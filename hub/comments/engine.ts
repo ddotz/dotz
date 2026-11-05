@@ -1,6 +1,6 @@
 // The comment engine: collect (script only, no model), draft (a model call only on request or per-source auto-draft), send (only through
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
-import { generateReply, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
+import { generateReply, lessonOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
 import { asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
@@ -165,6 +165,7 @@ export function createEngine(deps: EngineDeps) {
 		const measured: Tokens = tokens.reported ? { in: tokens.in, out: tokens.out } : { in: estimate(tokens.chars), out: estimate(tokens.outChars), estimated: true };
 		const notes = [...(r.action === "draft" ? [...r.warnings.map(w => `확인: ${w}`), ...r.questions.map(q => `정해 주세요: ${q}`)] : []), ...(seed ? [SEEDED_NOTE] : []), ...matched];
 		const body = seed ? seed.reply : r.action === "draft" ? r.draft.body : "";
+		if (previous && change !== undefined && r.action === "draft" && lessonOf(r, change)) deps.learn?.(src, lessonOf(r, change));
 		for (const d of store.drafts()) if (d.commentId === c.id && d.status === "pending") store.setDraftStatus(d.code, "stale");
 		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text: body, status: "pending", created: deps.now(), changes: previous ? [...previous.changes, change ?? ""] : [], clean: !notes.length && !previous?.mail, notes, tokens: measured, ...(previous?.mail ? { mail: previous.mail, ...(previous.mailAt ? { mailAt: previous.mailAt } : {}) } : {}) };
 		store.putDraft(draft);
@@ -630,7 +631,6 @@ export function createEngine(deps: EngineDeps) {
 			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
 			return { ok: true, draft: next };
 		}
-		deps.learn?.(src, change.trim());
 		return run(c, src, d, change.trim()).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 초안을 만들지 못했어요" }));
 	}
 

@@ -10,6 +10,7 @@ import { paths, writeAtomic } from "./settings.ts";
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale" | "held" | "answered";
 export type DraftRec = {
 	id: string;
+	recipient?: { who: string; evidence: string }; // who the model judged the sender to be and the sender's words it rests on (audit only)
 	kind: ReplyKind;
 	app: string; // tone profile of the draft: mail, youtube, instagram, kakao, ...
 	room?: string; // the messenger conversation, when the app has rooms

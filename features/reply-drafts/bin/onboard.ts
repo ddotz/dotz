@@ -13,7 +13,7 @@ import { appOn, dataDir, listProfiles, loadSettings, paths, REPO_FEATURE, saveSe
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { defaultCall } from "../lib/flow.ts";
 import { MAIL_TONE_VERSION, markVersion, sweep } from "../lib/persona.ts";
-import { learnTone, realRunner, SWEEP_LIMIT, toneSummary, zeleEnabled, type Runner } from "../lib/tone.ts";
+import { learnTone, realRunner, sentAccounts, SWEEP_LIMIT, toneSummary, zeleEnabled, type Runner } from "../lib/tone.ts";
 
 type Out = { lines: string[]; code: number };
 export type SnsAccess = { connected: (p: Platform) => boolean; ownTexts: (p: Platform) => Promise<string[]> };
@@ -65,7 +65,7 @@ export async function runOnboard(args: string[], run: Runner = realRunner, zeleO
 			if (app === undefined || app === "mail") {
 				setApp("mail", true);
 				writeSwitch();
-				return { lines: [`답장 초안을 켰어요. 새 메일 중 답장이 필요한 건 초안을 만들어 물어봐요. ${await learn({ app: "mail" }, { run, zeleOn }, analyze, "메일 (보낸 메일함)")}`], code: 0 };
+				return { lines: [`답장 초안을 켰어요. 새 메일 중 답장이 필요한 건 초안을 만들어 물어봐요. ${await learn({ app: "mail" }, { run, zeleOn, accounts: zeleOn ? [undefined] : sentAccounts(installConfig()) }, analyze, "메일 (보낸 메일함)")}`], code: 0 };
 			}
 			if (!(app in SNS)) return { lines: [`켤 수 있는 곳은 mail, youtube, instagram이에요: ${app}`], code: 2 };
 			const platform = app as Platform;

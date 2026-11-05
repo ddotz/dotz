@@ -132,15 +132,34 @@ export function parseThread(text: string): ThreadMessage[] {
 
 // Where a client starts quoting the earlier mail; everything from there on is not the new text.
 const QUOTE_START = [/^On .+wrote:\s*$/i, /^20\d\d[.\-/년 ].*작성:?\s*$/, /^-{2,}\s*(Original Message|원본 메시지)\s*-{2,}$/i, /^(From|보낸 사람):\s/i];
-/** The new text of a message: quoted lines, the quoted earlier mail and a `-- ` signature dropped. */
-export function newText(body: string): string {
+/** The new text of a message: quoted lines, the quoted earlier mail and a `-- ` signature dropped (`keepSignature`: the signature stays, it says who wrote). */
+export function newText(body: string, keepSignature = false): string {
 	const kept: string[] = [];
 	for (const line of body.split("\n")) {
 		const t = line.trim();
-		if (QUOTE_START.some(r => r.test(t)) || line === "-- " || t === "--") break;
+		if (QUOTE_START.some(r => r.test(t)) || (!keepSignature && (line === "-- " || t === "--"))) break;
 		if (!t.startsWith(">")) kept.push(line);
 	}
 	return kept.join("\n").trim();
+}
+
+const CONTEXT_MESSAGES = 6, CONTEXT_CLIP = 600, CONTEXT_MAX = 2000;
+/** A `zele mail read` thread for a draft: `text` = the newest message not from the owner (signature kept, quoted history cut), `context` = the earlier
+ *  messages, newest last. Text that is not a thread comes back as it is. */
+export function threadText(read: string, own: ReadonlySet<string>): { text: string; context?: string } {
+	const messages = parseThread(read);
+	if (!messages.length) return { text: read };
+	const last = messages.findLastIndex(m => !isOwnAddress(m.from, own));
+	const at = last < 0 ? messages.length - 1 : last;
+	const lines: string[] = [];
+	let size = 0;
+	for (const m of messages.slice(Math.max(0, at - CONTEXT_MESSAGES), at).reverse()) {
+		const line = `${isOwnAddress(m.from, own) ? "(the user)" : m.from}: ${newText(m.body).slice(0, CONTEXT_CLIP)}`;
+		if (size + line.length > CONTEXT_MAX) break;
+		size += line.length + 1;
+		lines.unshift(line);
+	}
+	return { text: newText(messages[at]!.body, true), ...(lines.length ? { context: lines.join("\n") } : {}) };
 }
 
 const REQUEST = /부탁|요청|문의|가능|할 수 있|please|could|can you/i;

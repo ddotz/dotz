@@ -193,6 +193,37 @@ export const hasSamples = (key: ToneKey | "install"): boolean => bullets(profile
 export const identityOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.identity);
 export const correctionsOf = (key: ToneKey | "install"): string[] => bullets(profile(key), HEADINGS.corrections);
 
+// The `## ` sections of a profile the code does not know (a hand-added `## 보낸 사람 신분별`), with their bullets.
+const KNOWN = new Set<string>(Object.values(HEADINGS));
+function unknownSections(md: string): { heading: string; items: string[] }[] {
+	const out: { heading: string; items: string[] }[] = [];
+	let current: { heading: string; items: string[] } | undefined;
+	for (const line of md.split("\n")) {
+		if (/^## /.test(line)) {
+			current = KNOWN.has(line.trim()) ? undefined : { heading: line.trim(), items: [] };
+			if (current) out.push(current);
+		} else {
+			const m = current && /^\s*[-*]\s+(.*\S)\s*$/.exec(line);
+			if (m) current!.items.push(m[1]!);
+		}
+	}
+	return out;
+}
+// A profile the user tuned by hand: corrections recorded, or a section of their own.
+export const isTuned = (key: ToneKey | "install"): boolean => correctionsOf(key).length > 0 || unknownSections(profile(key)).length > 0;
+
+// learned.json: which profiles ran their first sweep (and at which version), plus the marks of the pair reads (tone.ts refreshPairs).
+export function readLearned(): Record<string, string> {
+	if (!existsSync(paths.learned())) return {};
+	try {
+		return JSON.parse(readFileSync(paths.learned(), "utf8")) ?? {};
+	} catch {
+		return {};
+	}
+}
+export const markLearned = (marks: string[], now: Date): void => writeAtomic(paths.learned(), `${JSON.stringify({ ...readLearned(), ...Object.fromEntries(marks.map(m => [m, now.toISOString()])) }, null, 1)}\n`);
+
+// A `## ` section outside HEADINGS (one the user added by hand) is a standing instruction too: its bullets follow the known rule sections.
 // Samples come from the narrowest profile that has any (room -> app -> install; for the youtube and instagram apps the old
 // custom/sns/tone.md examples sit between app and install); rules, corrections and forbidden expressions are merged from every level,
 // install first and the narrower ones later.
@@ -218,7 +249,7 @@ export function loadStyle(key: ToneKey): LoadedStyle {
 	// The identity (who the user is as a writer) comes from the narrowest profile that has one, like the samples.
 	const narrowest = (heading: string) => [room, app, install].map(md => (md === undefined ? [] : bullets(md, heading))).find(xs => xs.length) ?? [];
 	const identity = narrowest(HEADINGS.identity);
-	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
+	return { identity, templates: narrowest(HEADINGS.templates), samples, samplesFrom, rules: unique([...merged(HEADINGS.rules, HEADINGS.learned, HEADINGS.profile), ...[install, app, room ?? ""].flatMap(md => unknownSections(md).flatMap(s => s.items))]), corrections: merged(HEADINGS.corrections), forbidden: merged(HEADINGS.forbidden) };
 }
 
 // Writes into exactly that profile (a legacy style.md is carried over first when the mail profile is written for the first time).

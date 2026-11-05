@@ -3,6 +3,8 @@
 // Comment replies are not sent from here (the youtube-instagram job flow posts them). The runner is injected.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { zeleMailSearch, type MailSearch } from "../../../hub/comments/mail-match.ts";
+import { zeleAccounts } from "../../../hub/zele.ts";
 import { readAppsFile } from "../../../hub/integrations.ts";
 import { loadPlugins, pluginReply, pluginRepliesWithFiles, pluginsLoaded } from "../../../hub/plugins.ts";
 import { dataDir } from "./settings.ts";
@@ -57,8 +59,9 @@ const zeleLogins = async (run: Runner): Promise<string[]> => {
 	const r = await run(["zele", "whoami"]).catch(e => ({ code: 1, stdout: "", stderr: String(e) }));
 	return r.code === 0 ? [...new Set(r.stdout.match(ADDRESS) ?? [])] : [];
 };
-// Category mails are posted as "<thread id>.<message count>".
-const threadOf = (rec: DraftRec) => (rec.source === "zele" ? rec.mailId : rec.mailId.replace(/\.\d+$/, ""));
+// Category mails are posted as "<thread id>.<message count>"; a source `zele` already posts the thread id.
+export const threadIdOf = (source: string, id: string): string => (source === "zele" ? id : id.replace(/\.\d+$/, ""));
+const threadOf = (rec: DraftRec) => threadIdOf(rec.source, rec.mailId);
 /**
  * The account a send goes through. With several accounts and no record of it: the one account the stored mail was addressed to, else the one
  * account that can open the thread. `several` = they are named and none could be settled; with one account zele needs no choice.
@@ -82,14 +85,27 @@ export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ accou
 export const webmailSite = (source: string): string | undefined =>
 	/^webmail[:/]([a-z0-9-]+)$/.exec(source)?.[1] ?? (/^[a-z0-9][a-z0-9-]{0,39}$/.test(source) && existsSync(join(dataDir(), "custom", "webmail", source, "spec.json")) ? source : undefined);
 
-// The text of one mail for the gateway offer: zele reads it by id, a webmail-no-api site through its own read command; any other source has none.
+// The text of one mail for the gateway offer: zele reads it by id, a webmail-no-api site through its own read command; any other source has none
+// unless it names a zele account.
 export async function readMailBody(source: string, id: string, run: Runner, account?: string): Promise<string | undefined> {
 	const site = webmailSite(source);
-	const argv = source === "zele" ? readArgv(id, account) : site ? ["bun", WEBMAIL_MAIL, site, "read", id] : undefined;
+	// Any other source reads through zele only when its mail app names an account and zele is installed (`zele mail read` does not mark mail read).
+	const viaZele = source === "zele" || (!site && !!account && !!Bun.which("zele"));
+	const argv = site ? ["bun", WEBMAIL_MAIL, site, "read", id] : viaZele ? readArgv(threadIdOf(source, id), account) : undefined;
 	if (!argv) return undefined;
 	const r = await run(argv);
 	return r.code === 0 && r.stdout.trim() ? r.stdout : undefined;
 }
+
+// Up to 5 earlier mails from one sender, one line each (`<date> <subject>: <snippet>`), the thread being drafted left out. Read-only (zele mail search).
+const HISTORY_MAX = 5, HISTORY_SNIPPET = 200;
+export async function senderHistory(search: MailSearch, address: string, account?: string, thread?: string): Promise<string[]> {
+	const items = await search.search(`from:${address}`, account);
+	return items.filter(m => m.id !== thread).slice(0, HISTORY_MAX).map(m => `${m.date ?? ""} ${m.subject}: ${m.snippet.replace(/\s+/g, " ").trim().slice(0, HISTORY_SNIPPET)}`.trim());
+}
+
+export const zeleHistory = (address: string, account?: string, thread?: string): Promise<string[]> =>
+	Bun.which("zele") ? senderHistory(zeleMailSearch(zeleAccounts), address, account, thread) : Promise.resolve([]);
 
 // Whether a mail source can send the files staged for a draft: zele can (`mail reply --attach`), a webmail-no-api site cannot (its adapter only saves a text draft),
 // another source only when its custom plugin says so (hub/plugins.ts repliesWithFiles; docs/custom-plugins.md).
