@@ -7,6 +7,7 @@
 //   > 제목: <subject>                        (optional)
 //   > 첨부: <name> (<size>)                  (optional, one line per file that goes out; "> 첨부: 없음" = the mail it answers had files and this
 //                                            reply carries none, so the owner sees they are not included)
+//   > 본문: <first line of the body>         (a session may label the body instead of the blank ">" line; 첨부 and the other fields may follow it. splitDraft reads every order)
 //   > 이어서: <what it follows> (<link>)  (optional, a draft made as a follow-up of an approved action, e.g. "댓글 답글에 이어서" + the comment's link)
 //   > 규칙: <name>                         (optional, the 자동 초안 규칙 that drafted it: the card's badge)
 //   >
@@ -291,6 +292,8 @@ export function refreshDraft(old: DraftApproval, text: string): DraftApproval {
 			if (f[k] === undefined) delete out[k];
 			else out[k] = f[k];
 		}
+		// A card stored before splitDraft read 본문 as a field kept the label and the file line in its body.
+		if (BODY_LABEL.test(o.body)) out.body = f.body;
 		return out as DraftApproval;
 	};
 	const next = head(old, fresh);
@@ -316,6 +319,8 @@ export function rewriteDraftTo(text: string, to: string, cc: readonly string[]):
 }
 
 const HEADER = /^(받는이|대상|대화방)\s*[:：]\s*(.*)$/;
+const FIELD = /^(받는이|대상|대화방|참조|제목|첨부|이어서|규칙)\s*[:：]/;
+const BODY_LABEL = /^본문\s*[:：][ \t]*/;
 const CC = /^참조\s*[:：]\s*(.*)$/;
 const SUBJECT = /^제목\s*[:：]\s*(.*)$/;
 const ATTACH = /^첨부\s*[:：]\s*(.*)$/;
@@ -359,7 +364,7 @@ export function parseQuotedDraft(text: string): DraftApproval | undefined {
 		if (m) quoted.push(m[1]!);
 	}
 	if (!quoted.length) return undefined;
-	const first = quoted.findIndex(l => HEADER.test(l));
+	const first = quoted.findIndex(opensDraft);
 	// A quote above the draft (the comment being answered) is not part of it; it is the source its recipient is checked against.
 	const above = first > 0 ? quoted.splice(0, first) : [];
 	const decide = decideOf(text);
@@ -376,6 +381,68 @@ export function parseQuotedDraft(text: string): DraftApproval | undefined {
 	return main && mail ? { ...main, mail: id ? { ...mail, ref: id } : mail } : main;
 }
 
+const opensDraft = (line: string) => HEADER.test(line.trimStart());
+// The one reading of a block's quoted lines: which are its fields and which its body. draftApprovalBlock writes the fields, a blank ">" and the body;
+// a session may label the body ("본문: ...", on one line or many) and put 첨부 or another field after it (2026-11-05, MODE.md gave no shape for them).
+// Without the label only 첨부 counts below the body, and only when the head has no 첨부 row: a built mail always has one, so its own words stay its words.
+// `moved`: the block was not in the built shape, so canonicalDraft rewrites it.
+function splitDraft(quoted: string[]): { head: string[]; body: string[]; moved: boolean } {
+	const seen = new Set<string>();
+	const field = (line: string): boolean => {
+		const m = FIELD.exec(line.trim());
+		const key = m && (HEADER.test(line.trim()) ? "to" : m[1]!);
+		if (!key || (key !== "첨부" && seen.has(key))) return false;
+		seen.add(key);
+		return true;
+	};
+	let i = 0;
+	while (opensDraft(quoted[0] ?? "") && i < quoted.length && field(quoted[i]!)) i++;
+	const rest = quoted.slice(i), first = rest.findIndex(l => l.trim());
+	const label = first < 0 ? null : BODY_LABEL.exec(rest[first]!.trim());
+	if (label) rest[first] = rest[first]!.trim().slice(label[0].length);
+	const filed = seen.has("첨부");
+	let end = rest.length;
+	for (let j = rest.length - 1; j > first; j--) {
+		if (!rest[j]!.trim()) continue;
+		if (label ? !field(rest[j]!) : filed || !ATTACH.test(rest[j]!.trim())) break;
+		end = j;
+	}
+	return { head: [...quoted.slice(0, i), ...rest.slice(end).filter(l => l.trim())].map(l => l.trim()), body: rest.slice(0, end), moved: !!label || end < rest.length };
+}
+
+// A message's hand-written blocks in the shape draftApprovalBlock writes, so the chat, Discord and every other reader of the text show the fields as
+// fields and no label in the body (hub/owner-text.ts). A built block, and a reply + mail card, stay as they are.
+const QUOTE_LINE = /^\s*>\s?(.*)$/;
+export function canonicalDraft(text: string): string {
+	if (!/본문|첨부/.test(text)) return text;
+	const lines = text.split("\n"), out: string[] = [];
+	let fence = false;
+	for (let i = 0; i < lines.length; i++) {
+		if (/^\s*```/.test(lines[i]!)) fence = !fence;
+		if (fence || !opensDraft(QUOTE_LINE.exec(lines[i]!)?.[1] ?? "")) {
+			out.push(lines[i]!);
+			continue;
+		}
+		let end = i;
+		while (end < lines.length && QUOTE_LINE.test(lines[end]!)) end++;
+		const run = lines.slice(i, end).map(l => QUOTE_LINE.exec(l)![1]!);
+		const s = run.some(l => MAIL_LINE.test(l)) ? undefined : splitDraft(run);
+		out.push(...(s?.moved ? [...s.head.map(l => `> ${l}`), ">", ...quote(s.body.join("\n").replace(/^\n+|\s+$/g, ""))] : lines.slice(i, end)));
+		i = end - 1;
+	}
+	return out.join("\n");
+}
+
+// "a.pdf / b.xlsx" or "a.pdf, b.xlsx": one line naming several files by hand is one file per name; a name may hold a comma itself.
+const FILE_NAME = /\.[A-Za-z0-9]{1,5}(?:\s+\([^()]+\))?$/;
+function fileNames(v: string): DraftFile[] {
+	const names = [/\s+\/\s+/, /\s*,\s+/].map(sep => v.split(sep)).find(p => p.length > 1 && p.every(x => FILE_NAME.test(x))) ?? [v];
+	return names.map(x => {
+		const m = FILE_SIZE.exec(x);
+		return m ? { name: m[1]!, size: m[2]! } : { name: x };
+	});
+}
+
 // One part (the reply or the mail) from its quoted lines: recipient line, optional subject / files / origin, then the body.
 function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	let toLabel = "받는이";
@@ -387,14 +454,14 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	let note: string | undefined;
 	let origin: DraftOrigin | undefined;
 	let rule: string | undefined;
-	let i = 0;
-	for (; i < quoted.length; i++) {
-		const h = HEADER.exec(quoted[i]!) ?? undefined;
-		const c = to && !cc.length ? CC.exec(quoted[i]!) : null;
-		const s = SUBJECT.exec(quoted[i]!);
-		const a = to ? ATTACH.exec(quoted[i]!) : null;
-		const o = to && !origin ? ORIGIN.exec(quoted[i]!) : null;
-		const r = to && rule === undefined ? RULE.exec(quoted[i]!) : null;
+	const { head, body: lines } = splitDraft(quoted);
+	for (const line of head) {
+		const h = HEADER.exec(line) ?? undefined;
+		const c = to && !cc.length ? CC.exec(line) : null;
+		const s = SUBJECT.exec(line);
+		const a = to ? ATTACH.exec(line) : null;
+		const o = to && !origin ? ORIGIN.exec(line) : null;
+		const r = to && rule === undefined ? RULE.exec(line) : null;
 		if (h && !to) {
 			toLabel = h[1]!;
 			to = h[2]!.trim();
@@ -404,21 +471,13 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 		else if (o && o[1]!.trim()) origin = { text: o[1]!.trim(), ...(o[2] ? { link: o[2] } : {}) };
 		else if (a) {
 			const v = a[1]!.trim();
-			const m = FILE_SIZE.exec(v);
 			const nn = NONE_NOTE.exec(v);
-			// One line naming several files ("a.xlsx, b.pdf", a hand-written block) is one file per name.
-			const parts = v.split(/\s*,\s+/);
 			if (v === "없음") none = true;
 			else if (nn) note = nn[1]!.trim();
-			else if (parts.length > 1 && parts.every(x => /\.[A-Za-z0-9]{1,5}(?:\s+\([^()]+\))?$/.test(x)))
-				for (const x of parts) {
-					const pm = FILE_SIZE.exec(x);
-					attachments.push(pm ? { name: pm[1]!, size: pm[2]! } : { name: x });
-				}
-			else if (v) attachments.push(m ? { name: m[1]!, size: m[2]! } : { name: v });
-		} else break;
+			else if (v) attachments.push(...fileNames(v));
+		}
 	}
-	const body = quoted.slice(i).join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\s+$/g, "");
+	const body = lines.join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\s+$/g, "");
 	if (!body) return undefined;
 	const clipped = body.slice(0, DRAFT_BODY_MAX);
 	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(`${subject ?? ""}\n${clipped}`));
@@ -437,7 +496,7 @@ export function quotedDraft(text: string): string | undefined {
 			if (out) break;
 			continue;
 		}
-		if (!out && !HEADER.test(m[1]!)) continue;
+		if (!out && !opensDraft(m[1]!)) continue;
 		(out ??= []).push(m[1]! ? `> ${m[1]}` : ">");
 	}
 	return out?.join("\n").replace(/(?:\n>)+$/, "");

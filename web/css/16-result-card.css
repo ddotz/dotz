@@ -177,7 +177,8 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .dr-origin a { color: inherit; text-decoration: underline; }
 .dr-origin svg { flex: none; width: 14px; height: 14px; }
 .dr-body { display: flex; flex-direction: column; gap: var(--sp-2); color: var(--fg); font-size: 15px; line-height: 24px; overflow-wrap: anywhere; }
-.dr-body p { margin: 0; white-space: pre-wrap; }
+.dr-body p, .bm .md.dr-body p { margin: 0; white-space: pre-wrap; }
+.bm .md.dr-body { font-size: 15px; line-height: 24px; }
 /* the files a draft sends along, and what is missing (10-decision-card.js draftFilesNode); the send sheet and the card share it */
 .dr-files { display: flex; flex-direction: column; gap: var(--sp-15); min-width: 0; margin-top: var(--sp-3); }
 .dr-fh { color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
@@ -191,6 +192,9 @@ a.dr-att:active { background: var(--active); }
 .dr-fm { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .dr-none, .dr-warn { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--fg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 .dr-none .ic { color: var(--warn); }
+.dr-note, .dc-gone { color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.dr-note { margin-top: var(--sp-1); }
+.dc-gone { padding: var(--sp-1) var(--sp-3) var(--sp-2); text-align: center; }
 .dr-warn { font-weight: 600; background: color-mix(in srgb, var(--warn) 18%, var(--card)); }
 .dr-warn > .ic { flex: none; width: 18px; height: 18px; fill: none; stroke: var(--warn); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .dr-wt { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }

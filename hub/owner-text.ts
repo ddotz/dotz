@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { normalizeAsk, normalizeHeaded } from "./ask-normalize.ts";
 import { D_OPT, DECISION_HEAD } from "./choices.ts";
 import { DATA_DIR, log } from "./config.ts";
+import { canonicalDraft } from "./draft-approval.ts";
 
 const FENCE = /^\s*```/;
 const QUESTION = /[?？]|까요|나요|주세요/;
@@ -39,7 +40,7 @@ const plainHead = (text: string, heads: string[]): string =>
 /** What may reach the owner. onBroken gets each "결정:" line no card came from; only the store passes it, so one message counts once. `gateway`: text the gateway wrote, where only a "결정:" block is one. */
 export function ownerText(text: string, onBroken?: (head: string) => void, gateway = false): string {
 	if (!text.includes("결정") && !/decision|[?？]|까요|주세요/i.test(text)) return text;
-	const out = gateway ? normalizeHeaded(text) : normalizeAsk(text);
+	const out = canonicalDraft(gateway ? normalizeHeaded(text) : normalizeAsk(text));
 	const heads = brokenHeads(out);
 	if (!heads.length) return out;
 	if (onBroken) for (const head of heads) onBroken(head);

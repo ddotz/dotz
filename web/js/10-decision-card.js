@@ -79,8 +79,10 @@ const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h *
 // Several decisions of one message are answered one by one (owner 2026-11-04): each open notice of the group is a block, a pick answers that
 // notice at once and the block leaves the card; the rest wait. A newer question of the conversation takes the dock first.
 // An open question with buttons stays here too once later messages pushed it up (decisionOne reads only the newest), until the owner answers its notice.
+const dcGone = t => isLaneT(t) && (i => i.known && !i.alive && !i.resumable)(targetInfo(t));   // a session that ended takes no answer
+const DC_GONE = "이 세션이 끝나서 답을 보낼 수 없어요";
 function decisionGroup(t) {
-  if (isLaneT(t) && (i => i.known && !i.alive && !i.resumable)(targetInfo(t))) return null;
+  if (dcGone(t)) return null;
   const open = NT.items.filter(n => ntOpenDec(n) && !n.pc && !n.decision.draft && !n.decision.assumed && n.decision.options.length && n.decision.to === t && n.decision.reply_to);
   if (!open.length) return null;
   const at = open.map(n => n.decision.reply_to).sort().pop(), mine = open.filter(n => n.decision.reply_to === at);
@@ -97,7 +99,7 @@ const ownerSaid = e => OWNER.has(e.kind) && !peerMsgOf(e);
 function decisionOne(t) {
   if (!S) return null;
   const info = targetInfo(t), s = ts(t);
-  if (isLaneT(t) && info.known && !info.alive && !info.resumable) return null;
+  if (dcGone(t)) return null;
   let raw = "", at = "";
   if (info.ask) { raw = String(info.ask.text); at = info.ask.at || ""; }
   else {
@@ -192,11 +194,13 @@ function multiNodes(dc, picks, st) {
 // app's 첨부 파일 폴더, x = take one off. The live list (DRF.st) replaces the one written in the message. o.t = the draft's conversation
 // (a peer's draft is changed on its own computer), o.edit false = read only, o.warn = a box the warning is drawn into instead of under the files.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, add: {} };
+const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, add: {}, wait: {} };
 const DRF_WIRE_MAX = 10 * 1024 * 1024;
 const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
 const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
-async function drfLoad(ref) { try { const r = await api(drfPath(ref, "files")); DRF.st[ref] = r && Array.isArray(r.files) ? r : drfNone; } catch { DRF.st[ref] = drfNone; } }
+function drfLoad(ref) {
+  return DRF.wait[ref] ||= api(drfPath(ref, "files")).then(r => { DRF.st[ref] = r && Array.isArray(r.files) ? r : drfNone; }, () => { DRF.st[ref] = drfNone; }).finally(() => { delete DRF.wait[ref]; });
+}
 async function drfWrite(ref, body) {
   const r = await api(drfPath(ref, "files"), "POST", body);
   DRF.st[ref] = { files: r.files, canAttach: r.canAttach, library: r.library, editable: r.editable, attachIssues: r.attachIssues };
@@ -243,8 +247,8 @@ function draftFilesNode(d, o = {}) {
   };
   function paint() {
     const st = ref ? DRF.st[ref] : null, live = !!st && !st.failed && st.tracked !== false;
-    // Files named in the message that dotz did not stage itself: shown, with a line saying it could not check they go out.
-    const unchecked = !!st && st.tracked === false && Array.isArray(d.attachments) && d.attachments.length > 0;
+    // Files named in the message that dotz did not stage itself: the names stand, with a plain line saying the session attaches them.
+    const named = !!st && st.tracked === false && Array.isArray(d.attachments) && d.attachments.length > 0;
     const fl = live ? st.files : Array.isArray(d.attachments) ? d.attachments : [];
     const can = live && st.editable && o.edit !== false, busy = !!DRF.busy[ref];
     const warn = d.warning && !fl.length;
@@ -253,12 +257,11 @@ function draftFilesNode(d, o = {}) {
     const warns = [
       issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부 확인" }), el("span", { class: "dr-wn", text: issues.join(" · ") }))) : null,
       warn && !issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
-      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null,
-      unchecked ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부가 실제로 붙었는지 몰라요" }), el("span", { class: "dr-wn", text: "보내기 전에 확인해 주세요" }))) : null];
+      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null];
     const rows = fl.map((f, i) => {
       const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
       const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
-      const link = ref ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${i}`)), target: "_blank", rel: "noopener", title: `${f.name} 열기`, "aria-label": `${f.name} 열기${f.size ? ` (${f.size})` : ""}` }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
+      const link = ref && !named ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${i}`)), target: "_blank", rel: "noopener", title: `${f.name} 열기`, "aria-label": `${f.name} 열기${f.size ? ` (${f.size})` : ""}` }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
       return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: "첨부에서 빼기", "aria-label": `${f.name} 빼기`, onclick: () => run(() => drfWrite(ref, { remove: i })) }, icon("close"))) : link;
     });
     const items = DRF.lib[ref] || [];
@@ -273,12 +276,13 @@ function draftFilesNode(d, o = {}) {
     const mailDraft = d.toLabel === "받는이";
     // o.live (the mail of a combined card, read only): the list is read from the staged files, so a ✓ says they are on the mail.
     clear(box).append(...[fl.length ? el("div", { class: o.live && live ? "dr-fh ok" : "dr-fh", text: o.live && live ? `✓ 첨부 ${fl.length}개 붙어 있어요` : `첨부 ${fl.length}개` }) : null, ...rows,
+      named ? el("div", { class: "dr-note", text: "세션이 직접 붙여 보내는 파일이라 여기서는 열어 볼 수 없어요" }) : null,
       !fl.length && (d.noAttachments || mailDraft) ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부: 없음" })) : null,
       add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
     box.hidden = !box.querySelector(".dr-fh, .dr-none, .dr-warn, .dr-add");
   }
   paint();
-  if (ref && (o.edit !== false || o.live) && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
+  if (ref && (o.edit !== false || o.live || (d.attachments || []).length) && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
   return box;
 }
 /* ---------- 받는 사람·참조 of a mail reply draft (hub/draft-recipients.ts) ---------- */
@@ -336,7 +340,8 @@ function draftToNode(d, o = {}) {
   };
   function paint() {
     const st = ref ? DRR.st[ref] : null;
-    const live = st && !st.failed ? st : { to: drrSplit(d.to), cc: Array.isArray(d.cc) ? d.cc : [], mode: d.mode || "reply", editable: !!ref && o.edit !== false, reply: !!d.mode };
+    // No record of this draft (a block a session wrote): the hub has no list, the card's own 받는이 stands and nothing here can change it.
+    const live = st && !st.failed && (st.to.length || st.editable) ? st : { to: drrSplit(d.to), cc: Array.isArray(d.cc) ? d.cc : [], mode: d.mode || "reply", editable: !!st && !!st.failed && !!ref && o.edit !== false, reply: !!d.mode };
     const editable = live.editable && o.edit !== false, off = busy();
     const seg = live.reply ? el("div", { class: "seg dr-seg", role: "group", "aria-label": "답장 범위" },
       ...[['reply', '답장'], ['all', '전체 답장']].map(([k, text]) => el("button", { class: live.mode === k ? "on" : "", type: "button", "data-k": `mode-${k}`, "aria-pressed": String(live.mode === k), disabled: off || !editable, text, onclick: () => { if (editable && !off && live.mode !== k) run(() => drrWrite(ref, { mode: k })); } }))) : null;
@@ -367,11 +372,13 @@ function draftMailNode(m, o = {}) {
     el("div", { class: "dr-mh" }, icon("mail"), el("span", { text: "함께 보낼 메일" })),
     el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: m.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: m.to || "-" })),
     m.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: m.subject })) : null,
-    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "함께 보낼 메일 내용", text: m.body }),
+    draftBodyNode(m.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": "함께 보낼 메일 내용" }),
     draftFilesNode(part, { edit: false, live: !!ref, t: o.t }));
 }
 // A combined card (comment reply + mail): the comment it answers on top, then 내 답글, then the mail (draftMailNode).
 const replyHead = () => el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: "내 답글" }));
+// The body of a draft, drawn as chat draws a message (relayed: words to read, no run button or settings card on what someone else may have written).
+const draftBodyNode = (text, cls, attrs = {}) => el("div", { ...attrs, class: `md ${cls}`, safeHtml: mdHtml(text, true) });
 function draftNode(d, o) {
   const both = !!d.mail && d.toLabel === "대상";
   return el("div", { class: "dc-draft" },
@@ -379,7 +386,7 @@ function draftNode(d, o) {
     !d.toLabel || d.toLabel === "받는이" ? draftToNode(d, o) : el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
     draftRuleNode(d), draftOriginNode(d),
-    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o), draftMailNode(d.mail, o));
+    draftBodyNode(d.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": "보낼 내용" }), draftFilesNode(d, o), draftMailNode(d.mail, o));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
 const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? "보내는 중…" : "보냈어요 · 처리하는 중");
@@ -447,16 +454,18 @@ function renderSheet(box, dc, picks, step) {
     d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: `받는이 확인: ${d.recipientWarning}` })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
-  const both = !!d && !!d.mail && d.toLabel === "대상";   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
+  const orgDrawn = () => { delete box.dataset.sig; paintDecision(); };   // the sig does not hold the hub's answer, so the repaint is asked for
+  const both = !!d && !!d.mail && d.toLabel === "대상" && orgHas(d.ref, dc.t, orgDrawn);   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), draftBodyNode(d.body, "dc-dr-b"), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");
-  const col = d && d.ref && body && ((d.toLabel === "대상" && !d.mail) || (d.toLabel === "받는이" && !d.mail)) ? el("div", { class: "od-draftcol" }) : null;
+  const col = d && d.ref && body && !d.mail && (d.toLabel === "대상" || d.toLabel === "받는이") && orgHas(d.ref, dc.t, orgDrawn) ? el("div", { class: "od-draftcol" }) : null;
   const org = col ? orgNodes(d, dc.t, box, col) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);
   if (edit) foot.append(editNode(dc, edit, st));
+  else if (d && dcGone(dc.t)) foot.append(el("div", { class: "dc-gone", role: "status", text: DC_GONE }));
   else if (d) {
     // One compact row: the first choice (보내기) filled, 고치기 tonal, the rest as text, and 직접 수정 as a small link at the end.
     const opts = dc.blocks[0].options, oe = opts.find(o => o.label === DRAFT_EDIT);
@@ -596,8 +605,7 @@ const SEND_LABELS = /^보내기\|고치기\|보내지 않기/;
 function inlineDc(i, live) {
   const sig = hashOf(i.body), at = i.e.ts, s = ts(i.t);
   if (live && live.t === i.t && (live.sig === sig || live.at === at)) return live;
-  const info = targetInfo(i.t);
-  if (isLaneT(i.t) && info.known && !info.alive && !info.resumable) return null;
+  if (dcGone(i.t)) return null;
   if (s.msgs.some(e => ownerSaid(e) && msOf(e.ts) > msOf(at)) || dcSettledAt(i.t, at)) return null;
   // Only the newest question waits, and a send approval outside a session goes by its draft (the docked card or the notice), never by a bare answer.
   if (s.msgs.some(e => msOf(e.ts) > msOf(at) && (e.kind === "out" || e.kind === "lane_report") && !e.update_key && parseChoices(parseTone(noHandoff(String(e.text ?? ""))).text).blocks.some(b => b.options.length > 1))) return null;

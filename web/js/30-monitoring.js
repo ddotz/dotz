@@ -320,7 +320,7 @@ function draftCardNode(n, o = {}) {
   if (o.bare) return el("div", { class: "dr-mail" }, recv,
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
     draftOriginNode(dr),
-    man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
+    man ? ta : draftBodyNode(dr.body, "dr-body"),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
   // A mail answered by this draft reads like the landing page's comment card: who wrote, where it came from, what they wrote, then the draft in a grey box.
   const om = mail ? MAILS.get(d.to) || {} : {}, who = mail ? mailSender(om.from) : "", sent = st === "send";
@@ -338,7 +338,7 @@ function draftCardNode(n, o = {}) {
       dcSending.delete(n.id); syncInlineChoices();
     } });
   }
-  const acts = editing ? null : open ? {
+  const gone = open && dcGone(d.to), acts = editing || gone ? null : open ? {
     send: () => { if (!oSend || busy) return; if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && answerInline(n, oSend)); else answerInline(n, oSend); },
     edit: oEdit ? () => { DR.edit.add(n.id); redraw(); } : null,
     drop: oDrop ? () => { if (!busy) answerInline(n, oDrop); } : null,
@@ -351,11 +351,11 @@ function draftCardNode(n, o = {}) {
   const card = rqCard({ key: `dr:${n.id}`, cls: `bm alert rc dr ${st}`, attrs: { "data-nid": n.id }, head,
     label: q || null, labelCls: "rc-title dr-q",
     recv, subject: dr.subject, ...(who && (om.summary || om.preview) ? { original: { text: String(om.summary || om.preview).split("\n")[0], ...(dr.ref ? { ref: dr.ref, t: d.to } : {}) } } : {}), sent, sentAt: when,
-    body: { text: dr.body, node: man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))), cls: "dr-body" },
+    body: { text: dr.body, node: man ? ta : draftBodyNode(dr.body, "dr-body"), cls: "dr-body" },
     // A mail draft always shows its 첨부 줄 (files, or 첨부: 없음) right before 보내기; the files are editable while the draft waits.
     attach: draftFilesNode(dr, { t: d.to, edit: open }),
     extra: [mail && !who ? drOriginal(d.to) : null,   // the head already says who wrote and what
-      draftOriginNode(dr), draftMailNode(dr.mail)],
+      gone ? el("div", { class: "dc-gone", role: "status", text: DC_GONE }) : null, draftOriginNode(dr), draftMailNode(dr.mail)],
     ...(revise ? { revise } : acts ? { acts } : {}) });
   return card;
 }

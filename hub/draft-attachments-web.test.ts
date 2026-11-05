@@ -168,11 +168,11 @@ describe("a comment reply that sends a mail too", () => {
 });
 
 describe("files dotz did not stage", () => {
-	test("a mail draft naming files dotz holds no record of shows them with a warning that they could not be checked", async () => {
+	test("a mail draft naming files dotz holds no record of shows them as plain rows with a plain note, and links nowhere", async () => {
 		const v = await open(390, 900);
 		await waitFor(v, `typeof draftFilesNode === "function"`);
-		const got = await v.evaluate(`(() => { DRF.st.KX1 = { files: [], canAttach: false, library: false, editable: false, tracked: false }; const b = draftFilesNode({ ref: "KX1", toLabel: "받는이", to: "a@b.c", body: "x", attachments: [{ name: "신청.xlsx" }, { name: "증빙.pdf" }] }, { edit: false }); document.body.append(b); return [b.hidden, b.querySelectorAll(".dr-fn").length, b.querySelector(".dr-warn .dr-wt span")?.textContent].join("|"); })()`);
-		expect(got).toBe("false|2|첨부가 실제로 붙었는지 몰라요");
+		const got = await v.evaluate(`(() => { DRF.st.KX1 = { files: [], canAttach: false, library: false, editable: false, tracked: false }; const b = draftFilesNode({ ref: "KX1", toLabel: "받는이", to: "a@b.c", body: "x", attachments: [{ name: "신청.xlsx" }, { name: "증빙.pdf" }] }, { edit: false }); document.body.append(b); return [b.hidden, b.querySelectorAll(".dr-fn").length, !!b.querySelector(".dr-warn, .dr-none, a"), !!b.querySelector(".dr-note")].join("|"); })()`);
+		expect(got).toBe("false|2|false|true");
 	});
 });
 
