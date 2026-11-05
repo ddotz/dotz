@@ -6,19 +6,22 @@
 //                                        -> { results: [{ ref, ok, reason? }] } (hub/reply-outcomes.ts); no new approval is recorded
 //   POST /api/drafts/<ref>/body          { text, part?: "reply" | "mail" }: the owner's own edit of a pending draft's text, before he sends it
 // and the single-card answers of the web (routes.ts) and Discord (main.ts), which take this path when the gateway can send the draft.
-import { log, now } from "./config.ts";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
 import { approvals, convOfTarget, newMid, out } from "./outbound.ts";
 import { answerDecision, type DecisionSend, listNotices, markDraftSend, NOTICE_CAP, openDraftCards, settleOpenDecision } from "./notices.ts";
 import type { Upload } from "./files.ts";
-import { commentContextOf, commentDraftOf, commentSendFailed, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
+import { commentContextOf, commentDraftOf, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
 import { dropFailed, retryFailed, type RetryDeps } from "./reply-outcomes.ts";
 import { appEntries, commentOwner } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
 import { DATA_DIR } from "./config.ts";
 import { linkedComment } from "./comments/linked.ts";
-import { getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
-import { createApprovalSender, refOfQuestion, runCli, sendActionOf, type SendResult, type SendTarget } from "./approval-send.ts";
+import { claimFile, getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
+import { claimHolder } from "./draft-claim.ts";
+import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, sendActionOf, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { answerBatch, batchCard, type BatchCard, type BatchPick } from "./approval-batch.ts";
 import { DRAFT_BODY_MAX, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
 import { pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
@@ -51,7 +54,33 @@ const reportSend = (r: SendResult): void => {
 	const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
 	void out(targetOf(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
 };
-export const sender = createApprovalSender({ kind: sendTargetOf, run: runCli, report: reportSend, log });
+// The approved sends still queued or sending are kept here (hub/approval-send.ts), so a restart finds them.
+const JOBS_FILE = join(DATA_DIR, "approval-sends.json");
+const jobStore = {
+	load: (): unknown[] => {
+		if (!existsSync(JOBS_FILE)) return [];
+		const list = JSON.parse(readFileSync(JOBS_FILE, "utf8"));
+		return Array.isArray(list) ? list : [];
+	},
+	save: (body: string): void => writeAtomic(JOBS_FILE, `${body}\n`),
+};
+/** A send that was running when the gateway stopped: sent, its sender still running (a mail CLI holding its claim), or lost with the mail possibly out. */
+function lookSend(j: SendJob): SendLook {
+	const mail = getDraft(j.ref);
+	if (mail) return mail.status === "sent" ? { state: "sent" } : claimHolder(claimFile(j.ref)) === "live" ? { state: "alive" } : { state: "failed", text: MAY_HAVE_GONE_OUT };
+	return commentSendOutcome(j.ref) ?? { state: "failed", text: MAY_HAVE_GONE_OUT };
+}
+export const sender = createApprovalSender({ kind: sendTargetOf, run: runCli, report: reportSend, log, store: jobStore, look: lookSend });
+let sendsBooted = false;
+/** Boot and every sweep after it: the first call takes up the sends the last run left (queued ones are queued again, running ones are judged, never re-run), later calls check the ones still running. */
+export function settleSends(): void {
+	if (!sendsBooted) {
+		sendsBooted = true;
+		commentSettleSending();
+		sender.recover();
+	}
+	sender.recheck();
+}
 // A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
 function reportCliFailure(ref: string, conv: string, text: string): void {
 	const card = listNotices(NOTICE_CAP).items.find(i => i.decision && i.title.endsWith(`(${ref})`));

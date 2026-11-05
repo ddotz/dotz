@@ -61,13 +61,14 @@ export async function answerBatch(conv: string, items: BatchItem[], deps: BatchD
 	const bot = chosen.filter(c => !gw.includes(c));
 	const open = chosen.find(c => c.card.notice);
 	const line = (c: (typeof chosen)[number]) => `${c.card.question}: ${c.pick.n}) ${c.pick.label}${c.pick.note ? ` - ${c.pick.note}` : ""}`;
-	// Held cards leave the queue first, so settling the open card shows a card that is still waiting, not one answered here.
-	deps.take(conv, chosen.filter(c => !c.card.notice).map(c => c.card.ref));
 	// The card the gateway answers keeps the button's own label as its answer (hub/reply-outcomes.ts pickedSend reads it): a record naming the card would settle it with the batch line,
 	// so it names none and the card is settled once the answer is safely recorded.
 	const gwOpen = gw.find(c => c.card.notice);
+	// Nothing leaves the queue before the answer is recorded: a record that throws loses no card, and its error reaches the caller.
 	if (gw.length) await deps.record(conv, `결정 답: ${gw.map(line).join(" · ")}`, gw.map(c => c.pick), false);
 	if (bot.length) await deps.record(conv, `결정 답 ${bot.length}건:\n${bot.map(c => `- ${line(c)}`).join("\n")}`, bot.map(c => c.pick), true, bot.find(c => c.card.notice)?.card.notice);
+	// Held cards leave the queue before the open card is settled, so settling shows a card that is still waiting, not one answered here.
+	deps.take(conv, chosen.filter(c => !c.card.notice).map(c => c.card.ref));
 	for (const c of new Set([gwOpen, open])) if (c) deps.settle(c.card.notice!, `${c.pick.n}) ${c.pick.label}`);
 	for (const c of gw) {
 		if (c.pick.n === 3) await deps.dropDraft?.(c.card.ref);

@@ -58,7 +58,12 @@ export function createStore(dir: string) {
 	const reads = (): Record<string, number> => readJson<Record<string, number>>(f("reads.json"), {});
 	const dismissed = (): Record<string, number> => readJson<Record<string, number>>(f("dismissed.json"), {});
 	const authors = (): Record<string, Author> => readJson<Record<string, Author>>(f("authors.json"), {});
-	const upsert = <T extends { [k: string]: any }>(list: T[], item: T, key: keyof T, cap: number): T[] => [...list.filter(x => x[key] !== item[key]), item].slice(-cap);
+	// Only closed items count against `cap` and are trimmed (oldest first): an item still waiting (`open`) is never dropped silently.
+	const upsert = <T extends { [k: string]: any }>(list: T[], item: T, key: keyof T, cap: number, open: (x: T) => boolean): T[] => {
+		const all = [...list.filter(x => x[key] !== item[key]), item];
+		let skip = all.reduce((n, x) => n + (open(x) ? 0 : 1), 0) - cap;
+		return skip > 0 ? all.filter(x => open(x) || skip-- <= 0) : all;
+	};
 	return {
 		dir,
 		config,
@@ -123,11 +128,11 @@ export function createStore(dir: string) {
 			writeAtomic(f("comments.json"), have.map(c => (c.source === source && c.thread === thread ? { ...c, postTitle: p.postTitle, ...(p.postLink ? { postLink: p.postLink } : {}), ...(p.thumb ? { thumb: p.thumb } : {}) } : c)));
 		},
 		drafts,
-		putDraft: (d: Draft) => writeAtomic(f("drafts.json"), upsert(drafts(), d, "code", MAX_DRAFTS)),
+		putDraft: (d: Draft) => writeAtomic(f("drafts.json"), upsert(drafts(), d, "code", MAX_DRAFTS, x => x.status === "pending")),
 		patchDraft: (code: string, patch: Partial<Draft>) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, ...patch } : d))),
 		setDraftStatus: (code: string, status: DraftStatus) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, status } : d))),
 		replies,
-		putReply: (r: Reply) => writeAtomic(f("replies.json"), upsert(replies(), r, "id", MAX_REPLIES)),
+		putReply: (r: Reply) => writeAtomic(f("replies.json"), upsert(replies(), r, "id", MAX_REPLIES, x => x.state !== "sent")),
 		removeReply: (id: string) => writeAtomic(f("replies.json"), replies().filter(r => r.id !== id)),
 		cursors,
 		setCursor: (key: string, c: Cursor) => writeAtomic(f("cursors.json"), { ...cursors(), [key]: c }),

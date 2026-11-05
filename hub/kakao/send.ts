@@ -527,7 +527,7 @@ export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chat
 
 // The in-process guard above does not see another process (the CLI the bot runs beside the gateway's button): a claim file does (hub/draft-claim.ts).
 async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string }): Promise<SendResult> {
-	const release = claimSend(join(dirname(deps.paths.drafts), "sending", code));
+	const release = claimSend(join(dirname(deps.paths.drafts), "sending", code), true);
 	if (!release) return refuse("이미 보내는 중이에요");
 	try {
 		return await sendClaimed(code, deps);

@@ -53,3 +53,29 @@ test("an open card the gateway answers keeps its button's label, and only after 
 	await expect(answerBatch("main", [{ ref: "D1", n: 1 }], deps)).rejects.toThrow("disk full");
 	expect(steps).toEqual([]);
 });
+
+test("a record that throws takes no held card out of the queue, sends nothing and passes the error on", async () => {
+	const held: BatchCard[] = cards.map(c => ({ ...c }));
+	const { log, deps } = setup(() => true);
+	const taken: string[] = [];
+	deps.cards = () => held;
+	deps.take = (_c, refs) => void taken.push(...refs);
+	deps.record = async () => {
+		throw new Error("inbox is full");
+	};
+	await expect(answerBatch("main", [{ ref: "D1", n: 1 }, { ref: "D2", n: 1 }], deps)).rejects.toThrow("inbox is full");
+	expect(taken).toEqual([]);
+	expect(log.sent).toEqual([]);
+});
+
+test("held cards leave the queue once the answer is recorded, before the open card is settled", async () => {
+	const open: BatchCard = { ...cards[0]!, notice: "n1" };
+	const { deps } = setup(() => true);
+	const steps: string[] = [];
+	deps.cards = () => [open, cards[1]!];
+	deps.take = (_c, refs) => void steps.push(`take:${refs.join(",")}`);
+	deps.record = async () => void steps.push("record");
+	deps.settle = id => void steps.push(`settle:${id}`);
+	await answerBatch("main", [{ ref: "D1", n: 1 }, { ref: "D2", n: 1 }], deps);
+	expect(steps).toEqual(["record", "take:D2", "settle:n1"]);
+});
