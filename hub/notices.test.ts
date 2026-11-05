@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_FILE, NAME, paths } from "./config.ts";
 import { decisionsOf, resetNoticesForTest } from "./notices.ts";
+import { classOfNotice } from "./notice-class.ts";
 import { shortTitle } from "./notice-title.ts";
 import { DRAFT_SEND, draftApprovalBlock, draftVerdict } from "./draft-approval.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
@@ -26,7 +27,7 @@ test("a worklog post becomes a persisted unread notice", () => {
 	const [n] = byText("첫 번째 작업 기록");
 	expect(n).toMatchObject({ kind: "worklog", tone: "run", title: "작업 기록", open: "worklog", read: false });
 	expect(n!.id).toHaveLength(8);
-	expect(unreadCount()).toBeGreaterThan(0);
+	expect(unreadCount()).toBe(0);   // class log: stored unread, but the 알림 screen does not list it
 });
 
 test("a session's line in 작업내역 records where its message lives; the session's own report clears that", () => {
@@ -83,8 +84,8 @@ test("a done lane report upserts the session result; a watch post for a channel 
 });
 
 test("mark read by id and mark all persist, and the list shows unread first", () => {
-	post("worklog", "읽기 시험 A");
-	post("worklog", "읽기 시험 B");
+	post("worklog", "[done] 읽기 시험 A");
+	post("worklog", "[done] 읽기 시험 B");
 	const [a, b] = [byText("읽기 시험 A")[0]!, byText("읽기 시험 B")[0]!];
 	const unread = unreadCount();
 	expect(markNoticesRead({ ids: [a.id] }).unread).toBe(unread - 1);
@@ -138,8 +139,8 @@ test("a notice links to its source message: the conversation and the event ts", 
 
 test("dismissing a notice reads it and removes it from the list and the count, and survives a reload from disk", () => {
 	markNoticesRead({ all: true });
-	post("worklog", "지울 글 A");
-	post("worklog", "지울 글 B");
+	post("worklog", "[done] 지울 글 A");
+	post("worklog", "[done] 지울 글 B");
 	const [a, b] = [byText("지울 글 A")[0]!, byText("지울 글 B")[0]!];
 	expect(unreadCount()).toBe(2);
 	const seen = lastEventId();
@@ -451,8 +452,8 @@ test("on load, an alert item stored next to the decision of the same message rea
 	expect(run.exitCode).toBe(0);
 	const out = JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!) as { ids: string[]; unread: number };
 	expect(out.ids.sort()).toEqual(["dec00001", "fail0001", "msg00001"]);
-	// The old open question (2026-10-22, alert) is past its 24 hour window: listed, but no longer counted as unread.
-	expect(out.unread).toBe(2);
+	// The old open question (2026-10-22, alert) is past its 24 hour window and msg:alert is a conversation item: listed here, but neither is counted.
+	expect(out.unread).toBe(1);
 	// kept in the file, only folded away
 	const after = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8")) as Notice[];
 	expect(after).toHaveLength(4);
@@ -1119,7 +1120,7 @@ test("on load, a notice of a channel the gateway no longer has is retired; known
 	});
 	const fresh = loadIn(dir);
 	expect(fresh.items.map(n => n.id).sort()).toEqual(["ddddddd2", "ddddddd3", "ddddddd4"]);
-	expect(fresh.unread).toBe(2);
+	expect(fresh.unread).toBe(0);   // conversation items are never counted
 	const saved: Notice[] = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8"));
 	expect(saved.find(n => n.id === "ddddddd1")).toMatchObject({ dismissed: true, read: true });
 	// a title that is only the raw channel id is replaced by a plain label (the session's title where the channel is a session's)
@@ -1279,7 +1280,7 @@ test("the gateway's own worklog status lines are born read; a gateway failure an
 	expect(byText("게이트웨이 재시작을 기다리는 중이에요: orchestrator 작업이 끝나면 다시 시작해요")[0]!.read).toBe(true);
 	expect(byText("자동 업데이트를 하지 못했어요")[0]!.read).toBe(false);
 	expect(byText("야간 정리 시작했어요")[0]!.read).toBe(false);
-	expect(unreadCount()).toBe(2);
+	expect(unreadCount()).toBe(1);   // the [run] post waits in 작업내역, not in the count
 });
 
 test("an all-clear alert is born read; a repeat updates the first alert in place and does not raise it again", () => {
@@ -1509,4 +1510,22 @@ test("monitor reports within a day fold into one unread row, newest first, 20 x 
 	expect(alerts[0]).toMatchObject({ id: first.id, read: true });
 	expect(alerts[0]!.repeats).toHaveLength(20);
 	expect(alerts[0]!.repeats!.every(r => r.text.length <= 160)).toBe(true);
+});
+
+test("the count is what the 알림 screen lists: conversation and log items do not count, and reading the listed one reaches 0", () => {
+	post("main", "대화 답변 하나");
+	post("worklog", "[run] 기록 한 줄");
+	const conv = stored().find(n => n.key === "msg:main")!;
+	const log = byText("기록 한 줄")[0]!;
+	expect([conv.read, log.read]).toEqual([false, false]);
+	expect([classOfNotice(conv).cls, classOfNotice(log).cls]).toEqual(["conv", "log"]);
+	expect(unreadCount()).toBe(0);
+
+	post("worklog", "[done] 끝난 일");
+	const done = byText("끝난 일")[0]!;
+	expect(classOfNotice(done).cls).toBe("result");
+	expect(unreadCount()).toBe(1);
+	markNoticesRead({ ids: [done.id] });
+	expect(unreadCount()).toBe(0);
+	expect(stored().find(n => n.id === conv.id)!.read).toBe(false);   // nothing stored changes: the conversation item stays unread
 });
