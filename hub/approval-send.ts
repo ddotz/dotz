@@ -119,7 +119,7 @@ export function createApprovalSender(deps: SenderDeps) {
 export async function runCli(argv: string[]): Promise<{ code: number; out: string }> {
 	// `env` is passed on purpose: without it Bun hands the child the environment the process started with, not process.env as it is now
 	// (the data folder a test or the gateway set at run time would be lost, and the CLI would read another install's drafts).
-	const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...process.env } });
+	const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...process.env, DOTZ_GATEWAY_SEND: "1" } });
 	const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
 	return { code, out: `${out}\n${err}`.slice(-4000) };
 }

@@ -2,7 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { commentDraftHandled, draftHandled, kakaoDraftHandled, mailDraftHandled, mailItemKey, mailRefHandled, type AllFacts } from "./draft-handled.ts";
 import { broadcast, emit } from "./events.ts";
-import { type ClosedCard, confirmGroup, listNotices, markDraftPosted, onDecisionClosed, resetNoticesForTest, setAppLabelResolver, setAppResolver, setDraftHandled, settleHandledDrafts, unreadCount } from "./notices.ts";
+import { type ClosedCard, confirmGroup, listNotices, markDraftPosted, markDraftSend, onDecisionClosed, resetNoticesForTest, setAppLabelResolver, setAppResolver, setDraftHandled, settleHandledDrafts, unreadCount } from "./notices.ts";
 import { decisionPush } from "./push.ts";
 
 const mail = (id: string, ref: string, status = "pending", created = "2026-10-01T00:00:00.000Z") => ({ id, ref, status, created });
@@ -125,6 +125,13 @@ test("a startup sweep cleans approvals that went stale while the hub was down, a
 	});
 	expect(await settleHandledDrafts()).toBe(1);
 	expect(open().map(i => i.decision!.draft!.ref)).toEqual(["d1"]);
+});
+
+test("one message asking about several drafts: a failed send shows on its own block", () => {
+	const block = (ref: string) => draftApprovalBlock({ to: "유튜브 댓글", toLabel: "대상", body: `답글 ${ref}`, ref, question: "이 답글 올릴까?" });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "ch:9", text: `[ask] 댓글 답글 초안이에요\n\n${["f1", "f2"].map(block).join("\n\n")}` });
+	markDraftSend("ch:9", "f2", "failed", "보내지 못했어요");
+	expect(listNotices(100).items.filter(i => i.decision?.to === "ch:9" && i.decision.send).map(i => [i.title, i.decision!.send!.state])).toEqual([["이 답글 올릴까? (f2)", "failed"]]);
 });
 
 test("one message asking about several drafts: each block closes when its own draft was sent or dropped elsewhere (the 모니터링 queue)", async () => {
