@@ -262,8 +262,7 @@ function msgNode(e) {
     case "result": {
       const go = el("button", { class: "btn tonal", type: "button", text: "세션 열기" });
       go.onclick = () => pickTarget(e.open || "main");
-      // the preview is plain text: drop the markdown bold and code marks
-      const lines = text.replace(/\*\*|`/g, "").split("\n").filter(Boolean).slice(0, 3).join("\n");
+      const lines = previewLines(choiceBody(text), 3).join("\n");
       return el("div", { class: "bm res" }, el("div", { class: "mt", text: ["세션 결과", hm].filter(Boolean).join(" · ") }),
         el("div", { class: "ccard" }, el("div", { class: "cc-hd" }, el("span", { class: "dot ok" }), el("span", { text: `${e.title || "세션"} 끝났어요` }), e.verified ? el("span", { class: "tag ok", text: "확인됨" }) : null),
           lines ? el("div", { class: "cc-note", text: lines }) : null, el("div", { class: "btns cc-act" }, go)));
@@ -309,12 +308,12 @@ function msgNode(e) {
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; its mid-turn progress line (update_key), new or stored, reads as the live status.
-      const isNote = e.kind === "out" && !!e.update_key && !e.live && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
       const { tone: mark, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
+      const isNote = e.kind === "out" && !!e.update_key && !e.live && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:"))) && !parseChoices(parsed).blocks.length;
       // A stored [run] or [wait] draws no tag of its own: syncLiveTags gives the newest report the state of now.
       const parked = parkedTone(mark) && !e.live && !isNote, tone = parked ? "" : isNote ? mark || "run" : mark;
       // The marker is a status tag in front of the first line (02-basic-markdown.js toneLead), for the orchestrator and a session alike.
-      const body = isNote ? parsed.replace(/^진행 중:\s*/, "") : parsed;
+      const body = isNote ? noteText(parsed.replace(/^진행 중:\s*/, "")) : parsed;
       const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업내역" : isRestart(e) ? "게이트웨이" : e.relay ? targetName(e.target) : botName;
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), rpQuote(e), cardNode(e.card));
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
@@ -335,10 +334,11 @@ function msgNode(e) {
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       // A relayed line is another computer's text, not this gateway's: no file chips, no path chips, no choice card; its `[file]` lines stay text (e.relay, 42-relay-chat.js).
       const fl = e.relay ? { text: body, files: [] } : fileLines(body), host = pqPc(eventTarget(e) || "");
-      // Shapes are for a finished answer of the assistant: never a progress note, a gateway line, a relayed line, a decision or a "started" note.
-      const answer = e.kind === "out" && !e.relay && !e.update_key && e.source !== "gateway" && !(pc0 && pc0.blocks.length) && tone !== "run" && !fl.text.startsWith("\u23f3");
+      // Shapes are for a finished answer or report of the assistant: never a progress note, a gateway line, a relayed line or a "started" note.
+      const answer = (e.kind === "out" || e.kind === "lane_report") && !e.relay && !e.update_key && e.source !== "gateway" && mark !== "run" && !fl.text.startsWith("\u23f3");
       const inl = pc && !isFixedT(target) && pc.blocks.some(b => b.options.length > 1);   // the card in the message (10-decision-card.js dcInline); in 알림 / 작업내역 a tap opens the sheet
-      const md = mdNode(inl ? inlineBody(fl.text) : pc && pc.blocks.length ? stripChoices(fl.text) : fl.text, "md", !!e.relay, answer && { shaped: fl.files.length > 0 }), files = e.relay ? null : pathFiles(md, host);
+      const shown = inl ? inlineBody(fl.text) : pc && pc.blocks.length ? choiceBody(fl.text) : fl.text;
+      const md = answer ? answerNode(shown, { shaped: fl.files.length > 0 }) : mdNode(shown, "md", !!e.relay), files = e.relay ? null : pathFiles(md, host);
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !e.relay && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
@@ -349,13 +349,16 @@ function msgNode(e) {
 }
 // The gateway's status while a turn runs (hub/livestatus.ts, e.live) and a session's progress note: the head line, one row per fact, then recent steps muted.
 // Every row stays on one line, so a long step never wraps on a phone and an update keeps the note's shape. A note is free text, so a tap (`tap`) opens what was cut.
+// A note is a model's text, so its marks are drawn (`code`, **bold**); a line of the gateway's status stays as written.
 function liveNode(body, tone, tap) {
-  const [lead, ...rows] = body.split("\n").filter(l => l.trim());
-  const lv = toneLead(el("div", { class: "lv", ...(tap ? { tabindex: "0", role: "button" } : {}) }, el("p", { text: lead }), ...rows.map(l =>
-    /^- /.test(l) ? el("div", { class: "lv-s", text: l.slice(2) }) : l.endsWith(":") ? el("div", { class: "lv-s lv-h", text: l.slice(0, -1) }) : el("div", { class: "lv-r", text: l }))), tone);
+  const [lead, ...rows] = body.split("\n").filter(l => l.trim()), words = s => (tap ? { safeHtml: inline(s) } : { text: s });
+  const lv = toneLead(el("div", { class: "lv", ...(tap ? { tabindex: "0", role: "button" } : {}) }, el("p", words(lead)), ...rows.map(l =>
+    /^- /.test(l) ? el("div", { class: "lv-s", ...words(l.slice(2)) }) : l.endsWith(":") ? el("div", { class: "lv-s lv-h", ...words(l.slice(0, -1)) }) : el("div", { class: "lv-r", ...words(l) }))), tone);
   if (tap) lv.onclick = () => { if (!getSelection().toString()) lv.classList.toggle("open"); };
   return lv;
 }
+// A progress note as rows: no file line, code fence, table rule, small-line or quote mark of a full message.
+const noteText = t => fileLines(t).text.split("\n").filter(l => !/^\s*```/.test(l) && !isSep(l)).map(l => l.replace(/^\s*(?:-#|>)\s+/, "")).join("\n");
 const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
 function newGroup(a) {
   const wsum = el("span", { class: "wsum" }), body = el("div", { class: "wbody" });

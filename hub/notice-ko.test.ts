@@ -61,3 +61,8 @@ test("the page's copy is this code, and runs to the same answers", () => {
 		}
 	});
 });
+
+test("an id that was all of a code span leaves no marks behind", () => {
+	expect(noticeKo("근거: `a1b2c3d` · 테스트 24개 통과")).toBe("근거: 테스트 24개 통과");
+	expect(noticeKo("커밋 `e1b86a59`, 테스트 · `a1b2c3d` · 끝")).not.toContain("``");
+});

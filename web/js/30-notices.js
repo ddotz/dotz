@@ -15,8 +15,9 @@ const ntWhen = n => ntTime(n.updated || n.ts);
 // Row text is plain: markdown marks (links, headings, bullets, emphasis, code) are dropped.
 const ntPlain = s => noticeKo(peerMsgLine(s), NK)
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-  .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
+  .replace(/^\s{0,3}(?:#{1,6}|>|-#|[-*+]|\d+\.)\s+/gm, "")
   .replace(/\*+|~~|`+/g, "")
+  .replace(/^\s*결정\s*[:：]\s*/gm, "")
   .replace(/(^|\s)_+([^_\s][^_]*)_+(?=\s|$)/g, "$1$2")
   .replace(/\s+/g, " ").trim();
 
@@ -580,7 +581,7 @@ function ntEditNode(n, ed) {
 // A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
 function ntBody(n, text) {
   const fl = fileLines(text == null ? n.text : text);
-  return [mdNode(ntCode(noticeKo(fl.text, NK)), "md ds-md"), filesNode(fl.files)];
+  return answerParts({ text: ntCode(noticeKo(fl.text, NK)), files: fl.files }, { cls: "md ds-md", lead: false });
 }
 // Ids, hashes and paths in the body read as `code` (they wrap anywhere); text already in backticks stays as it is.
 function ntCode(text) {
@@ -633,7 +634,7 @@ function ntSheetPaint() {
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
       // The buttons show the options; a "결정:" line that only repeats the title goes too.
-      ...ntBody(n, d.options.length && !d.draft ? stripChoices(parts.rest).split("\n").filter(l => (CH_HEAD.exec(l) || [])[1] !== ntPlain(n.title)).join("\n").trim() : parts.rest))];
+      ...ntBody(n, d.options.length && !d.draft ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).

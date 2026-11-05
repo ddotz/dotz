@@ -47,7 +47,7 @@ function rcRawMd(raw) {
   return out.join("\n");
 }
 const rcWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
-const rcPlain = s => String(s ?? "").replace(/^\s*#{1,6}\s*/, "").replace(/\*\*/g, "").trim();
+const rcPlain = s => String(s ?? "").replace(/^\s*#{1,6}\s*/, "").replace(/\*\*|`/g, "").trim();
 // The original folded behind "원문 보기" (raw: the text; opts.rawNode draws it itself, opts.rawOpen starts it open).
 function rcRawFold(raw, opts = {}) {
   const sum = el("summary", { text: opts.rawOpen ? "원문 접기" : "원문 보기" }), box = el("div", { class: `rc-rawbody${opts.rawNode ? " own" : ""}` }), d = el("details", { class: "rc-raw" }, sum, box);
@@ -92,8 +92,8 @@ function resultCard(opts) {
   if (title) kids.push(el("div", { class: "rc-title", text: title }));
   for (const s of rcSections(body)) {
     // [file] lines become file chips (as in a chat bubble and on Discord), and a path in the text opens like one
-    const fl = fileLines(s.body), rows = rcRowsNode(fl.text), md = !rows && fl.text.trim() ? mdNode(fl.text) : null;
-    kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, rows || md, md ? pathFiles(md) : null, filesNode(fl.files)));
+    const fl = fileLines(s.body), rows = rcRowsNode(fl.text), [md, ...rest] = !rows && fl.text.trim() ? answerParts(fl, { lead: false }) : [null, ...ansFiles(fl.files)];
+    kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, rows || md, md ? pathFiles(md) : null, rest));
   }
   if (raw || opts.rawNode) kids.push(rcRawFold(raw, opts));
   if (opts.actions && opts.actions.length) kids.push(el("div", { class: "btns cc-act" }, ...opts.actions));
@@ -130,13 +130,13 @@ function hcBriefNode(text) {
   const p = hcBriefParse(text);
   if (!p) return null;
   const kids = [];
-  if (p.pre) kids.push(mdNode(p.pre, "md", false, true));
+  if (p.pre) kids.push(answerNode(p.pre));
   const tag = /브리핑|아침/.test(text) ? el("span", { class: "tag pri", text: "아침 점검" }) : null;
   const card = el("div", { class: "hcb-card", safeHtml: timeRowsHtml(p.rows) });
   if (tag || p.head) card.prepend(el("div", { class: "hcb-hd" }, tag, p.head ? el("span", { class: "hcb-h" }, ...hcbNums(p.head)) : null));
   kids.push(card);
   let plain = [];
-  const flush = () => { const s = plain.join("\n").trim(); plain = []; if (s) kids.push(mdNode(s, "md", false, true)); };
+  const flush = () => { const s = plain.join("\n").trim(); plain = []; if (s) kids.push(answerNode(s)); };
   for (const l of p.post) {
     if (!l.trim()) { plain.push(l); continue; }
     if (HCB_MAIL.test(l)) { flush(); kids.push(el("div", { class: "hcb-chip" }, icon("mail"), el("span", {}, ...hcbNums(l.trim())))); }

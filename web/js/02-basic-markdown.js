@@ -162,7 +162,7 @@ function listBlockHtml(src) {
   return `<div class="mlist">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
 // relayed: another computer's reply (42-relay-chat.js) is text only: `[file]` lines stay text and a fence is a plain code block, with no run button and no settings card to act on here.
-// answer: an assistant answer (11-todo-strip.js) is drawn by its shapes (02-answer-shapes.js), { shaped: true } when it already has one (its files); every other caller keeps its text.
+// answer: a model's text is drawn by its shapes through answerNode (02-answer-shapes.js), the one caller that passes this; a direct mdNode() keeps its text (hub/answer-surfaces-web.test.ts).
 function mdHtml(src, relayed = false, answer = false) {
   const shape = answer ? { shaped: !!answer.shaped, opened: false, plain: "", rich: "" } : null;
   // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
@@ -170,7 +170,7 @@ function mdHtml(src, relayed = false, answer = false) {
   const parts = stripRecMark(stripMarkers(src, relayed)).split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
   const out = parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1, shape) : i % 3 === 2 ? (relayed ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
-  return shape && shape.shaped && shape.rich && out.startsWith(shape.plain) ? shape.rich + out.slice(shape.plain.length) : out;
+  return shape && shape.shaped && shape.rich && answer.lead !== false && out.startsWith(shape.plain) ? shape.rich + out.slice(shape.plain.length) : out;
 }
 const mdNode = (src, cls = "md", relayed = false, answer = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed, answer) });
 
