@@ -3,12 +3,14 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { HUB_TOKEN } from "./config.ts";
 import type { DialogAnswer } from "./local-login-dialog.ts";
+import { lanes } from "./lanes.ts";
 import { localLogin, makeRoute, setLoginConfirm, webAccess } from "./routes.ts";
 import { fakeHub, inbox, waitFor } from "./test-web.ts";
 
 // The login page and its button in a headless Bun.WebView, with a fake confirmation dialog the test answers: press, see the number, allow, land on the app (or deny, see the text).
 // The login link in a headless Bun.WebView against the real route (real gate, real socket): the page without a cookie says how to get a link, a fresh
 // link lands on the app with its API working, the same link in another view is the expired message, and the cookie is HttpOnly.
+lanes.clear();   // all files share one process: a fixture lane without a model left by another file fails /api/context, which the app loads on opening
 const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 const seen = inbox<string>();
 const server = Bun.serve({

@@ -31,7 +31,7 @@ afterAll(() => hub.stop());
 const boot = async (): Promise<View> => {
 	const v = await hub.view({ width: 1280, height: 900 });
 	await v.navigate(`${hub.origin}/`);
-	await waitFor(v, `typeof rqAll === "function" && NT.loaded && RQ.loaded && INTG.items.length === 3`);
+	await waitFor(v, `typeof rqAll === "function" && NT.loaded && RQ.loaded && TR.loaded && INTG.items.length === 3`);
 	return v;
 };
 const comments = (n: number, appKey = "youtube", extra: object = {}) => Array.from({ length: n }, (_, i) => ({

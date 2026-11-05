@@ -93,6 +93,7 @@ test("monitor reports folded into one row each still notify, and a repeated aler
 	expect(pushed.map(m => m.body)).toEqual(["새 글 0번", "새 글 1번", "새 글 2번"]);
 	expect(new Set(pushed.map(m => m.tag)).size).toBe(3);
 	const t = Date.now();
+	resetPushDedupeForTest();   // when another file wired the real push, those emits already went through shouldNotify
 	expect(pushed.map(m => shouldNotify(m, t, () => false, () => true))).toEqual([true, true, true]);
 	// a repeated alert updates its row and is not pushed again (hub/alert-gate.ts)
 	const alerts: unknown[] = [];

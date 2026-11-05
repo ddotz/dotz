@@ -18,6 +18,7 @@ async function trLoad() {
   // A send the gateway no longer holds (its frame was lost, or it restarted) does not stay 보내는 중 here.
   for (const x of Object.values(TR.results)) if ((x.state === "queued" || x.state === "sending") && !(r.results || []).some(y => y.ref === x.ref)) delete TR.results[x.ref];
   for (const x of r.results || []) TR.results[x.ref] = x;
+  TR.loaded = true;
   if (current === "monitoring" && MON.sel === "replies") { MON.sig = ""; monSchedule(); }   // the queue's head offers 빠른 처리 once enough wait
   if (TR.h) trMerge();
   paintDecision();   // a conversation with 2 or more waiting cards shows the 답장 초안 line (10-decision-card.js)
