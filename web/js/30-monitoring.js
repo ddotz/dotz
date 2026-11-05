@@ -363,15 +363,15 @@ function draftCardNode(n, o = {}) {
 function monDecisionNode(n) {
   const d = n.decision, open = d.state === "open", said = d.state === "answered" ? String(d.answer || "") : "";
   if (d.draft) return ntRevising(n) && ntSuccessor(n) ? null : draftCardNode(n);   // the rewritten draft replaces the one that was sent back
-  // The buttons show the options: the body keeps the lead text and the 결정: line, not the option lines (10-decision-card.js stripChoices).
-  const fl = fileLines(d.options.length ? stripChoices(n.text) : n.text);
+  // The buttons show the options and the card's head the question (10-decision-card.js choiceBody).
+  const fl = fileLines(d.options.length ? choiceBody(n.text, ntPlain(n.title)) : n.text);
   const rows = d.options.map(o => el("button", { class: `dcm-row${said.startsWith(`${o.n})`) ? " on" : ""}`, type: "button", disabled: !open || dcSending.has(n.id), "data-n": o.n,
     onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.pc ? n : n.id) : answerInline(n, o)) },
     el("span", { class: "dc-key", text: String(o.n) }),
     el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
   const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? "무시했어요" : d.expired ? "기한 지남" : d.resolved ? "답 없이 끝났어요" : `답했어요${said ? ` · ${ntPlain(said)}` : ""}` });
   return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || "답변이 필요해요" }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
-    mdNode(fl.text), filesNode(fl.files), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
+    answerParts(fl, { lead: false }), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
 }
 // Any other notice is a result card (11-resultcard.js): the monitor's name, the time, the result in words, the original folded.
 // A monitor's own report drops the monitor's name in front of its first line (the card already says whose it is).

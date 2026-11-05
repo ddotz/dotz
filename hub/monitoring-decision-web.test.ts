@@ -14,7 +14,7 @@ const hub = fakeHub({
 });
 afterAll(() => hub.stop());
 
-test("one answered [ask] with a choice block is one card: lead text, its 결정 line and the buttons, no raw option lines", async () => {
+test("one answered [ask] with a choice block is one card: lead text, its question once with no 결정: label, and the buttons, no raw option lines", async () => {
 	// leftovers of other test files: decisions with options are closed only by naming them
 	resolveNotices({ ids: listNotices(300).items.filter(n => n.decision?.state === "open").map(n => n.id) });
 	const at = new Date().toISOString();
@@ -36,9 +36,9 @@ test("one answered [ask] with a choice block is one card: lead text, its 결정 
 		(await v.evaluate(`JSON.stringify((() => {
 			const c = ${card}, body = c.cloneNode(true);
 			body.querySelectorAll(".mt, .dcm").forEach(e => e.remove());
-			return { same: NT.items.filter(n => n.at === ${JSON.stringify(at)}).length, rows: c.querySelectorAll(".dcm-row").length, on: c.querySelectorAll(".dcm-row.on").length, body: body.innerText };
+			return { same: NT.items.filter(n => n.at === ${JSON.stringify(at)}).length, rows: c.querySelectorAll(".dcm-row").length, on: c.querySelectorAll(".dcm-row.on").length, body: body.innerText, all: c.innerText };
 		})())`)) as string,
-	) as { same: number; rows: number; on: number; body: string };
+	) as { same: number; rows: number; on: number; body: string; all: string };
 	expect(got.same).toBe(1);
 	expect(got.rows).toBe(2);
 	expect(got.on).toBe(1);
@@ -46,6 +46,7 @@ test("one answered [ask] with a choice block is one card: lead text, its 결정 
 	expect(lines.some(l => /^\**\d+\)/.test(l))).toBe(false);
 	expect(lines.some(l => l.includes("폰에서도 잘 보여요") || l.includes("어디가 이상한지"))).toBe(false);
 	expect(lines.some(l => l.includes("탭 구성을 바꿨어요"))).toBe(true);
-	expect(lines.some(l => l.includes("결정: 폰 탭 구성 확인"))).toBe(true);
+	expect(got.all).not.toContain("결정:");
+	expect(got.all.split("폰 탭 구성 확인")).toHaveLength(2);
 	await v.evaluate(`(${card}.scrollIntoView({ block: "center" }), true)`);
 }, 30_000);
