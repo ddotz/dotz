@@ -33,6 +33,8 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 	const env: Record<string, unknown> = {
 		choiceFree: (s: string) => s,
 		monLastOut: () => "",
+		// One mail app (web/js/30-mailboxes.js): nothing to fold in these stores.
+		mxMerge: () => {}, mxHash: () => "", mxRoute: (t: string) => t, mxKeyOf: (k: string) => `i:${k}`, mxsName: () => "",
 		// No other computers here (web/js/34-peer-monitoring.js): the local list as is.
 		pqMerge: (items: N[]) => items, rqMonItem: () => null, pqLabel: () => null, pqSig: () => 0, pqOpen: () => {}, pqLink: (p: string) => p, kkItem: () => false, PQ: { of: new Map() },
 		intgWatch: () => {}, intgHas: (it: N, t: unknown) => ((it.conv as string[]) || []).some(p => String(t).startsWith(p)), INTG: { items: integrations, available: [] }, NT: { items: notices, loaded: true }, CONV: new Map(), MAILS: new Map(),

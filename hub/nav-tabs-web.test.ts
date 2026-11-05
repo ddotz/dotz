@@ -16,13 +16,13 @@ const routeAlias = new Function(`const NSC = { pass: 0 };\n${between(palette, "c
 
 type Mon = { sel: string; list: boolean };
 function monitoringRoute(narrow: boolean) {
-	const env = { narrowChat: () => narrow, enc: encodeURIComponent, current: "monitoring", pqOpen: () => {} };
+	const env = { narrowChat: () => narrow, enc: encodeURIComponent, current: "monitoring", pqOpen: () => {}, mxHash: () => "", mxRoute: (t: string) => t };
 	const src = `${between(monitoring, "const MON =", "async function loadMonitors")}\nreturn { MON, monConv, monHash, monRoute };`;
 	return new Function(...Object.keys(env), src)(...Object.values(env)) as { MON: Mon; monConv: () => boolean; monHash: () => string; monRoute: (t?: string) => void };
 }
 
 function chain(name: string, hash: string, narrow: boolean, mon: Mon) {
-	const env = { narrowChat: () => narrow, chatList: false, target: "main", SUB: new Set(), NSC: { ret: false }, backTarget: () => null, MON: mon, monCtx: "", enc: encodeURIComponent };
+	const env = { narrowChat: () => narrow, chatList: false, target: "main", SUB: new Set(), NSC: { ret: false }, backTarget: () => null, MON: mon, monCtx: "", enc: encodeURIComponent, mxChain: (h: string) => [h] };
 	const src = `${between(history, "function routeChain", "function navSync")}\nreturn routeChain;`;
 	return (new Function(...Object.keys(env), src)(...Object.values(env)) as (n: string, h: string) => string[])(name, hash);
 }
