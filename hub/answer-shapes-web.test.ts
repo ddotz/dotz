@@ -31,6 +31,8 @@ const cases: Record<string, object> = {
 	wideTable: answer("| a | b | c | d | e | f |\n|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 |"),
 	noHeader: answer("| 월 요금 | 19,000원 |\n| 데이터 | 20GB |"),
 	titledTimes: answer("**내일 일정**\n- 09:30 치과 · 3층 접수\n- 13:00 점심"),
+	// Real shape of a 2026-11-05 report: two of the nine names hold inline code, and one such name used to drop the whole list to plain lines.
+	inlineCode: answer(`✅ 지난 7일치 답을 화면 그리는 경로로 전부 돌려서, 일반 글자로 나오거나 카드가 빠진 곳을 찾아 고쳤어요.\n\n- 글자 그대로 나오던 \`**\`: 14 → 0\n- \`---\` 줄: 8 → 0\n- 채널 태그 원문: 5 → 0\n- 카드가 안 되던 선택지: 2 → 0\n- 고를 게 없는 질문 표시: 7 → 4\n- 내부 번호 노출: 41 → 1\n- 확인됨 같은 상태 글자: 42 → 20\n- 전 → 후 목록: 7 → 4\n- 숫자 목록: 3 → 2`),
 	user: { kind: "in", source: "web", target: "web", text: LABELS },
 	last: answer("끝이에요."),
 };
@@ -64,6 +66,14 @@ test("two or more label lines are key-column rows in one card, the closing parag
 	expect(await count("labels", "li")).toBe(0);
 	expect(await page<string[]>(`[...${msg("labels")}.querySelectorAll(".rc-k")].map(e => e.textContent)`)).toEqual(["원인", "고친 것"]);
 	expect(await page<string>(`${msg("labels")}.querySelector(".ans-card ~ p").textContent`)).toBe("내일 다시 볼게요.");
+});
+
+test("a name with inline code keeps the list a card, and the code is drawn as code", async () => {
+	expect(await count("inlineCode", ".ans-card .ans-keys")).toBe(1);
+	expect(await count("inlineCode", ".ans-keys .rc-row")).toBe(9);
+	expect(await count("inlineCode", "li")).toBe(0);
+	expect(await page<string[]>(`[...${msg("inlineCode")}.querySelectorAll(".rc-k code")].map(e => e.textContent)`)).toEqual(["**", "---"]);
+	expect(await page<boolean>(`${msg("inlineCode")}.textContent.includes("\`")`)).toBe(false);
 });
 
 test("the first sentence is the one bold thing of a shaped answer", async () => {
