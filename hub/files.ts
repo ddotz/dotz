@@ -44,7 +44,7 @@ function uploadPath(fileName: string, dir: string): { path: string; name: string
 	return { name, path: join(folder, `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}-${name}`) };
 }
 
-function uploadRecord(path: string, name: string, fileName: string, type: string, size: number): Upload {
+export function uploadRecord(path: string, name: string, fileName: string, type: string, size: number): Upload {
 	const original = fileName && fileName !== name ? fileName.slice(0, ORIGINAL_MAX) : undefined;
 	// A CLI that is only given the path finds it here (features/reply-drafts/lib/staged.ts); the day folder's cleanup takes it along.
 	if (original) writeAtomic(`${path}.name`, original);
@@ -60,7 +60,7 @@ export async function saveUpload(file: File, dir = UPLOADS, max = UPLOAD_MAX_BYT
 }
 
 // One network read of a file to its .part: FileHandle.write may take only some of the bytes.
-async function writeAll(fh: FileHandle, bytes: Uint8Array) {
+export async function writeAll(fh: FileHandle, bytes: Uint8Array) {
 	for (let at = 0; at < bytes.length;) at += (await fh.write(bytes, at, bytes.length - at)).bytesWritten;
 }
 

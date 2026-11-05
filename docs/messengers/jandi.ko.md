@@ -74,9 +74,10 @@ Outgoing Webhook 사용 방법은 JANDI 안내를 참고합니다: https://suppo
 
 - 읽는 방은 `self_chat.room_id` 하나뿐입니다. 시작할 때 그 방이 본인(`member_id`)과 JANDI 봇(`bot_id`)의 1:1 대화방인지 먼저 확인하고, 아니면 아무 메시지도 읽지 않고 멈춥니다.
 - 본인이 쓴 글 중 `dotz <내용>` 또는 `/dotz <내용>`(키워드는 `keyword`)으로 시작하는 것만 메인 대화로 전달됩니다. 메모, 웹훅 글, 다른 사람 글은 무시합니다.
+- 본인이 보낸 이미지·파일은 내용 없이 보내거나 캡션이 키워드 명령이면 턴에 `[attachment]`로 들어갑니다(`<DATA_DIR>/uploads/<날짜>/jandi-<메시지 id>/`에 저장, 크기 제한은 웹 업로드와 같음). 받지 못한 파일은 주소 줄로 남습니다.
 - 켤 때의 마지막 메시지부터 읽고, 읽은 위치를 `<DATA_DIR>/messengers/jandi-selfchat.json`에 남겨 다시 시작해도 같은 명령을 두 번 처리하지 않습니다.
 - 답은 그 방의 Incoming Webhook으로 올라옵니다. `rooms`에 `kind: "main"` 방을 하나 두고 `incoming_url`에 나와의 대화의 Incoming Webhook URL을 넣습니다(`outgoing_token`은 비워 둡니다).
-- 한 계정의 나와의 대화를 컴퓨터 여러 대가 함께 쓸 때는 컴퓨터마다 `keyword`를 다르게 하고(예: 집 `dotz`, 회사 `work`), `reply_prefix`(예: `[work]`)를 적으면 그 컴퓨터의 답이 그 머리말로 시작해 서로 구분됩니다.
+- 한 계정의 나와의 대화를 컴퓨터 여러 대가 함께 쓸 때는 컴퓨터마다 `keyword`를 다르게 하고(예: 집 `dotz`, 회사 `work`), `reply_prefix`(예: `[work]`)를 적으면 그 컴퓨터의 답이 그 머리말로 시작해 서로 구분됩니다. 캡션 없는 파일은 이 방을 읽는 컴퓨터 모두에 들어가니, 한 대에만 보내려면 그 컴퓨터의 키워드를 캡션으로 적습니다.
 - 세션은 dotz 비밀 `jandi-session`(`{"refresh_token": "..."}`, 암호화 저장)에서 읽습니다. 비밀번호는 저장하지 않습니다. 토큰이 바뀌면 새 값으로 다시 암호화해 저장합니다.
 
 ```json

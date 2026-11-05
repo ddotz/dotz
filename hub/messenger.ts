@@ -219,6 +219,7 @@ export function installFanout(): void {
 
 /** "1", "1)", "1.", "2) 고치기 - 이유" are an option number (with the owner's note after " - "); "10개 주세요", "1등이야", "" are not. */
 export function parseAskNumber(text: string): { n: number; note?: string } | undefined {
+	if (/^\[attachment\] /m.test(text)) return undefined; // a file that could not be saved: its message is still about that file
 	const m = /^\s*(\d{1,3})(?:[).](?:\s+(.*))?)?\s*$/s.exec(text);
 	const n = m ? Number(m[1]) : 0;
 	if (!m || n < 1) return undefined;

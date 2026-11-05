@@ -125,6 +125,7 @@ describe("parseAskNumber", () => {
 		["1.5배", undefined],
 		["0", undefined],
 		["", undefined],
+		["1.\n[attachment] a.png (image/png) https://files.jandi.com/a", undefined],
 	])("%j", (text, want) => expect(parseAskNumber(text)).toEqual(want));
 });
 

@@ -253,7 +253,7 @@ export function splitThinking(input: string): { model: string; thinking?: string
 }
 // Overwrites a state file all-or-nothing: the text goes to a sibling temp file, then rename() swaps it in (same directory,
 // so the rename is atomic). A crash or a second writer never leaves a half-written file behind.
-export function writeAtomic(file: string, text: string | Uint8Array, mode?: number): void {
+export function writeAtomic(file: string, text: string, mode?: number): void {
 	const tmp = `${file}.${process.pid}.tmp`;
 	writeFileSync(tmp, text, mode === undefined ? undefined : { mode });
 	renameSync(tmp, file);
