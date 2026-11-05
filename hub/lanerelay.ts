@@ -5,6 +5,9 @@
 // - a routine [run] progress report is not a turn: it stays on disk and in the what-runs-now line of the next prompt;
 // - an untagged reply in an exchange between the owner and the lane alone (the orchestrator sent nothing since its last
 //   relayed report) is not a turn either: the owner read it in the lane channel;
+// - nor is the gateway's own usage-limit notice (the lane resumes by itself), or an untagged report while the lane's workers run: 7 days
+//   to 2026-11-05 held 25 such "still running" turns (8.6M tokens) and 22 of them did nothing. `orchAsked` stays set, so the report that
+//   follows is the one relayed;
 // - a report repeating the lane's last relayed one is dropped (a gateway notice such as [lane exited] never is);
 // - a report arriving while the orchestrator is in a turn is steered into that turn at once (2026-10-20: held reports
 //   reached it after p90 368 s); only when the turn cannot take it are reports batched into one prompt for idle.
@@ -12,6 +15,9 @@ import { orchestratorOnlyAsk } from "./forline.ts";
 import { parkedTone, parseTone, type Tone } from "./tone.ts";
 
 export type Relay = { lane: string; tone?: Tone; text: string; file: string };
+
+/** No orchestrator turn for an untagged report: see the list above. A done claim made further down the text still goes. */
+export const ownerAlone = (l: { orchAsked?: boolean; claim?: unknown }, pause: boolean, workers: number): boolean => pause || l.orchAsked === false || (workers > 0 && !l.claim);
 
 function relayItem(r: Relay): string {
 	return `- lane ${r.lane} status=${r.tone ?? "report"} (full: ${r.file})\n${r.text.trim()}`;
