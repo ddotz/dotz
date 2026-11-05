@@ -173,7 +173,7 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hr .sproj { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-weight: 500; }
 .hr .sproj.none { color: var(--fg-3); font-weight: 400; }
 .hr .sline { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-3); }
-.hr .sline::before { content: "·"; margin-right: var(--sp-15); }
+.hr .sproj + .sline::before { content: "·"; margin-right: var(--sp-15); }
 .srows .hr + .li, .srows .li + .hr { box-shadow: inset 0 1px 0 var(--line); }
 /* 답변 필요 (09-needs-you.js): a critical row's dot is the error ink; 더 보기 is the list's last row, full width */
 .hr .dot.att.err { background: var(--err); }

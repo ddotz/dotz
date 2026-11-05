@@ -1,4 +1,4 @@
-/* ---------- 세션: a session's last report and chat link, and the 프로젝트 list below (the 세션 tab is gone: running sessions are rows of 채팅 and a card on 홈) ---------- */
+/* ---------- 세션: a session's last report and chat link, and the 프로젝트 list below (sessions live in their project's 세션 section; 진행 중 on 홈 and 채팅 is a shortcut to what runs now) ---------- */
 const LP = {};                  // lane name -> { acts: oldest-first {ts, text} lines in Korean, rev, loaded, loading, failedAt }
 const LANE_ACTS = 12;           // lines kept per session
 const laneKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
@@ -108,6 +108,7 @@ function prjLoad() {
     prjFlight = null; prjRev++;
     if (current === "project") { if (ppWide()) renderProjects(); pmPaint(); }
     else if (current === "projects") renderProjects();
+    else if (current === "home") homeSoon();   // a 진행 중 row names the session's project
   });
   return prjFlight;
 }
@@ -133,15 +134,31 @@ function sessionStatus(l) {
   if (!laneAlive(l)) return ["끝남", ""];
   return runStatus(`lane:${l.name}`, l.status, l.pendingAsk);
 }
+// The owner's words for a session, on every list of sessions: sessionStatus still decides, this only says it. What stopped short of finishing keeps its own word.
+const SESSION_WORD = { run: ["진행 중", "pri"], wait: ["답을 기다림", "warn"], done: ["완료", ""] };
+function sessionState(l) {
+  const st = sessionStatus(l), t = `lane:${l.name}`;
+  if (st[1] === "pri") return SESSION_WORD.run;
+  if (st[0] === RUN_LABEL.waiting) return SESSION_WORD.wait;
+  return laneAlive(l) && (laneQueued(t) || homeHeld(t)) ? st : SESSION_WORD.done;
+}
+// 진행 중, the one list 홈 and 채팅 read: S.lanes as this one status says, so a session leaves both by itself when it finishes. Oldest first: a new session
+// joins at the end and no row jumps when a message lands. A stored state (13-snapshot.js) says nothing about now, so it lists nothing until the real one lands.
+function sessionsNow() {
+  const of = word => ((S && !S.seeded && S.lanes) || []).filter(l => sessionState(l) === word).sort((a, b) => String(a.startedAt || "").localeCompare(String(b.startedAt || "")));
+  return { wait: of(SESSION_WORD.wait), run: of(SESSION_WORD.run) };
+}
+// A 진행 중 row's name: `company · company 출자전환 검토`, the title alone for a session with no project.
+const sessionHead = l => { const p = laneProject(l), n = l.title || l.name; return p && p !== n ? `${p} · ${n}` : n; };
 // o.project: the project name when the caller knows it better than the lane's own home; o.line: a short activity line after it;
-// o.word / o.tone: a status the caller knows better ("답변 필요").
+// o.word / o.tone: a status the caller knows better ("답변 필요"); o.head: the project stands in the name (sessionHead), not under it.
 function sessionRow(l, o = {}) {
-  const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionStatus(l), name = l.title || l.name, t = `lane:${l.name}`;
+  const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionState(l), name = l.title || l.name, t = `lane:${l.name}`;
   const subs = SUBS[t] || [], done = subs.filter(s => s.status !== "running").length;
   return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: o.open || (() => openTarget(t, lastChatView())), "aria-label": `${name} · ${proj ? `프로젝트 ${proj}` : "프로젝트 없음"} · ${word} · 대화 열기` },
     el("span", { class: `dot ${tone}` }),
-    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: name })),
-      el("span", { class: "ha" }, el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || "프로젝트 없음" }), o.line ? el("span", { class: "sline", text: o.line }) : null, o.extra || null)),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: o.head ? sessionHead(l) : name })),
+      el("span", { class: "ha" }, o.head ? null : el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || "프로젝트 없음" }), o.line ? el("span", { class: "sline", text: o.line }) : null, o.extra || null)),
     subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
     el("span", { class: `hs ${tone}`, text: word }));
 }
@@ -155,15 +172,15 @@ const PJ = { view: "all", q: "", more: PJ_PAGE };
 function prjState(p) {
   const ls = p.lanes || [];
   if (prjPaused(p)) return { k: "paused", tone: "", word: "일시 정지" };
-  const ask = ls.find(l => l.waiting);
-  if (ask) return { k: "need", tone: "att", word: "답을 기다려요", lane: ask };
   // The same verdict as the session's own row, so a session on handed-off work runs here too.
-  const open = ls.filter(l => l.live).map(l => ({ l, st: sessionStatus({ ...l, pendingAsk: l.waiting }) })), at = t => open.find(x => x.st[1] === t);
-  const work = at("pri");
-  if (work) return { k: "run", tone: "pri", word: work.st[0], lane: work.l };
+  const open = ls.filter(l => l.live).map(l => ({ l, st: sessionStatus({ ...l, pendingAsk: l.waiting }) })), at = t => open.find(x => x.st[1] === t), work = at("pri");
+  const ask = ls.find(l => l.waiting);
+  if (ask) return { k: "need", tone: "att", word: "답을 기다려요", lane: ask, run: !!work };   // run: it also counts under the 진행 중 filter
+  if (work) return { k: "run", tone: "pri", word: SESSION_WORD.run[0], lane: work.l };
   const stuck = at("err") || at("warn");
   if (stuck) return { k: "need", tone: stuck.st[1], word: stuck.st[0], lane: stuck.l };
-  if (ls.some(l => l.live)) return { k: "run", tone: "", word: "세션 열림" };
+  const queued = open.find(x => x.st[0] === "순서 대기");
+  if (queued) return { k: "run", tone: "", word: queued.st[0], lane: queued.l };
   return { k: "idle", tone: "", word: ls.length ? "쉬는 중" : "아직 세션이 없어요" };
 }
 // The newest thing that happened in the project: a session's report or start, or the record's last save.
@@ -188,12 +205,13 @@ function projRows(list) {
   return list.filter(p => !p.builtin).map(p => ({ p, st: prjState(p) }))
     .sort((a, b) => prjRank(a.st) - prjRank(b.st) || prjLastAt(b.p) - prjLastAt(a.p) || String(prjTitle(a.p)).localeCompare(String(prjTitle(b.p)), "ko", { numeric: true }));
 }
+const pjRuns = r => r.st.k === "run" || !!r.st.run;
 function pjChipCounts(rows) {
-  return { all: rows.length, need: rows.filter(r => r.st.k === "need").length, run: rows.filter(r => r.st.k === "run").length };
+  return { all: rows.length, need: rows.filter(r => r.st.k === "need").length, run: rows.filter(pjRuns).length };
 }
 function pjFiltered() {
   const q = PJ.q.trim().toLowerCase(), rows = projRows((PRJ && PRJ.projects) || []);
-  return rows.filter(r => (PJ.view === "all" || r.st.k === PJ.view) && (!q || `${prjTitle(r.p)} ${prjPurpose(r.p)}`.toLowerCase().includes(q)));
+  return rows.filter(r => (PJ.view === "all" || (PJ.view === "run" ? pjRuns(r) : r.st.k === PJ.view)) && (!q || `${prjTitle(r.p)} ${prjPurpose(r.p)}`.toLowerCase().includes(q)));
 }
 // One row, the prototype's list row (s-work.js 프로젝트): a folder tile, the name with one quiet line under it, then the state tag at the right.
 function prjRow(r) {

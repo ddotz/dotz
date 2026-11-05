@@ -256,7 +256,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 홈 지금 진행 중 (카드 `now:running`)
 - 목적: 지금 돌고 있는 것만 보여요: 세션 턴, 앱 대화의 작업, 백그라운드 작업, 한도 리셋을 기다리는 작업.
-- 구성: 카드 머리(`지금 진행 중`, 개수 `{n}개 작업 중`)와 `.hn[data-k=running]`. 행 종류는 (1) 세션/어시스턴트 행(`homeNowRow`), (2) 앱 대화 행(`homeConvRow`), (3) 백그라운드 작업 행(`workRow`), (4) 한도 대기 행(`homeLimitRow`).
+- 구성: 카드 머리(`지금 진행 중`, 개수 `{n}개 작업 중`)와 `.hn[data-k=running]`. 세션은 `sessionsNow`가 정해요: 답을 기다리는 세션이 맨 위(`답을 기다림`), 나머지는 오래된 순서이고 행 이름은 `프로젝트 · 제목`이에요. 저장해 둔 상태(`S.seeded`)로는 아무것도 올리지 않아요. 행 종류는 (1) 세션/어시스턴트 행(`homeNowRow`), (2) 앱 대화 행(`homeConvRow`), (3) 백그라운드 작업 행(`workRow`), (4) 한도 대기 행(`homeLimitRow`).
 - 기능: 어시스턴트 행은 `openTarget(t, lastChatView())`로 대화 열기. 세션 행은 `sessionRow`(아래 세션 행 항목). 앱 대화 행은 `go("chat", target)`. 작업 행은 `workGo`(진행 중이면 대화로, 끝났으면 결과 메시지로). 새로 생기는 행은 위에서 올라오는 모션(`motionIn`).
 - 상태: 비어 있으면 `진행 중인 작업이 없어요`. 행 미리보기 우선순위: 답변 필요일 때 질문 문구, 런 상태 줄(`runText`), 최신 활동 줄(`nowLine`), 모델 칩, 상태 단어. 서브에이전트가 있으면 `서브에이전트 {끝남}/{전체}`(title `서브에이전트 끝난 수 / 전체`). 폴백 모델이면 세션 행에 모델과 폴백 태그. 앱 대화 행 상태 `작업 중` 또는 `진행 중`, aria-label `{이름} · {상태} · 대화 열기`. 한도 대기 행: 배지 `한도 리셋되면 재개 ({HH:MM})`, 시각을 못 읽으면 `한도 리셋되면 재개`. 방금 끝난 작업은 `HC_KEEP`=6초 동안 이 카드에 `완료`로 남았다가 모션(`motionSwap`)으로 최근 끝난 작업으로 가요.
 - 데이터: `S.orchestrator`, `S.lanes`, `S.runs`, `S.work`, `S.convs`, `S.deferred`, `SUBS`, `LAST`(세션별 마지막 활동 줄), `GET /api/activity?source=lane:{name}&limit=30`(처음 한 번), `S.work_skew`.
@@ -321,7 +321,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 목적: 세션(레인)을 제목, 소속 프로젝트, 상태 단어로 한 행에 보여요. 탭하면 그 세션 대화로 가요.
 - 구성: `button.hr.srow[data-t=lane:{name}]` 안에 상태 점, `.hb`(`.hn1 .nm` 제목, `.ha`에 `.sproj` 프로젝트, 있으면 `.sline` 활동 줄과 모델 `.smodel`), 서브에이전트 `.hp`, 상태 `.hs`.
 - 기능: 기본 클릭은 `openTarget("lane:{name}", lastChatView())`(`o.open`으로 바꿀 수 있음). 홈의 지금 진행 중/대기 중/답변 필요가 이 행을 써요. `openLaneChat(name)`은 채팅 대화로 열기.
-- 상태: 프로젝트 이름은 세션이 시작된 작업 채널(`laneHome`)로만 찾고, 없으면 `프로젝트 없음`(`.sproj.none`). aria-label `{이름} · 프로젝트 {proj} 또는 프로젝트 없음 · {상태} · 대화 열기`. 상태 단어(`sessionStatus` -> `runStatus`): 끝났으면 `종료됨`이 아니라 이 행에서는 `끝남`(회색), 실행 중 `작업 중`(파랑), `답을 기다려요`(주황), `순서 대기`/`진행 중`(핸드오프 작업, 파랑), `한도 걸림`(주황), `오류`(빨강), 그 외 `statusKo`(`대기` 등). 답변 필요 행은 `word: "답변 필요"`, 주황으로 덮어써요.
+- 상태: 프로젝트 이름은 세션이 시작된 작업 채널(`laneHome`)로만 찾고, 없으면 `프로젝트 없음`(`.sproj.none`). aria-label `{이름} · 프로젝트 {proj} 또는 프로젝트 없음 · {상태} · 대화 열기`. 상태 단어(`sessionState`: `진행 중`/`답을 기다림`/`완료`, 멈춘 세션은 제 단어. `sessionStatus` -> `runStatus`): 끝났으면 `종료됨`이 아니라 이 행에서는 `끝남`(회색), 실행 중 `작업 중`(파랑), `답을 기다려요`(주황), `순서 대기`/`진행 중`(핸드오프 작업, 파랑), `한도 걸림`(주황), `오류`(빨강), 그 외 `statusKo`(`대기` 등). 답변 필요 행은 `word: "답변 필요"`, 주황으로 덮어써요.
 - 데이터: `S.lanes`(`name`, `title`, `status`, `live`, `home`, `project`, `pendingAsk`, `lastText`), `S.channels.homes`/`S.channels.work`, `PRJ`(프로젝트 목록), `S.runs`, `SUBS`.
 - 근거: web/js/18-lanes.js:168 `sessionRow`, 18-lanes.js:162 `sessionStatus`, 18-lanes.js:151 `laneHome`, 18-lanes.js:153 `laneProject`, 18-lanes.js:30 `openLaneChat`; web/js/41-runstate.js:20 `runStatus`.
 - css: 03-base.css(`.srow`), 05-log.css(`.sproj`, `.sline`, `.hr`), 08-project-sessions.css(세션 관련).
@@ -339,7 +339,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 목적: 프로젝트를 상태 순서로 훑고 열어요. 파일은 세션 쪽 18-lanes.js에 있지만 프로젝트 화면 담당과 겹치므로 요약만 적어요.
 - 구성: `#pl-shell` 안에 검색 `#pl-q`(placeholder `프로젝트 검색`), 칩 `전체`/`진행 중`/`확인 필요`/`끝남`(탭, 개수 표시), 목록 `#pl-list`(섹션 `고정`, `전체`, 맨 뒤 `세션`, 있으면 `내 설정`).
 - 기능: 행 탭은 `go("project", key)`. `프로젝트 {n}개 더 보기`(12개씩, `PJ_PAGE`). `세션과 채널` 행은 `go("chat","list")`, 부제 `일하는 세션 {n}개 · 작업 채널 {n}개`. 내 설정 행 부제 `내가 바꾼 것을 봐요`.
-- 상태: 프로젝트 상태 태그 `일시 정지`, `답을 기다려요`, `끝남`, `세션 열림`, `쉬는 중`, `아직 세션이 없어요` 또는 세션 상태 단어. 로드 전 `불러오는 중…`, 실패 `프로젝트를 불러오지 못했어요`. 프로젝트가 없으면 `아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요` + `채팅 열기` 버튼. 필터 결과 없음: `찾는 프로젝트가 없어요`, `확인할 프로젝트가 없어요`, `지금 진행 중인 프로젝트가 없어요`, `끝낸 프로젝트가 없어요`, `아직 프로젝트가 없어요`. 읽지 않은 수 배지(`읽지 않은 메시지 {n}개`).
+- 상태: 프로젝트 상태 태그 `일시 정지`, `답을 기다려요`, `끝남`, `쉬는 중`, `아직 세션이 없어요` 또는 세션 상태 단어. 로드 전 `불러오는 중…`, 실패 `프로젝트를 불러오지 못했어요`. 프로젝트가 없으면 `아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요` + `채팅 열기` 버튼. 필터 결과 없음: `찾는 프로젝트가 없어요`, `확인할 프로젝트가 없어요`, `지금 진행 중인 프로젝트가 없어요`, `끝낸 프로젝트가 없어요`, `아직 프로젝트가 없어요`. 읽지 않은 수 배지(`읽지 않은 메시지 {n}개`).
 - 데이터: `GET /api/custom`(`PRJ`), `S.lanes`.
 - 근거: web/js/18-lanes.js:141 `prjLoad`, 18-lanes.js:185 `prjState`, 18-lanes.js:230 `prjRow`, 18-lanes.js:269 `pjPaintRows`, 18-lanes.js:307 `renderProjects`.
 - css: 20-projects.css, 08-project-sessions.css.
@@ -438,7 +438,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 채팅 목록 (대화 목록)
 - 목적: 카카오톡식으로 모든 대화(비서, 알림, 작업 기록, 세션, 프로젝트, 메일/카카오톡 대기)를 한 목록에서 고르고 안 읽음 수를 봐요.
 - 구성: `aside#chat-convo.cv-side`(목록 패널, `#v-chat` 맨 앞에 붙음) 안에 `.cv-sec`(섹션 라벨) 다음 `.cv-card`(행 묶음)이 이어져요. 행은 `button.cv-row`(아이콘 `.cv-av`, 이름 `.cv-n`, 미리보기 `.cv-p`, 시각 `.cv-t`, 배지 `.cv-m2`). 맨 아래에 `.cv-foot`의 읽음 처리 버튼이 와요.
-- 기능: 행 탭으로 `go("chat", t)`(대화 열기). `프로젝트 N개 더 보기` 버튼으로 `CVF.more`를 40개씩 늘려요(`convRow`). 읽음 처리 버튼은 `convReadAll`로 답이 필요 없는 안 읽은 대화를 일괄 읽음으로 보내요. 메일/카카오톡 카드 행은 `go("monitoring", "c:<mail>")` 또는 `go("monitoring","i:kakao")`+`kkOpen`으로 모니터링을 열어요. 목록은 `convRows`(순서: 비서, `worklog`, `진행 중` 세션, `프로젝트`, 열려 있는 종료 세션, 종료 세션 묶음, `메일 · 카카오톡`)로 짜고 `convCards`가 카드로 묶어요.
+- 기능: 행 탭으로 `go("chat", t)`(대화 열기). `프로젝트 N개 더 보기` 버튼으로 `CVF.more`를 40개씩 늘려요(`convRow`). 읽음 처리 버튼은 `convReadAll`로 답이 필요 없는 안 읽은 대화를 일괄 읽음으로 보내요. 메일/카카오톡 카드 행은 `go("monitoring", "c:<mail>")` 또는 `go("monitoring","i:kakao")`+`kkOpen`으로 모니터링을 열어요. 목록은 `convRows`(순서: 세션이 돌거나 답을 기다릴 때만 맨 위 `진행 중`(`sessionsNow`, 홈 카드와 같은 목록, 행 이름 `프로젝트 · 제목`, 답을 기다리는 세션 먼저), 비서, `worklog`, `프로젝트`, 열려 있거나 안 읽은 것·답할 것이 남은 종료 세션, 종료 세션 묶음, `메일 · 카카오톡`)로 짜고 `convCards`가 카드로 묶어요.
 - 상태: 섹션 라벨 `진행 중`, `프로젝트`, `메일 · 카카오톡`. 더 보기 `프로젝트 ${n}개 더 보기`. 읽음 처리 `${n}개 읽음 처리`(title `답이 필요한 대화는 그대로 둬요`), 성공 토스트 `대화 ${n}개를 읽음으로 표시했어요`, 실패 `${n}개를 읽음으로 표시하지 못했어요: ...`(카운트는 되돌리고 `convLoad`로 다시 읽음). 행 상태: 안 읽음(`.unread`, 배지 `nb` aria `읽지 않은 메시지 ${n}개`), 선택(`.on`, `aria-current`), 마지막 글 없음(`.none`), 답변 필요 점(`dot warn` aria `답변 필요`). 세션 행은 `sessionStatus` 배지. 메일 카드 행: 이름 없으면 `(제목 없음)`, 힌트 `${보낸이} · 답장 초안이 기다려요`, 칩 `미답장`, 최대 5개. 목록 로딩 실패 시 문구 없이 5초 뒤 `/api/conversations` 재시도(`CV.failed`). 모니터링에서 연 대화는 같은 `#chat-convo`가 `모니터링 목록`(aria)으로 바뀌고 `monSideNodes`가 그려요. 폰(`max-width:1099px`)은 `chatList`가 켜진 때만 목록 전체 화면(`convListing`), 데스크톱(`>=1100px`)은 목록이 왼쪽 패널로 항상 보여요. 다른 컴퓨터 변형: 메일은 `!PQ.of.has(t)`인 것만 대기 카드에 넣어요. 종료 세션 묶음 행(`endedGroup`)과 `r.empty`(`.cv-empty`) 문구는 이 파일 밖이라 코드에서 확인 못 함.
 - 데이터: `GET /api/conversations`(items: target, last, read, unread, mail), `POST /api/read {target, ts}`, 이벤트 스트림 `{kind:"read"}`(`convOnRead`), 새 메시지 이벤트(`convNote`가 `message, lane_message, out, lane_report, result, mail, schedule, watch` 종류를 미리보기/안 읽음에 반영).
 - 근거: web/js/31-conversations.js:264(convRows), :288(convWaiting), :298(convCards), :348(convRow), :320(convReadBtn), :326(convReadAll), :341(convAvatar), :392(convPaint), :62(convLoad), :40(convNote), :91(convOnRead). 상태 선언 web/js/09-needs-you.js:369-371. 폰/데스크톱 판정 web/js/04-state.js:13,17.
@@ -795,7 +795,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
   - 불러오는 중: `불러오는 중…`. 실패(첫 로드): `프로젝트를 불러오지 못했어요`.
   - 프로젝트 0개: `아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요` + 버튼 `채팅 열기`.
   - 필터 결과 없음: 검색 중 `찾는 프로젝트가 없어요`, 확인 필요 `확인할 프로젝트가 없어요`, 진행 중 `지금 진행 중인 프로젝트가 없어요`, 끝남 `끝낸 프로젝트가 없어요`, 전체 `아직 프로젝트가 없어요`.
-  - 행 상태 태그(`prjState`): `일시 정지`, `답을 기다려요`, 세션 상태 단어(`runStatus`가 주는 단어), `끝남`, `세션 열림`, `쉬는 중`, `아직 세션이 없어요`. 정렬은 확인 필요, 진행 중, 최근 활동 순이고 `pinned`는 `고정` 그룹으로 먼저 나와요.
+  - 행 상태 태그(`prjState`): `일시 정지`, `답을 기다려요`, 세션 상태 단어(`runStatus`가 주는 단어), `끝남`, `쉬는 중`, `아직 세션이 없어요`. 정렬은 확인 필요, 진행 중, 최근 활동 순이고 `pinned`는 `고정` 그룹으로 먼저 나와요.
   - 안 읽음 배지 aria `읽지 않은 메시지 N개`, 99 넘으면 `99+`. 현재 보는 프로젝트 행은 `.on`.
   - `세션` 섹션은 칩이 `전체`이고 검색어가 없을 때만, `내 설정` 행은 `전체`이면서 검색어가 없거나 `커스텀`에 포함될 때만 나와요. 줄은 `일하는 세션 N개 · 작업 채널 N개`와 `내가 바꾼 것을 봐요`.
   - 폰 vs 데스크톱: 폭 1100px 이상(`ppWide`=`!narrowChat`, `04-state.js:13-15`)에서는 `go("projects")`가 곧바로 `project`로 바뀌고 목록은 왼쪽 304px 칸에 남아요. 1099px 이하(폰)에서는 목록이 한 화면이에요.

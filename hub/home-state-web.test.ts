@@ -95,8 +95,8 @@ test("지금 진행 중 stops at six rows, scrolls inside its card and keeps its
 // Every list of the home cards, filled with n rows through the state the page really reads; a custom card's list is in custom-home-web.test.ts.
 const fill = (n: number) => view.evaluate(`(n => {
 	const ids = Array.from({ length: n }, (_, i) => i), at = new Date().toISOString();
-	Object.assign(S, { orchestrator: { status: "idle" }, runs: {}, convs: [], waitlist: ids.map(i => ({ id: "q" + i, kind: "worker", title: "받아둔 일" })), lanes: ids.map(i => ({ name: "ask" + i, status: "idle", live: true, pendingAsk: { text: "어떻게 할까요?" } })),
-		work: ids.flatMap(i => [{ id: "r" + i, description: "맡긴 일", status: "running", target: "web", started_at: 1 }, { id: "d" + i, description: "끝난 일", status: "done", target: "web", started_at: 1, ended_at: 2 }]) });
+	Object.assign(S, { orchestrator: { status: "idle" }, runs: {}, convs: [], waitlist: ids.map(i => ({ id: "q" + i, kind: "worker", title: "받아둔 일" })), lanes: ids.flatMap(i => [{ name: "ask" + i, status: "idle", live: true, pendingAsk: { text: "어떻게 할까요?" } }, { name: "held" + i, status: "rate-limited", live: true }]),
+		work: ids.map(i => ({ id: "d" + i, description: "끝난 일", status: "done", target: "web", started_at: 1, ended_at: 2 })) });
 	monItems = () => ids.map(i => ({ app: true, key: "a" + i, name: "앱 " + i, unreplied: 1 }));
 	NT.items = ids.flatMap(i => [{ id: "n" + i, kind: "alert", cls: "alert", title: "알림 " + i, text: "알림", ts: at }, { id: "l" + i, kind: "worklog", title: "기록 " + i, text: "기록", ts: at }]);
 	NM.items = ids.map(i => ({ name: "감시 " + i, last_run: at, next_run: at }));
