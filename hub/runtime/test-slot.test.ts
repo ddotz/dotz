@@ -40,6 +40,7 @@ function project() {
 	const run = async (args: string[], extra: Record<string, string | undefined> = { DOTZ_LANE: "limit-test" }) => {
 		const env: Record<string, string | undefined> = { ...process.env, DOTZ_DIR: data, ...extra };
 		delete env.DOTZ_TEST_DIR;
+		delete env.BUN_TEST_WORKER_ID; // a parallel run's worker id would make this new run read as a worker of the test process
 		rmSync(ran, { force: true });
 		const p = Bun.spawn([process.execPath, "test", ...args], { cwd, env, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
 		const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
