@@ -64,7 +64,7 @@ const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".cv-empty", ".bell-non
 // code, inputs, links (an underline does not reach into an inline-block), mail bodies, the file viewer, and boxes that clamp or
 // ellipsize their text (an inline-block there would hide whole phrases instead of trimming the last line)
 const WPH_SKIP = ["pre", "code", "kbd", "samp", "textarea", "input", "select", "svg", "a", "[contenteditable]", ".btn", ".chip", ".tag", ".mb", ".mb-txt", ".tv-body",
-  ".clamp", "[class*='clamp']", ".ntf .bd2", ".pn .pt", ".ml-snip", ".qt", ".lg-q", ".lb", ".pj-sc .tx", ".hm-n .s", ".hm-sh .s", ".wh", ".rq-orig", ".md", ".ds-t", ".dc-q", ".dc-ds",
+  ".clamp", "[class*='clamp']", ".ntf .bd2", ".ml-snip", ".qt", ".lg-q", ".lb", ".pj-sc .tx", ".hm-n .s", ".hm-sh .s", ".wh", ".rq-orig", ".md", ".ds-t", ".dc-q", ".dc-ds",
   ".tr-rb", ".mr-sum", ".dr-ob", ".kk-lp-t", ".kk-lp-d", ".fr-sum", ".rc-title", ".mt-head .sup", ".ended .sup", ".sh-t .sup", ".wph", "#tl"].join(", ");
 
 function phraseFrag(tree) {
