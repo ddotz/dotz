@@ -1,6 +1,6 @@
 // Mail direction and reply state (hub/mail-state.ts): addresses and aliases, folders and labels, every reply transition, the old flags, and the one-time migration.
 import { describe, expect, test } from "bun:test";
-import { addressKey, directionOf, evictSurplus, isOwnAddress, mailLabel, migrateMails, nextReply, replyExpected, replyOf, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
+import { addressKey, directionOf, evictSurplus, isOwnAddress, mailLabel, migrateMails, nextReply, noteOwnSender, ownAddressesFor, replyExpected, replyOf, resetOwnAddresses, selfSent, setOwnAddresses, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 
 const own = new Set(["owner@example.com", "owner@gmail.com"]);
@@ -13,6 +13,7 @@ describe("addresses", () => {
 		expect(addressKey("o.w.n.e.r+news@googlemail.com")).toBe("owner@gmail.com");
 		expect(addressKey("owner.kim@example.com")).toBe("owner.kim@example.com");
 		expect(addressKey("(제목 없음)")).toBe("");
+		expect(addressKey('"owner@example.com" <Kim@Example.com>')).toBe("kim@example.com");
 	});
 	test("an alias is the owner's, a lookalike is not", () => {
 		expect(isOwnAddress("나 <owner+alias@example.com>", own)).toBe(true);
@@ -20,6 +21,34 @@ describe("addresses", () => {
 		expect(isOwnAddress("Kim <kim@example.com>", own)).toBe(false);
 		expect(isOwnAddress("owner@example.org", own)).toBe(false);
 		expect(isOwnAddress("", own)).toBe(false);
+	});
+});
+
+describe("selfSent", () => {
+	test("the sender alone decides once an address is known, display name and case aside", () => {
+		expect(selfSent({ from: '"나" <OWNER@example.com>', to: "kim@example.com" }, own)).toBe(true);
+		expect(selfSent({ from: "Kim <kim@example.com>", to: "owner@example.com" }, own)).toBe(false);
+		expect(selfSent({ from: '"owner@example.com" <kim@example.com>', to: "kim@example.com" }, own)).toBe(false);
+		expect(selfSent({ account: "owner@corp.example", from: "Owner+x@corp.example", to: "kim@example.com" }, new Set())).toBe(true);
+	});
+	test("with nothing known only a mail to its sender alone is his; a known set leaves out a stranger writing to himself", () => {
+		const none = new Set<string>();
+		expect(selfSent({ from: "a@x.example", to: "나 <A@x.example>" }, none)).toBe(true);
+		expect(selfSent({ from: "a@x.example", to: "a@x.example", cc: "b@x.example" }, none)).toBe(false);
+		expect(selfSent({ from: "news@x.example", to: "news@x.example" }, own)).toBe(false);
+	});
+	test("a source's address set is built once and rebuilt only when an address is learned", () => {
+		resetOwnAddresses();
+		setOwnAddresses("config", ["alias@example.com"]);
+		noteOwnSender("kdb", "나 <me@corp.example>");
+		const first = ownAddressesFor("kdb");
+		expect([...first].sort()).toEqual(["alias@example.com", "me@corp.example"]);
+		noteOwnSender("kdb", "ME@corp.example");
+		expect(ownAddressesFor("kdb")).toBe(first);
+		expect(ownAddressesFor("zele").has("me@corp.example")).toBe(false);
+		noteOwnSender("kdb", "second@corp.example");
+		expect(ownAddressesFor("kdb").has("second@corp.example")).toBe(true);
+		resetOwnAddresses();
 	});
 });
 

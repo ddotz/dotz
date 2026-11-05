@@ -5,6 +5,9 @@
 // or the poster says so (`direction: "out"`, a sent `folder`: SENT / 보낸편지함, or a SENT label). An outgoing mail is listed under 보낸 메일
 // and never counts as unread, never wakes the bot, never gets a reply draft.
 //
+// A mail he sent to himself is the exception that stays where the mailbox put it: read by its sender address alone (`selfSent`), it may be listed as
+// incoming, and only its reply state is affected.
+//
 // Reply state of an incoming thread, kept apart from read / unread (reading never changes it):
 //   (none)  nothing is expected          needs   답장 필요        draft  초안 있음 (a draft waits for approval)
 //   replied 답장함 (sent by dotz, or an outgoing mail of his found later in the thread)
@@ -50,7 +53,8 @@ export function nextReply(cur: MailReply | undefined, ev: MailReplyEvent): MailR
 // The poster may say so (`needsReply`); otherwise the gateway reads the mail itself, so 답장 필요 does not depend on a watcher or a bot
 // remembering to mark it (owner 2026-10-27: every mail of the company webmail sat at no state). Conservative on purpose: a sender that
 // is a machine or a mailing list, a bulk subject, an announcement or automated notice, an unsubscribe footer, or a mail whose To does not
-// name one of the owner's addresses (he is only in CC / BCC, or it went to a group / distribution list) never expects one; else
+// name one of the owner's addresses (he is only in CC / BCC, or it went to a group / distribution list) never expects one, nor does a mail he
+// wrote himself, also one addressed to other people as well (owner 2026-11-05: "내가 나한테 보낸거는 답장 필요 안하는걸 디폴트로"); else
 // a request in the subject or the text does (asks, questions, deadlines), and a mail that only delivers an answer does not.
 const MACHINE_SENDER = /no-?reply|do-?not-?reply|mailer-daemon|postmaster|administrator|notification|newsletter|news@|marketing|알림|공지/i;
 const BULK_SUBJECT = /^\s*[[(]?\s*(?:광고|ad|advertisement)\s*[\])]|스팸\s*리포트|spam report|뉴스레터|newsletter|시황|일일\s*(?:보고|리포트)|weekly digest|webinar|웨비나|unsubscribe|수신\s*거부|공지|공고|\bannouncement\b|\bnotice\b|out of office|부재\s*중|자동\s*(?:응답|발송)|auto-?reply/i;
@@ -62,7 +66,7 @@ const TODO_NONE = /^할\s*일\W*\s*(?:•|-|·)?\s*없음/;
 const REPLY_TODO = /회신|답장|답변|제출|작성|송부|보내|알려|의견|참석\s*여부|견적|해설|자료\s*(?:준비|정리|제공|전달)|reply|respond|send/i;
 const ANSWERS = /답변\s*(?:전달|드립니다|드려요|입니다)|회신\s*(?:드립니다|드려요|입니다)|감사합니다\.?\s*$/i;
 /** `list` = the poster saw a List-Id / List-Unsubscribe header (a mailing list or group mail). */
-export type ReplyCue = { from?: string; to?: string; cc?: string; subject: string; text?: string; list?: boolean };
+export type ReplyCue = { source?: string; account?: string; from?: string; to?: string; cc?: string; subject: string; text?: string; list?: boolean };
 
 // ---- is the owner a main recipient? ----
 // 답장 필요 is only for a mail written to him (owner 2026-10-31: "내가 주요 대상이 아닌 경우에는 답장 필요에서 제외"). Deterministic rules, no model:
@@ -71,15 +75,17 @@ export type ReplyCue = { from?: string; to?: string; cc?: string; subject: strin
 //                       group address (all@, team@, googlegroups.com...) with none of his addresses in To / Cc
 //   bulk   자동 발송     a machine sender (noreply, notification, newsletter...)
 //   other  다른 사람 앞  he is one of 3+ To recipients and the mail greets another of them by name ("Lee님,", "Hi Lee,")
+//   self   (no tag)     he wrote it (selfSent)
 // A mail that is excluded still shows in the list, only never as 답장 필요, with the reason as a small tag (mailCard `why`).
-export type ReplyExclusion = "cc" | "list" | "bulk" | "other";
-export const EXCLUSION_LABEL: Readonly<Record<ReplyExclusion, string>> = { cc: "참조로 받음", list: "단체 메일", bulk: "자동 발송", other: "다른 사람 앞" };
+export type ReplyExclusion = "self" | "cc" | "list" | "bulk" | "other";
+export const EXCLUSION_LABEL: Readonly<Record<Exclude<ReplyExclusion, "self">, string>> = { cc: "참조로 받음", list: "단체 메일", bulk: "자동 발송", other: "다른 사람 앞" };
 const GROUP_ADDRESS = /^(?:all|everyone|team|staff|group|groups|list|members?|announce\w*|notice|news|company|office|전체)(?:[._-][\w.-]*)?@|@googlegroups\.com$|@groups\./i;
 const parts = (s: string | undefined): string[] => (s ?? "").split(/[,;](?=(?:[^"]*"[^"]*")*[^"]*$)/).map(t => t.trim()).filter(Boolean);
 const nameOf = (t: string): string => t.replace(/<[^>]*>/, "").replace(/["']/g, "").trim().toLowerCase();
 // The name a mail greets in its first line: "이영희님," / "영희 님" / "Dear Lee," / "Hi Lee".
 const GREETING = /^\s*(?:(?:dear|hi|hello)\s+([a-z][\w.-]*)|([가-힣a-z][가-힣\w.-]{0,20}?)\s*(?:님|씨))\s*[,.:!\s]/i;
-export function replyExclusion(m: ReplyCue, own: ReadonlySet<string> = ownAddresses()): ReplyExclusion | undefined {
+export function replyExclusion(m: ReplyCue, own: ReadonlySet<string> = ownAddressesFor(m.source)): ReplyExclusion | undefined {
+	if (selfSent(m, own)) return "self";
 	if (m.list) return "list";
 	if (MACHINE_SENDER.test(m.from ?? "")) return "bulk";
 	const text = (m.text ?? "").slice(0, 4000);
@@ -100,7 +106,18 @@ export function replyExclusion(m: ReplyCue, own: ReadonlySet<string> = ownAddres
 	return others.some(named) && !to.filter(mine).some(named) ? "other" : undefined;
 }
 
-export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddresses()): boolean {
+/** Written by the owner: the sender is one of the addresses known for the mail's source, or its account. With none known at all a mail from
+ *  X to X alone is his (only then: a bulk sender also writes to itself, with its readers in Bcc). */
+export function selfSent(m: Pick<ReplyCue, "source" | "account" | "from" | "to" | "cc">, own: ReadonlySet<string> = ownAddressesFor(m.source)): boolean {
+	const from = addressKey(m.from);
+	if (!from) return false;
+	if (own.has(from) || from === addressKey(m.account)) return true;
+	if (own.size || m.account) return false;
+	const recipients = [...parts(m.to), ...parts(m.cc)];
+	return recipients.length === 1 && addressKey(recipients[0]) === from;
+}
+
+export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddressesFor(m.source)): boolean {
 	if (replyExclusion(m, own)) return false;
 	const text = (m.text ?? "").slice(0, 4000);
 	// The mail summary ends with what the owner has to do ("할 일"): when it is there, it decides. A reply is owed when one of those
@@ -125,9 +142,10 @@ export function replyOf(m: LegacyReplyFacts): MailReply | undefined {
 
 // ---- addresses ----
 
-/** "Kim <Kim@Example.com>" -> "kim@example.com"; the plus-tag is dropped, and the dots of a Gmail address too. "" when there is no address. */
+/** "Kim <Kim@Example.com>" -> "kim@example.com"; the plus-tag is dropped, and the dots of a Gmail address too. "" when there is no address.
+ *  The address in <> is the address: a display name that looks like one is only a name. */
 export function addressKey(text: string | undefined): string {
-	const m = /([\w.!#$%&'*+/=?^`{|}~-]+)@([\w-]+(?:\.[\w-]+)+)/.exec(text ?? "");
+	const m = /([\w.!#$%&'*+/=?^`{|}~-]+)@([\w-]+(?:\.[\w-]+)+)/.exec(/<([^<>]+)>\s*$/.exec(text ?? "")?.[1] ?? text ?? "");
 	if (!m) return "";
 	const domain = m[2]!.toLowerCase();
 	let user = m[1]!.toLowerCase().replace(/\+.*$/, "");
@@ -136,14 +154,34 @@ export function addressKey(text: string | undefined): string {
 }
 
 const registered = new Map<string, Set<string>>();
+// What each mail source itself showed to be his: the sender of its outgoing mails, which covers a source no account is registered for (a webmail
+// watcher). These never decide a mail's direction (`ownAddresses`), only selfSent. `sourceOwn` holds the merged sets, built once per change.
+const senders = new Map<string, Set<string>>();
+const sourceOwn = new Map<string, ReadonlySet<string>>();
+export function noteOwnSender(source: string, from: string | undefined): void {
+	const a = addressKey(from);
+	if (!a || senders.get(source)?.has(a)) return;
+	senders.set(source, new Set([...(senders.get(source) ?? []), a]));
+	sourceOwn.delete(source);
+}
+/** Every address known as his for one mail source: `ownAddresses` plus the senders of its outgoing mails. Cached: cheap for every row of every render. */
+export function ownAddressesFor(source: string | undefined): ReadonlySet<string> {
+	const key = source ?? "";
+	let own = sourceOwn.get(key);
+	if (!own) sourceOwn.set(key, (own = ownAddresses([...(senders.get(key) ?? [])])));
+	return own;
+}
 /** The accounts a mail source reads (zele: `zele whoami`), replacing what that source registered before. */
 export function setOwnAddresses(source: string, addresses: readonly string[]): void {
 	registered.set(source, new Set(addresses.map(addressKey).filter(Boolean)));
+	sourceOwn.clear();
 }
 /** What one source registered: `zele` = the accounts it is logged in to. */
 export const addressesOf = (source: string): ReadonlySet<string> => registered.get(source) ?? new Set();
 export function resetOwnAddresses(): void {
 	registered.clear();
+	senders.clear();
+	sourceOwn.clear();
 }
 /** Every address that is the owner's: what the sources registered (the "config" source holds the aliases of config.json, hub/mail.ts) plus `extra`. */
 export function ownAddresses(extra: readonly string[] = []): Set<string> {
@@ -167,7 +205,7 @@ export function directionOf(f: DirectionFacts, own: ReadonlySet<string> = ownAdd
 
 // ---- migration ----
 
-export type StoredMail = LegacyReplyFacts & { list?: true; reply_by?: ReplyBy; reply_at?: string; key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
+export type StoredMail = LegacyReplyFacts & { source?: string; account?: string; list?: true; reply_by?: ReplyBy; reply_at?: string; key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
 /** Mails older than this keep no reply state from replyExpected when the stored mails are brought up to the rules: history, not a backlog. */
 const JUDGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -175,15 +213,17 @@ const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|
 /**
  * One idempotent pass over the stored mails: the owner's own mails become outgoing, the old flags become `reply`, and an incoming mail with a
  * reply of his own (a sent dotz draft for it, or an outgoing mail with the same subject to its sender after it) becomes 답장함.
+ * A mail he wrote and marked 답장 필요 himself stays incoming: his mark wins.
  * Returns the number of records it changed; a second run changes none.
  */
 export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<string>; sentRefs?: ReadonlySet<string>; now?: number } = {}): number {
 	const own = opts.own ?? ownAddresses();
 	const now = opts.now ?? Date.now();
 	let changed = 0;
+	for (const r of records) if (r.dir === "out" && r.source) noteOwnSender(r.source, r.from);
 	for (const r of records) {
 		let touched = false;
-		if (r.dir !== "out" && isOwnAddress(r.from, own)) {
+		if (r.dir !== "out" && isOwnAddress(r.from, own) && !(r.reply === "needs" && r.reply_by === "owner")) {
 			r.dir = "out";
 			touched = true;
 		}
@@ -196,10 +236,11 @@ export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<st
 			}
 		} else {
 			const fresh = now - Date.parse(r.at) <= JUDGE_WINDOW_MS;
-			const cue = { from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "", list: r.list };
-			let reply = opts.sentRefs?.has(r.key) ? "replied" : replyOf(r) ?? (fresh && replyExpected(cue, own) ? "needs" : undefined);
-			// 답장 필요 the gateway or a poster set, on a mail he is not a main recipient of: none (his own 답장 필요로 표시 stays).
-			if (reply === "needs" && r.reply_by !== "owner" && replyExclusion(cue, own)) reply = undefined;
+			const cue = { source: r.source, account: r.account, from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "", list: r.list };
+			const mine = opts.own ?? ownAddressesFor(r.source);
+			let reply = opts.sentRefs?.has(r.key) ? "replied" : replyOf(r) ?? (fresh && replyExpected(cue, mine) ? "needs" : undefined);
+			// 답장 필요 the gateway or a poster set, on a mail he is not a main recipient of or wrote himself: none (his own 답장 필요로 표시 stays).
+			if (reply === "needs" && r.reply_by !== "owner" && replyExclusion(cue, mine)) reply = undefined;
 			if (reply !== r.reply || "needsReply" in r || "noReply" in r) {
 				if (reply) r.reply = reply;
 				else delete r.reply;
@@ -212,7 +253,7 @@ export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<st
 	}
 	const sent = records.filter(r => r.dir === "out");
 	for (const r of records) {
-		if (r.dir === "out" || r.reply === "replied") continue;
+		if (r.dir === "out" || r.reply === "replied" || selfSent(r, opts.own)) continue;
 		const subject = subjectKey(r.subject);
 		const who = addressKey(r.from);
 		const answer = sent.find(s => s.at >= r.at && subjectKey(s.subject) === subject && !!who && (s.to ?? "").split(",").some(t => addressKey(t) === who));
