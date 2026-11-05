@@ -1,13 +1,15 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { networkInterfaces } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { D_CLOSE, parseChoices } from "./choices.ts";
 import { DATA_DIR, log, NAME, writeAtomic } from "./config.ts";
+import { resolveResultFile } from "./discord-files.ts";
+import { UPLOAD_MAX_BYTES } from "./files.ts";
 import { dropForLine, forLines } from "./forline.ts";
 import { msg } from "./i18n.ts";
 import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
-import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
+import { createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
 import { createSessionMark } from "./jandi-session.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import { sameRoom } from "./messenger-rooms.ts";
@@ -258,6 +260,33 @@ async function viaSession(selfChat: SelfChat | undefined, cfg: JandiConfig, msg:
 	}
 	mark("self_chat", { last_out: Date.now() });
 	return { delivered: true };
+}
+
+/** The `[file]`s of an answer that reached the owner, each its own post in the self chat after the text, behind the reply prefix (so the poll never takes it
+ *  for a command). A file that cannot go (not an allowed file, over the upload limit, an upload error) stays in the web: one note names those, the log says why. */
+async function sendFiles(selfChat: SelfChat | undefined, cfg: JandiConfig, msg: OutMsg, text: string): Promise<void> {
+	const sc = cfg.self_chat;
+	if (!msg.files?.length || !selfChat || !selfChatReady(sc)) return;
+	const prefix = `${sc.reply_prefix || `[${NAME}]`} `;
+	const left: string[] = [];
+	for (const [i, input] of msg.files.entries()) {
+		const name = basename(input);
+		try {
+			if (i >= MAX_FILES) throw new Error(`over ${MAX_FILES} files`);
+			const path = resolveResultFile(input);
+			const size = statSync(path).size;
+			if (size > UPLOAD_MAX_BYTES) throw new Error(`too big (${size} bytes)`);
+			await selfChat.sendFile(path, name, size, messageBody(prefix + name));
+			mark("self_chat", { last_out: Date.now() });
+		} catch (e) {
+			log(`jandi: file ${name} not sent, left in the web (${(e as Error)?.message || errText(e)})`);
+			left.push(name);
+		}
+	}
+	if (left.length && text !== FILES_IN_WEB)
+		await selfChat
+			.post(`message-api/v3/teams/${sc.team_id}/rooms/${sc.room_id}/messages`, 3, messageBody(`${prefix}${left.join(", ")}: ${FILES_IN_WEB}`))
+			.catch(e => log(`jandi: note for unsent files failed (${(e as Error)?.message || errText(e)})`));
 }
 
 export type JandiAdapter = Adapter & { port(): number | undefined; selfChat(): SelfChat | undefined };
@@ -531,7 +560,11 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 		// JANDI has no lane room: a lane's result or question ([done]/[fail]/[ask]) reaches the owner in the main room; its progress stays in the web.
 		if (!dests.length && msg.kind === "lane" && ["result", "ask"].includes(postClass(msg.target, msg.text) ?? "")) dests = ready.filter(r => r.room.kind === "main");
 		dests = dests.filter((d, i) => dests.findIndex(x => x.url === d.url) === i);
-		if (!dests.length) return viaSession(selfChat, cfg, msg, text);
+		if (!dests.length) {
+			const r = await viaSession(selfChat, cfg, msg, text);
+			if (r.delivered) await sendFiles(selfChat, cfg, msg, text);
+			return r;
+		}
 		const prefix = cfg.self_chat?.enabled && cfg.self_chat.reply_prefix ? `${cfg.self_chat.reply_prefix} ` : "";
 		const parts = splitText(text, MAX_PART - prefix.length).map(p => prefix + p);
 		const ask = !!msg.options?.length;
@@ -551,6 +584,8 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			}
 		}
 		if (!ok) throw failed;
+		// The owner reads the main room in the self chat, so that is where its files go.
+		if (dests.some(d => d.room.kind === "main")) await sendFiles(selfChat, cfg, msg, text);
 		return { delivered: true };
 	}
 
