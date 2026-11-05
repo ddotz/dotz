@@ -1,5 +1,7 @@
 // The hub side of mailboxes (docs/mailbox.md): which account a mail is in, where a new mail goes, how a row finds its box, and the routes
-// /api/mailbox/move, /learn and /box. The store and the rules are hub/mailbox.ts; mails are read and changed only through hub/mail.ts.
+// /api/mailbox/move, /learn, /box, /tone and /suggest. The store and the rules are hub/mailbox.ts; mails are read and changed only through hub/mail.ts.
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { appEntries, inConv, readAppsFile, type IntegrationEntry } from "./integrations.ts";
 import { mailByKey, mailKeep, mailRecords, mailTarget, recordMail, type MailRecord } from "./mail.ts";
@@ -8,6 +10,7 @@ import {
 	BASE_ID, boxesOf, boxOfConv, boxOfSource, cleanBox, conversationOf, learnCond, loadMailboxes, MAX_BOXES, pickBox, pinKey, saveMailboxes, setPin,
 	type Box, type MailboxWhy, type Placed,
 } from "./mailbox.ts";
+import { addressesOf as addressesIn } from "./reply-draft.ts";
 import { body, json } from "./routes-util.ts";
 
 const mailEntries = (dir: string): IntegrationEntry[] => appEntries(dir).filter(e => e.app === "mail" && !e.gone);
@@ -126,6 +129,60 @@ function deleteRoute(dir: string, b: Record<string, any>): Response {
 	return json({ ok: true });
 }
 
+// The tone files are features/reply-drafts' (`<data dir>/custom/reply-drafts/tone/<instance>/<box>.md`, sections `## 정체성` and `## 고친 점`); hub/mailbox-cli.ts already lays them out by path, and
+// importing the feature here would add a hub -> features edge, so only these two sections are read.
+const toneBullets = (file: string, heading: string): string[] => {
+	if (!existsSync(file)) return [];
+	const out: string[] = [];
+	let on = false;
+	for (const line of readFileSync(file, "utf8").split("\n")) {
+		if (/^## /.test(line)) on = line.trim() === heading;
+		else if (on && /^\s*[-*]\s+\S/.test(line)) out.push(line.replace(/^\s*[-*]\s+/, "").trim());
+	}
+	return out;
+};
+/** GET /api/mailbox/tone?app=&box=: what a mailbox's tone file says, read when its settings item opens (never per card). The summary falls back to the instance's, then the install's profile like a draft does. */
+function toneRoute(dir: string, url: URL): Response {
+	const app = url.searchParams.get("app") ?? "", id = url.searchParams.get("box") ?? "";
+	if (!mailEntries(dir).some(e => e.key === app) || !boxesOf(dir, app).some(x => x.id === id) || !/^[\w-]+$/.test(app)) return fail("메일함을 찾을 수 없어요", 404);
+	const tone = join(dir, "custom", "reply-drafts", "tone"), own = join(tone, app, `${id}.md`);
+	const summary = [own, join(tone, `${app}.md`), join(tone, "install.md")].map(f => toneBullets(f, "## 정체성")).find(l => l.length) ?? [];
+	return json({ ok: true, own: existsSync(own), summary: summary.join(" "), corrections: toneBullets(own, "## 고친 점") });
+}
+
+// 묶음 제안: free-mail domains say nothing about a sender's kind, so they never form a group.
+const FREE_MAIL = new Set(["gmail.com", "googlemail.com", "naver.com", "daum.net", "hanmail.net", "kakao.com", "nate.com", "outlook.com", "hotmail.com", "live.com", "msn.com", "yahoo.com", "yahoo.co.kr", "icloud.com", "me.com", "mac.com", "proton.me", "protonmail.com", "gmx.com", "aol.com"]);
+export const SUGGEST_MAX = 8, SUGGEST_MIN = 2, SUGGEST_SENDERS = 3, SUGGEST_KEYS = 100;
+const SECOND_LEVEL = new Set(["co", "or", "ac", "go", "ne", "re", "pe", "com", "org", "net", "edu", "gov"]);
+/** The name part of a domain: `mail.choir.example.org` -> `example`, `x.co.kr` -> `x`. */
+const labelOf = (domain: string): string => {
+	const parts = domain.split(".");
+	parts.pop();
+	while (parts.length > 1 && SECOND_LEVEL.has(parts[parts.length - 1]!)) parts.pop();
+	return parts[parts.length - 1] ?? domain;
+};
+const senderName = (from: string, addr: string): string => from.replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || addr;
+
+/** GET /api/mailbox/suggest?app=: one pass over the stored mail of the account that is still in its base box, grouped by sender domain, at most SUGGEST_MAX groups of SUGGEST_MIN mails or more. No model, no file read. */
+function suggestRoute(dir: string, url: URL): Response {
+	const app = url.searchParams.get("app") ?? "", entries = mailEntries(dir);
+	if (!entries.some(e => e.key === app)) return fail("메일 계정을 찾을 수 없어요", 404);
+	const placed = boxPass(dir), by = new Map<string, { count: number; names: Map<string, number>; keys: string[] }>(), keep = Math.min(SUGGEST_KEYS, mailKeep());
+	for (const r of mailRecords()) {
+		if (r.dir === "out" || instanceIn(entries, r.key) !== app || placed(r).box !== BASE_ID) continue;
+		const addr = addressesIn(r.from)[0]?.toLowerCase(), domain = addr?.slice(addr.indexOf("@") + 1);
+		if (!addr || !domain || FREE_MAIL.has(domain)) continue;
+		const g = by.get(domain) ?? by.set(domain, { count: 0, names: new Map(), keys: [] }).get(domain)!;
+		g.count++;
+		const name = senderName(r.from, addr);
+		g.names.set(name, (g.names.get(name) ?? 0) + 1);
+		if (g.keys.length < keep) g.keys.push(r.key);
+	}
+	const groups = [...by].filter(([, g]) => g.count >= SUGGEST_MIN).sort((a, b) => b[1].count - a[1].count || (a[0] < b[0] ? -1 : 1)).slice(0, SUGGEST_MAX)
+		.map(([domain, g]) => ({ domain: `@${domain}`, label: labelOf(domain), count: g.count, senders: [...g.names].sort((a, b) => b[1] - a[1]).slice(0, SUGGEST_SENDERS).map(([n]) => n), keys: g.keys }));
+	return json({ ok: true, groups });
+}
+
 /** /api/mailbox/*: the same stage of the route chain (and the same web login) as /api/mail/*. Not forwarded to peers. */
 export async function mailboxRoute(req: Request, url: URL, dir = DATA_DIR): Promise<Response> {
 	const route = `${req.method} ${url.pathname}`;
@@ -133,5 +190,7 @@ export async function mailboxRoute(req: Request, url: URL, dir = DATA_DIR): Prom
 	if (route === "POST /api/mailbox/learn") return learnRoute(dir, await body(req));
 	if (route === "PUT /api/mailbox/box") return putRoute(dir, await body(req));
 	if (route === "DELETE /api/mailbox/box") return deleteRoute(dir, await body(req));
+	if (route === "GET /api/mailbox/tone") return toneRoute(dir, url);
+	if (route === "GET /api/mailbox/suggest") return suggestRoute(dir, url);
 	return fail("not found", 404);
 }

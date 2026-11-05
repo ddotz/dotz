@@ -9,7 +9,7 @@ ICONS.folder ??= ICONS.projects;
 ICONS.sliders ??= "M4 7h9M17 7h3M4 17h3M11 17h9M13 5v4M9 15v4";
 ICONS.users ??= "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3.5 19a5.5 5.5 0 0 1 11 0M16 5.4a3 3 0 0 1 0 5.2M17.5 14a5.5 5.5 0 0 1 3 5";
 ICONS.tag ??= "M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0zM8 8h.01";
-const MX = { key: "", acct: "all", box: "all", show: 0, mark: false, it: null, of: new Map(), accts: new Map(), pane: "", chip: "", slot: new Map(), teach: null };
+const MX = { key: "", acct: "all", box: "all", scr: "", show: 0, mark: false, it: null, of: new Map(), accts: new Map(), pane: "", chip: "", slot: new Map(), teach: null };
 const MX_MODE = { auto: "자동 초안", ask: "확인 먼저", notify: "알림만", quiet: "조용히 모으기" };
 const MX_ZERO = { live: 0, unread: 0, needs: 0 };
 const MX_STOP = new Set(["re", "fw", "fwd", "회신", "답장", "전달", "안내", "확인", "문의", "요청", "관련", "공지", "the", "and", "for", "with", "your", "from", "this", "that", "mail"]);
@@ -21,17 +21,18 @@ const mxMail = () => INTG.items.filter(x => x.app === "mail");
 // The one item's key: `i:mail`, or the first mail instance when `mail` is gone. Any mail instance opens it.
 const mxKeyOf = inst => (mxMail().some(x => x.key === inst) ? `i:${(mxMail().find(x => x.key === "mail") || mxMail()[0]).key}` : `i:${inst}`);
 // The address: `monitoring/i%3Amail/<account>/<box>`; the box is encoded twice so a name with a slash stays one part. Without a suffix the item opens as it was.
-const mxHash = sel => (sel === MX.key && (MX.acct !== "all" || MX.box !== "all") ? `/${enc(MX.acct)}/${enc(enc(MX.box))}` : "");
+const mxHash = sel => (sel === MX.key && (MX.acct !== "all" || MX.box !== "all" || MX.scr) ? `/${enc(MX.acct)}/${enc(enc(MX.box))}${MX.scr ? `/${MX.scr}` : ""}` : "");
 function mxRoute(tgt) {
-  const m = /^(i:[^/]+)(?:\/([^/]*)\/([^/]*))?$/.exec(tgt || "");
+  const m = /^(i:[^/]+)(?:\/([^/]*)\/([^/]*)(?:\/([^/]*))?)?$/.exec(tgt || "");
   if (!m) return tgt;
   const key = mxKeyOf(m[1].slice(2));
+  MX.scr = m[4] === "set" || m[4] === "new" ? m[4] : "";
   if (m[2] !== undefined) { MX.acct = mxDec(m[2]); MX.box = mxDec(m[3]); } else if (key !== m[1]) { MX.acct = m[1].slice(2); MX.box = "all"; }
   return key;
 }
 const mxSync = () => { MON.sig = ""; const box = $("#mon-timeline"); if (box) box.scrollTop = 0; routeReplace(monHash()); monSchedule(); };
-const mxBox = id => { MX.box = id; mxSync(); };
-const mxPick = a => { MX.acct = a; MX.box = "all"; mxSync(); };
+const mxBox = id => { MX.box = id; MX.scr = ""; mxSync(); };
+const mxPick = a => { MX.acct = a; MX.box = "all"; MX.scr = ""; mxSync(); };
 const mxNew = () => { if (typeof mxOpenNew === "function") mxOpenNew(); };
 const mxSet = id => { if (typeof mxOpenSet === "function") mxOpenSet(id); };
 
@@ -80,6 +81,7 @@ function mxScope(it) {
   if (MX.acct !== "all" && !it.accounts.some(a => a.key === MX.acct)) MX.acct = "all";
   const ents = mxEntries(it);
   if (MX.box !== "all" && !ents.some(e => e.id === MX.box)) MX.box = "all";
+  if (MX.scr === "set" && (MX.acct === "all" || MX.box === "all")) MX.scr = "";
   const cnt = new Map(), mails = [], ok = new Set(), cut = MX.acct !== "all" || MX.box !== "all";
   for (const t of it.mails) {
     const m = MAILS.get(t), at = MX.of.get(t);
@@ -97,7 +99,7 @@ function mxScope(it) {
   const sc = MX.acct === "all" ? it.accounts : it.accounts.filter(a => a.key === MX.acct), all = cnt.get("all") || MX_ZERO;
   const line = [it.accounts.length > 1 ? (MX.acct === "all" ? `계정 ${it.accounts.length}개` : sc[0].account || sc[0].label) : "", `안 읽음 ${all.unread}`, `메일함 ${sc.reduce((c, a) => c + a.boxes.length, 0)}개`].filter(Boolean).join(" · ");
   const rows = ents.map(e => ({ ...e, c: cnt.get(mxGroup(e.id) ? e.id : e.k) || MX_ZERO }));
-  return { ...it, mails, notices: cut ? it.notices.filter(n => ok.has(mxNoticeMail(n))) : it.notices, mxk: `|${MX.acct}|${MX.box}`, mxLine: it.conn ? "" : line, all, rows,
+  return { ...it, mails: MX.scr ? [] : mails, notices: MX.scr ? [] : cut ? it.notices.filter(n => ok.has(mxNoticeMail(n))) : it.notices, mxk: `|${MX.acct}|${MX.box}|${MX.scr}`, mxLine: it.conn ? "" : line, all, rows,
     esig: JSON.stringify([MX.acct, MX.box, all, rows.map(e => [e.id, e.b.name, e.b.icon, !!e.b.base, e.b.mode, e.n, e.c]), it.accounts.map(a => [a.key, a.label, a.mk])]) };
 }
 
