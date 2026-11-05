@@ -106,3 +106,14 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 		});
 	});
 }
+
+test("a project's run line is its own: main's work shows only where the project really runs on main", async () => {
+	const v = await hub.view({ width: 390, height: 844 }, "/");
+	await waitFor(v, `typeof paintRunState === "function" && !!S`);
+	const line = (t: string, kinds: string[]) => q<boolean>(v, `C = { processes: [], conversations: [], conversation_kinds: ${JSON.stringify(kinds)} }; S.runs = { main: { kind: "working", detail: "메인의 일" } }; target = ${t}; return !!runStateOf();`);
+	expect(await line('"ch:5"', ["ch"])).toBe(false);
+	expect(await line('"ch:5"', [])).toBe(true);
+	expect(await line("MAIN", ["ch"])).toBe(true);
+	await q(v, `target = "ch:5"; S.runs = { "ch:5": { kind: "working", detail: "이 대화의 일" }, main: { kind: "working", detail: "메인의 일" } }; return 0;`);
+	expect(await q(v, `return runStateOf().detail;`)).toBe("이 대화의 일");
+});

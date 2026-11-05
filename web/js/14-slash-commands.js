@@ -396,7 +396,7 @@ function ctxSession(t) {
   const procs = (C && C.processes) || [], main = () => procs.find(x => x.name === "orchestrator");
   if (t === MAIN) return main();
   if (isLaneT(t)) return procs.find(x => x.name === laneOf(t));
-  if (isProjT(t) && C && !(C.conversation_kinds || []).includes("ch")) return main();
+  if (projOnMain(t)) return main();
   return ((C && C.conversations) || []).find(x => x.key === t);
 }
 function renderCtxRing() {
