@@ -6,6 +6,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConvSessions, type BgWork, type Conv, type ConvDeps, type Prompts } from "./convsessions.ts";
+import type { HubEvent } from "./events.ts";
+import { createPrompts } from "./prompts.ts";
 import type { Orchestrator, OrchOpts } from "./orchestrator.ts";
 import { MAIN } from "./session-key.ts";
 
@@ -21,7 +23,7 @@ const tmp = (): string => {
 
 type Fake = { o: Orchestrator; delivered: string[]; parked: number; applied: number; started(): boolean };
 
-function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: string } = {}) {
+function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: string; history?: HubEvent[]; queue?: Prompts } = {}) {
 	const dir = opts.dir ?? tmp();
 	let clock = 1_000_000;
 	const fakes = new Map<string, Fake>();
@@ -94,9 +96,9 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: s
 			makes.set(o.key, o);
 			return fake(o.key).o;
 		},
-		wire: (c: Conv) => ({ queue: queue(c.key), bg: { list: () => [], running: () => 0 } as unknown as BgWork }),
+		wire: (c: Conv) => ({ queue: opts.queue ?? queue(c.key), bg: { list: () => [], running: () => 0 } as unknown as BgWork }),
 		dataDir: dir,
-		history: () => [],
+		history: () => opts.history ?? [],
 		workers: () => 0,
 		workerPin: () => "main-pin",
 		log: () => {},
@@ -117,6 +119,27 @@ test("an owner message in a mail conversation goes to that conversation's own se
 	expect(created).toEqual(["mail:k1"]);
 	expect(delivered).toEqual([{ key: "mail:k1", text: "이거 파일 어디감?", target: "mail:k1" }]);
 	expect(delivered.some(d => d.key === MAIN)).toBe(false);
+});
+
+test("the message that starts a new session stays out of its starting history: its own turn carries it, once", () => {
+	const event = (kind: string, text: string, mid?: string): HubEvent => ({ ts: "2026-11-05T06:01:12.336Z", kind, source: "web", text, ...(mid ? { mid } : {}) });
+	const history = [event("message", "지난 질문", "m0"), event("out", "지난 답"), event("message", "앞 조각", "m1"), event("message", "한계 부분 수정해", "m2")];
+	let startSeed: string | undefined;
+	// A real start() reads the seed inside the delivery that spawns the session.
+	const q = createPrompts({ deliver: () => (startSeed ??= seed()), steer: () => true, working: () => false, note: (_t, _r, text) => text, isNote: () => false, post: async () => ({ delivered: true }), clearProgress: () => {}, persist: () => {}, log: () => {} });
+	const { registry, makes } = setup({ history, queue: q as unknown as Prompts });
+	const key = registry.keyOf("web:worklog");
+	const seed = () => makes.get(key)!.seed!();
+	const inbox = "[dotz inbox] web:worklog msg=m2\n앞 조각\n한계 부분 수정해";
+	registry.deliverTo(key, inbox, { target: "web:worklog", replyTo: "m2", refs: ["m1", "m2"], owner: true });
+	expect(startSeed).toContain("지난 질문");
+	expect(startSeed).not.toContain("앞 조각");
+	expect(startSeed).not.toContain("한계 부분 수정해");
+	// A fresh session started after a crash mid-turn: the replay carries the message the lost turn was answering.
+	q.onPrompt(inbox);
+	expect(seed()).not.toContain("한계 부분 수정해");
+	q.onAnswer("고쳤어요");
+	expect(seed()).toContain("한계 부분 수정해");
 });
 
 test("a mail's Discord thread answers in the mail's session, and main keeps the main conversation", () => {
