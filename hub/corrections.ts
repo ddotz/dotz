@@ -17,9 +17,10 @@ const HANDOVER = /^\s*\[[^\]\n]{1,60}\]|handoff|handover|인계/i;
 const COMMAND = /^\s*[/!]\S/;
 
 // First match wins, so the narrow topics go first. Lessons are matched too (lessonTopic in reflect.ts), hence the English words.
+// 표현 and 설명 are everyday verbs and nouns, so "copy" takes them only beside a complaint; a 문구 that is cut off is a display fault, not wording.
 const TOPICS = [
 	["linebreak", /줄바꿈|자막|line.?break/i],
-	["copy", /ai\s*(?:티|같|특유|slop)|slop|문체|문구|표현|카피|설명|wording|copywriting/i],
+	["copy", /ai\s*(?:티|같|특유|slop)|slop|문체|문구(?![이가은는을를]?\s*잘[리려림렸])|카피|wording|copywriting|(?:어색한|이상한|딱딱한|촌스러운)\s*(?:표현|설명)|(?:표현|설명)[이가은는을를]?\s*(?:너무|(?:좀\s*)?(?:어색|이상[해하한함]|별로|구려|구리|딱딱|촌스|장황|고쳐|고치|바꿔|바꾸|다듬|수정))/i],
 	["no-card", /카드|선택지|복수 선택|decision card|choice card/i],
 	["duplicate", /중복|합쳐|같은 역할|이원화|duplicate/i],
 	["stalled", /멈(?:춰|췄|추|춤)|죽은|살아있|쉬고|쉰다|돌긴|계속해|마저해|진행중으로|작업중|진행상황|보고해|보냈냐|stall|stuck|\bhang|keep going/i],

@@ -66,6 +66,12 @@ test("topics read English lessons too and fall back to other", () => {
 	expect(topicOf("Sign the release tag")).toBe("other");
 });
 
+test("everyday 표현 and 설명 are no wording complaint; a complaint about the words is, in messages and in lessons", () => {
+	for (const t of ["이걸 왜 그런지 설명해봐", "문서 설명에 적어둬", "이 상태는 점으로 표현하자", "한 화면에 다 표현되게 해줘", "첫 화면 문구가 잘려", "빈 문구 잘림 고쳐"]) expect(topicOf(t)).not.toBe("copy");
+	for (const t of ["표현이 너무 ai 같은데", "설명이 어색해", "설명 좀 바꿔", "어색한 표현 빼", "문구 고쳐", "이 문구 별로야", "문체가 딱딱해", "카피 다시 써", "ai slop 없애", "ai 티 나"]) expect(topicOf(t)).toBe("copy");
+	for (const t of ["- [11-01] 딱딱한 표현을 쓰지 않아요", "- [11-01] Keep the wording plain"]) expect(topicOf(t)).toBe("copy");
+});
+
 test("replayed night by night, the labeled week raises one card per topic with a repeat", () => {
 	const at = (ts: string) => Date.parse(`2026-${ts.replace(" ", "T")}:00+09:00`);
 	const entries = flagged.map(r => ({ ts: new Date(at(r.ts)).toISOString(), topic: topicOf(r.t), conv: "web", text: r.t, attachments: [], previous: "" }) as Correction);
