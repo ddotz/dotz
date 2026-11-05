@@ -1,5 +1,5 @@
 // Generated from hub/notice-ko.ts by hub/gen-notice-ko-web.ts; do not edit. stripMarkers (02-basic-markdown.js) and clockKo (11-watchtext.js) are the page's own.
-const { noticeKo, errorKo, cronKo, plainTable } = (() => {
+const { noticeKo, errorKo, cronKo, plainTable, dropIdNote } = (() => {
 const NAMES = {
   watch: "모니터링",
   watches: "모니터링",
@@ -196,6 +196,7 @@ const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\
 const STATUS = /[ \t]*\[(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류)\](?!\()/gi;
 const SLASH_RE = new RegExp(`(?<![\\w/:.])\\/(${Object.keys(SLASH).join("|")})(?![\\w/가-힣-])`, "g");
 const TARGET = /\b(lane|ch|th|mail|settings|auth|msg|dec)((?::[\w.@~%-]+)+)/g;
+const dropIdNote = (s) => s.replace(/`[^`\n]+`|[ \t]*\((?:st_[0-9a-f]{8}|(?:ch|th):\d{10,})\)/g, (m) => m[0] === "`" ? m : "");
 function target(kind, rest, o) {
   const id = rest.slice(1);
   if (kind === "lane")
@@ -242,7 +243,7 @@ function spanRaw(code, o) {
   return `\`${code}\``;
 }
 function prose(s, o) {
-  let t = s.replace(/`?\b(Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|TodoWrite)\b`?\s*(?:도구|tool\b)/g, (_m, n) => w(TOOLS[n.toLowerCase()]));
+  let t = dropIdNote(s).replace(/<#\d{10,}>/g, w("채널")).replace(/`?\b(Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|TodoWrite)\b`?\s*(?:도구|tool\b)/g, (_m, n) => w(TOOLS[n.toLowerCase()]));
   t = t.replace(/`([^`\n]+)`/g, (_m, c) => span(c, o));
   t = t.replace(/^[ \t]*\$[ \t]+(.+)$/gm, (_m, c) => w(commandKo(c) ?? "명령"));
   t = t.replace(/\bhttps?:\/\/([^\s/)>\]"'`]+)[^\s)>\]"'`]*/g, (_m, host) => /^(?:localhost|\d+\.\d+\.\d+\.\d+)(?::\d+)?$/.test(host) ? "내부 주소" : host.replace(/^www\./, ""));
@@ -364,5 +365,5 @@ function noticeKo(raw, o = {}) {
 ${files.join(`
 `)}`.trim() : body;
 }
-return { noticeKo, errorKo, cronKo, plainTable };
+return { noticeKo, errorKo, cronKo, plainTable, dropIdNote };
 })();

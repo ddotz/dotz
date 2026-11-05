@@ -3,6 +3,7 @@
 import { isSnowflake } from "./threads.ts";
 import { DECISION_HEAD } from "./choices.ts";
 import { dropForLine } from "./forline.ts";
+import { dropIdNote } from "./notice-ko.ts";
 import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
@@ -83,7 +84,7 @@ function plainParts(text: string): { emoji: string; body: string } {
 export function readable(text: string): string {
 	let fence = false;
 	const out: string[] = [];
-	for (const line of text.split("\n")) {
+	for (let line of text.split("\n")) {
 		if (/^\s*```/.test(line)) {
 			fence = !fence;
 			out.push(line);
@@ -93,6 +94,7 @@ export function readable(text: string): string {
 			out.push(line);
 			continue;
 		}
+		line = dropIdNote(line);
 		const h = /^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
 		if (h && !line.startsWith("-# ")) {
 			out.push(`**${h[1]!.replace(/\*\*/g, "")}**`);

@@ -100,6 +100,9 @@ const STATUS = /[ \t]*\[(?:run|done|ask|fail|warn|blocked|partial|later|ok|error
 const SLASH_RE = new RegExp(`(?<![\\w/:.])\\/(${Object.keys(SLASH).join("|")})(?![\\w/가-힣-])`, "g");
 const TARGET = /\b(lane|ch|th|mail|settings|auth|msg|dec)((?::[\w.@~%-]+)+)/g;
 
+// "워커(st_01a1a07f)": an id in brackets after the thing it names says nothing to the owner, and the sentence stands without it. A code span keeps it.
+export const dropIdNote = (s: string): string => s.replace(/`[^`\n]+`|[ \t]*\((?:st_[0-9a-f]{8}|(?:ch|th):\d{10,})\)/g, m => (m[0] === "`" ? m : ""));
+
 function target(kind: string, rest: string, o: PlainOpts): string {
 	const id = rest.slice(1);
 	if (kind === "lane") return o.lane?.(id.split(":")[0]!) ?? "세션";
@@ -132,7 +135,7 @@ function spanRaw(code: string, o: PlainOpts): string {
 }
 
 function prose(s: string, o: PlainOpts): string {
-	let t = s.replace(/`?\b(Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|TodoWrite)\b`?\s*(?:도구|tool\b)/g, (_m, n: string) => w(TOOLS[n.toLowerCase()]!));
+	let t = dropIdNote(s).replace(/<#\d{10,}>/g, w("채널")).replace(/`?\b(Bash|Read|Edit|Write|Grep|Glob|WebFetch|WebSearch|TodoWrite)\b`?\s*(?:도구|tool\b)/g, (_m, n: string) => w(TOOLS[n.toLowerCase()]!));
 	t = t.replace(/`([^`\n]+)`/g, (_m, c: string) => span(c, o));
 	t = t.replace(/^[ \t]*\$[ \t]+(.+)$/gm, (_m, c: string) => w(commandKo(c) ?? "명령"));
 	t = t.replace(/\bhttps?:\/\/([^\s/)>\]"'`]+)[^\s)>\]"'`]*/g, (_m, host: string) => (/^(?:localhost|\d+\.\d+\.\d+\.\d+)(?::\d+)?$/.test(host) ? "내부 주소" : host.replace(/^www\./, "")));

@@ -8,7 +8,7 @@ function inline(s) {
     codes.push(`<code${/^(~|\.{0,2}\/)[^\s]*$|^[\w.-]+\/[\w./-]+(:\d+(-\d+)?)?$/.test(t) ? ' class="path"' : ""}>${esc(t)}</code>`);
     return `\0${codes.length - 1}\0`;
   });
-  return esc(held).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)\0]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+  return dropIdNote(esc(held)).replace(/&lt;#(\d{10,})&gt;/g, (_, id) => `<a href="#chat/ch:${id}">${esc(targetName(`ch:${id}`))}</a>`).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)\0]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/(^|[^"'>=\w])(https?:\/\/[^\s<\0]*[^\s<.,;:!?)\]'"\0])/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
     .replace(/~~([^~\n]+)~~/g, "<s>$1</s>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "$1<i>$2</i>")
     .replace(/\0(\d+)\0/g, (_, n) => codes[n]);
