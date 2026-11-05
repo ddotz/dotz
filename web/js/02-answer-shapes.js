@@ -5,6 +5,22 @@
 // same text differently, and hub/answer-surfaces-web.test.ts fails on it. An answer reaches the page whole (11-todo-strip.js streamIn), so it is drawn once, on
 // its first paint: the live status and progress notes never come through here, and there is no text that later turns into a card.
 const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
+// A plain "이름: 값" item is the same row (MODE.md "Numbers", "Changed values") when the name is a few words and the value no sentence; a sentence with a colon stays a list item.
+const ANS_PLAIN = /^([^*:：`.,?!()\n]{1,24}?)\s*[:：]\s+(\S.*)$/;
+const ANS_SENTENCE_END = /[.!?요다죠]\s*$/;
+const ANS_PLAIN_MAX = 60;
+// "5,308ms → 36ms": numbers on both sides are a change; words around an arrow are a path or a flow ("설정 → 앱").
+const ANS_CHANGE = /^([^→\n]*\d[^→\n]*?)\s*→\s*([^→\n]*\d[^→\n]*)$/;
+const ansKv = text => {
+  const m = ANS_LABEL.exec(text);
+  if (m) return m;
+  const p = ANS_PLAIN.exec(text);
+  return p && p[2].length <= ANS_PLAIN_MAX && !ANS_SENTENCE_END.test(p[2]) ? p : null;
+};
+function ansValue(value) {
+  const m = ANS_CHANGE.exec(value);
+  return m ? `<span class="rc-d nw-chg"><s>${inline(m[1])}</s> → <em>${inline(m[2])}</em></span>` : inline(value);
+}
 const ANS_EVIDENCE = /^근거:\s*(\S.*)$/;
 const ANS_HEAD = /^\*\*([^*\n]+)\*\*$/, ANS_COUNT = /^(.+?)\s*\((\d+회)\)$/;
 const ANS_SENTENCE = /^.+?[.!?](?=\s|$)/;
@@ -16,15 +32,15 @@ function answerParts({ text, files }, o = {}) {
   const md = answerNode(text, { ...o, shaped: files.length > 0 }), ev = files.length ? md.querySelector(":scope > .ans-ev:last-child") : null;
   return [md, ...ansFiles(files), ev].filter(Boolean);
 }
-const ansRow = (key, value) => `<div class="rc-row"><span class="rc-k">${inline(key)}</span><span class="rc-w">${inline(value)}</span></div>`;
+const ansRow = (key, value) => `<div class="rc-row"><span class="rc-k">${inline(key)}</span><span class="rc-w">${value}</span></div>`;
 // The list as a card, or null. Two or more flat items only: one line or a nested list is lighter as text.
 function ansListHtml(list) {
   if (list.items.length < 2 || list.items.some(i => i.sub)) return null;
-  if (list.t === "ol") return `<div class="ans-card"><div class="rc-rows ans-steps">${list.items.map((x, i) => ansRow(String(i + 1), x.text)).join("")}</div></div>`;
+  if (list.t === "ol") return `<div class="ans-card"><div class="rc-rows ans-steps">${list.items.map((x, i) => ansRow(String(i + 1), inline(x.text))).join("")}</div></div>`;
   if (timeList(list)) return `<div class="ans-card">${timeRowsHtml(list.items)}</div>`;
-  const kv = list.items.map(i => ANS_LABEL.exec(i.text));
+  const kv = list.items.map(i => ansKv(i.text));
   if (!kv.every(Boolean)) return null;
-  const rows = kv.map(m => ansRow(m[1], m[2])).join("");
+  const rows = kv.map(m => ansRow(m[1], ansValue(m[2]))).join("");
   return `<div class="ans-card"><div class="rc-rows ans-keys${kv.some(m => m[2].length > ANS_WORDY) ? " ans-wordy" : ""}">${rows}</div></div>`;
 }
 // The answer's one bold thing is its first sentence, drawn only when a shape below it carries the rest. A first line with no sentence end counts when it
@@ -48,11 +64,11 @@ function ansFiles(files) {
 }
 // A "**title**" line over a list of labels: one part of a bundle report, or null when the list is not all labels. ansJoin draws the parts.
 function ansSection(list, plain) {
-  const kv = list.items.map(i => ANS_LABEL.exec(i.text));
+  const kv = list.items.map(i => ansKv(i.text));
   if (!kv.every(Boolean) || list.items.some(i => i.sub)) return null;
   const rows = kv.map(m => {
     const c = ANS_COUNT.exec(m[1]);
-    return `<div class="rc-row ans-li"><span class="rc-k">${inline(c ? c[1] : m[1])}</span>${c ? `<span class="ans-n">${esc(c[2])}</span>` : ""}<span class="rc-w">${inline(m[2])}</span></div>`;
+    return `<div class="rc-row ans-li"><span class="rc-k">${inline(c ? c[1] : m[1])}</span>${c ? `<span class="ans-n">${esc(c[2])}</span>` : ""}<span class="rc-w">${ansValue(m[2])}</span></div>`;
   });
   return { n: rows.length, plain, html: `<div class="rc-sh"><span>${inline(ANS_HEAD.exec(list.head)[1])}</span></div>${rows.join("")}` };
 }

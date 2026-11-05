@@ -31,6 +31,8 @@ const FORMATS: Record<string, [string, string]> = {
 	list: ["찾았어요.\n\n```목록\n재무 | 김 | 10:42\n가족 | 엄마\n```", ".mlist"],
 	"bold over code": ["고쳤어요.\n\n**`hub/a.ts` 고침:** 끝났어요.", "b"],
 	rule: ["앞 문단이에요.\n\n---\n\n뒤 문단이에요.", "hr"],
+	numbers: ["정리했어요.\n\n- 전체 파일: 42개\n- 남은 일: 3건", ".ans-keys"],
+	changes: ["빨라졌어요.\n\n- 승인 목록: 5,308ms → 36ms\n- 채팅: 263ms → 154ms", ".ans-keys .nw-chg s"],
 };
 const hub = fakeHub({
 	api: (_req, url) => {
@@ -98,6 +100,13 @@ for (const [surface, draw] of Object.entries(SURFACES)) {
 		});
 	}
 }
+
+test("a sentence with a colon stays a list, and words around an arrow are not a change", async () => {
+	const prose = "정리했어요.\n\n- 앱 알림: 설정에 종류마다 줄 하나예요.\n- 답글: 초안을 쓰고 기다려요.";
+	expect(await drawn(SURFACES["main chat"]!(prose), ".ans-keys")).toBe(0);
+	const flow = "정리했어요.\n\n- 앱 알림: 설정 → 앱 · 알림\n- 답글: 초안 필요 → 확인 대기";
+	expect(await drawn(SURFACES["main chat"]!(flow), ".nw-chg")).toBe(0);
+});
 
 test("an id in brackets goes and a channel tag never shows raw on any surface", async () => {
 	const text = "알림 워커(st_01a1a07f)가 <#000000000000000000>에 올렸어요.";
