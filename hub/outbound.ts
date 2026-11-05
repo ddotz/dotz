@@ -31,7 +31,7 @@ import { createPrompts, type Reply, type WorkLink } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
-import { splitTone, stripHandoff, stripProjectInfo } from "./tone.ts";
+import { splitTone, stripHandoff, stripLater, stripProjectInfo } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards } from "./approval-queue.ts";
@@ -93,6 +93,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		post: (target, text, replyTo) => out(target, text, replyTo, { auto: true, session: key }),
 		// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
 		announce: (target, text, worker) => void systemNote(target, text, "deferred", worker).catch(e => log(`deferral note to ${target} failed: ${e}`)),
+		interim: (target, text) => void out(target, text, undefined, { auto: true, session: key, keepsOpen: true }).catch(e => log(`note to ${target} failed: ${e}`)),
 		// The worker the [later] turn just spawned, as OmO's task store lists it (bgWork is created below and read at call time).
 		workFor: target => {
 			const w = bg()?.list().find(w => w.status === "running" && w.target === target);
@@ -230,7 +231,7 @@ const lateRequest = (target: string) => {
 };
 // An answer (not a progress note, not a gateway notice, not a held approval card shown later) settles the owner messages waiting in this conversation.
 function settleAnswer(j: OutJob): void {
-	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key && !j.extra.queued) {
+	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key && !j.extra.queued && !j.extra.keepsOpen) {
 		// The answer ends the turn's progress reports here, the web chat's included: none may post after it.
 		void livestatus.stop(j.target);
 		const { done, keep } = settleWaiting(awaiting.get(j.target) ?? [], j.replyTo, isLocal(j.target), (convs.forTarget(j.target)?.queue ?? queue).waitingIds(j.target));
@@ -357,10 +358,11 @@ const cardsNoteFor = (target: string): string | undefined => {
 export const systemNote = (target: string, text: string, system: string, worker?: string) => out(target, text, undefined, { source: "gateway", system, ...(worker ? { worker } : {}) });
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
-	const answersOwner = extra.source === undefined || extra.source === "orchestrator";
-	text = stripSteerMark(text);
+	const answersOwner = (extra.source === undefined || extra.source === "orchestrator") && !extra.keepsOpen;
+	const said = stripSteerMark(text);
+	text = stripLater(said);
 	noteProjectInfo(target, text);
-	if (text && !stripProjectInfo(text)) return { delivered: true };
+	if (said && !stripProjectInfo(text)) return { delivered: true };
 	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.
 	if (target === "alert" && extra.source === "gateway" && !extra.update_key && repeatAlert(text)) extra = { ...extra, repeat: true };
 	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).

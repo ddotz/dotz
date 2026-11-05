@@ -42,7 +42,7 @@ function page() {
 	const data = cut(web("13-data.js"), "function ingestAct", "async function loadTarget");
 	const TS: Record<string, { acts: unknown[]; ak: Set<string>; cap: number }> = {};
 	const env = {
-		noticeKo, plainTable, choiceFree: (s: string) => s, NK: {},
+		noticeKo, plainTable, choiceFree: (s: string) => s, NK: {}, botName: "땅콩",
 		oneLine: (s: unknown) => String(s).replace(/\s+/g, " ").trim().slice(0, 160),
 		toolLineKo: () => "", target: "web", MAIN: "web", CV: { full: false }, isProjT: () => false, chatPush: () => {}, termPush: () => {},
 		ts: (t: string) => TS[t] ?? (TS[t] = { acts: [], ak: new Set(), cap: 100 }), TS,

@@ -81,7 +81,7 @@ function rcRowsNode(text) {
 // null when there is nothing to show.
 function resultCard(opts) {
   const sp = rcSplit(opts.text), raw = opts.raw !== undefined ? String(opts.raw).trim() : sp.raw;
-  let title = opts.title !== undefined ? rcPlain(opts.title) : "", body = choiceFree(sp.text);
+  let title = opts.title !== undefined ? rcPlain(opts.title) : "", body = choiceFree(stripMarkers(sp.text, true));
   if (opts.title === undefined && body) {
     const [first, ...rest] = body.split("\n"), t = rcPlain(first);
     if (t && t.length <= 120 && !rcLabel(first)) { title = t; body = rest.join("\n").trim(); }

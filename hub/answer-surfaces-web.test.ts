@@ -58,6 +58,7 @@ const SURFACES: Record<string, (text: string) => string> = {
 	"peer message": text => { const e = `{ ts: "${ts}", kind: "message", via: "맥미니", target: "web", text: ${JSON.stringify(text)} }`; return `peerMsgCard(${e}, peerMsgOf(${e}), "12:00")`; },
 	"monitoring decision": text => `monDecisionNode({ ...${notice(`${text}\n\n결정: 넣을까요?\n**1) 넣기**\n오늘 나가요.\n**2) 미루기**\n내일 나가요.`, "decision")}, title: "넣을까요?", decision: { state: "open", to: "main", options: [{ n: 1, label: "넣기" }, { n: 2, label: "미루기" }] } })`,
 };
+const shown = (expr: string) => ev<string>(view, `(() => { const box = document.createElement("div"); document.body.append(box); box.append(...[${expr}].flat().filter(Boolean)); const t = box.innerText; box.remove(); return t; })()`);
 const drawn = (expr: string, sel: string) => ev<number>(view, `(() => { const box = document.createElement("div"); document.body.append(box); box.append(...[${expr}].flat().filter(Boolean)); const n = box.querySelectorAll(${JSON.stringify(sel)}).length; box.remove(); return n; })()`);
 
 for (const [surface, draw] of Object.entries(SURFACES)) {
@@ -69,12 +70,54 @@ for (const [surface, draw] of Object.entries(SURFACES)) {
 	}
 }
 
+// The words of the gateway around a sentence, as stored: each is drawn on each surface. The sentence stays, the word never shows, a code span or not.
+const CONTROL: Record<string, string> = {
+	"[later] opening in code": "`[later]` 이동이 끝나면 등록할게요.\n\n[later]",
+	"[later] closing in code": "이동이 끝나면 등록할게요.\n\n`[later]`",
+	"[later] after the sentence": "이동이 끝나면 등록할게요. [later]",
+	"[later] bare, leading": "[later] 이동이 끝나면 등록할게요.",
+	"[keepalive]": "`[keepalive]` 이동이 끝나면 등록할게요.",
+	"[done] in code": "`[done]` 이동이 끝나면 등록할게요.",
+	"[ask] closing": "이동이 끝나면 등록할게요. `[ask]`",
+	"a lone dash": "이동이 끝나면 등록할게요.\n\n-",
+	"[gateway check]": "[gateway check] [done] 이동이 끝나면 등록할게요.",
+	"[dotz gateway] line": "[dotz gateway] 이동이 끝나면 등록할게요.",
+	"[orchestrator-guard] line": "[orchestrator-guard] 이동이 끝나면 등록할게요.",
+	"For the bot": "이동이 끝나면 등록할게요.\n\nFor 땃쥐: 재시작",
+	"project info": "이동이 끝나면 등록할게요.\n<project-info>{\"name\":\"a\"}</project-info>",
+};
+const LEAK = /\[(?:later|keepalive|done|ask|run|fail|gateway check|dotz gateway|orchestrator-guard|file)\]|For 땃쥐|project-info|(?:^|\n)\s*-\s*$/;
+for (const [surface, draw] of Object.entries(SURFACES)) {
+	for (const [word, text] of Object.entries(CONTROL)) {
+		test(`${word} on ${surface} shows only the sentence`, async () => {
+			const seen = await shown(draw(text));
+			expect(seen).toContain("이동이 끝나면 등록할게요");
+			expect(seen).not.toMatch(LEAK);
+		});
+	}
+}
+
+test("a code span that talks about a control word is kept on every surface", async () => {
+	const text = "그 턴은 `[later]`로 끝나고 `[done]`은 이모지로 나가요.";
+	for (const [surface, draw] of Object.entries(SURFACES)) {
+		const box = await shown(draw(text));
+		expect(`${surface}: ${box.includes("[later]") && box.includes("[done]")}`).toBe(`${surface}: true`);
+	}
+});
+
+test("a preview and an activity row read a control word the same", async () => {
+	for (const text of Object.values(CONTROL)) {
+		expect(await ev<string>(view, `convPreview(${JSON.stringify(text)})`)).not.toMatch(LEAK);
+		expect(await ev<string>(view, `friendlyLine(${JSON.stringify(text)})`)).not.toMatch(LEAK);
+	}
+	expect(await ev<boolean>(view, `isLaterText("\`[later]\`")`)).toBe(true);
+});
+
 test("a title above the body keeps the one bold thing", async () => {
 	expect(await drawn(SURFACES["main chat"]!(FORMATS.labels![0]), ".ans-lead")).toBe(1);
 	for (const s of ["notice sheet", "monitoring card", "monitoring decision"]) expect(await drawn(SURFACES[s]!(FORMATS.labels![0]), ".ans-lead")).toBe(0);
 });
 
-const shown = (expr: string) => ev<string>(view, `(() => { const box = document.createElement("div"); document.body.append(box); box.append(...[${expr}].flat().filter(Boolean)); const t = box.innerText; box.remove(); return t; })()`);
 const RAW = /\*\*|`|\[(?:done|run|ask|file)\]|(?:^|\n)\s*(?:-#\s|결정\s*:|>\s)|\|\s*-{2,}/;
 
 test("a progress note draws its marks and carries no line of a full message", async () => {
