@@ -115,7 +115,9 @@ function nscPaint(force) {
   if (!force && sig === NSC.sig) return;
   NSC.sig = sig;
   const first = !nscBox.list.firstChild, fresh = NT.loaded ? freshKeys(NSC.seen, rows.map(n => n.id)) : new Set();
+  const anchor = force || first ? null : rowAnchor(nscBox.list, ".nsc-r:not([data-child])", "nid", $("#views"));   // a live update leaves the reader's place alone
   nscBox.list.replaceChildren(...nscList(rows));
+  rowHold(anchor);
   if (!first) for (const id of fresh) { const r = nscRowOf(id); if (r) motionIn(r, "top"); }   // a notification that arrives slides in at the top of its group
 }
 const nscRowOf = id => nscBox && nscBox.list.querySelector(`.nsc-r[data-nid="${CSS.escape(String(id))}"]:not([data-child])`);
