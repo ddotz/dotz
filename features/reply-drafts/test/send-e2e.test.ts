@@ -77,8 +77,10 @@ describe("mail reply: draft -> 1) 보내기 -> zele reply with the file", () => 
 		const { rec } = await offered();
 		pick(env, rec.id, 1);
 		const down = fakeZele({ replyCode: 1 });
-		const failed = await runDraft(["send", rec.id], "", { run: down.run, hub: fakeHub() });
+		const told = fakeHub();
+		const failed = await runDraft(["send", rec.id], "", { run: down.run, hub: told });
 		expect(failed.code).toBe(1);
+		expect(told.posts).toEqual([{ path: "/api/approvals/failed", body: { op: "report", ref: rec.id, conv: `mail:${rec.ref}`, text: failed.lines[0] } }]);
 		expect(failed.lines[0]).toContain("보내지 못했어요");
 		expect(failed.lines[0]).toContain("zele: thread changed");
 		expect(getDraft(rec.id)!.status).toBe("pending");
