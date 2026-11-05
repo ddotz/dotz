@@ -15,5 +15,5 @@ export function styleWithExamples(style: ReplyStyle, app: string, text: string, 
 	const past: PastPair[] = pairs.map(p => ({ comment: p.received, reply: p.reply, at: p.at, thread: "", ...(p.edited ? { edited: true as const } : {}), ...(who && p.from && addressesOf(p.from)[0] === who ? { same: true } : {}) }));
 	const same = past.filter(p => p.same).sort((a, b) => b.at - a.at).slice(0, 2);
 	const close = [...same, ...similarPairs(text, past.filter(p => !same.includes(p)), EXAMPLES)].slice(0, EXAMPLES);
-	return withExamples(style, close, [...pairs].sort((a, b) => b.at - a.at).map(p => p.reply));
+	return withExamples(style, close, [...pairs].sort((a, b) => b.at - a.at).map(p => p.reply), text);
 }
