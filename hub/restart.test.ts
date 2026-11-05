@@ -25,6 +25,8 @@ test("a busy lane is waited for past 20 minutes, never killed; the owner is told
 	await advance(3 * 3600_000);
 	expect(state.exits).toBe(0);
 	expect(state.notices.length).toBe(1);
+	expect(state.notices[0]).toContain("작업 1개");
+	expect(state.notices[0]).not.toContain(state.busy[0]!);
 	state.busy = [];
 	await advance(5000);
 	expect(state.exits).toBe(1);
