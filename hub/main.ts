@@ -95,7 +95,8 @@ import type { ServerWebSocket } from "bun";
 import { appEntries, appKeyOf, integrationContext, readAppsFile } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
 import { applyMemory, mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
-import { setFormLink } from "./auth.ts";
+import { setAuthOpened, setFormLink } from "./auth.ts";
+import { openedText } from "./auth-wait.ts";
 import { webBase as getWebBase, webLink } from "./weblink.ts";
 import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
 import { commentDraftFacts } from "./comments/gateway.ts";
@@ -198,6 +199,12 @@ discord.setFileResolver(p => resolveAllowed(p, fileRoots(), sentFiles()));
 // Cloudflare Tunnel (hub/cloudflared.ts) and the device gate and sets the address; "local" and "tailscale" keep web.public_url or the tailnet lookup.
 void webAccess.start();
 setFormLink(() => getWebBase());
+// The asking conversation (and the messenger rooms it fans out to) hears that a form is open; Discord already has the button message.
+setAuthOpened((w, discordPosted) => {
+	if (w.target.startsWith("lane:")) return;
+	const base = getWebBase();
+	void out(w.target, openedText(w, base ? `${base}/` : undefined), undefined, { source: "gateway", ...(discordPosted ? { discord_route: false } : {}) }).catch(e => log(`auth open notice to ${w.target} failed: ${e}`));
+});
 discord.setFileLink(p => webLink(`/api/file?path=${encodeURIComponent(p)}&dl=1`));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
 startPush({ subject: () => getWebBase() ?? "mailto:dotz@example.com" });
