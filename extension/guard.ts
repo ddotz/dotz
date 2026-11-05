@@ -279,6 +279,8 @@ export function pinOmoTaskModel(input: any, pin: string): void {
 	}
 	if (Array.isArray(input?.tasks)) delete input.model;
 }
+// A conversation on its own model keeps its workers on main's: the hub writes that pin to DOTZ_WORKER_PIN_FILE (hub/convsessions.ts) only then.
+export const ownWorkerPin = (file: string | undefined): string | undefined => (file && existsSync(file) ? readFileSync(file, "utf8").trim() || undefined : undefined);
 // The live session's model as a task pin (`provider/model[:effort]`, OmO's own provider names), or undefined before one is known.
 export function livePin(model: { provider?: string; id?: string } | undefined, effort: unknown): string | undefined {
 	if (!model?.provider || !model.id) return undefined;
@@ -1193,7 +1195,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			addProjectFooter(verdict.input, process.env.DOTZ_CONV, taskCwd);
 			const dear = fableOk() ? undefined : expensiveTaskModel(event.input);
 			if (dear) return { block: true, reason: fableReason("this task call", dear) };
-			const pin = process.env.DOTZ_ORCHESTRATOR === "1" && !process.env.DOTZ_LANE && isOmoTaskInput(event.input) ? livePin(ctx?.model, pi.getThinkingLevel?.()) : undefined;
+			const pin = process.env.DOTZ_ORCHESTRATOR === "1" && !process.env.DOTZ_LANE && isOmoTaskInput(event.input) ? (ownWorkerPin(process.env.DOTZ_WORKER_PIN_FILE) ?? livePin(ctx?.model, pi.getThinkingLevel?.())) : undefined;
 			if (pin) {
 				pinOmoTaskModel(event.input, pin);
 				debug({ phase: "task-model-pin", pin });

@@ -101,15 +101,17 @@ export function orchBusy(o: Pick<typeof orch, "status" | "ctx"> = orch): string 
 // source ("orchestrator" for main, "conv:<key>"); keepalive: whether it pings to keep the 1h prompt cache; env: extra
 // environment for its process (DOTZ_CONV); scope: a paragraph its start prompt ends with; seed: what a brand-new session is
 // handed with its first prompt (the conversation's recent history), in the steer slot a handover uses; asks: whether the
-// lane questions still waiting for the owner ride along (main only: a conversation answers here and nothing else).
-export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: () => string; asks?: boolean };
+// lane questions still waiting for the owner ride along (main only: a conversation answers here and nothing else); model: the
+// conversation's own selector, when the owner picked one (else it inherits main's).
+export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: () => string; asks?: boolean; model?: () => string | undefined };
 export function createOrchestrator(opts: OrchOpts) {
 	const who = opts.key === "main" ? "orchestrator" : `conversation session ${opts.key}`;
 	// A conversation's session is handed its own prompts only: another conversation's pending question in it is what made a
 	// window answer out of someone else's context (owner 2026-11-03: "대화창 간에 서로 답변 꼬임").
 	const carriesAsks = opts.asks !== false;
+	const chosen = () => (opts.model?.() ? parseSelector(opts.model()!) : orchestratorModel());
 	// This session's compaction point, from the model it is running now (config context.models or orchestrator.rotate_tokens).
-	const compactAt = () => compactAtFor(orch.activeModel || selectorOf(orchestratorModel()), cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens);
+	const compactAt = () => compactAtFor(orch.activeModel || selectorOf(chosen()), cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens);
 	const orch = {
 		status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
 		// Why a "rate-limited" pause is on: a usage limit, or a billing/auth problem only the owner can fix.
@@ -747,14 +749,14 @@ export function createOrchestrator(opts: OrchOpts) {
 	function start(): void {
 		if (proc) return;
 		stopping = false;
-		const { sessionFile: prior, runtime: priorRuntime, activeModel: priorActive } = saved();
-		const model = selectorOf(orchestratorModel());
+		const { sessionFile: prior, runtime: priorRuntime, activeModel: priorActive, model: priorModel } = saved();
+		const model = selectorOf(chosen());
 		const runtime = runtimeFor("orchestrator");
 		const entries = chainAfter(model, fallbackChain("orchestrator"));
 		// The hub switches the chain itself on OmO, and on omp when an entry is conditional (fallback.ts hubChain); otherwise the
 		// runtime gets the models as its own plain fallback list.
 		const driven = hubChain(runtime.id, entries);
-		const nextChain = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
+		const nextChain = driven ? new Chain(model, driven, chosen().thinking) : undefined;
 		let spawnModel = model;
 		if (nextChain) {
 			const until = nextChain.exhaustedUntil();
@@ -771,9 +773,11 @@ export function createOrchestrator(opts: OrchOpts) {
 		// saved before the runtime was recorded is omp's). So does a chain switch (switchTo), and a start whose entry moves onto
 		// or off an API key since the session last ran (a gateway restart after the limit lifted). A model or effort change in
 		// config does not: the session is resumed on the new model, as OmO does on /model (owner 2026-10-21: a fresh session on
-		// every switch reloaded the whole context).
+		// every switch reloaded the whole context). A conversation session that starts on another selector than it last ran (parked or
+		// restarted across the change) does take a fresh session with a handover: it has no cache worth keeping by then.
 		const keyMove = Boolean(priorActive) && priorActive !== spawnModel && (keyedSelector(priorActive) || keyedSelector(spawnModel));
-		const rotate = prior && existsSync(prior) && (rotating || Boolean(freshSwitch) || keyMove || statSync(prior).size > ROTATE_BYTES || (priorRuntime ?? "omp") !== runtime.id);
+		const modelMove = opts.key !== "main" && Boolean(priorModel) && priorModel !== model;
+		const rotate = prior && existsSync(prior) && (rotating || Boolean(freshSwitch) || keyMove || modelMove || statSync(prior).size > ROTATE_BYTES || (priorRuntime ?? "omp") !== runtime.id);
 		const switched = freshSwitch ?? (keyMove ? { again: false } : undefined);
 		freshSwitch = undefined;
 		rotating = false;
@@ -801,7 +805,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		orch.activeModel = spawnModel;
 		chained = !chain && entries.length > 0;
 		const steer = steerToken(HUB_TOKEN, `orchestrator:${opts.key}`);
-		proc = markSteers(runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env, systemNote: steerContract(steer) }), steer);
+		proc = markSteers(runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, ...(opts.model?.() ? { workers: selectorOf(orchestratorModel()) } : {}), fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env, systemNote: steerContract(steer) }), steer);
 		orch.status = "starting";
 		orch.stoppedBy = "";
 		orch.stoppedAt = "";
@@ -971,13 +975,13 @@ export function createOrchestrator(opts: OrchOpts) {
 	// A model switched in place moves the orchestrator's task workers with it (the profile OmO reads); the guard pins subagent_type
 	// workers to the live model on each call (extension/guard.ts pinOmoTaskModel).
 	function workersFollow(model: string): void {
-		if (adapter?.id === "omo") writeOrchestratorProfile(undefined, model);
+		if (adapter?.id === "omo" && !opts.model?.()) writeOrchestratorProfile(undefined, model);
 	}
 	function switchInPlace(): boolean {
 		if (!proc?.setModel || !adapter || chained || orch.status !== "idle" || (chain && chain.active !== 0)) return false;
-		const model = selectorOf(orchestratorModel());
+		const model = selectorOf(chosen());
 		const driven = hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator")));
-		const next = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
+		const next = driven ? new Chain(model, driven, chosen().thinking) : undefined;
 		if (next && next.initial() !== 0) return false;
 		proc.setModel(model);
 		workersFollow(model);
@@ -1003,9 +1007,9 @@ export function createOrchestrator(opts: OrchOpts) {
 	function applyChainChange(): "updated" | "restarted" | "after-turn" | "next-start" {
 		const paused = orch.status === "rate-limited";
 		if (!proc && !paused) return "next-start";
-		const model = currentModel || selectorOf(orchestratorModel());
+		const model = currentModel || selectorOf(chosen());
 		const driven = adapter ? hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator"))) : undefined;
-		const fresh = () => (driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined);
+		const fresh = () => (driven ? new Chain(model, driven, chosen().thinking) : undefined);
 		if (paused) {
 			const until = Date.parse(orch.rateLimitedUntil ?? "");
 			const next = fresh();

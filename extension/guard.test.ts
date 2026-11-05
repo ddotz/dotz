@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
 import { LOOKUP_MODEL, omoSelector } from "../hub/runtime/omo.ts";
-import { addProjectFooter, FOLDER_RULES_MARKER, PROJECT_MARKER, budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
+import { addProjectFooter, FOLDER_RULES_MARKER, PROJECT_MARKER, budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -410,4 +410,13 @@ test("addProjectFooter: a brief naming a rule folder carries its AGENTS.md, once
 	} finally {
 		rmSync(repo, { recursive: true, force: true });
 	}
+});
+
+test("a conversation on its own model pins its task workers on main's, and only then", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pin-")), file = join(dir, "worker-pin");
+	expect(ownWorkerPin(undefined)).toBeUndefined();
+	expect(ownWorkerPin(file)).toBeUndefined();
+	writeFileSync(file, "anthropic-subscription/claude-opus-5-5:high\n");
+	expect(ownWorkerPin(file)).toBe("anthropic-subscription/claude-opus-5-5:high");
+	rmSync(dir, { recursive: true, force: true });
 });

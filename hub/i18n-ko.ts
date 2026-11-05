@@ -89,7 +89,8 @@ export const ko: Catalog = {
 		effortTitle: who => `${who} 추론 강도`,
 		updated: who => `${who}: 바꿨어요`,
 		unchanged: who => `${who}: 그대로예요`,
-		applied: { live: "바로 적용", restarted: "다시 시작해서 적용", "next-start": "다음 시작부터 적용" },
+		applied: { live: "바로 적용", restarted: "다시 시작해서 적용", "next-start": "다음 시작부터 적용", "next-turn": "다음 턴부터 적용" },
+		inheritMain: "메인 대화와 같게",
 		restartGateway: "게이트웨이 재시작을 예약해 뒀어요",
 		restartGatewayNote: minutes => `메인 에이전트와 세션이 모두 쉬면 다시 시작해요. ${minutes}분을 넘기면 알려 드려요.`,
 		restartMain: who => `${who}: 다시 시작하는 중이에요`,
@@ -129,7 +130,7 @@ export const ko: Catalog = {
 			title: "명령어",
 			groups: [
 				{ label: "보기", items: [["/status", "메인 에이전트·세션·Discord 상태"], ["/context", "프로세스별 컨텍스트 사용량"], ["/lanes", "세션과 모델 목록"], ["/quota", "공급자별 사용량 한도"], ["/providers", "로그인한 공급자와 모델 수"]] },
-				{ label: "모델", items: [["/model [대상] [모델] [추론 강도]", "모델 보기·바꾸기. 대상: orchestrator, lanes(새 세션), workers(서브에이전트), 세션 이름"], ["/effort <대상> <수준>", `추론 강도 바꾸기 (${levels})`], ["/compact <대상>", "컨텍스트 압축"]] },
+				{ label: "모델", items: [["/model [대상] [모델] [추론 강도]", "모델 보기·바꾸기. 대상: orchestrator, lanes(새 세션), workers(서브에이전트), 세션 이름. 프로젝트 대화에서 대상 없이 쓰면 그 대화만 바뀌고 inherit는 메인 대화와 같게 돌려요"], ["/effort <대상> <수준>", `추론 강도 바꾸기 (${levels})`], ["/compact <대상>", "컨텍스트 압축"]] },
 				{ label: "세션", items: [["/stop <세션>", "세션 멈추기 (나중에 이어갈 수 있어요)"], ["/resume <세션> [메시지]", "멈춘 세션 이어가기, 실행 중이면 메시지 보내기"], ["/abort [대상]", "하던 일 중단 (기본: orchestrator)"], ["/restart <대상>", `프로세스 다시 시작. gateway는 모든 작업이 끝날 때까지 기다려요 (${minutes}분 넘으면 알림)`]] },
 				{ label: "계정", items: [["/login [공급자]", "로그인. /login cancel로 취소"], ["/logout <공급자>", "로그아웃하고 키 지우기"], ["/account [id|별칭|auto]", "지금 Claude 계정과 이유. 계정을 고르거나 고정 풀기"], ["/account alias <id> <별칭>", "계정 별칭 정하기 (<id>만 쓰면 지움)"]] },
 			],

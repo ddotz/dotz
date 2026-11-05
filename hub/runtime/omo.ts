@@ -306,7 +306,7 @@ export const omo: RuntimeAdapter = {
 	start(o) {
 		const onKey = keyedWorker(o.env);
 		const key = keyProviderOf(o);
-		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, [], null) : writeOrchestratorProfile(undefined, orchestratorWorkerModel(o))) : undefined;
+		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, [], null) : writeOrchestratorProfile(undefined, o.workers ?? orchestratorWorkerModel(o))) : undefined;
 		telemetryOff();
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).

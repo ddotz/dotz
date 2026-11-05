@@ -189,10 +189,10 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		if (r) return r;
 	}
 	if (req.method === "POST" && url.pathname === "/api/command") {
-		const text = String((await body(req)).text ?? "").trim();
+		const b = await body(req), text = String(b.text ?? "").trim();
 		if (!text) return json({ error: "text required" }, 400);
 		try {
-			const card = await runCommand(/^[/!]/.test(text) ? text : `/${text}`);
+			const card = await runCommand(/^[/!]/.test(text) ? text : `/${text}`, typeof b.from === "string" ? b.from : undefined);
 			return card.tone === "err" ? json({ error: card.note ?? card.title, output: card.text, card }, 400) : json({ ok: true, output: card.text, card });
 		} catch (error) {
 			return fail(error);

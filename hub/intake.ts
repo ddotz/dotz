@@ -187,7 +187,7 @@ export function flush(target: string): void {
 
 // Slash/bang commands (/model, /restart, ...) are answered by the gateway itself, never by the orchestrator.
 export async function answerCommand(target: string, text: string, replyTo?: string): Promise<void> {
-	const card = await runCommand(text);
+	const card = await runCommand(text, target);
 	await out(target, card.text, replyTo, { source: "gateway", card }).catch(e => log(`command reply to ${target} failed: ${e}`));
 }
 
