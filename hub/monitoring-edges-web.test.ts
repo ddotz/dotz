@@ -82,6 +82,7 @@ describe.each([[412, 844], [1280, 800]])("모니터링 한 열 at %ipx", (width,
 		expect(await human("주간 점검 확인(state.json weekly-1104, w…")).toBe("주간 점검 확인");
 		expect(await human("피드백 데일리 보고: ssh -o BatchMode=yes host python3 - 24 < ~/.dotz/x.py")).toBe("피드백 데일리 보고");
 		expect(await human("ssh -o BatchMode=yes host uptime")).toBe("");
+		expect(await human("18시 릴리스 확인(state after-1800-release)")).toBe("18시 릴리스 확인");
 		expect(await human("Next.js 새 버전(14.2)을 확인해요")).toBe("Next.js 새 버전(14.2)을 확인해요");
 	});
 

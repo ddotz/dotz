@@ -251,7 +251,7 @@ function hCustomCard(s, i, cv, stages) {
   if (fl.length) {
     const all = hCvOpen.has(i), shown = all ? fl : fl.slice(0, H_CV_CAP);
     sec.append(el("div", { class: "cl", text: `내 기능 · ${fl.length}` }));
-    for (const f of shown) sec.append(row(() => fcOpenFeature(f), [f.name, el("span", { class: "tag", text: f.form }), f.enabled ? null : el("span", { class: "tag", text: "꺼짐" })], f.source.label, true));
+    for (const f of shown) sec.append(row(() => fcOpenFeature(f), [monClean(f.name, f.form), el("span", { class: "tag", text: f.form }), f.enabled ? null : el("span", { class: "tag", text: "꺼짐" })], f.source.label, true));
     if (fl.length > H_CV_CAP) {
       const more = el("button", { type: "button", class: "btn text hm-more", text: all ? "접기" : `${fl.length - H_CV_CAP}개 더 보기` });
       more.addEventListener("click", () => {
