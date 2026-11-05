@@ -57,7 +57,7 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 			if (!allowed.includes(picked)) return fail(`사용자가 1) 보내기를 고른 기록이 없어서 보내지 않았어요 (${v.verdict === "none" ? "고른 기록 없음" : v.verdict})`);
 			const said = picked === "own" && v.detail ? [`사용자 지시: ${v.detail}`] : [];
 			if (only === "mail") {
-				const m = await engine.sendMailOnly(d.code, args.includes("--retry") ? { retry: true } : {});
+				const m = await engine.sendMailOnly(d.code, { ...(args.includes("--retry") ? { retry: true as const } : {}), ...(picked === "send-as-is" ? { asIs: true as const } : {}) });
 				// A refusal for the files keeps its first words: the card opens again on them (hub/notices-drafts.ts markDraftSend).
 				if (!m.ok) return fail(m.text.startsWith(ATTACH_REFUSED) ? m.text : `메일을 보내지 못했어요: ${m.text}`);
 				if (d.status === "sent") return { lines: [...said, `메일만 다시 보냈어요. 답글은 이미 올라가 있어요 (${d.code})`], code: 0 };
