@@ -1,7 +1,7 @@
 // Files of the comment feature, all under <dataDir>/custom/comments/ (per install, never in the repo): config.json (the owner's choices),
 // comments.json, drafts.json, replies.json (send records), cursors.json, reads.json, dismissed.json (comment id -> time of 답장 안 함), authors.json (Instagram
 // reply id -> who wrote it; an author never changes, so an entry is kept for good). Every write is atomic and private (0600).
-import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Comment, CommentsConfig, SourceConfig } from "./contract.ts";
 
@@ -37,6 +37,24 @@ function readJson<T>(file: string, fallback: T): T {
 	}
 }
 
+// The drafts are asked for once per card of a request: the parse is kept while the file is the same (path, inode, mtime, size; every write is a
+// rename, so another process's write changes the inode). The list is shared: callers build new lists and records, they never edit one in place.
+const keptDrafts = new Map<string, { id: string; list: Draft[] }>();
+function readDrafts(file: string): Draft[] {
+	try {
+		const st = statSync(file);
+		const id = `${st.ino}|${st.mtimeMs}|${st.size}`;
+		const kept = keptDrafts.get(file);
+		if (kept?.id === id) return kept.list;
+		const list = JSON.parse(readFileSync(file, "utf8")) as Draft[];
+		keptDrafts.set(file, { id, list });
+		return list;
+	} catch {
+		keptDrafts.delete(file);
+		return [];
+	}
+}
+
 function writeAtomic(file: string, value: unknown): void {
 	mkdirSync(dirname(file), { recursive: true });
 	const tmp = `${file}.${process.pid}.tmp`;
@@ -52,7 +70,7 @@ export function createStore(dir: string) {
 		return { enabled: c.enabled === true, sources: c.sources && typeof c.sources === "object" ? c.sources : {} };
 	};
 	const comments = (): Comment[] => readJson<Comment[]>(f("comments.json"), []);
-	const drafts = (): Draft[] => readJson<Draft[]>(f("drafts.json"), []);
+	const drafts = (): Draft[] => readDrafts(f("drafts.json"));
 	const replies = (): Reply[] => readJson<Reply[]>(f("replies.json"), []);
 	const cursors = (): Record<string, Cursor> => readJson<Record<string, Cursor>>(f("cursors.json"), {});
 	const reads = (): Record<string, number> => readJson<Record<string, number>>(f("reads.json"), {});
