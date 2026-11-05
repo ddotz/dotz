@@ -55,7 +55,11 @@ function optionOf(body: string, headed = false): Option | undefined {
 	else if (asked && DETAIL_DESC.test(asked[2]!)) [s, desc] = [asked[1]!, asked[2]!];
 	if (DETAIL_DESC.test(desc)) detail = true;
 	// Under a "결정:" line the head vouches for the list: a long or sentence-like name is still an option, cut to a button's size with the rest as its description.
-	if (headed && s && [...s].length > MAX_LABEL) [s, desc] = [[...s].slice(0, MAX_LABEL).join("").trim(), desc || s];
+	if (headed && s && [...s].length > MAX_LABEL) {
+		const [, first, more] = /^(.+?)[.。]\s+(.+)$/.exec(s) ?? [];
+		if (first && [...first].length <= MAX_LABEL) [s, desc] = [first, desc || more!];
+		else [s, desc] = [[...s].slice(0, MAX_LABEL).join("").replace(/\s+\S*$/, ""), desc || s];
+	}
 	return !s || (!headed && ([...s].length > MAX_LABEL || NOT_LABEL.test(s))) ? undefined : { label: s, desc, rec, detail };
 }
 
@@ -127,8 +131,23 @@ function blockLines(f: Found): string[] {
 	return [...(f.lead ? [f.lead, ""] : []), `${ko ? "결정" : "Decision"}: ${question}`, ...options];
 }
 
+// "1) 보내기 / 2) 고치기 / 3) 보내지 않기" on one line of an [ask]: no parser reads a row, and the [ask] vouches that it is the choice.
+const OPTION_ROW = /^\s*1[.)]\s*\S.*\s[/|·]\s*2[.)]\s*\S/;
+function rowToHead(text: string): string {
+	if (!/\[ask\]/i.test(text) || !/[/|·]\s*2[.)]/.test(text)) return text;
+	const { tone, head, rest } = splitTone(text);
+	const lines = rest.split("\n");
+	const fenced = fenceMap(lines);
+	const at = lines.findIndex((l, i) => !fenced[i] && OPTION_ROW.test(l));
+	if (tone !== "ask" || at < 0 || lines.some((l, i) => !fenced[i] && DECISION_HEAD.test(l))) return text;
+	const items = lines[at]!.split(/\s[/|·]\s*(?=\d[.)])/).map(x => x.replace(/^\s*\d[.)]\s*/, "").trim());
+	if (items.length > 4 || items.some(x => !x)) return text;
+	lines.splice(at, 1, "결정: 어떻게 할까요?", ...items.map((x, i) => `**${i + 1}) ${x}**`));
+	return `${head}${lines.join("\n")}`;
+}
+
 /** The text with every option list as the contract's choice block and a status marker the surfaces read; unchanged when it asks nothing but for an old recommendation mark. Idempotent. */
-export const normalizeAsk = (text: string): string => stripRecommendMark(toChoiceBlock(canonHeaded(text)));
+export const normalizeAsk = (text: string): string => stripRecommendMark(toChoiceBlock(canonHeaded(rowToHead(text))));
 /** Only the blocks a "결정:" line opened: for text the gateway wrote itself, where a question over a list is no guess about a model's meaning. */
 export const normalizeHeaded = (text: string): string => stripRecommendMark(canonHeaded(text, false));
 
@@ -141,6 +160,19 @@ const CANON_OPTION = /^\s*(?:\*\*)?\s*\d{1,2}\)\s*[^*\s][^*]*(?:\*\*)?\s*$/;
 const QUOTED = /^\s*[>|]/;
 const ASKS_ANYTHING = /[?？]|까요|나요|주세요/;
 const MAX_HEADED = 9;
+// A recommendation at the end of a list is the message going on, not one more option.
+const RECOMMEND_LINE = /^\s*[-*•]\s+(?:\*\*)?추천\s*[:：]/;
+const LETTERED = /^\(?[a-d]\)\s+/i;
+const NESTED_QUESTION = /^\s*(?:\*\*)?\d[.)]\s+(.+?)\s*(?:\*\*)?\s*$/;
+const NESTED_OPTION = /^\s+(?:\d[.)]|[-*•])\s/;
+// "**결정 필요**" over "1. 질문?" and its indented options: the numbered line is the head, and the message may go on after the list.
+function nestedHead(lines: string[], i: number): string[] | null {
+	const q = NESTED_QUESTION.exec(lines[i]!)?.[1];
+	if (!q || !ASKS_ANYTHING.test(q) || !NESTED_OPTION.test(lines[i + 1] ?? "")) return null;
+	// Two numbered questions are two blocks (toChoiceBlock); this is the one question of a message that goes on after its list.
+	if (lines.some((l, n) => n !== i && ASKS_ANYTHING.test(NESTED_QUESTION.exec(l)?.[1] ?? "") && !NESTED_OPTION.test(l))) return null;
+	return lines.slice(0, i).some(l => HEADING.exec(l)?.[1] === "") ? ["", "결정", "", q] : null;
+}
 type Headed = { option: Option; raw: string; sameLine: boolean };
 
 // The options under a "결정:" line in any list style: numbers in a row, or bullets at one indent; a line under an option, or a deeper bullet, is its description.
@@ -150,13 +182,13 @@ function readHeaded(lines: string[], fenced: boolean[], from: number): { list: H
 	for (let i = from; i < lines.length; i++) {
 		const line = lines[i]!;
 		if (!line.trim()) continue;
-		if (fenced[i] || QUOTED.test(line) || HEAD_DRESS.test(line) || D_CLOSE.test(line) || META.test(line)) break;
+		if (fenced[i] || QUOTED.test(line) || HEAD_DRESS.test(line) || D_CLOSE.test(line) || META.test(line) || RECOMMEND_LINE.test(line)) break;
 		const n = HEADED_OPTION.exec(line), b = n ? null : BULLET.exec(line);
 		const at = line.length - line.trimStart().length;
 		const num = n ? (n[1] ? Number(n[1]) : CIRCLED.indexOf(n[2]!) + 1) : 0;
 		const isNext = list.length ? (numbered ? num === list.length + 1 : !!b && at <= indent) : !!n ? num === 1 : !!b;
 		if (isNext) {
-			const body = n ? n[3]! : b![1]!;
+			const body = n ? n[3]! : b![1]!.replace(LETTERED, "");
 			const option = optionOf(body, true);
 			if (!option) return undefined;
 			if (!list.length) [numbered, indent] = [!!n, at];
@@ -189,7 +221,7 @@ function canonHeaded(text: string, mark = true): string {
 	const out: string[] = [];
 	let blocks = 0;
 	for (let i = 0; i < lines.length; i++) {
-		const m = fenced[i] ? null : HEAD_DRESS.exec(lines[i]!);
+		const m: string[] | null = fenced[i] ? null : (HEAD_DRESS.exec(lines[i]!) ?? nestedHead(lines, i));
 		if (!m || !m[3]) {
 			out.push(lines[i]!);
 			continue;
