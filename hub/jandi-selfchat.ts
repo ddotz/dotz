@@ -1,12 +1,13 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { open } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { writeAtomic } from "./config.ts";
-import { attachmentLine, safeName, UPLOAD_MAX_BYTES, type Upload } from "./files.ts";
+import { attachmentLine, safeName, UPLOAD_MAX_BYTES, type Upload, uploadRecord, writeAll } from "./files.ts";
 import { readSecretFile, writeSecretFile } from "./secretbox.ts";
 
 // JANDI "나와의 대화" (the member's private chat with the JANDI bot) as an inbound path for members who cannot add a Team Outgoing Webhook.
 // The owner's own JANDI session (a refresh token in a dotz secret) reads that one room, and only the owner's own messages that start with
-// the keyword reach dotz. Replies still go out through the room's Incoming Webhook. This uses the JANDI web client's API, which JANDI does
+// the keyword, and files the owner sends without other text, reach dotz. Replies still go out through the room's Incoming Webhook. This uses the JANDI web client's API, which JANDI does
 // not document: a JANDI change can break it, and the adapter then shows the error instead of guessing.
 
 /** Another computer reached only through this room: it listens for `keyword` and answers with lines that start with `reply_prefix` (shown by hub/jandi-peers.ts).
@@ -19,10 +20,12 @@ export type SelfChatDeps = {
 	sleep?: (ms: number) => Promise<void>;
 	api?: string;
 	/** An owner message: its command text ("" for a file sent without text) and the files it carried, saved under <data dir>/uploads/<day>/jandi-<message id>/.
-	 *  A file that could not be saved is an `[attachment] <name> <url>` line in `text` instead. */
+	 *  A file that could not be saved is an `[attachment] <name> <url>` line in `text` instead, its url without a query. */
 	receive: (text: string, files: Upload[]) => void;
 	/** The largest file saved (default: the web upload limit). */
 	maxFileBytes?: number;
+	/** How long the files of one message may take together; what is not in by then becomes an [attachment] line. */
+	filesTimeoutMs?: number;
 	/** A new reply of a peer (a post by anyone but the owner that starts with its reply prefix), the prefix taken off; never for a peer with `notify: false`. */
 	peerReply?: (peer: SelfChatPeer, text: string, id: number) => void;
 	log: (msg: string) => void;
@@ -37,6 +40,7 @@ const TOKEN_MARGIN_MS = 5 * 60_000;
 const MAX_PEERS = 8;
 const MAX_FILES = 10;
 const MAX_REDIRECTS = 3;
+const FILES_TIMEOUT_MS = 120_000;
 
 const int = (v: unknown) => (Number.isSafeInteger(v) && (v as number) > 0 ? (v as number) : 0);
 
@@ -119,6 +123,12 @@ function filesOf(m: Message_ | undefined): JandiFile[] {
 
 const seoulDay = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 
+/** Where an unsaved file lives, for the turn's text: no query, fragment or credentials, which can sign a URL. */
+function plainUrl(raw: string): string {
+	const u = URL.parse(raw);
+	return u && /^https?:$/.test(u.protocol) ? `${u.origin}${u.pathname}` : "(not saved)";
+}
+
 export class SelfChatError extends Error {}
 
 export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
@@ -196,11 +206,13 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 	const apiOrigin = new URL(api).origin;
 	const trusted = (u: URL) => u.origin === apiOrigin || (u.protocol === "https:" && (u.hostname === "jandi.com" || u.hostname.endsWith(".jandi.com")));
 
-	/** The bytes of one file, at most `max`; throws with a short reason. */
-	async function fileBytes(url: URL, max: number): Promise<Uint8Array> {
+	/** Streams one file to `path`, at most `max` bytes, so its size costs no memory and a failure leaves no partial file; returns its size, throws with a short reason. */
+	async function download(url: URL, path: string, max: number, signal: AbortSignal): Promise<number> {
 		let retried = false;
 		for (let hops = 0; hops <= MAX_REDIRECTS; ) {
-			const res = await f(url, { headers: trusted(url) ? { Authorization: `bearer ${await token()}` } : {}, redirect: "manual", signal: AbortSignal.timeout(60_000) });
+			// Also on every redirect: fetch would read a file: or s3: address too.
+			if (url.protocol !== "https:" && url.origin !== apiOrigin) throw new SelfChatError("not https");
+			const res = await f(url, { headers: trusted(url) ? { Authorization: `bearer ${await token()}` } : {}, redirect: "manual", signal });
 			const to = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
 			if (to) {
 				void res.body?.cancel();
@@ -222,15 +234,23 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 				void res.body.cancel();
 				throw new SelfChatError("too big");
 			}
-			const chunks: Uint8Array[] = [];
-			let total = 0;
-			for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-				total += chunk.byteLength;
-				if (total > max) throw new SelfChatError("too big");
-				chunks.push(chunk);
+			mkdirSync(dirname(path), { recursive: true });
+			const part = `${path}.part`;
+			const out = await open(part, "w");
+			try {
+				let total = 0;
+				for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+					total += chunk.byteLength;
+					if (total > max) throw new SelfChatError("too big");
+					await writeAll(out, chunk);
+				}
+				if (!total) throw new SelfChatError("empty");
+				renameSync(part, path);
+				return total;
+			} finally {
+				await out.close();
+				rmSync(part, { force: true });
 			}
-			if (!total) throw new SelfChatError("empty");
-			return Buffer.concat(chunks);
 		}
 		throw new SelfChatError("too many redirects");
 	}
@@ -242,6 +262,7 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 		const files: Upload[] = [];
 		const lines: string[] = [];
 		const taken = new Set<string>();
+		const signal = AbortSignal.timeout(deps.filesTimeoutMs ?? FILES_TIMEOUT_MS);
 		for (const file of list) {
 			const raw = [file.name, file.filename, file.title].find((x): x is string => typeof x === "string" && x.trim() !== "") ?? "file";
 			let name = safeName(raw);
@@ -251,15 +272,12 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 			const url = String(file.fileUrl);
 			try {
 				if (typeof file.size === "number" && file.size > max) throw new SelfChatError("too big");
-				const bytes = await fileBytes(new URL(url), max);
-				mkdirSync(folder, { recursive: true });
 				const path = join(folder, name);
-				writeAtomic(path, bytes);
-				files.push({ path, name, ...(raw !== name ? { original: raw.slice(0, 300) } : {}), type: type || Bun.file(path).type || "application/octet-stream", size: bytes.byteLength });
+				files.push(uploadRecord(path, name, raw, type, await download(new URL(url), path, max, signal)));
 			} catch (e) {
 				// Never the URL in the log: it can carry a file token.
 				deps.log(`jandi self-chat: file ${name} of message ${id} not saved (${e instanceof SelfChatError ? e.message : String((e as Error)?.name ?? "error")})`);
-				lines.push(attachmentLine({ name, ...(type ? { type } : {}) }, url));
+				lines.push(attachmentLine({ name, ...(type ? { type } : {}) }, plainUrl(url)));
 			}
 		}
 		return { files, lines };
@@ -288,7 +306,9 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 	async function poll(last: number): Promise<number> {
 		const j = (await get(`message-api/v2/teams/${cfg.team_id}/rooms/${cfg.room_id}/messages?linkId=${last}&type=new&count=${PAGE}`, 2)) as { records?: unknown };
 		const records = (Array.isArray(j.records) ? j.records : []) as Record_[];
+		const commands: [string, Upload[]][] = [];
 		for (const r of records.sort((a, b) => a.id - b.id)) {
+			if (stopped) break; // a download can outlast stop(); what follows is the next reader's, from the saved id
 			if (!int(r.id) || r.id <= last) continue;
 			last = r.id;
 			saveLast(last); // before handing it on: a crash never runs the same command twice (nor notifies the same reply twice)
@@ -304,12 +324,14 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 			const text = said ? (commandOf(said, cfg.keyword) ?? (list.length && bareKeyword(said, cfg.keyword) ? "" : undefined)) : list.length ? "" : undefined;
 			if (text === undefined) continue;
 			if (!list.length) {
-				deps.receive(text, []);
+				commands.push([text, []]);
 				continue;
 			}
 			const { files, lines } = await saveFiles(r.id, list);
-			deps.receive([text, ...lines].filter(Boolean).join("\n"), files);
+			commands.push([[text, ...lines].filter(Boolean).join("\n"), files]);
 		}
+		// Handed on together: a text and the file right after it stay in one intake burst however long the download took.
+		for (const [text, files] of commands) deps.receive(text, files);
 		return last;
 	}
 
