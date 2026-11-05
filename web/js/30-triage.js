@@ -15,6 +15,8 @@ async function trLoad() {
   try { r = await api("/api/approvals"); } catch { return; }
   TR.groups = Array.isArray(r.groups) ? r.groups : [];
   TR.min = Number(r.triageMin) > 0 ? Number(r.triageMin) : 3;
+  // A send the gateway no longer holds (its frame was lost, or it restarted) does not stay 보내는 중 here.
+  for (const x of Object.values(TR.results)) if ((x.state === "queued" || x.state === "sending") && !(r.results || []).some(y => y.ref === x.ref)) delete TR.results[x.ref];
   for (const x of r.results || []) TR.results[x.ref] = x;
   if (current === "monitoring" && MON.sel === "replies") { MON.sig = ""; monSchedule(); }   // the queue's head offers 빠른 처리 once enough wait
   if (TR.h) trMerge();

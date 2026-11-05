@@ -82,6 +82,21 @@ describe("approval sender", () => {
 		expect(s.results("c").map(r => r.state)).toEqual(["sent"]);
 	});
 
+	test("more sends waiting than the results it keeps: a second approval of a waiting one still sends nothing", async () => {
+		const g = gatedRun();
+		const s = createApprovalSender({ kind: () => PLACES.D1, run: g.run, report: () => undefined, log: () => undefined });
+		const job = (ref: string) => ({ ref, conv: "c", action: "send" as const, title: `q (${ref})` });
+		for (let i = 0; i < 250; i++) s.enqueue(job(`Q${i}`));
+		s.enqueue(job("Q1"));
+		s.enqueue(job("END"));
+		for (let i = 0; g.started[i - 1] !== "END"; i++) {
+			await g.startedCount(i + 1);
+			g.finish(g.started[i]!);
+		}
+		expect(g.started.filter(r => r === "Q1")).toHaveLength(1);
+		expect(g.started).toHaveLength(251);
+	});
+
 	test("the send commands are the ones the bot runs", () => {
 		expect(sendArgv("comment", "D1", "send-mail", "bun").slice(2)).toEqual(["send", "D1", "--only", "mail"]);
 		expect(sendArgv("comment", "D1", "send-mail", "bun", true)!.slice(2)).toEqual(["send", "D1", "--only", "mail", "--retry"]);

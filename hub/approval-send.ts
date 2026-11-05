@@ -90,7 +90,8 @@ export function createApprovalSender(deps: SenderDeps) {
 		const r: SendResult = { ref: j.ref, conv: j.conv, title: j.title, state, text, at: now() };
 		results.delete(j.ref);
 		results.set(j.ref, r);
-		if (results.size > KEEP) results.delete(results.keys().next().value!);
+		// The oldest finished result goes: a queued or sending one is what stops a second approval (enqueue), so it stays however many wait.
+		if (results.size > KEEP) for (const [ref, old] of results) if (old.state !== "queued" && old.state !== "sending") { results.delete(ref); break; }
 		deps.report(r);
 	};
 
