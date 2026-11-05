@@ -435,9 +435,9 @@ function asConnNode(app) {
 function asSettingRow(app, f, feat, box) {
   const bound = feat && feat.features.find(x => x.setting === f.key), wait = bound && /승인 대기/.test(bound.status) ? bound.status : "";
   return el("div", { class: "as-row", "data-setting": f.key },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), f.help ? el("span", { class: "as-h", text: f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), f.blocked || f.help ? el("span", { class: "as-h", text: f.blocked || f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
     // A list is edited in the conversation (a change card); here it only says how many.
-    f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : asControl(f, async v => {
+    f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : f.blocked ? Object.assign(kkSwitch(false, f.label, f.key, () => {}), { disabled: true }) : asControl(f, async v => {
       if (AS.busy[app]) return;
       AS.busy[app] = true;
       try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }

@@ -98,7 +98,8 @@ mailAction(a) { // a: { source, id, action: "read" | "unread" | "archive" | "una
 mailActions(source) { return source === "work" ? ["read", "unread", "trash"] : undefined; }, // the card's `can`
 ```
 
-- Without `mailActions` the source counts as read-only toward its mailbox: every action still works in dotz and the screen says in one line that the mailbox did not follow.
+- Without `mailActions` the source counts as read-only toward its mailbox: every action still works in dotz and the action's toast says the mailbox did not follow.
+- `"trash"` runs only when the owner deletes a mail in the web app with the app's 삭제하면 원본도 삭제 switch on (off by default, shown disabled for a source that does not list it). Move only the mail `id` names to the mailbox's trash, never a permanent delete; a mail stays in dotz unless the hook returns true.
 - The other way, post what the mailbox shows on every poll: `POST /api/mail/state` items may carry `read`/`unread`, `archived`, `starred` and `trashed` besides `replied`. Only a change from the last report is applied, so a poll that has not seen a dotz action yet never undoes it; `trashed` removes the mail from dotz.
 
 ## Registering a mail reader as a mail instance

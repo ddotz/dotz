@@ -21,7 +21,6 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-bar { display: flex; align-items: center; gap: var(--sp-15); height: 40px; margin: 0 0 var(--sp-1); padding: 0 var(--sp-3) 0 var(--sp-15); overflow-x: auto; scrollbar-width: none; color: var(--fg-2); font-size: 12px; }
 .mbox-bar::-webkit-scrollbar { display: none; }
 .mbox-bar > * { flex: none; }
-.mbox-note { padding: 0 var(--sp-3) var(--sp-1) var(--sp-15); color: var(--fg-3); font-size: 12px; line-height: 16px; word-break: keep-all; }
 .mbox-bar.on { position: sticky; top: 40px; z-index: 2; background: var(--bg); }
 .mbox-all:disabled { visibility: hidden; }
 .mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
