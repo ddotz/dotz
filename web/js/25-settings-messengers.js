@@ -189,12 +189,14 @@ function renderMessenger(id) {
     if (!p.fail && !p.loading) loadMessengerSettings(id);
     return;
   }
-  const s = p.s, [tag, tone] = m ? msTag(m) : ["", ""];
+  const s = p.s, [tag, tone] = m ? msTag(m) : ["", ""], c = s.self_chat;
+  // With the login row on screen the status row stays only for what the login row does not say, and 연결 would start the same flow a second time.
+  const loginOnly = c && (!m || !m.configured || c.state === "lost"), turnOn = m && m.configured && !m.enabled && !m.error;
   const nodes = [el("div", { class: "sec", text: "연결" }),
     el("div", { class: "list" },
-      el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
+      loginOnly ? null : el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
         el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
-        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m)))),
+        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, c && !turnOn ? null : el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m)))),
       msSelfChatRow(id, s)),
     ...obSection(id, !!m && m.state === "ok")];
   if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },

@@ -98,9 +98,9 @@ export const ko: Catalog = {
 			alert: "JANDI 로그인이 끝나서 나와의 대화를 읽을 수 없어요. 설정 → 메신저 → JANDI에서 다시 연결해 주세요.",
 			ok: { label: "나와의 대화 연결됨", hint: "JANDI 로그인으로 연결돼 있어요." },
 			lost: { label: "JANDI 로그인이 끝났어요", hint: "나와의 대화를 읽을 수 없어요. 다시 연결하면 바로 이어져요." },
-			off: { label: "JANDI 로그인으로 연결", hint: "JANDI에 로그인만 하면 나와의 대화로 말을 걸 수 있어요." },
+			off: { label: "JANDI 나와의 대화", hint: "JANDI에 로그인만 하면 나와의 대화로 말을 걸 수 있어요." },
 			reconnect: "다시 연결",
-			connect: "잔디 로그인으로 연결",
+			connect: "로그인으로 연결",
 		},
 	},
 	cmd: {

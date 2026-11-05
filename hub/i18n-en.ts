@@ -104,9 +104,9 @@ export const en = {
 			alert: "The JANDI login ended, so the chat with yourself cannot be read. Reconnect under Settings → Messengers → JANDI.",
 			ok: { label: "Chat with yourself connected", hint: "Connected with your JANDI login." },
 			lost: { label: "The JANDI login ended", hint: "The chat with yourself cannot be read. Reconnecting picks up right away." },
-			off: { label: "Connect with your JANDI login", hint: "Log in to JANDI and you can talk to the gateway from your chat with yourself." },
+			off: { label: "JANDI chat with yourself", hint: "Log in to JANDI and you can talk to the gateway from your chat with yourself." },
 			reconnect: "Reconnect",
-			connect: "Connect with JANDI login",
+			connect: "Connect with login",
 		},
 	},
 	cmd: {
