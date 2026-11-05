@@ -7,7 +7,7 @@ import { replyChoiceBlock } from "../../../hub/choices.ts";
 import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../../../hub/followup.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
-import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, defaultCall, dropDraft, kindOf, mailAsksFile, refineAfterCorrection, reviseDraft, sendDraft, stageForReply, type FlowDeps } from "../lib/flow.ts";
+import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, defaultCall, dropDraft, kindOf, mailAsksFile, realRunner, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps } from "../lib/flow.ts";
 import { INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
@@ -95,6 +95,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (kind === "comment" || kind === "chat") return { lines: [built.rec.body], code: 0, notes: [...notes, ...built.warnings.map(w => `확인: ${w}`)] };
 			const chosen = chosenFrom(cands, built.files);
 			const warnings = [...built.warnings, ...(await stageForReply(built.rec, flow, chosen && Promise.resolve(chosen)).catch(e => [(e as Error).message]))];
+			await settleDraft(built.rec, deps.run);
 			addDraft(built.rec);
 			return { lines: [askText(built.rec, warnings)], code: 0, notes };
 		}
@@ -174,7 +175,7 @@ if (import.meta.main) {
 	const args = process.argv.slice(2);
 	const stdin = args[0] === "new" ? await Bun.stdin.text() : "";
 	try {
-		const out = await runDraft(args, stdin, { analyze: defaultCall(loadSettings().model) });
+		const out = await runDraft(args, stdin, { analyze: defaultCall(loadSettings().model), run: realRunner });
 		// stdout is only ever something to post or pipe on: on a non-zero exit the lines are explanations and go to stderr.
 		for (const l of out.lines) (out.code === 0 || out.code === ASK_EXIT ? console.log : console.error)(l);
 		for (const n of out.notes ?? []) console.error(n);

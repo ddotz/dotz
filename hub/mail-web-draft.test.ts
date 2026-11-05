@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { setupEnv } from "../features/reply-drafts/test/helpers.ts";
 import { HUB_TOKEN } from "./config.ts";
 import { mailByKey, postMail, type MailDeps } from "./mail.ts";
-import { UPLOADS } from "./files.ts";
+import { saveUpload, UPLOADS } from "./files.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { makeRoute } from "./routes.ts";
@@ -32,6 +32,18 @@ const upload = (name: string, text: string) => {
 const incoming = async () => (await postMail({ source: "zele", id: `wd${++seq}`, subject: "점검 결과 부탁드립니다", from: "Kim <kim@example.com>", to: "me@example.com", body: "점검 결과 보내 주세요" }, mailDeps)).key;
 
 describe("the owner writes a mail in the app", () => {
+	test("an uploaded file reaches the draft under the name it came with, in the new mail and in a file added to its card", async () => {
+		const up = () => saveUpload(new File(["pdf"], "(마크추가)파일.pdf"));
+		const res = await call("POST", "/api/mail/compose", { to: "lee@example.com", subject: "자료", body: "자료입니다.", attachments: [await up()] });
+		expect(res.status).toBe(200);
+		const rec = listDrafts().find(d => d.subject === "자료")!;
+		expect(stagedFiles(rec.id).map(f => f.name)).toEqual(["(마크추가)파일.pdf"]);
+		const more = await call("POST", `/api/drafts/${rec.id}/files`, { upload: await up() });
+		expect(more.status).toBe(200);
+		expect(stagedFiles(rec.id).map(f => f.name)).toEqual(["(마크추가)파일.pdf", "(마크추가)파일 (2).pdf"]);
+		expect(readFileSync(stagedFiles(rec.id)[1]!.path, "utf8")).toBe("pdf");
+	});
+
 	test("새 메일: his text and two files become a pending draft, both files staged with their bytes", async () => {
 		const a = upload("견적서.txt", "견적 금액은 3,000,000원입니다."), b = upload("일정.csv", "1주,설계\n2주,개발\n");
 		const res = await call("POST", "/api/mail/compose", { to: "lee@example.com", cc: "park@example.com", subject: "견적 문의", body: "견적을 부탁드립니다.", attachments: [a, b] });

@@ -53,6 +53,13 @@ type AccountRec = Pick<DraftRec, "account" | "compose" | "ref" | "app"> & Partia
 const originAccount = (rec: AccountRec) => (rec.origin?.kind === "mail" ? mailAccountOf(rec.origin.id) : undefined);
 export const zeleAccountOf = (rec: AccountRec): string | undefined => rec.account || (rec.compose ? originAccount(rec) : mailAccountOf(rec.ref)) || appAccountOf(rec.app, rec.source);
 
+// The one logged-in account the stored mail was addressed to: all an older stored mail, with no account of its own, can tell.
+function addressedLogin(rec: Pick<DraftRec, "ref">, logins: string[]): string | undefined {
+	const to = storedMail(rec.ref)?.to?.toLowerCase() ?? "";
+	const hits = logins.filter(a => to.includes(a.toLowerCase()));
+	return hits.length === 1 ? hits[0] : undefined;
+}
+
 const ADDRESS = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 const zeleLogins = async (run: Runner): Promise<string[]> => {
 	// No zele at all reads as no accounts.
@@ -72,9 +79,8 @@ export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ accou
 	const logins = await zeleLogins(run);
 	if (logins.length < 2) return {};
 	if (rec.compose) return { several: logins };
-	const to = storedMail(rec.ref)?.to?.toLowerCase() ?? "";
-	const addressed = logins.filter(a => to.includes(a.toLowerCase()));
-	if (addressed.length === 1) return { account: addressed[0] };
+	const addressed = addressedLogin(rec, logins);
+	if (addressed) return { account: addressed };
 	const holders: string[] = [];
 	for (const a of logins) if ((await run(readArgv(threadOf(rec), a))).code === 0) holders.push(a);
 	return holders.length === 1 ? { account: holders[0] } : { several: logins };
@@ -142,7 +148,7 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	if (!site) {
 		if (rec.compose) return fail(MANUAL);
 		// A plugin may not send through zele at all: it gets what is on record and refuses the rest itself.
-		const mailbox = zeleAccountOf(rec);
+		const mailbox = zeleAccountOf(rec) ?? addressedLogin(rec, await zeleLogins(run));
 		const sent = await pluginReply({ source: rec.source, id: rec.mailId, ...(mailbox ? { account: mailbox } : {}), to: rec.to, ...(cc.length ? { cc: cc.join(", ") } : {}), ...(rec.mode === "all" ? { all: true } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
 		return sent ?? fail(MANUAL);
 	}

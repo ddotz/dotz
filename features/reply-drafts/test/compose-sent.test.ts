@@ -56,6 +56,7 @@ describe("a mail written in the app", () => {
 		await runMailCli(["compose", "--app", "mail", "--to", "lee@example.com", "--subject", "견적 문의"], "견적서 보내드립니다.", h.deps);
 		const d = listDrafts()[0]!;
 		h.posts.length = 0;
+		h.argvs.length = 0;
 		expect((await runDraft(["send", d.id], "", h.deps)).code).toBe(1);
 		expect(h.posts).toEqual([]);
 		expect(h.argvs).toEqual([]);
