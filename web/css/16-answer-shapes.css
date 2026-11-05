@@ -15,6 +15,7 @@
 .ans-steps .rc-k { display: grid; place-items: center; height: var(--ans-step); border-radius: 50%; background: var(--card); color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; }
 .ans-steps .rc-w { line-height: var(--lh-chat); }
 .ans-tb { padding: var(--sp-2) var(--sp-4); }
+.ans-tb .mlist-url { white-space: pre; }
 .ans-tb table { width: 100%; border-collapse: collapse; table-layout: fixed; -webkit-user-select: none; user-select: none; }
 .ans-tb th, .ans-tb td { padding: var(--sp-2) var(--sp-3) var(--sp-2) 0; background: none; text-align: left; vertical-align: baseline; font-size: var(--fs-body); line-height: var(--lh-body); overflow-wrap: anywhere; white-space: normal; }
 .ans-tb th { color: var(--fg-3); font-weight: 400; }
