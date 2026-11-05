@@ -1,4 +1,4 @@
-// Generated fake identities and text pieces for hub/load-qa/seed.ts. Nothing here names a real person, address, company or work:
+// Generated fake identities and text pieces for hub/test/load-qa/seed.ts. Nothing here names a real person, address, company or work:
 // names are syllable mixes, addresses live on reserved example domains, texts are generic.
 
 export const SURNAMES = ["김", "이", "박", "최", "정", "강", "조", "윤", "장", "임", "한", "오"];

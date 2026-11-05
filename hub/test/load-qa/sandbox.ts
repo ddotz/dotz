@@ -1,12 +1,12 @@
 // macOS sandbox for the load-qa gateway: `sandbox-exec -f <profile> bun hub/main.ts` with a temp data dir, a fake HOME,
-// the fake CLIs (hub/load-qa/shims) first on PATH, no outbound network except loopback, and no access to the owner's
+// the fake CLIs (hub/test/load-qa/shims) first on PATH, no outbound network except loopback, and no access to the owner's
 // real state. profile() renders the SBPL text, launch() lays out a run directory and returns the argv/env/cwd to spawn.
 import { createHash } from "node:crypto";
 import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const SHIM_DIR = join(import.meta.dir, "shims");
-export const REPO = join(import.meta.dir, "..", "..");
+export const REPO = join(import.meta.dir, "..", "..", "..");
 export const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 
 // Real tools that bypass PATH (absolute-path exec sites of hub/ features/ onboard/ plus the system tools that reach the
