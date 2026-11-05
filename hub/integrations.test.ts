@@ -128,6 +128,15 @@ describe("unread counts and notice lists per sub-item", () => {
 		expect(items.find(i => i.key === "instagram")!.notices).toEqual(["i1"]);
 	});
 
+	test("the cap holds for finished notices only: every open decision of the app stays listed", () => {
+		const open = Array.from({ length: 150 }, (_, i) => notice(`o${i}`, { title: "카톡", decision: { to: "main", state: "open" } }));
+		const done = Array.from({ length: 150 }, (_, i) => notice(`d${i}`, { title: "카톡", decision: { to: "main", state: "done" } }));
+		// Closed ones come first and last, so the cap cuts among them while the open ones sit in the middle.
+		const ids = integrationItems(ctx, [...done.slice(0, 75), ...open, ...done.slice(75)], {}, 100).find(i => i.key === "kakao")!.notices;
+		expect(ids.filter(id => id.startsWith("o"))).toEqual(open.map(n => n.id));
+		expect(ids.filter(id => id.startsWith("d"))).toEqual(done.slice(0, 100).map(n => n.id));
+	});
+
 	test("the notice list is capped, newest first as given", () => {
 		const many = Array.from({ length: 5 }, (_, i) => notice(`c${i}`, { title: "카톡" }));
 		expect(integrationItems(ctx, many, {}, 3).find(i => i.key === "kakao")!.notices).toEqual(["c0", "c1", "c2"]);
