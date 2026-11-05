@@ -130,7 +130,7 @@ describe("screens", () => {
 	test("a paused monitor reads 꺼짐 on the home card, the 모니터링 row, its state line and the settings status, never 정상", async () => {
 		const v = await open();
 		const got = await q<Record<string, unknown>>(v, `const m = NM.items.find(x => x.name === "paused-ok"), it = monItems().find(i => i.key === "m:paused-ok");
-			const card = [...document.querySelectorAll("#home-cards .hc-mon")].find(r => r.textContent.includes("paused-ok"));
+			const card = [...document.querySelectorAll("#home-cards .hc-mon")].find(r => r.textContent.includes("paused ok"));
 			return { card: card && card.dataset.status, cardText: card && card.textContent, badge: it.badge, state: monState(it), stat: monStatNode(m).textContent, row: asStatRow("w:paused-ok", m).textContent,
 				lateBadge: monItems().find(i => i.key === "m:late-changed").badge, lateState: monState(monItems().find(i => i.key === "m:late-changed")) };`);
 		expect(got.card).toBe("off");
