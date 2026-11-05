@@ -51,6 +51,8 @@ export type Plugin = {
 	reply?(draft: MailReply): MailReplyResult | undefined | Promise<MailReplyResult | undefined>;
 	/** True when `reply` sends `attachments` for this source. Without it the approval sheet says the files cannot go and asks once more. */
 	repliesWithFiles?(source: string): boolean;
+	/** True when `reply` sends this source through a zele account and cannot go without `account`: with several accounts and none settled the card holds the draft and `reply` is not called. */
+	needsAccount?(source: string): boolean;
 	/** The owner did `action` on a mail this plugin posted (hub/mail-sync.ts): do it in the real mailbox. true = done, false = refused; `undefined` = this plugin cannot (not its source, or no such action); a throw = failed. */
 	mailAction?(a: MailActionRequest): boolean | undefined | Promise<boolean | undefined>;
 	/** The actions `mailAction` can do for this source, e.g. ["read", "unread", "trash"]; without it dotz treats the source as read-only toward its mailbox. */
@@ -219,3 +221,4 @@ export async function pluginMailAction(a: MailActionRequest): Promise<boolean | 
 export const pluginMailActions = (source: string): string[] => each("mailActions", l => l.plugin.mailActions?.(source))?.value ?? [];
 
 export const pluginRepliesWithFiles = (source: string): boolean => each("repliesWithFiles", l => l.plugin.repliesWithFiles?.(source) || undefined) !== undefined;
+export const pluginNeedsAccount = (source: string): boolean => each("needsAccount", l => l.plugin.needsAccount?.(source) || undefined) !== undefined;

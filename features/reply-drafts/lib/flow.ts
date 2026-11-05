@@ -11,7 +11,7 @@ import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECI
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
-import { canAttach, sendWith, settleAccount, webmailSite, zeleAccountOf, type SendOutcome } from "./senders.ts";
+import { canAttach, sendsThroughZele, sendWith, settleAccount, webmailSite, zeleAccountOf, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
@@ -190,11 +190,12 @@ export const draftLintFailures = (d: DraftRec): string[] => lintReply({ to: d.to
 
 export const ACCOUNT_HELD = "보낼 메일 계정을 메일 앱 설정에서 정하기 전에는 보내지 않아요";
 
-// The account of a new zele draft, settled before its card is shown: the owner hears here, not after he pressed 보내기, that it cannot go out as it is.
+// The account of a new draft that goes out through zele (senders.ts sendsThroughZele), settled before its card is shown: the owner hears here, not after he pressed 보내기, that it cannot go out as it is.
 // sendWith settles again and refuses without touching the mail, so a run that fails here (logged) loses nothing. No `run`: left to the send.
 export async function settleDraft(rec: DraftRec, run: Runner | undefined): Promise<void> {
-	if (!run || rec.kind !== "mail" || rec.source !== "zele" || rec.account) return;
+	if (!run || rec.kind !== "mail" || rec.account) return;
 	try {
+		if (!(await sendsThroughZele(rec.source))) return;
 		const settled = await settleAccount(rec, run);
 		if (settled.account) rec.account = settled.account;
 		if (settled.several) rec.accounts = settled.several;
