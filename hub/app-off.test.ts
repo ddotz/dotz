@@ -87,7 +87,7 @@ describe("a watch of an off app", () => {
 });
 
 describe("notices of an off app", () => {
-	const report = (label: string) => emit("inbox", { ts: now(), kind: "watch", source: "watch", watch: `sample-${label}`, label, reason: "output changed", text: "a=1" });
+	const report = (label: string) => emit("inbox", { ts: now(), kind: "watch", source: "watch", watch: `${label.startsWith("메일") ? "webmail" : "sample"}-${label}`, label, reason: "output changed", text: "a=1" });
 	const titles = () => listNotices(NOTICE_CAP).items.map(n => n.title);
 
 	test("none is kept while off, the old ones are hidden and not counted, and on restores them", () => {

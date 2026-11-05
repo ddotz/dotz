@@ -94,6 +94,28 @@ describe("which notices belong to an integration", () => {
 		for (const src of ["lane:kakao-rooms", "ch:123", "worklog", "main"]) expect(belongsTo(by("kakao"), notice("i", { src, title: "카톡 보내기를 고쳤어요" }))).toBe(false);
 		expect(belongsTo(by("kakao"), notice("j", { src: "alert", title: "카톡 새 메시지" }))).toBe(true);
 	});
+
+	const report = (id: string, watch: string, text: string) => notice(id, { kind: "watch", src: "alert", watch, title: "깃허브 PR·이슈 확인", text });
+
+	test("a monitor's report that merely names an app stays out of that app, in every app", () => {
+		const words = "새 이슈: 메일 보내기 실패, 카톡과 인스타그램, 유튜브, 웹사이트 답글도 확인";
+		for (const e of INTEGRATIONS) expect(belongsTo(e, report("k", "github-prs", words))).toBe(false);
+		const ctx = integrationContext(install(["kakao", "webmail-no-api"], { instagram: { user_id: "u" }, youtube: { channel: "c" } }), []);
+		expect(appKeyOf(report("k", "github-prs", words), ctx)).toBeUndefined();
+		for (const i of integrationItems(ctx, [report("k", "github-prs", words)])) expect([i.key, i.notices, i.unread]).toEqual([i.key, [], 0]);
+	});
+
+	test("an app keeps its own watcher's report: owned by name, or by what the hub resolved", () => {
+		expect(belongsTo(by("mail"), report("l", "webmail-naver", "메일 로그인이 끊겼어요"))).toBe(true);
+		const ctx = integrationContext(install(["webmail-no-api"]), []);
+		const listed = (own?: Map<string, string[]>) => integrationItems({ ...ctx, ...(own ? { own } : {}) }, [report("m", "library-check", "메일 확인이 실패했어요")]).find(i => i.key === "mail")!.notices;
+		expect(listed()).toEqual([]);
+		expect(listed(new Map([["mail", ["library-check"]]]))).toEqual(["m"]);
+	});
+
+	test("a watch's mail in a mail conversation stays the mail app's, whoever posted it", () => {
+		expect(belongsTo(by("mail"), notice("n", { kind: "watch", watch: "github-prs", src: "mail:k1", open: "mail:k1" }))).toBe(true);
+	});
 });
 
 describe("unread counts and notice lists per sub-item", () => {
