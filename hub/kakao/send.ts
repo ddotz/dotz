@@ -7,7 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { claimSend } from "../draft-claim.ts";
+import { claimHolder, claimSend } from "../draft-claim.ts";
 import { type DraftAction, draftApprovalBlock, draftVerdict } from "../draft-approval.ts";
 import { type Confirmer, dbConfirmer, dbPreview } from "./confirm.ts";
 import { writePrivate } from "./creds.ts";
@@ -519,15 +519,18 @@ export function restoreDraft(code: string, deps: Pick<SendDeps, "paths">): SendR
 }
 
 // `ownerApproved`: the owner clicked 보내기 in the web app, which replaces the inbox verdict; every other check stays. `text`: the owner's edit.
-export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string }): Promise<SendResult> {
+export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string; retry?: boolean }): Promise<SendResult> {
 	if (sending.has(code)) return Promise.resolve(refuse("이미 보내는 중이에요"));
 	sending.add(code);
 	return oneAtATime(() => sendDraftNow(code, deps)).finally(() => sending.delete(code));
 }
 
 // The in-process guard above does not see another process (the CLI the bot runs beside the gateway's button): a claim file does (hub/draft-claim.ts).
-async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string }): Promise<SendResult> {
-	const release = claimSend(join(dirname(deps.paths.drafts), "sending", code), true);
+async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string; retry?: boolean }): Promise<SendResult> {
+	// A sender that died holding the claim may have pressed send already: only the owner's 다시 보내기 (`retry`) takes it over, a plain send is refused.
+	const claim = join(dirname(deps.paths.drafts), "sending", code);
+	if (!deps.retry && claimHolder(claim) === "dead") return refuse("지난번에 보내다가 멈춰서 보낸 메시지가 이미 나갔을 수 있어요. 카카오톡방을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요");
+	const release = claimSend(claim, deps.retry === true);
 	if (!release) return refuse("이미 보내는 중이에요");
 	try {
 		return await sendClaimed(code, deps);
@@ -536,7 +539,7 @@ async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (ch
 	}
 }
 
-async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string }): Promise<SendResult> {
+async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string; retry?: boolean }): Promise<SendResult> {
 	const d = readDrafts(deps.paths).find(x => x.code === code);
 	if (!d) return refuse("그 초안을 찾지 못했어요");
 	if (d.status === "sent") return refuse(d.unconfirmed ? `전송 버튼을 이미 눌렀던 초안이라 다시 보내지 않아요. 카카오톡에서 확인해 주세요` : "이미 보낸 초안이에요");

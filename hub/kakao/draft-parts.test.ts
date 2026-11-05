@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { buildDraftPrompt, contextLines, draftParts, MAX_CONTEXT_LINES, MAX_PARTS, parseDraftReply } from "./draft.ts";
 import { createDraft, forgetWarm, listDrafts, sendDraft } from "./send.ts";
 import { kakaoPaths, type Msg } from "./types.ts";
@@ -60,5 +61,35 @@ describe("sending a draft of several parts", () => {
 		expect((await listDrafts({ paths, runner: s.runner }))[0]).toMatchObject({ status: "sent", sentParts: 3 });
 		expect((await sendDraft(d.code, deps)).ok).toBe(false);
 		expect(s.sends).toHaveLength(4);
+	});
+});
+
+// A sender that died mid-way may have pressed send already: its claim file is not taken over by a plain send (hub/draft-claim.ts), only by the owner's 다시 보내기.
+describe("a Kakao send whose process died holding the claim", () => {
+	let dir: string;
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "kk-dead-"));
+		mkdirSync(join(dir, "kakao"), { recursive: true });
+		forgetWarm();
+	});
+	afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+	test("is refused with a clear message and sends nothing; the owner's retry takes it over and sends once", async () => {
+		const paths = kakaoPaths(dir, dir);
+		const T0 = Date.parse("2026-10-26T00:00:00.000Z");
+		const s = fakeScreen([{ id: "chat_room", title: "스터디방", window: { title: "스터디방" } }]);
+		const d = await createDraft({ chatId: "100", roomName: "스터디방", text: "내일 7시 괜찮아", basisLogId: "500" }, { paths, runner: s.runner, now: () => T0 });
+		const claim = join(dirname(paths.drafts), "sending", d.code);
+		mkdirSync(dirname(claim), { recursive: true });
+		writeFileSync(claim, String(spawnSync(process.execPath, ["-e", ""]).pid));
+		const deps = { paths, runner: s.runner, now: () => T0 + 1000, latestIncoming: async () => "500", ownerApproved: true };
+
+		const plain = await sendDraft(d.code, deps);
+		expect(plain.ok).toBe(false);
+		expect(plain.reason).toContain("보낸 메시지가 이미 나갔을 수 있어요");
+		expect(s.sends).toEqual([]);
+
+		expect((await sendDraft(d.code, { ...deps, retry: true })).ok).toBe(true);
+		expect(s.sends.map(x => x[2])).toEqual(["내일 7시 괜찮아"]);
 	});
 });
