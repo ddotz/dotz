@@ -1,5 +1,5 @@
-import { afterAll, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { messages, sqliteDb } from "../../../hub/kakao/db.ts";
 import { makeFixtureDb, OWNER, ROOM } from "../../../hub/kakao/fixture.ts";
@@ -221,8 +221,55 @@ test("an offer that fails logs the error and still returns failed; a body that c
 	expect(logged.some(l => l.includes("post failed") && l.includes(mailFixture.key))).toBe(true);
 });
 
+test("an offer reads the whole thread before the snippet: the sender's newest message is the text, earlier ones and the sender's history reach the prompt", async () => {
+	enable(env);
+	const rule = "─".repeat(40);
+	const thread = ["Subject: s", rule, "From: Pat <pat@example.com>", "Date: Oct 1", "", "First question from Pat", rule, "From: me@example.net", "Date: Oct 2", "", "My earlier answer", rule, "From: Pat <pat@example.com>", "Date: Oct 3", "", "Second question\n-- \nPat, Example Org\n> quoted"].join("\n");
+	const seen: string[][] = [];
+	const model = fakeModel([j(goodReply)]);
+	const mail = { ...mailFixture, from: "Pat <pat@example.com>", to: "me@example.net", body: "short snippet" };
+	await offerMailDraft(mail, { send: () => undefined, call: model.call, readBody: async () => thread, history: async (a, account, t) => (seen.push([a, String(account), String(t)]), ["10/1 Hello: a line"]), own: () => ["me@example.net"], log: () => {} });
+	const user = model.calls.find(c => c.user.includes("Second question"))?.user ?? "";
+	expect(user).toContain("Pat, Example Org");
+	expect(user).not.toContain("short snippet");
+	expect(user).toContain("My earlier answer");
+	expect(user).toContain("10/1 Hello: a line");
+	expect(seen).toEqual([["pat@example.com", "undefined", mailFixture.id]]);
+});
+
+test("a category source reads its thread by the id without the count, and only with an account", async () => {
+	const argvs: string[][] = [];
+	const run: Runner = async argv => (argvs.push(argv), { code: 0, stdout: "text", stderr: "" });
+	expect(await readMailBody("manual", "T9.3", run)).toBeUndefined();
+	const which = spyOn(Bun, "which").mockReturnValue("/bin/zele");
+	try {
+		await readMailBody("manual", "T9.3", run, "me@example.net");
+	} finally {
+		which.mockRestore();
+	}
+	expect(argvs).toEqual([["zele", "mail", "read", "T9", "--account", "me@example.net"]]);
+});
+
+test("a webmail watch's posted body is used as it is, without reading the site again", async () => {
+	enable(env);
+	mkdirSync(join(env.dir, "custom", "webmail", "site-a"), { recursive: true });
+	writeFileSync(join(env.dir, "custom", "webmail", "site-a", "spec.json"), "{}");
+	let reads = 0;
+	const model = fakeModel([j(goodReply)]);
+	await offerMailDraft({ ...mailFixture, source: "site-a", body: "posted whole mail" }, { send: () => undefined, call: model.call, readBody: async () => (reads++, "read again"), log: () => {} });
+	expect(reads).toBe(0);
+	expect(model.calls.some(c => c.user.includes("posted whole mail"))).toBe(true);
+});
+
 test("sent mail is read with zele only when the install's config turned zele on", () => {
 	expect(zeleEnabled(undefined)).toBe(false);
 	expect(zeleEnabled({})).toBe(false);
 	expect(zeleEnabled({ zele: { enabled: false } })).toBe(false);
+});
+
+test("a section the code does not know reaches the rules, after the known rule sections, at every level", () => {
+	mkdirSync(join(paths.toneDir(), "mail"), { recursive: true });
+	writeFileSync(toneFile("install"), "## 말투\n\n- 존댓말\n\n## 설치 메모\n\n- 설치 줄\n");
+	writeFileSync(toneFile({ app: "mail" }), "## 보낸 사람 신분별\n\n- 학부모에게는 선생님 호칭\n\n## 말투\n\n- 짧게\n");
+	expect(loadStyle({ app: "mail" }).rules).toEqual(["존댓말", "짧게", "설치 줄", "학부모에게는 선생님 호칭"]);
 });

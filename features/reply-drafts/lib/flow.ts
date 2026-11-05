@@ -5,7 +5,7 @@ import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimSend } from "../../../hub/draft-claim.ts";
 import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, generateChatReply, lintReply, NO_RECIPIENT, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
+import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { matchLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
@@ -88,10 +88,10 @@ function tracedCall(deps: FlowDeps, item: ReplyItem, conv: string | undefined, t
 export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "draft"): ModelCall => (deps.trace ? tracedCall(deps, item, conv, deps.trace, what) : deps.call ?? replyCall(item.app ?? "mail", conv));
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
 // A mail draft's style carries the user's closest real past replies as examples; chat and comments keep theirs.
-const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" ? styleWithExamples(loadStyle(key), "mail", item.text) : loadStyle(key));
+const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" ? styleWithExamples(loadStyle(key), "mail", item.text, item.from) : loadStyle(key));
 
-function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[] }, changes: string[], deps: FlowDeps): DraftRec {
-	return { id: newId(), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item };
+function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient }, changes: string[], deps: FlowDeps): DraftRec {
+	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item };
 }
 
 // The owner is asked once, with a complete draft (owner 2026-10-26): the one draft call already settles every open point it can from what it
@@ -139,6 +139,7 @@ export function ownerWarning(w: string): string {
 	if (w === "the subject must start with 'Re:'") return "제목이 Re:로 시작하지 않아요";
 	if (w === "the body is empty") return "본문이 비어 있어요";
 	if ((x = m(/^the body is (\d+) characters; the limit is (\d+)$/))) return `본문이 ${x[1]}자예요 (최대 ${x[2]}자)`;
+	if (w === RECIPIENT_FAILURE) return "보낸 사람이 누구인지 판단한 근거가 메일에 없어요. 호칭과 내용이 이 사람에게 맞는지 봐 주세요";
 	if (w === SENT_CLAIM_FAILURE) return "이미 보냈다고 썼는데 보낸 근거가 없어요";
 	if (w === "the text contains a placeholder") return "채워 넣지 않은 자리표시가 있어요";
 	if ((x = m(/^it uses the forbidden expression '(.+)'$/))) return `쓰지 않기로 한 표현 '${x[1]}'이(가) 있어요`;
@@ -234,20 +235,25 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps)
 
 export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string; /** The approved send itself failed (not the approval gate): the owner has to hear it. */ sendFailed?: true };
 
-// The user picked 2) 고치기 (or the CLI is asked to): the change is recorded verbatim in the tone profile of that draft (its room, else its app), then the draft is regenerated.
+// The user picked 2) 고치기 (or the CLI is asked to): the draft is regenerated, and once that worked the lasting preference the change shows (the model's `lesson`;
+// the change itself when the model left it out; nothing when the change was only about this draft) is recorded in the tone profile of that draft (its room, else its app).
+// The change stays verbatim in the draft's own `changes`.
 export async function reviseDraft(id: string, change: string, deps: FlowDeps): Promise<Step> {
 	const found = getDraft(id);
 	const old = found && withRecipient(found);
 	if (!old) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
 	if (old.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${old.status} 상태라 고칠 수 없어요` };
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
-	recordCorrection(toneKey(old), change, nowOf(deps));
-	await refineAfterCorrection(toneKey(old), deps);
 	// The words are rewritten knowing which files ride on the draft now.
 	const held = stagedFiles(old.id).map(f => f.name);
 	const item = held.length ? { ...old.item, files: held } : old.item;
 	const r = await reviseReply(item, styleOf(old.item, toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
+	const lesson = lessonOf(r, change);
+	if (lesson) {
+		recordCorrection(toneKey(old), lesson, nowOf(deps));
+		await refineAfterCorrection(toneKey(old), deps);
+	}
 	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	// The recipients the owner set on the card stay: a rewrite of the words is not a reason to send it to somebody else.
 	rec.to = old.to;
@@ -318,7 +324,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does.
 		if (now.kind === "mail" && !now.compose && now.changes.length > 0 && now.item.text.trim()) {
 			try {
-				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime() });
+				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime(), ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}) });
 			} catch (e) {
 				console.error(`reply draft: sent draft ${id} not kept as a past reply: ${(e as Error).message}`);
 			}

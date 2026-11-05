@@ -5,10 +5,10 @@ import { addressKey, isOwnAddress } from "../mail-state.ts";
 import { parseThread, type ThreadMessage } from "../zele.ts";
 
 export type MailQuery = { author: string; postTitle: string; text: string; at: number };
-export type MailItem = { id: string; from: string; subject: string; snippet: string };
+export type MailItem = { id: string; from: string; subject: string; snippet: string; date?: string };
 export type MailSearch = {
 	/** zele `mail search <query>` items (newest first). */
-	search: (query: string) => Promise<MailItem[]>;
+	search: (query: string, account?: string) => Promise<MailItem[]>;
 	/** The messages of one thread (zele `mail read <id>`). */
 	read: (id: string) => Promise<ThreadMessage[]>;
 	/** The owner's own addresses: a message from one of them is his answer. */
@@ -105,7 +105,7 @@ export function zeleMailSearch(accounts: () => Promise<string[]>): MailSearch {
 		return out.normalize("NFC");
 	};
 	return {
-		search: async query => ((Bun.YAML.parse(await run(["search", query, "--limit", "50"])) as { items?: Record<string, unknown>[] } | null)?.items ?? []).map(t => ({ id: String(t.id), from: String(t.from ?? ""), subject: String(t.subject ?? ""), snippet: String(t.snippet ?? "") })),
+		search: async (query, account) => ((Bun.YAML.parse(await run(["search", query, "--limit", "50", ...(account ? ["--account", account] : [])])) as { items?: Record<string, unknown>[] } | null)?.items ?? []).map(t => ({ id: String(t.id), from: String(t.from ?? ""), subject: String(t.subject ?? ""), snippet: String(t.snippet ?? ""), ...(t.date ? { date: String(t.date) } : {}) })),
 		read: async id => parseThread(await run(["read", id])),
 		own: async () => new Set((await accounts()).map(addressKey).filter(Boolean)),
 	};

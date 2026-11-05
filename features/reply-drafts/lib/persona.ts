@@ -6,7 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
-import { correctionsOf, hasSamples, HEADINGS, identityOf, paths, roomFile, type ToneKey, templatesOf, toneFile, writeAtomic, writeExamples, writeIdentity, writeSections } from "./settings.ts";
+import { correctionsOf, hasSamples, HEADINGS, identityOf, isTuned, markLearned, paths, readLearned, roomFile, type ToneKey, templatesOf, toneFile, writeAtomic, writeExamples, writeIdentity, writeSections } from "./settings.ts";
 import { ownText, pickExamples, quotedText } from "./tone.ts";
 
 export const REFINE_EVERY = 5;
@@ -96,19 +96,8 @@ export async function sweep(key: ToneKey, texts: string[], where: string, call: 
 	return { examples: examples.length, identity: a.identity.length, templates: a.templates.length };
 }
 
-function readLearned(): Record<string, string> {
-	if (!existsSync(paths.learned())) return {};
-	try {
-		return JSON.parse(readFileSync(paths.learned(), "utf8")) ?? {};
-	} catch {
-		return {};
-	}
-}
-
 // Says a profile is learned at `version` (onboard.ts learn just did it by hand), so the next draft does not learn it again.
 export const markVersion = (key: ToneKey, version: string, now = new Date()): void => markLearned([`${fileKey(key)}@${version}`], now);
-
-const markLearned = (marks: string[], now: Date) => writeAtomic(paths.learned(), `${JSON.stringify({ ...readLearned(), ...Object.fromEntries(marks.map(m => [m, now.toISOString()])) }, null, 1)}\n`);
 
 // A profile learned by older code is learned once more when `version` is newer: the old profile is copied to <file>.bak-<date> first, then only
 // identity, reply templates and examples are rewritten. Nothing changes (and it is asked again next time) when the source is empty or the model fails.
@@ -132,6 +121,12 @@ export async function learnFirst(key: ToneKey, source: () => Promise<string[]>, 
 	const mark = version ? `${fileKey(key)}@${version}` : undefined;
 	const exists = !!(identityOf(key).length || learned[fileKey(key)]);
 	if (exists && (!mark || learned[mark])) return "known";
+	// A profile the user tuned (corrections, or a section of their own) is not relearned: a relearn rewrites the identity and reply templates, which
+	// would replace what they wrote. Marked as learned at this version, so it is not asked again.
+	if (exists && mark && isTuned(key)) {
+		markLearned([mark], now);
+		return "known";
+	}
 	// A relearn that failed or found nothing waits a day: it reads the whole sent folder, so it must not run with every mail.
 	if (exists && now.getTime() - Date.parse(learned[`${mark}~tried`] ?? "") < RETRY_MS) return "known";
 	if (exists) markLearned([`${mark}~tried`], now);
