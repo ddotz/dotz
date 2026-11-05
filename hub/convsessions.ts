@@ -14,7 +14,7 @@ import { createOrchestrator, orchBusy, type OrchOpts, type Orchestrator } from "
 import { createCapacity } from "./convcapacity.ts";
 import { omoSelector } from "./runtime/omo.ts";
 import type { createPrompts, Pending } from "./prompts.ts";
-import { MAIN, primaryTarget, safeDir, sessionKeyOf } from "./session-key.ts";
+import { CONV_KINDS, MAIN, primaryTarget, safeDir, sessionKeyOf } from "./session-key.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Prompts = ReturnType<typeof createPrompts>;
@@ -242,6 +242,8 @@ export function createConvSessions(d: ConvDeps) {
 	const all = (): Conv[] => [...(mainConv ? [mainConv] : []), ...convs.values()];
 	return {
 		keyOf,
+		/** The conversation kinds that have a session of their own; the others run on main. */
+		ownKinds: (): readonly string[] => (d.on() ? (d.kinds() ?? CONV_KINDS) : []),
 		get,
 		forTarget,
 		ensure,

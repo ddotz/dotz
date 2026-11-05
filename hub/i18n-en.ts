@@ -62,6 +62,7 @@ export const en = {
 		cancel: "Cancel",
 		none: "-",
 		notRunning: "Not running",
+		thisConversation: "This conversation",
 		model: "Model",
 		effort: "Effort",
 		sessions: "Sessions",

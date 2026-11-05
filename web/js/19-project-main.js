@@ -503,21 +503,24 @@ function renderContext() {
   if (!C) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const list = el("div", { class: "col" });
   // Exited lanes leave this list at once, like the lanes board; the orchestrator always stays.
-  for (const p of C.processes.filter(x => x.kind !== "lane" || laneAlive(x))) {
+  // Then each conversation with its own session, by the same row; a parked one shows its last figure.
+  const convRows = (C.conversations || []).map(x => ({ ...x, name: targetName(x.key) }));
+  for (const p of [...C.processes.filter(x => x.kind !== "lane" || laneAlive(x)), ...convRows]) {
     const cs = compactState(p.compaction);
     const inFlight = p.compaction && (p.compaction.state === "queued" || p.compaction.state === "compacting");
     const btn = el("button", { class: "btn tonal sm", type: "button", disabled: !p.running || inFlight, onclick: ev => busy(ev.currentTarget, async () => {
-      const r = await api("/api/compact", "POST", { target: p.name });
+      const r = await api("/api/compact", "POST", { target: p.key || p.name });
       toast(r.state === "queued" ? `${p.name}: 작업 중이라 끝나면 압축해요` : `${p.name}: 압축을 시작했어요`);
       loadContext(true);
     }) }, "압축");
     // A waiting session whose process is off (it starts again on its next message) keeps 대기 like every other screen, and says why it has no numbers.
-    const off = !p.running && p.status === "idle";
-    const t = p.kind === "lane" ? `lane:${p.name}` : MAIN, [word, tone] = runStatus(t, p.status, targetInfo(t).ask);
+    const off = !p.running && (p.status === "idle" || !!p.key);
+    const t = p.key || (p.kind === "lane" ? `lane:${p.name}` : MAIN), [word, tone] = runStatus(t, off ? "idle" : p.status, targetInfo(t).ask);
     list.append(el("div", { class: "card" },
-      el("div", { class: "heads" }, el("span", { class: `dot ${tone}` }), el("span", { class: "t", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "sp" }), el("span", { class: `tag ${tone}`, text: word })),
+      el("div", { class: "heads" }, el("span", { class: `dot ${tone}` }), el("span", { class: "t", text: p.kind === "orchestrator" ? botName : p.name }), el("span", { class: "sp" }), el("span", { class: `tag ${tone}`, text: word })),
       p.model ? el("div", { class: "sup sub", text: selLabel(p.model) }) : null,
-      p.running ? el("div", { class: "mt8" }, ctxBar(p)) : el("div", { class: "sup mt8", text: off ? "꺼져 있어요. 다음 메시지가 오면 다시 시작해요" : "실행 중이 아니에요" }),
+      p.running || (p.key && p.tokens > 0) ? el("div", { class: "mt8" }, ctxBar(p)) : null,
+      p.running ? null : el("div", { class: "sup mt8", text: off ? "꺼져 있어요. 다음 메시지가 오면 다시 시작해요" : "실행 중이 아니에요" }),
       el("div", { class: "row mt12", style: "justify-content:space-between" }, cs ? el("span", { class: `tag ${cs.tone}`, text: cs.text }) : el("span"), btn)));
   }
   clear(box).append(list, ...ctxModels());
