@@ -234,7 +234,7 @@ function draftFilesNode(d, o = {}) {
     const issues = live && st.attachIssues ? st.attachIssues : d.attachIssues || [];
     const warns = [
       issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부 확인" }), el("span", { class: "dr-wn", text: issues.join(" · ") }))) : null,
-      warn ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
+      warn && !issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
       noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null,
       unchecked ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부가 실제로 붙었는지 몰라요" }), el("span", { class: "dr-wn", text: "보내기 전에 확인해 주세요" }))) : null];
     const rows = fl.map((f, i) => {
