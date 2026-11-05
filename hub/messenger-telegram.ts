@@ -125,7 +125,8 @@ export function createTelegramAdapter(dataDir: string = DATA_DIR, opts: { fetch?
 				const chat = s.chats.find(c => c.id === chatId);
 				const target = chat && targetOf(chat);
 				if (!target) continue;
-				ctx?.receive({ adapter: "telegram", target, text: m.text.trim(), author, ...(m.message_id !== undefined ? { messageId: String(m.message_id) } : {}) });
+				const quoted = m.forward_origin || m.forward_date ? m.text : (m.quote?.text ?? m.reply_to_message?.text);
+				ctx?.receive({ adapter: "telegram", target, text: m.text.trim(), author, ...(m.message_id !== undefined ? { messageId: String(m.message_id) } : {}), ...(quoted ? { quoted } : {}) });
 			}
 			if (cursor > before) {
 				try {

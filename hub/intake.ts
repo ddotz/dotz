@@ -31,7 +31,7 @@ import { settingsNote } from "./settings-turn.ts";
 import { watchAsked } from "./watch-recheck.ts";
 import { pluginThread } from "./plugins.ts";
 import { cancelAuth, pendingWaits } from "./auth.ts";
-import { cancelReply, waitNotice, type WaitDeps } from "./auth-wait.ts";
+import { authHolds, bareText, cancelReply, waitNotice, type WaitDeps } from "./auth-wait.ts";
 
 // Chat is the hub over every work channel: each chat turn carries a short directory so the orchestrator can route the
 // work into the channel it belongs to (or split a growing thread of work into a new one).
@@ -154,18 +154,22 @@ convs.everyInstance(c => c.o.onOwnerCancel(target => void dropPending(target)));
 // A session waiting on dotz_auth gets owner messages only after the wait: the gateway answers them meanwhile (hub/auth-wait.ts).
 const authWait: WaitDeps = {
 	pending: pendingWaits,
-	sameSession: (a, b) => convs.keyOf(a) === convs.keyOf(b),
+	sessionOf: target => convs.keyOf(target),
+	busy: target => convs.forTarget(target)?.o.orch.status === "working",
 	cancel: cancelAuth,
 	post: (to, text, replyTo) => void out(to, text, replyTo, { source: "gateway" }).catch(e => log(`auth wait reply to ${to} failed: ${e}`)),
 };
+// Every surface hands intake the owner's messages only (discord.ts OWNER, each messenger's allow list), as deliver's owner: true below says.
+const inboundOf = (target: string, events: Record<string, any>[], replyTo?: string) => ({ target, text: bareText(events), owner: true, replyTo });
+/** The web's queue keeps a message from intake until the turn ends, which this wait holds off: it goes through intake instead. */
+export const authHeld = (target: string): boolean => authHolds(target, authWait);
 
 export function flush(target: string): void {
 	const b = bursts.get(target);
 	if (!b) return;
 	bursts.delete(target);
 	const head = b.events[0];
-	// Every surface hands intake the owner's messages only (discord.ts OWNER, each messenger's allow list), as deliver's owner: true below says.
-	const inbound = { target, text: b.events.length === 1 ? String(head.text ?? "") : "", owner: true, replyTo: b.replyTo };
+	const inbound = inboundOf(target, b.events, b.replyTo);
 	if (cancelReply(inbound, authWait)) return;
 	// The session that answers this conversation (main with conversation sessions off); one not started yet has no error.
 	const session = convs.forTarget(target)?.o;
@@ -177,13 +181,13 @@ export function flush(target: string): void {
 	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
-	waitNotice(inbound, authWait);
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
 	const was = convs.stateOf(target);
 	digest.note(convs.keyOf(target), "owner", String(merged.text ?? ""));
 	// After a tap on the update bar: kept for the restart, acknowledged on the message (and in a Discord channel's progress line).
 	const heldRefs = b.events.flatMap(e => refOf(e) ?? []);
 	if (updateNow()?.hold(inboxText(merged), { target, replyTo: b.replyTo, owner: true }, heldRefs)) return heldForUpdate(target, heldRefs, b.replyTo);
+	waitNotice(inbound, authWait);
 	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, refs: heldRefs, owner: true });
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.
@@ -236,11 +240,11 @@ async function accountChatAnswer(target: string, ask: Parameters<typeof accountA
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
 // `mail` (hub/mail.ts): the message reaches the orchestrator as one in that mail's Discord thread does (main.ts onOwner), plugin
 // thread hook included; a mail with no thread the hub knows answers in its web conversation `mail:<key>`.
-type WebSend = { source?: string; settings?: string; lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; decision?: string; picks?: Pick[]; elements?: Picked[]; refs?: string[]; via?: string };
+type WebSend = { source?: string; settings?: string; lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; quoted?: boolean; decision?: string; picks?: Pick[]; elements?: Picked[]; refs?: string[]; via?: string };
 export async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
 	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
-	const extra = { mid, ...(s.via ? { via: s.via } : {}), ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.reply ? { reply: s.reply } : {}), ...(s.decision ? { decision: s.decision } : {}), ...(s.picks?.length ? { picks: s.picks } : {}), ...(s.elements?.length ? { elements: s.elements } : {}), ...(s.refs?.length ? { refs: s.refs } : {}) };
+	const extra = { mid, ...(s.via ? { via: s.via } : {}), ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.reply ? { reply: s.reply } : {}), ...(s.quoted ? { quoted: true } : {}), ...(s.decision ? { decision: s.decision } : {}), ...(s.picks?.length ? { picks: s.picks } : {}), ...(s.elements?.length ? { elements: s.elements } : {}), ...(s.refs?.length ? { refs: s.refs } : {}) };
 	if (s.lane) {
 		const name = s.lane;
 		const channel = `lane:${name}`;
@@ -283,6 +287,10 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	else if (s.mode === "steer" && session?.orch.status === "working" && !updateNow()?.holding()) {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
+		// The web composer sends "steer" whenever the session works, so the dotz_auth wait is met here as well as in flush.
+		const inbound = inboundOf(to, [turn], mid);
+		if (cancelReply(inbound, authWait)) return;
+		waitNotice(inbound, authWait);
 		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
 		expectReply(to);
 		emitDelivery(to, mid, steered ? "steered" : "queued");

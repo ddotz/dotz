@@ -82,6 +82,7 @@ import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, workRows, approvals, convOfTarget, setRefHandled, reconcileMailCards } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
+import { primaryTarget } from "./session-key.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue, sendWeb } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
@@ -199,11 +200,13 @@ discord.setFileResolver(p => resolveAllowed(p, fileRoots(), sentFiles()));
 // Cloudflare Tunnel (hub/cloudflared.ts) and the device gate and sets the address; "local" and "tailscale" keep web.public_url or the tailnet lookup.
 void webAccess.start();
 setFormLink(() => getWebBase());
-// The asking conversation (and the messenger rooms it fans out to) hears that a form is open; Discord already has the button message.
+// The asking session's conversation (and the messenger rooms it fans out to) hears that a form is open, there because "취소" works
+// there; Discord already has the button message when it went to that same conversation.
 setAuthOpened((w, discordPosted) => {
-	if (w.target.startsWith("lane:")) return;
+	const same = convs.keyOf(w.target) === w.session;
+	const to = same ? w.target : primaryTarget(w.session);
 	const base = getWebBase();
-	void out(w.target, openedText(w, base ? `${base}/` : undefined), undefined, { source: "gateway", ...(discordPosted ? { discord_route: false } : {}) }).catch(e => log(`auth open notice to ${w.target} failed: ${e}`));
+	void out(to, openedText(w, base ? `${base}/` : undefined), undefined, { source: "gateway", ...(discordPosted && same ? { discord_route: false } : {}) }).catch(e => log(`auth open notice to ${to} failed: ${e}`));
 });
 discord.setFileLink(p => webLink(`/api/file?path=${encodeURIComponent(p)}&dl=1`));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
@@ -297,7 +300,7 @@ void syncAllRooms().then(() => startAll(
 		const thread = m.target.startsWith("th:") ? mailByThread(id) : undefined;
 		const mail = m.target.startsWith("mail:") ? mailByKey(id) : thread;
 		const conv = m.target === "alert" || m.target === "worklog" ? m.target : undefined;
-		await sendWeb({ source: m.adapter, channel: "web", text: m.text, mode: "default", login: m.author, ...(m.target.startsWith("lane:") ? { lane: id } : {}), ...(m.target.startsWith("ch:") ? { project: projectTarget(m.target, discord.channels.work) } : {}), ...(mail ? { mail } : {}), ...(conv ? { conv } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}), ...(m.files?.length ? { files: m.files } : {}) });
+		await sendWeb({ source: m.adapter, channel: "web", text: m.text, mode: "default", login: m.author, ...(m.target.startsWith("lane:") ? { lane: id } : {}), ...(m.target.startsWith("ch:") ? { project: projectTarget(m.target, discord.channels.work) } : {}), ...(mail ? { mail } : {}), ...(conv ? { conv } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}), ...(m.files?.length ? { files: m.files } : {}), ...(m.quoted ? { quoted: true } : {}) });
 	}, m => void pushNotify(m)),
 )).catch(e => log(`messengers failed to start: ${e}`));
 
