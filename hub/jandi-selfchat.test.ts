@@ -137,7 +137,8 @@ test("a peer's reply from another member fires peerReply once, with the prefix t
 	const state = join(dir, "messengers", "jandi-selfchat.json");
 	const saved: number[] = [];
 	const replies: Array<[string, string, number]> = [];
-	const again = () => createSelfChat({ ...cfg, peers }, {
+	const again = () => createSelfChat(cfg, {
+		peers: () => peers,
 		dataDir: dir, api: `http://127.0.0.1:${jandi.port}/`, receive: () => {}, log: () => {}, onError: () => {},
 		peerReply: (peer, text, id) => {
 			saved.push(JSON.parse(readFileSync(state, "utf8")).last_link_id);
@@ -158,6 +159,10 @@ test("a peer's reply from another member fires peerReply once, with the prefix t
 	expect(replies).toEqual([["work", "빌드 끝났어요", 2]]);
 	expect(saved).toEqual([2]);
 	await again().tick();   // a restart does not notify the same reply again
+	expect(replies).toHaveLength(1);
+	peers.splice(0, 1);   // the web settings removed it while this polls
+	messages.push({ id: 7, fromEntity: WEBHOOK_BOT, body: "[work] 또 끝났어요" });
+	await sc.tick();
 	expect(replies).toHaveLength(1);
 });
 

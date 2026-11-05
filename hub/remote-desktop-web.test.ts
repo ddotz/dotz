@@ -240,7 +240,7 @@ describe("entry points follow S.desk", () => {
 	const SELF = { name: "맥미니", url: "https://mini.test", self: true, online: true };
 	const OTHER = { name: "맥북", url: "https://book.test", self: false, online: true };
 	const OFFLINE = { name: "서재", url: "https://den.test", self: false, online: false };
-	const JANDI = { name: "회사", url: "/jandi-peer/x", self: false, online: true, via: "jandi" };
+	const JANDI = { name: "work", url: "/#chat/relay:jandi:work", self: false, online: true, via: "jandi" };
 	const sheet = async (v: View, list: object[]) => {
 		await run(v, `PR.list = ${JSON.stringify(list)}; prOpen(); prLoad = () => {};`);
 		await waitFor(v, `document.querySelector(".pr-sheet .pr-list")`);

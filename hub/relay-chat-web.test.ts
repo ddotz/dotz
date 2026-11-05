@@ -8,7 +8,7 @@ type Line = { id: number; at: number; me: boolean; text: string };
 const NOTE = "잔디로 주고받아요";
 const SELF = { name: "맥미니", self: true, online: true };
 const WORK = { name: "work", url: "/#chat/relay:jandi:work", self: false, online: true, via: "jandi", key: "work", note: NOTE };
-const CORP = { name: "회사", url: "https://corp.example", self: false, online: true, public: true };
+const CORP = { name: "공개 컴퓨터", url: "https://corp.example", self: false, online: true, public: true };
 const RELAY = "/api/relay/jandi/work";
 
 let peers: object[];
@@ -16,6 +16,8 @@ let lines: Line[];
 let gate: Promise<void> | undefined;
 let readFails: boolean;
 let sendFails: boolean;
+const RELAYS = { label: "잔디로 닿는 컴퓨터", hint: "안내", notify: "새 답 알림", add: "컴퓨터 추가", fields: ["name", "keyword", "reply_prefix"].map(key => ({ key, label: key, type: "text", hint: key })), items: [] as object[] };
+let settings: { enabled: boolean; help: string[]; fields: object[]; projects: object[]; relays: typeof RELAYS };
 const seen = inbox<string>();
 const hub = fakeHub({
 	api: async (req, url) => {
@@ -24,6 +26,10 @@ const hub = fakeHub({
 		if (p === "/api/peers") {
 			await gate;
 			return json([{ ...SELF, url: hub.origin }, ...peers]);
+		}
+		if (p === "/api/messengers/jandi") {
+			if (req.method === "PUT") settings = { ...settings, relays: { ...settings.relays, items: ((await req.json()) as { relays: object[] }).relays } };
+			return json(settings);
 		}
 		if (p === `${RELAY}/messages`) return readFails ? json({ error: "잔디에 연결하지 못했어요" }, 502) : json(lines);
 		if (p === `${RELAY}/send`) {
@@ -46,6 +52,7 @@ beforeEach(() => {
 	gate = undefined;
 	readFails = false;
 	sendFails = false;
+	settings = { enabled: true, help: [], fields: [], projects: [], relays: { ...RELAYS, items: [{ name: "work", keyword: "work", reply_prefix: "[work]", notify: true }] } };
 	seen.length = 0;
 });
 afterEach(() => run("localStorage.clear()"));
@@ -69,6 +76,11 @@ const relayOpen = async () => {
 };
 
 describe("picking the relay row", () => {
+	test("the gateway hears that this chat is on screen, which keeps its replies from buzzing", async () => {
+		await relayOpen();
+		expect(await ev(`(viewReport(), VIEW.sent)`)).toBe("relay:jandi:work");
+	});
+
 	test("stays on the page and draws the lines as the normal chat: own line, the computer's reply, the note, the computer's name", async () => {
 		await open();
 		await waitFor(`PR.list.length === 2`);
@@ -186,7 +198,7 @@ describe("a computer with a public address", () => {
 	const pickCorp = async () => {
 		await run(`prOpen();`);
 		await waitFor(`document.querySelectorAll(".pr-sheet .pr-row").length >= 4`);
-		await run(`[...document.querySelectorAll(".pr-sheet .pr-row")].find(b => b.querySelector(".pr-t")?.textContent === "회사").click();`);
+		await run(`[...document.querySelectorAll(".pr-sheet .pr-row")].find(b => b.querySelector(".pr-t")?.textContent === "공개 컴퓨터").click();`);
 	};
 
 	test("opens in the browser tab with no device id", async () => {
@@ -210,5 +222,27 @@ describe("a computer with a public address", () => {
 		expect(href).not.toContain("did");
 		expect(await ev(`window.__go.length`)).toBe(0);
 		expect(await ev(`!!document.querySelector("iframe")`)).toBe(false);
+	});
+});
+
+describe("the JANDI settings", () => {
+	const row = `[data-relay="work"]`;
+	const opened = async () => {
+		await open();
+		await run(`go("jandi");`);
+		await waitFor(`document.querySelector('#jandi ${row}')`);
+	};
+	test("adds a computer from the form, drops it and turns its alerts off, and the computer list is read again each time", async () => {
+		await opened();
+		for (const [key, value] of [["name", "새 컴퓨터"], ["keyword", "lab"], ["reply_prefix", "[lab]"]]) await run(`(() => { const i = document.querySelector('#jandi [name="ms-relay-${key}"]'); i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event("input")); })();`);
+		seen.length = 0;
+		await run(`document.querySelector('#jandi [data-relay-add] .btn').click();`);
+		await waitFor(`document.querySelector('#jandi [data-relay="lab"]') && document.querySelector('#jandi [name="ms-relay-keyword"]').value === ""`);
+		expect(settings.relays.items).toEqual([{ name: "work", keyword: "work", reply_prefix: "[work]", notify: true }, { name: "새 컴퓨터", keyword: "lab", reply_prefix: "[lab]" }]);
+		await run(`document.querySelector('#jandi ${row} [role="switch"]').click();`);
+		await waitFor(`document.querySelector('#jandi ${row} [role="switch"]').getAttribute("aria-checked") === "false"`);
+		await run(`document.querySelector('#jandi [data-relay="lab"] .ib').click();`);
+		await waitFor(`!document.querySelector('#jandi [data-relay="lab"]')`);
+		expect(settings.relays.items).toEqual([{ name: "work", keyword: "work", reply_prefix: "[work]", notify: false }]);
 	});
 });

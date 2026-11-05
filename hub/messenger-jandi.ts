@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { D_CLOSE, parseChoices } from "./choices.ts";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { dropForLine, forLines } from "./forline.ts";
+import { msg } from "./i18n.ts";
 import { createPeerChats, peerReplyPush } from "./jandi-peers.ts";
 import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
@@ -171,6 +172,31 @@ const newRoomId = (taken: Set<string>): string => {
 };
 const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s);
 
+/** The settings section of the computers reached through the self chat: only while it runs, so an install without it sees nothing new. */
+function relaySettings(sc: SelfChatConfig | undefined): Pick<Settings, "relays"> {
+	if (!sc?.enabled || !sc.team_id || !sc.room_id || !sc.member_id || !sc.bot_id) return {};
+	const t = msg().relay;
+	const field = (key: string, label: string, hint: string) => ({ key, label, type: "text" as const, hint });
+	return {
+		relays: {
+			label: t.label,
+			hint: t.hint,
+			notify: t.notify,
+			add: t.add,
+			fields: [field("name", t.name, t.nameHint), field("keyword", t.keyword, t.keywordHint), field("reply_prefix", t.prefix, t.prefixHint)],
+			items: (sc.peers ?? []).map(p => ({ name: p.name, keyword: p.keyword, reply_prefix: p.reply_prefix, notify: p.notify !== false })),
+		},
+	};
+}
+/** The self chat with `list` as its peers. A list the config would cut down is refused whole: the owner sees why, and nothing changes. */
+function withRelays(sc: SelfChatConfig | undefined, list: unknown): SelfChatConfig {
+	if (!sc || !Array.isArray(list)) throw new SettingsError(msg().relay.invalid);
+	const { peers: _old, ...rest } = sc;
+	const next = normalizeSelfChat({ ...rest, peers: list })!;
+	if ((next.peers?.length ?? 0) !== list.length) throw new SettingsError(msg().relay.invalid);
+	return next;
+}
+
 export type JandiAdapter = Adapter & { port(): number | undefined; selfChat(): SelfChat | undefined };
 
 export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
@@ -215,6 +241,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 						mark("self_chat", { last_in: Date.now() });
 						ctx?.receive({ adapter: "jandi", target: "main", text, author: `jandi:${sc.member_id}`, ...(files.length ? { files } : {}) });
 					},
+					peers: () => loadJandiConfig(dataDir).self_chat?.peers,
 					peerReply: (peer, text, id) => {
 						const m = peerReplyPush(peer, text, id);
 						if (m) ctx?.notify?.(m);
@@ -291,6 +318,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 					...status[r.id],
 				})),
 			},
+			...relaySettings(cfg.self_chat),
 			projects: [],
 		};
 	}
@@ -366,6 +394,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			}
 			next.rooms = rooms;
 		}
+		if (body.relays !== undefined) next.self_chat = withRelays(cfg.self_chat, body.relays);
 		saveJandiConfig(next, dataDir);
 	}
 

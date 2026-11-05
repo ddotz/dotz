@@ -47,6 +47,7 @@ export type SettingsRoom = {
 	last_out?: number;
 	last_error?: string;
 };
+export type SettingsRelay = { name: string; keyword: string; reply_prefix: string; notify: boolean };
 export type Settings = {
 	enabled: boolean;
 	help: string[];
@@ -55,6 +56,8 @@ export type Settings = {
 	/** `hint` is the one line of setup an adapter cannot do itself (hub/messenger-rooms.ts); the rooms themselves are made and mapped by the gateway. */
 	rooms?: { label: string; fields: SettingsField[]; items: SettingsRoom[]; editable: boolean; hint?: string };
 	projects: { target: string; name: string }[];
+	/** The computers this messenger carries a conversation to (the adapter's `relay`), where it can carry them; set with PUT { relays }, drawn by web/js/42-relay-chat.js. */
+	relays?: { label: string; hint: string; notify: string; add: string; fields: SettingsField[]; items: SettingsRelay[] };
 	/** Another settings screen that owns the real controls (Discord). */
 	link?: { label: string; view: string };
 	/** Which notice classes this messenger receives (hub/notify-route.ts); filled in by hub/messengers-api.ts, set with PUT { notify }. */
@@ -62,7 +65,7 @@ export type Settings = {
 };
 /** A room the web app's conversation structure calls for (hub/messenger-rooms.ts desiredRooms): main, alert, worklog and one per project. */
 export type DesiredRoom = { kind: "main" | "project" | "alert" | "worklog"; name: string; project?: string };
-export type SettingsPut = { enabled?: boolean; values?: Record<string, unknown>; allow?: string[]; rooms?: { id?: string; name?: string; kind?: string; project?: string; values?: Record<string, unknown> }[] };
+export type SettingsPut = { relays?: Partial<SettingsRelay>[]; enabled?: boolean; values?: Record<string, unknown>; allow?: string[]; rooms?: { id?: string; name?: string; kind?: string; project?: string; values?: Record<string, unknown> }[] };
 export type TestResult = { results: { id: string; name: string; ok: boolean; status?: number; error?: string }[] };
 /** A settings body the adapter refuses; the route answers 400 with the message. */
 export class SettingsError extends Error {}
@@ -94,7 +97,6 @@ export type Adapter = {
 		rows(): Promise<RelayRow[]>;
 		lines(key: string): Promise<RelayLine[]>;
 		send(key: string, text: string): Promise<void>;
-		note: string;
 	};
 	/** deliver() places msg.link itself (JANDI's connect info, Telegram's URL button, Slack's link). Absent: the fan-out appends it to the text as a last line. */
 	ownsLink?: true;

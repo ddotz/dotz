@@ -55,6 +55,22 @@ export const en = {
 	},
 
 	// Owner-facing text of the slash-command cards (hub/control.ts runCommand); lane -> session, worker -> subagent.
+	// A computer with no address of its own, reached through a messenger: the app's computer list, its chat and the messenger's settings screen.
+	relay: {
+		note: "Talks through JANDI",
+		gone: "This computer is no longer on the list",
+		label: "Computers reached through JANDI",
+		hint: "Add another computer that uses the same self-chat room. It joins the computer list, and you talk to it in the normal chat screen. With its switch on, new replies reach your phone.",
+		notify: "New reply alerts",
+		add: "Add computer",
+		name: "Name",
+		nameHint: "How it shows in the list. Left empty, the keyword is used.",
+		keyword: "Keyword",
+		keywordHint: "The word that calls that computer, with no spaces.",
+		prefix: "Reply prefix",
+		prefixHint: "What that computer puts at the very start of its replies.",
+		invalid: "Check the keyword and the reply prefix. Neither can match another computer's, and the list holds up to 8.",
+	},
 	cmd: {
 		failed: "That did not work",
 		applyAnyway: "Apply anyway",

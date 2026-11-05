@@ -3,6 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HUB_TOKEN } from "./config.ts";
+import { msg } from "./i18n.ts";
+import { setViewing } from "./notices-bell.ts";
+import { shouldNotify } from "./push.ts";
 import { createPeerChats, isOnline, linesOf, messageBody, ONLINE_MS, peerReplyPush } from "./jandi-peers.ts";
 import { createSelfChat, normalizeSelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { get, register, RelayError, unregister } from "./messenger.ts";
@@ -66,7 +69,7 @@ function chats(config: SelfChatConfig | null = cfg, withClient = true) {
 	const logs: string[] = [];
 	return { logs, chat: createPeerChats({ config: () => config ?? undefined, client: () => (withClient ? client : undefined), now: () => NOW, log: m => logs.push(m) }) };
 }
-const ROW = { name: "work", url: "/#chat/relay:jandi:work", self: false, online: true, via: "jandi", key: "work", note: "잔디로 주고받아요" };
+const ROW = { name: "work", url: "/#chat/relay:jandi:work", self: false, online: true, via: "jandi", key: "work", note: msg().relay.note };
 // The relay endpoints as the web app calls them, through the messenger registry like hub/routes.ts does.
 const call = (chat: ReturnType<typeof chats>["chat"], path: string, init?: RequestInit) => {
 	register({ id: "jandi", relay: chat } as never);
@@ -102,6 +105,10 @@ afterEach(() => {
 });
 
 describe("self_chat.peers config", () => {
+	test("a reply prefix that is this gateway's own or another peer's is dropped: its answers must not read as that computer's", () => {
+		const peers = [{ keyword: "a", reply_prefix: "[home]" }, { keyword: "b", reply_prefix: "[b]" }, { keyword: "c", reply_prefix: "[b]" }];
+		expect(normalizeSelfChat({ keyword: "dotz", reply_prefix: "[home]", peers })!.peers!.map(p => p.keyword)).toEqual(["b"]);
+	});
 	const base = { enabled: true, keyword: "dotz" };
 	test("keeps valid peers and drops the rest: own keyword, repeats, bad keyword or prefix, more than 8", () => {
 		const peers = normalizeSelfChat({
@@ -316,6 +323,23 @@ describe("the relay endpoints", () => {
 
 describe("a peer's new reply as a notification", () => {
 	const peer = cfg.peers![0]!;
+	test("a credential-shaped word never reaches the payload, and the rest carries no room or member id", () => {
+		const m = peerReplyPush(peer, "키는 sk-abcdefghijklmnopqrstuvwxyz 예요", 9)!;
+		expect(JSON.stringify(m)).not.toContain("sk-abcdefghijklmnopqrstuvwxyz");
+		expect(Object.keys(m).sort()).toEqual(["body", "kind", "tag", "title", "url"]);
+		expect(JSON.stringify(m)).not.toContain(String(cfg.room_id));
+	});
+	test("nothing goes out while that computer's chat is on a screen, and it notifies again once the page is gone", () => {
+		const m = peerReplyPush(peer, "빌드 끝났어요", 11)!;
+		expect(setViewing("tab-relay", `relay:jandi:${peer.keyword}`).ok).toBe(true);
+		expect(shouldNotify(m, 1_000, undefined, () => true)).toBe(false);
+		setViewing("tab-relay", "");
+		expect(shouldNotify(m, 1_000, undefined, () => true)).toBe(true);
+		expect(shouldNotify(m, 2_000, undefined, () => true)).toBe(false);   // the same post twice is one notification
+	});
+	test("a class switched off in the app's settings stays quiet", () => {
+		expect(shouldNotify(peerReplyPush(peer, "빌드 끝났어요", 12)!, 1_000, () => false, () => false)).toBe(false);
+	});
 	test("the class follows the status marker: [ask] asks, [done] and [fail] are results, no marker is a message, [run] is silent", () => {
 		const kind = (text: string) => peerReplyPush(peer, text, 1)?.kind;
 		expect([kind("[ask] 배포할까요?"), kind("[done] 끝났어요"), kind("[fail] 실패했어요"), kind("빌드 시작했어요"), kind("[run] 도는 중")]).toEqual(["ask", "result", "result", "conv", undefined]);
