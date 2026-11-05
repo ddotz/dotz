@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as l from "./lanes.ts";
 import type * as Lanes from "./lanes.ts";
@@ -114,6 +114,63 @@ test("a working lane is never parked, however long since its last frame", async 
 	expect(parkIdleLanes(1_000_000 + 600 * MIN, 20)).not.toContain("idle-busy");
 	expect(agent.killed).toBe(0);
 	l.stopLane("idle-busy");
+	await advance(300);
+});
+
+// A lane's session in an agent dir of its own: a worker's task record and the log whose age is the worker's silence (hub/bgwork.ts stallOf).
+function quietWorker(lane: Lanes.Lane, description: string): (minutes: number) => void {
+	const root = "01a1a711-4db3-7aa6-8fd6-bd53b48fb0f0", agent = join(DATA, `agent-${lane.name}`), store = join(agent, "projects", "p", "senpi-task");
+	const log = join(store, "logs", "st_quiet.jsonl");
+	mkdirSync(join(agent, "sessions", "s"), { recursive: true });
+	mkdirSync(join(store, "tasks"), { recursive: true });
+	mkdirSync(join(store, "logs"), { recursive: true });
+	lane.sessionFile = join(agent, "sessions", "s", `2026-11-04T14-58-11-507Z_${root}.jsonl`);
+	writeFileSync(lane.sessionFile, "");
+	writeFileSync(join(store, "tasks", "st_quiet.json"), JSON.stringify({ task_id: "st_quiet", status: "running", pid: process.pid, root_session_id: root, description, started_at: new Date(Date.now() - 300 * MIN).toISOString() }));
+	writeFileSync(log, `${JSON.stringify({ type: "tool_execution" })}\n`);
+	return minutes => {
+		const at = (Date.now() - minutes * MIN) / 1000;
+		utimesSync(log, at, at);
+	};
+}
+
+test("a worker silent in a long wait keeps its lane up; past the bound the lane stops and the owner is told what stopped with it", async () => {
+	const lane = await idleLane("idle-job");
+	const agent = lane.proc as unknown as FakeAgent;
+	const silentFor = quietWorker(lane, "에고 후보 평가");
+	lane.lastFrameAt = Date.now() - 34 * MIN;
+	const reports: string[] = [];
+	l.setReportHandler((_, text) => void reports.push(text));
+	silentFor(16);
+	expect(parkIdleLanes(Date.now(), 20)).not.toContain("idle-job");
+	expect(agent.killed).toBe(0);
+	silentFor(119);
+	expect(parkIdleLanes(Date.now(), 20)).not.toContain("idle-job");
+	silentFor(120);
+	expect(parkIdleLanes(Date.now(), 20)).toContain("idle-job");
+	expect(agent.killed).toBe(1);
+	expect(reports).toHaveLength(1);
+	expect(reports[0]).toStartWith("[lane stuck]");
+	expect(reports[0]).toContain("에고 후보 평가");
+	l.setReportHandler(() => {});
+	l.stopLane("idle-job");
+	await advance(300);
+});
+
+test("a lane's own shell holds the idle stop only up to the bound", async () => {
+	const lane = await idleLane("idle-shell");
+	const agent = lane.proc as unknown as FakeAgent;
+	writeFileSync(lane.sessionFile!, `${JSON.stringify({ customType: "session-lifecycle", data: { state: "waiting_background", waitingOn: { background: [{ source: "terminal-background-sessions", activeCount: 1 }] } } })}\n`);
+	lane.lastText = "[run] 빌드를 기다려요";
+	const reports: string[] = [];
+	l.setReportHandler((_, text) => void reports.push(text));
+	expect(parkIdleLanes(1_000_000 + 119 * MIN, 20)).not.toContain("idle-shell");
+	expect(agent.killed).toBe(0);
+	expect(parkIdleLanes(1_000_000 + 120 * MIN, 20)).toContain("idle-shell");
+	expect(agent.killed).toBe(1);
+	expect(reports).toHaveLength(1);
+	l.setReportHandler(() => {});
+	l.stopLane("idle-shell");
 	await advance(300);
 });
 
