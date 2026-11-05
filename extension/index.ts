@@ -24,6 +24,7 @@ import { systemDeny } from "../hub/systemdeny.ts";
 import { codeLockReason } from "../hub/codeguard.ts";
 import { lockedCodeDir } from "../hub/selfupdate-local.ts";
 import { loadPlugins, pluginDeny } from "../hub/plugins.ts";
+import { createRefusals } from "./refusals.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
@@ -79,6 +80,7 @@ const throwaway = () => throwawayReason({ hubPid: hubPid(DATA) });
 
 function enforceRules(pi: any): void {
 	let ready = false;
+	const refusals = createRefusals();
 	// Plugin load and reload lines (a failed reload keeps the old guard) go to hub.log, where the owner reads the gateway's.
 	const pluginLog = (line: string) => {
 		try {
@@ -103,14 +105,16 @@ function enforceRules(pi: any): void {
 		const system = systemDeny(command);
 		if (system) return { block: true, reason: `Blocked by dotz: ${system}.` };
 		const plugin = pluginDeny(command, DATA);
-		if (plugin) return { block: true, reason: plugin };
+		if (plugin) return { block: true, reason: refusals.say(plugin) };
 		const file = join(DATA, "RULES.md");
 		const reason = existsSync(file) ? blockedBy(command, readFileSync(file, "utf8")) : undefined;
-		if (reason) return { block: true, reason: `Blocked by the owner's rule (${file}): ${reason}. Do not work around it; report it if the task needs it.` };
+		if (reason) return { block: true, reason: refusals.say(`Blocked by the owner's rule (${file}): ${reason}. Do not work around it; report it if the task needs it.`) };
 		const feature = blockedByFeatures(DATA, command);
-		if (feature) return { block: true, reason: `Blocked by the owner's feature (${join(DATA, "features", feature.id, "feature.md")}): ${feature.reason}. Do not work around it; report it if the task needs it.` };
+		if (feature) return { block: true, reason: refusals.say(`Blocked by the owner's feature (${join(DATA, "features", feature.id, "feature.md")}): ${feature.reason}. Do not work around it; report it if the task needs it.`) };
 	};
 	pi.on("tool_call", (event: any) => (ready ? check(event) : loading.then(() => check(event))));
+	pi.on("input", () => void refusals.reset());
+	pi.on("agent_end", () => void refusals.reset());
 }
 
 function hub(): { url: string; token: string } | undefined {

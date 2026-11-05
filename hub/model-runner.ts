@@ -58,7 +58,14 @@ export function resetClock(ms: number, timeZone = TZ): string {
 	}
 }
 
-export type Health = { ok: true; account?: string } | { ok: false; reason: string };
+export type Health = { ok: true; account?: string } | { ok: false; reason: string; resetAt?: number };
+
+/** The subscription cannot run a call now. `resetAt` (ms) is when its usage limit ends, when the state files name it: a caller waits until then instead of retrying. */
+export class ProviderBlockedError extends Error {
+	constructor(reason: string, readonly resetAt?: number) {
+		super(reason);
+	}
+}
 
 const HEALTH_TTL_MS = 30_000;
 let healthCache: { key: string; at: number; value: Health } | undefined;
@@ -119,13 +126,13 @@ export function ensureProvider(model: string, now = runnerDeps.now()): void {
 	if (!model.startsWith("anthropic-subscription/")) return;
 	const key = `${agentDir()}|${model}`;
 	if (healthCache && healthCache.key === key && now - healthCache.at < HEALTH_TTL_MS) {
-		if (healthCache.value.ok === false) throw new Error(healthCache.value.reason);
+		if (healthCache.value.ok === false) throw new ProviderBlockedError(healthCache.value.reason, healthCache.value.resetAt);
 		return;
 	}
 	const h = subscriptionHealth(now);
-	const value: Health = h.account ? { ok: true, account: h.account } : { ok: false, reason: h.reason ?? "구독 계정을 지금 쓸 수 없어요" };
+	const value: Health = h.account ? { ok: true, account: h.account } : { ok: false, reason: h.reason ?? "구독 계정을 지금 쓸 수 없어요", resetAt: h.resetAt };
 	healthCache = { key, at: now, value };
-	if (!value.ok) throw new Error(value.reason);
+	if (!value.ok) throw new ProviderBlockedError(value.reason, value.resetAt);
 }
 
 // The account a warm process (or one call) should pin, as the readiness check just chose it.
