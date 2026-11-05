@@ -11,7 +11,7 @@ import { statSync } from "node:fs";
 import { basename } from "node:path";
 import { paths } from "./config.ts";
 import { sentFiles, tailEvents } from "./events.ts";
-import { attachFolder } from "../features/reply-drafts/lib/flow.ts";
+import { attachFolder, draftAttachIssues } from "../features/reply-drafts/lib/flow.ts";
 import { libraryFile, listLibrary, rankLibrary } from "../features/reply-drafts/lib/library.ts";
 import { canAttach } from "../features/reply-drafts/lib/senders.ts";
 import { addStagedBytes, addStagedFile, removeStagedFile, stagedFiles } from "../features/reply-drafts/lib/staged.ts";
@@ -60,9 +60,14 @@ export function pendingDraftFiles(id: string): DraftFileIn[] | undefined {
 	const rec = getDraft(id);
 	return rec && rec.kind === "mail" && rec.status === "pending" && canAttach(rec.source) ? stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size })) : undefined;
 }
-// Every open card re-checked against its staged files (hub/notices.ts refreshDraftFiles): on start, after a file changes here, and when the
-// approvals or the bell are read, so a file staged by another process (draft.ts revise, a rule) shows too.
-export const syncCardFiles = (): number => syncDraftFiles(pendingDraftFiles);
+// Where a pending mail draft's words and files disagree (flow.ts draftAttachIssues), beside its files; undefined for any other draft.
+export function pendingDraftIssues(id: string): string[] | undefined {
+	const rec = getDraft(id);
+	return rec && rec.kind === "mail" && rec.status === "pending" && canAttach(rec.source) ? draftAttachIssues(rec) : undefined;
+}
+// Every open card re-checked against its staged files and the findings on them (hub/notices.ts refreshDraftFiles): on start, after a file changes here,
+// and when the approvals or the bell are read, so a file staged by another process (draft.ts revise, attach, a rule) shows too.
+export const syncCardFiles = (): number => syncDraftFiles(pendingDraftFiles, pendingDraftIssues);
 export const askedFile = (ref: string, n: number): { path: string; name: string } | undefined => (getDraft(ref) ? undefined : askedFiles(ref)?.[n]);
 
 async function view(rec: DraftRec | undefined, ref: string) {
@@ -73,6 +78,8 @@ async function view(rec: DraftRec | undefined, ref: string) {
 		canAttach: !!rec && canAttach(rec.source),
 		library: editable && !!(await attachFolder(rec.ref)),
 		editable,
+		// Where the draft's words and its files disagree now (the card's 첨부 확인 line), so the sheet follows a file added or taken off.
+		attachIssues: rec ? draftAttachIssues(rec) : [],
 		// false: dotz holds no record of this draft (a block written by hand, another tool sends it), so the files it names are not
 		// files dotz has staged and nothing here can say they go out.
 		// A block a session wrote counts as tracked when every file it names is a [file] line of the asking message (askedFiles).

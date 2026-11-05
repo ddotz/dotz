@@ -3,7 +3,7 @@
 import { generateReply, lessonOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
-import { asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
@@ -13,7 +13,7 @@ import { EXAMPLES, pastPairs, SEEDED_NOTE, similarPairs, withExamples } from "./
 // after the reply is posted, revised or dropped with it.
 // `library: "mr"`: only audio (MR) files of one song are taken from the library (a buyer's request); see hub/mail-cli.ts composeMail.
 export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; library?: "mr" };
-export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number }[]; asksFile?: boolean; libraryMiss?: boolean };
+export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number }[]; asksFile?: boolean; libraryMiss?: boolean; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
 /** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
 export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string };
 export type MailLink = {
@@ -23,8 +23,10 @@ export type MailLink = {
 	compose: (spec: MailSpec) => Promise<{ ok: true; id: string; notes?: string[]; libraryMiss?: boolean } | { ok: false; reason: string }>;
 	/** The status of a mail draft whatever it is ("pending", "sent", ...); missing = only pending drafts are known (`view`). */
 	state?: (id: string) => string | undefined;
-	/** Sends the mail draft; the reply was just posted by the owner's pick, so no second pick is asked. */
-	send: (id: string) => Promise<{ ok: boolean; text: string }>;
+	/** Sends the mail draft; the reply was just posted by the owner's pick, so no second pick is asked. A mail whose files disagree with its words is refused unless `asIs` (the owner picked 이대로 보내기). */
+	send: (id: string, opts?: { asIs?: true }) => Promise<{ ok: boolean; text: string }>;
+	/** Where the mail draft's words and files disagree; checked before the reply is posted. Missing = nothing to check. */
+	issues?: (id: string) => string[];
 	drop: (id: string) => void;
 	revise: (id: string, change: string) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
 	view: (id: string) => MailView | undefined;
@@ -54,6 +56,11 @@ export type EngineDeps = {
 const MATCH_NOTE = /^(메일 대조|근거|초안 메모):/;
 
 export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === "website" ? "site" : src.kind);
+// A mail whose files disagree with its words is refused before the reply is posted: a reply posted ahead of a refused mail would say it was sent.
+function mailRefusal(mail: MailLink | undefined, mailId: string): GateResult | undefined {
+	const issues = mail?.issues?.(mailId) ?? [];
+	return issues.length ? { ok: false, reason: `${ATTACH_REFUSED} ${issues.join(" · ")}. 답글도 올리지 않았어요. ${ATTACH_AS_IS_HINT}` } : undefined;
+}
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
 const MAX_QUEUE = 200;
@@ -274,21 +281,21 @@ export function createEngine(deps: EngineDeps) {
 	// sends no mail. A failed mail leaves the reply posted and says so in the send record (Reply.mail) and the event.
 	// `only: "reply"` posts the reply and leaves the mail draft on its own (no longer linked once the reply draft is sent, so it is asked and sent
 	// by itself: hub/mail-cli.ts ask/send).
-	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule"; only?: "reply" }): GateResult {
+	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule"; only?: "reply"; asIs?: true }): GateResult {
 		const mailId = opts.by === "owner" && opts.only !== "reply" ? store.drafts().find(d => d.code === codeOrId)?.mail : undefined;
-		const r = dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}) }, gate);
+		const r = (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}) }, gate);
 		if (!r.ok) return r;
-		const done = mailId ? r.done.then(rep => sendMail(rep, mailId)) : r.done;
+		const done = mailId ? r.done.then(rep => sendMail(rep, mailId, opts.asIs)) : r.done;
 		pending.add(done);
 		void done.finally(() => pending.delete(done));
 		return { ...r, done };
 	}
 
-	async function sendMail(rep: Reply, mailId: string): Promise<Reply> {
+	async function sendMail(rep: Reply, mailId: string, asIs?: true): Promise<Reply> {
 		if (rep.state !== "sent") return rep;
 		let mail: MailOutcome;
 		try {
-			const m = deps.mail ? await deps.mail.send(mailId) : { ok: false, text: "메일 보내기를 쓸 수 없어요" };
+			const m = deps.mail ? await deps.mail.send(mailId, asIs ? { asIs } : undefined) : { ok: false, text: "메일 보내기를 쓸 수 없어요" };
 			mail = { state: m.ok ? "sent" : "failed", text: m.text };
 		} catch (e) {
 			mail = { state: "failed", text: e instanceof Error && e.message ? clip(e.message, 160) : "메일을 보내는 중 오류가 났어요" };

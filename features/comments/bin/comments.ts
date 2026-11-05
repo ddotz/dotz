@@ -4,6 +4,8 @@
 // created, is 1) 보내기 (hub/draft-approval.ts draftVerdict); the engine's gate (hub/comments/contract.ts) then posts it once.
 // `send <code> --only reply|mail` sends one part of a reply + mail card: also allowed after the card's 답글만 보내기 / 메일만 보내기 pick, and after
 // 어떻게 보낼지 직접 입력 (the owner's own words, printed back so the bot does what they say). The other part stays and is asked again.
+// A mail whose files disagree with its words is refused before the reply is posted; `--as-is` sends it as it is, and only after the owner's pick 이대로 보내기.
+// (the gateway adds it for that pick).
 import { join } from "node:path";
 import { commentAsk } from "../../../hub/comments/ask.ts";
 import type { Engine } from "../../../hub/comments/engine.ts";
@@ -50,7 +52,8 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 			if (only !== undefined && only !== "reply" && only !== "mail") return fail("--only는 reply 또는 mail이에요");
 			// Labels of the send-mode options on the card (hub/draft-approval.ts, when the card offers them).
 			const picked: string = v.verdict;
-			const allowed = ["send", "own", ...(only === "reply" ? ["send-main"] : only === "mail" ? ["send-mail"] : [])];
+			const allowed = ["send", "own", "send-as-is", ...(only === "reply" ? ["send-main"] : only === "mail" ? ["send-mail"] : [])];
+			if (args.includes("--as-is") && picked !== "send-as-is") return fail("사용자가 이대로 보내기를 고른 기록이 없어서 보내지 않았어요");
 			if (!allowed.includes(picked)) return fail(`사용자가 1) 보내기를 고른 기록이 없어서 보내지 않았어요 (${v.verdict === "none" ? "고른 기록 없음" : v.verdict})`);
 			const said = picked === "own" && v.detail ? [`사용자 지시: ${v.detail}`] : [];
 			if (only === "mail") {
@@ -58,7 +61,7 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 				if (!m.ok) return fail(`메일을 보내지 못했어요: ${m.text}`);
 				return { lines: [...said, `메일만 보냈어요. 답글은 아직 올리지 않았어요 (${d.code})`, askOf(d.code, "메일은 보냈어요. 답글은 따로 물어봐요") ?? ""].filter(Boolean), code: 0 };
 			}
-			const r = engine.send(d.code, { by: "owner", ...(only === "reply" ? { only } : {}) });
+			const r = engine.send(d.code, { by: "owner", ...(only === "reply" ? { only } : {}), ...(picked === "send-as-is" ? { asIs: true as const } : {}) });
 			if (!r.ok) return fail(r.reason);
 			const done = await r.done;
 			if (done.state !== "sent") return fail(`답글을 올리지 못했어요${d.mail ? " (메일도 보내지 않았어요)" : ""}: ${done.reason ?? "알 수 없는 이유"}`);
@@ -74,7 +77,7 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 			return { lines: [cfg.enabled ? "댓글 연동: 켜짐" : "댓글 연동: 꺼짐", ...rows, `초안 ${t.drafts}건, 초안 한 건당 평균 입력 ${t.avgIn} / 출력 ${t.avgOut} 토큰`], code: 0 };
 		}
 		default:
-			return { lines: ["usage: comments.ts draft <comment id> | send <code> [--only reply|mail] | revise <code> --change <text> [--part reply|mail] | drop <code> | status"], code: 2 };
+			return { lines: ["usage: comments.ts draft <comment id> | send <code> [--only reply|mail] [--as-is] | revise <code> --change <text> [--part reply|mail] | drop <code> | status"], code: 2 };
 	}
 }
 

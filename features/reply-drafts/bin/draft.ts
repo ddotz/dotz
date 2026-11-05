@@ -1,17 +1,22 @@
-// Action CLI the orchestrator runs: `new --mail <key>`, `revise <id> --change <text>`, `send <id>`, `drop <id>`, `status`.
+// Action CLI the orchestrator runs: `new --mail <key>`, `revise <id> --change <text>`, `send <id>`, `drop <id>`, `attach <id> <file>`, `detach <id> <n|name>`, `status`.
 // `new` and `revise` print the [ask] block to post unchanged (comment and chat drafts print the reply text only, notes go to stderr);
 // `send` refuses unless the user picked 1) 보내기 for that exact id. Stdin of `new` is the text to answer.
+import { existsSync } from "node:fs";
+import { basename, isAbsolute } from "node:path";
 import { replyChoiceBlock } from "../../../hub/choices.ts";
 import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../../../hub/followup.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
-import { askText, buildDraft, defaultCall, dropDraft, kindOf, refineAfterCorrection, reviseDraft, sendDraft, type FlowDeps } from "../lib/flow.ts";
+import { askText, attachFolder, buildDraft, defaultCall, dropDraft, kindOf, refineAfterCorrection, reviseDraft, sendDraft, type FlowDeps } from "../lib/flow.ts";
 import { INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
-import { addDraft, getDraft, listDrafts } from "../lib/store.ts";
+import { addDraft, type DraftRec, getDraft, listDrafts } from "../lib/store.ts";
+import { listLibrary } from "../lib/library.ts";
+import { canAttach } from "../lib/senders.ts";
+import { removeStagedFile, stagedFiles, stageLibraryFile } from "../lib/staged.ts";
 
 // Exit code of `new --kind chat` when the message needs the owner's own decision: stdout is the choice block to post as an [ask] (hub/choices.ts replyChoiceBlock).
 export const ASK_EXIT = 4;
-const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app> [--room <id>] --change <text> | status\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
+const USAGE = "usage: draft.ts new --mail <key> [--app <app>] [--room <id>] [--kind mail|comment|chat] [--from <sender>] [--subject <s>] [--context <c>] [--source <src>] [--id <mail id>] [--choice <the owner's pick>] (text on stdin) | revise <id> --change <text> | send <id> | drop <id> | correct --app <app> [--room <id>] --change <text> | attach <id> <path or file name in the 첨부 파일 폴더> | detach <id> <n or file name> | status\n  attach / detach change the files of a pending mail draft and print the refreshed [ask] (never edit draft-files/ or drafts.json by hand)\n  new --app kakao --room <chat id> --kind chat (recent messages on stdin; --mail optional) prints only the reply text\n  chat exit codes: 0 reply text on stdout | 3 nothing to answer | 4 the owner must choose first: stdout is a 결정 block (post it as an [ask]); after his pick run the same command again with --choice \"<pick>\"\n  --app: mail (default for mail), youtube | instagram for comments, kakao for chats; --room only for messenger rooms";
 
 type Out = { lines: string[]; code: number; notes?: string[] };
 export type DraftDeps = FlowDeps & { kakaoReader?: (chatId: string) => Promise<OwnerReader>; hub?: HubLike };
@@ -29,6 +34,26 @@ const positionals = (args: string[]): string[] => {
 	}
 	return out;
 };
+
+const nfc = (s: string) => s.normalize("NFC");
+// The pending mail draft whose files `attach` / `detach` change, or why it cannot.
+function editable(id: string | undefined): DraftRec | string {
+	const rec = id ? getDraft(id) : undefined;
+	if (!rec) return `초안 ${id ?? ""}을(를) 찾지 못했어요`;
+	if (rec.status !== "pending" || rec.kind !== "mail") return `초안 ${id}은(는) 기다리는 메일 초안이 아니라서 파일을 바꿀 수 없어요`;
+	if (!canAttach(rec.source)) return "이 메일은 파일을 붙여 보낼 수 없어요";
+	return rec;
+}
+// An absolute path of a file, else a name (or folder-relative path) in the mail app's 첨부 파일 폴더; one match only.
+async function fileToAttach(rec: DraftRec, what: string): Promise<string | { error: string }> {
+	if (isAbsolute(what) && existsSync(what)) return what;
+	const folder = await attachFolder(rec.ref);
+	if (!folder) return { error: "첨부 파일 폴더가 정해져 있지 않아요. 파일의 전체 경로로 알려 주세요" };
+	const all = listLibrary(folder), exact = all.filter(f => nfc(f.rel) === nfc(what));
+	const hit = exact.length ? exact : all.filter(f => nfc(basename(f.rel)) === nfc(basename(what)));
+	if (hit.length === 1) return hit[0]!.path;
+	return { error: hit.length ? `이름이 같은 파일이 여러 개예요: ${hit.map(f => f.rel).join(", ")}` : `첨부 파일 폴더에서 ${what}을(를) 찾지 못했어요` };
+}
 
 export async function runDraft(args: string[], stdin: string, deps: DraftDeps = {}): Promise<Out> {
 	const [cmd, ...rest] = args;
@@ -95,6 +120,29 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			recordCorrection({ app, ...(room !== undefined ? { room } : {}) }, change, (deps.now ?? (() => new Date()))());
 			await refineAfterCorrection({ app, ...(room !== undefined ? { room } : {}) }, deps);
 			return { lines: [`고친 점을 ${room !== undefined ? `${app} 대화방` : app} 말투에 기록했어요`], code: 0 };
+		}
+		// The files of a pending mail draft: the owner's card follows them (its 첨부 확인 line too), and the refreshed [ask] is printed.
+		case "attach": {
+			if (!pos[0] || !pos[1]) return { lines: [USAGE], code: 2 };
+			const rec = editable(pos[0]);
+			if (typeof rec === "string") return { lines: [rec], code: 1 };
+			const src = await fileToAttach(rec, pos[1]);
+			if (typeof src !== "string") return { lines: [src.error], code: 1 };
+			try {
+				await stageLibraryFile(rec.id, src, deps.stage);
+			} catch (e) {
+				return { lines: [(e as Error).message], code: 1 };
+			}
+			return { lines: [askText(getDraft(rec.id)!, [], "파일을 붙였어요")], code: 0 };
+		}
+		case "detach": {
+			if (!pos[0] || !pos[1]) return { lines: [USAGE], code: 2 };
+			const rec = editable(pos[0]);
+			if (typeof rec === "string") return { lines: [rec], code: 1 };
+			const files = stagedFiles(rec.id);
+			const at = /^\d+$/.test(pos[1]) ? Number(pos[1]) - 1 : files.findIndex(f => nfc(f.name) === nfc(pos[1]!));
+			if (!removeStagedFile(rec.id, at)) return { lines: [`없는 파일이에요: ${pos[1]} (붙은 파일: ${files.map((f, i) => `${i + 1}) ${f.name}`).join(", ") || "없음"})`], code: 1 };
+			return { lines: [askText(getDraft(rec.id)!, [], "파일을 뺐어요")], code: 0 };
 		}
 		case "drop":
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
