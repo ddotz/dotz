@@ -345,6 +345,19 @@ test("only a discovered peer may read or set a device's record on a gateway", as
 	expect(await (await dev("GET", `?did=${PHONE}&from=${GW.beta.url}`)).json()).toEqual({ on: true, app: false });
 });
 
+test("opening a relayed computer's chat closes its reply notifications on every device and leaves another computer's", async () => {
+	const { phoneApp } = await devices();
+	const url = "/#chat/relay:jandi:work";
+	const mine = { ...notice(), url, tag: "relay:jandi:work:7" }, other = { ...notice(), url: "/#chat/relay:jandi:work2", tag: "relay:jandi:work2:8" };
+	await send("alpha", mine);
+	await send("alpha", other);
+	await inst.alpha.withdrawRelay("relay:jandi:work");
+	expect(phoneApp.got().at(-1)).toMatchObject({ kind: "withdraw", withdraw: [mine.tag] });
+	const before = pushes.length;
+	await inst.alpha.withdrawRelay("relay:jandi:work");   // told once: the page reports every 20 s
+	expect(pushes.length).toBe(before);
+});
+
 // Owner 2026-10-28: a notification about something already handled ("확인이 필요" for a finished item) must go away on every device.
 test("a handled notice is taken back on every device it reached: now on a regular endpoint, relayed copies on the other computer too", async () => {
 	const { phoneApp, laptop } = await devices();

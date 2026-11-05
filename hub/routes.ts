@@ -18,7 +18,7 @@ import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
 import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
-import { pushRoute } from "./push.ts";
+import { pushRoute, viewConversation } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
 import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection, withStoreDrafts } from "./integrations.ts";
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
@@ -59,7 +59,7 @@ import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { type DecisionSend, type Notice, allNotices, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, handledNotice, ignoreNotice, undismissNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { type DecisionSend, type Notice, allNotices, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, handledNotice, ignoreNotice, undismissNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, unignoreNotice, unreadCount } from "./notices.ts";
 import { projectFiles } from "./projectinfo.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
@@ -728,7 +728,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// The page reports the conversation it shows ("" = hidden): answers there make no unread message item (hub/notices.ts).
 		if (req.method === "POST" && url.pathname === "/api/viewing") {
 			const b = await body(req);
-			const r = setViewing(b.id, b.conv);
+			const r = viewConversation(b.id, b.conv);
 			return json(r, r.ok ? 200 : 400);
 		}
 		const dismiss = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/dismiss$/.exec(url.pathname) : null;

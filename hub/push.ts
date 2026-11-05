@@ -11,7 +11,7 @@ import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
-import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onNoticeUnread } from "./notices.ts";
+import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onNoticeUnread, setViewing } from "./notices.ts";
 import { DECISION_HEAD, decisionText } from "./choices.ts";
 import { noticeKo, plainTable } from "./notice-ko.ts";
 import { type Found, knownComputers } from "./peers.ts";
@@ -236,6 +236,17 @@ export async function withdraw(tags: readonly string[], relay = true): Promise<n
 		if (me) await Promise.all(peers.map(p => peerJson(p.url, "/api/push/relay", { from: me.url, withdraw: [...new Set(tags)] })));
 	}
 	return now.size;
+}
+/** A relayed computer's chat is on screen: the notifications of its replies (tagged `<conv>:<line id>`, hub/jandi-peers.ts peerReplyPush) are read, on every device. */
+export async function withdrawRelay(conv: string): Promise<void> {
+	const tags = [...shown.keys()].filter(t => t.startsWith(`${conv}:`));
+	if (tags.length) await withdraw(tags);
+}
+/** POST /api/viewing: the page says which conversation it shows; a relayed computer's chat has no bell item, so what reads it is here. */
+export function viewConversation(id: unknown, conv: unknown): ReturnType<typeof setViewing> {
+	const r = setViewing(id, conv);
+	if (r.ok && typeof conv === "string" && conv.startsWith("relay:")) void withdrawRelay(conv).catch(err => log(`push: withdraw failed: ${(err as Error).message}`));
+	return r;
 }
 /** The notification tags a settled matter makes stale: a decision answered or dismissed, a conversation read. */
 export function staleTags(e: Record<string, unknown>): string[] {

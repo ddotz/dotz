@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { msg } from "./i18n.ts";
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -267,6 +268,56 @@ describe("rooms from the web structure", () => {
 		return { d, a: createJandiAdapter(d), cleanup: () => rmSync(d, { recursive: true, force: true }) };
 	};
 	const shape = (d: string) => loadJandiConfig(d).rooms.map(r => [r.kind, r.project ?? "", r.name]);
+
+	describe("computers reached through the self chat", () => {
+		const self_chat = { enabled: true, team_id: 1, room_id: 2, member_id: 3, bot_id: 4, keyword: "dotz", reply_prefix: "[home]", session_secret: "my-session" };
+		const base = { enabled: true, listen: { host: "127.0.0.1", port: 0 }, allow_emails: [], rooms: [] };
+		const A = { name: "A", keyword: "alpha", reply_prefix: "[alpha]", notify: true };
+
+		test("an install with no self chat, or one that is off, shows nothing new and refuses the list", () => {
+			for (const cfg of [base, { ...base, self_chat: { ...self_chat, enabled: false } }]) {
+				const t = fresh(cfg);
+				try {
+					expect(t.a.settings!().relays).toBeUndefined();
+				} finally {
+					t.cleanup();
+				}
+			}
+			const t = fresh(base);
+			try {
+				expect(() => t.a.saveSettings!({ relays: [A] })).toThrow();
+				expect(loadJandiConfig(t.d).self_chat).toBeUndefined();
+			} finally {
+				t.cleanup();
+			}
+		});
+
+		test("the list is set whole from the settings, the notify switch included, and the session settings stay", () => {
+			const t = fresh({ ...base, self_chat });
+			try {
+				expect(t.a.settings!().relays!.items).toEqual([]);
+				const two = t.a.saveSettings!({ relays: [A, { name: "", keyword: "beta", reply_prefix: "[beta]", notify: false }] });
+				expect(two.relays!.items).toEqual([A, { name: "beta", keyword: "beta", reply_prefix: "[beta]", notify: false }]);
+				expect(loadJandiConfig(t.d).self_chat).toMatchObject({ session_secret: "my-session", reply_prefix: "[home]", room_id: 2 });
+				expect(t.a.saveSettings!({ relays: [] }).relays!.items).toEqual([]);
+				expect(loadJandiConfig(t.d).self_chat).not.toHaveProperty("peers");
+			} finally {
+				t.cleanup();
+			}
+		});
+
+		test("a list with a bad entry is refused whole and changes nothing", () => {
+			const t = fresh({ ...base, self_chat });
+			try {
+				t.a.saveSettings!({ relays: [A] });
+				for (const bad of [{ keyword: "two words", reply_prefix: "[x]" }, { keyword: "dotz", reply_prefix: "[x]" }, { keyword: "x", reply_prefix: "[home]" }, { keyword: "x", reply_prefix: "[alpha]" }, { keyword: "x" }])
+					expect(() => t.a.saveSettings!({ relays: [A, bad] })).toThrow(msg().relay.invalid);
+				expect(t.a.settings!().relays!.items).toEqual([A]);
+			} finally {
+				t.cleanup();
+			}
+		});
+	});
 
 	test("switching it on maps main, alert, worklog and every project; nothing is sent and no webhook is invented", async () => {
 		const t = fresh({ enabled: true, listen: { host: "127.0.0.1", port: 0 }, allow_emails: [], rooms: [] });

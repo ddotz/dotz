@@ -87,3 +87,28 @@ async function relaySend(text) {
 const relayTick = () => { if (relayOn() && !document.hidden) relayLoad(target, true); };
 setInterval(relayTick, RELAY_POLL_MS);
 document.addEventListener("visibilitychange", relayTick);
+
+// 설정 > JANDI: which computers this messenger reaches (settings().relays, hub/messenger-jandi.ts). A change is saved at once, like the 알림 switches on that
+// screen, and the computer list is read again, so a new computer shows without a restart.
+function msRelaySave(p, items, btn) {
+  return busy(btn, async () => {
+    p.s = await api(`/api/messengers/${enc(p.id)}`, "PUT", { relays: items });
+    p.relAdd = {};
+    prLoad();
+    if (current === p.id) renderMessenger(p.id);
+  });
+}
+function msRelaySection(p, s) {
+  const r = s.relays;
+  if (!r) return [];
+  const add = p.relAdd = p.relAdd || {}, label = key => r.fields.find(f => f.key === key).label;
+  const rows = r.items.map((c, i) => el("div", { class: "li", "data-relay": c.keyword },
+    el("span", { class: "tx" }, el("div", { class: "hd", text: c.name }), el("div", { class: "sup", text: `${label("keyword")} ${c.keyword} · ${label("reply_prefix")} ${c.reply_prefix}` })),
+    liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(c.notify), "aria-label": `${c.name} ${r.notify}`, title: r.notify,
+      onclick: ev => msRelaySave(p, r.items.map((x, j) => (j === i ? { ...x, notify: !x.notify } : x)), ev.currentTarget) }),
+    el("button", { type: "button", class: "ib", "aria-label": `${c.name} 빼기`, onclick: ev => msRelaySave(p, r.items.filter((_, j) => j !== i), ev.currentTarget) }, icon("close")))));
+  const form = el("div", { class: "li dcs-form", "data-relay-add": "1" },
+    ...r.fields.map(f => el("div", {}, textField(f.label, input({ value: add[f.key] || "", name: `ms-relay-${f.key}`, oninput: ev => { add[f.key] = ev.target.value; } })), el("div", { class: "sup", text: f.hint }))),
+    el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn tonal", onclick: ev => msRelaySave(p, [...r.items, { ...add }], ev.currentTarget), text: r.add })));
+  return [el("div", { class: "sec", text: r.label }), el("div", { class: "list" }, ...rows, form, el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: r.hint }))))];
+}
