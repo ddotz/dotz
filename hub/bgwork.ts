@@ -569,6 +569,14 @@ export function createBgWork(deps: BgWorkDeps) {
 	}
 
 	/**
+	 * Workers OmO lists as running that have only gone silent past the stall window, not failed: a worker blocking on a long wait
+	 * writes nothing and looks the same as a hung one, so an idle stop must not take them for finished (laneidle.ts).
+	 */
+	function quietWork(file: string): BgWork[] {
+		return records(file).map(toWork).filter(w => w.status === "stalled" && !w.error);
+	}
+
+	/**
 	 * 중단: ends a running worker's process (SIGTERM, then SIGKILL when it is still there after a grace period) and lists it as
 	 * stopped from then on. A worker with no process id cannot be ended from here, and that is said instead of claimed done.
 	 */
@@ -600,7 +608,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		return { ok: true };
 	}
 
-	return { list, running, runningWork, queuedWork, takeStalled, cancel, reportOf, byId };
+	return { list, running, runningWork, quietWork, queuedWork, takeStalled, cancel, reportOf, byId };
 }
 
 const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });
@@ -612,5 +620,7 @@ export const sessionProjects = (sessionFile: string) => join(dirname(dirname(dir
 export const runningOmoWorkers = (sessionFile: string | undefined): number => anySession.running(sessionFile);
 /** The running OmO workers under one session file (a lane's), as records with description, start and model; none for no session. */
 export const runningOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.runningWork(sessionFile) : []);
+/** The workers under one session file silent past the stall window, with no error of their own. */
+export const quietOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.quietWork(sessionFile) : []);
 /** 중단 for a worker of another session (a lane's). */
 export const cancelOmoWorker = (id: string, sessionFile: string | undefined): Promise<CancelResult> => anySession.cancel(id, sessionFile);

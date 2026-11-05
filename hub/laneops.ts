@@ -16,7 +16,7 @@ import { baseLanguage, languageName } from "./language.ts";
 import { hubChain, Chain, Reverter } from "./fallback.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { statusActivity, runningSubagents } from "./activity.ts";
-import { runningOmoWorkers } from "./bgwork.ts";
+import { quietOmoWork, runningOmoWorkers } from "./bgwork.ts";
 import { openTodos } from "./runstate.ts";
 import { backgroundWork, readTodo, workCutOff } from "./todo.ts";
 import { parseTone } from "./tone.ts";
@@ -415,15 +415,23 @@ export function restoreLanes(): string[] {
 // (a restart killed the shell of a turn that had ended 88 s earlier, site-demo-proto 2026-11-04 01:11; 0.6 s, prototype-to-product 00:44).
 // A shell left running after a [done] or an [ask] (a dev server, say) is not what the lane waits on.
 // Only a live process is busy: a queued lane or one whose spawn failed has nothing a gateway restart could cut off (the Mac mini's
-// restart waited on the dead company-allowance-review, 2026-10-29).
-export const laneBusy = (lane: Lane): boolean =>
-	(Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting" || runningOmoWorkers(lane.sessionFile) > 0 || (backgroundWork(lane.sessionFile) > 0 && !closesTurn(lane.lastText)))) ||
+// restart waited on the dead company-allowance-review, 2026-10-29). `shells` false leaves the shell out: the idle stop bounds it itself.
+const waitsOnShell = (lane: Lane): boolean => backgroundWork(lane.sessionFile) > 0 && !closesTurn(lane.lastText);
+export const laneBusy = (lane: Lane, shells = true): boolean =>
+	(Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting" || runningOmoWorkers(lane.sessionFile) > 0 || (shells && waitsOnShell(lane)))) ||
 	runningSubagents(`lane:${lane.name}`) > 0;
 
+// What an idle stop would end with the lane, and since when nothing was heard of it: its silent workers and the shell it waits on.
+export const laneJobs = (lane: Lane): { what: string; since: number }[] => [
+	...quietOmoWork(lane.sessionFile).map(w => ({ what: w.description, since: w.ended_at ?? w.started_at })),
+	...(waitsOnShell(lane) ? [{ what: msg().laneShellJob, since: lane.lastFrameAt ?? Date.now() }] : []),
+];
+
 // Memory: stops an idle lane's process (~1 GB with its claude child) and keeps the lane idle on the same session file; the
-// next message resumes it there (sendToLane), and a gateway restart leaves it stopped (restoreLanes). Never a busy lane.
+// next message resumes it there (sendToLane), and a gateway restart leaves it stopped (restoreLanes). Never a busy lane; a shell it
+// waits on is the caller's to weigh (laneidle.ts).
 export function parkLane(lane: Lane): boolean {
-	if (!lane.proc || lane.status !== "idle" || laneBusy(lane) || lane.revive || !lane.sessionFile) return false;
+	if (!lane.proc || lane.status !== "idle" || laneBusy(lane, false) || lane.revive || !lane.sessionFile) return false;
 	lane.quiet = true;
 	lane.parked = true;
 	persist(lane);
