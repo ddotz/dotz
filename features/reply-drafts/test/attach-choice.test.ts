@@ -93,6 +93,23 @@ describe("(d) a rule's files are candidates, not a replacement", () => {
 		expect((await candidatesFor({ kind: "mail", from: "x", subject: "봄노래", text: "봄노래 악보" }, { source: "zele", ref: "c-2" }))!.files).toHaveLength(CANDIDATE_MAX);
 		rmSync(wide, { recursive: true, force: true });
 	});
+	test("words that say the kind of file do not fill the list: the asked song's score stays on it", async () => {
+		const wide = mkdtempSync(join(tmpdir(), "rd-choice-kinds-"));
+		for (let n = 0; n < 20; n++) writeFileSync(join(wide, `노래${n}_MR.mp3`), "x");
+		writeFileSync(join(wide, "봄노래_MR.mp3"), "x");
+		writeFileSync(join(wide, "봄노래_악보.pdf"), "x");
+		enable(env, { attachFolders: { mail: wide } });
+		const c = await candidatesFor({ kind: "mail", from: "x", subject: "악보 MR 부탁드려요", text: "봄노래 악보와 MR 부탁드립니다" }, { source: "zele", ref: "c-3" });
+		expect(c!.files.map(f => f.rel)).toEqual(expect.arrayContaining(["봄노래_MR.mp3", "봄노래_악보.pdf"]));
+		expect(c!.files).toHaveLength(CANDIDATE_MAX);
+		rmSync(wide, { recursive: true, force: true });
+	});
+	test("an ask in the subject alone still lets the model choose among the candidates", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const model = fakeModel([j(answer({ body: "시리즈 1부, 2부 보내드립니다.", files: ["시리즈_1부.pdf", "시리즈_2부.pdf"] }))]);
+		await offerMailDraft({ ...mailFixture, key: "c-4", subject: "시리즈 악보 요청드립니다", from: "Kim <kim@example.com>", body: "1부, 2부 다 받을 수 있을까요?" }, { send: sink().send, call: model.call });
+		expect(names(listDrafts()[0]!.id)).toEqual(["시리즈_1부.pdf", "시리즈_2부.pdf"]);
+	});
 	test("a mail that asks for three parts gets the three parts the model chose, not the rule's one file", async () => {
 		enable(env, { apps: { mail: { auto: false } }, attachFolders: { mail: lib } });
 		writeSettings(env.dir, "mail", { draft_rules: [rule], draft_default: "" });

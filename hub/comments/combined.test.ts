@@ -307,6 +307,16 @@ describe("sending one part of the card (send --only)", () => {
 		expect(t.engine.store.drafts().find(x => x.code === d.code)!.status).toBe("sent");
 	});
 
+	test("--only mail refused for its files keeps the refusal's first words, the reply and the mail stay pending", async () => {
+		const t = setup({ failSend: "첨부를 확인해 주세요: 본문에 쓴 파일이 안 붙었어요" });
+		const d = await withMail(t);
+		pick(t, d.code, 1);
+		const r = await runComments(["send", d.code, "--only", "mail"], t.engine, t.inbox);
+		expect(r.code).toBe(1);
+		expect(r.lines[0]).toStartWith("첨부를 확인해 주세요:");
+		expect(t.engine.store.drafts()[0]).toMatchObject({ status: "pending", mail: "M1" });
+	});
+
 	test("--only mail sends the mail; the reply waits alone and its card no longer carries the mail", async () => {
 		const t = setup();
 		const d = await withMail(t);

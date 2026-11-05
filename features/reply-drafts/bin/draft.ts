@@ -7,8 +7,7 @@ import { replyChoiceBlock } from "../../../hub/choices.ts";
 import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../../../hub/followup.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
-import { asksForFile } from "../../../hub/draft-approval.ts";
-import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, defaultCall, dropDraft, kindOf, refineAfterCorrection, reviseDraft, sendDraft, stageForReply, type FlowDeps } from "../lib/flow.ts";
+import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, defaultCall, dropDraft, kindOf, mailAsksFile, refineAfterCorrection, reviseDraft, sendDraft, stageForReply, type FlowDeps } from "../lib/flow.ts";
 import { INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
@@ -86,7 +85,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const item: ReplyItem = { kind, app, ...(room !== undefined ? { room } : {}), from, subject: flag(rest, "--subject"), text: stdin, context: flag(rest, "--context"), ...(kind === "chat" && choice ? { choice } : {}) };
 			const meta = { source: flag(rest, "--source") ?? "manual", mailId: flag(rest, "--id") ?? key, ref: key };
 			// Same path as the gateway's offer (offer.ts): the model chooses among candidates, then only the chosen files are staged.
-			const cands = kind === "mail" && asksForFile(stdin) ? await candidatesFor(item, meta).catch(e => (notes.push(`확인: 첨부 파일 후보를 찾지 못했어요 (${(e as Error).message})`), undefined)) : undefined;
+			const cands = kind === "mail" && mailAsksFile(item) ? await candidatesFor(item, meta).catch(e => (notes.push(`확인: 첨부 파일 후보를 찾지 못했어요 (${(e as Error).message})`), undefined)) : undefined;
 			if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
 			else if (cands) item.files = [];
 			const flow = { ...deps, stage: { tries: 5, ...deps.stage } };

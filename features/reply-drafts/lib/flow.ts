@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimSend } from "../../../hub/draft-claim.ts";
-import { attachIssues } from "../../../hub/attach-check.ts";
+import { attachIssues, withoutKindWords } from "../../../hub/attach-check.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
@@ -244,12 +244,18 @@ export async function candidatesFor(item: ReplyItem, meta: { source: string; ref
 		if (!path) missing.push(entry);
 		else add(library.find(f => f.path === path) ?? { rel: basename(path), path, size: statSync(path).size });
 	}
-	for (const r of rankLibrary(library, { subject: item.subject ?? "", text: item.text })) if (r.score > 0) add(r.file);
+	// The words that name the work first: "MR" alone would fill the list with every song's audio and leave the asked song's score off it.
+	const q = { subject: item.subject ?? "", text: item.text };
+	const work = { subject: withoutKindWords(q.subject), text: withoutKindWords(q.text) };
+	for (const r of [...rankLibrary(library, work), ...rankLibrary(library, q)]) if (r.score > 0) add(r.file);
 	return { files, missing };
 }
 
 // What the model chose among the candidates (ReplyResult.files); undefined = it made no choice, so the caller keeps today's matching.
 export const chosenFrom = (c: Candidates | undefined, names: string[] | undefined): LibraryFile[] | undefined => (c ? (c.files.length ? (names ? c.files.filter(f => names.includes(f.rel)) : undefined) : []) : undefined);
+
+// Whether the mail asks for a file: the ask is often in its subject alone ("악보 요청드립니다", then "1탄, 2탄 다 받을 수 있을까요?").
+export const mailAsksFile = (item: Pick<ReplyItem, "subject" | "text">): boolean => asksForFile(`${item.subject ?? ""}\n${item.text}`);
 
 // A reply that promises a file or answers a mail that asks for one: the best matches of the 첨부 파일 폴더 are staged for the owner to confirm
 // (they go out only with the owner's 보내기). Nothing fits -> the approval carries the warning and says so. A source that cannot send files gets neither.
@@ -258,7 +264,7 @@ export const chosenFrom = (c: Candidates | undefined, names: string[] | undefine
 // one file that cannot be copied never keeps the others off.
 export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promise<LibraryFile[] | undefined>): Promise<string[]> {
 	if (rec.kind !== "mail") return [];
-	rec.asksFile = asksForFile(rec.item.text) || undefined;
+	rec.asksFile = mailAsksFile(rec.item) || undefined;
 	const wants = !!rec.asksFile || claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`);
 	const found = files ? await files : wants ? await libraryFor(rec.item, rec, deps) : undefined;
 	if (!found || (!found.length && !wants)) return [];

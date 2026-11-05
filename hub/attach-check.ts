@@ -30,6 +30,19 @@ const kindsIn = (text: string): Set<FileKind> => new Set(KIND_WORD.filter(([, re
 const kindOf = (name: string): FileKind | undefined => KIND_EXT.find(([, re]) => re.test(name))?.[0];
 const labels = (kinds: Iterable<FileKind>) => [...kinds].map(k => KIND_LABEL[k]).join("·");
 
+// The words that say which kind of file, not which work: a mail's "MR" or "악보" matches every file of that kind in a library.
+const KIND_WORDS = new RegExp(KIND_WORD.map(([, re]) => re.source).join("|"), "gi");
+export const withoutKindWords = (text: string): string => text.replace(KIND_WORDS, " ");
+
+// What the received mail itself asks for: sentences that ask, above any quote of an earlier mail. "악보를 구입했어요. MR 부탁드립니다" asks for the audio alone.
+const ASKED = /부탁|주세요|주시|요청|신청|받을 수|받고 싶|\b(?:please|could you|can you)\b/i;
+const ownWords = (text: string): string => text.split(/-{3,}\s*Original Message/i)[0]!.split("\n").filter(l => !l.trimStart().startsWith(">")).join("\n");
+const askedKinds = (request: string): Set<FileKind> => kindsIn(sentences(ownWords(request)).filter(s => ASKED.test(s)).join("\n"));
+
+// "1탄, 2탄, 3탄", "1,2,3부": the numbered parts a sentence names. Names do not always carry the number, so parts are compared with a count of files, per kind.
+const PART = /(\d+(?:\s*[,.·]\s*\d+)*)\s*(탄|부|권|편)/g;
+const partsIn = (text: string): string[] => [...new Set([...text.matchAll(PART)].flatMap(m => m[1]!.split(/[,.·]/).map(n => `${n.trim()}${m[2]}`)))];
+
 const norm = (s: string) => s.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 // Words that say "a file" or how it was marked: they tie a file to nothing.
 const NOISE = /^(?:악보|악보집|파트보|총보|파일|자료|문서|부분|전체|공유|공유용|합주|합창|기악|기악합주|리듬악기|반주|피아노|버전|ver|mr|full|pdf|mp3|wav)$/i;
@@ -42,15 +55,19 @@ export function wordVariants(word: string): string[] {
 }
 // A short word several of the files share (an author's name) tells none of them apart; a longer shared one is the title they have in common.
 const SHARED_TITLE_MIN = 4;
+const LATIN_TITLE = /^[a-z]{4,}$/;
 function offTopic(files: readonly string[], text: string): string[] {
 	const words = files.map(f => [...new Set(nameWords(f).map(norm))]);
 	const seen = words.flat();
 	const telling = (w: string) => w.length >= SHARED_TITLE_MIN || seen.indexOf(w) === seen.lastIndexOf(w);
-	return files.filter((_, i) => !words[i]!.some(w => telling(w) && wordVariants(w).some(v => v.length >= 2 && text.includes(v))));
+	const onTopic = (i: number) => words[i]!.some(w => telling(w) && wordVariants(w).some(v => v.length >= 2 && text.includes(v)));
+	// A title in another script ("Golden" for "골든") is known from a file of that work that carries both.
+	const titles = new Set(words.flatMap((w, i) => (onTopic(i) ? w.filter(x => LATIN_TITLE.test(x)) : [])));
+	return files.filter((_, i) => !onTopic(i) && !words[i]!.some(w => titles.has(w)));
 }
 
 // The words of a name that say which file it is: "노래 MR (1).mp3" and "노래 MR (2).mp3" share all of theirs and are one file twice, "alpha song" and "beta song"
-// too few. A date or a version ("26.10.22") tells nothing; a numbered word only one side has ("1탄", "2탄") is a part of a series, a different file.
+// too few. A date or a version ("26.10.22") tells nothing; a numbered word one side lacks ("1탄", "2탄") is a part of a series, a different file.
 const fileWords = (name: string) => [...new Set(nameWords(name).map(norm))].filter(w => !/^\d+$/.test(w));
 const letters = (words: string[]) => words.join("").length;
 const numberedOnly = (a: string[], b: string[]) => a.some(w => /\d/.test(w) && !b.includes(w));
@@ -60,20 +77,28 @@ function cutsOfOneFile(files: readonly string[]): string[] {
 	files.forEach((a, i) => files.slice(i + 1).forEach(b => {
 		if (kindOf(a) !== kindOf(b)) return;
 		const x = fileWords(a), y = fileWords(b), both = letters(x.filter(w => y.includes(w)));
-		if (numberedOnly(x, y) && numberedOnly(y, x)) return;
+		if (numberedOnly(x, y) || numberedOnly(y, x)) return;
 		if (both >= VARIANT_MIN && both >= VARIANT_SHARE * Math.min(letters(x), letters(y))) out.add(a).add(b);
 	}));
 	return [...out];
 }
 
 export function attachIssues(d: AttachCheck): AttachIssue[] {
-	const said = promises(`${d.body}`);
+	// When the mail asked for a file, "모두 보내드리겠습니다" is about that file whether or not the sentence says so.
+	const asked = d.request === undefined ? new Set<FileKind>() : askedKinds(`${d.subject ?? ""}\n${d.request}`);
+	const said = asked.size ? sentences(d.body).filter(s => SEND_NOW.test(s) && !NOT_NOW.test(s)) : promises(d.body);
 	const promised = kindsIn(said.join("\n"));
 	const has = new Set(d.files.flatMap(f => kindOf(f) ?? []));
 	if (!d.files.length) return said.length ? [{ kind: "missing", text: `본문에 ${promised.size ? `${labels(promised)} ` : ""}파일을 보낸다고 썼지만 첨부파일이 없어요` }] : [];
 	const out: AttachIssue[] = [];
 	const short = [...promised].filter(k => !has.has(k));
 	if (short.length) out.push({ kind: "partial", text: `본문에 쓴 ${labels(short)} 파일이 안 붙었어요` });
+	const parts = partsIn(said.join("\n"));
+	const perKind = Math.max(...[...has].map(k => d.files.filter(f => kindOf(f) === k).length), 0);
+	if (parts.length > perKind) out.push({ kind: "partial", text: `본문에 쓴 ${parts.join(", ")}보다 붙은 파일이 적어요` });
+	const mentioned = kindsIn(d.body);
+	const skipped = [...asked].filter(k => !has.has(k) && !mentioned.has(k));
+	if (skipped.length) out.push({ kind: "partial", text: `받은 메일이 요청한 ${labels(skipped)} 파일이 안 붙었어요` });
 	if (promised.size) {
 		const asked = kindsIn(d.request ?? "");
 		const over = [...has].filter(k => !promised.has(k) && !asked.has(k));

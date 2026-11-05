@@ -109,7 +109,7 @@ describe("files in the send sheet at 390px", () => {
 		const v = await open(390, 844);
 		await openSheet(v, ref);
 		await waitFor(v, `document.querySelector(".fs-ft .dr-warn")`);
-		expect(await texts(v, ".fs-ft .dr-wn")).toEqual(["본문에 악보·문서 파일을 보낸다고 썼지만 첨부파일이 없어요", "본문에는 보낸다고 썼어요 · 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요"]);
+		expect(await texts(v, ".fs-ft .dr-wn")).toEqual(["본문에 악보·문서 파일을 보낸다고 썼지만 첨부파일이 없어요"]);
 		const warn = (await box(v, ".fs-ft .dr-warn"))!, send = (await box(v, ".fs-ft .dc-act.main"))!;
 		expect(warn.b).toBeLessThanOrEqual(send.t);
 		expect(await v.evaluate(`getComputedStyle(document.querySelector(".fs-ft .dr-warn")).backgroundColor !== getComputedStyle(document.querySelector(".fs-card")).backgroundColor`)).toBe(true);
