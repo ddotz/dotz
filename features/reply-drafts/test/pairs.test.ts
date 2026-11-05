@@ -466,12 +466,14 @@ test("a draft sees the pairs of its own source only: a site's draft its site's, 
 test("learning a site's sent folder saves its pairs and its own profile once, never rewrites a profile that has an identity, and keeps the pairs when the model fails", async () => {
 	const items = [1, 2, 3].map(n => sent(n));
 	const model = fakeModel([j({ identity: ["해요체로 짧게 답한다"], templates: [] })]);
-	await learnSiteSent("work", items, "mail-work", model.call);
+	const note = await learnSiteSent("work", items, "mail-work", model.call);
+	expect(note).toContain("- 해요체로 짧게 답한다");
+	expect(note).toContain(toneFile({ app: "mail-work" }));
 	expect(loadPairs("mail").filter(p => p.source === "work")).toHaveLength(3);
 	expect(identityOf({ app: "mail-work" })).toEqual(["해요체로 짧게 답한다"]);
 	const file = readFileSync(toneFile({ app: "mail-work" }), "utf8");
 	const again = fakeModel([j({ identity: ["다른 말투"], templates: [] })]);
-	await learnSiteSent("work", items, "mail-work", again.call);
+	expect(await learnSiteSent("work", items, "mail-work", again.call)).not.toContain("- 해요체로 짧게 답한다");
 	expect(again.calls).toHaveLength(0);
 	expect(readFileSync(toneFile({ app: "mail-work" }), "utf8")).toBe(file);
 	expect(typeof (await learnSiteSent("down", [sent(4)], "mail-down", async () => { throw new Error("model down"); }))).toBe("string");

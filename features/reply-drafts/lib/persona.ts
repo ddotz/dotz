@@ -99,6 +99,14 @@ export async function sweep(key: ToneKey, texts: string[], where: string, call: 
 	return { examples: examples.length, identity: a.identity.length, templates: a.templates.length };
 }
 
+// What a first sweep learned, shown at the end of onboarding so the owner can say whether it sounds like them. A correction or a line under `## 말투` outlives a relearn; an edit to the identity does not.
+const LEARNED_SHOWN = 4;
+export function learnedCheck(key: ToneKey): string {
+	const lines = identityOf(key).slice(0, LEARNED_SHOWN);
+	if (!lines.length) return "";
+	return `이렇게 배웠어요, 내 글 같은지 봐 주세요:\n${lines.map(l => `- ${l}`).join("\n")}\n다른 점은 초안에서 고치기로 알려 주거나 ${toneFile(key)}의 ${HEADINGS.rules}에 적어 주세요. 다시 배워도 남아요.`;
+}
+
 // A mail site's (or plugin's) sent folder, learned: its reply pairs are saved tagged with `source`, and an instance with no identity yet gets its own profile
 // (examples, identity, reply templates) from the same texts. A profile that has an identity is never rewritten. A model failure keeps the pairs and says so.
 export async function learnSiteSent(source: string, items: SentMail[], instance: string, call: ModelCall, now = new Date()): Promise<string> {
@@ -110,7 +118,7 @@ export async function learnSiteSent(source: string, items: SentMail[], instance:
 	const texts = items.filter(m => !/^\s*(fwd?|전달)\s*:/i.test(m.subject ?? "")).slice(0, SWEEP_LIMIT).map(m => (m.received ? `${m.body}\n${m.received.split("\n").map(l => `> ${l}`).join("\n")}` : m.body));
 	if (identityOf(key).length || !texts.length) return done;
 	try {
-		return (await sweep(key, texts, `${source} 메일 (보낸편지함)`, call)).identity ? `${done}. 이 메일의 말투 프로필도 만들었어요` : `${done}. 말투는 분석하지 못해 예시 문장만 저장했어요`;
+		return (await sweep(key, texts, `${source} 메일 (보낸편지함)`, call)).identity ? `${done}. 이 메일의 말투 프로필도 만들었어요\n${learnedCheck(key)}` : `${done}. 말투는 분석하지 못해 예시 문장만 저장했어요`;
 	} catch (e) {
 		return `${done}. 말투 분석은 모델 오류로 못 했어요 (${(e as Error).message.slice(0, 100)})`;
 	}
@@ -147,7 +155,7 @@ export async function learnFirst(key: ToneKey, source: () => Promise<string[]>, 
 		markLearned([mark], now);
 		return "known";
 	}
-	// A relearn that failed or found nothing waits a day: it reads the whole sent folder, so it must not run with every mail.
+	// A relearn that failed or found nothing waits a day: it reads the sent folder, so it must not run with every mail.
 	if (exists && now.getTime() - Date.parse(learned[`${mark}~tried`] ?? "") < RETRY_MS) return "known";
 	if (exists) markLearned([`${mark}~tried`], now);
 	const texts = await source();
