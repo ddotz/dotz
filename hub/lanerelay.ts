@@ -59,11 +59,13 @@ export function createOwnerNotes(deps: OwnerNotesDeps) {
 			(refused ? deps.refused : deps.answered)?.(lane, refs);
 			return "note";
 		},
-		/** The lane reported (its turn's final text): everything still open is answered by it; true when something was open, or a note earlier in this turn answered the owner (the report is an answer to the owner, whatever its tone). */
+		/** The lane reported (its turn's final text): everything still open is answered by it; true when something was open, or a note earlier prompted the owner's answer and this is the first report that is not a [run] (a [run] stays progress and keeps the note; a [run] that answers open messages leaves the note for the result that follows). */
 		reported(lane: string, text = ""): boolean {
 			const refs = open.get(lane);
-			if (!refs?.length) return noted.delete(lane);
+			const run = parseTone(text).tone === "run";
+			if (!refs?.length) return noted.has(lane) && !run && noted.delete(lane);
 			noted.delete(lane);
+			if (run) noted.add(lane);
 			open.delete(lane);
 			(refusesAsInjection(text) ? deps.refused : deps.answered)?.(lane, refs);
 			return true;
