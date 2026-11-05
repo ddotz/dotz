@@ -39,14 +39,14 @@ export const refOfQuestion = (q: string): string | undefined => /\(([A-Za-z0-9][
 
 /** The command that sends draft `ref` (a comment reply draft, a mail draft of features/reply-drafts), or undefined. */
 export function sendArgv(kind: SendKind, ref: string, action: SendAction, bun = process.execPath, retry = false): string[] | undefined {
-	if (kind === "comment") return [bun, join(ROOT, "features/comments/bin/comments.ts"), "send", ref, ...(action === "send-main" ? ["--only", "reply"] : action === "send-mail" ? ["--only", "mail"] : action === "send-as-is" ? ["--as-is"] : [])];
+	if (kind === "comment") return [bun, join(ROOT, "features/comments/bin/comments.ts"), "send", ref, ...(action === "send-main" ? ["--only", "reply"] : action === "send-mail" ? ["--only", "mail", ...(retry ? ["--retry"] : [])] : action === "send-as-is" ? ["--as-is"] : [])];
 	// A mail draft has one body; 답글만 / 메일만 belong to a comment card. Both 보내기 and 이대로 보내기 run the same send: it reads the owner's pick.
 	return action === "send" || action === "send-as-is" ? [bun, join(ROOT, "features/reply-drafts/bin/draft.ts"), "send", ref, ...(retry ? ["--retry"] : [])] : undefined;
 }
 
 export type SenderDeps = {
 	/** Which store knows `ref` (undefined = the gateway cannot send it). */
-	kind: (ref: string) => SendTarget | undefined;
+	kind: (ref: string, action?: SendAction) => SendTarget | undefined;
 	run: (argv: string[]) => Promise<{ code: number; out: string }>;
 	/** The state of one job changed (marks the card; a failure is reported once by the caller). */
 	report: (r: SendResult) => void;
@@ -96,13 +96,13 @@ export function createApprovalSender(deps: SenderDeps) {
 
 	/** Can the gateway send this pick itself? */
 	const can = (ref: string, action: SendAction | undefined): boolean => {
-		const t = action ? deps.kind(ref) : undefined;
+		const t = action ? deps.kind(ref, action) : undefined;
 		return !!t && !!sendArgv(t.kind, ref, action!);
 	};
 
 	/** Queues one approved send; false when the gateway cannot send it or the same draft is already queued, sending or sent. */
 	function enqueue(j: SendJob): boolean {
-		const t = deps.kind(j.ref);
+		const t = deps.kind(j.ref, j.action);
 		if (!t || !sendArgv(t.kind, j.ref, j.action)) return false;
 		const st = results.get(j.ref)?.state;
 		if (st === "queued" || st === "sending" || st === "sent") {

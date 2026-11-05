@@ -13,7 +13,10 @@ import type { SendJob } from "./approval-send.ts";
 
 export type BatchCard = { ref: string; question: string; text: string; draft?: DraftApproval; notice?: string };
 export type BatchPick = { q: string; n: number; label: string; note?: string };
-export type BatchItem = { ref: string; n: number; note?: string };
+/** `label`: the button text the page showed for `n`; a page that still shows an older card sends one that no longer fits (absent = an older page, not checked). */
+export type BatchItem = { ref: string; n: number; note?: string; label?: string };
+/** The refusal of an answer whose label is not the option's label now: the card changed since the owner looked. */
+export const STALE_OPTIONS = "카드 선택지가 바뀌었어요. 다시 확인하고 골라 주세요";
 
 export type BatchDeps = {
 	/** The open card (with its notice id) and the held ones of `conv`, in queue order. */
@@ -48,6 +51,7 @@ export async function answerBatch(conv: string, items: BatchItem[], deps: BatchD
 		const card = cards.find(c => c.ref === it.ref);
 		if (!card) return { status: 409, body: { error: "이미 처리됐거나 없는 카드가 있어요. 목록을 다시 열어 주세요", ref: it.ref } };
 		if (chosen.some(c => c.card.ref === it.ref)) return { status: 400, body: { error: "같은 카드가 두 번 있어요" } };
+		if (it.label !== undefined && it.label !== (it.n === 1 ? DRAFT_SEND : it.n === 2 ? DRAFT_EDIT : it.n === 3 ? DRAFT_DROP : it.label)) return { status: 409, body: { error: STALE_OPTIONS, ref: it.ref } };
 		const note = String(it.note ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_NOTE);
 		if (it.n === 1) chosen.push({ card, pick: { q: card.question, n: 1, label: DRAFT_SEND } });
 		else if (it.n === 2) {

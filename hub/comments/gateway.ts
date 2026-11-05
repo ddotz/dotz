@@ -65,6 +65,8 @@ export const commentDraftFacts = {
 };
 // The send approval's gateway path (hub/approval-wire.ts): which source a pending draft goes to, and the owner's own edit of its text.
 export const commentDraftOf = (code: string) => engine.store.drafts().find(d => d.code === code && d.status === "pending");
+/** The comment draft `code` whose reply is already posted (a combined card whose mail may still be owed). */
+export const commentPostedOf = (code: string) => engine.store.drafts().find(d => d.code === code && d.status === "sent");
 /** Every pending comment draft by code, read once: a request over many cards asks this map instead of the store for each card. */
 export const commentDraftsByCode = () => new Map(engine.store.drafts().filter(d => d.status === "pending").map(d => [d.code, d]));
 /** The app a comment source belongs to in the app list ("youtube", "instagram"; a website source is "site"). */

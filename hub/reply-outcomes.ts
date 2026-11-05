@@ -148,6 +148,8 @@ export type RetryDeps = {
 	drop: (ref: string) => Promise<{ ok: boolean; reason?: string }>;
 	/** A comment send of draft `ref` failed in the comment store (its record is the failure, with or without a notice). */
 	commentFailed: (ref: string) => boolean;
+	/** A comment draft whose reply is posted and that carried a mail: "pending" = the mail draft is still there to send, "gone" = it is not; undefined = any other draft. */
+	posted?: (ref: string) => "pending" | "gone" | undefined;
 };
 
 // The newest card of draft `ref` that carries a gateway send (in `to` when it is named).
@@ -170,8 +172,12 @@ export function retryFailed(items: unknown[], deps: RetryDeps): RetryResult[] {
 		const d = card?.decision;
 		if (!card || !d) return no("보낸 기록이 있는 카드를 찾지 못했어요");
 		if (d.send!.state !== "failed") return no("실패한 보내기만 다시 보낼 수 있어요");
-		const action = pickedSend(d);
+		let action = pickedSend(d);
 		if (!action) return no("보내기로 고른 카드가 아니라서 다시 보내지 않았어요");
+		// The reply of a combined card is up and only its mail failed: the retry sends that mail alone, the reply is never posted twice.
+		const posted = action === "send" || action === "send-as-is" ? deps.posted?.(ref) : undefined;
+		if (posted === "gone") return no("답글은 이미 올렸고, 함께 보낼 메일 초안은 이미 보냈거나 없어요");
+		if (posted) action = "send-mail";
 		if (!deps.can(ref, action)) return no("이 초안은 더 이상 보낼 수 없어요");
 		return deps.enqueue({ ref, conv: to, action, title: card.title, retry: true }) ? { ref, ok: true } : no("이 초안은 더 이상 보낼 수 없어요");
 	});
