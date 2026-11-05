@@ -34,6 +34,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 - Discord routing: `hub/discord-post.ts` (`<DATA_DIR>/discord-post.json`; kind and per-notice-class switches, `postClass` names a post's class, `/api/discord/post`; the web app always gets everything, 설정 → 앱 · 알림 adds "디스코드로도 보내기" per class)
 - push: `hub/push.ts` (per-class switches in config `notify.push`, `/api/push/classes`; news also per app, `custom/apps.json <app>.push`), `hub/webpush.ts`
 - per-install custom code (not part of the product): `hub/custom.ts` (cards, pins, routines), `hub/plugins.ts` (plugin hooks, see `docs/custom-plugins.md`; loaded from `<DATA_DIR>/custom/plugins/`)
+- mail: `hub/mail-move.ts` (moves a stored mail to another mail app, `/api/mail/move`)
 - Relay chat (a computer reached only through a messenger, the adapter's `relay`): `hub/relay-route.ts`, web `web/js/42-relay-chat.js`
 
 ## Accounts, providers, runtimes

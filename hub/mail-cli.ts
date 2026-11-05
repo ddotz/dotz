@@ -138,6 +138,11 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 		if (r.ok && rec) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);
 		return { lines: [r.text], code: r.ok ? 0 : 1 };
 	}
+	if (cmd === "move") {
+		const key = one("--key"), source = readAppsFile(dataDir())[one("--app") ?? ""]?.filter?.source?.trim();
+		if (!key || !source) return { lines: ["usage: mail-cli.ts move --key <mail key> --app <mail app with a filter source>"], code: 2 };
+		return (await notifyGateway({ path: "/api/mail/move", body: { key, source } }, deps.hub)) ? { lines: [`${key} 메일을 ${one("--app")} 앱으로 옮겼어요`], code: 0 } : { lines: ["메일을 옮기지 못했어요. 메일 키와 게이트웨이를 확인해 주세요"], code: 1 };
+	}
 	if (cmd === "ask") {
 		const rec = getDraft(one("--draft") ?? "");
 		if (!rec?.compose || rec.status !== "pending") return { lines: ["그런 메일 초안이 없거나 이미 처리됐어요"], code: 2 };
