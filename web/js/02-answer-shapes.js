@@ -4,6 +4,7 @@
 // part of a card, so a copy gives the original markdown. An answer reaches the page whole (11-todo-strip.js streamIn), so it is drawn once, on
 // its first paint: the live status and progress notes never come through here, and there is no text that later turns into a card.
 const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
+const ANS_EVIDENCE = /^근거:\s*(\S.*)$/;
 const ANS_SENTENCE = /^.+?[.!?](?=\s|$)/;
 const ANS_WORDY = 30, ANS_LEAD_MAX = 80;
 const ansRaw = line => `<span class="mlist-url" aria-hidden="true">${esc(line)}</span>`;
@@ -22,4 +23,19 @@ function ansLeadHtml(para) {
   const first = para[0], one = (ANS_SENTENCE.exec(first) || [first.length <= ANS_LEAD_MAX ? first : ""])[0];
   if (!one || one.split("**").length % 2 === 0 || one.split("`").length % 2 === 0) return "";
   return `<p><span class="ans-lead">${inline(one)}</span>${[inline(first.slice(one.length)), ...para.slice(1).map(inline)].join("<br>")}</p>`;
+}
+// The answer's last line "근거: a · b" as small pieces under everything else; the same line with text after it stays a meta line.
+function ansEvidenceHtml(line, rest) {
+  const m = ANS_EVIDENCE.exec(line.trim());
+  if (!m || rest.some(l => l.trim())) return "";
+  return `<div class="ans-ev">${ansRaw(line.trim())}${m[1].split(/\s+·\s+/).map(x => `<span>${inline(x)}</span>`).join("")}</div>`;
+}
+// An answer's files as rows in one card, the name first; a picture keeps its thumbnail.
+function ansFiles(files) {
+  const isImg = f => IMG_RE.test(f.name || f.path), docs = files.filter(f => !isImg(f)), box = filesNode(docs);
+  if (box) {
+    box.classList.add("ans-card", "ans-files");
+    docs.forEach((f, i) => box.children[i].append(el("span", { class: "mlist-url", "aria-hidden": "true", text: `[file] ${f.path}` })));
+  }
+  return [box, filesNode(files.filter(isImg))];
 }

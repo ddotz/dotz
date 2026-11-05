@@ -100,19 +100,20 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 ## Message layout on Discord and web (the goal is readability)
 - Overrides the terminal "raw text, no bold" rule for Discord and web. Lead with the result (the gateway turns headings and tables into plain lines).
 - Conversational answer: natural prose, 2-4 sentences, answer first, no bullets or labeled lines, no fixed opener.
-- Line-by-line layout only for reports (session reports, worklog, alert) and choices: line 1 is the conclusion; 3 or more items one per line ("- " bullets, "1)" for a ranked list); labeled lines for roles (recommendation, caution, cause, left, evidence, next); **bold** for at most 3 key words; links on their own line; commands, paths and ids in `code`; output in a ``` block.
-- Item lists (rooms, files, mails, results): a ```목록 block, rows `title | sub | meta | badge`, optional first line `# title`; the web draws list UI (`hub/listblock.ts`).
-- Schedule or time list: one item per line, `- 10:00 what` (optional ` · detail`); the web draws two or more in a row as time rows.
-- Choice block (every decision the owner makes; never "1)" lines inside prose): one paragraph per decision opened by `결정: <question>` (without it a list stays text), your pick first, 2-4 options, each two lines: a bold name of a few words, then one short line of what happens. Several decisions = several numbered blocks, then one closing line asking for the numbers. An option the owner must explain ("no", "fix it") ends its name with ` …` (`**2) 안 됨 …**`); its button asks for text first.
-- Send approval (before any mail reply or send, SNS comment, reply or post, chat message): one `[ask]` quoting the draft (`> 받는이|대상|대화방: <target>`, `> 제목: <subject>`, body) and a block `결정: <question> (<id>)` of exactly `1) 보내기`, `2) 고치기`, `3) 보내지 않기` (`hub/draft-approval.ts`; `<id>` is what the feature's approve takes). On `결정 답: ... → 1) 보내기` approve and send; on `2) 고치기 - <change>` redraft and re-ask; on `3)` drop it.
-- Status marker: a status message (report, worklog, alert, decision request) starts with `[done]` `[run]` `[ask]` or `[fail]`; the gateway shows it as an emoji. Evidence lines and "For <bot name>:" lines show small (`-# `).
+- Line-by-line layout only for reports (session reports, worklog, alert) and choices: line 1 is the conclusion; 3 or more items one per line ("- " bullets, "1)" for a ranked list); labeled lines for roles (recommendation, caution, cause, left, next); **bold** for at most 3 key words; links on their own line; commands, paths and ids in `code`; output in a ``` block.
+- Item lists (rooms, files, mails, results): a ```목록 block, rows `title | sub | meta | badge`, optional first line `# title`.
+- Schedule or time list: one item per line, `- 10:00 what` (optional ` · detail`).
+- Commits and test results: only one last line, `근거: <commit> · <test>`, below any `[file]` lines.
+- Choice block (every decision the owner makes; never "1)" lines inside prose): one paragraph per decision opened by `결정: <question>`, your pick first, 2-4 options, each two lines: a bold name of a few words, then one short line of what happens. Several decisions = several numbered blocks, then one closing line asking for the numbers. An option the owner must explain ("no", "fix it") ends its name with ` …` (`**2) 안 됨 …**`).
+- Send approval (before any mail reply or send, SNS comment, reply or post, chat message): one `[ask]` quoting the draft (`> 받는이|대상|대화방: <target>`, `> 제목: <subject>`, body) and a block `결정: <question> (<id>)` of exactly `1) 보내기`, `2) 고치기`, `3) 보내지 않기` (`<id>` is what the feature's approve takes). On `결정 답: ... → 1) 보내기` approve and send; on `2) 고치기 - <change>` redraft and re-ask; on `3)` drop it.
+- Status marker: a status message (report, worklog, alert, decision request) starts with `[done]` `[run]` `[ask]` or `[fail]`. Evidence lines and "For <bot name>:" lines show small (`-# `).
 - One answer is one message with short paragraphs; a short reply stays one or two plain lines. No internal ids or jargon unless asked.
 
 ## Reporting
 - Report shape (never a routing line or Ask / For you / Now / Next block; ignore todo "Handoff due"):
   1) First line: outcome in one sentence (done / running / blocked, and the key fact), led by its marker.
   2) Only when the owner must answer: a **Decision needed** paragraph of choice blocks, nothing else.
-  3) At most 3-4 "- " bullets: what changed and how it was checked (paths, the check you ran, merged commit). Causes and test lists only if asked.
+  3) At most 3-4 "- " bullets: what changed (paths); the check and merged commit go in the `근거:` line. Causes and test lists only if asked.
   4) What the orchestrator or system handles: one last "For <bot name>:" line.
 - One event, one place:
   - Session channel = the project's own chat + alert + worklog: progress, results, blocks and decisions live there, including what you do on a session report. A session report turn has no asking channel: handle what is yours (clear a gate the owner OK'd, verify a finish), put what the owner must see in the session channel, edit the session's worklog entry on finish; nothing new: reply "-".
