@@ -205,9 +205,20 @@ function atkParts(text, files, e) {
 }
 // A message of files alone has nothing to say in a bubble: the thumbnails above it already show them.
 const atkOnly = (text, files) => Array.isArray(files) && files.some(f => f.label) && !text.replace(ATK_RE, "").trim();
+// extra.row: an answer's file row. A link or a button cannot start a text selection, so the row is a plain element that opens the file itself,
+// unless the click ends a selection inside it.
+function fileChipRow(name, meta, extra) {
+  const open = extra.onclick || (() => window.open(extra.href, "_blank", "noopener"));
+  const row = el("div", { class: "fatt", role: extra.href ? "link" : "button", tabindex: "0", title: `${name} · 열기`,
+    onclick: () => { const sel = getSelection(); if (sel.isCollapsed || !sel.containsNode(row, true)) open(); },
+    onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } }, ...fileChipKids(name, meta));
+  return row;
+}
+const fileChipKids = (name, meta) => [el("span", { class: "fi-ic" }, icon("file")), el("span", { class: "fi-t" }, el("span", { class: "fi-n", text: name }), el("span", { class: "fi-m", text: meta }))];
 function fileChip(name, meta, extra = {}) {
+  if (extra.row) return fileChipRow(name, meta, extra);
   return el(extra.href ? "a" : extra.onclick ? "button" : "div", { class: `fatt${extra.cls ? ` ${extra.cls}` : ""}`, ...(extra.href ? { href: extra.href, target: "_blank", rel: "noopener", title: `${name} · 열기` } : extra.onclick ? { type: "button", onclick: extra.onclick, title: `${name} · 열기` } : { title: name }) },
-    el("span", { class: "fi-ic" }, icon("file")), el("span", { class: "fi-t" }, el("span", { class: "fi-n", text: name }), el("span", { class: "fi-m", text: meta })), extra.x || null);
+    ...fileChipKids(name, meta), extra.x || null);
 }
 function renderAtt() {
   const box = $("#atray");
@@ -255,7 +266,7 @@ function fileItem(f, n = 0, sibs = null) {
   const img = IMG_RE.test(f.name || f.path);
   const main = img
     ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name, f.pc, sibs) }, el("img", { src: thumbUrl(f.path, f.pc), alt: f.name, loading: "lazy", decoding: "async" }))
-    : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : !f.pc && canvasIsHtml(f.name) ? { onclick: () => canvasOpen(f.path, f.name) } : { href: fileUrl(f.path, false, f.pc) });
+    : fileChip(f.name, fileMeta(f.name, f.size), { row: f.row, ...(VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : !f.pc && canvasIsHtml(f.name) ? { onclick: () => canvasOpen(f.path, f.name) } : { href: fileUrl(f.path, false, f.pc) }) });
   const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), n ? imgNo(n) : null, img && f.label ? null : pathCopy(f.path));   // an image with its token is named by the chip; the viewer keeps the path
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };

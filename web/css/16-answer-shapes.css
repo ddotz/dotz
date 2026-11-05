@@ -1,12 +1,11 @@
 /* Assistant answers drawn by their shape (02-answer-shapes.js, prototype answers.css). Rows are the result card's .rc-row; this file only adds the card
-   around them, a wider key and the phone stack. Only the clipped original line is selectable, so a copy gives the markdown as written. */
+   around them, a wider key and the phone stack. Every word is plain selectable text: a selection copies what it covers. */
 .ans-card { position: relative; min-width: 0; margin: var(--sp-3) 0; padding: var(--sp-4); border-radius: var(--r-card); background: var(--layer); }
 .ans-card:first-child { margin-top: 0; }
 .ans-card:last-child { margin-bottom: 0; }
 .ans-lead { font-weight: 600; }
 .ans-card .rc-rows { gap: var(--sp-3); }
-.ans-card .rc-row { position: relative; padding: 0; }
-.ans-card .rc-k, .ans-card .rc-w { -webkit-user-select: none; user-select: none; }
+.ans-card .rc-row { padding: 0; }
 .ans-keys { --rc-k-w: 88px; }
 .ans-keys .rc-k { overflow-wrap: anywhere; }
 .ans-keys .rc-w b { font-weight: 400; }
@@ -15,8 +14,7 @@
 .ans-steps .rc-k { display: grid; place-items: center; height: var(--ans-step); border-radius: 50%; background: var(--card); color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; }
 .ans-steps .rc-w { line-height: var(--lh-chat); }
 .ans-tb { padding: var(--sp-2) var(--sp-4); }
-.ans-tb .mlist-url { white-space: pre; }
-.ans-tb table { width: 100%; border-collapse: collapse; table-layout: fixed; -webkit-user-select: none; user-select: none; }
+.ans-tb table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .ans-tb th, .ans-tb td { padding: var(--sp-2) var(--sp-3) var(--sp-2) 0; background: none; text-align: left; vertical-align: baseline; font-size: var(--fs-body); line-height: var(--lh-body); overflow-wrap: anywhere; white-space: normal; }
 .ans-tb th { color: var(--fg-3); font-weight: 400; }
 .ans-tb thead th { color: var(--fg-2); font-weight: 500; }
@@ -29,11 +27,10 @@
 .ans-li .rc-k { width: auto; color: var(--fg); font-size: var(--fs-row); font-weight: 500; }
 .ans-li .rc-w { grid-column: 1 / -1; color: var(--fg-2); font-size: var(--fs-body); }
 .ans-n { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
-.ans-card .rc-sh > span:not(.mlist-url), .ans-n { -webkit-user-select: none; user-select: none; }
-.ans-card .rc-sh { position: relative; }
 .bm .ans-files { flex-direction: column; flex-wrap: nowrap; gap: 0; margin-top: var(--sp-3); padding: var(--sp-1) var(--sp-4); }
 .ans-files .fitem { align-self: stretch; }
 .ans-files .fpath { display: none; }
+.ans-files .fatt { cursor: pointer; }
 .ans-files .fitem + .fitem { border-top: 1px solid var(--line); }
 .ans-files .fbox { width: 100%; }
 .ans-files .fbox > .fatt { flex: 1; min-width: 0; height: auto; min-height: var(--row-h); max-width: none; gap: var(--sp-3); padding: var(--sp-1) var(--sp-10) var(--sp-1) 0; border-radius: 0; background: none; }
@@ -42,9 +39,8 @@
 .ans-files .fi-t { flex: 1; flex-direction: row; align-items: center; gap: var(--sp-2); }
 .ans-files .fi-n { flex: 1; min-width: 0; font-size: var(--fs-body); line-height: var(--lh-body); font-weight: 400; }
 .ans-files .fi-m { flex: none; }
-.ans-files .fi-t, .ans-ev > span:not(.mlist-url) { -webkit-user-select: none; user-select: none; }
 .ans-files .fbox > .fatt + .fdl { top: 50%; right: 0; transform: translateY(-50%); }
-.ans-ev { position: relative; display: flex; flex-wrap: wrap; column-gap: var(--sp-3); margin-top: var(--sp-3); padding: 0 var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.ans-ev { display: flex; flex-wrap: wrap; column-gap: var(--sp-3); margin-top: var(--sp-3); padding: 0 var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .ans-ev code { padding: 0; background: none; font-size: var(--fs-meta); }
 @media (max-width: 759px) {
   .ans-wordy .rc-row { display: block; }

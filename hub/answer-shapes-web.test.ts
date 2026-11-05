@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { fakeHub, json, on } from "./test-web.ts";
 
 // An assistant answer drawn by its written shape (web/js/02-answer-shapes.js), in a headless browser: each shape's trigger, the text it falls back to,
-// the markdown a copied selection gives, and that an answer never turns from text into a card after it is on screen.
+// that all of a card's words can be selected as they read on screen, and that an answer never turns from text into a card after it is on screen.
 const ts = (n: number) => `2026-11-04T08:${String(10 + n).padStart(2, "0")}:00.000Z`;
 const answer = (text: string, extra: object = {}) => ({ kind: "out", source: "orchestrator", target: "web", text, ...extra });
 const LABELS = "- **원인:** 썸네일이 늦게 만들어졌어요.\n- **고친 것:** 원본을 줄여서 먼저 보여 줘요.";
@@ -96,8 +96,41 @@ test("only a finished assistant answer gets shapes", async () => {
 	for (const n of ["gateway", "started", "relay", "user"]) expect(await count(n, ".ans-card")).toBe(0);
 });
 
-test("a copied selection gives the lines as written", async () => {
-	expect(lines(await copied(`${msg("labels")}.querySelector(".md")`))).toEqual(["앨범을 고쳤어요. 새로고침하면 돼요.", "- **원인:** 썸네일이 늦게 만들어졌어요.", "- **고친 것:** 원본을 줄여서 먼저 보여 줘요.", "내일 다시 볼게요."]);
+test("a selected answer gives the words on screen, a selected part only that part", async () => {
+	expect(lines(await copied(`${msg("labels")}.querySelector(".md")`))).toEqual(["앨범을 고쳤어요. 새로고침하면 돼요.", "원인", "썸네일이 늦게 만들어졌어요.", "고친 것", "원본을 줄여서 먼저 보여 줘요.", "내일 다시 볼게요."]);
+	expect(await copied(`${msg("labels")}.querySelector(".rc-w")`)).toBe("썸네일이 늦게 만들어졌어요.");
+});
+
+test("every word of a card can be selected, and nothing hidden is there to copy", async () => {
+	const shaped = names.filter(n => n !== "user");
+	const stuck = await page<string[]>(`[...document.querySelectorAll(".ans-card")].flatMap(c => {
+		const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT), out = [];
+		while (walk.nextNode()) { const e = walk.currentNode.parentElement; if (walk.currentNode.data.trim() && !e.closest("button, .fi-ic") && getComputedStyle(e).userSelect === "none") out.push(e.className + ":" + walk.currentNode.data); }
+		return out;
+	})`);
+	expect(stuck).toEqual([]);
+	for (const n of shaped) expect(await count(n, ".ans-card .mlist-url, .ans-card [aria-hidden='true']:not(svg)")).toBe(0);
+});
+
+test("a right click and a drag on a card are the browser's own", async () => {
+	expect(await page<boolean[]>(`["contextmenu", "selectstart"].map(type => !${msg("labels")}.querySelector(".rc-w").dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true })))`)).toEqual([false, false]);
+});
+
+test("a file row's name starts a selection, and a click with text selected in it does not open the file", async () => {
+	expect(await count("files", ".ans-files a .fi-n, .ans-files button .fi-n")).toBe(0);
+	const opened = await page<number[]>(`(() => {
+		const row = ${msg("files")}.querySelector(".ans-files .fatt"), was = window.open, sel = getSelection();
+		let n = 0;
+		window.open = () => { n++; return null; };
+		const run = f => { const from = n; f(); return n - from; };
+		const out = [run(() => row.click()), run(() => row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })))];
+		sel.selectAllChildren(row.querySelector(".fi-n"));
+		out.push(run(() => row.click()));
+		sel.removeAllRanges();
+		window.open = was;
+		return out;
+	})()`);
+	expect(opened).toEqual([1, 1, 0]);
 });
 
 test("[file] lines are rows in one card with the name first, the evidence line under them", async () => {
@@ -113,20 +146,22 @@ test("a picture keeps its thumbnail", async () => {
 });
 
 test("a last 근거: line is small pieces and turns the lead on; with text after it, it stays a meta line", async () => {
-	expect(await page<string[]>(`[...${msg("evidence")}.querySelectorAll(".ans-ev > span:not(.mlist-url)")].map(e => e.textContent)`)).toEqual(["a1b2c3d", "테스트 24개 통과"]);
+	expect(await page<string[]>(`[...${msg("evidence")}.querySelectorAll(".ans-ev > span")].map(e => e.textContent)`)).toEqual(["a1b2c3d", "테스트 24개 통과"]);
 	expect(await lead("evidence")).toBe("고쳤어요.");
 	expect(await count("evidenceMid", ".ans-ev")).toBe(0);
 	expect(await count("evidenceMid", "p.meta")).toBe(1);
 	expect(await lead("evidenceMid")).toBeNull();
 });
 
-test("a copied selection gives the [file] and 근거: lines as written", async () => {
-	expect(lines(await copied(msg("files"))).slice(-3)).toEqual(["[file] /files/가계부.xlsx", "[file] /files/요약.pdf", "근거: 카드 212건 대조 · 빠진 건 없음"]);
+test("a selected answer gives the file names and evidence pieces, not the lines behind them", async () => {
+	const got = lines(await copied(msg("files")));
+	expect(got).toEqual(expect.arrayContaining(["가계부.xlsx", "요약.pdf", "카드 212건 대조", "빠진 건 없음"]));
+	expect(got.join("\n")).not.toMatch(/\[file\]|\/files\/|근거:/);
 });
 
 test("titles over label lists share one card, the count on the right", async () => {
 	expect(await count("bundle", ".ans-card")).toBe(1);
-	expect(await page<string[]>(`[...${msg("bundle")}.querySelectorAll(".ans-card .rc-sh")].map(e => e.querySelector(":scope > span:not(.mlist-url)").textContent)`)).toEqual(["아직 남음", "처리함"]);
+	expect(await page<string[]>(`[...${msg("bundle")}.querySelectorAll(".ans-card .rc-sh")].map(e => e.textContent)`)).toEqual(["아직 남음", "처리함"]);
 	expect(await page<string[]>(`[...${msg("bundle")}.querySelectorAll(".ans-card .ans-li")].map(e => [e.querySelector(".rc-k").textContent, e.querySelector(".ans-n")?.textContent ?? ""].join("|"))`)).toEqual(["배송 늦음|6회", "영수증 재발급|4회", "비밀번호 찾기|"]);
 	expect(await lead("bundle")).toBe("문의를 묶어 봤어요.");
 });
@@ -139,8 +174,8 @@ test("a lone title with one item, or a title over a plain list, stays as written
 	expect(await count("titleOverText", "p b")).toBe(1);
 });
 
-test("a copied bundle gives its title and lines as written", async () => {
-	expect(lines(await copied(`${msg("bundle")}.querySelector(".ans-card")`))).toEqual(["**아직 남음**", "- **배송 늦음 (6회):** 주말 주문이 몰렸어요.", "**처리함**", "- **영수증 재발급 (4회):** 바로 받을 수 있어요.", "- **비밀번호 찾기:** 스팸함으로 갔어요."]);
+test("a selected bundle gives its titles and rows", async () => {
+	expect(lines(await copied(`${msg("bundle")}.querySelector(".ans-card")`))).toEqual(["아직 남음", "배송 늦음", "6회", "주말 주문이 몰렸어요.", "처리함", "영수증 재발급", "4회", "바로 받을 수 있어요.", "비밀번호 찾기", "스팸함으로 갔어요."]);
 });
 
 test("numbered lines are steps with their number in a small cell", async () => {
@@ -164,9 +199,9 @@ test("a wider table or one with no header stays today's table", async () => {
 	}
 });
 
-test("copied steps and a copied table give the lines as written", async () => {
-	expect(lines(await copied(`${msg("steps")}.querySelector(".ans-card")`))).toEqual(["1. 전원을 꺼요.", "2) 버튼을 눌러요.", "3. 다시 찾아요."]);
-	expect(lines(await copied(`${msg("table")}.querySelector(".ans-card")`))).toEqual(["| | 기본형 | 넉넉형 |", "|---|---|---|", "| 월 요금 | 19,000원 | 33,000원 |", "| 데이터 | 20GB | 무제한 |"]);
+test("selected steps read in order, a selected table keeps its rows and cells", async () => {
+	expect(lines(await copied(`${msg("steps")}.querySelector(".ans-card")`))).toEqual(["1", "전원을 꺼요.", "2", "버튼을 눌러요.", "3", "다시 찾아요."]);
+	expect(lines(await copied(`${msg("table")}.querySelector(".ans-card")`))).toEqual(["기본형\t넉넉형", "월 요금\t19,000원\t33,000원", "데이터\t20GB\t무제한"]);
 });
 
 test("a time list is the same card, its title kept above it", async () => {
