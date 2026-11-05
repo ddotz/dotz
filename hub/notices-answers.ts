@@ -94,6 +94,9 @@ export function orchestratorAnswered(text: string, ref?: string, at = now()): nu
 
 // Signal 4: the bot resolves notices itself. `ids` picks exact notices, `match` every asking notice whose title or text holds that text, `conv` every
 // one asked in that conversation, `all` every open ask. A login request keeps its own end (authSettled).
+// The cards a session raised for the owner, once his word reached it another way. A send approval closes only on its own buttons.
+export const closeLaneCards = (name: string): number => resolveAsks(i => i.decision?.to === `lane:${name}` && !i.decision.draft, now(), true);
+
 export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unknown; all?: unknown }): { resolved: number; unread: number } {
 	const ids = Array.isArray(sel.ids) ? new Set(sel.ids.map(String)) : undefined;
 	const match = typeof sel.match === "string" && sel.match.trim() ? sel.match.trim().toLowerCase() : undefined;

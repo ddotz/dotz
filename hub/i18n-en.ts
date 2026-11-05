@@ -238,7 +238,8 @@ export const en = {
 
 	inboxLaneReport: (lane: string) => `[dotz inbox] session report from ${lane}:`,
 	inboxLaneReports: (n: number) => `[dotz inbox] ${n === 1 ? "session report" : `${n} session reports`} (routine progress stays in report.md and the what-runs-now line):`,
-	laneReportSteer: (body: string) => `${enLeads.laneReportLead}. Act on it now if it needs you (a result to pass on, a question, a failure): pass it on with dotz_send or answer the session with dotz_lane, then continue the current work; it does not come back later.\n\n${body}`,
+	laneReportSteer: (body: string) => `${enLeads.laneReportLead}. Act on it now if it needs you (a result or failure to pass on, a question you can answer): pass it on with dotz_send or answer the session with dotz_lane, then continue the current work; it does not come back later. A session's [ask] already reached the owner: never post it again.\n\n${body}`,
+	laneAskWaiting: (lanes: string) => `Not posted: the question of session ${lanes} already waits as a card in the owner's 답변 필요, and his answer there reaches the session. A second card only repeats it, so do not post it again in any words. A different question of yours goes in a later turn.`,
 	// A progress report of a running turn every 5 minutes (hub/livestatus.ts); never rewritten by a model.
 	liveStatus: (minutes: number, now: string, lanes: string, workers: string, steps: string[], rest: number) => `[run] Still working, ${minutes} min so far.${now ? `\nNow: ${now}` : ""}${lanes ? `\nSessions: ${lanes}` : ""}${workers ? `\nSubagents: ${workers}` : ""}${steps.length ? `\nRecently:${steps.map(s => `\n- ${s}`).join("")}${rest ? `\n- and ${rest} more` : ""}` : ""}`,
 	liveTool: { run: "Running a command", read: "Reading a file", edit: "Editing a file", search: "Searching files", web: "Searching the web", fetch: "Reading a web page", task: "Running a subtask", note: "Updating notes", other: "Working" },

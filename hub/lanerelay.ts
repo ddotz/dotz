@@ -8,6 +8,7 @@
 // - a report repeating the lane's last relayed one is dropped (a gateway notice such as [lane exited] never is);
 // - a report arriving while the orchestrator is in a turn is steered into that turn at once (2026-10-20: held reports
 //   reached it after p90 368 s); only when the turn cannot take it are reports batched into one prompt for idle.
+import { orchestratorOnlyAsk } from "./forline.ts";
 import { parkedTone, parseTone, type Tone } from "./tone.ts";
 
 export type Relay = { lane: string; tone?: Tone; text: string; file: string };
@@ -75,7 +76,15 @@ export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: str
 	const held: Relay[] = [];
 	const norm = (t: string) => t.replace(/\s+/g, " ").trim();
 	const body = (items: Relay[]) => `${deps.lead(items.length)}\n${items.map(relayItem).join("\n\n")}`;
-	const send = (items: Relay[]) => deps.deliver(body(items));
+	// The sessions whose question for the owner this orchestrator turn heard; the turn ends at the idle hook (flush).
+	const asked = new Set<string>();
+	const heard = (items: Relay[]) => {
+		for (const r of items) if (r.tone === "ask" && !orchestratorOnlyAsk(parseTone(r.text).text)) asked.add(r.lane);
+	};
+	const send = (items: Relay[]) => {
+		heard(items);
+		deps.deliver(body(items));
+	};
 
 	/** A lane's report: "relayed" (now), "steered" (into the running turn), "held" (batched for idle), "disk" (routine), "owner" (owner-only exchange) or "duplicate". */
 	function report(lane: string, text: string, file: string, ownerOnly = false): "relayed" | "steered" | "held" | "disk" | "owner" | "duplicate" {
@@ -89,7 +98,10 @@ export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: str
 		last.set(lane, key);
 		const item = { lane, tone, text, file };
 		if (deps.busy()) {
-			if (deps.steer?.(body([item]))) return "steered";
+			if (deps.steer?.(body([item]))) {
+				heard([item]);
+				return "steered";
+			}
 			// A newer report of the same lane replaces the held one: only its latest state matters.
 			const i = held.findIndex(h => h.lane === lane && h.tone !== "ask");
 			if (i >= 0 && tone !== "ask") held.splice(i, 1, item);
@@ -102,11 +114,12 @@ export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: str
 
 	/** The orchestrator went idle: everything held goes in as one prompt. */
 	function flush(): number {
+		asked.clear();
 		if (!held.length || deps.busy()) return 0;
 		const items = held.splice(0);
 		send(items);
 		return items.length;
 	}
 
-	return { report, flush, held: () => held.slice() };
+	return { report, flush, held: () => held.slice(), asked: () => [...asked] };
 }

@@ -81,6 +81,7 @@ import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
 import { queue, bgWork, workRows, out, progress, fileRoots } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
+import { repostRefusal } from "./lanewire.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
 import { authHeld, parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
@@ -1104,11 +1105,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "POST" && url.pathname === "/api/send") {
 			const b = await body(req);
 			const target = String(b.target ?? "chat");
-			// A conversation's own session answers only there (hub/convsessions.ts): a post of it anywhere else, an early text, a
-			// progress note or a send with no reply_to alike, is refused, so another window's answer never lands in this one.
+			// A conversation's own session answers only there (hub/convsessions.ts): a post of it anywhere else, an early text, a progress note or a send with no reply_to alike, is refused, so another window's answer never lands in this one.
 			const session = typeof b.session === "string" && b.session ? b.session : MAIN;
 			if (session !== MAIN && convs.keyOf(target) !== session) return json({ delivered: false, reason: `this session answers only ${primaryTarget(session)}; hand other work to main with dotz_conv send main` }, 403);
 			const sender = convs.get(session)?.queue ?? queue;
+			const refused = session === MAIN && !b.update_key && repostRefusal(target, String(b.text ?? ""));
+			if (refused) return json({ delivered: false, reason: refused });
 			// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
 			if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves });
 			if (b.update_key) {
@@ -1118,8 +1120,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 					return json({ delivered: false, reason: (error as Error).message }, 502);
 				}
 			}
-			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer. Meanwhile the owner
-			// sees it at once on that conversation's progress line (owner 2026-10-28: 중간 말을 바로 보여 주기), which the answer replaces.
+			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer. Meanwhile the owner sees it at once on that conversation's progress line (owner 2026-10-28: 중간 말을 바로 보여 주기), which the answer replaces.
 			if (sender.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined)) {
 				void progress(target, "progress", String(b.text ?? ""), b.reply_to).catch(e => log(`early text not shown on the progress line: ${(e as Error).message}`));
 				return json({ delivered: true, held: true, note: "held: it is shown on the progress line now and goes out together with your final answer for this request; do not send it again" });

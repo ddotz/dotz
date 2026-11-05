@@ -359,7 +359,7 @@ function orchestratorTools(pi: any): void {
 			const out =
 				p.action === "launch" ? await call("/api/lanes", { method: "POST", body: JSON.stringify({ why: p.why, hours: p.hours, owner_asked_for_lane: p.owner_asked_for_lane, name: p.name, title: p.title, kind: p.kind, home: p.home, cwd: p.cwd, brief: p.brief, model: p.model, worker_model: p.worker_model, est: p.est, force: p.force, owner_asked_for_fable: p.owner_asked_for_fable }) })
 				: p.action === "list" ? await call("/api/lanes")
-				: p.action === "send" ? await call(`/api/lanes/${p.name}/send`, { method: "POST", body: JSON.stringify({ text: p.text }) })
+				: p.action === "send" ? await call(`/api/lanes/${p.name}/send`, { method: "POST", body: JSON.stringify({ text: p.text, session: process.env.DOTZ_CONV ?? "main" }) })
 				: p.action === "handover" ? await call(`/api/lanes/${p.name}/handover`, { method: "POST", body: JSON.stringify({ text: p.text }) })
 				: p.action === "verify" ? await call(`/api/lanes/${p.name}/verify`, { method: "POST", body: JSON.stringify({ text: p.text, force: p.force }) })
 				: await call(`/api/lanes/${p.name}`, { method: "DELETE" });
