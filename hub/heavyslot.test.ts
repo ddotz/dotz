@@ -46,3 +46,17 @@ test("a wait past its bound gives up and reports it", async () => {
 	expect(readFileSync(join(dir, "slot.1"), "utf8")).toContain(" long");
 	held.release();
 });
+
+test("the workers of one run share its slot, and another run waits for the whole run", async () => {
+	const run = await acquireHeavySlot({ dir, label: "run", slots: 1, pid: process.pid });
+	const worker = await acquireHeavySlot({ dir, label: "worker", slots: 1, pid: process.pid });
+	expect(worker.note).toBeUndefined();
+	worker.release();   // not the holder: the slot stays
+	expect(readFileSync(join(dir, "slot.1"), "utf8")).toContain(" run");
+	let sawHolder = "";
+	const other = acquireHeavySlot({ dir, label: "other", slots: 1, pid: process.ppid, onWait: h => { sawHolder = h; } });
+	expect(sawHolder).toBe("run");
+	run.release();
+	(await other).release();
+	expect(readdirSync(dir)).toEqual([]);
+});

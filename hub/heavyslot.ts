@@ -15,7 +15,7 @@ const WAIT_MS = 20 * 60_000;
 const MAX_HOLD_MS = 20 * 60_000;
 
 export type HeavySlot = { release: () => void; waitedMs: number; note?: string };
-type SlotOptions = { dir: string; label: string; slots?: number; timeoutMs?: number; maxHoldMs?: number };
+type SlotOptions = { dir: string; label: string; slots?: number; timeoutMs?: number; maxHoldMs?: number; onWait?: (heldBy: string) => void; pid?: number };
 
 export const heavySlots = (): number => Math.max(1, Math.floor(Number(process.env.DOTZ_HEAVY_SLOTS) || cpus().length / 4));
 
@@ -76,7 +76,7 @@ export async function acquireHeavySlot(o: SlotOptions): Promise<HeavySlot> {
 	const slots = o.slots ?? heavySlots();
 	const maxHoldMs = o.maxHoldMs ?? MAX_HOLD_MS;
 	mkdirSync(o.dir, { recursive: true });
-	const owner = `${process.pid} ${Date.now()} ${randomUUID()} ${o.label.replace(/\s+/g, " ").slice(0, 120)}`;
+	const owner = `${o.pid ?? process.pid} ${Date.now()} ${randomUUID()} ${o.label.replace(/\s+/g, " ").slice(0, 120)}`;
 	const me = join(o.dir, `.${randomUUID()}.tmp`);
 	writeFileSync(me, owner);
 	let heldBy = "";
@@ -85,6 +85,7 @@ export async function acquireHeavySlot(o: SlotOptions): Promise<HeavySlot> {
 			const slot = join(o.dir, `slot.${n}`);
 			if (link(me, slot)) return slot;
 			const holder = read(slot);
+			if (o.pid !== undefined && holder?.startsWith(`${o.pid} `)) return slot; // the slot of the run this process belongs to
 			if (holder !== undefined && stale(holder, maxHoldMs)) reap(o.dir, slot, holder, me);
 			else if (holder) heldBy ||= holder.split(" ").slice(3).join(" ");
 			if (link(me, slot)) return slot;
@@ -96,6 +97,7 @@ export async function acquireHeavySlot(o: SlotOptions): Promise<HeavySlot> {
 	try {
 		slot = attempt();
 		if (!slot) {
+			o.onWait?.(heldBy);
 			const { promise, resolve } = Promise.withResolvers<string | undefined>();
 			let done = false;
 			const finish = (s: string | undefined) => {

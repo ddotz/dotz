@@ -8,8 +8,12 @@ import { installGitHooks } from "../git-hooks.ts";
 import { setMachineProbe } from "../limits.ts";
 import { liveDataDir } from "../live-guard.ts";
 import { installClock } from "./test-clock.ts";
+import { takeSuiteSlot } from "./test-slot.ts";
 
 installGitHooks(join(import.meta.dir, "..", "..")); // the push gate reaches a developer clone here (hub/git-hooks.ts)
+
+// A whole-suite run waits here for the machine-wide heavy slot, before anything below starts (and before DOTZ_* is cleared).
+await takeSuiteSlot(process.env);
 
 // Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test.
 for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DOTZ_TEST_DIR") delete process.env[k];

@@ -206,6 +206,9 @@ test("hooks: a patch read in an eval cell counts however the path is written (va
 	const first = await call("eval", { language: "js", code: "const iso = '/tmp/gx/iso';\nprint(await sh(`git apply ${iso}/st_1/root.patch`));" });
 	expect(first.reason).toContain("review before apply");
 	expect(first.reason).toContain("/tmp/gx/iso/st_1/root.patch");
+	// the read tool may name its path file_path
+	await call("read", { file_path: "/tmp/gx/iso/st_f/root.patch" });
+	expect(await call("eval", applyOf("/tmp/gx/iso/st_f/root.patch"))).toBeUndefined();
 	// read() with a template over a variable defined in an earlier cell, apply written with the resolved path in a later cell
 	expect(await call("eval", { language: "js", code: "const t = await read(`${iso}/st_1/root.patch`); print(t.slice(0, 20000));" })).toBeUndefined();
 	expect(await call("eval", applyOf("/tmp/gx/iso/st_1/root.patch"))).toBeUndefined();
