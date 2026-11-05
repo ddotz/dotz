@@ -87,7 +87,7 @@ for (const [name, w, h] of [["390", 390, 844], ["1280", 1280, 800]] as const) {
 			await v.evaluate(`(document.querySelector(".fs-ft .dc-go").click(), 0)`);
 			await posts.until(p => p.some(x => x.path.endsWith("/answer")), 10_000, "the answer");
 			const ans = posts.find(x => x.path.endsWith("/answer"))!;
-			expect(ans.body).toEqual({ n: 2, note: "이 내용으로 고쳐 주세요: 안녕하세요. 견적서를 첨부합니다." });
+			expect(ans.body).toEqual({ n: 2, label: "고치기", note: "이 내용으로 고쳐 주세요: 안녕하세요. 견적서를 첨부합니다." });
 		});
 
 		test("any other draft: chips under the textarea (removable), and the 고치기 answer goes out with the uploaded files", async () => {
@@ -114,6 +114,7 @@ for (const [name, w, h] of [["390", 390, 844], ["1280", 1280, 800]] as const) {
 			expect(posts[0]!.path).toBe(`/api/notices/${n.id}/answer`);
 			expect(posts[0]!.body).toEqual({
 				n: 2,
+				label: "고치기",
 				note: "첨부할 파일 1개(보고서.pdf)를 이 초안에 붙여 주세요. 이 내용으로 고쳐 주세요: 안녕하세요. 보고서를 보내 드립니다.",
 				files: [{ path: "/tmp/uploads/보고서.pdf", name: "보고서.pdf", type: "application/pdf", size: new TextEncoder().encode("내용-보고서.pdf").length }],
 			});
