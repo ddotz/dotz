@@ -7,7 +7,7 @@ const peers = web("33-peers.js");
 const between = (src: string, from: string, to: string): string => src.slice(src.indexOf(from), src.indexOf(to, src.indexOf(from)));
 const others = between(peers, "const prOthers", "\n\n");
 
-const RELAY = { name: "릴레이", url: "/jandi-peer/work", self: false, online: true, via: "jandi" };
+const RELAY = { name: "릴레이", url: "/#chat/relay:jandi:work", self: false, online: true, via: "jandi" };
 const PUBLIC = { name: "공개", url: "https://pub.example", self: false, online: true, public: true };
 const DIRECT = { name: "맥미니", url: "https://mini:8445", self: false, online: true };
 const SELF = { name: "맥북", url: "https://mac:8443", self: true, online: true };

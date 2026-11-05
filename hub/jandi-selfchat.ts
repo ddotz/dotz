@@ -26,6 +26,8 @@ export type SelfChatDeps = {
 	maxFileBytes?: number;
 	/** How long the files of one message may take together; what is not in by then becomes an [attachment] line. */
 	filesTimeoutMs?: number;
+	/** The peers as configured now (the web app's JANDI settings change them while this polls). */
+	peers?: () => readonly SelfChatPeer[] | undefined;
 	/** A new reply of a peer (a post by anyone but the owner that starts with its reply prefix), the prefix taken off; never for a peer with `notify: false`. */
 	peerReply?: (peer: SelfChatPeer, text: string, id: number) => void;
 	log: (msg: string) => void;
@@ -44,17 +46,20 @@ const FILES_TIMEOUT_MS = 120_000;
 
 const int = (v: unknown) => (Number.isSafeInteger(v) && (v as number) > 0 ? (v as number) : 0);
 
-/** The valid peers, in order: a keyword of 1-30 non-space characters that is neither this gateway's own nor a repeat, a reply prefix of 1-30 characters; at most 8. */
-function normalizePeers(raw: unknown, own: string): SelfChatPeer[] {
+/** The valid peers, in order: a keyword of 1-30 non-space characters that is neither this gateway's own nor a repeat, a reply prefix of 1-30 characters that is
+ *  neither this gateway's own (its answers would read as that computer's) nor a repeat; at most 8. */
+function normalizePeers(raw: unknown, own: string, ownPrefix: string): SelfChatPeer[] {
 	const out: SelfChatPeer[] = [];
 	const seen = new Set([own.toLowerCase()]);
+	const prefixes = new Set([ownPrefix]);
 	for (const p of Array.isArray(raw) ? raw : []) {
 		if (!p || typeof p !== "object") continue;
 		const o = p as Record<string, unknown>;
 		const kw = typeof o.keyword === "string" && /^\S{1,30}$/.test(o.keyword.trim()) ? o.keyword.trim().replace(/^\//, "") : "";
 		const prefix = typeof o.reply_prefix === "string" ? o.reply_prefix.trim() : "";
-		if (!kw || seen.has(kw.toLowerCase()) || prefix.length < 1 || prefix.length > 30) continue;
+		if (!kw || seen.has(kw.toLowerCase()) || prefixes.has(prefix) || prefix.length < 1 || prefix.length > 30) continue;
 		seen.add(kw.toLowerCase());
+		prefixes.add(prefix);
 		out.push({ name: (typeof o.name === "string" ? o.name.trim().slice(0, 30) : "") || kw, keyword: kw, reply_prefix: prefix, ...(o.notify === false ? { notify: false as const } : {}) });
 		if (out.length >= MAX_PEERS) break;
 	}
@@ -66,7 +71,8 @@ export function normalizeSelfChat(raw: unknown): SelfChatConfig | undefined {
 	const keyword = typeof o.keyword === "string" && /^\S{1,30}$/.test(o.keyword.trim()) ? o.keyword.trim().replace(/^\//, "") : "dotz";
 	const secret = typeof o.session_secret === "string" && /^[A-Za-z0-9._-]{1,64}$/.test(o.session_secret) ? o.session_secret : "jandi-session";
 	const ms = Number(o.interval_ms);
-	const peers = normalizePeers(o.peers, keyword);
+	const reply_prefix = typeof o.reply_prefix === "string" ? o.reply_prefix.trim().slice(0, 30) : "";
+	const peers = normalizePeers(o.peers, keyword, reply_prefix);
 	return {
 		enabled: o.enabled === true,
 		team_id: int(o.team_id),
@@ -74,7 +80,7 @@ export function normalizeSelfChat(raw: unknown): SelfChatConfig | undefined {
 		member_id: int(o.member_id),
 		bot_id: int(o.bot_id),
 		keyword,
-		reply_prefix: typeof o.reply_prefix === "string" ? o.reply_prefix.trim().slice(0, 30) : "",
+		reply_prefix,
 		session_secret: secret,
 		interval_ms: Number.isInteger(ms) && ms >= 1000 ? ms : 3000,
 		...(peers.length ? { peers } : {}),
@@ -314,7 +320,7 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 			saveLast(last); // before handing it on: a crash never runs the same command twice (nor notifies the same reply twice)
 			const body = r.message?.content?.body;
 			if (r.fromEntity !== cfg.member_id) {
-				const reply = typeof body === "string" ? peerReplyOf(body, cfg.peers) : undefined;
+				const reply = typeof body === "string" ? peerReplyOf(body, deps.peers?.()) : undefined;
 				if (reply && reply.peer.notify !== false) deps.peerReply?.(reply.peer, reply.text, r.id);
 				continue;
 			}

@@ -1,3 +1,5 @@
+import { scrub } from "./activity.ts";
+import { msg } from "./i18n.ts";
 import { commandOf, SelfChatError, startsWord, type SelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
 import { type AdapterPush, RelayError, type RelayLine, type RelayRow } from "./messenger.ts";
 import { noticeClass } from "./notice-class.ts";
@@ -11,8 +13,6 @@ import { parseTone } from "./tone.ts";
 export type Line = RelayLine;
 type Rec = { id: number; time?: unknown; createdAt?: unknown; fromEntity: number; message?: { content?: { body?: unknown } } };
 type Client = Pick<SelfChat, "get" | "post" | "checkRoom">;
-/** The line under a computer's name, and above the composer, while its chat goes through JANDI. */
-const NOTE = "잔디로 주고받아요";
 export type PeerChatDeps = { config: () => SelfChatConfig | undefined; client: () => Client | undefined; now?: () => number; log?: (msg: string) => void; listWaitMs?: number };
 
 const PAGE = 100;
@@ -59,7 +59,7 @@ export function peerReplyPush(peer: SelfChatPeer, text: string, id: number): Ada
 	const { tone, text: rest } = parseTone(text.trim());
 	const cls = tone ? noticeClass({ kind: "result", tone }).cls : "conv";
 	if (cls !== "ask" && cls !== "result" && cls !== "conv") return undefined;
-	const flat = rest.replace(/\s+/g, " ").trim();
+	const flat = scrub(rest).replace(/\s+/g, " ").trim();
 	if (!flat) return undefined;
 	const body = flat.length > PUSH_BODY ? `${flat.slice(0, PUSH_BODY - 1)}…` : flat;
 	return { kind: cls, title: peer.name, body, url: chatAddr(peer), tag: `relay:jandi:${peer.keyword}:${id}` };
@@ -98,7 +98,7 @@ export function createPeerChats(deps: PeerChatDeps) {
 	async function lookup(key: string) {
 		const a = active();
 		const peer = a?.peers.find(p => p.keyword === key);
-		if (!a || !peer) throw new RelayError("not found", 404);
+		if (!a || !peer) throw new RelayError(msg().relay.gone, 404);
 		return { c: a.c, peer };
 	}
 	const fail = (peer: SelfChatPeer, e: unknown): never => {
@@ -108,8 +108,6 @@ export function createPeerChats(deps: PeerChatDeps) {
 	};
 
 	return {
-		note: NOTE,
-
 		/** One row per configured peer for the computer list; a JANDI failure leaves the row, offline. JANDI gets at most `listWaitMs`:
 		 *  past that the rows use the last known messages (none yet: offline), so a slow JANDI never holds up the list. */
 		async rows(): Promise<RelayRow[]> {
@@ -126,7 +124,7 @@ export function createPeerChats(deps: PeerChatDeps) {
 			});
 			const recs = await Promise.race([fresh.catch(() => undefined), late]);
 			clearTimeout(timer);
-			return a.peers.map(p => ({ name: p.name, url: chatAddr(p), self: false, online: !!recs && isOnline(linesOf(recs, a.c.member_id, p), now()), via: "jandi" as const, key: p.keyword, note: NOTE }));
+			return a.peers.map(p => ({ name: p.name, url: chatAddr(p), self: false, online: !!recs && isOnline(linesOf(recs, a.c.member_id, p), now()), via: "jandi" as const, key: p.keyword, note: msg().relay.note }));
 		},
 
 		/** One peer's conversation, oldest first. */
