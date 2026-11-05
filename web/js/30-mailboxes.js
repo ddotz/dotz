@@ -9,7 +9,7 @@ ICONS.folder ??= ICONS.projects;
 ICONS.sliders ??= "M4 7h9M17 7h3M4 17h3M11 17h9M13 5v4M9 15v4";
 ICONS.users ??= "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3.5 19a5.5 5.5 0 0 1 11 0M16 5.4a3 3 0 0 1 0 5.2M17.5 14a5.5 5.5 0 0 1 3 5";
 ICONS.tag ??= "M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0zM8 8h.01";
-const MX = { key: "", acct: "all", box: "all", scr: "", show: 0, mark: false, it: null, of: new Map(), accts: new Map(), pane: "", chip: "", slot: new Map(), teach: null };
+const MX = { key: "", acct: "all", box: "all", scr: "", show: 0, mark: false, it: null, of: new Map(), nof: new Map(), accts: new Map(), pane: "", chip: "", slot: new Map(), teach: null };
 const MX_MODE = { auto: "자동 초안", ask: "확인 먼저", notify: "알림만", quiet: "조용히 모으기" };
 const MX_ZERO = { live: 0, unread: 0, needs: 0 };
 const MX_STOP = new Set(["re", "fw", "fwd", "회신", "답장", "전달", "안내", "확인", "문의", "요청", "관련", "공지", "the", "and", "for", "with", "your", "from", "this", "that", "mail"]);
@@ -39,7 +39,7 @@ const mxSet = id => { if (typeof mxOpenSet === "function") mxOpenSet(id); };
 /* ---- the one app ---- */
 // Every `app === "mail"` instance of monItems becomes one: mails and notices together, the counts added, `inst` the first one's. A peer's mail is not here (pqMerge adds it later).
 function mxMerge(items) {
-  MX.of = new Map(); MX.accts = new Map(); MX.key = "";
+  MX.of = new Map(); MX.nof = new Map(); MX.accts = new Map(); MX.key = "";
   const mine = items.filter(i => i.app && mxMail().some(x => x.key === i.inst));
   if (!mine.length) return;
   const top = mine.find(i => i.inst === "mail") || mine[0], first = s => [...String(s || "")][0] || "";
@@ -49,6 +49,7 @@ function mxMerge(items) {
     const a = { key: i.inst, n, label: i.name, account: g.account || "", boxes, byId: new Map(boxes.map(b => [b.id, b])), base: boxes.find(b => b.base) || boxes[0], conn: !!i.conn, hint: i.hint, needs: { drafts: i.drafts | 0, unread: i.unread | 0, unreplied: i.unreplied | 0 }, owned: i.owned || [], mk: same ? first(g.account).toUpperCase() || String(n + 1) : first(i.name) };
     MX.accts.set(a.key, a);
     for (const t of i.mails) MX.of.set(t, a.key);
+    for (const n of i.notices) MX.nof.set(n.id, a.key);
     return a;
   });
   const sum = f => mine.reduce((c, i) => c + (i[f] | 0), 0), down = accts.filter(a => a.conn);
@@ -99,7 +100,8 @@ function mxScope(it) {
   const sc = MX.acct === "all" ? it.accounts : it.accounts.filter(a => a.key === MX.acct), all = cnt.get("all") || MX_ZERO;
   const line = [it.accounts.length > 1 ? (MX.acct === "all" ? `계정 ${it.accounts.length}개` : sc[0].account || sc[0].label) : "", `안 읽음 ${all.unread}`, `메일함 ${sc.reduce((c, a) => c + a.boxes.length, 0)}개`].filter(Boolean).join(" · ");
   const rows = ents.map(e => ({ ...e, c: cnt.get(mxGroup(e.id) ? e.id : e.k) || MX_ZERO }));
-  return { ...it, mails: MX.scr ? [] : mails, notices: MX.scr ? [] : cut ? it.notices.filter(n => ok.has(mxNoticeMail(n))) : it.notices, mxk: `|${MX.acct}|${MX.box}|${MX.scr}`, mxLine: it.conn ? "" : line, all, rows,
+  // listed: the app has stored mail, so a box with none of it still draws as a mail list.
+  return { ...it, listed: it.mails.some(t => MAILS.has(t)), mails: MX.scr ? [] : mails, notices: MX.scr ? [] : cut ? it.notices.filter(n => (MX.box === "all" ? MX.nof.get(n.id) === MX.acct : ok.has(mxNoticeMail(n)))) : it.notices, mxk: `|${MX.acct}|${MX.box}|${MX.scr}`, mxLine: it.conn ? "" : line, all, rows,
     esig: JSON.stringify([MX.acct, MX.box, all, rows.map(e => [e.id, e.b.name, e.b.icon, !!e.b.base, e.b.mode, e.n, e.c]), it.accounts.map(a => [a.key, a.label, a.mk])]) };
 }
 
