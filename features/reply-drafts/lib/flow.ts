@@ -264,10 +264,10 @@ export type Candidates = { files: LibraryFile[]; /** Rule entries that name no f
 
 // The files the model may choose from for a mail, before the draft is written: the matched rule's files (resolved) first, then the library files that
 // share a word with the mail, CANDIDATE_MAX in all. Plain code, no model call; the model sees their names. undefined: this mail has no folder to choose from.
-// `folders`: the mailbox's own folders, in front of the app's 첨부 파일 폴더 (box.ts boxFolders); empty = the single folder as before.
-export async function candidatesFor(item: ReplyItem, meta: { source: string; ref: string }, rule?: DraftRule, folders: string[] = []): Promise<Candidates | undefined> {
+// `folders`: the mailbox's own folders, in front of the app's 첨부 파일 폴더 (box.ts boxFolders), or instead of it for an `alone` box; empty = the single folder as before.
+export async function candidatesFor(item: ReplyItem, meta: { source: string; ref: string }, rule?: DraftRule, folders: string[] = [], alone = false): Promise<Candidates | undefined> {
 	if (item.kind !== "mail" || !canAttach(meta.source)) return undefined;
-	const app = await attachFolder(meta.ref), roots = [...new Set([...folders, ...(app ? [app] : [])])];
+	const app = alone ? "" : await attachFolder(meta.ref), roots = [...new Set([...folders, ...(app ? [app] : [])])];
 	if (!roots.length) return undefined;
 	const library = folders.length ? roots.flatMap(listLibrary).filter((f, i, all) => all.findIndex(x => x.rel === f.rel) === i) : listLibrary(roots[0]!);
 	const files: LibraryFile[] = [], missing: string[] = [];
