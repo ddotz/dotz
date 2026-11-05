@@ -62,5 +62,5 @@ dialog.dlg.shell .dact { display: none; }
 .md .mlist-src .mlist-t { font: 500 var(--fs-sec)/var(--lh-sec) var(--font); }
 .md .mlist-src .mlist-s { font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
 .md .mlist-src .mlist-h, .md .mlist-src .mlist-av, .md .mlist-src .mlist-main { -webkit-user-select: none; user-select: none; }
-.md .mlist-url { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.md .mlist-url, .hcb-card .mlist-url { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .md .mlist-b { min-width: 20px; height: 20px; padding: 0 var(--sp-15); border-radius: 10px; background: var(--err); color: #fff; font: 600 11px/20px var(--font); text-align: center; }

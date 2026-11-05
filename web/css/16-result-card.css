@@ -249,15 +249,18 @@ a.dr-att:active { background: var(--active); }
 /* a briefing-shaped answer in chat (11-resultcard.js hcBriefNode): schedule rows with a muted time column, the mail line as a chip, counts as numbers */
 .hcb { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); min-width: 0; font-size: 15.5px; line-height: 28px; }
 .hcb > .md { align-self: stretch; }
-.hcb-card { align-self: stretch; max-width: 440px; padding: var(--sp-3) var(--sp-4) var(--sp-1); border-radius: var(--r-card); background: var(--card); }
-.hcb-hd { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; margin-bottom: var(--sp-1); }
+.hcb-card { align-self: stretch; max-width: 400px; padding: 0 var(--sp-3); border-radius: var(--r-card); background: var(--layer); }
+.md .hcb-card { margin-bottom: var(--sp-3); }
+.md .hcb-card:last-child { margin-bottom: 0; }
+.hcb-hd { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; padding-top: var(--sp-2); }
 .hcb-hd .tag { height: 22px; padding: 0 var(--sp-2); border-radius: 999px; font-size: 11.5px; font-weight: 600; }
 .hcb-h { min-width: 0; color: var(--fg-2); font: 500 13px/20px var(--font); }
-.hcb-rows { display: grid; }
-.hcb-r { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: baseline; min-height: 44px; padding: var(--sp-2) 0; font-size: 15px; line-height: 24px; }
-.hcb-r + .hcb-r { border-top: 1px solid var(--line); }
-.hcb-t { color: var(--fg-3); font-size: 13.5px; font-variant-numeric: tabular-nums; }
-.hcb-ti { min-width: 0; overflow-wrap: anywhere; }
+/* time rows in a chat answer (02-basic-markdown.js timeRowsHtml), sized from the landing page's phone scene; only the clipped original line is selectable */
+.hcb-card .rc-row { position: relative; padding: var(--sp-15) 0; }
+.hcb-card .rc-row + .rc-row { border-top: 1px solid var(--line); }
+.hcb-card .rc-k { width: 40px; }
+.hcb-card .rc-w b { font-weight: 400; }
+.hcb-card .rc-k, .hcb-card .rc-w { -webkit-user-select: none; user-select: none; }
 .hcb-chip { display: inline-flex; align-items: center; gap: var(--sp-2); max-width: 100%; min-height: 32px; padding: var(--sp-1) var(--sp-3); border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: 14px; line-height: 22px; }
 .hcb-chip .ic { color: var(--accent); }
 .hcb-ln { color: var(--fg-2); font-size: 14px; line-height: 22px; }
