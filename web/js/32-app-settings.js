@@ -48,8 +48,8 @@ async function asApprove(app, a, o) {
   AS.busy[app] = true; asPaint();
   try {
     const n = !app.includes("~") && typeof ntById === "function" ? ntById(a.id) : null;
-    if (n) await ntPost(n, o.n);
-    else await api(app.includes("~") ? `/api/integrations/${enc(app)}/approve` : `/api/notices/${enc(a.id)}/answer`, "POST", app.includes("~") ? { id: a.id, n: o.n } : { n: o.n });
+    if (n) await ntPost(n, o.n, undefined, undefined, o.label);
+    else await api(app.includes("~") ? `/api/integrations/${enc(app)}/approve` : `/api/notices/${enc(a.id)}/answer`, "POST", app.includes("~") ? { id: a.id, n: o.n } : { n: o.n, label: o.label });
     toast(`${o.label}(으)로 답했어요`);
     await asFeatLoad(app);
   } catch (e) { toast(e.message || "답하지 못했어요", true); }

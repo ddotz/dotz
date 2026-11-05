@@ -13,7 +13,7 @@ import { broadcast, emit } from "./events.ts";
 import { approvals, convOfTarget, newMid, out } from "./outbound.ts";
 import { answerDecision, type DecisionSend, allNotices, markDraftSend, openDraftCards, settleOpenDecision } from "./notices.ts";
 import type { Upload } from "./files.ts";
-import { commentContextOf, commentDraftOf, commentDraftsByCode, commentPending, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
+import { commentContextOf, commentDraftOf, commentPostedOf, commentDraftsByCode, commentPending, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
 import { dropFailed, retryFailed, type RetryDeps } from "./reply-outcomes.ts";
 import { appEntries, commentOwner } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
@@ -21,8 +21,8 @@ import { DATA_DIR } from "./config.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { claimFile, getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
 import { claimHolder } from "./draft-claim.ts";
-import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, sendActionOf, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
-import { answerBatch, batchCard, type BatchCard, type BatchPick } from "./approval-batch.ts";
+import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, sendActionOf, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
+import { answerBatch, batchCard, STALE_OPTIONS, type BatchCard, type BatchPick } from "./approval-batch.ts";
 import { DRAFT_BODY_MAX, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
 import { pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
 
@@ -30,13 +30,22 @@ import { pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-at
 export const TRIAGE_MIN_DEFAULT = 3;
 
 /** Where the gateway would send draft `ref`: a pending comment reply (per source) or a pending mail draft of its own (per sending account). */
-export function sendTargetOf(ref: string): SendTarget | undefined {
+export function sendTargetOf(ref: string, action?: SendAction): SendTarget | undefined {
 	const c = commentDraftOf(ref);
 	if (c) return { kind: "comment", lane: `comment:${c.source}` };
+	// A posted reply whose mail is still owed: only the mail can go (comments.ts send --only mail), so no other action is answered.
+	const p = commentPostedOf(ref);
+	if (p?.mail && (!action || action === "send-mail") && getDraft(p.mail)?.status === "pending") return { kind: "comment", lane: `comment:${p.source}` };
 	const m = getDraft(ref);
 	if (m && m.kind === "mail" && m.status === "pending" && !linkedComment(ref)) return { kind: "mail", lane: `mail:${m.source}` };
 	return undefined;
 }
+
+/** Whether the mail of a comment draft whose reply is posted is still there to send (see RetryDeps.posted). */
+const postedMailOf = (ref: string): "pending" | "gone" | undefined => {
+	const m = commentPostedOf(ref)?.mail;
+	return m ? (getDraft(m)?.status === "pending" ? "pending" : "gone") : undefined;
+};
 
 /** The app a draft belongs to (a comment draft's source app; a mail draft's app instance, found from its mail like groupOf), for the 실패 / 보낸 것 rows. */
 export const draftAppOf = (ref: string): string | undefined => {
@@ -133,9 +142,11 @@ export type CardGroup = { key: string; label: string; count: number; cards: Wait
  * A card's button on the web (POST /api/notices/<id>/answer). 보내기 on a draft the gateway can send is recorded with no model turn, the
  * card closes (its queue shows the next one at once) and the send is queued; 직접 수정 files ride to the bot, so such an answer keeps its path.
  */
-export async function webAnswer(id: string, body: { n?: unknown; note?: unknown; files?: Upload[] }, login: string, deliver: DecisionSend) {
+export async function webAnswer(id: string, body: { n?: unknown; label?: unknown; note?: unknown; files?: Upload[] }, login: string, deliver: DecisionSend) {
 	const card = allNotices().find(n => n.id === id);
 	const opt = card?.decision?.state === "open" ? card.decision.options.find(o => o.n === Number(body.n)) : undefined;
+	// The page names the label it showed for `n`: a card whose options changed since (a staged file moves 이대로 보내기 and 답글만) answers 409 instead of running another action. No label = as before.
+	if (typeof body.label === "string" && card?.decision?.state === "open" && opt?.label !== body.label) return { status: 409, body: { error: STALE_OPTIONS } };
 	const gw = card && opt && !body.files?.length ? gatewaySendOf(card.decision!.to, card.title, opt.label) : undefined;
 	const r = await answerDecision(id, body, async a => (gw ? recordAnswer({ source: "web", channel: channelOf(a.to), author: login, text: a.text, picks: a.picks ?? [], decision: a.notice }) : deliver(a)));
 	if (gw && r.status === 200 && !r.body.already) sender.enqueue({ ref: gw.ref, conv: card!.decision!.to, action: gw.action, title: card!.title });
@@ -205,7 +216,7 @@ export async function approvalRoute(req: Request, url: URL, deps: { login: strin
 	if (url.pathname === "/api/approvals" && req.method === "POST") {
 		const b = (await req.json().catch(() => ({}))) as { items?: unknown };
 		if (!Array.isArray(b.items)) return json({ error: "items are required" }, 400);
-		const items = b.items.filter((x): x is { ref: string; to: string; n: number; note?: string } => !!x && typeof x.ref === "string" && typeof x.to === "string" && typeof x.n === "number");
+		const items = b.items.filter((x): x is { ref: string; to: string; n: number; note?: string; label?: string } => !!x && typeof x.ref === "string" && typeof x.to === "string" && typeof x.n === "number");
 		if (items.some(i => i.to.startsWith("lane:") || i.to.startsWith("auth:"))) return json({ error: "세션과 로그인 요청은 여기서 답하지 않아요" }, 400);
 		// One answer per conversation (its picks are recorded where its cards were asked), in the order of the list.
 		const convs = [...new Set(items.map(i => i.to))];
@@ -229,10 +240,10 @@ export async function approvalRoute(req: Request, url: URL, deps: { login: strin
 			return json({ ok: true });
 		}
 		if ((b.op !== "retry" && b.op !== "drop") || !Array.isArray(b.items) || b.items.length > FAILED_BATCH_MAX) return json({ error: "op (retry | drop) and items are required" }, 400);
-		const deps: RetryDeps = { notices: allNotices(), can: (ref, action) => sender.can(ref, action), enqueue: j => sender.enqueue(j), commentFailed: commentSendFailed, drop: dropDraftRef };
+		const deps: RetryDeps = { notices: allNotices(), can: (ref, action) => sender.can(ref, action), enqueue: j => sender.enqueue(j), commentFailed: commentSendFailed, drop: dropDraftRef, posted: postedMailOf };
 		return json({ results: b.op === "retry" ? retryFailed(b.items, deps) : await dropFailed(b.items, deps) });
 	}
-	async function answerConv(conv: string, items: { ref: string; n: number; note?: string }[]) {
+	async function answerConv(conv: string, items: { ref: string; n: number; note?: string; label?: string }[]) {
 		return answerBatch(conv, items, {
 			cards: c => waitingCards().filter(x => x.to === c),
 			take: (c, refs) => approvals.take(c, refs),

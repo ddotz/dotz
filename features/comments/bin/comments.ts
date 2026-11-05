@@ -5,7 +5,7 @@
 // `send <code> --only reply|mail` sends one part of a reply + mail card: also allowed after the card's 답글만 보내기 / 메일만 보내기 pick, and after
 // 어떻게 보낼지 직접 입력 (the owner's own words, printed back so the bot does what they say). The other part stays and is asked again.
 // A mail whose files disagree with its words is refused before the reply is posted; `--as-is` sends it as it is, and only after the owner's pick 이대로 보내기.
-// (the gateway adds it for that pick).
+// (the gateway adds it for that pick). `--only mail --retry` is the owner's 다시 보내기 of a mail that failed after its reply was posted: that mail alone goes out, the reply never again.
 import { join } from "node:path";
 import { commentAsk } from "../../../hub/comments/ask.ts";
 import type { Engine } from "../../../hub/comments/engine.ts";
@@ -57,9 +57,10 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 			if (!allowed.includes(picked)) return fail(`사용자가 1) 보내기를 고른 기록이 없어서 보내지 않았어요 (${v.verdict === "none" ? "고른 기록 없음" : v.verdict})`);
 			const said = picked === "own" && v.detail ? [`사용자 지시: ${v.detail}`] : [];
 			if (only === "mail") {
-				const m = await engine.sendMailOnly(d.code);
+				const m = await engine.sendMailOnly(d.code, args.includes("--retry") ? { retry: true } : {});
 				// A refusal for the files keeps its first words: the card opens again on them (hub/notices-drafts.ts markDraftSend).
 				if (!m.ok) return fail(m.text.startsWith(ATTACH_REFUSED) ? m.text : `메일을 보내지 못했어요: ${m.text}`);
+				if (d.status === "sent") return { lines: [...said, `메일만 다시 보냈어요. 답글은 이미 올라가 있어요 (${d.code})`], code: 0 };
 				return { lines: [...said, `메일만 보냈어요. 답글은 아직 올리지 않았어요 (${d.code})`, askOf(d.code, "메일은 보냈어요. 답글은 따로 물어봐요") ?? ""].filter(Boolean), code: 0 };
 			}
 			const r = engine.send(d.code, { by: "owner", ...(only === "reply" ? { only } : {}), ...(picked === "send-as-is" ? { asIs: true as const } : {}) });
@@ -78,7 +79,7 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 			return { lines: [cfg.enabled ? "댓글 연동: 켜짐" : "댓글 연동: 꺼짐", ...rows, `초안 ${t.drafts}건, 초안 한 건당 평균 입력 ${t.avgIn} / 출력 ${t.avgOut} 토큰`], code: 0 };
 		}
 		default:
-			return { lines: ["usage: comments.ts draft <comment id> | send <code> [--only reply|mail] [--as-is] | revise <code> --change <text> [--part reply|mail] | drop <code> | status"], code: 2 };
+			return { lines: ["usage: comments.ts draft <comment id> | send <code> [--only reply|mail] [--as-is] [--retry] | revise <code> --change <text> [--part reply|mail] | drop <code> | status"], code: 2 };
 	}
 }
 

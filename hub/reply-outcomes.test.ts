@@ -236,6 +236,18 @@ test("retry of a failed send hands the owner's own pick back to the sender, once
 	]);
 });
 
+test("retry of a comment whose reply is posted and whose mail failed sends only the mail; with no mail left it is refused", () => {
+	const card = () => [notice("CD0000", { state: "failed", answer: `1) ${DRAFT_SEND}`, to: "ch:7", title: "댓글 답장 (CD0000)" })];
+	const g = gateway(card(), { posted: () => "pending" });
+	expect(retryFailed([{ ref: "CD0000", to: "ch:7" }], g.deps)).toEqual([{ ref: "CD0000", ok: true }]);
+	expect(g.enqueued).toEqual([{ ref: "CD0000", conv: "ch:7", action: "send-mail", title: "댓글 답장 (CD0000)", retry: true }]);
+	const gone = gateway(card(), { posted: () => "gone" });
+	const r = retryFailed([{ ref: "CD0000", to: "ch:7" }], gone.deps)[0]!;
+	expect(r).toMatchObject({ ref: "CD0000", ok: false });
+	expect(r.reason).toBeTruthy();
+	expect(gone.enqueued).toEqual([]);
+});
+
 test("through the real sender: a retried draft runs its CLI once, and a ref that already went out is not sent again", async () => {
 	const argvs: string[][] = [];
 	const marks: string[] = [];

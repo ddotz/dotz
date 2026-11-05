@@ -118,7 +118,7 @@ async function answerDecision(dc, text, opt, note) {
   try {
     // A card with one block whose question is a decision notice answers through the notice path (30-notices.js), so both stay in step.
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
-    if (nd) await ntPost(nd, opt.n, note, files);
+    if (nd) await ntPost(nd, opt.n, note, files, opt.label);
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
     const r = nd ? null : await api("/api/message", "POST", { text, ...(files.length ? { files } : {}), ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
@@ -149,7 +149,7 @@ function pickOption(dc, bi, opt, note) {
 }
 async function answerEach(dc, bi, opt, note) {
   DC.st[dc.key] = "sending"; paintDecision();
-  try { await ntPost(dc.blocks[bi].nd, opt.n, note, DC.files[dc.key]); delete DC.files[dc.key]; } catch (e) { toast(e.message, true); }
+  try { await ntPost(dc.blocks[bi].nd, opt.n, note, DC.files[dc.key], opt.label); delete DC.files[dc.key]; } catch (e) { toast(e.message, true); }
   delete DC.st[dc.key]; delete DC.picks[dc.key]; delete DC.step[dc.key];
   paintDecision();
 }
@@ -529,7 +529,7 @@ async function answerInline(nd, opt) {
     await noticeSheetOpen(nd.pc ? nd : nd.id); ntAnswer(nd, opt); return;
   }
   dcSending.add(nd.id); syncInlineChoices();
-  try { await ntPost(nd, opt.n); dcAnswerToast(nd, opt); } catch (e) { toast(e.message, true); }
+  try { await ntPost(nd, opt.n, undefined, undefined, opt.label); dcAnswerToast(nd, opt); } catch (e) { toast(e.message, true); }
   dcSending.delete(nd.id); syncInlineChoices();
 }
 // What a draft answered in place did, with the next step: 보냈어요 · 메일 열기 (the mail it answered), 보내지 않았어요 · 되돌리기 (the draft waits again).
