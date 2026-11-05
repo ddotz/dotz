@@ -9,7 +9,7 @@ import { reviseDraft } from "../lib/flow.ts";
 import { matchLibrary } from "../lib/library.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { canAttach, sendWith } from "../lib/senders.ts";
-import { addStagedFile, EVICTED, removeStagedFile, stagedFiles } from "../lib/staged.ts";
+import { addStagedFile, EVICTED, EVICTED_LATER, removeStagedFile, stagedFiles } from "../lib/staged.ts";
 import { paths } from "../lib/settings.ts";
 import { getDraft, listDrafts, setStatus } from "../lib/store.ts";
 import type { Runner } from "../lib/tone.ts";
@@ -133,9 +133,10 @@ describe("drafting a reply that promises a file", () => {
 		const copy = () => {
 			throw Object.assign(new Error("EDEADLK"), { code: "EDEADLK" });
 		};
-		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call, stage: { copy, download: () => undefined, tries: 0 } });
+		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call, stage: { copy, download: () => undefined, tries: 0, retry: false } });
 		const rec = listDrafts()[0]!;
-		expect(out.sent[0]!.text).toContain(EVICTED("행방불명_공유용.pdf"));
+		expect(out.sent[0]!.text).toContain(EVICTED_LATER("행방불명_공유용.pdf"));
+		expect(rec.wantFiles).toEqual([{ name: "행방불명_공유용.pdf", path: join(realpathSync(lib), "행방불명_공유용.pdf") }]);
 		expect(existsSync(join(env.dir, "draft-files", rec.id, "0"))).toBe(false);
 		expect(() => addStagedFile(rec.id, join(lib, "견적서 양식.xlsx"), undefined, copy, () => undefined)).toThrow(EVICTED("견적서 양식.xlsx"));
 		expect(existsSync(join(env.dir, "draft-files", rec.id, "0"))).toBe(false);

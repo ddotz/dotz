@@ -150,6 +150,8 @@ tagStoredApps();
 	const n = syncCardFiles();
 	if (n) log(`notices: ${n} draft card(s) now show their staged files`);
 }
+// A file that was still downloading (iCloud) when its draft was made is retried in the background; the waiting card updates when it lands.
+const cardFilesChanged = () => void syncCardFiles();
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
 // One answer for the notices and the approval queue: is the item behind this send-approval ref (in this conversation) already handled?
 const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
@@ -319,8 +321,8 @@ const mailDeps = (): MailDeps => ({
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
 	offerDraft: m =>
-		void offerMailDraft(m, { send: (target, text) => out(target, text), history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
-	requestDraft: m => requestMailDraft(m, { send: (target, text) => out(target, text), history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }),
+		void offerMailDraft(m, { stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+	requestDraft: m => requestMailDraft(m, { stage: { changed: cardFilesChanged }, send: (target, text) => out(target, text), history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }),
 });
 
 function classifyStoredMails(): void {

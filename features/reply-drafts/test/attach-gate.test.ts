@@ -94,6 +94,12 @@ describe("sendDraft with a mail whose files disagree with its words", () => {
 		expect(r.text).toContain("아직 못 붙인 파일: beta-other.pdf");
 	});
 
+	test("a wanted file that got on the draft another way no longer holds the send", () => {
+		const rec = draft(PROMISE, { wantFiles: [{ name: "alpha-song.pdf", path: join(lib, "alpha-song.pdf") }] });
+		addStagedFile(rec.id, join(lib, "alpha-song.pdf"));
+		expect(draftAttachIssues(getDraft(rec.id)!)).toEqual([]);
+	});
+
 	test("the reply + mail card's mail: withReply is refused unless the owner picked as-is", async () => {
 		const rec = draft(PROMISE);
 		const s = fakeSend();
@@ -136,6 +142,15 @@ describe("draft.ts attach / detach", () => {
 		expect(off.code).toBe(0);
 		expect(stagedFiles(rec.id)).toEqual([]);
 		expect(off.lines[0]).toContain("-# ⚠️ 첨부 확인");
+	});
+
+	test("detach by name takes off a file that was waited for and will not come", async () => {
+		const rec = draft(PROMISE, { wantFiles: [{ name: "beta-other.pdf", path: join(lib, "gone.pdf") }] });
+		addStagedFile(rec.id, join(lib, "alpha-song.pdf"));
+		expect(draftAttachIssues(getDraft(rec.id)!)).toEqual(["아직 못 붙인 파일: beta-other.pdf"]);
+		expect((await runDraft(["detach", rec.id, "beta-other.pdf"], "")).code).toBe(0);
+		expect(draftAttachIssues(getDraft(rec.id)!)).toEqual([]);
+		expect(stagedFiles(rec.id).map(f => f.name)).toEqual(["alpha-song.pdf"]);
 	});
 
 	test("attach by an absolute path, detach by name; a file that is not there or a draft that is not pending says so", async () => {

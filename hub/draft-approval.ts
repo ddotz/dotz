@@ -139,11 +139,11 @@ export function fileSizeText(b: number): string {
 const CLAIM = /첨부\s*(?:파일|자료|문서|서류)?\s*(?:을|를|은|는)?\s*(?:합니다|했습니다|했어요|해요|드립니다|드려요|드릴게요|해\s*드립니다|해\s*드려요|해\s*드릴게요|하였습니다)|첨부(?:파일|자료|문서|서류)?\s*(?:을|를)?\s*(?:보내|함께)|\b(?:attached|attaching)\b|\bI(?:'ve| have)?\s+attach|\bplease\s+find\b.*\battach/i;
 const NO_CLAIM = /첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|not\s+attach|no\s+attach|보내\s*(?:드리지|지)\s*못|못\s*보내|보내\s*드릴 수 없|보낼 수 없/i;
 // Nouns that name a file when a draft says it sends one or a mail asks for one.
-const FILE_NOUN = "악보|파일|자료|문서|견적서|청구서|계약서|제안서|보고서|이력서|영수증|사진|이미지|영상|음원|녹음|양식|서식|신청서|스캔본|스캔|첨부|pdf|hwpx?|docx?|xlsx?|pptx?|zip";
+const FILE_NOUN = "악보|파트보|악보집|총보|엠알|(?<![A-Za-z])mr(?![A-Za-z]|\\.\\s)|파일|자료|문서|견적서|청구서|계약서|제안서|보고서|이력서|영수증|사진|이미지|영상|음원|녹음|양식|서식|신청서|스캔본|스캔|첨부|pdf|hwpx?|docx?|xlsx?|pptx?|zip";
 const SENDS = "보내\\s*드(?:립니다|려요|릴게요|릴께요|리겠습니다|렸습니다|렸어요|립니다만)|보냅니다|보내요|보낼게요|보냈(?:습니다|어요)";
 // "행방불명 OST 또다시 악보 보내드립니다", "보내드린 악보는": the draft says it sends a file-like thing.
 const SENDS_FILE = new RegExp(`(?:${FILE_NOUN})[가-힣]{0,2}\\s*(?:을|를|은|는|도|만)?\\s*(?:[가-힣A-Za-z0-9]+\\s+){0,2}(?:${SENDS})|(?:보내\\s*드린|보낸)\\s*(?:${FILE_NOUN})|\\b(?:I'm sending|I'll send|I sent|I've sent|sending you|here is|here's)\\b[^.\\n]{0,40}\\b(?:file|pdf|document|score|sheet music|photo|invoice|quote)s?\\b`, "i");
-const ASK = /부탁|보내\s*주|보내\s*줘|보내\s*달|(?:공유|전달)\s*해?\s*(?:주|달)|주세요|주시면|주실 수|주실래/;
+const ASK = /요청|신청(?!서)|받을 수|받고 싶|부탁|보내\s*주|보내\s*줘|보내\s*달|(?:공유|전달)\s*해?\s*(?:주|달)|주세요|주시면|주실 수|주실래/;
 const ASK_EN = /\b(?:please|could you|can you|would you)\b[^.\n]{0,40}\b(?:send|share|attach|forward)\b[^.\n]{0,40}\b(?:file|pdf|document|score|sheet music|photo|invoice|quote|copy)s?\b/i;
 export const claimsAttachment = (text: string): boolean => (CLAIM.test(text) || SENDS_FILE.test(text)) && !NO_CLAIM.test(text);
 // The mail being answered asks for a file ("악보 부탁드립니다", "견적서 보내주세요").

@@ -71,33 +71,36 @@ describe("one model call for the common mail draft", () => {
 	});
 });
 
-describe("files are picked before the draft is written", () => {
-	test("a tie among library files is broken by the model first, and the draft is told which file rides on it", async () => {
+describe("files are chosen with the draft", () => {
+	test("a tie among library files costs no extra call: the draft call sees the names and chooses the file that rides on it", async () => {
 		enable(env, { attachFolders: { mail: lib } });
 		const order: string[] = [];
 		const prompts: string[] = [];
 		const call: ModelCall = async (_system, user) => {
 			order.push("draft");
 			prompts.push(user);
-			return j({ action: "draft", reason: "asks for a score", to: "kim@example.com", subject: "Re: 캐논 악보 부탁드립니다", body: "캐논 악보 보내드립니다.", questions: [] });
+			return j({ action: "draft", reason: "asks for a score", to: "kim@example.com", subject: "Re: 캐논 악보 부탁드립니다", body: "캐논 악보 보내드립니다.", questions: [], files: ["캐논_d.pdf"] });
 		};
-		const pick = async (names: string[]) => (order.push(`pick ${names.length}`), ["캐논_d.pdf"]);
+		let picks = 0;
+		const pick = async () => (picks++, ["캐논_a.pdf"]);
 		const out = sink(), l = logs();
 		expect(await offerMailDraft({ ...mailFixture, key: "f-1", subject: "캐논 악보 부탁드립니다", body: "캐논 악보 보내주세요." }, { send: out.send, call, pick, log: l.log })).toBe("offered");
-		expect(order).toEqual(["pick 5", "draft"]);
-		expect(prompts[0]).toContain('"캐논_d.pdf"');
+		expect(order).toEqual(["draft"]);
+		expect(picks).toBe(0);
+		for (const n of ["캐논_a.pdf", "캐논_e.pdf"]) expect(prompts[0]).toContain(`"${n}"`);
 		expect(parseDraftApproval(out.sent[0]!)?.attachments?.map(a => a.name)).toEqual(["캐논_d.pdf"]);
 		expect(stagedFiles(listDrafts()[0]!.id).map(f => f.name)).toEqual(["캐논_d.pdf"]);
 	});
 
-	test("a tie in a mail that does not ask for a file takes the best-ranked files without a model call", async () => {
+	test("a tie in a mail that does not ask for a file, where the draft names no files, stages nothing and calls no model", async () => {
 		enable(env, { attachFolders: { mail: lib } });
 		const model = fakeModel([j({ action: "draft", reason: "r", to: "kim@example.com", subject: "Re: 캐논 연주", body: "캐논 악보 보내드립니다.", questions: [] })]);
 		let picks = 0;
 		await offerMailDraft({ ...mailFixture, key: "f-2", subject: "캐논 연주", body: "지난번 캐논 연주 좋았어요." }, { send: sink().send, call: model.call, pick: async () => (picks++, []) });
 		expect(model.calls).toHaveLength(1);
 		expect(picks).toBe(0);
-		expect(stagedFiles(listDrafts()[0]!.id).map(f => f.name)).toEqual(["캐논_a.pdf", "캐논_b.pdf", "캐논_c.pdf"]);
+		expect(stagedFiles(listDrafts()[0]!.id)).toEqual([]);
+		expect(listDrafts()[0]!.libraryMiss).toBe(true);
 	});
 });
 
