@@ -278,7 +278,7 @@ function msgNode(e) {
         const rec = MAILS.get(`mail:${key}`) || {}, sp = rcSplit(text.split("\n").slice(1).join("\n").trim()), sum = sp.text || rec.summary || "";
         const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sum, e.preview, rec.preview, sp.raw);
         const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : sum, raw: sp.raw, rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw, e.subject) : undefined });
-        // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
+        // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, every action of the mail in it), the subject, the sender and time,
         // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, the attachments, then the original.
         if (card && key) {
           const hd = card.querySelector(".rc-hd"), title = card.querySelector(".rc-title"), meta = mailMetaNode(`mail:${key}`, e);

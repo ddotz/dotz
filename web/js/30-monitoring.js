@@ -586,6 +586,7 @@ async function mailSetFyi(t, on) {
   await api(`/api/mail/${t.slice(5)}/fyi`, on ? "POST" : "DELETE", on ? {} : undefined);
   const m = MAILS.get(t);
   if (m) { m.reply = on ? "fyi" : m.reply === "draft" ? "draft" : "needs"; m.unreplied = !on; }
+  document.querySelectorAll(".mtop-fyi").forEach(mailFyiPaint);
   MON.sig = ""; MON.side = ""; monSchedule();
   toast(on ? "답장 안 함으로 표시했어요" : "답장 필요로 표시했어요", false, on ? { label: "되돌리기", onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
@@ -611,8 +612,8 @@ async function mailDelete(t) {
   toast("메일을 목록에서 지웠어요");
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
-// The ⋯ at the top right of a mail card (every row of the list and the card at the top of the mail's conversation): mailActs, built from the
-// mail's state at the tap. `extra()`: more items ({ value, label, run }) after them, as the open mail's 원문 접기.
+// The ⋯ at the top right of a mail row: mailActs, built from the mail's state at the tap. `extra()`: more items ({ value, label, run }) after them,
+// as the row's 원문 보기.
 function mailMenuBtn(t, extra = () => []) {
   return el("button", { class: "ib mr-more", type: "button", "aria-label": "메일 메뉴", title: "메일 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", "data-k": "mail-menu", onclick: ev => {
     ev.stopPropagation();
