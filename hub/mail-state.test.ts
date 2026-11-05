@@ -1,6 +1,6 @@
 // Mail direction and reply state (hub/mail-state.ts): addresses and aliases, folders and labels, every reply transition, the old flags, and the one-time migration.
 import { describe, expect, test } from "bun:test";
-import { addressKey, directionOf, isOwnAddress, mailLabel, migrateMails, nextReply, replyExpected, replyOf, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
+import { addressKey, directionOf, evictSurplus, isOwnAddress, mailLabel, migrateMails, nextReply, replyExpected, replyOf, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 
 const own = new Set(["owner@example.com", "owner@gmail.com"]);
@@ -199,5 +199,33 @@ describe("does an incoming mail expect a reply", () => {
 		expect(migrateMails(recs, { own, now: NOW })).toBe(1);
 		expect(recs.map(r => r.reply)).toEqual(["needs", undefined, "fyi"]);
 		expect(migrateMails(recs, { own, now: NOW })).toBe(0);
+	});
+});
+
+describe("evictSurplus: the keep limit", () => {
+	type R = { key: string; reply?: MailReply; suggest?: { state?: string } };
+	const list: R[] = [
+		{ key: "draft", reply: "draft" },
+		{ key: "pending", suggest: {} },
+		{ key: "sent", suggest: { state: "sent" } },
+		{ key: "needs1", reply: "needs" },
+		{ key: "needs2", reply: "needs" },
+		{ key: "plain" },
+		{ key: "new1" },
+		{ key: "new2" },
+	];
+	const keys = (l: R[]) => l.map(r => r.key);
+	test("pending drafts always stay, even past the needs bound", () => {
+		expect(keys(evictSurplus(list, 1, 1))).toEqual(["draft", "pending"]);
+	});
+	test("mails that only await a reply stay while the total is within the bound, and go oldest first beyond it", () => {
+		expect(keys(evictSurplus(list, 5, 8))).toEqual(["draft", "pending", "needs1", "needs2", "new2"]);
+		expect(keys(evictSurplus(list, 5, 5))).toEqual(["draft", "pending", "plain", "new1", "new2"]);
+	});
+	test("a list within the keep limit is returned as it is, and each dropped key is reported", () => {
+		expect(evictSurplus(list, 8, 8)).toBe(list);
+		const dropped: string[] = [];
+		evictSurplus(list, 6, 8, k => dropped.push(k));
+		expect(dropped).toEqual(["sent", "plain"]);
 	});
 });
