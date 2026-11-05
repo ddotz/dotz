@@ -76,6 +76,16 @@ describe("답장 대기 with a big backlog", () => {
 		notices = [];
 	});
 
+	test("the meta line counts the gateway's own queued or sending sends when no notice holds them, and drops them once sent", async () => {
+		notices = [];
+		const v = await boot();
+		await run(v, `TR.results = { a: { ref: "a", state: "queued", at: Date.now() }, b: { ref: "b", state: "sending", at: Date.now() }, c: { ref: "c", state: "queued", at: Date.now() }, d: { ref: "d", state: "sent", at: Date.now() } }`);
+		await seed(v, comments(1));
+		await waitFor(v, `document.querySelector("#mon-tl .rq-qm .meta") && document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중 3건")`);
+		await run(v, `for (const ref of ["a", "b", "c"]) trLive({ ref, state: "sent", at: Date.now() }); rqSoon()`);
+		await waitFor(v, `!document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중")`);
+	});
+
 	test("a live update keeps the row nodes and the reader's place", async () => {
 		const v = await boot();
 		const list = comments(458);
@@ -148,5 +158,67 @@ describe("메일 목록 with 2,000 mails", () => {
 		expect(await ev<number>(v, `MBOX.drawn`)).toBe(200);
 		await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="archived"]').click()`);
 		await waitFor(v, `MON.mailFilter === "archived" && MBOX.drawn === 100`);
+	});
+
+	const more = async (v: View) => {
+		await run(v, `document.querySelector("#mon-tl [data-mb-more]").click()`);
+		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr").length === 200`);
+	};
+	const firstInView = `(() => { const box = $("#mon-timeline"), top = box.getBoundingClientRect().top, r = [...document.querySelectorAll("#mon-tl > .mr")].find(e => e.getBoundingClientRect().bottom > top); return { t: r.dataset.t, off: r.getBoundingClientRect().top - top, st: box.scrollTop }; })()`;
+
+	test("a new mail keeps the first row in view where it was and redraws only the rows that changed", async () => {
+		const v = await openList();
+		await more(v);
+		await run(v, `$("#mon-timeline").scrollTop = 2000`);
+		const before = await ev<{ t: string; off: number; st: number }>(v, firstInView);
+		expect(before.st).toBeGreaterThan(0);
+		await run(v, `window.__keep = [...document.querySelectorAll("#mon-tl > .mr")].slice(0, 150); window.__mo = new MutationObserver(() => {}); __mo.observe(document.getElementById("mon-tl"), { childList: true })`);
+		mails = [{ key: "live", subject: "새 메일", at: ago(0) }, ...mails];
+		await run(v, `convLoad()`);
+		await waitFor(v, `MBOX.vis.includes("mail:live") && document.querySelector('#mon-tl > .mr[data-t="mail:live"]')`, 3000);
+		const rowsMoved = await ev<number>(v, `__mo.takeRecords().reduce((c, r) => c + [...r.addedNodes, ...r.removedNodes].filter(n => n.classList && n.classList.contains("mr")).length, 0)`);
+		const after = await ev<{ t: string; off: number; st: number }>(v, firstInView);
+		expect(after.t).toBe(before.t);
+		expect(Math.abs(after.off - before.off)).toBeLessThan(2);
+		expect(rowsMoved).toBeLessThanOrEqual(6);
+		expect(await ev<boolean>(v, `__keep.slice(0, 149).every(n => n.isConnected)`)).toBe(true);
+	});
+
+	test("at the top a new mail just shows there", async () => {
+		const v = await openList();
+		mails = [{ key: "live2", subject: "맨 위 메일", at: ago(0) }, ...mails];
+		await run(v, `convLoad()`);
+		await waitFor(v, `document.querySelector("#mon-tl > .mr").dataset.t === "mail:live2"`, 3000);
+		expect(await ev<number>(v, `$("#mon-timeline").scrollTop`)).toBe(0);
+	});
+
+	test("더 보기 keeps the first 100 row nodes", async () => {
+		const v = await openList();
+		await run(v, `window.__keep = [...document.querySelectorAll("#mon-tl > .mr")]`);
+		await more(v);
+		expect(await ev<boolean>(v, `__keep.length === 100 && __keep.every((n, i) => document.querySelectorAll("#mon-tl > .mr")[i] === n)`)).toBe(true);
+	});
+
+	test("a selected row and an unread change redraw that row, the rest stay", async () => {
+		const v = await openList();
+		const row = (t: string) => `document.querySelector('#mon-tl > .mr[data-t="${t}"]')`;
+		const redraw = (js: string) => run(v, `${js}; MON.sig = ""; renderMonitoring()`);
+		await run(v, `window.__other = ${row("mail:m6")}`);
+		await redraw(`MBOX.sel.add("mail:m5")`);
+		expect(await ev<boolean>(v, `${row("mail:m5")}.classList.contains("mr-sel") && ${row("mail:m5")}.querySelector(".mr-chk").checked`)).toBe(true);
+		await redraw(`MAILS.get("mail:m5").read = false`);
+		expect(await ev<boolean>(v, `${row("mail:m5")}.classList.contains("mr-new") && !!${row("mail:m5")}.querySelector(".mr-unread") && ${row("mail:m5")}.classList.contains("mr-sel")`)).toBe(true);
+		await redraw(`MAILS.get("mail:m5").read = true; MBOX.sel.delete("mail:m5")`);
+		expect(await ev<boolean>(v, `!${row("mail:m5")}.classList.contains("mr-new") && !${row("mail:m5")}.classList.contains("mr-sel") && ${row("mail:m6")} === __other`)).toBe(true);
+	});
+
+	test("the 확인 대기 filter is not picked again by a live update", async () => {
+		const v = await openList();
+		await run(v, `MON.mailFilter = "owed"`);
+		mails = [{ key: "live3", subject: "또 새 메일", at: ago(0) }, ...mails];
+		await run(v, `convLoad()`);
+		await waitFor(v, `CONV.has("mail:live3")`, 3000);
+		await run(v, `MON.sig = ""; renderMonitoring()`);
+		expect(await ev<string>(v, `MON.mailFilter`)).toBe("owed");
 	});
 });
