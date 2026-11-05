@@ -158,7 +158,8 @@ export function setSection(existing: string, heading: string, items: string[]): 
 
 // Tone store: <DATA_DIR>/custom/reply-drafts/tone/install.md (whole install), <app>.md (mail, youtube, kakao, ...) and
 // <app>/<room>.md (one conversation of a messenger). Each file has the four sections above.
-export type ToneKey = { app: string; room?: string };
+// `base`: the app whose profile stands in at the app level when `app` has none (a mailbox's tone of a mail app instance without a profile of its own).
+export type ToneKey = { app: string; room?: string; base?: string };
 export type ToneLevel = "room" | "app" | "install";
 export type LoadedStyle = ReplyStyle & { samplesFrom: ToneLevel | "legacy" | "none" };
 
@@ -231,7 +232,7 @@ export const markLearned = (marks: string[], now: Date): void => writeAtomic(pat
 // install first and the narrower ones later.
 export function loadStyle(key: ToneKey): LoadedStyle {
 	const room = key.room === undefined ? undefined : profile(key);
-	const app = profile({ app: key.app });
+	const app = profile({ app: key.app }) || (key.base ? profile({ app: key.base }) : "");
 	const install = profile("install");
 	const levels: [ToneLevel, string | undefined][] = [["room", room], ["app", app], ["install", install]];
 	let samples: string[] = [];

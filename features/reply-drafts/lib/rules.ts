@@ -45,22 +45,29 @@ const MATCH_SYSTEM = [
 ].join("\n");
 const MATCH_TEXT_MAX = 1500;
 
-export function matchPrompt(mail: { from?: string; subject?: string; text: string }, rules: DraftRule[]): string {
-	return [`Rules:`, ...rules.map((r, i) => `${i + 1}. ${r.when.replace(/\s+/g, " ")}`), "", `From: ${mail.from ?? ""}`, `Subject: ${mail.subject ?? ""}`, "", mail.text.slice(0, MATCH_TEXT_MAX)].join("\n");
+// `judges` (mailbox 내용을 보고 판단 texts, docs/mailbox.md) are more numbered conditions after the rules, in the same prompt.
+export function matchPrompt(mail: { from?: string; subject?: string; text: string }, rules: DraftRule[], judges: string[] = []): string {
+	return [`Rules:`, ...[...rules.map(r => r.when), ...judges].map((c, i) => `${i + 1}. ${c.replace(/\s+/g, " ")}`), "", `From: ${mail.from ?? ""}`, `Subject: ${mail.subject ?? ""}`, "", mail.text.slice(0, MATCH_TEXT_MAX)].join("\n");
+}
+
+/** The first switched-on rule the mail meets, else the first judge text it meets (its index in `judges`), in ONE short call. No call when no rule is on and there is no judge. */
+export async function matchMail(mail: { from?: string; subject?: string; text: string }, rules: DraftRule[], judges: string[], call: ModelCall): Promise<{ rule?: DraftRule; judge?: number }> {
+	const on = rules.filter(r => r.on);
+	if (!on.length && !judges.length) return {};
+	const out = await call(MATCH_SYSTEM, matchPrompt(mail, on, judges));
+	const n = Number(/\d+/.exec(out)?.[0] ?? 0);
+	if (n >= 1 && n <= on.length) return { rule: on[n - 1]! };
+	return n > on.length && n <= on.length + judges.length ? { judge: n - on.length - 1 } : {};
 }
 
 /** The first switched-on rule the mail meets, or undefined. No model call when no rule is on. */
 export async function matchRule(mail: { from?: string; subject?: string; text: string }, rules: DraftRule[], call: ModelCall): Promise<DraftRule | undefined> {
-	const on = rules.filter(r => r.on);
-	if (!on.length) return undefined;
-	const out = await call(MATCH_SYSTEM, matchPrompt(mail, on));
-	const n = Number(/\d+/.exec(out)?.[0] ?? 0);
-	return n >= 1 && n <= on.length ? on[n - 1] : undefined;
+	return (await matchMail(mail, rules, [], call)).rule;
 }
 
-/** The draft's instruction: the 기본 규칙, then the matched rule's 어떻게, then what the owner typed for this one draft; undefined when all are empty. */
-export function ruleInstruction(base: string, rule: DraftRule | undefined, owner?: string): string | undefined {
-	const parts = [base, rule?.how ?? "", owner ?? ""].map(s => s.trim()).filter(Boolean);
+/** The draft's instruction: the 기본 규칙, the mailbox's lines (box.ts boxLines), then the matched rule's 어떻게, then what the owner typed for this one draft; undefined when all are empty. */
+export function ruleInstruction(base: string, rule: DraftRule | undefined, owner?: string, box: string[] = []): string | undefined {
+	const parts = [base, box.join("\n").slice(0, 1200), rule?.how ?? "", owner ?? ""].map(s => s.trim()).filter(Boolean);
 	return parts.length ? parts.join("\n").slice(0, 2000) : undefined;
 }
 
