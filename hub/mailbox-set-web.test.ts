@@ -179,4 +179,16 @@ describe("메일함 추가", () => {
 		await run(v, `document.querySelectorAll(".mxs .list > .li")[1].click()`);
 		await waitFor(v, `MXS.d.acct === "mail-2"`);
 	}, 30_000);
+
+	test("an account with no stored mail yet can still add its first box", async () => {
+		const kept = mails.splice(0);
+		try {
+			const v = await hub.view({ width: 1280, height: 900 });
+			await v.navigate(`${hub.origin}${NEW}`);
+			await waitFor(v, `NT.loaded && INTG.items.length === 2 && document.querySelector("#mon-tl > .mxs")`);
+			expect(await ev<boolean>(v, `MON.sel === "i:mail" && MX.scr === "new"`)).toBe(true);
+		} finally {
+			mails.push(...kept);
+		}
+	}, 30_000);
 });
