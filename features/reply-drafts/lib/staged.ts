@@ -149,6 +149,8 @@ export async function stageFiles(ref: string, paths: string[], want: Want[], opt
 const nap = (ms: number) => new Promise<void>(done => void setTimeout(done, ms).unref());
 const RETRY_TRIES = 10, RETRY_WAIT_MS = 30_000;
 const retrying = new Set<string>();
+// Drafts whose bounded retry ran out in this process: re-reading the cards does not start another round.
+const spent = new Set<string>();
 
 // Tries again, in the background and bounded, for the files a pending draft still waits for (wantFiles): each that copies is staged and leaves
 // the list, and `changed` is called so the waiting card updates. The offer queue never waits on this.
@@ -175,12 +177,13 @@ export function retryWanted(id: string, opts: StageOpts = {}): void {
 			if (staged) opts.changed?.();
 			if (!left.length) return;
 		}
+		spent.add(id);
 	})().catch(e => void console.error(`reply draft: files of draft ${id} not retried: ${(e as Error).message}`)).finally(() => void retrying.delete(id));
 }
 
 // Every pending draft that still waits for files gets the retry (one at a time per draft).
 export function resumeWantedFiles(opts: StageOpts = {}): void {
-	for (const d of listDrafts()) if (d.status === "pending" && d.wantFiles?.length) retryWanted(d.id, opts);
+	for (const d of listDrafts()) if (d.status === "pending" && d.wantFiles?.length && !spent.has(d.id)) retryWanted(d.id, opts);
 }
 
 // Bytes that came over the wire (a file added to a peer's draft).
