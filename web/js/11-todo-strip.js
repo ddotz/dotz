@@ -308,7 +308,7 @@ function msgNode(e) {
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; its mid-turn progress line (update_key), new or stored, reads as the live status.
-      const { tone: mark, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
+      const { tone: mark, claim, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
       const isNote = e.kind === "out" && !!e.update_key && !e.live && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:"))) && !parseChoices(parsed).blocks.length;
       // A stored [run] or [wait] draws no tag of its own: syncLiveTags gives the newest report the state of now.
       const parked = parkedTone(mark) && !e.live && !isNote, tone = parked ? "" : isNote ? mark || "run" : mark;
@@ -343,7 +343,7 @@ function msgNode(e) {
       const brief = e.kind === "out" && !e.relay && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
       const ev = answer && fl.files.length ? md.querySelector(":scope > .ans-ev:last-child") : null;   // the evidence line stays the last thing, under the files
-      return el("div", { class: `bm${card}`, ...liveAttr, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone || parked ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), inl ? dcInline(e, parsed, pc) : null, (answer ? ansFiles : filesNode)(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, ev);
+      return el("div", { class: `bm${card}`, ...liveAttr, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone || parked || claim ? [toneLead(el("div", { class: "md" }), tone, claim), brief] : brief) : toneLead(md, tone, claim), inl ? dcInline(e, parsed, pc) : null, (answer ? ansFiles : filesNode)(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, ev);
     }
   }
 }

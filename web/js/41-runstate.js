@@ -102,7 +102,7 @@ function syncLiveTags() {
     const tone = n === last ? liveTone(n.dataset.liveOf) : "";
     if ((n.dataset.liveShown || "") === tone) continue;
     n.dataset.liveShown = tone;
-    const root = n.querySelector(":scope > .md"), old = root.querySelector(".st-tag"), p = old && old.parentNode;
+    const root = n.querySelector(":scope > .md"), old = root.querySelector(".st-tag:not(.claim-tag)"), p = old && old.parentNode;
     if (old) old.remove();
     if (p && p !== root && !p.textContent.trim()) p.remove();
     toneLead(root, tone);
