@@ -30,6 +30,7 @@ const cases: Record<string, object> = {
 	table: answer("두 요금제예요. 기본형이 나아요.\n\n| | 기본형 | 넉넉형 |\n|---|---|---|\n| 월 요금 | 19,000원 | 33,000원 |\n| 데이터 | 20GB | 무제한 |"),
 	wideTable: answer("| a | b | c | d | e | f |\n|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 |"),
 	noHeader: answer("| 월 요금 | 19,000원 |\n| 데이터 | 20GB |"),
+	titledTimes: answer("**내일 일정**\n- 09:30 치과 · 3층 접수\n- 13:00 점심"),
 	user: { kind: "in", source: "web", target: "web", text: LABELS },
 	last: answer("끝이에요."),
 };
@@ -166,4 +167,10 @@ test("a wider table or one with no header stays today's table", async () => {
 test("copied steps and a copied table give the lines as written", async () => {
 	expect(lines(await copied(`${msg("steps")}.querySelector(".ans-card")`))).toEqual(["1. 전원을 꺼요.", "2) 버튼을 눌러요.", "3. 다시 찾아요."]);
 	expect(lines(await copied(`${msg("table")}.querySelector(".ans-card")`))).toEqual(["| | 기본형 | 넉넉형 |", "|---|---|---|", "| 월 요금 | 19,000원 | 33,000원 |", "| 데이터 | 20GB | 무제한 |"]);
+});
+
+test("a time list is the same card, its title kept above it", async () => {
+	expect(await count("titledTimes", ".ans-card .rc-row")).toBe(2);
+	expect(await count("titledTimes", ".hcb-card")).toBe(0);
+	expect(await page<string>(`${msg("titledTimes")}.querySelector("p b").textContent`)).toBe("내일 일정");
 });
