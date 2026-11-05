@@ -30,6 +30,7 @@ dotz 웹 앱의 화면과 움직임을 눌러 보며 결정하려고 만든 **�
 - `#intro` 화면 안내 A안(시트), `#intro/spot` B안(진짜 메뉴를 가리키기)
 - `#form` 카드 추가 새 폼 시안 (실시간 미리보기 · 썸네일 보기 · 더 보기, 찬 상태는 `#form/filled`, 연 상태는 `#form/more`, 설정에 입힌 모습은 `#form/settings`)
 - `#answers` 채팅 답 모양 시안 (같은 글을 지금 모양과 제안 모양으로 나란히, 카드를 쓰지 않는 곳까지)
+- `#mailbox` 메일함 시안 (메일함별 목록은 `#mailbox/b/score` · `offer` · `school` · `pay` · `general`, 설정은 `#mailbox/set/score`, 펼친 모습은 `#mailbox/set/score/match` · `/tone`, 추가는 `#mailbox/new`, 한 메일함에 있는 대화는 `#mailbox/m/m6`)
 
 ## 문서
 
@@ -52,3 +53,20 @@ dotz 웹 앱의 화면과 움직임을 눌러 보며 결정하려고 만든 **�
 | `s-onboard.js`, `onboard.css` | 웹 온보딩과 화면 안내 (설계는 `docs/web-onboarding.md`) |
 | `s-queue.js` | 대기함 시안: 멈춘 답장 한 목록, 실패 묶음, 채팅의 한 줄 |
 | `s-answers.js`, `answers.css` | 채팅 답 모양 시안: 마크다운 모양을 읽어 그려요 |
+| `s-mailbox.js`, `mailbox.css` | 메일함 시안: 메일 앱 안의 메일함, 옮기기, 메일함 설정, 추가 (가짜 값은 `data.js`의 `D.mailboxes`) |
+
+## 메일함 시안과 실제 코드
+
+메일 앱은 지금처럼 모니터링의 앱 하나(인스턴스 `mail`, `mail-2`)로 남고, 메일함은 그 안의 묶음이에요.
+
+| 화면 | 지금 있는 것 | 새로 필요한 것 |
+|---|---|---|
+| 분류 기준 | `hub/app-settings.ts`의 `draft_rules`(`DraftRule`: name, when, how, files, on)와 `features/reply-drafts/lib/rules.ts`의 `matchRule`. 켜진 규칙을 차례로 보고 처음 맞는 하나를 짧은 모델 호출로 골라요. "내용을 보고 판단"이 곧 `when`이에요 | 보낸 사람, 제목, 내용 칩: 모델 호출 전에 글자로 맞춰 보는 단계. 규칙은 초안만 정하므로, 맞은 메일함을 메일에 저장하는 곳 |
+| 처리 방식 | 앱 전체 `auto_draft` 스위치와 규칙의 `on` | 메일함마다 네 가지 값 하나 |
+| 말투 | `settings.ts`의 `ToneKey { app, room }`: `room`이 있으면 `tone/<app>/<room>.md`, 없으면 앱, 그다음 설치 전체 말투. 메신저 방이 쓰는 그대로 메일함 id를 `room`에 넣으면 돼요 | 메일 쪽에서 `room`을 넘기는 일. 고친 점은 말투 파일의 고침 항목(`HEADINGS.corrections`)을 보여 주면 돼요 |
+| 기본 지시 | 앱 전체 `draft_default` 뒤에 규칙의 `how`가 붙어요 | 없음. 메일함의 `how`로 충분해요 |
+| 첨부 폴더 | `attachFolders[인스턴스]` 경로 하나, 규칙의 `files` | 메일함마다 폴더 여러 곳 |
+| 받는 사람별 인사, 금지 문구 | 없음 | 메일함별 저장과 초안 프롬프트 반영, 금지 문구 검사 |
+| 알림 | 앱 인스턴스별 알림 설정 | 메일함별 값 |
+| 옮기기와 기준 배우기, 묶음 제안, 대화 한 곳 유지 | 없음 | 대화 단위로 메일함을 기억하는 저장, 옮길 때 조건 추가, 앱이 묶음을 찾는 작업 |
+| 기본 메일함 일반 | `matchRule`이 아무것도 고르지 못한 경우 | 그 결과를 일반 메일함으로 표시 |
