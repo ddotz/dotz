@@ -223,6 +223,27 @@ test("once the usage window resets the account is usable again", () => {
 	expect(() => ensureProvider("anthropic-subscription/claude-sonnet-5-5")).not.toThrow();
 });
 
+test("a limit with a known reset carries that time on the error, so a caller waits for it instead of retrying", () => {
+	auth([account()]);
+	const reset = later(3_600_000);
+	const resetAt = Date.parse(reset);
+	usage([{ usedPercent: 100, resetsAt: reset }]);
+	let thrown: unknown;
+	try {
+		ensureProvider("anthropic-subscription/claude-sonnet-5-5");
+	} catch (e) {
+		thrown = e;
+	}
+	expect((thrown as { resetAt?: number }).resetAt).toBe(resetAt);
+	// the cached answer inside the 30 s window keeps it
+	try {
+		ensureProvider("anthropic-subscription/claude-sonnet-5-5");
+	} catch (e) {
+		thrown = e;
+	}
+	expect((thrown as { resetAt?: number }).resetAt).toBe(resetAt);
+});
+
 test("a blocked pool slot counts even without a spent usage window", () => {
 	auth([account()]);
 	writeFileSync(join(agent, "credential-pool-state.json"), JSON.stringify({ providers: { "anthropic-subscription": { lanes: { stored: { slots: { default: { blockReason: "rate_limit", blockedUntil: clock.now + 600_000 } } } } } } }));

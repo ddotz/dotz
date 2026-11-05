@@ -28,6 +28,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { callRules, expandCellVars, OMO_PROJECTS, readPaths, workerTrail } from "./guard-notes.ts";
 import { dataDir, type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, loadGuardConfig, logOnce, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
@@ -73,7 +74,7 @@ const DONE_MARKER = /acceptance|done when|done-condition|end state|success crite
 // Shared with the owner's original extension and the harness doctor, so a brief marked by either copy is never marked twice.
 const BUDGET_MARKER = "[orchestrator-guard]";
 export const budgetLine = (g: GuardConfig = G) =>
-	`${BUDGET_MARKER} Final answer: at most ${g.worker_answer_chars} characters - outcome, changed paths, verification, blockers. Context budget ${Math.round(g.worker_context_tokens / 1000)}K tokens; if you near it, stop and hand back partial findings.`;
+	`${BUDGET_MARKER} Final answer: at most ${g.worker_answer_chars} characters - outcome, changed paths, verification, blockers. Context budget ${Math.round(g.worker_context_tokens / 1000)}K tokens; if you near it, stop and hand back partial findings. Never end a turn to wait for a background run (a text-only turn ends your run and the wake-up can fail to start): wait inside one blocking call, e.g. an eval cell that polls up to 280s, then report.`;
 // Per-job estimate in a brief: "Estimate: N%" = share of the 5h window the worker is expected to use (absent -> budget_default_estimate_percent).
 const ESTIMATE_RE = /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im;
 const USAGE_CACHE_MS = 120_000;
@@ -453,10 +454,11 @@ function saveState(state: ProjectState): void {
 	writeFileSync(statePath(state.cwd, state.lane), `${JSON.stringify(state, null, 2)}\n`);
 }
 
-function stateSummary(state: ProjectState, previousSession: boolean): string | undefined {
+export function stateSummary(state: ProjectState, previousSession: boolean, projects = OMO_PROJECTS): string | undefined {
 	const lines = Object.entries(state.workers).map(([id, w]) => {
-		if (w.status === "running")
-			return `- ${id}: ${previousSession ? "was running when the previous omp session ended (gone unless resumed with omp --restore)" : "still running"} - ${w.brief}`;
+		if (w.status === "running" && !previousSession) return `- ${id}: still running - ${w.brief}`;
+		if (w.status === "lost" || w.status === "running")
+			return `- ${id}: ${w.status === "lost" ? "lost" : "was running when the previous omp session ended (its process is gone; a message cannot continue it)"} - ${w.brief}\n  ${workerTrail(id, projects)}`;
 		if (w.patch && !w.applied)
 			return `- ${id}: ${w.status}, patch NOT applied: ${w.patch}${existsSync(w.patch) ? "" : " (file missing)"} - ${w.brief}`;
 		return `- ${id}: ${w.status} - ${w.brief}`;
@@ -938,9 +940,9 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 	const injectState = (ctx: any, previousSession: boolean) => {
 		const current = projectState(ctx);
 		if (refreshApplied(current, [], true)) saveState(current);
-		const summary = stateSummary(current, previousSession);
+		const state = stateSummary(current, previousSession), summary = [callRules(config), state].filter(Boolean).join("\n");
 		debug({ phase: "state-inject", previousSession, summary });
-		if (summary) pi.sendMessage({ customType: "orchestrator-state", content: summary, display: true }, { deliverAs: "nextTurn" });
+		pi.sendMessage({ customType: "orchestrator-state", content: summary, display: Boolean(state) }, { deliverAs: "nextTurn" });
 		// A worker still "running" from an earlier omp process died with it: report it once above, then settle it so it
 		// does not reappear as an open worker at every later session start.
 		if (previousSession) {
@@ -1068,7 +1070,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			}
 		},
 	});
-	const reviewedPatches = new Set<string>();
+	const reviewedPatches = new Set<string>(), cellVars = new Map<string, string>();
 	let compactions = 0;
 
 	pi.on("session_compact", (_event: any, ctx: any) => {
@@ -1222,16 +1224,16 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		if (tool === "read" && /\.patch(:|$)/.test(path)) reviewedPatches.add(patchKey(path));
 		// OmO has no bash tool: shell commands run inside `eval` cells (tool.bash, Bun.$, subprocess), and read() reads a file.
 		if (tool === "bash" || tool === "eval") {
-			const command = expandShellVars(shellText(event?.input));
-			if (tool === "eval") for (const shown of command.matchAll(/\bread\(\s*[`'"]([^`'"]+\.patch)/g)) reviewedPatches.add(patchKey(shown[1]));
+			const command = expandCellVars(shellText(event?.input), cellVars, tool === "eval");
 			const base = String(event?.input?.cwd ?? ".");
+			if (tool === "eval") for (const shown of readPaths(command, cellVars)) if (/\.patch$/.test(shown)) reviewedPatches.add(patchKey(shown, base));
 			for (const shown of command.matchAll(/\b(?:cat|bat|less|head|diff)\b[^|;&]*?(\S+\.patch)/g)) reviewedPatches.add(patchKey(shown[1], base));
 			const unreviewed = [...command.matchAll(new RegExp(`${GIT_APPLY}(?![^|;&]*--(?:stat|check))[^|;&]*?(\\S+\\.patch)`, "g"))]
 				.map(match => match[1])
 				.filter(patch => !reviewedPatches.has(patchKey(patch, base)));
 			if (unreviewed.length) {
 				debug({ phase: "apply-block", unreviewed });
-				return { block: true, reason: `orchestrator-guard: review before apply. Read ${unreviewed.join(", ")} first (read tool), check it matches the brief, then apply. For large or risky patches spawn the reviewer agent.` };
+				return { block: true, reason: `orchestrator-guard: review before apply. Read ${unreviewed.join(", ")} first with the read tool on that same path (or read('<that path>') in an eval cell; a path built from a variable counts when the variable is a plain string set in this session), check it matches the brief, then apply. For large or risky patches spawn the reviewer agent.` };
 			}
 		}
 	};

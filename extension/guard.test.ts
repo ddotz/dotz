@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
 import { LOOKUP_MODEL, omoSelector } from "../hub/runtime/omo.ts";
-import { addProjectFooter, FOLDER_RULES_MARKER, PROJECT_MARKER, budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
+import { stateSummary, addProjectFooter, FOLDER_RULES_MARKER, PROJECT_MARKER, budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -193,6 +193,68 @@ test("hooks: patch apply needs a read first", async () => {
 	expect((await handlers.tool_call[0](apply, ctx)).reason).toContain("review before apply");
 	await handlers.tool_call[0]({ toolName: "read", input: { path: "/tmp/w1.patch" } }, ctx);
 	expect(await handlers.tool_call[0](apply, ctx)).toBeUndefined();
+});
+
+test("hooks: a patch read in an eval cell counts however the path is written (variables from an earlier cell, template, Bun.file, spaces around =)", async () => {
+	const { pi, handlers } = fakePi(join(dir, "agent-empty"));
+	installGuard(pi, noGate);
+	const ctx = { agent: { kind: "main" }, cwd: dir, sessionManager: { getSessionId: () => "apply-eval" } };
+	const call = (toolName: string, input: Record<string, unknown>) => handlers.tool_call[0]({ toolName, input }, ctx);
+	const applyOf = (p: string) => ({ language: "js", code: "print((await tool.bash({command: `git apply " + p + "`})).text)" });
+
+	// not read yet: refused, and the refusal names the path it resolved and how to pass
+	const first = await call("eval", { language: "js", code: "const iso = '/tmp/gx/iso';\nprint(await sh(`git apply ${iso}/st_1/root.patch`));" });
+	expect(first.reason).toContain("review before apply");
+	expect(first.reason).toContain("/tmp/gx/iso/st_1/root.patch");
+	// read() with a template over a variable defined in an earlier cell, apply written with the resolved path in a later cell
+	expect(await call("eval", { language: "js", code: "const t = await read(`${iso}/st_1/root.patch`); print(t.slice(0, 20000));" })).toBeUndefined();
+	expect(await call("eval", applyOf("/tmp/gx/iso/st_1/root.patch"))).toBeUndefined();
+	// the apply may also use the variable from the earlier cell
+	expect(await call("eval", applyOf("${iso}/st_1/root.patch"))).toBeUndefined();
+	// another patch of the same run is still unread
+	expect((await call("eval", applyOf("${iso}/st_2/root.patch"))).reason).toContain("review before apply");
+	// Bun.file(p).text() on a variable with spaces around =
+	expect(await call("eval", { language: "js", code: "const pm = `${iso}/st_2/root.patch`;\nconst body = await Bun.file(pm).text();\nprint(body)" })).toBeUndefined();
+	expect(await call("eval", applyOf("${iso}/st_2/root.patch"))).toBeUndefined();
+	// a read of a different file is no review
+	await call("eval", { language: "js", code: "print(await read('/tmp/gx/notes.md'))" });
+	expect((await call("eval", applyOf("/tmp/gx/other/root.patch"))).reason).toContain("review before apply");
+});
+
+test("hooks: a session start names the rules that refuse a call, so the first call already follows them", async () => {
+	const { pi, handlers } = fakePi(join(dir, "agent-empty"));
+	const sent: any[] = [];
+	(pi as any).sendMessage = (m: any) => void sent.push(m);
+	installGuard(pi, noGate);
+	await handlers.session_start[0]({}, { agent: { kind: "main" }, cwd: join(dir, "rules-cwd"), sessionManager: { getSessionId: () => "rules" } });
+	const text = sent.map(m => m.content).join("\n");
+	expect(text).toContain("Done when:");
+	expect(text).toContain("git apply");
+});
+
+test("state: a worker lost with the previous session comes with its session file, last step, kept change and how to continue it", () => {
+	const projects = join(dir, "omo-projects");
+	const kids = join(projects, "worktree-abc", "senpi-task", "children", "st_lost1", "sessions", "st_lost1");
+	mkdirSync(kids, { recursive: true });
+	const line = (o: unknown) => `${JSON.stringify(o)}\n`;
+	writeFileSync(
+		join(kids, "2026-11-05T01-00-00-000Z_aaa.jsonl"),
+		line({ type: "message", timestamp: "2026-11-05T01:00:00.000Z", message: { role: "user", content: "brief" } }) +
+			line({ type: "message", timestamp: "2026-11-05T01:05:09.000Z", message: { role: "assistant", content: [{ type: "text", text: "Tests for the parser pass; now wiring the CLI." }, { type: "toolCall", name: "edit", arguments: { path: "src/cli.ts" } }] } }) +
+			"not json at the torn end",
+	);
+	const iso = join(projects, "worktree-abc", "senpi-task", "isolation", "st_lost1");
+	mkdirSync(iso, { recursive: true });
+	writeFileSync(join(iso, "root.patch"), "diff --git a/x b/x\n");
+	const state = { cwd: "/repo", workers: { st_lost1: { brief: "wire the CLI", spawnedAt: 1, status: "running" }, st_gone: { brief: "no trail", spawnedAt: 2, status: "running" } } };
+	const text = stateSummary(state, true, projects)!;
+	expect(text).toContain(join(kids, "2026-11-05T01-00-00-000Z_aaa.jsonl"));
+	expect(text).toContain("01:05");
+	expect(text).toContain("edit");
+	expect(text).toContain("src/cli.ts");
+	expect(text).toContain(join(iso, "root.patch"));
+	expect(text).toContain("st_gone");
+	expect(text).toContain("spawn a new worker");
 });
 
 test("install: enabled=false registers nothing; an installed original defers this copy and logs once", () => {

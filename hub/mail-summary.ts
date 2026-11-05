@@ -4,6 +4,7 @@
 // sentences on two lines: what the mail is about, then what the owner has to do with the to-do and its deadline in **bold** (the web draws them in
 // the opened mail's summary block, web/js/11-mailtext.js; an older mail keeps its one line or its "**요약**/**할 일**" sections and still draws), by the injected `model` (hub/main.ts hands it
 // hub/outlang.ts callModel with anthropic/claude-sonnet-5-5:high: mail summaries are Sonnet 5.5 high, never Haiku).
+// A usage limit whose reset the error names (`resetAt`, hub/model-runner.ts ProviderBlockedError) is waited out: the whole queue pauses until just after the reset, no retry is spent and every mail stays queued.
 // Never blocks a post: request() only queues. One or two calls at a time; a failed call is retried later with a growing wait and the mail shows
 // no summary (its preview) until one succeeds. An outgoing mail is never summarized (its body preview is the row text). No hub imports: everything
 // the work touches (records, model, timers, body source) is injected, so the test runs it with fakes.
@@ -35,6 +36,8 @@ export type SummaryDeps = {
 	concurrency?: number;
 	/** Waits before the 1st, 2nd.. retry; after the last one the mail is left to the next start's backfill. */
 	retryMs?: readonly number[];
+	/** The clock (ms); injected for the limit wait. */
+	now?: () => number;
 	/** Runs `fn` after `ms` (setTimeout); injected so a test fires the retries itself. */
 	later?: (fn: () => void, ms: number) => void;
 	log?: (line: string) => void;
@@ -61,6 +64,9 @@ export function createMailSummarizer(d: SummaryDeps) {
 	const retry = d.retryMs ?? [30_000, 120_000, 600_000, 1_800_000];
 	const later = d.later ?? ((fn, ms) => void setTimeout(fn, ms).unref?.());
 	const log = d.log ?? (() => undefined);
+	const now = d.now ?? Date.now;
+	const RESET_MARGIN_MS = 60_000;
+	let pausedUntil = 0;
 	const queue: string[] = [];
 	const hints = new Map<string, SummaryHint>();
 	const tries = new Map<string, number>();
@@ -71,6 +77,8 @@ export function createMailSummarizer(d: SummaryDeps) {
 		const r = d.get(key);
 		// The mail is gone, is the owner's own, or got a good summary meanwhile: no call.
 		if (!r || !needsHubSummary(r)) return void waiting.delete(key);
+		// A usage limit is known to last until pausedUntil: no call is made, the mail waits for it.
+		if (now() < pausedUntil) return void later(() => void (queue.push(key), pump()), pausedUntil - now());
 		const body = (hints.get(key)?.body ?? d.bodyOf?.(r) ?? "").trim().slice(0, BODY_CAP);
 		const files = (r.attachments ?? []).filter(a => !a.inline).map(a => a.name);
 		const text = [`제목: ${r.subject}`, r.from ? `보낸 사람: ${r.from}` : "", files.length ? `첨부: ${files.join(", ")}` : "", body ? `본문:\n${body}` : ""].filter(Boolean).join("\n");
@@ -84,6 +92,12 @@ export function createMailSummarizer(d: SummaryDeps) {
 			hints.delete(key);
 			tries.delete(key);
 		} catch (error) {
+			const resetAt = (error as { resetAt?: unknown }).resetAt;
+			if (typeof resetAt === "number" && resetAt > now()) {
+				pausedUntil = Math.max(pausedUntil, resetAt + RESET_MARGIN_MS);
+				log(`mail ${key}: usage limit until ${new Date(resetAt).toISOString()}; summaries wait for it`);
+				return void later(() => void (queue.push(key), pump()), pausedUntil - now());
+			}
 			const n = tries.get(key) ?? 0;
 			tries.set(key, n + 1);
 			if (n >= retry.length) {
