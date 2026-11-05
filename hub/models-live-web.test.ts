@@ -32,6 +32,7 @@ const MODELS = {
 		lanes: { chain: [], hub_driven: true, active: [SONNET], primary_down: { down: "quota", until: UNTIL }, harness: { id: "omo", name: "OmO" }, conditions: true },
 		workers: { chain: [], hub_driven: false, active: [], harness: { id: "omo", name: "OmO" }, conditions: true },
 	},
+	conversations: { "ch:5": { own: `${OPUS}:low` } },
 	in_use: modelsInUse({
 		orchestrator: { configured: `${OPUS}:high`, active: `${SONNET}:high` },
 		lanesDefault: `${OPUS}:high`,
@@ -46,6 +47,7 @@ const MODELS = {
 const STATE = { name: "dotz", orchestrator: { status: "idle", activeModel: `${SONNET}:high` }, lanes: [{ name: "pay", title: "결제", model: `${OPUS}:high`, worker_model: `${SONNET}:high`, status: "working", live: true, startedAt: UNTIL, reports: [], context: {} }], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 };
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
+const projectChange = Promise.withResolvers<unknown>();
 const server = Bun.serve({
 	port: 0,
 	hostname: "127.0.0.1",
@@ -59,6 +61,8 @@ const server = Bun.serve({
 		if (p === "/api/state") return json(STATE);
 		if (p === "/api/models") return json(MODELS);
 		if (p === "/api/peers") return json([]);
+		if (p === "/api/target" && req.method === "PUT") { projectChange.resolve(await req.json()); return json({ applied: "next-turn" }); }
+		if (p === "/api/target" && url.searchParams.get("target") === "ch:5") return json({ target: "ch:5", key: "orchestrator", own: true, inherited: `${SONNET}:high`, model: OPUS, thinking: "low", models: LIST });
 		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
@@ -107,6 +111,19 @@ describe("REQ1: home cards and the composer chip show the model in use", () => {
 		expect(r.hidden).toBe(false);
 		expect(r.fb).toStartWith("폴백 중 · 한도 소진");
 		expect(r.title).toContain("Opus 5.5");
+	});
+	test("a project conversation's row reads as main's; its model chip shows its own choice and the menu leads back to main's", async () => {
+		const v = await boot();
+		await run(v, `target = MAIN; renderCtxRing()`);
+		const main = await q<string>(v, `return document.querySelector("#c-own").textContent`);
+		await run(v, `target = "ch:5"; renderCtxRing()`);
+		const r = await q(v, `const t = id => document.querySelector(id).textContent; return { owner: t("#c-own"), model: t("#c-model"), effort: t("#c-effort") }`);
+		expect(r).toEqual({ owner: main, model: "Opus 5.5", effort: "낮음" });
+		await run(v, `document.querySelector("#c-model").click()`);
+		await waitFor(v, `document.querySelector(".menu .mi")`);
+		await run(v, `[...document.querySelectorAll(".menu .mi")].find(b => b.textContent.startsWith("메인 대화와 같게")).click()`);
+		expect(await projectChange.promise).toEqual({ target: "ch:5", inherit: true });
+		await run(v, `target = MAIN; renderCtxRing()`);
 	});
 	test("the subagent chip of a session reads its worker_model and is clickable", async () => {
 		const v = await boot();

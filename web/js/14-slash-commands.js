@@ -399,9 +399,9 @@ function renderCtxRing() {
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
   const owner = orchT ? botName : lane ? `세션 ${lane.title || lane.name}` : "";
   const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
-  // A project conversation says whose value the chips show: its own, or main's while it made no choice.
-  const proj = isProjT(target), chipOwner = proj ? "이 프로젝트" : owner;
-  ob.hidden = !(sel && owner); ob.textContent = proj && !live.own ? "메인 대화와 같음" : chipOwner; ob.classList.toggle("keep", proj);
+  // The row reads as in main; a project's own choice shows in the tooltips and in the menus' first row (inheritRow).
+  const chipOwner = isProjT(target) ? "이 프로젝트" : owner;
+  ob.hidden = !(sel && owner); ob.textContent = owner;
   wb.hidden = !wsel;
   if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `서브에이전트 ${modelChipText(wbase)}${wlevel ? ` · ${thinkKo(wlevel)}` : ""}`; wb.title = `이 세션의 서브에이전트 모델`; }
   // model and effort are separate chips, each with its own popover

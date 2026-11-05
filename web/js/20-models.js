@@ -132,12 +132,12 @@ function fbWhy(layer) {
   return { reason: pd ? FB_DOWN_KO[pd.down] || "" : "", until: pd && pd.until && isFinite(Date.parse(pd.until)) ? pd.until : "" };
 }
 function liveModel(t) {
-  // A project conversation: its own choice and its session's model, or main's as it is with no choice (own: false).
+  // A project conversation: its own choice and its session's model, or main's as it is with no choice.
   if (isProjT(t)) {
     const c = M && M.conversations && M.conversations[t], m = liveModel(MAIN);
-    if (!c) return { ...m, own: false };
+    if (!c) return m;
     const conf = c.own || m.conf, act = c.active;
-    return { sel: act || conf, conf, own: !!c.own, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy("orchestrator") : null };
+    return { sel: act || conf, conf, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy("orchestrator") : null };
   }
   const main = t === MAIN, om = M && M.orchestrator;
   const lm = main ? null : ((M && M.lanes) || []).find(x => `lane:${x.name}` === t), sl = main || !S ? null : (S.lanes || []).find(x => `lane:${x.name}` === t);
