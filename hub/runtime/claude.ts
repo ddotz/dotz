@@ -19,7 +19,7 @@ import type { Subprocess } from "bun";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { summary } from "../activity.ts";
+import { ownIntent, summary } from "../activity.ts";
 import { DATA_DIR, log, parseSelector } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { classifyProviderError } from "../providers.ts";
@@ -260,8 +260,9 @@ export class ClaudeFrames {
 function toolCall(b: Frame): ActivityRow {
 	const args = b.input && typeof b.input === "object" ? (b.input as Record<string, unknown>) : {};
 	// Claude's Bash/Task calls carry `description`, the model's own one-line intent; the other tools show command/path/pattern.
-	const label = summary(args, typeof args.description === "string" ? args.description : undefined);
-	return { type: "tool_call", tool: b.name, call_id: b.id, intent: label, text: label ? `${b.name}: ${label}` : String(b.name ?? ""), args: JSON.stringify(args, null, 2) };
+	const intent = typeof args.description === "string" ? args.description : undefined;
+	const label = summary(args, intent);
+	return { type: "tool_call", tool: b.name, call_id: b.id, intent: label, ...(ownIntent(args, intent) ? { said: true } : {}), text: label ? `${b.name}: ${label}` : String(b.name ?? ""), args: JSON.stringify(args, null, 2) };
 }
 
 // A task worker (the Agent/Task tool) as `task_*` system frames report it; shell tasks (`local_bash`) are not workers.

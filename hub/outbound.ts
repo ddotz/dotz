@@ -193,7 +193,8 @@ export const awaiting = new Map<string, Waiting[]>();
 export const refOf = (e: Record<string, any>): string | undefined => e.mid ?? e.message_id ?? undefined;
 export const newMid = () => randomUUID().slice(0, 8);
 // Web has no message to edit: the receipt and progress line are one "out" note per conversation (the page keeps the newest).
-const webNote = (target: string, text: string) => emit("outbox", { ts: now(), kind: "out", source: "gateway", target, text, update_key: "progress" });
+// `live` marks the gateway's own status (livestatus.ts): the page draws its lines as a status instead of a message.
+const webNote = (target: string, text: string, live = false) => emit("outbox", { ts: now(), kind: "out", source: "gateway", target, text, update_key: "progress", ...(live ? { live } : {}) });
 export const receiptNote = (how: LaneDelivery): string | undefined =>
 	how === "steered" ? "📨 받았어요. 하던 작업에 바로 넣었고, 답이 준비되면 여기로 올게요." : how === "held" ? "📨 받았어요. 사용량 한도가 풀리면 바로 전달할게요." : how === "resumed" ? "📨 받았어요. 멈춰 있던 세션을 다시 시작해서 전달했어요." : undefined;
 // An owner message that could not reach its session: the failed state on the message and, in that chat, a gateway message with the way forward.
@@ -564,6 +565,6 @@ setWiring(c => {
 });
 
 export function installDelivery(): void {
-	livestatus.setWebProgress(webNote);
+	livestatus.setWebProgress((target, text) => webNote(target, text, !!text));
 	wireAnswers(mainConv);
 }

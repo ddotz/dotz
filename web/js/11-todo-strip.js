@@ -309,7 +309,7 @@ function msgNode(e) {
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
-      const isNote = e.kind === "out" && !!e.update_key && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
+      const isNote = e.kind === "out" && !!e.update_key && !e.live && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
       const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
       // The marker is a status tag in front of the first line (02-basic-markdown.js toneLead), for the orchestrator and a session alike.
       const body = parsed;
@@ -322,6 +322,7 @@ function msgNode(e) {
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), rpQuote(e), cardNode(e.card));
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null);
+      if (e.live) return el("div", { class: `bm${card}` }, head, liveNode(body, tone));
       const pc0 = !e.relay && (e.kind === "out" || e.kind === "lane_report") ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
       // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
       // the decision sheet (30-notices.js) — the options themselves live there, never in the message body.
@@ -342,6 +343,13 @@ function msgNode(e) {
       return el("div", { class: `bm${card}`, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files);
     }
   }
+}
+// The gateway's status while a turn runs (hub/livestatus.ts, e.live): the head line, one row per fact, then recent steps muted.
+// Every row stays on one line, so a long step never wraps on a phone and an update keeps the note's shape.
+function liveNode(body, tone) {
+  const [lead, ...rows] = body.split("\n");
+  return toneLead(el("div", { class: "lv" }, el("p", { text: lead }), ...rows.map(l =>
+    /^- /.test(l) ? el("div", { class: "lv-s", text: l.slice(2) }) : l.endsWith(":") ? el("div", { class: "lv-s lv-h", text: l.slice(0, -1) }) : el("div", { class: "lv-r", text: l }))), tone);
 }
 const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
 function newGroup(a) {
@@ -388,6 +396,8 @@ function chatPush(en, bulk) {
     const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
     // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);
     // the answer to that target (or its lane report) drops them.
+    // A status that updates stays where it is: no rise, and it never shrinks while the wait lasts.
+    const held = e.live && !bulk ? CS.prog.get(pkey)?.node.offsetHeight || 0 : 0;
     if (pkey) { dropProgress(pkey); if (laneT) for (const [k, v] of CS.prog) if (v.target === laneT) dropProgress(k); }
     else if (!isFixedT(target) && (e.kind === "lane_report" || (e.kind === "out" && !e.system))) {
       const t = e.kind === "lane_report" || laneT ? et : String(e.target ?? "");
@@ -402,7 +412,8 @@ function chatPush(en, bulk) {
       if (who && who === CS.who && t - CS.whoT < 600000 && !(e.target === "alert" && n.querySelector(":scope > .mt > .tag"))) n.classList.add("cont");   // an 알림 row that carries a status tag keeps its head, so the tag shows
       CS.who = who; CS.whoT = t;
       if (convIncoming(e)) fresh = n;
-      tlHome(n).append(n); if (!bulk) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
+      if (held) n.style.minHeight = `${held}px`;
+      tlHome(n).append(n); if (!bulk && !held) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
       if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {

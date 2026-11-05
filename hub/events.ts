@@ -75,6 +75,8 @@ export type Activity = {
 	call_id?: string;
 	args?: string;
 	intent?: string;
+	/** `intent` is the model's own words, not a command, path or query standing in for them (activity.ts ownIntent). */
+	said?: boolean;
 	is_error?: boolean;
 };
 const ACTIVITY_MAX = 300;
