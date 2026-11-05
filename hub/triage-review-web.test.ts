@@ -83,16 +83,16 @@ describe("review queue", async () => {
 		await key(v, "1");
 		await waitFor(v, `document.querySelector(".tr-pos").firstChild.textContent === "2/3"`);
 		await arrived(1);
-		expect(reqs.map(r => r.body)).toEqual([{ items: [{ ref: "Dxyz789", to: "main", n: 1 }] }]);
+		expect(reqs.map(r => r.body)).toEqual([{ items: [{ ref: "Dxyz789", to: "main", n: 1, label: "보내기" }] }]);
 		await key(v, "x");
 		await waitFor(v, `document.querySelector(".tr-pos").firstChild.textContent === "3/3"`);
 		await arrived(2);
-		expect(reqs[1]!.body).toEqual({ items: [{ ref: "Dabc234", to: "main", n: 3 }] });
+		expect(reqs[1]!.body).toEqual({ items: [{ ref: "Dabc234", to: "main", n: 3, label: "보내지 않기" }] });
 		await waitFor(v, `document.querySelector(".tr-org .tr-otx") && document.querySelector(".tr-org .tr-otx").textContent.includes("악보를 받을 수 있을까요?")`);
 		await key(v, "Enter");
 		await waitFor(v, `document.querySelector(".tr-sumlist")`);
 		await arrived(3);
-		expect(reqs[2]!.body).toEqual({ items: [{ ref: "Rxyz234", to: "main", n: 1 }] });
+		expect(reqs[2]!.body).toEqual({ items: [{ ref: "Rxyz234", to: "main", n: 1, label: "보내기" }] });
 		const rows = await q<string[]>(v, `return [...document.querySelectorAll(".tr-sumlist li")].map(li => li.textContent)`);
 		expect(rows).toEqual(["보내지 않았어요1건", "보내는 중2건"]);
 	});
@@ -109,6 +109,6 @@ describe("review queue", async () => {
 		await waitFor(v, `document.querySelector(".tr-pos").firstChild.textContent === "2/3"`);
 		await arrived(1);
 		expect(reqs).toHaveLength(1);
-		expect(reqs[0]!.body).toEqual({ items: [{ ref: "Dxyz789", to: "main", n: 2, note: "더 짧게" }] });
+		expect(reqs[0]!.body).toEqual({ items: [{ ref: "Dxyz789", to: "main", n: 2, label: "고치기", note: "더 짧게" }] });
 	});
 });

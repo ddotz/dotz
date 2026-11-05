@@ -181,7 +181,7 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		const before = answers.length;
 		await run(v, `document.querySelector("#app-sw [data-approval] [data-k='appr:그만두기']").click()`);
 		await waitFor(v, `!AS.busy.instagram`);
-		expect(answers.slice(before)).toEqual([{ id: "n-ig", body: { n: 3 } }]);
+		expect(answers.slice(before)).toEqual([{ id: "n-ig", body: { n: 3, label: "그만두기" } }]);
 	});
 
 	test("a peer app's approval answer is forwarded as the peer's own decision (/api/peer/act answer)", async () => {
