@@ -12,7 +12,7 @@ import { countChannelNotices, dropChannelNotices } from "./notices.ts";
 import { loadProjectInfo, removeProjectInfo } from "./projectinfo.ts";
 import { loadProjects, removeProject } from "./projects.ts";
 import { allWatches } from "./watch.ts";
-import { clearChannel, getSetup, watchLabel } from "./workchannels.ts";
+import { clearChannel, getSetup, homeChannel, watchLabel } from "./workchannels.ts";
 
 export class ProjectDeleteError extends Error {
 	constructor(readonly status: number, message: string) {
@@ -35,7 +35,7 @@ export const defaultDeps: DeleteDeps = {
 		const c = discord.channels;
 		return Object.fromEntries(([["chat", c.chat], ["worklog", c.worklog], ["alert", c.alert], ["dm", c.dm], ["brief", c.brief]] as const).filter(([, id]) => id).map(([name, id]) => [id!, name]));
 	},
-	running: id => [...lanes.values()].filter(l => laneLive(l) && (discord.channels.homes[l.name] ?? l.home) === id).map(l => l.name),
+	running: id => [...lanes.values()].filter(l => laneLive(l) && homeChannel(l.name, l.home, discord.channels.homes) === id).map(l => l.name),
 	removeChannel: discord.deleteWorkChannel,
 };
 

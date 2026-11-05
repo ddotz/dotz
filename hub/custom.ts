@@ -14,7 +14,7 @@ import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
 import { parseTone, previewSource } from "./tone.ts";
 import { exec, listWatches } from "./watch.ts";
-import { getSetup } from "./workchannels.ts";
+import { getSetup, homeChannel } from "./workchannels.ts";
 
 const VIEWS = ["text", "stat", "list", "kv"] as const;
 export type View = (typeof VIEWS)[number];
@@ -490,18 +490,23 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 		return p;
 	};
 	const lanes = input.lanes.filter(l => typeof l.cwd === "string" && l.cwd && typeof l.name === "string").map(l => ({ l, at: Date.parse(String(l.startedAt ?? "")) || 0 })).sort((a, b) => b.at - a.at);
+	const byChannel = (id: string) => [...projects.values()].find(p => p.channel?.id === id);
+	const folder = (path: string) => projects.get(`dir:${path}`) ?? make(`dir:${path}`, basename(path), path);
+	const isTmp = (p: string) => tmp.some(t => p === t || p.startsWith(`${t.replace(/\/+$/, "")}/`));
+	// A worktree lane belongs to the checkout it works for, not to its own ~/.dotz/lanes/<name>/worktree folder; a temp folder is no project.
+	const folderOf = (l: Record<string, unknown>, cwd = String(typeof l.repo === "string" && l.repo ? l.repo : l.cwd)) => (isTmp(cwd.replace(/^~(?=\/|$)/, home)) ? undefined : norm(cwd));
+	// The one rule for a session's project, every surface reads it from here (docs/layers.md §1): its home channel, the folder only without one.
 	for (const { l, at } of lanes) {
-		// A worktree lane belongs to the checkout it works for, not to its own ~/.dotz/lanes/<name>/worktree folder (every
-		// such lane showed as a project named "worktree").
-		const cwd = String(typeof l.repo === "string" && l.repo ? l.repo : l.cwd);
-		const expanded = cwd.replace(/^~(?=\/|$)/, home);
-		if (tmp.some(t => expanded === t || expanded.startsWith(`${t.replace(/\/+$/, "")}/`))) continue;
-		const path = norm(cwd);
-		const p = projects.get(`dir:${path}`) ?? make(`dir:${path}`, basename(path), path);
-		const name = String(l.name);
+		const name = String(l.name), id = homeChannel(name, l.home, homes), path = folderOf(l);
+		let p = id ? byChannel(id) : path ? folder(path) : undefined;
+		if (id && !p) {
+			// A new home channel takes its session's folder as its own; a second channel in the same folder stands alone.
+			p = path && !folder(path).channel ? folder(path) : make(`ch:${id}`, work[id] ?? id);
+			p.channel = chan(id);
+		}
+		if (!p) continue;
 		p.lanes.push({ name, ...(typeof l.title === "string" && l.title ? { title: l.title } : {}), status: String(l.status ?? ""), live: Boolean(l.live), ...(l.startedAt ? { startedAt: String(l.startedAt) } : {}), ...(l.lastReportAt ? { lastReportAt: String(l.lastReportAt) } : {}), ...(l.pendingAsk ? { waiting: true } : {}), lastText: String(l.lastText ?? "").slice(0, 300), reports: Number(l.reports ?? 0) || 0, ...(laneCh[name] ? { channel: laneCh[name] } : {}) });
 		p.newest = Math.max(p.newest, at);
-		if (homes[name] && !p.channel) p.channel = chan(homes[name]);
 	}
 	// A work channel no session is homed in belongs to the folder project named like it ("dotz-개선" -> ~/Code/dotz), else it stands alone.
 	for (const [id, name] of Object.entries(work)) {

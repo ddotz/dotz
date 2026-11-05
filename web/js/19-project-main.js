@@ -47,11 +47,10 @@ function pmProject() {
 function pmSessionRows(p, D) {
   const dl = (D && D.lanes) || [], all = (S && S.lanes) || [], names = new Set([...dl.map(l => l.name), ...(p.lanes || []).map(l => l.name)]);
   const chat = prjChat(p);
-  if (chat) for (const l of all) if (laneHome(l) === chat) names.add(l.name);
-  // A project with its own chat lists the sessions assigned to it; a live session of the same folder started from chat belongs to no project.
-  return [...names].filter(n => { const s = all.find(l => l.name === n); return !(chat && s && laneAlive(s) && !laneHome(s)); }).map(n => {
+  if (chat) for (const l of all) if (laneChat(l) === chat) names.add(l.name);
+  return [...names].map(n => {
     const s = all.find(l => l.name === n), d = dl.find(l => l.name === n) || (p.lanes || []).find(l => l.name === n) || {};
-    return { project: s && laneHome(s) ? laneProject(s) : prjTitle(p), at: Date.parse(d.finishedAt || d.lastReportAt || d.startedAt || (s && s.startedAt) || "") || 0, name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, ask: s && s.pendingAsk && s.pendingAsk.text ? oneLine(s.pendingAsk.text) : "", line: friendlyLine(d.line || d.lastText || "").slice(0, 140) };
+    return { project: (s && laneProject(s)) || prjTitle(p), at: Date.parse(d.finishedAt || d.lastReportAt || d.startedAt || (s && s.startedAt) || "") || 0, name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, ask: s && s.pendingAsk && s.pendingAsk.text ? oneLine(s.pendingAsk.text) : "", line: friendlyLine(d.line || d.lastText || "").slice(0, 140) };
   }).sort((a, b) => (b.live - a.live) || (b.waiting - a.waiting) || a.title.localeCompare(b.title));
 }
 // Level 2: the essentials only. Each section is one tappable summary row that opens its own page (level 3, pmSheet).
