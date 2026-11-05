@@ -9,9 +9,9 @@
 //     -> 200 {"ok": true, "results": [{"key": "<key>", "ok": true, "synced": true, "note"?: "..."}, ...]}   a missing key is {"key", "ok": false, "synced": false, "note": "이 메일을 찾지 못했어요"}
 //   dotz side of each action: read = the conversation's read position moves up to the mail (POST /api/read does the same); unread = the position moves
 //   to just before the mail, so it counts unread again; archive / unarchive = the record's `archived` flag (a newer message of the thread, another
-//   messageId, makes it a new mail again and clears it); star / unstar = `starred`; trash = the mail leaves dotz (DELETE /api/mail/<key>) and
-//   the mailbox's trash gets it. Opening a mail (POST /api/read moving the position) is "read" toward the mailbox only.
-//   Mailbox side: zele = `zele mail read-mark|unread-mark|archive|trash|star|unstar <threadId> [--account <a>]` and unarchive = `mail label --add INBOX`;
+//   messageId, makes it a new mail again and clears it); star / unstar = `starred`; trash = the mail leaves dotz (DELETE /api/mail/<key>) and no
+//   source is called: {"ok": true, "synced": false}. The original goes only through hub/mail-delete.ts (the owner's click with the app's switch on). Opening a mail (POST /api/read moving the position) is "read" toward the mailbox only.
+//   Mailbox side: zele = `zele mail read-mark|unread-mark|archive|star|unstar <threadId> [--account <a>]` and unarchive = `mail label --add INBOX`;
 //   a webmail-no-api site can do none of them (synced false + note); any other source asks its custom plugin's `mailAction({source, id, action})`
 //   (hub/plugins.ts, docs/custom-plugins.md): true = done, false = refused, undefined = not supported (note), a throw = failed (note).
 //
@@ -22,8 +22,8 @@
 //   read moves it forward. The zele poll reports unread, starred, trashed (TRASH label) and archived:false (INBOX label) from the lists it already reads.
 //
 // GET /api/conversations `mail` card (hub/mail.ts mailCard) gains: "read": boolean (nothing of the mail is unread), "archived"?: true, "starred"?: true,
-//   "can": string[] = the actions that reach the real mailbox for this mail's source (zele: all seven; webmail-no-api: []; a plugin: what its
-//   `mailActions(source)` lists, else []). Every action works in dotz whatever `can` says; it only says whether `synced` can come back true.
+//   "can": string[] = the actions that source can do in the real mailbox (zele: all seven; webmail-no-api: []; a plugin: what its `mailActions(source)` lists,
+//   else []). Every action works in dotz whatever `can` says; it only says whether `synced` can come back true ("trash" in it: the switch can be turned on).
 //   "base": the subject without Re:/Fwd:, the key the sent replies and the incoming mails of one thread share (sent mails have "dir": "out").
 //
 // Everything outside (zele, plugins, the read position, deleting) is injected (SyncDeps), so the tests run it with fakes.
@@ -52,13 +52,13 @@ export type SyncDeps = {
 	log?: (line: string) => void;
 };
 
-const ZELE_CMD: Record<Exclude<MailAction, "unarchive">, string> = { read: "read-mark", unread: "unread-mark", archive: "archive", trash: "trash", star: "star", unstar: "unstar" };
-const NO_SUPPORT: Record<MailAction, string> = {
+type SyncedAction = Exclude<MailAction, "trash">;
+const ZELE_CMD: Record<Exclude<SyncedAction, "unarchive">, string> = { read: "read-mark", unread: "unread-mark", archive: "archive", star: "star", unstar: "unstar" };
+const NO_SUPPORT: Record<SyncedAction, string> = {
 	read: "dotz에서만 읽음 표시가 바뀌었어요",
 	unread: "dotz에서만 읽음 표시가 바뀌었어요",
 	archive: "dotz에서만 보관 상태가 바뀌었어요",
 	unarchive: "dotz에서만 보관 상태가 바뀌었어요",
-	trash: "dotz에서만 지웠어요",
 	star: "dotz에서만 별표가 바뀌었어요",
 	unstar: "dotz에서만 별표가 바뀌었어요",
 };
@@ -67,7 +67,7 @@ const FAILED = "메일함에 반영하지 못했어요 · dotz에서만 바뀌�
 /** The actions that reach the real mailbox of a source. */
 export const canOf = (source: string, d: Pick<SyncDeps, "webmail" | "pluginCan">): string[] => (source === "zele" ? [...MAIL_ACTIONS] : d.webmail(source) ? [] : d.pluginCan(source));
 
-async function provider(r: MailRecord, action: MailAction, d: SyncDeps): Promise<ActionResult> {
+async function provider(r: MailRecord, action: SyncedAction, d: SyncDeps): Promise<ActionResult> {
 	try {
 		if (r.source === "zele") {
 			const argv = action === "unarchive" ? ["zele", "mail", "label", r.id, "--add", "INBOX"] : ["zele", "mail", ZELE_CMD[action], r.id];
@@ -85,6 +85,13 @@ async function provider(r: MailRecord, action: MailAction, d: SyncDeps): Promise
 		return { ok: true, synced: false, note: FAILED };
 	}
 }
+
+/** SyncDeps.exec for real: runs the command; only its code and stderr are kept. */
+export const spawnExec: SyncDeps["exec"] = async argv => {
+	const p = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
+	const [code, stderr] = await Promise.all([p.exited, new Response(p.stderr).text()]);
+	return { code, stderr };
+};
 
 const patch = (r: MailRecord, change: Partial<MailRecord>, drop: (keyof MailRecord)[] = []): void => {
 	const next: MailRecord = { ...r, ...change };
@@ -108,7 +115,7 @@ export async function mailAction(key: string, action: MailAction, d: SyncDeps, o
 		else if (action === "star") patch(r, { starred: true });
 		else if (action === "unstar") patch(r, {}, ["starred"]);
 	}
-	const result = r.dir === "out" ? { ok: true, synced: false, note: NO_SUPPORT[action] } : await provider(r, action, d);
+	const result: ActionResult = action === "trash" ? { ok: true, synced: false } : r.dir === "out" ? { ok: true, synced: false, note: NO_SUPPORT[action] } : await provider(r, action, d);
 	if (action === "trash" && !opts.providerOnly) await d.remove(key);
 	if (!opts.providerOnly) d.changed(key);
 	return result;

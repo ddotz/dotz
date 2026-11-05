@@ -43,7 +43,8 @@ import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailsFyi, mailKeep, setMailSuggest, sentMailEvent, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { moveMailRoute } from "./mail-move.ts";
-import { applyMailboxFlags, canOf, isMailAction, mailAction, mailActions, type SyncDeps } from "./mail-sync.ts";
+import { applyMailboxFlags, canOf, isMailAction, mailAction, mailActions, spawnExec, type SyncDeps } from "./mail-sync.ts";
+import { originalDeletable, originalDeleteRoute, originalDeps } from "./mail-delete.ts";
 import { manualDraft } from "./mail-manual.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
 import { pluginMailAction, pluginMailActions } from "./plugins.ts";
@@ -321,11 +322,7 @@ const removeMailLocal = async (key: string): Promise<boolean> => {
 };
 /** hub/mail-sync.ts wired to the real parts: zele and plugins for the mailbox, the read position, deleting. */
 export const mailSyncDeps: SyncDeps = {
-	exec: async argv => {
-		const p = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
-		const [code, stderr] = await Promise.all([p.exited, new Response(p.stderr).text()]);
-		return { code, stderr };
-	},
+	exec: spawnExec,
 	plugin: pluginMailAction,
 	pluginCan: pluginMailActions,
 	webmail: s => !!webmailSite(s),
@@ -340,6 +337,7 @@ export const mailSyncDeps: SyncDeps = {
 	changed: key => broadcast({ kind: "mail_unreplied", target: mailTarget(key) }),
 	log,
 };
+export const mailOriginal = originalDeps(DATA_DIR, mailSyncDeps);
 const keyOfSource = (source: string, id: string): string | undefined => {
 	try {
 		return mailKey(source, id);
@@ -790,11 +788,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			// Ended sessions are listed too: 답변 필요 stays on their row (their unread is 0, conversations.ts unreadOf) in the folded 끝난 세션 group (web/js/04-state.js endedGroup).
 			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its messages in the log, but it leaves
 			// this list, so it leaves every list and count here and on the other computer (its snapshot is this list, hub/peer-monitor.ts).
-			const lv = liveLanes();
+			const lv = liveLanes(), trashable = originalDeletable(DATA_DIR, mailSyncDeps);
 			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
 				if (!c.target.startsWith("mail:")) return [c];
 				const m = mailByKey(c.target.slice(5));
-				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key), { read: c.unread === 0, can: canOf(m.source, mailSyncDeps) }) }] : [];
+				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key), { read: c.unread === 0, can: canOf(m.source, mailSyncDeps), trashOriginal: trashable(m) }) }] : [];
 			});
 			return json({ items });
 		}
@@ -840,7 +838,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			if (found.size) broadcast({ kind: "mail_unreplied", target: mailTarget(found.values().next().value!) });
 			return json({ ok: true, results: keys.map(key => ({ key, ok: found.has(key) })) });
 		}
-		// 읽음 / 안 읽음 / 보관 / 별표 / 휴지통 on a mail: dotz changes at once and the real mailbox follows (hub/mail-sync.ts has the contract).
+		if (req.method === "POST" && url.pathname === "/api/mail/delete-original") return originalDeleteRoute(req, peer, await body(req), mailOriginal);   // the owner's 삭제 with the switch on
+		// 읽음 / 안 읽음 / 보관 / 별표 on a mail: dotz changes at once and the real mailbox follows; 휴지통 stays in dotz (hub/mail-sync.ts has the contract).
 		if (req.method === "POST" && url.pathname === "/api/mail/actions") {
 			const b = await body(req).catch(() => ({})) as { keys?: unknown; action?: unknown };
 			if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
@@ -857,8 +856,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// 삭제 on a mail card: the mail leaves dotz (record, list entry, counts, its notices and pending drafts); the real mailbox is not touched.
 		const mailDelete = req.method === "DELETE" && /^\/api\/mail\/([a-z0-9._-]+)$/.exec(url.pathname);
 		if (mailDelete) {
-			const key = mailDelete[1]!;
-			if (!(await removeMailLocal(key))) return json({ error: "이 메일을 찾지 못했어요" }, 404);
+			if (!(await removeMailLocal(mailDelete[1]!))) return json({ error: "이 메일을 찾지 못했어요" }, 404);
 			return json({ ok: true });
 		}
 		// 초안 작성 on a mail: the owner asks for a reply draft himself. It is made behind the request (a model call takes a while, and a peer's

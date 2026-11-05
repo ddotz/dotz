@@ -1373,7 +1373,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 메일함 목록 도구줄 (선택 막대, 별표, 체크박스)
 - 목적: 모니터링의 메일 목록 위에서 여러 메일을 골라 읽음, 보관, 삭제, 답장 안 함으로 한 번에 처리해요.
-- 구성: `#mbox-bar.mbox-bar`(모두 선택 체크박스 `.mbox-all`, 개수 `.mbox-n`, 동작 버튼 `.mbox-b`, 선택 해제 `.mbox-x`, 안내 `.mbox-note`). 각 메일 행 머리에 `.mr-lead`(체크박스 `.mr-chk` + 별표 `.mr-star`). 목록 필터 줄은 30-monitoring.js의 `mailFilterBar`(`.mr-filter.mr-mail`, role=tablist, aria-label `메일 보기`)가 그리고 이 파일은 막대만 그려요.
+- 구성: `#mbox-bar.mbox-bar`(모두 선택 체크박스 `.mbox-all`, 개수 `.mbox-n`, 동작 버튼 `.mbox-b`, 선택 해제 `.mbox-x`). 각 메일 행 머리에 `.mr-lead`(체크박스 `.mr-chk` + 별표 `.mr-star`). 목록 필터 줄은 30-monitoring.js의 `mailFilterBar`(`.mr-filter.mr-mail`, role=tablist, aria-label `메일 보기`)가 그리고 이 파일은 막대만 그려요.
 - 기능:
   - 행 체크박스 켜기/끄기: `mbLead` onchange가 `MBOX.sel`을 바꾸고 막대만 다시 그려요(`mbPaintBar`).
   - 모두 선택: `mbPaintBar`의 `.mbox-all` onchange(전체 선택/해제, 일부만 고르면 indeterminate).
@@ -1385,7 +1385,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 상태:
   - 선택 0개: 막대는 `메일 N개`(목록 개수, 0이면 빈 글) 표시, `.on` 클래스 없음. 목록이 비면 모두 선택 체크박스가 disabled.
   - 선택 1개 이상: `N개 선택`(aria-live polite), 막대에 `.on`.
-  - 메일함이 동작을 따라주지 않을 때(선택 메일 중 하나라도 `can`에 해당 동작이 없을 때) 막대 아래 `role=status` 안내 한 줄: 읽음/안 읽음/보관/받은편지함/별표/별표 빼기는 `dotz에서만 바뀌어요`, 삭제는 `메일함에선 지워지지 않아요`(`MB_NOTE`).
+  - `삭제하면 원본도 삭제`가 켜진 앱의 메일(`trashOriginal`)은 실행 취소 대신 확인 창이 떠요: `이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요`, 여러 건이면 `메일 N개를 삭제할까요? 원본도 메일함 휴지통으로 옮겨요`. 원본을 지우지 못한 메일은 목록에 남고 토스트에 `다시 시도`가 붙어요.
   - 별표 상태: on이면 aria-label/title `별표 빼기`, 아니면 `별표 달기`, `aria-pressed`.
   - 행 선택 시 `.mr-sel` 클래스.
   - 안 읽음 판단(`mailUnread`): 카드에 `read` 불리언이 있으면 그 값, 없으면 dotz 자체 읽음 위치(`ts(t).unread`). 보낸 메일(`dir:"out"`)은 안 읽음이 아니에요.

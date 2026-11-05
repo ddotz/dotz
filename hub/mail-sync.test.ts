@@ -62,7 +62,7 @@ describe("dotz action -> mailbox", () => {
 		expect(mailByKey(key)!.archived).toBeUndefined();
 	});
 
-	test("a failing mailbox call changes dotz only and says so; trash removes the mail and trashes it in the mailbox", async () => {
+	test("a failing mailbox call changes dotz only and says so; trash removes the mail and calls no source", async () => {
 		const down = fakes({ exec: async () => ({ code: 1, stderr: "token expired" }) });
 		const key = await incoming("zele");
 		const res = await mailAction(key, "archive", down.deps);
@@ -70,9 +70,8 @@ describe("dotz action -> mailbox", () => {
 		expect(res.note).toContain("반영하지 못했어요");
 		expect(mailByKey(key)!.archived).toBe(true);
 		const { deps, calls } = fakes();
-		const id = mailByKey(key)!.id;
-		expect(await mailAction(key, "trash", deps)).toEqual({ ok: true, synced: true });
-		expect(calls.argv).toEqual([["zele", "mail", "trash", id]]);
+		expect(await mailAction(key, "trash", deps)).toEqual({ ok: true, synced: false });
+		expect(calls.argv).toEqual([]);
 		expect(calls.removed).toEqual([key]);
 		expect(mailByKey(key)).toBeUndefined();
 		expect(await mailAction(key, "read", deps)).toMatchObject({ ok: false });

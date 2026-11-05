@@ -86,7 +86,8 @@ import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue, sendWeb } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { mailAction } from "./mail-sync.ts";
-import { applyMailStates, deliverAnswer, mailSyncDeps, makeRoute, startStallSweep, stateWaitlist, webAccess } from "./routes.ts";
+import { recoverOriginalDeletes } from "./mail-delete.ts";
+import { applyMailStates, deliverAnswer, mailOriginal, mailSyncDeps, makeRoute, startStallSweep, stateWaitlist, webAccess } from "./routes.ts";
 import { waitlistSweep } from "./waitlist.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { desk, type DeskWsData } from "./remote-desktop.ts";
@@ -335,6 +336,7 @@ backfillMailSummaries();
 
 // A mail he opened in dotz is read in its mailbox too (zele: `mail read-mark`, a plugin: its mailAction): hub/mail-sync.ts, mailbox side only.
 setMailReadOut(r => void mailAction(r.key, "read", mailSyncDeps, { providerOnly: true }));
+recoverOriginalDeletes(mailOriginal.pending, text => out("alert", text, undefined, { source: "gateway" }));
 
 void startZele({
 	alert,

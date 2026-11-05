@@ -10,7 +10,7 @@ const SHOTS = process.env.MAIL_UI_SHOTS ?? "";
 const CAN = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"];
 const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
 
-type Mail = { key: string; subject: string; from: string; to?: string; cc?: string; at: string; summary: string; read: boolean; archived?: boolean; starred?: boolean; dir?: "out"; can?: string[]; reply?: string; attachments?: unknown[] };
+type Mail = { key: string; subject: string; from: string; to?: string; cc?: string; at: string; summary: string; read: boolean; archived?: boolean; starred?: boolean; dir?: "out"; can?: string[]; trashOriginal?: boolean; reply?: string; attachments?: unknown[] };
 const fresh = (): Mail[] => [
 	{ key: "fx-a", subject: "월간 점검 보고서 확인 요청", from: "Alex Sender <alex@example.com>", to: "me@example.com, Park <park@example.com>", cc: "Choi <choi@example.com>", at: ago(1), summary: "요약\n- 이번 달 점검이 끝났어요.\n- 금요일까지 결과 확인이 필요해요.", read: false, starred: true, can: CAN, reply: "needs", attachments: [{ name: "점검보고서.pdf", type: "application/pdf", size: 482113 }] },
 	{ key: "fx-b", subject: "회의 일정 변경", from: "Kim <kim@example.com>", at: ago(3), summary: "목요일 회의를 금요일 오후로 옮기려고 해요. 가능한지 알려 달라고 해요.", read: false, can: CAN },
@@ -25,7 +25,7 @@ let mails: Mail[] = fresh();
 let posts: { path: string; body: any }[] = [];
 let composeFails = false;
 
-const card = (m: Mail) => ({ subject: m.subject, from: m.from, to: m.to, cc: m.cc, source: "kdb", at: m.at, summary: m.summary, dir: m.dir, read: m.read, archived: !!m.archived, starred: !!m.starred, can: m.can, reply: m.reply, attachments: m.attachments });
+const card = (m: Mail) => ({ subject: m.subject, from: m.from, to: m.to, cc: m.cc, source: "kdb", at: m.at, summary: m.summary, dir: m.dir, read: m.read, archived: !!m.archived, starred: !!m.starred, trashOriginal: m.trashOriginal, can: m.can, reply: m.reply, attachments: m.attachments });
 const history = (m: Mail) => [{ kind: "mail", ts: m.at, conv: `mail:${m.key}`, target: `mail:${m.key}`, mail: m.key, subject: m.subject, from: m.from, to: m.to, cc: m.cc, dir: m.dir, source: "kdb", html: false, attachments: m.attachments, text: `[mail] ${m.subject}\n\n${m.summary}\n\n원문\n안녕하세요.\n점검 결과를 보내 드립니다.\n확인 부탁드립니다.` }];
 const APPLY: Record<string, (m: Mail) => void> = {
 	read: m => { m.read = true; }, unread: m => { m.read = false; }, archive: m => { m.archived = true; }, unarchive: m => { m.archived = false; },
@@ -64,6 +64,10 @@ const hub = fakeHub({
 			// The real hub: the action always lands in dotz; a mailbox with no capability list of its own answers synced:false and one line.
 			const line = `dotz에서만 ${body.action === "archive" || body.action === "unarchive" ? "보관 상태가" : "읽음 표시가"} 바뀌었어요`;
 			return json({ ok: true, results: body.keys.map(k => { const m = mails.find(x => x.key === k); if (m) APPLY[body.action](m); return { key: k, ok: true, synced: !!(m && m.can && m.can.length), ...(m && !(m.can && m.can.length) ? { note: line } : {}) }; }) });
+		}
+		if (p === "/api/mail/delete-original" && req.method === "POST") {
+			const body = (await req.json()) as { keys: string[] }; posts.push({ path: p, body });
+			return json({ ok: true, results: body.keys.map(key => { if (key === "fx-fail") return { key, ok: false, note: "원본을 지우지 못해서 메일을 그대로 뒀어요" }; mails = mails.filter(m => m.key !== key); return { key, ok: true }; }) });
 		}
 		const del = /^\/api\/mail\/([^/]+)$/.exec(p);
 		if (del && req.method === "DELETE") { posts.push({ path: p, body: null }); mails = mails.filter(x => x.key !== del[1]); return json({ ok: true }); }
@@ -290,7 +294,7 @@ describe("the open mail", () => {
 describe("the bar above the list", () => {
 	const place = `(() => { const y = s => Math.round(document.querySelector(s).getBoundingClientRect().top * 100) / 100; return { row: y("#mon-tl > .mr"), box: y("#mon-tl > .mr .mr-chk"), all: y(".mbox-all"), bar: document.querySelector("#mbox-bar").getBoundingClientRect().height }; })()`;
 	type Place = { row: number; box: number; all: number; bar: number };
-	for (const [width, height] of [[412, 915], [1280, 800]]) test(`selecting moves nothing at ${width}, and the line about the mailbox stays put`, async () => {
+	for (const [width, height] of [[412, 915], [1280, 800]]) test(`selecting moves nothing at ${width}`, async () => {
 		const v = await openList(width, height);
 		// The list rises in as it opens; measure where it comes to rest.
 		await waitFor(v, `!document.getAnimations().some(a => a.playState === "running" && a.effect.getTiming().iterations !== Infinity)`);
@@ -303,7 +307,6 @@ describe("the bar above the list", () => {
 		expect(await ev<Place>(v, place)).toEqual(idle);
 		// One line: the bar holds every control on one row, nothing dropped below it.
 		expect(await ev<number>(v, `new Set([...document.querySelector("#mbox-bar").children].map(c => { const r = c.getBoundingClientRect(); return Math.round(r.top + r.height / 2); })).size`)).toBe(1);
-		expect(await ev<number>(v, `document.querySelectorAll(".mbox-note").length`)).toBe(1);
 		await shot(v, `bar-${width}-selected`);
 		await run(v, `document.querySelector("#mbox-bar .mbox-x").click()`);
 		expect(await ev<Place>(v, place)).toEqual(idle);
@@ -321,10 +324,11 @@ describe("the line about a mailbox that does not follow", () => {
 	const note = (v: View) => ev<string | null>(v, `document.querySelector("#mon-tl .mbox-note")?.textContent ?? null`);
 	const only = (can: string[]) => { mails = mails.filter(m => m.key !== "fx-old"); for (const m of mails) m.can = can; };
 
-	test("a source without mailAction shows it, one with mailAction does not", async () => {
+	test("no list draws it, whatever its mailbox can do", async () => {
 		only([]);
 		const off = await openList(1280, 800);
-		expect(await note(off)).toContain("dotz에서만");
+		expect(await note(off)).toBeNull();
+		expect(await ev<boolean>(off, `document.body.textContent.includes("실제 메일함에는")`)).toBe(false);
 		only(CAN);
 		const on = await openList(1280, 800);
 		expect(await note(on)).toBeNull();
@@ -335,15 +339,83 @@ describe("the line about a mailbox that does not follow", () => {
 		const v = await openList(1280, 800);
 		expect(await ev<string[]>(v, `[...document.querySelector("#mon-tl").childNodes].filter(n => n.nodeType === 3).map(n => n.textContent)`)).toEqual([]);
 	}, 30_000);
+});
 
-	test("a mixed list says some, and a source that can do one of the two names only the other", async () => {
-		only(CAN);
-		mails.find(m => m.key === "fx-b")!.can = [];
-		const mixed = await openList(1280, 800);
-		expect(await note(mixed)).toStartWith("일부 메일의 읽음·삭제");
-		only(["read", "unread"]);
-		const part = await openList(1280, 800);
-		expect(await note(part)).toStartWith("삭제는");
+describe("삭제하면 원본도 삭제", () => {
+	const on = (...keys: string[]) => { for (const m of mails) if (keys.includes(m.key)) m.trashOriginal = true; };
+	const confirm = (v: View) => ev<string>(v, `document.querySelector("dialog[open]").textContent`);
+	const yes = (v: View) => run(v, `document.querySelector("dialog[open] .btn.danger").click()`);
+
+	test("one mail: the confirm says the original goes, once; no undo window; one post; the row leaves when the hub says so", async () => {
+		on("fx-b");
+		const v = await openList(1280, 800);
+		await tick(v, "회의 일정 변경");
+		await run(v, `${bar(v, "삭제")}.click()`);
+		await waitFor(v, `document.querySelector("dialog[open]")`);
+		expect((await confirm(v)).match(/원본/g)?.length).toBe(1);
+		expect(await confirm(v)).toContain("휴지통");
+		expect(posts).toEqual([]);
+		await yes(v);
+		await posted(1);
+		expect(posts[0]).toEqual({ path: "/api/mail/delete-original", body: { keys: ["fx-b"] } });
+		await waitFor(v, `!${rowJs("회의 일정 변경")}`);
+		expect(posts.length).toBe(1);
+	}, 30_000);
+
+	test("no on the confirm sends nothing and keeps the row", async () => {
+		on("fx-b");
+		const v = await openList(1280, 800);
+		await tick(v, "회의 일정 변경");
+		await run(v, `${bar(v, "삭제")}.click()`);
+		await waitFor(v, `document.querySelector("dialog[open]")`);
+		await run(v, `document.querySelector("dialog[open]").close()`);
+		await waitFor(v, `!document.querySelector("dialog[open]")`);
+		expect(posts).toEqual([]);
+		expect(await ev<boolean>(v, `!!${rowJs("회의 일정 변경")}`)).toBe(true);
+	}, 30_000);
+
+	test("a selection: the confirm says the count; only the mails under the switch go to the original route, the rest stay in dotz", async () => {
+		on("fx-a", "fx-b");
+		const v = await openList(1280, 800);
+		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경"); await tick(v, "회사 메일");
+		await run(v, `${bar(v, "삭제")}.click()`);
+		await waitFor(v, `document.querySelector("dialog[open]")`);
+		expect(await confirm(v)).toContain("메일 3개");
+		expect(await confirm(v)).toContain("그중 2개는 원본");
+		await yes(v);
+		await posted(2);
+		expect(posts).toEqual([{ path: "/api/mail/delete-original", body: { keys: ["fx-a", "fx-b"] } }, { path: "/api/mail/fx-kdb/action", body: { action: "trash" } }]);
+	}, 30_000);
+
+	test("a failure keeps the mail, is told, and 다시 시도 asks again", async () => {
+		on("fx-fail");
+		const v = await openList(1280, 800);
+		await tick(v, "처리가 안 되는 메일");
+		await run(v, `${bar(v, "삭제")}.click()`);
+		await waitFor(v, `document.querySelector("dialog[open]")`);
+		await yes(v);
+		await waitFor(v, `document.querySelector(".snack.bad .sa")`);
+		expect(await ev<string>(v, `document.querySelector(".snack.bad").textContent`)).toContain("그대로 뒀어요");
+		expect(await ev<boolean>(v, `!!${rowJs("처리가 안 되는 메일")}`)).toBe(true);
+		await run(v, `document.querySelector(".snack .sa").click()`);
+		await waitFor(v, `document.querySelector("dialog[open]")`);
+	}, 30_000);
+
+	test("the ⋯ 삭제 of a mail under the switch takes the same way; off it stays the plain dotz delete", async () => {
+		on("fx-b");
+		const v = await openList(1280, 800);
+		await run(v, `mailDelete("mail:fx-b")`);
+		await waitFor(v, `document.querySelector("dialog[open]")`);
+		expect(await confirm(v)).toContain("원본도");
+		await yes(v);
+		await posted(1);
+		expect(posts[0]!.path).toBe("/api/mail/delete-original");
+		await run(v, `mailDelete("mail:fx-c")`);
+		await waitFor(v, `document.querySelector("dialog[open]")`);
+		expect(await confirm(v)).toContain("메일함엔 남아 있어요");
+		await yes(v);
+		await posted(2);
+		expect(posts[1]).toEqual({ path: "/api/mail/fx-c", body: null });
 	}, 30_000);
 });
 

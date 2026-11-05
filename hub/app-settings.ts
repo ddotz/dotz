@@ -37,6 +37,8 @@ export type SettingField = {
 	switch?: boolean;
 	/** Dotted paths in the same file that are set true together with this switch turned on. */
 	alsoOn?: string[];
+	/** Why this bool cannot be turned on here now (asked when read and when written), or undefined. */
+	blocked?: (app: string) => string | undefined;
 	/** The stored boolean is the opposite of the value shown (the file says `off`, the switch says 쓰기). */
 	invert?: boolean;
 	/** Learned in conversation, not set in the settings screen (owner 2026-10-26): the bot saves it with a dotz-settings block of memory keys
@@ -84,6 +86,16 @@ export const setDiscordProbe = (probe: () => boolean, news?: () => boolean): voi
 export const discordConnectedNow = (): boolean => discordConnected();
 /** Whether the mail app instance that owns mail `<key>` (matched by its source like the other instance filters) has 디스코드에도 올리기 on. */
 export const mailDiscordOn = (dataDir: string, key: string): boolean => readAppsFile(dataDir)[instanceOf(appEntries(dataDir), "mail", `mail:${key}`)]?.discord === true;
+// 삭제하면 원본도 삭제: custom/apps.json {"<mail instance>":{"delete_original":true}} (off when missing); hub/mail-delete.ts does it. routes.ts installs the probe.
+let mailTrashProbe = (_app: string): boolean => false;
+export const setMailTrashProbe = (probe: (app: string) => boolean): void => {
+	mailTrashProbe = probe;
+};
+export const mailOriginalOn = (dataDir: string): ((key: string) => boolean) => {
+	const entries = appEntries(dataDir), raw = readAppsFile(dataDir);
+	return key => raw[instanceOf(entries, "mail", `mail:${key}`)]?.delete_original === true;
+};
+const deleteOriginalField = (app: string): SettingField => ({ key: "delete_original", label: "삭제하면 원본도 삭제", type: "bool", help: "메일을 삭제할 때 실제 메일함에서도 휴지통으로 옮겨요", store: "custom/apps.json", path: `${app}.delete_original`, def: false, switch: true, section: "advanced", blocked: a => (mailTrashProbe(a) ? undefined : "이 메일함은 원본 삭제를 지원하지 않아요") });
 const discordField = (app: string): SettingField => ({ key: "discord", label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", store: "custom/apps.json", path: `${app}.discord`, def: false, switch: true, section: "notify" });
 // A monitoring app's own reports (kakao, instagram, youtube: its watches' posts, main.ts watchRoute) on Discord too; unset = the 새 소식 class switch.
 const NEWS_APPS = new Set(["kakao", "instagram", "youtube"]);
@@ -125,7 +137,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), notifyField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(NEWS_APPS.has(base) && discordConnected() ? [appDiscordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), notifyField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(NEWS_APPS.has(base) && discordConnected() ? [appDiscordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [deleteOriginalField(app), attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {
@@ -217,7 +229,7 @@ export function validate(app: string, values: unknown): Record<string, SettingVa
 	return validateFields(fields, values);
 }
 
-export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory" | "placeholder"> & { value: SettingValue };
+export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory" | "placeholder"> & { value: SettingValue; blocked?: string };
 /** A field with its current value, as GET returns it. */
 export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.section ? { section: f.section } : {}), ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), ...(f.placeholder ? { placeholder: f.placeholder } : {}), value });
 export function readSettings(dataDir: string, app: string): SettingView[] {
@@ -231,7 +243,8 @@ export function readSettings(dataDir: string, app: string): SettingView[] {
 		} catch {
 			value = f.def ?? "";
 		}
-		return viewOf(f, value);
+		const blocked = f.blocked?.(app);
+		return blocked ? { ...viewOf(f, false), blocked } : viewOf(f, value);
 	});
 }
 
@@ -241,6 +254,8 @@ export function writeSettings(dataDir: string, app: string, values: unknown): Se
 	const byStore = new Map<string, Record<string, any>>();
 	for (const [k, v] of Object.entries(clean)) {
 		const f = fieldsOf(app).find(x => x.key === k)!;
+		const blocked = v === true ? f.blocked?.(app) : undefined;
+		if (blocked) throw new SettingsError(blocked);
 		if (!byStore.has(f.store)) byStore.set(f.store, readJson(join(dataDir, f.store)));
 		const doc = byStore.get(f.store)!;
 		setPath(doc, f.path, f.invert ? !v : v);
