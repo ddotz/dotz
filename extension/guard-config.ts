@@ -68,7 +68,7 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	expensive_models: [],
 	defer_to_installed: true,
 	harness_tools: true,
-	task_token_cap: 8_000_000,
+	task_token_cap: 12_000_000,
 };
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
