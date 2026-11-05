@@ -651,6 +651,24 @@ test("an answer that came without a prompt settles the deferred settings request
 	expect(q.waitingOnWorkers()).toBe(0);
 });
 
+test("a worker spawned in a turn a note started serves the owner message steered into it: its result closes that message and nothing asks again", async () => {
+	const { q, state, open, startTurn } = setup();
+	startTurn("[dotz gateway] This conversation is new. Reply with - now.", { target: "web:worklog" });
+	q.deliver("한계 고쳐", { target: "web:worklog", replyTo: "m1" });
+	q.workersSpawned([{ id: "st_fix" }]);
+	q.onAnswer("[later]");
+	q.settleTurn();
+	state.working = false;
+	q.redeliverSteered();
+
+	q.workersDone(["st_fix"]);
+	q.onAnswer("고쳐서 올렸어요.");
+	await Bun.sleep(0);
+	expect(state.posts).toEqual([{ target: "web:worklog", text: "고쳐서 올렸어요.", replyTo: "m1" }]);
+	expect(q.isAnswered("m1")).toBe(true);
+	expect(open().filter(p => p.replyTo)).toEqual([]);
+});
+
 test("the newest-message path (no deferred prompt) names no message and answers none", async () => {
 	const SETTINGS = "settings:w:login-cartier-com";
 	const { q, state, open } = setup([], [{ target: SETTINGS, replyTo: "m7", at: Date.now() - 60_000 }]);

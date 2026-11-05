@@ -559,10 +559,13 @@ export function createPrompts(deps: PromptDeps) {
 		saveLinks();
 	}
 
+	/** The owner message a turn's worker serves: the turn's own, else (a note started the turn, such as a new session's history) the newest one steered in. Without it the result named no message and the open-request check asked for a second answer (2026-11-05 st_01a1aa4c). */
+	const requestOf = (p: Prompt) => p.replyTo ?? prompts.findLast(q => q.steered && q.replyTo && q.target === p.target)?.replyTo;
+
 	/** Workers the runtime just spawned: the running turn's request is theirs; a run no prompt started serves the request of the worker that woke it. */
 	function workersSpawned(workers: { id: string; description?: string }[]): void {
 		if (current?.target) {
-			for (const w of workers) link(w.id, { target: current.target, replyTo: current.replyTo }, w.description);
+			for (const w of workers) link(w.id, { target: current.target, replyTo: requestOf(current) }, w.description);
 			return;
 		}
 		const woken = woke.map(w => links.get(w.id)).find(l => l !== undefined);
@@ -591,8 +594,8 @@ export function createPrompts(deps: PromptDeps) {
 		const turn = turns.at(-1);
 		const from = (turn?.prompt === p ? turn.start : p.at) - TURN_SLACK_MS;
 		for (const w of deps.work?.() ?? [])
-			if ((w.status === "running" || w.status === "stalled") && w.startedAt >= from && (!w.target || sameConv(w.target, p.target!))) link(w.id, { target: p.target!, replyTo: p.replyTo }, w.description);
-		return linksOf(p).filter(l => l.at >= from && !receiptedWorker(l));
+			if ((w.status === "running" || w.status === "stalled") && w.startedAt >= from && (!w.target || sameConv(w.target, p.target!))) link(w.id, { target: p.target!, replyTo: requestOf(p) }, w.description);
+		return linksOf({ target: p.target, replyTo: requestOf(p) }).filter(l => l.at >= from && !receiptedWorker(l));
 	}
 
 	const requestOpen = (l: WorkLink) => tiedOpen(l).length > 0;
