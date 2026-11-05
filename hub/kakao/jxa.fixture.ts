@@ -1,12 +1,14 @@
 // Loads the real room.jxa.js outside osascript for tests: the ObjC bridge, System Events and `delay` are stubbed, and the script's clock
 // (Date.now) is a fake that `delay` advances, so its `until` waits end at once and deterministically. Only pure decisions and the send step
 // against a fake window are exercised; nothing here touches KakaoTalk.
+import attachSrc from "./attach.jxa.js" with { type: "text" };
 import src from "./room.jxa.js" with { type: "text" };
 
 export type Jxa = {
 	inputVerdict: (value: string, ph: string, text: string, ours: string[], priorPressed: string[]) => "free" | "same_pressed" | "prior_left" | "ours" | "owner";
 	rowStillIs: (texts: string[], name: string, expect?: { members?: number; noCount?: boolean; preview?: string }) => boolean;
 	sendInto: (name: string, text: string, ours: string[], priorPressed: string[]) => { ok: boolean; why?: string; pressed?: boolean; left?: string; preview?: string };
+	attachFile: (name: string, path: string) => { ok: boolean; why?: string; pressed?: boolean; clipboard?: boolean };
 	setWindowNamed: (fn: (name: string) => unknown) => void;
 	norm: (s: string) => string;
 	axScan: (name: string, first: boolean, budgetMs: number, hint?: number, need?: number) => { ok: true; rows: number; scanned: number; hits: { index: number; texts: string[] }[]; stopped: "found" | "budget" | "end"; pages: number } | null;
@@ -26,7 +28,7 @@ export function axList(rows: AxRow[]) {
 	return { AXWindows: [listWin] };
 }
 
-export function loadJxa(opts: { app?: ReturnType<typeof axList>; msPerRead?: number } = {}): Jxa {
+export function loadJxa(opts: { app?: ReturnType<typeof axList>; msPerRead?: number; systemEvents?: unknown; objc?: Record<string, unknown> } = {}): Jxa {
 	let t = 0;
 	const fakeDate = { now: () => t };
 	const delay = (s: number) => {
@@ -49,9 +51,10 @@ export function loadJxa(opts: { app?: ReturnType<typeof axList>; msPerRead?: num
 				},
 				AXUIElementPerformAction: () => -25205,
 			}
-		: {};
-	const body = `${src}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, norm: norm, axScan: axScan, setWindowNamed: function (fn) { windowNamed = fn; } };`;
-	return new Function("ObjC", "$", "Application", "delay", "Ref", "Date", body)(objc, $, noApp, delay, () => [], fakeDate) as Jxa;
+		: (opts.objc ?? {});
+	const body = `${src}\n${attachSrc}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, attachFile: attachFile, norm: norm, axScan: axScan, setWindowNamed: function (fn) { windowNamed = fn; } };`;
+	const application = opts.systemEvents ? () => opts.systemEvents : noApp;
+	return new Function("ObjC", "$", "Application", "delay", "Ref", "Date", body)(objc, $, application, delay, () => [], fakeDate) as Jxa;
 }
 
 // A chat window with one input and a 전송 button, as sendInto reads it through System Events: `value` is read as a function and set as a
