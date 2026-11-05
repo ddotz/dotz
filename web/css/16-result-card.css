@@ -10,7 +10,7 @@
 .rc-rows > .rc-sh { margin-top: var(--sp-3); }
 .rc-rows > .rc-sh:first-child { margin-top: 0; }
 .rc-row { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; padding: var(--sp-05) 0; }
-.rc-k { flex: none; width: 48px; color: var(--fg-3); font: 400 13px/22px var(--font); font-variant-numeric: tabular-nums; }
+.rc-k { flex: none; width: var(--rc-k-w, 48px); color: var(--fg-3); font: 400 13px/22px var(--font); font-variant-numeric: tabular-nums; }
 .rc-w { min-width: 0; font: 400 15px/22px var(--font); overflow-wrap: anywhere; }
 .rc-w b { font-weight: 500; }
 .rc-d { margin-left: var(--sp-2); color: var(--fg-3); font-size: 13px; }

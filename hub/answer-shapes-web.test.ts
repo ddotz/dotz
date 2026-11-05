@@ -1,0 +1,88 @@
+import { afterAll, expect, test } from "bun:test";
+import { fakeHub, json, on } from "./test-web.ts";
+
+// An assistant answer drawn by its written shape (web/js/02-answer-shapes.js), in a headless browser: each shape's trigger, the text it falls back to,
+// the markdown a copied selection gives, and that an answer never turns from text into a card after it is on screen.
+const ts = (n: number) => `2026-11-04T08:${String(10 + n).padStart(2, "0")}:00.000Z`;
+const answer = (text: string, extra: object = {}) => ({ kind: "out", source: "orchestrator", target: "web", text, ...extra });
+const LABELS = "- **원인:** 썸네일이 늦게 만들어졌어요.\n- **고친 것:** 원본을 줄여서 먼저 보여 줘요.";
+const cases: Record<string, object> = {
+	labels: answer(`앨범을 고쳤어요. 새로고침하면 돼요.\n\n${LABELS}\n\n내일 다시 볼게요.`),
+	wordy: answer("- **원인:** 새로 올린 사진의 썸네일이 만들어지기 전에 목록을 먼저 불러와서 빈 칸으로 보였어요.\n- **확인:** 봤어요."),
+	oneItem: answer("하나예요.\n\n- **원인:** 늦었어요."),
+	nested: answer("- **원인:** 늦었어요.\n  - 세부 내용이에요.\n- **고친 것:** 줄였어요."),
+	mixed: answer("- **원인:** 늦었어요.\n- 라벨 없는 줄이에요."),
+	talk: answer("네, 그렇게 하면 돼요. 내일 다시 볼게요."),
+	gateway: answer(LABELS, { source: "gateway" }),
+	started: answer(`\u23f3 시작했어요.\n\n${LABELS}`),
+	relay: answer(LABELS, { relay: true }),
+	alreadyBold: answer(`**앨범을 고쳤어요. 새로고침**하면 돼요.\n\n${LABELS}`),
+	version: answer(`v1.2 버전에서 고쳤어요. 끝이에요.\n\n${LABELS}`),
+	user: { kind: "in", source: "web", target: "web", text: LABELS },
+	last: answer("끝이에요."),
+};
+const names = Object.keys(cases);
+const events = names.map((n, i) => ({ ts: ts(i), ...cases[n] }));
+const hub = fakeHub({
+	api: (_req, url) => {
+		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: url.searchParams.get("target") === "main" ? events : [] });
+		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
+		if (url.pathname === "/api/notices") return json({ unread: 0, items: [] });
+	},
+});
+const view = await hub.view({ width: 390, height: 844 });
+afterAll(() => hub.stop());
+const { waitFor } = on(view);
+const page = async <T>(expr: string) => (await view.evaluate(`JSON.stringify(${expr})`).then(s => JSON.parse(s as string))) as T;
+const msg = (name: string) => `document.querySelector('[data-ts="${ts(names.indexOf(name))}"]')`;
+const count = (name: string, sel: string) => page<number>(`${msg(name)}.querySelectorAll(${JSON.stringify(sel)}).length`);
+const lead = (name: string) => page<string | null>(`${msg(name)}.querySelector(".ans-lead")?.textContent ?? null`);
+const copied = (sel: string) => page<string>(`(() => { const s = getSelection(); s.selectAllChildren(${sel}); const t = s.toString(); s.removeAllRanges(); return t; })()`);
+const lines = (t: string) => t.trim().split(/\n+/).map(l => l.trim());
+
+await view.navigate(`${hub.origin}/`);
+await waitFor(`typeof openTarget === "function" && S`);
+await view.evaluate(`(openTarget("main", "chat"), 0)`);
+await waitFor(`${msg("last")} !== null`);
+
+test("two or more label lines are key-column rows in one card, the closing paragraph stays text", async () => {
+	expect(await count("labels", ".ans-card .rc-row")).toBe(2);
+	expect(await count("labels", ".ans-card")).toBe(1);
+	expect(await count("labels", "li")).toBe(0);
+	expect(await page<string[]>(`[...${msg("labels")}.querySelectorAll(".rc-k")].map(e => e.textContent)`)).toEqual(["원인", "고친 것"]);
+	expect(await page<string>(`${msg("labels")}.querySelector(".ans-card ~ p").textContent`)).toBe("내일 다시 볼게요.");
+});
+
+test("the first sentence is the one bold thing of a shaped answer", async () => {
+	expect(await lead("labels")).toBe("앨범을 고쳤어요.");
+	expect(await count("labels", ".ans-lead")).toBe(1);
+	expect(await lead("version")).toBe("v1.2 버전에서 고쳤어요.");
+});
+
+test("a long value stacks the label over the value on a phone", async () => {
+	const left = await page<number[]>(`[".rc-k", ".rc-w"].map(s => Math.round(${msg("wordy")}.querySelector(s).getBoundingClientRect().left))`);
+	expect(left[0]).toBe(left[1]);
+	expect(await page<boolean>(`document.documentElement.scrollWidth > innerWidth`)).toBe(false);
+});
+
+test("no card for a single item, a nested or a mixed list, or a conversation line", async () => {
+	for (const n of ["oneItem", "nested", "mixed", "talk"]) {
+		expect(await count(n, ".ans-card")).toBe(0);
+		expect(await lead(n)).toBeNull();
+	}
+	expect(await count("oneItem", "li")).toBe(1);
+	expect(await count("nested", "li")).toBe(3);
+});
+
+test("a mark open across the cut keeps the paragraph as written", async () => {
+	expect(await lead("alreadyBold")).toBeNull();
+	expect(await count("alreadyBold", ".ans-card")).toBe(1);
+});
+
+test("only a finished assistant answer gets shapes", async () => {
+	for (const n of ["gateway", "started", "relay", "user"]) expect(await count(n, ".ans-card")).toBe(0);
+});
+
+test("a copied selection gives the lines as written", async () => {
+	expect(lines(await copied(`${msg("labels")}.querySelector(".md")`))).toEqual(["앨범을 고쳤어요. 새로고침하면 돼요.", "- **원인:** 썸네일이 늦게 만들어졌어요.", "- **고친 것:** 원본을 줄여서 먼저 보여 줘요.", "내일 다시 볼게요."]);
+});
