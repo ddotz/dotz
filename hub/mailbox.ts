@@ -145,7 +145,13 @@ export const pinKey = (instance: string, source: string, id: string) => `${insta
 
 // conversation -> box id of the stored mail, "" for a stored mail with no box of its own (filled by hub/mail.ts at load and on every recordMail): rule 1 reads it, no file read per mail.
 const convBox = new Map<string, string>();
-export const trackBox = (r: { source: string; id: string; mbox?: string; dir?: string }): void => void (r.dir !== "out" && convBox.set(convKey(r.source, r.id), r.mbox ?? ""));
+/** Twice the most mail hub/mail.ts keeps, so dropping the oldest entry only forgets conversations whose mail is long gone. */
+export const CONV_MAX = 40_000;
+export const trackBox = (r: { source: string; id: string; mbox?: string; dir?: string }): void => {
+	if (r.dir === "out") return;
+	convBox.set(convKey(r.source, r.id), r.mbox ?? "");
+	if (convBox.size > CONV_MAX) convBox.delete(convBox.keys().next().value as string);
+};
 export const boxOfConv = (source: string, id: string): string | undefined => convBox.get(convKey(source, id));
 
 /** Remembers the owner's move of a conversation past the eviction of its records; the oldest pins go over the cap. */
