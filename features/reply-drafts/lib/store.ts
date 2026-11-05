@@ -20,6 +20,7 @@ export type DraftRec = {
 	mailId: string; // the id the source knows the mail by
 	ref: string; // the gateway's mail key
 	account?: string; // the zele account the mail belongs to: every zele read / reply of this draft passes `--account` with it
+	accounts?: string[]; // several zele accounts and none could be settled when the draft was made: the card names them and says it holds the send
 	origAttachments?: number; // files the mail it answers has; the senders carry none of them along, which the approval says
 	asksFile?: boolean; // the mail it answers asks for a file (hub/draft-approval.ts asksForFile)
 	libraryMiss?: boolean; // the 첨부 파일 폴더 is set and held no file that fits

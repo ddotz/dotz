@@ -15,7 +15,7 @@ import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
-import { askText, draftAttachIssues, sendDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { askText, draftAttachIssues, realRunner, sendDraft, settleDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
@@ -121,6 +121,7 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	const id = newId();
 	for (const p of paths) addStagedFile(id, p);
 	const rec: DraftRec = { id, kind: "mail", app, source: via.source, mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, ...(libraryMiss ? { libraryMiss: true } : {}), ...(origin ? { origin } : {}), ...draft, status: "pending", created: (deps.now ?? (() => new Date()))().toISOString(), changes: [], questions: [], item };
+	await settleDraft(rec, deps.run);
 	addDraft(rec);
 	if (i.notify !== false) await notifyGateway({ path: "/api/mail/compose", body: { ref: id, source: via.source, app, to: draft.to, subject, ...(origin ? { origin: origin.text } : {}) } }, deps.hub);
 	return { ok: true, rec, notes };
@@ -184,7 +185,7 @@ if (import.meta.main) {
 	const args = process.argv.slice(2);
 	const stdin = args[0] === "compose" ? await Bun.stdin.text() : "";
 	try {
-		const out = await runMailCli(args, stdin);
+		const out = await runMailCli(args, stdin, { run: realRunner });
 		for (const l of out.lines) (out.code === 0 ? console.log : console.error)(l);
 		for (const n of out.notes ?? []) console.error(n);
 		process.exit(out.code);

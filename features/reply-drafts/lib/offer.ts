@@ -6,12 +6,13 @@ import { threadText } from "../../../hub/zele.ts";
 import { ownAddresses } from "../../../hub/mail-state.ts";
 import { threadIdOf, webmailSite } from "./senders.ts";
 import { retryWanted, type StageOpts, type Want } from "./staged.ts";
-import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
+import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, settleDraft, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
 import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
 import { appOn, ensureSwitch, hasOwnTone, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 import { FairQueue } from "./fair-queue.ts";
+import type { Runner } from "./tone.ts";
 
 export type OfferMail = { account?: string; key: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
 export type OfferDeps = {
@@ -29,6 +30,8 @@ export type OfferDeps = {
 	history?: (address: string, account?: string, thread?: string) => Promise<string[]>;
 	/** Keeps the past reply pairs current (tone.ts refreshPairs); fire and forget beside the identity sweep. */
 	refreshPairs?: () => Promise<void>;
+	/** Runs zele to settle the account of a new draft (flow.ts settleDraft); without it the send does. */
+	run?: Runner;
 	log?: (line: string) => void;
 	/** Records the suggested action on the mail (hub/mail.ts setMailSuggest), for the web's suggestion slot of that mail. */
 	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string; rule?: string }) => void;
@@ -227,6 +230,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 			warnings.push(...later.why);
 			if (missing.length) warnings.push(ruleFileMissing(missing));
 		} else warnings.push(...(await stageForReply(built.rec, flow).catch(notStaged)));
+		await settleDraft(built.rec, deps.run);
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings));
 		addDraft(built.rec);
 		if (built.rec.wantFiles?.length) retryWanted(built.rec.id, flow.stage);
