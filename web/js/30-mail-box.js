@@ -14,6 +14,7 @@ ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
 ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
 ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
+ICONS.flag = "M6 21V4h12l-2.5 4 2.5 4H6";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set() };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
@@ -285,24 +286,43 @@ function mbList(vis) {
 }
 
 /* ---------- the open mail: one slim bar of icons at its top, like Gmail ---------- */
-// Back, 보관, 삭제, 읽음 / 안 읽음, 답장, 전체답장, 전달, 초안 작성, then the ⋯ (its own list plus 원문 접기). Icons only: the name is the aria-label and
-// the title. The bar sticks while the mail scrolls. A mailbox that will not follow an action says so in the action's toast, not in a standing line.
+// 보관, 삭제, 읽음 / 안 읽음, 답장, 전체답장, 전달, 초안 작성, 답장 안 함 / 답장 필요로 표시, 원문 보기 / 접기: every action of the open mail once, no ⋯ (owner 11-05). The way
+// back is the head's (#back, .cv-up); the row's ⋯ keeps 삭제 from dotz only. Icons only: the name is the aria-label and the title. The bar sticks while
+// the mail scrolls. A mailbox that will not follow an action says so in the action's toast, not in a standing line.
 const mbIco = (label, ic, onclick, k) => el("button", { class: "ib mtop-b", type: "button", "data-k": k, title: label, "aria-label": label, onclick }, icon(ic));
+// The mark a tap sets now names the button, and mailSetFyi turns it to the other one.
+function mailFyiPaint(b) {
+  const a = mailOwed(MAILS.get(b.dataset.t) || {}) ? "no" : "need";
+  b.dataset.a = a; b.dataset.k = `mail-open-${a}`; b.title = MAIL_ACT[a]; b.setAttribute("aria-label", MAIL_ACT[a]);
+  clear(b).append(icon(a === "no" ? "replyoff" : "flag"));
+  return b;
+}
+function mailFyiBtn(t) {
+  const b = mbIco("", "flag", ev => busy(ev.currentTarget, () => mailActRun(t, b.dataset.a, null)));
+  b.classList.add("mtop-fyi"); b.dataset.t = t;
+  return mailFyiPaint(b);
+}
+// 원문 보기 / 접기 of the mail's own .rc-raw: the name follows the fold.
+function mailRawBtn(d) {
+  const b = mbIco("", "file", () => { d.open = !d.open; }, "mail-open-raw"), paint = () => { const label = d.open ? "원문 접기" : "원문 보기"; b.title = label; b.setAttribute("aria-label", label); b.setAttribute("aria-expanded", String(d.open)); };
+  d.addEventListener("toggle", paint);
+  paint();
+  return b;
+}
 function mailOpenBar(t, card) {
   const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived, out = m.dir === "out";
   const acts = [arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "보관", "archive"], ["trash", "삭제", "trash"], out ? null : unread ? ["read", "읽음으로 표시", "mailopen"] : ["unread", "안 읽음으로 표시", "mail"]].filter(Boolean);
-  const back = monCtx && MON.sel ? MON.sel : "i:mail";
-  const raw = () => card && card.querySelector(":scope > .rc-raw");
+  const raw = card && card.querySelector(":scope > .rc-raw");
   if (card) mailOpenSummary(t, card);
   return el("div", { class: "mtop", role: "toolbar", "aria-label": "메일 처리" },
-    mbIco("목록으로", "back", () => go("monitoring", back), "mail-top-back"),
     ...acts.map(([a, label, ic]) => mbIco(label, ic, ev => busy(ev.currentTarget, async () => {
       const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
       if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
     }), `mail-open-${a}`)),
     ...MB_MODES.map(([k, label, ic]) => el("button", { class: "ib mtop-b mbox-mode", type: "button", "data-mode": k, title: label, "aria-label": label, onclick: () => { mbOpenReply(t, k); const s = tl.querySelector(":scope > .mbox-reply"); if (s) s.scrollIntoView({ block: "nearest" }); } }, icon(ic))),
     out ? null : mailDraftButton(t, "ib mtop-b mr-draft"),
-    mailMenuBtn(t, () => { const d = raw(); return d ? [{ value: "raw", label: d.open ? "원문 접기" : "원문 보기", run: () => { d.open = !d.open; } }] : []; }));
+    out ? null : mailFyiBtn(t),
+    raw ? mailRawBtn(raw) : null);
 }
 
 /* ---------- 메일 쓰기: the floating button and its sheet ---------- */
