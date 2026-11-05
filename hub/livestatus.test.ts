@@ -7,6 +7,7 @@ import { DATA_DIR } from "./config.ts";
 import { emitEventActivity } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { emitActivity } from "./events.ts";
+import { msg } from "./i18n.ts";
 import * as livestatus from "./livestatus.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 
@@ -59,7 +60,7 @@ async function run(minutes: number, each?: (m: number) => void): Promise<void> {
 		await quiet();
 	}
 }
-const toolCall = (intent: string) => emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "tool_call", text: `bash: ${intent}`, intent });
+const toolCall = (intent: string) => emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "tool_call", text: `bash: ${intent}`, intent, said: true });
 const typing = (r: Req) => r.path.endsWith("/typing");
 const reports = () => requests.filter(r => (r.method === "POST" || r.method === "PATCH") && !typing(r) && r.body?.content.startsWith("⏳"));
 const visible = () => requests.filter(r => !typing(r));
@@ -85,8 +86,8 @@ test("progress: typing throughout, one message at 5 min edited when something mo
 	// the tool call at 21 min is news more than 5 min after the last report, so it goes out at the next check.
 	expect(posted.map(p => Math.round((p.at - t0) / 60_000))).toEqual([5, 10, 22]);
 	expect(posted[0]!.body!.content).toMatch(/\b5\b/);
-	expect(posted[0]!.body!.content).toMatch(/: 설정 파일 읽는 중\n[^\n]*: 테스트 실행하는 중\n/);
-	expect(posted[0]!.body!.content).toContain("테스트 실행하는 중");
+	expect(posted[0]!.body!.content).toMatch(/: 테스트 실행하는 중\n/);
+	expect(posted[0]!.body!.content.split("\n")).toContain("- 설정 파일 읽는 중");
 	expect(posted[0]!.body!.content).toContain("w1: LiveStatusLine 구현");
 	expect(posted[1]!.body!.content).toContain("커밋 정리하는 중");
 	expect(posted[1]!.body!.content).not.toContain("설정 파일");
@@ -110,6 +111,49 @@ test("after the first report a worker finishing is reported within a minute, not
 	await discord.clearProgress("ch:111");
 	expect(reports().map(p => Math.round((p.at - t0) / 60_000))).toEqual([5, 7]);
 	expect(reports()[1]!.body!.content).not.toContain("w2: 빌드");
+});
+
+test("the note says plain steps: no raw tool name, query or upload file name, at most three recent ones and a count of the rest", async () => {
+	await run(1); // the previous answer is not this wait's
+	requests.length = 0;
+	const raw = (tool: string, intent: string, said = false) => emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "tool_call", tool, text: intent ? `${tool}: ${intent}` : tool, intent, ...(said ? { said } : {}) });
+	const upload = "mw2u0t1gz8ef-20261105_095044.jpg";
+	livestatus.begin("ch:111", "lane:live-test");
+	await run(6, m => {
+		if (m === 0) {
+			raw("web_search", "채무자회생법 제137조 외국통화 회생채권 조문");
+			raw("read", `/Users/x/uploads/2026-11-05/${upload}`);
+			raw("read", `${upload} 확인`, true);
+			raw("eval", "eval", true);
+			toolCall("환율 확인");
+			toolCall("집계 확인");
+			toolCall("평가액 계산");
+			toolCall("기준서 원문 확보");
+			raw("mcp__custom-tools__eval", "");
+		}
+	});
+	await discord.send("ch:111", "answer");
+	await discord.clearProgress("ch:111");
+	const note = reports()[0]!.body!.content;
+	expect(note.split("\n").filter(l => l.startsWith("- ")).slice(0, 3)).toEqual(["- 집계 확인", "- 평가액 계산", "- 기준서 원문 확보"]);
+	expect(note).toContain(`: ${msg().liveTool.run}\n`);
+	expect(note).toMatch(/\b4\b/);
+	for (const leak of ["eval", "web_search", "제137조", "mw2u0t1gz8ef", ".jpg"]) expect(note).not.toContain(leak);
+	await run(1);
+});
+
+test("nothing in the model's words since the last report means no recent section", async () => {
+	requests.length = 0;
+	livestatus.begin("ch:111", "lane:live-test");
+	await run(6, m => {
+		if (m === 0) for (const tool of ["web_search", "read", "bash"]) emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "tool_call", tool, text: tool, intent: "" });
+	});
+	await discord.send("ch:111", "answer");
+	await discord.clearProgress("ch:111");
+	const lines = reports()[0]!.body!.content.split("\n");
+	expect(lines.filter(l => l.startsWith("- "))).toEqual([]);
+	expect(lines[1]).toEndWith(`: ${msg().liveTool.run}`);
+	await run(1);
 });
 
 test("an answer within 5 min means no report at all", async () => {
@@ -169,7 +213,7 @@ test("a conversation session's answer at 1:40 ends the web wait too: nothing is 
 test("web: a line already posted is finalized when the session's turn ends or its answer comes, and none follows", async () => {
 	const posts: { target: string; text: string }[] = [];
 	livestatus.setWebProgress((target, text) => void posts.push({ target, text }));
-	const sessionTool = (intent: string) => emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "conv:work", type: "tool_call", text: intent, intent });
+	const sessionTool = (intent: string) => emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "conv:work", type: "tool_call", text: intent, intent, said: true });
 	livestatus.begin("ch:111", "conv:work", true);
 	await run(6, m => m === 1 && sessionTool("문서 정리하는 중"));
 	expect(posts.map(p => p.text.length > 0)).toEqual([true]);

@@ -35,6 +35,13 @@ export function summary(args: unknown, intent?: string): string {
 	return line.length > 90 ? `${line.slice(0, 89)}…` : line;
 }
 
+// Whether summary() above has the model's own words rather than a raw command, path or query. The progress note shows only those.
+export function ownIntent(args: unknown, intent?: string): boolean {
+	const a = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+	const v = a.i ?? a.intent ?? intent ?? a.summary;
+	return typeof v === "string" && !!v.trim();
+}
+
 // Stamps a runtime's activity row with time and source, scrubs secrets from it, and feeds the terminal view; task-worker
 // updates go to the subagent lists. Other events are not display material.
 export function emitEventActivity(source: string, ev: AgentEvent): void {

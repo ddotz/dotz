@@ -208,6 +208,7 @@
     "tool": "bash",
     "call_id": "t1",
     "intent": "list the files",
+    "said": true,
     "text": "bash: list the files",
     "args": "{\n  \"command\": \"ls -la\\nfoo\",\n  \"i\": \"list the files\"\n}"
    }
@@ -289,6 +290,7 @@
     "tool": "task",
     "call_id": "t4",
     "intent": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII…",
+    "said": true,
     "text": "task: IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII…",
     "args": "{\n  \"tasks\": [\n    1\n  ]\n}"
    }

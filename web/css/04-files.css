@@ -140,6 +140,13 @@ dialog.lbox::backdrop { background: transparent; }
 .pn .pt { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pn.open .pt { display: block; }
 .pn .mt { flex: none; }
+.lv { min-width: 0; font-size: var(--fs-chat); line-height: var(--lh-chat); }
+.lv p { margin: 0 0 var(--sp-1); }
+.lv-r, .lv-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-r { color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.lv-s { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-sec); }
+.lv-s:not(.lv-h)::before { content: "\00b7"; margin-right: var(--sp-15); }
+.lv-h { margin-top: var(--sp-1); }
 .sn { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; padding: var(--sp-2) var(--sp-3); border-radius: 12px; background: var(--layer); font-size: 14px; line-height: 22px; }
 .sn .st { flex: 1; min-width: 0; }
 /* login requests (dotz_auth, 16-target-switcher-conversation.js paintAuth): the form's header, body (.abd) and footer sit directly in the full-screen overlay card (14-overlay.css) */
