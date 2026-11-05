@@ -124,7 +124,7 @@ function hcBriefParse(text) {
   while (h >= 0 && !lines[h].trim()) h--;
   const head = h >= 0 && lines[h].trim().length <= 24 && !/[.!?요]$/.test(lines[h].trim()) ? lines[h].trim() : "";
   const pre = lines.slice(0, head ? h : a).join("\n").trim();
-  return { pre, head, rows: lines.slice(a, b + 1).map(l => ({ text: l.replace(/^\s*[-*\u2022]\s+/, "").trim(), raw: l.trim() })), post: lines.slice(b + 1) };
+  return { pre, head, rows: lines.slice(a, b + 1).map(l => ({ text: l.replace(/^\s*[-*\u2022]\s+/, "").trim() })), post: lines.slice(b + 1) };
 }
 function hcBriefNode(text) {
   const p = hcBriefParse(text);

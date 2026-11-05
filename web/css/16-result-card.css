@@ -13,7 +13,7 @@
 .rc-k { flex: none; width: var(--rc-k-w, 48px); color: var(--fg-3); font: 400 13px/22px var(--font); font-variant-numeric: tabular-nums; }
 .rc-w { min-width: 0; font: 400 15px/22px var(--font); overflow-wrap: anywhere; }
 .rc-w b { font-weight: 500; }
-.rc-d { margin-left: var(--sp-2); color: var(--fg-3); font-size: 13px; }
+.rc-d { margin-left: var(--sp-1); color: var(--fg-3); font-size: 13px; }
 .rc-d.nw-chg s { color: var(--fg-3); }
 .rc-d.nw-chg em { color: var(--fg-2); font-style: normal; font-weight: 500; }
 .rc-sh { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
@@ -255,12 +255,11 @@ a.dr-att:active { background: var(--active); }
 .hcb-hd { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; padding-top: var(--sp-2); }
 .hcb-hd .tag { height: 22px; padding: 0 var(--sp-2); border-radius: 999px; font-size: 11.5px; font-weight: 600; }
 .hcb-h { min-width: 0; color: var(--fg-2); font: 500 13px/20px var(--font); }
-/* time rows of a briefing, sized from the landing page's phone scene; only the clipped original line is selectable (an answer's card: 16-answer-shapes.css) */
-.hcb-card .rc-row { position: relative; padding: var(--sp-15) 0; }
+/* time rows of a briefing, sized from the landing page's phone scene */
+.hcb-card .rc-row { padding: var(--sp-15) 0; }
 .hcb-card .rc-row + .rc-row { border-top: 1px solid var(--line); }
 .hcb-card .rc-k { width: 40px; }
 .hcb-card .rc-w b { font-weight: 400; }
-.hcb-card .rc-k, .hcb-card .rc-w { -webkit-user-select: none; user-select: none; }
 .hcb-chip { display: inline-flex; align-items: center; gap: var(--sp-2); max-width: 100%; min-height: 32px; padding: var(--sp-1) var(--sp-3); border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: 14px; line-height: 22px; }
 .hcb-chip .ic { color: var(--accent); }
 .hcb-ln { color: var(--fg-2); font-size: 14px; line-height: 22px; }

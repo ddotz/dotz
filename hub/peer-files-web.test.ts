@@ -194,7 +194,7 @@ test("a result file the Mac mini's bot posted in its conversation opens here thr
 	const RCHIP = `[...document.querySelectorAll(".bm .mfiles .fatt")].find(c => c.querySelector(".fi-n").textContent === "결과본.pdf")`;
 	// the HEAD check answered: the size fills in (a refused check would turn the chip into a disabled "파일이 지워졌어요" one)
 	await waitFor(v, `${RCHIP} && ${RCHIP}.querySelector(".fi-m").textContent === "PDF · ${new TextEncoder().encode(PDF).length}B"`);
-	const c = await q<{ off: boolean; href: string; open: string }>(v, `const c = ${RCHIP}; return { off: c.classList.contains("off"), href: c.getAttribute("href"), open: await (await fetch(c.href)).text() }`);
+	const c = await q<{ off: boolean; href: string; open: string }>(v, `const c = ${RCHIP}, was = window.open; let href = ""; window.open = u => { href = u; return null; }; c.click(); window.open = was; return { off: c.classList.contains("off"), href, open: await (await fetch(href)).text() }`);
 	expect(c.off).toBe(false);
 	expect(decodeURIComponent(decodeURIComponent(c.href))).toContain(`/api/peer/file?path=${RESULT}`);
 	expect(c.open).toBe(PDF);
