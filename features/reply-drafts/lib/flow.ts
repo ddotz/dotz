@@ -3,7 +3,8 @@
 import { dirname, join } from "node:path";
 import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimSend } from "../../../hub/draft-claim.ts";
-import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
+import { attachIssues } from "../../../hub/attach-check.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { matchLibrary, type LibraryFile } from "./library.ts";
@@ -152,6 +153,16 @@ export function ownerWarning(w: string): string {
 	return w;
 }
 
+// What a mail draft's words and its files disagree on, as the owner reads it on the card and in the refused send (hub/attach-check.ts), plus the files
+// chosen for it that are not on it yet. Mail only; a source that cannot carry files has nothing to check.
+export function draftAttachIssues(rec: DraftRec): string[] {
+	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
+	const files = stagedFiles(rec.id).map(f => f.name);
+	const found = attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text);
+	const want = (rec.wantFiles ?? []).map(f => f.name);
+	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
+}
+
 // The [ask] message of one draft; the notes line carries lint warnings, the card's question what only the user can decide.
 export function askText(draft: DraftRec, warnings: string[], headline = draft.compose ? "새 메일 초안을 만들었어요" : "답장 초안을 만들었어요"): string {
 	const rec = withRecipient(draft);
@@ -161,8 +172,9 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	// A webmail site sends text only (senders.ts canAttach): its files are listed as the ones that stay behind, and a send that holds them is refused.
 	const noFiles = rec.kind === "mail" && !!webmailSite(rec.source);
 	const attachments = noFiles ? [] : staged;
+	const issues = draftAttachIssues(rec);
 	const keptBack = noFiles && staged.length ? { sendResult: "파일이 붙어 있어 보내지 않아요. 파일을 빼면 본문만 보내요" } : {};
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: withoutNoFileClaims(rec), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}) });
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: withoutNoFileClaims(rec), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}), ...(issues.length ? { attachIssues: issues } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
@@ -301,7 +313,9 @@ export function restoreDraft(ref: string): { ok: boolean; text: string } {
 // conversation ("보내자", hub/draft-approval.ts textVerdict); lints again first.
 // `withReply`: the mail rides on a comment reply (hub/comments/linked.ts) and the caller is that reply's send, which has already passed the
 // reply's gate (the owner's pick on the one card, or the owner's own click); a linked mail is refused without it.
-export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true } = {}): Promise<Step> {
+// `asIs`: with `withReply`, the owner picked 이대로 보내기 on the card (without it the verdict says so). A mail whose files disagree with its words is refused
+// before it goes out unless he did; the draft stays pending so the card can still be answered.
+export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true; asIs?: true } = {}): Promise<Step> {
 	const stored = getDraft(id);
 	const d = stored && withRecipient(stored);
 	if (stored && d && d !== stored && stored.status === "pending") patchDraft(id, { to: d.to, item: d.item, questions: d.questions });
@@ -309,13 +323,15 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요` };
 	const card = opts.withReply ? undefined : linkedComment(id);
 	if (card) return { ok: false, text: `이 메일은 댓글 답글(${card})과 한 장으로 승인해요. 답글 쪽 comments.ts send ${card}로 보내 주세요` };
-	const v: DraftVerdict = opts.withReply ? { verdict: "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created), d.kind === "mail" ? { conv: `mail:${d.ref}` } : {});
+	const v: DraftVerdict = opts.withReply ? { verdict: opts.asIs ? "send-as-is" : "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created), d.kind === "mail" ? { conv: `mail:${d.ref}` } : {});
 	if (v.verdict === "drop") {
 		setStatus(id, "dropped");
 		return { ok: false, text: "보내지 않기로 한 초안이에요" };
 	}
 	if (v.verdict === "edit") return { ok: false, text: `고치기를 골랐어요${v.detail ? ` (${v.detail})` : ""}. revise로 고친 뒤 다시 물어봐 주세요` };
-	if (v.verdict !== "send") return { ok: false, text: "아직 보내도 된다는 답을 받지 못했어요" };
+	if (v.verdict !== "send" && v.verdict !== "send-as-is") return { ok: false, text: "아직 보내도 된다는 답을 받지 못했어요" };
+	const issues = v.verdict === "send" ? draftAttachIssues(d) : [];
+	if (issues.length) return { ok: false, text: `${ATTACH_REFUSED} ${issues.join(" · ")}. ${ATTACH_AS_IS_HINT}` };
 	const failures = lintReply({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
 	if (failures.length) return { ok: false, text: `보내기 직전 검사에서 걸려서 보내지 않았어요: ${failures.map(ownerWarning).join(" · ")}` };
 	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.

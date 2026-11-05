@@ -33,6 +33,10 @@ knows and is asked in the same card, as a `정할 것:` list (one `- ` line each
 A change to how a card shows its files or warnings must reach the cards already waiting, not only new ones: every open card is re-read
 on start and re-checked against its staged files on start, after a file changes and when the approvals or the bell are read
 (hub/notices.ts refreshNoticeDrafts, refreshDraftFiles).
+A mail whose words and files disagree does not go out on 1) 보내기 (owner 2026-11-04: rules in the prompt did not hold, and a warning shown once did not either). `hub/attach-check.ts` compares
+them, with plain code and no model, for every rendering of the card and again in `sendDraft`; `draftAttachIssues` adds the files chosen but not on the draft yet (`wantFiles`). The card carries a
+`-# ⚠️ 첨부 확인:` line and a 4th option 이대로 보내기 (`send-as-is`, also a typed "이대로 보내": the pick on Discord spends the card's buttons), and both follow the staged files (`withAttachIssues`).
+A refused send leaves the draft pending and opens the card again (`markDraftSend`). On a reply + mail card the refusal comes before the reply is posted (hub/comments/engine.ts `mailRefusal`).
 A chat message that needs his own decision still asks first (exit 4), since the reply depends on it.
 
 ## Files (`<DATA_DIR>/custom/reply-drafts/`)

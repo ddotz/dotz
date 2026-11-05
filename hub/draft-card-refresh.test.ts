@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { parseDecisions } from "./choices.ts";
-import { decideOf, draftApprovalBlock, NO_ATTACHMENT_WARNING, parseDraftApproval, withStagedFiles } from "./draft-approval.ts";
+import { decideOf, draftApprovalBlock, NO_ATTACHMENT_WARNING, parseDraftApproval, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
 import { type Notice, refreshDraftFiles } from "./notices.ts";
 
 const mail = { to: "kim@example.com", subject: "악보 요청", body: "안녕하세요.\n\n악보 첨부해 드립니다.", ref: "RABC123", question: "이 답장 보낼까요?" };
@@ -28,6 +28,37 @@ test("a file staged after the card was posted replaces its 첨부 row and clears
 	expect(withStagedFiles(now, [{ name: "악보.pdf", size: 2048 }])).toBe(now);
 	// The file taken off again: 없음 with the reason, as a fresh card would say it.
 	expect(parseDraftApproval(withStagedFiles(now, []))!.warning).toBe(NO_ATTACHMENT_WARNING);
+});
+
+test("an open card follows the finding on its files: the line and the 4th option come and go, in the text, the parsed draft and the options", () => {
+	const why = "본문에 악보·문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
+	const text = `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ ...mail, sendResult: "kim@example.com에 보내요" })}`;
+	const labels = (n: Notice) => (n as any).decision.options.map((o: { label: string }) => o.label);
+	const open = { id: "a", text, decision: { options: parseDecisions(text).blocks[0]!.options, to: "mail:x", group: 1, state: "open", draft: parseDraftApproval(text)! } } as unknown as Notice;
+	const answered = { ...open, id: "b", decision: { ...(open as any).decision, state: "answered" } } as Notice;
+	const files = (id: string) => (id === "RABC123" ? [] : undefined);
+	expect(refreshDraftFiles([open], files, () => undefined)).toEqual([]);
+	expect(refreshDraftFiles([open], files, () => [why]).map(n => n.id)).toEqual(["a"]);
+	const d = (open as any).decision.draft;
+	expect(open.text).toContain(`-# ⚠️ 첨부 확인: ${why}\n> 받는이:`);
+	expect(open.text).toContain("**1) 보내기**\nkim@example.com에 보내요. 첨부가 맞을 때까지는 보내지 않아요");
+	expect(d.attachIssues).toEqual([why]);
+	expect(labels(open)).toEqual(["보내기", "고치기", "보내지 않기", "이대로 보내기"]);
+	expect((open as any).decision.options.map((o: { n: number }) => o.n)).toEqual([1, 2, 3, 4]);
+	expect(refreshDraftFiles([open], files, () => [why])).toEqual([]);
+	// The file arrives: the line and the option go, and the card is the one it was.
+	expect(refreshDraftFiles([open], files, () => []).map(n => n.id)).toEqual(["a"]);
+	expect(open.text).toBe(text);
+	expect((open as any).decision.draft.attachIssues).toBeUndefined();
+	expect(labels(open)).toEqual(["보내기", "고치기", "보내지 않기"]);
+	// An answered card is left as it was.
+	expect(refreshDraftFiles([answered], files, () => [why])).toEqual([]);
+});
+
+test("the finding set on a card already saying it leaves the card as draftApprovalBlock wrote it, source quote and reply + mail part included", () => {
+	const why = "본문에 악보·문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
+	const text = draftApprovalBlock({ ...mail, origin: { text: "원문 한 줄" }, attachIssues: [why], mail: { to: "b@example.com", subject: "Re: 악보", body: "악보 보내드립니다", attachIssues: [] } });
+	expect(withAttachIssues(text, [why])).toBe(text);
 });
 
 test("an open card already waiting is re-checked against its staged files; an answered card or an untracked draft is left as posted", () => {

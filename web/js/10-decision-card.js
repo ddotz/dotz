@@ -133,6 +133,9 @@ const needsNote = (dc, opt) => (dc.draft ? draftAsksText(opt) : detailOf(opt));
 const pickSay = o => `${o.n}) ${o.label}${o.note ? ` - ${o.note}` : ""}`;
 function pickOption(dc, bi, opt, note) {
   if (DC.st[dc.key]) return;
+  // A mail whose files disagree with its words is not sent by 보내기: the owner is shown what is off and 이대로 보내기 is the pick that sends it (cancel keeps the card).
+  const asIs = dc.draft && (dc.draft.attachIssues || []).length && dc.blocks[bi] && dc.blocks[bi].options.find(o => o.label === "이대로 보내기");
+  if (asIs && opt.label === "보내기" && !opt.sure) { ask("첨부를 확인해 주세요", `${dc.draft.attachIssues.join(" · ")}. 이대로 보낼까요?`, "이대로 보내기").then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
   if (dc.draft && (dc.draft.warning || (dc.draft.attachments || []).length) && opt.label === "보내기" && !opt.sure) { drfSure(dc.draft, dc.t).then(ok => { if (ok) pickOption(dc, bi, { ...opt, sure: true }, note); }); return; }
   if (!note && needsNote(dc, opt)) { DC.edit[dc.key] = { bi, opt }; paintDecision(); return; }
   const p = DC.picks[dc.key] || [];
@@ -175,7 +178,7 @@ const drfNone = { files: [], canAttach: false, library: false, editable: false, 
 async function drfLoad(ref) { try { const r = await api(drfPath(ref, "files")); DRF.st[ref] = r && Array.isArray(r.files) ? r : drfNone; } catch { DRF.st[ref] = drfNone; } }
 async function drfWrite(ref, body) {
   const r = await api(drfPath(ref, "files"), "POST", body);
-  DRF.st[ref] = { files: r.files, canAttach: r.canAttach, library: r.library, editable: r.editable };
+  DRF.st[ref] = { files: r.files, canAttach: r.canAttach, library: r.library, editable: r.editable, attachIssues: r.attachIssues };
 }
 const drfBase64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(f); });
 async function drfUpload(ref, f) {
@@ -228,7 +231,9 @@ function draftFilesNode(d, o = {}) {
     const can = live && st.editable && o.edit !== false, busy = !!DRF.busy[ref];
     const warn = d.warning && !fl.length;
     const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
+    const issues = live && st.attachIssues ? st.attachIssues : d.attachIssues || [];
     const warns = [
+      issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부 확인" }), el("span", { class: "dr-wn", text: issues.join(" · ") }))) : null,
       warn ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
       noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null,
       unchecked ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부가 실제로 붙었는지 몰라요" }), el("span", { class: "dr-wn", text: "보내기 전에 확인해 주세요" }))) : null];

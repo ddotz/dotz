@@ -20,8 +20,8 @@ import { linkedComment } from "./comments/linked.ts";
 import { getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
 import { createApprovalSender, refOfQuestion, runCli, sendActionOf, type SendResult, type SendTarget } from "./approval-send.ts";
 import { answerBatch, batchCard, type BatchCard, type BatchPick } from "./approval-batch.ts";
-import { DRAFT_BODY_MAX, withStagedFiles } from "./draft-approval.ts";
-import { pendingDraftFiles, syncCardFiles } from "./draft-attach.ts";
+import { DRAFT_BODY_MAX, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
+import { pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
 
 // How many waiting cards of one conversation make the web open its triage view instead of one card at a time (settings: web.triage_min).
 export const TRIAGE_MIN_DEFAULT = 3;
@@ -123,8 +123,9 @@ export function waitingCards(): WaitingCard[] {
 	const entries = appEntries(DATA_DIR);
 	syncCardFiles();
 	const staged = (ref: string, text: string) => {
-		const files = pendingDraftFiles(ref);
-		return files ? withStagedFiles(text, files) : text;
+		const files = pendingDraftFiles(ref), issues = pendingDraftIssues(ref);
+		const shown = files ? withStagedFiles(text, files) : text;
+		return issues ? withAttachIssues(shown, issues) : shown;
 	};
 	const open = openDraftCards().map(c => ({ ref: c.ref, to: c.to, question: c.title, text: c.text, draft: c.draft, notice: c.id }));
 	const held = approvals.held().map(h => ({ ...batchCard(h.ref, staged(h.ref, h.text)), to: convOfTarget(h.target) })).filter(h => !open.some(o => o.ref === h.ref && o.to === h.to));

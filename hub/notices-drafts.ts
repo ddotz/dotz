@@ -1,8 +1,9 @@
 // Send-approval cards: staged files, recipients, Discord post, the settle pass. A part of the notice store split out of hub/notices.ts, code unchanged.
 import { log, now } from "./config.ts";
-import { blockDraftRef, type DraftApproval, type DraftFileIn, parseDraftApproval, refreshDraft, rewriteDraftTo, withStagedFiles } from "./draft-approval.ts";
+import { parseDecisions } from "./choices.ts";
+import { ATTACH_REFUSED, blockDraftRef, type DraftApproval, type DraftFileIn, parseDraftApproval, refreshDraft, rewriteDraftTo, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
-import type { Decision, Notice } from "./notices-types.ts";
+import type { Decision, DecisionOpt, Notice } from "./notices-types.ts";
 import { appLabelOf, appOf, draftHandled } from "./notices-wiring.ts";
 import { TEXT_MAX, isOpenDecision } from "./notices-rules.ts";
 import { items, save, settleDecision } from "./notices-store.ts";
@@ -13,7 +14,13 @@ import { announce, reopenNotices } from "./notices-answers.ts";
 // (첨부 API, draft.ts revise, a rule or the 첨부 파일 폴더) rewrites its `> 첨부:` rows and the "no file" warning goes, without asking again
 // (owner 2026-11-02). `filesOf(id)`: the files staged for a pending draft, undefined when dotz does not stage that draft's files.
 // The reply part is its card ref, the 함께 보낼 메일 part its own id. Returns the cards that changed.
-export function refreshDraftFiles(list: Notice[], filesOf: (id: string) => DraftFileIn[] | undefined): Notice[] {
+// `issuesOf(id)`: where that draft's words and files disagree (flow.ts draftAttachIssues), undefined when it is not a draft of dotz: the card's
+// `첨부 확인` line and its 4th option follow it the same way (an open card may be answered 이대로 보내기 only while it carries them).
+function optionsOf(old: DecisionOpt[], text: string): DecisionOpt[] {
+	const blocks = parseDecisions(text).blocks;
+	return blocks.length === 1 ? blocks[0]!.options.map(o => ({ ...old.find(x => x.label === o.label), ...o })) : old;
+}
+export function refreshDraftFiles(list: Notice[], filesOf: (id: string) => DraftFileIn[] | undefined, issuesOf?: (id: string) => string[] | undefined): Notice[] {
 	const hit: Notice[] = [];
 	for (const it of list) {
 		const d = it.decision?.draft;
@@ -22,15 +29,19 @@ export function refreshDraftFiles(list: Notice[], filesOf: (id: string) => Draft
 		let text = main ? withStagedFiles(it.text, main) : it.text;
 		const mail = d.mail?.ref ? filesOf(d.mail.ref) : undefined;
 		if (mail) text = withStagedFiles(text, mail, "mail");
+		const found = [issuesOf?.(d.ref), d.mail?.ref ? issuesOf?.(d.mail.ref) : undefined];
+		const before = text;
+		if (found.some(x => x !== undefined)) text = withAttachIssues(text, found.flatMap(x => x ?? []));
 		if (text === it.text) continue;
+		if (text !== before) it.decision!.options = optionsOf(it.decision!.options, text);
 		it.text = text;
 		it.decision!.draft = refreshDraft(d, text);
 		hit.push(it);
 	}
 	return hit;
 }
-export function syncDraftFiles(filesOf: (id: string) => DraftFileIn[] | undefined): number {
-	const hit = refreshDraftFiles(items, filesOf);
+export function syncDraftFiles(filesOf: (id: string) => DraftFileIn[] | undefined, issuesOf?: (id: string) => string[] | undefined): number {
+	const hit = refreshDraftFiles(items, filesOf, issuesOf);
 	if (hit.length) announce(hit, now());
 	return hit.length;
 }
@@ -53,7 +64,9 @@ export function markDraftSend(to: string, ref: string, state: NonNullable<Decisi
 	const prev = n.decision!.send;
 	const attempts = state === "queued" && prev?.state === "failed" ? (prev.attempts ?? 1) + 1 : prev?.attempts;
 	n.decision!.send = { state, ...(text ? { text: text.slice(0, 300) } : {}), at, ...(attempts ? { attempts } : {}) };
-	announce([n], at);
+	// A send refused for its files leaves the draft pending: its card opens again with the reason, so it can be answered (이대로 보내기) or the files fixed.
+	if (state === "failed" && text.startsWith(ATTACH_REFUSED) && n.decision!.state !== "open") reopenNotices([n.id]);
+	else announce([n], at);
 }
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.
 export function rewriteOpenDraft(to: string, ref: string, text: string): number {
