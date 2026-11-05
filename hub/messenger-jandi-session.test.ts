@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NAME } from "./config.ts";
+import { setFileResolver } from "./discord-files.ts";
 import { msg } from "./i18n.ts";
 import { createJandiAdapter, type JandiAdapter, saveJandiConfig } from "./messenger-jandi.ts";
 import type { OutMsg } from "./messenger.ts";
@@ -11,8 +12,11 @@ const SELF = { enabled: true, team_id: 11, room_id: 115, member_id: 21, bot_id: 
 const realFetch = globalThis.fetch;
 let dir: string;
 let adapter: JandiAdapter | undefined;
-let posts: { path: string; body: { text?: string } }[];
+let posts: { path: string; body: { text?: string; fileIds?: number[] } }[];
 let tokenStatus: number;
+let uploads: { path: string; body: unknown }[];
+let storageStatus: number;
+const STORAGE = "https://storage.test/bucket";
 let hooks: string[];
 let hookServer: ReturnType<typeof Bun.serve>;
 
@@ -23,10 +27,23 @@ beforeEach(() => {
 	posts = [];
 	hooks = [];
 	tokenStatus = 200;
+	uploads = [];
+	storageStatus = 204;
+	setFileResolver(p => p);
 	hookServer = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: async req => (hooks.push(await req.text()), new Response("{}")) });
 	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = new URL(String(input));
+		if (url.href === STORAGE) {
+			const form = init?.body as FormData;
+			uploads.push({ path: "storage", body: { key: form.get("key"), file: await (form.get("file") as File).text(), name: (form.get("file") as File).name, last: [...form.keys()].at(-1) } });
+			if (storageStatus === 307 && init?.redirect !== "manual") return new Response(null, { status: 200 }); // what fetch does, following it
+			return new Response(null, { status: storageStatus });
+		}
 		if (url.hostname !== "i1.jandi.com") return realFetch(input, init);
+		if (url.pathname.startsWith("/file-api/")) {
+			uploads.push({ path: url.pathname, body: JSON.parse(String(init?.body)) });
+			return Response.json(url.pathname.endsWith("/uploadUrl") ? { uploadUrl: STORAGE, fields: { key: "k/1" }, name: "stored-1" } : { id: 501 });
+		}
 		if (url.pathname === "/inner-api/token") return tokenStatus === 200 ? Response.json({ access_token: "at", expires_in: 3600 }) : new Response(null, { status: tokenStatus });
 		if (url.pathname.includes("/message-api/v3/")) {
 			posts.push({ path: url.pathname, body: JSON.parse(String(init?.body)) });
@@ -84,6 +101,55 @@ describe("replies through the owner's session", () => {
 		expect((await a.deliver(post())).delivered).toBe(true);
 		expect(posts).toEqual([]);
 		expect(hooks).toHaveLength(1);
+	});
+});
+
+const answer = (file: string): OutMsg => post({ text: `보고서예요\n[file] ${file}`, files: [file] });
+
+describe("an answer's [file]s", () => {
+	test("each goes to the self chat after the text, the way the web client uploads it", async () => {
+		config({ incoming_url: "" });
+		const file = join(dir, "dotz-test.txt");
+		writeFileSync(file, "hello");
+		const a = await start();
+		expect(await a.deliver(answer(file))).toEqual({ delivered: true });
+		expect(uploads).toEqual([
+			{ path: "/file-api/v1/teams/11/rooms/115/uploadUrl", body: { filename: "dotz-test.txt", size: 5 } },
+			{ path: "storage", body: { key: "k/1", file: "hello", name: "dotz-test.txt", last: "file" } },
+			{ path: "/file-api/v2/teams/11/rooms/115/attachment/files", body: { fileName: "stored-1", title: "dotz-test.txt" } },
+		]);
+		expect(posts.map(p => [p.body.text, p.body.fileIds])).toEqual([
+			["[봇] 보고서예요", undefined],
+			["[봇] dotz-test.txt", [501]],
+		]);
+	});
+
+	test("a failed upload leaves the file in the web with a note, and the answer still counts as delivered", async () => {
+		config({ incoming_url: `http://127.0.0.1:${hookServer.port}/in` });
+		const file = join(dir, "dotz-test.txt");
+		writeFileSync(file, "hello");
+		storageStatus = 403;
+		const a = await start();
+		expect(await a.deliver(answer(file))).toEqual({ delivered: true });
+		expect(hooks).toHaveLength(1);
+		expect(posts.map(p => [p.body.text, p.body.fileIds])).toEqual([["[봇] dotz-test.txt: 첨부 파일은 웹에서 볼 수 있어요", undefined]]);
+	});
+});
+
+describe("an answer's [file]s, what stays out", () => {
+	test("a storage redirect is not followed, and past ten files the rest stay in the web", async () => {
+		config({ incoming_url: "" });
+		const file = join(dir, "dotz-test.txt");
+		writeFileSync(file, "hello");
+		storageStatus = 307;
+		const a = await start();
+		await a.deliver(answer(file));
+		expect(posts.at(-1)?.body).toMatchObject({ text: "[봇] dotz-test.txt: 첨부 파일은 웹에서 볼 수 있어요" });
+		storageStatus = 204;
+		uploads = [];
+		await a.deliver(post({ text: "많아요", files: Array.from({ length: 11 }, () => file) }));
+		expect(uploads.filter(u => u.path === "storage")).toHaveLength(10);
+		expect(posts.at(-1)?.body.text).toBe("[봇] dotz-test.txt: 첨부 파일은 웹에서 볼 수 있어요");
 	});
 });
 
