@@ -29,7 +29,7 @@ import { startMemoryGuard } from "./memguard.ts";
 import { setTrashChannels } from "./lanetrash.ts";
 import { laneSpot, rememberSpot } from "./lanestate.ts";
 import { migratePostSettings, postSettings, setWebLane } from "./discord-post.ts";
-import { resolveAllowed } from "./files.ts";
+import { resolveAllowed, UPLOAD_MAX_BYTES } from "./files.ts";
 import { setDiskNotify } from "./diskguard.ts";
 import { approvesBudget, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
@@ -389,6 +389,8 @@ const server = Bun.serve({
 	hostname: HOST,
 	port: PORT,
 	idleTimeout: 0,
+	// Bun's default of 128MB would cut a body under a higher web.upload_max_mb; uploadsFrom refuses by the limit itself.
+	maxRequestBodySize: Math.max(128 * 1024 * 1024, UPLOAD_MAX_BYTES * 2 + 65536),
 	// A user app's websocket (/apps/<id>/…, hub/app-proxy.ts) is bridged to the app's own server; every other upgrade is refused.
 	// The remote desktop's viewers carry data.kind "desk" (hub/remote-desktop.ts); the rest are apps.
 	websocket: {
