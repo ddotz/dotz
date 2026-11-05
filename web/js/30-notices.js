@@ -158,12 +158,11 @@ async function ntReach(t, at) {
     if (t === target) renderAll(true);
   }
 }
-// The element that carries the highlight: the card or bubble inside the message when there is one (so the glow follows its own rounded shape),
-// else the message itself, drawn as a bar + tint ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
+// The element that carries the highlight: the card or bubble inside the message when there is one, else the message itself. Anything that paints
+// its own fill keeps the glow on its own rounded shape; plain text gets the tint alone ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
 function ntHlHost(node) {
-  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm") ? node.querySelector(":scope > .ccard") : node.matches(".cmdbox") ? node.querySelector(":scope > .ccard") : node.matches(".sn, .ccard") ? node : null;
-  if (!card && node.matches(".bm.rep, .bm.alert")) return { host: node, bar: false };   // these carry their own rounded card background
-  return { host: card || node, bar: !card };
+  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm, .cmdbox") ? node.querySelector(":scope > .ccard") : null;
+  return { host: card || node, bar: !card && /(\d, ){3}0\)$/.test(getComputedStyle(node).backgroundColor) };   // alpha 0: no fill of its own
 }
 function ntFlash(node) {
   const { host, bar } = ntHlHost(node);
