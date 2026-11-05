@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { ev, fakeHub, idleState, json, run, type View, waitFor } from "./test-web.ts";
 
-// 진행 중 is one list on 홈 and at the top of 채팅, a shortcut to sessions that stay in their project's 세션 section: the shipped page against a stub gateway.
+// 진행 중 is one list on 홈 and under 땅콩 and 작업내역 in 채팅, a shortcut to sessions that stay in their project's 세션 section: the shipped page against a stub gateway.
 const work = { "7001": "company" };
 const lane = (name: string, title: string, extra: object) => ({ name, title, cwd: "/h/shared", status: "idle", live: true, reports: 1, startedAt: "2026-11-01T00:00:00Z", ...extra });
 const company = lane("company", "company 출자전환 검토", { status: "working", home: "ch:7001", project: "company", startedAt: "2026-11-01T01:00:00Z" });
@@ -38,10 +38,10 @@ afterAll(() => hub.stop());
 
 const WANT = [["company · 손익 검토", "답을 기다림"], ["company · company 출자전환 검토", "진행 중"], ["회의록 정리", "진행 중"]];
 const homeRows = `(() => { renderHomeNow(); return [...document.querySelectorAll('#v-home .hn[data-k="running"] .srow')].map(r => [r.querySelector(".nm").textContent, r.querySelector(".hs").textContent]); })()`;
-const chatRows = `(() => { const sec = [...document.querySelectorAll("#chat-convo .cv-sec")].find(n => n.textContent === "진행 중"); return sec && sec === document.querySelector("#chat-convo > *") ? [...sec.nextElementSibling.querySelectorAll(".cv-row")].map(r => [r.querySelector(".cv-n").textContent, r.querySelector(".tag").textContent]) : null; })()`;
+const chatRows = `(() => { const sec = [...document.querySelectorAll("#chat-convo .cv-sec")].find(n => n.textContent === "진행 중"); const above = sec && sec.previousElementSibling; return above === document.querySelector("#chat-convo > *") && [...above.querySelectorAll(".cv-row")].map(r => r.dataset.t).join() === "main,worklog" ? [...sec.nextElementSibling.querySelectorAll(".cv-row")].map(r => [r.querySelector(".cv-n").textContent, r.querySelector(".tag").textContent]) : null; })()`;
 const listed = async (expr: string, want: unknown) => { await waitFor(v, `JSON.stringify(${expr}) === ${JSON.stringify(JSON.stringify(want))}`); };
 
-test("홈 and the top of 채팅 list the same sessions: waiting first, named project · title, finished and held ones left out", async () => {
+test("홈 and 채팅, under 땅콩 and 작업내역, list the same sessions: waiting first, named project · title, finished and held ones left out", async () => {
 	await run(v, `go("home")`);
 	await listed(homeRows, WANT);
 	expect(await ev<number>(v, `document.querySelectorAll('#v-home .hn[data-k="waiting"] [data-t="lane:ask"]').length`)).toBe(0);
@@ -56,16 +56,23 @@ test("the project's 세션 section holds them all under the one status: waiting,
 	expect(await ev<string[][]>(v, `pmSessionRows(PRJ.projects[0], null).map(r => [r.name, pmLaneState(r)[0]])`)).toEqual([["ask", "답을 기다림"], ["company", "진행 중"], ["held", "한도 걸림"], ["done", "완료"], ["gone", "완료"]]);
 });
 
-test("a finished session leaves 진행 중 by itself; with nothing running the list has no header and a read further down does not move", async () => {
-	const mainTop = `document.querySelector('#chat-convo [data-t="main"]').getBoundingClientRect().top`;
-	await run(v, `go("chat", "list"); const side = document.querySelector("#chat-convo"); side.style.height = "160px"; side.style.overflowY = "auto"; side.scrollTop = 100`);
-	await waitFor(v, `document.querySelector("#chat-convo").scrollTop === 100`);
-	const before = await ev<number>(v, mainTop);
+test("a session leaves and joins 진행 중 by itself; with nothing running the list has no header, and neither a read further down nor the very top moves", async () => {
+	const top = (t: string) => `document.querySelector('#chat-convo [data-t="${t}"]').getBoundingClientRect().top`;
+	const below = top("ch:7001"), mainTop = top("main");
+	await run(v, `go("chat", "list"); const side = document.querySelector("#chat-convo"); side.style.height = "160px"; side.style.overflowY = "auto"; side.scrollTop = 120`);
+	await waitFor(v, `document.querySelector("#chat-convo").scrollTop === 120`);
+	const before = await ev<number>(v, below);
 	await run(v, `S.lanes.find(l => l.name === "company").status = "idle"; S.runs["lane:company"] = { kind: "done" }; renderBars()`);
 	await listed(chatRows, [WANT[0], WANT[2]]);
-	expect(Math.abs(await ev<number>(v, mainTop) - before)).toBeLessThan(1);
+	expect(Math.abs(await ev<number>(v, below) - before)).toBeLessThan(1);
+	await run(v, `S.lanes.find(l => l.name === "company").status = "working"; S.runs["lane:company"] = { kind: "working" }; renderBars()`);
+	await listed(chatRows, WANT);
+	expect(Math.abs(await ev<number>(v, below) - before)).toBeLessThan(1);
+	await run(v, `document.querySelector("#chat-convo").scrollTop = 0`);
+	const resting = await ev<number>(v, mainTop);
 	await run(v, `S.lanes = S.lanes.map(l => ({ ...l, status: l.status === "working" ? "idle" : l.status, pendingAsk: undefined })); S.runs = {}; renderBars()`);
 	await waitFor(v, `![...document.querySelectorAll("#chat-convo .cv-sec")].some(n => n.textContent === "진행 중")`);
+	expect(Math.abs(await ev<number>(v, mainTop) - resting)).toBeLessThan(1);
 	expect(await ev<string>(v, `document.querySelector("#chat-convo .cv-row").dataset.t`)).toBe("main");
 });
 
