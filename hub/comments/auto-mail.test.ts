@@ -21,11 +21,12 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function fakeMail(o: { miss?: boolean; failSend?: string; failCompose?: string } = {}) {
+function fakeMail(o: { miss?: boolean; failSend?: string; failCompose?: string; write?: MailLink["write"] } = {}) {
 	const specs: MailSpec[] = [];
 	const status = new Map<string, string>();
 	const views = new Map<string, MailView>();
 	const link: MailLink = {
+		...(o.write ? { write: o.write } : {}),
 		compose: async spec => {
 			if (o.failCompose) return { ok: false, reason: o.failCompose };
 			const id = `M${specs.push(spec)}`;
@@ -87,6 +88,23 @@ describe("autoMail", () => {
 		expect(text).toContain("메일 초안 작성됨");
 		expect(text).toContain("> 첨부: score.pdf");
 		expect(t.mail.specs[0]!.library).toBeUndefined();
+	});
+
+	test("write: its text is the mail body; undefined, empty or a throw keep the fixed text", async () => {
+		const bodyWith = async (write: MailLink["write"]) => {
+			rmSync(dir, { recursive: true, force: true });
+			const t = setup({ source: { autoMail: true, mailApp: "mail" }, mail: { write } });
+			await t.engine.collect({ force: true });
+			return t.mail.specs[0]!.body;
+		};
+		const seen: unknown[] = [];
+		expect(await bodyWith(async spec => (seen.push(spec), "팩 님, 악보 보냈어요"))).toBe("팩 님, 악보 보냈어요");
+		expect(seen).toEqual([{ app: "mail", to: "Fan@Example.com", author: "팬", text: ASKS, postTitle: "센과 치히로 피아노" }]);
+		const fixed = await bodyWith(undefined);
+		expect(fixed).toContain("팬님");
+		expect(await bodyWith(async () => undefined)).toBe(fixed);
+		expect(await bodyWith(async () => "  ")).toBe(fixed);
+		expect(await bodyWith(async () => { throw new Error("model down"); })).toBe(fixed);
 	});
 
 	test("a writer who says he bought it gets the MR only (library: mr)", async () => {

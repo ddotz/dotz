@@ -290,9 +290,14 @@ export const rewritable = (failures: string[]): string[] => failures.filter(f =>
 const SENT_CLAIM = /보내\s*드렸|보내\s*놨|보내\s*두었|발송(?:했|해\s*드렸|드렸|하였)|전송(?:했|해\s*드렸)|전달(?:했|해\s*드렸|드렸)|첨부(?:했|해\s*드렸|하였)/;
 export const SENT_CLAIM_FAILURE = "it says something was already sent or attached, but nothing here shows that: write what the user will do, or put it in questions";
 // Draft time only, never in lintReply: the model's evidence for who wrote must be words that are in the subject, text or context (whitespace ignored).
+// It often joins two quotes with " / " or an ellipsis: each one is checked on its own.
 export const RECIPIENT_FAILURE = "the recipient evidence is not words of the message: quote the sender's own words from the subject, text or context, or write unknown with an empty evidence";
 const squash = (s: string) => s.replace(/\s+/g, "");
-const unfoundedRecipient = (r: Recipient | undefined, item: ReplyItem): boolean => !!r?.evidence && item.kind !== "chat" && !squash(`${item.subject ?? ""}\n${item.text}\n${item.context ?? ""}`).includes(squash(r.evidence));
+function unfoundedRecipient(r: Recipient | undefined, item: ReplyItem): boolean {
+	if (!r?.evidence || item.kind === "chat") return false;
+	const seen = squash(`${item.subject ?? ""}\n${item.text}\n${item.context ?? ""}`);
+	return r.evidence.split(/[/…]|\.{3}/).map(squash).some(q => q && !seen.includes(q));
+}
 const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boolean => SENT_CLAIM.test(body) && !item.files?.length && !item.instruction?.trim() && !item.choice && !base.change;
 
 const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? addressesOf(item.replyTo)[0] ?? addressesOf(item.from)[0] ?? item.from : item.from);

@@ -237,6 +237,14 @@ test("an offer reads the whole thread before the snippet: the sender's newest me
 	expect(seen).toEqual([["pat@example.com", "undefined", mailFixture.id]]);
 });
 
+test("a read with no text of its own (html only) leaves the poster's body, not the subject", async () => {
+	enable(env);
+	const read = ["Subject: s", "─".repeat(40), "From: Pat <pat@example.com>", "Date: Oct 1", ""].join("\n");
+	const model = fakeModel([j(goodReply)]);
+	await offerMailDraft({ ...mailFixture, from: "Pat <pat@example.com>", body: "posted snippet" }, { send: () => undefined, call: model.call, readBody: async () => read, log: () => {} });
+	expect(model.calls.some(c => c.user.includes("posted snippet"))).toBe(true);
+});
+
 test("a category source reads its thread by the id without the count, and only with an account", async () => {
 	const argvs: string[][] = [];
 	const run: Runner = async argv => (argvs.push(argv), { code: 0, stdout: "text", stderr: "" });
