@@ -44,6 +44,7 @@ import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailsFyi, mailKeep, setMailSuggest, sentMailEvent, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { moveMailRoute } from "./mail-move.ts";
+import { boxPass, withBoxes } from "./routes-mailbox.ts";
 import { applyMailboxFlags, canOf, isMailAction, mailAction, mailActions, spawnExec, type SyncDeps } from "./mail-sync.ts";
 import { originalDeletable, originalDeleteRoute, originalDeps } from "./mail-delete.ts";
 import { manualDraft } from "./mail-manual.ts";
@@ -611,7 +612,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
 			const own = ownedWatches(DATA_DIR, allWatches());
-			const items = integrationItems({ ...ctx, own }, allNotices(), convUnread, 100, undefined, mailSuggests(), Date.now(), draftNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
+			const items = integrationItems({ ...ctx, own }, allNotices(), convUnread, 100, undefined, mailSuggests(), Date.now(), draftNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withBoxes(withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()), DATA_DIR));
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
@@ -790,11 +791,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			// Ended sessions are listed too: 답변 필요 stays on their row (their unread is 0, conversations.ts unreadOf) in the folded 끝난 세션 group (web/js/04-state.js endedGroup).
 			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its messages in the log, but it leaves
 			// this list, so it leaves every list and count here and on the other computer (its snapshot is this list, hub/peer-monitor.ts).
-			const lv = liveLanes(), trashable = originalDeletable(DATA_DIR, mailSyncDeps);
+			const lv = liveLanes(), trashable = originalDeletable(DATA_DIR, mailSyncDeps), place = boxPass(DATA_DIR);
 			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
 				if (!c.target.startsWith("mail:")) return [c];
 				const m = mailByKey(c.target.slice(5));
-				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key), { read: c.unread === 0, can: canOf(m.source, mailSyncDeps), trashOriginal: trashable(m) }) }] : [];
+				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key), { read: c.unread === 0, can: canOf(m.source, mailSyncDeps), trashOriginal: trashable(m), place }) }] : [];
 			});
 			return json({ items });
 		}

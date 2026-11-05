@@ -67,6 +67,7 @@ import { startTokenAudit } from "./token-audit.ts";
 import { startZele, zeleAccounts, zeleRead } from "./zele.ts";
 import { createReconciler } from "./mail-reconcile.ts";
 import { backfillMailSummaries, mailSummarizer } from "./mail-summary-live.ts";
+import { placeMail } from "./routes-mailbox.ts";
 import { mailByKey, mailByThread, mailRecords, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailReply, setMailSuggest, type MailDeps } from "./mail.ts";
 import { ownAddresses, ownAddressesFor, replyExpected } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
@@ -327,6 +328,7 @@ const mailDeps = (): MailDeps => ({
 	},
 	discordOn: discord.status.enabled,
 	summarize: (key, hint) => mailSummarizer.request(key, hint),
+	placeMail: placeMail(DATA_DIR),
 	// A Discord thread per mail only when the mail's app instance has 디스코드에도 올리기 on (hub/app-settings.ts); web only otherwise.
 	threadOn: (_source, key) => mailDiscordOn(DATA_DIR, key),
 	newMailOn: (_source, key) => mailFeatureOn(DATA_DIR, key, "new_mail"),
