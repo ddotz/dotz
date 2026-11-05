@@ -13,7 +13,7 @@ ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
 ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
 ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
-const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null };
+const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "" };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
@@ -222,6 +222,27 @@ function mbNote(mails) {
   return el("div", { class: "mbox-note", text: `${some ? "일부 메일의 " : ""}${what}${what === "읽음" ? "은" : "는"} dotz에서만 바뀌고 실제 메일함에는 반영되지 않아요` });
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
+const MB_PAGE = 100;   // mail rows drawn at first and added per step
+let mbObs = null;
+// How many mail rows the list draws: MB_PAGE, grown by each step, and back to MB_PAGE when the list (app, folder) changes. A live update keeps it.
+function mbDrawn(scope) {
+  if (MBOX.fk !== scope) { MBOX.fk = scope; MBOX.drawn = MB_PAGE; }
+  return MBOX.drawn;
+}
+function mbMore() { MBOX.drawn += MB_PAGE; MON.sig = ""; monSchedule(); }
+// After the drawn rows: a sentinel that adds a page when it reaches the viewport, and the plain button for a browser without IntersectionObserver.
+function mbMoreNodes(left) {
+  const btn = moreRow(`${left}개 더 보기`, mbMore);
+  btn.dataset.mbMore = "1";
+  return [el("div", { class: "mon-sentinel", "data-mb": "1", "aria-hidden": "true" }), btn];
+}
+function mbObserve() {
+  const box = $("#mon-timeline"), s = box && box.querySelector(".mon-sentinel[data-mb]");
+  if (mbObs) mbObs.disconnect();
+  if (!s || typeof IntersectionObserver !== "function") return;
+  if (!mbObs) mbObs = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) mbMore(); }, { root: box, rootMargin: "240px 0px" });
+  mbObs.observe(s);
+}
 function mbList(vis) {
   MBOX.vis = vis;
   for (const t of [...MBOX.sel]) if (!vis.includes(t)) MBOX.sel.delete(t);
