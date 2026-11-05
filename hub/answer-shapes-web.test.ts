@@ -18,6 +18,10 @@ const cases: Record<string, object> = {
 	relay: answer(LABELS, { relay: true }),
 	alreadyBold: answer(`**앨범을 고쳤어요. 새로고침**하면 돼요.\n\n${LABELS}`),
 	version: answer(`v1.2 버전에서 고쳤어요. 끝이에요.\n\n${LABELS}`),
+	files: answer("가계부를 정리했어요. 식비가 늘었어요.\n\n[file] /files/가계부.xlsx\n[file] /files/요약.pdf\n\n근거: 카드 212건 대조 · 빠진 건 없음"),
+	picture: answer("사진이에요.\n\n[file] /files/앨범.png"),
+	evidence: answer("고쳤어요. 끝이에요.\n\n근거: `a1b2c3d` · 테스트 24개 통과"),
+	evidenceMid: answer("고쳤어요. 끝이에요.\n\n근거: 로그를 봤어요.\n\n내일 다시 볼게요."),
 	user: { kind: "in", source: "web", target: "web", text: LABELS },
 	last: answer("끝이에요."),
 };
@@ -85,4 +89,28 @@ test("only a finished assistant answer gets shapes", async () => {
 
 test("a copied selection gives the lines as written", async () => {
 	expect(lines(await copied(`${msg("labels")}.querySelector(".md")`))).toEqual(["앨범을 고쳤어요. 새로고침하면 돼요.", "- **원인:** 썸네일이 늦게 만들어졌어요.", "- **고친 것:** 원본을 줄여서 먼저 보여 줘요.", "내일 다시 볼게요."]);
+});
+
+test("[file] lines are rows in one card with the name first, the evidence line under them", async () => {
+	expect(await count("files", ".ans-files .fitem")).toBe(2);
+	expect(await page<string[]>(`[...${msg("files")}.querySelectorAll(".ans-files .fi-n")].map(e => e.textContent)`)).toEqual(["가계부.xlsx", "요약.pdf"]);
+	expect(await page<string[]>(`[...${msg("files")}.querySelectorAll(":scope > *")].map(e => e.className.split(" ")[0]).slice(-2)`)).toEqual(["mfiles", "ans-ev"]);
+	expect(await lead("files")).toBe("가계부를 정리했어요.");
+});
+
+test("a picture keeps its thumbnail", async () => {
+	expect(await count("picture", ".ans-files")).toBe(0);
+	expect(await count("picture", ".mfiles")).toBe(1);
+});
+
+test("a last 근거: line is small pieces and turns the lead on; with text after it, it stays a meta line", async () => {
+	expect(await page<string[]>(`[...${msg("evidence")}.querySelectorAll(".ans-ev > span:not(.mlist-url)")].map(e => e.textContent)`)).toEqual(["a1b2c3d", "테스트 24개 통과"]);
+	expect(await lead("evidence")).toBe("고쳤어요.");
+	expect(await count("evidenceMid", ".ans-ev")).toBe(0);
+	expect(await count("evidenceMid", "p.meta")).toBe(1);
+	expect(await lead("evidenceMid")).toBeNull();
+});
+
+test("a copied selection gives the [file] and 근거: lines as written", async () => {
+	expect(lines(await copied(msg("files"))).slice(-3)).toEqual(["[file] /files/가계부.xlsx", "[file] /files/요약.pdf", "근거: 카드 212건 대조 · 빠진 건 없음"]);
 });

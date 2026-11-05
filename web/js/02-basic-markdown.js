@@ -124,7 +124,13 @@ function blocks(text, last, answer) {
     }
     flushT();
     // Discord's "-# " subtext line renders like the meta lines.
-    if (meta.test(line) || /^\s*-#\s/.test(line)) { flushP(); flushL(); html.push(`<p class="meta">${inline(line.replace(/^\s*-#?\s+/, ""))}</p>`); continue; }
+    if (meta.test(line) || /^\s*-#\s/.test(line)) {
+      flushP(); flushL();
+      const ev = answer && last && ansEvidenceHtml(line, lines.slice(i + 1));
+      if (ev) answer.shaped = true;
+      html.push(ev || `<p class="meta">${inline(line.replace(/^\s*-#?\s+/, ""))}</p>`);
+      continue;
+    }
     // An indented item (2+ spaces) is a sub-item of the list it sits in, whatever its own marker.
     if ((m = line.match(/^(\s*)(?:[-*•]|(\d+)[.)])\s+(.*)/))) {
       flushP();
@@ -154,9 +160,9 @@ function listBlockHtml(src) {
   return `<div class="mlist">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
 // relayed: another computer's reply (42-relay-chat.js) is text only: `[file]` lines stay text and a fence is a plain code block, with no run button and no settings card to act on here.
-// answer: an assistant answer (11-todo-strip.js) is drawn by its shapes (02-answer-shapes.js); every other caller keeps its text.
+// answer: an assistant answer (11-todo-strip.js) is drawn by its shapes (02-answer-shapes.js), { shaped: true } when it already has one (its files); every other caller keeps its text.
 function mdHtml(src, relayed = false, answer = false) {
-  const shape = answer ? { shaped: false, opened: false, plain: "", rich: "" } : null;
+  const shape = answer ? { shaped: !!answer.shaped, opened: false, plain: "", rich: "" } : null;
   // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
   // A fence opens only at the start of a line (``` in the middle of a sentence stays text) and closes with ``` at the end of a line.
   const parts = stripRecMark(stripMarkers(src, relayed)).split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
