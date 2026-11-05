@@ -83,6 +83,13 @@ await run([process.execPath, join(REPO, "hub/load-qa/seed.ts"), "--dir", join(ou
 const seedMs = Math.round(performance.now() - t0);
 const seedLog = JSON.parse(readFileSync(join(out, "seed.log"), "utf8").trim().split("\n").at(-1)!) as { counts: Record<string, number>; read: Record<string, unknown>; store: Record<string, unknown> };
 
+// The fake zele serves the mail every reply draft answers (read back from the seeded drafts file), so an approved send finds its mail.
+const draftFile = JSON.parse(readFileSync(join(out, "data", "custom", "reply-drafts", "drafts.json"), "utf8")) as { drafts: { kind: string; compose?: boolean; mailId: string; account?: string; created: string; item?: { from?: string; to?: string[]; subject?: string; text?: string } }[] };
+const zeleMails = draftFile.drafts
+	.filter(d => d.kind === "mail" && !d.compose && d.account && d.item?.from)
+	.map(d => ({ id: d.mailId, account: d.account, folder: "inbox", from: d.item!.from, to: (d.item!.to ?? []).join(", "), subject: d.item!.subject ?? "", body: d.item!.text ?? "", date: d.created }));
+writeFileSync(join(out, "zele-mail.json"), `${JSON.stringify({ accounts: ACCOUNTS.map(a => a.address), mails: zeleMails, events: [] })}\n`);
+
 // 2. the code under test: tracked plus modified plus new (not ignored) files of this working tree
 const files = (await Bun.$`git -C ${REPO} ls-files -c -o --exclude-standard`.text()).split("\n").filter(f => f && existsSync(join(REPO, f)));
 writeFileSync(join(out, "repo-files.txt"), `${files.join("\n")}\n`);

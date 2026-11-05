@@ -69,10 +69,13 @@ export type FileStat = { size: number; mtimeMs: number };
 export function snapshot(dir: string, depth = 2): Map<string, FileStat> {
 	const out = new Map<string, FileStat>();
 	const walk = (d: string, level: number) => {
-		for (const e of readdirSync(d, { withFileTypes: true })) {
+		// The gateway writes atomically (temp file, rename), so an entry can vanish between the listing and the stat: skip it.
+		let entries: import("node:fs").Dirent[] = [];
+		try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
+		for (const e of entries) {
 			const p = join(d, e.name);
 			if (e.isDirectory()) { if (level < depth) walk(p, level + 1); }
-			else if (e.isFile()) { const s = statSync(p); out.set(p, { size: s.size, mtimeMs: s.mtimeMs }); }
+			else if (e.isFile()) { try { const s = statSync(p); out.set(p, { size: s.size, mtimeMs: s.mtimeMs }); } catch { /* renamed away */ } }
 		}
 	};
 	walk(dir, 0);
