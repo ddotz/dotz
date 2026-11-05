@@ -194,3 +194,40 @@ test("a decision outside a chat card reads as a sentence, without its label", as
 	expect(await shown(SURFACES["monitoring decision"]!("앞 문단이에요."))).not.toMatch(RAW);
 	expect(await ev<string>(view, `choiceBody(${JSON.stringify(text)}, "넣을까요?")`)).toBe("[ask] 앞 문단이에요.");
 });
+
+const LIST = "- **기준:** 짧은 글\n- **쓰는 법:** 한마디";
+const stored = (text: string, extra = "") => `msgNode({ ts: "${ts}", kind: "out", source: "orchestrator", target: "web", text: ${JSON.stringify(text)}${extra} })`;
+// hub/notices-signals.ts stores a result's first three lines with the blank lines gone, so a list follows its sentence directly.
+const result = (text: string) => `msgNode({ ts: "${ts}", kind: "result", source: "gateway", target: "web", title: "세션", verified: true, open: "lane:a", text: ${JSON.stringify(text)} })`;
+
+test("a start notice is drawn as an answer, in either way it is written", async () => {
+	expect(await drawn(stored(`\u23f3 세션을 시작했어요.\n\n${LIST}`), ".ans-keys")).toBe(1);
+	expect(await drawn(stored(`[run] 세션을 시작했어요.\n\n${LIST}`), ".ans-keys")).toBe(1);
+});
+
+test("a line that gets replaced stays text: a progress line and a session's own [run]", async () => {
+	expect(await drawn(stored(`\u23f3 고치는 중이에요.\n\n${LIST}`, ', update_key: "progress"'), ".ans-card")).toBe(0);
+	expect(await drawn(SURFACES["session report"]!(`[run] 고치는 중이에요.\n\n${LIST}`), ".ans-card")).toBe(0);
+	expect(await drawn(SURFACES["session answer"]!(`[run] 고치는 중이에요.\n\n${LIST}`), ".ans-card")).toBe(0);
+});
+
+test("a gateway result draws its list inside its one card, under the one bold title", async () => {
+	const row = result(`끝났어요.\n${LIST}`);
+	expect(await drawn(row, ".ccard")).toBe(1);
+	expect(await drawn(row, ".ccard .ans-keys .rc-row")).toBe(2);
+	expect(await drawn(row, ".ccard .ans-lead")).toBe(0);
+	expect(await shown(row)).toContain("세션 끝났어요");
+	expect(await shown(result("머지 커밋은 `0aec048e`예요."))).toContain("0aec048e");
+});
+
+test("a result cut under a heading drops the heading with nothing below it", async () => {
+	const seen = await shown(result("끝났어요.\n판정은 맞았어요.\n**고친 것**"));
+	expect(seen).toContain("판정은 맞았어요.");
+	expect(seen).not.toContain("고친 것");
+});
+
+test("a worklog line edited in place is an answer, a gateway line there is not", async () => {
+	const worklog = (source: string) => `msgNode({ ts: "${ts}", kind: "out", source: "${source}", target: "worklog", update_key: "lane:a", text: ${JSON.stringify(`확인됨 · 끝났어요.\n\n${LIST}`)} })`;
+	expect(await drawn(worklog("orchestrator"), ".ans-keys")).toBe(1);
+	expect(await drawn(worklog("gateway"), ".ans-card")).toBe(0);
+});

@@ -113,6 +113,7 @@ dialog.lbox::backdrop { background: transparent; }
 .ccard { max-width: 560px; padding: var(--sp-4); border-radius: var(--r-card); background: var(--card); }
 /* the session-result card sits straight in the timeline column: as wide as the replies and the composer, not the 560px a command answer gets */
 .bm.res > .ccard { max-width: none; }
+.bm.res .cc-hd + .md { margin-top: var(--sp-2); }
 @media (max-width: 639px) { .tl-in > .bm.res { padding: 0; } .bm.res > .mt { padding: 0 var(--sp-4); } }
 /* a message from another computer's gateway (01-peer-msg.js): the computer, the kind, then the words */
 .bm.pmc > .ccard { padding: var(--sp-3) var(--sp-4); background: var(--layer); }

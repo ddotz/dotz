@@ -262,10 +262,11 @@ function msgNode(e) {
     case "result": {
       const go = el("button", { class: "btn tonal", type: "button", text: "세션 열기" });
       go.onclick = () => pickTarget(e.open || "main");
-      const lines = previewLines(choiceBody(text), 3).join("\n");
+      // The hub stores a report's first three lines (hub/notices-read.ts summary), which can end on a heading with nothing below it.
+      const body = parseTone(previewSrc(choiceBody(text))).text.replace(/\n\*\*[^*\n]+\*\*$/, "").trim();
       return el("div", { class: "bm res" }, el("div", { class: "mt", text: ["세션 결과", hm].filter(Boolean).join(" · ") }),
         el("div", { class: "ccard" }, el("div", { class: "cc-hd" }, el("span", { class: "dot ok" }), el("span", { text: `${e.title || "세션"} 끝났어요` }), e.verified ? el("span", { class: "tag ok", text: "확인됨" }) : null),
-          lines ? el("div", { class: "cc-note", text: lines }) : null, el("div", { class: "btns cc-act" }, go)));
+          body ? answerParts(fileLines(body), { lead: false }) : null, el("div", { class: "btns cc-act" }, go)));
     }
     case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
     case "mail": {
@@ -334,8 +335,9 @@ function msgNode(e) {
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       // A relayed line is another computer's text, not this gateway's: no file chips, no path chips, no choice card; its `[file]` lines stay text (e.relay, 42-relay-chat.js).
       const fl = e.relay ? { text: body, files: [] } : fileLines(body), host = pqPc(eventTarget(e) || "");
-      // Shapes are for a finished answer or report of the assistant: never a progress note, a gateway line, a relayed line or a "started" note.
-      const answer = (e.kind === "out" || e.kind === "lane_report") && !e.relay && !e.update_key && e.source !== "gateway" && mark !== "run" && !fl.text.startsWith("\u23f3");
+      // Shapes are for an answer, a report or a "started" note of the assistant: never a line the next one replaces (a progress note, a session's [run]), a gateway line or a relayed line.
+      // A worklog post is keyed only to show its newest version (13-data.js dedupKeyed), so it stays an answer.
+      const answer = (e.kind === "out" || e.kind === "lane_report") && !e.relay && (!e.update_key || e.target === "worklog") && e.source !== "gateway" && (mark !== "run" || (e.kind === "out" && !fromLane));
       const inl = pc && !isFixedT(target) && pc.blocks.some(b => b.options.length > 1);   // the card in the message (10-decision-card.js dcInline); in 알림 / 작업내역 a tap opens the sheet
       const shown = inl ? inlineBody(fl.text) : pc && pc.blocks.length ? choiceBody(fl.text) : fl.text;
       const md = answer ? answerNode(shown, { shaped: fl.files.length > 0 }) : mdNode(shown, "md", !!e.relay), files = e.relay ? null : pathFiles(md, host);
