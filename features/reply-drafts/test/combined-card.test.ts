@@ -34,7 +34,7 @@ function setup() {
 	const posted: string[] = [];
 	const argvs: string[][] = [];
 	const deps = {
-		run: async (argv: string[]) => (argvs.push(argv), { code: 0, stdout: "", stderr: "" }),
+		run: async (argv: string[]) => (argv[1] === "whoami" || argvs.push(argv), { code: 0, stdout: "", stderr: "" }),
 		hub: { post: async () => ({ status: 200 }) },
 	};
 	const adapter: CommentAdapter = {

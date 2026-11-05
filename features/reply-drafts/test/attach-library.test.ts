@@ -175,7 +175,7 @@ describe("drafting a reply that promises a file", () => {
 describe("sending", () => {
 	const runner = () => {
 		const argv: string[][] = [];
-		const run: Runner = async a => (argv.push(a), { code: 0, stdout: "", stderr: "" });
+		const run: Runner = async a => (a[1] === "whoami" || argv.push(a), { code: 0, stdout: "", stderr: "" });
 		return { argv, run };
 	};
 	test("zele reply carries every staged file as --attach, after the read zele demands", async () => {

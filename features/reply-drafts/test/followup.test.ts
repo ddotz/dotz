@@ -35,7 +35,7 @@ const harness = () => {
 		argvs,
 		posts,
 		deps: {
-			run: async (argv: string[]) => (argvs.push(argv), { code: 0, stdout: "", stderr: "" }),
+			run: async (argv: string[]) => (argv[1] === "whoami" || argvs.push(argv), { code: 0, stdout: "", stderr: "" }),
 			hub: { post: async (path: string, body?: unknown) => (posts.push({ path, body }), { status: 200 }) },
 		},
 	};

@@ -71,7 +71,7 @@ curl -s -X POST http://127.0.0.1:<web.port>/api/mail \
 The reply-drafts feature sends a reply the owner approved (보내기). For a mail whose `source` is neither `zele` nor a webmail-no-api site, it asks the plugins, in file-name order, until one returns a result:
 
 ```ts
-reply(draft) { // draft: { source, id, to, cc?, all?, subject?, body, attachments: [{ name, path, size }] }
+reply(draft) { // draft: { source, id, account? (the zele account, when dotz settled it), to, cc?, all?, subject?, body, attachments: [{ name, path, size }] }
 	if (draft.source !== "work") return undefined;           // not mine: the next plugin, else "send it by hand"
 	// ... send draft.body to every address of draft.to (one address or a comma list), with draft.cc as 참조 when it is there,
 	// and attach every file at draft.attachments[i].path (absolute, on this computer)
