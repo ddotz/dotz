@@ -11,6 +11,7 @@ import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction,
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
+import { FairQueue } from "./fair-queue.ts";
 
 export type OfferMail = { account?: string; key: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
 export type OfferDeps = {
@@ -80,29 +81,71 @@ function mayDraft(m: OfferMail): boolean {
 // whole feature off (onboard.ts off).
 const rulesAllowed = (s: ReturnType<typeof loadSettings>) => !(s.decided && !s.enabled);
 
-// Offers run one at a time: a burst of new mail never starts many model calls at once.
-let chain: Promise<unknown> = Promise.resolve();
+type OfferResult = "offered" | "skipped" | "off" | "failed";
+type Reads = { body: Promise<string | undefined>; history: Promise<string[]> };
+type Job = { m: OfferMail; deps: OfferDeps; queued: number; instance: string; requested: boolean; reads?: Reads; counted?: boolean; done: (r: OfferResult) => void };
+
+// Offers run one at a time (a burst of new mail never starts many model calls at once), but not in arrival order: each mail app instance is a lane and
+// the lanes take turns, so one app's backlog never holds another app's mail, and an owner's request goes before every automatic offer.
+const urgent = new FairQueue<Job>(), waiting = new FairQueue<Job>();
+let busy = false;
+// The body and history reads (a mail CLI child each) start only for the first few automatic offers in line, while the one before them is in its model
+// call: at most this many offers have reads started and not yet begun, whatever the burst size. An owner's request reads at once (one per click).
+const READ_AHEAD = 2;
+let readingAhead = 0;
+
+function startReads(j: Job): Reads {
+	if (j.reads) return j.reads;
+	try {
+		const may = j.requested || mayDraft(j.m);
+		return (j.reads = { body: may ? fullBody(j.m, j.deps) : Promise.resolve(j.m.body), history: may ? startHistory(j.m, j.deps) : Promise.resolve([]) });
+	} catch (e) {
+		(j.deps.log ?? console.error)(`reply draft: mail ${j.m.key} reads not started: ${(e as Error).message}`);
+		return (j.reads = { body: Promise.resolve(j.m.body), history: Promise.resolve([]) });
+	}
+}
+
+function pump(): void {
+	if (!busy) {
+		const j = urgent.shift() ?? waiting.shift();
+		if (j) {
+			busy = true;
+			if (j.counted) readingAhead--;
+			offerOne(j.m, j.deps, startReads(j), j.queued, j.instance, j.requested).catch(() => "failed" as const).then(r => {
+				busy = false;
+				j.done(r);
+				pump();
+			});
+		}
+	}
+	for (const j of waiting.first(READ_AHEAD)) {
+		if (readingAhead >= READ_AHEAD) break;
+		if (j.reads) continue;
+		startReads(j);
+		j.counted = true;
+		readingAhead++;
+	}
+}
+
+// The lane of a mail: its app instance; a mail no instance claims (the plain mail app) falls back to its account, else its source.
+async function enqueue(m: OfferMail, deps: OfferDeps, requested: boolean): Promise<OfferResult> {
+	const queued = Date.now();
+	const instance = await mailInstanceOf(m.key);
+	return new Promise<OfferResult>(done => {
+		const job: Job = { m, deps, queued, instance, requested, done };
+		(requested ? urgent : waiting).push(instance !== "mail" ? instance : accountOf(m) || m.source, job);
+		if (requested) startReads(job);
+		pump();
+	});
+}
+
 /** 초안 작성 on a mail (POST /api/mail/<key>/draft): the owner asked for a draft himself, so the auto-draft switch, the one-look-per-message mark and
  *  the sender filter do not apply, and the model must draft (ReplyItem.requested). The draft arrives like an offered one: the send-approval card
  *  in the mail's conversation and the 답장 초안 chip on its row. */
-export function requestMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
-	const body = fullBody(m, deps), history = startHistory(m, deps);
-	const queued = Date.now();
-	const next = chain.then(() => offerOne(m, deps, body, history, queued, true));
-	chain = next.catch(() => undefined);
-	return next;
-}
-export function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
-	// The body read (a mail CLI or webmail round trip) starts now, while an earlier offer may still be in its model call; only the model calls queue.
-	const may = mayDraft(m);
-	const body = may ? fullBody(m, deps) : Promise.resolve(m.body), history = may ? startHistory(m, deps) : Promise.resolve([] as string[]);
-	const queued = Date.now();
-	const next = chain.then(() => offerOne(m, deps, body, history, queued));
-	chain = next.catch(() => undefined);
-	return next;
-}
+export const requestMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => enqueue(m, deps, true);
+export const offerMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => enqueue(m, deps, false);
 
-async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | undefined>, history: Promise<string[]>, queued: number, requested = false): Promise<"offered" | "skipped" | "off" | "failed"> {
+async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads, queued: number, instance: string, requested: boolean): Promise<OfferResult> {
 	const log = deps.log ?? ((line: string) => console.error(line));
 	const started = Date.now();
 	let trace: DraftTrace | undefined;
@@ -110,7 +153,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		const settings = loadSettings();
 		const auto = appOn(settings, "mail");
 		// The rules of the mail's own app instance; a mail of an instance without a rule switched on costs nothing more.
-		const own = rulesAllowed(settings) ? await rulesOf(await mailInstanceOf(m.key)) : undefined;
+		const own = rulesAllowed(settings) ? await rulesOf(instance) : undefined;
 		const rules = own?.rules.filter(r => r.on) ?? [];
 		if (!requested && !auto && !rules.length) return "off";
 		if (!requested && m.needs === false && !rules.length) return "off";
