@@ -1,13 +1,16 @@
 import { NAME } from "./config.ts";
 
-// Message tone: an explicit marker the model writes at the very start of line 1 ([done] [run] [ask] [fail] and their
+// Message tone: an explicit marker the model writes at the very start of line 1 ([done] [run] [wait] [ask] [fail] and their
 // Korean/alias forms) becomes one leading status emoji. No marker, no emoji; nothing is inferred from the content.
 // Pure parsing only; Discord and web each render the result themselves.
-export type Tone = "done" | "run" | "ask" | "fail";
+export type Tone = "done" | "run" | "wait" | "ask" | "fail";
 
-export const TONE_EMOJI: Record<Tone, string> = { done: "✅", run: "⏳", ask: "❓", fail: "❌" };
+// [run] and [wait] say where a session stands right now, so they go stale: progress, never a result (no bell, no push, no orchestrator turn).
+export const parkedTone = (tone: Tone | undefined): boolean => tone === "run" || tone === "wait";
 
-const TAGS: Record<string, Tone> = { done: "done", 완료: "done", run: "run", 진행: "run", ask: "ask", 결정: "ask", fail: "fail", 실패: "fail", warn: "fail", 경고: "fail" };
+export const TONE_EMOJI: Record<Tone, string> = { done: "✅", run: "⏳", wait: "⏸️", ask: "❓", fail: "❌" };
+
+const TAGS: Record<string, Tone> = { done: "done", 완료: "done", run: "run", 진행: "run", wait: "wait", 대기: "wait", ask: "ask", 결정: "ask", fail: "fail", 실패: "fail", warn: "fail", 경고: "fail" };
 const MARKER = new RegExp(`^\\[(${Object.keys(TAGS).join("|")})\\][ \\t]*`, "i");
 
 const OPTION = /^\s*>?\s*\*\*\d+\)/;
@@ -19,12 +22,12 @@ const META = new RegExp(`^\\s*(?:-\\s+)?(?:근거:|출처:|Evidence:|Source:|For
 // every display path then runs the text through stripMarkers. Only these shapes, only at line start (optionally behind a list
 // dash, `**` or a `**name**: ` lead), outside ``` fences, are dropped; other brackets are content: `[1]`, `[x]`, `[text](url)`,
 // `[name] ...` that is not one of these shapes, anything mid-line, code.
-//   status      [run] [done] [ask] [fail] [warn] [blocked] [partial] [later] [ok] [error] and Korean forms
+//   status      [run] [wait] [done] [ask] [fail] [warn] [blocked] [partial] [later] [ok] [error] and Korean forms
 //   gateway     [lane <word>] ([lane error]/[lane exited]/[lane stuck]) [dotz gateway|inbox|reflect|lane <name>|...] [dotz]
 //               [orchestrator-guard] [지금 도는 것] [now running] [handover] [keepalive] [system] [attachment] [owner via <x>]
 //   tool        [ok | 12ms] [error | 3s] ; routine [routine:<id>:<hash>] ; clock [10-23]
 //   [file] lines are attachments (hub/discord-files.ts takes them first); a left-over one is dropped with its path.
-const STATUS_WORDS = "run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류";
+const STATUS_WORDS = "run|wait|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|대기|결정|실패|경고|차단|부분|나중|오류";
 const MARKER_BODY = `(?:${STATUS_WORDS}|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})`;
 const LINE_LEAD = "[ \\t]*(?:[-*][ \\t]+)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?";
 const MARKER_LEAD = new RegExp(`^(${LINE_LEAD})(\\*\\*)?\\[${MARKER_BODY}\\](\\*\\*)?[ \\t]*`, "i");

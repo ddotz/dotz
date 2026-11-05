@@ -8,7 +8,7 @@
 // - a report repeating the lane's last relayed one is dropped (a gateway notice such as [lane exited] never is);
 // - a report arriving while the orchestrator is in a turn is steered into that turn at once (2026-10-20: held reports
 //   reached it after p90 368 s); only when the turn cannot take it are reports batched into one prompt for idle.
-import { parseTone, type Tone } from "./tone.ts";
+import { parkedTone, parseTone, type Tone } from "./tone.ts";
 
 export type Relay = { lane: string; tone?: Tone; text: string; file: string };
 
@@ -80,7 +80,7 @@ export function createLaneRelay(deps: { busy: () => boolean; deliver: (text: str
 	/** A lane's report: "relayed" (now), "steered" (into the running turn), "held" (batched for idle), "disk" (routine), "owner" (owner-only exchange) or "duplicate". */
 	function report(lane: string, text: string, file: string, ownerOnly = false): "relayed" | "steered" | "held" | "disk" | "owner" | "duplicate" {
 		const { tone } = parseTone(text);
-		if (tone === "run") return "disk";
+		if (parkedTone(tone)) return "disk";
 		if (!tone && ownerOnly && !/^\[lane [a-z]+\]/.test(text)) return "owner";
 		const key = norm(text);
 		// A gateway notice ([lane exited], [lane error]) is a new event each time, even in the same words: an owner message

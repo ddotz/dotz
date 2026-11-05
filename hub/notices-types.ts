@@ -7,7 +7,7 @@ import { say } from "./notices-read.ts";
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
 // bell survives a restart. Fed by what the hub already emits (onEmit), so main.ts only wires the API and the resolver.
 export type NoticeKind = "result" | "alert" | "worklog" | "watch" | "decision" | "message";
-export type NoticeTone = "done" | "run" | "ask" | "fail" | "";
+export type NoticeTone = "done" | "run" | "wait" | "ask" | "fail" | "";
 export type Notice = {
 	id: string;
 	ts: string;

@@ -177,9 +177,11 @@ function mdHtml(src, relayed = false, answer = false) {
 const mdNode = (src, cls = "md", relayed = false, answer = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed, answer) });
 
 /* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
-const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
+const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", wait: "wait", "대기": "wait", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
 // The marker word is drawn as one status tag at the start of the message's first line (prototype .bub .st), never as the raw marker or an emoji.
-const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], ask: ["warn", "확인 필요"], fail: ["err", "실패"] };
+const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], wait: ["warn", "답을 기다려요"], ask: ["warn", "확인 필요"], fail: ["err", "실패"] };
+// [run] and [wait] are true only of the moment they were written: 41-runstate.js syncLiveTags draws them from the current state.
+const parkedTone = tone => tone === "run" || tone === "wait";
 const toneTag = tone => LANE_TONE[tone] ? el("span", { class: `tag ${LANE_TONE[tone][0]} st-tag`, text: LANE_TONE[tone][1] }) : null;
 // The tag goes in front of the first paragraph's text; a body that opens with a list or a card gets a line of its own.
 function toneLead(root, tone) {
@@ -192,7 +194,7 @@ function toneLead(root, tone) {
 // known marker shapes at line start (behind an optional list dash, `**` or `**name**: ` lead), outside ``` fences; any
 // other bracket is content. Status words, [lane <word>], [dotz ...], [orchestrator-guard], [지금 도는 것], [attachment],
 // [system], [owner via <x>], [ok | 12ms], [routine:...], [10-23]; a left-over [file] line is dropped.
-const MK_BODY = "(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})";
+const MK_BODY = "(?:run|wait|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|대기|결정|실패|경고|차단|부분|나중|오류|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})";
 const MK_LEAD = new RegExp("^([ \\t]*(?:[-*][ \\t]+)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?)(\\*\\*)?\\[" + MK_BODY + "\\](\\*\\*)?[ \\t]*", "i");
 // keepFiles: a message body keeps its `[file]` lines for the attachment chips (fileLines, 15-attachments.js); mdNode drops them.
 function stripMarkers(text, keepFiles = false) {

@@ -8,6 +8,7 @@
 //   conv   대화       a new answer in a conversation the owner is not looking at: push only then (hub/push.ts shouldNotify).
 //   log    기록       [run] progress, routine records and a monitor report that found nothing new (watchUnchanged): no push, no badge, only in 작업내역 / 모니터링.
 import type { Notice, NoticeKind, NoticeTone } from "./notices.ts";
+import { parkedTone } from "./tone.ts";
 import { loginLost, watchUnchanged } from "./watchtext.ts";
 
 export const NOTICE_CLASSES = ["ask", "alert", "result", "news", "conv", "log"] as const;
@@ -30,7 +31,7 @@ export const isLoginLost = (n: Pick<ClassInput, "kind" | "tone" | "text">): bool
 
 function clsOf(n: ClassInput): NoticeClass {
 	if (n.kind === "decision" || n.decision !== undefined || n.tone === "ask") return "ask";
-	if (n.tone === "run") return "log";
+	if (parkedTone(n.tone || undefined)) return "log";
 	if (isLoginLost(n)) return "alert";
 	switch (n.kind) {
 		case "alert":
