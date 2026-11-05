@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandOf, createSelfChat, normalizeSelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
+import { commandOf, createSelfChat, normalizeSelfChat, type SelfChatConfig, type SelfChatDeps, type SelfChatPeer } from "./jandi-selfchat.ts";
 import type { Upload } from "./files.ts";
 import { readSecretFile, setSecretKey } from "./secretbox.ts";
 import fileRecord from "./fixtures/jandi-file-message.json";
@@ -37,6 +37,8 @@ const jandi = Bun.serve({
 			return new Response(null, { status: 401 });
 		}
 		if (u.pathname === "/files/screenshot.png") return new Response(PNG, { headers: { "Content-Type": "image/png" } });
+		if (u.pathname === "/files/unsized.png") return new Response(new ReadableStream({ pull: c => c.enqueue(PNG) })); // never ends, no Content-Length
+		if (u.pathname === "/files/stalled.png") return new Response(new ReadableStream({ start: c => c.enqueue(PNG) }));
 		if (u.pathname === `/room-api/v2/teams/${TEAM}/rooms/${ROOM}`) return Response.json({ id: ROOM, ...room });
 		if (u.pathname === `/message-api/v2/teams/${TEAM}/rooms/${ROOM}/messages`) {
 			const after = Number(u.searchParams.get("linkId") ?? 0);
@@ -167,7 +169,7 @@ function fileMsg(id: number, from: number, caption?: string, file: Record<string
 	return { id, fromEntity: from, message: m };
 }
 type Got = { text: string; files: Upload[] };
-function makeFiles(got: Got[], over: { maxFileBytes?: number } = {}) {
+function makeFiles(got: Got[], over: Partial<SelfChatDeps> = {}) {
 	return createSelfChat(cfg, { dataDir: dir, api: `http://127.0.0.1:${jandi.port}/`, receive: (text, files) => got.push({ text, files }), log: () => {}, onError: () => {}, ...over });
 }
 
@@ -230,4 +232,113 @@ test("a record of contentType file (the older shape) is read the same way", asyn
 	messages.push({ id: 2, fromEntity: ME, message: { contentType: "file", content } });
 	await sc.tick();
 	expect(got.map(g => [g.text, g.files.map(f => f.name)])).toEqual([["", ["screenshot.png"]]]);
+});
+
+// Hosts a test cannot serve: everything but the local API goes through `routes`, and `seen` is what each host was sent.
+function outside(routes: Record<string, () => Response>) {
+	const seen: [string, string | null][] = [];
+	const fetcher = ((url: string | URL, init?: RequestInit) => {
+		if (String(url).startsWith(`http://127.0.0.1:${jandi.port}/`)) return fetch(url, init);
+		seen.push([String(url), new Headers(init?.headers).get("authorization")]);
+		return Promise.resolve(routes[String(url)]?.() ?? new Response(null, { status: 404 }));
+	}) as typeof fetch;
+	return { seen, fetcher };
+}
+const moved = (to: string) => () => new Response(null, { status: 302, headers: { Location: to } });
+
+test("the session goes to https jandi.com hosts only, never to a lookalike a redirect names", async () => {
+	const got: Got[] = [];
+	const hop = outside({
+		"https://files.jandi.com/a": moved("https://evil-jandi.com/a"),
+		"https://evil-jandi.com/a": moved("https://files.jandi.com.evil.test/a"),
+		"https://files.jandi.com.evil.test/a": () => new Response(PNG),
+	});
+	const sc = makeFiles(got, { fetch: hop.fetcher });
+	await sc.tick();
+	messages.push(fileMsg(2, ME, undefined, { fileUrl: "https://files.jandi.com/a" }));
+	await sc.tick();
+	expect(hop.seen).toEqual([["https://files.jandi.com/a", "bearer at"], ["https://evil-jandi.com/a", null], ["https://files.jandi.com.evil.test/a", null]]);
+	expect(got[0]!.files).toHaveLength(1);
+});
+
+test("a downgrade to http, another scheme and an endless redirect are refused; the line and the log keep no query", async () => {
+	const got: Got[] = [];
+	const logs: string[] = [];
+	const hop = outside({
+		"https://files.jandi.com/plain?sig=s3cret": moved("http://files.jandi.com/plain?sig=s3cret"),
+		"https://files.jandi.com/local": moved("file:///etc/hosts"),
+		"https://files.jandi.com/loop": moved("https://files.jandi.com/loop"),
+	});
+	const sc = makeFiles(got, { fetch: hop.fetcher, log: m => logs.push(m) });
+	await sc.tick();
+	messages.push(fileMsg(2, ME, undefined, { fileUrl: "https://files.jandi.com/plain?sig=s3cret" }), fileMsg(3, ME, undefined, { fileUrl: "https://files.jandi.com/local" }), fileMsg(4, ME, undefined, { fileUrl: "https://files.jandi.com/loop" }), fileMsg(5, ME, undefined, { fileUrl: "file:///etc/hosts" }));
+	await sc.tick();
+	expect(got.map(g => [g.text, g.files.length])).toEqual([
+		["[attachment] screenshot.png (image/png) https://files.jandi.com/plain", 0],
+		["[attachment] screenshot.png (image/png) https://files.jandi.com/local", 0],
+		["[attachment] screenshot.png (image/png) https://files.jandi.com/loop", 0],
+		["[attachment] screenshot.png (image/png) (not saved)", 0],
+	]);
+	expect(hop.seen.filter(([u]) => !u.startsWith("https:"))).toEqual([]);
+	expect(hop.seen.filter(([u]) => u.endsWith("/loop"))).toHaveLength(4);
+	expect(logs.filter(l => l.includes("not saved")).map(l => /\((.+)\)$/.exec(l)?.[1])).toEqual(["not https", "not https", "too many redirects", "not https"]);
+	expect(logs.join("\n")).not.toContain("s3cret");
+});
+
+test("a body with no Content-Length stops at the cap and leaves no partial file", async () => {
+	const got: Got[] = [];
+	const sc = makeFiles(got, { maxFileBytes: 20 });
+	await sc.tick();
+	messages.push(fileMsg(2, ME, "dotz 봐", { fileUrl: `http://127.0.0.1:${jandi.port}/files/unsized.png` }));
+	await sc.tick();
+	expect(got).toEqual([{ text: `봐\n[attachment] screenshot.png (image/png) http://127.0.0.1:${jandi.port}/files/unsized.png`, files: [] }]);
+	const day = readdirSync(join(dir, "uploads"))[0]!;
+	expect(readdirSync(join(dir, "uploads", day, "jandi-2"))).toEqual([]);
+});
+
+test("a file name cannot leave the message's folder and a saved file is not executable", async () => {
+	const got: Got[] = [];
+	const sc = makeFiles(got);
+	await sc.tick();
+	messages.push(fileMsg(2, ME, undefined, { name: "../../../../.ssh/run.sh" }));
+	await sc.tick();
+	const f = got[0]!.files[0]!;
+	expect(f.path).toMatch(/\/uploads\/[^/]+\/jandi-2\/run\.sh$/);
+	expect(statSync(f.path).mode & 0o111).toBe(0);
+});
+
+test("a stalled file does not hold the turn or the poll: the message's deadline covers all its files", async () => {
+	const got: Got[] = [];
+	const sc = makeFiles(got, { filesTimeoutMs: 50 });
+	await sc.tick();
+	const stalled = fileMsg(2, ME, "dotz 봐", { fileUrl: `http://127.0.0.1:${jandi.port}/files/stalled.png` }) as { message: { attachments: unknown[] } };
+	stalled.message.attachments.push(stalled.message.attachments[0]);
+	messages.push(stalled as unknown as Msg, { id: 3, fromEntity: ME, body: "dotz 다음" });
+	await sc.tick();
+	expect(got.map(g => g.text.split("\n").length)).toEqual([3, 1]);
+	expect(got.map(g => g.files)).toEqual([[], []]);
+	expect(got[1]!.text).toBe("다음");
+});
+
+test("a text before a file waits for the download, so both land in one burst; stop() during a download leaves the rest to the next reader", async () => {
+	const got: Got[] = [];
+	const at: number[] = [];
+	let sc: ReturnType<typeof makeFiles>;
+	const hop = outside({
+		"https://files.jandi.com/a": () => {
+			at.push(got.length);
+			sc.stop();
+			return new Response(PNG);
+		},
+	});
+	sc = makeFiles(got, { fetch: hop.fetcher });
+	await sc.tick();
+	messages.push({ id: 2, fromEntity: ME, body: "dotz 이거" }, fileMsg(3, ME, undefined, { fileUrl: "https://files.jandi.com/a" }), { id: 4, fromEntity: ME, body: "dotz 다음" });
+	await sc.tick();
+	expect(at).toEqual([0]);
+	expect(got.map(g => [g.text, g.files.length])).toEqual([["이거", 0], ["", 1]]);
+	const next: Got[] = [];
+	const again = makeFiles(next);
+	await again.tick();
+	expect(next.map(g => g.text)).toEqual(["다음"]);
 });
