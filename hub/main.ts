@@ -290,7 +290,7 @@ void syncAllRooms().then(() => startAll(
 		const thread = m.target.startsWith("th:") ? mailByThread(id) : undefined;
 		const mail = m.target.startsWith("mail:") ? mailByKey(id) : thread;
 		const conv = m.target === "alert" || m.target === "worklog" ? m.target : undefined;
-		await sendWeb({ source: m.adapter, channel: "web", text: m.text, mode: "default", login: m.author, ...(m.target.startsWith("lane:") ? { lane: id } : {}), ...(m.target.startsWith("ch:") ? { project: projectTarget(m.target, discord.channels.work) } : {}), ...(mail ? { mail } : {}), ...(conv ? { conv } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}) });
+		await sendWeb({ source: m.adapter, channel: "web", text: m.text, mode: "default", login: m.author, ...(m.target.startsWith("lane:") ? { lane: id } : {}), ...(m.target.startsWith("ch:") ? { project: projectTarget(m.target, discord.channels.work) } : {}), ...(mail ? { mail } : {}), ...(conv ? { conv } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}), ...(m.files?.length ? { files: m.files } : {}) });
 	}, m => void pushNotify(m)),
 )).catch(e => log(`messengers failed to start: ${e}`));
 

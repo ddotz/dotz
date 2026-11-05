@@ -211,9 +211,9 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			if (sc?.enabled && sc.team_id && sc.room_id && sc.member_id && sc.bot_id) {
 				selfChat = createSelfChat(sc, {
 					dataDir,
-					receive: text => {
+					receive: (text, files) => {
 						mark("self_chat", { last_in: Date.now() });
-						ctx?.receive({ adapter: "jandi", target: "main", text, author: `jandi:${sc.member_id}` });
+						ctx?.receive({ adapter: "jandi", target: "main", text, author: `jandi:${sc.member_id}`, ...(files.length ? { files } : {}) });
 					},
 					peerReply: (peer, text, id) => {
 						const m = peerReplyPush(peer, text, id);
