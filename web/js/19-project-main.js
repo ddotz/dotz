@@ -51,7 +51,14 @@ function pmSessionRows(p, D) {
   return [...names].map(n => {
     const s = all.find(l => l.name === n), d = dl.find(l => l.name === n) || (p.lanes || []).find(l => l.name === n) || {};
     return { project: (s && laneProject(s)) || prjTitle(p), at: Date.parse(d.finishedAt || d.lastReportAt || d.startedAt || (s && s.startedAt) || "") || 0, name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, ask: s && s.pendingAsk && s.pendingAsk.text ? oneLine(s.pendingAsk.text) : "", line: friendlyLine(d.line || d.lastText || "").slice(0, 140) };
-  }).sort((a, b) => (b.live - a.live) || (b.waiting - a.waiting) || a.title.localeCompare(b.title));
+  }).map(r => ({ r, rank: pmSessionRank(r) })).sort((a, b) => a.rank - b.rank || (a.rank === PM_DONE ? b.r.at - a.r.at : a.r.title.localeCompare(b.r.title))).map(x => x.r);
+}
+// The word of a project's session row, the same as its 진행 중 row (sessionState). Waiting on the owner, then running, then what stopped short; finished sink, newest first.
+const pmLaneState = r => sessionState({ name: r.name, status: r.status, live: r.live, pendingAsk: r.waiting });
+const PM_DONE = 3;
+function pmSessionRank(r) {
+  const s = pmLaneState(r);
+  return s === SESSION_WORD.wait ? 0 : s === SESSION_WORD.run ? 1 : s === SESSION_WORD.done ? PM_DONE : 2;
 }
 // Level 2: the essentials only. Each section is one tappable summary row that opens its own page (level 3, pmSheet).
 function pmPaint() {
@@ -193,8 +200,8 @@ function pmHead(q) {
     el("div", { class: "pmv-hmain" },
       el("div", { class: "pmv-htop" },
         pmEditable({ value: prjTitle(q), label: "프로젝트 이름", required: true, cls: "pmv-title", save: v => pmWrite({ title: v }) }),
-        el("span", { class: `tag ${tone}`, text: st.word }),
-        at ? el("span", { class: "pmv-upd", text: prjAgo(at) }) : null),
+        st.k === "idle" && at ? null : el("span", { class: `tag ${tone}`, text: st.word }),
+        at ? el("span", { class: "pmv-upd", text: `마지막 대화 ${prjAgo(at)}` }) : null),
       pmEditable({ value: prjPurpose(q), shown: prjBlurb(prjPurpose(q)), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
     // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
     chat ? el("div", { class: "pmv-hact" }, el("div", { class: "pmv-hrow" },
@@ -367,7 +374,7 @@ function pmRoutine(x) {
 const pmSessionRow = (r, open) => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line, ...(typeof open === "function" ? { open } : {}) });
 // The prototype's session row (s-work.js project 세션): a state dot, the title, the lane name, and the state tag at the right.
 function pmLaneRow(r) {
-  const [word, tone] = sessionStatus({ name: r.name, status: r.status, live: r.live, pendingAsk: r.waiting });
+  const [word, tone] = pmLaneState(r);
   return el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()), "aria-label": `${r.title} · ${word} · 대화 열기` },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: r.name })),
