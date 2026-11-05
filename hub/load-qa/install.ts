@@ -30,7 +30,10 @@ export function writeInstall(dataDir: string, o: InstallOpts): void {
 		load_qa: { scale: o.scale },
 	};
 	mkdirSync(join(dataDir, "onboarding"), { recursive: true });
-	writeFileSync(join(dataDir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+	// seed.ts writes mail.keep / mail.own_addresses into config.json: whichever of seed and install runs second keeps the other's `mail` section.
+	const file = join(dataDir, "config.json");
+	const prior = existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as { mail?: unknown }) : {};
+	writeFileSync(file, `${JSON.stringify({ ...config, ...(prior.mail ? { mail: prior.mail } : {}) }, null, 2)}\n`);
 	const done = { status: "done", token_sha256: "", token_expires_at: 0, cookie_sha256: "", step: "done", draft: {}, intro: "seen" };
 	writeFileSync(join(dataDir, "onboarding", "first-run.json"), `${JSON.stringify(done, null, 2)}\n`, { mode: 0o600 });
 	const agent = join(home, ".omo", "agent");

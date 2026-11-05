@@ -355,17 +355,23 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 	for (const d of allRecs) if (!d.compose) out(d.created, Flow.askText(d, []));
 	for (const k of comments.cards) out(iso(k.d.created), CommentAsk.commentAsk(k.src, k.c, k.d, undefined, k.mail ? Linked.mailPartOf(k.mail) : undefined));
 	const mailRows = [...Mail.mailRecords(), ...bulk].filter(m => m.dir !== "out").sort((a, b) => a.at.localeCompare(b.at));
-	const mailNotices = Math.max(0, Math.round((size.notices - events.length) * 0.82));
-	for (const m of mailRows.slice(-mailNotices)) events.push({ ts: m.at, e: { ts: m.at, kind: "mail", incoming: true, source: m.source, channel: `mail:${m.key}`, conv: `mail:${m.key}`, mail: m.key, subject: m.subject, from: m.from, ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), text: Mail.mailText({ from: m.from, subject: m.subject, ...(m.summary ? { summary: m.summary } : {}) }) } });
-	for (let i = 0; events.length < size.notices; i++) out(iso(base - 90_000 * (i + 1)), `${ALERTS[i % ALERTS.length]} (${i + 1})`);
+	// The store trims to NOTICE_CAP (300) and never drops an open decision, so once the 500 draft cards are in, every other new row is trimmed at
+	// once. Mails and alerts are therefore fed first (oldest first, each captured as made), the cards after them; the rows written below are
+	// every row the feed made, which the store alone could not hold (a finding: hub/notices-rules.ts NOTICE_CAP).
+	const mailEvent = (m: (typeof mailRows)[number]) => ({ ts: m.at, e: { ts: m.at, kind: "mail", incoming: true, source: m.source, channel: `mail:${m.key}`, conv: `mail:${m.key}`, mail: m.key, subject: m.subject, from: m.from, ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), text: Mail.mailText({ from: m.from, subject: m.subject, ...(m.summary ? { summary: m.summary } : {}) }) } });
+	const alerts = Math.min(20, Math.max(0, size.notices - events.length));
+	for (let i = 0; i < alerts; i++) out(iso(base - 90_000 * (i + 1)), `${ALERTS[i % ALERTS.length]} (${i + 1})`);
+	const alertEvents = events.splice(events.length - alerts, alerts);
+	const first = [...mailRows.slice(-Math.max(0, size.notices - events.length - alerts)).map(mailEvent), ...alertEvents].sort((a, b) => a.ts.localeCompare(b.ts));
 	events.sort((a, b) => a.ts.localeCompare(b.ts));
 	const seen = new Set<string>(), made: (typeof Notices.items)[number][] = [];
 	await timed("notices.feed", () => {
-		for (const { e } of events) {
+		for (const { e } of [...first, ...events]) {
 			Notices.feed(e as import("../events.ts").HubEvent);
 			for (const n of Notices.items) if (!seen.has(n.id)) (seen.add(n.id), made.push(n));
 		}
 	});
+	if (made.length !== size.notices) throw new Error(`seed: the feed made ${made.length} notices, wanted ${size.notices}`);
 	const kept = Notices.items.length;
 	for (const [i, n] of made.entries()) n.id = i.toString(16).padStart(8, "0");
 	await timed("notices.direct", () => Cfg.writeAtomic(Cfg.paths.notices, `${JSON.stringify(made, null, 1)}\n`));
