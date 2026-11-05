@@ -1,8 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { oneShotInbox } from "./aside.ts";
-import { loginCaptureScript } from "./messenger-login.ts";
+import { inboxPost, loginCaptureScript } from "./messenger-login.ts";
 
 describe("login capture inbox", () => {
+	test("a post to an inbox that never answers ends by its time limit, in a repl that has no AbortSignal", async () => {
+		const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
+		const post = new AsyncFunction("fetch", "setTimeout", "AbortSignal", inboxPost("http://127.0.0.1:1/x", "{ a: 1 }"));
+		const never = () => new Promise(() => {});
+		const atOnce = (f: () => void) => f();
+		await expect(post(never, atOnce, undefined)).rejects.toThrow("timed out");
+	});
+
 	test("takes one POST on its random path from this machine and answers 404 to everything after", async () => {
 		const inbox = oneShotInbox();
 		try {
