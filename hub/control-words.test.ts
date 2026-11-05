@@ -91,3 +91,8 @@ test("out stores the prose, keeps the waiting message open for a note, and posts
 	await out("web", "`[later]`");
 	expect(seen.filter(e => e.kind === "out")).toHaveLength(1);
 });
+
+test("a --- line leaves no dashes on Discord, a code fence keeps them", () => {
+	expect(buildPayloads("앞 문단이에요.\n\n---\n\n뒤 문단이에요.")[0]!.content).not.toContain("---");
+	expect(buildPayloads("```\n---\n```")[0]!.content).toContain("---");
+});

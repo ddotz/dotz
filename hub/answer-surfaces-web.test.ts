@@ -29,6 +29,8 @@ const FORMATS: Record<string, [string, string]> = {
 	evidence: ["고쳤어요.\n\n근거: 테스트 24개 통과", ".ans-ev"],
 	files: ["정리했어요.\n\n[file] /files/요약.pdf", ".ans-files"],
 	list: ["찾았어요.\n\n```목록\n운영 | 김 | 10:42\n가족 | 엄마\n```", ".mlist"],
+	"bold over code": ["고쳤어요.\n\n**`hub/a.ts` 고침:** 끝났어요.", "b"],
+	rule: ["앞 문단이에요.\n\n---\n\n뒤 문단이에요.", "hr"],
 };
 const hub = fakeHub({
 	api: (_req, url) => {

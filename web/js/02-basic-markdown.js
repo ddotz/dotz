@@ -1,9 +1,17 @@
 /* ---------- basic markdown (input is escaped before any markup is produced) ---------- */
 // Links only for http(s) targets; the text and URL are already escaped when the anchor is built.
+// A `code` span stands in as one \0n\0 token, so bold, italics and links can run across it ("**`a.ts` 고침:**").
 function inline(s) {
-  return String(s).split(/(`[^`\n]+`)/).map((p, i) => i % 2 ? `<code${/^(~|\.{0,2}\/)[^\s]*$|^[\w.-]+\/[\w./-]+(:\d+(-\d+)?)?$/.test(p.slice(1, -1)) ? ' class="path"' : ""}>${esc(p.slice(1, -1))}</code>` : esc(p).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/(^|[^"'>=\w])(https?:\/\/[^\s<]*[^\s<.,;:!?)\]'"])/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
-    .replace(/~~([^~\n]+)~~/g, "<s>$1</s>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "$1<i>$2</i>")).join("");
+  const codes = [];
+  const held = String(s).replace(/\0/g, "").replace(/`[^`\n]+`/g, c => {
+    const t = c.slice(1, -1);
+    codes.push(`<code${/^(~|\.{0,2}\/)[^\s]*$|^[\w.-]+\/[\w./-]+(:\d+(-\d+)?)?$/.test(t) ? ' class="path"' : ""}>${esc(t)}</code>`);
+    return `\0${codes.length - 1}\0`;
+  });
+  return esc(held).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)\0]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/(^|[^"'>=\w])(https?:\/\/[^\s<\0]*[^\s<.,;:!?)\]'"\0])/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
+    .replace(/~~([^~\n]+)~~/g, "<s>$1</s>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "$1<i>$2</i>")
+    .replace(/\0(\d+)\0/g, (_, n) => codes[n]);
 }
 // "| a | b |" rows; the "|---|" separator row after the first one makes that row the header.
 const cells = line => line.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
@@ -80,6 +88,7 @@ function rcRowHtml(key, text, tail = "") {
 }
 // A list of "10:00 what" items and nothing else is a schedule: the rows of an answer's card (02-answer-shapes.js) and of a briefing (11-resultcard.js).
 const TIME_ROW = /^(\d{1,2}:\d{2})\s+(\S.*)$/;
+const RULE_LINE = /^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/;   // a "---" line divides a message: a hairline, never three dashes
 const timeList = l => l.t === "ul" && l.items.length >= 2 && l.items.every(i => !i.sub && TIME_ROW.test(i.text));
 function timeRowsHtml(items) {
   return `<div class="rc-rows">${items.map(i => { const m = TIME_ROW.exec(i.text); return rcRowHtml(m[1], m[2]); }).join("")}</div>`;
@@ -142,6 +151,7 @@ function blocks(text, last, answer) {
     }
     else if ((m = line.match(/^\s*>\s?(.*)/))) { flushL(); if (para.length) { const q = quote; quote = []; flushP(); quote = q; } quote.push(m[1]); }
     else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flushP(); flushL(); html.push(`<p class="h"><b>${inline(m[1])}</b></p>`); }
+    else if (RULE_LINE.test(line)) { flushP(); flushL(); html.push("<hr>"); }
     else if (!line.trim()) { flushP(); flushL(); }
     else { flushL(); para.push(line); }
   }
