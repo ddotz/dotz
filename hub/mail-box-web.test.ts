@@ -56,14 +56,13 @@ const hub = fakeHub({
 			const body = (await req.json()) as { action: string }; posts.push({ path: p, body });
 			if (one[1] === "fx-fail") return json({ ok: false, synced: false, note: "Gmail에 반영하지 못했어요" });
 			const m = mails.find(x => x.key === one[1]); if (m) APPLY[body.action](m);
-			if (m && Array.isArray(m.can) && !m.can.length) return json({ ok: true, synced: false, note: `dotz에서만 ${body.action === "archive" || body.action === "unarchive" ? "보관 상태가" : "읽음 표시가"} 바뀌었어요` });
+			if (m && Array.isArray(m.can) && !m.can.length) return json({ ok: true, synced: false });
 			return json({ ok: true, synced: true });
 		}
 		if (p === "/api/mail/actions" && req.method === "POST") {
 			const body = (await req.json()) as { keys: string[]; action: string }; posts.push({ path: p, body });
-			// The real hub: the action always lands in dotz; a mailbox with no capability list of its own answers synced:false and one line.
-			const line = `dotz에서만 ${body.action === "archive" || body.action === "unarchive" ? "보관 상태가" : "읽음 표시가"} 바뀌었어요`;
-			return json({ ok: true, results: body.keys.map(k => { const m = mails.find(x => x.key === k); if (m) APPLY[body.action](m); return { key: k, ok: true, synced: !!(m && m.can && m.can.length), ...(m && !(m.can && m.can.length) ? { note: line } : {}) }; }) });
+			// The real hub: the action always lands in dotz; a mailbox with no capability list of its own answers synced:false and no note.
+			return json({ ok: true, results: body.keys.map(k => { const m = mails.find(x => x.key === k); if (m) APPLY[body.action](m); return { key: k, ok: true, synced: !!(m && m.can && m.can.length) }; }) });
 		}
 		if (p === "/api/mail/delete-original" && req.method === "POST") {
 			const body = (await req.json()) as { keys: string[] }; posts.push({ path: p, body });
@@ -162,17 +161,18 @@ describe("actions on a selection", () => {
 		expect(await ev<boolean>(v, `${rowJs("처리가 안 되는 메일")}.classList.contains("mr-new")`)).toBe(true);
 	}, 30_000);
 
-	test("a mailbox that will not follow still changes in dotz, and says so in one line", async () => {
+	test("a mailbox that will not follow still changes in dotz and shows the usual done toast with no notice line", async () => {
 		const v = await openList(1280, 800);
 		await tick(v, "회사 메일");
-		// company, a webmail site: the card says can: [], so the hub cannot follow, but the action still happens here. The action still lands in dotz and the hub's one line says the mailbox did not follow.
+		// company, a webmail site: the card says can: [], so the hub cannot follow, but the action still happens here. The action still lands in dotz and the hub answers synced:false with no note, so the usual done toast shows.
 		expect(await ev<boolean>(v, `${bar(v, "읽음으로 표시")}.disabled`)).toBe(false);
 		expect(await ev<boolean>(v, `${bar(v, "완료(보관)")}.disabled`)).toBe(false);
 		await run(v, `${bar(v, "완료(보관)")}.click()`);
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/fx-company/action", body: { action: "archive" } });
 		await waitFor(v, `!${rowJs("회사 메일")}`);
-		expect(await ev<number>(v, `[...document.querySelectorAll("body *")].filter(e => e.children.length === 0 && e.textContent.includes("dotz에서만 보관 상태가 바뀌었어요")).length`)).toBe(1);
+		await waitFor(v, `document.querySelector(".snack")?.textContent.includes("보관했어요")`);
+		expect(await ev<boolean>(v, `document.body.textContent.includes("dotz에서만")`)).toBe(false);
 	}, 30_000);
 
 	test("삭제 asks first, then uses the old route for a mailbox with no capability list", async () => {
