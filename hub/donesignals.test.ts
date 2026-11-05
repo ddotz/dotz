@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkDone, doneChecks, doneProblem, splitChecks } from "./donesignals.ts";
@@ -47,14 +47,19 @@ test("each check kind reads live state and says why it fails", async () => {
 	expect(checks[8]!.detail).toContain("OPEN");
 });
 
-test("stdout~ anchors match a stream's last line as in a shell, in a folder with spaces and Korean", async () => {
-	const cwd = join(mkdtempSync(join(tmpdir(), "dotz-done-")), "내 드라이브 폴더");
-	mkdirSync(cwd);
-	writeFileSync(join(cwd, "사용 설명서_1.docx"), "x");
-	const checks = await checkDone(
-		['command `ls | grep -c "사용 설명서_"` stdout~"^1$"', 'command `echo 2` stdout~"^1$"', 'command `echo ok; echo warn >&2` stdout~"^warn$"'],
-		cwd,
-		{ receiptsDir: mkdtempSync(join(tmpdir(), "dotz-done-r-")) },
-	);
-	expect(checks.map(c => c.ok)).toEqual([true, false, true]);
+test("stdout~: $ ignores trailing newlines, and no pattern passes on one stream alone", async () => {
+	const cases: [string, boolean][] = [
+		['command `echo 1` stdout~"^1$"', true],
+		['command `echo 2` stdout~"^1$"', false],
+		['command `true` stdout~"^$"', true],
+		['command `echo dirty` stdout~"^$"', false],
+		['command `echo FAIL` stdout~"^(?!.*FAIL)"', false],
+		['command `echo ok; echo FAIL >&2` stdout~"^(?![^]*FAIL)"', false],
+		['command `echo 2; echo 1 >&2` stdout~"^1$"', false],
+		['command `echo 2; echo 1 >&2` stdout~"1$"', false],
+		['command `echo 1; echo warn >&2` stdout~"warn"', true],
+		['command `echo 1` stdout~"1\\n"', true],
+	];
+	const checks = await checkDone(cases.map(c => c[0]), mkdtempSync(join(tmpdir(), "dotz-done-")), { receiptsDir: mkdtempSync(join(tmpdir(), "dotz-done-r-")) });
+	expect(checks.map(c => [c.signal, c.ok])).toEqual(cases);
 });
