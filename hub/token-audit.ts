@@ -81,7 +81,7 @@ type Stats = {
 	wakes: Record<string, { n: number; tokens: number; cost: number }>; warmings: number;
 	errTurns: number; maxErrStreak: number; errCodes: Record<string, number>; compactErr: number;
 	maxBigStreak: number; bigTokens: number; bigCost: number;
-	fbTurns: number; fbModels: Set<string>; intended?: string; fbSegs: number[][]; shrinks: number;
+	fbTurns: number; fbModels: Set<string>; fbIntended: Set<string>; intended?: string; fbSegs: number[][]; shrinks: number;
 	fable: number; fableCost: number; effortTurns: number; effortCost: number; expensiveCost: number; efforts: Set<string>;
 	maxToolStreak: number; maxToolDesc: string; loopTokens: number; loopCost: number; readRate: number;
 };
@@ -113,7 +113,7 @@ export function readDecisions(files = CONTINUITY_LOGS): Decisions {
 export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisions: Decisions = new Map()): Stats {
 	const s: Stats = {
 		src, intended: src.requested, fbSegs: [], shrinks: 0, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], rebuilds: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0,
-		errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0, fbTurns: 0, fbModels: new Set(),
+		errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0, fbTurns: 0, fbModels: new Set(), fbIntended: new Set(),
 		fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, expensiveCost: 0, efforts: new Set(), maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
 	};
 	const sessionDecisions = decisions.get(src.file.match(/([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/)?.[1] ?? "") ?? [];
@@ -123,7 +123,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 	let compacted = false, modelChanged = false, thinkChanged = false, user = false;
 	let prev: { ts: number; ctx: number; ttlMin: number; out: number; before?: number } | undefined;
 	let prevStop = "stop";
-	let lastCompactTs = 0, fbOpen = false;
+	let lastCompactTs = 0, fbOpen = false, unproven = false;
 	let omoLong = false;
 	let errStreak = 0, bigStreak = 0, toolHash = "", toolStreak = 0, readTok = 0, readCost = 0;
 	let level = "";
@@ -157,8 +157,12 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 				const model = o.model ?? (o.provider && o.modelId ? `${o.provider}/${o.modelId}` : "");
 				// A fallback switch keeps the model it replaced as the intended one (OmO names it originalModelId).
 				if (o.reason === "fallback" || o.resolvedModelIsFallback) {
+					unproven = false;
 					if (o.originalModelId) s.intended = `${o.originalProvider ?? o.provider}/${o.originalModelId}`;
-				} else if (model) s.intended = model;
+				} else if (model) {
+					s.intended = model;
+					unproven = !src.requested;
+				}
 			} catch {}
 			continue;
 		} else if (head.startsWith('{"type":"thinking_level_change"')) {
@@ -213,6 +217,11 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 		if (!tokens) {
 			prevStop = m.stopReason ?? "stop";
 			continue;
+		}
+		// A resumed process's --model writes no model_change (OmO: "no model_change recorded that hop"), so a selection that never answered gives way to the model that did.
+		if (unproven && m.stopReason !== "error") {
+			s.intended = model;
+			unproven = false;
 		}
 		if (inWindow) {
 			s.start ??= ts;
@@ -285,6 +294,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 			if (s.intended && !sameModel(model, s.intended)) {
 				s.fbTurns++;
 				s.fbModels.add(model);
+				s.fbIntended.add(s.intended);
 				if (!fbOpen) s.fbSegs.push([]);
 				fbOpen = true;
 				s.fbSegs.at(-1)!.push(ts);
@@ -397,7 +407,7 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 			// A fallback while the intended model is rate-limited is the chain working; staying on it >60 min after is the leak.
 			const after = Math.max(0, ...s.fbSegs.map(seg => fallbackAfterCapacity(seg, exhaust)));
 			F.push({
-				flag: s.fbTurns >= 20 && after > 60, kind: "폴백 모델", who, tip: "원래 모델 복귀 확인", what: `의도한 ${s.intended}이 아닌 ${[...s.fbModels].join(", ")}로 ${s.fbTurns}턴`, amount: `${s.fbTurns}턴`, save: 0,
+				flag: s.fbTurns >= 20 && after > 60, kind: "폴백 모델", who, tip: "원래 모델 복귀 확인", what: `의도한 ${[...s.fbIntended].join(", ")}이 아닌 ${[...s.fbModels].join(", ")}로 ${s.fbTurns}턴`, amount: `${s.fbTurns}턴`, save: 0,
 				evidence: after > 0 ? `한도(429)가 풀린 뒤에도 폴백 ${Math.round(after)}분` : "모두 한도(429 retry-after) 안의 폴백: 체인이 정상 작동 중",
 				fix: after > 60 ? "제안: 한도가 풀린 뒤에도 폴백에 머무는지 확인 - 의도한 모델 복원" : undefined,
 			});
