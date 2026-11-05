@@ -16,6 +16,7 @@ export const paths = {
 	toneDir: () => join(root(), "tone"),
 	drafts: () => join(root(), "drafts.json"),
 	learned: () => join(root(), "learned.json"), // tone profiles whose first sweep already ran: { "<profile>": iso }
+	voices: () => join(root(), "box-voice.json"), // the mailboxes learned from their own sent mail (lib/box-voice.ts): { "<instance>/<box>": { at, texts, seen } }
 	pairs: (app: string) => join(root(), "pairs", `${app}.jsonl`), // the user's real past replies with the message each answered, one JSON line per pair (lib/pairs.ts)
 	corpusDir: () => join(root(), "sent"), // the first sweep's extract of the user's sent texts, one file per profile (re-analysis reads it)
 	snsTone: () => join(dataDir(), "custom", "sns", "tone.md"),
@@ -296,8 +297,9 @@ export function listProfiles(): string[] {
 }
 
 /** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). `source`: the mail source whose sent folder it came from (a mail site, a plugin); absent = zele (comment pairs have their own file per source, so no tag).
- * `edited`: the user changed the draft by hand before sending. `thread`: the post a comment pair sits under. */
-export type Pair = { received: string; reply: string; at: number; from?: string; source?: string; edited?: true; thread?: string };
+ * `edited`: the user changed the draft by hand before sending. `thread`: the post a comment pair sits under.
+ * `conv`: the mail conversation, `subj`: its subject, `account`: the zele address it was sent from: what says which mailbox a reply belongs to (lib/box-voice.ts), read fresh so a move or an undo needs no rewrite. */
+export type Pair = { received: string; reply: string; at: number; from?: string; source?: string; edited?: true; thread?: string; conv?: string; subj?: string; account?: string };
 
 export const MAX_PAIRS = 1000;
 
@@ -312,7 +314,7 @@ export function loadPairs(app: string): Pair[] {
 		if (!line.trim()) continue;
 		try {
 			const p = JSON.parse(line);
-			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}), ...(p.edited === true ? { edited: true as const } : {}), ...(typeof p.thread === "string" && p.thread ? { thread: p.thread } : {}) });
+			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}), ...(p.edited === true ? { edited: true as const } : {}), ...(typeof p.thread === "string" && p.thread ? { thread: p.thread } : {}), ...(typeof p.conv === "string" && p.conv ? { conv: p.conv } : {}), ...(typeof p.subj === "string" && p.subj ? { subj: p.subj } : {}), ...(typeof p.account === "string" && p.account ? { account: p.account } : {}) });
 		} catch {
 			unreadable++;
 		}
@@ -321,7 +323,7 @@ export function loadPairs(app: string): Pair[] {
 	return out;
 }
 
-// Deduped by reply + received (the newest of a repeat stays, but takes the sender, the edited mark and the post from a copy that has one, so a re-read upgrades an old pair and never drops a mark),
+// Deduped by reply + received (the newest of a repeat stays, but takes the sender, the edited mark, the post and the mailbox facts from a copy that has one, so a re-read upgrades an old pair and never drops a mark),
 // the newest MAX_PAIRS of each source kept (a big sent folder of one source never pushes out another's), oldest first.
 export function savePairs(app: string, pairs: Pair[]): void {
 	const seen = new Map<string, Pair>();
@@ -329,7 +331,7 @@ export function savePairs(app: string, pairs: Pair[]): void {
 		const k = `${p.source ?? ""}\n${normText(p.reply)}\n${normText(p.received)}`;
 		const before = seen.get(k);
 		if (!before) seen.set(k, p);
-		else seen.set(k, { ...before, ...(!before.from && p.from ? { from: p.from } : {}), ...(!before.edited && p.edited ? { edited: true as const } : {}), ...(!before.thread && p.thread ? { thread: p.thread } : {}) });
+		else seen.set(k, { ...before, ...(!before.from && p.from ? { from: p.from } : {}), ...(!before.edited && p.edited ? { edited: true as const } : {}), ...(!before.thread && p.thread ? { thread: p.thread } : {}), ...(!before.conv && p.conv ? { conv: p.conv } : {}), ...(!before.subj && p.subj ? { subj: p.subj } : {}), ...(!before.account && p.account ? { account: p.account } : {}) });
 	}
 	const count = new Map<string, number>();
 	const kept = [...seen.values()].filter(p => {

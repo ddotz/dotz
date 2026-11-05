@@ -1,20 +1,21 @@
 // Learning the user's tone: the user's own sent texts -> sentences of 3-120 characters, quoted history and signatures dropped,
 // deduped, at most 40 -> the "## 예시" section of ONE tone profile (settings.ts: install, app or app+room). The sources are injected
 // (a command runner for the sent-mail reader, a file, ready-made texts such as one messenger room's own lines), so tests never touch mail.
-import { readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { addressesOf, AUTOMATED } from "../../../hub/reply-draft.ts";
 import { SIDE_MAX } from "../../../hub/comments/past.ts";
 import { readAppsFile } from "../../../hub/integrations.ts";
+import { hasBoxes } from "../../../hub/mailbox.ts";
 import { loadPlugins, pluginsLoaded, pluginSentMail } from "../../../hub/plugins.ts";
-import { dataDir, loadPairs, markLearned, MAX_PAIRS, normText, type Pair, readLearned, savePairs, writeExamples, type ToneKey } from "./settings.ts";
+import { dataDir, loadPairs, markLearned, MAX_PAIRS, normText, type Pair, paths, readLearned, savePairs, writeExamples, type ToneKey } from "./settings.ts";
 import { listDrafts } from "./store.ts";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
 export type Runner = (argv: string[], ms?: number) => Promise<RunResult>;
 
 /** One mail of the owner's sent folder as a mail site or a plugin hands it over (webmail-no-api mail.ts `sent`, a plugin's `sentMail`). `to`: the receivers; `at`: epoch ms; `received`: the message it answered, when the source knows it (else read from the quote in `body`). */
-export type SentMail = { to?: string; subject?: string; at: number; body: string; received?: string };
+export type SentMail = { to?: string; subject?: string; at: number; body: string; received?: string; /** The conversation id, when the source has one: an owner's move of that conversation then reaches this mail (lib/box-voice.ts). */ id?: string };
 
 export const MAX_EXAMPLES = 40;
 export const SWEEP_LIMIT = 200; // sent texts the first sweep reads for the identity (persona.ts)
@@ -136,7 +137,7 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 			if (!received) continue;
 			paired.add(at);
 			const stamp = Date.parse(msg.date);
-			pairs.push({ received, reply: mine, at: Number.isFinite(stamp) ? stamp : now - n, from: sender });
+			pairs.push({ received, reply: mine, at: Number.isFinite(stamp) ? stamp : now - n, from: sender, ...(id ? { conv: id } : {}), ...(m.subject ? { subj: String(m.subject) } : {}), ...(me ? { account: me } : {}) });
 		}
 	}
 	return { texts, pairs };
@@ -152,7 +153,7 @@ export function sentPairs(items: SentMail[], source: string, ownerDrafts: string
 		const received = (m.received ?? quotedText(m.body)).trim();
 		const to = addressesOf(m.to)[0];
 		if (!mine || !received || mine.length > SIDE_MAX || FORWARD.test(m.body) || FORWARD.test(mine) || FWD_SUBJECT.test(m.subject ?? "") || (to && AUTOMATED.test(to.split("@")[0]!)) || bots.some(b => normText(mine).startsWith(b))) continue;
-		out.push({ received, reply: mine, at: m.at, source, ...(to ? { from: to } : {}) });
+		out.push({ received, reply: mine, at: m.at, source, ...(to ? { from: to } : {}), ...(m.id ? { conv: m.id } : {}), ...(m.subject ? { subj: m.subject } : {}) });
 	}
 	return out;
 }
@@ -252,8 +253,12 @@ const pluginsSent: PluginSent = async limit => {
 // Keeps the past reply pairs (and who each answered) current, with no model call and no profile change. Each source reads on its own: zele (the accounts
 // of sentAccounts), every mail site with a sent folder, every plugin with `sentMail`. The first read of a source takes the newest PAIR_SWEEP (zele stops at MAX_PAIRS pairs), later ones
 // at most once a day the newest PAIR_DAILY. The day mark is set before reading, so a failure waits a day; one source failing never stops the others.
+// An install that has mailboxes reads each source once more for the mailbox facts of its stored pairs (conv, subj, account): the pairs file is copied first, nothing is lost, and an install without mailboxes never pays for this.
 export async function refreshPairs(run: Runner, now = new Date(), plugins: PluginSent = pluginsSent): Promise<void> {
 	const learned = readLearned();
+	const boxed = hasBoxes(dataDir()), file = paths.pairs("mail"), bak = `${file}.bak-boxes`;
+	if (boxed && existsSync(file) && !existsSync(bak)) copyFileSync(file, bak);
+	const first = (mark: string, tagged: string): boolean => !learned[mark] || (boxed && !learned[tagged]);
 	const due = (id: string): boolean => {
 		if (now.getTime() - Date.parse(learned[`pairs-${id}~day`] ?? "") < DAY) return false;
 		markLearned([`pairs-${id}~day`], now);
@@ -267,23 +272,23 @@ export async function refreshPairs(run: Runner, now = new Date(), plugins: Plugi
 	const accounts = sentAccounts(installConfig());
 	if (accounts.length && due("mail")) {
 		jobs.push(["mail", async () => {
-			const first = !learned["pairs-mail@2"];
-			for (const account of accounts) keep((await sentMail(run, first ? PAIR_SWEEP : PAIR_DAILY, bots, account, MAX_PAIRS)).pairs);
-			if (first) markLearned(["pairs-mail@2"], now);
+			const whole = first("pairs-mail@2", "pairs-mail@3");
+			for (const account of accounts) keep((await sentMail(run, whole ? PAIR_SWEEP : PAIR_DAILY, bots, account, MAX_PAIRS)).pairs);
+			if (whole) markLearned(["pairs-mail@2", ...(boxed ? ["pairs-mail@3"] : [])], now);
 		}]);
 	}
 	for (const site of sentSites()) {
 		if (!due(site)) continue;
 		jobs.push([site, async () => {
-			const first = !learned[`pairs-${site}@1`];
-			keep(sentPairs(await siteSent(run, site, first ? PAIR_SWEEP : PAIR_DAILY), site, bots));
-			if (first) markLearned([`pairs-${site}@1`], now);
+			const whole = first(`pairs-${site}@1`, `pairs-${site}@2`);
+			keep(sentPairs(await siteSent(run, site, whole ? PAIR_SWEEP : PAIR_DAILY), site, bots));
+			if (whole) markLearned([`pairs-${site}@1`, ...(boxed ? [`pairs-${site}@2`] : [])], now);
 		}]);
 	}
 	jobs.push(["plugins", async () => {
-		for (const p of await plugins(name => (due(`plugin-${name}`) ? (learned[`pairs-plugin-${name}@1`] ? PAIR_DAILY : PAIR_SWEEP) : 0))) {
+		for (const p of await plugins(name => (due(`plugin-${name}`) ? (first(`pairs-plugin-${name}@1`, `pairs-plugin-${name}@2`) ? PAIR_SWEEP : PAIR_DAILY) : 0))) {
 			keep(sentPairs(p.items, p.source, bots));
-			markLearned([`pairs-plugin-${p.plugin}@1`], now);
+			markLearned([`pairs-plugin-${p.plugin}@1`, ...(boxed ? [`pairs-plugin-${p.plugin}@2`] : [])], now);
 		}
 	}]);
 	for (const [id, job] of jobs) {

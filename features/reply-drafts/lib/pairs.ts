@@ -9,8 +9,11 @@ export const addPair = (app: string, pair: Pair): void => savePairs(app, [...loa
 
 // Up to 2 newest replies to the same address first (`same`), then the most similar ones, EXAMPLES in all, no repeats.
 // `source`: only the pairs of that mail source (absent tag = zele) and the habits measured over them; undefined = every pair.
-export function styleWithExamples(style: ReplyStyle, app: string, text: string, from?: string, source?: string): ReplyStyle {
-	const pairs = loadPairs(app).filter(p => source === undefined || (p.source ?? "zele") === source);
+export const styleWithExamples = (style: ReplyStyle, app: string, text: string, from?: string, source?: string): ReplyStyle =>
+	styleFrom(style, loadPairs(app).filter(p => source === undefined || (p.source ?? "zele") === source), text, from);
+
+// The same shaping over pairs already chosen (a mailbox's own: lib/box-voice.ts).
+export function styleFrom(style: ReplyStyle, pairs: Pair[], text: string, from?: string): ReplyStyle {
 	const who = addressesOf(from)[0];
 	const past: PastPair[] = pairs.map(p => ({ comment: p.received, reply: p.reply, at: p.at, thread: "", ...(p.edited ? { edited: true as const } : {}), ...(who && p.from && addressesOf(p.from)[0] === who ? { same: true } : {}) }));
 	const same = past.filter(p => p.same).sort((a, b) => b.at - a.at).slice(0, 2);

@@ -84,13 +84,27 @@ A draft records its `box` and `instance`, so a revision and the send check use t
 undo needs. `POST /api/mailbox/learn {box, kind, value}` adds a `from`/`subj` condition or a `not.from` veto; it is only called when the owner picks it in
 the small 앞으로는 어떻게 할까요? box. A move alone teaches nothing.
 
+## Voice
+
+An account with 2 or more mailboxes learns one voice per mailbox from what the owner himself wrote in it (features/reply-drafts/lib/box-voice.ts); an account with one mailbox behaves as before and shows nothing.
+
+- Source: the stored reply pairs, which now keep `conv`, `subj` and `account`. A sent draft of ours and an edited draft are left out, even when he changed them, because they are not his own words. A mail he started himself has no received mail, so it is not a pair and does not count.
+- Which mailbox a pair belongs to is worked out when it is read (`pastPass`, hub/routes-mailbox.ts), so a move, an undo or a deleted mailbox rewrites nothing. In order: the pin of its conversation, the stored mail it answered, the mailbox it was learned in (its mail left the store), the mailboxes' rules, the base mailbox. A source with no conversation id matches the stored mail by sender and subject.
+- Amount: the newest 200 of a mailbox, under the same size caps as the account's sweep. Fewer than 20 keep the account's voice, and the 말투 item and `onboard.ts status` say so. Below 20 the examples of a draft are the account's too.
+- Cost: one Sonnet-level call per mailbox, after the pair refresh of a draft, at most 3 mailboxes in one pass and one try a day per mailbox. It runs again only when at least 20 or a quarter of the newest replies changed, so a move and its undo cost nothing.
+- Result: `tone/<instance>/<box>.md`, which a draft already read. The file is copied to `.bak-<date>` before every write. `## 고친 점` and sections he wrote stay; a file with a voice of its own is not learned over (`kept`), and one with corrections is learned once and then only by 다시 배우기. A mailbox that fell under 20 returns to the account's voice, and its corrections stay.
+- 기본 지시 still goes over the voice.
+- Existing installs: the first refresh with mailboxes reads each sent source once more for the mailbox facts of the stored pairs, after copying the pairs file to `pairs/mail.jsonl.bak-boxes`.
+
 ## Settings and 메일함 추가 (web)
 
 Two more screens of the same view, drawn in place of the list: `MX.scr` is `set` or `new` and is the last part of the address, `monitoring/i%3Amail/<account>/<box>/set` (an old address without it opens the list). 메일함 설정 saves each change at once with
 `PUT /api/mailbox/box` (the whole box, so `alone`, `rules` and `conds.src` come back unchanged); a refused save restores the box and shows the hub's reason. A box list's `n:<name>` entry opens the first account's box of that name. The base box has no delete; deleting another sends
 `DELETE /api/mailbox/box` and its mail reads as 일반. 메일함 추가 starts from a suggestion, an empty box or another box's settings; a suggestion fills the name and a `conds.from` domain, and the mail already there moves only when the owner switches that on (then `POST /api/mailbox/move`).
 
-- `GET /api/mailbox/tone?app=<instance>&box=<id>` -> `{ok, own, summary, corrections}`: the box's tone file `tone/<instance>/<box>.md` (the summary falls back to the instance's, then the install's, like a draft does; `corrections` is the box's own file only). Read when the settings item 말투 opens, never per card. 다시 배우기 and 예시 보기 have no route and are not on the screen.
+- `GET /api/mailbox/tone?app=<instance>&box=<id>` -> `{ok, own, summary, corrections, voice}`: the box's tone file `tone/<instance>/<box>.md` (the summary falls back to the instance's, then the install's, like a draft does; `corrections` is the box's own file only). `voice` is `{state, count, need, at?, texts?}` (see "Voice"). Read when the settings item 말투 opens, never per card.
+- `POST /api/mailbox/relearn {app, box}` -> `{ok, result, voice}`: 다시 배우기, `result` one of `learned`, `few`, `busy`, `empty`. It is the only thing that replaces a voice the owner tuned.
+- `GET /api/mailbox/examples?app=<instance>&box=<id>` -> `{ok, examples: [{received, reply}]}`: 예시 보기, the newest 5 replies he wrote himself in this box.
 - `GET /api/mailbox/suggest?app=<instance>` -> `{ok, groups: [{domain, label, count, senders, keys}]}`: one pass over the stored mail of that account that is still in its base box, grouped by sender domain (at most 8 groups of 2 mails or more, 3 senders and 100 keys each), without free-mail domains and outgoing mail. No model call; once per opening of the screen.
 
 ## Web

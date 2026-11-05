@@ -25,7 +25,7 @@ export function boxLines(b: Box | undefined, from: string | undefined): string[]
 		const a = g.addr.trim().toLowerCase();
 		return !!g.hello && !!a && (a.startsWith("@") ? sender.some(s => s.endsWith(a)) : sender.includes(a));
 	});
-	return [b.how.trim(), hit ? `이 보낸 사람(${hit.who || hit.addr})에게는 "${hit.hello}"(으)로 인사해요.` : "", b.bans.length ? `쓰지 않을 표현: ${b.bans.join(", ")}.` : ""].filter(Boolean);
+	return [...(b.how.trim() ? [b.how.trim(), "이 지시가 배운 말투와 어긋나면 이 지시를 따라요."] : []), hit ? `이 보낸 사람(${hit.who || hit.addr})에게는 "${hit.hello}"(으)로 인사해요.` : "", b.bans.length ? `쓰지 않을 표현: ${b.bans.join(", ")}.` : ""].filter(Boolean);
 }
 
 /** One warning line per banned phrase found in the draft (flow.ts ownerWarning words it for the card); sending is not blocked. */

@@ -58,6 +58,15 @@
 
 /* 말투, 답장 지시, 인사말 */
 .mxs-sum { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.mxs-rowb { display: flex; align-items: center; gap: var(--sp-3); }
+.mxs-rowb .mxs-h { flex: 1; min-width: 0; }
+.mxs-vb { flex: none; display: flex; gap: var(--sp-2); }
+.mxs-ex { display: flex; flex-direction: column; gap: var(--sp-5); min-height: 0; overflow-y: auto; padding: var(--sp-2) var(--sp-6) var(--sp-5); }
+.mxs-exi { display: flex; flex-direction: column; gap: var(--sp-2); }
+.mxs-exi .mxs-k { line-height: var(--lh-sec); }
+.mxs-exi .mxs-h { margin: 0; }
+.mxs-exi .mxs-sum { white-space: pre-wrap; }
+@media (max-width: 639px) { .mxs-rowb { flex-direction: column; align-items: flex-start; } .mxs-ex { padding-left: var(--sp-4); padding-right: var(--sp-4); } }
 .mxs-fx { margin: 0; padding-left: var(--sp-5); color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
 .mxs-ta { height: auto; min-height: calc(var(--field-h) * 2); padding: var(--sp-2) var(--sp-3); font-family: inherit; line-height: var(--lh-body); resize: vertical; }
 .mxs-gl { display: flex; flex-direction: column; }

@@ -118,14 +118,19 @@ export async function learnSiteSent(source: string, items: SentMail[], instance:
 // Says a profile is learned at `version` (onboard.ts learn just did it by hand), so the next draft does not learn it again.
 export const markVersion = (key: ToneKey, version: string, now = new Date()): void => markLearned([`${fileKey(key)}@${version}`], now);
 
+// A copy of a profile as it is now, at most one a day: <file>.bak-<date>.
+export function backupTone(key: ToneKey, now: Date): void {
+	const old = [toneFile(key), key.app === "mail" && key.room === undefined ? paths.legacyStyle() : ""].find(f => f && existsSync(f));
+	const bak = `${toneFile(key)}.bak-${now.toISOString().slice(0, 10)}`;
+	if (old && !existsSync(bak)) writeAtomic(bak, readFileSync(old, "utf8"));
+}
+
 // A profile learned by older code is learned once more when `version` is newer: the old profile is copied to <file>.bak-<date> first, then only
 // identity, reply templates and examples are rewritten. Nothing changes (and it is asked again next time) when the source is empty or the model fails.
 async function relearn(key: ToneKey, texts: string[], where: string, call: ModelCall, now: Date, mark: string): Promise<"learned" | "empty"> {
 	const a = await analyzeTone(texts, where, call);
 	if (!a.identity.length) return "empty";
-	const old = [toneFile(key), key.app === "mail" && key.room === undefined ? paths.legacyStyle() : ""].find(f => f && existsSync(f));
-	const bak = `${toneFile(key)}.bak-${now.toISOString().slice(0, 10)}`;
-	if (old && !existsSync(bak)) writeAtomic(bak, readFileSync(old, "utf8"));
+	backupTone(key, now);
 	const examples = pickExamples(texts);
 	writeAtomic(corpusFile(key), `${corpusOf(texts)}\n`);
 	writeSections(key, [[HEADINGS.identity, a.identity], [HEADINGS.templates, a.templates], ...(examples.length ? [[HEADINGS.samples, examples] as [string, string[]]] : [])]);

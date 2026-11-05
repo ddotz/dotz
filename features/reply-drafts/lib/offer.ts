@@ -2,6 +2,7 @@
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
+import { hasBoxes } from "../../../hub/mailbox.ts";
 import { threadText } from "../../../hub/zele.ts";
 import { ownAddresses } from "../../../hub/mail-state.ts";
 import { threadIdOf, webmailSite } from "./senders.ts";
@@ -11,7 +12,7 @@ import { anyRuleOn, mailInstanceOf, matchMail, ruleFileMissing, ruleInstruction,
 import { banWarnings, boxFolders, boxLines, boxRules, noAutoDraft } from "./box.ts";
 import { boxCtx, moveByJudge, type BoxDeps } from "./box-place.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
-import { appOn, ensureSwitch, hasOwnTone, loadSettings } from "./settings.ts";
+import { appOn, dataDir, ensureSwitch, hasOwnTone, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 import { FairQueue } from "./fair-queue.ts";
 import type { Runner } from "./tone.ts";
@@ -53,12 +54,14 @@ function fullBody(m: OfferMail, deps: OfferDeps): Promise<string | undefined> {
 	return deps.readBody(m.source, m.id, accountOf(m)).then(t => t ?? m.body, e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), m.body));
 }
 
-// One pair refresh at a time; it never delays or fails a draft.
+// One pair refresh at a time; it never delays or fails a draft. The mailboxes' voices are learned from what it kept, and only an account with mailboxes loads that code.
 let refreshing = false;
-function refreshPairs(deps: OfferDeps, log: (line: string) => void): void {
+function refreshPairs(deps: OfferDeps, log: (line: string) => void, instance: string): void {
 	if (!deps.refreshPairs || refreshing) return;
 	refreshing = true;
-	deps.refreshPairs().catch(e => log(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`)).finally(() => void (refreshing = false));
+	deps.refreshPairs().then(async () => {
+		if (deps.analyze && hasBoxes(dataDir())) await (await import("./box-voice.ts")).refreshVoices(instance, deps.analyze, log);
+	}).catch(e => log(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`)).finally(() => void (refreshing = false));
 }
 
 // Earlier mail from the sender: never delays a draft past this long, and a failure is no history.
@@ -224,7 +227,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		const instruction = ruleInstruction(box?.alone ? "" : own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined, boxLines(box, item.from));
 		if (instruction) item.instruction = instruction;
 		const read = Date.now();
-		refreshPairs(deps, log);
+		refreshPairs(deps, log, instance);
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze, undefined, MAIL_TONE_VERSION).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const learned = Date.now();
 		// The files are picked BEFORE the words are written, so the draft is told which files ride on it (and that none fits) and its text agrees
