@@ -2,6 +2,7 @@
 // was already looked at (drafted or skipped) so a mail is never drafted twice, even after its draft is gone.
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ReplyItem, ReplyKind } from "../../../hub/reply-draft.ts";
 import { paths, writeAtomic } from "./settings.ts";
 
@@ -39,6 +40,9 @@ export type DraftRec = {
 };
 type File = { drafts: DraftRec[]; keys: string[] };
 
+/** The file whose existence says a sender holds draft `id` (hub/draft-claim.ts). */
+export const claimFile = (id: string): string => join(dirname(paths.drafts()), "sending", id);
+
 const MAX_DRAFTS = 200;
 const MAX_KEYS = 2000;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -53,7 +57,18 @@ function read(): File {
 	}
 }
 
-const write = (f: File) => writeAtomic(paths.drafts(), `${JSON.stringify({ drafts: f.drafts.slice(-MAX_DRAFTS), keys: f.keys.slice(-MAX_KEYS) }, null, 1)}\n`);
+// Only closed drafts (sent, dropped, stale, answered) are trimmed, oldest first: a pending or held draft still has a card, so it always stays.
+// A key of a kept draft is never forgotten either (the mail would be drafted twice); other keys beyond MAX_KEYS go oldest first.
+function trimmed(f: File): File {
+	let skip = f.drafts.reduce((n, d) => n + (d.status === "pending" || d.status === "held" ? 0 : 1), 0) - MAX_DRAFTS;
+	const drafts = skip > 0 ? f.drafts.filter(d => d.status === "pending" || d.status === "held" || skip-- <= 0) : f.drafts;
+	let over = f.keys.length - MAX_KEYS;
+	if (over <= 0) return { drafts, keys: f.keys };
+	const kept = new Set(drafts.map(d => d.ref));
+	return { drafts, keys: f.keys.filter(k => over <= 0 || kept.has(k) || (over--, false)) };
+}
+
+const write = (f: File) => writeAtomic(paths.drafts(), `${JSON.stringify(trimmed(f), null, 1)}\n`);
 
 export function newId(taken: Set<string> = new Set(listDrafts().map(d => d.id))): string {
 	for (;;) {

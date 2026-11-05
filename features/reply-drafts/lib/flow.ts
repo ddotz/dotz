@@ -1,10 +1,9 @@
 // The draft life cycle shared by the gateway offer (offer.ts) and the CLI (bin/draft.ts): build -> ask -> revise | send | drop.
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
 import { statSync } from "node:fs";
-import { dirname, join } from "node:path";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment } from "../../../hub/comments/linked.ts";
-import { claimSend } from "../../../hub/draft-claim.ts";
+import { claimHolder, claimSend } from "../../../hub/draft-claim.ts";
 import { attachIssues, withoutKindWords } from "../../../hub/attach-check.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
@@ -17,7 +16,7 @@ import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleWithExamples } from "./pairs.ts";
-import { addDraft, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
+import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
@@ -385,7 +384,8 @@ export function restoreDraft(ref: string): { ok: boolean; text: string } {
 // reply's gate (the owner's pick on the one card, or the owner's own click); a linked mail is refused without it.
 // `asIs`: with `withReply`, the owner picked 이대로 보내기 on the card (without it the verdict says so). A mail whose files disagree with its words is refused
 // before it goes out unless he did; the draft stays pending so the card can still be answered.
-export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true; asIs?: true } = {}): Promise<Step> {
+// `retry`: the owner pressed 다시 보내기 on purpose; only then is a claim left by a sender that died (the mail may have gone out) taken over.
+export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true; asIs?: true; retry?: true } = {}): Promise<Step> {
 	const stored = getDraft(id);
 	const d = stored && withRecipient(stored);
 	if (stored && d && d !== stored && stored.status === "pending") patchDraft(id, { to: d.to, item: d.item, questions: d.questions });
@@ -405,7 +405,8 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	const failures = lintReply({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
 	if (failures.length) return { ok: false, text: `보내기 직전 검사에서 걸려서 보내지 않았어요: ${failures.map(ownerWarning).join(" · ")}` };
 	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.
-	const release = claimSend(join(dirname(paths.drafts()), "sending", id));
+	if (!opts.retry && claimHolder(claimFile(id)) === "dead") return { ok: false, text: `초안 ${id}은(는) 지난번에 보내다가 멈춰서 메일이 이미 나갔을 수 있어요. 보낸편지함을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요` };
+	const release = claimSend(claimFile(id), opts.retry === true);
 	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요` };
 	try {
 		const now = getDraft(id);

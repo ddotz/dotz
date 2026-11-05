@@ -173,7 +173,7 @@ export function retryFailed(items: unknown[], deps: RetryDeps): RetryResult[] {
 		const action = pickedSend(d);
 		if (!action) return no("보내기로 고른 카드가 아니라서 다시 보내지 않았어요");
 		if (!deps.can(ref, action)) return no("이 초안은 더 이상 보낼 수 없어요");
-		return deps.enqueue({ ref, conv: to, action, title: card.title }) ? { ref, ok: true } : no("이 초안은 더 이상 보낼 수 없어요");
+		return deps.enqueue({ ref, conv: to, action, title: card.title, retry: true }) ? { ref, ok: true } : no("이 초안은 더 이상 보낼 수 없어요");
 	});
 }
 

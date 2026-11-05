@@ -63,7 +63,6 @@ function mailRefusal(mail: MailLink | undefined, mailId: string): GateResult | u
 }
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
-const MAX_QUEUE = 200;
 const RECHECK_CAP = 200;
 const RECHECK_EVERY_MS = 30 * 60_000;
 export const MAIL_KEPT_NOTE = "확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요";
@@ -508,8 +507,8 @@ export function createEngine(deps: EngineDeps) {
 				const now = deps.now();
 				fresh = absorb(src, res.comments.map(r => (r.at > now ? { ...r, at: now } : r)));
 				const wanted = src.autoDraft && replyOn(src) ? fresh.filter(c => c.at >= (src.autoSince ?? 0) && needsReply(c)).map(c => c.id) : [];
-				// Bounded (a flood of new comments keeps the newest MAX_QUEUE): cursors.json is read on every run.
-				const queue = [...new Set([...(prior.queue ?? []), ...wanted])].slice(-MAX_QUEUE);
+				// Not capped: a waiting comment is never dropped silently. It is bounded anyway: only stored comments (MAX_COMMENTS) are queued, and a queue entry whose comment is gone or answered is settled without a model call.
+				const queue = [...new Set([...(prior.queue ?? []), ...wanted])];
 				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now(), ...(res.error ? { error: clip(res.error, 160) } : {}), ...(queue.length ? { queue } : {}) });
 				if (res.error) out.errors[src.key] = clip(res.error, 160);
 			} catch (e) {
