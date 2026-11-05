@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { realMailLink } from "../../../hub/comments/mail-link.ts";
 import { parseDraftApproval } from "../../../hub/draft-approval.ts";
+import { saveUpload } from "../../../hub/files.ts";
 import { composeMail } from "../../../hub/mail-cli.ts";
 import { loadPlugins } from "../../../hub/plugins.ts";
 import { runDraft } from "../bin/draft.ts";
@@ -256,6 +257,42 @@ describe("staged file names", () => {
 	});
 });
 
+describe("an upload named by its path", () => {
+	const uploads = () => join(env.dir, "uploads");
+	const draft = () => {
+		const made = rec();
+		addDraft(made);
+		return made.id;
+	};
+
+	test("draft.ts attach keeps the name it came with, not the stored one", async () => {
+		const id = draft();
+		for (const name of ["(마크추가) 달빛정원.pdf", "plain.pdf"]) {
+			const up = await saveUpload(new File(["x"], name), uploads());
+			expect((await runDraft(["attach", id, up.path], "")).code).toBe(0);
+		}
+		expect(stagedFiles(id).map(f => f.name)).toEqual(["(마크추가) 달빛정원.pdf", "plain.pdf"]);
+	});
+
+	test("a new mail's --attach does too", async () => {
+		const up = await saveUpload(new File(["x"], "(마크추가) 문서.pdf"), uploads());
+		const made = await composeMail({ app: "mail", to: ["kim@example.com"], subject: "안내", body: "안녕하세요. 문서 보내드립니다.", attach: [up.path], notify: false }, {});
+		if (!made.ok) throw new Error(made.error);
+		expect(stagedFiles(made.rec.id).map(f => f.name)).toEqual(["(마크추가) 문서.pdf"]);
+	});
+
+	test("an upload stored before the name was kept loses its stored prefix; a file outside uploads keeps its name", async () => {
+		const id = draft();
+		const day = join(uploads(), "2026-11-01");
+		mkdirSync(day, { recursive: true });
+		writeFileSync(join(day, "mhf3k2a1b2c3-_마크추가_ 문서.pdf"), "x");
+		writeFileSync(join(env.dir, "mhf3k2a1b2c3-report.pdf"), "x");
+		await runDraft(["attach", id, join(day, "mhf3k2a1b2c3-_마크추가_ 문서.pdf")], "");
+		await runDraft(["attach", id, join(env.dir, "mhf3k2a1b2c3-report.pdf")], "");
+		expect(stagedFiles(id).map(f => f.name)).toEqual(["_마크추가_ 문서.pdf", "mhf3k2a1b2c3-report.pdf"]);
+	});
+});
+
 describe("mail ridden on a comment reply", () => {
 	test("compose carries the library notes and libraryMiss; the view carries the warning", async () => {
 		enable(env, { attachFolders: { mail: lib } });
@@ -351,6 +388,72 @@ describe("the account of a draft is settled when the draft is made", () => {
 		delete got.__acctGot;
 		rmSync(plugin);
 		await loadPlugins(env.dir);
+	});
+
+	describe("a plugin mailer", () => {
+		const plugin = async (name: string, hooks: string) => {
+			mkdirSync(join(env.dir, "custom", "plugins"), { recursive: true });
+			const file = join(env.dir, "custom", "plugins", `${name}.ts`);
+			writeFileSync(file, `export default { reply: async d => (globalThis.__acctSent = [d.account], { ok: true, message: "보냈어요" }), ${hooks} };`);
+			await loadPlugins(env.dir);
+			return async () => {
+				rmSync(file);
+				await loadPlugins(env.dir);
+			};
+		};
+		const got = globalThis as { __acctSent?: unknown[] };
+		const offerScore = async (key: string, run: Runner) => {
+			enable(env, {});
+			const out = sink();
+			expect(await offerMailDraft({ ...mailFixture, key, id: "T42.3", source: "score" }, { send: out.send, call: fakeModel([j(goodReply)]).call, run })).toBe("offered");
+			return { card: out.sent[0]!, made: listDrafts().find(d => d.ref === key)! };
+		};
+		beforeEach(() => void delete got.__acctSent);
+
+		test("one that sends through zele, undecided: same card and same refusal as zele, and the plugin is never called", async () => {
+			const done = await plugin("zele-way", `needsAccount: source => source === "score"`);
+			const f = twoAccounts();
+			const { card, made } = await offerScore("score-none", f.run);
+			expect(made.accounts).toEqual([A1, A2]);
+			expect(card).toContain(ACCOUNT_HELD);
+			const out = await sendWith(made, f.run);
+			await done();
+			expect(out.ok).toBe(false);
+			expect(out.message).toContain(A2);
+			expect(got.__acctSent).toBeUndefined();
+		});
+
+		test("one that sends through zele gets the one account that opens the thread", async () => {
+			const done = await plugin("zele-way2", `needsAccount: source => source === "score"`);
+			const f = twoAccounts([A2]);
+			const { card, made } = await offerScore("score-probe", f.run);
+			expect(made.account).toBe(A2);
+			expect(card).not.toContain(ACCOUNT_HELD);
+			expect(f.calls.at(-1)).toEqual(["zele", "mail", "read", "T42", "--account", A2]);
+			expect((await sendWith(made, f.run)).ok).toBe(true);
+			await done();
+			expect(got.__acctSent).toEqual([A2]);
+		});
+
+		test("one that sends through zele with one account is not held", async () => {
+			const done = await plugin("zele-way3", `needsAccount: source => source === "score"`);
+			const run: Runner = async () => ({ code: 0, stdout: A1, stderr: "" });
+			const { card, made } = await offerScore("score-one", run);
+			expect(card).not.toContain(ACCOUNT_HELD);
+			expect((await sendWith(made, run)).ok).toBe(true);
+			await done();
+		});
+
+		test("one with its own mailbox is never held by the zele accounts of the install", async () => {
+			const done = await plugin("own-box", "");
+			const f = twoAccounts();
+			const { card, made } = await offerScore("score-own", f.run);
+			expect(made.accounts).toBeUndefined();
+			expect(card).not.toContain(ACCOUNT_HELD);
+			expect((await sendWith(made, f.run)).ok).toBe(true);
+			await done();
+			expect(got.__acctSent).toEqual([undefined]);
+		});
 	});
 
 	test("a mailer that cannot even start is a failed send: the reason is reported and the draft stays unsent", async () => {

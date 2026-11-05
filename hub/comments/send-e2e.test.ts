@@ -79,7 +79,7 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		expect(parseDraftApproval(ask)).toMatchObject({ toLabel: "대상", to: "팬 댓글", ref: d.code, mail: { to: "fan@example.com", attachments: [{ name: "캐논.pdf" }] } });
 		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(1);
 		expect(w.posted).toEqual([]);
-		expect(w.zele).toEqual([]);
+		expect(w.mailSends()).toEqual([]);
 		w.pick(d.code);
 		expect(await runComments(["send", d.code], w.engine, w.inbox)).toEqual({ lines: [`답글을 올리고 메일을 보냈어요 (${d.code})`], code: 0 });
 		expect(w.posted).toEqual(["문서는 메일로 보내 드렸어요"]);
@@ -99,7 +99,7 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		const alone = await runMailCli(["send", "--draft", mailId], "", { run: async () => ({ code: 0, stdout: "", stderr: "" }), hub: { post: async () => ({ status: 200 }) } });
 		expect(alone.code).toBe(1);
 		expect(alone.lines[0]).toContain("한 장으로 승인해요");
-		expect(w.zele).toEqual([]);
+		expect(w.mailSends()).toEqual([]);
 	});
 
 	test("a failed reply sends no mail and keeps the card; after the platform recovers the same pick posts and sends once", async () => {
@@ -109,7 +109,7 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		const out = await runComments(["send", d.code], w.engine, w.inbox);
 		expect(out.code).toBe(1);
 		expect(out.lines[0]).toBe("답글을 올리지 못했어요 (메일도 보내지 않았어요): quota exceeded");
-		expect(w.zele).toEqual([]);
+		expect(w.mailSends()).toEqual([]);
 		expect(w.engine.store.drafts()[0]!.status).toBe("pending");
 		expect(getDraft(mailId)!.status).toBe("pending");
 		w.recover();
