@@ -23,11 +23,12 @@ test("history of worklog shows each update_key once, as its newest version, and 
 	post("2050-03-01T00:00:02.000Z", "worklog", { update_key: "lane:h2", text: "[run] 다른 세션" });
 	post("2050-03-01T00:00:03.000Z", "worklog", { update_key: "lane:h1", text: "[done] 끝" });
 	post("2050-03-01T00:00:04.000Z", "alert", { text: "경고예요" });
-	const w = historyEvents("worklog", 50).filter(e => String(e.update_key).startsWith("lane:h"));
+	const mine = (e: { update_key?: unknown }) => e.update_key === "lane:h1" || e.update_key === "lane:h2";   // the store is shared across test files
+	const w = historyEvents("worklog", 50).filter(mine);
 	expect(w.map(e => e.text)).toEqual(["[run] 다른 세션", "[done] 끝"]);
 	expect(historyEvents("alert", 50).some(e => e.text === "경고예요")).toBe(true);
 	expect(historyEvents("main", 500).some(e => e.target === "alert" || e.target === "worklog")).toBe(false);
-	expect(historyEvents("worklog", 500, "2050-03-01T00:00:03.000Z").filter(e => String(e.update_key).startsWith("lane:h")).map(e => e.text)).toEqual(["[run] 시작", "[run] 다른 세션"]);
+	expect(historyEvents("worklog", 500, "2050-03-01T00:00:03.000Z").filter(mine).map(e => e.text)).toEqual(["[run] 시작", "[run] 다른 세션"]);
 });
 
 test("unread counts an alert once and a re-edited worklog entry once", () => {
