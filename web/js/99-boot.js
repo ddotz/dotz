@@ -8,6 +8,7 @@
   const noCustom = () => { if (!window.dotzCustom && current === "cardform") go("home"); };
   const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/custom.js", onload: noCustom, onerror: noCustom }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
+  pushTapCheck();
   await snapHomeSeed();
   let h = parseHash();
   if (pushOpenTs && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // #chat/alert is the 알림 screen: drawn first, then pushOpen lands on the item
@@ -96,6 +97,7 @@
   // The stream stalls while the phone sleeps (a push can land before the message does): coming back after a few seconds away, refetch.
   let hiddenAt = 0;
   const wake = () => {
+    pushTapCheck();
     const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream();
     if (away > 5000) resync(); else if (missed.state) refreshState();
     if (missed.models) loadModels(true);

@@ -80,15 +80,16 @@ const tapRow = async (view: View, tab: string, id: string) => {
 
 // web/sw.js as shipped, with its platform stubbed: what a push shows, and what a tap on it does.
 const swOf = (wins: unknown[]) => {
-	const h: Record<string, (ev: unknown) => void> = {}, shown: { data: unknown }[] = [], opened: string[] = [];
+	const h: Record<string, (ev: unknown) => void> = {}, shown: { data: unknown }[] = [], opened: string[] = [], kept: string[] = [];
 	const self = {
 		addEventListener: (k: string, f: (ev: unknown) => void) => { h[k] = f; },
 		clients: { matchAll: async () => wins, openWindow: async (u: string) => { opened.push(u); } },
 		registration: { showNotification: async (_t: string, o: { data: unknown }) => { shown.push(o); }, getNotifications: async () => [], pushManager: { getSubscription: async () => null } },
 	};
-	new Function("self", "location", "caches", readFileSync(join(import.meta.dir, "..", "web", "sw.js"), "utf8"))(self, new URL(hub.origin), {});
+	new Function("self", "location", "caches", readFileSync(join(import.meta.dir, "..", "web", "sw.js"), "utf8"))(self, new URL(hub.origin), { open: async () => ({ put: async (_k: string, r: Response) => { kept.push(await r.text()); } }) });
 	return {
 		opened,
+		kept,
 		tap: async (msg: object) => {
 			const wait: Promise<unknown>[] = [];
 			h.push!({ data: { json: () => msg }, waitUntil: (p: Promise<unknown>) => wait.push(p) });
@@ -246,6 +247,30 @@ describe.each([["phone", 390], ["desktop", 1280]] as const)("%s", (_name, width)
 		await sw.tap(pushOf("rep"));
 		expect(posted).toEqual([]);
 		expect(sw.opened).toEqual([`${hub.origin}/?m=${encodeURIComponent(LANE_AT)}&i=rep#chat/lane:a`]);
+	});
+
+	test("a phone that brings the app back at an older push's address follows the tapped push, and the old address never lands again", async () => {
+		const first = swOf([]), second = swOf([]);
+		await first.tap({ kind: "ask", title: "답변이 필요해요", body: "배포할까요?", url: "/#chat/main", tag: "decision:dec", ts: ASK_AT, id: "dec" });
+		await second.tap(pushOf("rep"));
+		const view = await open(width);
+		const { run, waitFor, ev } = on(view);
+		// The page's real cache gets what the worker kept; `at` is the page's own clock.
+		const keep = (kept: string) => view.evaluate(`caches.open("dotz-share").then(c => c.put("/push/tap", new Response(JSON.stringify({ ...${kept}, at: Date.now() }))))`);
+		try {
+			await keep(first.kept[0]!);
+			await view.navigate(first.opened[0]!);
+			await waitFor(`localStorage.getItem("dotz-push-spent") && target === "main" && CV.jump === ${JSON.stringify(ASK_AT)}`);
+			await view.navigate(first.opened[0]!);
+			await waitFor(`NT.loaded`);
+			expect(await ev(`[location.search, pushOpenTs, NS.h]`)).toEqual(["", "", null]);
+			await keep(second.kept[0]!);
+			await run(`reloadPage = () => { window.__reloadedAt = location.href; }; pushTapCheck();`);
+			await waitFor(`window.__reloadedAt`);
+			expect(await ev(`window.__reloadedAt`)).toBe(second.opened[0]!);
+		} finally {
+			await view.evaluate(`caches.delete("dotz-share"), localStorage.removeItem("dotz-push-spent")`);
+		}
 	});
 
 	test("a decision's push, cold: its conversation at the message, the sheet over it", async () => {

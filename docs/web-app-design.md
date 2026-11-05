@@ -2247,7 +2247,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 서비스 워커와 오프라인 셸 (web/sw.js)
 - 목적: 앱 셸을 캐시해서 알림 탭으로 앱이 바로 뜨게 하고, 웹 푸시를 보여줘요.
-- 구성: 캐시 `dotz-shell-v11`(셸 `/`, `/app.js`, `/app.css`, `/custom.js`와 아이콘 4개), 공유 캐시 `dotz-share`, IndexedDB `dotz-snap`.
+- 구성: 캐시 `dotz-shell-v12`(셸 `/`, `/app.js`, `/app.css`, `/custom.js`와 아이콘 4개), 공유 캐시 `dotz-share`, IndexedDB `dotz-snap`.
 - 기능: 설치 시 셸을 캐시하고 `skipWaiting`, 활성화 시 옛 캐시 삭제와 `clients.claim`. 탐색 요청이나 셸 파일 요청은 캐시 우선 응답 후 백그라운드 갱신(`refreshShell`, 셸 파일 셋이 모두 성공했을 때만 저장, ETag 또는 본문 비교로 변경 감지). 바뀌었으면 열린 창에 `{type:"shell-updated"}`. 페이지가 `{type:"refresh-shell"}`을 보내면 갱신 뒤 포트로 `done`. 공유 대상: `POST /share-target`이면 사진을 `dotz-share`에 저장하고 `/?shared=1#chat`으로 303. 푸시: `push`(알림 표시, 결정 옵션 버튼 최대 2개, `withdraw`로 처리된 알림 닫기, 화면에 같은 대화가 열려 있으면 억제하고 Apple 엔드포인트는 조용한 알림을 띄웠다 닫음), `pushsubscriptionchange`(재구독 `/api/push/subscribe`), `notificationclick`(열린 창에 `{open, ts, nid, notice}`를 보내거나 새 창을 `?m=`, `?i=`, `?n=`로 엶, 옵션 버튼은 `POST /api/notices/<id>/answer`, 성공 시 `답변을 보냈어요` 알림 3.5초).
 - 상태: 가로채지 않는 경로: `/api/*`, 다른 origin, GET이 아닌 요청, `/manifest.webmanifest`, `/jandi-peer/*`, `/pair`, `/pair.js`, `/desk`, `/desk/*`. 푸시 표시 제목 기본 `알림`, 정리 알림 `알림 정리`(본문 `처리한 알림을 정리했어요`), 푸시 때 대화 기록 60개를 미리 읽어 스냅샷에 넣어요(`warmConv`, 403이고 `x-dotz-pair` 헤더가 있으면 스냅샷 DB 삭제).
 - 데이터: `/api/history?target=...&limit=60`, `/api/push`, `/api/push/subscribe`, `/api/notices/<id>/answer`.
