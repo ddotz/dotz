@@ -1,6 +1,6 @@
 // One command for the load install: seed, boot the gateway under the sandbox, measure, write results, stop.
-//   bun hub/load-qa/run.ts --scale small|large [--out DIR] [--serve] [--port N] [--latency MS]
-//   bun hub/load-qa/run.ts --stop --out DIR
+//   bun hub/test/load-qa/run.ts --scale small|large [--out DIR] [--serve] [--port N] [--latency MS]
+//   bun hub/test/load-qa/run.ts --stop --out DIR
 // The gateway runs from a copy of this working tree under <out>/repo (the sandbox cannot read ~/.dotz, where the real checkout of an
 // install lives, and the copy keeps the run away from the real checkout), on a temp data dir, a fake HOME and the fake CLIs.
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -58,7 +58,7 @@ if (has("stop")) {
 	process.exit(0);
 }
 if (scale !== "small" && scale !== "large") fail("--scale must be small or large");
-if (existsSync(pidFile) && alive(Number(readFileSync(pidFile, "utf8").trim()))) fail(`a gateway of ${out} still runs; stop it with: bun hub/load-qa/run.ts --stop --out ${out}`);
+if (existsSync(pidFile) && alive(Number(readFileSync(pidFile, "utf8").trim()))) fail(`a gateway of ${out} still runs; stop it with: bun hub/test/load-qa/run.ts --stop --out ${out}`);
 
 const freePort = (): number => {
 	const s = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") });
@@ -79,7 +79,7 @@ await stop(out);
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 const t0 = performance.now();
-await run([process.execPath, join(REPO, "hub/load-qa/seed.ts"), "--dir", join(out, "data"), "--scale", scale], "seed.log");
+await run([process.execPath, join(REPO, "hub/test/load-qa/seed.ts"), "--dir", join(out, "data"), "--scale", scale], "seed.log");
 const seedMs = Math.round(performance.now() - t0);
 const seedLog = JSON.parse(readFileSync(join(out, "seed.log"), "utf8").trim().split("\n").at(-1)!) as { counts: Record<string, number>; read: Record<string, unknown>; store: Record<string, unknown> };
 
@@ -101,7 +101,7 @@ const repo = join(out, "repo");
 const l = launch({ runDir: out, port, repo, modelLatencyMs: latency });
 writeInstall(l.dataDir, { port, accounts: ACCOUNTS.map(a => a.address), scale });
 // the fake CLIs come from the copy too, so the run does not depend on where the checkout lives
-const shims = join(repo, "hub", "load-qa", "shims");
+const shims = join(repo, "hub", "test", "load-qa", "shims");
 for (const k of Object.keys(l.env)) l.env[k] = l.env[k]!.split(SHIM_DIR).join(shims);
 const tSpawn = performance.now();
 const gw = Bun.spawn(l.argv, { cwd: l.cwd, env: l.env, stdin: "ignore", detached: true, stdout: Bun.file(l.logFile), stderr: Bun.file(l.logFile) });
@@ -128,13 +128,13 @@ for (let i = 0; i < 1200; i++) {
 if (bootMs < 0) (await stop(out), fail(`no API answer within 120 s, see ${l.logFile}`));
 
 if (has("serve")) {
-	console.log(`serving ${l.url}\nlogin link (one use, open it in the browser): ${await loginLink(l.dataDir, port)}\npid ${gw.pid}\nstop: bun hub/load-qa/run.ts --stop --out ${out}`);
+	console.log(`serving ${l.url}\nlogin link (one use, open it in the browser): ${await loginLink(l.dataDir, port)}\npid ${gw.pid}\nstop: bun hub/test/load-qa/run.ts --stop --out ${out}`);
 	process.exit(0);
 }
 
 let code = 0;
 try {
-	const probeProc = Bun.spawn(sandboxArgv(l.profileFile, [process.execPath, join(repo, "hub", "load-qa", "isolation-probe.ts")]), { cwd: l.cwd, env: l.env, stdout: "pipe", stderr: "pipe" });
+	const probeProc = Bun.spawn(sandboxArgv(l.profileFile, [process.execPath, join(repo, "hub", "test", "load-qa", "isolation-probe.ts")]), { cwd: l.cwd, env: l.env, stdout: "pipe", stderr: "pipe" });
 	const probeText = `${await new Response(probeProc.stdout).text()}${await new Response(probeProc.stderr).text()}`;
 	writeFileSync(join(out, "isolation-probe.txt"), probeText);
 	const probe = { ok: (await probeProc.exited) === 0 && probeText.includes("[ok]") && !probeText.includes("[FAIL]"), text: probeText };

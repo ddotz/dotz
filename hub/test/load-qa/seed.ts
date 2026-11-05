@@ -1,7 +1,7 @@
 // Deterministic fake data for the load-QA install: mails of three accounts, reply drafts, notices, comment cards that carry a mail draft, and
 // attachment libraries (local, fake iCloud). Created through the real stores where that is fast; where a store is too slow or capped the
 // on-disk format is written directly and read back through the real readers (`--verify`). Only generated values; only under /tmp/load-qa/.
-//   bun hub/load-qa/seed.ts --dir /tmp/load-qa/<name> --scale small|large [--mail-real all]
+//   bun hub/test/load-qa/seed.ts --dir /tmp/load-qa/<name> --scale small|large [--mail-real all]
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
@@ -200,10 +200,10 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 	const cfg = existsSync(cfgFile) ? JSON.parse(readFileSync(cfgFile, "utf8")) : {};
 	writeJson(cfgFile, { ...cfg, mail: { ...cfg.mail, keep, own_addresses: ACCOUNTS.map(a => a.address) } });
 
-	const Mail = await import("../mail.ts"), MailState = await import("../mail-state.ts"), Files = await import("../files.ts"), Cfg = await import("../config.ts");
-	const Settings = await import("../../features/reply-drafts/lib/settings.ts"), Drafts = await import("../../features/reply-drafts/lib/store.ts");
-	const Flow = await import("../../features/reply-drafts/lib/flow.ts"), Notices = await import("../notices-store.ts");
-	const CommentStore = await import("../comments/store.ts"), CommentAsk = await import("../comments/ask.ts"), Linked = await import("../comments/linked.ts"), Match = await import("../comments/mail-match.ts");
+	const Mail = await import("../../mail.ts"), MailState = await import("../../mail-state.ts"), Files = await import("../../files.ts"), Cfg = await import("../../config.ts");
+	const Settings = await import("../../../features/reply-drafts/lib/settings.ts"), Drafts = await import("../../../features/reply-drafts/lib/store.ts");
+	const Flow = await import("../../../features/reply-drafts/lib/flow.ts"), Notices = await import("../../notices-store.ts");
+	const CommentStore = await import("../../comments/store.ts"), CommentAsk = await import("../../comments/ask.ts"), Linked = await import("../../comments/linked.ts"), Match = await import("../../comments/mail-match.ts");
 
 	// Apps: three mail instances (own source, account and recipients), YouTube, Instagram and Kakao on.
 	const libs = await timed("libraries", () => makeLibraries(dir, size.library));
@@ -212,7 +212,7 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 		writeJson(join(dir, "custom", "sns", "config.json"), { youtube: { channel_id: "UCfakechannel0000000000" }, instagram: { user_id: "17841400000000000", username: "fake_account" } });
 		const kakao = join(dir, "features", "kakao", "feature.md");
 		mkdirSync(dirname(kakao), { recursive: true });
-		writeFileSync(kakao, readFileSync(join(import.meta.dir, "..", "..", "features", "kakao", "feature.md"), "utf8").replace(/^enabled:\s*false\s*$/m, "enabled: true"));
+		writeFileSync(kakao, readFileSync(join(import.meta.dir, "..", "..", "..", "features", "kakao", "feature.md"), "utf8").replace(/^enabled:\s*false\s*$/m, "enabled: true"));
 		Settings.saveSettings({
 			enabled: true, auto: true,
 			apps: Object.fromEntries([...ACCOUNTS.map(a => a.inst), "youtube", "instagram", "kakao"].map(a => [a, { auto: true }])),
@@ -243,7 +243,7 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 	});
 	const realKeys = new Set(realSet.map(s => s.key));
 	const bulk = await timed("mail.bulk", async () => {
-		const out: import("../mail.ts").MailRecord[] = [];
+		const out: import("../../mail.ts").MailRecord[] = [];
 		for (const s of specs) {
 			if (realKeys.has(s.key)) continue;
 			const cue = { from: fromOf(s), to: toOf(s), cc: ccOf(s), subject: s.subject, text: s.summary || s.body, list: s.list };
@@ -270,7 +270,7 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 		}
 	};
 	const asks = ["내일 오후에 가능하세요?", "확인했습니다. 곧 안내드릴게요.", "일정은 금요일로 잡아 두었어요.", "말씀하신 자료는 첨부했습니다."];
-	const recs: import("../../features/reply-drafts/lib/store.ts").DraftRec[] = [];
+	const recs: import("../../../features/reply-drafts/lib/store.ts").DraftRec[] = [];
 	const created = (at: number): string => iso(Math.min(base - 30_000, at + 60_000 * (5 + r.int(600))));
 	const wantedFor = (inst: string, i: number) => (inst === "mail-beta" && libs.library.wanted.length && i % 5 === 0 ? { wantFiles: [libs.library.wanted[i % libs.library.wanted.length]!] } : {});
 	for (const [i, s] of wantDraft.entries()) {
@@ -328,9 +328,9 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 		cs.saveConfig({ enabled: true, sources });
 		const wrote = specs.filter(s => !s.out && s.acct.inst === "mail" && s.needsReply && s.person.role === "student");
 		const total = size.compose + size.commentOnly;
-		const list: import("../comments/contract.ts").Comment[] = [], drafts: import("../comments/store.ts").Draft[] = [];
+		const list: import("../../comments/contract.ts").Comment[] = [], drafts: import("../../comments/store.ts").Draft[] = [];
 		const cards: { src: (typeof sources)[keyof typeof sources]; c: (typeof list)[number]; d: (typeof drafts)[number]; mail?: Rec }[] = [];
-		type Rec = import("../../features/reply-drafts/lib/store.ts").DraftRec;
+		type Rec = import("../../../features/reply-drafts/lib/store.ts").DraftRec;
 		for (let i = 0; i < total * 2; i++) {
 			const combined = i < size.compose, src = sources[i % 2 ? "instagram" : "youtube"], mailSpec = combined ? wrote[i % wrote.length] : undefined;
 			const author = mailSpec ? mailSpec.person.name : `${r.pick(SURNAMES)}${r.pick(GIVEN)[0]}`, addr = mailSpec?.person.addr ?? "";
@@ -367,7 +367,7 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 	const seen = new Set<string>(), made: (typeof Notices.items)[number][] = [];
 	await timed("notices.feed", () => {
 		for (const { e } of [...first, ...events]) {
-			Notices.feed(e as import("../events.ts").HubEvent);
+			Notices.feed(e as import("../../events.ts").HubEvent);
 			for (const n of Notices.items) if (!seen.has(n.id)) (seen.add(n.id), made.push(n));
 		}
 	});
@@ -396,9 +396,9 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 export async function verify(dirArg: string) {
 	const dir = checkDir(dirArg);
 	process.env.DOTZ_DIR = dir;
-	const Mail = await import("../mail.ts"), Drafts = await import("../../features/reply-drafts/lib/store.ts"), Notices = await import("../notices-store.ts");
-	const Library = await import("../../features/reply-drafts/lib/library.ts"), Settings = await import("../../features/reply-drafts/lib/settings.ts"), CommentStore = await import("../comments/store.ts");
-	const Integrations = await import("../integrations.ts");
+	const Mail = await import("../../mail.ts"), Drafts = await import("../../../features/reply-drafts/lib/store.ts"), Notices = await import("../../notices-store.ts");
+	const Library = await import("../../../features/reply-drafts/lib/library.ts"), Settings = await import("../../../features/reply-drafts/lib/settings.ts"), CommentStore = await import("../../comments/store.ts");
+	const Integrations = await import("../../integrations.ts");
 	const cs = CommentStore.createStore(CommentStore.commentsDir(dir)), s = Settings.loadSettings(), recs = Mail.mailRecords();
 	return {
 		mails: recs.length, mailsOut: recs.filter(m => m.dir === "out").length, mailsBySource: Object.fromEntries(ACCOUNTS.map(a => [a.source, recs.filter(m => m.source === a.source).length])),
@@ -416,7 +416,7 @@ if (import.meta.main) {
 	};
 	const dir = arg("dir"), scale = arg("scale") ?? "small";
 	if (!dir || (scale !== "small" && scale !== "large")) {
-		console.error("usage: bun hub/load-qa/seed.ts --dir /tmp/load-qa/<name> --scale small|large [--mail-real all] [--verify]");
+		console.error("usage: bun hub/test/load-qa/seed.ts --dir /tmp/load-qa/<name> --scale small|large [--mail-real all] [--verify]");
 		process.exit(2);
 	}
 	if (process.argv.includes("--verify")) {
