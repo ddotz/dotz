@@ -9,7 +9,7 @@ import { parseCommand, setGatewayRestart } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
-import { discordGatewayAnswer, webAnswer } from "./approval-wire.ts";
+import { discordGatewayAnswer, settleSends, webAnswer } from "./approval-wire.ts";
 import { installFanout, makeCtx, register, setAskApplier, startAll } from "./messenger.ts";
 import { setProjectSource, syncAllRooms } from "./messenger-rooms.ts";
 import { discordAdapter } from "./messenger-discord.ts";
@@ -176,6 +176,7 @@ const mailReconciler = createReconciler({
 const reconcileLog = (r: { checked: number; replied: number; notChecked: number } | undefined) => void (r && (r.checked || r.notChecked) && log(`mail reconcile: ${r.checked} threads checked, ${r.replied} answered elsewhere, ${r.notChecked} not checked`));
 const reconcileMails = (limit: number) => mailReconciler.run(limit).then(r => (reconcileLog(r), r));
 const settleSweep = () => {
+	settleSends();
 	// Questions past their answer time close here, in the pass that already settles handled drafts: no timer of their own.
 	const expired = settleExpiredQuestions();
 	if (expired) log(`notices: ${expired} questions past their answer time closed`);
