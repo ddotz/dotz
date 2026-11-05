@@ -1,5 +1,5 @@
 // Generated from hub/notice-ko.ts by hub/gen-notice-ko-web.ts; do not edit. stripMarkers (02-basic-markdown.js) and clockKo (11-watchtext.js) are the page's own.
-const { noticeKo, errorKo, cronKo } = (() => {
+const { noticeKo, errorKo, cronKo, plainTable } = (() => {
 const NAMES = {
   watch: "모니터링",
   watches: "모니터링",
@@ -294,6 +294,16 @@ function errorKo(msg) {
     return "찾지 못했어요";
   return /[A-Za-z]{2,}/.test(m) ? "처리하지 못했어요. 잠시 뒤에 다시 해 주세요" : m;
 }
+function plainTable(text) {
+  return text.split(`
+`).flatMap((l) => {
+    if (/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l))
+      return [];
+    const row = /^\s*\|(.*)\|\s*$/.exec(l);
+    return [row ? row[1].split("|").map((c) => c.trim()).filter(Boolean).join(" · ") : l];
+  }).join(`
+`);
+}
 function noticeKo(raw, o = {}) {
   let src = String(raw ?? "");
   let files = [];
@@ -354,5 +364,5 @@ function noticeKo(raw, o = {}) {
 ${files.join(`
 `)}`.trim() : body;
 }
-return { noticeKo, errorKo, cronKo };
+return { noticeKo, errorKo, cronKo, plainTable };
 })();

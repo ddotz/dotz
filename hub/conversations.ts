@@ -3,7 +3,7 @@ import { paths } from "./config.ts";
 import { briefMail, mailByKey } from "./mail.ts";
 import { laneLive, lanes } from "./lanestate.ts";
 import { readOf, unreadFrom } from "./reads.ts";
-import { noticeKo } from "./notice-ko.ts";
+import { noticeKo, plainTable } from "./notice-ko.ts";
 import { parseTone, previewSource } from "./tone.ts";
 
 // The messenger overview: one row per conversation (the main chat, each project channel, each session) with its newest real
@@ -31,7 +31,7 @@ export function isRealMessage(e: HubEvent): boolean {
 // First meaningful line of a message as plain text: the handoff block, the [done]-style marker, code fences and markdown
 // decoration are dropped.
 export function previewOf(raw: string): string {
-	const text = noticeKo(parseTone(previewSource(raw)).text);
+	const text = plainTable(noticeKo(parseTone(previewSource(raw)).text));
 	let fence = false;
 	for (const line of text.split("\n")) {
 		if (/^\s*```/.test(line)) {

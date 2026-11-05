@@ -14,11 +14,11 @@ const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e) 
 
 // Same rule as hub/conversations.ts previewOf: the first meaningful lines, plain text. convPreview: the first, 120 chars.
 function previewLines(raw, max) {
-  const text = noticeKo(parseTone(previewSrc(raw)).text, NK), out = [];
+  const text = plainTable(noticeKo(parseTone(previewSrc(raw)).text, NK)), out = [];
   let fence = false;
   for (const line of text.split("\n")) {
     if (/^\s*```/.test(line)) { fence = !fence; continue; }
-    if (fence || isSep(line)) continue;
+    if (fence) continue;
     const plain = line.replace(/^\s*-#\s+/, "").replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_~`]+/g, "").replace(/\s+/g, " ").trim();
     if (plain && out.push(plain) >= max) break;
   }

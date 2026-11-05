@@ -7,8 +7,8 @@ import { ev, fakeHub, json, on } from "./test-web.ts";
 // parser. Each format is rendered on each surface with the page's real functions and compared with the main chat; a raw mark left on a surface fails, and so
 // does a new caller of mdNode, which is how a surface bypasses the shared path.
 const JS = join(import.meta.dir, "..", "web", "js");
-// Who may draw text without shapes, and how many calls each holds: the owner's own words, a document, a model's thinking, a raw original, a question line, another computer's text.
-const PLAIN_MD = { "15-attachments.js": 2, "17-state-refresh.js": 1, "01-peer-msg.js": 2, "11-resultcard.js": 1, "12-terminal-view.js": 1, "10-decision-card.js": 5, "11-todo-strip.js": 3, "02-answer-shapes.js": 1 };
+// Who may draw text without shapes, and how many calls each holds: the owner's own words, a document, a model's thinking, a raw original, a question line.
+const PLAIN_MD = { "15-attachments.js": 2, "17-state-refresh.js": 1, "11-resultcard.js": 1, "12-terminal-view.js": 1, "10-decision-card.js": 5, "11-todo-strip.js": 3, "02-answer-shapes.js": 1 };
 
 test("mdNode and mdHtml have no new caller: a model's text goes through answerNode", () => {
 	const calls: Record<string, number> = {};
@@ -55,13 +55,14 @@ const SURFACES: Record<string, (text: string) => string> = {
 	"report with a decision": text => `msgNode(${out(`[ask] ${text}\n\n결정: 넣을까요?\n**1) 넣기**\n오늘 나가요.\n**2) 미루기**\n내일 나가요.`)})`,
 	"notice sheet": text => `el("div", {}, ...ntBody(${notice(text)}))`,
 	"monitoring card": text => `monNoticeNode(${notice(text, "watch")})`,
+	"peer message": text => { const e = `{ ts: "${ts}", kind: "message", via: "맥미니", target: "web", text: ${JSON.stringify(text)} }`; return `peerMsgCard(${e}, peerMsgOf(${e}), "12:00")`; },
 	"monitoring decision": text => `monDecisionNode({ ...${notice(`${text}\n\n결정: 넣을까요?\n**1) 넣기**\n오늘 나가요.\n**2) 미루기**\n내일 나가요.`, "decision")}, title: "넣을까요?", decision: { state: "open", to: "main", options: [{ n: 1, label: "넣기" }, { n: 2, label: "미루기" }] } })`,
 };
 const drawn = (expr: string, sel: string) => ev<number>(view, `(() => { const box = document.createElement("div"); document.body.append(box); box.append(...[${expr}].flat().filter(Boolean)); const n = box.querySelectorAll(${JSON.stringify(sel)}).length; box.remove(); return n; })()`);
 
 for (const [surface, draw] of Object.entries(SURFACES)) {
 	for (const [format, [text, sel]] of Object.entries(FORMATS)) {
-		if (surface === "report with a decision" && format === "files") continue;
+		if ((surface === "report with a decision" || surface === "peer message") && format === "files") continue;   // a peer's file lives on that computer: no chip
 		test(`${format} on ${surface} is the shared shape`, async () => {
 			expect(await drawn(draw(text), sel)).toBeGreaterThan(0);
 		});
@@ -93,6 +94,19 @@ test("a one-line row or a preview is plain words", async () => {
 	expect(await shown(`nscRow(${notice(text)}, "all")`)).not.toMatch(RAW);
 	expect(await shown(`msgNode({ ts: "${ts}", kind: "result", title: "세션", open: "lane:a", text: ${JSON.stringify(text)} })`)).not.toMatch(RAW);
 	expect(await ev<string>(view, `convPreview(${JSON.stringify(text)})`)).not.toMatch(RAW);
+	expect(await shown(`el("div", { text: monSummary(${notice(text)}, []) })`)).not.toMatch(RAW);
+	expect(await ev<string>(view, `friendlyLine(${JSON.stringify(text)})`)).not.toMatch(RAW);
+});
+
+test("a choice block on a surface that holds no options never shows, a numbered list with no head stays", async () => {
+	const text = "앞 문단이에요.\n\n결정: 넣을까요?\n**1) 넣기**\n오늘 나가요.\n**2) 미루기**\n내일 나가요.";
+	for (const expr of [SURFACES["monitoring card"]!(text), SURFACES["peer message"]!(text), `monLogRow(${notice(text)}, [])`, `el("div", { text: monSummary(${notice(text)}, []) })`]) {
+		const seen = await shown(expr);
+		expect(seen).toContain("앞 문단이에요");
+		expect(seen).not.toMatch(RAW);
+		expect(seen).not.toContain("넣기");
+	}
+	expect(await shown(SURFACES["monitoring card"]!("순서예요.\n\n1) 꺼요.\n2) 켜요."))).toContain("켜요");
 });
 
 test("a decision outside a chat card reads as a sentence, without its label", async () => {

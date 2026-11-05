@@ -25,6 +25,11 @@ function stripChoices(text) {
 }
 // A body whose card shows the options: the question line loses its "결정:" label, and goes when `title` (the card's head) already says it. Text without an inline card reads as a sentence.
 const choiceBody = (text, title) => stripChoices(text).split("\n").flatMap(l => { const q = (CH_HEAD.exec(l) || [])[1]; return q === undefined ? [l] : q && q !== title ? [q] : []; }).join("\n").trim();
+// Text on a surface that holds no options (a notice that is no decision, a report card): a choice block goes whether or not its question is still open; any other numbered list stays.
+function choiceFree(text) {
+  const t = String(text ?? "").replace(/^[ \t]*\d{1,2}\.[ \t]+(?=(?:\*\*)?[ \t]*결정[ \t]*[:：])/gm, "");   // text that never passed the hub (a peer's message) can number its heads
+  return parseChoices(t).blocks.length ? choiceBody(t) : text;
+}
 // The message body above its inline card (dcInline): the card holds the question and the options, so neither stays as text. Text outside the blocks stays, code fences whole.
 function inlineBody(text) {
   const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];

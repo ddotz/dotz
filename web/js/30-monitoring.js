@@ -669,9 +669,9 @@ const MON_PAGE = 30;       // rows per page (더 보기 / 이전 소식 보기 b
 const monPageTo = (key, i) => { if (i >= 0) MON.more.set(key, Math.max(MON.more.get(key) || MON_PAGE, (Math.floor(i / MON_PAGE) + 1) * MON_PAGE)); };
 const MON_FOLD_MIN = 3;    // a run of this many same results in a row folds into its last one
 // A row's summary: the report's first two lines (the monitor's name and the original dropped), 140 characters at most.
+const monLines = (n, names) => monStrip(choiceFree(String(n.text || "").split(/\n(?:```원문|원문[ \t]*\n)/)[0]), [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
 function monSummary(n, names) {
-  const body = String(n.text || "").split(/\n(?:```원문|원문[ \t]*\n)/)[0];
-  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
+  const lines = monLines(n, names);
   const s = lines.slice(0, 2).join(" · ");
   return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || "알림";
 }
@@ -750,8 +750,7 @@ function monLogRow(n, names) {
   const key = `n:${n.id}`;
   if (n.id === MON.want) MON.open.add(key);
   if (ntIsDec(n) || n.item || monNeed(n) || MON.open.has(key)) return monRowNode(n, names);
-  const body = String(n.text || "").split(/\n(?:\`\`\`원문|원문[ \t]*\n)/)[0];
-  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
+  const lines = monLines(n, names);
   const chg = nwChangeNode(nwChangeLine(n.text)), plain = lines.filter(l => !l.includes("→")).map(l => l.replace(/^\[[^\]]*\]\s*/, ""));
   const main = chg || plain[0] || ntPlain(n.title) || "알림", sub = chg ? plain[0] || "" : plain[1] || "";
   const src = ntPlain(names[0] || n.title) || "알림";

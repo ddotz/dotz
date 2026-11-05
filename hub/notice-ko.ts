@@ -176,6 +176,14 @@ export function errorKo(msg: string): string {
 }
 
 // The text as everyday Korean. `error`: a failure message (a toast's `e.message`): its English / HTTP tail is worded too.
+// A table as a one-line preview reads it: the rule line goes and a row's cells are joined. The text a card draws keeps its table.
+export function plainTable(text: string): string {
+	return text.split("\n").flatMap(l => {
+		if (/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l)) return [];
+		const row = /^\s*\|(.*)\|\s*$/.exec(l);
+		return [row ? row[1].split("|").map(c => c.trim()).filter(Boolean).join(" · ") : l];
+	}).join("\n");
+}
 export function noticeKo(raw: string, o: PlainOpts = {}): string {
 	let src = String(raw ?? "");
 	let files: string[] = [];
