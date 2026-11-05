@@ -6,8 +6,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
-import { correctionsOf, hasSamples, HEADINGS, identityOf, isTuned, markLearned, paths, readLearned, roomFile, type ToneKey, templatesOf, toneFile, writeAtomic, writeExamples, writeIdentity, writeSections } from "./settings.ts";
-import { loadPairs, savePairs } from "./pairs.ts";
+import { correctionsOf, hasSamples, HEADINGS, identityOf, isTuned, learnedCheck, loadPairs, markLearned, paths, readLearned, roomFile, savePairs, type ToneKey, templatesOf, toneFile, writeAtomic, writeExamples, writeIdentity, writeSections } from "./settings.ts";
 import { botDrafts, ownText, pickExamples, quotedText, sentPairs, SWEEP_LIMIT, type SentMail } from "./tone.ts";
 
 export const REFINE_EVERY = 5;
@@ -97,14 +96,6 @@ export async function sweep(key: ToneKey, texts: string[], where: string, call: 
 	// Reply templates the user already has under `## 답장 틀` are kept.
 	if (a.identity.length) writeIdentity(key, a.identity, templatesOf(key).length ? undefined : a.templates);
 	return { examples: examples.length, identity: a.identity.length, templates: a.templates.length };
-}
-
-// What a first sweep learned, shown at the end of onboarding so the owner can say whether it sounds like them. A correction or a line under `## 말투` outlives a relearn; an edit to the identity does not.
-const LEARNED_SHOWN = 4;
-export function learnedCheck(key: ToneKey): string {
-	const lines = identityOf(key).slice(0, LEARNED_SHOWN);
-	if (!lines.length) return "";
-	return `이렇게 배웠어요, 내 글 같은지 봐 주세요:\n${lines.map(l => `- ${l}`).join("\n")}\n다른 점은 초안에서 고치기로 알려 주거나 ${toneFile(key)}의 ${HEADINGS.rules}에 적어 주세요. 다시 배워도 남아요.`;
 }
 
 // A mail site's (or plugin's) sent folder, learned: its reply pairs are saved tagged with `source`, and an instance with no identity yet gets its own profile

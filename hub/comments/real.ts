@@ -2,8 +2,7 @@
 // profiles of features/reply-drafts, and the one subscription-only model call. The gateway and the watch/onboard scripts build the engine here.
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { loadPairs, savePairs } from "../../features/reply-drafts/lib/pairs.ts";
-import { loadStyle, markLearned, readLearned, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
+import { loadPairs, loadStyle, markLearned, readLearned, recordCorrection, savePairs } from "../../features/reply-drafts/lib/settings.ts";
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
 import { commentsFor, commentsRead, mediaHistory, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
 import { readCommentsSince } from "../../features/youtube-instagram/lib/yt-read.ts";

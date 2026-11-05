@@ -14,8 +14,7 @@ import { createHub } from "../../../hub/kakao/hub.ts";
 import { loadConfig } from "../../youtube-instagram/lib/config.ts";
 import { IMPORT_HINT, legacyGate } from "../../youtube-instagram/lib/legacy.ts";
 import { cleanExample } from "../../youtube-instagram/lib/reply-adapter.ts";
-import { learnedCheck } from "../../reply-drafts/lib/persona.ts";
-import { dataDir, writeExamples } from "../../reply-drafts/lib/settings.ts";
+import { dataDir, learnedCheck, writeExamples } from "../../reply-drafts/lib/settings.ts";
 import { pickExamples } from "../../reply-drafts/lib/tone.ts";
 
 type Out = { lines: string[]; code: number };

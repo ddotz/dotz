@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runWatch } from "../../features/comments/bin/watch.ts";
-import { loadPairs } from "../../features/reply-drafts/lib/pairs.ts";
+import { loadPairs } from "../../features/reply-drafts/lib/settings.ts";
 import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine, type DraftModel } from "./engine.ts";
 import { instagramAdapter, youtubeAdapter, type InstagramApi, type YoutubeApi } from "./adapters/google-meta.ts";
