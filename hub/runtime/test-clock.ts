@@ -39,7 +39,9 @@ export async function advance(ms: number): Promise<void> {
 		for (const t of tasks.values()) if (t.at <= target && (!next || t.at < next.at || (t.at === next.at && t.id < next.id))) next = t;
 		if (!next) break;
 		clock.now = Math.max(clock.now, next.at);
-		if (next.every) next.at += next.every;
+		// A test that sets clock.now leaves an interval behind: like a real timer it fires once and goes on from now. Once per missed period
+		// (20 days of a 1 s interval) ran past a later file's 5 s limit, in that file's first advance.
+		if (next.every) next.at = clock.now + next.every;
 		else tasks.delete(next.id);
 		next.fn();
 		await flush(3);

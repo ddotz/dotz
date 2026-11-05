@@ -651,6 +651,26 @@ test("an answer that came without a prompt settles the deferred settings request
 	expect(q.waitingOnWorkers()).toBe(0);
 });
 
+test("a turn pairs with its own prompt when older prompts without a message are dropped first", async () => {
+	const later = setup();
+	later.q.deliver("[dotz inbox] 세션 보고");
+	later.q.deliver("첫째", chat("m1"));
+	later.q.deliver("둘째", chat("m2"));
+	later.q.deliver("셋째", chat("m3"));
+	later.q.onPrompt("둘째");
+	later.q.onAnswer("둘째 답");
+	await Bun.sleep(0);
+	expect(later.state.posts).toEqual([{ target: "chat", text: "둘째 답", replyTo: "m2" }]);
+
+	const last = setup();
+	last.q.deliver("[dotz inbox] 세션 보고");
+	last.q.deliver("첫째", chat("m1"));
+	last.q.onPrompt("첫째");
+	last.q.onAnswer("첫째 답");
+	await Bun.sleep(0);
+	expect(last.state.posts).toEqual([{ target: "chat", text: "첫째 답", replyTo: "m1" }]);
+});
+
 test("a worker spawned in a turn a note started serves the owner message steered into it: its result closes that message and nothing asks again", async () => {
 	const { q, state, open, startTurn } = setup();
 	startTurn("[dotz gateway] This conversation is new. Reply with - now.", { target: "web:worklog" });
