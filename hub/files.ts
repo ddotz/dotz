@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join, sep } from "node:path";
-import { cfg, DATA_DIR, HOME } from "./config.ts";
+import { cfg, DATA_DIR, HOME, writeAtomic } from "./config.ts";
 import { FILES, queueSnapshots, snapshotFor } from "./filesnap.ts";
 
 export const UPLOADS = join(DATA_DIR, "uploads");
@@ -41,7 +41,10 @@ export async function saveUpload(file: File, dir = UPLOADS, max = UPLOAD_MAX_BYT
 	const name = safeName(file.name || "pasted");
 	const path = join(folder, `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}-${name}`);
 	await Bun.write(path, file);
-	return { path, name, ...(file.name && file.name !== name ? { original: file.name.slice(0, ORIGINAL_MAX) } : {}), type: file.type || Bun.file(path).type || "application/octet-stream", size: file.size };
+	const original = file.name && file.name !== name ? file.name.slice(0, ORIGINAL_MAX) : undefined;
+	// A CLI that is only given the path finds it here (features/reply-drafts/lib/staged.ts); the day folder's cleanup takes it along.
+	if (original) writeAtomic(`${path}.name`, original);
+	return { path, name, ...(original ? { original } : {}), type: file.type || Bun.file(path).type || "application/octet-stream", size: file.size };
 }
 
 // Reads a multipart body (one or more "file" fields). The size limit is checked per file and on the whole body.

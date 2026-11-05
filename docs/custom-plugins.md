@@ -79,12 +79,14 @@ reply(draft) { // draft: { source, id, account? (the zele account, when dotz set
 	return { ok: true, message: "답장을 보냈어요" };            // or { ok: false, message: "why" }
 },
 repliesWithFiles(source) { return source === "work"; },     // true only when reply really sends draft.attachments
+needsAccount(source) { return source === "work"; },         // true only when reply sends through a zele account (a plugin with its own mailbox leaves it out)
 ```
 
 - `to` is what the owner left on the card's 받는 사람 rows: one address or a comma list. `cc` is the 참조 list the same way, absent when there is none, and `all` is true when the owner picked 전체 답장 (the sender plus the original's 받는 사람·참조). Send every address you are given; a source that cannot (one recipient only, no 참조) should return `{ ok: false, message }` saying so rather than dropping them.
 - `attachments` are the files staged for that draft: the owner added them in the send sheet, or reply-drafts matched them in the mail instance's 첨부 파일 폴더 setting and the owner confirmed them. Without `repliesWithFiles`, the sheet says the account cannot send files, asks once more before 보내기, and a draft that holds files is not sent at all.
 - zele sends them with `zele mail reply <id> --attach <path>` (one flag per file). A webmail-no-api site cannot send files: its adapter only saves a text draft.
 - A throw in `reply` is a failed send (logged, the owner sees why); returning `undefined` means the source is not this plugin's.
+- `account` is optional because a plugin may send from its own mailbox, which zele's accounts say nothing about. A plugin that sends through zele declares `needsAccount`: dotz then settles the account like a zele mail when the draft is made, and with several accounts and none settled the card says so and `reply` is not called until the mail app has an account. Without it a draft is never held for an account, `reply` gets what is on record, and refuses by itself if that is not enough.
 
 ## Syncing what the owner does in dotz to the mailbox
 

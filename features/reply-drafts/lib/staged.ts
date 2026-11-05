@@ -1,7 +1,7 @@
 // The files a mail draft sends along, as hub/draft-files.ts staged them: <data dir>/draft-files/<draft id>/<n>/<name>, n = 0.. without gaps.
 // Pure fs (no hub/config.ts import, the CLI send path reads it too); the data dir is read from DOTZ_DIR on every call like settings.ts.
-import { copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, extname, join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join, sep } from "node:path";
 import { dataDir } from "./settings.ts";
 import { getDraft, listDrafts, patchDraft } from "./store.ts";
 
@@ -17,6 +17,19 @@ export function stagedName(name: string): string {
 	const clean = base.replace(/[\u0000-\u001f\u007f]+/g, "_").replace(/\s+/g, " ").replace(/^[.\s]+/, "").trim();
 	const ext = extname(clean).slice(0, 16);
 	return `${clean.slice(0, clean.length - extname(clean).length).slice(0, 100) || "file"}${ext}`;
+}
+
+// The name a file goes out as. An upload is stored as "<time><random>-<safe name>" (hub/files.ts saveUpload): it goes out under the name it came with,
+// which saveUpload kept beside it when the safe name differs; without that note (the same name, or an older upload) the safe name is all there is.
+function ownName(src: string): string {
+	const name = basename(src);
+	if (!src.startsWith(join(dataDir(), "uploads") + sep)) return name;
+	try {
+		return readFileSync(`${src}.name`, "utf8") || name;
+	} catch {
+		// no note: see above
+		return /^[0-9a-z]{8,12}-(.+)$/.exec(name)?.[1] ?? name;
+	}
 }
 
 const dirOf = (ref: string, root: string) => {
@@ -80,7 +93,7 @@ export const requestDownload: Download = src => {
 // A copy that fails takes its slot away again, so no empty <n> folder is left between the files.
 function copyInto(ref: string, src: string, root: string, copy: CopyFile): StagedFile {
 	if (!statSync(src).isFile()) throw new Error(`${src} is not a file`);
-	const to = slot(ref, basename(src), root);
+	const to = slot(ref, ownName(src), root);
 	try {
 		copy(src, to);
 	} catch (error) {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { zeleMailSearch, type MailSearch } from "../../../hub/comments/mail-match.ts";
 import { zeleAccounts } from "../../../hub/zele.ts";
 import { readAppsFile } from "../../../hub/integrations.ts";
-import { loadPlugins, pluginReply, pluginRepliesWithFiles, pluginsLoaded } from "../../../hub/plugins.ts";
+import { loadPlugins, pluginNeedsAccount, pluginReply, pluginRepliesWithFiles, pluginsLoaded } from "../../../hub/plugins.ts";
 import { dataDir } from "./settings.ts";
 import { recipientList } from "./recipients.ts";
 import { stagedFiles } from "./staged.ts";
@@ -86,6 +86,15 @@ export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ accou
 	return holders.length === 1 ? { account: holders[0] } : { several: logins };
 }
 
+// Whether a mail of this source goes out through a zele account, so several accounts leave a choice: zele itself and a plugin that says so (needsAccount).
+// Any other plugin sends from its own mailbox, however many accounts zele has here: nothing can be asked of it, and holding its draft would stop a mail that goes out fine.
+export async function sendsThroughZele(source: string): Promise<boolean> {
+	if (source === "zele") return true;
+	if (webmailSite(source)) return false;
+	if (!pluginsLoaded()) await loadPlugins(dataDir());
+	return pluginNeedsAccount(source);
+}
+
 // A webmail-no-api site: "webmail:<site>" (a new mail composed for it), or the plain site name its watch posts as the mail's `source`
 // (features/webmail-no-api/lib/watchkit.ts postToGateway) when this install onboarded that site.
 export const webmailSite = (source: string): string | undefined =>
@@ -130,7 +139,7 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	// This site's adapter saves a text draft with one recipient and no 참조: sending it would drop the rest without a word.
 	if (webmailSite(rec.source) && (cc.length || recipientList(rec.to).length > 1))
 		return fail("이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요");
-	const settled = rec.source === "zele" ? await settleAccount(rec, run) : {};
+	const settled = (await sendsThroughZele(rec.source)) ? await settleAccount(rec, run) : {};
 	if (settled.several) return fail(`메일 계정이 ${settled.several.join(", ")} 여러 개인데 이 메일이 어느 계정 것인지 알 수 없어서 보내지 않았어요. 초안은 그대로 있어요`);
 	const account = settled.account;
 	if (rec.compose && rec.source === "zele") {
@@ -147,8 +156,8 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	const site = webmailSite(rec.source);
 	if (!site) {
 		if (rec.compose) return fail(MANUAL);
-		// A plugin may not send through zele at all: it gets what is on record and refuses the rest itself.
-		const mailbox = zeleAccountOf(rec) ?? addressedLogin(rec, await zeleLogins(run));
+		// A plugin that did not ask for an account (needsAccount) may not send through zele at all: it gets what is on record and refuses the rest itself.
+		const mailbox = account ?? zeleAccountOf(rec) ?? addressedLogin(rec, await zeleLogins(run));
 		const sent = await pluginReply({ source: rec.source, id: rec.mailId, ...(mailbox ? { account: mailbox } : {}), to: rec.to, ...(cc.length ? { cc: cc.join(", ") } : {}), ...(rec.mode === "all" ? { all: true } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
 		return sent ?? fail(MANUAL);
 	}
