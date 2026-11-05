@@ -13,7 +13,7 @@ ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
 ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
 ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
-const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "" };
+const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set() };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
@@ -49,6 +49,7 @@ function mbFresh(scope, box) {
 function mbRowsOut(keys) {
   const keep = mailFilterOf()[2], gone = keys.filter(t => !MAILS.has(t) || !keep(MAILS.get(t), t));
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => gone.includes(r.dataset.t));
+  for (const r of rows) MBOX.rows.delete(r.dataset.t);   // a row that fades out is not kept
   return rows.length ? Promise.all(rows.map(r => motionOut(r))) : null;
 }
 
@@ -226,8 +227,23 @@ const MB_PAGE = 100;   // mail rows drawn at first and added per step
 let mbObs = null;
 // How many mail rows the list draws: MB_PAGE, grown by each step, and back to MB_PAGE when the list (app, folder) changes. A live update keeps it.
 function mbDrawn(scope) {
-  if (MBOX.fk !== scope) { MBOX.fk = scope; MBOX.drawn = MB_PAGE; }
+  if (MBOX.fk !== scope) { MBOX.fk = scope; MBOX.drawn = MB_PAGE; MBOX.rows.clear(); }
   return MBOX.drawn;
+}
+// A mail row's node is kept while everything the row shows is the same (its signature): the mail card, its conversation, the unread count, the tick,
+// an open decision, the opened original, the summary line and the time text. Only rows drawn by the last repaint are kept (mbRowsPrune).
+function mbRow(t, label) {
+  const m = MAILS.get(t), last = CONV.get(t), when = (m ? mailRowWhen : rcWhen)(last ? last.ts : m && m.at);
+  const sig = JSON.stringify([label, m, last, ts(t).unread, MBOX.sel.has(t), ntHasDecision(t), MR_OG.has(t), m ? mailBrief(m, t) : "", when]), hit = MBOX.rows.get(t);
+  MBOX.pass.add(t);
+  if (hit && hit.sig === sig) return hit.node;
+  const node = monConvNode(t, label);
+  if (node) MBOX.rows.set(t, { sig, node }); else MBOX.rows.delete(t);
+  return node;
+}
+function mbRowsPrune() {
+  for (const t of [...MBOX.rows.keys()]) if (!MBOX.pass.has(t)) MBOX.rows.delete(t);
+  MBOX.pass.clear();
 }
 function mbMore() { MBOX.drawn += MB_PAGE; MON.sig = ""; monSchedule(); }
 // After the drawn rows: a sentinel that adds a page when it reaches the viewport, and the plain button for a browser without IntersectionObserver.

@@ -350,9 +350,15 @@ function rqFailDescs(rows) {
   return out;
 }
 // Replies the owner approved that are queued or on their way (a notice's decision.send), of this computer and the others.
+// The gateway's own record (TR.results: GET /api/approvals and the approval_send frames) counts every local send, whether or not its notice is in NT.items
+// (GET /api/notices keeps the open cards and the newest page, so an approved card can sit past it); the notices count the other computers' sends. A ref counts once.
 function rqSending() {
-  const seen = new Set();
-  for (const n of [...NT.items, ...rqApps().filter(a => a.pc).flatMap(a => a.notices)]) { const s = n.decision && n.decision.send; if (s && (s.state === "queued" || s.state === "sending")) seen.add(`${n.pc ? n.pc.url : ""}|${n.id}`); }
+  const seen = new Set(), live = s => !!s && (s.state === "queued" || s.state === "sending");
+  for (const r of Object.values(TR.results)) if (live(r)) seen.add(`|${r.ref}`);
+  for (const n of [...NT.items, ...rqApps().filter(a => a.pc).flatMap(a => a.notices)]) {
+    const d = n.decision;
+    if (d && live(d.send)) seen.add(`${n.pc ? n.pc.url : ""}|${d.draft && d.draft.ref ? d.draft.ref : `#${n.id}`}`);
+  }
   return seen.size;
 }
 function rqPaintHead(rows) {
@@ -370,31 +376,33 @@ function rqPaintHead(rows) {
 const RQ_PAGE = 200;   // rows drawn per section; 더 보기 adds a page (the failed section always draws all)
 // Keyed update of one box: a child stays when its key and signature are the same, the rest is removed, replaced or inserted in order.
 function rqSync(box, descs) {
-  const want = new Set(descs.map(d => d.key)), have = new Map();
-  for (const n of [...box.children]) { if (want.has(n.dataset.rk)) have.set(n.dataset.rk, n); else n.remove(); }
-  let at = box.firstChild;
-  for (const d of descs) {
+  const have = new Map([...box.children].map(n => [n.dataset.rk, n]));
+  listPlace(box, descs.map(d => {
     let n = have.get(d.key);
-    if (!n || n._sig !== d.sig) {
-      const x = d.make();
-      x._sig = d.sig; x.dataset.rk = d.key;
-      if (n) { if (n === at) at = n.nextSibling; n.remove(); }
-      n = x;
-    }
-    if (n === at) at = at.nextSibling; else box.insertBefore(n, at);
-  }
+    if (!n || n._sig !== d.sig) { n = d.make(); n._sig = d.sig; n.dataset.rk = d.key; }
+    return n;
+  }));
 }
-// The first row in view and its offset from the top of the scroll box; rqHold puts it back after the rows above it changed.
-function rqAnchor() {
-  const box = $("#mon-timeline"), u = rqUi();
-  if (!box || box.scrollTop <= 0 || !u.ls.isConnected) return null;
-  const top = box.getBoundingClientRect().top, n = [...u.ls.querySelectorAll(".rq-r")].find(e => e.getBoundingClientRect().bottom > top);
-  return n ? { key: n.dataset.rk, off: n.getBoundingClientRect().top - top } : null;
+// Puts `nodes` in `box` in that order: a child no longer wanted is removed, one already in place stays, the rest is inserted.
+function listPlace(box, nodes) {
+  const want = new Set(nodes);
+  for (const n of [...box.children]) if (!want.has(n)) n.remove();
+  let at = box.firstChild;
+  for (const n of nodes) { if (n === at) at = at.nextSibling; else box.insertBefore(n, at); }
 }
-function rqHold(a) {
-  const box = $("#mon-timeline"), n = a && [...rqUi().ls.querySelectorAll(".rq-r")].find(e => e.dataset.rk === a.key);
+// The first row of `root` (matching `sel`) in view and its offset from the top of the scroll box, `key` being the dataset name that identifies a row;
+// rowHold puts it back after the rows above it changed.
+function rowAnchor(root, sel, key) {
+  const box = $("#mon-timeline");
+  if (!box || box.scrollTop <= 0 || !root.isConnected) return null;
+  const top = box.getBoundingClientRect().top, n = [...root.querySelectorAll(sel)].find(e => e.getBoundingClientRect().bottom > top);
+  return n ? { root, sel, key, id: n.dataset[key], off: n.getBoundingClientRect().top - top } : null;
+}
+function rowHold(a) {
+  const box = $("#mon-timeline"), n = a && [...a.root.querySelectorAll(a.sel)].find(e => e.dataset[a.key] === a.id);
   if (n && box) box.scrollTop += n.getBoundingClientRect().top - box.getBoundingClientRect().top - a.off;
 }
+const rqAnchor = () => rowAnchor(rqUi().ls, ".rq-r", "rk");
 // What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).
 function rqDescs(shown) {
   if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…"; return [{ key: "empty", sig: text, make: () => el("div", { class: "list" }, el("div", { class: "empty", text })) }]; }
@@ -420,7 +428,7 @@ function rqPaintList(rows) {
     for (const d of top) if (d.rows) rqSync([...u.ls.children].find(n => n.dataset.rk === d.key), d.rows);
     u.ls.dataset.on = "1";
     if (fk) { const n = [...u.ls.querySelectorAll(".rq-r")].find(e => e.dataset.rk === fk), b = n && n.querySelector(".tx"); if (b && document.activeElement !== b) b.focus({ preventScroll: true }); }
-    rqHold(anchor);
+    rowHold(anchor);
   };
   // Rows that left (answered, sent again, dropped) fade out first; a tab change or a fold redraws at once.
   const keys = new Set(shown.map(r => r.key)), gone = RQ.now || !u.ls.dataset.on ? [] : [...u.ls.querySelectorAll("[data-qr]")].filter(n => !keys.has(n.dataset.qr));
