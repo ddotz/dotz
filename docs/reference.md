@@ -45,7 +45,9 @@ too. omp (oh-my-pi) and Claude Code are explicit opt-ins; what changes then is i
 
 ## Install and onboard
 
-`install.sh` (POSIX sh, macOS and Linux) installs bun when missing (bun.sh installer), installs OmO (`bun add -g --trust
+Windows: install inside WSL 2 and control Windows from there, see [docs/windows.md](windows.md).
+
+`install.sh` (POSIX sh, macOS, Linux and WSL 2) installs bun when missing (bun.sh installer), installs OmO (`bun add -g --trust
 omo-ai`) unless `DOTZ_HARNESS` says otherwise or another harness is already there, downloads the code to
 `~/.local/share/dotz` (`DOTZ_HOME`), creates the data dir `~/.dotz` (`DOTZ_DIR`, nothing in it but what the wizard writes)
 and runs the wizard on the terminal (`/dev/tty`, so it works under `curl | sh`). Source: the GitHub tarball of

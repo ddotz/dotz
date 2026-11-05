@@ -322,15 +322,37 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 8px 8px 18px;
+  padding: 8px;
   border-bottom: 1px solid var(--code-line);
 }
 
-.install-label {
+.os-pick {
+  display: flex;
+  gap: 4px;
+}
+
+.os {
+  min-width: 56px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--code-muted);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background-color var(--m-fast) var(--m-ease), color var(--m-fast) var(--m-ease);
+}
+
+.os:hover,
+.os[aria-pressed="true"] {
+  background: var(--code-line);
+  color: var(--code-ink);
+}
+
+.os:focus-visible {
+  outline-color: var(--code-ink);
 }
 
 .copy {
@@ -387,6 +409,24 @@ a:hover {
   color: var(--code-ink);
   font-size: inherit;
   white-space: pre;
+}
+
+.install-steps {
+  margin: 0;
+  padding: 0 18px 18px;
+  color: var(--code-muted);
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+.install-steps code {
+  white-space: nowrap;
+}
+
+.install-steps a {
+  color: var(--code-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .cta-row {

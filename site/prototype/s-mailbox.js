@@ -53,7 +53,7 @@
   const paneRow = (id, name, sub, icon, cur, extra = "") => '<a class="mx-pr' + (cur === id ? " on" : "") + '" href="' + boxHref(id) + '"' + (cur === id ? ' aria-current="true"' : "") + '><span class="av">' + ic(icon) + '</span><span class="tx"><span class="hd">' + h(name) + extra + '</span><span class="sup">' + h(sub) + '</span></span><span class="mx-pn">' + stateDot(id) + "<span>" + live(inBox(id)).length + "</span></span></a>";
   const pane = (cur) => '<nav class="mx-pane" aria-label="메일함"><div class="list">' + paneRow("all", "전체", "안 읽음 " + unread("all"), "mail", cur) + '</div><div class="list">' + entries().map(({ id, b, n }) => paneRow(id, b.name, n ? "계정 " + n + "개" : MODES[b.mode][0], b.icon, cur, (b.base ? '<span class="tag mx-base">기본</span>' : "") + (n ? "" : markIf(b)))).join("") + '</div><a class="btn text sm mx-add" href="#mailbox/new">' + ic("plus") + "메일함 추가</a></nav>";
   const chipRow = (cur) => '<div class="mx-tabs" role="tablist" aria-label="메일함">' + [{ id: "all", name: "전체" }, ...entries().map((e) => ({ id: e.id, name: e.b.name, mark: e.n ? "" : markIf(e.b) }))].map(({ id, name, mark }) => '<a role="tab" aria-selected="' + (cur === id) + '" class="mx-tab' + (cur === id ? " on" : "") + '" href="' + boxHref(id) + '">' + h(name) + (mark || "") + stateDot(id) + "<span>" + live(inBox(id)).length + "</span></a>").join("") + '<a class="mx-tab" href="#mailbox/new" aria-label="메일함 추가">' + ic("plus") + "</a></div>";
-  const head = () => '<div class="mx-hd"><span class="av">' + ic("mail") + '</span><span class="tx"><span class="hd">메일<span class="mx-pc">맥북</span></span><span class="sup">' + (multi() ? h(S.mbA === "all" ? "계정 " + accts().length + "개" : acct(S.mbA).addr) + " · " : "") + "안 읽음 " + unread("all") + " · 메일함 " + (S.mbA === "all" ? S.mb.boxes : boxesOf(S.mbA)).length + '개</span></span><a class="ib" href="#mail" aria-label="지금 메일 화면으로" title="지금 메일 화면으로">' + ic("list") + "</a></div>";
+  const head = () => '<div class="mx-hd"><span class="av">' + ic("mail") + '</span><span class="tx"><span class="hd">메일<span class="mx-pc">노트북</span></span><span class="sup">' + (multi() ? h(S.mbA === "all" ? "계정 " + accts().length + "개" : acct(S.mbA).addr) + " · " : "") + "안 읽음 " + unread("all") + " · 메일함 " + (S.mbA === "all" ? S.mb.boxes : boxesOf(S.mbA)).length + '개</span></span><a class="ib" href="#mail" aria-label="지금 메일 화면으로" title="지금 메일 화면으로">' + ic("list") + "</a></div>";
 
   /* 메일 줄: 실제 메일 앱의 한 줄(.mr)과 같은 순서 */
   const row = (m, cur) => {
@@ -92,7 +92,7 @@
   };
   const screen = (cur) => { if (cur !== "all" && !isGroup(cur) && !box(cur)) return '<div class="empty">지운 메일함이에요.<br><a class="btn tonal sm" href="#mailbox" style="margin-top:12px">전체로 가기</a></div>'; return head() + chipRow(cur) + '<div class="mx-wrap">' + pane(cur) + '<div class="mx-main">' + list(cur) + '</div></div><a class="mx-fab" href="#mail/compose" aria-label="메일 쓰기">' + ic("edit") + "<span>메일 쓰기</span></a>"; };
 
-  /* 메일 화면의 계정 칩: 맥북 칩과 같은 모양으로 머리줄의 맥북 칩 옆에 놓여요 */
+  /* 메일 화면의 계정 칩: 노트북 칩과 같은 모양으로 머리줄의 노트북 칩 옆에 놓여요 */
   const acctBar = () => {
     $("#appbar .mx-acc")?.remove();
     if (!multi()) return;

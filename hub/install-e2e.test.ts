@@ -243,6 +243,38 @@ test("a fresh install on a desktop hands the setup address to the opener and doe
 	expect(i.out).not.toMatch(ADDRESS);
 }, 60_000);
 
+// WSL on any host: uname says Linux, the distro variable marks WSL, no Linux display, and only the Windows side can open a browser.
+const wslStubs = (s: ReturnType<typeof scene>, systemd: boolean) => {
+	const bin = join(dirname(s.data), "bin");
+	writeFileSync(join(bin, "uname"), "#!/bin/sh\necho Linux\n");
+	writeFileSync(join(bin, "powershell.exe"), '#!/bin/sh\necho "powershell.exe $*" >> "$STUB_LOG"\n');
+	if (!systemd) writeFileSync(join(bin, "systemctl"), "#!/bin/sh\necho 'System has not been booted with systemd' >&2\nexit 1\n");
+	for (const name of ["uname", "powershell.exe", "systemctl"]) chmodSync(join(bin, name), 0o755);
+};
+const WSL_ENV = { WSL_DISTRO_NAME: "Ubuntu", DISPLAY: "", WAYLAND_DISPLAY: "" };
+
+test("under WSL with no Linux display the setup address goes to the Windows browser", () => {
+	const s = scene();
+	stubOpenPath(s, "works");
+	wslStubs(s, true);
+	const i = s.install(WSL_ENV);
+	if (i.code !== 0) throw new Error(i.out);
+	expect(s.stubCalls()).toMatch(/^powershell\.exe -NoProfile -Command Start-Process 'http:\/\/127\.0\.0\.1:\d+\/setup\?token=[A-Za-z0-9_-]+'$/m);
+	expect(s.stubCalls()).not.toMatch(OPENERS);
+	expect(i.out).toContain("opened the setup page in your browser");
+	expect(i.out).not.toMatch(ADDRESS);
+}, 60_000);
+
+test("under WSL without systemd the install stops first and names the fix", () => {
+	const s = scene();
+	wslStubs(s, false);
+	const i = s.install(WSL_ENV);
+	expect(i.code).toBe(1);
+	expect(i.out).toContain("systemd=true in /etc/wsl.conf");
+	expect(existsSync(s.marker)).toBe(false);
+	expect(i.out).not.toContain("installed");
+}, 60_000);
+
 test("when the opener exits 1 the address is printed instead", () => {
 	const s = scene();
 	stubOpenPath(s, "fails");

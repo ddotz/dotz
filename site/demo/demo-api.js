@@ -689,7 +689,7 @@
     "/api/apps": { items: [] },
     "/api/approvals": { items: [] },
     "/api/devices": [
-      { id: "cred-mac", name: "맥북 Safari", created: new Date(Date.now() - 40 * 864e5).toISOString(), last_used: new Date(Date.now() - 6e5).toISOString(), current: true },
+      { id: "cred-mac", name: "노트북 Safari", created: new Date(Date.now() - 40 * 864e5).toISOString(), last_used: new Date(Date.now() - 6e5).toISOString(), current: true },
       { id: "cred-phone", name: "아이폰", created: new Date(Date.now() - 12 * 864e5).toISOString(), last_used: new Date(Date.now() - 2 * 864e5).toISOString(), current: false },
     ],
     "/api/accounts": {
@@ -768,8 +768,8 @@
     ] }] },
     "/api/machine": {},
     "/api/peers": [
-      { name: "맥북", url: "https://macbook.demo.ts.net", self: true, online: true },
-      { name: "맥미니", url: "https://macmini.demo.ts.net", online: true, unread: 2, need: 1 },
+      { name: "노트북", url: "https://laptop.demo.ts.net", self: true, online: true },
+      { name: "데스크톱", url: "https://desktop.demo.ts.net", online: true, unread: 2, need: 1 },
       { name: "서버", url: "https://server.demo.ts.net", online: false },
     ],
   };

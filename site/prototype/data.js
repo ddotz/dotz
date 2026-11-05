@@ -1,8 +1,8 @@
 window.D = (() => {
   const D = {};
   D.computers = [
-    { name: "맥북", self: true, online: true, sub: "이 컴퓨터", need: 0 },
-    { name: "맥미니", online: true, sub: "집 · 온라인", need: 1, unread: 2 },
+    { name: "노트북", self: true, online: true, sub: "이 컴퓨터", need: 0 },
+    { name: "데스크톱", online: true, sub: "집 · 온라인", need: 1, unread: 2 },
     { name: "스튜디오 PC", online: false, sub: "꺼져 있어요" },
   ];
 
