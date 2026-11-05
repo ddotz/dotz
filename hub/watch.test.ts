@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { DATA_DIR, paths } from "./config.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import type { ReloginOpts, ReloginResult } from "./autologin.ts";
-import { addWatch, allWatches, approveWatch, exec, learnLife, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, sessionGapMs, setSessionIo, startWatches, watchScript } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, exec, learnLife, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, sessionGapMs, setSessionIo, startWatches, watchScript, watchShell } from "./watch.ts";
 
 const notes: { name: string; reason: string }[] = [];
 let waiter: (() => void) | undefined;
@@ -29,10 +29,18 @@ const approval = (name: string) => join(DATA_DIR, "approvals", name);
 // reached. The read can only finish once every holder of the output pipe is gone (the read grace is a fake-clock timer
 // nobody advances), so the run settling proves the grandchild exited; ps then sees that pid gone or a zombie, never
 // running. A name match (pgrep) also saw unreaped zombies and other runs' sleeps.
+test("without zsh a command runs in bash, without bash in sh, and the shell really runs it", async () => {
+	expect(watchShell(p => p === "/bin/zsh" || p === "/bin/bash")).toBe("/bin/zsh");
+	expect(watchShell(p => p === "/bin/bash")).toBe("/bin/bash");
+	expect(watchShell(() => false)).toBe("/bin/sh");
+	const { code, output } = await exec([watchShell(p => p === "/bin/bash"), "-lc", "echo ${BASH_VERSION:+bash}"], undefined, 5000);
+	expect([code, output.trim()]).toEqual([0, "bash"]);
+});
+
 test("the deadline SIGKILLs the whole process group, so a background grandchild cannot hold the read", async () => {
 	const fifo = join(mkdtempSync(join(tmpdir(), "dotz-pgkill-")), "pid");
 	expect((await Bun.spawn(["mkfifo", fifo]).exited)).toBe(0);
-	const run = exec(["/bin/zsh", "-c", `sleep 600 & echo $! > ${fifo}; wait`], undefined, 1000);
+	const run = exec(["/bin/sh", "-c", `sleep 600 & echo $! > ${fifo}; wait`], undefined, 1000);
 	const pid = Number((await readFile(fifo, "utf8")).trim());
 	expect(pid).toBeGreaterThan(0);
 	await advance(1000);
