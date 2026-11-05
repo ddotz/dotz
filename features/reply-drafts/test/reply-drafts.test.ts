@@ -253,10 +253,12 @@ test("a second mail's body is read while the first draft is still in its model c
 	const gate = new Promise<void>(r => (release = r));
 	const model = fakeModel([j(goodReply), j(goodReply)]);
 	const reads: string[] = [];
-	const deps = { send: out.send, call: async (s: string, u: string) => (await gate, model.call(s, u)), readBody: async (_src: string, id: string) => (reads.push(id), "다음 주 화요일에 회의 가능하신가요?") };
+	let bothRead!: () => void;
+	const bothStarted = new Promise<void>(r => (bothRead = r));
+	const deps = { send: out.send, call: async (s: string, u: string) => (await gate, model.call(s, u)), readBody: async (_src: string, id: string) => (reads.push(id), reads.length === 2 && bothRead(), "다음 주 화요일에 회의 가능하신가요?") };
 	const first = offerMailDraft({ ...mailFixture, body: undefined, key: "p-1", id: "p-1" }, deps);
 	const second = offerMailDraft({ ...mailFixture, body: undefined, key: "p-2", id: "p-2" }, deps);
-	await Promise.resolve();
+	await bothStarted;
 	expect(reads).toEqual(["p-1", "p-2"]);   // both reads started before the first model call returned
 	release();
 	expect([await first, await second]).toEqual(["offered", "offered"]);
