@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { NAME } from "./config.ts";
 import { createLaneRelay, createOwnerNotes } from "./lanerelay.ts";
 
 function relay() {
@@ -121,4 +122,27 @@ test("a [run] or owner-only report is classified apart from a note: the note pat
 	expect(r.report("a", "10분 안에 알려요.", "/f", true)).toBe("owner");
 	expect(r.report("a", "[run] 테스트 중", "/f", true)).toBe("disk");
 	expect(sent).toHaveLength(0);
+});
+
+test("the questions a turn heard are named until the turn ends, relayed, steered or held; an order for the orchestrator is no question", () => {
+	let busy = false;
+	const r = createLaneRelay({ busy: () => busy, deliver: () => {}, lead: n => `[${n}]`, steer: () => true });
+	r.report("a", "[ask] which one?\n결정: 고를까요?\n1) 네\n2) 아니요", "/a");
+	r.report("b", "[done] merged", "/b");
+	expect(r.asked()).toEqual(["a"]);
+	r.flush();
+	expect(r.asked()).toEqual([]);
+	busy = true;
+	r.report("c", "[ask] steered one?\n결정: 고를까요?\n1) 네\n2) 아니요", "/c");
+	r.report("d", `[ask] 재시작이 필요해요\n\nFor ${NAME}: 재시작해 주세요`, "/d");
+	expect(r.asked()).toEqual(["c"]);
+	busy = false;
+	r.flush();
+	const held = createLaneRelay({ busy: () => busy, deliver: () => {}, lead: n => `[${n}]` });
+	busy = true;
+	held.report("e", "[ask] later?\n결정: 고를까요?\n1) 네\n2) 아니요", "/e");
+	expect(held.asked()).toEqual([]);
+	busy = false;
+	held.flush();
+	expect(held.asked()).toEqual(["e"]);
 });

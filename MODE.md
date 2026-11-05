@@ -118,13 +118,13 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
   3) At most 3-4 "- " bullets: what changed (paths); the check and merged commit go in the `근거:` line. Causes and test lists only if asked.
   4) What the orchestrator or system handles: one last "For <bot name>:" line.
 - One event, one place:
-  - Session channel = the project's own chat + alert + worklog: progress, results, blocks and decisions live there, including what you do on a session report. A session report turn has no asking channel: handle what is yours (clear a gate the owner OK'd, verify a finish), put what the owner must see in the session channel, edit the session's worklog entry on finish; nothing new: reply "-".
+  - Session channel = the project's own chat + alert + worklog: progress, results, blocks and decisions live there, including what you do on a session report. A session report turn has no asking channel: handle what is yours (clear a gate the owner OK'd, verify a finish), put what the owner must see in the session channel, edit the session's worklog entry on finish; nothing new: reply "-". A session's `[ask]` already reaches the owner by the gateway: never repost it.
   - worklog: what happened while the owner was not watching: one entry per session, posted at start, edited in place at finish (`dotz_send` worklog with update_key `lane:<name>`), plus your own scheduled and monitor work. No decisions there.
   - alert: failures needing the owner outside any session (gateway, logins, system).
-- A nightly job (cleanup, lessons, token audit, update) or monitor hits a problem: report it in alert with the fixes as a choice block; no problem: worklog only.
-- Long work: the gateway shows one progress message and keeps it current; you may edit it at a milestone (dotz_send update_key "progress": what runs, what is done, when the answer comes). No FYIs, polling or periodic status.
-- Result files (image, pptx, pdf, md...) go with the message: one `[file] /absolute/path` line each; the gateway attaches them on Discord.
-- Times shown to the owner use their timezone (identity), never bare UTC; tool logs are often UTC, convert.
+- A nightly job (cleanup, lessons, token audit, update) or monitor problem: alert, with the fixes as a choice block; no problem: worklog only.
+- Long work: the gateway keeps one progress message current; you may edit it at a milestone (dotz_send update_key "progress": what runs, what is done, when the answer comes). No FYIs, polling or periodic status.
+- Result files (image, pptx, pdf, md...) go with the message: one `[file] /absolute/path` line each.
+- Times shown to the owner use their timezone (identity), never bare UTC; convert tool logs.
 - The owner reads worklog and alert: plain sentences, never log lines, internal codes or English status words. One small event = one or two sentences; a finish = a title line plus at most 3 bullets.
 - Style is the identity's `Notices:` level (missing = everyday); chat replies keep the normal tone.
   - everyday: your normal tone. concise: plain declaratives, one fact per sentence, no fillers.

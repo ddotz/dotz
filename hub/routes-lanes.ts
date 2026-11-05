@@ -9,7 +9,8 @@ import { deleteLanes, restoreLanes as restoreTrashedLanes, trashList } from "./l
 import { abortLane, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, estimateOf, handoverLane, isExpensive, laneJustification, lanes, laneList, launch, restartLane, resumeByName, sendToLane, stopLane, titleProblem, verifyLane } from "./lanes.ts";
 import { anthropicUsage } from "./providers.ts";
 import { keepHome, persist } from "./lanestate.ts";
-import { laneVerified } from "./notices.ts";
+import { closeLaneCards, laneVerified } from "./notices.ts";
+import { convs } from "./convsessions.ts";
 import { doneProblem } from "./donesignals.ts";
 import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, startedIn } from "./threads.ts";
@@ -220,7 +221,11 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				return json({ ok: true, lane: lane.name, channel, ...(lane.waiting ? { waiting: lane.waiting } : {}) });
 			}
 			if (req.method === "POST" && parts[3] === "send") {
-				sendToLane(parts[2], String((await body(req)).text ?? ""));
+				const b = await body(req);
+				sendToLane(parts[2], String(b.text ?? ""));
+				// Sent in a turn the owner started, this carries his word to the session: its card waits on him no longer. Any other turn's message leaves it open.
+				const turn = (convs.get(String(b.session))?.queue ?? queue).current();
+				if (turn?.target && !turn.done) closeLaneCards(parts[2]);
 				return json({ ok: true });
 			}
 			if (req.method === "POST" && parts[3] === "restart") {
