@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { paths } from "../lib/settings.ts";
-import { addDraft, getDraft, isDrafted, listDrafts, type DraftRec } from "../lib/store.ts";
+import { addDraft, draftHeads, getDraft, isDrafted, listDrafts, type DraftRec } from "../lib/store.ts";
 import { writeAtomic } from "../lib/settings.ts";
 import { setupEnv } from "./helpers.ts";
 
@@ -39,4 +39,17 @@ test("changing a returned draft does not change the stored one", () => {
 	listDrafts()[0]!.body = "x";
 	expect(getDraft("R2")?.status).toBe("pending");
 	expect(getDraft("R2")?.body).toBe("b");
+});
+
+// The sweep over the open cards asks "which drafts are there" once per card: that read hands out shared heads, it does not copy every draft body each time.
+test("the draft heads are not copied per question and follow a changed file", () => {
+	for (let i = 0; i < 20; i++) addDraft(rec(i));
+	const clone = spyOn(globalThis, "structuredClone");
+	for (let i = 0; i < 20; i++) expect(draftHeads()).toHaveLength(20);
+	const copies = clone.mock.calls.length;
+	clone.mockRestore();
+	expect(copies).toBe(0);
+	expect(draftHeads()[3]).toEqual({ id: "R3", ref: "k3", status: "pending", created: new Date(3000).toISOString() });
+	writeAtomic(paths.drafts(), `${JSON.stringify({ drafts: [{ ...rec(3), status: "sent" }], keys: ["k3"] })}\n`);
+	expect(draftHeads()).toEqual([{ id: "R3", ref: "k3", status: "sent", created: new Date(3000).toISOString() }]);
 });

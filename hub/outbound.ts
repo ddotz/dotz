@@ -36,7 +36,7 @@ import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime,
 import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
-import { listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
+import { draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { route } from "./notify-route.ts";
@@ -279,7 +279,7 @@ export const approvals = createApprovalQueue({
 	convOf: convOfTarget,
 	openRefs: openDraftRefs,
 	// The bot's `mail:<id>` card and the app's reply draft of that mail are one item.
-	itemOf: (conv, ref) => mailItemKey(ref, conv, listMailDrafts),
+	itemOf: (conv, ref) => mailItemKey(ref, conv, draftHeads),
 	handled: (ref, conv) => refHandled(ref, conv),
 	post: (target, text, extra) => void out(target, text, undefined, { ...extra, queued: true }).catch(e => log(`held approval card to ${target} failed: ${e}`)),
 	// A card that went to Discord as one message is edited there too (a [file] line would show raw in an edit, so such a card keeps its first text).
