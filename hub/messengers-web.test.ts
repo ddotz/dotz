@@ -237,6 +237,30 @@ describe("메신저 설정", () => {
 		expect(onboard).toEqual(["jandi/start"]);
 	}, 30_000);
 
+	test("a JANDI that connects by login shows one action, and a step the owner row repeats is drawn once", async () => {
+		const j = items.find(i => i.id === "jandi")!;
+		Object.assign(j, { enabled: false, configured: false, state: "off" });
+		selfChat = { state: "off", label: "L", hint: "H", connect: "C" };
+		const v = await open(1280, 800);
+		await run(v, `go("jandi")`);
+		await waitFor(v, `document.querySelector('#jandi [data-ms-selfchat="off"]')`);
+		const count = (sel: string) => ev<number>(v, `document.querySelectorAll(${JSON.stringify("#jandi " + sel)}).length`);
+		expect([await count("[data-ms-status]"), await count("[data-ms-connect]"), await count("[data-ms-selfchat-connect]")]).toEqual([0, 0, 1]);
+		Object.assign(j, { enabled: true, configured: true, state: "ok" });
+		selfChat = { state: "ok", label: "L", hint: "H", connect: "C" };
+		await run(v, `MSS.page.s = null; loadMessengerIndex().then(() => renderMessenger("jandi"))`);
+		await waitFor(v, `document.querySelector('#jandi [data-ms-selfchat="ok"]') && document.querySelector('#jandi [data-ms-status]')`);
+		expect([await count("[data-ms-connect]"), await count("[data-ms-selfchat-connect]")]).toEqual([0, 1]);
+		selfChat = { state: "lost", label: "L", hint: "H", connect: "C" };
+		await run(v, `MSS.page.s = null; renderMessenger("jandi")`);
+		await waitFor(v, `document.querySelector('#jandi [data-ms-selfchat="lost"]')`);
+		expect(await count("[data-ms-status]")).toBe(0);
+		ob.jandi = waiting("jandi", "로그인", "탭에서 로그인해 주세요.");
+		await run(v, `loadOnboarding("jandi")`);
+		await waitFor(v, `document.querySelector('#jandi [data-onb-owner]')`);
+		expect(await ev<number>(v, `[...document.querySelectorAll("#jandi .hd")].filter(x => x.textContent === "로그인").length`)).toBe(1);
+	}, 30_000);
+
 	test("a question with choices shows one row each, no continue button, never auto-continues, and a pick posts the choice", async () => {
 		const v = await open(1280, 800, "light", "jandi");
 		onboard = [];
