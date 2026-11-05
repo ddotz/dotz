@@ -403,7 +403,7 @@ export function createKakaoWeb(deps: WebDeps) {
 		// The one way the web sends a draft (its card's 보내기, 다시 보내기 of its failed send, a typed send of exactly its text): part by part from
 		// its first unsent part (send.ts sendClaimed), never as one joined message. `edited`: the owner's edit; `learn`: the edit is a new
 		// correction for the room's tone profile (a retry of an edited send was learned already).
-		const sendDraftNow = async (draft: Draft, edited: string | undefined, learn: boolean): Promise<Response> => {
+		const sendDraftNow = async (draft: Draft, edited: string | undefined, learn: boolean, retry = false): Promise<Response> => {
 			if (draft.status !== "pending") return json({ error: draft.status === "sent" ? "이미 보낸 초안이에요" : "이 초안은 더 이상 보낼 수 없어요" }, 409);
 			const bad = edited === undefined ? undefined : draftTextError(edited);
 			if (bad) return json({ error: bad }, 400);
@@ -427,7 +427,7 @@ export function createKakaoWeb(deps: WebDeps) {
 			const rec = newRecord(draft.chatId, draft.sentParts ? draft.text : (edited ?? draft.text), draft.code);
 			start(rec, async () => {
 				const cache = await allRooms(config!, true);
-				return dispatchSend({ kind: "draft", code: draft.code, ownerApproved: true, ...(edited !== undefined ? { text: edited } : {}) }, {
+				return dispatchSend({ kind: "draft", code: draft.code, ownerApproved: true, ...(retry ? { retry: true as const } : {}), ...(edited !== undefined ? { text: edited } : {}) }, {
 					paths,
 					runner: deps.runner,
 					now,
@@ -634,7 +634,7 @@ export function createKakaoWeb(deps: WebDeps) {
 					if (draft.status === "dropped" || draft.status === "stale")
 						return json({ error: `${draft.status === "stale" ? "그사이 새 메시지가 와서 낡은 초안이라" : "보내지 않기로 한 초안이라"} 다시 보내지 않았어요${draft.sentParts ? ` (${draftParts(draft.text).length}개 중 ${draft.sentParts}개는 이미 보냈어요)` : ""}` }, 409);
 					// The edit the owner sent the first time is sent again (send.ts ignores it once a part is in the room).
-					res = await sendDraftNow(draft, sameText(rec.text, draft.text) ? undefined : rec.text, false);
+					res = await sendDraftNow(draft, sameText(rec.text, draft.text) ? undefined : rec.text, false, true);
 				} else {
 					const room = (await allRooms(config!, true)).all.find(r => r.chatId === chatId);
 					if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);

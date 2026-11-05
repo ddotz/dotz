@@ -34,7 +34,7 @@ export function mergeMessages<T extends { id: string; sentAt: number; logId?: st
 export const addOnce = <T extends { id: string }>(list: T[], item: T): T[] => (list.some(x => x.id === item.id) ? list : [...list, item]);
 
 export type Lease = (chatId: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
-export type SendRequest = { kind: "text"; chatId: string; roomName: string; text: string } | { kind: "draft"; code: string; text?: string; ownerApproved?: boolean };
+export type SendRequest = { kind: "text"; chatId: string; roomName: string; text: string } | { kind: "draft"; code: string; text?: string; ownerApproved?: boolean; retry?: boolean };
 export type DispatchDeps = SendDeps & {
 	roomNames?: () => Promise<RoomFact[]>;
 	latestIncoming?: (chatId: string) => Promise<string | undefined>;
@@ -61,5 +61,5 @@ export async function dispatchSend(req: SendRequest, deps: DispatchDeps): Promis
 	}
 	if (req.kind === "text") return sendText({ chatId, roomName: req.roomName, text: req.text }, deps);
 	if (!deps.latestIncoming) return refuse("새 메시지가 왔는지 확인하지 못해서 보내지 않았어요");
-	return sendDraft(req.code, { ...deps, latestIncoming: deps.latestIncoming, ownerApproved: req.ownerApproved, ...(req.text !== undefined ? { text: req.text } : {}) });
+	return sendDraft(req.code, { ...deps, latestIncoming: deps.latestIncoming, ownerApproved: req.ownerApproved, ...(req.retry ? { retry: true } : {}), ...(req.text !== undefined ? { text: req.text } : {}) });
 }

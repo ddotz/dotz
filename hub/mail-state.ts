@@ -223,3 +223,22 @@ export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<st
 	}
 	return changed;
 }
+
+/**
+ * The keep limit for the stored mails: the surplus over `keep` is taken from the oldest end (`records` is sorted by time), `onDrop` gets each dropped key.
+ * A mail with a reply draft waiting (reply "draft", or a suggest not sent) is never evicted: its card would lose its subject and close as handled
+ * (hub/draft-handled.ts treats a missing mail as gone). A mail that only has reply "needs" stays while the list holds at most `needsMax` mails,
+ * so a reply expected cannot grow the list forever.
+ */
+export function evictSurplus<T extends { key: string; reply?: MailReply; suggest?: { state?: string } }>(records: T[], keep: number, needsMax: number, onDrop?: (key: string) => void): T[] {
+	let surplus = records.length - keep;
+	if (surplus <= 0) return records;
+	let total = records.length;
+	return records.filter(x => {
+		if (surplus <= 0 || x.reply === "draft" || (!!x.suggest && (x.suggest.state ?? "draft") !== "sent") || (x.reply === "needs" && total <= needsMax)) return true;
+		surplus--;
+		total--;
+		onDrop?.(x.key);
+		return false;
+	});
+}

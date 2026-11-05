@@ -231,8 +231,8 @@ test("retry of a failed send hands the owner's own pick back to the sender, once
 	const res = retryFailed([{ ref: "RMAIL01", to: "mail:work" }, { ref: "D1", to: "ch:7" }], g.deps);
 	expect(res).toEqual([{ ref: "RMAIL01", ok: true }, { ref: "D1", ok: true }]);
 	expect(g.enqueued).toEqual([
-		{ ref: "RMAIL01", conv: "mail:work", action: "send", title: "김철수에게 답장 (RMAIL01)" },
-		{ ref: "D1", conv: "ch:7", action: "send-main", title: "댓글 답장 (D1)" },
+		{ ref: "RMAIL01", conv: "mail:work", action: "send", title: "김철수에게 답장 (RMAIL01)", retry: true },
+		{ ref: "D1", conv: "ch:7", action: "send-main", title: "댓글 답장 (D1)", retry: true },
 	]);
 });
 
@@ -252,7 +252,7 @@ test("through the real sender: a retried draft runs its CLI once, and a ref that
 	expect(retryFailed([{ ref: "RMAIL01", to: "mail:work" }], deps)[0]).toEqual({ ref: "RMAIL01", ok: true });
 	await sender.idle();
 	expect(argvs).toHaveLength(1);
-	expect(argvs[0]!.slice(-2)).toEqual(["send", "RMAIL01"]);
+	expect(argvs[0]!.slice(-3)).toEqual(["send", "RMAIL01", "--retry"]);
 	expect(marks).toEqual(["RMAIL01:queued", "RMAIL01:sending", "RMAIL01:sent"]);
 
 	// The page still lists the old failure (its snapshot is a moment old) and the owner taps again: nothing runs.

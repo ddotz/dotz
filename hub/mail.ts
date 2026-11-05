@@ -7,7 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, migrateMails, nextReply, ownAddresses, replyExclusion, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
+import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, evictSurplus, migrateMails, nextReply, ownAddresses, replyExclusion, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 import { withSenderAddress } from "./reply-draft.ts";
 import { isFailedSummary, needsHubSummary, shownSummary } from "./mail-summary.ts";
@@ -285,10 +285,6 @@ function settleNotMine(): string[] {
 export const mailSuggests = (): Array<{ target: string; state?: string; at: string }> => records.flatMap(r => r.suggest ? [{ target: mailTarget(r.key), state: r.suggest.state ?? "draft", at: r.suggest.at ?? r.at }] : []);
 export const mailTargets = (): string[] => [...records].sort((a, b) => b.at.localeCompare(a.at)).map(r => mailTarget(r.key));
 
-// A mail with a reply draft waiting, a reply expected or an open card is never evicted by the keep limit: its card would lose its subject and
-// close as handled (hub/draft-handled.ts treats a missing mail as gone). Only the other mails count against `mailKeep`.
-const waits = (x: MailRecord): boolean => x.reply === "needs" || x.reply === "draft" || (!!x.suggest && (x.suggest.state ?? "draft") !== "sent");
-
 // One add is O(n): the list stays sorted by time (a tie goes after the older ones, as a stable sort would), the old copy is cut out, the new one is
 // inserted from the end (a new mail is nearly always the newest), and the surplus is taken from the oldest end.
 export function recordMail(r: MailRecord): void {
@@ -301,15 +297,7 @@ export function recordMail(r: MailRecord): void {
 	let at = records.length;
 	while (at > 0 && records[at - 1]!.at.localeCompare(r.at) > 0) at--;
 	records.splice(at, 0, r);
-	let surplus = records.length - mailKeep();
-	if (surplus > 0) {
-		records = records.filter(x => {
-			if (surplus <= 0 || waits(x)) return true;
-			surplus--;
-			byKey.delete(x.key);
-			return false;
-		});
-	}
+	records = evictSurplus(records, mailKeep(), KEEP_MAX, k => byKey.delete(k));
 	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
 }
 
