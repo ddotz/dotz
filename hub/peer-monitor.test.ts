@@ -49,6 +49,10 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}), ...(b.files ? { files: b.files } : {}) });
 			return Response.json({ ok: true });
 		}
+		if (req.method === "POST" && path.endsWith("/answer")) {
+			events.push({ target: path, text: JSON.stringify(await req.json()) });
+			return Response.json({ ok: true });
+		}
 		if (req.method === "POST" && path === "/api/send") {
 			sends.push((await req.json()) as Gateway["sends"][number]);
 			return Response.json({ delivered: true });
@@ -268,6 +272,14 @@ test("proxy: only known peers, only the peer lists", async () => {
 	const gone = await through(URL_B, "/api/notices");
 	expect(gone.status).toBe(502);
 	expect(await gone.json()).toEqual({ error: "연결 안 됨" });
+});
+
+test("an answer from the other computer carries the label the owner saw, so the owner's gateway can refuse a card that changed", async () => {
+	const { A, B } = pair();
+	await A.mon.peerMonitoring();
+	const r = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify({ action: "answer", args: { id: "n1", n: 4, label: "이대로 보내기" } }) }));
+	expect(r.status).toBe(200);
+	expect(B.events.map(e => [e.target, JSON.parse(e.text).label])).toEqual([["/api/notices/n1/answer", "이대로 보내기"]]);
 });
 
 test("a forwarded message is recorded once on the owner with via, and shows once in the sender's merged view", async () => {

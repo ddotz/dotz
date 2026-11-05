@@ -338,7 +338,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				return ask("POST", "/api/send", { target: "chat", text: `✅ ${from}에서 넘긴 작업을 받아 이어서 해요 (id ${a.id})`, session: "main" }, login);
 			case "answer":
 				if (typeof a.id !== "string" || !a.id) return bad("id required");
-				return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/answer`, { n: a.n, note: a.note, via: from }, login);
+				return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/answer`, { n: a.n, label: a.label, note: a.note, via: from }, login);
 			// A notice of this computer seen in the other one's 모니터링: 읽음 처리, the x (무시) and its undo, the same routes the owner's own web uses.
 			case "notice":
 				if (a.op === "read" && Array.isArray(a.ids)) return ask("POST", "/api/notices/read", { ids: a.ids.map(String) }, login);
