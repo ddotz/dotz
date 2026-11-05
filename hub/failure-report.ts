@@ -58,6 +58,7 @@ const HUB_COUNTERS: { name: string; re: RegExp; sum?: RegExp }[] = [
 	{ name: "재시도: 막힌 턴", re: /login store changed; retrying the blocked turn/ }, { name: "재시도: 메일·카드 요약", re: /summary failed, retry|keep their original \(retry in/ },
 	{ name: "재시도: 답 전에 끊긴 턴", re: /stopped on an error before answering; its request stays open for the retry/ },
 	{ name: "재생: 못 받은 프롬프트", re: /replaying \d+ unanswered prompt/, sum: /replaying (\d+) unanswered/ },
+	{ name: "답: 워커 결과로 연결", re: /an answer had no prompt; sent to (?!no message)/ }, { name: "답: 메시지 없이 전달", re: /an answer had no prompt; sent to no message/ }, { name: "[later]: 프롬프트 없는 턴", re: /a run without a prompt said \[later\]/ },
 	{ name: "재시작: 게이트웨이", re: /gateway restart \(/ }, { name: "재시작: 레인 중단", re: /stopped for a gateway restart/ }, { name: "재시작: 오래 기다림", re: /gateway restart still waiting/ },
 ];
 
