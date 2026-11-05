@@ -212,7 +212,13 @@ export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readon
 	return entries.find(e => belongsTo(e, n) && (integrationOn(e, ctx) || ctx.off.has(e.key) || where.some(w => inConv(e, w))))?.key;
 }
 
-// The enabled entries with their notices (newest first as given, at most `cap`) and the unread count, counted by item (owner 2026-10-28: one mail
+// The ids an app lists, newest first as given: every open decision stays (an open card must never lose its app), the cap holds for finished notices only.
+const listed = (mine: readonly NoticeLike[], cap: number): string[] => {
+	let closed = 0;
+	return mine.filter(n => n.decision?.state === "open" || closed++ < cap).map(n => n.id);
+};
+
+// The enabled entries with their notices (newest first as given, open decisions always, finished ones at most `cap`) and the unread count, counted by item (owner 2026-10-28: one mail
 // showed 2 because its unread notice and its unread conversation were both counted): each conversation under the entry's `conv` prefixes with
 // unread messages is one (`convUnread`: target -> unread messages, however many), and an unread notice counts only when it lives outside those. `suggests` = the mails' reply states, `now` = the clock.
 export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number; unreplied?: number }>> = {}, waits: ReplyWaits = { targets: [], apps: {} }): IntegrationItem[] {
@@ -236,7 +242,7 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
 		const unreplied = waits.targets.filter(t => inConv(e, t)).length + (waits.apps[e.key] ?? 0) + (cm.unreplied ?? 0);
 		const needs = { drafts: newestDraft.size + cm.drafts, unread: mine.filter(n => !n.read && !waitsDraft(n) && ownItem(n)).length + fromConvs + cm.unread, sentToday, unreplied };
-		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read && ownItem(n)).length + fromConvs + cm.unread, unreplied, notices: mine.slice(0, cap).map(n => n.id), needs };
+		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read && ownItem(n)).length + fromConvs + cm.unread, unreplied, notices: listed(mine, cap), needs };
 	});
 }
 
