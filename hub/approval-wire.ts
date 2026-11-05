@@ -13,7 +13,7 @@ import { broadcast, emit } from "./events.ts";
 import { approvals, convOfTarget, newMid, out } from "./outbound.ts";
 import { answerDecision, type DecisionSend, listNotices, markDraftSend, NOTICE_CAP, openDraftCards, settleOpenDecision } from "./notices.ts";
 import type { Upload } from "./files.ts";
-import { commentContextOf, commentDraftOf, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
+import { commentContextOf, commentDraftOf, commentDraftsByCode, commentPending, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
 import { dropFailed, retryFailed, type RetryDeps } from "./reply-outcomes.ts";
 import { appEntries, commentOwner } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
@@ -138,8 +138,8 @@ export async function webAnswer(id: string, body: { n?: unknown; note?: unknown;
 	return r;
 }
 
-function groupOf(ref: string, to: string, entries = appEntries(DATA_DIR)): { key: string; label?: string } {
-	const c = commentDraftOf(ref), app = c && commentSourceApp(c.source);
+function groupOf(ref: string, to: string, entries: ReturnType<typeof appEntries>, comments: ReturnType<typeof commentDraftsByCode>): { key: string; label?: string } {
+	const c = comments.get(ref), app = c && commentSourceApp(c.source);
 	const m = c ? undefined : getDraft(ref);
 	const key = c && app ? commentOwner(entries, app, c.source) : m ? (m.compose ? m.app : instanceOf(entries, "mail", `mail:${m.ref}`)) : `conv:${to}`;
 	return { key, label: entries.find(e => e.key === key)?.label };
@@ -149,7 +149,7 @@ const isMailRef = (ref: string) => /^R[A-Z2-7]{6}$/.test(ref) && getDraft(ref)?.
 
 /** Every waiting send-approval card: the open ones, then the held ones, each with its conversation and app-instance group. */
 export function waitingCards(): WaitingCard[] {
-	const entries = appEntries(DATA_DIR);
+	const entries = appEntries(DATA_DIR), comments = commentDraftsByCode();
 	syncCardFiles();
 	const staged = (ref: string, text: string) => {
 		const files = pendingDraftFiles(ref), issues = pendingDraftIssues(ref);
@@ -158,14 +158,14 @@ export function waitingCards(): WaitingCard[] {
 	};
 	const open = openDraftCards().map(c => ({ ref: c.ref, to: c.to, question: c.title, text: c.text, draft: c.draft, notice: c.id }));
 	const held = approvals.held().map(h => ({ ...batchCard(h.ref, staged(h.ref, h.text)), to: convOfTarget(h.target) })).filter(h => !open.some(o => o.ref === h.ref && o.to === h.to));
-	return [...open, ...held].map(c => ({ ...c, sendable: sender.can(c.ref, "send"), group: groupOf(c.ref, c.to, entries).key, info: cardInfo(c.text) }));
+	return [...open, ...held].map(c => ({ ...c, sendable: sender.can(c.ref, "send"), group: groupOf(c.ref, c.to, entries, comments).key, info: cardInfo(c.text) }));
 }
 
 /** The waiting cards by app instance, largest group first; one category never mixes into another. */
 export function cardGroups(cards = waitingCards()): CardGroup[] {
-	const entries = appEntries(DATA_DIR), by = new Map<string, CardGroup>();
+	const entries = appEntries(DATA_DIR), comments = commentDraftsByCode(), by = new Map<string, CardGroup>();
 	for (const c of cards) {
-		const g = by.get(c.group) ?? { key: c.group, label: groupOf(c.ref, c.to, entries).label ?? "승인 대기", count: 0, cards: [] };
+		const g = by.get(c.group) ?? { key: c.group, label: groupOf(c.ref, c.to, entries, comments).label ?? "승인 대기", count: 0, cards: [] };
 		g.cards.push(c);
 		g.count++;
 		by.set(c.group, g);
@@ -194,7 +194,8 @@ async function dropDraftRef(ref: string): Promise<{ ok: boolean; reason?: string
  */
 export async function approvalRoute(req: Request, url: URL, deps: { login: string; triageMin: number; deliver: (to: string, text: string, picks: BatchPick[], decision?: string) => Promise<void> }): Promise<Response | undefined> {
 	if (url.pathname === "/api/approvals" && req.method === "GET") {
-		const groups = cardGroups().map(g => ({ ...g, cards: g.cards.map(({ text: _text, ...c }) => ({ ...c, kind: commentDraftOf(c.ref) ? "comment" : "mail", ...(commentDraftOf(c.ref) ? { comment: commentContextOf(c.ref) } : {}) })) }));
+		const comments = commentDraftsByCode(), pending = commentPending();
+		const groups = cardGroups().map(g => ({ ...g, cards: g.cards.map(({ text: _text, ...c }) => ({ ...c, kind: comments.has(c.ref) ? "comment" : "mail", ...(comments.has(c.ref) ? { comment: commentContextOf(c.ref, pending) } : {}) })) }));
 		return json({ groups, results: sender.results(), triageMin: deps.triageMin });
 	}
 	if (url.pathname === "/api/approvals" && req.method === "POST") {

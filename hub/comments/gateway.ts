@@ -65,14 +65,16 @@ export const commentDraftFacts = {
 };
 // The send approval's gateway path (hub/approval-wire.ts): which source a pending draft goes to, and the owner's own edit of its text.
 export const commentDraftOf = (code: string) => engine.store.drafts().find(d => d.code === code && d.status === "pending");
+/** Every pending comment draft by code, read once: a request over many cards asks this map instead of the store for each card. */
+export const commentDraftsByCode = () => new Map(engine.store.drafts().filter(d => d.status === "pending").map(d => [d.code, d]));
 /** The app a comment source belongs to in the app list ("youtube", "instagram"; a website source is "site"). */
 export const commentSourceApp = (source: string): string | undefined => {
 	const k = engine.store.config().sources[source]?.kind;
 	return k === "website" ? "site" : k;
 };
 /** The comment a pending draft answers, for the send-approval cards and the review queue (GET /api/approvals): the post, the quoted comment (clipped), its time and the mail mark. */
-export const commentContextOf = (code: string) => {
-	const d = engine.pendingDrafts().find(x => x.code === code);
+export const commentContextOf = (code: string, pending: ReturnType<typeof engine.pendingDrafts> = engine.pendingDrafts()) => {
+	const d = pending.find(x => x.code === code);
 	return d ? { source: d.sourceLabel, post: d.title, link: d.link, who: d.to, ...(d.original ? { text: d.original.text, at: d.original.at } : {}), ...(d.mailMark ? { mailMark: d.mailMark } : {}) } : undefined;
 };
 /** 보내지 않기 on a comment draft (the same step as the comment card's). */
