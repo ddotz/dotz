@@ -1,9 +1,11 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commandOf, createSelfChat, normalizeSelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
+import type { Upload } from "./files.ts";
 import { readSecretFile, setSecretKey } from "./secretbox.ts";
+import fileRecord from "./fixtures/jandi-file-message.json";
 
 const TEAM = 7;
 const ROOM = 100;
@@ -11,7 +13,8 @@ const ME = 11;
 const BOT = 22;
 const WEBHOOK_BOT = 33;
 
-type Msg = { id: number; fromEntity: number; body: string };
+type Msg = { id: number; fromEntity: number; body?: string; message?: unknown };
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 let room: { type: string; companionId: number; members: number[] };
 let messages: Msg[];
 let calls: string[];
@@ -33,11 +36,12 @@ const jandi = Bun.serve({
 			expireOnce = false;
 			return new Response(null, { status: 401 });
 		}
+		if (u.pathname === "/files/screenshot.png") return new Response(PNG, { headers: { "Content-Type": "image/png" } });
 		if (u.pathname === `/room-api/v2/teams/${TEAM}/rooms/${ROOM}`) return Response.json({ id: ROOM, ...room });
 		if (u.pathname === `/message-api/v2/teams/${TEAM}/rooms/${ROOM}/messages`) {
 			const after = Number(u.searchParams.get("linkId") ?? 0);
 			const list = u.searchParams.get("type") === "new" ? messages.filter(m => m.id > after) : messages.slice(-1);
-			const records = list.map(m => ({ id: m.id, fromEntity: m.fromEntity, message: { content: { body: m.body } } }));
+			const records = list.map(m => ({ id: m.id, fromEntity: m.fromEntity, message: m.message ?? { content: { body: m.body } } }));
 			return Response.json({ lastLinkId: messages.at(-1)?.id ?? 0, records: records.reverse() });
 		}
 		return new Response(null, { status: 404 });
@@ -153,4 +157,77 @@ test("a peer's reply from another member fires peerReply once, with the prefix t
 	expect(saved).toEqual([2]);
 	await again().tick();   // a restart does not notify the same reply again
 	expect(replies).toHaveLength(1);
+});
+
+// A real-shaped JANDI file message (hub/fixtures/jandi-file-message.json): `attachments[]` on a text record, with or without a caption.
+function fileMsg(id: number, from: number, caption?: string, file: Record<string, unknown> = {}): Msg {
+	const m = structuredClone(fileRecord.message) as any;
+	Object.assign(m.attachments[0].content, { fileUrl: `http://127.0.0.1:${jandi.port}/files/screenshot.png` }, file);
+	if (caption !== undefined) m.content.body = caption;
+	return { id, fromEntity: from, message: m };
+}
+type Got = { text: string; files: Upload[] };
+function makeFiles(got: Got[], over: { maxFileBytes?: number } = {}) {
+	return createSelfChat(cfg, { dataDir: dir, api: `http://127.0.0.1:${jandi.port}/`, receive: (text, files) => got.push({ text, files }), log: () => {}, onError: () => {}, ...over });
+}
+
+test("an owner image with the keyword as caption, and an image alone, each reach dotz with the file saved in the message's own folder", async () => {
+	const got: Got[] = [];
+	const sc = makeFiles(got);
+	await sc.tick();
+	messages.push(fileMsg(2, ME, "dotz 이거 봐줘"), fileMsg(3, ME), fileMsg(4, ME, "dotz"));
+	await sc.tick();
+	expect(got.map(g => g.text)).toEqual(["이거 봐줘", "", ""]);
+	for (const [i, g] of got.entries()) {
+		expect(g.files).toHaveLength(1);
+		const f = g.files[0]!;
+		expect(f.path).toMatch(new RegExp(`/uploads/\\d{4}-\\d{2}-\\d{2}/jandi-${i + 2}/screenshot\\.png$`));
+		expect(f.path.startsWith(dir)).toBe(true);
+		expect({ name: f.name, type: f.type, size: f.size }).toEqual({ name: "screenshot.png", type: "image/png", size: PNG.length });
+		expect(new Uint8Array(readFileSync(f.path))).toEqual(PNG);
+	}
+	expect(calls.filter(c => c === "/files/screenshot.png")).toHaveLength(3); // fetched with the owner's session (the route refuses any other)
+});
+
+test("text then an image right after are two messages in order, so the gateway's burst joins them into one turn", async () => {
+	const got: Got[] = [];
+	const sc = makeFiles(got);
+	await sc.tick();
+	messages.push({ id: 2, fromEntity: ME, body: "dotz 이 화면 뭐가 문제야" }, fileMsg(3, ME));
+	await sc.tick();
+	expect(got.map(g => [g.text, g.files.length])).toEqual([["이 화면 뭐가 문제야", 0], ["", 1]]);
+});
+
+test("another member's image and the owner's image with a caption for someone else are ignored, and nothing is downloaded", async () => {
+	const got: Got[] = [];
+	const sc = makeFiles(got);
+	await sc.tick();
+	messages.push(fileMsg(2, WEBHOOK_BOT), fileMsg(3, WEBHOOK_BOT, "dotz 봐"), fileMsg(4, ME, "메모로 둔 사진"));
+	await sc.tick();
+	expect(got).toEqual([]);
+	expect(calls.some(c => c.startsWith("/files/"))).toBe(false);
+	expect(existsSync(join(dir, "uploads"))).toBe(false);
+});
+
+test("a file over the size cap or one that cannot be fetched still makes a turn, as an [attachment] line with its JANDI URL", async () => {
+	const got: Got[] = [];
+	const sc = makeFiles(got, { maxFileBytes: 4 });
+	await sc.tick();
+	messages.push(fileMsg(2, ME, "dotz 큰 파일"), fileMsg(3, ME, undefined, { size: 1, fileUrl: `http://127.0.0.1:${jandi.port}/files/gone.png`, name: "gone.png" }));
+	await sc.tick();
+	expect(got).toEqual([
+		{ text: `큰 파일\n[attachment] screenshot.png (image/png) http://127.0.0.1:${jandi.port}/files/screenshot.png`, files: [] },
+		{ text: `[attachment] gone.png (image/png) http://127.0.0.1:${jandi.port}/files/gone.png`, files: [] },
+	]);
+	expect(existsSync(join(dir, "uploads"))).toBe(false);
+});
+
+test("a record of contentType file (the older shape) is read the same way", async () => {
+	const got: Got[] = [];
+	const sc = makeFiles(got);
+	await sc.tick();
+	const content = { ...fileRecord.message.attachments[0]!.content, fileUrl: `http://127.0.0.1:${jandi.port}/files/screenshot.png` };
+	messages.push({ id: 2, fromEntity: ME, message: { contentType: "file", content } });
+	await sc.tick();
+	expect(got.map(g => [g.text, g.files.map(f => f.name)])).toEqual([["", ["screenshot.png"]]]);
 });
