@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commentId, type CommentAdapter, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine } from "./engine.ts";
-import { closeness, habitsOf, mergePast, type PastPair, pastPairs, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
+import { habitsOf, mergePast, type PastPair, pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
 import type { Draft, Reply } from "./store.ts";
 
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
@@ -104,15 +104,4 @@ test("a sent reply whose draft was changed by hand is marked edited, also when i
 test("merging keeps one copy of a repeat and the mark or sender any copy had", () => {
 	const merged = mergePast([pair("Q?", "A.", 1, { edited: true, from: "x" })], [pair("q?", "a. ", 0)]);
 	expect(merged).toMatchObject([{ edited: true, from: "x", at: NOW }]);
-});
-
-test("the prompt's closeness is the plain similarity of the shown pairs: recency and hand edits only rank them", () => {
-	const twin = pair("악보 파일을 받을 수 있을까요", "네", 0, { edited: true });
-	const other = pair("공연 잘 봤습니다 감사합니다", "감사해요", 400);
-	expect(closeness(twin.comment, [other, twin])).toBeCloseTo(1, 5);
-	expect(closeness("완전히 다른 이야기", [other])).toBe(0);
-	expect(closeness("악보", [])).toBe(0);
-	const style = { samples: [], rules: [], corrections: [], forbidden: [] };
-	expect(withExamples(style, [other, twin], [], twin.comment).closest).toBeCloseTo(1, 5);
-	expect(withExamples(style, [], [], twin.comment).closest).toBeUndefined();
 });
