@@ -79,7 +79,7 @@ function rcRowHtml(key, text, tail = "", raw = "") {
   const d = tail ? null : /^(.*?)\s+·\s+(.*)$/.exec(text);
   return `<div class="rc-row">${raw ? `<span class="mlist-url" aria-hidden="true">${esc(raw)}</span>` : ""}<span class="rc-k">${esc(key)}</span><span class="rc-w"><b>${inline(d ? d[1] : text)}</b>${d ? `<span class="rc-d">${inline(d[2])}</span>` : tail}</span></div>`;
 }
-// A list of two or more "10:00 what" items and nothing else is the landing page's schedule card; a mixed list or a single line stays as written.
+// A list of "10:00 what" items and nothing else is a schedule: the rows of an answer's card (02-answer-shapes.js) and of a briefing (11-resultcard.js).
 const TIME_ROW = /^(\d{1,2}:\d{2})\s+(\S.*)$/;
 const timeList = l => l.t === "ul" && l.items.length >= 2 && l.items.every(i => !i.sub && TIME_ROW.test(i.text));
 function timeRowsHtml(items) {
@@ -101,10 +101,10 @@ function blocks(text, last, answer) {
   };
   const flushL = () => {
     if (!list) return;
-    const plain = `${list.head ? `<p>${inline(list.head)}</p>` : ""}<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`;
-    const shaped = !answer ? null : list.head ? ansSection(list, plain) : timeList(list) ? `<div class="hcb-card">${timeRowsHtml(list.items)}</div>` : ansListHtml(list);
-    if (typeof shaped === "string") answer.shaped = true;
-    html.push(shaped || plain);
+    const head = list.head ? `<p>${inline(list.head)}</p>` : "", plain = `<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`;
+    const part = answer && head ? ansSection(list, head + plain) : null, card = answer && !part ? ansListHtml(list) : null;
+    if (card) answer.shaped = true;
+    html.push(part || head + (card || plain));
     list = null;
   };
   const flushT = () => {

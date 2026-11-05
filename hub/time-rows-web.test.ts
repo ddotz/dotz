@@ -26,7 +26,7 @@ afterAll(() => hub.stop());
 const { waitFor } = on(view);
 const page = async <T>(expr: string) => (await view.evaluate(`JSON.stringify(${expr})`).then(s => JSON.parse(s as string))) as T;
 const msg = (i: number) => `[...document.querySelectorAll(".bm, .ub")].filter(m => m.querySelector(".md, .hcb") || m.matches(".ub"))[${i}]`;
-const shape = (i: number) => page<{ cards: number; rows: number; lis: number; pre: number; table: number }>(`(m => ({ cards: m.querySelectorAll(".hcb-card").length, rows: m.querySelectorAll(".rc-row").length, lis: m.querySelectorAll("li").length, pre: m.querySelectorAll("pre").length, table: m.querySelectorAll("table").length }))(${msg(i)})`);
+const shape = (i: number) => page<{ cards: number; rows: number; lis: number; pre: number; table: number }>(`(m => ({ cards: m.querySelectorAll(".hcb-card, .ans-card:has(.rc-row)").length, rows: m.querySelectorAll(".rc-row").length, lis: m.querySelectorAll("li").length, pre: m.querySelectorAll("pre").length, table: m.querySelectorAll("table").length }))(${msg(i)})`);
 
 await view.navigate(`${hub.origin}/`);
 await waitFor(`typeof openTarget === "function" && S`);

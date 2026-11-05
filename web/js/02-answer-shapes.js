@@ -14,6 +14,7 @@ const ansRow = (key, value, raw) => `<div class="rc-row">${ansRaw(raw)}<span cla
 function ansListHtml(list) {
   if (list.items.length < 2 || list.items.some(i => i.sub)) return null;
   if (list.t === "ol") return `<div class="ans-card"><div class="rc-rows ans-steps">${list.items.map((x, i) => ansRow(String(i + 1), x.text, x.raw)).join("")}</div></div>`;
+  if (timeList(list)) return `<div class="ans-card">${timeRowsHtml(list.items)}</div>`;
   const kv = list.items.map(i => ANS_LABEL.exec(i.text));
   if (!kv.every(Boolean)) return null;
   const rows = kv.map((m, i) => ansRow(m[1], m[2], list.items[i].raw)).join("");
