@@ -99,6 +99,16 @@ for (const [surface, draw] of Object.entries(SURFACES)) {
 	}
 }
 
+test("an id in brackets goes and a channel tag never shows raw on any surface", async () => {
+	const text = "알림 워커(st_01a1a07f)가 <#000000000000000000>에 올렸어요.";
+	for (const [surface, draw] of Object.entries(SURFACES)) {
+		const seen = await shown(draw(text));
+		expect(`${surface}: ${seen}`).toContain("알림 워커가");
+		expect(`${surface}: ${seen}`).not.toMatch(/st_|<#|<>|ch:|\d{10}/);
+	}
+	expect(await drawn(SURFACES["main chat"]!(text), 'a[href="#chat/ch:000000000000000000"]')).toBe(1);
+});
+
 test("a code span that talks about a control word is kept on every surface", async () => {
 	const text = "그 턴은 `[later]`로 끝나고 `[done]`은 이모지로 나가요.";
 	for (const [surface, draw] of Object.entries(SURFACES)) {
