@@ -102,6 +102,9 @@ export function boxesOf(dir: string, instance: string): Box[] {
 	return stored.some(b => b.base) ? stored : [implicitBase(), ...stored];
 }
 
+/** Whether any account has a mailbox besides its base box (one cached stat): what per-mailbox learning waits for. */
+export const hasBoxes = (dir: string): boolean => Object.values(loadMailboxes(dir).accounts).some(a => a.boxes.some(b => !b.base));
+
 /** What the rules read of a mail: its source, sender, subject, and the summary and body the post carried. */
 export type MailFacts = { src: string; from: string; subj: string; body: string };
 const lc = (s: string) => s.trim().toLowerCase();

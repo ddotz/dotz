@@ -16,7 +16,7 @@ import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
-import { addPair, styleWithExamples } from "./pairs.ts";
+import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
 import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
@@ -109,7 +109,13 @@ export function mailStyleOf(text: string, from: string): ReplyStyle | undefined 
 // and comments keep theirs. A zele pair does not say which account it came from, so a zele draft with a profile of its own gets none: another account's replies
 // must not ride in its prompt.
 export const pairSource = (source: string): string => webmailSite(source) ?? source;
-const styleOf = (item: ReplyItem, key: ToneKey, source: string) => (item.kind === "mail" && !(item.profile && pairSource(source) === "zele") ? styleWithExamples(loadStyle(key), "mail", item.text, item.from, pairSource(source)) : loadStyle(key));
+// A mail in a mailbox with enough of the owner's own replies sees only those (lib/box-voice.ts, loaded on use: only a mail in a box pays for it).
+async function styleOf(item: ReplyItem, key: ToneKey, source: string, at: { box?: string; instance?: string }) {
+	if (item.kind !== "mail") return loadStyle(key);
+	const own = at.box && at.instance ? (await import("./box-voice.ts")).boxExamples(at.instance, at.box) : undefined;
+	if (own) return styleFrom(loadStyle(key), own, item.text, item.from);
+	return item.profile && pairSource(source) === "zele" ? loadStyle(key) : styleWithExamples(loadStyle(key), "mail", item.text, item.from, pairSource(source));
+}
 
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient }, changes: string[], deps: FlowDeps): DraftRec {
 	// The candidates were for this one model call; a later revision builds its own.
@@ -124,7 +130,7 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 // back to the model.
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
 	const trace = deps.trace ?? draftTrace();
-	const style = styleOf(item, toneKey({ ...item, box: meta.box, instance: meta.instance }), meta.source), call = callOf({ ...deps, trace }, item, meta.ref);
+	const style = await styleOf(item, toneKey({ ...item, box: meta.box, instance: meta.instance }), meta.source, meta), call = callOf({ ...deps, trace }, item, meta.ref);
 	const r = await generateChatReply(item, style, call);
 	if (r.action !== "draft") return r;
 	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
@@ -369,7 +375,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	const held = stagedFiles(old.id).map(f => f.name);
 	const rev = await revisionCandidates(old, change);
 	const item = rev ? { ...old.item, candidates: rev.names } : held.length ? { ...old.item, files: held } : old.item;
-	const r = await reviseReply(item, styleOf(old.item, toneKey(old), old.source), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
+	const r = await reviseReply(item, await styleOf(old.item, toneKey(old), old.source, old), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const lesson = lessonOf(r, change);
 	if (lesson) {

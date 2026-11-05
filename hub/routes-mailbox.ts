@@ -1,11 +1,11 @@
 // The hub side of mailboxes (docs/mailbox.md): which account a mail is in, where a new mail goes, how a row finds its box, and the routes
-// /api/mailbox/move, /learn, /box, /tone and /suggest. The store and the rules are hub/mailbox.ts; mails are read and changed only through hub/mail.ts.
+// /api/mailbox/move, /learn, /box, /tone, /relearn, /examples and /suggest. The store and the rules are hub/mailbox.ts; mails are read and changed only through hub/mail.ts.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { appEntries, inConv, readAppsFile, type IntegrationEntry } from "./integrations.ts";
 import { mailByKey, mailKeep, mailRecords, mailTarget, recordMail, type MailRecord } from "./mail.ts";
-import { addressesOf } from "./mail-state.ts";
+import { addressesOf, subjectKey } from "./mail-state.ts";
 import {
 	BASE_ID, boxesOf, boxOfConv, boxOfSource, cleanBox, conversationOf, learnCond, loadMailboxes, MAX_BOXES, pickBox, pinKey, saveMailboxes, setPin,
 	type Box, type MailboxWhy, type Placed,
@@ -42,6 +42,34 @@ export function boxPass(dir: string): (m: MailRecord) => { box: string; boxWhy?:
 		if (pinned && boxes.some(b => b.id === pinned)) return { box: pinned, boxWhy: { kind: "moved" } };
 		const bySource = boxOfSource(boxes, m.source);
 		return bySource ? { box: bySource.id, boxWhy: { kind: "src", value: m.source } } : { box: BASE_ID };
+	};
+}
+
+/** The facts of a past reply of the owner (features/reply-drafts/lib/settings.ts Pair). */
+export type PastMail = { source: string; received: string; conv?: string; from?: string; subj?: string; account?: string };
+/**
+ * Which mailbox of `instance` each past reply of the owner belongs to, undefined for a reply of another account. Read fresh, never stored, so a move, an undo or a deleted box is
+ * right at once: the pin of its conversation, else where the stored mail it answered is now, else `remembered` (a reply learned there, whose mail left the store), else the boxes' rules.
+ * A source with no conversation ids is matched by sender and subject.
+ */
+export function pastPass(dir: string, instance: string): (p: PastMail, remembered?: string) => string | undefined {
+	const entries = mailEntries(dir), boxes = boxesOf(dir, instance), pins = loadMailboxes(dir).pins, shown = boxPass(dir), held = new Map<string, string>(), owners = new Map<string, string>();
+	const apps = readAppsFile(dir), addr = (s?: string): string | undefined => addressesIn(s)[0]?.toLowerCase();
+	const named = new Map(entries.flatMap(e => { const a = addr(apps[e.key]?.filter?.account); return a ? [[a, e.key] as const] : []; })), plain = entries.find(e => !apps[e.key]?.filter?.account)?.key ?? "mail";
+	const known = (id: string | undefined): id is string => !!id && boxes.some(b => b.id === id);
+	const talk = (from?: string, subj?: string): string => (from && subj ? `${addr(from) ?? ""}|${subjectKey(subj)}` : "");
+	for (const r of mailRecords()) {
+		if (r.dir === "out") continue;
+		owners.set(r.source.replace(/^webmail[:/]/, ""), instanceIn(entries, r.key));
+		const { box, boxWhy } = shown(r);
+		if (box === BASE_ID && !boxWhy) continue;   // the base box with no reason says nothing: the rules decide
+		held.set(`${r.source}|${conversationOf(r.source, r.id)}`, box);
+		held.set(talk(r.from, r.subject), box);
+	}
+	return (p, remembered) => {
+		if ((p.source === "zele" ? named.get(addr(p.account) ?? "") ?? plain : owners.get(p.source) ?? instanceIn(entries, `${p.source}-0`)) !== instance) return undefined;
+		const kept = [p.conv ? pins[pinKey(instance, p.source, p.conv)] : undefined, p.conv ? held.get(`${p.source}|${conversationOf(p.source, p.conv)}`) : undefined, held.get(talk(p.from, p.subj)), remembered].find(known);
+		return kept ?? pickBox({ src: p.source, from: p.from ?? "", subj: p.subj ?? "", body: p.received }, boxes).box.id;
 	};
 }
 
@@ -143,12 +171,31 @@ const toneBullets = (file: string, heading: string): string[] => {
 	return out;
 };
 /** GET /api/mailbox/tone?app=&box=: what a mailbox's tone file says, read when its settings item opens (never per card). The summary falls back to the instance's, then the install's profile like a draft does. */
-function toneRoute(dir: string, url: URL): Response {
+async function toneRoute(dir: string, url: URL): Promise<Response> {
 	const app = url.searchParams.get("app") ?? "", id = url.searchParams.get("box") ?? "";
 	if (!mailEntries(dir).some(e => e.key === app) || !boxesOf(dir, app).some(x => x.id === id) || !/^[\w-]+$/.test(app)) return fail("메일함을 찾을 수 없어요", 404);
 	const tone = join(dir, "custom", "reply-drafts", "tone"), own = join(tone, app, `${id}.md`);
 	const summary = [own, join(tone, `${app}.md`), join(tone, "install.md")].map(f => toneBullets(f, "## 정체성")).find(l => l.length) ?? [];
-	return json({ ok: true, own: existsSync(own), summary: summary.join(" "), corrections: toneBullets(own, "## 고친 점") });
+	const { voiceOf } = await import("../features/reply-drafts/lib/box-voice.ts");
+	return json({ ok: true, own: existsSync(own), summary: summary.join(" "), corrections: toneBullets(own, "## 고친 점"), voice: voiceOf(app, id) });
+}
+
+const findBox = (dir: string, app: unknown, id: unknown): Box | undefined => (typeof app === "string" && mailEntries(dir).some(e => e.key === app) ? boxesOf(dir, app).find(x => x.id === id) : undefined);
+
+/** POST /api/mailbox/relearn {app, box}: the owner's 다시 배우기, one model call when the box has enough of his own mail; too few starts reading the sent folder and learning follows by itself. */
+async function relearnRoute(dir: string, b: Record<string, any>): Promise<Response> {
+	const box = findBox(dir, b.app, b.box);
+	if (!box) return fail("메일함을 찾을 수 없어요", 404);
+	const { relearnBox } = await import("../features/reply-drafts/lib/box-voice.ts");
+	return json({ ok: true, ...(await relearnBox(b.app, box)) });
+}
+
+/** GET /api/mailbox/examples?app=&box=: the newest replies the owner wrote himself in this mailbox, with the mail each answered (예시 보기). */
+async function examplesRoute(dir: string, url: URL): Promise<Response> {
+	const app = url.searchParams.get("app"), box = findBox(dir, app, url.searchParams.get("box"));
+	if (!box) return fail("메일함을 찾을 수 없어요", 404);
+	const { voiceExamples } = await import("../features/reply-drafts/lib/box-voice.ts");
+	return json({ ok: true, examples: voiceExamples(app!, box.id) });
 }
 
 // 묶음 제안: free-mail domains say nothing about a sender's kind, so they never form a group.
@@ -192,6 +239,8 @@ export async function mailboxRoute(req: Request, url: URL, dir = DATA_DIR): Prom
 	if (route === "PUT /api/mailbox/box") return putRoute(dir, await body(req));
 	if (route === "DELETE /api/mailbox/box") return deleteRoute(dir, await body(req));
 	if (route === "GET /api/mailbox/tone") return toneRoute(dir, url);
+	if (route === "POST /api/mailbox/relearn") return relearnRoute(dir, await body(req));
+	if (route === "GET /api/mailbox/examples") return examplesRoute(dir, url);
 	if (route === "GET /api/mailbox/suggest") return suggestRoute(dir, url);
 	return fail("not found", 404);
 }

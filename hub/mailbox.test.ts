@@ -349,8 +349,8 @@ describe("suggest and tone", () => {
 		{
 			mkdirSync(join(dir, "custom", "reply-drafts", "tone", "mail"), { recursive: true });
 			writeFileSync(join(dir, "custom", "reply-drafts", "tone", "mail", "b-choir.md"), "## 정체성\n\n- 정중하게 써요\n\n## 고친 점\n\n- 2031-01-01: 더 짧게\n");
-			expect((await get("/api/mailbox/tone?app=mail&box=b-choir")).json).toEqual({ ok: true, own: true, summary: "정중하게 써요", corrections: ["2031-01-01: 더 짧게"] });
-			expect((await get("/api/mailbox/tone?app=mail&box=b-plain")).json).toEqual({ ok: true, own: false, summary: "", corrections: [] });
+			expect((await get("/api/mailbox/tone?app=mail&box=b-choir")).json).toMatchObject({ ok: true, own: true, summary: "정중하게 써요", corrections: ["2031-01-01: 더 짧게"] });
+			expect((await get("/api/mailbox/tone?app=mail&box=b-plain")).json).toMatchObject({ ok: true, own: false, summary: "", corrections: [] });
 			expect((await get("/api/mailbox/tone?app=mail&box=b-none")).status).toBe(404);
 		}
 	});
