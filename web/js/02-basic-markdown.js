@@ -111,7 +111,7 @@ function blocks(text, last, answer) {
     if (!table) return;
     const [head, ...rest] = table.head ? table.rows : [null, ...table.rows], card = answer && head && rest.length > 0 && head.length <= ANS_TABLE_COLS;
     if (card) answer.shaped = true;
-    html.push(`<div class="${card ? "ans-card ans-tb" : "tbl"}">${card ? `<div class="mlist-url" aria-hidden="true">${table.raw.map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}<table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map((c, i) => card && !i ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+    html.push(`<div class="${card ? "ans-card ans-tb" : "tbl"}">${card ? ansRaw(table.raw.join("\n")) : ""}<table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map((c, i) => card && !i ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
     table = null;
   };
   for (let i = 0; i < lines.length; i++) {
