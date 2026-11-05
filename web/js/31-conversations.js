@@ -59,7 +59,27 @@ function convDropGone(items) {
   if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
   mbRefresh();
 }
-async function convLoad() {
+// One load at a time: a call that comes while one runs makes it read again once it ends, and both callers get the same promise.
+let convFlight = null, convAgain = false;
+function convLoad() {
+  if (convFlight) { convAgain = true; return convFlight; }
+  convFlight = (async () => { do { convAgain = false; await convLoadNow(); } while (convAgain); })().finally(() => { convFlight = null; });
+  return convFlight;
+}
+// A live event (one per mail) refreshes through this: the first runs at once; events during the load or the next LIVE_GAP ms collapse into one trailing run.
+let LIVE_GAP = 2000;
+function coalesced(fn) {
+  let busy = false, queued = false;
+  const run = async () => {
+    busy = true; queued = false;
+    try { await fn(); } finally { setTimeout(() => { busy = false; if (queued) run(); }, LIVE_GAP); }
+  };
+  const live = () => { if (busy) queued = true; else run(); };
+  live.busy = () => busy;
+  return live;
+}
+const mailLive = coalesced(() => Promise.allSettled([convLoad(), loadIntegrations()]));
+async function convLoadNow() {
   clearTimeout(convRetry);
   try {
     const r = await api("/api/conversations");
