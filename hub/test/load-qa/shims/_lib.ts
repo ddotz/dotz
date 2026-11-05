@@ -1,4 +1,4 @@
-// Shared helpers of the load-qa fake CLIs (hub/load-qa/shims). Every shim calls begin() first: one line in
+// Shared helpers of the load-qa fake CLIs (hub/test/load-qa/shims). Every shim calls begin() first: one line in
 // $LOAD_QA_RUN/shim-calls.jsonl {ts, tool, argv} and a start/end pair in $LOAD_QA_RUN/shim-concurrency.jsonl
 // {ts, tool, pid, event}. Only generated fake values are ever printed.
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
