@@ -287,7 +287,7 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, o
 const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it says something was already sent|^the recipient evidence /;
 export const rewritable = (failures: string[]): string[] => failures.filter(f => REWRITABLE.test(f));
 // With candidates: a body that promises a file the chosen files do not carry (hub/attach-check.ts missing | partial) is rewritten once, never shown as a warning.
-const ATTACH_FAILURE = { missing: "the body says a file is sent, but you chose no file: choose the file the message asks for from the list, or take the promise out of the body", partial: "the body promises a kind of file that none of the files you chose is: fix the choice or the body" } as const;
+const ATTACH_FAILURE = { missing: "the body says a file is sent, but you chose no file: choose the file the message asks for from the list, or take the promise out of the body", partial: "the message asks for or the body promises a file that the files you chose do not cover: fix the choice or the body" } as const;
 
 // A real reply says "메일로 보내드렸습니다", so a draft copies it though nothing was sent (reply-voice test set, 1 in 49 at Sonnet medium and high alike).
 // Draft time only, never in lintReply: the owner may have sent it himself by the time he approves, and a lint failure refuses the send.

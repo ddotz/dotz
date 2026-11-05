@@ -2,12 +2,11 @@
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
-import { asksForFile } from "../../../hub/draft-approval.ts";
 import { threadText } from "../../../hub/zele.ts";
 import { ownAddresses } from "../../../hub/mail-state.ts";
 import { threadIdOf, webmailSite } from "./senders.ts";
 import { retryWanted, type StageOpts, type Want } from "./staged.ts";
-import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, libraryFor, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
+import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
 import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
@@ -155,7 +154,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		// with the attachments. A rule that names its files stages those instead.
 		const ruleFiles = !!rule?.files.length;
 		// The model chooses among candidates (the rule's files first, then the library matches); no model call picks them.
-		const asked = asksForFile(item.text);
+		const asked = mailAsksFile(item);
 		const cands = ruleFiles || asked ? await candidatesFor(item, { source: m.source, ref: m.key }, rule).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
 		if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
 		else if (cands && asked) item.files = [];
@@ -176,7 +175,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 			warnings.push(...(await stageForReply(built.rec, flow, Promise.resolve(chosen)).catch(notStaged)));
 			if (cands?.missing.length) warnings.push(ruleFileMissing(cands.missing));
 		} else if (rule && ruleFiles) {
-			built.rec.asksFile = asksForFile(item.text) || undefined;
+			built.rec.asksFile = mailAsksFile(item) || undefined;
 			const later = { want: [] as Want[], why: [] as string[] };
 			const missing = await stageRuleFiles(built.rec.id, rule, await attachFolder(m.key), flow.stage, later);
 			if (later.want.length) built.rec.wantFiles = later.want;

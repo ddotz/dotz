@@ -77,7 +77,7 @@ export async function matchLibrary(folder: string, q: Query, pick?: (names: stri
 	if (top < MIN_SCORE) return [];
 	const best = ranked.filter(r => r.score === top).map(r => r.file);
 	if (best.length <= LIBRARY_PICK_MAX) return best;
-	const named = await pick?.(best.slice(0, 30).map(f => f.rel)).catch(() => []);
+	const named = await pick?.(best.slice(0, 30).map(f => f.rel)).catch((): string[] => []);
 	return best.filter(f => named?.includes(f.rel)).slice(0, LIBRARY_PICK_MAX);
 }
 

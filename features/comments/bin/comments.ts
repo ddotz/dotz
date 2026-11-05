@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { commentAsk } from "../../../hub/comments/ask.ts";
 import type { Engine } from "../../../hub/comments/engine.ts";
 import { realEngine } from "../../../hub/comments/real.ts";
-import { draftVerdict } from "../../../hub/draft-approval.ts";
+import { ATTACH_REFUSED, draftVerdict } from "../../../hub/draft-approval.ts";
 import { dataDir } from "../../reply-drafts/lib/settings.ts";
 
 type Out = { lines: string[]; code: number };
@@ -58,7 +58,8 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 			const said = picked === "own" && v.detail ? [`사용자 지시: ${v.detail}`] : [];
 			if (only === "mail") {
 				const m = await engine.sendMailOnly(d.code);
-				if (!m.ok) return fail(`메일을 보내지 못했어요: ${m.text}`);
+				// A refusal for the files keeps its first words: the card opens again on them (hub/notices-drafts.ts markDraftSend).
+				if (!m.ok) return fail(m.text.startsWith(ATTACH_REFUSED) ? m.text : `메일을 보내지 못했어요: ${m.text}`);
 				return { lines: [...said, `메일만 보냈어요. 답글은 아직 올리지 않았어요 (${d.code})`, askOf(d.code, "메일은 보냈어요. 답글은 따로 물어봐요") ?? ""].filter(Boolean), code: 0 };
 			}
 			const r = engine.send(d.code, { by: "owner", ...(only === "reply" ? { only } : {}), ...(picked === "send-as-is" ? { asIs: true as const } : {}) });
