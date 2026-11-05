@@ -12,6 +12,8 @@ import { basename } from "node:path";
 import { paths } from "./config.ts";
 import { sentFiles, tailEvents } from "./events.ts";
 import { attachFolder, draftAttachIssues } from "../features/reply-drafts/lib/flow.ts";
+// The gateway posts a mail draft's card with the text the CLI prints (approval-wire.ts); one hub file holds the edge to flow.ts.
+export { askText } from "../features/reply-drafts/lib/flow.ts";
 import { libraryFile, listLibrary, rankLibrary } from "../features/reply-drafts/lib/library.ts";
 import { canAttach } from "../features/reply-drafts/lib/senders.ts";
 import { addStagedBytes, addStagedFile, removeStagedFile, resumeWantedFiles, stagedFiles } from "../features/reply-drafts/lib/staged.ts";

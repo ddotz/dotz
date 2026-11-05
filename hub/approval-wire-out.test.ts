@@ -7,7 +7,9 @@ import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { ignoreNotice, listNotices } from "./notices.ts";
 import { out } from "./outbound.ts";
-import { approvalRoute, sender, webAnswer } from "./approval-wire.ts";
+import { approvalRoute, reportSend, sendTargetOf, sender, webAnswer } from "./approval-wire.ts";
+import { commentsDir, createStore } from "./comments/store.ts";
+import { DATA_DIR } from "./config.ts";
 import { addDraft, newId } from "../features/reply-drafts/lib/store.ts";
 
 const CONV = "mail:aw-test";
@@ -108,4 +110,26 @@ test("a send a session's CLI ran fails: the gateway report reaches the owner whe
 afterAll(() => {
 	for (const n of openCards()) ignoreNotice(n.id);
 	expect(openCards()).toEqual([]);
+});
+
+test("답글만 보내기 through the gateway: the mail draft left behind gets one open card, also when the send is reported twice, and 보내기 on it is a mail send", async () => {
+	// Its own conversation: a card waits behind the open card of its conversation, and the tests above leave one open in CONV.
+	const owed = "mail:aw-owed";
+	const mail = draft("메일 본문");
+	const code = "DOWED00001";
+	createStore(commentsDir(DATA_DIR)).putDraft({ code, commentId: "cm:x:1", source: "x", thread: "t", text: "답글", status: "sent", created: 1, changes: [], clean: true, notes: [], mail });
+	const mailCards = () => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === owed && n.decision.draft?.ref === mail);
+	const posts: string[] = [];
+	onEmit(e => void (e.kind === "out" && e.target === owed && posts.push(String(e.text))));
+	const report = () => reportSend({ ref: code, conv: owed, title: "댓글 답글 (" + code + ")", state: "sent", text: "답글만 올렸어요", at: Date.now() });
+	// A later post of the same conversation passes the queue after the card, so the card is a notice by then.
+	const flush = () => out(owed, "정리했어요", undefined, { source: "gateway" });
+	report();
+	await flush();
+	expect(mailCards()).toHaveLength(1);
+	report();
+	await flush();
+	expect(mailCards()).toHaveLength(1);
+	expect(posts.filter(t => t.includes(`(${mail})`))).toHaveLength(1);
+	expect(sendTargetOf(mail, "send")).toMatchObject({ kind: "mail" });
 });

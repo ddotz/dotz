@@ -364,6 +364,26 @@ describe("sending one part of the card (send --only)", () => {
 		expect(t.log).toHaveLength(4);
 	});
 
+	test("a posted reply picked as 이대로 보내기 whose mail failed: the retry goes out as-is; a plain 보내기 pick keeps the attach check", async () => {
+		const o: { failSend?: string } = { failSend: "SMTP 거부" };
+		const t = setup({ ...o, issues: ["본문에 파일을 보낸다고 썼지만 첨부파일이 없어요"] });
+		const d = await withMail(t);
+		appendFileSync(t.inbox, `${JSON.stringify({ ts: new Date(NOW + 6000).toISOString(), kind: "message", source: "web", text: "4) 이대로 보내기", picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${d.code})`, n: 4, label: "이대로 보내기" }] })}\n`);
+		expect((await runComments(["send", d.code, "--as-is"], t.engine, t.inbox)).code).toBe(1);
+		const r = await runComments(["send", d.code, "--only", "mail", "--retry"], t.engine, t.inbox);
+		expect(r.code).toBe(1);
+		expect(t.log).toEqual(["compose M1", "reply", "send M1 as-is", "send M1 as-is retry"]);
+	});
+
+	test("a posted reply picked as plain 보내기 whose mail failed: the retry sends without as-is", async () => {
+		const t = setup({ failSend: "SMTP 거부" });
+		const d = await withMail(t);
+		pick(t, d.code, 1);
+		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(1);
+		expect((await runComments(["send", d.code, "--only", "mail", "--retry"], t.engine, t.inbox)).code).toBe(1);
+		expect(t.log).toEqual(["compose M1", "reply", "send M1", "send M1 retry"]);
+	});
+
 	test("without the owner's pick nothing goes out, and --only takes reply or mail only", async () => {
 		const t = setup();
 		const d = await withMail(t);
