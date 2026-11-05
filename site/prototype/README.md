@@ -29,6 +29,7 @@ dotz 웹 앱의 화면과 움직임을 눌러 보며 결정하려고 만든 **�
 - `#onboard` 웹 온보딩 전체 화면 (단계는 `#onboard/harness` · `tools` · `bot` · `discord` · `web` · `review` · `done`, 값은 새로고침해도 남고 툴바의 "온보딩 처음부터"로 지워요. 닫힌 주소는 `#onboard/expired` · `#onboard/closed`)
 - `#intro` 화면 안내 A안(시트), `#intro/spot` B안(진짜 메뉴를 가리키기)
 - `#form` 카드 추가 새 폼 시안 (실시간 미리보기 · 썸네일 보기 · 더 보기, 찬 상태는 `#form/filled`, 연 상태는 `#form/more`, 설정에 입힌 모습은 `#form/settings`)
+- `#answers` 채팅 답 모양 시안 (같은 글을 지금 모양과 제안 모양으로 나란히, 카드를 쓰지 않는 곳까지)
 
 ## 문서
 
@@ -50,3 +51,4 @@ dotz 웹 앱의 화면과 움직임을 눌러 보며 결정하려고 만든 **�
 | `s-form.js` | 새 폼 시안: 카드 추가, 같은 입력칸을 입힌 설정 폼 |
 | `s-onboard.js`, `onboard.css` | 웹 온보딩과 화면 안내 (설계는 `docs/web-onboarding.md`) |
 | `s-queue.js` | 대기함 시안: 멈춘 답장 한 목록, 실패 묶음, 채팅의 한 줄 |
+| `s-answers.js`, `answers.css` | 채팅 답 모양 시안: 마크다운 모양을 읽어 그려요 |
