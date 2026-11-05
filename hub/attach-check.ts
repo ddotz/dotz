@@ -49,24 +49,19 @@ function offTopic(files: readonly string[], text: string): string[] {
 	return files.filter((_, i) => !words[i]!.some(w => telling(w) && wordVariants(w).some(v => v.length >= 2 && text.includes(v))));
 }
 
-// What is left of a name once marks, brackets and digits are gone: "노래 MR (1).mp3" and "노래 MR (2).mp3" are one file twice.
-const stem = (name: string) => norm(name.replace(/\.[^.]+$/, "").replace(/\([^)]*\)|\[[^\]]*\]/g, " ")).replace(/\d+/g, "");
-function sharedRun(a: string, b: string): number {
-	let best = 0;
-	for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) {
-		let n = 0;
-		while (i + n < a.length && j + n < b.length && a[i + n] === b[j + n]) n++;
-		best = Math.max(best, n);
-	}
-	return best;
-}
+// The words of a name that say which file it is: "노래 MR (1).mp3" and "노래 MR (2).mp3" share all of theirs and are one file twice, "alpha song" and "beta song"
+// too few. A date or a version ("26.10.22") tells nothing; a numbered word only one side has ("1탄", "2탄") is a part of a series, a different file.
+const fileWords = (name: string) => [...new Set(nameWords(name).map(norm))].filter(w => !/^\d+$/.test(w));
+const letters = (words: string[]) => words.join("").length;
+const numberedOnly = (a: string[], b: string[]) => a.some(w => /\d/.test(w) && !b.includes(w));
 const VARIANT_MIN = 4, VARIANT_SHARE = 0.6;
 function cutsOfOneFile(files: readonly string[]): string[] {
 	const out = new Set<string>();
 	files.forEach((a, i) => files.slice(i + 1).forEach(b => {
 		if (kindOf(a) !== kindOf(b)) return;
-		const x = stem(a), y = stem(b), run = sharedRun(x, y);
-		if (run >= VARIANT_MIN && run >= VARIANT_SHARE * Math.min(x.length, y.length)) out.add(a).add(b);
+		const x = fileWords(a), y = fileWords(b), both = letters(x.filter(w => y.includes(w)));
+		if (numberedOnly(x, y) && numberedOnly(y, x)) return;
+		if (both >= VARIANT_MIN && both >= VARIANT_SHARE * Math.min(letters(x), letters(y))) out.add(a).add(b);
 	}));
 	return [...out];
 }

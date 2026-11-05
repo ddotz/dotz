@@ -15,7 +15,7 @@ import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
-import { askText, sendDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { askText, draftAttachIssues, sendDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
 import { listLibrary, rankLibrary, LIBRARY_PICK_MAX } from "../features/reply-drafts/lib/library.ts";
 import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
@@ -175,7 +175,7 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 	const c = store!.comments().find(x => x.id === linked.commentId);
 	const src = store!.config().sources[linked.source];
 	if (!c || !src) return { lines: ["원댓글을 찾지 못했어요"], code: 2 };
-	return { lines: [commentAsk(src, c, linked, "댓글 답글과 이어서 보낼 메일 초안을 만들었어요", mailPartOf(made.rec))], code: 0, notes: made.notes };
+	return { lines: [commentAsk(src, c, linked, "댓글 답글과 이어서 보낼 메일 초안을 만들었어요", { ...mailPartOf(made.rec), attachIssues: draftAttachIssues(made.rec) })], code: 0, notes: made.notes };
 }
 
 if (import.meta.main) {

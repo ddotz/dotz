@@ -73,7 +73,7 @@ async function toneSample(ctx: Ctx, args: string[]): Promise<RunResult> {
 // A reply goes public only on the owner's own 1) 보내기 pick for exactly this job, made after the job was created (hub/draft-approval.ts).
 function requirePick(j: Job): void {
 	const v = draftVerdict(replyPaths.inbox(), j.id, Date.parse(j.created));
-	if (v.verdict === "send") return;
+	if (v.verdict === "send" || v.verdict === "send-as-is") return;
 	if (v.verdict === "edit") throw new Error(`고치기를 골랐어요${v.detail ? ` (${v.detail})` : ""}. sns.ts revise ${j.id} --change "<내용>"로 고친 뒤 다시 물어봐 주세요`);
 	if (v.verdict === "drop") throw new Error(`보내지 않기로 한 답글이에요. sns.ts reject ${j.id}`);
 	throw new Error("아직 보내도 된다는 답을 받지 못했어요");

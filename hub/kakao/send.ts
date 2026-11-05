@@ -120,7 +120,7 @@ const ms = (ts: string) => Date.parse(ts);
 type Verdict = "approved" | "cancelled" | "none";
 
 // A draft card has three answers: 보내기 approves, 고치기 and 보내지 않기 cancel; the other draft actions say nothing here.
-const VERDICT_OF: Record<DraftAction | "none", Verdict> = { send: "approved", edit: "cancelled", drop: "cancelled", "send-main": "none", "send-mail": "none", own: "none", none: "none" };
+const VERDICT_OF: Record<DraftAction | "none", Verdict> = { send: "approved", edit: "cancelled", drop: "cancelled", "send-main": "none", "send-mail": "none", own: "none", "send-as-is": "approved", none: "none" };
 
 // The same rule as every other draft (hub/draft-approval.ts draftVerdict): only the owner's own messages after the draft was made count, and
 // the owner's LAST word wins. A typed reply counts in the conversation the ask went out in, which the outbox says.

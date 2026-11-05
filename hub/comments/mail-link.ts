@@ -1,7 +1,7 @@
 // The real MailLink of the comment engine (engine.ts): the mail that rides on a comment reply is a compose draft of hub/mail-cli.ts, sent and
 // revised through the same reply-drafts flow, so its lint, files and sender are the ones of every other mail. It is not listed in the web mail
 // app on its own (the card of the comment reply is the one place to approve it).
-import { dropDraft, mailStyleOf, reviseDraft, sendDraft, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
+import { draftAttachIssues, dropDraft, mailStyleOf, reviseDraft, sendDraft, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
 import { getDraft } from "../../features/reply-drafts/lib/store.ts";
 import { addressesOf, generateReply } from "../reply-draft.ts";
 import { callReplyModel } from "../reply-model.ts";
@@ -37,9 +37,13 @@ export function realMailLink(deps: FlowDeps = {}): RealMailLink {
 			return r.ok ? { ok: true, id: r.rec.id, notes: r.notes, ...(r.rec.libraryMiss ? { libraryMiss: true } : {}) } : { ok: false, reason: r.error };
 		},
 		state: id => getDraft(id)?.status,
-		send: async id => {
-			const r = await sendDraft(id, deps, { withReply: true });
+		send: async (id, opts) => {
+			const r = await sendDraft(id, deps, { withReply: true, ...(opts?.asIs ? { asIs: true as const } : {}) });
 			return { ok: r.ok, text: r.text };
+		},
+		issues: id => {
+			const rec = getDraft(id);
+			return rec ? draftAttachIssues(rec) : [];
 		},
 		drop: id => void dropDraft(id),
 		async revise(id, change) {
@@ -47,8 +51,9 @@ export function realMailLink(deps: FlowDeps = {}): RealMailLink {
 			return r.ok && r.id ? { ok: true, id: r.id } : { ok: false, reason: r.text };
 		},
 		view: id => {
-			const v = mailViewOf(id);
-			return v && (v.libraryMiss ? { ...v, notes: [LIBRARY_MISS_NOTE] } : v);
+			const v = mailViewOf(id), rec = v && getDraft(id), issues = rec ? draftAttachIssues(rec) : [];
+			const shown = v && (issues.length ? { ...v, attachIssues: issues } : v);
+			return shown && (shown.libraryMiss ? { ...shown, notes: [LIBRARY_MISS_NOTE] } : shown);
 		},
 	};
 }

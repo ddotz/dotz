@@ -289,7 +289,7 @@ function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
   if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && d.options.find(x => x.n === Number(m[1]));
-  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop", "답글만 보내기": "send", "메일만 보내기": "send", [DRAFT_OWN]: "own" }[o.label] || "expired";
+  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop", "답글만 보내기": "send", "메일만 보내기": "send", "이대로 보내기": "send", [DRAFT_OWN]: "own" }[o.label] || "expired";
 }
 const drParas = body => String(body ?? "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().split(/\n\n/);
 function drOriginal(t) {

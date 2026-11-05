@@ -13,7 +13,7 @@ import { draftActionOf } from "./draft-approval.ts";
 export type SendKind = "comment" | "mail";
 /** What the gateway knows of a ref: which CLI sends it, and the place it goes to (sends to one place stay in order). */
 export type SendTarget = { kind: SendKind; lane: string };
-export type SendAction = "send" | "send-main" | "send-mail";
+export type SendAction = "send" | "send-main" | "send-mail" | "send-as-is";
 export type SendJob = { ref: string; conv: string; action: SendAction; title: string };
 export type SendResult = { ref: string; conv: string; title: string; state: "queued" | "sending" | "sent" | "failed"; text: string; at: number };
 
@@ -22,7 +22,7 @@ const ROOT = join(import.meta.dir, "..");
 /** The send action a picked label asks the gateway for, or undefined when the bot has to read it (고치기, 보내지 않기, 직접 입력). */
 export function sendActionOf(label: string): SendAction | undefined {
 	const a = draftActionOf(label);
-	return a === "send" || a === "send-main" || a === "send-mail" ? a : undefined;
+	return a === "send" || a === "send-main" || a === "send-mail" || a === "send-as-is" ? a : undefined;
 }
 
 /** The ref in a decision question's trailing "(<ref>)". */
@@ -30,9 +30,9 @@ export const refOfQuestion = (q: string): string | undefined => /\(([A-Za-z0-9][
 
 /** The command that sends draft `ref` (a comment reply draft, a mail draft of features/reply-drafts), or undefined. */
 export function sendArgv(kind: SendKind, ref: string, action: SendAction, bun = process.execPath): string[] | undefined {
-	if (kind === "comment") return [bun, join(ROOT, "features/comments/bin/comments.ts"), "send", ref, ...(action === "send-main" ? ["--only", "reply"] : action === "send-mail" ? ["--only", "mail"] : [])];
-	// A mail draft has one body; 답글만 / 메일만 belong to a comment card.
-	return action === "send" ? [bun, join(ROOT, "features/reply-drafts/bin/draft.ts"), "send", ref] : undefined;
+	if (kind === "comment") return [bun, join(ROOT, "features/comments/bin/comments.ts"), "send", ref, ...(action === "send-main" ? ["--only", "reply"] : action === "send-mail" ? ["--only", "mail"] : action === "send-as-is" ? ["--as-is"] : [])];
+	// A mail draft has one body; 답글만 / 메일만 belong to a comment card. Both 보내기 and 이대로 보내기 run the same send: it reads the owner's pick.
+	return action === "send" || action === "send-as-is" ? [bun, join(ROOT, "features/reply-drafts/bin/draft.ts"), "send", ref] : undefined;
 }
 
 export type SenderDeps = {

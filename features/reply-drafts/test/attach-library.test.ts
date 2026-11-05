@@ -60,8 +60,8 @@ describe("the warning heuristic", () => {
 		const out = sink();
 		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call });
 		const text = out.sent[0]!.text;
-		expect(text).not.toContain("⚠");
-		expect(parseDraftApproval(text)).toMatchObject({ warning: NO_ATTACHMENT_WARNING, note: "본문에는 보낸다고 썼어요" });
+		expect(text).not.toContain("받는이 확인");
+		expect(parseDraftApproval(text)).toMatchObject({ warning: NO_ATTACHMENT_WARNING, note: "본문에는 보낸다고 썼어요", attachIssues: [expect.stringContaining("첨부파일이 없어요")] });
 	});
 });
 
@@ -249,7 +249,7 @@ describe("adding and removing files of a draft (the send sheet's routes)", () =>
 	}
 	test("the library lists its files; picking one stages it, bytes stage a file, x takes one off", async () => {
 		const ref = await draft();
-		expect((await call("GET", ref, "files")).body).toEqual({ files: [], canAttach: true, library: true, editable: true, tracked: true });
+		expect((await call("GET", ref, "files")).body).toEqual({ files: [], canAttach: true, library: true, editable: true, attachIssues: [expect.stringContaining("첨부파일이 없어요")], tracked: true });
 		const listed = (await call("GET", ref, "library")).body.items as { rel: string }[];
 		expect(listed.map(i => i.rel)).toContain("문서/기타/캐논.pdf");
 		expect((await call("GET", ref, "library", undefined, "?q=캐논")).body.items.map((i: { rel: string }) => i.rel)).toEqual(["문서/기타/캐논.pdf"]);
