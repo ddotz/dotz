@@ -4,7 +4,7 @@ import { isSnowflake } from "./threads.ts";
 import { DECISION_HEAD } from "./choices.ts";
 import { dropForLine } from "./forline.ts";
 import { dropIdNote } from "./notice-ko.ts";
-import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
+import { claimWord, dropClaim, metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
 export const noEmoji = (s: string) => s.replace(/ ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]+/gu, "");
@@ -75,8 +75,9 @@ export const reference = (replyTo?: string) => (replyTo && isSnowflake(replyTo) 
 // Plain message text: the explicit marker becomes the one status emoji, the model's own emoji are stripped (before the
 // status emoji is added), choice blocks lose their quote prefixes and meta lines become subtext.
 function plainParts(text: string): { emoji: string; body: string } {
-	const { tone, text: bare } = parseTone(dropForLine(text));
-	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noEmoji(metaToSubtext(plainChoice(readable(tone ? bare.trimStart() : bare)))) };
+	const { tone, text: parsed } = parseTone(dropForLine(text));
+	const bare = tone ? parsed.trimStart() : parsed, claim = claimWord(bare);
+	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noEmoji(metaToSubtext(plainChoice(readable(dropClaim(bare))))).trimStart() + (claim ? `\n-# ${claim}` : "") };
 }
 
 // Discord-mobile layout the model cannot break, outside ``` fences: a "# heading" becomes a bold line, a "| table |"

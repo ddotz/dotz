@@ -8,7 +8,7 @@ function inline(s) {
     codes.push(`<code${/^(~|\.{0,2}\/)[^\s]*$|^[\w.-]+\/[\w./-]+(:\d+(-\d+)?)?$/.test(t) ? ' class="path"' : ""}>${esc(t)}</code>`);
     return `\0${codes.length - 1}\0`;
   });
-  return dropIdNote(esc(held)).replace(/&lt;#(\d{10,})&gt;/g, (_, id) => `<a href="#chat/ch:${id}">${esc(targetName(`ch:${id}`))}</a>`).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)\0]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+  return dropIdNote(esc(held)).replace(/&lt;#(\d{10,})&gt;|(?<![\w/:=-])ch:(\d{10,})\b/g, (_, a, b) => `<a href="#chat/ch:${a || b}">${esc(targetName(`ch:${a || b}`))}</a>`).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)\0]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/(^|[^"'>=\w])(https?:\/\/[^\s<\0]*[^\s<.,;:!?)\]'"\0])/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
     .replace(/~~([^~\n]+)~~/g, "<s>$1</s>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "$1<i>$2</i>")
     .replace(/\0(\d+)\0/g, (_, n) => codes[n]);
@@ -191,7 +191,7 @@ const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], wait: ["
 // [run] and [wait] are true only of the moment they were written: 41-runstate.js syncLiveTags draws them from the current state.
 const parkedTone = tone => tone === "run" || tone === "wait";
 const toneTag = tone => LANE_TONE[tone] ? el("span", { class: `tag ${LANE_TONE[tone][0]} st-tag`, text: LANE_TONE[tone][1] }) : null;
-// A lane's worklog entry says whether its report was checked in words (hub/laneops.ts claimPrefix, which Discord reads as written); here it is the tag of a project's result row (19-project-main.js pmResultRow).
+// A lane's worklog entry says whether its report was checked in words (hub/laneops.ts claimPrefix, which Discord shows as subtext); here it is the tag of a project's result row (19-project-main.js pmResultRow).
 const CLAIM_LEAD = /^(?:(?:확인됨|보고됨|verified|reported) · )+/, CLAIM_TAG = { verified: ["ok", "확인됨"], reported: ["", "보고만 함"] };
 const claimTag = claim => CLAIM_TAG[claim] ? el("span", { class: `tag ${CLAIM_TAG[claim][0]} st-tag claim-tag`, text: CLAIM_TAG[claim][1] }) : null;
 // The tag goes in front of the first paragraph's text; a body that opens with a list or a card gets a line of its own.

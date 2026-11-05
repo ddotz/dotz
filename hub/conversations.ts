@@ -43,7 +43,7 @@ export function previewOf(raw: string): string {
 			.replace(/^\s*-#\s+/, "")
 			.replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "")
 			.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-			.replace(/[*_~`]+/g, "")
+			.replace(/[*~`]+|(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, "")
 			.replace(/\s+/g, " ")
 			.trim();
 		if (!plain) continue;

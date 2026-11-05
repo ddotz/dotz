@@ -65,11 +65,14 @@ export function cronKo(expr: string): string {
 }
 const CRON = /^\s*(?:[\d*/,-]+\s+){4}[\d*/,A-Za-z-]+\s*$/;
 
-const words = (s: string): string => {
+const nameParts = (s: string): string[] => {
 	const parts = s.split(/[_\s]+/).filter(Boolean);
 	if (parts.length > 1 && parts[0]!.toLowerCase() === "dotz") parts.shift();
-	return parts.map(p => NAMES[p.toLowerCase()] ?? p).join(" ");
+	return parts;
 };
+const words = (s: string): string => nameParts(s).map(p => NAMES[p.toLowerCase()] ?? p).join(" ");
+// A snake_case name becomes words only when NAMES covers all of it: half a translation ("task 보내기") reads worse than the name, and an id must not split.
+const named = (s: string): boolean => nameParts(s).every(p => NAMES[p.toLowerCase()]);
 // "ssh -p 22 me@box 'ls'" -> "box에 원격 접속"
 const sshKo = (s: string): string => s.replace(/\bssh\s+(?:-\S+\s+(?:\d+\s+|\S+\s+(?=\S+@|[\w.-]+\s*$))?)*(?:[\w.-]+@)?([A-Za-z0-9][\w.-]*)(?:\s+(?:'[^']*'|"[^"]*"))?/g, (_m, host: string) => `${host}에 원격 접속`);
 function commandKo(s: string): string | undefined {
@@ -100,8 +103,15 @@ const STATUS = /[ \t]*\[(?:run|done|ask|fail|warn|blocked|partial|later|ok|error
 const SLASH_RE = new RegExp(`(?<![\\w/:.])\\/(${Object.keys(SLASH).join("|")})(?![\\w/가-힣-])`, "g");
 const TARGET = /\b(lane|ch|th|mail|settings|auth|msg|dec)((?::[\w.@~%-]+)+)/g;
 
-// "워커(st_01a1a07f)": an id in brackets after the thing it names says nothing to the owner, and the sentence stands without it. A code span keeps it.
-export const dropIdNote = (s: string): string => s.replace(/`[^`\n]+`|[ \t]*\((?:st_[0-9a-f]{8}|(?:ch|th):\d{10,})\)/g, m => (m[0] === "`" ? m : ""));
+// "워커(st_01a1a07f)": an id in brackets after the thing it names says nothing to the owner, and the sentence stands without it.
+// "st_01a1a07f가 멈췄어요": a bare one is the sentence's subject, so the word for it takes its place, with the particle that word asks for. A code span or a path keeps it.
+export const dropIdNote = (s: string): string =>
+	josa(s.replace(/`[^`\n]+`|[ \t]*\((?:st_[0-9a-f]{8}|(?:ch|th):\d{10,})\)|(?<![\w/.:=-])st_[0-9a-f]{8}(?:,[ \t]*st_[0-9a-f]{8})*(?![\w-]|\.\w)/g, m => {
+		if (m[0] === "`") return m;
+		if (m.trimStart()[0] === "(") return "";
+		const n = m.split(",").length;
+		return w(n > 1 ? `워커 ${n}개` : "워커");
+	}));
 
 function target(kind: string, rest: string, o: PlainOpts): string {
 	const id = rest.slice(1);
@@ -129,7 +139,7 @@ function spanRaw(code: string, o: PlainOpts): string {
 	if (TOOLS[t.toLowerCase()] && /^[A-Za-z]+$/.test(t)) return TOOLS[t.toLowerCase()]!;
 	if (/^mcp__\w+?__\w+$/.test(t)) return words(t.split("__").at(-1)!);
 	if (!/\s/.test(t) && t.includes("/") && isPath(t)) return pathKo(t);
-	if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(t)) return words(t);
+	if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(t) && named(t)) return words(t);
 	if (new RegExp(TARGET.source).test(t) && !/\s/.test(t)) return t.replace(TARGET, (_m, k: string, r: string) => target(k, r, o));
 	return `\`${code}\``;
 }
@@ -148,7 +158,7 @@ function prose(s: string, o: PlainOpts): string {
 	t = t.replace(/\bgit\s+(push|pull|commit|merge|rebase|status|diff|log|checkout|reset)\b/g, (_m, sub: string) => w(SUB[sub]!));
 	t = t.replace(/\bmcp__\w+?__(\w+)/g, (_m, n: string) => w(words(n)));
 	t = t.replace(TARGET, (_m, k: string, r: string) => w(target(k, r, o)));
-	t = t.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b(?!\.[A-Za-z0-9])/g, m => w(words(m)));
+	t = t.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b(?!\.[A-Za-z0-9])/g, m => (named(m) ? w(words(m)) : m));
 	t = t.replace(LONG_ID, "");
 	t = t.split(/(`[^`\n]*`)/).map((s, i) => (i % 2 ? s : s.replace(STATUS, ""))).join("");
 	t = t.replace(/^\[([^\]\n]{2,30})\][ \t]+(?=\S)/gm, (m, label: string) => (/^[\d\sx]+$/i.test(label) ? m : `${label}: `));

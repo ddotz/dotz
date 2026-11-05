@@ -601,7 +601,7 @@ function ntParts(n) {
   const text = stripMarkers(noticeKo(peerMsgLine(n.text), { ...NK, keepFiles: true }), true).replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").trim(), title0 = ntPlain(n.title);
   const first = (text.split("\n").find(l => l.trim()) || "").trim();
   const m = /^.*?[.!?。？！](?=\s|$)/.exec(first), sent = m ? m[0] : first;
-  const head = ntShort(sent.replace(/[*_`#>]/g, "")), a = head.replace(/…$/, ""), b = title0.replace(/…$/, "");
+  const head = ntShort(sent.replace(/[*`#>]|(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/g, "")), a = head.replace(/…$/, ""), b = title0.replace(/…$/, "");
   if (!title0 || !a || !(a.startsWith(b) || b.startsWith(a))) return { title: ntShort(title0), rest: text };
   return { title: head, rest: head.endsWith("…") ? text : text.replace(sent, "").trim() };
 }

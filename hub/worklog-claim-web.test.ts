@@ -5,7 +5,7 @@ import { clean } from "./notices-rules.ts";
 import { fakeHub, json, on } from "./test-web.ts";
 
 // A lane's worklog entry carries its claim as words in the stored text (laneops.ts claimPrefix). The 작업내역 conversation draws them as
-// the app's status tag, whatever the entry's age; notices and previews drop them; Discord reads them as written.
+// the app's status tag, whatever the entry's age; notices and previews drop them; Discord, which has no tags, keeps the word as subtext.
 const ts = (n: number) => `2026-11-05T15:${String(10 + n).padStart(2, "0")}:00.000Z`;
 const entry = (n: number, text: string) => ({ ts: ts(n), kind: "out", source: "orchestrator", target: "worklog", update_key: `lane:l${n}`, text });
 const worklog = [
@@ -55,13 +55,15 @@ test("작업내역 draws the claim as a status tag in the entry, never as body t
 	expect(rows[7]!.body).toBe("빌드는 확인됨 · 배포는 내일이에요.");
 });
 
-test("notices and previews drop the claim; Discord keeps it", () => {
+test("notices and previews drop the claim; Discord shows it as subtext", () => {
 	for (const text of ["확인됨 · ✅ 메일함을 끝냈어요", "확인됨 · 확인됨 · ✅ 메일함을 끝냈어요", "[done] 보고됨 · ✅ 메일함을 끝냈어요", "verified · ✅ 메일함을 끝냈어요"]) {
 		expect(clean(text).text).toBe("✅ 메일함을 끝냈어요");
 		expect(previewOf(text)).toContain("메일함을 끝냈어요");
 		expect(previewOf(text)).not.toMatch(/확인됨|보고됨|verified/);
 	}
 	expect(clean("[done] 확인됨 · 끝냈어요")).toEqual({ tone: "done", text: "끝냈어요" });
-	expect(JSON.stringify(buildPayloads("[done] 확인됨 · 끝냈어요"))).toContain("✅ 확인됨 · 끝냈어요");
-	expect(JSON.stringify(buildPayloads("확인됨 · ✅ 끝냈어요"))).toContain("확인됨 · ");
+	expect(buildPayloads("[done] 확인됨 · 끝냈어요")[0]!.content).toBe("✅ 끝냈어요\n-# 확인됨");
+	expect(buildPayloads("확인됨 · 확인됨 · ✅ 끝냈어요")[0]!.content).toBe("끝냈어요\n-# 확인됨");
+	expect(buildPayloads("보고됨 · 끝냈어요")[0]!.content).toBe("끝냈어요\n-# 보고만 함");
+	expect(buildPayloads("빌드는 확인됨 · 배포는 내일이에요")[0]!.content).toBe("빌드는 확인됨 · 배포는 내일이에요");
 });
