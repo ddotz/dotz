@@ -34,6 +34,7 @@ beforeAll(async () => {
 	received = [];
 	incoming = Bun.serve({
 		port: 0,
+		hostname: "127.0.0.1",   // on all addresses the OS can hand out a port another server holds on 127.0.0.1, which then answers these posts with 404
 		async fetch(req) {
 			captured.push({ path: new URL(req.url).pathname, headers: req.headers, body: await req.json() });
 			return new Response("{}");
@@ -392,7 +393,7 @@ describe("rooms from the web structure", () => {
 
 	test("one default webhook serves every room that has none, and a project without a room still reaches main; a lane's progress has no room but its result and question reach main", async () => {
 		const seen: string[] = [];
-		const hook = Bun.serve({ port: 0, async fetch(req) { seen.push(`${new URL(req.url).pathname} ${(await req.json()).body}`); return new Response("{}"); } });
+		const hook = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(req) { seen.push(`${new URL(req.url).pathname} ${(await req.json()).body}`); return new Response("{}"); } });
 		const t = fresh({ enabled: true, rooms: [], incoming_url: `http://127.0.0.1:${hook.port}/in/default` });
 		try {
 			await t.a.syncRooms!(desiredRooms(PROJECTS));
