@@ -90,7 +90,7 @@ export type Lane = Record_ & {
 };
 
 export const lanes = new Map<string, Lane>();
-type ReportFn = (lane: Lane, text: string, answeringOwner?: boolean) => void;
+type ReportFn = (lane: Lane, text: string, answeringOwner?: boolean, pause?: boolean) => void;
 export const hooks: { report: ReportFn; progress: ReportFn; notice: ReportFn; idle: (name: string) => void; verified: (name: string, text: string) => void; openCard: (name: string) => boolean } = { report: () => {}, progress: () => {}, notice: () => {}, idle: () => {}, verified: () => {}, openCard: () => false };
 // Owner messages sent to a lane and not answered yet (lanerelay.ts createOwnerNotes): the lane's short answer note at its next
 // tool boundary reaches the owner at once, and the delivery state of each message follows (hub/events.ts emitDelivery).

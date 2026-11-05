@@ -8,7 +8,8 @@ import { lanes, setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setO
 import { decisionsOf, laneHasOpenCard, laneVerified } from "./notices.ts";
 import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
-import { createLaneRelay } from "./lanerelay.ts";
+import { createLaneRelay, ownerAlone } from "./lanerelay.ts";
+import { workersOf } from "./lanevis.ts";
 import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
 import { parkedTone, parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, out } from "./outbound.ts";
@@ -33,10 +34,10 @@ export function repostRefusal(target: string, text: string): string | undefined 
 export function installLaneHandlers(): void {
 	setVerifiedHandler((name, text) => laneVerified(name, text));
 	setOpenCardCheck(laneHasOpenCard);
-	setReportHandler((lane, raw, answering) => {
+	setReportHandler((lane, raw, answering, pause) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
 		const text = stripHandoff(raw);
-		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
+		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length));
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 		if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);
 		else if (how === "relayed") log(`lane ${lane.name} report relayed to the orchestrator`);

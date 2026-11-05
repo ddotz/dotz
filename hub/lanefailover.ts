@@ -33,7 +33,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	if (note.alert) {
 		report(lane, owner
 			? blockText(lk as "auth" | "billing", account, providerOf(lane.model), wait)
-			: (await pinnedLimitNotice(Date.now() + wait)) ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, true);
+			: (await pinnedLimitNotice(Date.now() + wait)) ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, owner ? true : "pause");
 	}
 	lane.pauseReported = true;
 	lane.pauseKind = kind;
@@ -55,7 +55,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 }
 // A turn that works again ends the lane's blocked episode: the owner hears it once.
 export function laneRecovered(lane: Lane): void {
-	if (noteRecovered(`lane:${lane.name}`)) report(lane, recoveryText(), true);
+	if (noteRecovered(`lane:${lane.name}`)) report(lane, recoveryText(), "pause");
 }
 
 // Overloaded/5xx/network errors: retry the failed turn with backoff, bounded. Returns false once the retries are spent,
@@ -155,7 +155,7 @@ export function pauseExhausted(lane: Lane, c: Chain, until: number): void {
 	const line = msg().fallbackExhausted(c.label(c.active), at);
 	log(`lane ${lane.name} ${line}`);
 	hooks.notice(lane, line);
-	if (noteBlock(`lane:${lane.name}`, c.label(c.active), "limit").alert) report(lane, line, true);
+	if (noteBlock(`lane:${lane.name}`, c.label(c.active), "limit").alert) report(lane, line, "pause");
 	lane.pauseReported = true;
 	clearTimeout(lane.resumeTimer);
 	atTime(until, t => (lane.resumeTimer = t), () => {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { NAME } from "./config.ts";
-import { createLaneRelay, createOwnerNotes } from "./lanerelay.ts";
+import { createLaneRelay, createOwnerNotes, ownerAlone } from "./lanerelay.ts";
 
 function relay() {
 	const sent: string[] = [];
@@ -145,4 +145,12 @@ test("the questions a turn heard are named until the turn ends, relayed, steered
 	busy = false;
 	held.flush();
 	expect(held.asked()).toEqual(["e"]);
+});
+
+test("an untagged report while the lane's workers run, or a usage-limit notice, starts no orchestrator turn; a done claim and a report the orchestrator asked for do", () => {
+	expect(ownerAlone({ orchAsked: true }, false, 1)).toBe(true);
+	expect(ownerAlone({ orchAsked: true }, true, 0)).toBe(true);
+	expect(ownerAlone({ orchAsked: true, claim: { state: "reported" } }, false, 1)).toBe(false);
+	expect(ownerAlone({ orchAsked: true }, false, 0)).toBe(false);
+	expect(ownerAlone({ orchAsked: false }, false, 0)).toBe(true);
 });
