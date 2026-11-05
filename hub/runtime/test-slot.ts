@@ -28,7 +28,7 @@ export function isFullSuite(words: string[]): boolean {
 		}
 		named.push(a);
 	}
-	return named.length === 0 || named.length > FEW_FILES || named.some(n => !/\.(test|spec)\.[cm]?[jt]sx?$/.test(n));
+	return named.length === 0 || named.length > FEW_FILES || named.some(n => !/\.[cm]?[jt]sx?$/.test(n));
 }
 
 const commandLine = (pid: number): string[] => Bun.spawnSync(["/bin/ps", "-o", "command=", "-p", String(pid)]).stdout.toString().trim().split(/\s+/);
