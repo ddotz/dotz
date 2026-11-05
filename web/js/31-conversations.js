@@ -79,6 +79,7 @@ function coalesced(fn) {
   return live;
 }
 const mailLive = coalesced(() => Promise.allSettled([convLoad(), loadIntegrations()]));
+const monitorsLive = coalesced(() => loadMonitors());
 async function convLoadNow() {
   clearTimeout(convRetry);
   try {

@@ -92,7 +92,7 @@ function noticeLive(e) {
     // repaint would drop the change it is making (its 받는이 edit) and the sheet's own update path repaints it. Any decision of this conversation:
     // a block of a several-draft card settles without `draft` when its draft is sent from 모니터링, and the docked card drops it here.
     if (ntIsDec(e.item) && e.item.decision.to === target && !DK.h) paintDecision();
-    if (e.item.kind === "watch") loadMonitors();
+    if (e.item.kind === "watch") monitorsLive();
   } else if (e.kind === "notice_dismiss") {
     ntHandled(e.id);
     const g = NT.items.find(x => x.id === e.id);
