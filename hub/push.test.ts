@@ -17,6 +17,12 @@ test("a web answer notifies only when it finishes work or needs the owner; a qui
 	expect(classify(ev({ target: "web", text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", body: "어느 쪽?" });
 });
 
+test("a push body never shows the \"For <bot>:\" line of a report", () => {
+	const text = `끝났어요\n\nFor ${NAME}: 후속 없음`;
+	expect(classify(ev({ target: "web", text }), LONG_TURN_MS)?.body).toBe("끝났어요");
+	expect(classify(ev({ target: "web", text: `[done] ${text}` }))?.body).toBe("끝났어요");
+});
+
 test("a project's answers notify like the main chat's and open that project's chat; a thread of it does too", () => {
 	const CH = "ch:1561565203714408448";
 	expect(classify(ev({ target: CH, text: "네, 맞아요" }), 5_000)).toBeUndefined();
