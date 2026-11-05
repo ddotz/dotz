@@ -27,7 +27,7 @@ import { errorAsk } from "./orch-error.ts";
 import { createBgWork, omoWorkById, sessionProjects } from "./bgwork.ts";
 import { createWorkRows } from "./workrows.ts";
 import { digest } from "./convdigest.ts";
-import { createPrompts, type WorkLink } from "./prompts.ts";
+import { createPrompts, type Reply, type WorkLink } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
@@ -159,11 +159,11 @@ export const workRows = createWorkRows({
 // True when the message was steered into the running turn (only one of the same conversation is, prompts.ts deliver).
 // An owner message goes to its conversation's session (main with conversation sessions off); everything else to main.
 // From a tap on the update bar until the restart, a new turn is held and goes in after it (hub/update-now.ts).
-export function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): boolean {
+export function deliver(text: string, reply?: Reply): boolean {
 	if (updateNow()?.hold(text, reply)) return false;
 	return deliverNow(text, reply);
 }
-export function deliverNow(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): boolean {
+export function deliverNow(text: string, reply?: Reply): boolean {
 	if (reply) discord.typing(reply.target);
 	return convs.deliverTo(reply?.owner ? convs.keyOf(reply.target) : MAIN, text, reply);
 }

@@ -37,7 +37,7 @@
 
 import { isSilent } from "./tone.ts";
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string; deferred?: boolean };
@@ -47,7 +47,7 @@ export type WorkLink = { id: string; target: string; replyTo?: string; at: numbe
 export type OpenRequest = { target: string; replyTo?: string; at: number; workers: { id: string; description?: string }[] };
 /** One of this session's background workers, as hub/bgwork.ts lists it (running oldest first, then recently finished newest first). */
 export type WorkRow = { id: string; description?: string; status: "running" | "stalled" | "done" | "failed"; target?: string; replyTo?: string; startedAt: number; endedAt?: number };
-export type Reply = { target: string; replyTo?: string; owner?: boolean };
+export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean }; // refs: every message merged into this prompt
 
 export type PromptDeps = {
 	/** Starts a normal orchestrator turn with this prompt. */
@@ -222,7 +222,7 @@ export function createPrompts(deps: PromptDeps) {
 		if (elsewhere?.target) text = `${text}\n\n${deps.foreignNote!(elsewhere, elsewhere.target)}`;
 		const cards = reply?.owner && !deps.hasCardsNote?.(text) ? deps.cardsNote?.(reply.target) : undefined;
 		if (cards) text = `${cards}\n\n${text}`;
-		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered };
+		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, ...(reply?.refs?.length ? { refs: reply.refs } : {}), sent: [], steered };
 		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
 		if (reply?.owner) {
@@ -712,9 +712,11 @@ export function createPrompts(deps: PromptDeps) {
 			const told = (p.told ?? []).flatMap(id => links.get(id) ?? []);
 			for (const l of told) tie(l, p);
 			if (fresh.length || twin) return void save();
-			// The worker this turn really passed the follow-up to; the conversation's oldest running one is only a guess.
+			// The worker this turn really passed the follow-up to; the conversation's oldest running one is only a guess, which takes this request when no request owns it (2026-11-05 st_01a1aa4c: the answer left the request open).
 			const heard = told.at(-1);
 			const w = heard ? { id: heard.id, description: heard.description ?? "" } : deps.workFor?.(p.target);
+			const unowned = !heard && w ? links.get(w.id) : undefined;
+			if (unowned && !unowned.replyTo && !unowned.also?.length) tie(unowned, p);
 			const took = w?.description.trim();
 			const note = took ? `백그라운드 작업으로 맡겼어요: ${took}` : "백그라운드 작업으로 맡겼어요";
 			// One receipt per worker (owner 2026-10-30: the same "유튜브 답글 게시" note came 4x in 2 minutes): a later deferral in the
