@@ -20,7 +20,7 @@ let tab = globalThis.dzLogin[${key}];
 if (!tab) { tab = await openTab(${JSON.stringify(o.url)}); globalThis.dzLogin[${key}] = tab; await new Promise(r => setTimeout(r, 3000)); }
 const found = await tab.evaluate(${o.read}).catch(() => { if (tab.isClosed()) delete globalThis.dzLogin[${key}]; return null; });
 if (!found) { console.log('RESULT ' + JSON.stringify({ ok: true, waiting: 'login' })); }
-else { await fetch(${JSON.stringify(o.inbox)}, { method: 'POST', body: JSON.stringify(found), signal: AbortSignal.timeout(10000) }); await dzClose(tab); delete globalThis.dzLogin[${key}]; console.log('RESULT ' + JSON.stringify({ ok: true })); }`);
+else { await fetch(${JSON.stringify(o.inbox)}, { method: 'POST', body: JSON.stringify(found) }); await dzClose(tab); delete globalThis.dzLogin[${key}]; console.log('RESULT ' + JSON.stringify({ ok: true })); }`);
 }
 
 export function loginCloseScript(key: string): string {
