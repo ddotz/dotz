@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { addressesOf, buildPrompt, generateReply, lintReply, NO_RECIPIENT, parseResult, precheck, reviseReply, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
+import { ADAPT, addressesOf, buildPrompt, examplesUse, FAMILIAR_AT, generateReply, lintReply, NO_RECIPIENT, parseResult, precheck, reviseReply, type ModelCall, type ReplyItem, type ReplyStyle } from "./reply-draft.ts";
 
 const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "회의 일정 문의", text: "다음 주 회의 일정을 알려 주실 수 있을까요?" };
 const style: ReplyStyle = { samples: ["확인해 보고 말씀드릴게요."], rules: [], corrections: [], forbidden: [] };
@@ -179,4 +179,26 @@ test("a draft that says it already sent something gets one rewrite; the user's o
 	for (const grounded of [{ files: ["mr.mp3"] }, { instruction: "보냈다고 답해" }]) expect(await generateReply({ ...item, ...grounded }, style, fake([claim]).call)).toMatchObject({ tries: 1, warnings: [] });
 	expect(await generateReply(item, style, fake([claim, claim]).call)).toMatchObject({ tries: 2, warnings: [expect.stringContaining("already sent")] });
 	expect(lintReply({ to: "kim@example.com", subject: "Re: 회의 일정 문의", body: "메일로 보내드렸습니다" }, item, style)).toEqual([]);
+});
+
+test("the closest past pair decides whether the draft follows an example, per kind, and no closeness counts as unfamiliar", () => {
+	expect(examplesUse("mail", FAMILIAR_AT.mail)).toBe("follow");
+	expect(examplesUse("mail", FAMILIAR_AT.mail - 0.01)).toBe("voice");
+	expect(examplesUse("comment", FAMILIAR_AT.comment)).toBe("follow");
+	expect(examplesUse("comment", FAMILIAR_AT.comment - 0.01)).toBe("voice");
+	expect(examplesUse("mail", undefined)).toBe("voice");
+});
+
+test("only the follow branch carries the follow-the-example instruction into the prompt", () => {
+	const examples = [{ received: "악보 받을 수 있을까요?", reply: "네, 보내드립니다." }];
+	expect(buildPrompt(item, { ...style, examples, closest: 0.9 }).system).toContain(ADAPT);
+	expect(buildPrompt(item, { ...style, examples, closest: 0.1 }).system).not.toContain(ADAPT);
+	expect(buildPrompt(item, style).system).not.toContain(ADAPT);
+});
+
+test("an unfamiliar message carries fewer examples than a familiar one", () => {
+	const examples = Array.from({ length: 8 }, (_, i) => ({ received: `질문 ${i}`, reply: `답 ${i}` }));
+	const shown = (closest: number) => buildPrompt(item, { ...style, examples, closest }).user.split("<<<REPLY").length - 1;
+	expect(shown(0.9)).toBe(8);
+	expect(shown(0.1)).toBe(3);
 });
