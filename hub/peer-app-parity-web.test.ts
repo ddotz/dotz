@@ -158,7 +158,7 @@ test("a peer's draft card answers on the Mac mini once and turns to 보냄; noth
 	acts.length = 0; localPosts.length = 0;
 	await run(v, `document.querySelector("#mon-tl .bm.dr .dr-send").click()`);
 	await waitFor(v, `!document.querySelector("#mon-tl .bm.dr .dr-send")`);   // answered: it leaves 확인 대기
-	expect(acts).toEqual([{ action: "answer", args: { id: "dp", n: 1 } }]);
+	expect(acts).toEqual([{ action: "answer", args: { id: "dp", n: 1, label: "보내기" } }]);
 	expect(localPosts.filter(x => x.path.startsWith("/api/notices"))).toEqual([]);
 	await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"]').click()`);
 	await waitFor(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"].on')`);
