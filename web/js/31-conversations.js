@@ -283,25 +283,25 @@ addEventListener("pagehide", () => viewReport(true));
 setInterval(viewReport, 2000);
 
 /* ---- the list ---- */
-// The main assistant and the two feeds first, then the running sessions under 진행 중 (one with a question waiting first), the projects by their
-// newest message (silent ones after, in project order). A session that ended stays in the list only while it is open; the ended ones fold into
-// one group after that, and the mails and rooms that wait on the owner close the list. 모니터링 has its own tab (30-monitoring.js) and uses this same row.
+// 진행 중 on top while a session runs or waits on the owner (sessionsNow, the 홈 card's own list; no header when none does), then the main assistant and the
+// two feeds, the projects by their newest message (silent ones after, in project order). A session out of 진행 중 keeps a row only while it is open or still
+// has something unread or asked; the ended ones fold into one group after that, and the mails and rooms that wait on the owner close the list. 모니터링 has its
+// own tab (30-monitoring.js) and uses this same row.
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
   const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need: convNeeds(t) }; };
   const all = (S && S.lanes) || [];
-  const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
-  const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
-  const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
+  const { wait, run } = sessionsNow(), now = [...wait, ...run];
+  const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionState(l), hint: convPreview(l.lastText) || m.hint || homeRunLine(t) }; };
   // A card per group, and last the 메일 · 카카오톡 card of what waits there.
   const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
-  const out = [MAIN, "worklog"].map(mk), lanes = running.map(sess);
-  if (lanes.length) out.push({ header: "진행 중", sec: true }, ...lanes);
+  const out = now.length ? [{ header: "진행 중", sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true }] : [];
+  out.push(...[MAIN, "worklog"].map(mk));
   if (page.length) out.push({ header: "프로젝트", sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
-  const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
-  if (open) out.push(sess(open));
+  const listed = new Set(now);
+  out.push(...all.filter(l => { const t = `lane:${l.name}`; return !listed.has(l) && (t === target || (laneAlive(l) && (ts(t).unread || convNeeds(t)))); }).map(sess));
   const ended = endedLanes();
   if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
   const waits = convWaiting();
@@ -325,6 +325,7 @@ function convCards(rows) {
   let box = null;
   for (const r of rows) {
     if (r.read) { const b = convReadBtn(); if (b) nodes.push(b); continue; }
+    if (r.split) { box = null; continue; }
     if (r.header) { nodes.push(el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
     if (!box) nodes.push(box = el("div", { class: "cv-card" }));
     box.append(convRow(r));
@@ -426,11 +427,12 @@ function convPaint() {
   if (sig !== convSig) {
     convSig = sig;
     convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
-    const top = convSide.scrollTop;
+    // 진행 중 sits above everything: a list read further down stays where it is when a session starts or ends.
+    const top = convSide.scrollTop, mark = () => (convSide.querySelector(`.cv-row[data-t="${MAIN}"]`) || {}).offsetTop || 0, was = mark();
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
     clear(convSide).append(...(monCtx ? monSideNodes(rows) : convCards(rows)));
     if (monCtx) monDecorateRows(convSide, items);
-    convSide.scrollTop = top;
+    convSide.scrollTop = top && top + mark() - was;
   }
   convSide.classList.toggle("mon-side", !!monCtx);
   $("#v-chat").classList.toggle("mon-ctx", !!monCtx);

@@ -140,7 +140,7 @@ test("the list pages 12 projects at a time, filters by need/running and searches
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 4`);
 	await run(v, `document.querySelector('.pl-chips [data-view="run"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 6`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("작업 중")))).toBe(true);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("진행 중")))).toBe(true);
 	await run(v, `document.querySelector('.pl-chips [data-view="all"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 12`);
 	// search narrows to the typed name
