@@ -177,6 +177,13 @@ describe("reply settings of the box", () => {
 		expect(model.calls[0]!.user).toContain("1. 문서 문의");
 		expect(model.calls[0]!.user).not.toContain(RULE.when);
 	});
+	test("an alone box follows none of the instance's rules or 기본 규칙", async () => {
+		writeSettings(env.dir, "mail", { draft_rules: [RULE], draft_default: "모든 메일에 넣는 지시" });
+		appSwitch(true);
+		const { model } = await draftIn({ alone: true, mode: "auto" });
+		expect(model.calls.some(isMatch)).toBe(false);
+		expect(JSON.stringify(model.calls)).not.toContain("모든 메일에 넣는 지시");
+	});
 	test("the box's folders join the 첨부 파일 폴더 for candidates; none keeps the single folder", async () => {
 		const own = join(lib, "box"), app = join(lib, "app");
 		for (const [dir, name] of [[own, "봄노래 문서 박스.pdf"], [app, "봄노래 문서 앱.pdf"]] as const) mkdirSync(dir, { recursive: true }), writeFileSync(join(dir, name), "x");

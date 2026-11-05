@@ -96,5 +96,21 @@ No new polling. No per-card file read. No per-mail model call for classification
 
 ## Folding per-source instances
 
-Some installs split one mailbox into several app instances by `source`. `bun hub/mailbox-cli.ts fold` turns them into mailboxes of one account, as data
-only. See the section written with that tool.
+Some installs split one mail account into several app instances by `filter.source`: an outside watch classifies the mail and posts it under a source per
+category. `hub/mailbox-cli.ts` turns them into mailboxes of one account. It changes data only; the classification stays the watch's, and a generic `conds.src`
+reads its sources.
+
+    bun hub/mailbox-cli.ts fold --base <the instance that becomes 일반>           # prints the plan, writes nothing
+    bun hub/mailbox-cli.ts fold --base <instance> --apply                         # keeps a backup under custom/mailbox-fold-<time>/
+    bun hub/mailbox-cli.ts undo <that backup>
+
+- Each folded instance becomes a box with `conds.src`; `--base` folds one into 일반. `--into` (default `mail`) and `--from` narrow it; by default it takes the
+  instances with a `filter.source` on the same `filter.account` as the target.
+- An instance with the same 기본 규칙, rules and folder as the target inherits them. One that differs becomes an `alone` box and keeps exactly what it had,
+  so no mail starts following rules it did not follow. `mode` stays undefined, so drafting does not change until the owner picks a mode.
+- Watches move to the target. `tone/<instance>.md` is copied to `tone/<target>/<box>.md`; the old file stays for drafts still waiting.
+- Stored mail is not rewritten: a record with no `mbox` is read through `conds.src`. Waiting drafts keep working: their send route is the mail's source and account.
+- Not carried, listed by the plan: `discord`, `delete_original`, `push`, `off`. Anything that names an old instance outside these files (`--app mail-orders` in a rule
+  or a watch script) has to be changed by hand before `--apply`: search the install for the old ids first.
+
+Before `--apply` on another install, ask its owner. Test it on a copy with `--data <dir>`.

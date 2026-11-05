@@ -171,7 +171,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		if (!requested && noAutoDraft(box)) return isDrafted(looked) ? "skipped" : (markDrafted(looked), "off");
 		// The rules of the mail's own app instance (the mailbox's own, when it has some); a mail of an instance without a rule switched on costs nothing more.
 		const own = allowed ? await rulesOf(instance) : undefined;
-		const rules = (allowed ? boxRules(box) ?? own?.rules ?? [] : []).filter(r => r.on);
+		const rules = (allowed ? boxRules(box) ?? (box?.alone ? [] : own?.rules ?? []) : []).filter(r => r.on);
 		// The judge of the other mailboxes rides on the rule match: only a mail still in the base box, that needs a reply, and nobody asked a draft for.
 		const judges = !requested && m.needs !== false && allowed ? ctx.judges : [];
 		if (!requested && !auto && !rules.length && !judges.length) return "off";
@@ -221,7 +221,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 			markDrafted(looked);
 			return "skipped";
 		}
-		const instruction = ruleInstruction(own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined, boxLines(box, item.from));
+		const instruction = ruleInstruction(box?.alone ? "" : own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined, boxLines(box, item.from));
 		if (instruction) item.instruction = instruction;
 		const read = Date.now();
 		refreshPairs(deps, log);
@@ -232,7 +232,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		const ruleFiles = !!rule?.files.length;
 		// The model chooses among candidates (the rule's files first, then the library matches); no model call picks them.
 		const asked = mailAsksFile(item);
-		const cands = ruleFiles || asked ? await candidatesFor(item, { source: m.source, ref: m.key }, rule, boxFolders(box)).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
+		const cands = ruleFiles || asked ? await candidatesFor(item, { source: m.source, ref: m.key }, rule, boxFolders(box), box?.alone).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
 		if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
 		else if (cands && asked) item.files = [];
 		const built = await buildDraft(item, { ...(box ? { box: box.id, instance } : {}), source: m.source, mailId: m.id, ref: m.key, ...(m.account ? { account: m.account } : {}), ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
