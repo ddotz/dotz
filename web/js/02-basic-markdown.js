@@ -109,8 +109,9 @@ function blocks(text, last, answer) {
   };
   const flushT = () => {
     if (!table) return;
-    const [head, ...rest] = table.head ? table.rows : [null, ...table.rows];
-    html.push(`<div class="tbl"><table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+    const [head, ...rest] = table.head ? table.rows : [null, ...table.rows], card = answer && head && rest.length > 0 && head.length <= ANS_TABLE_COLS;
+    if (card) answer.shaped = true;
+    html.push(`<div class="${card ? "ans-card ans-tb" : "tbl"}">${card ? `<div class="mlist-url" aria-hidden="true">${table.raw.map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}<table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map((c, i) => card && !i ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
     table = null;
   };
   for (let i = 0; i < lines.length; i++) {
@@ -119,7 +120,8 @@ function blocks(text, last, answer) {
     if (run) { flushT(); flushP(); flushL(); html.push(sourceListHtml(run)); i = run.end - 1; continue; }
     if (/^\s*\|.*\|\s*$/.test(line)) {
       flushP(); flushL();
-      if (!table) table = { rows: [], head: false };
+      if (!table) table = { rows: [], head: false, raw: [] };
+      table.raw.push(line.trim());
       if (isSep(line)) { if (table.rows.length === 1) table.head = true; } else table.rows.push(cells(line));
       continue;
     }
