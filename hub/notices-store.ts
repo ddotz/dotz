@@ -52,16 +52,14 @@ export function pruneWatch(): boolean {
 	items = kept;
 	return true;
 }
-// Oldest read item goes first; when everything is unread, the oldest one. An open decision is never dropped.
+// Oldest read item goes first; when everything is unread, the oldest one. An open decision is never dropped, nor is a closed card whose send
+// failed until it is handled or dismissed (the owner has not seen the failure yet). One sort and one filter, however far over the cap the store is.
+const keptByTrim = (i: Notice): boolean => isOpenDecision(i) || (i.decision?.send?.state === "failed" && !i.handled && !i.dismissed);
 function trim(): void {
-	while (items.length > NOTICE_CAP) {
-		const oldest = (list: Notice[]) => list.reduce((a, b) => (b.updated < a.updated ? b : a));
-		const droppable = items.filter(i => !isOpenDecision(i));
-		if (!droppable.length) return;
-		const pool = droppable.filter(i => i.read);
-		const drop = oldest(pool.length ? pool : droppable);
-		items = items.filter(i => i !== drop);
-	}
+	const over = items.length - NOTICE_CAP;
+	if (over <= 0) return;
+	const drop = new Set(items.filter(i => !keptByTrim(i)).sort((a, b) => Number(b.read) - Number(a.read) || (a.updated < b.updated ? -1 : a.updated > b.updated ? 1 : 0)).slice(0, over));
+	if (drop.size) items = items.filter(i => !drop.has(i));
 }
 
 // `repeat`: overwrites the alert it repeats (alert-gate), `fold`: a monitor report that joins the watch's newest row; both keep the old text in `repeats`.

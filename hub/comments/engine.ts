@@ -3,7 +3,7 @@
 import { generateReply, lessonOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
@@ -27,6 +27,8 @@ export type MailLink = {
 	send: (id: string, opts?: { asIs?: true }) => Promise<{ ok: boolean; text: string }>;
 	/** Where the mail draft's words and files disagree; checked before the reply is posted. Missing = nothing to check. */
 	issues?: (id: string) => string[];
+	/** What the mail's send-time lint would refuse (placeholder, forbidden expression, recipient), as the owner reads it; checked before the reply is posted, also for 이대로 보내기. Missing = nothing to check. */
+	lint?: (id: string) => string[];
 	drop: (id: string) => void;
 	revise: (id: string, change: string) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
 	view: (id: string) => MailView | undefined;
@@ -60,6 +62,11 @@ export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === 
 function mailRefusal(mail: MailLink | undefined, mailId: string): GateResult | undefined {
 	const issues = mail?.issues?.(mailId) ?? [];
 	return issues.length ? { ok: false, reason: `${ATTACH_REFUSED} ${issues.join(" · ")}. 답글도 올리지 않았어요. ${ATTACH_AS_IS_HINT}` } : undefined;
+}
+// The mail's own send-time lint runs before the reply is posted too: a hit there would leave a posted reply and an unsent mail.
+function mailLintRefusal(mail: MailLink | undefined, mailId: string): GateResult | undefined {
+	const found = mail?.lint?.(mailId) ?? [];
+	return found.length ? { ok: false, reason: `${LINT_REFUSED} ${found.join(" · ")}. 답글도 올리지 않았어요.` } : undefined;
 }
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
@@ -282,7 +289,7 @@ export function createEngine(deps: EngineDeps) {
 	// by itself: hub/mail-cli.ts ask/send).
 	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule"; only?: "reply"; asIs?: true }): GateResult {
 		const mailId = opts.by === "owner" && opts.only !== "reply" ? store.drafts().find(d => d.code === codeOrId)?.mail : undefined;
-		const r = (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}) }, gate);
+		const r = (mailId ? mailLintRefusal(deps.mail, mailId) : undefined) ?? (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}) }, gate);
 		if (!r.ok) return r;
 		const done = mailId ? r.done.then(rep => sendMail(rep, mailId, opts.asIs)) : r.done;
 		pending.add(done);

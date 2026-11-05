@@ -18,7 +18,7 @@ export { refreshDraftFiles, syncDraftFiles, markDraftPosted, openDraftRefs, open
 export { settleExpiredQuestions, settleOpenDecision, answerDecision, authRequested, authSettled, orchestratorAnswered, resolveNotices, ignoreNotice, unignoreNotice, reopenNotices } from "./notices-answers.ts";
 export type { DecisionSend } from "./notices-answers.ts";
 export { laneVerified, UPDATE_NOTICE_KEY, updateAvailable, accountUsedChanged, updateResolved } from "./notices-signals.ts";
-export { laneHasOpenCard, setViewing, dropLaneNotices, dropChannelNotices, countChannelNotices, listNotices, dismissedAlertAts, dismissNotice, handledNotice, undismissNotice } from "./notices-bell.ts";
+export { laneHasOpenCard, setViewing, dropLaneNotices, dropChannelNotices, countChannelNotices, listNotices, allNotices, dismissedAlertAts, dismissNotice, handledNotice, undismissNotice } from "./notices-bell.ts";
 
 onBroadcast(e => {
 	if (DRAFT_CHANGED.has(String(e.kind))) settleSoon();

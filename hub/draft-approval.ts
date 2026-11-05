@@ -39,6 +39,8 @@ export const DRAFT_OWN = "어떻게 보낼지 직접 입력";
 export const DRAFT_AS_IS = "이대로 보내기";
 export const ATTACH_MARK = "-# ⚠️ 첨부 확인: ";
 export const ATTACH_REFUSED = "첨부를 확인해 주세요:";
+// The send-time lint (placeholder, forbidden expression, recipient) refused the mail; the findings follow.
+export const LINT_REFUSED = "보내기 직전 검사에서 걸려서 보내지 않았어요:";
 // The refusal says how to go on from any screen: Discord's buttons are spent by the pick that was refused, a typed "이대로 보내" answers too (draftVerdict).
 export const ATTACH_AS_IS_HINT = "그래도 보내려면 카드에서 '이대로 보내기'를 고르거나 '이대로 보내'라고 답해 주세요";
 const ATTACH_HELD = ". 첨부가 맞을 때까지는 보내지 않아요";

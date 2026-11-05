@@ -45,12 +45,20 @@ export function dropChannelNotices(conv: string, messagesOnly = false): number {
 // How many notices dropChannelNotices(conv) would retire (the project delete sheet lists it).
 export const countChannelNotices = (conv: string): number => channelNotices(conv, false).length;
 
-// Unread first, then the most recently updated.
-export function listNotices(limit = 100): { items: Notice[]; unread: number } {
-	const n = Math.max(1, Math.min(Math.floor(limit) || 100, NOTICE_CAP));
+// Open decisions first, then unread, then the most recently updated.
+const sortedNotices = (): Notice[] => {
 	const shown = items.filter(i => !i.dismissed && !appBlocked(i));
 	const order = new Map(shown.map((i, idx) => [i, idx]));
-	const sorted = [...shown].sort((a, b) => Number(isOpenDecision(b)) - Number(isOpenDecision(a)) || Number(a.read) - Number(b.read) || b.updated.localeCompare(a.updated) || order.get(b)! - order.get(a)!);
+	return [...shown].sort((a, b) => Number(isOpenDecision(b)) - Number(isOpenDecision(a)) || Number(a.read) - Number(b.read) || b.updated.localeCompare(a.updated) || order.get(b)! - order.get(a)!);
+};
+// The same list with no limit: what a lookup or a scan inside the hub reads (a limit would hide a card past it).
+export const allNotices = (): Notice[] => sortedNotices().map(i => withClass(i, readable(i)));
+
+// `keepOpen` (GET /api/notices): never fewer rows than the open decisions plus 100, so no open card falls off the page.
+export function listNotices(limit = 100, keepOpen = false): { items: Notice[]; unread: number } {
+	const sorted = sortedNotices();
+	const base = Math.max(1, Math.min(Math.floor(limit) || 100, NOTICE_CAP));
+	const n = keepOpen ? Math.max(base, sorted.filter(isOpenDecision).length + 100) : base;
 	return { items: sorted.slice(0, n).map(i => withClass(i, readable(i))), unread: unreadCount() };
 }
 
