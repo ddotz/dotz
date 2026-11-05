@@ -96,6 +96,8 @@ describe("an offer drafted by a rule", () => {
 		rulesOff([other, RULE], "존댓말로 짧게");
 		const m = fakeModel(["2", j(reply)]);
 		const out = sink();
+		expect(await offerMailDraft({ ...askMail, key: "r-self", source: "company" }, { send: out.send, call: fakeModel([]).call, own: s => (s === "company" ? ["parent@example.com"] : []) })).toBe("skipped");
+		expect(out.sent).toEqual([]);
 		expect(await offerMailDraft(askMail, { send: out.send, suggest: out.suggest, call: m.call })).toBe("offered");
 		expect(m.calls).toHaveLength(2);
 		expect(m.calls[1]!.user).toContain(`존댓말로 짧게 ${RULE.how}`);

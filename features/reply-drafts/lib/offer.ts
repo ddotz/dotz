@@ -32,8 +32,8 @@ export type OfferDeps = {
 	log?: (line: string) => void;
 	/** Records the suggested action on the mail (hub/mail.ts setMailSuggest), for the web's suggestion slot of that mail. */
 	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string; rule?: string }) => void;
-	/** The owner's own addresses (hub/mail-state.ts ownAddresses in the gateway): never a recipient of 전체 답장. Absent = the mail's 받는 사람. */
-	own?: () => string[];
+	/** The owner's own addresses for a mail source (hub/mail-state.ts ownAddressesFor in the gateway): never a recipient of 전체 답장, and a mail from one gets no draft. Absent = the mail's 받는 사람. */
+	own?: (source: string) => string[];
 };
 
 // The text a model call sees is capped; a long thread's tail (quoted history) adds tokens and nothing for the reply.
@@ -160,7 +160,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		// One look per message: a newer message of the same thread (messageId) is looked at again, a repeat of the same one is not.
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
 		if (!requested && isDrafted(looked)) return "skipped";
-		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: deps.own?.() ?? addressesOf(m.to), to: addressesOf(m.to), ...(m.cc ? { cc: addressesOf(m.cc) } : {}), subject: m.subject, text: "", ...(requested ? { requested: true } : {}), ...(requested && m.instruction?.trim() ? { instruction: m.instruction.trim().slice(0, 500) } : {}) };
+		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: deps.own?.(m.source) ?? addressesOf(m.to), to: addressesOf(m.to), ...(m.cc ? { cc: addressesOf(m.cc) } : {}), subject: m.subject, text: "", ...(requested ? { requested: true } : {}), ...(requested && m.instruction?.trim() ? { instruction: m.instruction.trim().slice(0, 500) } : {}) };
 		// Learning stays on the shared mail profile; only the writing, the revising and the send check read the instance's own profile.
 		if (hasOwnTone(instance)) item.profile = instance;
 		if (!requested && precheck(item, settings.senders, { addressLater: true })) {

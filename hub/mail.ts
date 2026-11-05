@@ -7,7 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, evictSurplus, migrateMails, nextReply, ownAddresses, replyExclusion, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
+import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, evictSurplus, migrateMails, nextReply, noteOwnSender, ownAddresses, replyExclusion, replyExpected, replyOf, selfSent, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 import { withSenderAddress } from "./reply-draft.ts";
 import { isFailedSummary, needsHubSummary, shownSummary } from "./mail-summary.ts";
@@ -105,6 +105,7 @@ setOwnAddresses("config", [aliases.mail?.own_addresses, aliases.zele?.aliases].f
 if (migrateMails(records as StoredMail[])) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
 
 export const mailByKey = (key: string): MailRecord | undefined => byKey.get(key);
+const cueOf = (r: MailRecord) => ({ source: r.source, account: r.account, from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "", list: r.list });
 
 /** The hub-made summary of a mail (hub/mail-summary.ts): kept instead of its empty or failure-placeholder summary, the preview given up. False when the mail is gone or has a usable summary. */
 export function setMailSummary(key: string, summary: string): boolean {
@@ -112,7 +113,7 @@ export function setMailSummary(key: string, summary: string): boolean {
 	if (!r || !needsHubSummary(r) || !summary.trim()) return false;
 	r.summary = summary;
 	delete r.preview;
-	if (r.dir !== "out" && !replyOf(r) && replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: summary, list: r.list })) r.reply = "needs";
+	if (r.dir !== "out" && !replyOf(r) && replyExpected(cueOf(r))) r.reply = "needs";
 	persistSoon();
 	return true;
 }
@@ -121,6 +122,7 @@ export function setMailSummary(key: string, summary: string): boolean {
 export function setMailSuggest(key: string, suggest: MailSuggest | undefined): boolean {
 	const r = byKey.get(key);
 	if (!r) return false;
+	if (suggest?.state === "waiting" && selfSent(r)) return true;
 	const { suggest: _old, needsReply: _n, noReply: _o, reply_by, reply_at, ...rest } = r;
 	const event: MailReplyEvent | undefined = !suggest ? undefined : suggest.state === "sent" ? "sent" : suggest.state === "waiting" ? "need" : "draft";
 	const reply = event && r.dir !== "out" ? nextReply(replyOf(rest), event) : replyOf(rest);
@@ -137,7 +139,7 @@ export function setMailReply(key: string, event: MailReplyEvent, at = new Date()
 	const r = byKey.get(key);
 	if (!r) return false;
 	if (r.dir === "out") return true;
-	if ((event === "skip" || event === "fyi") && by !== "owner") return true;
+	if ((event === "skip" || event === "fyi" || (event === "need" && selfSent(r))) && by !== "owner") return true;
 	const next = replyNext(r, event, at, by);
 	if (JSON.stringify(next) !== JSON.stringify(r)) recordMail(next);
 	return true;
@@ -268,13 +270,12 @@ export function mailOpened(target: string): void {
 		log(`mail ${r.key}: not marked read in its mailbox: ${(error as Error).message}`);
 	}
 }
-/** 답장 필요 that the gateway or a poster set on a mail he is not a main recipient of goes (his own 답장 필요로 표시 stays). One write. */
+/** 답장 필요 that the gateway or a poster set on a mail he is not a main recipient of or wrote himself goes (his own 답장 필요로 표시 stays). One write. */
 function settleNotMine(): string[] {
-	const own = ownAddresses();
 	const gone: string[] = [];
 	for (const r of records) {
 		if (r.dir === "out" || r.reply !== "needs" || r.reply_by === "owner") continue;
-		if (!replyExclusion({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "", list: r.list }, own)) continue;
+		if (!replyExclusion(cueOf(r))) continue;
 		delete r.reply;
 		gone.push(r.key);
 	}
@@ -294,6 +295,7 @@ export function recordMail(r: MailRecord): void {
 		if (i >= 0) records.splice(i, 1);
 	}
 	byKey.set(r.key, r);
+	if (r.dir === "out") noteOwnSender(r.source, r.from);
 	let at = records.length;
 	while (at > 0 && records[at - 1]!.at.localeCompare(r.at) > 0) at--;
 	records.splice(at, 0, r);
@@ -460,7 +462,7 @@ export function briefMail(key: string, text: string): boolean {
 	const brief = mailBriefOf(text, r.from, r.subject);
 	if (!brief) return false;
 	r.summary = brief;
-	if (r.dir !== "out" && !replyOf(r) && replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: brief, list: r.list })) r.reply = "needs";
+	if (r.dir !== "out" && !replyOf(r) && replyExpected(cueOf(r))) r.reply = "needs";
 	persistSoon();
 	return true;
 }
@@ -520,8 +522,8 @@ const mailStateOf = (m: MailRecord, sent: boolean) => {
 /** Why an incoming mail is not 답장 필요 although it may look like it: he is not a main recipient (hub/mail-state.ts replyExclusion). */
 const whyOf = (m: MailRecord): string | undefined => {
 	if (m.dir === "out") return undefined;
-	const x = replyExclusion({ from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: m.summary || m.preview || "", list: m.list });
-	return x ? EXCLUSION_LABEL[x] : undefined;
+	const x = replyExclusion(cueOf(m));
+	return x && x !== "self" ? EXCLUSION_LABEL[x] : undefined;
 };
 /** What the web draws a mail row from (GET /api/conversations `mail`, and a watch report that points at the mail): no stored paths.
  *  `why` = the small reason tag of a mail he is not a main recipient of (참조로 받음, 단체 메일...). */
@@ -741,7 +743,7 @@ const addresses = (s: string | undefined): string[] => (s ?? "").toLowerCase().m
 export function answeredBy(out: { subject: string; to?: string; cc?: string; at: string }): string[] {
 	const base = baseSubject(out.subject), to = new Set([...addresses(out.to), ...addresses(out.cc)]);
 	if (!base || !to.size) return [];
-	return records.filter(r => r.dir !== "out" && r.at <= out.at && baseSubject(r.subject) === base && addresses(r.from).some(a => to.has(a))).map(r => r.key);
+	return records.filter(r => r.dir !== "out" && r.at <= out.at && baseSubject(r.subject) === base && addresses(r.from).some(a => to.has(a)) && !selfSent(r)).map(r => r.key);
 }
 
 async function post(m: MailInput, key: string, target: string, deps: MailDeps, reopened?: MailRecord): Promise<MailResult> {
@@ -772,8 +774,8 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
 	// 답장 필요: the poster's word, else the gateway reads the mail (hub/mail-state.ts replyExpected).
-	// Never when he is not a main recipient (only in Cc, a list or group mail, a machine sender), whatever the poster says.
-	const cue = { from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: summary || m.body || "", list: m.list };
+	// Never when he is not a main recipient (only in Cc, a list or group mail, a machine sender) or wrote it himself, whatever the poster says.
+	const cue = { source: m.source, account: m.account, from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: summary || m.body || "", list: m.list };
 	const needs = (m.needsReply && !replyExclusion(cue)) || replyExpected(cue);
 	recordMail({ ...(m.list ? { list: true as const } : {}), ...(m.account ? { account: m.account } : {}), key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: now } : {}) });
 	// `incoming`: a mail that came in (not the owner's own draft, composeMail): the bell's 새 소식 and the phone notification for it (hub/notices.ts fromInbox).
@@ -781,8 +783,9 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
 	// `needs`: a mail that does not need a reply gets no automatic draft unless one of its app's draft rules is on (features/reply-drafts/lib/offer.ts).
+	// His own mail gets none at all.
 	try {
-		deps.offerDraft?.({ ...(m.account ? { account: m.account } : {}), key, target, needs, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}) });
+		if (!selfSent(cue)) deps.offerDraft?.({ ...(m.account ? { account: m.account } : {}), key, target, needs, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}) });
 	} catch (error) {
 		log(`mail ${key}: reply draft offer failed: ${(error as Error).message}`);
 	}
