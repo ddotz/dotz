@@ -55,7 +55,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mopen .mb-txt { padding: 0; border: 0; background: none; }
 .mopen .mb-frame { border: 0; }
 /* the files: chips with the name and the size, one download each (principle 3); the head is a grey word, not a bold line */
-.mopen > .mr-files { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: 0; padding-top: 0; border-top: 0; }
+.mopen > .mr-files { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-15) 0 var(--sp-1); padding-top: 0; border-top: 0; }
 .mopen > .mr-files > .mr-fh { flex: 1 0 100%; font-weight: 500; }
 .mopen > .mr-files > .mr-file { position: relative; min-height: 36px; max-width: 100%; padding: 0 var(--sp-3); gap: var(--sp-15); background: var(--layer); font-size: 13px; }
 .mopen > .mr-files > .mr-file::after { content: ""; position: absolute; inset: -4px 0; }
