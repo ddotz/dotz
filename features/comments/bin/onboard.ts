@@ -14,6 +14,7 @@ import { createHub } from "../../../hub/kakao/hub.ts";
 import { loadConfig } from "../../youtube-instagram/lib/config.ts";
 import { IMPORT_HINT, legacyGate } from "../../youtube-instagram/lib/legacy.ts";
 import { cleanExample } from "../../youtube-instagram/lib/reply-adapter.ts";
+import { learnedCheck } from "../../reply-drafts/lib/persona.ts";
 import { dataDir, writeExamples } from "../../reply-drafts/lib/settings.ts";
 import { pickExamples } from "../../reply-drafts/lib/tone.ts";
 
@@ -177,6 +178,8 @@ export async function runOnboard(args: string[], deps: { engine?: Engine; gatewa
 			// Fewer than 20 replies give no identity: their sentences still become the examples.
 			if (past.pairs < 20) writeExamples({ app: key }, pickExamples(past.replies.map(cleanExample).filter(Boolean), 20));
 			lines.push(`내가 쓴 지난 답글 ${past.pairs}개를 읽어 말투를 배웠어요`);
+			const check = learnedCheck({ app: key });
+			if (check) lines.push(check);
 		}
 	} catch {
 		await fromOwn();

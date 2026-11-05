@@ -1,8 +1,8 @@
 // One-request onboarding for a mail site zele cannot reach: preflight -> login (the browser's saved password, background)
 // -> record the client's calls -> generate the adapter -> live list + read test (with a read-endpoint probe) -> config,
 // card, sidebar, feature switch -> new-mail watch and session-keeping watch -> the site's own 메일 app instance (its 모니터링 row, settings,
-// 연결 끊김 state; docs/custom-plugins.md "Registering a mail reader as a mail instance") -> the sent folder: its calls recorded, its whole
-// content read and learned as the owner's own past replies and tone. Every step is idempotent and the state file
+// 연결 끊김 state; docs/custom-plugins.md "Registering a mail reader as a mail instance") -> the sent folder: its calls recorded, its newest
+// mails read and learned as the owner's own past replies and tone. Every step is idempotent and the state file
 // records where it is, so an interrupted run resumes at that step. Every owner action (a missing saved password, a second
 // factor) is gathered into one ask; the next run with `approve` carries on to the end. Progress is one evolving message.
 // All side effects go through `Io`, so the whole flow runs against a fake mail server in the tests.
@@ -55,7 +55,7 @@ export type Io = {
 	record(url: string, deep: boolean): Promise<CapturedRequest[]>;
 	/** The calls the sent folder made when its link was opened in the background tab; [] when there is no such link or the recording failed. */
 	recordSent(url: string): Promise<CapturedRequest[]>;
-	/** Reads the whole sent folder (mail.ts sent) and learns it (reply-drafts learnSiteSent); returns a note for the summary. */
+	/** Reads the newest sent mails (mail.ts sent) and learns them (reply-drafts learnSiteSent); returns a note for the summary. */
 	learnSent(site: string): Promise<string | undefined>;
 	gateway: Gateway;
 	progress(text: string): Promise<void>;

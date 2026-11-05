@@ -44,7 +44,7 @@ async function login(url: string, allowSecondFactor: boolean): Promise<LoginResu
 	return loginViaRepl((code, ms) => run(["aside", "repl", beforeKill(code, ms)], ms), url, allowSecondFactor);
 }
 
-// The whole sent folder through mail.ts (the same read-only command the orchestrator uses), learned by reply-drafts as past replies and, for an instance
+// The newest sent mails through mail.ts (the same read-only command the orchestrator uses), learned by reply-drafts as past replies and, for an instance
 // with no tone profile yet, as its own profile. Loaded on use: reply-drafts is not needed to connect a site.
 async function learnSent(site: string): Promise<string | undefined> {
 	const out = await run(["bun", join(import.meta.dir, "mail.ts"), site, "sent"], 30 * 60_000);

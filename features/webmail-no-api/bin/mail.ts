@@ -50,16 +50,16 @@ export async function runSearch(ctx: Ctx, spec: SiteSpec, q: string): Promise<{ 
 
 // epoch seconds or ms as a string, else a date text; 0 when the site gives none
 const atOf = (time: string): number => (/^\d{10}$/.test(time) ? Number(time) * 1000 : /^\d{13}$/.test(time) ? Number(time) : Date.parse(time) || 0);
-const SENT_READERS = 4;
 
-// The sent folder as one JSON line per mail `{id,to,subject,at,body}` (reply-drafts SentMail), newest first. A mail that cannot be read is left out. Read-only.
+// The newest `limit` sent mails as one JSON line per mail `{id,to,subject,at,body}` (reply-drafts SentMail), newest first. A mail that cannot be read is left out. Read-only.
+// One read at a time: a real server answered reads run side by side with blank bodies.
 export async function runSent(ctx: Ctx, spec: SiteSpec, limit = SENT_LIMIT): Promise<{ lines: string[]; code: number }> {
 	if (!spec.sent) return { lines: ["이 사이트 스펙에는 보낸편지함(sent)이 없어요"], code: 1 };
 	const mails = await sentList(ctx, spec, limit);
 	const lines: string[] = [];
-	for (let i = 0; i < mails.length; i += SENT_READERS) {
-		const got = await Promise.all(mails.slice(i, i + SENT_READERS).map((m) => read(ctx, spec, m.id).then((d) => ({ m, d }), (e: Error) => (ctx.log(`sent ${m.id}: ${e.message}`), undefined))));
-		for (const g of got) if (g) lines.push(JSON.stringify({ id: g.m.id, to: g.m.to ?? "", subject: g.m.subject, at: atOf(g.m.time), body: g.d.body }));
+	for (const m of mails) {
+		const d = await read(ctx, spec, m.id).catch((e: Error) => void ctx.log(`sent ${m.id}: ${e.message}`));
+		if (d) lines.push(JSON.stringify({ id: m.id, to: m.to ?? "", subject: m.subject, at: atOf(m.time), body: d.body }));
 	}
 	return { lines, code: 0 };
 }
