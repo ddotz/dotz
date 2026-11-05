@@ -43,6 +43,21 @@ describe("mail key", () => {
 	});
 });
 
+describe("the account of a mail an outside watch posts", () => {
+	test("the one zele account among its recipients is the account; none or two leave it unknown", async () => {
+		const { deps } = fakes(false);
+		setOwnAddresses("zele", ["a@example.com", "b@example.com"]);
+		try {
+			const post = async (to: string) => mailByKey((await postMail({ source: "cat", id: uid("acct"), subject: "악보 요청", from: "Kim <kim@example.com>", to }, deps)).key)?.account;
+			expect(await post("Owner <a@example.com>")).toBe("a@example.com");
+			expect(await post("kim@example.com")).toBeUndefined();
+			expect(await post("a@example.com, b@example.com")).toBeUndefined();
+		} finally {
+			setOwnAddresses("zele", []);
+		}
+	});
+});
+
 describe("postMail", () => {
 	test("with a poster's thread: recorded, one mail event in mail:<key>, no thread opened", async () => {
 		const { deps, calls } = fakes(true);

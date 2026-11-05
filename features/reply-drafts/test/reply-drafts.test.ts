@@ -135,7 +135,7 @@ test("the lint runs again right before sending", async () => {
 test("sending routes by source: the mail CLI reads then replies to the mail id, an unknown source is refused for the user to send by hand", async () => {
 	const { rec } = await offered();
 	const argvs: string[][] = [];
-	const run: Runner = async argv => (argvs.push(argv), { code: 0, stdout: "", stderr: "" });
+	const run: Runner = async argv => (argv[1] === "whoami" || argvs.push(argv), { code: 0, stdout: "", stderr: "" });
 	expect((await sendWith(rec!, run)).ok).toBe(true);
 	expect(argvs).toEqual([
 		["zele", "mail", "read", "msg-1"],
@@ -149,7 +149,7 @@ test("sending routes by source: the mail CLI reads then replies to the mail id, 
 test("webmail source: draft, approve and send of that feature, in that order", async () => {
 	const { rec } = await offered();
 	const argvs: string[][] = [];
-	const run: Runner = async argv => (argvs.push(argv), { code: 0, stdout: argv[3] === "draft" ? "초안 저장: d-1\n" : "ok\n", stderr: "" });
+	const run: Runner = async argv => (argv[1] === "whoami" || argvs.push(argv), { code: 0, stdout: argv[3] === "draft" ? "초안 저장: d-1\n" : "ok\n", stderr: "" });
 	expect((await sendWith({ ...rec!, source: "webmail:work" }, run)).ok).toBe(true);
 	expect(argvs.map(a => a.slice(3, 5))).toEqual([["draft", "kim@example.com"], ["approve"], ["send", "d-1"]]);
 	expect(argvs.every(a => a[2] === "work")).toBe(true);

@@ -7,7 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { directionOf, EXCLUSION_LABEL, migrateMails, nextReply, ownAddresses, replyExclusion, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
+import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, migrateMails, nextReply, ownAddresses, replyExclusion, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 import { withSenderAddress } from "./reply-draft.ts";
 import { isFailedSummary, needsHubSummary, shownSummary } from "./mail-summary.ts";
@@ -566,8 +566,16 @@ export function mailText(m: Pick<MailInput, "from" | "subject" | "summary" | "bo
 // A watcher retrying the same mail while the first post still opens its thread must not open a second one.
 const inflight = new Map<string, Promise<MailResult>>();
 
+// An outside watch names the mailbox among the recipients, not as `account`: the one logged-in account there is the mail's, so its reply can go through it.
+function accountOfRecipients(to: string | undefined): string | undefined {
+	const logins = addressesOf("zele");
+	const mine = new Set((to ?? "").split(",").map(a => addressKey(a)).filter(a => logins.has(a)));
+	return mine.size === 1 ? [...mine][0] : undefined;
+}
+
 export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult> {
 	const m = parseMail(raw);
+	m.account ??= accountOfRecipients(m.to);
 	if (isFailedSummary(m.summary)) delete m.summary;
 	// A source that reports the sender by name only (a list view's cut-off display name): the address is read from the mail's own text, so the
 	// list, the draft's recipient and every reply rule see a real sender.
