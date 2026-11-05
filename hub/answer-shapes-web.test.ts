@@ -16,6 +16,7 @@ const cases: Record<string, object> = {
 	gateway: answer(LABELS, { source: "gateway" }),
 	started: answer(`\u23f3 시작했어요.\n\n${LABELS}`),
 	relay: answer(LABELS, { relay: true }),
+	result: { kind: "result", source: "gateway", target: "web", title: "앨범", verified: true, open: "lane:a", text: `앨범을 고쳤어요.\n${LABELS}` },
 	alreadyBold: answer(`**앨범을 고쳤어요. 새로고침**하면 돼요.\n\n${LABELS}`),
 	version: answer(`v1.2 버전에서 고쳤어요. 끝이에요.\n\n${LABELS}`),
 	files: answer("가계부를 정리했어요. 식비가 늘었어요.\n\n[file] /files/가계부.xlsx\n[file] /files/요약.pdf\n\n근거: 카드 212건 대조 · 빠진 건 없음"),
@@ -102,8 +103,15 @@ test("a mark open across the cut keeps the paragraph as written", async () => {
 	expect(await count("alreadyBold", ".ans-card")).toBe(1);
 });
 
-test("only a finished assistant answer gets shapes", async () => {
-	for (const n of ["gateway", "started", "relay", "user"]) expect(await count(n, ".ans-card")).toBe(0);
+test("a gateway line, a relayed line and the owner's words get no shapes", async () => {
+	for (const n of ["gateway", "relay", "user"]) expect(await count(n, ".ans-card")).toBe(0);
+});
+
+test("a start notice and a session's result are one card each, in their own row", async () => {
+	expect(await count("started", ".ans-keys")).toBe(1);
+	expect(await count("result", ".ccard .ans-keys")).toBe(1);
+	expect(await page<number>(`document.querySelectorAll(".bm.res").length`)).toBe(1);
+	expect(await page<number>(`[...document.querySelectorAll("#tl [data-ts]")].filter(n => n.textContent.includes("시작했어요")).length`)).toBe(1);
 });
 
 test("a selected answer gives the words on screen, a selected part only that part", async () => {
