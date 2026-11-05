@@ -9,10 +9,10 @@ import { dirname, join } from "node:path";
 import { loadConfig, realCtx } from "../../youtube-instagram/lib/config.ts";
 import { cleanExample, ownReplyTexts, snsConnected } from "../../youtube-instagram/lib/reply-adapter.ts";
 import type { Platform } from "../../youtube-instagram/lib/watchkit.ts";
-import { appOn, dataDir, listProfiles, loadSettings, paths, REPO_FEATURE, saveSettings, setApp, validApp, type ToneKey } from "../lib/settings.ts";
+import { appOn, dataDir, learnedCheck, listProfiles, loadSettings, paths, REPO_FEATURE, saveSettings, setApp, validApp, type ToneKey } from "../lib/settings.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { defaultCall } from "../lib/flow.ts";
-import { learnedCheck, MAIL_TONE_VERSION, markVersion, sweep } from "../lib/persona.ts";
+import { MAIL_TONE_VERSION, markVersion, sweep } from "../lib/persona.ts";
 import { learnTone, realRunner, sentAccounts, SWEEP_LIMIT, toneSummary, zeleEnabled, type Runner } from "../lib/tone.ts";
 
 type Out = { lines: string[]; code: number };

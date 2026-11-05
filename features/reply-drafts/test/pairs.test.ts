@@ -7,9 +7,9 @@ import { buildPrompt, type ReplyItem, type ReplyStyle } from "../../../hub/reply
 import { buildDraft, mailStyleOf, reviseDraft, sendDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { habitsOf } from "../../../hub/comments/past.ts";
-import { addPair, loadPairs, MAX_PAIRS, savePairs, styleWithExamples } from "../lib/pairs.ts";
+import { addPair, styleWithExamples } from "../lib/pairs.ts";
 import { learnFirst, learnSiteSent, MAIL_TONE_VERSION } from "../lib/persona.ts";
-import { identityOf, listProfiles, loadStyle, paths, toneFile } from "../lib/settings.ts";
+import { identityOf, listProfiles, loadPairs, loadStyle, MAX_PAIRS, paths, savePairs, toneFile } from "../lib/settings.ts";
 import { getDraft, listDrafts as storedDrafts } from "../lib/store.ts";
 import { learnTone, ownText, sentMail, sentPairs, type PluginSent, type Runner, type SentMail } from "../lib/tone.ts";
 import { enable, fakeModel, j, mailFixture, pick, setupEnv } from "./helpers.ts";

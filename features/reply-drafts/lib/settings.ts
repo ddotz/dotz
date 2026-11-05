@@ -294,3 +294,56 @@ export function listProfiles(): string[] {
 	if (!out.includes("mail.md") && existsSync(paths.legacyStyle())) out.push("mail.md (style.md)");
 	return out.sort();
 }
+
+/** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). `source`: the mail source whose sent folder it came from (a mail site, a plugin); absent = zele (comment pairs have their own file per source, so no tag).
+ * `edited`: the user changed the draft by hand before sending. `thread`: the post a comment pair sits under. */
+export type Pair = { received: string; reply: string; at: number; from?: string; source?: string; edited?: true; thread?: string };
+
+export const MAX_PAIRS = 1000;
+
+export const normText = (s: string): string => s.replace(/\s+/g, " ").trim().toLowerCase();
+
+export function loadPairs(app: string): Pair[] {
+	const file = paths.pairs(app);
+	if (!existsSync(file)) return [];
+	const out: Pair[] = [];
+	let unreadable = 0;
+	for (const line of readFileSync(file, "utf8").split("\n")) {
+		if (!line.trim()) continue;
+		try {
+			const p = JSON.parse(line);
+			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}), ...(p.edited === true ? { edited: true as const } : {}), ...(typeof p.thread === "string" && p.thread ? { thread: p.thread } : {}) });
+		} catch {
+			unreadable++;
+		}
+	}
+	if (unreadable) console.error(`reply draft: ${unreadable} unreadable line(s) in ${file} skipped`);
+	return out;
+}
+
+// Deduped by reply + received (the newest of a repeat stays, but takes the sender, the edited mark and the post from a copy that has one, so a re-read upgrades an old pair and never drops a mark),
+// the newest MAX_PAIRS of each source kept (a big sent folder of one source never pushes out another's), oldest first.
+export function savePairs(app: string, pairs: Pair[]): void {
+	const seen = new Map<string, Pair>();
+	for (const p of [...pairs].sort((a, b) => b.at - a.at)) {
+		const k = `${p.source ?? ""}\n${normText(p.reply)}\n${normText(p.received)}`;
+		const before = seen.get(k);
+		if (!before) seen.set(k, p);
+		else seen.set(k, { ...before, ...(!before.from && p.from ? { from: p.from } : {}), ...(!before.edited && p.edited ? { edited: true as const } : {}), ...(!before.thread && p.thread ? { thread: p.thread } : {}) });
+	}
+	const count = new Map<string, number>();
+	const kept = [...seen.values()].filter(p => {
+		const n = (count.get(p.source ?? "") ?? 0) + 1;
+		count.set(p.source ?? "", n);
+		return n <= MAX_PAIRS;
+	});
+	writeAtomic(paths.pairs(app), kept.reverse().map(p => JSON.stringify(p)).join("\n") + (kept.length ? "\n" : ""));
+}
+
+// What a first sweep learned, shown at the end of onboarding so the owner can say whether it sounds like them. A correction or a line under `## 말투` outlives a relearn; an edit to the identity does not.
+const LEARNED_SHOWN = 4;
+export function learnedCheck(key: ToneKey): string {
+	const lines = identityOf(key).slice(0, LEARNED_SHOWN);
+	if (!lines.length) return "";
+	return `이렇게 배웠어요, 내 글 같은지 봐 주세요:\n${lines.map(l => `- ${l}`).join("\n")}\n다른 점은 초안에서 고치기로 알려 주거나 ${toneFile(key)}의 ${HEADINGS.rules}에 적어 주세요. 다시 배워도 남아요.`;
+}

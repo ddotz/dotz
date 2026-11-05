@@ -5,8 +5,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { toneKey, reviseDraft, sendDraft } from "../lib/flow.ts";
 import { offerMailDraft, type OfferMail } from "../lib/offer.ts";
-import { savePairs } from "../lib/pairs.ts";
-import { paths, toneFile, writeIdentity } from "../lib/settings.ts";
+import { paths, savePairs, toneFile, writeIdentity } from "../lib/settings.ts";
 import { listDrafts } from "../lib/store.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
