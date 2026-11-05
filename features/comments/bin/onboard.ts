@@ -23,6 +23,7 @@ export type Gateway = { watches: () => Promise<string[]>; add: (body: Record<str
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const FEATURE = join(import.meta.dir, "..");
 const WATCH = "comments";
+const HISTORY_MS = 240_000;
 const OLD_WATCH: Record<string, string> = { youtube: "sns-yt-comments", instagram: "sns-ig-comments" };
 const WORD: Record<string, string> = { youtube: "유튜브", instagram: "인스타", site: "웹사이트" };
 const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -131,17 +132,6 @@ export async function runOnboard(args: string[], deps: { engine?: Engine; gatewa
 	const lines: string[] = [];
 	let code = 0;
 	try {
-		const own = await engine.ownReplies(key);
-		const examples = pickExamples(own.map(cleanExample).filter(Boolean), 20);
-		if (examples.length) {
-			writeExamples({ app: key }, examples);
-			lines.push(`내가 쓴 지난 답글 ${examples.length}개에서 말투를 배웠어요`);
-		} else lines.push("지난 답글이 없어서 정중한 기본 말투로 시작해요. 고치기를 하면 거기서 배워요");
-	} catch {
-		lines.push("지난 답글을 읽지 못해서 정중한 기본 말투로 시작해요");
-	}
-
-	try {
 		if (app === "site") await gateway.app?.({ app: "site", id: key, label: label.slice(0, 30), filter: { source: key.slice(5) } });
 		const names = await gateway.watches();
 		if (!names.includes(WATCH)) await gateway.add({ name: WATCH, command: `bun ${shq(join(FEATURE, "bin", "watch.ts"))}`, every_minutes: 5, on: "match", pattern: ".", to: "orchestrator", timeout_seconds: 300 });
@@ -162,6 +152,34 @@ export async function runOnboard(args: string[], deps: { engine?: Engine; gatewa
 	} catch (e) {
 		lines.push(`첫 읽기가 실패했어요: ${(e as Error).message}`);
 		code = code || 4;
+	}
+
+	// The tone: the past replies are read back from the platform (pairs for the prompt, and the identity from 20 or more); an adapter without a history read gives the 30 it can list.
+	const fromOwn = async (why?: string) => {
+		try {
+			const examples = pickExamples((await engine.ownReplies(key)).map(cleanExample).filter(Boolean), 20);
+			if (examples.length) {
+				writeExamples({ app: key }, examples);
+				lines.push(`내가 쓴 지난 답글 ${examples.length}개에서 말투를 배웠어요`);
+			} else lines.push("지난 답글이 없어서 정중한 기본 말투로 시작해요. 고치기를 하면 거기서 배워요");
+		} catch {
+			lines.push("지난 답글을 읽지 못해서 정중한 기본 말투로 시작해요");
+		}
+		if (why) lines.push(`(지난 답글 전체 읽기는 실패했어요: ${why}. 감시가 하루 뒤에 다시 시도해요)`);
+	};
+	try {
+		const past = await engine.refreshPast({ key, deadline: Date.now() + HISTORY_MS });
+		if (!past) await fromOwn();
+		else if (past.status === "failed") await fromOwn(past.error);
+		else if (past.status === "known") lines.push("지난 답글은 이미 읽어 두었어요");
+		else if (!past.pairs) lines.push("지난 답글이 없어서 정중한 기본 말투로 시작해요. 고치기를 하면 거기서 배워요");
+		else {
+			// Fewer than 20 replies give no identity: their sentences still become the examples.
+			if (past.pairs < 20) writeExamples({ app: key }, pickExamples(past.replies.map(cleanExample).filter(Boolean), 20));
+			lines.push(`내가 쓴 지난 답글 ${past.pairs}개를 읽어 말투를 배웠어요`);
+		}
+	} catch {
+		await fromOwn();
 	}
 	lines.unshift(`${label} 답글 도우미를 켰어요. 초안은 부탁할 때만 만들고, 사용자가 1) 보내기를 고르기 전에는 아무것도 올리지 않아요`);
 	return { lines, code };

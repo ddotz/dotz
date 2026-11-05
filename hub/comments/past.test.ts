@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commentId, type CommentAdapter, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine } from "./engine.ts";
-import { pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
-import type { Draft } from "./store.ts";
+import { habitsOf, mergePast, type PastPair, pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
+import type { Draft, Reply } from "./store.ts";
 
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
 const json = (o: object) => `\`\`\`json\n${JSON.stringify({ reason: "r", to: "", questions: [], ...o })}\n\`\`\``;
@@ -66,4 +66,42 @@ test("a bot draft the owner sent unchanged is not a past reply of his; an edited
 	const draft = (text: string, changes: string[]): Draft => ({ code: "D1", commentId: "x", source: "youtube", thread: "p1", text, status: "sent", created: NOW, changes, clean: true, notes: [] });
 	expect(pastPairs(comments, [], "youtube", [draft("Thank  you so much!", [])]).map(p => p.reply)).toEqual(["It is linked in the description."]);
 	expect(pastPairs(comments, [], "youtube", [draft("Thank you so much!", ["shorter"])]).map(p => p.reply)).toEqual(["It is linked in the description.", "Thank you so much!"]);
+});
+
+const DAY = 86_400_000;
+const QUERY = "where is the backing track";
+const pair = (comment: string, reply: string, ageDays: number, o: Partial<PastPair> = {}): PastPair => ({ comment, reply, at: NOW - ageDays * DAY, thread: "", ...o });
+const best = (pairs: PastPair[]) => similarPairs(QUERY, pairs, 1, undefined, NOW)[0]?.reply;
+
+test("a newer pair beats an older pair of equal text; a much closer old pair still beats a newer weak one", () => {
+	expect(best([pair(QUERY, "old", 400), pair(QUERY, "new", 1)])).toBe("new");
+	expect(best([pair(QUERY, "new", 1), pair(QUERY, "old", 400)])).toBe("new");
+	expect(best([pair(QUERY, "close-old", 400), pair("backing music later maybe", "weak-new", 0)])).toBe("close-old");
+});
+
+test("an edited pair beats an equal plain pair; a far weaker edited pair does not beat a close plain one; no shared words stays out", () => {
+	expect(best([pair(QUERY, "plain", 1), pair(QUERY, "edited", 1, { edited: true })])).toBe("edited");
+	expect(best([pair("backing music later maybe", "edited-weak", 1, { edited: true }), pair(QUERY, "plain-close", 1)])).toBe("plain-close");
+	expect(best([pair("zzzz qqqq", "edited-unrelated", 0, { edited: true })])).toBeUndefined();
+});
+
+test("habits are measured over the newest 300 replies only", () => {
+	const newest = Array.from({ length: 300 }, () => "Thanks! ^^");
+	const older = Array.from({ length: 100 }, () => "Dear sir, kind regards.");
+	expect(habitsOf([...newest, ...older])).toEqual(habitsOf(newest));
+	expect(habitsOf([...newest, ...older])).not.toEqual(habitsOf([...older, ...newest]));
+});
+
+test("a sent reply whose draft was changed by hand is marked edited, also when it is stored as his own comment too; a trimmed draft leaves it plain", () => {
+	const comments = [...history, { native: "n1r", thread: "p1", parent: "n1", author: "me", text: "Here it is.", postTitle: "P", at: NOW - 500, mine: true }].map(r => ({ ...r, id: commentId("youtube", r.native), source: "youtube", mine: r.mine === true, collector: "m" }));
+	const sent: Reply = { id: "send:n1", commentId: commentId("youtube", "n1"), source: "youtube", thread: "p1", text: "Here it is.", state: "sent", at: NOW - 400, draft: "D7", via: "owner", collector: "m" };
+	const draft = (changes: string[]): Draft => ({ code: "D7", commentId: sent.commentId, source: "youtube", thread: "p1", text: "Here it is.", status: "sent", created: NOW, changes, clean: true, notes: [] });
+	const mark = (drafts: Draft[]) => pastPairs(comments, [sent], "youtube", drafts).find(p => p.reply === "Here it is.")?.edited;
+	expect(mark([draft(["shorter"])])).toBe(true);
+	expect(mark([])).toBeUndefined();
+});
+
+test("merging keeps one copy of a repeat and the mark or sender any copy had", () => {
+	const merged = mergePast([pair("Q?", "A.", 1, { edited: true, from: "x" })], [pair("q?", "a. ", 0)]);
+	expect(merged).toMatchObject([{ edited: true, from: "x", at: NOW }]);
 });

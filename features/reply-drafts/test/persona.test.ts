@@ -7,8 +7,8 @@ import { runOnboard } from "../bin/onboard.ts";
 import { type CommentAdapter, draftComments } from "../lib/comments.ts";
 import { ensureKakaoRoom } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
-import { corpusFile, maybeRefine, parseIdentity, REFINE_EVERY } from "../lib/persona.ts";
-import { identityOf, loadStyle, paths, recordCorrection, templatesOf, toneFile, writeIdentity } from "../lib/settings.ts";
+import { COMMENT_TONE_VERSION, corpusFile, learnFirst, maybeRefine, parseIdentity, REFINE_EVERY } from "../lib/persona.ts";
+import { identityOf, loadStyle, paths, recordCorrection, templatesOf, toneFile, writeAtomic, writeIdentity } from "../lib/settings.ts";
 import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
@@ -117,4 +117,23 @@ test("onboard on --app youtube reads the past replies and saves the identity wit
 	expect(out.code).toBe(0);
 	expect(identityOf({ app: "youtube" })).toEqual(["밝고 다정하게 답한다"]);
 	expect(readFileSync(toneFile({ app: "youtube" }), "utf8")).toContain("- 영상 봐 주셔서 고마워요.");
+});
+
+test("a comment source's first sweep keeps the reply templates the user wrote, once; a tuned profile is left as it is", async () => {
+	const key = { app: "youtube" };
+	writeAtomic(toneFile(key), "## 답장 틀\n- 감사 => 고마워요 {이름}님\n");
+	const model = fakeModel([j({ identity: ["밝고 다정하게 답한다"], templates: [{ when: "질문", lines: ["링크는 설명란에 있어요."] }] })]);
+	const texts = async () => ["링크는 설명란에 있어요.\n> 어디서 받나요?"];
+	expect(await learnFirst(key, texts, "유튜브 댓글", model.call, new Date(), COMMENT_TONE_VERSION)).toBe("learned");
+	expect(identityOf(key)).toEqual(["밝고 다정하게 답한다"]);
+	expect(templatesOf(key)).toEqual(["감사 => 고마워요 {이름}님"]);
+	expect(await learnFirst(key, texts, "유튜브 댓글", model.call, new Date(), COMMENT_TONE_VERSION)).toBe("known");
+	expect(model.calls).toHaveLength(1);
+
+	const tuned = { app: "tuned" };
+	writeAtomic(toneFile(tuned), "## 정체성\n- 짧게 답한다\n\n## 고친 점\n- 2030-01-01: 존댓말로\n");
+	const before = readFileSync(toneFile(tuned), "utf8");
+	expect(await learnFirst(tuned, texts, "유튜브 댓글", model.call, new Date(), COMMENT_TONE_VERSION)).toBe("known");
+	expect(readFileSync(toneFile(tuned), "utf8")).toBe(before);
+	expect(model.calls).toHaveLength(1);
 });

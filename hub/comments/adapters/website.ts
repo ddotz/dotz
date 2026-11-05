@@ -5,7 +5,8 @@
 // Script/JSON read output:  {"comments":[{"id","thread","parent?","author","text","postTitle?","postLink?","at"(ISO or ms),"mine?"}],"cursor?"}
 // The read output SHOULD include the owner's own replies (mine:true, parent) of the last 30 days, so answered comments close (the hub never sees
 // an answer given on the site otherwise).
-// A read script is run as `<command...> --since <cursor>`; a JSON endpoint gets `?since=<cursor>`.
+// A read script is run as `<command...> --since <cursor>`; a JSON endpoint gets `?since=<cursor>`. The cursor `1` means "from the beginning": the owner's past replies
+// (mine:true, parent) and the comments they answer, read-only (nothing on the site is marked, no message room is opened). An RSS feed is read as usual.
 // Post body (webhook JSON, or stdin of the script): {"sendId","commentId","thread","parent?","text"}; answer {"ok":true,"ref?"} or {"ok":false,"reason"}.
 //
 // DM inbox (optional `site.dm`): read output {"messages":[{"room","id","author","text","at","mine?","title?"}],"cursor?"} from
@@ -16,7 +17,9 @@ import { join } from "node:path";
 import { readSecretFile } from "../../secretbox.ts";
 import { type CommentAdapter, DM_THREAD, type RawComment, type ReplyOutcome, sameWords, type SiteConfig } from "../contract.ts";
 
-export type Exec = (argv: string[], stdin?: string) => Promise<{ code: number; stdout: string; stderr: string }>;
+export type Exec = (argv: string[], stdin?: string, timeoutMs?: number) => Promise<{ code: number; stdout: string; stderr: string }>;
+export const HISTORY_CURSOR = "1";
+const HISTORY_TIMEOUT_MS = 240_000;
 export type WebsiteDeps = { exec: Exec; fetch: typeof fetch; secretsDir: string; siteDir: string };
 
 // A site script may start its own helpers (a browser repl, a login keeper) that inherit its pipes: on timeout the whole process group is
@@ -160,10 +163,10 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 		if (!res.ok) throw new Error(`사이트가 ${res.status}로 답했어요`);
 		return parseDmJson(await res.text());
 	};
-	const readComments = async (site: SiteConfig, cursor: string | undefined): Promise<{ comments: RawComment[]; cursor?: string }> => {
+	const readComments = async (site: SiteConfig, cursor: string | undefined, timeoutMs?: number): Promise<{ comments: RawComment[]; cursor?: string }> => {
 		const { read } = site;
 		if (read.kind === "script") {
-			const r = await deps.exec([...command(read.command), ...(cursor ? ["--since", cursor] : [])]);
+			const r = await deps.exec([...command(read.command), ...(cursor ? ["--since", cursor] : [])], undefined, timeoutMs);
 			if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().slice(0, 160) || `읽기 스크립트가 ${r.code}로 끝났어요`);
 			return parseSiteJson(r.stdout);
 		}
@@ -193,6 +196,11 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 			}
 			const c = read.cursor ?? at.c, d = dms.cursor ?? at.d;
 			return { comments: [...read.comments, ...dms.comments], cursor: JSON.stringify({ ...(c !== undefined ? { c } : {}), ...(d !== undefined ? { d } : {}) }), ...(error ? { error } : {}) };
+		},
+		// Past replies for the pair file: one read from the beginning. The DM inbox is not read (reading a room can mark it read on the site). A failure throws.
+		async history(src, opts) {
+			const site = siteOf(src);
+			return (await readComments(site, site.read.kind === "rss" ? undefined : HISTORY_CURSOR, Math.max(1_000, Math.min(HISTORY_TIMEOUT_MS, opts.deadline - Date.now())))).comments;
 		},
 		async reply(src, c, text, sendId) {
 			let site: SiteConfig;

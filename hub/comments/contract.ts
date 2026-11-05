@@ -41,6 +41,10 @@ export type CommentAdapter = {
 	// The title, link and thumbnail of these posts (ids = Comment.thread), for stored comments that were collected without a title. Posts it cannot name are left out.
 	retitle?(src: SourceConfig, threads: string[]): Promise<Record<string, PostInfo>>;
 	ownReplies?(src: SourceConfig, limit: number): Promise<string[]>;
+	// The owner's past replies with the comments they answer, newest first, for the engine's pair file (engine.ts refreshPast). Rows only, same shape as `list` (a reply is `mine` with its `parent`):
+	// nothing is stored, posted or marked read. Stops at `target` owner replies, at the end of what the platform has, at its own caps or at `deadline` (epoch ms), and
+	// keeps the rows read so far when a later read fails; throws only when nothing was read.
+	history?(src: SourceConfig, opts: { target: number; deadline: number }): Promise<RawComment[]>;
 	// Re-reads still-open comments (the engine hands over top-level comments that wait for a reply or hold a pending draft, plus stored rows an adapter
 	// may need to resolve) and answers with the owner's replies under them (mine: true, parent = the open comment's native) and the natives that no longer
 	// exist on the platform. A native is "gone" only when the platform was read completely. Throws on an API failure; nothing is posted.

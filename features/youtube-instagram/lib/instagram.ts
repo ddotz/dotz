@@ -80,14 +80,23 @@ export async function me(ctx: Ctx, token?: string): Promise<{ user_id: string; u
 	return { user_id: String(d.user_id ?? d.id), username: d.username, followers: d.followers_count ?? 0, media: d.media_count ?? 0 };
 }
 
+type RawMedia = { id: string; caption?: string; comments_count?: number; timestamp: string; permalink?: string; media_type?: string; media_url?: string; thumbnail_url?: string };
+const MEDIA_FIELDS = "id,caption,comments_count,timestamp,permalink,media_type,media_url,thumbnail_url";
+// The picture to show: a video's own media_url is the video file, so only its thumbnail_url counts.
+const toMedia = (m: RawMedia): IgMedia => {
+	const thumb = m.media_type === "VIDEO" ? m.thumbnail_url : (m.media_url ?? m.thumbnail_url);
+	return { id: m.id, caption: m.caption, comments_count: m.comments_count ?? 0, timestamp: m.timestamp, ...(m.permalink ? { permalink: m.permalink } : {}), ...(thumb ? { thumb } : {}) };
+};
+
 export async function mediaWithCounts(ctx: Ctx, limit = 50): Promise<IgMedia[]> {
-	type Raw = { id: string; caption?: string; comments_count?: number; timestamp: string; permalink?: string; media_type?: string; media_url?: string; thumbnail_url?: string };
-	const d = await graph<{ data?: Raw[] }>(ctx, `${BASE}/me/media?${new URLSearchParams({ fields: "id,caption,comments_count,timestamp,permalink,media_type,media_url,thumbnail_url", limit: String(limit) })}`, secret().access_token);
-	// The picture to show: a video's own media_url is the video file, so only its thumbnail_url counts.
-	return (d.data ?? []).map(m => {
-		const thumb = m.media_type === "VIDEO" ? m.thumbnail_url : (m.media_url ?? m.thumbnail_url);
-		return { id: m.id, caption: m.caption, comments_count: m.comments_count ?? 0, timestamp: m.timestamp, ...(m.permalink ? { permalink: m.permalink } : {}), ...(thumb ? { thumb } : {}) };
-	});
+	const d = await graph<{ data?: RawMedia[] }>(ctx, `${BASE}/me/media?${new URLSearchParams({ fields: MEDIA_FIELDS, limit: String(limit) })}`, secret().access_token);
+	return (d.data ?? []).map(toMedia);
+}
+
+// The newest `max` media (the account's feed pages of 50, newest first), for reading back past replies.
+export async function mediaHistory(ctx: Ctx, max = 300): Promise<IgMedia[]> {
+	const all = await allPages<RawMedia>(ctx, "me/media", { fields: MEDIA_FIELDS, limit: "50" }, Math.ceil(max / 50));
+	return all.items.slice(0, max).map(toMedia);
 }
 
 // ---- direct messages (read only) --------------------------------------------------------------------------------------
