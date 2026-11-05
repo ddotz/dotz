@@ -98,6 +98,11 @@ export function readable(text: string): string {
 			out.push(`**${h[1]!.replace(/\*\*/g, "")}**`);
 			continue;
 		}
+		// Discord has no rule: a "---" line would show as three dashes, a blank line divides the same.
+		if (/^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+			out.push("");
+			continue;
+		}
 		if (/^\s*\|.*\|\s*$/.test(line)) {
 			if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) continue;
 			out.push(line.trim().replace(/^\|\s*|\s*\|$/g, "").split(/\s*\|\s*/).filter(Boolean).join(" · "));
