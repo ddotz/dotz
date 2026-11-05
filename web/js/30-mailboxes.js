@@ -55,7 +55,7 @@ function mxMerge(items) {
   MX.key = top.key;
   Object.assign(top, { accounts: accts, mails: mine.flatMap(i => i.mails), notices: mine.flatMap(i => i.notices), drafts: sum("drafts"), unread: sum("unread"), unreplied: sum("unreplied") });
   if (accts.length > 1) Object.assign(top, { name: "메일", conn: false, owned: mine.flatMap(i => i.owned || []), msig: mine.map(i => i.msig).join("|"), at: mine.map(i => i.at).sort().pop(),
-    hint: down.length ? down[0].hint : monNeedLine({ drafts: top.drafts, unreplied: top.unreplied, unread: sum("unread") }, false), badge: down.length ? ["연결 끊김", "err"] : mine.map(i => i.badge).find(Boolean) || null });
+    hint: down.length ? down[0].hint : monNeedLine({ drafts: top.drafts, unreplied: top.unreplied, unread: top.unread }, false), badge: down.length ? ["연결 끊김", "err"] : mine.map(i => i.badge).find(Boolean) || null });
   for (const i of mine) if (i !== top) items.splice(items.indexOf(i), 1);
 }
 const mxBoxOf = t => { const a = MX.accts.get(MX.of.get(t)), m = MAILS.get(t); return a ? a.byId.get(m && m.box) || a.base : null; };
