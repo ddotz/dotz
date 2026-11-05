@@ -309,7 +309,7 @@ function rqFold(key) {
 // The app chips with each app's count: shown while two or more apps wait and the waiting count reaches the triage minimum, or while one app is picked (an app row's 답장 대기 button).
 function rqFilterBar(rows) {
   const by = new Map();
-  for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst)}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
+  for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst) || "기타"}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
   if (RQ.app && !by.has(RQ.app)) RQ.app = "";
   const chip = (k, text, n) => el("button", { class: `cchip mr-f${RQ.app === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(RQ.app === k), "data-filter": k || "all", onclick: () => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } }, text, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
   const total = [...by.values()].reduce((c, v) => c + v.n, 0);
