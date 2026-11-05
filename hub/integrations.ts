@@ -82,8 +82,9 @@ export const INTEGRATIONS: IntegrationEntry[] = [
 	},
 ];
 
-export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string>; off: ReadonlySet<string>; entries?: readonly IntegrationEntry[] };
-type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; ts?: string; updated?: string; read?: boolean; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
+// `own`: instance key -> the watches the hub resolved it owns (hub/app-features.ts ownedWatches), for the ownership a name cannot show (a site, what the watch does).
+export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string>; off: ReadonlySet<string>; entries?: readonly IntegrationEntry[]; own?: ReadonlyMap<string, readonly string[]> };
+type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; watch?: string; ts?: string; updated?: string; read?: boolean; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
 // What waits on the owner in one app, counted here so the web scans nothing: `drafts` = reply drafts that wait for his 보내기 (open send-approval
 // [ask]s), `unread` = unread notices and conversation messages (the draft asks are not counted twice), `sentToday` = replies sent by themselves today.
 export type IntegrationNeeds = { drafts: number; unread: number; sentToday: number; unreplied: number };
@@ -193,7 +194,10 @@ const hasConvs = (e: IntegrationEntry, notices: readonly NoticeLike[], convUnrea
 
 const SESSION_SRC = /^(?:lane:|ch:|worklog$|main$)/;
 
-export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
+export const named = (list: readonly string[], watch: string): boolean => list.some(w => (w.endsWith("-") ? watch.startsWith(w) : watch === w));
+export const owns = (e: IntegrationEntry, watch: string): boolean => named(e.watches ?? [], watch) && !named(e.not?.watches ?? [], watch);
+
+export function belongsTo(e: IntegrationEntry, n: NoticeLike, own: readonly string[] = []): boolean {
 	const { draft = [], text = [] } = e.match;
 	const where = whereOf(n);
 	if (where.some(w => inConv(e, w))) return true;
@@ -202,6 +206,8 @@ export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
 	if (n.decision && draft.some(l => body.includes(`> ${l}:`))) return true;
 	// A work session's or channel's own report ("카톡 보내기를 고쳤어요") talks about the app; it is not a notice of the app.
 	if (SESSION_SRC.test(n.src ?? "")) return false;
+	// Likewise a monitor's report ("새 이슈: 메일 보내기 실패"): only the app that owns the watch can claim it by its words.
+	if (n.watch && !own.includes(n.watch) && !owns(e, n.watch)) return false;
 	const hay = `${n.title ?? ""}\n${body}`.toLowerCase();
 	return text.some(t => hay.includes(t.toLowerCase()));
 }
@@ -209,7 +215,7 @@ export function belongsTo(e: IntegrationEntry, n: NoticeLike): boolean {
 // The key of the app (an entry on at this install, or one whose conversation the notice lives in) the notice belongs to; none = the owner's own monitor.
 export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS): string | undefined {
 	const where = whereOf(n);
-	return entries.find(e => belongsTo(e, n) && (integrationOn(e, ctx) || ctx.off.has(e.key) || where.some(w => inConv(e, w))))?.key;
+	return entries.find(e => belongsTo(e, n, ctx.own?.get(e.key)) && (integrationOn(e, ctx) || ctx.off.has(e.key) || where.some(w => inConv(e, w))))?.key;
 }
 
 // The ids an app lists, newest first as given: every open decision stays (an open card must never lose its app), the cap holds for finished notices only.
@@ -224,7 +230,7 @@ const listed = (mine: readonly NoticeLike[], cap: number): string[] => {
 export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number; unreplied?: number }>> = {}, waits: ReplyWaits = { targets: [], apps: {} }): IntegrationItem[] {
 	const today = new Date(now).toDateString();
 	return entries.filter(e => !ctx.off.has(e.key) && (integrationOn(e, ctx) || hasConvs(e, notices, convUnread))).map(e => {
-		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n));
+		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n, ctx.own?.get(e.key)));
 		const convs = e.match.conv ?? [];
 		const unreadConvs = new Set(Object.entries(convUnread).filter(([t, n]) => n > 0 && inConv(e, t)).map(([t]) => t));
 		const fromConvs = unreadConvs.size;

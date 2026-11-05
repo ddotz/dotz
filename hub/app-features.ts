@@ -12,12 +12,11 @@ import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readSettings, SettingsError, writeSettings, type SettingSection } from "./app-settings.ts";
 import { APP_FEATURES, declOf, type FeatureDecl, featureOn, readApps } from "./app-feature-flags.ts";
-import { APPS_FILE, appBase, appEntries, belongsTo, type IntegrationEntry } from "./integrations.ts";
+import { APPS_FILE, appBase, appEntries, belongsTo, type IntegrationEntry, named } from "./integrations.ts";
 import { watchFacts } from "./monitors.ts";
 import type { Watch, WatchOwner } from "./watch.ts";
 import { watchConnection } from "./watch-status.ts";
 
-const named = (list: readonly string[], watch: string): boolean => list.some(w => (w.endsWith("-") ? watch.startsWith(w) : watch === w));
 /** What ownership needs of a watch: its name and the words a derivation reads, the owner it names, and the site a login keeper keeps. */
 export type WatchLike = { name: string; label?: string; command?: string; script?: string; owner?: WatchOwner; session?: { url: string }; approval_minutes?: number };
 const hostOf = (url: string): string => {
@@ -128,7 +127,7 @@ export function featuresOf(dataDir: string, app: string, watches: readonly Watch
 	const decls = declOf(app), settings = new Map(readSettings(dataDir, app).map(s => [s.key, s.value]));
 	const mine = new Set(ownedWatches(dataDir, watches).get(app) ?? []);
 	// An approval is an open question with a draft in the app's own conversation or about the app (hub/integrations.ts belongsTo).
-	const open = notices.filter(n => !n.dismissed && !n.ignored && n.decision?.state === "open" && !!n.decision.draft && belongsTo(entry, n));
+	const open = notices.filter(n => !n.dismissed && !n.ignored && n.decision?.state === "open" && !!n.decision.draft && belongsTo(entry, n, [...mine]));
 	const featureOfNotice = (n: NoticeLike): FeatureDecl | undefined => {
 		const hay = `${n.title ?? ""}\n${n.text ?? ""}`;
 		const hit = (f: FeatureDecl, any: boolean) => (f.approves ?? []).some(p => (p === "." ? any : new RegExp(p, "i").test(hay)));
