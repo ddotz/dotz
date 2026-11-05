@@ -51,7 +51,8 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   Reading (`loadStyle({app, room?})`): the 예시 come from the narrowest profile that has any (room -> app -> install) and the result says
   which level that was; 말투, 고친 점 and 금지 are merged from all levels, install first and the narrower ones later. Writing
   (`learnTone`, `recordCorrection`) goes into exactly one profile. Two rooms of one messenger therefore never share a tone, a room
-  that was never written to follows its app, an app without samples follows the install.
+  that was never written to follows its app, an app without samples follows the install. A mailbox is a room of its account (`tone/<instance>/<box>.md`);
+  what its voice was learned from is in `box-voice.json` (docs/mailbox.md "Voice").
   A profile with corrections or a section of its own is not relearned. A `## ` section the code does not know reaches the rules.
   Legacy: an old `style.md` is read as the `mail` profile until `tone/mail.md` exists (the next write moves it over); for the `youtube`
   and `instagram` apps without samples, `## 예시` of `custom/sns/tone.md` is used (only for those apps, between app and install).
@@ -89,6 +90,7 @@ corrections turned into a checklist). `lib/persona.ts`:
 
 - `lib/offer.ts` `offerMailDraft`: the gateway hook for a new mail (off unless enabled and auto; never throws; a failure is logged and returns `failed`). `hub/main.ts` wires it into `mailDeps().offerDraft`.
 - `lib/flow.ts` build / revise / send / drop shared by the offer and `bin/draft.ts`.
+- `lib/box-voice.ts` one learned voice per mailbox from his own replies in it (docs/mailbox.md "Voice"), run beside the pair refresh of a draft, once, not per mail.
 - `lib/tone.ts` sentence extraction (3-120 chars, quoted history and signatures dropped, deduped, at most 40) from injected sources, into one profile.
 - `lib/kakao-tone.ts` the user's own text lines of one KakaoTalk room (injected reader, fixture in tests) -> `kakao/<chat id>`.
 - `lib/senders.ts` zele: `zele mail read <id>` first (zele refuses a reply otherwise), then `zele mail reply <id> --to <to> [--cc <list>] --body <body>`; a refused

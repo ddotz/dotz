@@ -10,6 +10,7 @@ import { loadConfig, realCtx } from "../../youtube-instagram/lib/config.ts";
 import { cleanExample, ownReplyTexts, snsConnected } from "../../youtube-instagram/lib/reply-adapter.ts";
 import type { Platform } from "../../youtube-instagram/lib/watchkit.ts";
 import { appOn, dataDir, learnedCheck, listProfiles, loadSettings, paths, REPO_FEATURE, saveSettings, setApp, validApp, type ToneKey } from "../lib/settings.ts";
+import { boxesOf, hasBoxes } from "../../../hub/mailbox.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { defaultCall } from "../lib/flow.ts";
 import { MAIL_TONE_VERSION, markVersion, sweep } from "../lib/persona.ts";
@@ -57,6 +58,13 @@ async function learn(key: ToneKey, opts: Parameters<typeof learnTone>[1], analyz
 	}
 }
 
+// An install with mailboxes: each learned once when asked to, and one line per mailbox, so one on the account's voice says so. One mailbox prints nothing.
+async function mailboxVoices(analyze?: ModelCall): Promise<string[]> {
+	if (!hasBoxes(dataDir())) return [];
+	const v = await import("../lib/box-voice.ts");
+	return analyze ? v.learnVoices(analyze) : v.voiceLines();
+}
+
 export async function runOnboard(args: string[], run: Runner = realRunner, zeleOn: boolean = zeleEnabled(installConfig()), sns: SnsAccess = realSns, analyze?: ModelCall): Promise<Out> {
 	const [cmd] = args;
 	const app = flag(args, "--app");
@@ -65,7 +73,7 @@ export async function runOnboard(args: string[], run: Runner = realRunner, zeleO
 			if (app === undefined || app === "mail") {
 				setApp("mail", true);
 				writeSwitch();
-				return { lines: [`답장 초안을 켰어요. 새 메일 중 답장이 필요한 건 초안을 만들어 물어봐요. ${await learn({ app: "mail" }, { run, zeleOn, accounts: zeleOn ? [undefined] : sentAccounts(installConfig()) }, analyze, "메일 (보낸 메일함)")}`], code: 0 };
+				return { lines: [`답장 초안을 켰어요. 새 메일 중 답장이 필요한 건 초안을 만들어 물어봐요. ${await learn({ app: "mail" }, { run, zeleOn, accounts: zeleOn ? [undefined] : sentAccounts(installConfig()) }, analyze, "메일 (보낸 메일함)")}`, ...(await mailboxVoices(analyze))], code: 0 };
 			}
 			if (!(app in SNS)) return { lines: [`켤 수 있는 곳은 mail, youtube, instagram이에요: ${app}`], code: 2 };
 			const platform = app as Platform;
@@ -101,12 +109,18 @@ export async function runOnboard(args: string[], run: Runner = realRunner, zeleO
 			const room = flag(args, "--room");
 			if (learnApp !== "install" && !validApp(learnApp)) return { lines: [`앱 이름은 영문 소문자·숫자·-만 쓸 수 있어요: ${learnApp}`], code: 1 };
 			if (file && !existsSync(file)) return { lines: [`파일을 찾지 못했어요: ${file}`], code: 1 };
+			const box = !file && room !== undefined && hasBoxes(dataDir()) ? boxesOf(dataDir(), learnApp).find(b => b.id === room) : undefined;
+			if (box) { // a mailbox learns from what he sent in it, never from the whole sent folder
+				const { learnBox, voiceLine } = await import("../lib/box-voice.ts");
+				await learnBox(learnApp, box, analyze ?? defaultCall(loadSettings().model));
+				return { lines: [voiceLine(learnApp, box)], code: 0 };
+			}
 			return { lines: [await learn({ app: learnApp, ...(room !== undefined ? { room } : {}) }, { fromFile: file, run, zeleOn }, analyze)], code: 0 };
 		}
 		case "status": {
 			const s = loadSettings();
 			const state = (a: string) => (appOn(s, a) ? "켜짐" : "꺼짐");
-			return { lines: [`${s.enabled ? "켜짐" : "꺼짐"} · 메일 ${state("mail")} · 유튜브 ${state("youtube")} · 인스타 ${state("instagram")} · 말투 프로필 ${listProfiles().join(", ") || "없음"}`], code: 0 };
+			return { lines: [`${s.enabled ? "켜짐" : "꺼짐"} · 메일 ${state("mail")} · 유튜브 ${state("youtube")} · 인스타 ${state("instagram")} · 말투 프로필 ${listProfiles().join(", ") || "없음"}`, ...(await mailboxVoices())], code: 0 };
 		}
 		default:
 			return { lines: ["usage: onboard.ts on [--app mail|youtube|instagram] [--to <target>] | off [--app <app>] | status | learn [--app <app|install>] [--room <id>] [--from-file <file>]"], code: 2 };

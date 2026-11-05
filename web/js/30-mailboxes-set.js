@@ -108,13 +108,45 @@ function mxsItem(key, label, sum, body) {
   return el("div", { class: `mxs-ac${open ? " open" : ""}` }, el("button", { class: "mxs-ah", type: "button", "aria-expanded": String(open), "data-k": key, onclick: () => mxsToggle(key) }, el("span", { class: "mxs-al", text: label }), el("span", { class: "mxs-av", text: open ? "" : sum }), icon("drop")),
     open ? el("div", { class: "mxs-ab" }, ...body()) : null);
 }
+const mxsToneUrl = (app, box) => `/api/mailbox/tone?app=${enc(app)}&box=${enc(box)}`;
 function mxsToggle(key) {
   MXS.open = MXS.open === key ? "" : key; MXS.add = "";
   mxsPaint();
   if (MXS.open !== "tone") return;
   const a = MX.accts.get(MX.acct), k = `${a.key}|${MX.box}`;
   MXS.tone.set(k, { busy: true });
-  api(`/api/mailbox/tone?app=${enc(a.key)}&box=${enc(MX.box)}`).then(r => MXS.tone.set(k, r), e => { MXS.tone.set(k, { failed: true }); toast(mxsErr(e), true); }).then(mxsPaint);
+  api(mxsToneUrl(a.key, MX.box)).then(r => MXS.tone.set(k, r), e => { MXS.tone.set(k, { failed: true }); toast(mxsErr(e), true); }).then(mxsPaint);
+}
+// 말투 of a mailbox among several: where its voice comes from, what 다시 배우기 and 예시 보기 reach (docs/mailbox.md "Voice").
+const mxsVoiceText = v => ({
+  own: `보낸 글 ${v.texts}개로 따로 배웠어요`,
+  kept: "이 메일함에 따로 적어 둔 말투를 써요",
+  ready: `보낸 글 ${v.count}개가 모였어요. 곧 따로 배워요`,
+  few: `이 메일함에서 보낸 글이 ${v.count}개라 계정 말투를 써요. ${v.need}개부터 따로 배워요`,
+})[v.state];
+const MXS_LEARNT = { learned: "말투를 다시 배웠어요", few: "보낸 메일을 더 읽어 볼게요. 모이면 알아서 배워요", busy: "이미 배우고 있어요", empty: "말투를 찾지 못해 그대로 뒀어요" };
+async function mxsRelearn(a, b) {
+  const k = `${a.key}|${b.id}`, was = MXS.tone.get(k);
+  MXS.tone.set(k, { ...was, learning: true }); mxsPaint();
+  try {
+    const r = await api("/api/mailbox/relearn", "POST", { app: a.key, box: b.id });
+    MXS.tone.set(k, await api(mxsToneUrl(a.key, b.id)));
+    toast(MXS_LEARNT[r.result]);
+  } catch (e) { MXS.tone.set(k, was); toast(mxsErr(e), true); }
+  mxsPaint();
+}
+async function mxsExamples(a, b) {
+  let list;
+  try { list = (await api(`/api/mailbox/examples?app=${enc(a.key)}&box=${enc(b.id)}`)).examples; } catch (e) { toast(mxsErr(e), true); return; }
+  const h = fsOpen({ label: "예시 보기", cls: "mid" });
+  h.box.append(fsHead([el("div", { class: "fs-t", text: "예시 보기" })], { close: () => h.close() }), el("div", { class: "mxs-ex" }, ...list.map(x => el("div", { class: "mxs-exi" }, el("div", { class: "mxs-k", text: "받은 메일" }), el("div", { class: "mxs-h", text: x.received }), el("div", { class: "mxs-k", text: "내가 쓴 답장" }), el("div", { class: "mxs-sum", text: x.reply })))));
+}
+function mxsVoiceRow(a, b, t) {
+  const v = t.voice;
+  return [el("div", { class: "mxs-rowb" }, el("span", { class: "mxs-h", text: t.learning ? "지난 메일을 다시 읽고 있어요" : mxsVoiceText(v) }),
+    el("span", { class: "mxs-vb" }, el("button", { class: "btn tonal sm mxs-vx", type: "button", disabled: !v.count, onclick: () => mxsExamples(a, b) }, "예시 보기"),
+      el("button", { class: "btn tonal sm mxs-vl", type: "button", disabled: !!t.learning, onclick: () => mxsRelearn(a, b) }, "다시 배우기"))),
+    b.how ? el("div", { class: "mxs-h", text: "기본 지시를 적어 두면 배운 말투보다 먼저 따라요" }) : null];
 }
 function mxsToneBody(a, b) {
   const t = MXS.tone.get(`${a.key}|${b.id}`) || { busy: true }, more = MXS.more.has("fix");
@@ -122,7 +154,7 @@ function mxsToneBody(a, b) {
   if (t.failed) return [el("div", { class: "mxs-h", text: "말투를 읽지 못했어요" })];
   const fixes = more ? t.corrections : t.corrections.slice(0, MXS_FIX);
   return [t.summary ? el("div", { class: "mxs-sum", text: t.summary }) : el("div", { class: "mxs-h", text: "아직 정리된 말투가 없어요. 메일 앱 말투를 그대로 써요." }),
-    t.own ? null : el("div", { class: "mxs-h", text: "이 메일함만의 말투는 아직 없어요. 초안을 고치면 여기에 쌓여요." }),
+    ...(t.voice.state !== "single" ? mxsVoiceRow(a, b, t) : [t.own ? null : el("div", { class: "mxs-h", text: "이 메일함만의 말투는 아직 없어요. 초안을 고치면 여기에 쌓여요." })]),
     t.corrections.length ? el("div", { class: "mxs-k", text: "고친 점" }) : null, t.corrections.length ? el("ul", { class: "mxs-fx" }, ...fixes.map(f => el("li", { text: f }))) : null,
     t.corrections.length > MXS_FIX && !more ? el("button", { class: "chip mxs-c2", type: "button", onclick: () => { MXS.more.add("fix"); mxsPaint(); } }, `더 보기 · ${t.corrections.length - MXS_FIX}개`) : null];
 }

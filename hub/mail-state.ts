@@ -208,7 +208,7 @@ export function directionOf(f: DirectionFacts, own: ReadonlySet<string> = ownAdd
 export type StoredMail = LegacyReplyFacts & { source?: string; account?: string; list?: true; reply_by?: ReplyBy; reply_at?: string; key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
 /** Mails older than this keep no reply state from replyExpected when the stored mails are brought up to the rules: history, not a backlog. */
 const JUDGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
-const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
+export const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
 
 /**
  * One idempotent pass over the stored mails: the owner's own mails become outgoing, the old flags become `reply`, and an incoming mail with a

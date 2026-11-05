@@ -27,7 +27,9 @@ setup: bun {repo}/features/reply-drafts/bin/onboard.ts on --to <asking target>
 
 고친 점에는 고친 내용이 보여 주는 오래 가는 취향만 남겨요(모델이 준 `lesson`). 이번 한 번만의 고침이면 아무것도 적지 않고, 모델이 아무것도 안 주면 고친 내용 그대로 적어요. 메일·댓글 프롬프트에는 가장 새 12개만 200자까지 잘라 들어가요. 카드 밖에서 부탁받은 고침(채팅에서 번호로 답한 것 포함)도 `bun {repo}/features/reply-drafts/bin/draft.ts correct --app <앱> --change "<내용>"`으로 남겨야 다음 초안이 반영해요.
 
-말투 다시 배우기·끄기: `onboard.ts learn [--app <앱|install>] [--room <방 id>] [--from-file <파일>]`, `onboard.ts off`. 보낸 사람을 제한하려면 `~/.dotz/custom/reply-drafts/config.json`의 `senders.only`·`senders.skip`(주소 또는 `@도메인`)을 고쳐요.
+메일함이 둘 이상이면 메일함마다 그곳에서 직접 쓴 답장으로 말투를 따로 배워요. 최근 200개까지 읽고, 20개가 안 되면 계정 말투를 쓰며 메일함 설정의 말투 항목과 `onboard.ts status`에 그렇게 보여 줘요. 메일함 기본 지시가 배운 말투보다 먼저예요.
+
+말투 다시 배우기·끄기: `onboard.ts learn [--app <앱|install>] [--room <방 또는 메일함 id>] [--from-file <파일>]`, `onboard.ts off`. 보낸 사람을 제한하려면 `~/.dotz/custom/reply-drafts/config.json`의 `senders.only`·`senders.skip`(주소 또는 `@도메인`)을 고쳐요.
 
 잘못된 메일 앱에 들어간 메일 옮기기: `bun {repo}/hub/mail-cli.ts move --key <메일 키> --app <메일 앱>`. 그 앱의 메일로 다시 올라가고 초안도 거기서 만들어져요.
 

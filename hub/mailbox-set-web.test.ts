@@ -33,13 +33,20 @@ const item = (inst: string) => ({ key: inst, app: "mail", label: inst === "mail"
 	state: "connected", notices: [], unread: 0, needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: 0 }, boxes: boxes[inst as "mail"], account: inst === "mail" ? "me@example.com" : "me@work.example.com" });
 const card = (m: (typeof mails)[number]) => ({ subject: m.subject, from: m.from, source: "company", at: m.at, summary: "요약이에요", read: true, archived: false, starred: false, can: CAN, box: m.box });
 
+const voices: Record<string, object> = {};
 const hub = fakeHub({
 	api: async (req, url) => {
 		const p = url.pathname;
 		if (p === "/api/notices") return json({ items: [], unread: 0 });
 		if (p === "/api/integrations") return json({ items: [item("mail"), item("mail-2")], available: [] });
 		if (p === "/api/conversations") return json({ items: mails.map(m => ({ target: `mail:${m.key}`, unread: 0, read: null, mail: card(m), last: { ts: m.at, text: m.subject, from: "bot" } })) });
-		if (p === "/api/mailbox/tone") return json({ ok: true, own: true, summary: "정중하고 짧게 써요", corrections: ["더 짧게", "호칭을 빼요", "끝인사를 줄여요"] });
+		if (p === "/api/mailbox/tone") return json({ ok: true, own: true, summary: "정중하고 짧게 써요", corrections: ["더 짧게", "호칭을 빼요", "끝인사를 줄여요"], voice: voices[url.searchParams.get("box") ?? ""] ?? { state: "single", count: 0, need: 20 } });
+		if (p === "/api/mailbox/examples") return json({ ok: true, examples: [{ received: "자료 부탁해요", reply: "삼가 회신드립니다" }] });
+		if (p === "/api/mailbox/relearn") {
+			record({ method: req.method, path: p, body: await req.json() });
+			voices["b-score"] = { state: "own", count: 64, need: 20, texts: 64 };
+			return json({ ok: true, result: "learned" });
+		}
 		if (p === "/api/mailbox/suggest") return json({ ok: true, groups });
 		if (p === "/api/mailbox/box" || p === "/api/mailbox/move") {
 			const body = (await req.json()) as any;
@@ -97,6 +104,21 @@ describe("메일함 설정", () => {
 		await waitFor(v, `document.querySelector(".mxs-sum")`);
 		expect(await ev<any>(v, `({ summary: document.querySelector(".mxs-sum").textContent, fixes: [...document.querySelectorAll(".mxs-fx li")].map(l => l.textContent) })`))
 			.toEqual({ summary: "정중하고 짧게 써요", fixes: ["더 짧게", "호칭을 빼요"] });
+		expect(await ev<number>(v, `document.querySelectorAll(".mxs-vl").length`)).toBe(0);
+	}, 30_000);
+
+	test("a mailbox on the account's voice says so, 다시 배우기 updates it, and 예시 보기 shows his own reply", async () => {
+		voices["b-score"] = { state: "few", count: 7, need: 20 };
+		const v = await open(SET);
+		await openItem(v, "tone");
+		await waitFor(v, `document.querySelector(".mxs-rowb")`);
+		expect(await ev<string>(v, `document.querySelector(".mxs-rowb .mxs-h").textContent`)).toContain("계정 말투");
+		await click(v, ".mxs-vl");
+		await waitFor(v, `document.querySelector(".mxs-rowb .mxs-h").textContent.includes("64개")`);
+		await click(v, ".mxs-vx");
+		await waitFor(v, `document.querySelector(".mxs-ex")`);
+		expect(await ev<string>(v, `document.querySelector(".mxs-ex .mxs-sum").textContent`)).toBe("삼가 회신드립니다");
+		delete voices["b-score"];
 	}, 30_000);
 
 	test("a change saves the whole box (the `alone` flag and the source conditions stay), and 뒤로 returns to the box list", async () => {
