@@ -335,7 +335,14 @@ details.work[open] { padding: var(--sp-15) var(--sp-2) var(--sp-2); border-radiu
 .fatt .fi-t { min-width: 0; display: flex; flex-direction: column; }
 .fatt .fi-n { font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fatt .fi-m { font-size: 12px; line-height: 16px; color: var(--fg-3); }
-.fatt.up { opacity: .55; }
+.fatt.fail { max-width: 280px; }
+.fatt.fail .fi-m { color: var(--err); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fatt .pring { width: 32px; height: 32px; font-size: 10px; color: var(--accent); }
+.up-retry { padding: 0; border: 0; cursor: pointer; }
+.up-retry:hover { color: var(--fg); }
+/* a percent ring: the sidebar's folded usage (22-shell.css) and an upload on its chip; --p is 0 to 100, the size and the color come from where it stands */
+.pring { position: relative; flex: none; display: grid; place-items: center; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pring::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(currentColor calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle closest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px)); mask: radial-gradient(circle closest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px)); }
 /* the number under an image of a message that carries several ("이미지 1"): a small .tag, in the tray and in the sent message alike */
 .fatt-n { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
 .tag.img-no { flex: none; margin-top: var(--sp-1); }

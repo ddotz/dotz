@@ -1,6 +1,7 @@
 // Upload storage, the read-only file route's guards (roots, traversal, symlinks, secrets), Range, and the live-lane rule.
 import { expect, test } from "bun:test";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, watch, writeFileSync } from "node:fs";
+import { connect } from "node:net";
 import { join } from "node:path";
 import { allowedRoots, attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, resolveAllowed, safeName, saveUpload, ownerFiles, serveFile, UPLOADS, uploadsFrom } from "./files.ts";
 import { isTempLane } from "./lanes.ts";
@@ -159,3 +160,51 @@ test("a message whose staged upload is gone is refused with how many are missing
 	expect(messageFiles([{ path: kept }, { path: join(UPLOADS, "t", "gone.xlsx") }])).toHaveLength(1);   // the lenient reader stays for draft files
 });
 
+
+const uploadDir = () => mkdtempSync(join(DATA, "up-"));
+const tree = (dir: string) => readdirSync(dir, { recursive: true, withFileTypes: true }).filter(e => e.isFile()).map(e => e.name);
+const CRLF = "\r\n";
+const multipart = (parts: string[]) => new Request("http://x/api/upload", { method: "POST", headers: { "content-type": "multipart/form-data; boundary=BB" }, body: parts.join("") });
+const part = (name: string, body: string) => `--BB${CRLF}Content-Disposition: form-data; name="file"; filename="${name}"${CRLF}Content-Type: application/x-7z-compressed${CRLF}${CRLF}${body}${CRLF}`;
+
+test("a multipart body goes to disk byte for byte, whichever way the network cut it: a boundary split across reads, CRLF and dashes in the file", async () => {
+	const dir = uploadDir(), inner = `a\r\n--B\r\n--Bx${"z".repeat(70000)}\r\n-`, whole = new TextEncoder().encode(`${part("한글 주석.7z.001", inner)}${part("b.bin", "two")}--BB--${CRLF}`);
+	const body = new ReadableStream<Uint8Array>({ start(c) { for (let i = 0; i < whole.length; i += i < 200 ? 1 : 5000) c.enqueue(whole.slice(i, i + (i < 200 ? 1 : 5000))); c.close(); } });
+	const got = await uploadsFrom(new Request("http://x/api/upload", { method: "POST", headers: { "content-type": "multipart/form-data; boundary=BB" }, body }), dir);
+	expect(got.map(f => [f.name, f.type, f.size])).toEqual([["한글 주석.7z.001", "application/x-7z-compressed", inner.length], ["b.bin", "application/x-7z-compressed", 3]]);
+	expect(readFileSync(got[0]!.path, "utf8")).toBe(inner);
+	expect(readFileSync(got[1]!.path, "utf8")).toBe("two");
+});
+
+test("an upload over the limit, or a body that stops before its end, leaves nothing behind", async () => {
+	const dir = uploadDir();
+	await expect(uploadsFrom(multipart([part("big.bin", "x".repeat(2048)), "--BB--"]), dir, 1024)).rejects.toMatchObject({ status: 413 });
+	await expect(uploadsFrom(multipart([part("good.bin", "ok"), part("cut.bin", "half of it")]), dir)).rejects.toBeInstanceOf(FileError);
+	expect(tree(dir)).toEqual([]);
+});
+
+test("a form with text fields and no file, and a body that is not a form, are refused as before", async () => {
+	const dir = uploadDir(), form = new FormData();
+	form.append("file", "only text");
+	await expect(uploadsFrom(new Request("http://x/api/upload", { method: "POST", body: form }), dir)).rejects.toMatchObject({ message: "file field is required" });
+	await expect(uploadsFrom(new Request("http://x/api/upload", { method: "POST", body: "{}" }), dir)).rejects.toMatchObject({ status: 400 });
+	await expect(uploadsFrom(multipart(Array.from({ length: 11 }, (_, i) => part(`${i}.txt`, "x")).concat("--BB--")), dir)).rejects.toMatchObject({ message: "한 번에 10개까지 보낼 수 있어요" });
+	expect(tree(dir)).toEqual([]);
+});
+
+test("the client going away mid-upload (× on the chip, xhr.abort) removes the partly saved file", async () => {
+	const dir = uploadDir();
+	let settled!: (e: unknown) => void;
+	const ended = new Promise(ok => { settled = ok; });
+	const server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(req) { try { await uploadsFrom(req, dir); settled("saved"); } catch (e) { settled(e); } return new Response("x"); } });
+	const started = new Promise<void>(ok => { const w = watch(dir, { recursive: true }, () => { if (tree(dir).some(n => n.endsWith(".part"))) { w.close(); ok(); } }); });
+	const sock = connect(server.port, "127.0.0.1");
+	await new Promise(ok => sock.once("connect", ok));
+	sock.write(`POST /api/upload HTTP/1.1\r\nHost: x\r\nContent-Type: multipart/form-data; boundary=BB\r\nContent-Length: 1000000\r\n\r\n${part("half.bin", "some bytes").slice(0, 120)}`);
+	await started;
+	sock.destroy();
+	expect(await ended).toBeInstanceOf(FileError);
+	expect(tree(dir)).toEqual([]);
+	expect(existsSync(dir)).toBe(true);
+	server.stop(true);
+});

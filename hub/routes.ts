@@ -50,7 +50,7 @@ import { askText } from "../features/reply-drafts/lib/flow.ts";
 import { pluginMailAction, pluginMailActions } from "./plugins.ts";
 import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
 import { getDraft, holdDrafts, holdDraftsOf, listDrafts, restoreDrafts, restoreDraftsOf } from "../features/reply-drafts/lib/store.ts";
-import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
+import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, UPLOAD_MAX_BYTES, uploadsFrom } from "./files.ts";
 import { ownerElements, pickedLines } from "./picked.ts";
 import { ownerRefs, refLines } from "./mentions.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
@@ -578,7 +578,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), waitlist: stateWaitlist(), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
+			return json({ name: NAME, address: ADDRESS, upload_max: UPLOAD_MAX_BYTES, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), waitlist: stateWaitlist(), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
 		if (req.method === "GET" && url.pathname === "/api/notices") syncCardFiles();
 		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100), true), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });

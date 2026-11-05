@@ -236,7 +236,7 @@ async function sendCommand(text) {
 async function sendChat(how) {
   const text = ta.value.trim();
   if (isRelayT(target)) { if (text && !ta.disabled) relaySend(text); return; }
-  if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }
+  if (ATT.some(a => !a.file)) { toast(ATT.some(a => (upJob(target, a.id) || {}).error) ? "못 올린 파일을 다시 올리거나 빼 주세요" : "파일을 올리는 중이에요"); return; }
   const files = ATT.map(a => ({ ...a.file, label: a.no })), picks = pkItems();
   if ((!text && !files.length && !picks.length) || ta.disabled) return;
   if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }

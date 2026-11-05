@@ -1,14 +1,16 @@
 // Files the owner hands to the agents (web upload: + button, drag-drop, paste) and files the agents point back at
 // (read-only preview/download). Uploads land under <data dir>/uploads/<day>/; the message carries their absolute paths.
 // Serving is read-only and limited to allowed roots, resolved through realpath so `..` and symlinks cannot leave them.
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from "node:fs";
+import { open, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join, sep } from "node:path";
 import { cfg, DATA_DIR, HOME, writeAtomic } from "./config.ts";
 import { FILES, queueSnapshots, snapshotFor } from "./filesnap.ts";
+import { readMultipart } from "./upload-stream.ts";
 
 export const UPLOADS = join(DATA_DIR, "uploads");
-const UPLOAD_MAX_BYTES = Math.max(1, Number((cfg as any).web?.upload_max_mb ?? 50)) * 1024 * 1024;
+export const UPLOAD_MAX_BYTES = Math.max(1, Number((cfg as any).web?.upload_max_mb ?? 50)) * 1024 * 1024;
 
 export class FileError extends Error {
 	constructor(message: string, readonly status: number) {
@@ -33,36 +35,74 @@ export function safeName(name: string): string {
 
 const day = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 
-export async function saveUpload(file: File, dir = UPLOADS, max = UPLOAD_MAX_BYTES): Promise<Upload> {
-	if (file.size > max) throw new FileError(`파일이 너무 커요 (${Math.ceil(file.size / 1048576)}MB, 최대 ${Math.round(max / 1048576)}MB)`, 413);
-	if (!file.size) throw new FileError("빈 파일이에요", 400);
+const tooBig = (bytes: number, max: number) => new FileError(`파일이 너무 커요 (${Math.ceil(bytes / 1048576)}MB, 최대 ${Math.round(max / 1048576)}MB)`, 413);
+
+function uploadPath(fileName: string, dir: string): { path: string; name: string } {
 	const folder = join(dir, day());
 	mkdirSync(folder, { recursive: true });
-	const name = safeName(file.name || "pasted");
-	const path = join(folder, `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}-${name}`);
-	await Bun.write(path, file);
-	const original = file.name && file.name !== name ? file.name.slice(0, ORIGINAL_MAX) : undefined;
-	// A CLI that is only given the path finds it here (features/reply-drafts/lib/staged.ts); the day folder's cleanup takes it along.
-	if (original) writeAtomic(`${path}.name`, original);
-	return { path, name, ...(original ? { original } : {}), type: file.type || Bun.file(path).type || "application/octet-stream", size: file.size };
+	const name = safeName(fileName || "pasted");
+	return { name, path: join(folder, `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}-${name}`) };
 }
 
-// Reads a multipart body (one or more "file" fields). The size limit is checked per file and on the whole body.
+function uploadRecord(path: string, name: string, fileName: string, type: string, size: number): Upload {
+	const original = fileName && fileName !== name ? fileName.slice(0, ORIGINAL_MAX) : undefined;
+	// A CLI that is only given the path finds it here (features/reply-drafts/lib/staged.ts); the day folder's cleanup takes it along.
+	if (original) writeAtomic(`${path}.name`, original);
+	return { path, name, ...(original ? { original } : {}), type: type || Bun.file(path).type || "application/octet-stream", size };
+}
+
+export async function saveUpload(file: File, dir = UPLOADS, max = UPLOAD_MAX_BYTES): Promise<Upload> {
+	if (file.size > max) throw tooBig(file.size, max);
+	if (!file.size) throw new FileError("빈 파일이에요", 400);
+	const { path, name } = uploadPath(file.name, dir);
+	await Bun.write(path, file);
+	return uploadRecord(path, name, file.name, file.type, file.size);
+}
+
+// One network read of a file to its .part: FileHandle.write may take only some of the bytes.
+async function writeAll(fh: FileHandle, bytes: Uint8Array) {
+	for (let at = 0; at < bytes.length;) at += (await fh.write(bytes, at, bytes.length - at)).bytesWritten;
+}
+
+// Reads a multipart body (one or more "file" fields) straight to disk (hub/upload-stream.ts), so an upload's size costs the hub no memory. The size
+// limit is checked per file as the bytes arrive and on the whole body. A file gets its name only when the whole body is in: a client that goes away
+// (× on the chip aborts the request) or any refusal leaves nothing behind.
 export async function uploadsFrom(req: Request, dir = UPLOADS, max = UPLOAD_MAX_BYTES): Promise<Upload[]> {
 	const len = Number(req.headers.get("content-length") ?? 0);
 	if (len > max * 2 + 65536) throw new FileError(`한 번에 보낼 수 있는 양을 넘었어요 (최대 ${Math.round((max * 2) / 1048576)}MB)`, 413);
-	let form: FormData;
+	const boundary = /^multipart\/form-data\b.*\bboundary=(?:"([^"]+)"|([^;\s]+))/i.exec(req.headers.get("content-type") ?? "");
+	if (!boundary || !req.body) throw new FileError("multipart/form-data with a file field is required", 400);
+	const saved: { path: string; name: string; fileName: string; type: string; size: number }[] = [];
+	let writing: FileHandle | undefined;
 	try {
-		form = await req.formData();
-	} catch {
-		throw new FileError("multipart/form-data with a file field is required", 400);
+		await readMultipart(req.body, boundary[1] ?? boundary[2]!, async head => {
+			if (head.field !== "file" || head.filename === undefined) return undefined;
+			if (saved.length === 10) throw new FileError("한 번에 10개까지 보낼 수 있어요", 400);
+			const file = { ...uploadPath(head.filename, dir), fileName: head.filename, type: head.type, size: 0 };
+			saved.push(file);
+			const fh = (writing = await open(`${file.path}.part`, "wx"));
+			return {
+				write: async bytes => {
+					file.size += bytes.length;
+					if (file.size > max) throw tooBig(Math.max(file.size, len), max);
+					await writeAll(fh, bytes);
+				},
+				end: async () => {
+					writing = undefined;
+					await fh.close();
+				},
+			};
+		});
+		if (!saved.length) throw new FileError("file field is required", 400);
+		if (saved.some(f => !f.size)) throw new FileError("빈 파일이에요", 400);
+		for (const f of saved) renameSync(`${f.path}.part`, f.path);
+		return saved.map(f => uploadRecord(f.path, f.name, f.fileName, f.type, f.size));
+	} catch (error) {
+		throw error instanceof FileError ? error : new FileError("올리는 중에 끊겼어요", 400);
+	} finally {
+		await (writing as FileHandle | undefined)?.close();
+		for (const f of saved) rmSync(`${f.path}.part`, { force: true });
 	}
-	const files = form.getAll("file").filter((f): f is File => typeof f !== "string");
-	if (!files.length) throw new FileError("file field is required", 400);
-	if (files.length > 10) throw new FileError("한 번에 10개까지 보낼 수 있어요", 400);
-	const out: Upload[] = [];
-	for (const f of files) out.push(await saveUpload(f, dir, max));
-	return out;
 }
 
 // Names that never leave the machine through this route, even inside an allowed root.

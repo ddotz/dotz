@@ -241,7 +241,7 @@ function paintStrip() {
   // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left; the folded rail shows only the ring
   if (side) {
     side.classList.toggle("warn", pct <= 40);
-    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring", style: `--p:${pct}`, text: String(pct) }));
+    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring pring", style: `--p:${pct}`, text: String(pct) }));
     side.title = `사용량 · ${word} ${pct}% 남음`; side.setAttribute("aria-label", side.title);
   }
 }
