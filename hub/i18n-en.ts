@@ -244,6 +244,7 @@ export const en = {
 	laneShellJob: "a background command",
 	laneIdleHeld: (jobs: string[], minutes: number) => `[lane stuck] This idle lane stays up for: ${jobs.join(", ")}. Nothing was heard of it for ${minutes}+ minutes and it keeps about 1 GB in use. If it is still needed, leave it; if not, stop this lane.`,
 	laneRestartStuck: (n: number) => `[lane stuck] This session's work was cut off and it was brought back ${n} times, but its plan did not move, so it is left alone. To go on, send it a message; to drop the work, stop the session.`,
+	sessionRestartStuck: (n: number) => `This conversation's work was cut off and it was brought back ${n} times without finishing, so it is left alone. To go on, send a message here.`,
 	laneResumeContinue: (open: number, current: string) => `[dotz gateway] Your process stopped with work unfinished and you are back on this conversation. Check what was left (result files, logs), rerun what is missing, and go on${open ? ` with your ${open} open task(s)${current ? ` (now: ${current})` : ""}` : ""}. If nothing is left, say so with [done]; if it waits on the owner, say so with [ask] or [wait].`,
 	laneWorkersCut: (workers: string[]) => `These workers died with it and will not report back, so rerun them: ${workers.join(", ")}.`,
 	checkPassed: (n: number, landed: boolean) => `Checks passed: all ${n} checks passed${landed ? ", and the work branch is landed in main" : ""}`,

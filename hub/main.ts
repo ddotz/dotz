@@ -27,6 +27,8 @@ import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCle
 import { startRecallIndexing } from "./recall-idle.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
 import { startLaneResumeSweep, stopLaneResumeSweep } from "./laneresume.ts";
+import { createSessionResume } from "./sessionresume.ts";
+import { MAIN } from "./session-key.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { setTrashChannels } from "./lanetrash.ts";
 import { laneSpot, rememberSpot } from "./lanestate.ts";
@@ -48,7 +50,7 @@ import { createWaitCheck } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
-import { backfillNotices, draftCardCounts, dropChannelNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { allNotices, backfillNotices, draftCardCounts, dropChannelNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
@@ -706,7 +708,16 @@ const restartGate = createRestartGate({
 	},
 });
 // After the gate exists: the first pass runs now, and a resume waits out a restart in progress.
-startLaneResumeSweep({ budget: name => budgetProblem(name, estimateOf(undefined, ""), false), restarting: () => restartGate.waiting() });
+const sessionResume = createSessionResume({
+	file: join(DATA_DIR, "session-resume.json"),
+	log,
+	sessions: () =>
+		convs.resumeSessions(
+			c => allNotices().some(n => n.kind === "decision" && n.decision?.state === "open" && (n.decision.to === c.primary || (c.key === MAIN && (n.decision.to === "main" || n.decision.to.startsWith("auth:"))))),
+			(target, text) => void out(target, text, undefined, { source: "gateway" }).catch(e => log(`session resume notice to ${target} failed: ${e}`)),
+		),
+});
+startLaneResumeSweep({ budget: name => budgetProblem(name, estimateOf(undefined, ""), false), restarting: () => restartGate.waiting(), sessions: sessionResume.tick });
 function restartGateway(): string {
 	return restartGate.request();
 }

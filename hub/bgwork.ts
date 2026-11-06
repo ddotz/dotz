@@ -149,7 +149,7 @@ const conversationOf = (d: OpenDeferred | undefined) => d && { target: d.target 
 // A running record with no pid and no update for this long is a leftover, not a worker (seen: records from 2026-10-19 still "running").
 const NO_PID_STALE_MS = 3 * 3600_000;
 // A record still "running" whose process is gone counts as killed work this long; older ones are leftovers nobody closed.
-const DEAD_WORK_MS = 48 * 3600_000;
+export const DEAD_WORK_MS = 48 * 3600_000;
 const QUEUED = new Set(["queued", "pending"]);
 const RUNNING = new Set(["running", ...QUEUED]);
 // A running worker with no transcript or task-log activity for this long is stalled (DOTZ_WORKER_STALL_MIN, default 15).
@@ -265,7 +265,8 @@ export function createBgWork(deps: BgWorkDeps) {
 	const reports = new Map<string, string>();
 	// Failures already written to the log (list() runs on every /api/state read).
 	const told = new Set<string>();
-	// Failures already handed to the session (once each; a restart re-reads turnEndedAt, which the handed turn moved past them).
+	// Failures already handed to the session (once each; a restart re-reads turnEndedAt, which the handed turn moved past them); the resume
+	// sweep's wake counts too (hub/sessionresume.ts).
 	const handed = new Set<string>();
 	// Workers the owner stopped (중단), with when: OmO's record still says running for a while after its process ended.
 	const cancelled = new Map<string, number>();
@@ -621,7 +622,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		return { ok: true };
 	}
 
-	return { list, running, runningWork, quietWork, deadWork, queuedWork, takeStalled, cancel, reportOf, byId };
+	return { list, running, runningWork, quietWork, deadWork, handed, queuedWork, takeStalled, cancel, reportOf, byId };
 }
 
 const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });
