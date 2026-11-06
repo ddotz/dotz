@@ -128,7 +128,8 @@ test("with two steered messages on a channel, a reply_to answer to the second se
 	q.sent("chat", "answer to two", "s2");
 	expect(open().map(p => p.text)).toEqual(["first", "one"]);
 
-	// Without a reply_to it falls back to the first steered prompt of the channel.
+	// Without a reply_to it falls back to the first steered prompt of the channel the model has seen.
+	q.onPrompt(state.steered[0]!);
 	q.sent("chat", "plain note");
 	expect(open().map(p => p.text)).toEqual(["first"]);
 
@@ -514,18 +515,19 @@ test("an answered web prompt is not replayed after a restart, an unanswered one 
 	expect(after.open()).toEqual([{ text: "replay still open", at: expect.any(Number), target: "web", replyTo: "wq-2" }]);
 });
 
-test("a steered web prompt covered by the turn's final answer is not delivered again", async () => {
-	const { q, state, open, startTurn } = setup([], [], { covers: target => target === "web" });
+test("a steered prompt the model saw is covered by the turn's final answer and is not delivered again", async () => {
+	const { q, state, open, startTurn } = setup();
 	startTurn("first", web("wc-1"));
 	q.deliver("second", web("wc-2"));
 	q.deliver("other channel", chat("wc-3"));
 	expect(state.steered).toHaveLength(2);
+	q.onPrompt(state.steered[0]!);
 	q.onAnswer("answers both");
 	await Promise.resolve();
 	expect(q.isAnswered("wc-2")).toBe(true);
 	state.working = false;
 	q.redeliverSteered();
-	// Only the Discord message, which the final answer does not cover, comes back.
+	// Only the message whose note the model never got comes back.
 	expect(state.delivered).toEqual(["first", "other channel"]);
 	expect(open().map(p => p.replyTo)).toEqual(["wc-3"]);
 });
@@ -909,6 +911,8 @@ test("a prompt for one conversation is told that another conversation's worker i
 	expect(state.delivered.at(-1)).toBe("A 후속");
 	q.deliver("[foreign] wA ch:A\n\nB 요청", { target: "ch:B", replyTo: "b9", owner: true });
 	expect(state.delivered.at(-1)).toBe("[foreign] wA ch:A\n\nB 요청");
+	q.onPrompt(state.delivered.at(-1)!);
+	q.settleTurn();
 	works[0] = { ...works[0]!, status: "done", endedAt: Date.now() };
 	q.deliver("B 또", { target: "ch:B", replyTo: "b3", owner: true });
 	expect(state.delivered.at(-1)).toBe("B 또");

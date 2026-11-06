@@ -1046,7 +1046,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				const item = take(id);
 				if (!item) return json({ error: "not queued (already sent)" }, 404);
 				try {
-					await sendWeb({ lane: item.target.startsWith("lane:") ? item.target.slice(5) : undefined, channel: "web", text: item.text, mode: "steer", login: item.author ?? "local" });
+					await sendWeb({ lane: item.target.startsWith("lane:") ? item.target.slice(5) : undefined, channel: "web", text: item.text, mode: "steer", sendNow: true, login: item.author ?? "local" });
 				} catch (error) {
 					restore([item]);
 					return json({ error: (error as Error).message }, 409);

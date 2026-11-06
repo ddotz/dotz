@@ -118,7 +118,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		pending: sends.pending,
 		recent: () => recentOwnerMessages().filter(m => convs.keyOf(m.target) === key),
 		answeredSince,
-		covers: target => isLocal(target),
+		settled: settleRefs,
 	});
 }
 // A failed worker no turn took up is handed back to its own session, answering in the conversation it served (bgwork.ts handover).
@@ -230,6 +230,23 @@ const lateRequest = (target: string) => {
 	const q = convs.forTarget(target)?.queue ?? queue;
 	return lateRequestId(target, q.current(), lastOwner.get(target), askedAtMs);
 };
+function markShown(target: string, done: Waiting[]): void {
+	for (const w of done) {
+		emitDelivery(target, w.ref, "answered");
+		convs.markAnsweredAll(w.ref);
+		convs.markAnsweredAll(w.by);
+	}
+	recheckAnswered(target);
+}
+// An answer that named another message of the burst also answered these: each shows as answered.
+export function settleRefs(target: string, ids: string[]): void {
+	const done = ids.flatMap(id => {
+		const r = settleWaiting(awaiting.get(target) ?? [], id, false);
+		awaiting.set(target, r.keep);
+		return r.done;
+	});
+	if (done.length) markShown(target, done);
+}
 // An answer (not a progress note, not a gateway notice, not a held approval card shown later) settles the owner messages waiting in this conversation.
 function settleAnswer(j: OutJob): void {
 	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key && !j.extra.queued && !j.extra.keepsOpen) {
@@ -239,12 +256,7 @@ function settleAnswer(j: OutJob): void {
 		awaiting.set(j.target, keep);
 		// One truth: a message shown as answered is answered for the prompt queue too (deferred wait, pending.json, restart replay).
 		// An answer that names the last message of a burst (`by`) leaves the burst's other prompts open otherwise.
-		for (const w of done) {
-			emitDelivery(j.target, w.ref, "answered");
-			convs.markAnsweredAll(w.ref);
-			convs.markAnsweredAll(w.by);
-		}
-		recheckAnswered(j.target);
+		markShown(j.target, done);
 	}
 }
 // Everything after the text is final: the delivery states, then the web is done or the send ledger (kept on disk) takes over.
@@ -498,7 +510,7 @@ export function replayPending(): number {
 	// Stored conversation sessions come back parked; their open prompts go into their own session (feature on) or main (off).
 	const stored = convs.restore();
 	// The messages still wait after the restart: their answer must settle them (`awaiting` lives in memory).
-	for (const p of [...open, ...stored.flatMap(r => r.pending)]) if (p.target && p.replyTo) awaiting.set(p.target, [...(awaiting.get(p.target) ?? []), { ref: p.replyTo, by: p.replyTo }]);
+	for (const p of [...open, ...stored.flatMap(r => r.pending)]) if (p.target && p.replyTo) awaiting.set(p.target, [...(awaiting.get(p.target) ?? []), ...[...new Set([...(p.refs ?? []), p.replyTo])].map(ref => ({ ref, by: p.replyTo }))]);
 	const toMain = [...stored.filter(r => r.key === MAIN).flatMap(r => r.pending)];
 	// With conversation sessions on, main's own file may still hold a conversation's prompt from before: it goes to that session.
 	const mine = open.filter(p => convs.keyOf(p.target) === MAIN);

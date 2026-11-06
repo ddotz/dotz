@@ -24,9 +24,13 @@ export function prompt(lane: Lane, text: string): void {
 	// (report, progress note, todo item, tool intent): "answer the owner in Korean" read as covering replies only.
 	const nudge = (lane.retainNext ? `\n${msg().retainNudge}` : "") + (lane.workerNext ? `\n${lane.workerNext}` : "") + (/^\[owner via /.test(text) ? `\n${msg().ownerAnswerNudge}` : "");
 	lane.retainNext = lane.workerNext = undefined;
-	lane.proc?.send(`${text}${nudge}\n${msg().laneLanguage(languageName(lang()))}${handoffNote(`lane:${lane.name}`)}`, lane.status === "working" ? "steer" : "prompt");
-	if (lane.status === "working") return;
+	// The owner's next message while the turn is still starting joins its first model call: a queued steer is drained at the start of
+	// the agent loop (orchestrator.ts), a second "prompt" would ask for a second turn.
+	const joins = lane.status === "working" || (lane.startingOn === lane.proc && lane.proc !== undefined && /^\[owner via /.test(text));
+	lane.proc?.send(`${text}${nudge}\n${msg().laneLanguage(languageName(lang()))}${handoffNote(`lane:${lane.name}`)}`, joins ? "steer" : "prompt");
+	if (joins) return;
 	lane.prompted = text;
+	lane.startingOn = lane.proc;
 	clearTimeout(lane.watchdog);
 	lane.watchdog = setTimeout(() => {
 		log(`lane ${lane.name} did not start a turn after a prompt; restarting it`);

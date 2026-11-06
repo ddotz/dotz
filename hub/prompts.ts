@@ -34,12 +34,13 @@
 // one request back), and its request is asked again once. orphanTarget only picks a conversation for what no link explains; a run no
 // worker woke closes no request, and an answer no message explains is posted with no reply link.
 
+import { createBurst, sameConv } from "./promptburst.ts";
 import { isSilent, laterParts, stripLater } from "./tone.ts";
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
-export type Pending = { text: string; at?: number; target?: string; replyTo?: string; deferred?: boolean };
+export type Pending = { text: string; at?: number; target?: string; replyTo?: string; refs?: string[]; deferred?: boolean };
 /** A worker and the request it was spawned for. `also`: follow-ups deferred to it; `receipted`: its line was posted; `delivered`: an answer from its result went out; `read`: its result was read in a run that did not answer it. */
 export type WorkLink = { id: string; target: string; replyTo?: string; at: number; description?: string; also?: string[]; receipted?: boolean; delivered?: boolean; read?: boolean; cancelled?: boolean };
 /** A request waiting on background work, for the gateway's silent-wait check (hub/waitcheck.ts). */
@@ -102,17 +103,14 @@ export type PromptDeps = {
 	recent?: () => OwnerMessage[];
 	/** Did the orchestrator answer in `target` after `at`? Settles stored prompts that carry no message id (written before web messages had one). */
 	answeredSince?: (target: string, at: number) => boolean;
-	/** Does a final answer to `target` also cover the messages steered into its turn (the web has no per-message answers)? */
-	covers?: (target: string) => boolean;
+	/** These messages of `target` were answered by an answer that names another one of the burst. */
+	settled?: (target: string, ids: string[]) => void;
 };
 
 // Near-identical answers: the first NEAR_CHARS letters and digits (lowercased, no spaces or punctuation) match, at least NEAR_MIN long.
 const NEAR_CHARS = 40;
 const NEAR_MIN = 20;
 const head = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "").slice(0, NEAR_CHARS);
-// "chat" and "web" are both the owner's main conversation on the web page (hub/events.ts eventTarget).
-const isMain = (t: string) => t === "chat" || t === "web";
-const sameConv = (a: string, b: string) => a === b || (isMain(a) && isMain(b));
 const MAX_PROMPTS = 200;
 const MAX_ANSWERED = 5000;
 const REPLAY_MAX_AGE_MS = 12 * 3600_000;
@@ -176,7 +174,7 @@ export function createPrompts(deps: PromptDeps) {
 		return (deps.work?.() ?? []).find(w => (w.status === "running" || w.status === "stalled") && w.target !== undefined && waiting.has(w.target) && !sameConv(w.target, target));
 	}
 
-	const pending = ({ text, at, target, replyTo, deferred }: Prompt): Pending => ({ text, at, target, replyTo, ...(deferred ? { deferred } : {}) });
+	const pending = ({ text, at, target, replyTo, refs, deferred }: Prompt): Pending => ({ text, at, target, replyTo, ...(refs?.length ? { refs } : {}), ...(deferred ? { deferred } : {}) });
 	const save = () => {
 		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts.filter(p => !p.cancelled)].filter(p => !isAnswered(p.replyTo)).map(pending);
 		deps.persist(open);
@@ -199,26 +197,31 @@ export function createPrompts(deps: PromptDeps) {
 		save();
 	}
 
+	const burst = createBurst(prompts, { ...deps, isAnswered, markAnswered, save });
+
 	/**
 	 * Delivers one prompt; true when it was steered into the running turn. Only a message of the conversation that turn answers is
 	 * steered in: another conversation's message waits as its own prompt, so one turn never mixes two conversations and its answer
 	 * cannot land in the wrong one (2026-10-28 21:44 KST: a mail thread's question was steered into a KTX run and the KTX answer
-	 * was posted in the mail thread).
+	 * was posted in the mail thread). The owner's next message while that run goes on after its first stop joins it too; behind a
+	 * prompt that has not started yet it gathers (hub/promptburst.ts).
 	 */
 	function deliver(text: string, reply?: Reply): boolean {
-		const steered = Boolean(reply) && deps.working() && Boolean(current && !current.done && current.target && sameConv(current.target, reply!.target));
+		const running = Boolean(current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
+		const steered = deps.working() && running;
+		const gather = !steered && reply?.owner === true && burst.gathers(reply.target);
 		// A new owner turn for a conversation whose background worker is still running starts with a note naming that worker, so the
 		// orchestrator passes a follow-up to it (task_send) instead of spawning a second worker for the same job (owner 2026-10-30:
 		// four follow-ups to one posting job). The Prompt keeps the text as delivered: onPrompt pairs by it and a replay re-sends it.
-		const worker = !steered && reply?.owner ? deps.workFor?.(reply.target) : undefined;
+		const worker = !steered && !gather && reply?.owner ? deps.workFor?.(reply.target) : undefined;
 		if (worker && deps.joinNote && !deps.hasJoinNote?.(text)) text = `${deps.joinNote(worker)}\n\n${text}`;
 		// A worker of another conversation may report during this turn (OmO injects its completion into the running run): its answer
 		// belongs to its own conversation, not to this prompt's (2026-10-31 06:36 UTC, A's answer was posted into B).
-		const elsewhere = reply?.owner && deps.foreignNote && !deps.hasForeignNote?.(text) ? otherConversation(reply.target) : undefined;
+		const elsewhere = reply?.owner && !gather && deps.foreignNote && !deps.hasForeignNote?.(text) ? otherConversation(reply.target) : undefined;
 		if (elsewhere?.target) text = `${text}\n\n${deps.foreignNote!(elsewhere, elsewhere.target)}`;
-		const cards = reply?.owner && !deps.hasCardsNote?.(text) ? deps.cardsNote?.(reply.target) : undefined;
+		const cards = reply?.owner && !gather && !deps.hasCardsNote?.(text) ? deps.cardsNote?.(reply.target) : undefined;
 		if (cards) text = `${cards}\n\n${text}`;
-		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, ...(reply?.refs?.length ? { refs: reply.refs } : {}), sent: [], steered };
+		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, ...(reply?.refs?.length ? { refs: reply.refs } : {}), sent: [], steered, ...(reply?.owner ? { owner: true } : {}), ...(gather ? { gathered: true } : {}) };
 		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
 		if (reply?.owner) {
@@ -226,28 +229,21 @@ export function createPrompts(deps: PromptDeps) {
 			if (owners.length > MAX_RECENT) owners.splice(0, owners.length - MAX_RECENT);
 		}
 		save();
+		if (gather) return void burst.gathered(), false;
 		if (!steered) {
 			// A turn still owes an answer, yet the orchestrator does not look busy: logged to find why (10-20 17:19).
 			if (reply && deps.working()) deps.log(`message for ${reply.target} waits as its own prompt: the running turn answers ${current && !current.done ? (current.target ?? "-") : "no request of ours"}`);
 			deps.deliver(text, Boolean(reply?.owner));
 			return false;
 		}
-		if (deps.steer(deps.note(reply!.target, reply!.replyTo, text)) !== false) return true;
+		const note = deps.note(reply!.target, reply!.replyTo, text);
+		prompt.noted = note.trim();
+		if (deps.steer(note) !== false) return true;
+		prompt.noted = undefined;
 		// The turn ended between the check and the steer: the message goes in as a normal prompt instead of waiting.
 		prompts.at(-1)!.steered = false;
 		deps.deliver(text, Boolean(reply?.owner));
 		return false;
-	}
-
-	/**
-	 * A dotz_send settles the steered prompt it answers: the one whose message id it replies to, or, when it names no
-	 * message, the first steered prompt of that channel.
-	 */
-	function settleSteered(target: string, replyTo?: string): void {
-		const i = prompts.findIndex(p => p.steered && p.target === target && (replyTo ? p.replyTo === replyTo : true));
-		if (i < 0) return;
-		prompts.splice(i, 1);
-		save();
 	}
 
 	/** Records a dotz_send: the turn's current prompt has now sent this part, and a steered prompt it answers is settled. Returns the request it answers, which the post must carry: the wake is spent here. */
@@ -262,12 +258,13 @@ export function createPrompts(deps: PromptDeps) {
 			const d = ref ? openDeferred().find(p => p.target === target && p.replyTo === ref) : undefined;
 			if (d) {
 				d.done = true;
+				burst.close(target, d.refs ?? []);
 				save();
 			}
 			closeResults(ref);
 		}
 		markAnswered(ref);
-		settleSteered(target, replyTo);
+		burst.settle(target, replyTo);
 		return ref;
 	}
 
@@ -279,7 +276,7 @@ export function createPrompts(deps: PromptDeps) {
 	function holdEarly(target: string, text: string, replyTo?: string): boolean {
 		const p = current;
 		if (!p || p.done || p.target !== target || !text.trim()) return false;
-		if (prompts.some(q => q.steered && q.target === target && (replyTo ? q.replyTo === replyTo : true))) return false;
+		if (burst.find(target, replyTo)) return false;
 		(p.held ??= []).push(stripLater(text).trim());
 		deps.log(`held an early send to ${target} until the turn's answer (${text.trim().length} chars)`);
 		return true;
@@ -296,16 +293,17 @@ export function createPrompts(deps: PromptDeps) {
 	 */
 	function cancel(): string | undefined {
 		const p = current;
-		if (!p || p.done) return undefined;
-		const target = p.target;
+		const target = p?.target;
+		if (!p || (p.done && !prompts.some(q => (q.steered || q.gathered) && q.target !== undefined && target !== undefined && sameConv(q.target, target)))) return undefined;
+		const here = (q: Prompt) => q.target === target || (q.target !== undefined && target !== undefined && sameConv(q.target, target));
 		Object.assign(p, { done: true, cancelled: true, last: undefined, held: undefined });
-		for (const q of prompts.filter(q => q.steered && q.target === target)) {
+		for (const q of prompts.filter(q => (q.steered || q.gathered) && here(q))) {
 			q.cancelled = true;
 			prompts.splice(prompts.indexOf(q), 1);
 			cancelledNotes.push({ text: q.text, at: Date.now() });
 		}
 		// Messages of that conversation sent while it worked wait in the runtime's queue as next prompts: each is stopped when it starts.
-		for (const q of prompts.filter(q => !q.steered && q.target === target)) Object.assign(q, { cancelled: true, done: true });
+		for (const q of prompts.filter(q => !q.steered && here(q))) Object.assign(q, { cancelled: true, done: true });
 		for (const d of openDeferred().filter(d => d.target === target)) Object.assign(d, { done: true, cancelled: true });
 		for (const l of links.values()) if (l.target === target) l.cancelled = true;
 		saveLinks();
@@ -320,22 +318,6 @@ export function createPrompts(deps: PromptDeps) {
 		if (current && !current.done && current.target === from) current.target = to;
 	}
 
-	/** The orchestrator is idle: steered prompts nobody answered go in again as normal prompts. */
-	function redeliverSteered(): void {
-		const open = prompts.filter(p => p.steered);
-		let dropped = false;
-		for (const p of open) {
-			if (isAnswered(p.replyTo)) {
-				prompts.splice(prompts.indexOf(p), 1);
-				dropped = true;
-				continue;
-			}
-			p.steered = false;
-			deps.deliver(p.text, true);
-		}
-		if (dropped) save();
-	}
-
 	/** omp started a prompt: pair it with the delivered one it came from. Returns true when the turn that just started carries only messages of a request the owner cancelled: the caller aborts it. */
 	function onPrompt(text: string): boolean {
 		cancelledNotes = cancelledNotes.filter(n => Date.now() - n.at <= CANCEL_NOTE_MS);
@@ -345,13 +327,13 @@ export function createPrompts(deps: PromptDeps) {
 			return true;
 		}
 		// Notes steered into a running turn are not new requests: the turn keeps answering the prompt it started with.
-		if (deps.isNote(text)) return false;
+		if (deps.isNote(text)) return void burst.see(text), false;
 		// The harness's own mid-turn injections (OmO: `<system-reminder>` when a detached cell finishes, `<omo-senpi-task>`)
 		// are not prompts either; clearing `current` on them dropped the turn's final answer (owner 2026-10-20: "작업 끝나도
 		// 보고 안하는거", the 17:18 web turn).
 		if (text.trimStart().startsWith("<")) return false;
 		for (const q of prompts.filter(q => q.cancelled && Date.now() - q.at > CANCEL_NOTE_MS)) prompts.splice(prompts.indexOf(q), 1);
-		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
+		const i = prompts.findIndex(p => !p.steered && !p.gathered && text.includes(p.key));
 		const started = prompts[i];
 		if (i >= 0 && started!.cancelled) {
 			prompts.splice(i, 1);
@@ -386,6 +368,7 @@ export function createPrompts(deps: PromptDeps) {
 			current.done = true;
 			deps.log(`the prompt for ${current.target ?? "-"} was already answered by a dotz_send; this turn's answer is dropped`);
 		}
+		if (current?.target) burst.release(current.target);
 		save();
 		return false;
 	}
@@ -667,25 +650,41 @@ export function createPrompts(deps: PromptDeps) {
 		if (to.prompt) to.prompt.done = true;
 		for (const d of tied) d.done = true;
 		for (const d of deferred) if (d.target === to.target && d.replyTo !== undefined && d.replyTo === to.replyTo) d.done = true;
-		if (to.replyTo) settleSteered(to.target, to.replyTo);
+		if (to.replyTo) burst.settle(to.target, to.replyTo);
 		save();
 		void deps
 			.post(to.target, t, to.replyTo)
 			.then(r => {
 				if (!r.delivered) return;
 				markAnswered(to.replyTo);
-				for (const d of tied) markAnswered(d.replyTo);
+				burst.close(to.target, to.prompt?.refs ?? []);
+				for (const d of tied) {
+					markAnswered(d.replyTo);
+					burst.close(to.target, d.refs ?? []);
+				}
 				deps.clearProgress(to.target);
 			})
 			.catch(e => deps.log(`reply to ${to.target} failed: ${e}`));
 	}
 
-	/** The turn's final answer to `target` also answers what was steered into the turn there: those are not delivered again. */
-	function coverSteered(target: string): void {
-		for (const q of prompts.filter(x => x.steered && x.target === target)) {
-			prompts.splice(prompts.indexOf(q), 1);
-			markAnswered(q.replyTo);
-		}
+	/** A later stop of a run whose prompt was answered: it answers what landed in the run since, and is posted with them. */
+	function onContinued(p: Prompt, text: string): void {
+		const { later, text: t } = laterParts(text);
+		const target = p.target;
+		const replyTo = target ? burst.seen(target).findLast(q => q.replyTo)?.replyTo : undefined;
+		if (!target || p.cancelled || later || isSilent(t) || !burst.seen(target).length) return;
+		const ids = burst.cover(target);
+		save();
+		if (p.sent.some(s => sameConv(s.target, target) && s.text.includes(t))) return burst.close(target, ids);
+		p.sent.push({ target, text: t });
+		void deps
+			.post(target, t, replyTo)
+			.then(r => {
+				if (!r.delivered) return;
+				burst.close(target, ids);
+				deps.clearProgress(target);
+			})
+			.catch(e => deps.log(`reply to ${target} failed: ${e}`));
 	}
 
 	/** An assistant stop: the turn's final answer goes to the channel that asked, once. */
@@ -693,7 +692,7 @@ export function createPrompts(deps: PromptDeps) {
 		const p = current;
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
 		if (!p) return onOrphanAnswer(text);
-		if (p.done) return;
+		if (p.done) return onContinued(p, text);
 		const { later, text: t } = laterParts(text);
 		if (later && p.target && !p.deferred) {
 			if (t) deps.interim?.(p.target, t);
@@ -739,7 +738,7 @@ export function createPrompts(deps: PromptDeps) {
 		if (silent && t !== "-") deps.log(`a no-op answer for ${p.target ?? "-"} was not posted: ${t.slice(0, 160)}`);
 		if (p.target && !silent) receipted.delete(receiptKey(p.target));
 		if (!silent) closeResults(p.replyTo);
-		if (p.target && !silent && deps.covers?.(p.target)) coverSteered(p.target);
+		const ids = p.target && !silent ? [...(p.refs ?? []), ...burst.cover(p.target)] : [];
 		save();
 		if (!p.target) return;
 		const target = p.target;
@@ -753,7 +752,7 @@ export function createPrompts(deps: PromptDeps) {
 		const repeat = silent || prior.some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
 		if (repeat && !held.length) {
 			if (sentHere) deps.clearProgress(target);
-			return;
+			return burst.close(target, ids);
 		}
 		const body = [...held, ...(repeat ? [] : [t])].join("\n\n");
 		p.sent.push({ target, text: body });
@@ -762,6 +761,7 @@ export function createPrompts(deps: PromptDeps) {
 			.then(r => {
 				if (!r.delivered) return;
 				markAnswered(p.replyTo);
+				burst.close(target, ids);
 				deps.clearProgress(target);
 			})
 			.catch(e => deps.log(`reply to ${target} failed: ${e}`));
@@ -783,10 +783,10 @@ export function createPrompts(deps: PromptDeps) {
 		const waits = (p: Pending) => p.deferred === true && linksOf(p).some(l => !l.delivered && !l.cancelled && !failed.has(l.id));
 		const kept = fresh.filter(waits);
 		const again = fresh.filter(p => !waits(p));
-		for (const p of kept) deferred.push({ key: p.text.slice(0, 300), text: p.text, at: p.at ?? Date.now(), target: p.target, replyTo: p.replyTo, sent: [], deferred: true });
+		for (const p of kept) deferred.push({ key: p.text.slice(0, 300), text: p.text, at: p.at ?? Date.now(), target: p.target, replyTo: p.replyTo, ...(p.refs?.length ? { refs: p.refs } : {}), sent: [], deferred: true });
 		if (kept.length) { deps.log(`${kept.length} request(s) keep waiting on their workers after the restart`); save(); }
 		if (again.length) deps.log(`replaying ${again.length} unanswered prompt(s) from before the restart`);
-		for (const p of again) deliver(wrap(p.text), p.target ? { target: p.target, replyTo: p.replyTo } : undefined);
+		for (const p of again) deliver(wrap(p.text), p.target ? { target: p.target, replyTo: p.replyTo, refs: p.refs } : undefined);
 		return again.length;
 	}
 
@@ -818,7 +818,7 @@ export function createPrompts(deps: PromptDeps) {
 	const openRequests = (): OpenRequest[] => openDeferred().flatMap(p => (p.target ? [{ target: p.target, ...(p.replyTo ? { replyTo: p.replyTo } : {}), at: p.at, workers: linksOf(p).map(({ id, description }) => ({ id, ...(description ? { description } : {}) })) }] : []));
 
 	/** Messages of this conversation with a turn of their own still to come: an answer to another message there does not settle them. */
-	const waitingIds = (target: string): string[] => [...openDeferred(), ...prompts.filter(p => !p.steered)].flatMap(p => (p.replyTo && p.target && sameConv(p.target, target) ? [p.replyTo] : []));
+	const waitingIds = (target: string): string[] => [...openDeferred(), ...prompts.filter(p => !p.seen)].flatMap(p => (p.target && sameConv(p.target, target) ? [...new Set([...(p.refs ?? []), ...(p.replyTo ? [p.replyTo] : [])])] : []));
 
-	return { deliver, settleSteered, sent, holdEarly, cancel, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, turnAt, queued: () => prompts.slice(), current: () => current, linkOf: (id: string) => links.get(id), link, workersSpawned, workersDone, workersSteered, resultFor, openRequests, waitingIds };
+	return { deliver, settleSteered: burst.settle, sent, holdEarly, cancel, retarget, markAnswered, isAnswered, redeliverSteered: burst.redeliver, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, turnAt, queued: () => prompts.slice(), current: () => current, linkOf: (id: string) => links.get(id), link, workersSpawned, workersDone, workersSteered, resultFor, openRequests, waitingIds };
 }

@@ -108,6 +108,7 @@ test("the web composer's steer and a burst flushed by intake both close the requ
 	try {
 		const a = await ask("chat", "icon-steer", "main");
 		await sendWeb({ channel: "web", text: "취소", mode: "steer", login: "local" });
+		flush("web");
 		expect(await status(a)).toBe("cancelled");
 		const b = await ask("chat", "icon-flush", "main");
 		intake({ kind: "message", source: "discord", channel: "chat", text: "취소", attachments: [] }, "chat");

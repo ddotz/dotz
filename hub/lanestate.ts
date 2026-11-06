@@ -91,6 +91,8 @@ export type Lane = Record_ & {
 	queueTold?: boolean;
 	// The last text sent as a new turn (not a steer) until the model answers (laneevents.ts refusedTurn).
 	prompted?: string;
+	/** The process a prompt went to whose turn has not started yet: the owner's next message joins that turn. */
+	startingOn?: unknown;
 	refusedTimer?: Timer;
 };
 
