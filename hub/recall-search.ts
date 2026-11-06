@@ -21,7 +21,10 @@ export interface OpenedDoc { id: string; ts: string; room: string; project: stri
 
 const DAY = 86_400_000;
 const SLACK = 6 * 3600_000;
-const RRF_K = 60;
+// Measured: k 20, each vector list counts double a keyword list (one vector list per phrasing).
+const RRF_K = 20;
+const KEYWORD_WEIGHT = 1;
+const VECTOR_WEIGHT = 2;
 const PROJECT_BOOST = 1.5;
 const COMMON_SHARE = 0.4;
 const BM25 = "bm25(fts, 5.0, 1.0, 2.0)";
@@ -95,10 +98,10 @@ export function search(db: Database, q: SearchQuery, opts: SearchOpts): Hit[] {
 	const pool = Math.max(50, limit * 6);
 	const range = [bound(q.after, 0, false), bound(q.before, Number.MAX_SAFE_INTEGER, true)] as const;
 	const phrases = [q.query, ...(q.also ?? [])];
-	const lists = phrases.map(p => keywordRanks(db, usefulTerms(db, p), range, pool));
-	if (opts.mode === "hybrid") lists.push(...vectorRanks(db, opts.queryVecs ?? [], opts.model, range, pool));
+	const lists = phrases.map(p => ({ weight: KEYWORD_WEIGHT, ranks: keywordRanks(db, usefulTerms(db, p), range, pool) }));
+	if (opts.mode === "hybrid") lists.push(...vectorRanks(db, opts.queryVecs ?? [], opts.model, range, pool).map(ranks => ({ weight: VECTOR_WEIGHT, ranks })));
 	const score = new Map<number, number>();
-	for (const list of lists) list.forEach((n, rank) => score.set(n, (score.get(n) ?? 0) + 1 / (RRF_K + rank)));
+	for (const { weight, ranks } of lists) ranks.forEach((n, rank) => score.set(n, (score.get(n) ?? 0) + weight / (RRF_K + rank)));
 	const byN = db.query<DocRow, [number]>("SELECT id, n, ts_ms, room, project, title, kind, file, line, owner, answer FROM docs WHERE n = ?");
 	const want = q.project?.toLowerCase();
 	const needles = [...new Set(phrases.flatMap(p => tokenize(p)))].filter(w => w.length >= 2);

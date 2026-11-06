@@ -1,9 +1,11 @@
-// Context search command line (docs: recall-index.ts, recall-search.ts). Everything is local: index builds or refreshes the SQLite file,
-// search/open/status read it, dump writes every doc as JSONL for an evaluator.
+// Context search command line (docs: recall-index.ts, recall-search.ts, recall-embed.ts). Everything is local: index builds or refreshes the SQLite file,
+// refresh does that plus the meaning vectors within a time budget (the one command the gateway runs, hub/recall-idle.ts), search/open/status read it,
+// dump writes every doc as JSONL for an evaluator. Search is hybrid when vectors and the embedder exist, else keyword with a visible note.
 import type { Database } from "bun:sqlite";
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
+import { bunBin, embedPending, loadEmbedder, MODEL_NAME, modelReady, notReadyReason, provision, vectorCount } from "./recall-embed.ts";
 import { indexPath, ingest, openRecall } from "./recall-index.ts";
 import { openDoc, search, type Hit } from "./recall-search.ts";
 
@@ -26,6 +28,7 @@ export function parseArgs(argv: readonly string[]): Args {
 	const flags = new Map<string, string[]>();
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i] ?? "";
+		if (a === "--") { pos.push(...argv.slice(i + 1)); break; }
 		if (!a.startsWith("--")) { pos.push(a); continue; }
 		const name = a.slice(2);
 		if (BOOLEAN.has(name)) { flags.set(name, ["1"]); continue; }
@@ -58,15 +61,19 @@ function status(db: Database): string {
 	const kinds = one<{ kind: string; c: number }>("SELECT kind, count(*) c FROM docs GROUP BY kind").map(r => `${r.kind}=${r.c}`).join(" ");
 	const months = one<{ m: string; c: number }>("SELECT substr(ts,1,7) m, count(*) c FROM docs GROUP BY m ORDER BY m").map(r => `${r.m}:${r.c}`).join(" ");
 	const files = one<{ c: number }>("SELECT count(*) c FROM files")[0]?.c ?? 0;
-	const vecs = one<{ model: string; c: number }>("SELECT model, count(*) c FROM vecs GROUP BY model").map(r => `${r.model}=${r.c}`).join(" ") || "none";
-	return [`docs ${total?.c ?? 0} (${kinds || "none"}) from ${total?.lo ?? "-"} to ${total?.hi ?? "-"}`, `by month ${months || "-"}`, `files ${files}, vectors ${vecs}`].join("\n");
+	const v = vectorCount(db, MODEL_NAME);
+	const why = notReadyReason(DATA_DIR);
+	return [
+		`docs ${total?.c ?? 0} (${kinds || "none"}) from ${total?.lo ?? "-"} to ${total?.hi ?? "-"}`, `by month ${months || "-"}`,
+		`files ${files}, vectors ${v.done} of ${v.total} (${MODEL_NAME})`, `model ${why ? `not ready: ${why}` : "ready"}`,
+	].join("\n");
 }
 
 const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-function formatHits(hits: readonly Hit[]): string {
-	if (!hits.length) return "no match; try other words, the person's own phrasing, or drop the date and project limits";
-	return hits.map((h, i) => {
+function formatHits(hits: readonly Hit[], note = ""): string {
+	if (!hits.length) return `${note}no match; try other words, the person's own phrasing, or drop the date and project limits`;
+	return note + hits.map((h, i) => {
 		const where = [h.room, h.project].filter(Boolean).join(" ");
 		return `${i + 1}. ${h.id} ${h.ts} ${h.kind}${where ? ` ${where}` : ""}\n   Q: ${clip(h.owner, 110)}\n   A: ${clip(h.answer, 110)}`;
 	}).join("\n");
@@ -81,10 +88,52 @@ function dump(db: Database, out: string): number {
 	return lines.length;
 }
 
-function main(argv: readonly string[]): void {
+async function refresh(budgetMs: number): Promise<number> {
+	const t0 = Date.now();
+	const db = openRecall(DATA_DIR);
+	const r = ingest(db, { roots: sessionDirs(), budgetMs, convKeys: convKeys() });
+	const lines = [`indexed ${r.docs} docs from ${r.files} files, removed ${r.removed} gone files${r.complete ? "" : " (budget reached)"}`];
+	let code = 0;
+	if (!modelReady(DATA_DIR)) {
+		const p = await provision({ dataDir: DATA_DIR, bun: bunBin() });
+		lines.push(`model setup: ${p.status}${p.reason ? ` (${p.reason})` : ""}`);
+		if (p.status === "failed") code = 2;
+	}
+	const { embedder: e, reason } = await loadEmbedder(DATA_DIR);
+	if (e) {
+		const x = await embedPending(db, e, Math.max(0, budgetMs - (Date.now() - t0)));
+		lines.push(`embedded ${x.done}${x.failed ? `, ${x.failed} failed (${x.firstError})` : ""}${x.stopped ? " (budget reached, run again to continue)" : ""}`);
+	} else lines.push(`no embedding: ${reason}`);
+	const v = vectorCount(db, MODEL_NAME);
+	lines.push(`vectors ${v.done} of ${v.total}, ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+	console.log(lines.join("\n"));
+	return code;
+}
+
+// Hybrid needs stored vectors and a loadable embedder; any miss ends in keyword search with the reason on stderr.
+async function queryVectors(db: Database, phrases: readonly string[]): Promise<{ vecs?: Float32Array[]; reason?: string }> {
+	if (vectorCount(db, MODEL_NAME).done === 0) return { reason: "no vectors stored yet" };
+	const { embedder: e, reason } = await loadEmbedder(DATA_DIR);
+	if (!e) return { reason };
+	try {
+		const vecs: Float32Array[] = [];
+		for (const p of phrases) vecs.push(await e.embed(p));
+		return { vecs };
+	} catch (err) {
+		return { reason: `embedding failed: ${(err instanceof Error ? err.message : String(err)).split("\n")[0]}` };
+	}
+}
+
+async function main(argv: readonly string[]): Promise<void> {
 	const [cmd, ...rest] = argv;
 	const { pos, flags } = parseArgs(rest);
 	const one = (n: string): string | undefined => flags.get(n)?.[0];
+	if (cmd === "refresh") {
+		const budget = Number(one("budget-ms") ?? 20000);
+		if (!Number.isFinite(budget) || budget < 0) fail("--budget-ms must be a number");
+		process.exitCode = await refresh(budget);
+		return;
+	}
 	if (cmd === "index") {
 		const budget = one("budget-ms");
 		const db = openRecall(DATA_DIR);
@@ -98,8 +147,12 @@ function main(argv: readonly string[]): void {
 		const limit = Number(one("limit") ?? 8);
 		if (!Number.isInteger(limit) || limit < 1) fail("--limit must be a positive integer");
 		const db = openRecall(DATA_DIR, true);
-		const hits = search(db, { query, also: flags.get("also"), after: one("after"), before: one("before"), project: one("project"), limit }, { mode: "keyword" });
-		console.log(flags.has("json") ? JSON.stringify(hits) : formatHits(hits));
+		const q = { query, also: flags.get("also"), after: one("after"), before: one("before"), project: one("project"), limit };
+		const forced = flags.has("keyword");
+		const { vecs, reason } = forced ? ({} as { vecs?: Float32Array[]; reason?: string }) : await queryVectors(db, [query, ...(q.also ?? [])]);
+		if (reason) console.error(`recall: keyword only: ${reason}`);
+		const hits = search(db, q, vecs ? { mode: "hybrid", queryVecs: vecs, model: MODEL_NAME } : { mode: "keyword" });
+		console.log(flags.has("json") ? JSON.stringify(hits) : formatHits(hits, vecs || forced ? "" : "(keyword only)\n"));
 		return;
 	}
 	if (cmd === "open") {
@@ -121,13 +174,12 @@ function main(argv: readonly string[]): void {
 		console.log(`dumped ${dump(openRecall(DATA_DIR, true), out as string)} docs to ${out}`);
 		return;
 	}
-	fail(`usage: bun hub/recall-cli.ts index|search|open|status|dump (index at ${indexPath(DATA_DIR)})`);
+	fail(`usage: bun hub/recall-cli.ts refresh|index|search|open|status|dump (index at ${indexPath(DATA_DIR)})`);
 }
 
 if (import.meta.main) {
-	try {
-		main(process.argv.slice(2));
-	} catch (e) {
-		fail((e instanceof Error ? e.message : String(e)).split("\n")[0] ?? "failed");
-	}
+	main(process.argv.slice(2)).then(
+		() => process.exit(process.exitCode ?? 0),
+		e => fail((e instanceof Error ? e.message : String(e)).split("\n")[0] ?? "failed"),
+	);
 }
