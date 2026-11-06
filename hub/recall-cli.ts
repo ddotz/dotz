@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { bunBin, embedPending, loadEmbedder, MODEL_NAME, modelReady, notReadyReason, provision, vectorCount } from "./recall-embed.ts";
 import { indexPath, ingest, openRecall } from "./recall-index.ts";
+import { provisionRerank, rerankHits, rerankReady, RERANK_NAME, RERANK_POOL } from "./recall-rerank.ts";
 import { openDoc, search, type Hit } from "./recall-search.ts";
 
 const REPO = resolve(import.meta.dir, "..");
@@ -21,7 +22,7 @@ const fail = (msg: string): never => {
 };
 
 interface Args { pos: string[]; flags: Map<string, string[]> }
-const BOOLEAN = new Set(["keyword", "json"]);
+const BOOLEAN = new Set(["keyword", "json", "no-rerank"]);
 
 export function parseArgs(argv: readonly string[]): Args {
 	const pos: string[] = [];
@@ -66,6 +67,7 @@ function status(db: Database): string {
 	return [
 		`docs ${total?.c ?? 0} (${kinds || "none"}) from ${total?.lo ?? "-"} to ${total?.hi ?? "-"}`, `by month ${months || "-"}`,
 		`files ${files}, vectors ${v.done} of ${v.total} (${MODEL_NAME})`, `model ${why ? `not ready: ${why}` : "ready"}`,
+		`reranker ${rerankReady(DATA_DIR) ? "ready" : "not downloaded yet"} (${RERANK_NAME})`,
 	].join("\n");
 }
 
@@ -98,6 +100,10 @@ async function refresh(budgetMs: number): Promise<number> {
 		const p = await provision({ dataDir: DATA_DIR, bun: bunBin() });
 		lines.push(`model setup: ${p.status}${p.reason ? ` (${p.reason})` : ""}`);
 		if (p.status === "failed") code = 2;
+	}
+	if (!rerankReady(DATA_DIR)) {
+		const p = await provisionRerank({ dataDir: DATA_DIR });
+		lines.push(`reranker setup: ${p.status}${p.reason ? ` (${p.reason})` : ""}`);
 	}
 	const { embedder: e, reason } = await loadEmbedder(DATA_DIR);
 	if (e) {
@@ -151,7 +157,11 @@ async function main(argv: readonly string[]): Promise<void> {
 		const forced = flags.has("keyword");
 		const { vecs, reason } = forced ? ({} as { vecs?: Float32Array[]; reason?: string }) : await queryVectors(db, [query, ...(q.also ?? [])]);
 		if (reason) console.error(`recall: keyword only: ${reason}`);
-		const hits = search(db, q, vecs ? { mode: "hybrid", queryVecs: vecs, model: MODEL_NAME } : { mode: "keyword" });
+		const rerank = !forced && !flags.has("no-rerank");
+		const found = search(db, { ...q, limit: rerank ? Math.max(limit, RERANK_POOL) : limit }, vecs ? { mode: "hybrid", queryVecs: vecs, model: MODEL_NAME } : { mode: "keyword" });
+		const ranked = rerank ? await rerankHits(db, query, found, DATA_DIR) : { hits: found };
+		if (ranked.reason) console.error(`recall: not reranked: ${ranked.reason}`);
+		const hits = ranked.hits.slice(0, limit);
 		console.log(flags.has("json") ? JSON.stringify(hits) : formatHits(hits, vecs || forced ? "" : "(keyword only)\n"));
 		return;
 	}

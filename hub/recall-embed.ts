@@ -19,8 +19,8 @@ export const MODEL_FILES: readonly ModelFile[] = [
 	{ name: "tokenizer_config.json", url: `${REPO_URL}/tokenizer_config.json`, sha256: "f534522d501e985fd55c18a97cf90674fbbdbf736d4c6b0ab14cd2f86cc96d7f" },
 ];
 export const RUNTIME_PACKAGES = ["onnxruntime-node@1.31.1", "@huggingface/tokenizers@0.2.0"] as const;
-const ORT_ENTRY = ["node_modules", "onnxruntime-node", "dist", "index.js"];
-const TOKENIZER_ENTRY = ["node_modules", "@huggingface", "tokenizers", "dist", "tokenizers.mjs"];
+export const ORT_ENTRY = ["node_modules", "onnxruntime-node", "dist", "index.js"];
+export const TOKENIZER_ENTRY = ["node_modules", "@huggingface", "tokenizers", "dist", "tokenizers.mjs"];
 const MAX_TOKENS = 256;
 const DIMS = 768;
 export const RETRY_AFTER_MS = 6 * 3600_000;
@@ -29,7 +29,7 @@ const INSTALL_TIMEOUT_MS = 10 * 60_000;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 
 export const recallDir = (dataDir: string): string => join(dataDir, "recall");
-const runtimeDir = (dataDir: string): string => join(recallDir(dataDir), "runtime");
+export const runtimeDir = (dataDir: string): string => join(recallDir(dataDir), "runtime");
 const modelDir = (dataDir: string): string => join(recallDir(dataDir), "model");
 const markerPath = (dataDir: string): string => join(recallDir(dataDir), "provision-failed.json");
 const lockPath = (dataDir: string): string => join(recallDir(dataDir), "provision.lock");
@@ -39,7 +39,7 @@ export function bunBin(execPath: string = process.execPath, which: (name: string
 	return /^bun(\.exe)?$/i.test(basename(execPath)) ? execPath : (which("bun") ?? "bun");
 }
 
-function privateDir(dir: string): void {
+export function privateDir(dir: string): void {
 	mkdirSync(dir, { recursive: true, mode: 0o700 });
 	chmodSync(dir, 0o700);
 }
@@ -112,7 +112,7 @@ async function installRuntime(d: Required<Pick<ProvisionDeps, "bun" | "run">> & 
 	pruneNative(d.runtime, d.os, d.arch);
 }
 
-async function downloadModel(dir: string, files: readonly ModelFile[], fetchFn: NonNullable<ProvisionDeps["fetch"]>): Promise<void> {
+export async function downloadModel(dir: string, files: readonly ModelFile[], fetchFn: NonNullable<ProvisionDeps["fetch"]> = (url, init) => fetch(url, init)): Promise<void> {
 	privateDir(dir);
 	for (const f of files) {
 		const dest = join(dir, f.name);
@@ -153,7 +153,7 @@ export async function provision(deps: ProvisionDeps): Promise<ProvisionResult> {
 	if (!takeLock(dataDir, Date.now())) return { status: "busy", reason: "another provision is running" };
 	try {
 		await installRuntime({ bun: deps.bun ?? bunBin(), run: deps.run ?? defaultRun, runtime: runtimeDir(dataDir), os: deps.platform?.os ?? process.platform, arch: deps.platform?.arch ?? process.arch });
-		await downloadModel(modelDir(dataDir), deps.files ?? MODEL_FILES, deps.fetch ?? ((url, init) => fetch(url, init)));
+		await downloadModel(modelDir(dataDir), deps.files ?? MODEL_FILES, deps.fetch);
 		rmSync(markerPath(dataDir), { force: true });
 		return { status: "ok" };
 	} catch (e) {
