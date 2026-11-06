@@ -183,4 +183,14 @@ describe("telegram web link", () => {
 		expect(fake.calls[0]!.body).toEqual({ chat_id: "111", text: "끝났어요", reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: LINK }]] } });
 		expect(fake.calls[1]!.body).toEqual({ chat_id: "111", text: "링크 없음" });
 	});
+
+	test("a status marker goes out as its emoji, never as the literal word", async () => {
+		const dir = tempDir();
+		saveTelegramConfig({ enabled: true, token: TOKEN, chats: [{ id: "111", name: "main", kind: "main" }], allow: [] }, dir);
+		const fake = telegramFetch();
+		const a = createTelegramAdapter(dir, { fetch: fake.fetch, pollMs: 60_000 });
+		await a.deliver({ target: "main", kind: "main", text: "[fail] 보내지 못했어요" });
+		await a.deliver({ target: "main", kind: "main", text: "[done] 끝났어요" });
+		expect(fake.calls.map(c => (c.body as { text: string }).text)).toEqual(["❌ 보내지 못했어요", "✅ 끝났어요"]);
+	});
 });

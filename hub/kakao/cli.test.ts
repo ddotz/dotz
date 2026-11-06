@@ -86,6 +86,7 @@ test("setup without --foreground detaches itself and prints one line; a running 
 	expect(await run(["setup", "--to", "ch:123"], ctx)).toBe(0);
 	expect(log.spawned).toEqual([["setup", "--foreground", "--to", "ch:123"]]);
 	expect(log.out).toHaveLength(1);
+	expect(log.out[0]!.startsWith("⏳ 카톡 연결을 시작했어요")).toBe(true);
 	atomicWrite(ctx.paths.onboard, JSON.stringify({ status: "running", steps: {}, started: "x", pid: 4242 }));
 	const again = build({ isAlive: pid => pid === 4242 });
 	again.ctx.paths = ctx.paths;

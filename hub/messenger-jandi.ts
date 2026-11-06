@@ -130,7 +130,7 @@ function jandiText(msg: OutMsg): string | undefined {
 	const { tone, text } = parseTone(shown);
 	if (parkedTone(tone) && !msg.options?.length) return undefined;
 	let body = plainChoice(text).trim();
-	if (!body) return msg.files?.length ? FILES_IN_WEB : undefined;
+	if (!body) return msg.files?.length ? FILES_IN_WEB : tone === "fail" ? TONE_EMOJI.fail : undefined;
 	if (NO_REPLY.test(body)) return undefined;
 	if (msg.options?.length && parseChoices(body).options.length !== msg.options.length) body += `\n\n${msg.options.map(o => `${o.n}) ${o.label}`).join("\n")}`;
 	return tone ? `${TONE_EMOJI[tone]} ${body}` : body;

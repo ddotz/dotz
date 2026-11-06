@@ -170,7 +170,7 @@ const MARK_LINE = /^\s*(?:[-*]\s*)?\**\s*\[(done|run|ask|fail|later|완료)\]\**
 function failLine(text: string | undefined): string | undefined {
 	const line = previewSource(String(text ?? "")).split("\n").find(l => MARK_LINE.test(l));
 	const m = line ? MARK_LINE.exec(line) : null;
-	return m && m[1]!.toLowerCase() === "fail" ? line!.slice(m[0].length).replace(/\*\*/g, "").trim() || "[fail]" : undefined;
+	return m && m[1]!.toLowerCase() === "fail" ? line!.slice(m[0].length).replace(/\*\*/g, "").trim() || "실패" : undefined;
 }
 // The folder a worker works for: orchestrator briefs open with "Repo: <absolute path>"; an isolated copy's own cwd says nothing.
 function folderOf(r: Rec): string | undefined {

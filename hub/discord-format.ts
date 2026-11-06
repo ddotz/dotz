@@ -8,6 +8,8 @@ import { claimWord, dropClaim, metaToSubtext, parseTone, plainChoice, TONE_EMOJI
 
 const LIMIT = 1900;
 export const noEmoji = (s: string) => s.replace(/ ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]+/gu, "");
+// The body keeps the one emoji that carries a meaning of the gateway's own: the failure stripMarkers leaves behind.
+const noModelEmoji = (s: string) => s.split(TONE_EMOJI.fail).map(noEmoji).join(TONE_EMOJI.fail);
 
 function split(text: string, limit = LIMIT): string[] {
 	const out: string[] = [];
@@ -77,7 +79,7 @@ export const reference = (replyTo?: string) => (replyTo && isSnowflake(replyTo) 
 function plainParts(text: string): { emoji: string; body: string } {
 	const { tone, text: parsed } = parseTone(dropForLine(text));
 	const bare = tone ? parsed.trimStart() : parsed, claim = claimWord(bare);
-	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noEmoji(metaToSubtext(plainChoice(readable(dropClaim(bare))))).trimStart() + (claim ? `\n-# ${claim}` : "") };
+	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noModelEmoji(metaToSubtext(plainChoice(readable(dropClaim(bare))))).trimStart() + (claim ? `\n-# ${claim}` : "") };
 }
 
 // Discord-mobile layout the model cannot break, outside ``` fences: a "# heading" becomes a bold line, a "| table |"

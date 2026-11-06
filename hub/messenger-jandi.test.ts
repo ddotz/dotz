@@ -205,6 +205,11 @@ describe("deliver", () => {
 		expect(await send("main", "web", "백그라운드 작업으로 맡겼어요: DEMO 취합", { gatewayNote: true })).toEqual({ delivered: false, reason: "internal" });
 		expect(captured).toHaveLength(0);
 	});
+	test("a failure with no words still reaches the room as the failure emoji", async () => {
+		captured.length = 0;
+		expect(await send("main", "main", "[fail]")).toEqual({ delivered: true });
+		expect(captured[0]!.body).toEqual({ body: "❌" });
+	});
 	test("gateway, role and subtext lines leave the answer, which still goes out", async () => {
 		captured.length = 0;
 		await send("main", "main", `[done] 끝났어요.\n[dotz gateway] 작업 중에 새 메시지가 도착했어요\nFor ${NAME}: 없음\n-# ⚠️ 받는이 확인: boss@corp.test`);
