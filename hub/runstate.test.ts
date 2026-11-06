@@ -246,11 +246,11 @@ test("a session waiting for the owner with no open work is waiting, and gets no 
 	expect(waitsForOwner("[run] 빌드가 끝나길 기다리는 중이에요.")).toBe(false);
 });
 
-test("a promise still stands beside a wait, and open plan tasks win over a wait", () => {
+test("a promise still stands beside a wait; an explicit [wait] holds even with plan tasks open (ddotz/dotz#44)", () => {
 	const promised = runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: "[run] 형 메시지를 기다리는 동안 로그를 볼게요." });
 	expect(promised).toMatchObject({ kind: "idle", reason: "unfinished" });
 	expect(stallStep(promised, now, { at: [] }).nudge).toBe(true);
-	expect(stallStep(runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: "[wait] 형 메시지 기다려요", todos: todos(2) }), now, { at: [] }).nudge).toBe(true);
+	expect(stallStep(runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: "[wait] 형 메시지 기다려요", todos: todos(2) }), now, { at: [] }).nudge).toBe(false);
 	expect(stallStep(runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: "바로 고칠게요." }), now, { at: [] }).nudge).toBe(true);
 });
 

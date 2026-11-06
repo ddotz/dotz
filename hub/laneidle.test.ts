@@ -134,7 +134,7 @@ function quietWorker(lane: Lanes.Lane, description: string): (minutes: number) =
 	};
 }
 
-test("a worker silent in a long wait keeps its lane up; past the bound the lane stops and the owner is told what stopped with it", async () => {
+test("a worker silent in a long wait keeps its lane up however long; past the bound the owner is told once what holds it", async () => {
 	const lane = await idleLane("idle-job");
 	const agent = lane.proc as unknown as FakeAgent;
 	const silentFor = quietWorker(lane, "에고 후보 평가");
@@ -146,9 +146,11 @@ test("a worker silent in a long wait keeps its lane up; past the bound the lane 
 	expect(agent.killed).toBe(0);
 	silentFor(119);
 	expect(parkIdleLanes(Date.now(), 20)).not.toContain("idle-job");
+	expect(reports).toEqual([]);
 	silentFor(120);
-	expect(parkIdleLanes(Date.now(), 20)).toContain("idle-job");
-	expect(agent.killed).toBe(1);
+	expect(parkIdleLanes(Date.now(), 20)).not.toContain("idle-job");
+	expect(parkIdleLanes(Date.now(), 20)).not.toContain("idle-job");
+	expect(agent.killed).toBe(0);
 	expect(reports).toHaveLength(1);
 	expect(reports[0]).toStartWith("[lane stuck]");
 	expect(reports[0]).toContain("에고 후보 평가");
@@ -171,7 +173,7 @@ test("a worker stopped on a provider error keeps its lane up like a silent one; 
 	await advance(300);
 });
 
-test("a lane's own shell holds the idle stop only up to the bound", async () => {
+test("a lane's own shell holds the idle stop; past the bound the owner is told once", async () => {
 	const lane = await idleLane("idle-shell");
 	const agent = lane.proc as unknown as FakeAgent;
 	writeFileSync(lane.sessionFile!, `${JSON.stringify({ customType: "session-lifecycle", data: { state: "waiting_background", waitingOn: { background: [{ source: "terminal-background-sessions", activeCount: 1 }] } } })}\n`);
@@ -180,8 +182,10 @@ test("a lane's own shell holds the idle stop only up to the bound", async () => 
 	l.setReportHandler((_, text) => void reports.push(text));
 	expect(parkIdleLanes(1_000_000 + 119 * MIN, 20)).not.toContain("idle-shell");
 	expect(agent.killed).toBe(0);
-	expect(parkIdleLanes(1_000_000 + 120 * MIN, 20)).toContain("idle-shell");
-	expect(agent.killed).toBe(1);
+	expect(reports).toEqual([]);
+	expect(parkIdleLanes(1_000_000 + 120 * MIN, 20)).not.toContain("idle-shell");
+	expect(parkIdleLanes(1_000_000 + 121 * MIN, 20)).not.toContain("idle-shell");
+	expect(agent.killed).toBe(0);
 	expect(reports).toHaveLength(1);
 	l.setReportHandler(() => {});
 	l.stopLane("idle-shell");

@@ -6,10 +6,10 @@
 import { quietOmoWork } from "./bgwork.ts";
 import { msg } from "./i18n.ts";
 import { resumeLane } from "./lanerun.ts";
-import { laneClosed } from "./laneops.ts";
 import { prompt } from "./laneprompt.ts";
 import { type Lane, laneBusy, lanes } from "./lanes.ts";
 import { persist } from "./lanestate.ts";
+import { laneClosed } from "./laneunfinished.ts";
 import type { Interrupted } from "./orch-error.ts";
 import { classifyProviderError } from "./providers.ts";
 

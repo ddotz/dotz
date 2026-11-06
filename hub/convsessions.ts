@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { createBgWork } from "./bgwork.ts";
-import { runningOmoWorkers } from "./bgwork.ts";
+import { quietOmoWork, runningOmoWorkers } from "./bgwork.ts";
 import { convIdleStopMin, convKinds, convMaxLive, convSessionsOn, DATA_DIR, log as hubLog, NAME, orchestratorModel, selectorOf, writeAtomic } from "./config.ts";
 import { historyEvents, type HubEvent } from "./events.ts";
 import { mailByThread } from "./mail.ts";
@@ -325,7 +325,8 @@ export const convs = createConvSessions({
 	wire: c => wiring!(c),
 	dataDir: DATA_DIR,
 	history: historyEvents,
-	workers: c => runningOmoWorkers(c.o.orch.sessionFile),
+	// Silent workers count: a long wait writes nothing, and the park would end it (the lanes' reply-voice stop, laneidle.ts).
+	workers: c => runningOmoWorkers(c.o.orch.sessionFile) + quietOmoWork(c.o.orch.sessionFile).length,
 	workerPin: () => omoSelector(selectorOf(orchestratorModel())),
 	log: hubLog,
 });

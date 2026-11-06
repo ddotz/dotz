@@ -12,10 +12,11 @@
 // The stop ends the lane's task workers and their background runs with it, and a worker blocking on a long wait writes nothing, so past
 // the stall window (bgwork.ts) it stops counting as running: reply-voice's worker st_01a1abe7 began a 1700 s wait at 23:10:16 KST
 // on 2026-11-05, read as stalled at 23:25:16, and the stop at 23:25:23 cut off an eval whose items were still landing at 23:25:21, with
-// no word to anyone. A silent worker or an awaited shell now holds the stop, which costs memory only (no turn). JOB_BOUND_MIN ends the
-// hold, and the owner is told what stopped: the longest silence of 224 workers over 7 days was that 28.5 min wait, and the longest wait
-// of a lane on its own shell over 10 days 72.6 min, while an abandoned job would keep ~1 GB up forever. A worker stopped on a provider
-// error holds it too: note-merge was stopped at 12:00 KST on 2026-11-06 with st_01a1aea0 on three stream timeouts, its worker lost.
+// no word to anyone. A silent worker or an awaited shell now holds the stop for as long as it lives, which costs memory only (no turn);
+// parkLane refuses them whoever asks. Past JOB_BOUND_MIN the owner is told once what is keeping ~1 GB up, the choice being his: the
+// longest silence of 224 workers over 7 days was that 28.5 min wait, and the longest wait of a lane on its own shell over 10 days 72.6
+// min. A worker stopped on a provider error holds it too: note-merge was stopped at 12:00 KST on 2026-11-06 with st_01a1aea0 on three
+// stream timeouts, its worker lost. A lane stopped with its plan open is the resume sweep's (laneresume.ts).
 import { lanesIdleStopMin, log } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { type Lane, laneBusy, laneJobs, lanes, parkLane } from "./lanes.ts";
@@ -26,6 +27,8 @@ export const CHECK_MS = 60_000;
 const JOB_BOUND_MIN = 120;
 // Lanes whose hold is already in the log.
 const held = new Set<string>();
+// Lanes whose owner was told of a job past the bound.
+const told = new Set<string>();
 
 // Pure decision: an idle lane with a session, nothing running for it, quiet for at least `minutes`.
 export function shouldPark(lane: Pick<Lane, "status" | "proc" | "revive" | "sessionFile" | "lastFrameAt" | "name">, busy: boolean, minutes: number, now: number): boolean {
@@ -38,17 +41,20 @@ export function parkIdleLanes(now = Date.now(), minutes = lanesIdleStopMin()): s
 	for (const lane of lanes.values()) {
 		if (!shouldPark(lane, laneBusy(lane, false), minutes, now)) continue;
 		const jobs = laneJobs(lane);
-		const live = jobs.find(j => now - j.since < JOB_BOUND_MIN * 60_000);
-		if (live) {
-			if (!held.has(lane.name)) log(`lane ${lane.name} idle for ${minutes}+ min, kept up for: ${live.what}`);
+		if (jobs.length) {
+			if (!held.has(lane.name)) log(`lane ${lane.name} idle for ${minutes}+ min, kept up for: ${jobs.map(j => j.what).join(", ")}`);
 			held.add(lane.name);
+			if (!told.has(lane.name) && jobs.every(j => now - j.since >= JOB_BOUND_MIN * 60_000)) {
+				told.add(lane.name);
+				hooks.report(lane, msg().laneIdleHeld(jobs.map(j => j.what), JOB_BOUND_MIN));
+			}
 			continue;
 		}
 		held.delete(lane.name);
+		told.delete(lane.name);
 		if (!parkLane(lane)) continue;
 		parked.push(lane.name);
 		log(`lane ${lane.name} idle for ${minutes}+ min: process stopped to free memory, the next message resumes ${lane.sessionFile}`);
-		if (jobs.length) hooks.report(lane, msg().laneIdleStopped(jobs.map(j => j.what), JOB_BOUND_MIN));
 	}
 	return parked;
 }

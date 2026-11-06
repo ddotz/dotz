@@ -13,6 +13,7 @@ import { withWorktree } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
 import { existsSync, rmSync } from "node:fs";
 import { laneLimits } from "./lanelimits.ts";
+import { unfinishedWork } from "./laneunfinished.ts";
 
 export const RECOVERY_MAX = 3;
 export const RECOVERY_WINDOW_MS = 60 * 60_000;
@@ -51,6 +52,7 @@ export function runtimeMismatch(lane: Pick<Lane, "name" | "runtime" | "sessionFi
 // orchestrator as a failure to fix; a launch returns the error to its caller (laneops begin).
 function startFailed(lane: Lane, why: string, resume: boolean): void {
 	lane.proc = undefined;
+	lane.died = undefined;
 	lane.startError = why;
 	setStatus(lane, "exited");
 	log(`lane ${lane.name} could not start: ${why}`);
@@ -123,6 +125,8 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	lane.quiet = false;
 	lane.spawnedAt = Date.now();
 	lane.parked = undefined;
+	lane.died = undefined;
+	lane.resumeDue = undefined;
 	lane.revive = undefined;
 	lane.lastFrameAt = Date.now();
 	setStatus(lane, "starting");
@@ -141,6 +145,11 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		endSubagents(`lane:${lane.name}`);
 		statusActivity(`lane:${lane.name}`, `lane process exited (code ${code})`);
 		if (lane.quiet) return log(`lane ${lane.name} stopped for a gateway restart`);
+		// Read before the exit notice below replaces report.md. Nobody asked for this exit, and a turn it cut off is work whatever came before.
+		if (!lane.revive && !lane.ownerStopped && (lane.status === "working" || lane.status === "starting" || unfinishedWork(lane))) {
+			lane.died = { at: new Date().toISOString(), code };
+			lane.resumeDue = { state: "due" };
+		}
 		setStatus(lane, "exited");
 		log(`lane ${lane.name} exited (${code})`);
 		if (!lane.revive) ownerNotes.lost(lane.name);

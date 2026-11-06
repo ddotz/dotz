@@ -8,7 +8,7 @@ const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", er
 // "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
 // recover: a background worker failed and the agent takes it up itself (hub/runstate.ts failedRun) - its progress, not a request to the owner.
-const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
+const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" || r.reason === "resume" ? "이어서 처리 중" : "맡긴 작업 진행 중";
 // standby: no question, but nothing moves until the owner writes (a [wait] report, hub/runstate.ts waitsForOwner).
 const waitsOnOwner = r => r.kind === "waiting" && (r.reason === "ask" || r.reason === "standby");
 // A conversation waiting on work it handed off is progressing: blue on every row that shows it, like this line. One whose turn or whose

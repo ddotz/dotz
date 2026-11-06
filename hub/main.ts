@@ -26,13 +26,15 @@ import { WORK_SWEEP_MS } from "./workrows.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startRecallIndexing } from "./recall-idle.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
+import { startLaneResumeSweep, stopLaneResumeSweep } from "./laneresume.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { setTrashChannels } from "./lanetrash.ts";
 import { laneSpot, rememberSpot } from "./lanestate.ts";
 import { migratePostSettings, postSettings, setWebLane } from "./discord-post.ts";
 import { resolveAllowed, UPLOAD_MAX_BYTES } from "./files.ts";
 import { setDiskNotify } from "./diskguard.ts";
-import { approvesBudget, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
+import { budgetProblem } from "./routes-lanes.ts";
+import { approvesBudget, estimateOf, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
@@ -621,6 +623,7 @@ function shutdown(): Promise<never> {
 			name: "save state",
 			run: () => {
 				for (const target of [...bursts.keys()]) flush(target);
+				stopLaneResumeSweep();
 				shutdownLanes();
 				stopOrchestrator();
 			},
@@ -702,6 +705,8 @@ const restartGate = createRestartGate({
 		void shutdown();
 	},
 });
+// After the gate exists: the first pass runs now, and a resume waits out a restart in progress.
+startLaneResumeSweep({ budget: name => budgetProblem(name, estimateOf(undefined, ""), false), restarting: () => restartGate.waiting() });
 function restartGateway(): string {
 	return restartGate.request();
 }
