@@ -169,6 +169,16 @@ function prPick(p, o = {}) {
   prGo(prUrl(p, `?did=${enc(DEVICE_ID)}${o.auto ? "&auto=1" : ""}`));   // the device id goes along: the push subscriptions on both computers become one device
 }
 
+// 지우기: an offline computer that paired with this one can be forgotten (DELETE /api/peers); an online, relay or public row never gets the button.
+function prForgetBtn(p, off) {
+  if (!off || p.via || p.public) return null;
+  return el("button", { type: "button", class: "btn tonal inrow pr-desk", text: "지우기", "aria-label": `${p.name} 목록에서 지우기`, onclick: async () => {
+    if (!confirm(`${p.name}을(를) 내 컴퓨터 목록에서 지울까요?`)) return;
+    try { await api(`/api/peers?url=${enc(p.url)}`, "DELETE"); toast(`${p.name}을(를) 지웠어요`); } catch (e) { toast(`${p.name}을(를) 지우지 못했어요`, true); }
+    prLoad();
+  } });
+}
+
 function prSheet() {
   const rows = PR.list.map(p => {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
@@ -182,7 +192,7 @@ function prSheet() {
       el("span", { class: `dot${(p.self ? !selfDown : p.online && !selfDown) ? " ok" : ""}` }),
       el("span", { class: "pr-tx" }, el("span", { class: "pr-t", text: p.name }), sub ? el("span", { class: "pr-sub", text: sub }) : null),
       alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : here ? icon("check", "pr-ck") : null);
-    const screen = dskRowBtn(p);
+    const screen = dskRowBtn(p) || prForgetBtn(p, off);
     return screen ? el("div", { class: "pr-line" }, row, screen) : row;
   });
   const manage = el("button", { type: "button", class: "pr-row pr-manage", onclick: () => { prClose(false); go("settings"); } }, icon("settings"), el("span", { class: "pr-t", text: "컴퓨터 관리" }));
