@@ -348,15 +348,20 @@ export function handoverLane(name: string, text?: string): void {
 
 const closesTurn = (text: string) => ["done", "ask"].includes(parseTone(text).tone ?? "");
 
+// Finished, verified, or waiting on the owner: nothing brings such a lane back by itself.
+export function laneClosed(lane: Lane): boolean {
+	const reported = join(dir(lane.name), "report.md");
+	return Boolean(lane.pendingAsk || lane.claim) || (existsSync(reported) && closesTurn(readFileSync(reported, "utf8")));
+}
+
 // Continuation turns one unchanged plan gets from gateway restarts before the owner is told instead.
 export const RESTART_WAKE_MAX = 3;
 // The note for a lane that stopped idle with work left: tasks open, or what it waited on cut off, and no closing report. A [done] or
 // an open [ask] stays idle. A restart costs no context: the note is one prompt on the same session, and the first turn after the
 // 33-minute gap read the whole prefix from cache (site-demo-proto 01:43: 182,024 read, 738 written).
 function restartNote(lane: Lane): string | undefined {
-	const reported = join(dir(lane.name), "report.md");
 	const todo = openTodos(readTodo(lane.sessionFile));
-	if (lane.pendingAsk || lane.claim || (existsSync(reported) && closesTurn(readFileSync(reported, "utf8"))) || (!todo.open && !workCutOff(lane.sessionFile))) {
+	if (laneClosed(lane) || (!todo.open && !workCutOff(lane.sessionFile))) {
 		lane.restartWakes = undefined;
 		return undefined;
 	}

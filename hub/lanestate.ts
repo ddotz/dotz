@@ -19,7 +19,7 @@ type Ask = { text: string; at: string };
 // Continuation turns a gateway restart gave a lane on one unchanged plan (laneops.ts restoreLanes); on disk, since restarts are what it counts.
 type RestartWakes = { plan: string; count: number };
 // `runtime`: the runtime that wrote sessionFile (omo, omp, claude); a session is only ever resumed by that runtime.
-export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; endedAt?: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; /** Sent again after a busy session refused it (laneevents.ts refusedTurn); on disk, so a restart sends it too. */ refused?: { text: string; tries: number }; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; restartWakes?: RestartWakes; waiting?: string; home?: string; homeName?: string; channel?: string; web?: boolean };
+export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; endedAt?: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; /** Sent again after a busy session refused it (laneevents.ts refusedTurn); on disk, so a restart sends it too. */ refused?: { text: string; tries: number }; /** A network failure stopped its work (lanereconnect.ts); on disk, so a restart keeps it. resumed: this outage's one resume went out. */ interrupted?: { resumed?: boolean }; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; restartWakes?: RestartWakes; waiting?: string; home?: string; homeName?: string; channel?: string; web?: boolean };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
@@ -183,9 +183,9 @@ export function persist(lane: Lane): void {
 			// no record yet
 		}
 	}
-	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, endedAt, sessionFile, runtime, reports, lastReportAt, parked, held, refused, worktree, claim, pendingAsk, restartWakes, waiting, home, homeName, channel, web } = lane;
+	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, endedAt, sessionFile, runtime, reports, lastReportAt, parked, held, refused, interrupted, worktree, claim, pendingAsk, restartWakes, waiting, home, homeName, channel, web } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, ...(endedAt ? { endedAt } : {}), sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(refused ? { refused } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(restartWakes ? { restartWakes } : {}), ...(waiting ? { waiting } : {}), ...(home ? { home, ...(homeName ? { homeName } : {}) } : {}), ...(channel ? { channel } : {}), ...(web ? { web } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, ...(endedAt ? { endedAt } : {}), sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(refused ? { refused } : {}), ...(interrupted ? { interrupted } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(restartWakes ? { restartWakes } : {}), ...(waiting ? { waiting } : {}), ...(home ? { home, ...(homeName ? { homeName } : {}) } : {}), ...(channel ? { channel } : {}), ...(web ? { web } : {}) }, null, 2)}\n`);
 }
 export function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;

@@ -166,6 +166,7 @@ export function resumeLane(lane: Lane, text: string): void {
 		spawn(lane, true);
 		return;
 	}
+	if (lane.interrupted) lane.interrupted.resumed = true;
 	text = withWorktree(lane, text);
 	spawn(lane, true);
 	prompt(lane, withHeld(lane, text));

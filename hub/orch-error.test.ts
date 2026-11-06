@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { parseChoices } from "./choices.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { cfg, paths } from "./config.ts";
-import { ERROR_ASK_HOLD_MS, ERROR_ASK_REPEAT_HOLD_MS, errorAnswer, errorAsk, errorAskFile, type OrchError, plainError, startErrorWatch } from "./orch-error.ts";
+import { ERROR_ASK_HOLD_MS, ERROR_ASK_REPEAT_HOLD_MS, errorAnswer, errorAsk, errorAskFile, type OrchError, plainError, startErrorWatch, startResumeWatch, watchSession } from "./orch-error.ts";
 import { createPrompts } from "./prompts.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
@@ -187,6 +187,104 @@ test("the watch resumes once per episode, only after the model host answers", as
 	clearInterval(t);
 	expect(resumed).toBe(1);
 	expect(e.probed).toBe(true);
+});
+
+test("a resume that fails while the host answers stays spent; only the host seen down makes the next answer a new outage", async () => {
+	const e: OrchError = { since: new Date().toISOString(), ...plainError("timed out"), raw: "timed out" };
+	let reachable = true;
+	let resumed = 0;
+	const t = startErrorWatch({ error: () => e, reachable: async () => reachable, resume: () => resumed++, log: () => {}, every: 1 });
+	const tick = async () => {
+		await advance(1);
+		await flush();
+	};
+	await tick();
+	await tick();
+	await tick();
+	expect(resumed).toBe(1);
+	reachable = false;
+	await tick();
+	await tick();
+	expect(resumed).toBe(1);
+	reachable = true;
+	await tick();
+	await tick();
+	clearInterval(t);
+	expect(resumed).toBe(2);
+});
+
+test("a conversation session parked on a lost turn resumes once when the host answers, and its open request replays; an owner-stopped one stays stopped", async () => {
+	const c = o.createOrchestrator({ key: "conv:lost", stateFile: join(process.env.DOTZ_DIR!, "conv-lost.json"), source: "conv:lost", keepalive: false });
+	let replays = 0;
+	c.setRestartedHandler(() => (replays++, { replayed: 1, texts: [] }));
+	c.start();
+	const agent = started.at(-1)!;
+	for (let i = 0; i < 6; i++) {
+		agent.push(failed("stream start timed out"));
+		await flush();
+	}
+	expect(c.orch.error).toBeDefined();
+	c.park();
+	await flush();
+	expect(c.orch.status).toBe("stopped");
+	const before = started.length;
+	let reachable = false;
+	const woken: string[] = [];
+	const t = watchSession({ key: "conv:lost", o: c }, k => woken.push(k), () => {}, async () => reachable, 1);
+	await advance(3);
+	await flush();
+	expect(started.length).toBe(before);
+	reachable = true;
+	await advance(1);
+	await flush();
+	await advance(3);
+	await flush();
+	expect(woken).toEqual(["conv:lost"]);
+	expect(started.length).toBe(before + 1);
+	expect(replays).toBe(1);
+	reachable = false;
+	await advance(1);
+	await flush();
+	c.stop();
+	await flush();
+	reachable = true;
+	await advance(3);
+	await flush();
+	clearInterval(t);
+	expect(started.length).toBe(before + 1);
+	expect(replays).toBe(1);
+});
+
+test("the resume watch probes nothing with nothing interrupted, resumes one entry once, and a second outage gives one more", async () => {
+	let probes = 0;
+	let reachable = false;
+	let pending = false;
+	let spent = false;
+	const resumes: string[] = [];
+	const entry = { key: "lane x", due: () => !spent, resume: () => (spent = true, void resumes.push("x")), rearm: () => void (spent = false) };
+	const t = startResumeWatch({ interrupted: () => (pending ? [entry] : []), reachable: async () => (probes++, reachable), log: () => {}, every: 1 });
+	const tick = async () => {
+		await advance(1);
+		await flush();
+	};
+	await tick();
+	expect(probes).toBe(0);
+	pending = true;
+	await tick();
+	await tick();
+	expect(probes).toBe(2);
+	expect(resumes).toEqual([]);
+	reachable = true;
+	await tick();
+	await tick();
+	expect(resumes).toEqual(["x"]);
+	reachable = false;
+	await tick();
+	reachable = true;
+	await tick();
+	await tick();
+	clearInterval(t);
+	expect(resumes).toEqual(["x", "x"]);
 });
 
 function queue() {

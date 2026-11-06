@@ -37,8 +37,9 @@ import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
 import { activeHarness, runtimeFor } from "./runtime/index.ts";
-import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, resumeAfterError, steer as steerOrchestrator, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
-import { errorAsk, startErrorWatch } from "./orch-error.ts";
+import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, steer as steerOrchestrator, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
+import { errorAsk, startResumeWatch, watchSession } from "./orch-error.ts";
+import { interruptedLanes } from "./lanereconnect.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { createWaitCheck } from "./waitcheck.ts";
@@ -126,7 +127,8 @@ clearLeftWebProgress();
 // as an ask); after any restart its open prompts replay; once the model host answers again, one automatic resume.
 setErrorHandler(e => alert(errorAsk(NAME, e)));
 setRestartedHandler(replayOpen);
-startErrorWatch({ error: () => orch.error, resume: resumeAfterError, log });
+convs.everyInstance(c => watchSession(c, convs.ensure, log));
+startResumeWatch({ interrupted: interruptedLanes, log });
 setLaneTitleResolver(name => lanes.get(name)?.title);
 setWatchLabelResolver(watchLabel);
 setAppResolver(n => (n.kind === "watch" && n.watch ? watchOwner(appEntries(DATA_DIR), allWatches().find(w => w.name === n.watch) ?? { name: n.watch }) : undefined) ?? appKeyOf(n, integrationContext(DATA_DIR, cfg.zele?.enabled !== false && Bun.which("zele") ? ["zele"] : [])));
@@ -671,6 +673,7 @@ const waitCheck = createWaitCheck({
 		key: c.key,
 		open: c.queue.openRequests,
 		busy: () => Boolean(orchBusy(c.o.orch)) || c.o.orch.status === "rate-limited",
+		down: () => c.o.orch.error !== undefined && !c.o.orch.error.probed,
 		workers: () => c.bg.running(),
 		armed: since => allWatches().some(w => w.once && w.to === "orchestrator" && !w.paused && Date.parse(w.created) >= since),
 		lastTurnEndAt: () => c.o.lastTurnEndAt(),
