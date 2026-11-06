@@ -86,6 +86,8 @@ self.addEventListener("fetch", ev => {
   if (url.pathname === "/pair" || url.pathname === "/pair.js") return;
   // the remote desktop (hub/remote-desktop.ts) is the gateway's own page, never the app shell
   if (url.pathname === "/desk" || url.pathname.startsWith("/desk/")) return;
+  // user apps (hub/apps-web.ts) are served by the gateway at /apps/<id>/, never the app shell
+  if (url.pathname.startsWith("/apps/")) return;
   if (req.mode === "navigate" || FRESH.includes(url.pathname)) {
     const key = req.mode === "navigate" ? "/" : url.pathname;
     if (req.mode === "navigate") ev.waitUntil(new Promise(res => setTimeout(res, REFRESH_AFTER_MS)).then(refreshShell));

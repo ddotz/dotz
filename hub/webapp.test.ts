@@ -335,6 +335,15 @@ describe("service worker shell", () => {
 		for (const p of ["/", "/app.js", "/app.css"]) expect(await c.match(p).then(r => r!.text())).toBe(`old ${p}`);
 	});
 
+	test("a navigation to a user app is left to the network, not answered with the app shell", async () => {
+		const caches = fakeCaches();
+		await (await caches.open("dotz-shell-v12")).put("/", new Response("shell"));
+		const h = boot(caches, async () => new Response(""));
+		let answered = 0;
+		h.fetch!({ request: { method: "GET", url: "https://dotz.test/apps/todo/", mode: "navigate" }, respondWith: () => { answered++; }, waitUntil: () => {} });
+		expect(answered).toBe(0);
+	});
+
 	test("a tapped notification focuses an open window and hands it the target instead of opening a new one", async () => {
 		const events: string[] = [];
 		const win = { url: "https://dotz.test/#chat/main", focus: async () => { events.push("focus"); }, postMessage: (m: { open: string }) => { events.push(`msg ${m.open}`); } };
