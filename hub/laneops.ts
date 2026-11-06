@@ -1,5 +1,5 @@
 import { DATA_DIR, log, paths, selectorOf, lanesModel, now, chainAfter, fallbackChain, parseSelector } from "./config.ts";
-import { type Lane, hooks, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
+import { type Lane, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
 import { broadcast } from "./events.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
@@ -17,8 +17,8 @@ import { hubChain, Chain, Reverter } from "./fallback.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { statusActivity, runningSubagents } from "./activity.ts";
 import { quietOmoWork, runningOmoWorkers } from "./bgwork.ts";
-import { openTodos } from "./runstate.ts";
-import { backgroundWork, readTodo, workCutOff } from "./todo.ts";
+import { laneClosed, unfinishedWork, withWorkers } from "./laneunfinished.ts";
+import { backgroundWork } from "./todo.ts";
 import { parseTone } from "./tone.ts";
 import { activeCount, laneLimits, launchWait, waitingLanes } from "./lanelimits.ts";
 import { trackTimer } from "./shutdown.ts";
@@ -129,11 +129,16 @@ export function sendToLane(name: string, text: string, ref?: string, gateway = f
 	if (lane.waiting) throw new Error(`lane ${name} is queued (${lane.waiting}); it starts by itself when the limits allow`);
 	if (!lane.proc && (!lane.sessionFile || !existsSync(lane.sessionFile))) throw new Error(`lane ${name} is not running and has no session to resume`);
 	// New work makes an unchecked [done] claim stale; a verified one stays until the lane's next report replaces it.
-	// Any message to the lane is the owner's answer to a pending [ask].
-	lane.askRefused = false;
-	if (lane.claim?.state === "reported" || lane.pendingAsk) {
+	// Any message to the lane is the owner's answer to a pending [ask], and starts a new episode of automatic resumes. The gateway's own
+	// prompts are not: a stall nudge that cleared the ask left the lane reading as unfinished (ddotz/dotz#44).
+	if (!gateway) {
+		lane.askRefused = false;
+		lane.bareAsk = undefined;
 		if (lane.claim?.state === "reported") lane.claim = undefined;
+		else if (lane.claim) lane.claim.reopened = true;
 		clearAsk(lane);
+		lane.restartWakes = undefined;
+		lane.ownerStopped = undefined;
 		persist(lane);
 	}
 	// 2026-11-01: a stall nudge every few minutes to a lane waiting hours on a video made each "still waiting" reply a relayed
@@ -180,6 +185,9 @@ export function claimPrefix(name: string): string {
 export function stopLane(name: string): void {
 	const lane = known(name);
 	const proc = lane.proc;
+	lane.ownerStopped = true;
+	lane.died = undefined;
+	persist(lane);
 	// Queued, or no process at all (a spawn that failed): nothing to kill, the lane just ends and frees its slot.
 	if (lane.waiting || !proc) {
 		lane.waiting = undefined;
@@ -195,12 +203,15 @@ export function stopLane(name: string): void {
 export function abortLane(name: string): void {
 	const lane = known(name);
 	if (!lane.proc) throw new Error(`lane ${name} is not running`);
+	lane.ownerStopped = true;
+	persist(lane);
 	lane.proc.abort();
 }
 
 // Resumes a stopped lane (or, with text, steers a running one) from its saved session.
 export function resumeByName(name: string, text?: string): void {
 	const lane = known(name);
+	lane.ownerStopped = undefined;
 	if (lane.proc) {
 		if (!text) throw new Error(`lane ${name} is already running`);
 		if (lane.pendingAsk) {
@@ -220,19 +231,23 @@ export function resumeByName(name: string, text?: string): void {
 
 // Restarts the omp process of a lane, resuming its session (a turn that was running is cut off, so it is told to continue,
 // with `note` when the caller knows why).
-export async function restartLane(name: string, note = msg().laneOwnerRestarted): Promise<void> {
+export async function restartLane(name: string, note = msg().laneOwnerRestarted, byOwner = false): Promise<void> {
 	const lane = known(name);
+	if (byOwner) lane.ownerStopped = undefined;
 	if (!lane.proc) return resumeByName(name);
 	if (!lane.sessionFile || !existsSync(lane.sessionFile)) throw new Error(`lane ${name} has no session yet; try again in a few seconds`);
 	// The process runs on the runtime it started on; a runtime switched in config since then cannot take its session over.
 	const wrong = runtimeMismatch(lane);
 	if (wrong) throw wrong;
+	// A worker or shell under an idle lane dies with the process (the memory guard asks for this too), so it is brought back with word of them.
 	const wasWorking = lane.status === "working" || lane.status === "starting";
+	const jobs = laneJobs(lane).map(j => j.what);
+	const cut = wasWorking || ((laneBusy(lane) || jobs.length > 0) && !laneClosed(lane));
 	const old = lane.proc;
 	lane.quiet = true;
 	old.kill();
 	await old.exited;
-	if (wasWorking) resumeLane(lane, note);
+	if (cut) resumeLane(lane, withWorkers(note, jobs));
 	else if (spawn(lane, true)) setStatus(lane, "idle");
 }
 
@@ -325,6 +340,7 @@ export async function rotateLane(name: string, why: string): Promise<void> {
 export function handoverLane(name: string, text?: string): void {
 	const lane = known(name);
 	if (lane.proc) throw new Error(`lane ${name} is running; it needs no handover`);
+	lane.ownerStopped = undefined;
 	const previous = lane.sessionFile;
 	const from = harnessName(sessionRuntime(lane) ?? "?");
 	const to = harnessName(runtimeFor("lane").id);
@@ -348,36 +364,13 @@ export function handoverLane(name: string, text?: string): void {
 
 const closesTurn = (text: string) => ["done", "ask"].includes(parseTone(text).tone ?? "");
 
-// Finished, verified, or waiting on the owner: nothing brings such a lane back by itself.
-export function laneClosed(lane: Lane): boolean {
-	const reported = join(dir(lane.name), "report.md");
-	return Boolean(lane.pendingAsk || lane.claim) || (existsSync(reported) && closesTurn(readFileSync(reported, "utf8")));
-}
+export { laneClosed };
 
-// Continuation turns one unchanged plan gets from gateway restarts before the owner is told instead.
-export const RESTART_WAKE_MAX = 3;
-// The note for a lane that stopped idle with work left: tasks open, or what it waited on cut off, and no closing report. A [done] or
-// an open [ask] stays idle. A restart costs no context: the note is one prompt on the same session, and the first turn after the
-// 33-minute gap read the whole prefix from cache (site-demo-proto 01:43: 182,024 read, 738 written).
-function restartNote(lane: Lane): string | undefined {
-	const todo = openTodos(readTodo(lane.sessionFile));
-	if (laneClosed(lane) || (!todo.open && !workCutOff(lane.sessionFile))) {
-		lane.restartWakes = undefined;
-		return undefined;
-	}
-	const plan = `${todo.open}:${todo.current ?? ""}`;
-	const count = lane.restartWakes?.plan === plan ? lane.restartWakes.count : 0;
-	if (count === RESTART_WAKE_MAX) {
-		log(`lane ${lane.name} left idle: ${count} continuation turns after restarts changed nothing in its plan`);
-		hooks.report(lane, msg().laneRestartStuck(count));
-	}
-	lane.restartWakes = { plan, count: Math.min(count + 1, RESTART_WAKE_MAX + 1) };
-	return count < RESTART_WAKE_MAX ? msg().laneRestartContinue(todo.open, todo.current ?? "") : undefined;
-}
-
-// Brings back every lane that was alive when the gateway stopped: working ones resume their turn, idle ones with work left get a
-// continuation turn (restartNote), and the rest (finished, waiting on the owner) are respawned idle so they keep answering in their
-// channel. Lanes already stopped stay stopped. Returns the lanes that were resumed mid-work.
+// Brings back every lane that was alive when the gateway stopped: working ones resume their turn, and the rest (finished, waiting on the
+// owner) are respawned idle so they keep answering in their channel. One that stopped idle with work left, or a parked or crashed one,
+// costs no slot at boot: the resume sweep (laneresume.ts) brings those back through the one gate of capacity, budget and the wake bound.
+// A wake costs no context: the note is one prompt on the same session, and the first turn after the 33-minute gap read the whole prefix
+// from cache (site-demo-proto 01:43: 182,024 read, 738 written). Returns the lanes that were resumed mid-work.
 export function restoreLanes(): string[] {
 	const resumed: string[] = [];
 	if (!existsSync(paths.lanes)) return resumed;
@@ -399,16 +392,16 @@ export function restoreLanes(): string[] {
 			resumed.push(name);
 		} else if (session && rec.status === "idle" && rec.parked) {
 			lane.quiet = true;
-			log(`lane ${name} stays parked (idle, no process; a message resumes it)`);
+			log(`lane ${name} parked (idle, no process): a message resumes it, and so does the sweep if it has work left`);
 		} else if (session && rec.status === "idle") {
-			// A message a busy session refused, its retry cut off by the restart (laneevents.ts refusedTurn).
-			const note = lane.refused?.text ?? restartNote(lane);
-			lane.refused = undefined;
-			if (note) {
-				resumeLane(lane, note);
-				resumed.push(name);
+			// A message a busy session refused counts: its retry was cut off by the restart (laneevents.ts refusedTurn).
+			if (unfinishedWork(lane)) {
+				lane.quiet = true;
+				lane.parked = true;
+				log(`lane ${name} has work left: the resume sweep brings it back`);
 				continue;
 			}
+			lane.restartWakes = undefined;
 			if (spawn(lane, true)) setStatus(lane, "idle");
 			log(`lane ${name} respawned idle ${rec.sessionFile}`);
 		} else if (rec.waiting && rec.status === "starting") log(`lane ${name} still queued (${rec.waiting}), it starts when the limits allow`);
@@ -435,12 +428,13 @@ export const laneJobs = (lane: Lane): { what: string; since: number }[] => [
 ];
 
 // Memory: stops an idle lane's process (~1 GB with its claude child) and keeps the lane idle on the same session file; the
-// next message resumes it there (sendToLane), and a gateway restart leaves it stopped (restoreLanes). Never a busy lane; a shell it
-// waits on is the caller's to weigh (laneidle.ts).
+// next message resumes it there (sendToLane), and if it has work left the resume sweep does (laneresume.ts). Never a lane that holds a
+// worker or a shell it waits on, silent or not, whoever asks: the stop would end them with no word to anyone.
 export function parkLane(lane: Lane): boolean {
-	if (!lane.proc || lane.status !== "idle" || laneBusy(lane, false) || lane.revive || !lane.sessionFile) return false;
+	if (!lane.proc || lane.status !== "idle" || laneBusy(lane) || laneJobs(lane).length || lane.revive || !lane.sessionFile) return false;
 	lane.quiet = true;
 	lane.parked = true;
+	lane.resumeDue = unfinishedWork(lane) ? { state: "due" } : undefined;
 	persist(lane);
 	lane.proc.kill();
 	return true;

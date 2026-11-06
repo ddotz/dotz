@@ -11,7 +11,7 @@ import { DATA_DIR, lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OM
 import { describeCtx } from "./context.ts";
 import { UPLOADS } from "./files.ts";
 import { sweepSnapshots } from "./filesnap.ts";
-import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
+import { compactLane, laneBusy, laneJobs, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
 import { purgeTrash } from "./lanetrash.ts";
 import { nightlyHandover, orchestratorPid } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
@@ -36,7 +36,7 @@ function lastRunDate(): string | undefined {
 
 // Looks at every idle lane once; returns one line per action taken.
 async function runLaneHygiene(): Promise<string[]> {
-	const idle = [...lanes.values()].filter(l => l.proc && l.status === "idle");
+	const idle = [...lanes.values()].filter(l => l.proc && l.status === "idle" && !laneBusy(l) && !laneJobs(l).length);
 	const skipped = [...lanes.values()].filter(l => l.status === "working" || l.status === "starting" || l.status === "rate-limited").map(l => `${l.name} (${l.status})`);
 	for (const lane of idle) refreshLaneStats(lane.name);
 	if (idle.length) await Bun.sleep(STATS_WAIT_MS);

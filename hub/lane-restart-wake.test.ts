@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg } from "./config.ts";
 import { msg } from "./i18n.ts";
+import { resumeUnfinished } from "./laneresume.ts";
 import * as l from "./lanes.ts";
 import type * as Lanes from "./lanes.ts";
 import { dir, persist } from "./lanestate.ts";
@@ -81,7 +82,9 @@ function idleLane(name: string): Lanes.Lane {
 	return lane;
 }
 
-// One gateway restart: what the gateway saves, the process gone, and a new gateway reading the records back.
+// One gateway restart: what the gateway saves, the process gone, a new gateway reading the records back, and its first sweep, far enough
+// from the last one that the backoff has run out.
+let sweepAt = Date.now();
 async function restart(name: string): Promise<FakeAgent | undefined> {
 	const before = spawns.length;
 	l.shutdownLanes();
@@ -89,6 +92,7 @@ async function restart(name: string): Promise<FakeAgent | undefined> {
 	await flush();
 	l.lanes.delete(name);
 	l.restoreLanes();
+	await resumeUnfinished({}, (sweepAt += 3600_000));
 	return spawns.slice(before).at(-1)?.agent;
 }
 const reportFile = (name: string, text: string) => writeFileSync(join(dir(name), "report.md"), `${text}\n`);
@@ -139,7 +143,7 @@ test("a lane with tasks open whose shell the restart cut comes back with one con
 	expect(agent).toBeDefined();
 	expect(spawns.at(-1)!.opts.resume).toBe(file);
 	expect(agent!.sent).toHaveLength(1);
-	expect(agent!.sent[0]).toContain(msg().laneRestartContinue(7, "할 일 0"));
+	expect(agent!.sent[0]).toContain(msg().laneResumeContinue(7, "할 일 0"));
 	expect(l.lanes.get(lane.name)!.status).toBe("starting");
 	l.stopLane(lane.name);
 	await advance(300);
@@ -151,7 +155,7 @@ test("a lane whose shell was cut wakes with no plan at all", async () => {
 	session(lane, [stopped]);
 	const agent = await restart(lane.name);
 	expect(agent!.sent).toHaveLength(1);
-	expect(agent!.sent[0]).toContain(msg().laneRestartContinue(0, ""));
+	expect(agent!.sent[0]).toContain(msg().laneResumeContinue(0, ""));
 	l.stopLane(lane.name);
 	await advance(300);
 });
@@ -187,7 +191,7 @@ test("a lane that finished or waits on the owner stays idle, tasks open or not",
 	l.stopLane(asked.name);
 	await advance(300);
 	const quiet = idleLane("wake-quiet");
-	reportFile(quiet.name, "[run] 중간 보고");
+	reportFile(quiet.name, "중간 보고");
 	session(quiet, [todos(0)]);
 	expect((await restart(quiet.name))!.sent).toEqual([]);
 	l.stopLane(quiet.name);
@@ -205,10 +209,10 @@ test("a lane that makes no progress is woken three times, then alerts once and s
 		persist(l.lanes.get(name)!);
 	}
 	reports.length = 0;
-	expect((await restart(name))!.sent).toEqual([]);
+	expect(await restart(name)).toBeUndefined();
 	expect(reports).toEqual([msg().laneRestartStuck(3)]);
 	expect(l.lanes.get(name)!.status).toBe("idle");
-	expect((await restart(name))!.sent).toEqual([]);
+	expect(await restart(name)).toBeUndefined();
 	expect(reports).toHaveLength(1);
 	session(l.lanes.get(name)!, [todos(2), stopped]);
 	expect((await restart(name))!.sent).toHaveLength(1);

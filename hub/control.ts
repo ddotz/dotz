@@ -609,7 +609,7 @@ async function execute(text: string, from?: string): Promise<CommandCard> {
 				return card(t.restartMain(NAME), [], { tone: "busy" });
 			}
 			if (!first) throw new ControlError("usage: /restart gateway|orchestrator|<lane>");
-			await restartLane(first);
+			await restartLane(first, undefined, true);
 			return card(t.restartSession(laneLabel(first)), [], { tone: "ok" });
 		case "stop":
 			if (!first) throw new ControlError("usage: /stop <lane>");

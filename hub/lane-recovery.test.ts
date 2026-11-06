@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { resumeUnfinished } from "./laneresume.ts";
 import type * as Lanes from "./lanes.ts";
 import { cfg, NAME } from "./config.ts";
 import { dropForLine } from "./forline.ts";
@@ -243,6 +244,7 @@ test("a second message refused while the first waits goes with it, and a restart
 	await flush();
 	l.lanes.delete("busy-restart");
 	l.restoreLanes();
+	await resumeUnfinished();
 	const back = spawns.slice(before).at(-1)!.agent;
 	expect(back.sent.at(-1)).toContain("첫 메시지\n\n둘째 메시지");
 	expect(reports).toEqual([]);

@@ -49,11 +49,14 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 		// Once back to the session for a real choice block; the second time it is a plain note, so the text is never lost and never loops.
 		if (lane.proc && !lane.askRefused) {
 			lane.askRefused = true;
+			lane.bareAsk = true;
+			persist(lane);
 			log(`lane ${lane.name} [ask] refused (no choice block)`);
 			return prompt(lane, msg().askRefused(parseTone(text).text));
 		}
 		text = parseTone(text).text;
-	}
+		lane.bareAsk = true;
+	} else if (!notice) lane.bareAsk = undefined;
 	// The turn's final text answers every owner message still open (a gateway notice does not).
 	const answering = !notice && ownerNotes.reported(lane.name, text);
 	lane.reports++;

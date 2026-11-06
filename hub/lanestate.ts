@@ -12,14 +12,14 @@ import { TEMP_PATH } from "./live-guard.ts";
 export type LaneStatus = "starting" | "working" | "idle" | "rate-limited" | "exited";
 // A lane in a git repo works in its own worktree (repo = the owner's checkout, base = the branch it lands on).
 export type Worktree = { path: string; repo: string; branch: string; base: string };
-type Claim = { state: "reported" | "verified"; at: string; evidence?: string; problems?: string[] };
+type Claim = { state: "reported" | "verified"; at: string; evidence?: string; problems?: string[]; /** The owner wrote after it: it no longer closes the lane (laneunfinished.ts). */ reopened?: boolean };
 // A lane's own [ask] report stays a question for the owner until the owner answers (sendToLane) or the lane reports again.
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
 // Continuation turns a gateway restart gave a lane on one unchanged plan (laneops.ts restoreLanes); on disk, since restarts are what it counts.
-type RestartWakes = { plan: string; count: number };
+type RestartWakes = { plan: string; count: number; nextAt?: number };
 // `runtime`: the runtime that wrote sessionFile (omo, omp, claude); a session is only ever resumed by that runtime.
-export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; endedAt?: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; /** Sent again after a busy session refused it (laneevents.ts refusedTurn); on disk, so a restart sends it too. */ refused?: { text: string; tries: number }; /** A network failure stopped its work (lanereconnect.ts); on disk, so a restart keeps it. resumed: this outage's one resume went out. */ interrupted?: { resumed?: boolean }; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; restartWakes?: RestartWakes; waiting?: string; home?: string; homeName?: string; channel?: string; web?: boolean };
+export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; endedAt?: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; /** Sent again after a busy session refused it (laneevents.ts refusedTurn); on disk, so a restart sends it too. */ refused?: { text: string; tries: number }; /** Its last report was an [ask] with no choice block, refused and kept as a plain note (lanereport.ts): still a question. */ bareAsk?: boolean; /** The owner stopped this lane or its turn: it is not brought back until someone writes to it. */ ownerStopped?: boolean; /** Its process ended by itself with work unfinished (lanerun.ts); the resume sweep brings it back. */ died?: { at: string; code: number }; /** A network failure stopped its work (lanereconnect.ts); on disk, so a restart keeps it. resumed: this outage's one resume went out. */ interrupted?: { resumed?: boolean }; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; restartWakes?: RestartWakes; waiting?: string; home?: string; homeName?: string; channel?: string; web?: boolean };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
@@ -34,6 +34,8 @@ export type Lane = Record_ & {
 	// The text the lane last reported since its last turn_start: the same text again before a new turn starts is one event
 	// delivered twice (two error frames of one failed request, tailnet-monitoring 2026-10-23 02:58 and 03:03), not a new report.
 	reportedThisTurn?: string;
+	/** Unfinished and on its way back (laneresume.ts): what the run line says instead of 쉬는 중; set by the sweep, so /api/state reads no transcript. */
+	resumeDue?: { state: "due" | "capacity" | "stuck"; detail?: string };
 	proc?: AgentProcess;
 	timer?: ReturnType<typeof setTimeout>;
 	watchdog?: ReturnType<typeof setTimeout>;
@@ -183,9 +185,9 @@ export function persist(lane: Lane): void {
 			// no record yet
 		}
 	}
-	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, endedAt, sessionFile, runtime, reports, lastReportAt, parked, held, refused, interrupted, worktree, claim, pendingAsk, restartWakes, waiting, home, homeName, channel, web } = lane;
+	const { name, title, cwd, model, workerModel, fableOk, status, startedAt, endedAt, sessionFile, runtime, reports, lastReportAt, parked, held, refused, bareAsk, ownerStopped, died, interrupted, worktree, claim, pendingAsk, restartWakes, waiting, home, homeName, channel, web } = lane;
 	mkdirSync(dir(name), { recursive: true });
-	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, ...(endedAt ? { endedAt } : {}), sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(refused ? { refused } : {}), ...(interrupted ? { interrupted } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(restartWakes ? { restartWakes } : {}), ...(waiting ? { waiting } : {}), ...(home ? { home, ...(homeName ? { homeName } : {}) } : {}), ...(channel ? { channel } : {}), ...(web ? { web } : {}) }, null, 2)}\n`);
+	writeAtomic(join(dir(name), "lane.json"), `${JSON.stringify({ name, ...(title ? { title } : {}), cwd, model, workerModel, ...(fableOk ? { fableOk } : {}), status, startedAt, ...(endedAt ? { endedAt } : {}), sessionFile, ...(runtime ? { runtime } : {}), reports, ...(lastReportAt ? { lastReportAt } : {}), ...(parked ? { parked } : {}), ...(held?.length ? { held } : {}), ...(refused ? { refused } : {}), ...(bareAsk ? { bareAsk } : {}), ...(ownerStopped ? { ownerStopped } : {}), ...(died ? { died } : {}), ...(interrupted ? { interrupted } : {}), ...(worktree ? { worktree } : {}), ...(claim ? { claim } : {}), ...(pendingAsk ? { pendingAsk } : {}), ...(restartWakes ? { restartWakes } : {}), ...(waiting ? { waiting } : {}), ...(home ? { home, ...(homeName ? { homeName } : {}) } : {}), ...(channel ? { channel } : {}), ...(web ? { web } : {}) }, null, 2)}\n`);
 }
 export function setStatus(lane: Lane, status: LaneStatus): void {
 	if (lane.status === status) return;

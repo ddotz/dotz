@@ -104,7 +104,10 @@ function lifecycle(file: string | undefined): Lifecycle | undefined {
 		const kids = Number(d.waitingOn?.children) || 0;
 		life.dying = bg.filter(b => DIES_WITH_PROCESS.has(b?.source)).reduce((n, b) => n + (Number(b.activeCount) || 0), 0);
 		// no_wake: OmO saw the turn's last wake source go (site-demo-proto 01:11:37, its shell killed) with nothing left to wake it.
-		life.cut = life.dying > 0 || kids > 0 || d.lastStop?.cause === "no_wake";
+		// stalled / interrupted_run on the owner's side: OmO's own word that a run ended unanswered (reply-voice 2026-11-05 23:25 KST: the last
+		// record after the kill read waiting_human, 0 children, a stalled item, cause no_wake).
+		const human: any[] = Array.isArray(d.waitingOn?.human) ? d.waitingOn.human : [];
+		life.cut = life.dying > 0 || kids > 0 || d.lastStop?.cause === "no_wake" || human.some(h => h?.kind === "stalled" || h?.kind === "interrupted_run");
 		if (String(d.state ?? "").startsWith("waiting")) {
 			const items = (src: string) => bg.filter(b => b?.source === src && b.activeCount > 0).flatMap(b => (Array.isArray(b.items) ? b.items : []));
 			const mon = items("terminal-monitors").map(x => str(x?.description)).find(Boolean);
