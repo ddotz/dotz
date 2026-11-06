@@ -9,7 +9,7 @@ const rep = (lane: string, ts: string, text: string) => shownEvent({ ts, kind: "
 const owner = (lane: string, ts: string, text: string, extra = {}) => ({ ts, kind: "lane_message", source: "web", author: "me", lane, text, ...extra });
 const events: Record<string, unknown[]> = {
 	"lane:open": [owner("open", "2026-11-05T07:20:00.000Z", "해 줘"), rep("open", T1, SHOT_BULLETS)],
-	"lane:closed": [rep("closed", T2, SHOT_DRAFT), owner("closed", "2026-11-05T07:28:34.481Z", "1) 보내기", { reply_to: T2, picks: [{ q: "이 메일을 회사 메일로 보낼까요? (company-2769e70)", n: 1, label: "보내기" }] })],
+	"lane:closed": [rep("closed", T2, SHOT_DRAFT), owner("closed", "2026-11-05T07:28:34.481Z", "1) 보내기", { reply_to: T2, picks: [{ q: "이 메일을 회사 메일로 보낼까요? (pilot-2769e70)", n: 1, label: "보내기" }] })],
 	"lane:passed": [rep("passed", T1, SHOT_BULLETS), owner("passed", "2026-11-05T07:22:00.000Z", "나중에 볼게")],
 };
 const sent: Record<string, unknown>[] = [];

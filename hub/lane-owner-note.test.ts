@@ -170,7 +170,7 @@ test("a [wait] final after a mid-turn note is the answer to the owner; the next 
 	await advance(300);
 });
 
-// 2026-11-05 company-stage1: owner message -> mid-turn note -> a [run] report ends a turn -> the [wait] result -> a [wait] repeat 2s later.
+// 2026-11-05 pilot-stage1: owner message -> mid-turn note -> a [run] report ends a turn -> the [wait] result -> a [wait] repeat 2s later.
 // The [run] must not consume the note, or the real result stays parked and is replaced by the repeat.
 async function reportTurn(agent: FakeAgent, text: string): Promise<boolean | undefined> {
 	agent.push({ type: "turn_start" });
@@ -277,7 +277,7 @@ test("a button on a session's send approval reaches the session as 결정 답 wi
 		emit("inbox", { ts, kind: "lane_report", source: "lane:note-answer", lane: "note-answer", text: SHOT_LABELLED });
 		return listNotices(100).items.find(n => n.decision?.state === "open" && n.decision.to === "lane:note-answer")!;
 	};
-	const q = "이 메일을 회사 메일로 보낼까요? (company-5d3d419)";
+	const q = "이 메일을 회사 메일로 보낼까요? (pilot-5d3d419)";
 	const tap = async (n: number, label: string, note?: string) => {
 		const card = ask(new Date(Date.parse("2050-02-01T00:00:00.000Z") + n * 1000).toISOString());
 		expect((await webAnswer(card.id, { n, label, ...(note ? { note } : {}) }, "me", a => deliverAnswer({ ...a, login: "me" }))).status).toBe(200);

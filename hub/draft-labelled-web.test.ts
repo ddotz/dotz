@@ -8,8 +8,8 @@ import { fakeHub, idleState, json, waitFor, type View } from "./test-web.ts";
 
 // A send approval a session wrote by hand has no reply-draft record: the sheet shows its fields, its named file and only what can work.
 // Headless browser against the real notice store and draft routes; the answer stops at the fake route.
-const LANE = "company-stage1";
-const lanes = [{ name: LANE, title: "company", status: "idle", live: true, alive: true }, { name: "gone", title: "끝난 세션", status: "done", live: false, alive: false, resumable: false }];
+const LANE = "pilot-stage1";
+const lanes = [{ name: LANE, title: "Pilot", status: "idle", live: true, alive: true }, { name: "gone", title: "끝난 세션", status: "done", live: false, alive: false, resumable: false }];
 let answered = Promise.withResolvers<Record<string, unknown>>();
 const hub = fakeHub({
 	state: () => idleState({ lanes, notices_unread: unreadCount() }),
@@ -49,10 +49,10 @@ describe("the sheet of a card with no reply-draft record", () => {
 		test(`${w}px: 받는이, the named file with a plain note, no warning, no 원문, the body as in chat`, async () => {
 			const v = await sheet(w, h);
 			expect(await texts(v, ".fs-body .dr-rcrow[data-row=to] .dr-rc-t")).toEqual(["owner@example.com"]);
-			expect(await texts(v, ".fs-body .dr-fn")).toEqual(["company-portable.zip"]);
+			expect(await texts(v, ".fs-body .dr-fn")).toEqual(["Pilot-portable.zip"]);
 			expect(await texts(v, ".fs-body .dr-note")).toHaveLength(1);
 			expect(await v.evaluate(`!!document.querySelector(".fs-card .dr-warn, .fs-body .dr-none, .fs-body a.dr-att, .fs-body .dr-add, .fs-body .dr-x, .fs-body .dr-rc-add")`)).toBe(false);
-			await waitFor(v, `DRF.st["company-5d3d419"]`);
+			await waitFor(v, `DRF.st["pilot-5d3d419"]`);
 			expect(await v.evaluate(`!!document.querySelector(".od-bar, .od-seg, .od-orig")`)).toBe(false);
 			const body = (await texts(v, ".fs-body .dc-dr-b"))[0]!;
 			expect(body.startsWith("PaddleOCR")).toBe(true);
@@ -60,7 +60,7 @@ describe("the sheet of a card with no reply-draft record", () => {
 			expect(body).not.toContain("첨부:");
 			expect(body).not.toContain("`");
 			expect(await texts(v, ".fs-body .dc-dr-b code")).toContain("/chat/completions");
-			expect(body).toContain("%LOCALAPPDATA%\\company\\company.log");
+			expect(body).toContain("%LOCALAPPDATA%\\Pilot\\pilot.log");
 		});
 
 	test("보내기, 고치기, 보내지 않기 and 직접 수정 show, because the session takes each of them; 고치기 answers the notice", async () => {
@@ -97,7 +97,7 @@ describe("빠른 처리 and the queue", () => {
 		await v.navigate(`${hub.origin}/`);
 		await waitFor(v, `typeof trOneView === "function"`);
 		const d = notice(LANE).decision!.draft!;
-		const got = JSON.parse(await v.evaluate(`(() => { const [b] = trOneView({ ref: ${JSON.stringify(d.ref)}, to: "lane:company-stage1", question: "q", draft: ${JSON.stringify(d)}, sendable: false, editable: false }); document.body.append(b); return JSON.stringify({ ta: !!b.querySelector("textarea"), code: b.querySelectorAll(".dc-dr-b code").length }); })()`) as string);
+		const got = JSON.parse(await v.evaluate(`(() => { const [b] = trOneView({ ref: ${JSON.stringify(d.ref)}, to: "lane:pilot-stage1", question: "q", draft: ${JSON.stringify(d)}, sendable: false, editable: false }); document.body.append(b); return JSON.stringify({ ta: !!b.querySelector("textarea"), code: b.querySelectorAll(".dc-dr-b code").length }); })()`) as string);
 		expect(got.ta).toBe(false);
 		expect(got.code).toBeGreaterThan(3);
 	});
@@ -109,7 +109,7 @@ describe("빠른 처리 and the queue", () => {
 		await v.evaluate(`(() => { const c = draftCardNode(${JSON.stringify(notice(LANE))}); c.id = "qc"; document.body.append(c); })()`);
 		await waitFor(v, `document.querySelector("#qc .dr-note") && document.querySelector("#qc .dr-rcrow")`);
 		expect(await texts(v, "#qc .dr-rc-t")).toEqual(["owner@example.com"]);
-		expect(await texts(v, "#qc .dr-fn")).toEqual(["company-portable.zip"]);
+		expect(await texts(v, "#qc .dr-fn")).toEqual(["Pilot-portable.zip"]);
 		expect(await v.evaluate(`!!document.querySelector("#qc .dr-warn, #qc .dr-none, #qc a.dr-att")`)).toBe(false);
 		expect((await texts(v, "#qc .dr-body"))[0]).not.toContain("본문:");
 		expect((await texts(v, "#qc .dr-body code"))).toContain("연결 시험");
