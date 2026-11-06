@@ -120,3 +120,30 @@ test("the words of a source row can be selected, and a click with text selected 
 	})()`);
 	expect(prevented).toEqual([false, true]);
 });
+
+test("a pressed row is no link, so a drag from its words selects them; a real click opens it only while nothing is selected", async () => {
+	expect(await page<(string | null)[]>(`(() => {
+		const row = ${lists}[0].querySelector("a.mlist-row"), words = row.querySelector(".mlist-t"), href = () => row.getAttribute("href"), press = (type, button = 0) => words.dispatchEvent(new MouseEvent(type, { bubbles: true, button }));
+		press("mousedown", 2);
+		const right = href();
+		press("mouseup", 2);
+		press("mousedown");
+		document.querySelector("textarea, input")?.dispatchEvent(new FocusEvent("blur"));
+		const pressed = href();
+		press("mouseup");
+		return [right, pressed, href()];
+	})()`)).toEqual([URLS[0], null, URLS[0]]);
+	await view.evaluate(`void (window.__probe = ev => { if (ev.target.closest?.(".mlist-src a.mlist-row")) { (window.__opened ??= []).push(!ev.defaultPrevented); ev.preventDefault(); } }, document.addEventListener("click", window.__probe))`);
+	const word = ".mlist-src a.mlist-row .mlist-t";
+	const { x, y } = await page<{ x: number; y: number }>(`(() => { const el = document.querySelector(${JSON.stringify(word)}); el.scrollIntoView({ block: "center" }); const r = el.getBoundingClientRect(); return { x: r.left + 8, y: r.top + r.height / 2 }; })()`);
+	await view.click(x, y);
+	const select = `getSelection().selectAllChildren(document.querySelector(${JSON.stringify(word)}))`;
+	await view.evaluate(select);
+	await view.click(x, y);
+	await view.evaluate(select);
+	await view.click(x + 40, y + 20);
+	await view.click(x, y);
+	const opened = await page<boolean[]>(`window.__opened`);
+	await view.evaluate(`void (document.removeEventListener("click", window.__probe), getSelection().removeAllRanges())`);
+	expect(opened).toEqual([true, false, false, true]);
+});

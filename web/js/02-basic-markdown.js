@@ -78,10 +78,23 @@ function sourcePath(url) {
   return (segs.length > 2 ? "…/" : "") + segs.slice(-2).join("/");
 }
 // A tap after a drag-selection inside a row is the end of the selection, not a request to open it (as 15-attachments.js does for a file row).
+// The press itself clears a selection, so a press on a row with text selected is kept for its click.
+let sourceRowPressedSelected = null;
+const sourceRowSelected = row => { const sel = getSelection(); return !sel.isCollapsed && sel.containsNode(row, true); };
 document.addEventListener("click", ev => {
-  const row = ev.target.closest?.(".mlist-src a.mlist-row"), sel = getSelection();
-  if (row && !sel.isCollapsed && sel.containsNode(row, true)) ev.preventDefault();
+  const row = ev.target.closest?.(".mlist-src a.mlist-row"), pressed = sourceRowPressedSelected;
+  sourceRowPressedSelected = null;
+  if (row && (row === pressed || sourceRowSelected(row))) ev.preventDefault();
 });
+// Chromium starts no selection inside a link, only a link drag, so a row gives up its href for the press and takes it back before the click; a plain tap still opens it.
+document.addEventListener("mousedown", ev => {
+  const row = ev.button === 0 && !ev.ctrlKey ? ev.target.closest?.(".mlist-src a.mlist-row[href]") : null;
+  if (!row) return;
+  sourceRowPressedSelected = sourceRowSelected(row) ? row : null;
+  const href = row.getAttribute("href"), done = new AbortController();
+  row.removeAttribute("href");
+  for (const end of ["mouseup", "dragend"]) addEventListener(end, () => { row.setAttribute("href", href); done.abort(); }, { capture: true, signal: done.signal });
+}, true);
 function sourceListHtml({ head, items }) {
   const rows = items.map(({ title, href }) => {
     const url = new URL(href), site = url.hostname.replace(/^www\./, ""), path = sourcePath(url), sub = title ? [site, path].filter(Boolean).join(" · ") : path;
