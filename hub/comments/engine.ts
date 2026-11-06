@@ -2,9 +2,9 @@
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { generateReply, lessonOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
 import { createSendRecovery } from "./recover.ts";
-import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
+import { type Comment, type CommentAdapter, DM_THREAD, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeText, promisesMail, recipientCheck } from "../draft-approval.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
@@ -217,17 +217,14 @@ export function createEngine(deps: EngineDeps) {
 		if (!c || !src) return Promise.resolve({ ok: false, reason: "원댓글을 찾지 못했어요" });
 		if (!replyOn(src)) return Promise.resolve({ ok: false, reason: OFF_REASON });
 		if (c.mine) return Promise.resolve({ ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요" });
-		return run(c, src).then(async (step): Promise<Step> => {
-			if (!step.ok || !src.autoMail) return step;
-			await linkMail(step.draft.code);
-			return { ok: true, draft: store.drafts().find(d => d.code === step.draft.code) ?? step.draft };
-		}).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요" }));
+		return run(c, src).then(step => withMail(src, step)).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요" }));
 	}
 
 	// Linked mail for a comment that asks for a file and names an address: the pending reply draft `code` gets a compose mail draft (template text, files
 	// chosen from the library by the post title + comment words), shown in the same card and sent only with the owner's 보내기. Idempotent: a draft that
 	// already has its pending mail keeps it. A skip is told back as the reason; a missing mail app or a failed compose is also a "확인:" line on the card.
 	const linking = new Set<string>();
+	const withMail = async (src: SourceConfig, step: Step): Promise<Step> => (!step.ok || !src.autoMail || step.draft.mail ? step : (await linkMail(step.draft.code), { ok: true, draft: store.drafts().find(d => d.code === step.draft.code) ?? step.draft }));
 	async function linkMail(code: string): Promise<{ ok: true; mail: string; existing?: true } | { ok: false; reason: string }> {
 		const d = store.drafts().find(x => x.code === code);
 		const c = d && find(d.commentId);
@@ -236,7 +233,7 @@ export function createEngine(deps: EngineDeps) {
 		if (d.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요" };
 		if (d.mail && mailView(d)) return { ok: true, mail: d.mail, existing: true };
 		if (!deps.mail) return { ok: false, reason: "메일 초안을 쓸 수 없어요" };
-		if (!asksForFile(c.text)) return { ok: false, reason: "파일을 요청한 댓글이 아니에요" };
+		if (!asksForFile(c.text) && !promisesMail(d.text)) return { ok: false, reason: "파일을 요청한 댓글이 아니에요" };
 		const to = ADDRESS.exec(c.text)?.[0];
 		if (!to) return { ok: false, reason: "댓글에 메일 주소가 없어요" };
 		if (linking.has(code)) return { ok: false, reason: "메일 초안을 만드는 중이에요" };
@@ -251,12 +248,12 @@ export function createEngine(deps: EngineDeps) {
 		}
 		linking.add(code);
 		try {
-			const title = isUntitled(c) ? "" : clip(c.postTitle, 60);
+			const dm = c.thread.startsWith(DM_THREAD), title = dm || isUntitled(c) ? "" : clip(c.postTitle, 60); // a 쪽지's stand-in title names no song
 			const made = await deps.mail.compose({
 				app: src.mailApp,
 				to,
 				subject: title ? `${title} 자료 보내드립니다` : "요청하신 자료 보내드립니다",
-				body: (await deps.mail.write?.({ app: src.mailApp, to, author: c.author, text: c.text, postTitle: title }).catch(e => (addNote(`확인: 메일 본문을 쓰지 못해 기본 문구로 했어요 - ${e instanceof Error && e.message ? clip(e.message, 160) : "알 수 없는 이유"}`), undefined)))?.trim() || `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
+				body: (await deps.mail.write?.({ app: src.mailApp, to, author: c.author, text: c.text, postTitle: title }).catch(e => (addNote(`확인: 메일 본문을 쓰지 못해 기본 문구로 했어요 - ${e instanceof Error && e.message ? clip(e.message, 160) : "알 수 없는 이유"}`), undefined)))?.trim() || `안녕하세요, ${c.author}님.\n\n${dm ? "쪽지" : "댓글"}로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
 				fromLibrary: clip(`${title} ${c.text.replace(to, " ")}`, 200),
 				// A writer who says he bought the score already has it: only the MR is attached (the owner's rule; 총보 goes to buyers only).
 				...(BOUGHT.test(c.text) ? { library: "mr" as const } : {}),
@@ -669,7 +666,7 @@ export function createEngine(deps: EngineDeps) {
 			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
 			return { ok: true, draft: next };
 		}
-		return run(c, src, d, change.trim()).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 초안을 만들지 못했어요" }));
+		return run(c, src, d, change.trim()).then(step => withMail(src, step)).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 초안을 만들지 못했어요" }));
 	}
 
 	function update(key: string, patch: { watch?: string[]; autoDraft?: boolean; autoSend?: SourceConfig["autoSend"]; autoMail?: boolean; mailApp?: string }): SourceConfig | undefined {

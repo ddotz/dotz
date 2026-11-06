@@ -16,7 +16,7 @@ export type SiteConfig = {
 };
 // One chosen source = one account/channel/site. `watch` lists the post ids to follow ("*" = all); empty = nothing is read (costs nothing).
 export type SourceConfig = { key: string; kind: SourceKind; label: string; watch: string[]; autoDraft: boolean; everyMin?: number; autoSince?: number; autoSend?: AutoSend; site?: SiteConfig; mailMatch?: boolean; pastSeed?: boolean;
-	/** A reply draft for a comment that asks for a file and names an e-mail address also gets a linked mail draft (engine.ts linkMail), written by `mailApp` (a mail app instance id, e.g. `mail` or `mail-teaching`). Off by default; without `mailApp` the card says no mail was made. */
+	/** A reply draft for a comment or 쪽지 that asks for a file (or whose reply promises a mail) and names an e-mail address also gets a linked mail draft (engine.ts linkMail), written by `mailApp` (a mail app instance id, e.g. `mail` or `mail-teaching`). Off by default; without `mailApp` the card says no mail was made. */
 	autoMail?: boolean; mailApp?: string };
 export type CommentsConfig = { enabled: boolean; sources: Record<string, SourceConfig> };
 

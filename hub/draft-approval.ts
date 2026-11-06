@@ -152,6 +152,8 @@ export const claimsAttachment = (text: string): boolean => (CLAIM.test(text) || 
 // The mail being answered asks for a file ("악보 부탁드립니다", "견적서 보내주세요").
 export const asksForFile = (text: string): boolean =>
 	ASK_EN.test(text) || text.split(/[.!?\n]+/).some(sentence => new RegExp(FILE_NOUN, "i").test(sentence) && ASK.test(sentence));
+// A reply that promises the file by mail ("남겨주신 메일로 MR 보내드리겠습니다"): the owner's word, so a mail follows it.
+export const promisesMail = (text: string): boolean => /메일[^.!?\n]{0,30}보내\s*드/.test(text);
 
 const quote = (s: string) => s.split("\n").map(l => (l ? `> ${l}` : ">"));
 

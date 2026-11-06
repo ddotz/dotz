@@ -12,7 +12,8 @@ import { createCommentsWeb } from "./web.ts";
 const NOW = Date.parse("2026-11-02T00:00:00.000Z");
 const ASKS = "악보 부탁드립니다. Fan@Example.com 입니다";
 const raw = (native: string, text: string): RawComment => ({ native, thread: "p1", author: "팬", text, postTitle: "센과 치히로 피아노", at: NOW - 1000 });
-const reply = `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body: "메일로 보내드릴게요", questions: [] })}\n\`\`\``;
+const replyOf = (body: string) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [] })}\n\`\`\``;
+const reply = replyOf("메일로 보내드릴게요");
 const base: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: true };
 
 let dir: string;
@@ -47,18 +48,18 @@ function fakeMail(o: { miss?: boolean; failSend?: string; failCompose?: string; 
 	return { link, specs };
 }
 
-function setup(o: { source?: Partial<SourceConfig>; text?: string; mail?: Parameters<typeof fakeMail>[0]; noMail?: boolean } = {}) {
+function setup(o: { source?: Partial<SourceConfig>; text?: string; body?: string; dm?: true; mail?: Parameters<typeof fakeMail>[0]; noMail?: boolean } = {}) {
 	const source: SourceConfig = { ...base, ...o.source };
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
 	const adapter: CommentAdapter = {
 		kind: "youtube",
-		list: async () => ({ comments: [raw("c1", o.text ?? ASKS)], cursor: "1" }),
+		list: async () => ({ comments: [{ ...raw("c1", o.text ?? ASKS), ...(o.dm ? { native: "dm:r1:c1", thread: "dm:r1", postTitle: "쪽지" } : {}) }], cursor: "1" }),
 		reply: async () => ({ ok: true, ref: "r1" }),
 		posts: async () => [],
 	};
 	const mail = fakeMail(o.mail);
-	const engine = createEngine({ dir, now: () => NOW, collector: "mac-a", adapters: { youtube: adapter }, model: async () => ({ text: reply }), ...(o.noMail ? {} : { mail: mail.link }) });
+	const engine = createEngine({ dir, now: () => NOW, collector: "mac-a", adapters: { youtube: adapter }, model: async () => ({ text: o.body === undefined ? reply : replyOf(o.body) }), ...(o.noMail ? {} : { mail: mail.link }) });
 	return { engine, mail, source, id: commentId("youtube", "c1") };
 }
 const pendingOf = (t: ReturnType<typeof setup>) => t.engine.store.drafts().filter(d => d.status === "pending");
@@ -124,13 +125,43 @@ describe("autoMail", () => {
 	test("no address, no file ask, or no mail link: no mail", async () => {
 		for (const o of [{ text: "악보 부탁드립니다" }, { text: "영상 잘 봤어요. a@b.com" }, { noMail: true }]) {
 			rmSync(dir, { recursive: true, force: true });
-			const t = setup({ source: { autoMail: true, mailApp: "mail" }, ...o });
+			const t = setup({ source: { autoMail: true, mailApp: "mail" }, body: "감사합니다", ...o });
 			await t.engine.collect({ force: true });
 			expect(pendingOf(t)).toHaveLength(1);
 			expect(pendingOf(t)[0]!.mail).toBeUndefined();
 			expect(pendingOf(t)[0]!.notes).toEqual([]);
 			expect(t.mail.specs).toHaveLength(0);
 		}
+	});
+
+	test("a 쪽지 asking for the MR with an address: the mail says 쪽지, and the stand-in title stays out of subject and library search", async () => {
+		const text = "수고했어오늘도, GOLDEN악보 마이뮤직5에서 구매했습니다. 반주 MR 부탁드려요. 메일은 tong@example.com 입니다.";
+		const t = setup({ source: { autoMail: true, mailApp: "mail" }, dm: true, text });
+		await t.engine.collect({ force: true });
+		expect(pendingOf(t)[0]!.mail).toBe("M1");
+		const spec = t.mail.specs[0]!;
+		expect(spec).toMatchObject({ to: "tong@example.com", subject: "요청하신 자료 보내드립니다", library: "mr" });
+		expect(spec.body).toContain("쪽지로 요청하신");
+		expect(spec.fromLibrary).toContain("GOLDEN");
+		expect(spec.fromLibrary).not.toContain("쪽지");
+	});
+
+	test("the reply promises a mail (메일로 보내드릴게요) to a writer who left an address: the mail follows, even without a file word", async () => {
+		const t = setup({ source: { autoMail: true, mailApp: "mail" }, text: "지난번 그거 저도 받을 수 있을까요? a@b.com", body: "남겨주신 메일로 MR 보내드리겠습니다^^" });
+		await t.engine.collect({ force: true });
+		expect(pendingOf(t)[0]!.mail).toBe("M1");
+		expect(t.mail.specs[0]).toMatchObject({ to: "a@b.com" });
+	});
+
+	test("a revision that now promises a mail gets the mail on its card", async () => {
+		const t = setup({ source: { autoMail: true, mailApp: "mail" }, text: "지난번 그거 저도 받을 수 있을까요? a@b.com", body: "감사합니다" });
+		await t.engine.collect({ force: true });
+		const first = pendingOf(t)[0]!;
+		expect(first.mail).toBeUndefined();
+		const revised = createEngine({ dir, now: () => NOW, collector: "mac-a", adapters: {}, model: async () => ({ text: replyOf("메일로 보내드릴게요") }), mail: t.mail.link });
+		const step = await revised.revise(first.code, "메일로 보낸다고 해줘");
+		expect(step.ok && step.draft.mail).toBe("M1");
+		expect(t.mail.specs).toHaveLength(1);
 	});
 
 	test("no mail app configured: no mail, and the card says so", async () => {
