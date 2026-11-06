@@ -26,9 +26,9 @@ const CMDS = [
   { c: "/logout", d: "공급자 로그아웃", args: [{ n: "공급자", opts: slProviders }] },
   { c: "/quota", d: "공급자·계정별 사용 한도", dup: true },
   // 이 컴퓨터의 셸 (owner 2026-11-03): typed here, run in the terminal sheet - the composer's own way to the shell, not a gateway command.
-  { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }], dup: true },
+  { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }], dup: true, page: true },
   // 화면 공유 (owner 2026-11-04): opens this computer's screen in a tab, not a gateway command; listed only while S.desk exists, and not in the palette (which has its own item).
-  { c: "/screen", d: "이 컴퓨터 화면 열기", desk: true },
+  { c: "/screen", d: "이 컴퓨터 화면 열기", desk: true, page: true },
   { c: "/help", d: "명령 전체 설명" },
 ];
 // The command palette lists the same commands.
@@ -221,6 +221,9 @@ async function stopTarget() {
 // (36-shell.js openShell). Keep a bare "/terminal" in the box and say what is missing instead of sending it anywhere.
 const SH_CMD = /^\/(?:terminal|셸|shell)(?:\s+([\s\S]*))?$/;
 const SCR_CMD = /^\/(?:screen|화면)\s*$/;
+// Is this text a command? The page's own, or a gateway one (hub/control.ts parseCommand, same list by hub/palette-routes-web.test.ts).
+// Any other "/" text, a path or a typo, is an ordinary message.
+const isSlashCommand = text => SH_CMD.test(text) || SCR_CMD.test(text) || CMDS.some(x => !x.page && x.c === text.split(/\s/, 1)[0].toLowerCase());
 // A slash command (typed, or a card button) goes to the gateway for the current target; its answer joins the chat as a card.
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
@@ -239,15 +242,16 @@ async function sendChat(how) {
   if (ATT.some(a => !a.file)) { toast(ATT.some(a => (upJob(target, a.id) || {}).error) ? "못 올린 파일을 다시 올리거나 빼 주세요" : "파일을 올리는 중이에요"); return; }
   const files = ATT.map(a => ({ ...a.file, label: a.no })), picks = pkItems();
   if ((!text && !files.length && !picks.length) || ta.disabled) return;
-  if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
-  if (picks.length && text.startsWith("/")) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
-  const refs = text.startsWith("/") ? [] : mnRefs(text), sentMentions = MENTIONS;
+  const isCommand = isSlashCommand(text);
+  if (files.length && isCommand) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
+  if (picks.length && isCommand) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
+  const refs = isCommand ? [] : mnRefs(text), sentMentions = MENTIONS;
   const sentAtt = ATT, sentPicks = PICK; ATT = []; atkForget(); renderAtt(); pkClear(); MENTIONS = [];
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
   chatStick = true; termStick = true;
-  if (text.startsWith("/")) {
+  if (isCommand) {
     if (SCR_CMD.test(text)) {
       if (!(S && S.desk)) { toast("이 컴퓨터에서는 화면 공유를 쓸 수 없어요", true); ta.value = text; autosize(); return; }
       openScreen(); return;
