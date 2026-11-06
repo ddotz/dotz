@@ -153,8 +153,8 @@ const positive = (v: unknown, fallback: number) => (typeof v === "number" && Num
 export const LANES_COMPACT_AT = 300_000;
 // Defaults of the config.json keys the 구성 view shows and edits: the module that reads each key and the view (hub/harness.ts)
 // take them from here, so the screen never shows a value the gateway does not use (owner 2026-10-21: per-install values).
-// coalesce_ms 2 s (was 4 s): over 48 h only 1 of 119 same-channel follow-ups came 2-4 s after the previous one, so the
-// longer merge window only delayed every message (~/.dotz/reports/speed-20261021.md).
+// coalesce_ms 2 s (was 4 s): over 14 days (2026-11-06, 900 owner messages) 0.1% were followed within 2 s, 1.4% within 5 s, 4.3%
+// within 10 s, so a longer first wait would delay nearly every lone message for nothing.
 export const DEFAULTS = {
 	rotate_tokens: 300_000, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
 	conv_idle_stop_min: 20,
@@ -164,6 +164,13 @@ export const DEFAULTS = {
 export const HOST = "127.0.0.1";
 // Messages of one channel merge for at most this long after the first (hub/main.ts intake).
 export const COALESCE_MAX_MS = 20_000;
+// The owner is mid-burst when the message comes at most BURST_GAP_MS after the previous one in that conversation and that one is
+// still unanswered, or when a burst is already gathering: 10% of messages (73 of 722 web, Discord and terminal messages), and the
+// earlier message is still being worked on then, so the wait costs little. Their next message came within 8 s in 7%, 10 s in 8%,
+// 12 s in 14%, 15 s in 18%, 30 s in 33%: 12 s holds the 3-12 s gaps without holding a message for half a minute, and what escapes
+// the window is gathered behind the turn (hub/promptburst.ts).
+export const BURST_GAP_MS = 30_000;
+export const BURST_WAIT_MS = 12_000;
 export const ACCOUNT_HISTORY_DAYS = 3;
 export const accountHistoryDays = () => positive(cfg.accounts?.history_days, ACCOUNT_HISTORY_DAYS);
 export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, LANES_COMPACT_AT);

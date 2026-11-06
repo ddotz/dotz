@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { parseCommand } from "./control.ts";
 import { onEmit, type HubEvent } from "./events.ts";
-import { bursts, sendWeb } from "./intake.ts";
+import { bursts, flush, sendWeb } from "./intake.ts";
 import { orch } from "./orchestrator.ts";
 import { inbox } from "./test-web.ts";
 
@@ -44,6 +44,7 @@ test("steering into a working session takes an unknown word too", async () => {
 	process.env.DOTZ_NO_ORCHESTRATOR = "1";
 	try {
 		await sendWeb({ channel: "web", text: "/foo bar", mode: "steer", login: "local" });
+		flush("web");
 	} finally {
 		orch.status = was;
 		delete process.env.DOTZ_NO_ORCHESTRATOR;

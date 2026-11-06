@@ -1,5 +1,5 @@
 // Inbound path of the hub: inbox text, burst coalescing (intake/flush), web sends and the queued-message sweep. Split out of main.ts.
-import { cfg, COALESCE_MAX_MS, DATA_DIR, DEFAULTS, log, now } from "./config.ts";
+import { BURST_GAP_MS, BURST_WAIT_MS, cfg, COALESCE_MAX_MS, DATA_DIR, DEFAULTS, log, now } from "./config.ts";
 import { limitsCard, parseCommand, runCommand } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
@@ -111,11 +111,15 @@ function inboxBody(e: Record<string, any>): string {
 
 // Owners often send one thought as several short messages. Messages from the same channel that arrive within
 // COALESCE_MS of each other (at most COALESCE_MAX_MS after the first) become one turn, the way someone's inbox monitor
-// batched lines that arrived together.
+// batched lines that arrived together. Mid-burst the wait is BURST_WAIT_MS (config.ts): a lone message keeps the short one.
 const COALESCE_MS = Number((cfg as any).gateway?.coalesce_ms ?? DEFAULTS.coalesce_ms);
 // Every owner message of every surface is emitted to the inbox first, so the ledger sees them all, lanes and commands included.
 onEmit(e => recordCorrection(e));
 export const bursts = new Map<string, { events: Record<string, any>[]; replyTo?: string; first: number; timer?: ReturnType<typeof setTimeout> }>();
+
+const lastAsked = new Map<string, number>();
+const quietMs = (target: string, gathering: number, last: number | undefined): number =>
+	COALESCE_MS && (gathering > 1 || (last !== undefined && Date.now() - last <= BURST_GAP_MS && Boolean(awaiting.get(target)?.length))) ? Math.max(COALESCE_MS, BURST_WAIT_MS) : COALESCE_MS;
 
 export function intake(event: Record<string, any>, target: string, replyTo?: string): void {
 	let b = bursts.get(target);
@@ -128,7 +132,9 @@ export function intake(event: Record<string, any>, target: string, replyTo?: str
 	b.events.push(event);
 	b.replyTo = replyTo ?? b.replyTo;
 	if (replyTo) lastOwner.set(target, replyTo);
-	b.timer = setTimeout(() => flush(target), Math.max(0, Math.min(COALESCE_MS, b.first + COALESCE_MAX_MS - Date.now())));
+	const quiet = quietMs(target, b.events.length, lastAsked.get(target));
+	lastAsked.set(target, Date.now());
+	b.timer = setTimeout(() => flush(target), Math.max(0, Math.min(quiet, b.first + COALESCE_MAX_MS - Date.now())));
 }
 
 export const UPDATE_RECEIPT = "📨 받았어요. 업데이트를 적용하고 다시 켜지면 바로 전달할게요.";
@@ -235,12 +241,13 @@ async function accountChatAnswer(target: string, ask: Parameters<typeof accountA
 }
 
 // Sends one web message the way the composer's modes mean it. "default" (no mode): the main assistant takes it as the next
-// message, a working lane gets it steered in; "steer": into the running turn now; "interrupt": abort, then new prompt.
+// message, a working lane gets it steered in; "steer": into the running turn, gathered with what follows it, or at once with
+// `sendNow` (the queue's 지금 보내기); "interrupt": abort, then new prompt.
 // `files` are uploads (files.ts): the chat shows them as chips, the agent gets one [attachment] line per file with its path.
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
 // `mail` (hub/mail.ts): the message reaches the orchestrator as one in that mail's Discord thread does (main.ts onOwner), plugin
 // thread hook included; a mail with no thread the hub knows answers in its web conversation `mail:<key>`.
-type WebSend = { source?: string; settings?: string; lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; quoted?: boolean; decision?: string; picks?: Pick[]; elements?: Picked[]; refs?: string[]; via?: string };
+type WebSend = { source?: string; settings?: string; lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; sendNow?: boolean; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; quoted?: boolean; decision?: string; picks?: Pick[]; elements?: Picked[]; refs?: string[]; via?: string };
 export async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
 	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
@@ -284,10 +291,10 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	// The session that answers `to` (main with conversation sessions off): steer and interrupt act on its turn only.
 	const session = convs.forTarget(to)?.o;
 	if (parseCommand(event.text)) void answerCommand(to, event.text);
-	else if (s.mode === "steer" && session?.orch.status === "working" && !updateNow()?.holding()) {
+	else if (s.mode === "steer" && s.sendNow && session?.orch.status === "working" && !updateNow()?.holding()) {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
-		// The web composer sends "steer" whenever the session works, so the dotz_auth wait is met here as well as in flush.
+		// The dotz_auth wait is met here as well as in flush.
 		const inbound = inboundOf(to, [turn], mid);
 		if (cancelReply(inbound, authWait)) return;
 		waitNotice(inbound, authWait);

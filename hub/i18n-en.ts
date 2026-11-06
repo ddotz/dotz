@@ -270,7 +270,7 @@ export const en = {
 	otherWorker: (id: string, conversation: string, replyTo?: string) => `${enLeads.otherConvLead}. This turn's final answer goes to this conversation only. If the result of task ${id} (${conversation}) arrives during this turn, send that answer with dotz_send target "${conversation}"${replyTo ? ` reply_to "${replyTo}"` : " reply_to <that conversation's message id>"}, never here.`,
 	workReadElsewhere: (id: string, conversation: string, readIn: string) => `${enLeads.otherConvLead}. The result of task ${id} (${conversation}) was read in a turn for ${readIn}. It is the answer to the request in ${conversation}: answer it here.`,
 	workReadHere: (id: string) => `[dotz gateway] The result of task ${id} was read in a turn that did not answer this request. Answer it now from that result.`,
-	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}. If its full answer is ready now (a quick question), send it with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}: that settles the message, it counts as answered and never comes back as a turn. Otherwise send nothing: it comes back as its own turn when you are idle. Then continue the current work; your final answer still goes to the request you started with.\n\n${text}`,
+	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}. If its full answer is ready now (a quick question), send it with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}. Otherwise send nothing separately: keep working and include its answer in this turn's final answer. Either way that answers the message.\n\n${text}`,
 	// The one leading line of an owner prompt that says what runs now (workers named by the hub from its own state; no model call).
 	nowRunning: "[running now]",
 	nowLanes: (n: number, body: string) => `sessions ${n}(${body})`,
@@ -387,7 +387,7 @@ Do this, briefly:
 			"lanes.nightly_compact_at": { label: "Nightly compaction threshold", unit: "tokens" },
 			"lanes.rotate_mb": { label: "Conversation file rotation size", unit: "MB" },
 			"lanes.max_rss_gb": { label: "Process memory limit", unit: "GB", hint: "Above this, the process restarts on the same conversation. To turn it off, set 0 in config.json" },
-			"gateway.coalesce_ms": { label: "Time to merge consecutive messages", unit: "ms", hint: "Messages arriving in the same channel within this time are handled together" },
+			"gateway.coalesce_ms": { label: "Time to merge consecutive messages", unit: "ms", hint: "A lone message waits this long before it goes in. A message sent while the previous one is still unanswered waits longer, so they are handled together. Messages arriving during a turn are gathered into that turn either way" },
 			"reflect_at": { label: "Nightly review time", hint: "HH:MM or off" },
 			"token_audit_at": { label: "Token audit time", hint: "HH:MM or off" },
 			"omp_update.mode": { label: "Update mode", options: { check: "Notify of new versions only", install: "Install automatically and restart", off: "Off" } },

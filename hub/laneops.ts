@@ -144,7 +144,7 @@ export function sendToLane(name: string, text: string, ref?: string, gateway = f
 	// 2026-11-01: a stall nudge every few minutes to a lane waiting hours on a video made each "still waiting" reply a relayed
 	// report, so every one woke the orchestrator.
 	if (!gateway && !/^\[owner via /.test(text) && text !== "/budget-ok") lane.orchAsked = true;
-	const how: LaneDelivery = !lane.proc ? "resumed" : lane.status === "working" ? "steered" : lane.status === "rate-limited" ? "held" : "received";
+	const how: LaneDelivery = !lane.proc ? "resumed" : lane.status === "working" || lane.startingOn === lane.proc ? "steered" : lane.status === "rate-limited" ? "held" : "received";
 	if (lane.proc) prompt(lane, text);
 	else resumeLane(lane, text);
 	ownerNotes.asked(name, ref);
