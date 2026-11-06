@@ -46,7 +46,7 @@ export async function rewriteState(exec: Exec, dir: string, remote: string, lsRe
 
 export const rewriteNote = (branch: string | undefined): string => ` 저장소 기록이 다시 쓰여서 새 기록으로 옮겼어요.${branch ? ` 로컬 커밋은 ${branch}에도 보관했어요.` : ""}`;
 
-const run: Exec = async (cmd, cwd, timeoutMs) => {
+export const run: Exec = async (cmd, cwd, timeoutMs) => {
 	const p = Bun.spawn(cmd, { cwd, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, stdout: "pipe", stderr: "pipe", stdin: "ignore", timeout: timeoutMs });
 	const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
 	return { code, out: `${out}${err}`.trim() };

@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 export type Term = { value: string; label: string };
 
 const MASK = "[비공개]";
-const PUBLIC_REPO = "ddotz/dotz";
+export const PUBLIC_REPO = "ddotz/dotz";
 const PUBLIC_URL = `https://github.com/${PUBLIC_REPO}.git`;
 const PUBLIC_EMAIL = /@(?:github\.com|users\.noreply\.github\.com|(?:[\w-]+\.)*example\.\w+)$/i;
 const PLACEHOLDER_USER = "you|user|username|name|me|example|runner|Shared";
