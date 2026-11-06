@@ -385,7 +385,8 @@ export async function setFallback(target: string, chain: unknown[]) {
 
 export const COMMANDS = ["help", "status", "context", "compact", "lanes", "model", "effort", "restart", "stop", "resume", "abort", "providers", "login", "logout", "quota", "account"];
 
-// "/name args" or "!name args" with a known command name; anything else is not a command.
+// "/name args" or "!name args" with a known command name; anything else is not a command but an ordinary message, on every path
+// (web/js/14-slash-commands.js isSlashCommand is this test for the page, which also has commands of its own).
 export function parseCommand(text: string): { name: string; args: string[]; rest: string } | undefined {
 	const m = text.trim().match(/^[/!]([a-z]+)(?:\s+([\s\S]*))?$/i);
 	const name = m?.[1].toLowerCase();
@@ -393,8 +394,6 @@ export function parseCommand(text: string): { name: string; args: string[]; rest
 	const rest = (m[2] ?? "").trim();
 	return { name, args: rest ? rest.split(/\s+/) : [], rest };
 }
-// A web message shaped like a slash command ("/word" alone or followed by arguments), known or not; file paths do not match.
-export const looksLikeCommand = (text: string) => /^\/[a-z]+(\s|$)/i.test(text.trim());
 
 // What a command answers: a compact card for the web chat (title, tone dot, label/value rows, a note, buttons that send a
 // command) and `text`, the same answer as plain markdown for Discord and the terminal. Texts live in the i18n catalog.

@@ -1,6 +1,6 @@
 // Inbound path of the hub: inbox text, burst coalescing (intake/flush), web sends and the queued-message sweep. Split out of main.ts.
 import { cfg, COALESCE_MAX_MS, DATA_DIR, DEFAULTS, log, now } from "./config.ts";
-import { limitsCard, looksLikeCommand, parseCommand, runCommand } from "./control.ts";
+import { limitsCard, parseCommand, runCommand } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
@@ -283,7 +283,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const turn = note ? { ...event, plugin_note: note } : event;
 	// The session that answers `to` (main with conversation sessions off): steer and interrupt act on its turn only.
 	const session = convs.forTarget(to)?.o;
-	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);
+	if (parseCommand(event.text)) void answerCommand(to, event.text);
 	else if (s.mode === "steer" && session?.orch.status === "working" && !updateNow()?.holding()) {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
