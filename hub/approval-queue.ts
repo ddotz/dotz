@@ -38,6 +38,8 @@ export type ApprovalQueueDeps = {
 	itemOf?: (conv: string, ref: string) => string;
 	/** Whether the item behind a ref was handled elsewhere (sent, dropped, answered by the owner himself): such a held card is dropped, never shown. */
 	handled?: (ref: string, conv: string) => boolean | Promise<boolean>;
+	/** The web address of the 답장 대기 screen (web/js/30-replies.js, with 빠른 처리), put on the progress line while cards wait; none while the web has no address. */
+	queueLink?: () => string | undefined;
 };
 
 /** The closed form of a send-approval card on Discord: its first line kept, then how it ended (the buttons are removed by the caller). */
@@ -102,15 +104,17 @@ export function splitCardLead(text: string): { lead: string; card: string } | un
 	return split.lead && cardRef(split.card) === cardRef(text) ? split : undefined;
 }
 
-const LEFT = /^-# (?:남은 \d+건(?: \(\d+\/\d+\))?|마지막 카드예요(?: \(\d+\/\d+\))?)$/;
+const LEFT = /^-# (?:남은 \d+건(?: \(\d+\/\d+\))?(?: · \[[^\]]+\]\([^)\s]+\))?|마지막 카드예요(?: \(\d+\/\d+\))?)$/;
 export type CardPos = { k: number; total: number };
 /**
  * The card text with its progress line right under the first line (where a card's notes go): "남은 N건 (k/T)" while cards wait behind it,
  * "마지막 카드예요 (T/T)" on the last one of a run of several, nothing for a lone card. Without `pos` only the count: "남은 N건", none for 0.
+ * With `link` (the web's 답장 대기 screen) every "남은 N건" line ends with it, so the rest can be answered together from any card.
  */
-export function withLeft(text: string, left: number, pos?: CardPos): string {
+export function withLeft(text: string, left: number, pos?: CardPos, link?: string): string {
 	const lines = text.split("\n").filter(l => !LEFT.test(l.trim()));
-	const line = pos && pos.total > 1 ? (left > 0 ? `-# 남은 ${left}건 (${pos.k}/${pos.total})` : `-# 마지막 카드예요 (${pos.total}/${pos.total})`) : left > 0 ? `-# 남은 ${left}건` : "";
+	const web = link ? ` · [웹에서 한 번에 처리하기](${link})` : "";
+	const line = pos && pos.total > 1 ? (left > 0 ? `-# 남은 ${left}건 (${pos.k}/${pos.total})${web}` : `-# 마지막 카드예요 (${pos.total}/${pos.total})`) : left > 0 ? `-# 남은 ${left}건${web}` : "";
 	if (line) lines.splice(1, 0, line);
 	return lines.join("\n");
 }
@@ -145,7 +149,7 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	};
 	const marked = (conv: string, text: string) => {
 		const p = progress(conv, text);
-		return withRecipientMark(withLeft(text, p.left, p.pos));
+		return withRecipientMark(withLeft(text, p.left, p.pos, deps.queueLink?.()));
 	};
 	const save = () => deps.persist(held.slice());
 	const heldIn = (conv: string) => held.filter(h => deps.convOf(h.target) === conv);

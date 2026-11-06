@@ -30,6 +30,8 @@ const lanes = [
 ];
 
 const json = (v: unknown) => Response.json(v);
+// The gateway does not answer /api/notices (the connection dropped): the last test turns it on.
+let noticesDown = false;
 const server = Bun.serve({
 	port: 0,
 	hostname: "127.0.0.1",
@@ -40,11 +42,11 @@ const server = Bun.serve({
 		const asset = appAsset(req, url.pathname);
 		if (asset) return asset;
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes, terminals: {}, channels: { work: [] }, discord: {}, notices_unread: notices.length });
+		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: noticesDown ? [] : lanes, terminals: {}, channels: { work: [] }, discord: {}, notices_unread: notices.length });
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
 		if (url.pathname === "/api/conversations") return json({ items: [] });
-		if (url.pathname === "/api/notices") return json({ unread: notices.length, items: notices });
+		if (url.pathname === "/api/notices") return noticesDown ? new Response("down", { status: 502 }) : json({ unread: notices.length, items: notices });
 		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
@@ -104,3 +106,20 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 		});
 	});
 }
+
+describe("답변 필요 when the notices do not load", () => {
+	test("it says they could not be loaded, as the 알림 card does, never that nothing waits", async () => {
+		noticesDown = true;
+		try {
+			// No 홈 record drawn earlier on this device (13-snapshot.js) to fall back on.
+			await view.navigate(`http://127.0.0.1:${server.port}/`);
+			await view.evaluate(`(snapForget(), 0)`);
+			await view.navigate(`http://127.0.0.1:${server.port}/`);
+			await waitFor(`typeof NT !== "undefined" && NT.failed && S && current === "home" && ${LIST}`);
+			expect(await q(`return ${LIST}.textContent`)).toBe("불러오지 못했어요");
+			expect(await q(`return document.querySelector("#home-now").textContent`)).not.toContain("답변할 항목이 없어요");
+		} finally {
+			noticesDown = false;
+		}
+	});
+});

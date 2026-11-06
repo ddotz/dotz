@@ -204,10 +204,11 @@ function nyMonRow(it) {
       el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, monClean(m.last_summary || "")].filter(Boolean).join(" · ") })),
     el("span", { class: "hs warn", text: it.act }));
 }
-// The list of the 홈 card: every row, six in sight (08-home.js capLists).
+// The list of the 홈 card: every row, six in sight (08-home.js capLists). Its items come from the notices, so while they have not loaded (or failed
+// to) an empty list says so as the 알림 card does (08-home.js hcState), never that nothing waits.
 function nyListNode(items) {
   const rows = nyRows(items);
-  return el("div", { class: "hn", "data-k": "needs", "data-cap": "needs" }, ...rows.map(r => r.node), ...(rows.length ? [] : [hcNone("답변할 항목이 없어요")]));
+  return el("div", { class: "hn", "data-k": "needs", "data-cap": "needs" }, ...rows.map(r => r.node), ...(rows.length ? [] : [hcNone(hcState() || "답변할 항목이 없어요")]));
 }
 function attnChanged() {
   renderBars();

@@ -233,6 +233,25 @@ describe("approval queue", () => {
 		expect(withLeft(withLeft(c, 3), 0)).toBe(c);
 		expect(cardRef(withLeft(c, 3))).toBe("cm-A");
 	});
+
+	test("every card with cards behind it links the web's 답장 대기 screen, even with only one left; the last card does not", () => {
+		const link = "https://dotz.example/#monitoring/replies";
+		const t = setup([], { queueLink: () => link });
+		t.q.route("ch:1", card("A"));
+		t.show("ch:1", card("A"));
+		t.q.route("ch:1", card("B"));
+		expect(t.rewrites.at(-1)!.text.split("\n")[1]).toBe(`-# 남은 1건 (1/2) · [웹에서 한 번에 처리하기](${link})`);
+		t.q.route("ch:1", card("C"));
+		// The recount replaces the line, never adds a second one.
+		expect(t.rewrites.at(-1)!.text.split("\n").filter(l => l.includes("남은"))).toEqual([`-# 남은 2건 (1/3) · [웹에서 한 번에 처리하기](${link})`]);
+		t.close("ch:1", "cm-A");
+		expect(t.posts[0]!.text.split("\n")[1]).toBe(`-# 남은 1건 (2/3) · [웹에서 한 번에 처리하기](${link})`);
+		t.show("ch:1", t.posts[0]!.text);
+		t.close("ch:1", "cm-B");
+		expect(t.posts[1]!.text).not.toContain(link);
+		// The progress the bot is told about stays the bare count.
+		expect(withLeft(withLeft(card("A"), 2, undefined, link), 0)).toBe(card("A"));
+	});
 });
 
 describe("an answer written above a held card", () => {
