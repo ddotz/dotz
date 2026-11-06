@@ -55,7 +55,7 @@ import { getDraft, holdDrafts, holdDraftsOf, listDrafts, restoreDrafts, restoreD
 import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, UPLOAD_MAX_BYTES, uploadsFrom } from "./files.ts";
 import { ownerElements, pickedLines } from "./picked.ts";
 import { ownerRefs, refLines } from "./mentions.ts";
-import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
+import { laneCapacity, laneClosed, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
@@ -155,7 +155,7 @@ export function startStallSweep(nudge: (conversation: string, r: RunState) => vo
 			const runs = stateRuns(), now = Date.now();
 			// sessions too: company-loss-review on the Mac mini (2026-10-29 01:53Z) ended a turn with a [run] report and 13 tasks open, and
 			// nothing woke it (a [run] report stays on disk)
-			const keys = ["main", ...convs.conversations().filter(c => convs.live(c)).map(c => c.primary), ...[...lanes.values()].filter(l => !!l.proc).map(l => `lane:${l.name}`)];
+			const keys = ["main", ...convs.conversations().filter(c => convs.live(c)).map(c => c.primary), ...[...lanes.values()].filter(l => !!l.proc && !laneClosed(l)).map(l => `lane:${l.name}`)];
 			for (const k of keys) {
 				const r = runs[k], step = r && stallStep(r, now, told.get(k) ?? { at: [] });
 				if (step) told.set(k, step.memo);
@@ -219,7 +219,7 @@ function stateRuns(): Record<string, RunState> {
 			work: workers,
 			children: runningChildren(source),
 			later: deferred.filter(d => d.target === source).length,
-			capacity: lane.waiting,
+			capacity: lane.waiting, resumeDue: lane.resumeDue,
 			lastTurnEnd: lastTurnEnd(items),
 			turnFailed: lastTurnFailed(items),
 			resuming: lane.resuming,

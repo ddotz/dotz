@@ -109,6 +109,8 @@ type Rec = {
 	task_summary?: string;
 	category?: string;
 	pid?: number;
+	/** The process an in-process worker runs inside (a lane's or a session's own): OmO writes it as a string. */
+	host_pid?: string | number;
 	recovery_deadline_at?: string;
 	spawn_spec?: { cwd?: string; prompt?: string; isolation?: unknown };
 	error_message?: string;
@@ -146,6 +148,8 @@ const SPAWN_SLACK_MS = 5_000;
 const conversationOf = (d: OpenDeferred | undefined) => d && { target: d.target };
 // A running record with no pid and no update for this long is a leftover, not a worker (seen: records from 2026-10-19 still "running").
 const NO_PID_STALE_MS = 3 * 3600_000;
+// A record still "running" whose process is gone counts as killed work this long; older ones are leftovers nobody closed.
+const DEAD_WORK_MS = 48 * 3600_000;
 const QUEUED = new Set(["queued", "pending"]);
 const RUNNING = new Set(["running", ...QUEUED]);
 // A running worker with no transcript or task-log activity for this long is stalled (DOTZ_WORKER_STALL_MIN, default 15).
@@ -432,7 +436,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		} else if (status === "running" && typeof r.pid === "number" && !alive(r.pid) && stamp(r.recovery_deadline_at) <= now()) {
 			status = "failed";
 			ended = stamp(r.updated_at) || started;
-		} else if (status === "running" && typeof r.pid !== "number" && now() - (stamp(r.updated_at) || started) > NO_PID_STALE_MS) {
+		} else if (status === "running" && typeof r.pid !== "number" && (now() - (stamp(r.updated_at) || started) > NO_PID_STALE_MS || (r.host_pid !== undefined && !alive(Number(r.host_pid)) && stamp(r.recovery_deadline_at) <= now()))) {
 			status = "failed";
 			ended = stamp(r.updated_at) || started;
 		}
@@ -577,6 +581,14 @@ export function createBgWork(deps: BgWorkDeps) {
 		return records(file).map(toWork).filter(w => w.status === "stalled");
 	}
 
+	/** Workers OmO still lists as running whose process is gone (st_01a1abe7: its host killed, "running" for 15 hours until a resume closed it). */
+	function deadWork(file: string): BgWork[] {
+		return records(file)
+			.filter(r => RUNNING.has((r.status ?? "").toLowerCase()) && !cancelled.has(r.task_id!))
+			.map(toWork)
+			.filter(w => w.status === "failed" && now() - (w.ended_at ?? 0) < DEAD_WORK_MS);
+	}
+
 	/**
 	 * 중단: ends a running worker's process (SIGTERM, then SIGKILL when it is still there after a grace period) and lists it as
 	 * stopped from then on. A worker with no process id cannot be ended from here, and that is said instead of claimed done.
@@ -609,7 +621,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		return { ok: true };
 	}
 
-	return { list, running, runningWork, quietWork, queuedWork, takeStalled, cancel, reportOf, byId };
+	return { list, running, runningWork, quietWork, deadWork, queuedWork, takeStalled, cancel, reportOf, byId };
 }
 
 const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });
@@ -623,5 +635,6 @@ export const runningOmoWorkers = (sessionFile: string | undefined): number => an
 export const runningOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.runningWork(sessionFile) : []);
 /** The workers under one session file OmO still lists as running that stopped working (the error says why, when one did). */
 export const quietOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.quietWork(sessionFile) : []);
+export const deadOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.deadWork(sessionFile) : []);
 /** 중단 for a worker of another session (a lane's). */
 export const cancelOmoWorker = (id: string, sessionFile: string | undefined): Promise<CancelResult> => anySession.cancel(id, sessionFile);

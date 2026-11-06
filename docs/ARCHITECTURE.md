@@ -22,7 +22,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 ## Lanes (sessions)
 
 - public facade `hub/lanes.ts` (re-exports; owns the stall/progress timers)
-- state `hub/lanestate.ts`, lifecycle ops `hub/laneops.ts`, process run/recover `hub/lanerun.ts`, event reading `hub/laneevents.ts`, failover `hub/lanefailover.ts`, resume after a reconnect `hub/lanereconnect.ts`, reports `hub/lanereport.ts`, prompts `hub/laneprompt.ts`, worktrees `hub/lanetree.ts`, launch gates `hub/lanegates.ts`, views `hub/laneviews.ts`, launch limits `hub/lanelimits.ts` (machine limits `hub/limits.ts`)
+- state `hub/lanestate.ts`, lifecycle ops `hub/laneops.ts`, process run/recover `hub/lanerun.ts`, event reading `hub/laneevents.ts`, failover `hub/lanefailover.ts`, resume after a reconnect `hub/lanereconnect.ts`, the unfinished-work signal `hub/laneunfinished.ts` and the sweep that resumes on it `hub/laneresume.ts`, reports `hub/lanereport.ts`, prompts `hub/laneprompt.ts`, worktrees `hub/lanetree.ts`, launch gates `hub/lanegates.ts`, views `hub/laneviews.ts`, launch limits `hub/lanelimits.ts` (machine limits `hub/limits.ts`)
 - around lanes: `hub/lanewire.ts` (report handlers), `hub/lanerelay.ts`, `hub/lanevis.ts`, `hub/lanetrash.ts`, `hub/laneidle.ts`, `hub/asks.ts`, `hub/hygiene.ts`, `hub/cleanup.ts`, `hub/memguard.ts`, `hub/receipts.ts`
 
 ## Channels and notices

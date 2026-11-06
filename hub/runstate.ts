@@ -4,8 +4,8 @@
 // composer (web/js/41-runstate.js). The derivation is pure so every case is tested without a gateway.
 import { parseTone } from "./tone.ts";
 export type RunKind = "working" | "waiting" | "idle" | "limited" | "error" | "stopped" | "done";
-// waiting: ask | standby (no question, the session has nothing to do until the owner writes) | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | interrupted · limited: rate | owner (a billing/auth block) · stopped: owner
-export type RunReason = "ask" | "standby" | "work" | "recover" | "child" | "later" | "capacity" | "unfinished" | "interrupted" | "unknown" | "rate" | "owner";
+// waiting: ask | standby (no question, the session has nothing to do until the owner writes) | resume (unfinished work the gateway is bringing back) | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | interrupted · limited: rate | owner (a billing/auth block) · stopped: owner
+export type RunReason = "ask" | "standby" | "work" | "recover" | "child" | "later" | "capacity" | "resume" | "unfinished" | "interrupted" | "unknown" | "rate" | "owner";
 // work: the background worker the line is about (중단 while it runs, 다시 맡기기 after it failed); cancelled: the owner stopped it.
 // queued: every worker the line could name is still waiting to start, so nothing runs for this conversation yet.
 export type RunState = { kind: RunKind; reason?: RunReason; since?: string; detail?: string; todos?: number; work?: string; cancelled?: boolean; queued?: boolean };
@@ -25,6 +25,8 @@ export type RunInput = {
 	children?: { name?: string; description?: string }[];
 	later?: number;
 	capacity?: string;
+	/** Stopped with unfinished work and on its way back, or past the automatic bound (hub/laneresume.ts): never 쉬는 중, never 끝났어요. */
+	resumeDue?: { state: "due" | "capacity" | "stuck"; detail?: string };
 	lastTurnEnd?: string;
 	/** The last turn's final answer text: a promise in it ("바로 할게") that nothing is running for is unfinished work. */
 	lastAnswer?: string;
@@ -58,6 +60,9 @@ export function runState(i: RunInput): RunState {
 	if (i.status === "working" || i.status === "starting") return { kind: "working", since: i.since, ...(short(i.intent) || short(i.todos?.current) ? { detail: short(i.intent) || short(i.todos?.current) } : {}), ...todos };
 	if (i.error) return { kind: "error", since: i.error.since, detail: short(i.error.text || "모델 오류"), ...todos };
 	if (i.status === "stopped") return { kind: "stopped", ...(i.stoppedBy === "owner" ? { reason: "owner" as const } : {}), since: i.since, ...todos };
+	if (i.resumeDue?.state === "stuck") return { kind: "waiting", reason: "standby", detail: "자동으로 이어가지 못했어요", ...todos };
+	if (i.resumeDue?.state === "capacity") return { kind: "waiting", reason: "capacity", detail: short(i.resumeDue.detail), ...todos };
+	if (i.resumeDue) return { kind: "waiting", reason: "resume", detail: "끊긴 작업을 곧 이어가요", ...todos };
 	if (i.status === "exited") return { kind: "done", since: i.since, ...todos };
 	// A compaction after a turn reads as work, not as 쉬는 중 with tasks left (Mac mini 2026-10-29 01:46: "어 뭐지?").
 	if (i.compacting) return { kind: "working", detail: "대화 정리 중", ...todos };
@@ -76,6 +81,10 @@ export function runState(i: RunInput): RunState {
 	if (f && f.status === "failed" && (f.ended_at ?? 0) > (Date.parse(i.lastTurnEnd ?? "") || 0)) return { ...failedRun(f, false), ...todos };
 	if (i.later) return { kind: "waiting", reason: "later", since: i.lastTurnEnd, ...todos };
 	if (i.capacity) return { kind: "waiting", reason: "capacity", detail: short(i.capacity), ...todos };
+	// An [ask] or [wait] with no owner message after it: not unfinished, whatever the plan says (ddotz/dotz#44). pendingAsk is gone after a
+	// refused bare [ask]; the turn's own marker is not.
+	const said = parseTone(String(i.lastAnswer ?? "")).tone;
+	if (i.lastTurnEnd && (said === "ask" || said === "wait")) return { kind: "waiting", reason: "standby", since: i.lastTurnEnd, ...todos };
 	if (open) return { kind: "idle", reason: i.lastTurnEnd ? "unfinished" : "interrupted", since: i.lastTurnEnd, ...(short(i.todos?.current) ? { detail: short(i.todos?.current) } : {}), ...(i.acted === undefined ? {} : { acted: i.acted }), ...todos };
 	// A turn that ended promising work it did not start (2026-11-01 15:20Z) is unfinished even with no plan: the session rested 25
 	// minutes and answered "아직 시작 안 했어".
@@ -137,10 +146,14 @@ function promiseEnd(sentence: string): string | undefined {
 }
 
 /** Open = not completed and not abandoned; current = the in_progress task, else the first pending one. */
+// A task the session marked as waiting on the owner is not work it can go on with (ddotz/dotz#44); OmO's statuses have no such value, so
+// the stall nudge's "mark it so in your plan" lands in the task's words.
+const OWNER_TASK = /(?:오너|owner)[^\n]{0,8}(?:대기|기다)|답\s*(?:대기|기다)|waiting\s+(?:on|for)\s+(?:the\s+)?owner/i;
+const waitingTask = (x: { content?: string; status?: string }) => x.status === "waiting" || x.status === "blocked" || OWNER_TASK.test(x.content ?? "");
 export function openTodos(t: TodoLike): { open: number; current?: string } {
 	const all = (t.phases || []).flatMap(p => p.tasks || []);
-	const live = all.filter(x => x.status !== "completed" && x.status !== "abandoned");
-	const cur = all.find(x => x.status === "in_progress") || live[0];
+	const live = all.filter(x => x.status !== "completed" && x.status !== "abandoned" && !waitingTask(x));
+	const cur = live.find(x => x.status === "in_progress") || live[0];
 	return { open: live.length, ...(cur?.content ? { current: cur.content } : {}) };
 }
 

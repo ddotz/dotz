@@ -26,7 +26,7 @@ import { json, body } from "./routes-util.ts";
 // Lanes are the expensive work, and the omp budget gate only sees task-tool workers, so lane launches check the quota here.
 // Every decision (go / blocked / forced / unknown) leaves exactly one hub.log line.
 // A refusal carries the 5h window's reset time when the usage report has it (the deferred work's resume_at).
-async function budgetProblem(name: string, est: number, force: boolean): Promise<{ text: string; resetAt?: number } | undefined> {
+export async function budgetProblem(name: string, est: number, force: boolean): Promise<{ text: string; resetAt?: number } | undefined> {
 	if (force) {
 		log(budgetLine(name, est, undefined, undefined, "forced"));
 		return undefined;
@@ -229,7 +229,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				return json({ ok: true });
 			}
 			if (req.method === "POST" && parts[3] === "restart") {
-				await restartLane(parts[2]);
+				await restartLane(parts[2], undefined, true);
 				return json({ ok: true });
 			}
 			if (req.method === "POST" && parts[3] === "resume") {
