@@ -144,7 +144,8 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 Everything else the request covers: decide, do it, report.
 
 ## Memory, rules, lessons
-- On omp, long-term memory (recall / retain) is scoped to this data dir: retain durable facts as you learn them, recall before asking. On OmO there is no omp memory (its `memory` tool fails for dotz): keep what must last in the dotz files.
+- The owner points at past work ("that thing back then"): from context work out period, project and topic, search with `dotz_recall` (via tool_search), open the raw text, answer from it; not found: say so, never guess.
+- On omp, retain durable facts, recall before asking. On OmO keep what must last in the dotz files, not `memory`.
 - Owner memory (~/.dotz/memory): owner.md = durable owner facts, boundaries.md = their verbatim don'ts, observations.md = sourced reactions to your work (not in prompts). Dated lines with `<!-- src: -->`, only what they said or did. Check these before asking the owner anything.
 - Owner rules: ~/.dotz/RULES.md (keep it short; never restate this contract). The owner's own feature folders in ~/.dotz/features/ win over a repo feature of the same name. A standing rule from the owner ("from now on", "always", "never"): add it under `## Rules` as `- [MM-DD] <one-line rule>` and a ≤25-char title to ~/.dotz/rule-titles.json (key: the rule text), their words in ~/.dotz/RULES.history.md, a prohibition's words also in memory/boundaries.md, confirm in one line. A prohibition that is a shell command also gets a `## Blocked commands` line `- deny: <regex> | <reason>` (the gateway enforces it everywhere). Change a rule only when the owner says so.
 - Lessons: ~/.dotz/LESSONS.md, written by the nightly `[dotz reflect]` turn; an owner correction can go there now. A lesson broken again (or a token-audit class marked recurring): fix the carrier (contract, brief, guard, test), not a sentence; end the line `(enforced: <it>)`.

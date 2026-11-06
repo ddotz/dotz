@@ -254,9 +254,13 @@ export function ingest(db: Database, opts: IngestOpts): IngestResult {
 	return result;
 }
 
+// One vector per doc, measured: the first 500 characters of the owner text, a newline, the first 900 of the answer.
+export const EMBED_OWNER_CHARS = 500;
+export const EMBED_ANSWER_CHARS = 900;
+
 export function pendingDocs(db: Database, model: string, limit: number): { id: string; text: string }[] {
 	return db.query<{ id: string; text: string }, [string, number]>(
-		"SELECT d.id AS id, d.owner || char(10) || d.answer AS text FROM docs d WHERE NOT EXISTS (SELECT 1 FROM vecs v WHERE v.doc_id = d.id AND v.model = ?) ORDER BY d.ts_ms DESC LIMIT ?",
+		`SELECT d.id AS id, substr(d.owner, 1, ${EMBED_OWNER_CHARS}) || char(10) || substr(d.answer, 1, ${EMBED_ANSWER_CHARS}) AS text FROM docs d WHERE NOT EXISTS (SELECT 1 FROM vecs v WHERE v.doc_id = d.id AND v.model = ?) ORDER BY d.ts_ms DESC LIMIT ?`,
 	).all(model, limit);
 }
 
