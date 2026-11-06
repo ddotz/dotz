@@ -241,6 +241,8 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 	if (!plan.ok) {
 		print(opts.force ? "강제 릴리스를 낼 수 없어요." : "다음 버전을 낼 수 없어요.");
 		print(plan.reason);
+		const last = planForcedNext(tags);
+		if (opts.dryRun && last.ok) print(await releaseNote(root, "다음 버전", last.previous ? `v${last.previous.text}` : null, "HEAD", opts.terms ?? releaseTerms()));
 		return 1;
 	}
 	const { version, previous } = plan;

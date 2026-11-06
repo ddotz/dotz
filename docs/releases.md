@@ -43,7 +43,7 @@ commit is one line under 내부 정리. Each other commit gives three lines: 무
 `CONTRIBUTING.md`). A body without those labels goes under 어떻게, and a missing part says so instead of guessing. The note goes through
 `hub/public-scrub.ts`, the same scrub as GitHub posts: the pattern list, this machine's config and secrets when it has a data folder, and
 the `PRIVACY_TERMS` repo secret (one term per line) in Actions, where no data folder exists. It covers `<previous tag>..<tag>`, so commits
-that landed while the run rebased are in it. `--dry-run` prints it, `--force` publishes it the same way, and a Release that fails turns
+that landed while the run rebased are in it. `--dry-run` prints it (also on a day that is full), `--force` publishes it the same way, and a Release that fails turns
 the run red with the note in its log: the tag is out, so create the Release by hand with `gh release create <tag> --notes-file <file>`.
 Tags from before this change have no Release. The update notice and settings → 업데이트 link to the note of the version on offer.
 

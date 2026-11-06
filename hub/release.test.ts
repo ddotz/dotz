@@ -221,6 +221,18 @@ describe("release note", () => {
 		expect(lines.join("\n")).toContain("**무엇**: 버튼 폭을 고칩니다");
 	});
 
+	test("--dry-run on a full day says so and still shows what the next version would carry", async () => {
+		const root = tempRepo();
+		commit(root, "base");
+		for (const n of [1, 2, 3]) git(root, "tag", `v261106.${n}`);
+		git(root, "commit", "--allow-empty", "-q", "-m", "버튼 폭을 고칩니다", "-m", "왜: 글자가 잘렸어요.");
+		const lines: string[] = [];
+		expect(await publishVersion({ auto: false, force: false, dryRun: true, cwd: root, now: kst("2026-11-06T19:00:00"), print: l => lines.push(l), terms: [] })).toBe(1);
+		const text = lines.join("\n");
+		expect(text).toContain("# dotz 다음 버전");
+		expect(text).toContain("**왜**: 글자가 잘렸어요.");
+	});
+
 	test("a failed GitHub Release fails the run and keeps the note in the log", async () => {
 		const parent = mkdtempSync(join(tmpdir(), "dotz-release-gh-"));
 		roots.push(parent);
