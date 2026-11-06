@@ -134,7 +134,7 @@ http://127.0.0.1:7420/
 로그인 버튼을 눌렀는데 확인 창이 뜨지 않으면, Ubuntu 창에서 한 번 쓰는 로그인 링크를 만들어 열어요.
 
 ```sh
-cd ~/.local/share/dotz && bun hub/web-login-cli.ts --open
+dotz
 ```
 
 **폰에서:** 3번에서 WSL에 깐 Tailscale로 접속해요. 폰도 같은 Tailscale 계정에 연결해 둬요.

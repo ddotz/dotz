@@ -29,7 +29,7 @@ const cookieOf = (r: Response) => r.headers.get("set-cookie")!.split(";")[0]!;
 const session = async () => cookieOf(await hit(await linkPath()));
 const setMode = (mode: string) => webAccess.change({ mode });
 const logText = () => (existsSync(join(DATA, "hub.log")) ? readFileSync(join(DATA, "hub.log"), "utf8") : "");
-const DENIED = "링크가 만료됐거나 이미 썼어요. 이 주소의 첫 화면에서 다시 로그인해 주세요.";
+const DENIED = "링크가 만료됐거나 이미 썼어요. 터미널에서 dotz를 다시 실행해 주세요.";
 const HINT = "이 컴퓨터만 모드예요. 브라우저에서 이 주소를 열어 로그인해 주세요.";
 
 // Not a browser on this computer: each must refuse both a code and a valid cookie. [headers, base, peer ip]
@@ -80,7 +80,7 @@ describe("이 컴퓨터만 로그인 링크", () => {
 		expect(r.headers.get("set-cookie")).toMatch(/^dotz_local=[\w-]{43}; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Strict$/);
 		const cookie = cookieOf(r);
 		expect(await status("/api/state", { headers: { cookie } })).toBe(200);
-		expect(createLocalLogin({ dir: DATA }).verify(new Request(BASE, { headers: { cookie } }))).toBe(true);
+		expect(createLocalLogin({ dir: DATA }).verify(new Request(BASE, { headers: { cookie } }), "local")).toBe(true);
 	});
 
 	test("no header and no cookie from the loopback is 403 and says how to get a link", async () => {
@@ -131,14 +131,16 @@ describe("이 컴퓨터만 로그인 링크", () => {
 		expect(await status(path)).toBe(303);
 	});
 
-	test("only the token mints: a session cookie cannot, a stranger cannot, outside local mode it is 409", async () => {
+	test("only the token mints: a session cookie cannot, a stranger cannot, a request that came through a proxy cannot", async () => {
 		const cookie = await session();
 		const mintWith = (headers: Record<string, string>) => status("/api/web-access/login-link", { method: "POST", headers });
 		expect(await mintWith({ cookie })).toBe(403);
 		expect(await mintWith({})).toBe(403);
 		expect(await mintWith(owner)).toBe(200);
 		await setMode("tailscale");
-		expect(await mintWith(owner)).toBe(409);
+		expect(await mintWith(owner)).toBe(200);
+		expect(await mintWith({ ...owner, "x-forwarded-for": "100.64.0.9" })).toBe(403);
+		expect(await status("/api/web-access/login-link", { method: "POST", headers: owner, base: "https://box.example.ts.net" })).toBe(403);
 		await setMode("local");
 	});
 
@@ -196,7 +198,7 @@ describe("이 컴퓨터만 로그인 링크", () => {
 			expect(text).not.toContain(secret);
 			expect(log).not.toContain(secret);
 		}
-		expect(JSON.parse(text).sessions[0]).toEqual({ hash: expect.stringMatching(/^[0-9a-f]{64}$/), expires_at: expect.any(Number) });
+		expect(JSON.parse(text).sessions[0]).toEqual({ hash: expect.stringMatching(/^[0-9a-f]{64}$/), expires_at: expect.any(Number), mode: "local" });
 	});
 });
 
@@ -212,31 +214,31 @@ describe("createLocalLogin", () => {
 		const fresh = ll.mint();
 		const stale = ll.mint();
 		t += 5 * 60_000 - 1;
-		expect(ll.redeem(fresh)).toBeString();
+		expect(ll.redeem(fresh, "local")).toBeString();
 		t += 2;
-		expect(ll.redeem(stale)).toBeUndefined();
+		expect(ll.redeem(stale, "local")).toBeUndefined();
 	});
 
 	test("a session lasts 30 days from the login, without sliding", () => {
 		const ll = make(join(tmp, "b"));
-		const token = ll.redeem(ll.mint())!;
+		const token = ll.redeem(ll.mint(), "local")!;
 		t += 30 * 24 * 3600_000 - 1;
-		expect(ll.verify(withCookie(token))).toBe(true);
-		expect(ll.verify(withCookie(token))).toBe(true);
+		expect(ll.verify(withCookie(token), "local")).toBe(true);
+		expect(ll.verify(withCookie(token), "local")).toBe(true);
 		t += 2;
-		expect(ll.verify(withCookie(token))).toBe(false);
-		expect(make(join(tmp, "b")).verify(withCookie(token))).toBe(false);
+		expect(ll.verify(withCookie(token), "local")).toBe(false);
+		expect(make(join(tmp, "b")).verify(withCookie(token), "local")).toBe(false);
 	});
 
 	test("at most 5 codes and 10 sessions are kept, the oldest dropped", () => {
 		const ll = make(join(tmp, "c"));
 		const codes = Array.from({ length: 6 }, () => ll.mint());
-		expect(ll.redeem(codes[0]!)).toBeUndefined();
-		expect(ll.redeem(codes[5]!)).toBeString();
-		const tokens = Array.from({ length: 11 }, () => ll.redeem(ll.mint())!);
-		expect(ll.verify(withCookie(tokens[0]!))).toBe(false);
-		expect(ll.verify(withCookie(tokens[1]!))).toBe(true);
-		expect(make(join(tmp, "c")).verify(withCookie(tokens[10]!))).toBe(true);
+		expect(ll.redeem(codes[0]!, "local")).toBeUndefined();
+		expect(ll.redeem(codes[5]!, "local")).toBeString();
+		const tokens = Array.from({ length: 11 }, () => ll.redeem(ll.mint(), "local")!);
+		expect(ll.verify(withCookie(tokens[0]!), "local")).toBe(false);
+		expect(ll.verify(withCookie(tokens[1]!), "local")).toBe(true);
+		expect(make(join(tmp, "c")).verify(withCookie(tokens[10]!), "local")).toBe(true);
 	});
 
 	test("an unreadable sessions file means no sessions, never a throw", () => {
@@ -244,8 +246,8 @@ describe("createLocalLogin", () => {
 		mkdirSync(dir, { recursive: true });
 		writeFileSync(join(dir, "web-local-sessions.json"), "{ not json");
 		const ll = make(dir);
-		expect(ll.verify(withCookie("anything"))).toBe(false);
-		expect(ll.redeem(ll.mint())).toBeString();
+		expect(ll.verify(withCookie("anything"), "local")).toBe(false);
+		expect(ll.redeem(ll.mint(), "local")).toBeString();
 	});
 });
 
@@ -475,5 +477,109 @@ describe("createLocalLogin requests", () => {
 		const probe = new Request(`${BASE}/local-login/status?id=${id}`);
 		const r = broken.status(probe, new URL(probe.url), "local", "127.0.0.1");
 		expect(await r.json()).toEqual({ state: "unavailable" });
+	});
+});
+
+// `dotz` (hub/dotz-command.ts): the one-time link gets a browser on this computer in whatever mode the gateway is in; nothing else changed for anyone else.
+describe("로컬 진입 (모든 모드)", () => {
+	const FAKE = join(DATA, "fake-cloudflared.sh");
+	const HOST = "dotz.example.com";
+	const previousBin = process.env.DOTZ_CLOUDFLARED_BIN;
+	const enter = async (mode: string) => {
+		if (mode !== "cloudflare") return setMode(mode);
+		writeFileSync(FAKE, "#!/bin/sh\nexec sleep 30\n", { mode: 0o755 });
+		process.env.DOTZ_CLOUDFLARED_BIN = FAKE;
+		await webAccess.change({ mode, hostname: HOST, token: "tunnel-token-for-the-test-0123456789" });
+	};
+	afterAll(async () => {
+		await webAccess.change({ mode: "local", hostname: "", token: "" });
+		if (previousBin === undefined) delete process.env.DOTZ_CLOUDFLARED_BIN;
+		else process.env.DOTZ_CLOUDFLARED_BIN = previousBin;
+	});
+
+	for (const mode of ["tailscale", "cloudflare", "local"]) {
+		describe(mode, () => {
+			beforeAll(() => enter(mode));
+			beforeEach(() => ALLOW.delete(OWNER));
+
+			test("no open loopback: without a token or a cookie nothing gets in", async () => {
+				expect(await status("/api/state")).not.toBe(200);
+				expect(await status("/local-login?code=wrong")).toBe(403);
+				expect(await status("/local-login")).toBe(403);
+			});
+
+			test("a loopback request with a valid token becomes a session, and the token is single use", async () => {
+				const path = await linkPath();
+				const first = await hit(path);
+				expect([first.status, first.headers.get("location")]).toEqual([303, "/"]);
+				const cookie = cookieOf(first);
+				expect(first.headers.get("set-cookie")).toContain("HttpOnly");
+				expect(first.headers.get("set-cookie")).toContain("SameSite=Strict");
+				expect(await status("/api/state", { headers: { cookie } })).toBe(200);
+				expect(await status(path)).toBe(403);
+			});
+
+			test("a request through a tunnel, a proxy or a rebound name redeems nothing and does not burn the token", async () => {
+				const path = await linkPath();
+				for (const header of ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port", "forwarded", "x-real-ip", "cf-connecting-ip", "cf-ray", "tailscale-user-login", "via", "true-client-ip"]) expect(await status(path, { headers: { [header]: "203.0.113.9" } })).toBe(403);
+				for (const base of ["https://box.example.ts.net", `https://${HOST}`, `http://rebind.example.com:${PORT}`, "http://127.0.0.1.nip.io"]) expect(await status(path, { base })).toBe(403);
+				expect(await status(path, { ip: "100.64.0.9" })).toBe(403);
+				expect(await status(path)).toBe(303);
+			});
+
+			test("the session counts only for a genuine local request", async () => {
+				const cookie = await session();
+				expect(await status("/api/state", { headers: { cookie, "x-forwarded-for": "203.0.113.9" } })).not.toBe(200);
+				expect(await status("/api/state", { headers: { cookie, "cf-ray": "abc" } })).not.toBe(200);
+				expect(await status("/api/state", { headers: { cookie }, base: `https://${HOST}` })).not.toBe(200);
+				expect(await status("/api/state", { headers: { cookie }, ip: "100.64.0.9" })).not.toBe(200);
+				expect(await status("/api/state", { headers: { cookie, origin: "https://evil.example" } })).not.toBe(200);
+				expect(await status("/api/state", { headers: { cookie, "sec-fetch-site": "cross-site" } })).not.toBe(200);
+			});
+		});
+	}
+
+	test("a mode change voids every loopback session and token, not only those of local mode", async () => {
+		await setMode("tailscale");
+		const cookie = await session();
+		const path = await linkPath();
+		await enter("cloudflare");
+		expect(await status("/api/state", { headers: { cookie } })).not.toBe(200);
+		expect(await status(path)).toBe(403);
+		await setMode("tailscale");
+		expect(await status("/api/state", { headers: { cookie } })).toBe(403);
+	});
+
+	test("outside local mode the login page's dialog stays closed: only the hub token opens loopback", async () => {
+		await setMode("tailscale");
+		asked.length = 0;
+		const r = await status("/local-login/request", { method: "POST", headers: { origin: BASE } });
+		expect(r).toBe(403);
+		expect(asked).toEqual([]);
+	});
+
+	test("an expired token is refused, and a session of another mode (or of an older file) does not count", () => {
+		const dir = mkdtempSync(join(tmpdir(), "dotz-loopback-"));
+		let clock = 1_000_000;
+		const login = createLocalLogin({ dir, now: () => clock });
+		const request = (code: string) => new Request(`${BASE}/local-login?code=${code}`);
+		const url = (code: string) => new URL(request(code).url);
+		const code = login.mint();
+		clock += 5 * 60_000;
+		expect(login.page(request(code), url(code), "tailscale", "127.0.0.1").status).toBe(403);
+
+		const good = login.mint();
+		const answered = login.page(request(good), url(good), "tailscale", "127.0.0.1");
+		const cookie = cookieOf(answered);
+		const browser = new Request(`${BASE}/`, { headers: { cookie } });
+		expect([login.verify(browser, "tailscale"), login.verify(browser, "cloudflare"), login.verify(browser, "local")]).toEqual([true, false, false]);
+
+		const hash = JSON.parse(readFileSync(join(dir, "web-local-sessions.json"), "utf8")).sessions[0].hash;
+		writeFileSync(join(dir, "web-local-sessions.json"), JSON.stringify({ sessions: [{ hash, expires_at: clock + 1000 }] }));
+		const older = createLocalLogin({ dir, now: () => clock });
+		expect([older.verify(browser, "tailscale"), older.verify(browser, "local")]).toEqual([false, true]);
+		older.keepMode("tailscale");
+		expect(createLocalLogin({ dir, now: () => clock }).verify(browser, "local")).toBe(false);
+		rmSync(dir, { recursive: true, force: true });
 	});
 });

@@ -126,17 +126,17 @@ export const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCas
 // and only paired devices (hub/devices.ts) get in; Access, when set up, is required on top of the device session.
 // The Tailscale-User-Login header is trusted only in "tailscale" mode: elsewhere nothing vouches for it, so whoever reaches the port could write it.
 // In "local" (이 컴퓨터만) a browser on this computer logs in once: a button on the login page makes the gateway ask on the owner's screen (or the bot hands out a
-// link, hub/web-login-cli.ts); leaving the mode voids its sessions (hub/local-login.ts).
+// link, hub/web-login-cli.ts). In every mode the `dotz` command logs a browser on this computer in with that same link; changing the mode voids such sessions (hub/local-login.ts).
 let confirmLogin: Confirm = nativeConfirm;
 /** Tests replace the native confirmation dialog of the login page (hub/local-login-dialog.ts) with a fake whose answer they control. */
 export const setLoginConfirm = (c: Confirm): void => { confirmLogin = c; };
 export const localLogin = createLocalLogin({ dir: DATA_DIR, confirm: number => confirmLogin(number) });
-export const webAccess = createWebAccess({ dir: DATA_DIR, allow: ALLOW, notify: text => out("alert", text, undefined, { source: "gateway" }), onLeaveLocal: () => localLogin.clear() });
-if (webAccess.mode() !== "local") localLogin.clear();
+export const webAccess = createWebAccess({ dir: DATA_DIR, allow: ALLOW, notify: text => out("alert", text, undefined, { source: "gateway" }), onModeChange: () => localLogin.clear() });
+localLogin.keepMode(webAccess.mode());
 
 function authorized(req: Request, cfOk = false, devOk = false, peerIp?: string): boolean {
 	if (req.headers.get("x-dotz-token") === HUB_TOKEN) return true;
-	if (webAccess.mode() === "local" && localBrowser(req, peerIp) && localLogin.verify(req)) return true;
+	if (localBrowser(req, peerIp) && localLogin.verify(req, webAccess.mode())) return true;
 	if (webAccess.devices() ? cloudflareGate({ device: devOk, accessConfigured: !!webAccess.cfAccess(), access: cfOk }) : cfOk) return true;
 	const login = (req.headers.get("tailscale-user-login") ?? "").toLowerCase();
 	if (login && ALLOW.has(login) && webAccess.mode() === "tailscale") return true;
@@ -444,7 +444,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (deviceApi) return deviceApi;
 		const accessApi = peer === "none" ? await webAccessRoute(req, url, webAccess) : undefined;
 		if (accessApi) return accessApi;
-		const loginLink = peer === "none" ? localLogin.loginLink(req, url, { mode: webAccess.mode(), port: PORT, tokenOk: req.headers.get("x-dotz-token") === HUB_TOKEN }) : undefined;
+		const loginLink = peer === "none" ? localLogin.loginLink(req, url, { port: PORT, tokenOk: req.headers.get("x-dotz-token") === HUB_TOKEN, local: localBrowser(req, srv?.requestIP(req)?.address) }) : undefined;
 		if (loginLink) return loginLink;
 		// 설정 → 웹 접속: Cloudflare starts the onboarding flow, 이 컴퓨터만 records the mode and is done at once. Neither answer carries a secret.
 		if (peer === "none" && url.pathname === "/api/web-access/onboard") {

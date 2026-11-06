@@ -1,4 +1,4 @@
-// Fallback for the bot while web.access is "local" (이 컴퓨터만); the owner normally logs in with the button on the login page (hub/local-login-page.ts).
+// The `dotz` command (hub/dotz-command.ts) and the bot's fallback, in every web.access mode.
 // Prints a one-time login link for the browser (only the url goes to stdout); --open also opens it in this computer's default browser.
 import { HUB_TOKEN, PORT } from "./config.ts";
 import { openerCommand } from "./opener.ts";
@@ -15,8 +15,10 @@ if (!r.ok || !data.url) {
 }
 console.log(data.url);
 if (process.argv.includes("--open")) {
-	const proc = Bun.spawn(openerCommand(data.url), { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-	if ((await proc.exited) !== 0) {
+	const opened = await Promise.resolve()
+		.then(() => Bun.spawn(openerCommand(data.url), { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exited)
+		.catch(() => 1); // a headless Linux has no xdg-open
+	if (opened !== 0) {
 		console.error("브라우저를 열지 못했어요. 위 주소를 브라우저에서 열어 주세요");
 		process.exit(1);
 	}
