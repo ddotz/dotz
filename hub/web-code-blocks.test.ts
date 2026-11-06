@@ -75,19 +75,19 @@ describe("code block markup", () => {
 describe("password prompt detection", () => {
 	test.each([
 		"Password:",
-		"[sudo] password for someone: ",
-		"someone@mac.local's password:",
-		"Enter passphrase for key '/home/me/.ssh/id_ed25519':",
+		"[sudo] password for owner: ",
+		"owner@mac.local's password:",
+		"Enter passphrase for key '/Users/me/.ssh/id_ed25519':",
 		"암호:",
-		"[sudo] someone의 암호:",
+		"[sudo] owner의 암호:",
 		"비밀번호를 입력하세요:",
-		"Password for someone@host: ",
+		"Password for owner@host: ",
 		"Enter Password：",
 	])("%j is a password prompt", line => {
 		expect(shell.isPasswordPrompt(line)).toBe(true);
 	});
 
-	test.each(["", "$ ", "someone@mac ~ % ls", "Password updated.", "the password is rotated daily", "Last login: Thu Oct 22", "x".repeat(300) + " password:"])("%j is not", line => {
+	test.each(["", "$ ", "owner@mac ~ % ls", "Password updated.", "the password is rotated daily", "Last login: Thu Oct 22", "x".repeat(300) + " password:"])("%j is not", line => {
 		expect(shell.isPasswordPrompt(line)).toBe(false);
 	});
 });

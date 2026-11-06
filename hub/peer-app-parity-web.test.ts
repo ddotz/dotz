@@ -15,11 +15,11 @@ const later = (min: number) => new Date(Date.now() + min * 60_000).toISOString()
 const Q = "이 답장 보낼까요?";
 const OPTS = [{ n: 1, label: "보내기", desc: "", rec: true }, { n: 2, label: "고치기", desc: "", rec: false, detail: true }, { n: 3, label: "보내지 않기", desc: "", rec: false }];
 const DRAFT = { toLabel: "받는이", to: "Kim <kim@example.com>", subject: "Re: 견적 요청", body: "안녕하세요.\n\n견적서를 보내 드려요.\n\n감사합니다." };
-const LOCAL_T = "mail:company-local", PEER_T = "mail:company-peer";
+const LOCAL_T = "mail:acme-local", PEER_T = "mail:acme-peer";
 const draft = (id: string, t: string, state = "open", extra: object = {}) => ({ id, ts: now, updated: now, kind: "decision", tone: "ask", title: `${Q} (RSE5J5F)`, text: `[ask] 답장 초안을 만들었어요.\n\n> 받는이: Kim <kim@example.com>\n> 제목: Re: 견적 요청\n\n${Q}`, open: t, src: t, at: now, read: false,
 	decision: { options: OPTS, to: t, reply_to: now, group: 1, state, draft: DRAFT, ...extra } });
-const mail = (key: string) => ({ key, subject: "견적 요청", from: "Kim <kim@example.com>", source: "company", at: now, summary: "다음 주까지 견적을 받고 싶어요.", reply: "draft", unreplied: true });
-const conv = (t: string) => ({ target: t, mail: mail(t.slice(5)), last: { ts: now, text: "견적 요청 메일", via: "company" }, unread: 0 });
+const mail = (key: string) => ({ key, subject: "견적 요청", from: "Kim <kim@example.com>", source: "acme", at: now, summary: "다음 주까지 견적을 받고 싶어요.", reply: "draft", unreplied: true });
+const conv = (t: string) => ({ target: t, mail: mail(t.slice(5)), last: { ts: now, text: "견적 요청 메일", via: "acme" }, unread: 0 });
 const KAKAO_W = { name: "카카오톡 새 소식", watch: "kakao-new", kind: "watch", last_run: now, last_result: "ok", next_run: later(1), every: "1분마다", last_ok: now, fails: 0 };
 const app = (key: string, label: string, icon: string, notices: string[], extra: object = {}) => ({ key, label, icon, kind: "app", unread: 0, notices, needs: { drafts: notices.length, unread: 0, sentToday: 0 }, ...extra });
 const MAIL_APP = (id: string) => app("mail", "메일", "mail", [id], { conv: ["mail:"] });

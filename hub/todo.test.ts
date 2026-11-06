@@ -36,7 +36,7 @@ test("a todo result far from the end of a large file is found by reading growing
 	expect(readTodo(newer).at).toBe("2026-10-21T03:00:00.000Z");
 });
 
-// company-loss-review on the Mac mini (2026-10-29): its turn ended to wait on its own "HTML 워커 종료" monitor (armed two turns before) and a
+// acme-loss-review on the Mac mini (2026-10-29): its turn ended to wait on its own "HTML 워커 종료" monitor (armed two turns before) and a
 // background shell; the harness's own lifecycle record says so, and that is what the session waits on.
 test("a session waits on what its harness's latest lifecycle record says: a monitor first, else its background shells or subagents", () => {
 	const d = join(process.env.DOTZ_DIR!, "todo-monitor");

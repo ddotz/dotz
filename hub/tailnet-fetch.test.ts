@@ -7,12 +7,12 @@ const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: req => ((seenH
 afterAll(() => server.stop(true));
 
 test("a *.ts.net name that does not resolve is retried at the address Tailscale gives, with its own Host header", async () => {
-	const url = `http://no-such-node-dz.example.ts.net:${server.port}/manifest.webmanifest`;
+	const url = `http://no-such-node-dz.tail1234.ts.net:${server.port}/manifest.webmanifest`;
 	const asked: string[] = [];
 	const r = await peerFetch(url, {}, async host => (asked.push(host), "127.0.0.1"));
 	expect(await r.json()).toEqual({ gateway: "dotz" });
-	expect(asked).toEqual(["no-such-node-dz.example.ts.net"]);
-	expect(seenHost).toBe(`no-such-node-dz.example.ts.net:${server.port}`);
+	expect(asked).toEqual(["no-such-node-dz.tail1234.ts.net"]);
+	expect(seenHost).toBe(`no-such-node-dz.tail1234.ts.net:${server.port}`);
 });
 
 test("any other failure, or a name outside the tailnet, is not retried", async () => {

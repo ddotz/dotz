@@ -3,9 +3,9 @@ import { projectsView } from "./custom.ts";
 import { ev, fakeHub, idleState, json, type View, waitFor } from "./test-web.ts";
 
 // One session, one project on every web surface: the real resolver's output served to the shipped page at 390px, against a stub gateway.
-const work = { "7001": "company", "7002": "private-project" };
+const work = { "7001": "기획팀", "7002": "지원리뷰" };
 const lane = (name: string, extra: object) => ({ name, title: name, cwd: "/h/shared", status: "idle", live: true, reports: 0, startedAt: "2026-11-01T00:00:00Z", ...extra });
-const lanes = [lane("homed", { home: "ch:7001", project: "company" }), lane("rival", { home: "ch:7002", project: "private-project" }), lane("folderOnly", { cwd: "/h/alone" })];
+const lanes = [lane("homed", { home: "ch:7001", project: "기획팀" }), lane("rival", { home: "ch:7002", project: "지원리뷰" }), lane("folderOnly", { cwd: "/h/alone" })];
 const projects = projectsView({ lanes, channels: { work }, pins: { projects: [], hide_projects: [], routines: [], links: [] }, home: "/h", tmpDirs: [] });
 const hub = fakeHub({
 	stream: "fake",
@@ -37,8 +37,8 @@ test("a homed session shows its home project everywhere, a session with no home 
 		const l = S.lanes.find(x => x.name === "${name}"), p = PRJ.projects.find(x => x.name === "${project}");
 		return { label: laneProject(l), notice: ntLaneNote({ key: "lane:${name}" }).split(" · ")[0], rows: pmSessionRows(p, null).map(r => r.name + ":" + r.project), row: sessionRow(l).querySelector(".sproj").textContent, chat: laneChat(l) };
 	})()`);
-	expect(await onPage("homed", "company")).toMatchObject({ label: "company", notice: "company", rows: ["homed:company"], row: "company", chat: "ch:7001" });
-	expect(await onPage("rival", "private-project")).toMatchObject({ label: "private-project", notice: "private-project", rows: ["rival:private-project"], row: "private-project", chat: "ch:7002" });
+	expect(await onPage("homed", "기획팀")).toMatchObject({ label: "기획팀", notice: "기획팀", rows: ["homed:기획팀"], row: "기획팀", chat: "ch:7001" });
+	expect(await onPage("rival", "지원리뷰")).toMatchObject({ label: "지원리뷰", notice: "지원리뷰", rows: ["rival:지원리뷰"], row: "지원리뷰", chat: "ch:7002" });
 	const alone = projects.find(p => p.key === "dir:~/alone")!.name;
 	expect(await onPage("folderOnly", alone)).toMatchObject({ label: alone, notice: alone, rows: [`folderOnly:${alone}`], row: alone, chat: "" });
 	const rows = await ev<string[]>(v, `(() => { renderBars(); const d = document.querySelector(".thead .tdrop"); return d ? d._items().map(i => i.header || i.value) : []; })()`);

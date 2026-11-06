@@ -15,7 +15,7 @@ const watch = (name: string, label: string, extra: object = {}) => ({ name: labe
 const MAIL = { subject: "월간 점검 보고서", from: "Alex Sender <sender@example.com>", source: "fx", at: at(10), summary: "요약\n내용이 있어요.", n: 1 };
 const ROOMS = [{ chatId: "100", name: "가나다 모임", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: Date.UTC(2026, 9, 23, 3, 20) }];
 const fields = () => WATCH_FIELDS.map(f => viewOf(f, f.key === "enabled" ? true : f.key === "every_minutes" ? 30 : f.key === "to" ? "alert" : "이름"));
-const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [watch("login-private-project-com", "까르띠에 로그인 유지", { last_result: "fail", fails: 3, keeper: true })], notices: [], integrations: [], conversations: [] } }];
+const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [watch("login-boutique-com", "부티크 로그인 유지", { last_result: "fail", fails: 3, keeper: true })], notices: [], integrations: [], conversations: [] } }];
 
 const hub = fakeHub({
 	api: (_req, url) => {
@@ -34,7 +34,7 @@ const hub = fakeHub({
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: ROOMS });
 		if (p === "/api/kakao/chat/100") return json({ room: { chatId: "100", name: "가나다 모임", kind: "group", group: true }, messages: [], read: "0", kakaoUnread: 0, drafts: [], sends: [] });
 		if (p === "/api/monitoring/peers") return json(peers);
-		if (p === "/api/peer/proxy") return json(url.searchParams.get("p") === "/api/watches/login-private-project-com/settings" ? { key: "login-private-project-com", fields: fields() } : {});
+		if (p === "/api/peer/proxy") return json(url.searchParams.get("p") === "/api/watches/login-boutique-com/settings" ? { key: "login-boutique-com", fields: fields() } : {});
 		if (/^\/api\/(?:integrations|watches)\/[a-z0-9-]+\/settings$/.test(p)) return json({ key: "x", fields: fields() });
 	},
 });
@@ -53,7 +53,7 @@ const boot = async (width: number, height: number) => {
 };
 
 // One entry per kind of detail: how it is opened, which settings conversation its button leads to, and where its title bar is on a wide screen.
-const PEER_KEY = `p:${MINI}|m:까르띠에 로그인 유지`;
+const PEER_KEY = `p:${MINI}|m:부티크 로그인 유지`;
 const KINDS: { name: string; open: string; after?: [string, string]; ready?: string; app: string; head: string }[] = [
 	{ name: "mail app", open: `go("monitoring", "i:mail")`, app: "mail", head: "#mon-head" },
 	{ name: "mail", open: `go("monitoring", "c:mail:fx-1")`, ready: `target === "mail:fx-1"`, app: "mail", head: "#cv-head" },
@@ -62,7 +62,7 @@ const KINDS: { name: string; open: string; after?: [string, string]; ready?: str
 	{ name: "other app", open: `go("monitoring", "i:site")`, app: "site", head: "#mon-head" },
 	{ name: "general monitor", open: `go("monitoring", "m:일반 감시")`, app: "w:plain-watch", head: "#mon-head" },
 	{ name: "login keeper", open: `go("monitoring", "m:로컬 로그인 유지")`, app: "w:login-local", head: "#mon-head" },
-	{ name: "peer monitor", open: `go("monitoring", ${JSON.stringify(PEER_KEY)})`, app: "w:login-private-project-com", head: "#mon-head" },
+	{ name: "peer monitor", open: `go("monitoring", ${JSON.stringify(PEER_KEY)})`, app: "w:login-boutique-com", head: "#mon-head" },
 ];
 
 describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in its title bar", () => {

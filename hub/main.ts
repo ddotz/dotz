@@ -640,7 +640,7 @@ function shutdown(): Promise<never> {
 	], 10_000 + (replies.size() ? outlangTimeoutMs() + 2000 : 0));
 }
 
-// Restart the gateway the way someone's herdr-restart does: wait until the orchestrator and every lane are idle, task
+// Restart the gateway the way the earlier secretary's herdr-restart does: wait until the orchestrator and every lane are idle, task
 // workers included, then exit; launchd (KeepAlive) starts the new code. Called during an orchestrator turn, it waits for
 // that turn to end, so the answer goes out first. restart.ts: a busy lane is never killed, requests are coalesced.
 const DEFER_GRACE_MS = 5 * 60_000;

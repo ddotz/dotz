@@ -39,7 +39,7 @@ function fixture(name: string) {
 		turn(300, [call("c3", "edit", {})]),
 		result("c3", "edit", "Could not find the exact text in a.ts", true),
 		turn(300, [call("c4", "eval", { code: "2" })]),
-		result("c4", "eval", "Blocked by dotz (custom plugin company): no explicit OK", true),
+		result("c4", "eval", "Blocked by dotz (custom plugin acme): no explicit OK", true),
 		turn(0, [], "error", { errorMessage: "429 usage limit" }),
 		turn(200, [say("done and dusted")], "stop"),
 	);
@@ -62,7 +62,7 @@ describe("classifiers", () => {
 	test("tool errors fall into the six causes", () => {
 		expect(classifyToolError("Worker brief rejected by the guard: no observable done-condition")).toBe("얇은 브리프");
 		expect(classifyToolError("INTERRUPTED: the consuming run ended")).toBe("런타임 끊김");
-		expect(classifyToolError("Blocked by dotz (custom plugin company)")).toBe("정책 차단");
+		expect(classifyToolError("Blocked by dotz (custom plugin acme)")).toBe("정책 차단");
 		expect(classifyToolError("Command timed out after 30s")).toBe("기한 초과");
 		expect(classifyToolError("Validation failed for tool eval")).toBe("입력 오류");
 		expect(classifyToolError("ENOENT: no such file or directory")).toBe("낡은 경로·선택자");

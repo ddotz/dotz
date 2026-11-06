@@ -153,7 +153,7 @@ export function startStallSweep(nudge: (conversation: string, r: RunState) => vo
 	const timer = setInterval(() => {
 		try {
 			const runs = stateRuns(), now = Date.now();
-			// sessions too: company-loss-review on the Mac mini (2026-10-29 01:53Z) ended a turn with a [run] report and 13 tasks open, and
+			// sessions too: acme-loss-review on the Mac mini (2026-10-29 01:53Z) ended a turn with a [run] report and 13 tasks open, and
 			// nothing woke it (a [run] report stays on disk)
 			const keys = ["main", ...convs.conversations().filter(c => convs.live(c)).map(c => c.primary), ...[...lanes.values()].filter(l => !!l.proc && !laneClosed(l)).map(l => `lane:${l.name}`)];
 			for (const k of keys) {

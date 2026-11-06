@@ -245,13 +245,13 @@ test("the thread panel starts at 1024px, the panel and the conversation side by 
 test("a sender or recipient given by name only is shown by name, and the body's own pictures are not listed as files", async () => {
 	const v = await openPage(390, "monitoring/i:mail");
 	const got = await ev(v, `(() => {
-		const head = mailHeadNode({ from: "redacted Lee (KR - A", to: "redacted", cc: "Park <park@example.com>" }), quoted = mailHeadNode({ from: String.fromCharCode(34) + "redacted" + String.fromCharCode(34) + " <kkmo@example.com>" });
+		const head = mailHeadNode({ from: "Jisoo Han (KR - A", to: "이서준", cc: "Park <park@example.com>" }), quoted = mailHeadNode({ from: String.fromCharCode(34) + "이서준" + String.fromCharCode(34) + " <gm.lee@example.com>" });
 		const files = mailFilesNode("fx-1", [{ name: "image001.png", size: 10, inline: true }, { name: "견적서.pdf", size: 2048 }]);
 		const none = mailFilesNode("fx-1", [{ name: "image001.png", size: 10, inline: true }]);
 		return { rows: [...head.querySelectorAll(".mhd-r")].map(r => r.textContent), quoted: quoted.querySelector(".mhd-r").textContent, files: files ? [files.querySelector(".mr-fh").textContent, ...[...files.querySelectorAll("a")].map(a => a.textContent + "|" + a.getAttribute("href"))] : null, none };
 	})()`);
-	expect(got.rows).toEqual(["보낸 사람redacted Lee (KR - A", "받는 사람redacted", "참조Park <park@example.com>"]);
-	expect(got.quoted).toBe("보낸 사람redacted <kkmo@example.com>");
+	expect(got.rows).toEqual(["보낸 사람Jisoo Han (KR - A", "받는 사람이서준", "참조Park <park@example.com>"]);
+	expect(got.quoted).toBe("보낸 사람이서준 <gm.lee@example.com>");
 	expect(got.files[0]).toBe("첨부 1개");
 	expect(got.files[1]).toStartWith("견적서.pdf");
 	expect(got.files[1]).toContain("/api/mail/fx-1/files/1");

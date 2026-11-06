@@ -11,7 +11,7 @@ const RAW = /dotz_|\/Users|\*\/5|\bssh\b|\[(?:done|ask|run|fail)\]|\blane:|\bch:
 const lanes = (name: string) => (name === "mail-reply-drafts" ? "메일 답장 초안" : undefined);
 
 test("raw identifiers become words and the data stays", () => {
-	const text = "[done] `dotz_watch`로 메일 3통을 확인했어요. 초안은 /home/me/.dotz/drafts/weekly_report.md 에 있어요 (id=3f2a9b1c-1111-2222-3333-444455556666)";
+	const text = "[done] `dotz_watch`로 메일 3통을 확인했어요. 초안은 /Users/me/.dotz/drafts/weekly_report.md 에 있어요 (id=3f2a9b1c-1111-2222-3333-444455556666)";
 	const out = noticeKo(text, { lane: lanes });
 	expect(out).not.toMatch(RAW);
 	expect(out).toContain("메일 3통");

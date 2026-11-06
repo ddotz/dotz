@@ -8,9 +8,9 @@ const item = (own: string[]) => ({ key: "mail", own, needs: { drafts: 0, unread:
 
 describe("an app's connection from the watches it owns", () => {
 	test("a login keeper whose check says DOTZ_DISCONNECTED (exit 0, the alert went elsewhere) is disconnected since the time it names", () => {
-		const keeper = w("company-login", { last: "DOTZ_DISCONNECTED since=2026-10-23T12:29:18.300Z\nwaiting for the owner's approval", lastRun: "2026-10-26T11:43:34.697Z" });
+		const keeper = w("acme-login", { last: "DOTZ_DISCONNECTED since=2026-10-23T12:29:18.300Z\nwaiting for the owner's approval", lastRun: "2026-10-26T11:43:34.697Z" });
 		expect(watchConnection(keeper)).toEqual({ state: "disconnected", since: "2026-10-23T12:29:18.300Z", reason: "login" });
-		const out = withConnection(item(["company-login"]), [keeper], "Asia/Seoul");
+		const out = withConnection(item(["acme-login"]), [keeper], "Asia/Seoul");
 		expect(out.state).toBe("disconnected");
 		expect(out.since).toBe("2026-10-23T12:29:18.300Z");
 		expect(out.hint).toBe("연결 끊김 · 10월 23일 21:29부터 · 다시 로그인 필요");

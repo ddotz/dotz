@@ -63,7 +63,7 @@ export type DraftFile = { name: string; size?: string };
 export type DraftOrigin = { text: string; link?: string };
 export type DraftApproval = { toLabel: string; to: string; /** What only the owner can decide, one point each (the card's 정할 것 list). */ decide?: string[]; cc?: string[]; mode?: "reply" | "all"; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; rule?: string; mail?: DraftApproval; /** recipientCheck's finding against the quoted source above the draft. */ recipientWarning?: string; /** The card's `첨부 확인` line: where the words and the files disagree. */ attachIssues?: string[] };
 
-// The recipient of a reply is the address the source wrote, copied as is (2026-10-31: a comment's "thanever2@hannail.net" and the owner
+// The recipient of a reply is the address the source wrote, copied as is (2026-10-31: a comment's "reader2@hannail.net" and the owner
 // having to say "hanmail.net 으로 주소 고쳐서 다시 보내"). recipientCheck compares a draft's recipient with the addresses in the source text
 // (the comment or mail it answers): an address the source does not have is a mismatch; one copied as is whose domain is one letter away
 // (edit distance 1-2) from a common mail domain is named as a likely typo with the corrected address, so the owner decides before 보내기.

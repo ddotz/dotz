@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { buildProviders, omoAuthInfos, omoModels } from "./providers.ts";
 
 // The mac mini's auth.json shape: only the Claude subscription login (secrets replaced).
-const mini = { "anthropic-subscription": { type: "oauth", access: "x", refresh: "x", expires: 1, accounts: [{ name: "imported-anthropic" }, { name: "host-shared" }], pinned: "imported-anthropic" } };
+const mini = { "anthropic-subscription": { type: "oauth", access: "x", refresh: "x", expires: 1, accounts: [{ name: "imported-anthropic" }, { name: "teammate-shared" }], pinned: "imported-anthropic" } };
 const table = [
 	"provider                    model                      context  max-out  thinking  images",
 	"anthropic                   claude-opus-5-5            1M       128K     yes       yes   ",

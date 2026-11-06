@@ -18,15 +18,15 @@ const fresh = (): Mail[] => [
 	{ key: "fx-d", subject: "배송 안내", from: "Shop <shop@example.com>", at: ago(50), summary: "주문하신 상품이 출발했어요.", read: true, archived: true, can: CAN },
 	{ key: "fx-e", subject: "Re: 견적서 보내드립니다", from: "me@example.com", to: "Lee <lee@example.com>", at: ago(25), summary: "확인했어요. 금요일까지 답드릴게요.", read: true, dir: "out", can: CAN },
 	{ key: "fx-fail", subject: "처리가 안 되는 메일", from: "Oh <oh@example.com>", at: ago(5), summary: "서버가 거절하는 메일이에요.", read: false, can: CAN },
-	{ key: "fx-company", subject: "회사 메일", from: "Work <work@example.com>", at: ago(6), summary: "회사 메일함은 can이 비어 있어요.", read: false, can: [] },
+	{ key: "fx-acme", subject: "회사 메일", from: "Work <work@example.com>", at: ago(6), summary: "회사 메일함은 can이 비어 있어요.", read: false, can: [] },
 	{ key: "fx-old", subject: "읽음 표시를 못 하는 메일함", from: "Old <old@example.com>", at: ago(7), summary: "이 메일함은 can 정보가 없어요.", read: true },
 ];
 let mails: Mail[] = fresh();
 let posts: { path: string; body: any }[] = [];
 let composeFails = false;
 
-const card = (m: Mail) => ({ subject: m.subject, from: m.from, to: m.to, cc: m.cc, source: "company", at: m.at, summary: m.summary, dir: m.dir, read: m.read, archived: !!m.archived, starred: !!m.starred, trashOriginal: m.trashOriginal, can: m.can, reply: m.reply, attachments: m.attachments });
-const history = (m: Mail) => [{ kind: "mail", ts: m.at, conv: `mail:${m.key}`, target: `mail:${m.key}`, mail: m.key, subject: m.subject, from: m.from, to: m.to, cc: m.cc, dir: m.dir, source: "company", html: false, attachments: m.attachments, text: `[mail] ${m.subject}\n\n${m.summary}\n\n원문\n안녕하세요.\n점검 결과를 보내 드립니다.\n확인 부탁드립니다.` }];
+const card = (m: Mail) => ({ subject: m.subject, from: m.from, to: m.to, cc: m.cc, source: "acme", at: m.at, summary: m.summary, dir: m.dir, read: m.read, archived: !!m.archived, starred: !!m.starred, trashOriginal: m.trashOriginal, can: m.can, reply: m.reply, attachments: m.attachments });
+const history = (m: Mail) => [{ kind: "mail", ts: m.at, conv: `mail:${m.key}`, target: `mail:${m.key}`, mail: m.key, subject: m.subject, from: m.from, to: m.to, cc: m.cc, dir: m.dir, source: "acme", html: false, attachments: m.attachments, text: `[mail] ${m.subject}\n\n${m.summary}\n\n원문\n안녕하세요.\n점검 결과를 보내 드립니다.\n확인 부탁드립니다.` }];
 const APPLY: Record<string, (m: Mail) => void> = {
 	read: m => { m.read = true; }, unread: m => { m.read = false; }, archive: m => { m.archived = true; }, unarchive: m => { m.archived = false; },
 	star: m => { m.starred = true; }, unstar: m => { m.starred = false; }, trash: m => { mails = mails.filter(x => x !== m); },
@@ -164,12 +164,12 @@ describe("actions on a selection", () => {
 	test("a mailbox that will not follow still changes in dotz and shows the usual done toast with no notice line", async () => {
 		const v = await openList(1280, 800);
 		await tick(v, "회사 메일");
-		// company, a webmail site: the card says can: [], so the hub cannot follow, but the action still happens here. The action still lands in dotz and the hub answers synced:false with no note, so the usual done toast shows.
+		// acme, a webmail site: the card says can: [], so the hub cannot follow, but the action still happens here. The action still lands in dotz and the hub answers synced:false with no note, so the usual done toast shows.
 		expect(await ev<boolean>(v, `${bar(v, "읽음으로 표시")}.disabled`)).toBe(false);
 		expect(await ev<boolean>(v, `${bar(v, "완료(보관)")}.disabled`)).toBe(false);
 		await run(v, `${bar(v, "완료(보관)")}.click()`);
 		await posted(1);
-		expect(posts[0]).toEqual({ path: "/api/mail/fx-company/action", body: { action: "archive" } });
+		expect(posts[0]).toEqual({ path: "/api/mail/fx-acme/action", body: { action: "archive" } });
 		await waitFor(v, `!${rowJs("회사 메일")}`);
 		await waitFor(v, `document.querySelector(".snack")?.textContent.includes("보관했어요")`);
 		expect(await ev<boolean>(v, `document.body.textContent.includes("dotz에서만")`)).toBe(false);
@@ -384,7 +384,7 @@ describe("삭제하면 원본도 삭제", () => {
 		expect(await confirm(v)).toContain("그중 2개는 원본");
 		await yes(v);
 		await posted(2);
-		expect(posts).toEqual([{ path: "/api/mail/delete-original", body: { keys: ["fx-a", "fx-b"] } }, { path: "/api/mail/fx-company/action", body: { action: "trash" } }]);
+		expect(posts).toEqual([{ path: "/api/mail/delete-original", body: { keys: ["fx-a", "fx-b"] } }, { path: "/api/mail/fx-acme/action", body: { action: "trash" } }]);
 	}, 30_000);
 
 	test("a failure keeps the mail, is told, and 다시 시도 asks again", async () => {
@@ -420,7 +420,7 @@ describe("삭제하면 원본도 삭제", () => {
 });
 
 describe("답장 안 함 on many mails", () => {
-	const owe = () => { for (const m of mails) if (["fx-a", "fx-b", "fx-fail", "fx-company", "fx-old", "fx-d"].includes(m.key)) { m.reply = "needs"; m.archived = false; } };
+	const owe = () => { for (const m of mails) if (["fx-a", "fx-b", "fx-fail", "fx-acme", "fx-old", "fx-d"].includes(m.key)) { m.reply = "needs"; m.archived = false; } };
 	const toastAct = (v: View) => run(v, `[...document.querySelectorAll(".snack button")].find(b => b.textContent === "되돌리기").click()`);
 
 	test("a selection is one post, skips the mails that owe nothing, changes no read state, and 되돌리기 is one post too", async () => {

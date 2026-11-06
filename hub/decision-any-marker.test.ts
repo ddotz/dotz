@@ -25,7 +25,7 @@ describe("decisionsOf: any bot message with a choice block", () => {
 			expect(decisionsOf(ev(`${head}\n\n${block}`)).map(d => d.title)).toEqual(["방문 예약"]);
 		}
 		expect(decisionsOf(ev(`[done] 끝\n\n${block}`, { target: "ch:5" }))[0]!.to).toBe("ch:5");
-		const lane = { ts: "2050-06-01T00:00:00.000Z", kind: "lane_report", lane: "private-project", text: `[done] 끝\n\n${block}` };
+		const lane = { ts: "2050-06-01T00:00:00.000Z", kind: "lane_report", lane: "boutique", text: `[done] 끝\n\n${block}` };
 		expect(decisionsOf(lane)).toHaveLength(1);
 	});
 

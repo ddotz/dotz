@@ -1,6 +1,7 @@
 // Files the owner hands to the agents (web upload: + button, drag-drop, paste) and files the agents point back at
 // (read-only preview/download). Uploads land under <data dir>/uploads/<day>/; the message carries their absolute paths.
 // Serving is read-only and limited to allowed roots, resolved through realpath so `..` and symlinks cannot leave them.
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from "node:fs";
 import { open, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -148,10 +149,13 @@ const listedDataDirs = () => [UPLOADS, FILES, join(DATA_DIR, "lanes"), join(DATA
 // holds no account, session or state data (owner 2026-11-01: a lane's shots in logs/notify-update-shots/ showed "열 수 없는 파일이에요").
 // Config, records (.json/.jsonl) and the top-level files stay shut.
 const ARTIFACT = /\.(png|jpe?g|gif|webp|avif|heic|svg|pdf|md|markdown|txt|html?|csv|tsv|xlsx?|docx?|pptx?|hwpx?|numbers|pages|mp4|mov|webm|mp3|m4a|wav|zip)$/i;
-const PRIVATE_DATA = new Set(["accounts", "approvals", "conv-sessions", "identity", "kakao", "company", "memory", "secrets", "state"]);
+const PRIVATE_DATA = new Set(["accounts", "approvals", "conv-sessions", "identity", "kakao", "memory", "secrets", "state"]);
+// One owner-specific private folder, kept as a salted hash so this public source does not spell its name.
+const PRIVATE_DATA_HASHED = new Set(["4ee39e07918d2e07f58713b49e621b673f675a59e86dd4ba56ad48579cb7fc44"]);
+const privateData = (name: string) => PRIVATE_DATA.has(name) || PRIVATE_DATA_HASHED.has(createHash("sha256").update(`dotz-data:${name}`).digest("hex"));
 const dataArtifact = (r: string, data: string): boolean => {
 	const parts = r.slice(data.length + 1).split(sep);
-	return parts.length > 1 && !PRIVATE_DATA.has(parts[0]!) && ARTIFACT.test(r);
+	return parts.length > 1 && !privateData(parts[0]!) && ARTIFACT.test(r);
 };
 
 export const LOST = "원본이 지워졌어요";

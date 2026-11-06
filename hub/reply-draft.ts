@@ -68,7 +68,7 @@ export function addressesOf(s: string | undefined): string[] {
 
 export const NO_RECIPIENT = "no recipient address in 'to'";
 
-// A sender shown by name only, as some mail sources report it ("redacted Lee (KR - A": a name cut short, no address). The name without a cut-off
+// A sender shown by name only, as some mail sources report it ("Jisoo Han (KR - A": a name cut short, no address). The name without a cut-off
 // "(..." tail, for display beside a recovered address.
 export function senderName(from: string): string {
 	const bare = from.replace(/<[^>]*>?/g, " ").replace(/"/g, "").replace(/\s+/g, " ").trim();
@@ -79,7 +79,7 @@ export function senderName(from: string): string {
 const nameTokens = (name: string): string[] => [...new Set(senderName(name).replace(/\([^)]*\)/g, " ").toLowerCase().split(/[^a-z0-9가-힣]+/).filter(t => t.length >= 2))];
 
 // The address of a sender the source reported by name only, read from the mail's own text: a "Name <address>" line of that name (the quoted
-// headers of a thread, a signature), else the one address whose local part spells the name (redacted.lee for "redacted Lee"). The user's own
+// headers of a thread, a signature), else the one address whose local part spells the name (jisoo.han for "Jisoo Han"). The user's own
 // addresses never count; two different addresses that fit equally well give none, so a guess is never made.
 export function senderAddress(from: string, text: string, self: readonly string[] = []): string | undefined {
 	const own = new Set(self.flatMap(addressesOf));

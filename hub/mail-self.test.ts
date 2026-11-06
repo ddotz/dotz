@@ -5,7 +5,7 @@ import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 
 let seq = 0;
 const source = () => `selfmail${Date.now().toString(36)}${++seq}`;
-const ME = '"redacted" <someone@corp.example>';
+const ME = '"홍길동" <owner@corp.example>';
 const ASK = { subject: "자료 보내 주세요?", body: "검토 부탁드립니다?", needsReply: true };
 
 function fakes() {
@@ -34,7 +34,7 @@ describe("a new mail from himself", () => {
 	test("is no 답장 필요 and gets no draft, whatever the poster says, and stays an unread incoming mail", async () => {
 		const s = source(), { deps, calls } = fakes();
 		await sentCopy(s, deps);
-		const r = await postMail({ source: s, id: "a", from: '"redacted" <someone@Corp.Example>', to: ME, ...ASK }, deps);
+		const r = await postMail({ source: s, id: "a", from: '"홍길동" <OWNER@Corp.Example>', to: ME, ...ASK }, deps);
 		const m = mailByKey(r.key)!;
 		expect(m.reply).toBeUndefined();
 		expect(m.dir).toBeUndefined();
@@ -53,15 +53,15 @@ describe("a new mail from himself", () => {
 	});
 	test("from the mail's own account or a configured alias", async () => {
 		const { deps } = fakes();
-		const a = await postMail({ source: source(), id: "c", account: "someone@corp.example", from: ME, to: "someone@corp.example", ...ASK }, deps);
+		const a = await postMail({ source: source(), id: "c", account: "owner@corp.example", from: ME, to: "owner@corp.example", ...ASK }, deps);
 		expect(mailByKey(a.key)!.reply).toBeUndefined();
-		setOwnAddresses("config", ["someone@corp.example"]);
+		setOwnAddresses("config", ["owner@corp.example"]);
 		const b = await postMail({ source: source(), id: "d", direction: "in", from: ME, to: "kim@corp.example", ...ASK }, deps);
 		expect(mailByKey(b.key)!.reply).toBeUndefined();
 	});
 	test("with no address known, only a mail to its sender alone counts as his", async () => {
 		const { deps, calls } = fakes();
-		const alone = await postMail({ source: source(), id: "e", from: ME, to: "someone@corp.example", ...ASK }, deps);
+		const alone = await postMail({ source: source(), id: "e", from: ME, to: "owner@corp.example", ...ASK }, deps);
 		expect(mailByKey(alone.key)!.reply).toBeUndefined();
 		expect(calls.offers).toBe(0);
 		const shared = await postMail({ source: source(), id: "f", from: ME, to: `${ME}, kim@corp.example`, ...ASK }, deps);
@@ -71,7 +71,7 @@ describe("a new mail from himself", () => {
 	test("someone else's mail stays 답장 필요, also with his name on it or his address as a display name", async () => {
 		const s = source(), { deps } = fakes();
 		await sentCopy(s, deps);
-		const r = await postMail({ source: s, id: "g", from: '"someone@corp.example" <kim@corp.example>', to: ME, ...ASK }, deps);
+		const r = await postMail({ source: s, id: "g", from: '"owner@corp.example" <kim@corp.example>', to: ME, ...ASK }, deps);
 		expect(mailByKey(r.key)!.reply).toBe("needs");
 	});
 	test("a later sent copy of it does not make it 답장함", async () => {
@@ -115,7 +115,7 @@ describe("stored mails", () => {
 		migrateStoredMails();
 		syncMailStates(s, [], () => false);
 		expect(mailByKey(key)).toMatchObject({ reply: "needs", reply_by: "owner" });
-		setOwnAddresses("config", ["someone@corp.example"]);
+		setOwnAddresses("config", ["owner@corp.example"]);
 		migrateStoredMails();
 		expect(mailByKey(key)).toMatchObject({ reply: "needs", reply_by: "owner" });
 		expect(mailByKey(key)!.dir).toBeUndefined();

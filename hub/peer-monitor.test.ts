@@ -447,9 +447,9 @@ test("a project delete from a peer reads its plan and runs the owner's own DELET
 test("a message to a peer's monitor conversation is forwarded as the settings target of that watch, with who asked", async () => {
 	const { A, B } = pair();
 	const pc = encodeURIComponent(URL_B), p = encodeURIComponent("/api/peer/act");
-	const r = await A.handle(req(`/api/peer/proxy?pc=${pc}&p=${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "message", args: { target: "settings:w:login-private-project-com", text: "다시 로그인해 줘" } }) }));
+	const r = await A.handle(req(`/api/peer/proxy?pc=${pc}&p=${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "message", args: { target: "settings:w:login-boutique-com", text: "다시 로그인해 줘" } }) }));
 	expect(r.status).toBe(200);
-	expect(B.events).toEqual([{ target: "settings:w:login-private-project-com", text: "다시 로그인해 줘", via: "노트북" }]);
+	expect(B.events).toEqual([{ target: "settings:w:login-boutique-com", text: "다시 로그인해 줘", via: "노트북" }]);
 	expect(A.events).toEqual([]);
 });
 
@@ -457,10 +457,10 @@ test("a message to a project target of a peer never carries a monitor name; a se
 	const { A, B } = pair();
 	const pc = encodeURIComponent(URL_B), p = encodeURIComponent("/api/peer/act");
 	const post = (body: unknown) => A.handle(req(`/api/peer/proxy?pc=${pc}&p=${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }));
-	expect((await post({ action: "message", args: { target: "ch:000000000000000000", settings: "w:login-private-project-com", text: "원인 찾아 줘" } })).status).toBe(200);
-	expect(B.events).toEqual([{ target: "ch:000000000000000000", text: "원인 찾아 줘", via: "노트북" }]);
-	expect((await post({ action: "message", args: { target: "settings:w:login-private-project-com", settings: "w:other", text: "x" } })).status).toBe(200);
-	expect(B.events[1]).toEqual({ target: "settings:w:login-private-project-com", text: "x", via: "노트북" });
+	expect((await post({ action: "message", args: { target: "ch:1500000000003290227", settings: "w:login-boutique-com", text: "원인 찾아 줘" } })).status).toBe(200);
+	expect(B.events).toEqual([{ target: "ch:1500000000003290227", text: "원인 찾아 줘", via: "노트북" }]);
+	expect((await post({ action: "message", args: { target: "settings:w:login-boutique-com", settings: "w:other", text: "x" } })).status).toBe(200);
+	expect(B.events[1]).toEqual({ target: "settings:w:login-boutique-com", text: "x", via: "노트북" });
 });
 
 test("a peer's mail draft gets and loses files through the owner's own draft files route, once; the file list is a proxied GET", async () => {

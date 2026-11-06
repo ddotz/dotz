@@ -15,9 +15,9 @@ import { loadPlugins, pluginDeny } from "./plugins.ts";
 const data = mkdtempSync(join(tmpdir(), "dotz-mail-reply-"));
 const THREAD = "1430000000000004242";
 const OK_FILE = join(data, `ok-${THREAD}`);
-const KEY = `company-r${Date.now().toString(36)}`;
+const KEY = `acme-r${Date.now().toString(36)}`;
 
-// Shaped like the company plugin: the thread hook records an explicit OK and supplies the mail note; deny blocks the send without it.
+// Shaped like the ACME plugin: the thread hook records an explicit OK and supplies the mail note; deny blocks the send without it.
 const GUARD = `import { existsSync, writeFileSync } from "node:fs";
 const OK = ${JSON.stringify(OK_FILE)};
 export default {
@@ -25,11 +25,11 @@ export default {
 	thread({ thread, text }) {
 		if (thread !== ${JSON.stringify(THREAD)}) return undefined;
 		if (/^\\s*(ㅇㅇ|ok|1\\) 보내기)\\s*$/i.test(text)) writeFileSync(OK, "1");
-		return { parentName: "company", note: "[mailguard] mail thread " + thread + (existsSync(OK) ? " (owner OK recorded)" : " (no OK yet)") };
+		return { parentName: "업무메일", note: "[mailguard] mail thread " + thread + (existsSync(OK) ? " (owner OK recorded)" : " (no OK yet)") };
 	},
 	deny(command) {
 		if (!/\\bacme-send\\b/.test(command)) return undefined;
-		return existsSync(OK) ? undefined : "company-send needs the owner's OK in that mail's conversation";
+		return existsSync(OK) ? undefined : "acme-send needs the owner's OK in that mail's conversation";
 	},
 };
 `;
@@ -39,8 +39,8 @@ beforeAll(async () => {
 	mkdirSync(join(data, "custom", "plugins"), { recursive: true });
 	writeFileSync(join(data, "custom", "plugins", "mailguard.ts"), GUARD);
 	await loadPlugins(data);
-	discord.channels.threads[THREAD] = { parent: "000000000000000000", name: "견적 요청" };
-	recordMail({ key: KEY, source: "company", id: KEY.slice(4), subject: "견적 요청", from: "Kim <kim@example.com>", at: new Date().toISOString(), thread: THREAD });
+	discord.channels.threads[THREAD] = { parent: "1500000000001908448", name: "견적 요청" };
+	recordMail({ key: KEY, source: "acme", id: KEY.slice(4), subject: "견적 요청", from: "Kim <kim@example.com>", at: new Date().toISOString(), thread: THREAD });
 	onEmit(e => void (e.kind === "message" && e.source === "web" && inbox.push(e)));
 });
 beforeEach(() => {
@@ -54,7 +54,7 @@ afterAll(async () => {
 
 // Sends through sendWeb and takes the burst it queued for the orchestrator (what flush would deliver), so no turn runs.
 async function reply(text: string): Promise<{ target: string; turn: string; event: HubEvent }> {
-	await sendWeb({ mail: mailByKey(KEY)!, channel: "web", text, mode: "default", login: "someone" });
+	await sendWeb({ mail: mailByKey(KEY)!, channel: "web", text, mode: "default", login: "owner" });
 	const [target, b] = [...bursts].find(([, x]) => x.events.some(e => e.text === text))!;
 	clearTimeout(b.timer);
 	bursts.delete(target);
@@ -67,27 +67,27 @@ test("a web reply goes to the mail's thread with the plugin's note, in the mail 
 	expect(r.target).toBe(`th:${THREAD}`);
 	expect(r.turn).toContain(`[mailguard] mail thread ${THREAD} (no OK yet)`);
 	expect(r.turn).toContain("견적 요청");
-	expect(r.turn).toContain("company");
-	expect(r.event).toMatchObject({ channel: `th:${THREAD}`, conv: `mail:${KEY}`, thread_name: "견적 요청", parent_name: "company" });
+	expect(r.turn).toContain("업무메일");
+	expect(r.event).toMatchObject({ channel: `th:${THREAD}`, conv: `mail:${KEY}`, thread_name: "견적 요청", parent_name: "업무메일" });
 	expect(r.event).not.toHaveProperty("plugin_note");
 	expect(eventTarget(r.event)).toBe(`mail:${KEY}`);
 });
 
 test("only an explicit OK in the conversation records the OK; the plugin's guard then lets the send pass", async () => {
-	expect(pluginDeny(`company-send ${KEY}`, data)).toContain("needs the owner's OK");
+	expect(pluginDeny(`acme-send ${KEY}`, data)).toContain("needs the owner's OK");
 	await reply("보내지 말고 기다려");
 	expect(existsSync(OK_FILE)).toBe(false);
-	expect(pluginDeny(`company-send ${KEY}`, data)).toContain("needs the owner's OK");
+	expect(pluginDeny(`acme-send ${KEY}`, data)).toContain("needs the owner's OK");
 	const ok = await reply("ㅇㅇ");
 	expect(existsSync(OK_FILE)).toBe(true);
 	expect(ok.turn).toContain("(owner OK recorded)");
-	expect(pluginDeny(`company-send ${KEY}`, data)).toBeUndefined();
+	expect(pluginDeny(`acme-send ${KEY}`, data)).toBeUndefined();
 });
 
 test("a mail with no thread the hub knows answers in its web conversation, with the built-in mail note", async () => {
 	const key = `zele-w${Date.now().toString(36)}`;
 	recordMail({ key, source: "zele", id: key.slice(5), subject: "웹 전용", from: "Lee", at: new Date().toISOString() });
-	await sendWeb({ mail: mailByKey(key)!, channel: "web", text: "요약해 줘", mode: "default", login: "someone" });
+	await sendWeb({ mail: mailByKey(key)!, channel: "web", text: "요약해 줘", mode: "default", login: "owner" });
 	const b = bursts.get(`mail:${key}`)!;
 	clearTimeout(b.timer);
 	bursts.delete(`mail:${key}`);

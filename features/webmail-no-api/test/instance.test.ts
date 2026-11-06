@@ -148,10 +148,10 @@ test("a logged-out site shows 연결 끊김 in its own row, not in the default �
 	try {
 		const gw = { calls: [] as { path: string; body: any }[] };
 		const io = fakeIo(srv, gw);
-		expect((await runOnboard(io, { site: "company", url: `${srv.origin}/mail/`, label: "회사 메일" })).status).toBe("done");
+		expect((await runOnboard(io, { site: "acme", url: `${srv.origin}/mail/`, label: "회사 메일" })).status).toBe("done");
 		const name = gw.calls.find((c) => c.path === "/api/watches")!.body.name as string;
 
-		const config = defaultConfig("company");
+		const config = defaultConfig("acme");
 		let st: WatchState = initialState();
 		let watch: WatchStatusLike = { name, state: { fails: 0 } };
 		const run = async (at: number) => {
@@ -161,7 +161,7 @@ test("a logged-out site shows 연결 끊김 in its own row, not in the default �
 		};
 		const row = () => {
 			const own = ownedWatches(dir, [watch]);
-			return { mine: withConnection({ key: "mail-company", own: own.get("mail-company") ?? [] }, [watch], "Asia/Seoul"), dflt: withConnection({ key: "mail", own: own.get("mail") ?? [] }, [watch], "Asia/Seoul") };
+			return { mine: withConnection({ key: "mail-acme", own: own.get("mail-acme") ?? [] }, [watch], "Asia/Seoul"), dflt: withConnection({ key: "mail", own: own.get("mail") ?? [] }, [watch], "Asia/Seoul") };
 		};
 
 		await run(Date.parse("2026-10-23T12:00:00Z"));

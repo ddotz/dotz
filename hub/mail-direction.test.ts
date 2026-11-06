@@ -22,7 +22,7 @@ function fakes() {
 	const deps: MailDeps = {
 		createThread: async () => (calls.threads++, { id: "143000000000000001" }),
 		send: async () => undefined,
-		mailChannel: async () => "000000000000000000",
+		mailChannel: async () => "1500000000001908448",
 		discordOn: true,
 		threadOn: () => true,
 		emit: e => (calls.events.push(e), emit("inbox", e as Parameters<typeof emit>[1])),

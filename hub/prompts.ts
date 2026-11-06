@@ -1,6 +1,6 @@
 // The orchestrator's prompt queue. Every delivered prompt remembers where its answer goes; prompts are matched back by
 // their text as omp starts them (FIFO, so identical texts still pair in order). Unanswered prompts are kept on disk
-// (someone's `last_handled`: a message counts as handled when it is answered, not when it arrives), so a restart mid-turn
+// (the earlier secretary's `last_handled`: a message counts as handled when it is answered, not when it arrives), so a restart mid-turn
 // replays them on boot.
 //
 // An owner message that arrives while the orchestrator is mid-turn is steered into that turn instead of waiting

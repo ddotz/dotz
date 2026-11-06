@@ -32,10 +32,10 @@ test("dates do not count as overlap and tokens are case-insensitive", () => {
 test("the digest cites the Discord message id of an owner correction, the source of an observation line", () => {
 	const had = existsSync(paths.inbox) ? readFileSync(paths.inbox, "utf8") : undefined;
 	const at = new Date(now - 3600_000).toISOString();
-	writeFileSync(paths.inbox, `${JSON.stringify({ ts: at, kind: "message", channel: "chat", message_id: "1561556210908667915", text: "아니 그거 하지 마" })}\n`);
-	writeFileSync(paths.corrections, `${JSON.stringify(correction("아니 그거 하지 마", "misread", at, "1561556210908667915"))}\n`);
+	writeFileSync(paths.inbox, `${JSON.stringify({ ts: at, kind: "message", channel: "chat", message_id: "1500000000001767915", text: "아니 그거 하지 마" })}\n`);
+	writeFileSync(paths.corrections, `${JSON.stringify(correction("아니 그거 하지 마", "misread", at, "1500000000001767915"))}\n`);
 	try {
-		expect(digest("", now)).toContain("  - 아니 그거 하지 마 (src: discord 1561556210908667915)");
+		expect(digest("", now)).toContain("  - 아니 그거 하지 마 (src: discord 1500000000001767915)");
 	} finally {
 		rmSync(paths.corrections, { force: true });
 		if (had === undefined) rmSync(paths.inbox);

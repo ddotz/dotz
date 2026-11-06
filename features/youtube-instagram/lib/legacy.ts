@@ -1,4 +1,4 @@
-// Reuse the YouTube/Instagram login a machine already keeps from the owner's earlier setup (someone's ~/.ddotz, the OmO harness folders), so the
+// Reuse the YouTube/Instagram login a machine already keeps from the owner's earlier setup (the earlier secretary's ~/.ddotz, the OmO harness folders), so the
 // owner does not copy token files by hand. One yes/no, then the files are copied into <data dir>/secrets with 0600. Values are never parsed,
 // printed or logged: this module only looks at file names and copies bytes. Nothing is overwritten and nothing is copied before the "yes".
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";

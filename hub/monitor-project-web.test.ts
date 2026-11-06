@@ -8,7 +8,7 @@ import { fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
 // the proxy; 지금 확인 runs a watch now; a home progress row opens the settings conversation; the model's English thinking shows as a Korean label.
 // Headless; the peer is a fixture.
 const MINI = "http://mini.test";
-const CH = "000000000000000000", PCH = "1562723146669490228";
+const CH = "1500000000003290227", PCH = "1500000000003290228";
 const at = (min: number) => new Date(Date.UTC(2026, 9, 23, 3, min)).toISOString();
 const failing = (name: string, label: string, channel?: string) => ({ name: label, watch: name, kind: "watch", last_run: at(32), last_result: "fail", next_run: at(62), every: "30분마다", fails: 3, last_ok: at(2), last_output: "로그인이 풀렸어요", keeper: true, ...(channel ? { channel: `ch:${channel}` } : {}) });
 const fields = () => WATCH_FIELDS.map(f => viewOf(f, f.key === "enabled" ? true : f.key === "every_minutes" ? 30 : f.key === "to" ? "alert" : "라벨"));
@@ -20,9 +20,9 @@ const runs = inbox<string>();
 const patches = inbox<{ name: string; values: unknown }>();
 const history: Record<string, Record<string, unknown>[]> = {
 	"settings:w:login-local": [{ ts: at(40), kind: "message", source: "web", channel: "settings:w:login-local", author: "local", text: "지난번 질문" }, { ts: at(41), kind: "out", source: "orchestrator", target: "settings:w:login-local", text: CARD }],
-	"settings:w:login-private-project-com": [{ ts: at(40), kind: "out", source: "orchestrator", target: "settings:w:login-private-project-com", text: "맥미니 감시 대화에서 보낸 답이에요" }],
+	"settings:w:login-boutique-com": [{ ts: at(40), kind: "out", source: "orchestrator", target: "settings:w:login-boutique-com", text: "맥미니 감시 대화에서 보낸 답이에요" }],
 };
-const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [failing("login-private-project-com", "까르띠에 로그인 유지", PCH)], notices: [], integrations: [], conversations: [] } }];
+const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [failing("login-boutique-com", "부티크 로그인 유지", PCH)], notices: [], integrations: [], conversations: [] } }];
 
 async function proxy(req: Request, url: URL): Promise<Response> {
 	const p = url.searchParams.get("p") ?? "";
@@ -30,7 +30,7 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 		acts.push((await req.json()) as (typeof acts)[number]);
 		return json({ ok: true });
 	}
-	if (p === "/api/watches/login-private-project-com/settings") return json({ key: "login-private-project-com", fields: fields() });
+	if (p === "/api/watches/login-boutique-com/settings") return json({ key: "login-boutique-com", fields: fields() });
 	if (p.startsWith("/api/history")) {
 		const target = new URL(p, "http://x").searchParams.get("target") ?? "";
 		return json({ target, events: history[target] ?? [] });
@@ -40,7 +40,7 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 const hub = fakeHub({
 	api: async (req, url) => {
 		const p = url.pathname;
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: { [CH]: "까르띠에-재고-구매" } }, discord: {}, notices_unread: 0, work: [{ id: "w1", description: "로그인 원인 조사", status: "running", started_at: Date.now() - 60_000, target: "settings:w:login-local" }] });
+		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: { [CH]: "부티크-재고-구매" } }, discord: {}, notices_unread: 0, work: [{ id: "w1", description: "로그인 원인 조사", status: "running", started_at: Date.now() - 60_000, target: "settings:w:login-local" }] });
 		if (p === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
 		if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (p === "/api/monitors") return json({ items: [failing("login-local", "로컬 로그인 유지", CH)] });
@@ -65,7 +65,7 @@ const hub = fakeHub({
 afterAll(() => hub.stop());
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const LOCAL_KEY = "m:로컬 로그인 유지";
-const PEER_KEY = `p:${MINI}|m:까르띠에 로그인 유지`;
+const PEER_KEY = `p:${MINI}|m:부티크 로그인 유지`;
 const boot = async (key: string) => {
 	const v = await hub.view({ width: 1280, height: 800 });
 	await v.navigate(`${hub.origin}/`);
@@ -135,11 +135,11 @@ describe("a peer's monitor of a project", () => {
 		const v = await boot(PEER_KEY);
 		await waitFor(v, `document.querySelector("#mon-head .as-hd") && document.querySelector("#mon-tl [data-chip]")`);
 		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
-		await waitFor(v, `target === "settings:w:login-private-project-com" && monCtx === target && document.querySelector("#tl").textContent.includes("맥미니 감시 대화에서 보낸 답이에요")`);
+		await waitFor(v, `target === "settings:w:login-boutique-com" && monCtx === target && document.querySelector("#tl").textContent.includes("맥미니 감시 대화에서 보낸 답이에요")`);
 		await waitFor(v, `document.querySelector("#mon-chips [data-chip]")`);
 		await run(v, `document.querySelector('#mon-chips [data-chip="일시정지"]').click()`);
 		await acts.until(() => acts.some(a => a.action === "message"));
-		expect(acts.find(a => a.action === "message")).toMatchObject({ args: { target: "settings:w:login-private-project-com", text: "일시정지" } });
+		expect(acts.find(a => a.action === "message")).toMatchObject({ args: { target: "settings:w:login-boutique-com", text: "일시정지" } });
 		expect(acts.find(a => a.action === "message")!.args).not.toHaveProperty("project");
 		expect(acts.find(a => a.action === "message")!.args).not.toHaveProperty("settings");
 		expect(sent).toEqual([]);
@@ -147,8 +147,8 @@ describe("a peer's monitor of a project", () => {
 		await waitFor(v, `document.querySelector("#mon-head .mon-recheck")`);
 		await run(v, `document.querySelector("#mon-head .mon-recheck").click()`);
 		await acts.until(() => acts.some(a => a.action === "watch"));
-		expect(acts.find(a => a.action === "watch")).toEqual({ action: "watch", args: { op: "run", name: "login-private-project-com" } });
-		expect(runs).not.toContain("login-private-project-com");
+		expect(acts.find(a => a.action === "watch")).toEqual({ action: "watch", args: { op: "run", name: "login-boutique-com" } });
+		expect(runs).not.toContain("login-boutique-com");
 	});
 });
 

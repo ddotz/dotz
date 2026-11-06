@@ -27,12 +27,12 @@ const MINI = "mini.ts.net.";
 const PORTS = [8443, 8445, 8444];
 
 test("friendlyName maps known Mac hostnames and keeps others", () => {
-	expect(friendlyName("host")).toBe("맥북");
-	expect(friendlyName("host.example.ts.net.")).toBe("맥북");
-	expect(friendlyName("host.example.ts.net")).toBe("맥미니");
+	expect(friendlyName("owner-macbookpro")).toBe("맥북");
+	expect(friendlyName("owner-macbookpro.tail1234.ts.net.")).toBe("맥북");
+	expect(friendlyName("owner-mac-mini.tail1234.ts.net")).toBe("맥미니");
 	expect(friendlyName("Macmini")).toBe("맥미니");
 	expect(friendlyName("studio-imac")).toBe("아이맥");
-	expect(friendlyName("host.example.ts.net")).toBe("nas");
+	expect(friendlyName("nas.tail1234.ts.net")).toBe("nas");
 });
 
 test("uniqueNames falls back to hostnames for duplicates only", () => {

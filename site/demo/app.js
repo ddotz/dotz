@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "47fc379650b8";
+const WEB_BUILD = "5c32699c890b";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -761,7 +761,9 @@ if (typeof document !== "undefined" && document.body && typeof MutationObserver 
 // its first paint: the live status and progress notes never come through here, and there is no text that later turns into a card.
 const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
 // A plain "이름: 값" item is the same row (MODE.md "Numbers", "Changed values") when the name is a few words and the value no sentence; a sentence with a colon stays a list item.
-const ANS_PLAIN = /^([^*:：`.,?!()\n]{1,24}?)\s*[:：]\s+(\S.*)$/;
+// The name may hold inline code (`**`); its length counts without the backticks, and the punctuation rule applies only outside the code.
+const ANS_PLAIN = /^((?:`[^`\n]+`|[^*:：`.,?!()\n])+?)\s*[:：]\s+(\S.*)$/;
+const ANS_NAME_MAX = 24;
 const ANS_SENTENCE_END = /[.!?요다죠]\s*$/;
 const ANS_PLAIN_MAX = 60;
 // "5,308ms → 36ms": numbers on both sides are a change; words around an arrow are a path or a flow ("설정 → 앱").
@@ -770,7 +772,7 @@ const ansKv = text => {
   const m = ANS_LABEL.exec(text);
   if (m) return m;
   const p = ANS_PLAIN.exec(text);
-  return p && p[2].length <= ANS_PLAIN_MAX && !ANS_SENTENCE_END.test(p[2]) ? p : null;
+  return p && p[1].replace(/`/g, "").length <= ANS_NAME_MAX && p[2].length <= ANS_PLAIN_MAX && !ANS_SENTENCE_END.test(p[2]) ? p : null;
 };
 function ansValue(value) {
   const m = ANS_CHANGE.exec(value);
@@ -876,14 +878,15 @@ function unquoteChoices(lines) {
   }
   return out;
 }
-// A source list at the end of an answer: a heading line (출처:, 참고:, Sources:) over URL lines, or a last run of two or more bare URL lines,
-// becomes 목록 rows (site, then a short path or the link's own title). Everything comes from the URL string: no fetch, no favicon.
+// A source list at the end of an answer: a heading line (출처:, 참고:, 근거:, Sources:) over link lines (a bare URL, "이름: URL", "이름 - URL", [이름](URL)),
+// or a last run of two or more bare URL lines, becomes 목록 rows (the given name over the site and a short path, or the site over the short path). Everything comes from the URL string: no fetch, no favicon.
 // The full URL stays in the row as clipped text, the only selectable part, so copying the message gives the original URLs.
-const SRC_HEAD = /^\s*(?:#{1,6}\s+)?(?:\*\*)?(출처|참고(?: 자료| 링크)?|Sources?|References?)(?:\*\*)?\s*:?\s*(?:\*\*)?\s*$/i;
-const SRC_ITEM = /^\s*(?:(?:[-*•]|\d+[.)])\s+)?(?:\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|<?(https?:\/\/[^\s<>]+)>?)\s*$/;
+const SRC_HEAD = /^\s*(?:#{1,6}\s+)?(?:\*\*)?(출처|참고(?: 자료| 링크)?|근거|Sources?|References?)(?:\*\*)?\s*:?\s*(?:\*\*)?\s*$/i;
+const SRC_BULLET = /^\s*(?:[-*•]|\d+[.)])\s/;
+const SRC_ITEM = /^\s*(?:(?:[-*•]|\d+[.)])\s+)?(?:\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(\S(?:(?!:\/\/).)*?)(?::|\s-)\s+<?(https?:\/\/[^\s<>]+)>?|<?(https?:\/\/[^\s<>]+)>?)\s*$/;
 function sourceItem(line) {
-  const m = line.match(SRC_ITEM), href = m && (m[2] || m[3]);
-  return href && URL.canParse(href) ? { title: m[1] || "", href } : null;
+  const m = line.match(SRC_ITEM), href = m && (m[2] || m[4] || m[5]);
+  return href && URL.canParse(href) ? { title: (m[1] || m[3] || "").replace(/\*\*|`/g, ""), href } : null;
 }
 // start line -> { head, items, end } for each source list in these lines; only the message's last text part (last) can hold a list without a heading.
 function sourceRuns(lines, last) {
@@ -894,14 +897,16 @@ function sourceRuns(lines, last) {
     const h = lines[i].match(SRC_HEAD);
     if (!h) continue;
     const items = [];
-    let end = i + 1;
+    let end = i + 1, mixed = false;
     for (let j = end; j < lines.length; j++) {
       if (!lines[j].trim()) continue;
       const item = sourceItem(lines[j]);
-      if (!item) break;
+      // A 근거: list keeps its shape unless every item in it is a link: the next line or bullet being something else leaves it as written.
+      if (!item) { mixed = h[1] === "근거" && (j === end || SRC_BULLET.test(lines[j])); break; }
       items.push(item); end = j + 1;
     }
-    if (items.length) { runs.set(i, { head: h[1], items, end }); taken = end; i = end - 1; }
+    if (mixed) taken = lines.length;   // nor does the last-run scan below take a piece of it
+    else if (items.length) { runs.set(i, { head: h[1], items, end }); taken = end; i = end - 1; }
   }
   if (!last) return runs;
   let end = lines.length;
@@ -918,10 +923,28 @@ function sourcePath(url) {
   const segs = url.pathname.split("/").filter(Boolean).map(sourcePart);
   return (segs.length > 2 ? "…/" : "") + segs.slice(-2).join("/");
 }
+// A tap after a drag-selection inside a row is the end of the selection, not a request to open it (as 15-attachments.js does for a file row).
+// The press itself clears a selection, so a press on a row with text selected is kept for its click.
+let sourceRowPressedSelected = null;
+const sourceRowSelected = row => { const sel = getSelection(); return !sel.isCollapsed && sel.containsNode(row, true); };
+document.addEventListener("click", ev => {
+  const row = ev.target.closest?.(".mlist-src a.mlist-row"), pressed = sourceRowPressedSelected;
+  sourceRowPressedSelected = null;
+  if (row && (row === pressed || sourceRowSelected(row))) ev.preventDefault();
+});
+// Chromium starts no selection inside a link, only a link drag, so a row gives up its href for the press and takes it back before the click; a plain tap still opens it.
+document.addEventListener("mousedown", ev => {
+  const row = ev.button === 0 && !ev.ctrlKey ? ev.target.closest?.(".mlist-src a.mlist-row[href]") : null;
+  if (!row) return;
+  sourceRowPressedSelected = sourceRowSelected(row) ? row : null;
+  const href = row.getAttribute("href"), done = new AbortController();
+  row.removeAttribute("href");
+  for (const end of ["mouseup", "dragend"]) addEventListener(end, () => { row.setAttribute("href", href); done.abort(); }, { capture: true, signal: done.signal });
+}, true);
 function sourceListHtml({ head, items }) {
   const rows = items.map(({ title, href }) => {
-    const url = new URL(href), site = url.hostname.replace(/^www\./, ""), sub = title || sourcePath(url);
-    return `<a class="mlist-row" href="${esc(href)}" title="${esc(href)}" target="_blank" rel="noopener noreferrer"><span class="mlist-url" aria-hidden="true">${esc(href)}</span><span class="mlist-av" aria-hidden="true">${esc(site[0].toUpperCase())}</span><div class="mlist-main"><div class="mlist-t">${esc(site)}</div>${sub ? `<div class="mlist-s">${esc(sub)}</div>` : ""}</div></a>`;
+    const url = new URL(href), site = url.hostname.replace(/^www\./, ""), path = sourcePath(url), sub = title ? [site, path].filter(Boolean).join(" · ") : path;
+    return `<a class="mlist-row" href="${esc(href)}" title="${esc(href)}" target="_blank" rel="noopener noreferrer"><span class="mlist-url" aria-hidden="true">${esc(href)}</span><span class="mlist-av" aria-hidden="true">${esc(site[0].toUpperCase())}</span><div class="mlist-main"><div class="mlist-t">${esc(title || site)}</div>${sub ? `<div class="mlist-s">${esc(sub)}</div>` : ""}</div></a>`;
   });
   return `<div class="mlist mlist-src">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
@@ -1057,15 +1080,25 @@ const MK_WORD = "\\[(?:run|wait|done|ask|fail|later|keepalive)\\]";
 const MK_OPEN = new RegExp("^[ \\t]*(`|\\*\\*)?" + MK_WORD + "\\1(?:[ \\t]+(?!(?:\ub9c8\ucee4|\ud45c\uc2dc|\ud45c\uc2dd|\ubb38\uad6c|\uc81c\uc5b4\uc5b4|\ub2e8\uc5b4|\ud1a0\ud070|\uae00\uc790|\uc2e0\ud638|\ucc98\ub9ac|\ub204\ucd9c|\uac19\uc740|marker|sentinel|token|word))|[ \\t]*$)", "i");
 const MK_ALONE = new RegExp("^[ \\t]*(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i");
 const MK_CLOSE = new RegExp("(?<=[.!?\u2026\uc694\ub2e4])[ \\t]+(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i");
+// A dropped fail word leaves the failure (the page has no emoji: the word, where the hub leaves its emoji), and a status word in prose reads as its plain word (hub/tone.ts FAIL_WORD, MENTION, keep in step).
+const MK_FAIL = /\[(?:fail|실패|warn|경고)\]/i;
+const mkFail = gone => MK_FAIL.test(gone) ? "실패: " : "";
+const MK_WORDS = { done: "완료", "완료": "완료", run: "진행 중", "진행": "진행 중", wait: "대기", "대기": "대기", ask: "확인 필요", "결정": "확인 필요", fail: "실패", "실패": "실패", warn: "실패", "경고": "실패" };
+const MK_STATUS = Object.keys(MK_WORDS).join("|");
+const MK_TOKEN = `(?:\`\\[(?:${MK_STATUS})\\]\`|\\*\\*\\[(?:${MK_STATUS})\\]\\*\\*|\\[(?:${MK_STATUS})\\])`;
+const MK_JOIN = "[ \\t]*[,/·][ \\t]*";
+const MK_NAMES = "(?:\uB9C8\uCEE4|\uD45C\uC2DC|\uD45C\uC2DD|\uBB38\uAD6C|\uC81C\uC5B4\uC5B4|\uB2E8\uC5B4|\uD1A0\uD070|\uAE00\uC790|\uC2E0\uD638|\uCC98\uB9AC|\uB204\uCD9C|\uAC19\uC740|marker|sentinel|token|word)";
+const MK_MENTION = new RegExp(`(?<![\\w가-힣"'\\[\`*/])${MK_TOKEN}(?:${MK_JOIN}${MK_TOKEN}){0,7}(?!${MK_JOIN}(?:\`|\\*\\*)?\\[)(?=[,!?…)]|\\.(?![A-Za-z0-9])|[ \\t]+(?!${MK_NAMES})|[ \\t]*$)|(\`[^\`\\n]+\`)`, "gi");
+const mkPlainWords = line => line.includes("[") ? line.replace(MK_MENTION, (m, span) => span ?? m.replace(/(?:`|\*\*)?\[([^\]]+)\](?:`|\*\*)?/g, (_, word) => MK_WORDS[word.toLowerCase()])) : line;
 const forRe = () => new RegExp(`^\\s*(?:-#?\\s+)?(?:\\*\\*)?(?:For (?:${escRe(botName)}|땃쥐):|(?:${escRe(botName)}|땃쥐) 몫:)`, "i");
 // keepFiles: a message body keeps its `[file]` lines for the attachment chips (fileLines, 15-attachments.js); mdNode drops them.
-function stripMarkers(text, keepFiles = false) {
+function stripMarkers(text, keepFiles = false, own = true) {
   text = String(text ?? "");
   if (!/\[|몫:|For |<project-info>|\n[ \t]*-\s*$/.test(text)) return text;
   text = text.replace(/\s*<project-info>[\s\S]*?(?:<\/project-info>|$)/g, "");
   let fence = false, opened = false, tail = -1;
-  const out = [], fors = [], forLine = forRe();
-  for (const line of text.split("\n")) {
+  const out = [], fors = [], prose = [], forLine = forRe();
+  for (const [i, line] of text.split("\n").entries()) {
     if (/^\s*```/.test(line) || fence) {
       if (/^\s*```/.test(line)) fence = !fence;
       out.push(line);
@@ -1074,29 +1107,53 @@ function stripMarkers(text, keepFiles = false) {
     }
     if (/^[ \t]*\[file\][ \t]/i.test(line)) { if (keepFiles) out.push(line); continue; }
     if (forLine.test(line)) { fors.push(line); continue; }
-    let l = line;
-    for (let m = MK_LEAD.exec(l); m; m = MK_LEAD.exec(l)) l = m[1] + l.slice(m[0].length);
+    let l = line, mark = "", at = 0;
+    const lead = i === 0 && /^\[([^\]\n]+)\]/.exec(l);
+    let tone = own && !!lead && TONE_TAGS.has(lead[1].toLowerCase());
+    for (let m = MK_LEAD.exec(l); m; m = MK_LEAD.exec(l), tone = false) {
+      if (!tone) mark ||= mkFail(m[0]);
+      at = m[1].length;
+      l = m[1] + l.slice(m[0].length);
+    }
     if (!opened && l.trim()) {
       opened = true;
       const m = MK_OPEN.exec(l);
-      if (m) l = l.slice(m[0].length);
+      if (m) {
+        mark ||= mkFail(m[0]);
+        at = 0;
+        l = l.slice(m[0].length);
+      }
     }
-    if (MK_ALONE.test(l)) l = "";
+    if (MK_ALONE.test(l)) {
+      mark ||= mkFail(l);
+      l = "";
+      at = 0;
+    }
+    if (mark) {
+      const rest = l.slice(at).replace(/^:[ \t]*/, "");
+      l = rest.trim() ? `${l.slice(0, at)}${mark}${rest}` : `${l.slice(0, at)}${mark.slice(0, -2)}`;
+    }
     if (l.trim()) tail = out.length;
+    prose.push(out.length);
     out.push(l);
   }
   // A message that is only the line keeps it: nothing else would be drawn.
   if (!out.some(l => l.trim())) return [...out, ...fors].join("\n");
-  if (tail < 0) return out.join("\n");
-  if (out[tail].trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
-  else out[tail] = out[tail].replace(MK_CLOSE, "");
+  if (tail >= 0) {
+    if (out[tail].trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
+    else out[tail] = out[tail].replace(MK_CLOSE, m => MK_FAIL.test(m) ? " 실패" : "");
+  }
+  for (const i of prose) out[i] = mkPlainWords(out[i]);
   return out.join("\n");
 }
+const MK_FAIL_LEAD = /^\s*(?:\*\*|`)?\[(?:fail|실패|warn|경고)\]/i;
 function parseTone(text, keepFiles = false) {
   text = String(text ?? "");
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
   const body = tag ? text.slice(m[0].length) : text, c = CLAIM_LEAD.exec(body);
-  return { tone: tag || "", claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: stripMarkers(c ? body.slice(c[0].length) : body, keepFiles) };
+  const shown = stripMarkers(c ? body.slice(c[0].length) : body, keepFiles, !tag), led = (!tag ? MK_FAIL_LEAD.test(body) : tag === "fail") && /^\s*실패(?:: |$)/.exec(shown);
+  // A failure marker the tone did not read (bold, indented) still draws the failure tag; under the tag the word is said already.
+  return { tone: tag || (led ? "fail" : ""), claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: led ? shown.slice(led[0].length) : shown };
 }
 
 /* ---------- api ---------- */
@@ -4725,7 +4782,7 @@ function mtNode(blocks) {
   }
   return box;
 }
-// A secure mail's decrypted page opens with the mail's own header as text (company-mail-lib.ts decryptSecureMail): the subject, the date, then
+// A secure mail's decrypted page opens with the mail's own header as text (acme-mail-lib.ts decryptSecureMail): the subject, the date, then
 // `보낸사람(Sender) : … 받는사람(Recipient) : …`, a blank line, the mail. Its recipient is the original one, not the copy's. The view already shows that header, so
 // { body, to, cc } splits it off, only for all of it at the very top: the mail's subject, a line that is only a date, and a sender and a recipient label
 // on lines of nothing but labels, then a blank line or the end. Anything else is null. Stored mails stay as they are; a first-line compare ends most calls.
@@ -5213,10 +5270,11 @@ function msgNode(e) {
     case "result": {
       const go = el("button", { class: "btn tonal", type: "button", text: "세션 열기" });
       go.onclick = () => pickTarget(e.open || "main");
-      const lines = previewLines(choiceBody(text), 3).join("\n");
+      // The hub stores a report's first three lines (hub/notices-read.ts summary), which can end on a heading with nothing below it.
+      const body = parseTone(previewSrc(choiceBody(text))).text.replace(/\n\*\*[^*\n]+\*\*$/, "").trim();
       return el("div", { class: "bm res" }, el("div", { class: "mt", text: ["세션 결과", hm].filter(Boolean).join(" · ") }),
         el("div", { class: "ccard" }, el("div", { class: "cc-hd" }, el("span", { class: "dot ok" }), el("span", { text: `${e.title || "세션"} 끝났어요` }), e.verified ? el("span", { class: "tag ok", text: "확인됨" }) : null),
-          lines ? el("div", { class: "cc-note", text: lines }) : null, el("div", { class: "btns cc-act" }, go)));
+          body ? answerParts(fileLines(body), { lead: false }) : null, el("div", { class: "btns cc-act" }, go)));
     }
     case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
     case "mail": {
@@ -5285,8 +5343,9 @@ function msgNode(e) {
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       // A relayed line is another computer's text, not this gateway's: no file chips, no path chips, no choice card; its `[file]` lines stay text (e.relay, 42-relay-chat.js).
       const fl = e.relay ? { text: body, files: [] } : fileLines(body), host = pqPc(eventTarget(e) || "");
-      // Shapes are for a finished answer or report of the assistant: never a progress note, a gateway line, a relayed line or a "started" note.
-      const answer = (e.kind === "out" || e.kind === "lane_report") && !e.relay && !e.update_key && e.source !== "gateway" && mark !== "run" && !fl.text.startsWith("\u23f3");
+      // Shapes are for an answer, a report or a "started" note of the assistant: never a line the next one replaces (a progress note, a session's [run]), a gateway line or a relayed line.
+      // A worklog post is keyed only to show its newest version (13-data.js dedupKeyed), so it stays an answer.
+      const answer = (e.kind === "out" || e.kind === "lane_report") && !e.relay && (!e.update_key || e.target === "worklog") && e.source !== "gateway" && (mark !== "run" || (e.kind === "out" && !fromLane));
       const inl = pc && !isFixedT(target) && pc.blocks.some(b => b.options.length > 1);   // the card in the message (10-decision-card.js dcInline); in 알림 / 작업내역 a tap opens the sheet
       const shown = inl ? inlineBody(fl.text) : pc && pc.blocks.length ? choiceBody(fl.text) : fl.text;
       const md = answer ? answerNode(shown, { shaped: fl.files.length > 0 }) : mdNode(shown, "md", !!e.relay), files = e.relay ? null : pathFiles(md, host);
@@ -6132,9 +6191,9 @@ const CMDS = [
   { c: "/logout", d: "공급자 로그아웃", args: [{ n: "공급자", opts: slProviders }] },
   { c: "/quota", d: "공급자·계정별 사용 한도", dup: true },
   // 이 컴퓨터의 셸 (owner 2026-11-03): typed here, run in the terminal sheet - the composer's own way to the shell, not a gateway command.
-  { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }], dup: true },
+  { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }], dup: true, page: true },
   // 화면 공유 (owner 2026-11-04): opens this computer's screen in a tab, not a gateway command; listed only while S.desk exists, and not in the palette (which has its own item).
-  { c: "/screen", d: "이 컴퓨터 화면 열기", desk: true },
+  { c: "/screen", d: "이 컴퓨터 화면 열기", desk: true, page: true },
   { c: "/help", d: "명령 전체 설명" },
 ];
 // The command palette lists the same commands.
@@ -6327,6 +6386,9 @@ async function stopTarget() {
 // (36-shell.js openShell). Keep a bare "/terminal" in the box and say what is missing instead of sending it anywhere.
 const SH_CMD = /^\/(?:terminal|셸|shell)(?:\s+([\s\S]*))?$/;
 const SCR_CMD = /^\/(?:screen|화면)\s*$/;
+// Is this text a command? The page's own, or a gateway one (hub/control.ts parseCommand, same list by hub/palette-routes-web.test.ts).
+// Any other "/" text, a path or a typo, is an ordinary message.
+const isSlashCommand = text => SH_CMD.test(text) || SCR_CMD.test(text) || CMDS.some(x => !x.page && x.c === text.split(/\s/, 1)[0].toLowerCase());
 // A slash command (typed, or a card button) goes to the gateway for the current target; its answer joins the chat as a card.
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
@@ -6345,15 +6407,16 @@ async function sendChat(how) {
   if (ATT.some(a => !a.file)) { toast(ATT.some(a => (upJob(target, a.id) || {}).error) ? "못 올린 파일을 다시 올리거나 빼 주세요" : "파일을 올리는 중이에요"); return; }
   const files = ATT.map(a => ({ ...a.file, label: a.no })), picks = pkItems();
   if ((!text && !files.length && !picks.length) || ta.disabled) return;
-  if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
-  if (picks.length && text.startsWith("/")) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
-  const refs = text.startsWith("/") ? [] : mnRefs(text), sentMentions = MENTIONS;
+  const isCommand = isSlashCommand(text);
+  if (files.length && isCommand) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
+  if (picks.length && isCommand) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
+  const refs = isCommand ? [] : mnRefs(text), sentMentions = MENTIONS;
   const sentAtt = ATT, sentPicks = PICK; ATT = []; atkForget(); renderAtt(); pkClear(); MENTIONS = [];
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
   chatStick = true; termStick = true;
-  if (text.startsWith("/")) {
+  if (isCommand) {
     if (SCR_CMD.test(text)) {
       if (!(S && S.desk)) { toast("이 컴퓨터에서는 화면 공유를 쓸 수 없어요", true); ta.value = text; autosize(); return; }
       openScreen(); return;
@@ -7864,7 +7927,7 @@ function sessionsNow() {
   const of = word => ((S && !S.seeded && S.lanes) || []).filter(l => sessionState(l) === word).sort((a, b) => String(a.startedAt || "").localeCompare(String(b.startedAt || "")));
   return { wait: of(SESSION_WORD.wait), run: of(SESSION_WORD.run) };
 }
-// A 진행 중 row's name: `company · company 출자전환 검토`, the title alone for a session with no project.
+// A 진행 중 row's name: `기획팀 · 분기 안건 검토`, the title alone for a session with no project.
 const sessionHead = l => { const p = laneProject(l), n = l.title || l.name; return p && p !== n ? `${p} · ${n}` : n; };
 // o.project: the project name when the caller knows it better than the lane's own home; o.line: a short activity line after it;
 // o.word / o.tone: a status the caller knows better ("답변 필요"); o.head: the project stands in the name (sessionHead), not under it.
@@ -14058,7 +14121,7 @@ function mailAddrList(v) {
   return parts.map(p => p.trim()).filter(Boolean).map(p => {
     const m = /^(.*?)<([^<>]+)>\s*$/.exec(p);
     const addr = (m ? m[2] : p).trim(), mail = /@/.test(addr);
-    // a name with no address ("redacted", a list view's cut-off "Lee (KR - A") is still who it is: shown as the name, not dropped
+    // a name with no address ("이서준", a list view's cut-off "Han (KR - A") is still who it is: shown as the name, not dropped
     const name = m ? m[1].trim().replace(/^["']|["']$/g, "").trim() : mail ? "" : p.replace(/^["']|["']$/g, "").trim();
     return { name, addr: mail ? addr : "", raw: p };
   }).filter(a => a.addr || a.name);
@@ -14323,13 +14386,45 @@ function mxsItem(key, label, sum, body) {
   return el("div", { class: `mxs-ac${open ? " open" : ""}` }, el("button", { class: "mxs-ah", type: "button", "aria-expanded": String(open), "data-k": key, onclick: () => mxsToggle(key) }, el("span", { class: "mxs-al", text: label }), el("span", { class: "mxs-av", text: open ? "" : sum }), icon("drop")),
     open ? el("div", { class: "mxs-ab" }, ...body()) : null);
 }
+const mxsToneUrl = (app, box) => `/api/mailbox/tone?app=${enc(app)}&box=${enc(box)}`;
 function mxsToggle(key) {
   MXS.open = MXS.open === key ? "" : key; MXS.add = "";
   mxsPaint();
   if (MXS.open !== "tone") return;
   const a = MX.accts.get(MX.acct), k = `${a.key}|${MX.box}`;
   MXS.tone.set(k, { busy: true });
-  api(`/api/mailbox/tone?app=${enc(a.key)}&box=${enc(MX.box)}`).then(r => MXS.tone.set(k, r), e => { MXS.tone.set(k, { failed: true }); toast(mxsErr(e), true); }).then(mxsPaint);
+  api(mxsToneUrl(a.key, MX.box)).then(r => MXS.tone.set(k, r), e => { MXS.tone.set(k, { failed: true }); toast(mxsErr(e), true); }).then(mxsPaint);
+}
+// 말투 of a mailbox among several: where its voice comes from, what 다시 배우기 and 예시 보기 reach (docs/mailbox.md "Voice").
+const mxsVoiceText = v => ({
+  own: `보낸 글 ${v.texts}개로 따로 배웠어요`,
+  kept: "이 메일함에 따로 적어 둔 말투를 써요",
+  ready: `보낸 글 ${v.count}개가 모였어요. 곧 따로 배워요`,
+  few: `이 메일함에서 보낸 글이 ${v.count}개라 계정 말투를 써요. ${v.need}개부터 따로 배워요`,
+})[v.state];
+const MXS_LEARNT = { learned: "말투를 다시 배웠어요", few: "보낸 메일을 더 읽어 볼게요. 모이면 알아서 배워요", busy: "이미 배우고 있어요", empty: "말투를 찾지 못해 그대로 뒀어요" };
+async function mxsRelearn(a, b) {
+  const k = `${a.key}|${b.id}`, was = MXS.tone.get(k);
+  MXS.tone.set(k, { ...was, learning: true }); mxsPaint();
+  try {
+    const r = await api("/api/mailbox/relearn", "POST", { app: a.key, box: b.id });
+    MXS.tone.set(k, await api(mxsToneUrl(a.key, b.id)));
+    toast(MXS_LEARNT[r.result]);
+  } catch (e) { MXS.tone.set(k, was); toast(mxsErr(e), true); }
+  mxsPaint();
+}
+async function mxsExamples(a, b) {
+  let list;
+  try { list = (await api(`/api/mailbox/examples?app=${enc(a.key)}&box=${enc(b.id)}`)).examples; } catch (e) { toast(mxsErr(e), true); return; }
+  const h = fsOpen({ label: "예시 보기", cls: "mid" });
+  h.box.append(fsHead([el("div", { class: "fs-t", text: "예시 보기" })], { close: () => h.close() }), el("div", { class: "mxs-ex" }, ...list.map(x => el("div", { class: "mxs-exi" }, el("div", { class: "mxs-k", text: "받은 메일" }), el("div", { class: "mxs-h", text: x.received }), el("div", { class: "mxs-k", text: "내가 쓴 답장" }), el("div", { class: "mxs-sum", text: x.reply })))));
+}
+function mxsVoiceRow(a, b, t) {
+  const v = t.voice;
+  return [el("div", { class: "mxs-rowb" }, el("span", { class: "mxs-h", text: t.learning ? "지난 메일을 다시 읽고 있어요" : mxsVoiceText(v) }),
+    el("span", { class: "mxs-vb" }, el("button", { class: "btn tonal sm mxs-vx", type: "button", disabled: !v.count, onclick: () => mxsExamples(a, b) }, "예시 보기"),
+      el("button", { class: "btn tonal sm mxs-vl", type: "button", disabled: !!t.learning, onclick: () => mxsRelearn(a, b) }, "다시 배우기"))),
+    b.how ? el("div", { class: "mxs-h", text: "기본 지시를 적어 두면 배운 말투보다 먼저 따라요" }) : null];
 }
 function mxsToneBody(a, b) {
   const t = MXS.tone.get(`${a.key}|${b.id}`) || { busy: true }, more = MXS.more.has("fix");
@@ -14337,7 +14432,7 @@ function mxsToneBody(a, b) {
   if (t.failed) return [el("div", { class: "mxs-h", text: "말투를 읽지 못했어요" })];
   const fixes = more ? t.corrections : t.corrections.slice(0, MXS_FIX);
   return [t.summary ? el("div", { class: "mxs-sum", text: t.summary }) : el("div", { class: "mxs-h", text: "아직 정리된 말투가 없어요. 메일 앱 말투를 그대로 써요." }),
-    t.own ? null : el("div", { class: "mxs-h", text: "이 메일함만의 말투는 아직 없어요. 초안을 고치면 여기에 쌓여요." }),
+    ...(t.voice.state !== "single" ? mxsVoiceRow(a, b, t) : [t.own ? null : el("div", { class: "mxs-h", text: "이 메일함만의 말투는 아직 없어요. 초안을 고치면 여기에 쌓여요." })]),
     t.corrections.length ? el("div", { class: "mxs-k", text: "고친 점" }) : null, t.corrections.length ? el("ul", { class: "mxs-fx" }, ...fixes.map(f => el("li", { text: f }))) : null,
     t.corrections.length > MXS_FIX && !more ? el("button", { class: "chip mxs-c2", type: "button", onclick: () => { MXS.more.add("fix"); mxsPaint(); } }, `더 보기 · ${t.corrections.length - MXS_FIX}개`) : null];
 }
@@ -15376,7 +15471,7 @@ function monProgNode(m, opts = {}) {
 // is only the small text in the header. A watch's notices carry the label (hub notice) or the raw name (a gateway "[name] ..." post).
 const monWords = s => /^[A-Za-z0-9][\w.-]*$/.test(s) && /[-_]/.test(s) ? s.replace(/[-_]+/g, " ") : s;
 const monRaw = m => String(m.watch || m.name || "");
-// A raw command never reaches the screen (owner 2026-11-04): a schedule's text is what it runs ("someone이 피드백 데일리 보고: ssh -o BatchMode=yes ... python3 - 24 < ~/.dotz/...").
+// A raw command never reaches the screen (owner 2026-11-04): a schedule's text is what it runs ("피드백 데일리 보고: ssh -o BatchMode=yes ... python3 - 24 < ~/.dotz/...").
 // monHuman keeps the plain sentences before the first one that holds a command or a file path (a schedule's text can be the whole prompt it runs), stops at the
 // colon before a command, and drops a bracket that holds one; a text that is only a command gives "" and the caller names the kind in words.
 const MON_CMD = /\b[\w.-]+\.(?:md|jsonl?|ya?ml|toml|log|py|sh)\b|\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
@@ -19597,6 +19692,16 @@ function prPick(p, o = {}) {
   prGo(prUrl(p, `?did=${enc(DEVICE_ID)}${o.auto ? "&auto=1" : ""}`));   // the device id goes along: the push subscriptions on both computers become one device
 }
 
+// 지우기: an offline computer that paired with this one can be forgotten (DELETE /api/peers); an online, relay or public row never gets the button.
+function prForgetBtn(p, off) {
+  if (!off || p.via || p.public) return null;
+  return el("button", { type: "button", class: "btn tonal inrow pr-forget", text: "지우기", "aria-label": `${p.name} 목록에서 지우기`, onclick: async () => {
+    if (!await ask(`${p.name} 지우기`, "내 컴퓨터 목록에서 지울까요? 다시 켜면 목록에 돌아와요.", "지우기", true)) return;
+    try { await api(`/api/peers?url=${enc(p.url)}`, "DELETE"); toast(`${p.name}을(를) 지웠어요`); } catch (e) { toast(`${p.name}을(를) 지우지 못했어요`, true); }
+    prLoad();
+  } });
+}
+
 function prSheet() {
   const rows = PR.list.map(p => {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
@@ -19610,7 +19715,7 @@ function prSheet() {
       el("span", { class: `dot${(p.self ? !selfDown : p.online && !selfDown) ? " ok" : ""}` }),
       el("span", { class: "pr-tx" }, el("span", { class: "pr-t", text: p.name }), sub ? el("span", { class: "pr-sub", text: sub }) : null),
       alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : here ? icon("check", "pr-ck") : null);
-    const screen = dskRowBtn(p);
+    const screen = dskRowBtn(p) || prForgetBtn(p, off);
     return screen ? el("div", { class: "pr-line" }, row, screen) : row;
   });
   const manage = el("button", { type: "button", class: "pr-row pr-manage", onclick: () => { prClose(false); go("settings"); } }, icon("settings"), el("span", { class: "pr-t", text: "컴퓨터 관리" }));
@@ -20720,7 +20825,7 @@ const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", er
 // "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
 // recover: a background worker failed and the agent takes it up itself (hub/runstate.ts failedRun) - its progress, not a request to the owner.
-const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
+const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" || r.reason === "resume" ? "이어서 처리 중" : "맡긴 작업 진행 중";
 // standby: no question, but nothing moves until the owner writes (a [wait] report, hub/runstate.ts waitsForOwner).
 const waitsOnOwner = r => r.kind === "waiting" && (r.reason === "ask" || r.reason === "standby");
 // A conversation waiting on work it handed off is progressing: blue on every row that shows it, like this line. One whose turn or whose

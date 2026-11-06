@@ -8,7 +8,7 @@ const env = setupEnv();
 afterAll(env.cleanup);
 const { dropAnsweredMailDraft } = await import("./draft-drop.ts");
 
-const rec = (id: string): DraftRec => ({ id, kind: "mail", app: "mail", source: "company", mailId: "1", ref: `company-${id}`, to: "a@b.co", body: "본문", status: "pending", created: new Date().toISOString(), changes: [], questions: [], item: { kind: "mail", from: "a@b.co", text: "x" } });
+const rec = (id: string): DraftRec => ({ id, kind: "mail", app: "mail", source: "acme", mailId: "1", ref: `acme-${id}`, to: "a@b.co", body: "본문", status: "pending", created: new Date().toISOString(), changes: [], questions: [], item: { kind: "mail", from: "a@b.co", text: "x" } });
 const card = (ref: string) => ({ id: "n1", decision: { draft: { ref }, options: [{ n: 1, label: "보내기" }, { n: 2, label: "고치기" }, { n: 3, label: "보내지 않기" }] } }) as unknown as Notice;
 
 test("보내지 않기 drops the mail draft; 보내기 and 고치기 leave it to their own paths; a kakao code is not touched", async () => {

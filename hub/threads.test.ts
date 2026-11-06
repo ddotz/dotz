@@ -8,9 +8,9 @@ const work = (id: string) => id === "500";
 const parents: Record<string, string> = { "700": "500" };
 const place = (a: { home?: string; asking?: string; askingMessage?: string; discordForWeb?: boolean }) => lanePlace({ ...a, isWork: work, threadParent: id => parents[id] });
 // Discord message ids (the owner wrote on Discord); a web message id is not one.
-const m1 = "1559940386452152351";
-const m2 = "1559940386452152352";
-const m3 = "1559940386452152353";
+const m1 = "1500000000001252351";
+const m2 = "1500000000001252352";
+const m3 = "1500000000001252353";
 
 test("the launching turn's answer moves into the lane thread only for an ask from that Discord channel or thread", () => {
 	expect(answerMovesToLane(place({ asking: "ch:500", askingMessage: m1 }), "ch:500")).toBe(true);
@@ -53,11 +53,11 @@ test("reply reference: always at top level, in a thread only when the owner wrot
 });
 
 test("a web message id (hex) as reply_to is never a Discord message_reference", () => {
-	expect(replyRef("ch:000000000000000000", "5eeba27e", undefined)).toBeUndefined();
+	expect(replyRef("ch:1500000000001908448", "5eeba27e", undefined)).toBeUndefined();
 	expect(replyRef("chat", "5eeba27e", undefined)).toBeUndefined();
-	expect(replyRef("ch:500", "000000000000000000", undefined)).toBe("000000000000000000");
+	expect(replyRef("ch:500", "1500000000001908448", undefined)).toBe("1500000000001908448");
 	expect(JSON.stringify(buildPayloads("hi", "5eeba27e"))).not.toContain("message_reference");
-	expect(JSON.stringify(buildPayloads("hi", "000000000000000000"))).toContain("message_reference");
+	expect(JSON.stringify(buildPayloads("hi", "1500000000001908448"))).toContain("message_reference");
 });
 
 test("a reply to a thread's starter message goes into that thread, other replies stay", () => {
@@ -79,8 +79,8 @@ test("thread titles are plain words: no [kind], emoji or pipes; a code name give
 });
 
 test("readable: headings become bold lines, tables become lines, raw ids become links, code fences untouched", () => {
-	const text = ["## 결과", "| 항목 | 값 |", "|---|---|", "| 테스트 | 120 |", "자세한 건 th:000000000000000000 참고", "```", "# not a heading", "| a | b |", "```", "-# 작은 글씨"].join("\n");
-	expect(readable(text)).toBe(["**결과**", "항목 · 값", "테스트 · 120", "자세한 건 <#000000000000000000> 참고", "```", "# not a heading", "| a | b |", "```", "-# 작은 글씨"].join("\n"));
+	const text = ["## 결과", "| 항목 | 값 |", "|---|---|", "| 테스트 | 120 |", "자세한 건 th:1500000000002115902 참고", "```", "# not a heading", "| a | b |", "```", "-# 작은 글씨"].join("\n");
+	expect(readable(text)).toBe(["**결과**", "항목 · 값", "테스트 · 120", "자세한 건 <#1500000000002115902> 참고", "```", "# not a heading", "| a | b |", "```", "-# 작은 글씨"].join("\n"));
 });
 
 test("a web message id never becomes a thread's starting message, so the lane still gets its thread", () => {

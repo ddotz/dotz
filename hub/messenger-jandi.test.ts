@@ -187,9 +187,9 @@ describe("deliver", () => {
 	});
 	test("a status marker becomes its emoji, and a bracket that is content stays", async () => {
 		captured.length = 0;
-		await send("main", "main", "[done] 까르띠에 로그인을 해 뒰어요. [1]번 항목 참고");
+		await send("main", "main", "[done] 부티크 로그인을 해 뒰어요. [1]번 항목 참고");
 		await send("main", "main", "[fail] 세션을 다시 띄우지 못했어요");
-		expect(captured.map(c => c.body.body)).toEqual(["✅ 까르띠에 로그인을 해 뒰어요. [1]번 항목 참고", "❌ 세션을 다시 띄우지 못했어요"]);
+		expect(captured.map(c => c.body.body)).toEqual(["✅ 부티크 로그인을 해 뒰어요. [1]번 항목 참고", "❌ 세션을 다시 띄우지 못했어요"]);
 	});
 	test("what is not for the owner is never posted", async () => {
 		captured.length = 0;

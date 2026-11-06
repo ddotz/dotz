@@ -9,10 +9,10 @@ const MINI = "http://mini.test";
 const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 const at = (min: number) => new Date(Date.UTC(2026, 9, 27, 6, min)).toISOString();
 type Run = { kind: string; reason?: string; since?: string; detail?: string; todos?: number };
-const WORKING: Run = { kind: "working", since: ago(4), detail: "redacted 연결 스크립트 흐름도 HTML · Opus 5.5 medium" };
+const WORKING: Run = { kind: "working", since: ago(4), detail: "샘플 연결 스크립트 흐름도 HTML · Opus 5.5 medium" };
 const FAILED: Run = { kind: "error", since: ago(7), detail: "child turn produced no assistant output · 다시 맡기지 않았어요" };
-const MAIL = { subject: "company 메일", from: "민수 <m@example.com>", source: "mail", at: at(20), summary: "흐름도 부탁드려요" };
-const LAST = { ts: at(20), text: "company 메일", from: "bot" };
+const MAIL = { subject: "ACME 메일", from: "민수 <m@example.com>", source: "mail", at: at(20), summary: "흐름도 부탁드려요" };
+const LAST = { ts: at(20), text: "ACME 메일", from: "bot" };
 const MAIL_APP = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], unread: 1, notices: [], needs: { drafts: 0, unread: 1, sentToday: 0 } };
 type Peer = { name: string; url: string; online: boolean; stale: boolean; items: Record<string, unknown> | null };
 const peers: Peer[] = [{
@@ -45,7 +45,7 @@ const server = Bun.serve({
 		if (p === "/api/monitoring/peers") return json(peers);
 		if (p === "/api/peer/proxy") return json({ events: [] });
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [
-			{ ts: at(20), kind: "mail", subject: MAIL.subject, from: MAIL.from, mail: "loc", conv: "mail:loc", text: "민수 · company 메일\n\n흐름도 부탁드려요" },
+			{ ts: at(20), kind: "mail", subject: MAIL.subject, from: MAIL.from, mail: "loc", conv: "mail:loc", text: "민수 · ACME 메일\n\n흐름도 부탁드려요" },
 			// The delivery record the outbox keeps for an owner message (`kind: "delivery"`): no text of its own, so it must not be a bubble.
 			{ ts: at(21), kind: "delivery", source: "gateway", target: "mail:loc", state: "answered", text: "" },
 		] });
@@ -79,7 +79,7 @@ test("a mail conversation on this computer shows the background worker its reque
 	RUNS = { ...RUNS, "mail:loc": WORKING };
 	await v.evaluate(`refreshState().then(() => true)`);
 	await waitFor(v, `!$("#runstate").hidden && $("#runstate-tx").textContent.startsWith("작업 중")`);
-	expect(await line(v)).toBe("작업 중 · redacted 연결 스크립트 흐름도 HTML · Opus 5.5 medium · 4분");
+	expect(await line(v)).toBe("작업 중 · 샘플 연결 스크립트 흐름도 HTML · Opus 5.5 medium · 4분");
 }, 20_000);
 
 test("the same mail opened from the other computer shows that computer's run state", async () => {
@@ -90,5 +90,5 @@ test("the same mail opened from the other computer shows that computer's run sta
 	await v.evaluate(`($("#mon-tl .mr").click(), 0)`);
 	await waitFor(v, `target === "mail:abc" && !$("#runstate").hidden`);
 	expect(await v.evaluate(`pqPc(target) && pqPc(target).url`)).toBe(MINI);
-	expect(await line(v)).toBe("작업 중 · redacted 연결 스크립트 흐름도 HTML · Opus 5.5 medium · 4분");
+	expect(await line(v)).toBe("작업 중 · 샘플 연결 스크립트 흐름도 HTML · Opus 5.5 medium · 4분");
 }, 20_000);

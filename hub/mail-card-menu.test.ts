@@ -185,10 +185,10 @@ describe("from another computer (/api/peer/act)", () => {
 	const pm = createPeerMonitor({ name: () => "A", computers: async () => [], local: async req => (seen.push([req.method, new URL(req.url).pathname]), Response.json({ ok: true })) });
 	const act = (action: string, args: unknown) => pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action, from: "B", args }) }), new URL("http://local/api/peer/act"));
 	test("답장 안 해도 돼요, its undo and 삭제 each run once, on the routes of the computer that holds the mail", async () => {
-		await act("fyi", { key: "company-1" });
-		await act("fyi", { key: "company-1", on: false });
-		await act("mail-delete", { key: "company-1" });
-		expect(seen).toEqual([["POST", "/api/mail/company-1/fyi"], ["DELETE", "/api/mail/company-1/fyi"], ["DELETE", "/api/mail/company-1"]]);
+		await act("fyi", { key: "acme-1" });
+		await act("fyi", { key: "acme-1", on: false });
+		await act("mail-delete", { key: "acme-1" });
+		expect(seen).toEqual([["POST", "/api/mail/acme-1/fyi"], ["DELETE", "/api/mail/acme-1/fyi"], ["DELETE", "/api/mail/acme-1"]]);
 		expect((await act("mail-delete", {}))!.status).toBe(400);
 	});
 });

@@ -4,13 +4,13 @@ import { peerName } from "./peers.ts";
 
 describe("machine name", () => {
 	test("empty or missing config falls back to the hostname-derived name", () => {
-		expect(resolveName(undefined, "host.tail1234.ts.net.")).toBe("맥북");
-		expect(resolveName("", "host")).toBe("맥미니");
+		expect(resolveName(undefined, "owner-macbookpro.tail1234.ts.net.")).toBe("맥북");
+		expect(resolveName("", "owner-mac-mini")).toBe("맥미니");
 		expect(resolveName("   ", "devbox.local")).toBe("devbox");
-		expect(friendlyName("someone-mac-studio")).toBe("맥 스튜디오");
+		expect(friendlyName("owner-mac-studio")).toBe("맥 스튜디오");
 	});
 	test("a chosen name wins and is cleaned", () => {
-		expect(resolveName("  내 \n 맥북  ", "host")).toBe("내 맥북");
+		expect(resolveName("  내 \n 맥북  ", "owner-macbookpro")).toBe("내 맥북");
 		expect(cleanName("a\u0000b")).toBe("a b");
 		expect(cleanName(42)).toBe("");
 		expect(cleanName("가".repeat(MAX_NAME + 10))).toHaveLength(MAX_NAME);

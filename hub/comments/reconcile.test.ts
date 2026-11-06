@@ -53,7 +53,7 @@ describe("owner replies that come in later close the comment and its draft", () 
 		config([source("site-mapia", "website")]);
 		const site = fake("website");
 		const { engine, dropped } = engineWith({ website: site.adapter });
-		site.st.pages = [[raw("c1", { author: "1181990번째 마피아", text: "문서 구입했습니다~ 보조 mr 부탁드립니다! a@naver.com" })]];
+		site.st.pages = [[raw("c1", { author: "구독자셋", text: "자료 구입했습니다~ 파일 부탁드립니다! a@naver.com" })]];
 		await engine.collect({ force: true });
 		engine.store.putDraft(draft({ code: "D2jwqz9", commentId: "cm:site-mapia:c1", source: "site-mapia", mail: "mail1", mailAt: NOW, clean: false }));
 		expect(engine.unreplied(engine.store.comments()[0]!)).toBe(true);
@@ -84,9 +84,9 @@ describe("owner replies that come in later close the comment and its draft", () 
 		const state = { threads: {} as Record<string, { videoId: string; replies: { id: string; parentId: string; author: string; text: string; publishedAt: string }[] }>, ids: [] as string[][] };
 		const api: YoutubeApi = {
 			channelId: () => "UCme",
-			threadsSince: async () => ({ comments: [{ id: "hwa", videoId: "p1", author: "@commenter-a", authorChannelId: "UCfan", text: "진짜 전문가이신가요?", publishedAt: new Date(NOW - DAY).toISOString(), replied: false } satisfies YtComment], newest: "n" }),
+			threadsSince: async () => ({ comments: [{ id: "hwa", videoId: "p1", author: "@구독자둘", authorChannelId: "UCfan", text: "진짜 직접 만드신 건가요?", publishedAt: new Date(NOW - DAY).toISOString(), replied: false } satisfies YtComment], newest: "n" }),
 			uploads: async () => [],
-			videos: async ids => Object.fromEntries(ids.map(i => [i, { title: "회의 영상" }])),
+			videos: async ids => Object.fromEntries(ids.map(i => [i, { title: "소개 영상" }])),
 			reply: async () => "r",
 			ownReplies: async () => [],
 			threadsByIds: async (_c, ids) => (state.ids.push(ids), state.threads),
@@ -97,16 +97,16 @@ describe("owner replies that come in later close the comment and its draft", () 
 		engine.store.putDraft(draft({ code: "Dhwa", commentId: "cm:youtube:hwa", source: "youtube" }));
 		expect(await engine.reconcile({ recheck: true })).toEqual({ answered: 0, gone: 0, draftsClosed: 0 });
 
-		state.threads = { hwa: { videoId: "p1", replies: [{ id: "hwa.1", parentId: "hwa", author: "someone", text: "감사합니다", publishedAt: new Date(NOW - DAY + 5 * 60_000).toISOString() }] } };
+		state.threads = { hwa: { videoId: "p1", replies: [{ id: "hwa.1", parentId: "hwa", author: "지수", text: "감사합니다", publishedAt: new Date(NOW - DAY + 5 * 60_000).toISOString() }] } };
 		expect(await engine.reconcile({ recheck: true })).toEqual({ answered: 1, gone: 0, draftsClosed: 1 });
-		expect(engine.store.comments().find(c => c.native === "hwa.1")).toMatchObject({ mine: true, parent: "hwa", thread: "p1", postTitle: "회의 영상" });
+		expect(engine.store.comments().find(c => c.native === "hwa.1")).toMatchObject({ mine: true, parent: "hwa", thread: "p1", postTitle: "소개 영상" });
 		expect(engine.store.drafts()[0]).toMatchObject({ status: "answered", closedReason: "answered-on-platform" });
 		expect(engine.needs().youtube?.unreplied).toBe(0);
 		expect(state.ids[0]).toEqual(["hwa"]);
 	});
 
 	test("YouTube list also stores the owner's replies it already reads", async () => {
-		const reply = { id: "t.1", parentId: "t", author: "someone", text: "네", publishedAt: new Date(NOW - 1000).toISOString() };
+		const reply = { id: "t.1", parentId: "t", author: "지수", text: "네", publishedAt: new Date(NOW - 1000).toISOString() };
 		const api: YoutubeApi = {
 			channelId: () => "UCme",
 			threadsSince: async () => ({ comments: [{ id: "t", videoId: "p1", author: "fan", authorChannelId: "UCfan", text: "q", publishedAt: new Date(NOW - 5000).toISOString(), replied: true, ownerReplies: [reply] }] }),
@@ -241,7 +241,7 @@ describe("Instagram reply authors", () => {
 		config([source("instagram", "instagram")]);
 		const state = fresh();
 		state.list = [
-			top("k1", "fan1", "2030-06-15T12:10:00+0000", "문서 부탁드려요", { replies: [{ id: "r1", username: "owner_ig", fromId: "17841", text: "보내 드렸어요", timestamp: "2030-06-15T13:00:00+0000" }, { id: "r2", username: "fan2", text: "저도요", timestamp: "2030-06-15T14:00:00+0000" }] }),
+			top("k1", "fan1", "2030-06-15T12:10:00+0000", "자료 부탁드려요", { replies: [{ id: "r1", username: "owner_ig", fromId: "17841", text: "보내 드렸어요", timestamp: "2030-06-15T13:00:00+0000" }, { id: "r2", username: "fan2", text: "저도요", timestamp: "2030-06-15T14:00:00+0000" }] }),
 			top("r1", "owner_ig", "2030-06-15T13:00:00+0000", "보내 드렸어요", { fromId: "17841", parentId: "k1" }),
 			top("r2", "fan2", "2030-06-15T14:00:00+0000", "저도요"),
 			top("r3", "owner_ig", "2030-06-15T15:00:00+0000", "@fan2 보내 드릴게요", { fromId: "17841", parentId: "k1" }),
@@ -263,7 +263,7 @@ describe("Instagram reply authors", () => {
 		const seed = (o: Partial<Comment> & Pick<Comment, "native" | "at">): Comment => ({ id: `cm:instagram:${o.native}`, source: "instagram", thread: "m1", author: UNKNOWN, text: "", postTitle: "post", mine: false, collector: "t", ...o });
 		const store = createStore(dir);
 		store.addComments([
-			seed({ native: "k1", author: "fan1", text: "문서 부탁드려요", at: NOW - 3 * DAY }),
+			seed({ native: "k1", author: "fan1", text: "자료 부탁드려요", at: NOW - 3 * DAY }),
 			seed({ native: "k1.0", parent: "k1", text: "❤️", at: NOW - 3 * DAY + 1 }),
 			seed({ native: "k1.1", parent: "k1", text: "보내 드렸어요", at: NOW - 3 * DAY + 2 }),
 			seed({ native: "k2", author: "fan2", text: "멋져요", at: NOW - 2 * DAY }),
@@ -309,7 +309,7 @@ describe("Instagram reply authors", () => {
 		config([source("instagram", "instagram")]);
 		const state = fresh();
 		state.withAuthor = false;
-		state.list = [top("k1", "fan1", "2030-06-15T12:10:00Z", "문서 부탁드려요", { replies: [{ username: UNKNOWN, text: "보내 드렸어요", timestamp: "2030-06-15T13:00:00Z" }] })];
+		state.list = [top("k1", "fan1", "2030-06-15T12:10:00Z", "자료 부탁드려요", { replies: [{ username: UNKNOWN, text: "보내 드렸어요", timestamp: "2030-06-15T13:00:00Z" }] })];
 		const old = ig(state);
 		await old.collect({ force: true });
 		expect(old.store.comments().map(c => c.id)).toEqual(["cm:instagram:k1", "cm:instagram:k1.0"]);
@@ -318,7 +318,7 @@ describe("Instagram reply authors", () => {
 		old.store.putDraft(draft({ code: "Dold", commentId: "cm:instagram:k1.0", source: "instagram", thread: "m1", status: "dropped" }));
 
 		state.withAuthor = true;
-		state.list = [top("k1", "fan1", "2030-06-15T12:10:00Z", "문서 부탁드려요", { replies: [{ id: "r1", username: UNKNOWN, text: "보내 드렸어요", timestamp: "2030-06-15T13:00:00Z" }] })];
+		state.list = [top("k1", "fan1", "2030-06-15T12:10:00Z", "자료 부탁드려요", { replies: [{ id: "r1", username: UNKNOWN, text: "보내 드렸어요", timestamp: "2030-06-15T13:00:00Z" }] })];
 		state.authors = { r1: { username: "owner_ig", fromId: "17841" } };
 		const engine = ig(state);
 		expect(await engine.reconcile({ recheck: true })).toEqual({ answered: 1, gone: 0, draftsClosed: 1 });
@@ -385,7 +385,7 @@ describe("Instagram reply authors", () => {
 });
 
 describe("issue #32: YouTube replies", () => {
-	const VIDEO = "F7CRPU2iqBI";
+	const VIDEO = "FakeVideo01";
 	const HWA = "comment-id", GAME = "comment-id";
 	const at = (iso: string) => new Date(iso).toISOString();
 	function setup(replies: Record<string, { id: string; parentId: string; author: string; text: string; publishedAt: string }[]>, fail = false) {
@@ -395,12 +395,12 @@ describe("issue #32: YouTube replies", () => {
 			channelId: () => "UCme",
 			// The InnerTube read: new comments only, no replies, replied false.
 			threadsSince: async () => ({ comments: [
-				{ id: GAME, videoId: VIDEO, author: "@commenter-b", authorChannelId: "UCg", text: "와 대박", publishedAt: at("2026-10-28T11:14:26Z"), replied: false },
-				{ id: HWA, videoId: VIDEO, author: "@commenter-a", authorChannelId: "UCh", text: "진짜 전문가이신가요?", publishedAt: at("2026-10-28T14:03:42Z"), replied: false },
-				{ id: "Ugopen", videoId: VIDEO, author: "@fan", authorChannelId: "UCf", text: "문서 있나요?", publishedAt: at("2026-10-28T15:00:00Z"), replied: false },
+				{ id: GAME, videoId: VIDEO, author: "@구독자하나", authorChannelId: "UCg", text: "와 대박", publishedAt: at("2026-10-28T11:14:26Z"), replied: false },
+				{ id: HWA, videoId: VIDEO, author: "@구독자둘", authorChannelId: "UCh", text: "진짜 직접 만드신 건가요?", publishedAt: at("2026-10-28T14:03:42Z"), replied: false },
+				{ id: "Ugopen", videoId: VIDEO, author: "@fan", authorChannelId: "UCf", text: "자료 있나요?", publishedAt: at("2026-10-28T15:00:00Z"), replied: false },
 			] satisfies YtComment[], newest: "n" }),
 			uploads: async () => [],
-			videos: async ids => Object.fromEntries(ids.map(i => [i, { title: "회의 영상" }])),
+			videos: async ids => Object.fromEntries(ids.map(i => [i, { title: "소개 영상" }])),
 			reply: async () => "r",
 			ownReplies: async () => [],
 			threadsByIds: async (_c, ids) => (calls.push(ids), fail ? Promise.reject(new Error("quota")) : Object.fromEntries(ids.map(i => [i, { videoId: VIDEO, replies: replies[i] ?? [] }]))),
@@ -412,8 +412,8 @@ describe("issue #32: YouTube replies", () => {
 
 	test("comments he answered on YouTube come with his replies (mine, under their comment), are not 미답장 and get no auto draft", async () => {
 		const { engine, calls } = setup({
-			[HWA]: [{ id: `${HWA}.r1`, parentId: HWA, author: "@someone", text: "네 직접 만들었어요", publishedAt: at("2026-10-29T01:00:00Z") }],
-			[GAME]: [{ id: `${GAME}.r1`, parentId: GAME, author: "@someone", text: "감사합니다!", publishedAt: at("2026-10-28T12:00:00Z") }],
+			[HWA]: [{ id: `${HWA}.r1`, parentId: HWA, author: "@채널주인", text: "네 직접 만들었어요", publishedAt: at("2026-10-29T01:00:00Z") }],
+			[GAME]: [{ id: `${GAME}.r1`, parentId: GAME, author: "@채널주인", text: "감사합니다!", publishedAt: at("2026-10-28T12:00:00Z") }],
 		});
 		const out = await engine.collect({ force: true });
 		expect(calls[0]).toEqual([GAME, HWA, "Ugopen"]);

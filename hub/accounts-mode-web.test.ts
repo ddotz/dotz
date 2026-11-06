@@ -23,7 +23,7 @@ const find = (n: any, f: (x: Node) => boolean, out: Node[] = []): Node[] => {
 const account = (name: string, over: object = {}) => ({ name, alias: null, label: name, current: false, blocked: null, blocked_until: null, blocked_tag: null, five_hour_left: null, seven_day_left: null, ...over });
 const body = (mode: "auto" | "pinned", over: object = {}) => ({
 	mode,
-	accounts: [account("default", { current: true }), account("host-shared")],
+	accounts: [account("default", { current: true }), account("teammate-shared")],
 	chosen: { name: "default", label: "default", source: mode === "pinned" ? "manual" : "auto", blocked: null, text: "" },
 	rules_text: [{ index: 0, text: "평일 09:00-18:00 · 회사 계정" }],
 	script: { path: "/tmp/pick.sh", timeout_ms: 5000, every_minutes: 5, last: { account: "default", at: "2026-10-23T05:00:00Z" } },
@@ -101,7 +101,7 @@ test("고정: the switch is off, the help becomes the 고정 text, no 전환 규
 });
 
 test("고정: a blocked fixed account says it waits and keeps its badge and limit tag", () => {
-	const blocked = body("pinned", { accounts: [account("default", { current: true, blocked: "rate_limit", blocked_tag: "한도 걸림 · 01:00까지" }), account("host-shared")], chosen: { name: "default", label: "default", source: "manual", blocked: "rate_limit", text: "한도에 걸려서 01:00까지 멈춰 있어요. 고정했으니 다른 계정으로 넘어가지 않아요" } });
+	const blocked = body("pinned", { accounts: [account("default", { current: true, blocked: "rate_limit", blocked_tag: "한도 걸림 · 01:00까지" }), account("teammate-shared")], chosen: { name: "default", label: "default", source: "manual", blocked: "rate_limit", text: "한도에 걸려서 01:00까지 멈춰 있어요. 고정했으니 다른 계정으로 넘어가지 않아요" } });
 	const { nodes } = card(blocked);
 	const all = text(nodes);
 	expect(all).toContain("멈춰 있어요");
@@ -125,21 +125,21 @@ test("고정: tapping another account row fixes it, tapping the fixed one does n
 	fixed.attrs.onclick({ currentTarget: {} });
 	expect(pinned.calls).toEqual([]);
 	other.attrs.onclick({ currentTarget: {} });
-	expect(pinned.calls).toEqual([["/api/accounts/mode", "PUT", { mode: "pinned", account: "host-shared" }]]);
+	expect(pinned.calls).toEqual([["/api/accounts/mode", "PUT", { mode: "pinned", account: "teammate-shared" }]]);
 
 	const auto = card(body("auto"));
 	mainOf(rowsOf(auto.nodes)[1]!).attrs.onclick({ currentTarget: {} });
 	expect(auto.calls).toEqual([]);
-	expect(auto.dialogs).toEqual(["host-shared"]);
+	expect(auto.dialogs).toEqual(["teammate-shared"]);
 });
 
 test("every account row has its number and a grip; no arrow buttons; ArrowUp/ArrowDown on a grip write PUT /api/accounts/order, the ends do nothing", () => {
-	const three = [account("default", { order: 1, current: true }), account("host-shared", { order: 2 }), account("third", { order: 3 })];
+	const three = [account("default", { order: 1, current: true }), account("teammate-shared", { order: 2 }), account("third", { order: 3 })];
 	for (const mode of ["auto", "pinned"] as const) {
 		const c = card(body(mode, { accounts: three }));
 		const rows = rowsOf(c.nodes);
 		expect(rows.map(r => text(find(r, n => String(n.attrs.class).includes("acc-no"))).trim())).toEqual(["1", "2", "3"]);
-		expect(rows.map(r => gripOf(r).attrs["data-acc"])).toEqual(["default", "host-shared", "third"]);
+		expect(rows.map(r => gripOf(r).attrs["data-acc"])).toEqual(["default", "teammate-shared", "third"]);
 		expect(find(c.nodes, n => String(n.attrs.class).includes("acc-mvs"))).toHaveLength(0);
 		expect(text(c.nodes)).not.toMatch(/[↑↓]/);
 	}
@@ -150,7 +150,7 @@ test("every account row has its number and a grip; no arrow buttons; ArrowUp/Arr
 	keys(1, "Enter");
 	expect(auto.calls).toEqual([]);
 	keys(1, "ArrowUp");
-	expect(auto.calls).toEqual([["/api/accounts/order", "PUT", { order: ["host-shared", "default", "third"] }]]);
+	expect(auto.calls).toEqual([["/api/accounts/order", "PUT", { order: ["teammate-shared", "default", "third"] }]]);
 	keys(1, "ArrowDown");
-	expect(auto.calls.at(-1)).toEqual(["/api/accounts/order", "PUT", { order: ["default", "third", "host-shared"] }]);
+	expect(auto.calls.at(-1)).toEqual(["/api/accounts/order", "PUT", { order: ["default", "third", "teammate-shared"] }]);
 });

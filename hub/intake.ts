@@ -110,7 +110,7 @@ function inboxBody(e: Record<string, any>): string {
 }
 
 // Owners often send one thought as several short messages. Messages from the same channel that arrive within
-// COALESCE_MS of each other (at most COALESCE_MAX_MS after the first) become one turn, the way someone's inbox monitor
+// COALESCE_MS of each other (at most COALESCE_MAX_MS after the first) become one turn, the way the earlier secretary's inbox monitor
 // batched lines that arrived together. Mid-burst the wait is BURST_WAIT_MS (config.ts): a lone message keeps the short one.
 const COALESCE_MS = Number((cfg as any).gateway?.coalesce_ms ?? DEFAULTS.coalesce_ms);
 // Every owner message of every surface is emitted to the inbox first, so the ledger sees them all, lanes and commands included.

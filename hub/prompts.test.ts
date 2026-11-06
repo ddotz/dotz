@@ -174,7 +174,7 @@ test("answer only when ready: an early send to the asking channel is held and go
 });
 
 test("the final answer of a turn started from a work channel lands in that project's web chat once", () => {
-	const CH = "ch:000000000000000000";
+	const CH = "ch:1500000000001908448";
 	const post: PromptDeps["post"] = async (target, text, replyTo) => (emit("outbox", outEvent({ ts: new Date().toISOString(), kind: "out", source: "orchestrator", target, text, reply_to: replyTo ?? null }, () => undefined)), { delivered: true });
 	const { q, startTurn } = setup([], [], { post });
 	startTurn("web msg in the project", { target: CH, replyTo: "5eeba27e" });
@@ -374,14 +374,14 @@ test("a turn that defers to a background worker sends nothing; the run the worke
 
 test("a deferred turn posts one short note naming the worker, so its conversation is not silent", () => {
 	const announced: { target: string; text: string; worker?: string }[] = [];
-	const { q, state, startTurn } = setup([], [], { announce: (target, text, worker) => announced.push({ target, text, ...(worker ? { worker } : {}) }), workFor: () => ({ id: "w1", description: "redacted 연결 스크립트 흐름도 HTML" }) });
-	startTurn("이거 파일 전부 흐름도로 재구성해", { target: "th:000000000000000000" });
+	const { q, state, startTurn } = setup([], [], { announce: (target, text, worker) => announced.push({ target, text, ...(worker ? { worker } : {}) }), workFor: () => ({ id: "w1", description: "샘플 연결 스크립트 흐름도 HTML" }) });
+	startTurn("이거 파일 전부 흐름도로 재구성해", { target: "th:1500000000005057364" });
 	q.onAnswer("[later]");
 	// The worker's id rides along: the web's system line opens that worker and shows its state.
-	expect(announced).toEqual([{ target: "th:000000000000000000", text: "백그라운드 작업으로 맡겼어요: redacted 연결 스크립트 흐름도 HTML", worker: "w1" }]);
+	expect(announced).toEqual([{ target: "th:1500000000005057364", text: "백그라운드 작업으로 맡겼어요: 샘플 연결 스크립트 흐름도 HTML", worker: "w1" }]);
 	// The note is not the answer: nothing was posted to the request and it still waits for the worker.
 	expect(state.posts).toEqual([]);
-	expect(q.deferredOpen().map(d => d.target)).toEqual(["th:000000000000000000"]);
+	expect(q.deferredOpen().map(d => d.target)).toEqual(["th:1500000000005057364"]);
 	// A worker the store does not list yet still gets a readable note, never an empty message.
 	const bare = setup([], [], { announce: (target, text) => announced.push({ target, text }) });
 	bare.startTurn("메일 답장 써 줘", { target: "mail:k1" });
@@ -636,7 +636,7 @@ test("a worker spawned in turn B belongs to B's message, not to the earlier turn
 });
 
 test("an answer that came without a prompt settles the deferred settings request it went to: nothing stays open or waiting, and a restart does not replay it", async () => {
-	const SETTINGS = "settings:w:login-private-project-com";
+	const SETTINGS = "settings:w:login-boutique-com";
 	const { q, state, open, startTurn } = setup();
 	startTurn("원인 찾아 줘", { target: SETTINGS, replyTo: "m1" });
 	q.workersSpawned([{ id: "st_login" }]);
@@ -695,7 +695,7 @@ test("a worker spawned in a turn a note started serves the owner message steered
 });
 
 test("the newest-message path (no deferred prompt) names no message and answers none", async () => {
-	const SETTINGS = "settings:w:login-private-project-com";
+	const SETTINGS = "settings:w:login-boutique-com";
 	const { q, state, open } = setup([], [{ target: SETTINGS, replyTo: "m7", at: Date.now() - 60_000 }]);
 	q.onAnswer("다시 로그인했어요. 다음 확인 때 정상으로 바뀌는지 볼게요.");
 	await Bun.sleep(0);

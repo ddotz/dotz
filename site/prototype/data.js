@@ -146,9 +146,9 @@ window.D = (() => {
   ];
 
   D.projects = [
-    { id: "private-project", name: "한글 문서 자동화", purpose: "공문 양식에 맞춰 HWPX 문서를 만들어요", pinned: true, upd: "5분 전", need: 1, state: "pri", st: "세션 일하는 중",
+    { id: "docgen", name: "한글 문서 자동화", purpose: "공문 양식에 맞춰 HWPX 문서를 만들어요", pinned: true, upd: "5분 전", need: 1, state: "pri", st: "세션 일하는 중",
       ms: [["양식 분석", 1], ["공문 초안 생성", 1], ["표 서식 맞추기", 0], ["검수와 전달", 0]],
-      lanes: [{ n: "private-project-fill", ti: "공문 초안 채우기", s: "일하는 중", tone: "pri" }],
+      lanes: [{ n: "docgen-fill", ti: "공문 초안 채우기", s: "일하는 중", tone: "pri" }],
       work: [{ ti: "표 서식 점검", s: "running" }, { ti: "공문 양식 12종 읽기", s: "done" }],
       results: [{ ti: "공문 초안 3건을 만들었어요", at: "20분 전", f: "공문-초안.hwpx" }, { ti: "양식 12종 분석 보고", at: "어제", f: "양식-분석.md" }],
       monitors: [], ask: { ti: "표 머리글을 굵게 할까요?", href: "chat/ch1" } },

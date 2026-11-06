@@ -148,7 +148,7 @@ function sessionsNow() {
   const of = word => ((S && !S.seeded && S.lanes) || []).filter(l => sessionState(l) === word).sort((a, b) => String(a.startedAt || "").localeCompare(String(b.startedAt || "")));
   return { wait: of(SESSION_WORD.wait), run: of(SESSION_WORD.run) };
 }
-// A 진행 중 row's name: `company · company 출자전환 검토`, the title alone for a session with no project.
+// A 진행 중 row's name: `기획팀 · 분기 안건 검토`, the title alone for a session with no project.
 const sessionHead = l => { const p = laneProject(l), n = l.title || l.name; return p && p !== n ? `${p} · ${n}` : n; };
 // o.project: the project name when the caller knows it better than the lane's own home; o.line: a short activity line after it;
 // o.word / o.tone: a status the caller knows better ("답변 필요"); o.head: the project stands in the name (sessionHead), not under it.

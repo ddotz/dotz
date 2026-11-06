@@ -129,9 +129,9 @@ async function clear(...names: string[]): Promise<void> {
 const spawned = () => spawns.length;
 const lastAgent = () => spawns.at(-1)!.agent;
 
-test("company-xhigh replay (2026-11-06): a last [run] with nothing open behind it wakes nobody, and neither does work that sat for days", async () => {
+test("audit-xhigh replay (2026-11-06): a last [run] with nothing open behind it wakes nobody, and neither does work that sat for days", async () => {
 	const lane = idleLane("uf-stale-run");
-	reportFile(lane.name, "[run] 메모에 두 계좌 잔액을 반영했고, company 소관은 메모리에도 저장했어요.");
+	reportFile(lane.name, "[run] 메모에 두 계좌 잔액을 반영했고, 운영팀 소관은 메모리에도 저장했어요.");
 	await down(lane);
 	const back = await restart(lane.name);
 	session(back, [], Date.now() - 27 * 60 * MIN);

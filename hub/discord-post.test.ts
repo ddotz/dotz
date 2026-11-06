@@ -30,7 +30,7 @@ test("a kind switched off stays on the web; an answer to a message written on Di
 	expect(discordPosts("alert")).toBe(false);
 	expect(discordPosts("lane:x")).toBe(true);
 	expect(discordPosts("worklog")).toBe(true);
-	expect(discordPosts("main", "1559940386452152350")).toBe(true);   // a Discord message id: he asked there
+	expect(discordPosts("main", "1500000000001252350")).toBe(true);   // a Discord message id: he asked there
 	expect(discordPosts("main", "web-1729900000000")).toBe(false);
 	expect(postKind("lane:a")).toBe("lanes");
 });
@@ -50,7 +50,7 @@ test("first start: today's routing where Discord is connected, web only where it
 test("a session started from the web never posts to Discord, whatever the lanes switch", () => {
 	setWebLane(name => name === "webby");
 	expect(discordPosts("lane:webby")).toBe(false);
-	expect(discordPosts("lane:webby", "1559940386452152350")).toBe(false);
+	expect(discordPosts("lane:webby", "1500000000001252350")).toBe(false);
 	expect(discordPosts("lane:other")).toBe(true);
 });
 
@@ -110,10 +110,10 @@ test("a given class decides, whatever the target's kind; without one the target'
 
 test("an answer to a Discord message still posts when its class is off; a web lane never posts, whatever the class", () => {
 	savePostSettings({ conv: false, result: true });
-	expect(discordPosts("main", "1559940386452152350", "conv")).toBe(true);
+	expect(discordPosts("main", "1500000000001252350", "conv")).toBe(true);
 	expect(discordPosts("main", "web-1729900000000", "conv")).toBe(false);
 	setWebLane(name => name === "webby");
 	expect(discordPosts("lane:webby", undefined, "result")).toBe(false);
-	expect(discordPosts("lane:webby", "1559940386452152350", "result")).toBe(false);
+	expect(discordPosts("lane:webby", "1500000000001252350", "result")).toBe(false);
 	expect(discordPosts("lane:other", undefined, "result")).toBe(true);
 });

@@ -29,7 +29,7 @@ test("refLines names each pick by its id with what runs now, and says when it is
 
 test("inboxText prints the reference lines right after the text of their part", () => {
 	const refs = refLines(ownerRefs([{ kind: "task", id: "st_mail", label: "메일 알림 마무리" }]), WORLD);
-	const l = inboxText({ kind: "message", source: "web", channel: "web", mid: "m-ref", author: "someone", text: "@메일 알림 마무리 이거 멈춰", refs }).split("\n");
+	const l = inboxText({ kind: "message", source: "web", channel: "web", mid: "m-ref", author: "owner", text: "@메일 알림 마무리 이거 멈춰", refs }).split("\n");
 	const body = l.indexOf("@메일 알림 마무리 이거 멈춰");
 	expect(body).toBeGreaterThan(-1);
 	expect(l[body + 1]).toBe(`[지칭] @메일 알림 마무리 = task st_mail "메일 알림 마무리" (running, folder /tmp/wt-mail)`);

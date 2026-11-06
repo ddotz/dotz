@@ -3,7 +3,7 @@
    same event stream frames the gateway sends (kind "message" / "out" / "notice"), so the app draws them as it draws real ones. */
 (() => {
   const F = window.DEMO_FIXTURES;
-  // 한글 문서 자동화: the prototype's first project (site/prototype/data.js), so #project/ch:5 reads like #project/private-project. Its purpose is the raw
+  // 한글 문서 자동화: the prototype's first project (site/prototype/data.js), so #project/ch:5 reads like #project/docgen. Its purpose is the raw
   // text a real project carries (paths, repos, ports, file names) on purpose: the screens must show it as a plain sentence.
   {
     const { now, ago } = F;

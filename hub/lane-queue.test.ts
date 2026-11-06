@@ -130,7 +130,7 @@ test("a lane's worker slots come from the limits at spawn and go to the runtime"
 	l.stopLane("slots-b");
 });
 
-// Mac mini 2026-10-29: company-allowance-review's spawn threw and the lane stayed "starting", so company-loss-review waited for memory behind it.
+// Mac mini 2026-10-29: acme-allowance-review's spawn threw and the lane stayed "starting", so acme-loss-review waited for memory behind it.
 test("a lane whose start throws ends at once and holds no slot", () => {
 	setMachineProbe(rich);
 	const before = activeCount();

@@ -2,7 +2,7 @@
 // anthropic/claude-sonnet-5-5:high on the API key in a fresh session with a handover (never the same session), lanes stay on
 // the subscription without a key, the subscription's usage report holds the return while it is still out and brings the
 // orchestrator back to Opus medium in a fresh session as soon as it is usable, the alert channel hears the API episode once
-// at its start and once at its end, and while host-shared is pinned no API key is used at all.
+// at its start and once at its end, and while teammate-shared is pinned no API key is used at all.
 // API_FALLBACK_SIM_LOG=<file> also writes each step as one line (the evidence log).
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -238,12 +238,12 @@ test("failed probe before the reset time: no restart before it, one fall-back no
 	await advance(300);
 }, 60_000);
 
-test("simulated 429 while host-shared is pinned: no API key, the orchestrator pauses on the subscription", async () => {
+test("simulated 429 while teammate-shared is pinned: no API key, the orchestrator pauses on the subscription", async () => {
 	// the install names the account in config guard.no_api_key_accounts (hub/apikey-policy.ts); the code bans none by itself
 	const conf = join(DATA_DIR, "config.json"), had = existsSync(conf) ? readFileSync(conf, "utf8") : undefined;
 	const c = had ? JSON.parse(had) : {};
-	writeFileSync(conf, JSON.stringify({ ...c, guard: { ...(c.guard ?? {}), no_api_key_accounts: ["host-shared"] } }));
-	writeFileSync(authFile, JSON.stringify({ "anthropic-subscription": { pinned: "host-shared" } }));
+	writeFileSync(conf, JSON.stringify({ ...c, guard: { ...(c.guard ?? {}), no_api_key_accounts: ["teammate-shared"] } }));
+	writeFileSync(authFile, JSON.stringify({ "anthropic-subscription": { pinned: "teammate-shared" } }));
 	alerts.length = 0;
 	const sub = await startOnSubscription();
 	o.deliver("hello", true);
@@ -253,7 +253,7 @@ test("simulated 429 while host-shared is pinned: no API key, the orchestrator pa
 	expect(current().opts.env.DOTZ_KEY_VALUE).toBeUndefined();
 	expect(o.orch.status).toBe("rate-limited");
 	expect(alerts.some(a => a.includes("API key in use"))).toBe(false);
-	log(`pinned  host-shared pinned, simulated 429 -> status ${o.orch.status}, still ${o.orch.activeModel}, no key`);
+	log(`pinned  teammate-shared pinned, simulated 429 -> status ${o.orch.status}, still ${o.orch.activeModel}, no key`);
 	o.stop();
 	await advance(300);
 	rmSync(authFile, { force: true });

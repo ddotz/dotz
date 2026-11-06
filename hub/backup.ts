@@ -1,5 +1,5 @@
 // Optional off-machine copy of the ~/.dotz git snapshot (config `backup.remote`, off by default). Nothing leaves the
-// machine unless every file about to be pushed passes the secret scan below (ported from someone backup.py).
+// machine unless every file about to be pushed passes the secret scan below (ported from the earlier secretary's backup.py).
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { machineHost } from "./hostname.ts";

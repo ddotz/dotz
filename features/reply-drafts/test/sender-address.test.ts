@@ -10,27 +10,27 @@ const env = setupEnv();
 afterAll(env.cleanup);
 enable(env, { apps: { mail: { auto: true } } });
 
-const BODY = "안녕하세요. 자료 확인 부탁드립니다.\n\n감사합니다.\nredacted Lee (KR)\nEmail:\nsomeone@example.com\n\n보낸 사람: redacted <me@corp.example>";
-const mail = { key: "company-1", target: "main", source: "company", id: "1", subject: "Re: 자료 요청", from: "redacted Lee (KR - A", to: "me@corp.example", body: BODY };
+const BODY = "안녕하세요. 자료 확인 부탁드립니다.\n\n감사합니다.\nJisoo Han (KR)\nEmail:\njisoo.han@audit.example\n\n보낸 사람: 홍길동 <me@corp.example>";
+const mail = { key: "acme-1", target: "main", source: "acme", id: "1", subject: "Re: 자료 요청", from: "Jisoo Han (KR - A", to: "me@corp.example", body: BODY };
 const reply = (to: string) => j({ action: "draft", reason: "asks", to, subject: "Re: 자료 요청", body: "확인했습니다.", questions: [] });
 
 test("a name-only, cut-off sender gets a draft to the address the mail's own text names, with no recipient warning", async () => {
 	const sent: string[] = [];
-	const r = await offerMailDraft(mail, { send: (_t, text) => sent.push(text), call: fakeModel([reply("redacted Lee (KR - A")]).call });
+	const r = await offerMailDraft(mail, { send: (_t, text) => sent.push(text), call: fakeModel([reply("Jisoo Han (KR - A")]).call });
 	expect(r).toBe("offered");
-	const d = listDrafts().find(x => x.ref === "company-1")!;
-	expect(d.to).toBe("someone@example.com");
-	expect(d.item.from).toBe("redacted Lee <someone@example.com>");
-	expect(sent[0]).toContain("> 받는이: someone@example.com");
+	const d = listDrafts().find(x => x.ref === "acme-1")!;
+	expect(d.to).toBe("jisoo.han@audit.example");
+	expect(d.item.from).toBe("Jisoo Han <jisoo.han@audit.example>");
+	expect(sent[0]).toContain("> 받는이: jisoo.han@audit.example");
 	expect(sent[0]).not.toContain("no recipient");
 });
 
-const stale = (over: Partial<DraftRec> = {}): DraftRec => ({ id: "ROLD1", kind: "mail", app: "mail", source: "company", mailId: "2", ref: "company-2", to: "redacted Lee (KR - A", subject: "Re: 자료 요청", body: "확인했습니다.", status: "pending", created: new Date(Date.now() - 60_000).toISOString(), changes: [], questions: [], item: { kind: "mail", from: "redacted Lee (KR - A", self: ["me@corp.example"], subject: "Re: 자료 요청", text: BODY }, ...over });
+const stale = (over: Partial<DraftRec> = {}): DraftRec => ({ id: "ROLD1", kind: "mail", app: "mail", source: "acme", mailId: "2", ref: "acme-2", to: "Jisoo Han (KR - A", subject: "Re: 자료 요청", body: "확인했습니다.", status: "pending", created: new Date(Date.now() - 60_000).toISOString(), changes: [], questions: [], item: { kind: "mail", from: "Jisoo Han (KR - A", self: ["me@corp.example"], subject: "Re: 자료 요청", text: BODY }, ...over });
 
 test("a draft made before the fix shows and sends with the recovered address; the stored draft is corrected once", async () => {
-	addDraft(stale({ questions: ["The sender's email address is cut off at \"redacted Lee KR - A\". Please enter the recipient address before sending.", "회신 기한"] }));
+	addDraft(stale({ questions: ["The sender's email address is cut off at \"Jisoo Han KR - A\". Please enter the recipient address before sending.", "회신 기한"] }));
 	const card = askText(getDraft("ROLD1")!, ["no recipient address in 'to'"]);
-	expect(card).toContain("> 받는이: redacted Lee <someone@example.com>");
+	expect(card).toContain("> 받는이: Jisoo Han <jisoo.han@audit.example>");
 	expect(card).toContain("정할 것:\n- 회신 기한\n");
 	expect(card).not.toContain("cut off");
 	expect(askText(getDraft("ROLD1")!, ["no recipient address in 'to'"])).not.toContain("확인:");
@@ -38,12 +38,12 @@ test("a draft made before the fix shows and sends with the recovered address; th
 	const seen: DraftRec[] = [];
 	const r = await sendDraft("ROLD1", { send: async rec => (seen.push(rec), { ok: true, message: "보냈어요" }) });
 	expect(r.ok).toBe(true);
-	expect(seen[0]!.to).toBe("redacted Lee <someone@example.com>");
-	expect(getDraft("ROLD1")!.to).toBe("redacted Lee <someone@example.com>");
+	expect(seen[0]!.to).toBe("Jisoo Han <jisoo.han@audit.example>");
+	expect(getDraft("ROLD1")!.to).toBe("Jisoo Han <jisoo.han@audit.example>");
 });
 
 test("no address anywhere: the card asks for it in Korean and 보내기 is refused with a Korean reason, nothing sent", async () => {
-	addDraft(stale({ id: "ROLD2", ref: "company-3", item: { kind: "mail", from: "redacted Lee (KR - A", self: ["me@corp.example"], subject: "Re: 자료 요청", text: "주소가 없는 본문" } }));
+	addDraft(stale({ id: "ROLD2", ref: "acme-3", item: { kind: "mail", from: "Jisoo Han (KR - A", self: ["me@corp.example"], subject: "Re: 자료 요청", text: "주소가 없는 본문" } }));
 	expect(askText(getDraft("ROLD2")!, ["no recipient address in 'to'"])).toContain("확인: 받는 사람의 메일 주소를 찾지 못했어요");
 	pick(env, "ROLD2", 1);
 	let called = false;

@@ -3,7 +3,7 @@ import { ev, fakeHub, json, run, waitFor } from "./test-web.ts";
 
 // 모니터링 lists a monitor under the section its hub-sent `scope` names: an app's under the app, a project's in its own 프로젝트 group, 일반 모니터링 only for the unowned;
 // internal housekeeping stays out of sight until it fails. Headless.
-const CH = "000000000000000000";
+const CH = "1500000000001908448";
 const mon = (watch: string, name: string, extra: object = {}) => ({ name, watch, kind: "watch", last_run: "2026-10-23T03:00:00Z", last_result: "ok", every: "30분마다", fails: 0, connection: "connected", ...extra });
 const app = { key: "mail", label: "메일", kind: "app", icon: "mail", app: "mail", conv: ["mail:"], unread: 0, unreplied: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: 0 } };
 let monitors: object[] = [];

@@ -13,7 +13,7 @@ function deps(): { deps: MailDeps; events: Record<string, unknown>[] } {
 		deps: {
 			createThread: async () => ({ id: "143000000000000001" }),
 			send: async () => undefined,
-			mailChannel: async () => "000000000000000000",
+			mailChannel: async () => "1500000000001908448",
 			discordOn: true,
 			threadOn: () => true,
 			emit: e => void events.push(e as Record<string, unknown>),
@@ -28,7 +28,7 @@ describe("opening a sent mail", () => {
 	test("a sent mail with no conversation opens on the mail itself, body included", async () => {
 		const { deps: d, events } = deps();
 		const id = uid();
-		const r = await postMail({ source: "company", id, from: "Owner <owner@example.com>", to: "Kim <kim@example.com>", subject: "일정 문의", body: "안녕하세요.\n다음 주 일정 건 문의드립니다.", direction: "out" }, d);
+		const r = await postMail({ source: "acme", id, from: "Owner <owner@example.com>", to: "Kim <kim@example.com>", subject: "일정 문의", body: "안녕하세요.\n다음 주 일정 건 문의드립니다.", direction: "out" }, d);
 		expect(r).toMatchObject({ direction: "out", html: true });
 		expect(events).toEqual([]);
 		const ev = sentMailEvent(r.key);
@@ -40,7 +40,7 @@ describe("opening a sent mail", () => {
 	test("a sent mail reported without its body takes it when reported again", async () => {
 		const { deps: d } = deps();
 		const id = uid();
-		const bare = { source: "company", id, from: "Owner <owner@example.com>", to: "Lee <lee@example.com>", subject: "자료 송부", direction: "out" as const };
+		const bare = { source: "acme", id, from: "Owner <owner@example.com>", to: "Lee <lee@example.com>", subject: "자료 송부", direction: "out" as const };
 		const first = await postMail(bare, d);
 		expect(mailByKey(first.key)?.html).toBeUndefined();
 		expect(sentMailEvent(first.key)).toMatchObject({ subject: "자료 송부", to: "Lee <lee@example.com>" });
@@ -54,7 +54,7 @@ describe("opening a sent mail", () => {
 	// A poster marks a sent mail done only on `html` in the answer: a body-less record must not answer it, one that holds its body must.
 	test("a repost answers html only when the body is kept", async () => {
 		const { deps: d } = deps();
-		const bare = { source: "company", id: uid(), from: "Owner <owner@example.com>", to: "Park <park@example.com>", subject: "검토의견", direction: "out" as const };
+		const bare = { source: "acme", id: uid(), from: "Owner <owner@example.com>", to: "Park <park@example.com>", subject: "검토의견", direction: "out" as const };
 		await postMail(bare, d);
 		expect((await postMail(bare, d)).html).toBeUndefined();
 		await postMail({ ...bare, body: "검토의견 송부드립니다." }, d);

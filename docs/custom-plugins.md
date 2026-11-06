@@ -129,5 +129,5 @@ curl -s -X POST http://127.0.0.1:<web.port>/api/apps -H "x-dotz-token: <hub toke
 ```
 
 - `filter.source` = the `source` the plugin posts; the instance owns the mails `mail:<source>-…` (a source must not be the start of another one joined with a hyphen). `filter.watches` = the plugin's watch names (a name ending in `-` is a prefix): they pause when the instance is off and go with 제거 and 삭제, and the default 메일 instance stops claiming them.
-- The default 메일 instance keeps every mail no other instance claims, so existing installs look the same. By hand, `custom/apps.json` takes the same shape (`{"mail-2":{"app":"mail","label":"…","filter":{…}}}`) and `{"mail":{"watches":["company-login"]}}` adds watch names to an instance without a filter.
+- The default 메일 instance keeps every mail no other instance claims, so existing installs look the same. By hand, `custom/apps.json` takes the same shape (`{"mail-2":{"app":"mail","label":"…","filter":{…}}}`) and `{"mail":{"watches":["acme-login"]}}` adds watch names to an instance without a filter.
 - The owner renames an instance in its settings panel (`label`) and deletes an off one in 앱 관리; `DELETE /api/apps/<id>[?data=1]` is the same call.

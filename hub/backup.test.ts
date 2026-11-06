@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { backupBranch } from "./backup.ts";
 
 test("backupBranch gives each computer its own branch, never main", () => {
-	expect(backupBranch("host.local")).toBe("backup/host");
-	expect(backupBranch("someone-MacBook-Pro.local.")).toBe("backup/someone-macbook-pro");
-	expect(backupBranch("host")).not.toBe(backupBranch("host"));
+	expect(backupBranch("owner-Mac-mini.local")).toBe("backup/owner-mac-mini");
+	expect(backupBranch("Owner-MacBook-Pro.local.")).toBe("backup/owner-macbook-pro");
+	expect(backupBranch("owner-mac-mini")).not.toBe(backupBranch("owner-macbookpro"));
 });
 
 test("backupBranch sanitizes odd or empty hostnames", () => {

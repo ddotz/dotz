@@ -866,6 +866,7 @@ dialog.lbox::backdrop { background: transparent; }
 .ccard { max-width: 560px; padding: var(--sp-4); border-radius: var(--r-card); background: var(--card); }
 /* the session-result card sits straight in the timeline column: as wide as the replies and the composer, not the 560px a command answer gets */
 .bm.res > .ccard { max-width: none; }
+.bm.res .cc-hd + .md { margin-top: var(--sp-2); }
 @media (max-width: 639px) { .tl-in > .bm.res { padding: 0; } .bm.res > .mt { padding: 0 var(--sp-4); } }
 /* a message from another computer's gateway (01-peer-msg.js): the computer, the kind, then the words */
 .bm.pmc > .ccard { padding: var(--sp-3) var(--sp-4); background: var(--layer); }
@@ -2392,7 +2393,7 @@ dialog.dlg.shell .dact { display: none; }
 .md .mlist-src .mlist-av { width: 28px; height: 28px; border-radius: var(--r-seg); font-size: var(--fs-sec); }
 .md .mlist-src .mlist-t { font: 500 var(--fs-sec)/var(--lh-sec) var(--font); }
 .md .mlist-src .mlist-s { font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
-.md .mlist-src .mlist-h, .md .mlist-src .mlist-av, .md .mlist-src .mlist-main { -webkit-user-select: none; user-select: none; }
+.md .mlist-src .mlist-av { -webkit-user-select: none; user-select: none; }
 .md .mlist-url { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .md .mlist-b { min-width: 20px; height: 20px; padding: 0 var(--sp-15); border-radius: 10px; background: var(--err); color: #fff; font: 600 11px/20px var(--font); text-align: center; }
 
@@ -4124,6 +4125,15 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 
 /* 말투, 답장 지시, 인사말 */
 .mxs-sum { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.mxs-rowb { display: flex; align-items: center; gap: var(--sp-3); }
+.mxs-rowb .mxs-h { flex: 1; min-width: 0; }
+.mxs-vb { flex: none; display: flex; gap: var(--sp-2); }
+.mxs-ex { display: flex; flex-direction: column; gap: var(--sp-5); min-height: 0; overflow-y: auto; padding: var(--sp-2) var(--sp-6) var(--sp-5); }
+.mxs-exi { display: flex; flex-direction: column; gap: var(--sp-2); }
+.mxs-exi .mxs-k { line-height: var(--lh-sec); }
+.mxs-exi .mxs-h { margin: 0; }
+.mxs-exi .mxs-sum { white-space: pre-wrap; }
+@media (max-width: 639px) { .mxs-rowb { flex-direction: column; align-items: flex-start; } .mxs-ex { padding-left: var(--sp-4); padding-right: var(--sp-4); } }
 .mxs-fx { margin: 0; padding-left: var(--sp-5); color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
 .mxs-ta { height: auto; min-height: calc(var(--field-h) * 2); padding: var(--sp-2) var(--sp-3); font-family: inherit; line-height: var(--lh-body); resize: vertical; }
 .mxs-gl { display: flex; flex-direction: column; }
@@ -4693,9 +4703,9 @@ body { display: flow-root; }
 @media (max-width: 639px) { .dsk-pill { flex: 0 1 auto; min-width: 0; max-width: 40%; } }
 .pr-line { display: flex; align-items: center; gap: var(--sp-1); }
 .pr-line .pr-row { flex: 1; min-width: 0; }
-.btn.tonal.pr-desk { flex: none; margin-right: var(--sp-2); background: var(--hover); white-space: nowrap; }
-.btn.tonal.pr-desk:hover { background: var(--active); }
-.anch .btn.tonal.pr-desk { margin-right: var(--sp-1); }
+.btn.tonal.pr-desk, .btn.tonal.pr-forget { flex: none; margin-right: var(--sp-2); background: var(--hover); white-space: nowrap; }
+.btn.tonal.pr-desk:hover, .btn.tonal.pr-forget:hover { background: var(--active); }
+.anch .btn.tonal.pr-desk, .anch .btn.tonal.pr-forget { margin-right: var(--sp-1); }
 @media (min-width: 700px) { .ds-bd.anch .ds-sheet.pr-sheet { width: 280px; } }
 
 /* 화면 안내 (web/js/42-intro.js): the spotlight is a hole in the scrim over a real menu, the card sits next to it (above the tab bar on a phone) or in the middle. */

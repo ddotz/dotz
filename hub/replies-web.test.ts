@@ -38,15 +38,15 @@ const PEER_KAKAO = app("kakao", "카카오톡", "chat", [], { drafts: 1, unread:
 const T = { peerMail: iso(0), peerKakao: iso(1), localKakao: iso(2), localMail: iso(3), localComment: iso(5) };
 let localReplies = [kakaoDraft("K1", T.localKakao), commentDraft(T.localComment)];
 let peerReplies = [kakaoDraft("PK1", T.peerKakao, { room: "공부 모임" })];
-let peerNote = mailDraft("dp", "mail:company-peer", T.peerMail);
-const localNote = mailDraft("dl", "mail:company-local", T.localMail, [{ name: "견적서.pdf", size: "2.1MB" }]);
+let peerNote = mailDraft("dp", "mail:acme-peer", T.peerMail);
+const localNote = mailDraft("dl", "mail:acme-local", T.localMail, [{ name: "견적서.pdf", size: "2.1MB" }]);
 localNote.decision.draft = { ...localNote.decision.draft, warning: "받는이 주소가 처음이에요" };
 // What the hub's GET /api/replies adds: failed sends (three mail ones of one reason, one comment reply without a reason, two KakaoTalk sends of one reason), today's sent ones,
 // and why a rule did not send a draft.
 const mkFail = (key: string, extra: object) => ({ key, kind: "mail", app: "mail", who: "Kim", what: "견적 요청", at: Date.now() - 9 * 60_000, text: "견적서를 보내 드려요.", ...extra });
 const FAILED = () => [
-	mkFail("F1", { ref: "r1", conv: "mail:company-a", why: "서버가 응답하지 않았어요" }), mkFail("F2", { ref: "r2", conv: "mail:company-b", why: "서버가 응답하지 않았어요", at: Date.now() - 10 * 60_000 }),
-	mkFail("F3", { ref: "r3", conv: "mail:company-c", why: "서버가 응답하지 않았어요", at: Date.now() - 11 * 60_000 }),
+	mkFail("F1", { ref: "r1", conv: "mail:acme-a", why: "서버가 응답하지 않았어요" }), mkFail("F2", { ref: "r2", conv: "mail:acme-b", why: "서버가 응답하지 않았어요", at: Date.now() - 10 * 60_000 }),
+	mkFail("F3", { ref: "r3", conv: "mail:acme-c", why: "서버가 응답하지 않았어요", at: Date.now() - 11 * 60_000 }),
 	mkFail("FC", { kind: "comment", app: "youtube", who: "가나", what: "첫 번째 영상", sendId: "cs1", at: Date.now() - 12 * 60_000 }),
 	mkFail("FK1", { kind: "kakao", app: "kakao", who: "가나다 모임", what: "카카오톡 답장", chatId: "100", sendId: "s1", ref: "kr1", why: "카카오톡 창이 닫혀 있어요", at: Date.now() - 13 * 60_000 }),
 	mkFail("FK2", { kind: "kakao", app: "kakao", who: "가나다 모임", what: "카카오톡 답장", chatId: "100", sendId: "s2", ref: "kr2", why: "카카오톡 창이 닫혀 있어요", at: Date.now() - 14 * 60_000 }),
@@ -57,8 +57,8 @@ const SENT = () => [
 ];
 const STOP_K1 = "상대가 처음 보내는 사람이에요";
 let failedList: ReturnType<typeof FAILED> = FAILED(), sentList: object[] = SENT();
-const conv = (t: string) => ({ target: t, mail: { key: t.slice(5), subject: "견적 요청", from: "Kim <kim@example.com>", source: "company", at: T.localMail, summary: "다음 주까지 견적을 받고 싶어요.", reply: "draft", unreplied: true }, last: { ts: T.localMail, text: "견적 요청 메일", via: "company" }, unread: 0 });
-const snapshot = () => ({ name: "맥미니", rev: `r${peerReplies.length}${peerNote.decision.state}`, monitors: [], notices: [peerNote], integrations: [PEER_MAIL, PEER_KAKAO], available: [], conversations: [conv("mail:company-peer")], replies: peerReplies, failed: [], sent: [], stops: {} });
+const conv = (t: string) => ({ target: t, mail: { key: t.slice(5), subject: "견적 요청", from: "Kim <kim@example.com>", source: "acme", at: T.localMail, summary: "다음 주까지 견적을 받고 싶어요.", reply: "draft", unreplied: true }, last: { ts: T.localMail, text: "견적 요청 메일", via: "acme" }, unread: 0 });
+const snapshot = () => ({ name: "맥미니", rev: `r${peerReplies.length}${peerNote.decision.state}`, monitors: [], notices: [peerNote], integrations: [PEER_MAIL, PEER_KAKAO], available: [], conversations: [conv("mail:acme-peer")], replies: peerReplies, failed: [], sent: [], stops: {} });
 
 const acts: { action: string; args: Record<string, unknown> }[] = [];
 const localPosts: { path: string; body: unknown }[] = [];
@@ -80,8 +80,8 @@ const server = Bun.serve({
 		if (p === "/api/monitors") return json({ items: [] });
 		if (p === "/api/notices") return json({ unread: 1, items: [localNote] });
 		if (p === "/api/integrations") return json({ items: [LOCAL_MAIL, LOCAL_KAKAO, LOCAL_YOUTUBE], available: [] });
-		if (p === "/api/conversations") return json({ items: [conv("mail:company-local")] });
-		if (p === "/api/drafts/og1/original") return json({ kind: "mail", key: "company-og", from: "Kim <kim@example.com>", date: T.localMail, subject: "견적 요청", text: "안녕하세요.\n\n다음 주까지 견적을 받고 싶어요. 수량은 100개예요.", html: false, attachments: [] });
+		if (p === "/api/conversations") return json({ items: [conv("mail:acme-local")] });
+		if (p === "/api/drafts/og1/original") return json({ kind: "mail", key: "acme-og", from: "Kim <kim@example.com>", date: T.localMail, subject: "견적 요청", text: "안녕하세요.\n\n다음 주까지 견적을 받고 싶어요. 수량은 100개예요.", html: false, attachments: [] });
 		if (p === "/api/drafts/og2/original") return json({ kind: "comment", key: "og2", author: "가나", date: T.localComment, text: "자막 언제 나와요? 기다리고 있어요.", post: { kind: "youtube", title: "첫 번째 영상" } });
 		if (p === "/api/replies") { repliesReads++; return json({ items: localReplies, failed: failedList, sent: sentList, stops: { K1: STOP_K1 } }); }
 		if (p === "/api/monitoring/peers") { peerReads++; return json([{ name: "맥미니", url: MINI, online: true, stale: false, items: snapshot() }]); }
@@ -124,7 +124,7 @@ const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const boot = async (width: number, height: number) => {
 	localReplies = [kakaoDraft("K1", T.localKakao), commentDraft(T.localComment)];
 	peerReplies = [kakaoDraft("PK1", T.peerKakao, { room: "공부 모임" })];
-	peerNote = mailDraft("dp", "mail:company-peer", T.peerMail);
+	peerNote = mailDraft("dp", "mail:acme-peer", T.peerMail);
 	failedList = FAILED(); sentList = SENT();
 	acts.length = 0; localPosts.length = 0;
 	const v = new Bun.WebView({ width, height });
@@ -215,7 +215,7 @@ describe.each([[390, 844], [1280, 900]])("답장 대기 at %ipx", (width, height
 		expect(localPosts.map(x => x.path)).toEqual(["/api/approvals/failed", "/api/kakao/chat/100/send/s1/retry", "/api/kakao/chat/100/send/s2/retry", "/api/comments/sends/cs1/retry"]);
 		const mail = localPosts[0]!.body as { op: string; items: { ref: string; to: string }[] };
 		expect(mail.op).toBe("retry");
-		expect(mail.items.map(i => [i.ref, i.to]).sort()).toEqual([["r1", "mail:company-a"], ["r2", "mail:company-b"], ["r3", "mail:company-c"]]);
+		expect(mail.items.map(i => [i.ref, i.to]).sort()).toEqual([["r1", "mail:acme-a"], ["r2", "mail:acme-b"], ["r3", "mail:acme-c"]]);
 		expect(localPosts.some(x => x.path === "/api/approvals")).toBe(false);   // nothing was answered with a pick
 		expect(acts).toEqual([]);
 		expect(await q<string>(v, `return document.querySelector("#nav-mon").textContent`)).toBe("5");   // the failures left the number

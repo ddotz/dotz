@@ -1299,12 +1299,12 @@ test("an answer in a monitor's settings conversation is titled with the monitor'
 
 test("the gateway's own worklog status lines are born read; a gateway failure and the assistant's worklog post there still wait", () => {
 	post("worklog", "모델 폴백: anthropic/claude-opus-5-5 → anthropic/claude-sonnet-5", { source: "gateway" });
-	post("worklog", "계정을 default에서 host-shared로 바꿨어요. 직접 골랐기 때문이에요.", { source: "gateway" });
+	post("worklog", "계정을 default에서 teammate-shared로 바꿨어요. 직접 골랐기 때문이에요.", { source: "gateway" });
 	post("worklog", "게이트웨이 재시작을 기다리는 중이에요: orchestrator 작업이 끝나면 다시 시작해요", { source: "gateway" });
 	post("worklog", "[fail] 자동 업데이트를 하지 못했어요", { source: "gateway" });
 	post("worklog", "[run] 야간 정리 시작했어요");
 	expect(byText("모델 폴백: anthropic/claude-opus-5-5 → anthropic/claude-sonnet-5")[0]!.read).toBe(true);
-	expect(byText("계정을 default에서 host-shared로 바꿨어요. 직접 골랐기 때문이에요.")[0]!.read).toBe(true);
+	expect(byText("계정을 default에서 teammate-shared로 바꿨어요. 직접 골랐기 때문이에요.")[0]!.read).toBe(true);
 	expect(byText("게이트웨이 재시작을 기다리는 중이에요: orchestrator 작업이 끝나면 다시 시작해요")[0]!.read).toBe(true);
 	expect(byText("자동 업데이트를 하지 못했어요")[0]!.read).toBe(false);
 	expect(byText("야간 정리 시작했어요")[0]!.read).toBe(false);

@@ -415,7 +415,7 @@ export function restoreLanes(): string[] {
 // (a restart killed the shell of a turn that had ended 88 s earlier, site-demo-proto 2026-11-04 01:11; 0.6 s, prototype-to-product 00:44).
 // A shell left running after a [done] or an [ask] (a dev server, say) is not what the lane waits on.
 // Only a live process is busy: a queued lane or one whose spawn failed has nothing a gateway restart could cut off (the Mac mini's
-// restart waited on the dead company-allowance-review, 2026-10-29). `shells` false leaves the shell out: the idle stop bounds it itself.
+// restart waited on the dead acme-allowance-review, 2026-10-29). `shells` false leaves the shell out: the idle stop bounds it itself.
 const waitsOnShell = (lane: Lane): boolean => backgroundWork(lane.sessionFile) > 0 && !closesTurn(lane.lastText);
 export const laneBusy = (lane: Lane, shells = true): boolean =>
 	(Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting" || runningOmoWorkers(lane.sessionFile) > 0 || (shells && waitsOnShell(lane)))) ||

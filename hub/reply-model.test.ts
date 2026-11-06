@@ -189,7 +189,7 @@ describe("the draft paths call the model they resolved", () => {
 	test("a mail conversation's reply draft keeps the mail app's reply model, whatever the orchestrator runs on", async () => {
 		const { seen, call } = recorder();
 		writeSettings(dir, "mail", { reply_model: `${SONNET}:medium` });
-		await callReplyModel("mail", "mail:company-67010497", "s", "u", call, { dataDir: dir });
+		await callReplyModel("mail", "mail:acme-67010497", "s", "u", call, { dataDir: dir });
 		expect(seen.map(s => s.model)).toEqual([`${SONNET}:medium`]);
 	});
 });

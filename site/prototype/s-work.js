@@ -69,7 +69,7 @@
 
   const laneRow = (l) => `<a class="li" href="#chat/lane"><span class="lead"><span class="dot ${l[3]}"></span></span><span class="tx"><span class="hd">${h(l[0])}</span><span class="sup">${h(l[1])}</span></span><span class="end"><span class="tag ${tagFor(l[3])}">${h(l[2])}</span></span></a>`;
   P.reg({ id: "sessions", title: "세션과 채널", tab: "projects", back: "projects", group: "프로젝트", desc: "세션 목록 · 작업 채널 · 홈 채널",
-    render: () => `<div class="sec">세션</div><div class="list">${[["공문 초안 채우기", "private-project-fill · 한글 문서 자동화", "일하는 중", "pri"], ["가격 수집", "price-scan · 가격 조사", "일하는 중", "pri"], ["배포 공지 초안", "notes-draft · 릴리스 노트", "답을 기다려요", "warn"], ["랜딩 페이지 점검", "site-check · 랜딩 페이지", "쉬는 중", ""]].map(laneRow).join("")}</div>
+    render: () => `<div class="sec">세션</div><div class="list">${[["공문 초안 채우기", "docgen-fill · 한글 문서 자동화", "일하는 중", "pri"], ["가격 수집", "price-scan · 가격 조사", "일하는 중", "pri"], ["배포 공지 초안", "notes-draft · 릴리스 노트", "답을 기다려요", "warn"], ["랜딩 페이지 점검", "site-check · 랜딩 페이지", "쉬는 중", ""]].map(laneRow).join("")}</div>
     <div class="sec">작업 채널</div><div class="list">${D.projects.map((p) => `<a class="li" href="#project/${p.id}"><span class="ico">${ic("folder")}</span><span class="tx"><span class="hd">${h(p.name)}</span><span class="sup">세션 ${p.lanes.length}개 연결</span></span><span class="end">${ic("chev", "chev")}</span></a>`).join("")}</div>
     <div class="sec">홈 채널</div><div class="list">${link("chat/alert", "bell", "알림", "밖에서 오너가 필요한 일", '<span class="bd">2</span>')}${link("chat/worklog", "list", "작업 기록", "오너가 안 보는 동안 일어난 일")}</div>` });
 

@@ -9,8 +9,8 @@ import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 const SHOTS = process.env.ACCOUNTS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
-const NAMES = ["default", "host-shared", "work-long-account-name@example.com", "backup", "team"];
-const LABELS: Record<string, string> = { default: "개인 계정", "host-shared": "someone 공용 계정", "work-long-account-name@example.com": "회사 계정 (긴 이름 확인용)", backup: "backup", team: "팀" };
+const NAMES = ["default", "teammate-shared", "work-long-account-name@example.com", "backup", "team"];
+const LABELS: Record<string, string> = { default: "개인 계정", "teammate-shared": "공용 계정", "work-long-account-name@example.com": "회사 계정 (긴 이름 확인용)", backup: "backup", team: "팀" };
 let mode: "auto" | "pinned" = "auto";
 let pin = "default";
 let order = [...NAMES];
@@ -24,9 +24,9 @@ const stateBody = () => ({
 		alias: LABELS[name] === name ? null : LABELS[name],
 		label: LABELS[name],
 		current: name === pin,
-		blocked: name === "host-shared" ? "rate_limit" : null,
+		blocked: name === "teammate-shared" ? "rate_limit" : null,
 		blocked_until: null,
-		blocked_tag: name === "host-shared" ? "한도 걸림 · 01:00까지" : null,
+		blocked_tag: name === "teammate-shared" ? "한도 걸림 · 01:00까지" : null,
 		five_hour_left: 62 - i * 9,
 		seven_day_left: 80 - i * 11,
 	})),
@@ -141,7 +141,7 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1440, 900]] as con
 		expect(await q(v, `return [document.querySelectorAll(".li.acc.drag").length, [...document.querySelectorAll(".li.acc")].map(r => r.style.transform !== "")]`)).toEqual([1, [true, true, true, false, false]]);
 		await fire(v, "pointerup", "document", r0.top + 1);
 		await waitFor(v, `document.querySelector(".li.acc .acc-grip").dataset.acc === "work-long-account-name@example.com"`);
-		expect(calls.at(-1)).toEqual(["/api/accounts/order", { order: ["work-long-account-name@example.com", "default", "host-shared", "backup", "team"] }]);
+		expect(calls.at(-1)).toEqual(["/api/accounts/order", { order: ["work-long-account-name@example.com", "default", "teammate-shared", "backup", "team"] }]);
 		const f = await fit(v);
 		expect(f.nums).toEqual(["1", "2", "3", "4", "5"]);
 		expect(f.over).toEqual([]);
@@ -160,7 +160,7 @@ test("touch: a long press on a row lifts it and a drag saves the order; a tap an
 	await fire(v, "pointermove", "document", r3.top + 1, "touch");
 	await fire(v, "pointerup", "document", r3.top + 1, "touch");
 	await waitFor(v, `[...document.querySelectorAll(".li.acc .acc-grip")].at(-1).dataset.acc === "backup"`);
-	expect(calls.at(-1)).toEqual(["/api/accounts/order", { order: ["default", "host-shared", "work-long-account-name@example.com", "team", "backup"] }]);
+	expect(calls.at(-1)).toEqual(["/api/accounts/order", { order: ["default", "teammate-shared", "work-long-account-name@example.com", "team", "backup"] }]);
 	// 고정: a quick touch tap never starts a drag and still picks the row
 	await run(v, `document.querySelector('.hs-sw[aria-label="자동 전환"]').click()`);
 	await waitFor(v, `document.querySelector(".li.acc.on")`);
@@ -169,8 +169,8 @@ test("touch: a long press on a row lifts it and a drag saves the order; a tap an
 	await fire(v, "pointerup", "document", r1.mid, "touch");
 	expect(await q(v, `return document.querySelectorAll(".li.acc.drag").length`)).toBe(0);
 	await run(v, `${rowEl(1, ".acc-main")}.click()`);
-	await waitFor(v, `document.querySelector(".li.acc.on .acc-grip").dataset.acc === "host-shared"`);
-	expect(calls.at(-1)).toEqual(["/api/accounts/mode", { mode: "pinned", account: "host-shared" }]);
+	await waitFor(v, `document.querySelector(".li.acc.on .acc-grip").dataset.acc === "teammate-shared"`);
+	expect(calls.at(-1)).toEqual(["/api/accounts/mode", { mode: "pinned", account: "teammate-shared" }]);
 	// a drag in 고정 mode reorders without picking, and the click that follows the drop is ignored
 	const [a, b] = [await rowRect(v, 3), await rowRect(v, 0)];
 	await fire(v, "pointerdown", rowEl(3, ".acc-main"), a.mid, "touch");

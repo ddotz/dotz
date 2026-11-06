@@ -18,9 +18,9 @@ const OPTS = [{ n: 1, label: "보내기", desc: "", rec: true }, { n: 2, label: 
 type Dec = { id: string; to: string; at: string; subject: string; body: string; state: string; answer?: string; dismissed?: boolean };
 const notice = (d: Dec) => ({ id: d.id, ts: d.at, updated: d.at, kind: "decision", tone: "ask", title: "이 답장 보낼까요?", text: "이 답장 보낼까요?", open: d.to, src: d.to, at: d.at, read: d.state !== "open",
 	decision: { options: OPTS, to: d.to, reply_to: d.at, group: 1, state: d.state, ...(d.answer ? { answer: d.answer, answered_at: iso(6, 53) } : {}), draft: { toLabel: "받는이", to: "Kim <kim@example.com>", subject: d.subject, body: d.body } } });
-const mail = (subject: string, h: number, reply: string) => ({ subject, from: "Kim <kim@example.com>", to: "me@example.com", source: "company", at: iso(h), summary: `${subject} 요약이에요.`, reply, unreplied: reply !== "replied" });
+const mail = (subject: string, h: number, reply: string) => ({ subject, from: "Kim <kim@example.com>", to: "me@example.com", source: "acme", at: iso(h), summary: `${subject} 요약이에요.`, reply, unreplied: reply !== "replied" });
 const conv = (key: string, subject: string, h: number, reply: string) => ({ target: `mail:${key}`, unread: 0, read: iso(h), mail: mail(subject, h, reply), last: { ts: iso(h), text: subject, from: "bot" } });
-const mailEvent = (t: string, subject: string, h: number) => ({ ts: iso(h), kind: "mail", source: "company", channel: t, conv: t, mail: t.slice(5), subject, from: "Kim <kim@example.com>", to: "me@example.com", text: `Kim <kim@example.com> · ${subject}\n\n${subject} 요약이에요.\n\n원문\n견적서를 보내 주세요.` });
+const mailEvent = (t: string, subject: string, h: number) => ({ ts: iso(h), kind: "mail", source: "acme", channel: t, conv: t, mail: t.slice(5), subject, from: "Kim <kim@example.com>", to: "me@example.com", text: `Kim <kim@example.com> · ${subject}\n\n${subject} 요약이에요.\n\n원문\n견적서를 보내 주세요.` });
 const app = (decs: Dec[]) => ({ key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: decs.filter(d => !d.dismissed).map(d => d.id), unread: 0, unreplied: 1, needs: { drafts: decs.filter(d => d.state === "open").length, unread: 0, sentToday: 0, unreplied: 1 } });
 const shown = (decs: Dec[]) => decs.filter(d => !d.dismissed).map(notice);
 

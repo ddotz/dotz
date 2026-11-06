@@ -16,8 +16,8 @@ const MAILS: Mail[] = [
 	{ key: "fx-gone", subject: "기록이 없는 메일", from: "Nobody <nobody@example.com>", to: "me@example.com", at: ago(3), summary: "대화 기록이 지워진 메일이에요.", event: false },
 ];
 const hits: Record<string, number> = {};
-const card = (m: Mail) => ({ subject: m.subject, from: m.from, to: m.to, source: "company", at: m.at, summary: m.summary, read: true, can: [], html: !!m.html, attachments: m.attachments });
-const history = (m: Mail) => m.event ? [{ kind: "mail", ts: m.at, conv: `mail:${m.key}`, target: `mail:${m.key}`, mail: m.key, subject: m.subject, from: m.from, to: m.to, source: "company", html: !!m.html, attachments: m.attachments, text: `${m.from} · ${m.subject}\n\n${m.summary}\n\n원문\n${BODY}` }] : [];
+const card = (m: Mail) => ({ subject: m.subject, from: m.from, to: m.to, source: "acme", at: m.at, summary: m.summary, read: true, can: [], html: !!m.html, attachments: m.attachments });
+const history = (m: Mail) => m.event ? [{ kind: "mail", ts: m.at, conv: `mail:${m.key}`, target: `mail:${m.key}`, mail: m.key, subject: m.subject, from: m.from, to: m.to, source: "acme", html: !!m.html, attachments: m.attachments, text: `${m.from} · ${m.subject}\n\n${m.summary}\n\n원문\n${BODY}` }] : [];
 const hub = fakeHub({
 	api: (req, url) => {
 		const p = url.pathname;

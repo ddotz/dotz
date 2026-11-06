@@ -19,7 +19,7 @@ const decisions: Dec[] = [];
 const notice = (d: Dec) => ({ id: d.id, ts: d.at, updated: d.at, kind: "decision", tone: "ask", title: "이 답장 보낼까요?", text: "이 답장 보낼까요?", open: d.to, src: d.to, at: d.at, read: d.state !== "open", decision: { options: OPTS, to: d.to, reply_to: d.at, group: 1, state: d.state, ...(d.answer ? { answer: d.answer, answered_at: d.at } : {}), draft: { toLabel: "받는이", to: "Kim <kim@example.com>", subject: d.subject, body: "안녕하세요.\n\n보내 드립니다." } } });
 // The hub's own count: one waiting draft per mail (the newest), exactly what 확인 대기 lists.
 const waiting = () => { const newest = new Map<string, Dec>(); for (const d of decisions) if (d.state === "open" && (!newest.get(d.to) || d.at > newest.get(d.to)!.at)) newest.set(d.to, d); return newest.size; };
-const mail = (key: string, subject: string, h: number) => ({ subject, from: "Kim <kim@example.com>", source: "company", at: iso(h), summary: `${subject} 요약이에요.`, reply: "draft", unreplied: true });
+const mail = (key: string, subject: string, h: number) => ({ subject, from: "Kim <kim@example.com>", source: "acme", at: iso(h), summary: `${subject} 요약이에요.`, reply: "draft", unreplied: true });
 const app = (ids: string[], drafts: number) => ({ key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: ids, unread: 0, unreplied: 1, needs: { drafts, unread: 0, sentToday: 0, unreplied: 1 } });
 const localApp = () => app(decisions.map(d => d.id), waiting());
 const ROWS = ["fx-a", "fx-b", "fx-c"].map((key, i) => ({ target: `mail:${key}`, unread: 0, read: iso(1), mail: mail(key, ["견적 요청", "일정 조율", "자료 요청"][i]!, 9 - i), last: { ts: iso(9 - i), text: "메일", from: "bot" } }));

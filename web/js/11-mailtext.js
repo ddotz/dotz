@@ -198,7 +198,7 @@ function mtNode(blocks) {
   }
   return box;
 }
-// A secure mail's decrypted page opens with the mail's own header as text (company-mail-lib.ts decryptSecureMail): the subject, the date, then
+// A secure mail's decrypted page opens with the mail's own header as text (acme-mail-lib.ts decryptSecureMail): the subject, the date, then
 // `보낸사람(Sender) : … 받는사람(Recipient) : …`, a blank line, the mail. Its recipient is the original one, not the copy's. The view already shows that header, so
 // { body, to, cc } splits it off, only for all of it at the very top: the mail's subject, a line that is only a date, and a sender and a recipient label
 // on lines of nothing but labels, then a blank line or the end. Anything else is null. Stored mails stay as they are; a first-line compare ends most calls.

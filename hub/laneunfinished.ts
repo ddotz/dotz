@@ -3,7 +3,7 @@
 // stop killed both at 23:25, and every later restart logged "stays parked" because "no process, status idle" read as nothing to do. It
 // sat 15 hours with work open until the owner wrote. A lane waiting on the owner is the opposite failure (ddotz/dotz#44: woken three
 // times after an [ask], re-asking each time for tokens), so the closing checks come first and say "leave it alone". Conversation sessions and
-// the orchestrator read the same evidence (interruptedWork, hub/sessionresume.ts). A report is never evidence by itself: company-xhigh's last
+// the orchestrator read the same evidence (interruptedWork, hub/sessionresume.ts). A report is never evidence by itself: audit-xhigh's last
 // [run] was a finished step, 27 hours old, with nothing open behind it.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

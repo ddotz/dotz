@@ -10,8 +10,8 @@ import { addDraft, answerDrafts, getDraft, listDrafts, type DraftRec } from "../
 
 const ME = "me@example.com";
 const KIM = "Kim <kim@example.com>";
-const A1 = "ddotz";
-const A2 = "sara1468@snu.ac.kr";
+const A1 = "first.account@example.com";
+const A2 = "second.account@school.example";
 
 // `zele mail read` output: a header, then one block per message split by a line of ─.
 const thread = (...messages: [from: string, date: string][]) => ["Thread: x", ...messages.map(([from, date]) => `From: ${from}\nTo: x\nDate: ${date}\n\n본문`)].join("\n──────────\n");

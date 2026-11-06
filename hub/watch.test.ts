@@ -1,4 +1,4 @@
-// dotz_watch robustness from someone's launchd watchers: process-group SIGKILL deadline, per-kind retry, owner-approval gate.
+// dotz_watch robustness from the earlier secretary's launchd watchers: process-group SIGKILL deadline, per-kind retry, owner-approval gate.
 import { afterEach, beforeAll, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";

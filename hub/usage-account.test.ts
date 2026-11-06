@@ -1,5 +1,5 @@
 // "한도", the lane budget gate and the 429 resume time read the limits of the account dotz's agents really run on: under
-// OmO that is OmO's pinned subscription account (e.g. host-shared), not omp's login (the owner's default).
+// OmO that is OmO's pinned subscription account (e.g. teammate-shared), not omp's login (the owner's default).
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ const agentDir = process.env.OMO_CODING_AGENT_DIR!;
 const auth = (sub: Record<string, unknown>) => writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ "anthropic-subscription": { type: "oauth", ...sub } }));
 const pool = (slots: Record<string, unknown>) => writeFileSync(join(agentDir, "credential-pool-state.json"), JSON.stringify({ providers: { "anthropic-subscription": { lanes: { stored: { slots } } } } }));
 const FAR = Date.now() + 365 * 86400e3;
-const accounts = [{ name: "default", access: "tok-default", expires: FAR }, { name: "host-shared", access: "tok-host", expires: FAR }];
+const accounts = [{ name: "default", access: "tok-default", expires: FAR }, { name: "teammate-shared", access: "tok-teammate", expires: FAR }];
 const body = (five: number, week: number) => ({ five_hour: { utilization: five, resets_at: "2030-01-01T05:00:00Z" }, seven_day: { utilization: week, resets_at: "2030-01-07T00:00:00Z" }, seven_day_opus: null });
 const realFetch = globalThis.fetch;
 // A read held from an earlier test (or the sticky pick it left) would answer from cache instead of the fake fetch.
@@ -27,31 +27,31 @@ afterEach(() => {
 });
 
 test("under OmO the limits are the pinned account's, read with its own token, and the answer names it", async () => {
-	auth({ pinned: "host-shared", accounts });
+	auth({ pinned: "teammate-shared", accounts });
 	const seen: string[] = [];
 	globalThis.fetch = (async (_url: string, init: RequestInit) => {
 		const token = String((init.headers as Record<string, string>).authorization);
 		seen.push(token);
-		return Response.json(token === "Bearer tok-host" ? body(66, 67) : body(2, 22));
+		return Response.json(token === "Bearer tok-teammate" ? body(66, 67) : body(2, 22));
 	}) as typeof fetch;
 	const r = await anthropicUsage("orchestrator");
-	expect(seen).toEqual(["Bearer tok-host"]);
-	expect(r?.account).toBe("host-shared");
+	expect(seen).toEqual(["Bearer tok-teammate"]);
+	expect(r?.account).toBe("teammate-shared");
 	expect(r?.limits.find(l => l.id === "anthropic:5h")?.amount.remaining).toBe(34);
 	expect(r?.limits.find(l => l.id === "anthropic:7d")?.amount.used).toBe(67);
 	const text = limitsText(r!, Date.now());
-	expect(text).toContain("host-shared");
+	expect(text).toContain("teammate-shared");
 	expect(text).toContain("66.0% used");
 });
 
 test("after an account switch the quota is the new account's, not the pinned or cached one", async () => {
-	auth({ pinned: "host-shared", accounts });
+	auth({ pinned: "teammate-shared", accounts });
 	const seen: string[] = [];
 	let fiveOfDefault = 2;
 	globalThis.fetch = (async (_url: string, init: RequestInit) => {
 		const token = String((init.headers as Record<string, string>).authorization);
 		seen.push(token);
-		return Response.json(token === "Bearer tok-host" ? body(37, 11) : body(fiveOfDefault, 22));
+		return Response.json(token === "Bearer tok-teammate" ? body(37, 11) : body(fiveOfDefault, 22));
 	}) as typeof fetch;
 	const fiveOf = async () => {
 		// a switch refreshes the usage in the background (main.ts onAccountSwitch)
@@ -60,7 +60,7 @@ test("after an account switch the quota is the new account's, not the pinned or 
 		return { account: p?.account, five: p?.limits.find(l => l.id === "anthropic:5h")?.used };
 	};
 	try {
-		expect(await fiveOf()).toEqual({ account: "host-shared", five: 37 });
+		expect(await fiveOf()).toEqual({ account: "teammate-shared", five: 37 });
 		// the owner picks the other account in the web app (POST /api/accounts/use)
 		setManual("default");
 		expect(await fiveOf()).toEqual({ account: "default", five: 2 });
@@ -70,8 +70,8 @@ test("after an account switch the quota is the new account's, not the pinned or 
 		forgetAccountUsage("default");
 		expect(await fiveOf()).toEqual({ account: "default", five: 9 });
 		// and back
-		setManual("host-shared");
-		expect(await fiveOf()).toEqual({ account: "host-shared", five: 37 });
+		setManual("teammate-shared");
+		expect(await fiveOf()).toEqual({ account: "teammate-shared", five: 37 });
 	} finally {
 		setManual(undefined);
 		resetStickyForTest();
@@ -80,9 +80,9 @@ test("after an account switch the quota is the new account's, not the pinned or 
 
 test("unpinned: the pool's account that is not blocked and last succeeded", () => {
 	auth({ accounts });
-	pool({ default: { blockReason: "rate_limit", blockedUntil: Date.now() + 3600e3, lastSuccessAt: 5 }, "host-shared": { lastSuccessAt: 1 } });
-	expect(subscriptionAccount()?.name).toBe("host-shared");
-	pool({ default: { lastSuccessAt: 5 }, "host-shared": { lastSuccessAt: 1 } });
+	pool({ default: { blockReason: "rate_limit", blockedUntil: Date.now() + 3600e3, lastSuccessAt: 5 }, "teammate-shared": { lastSuccessAt: 1 } });
+	expect(subscriptionAccount()?.name).toBe("teammate-shared");
+	pool({ default: { lastSuccessAt: 5 }, "teammate-shared": { lastSuccessAt: 1 } });
 	expect(subscriptionAccount()?.name).toBe("default");
 	expect(subscriptionAccount()?.pinned).toBe(false);
 });
@@ -128,7 +128,7 @@ test("a Claude CLI login is read with the token the CLI keeps for its account di
 });
 
 test("GET /api/quota answers from the last read without asking again; an old one starts one background read whose change is pushed", async () => {
-	auth({ pinned: "host-shared", accounts });
+	auth({ pinned: "teammate-shared", accounts });
 	let five = 40;
 	let calls = 0;
 	globalThis.fetch = (async () => (calls++, Response.json(body(five, 11)))) as typeof fetch;
@@ -139,7 +139,7 @@ test("GET /api/quota answers from the last read without asking again; an old one
 	expect(calls).toBe(1);
 	const pushed = new Promise<Awaited<ReturnType<typeof quota>>>(resolve => onQuota(resolve));
 	five = 55;
-	forgetAccountUsage("host-shared");
+	forgetAccountUsage("teammate-shared");
 	// past the refresh time the old answer still comes at once; the read runs behind it
 	expect(await quota(first.fetched_at + QUOTA_REFRESH_MS)).toBe(first);
 	expect(fiveOf(await pushed)).toBe(55);

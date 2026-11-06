@@ -31,7 +31,7 @@ const waitForPosts = (n: number) => (posts.length >= n ? Promise.resolve() : new
 }));
 const item = (inst: string) => ({ key: inst, app: "mail", label: inst === "mail" ? "개인 메일" : "회사 메일", icon: "mail", kind: "app", conv: inst === "mail" ? ["mail:"] : ["mail:w-"], ...(inst === "mail" ? { convNot: ["mail:w-"] } : {}),
 	state: "connected", notices: [], unread: 0, needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: 0 }, boxes: boxes[inst as "mail"], account: inst === "mail" ? "me@example.com" : "me@work.example.com" });
-const card = (m: (typeof mails)[number]) => ({ subject: m.subject, from: m.from, source: "company", at: m.at, summary: "요약이에요", read: true, archived: false, starred: false, can: CAN, box: m.box });
+const card = (m: (typeof mails)[number]) => ({ subject: m.subject, from: m.from, source: "acme", at: m.at, summary: "요약이에요", read: true, archived: false, starred: false, can: CAN, box: m.box });
 
 const voices: Record<string, object> = {};
 const hub = fakeHub({

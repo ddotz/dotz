@@ -79,7 +79,7 @@ const scrub = (s: string) => noEmoji(s).replace(/[┃|]/g, " ").replace(/\s+/g, 
 const cleanName = (s: string) => scrub(s).slice(0, 90) || "work";
 // Thread names are plain words of what the work is (threads.ts threadTitle); the old "[kind]" prefix is gone.
 const threadName = (title: string, fallback?: string): string => threadTitle(title, fallback);
-// A thread starts from a real message in its parent channel (as someone does), so it shows under that message with its
+// A thread starts from a real message in its parent channel (as the earlier secretary does), so it shows under that message with its
 // content instead of appearing empty with a "you were added" notice. Falls back to a bare thread if the post fails.
 // With `fromMessage` (the owner's own message in that channel) the thread hangs from it and nothing new is posted.
 async function threadFromMessage(parentId: string, starter: string, name: string, fromMessage?: string): Promise<{ id: string; name: string }> {
@@ -724,7 +724,7 @@ export type Incoming = {
 	picks?: Pick[];
 };
 
-// Owner messages sent while the gateway restarts or is disconnected are fetched after the next READY, as someone handles
+// Owner messages sent while the gateway restarts or is disconnected are fetched after the next READY, as the earlier secretary handles
 // "messages between restarts": the id of the last handled owner message is kept on disk, and ids already handled in this
 // process are skipped so a message seen both live and in the catch-up is delivered once.
 const SEEN_FILE = join(DATA_DIR, "discord-seen.json");
@@ -756,7 +756,7 @@ export function disconnect(): Promise<void> {
 const snowflakeMs = (id: string) => Number((BigInt(id) >> 22n) + 1420070400000n);
 
 // Edits of recent owner messages: the text of each delivered owner message is kept by id so MESSAGE_UPDATE can be delivered
-// as a correction carrying the old text (as someone does). An edit is delivered once per distinct content.
+// as a correction carrying the old text (as the earlier secretary does). An edit is delivered once per distinct content.
 const EDIT_WINDOW_MS = 15 * 60_000;
 const recentTexts = new Map<string, string>();
 const remember = (id: string, text: string) => {

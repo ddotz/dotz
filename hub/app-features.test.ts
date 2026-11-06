@@ -150,7 +150,7 @@ describe("features view", () => {
 		expect([ran, approved]).toEqual([[], ["ig-site-login"]]);
 	});
 	test("a watch that exits 0 but says it is logged out (DOTZ_DISCONNECTED) is a down row with 다시 연결, not 정상", () => {
-		const w = watch("company-login");
+		const w = watch("acme-login");
 		const down = internalOf({ ...w, state: { ...w.state, fails: 0, lastRun: "2026-10-27T00:18:50.593Z", last: "waiting for the owner's approval\nDOTZ_DISCONNECTED since=2026-10-23T12:29:18.300Z" } }, "메일");
 		expect([down.dot, down.down, down.status]).toEqual(["fail", true, "연결이 끊겼어요 · 다시 로그인이 필요해요"]);
 		const ok = internalOf({ ...w, state: { ...w.state, fails: 0, lastRun: "2026-10-27T00:18:50.593Z", last: "not waiting" } }, "메일");
@@ -180,13 +180,13 @@ describe("a peer gets the same through /api/peer/proxy and /api/peer/act", () =>
 	});
 	test("초안 작성 of a peer's mail is a POST of its draft route on the owning machine", async () => {
 		seen.length = 0;
-		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "mail-draft", from: "B", args: { key: "company-66943118" } }) }), new URL("http://local/api/peer/act"));
-		expect(seen.map(s => [s.method, s.path])).toEqual([["POST", "/api/mail/company-66943118/draft"]]);
+		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "mail-draft", from: "B", args: { key: "acme-66943118" } }) }), new URL("http://local/api/peer/act"));
+		expect(seen.map(s => [s.method, s.path])).toEqual([["POST", "/api/mail/acme-66943118/draft"]]);
 	});
 	test("감시 삭제 of a peer's monitor is a DELETE of the watch on the owning machine", async () => {
 		seen.length = 0;
-		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "watch", from: "B", args: { op: "delete", name: "login-private-project-com" } }) }), new URL("http://local/api/peer/act"));
-		expect(seen.map(s => [s.method, s.path])).toEqual([["DELETE", "/api/watches/login-private-project-com"]]);
+		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "watch", from: "B", args: { op: "delete", name: "login-boutique-com" } }) }), new URL("http://local/api/peer/act"));
+		expect(seen.map(s => [s.method, s.path])).toEqual([["DELETE", "/api/watches/login-boutique-com"]]);
 	});
 });
 

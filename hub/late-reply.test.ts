@@ -7,12 +7,12 @@ import { emit, ownerMessage } from "./events.ts";
 import { createPrompts } from "./prompts.ts";
 import { isLate, lateQuote, lateRequestId, LATE_MS, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 
-const SNOW = "000000000000000000";
+const SNOW = "1500000000001908448";
 const snowAt = (ms: number) => ((BigInt(ms) - 1420070400000n) << 22n).toString();
 
 test("a web short id resolves to the owner message it names", () => {
-	emit("inbox", { ts: "2026-10-23T07:22:48.000Z", kind: "message", source: "web", channel: "ch:1", author: "someone", text: "계정 고정 스위치 만들어 줘", mid: "cbfba25d" });
-	expect(ownerMessage("cbfba25d")).toEqual({ text: "계정 고정 스위치 만들어 줘", ts: "2026-10-23T07:22:48.000Z", author: "someone" });
+	emit("inbox", { ts: "2026-10-23T07:22:48.000Z", kind: "message", source: "web", channel: "ch:1", author: "owner", text: "계정 고정 스위치 만들어 줘", mid: "cbfba25d" });
+	expect(ownerMessage("cbfba25d")).toEqual({ text: "계정 고정 스위치 만들어 줘", ts: "2026-10-23T07:22:48.000Z", author: "owner" });
 	expect(ownerMessage("00000000")).toBeUndefined();
 });
 
@@ -79,8 +79,8 @@ const quoteOf = (msgs: Record<string, unknown>[]) =>
 const texts = (n: Node): string[] => n.kids.map(k => (typeof k === "string" ? k : (k as Node).kids[0] as string));
 
 test("the web draws a bot message that replies to an owner message with the same quote block, from the hub's reply or from the loaded message", () => {
-	const rpQuote = quoteOf([{ kind: "message", mid: "cbfba25d", author: "someone", text: "계정 고정 만들어 줘" }]);
-	const sent = rpQuote({ kind: "out", reply_to: "cbfba25d", reply: { id: "cbfba25d", author: "someone", content: "계정 고정 만들어 줘" } })!;
+	const rpQuote = quoteOf([{ kind: "message", mid: "cbfba25d", author: "owner", text: "계정 고정 만들어 줘" }]);
+	const sent = rpQuote({ kind: "out", reply_to: "cbfba25d", reply: { id: "cbfba25d", author: "owner", content: "계정 고정 만들어 줘" } })!;
 	expect(sent.cls).toBe("rpq");
 	expect(texts(sent)).toEqual(["나", "계정 고정 만들어 줘"]);
 	const old = rpQuote({ kind: "out", reply_to: "cbfba25d" })!;

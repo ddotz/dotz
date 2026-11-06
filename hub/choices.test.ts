@@ -97,7 +97,7 @@ test("two numbered questions under a heading are two blocks; a [fail] keeps its 
 });
 
 test("the question of 2026-10-31 gets a card; a For line after the options stays below the block", () => {
-	const got = normalizeAsk("암호가 필요해요.\n\n둘 중 어떻게 할까요?\n\n1) someone이에게 메뉴로 업데이트해 달라고 하기\n2) someone이 Mac 암호를 받아 제가 설치하기\n\nFor 도리: 답이 오면 이어 가요");
+	const got = normalizeAsk("암호가 필요해요.\n\n둘 중 어떻게 할까요?\n\n1) 지수에게 메뉴로 업데이트해 달라고 하기\n2) 지수 Mac 암호를 받아 제가 설치하기\n\nFor 도리: 답이 오면 이어 가요");
 	expect(parseDecisions(got).blocks[0]!.options[1]).toMatchObject({ desc: "", n: 2 });
 	expect(got.endsWith("\n\nFor 도리: 답이 오면 이어 가요")).toBe(true);
 });
