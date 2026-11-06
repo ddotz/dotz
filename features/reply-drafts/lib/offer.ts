@@ -31,7 +31,7 @@ export type OfferDeps = BoxDeps & {
 	readBody?: (source: string, id: string, account?: string) => Promise<string | undefined>;
 	/** Lines `<date> <subject>: <snippet>` of earlier mail from one sender, the current thread left out (senders.ts senderHistory); started beside the body read. */
 	history?: (address: string, account?: string, thread?: string) => Promise<string[]>;
-	/** Keeps the past reply pairs current (tone.ts refreshPairs); fire and forget beside the identity sweep. */
+	/** Keeps the past reply pairs current (tone.ts refreshPairs); fire and forget, on a mail's arrival and beside the identity sweep. */
 	refreshPairs?: () => Promise<void>;
 	/** Runs zele to settle the account of a new draft (flow.ts settleDraft); without it the send does. */
 	run?: Runner;
@@ -54,14 +54,28 @@ function fullBody(m: OfferMail, deps: OfferDeps): Promise<string | undefined> {
 	return deps.readBody(m.source, m.id, accountOf(m)).then(t => t ?? m.body, e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), m.body));
 }
 
-// One pair refresh at a time; it never delays or fails a draft. The mailboxes' voices are learned from what it kept, and only an account with mailboxes loads that code.
-let refreshing = false;
+// Whether this install's mail sent folders may be read: not after an explicit off (onboard.ts off, the app's switch), which beats the absence of monitoring that keeps drafts off.
+const readsMail = (s: ReturnType<typeof loadSettings>) => appOn(s, "mail", () => true);
+
+// One pair read at a time, shared by a mail's arrival and its draft; it never delays or fails a draft.
+let reading: Promise<void> | undefined;
+const readPairs = (run: () => Promise<void>, log: (line: string) => void): Promise<void> =>
+	(reading ??= run().catch(e => log(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`)).finally(() => void (reading = undefined)));
+
+// A mail coming in is the source in use, drafted or not: the owner's words tie reading the sent folder to connecting a mail, not to monitoring being on, and a draft he asks
+// for later needs the examples ready. The read is local and calls no model, so nothing here touches the mailboxes' voices.
+function readOnArrival(deps: OfferDeps): void {
+	if (deps.refreshPairs && readsMail(loadSettings())) void readPairs(deps.refreshPairs, deps.log ?? console.error);
+}
+
+// A draft keeps the pairs current too, and the mailboxes' voices are learned from what they kept; only an account with mailboxes loads that code.
+let voicing = false;
 function refreshPairs(deps: OfferDeps, log: (line: string) => void, instance: string): void {
-	if (!deps.refreshPairs || refreshing) return;
-	refreshing = true;
-	deps.refreshPairs().then(async () => {
+	if (!deps.refreshPairs || voicing) return;
+	voicing = true;
+	readPairs(deps.refreshPairs, log).then(async () => {
 		if (deps.analyze && hasBoxes(dataDir())) await (await import("./box-voice.ts")).refreshVoices(instance, deps.analyze, log);
-	}).catch(e => log(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`)).finally(() => void (refreshing = false));
+	}).catch(e => log(`reply draft: mailbox voices not refreshed: ${(e as Error).message}`)).finally(() => void (voicing = false));
 }
 
 // Earlier mail from the sender: never delays a draft past this long, and a failure is no history.
@@ -156,7 +170,7 @@ async function enqueue(m: OfferMail, deps: OfferDeps, requested: boolean): Promi
  *  the sender filter do not apply, and the model must draft (ReplyItem.requested). The draft arrives like an offered one: the send-approval card
  *  in the mail's conversation and the 답장 초안 chip on its row. */
 export const requestMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => enqueue(m, deps, true);
-export const offerMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => enqueue(m, deps, false);
+export const offerMailDraft = (m: OfferMail, deps: OfferDeps): Promise<OfferResult> => (readOnArrival(deps), enqueue(m, deps, false));
 
 async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads, queued: number, instance: string, requested: boolean): Promise<OfferResult> {
 	const log = deps.log ?? ((line: string) => console.error(line));
@@ -227,8 +241,10 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		const instruction = ruleInstruction(box?.alone ? "" : own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined, boxLines(box, item.from));
 		if (instruction) item.instruction = instruction;
 		const read = Date.now();
-		refreshPairs(deps, log, instance);
-		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze, undefined, MAIL_TONE_VERSION).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
+		// A rule or mailbox that drafts is its own opt-in; a draft asked for by hand on an install that said off reads nothing.
+		const reads = readsMail(settings) || (allowed && !requested);
+		if (reads) refreshPairs(deps, log, instance);
+		if (reads && deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze, undefined, MAIL_TONE_VERSION).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const learned = Date.now();
 		// The files are picked BEFORE the words are written, so the draft is told which files ride on it (and that none fits) and its text agrees
 		// with the attachments. A rule that names its files stages those instead.
