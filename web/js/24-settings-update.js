@@ -25,6 +25,7 @@ function updAvailable() {
   if (!i || i.error) return false;
   const { pending, c } = updState(i);
   if (!c || !c.ok || pending) return false;
+  if (c.rewrite) return true;
   return c.available ? updRelNewer(c.version && c.version.release, c.available) : c.incomingTotal > 0;
 }
 const hvList = () => (HV.info && Array.isArray(HV.info.harnesses) ? HV.info.harnesses : []);
@@ -145,7 +146,7 @@ async function updCheck(btn) {
     const c = await api("/api/update/check", "POST");
     UPD.info = { ...UPD.info, lastCheck: c };
     paintUpdBadge();
-    if (c.ok) toast(c.available && updRelNewer(c.version && c.version.release, c.available) ? `새 버전 ${c.available}이 있어요` : c.incomingTotal ? `새 커밋 ${c.incomingTotal}개가 있어요` : "최신 버전이에요");
+    if (c.ok) toast(c.rewrite ? "저장소 기록이 바뀌어서 새 기록으로 옮겨요" : c.available && updRelNewer(c.version && c.version.release, c.available) ? `새 버전 ${c.available}이 있어요` : c.incomingTotal ? `새 커밋 ${c.incomingTotal}개가 있어요` : "최신 버전이에요");
   });
   renderSettings();
 }
