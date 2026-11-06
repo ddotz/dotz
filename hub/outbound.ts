@@ -8,7 +8,7 @@ import { DATA_DIR, log, NAME, now, paths, TZ, writeAtomic } from "./config.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { updateNow } from "./update-now.ts";
-import { isNote, msg } from "./i18n.ts";
+import { isNote, isOpenNudge, msg } from "./i18n.ts";
 import { stripSteerMark } from "./steer-mark.ts";
 import { normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { stripRecommendMark } from "./choices.ts";
@@ -90,6 +90,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		working: () => o.orch.status === "working",
 		note: (target, replyTo, text) => msg().newMessage(target, replyTo, text),
 		isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
+		regenerated: isOpenNudge,
 		post: (target, text, replyTo) => out(target, text, replyTo, { auto: true, session: key }),
 		// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
 		announce: (target, text, worker) => void systemNote(target, text, "deferred", worker).catch(e => log(`deferral note to ${target} failed: ${e}`)),
