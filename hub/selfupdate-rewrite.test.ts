@@ -134,6 +134,50 @@ test("a rewrite that keeps an old prefix moves the install once: listed commits 
 	expect((await check(opts())).rewrite).toBeUndefined();
 });
 
+test("a second marker that rewrites only the last commits and re-points the same version tag moves a release install once, keeping nothing", async () => {
+	rewriteOrigin();
+	await autoCheck(opts(), autoHooks().api);
+	const kept = head(pusher);
+	r.push("b.txt", "same tree\n", "carries an address");
+	const version = r.release("c.txt", "same tree\n", "release");
+	const tag = `v${version}`;
+	const oldTag = head(pusher);
+	r.push("d.txt", "same tree\n", "after the release");
+	const { h, api } = autoHooks();
+	await autoCheck(opts(), api);
+	expect(head(work)).toBe(oldTag);
+	expect(h.restarts).toBe(1);
+
+	const old = sh(pusher, "rev-list", "--reverse", `${kept}..main`).split("\n");
+	const moved = new Map<string, string>();
+	let parent = kept;
+	for (const sha of old) {
+		parent = sh(pusher, "-c", "user.email=noreply@t", "commit-tree", `${sha}^{tree}`, "-p", parent, "-m", sh(pusher, "log", "-1", "--format=%B", sha));
+		moved.set(sha, parent);
+	}
+	const newTag = moved.get(oldTag)!;
+	sh(pusher, "reset", "-q", "--hard", parent);
+	sh(pusher, "tag", "-f", tag, newTag);
+	const file = join(root, "marker2.txt");
+	writeFileSync(file, `${old.map(key).join("\n")}\n`);
+	sh(pusher, "tag", "history-rewrite-2", sh(pusher, "hash-object", "-w", file));
+	sh(pusher, "push", "-q", "--force", "--atomic", "origin", "main", `refs/tags/${tag}`, "refs/tags/history-rewrite-2");
+
+	const before = await check(opts());
+	expect(before.rewrite).toBeDefined();
+	expect(before.ahead).toEqual([]);
+	expect(before.keep).toBeUndefined();
+	await autoCheck(opts(), api);
+	await autoCheck(opts(), api);
+	expect(head(work)).toBe(newTag);
+	expect(sh(work, "rev-parse", "HEAD^{tree}")).toBe(sh(pusher, "rev-parse", `${oldTag}^{tree}`));
+	expect(isAncestor(oldTag, "HEAD")).toBe(false);
+	expect(branches()).toEqual([]);
+	expect(h.alerts).toEqual([]);
+	expect(h.restarts).toBe(2);
+	expect((await check(opts())).rewrite).toBeUndefined();
+});
+
 test("failing tests on the new history put the install back on the old one", async () => {
 	sh(pusher, "rm", "-q", "--cached", "a.txt");
 	writeFileSync(join(pusher, "FAIL"), "x\n");
