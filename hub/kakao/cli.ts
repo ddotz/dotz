@@ -54,6 +54,8 @@ const GATED = new Set(["login", "rooms", "read", "draft", "send", "send-file"]);
 const MAX_READ = 50;
 const MAX_FILES = 10;
 const MAX_FILE_BYTES = 300 * 1024 * 1024;
+// tone.ts loads the hub config, which every other command on an empty data dir must not need; these runs post through the hub, so it is there.
+const shown = async (text: string) => (await import("../tone.ts")).toneText(text);
 const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | rooms [--all] [--limit 30] [--plain] | read --chat <id> [--limit 20] | draft --chat <id> | send --draft <코드> | send-file --self --file <경로> [--file <경로>...] | off [--forget]";
 
 function parseArgs(argv: string[]): Record<string, string | true> {
@@ -84,11 +86,11 @@ async function setup(args: Record<string, string | true>, ctx: Ctx): Promise<num
 	const target = str(args.to) ?? prev?.target ?? "chat";
 	if (!args.foreground) {
 		ctx.spawnSetup(["setup", "--foreground", "--to", target]);
-		ctx.out("[run] 카톡 연결을 시작했어요. 진행 상황은 알림 메시지 하나로 알려 드려요");
+		ctx.out("⏳ 카톡 연결을 시작했어요. 진행 상황은 알림 메시지 하나로 알려 드려요");
 		return 0;
 	}
 	const r = await runOnboarding(onboardDeps(ctx, target));
-	ctx.out(r.text.split("\n")[0]!);
+	ctx.out(await shown(r.text.split("\n")[0]!));
 	return 0;
 }
 
@@ -277,7 +279,7 @@ export async function run(argv: string[], ctx: Ctx): Promise<number> {
 	if (config?.enabled !== true) return ctx.out(OFF_LINE), 1;
 	if (cmd === "login") {
 		const r = await runLoginOnly(onboardDeps(ctx, readState(ctx.paths)?.target ?? "chat"));
-		ctx.out(r.text);
+		ctx.out(await shown(r.text));
 		return r.ok ? 0 : 1;
 	}
 	if (cmd === "rooms") return rooms(args, ctx, config);

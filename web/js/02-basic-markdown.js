@@ -218,15 +218,25 @@ const MK_WORD = "\\[(?:run|wait|done|ask|fail|later|keepalive)\\]";
 const MK_OPEN = new RegExp("^[ \\t]*(`|\\*\\*)?" + MK_WORD + "\\1(?:[ \\t]+(?!(?:\ub9c8\ucee4|\ud45c\uc2dc|\ud45c\uc2dd|\ubb38\uad6c|\uc81c\uc5b4\uc5b4|\ub2e8\uc5b4|\ud1a0\ud070|\uae00\uc790|\uc2e0\ud638|\ucc98\ub9ac|\ub204\ucd9c|\uac19\uc740|marker|sentinel|token|word))|[ \\t]*$)", "i");
 const MK_ALONE = new RegExp("^[ \\t]*(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i");
 const MK_CLOSE = new RegExp("(?<=[.!?\u2026\uc694\ub2e4])[ \\t]+(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i");
+// A dropped fail word leaves the failure (the page has no emoji: the word, where the hub leaves its emoji), and a status word in prose reads as its plain word (hub/tone.ts FAIL_WORD, MENTION, keep in step).
+const MK_FAIL = /\[(?:fail|실패|warn|경고)\]/i;
+const mkFail = gone => MK_FAIL.test(gone) ? "실패: " : "";
+const MK_WORDS = { done: "완료", "완료": "완료", run: "진행 중", "진행": "진행 중", wait: "대기", "대기": "대기", ask: "확인 필요", "결정": "확인 필요", fail: "실패", "실패": "실패", warn: "실패", "경고": "실패" };
+const MK_STATUS = Object.keys(MK_WORDS).join("|");
+const MK_TOKEN = `(?:\`\\[(?:${MK_STATUS})\\]\`|\\*\\*\\[(?:${MK_STATUS})\\]\\*\\*|\\[(?:${MK_STATUS})\\])`;
+const MK_JOIN = "[ \\t]*[,/·][ \\t]*";
+const MK_NAMES = "(?:\uB9C8\uCEE4|\uD45C\uC2DC|\uD45C\uC2DD|\uBB38\uAD6C|\uC81C\uC5B4\uC5B4|\uB2E8\uC5B4|\uD1A0\uD070|\uAE00\uC790|\uC2E0\uD638|\uCC98\uB9AC|\uB204\uCD9C|\uAC19\uC740|marker|sentinel|token|word)";
+const MK_MENTION = new RegExp(`(?<![\\w가-힣"'\\[\`*/])${MK_TOKEN}(?:${MK_JOIN}${MK_TOKEN}){0,7}(?!${MK_JOIN}(?:\`|\\*\\*)?\\[)(?=[,!?…)]|\\.(?![A-Za-z0-9])|[ \\t]+(?!${MK_NAMES})|[ \\t]*$)|(\`[^\`\\n]+\`)`, "gi");
+const mkPlainWords = line => line.includes("[") ? line.replace(MK_MENTION, (m, span) => span ?? m.replace(/(?:`|\*\*)?\[([^\]]+)\](?:`|\*\*)?/g, (_, word) => MK_WORDS[word.toLowerCase()])) : line;
 const forRe = () => new RegExp(`^\\s*(?:-#?\\s+)?(?:\\*\\*)?(?:For (?:${escRe(botName)}|땃쥐):|(?:${escRe(botName)}|땃쥐) 몫:)`, "i");
 // keepFiles: a message body keeps its `[file]` lines for the attachment chips (fileLines, 15-attachments.js); mdNode drops them.
-function stripMarkers(text, keepFiles = false) {
+function stripMarkers(text, keepFiles = false, own = true) {
   text = String(text ?? "");
   if (!/\[|몫:|For |<project-info>|\n[ \t]*-\s*$/.test(text)) return text;
   text = text.replace(/\s*<project-info>[\s\S]*?(?:<\/project-info>|$)/g, "");
   let fence = false, opened = false, tail = -1;
-  const out = [], fors = [], forLine = forRe();
-  for (const line of text.split("\n")) {
+  const out = [], fors = [], prose = [], forLine = forRe();
+  for (const [i, line] of text.split("\n").entries()) {
     if (/^\s*```/.test(line) || fence) {
       if (/^\s*```/.test(line)) fence = !fence;
       out.push(line);
@@ -235,29 +245,53 @@ function stripMarkers(text, keepFiles = false) {
     }
     if (/^[ \t]*\[file\][ \t]/i.test(line)) { if (keepFiles) out.push(line); continue; }
     if (forLine.test(line)) { fors.push(line); continue; }
-    let l = line;
-    for (let m = MK_LEAD.exec(l); m; m = MK_LEAD.exec(l)) l = m[1] + l.slice(m[0].length);
+    let l = line, mark = "", at = 0;
+    const lead = i === 0 && /^\[([^\]\n]+)\]/.exec(l);
+    let tone = own && !!lead && TONE_TAGS.has(lead[1].toLowerCase());
+    for (let m = MK_LEAD.exec(l); m; m = MK_LEAD.exec(l), tone = false) {
+      if (!tone) mark ||= mkFail(m[0]);
+      at = m[1].length;
+      l = m[1] + l.slice(m[0].length);
+    }
     if (!opened && l.trim()) {
       opened = true;
       const m = MK_OPEN.exec(l);
-      if (m) l = l.slice(m[0].length);
+      if (m) {
+        mark ||= mkFail(m[0]);
+        at = 0;
+        l = l.slice(m[0].length);
+      }
     }
-    if (MK_ALONE.test(l)) l = "";
+    if (MK_ALONE.test(l)) {
+      mark ||= mkFail(l);
+      l = "";
+      at = 0;
+    }
+    if (mark) {
+      const rest = l.slice(at).replace(/^:[ \t]*/, "");
+      l = rest.trim() ? `${l.slice(0, at)}${mark}${rest}` : `${l.slice(0, at)}${mark.slice(0, -2)}`;
+    }
     if (l.trim()) tail = out.length;
+    prose.push(out.length);
     out.push(l);
   }
   // A message that is only the line keeps it: nothing else would be drawn.
   if (!out.some(l => l.trim())) return [...out, ...fors].join("\n");
-  if (tail < 0) return out.join("\n");
-  if (out[tail].trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
-  else out[tail] = out[tail].replace(MK_CLOSE, "");
+  if (tail >= 0) {
+    if (out[tail].trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
+    else out[tail] = out[tail].replace(MK_CLOSE, m => MK_FAIL.test(m) ? " 실패" : "");
+  }
+  for (const i of prose) out[i] = mkPlainWords(out[i]);
   return out.join("\n");
 }
+const MK_FAIL_LEAD = /^\s*(?:\*\*|`)?\[(?:fail|실패|warn|경고)\]/i;
 function parseTone(text, keepFiles = false) {
   text = String(text ?? "");
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
   const body = tag ? text.slice(m[0].length) : text, c = CLAIM_LEAD.exec(body);
-  return { tone: tag || "", claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: stripMarkers(c ? body.slice(c[0].length) : body, keepFiles) };
+  const shown = stripMarkers(c ? body.slice(c[0].length) : body, keepFiles, !tag), led = (!tag ? MK_FAIL_LEAD.test(body) : tag === "fail") && /^\s*실패(?:: |$)/.exec(shown);
+  // A failure marker the tone did not read (bold, indented) still draws the failure tag; under the tag the word is said already.
+  return { tone: tag || (led ? "fail" : ""), claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: led ? shown.slice(led[0].length) : shown };
 }
 
 /* ---------- api ---------- */

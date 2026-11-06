@@ -3,7 +3,7 @@ import { msg } from "./i18n.ts";
 import { commandOf, SelfChatError, startsWord, type SelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
 import { type AdapterPush, RelayError, type RelayLine, type RelayRow } from "./messenger.ts";
 import { noticeClass } from "./notice-class.ts";
-import { parseTone } from "./tone.ts";
+import { parseTone, TONE_EMOJI } from "./tone.ts";
 
 // Computers reached only through the owner's JANDI "나와의 대화" (config `self_chat.peers`): this is the JANDI adapter's `relay` (hub/messenger-jandi.ts), served to the
 // web app's chat view by hub/relay-route.ts. They have no URL of their own: this gateway reads the one configured room with the owner's session (hub/jandi-selfchat.ts),
@@ -59,7 +59,7 @@ export function peerReplyPush(peer: SelfChatPeer, text: string, id: number): Ada
 	const { tone, text: rest } = parseTone(text.trim());
 	const cls = tone ? noticeClass({ kind: "result", tone }).cls : "conv";
 	if (cls !== "ask" && cls !== "result" && cls !== "conv") return undefined;
-	const flat = scrub(rest).replace(/\s+/g, " ").trim();
+	const flat = scrub(rest).replace(/\s+/g, " ").trim() || (tone === "fail" ? TONE_EMOJI.fail : "");
 	if (!flat) return undefined;
 	const body = flat.length > PUSH_BODY ? `${flat.slice(0, PUSH_BODY - 1)}…` : flat;
 	return { kind: cls, title: peer.name, body, url: chatAddr(peer), tag: `relay:jandi:${peer.keyword}:${id}` };

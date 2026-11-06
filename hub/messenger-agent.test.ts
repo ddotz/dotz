@@ -287,7 +287,7 @@ describe("deliver", () => {
 		expect(a.canEdit).toBe(false);
 		expect(await a.deliver(out({ text: "progress", updateKey: "k" }))).toEqual({ delivered: false, reason: "edit" });
 		expect((await a.deliver(out({ text: "[fail] broke", updateKey: "k" }))).delivered).toBe(true);
-		expect(fake.sent.map(s => s.text)).toEqual(["[fail] broke"]);
+		expect(fake.sent.map(s => s.text)).toEqual(["❌ broke"]);
 	});
 
 	test("long text is split into short parts, later parts inside the first one's thread", async () => {
@@ -303,7 +303,7 @@ describe("deliver", () => {
 	test("ask options are appended as numbered lines", async () => {
 		const a = await started();
 		await a.deliver(out({ text: "[ask] which?", options: [{ n: 1, label: "yes" }, { n: 2, label: "no" }] }));
-		expect(fake.sent[0]!.text).toBe("[ask] which?\n\n1) yes\n2) no\n\n번호로 답해 주세요");
+		expect(fake.sent[0]!.text).toBe("❓ which?\n\n1) yes\n2) no\n\n번호로 답해 주세요");
 	});
 
 	test("a failing send throws without the token and marks the chat", async () => {

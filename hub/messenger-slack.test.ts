@@ -117,6 +117,13 @@ describe("slack messenger", () => {
 		expect(fake.calls[2]!.body.get("channel")).toBe("C0MAIN1234");
 	});
 
+	test("a status marker goes out as its emoji, never as the literal word", async () => {
+		const { a, fake } = setup(tempDir());
+		await a.deliver({ target: "alert", kind: "alert", text: "[fail] 보내지 못했어요" });
+		await a.deliver({ target: "alert", kind: "alert", text: "[done] 끝났어요" });
+		expect(fake.calls.map(c => c.body.get("text"))).toEqual(["❌ 보내지 못했어요", "✅ 끝났어요"]);
+	});
+
 	test("test checks auth and posts one line to main only when a main channel exists", async () => {
 		const withMain = tempDir();
 		const one = setup(withMain);

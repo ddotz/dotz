@@ -31,6 +31,8 @@ const META = new RegExp(`^\\s*(?:-\\s+)?(?:근거:|출처:|Evidence:|Source:|For
 // opening the message before a space (not before a word that names it: "`[later]` 표시를 고쳤어요", "`[later]`로 끝나요"), alone on a line, and closing the
 // message after a finished sentence. Anywhere else it is being talked about: mid-sentence, a list item, a span with a particle, a fence.
 // A lone `-` closing a message is the no-op sentinel left under a note.
+// A failure keeps its meaning (owner 2026-11-06: "fail 표시가 플레인 텍스트로 노출되면은 안되고"): a fail word dropped anywhere but as the message's own tone marker leaves ❌.
+// In prose a status word that is not talked about as a word (MENTION) reads as its plain word: "`[fail]` 알림이 가요" -> "실패 알림이 가요". Followed by a word that names it, a glued particle or `:`, or inside a longer code span, it stays.
 const STATUS_WORDS = "run|wait|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|대기|결정|실패|경고|차단|부분|나중|오류";
 const MARKER_BODY = `(?:${STATUS_WORDS}|attachment|system|handover|keepalive|orchestrator-guard|gateway check|web:[a-z-]+|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})`;
 const LINE_LEAD = "[ \\t]*(?:[-*][ \\t]+)?(?:진행 중:[ \\t]*)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?";
@@ -44,14 +46,23 @@ const edges = (word: string, skip = "") => ({
 	close: new RegExp(`(?<=[.!?…요다])[ \\t]+(\`|\\*\\*)?\\[${word}\\]\\1[ \\t]*$`, "i"),
 });
 const CONTROL = edges("(?:run|wait|done|ask|fail|later|keepalive)");
+const FAIL_WORD = /\[(?:fail|실패|warn|경고)\]/i;
+const failMark = (gone: string): string => (FAIL_WORD.test(gone) ? `${TONE_EMOJI.fail} ` : "");
+const MENTION_WORD: Record<Tone, string> = { done: "완료", run: "진행 중", wait: "대기", ask: "확인 필요", fail: "실패" };
+const STATUS_ALT = Object.keys(TAGS).join("|");
+const STATUS_TOKEN = `(?:\`\\[(?:${STATUS_ALT})\\]\`|\\*\\*\\[(?:${STATUS_ALT})\\]\\*\\*|\\[(?:${STATUS_ALT})\\])`;
+const TOKEN_JOIN = "[ \\t]*[,/·][ \\t]*";
+const MENTION = new RegExp(`(?<![\\w가-힣"'\\[\`*/])${STATUS_TOKEN}(?:${TOKEN_JOIN}${STATUS_TOKEN}){0,7}(?!${TOKEN_JOIN}(?:\`|\\*\\*)?\\[)(?=[,!?…)]|\\.(?![A-Za-z0-9])|[ \\t]+(?!${NAMES_IT})|[ \\t]*$)|(\`[^\`\\n]+\`)`, "gi");
+const plainWords = (line: string): string => (line.includes("[") ? line.replace(MENTION, (m: string, span?: string) => span ?? m.replace(/(?:`|\*\*)?\[([^\]]+)\](?:`|\*\*)?/g, (_, w: string) => MENTION_WORD[TAGS[w.toLowerCase()]!])) : line);
 // A tone marker may stand before `[later]` (it is the message's tone, stripLater keeps it).
 const LATER_EDGES = edges("later", `(?:\\[(?:${STATUS_WORDS})\\][ \\t]*)*`);
 
 // The lines outside fences with `lead` markers and control words at the edges gone. `tail`: the last line with text.
-function stripWords(text: string, w: typeof CONTROL, full: boolean): string {
+function stripWords(text: string, w: typeof CONTROL, full: boolean, own = true): string {
 	let fence = false, opened = false, tail = -1;
 	const out: string[] = [];
-	for (const line of text.split("\n")) {
+	const prose: number[] = [];
+	for (const [i, line] of text.split("\n").entries()) {
 		if (FENCE.test(line) || fence) {
 			if (FENCE.test(line)) fence = !fence;
 			out.push(line);
@@ -60,22 +71,42 @@ function stripWords(text: string, w: typeof CONTROL, full: boolean): string {
 		}
 		if (full && FILE_MARK.test(line)) continue;
 		let l = line;
-		if (full) for (let m = MARKER_LEAD.exec(l); m; m = MARKER_LEAD.exec(l)) l = m[1]! + l.slice(m[0].length);
+		let mark = "", at = 0;
+		if (full) {
+			for (let m = MARKER_LEAD.exec(l), tone = own && i === 0 && MARKER.test(l); m; m = MARKER_LEAD.exec(l), tone = false) {
+				if (!tone) mark ||= failMark(m[0]);
+				at = m[1]!.length;
+				l = m[1]! + l.slice(m[0].length);
+			}
+		}
 		if (!opened && l.trim()) {
 			opened = true;
 			const m = w.open.exec(l);
-			if (m) l = m[1]! + l.slice(m[0].length);
+			if (m) {
+				if (full) mark ||= failMark(m[0]);
+				at = m[1]!.length;
+				l = m[1]! + l.slice(m[0].length);
+			}
 		}
-		if (w.alone.test(l)) l = "";
+		if (w.alone.test(l)) {
+			mark ||= failMark(l);
+			l = "";
+			at = 0;
+		}
+		if (mark) l = `${l.slice(0, at)}${mark}${l.slice(at).replace(/^:[ \t]*/, "")}`.trimEnd();
 		if (l.trim()) tail = out.length;
+		prose.push(out.length);
 		out.push(l);
 	}
-	if (tail < 0) return out.join("\n");
-	if (full && out[tail]!.trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
-	else out[tail] = out[tail]!.replace(w.close, "");
+	if (tail >= 0) {
+		if (full && out[tail]!.trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
+		else out[tail] = out[tail]!.replace(w.close, m => (full && FAIL_WORD.test(m) ? ` ${TONE_EMOJI.fail}` : ""));
+	}
+	if (full) for (const i of prose) out[i] = plainWords(out[i]!);
 	return out.join("\n");
 }
-export const stripMarkers = (text: string): string => (text.includes("[") || LONE_DASH.test(text) ? stripWords(text, CONTROL, true) : text);
+// `own`: the opening marker is the message's tone, read elsewhere; parseTone has already taken that one off.
+export const stripMarkers = (text: string, own = true): string => (text.includes("[") || LONE_DASH.test(text) ? stripWords(text, CONTROL, true, own) : text);
 
 // The leading status marker apart from the rest: `head` is the raw marker text, `rest` still carries the other markers.
 export function splitTone(text: string): { tone?: Tone; head: string; rest: string } {
@@ -93,9 +124,18 @@ export const claimWord = (text: string): string => {
 };
 
 // `text` is what may be shown: the status marker and every other machine marker are gone.
+const LED_FAIL = new RegExp(`^\\s*${TONE_EMOJI.fail}[ \\t]*`);
 export function parseTone(text: string): { tone?: Tone; text: string } {
 	const { tone, rest } = splitTone(text);
-	return tone ? { tone, text: stripMarkers(rest) } : { text: stripMarkers(rest) };
+	const shown = stripMarkers(rest, !tone);
+	return tone ? { tone, text: tone === "fail" ? shown.replace(LED_FAIL, "") : shown } : { text: shown };
+}
+
+// A messenger with no status style of its own: the status as its emoji, nothing else of the machine's.
+export function toneText(text: string): string {
+	const { tone, text: shown } = parseTone(text);
+	const body = shown.trim();
+	return tone ? `${TONE_EMOJI[tone]} ${body}`.trimEnd() : body;
 }
 
 // OmO's harness opens a final answer with a handoff block ("Ask: ... - wanted: ... For you: ... Now: ... Next: ..."): agent

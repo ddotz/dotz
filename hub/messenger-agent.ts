@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, SettingsError, type SettingsPut, type TestResult } from "./messenger.ts";
 import { channelName, sameRoom } from "./messenger-rooms.ts";
+import { toneText } from "./tone.ts";
 import { splitText } from "./messenger-jandi.ts";
 
 // Slack / Telegram (and other chat services) through the optional agent-messenger package (github.com/agent-messenger/agent-messenger).
@@ -797,6 +798,7 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 		const t = tr();
 		const final = isFinal(msg);
 		if (msg.updateKey && !final && !t.edit) return { delivered: false, reason: "edit" };
+		if (!toneText(msg.text) && !msg.options?.length) return { delivered: false, reason: "internal" };
 		const all = loadAgentConfig(dataDir).connections.flatMap(conn => conn.chats.map(chat => ({ conn, chat })));
 		let dests = all.filter(({ chat }) => chat.kind === msg.kind && (msg.kind !== "project" || chat.project === msg.target));
 		// A project with no chat of its own talks in the main chat (the web app shows it under the main conversation too).
@@ -817,7 +819,7 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 	}
 
 	async function sendTo(t: AgentTransport, conn: AgentConn, chat: AgentChat, msg: OutMsg, final: boolean): Promise<string[]> {
-		let text = msg.text;
+		let text = toneText(msg.text);
 		if (msg.options?.length) text += `\n\n${msg.options.map(o => `${o.n}) ${o.label}`).join("\n")}\n\n${ASK_HINT}`;
 		const parts = splitText(text, MAX_PART);
 		const key = msg.replyTo ? ledgerKey(conn.id, chat.id, msg.target, msg.replyTo) : undefined;
