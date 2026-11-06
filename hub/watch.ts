@@ -42,7 +42,7 @@ export type Watch = {
 	timeout_seconds?: number;
 	retry?: Record<string, number[]>;
 	approval_minutes?: number;
-	once?: boolean; // one-shot: removed after its first change/match report (a recurring watch has no flag and stays)
+	once?: boolean; // one-shot: removed after its first change/match report; on=match fires on any matching output, also the first (a recurring watch has no flag and stays)
 	paused?: boolean;
 	// The owner's notification switches of this monitor (hub/watch-settings.ts): `notify: false` keeps its reports out of the bell (hub/app-off.ts newsMuted),
 	// `push: false` off the phone (hub/push.ts setWatchPushOff); `discord` decides whether its own posts also go to Discord (missing: the 새 소식 class switch).
@@ -329,7 +329,9 @@ async function runOnce(w: Watch): Promise<void> {
 			w.state.lastChanged = true;
 			notify(w, "output changed", output, prev);
 		}
-		if (w.on === "match" && changed && new RegExp(w.pattern!, "i").test(output)) {
+		// A first output is a recurring watch's baseline (a feed's old items are not news). A once match is a gate, as a sentinel line of OmO's monitor:
+		// it may print one constant line, or already hold on its first run, so the match alone is the event.
+		if (w.on === "match" && (changed || w.once) && new RegExp(w.pattern!, "i").test(output)) {
 			w.state.lastChanged = true;
 			notify(w, `matched /${w.pattern}/`, output, prev);
 		}

@@ -109,7 +109,7 @@ test("a one-shot schedule is deleted after it fires and a recurring one is kept"
 test("a one-shot watch is deleted after its first match report and a recurring one is kept", async () => {
 	const reports: string[] = [];
 	startWatches((w, reason) => reports.push(`${w.name}:${reason}`));
-	// each run prints a new number, so every run after the baseline is a change that matches the pattern
+	// each run prints a new number: the once watch matches on its first run, the recurring one on every run after its baseline
 	const check = 'f="$DOTZ_WATCH_STATE_DIR/n"; n=$(cat "$f" 2>/dev/null || echo 0); echo $((n + 1)) > "$f"; echo "run $n"';
 	const once = addWatch({ name: "gone-after-match", command: check, every_minutes: 60, on: "match", pattern: "run", once: true }, "");
 	const every = addWatch({ name: "stays-after-match", command: check, every_minutes: 60, on: "match", pattern: "run" }, "");

@@ -1,6 +1,6 @@
 // dotz_watch robustness from the earlier secretary's launchd watchers: process-group SIGKILL deadline, per-kind retry, owner-approval gate.
 import { afterEach, beforeAll, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -291,6 +291,44 @@ test("a flapping watch tells the owner once per episode; a refail that lasts, or
 	await step(1, 120);
 	await step(1);
 	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered", "failed 3 times in a row (exit 1)", "recovered", "failed 2 times in a row (exit 1)"]);
+});
+
+// The shape of a one-shot gate: the check fails until its condition holds, then prints one constant line. There is no second, different output
+// to compare with, so the match itself is the event (dotz-rewrite-ready passed for 40 minutes unreported and was never removed).
+test("a once match fires on a constant first success, after failures or at once, beside its recovery note, and is removed", async () => {
+	const flag = join(DATA_DIR, "watch-gate.flag");
+	rmSync(flag, { force: true });
+	addWatch({ name: "t-gate", command: `[ -e '${flag}' ] && echo ready`, on: "match", pattern: "ready", to: "alert", once: true }, "");
+	await runWatch("t-gate");
+	await runWatch("t-gate");
+	writeFileSync(flag, "");
+	await runWatch("t-gate");
+	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered", "matched /ready/"]);
+	expect(allWatches().some(w => w.name === "t-gate")).toBe(false);
+	notes.length = 0;
+	addWatch({ name: "t-ready", command: "echo ready", on: "match", pattern: "ready", to: "alert", once: true }, "");
+	await runWatch("t-ready");
+	expect(notes).toEqual([{ name: "t-ready", reason: "matched /ready/" }]);
+	expect(allWatches().some(w => w.name === "t-ready")).toBe(false);
+});
+
+test("a first output stays the baseline of a recurring match, also after failures, and of a once change watch", async () => {
+	const out = join(DATA_DIR, "watch-base.txt"), steady = join(DATA_DIR, "watch-base-steady.txt");
+	rmSync(out, { force: true });
+	writeFileSync(steady, "old items\n");
+	addWatch({ name: "t-feed", command: `cat '${out}'`, on: "match", pattern: ".", to: "alert" }, "");
+	addWatch({ name: "t-once-change", command: `cat '${steady}'`, on: "change", to: "alert", once: true }, "");
+	await runWatch("t-feed");
+	await runWatch("t-once-change");
+	writeFileSync(out, "old items\n");
+	await runWatch("t-feed");
+	expect(notes).toEqual([]);
+	writeFileSync(out, "new item\n");
+	writeFileSync(steady, "new item\n");
+	await runWatch("t-feed");
+	await runWatch("t-once-change");
+	expect(notes.map(n => n.reason)).toEqual(["matched /./", "output changed"]);
+	expect(allWatches().map(w => w.name)).toEqual(["t-feed"]);
 });
 
 // A kept login the gateway signs in again itself (hub/autologin.ts through sessionRun). The Aside check and sign-in are swapped for scripted
