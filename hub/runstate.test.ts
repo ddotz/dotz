@@ -108,32 +108,32 @@ test("openTodos counts tasks that are neither completed nor abandoned and picks 
 });
 
 test("a mail conversation's run state is the worker its request was deferred to, whichever target names it", () => {
-	const threads: Record<string, string> = { "000000000000000000": "company-67010497" };
+	const threads: Record<string, string> = { "1500000000005057364": "acme-67010497" };
 	const conv = (t: string) => mailConversation(t, id => threads[id]);
-	expect(conv("th:000000000000000000")).toBe("mail:company-67010497");
-	expect(conv("mail:company-67010497")).toBe("mail:company-67010497");
+	expect(conv("th:1500000000005057364")).toBe("mail:acme-67010497");
+	expect(conv("mail:acme-67010497")).toBe("mail:acme-67010497");
 	expect(conv("web")).toBeUndefined();
-	const work = { id: "st_01a17c04", description: "redacted 연결 스크립트 흐름도 HTML", status: "running" as const, started_at: now - 240_000, target: "th:000000000000000000" };
+	const work = { id: "st_01a17c04", description: "샘플 연결 스크립트 흐름도 HTML", status: "running" as const, started_at: now - 240_000, target: "th:1500000000005057364" };
 	// The thread target and the mail key name the one conversation the owner sees, so either yields its line.
 	// It names the worker, so the line's 중단 stops that one.
-	expect(workConversationRuns([work], conv)).toEqual({ "mail:company-67010497": { kind: "working", since: iso(240_000), detail: "redacted 연결 스크립트 흐름도 HTML", work: "st_01a17c04" } });
-	expect(workConversationRuns([{ ...work, target: "mail:company-67010497" }], conv)).toEqual({ "mail:company-67010497": { kind: "working", since: iso(240_000), detail: "redacted 연결 스크립트 흐름도 HTML", work: "st_01a17c04" } });
+	expect(workConversationRuns([work], conv)).toEqual({ "mail:acme-67010497": { kind: "working", since: iso(240_000), detail: "샘플 연결 스크립트 흐름도 HTML", work: "st_01a17c04" } });
+	expect(workConversationRuns([{ ...work, target: "mail:acme-67010497" }], conv)).toEqual({ "mail:acme-67010497": { kind: "working", since: iso(240_000), detail: "샘플 연결 스크립트 흐름도 HTML", work: "st_01a17c04" } });
 	expect(workConversationRuns([{ ...work, target: "web" }], conv)).toEqual({});
 	// The model the worker runs on follows its description: the owner sees which model does the work he asked for there.
-	expect(workConversationRuns([{ ...work, model: "Opus 5.5 medium" }], conv)["mail:company-67010497"]!.detail).toBe("redacted 연결 스크립트 흐름도 HTML · Opus 5.5 medium");
+	expect(workConversationRuns([{ ...work, model: "Opus 5.5 medium" }], conv)["mail:acme-67010497"]!.detail).toBe("샘플 연결 스크립트 흐름도 HTML · Opus 5.5 medium");
 	expect(runState({ status: "idle", work: [{ description: "흐름도", started_at: now, model: "Opus 5.5 medium" }], now }).detail).toBe("흐름도 · Opus 5.5 medium");
 });
 
 test("a worker that failed at spawn says why, and whether it was handed over again", () => {
-	const conv = (t: string) => mailConversation(t, () => "company-67010497");
-	const failed = { id: "st_01a17c03", description: "redacted 연결 스크립트 흐름도 HTML", status: "failed" as const, started_at: now - 300_000, ended_at: now - 300_000, target: "th:000000000000000000", error: "child turn produced no assistant output" };
+	const conv = (t: string) => mailConversation(t, () => "acme-67010497");
+	const failed = { id: "st_01a17c03", description: "샘플 연결 스크립트 흐름도 HTML", status: "failed" as const, started_at: now - 300_000, ended_at: now - 300_000, target: "th:1500000000005057364", error: "child turn produced no assistant output" };
 	// <작업> · <이유> while the agent takes it up; once a turn took it up (handled) the conversation has no line for it.
-	expect(workConversationRuns([failed], conv)["mail:company-67010497"]).toEqual({ kind: "waiting", reason: "recover", since: iso(300_000), detail: "redacted 연결 스크립트 흐름도 HTML · child turn produced no assistant output", work: "st_01a17c03" });
-	expect(workConversationRuns([{ ...failed, handled: true }], conv)["mail:company-67010497"]).toBeUndefined();
-	const retry = { id: "st_01a17c04", description: "다시", status: "running" as const, started_at: now - 240_000, target: "th:000000000000000000" };
-	expect(workConversationRuns([failed, retry], conv)["mail:company-67010497"]).toMatchObject({ kind: "working", detail: "다시" });
+	expect(workConversationRuns([failed], conv)["mail:acme-67010497"]).toEqual({ kind: "waiting", reason: "recover", since: iso(300_000), detail: "샘플 연결 스크립트 흐름도 HTML · child turn produced no assistant output", work: "st_01a17c03" });
+	expect(workConversationRuns([{ ...failed, handled: true }], conv)["mail:acme-67010497"]).toBeUndefined();
+	const retry = { id: "st_01a17c04", description: "다시", status: "running" as const, started_at: now - 240_000, target: "th:1500000000005057364" };
+	expect(workConversationRuns([failed, retry], conv)["mail:acme-67010497"]).toMatchObject({ kind: "working", detail: "다시" });
 	const failedAgain = { ...retry, status: "failed" as const, ended_at: now - 60_000 };
-	expect(workConversationRuns([failed, failedAgain], conv)["mail:company-67010497"]).toMatchObject({ kind: "waiting", reason: "recover", detail: "다시 · 이유가 기록되지 않았어요 · 다시 맡긴 작업도 실패했어요", work: "st_01a17c04" });
+	expect(workConversationRuns([failed, failedAgain], conv)["mail:acme-67010497"]).toMatchObject({ kind: "waiting", reason: "recover", detail: "다시 · 이유가 기록되지 않았어요 · 다시 맡긴 작업도 실패했어요", work: "st_01a17c04" });
 });
 
 test("an isolation refusal is said in Korean instead of raw git output", () => {
@@ -235,7 +235,7 @@ test("a session whose only worker is queued says so, and a running worker outran
 	expect([both.work, both.queued]).toEqual(["r", undefined]);
 });
 
-// lane company-xhigh 2026-11-05: these reports rested with an empty plan, and the last was told to go on.
+// lane audit-xhigh 2026-11-05: these reports rested with an empty plan, and the last was told to go on.
 test("a session waiting for the owner with no open work is waiting, and gets no nudge", () => {
 	for (const lastAnswer of ["[wait] 형 메시지만 남았어요", "[run] 준비됐고 형 메시지를 기다리는 중이에요.", "[run] 남은 일은 형 메시지가 와야 시작할 수 있어서 할 일 목록은 비워 뒀고, 메모 파일은 형이 끝내자고 할 때 쓸게요.", "[run] 지금 할 수 있는 일은 끝났고, 다음은 형 메시지가 와야 시작해요.", "오너 답을 기다릴게요."]) {
 		const r = runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer });

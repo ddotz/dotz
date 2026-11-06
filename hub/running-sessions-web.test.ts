@@ -2,17 +2,17 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { ev, fakeHub, idleState, json, run, type View, waitFor } from "./test-web.ts";
 
 // 진행 중 is one list on 홈 and under 땅콩 and 작업내역 in 채팅, a shortcut to sessions that stay in their project's 세션 section: the shipped page against a stub gateway.
-const work = { "7001": "company" };
+const work = { "7001": "기획팀" };
 const lane = (name: string, title: string, extra: object) => ({ name, title, cwd: "/h/shared", status: "idle", live: true, reports: 1, startedAt: "2026-11-01T00:00:00Z", ...extra });
-const company = lane("company", "company 출자전환 검토", { status: "working", home: "ch:7001", project: "company", startedAt: "2026-11-01T01:00:00Z" });
+const audit = lane("audit", "분기 안건 검토", { status: "working", home: "ch:7001", project: "기획팀", startedAt: "2026-11-01T01:00:00Z" });
 const free = lane("free", "회의록 정리", { status: "working", startedAt: "2026-11-01T02:00:00Z" });
-const ask = lane("ask", "손익 검토", { home: "ch:7001", project: "company", startedAt: "2026-11-01T03:00:00Z", pendingAsk: { text: "어떻게 할까요?" } });
-const done = lane("done", "지난달 보고", { home: "ch:7001", project: "company" });
-const held = lane("held", "한도 세션", { status: "rate-limited", home: "ch:7001", project: "company" });
-const gone = lane("gone", "오래된 세션", { status: "exited", live: false, home: "ch:7001", project: "company", finishedAt: "2026-11-01T04:00:00Z" });
-const lanes = [done, held, free, company, ask, gone];
-const runs = { "lane:company": { kind: "working" }, "lane:free": { kind: "working" }, "lane:ask": { kind: "waiting", reason: "ask" }, "lane:done": { kind: "done", since: "2026-11-01T05:00:00Z" } };
-const projects = [{ key: "ch:7001", name: "company", channel: { id: "7001" }, lanes: lanes.filter(l => l !== free).map(l => ({ name: l.name, title: l.title, status: l.status, live: l.live, waiting: l === ask, finishedAt: l === done ? "2026-11-01T05:00:00Z" : l === gone ? "2026-11-01T04:00:00Z" : undefined })) }];
+const ask = lane("ask", "손익 검토", { home: "ch:7001", project: "기획팀", startedAt: "2026-11-01T03:00:00Z", pendingAsk: { text: "어떻게 할까요?" } });
+const done = lane("done", "지난달 보고", { home: "ch:7001", project: "기획팀" });
+const held = lane("held", "한도 세션", { status: "rate-limited", home: "ch:7001", project: "기획팀" });
+const gone = lane("gone", "오래된 세션", { status: "exited", live: false, home: "ch:7001", project: "기획팀", finishedAt: "2026-11-01T04:00:00Z" });
+const lanes = [done, held, free, audit, ask, gone];
+const runs = { "lane:audit": { kind: "working" }, "lane:free": { kind: "working" }, "lane:ask": { kind: "waiting", reason: "ask" }, "lane:done": { kind: "done", since: "2026-11-01T05:00:00Z" } };
+const projects = [{ key: "ch:7001", name: "기획팀", channel: { id: "7001" }, lanes: lanes.filter(l => l !== free).map(l => ({ name: l.name, title: l.title, status: l.status, live: l.live, waiting: l === ask, finishedAt: l === done ? "2026-11-01T05:00:00Z" : l === gone ? "2026-11-01T04:00:00Z" : undefined })) }];
 const hub = fakeHub({
 	stream: "fake",
 	state: () => idleState({ channels: { work }, lanes, runs }),
@@ -36,7 +36,7 @@ beforeAll(async () => {
 });
 afterAll(() => hub.stop());
 
-const WANT = [["company · 손익 검토", "답을 기다림"], ["company · company 출자전환 검토", "진행 중"], ["회의록 정리", "진행 중"]];
+const WANT = [["기획팀 · 손익 검토", "답을 기다림"], ["기획팀 · 분기 안건 검토", "진행 중"], ["회의록 정리", "진행 중"]];
 const homeRows = `(() => { renderHomeNow(); return [...document.querySelectorAll('#v-home .hn[data-k="running"] .srow')].map(r => [r.querySelector(".nm").textContent, r.querySelector(".hs").textContent]); })()`;
 const chatRows = `(() => { const sec = [...document.querySelectorAll("#chat-convo .cv-sec")].find(n => n.textContent === "진행 중"); const above = sec && sec.previousElementSibling; return above === document.querySelector("#chat-convo > *") && [...above.querySelectorAll(".cv-row")].map(r => r.dataset.t).join() === "main,worklog" ? [...sec.nextElementSibling.querySelectorAll(".cv-row")].map(r => [r.querySelector(".cv-n").textContent, r.querySelector(".tag").textContent]) : null; })()`;
 const listed = async (expr: string, want: unknown) => { await waitFor(v, `JSON.stringify(${expr}) === ${JSON.stringify(JSON.stringify(want))}`); };
@@ -48,12 +48,12 @@ test("홈 and 채팅, under 땅콩 and 작업내역, list the same sessions: wai
 	expect(await ev<number>(v, `document.querySelectorAll('#v-home .hn[data-k="waiting"] [data-t="lane:held"]').length`)).toBe(1);
 	await run(v, `go("chat", "list")`);
 	await listed(chatRows, WANT);
-	await run(v, `document.querySelector('#chat-convo .cv-card .cv-row[data-t="lane:company"]').click()`);
-	await waitFor(v, `target === "lane:company" && current === "chat"`);
+	await run(v, `document.querySelector('#chat-convo .cv-card .cv-row[data-t="lane:audit"]').click()`);
+	await waitFor(v, `target === "lane:audit" && current === "chat"`);
 });
 
 test("the project's 세션 section holds them all under the one status: waiting, running, what stopped short, finished last", async () => {
-	expect(await ev<string[][]>(v, `pmSessionRows(PRJ.projects[0], null).map(r => [r.name, pmLaneState(r)[0]])`)).toEqual([["ask", "답을 기다림"], ["company", "진행 중"], ["held", "한도 걸림"], ["done", "완료"], ["gone", "완료"]]);
+	expect(await ev<string[][]>(v, `pmSessionRows(PRJ.projects[0], null).map(r => [r.name, pmLaneState(r)[0]])`)).toEqual([["ask", "답을 기다림"], ["audit", "진행 중"], ["held", "한도 걸림"], ["done", "완료"], ["gone", "완료"]]);
 });
 
 test("a session leaves and joins 진행 중 by itself; with nothing running the list has no header, and neither a read further down nor the very top moves", async () => {
@@ -63,10 +63,10 @@ test("a session leaves and joins 진행 중 by itself; with nothing running the 
 	await run(v, `go("chat", "list"); const side = document.querySelector("#chat-convo"); side.style.height = "160px"; side.style.overflowY = "auto"; side.scrollTop = 120`);
 	await waitFor(v, `document.querySelector("#chat-convo").scrollTop === 120`);
 	const before = await ev<number>(v, below);
-	await run(v, `S.lanes.find(l => l.name === "company").status = "idle"; S.runs["lane:company"] = { kind: "done" }; renderBars()`);
+	await run(v, `S.lanes.find(l => l.name === "audit").status = "idle"; S.runs["lane:audit"] = { kind: "done" }; renderBars()`);
 	await listed(chatRows, [WANT[0], WANT[2]]);
 	expect(Math.abs(await ev<number>(v, below) - before)).toBeLessThan(1);
-	await run(v, `S.lanes.find(l => l.name === "company").status = "working"; S.runs["lane:company"] = { kind: "working" }; renderBars()`);
+	await run(v, `S.lanes.find(l => l.name === "audit").status = "working"; S.runs["lane:audit"] = { kind: "working" }; renderBars()`);
 	await listed(chatRows, WANT);
 	expect(Math.abs(await ev<number>(v, below) - before)).toBeLessThan(1);
 	await run(v, `document.querySelector("#chat-convo").scrollTop = 0`);

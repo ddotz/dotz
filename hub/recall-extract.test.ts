@@ -128,7 +128,7 @@ describe("legacy monitor era", () => {
 	});
 
 	test("relayed instructions keep their kind and lose the tag", () => {
-		const out = pairs([user("[사용자 지시 · someone] do the thing"), said("done")], LEGACY);
+		const out = pairs([user("[사용자 지시 · 이전 비서] do the thing"), said("done")], LEGACY);
 		expect(out[0]).toMatchObject({ kind: "relay", owner: "do the thing" });
 	});
 

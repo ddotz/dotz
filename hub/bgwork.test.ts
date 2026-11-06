@@ -81,10 +81,10 @@ test("a worker that failed at spawn still names its conversation and why, and th
 	// st_01a17c03 (2026-10-27): status error, started_at == terminal_at, a turn of ours had just spawned it.
 	record("st_start", { status: "error", terminal_at: iso(T0 + 400), error_message: "child turn produced no assistant output" });
 	const lines: string[] = [];
-	const turn = (at: number) => (at === T0 + 400 ? { target: "th:000000000000000000", replyTo: "m-1" } : undefined);
+	const turn = (at: number) => (at === T0 + 400 ? { target: "th:1500000000005057364", replyTo: "m-1" } : undefined);
 	const work = createBgWork({ sessionFile: () => session, deferred: () => [], turn, now: () => T0 + 60_000, log: m => lines.push(m) });
-	for (let i = 0; i < 3; i++) expect(work.list()[0]).toMatchObject({ id: "st_start", status: "failed", target: "th:000000000000000000", reply_to: "m-1", error: "child turn produced no assistant output" });
-	expect(lines).toEqual(["background work st_start failed in th:000000000000000000: child turn produced no assistant output"]);
+	for (let i = 0; i < 3; i++) expect(work.list()[0]).toMatchObject({ id: "st_start", status: "failed", target: "th:1500000000005057364", reply_to: "m-1", error: "child turn produced no assistant output" });
+	expect(lines).toEqual(["background work st_start failed in th:1500000000005057364: child turn produced no assistant output"]);
 });
 
 test("a finished worker carries the message of its result; an unsure one is asked again, a cancelled or running one never", () => {
@@ -170,10 +170,10 @@ test("a failed worker carries its reason in Korean and stays listed for the hour
 });
 
 test("다시 맡기기 goes to the conversation the request came from, in the owner's own words when known", () => {
-	const keyOf = (thread: string) => (thread === "000000000000000000" ? "company-1" : undefined);
+	const keyOf = (thread: string) => (thread === "1500000000005057364" ? "acme-1" : undefined);
 	expect([undefined, "web", "terminal"].map(t => workConversation(t, keyOf))).toEqual(["main", "main", "main"]);
-	expect(workConversation("th:000000000000000000", keyOf)).toBe("mail:company-1");
-	expect(workConversation("th:1564523279849357365", keyOf)).toBe("main");
+	expect(workConversation("th:1500000000005057364", keyOf)).toBe("mail:acme-1");
+	expect(workConversation("th:1500000000005057365", keyOf)).toBe("main");
 	expect(["mail:k2", "ch:42", "settings:w:login"].map(t => workConversation(t, keyOf))).toEqual(["mail:k2", "ch:42", "settings:w:login"]);
 	const w = { description: "흐름도 그리기", reason: "이유가 기록되지 않았어요" };
 	expect(retryText(w, "흐름도를 HTML로 만들어 줘")).toBe("실패한(이유가 기록되지 않았어요) 백그라운드 작업 \"흐름도 그리기\"을 다시 맡아 주세요.\n\n처음 요청:\n흐름도를 HTML로 만들어 줘");

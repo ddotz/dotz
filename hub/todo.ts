@@ -60,7 +60,7 @@ export function readTodo(file: string | undefined): Todo {
 	return { phases: [] };
 }
 
-// What a session's harness says it waits on (owner 2026-10-29: company-loss-review showed 쉬는 중 · 할 일 13개 남음 while it waited on its own
+// What a session's harness says it waits on (owner 2026-10-29: acme-loss-review showed 쉬는 중 · 할 일 13개 남음 while it waited on its own
 // "HTML 워커 종료" monitor, and the stall rule then told it to go on). OmO writes a `session-lifecycle` record at every change: its state
 // ("waiting_background" when a turn ended on purpose to wait) and `waitingOn` (subagents, background shells, monitors). The latest record
 // is the truth; only the file's tail is read, cached by size, time and last bytes.

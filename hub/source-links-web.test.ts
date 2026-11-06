@@ -10,7 +10,7 @@ const URLS = [
 	"https://learn.microsoft.com/en-us/windows/ai/apis/phi-silica",
 ];
 const SENTENCE = "자세한 건 [공식 문서](https://example.com/guide)와 https://example.org/a 를 보세요.";
-const LAW = "https://casenote.kr/법령/한국company법";
+const LAW = "https://casenote.kr/법령/한국예시은행법";
 const ts = (n: number) => `2026-11-04T08:${String(10 + n).padStart(2, "0")}:00.000Z`;
 const answer = (n: number, text: string) => ({ ts: ts(n), kind: "out", source: "orchestrator", target: "web", text });
 const events = [
@@ -19,7 +19,7 @@ const events = [
 	answer(2, "참고:\n- [읽어 볼 글](https://www.example.net/post?id=1)\n- https://example.net"),
 	answer(3, `한 줄만 있어요.\n${URLS[1]}`),
 	answer(4, `${URLS[1]}\n${URLS[2]}\n이어지는 말이에요.`),
-	answer(5, `조문에 맞아요.\n\n근거:\n- 한국company법 제31조: ${LAW}/제31조\n- 한국company법 제32조(손실은 적립금으로 먼저 보전): ${LAW}/제32조\n- 한국company법 제23조: ${LAW}/제23조`),
+	answer(5, `조문에 맞아요.\n\n근거:\n- 한국예시은행법 제31조: ${LAW}/제31조\n- 한국예시은행법 제32조(손실은 적립금으로 먼저 보전): ${LAW}/제32조\n- 한국예시은행법 제23조: ${LAW}/제23조`),
 	answer(6, "근거:\n- 규정: https://example.com/a\n- 담당자에게 확인했어요."),
 	answer(7, "참고:\n문서 - https://example.org/a\n[글](https://example.org/b)\n1. 책: <https://example.org/c>"),
 	answer(8, "문서: https://example.com/a\n글: https://example.com/b"),
@@ -74,9 +74,9 @@ test("a last run of bare URLs needs two lines; a list with a heading also takes 
 test("a 근거: heading over 이름: URL lines draws rows with the name first, the site and short path under it", async () => {
 	const rows = await rowsOf(3);
 	expect(rows.map(r => [r.letter, r.site, r.sub])).toEqual([
-		["C", "한국company법 제31조", "casenote.kr · …/한국company법/제31조"],
-		["C", "한국company법 제32조(손실은 적립금으로 먼저 보전)", "casenote.kr · …/한국company법/제32조"],
-		["C", "한국company법 제23조", "casenote.kr · …/한국company법/제23조"],
+		["C", "한국예시은행법 제31조", "casenote.kr · …/한국예시은행법/제31조"],
+		["C", "한국예시은행법 제32조(손실은 적립금으로 먼저 보전)", "casenote.kr · …/한국예시은행법/제32조"],
+		["C", "한국예시은행법 제23조", "casenote.kr · …/한국예시은행법/제23조"],
 	]);
 	expect(rows.map(r => r.href)).toEqual([`${LAW}/제31조`, `${LAW}/제32조`, `${LAW}/제23조`]);
 	expect(await page(`${lists}[3].querySelector(".mlist-h").textContent`)).toBe("근거");

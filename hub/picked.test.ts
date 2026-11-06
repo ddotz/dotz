@@ -38,7 +38,7 @@ test("pickedLines prints one line per element and leaves out an empty text or ht
 
 test("inboxText prints the picked lines right after the text of their part", () => {
 	const text = inboxText({
-		kind: "message", source: "web", channel: "web", mid: "m-pick", author: "someone", text: "이 두 개 고쳐줘",
+		kind: "message", source: "web", channel: "web", mid: "m-pick", author: "owner", text: "이 두 개 고쳐줘",
 		elements: [{ n: 1, tag: "button", sel: "#save", text: "Save", html: "", view: "settings", title: "" }, { n: 2, tag: "a", sel: "a.help", text: "Help", html: "", view: "home", title: "" }],
 	});
 	const l = lines(text);
@@ -50,7 +50,7 @@ test("inboxText prints the picked lines right after the text of their part", () 
 
 test("a burst keeps each part's own picked elements", () => {
 	const text = inboxText({
-		kind: "message", source: "web", channel: "web", mid: "m-pick-b", author: "someone", text: "둘",
+		kind: "message", source: "web", channel: "web", mid: "m-pick-b", author: "owner", text: "둘",
 		parts: [{ text: "하나", elements: [{ n: 1, tag: "div", sel: "#one", text: "", html: "", view: "v1", title: "" }] }, { text: "둘" }],
 	});
 	expect(text).toContain("[picked 1] v1 | div #one");

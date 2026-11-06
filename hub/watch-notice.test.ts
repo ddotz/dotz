@@ -7,16 +7,16 @@ import { addWatch, allWatches, relabelWatches, removeWatch } from "./watch.ts";
 import { clearChannel, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
 
 setWatchLabelResolver(watchLabel);
-const CH = "000000000000000000";
-const CH2 = "1562723146669490228";
-const NAME = "까르띠에-재고-구매";
+const CH = "1500000000003290227";
+const CH2 = "1500000000003290228";
+const NAME = "부티크-재고-구매";
 // The whole store, not the first page: the notice store is shared with every test file in the run, and unread ones from earlier files fill a 100-item page.
 const noticesFor = (title: string) => listNotices(NOTICE_CAP).items.filter(n => n.kind === "watch" && n.title === title);
 
 // The channels and their monitors are the fixture of the tests below, set up once so no test depends on another having run first.
 let a: ReturnType<typeof setupChannel>, b: ReturnType<typeof setupChannel>;
 beforeAll(() => {
-	a = setupChannel({ channel: `ch:${CH}`, purpose: "재고 확인", monitors: [{ command: "echo private-project_mails=0" }, { command: "echo private-project_mails=1" }] }, NAME, "");
+	a = setupChannel({ channel: `ch:${CH}`, purpose: "재고 확인", monitors: [{ command: "echo boutique_mails=0" }, { command: "echo boutique_mails=1" }] }, NAME, "");
 	b = setupChannel({ channel: `ch:${CH2}`, purpose: "다른 일", monitors: [{ command: "echo 1", label: "메일 감시" }] }, "다른-채널", "");
 });
 afterAll(() => {
@@ -34,8 +34,8 @@ test("reasons of the watch runner read as Korean and unknown ones pass through",
 	expect(watchReasonKo("recovered")).toBe("다시 정상이에요");
 	expect(watchReasonKo("failed 3 times in a row (exit 1)")).toBe("3번 연속 실패했어요");
 	expect(watchReasonKo("바뀌었어요")).toBe("바뀌었어요");
-	expect(watchLine("재고 감시", "output changed", "private-project_mails=1")).toBe("재고 감시: 결과가 바뀌었어요\n```원문\nprivate-project_mails=1\n```");
-	expect(watchLine("재고 감시", "output changed", "private-project_mails=1", { raw: false })).toBe("재고 감시: 결과가 바뀌었어요");
+	expect(watchLine("재고 감시", "output changed", "boutique_mails=1")).toBe("재고 감시: 결과가 바뀌었어요\n```원문\nboutique_mails=1\n```");
+	expect(watchLine("재고 감시", "output changed", "boutique_mails=1", { raw: false })).toBe("재고 감시: 결과가 바뀌었어요");
 	expect(watchLine("재고 감시", "output changed", " ")).toBe("재고 감시: 결과가 바뀌었어요");
 });
 
@@ -52,7 +52,7 @@ test("a channel monitor event routed to the orchestrator makes no notice while t
 	const name = allWatches().find(w => w.channels?.includes(CH) && watchLabel(w.name) === `${NAME} 감시 2`)!;
 	setOrchestratorAvailable(() => true);
 	const before = noticesFor(`${NAME} 감시 2`).length;
-	emit("inbox", watchWakeEvent(name, "output changed", "private-project_mails=1"));
+	emit("inbox", watchWakeEvent(name, "output changed", "boutique_mails=1"));
 	expect(noticesFor(`${NAME} 감시 2`)).toHaveLength(before);
 });
 
@@ -60,11 +60,11 @@ test("with the orchestrator unavailable the same event is a Korean notice titled
 	const w = allWatches().find(x => x.channels?.includes(CH) && watchLabel(x.name) === `${NAME} 감시 2`)!;
 	setOrchestratorAvailable(() => false);
 	try {
-		emit("inbox", watchWakeEvent(w, "output changed", "private-project_mails=1"));
+		emit("inbox", watchWakeEvent(w, "output changed", "boutique_mails=1"));
 	} finally {
 		setOrchestratorAvailable(() => true);
 	}
-	const text = `${NAME} 감시 2: 결과가 바뀌었어요\n${rawFence("private-project_mails=1")}`;
+	const text = `${NAME} 감시 2: 결과가 바뀌었어요\n${rawFence("boutique_mails=1")}`;
 	expect(noticesFor(`${NAME} 감시 2`).find(n => n.text === text)).toMatchObject({ kind: "watch", open: "alert" });
 });
 
@@ -80,7 +80,7 @@ test("events routed to alert or chat, or an orchestrator event without a channel
 
 test("a notice stored with the raw watch name and English reason renders with the label and Korean", () => {
 	const w = allWatches().find(x => x.channels?.includes(CH) && watchLabel(x.name) === `${NAME} 감시 1`)!;
-	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target: "ch:123", text: `[${w.name}] output changed\nprivate-project_mails=1` });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target: "ch:123", text: `[${w.name}] output changed\nboutique_mails=1` });
 	const shown = listNotices(NOTICE_CAP).items.find(n => n.kind === "watch" && n.title === `${NAME} 감시 1`);
 	expect(shown?.text).toBe(`${NAME} 감시 1: 결과가 바뀌었어요`);
 });

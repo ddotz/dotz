@@ -170,7 +170,7 @@ test("textVerdict: a typed yes or send verb approves, a negative refuses, anythi
 
 test("draftVerdict: a typed reply in the draft's conversation counts, the latest word wins, other conversations do not", () => {
 	const since = Date.parse(ts()) - 1000;
-	const ref = "RTEXT01", conv = "mail:company-RTEXT01";
+	const ref = "RTEXT01", conv = "mail:acme-RTEXT01";
 	const say = (text: string, extra: Record<string, unknown> = {}) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:1", conv, text, ...extra });
 	say("3) 보내지 않기", { picks: [{ q: `이 답장을 보낼까요? (${ref})`, n: 3, label: "보내지 않기" }] });
 	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
@@ -227,16 +227,16 @@ test("a card with both 참조 and 규칙 lines reads back with each", () => {
 import { domainTypo, draftApprovalBlock as block, recipientCheck, RECIPIENT_MARK, withRecipientMark } from "./draft-approval.ts";
 
 test("a recipient copied with the comment's typo is flagged with the likely address, never changed", () => {
-	const src = "악보 받을 수 있을까요? thanever2@hannail.net 으로 부탁드려요";
+	const src = "악보 받을 수 있을까요? reader2@hannail.net 으로 부탁드려요";
 	expect(domainTypo("hannail.net")).toBe("hanmail.net");
 	expect(domainTypo("gmial.com")).toBe("gmail.com");
 	expect(domainTypo("navr.co")).toBe("naver.com");
-	expect(recipientCheck("thanever2@hannail.net", src)).toContain("thanever2@hannail.net → thanever2@hanmail.net");
-	const card = `[ask] 메일 답장 초안이에요\n> 원문: ${src}\n${block({ to: "thanever2@hannail.net", toLabel: "받는이", body: "보내 드립니다.", ref: "RABCDEF", question: "이 답장 보낼까요?" })}`;
+	expect(recipientCheck("reader2@hannail.net", src)).toContain("reader2@hannail.net → reader2@hanmail.net");
+	const card = `[ask] 메일 답장 초안이에요\n> 원문: ${src}\n${block({ to: "reader2@hannail.net", toLabel: "받는이", body: "보내 드립니다.", ref: "RABCDEF", question: "이 답장 보낼까요?" })}`;
 	const marked = withRecipientMark(card);
 	expect(marked.split("\n")[1]).toStartWith(RECIPIENT_MARK);
-	expect(marked.split("\n")[1]).toContain("thanever2@hanmail.net");
-	expect(parseDraftApproval(marked)?.to).toBe("thanever2@hannail.net");
+	expect(marked.split("\n")[1]).toContain("reader2@hanmail.net");
+	expect(parseDraftApproval(marked)?.to).toBe("reader2@hannail.net");
 	expect(withRecipientMark(marked)).toBe(marked);
 });
 

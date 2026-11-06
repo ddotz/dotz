@@ -1,4 +1,4 @@
-// Nightly update of the harness dotz runs its agents on (someone's nightly.ts, extended). At omp_update.at ("04:20") the gateway
+// Nightly update of the harness dotz runs its agents on (the earlier secretary's nightly.ts, extended). At omp_update.at ("04:20") the gateway
 // checks each harness in use: omp via `omp update --check`; omo (OmO on senpi) by comparing `omo --version` with the omo-ai
 // version npm calls latest (the senpi engine is pinned by omo-ai and moves with it, so one install covers both).
 // omp_update.mode (the key keeps its old name): "install" (default) installs a newer version, checks that the harness really

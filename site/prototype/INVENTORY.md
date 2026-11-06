@@ -72,7 +72,7 @@
 | 이름 | 무엇 | 출처 파일 | 프로토타입 위치 |
 |---|---|---|---|
 | 프로젝트 목록 | 프로젝트 고정 · 상태 한눈에 | web/js/19-project-main.js, web/css/20-projects.css | `#projects` |
-| 프로젝트 상세 | 목적, 단계 진행 막대, 단계 체크 | web/js/19-project-main.js, web/js/28-harness-project.js | `#project/private-project`, `#project/landing`, `#project/release`, `#project/pricing` |
+| 프로젝트 상세 | 목적, 단계 진행 막대, 단계 체크 | web/js/19-project-main.js, web/js/28-harness-project.js | `#project/docgen`, `#project/landing`, `#project/release`, `#project/pricing` |
 | 세션과 채널 | 세션 목록, 프로젝트의 작업 채널, 홈 채널(알림, 작업 기록) | web/js/18-lanes.js, MODE.ko.md (Chat is the hub; work channels; threads) | `#sessions` |
 | 세션 보고 대화 | 세션의 마지막 보고와 대화 링크 | web/js/18-lanes.js | `#chat/lane` |
 | 서브에이전트 진행 | 출처별로 서브에이전트가 도는 모습을 실시간으로 | web/js/06-subagents.js | 없음 |

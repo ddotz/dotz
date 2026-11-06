@@ -15,14 +15,14 @@ const { dropAnsweredMailDraft } = await import("./draft-drop.ts");
 const { droppedDraftRefs, restoreReopenedDrafts } = await import("./draft-restore.ts");
 const { restoreDraft, sendDraft } = await import("../features/reply-drafts/lib/flow.ts");
 
-const rec = (id: string, ref = `company-${id}`): DraftRec => ({ id, kind: "mail", app: "mail", source: "company", mailId: "1", ref, to: "kim@example.com", subject: "Re: 견적", body: "확인해 보고 말씀드릴게요.", status: "pending", created: new Date(Date.now() - 60_000).toISOString(), changes: [], questions: [], item: { kind: "mail", from: "Kim <kim@example.com>", text: "견적 부탁드려요" } });
+const rec = (id: string, ref = `acme-${id}`): DraftRec => ({ id, kind: "mail", app: "mail", source: "acme", mailId: "1", ref, to: "kim@example.com", subject: "Re: 견적", body: "확인해 보고 말씀드릴게요.", status: "pending", created: new Date(Date.now() - 60_000).toISOString(), changes: [], questions: [], item: { kind: "mail", from: "Kim <kim@example.com>", text: "견적 부탁드려요" } });
 let clock = Date.now();
 // The web send of a decision answer as it lands in inbox.jsonl (hub/notices.ts answerDecision -> sendWeb), each a little later than the last.
 const webSend = async (a: { text: string; picks?: unknown }) => {
 	clock += 1000;
 	appendFileSync(join(env.dir, "inbox.jsonl"), `${JSON.stringify({ ts: new Date(clock).toISOString(), kind: "message", source: "web", text: a.text, picks: a.picks })}\n`);
 };
-const post = (ref: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "mail:company-1", text: `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", subject: "Re: 견적", body: "확인해 보고 말씀드릴게요.", ref, question: "이 답장 보낼까요?" })}` });
+const post = (ref: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "mail:acme-1", text: `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", subject: "Re: 견적", body: "확인해 보고 말씀드릴게요.", ref, question: "이 답장 보낼까요?" })}` });
 const cardOf = (ref: string) => listNotices(NOTICE_CAP).items.find(i => i.decision?.draft?.ref === ref)!;
 const reopen = async (ids: string[]) => {
 	const refs = droppedDraftRefs(listNotices(NOTICE_CAP).items, ids);
@@ -68,15 +68,15 @@ test("a reopen of a card answered 보내기 leaves the sent draft alone", async 
 });
 
 test("restoreDraft refuses a sent or replaced draft and one whose mail has a newer draft waiting", () => {
-	addDraft(rec("RCCCCC2", "company-c"));
+	addDraft(rec("RCCCCC2", "acme-c"));
 	setStatus("RCCCCC2", "sent");
 	expect(restoreDraft("RCCCCC2")).toMatchObject({ ok: false });
-	addDraft(rec("RDDDDD2", "company-d"));
-	addDraft(rec("REEEEE2", "company-d"));   // the newer draft of the same mail makes the older one stale
+	addDraft(rec("RDDDDD2", "acme-d"));
+	addDraft(rec("REEEEE2", "acme-d"));   // the newer draft of the same mail makes the older one stale
 	expect(getDraft("RDDDDD2")!.status).toBe("stale");
 	expect(restoreDraft("RDDDDD2")).toMatchObject({ ok: false });
 	setStatus("REEEEE2", "dropped");
-	addDraft(rec("RFFFFF2", "company-d"));
+	addDraft(rec("RFFFFF2", "acme-d"));
 	expect(restoreDraft("REEEEE2")).toMatchObject({ ok: false });
 	expect([getDraft("REEEEE2")!.status, getDraft("RFFFFF2")!.status]).toEqual(["dropped", "pending"]);
 	expect(restoreDraft("RZZZZZ2")).toMatchObject({ ok: false });

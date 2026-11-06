@@ -47,7 +47,7 @@ export function runtimeMismatch(lane: Pick<Lane, "name" | "runtime" | "sessionFi
 
 // Starts the lane's process; false when a resume is refused because the session belongs to another runtime (the lane is
 // then left exited, untouched).
-// A process that could not start leaves the lane ended, never "starting" with no process holding a slot (company-allowance-review on the
+// A process that could not start leaves the lane ended, never "starting" with no process holding a slot (acme-allowance-review on the
 // Mac mini, 2026-10-29, kept the next lane waiting for memory). A start nobody is waiting on (a resume) is reported to the
 // orchestrator as a failure to fix; a launch returns the error to its caller (laneops begin).
 function startFailed(lane: Lane, why: string, resume: boolean): void {

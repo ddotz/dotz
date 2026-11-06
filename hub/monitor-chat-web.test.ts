@@ -9,13 +9,13 @@ import { advanceTimers, fakeHub, inbox, json, run, waitFor, type View } from "./
 const MINI = "http://mini.test";
 const at = (min: number) => new Date(Date.UTC(2026, 9, 23, 3, min)).toISOString();
 const failing = (name: string, label: string) => ({ name: label, watch: name, kind: "watch", last_run: at(32), last_result: "fail", next_run: at(62), every: "30분마다", fails: 3, last_ok: at(2), last_output: "로그인이 풀렸어요 로그인 화면이 다시 나왔어요", keeper: true });
-const PEER_T = "settings:w:login-private-project-com";
-const fields = () => WATCH_FIELDS.map(f => viewOf(f, f.key === "enabled" ? true : f.key === "every_minutes" ? 30 : f.key === "to" ? "alert" : "까르띠에 로그인 유지"));
+const PEER_T = "settings:w:login-boutique-com";
+const fields = () => WATCH_FIELDS.map(f => viewOf(f, f.key === "enabled" ? true : f.key === "every_minutes" ? 30 : f.key === "to" ? "alert" : "부티크 로그인 유지"));
 
 const sent = inbox<Record<string, unknown>>();
 const acts = inbox<{ action: string; args: Record<string, unknown> }>();
 const peerHistory: Record<string, unknown>[] = [];
-const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [failing("login-private-project-com", "까르띠에 로그인 유지")], notices: [], integrations: [], conversations: [] } }];
+const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [failing("login-boutique-com", "부티크 로그인 유지")], notices: [], integrations: [], conversations: [] } }];
 
 async function proxy(req: Request, url: URL): Promise<Response> {
 	const p = url.searchParams.get("p") ?? "";
@@ -28,7 +28,7 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 		}
 		return json({ ok: true });
 	}
-	if (p === "/api/watches/login-private-project-com/settings") return json({ key: "login-private-project-com", fields: fields() });
+	if (p === "/api/watches/login-boutique-com/settings") return json({ key: "login-boutique-com", fields: fields() });
 	if (p.startsWith("/api/history")) return json({ target: PEER_T, events: peerHistory });
 	return json({});
 }
@@ -62,7 +62,7 @@ const closeScreen = async (v: View) => {
 	await run(v, `const b = document.querySelector('[data-k="as-back"]'); if (b) b.click()`);
 	await waitFor(v, `!document.querySelector("#app-sw")`);
 };
-const PEER_KEY = `p:${MINI}|m:까르띠에 로그인 유지`;
+const PEER_KEY = `p:${MINI}|m:부티크 로그인 유지`;
 const boot = async (width: number, height: number, key: string) => {
 	const v = await hub.view({ width, height });
 	await v.navigate(`${hub.origin}/`);
@@ -98,7 +98,7 @@ describe("a failing peer monitor", () => {
 		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);
 		await run(v, `document.querySelector('#app-sw [data-k="enabled"]').click()`);
 		await acts.until(() => !(!acts.some(a => a.action === "watch")));
-		expect(acts.find(a => a.action === "watch")).toEqual({ action: "watch", args: { op: "settings", name: "login-private-project-com", values: { enabled: false } } });
+		expect(acts.find(a => a.action === "watch")).toEqual({ action: "watch", args: { op: "settings", name: "login-boutique-com", values: { enabled: false } } });
 		await acts.until(() => !(!acts.some(a => a.action === "message")));
 		expect(acts.find(a => a.action === "message")).toMatchObject({ args: { target: PEER_T, text: "다시 로그인해 줘" } });
 		expect(sent).toEqual([]);

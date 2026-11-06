@@ -376,10 +376,10 @@ test("the orchestrator's task workers are pinned to its live model and effort; a
 	process.env.DOTZ_ORCHESTRATOR = "1";
 	delete process.env.DOTZ_LANE;
 	try {
-		const one = { subagent_type: "oracle", prompt: "mail:company-1 요청: redacted 흐름도 검토\nDone when: 의견 3개" };
+		const one = { subagent_type: "oracle", prompt: "mail:acme-1 요청: 샘플 흐름도 검토\nDone when: 의견 3개" };
 		const r = await handlers.tool_call[0]({ toolName: "task", input: one }, ctx);
 		expect(r.input.model).toBe("anthropic-subscription/claude-opus-5-5:medium");
-		const look = { subagent_type: "librarian", prompt: "mail:company-1 요청: redacted 흐름도 자료 찾기\nDone when: 링크 3개" };
+		const look = { subagent_type: "librarian", prompt: "mail:acme-1 요청: 샘플 흐름도 자료 찾기\nDone when: 링크 3개" };
 		expect((await handlers.tool_call[0]({ toolName: "task", input: look }, ctx)).input.model).toBe(LOOKUP_PIN);
 		const cat = { category: "deep-low", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "흐름도 만들기\nAcceptance: html" };
 		expect("model" in (await handlers.tool_call[0]({ toolName: "task", input: cat }, ctx)).input).toBe(false);
@@ -399,19 +399,19 @@ test("the worker state is keyed by DOTZ_CONV, and shared files are written only 
 		delete process.env.DOTZ_LANE;
 		delete process.env.DOTZ_CONV;
 		expect(stateOwner()).toBeUndefined();
-		process.env.DOTZ_CONV = "mail:company-1";
-		expect(stateOwner()).toBe("mail:company-1");
+		process.env.DOTZ_CONV = "mail:acme-1";
+		expect(stateOwner()).toBe("mail:acme-1");
 		process.env.DOTZ_LANE = "ktx";
 		expect(stateOwner()).toBe("ktx");
 		delete process.env.DOTZ_LANE;
 		const data = join(dir, "data");
-		expect(sharedWriteBlock("write", { path: join(data, "state.json") }, data, "mail:company-1")).toContain("dotz_conv send main");
-		expect(sharedWriteBlock("edit", { path: join(data, "RULES.md") }, data, "mail:company-1")).toBeDefined();
-		expect(sharedWriteBlock("write", { path: join(data, "memory", "owner.md") }, data, "mail:company-1")).toBeDefined();
-		expect(sharedWriteBlock("eval", { language: "js", code: `await Bun.write("${join(data, "LESSONS.md")}", "x")` }, data, "mail:company-1")).toBeDefined();
+		expect(sharedWriteBlock("write", { path: join(data, "state.json") }, data, "mail:acme-1")).toContain("dotz_conv send main");
+		expect(sharedWriteBlock("edit", { path: join(data, "RULES.md") }, data, "mail:acme-1")).toBeDefined();
+		expect(sharedWriteBlock("write", { path: join(data, "memory", "owner.md") }, data, "mail:acme-1")).toBeDefined();
+		expect(sharedWriteBlock("eval", { language: "js", code: `await Bun.write("${join(data, "LESSONS.md")}", "x")` }, data, "mail:acme-1")).toBeDefined();
 		// Reading them, and writing anything else, is fine; so is every write from the main session.
-		expect(sharedWriteBlock("eval", { language: "js", code: `print(read("${join(data, "state.json")}"))` }, data, "mail:company-1")).toBeUndefined();
-		expect(sharedWriteBlock("write", { path: join(data, "reports", "x.md") }, data, "mail:company-1")).toBeUndefined();
+		expect(sharedWriteBlock("eval", { language: "js", code: `print(read("${join(data, "state.json")}"))` }, data, "mail:acme-1")).toBeUndefined();
+		expect(sharedWriteBlock("write", { path: join(data, "reports", "x.md") }, data, "mail:acme-1")).toBeUndefined();
 		expect(sharedWriteBlock("write", { path: join(data, "state.json") }, data, "")).toBeUndefined();
 		// Through the installed hook: blocked under DOTZ_CONV, allowed for main.
 		const { pi, handlers } = fakePi(join(dir, "agent-empty"));
@@ -430,21 +430,21 @@ test("the worker state is keyed by DOTZ_CONV, and shared files are written only 
 test("project footer: a channel with a project gets its README and RULES.md paths; chat and unknown folders get none", () => {
 	const data = mkdtempSync(join(tmpdir(), "dotz-proj-"));
 	try {
-		mkdirSync(join(data, "projects", "company"), { recursive: true });
-		writeFileSync(join(data, "projects", "company", "README.md"), "# company");
+		mkdirSync(join(data, "projects", "acme"), { recursive: true });
+		writeFileSync(join(data, "projects", "acme", "README.md"), "# acme");
 		writeFileSync(join(data, "RULES.md"), "rules");
-		writeFileSync(join(data, "channel-setups.json"), JSON.stringify([{ channel: "42", purpose: "analysis in projects/company (README)" }, { channel: "7", purpose: "projects/none" }]));
-		const readme = join(data, "projects", "company", "README.md");
+		writeFileSync(join(data, "channel-setups.json"), JSON.stringify([{ channel: "42", purpose: "analysis in projects/acme (README)" }, { channel: "7", purpose: "projects/none" }]));
+		const readme = join(data, "projects", "acme", "README.md");
 		const omo = { category: "quick", prompt: "make summary.html\nDone when: file" };
 		addProjectFooter(omo, "ch:42", "/tmp", data);
 		expect(omo.prompt).toContain(`${PROJECT_MARKER} ${readme}, ${join(data, "RULES.md")}`);
 		addProjectFooter(omo, "ch:42", "/tmp", data);
 		expect(omo.prompt.split(PROJECT_MARKER).length).toBe(2);
-		const omp = { tasks: [{ task: `edit ${data}/projects/company/a.html\nAcceptance: ok` }] };
+		const omp = { tasks: [{ task: `edit ${data}/projects/acme/a.html\nAcceptance: ok` }] };
 		addProjectFooter(omp, undefined, "/tmp", data);
 		expect(omp.tasks[0].task).toContain(readme);
 		const inCwd = { prompt: "x\nDone when: y" };
-		addProjectFooter(inCwd, "web", join(data, "projects", "company", "out"), data);
+		addProjectFooter(inCwd, "web", join(data, "projects", "acme", "out"), data);
 		expect(inCwd.prompt).toContain(readme);
 		for (const conv of [undefined, "web", "ch:7", "ch:99"]) {
 			const chat = { prompt: "look up x\nDone when: y" };

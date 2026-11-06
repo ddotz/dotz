@@ -8,11 +8,11 @@ import { type Computer, createPeerMonitor, type OrchestratorPause } from "./peer
 // The Mac mini's orchestrator was paused (provider login) and the owner wrote in a mail conversation from the other Mac. The gateway's notice and
 // the held state are written for the mail's Discord thread; the thread is unknown to Discord here, so the Discord send is dropped. Both must still
 // be in the mail conversation's history (what the owner's own web and a peer's proxied read both show).
-const THREAD = "000000000000000000";
-const KEY = `company-n${Date.now().toString(36)}`;
+const THREAD = "1500000000003782505";
+const KEY = `acme-n${Date.now().toString(36)}`;
 
 test("a gateway notice and the held state of a mail's thread are in the mail conversation, also when the Discord send is dropped", async () => {
-	recordMail({ key: KEY, source: "company", id: KEY.slice(4), subject: "견적 요청", from: "Kim <kim@example.com>", at: new Date().toISOString(), thread: THREAD });
+	recordMail({ key: KEY, source: "acme", id: KEY.slice(4), subject: "견적 요청", from: "Kim <kim@example.com>", at: new Date().toISOString(), thread: THREAD });
 	// The session that answers the thread is the one paused: the mail's own session (conversation sessions are on by default).
 	const orch = convs.ensure(convs.keyOf(`th:${THREAD}`)).o.orch;
 	const was = { status: orch.status, pauseKind: orch.pauseKind };

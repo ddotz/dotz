@@ -5,15 +5,15 @@ import { advanceTimers, fakeHub, idleState, json, run, waitFor } from "./test-we
 // gets the mini's events on its own stream, so the notice the mini writes afterwards has to arrive by the page's repeated read; the composer says the bot is
 // paused. Headless; the two gateways are fixtures.
 const MINI = "http://mini.test";
-const T = "mail:company-66931568";
-const THREAD = "th:000000000000000000";
+const T = "mail:acme-66931568";
+const THREAD = "th:1500000000003782505";
 const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } };
-const asked = { ts: "2026-10-23T12:50:00.000Z", kind: "message", source: "web", channel: THREAD, conv: T, author: "someone", mid: "m1", text: "답장 초안 작성해." };
+const asked = { ts: "2026-10-23T12:50:00.000Z", kind: "message", source: "web", channel: THREAD, conv: T, author: "owner", mid: "m1", text: "답장 초안 작성해." };
 const history: Record<string, unknown>[] = [asked];
 const PAUSED_OUT = "지금 모델 제공자 결제/인증 문제로 멈춰 있어요. 해결되면 받은 메시지부터 이어서 처리할게요.";
 const miniBot = { status: "rate-limited", pauseKind: "owner" };
 const localBot = { status: "rate-limited", pauseKind: "rate" };
-const peers = () => [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [], notices: [], integrations: [MAIL], available: [], conversations: [{ target: T, mail: { key: "company-66931568", subject: "견적 요청", from: "Kim", source: "company", at: asked.ts }, last: { text: "메일 본문", via: "company" }, unread: 0 }], orchestrator: miniBot } }];
+const peers = () => [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [], notices: [], integrations: [MAIL], available: [], conversations: [{ target: T, mail: { key: "acme-66931568", subject: "견적 요청", from: "Kim", source: "acme", at: asked.ts }, last: { text: "메일 본문", via: "acme" }, unread: 0 }], orchestrator: miniBot } }];
 
 const hub = fakeHub({
 	slowTimers: true,

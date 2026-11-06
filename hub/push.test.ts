@@ -24,7 +24,7 @@ test("a push body never shows the \"For <bot>:\" line of a report", () => {
 });
 
 test("a project's answers notify like the main chat's and open that project's chat; a thread of it does too", () => {
-	const CH = "ch:000000000000000000";
+	const CH = "ch:1500000000001908448";
 	expect(classify(ev({ target: CH, text: "네, 맞아요" }), 5_000)).toBeUndefined();
 	expect(classify(ev({ target: CH, text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: `${NAME} · 완료`, url: `/#chat/${CH}`, tag: `answer:${CH}` });
 	expect(classify(ev({ target: CH, text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", url: `/#chat/${CH}` });
@@ -201,12 +201,12 @@ test("a decision notice pushes as 답변이 필요해요 with its id, the decisi
 });
 
 test("an answer in a monitor's or app's settings conversation notifies like any answer, titled with its label and opening that conversation", () => {
-	setWatchLabelResolver(name => (name === "login-private-project-com" ? "까르띠에 로그인 유지" : name));
-	const conv = "settings:w:login-private-project-com";
+	setWatchLabelResolver(name => (name === "login-boutique-com" ? "부티크 로그인 유지" : name));
+	const conv = "settings:w:login-boutique-com";
 	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: "까르띠에 로그인 유지 · 완료", url: `/#chat/${conv}`, tag: `answer:${conv}` });
-	expect(classify(ev({ target: conv, text: "[fail] 다시 로그인하지 못했어요" }), 5_000)).toMatchObject({ kind: "result", title: "까르띠에 로그인 유지 · 실패" });
-	expect(classify(ev({ target: conv, text: "[ask] 다시 로그인할까요?" }))).toMatchObject({ kind: "ask", title: "까르띠에 로그인 유지 · 확인 필요" });
+	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: "부티크 로그인 유지 · 완료", url: `/#chat/${conv}`, tag: `answer:${conv}` });
+	expect(classify(ev({ target: conv, text: "[fail] 다시 로그인하지 못했어요" }), 5_000)).toMatchObject({ kind: "result", title: "부티크 로그인 유지 · 실패" });
+	expect(classify(ev({ target: conv, text: "[ask] 다시 로그인할까요?" }))).toMatchObject({ kind: "ask", title: "부티크 로그인 유지 · 확인 필요" });
 	expect(classify(ev({ source: "gateway", target: conv, text: "받았어요" }), LONG_TURN_MS)).toBeUndefined();
 	setWatchLabelResolver(name => name);
 });

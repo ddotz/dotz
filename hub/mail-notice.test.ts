@@ -40,7 +40,7 @@ const deps = (threadOn: boolean): MailDeps => ({
 const mailNotices = () => listNotices().items.filter(n => n.open.startsWith("mail:"));
 
 test("a new mail from the webmail source or zele makes an unread bell item and a phone notification, Discord thread or not", async () => {
-	const web = await postMail({ source: "company", id: "w-1", subject: "견적 문의", from: "\"김철수\" <kim@example.com>" }, deps(false));
+	const web = await postMail({ source: "acme", id: "w-1", subject: "견적 문의", from: "\"김철수\" <kim@example.com>" }, deps(false));
 	const zele = await postMail({ source: "zele", id: "z-1", subject: "회의 일정", from: "lee@example.com" }, deps(true));
 	expect(threads).toEqual(["회의 일정"]);
 	expect(mailNotices().map(n => [n.open, n.title, n.text, n.read]).sort()).toEqual([
@@ -56,12 +56,12 @@ test("a new mail from the webmail source or zele makes an unread bell item and a
 
 test("새 소식 알림 off for the mail app: the mail is still posted but nothing reaches the bell or the phone; on again, it does", async () => {
 	apps({ mail: { notify: false } });
-	const off = await postMail({ source: "company", id: "w-2", subject: "조용한 메일", from: "a@example.com" }, deps(false));
+	const off = await postMail({ source: "acme", id: "w-2", subject: "조용한 메일", from: "a@example.com" }, deps(false));
 	expect(off.ok).toBe(true);
 	expect(mailNotices()).toEqual([]);
 	expect(unread).toEqual([]);
 	apps({ mail: { notify: true } });
-	await postMail({ source: "company", id: "w-3", subject: "다시 켬", from: "a@example.com" }, deps(false));
+	await postMail({ source: "acme", id: "w-3", subject: "다시 켬", from: "a@example.com" }, deps(false));
 	expect(mailNotices().map(n => n.text)).toEqual(["다시 켬"]);
 });
 

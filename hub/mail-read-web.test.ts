@@ -21,16 +21,16 @@ const mails: Mail[] = [
 	{ key: "fx-a", subject: "견적 요청", from: "Kim <kim@example.com>", unread: 1, at: iso(9) },
 	{ key: "fx-b", subject: "회의록 공유", from: "Lee <lee@example.com>", unread: 0, at: iso(8) },
 ];
-const card = (m: Mail) => ({ subject: m.subject, from: m.from, source: "company", at: m.at, summary: `${m.subject}에 대한 내용이에요.` });
+const card = (m: Mail) => ({ subject: m.subject, from: m.from, source: "acme", at: m.at, summary: `${m.subject}에 대한 내용이에요.` });
 // A mail long enough to scroll: it opens at its top, so being on screen - not being at the bottom - is what reading it means.
 const BODY = Array.from({ length: 80 }, (_, i) => `본문 ${i + 1}번째 문단입니다. 견적과 일정을 확인해 주세요.`).join("\n\n");
-const history = (m: Mail) => [{ kind: "mail", ts: m.at, conv: `mail:${m.key}`, target: `mail:${m.key}`, subject: m.subject, from: m.from, source: "company", html: false, text: `[mail] ${m.subject}\n\n${BODY}\n\n감사합니다.` }];
+const history = (m: Mail) => [{ kind: "mail", ts: m.at, conv: `mail:${m.key}`, target: `mail:${m.key}`, subject: m.subject, from: m.from, source: "acme", html: false, text: `[mail] ${m.subject}\n\n${BODY}\n\n감사합니다.` }];
 const readPosts: { target: string; ts: string }[] = [];
 const acts: { action: string; args: Record<string, unknown> }[] = [];
 
 // The other computer's mail, seen from this page as a peer item.
 const PEER_T = "mail:px-1";
-const peerMail = { key: "px-1", subject: "견적 문의", from: "Lee <lee@example.com>", source: "company", at: iso(7), summary: "이번 주까지 견적을 받고 싶어요." };
+const peerMail = { key: "px-1", subject: "견적 문의", from: "Lee <lee@example.com>", source: "acme", at: iso(7), summary: "이번 주까지 견적을 받고 싶어요." };
 const app = (unread: number) => ({ key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: [], unread, needs: { drafts: 0, unread, sentToday: 0, unreplied: 0 } });
 let peers: unknown[] = [];
 const peer = () => ({ name: "맥미니", url: MINI, online: true, stale: false, items: peerItems() });
@@ -76,7 +76,7 @@ const server = Bun.serve({
 		if (p === "/api/peer/proxy") {
 			const pp = url.searchParams.get("p") ?? "";
 			if (req.method === "POST") { acts.push((await req.json()) as (typeof acts)[number]); return json({ ok: true }); }
-			if (pp.startsWith("/api/history")) return json({ target: PEER_T, events: [{ kind: "mail", ts: peerMail.at, conv: PEER_T, target: PEER_T, subject: peerMail.subject, from: peerMail.from, source: "company", text: `[mail] ${peerMail.subject}\n\n${BODY}` }] });
+			if (pp.startsWith("/api/history")) return json({ target: PEER_T, events: [{ kind: "mail", ts: peerMail.at, conv: PEER_T, target: PEER_T, subject: peerMail.subject, from: peerMail.from, source: "acme", text: `[mail] ${peerMail.subject}\n\n${BODY}` }] });
 			return json({});
 		}
 		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });

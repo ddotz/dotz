@@ -36,7 +36,7 @@ const tmpFile = () => join(mkdtempSync(join(tmpdir(), "sendlog-")), "unsent.json
 test("a web reply_to (hex) goes out without a reference and still marks the prompt answered", async () => {
 	const refs: (string | undefined)[] = [];
 	const { ledger, state } = setup(tmpFile(), async (_t, _x, ref) => (refs.push(ref), { delivered: true }));
-	const target = "ch:000000000000000000";
+	const target = "ch:1500000000001908448";
 	const r = await ledger.submit(target, "answer", replyRef(target, "5eeba27e", undefined), "5eeba27e");
 	expect(r.delivered).toBe(true);
 	expect(refs).toEqual([undefined]);

@@ -102,7 +102,7 @@ export function digest(sessionFile: string, now = Date.now()): string | undefine
 	].join("\n");
 }
 
-// Lanes are the expensive sessions (someone token-audit scans every tab, not just the secretary).
+// Lanes are the expensive sessions (the earlier secretary's token-audit scans every tab, not just the secretary).
 function laneUsage(since: number): string[] {
 	if (!existsSync(paths.lanes)) return [];
 	return readdirSync(paths.lanes).flatMap(name => {

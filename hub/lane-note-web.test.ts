@@ -6,15 +6,15 @@ import { ev, fakeHub, json, on } from "./test-web.ts";
 const ts = (n: number) => `2026-11-05T01:${String(10 + n).padStart(2, "0")}:00.000Z`;
 const note = (t: string, n: number, text: string, extra: object = {}) => ({ ts: ts(n), kind: "out", source: t, target: t, update_key: "progress", text, ...extra });
 const history: Record<string, object[]> = {
-	"lane:company": [note("lane:company", 0, "[run] 판례를 대조하고 있어요.\n지금: 판례와 기준서 원문을 함께 대조해서 평가액을 다시 확인하는 중이에요 아주 긴 문장이 이어져도 한 줄로 잘려요\n- 환율 확인")],
+	"lane:audit": [note("lane:audit", 0, "[run] 판례를 대조하고 있어요.\n지금: 판례와 기준서 원문을 함께 대조해서 평가액을 다시 확인하는 중이에요 아주 긴 문장이 이어져도 한 줄로 잘려요\n- 환율 확인")],
 	"lane:old": [note("lane:old", 1, "진행 중: 재시작 전에 남은 메모예요")],
 	"lane:gone": [note("lane:gone", 1, "[run] 세션이 끝나기 전 메모예요")],
 };
 const running = { kind: "working", since: ts(0) };
-const lanes = ["company", "old", "gone"].map(name => ({ name, status: "working", title: name, cwd: `/tmp/${name}`, startedAt: ts(0) }));
+const lanes = ["audit", "old", "gone"].map(name => ({ name, status: "working", title: name, cwd: `/tmp/${name}`, startedAt: ts(0) }));
 const hub = fakeHub({
 	stream: "fake",
-	state: () => ({ name: "땅콩", orchestrator: { status: "idle" }, lanes, terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0, runs: { "lane:company": running, "lane:old": running } }),
+	state: () => ({ name: "땅콩", orchestrator: { status: "idle" }, lanes, terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0, runs: { "lane:audit": running, "lane:old": running } }),
 	api: (_req, url) => {
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: history[url.searchParams.get("target") ?? ""] ?? [] });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
@@ -40,8 +40,8 @@ await waitFor(`typeof openTarget === "function" && S`);
 await hub.streamConnected();
 
 test("a stored note draws as the live status, under the speaker line, and a tap opens the cut row", async () => {
-	await open("lane:company");
-	expect(await seen()).toEqual({ old: 0, notes: 1, who: "company", time: false, tag: "진행 중", lead: "진행 중판례를 대조하고 있어요.", wide: false });
+	await open("lane:audit");
+	expect(await seen()).toEqual({ old: 0, notes: 1, who: "audit", time: false, tag: "진행 중", lead: "진행 중판례를 대조하고 있어요.", wide: false });
 	const nowrap = `getComputedStyle(document.querySelector("#tl .lv .lv-r")).whiteSpace`;
 	expect(await ev(view, nowrap)).toBe("nowrap");
 	await view.evaluate(`(document.querySelector("#tl .lv").click(), 0)`);
@@ -54,11 +54,11 @@ test("a note stored in the old wording loses the prefix and gets the same shape"
 });
 
 test("a live note replaces the last one, and the answer that drops it keeps its own head", async () => {
-	await open("lane:company");
-	hub.push(note("lane:company", 2, "[run] 다음 단계로 넘어갔어요"));
+	await open("lane:audit");
+	hub.push(note("lane:audit", 2, "[run] 다음 단계로 넘어갔어요"));
 	await waitFor(`document.querySelector("#tl .lv p")?.textContent.includes("다음 단계")`);
 	expect((await seen()).notes).toBe(1);
-	hub.push({ ts: ts(3), kind: "out", source: "lane:company", target: "lane:company", text: "끝났어요" });
+	hub.push({ ts: ts(3), kind: "out", source: "lane:audit", target: "lane:audit", text: "끝났어요" });
 	await waitFor(`!document.querySelector("#tl .lv")`);
 	expect(await ev(view, `getComputedStyle(document.querySelector("#tl .bm:last-of-type > .mt")).display`)).not.toBe("none");
 });

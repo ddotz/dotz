@@ -6,5 +6,5 @@ test("a shell line and a command-shaped word stay with the harness", () => {
 });
 
 test("a path and ordinary text go to the gateway", () => {
-	for (const text of ["/home/me/Downloads/a 이거 봐줘", "/tmp/a.txt", "/ 이거", "안녕"]) expect(staysInTerminal(text)).toBe(false);
+	for (const text of ["/Users/me/Downloads/a 이거 봐줘", "/tmp/a.txt", "/ 이거", "안녕"]) expect(staysInTerminal(text)).toBe(false);
 });

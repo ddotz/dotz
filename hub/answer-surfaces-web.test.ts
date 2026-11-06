@@ -109,13 +109,13 @@ test("a sentence with a colon stays a list, and words around an arrow are not a 
 });
 
 test("an id in brackets goes and a channel tag never shows raw on any surface", async () => {
-	const text = "알림 워커(st_01a1a07f)가 <#000000000000000000>에 올렸어요.";
+	const text = "알림 워커(st_01a1a07f)가 <#1500000000005984746>에 올렸어요.";
 	for (const [surface, draw] of Object.entries(SURFACES)) {
 		const seen = await shown(draw(text));
 		expect(`${surface}: ${seen}`).toContain("알림 워커가");
 		expect(`${surface}: ${seen}`).not.toMatch(/st_|<#|<>|ch:|\d{10}/);
 	}
-	expect(await drawn(SURFACES["main chat"]!(text), 'a[href="#chat/ch:000000000000000000"]')).toBe(1);
+	expect(await drawn(SURFACES["main chat"]!(text), 'a[href="#chat/ch:1500000000005984746"]')).toBe(1);
 });
 
 test("a bare worker id reads as a word with its particle and a code word stays whole on every surface", async () => {
@@ -128,9 +128,9 @@ test("a bare worker id reads as a word with its particle and a code word stays w
 });
 
 test("a bare channel id in a chat line links to the channel, a quoted command keeps it", async () => {
-	const line = "대기 중: conversation session ch:000000000000000000, 명령 DOTZ_APPROVAL_CONV=ch:1564971207911284747 끝";
-	expect(await drawn(SURFACES["main chat"]!(line), 'a[href="#chat/ch:000000000000000000"]')).toBe(1);
-	expect(await shown(SURFACES["main chat"]!(line))).toContain("DOTZ_APPROVAL_CONV=ch:1564971207911284747");
+	const line = "대기 중: conversation session ch:1500000000005984746, 명령 DOTZ_APPROVAL_CONV=ch:1500000000005984747 끝";
+	expect(await drawn(SURFACES["main chat"]!(line), 'a[href="#chat/ch:1500000000005984746"]')).toBe(1);
+	expect(await shown(SURFACES["main chat"]!(line))).toContain("DOTZ_APPROVAL_CONV=ch:1500000000005984747");
 });
 
 test("a code span that talks about a control word is kept on every surface", async () => {

@@ -60,7 +60,7 @@ function prose(text: string): string {
 
 // Plain English-looking words of a text: letters only, 2+ of them (identifiers with digits/underscores/dots do not count).
 const latinWords = (s: string): number => (s.match(/(?<![\w-])[A-Za-z][A-Za-z'’]+(?![\w-])/g) ?? []).length;
-// The words of sentence-like parts only: a list of names ("contact_manager, dotz, findr, private-project", one per item or line) is not
+// The words of sentence-like parts only: a list of names ("contact_manager, dotz, findr, docgen", one per item or line) is not
 // English prose. A 137-char repo list was sent for a rewrite that took 12 s and came back 8x longer (2026-10-28).
 const sentenceWords = (s: string): number => s.split(/[,;|·\n]+/).map(latinWords).filter(n => n >= 2).reduce((a, n) => a + n, 0);
 

@@ -19,7 +19,7 @@ const setBan = (names: string[] | undefined) => {
 
 test("no account is banned unless the install's config names it: the shipped code carries no owner's account", () => {
 	setBan(undefined);
-	pin("host-shared");
+	pin("teammate-shared");
 	expect(apiKeyBan()).toBeUndefined();
 	expect(withoutApiKeys({ ANTHROPIC_API_KEY: "sk" })).toEqual({ ANTHROPIC_API_KEY: "sk" });
 	pin("default");
@@ -54,21 +54,21 @@ test("API keys are off unless guard.allow_api_key is true: no entry moves onto a
 });
 
 test("the config list is the ban: naming an account bans it", () => {
-	setBan(["host-shared"]);
-	pin("host-shared");
-	expect(apiKeyBan()).toBe("host-shared");
+	setBan(["teammate-shared"]);
+	pin("teammate-shared");
+	expect(apiKeyBan()).toBe("teammate-shared");
 	pin("default");
 });
 
-test("host-shared pinned: an API-key entry is never chosen and never gets its key; another pin allows it", () => {
+test("teammate-shared pinned: an API-key entry is never chosen and never gets its key; another pin allows it", () => {
 	resetFallbackState();
 	const entries = [{ model: "anthropic/claude-opus-5-5", key_file: "anthropic-api-key" }];
-	pin("host-shared");
-	expect(apiKeyBan()).toBe("host-shared");
+	pin("teammate-shared");
+	expect(apiKeyBan()).toBe("teammate-shared");
 	const c = new Chain("anthropic/claude-opus-5-5:medium", entries, "medium");
 	expect(c.down(1)?.why).toBe("error");
 	expect(c.fail("quota", Date.now() + 3600e3)).toBeUndefined();
-	expect(() => c.env(1)).toThrow(/host-shared/);
+	expect(() => c.env(1)).toThrow(/teammate-shared/);
 
 	resetFallbackState();
 	pin("default");
@@ -78,8 +78,8 @@ test("host-shared pinned: an API-key entry is never chosen and never gets its ke
 	expect(d.env(1).DOTZ_KEY_VALUE).toBe("sk-ant-test");
 });
 
-test("host-shared pinned: API-key variables are stripped from a spawned process's environment", () => {
-	pin("host-shared");
+test("teammate-shared pinned: API-key variables are stripped from a spawned process's environment", () => {
+	pin("teammate-shared");
 	const env = withoutApiKeys({ PATH: "/bin", ANTHROPIC_API_KEY: "sk", ANTHROPIC_AUTH_TOKEN: "t", DOTZ_KEY_VALUE: "k" });
 	expect(env).toEqual({ PATH: "/bin" });
 	pin("default");
@@ -87,22 +87,22 @@ test("host-shared pinned: API-key variables are stripped from a spawned process'
 });
 
 test("the owner's lift file allows API keys under the pin until its expiry, then the ban is back by itself", () => {
-	pin("host-shared");
+	pin("teammate-shared");
 	writeFileSync(allowFile(), `${Math.floor(Date.now() / 1000) + 3600}\n`);
 	expect(apiKeyBan()).toBeUndefined();
 	expect(withoutApiKeys({ ANTHROPIC_API_KEY: "sk" })).toEqual({ ANTHROPIC_API_KEY: "sk" });
 	writeFileSync(allowFile(), `${Math.floor(Date.now() / 1000) - 1}\n`);
-	expect(apiKeyBan()).toBe("host-shared");
+	expect(apiKeyBan()).toBe("teammate-shared");
 	rmSync(allowFile());
-	expect(apiKeyBan()).toBe("host-shared");
+	expect(apiKeyBan()).toBe("teammate-shared");
 	pin("default");
 });
 
 test("the settings view says an API-key entry is down because of the pin, and not otherwise", () => {
 	resetFallbackState();
 	const entry = { model: "anthropic/claude-opus-5-5", key_file: "anthropic-api-key" };
-	pin("host-shared");
-	expect(entryView(entry)).toMatchObject({ down: "error", down_reason: "api_key_ban", down_account: "host-shared" });
+	pin("teammate-shared");
+	expect(entryView(entry)).toMatchObject({ down: "error", down_reason: "api_key_ban", down_account: "teammate-shared" });
 	pin("default");
 	expect(entryView(entry).down_reason).toBeUndefined();
 });

@@ -1,4 +1,4 @@
-// Nightly lane hygiene (what someone's session doctor did for its tabs): once a day at lanes.nightly_at (gateway-local time)
+// Nightly lane hygiene (what the earlier secretary's session doctor did for its tabs): once a day at lanes.nightly_at (gateway-local time)
 // every idle lane is looked at. A session file past lanes.rotate_mb starts a fresh session with a handover; otherwise a
 // context of lanes.nightly_compact_at tokens or more (default 300K, the same as the daytime lanes.compact_at) is compacted.
 // Working, rate-limited and stopped lanes are left alone.

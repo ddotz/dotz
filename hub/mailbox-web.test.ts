@@ -26,7 +26,7 @@ let down = false;
 let moveFails = false;
 let posts: { path: string; body: any }[] = [];
 
-const card = (m: Mail) => ({ subject: m.subject, from: m.from, source: "company", at: m.at, summary: "요약이에요", read: m.read, archived: false, starred: false, can: CAN, box: m.box });
+const card = (m: Mail) => ({ subject: m.subject, from: m.from, source: "acme", at: m.at, summary: "요약이에요", read: m.read, archived: false, starred: false, can: CAN, box: m.box });
 const mine = (inst: string) => mails.filter(m => (inst === "mail" ? !m.key.startsWith("w-") : m.key.startsWith("w-")));
 const item = (inst: string) => ({ key: inst, app: "mail", label: inst === "mail" ? "개인 메일" : "회사 메일", icon: "mail", kind: "app", conv: inst === "mail" ? ["mail:"] : ["mail:w-"], ...(inst === "mail" ? { convNot: ["mail:w-"] } : {}),
 	state: inst === "mail-2" && down ? "disconnected" : "connected", notices: [], unread: mine(inst).filter(m => !m.read).length, needs: { drafts: 0, unread: mine(inst).filter(m => !m.read).length, sentToday: 0, unreplied: 0 },

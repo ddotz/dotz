@@ -25,7 +25,7 @@ const account = (name: string, over: object = {}) => ({ name, alias: null, label
 const body = (on_limit: string | null, over: object = {}) => ({
 	mode: "pinned",
 	rules: { on_limit },
-	accounts: [account("default", { current: true }), account("host-shared")],
+	accounts: [account("default", { current: true }), account("teammate-shared")],
 	chosen: { name: "default", label: "default", source: "manual", blocked: null, text: "" },
 	rules_text: [],
 	script: { path: null, timeout_ms: 5000, every_minutes: 5, last: null },

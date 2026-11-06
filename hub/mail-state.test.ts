@@ -40,14 +40,14 @@ describe("selfSent", () => {
 	test("a source's address set is built once and rebuilt only when an address is learned", () => {
 		resetOwnAddresses();
 		setOwnAddresses("config", ["alias@example.com"]);
-		noteOwnSender("company", "나 <me@corp.example>");
-		const first = ownAddressesFor("company");
+		noteOwnSender("acme", "나 <me@corp.example>");
+		const first = ownAddressesFor("acme");
 		expect([...first].sort()).toEqual(["alias@example.com", "me@corp.example"]);
-		noteOwnSender("company", "ME@corp.example");
-		expect(ownAddressesFor("company")).toBe(first);
+		noteOwnSender("acme", "ME@corp.example");
+		expect(ownAddressesFor("acme")).toBe(first);
 		expect(ownAddressesFor("zele").has("me@corp.example")).toBe(false);
-		noteOwnSender("company", "second@corp.example");
-		expect(ownAddressesFor("company").has("second@corp.example")).toBe(true);
+		noteOwnSender("acme", "second@corp.example");
+		expect(ownAddressesFor("acme").has("second@corp.example")).toBe(true);
 		resetOwnAddresses();
 	});
 });

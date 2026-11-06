@@ -3,8 +3,8 @@ import { emit, eventTarget, historyEvents } from "./events.ts";
 import { isProjectTarget, outEvent, projectTarget } from "./projectchat.ts";
 import { bundle } from "./webapp.ts";
 
-const WORK = { "000000000000000000": "dotz-개선" };
-const CH = "ch:000000000000000000";
+const WORK = { "1500000000001908448": "dotz-개선" };
+const CH = "ch:1500000000001908448";
 
 // The conversations a web chat target shows: the owner's message in a project channel (from Discord or from the web
 // switcher), the orchestrator's answers and progress there, and everything that stays in the main chat or a lane.
@@ -32,7 +32,7 @@ const EVENTS: Array<[string, Record<string, unknown>, string]> = [
 ];
 
 describe("what the orchestrator sends to Discord also shows in the web project chat", () => {
-	const parentOf = (t: string) => (t === "42" ? "000000000000000000" : undefined);
+	const parentOf = (t: string) => (t === "42" ? "1500000000001908448" : undefined);
 	const sendOnce = (target: string, text: string, ts: string) => emit("outbox", outEvent({ ts, kind: "out", source: "orchestrator", target, text, reply_to: "5eeba27e" }, parentOf));
 
 	test("a dotz_send to a work channel is one event in that channel's conversation, with its reply link and files, not in the main chat", () => {
@@ -54,7 +54,7 @@ describe("what the orchestrator sends to Discord also shows in the web project c
 
 describe("project orchestrator target", () => {
 	test("a known work channel is a project target, by id or ch:<id>", () => {
-		expect(projectTarget("000000000000000000", WORK)).toEqual({ target: CH, name: "dotz-개선" });
+		expect(projectTarget("1500000000001908448", WORK)).toEqual({ target: CH, name: "dotz-개선" });
 		expect(projectTarget(CH, WORK)).toEqual({ target: CH, name: "dotz-개선" });
 	});
 
@@ -62,7 +62,7 @@ describe("project orchestrator target", () => {
 		expect(() => projectTarget("999", WORK)).toThrow();
 		expect(() => projectTarget("ch:", WORK)).toThrow();
 		expect(() => projectTarget("lane:a", WORK)).toThrow();
-		expect(() => projectTarget("../000000000000000000", WORK)).toThrow();
+		expect(() => projectTarget("../1500000000001908448", WORK)).toThrow();
 	});
 
 	test("isProjectTarget takes ch:<digits> only", () => {

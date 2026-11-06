@@ -194,7 +194,7 @@ test("web: the progress line is one note per conversation through the web hook, 
 	expect(posts.map(p => p.text)).toEqual([posts[0]!.text, ""]);
 });
 
-// A work channel answered by its own conversation session (2026-11-01, ch:000000000000000000): the web message's progress line
+// A work channel answered by its own conversation session (2026-11-01, ch:1500000000005984746): the web message's progress line
 // waited on main's turn and on a Discord send, so the session's answer at 1:40 (web only) left "5분째 작업 중" posted at 5:00.
 test("a conversation session's answer at 1:40 ends the web wait too: nothing is posted at 5:00", async () => {
 	requests.length = 0;

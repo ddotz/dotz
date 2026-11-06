@@ -1,4 +1,4 @@
-// Nightly token-leak audit, ported from the macmini someone token-audit.ts. Pure TS, no LLM calls, report only.
+// Nightly token-leak audit, ported from the earlier secretary's token-audit.ts. Pure TS, no LLM calls, report only.
 // Scans the session jsonl files of both runtimes (OmO ~/.omo/agent/sessions plus its task-worker stores, omp
 // ~/.omp/agent/sessions; orchestrator, lane worktrees, task workers) active in the last 24h, writes the full
 // report to ~/.dotz/logs/token-audit-YYYYMMDD.md (KST), keeps a 14-day history in ~/.dotz/token-audit.json, and posts ONE
@@ -14,7 +14,7 @@ import { collectSessions, OMO_WAKE, projectLabel as labelOf, type Src } from "./
 import { trackTimer } from "./shutdown.ts";
 
 // OmO (senpi) trims the context of every request once the last usage reaches 50% of the window; the trim is not saved, so
-// requests alternate full/trimmed and the trimmed prefix misses the cache (measured on the macmini someone, 2026-10-08).
+// requests alternate full/trimmed and the trimmed prefix misses the cache (measured on the earlier secretary, 2026-10-08).
 const REDUCE_GATE = 500_000;
 // Known causes of a cache break that are not a prompt-prefix change made here: the report names them instead of guessing.
 const CAUSE: Record<string, [string, string]> = {
@@ -23,7 +23,7 @@ const CAUSE: Record<string, [string, string]> = {
 	date: ["UTC 날짜 변경(environment-context 재주입)", "로컬 조치 없음(하루 1회)"],
 	idle: ["유휴 뒤 둘째 호출 패턴(기전 미증명)", "미증명이라 고칠 곳을 단정할 수 없음: 재발하면 해당 요청의 프롬프트 차이를 대조"],
 };
-// Unexplained OmO breaks: what the injected event before them points at (from someone's audit), instead of a generic hint.
+// Unexplained OmO breaks: what the injected event before them points at (from the earlier secretary's audit), instead of a generic hint.
 const BUST_FIX: [RegExp, string][] = [
 	[/^pi-rules\.scan\((reload|startup|resume)\)$|^senpi-memory\.session-binding$/, "재개·리로드 때 OmO가 프롬프트를 새로 조립해 프리픽스가 바뀜(재시작 직후 1회면 정상, 반복되면 재시작 원인 확인)"],
 	[/^omo-memory:(projection-pin|notice|soul-updated)$/, "메모리 projection 재핀이 프롬프트 앞부분을 바꾸는지 확인(dotz는 OmO 메모리를 끔)"],

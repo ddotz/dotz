@@ -1,4 +1,4 @@
-// Replays the owner's burst of 2026-11-06 07:30:41-07:32:13 UTC in project conversation ch:000000000000000000: nine short web
+// Replays the owner's burst of 2026-11-06 07:30:41-07:32:13 UTC in project conversation ch:1500000000008356296: nine short web
 // messages, each answered on its own, six of them twice, one reply garbled by the double delivery.
 import { expect, test } from "bun:test";
 import { createPrompts, type Pending, type PromptDeps } from "./prompts.ts";
@@ -9,7 +9,7 @@ import { awaiting, settleRefs } from "./outbound.ts";
 import { GATHER_MAX_MS } from "./promptburst.ts";
 import { advance, clock, flush } from "./runtime/test-clock.ts";
 
-const CH = "ch:000000000000000000";
+const CH = "ch:1500000000008356296";
 const reply = (id: string, target = CH) => ({ target, replyTo: id, owner: true });
 
 function setup(extra: Partial<PromptDeps> = {}) {

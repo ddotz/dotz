@@ -12,7 +12,7 @@ const data = mkdtempSync(join(tmpdir(), "watch-scope-"));
 afterAll(() => rmSync(data, { recursive: true, force: true }));
 mkdirSync(join(data, "custom"), { recursive: true });
 writeFileSync(join(data, "custom", "apps.json"), JSON.stringify({ "mail-2": { app: "mail", label: "회사", created: true, filter: { source: "work" } } }));
-const ctx = (): ScopeContext => ({ entries: appEntries(data), dataDir: data, projects: { "ch:42": { title: "dotz" } }, setupName: c => (c === "7" ? "까르띠에" : undefined) });
+const ctx = (): ScopeContext => ({ entries: appEntries(data), dataDir: data, projects: { "ch:42": { title: "dotz" } }, setupName: c => (c === "7" ? "부티크" : undefined) });
 const scope = (w: ScopeWatch) => watchScope({ command: "true", ...w }, ctx());
 
 describe("an owner the watch names", () => {
@@ -45,7 +45,7 @@ describe("an app by what the watch does", () => {
 describe("a project", () => {
 	test("a channel monitor takes the project's title, else the setup's name, else 프로젝트", () => {
 		expect(scope({ name: "ch-42-1", channels: ["42"] })).toEqual({ scope: "project", project: "ch:42", title: "dotz" });
-		expect(scope({ name: "ch-7-1", channels: ["7"] })).toEqual({ scope: "project", project: "ch:7", title: "까르띠에" });
+		expect(scope({ name: "ch-7-1", channels: ["7"] })).toEqual({ scope: "project", project: "ch:7", title: "부티크" });
 		expect(scope({ name: "ch-9-1", channels: ["9"] })).toEqual({ scope: "project", project: "ch:9", title: "프로젝트" });
 	});
 	test("a watch working in <data>/projects/<name>/ belongs to that folder", () => {
@@ -60,7 +60,7 @@ describe("internal and plain", () => {
 		expect(scope({ name: "x", label: "heartbeat" })).toEqual({ scope: "internal" });
 	});
 	test("a login keeper with no app and no project, and a standalone check, stay plain", () => {
-		expect(scope({ name: "company-login", session: { url: "https://login.company.example/" } })).toEqual({ scope: "plain" });
+		expect(scope({ name: "acme-login", session: { url: "https://login.acme.example/" } })).toEqual({ scope: "plain" });
 		expect(scope({ name: "nas-php-node-patch" })).toEqual({ scope: "plain" });
 	});
 });

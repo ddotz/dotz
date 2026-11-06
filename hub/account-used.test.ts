@@ -35,27 +35,27 @@ afterEach(() => {
 });
 
 test("usedAccount: the pick while usable, else the latest successful usable account, else the pick", () => {
-	const names = ["default", "host-shared"];
-	const last = (n: string) => (n === "host-shared" ? 5 : 1);
+	const names = ["default", "teammate-shared"];
+	const last = (n: string) => (n === "teammate-shared" ? 5 : 1);
 	expect(usedAccount("default", names, () => false, last)).toBe("default");
-	expect(usedAccount("default", names, n => n === "default", last)).toBe("host-shared");
+	expect(usedAccount("default", names, n => n === "default", last)).toBe("teammate-shared");
 	expect(usedAccount("default", names, () => true, last)).toBe("default");
-	expect(usedAccount(undefined, names, () => false, last)).toBe("host-shared");
+	expect(usedAccount(undefined, names, () => false, last)).toBe("teammate-shared");
 });
 
 test("the usage numbers follow the account requests really use, not the blocked pick", () => {
 	const now = Date.now();
-	auth(["default", "host-shared"], "default");
-	slots({ default: limited(now + 60 * MIN), "host-shared": { lastSuccessAt: now } });
-	expect(subscriptionAccount(authFile(), now, "default")?.name).toBe("host-shared");
-	slots({ default: { lastSuccessAt: now }, "host-shared": { lastSuccessAt: now - MIN } });
+	auth(["default", "teammate-shared"], "default");
+	slots({ default: limited(now + 60 * MIN), "teammate-shared": { lastSuccessAt: now } });
+	expect(subscriptionAccount(authFile(), now, "default")?.name).toBe("teammate-shared");
+	slots({ default: { lastSuccessAt: now }, "teammate-shared": { lastSuccessAt: now - MIN } });
 	expect(subscriptionAccount(authFile(), now, "default")?.name).toBe("default");
 });
 
 test("/api/accounts: current is the account really used; a blocked 고정 pick keeps the requests and says it waits", () => {
 	const now = Date.now();
-	auth(["default", "host-shared"], "default");
-	slots({ default: limited(now + 60 * MIN), "host-shared": { lastSuccessAt: now } });
+	auth(["default", "teammate-shared"], "default");
+	slots({ default: limited(now + 60 * MIN), "teammate-shared": { lastSuccessAt: now } });
 	setManual("default");
 	const b = accountsBody(now);
 	expect(b.accounts.filter(a => a.current).map(a => a.name)).toEqual(["default"]);
@@ -67,11 +67,11 @@ test("/api/accounts: current is the account really used; a blocked 고정 pick k
 	// a later day reads as a clock the owner can read, never "10. 23."
 	expect(d.blocked_tag).toMatch(/\d{2}:\d{2}/);
 	expect(d.blocked_tag).not.toMatch(/\d+\.\s/);
-	expect(b.accounts.find(a => a.name === "host-shared")!.blocked_tag).toBeNull();
-	expect(b.accounts.find(a => a.name === "host-shared")!.current).toBe(false);
+	expect(b.accounts.find(a => a.name === "teammate-shared")!.blocked_tag).toBeNull();
+	expect(b.accounts.find(a => a.name === "teammate-shared")!.current).toBe(false);
 
 	// not blocked: the pick is the account used and nothing is redirected
-	slots({ default: { lastSuccessAt: now }, "host-shared": {} });
+	slots({ default: { lastSuccessAt: now }, "teammate-shared": {} });
 	const ok = accountsBody(now + 2 * MIN);
 	expect(ok.accounts.filter(a => a.current).map(a => a.name)).toEqual(["default"]);
 	expect(ok.chosen).toMatchObject({ name: "default", used_instead: null, blocked: null });
@@ -80,16 +80,16 @@ test("/api/accounts: current is the account really used; a blocked 고정 pick k
 test("a change of the account used is no notice (owner 2026-10-23: not needed), whoever made it", async () => {
 	announceUsedChanges();
 	const now = Date.now();
-	auth(["default", "host-shared"]);
-	slots({ default: { lastSuccessAt: now }, "host-shared": {} });
+	auth(["default", "teammate-shared"]);
+	slots({ default: { lastSuccessAt: now }, "teammate-shared": {} });
 	const before = usedNotices().length;
 	expect(stickyAccount(now)).toBe("default");
 	expect(usedNotices().length).toBe(before); // the first pick is no change
 
-	slots({ default: limited(now + 600 * MIN), "host-shared": { lastSuccessAt: now } });
+	slots({ default: limited(now + 600 * MIN), "teammate-shared": { lastSuccessAt: now } });
 	stickyAccount(now + MIN);
 	stickyAccount(now + 2 * MIN);
-	expect(stickyAccount(now + 3 * MIN)).toBe("host-shared");
+	expect(stickyAccount(now + 3 * MIN)).toBe("teammate-shared");
 	expect(usedNotices().length).toBe(before);
 
 	const res = await accountsRoute(new Request("http://x/api/accounts/use", { method: "POST", body: JSON.stringify({ account: "default" }) }), new URL("http://x/api/accounts/use"));

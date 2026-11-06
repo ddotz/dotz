@@ -81,7 +81,7 @@ export function lastAnswerAt(file: string, tailBytes = 512 * 1024): number | und
 // the next try. Usage limits and owner-fixable errors still go through the normal path (they pause and hold messages).
 export const keepaliveErrorDropped = (kind: ProviderErrorKind): boolean => kind !== "rate" && kind !== "owner";
 
-// Keepalive (as on the macmini someone): the 1h prompt cache would expire after an idle hour and the next message would
+// Keepalive (as on the earlier secretary): the 1h prompt cache would expire after an idle hour and the next message would
 // re-write the whole prefix at 2x. A ping at 50-58 min idle costs a 0.1x read, so pinging wins for any gap shorter than
 // ~18 pings; after KEEPALIVE_MAX consecutive pings (a night or longer away) the cache is allowed to expire.
 export const KEEPALIVE_FROM_MS = Number(process.env.DOTZ_KEEPALIVE_FROM_MS ?? 50 * 60_000);

@@ -222,7 +222,7 @@ export function watchLine(label: string, reason: string, output = "", opts: Line
 	return lines.join("\n");
 }
 
-// The key of a watch ("company-login", "ch-1234-2") as words the owner reads: known English words become Korean, other words (a site, a product)
+// The key of a watch ("acme-login", "ch-1234-2") as words the owner reads: known English words become Korean, other words (a site, a product)
 // stay. A key that carries no name of its own (a channel's numbered monitor) has no words: "".
 const APPS: Record<string, string> = {
 	kakao: "카카오톡", kakaotalk: "카카오톡", instagram: "인스타그램", ig: "인스타그램", youtube: "유튜브", yt: "유튜브", gmail: "지메일", naver: "네이버", daum: "다음",
@@ -263,7 +263,7 @@ export function deriveLabel(i: LabelInput): string {
 	return `${lead || "프로젝트"} 감시${n ? ` ${n}` : ""}`;
 }
 
-// A label that is still a key ("company-login", "ch ch 2") and not words written for people.
+// A label that is still a key ("acme-login", "ch ch 2") and not words written for people.
 export const isKeyLabel = (label: string): boolean => KEYISH.test(label.trim().replace(/\s+/g, "-")) && !/[A-Z가-힣]/.test(label);
 
 const TARGETS = /^\s*(?:(?:ch|lane|th):\S+\s*)+/;

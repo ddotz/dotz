@@ -34,10 +34,10 @@ test("a throwaway may not write the live data dir, by tool or by shell; reads an
 test("the live data dir counts as written only as a write target, not as a read source", () => {
 	const sh = (command: string) => liveWrite({ toolName: "bash", input: { command } }, [LIVE]);
 	const ev = (code: string) => liveWrite({ toolName: "eval", input: { code } }, [LIVE]);
-	expect(sh(`cp ${LIVE}/x ~/company-work/`)).toBeUndefined();
-	expect(ev(`await Bun.$\`cp -r ${LIVE}/x ~/company-work/\`.text();`)).toBeUndefined();
+	expect(sh(`cp ${LIVE}/x ~/acme-work/`)).toBeUndefined();
+	expect(ev(`await Bun.$\`cp -r ${LIVE}/x ~/acme-work/\`.text();`)).toBeUndefined();
 	expect(sh("cat ~/.dotz/state.json > /tmp/s.json")).toBeUndefined();
-	expect(sh(`cp ~/company-work/x ${LIVE}/`)).toContain("live data dir");
+	expect(sh(`cp ~/acme-work/x ${LIVE}/`)).toContain("live data dir");
 	expect(ev(`await Bun.$\`cp /tmp/x ~/.dotz/state.json\`;`)).toContain("live data dir");
 	expect(sh("cat x | tee -a ~/.dotz/log")).toContain("live data dir");
 	expect(sh("rm -rf ~/.dotz/sessions")).toContain("live data dir");

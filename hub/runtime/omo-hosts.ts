@@ -3,7 +3,7 @@
 // keyed by the owning process). That host is detached (ppid 1) and only exits after 15 idle minutes, so every short-lived
 // omo process dotz runs (runtime checks, probes, restarts) used to leave one behind. dotz records each omo process it
 // starts; when one exits its hosts are stopped, and a sweep (gateway start, then every 10 minutes: the session-doctor
-// duty someone has) stops hosts of recorded processes that died while the gateway was down. Hosts of the owner's own OmO
+// duty the earlier secretary has) stops hosts of recorded processes that died while the gateway was down. Hosts of the owner's own OmO
 // sessions are never touched: only hosts whose owner pid is one dotz recorded.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -98,7 +98,7 @@ export async function closeHostsOf(pid: number | undefined): Promise<number> {
 export async function sweepHosts(): Promise<number> {
 	let stopped = 0;
 	for (const rec of records()) if (!alive(rec.pid)) stopped += await closeHostsOf(rec.pid);
-	// OmO's own cleanup of endpoint records whose host is provably dead (as someone's session doctor does).
+	// OmO's own cleanup of endpoint records whose host is provably dead (as the earlier secretary's session doctor does).
 	if (stopped) await Bun.spawn([OMO, "host", "gc", "--json"], { stdin: "ignore", stdout: "ignore", stderr: "ignore", timeout: 20_000 }).exited;
 	return stopped;
 }

@@ -206,7 +206,7 @@ export function setStatus(lane: Lane, status: LaneStatus): void {
 // Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy lane queues it until turn_end.
 export const portOf = (lane: Lane): CompactPort => ({ idle: () => lane.status === "idle", compact: () => lane.proc?.compact(), refreshUsage: () => lane.proc?.refreshUsage() });
 
-// A finished turn's report goes out at turn_end, as someone replied the moment its turn ended (DOTZ_REPORT_DEBOUNCE_MS
+// A finished turn's report goes out at turn_end, as the earlier secretary replied the moment its turn ended (DOTZ_REPORT_DEBOUNCE_MS
 // can add a wait). It is kept on disk until sent, so a gateway restart in between sends it on the next start.
 export const pendingFile = (lane: Lane) => join(dir(lane.name), "pending-report.md");
 

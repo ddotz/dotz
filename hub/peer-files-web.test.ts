@@ -12,10 +12,10 @@ const SHOTS = process.env.PEER_FILES_SHOTS ?? "/tmp/peer-files-shots";
 mkdirSync(SHOTS, { recursive: true });
 const MINI = "http://mini.test";
 const now = new Date(Date.now() - 5 * 60_000).toISOString();
-const LOCAL_T = "mail:company-local", PEER_T = "mail:company-peer";
+const LOCAL_T = "mail:acme-local", PEER_T = "mail:acme-peer";
 const NAME = "연결조정분개_흐름도.html", BODY = "<html><body>흐름도</body></html>";
-const mail = (key: string) => ({ key, subject: "연결조정 분개", from: "Kim <kim@example.com>", source: "company", at: now, summary: "흐름도를 다시 보내 주세요.", reply: "draft", unreadplied: false });
-const conv = (t: string) => ({ target: t, mail: mail(t.slice(5)), last: { ts: now, text: "연결조정 분개", via: "company" }, unread: 0 });
+const mail = (key: string) => ({ key, subject: "연결조정 분개", from: "Kim <kim@example.com>", source: "acme", at: now, summary: "흐름도를 다시 보내 주세요.", reply: "draft", unreadplied: false });
+const conv = (t: string) => ({ target: t, mail: mail(t.slice(5)), last: { ts: now, text: "연결조정 분개", via: "acme" }, unread: 0 });
 const MAIL_APP = { key: "mail", label: "메일", icon: "mail", kind: "app", unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 }, conv: ["mail:"] };
 
 type Up = { path: string; name: string; type: string; size: number };

@@ -20,7 +20,7 @@ import { lanes } from "./lanes.ts";
 export const FIRST_AFTER_MS = 5 * 60_000;
 const EVERY_MS = 5 * 60_000;
 // After the first report a milestone (a lane or task worker started or finished) is reported at the next check instead
-// of waiting out EVERY_MS (owner 2026-10-19: "진행보고도 someone처럼": a reply at each milestone, at most every 5 min otherwise).
+// of waiting out EVERY_MS (owner 2026-10-19: "진행보고도 이전 비서처럼": a reply at each milestone, at most every 5 min otherwise).
 const CHECK_MS = 30_000;
 // A turn that never reports its end (the process died) must not keep reporting forever.
 const MAX_MS = 6 * 3600_000;

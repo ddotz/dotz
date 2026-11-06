@@ -72,12 +72,12 @@ test("a file that was never attached is refused, also by traversal from an attac
 });
 
 test("a listed work-channel result under projects/ is served; an unlisted neighbour in the same folder is refused", async () => {
-	const dir = join(DATA, "projects", "private-project");
+	const dir = join(DATA, "projects", "boutique");
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, "shot.png"), "PROJPNG");
 	writeFileSync(join(dir, "unlisted.png"), "x");
-	sendFiles("projects/private-project/shot.png");
-	const ok = await get("projects/private-project/shot.png");
+	sendFiles("projects/boutique/shot.png");
+	const ok = await get("projects/boutique/shot.png");
 	expect([ok.status, ok.headers.get("content-type"), await ok.text()]).toEqual([200, "image/png", "PROJPNG"]);
 	expect((await get(join(dir, "unlisted.png"))).status).toBe(403);
 });

@@ -22,7 +22,7 @@ const hub = fakeHub({
 		if (p === "/api/notices") return json({ items: notices, unread: 0 });
 		if (p === "/api/approvals") return json({ groups: [], results: [], triageMin: 3 });
 		if (p === "/api/integrations") return json({ items: [app("mail", "메일", { icon: "mail", conv: ["mail:"] }), app("youtube", "유튜브"), app("instagram", "인스타그램")], available: [] });
-		if (p === "/api/conversations") return json({ items: mails.map(m => ({ target: `mail:${m.key}`, unread: 0, read: null, mail: { subject: m.subject, from: "Kim <kim@example.com>", source: "company", at: m.at, summary: "요약", read: true, archived: false, starred: false, can: CAN }, last: { ts: m.at, text: m.subject, from: "bot" } })) });
+		if (p === "/api/conversations") return json({ items: mails.map(m => ({ target: `mail:${m.key}`, unread: 0, read: null, mail: { subject: m.subject, from: "Kim <kim@example.com>", source: "acme", at: m.at, summary: "요약", read: true, archived: false, starred: false, can: CAN }, last: { ts: m.at, text: m.subject, from: "bot" } })) });
 		return undefined;
 	},
 });

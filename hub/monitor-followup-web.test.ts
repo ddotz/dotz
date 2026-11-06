@@ -20,12 +20,12 @@ const need = { drafts: 0, unread: 0, sentToday: 0 };
 const app = (key: string, label: string, icon: string, extra: object = {}) => ({ key, label, icon, kind: "app", conv: [], notices: [], needs: need, ...extra });
 const fields = () => WATCH_FIELDS.map(f => viewOf(f, f.key === "enabled" ? true : f.key === "every_minutes" ? 30 : f.key === "to" ? "alert" : "이름"));
 const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1",
-	monitors: [failing("company-login", "카톡 로그인", 4, { keeper: true }), failing("login-private-project-com", "까르띠에 로그인 유지", 3, { keeper: true }), failing("webmail-naver", "웹메일 확인", 2)],
-	notices: [], integrations: [app("kakao", "카카오톡", "chat", { watches: ["company-login"] }), app("mail", "메일", "mail", { conv: ["mail:"], watches: ["webmail-"] })], conversations: [] } }];
+	monitors: [failing("acme-login", "카톡 로그인", 4, { keeper: true }), failing("login-boutique-com", "부티크 로그인 유지", 3, { keeper: true }), failing("webmail-naver", "웹메일 확인", 2)],
+	notices: [], integrations: [app("kakao", "카카오톡", "chat", { watches: ["acme-login"] }), app("mail", "메일", "mail", { conv: ["mail:"], watches: ["webmail-"] })], conversations: [] } }];
 
 const PEER_KAKAO = `p:${MINI}|i:kakao`;
 const PEER_MAIL = `p:${MINI}|i:mail`;
-const PEER_MON = `p:${MINI}|m:까르띠에 로그인 유지`;
+const PEER_MON = `p:${MINI}|m:부티크 로그인 유지`;
 let orchStatus = "idle";
 const messages: Record<string, { ts: string }[]> = {};
 const hub = fakeHub({
@@ -98,11 +98,11 @@ describe("a watch an app owns belongs to the app", () => {
 			const names = await rowNames(v);
 			expect(names).not.toContain("카톡 로그인");
 			expect(names).not.toContain("웹메일 확인");
-			expect(names).toContain("까르띠에 로그인 유지");
+			expect(names).toContain("부티크 로그인 유지");
 			expect(await q(v, `return !!document.querySelector('#mon-side [data-k=${JSON.stringify(PEER_KAKAO)}] .tag.err')`)).toBe(true);
 			await run(v, `go("monitoring", ${JSON.stringify(PEER_KAKAO)})`);
-			await waitFor(v, `document.querySelector('.kk-rooms .as-stat[data-watch="company-login"]')`);
-			expect(await q<string>(v, `return document.querySelector('.kk-rooms .as-stat[data-watch="company-login"]').textContent`)).toContain("연속 실패 4번");
+			await waitFor(v, `document.querySelector('.kk-rooms .as-stat[data-watch="acme-login"]')`);
+			expect(await q<string>(v, `return document.querySelector('.kk-rooms .as-stat[data-watch="acme-login"]').textContent`)).toContain("연속 실패 4번");
 			await shot(v, `owned-watch-peer-${w}.png`);
 			await run(v, `go("monitoring", ${JSON.stringify(PEER_MAIL)})`);
 			// The app's status is in its settings screen, opened from the title-bar gear.
@@ -132,14 +132,14 @@ describe("a monitor's conversation", () => {
 
 	test("390px: a peer monitor's conversation is titled with its own name and the machine, with its status", async () => {
 		const v = await boot(390, 844);
-		await run(v, `go("monitoring", "c:settings:w:login-private-project-com")`);
-		await waitFor(v, `target === "settings:w:login-private-project-com"`);
+		await run(v, `go("monitoring", "c:settings:w:login-boutique-com")`);
+		await waitFor(v, `target === "settings:w:login-boutique-com"`);
 		const conv = await q<{ title: string; chip: string; sw: boolean }>(v, `return { title: document.querySelector("#title").textContent, chip: document.querySelector("#title .mon-pc").textContent, sw: !!document.querySelector("#app-sw") }`);
 		expect(conv.sw).toBe(false);
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw .as-stat')`);
 		const s = { ...conv, stat: await q<string>(v, `return document.querySelector("#app-sw .as-stat").textContent`) };
-		expect(s.title).toContain("까르띠에 로그인 유지");
+		expect(s.title).toContain("부티크 로그인 유지");
 		expect(s.title).not.toContain("설정");
 		expect(s.chip).toBe("맥미니");
 		for (const t of ["연속 실패 3번", "마지막 정상"]) expect(s.stat).toContain(t);
@@ -149,10 +149,10 @@ describe("a monitor's conversation", () => {
 
 	test("1280px: the head says the monitor's name, then the machine", async () => {
 		const v = await boot(1280, 800);
-		await run(v, `go("monitoring", "c:settings:w:login-private-project-com")`);
-		await waitFor(v, `target === "settings:w:login-private-project-com" && document.querySelector("#cv-head .cv-n")`);
+		await run(v, `go("monitoring", "c:settings:w:login-boutique-com")`);
+		await waitFor(v, `target === "settings:w:login-boutique-com" && document.querySelector("#cv-head .cv-n")`);
 		const t = await q<string>(v, `return document.querySelector("#cv-head .cv-n").textContent`);
-		expect(t).toBe("까르띠에 로그인 유지맥미니");
+		expect(t).toBe("부티크 로그인 유지맥미니");
 	});
 
 	test("390px: the busy line shows only for a turn this conversation started", async () => {

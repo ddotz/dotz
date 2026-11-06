@@ -1,4 +1,4 @@
-// Token cap on OmO task workers of the orchestrator and of lanes (owner 2026-10-29: two private-project CLI workers on 10-28 spent
+// Token cap on OmO task workers of the orchestrator and of lanes (owner 2026-10-29: two railway CLI workers on 10-28 spent
 // ~2M tokens each, ~40 turns re-reading a 70-80K context, and delivered nothing). Every provider turn's tokens (input, cache
 // read and write, output: the token audit's "토큰" column) are summed; past `guard.task_token_cap` every further tool call is
 // blocked with a [fail] note, so the worker's next answer is its final one (what it spent, partial state, the handoff file)

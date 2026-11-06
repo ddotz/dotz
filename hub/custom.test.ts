@@ -587,27 +587,27 @@ test("GET and PUT edit the card's own file; the folder form keeps its render.js;
 describe("a session's project", () => {
 	const noPins = { projects: [], hide_projects: [], routines: [], links: [] };
 	const at = (name: string, day: number, extra: object = {}) => ({ name, cwd: "/h/shared", status: "idle", startedAt: `2026-10-0${day}T00:00:00Z`, ...extra });
-	const work = { "1": "company", "2": "redacted" };
+	const work = { "1": "기획팀", "2": "지원팀" };
 	const all = (lanes: Array<Record<string, unknown>>, channels: object = { work }) => projectsView({ lanes, channels, pins: noPins, home: "/h", tmpDirs: ["/tmp"] });
 	const holder = (ps: ReturnType<typeof all>, lane: string) => ps.filter(p => p.lanes.some(l => l.name === lane)).map(p => p.name);
 
 	test("a lane with home sits under that project even when another project shares its folder, and its worktree does not matter", () => {
 		const ps = all([at("a", 1, { home: "ch:1" }), at("b", 2, { home: "ch:2" }), at("c", 3, { home: "ch:1", cwd: "/h/.dotz/lanes/c/worktree", repo: "/h/shared" })]);
-		expect(holder(ps, "a")).toEqual(["company"]);
-		expect(holder(ps, "c")).toEqual(["company"]);
-		expect(holder(ps, "b")).toEqual(["redacted"]);
-		expect(ps.filter(p => p.name === "company" || p.name === "redacted")).toHaveLength(2);
+		expect(holder(ps, "a")).toEqual(["기획팀"]);
+		expect(holder(ps, "c")).toEqual(["기획팀"]);
+		expect(holder(ps, "b")).toEqual(["지원팀"]);
+		expect(ps.filter(p => p.name === "기획팀" || p.name === "지원팀")).toHaveLength(2);
 	});
 	test("an ended lane keeps its project from the lane record alone, and the channel takes its folder", () => {
 		const ps = all([at("old", 1, { title: "오래된 일" }), at("done", 2, { home: "ch:1" })]);
-		expect(holder(ps, "done")).toEqual(["company"]);
+		expect(holder(ps, "done")).toEqual(["기획팀"]);
 		expect(ps.filter(p => p.channel?.id === "1")).toHaveLength(1);
-		expect(holder(ps, "old")).toEqual(["company"]);
+		expect(holder(ps, "old")).toEqual(["기획팀"]);
 	});
 	test("a lane with no home falls back to its folder, and a homed lane in a temp folder still has its project", () => {
 		const ps = all([at("plain", 1, { title: "폴더 일" }), at("t", 2, { home: "ch:2", cwd: "/tmp/x" }), at("gone", 3, { cwd: "/tmp/y" })]);
 		expect(ps.find(p => p.key === "dir:~/shared")?.lanes.map(l => l.name)).toEqual(["plain"]);
-		expect(holder(ps, "t")).toEqual(["redacted"]);
+		expect(holder(ps, "t")).toEqual(["지원팀"]);
 		expect(holder(ps, "gone")).toEqual([]);
 	});
 });

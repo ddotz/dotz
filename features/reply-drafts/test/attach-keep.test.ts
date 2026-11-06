@@ -128,7 +128,7 @@ describe("what the mailer gets", () => {
 
 	test("a plugin mailer receives every file with its bytes and size", async () => {
 		mkdirSync(join(env.dir, "custom", "plugins"), { recursive: true });
-		writeFileSync(join(env.dir, "custom", "plugins", "company.ts"), [
+		writeFileSync(join(env.dir, "custom", "plugins", "acme.ts"), [
 			`export default {`,
 			`\trepliesWithFiles: () => true,`,
 			`\treply: async d => {`,
@@ -138,7 +138,7 @@ describe("what the mailer gets", () => {
 			`};`,
 		].join("\n"));
 		await loadPlugins(env.dir);
-		const d = rec({ source: "company", mailId: "company-1", ref: "company-1" });
+		const d = rec({ source: "acme", mailId: "acme-1", ref: "acme-1" });
 		addDraft(d);
 		twoFiles(d.id);
 		const out = await sendWith(getDraft(d.id)!, fake().run);

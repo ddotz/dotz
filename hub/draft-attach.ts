@@ -29,7 +29,7 @@ const FILE_MAX = 25 * 1024 * 1024;
 const LIBRARY_LIST_MAX = 100;
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
-// A send approval dotz did not make (a block a session wrote, sent by its own tool with the file, e.g. company-mail-act.ts --att-file): its
+// A send approval dotz did not make (a block a session wrote, sent by its own tool with the file, e.g. acme-mail-act.ts --att-file): its
 // `> 첨부:` files are the ones the asking message (a post, or a session's report) names in its [file] lines, matched by file name. Each has to be a file GET /api/file
 // serves for that message (resolveAllowed with the sent [file] lines), so nothing else is reachable. undefined unless every file is found.
 const nfc = (s: string) => s.normalize("NFC").trim();

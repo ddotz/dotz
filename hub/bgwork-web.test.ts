@@ -114,31 +114,31 @@ test("홈: a session the run line calls 진행 중 (waiting on its own worker) i
 test("홈: an app conversation whose own session runs is a row of 지금 진행 중 with its title, run line and worker, opens in its app view, and leaves when idle", async () => {
 	WORK = [];
 	CONVS = [
-		{ target: "mail:company-67180972", name: "회의록 흐름도 요청", work: [{ id: "st_conv", description: "흐름도 HTML 만들기", status: "running", started_at: ago(4), model: "Opus 5.5 medium" }] },
+		{ target: "mail:acme-67180972", name: "회의록 흐름도 요청", work: [{ id: "st_conv", description: "흐름도 HTML 만들기", status: "running", started_at: ago(4), model: "Opus 5.5 medium" }] },
 		{ target: "settings:youtube", work: [] },
 	];
-	RUNS = { main: { kind: "idle" }, "mail:company-67180972": { kind: "working", since: agoIso(6), detail: "흐름도 그리기" }, "settings:youtube": { kind: "done", since: agoIso(30) } };
+	RUNS = { main: { kind: "idle" }, "mail:acme-67180972": { kind: "working", since: agoIso(6), detail: "흐름도 그리기" }, "settings:youtube": { kind: "done", since: agoIso(30) } };
 	try {
 		const v = await boot("#home");
-		await waitFor(v, `current === "home" && document.querySelector('#v-home .hn[data-k="running"] [data-t="mail:company-67180972"]')`);
+		await waitFor(v, `current === "home" && document.querySelector('#v-home .hn[data-k="running"] [data-t="mail:acme-67180972"]')`);
 		const s = await sections(v);
 		expect(s.running).toHaveLength(2);
 		expect(s.running![0]).toContain("회의록 흐름도 요청");
 		expect(s.running![0]).toContain("작업 중 · 흐름도 그리기 · 6분");
-		expect(s.running![0]).not.toContain("company-67180972");
+		expect(s.running![0]).not.toContain("acme-67180972");
 		expect(s.running![1]).toContain("흐름도 HTML 만들기");
 		expect(s.running![1]).toContain("Opus 5.5 medium");
 		expect(s.running!.join("|")).not.toContain("settings:youtube");
 		// same row shape as the others: no 중단 on the list
 		expect(await v.evaluate(`document.querySelectorAll('#v-home .hn[data-k="running"] button').length`)).toBe(2);
-		await v.evaluate(`(document.querySelector('#v-home [data-t="mail:company-67180972"]').click(), 0)`);
-		await waitFor(v, `current === "chat" && target === "mail:company-67180972"`);
-		expect(await v.evaluate(`location.hash`)).toBe("#monitoring/c:mail%3Akdb-67180972");
+		await v.evaluate(`(document.querySelector('#v-home [data-t="mail:acme-67180972"]').click(), 0)`);
+		await waitFor(v, `current === "chat" && target === "mail:acme-67180972"`);
+		expect(await v.evaluate(`location.hash`)).toBe("#monitoring/c:mail%3Aacme-67180972");
 		// the turn ended: the row is gone on the next state refresh
-		RUNS = { main: { kind: "idle" }, "mail:company-67180972": { kind: "done", since: agoIso(0) } };
-		CONVS = [{ target: "mail:company-67180972", name: "회의록 흐름도 요청", work: [] }];
+		RUNS = { main: { kind: "idle" }, "mail:acme-67180972": { kind: "done", since: agoIso(0) } };
+		CONVS = [{ target: "mail:acme-67180972", name: "회의록 흐름도 요청", work: [] }];
 		await v.evaluate(`(go("home"), refreshState().then(() => true))`);
-		await waitFor(v, `current === "home" && !document.querySelector('#v-home [data-t="mail:company-67180972"]')`);
+		await waitFor(v, `current === "home" && !document.querySelector('#v-home [data-t="mail:acme-67180972"]')`);
 		expect((await sections(v)).running).toEqual(["진행 중인 작업이 없어요"]);
 	} finally {
 		CONVS = [];

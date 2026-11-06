@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { clockKo, deriveLabel, describeOutput, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLine, watchLine, watchSummary } from "./watchtext.ts";
 
-const KAKAO = "kakao chat=458693335449148 new=1 from=3957198286878674945 to=3957198286878674945 at=2026-10-22T12:26:36.000Z";
+const KAKAO = "kakao chat=100000000000001 new=1 from=3900000000000000001 to=3900000000000000001 at=2026-10-22T12:26:36.000Z";
 const NOW = Date.parse("2026-10-22T13:00:00.000Z");
 const TZ = "Asia/Seoul";
 
@@ -41,7 +41,7 @@ test("the kakao-style post is the label, a human line and a folded raw text; the
 });
 
 test("without a summary the raw text still folds; plain Korean output stays prose; the bell gets no raw", () => {
-	expect(watchLine("재고", "output changed", "private-project_mails=1")).toBe("재고: 결과가 바뀌었어요\n```원문\nprivate-project_mails=1\n```");
+	expect(watchLine("재고", "output changed", "boutique_mails=1")).toBe("재고: 결과가 바뀌었어요\n```원문\nboutique_mails=1\n```");
 	expect(watchLine("재고", "output changed", "새 메일이 1통 왔어요")).toBe("재고: 결과가 바뀌었어요\n새 메일이 1통 왔어요");
 	expect(watchLine("재고", "output changed", KAKAO, { raw: false, now: NOW, tz: TZ })).toBe("재고: 결과가 바뀌었어요\n새 소식 1건 · 오후 9:26");
 	expect(watchLine("재고", "recovered")).toBe("재고: 다시 정상이에요");
@@ -90,9 +90,9 @@ test("an unlabeled watch gets a readable Korean name, never its key", () => {
 	expect(plainLabel("kakao 새 소식")).toBe("카카오톡 새 소식");
 	expect(plainLabel("kakaopay 새 소식")).toBe("kakaopay 새 소식");
 	expect(plainLabel("GitHub 감시")).toBe("GitHub 감시");
-	expect(isKeyLabel("company login")).toBe(true);
+	expect(isKeyLabel("acme login")).toBe(true);
 	expect(isKeyLabel("샘플 로그인")).toBe(false);
-	expect(isKeyLabel("private-project")).toBe(false);
+	expect(isKeyLabel("Boutique")).toBe(false);
 });
 
 test("a changed output becomes a sentence of what was added or gone, with the raw folded", () => {
@@ -101,7 +101,7 @@ test("a changed output becomes a sentence of what was added or gone, with the ra
 	expect(describeOutput(now, { prev })).toEqual({ text: "새로 생겼어요: Item C · Item D\n사라졌어요: Item B", readable: true });
 	expect(watchLine("샘플 감시", "output changed", now, { prev })).toBe("샘플 감시: 결과가 바뀌었어요\n새로 생겼어요: Item C · Item D\n사라졌어요: Item B\n" + rawFence(now));
 	expect(describeOutput("+ Build 9.1.0\n- Build 9.0.9").text).toBe("새로 생겼어요: Build 9.1.0\n사라졌어요: Build 9.0.9");
-	expect(describeOutput("\x1b[32mItem A\x1b[0m\nItem E 3957223900184580097", { prev: "Item A" }).text).toBe("새로 생겼어요: Item E");
+	expect(describeOutput("\x1b[32mItem A\x1b[0m\nItem E 3900000000000000002", { prev: "Item A" }).text).toBe("새로 생겼어요: Item E");
 });
 
 test("a DOTZ_FAIL kind reads as a Korean phrase", () => {

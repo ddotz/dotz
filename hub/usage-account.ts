@@ -113,7 +113,7 @@ export function runtimeIdOf(role: "orchestrator" | "lane"): string {
 // Whether OmO skips an account now, and until when. OmO records a block in two places: on the account entry in auth.json
 // (blockedUntil/blockReason, which its account selection reads: isAccountBlocked) and in credential-pool-state.json (a slot).
 // Reading only the pool state missed a block that exists only in auth.json, so dotz showed and pinned an account OmO then
-// skipped (2026-10-22: default blocked until 16:00Z, shown as the connected account while requests ran on host-shared).
+// skipped (2026-10-22: default blocked until 16:00Z, shown as the connected account while requests ran on teammate-shared).
 // Both are honoured; a block without an expiry (an auth block) lasts until the owner logs in again.
 export function blockOf(account: Json | undefined, slot: Json | undefined, now: number): { until?: number; reason: string } | undefined {
 	const found: { until?: number; reason: string }[] = [];

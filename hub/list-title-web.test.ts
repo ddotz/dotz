@@ -6,7 +6,7 @@ import { ev, fakeHub, waitFor } from "./test-web.ts";
 const hub = fakeHub({});
 afterAll(() => hub.stop());
 
-const LONG = "다음 주 월요일까지 company에 제출할 분기 예산 집행 현황 보고서 초안 검토 요청 건에 대한 회신과 후속 일정 조율";
+const LONG = "다음 주 월요일까지 기획팀에 제출할 분기 예산 집행 현황 보고서 초안 검토 요청 건에 대한 회신과 후속 일정 조율";
 const measure = (selector: string) => `(() => {
 	const e = document.querySelector(${JSON.stringify(selector)}), s = getComputedStyle(e), box = e.getBoundingClientRect(), r = document.createRange();
 	r.selectNodeContents(e);

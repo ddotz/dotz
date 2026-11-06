@@ -156,40 +156,40 @@ describe("an install's own watches", () => {
 	const deps = (names: string[], gone: string[] = []) => ({ watchNames: () => names, removeWatch: (n: string) => void gone.push(n) });
 
 	test("a watch named in the instance's `watches` is the app's own: paused while off, listed and deleted by 제거, beside the registry's", () => {
-		apps({ mail: { off: true, watches: ["company-login", "company-sync-"] } });
-		for (const w of ["company-login", "company-sync-inbox", "webmail-gmail"]) expect(watchOff(dir, w)).toBe(true);
-		expect(watchOff(dir, "company-login-2")).toBe(false);
+		apps({ mail: { off: true, watches: ["acme-login", "acme-sync-"] } });
+		for (const w of ["acme-login", "acme-sync-inbox", "webmail-gmail"]) expect(watchOff(dir, w)).toBe(true);
+		expect(watchOff(dir, "acme-login-2")).toBe(false);
 		expect(watchOff(dir, "kakao-new")).toBe(false);
-		apps({ mail: { watches: ["company-login"] } });
-		expect(watchOff(dir, "company-login")).toBe(false);
-		const names = ["company-login", "webmail-gmail", "other-watch"], gone: string[] = [];
-		expect(removalPlan(dir, "mail", names)!.watches).toEqual(["company-login", "webmail-gmail"]);
+		apps({ mail: { watches: ["acme-login"] } });
+		expect(watchOff(dir, "acme-login")).toBe(false);
+		const names = ["acme-login", "webmail-gmail", "other-watch"], gone: string[] = [];
+		expect(removalPlan(dir, "mail", names)!.watches).toEqual(["acme-login", "webmail-gmail"]);
 		writeSettings(dir, "mail", { use_here: false });
 		deleteApp(dir, "mail", {}, deps(names, gone));
-		expect(gone).toEqual(["company-login", "webmail-gmail"]);
+		expect(gone).toEqual(["acme-login", "webmail-gmail"]);
 	});
 
 	test("an added instance owns its extra watches, and the default no longer does", () => {
-		apps({ mail: { watches: ["company-login"] }, "mail-2": { app: "mail", filter: { watches: ["webmail-naver"] }, watches: ["naver-login"] } });
+		apps({ mail: { watches: ["acme-login"] }, "mail-2": { app: "mail", filter: { watches: ["webmail-naver"] }, watches: ["naver-login"] } });
 		expect(removalPlan(dir, "mail-2", ["naver-login", "webmail-naver", "webmail-gmail"])!.watches).toEqual(["naver-login", "webmail-naver"]);
-		expect(removalPlan(dir, "mail", ["company-login", "naver-login", "webmail-naver", "webmail-gmail"])!.watches).toEqual(["company-login", "webmail-gmail"]);
+		expect(removalPlan(dir, "mail", ["acme-login", "naver-login", "webmail-naver", "webmail-gmail"])!.watches).toEqual(["acme-login", "webmail-gmail"]);
 	});
 });
 
 describe("a custom mail reader", () => {
 	test("a company mail plugin is a mail instance by its source and its own watch names: its mails, counts and watches are the instance's alone", () => {
-		expect(createApp(dir, { app: "mail", label: "회사 메일", filter: { source: "company Work", watches: ["company-login", "company-mail"] } })).toEqual({ id: "mail-2", label: "회사 메일" });
-		const got = items(["zele"], [note("w1", "mail:company-work-77"), note("g1", "mail:gmail-1")], { "mail:company-work-77": 4, "mail:gmail-1": 1 });
+		expect(createApp(dir, { app: "mail", label: "회사 메일", filter: { source: "ACME Work", watches: ["acme-login", "acme-mail"] } })).toEqual({ id: "mail-2", label: "회사 메일" });
+		const got = items(["zele"], [note("w1", "mail:acme-work-77"), note("g1", "mail:gmail-1")], { "mail:acme-work-77": 4, "mail:gmail-1": 1 });
 		expect(got.map(i => [i.key, i.label, i.unread, i.notices])).toEqual([["mail", "메일", 1, ["g1"]], ["mail-2", "회사 메일", 1, ["w1"]]]);
-		expect(got[1]!.conv).toEqual(["mail:company-work-"]);
-		expect(watchOff(dir, "company-login")).toBe(false);
+		expect(got[1]!.conv).toEqual(["mail:acme-work-"]);
+		expect(watchOff(dir, "acme-login")).toBe(false);
 		writeSettings(dir, "mail-2", { use_here: false });
-		expect(watchOff(dir, "company-login")).toBe(true);
-		expect(watchOff(dir, "company-mail")).toBe(true);
+		expect(watchOff(dir, "acme-login")).toBe(true);
+		expect(watchOff(dir, "acme-mail")).toBe(true);
 		expect(watchOff(dir, "webmail-gmail")).toBe(false);
-		expect(blockedByOff(dir, { src: "mail:company-work-77" })).toBe(true);
-		expect(removalPlan(dir, "mail-2", ["company-login", "company-mail", "webmail-gmail"])).toMatchObject({ label: "회사 메일", watches: ["company-login", "company-mail"], features: [] });
-		expect(removalPlan(dir, "mail", ["company-login", "company-mail", "webmail-gmail"])!.watches).toEqual(["webmail-gmail"]);
+		expect(blockedByOff(dir, { src: "mail:acme-work-77" })).toBe(true);
+		expect(removalPlan(dir, "mail-2", ["acme-login", "acme-mail", "webmail-gmail"])).toMatchObject({ label: "회사 메일", watches: ["acme-login", "acme-mail"], features: [] });
+		expect(removalPlan(dir, "mail", ["acme-login", "acme-mail", "webmail-gmail"])!.watches).toEqual(["webmail-gmail"]);
 		expect(readSettings(dir, "mail-2").map(f => f.key)).toEqual(["use_here", "label", "notify", "push", "auto_draft", "skip_senders", "only_senders", "reply_model", "followup", "delete_original", "attach_folder", "draft_default", "draft_rules"]);
 	});
 });

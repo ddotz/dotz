@@ -8,7 +8,7 @@ const PASS = "Sup3r-secret!pw";
 
 test("a stored value is encrypted on disk, 0600, and reads back; under another file name it does not open", () => {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-sbox-"));
-	const file = join(dir, "private-project");
+	const file = join(dir, "railway");
 	writeSecretFile(file, JSON.stringify({ username: "me", password: PASS }));
 	const raw = readFileSync(file, "utf8");
 	expect(isSealed(raw)).toBe(true);
@@ -22,19 +22,19 @@ test("a stored value is encrypted on disk, 0600, and reads back; under another f
 test("start-up sealing encrypts the plain dotz_auth values (and one-time ones) and leaves tokens and gateway key files as they are", () => {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-sbox-"));
 	mkdirSync(join(dir, "once"));
-	writeFileSync(join(dir, "private-project"), JSON.stringify({ username: "u", password: PASS }));
+	writeFileSync(join(dir, "boutique"), JSON.stringify({ username: "u", password: PASS }));
 	writeFileSync(join(dir, "once", "shop-1"), JSON.stringify({ card_number: "4539771203846918" }));
 	writeFileSync(join(dir, "hub-token"), "abc123\n");
 	writeFileSync(join(dir, "vapid.json"), JSON.stringify({ publicKey: "p", privateKey: "k" }));
-	writeSecretFile(join(dir, "private-project"), JSON.stringify({ password: PASS }));
-	const before = readFileSync(join(dir, "private-project"), "utf8");
-	expect(sealPlainSecrets(dir).sort()).toEqual(["private-project", "once/shop-1"]);
-	expect(readFileSync(join(dir, "private-project"), "utf8")).not.toContain(PASS);
-	expect(JSON.parse(readSecretFile(join(dir, "private-project"))).password).toBe(PASS);
+	writeSecretFile(join(dir, "railway"), JSON.stringify({ password: PASS }));
+	const before = readFileSync(join(dir, "railway"), "utf8");
+	expect(sealPlainSecrets(dir).sort()).toEqual(["boutique", "once/shop-1"]);
+	expect(readFileSync(join(dir, "boutique"), "utf8")).not.toContain(PASS);
+	expect(JSON.parse(readSecretFile(join(dir, "boutique"))).password).toBe(PASS);
 	expect(JSON.parse(readSecretFile(join(dir, "once", "shop-1"))).card_number).toBe("4539771203846918");
 	expect(readFileSync(join(dir, "hub-token"), "utf8")).toBe("abc123\n");
 	expect(JSON.parse(readFileSync(join(dir, "vapid.json"), "utf8")).privateKey).toBe("k");
-	expect(readFileSync(join(dir, "private-project"), "utf8")).toBe(before);
+	expect(readFileSync(join(dir, "railway"), "utf8")).toBe(before);
 	expect(sealPlainSecrets(dir)).toEqual([]);
 });
 

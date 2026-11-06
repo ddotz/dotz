@@ -28,20 +28,20 @@ const load = async (ready: string) => {
 	await waitFor(`typeof openTarget === "function" && S && NT.loaded`);
 	await view.evaluate(ready);
 };
-const card = (ref: string, progress: string, extra = "") => `[ask] 메일 답장 초안이에요\n-# ${progress}${extra}\n${draftApprovalBlock({ to: "thanever2@hannail.net", toLabel: "받는이", subject: "악보", body: `보내 드립니다 ${ref}`, ref, question: "이 답장 보낼까요?" })}`;
+const card = (ref: string, progress: string, extra = "") => `[ask] 메일 답장 초안이에요\n-# ${progress}${extra}\n${draftApprovalBlock({ to: "reader2@hannail.net", toLabel: "받는이", subject: "악보", body: `보내 드립니다 ${ref}`, ref, question: "이 답장 보낼까요?" })}`;
 const noticeOf = (ref: string) => listNotices(300).items.find(i => i.kind === "decision" && i.decision?.draft?.ref === ref)!;
 
 describe("approval cards one after another", () => {
 	test("the sheet shows the card's place and a likely recipient typo; answering it opens the next card at once", async () => {
 		const a = `RA${Date.now()}`, b = `RB${Date.now()}`;
-		emit("outbox", { ts: new Date(Date.now() - 2000).toISOString(), kind: "out", source: "orchestrator", target: "alert", text: card(a, "남은 1건 (1/2)", "\n> 원문: thanever2@hannail.net 으로 보내 주세요") });
+		emit("outbox", { ts: new Date(Date.now() - 2000).toISOString(), kind: "out", source: "orchestrator", target: "alert", text: card(a, "남은 1건 (1/2)", "\n> 원문: reader2@hannail.net 으로 보내 주세요") });
 		emit("outbox", { ts: new Date(Date.now() - 1000).toISOString(), kind: "out", source: "orchestrator", target: "alert", text: card(b, "마지막 카드예요 (2/2)") });
 		const na = noticeOf(a), nb = noticeOf(b);
-		expect(na.decision!.draft!.recipientWarning).toContain("thanever2@hanmail.net");
+		expect(na.decision!.draft!.recipientWarning).toContain("reader2@hanmail.net");
 		await load(`(noticeSheetOpen(${JSON.stringify(na.id)}), 0)`);
 		await waitFor(`document.querySelectorAll(".fs-ft .dc-act").length === 3`);
 		expect(await view.evaluate(`document.querySelector(".fs-left").textContent`)).toBe(" · 남은 1건 (1/2)");
-		expect(await view.evaluate(`document.querySelector(".dc-rw").textContent`)).toContain("hannail.net → thanever2@hanmail.net");
+		expect(await view.evaluate(`document.querySelector(".dc-rw").textContent`)).toContain("hannail.net → reader2@hanmail.net");
 		// The hub answers the first card: the sheet moves on to the next card of the same conversation without another tap.
 		await view.evaluate(`(() => { const n = ntById(DK.nid); n.decision.state = "answered"; n.decision.answer = "1) 보내기"; dkPaint(); return 0; })()`);
 		await waitFor(`DK.nid === ${JSON.stringify(nb.id)} && document.querySelector(".fs-left")`);

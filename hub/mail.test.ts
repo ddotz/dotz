@@ -8,7 +8,7 @@ import { moveMail } from "./mail-move.ts";
 import { setOwnAddresses } from "./mail-state.ts";
 import { outEvent } from "./projectchat.ts";
 
-function fakes(discordOn: boolean, channel: string | undefined = "000000000000000000", threadOn: MailDeps["threadOn"] = () => true) {
+function fakes(discordOn: boolean, channel: string | undefined = "1500000000001908448", threadOn: MailDeps["threadOn"] = () => true) {
 	const calls = { channels: 0, threads: [] as [string, string, string][], sends: [] as [string, string][], events: [] as Record<string, any>[], wakes: [] as [Record<string, any>, string][] };
 	let n = 0;
 	const deps: MailDeps = {
@@ -82,13 +82,13 @@ describe("postMail", () => {
 	test("with a poster's thread: recorded, one mail event in mail:<key>, no thread opened", async () => {
 		const { deps, calls } = fakes(true);
 		const id = uid("t");
-		const r = await postMail({ source: "company", id, subject: "견적 요청", from: "Kim <kim@example.com>", summary: "금요일까지 회신 요청", body: "본문입니다", thread: "1430000000000009999" }, deps);
-		expect(r).toEqual({ ok: true, key: `company-${id}`, target: `mail:company-${id}`, thread: "1430000000000009999" });
+		const r = await postMail({ source: "acme", id, subject: "견적 요청", from: "Kim <kim@example.com>", summary: "금요일까지 회신 요청", body: "본문입니다", thread: "1430000000000009999" }, deps);
+		expect(r).toEqual({ ok: true, key: `acme-${id}`, target: `mail:acme-${id}`, thread: "1430000000000009999" });
 		expect(calls.threads).toEqual([]);
 		expect(calls.sends).toEqual([]);
 		expect(calls.events).toHaveLength(1);
 		const e = calls.events[0]!;
-		expect(e).toMatchObject({ kind: "mail", source: "company", channel: r.target, conv: r.target, mail: r.key });
+		expect(e).toMatchObject({ kind: "mail", source: "acme", channel: r.target, conv: r.target, mail: r.key });
 		expect(String(e.text).split("\n")[0]).toBe("Kim <kim@example.com> · 견적 요청");
 		expect(e.text).toContain("금요일까지 회신 요청");
 		expect(e.text).toContain("원문\n본문입니다");
@@ -118,7 +118,7 @@ describe("postMail", () => {
 		const { deps, calls } = fakes(true);
 		const id = uid("d");
 		const r = await postMail({ source: "zele", id, subject: "회의 안내", from: "Lee", summary: "내일 10시", body: "자세한 내용" }, deps);
-		expect(calls.threads).toEqual([["ch:000000000000000000", "회의 안내", "Lee\n내일 10시"]]);
+		expect(calls.threads).toEqual([["ch:1500000000001908448", "회의 안내", "Lee\n내일 10시"]]);
 		expect(r.thread).toBe("143000000000000001");
 		expect(calls.sends).toEqual([[`th:${r.thread}`, "원문\n자세한 내용"]]);
 		expect(mailByKey(r.key)?.thread).toBe(r.thread);
@@ -147,7 +147,7 @@ describe("postMail", () => {
 	});
 
 	test("디스코드에도 올리기 is per mail: it gets the source and key of each mail, so one instance can open threads while another stays on the web", async () => {
-		const { deps, calls } = fakes(true, "000000000000000000", source => source === "naver");
+		const { deps, calls } = fakes(true, "1500000000001908448", source => source === "naver");
 		const on = await postMail({ source: "naver", id: uid("i"), subject: "켜진 계정", wake: true }, deps);
 		const off = await postMail({ source: "zele", id: uid("i"), subject: "꺼진 계정", wake: true }, deps);
 		expect(on.thread).toBeDefined();
@@ -195,7 +195,7 @@ describe("postMail", () => {
 		const r2 = await postMail({ source: "zele", id: uid("k"), subject: "깨우기", wake: true }, off.deps);
 		expect(off.calls.wakes.map(([, t]) => t)).toEqual([r2.target]);
 		const quiet = fakes(false);
-		await postMail({ source: "company", id: uid("k"), subject: "조용히" }, quiet.deps);
+		await postMail({ source: "acme", id: uid("k"), subject: "조용히" }, quiet.deps);
 		expect(quiet.calls.wakes).toEqual([]);
 	});
 
@@ -347,12 +347,12 @@ describe("a mail posted without a summary", () => {
 test("a source that reports the sender by a cut-off name only: the mail is recorded with the address its own text names", async () => {
 	const { deps } = fakes(false);
 	const id = uid("nm");
-	const r = await postMail({ source: "plug", id, subject: "Re: 자료", from: "redacted Lee (KR - A", to: "me@corp.example", body: "감사합니다.\nredacted Lee (KR)\nEmail: someone@example.com" }, deps);
-	expect(mailByKey(r.key)!.from).toBe("redacted Lee <someone@example.com>");
-	const html = await postMail({ source: "plug", id: uid("nh"), subject: "Re: 자료", from: "redacted Lee (KR - A", html: "<p>보낸 사람: redacted Lee (KR - Assurance) &lt;someone@example.com&gt;</p>" }, deps);
-	expect(mailByKey(html.key)!.from).toBe("redacted Lee <someone@example.com>");
-	const none = await postMail({ source: "plug", id: uid("nn"), subject: "Re: 자료", from: "redacted Lee (KR - A", body: "주소 없음" }, deps);
-	expect(mailByKey(none.key)!.from).toBe("redacted Lee (KR - A");
+	const r = await postMail({ source: "plug", id, subject: "Re: 자료", from: "Jisoo Han (KR - A", to: "me@corp.example", body: "감사합니다.\nJisoo Han (KR)\nEmail: jisoo.han@audit.example" }, deps);
+	expect(mailByKey(r.key)!.from).toBe("Jisoo Han <jisoo.han@audit.example>");
+	const html = await postMail({ source: "plug", id: uid("nh"), subject: "Re: 자료", from: "Jisoo Han (KR - A", html: "<p>보낸 사람: Jisoo Han (KR - Assurance) &lt;jisoo.han@audit.example&gt;</p>" }, deps);
+	expect(mailByKey(html.key)!.from).toBe("Jisoo Han <jisoo.han@audit.example>");
+	const none = await postMail({ source: "plug", id: uid("nn"), subject: "Re: 자료", from: "Jisoo Han (KR - A", body: "주소 없음" }, deps);
+	expect(mailByKey(none.key)!.from).toBe("Jisoo Han (KR - A");
 });
 
 describe("a repeat post completes the record", () => {
@@ -362,16 +362,16 @@ describe("a repeat post completes the record", () => {
 		let offered: { attachments?: { name: string }[] } | undefined;
 		deps.offerDraft = m => void (offered = m);
 		const id = uid("rep");
-		await postMail({ source: "zele", id, subject: "견적", from: "Lee (KR - A", html: "<p>본문</p><img src=\"cid:pic-1\">", body: "본문" }, deps);
+		await postMail({ source: "zele", id, subject: "견적", from: "Han (KR - A", html: "<p>본문</p><img src=\"cid:pic-1\">", body: "본문" }, deps);
 		const key = mailKey("zele", id), before = mailByKey(key)!;
 		expect([before.to, before.cc, before.attachments]).toEqual([undefined, undefined, undefined]);
 		const events = calls.events.length;
 		const html = "<p>본문</p><img src=\"cid:pic-1\">";
-		const r = await postMail({ source: "zele", id, subject: "견적", from: "\"Lee (KR - ASR)\" <lee@example.com>", to: "kim@example.com", cc: "\"Park\" <park@example.com>", html, body: "본문",
+		const r = await postMail({ source: "zele", id, subject: "견적", from: "\"Han (KR - ASR)\" <lee@example.com>", to: "kim@example.com", cc: "\"Park\" <park@example.com>", html, body: "본문",
 			attachments: [{ name: "image.png", type: "image/png", data: PNG, cid: "pic-1" }, { name: "견적서.pdf", data: PNG }] }, deps);
 		expect(r.duplicate).toBe(true);
 		const after = mailByKey(key)!;
-		expect([after.from, after.to, after.cc]).toEqual(["\"Lee (KR - ASR)\" <lee@example.com>", "kim@example.com", "\"Park\" <park@example.com>"]);
+		expect([after.from, after.to, after.cc]).toEqual(["\"Han (KR - ASR)\" <lee@example.com>", "kim@example.com", "\"Park\" <park@example.com>"]);
 		// only the body's picture is added (a real file of a known mail is not this path's business); it is marked inline and drawn in place
 		expect(attachmentList(after)).toEqual([{ name: "image.png", type: "image/png", size: Buffer.from(PNG, "base64").length, inline: true }]);
 		expect(after.reply).toBe(before.reply);

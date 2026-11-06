@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createRefusals } from "./refusals.ts";
 
-const REASON = "Blocked by dotz (custom plugin company): company mail leaves only on the owner's OK: mail 1: no explicit OK";
+const REASON = "Blocked by dotz (custom plugin acme): company mail leaves only on the owner's OK: mail 1: no explicit OK";
 
 test("the first refusal is said as it is, a repeat for the same reason ends the turn and the text stays the refusal", () => {
 	const r = createRefusals();

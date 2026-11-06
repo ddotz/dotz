@@ -31,7 +31,7 @@ describe("a [done] answer with a choice block", () => {
 		expect(await view.evaluate(`[...document.querySelectorAll("#dcard .dc-row")].every(b => !b.disabled)`)).toBe(true);
 		expect(await view.evaluate(`!document.querySelector("#dcard").hidden && document.querySelector("#dcard .dc-q").textContent`)).toBe("방문 예약");
 		expect(await view.evaluate(`document.body.textContent.includes("제일 빨리 가서 직접 물어볼 수 있어요")`)).toBe(true);
-		expect(await view.evaluate(`document.querySelector(".bm").textContent.includes("까르띠에 고객관리팀으로")`)).toBe(true);
+		expect(await view.evaluate(`document.querySelector(".bm").textContent.includes("부티크 고객관리팀으로")`)).toBe(true);
 		const seen = JSON.parse(await view.evaluate(`JSON.stringify([...document.querySelectorAll("#dcard .dc-row")].map(b => { const r = b.getBoundingClientRect(); return r.width > 200 && r.height >= 40 && r.left >= 0 && r.right <= innerWidth; }))`));
 		expect(seen).toHaveLength(3);
 		expect(seen.every(Boolean)).toBe(true);

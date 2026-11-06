@@ -15,7 +15,7 @@ const hub = fakeHub({
 afterAll(() => hub.stop());
 beforeEach(() => { posts.length = 0; });
 
-const PATH = "/home/me/Downloads/26.2Q 주석/2026년 2분기 대출채권 주석/ 이거 주석파일 관리하는데 어떻게 할까";
+const PATH = "/Users/me/Downloads/분기 자료/2026년 2분기 자료/ 이거 자료파일 관리하는데 어떻게 할까";
 const open = async (width: number): Promise<View> => {
 	const v = await hub.view({ width, height: 800 }, "/");
 	await waitFor(v, `typeof sendChat === "function" && !ta.disabled`);

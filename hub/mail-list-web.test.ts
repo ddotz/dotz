@@ -185,7 +185,7 @@ test("a notice of a deleted mail is no control-less card in the mail list", asyn
 		MAILS.set("mail:fx-1", { subject: "살아 있는 메일", from: "Kim <kim@example.com>", source: "fx", at });
 		MAILS.delete("mail:gone-1");
 		const notices = [
-			{ id: "n-gone", kind: "watch", tone: "", title: "company금융공학실", text: "[company금융공학실] 일일 환율 및 금리시황", open: "mail:gone-1", src: "mail:gone-1", key: "mail:gone-1", ts: at, at, read: true, app: "mail" },
+			{ id: "n-gone", kind: "watch", tone: "", title: "ACME금융공학실", text: "[ACME금융공학실] 일일 환율 및 금리시황", open: "mail:gone-1", src: "mail:gone-1", key: "mail:gone-1", ts: at, at, read: true, app: "mail" },
 			{ id: "n-live", kind: "watch", tone: "", title: "Kim", text: "살아 있는 메일", open: "mail:fx-1", src: "mail:fx-1", ts: at, at, read: true, app: "mail" },
 			{ id: "n-plain", kind: "watch", tone: "", title: "메일", text: "동기화가 끝났어요", ts: at, at, read: true, app: "mail" },
 		];
@@ -193,7 +193,7 @@ test("a notice of a deleted mail is no control-less card in the mail list", asyn
 		document.querySelector("#mon-tl").replaceChildren(...nodes);
 		const cards = [...document.querySelectorAll("#mon-tl > .bm")];
 		return JSON.stringify({ nids: cards.map(c => c.dataset.nid || null).filter(Boolean), rows: cards.filter(c => c.classList.contains("mr")).map(c => [c.querySelector(".rc-title").textContent, !!c.querySelector(".mr-chk"), !!c.querySelector(".mr-star"), !!c.querySelector(".mr-more")]),
-			gone: document.querySelector("#mon-tl").textContent.includes("company금융공학실") });
+			gone: document.querySelector("#mon-tl").textContent.includes("ACME금융공학실") });
 	})()`)) as string) as any;
 	expect(got.gone).toBe(false);
 	expect(got.nids).toEqual(["n-plain"]);

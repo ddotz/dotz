@@ -4,7 +4,7 @@ import { basename } from "node:path";
 const BRIEF_MAX = 8000;
 const DONE_RE = /(done[- ]?when|done\s*=|acceptance|완료\s*조건)/i;
 
-// A lane is for multi-hour, multi-step project work (the someone rule): anything shorter the orchestrator does itself or
+// A lane is for multi-hour, multi-step project work (the earlier secretary's rule): anything shorter the orchestrator does itself or
 // with task subagents, whose results come back into its own session, so no channel, worktree or report relay is spent on
 // it. The launch must say why a lane is needed and how long the work is expected to take; under LANE_MIN_HOURS it is
 // refused unless the owner asked for a lane.

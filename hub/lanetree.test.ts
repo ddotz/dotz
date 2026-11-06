@@ -39,7 +39,7 @@ test("a lane in an ignored folder (a `*` .gitignore, as ~/.dotz) runs in place w
 	writeFileSync(join(repo, ".gitignore"), "*\n");
 	sh(repo, "add", "-f", ".gitignore");
 	sh(repo, "commit", "-qm", "ignore all");
-	const cwd = join(repo, "projects", "company");
+	const cwd = join(repo, "projects", "acme");
 	mkdirSync(cwd, { recursive: true });
 	writeFileSync(join(cwd, "notes.md"), "x\n");
 	expect(laneWorktree("tree-ign", cwd)).toEqual({ cwd });

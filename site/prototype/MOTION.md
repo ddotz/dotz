@@ -59,7 +59,7 @@
 | 상태 점 깜박임 | `#home`, `#tasks`, `#chat/ch1` |
 | 위에서 내려옴, 새 행 | `#notices/arrive`의 새 알림, `#tasks`의 새 작업, `#watch/price`의 "지금 확인" |
 | 스위치, 두 칸 토글 | `#settings/display`, `#settings/accounts` |
-| 진행 막대 | `#project/private-project`에서 단계를 눌러 체크/해제 |
+| 진행 막대 | `#project/docgen`에서 단계를 눌러 체크/해제 |
 | 팝오버, 팔레트 | 헤더의 컴퓨터 이름 버튼, `#palette` |
 | 사라짐 + 토스트 | `#settings/devices`에서 기기 빼기, `#notices` 지난 알림의 ✕ |
 | 알림 행 사라짐 → 지난 알림 | `#notices`에서 새 소식의 ✕, 결정 행을 눌러 시트에서 고르기 |

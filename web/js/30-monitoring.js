@@ -118,7 +118,7 @@ function monProgNode(m, opts = {}) {
 // is only the small text in the header. A watch's notices carry the label (hub notice) or the raw name (a gateway "[name] ..." post).
 const monWords = s => /^[A-Za-z0-9][\w.-]*$/.test(s) && /[-_]/.test(s) ? s.replace(/[-_]+/g, " ") : s;
 const monRaw = m => String(m.watch || m.name || "");
-// A raw command never reaches the screen (owner 2026-11-04): a schedule's text is what it runs ("미설이 피드백 데일리 보고: ssh -o BatchMode=yes ... python3 - 24 < ~/.dotz/...").
+// A raw command never reaches the screen (owner 2026-11-04): a schedule's text is what it runs ("피드백 데일리 보고: ssh -o BatchMode=yes ... python3 - 24 < ~/.dotz/...").
 // monHuman keeps the plain sentences before the first one that holds a command or a file path (a schedule's text can be the whole prompt it runs), stops at the
 // colon before a command, and drops a bracket that holds one; a text that is only a command gives "" and the caller names the kind in words.
 const MON_CMD = /\b[\w.-]+\.(?:md|jsonl?|ya?ml|toml|log|py|sh)\b|\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
