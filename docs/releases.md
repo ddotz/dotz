@@ -15,7 +15,7 @@ A forced release (hotfix) appends `.M` instead of taking a window: `bun hub/rele
 not count against the three scheduled releases of the day. Installations pick a hotfix up at the next window like any other
 version; nothing reaches them sooner.
 Cut a scheduled release outside the windows with `bun hub/release.ts` (same rule and cap), or add `--dry-run` to see the
-version and summary without writing anything. It never runs tests: the updater side tests what a release contains.
+version, summary and release note without writing anything. It never runs tests: the updater side tests what a release contains.
 
 GitHub delays scheduled runs and sometimes drops them (the 12:00 slot of 2026-11-04 never ran; others came up to 6 hours late), so
 the owner's machine starts each slot itself. A dotz watch on that machine, `bun hub/release.ts --dispatch` every minute, starts
@@ -36,6 +36,16 @@ the usual gate and rollback run. It lands on the newest release tag, like any up
 The `pre-push` and `pre-rebase` hooks refuse old commits once the marker exists, so a stale checkout cannot put them back on GitHub.
 This code only reaches an install through a release, so ship it and let installs take it before any rewrite: an older install stays on
 the old history at the same version until the next release, then treats the whole old history as local commits.
+
+Every release is also a GitHub Release whose body is the note `hub/release-note.ts` builds from the commits since the previous tag, with
+no model call. Commits are grouped by plain Korean topic (by the files they touch); release and merge commits are left out and a test-only
+commit is one line under 내부 정리. Each other commit gives three lines: 무엇 (the subject), 왜 and 어떻게 (the body lines `왜:` and `어떻게:`,
+`CONTRIBUTING.md`). A body without those labels goes under 어떻게, and a missing part says so instead of guessing. The note goes through
+`hub/public-scrub.ts`, the same scrub as GitHub posts: the pattern list, this machine's config and secrets when it has a data folder, and
+the `PRIVACY_TERMS` repo secret (one term per line) in Actions, where no data folder exists. It covers `<previous tag>..<tag>`, so commits
+that landed while the run rebased are in it. `--dry-run` prints it, `--force` publishes it the same way, and a Release that fails turns
+the run red with the note in its log: the tag is out, so create the Release by hand with `gh release create <tag> --notes-file <file>`.
+Tags from before this change have no Release. The update notice and settings → 업데이트 link to the note of the version on offer.
 
 See the current version with `cat VERSION`, and what shipped with `git tag --list 'v*' | tail -3` or
 `git ls-remote --tags origin`; `git describe --tags --abbrev=0` names the last release marker.

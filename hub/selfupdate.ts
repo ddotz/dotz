@@ -932,7 +932,7 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 	if (j.status === "updated") {
 		delete s.autoRefused;
 		delete s.autoFailed;
-		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${rel}, ${c.rewrite ? "저장소 기록 정리" : `커밋 ${c.incomingTotal}개`}, 테스트 통과).${j.note ? ` ${j.note}` : ""} 하던 일이 모두 끝나면 다시 시작해요.`);
+		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${rel}, ${c.rewrite ? "저장소 기록 정리" : `커밋 ${c.incomingTotal}개`}, 테스트 통과).${j.note ? ` ${j.note}` : ""} 하던 일이 모두 끝나면 다시 시작해요.${c.available ? ` 릴리스 노트: https://github.com/ddotz/dotz/releases/tag/v${c.available}` : ""}`);
 		hooks.restartIdle();
 		return;
 	}
@@ -955,7 +955,7 @@ export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoH
 	if (updateAvailable(c) && c.remoteHead && s.notified !== c.remoteHead) {
 		s.notified = c.remoteHead;
 		const rel = c.available && "release" in c.version && c.version.release ? `${c.version.release} → ${c.available}` : c.available ?? "";
-		const text = `새 버전이 있어요: ${rel ? `${rel} ` : ""}커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.keep ? ` ${c.keep.line}` : ""}`;
+		const text = `새 버전이 있어요: ${rel ? `${rel} ` : ""}커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.available ? ` 릴리스 노트: https://github.com/ddotz/dotz/releases/tag/v${c.available}` : ""}${c.keep ? ` ${c.keep.line}` : ""}`;
 		record(resolve(o).logDir, `auto-check: notified ${c.remoteHead.slice(0, 7)}`);
 		notifyFn?.(text, c.incomingTotal);
 	}

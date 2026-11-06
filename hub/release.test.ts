@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -172,6 +172,71 @@ describe("dates", () => {
 	test("shiftDay crosses month ends", () => {
 		expect(shiftDay("261031", 1)).toBe("261101");
 		expect(shiftDay("261230", 2)).toBe("270101");
+	});
+});
+
+describe("release note", () => {
+	const kst = (text: string) => new Date(`${text}+09:00`);
+	const published = async (force: boolean) => {
+		const parent = mkdtempSync(join(tmpdir(), "dotz-release-gh-"));
+		roots.push(parent);
+		const origin = join(parent, "github.com", "ddotz", "dotz.git");
+		mkdirSync(origin, { recursive: true });
+		git(origin, "init", "-q", "--bare", "-b", "main");
+		const root = tempRepo();
+		git(root, "remote", "add", "origin", origin);
+		git(root, "switch", "-q", "-c", "main");
+		commit(root, "base");
+		git(root, "tag", "v261105.1");
+		git(root, "commit", "--allow-empty", "-q", "-m", "메시지가 끊기지 않아요", "-m", "왜: 재시작 뒤 답이 사라졌어요.\n어떻게: 이제 다시 보내요.");
+		git(root, "push", "-q", "origin", "main", "v261105.1");
+		const calls: { cmd: readonly string[]; body: string }[] = [];
+		const exec = async (cmd: readonly string[]) => {
+			calls.push({ cmd, body: readFileSync(cmd[cmd.length - 1], "utf8") });
+			return { code: 0, out: "https://github.com/ddotz/dotz/releases/tag/x" };
+		};
+		const code = await publishVersion({ auto: false, force, dryRun: false, cwd: root, now: kst("2026-11-06T13:00:00"), print: () => {}, exec, terms: [] });
+		return { code, calls };
+	};
+
+	for (const [name, force, tag] of [["scheduled", false, "v261106.1"], ["--force", true, "v261105.1.1"]] as const) {
+		test(`a ${name} release publishes the note as its GitHub Release`, async () => {
+			const { code, calls } = await published(force);
+			expect(code).toBe(0);
+			expect(calls).toHaveLength(1);
+			expect(calls[0].cmd.slice(0, 6)).toEqual(["gh", "release", "create", tag, "--repo", "ddotz/dotz"]);
+			expect(calls[0].body).toContain("**왜**: 재시작 뒤 답이 사라졌어요.");
+			expect(calls[0].body).not.toContain("release: v");
+		});
+	}
+
+	test("--dry-run prints the note and calls nothing", async () => {
+		const root = tempRepo();
+		commit(root, "base");
+		git(root, "tag", "v261105.1");
+		commit(root, "버튼 폭을 고칩니다");
+		const lines: string[] = [];
+		const exec = async () => { throw new Error("no exec in a dry run"); };
+		expect(await publishVersion({ auto: false, force: false, dryRun: true, cwd: root, now: kst("2026-11-06T13:00:00"), print: l => lines.push(l), exec, terms: [] })).toBe(0);
+		expect(lines.join("\n")).toContain("**무엇**: 버튼 폭을 고칩니다");
+	});
+
+	test("a failed GitHub Release fails the run and keeps the note in the log", async () => {
+		const parent = mkdtempSync(join(tmpdir(), "dotz-release-gh-"));
+		roots.push(parent);
+		const origin = join(parent, "github.com", "ddotz", "dotz.git");
+		mkdirSync(origin, { recursive: true });
+		git(origin, "init", "-q", "--bare", "-b", "main");
+		const root = tempRepo();
+		git(root, "remote", "add", "origin", origin);
+		git(root, "switch", "-q", "-c", "main");
+		commit(root, "base");
+		git(root, "push", "-q", "origin", "main");
+		const lines: string[] = [];
+		const code = await publishVersion({ auto: false, force: false, dryRun: false, cwd: root, now: kst("2026-11-06T13:00:00"), print: l => lines.push(l), exec: async () => { throw new Error("gh is not installed"); }, terms: [] });
+		expect(code).toBe(1);
+		expect(git(origin, "tag", "--list", "v*").trim()).toBe("v261106.1");
+		expect(lines.join("\n")).toContain("# dotz v261106.1");
 	});
 });
 

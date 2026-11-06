@@ -1,7 +1,10 @@
 // Versioned delivery (docs/releases.md): tag v<YYMMDD.N> scheduled or v<YYMMDD.N.M> forced on main plus VERSION, KST day.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeAtomic } from "../firstrun/atomic.ts"; // not hub/config.ts: it needs a data dir at load, and CI has none
+import { releaseTerms, scrub, type Term } from "./public-scrub.ts";
+import { buildReleaseNote, NOTE_LOG_FORMAT, parseNoteCommits } from "./release-note.ts";
 
 export type Release = { readonly date: string; readonly n: number; readonly hotfix: number | null; readonly text: string };
 
@@ -20,6 +23,8 @@ const DAY_MS = 24 * 3600_000;
 const SLOT_HOURS = [18, 12, 0];
 const RELEASE_REPO = "ddotz/dotz";
 const RELEASE_OWNER = "ddotz";
+const NOTE_LOG_LIMIT = 500;
+const GITHUB_REPO = /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?$/;
 export const TAG_RE = /^v(\d{2})(\d{2})(\d{2})\.([1-3])(?:\.(\d+))?$/;
 
 function kstParts(now: Date): { y: number; m: number; d: number } {
@@ -167,7 +172,39 @@ export type PublishOptions = {
 	cwd: string;
 	now?: Date;
 	print?: (line: string) => void;
+	exec?: Exec;
+	terms?: readonly Term[];
 };
+
+async function releaseNote(root: string, tag: string, base: string | null, rev: string, terms: readonly Term[]): Promise<string> {
+	const log = await gitOutput(["log", "--no-merges", "--name-only", `--max-count=${NOTE_LOG_LIMIT}`, `--format=${NOTE_LOG_FORMAT}`, base ? `${base}..${rev}` : rev], root);
+	if (log.code !== 0) throw new Error(`릴리스 노트용 커밋을 읽지 못했어요: ${log.out}`);
+	return buildReleaseNote({ tag, previous: base, commits: parseNoteCommits(log.out), terms });
+}
+
+// A GitHub Release per tag, with the note as its body. The tag is already out, so a failure here reports and leaves the note in the log.
+async function publishNote(root: string, tag: string, note: string, exec: Exec, print: (line: string) => void): Promise<boolean> {
+	const repo = GITHUB_REPO.exec((await gitOutput(["remote", "get-url", "origin"], root)).out)?.[1];
+	if (!repo) {
+		print("origin이 GitHub가 아니라서 릴리스 노트는 올리지 않았어요.");
+		return true;
+	}
+	const dir = mkdtempSync(join(tmpdir(), "dotz-release-note-"));
+	try {
+		const file = join(dir, "note.md");
+		writeAtomic(file, note);
+		const made = await exec(["gh", "release", "create", tag, "--repo", repo, "--title", tag, "--verify-tag", "--notes-file", file]).catch((e: unknown) => ({ code: 1, out: String(e) }));
+		if (made.code === 0) {
+			print(`릴리스 노트: ${made.out}`);
+			return true;
+		}
+		print(`태그는 나갔지만 릴리스 노트를 올리지 못했어요: ${made.out}`);
+		print(note);
+		return false;
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+}
 
 export async function publishVersion(opts: PublishOptions): Promise<number> {
 	const print = opts.print ?? ((line: string) => console.log(line));
@@ -211,13 +248,15 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 
 	const base = previous ? `v${previous.text}` : null;
 	const log = await gitOutput(["log", "--oneline", "--max-count=20", ...(base ? [`${base}..HEAD`] : ["HEAD"])], root);
-	const summary = summarizeChanges(log.out.split("\n").filter(Boolean), previous);
+	const terms = opts.terms ?? releaseTerms();
+	const summary = scrub(summarizeChanges(log.out.split("\n").filter(Boolean), previous), terms).text;
 
 	print(`다음 ${opts.force ? "강제 " : ""}버전: ${tag}${previous ? ` (이전 ${base})` : " (첫 버전)"}`);
 	print(`변경 요약: ${summary}`);
 
 	if (opts.dryRun) {
-		print(`[--dry-run] 아무것도 쓰지 않았어요. 실제로 내보내면 VERSION을 ${version.text}로 쓰고, 커밋하고, 태그 ${tag}까지 origin/main과 함께 푸시해요.`);
+		print(await releaseNote(root, tag, base, "HEAD", terms));
+		print(`[--dry-run] 아무것도 쓰지 않았어요. 실제로 내보내면 VERSION을 ${version.text}로 쓰고, 커밋하고, 태그 ${tag}까지 origin/main과 함께 푸시한 뒤 위 노트로 GitHub Release를 만들어요.`);
 		return 0;
 	}
 
@@ -295,13 +334,14 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 	}
 	print(`푸시: origin ${tag}`);
 	print(`내보냈어요: ${tag} (${sha.out})`);
-	return 0;
+	// After the rebase above: the note covers what the tag really holds, commits that landed during the run included.
+	return (await publishNote(root, tag, await releaseNote(root, tag, base, tag, terms), opts.exec ?? run, print)) ? 0 : 1;
 }
 
 type Exec = (cmd: readonly string[]) => Promise<{ code: number; out: string }>;
 
 async function run(cmd: readonly string[]): Promise<{ code: number; out: string }> {
-	const proc = Bun.spawn([...cmd], { stdout: "pipe", stderr: "pipe" });
+	const proc = Bun.spawn([...cmd], { stdout: "pipe", stderr: "pipe", timeout: 60_000 });
 	const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
 	return { code: await proc.exited, out: `${out}${err}`.trim() };
 }

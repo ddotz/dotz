@@ -24,3 +24,6 @@ jobs:
         with:
           bun-version: latest
       - run: bun hub/release.ts --auto
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRIVACY_TERMS: ${{ secrets.PRIVACY_TERMS }}
