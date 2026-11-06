@@ -32,14 +32,15 @@ function unquoteChoices(lines) {
   }
   return out;
 }
-// A source list at the end of an answer: a heading line (출처:, 참고:, Sources:) over URL lines, or a last run of two or more bare URL lines,
-// becomes 목록 rows (site, then a short path or the link's own title). Everything comes from the URL string: no fetch, no favicon.
+// A source list at the end of an answer: a heading line (출처:, 참고:, 근거:, Sources:) over link lines (a bare URL, "이름: URL", "이름 - URL", [이름](URL)),
+// or a last run of two or more bare URL lines, becomes 목록 rows (the given name over the site and a short path, or the site over the short path). Everything comes from the URL string: no fetch, no favicon.
 // The full URL stays in the row as clipped text, the only selectable part, so copying the message gives the original URLs.
-const SRC_HEAD = /^\s*(?:#{1,6}\s+)?(?:\*\*)?(출처|참고(?: 자료| 링크)?|Sources?|References?)(?:\*\*)?\s*:?\s*(?:\*\*)?\s*$/i;
-const SRC_ITEM = /^\s*(?:(?:[-*•]|\d+[.)])\s+)?(?:\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|<?(https?:\/\/[^\s<>]+)>?)\s*$/;
+const SRC_HEAD = /^\s*(?:#{1,6}\s+)?(?:\*\*)?(출처|참고(?: 자료| 링크)?|근거|Sources?|References?)(?:\*\*)?\s*:?\s*(?:\*\*)?\s*$/i;
+const SRC_BULLET = /^\s*(?:[-*•]|\d+[.)])\s/;
+const SRC_ITEM = /^\s*(?:(?:[-*•]|\d+[.)])\s+)?(?:\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(\S(?:(?!:\/\/).)*?)(?::|\s-)\s+<?(https?:\/\/[^\s<>]+)>?|<?(https?:\/\/[^\s<>]+)>?)\s*$/;
 function sourceItem(line) {
-  const m = line.match(SRC_ITEM), href = m && (m[2] || m[3]);
-  return href && URL.canParse(href) ? { title: m[1] || "", href } : null;
+  const m = line.match(SRC_ITEM), href = m && (m[2] || m[4] || m[5]);
+  return href && URL.canParse(href) ? { title: (m[1] || m[3] || "").replace(/\*\*|`/g, ""), href } : null;
 }
 // start line -> { head, items, end } for each source list in these lines; only the message's last text part (last) can hold a list without a heading.
 function sourceRuns(lines, last) {
@@ -50,14 +51,16 @@ function sourceRuns(lines, last) {
     const h = lines[i].match(SRC_HEAD);
     if (!h) continue;
     const items = [];
-    let end = i + 1;
+    let end = i + 1, mixed = false;
     for (let j = end; j < lines.length; j++) {
       if (!lines[j].trim()) continue;
       const item = sourceItem(lines[j]);
-      if (!item) break;
+      // A 근거: list keeps its shape unless every item in it is a link: the next line or bullet being something else leaves it as written.
+      if (!item) { mixed = h[1] === "근거" && (j === end || SRC_BULLET.test(lines[j])); break; }
       items.push(item); end = j + 1;
     }
-    if (items.length) { runs.set(i, { head: h[1], items, end }); taken = end; i = end - 1; }
+    if (mixed) taken = lines.length;   // nor does the last-run scan below take a piece of it
+    else if (items.length) { runs.set(i, { head: h[1], items, end }); taken = end; i = end - 1; }
   }
   if (!last) return runs;
   let end = lines.length;
@@ -81,8 +84,8 @@ document.addEventListener("click", ev => {
 });
 function sourceListHtml({ head, items }) {
   const rows = items.map(({ title, href }) => {
-    const url = new URL(href), site = url.hostname.replace(/^www\./, ""), sub = title || sourcePath(url);
-    return `<a class="mlist-row" href="${esc(href)}" title="${esc(href)}" target="_blank" rel="noopener noreferrer"><span class="mlist-url" aria-hidden="true">${esc(href)}</span><span class="mlist-av" aria-hidden="true">${esc(site[0].toUpperCase())}</span><div class="mlist-main"><div class="mlist-t">${esc(site)}</div>${sub ? `<div class="mlist-s">${esc(sub)}</div>` : ""}</div></a>`;
+    const url = new URL(href), site = url.hostname.replace(/^www\./, ""), path = sourcePath(url), sub = title ? [site, path].filter(Boolean).join(" · ") : path;
+    return `<a class="mlist-row" href="${esc(href)}" title="${esc(href)}" target="_blank" rel="noopener noreferrer"><span class="mlist-url" aria-hidden="true">${esc(href)}</span><span class="mlist-av" aria-hidden="true">${esc(site[0].toUpperCase())}</span><div class="mlist-main"><div class="mlist-t">${esc(title || site)}</div>${sub ? `<div class="mlist-s">${esc(sub)}</div>` : ""}</div></a>`;
   });
   return `<div class="mlist mlist-src">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }

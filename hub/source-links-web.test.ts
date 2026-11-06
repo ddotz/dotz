@@ -10,6 +10,7 @@ const URLS = [
 	"https://learn.microsoft.com/en-us/windows/ai/apis/phi-silica",
 ];
 const SENTENCE = "자세한 건 [공식 문서](https://example.com/guide)와 https://example.org/a 를 보세요.";
+const LAW = "https://casenote.kr/법령/한국예시협회법";
 const ts = (n: number) => `2026-11-04T08:${String(10 + n).padStart(2, "0")}:00.000Z`;
 const answer = (n: number, text: string) => ({ ts: ts(n), kind: "out", source: "orchestrator", target: "web", text });
 const events = [
@@ -18,6 +19,11 @@ const events = [
 	answer(2, "참고:\n- [읽어 볼 글](https://www.example.net/post?id=1)\n- https://example.net"),
 	answer(3, `한 줄만 있어요.\n${URLS[1]}`),
 	answer(4, `${URLS[1]}\n${URLS[2]}\n이어지는 말이에요.`),
+	answer(5, `조문에 맞아요.\n\n근거:\n- 한국예시협회법 제31조: ${LAW}/제31조\n- 한국예시협회법 제32조(손실은 적립금으로 먼저 보전): ${LAW}/제32조\n- 한국예시협회법 제23조: ${LAW}/제23조`),
+	answer(6, "근거:\n- 규정: https://example.com/a\n- 담당자에게 확인했어요."),
+	answer(7, "참고:\n문서 - https://example.org/a\n[글](https://example.org/b)\n1. 책: <https://example.org/c>"),
+	answer(8, "문서: https://example.com/a\n글: https://example.com/b"),
+	answer(9, "근거:\n- 담당자에게 확인했어요.\n- https://example.com/a\n- https://example.com/b"),
 ];
 const hub = fakeHub({
 	api: (_req, url) => {
@@ -36,7 +42,7 @@ const rowsOf = (i: number) => page<{ site: string; sub: string | null; href: str
 await view.navigate(`${hub.origin}/`);
 await waitFor(`typeof openTarget === "function" && S`);
 await view.evaluate(`(openTarget("main", "chat"), 0)`);
-await waitFor(`${lists}.length === 3`);
+await waitFor(`${lists}.length === 5`);
 
 test("the four URLs under 출처: are rows with site and short path, the full URL behind them", async () => {
 	const rows = await rowsOf(0);
@@ -60,9 +66,29 @@ test("a link inside a sentence stays a plain inline link", async () => {
 test("a last run of bare URLs needs two lines; a list with a heading also takes link titles and a bare domain", async () => {
 	expect((await rowsOf(1)).map(r => r.href)).toEqual([URLS[1], URLS[2]]);
 	expect(await page(`${lists}[1].querySelector(".mlist-h")`)).toBeNull();
-	expect((await rowsOf(2)).map(r => [r.site, r.sub])).toEqual([["example.net", "읽어 볼 글"], ["example.net", null]]);
-	const texts = await page<string[]>(`[...document.querySelectorAll(".bm")].slice(3).map(b => [...b.querySelectorAll(".md a")].filter(a => !a.classList.contains("mlist-row")).length + (b.querySelector(".mlist-src") ? "rows" : ""))`);
+	expect((await rowsOf(2)).map(r => [r.site, r.sub])).toEqual([["읽어 볼 글", "example.net · post"], ["example.net", null]]);
+	const texts = await page<string[]>(`[...document.querySelectorAll(".bm")].slice(3, 5).map(b => [...b.querySelectorAll(".md a")].filter(a => !a.classList.contains("mlist-row")).length + (b.querySelector(".mlist-src") ? "rows" : ""))`);
 	expect(texts).toEqual(["1", "2"]);
+});
+
+test("a 근거: heading over 이름: URL lines draws rows with the name first, the site and short path under it", async () => {
+	const rows = await rowsOf(3);
+	expect(rows.map(r => [r.letter, r.site, r.sub])).toEqual([
+		["C", "한국예시협회법 제31조", "casenote.kr · …/한국예시협회법/제31조"],
+		["C", "한국예시협회법 제32조(손실은 적립금으로 먼저 보전)", "casenote.kr · …/한국예시협회법/제32조"],
+		["C", "한국예시협회법 제23조", "casenote.kr · …/한국예시협회법/제23조"],
+	]);
+	expect(rows.map(r => r.href)).toEqual([`${LAW}/제31조`, `${LAW}/제32조`, `${LAW}/제23조`]);
+	expect(await page(`${lists}[3].querySelector(".mlist-h").textContent`)).toBe("근거");
+});
+
+test("list items may have no bullet and may be 이름 - URL, a markdown link or a bare URL in one list", async () => {
+	expect((await rowsOf(4)).map(r => [r.site, r.href])).toEqual([["문서", "https://example.org/a"], ["글", "https://example.org/b"], ["책", "https://example.org/c"]]);
+});
+
+test("a 근거: list with an item that is no link stays a list, and named lines with no heading stay text", async () => {
+	const out = await page<[boolean, number][]>(`[6, 8, 9].map(i => { const b = document.querySelectorAll(".bm")[i]; return [!!b.querySelector(".mlist-src"), b.querySelectorAll(".md a").length]; })`);
+	expect(out).toEqual([[false, 1], [false, 2], [false, 2]]);
 });
 
 test("rows ask for nothing from the network and stay inside a phone screen", async () => {
