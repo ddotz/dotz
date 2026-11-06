@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bindPeer, boundPeer } from "./peer-pair.ts";
 import { cfg } from "./config.ts";
-import { baseUrl, cached, candidatePorts, countsFrom, discover, extraUrls, friendlyName, isDotz, isPublicHost, knownComputers, listPeers, pool, publicPeer, resolveNode, sameUserNodes, selfFound, uniqueNames } from "./peers.ts";
+import { baseUrl, cached, forgetPeer, forgetRoute, candidatePorts, countsFrom, discover, extraUrls, friendlyName, isDotz, isPublicHost, knownComputers, listPeers, pool, publicPeer, resolveNode, sameUserNodes, selfFound, uniqueNames } from "./peers.ts";
 import { setWebBase } from "./weblink.ts";
 
 const roots: string[] = [];
@@ -215,4 +215,48 @@ test("a public row is offline when its manifest is not dotz's, and is asked for 
 	const row = await publicPeer({ name: "x", host: "x.example.com", url: "https://x.example.com", self: false, public: true }, get);
 	expect(row).toEqual({ name: "x", url: "https://x.example.com", self: false, online: false, public: true });
 	expect(asked).toEqual(["https://x.example.com/manifest.webmanifest"]);
+});
+
+test("forgetPeer forgets an offline bound computer only: an online, public, relay or own row stays", () => {
+	const dir = mkdtempSync(join(tmpdir(), "peers-forget-"));
+	roots.push(dir);
+	const url = "https://mini.ts.net:8445";
+	bindPeer(MINI, url, "맥미니", dir);
+	const row = { name: "맥미니", url, self: false, online: false };
+	expect(forgetPeer(url, [{ ...row, online: true }], dir)).toBe("online");
+	expect(forgetPeer(url, [{ ...row, public: true }, { ...row, self: true }, { ...row, via: "jandi" }], dir)).toBe("none");
+	expect(forgetPeer("https://other.ts.net", [row], dir)).toBe("none");
+	expect(boundPeer(MINI, dir)?.url).toBe(url);
+	expect(forgetPeer(url, [row], dir)).toBe("ok");
+	expect(boundPeer(MINI, dir)).toBeUndefined();
+});
+
+test("forgetRoute asks the computer itself first: one that still answers stays, and a URL off the list is never asked", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "peers-forget-route-"));
+	roots.push(dir);
+	const url = "https://mini.ts.net:8445";
+	bindPeer(MINI, url, "맥미니", dir);
+	const rows = async () => [{ name: "맥미니", url, self: false, online: false }];
+	const asked: string[] = [];
+	const answers = (v: boolean) => async (u: string) => { asked.push(u); return v; };
+	const route = (target: string, v: boolean) => forgetRoute(new URL(`http://x/api/peers?url=${encodeURIComponent(target)}`), { rows, alive: answers(v), dir });
+	expect((await route("https://evil.example", true)).status).toBe(404);
+	expect(asked).toEqual([]);
+	expect((await route(url, true)).status).toBe(409);
+	expect(boundPeer(MINI, dir)?.url).toBe(url);
+	expect((await route(url, false)).status).toBe(200);
+	expect(boundPeer(MINI, dir)).toBeUndefined();
+});
+
+test("a reset cache loads anew and ignores a load that began before the reset", async () => {
+	let n = 0;
+	const gates: Array<(v: number) => void> = [];
+	const get = cached(60_000, () => new Promise<number>(r => { n++; gates.push(r); }));
+	const first = get();
+	get.reset();
+	const second = get();
+	gates[1]!(2);
+	gates[0]!(1);
+	expect([await first, await second, n]).toEqual([1, 2, 2]);
+	expect(await get()).toBe(2);
 });

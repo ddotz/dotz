@@ -72,7 +72,7 @@ import { updateRoute } from "./selfupdate.ts";
 import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, setAppName, webBuild } from "./webapp.ts";
-import { listPeers, ownLogin } from "./peers.ts";
+import { forgetRoute, listPeers, ownLogin } from "./peers.ts";
 import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
 import { checkPeer } from "./peer-auth.ts";
@@ -545,7 +545,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			}
 		}
 		if (url.pathname === "/api/health") return json({ ok: true });
-		if (req.method === "GET" && url.pathname === "/api/peers") return json([...(await listPeers()), ...(await relayRows())]);
+		if (url.pathname === "/api/peers" && (req.method === "GET" || req.method === "DELETE")) return req.method === "GET" ? json([...(await listPeers()), ...(await relayRows())]) : forgetRoute(url);
 		// Send lease of another gateway (hub/send-lease.ts): claim, release or record a sent id before an app message goes out.
 		if (req.method === "POST" && url.pathname === "/api/peer/lease") return json(handleLease((await body(req)) as LeaseReq, Date.now()));
 		// This computer's name for the settings screen: the one in use, the one the owner set (empty = none), and the hostname default.

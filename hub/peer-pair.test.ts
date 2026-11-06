@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkPeer } from "./peer-auth.ts";
 import { createPeerMonitor } from "./peer-monitor.ts";
-import { acceptedTokens, boundPeer, createPairer, handlePair, outToken, PAIR_PATH, REASON } from "./peer-pair.ts";
+import { acceptedTokens, bindPeer, boundPeer, boundPeers, createPairer, handlePair, outToken, PAIR_PATH, REASON, unbindPeer } from "./peer-pair.ts";
 import { loginOf, sameUserNodes } from "./peers.ts";
 
 // Gateway A asks gateway B in one process: B's handler is the pair door, the peer gate and the peer routes; the network is an injected fetch
@@ -177,4 +177,20 @@ test("own login and same-user nodes: tagged nodes never count", () => {
 	expect(loginOf({ ...st, Self: { ...st.Self, Tags: ["tag:x"] } })).toBeUndefined();
 	expect(loginOf(undefined)).toBeUndefined();
 	expect(sameUserNodes(st).map(n => n.DNSName)).toEqual(["a.ts.net."]);
+});
+
+test("unbindPeer forgets one host: its record and its tokens, no other host's", async () => {
+	const dir = tmp();
+	const pair = createPairer({ fetch: async (_u, init) => Response.json({ token: "t".repeat(32), echo: init?.method }), selfUrl: async () => URL_A, dir });
+	expect((await pair(URL_B)).ok).toBe(true);
+	bindPeer("c.example.test", "https://c.example.test", "맥미니", dir);
+	expect(outToken(URL_B, dir)).toBeDefined();
+	expect(boundPeer("b.example.test", dir)?.url).toBe(URL_B);
+
+	expect(unbindPeer("B.example.test.", dir)).toBe(true);
+	expect(boundPeer("b.example.test", dir)).toBeUndefined();
+	expect(outToken(URL_B, dir)).toBeUndefined();
+	expect(Object.keys(boundPeers(dir))).toEqual(["c.example.test"]);
+	expect(boundPeer("c.example.test", dir)?.name).toBe("맥미니");
+	expect(unbindPeer("b.example.test", dir)).toBe(false);
 });
