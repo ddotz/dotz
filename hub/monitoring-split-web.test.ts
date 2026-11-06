@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 // 모니터링 (web/js/30-monitoring.js) run as shipped over a fixed store: which notices it lists, and what a watch row opens.
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring.js"), "utf8");
+const chatSrc = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitor-chat.js"), "utf8");
 const between = (from: string, to: string) => {
 	const a = src.indexOf(from), b = src.indexOf(to, a);
 	if (a < 0 || b < 0) throw new Error(`markers not found: ${from} .. ${to}`);
@@ -37,6 +38,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		mxMerge: () => {}, mxHash: () => "", mxRoute: (t: string) => t, mxKeyOf: (k: string) => `i:${k}`, mxsName: () => "",
 		// No other computers here (web/js/34-peer-monitoring.js): the local list as is.
 		pqMerge: (items: N[]) => items, rqMonItem: () => null, pqLabel: () => null, pqSig: () => 0, pqOpen: () => {}, pqLink: (p: string) => p, kkItem: () => false, PQ: { of: new Map() },
+		asConv: (a: string) => `settings:${a}`, isSettingsT: (t: string) => t.startsWith("settings:"), monCtx: "", target: "",
 		intgWatch: () => {}, intgHas: (it: N, t: unknown) => ((it.conv as string[]) || []).some(p => String(t).startsWith(p)), INTG: { items: integrations, available: [] }, NT: { items: notices, loaded: true }, CONV: new Map(), MAILS: new Map(),
 		ntById: (id: string) => notices.find(n => n.id === id), ntAt: (n: N) => Date.parse(String(n.updated || n.ts)), ntPlain: (s: unknown) => String(s ?? ""),
 		KST: {}, kstDay: (t: string) => String(t).slice(0, 10), kstHM: (t: string) => String(t).slice(11, 16), dayLabel: () => "어제", ntTime: (t: string) => String(t).slice(11, 16),
@@ -47,7 +49,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		api: async () => ({}), homeSoon: () => {}, titles: { monitoring: "모니터링" }, ntIsDec: (n: N) => n.kind === "decision" && !!n.decision, ntNeeds: () => false,
 		ntWithRepeats: (l: unknown[]) => l, noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, nwChangeNode: () => null, nwChangeLine: () => "", asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
 	};
-	const body = `${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
+	const body = `${chatSrc}\n${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
 NM.items = MONS; NM.loaded = true;
 return { MON, monRoute, monItems, monSel, monRows, monTimeline, monHead, monKeyOf };`;
 	const api = new Function(...Object.keys(env), "MONS", body)(...Object.values(env), monitors);
@@ -128,12 +130,12 @@ describe("a watch row", () => {
 		expect(row.hint).not.toContain("nas-php-node");
 	});
 
-	test("opens the conversation view: its reports and its latest run as message cards, no fact card", () => {
+	test("opens its conversation; its report log: the reports and the latest run as message cards, no fact card", () => {
 		const m = load(store(), integrations, monitors), items = m.monItems();
 		const row = m.monRows(items, null).find(r => r.k === "m:node security updates")!;
 		row.open!();
-		expect(m.went).toEqual([["monitoring", "m:node security updates"]]);
-		m.monRoute(m.went[0]![1]);
+		expect(m.went).toEqual([["monitoring", "c:settings:w:node-security-updates"]]);
+		m.monRoute("m:node security updates");
 		const sel = m.monSel(items)!;
 		expect(sel.key).toBe("m:node security updates");
 		const nodes = m.monTimeline(sel);

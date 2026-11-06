@@ -96,7 +96,9 @@ function pmPrimary(rows) {
 function pmWatchRow(x) {
   const mins = x.every_minutes ?? (x.schedule && x.schedule.every_minutes) ?? 0, [tone, why] = pmHealth(x);
   const sub = [mins ? pmEvery(mins) : "", x.paused ? "일시 정지" : why || (x.lastRun ? `마지막 ${kstStamp(x.lastRun)}` : "")].filter(Boolean).join(" · ");
-  return el("button", { class: "li tap", type: "button", onclick: () => pmSheet("routines") },
+  // A monitor opens beside the other monitors, as in 모니터링; an app's own watch has no row there and stays in the sheet.
+  const open = () => { const it = x.kind === "monitor" ? monItems().find(i => i.mon && i.mon.watch === x.id) : null; if (it) go("monitoring", monRowGo(it)); else pmSheet("routines"); };
+  return el("button", { class: "li tap", type: "button", onclick: open },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: pmRoutineName(x) }), sub ? el("div", { class: "sup", text: sub }) : null),
     el("span", { class: "li-end" }, el("span", { class: "tag", text: PM_KIND[x.kind] })));

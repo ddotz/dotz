@@ -389,6 +389,9 @@ const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label":
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
 const convHead = el("div", { id: "cv-head", class: "cv-head" });
 $("#v-chat").prepend(convSide, convHead);
+// Over a monitor's conversation (monChatTopNodes in 30-monitoring.js).
+const monChatTop = el("div", { id: "mon-chat-top", class: "mon-chat-top", hidden: true });
+convHead.after(monChatTop);
 
 function convPaintHead() {
   asSync();
@@ -422,7 +425,8 @@ function convPaint() {
   convTitle();
   mailSentPaint();
   mbReplyPaint();
-  const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx]);
+  if (monCtx && isSettingsT(target)) MON.sel = monItemOf(target) || MON.sel;   // the monitor list may have loaded after this conversation opened
+  const items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx]);
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
@@ -438,6 +442,10 @@ function convPaint() {
   }
   convSide.classList.toggle("mon-side", !!monCtx);
   $("#v-chat").classList.toggle("mon-ctx", !!monCtx);
+  const mit = items ? monChatIt(items) : null, topSig = mit ? JSON.stringify([mit.key, mit.msig, mit.unread]) : "";
+  $("#v-chat").classList.toggle("mon-two", !!mit);
+  monChatTop.hidden = !mit;
+  if (topSig !== monChatTop.dataset.sig) { monChatTop.dataset.sig = topSig; clear(monChatTop); if (mit) monChatTop.append(...monChatTopNodes(mit).filter(Boolean)); }
   $("#v-chat").classList.toggle("no-composer", target === "alert");
   convPaintHead();
 }

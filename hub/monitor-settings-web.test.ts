@@ -201,7 +201,7 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const) test(`a disconnected ap
 	mailDown = true;
 	const v = await open(w, h);
 	try {
-		await boot(v, "m:웹 감시");
+		await boot(v, "list");
 		await waitFor(v, `[...document.querySelectorAll("body *")].some(n => !n.childElementCount && n.textContent === ${JSON.stringify(DOWN)})`);
 	} finally {
 		mailDown = false;

@@ -11,7 +11,7 @@ const NT_RESULT = { ok: ["정상", "done"], changed: ["바뀜", "ask"], fail: ["
 const MON_KIND = { watch: "모니터링", schedule: "예약" };
 // The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
 const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
-// sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width (the item then has the whole column).
+// sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width. An app's item has the whole column; a monitor opens beside the list of monitors (monListRows).
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
 const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0 };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
 const monConv = () => current === "monitoring" && !MON.list;
@@ -269,7 +269,7 @@ function monRows(items, sel) {
     if ((it.group === MON_GROUP.plain || it.proj) && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
     if (it.group && it.group !== group) rows.push({ header: it.group });
     group = it.group;
-    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, unreplied: it.unreplied | 0, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });
+    rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, unreplied: it.unreplied | 0, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", monRowGo(it)) });
   }
   if (!added) { if (group !== MON_GROUP.app) rows.push({ header: MON_GROUP.app }); addRow(); }
   if (!NM.loaded) rows.push({ header: NM.failed ? "모니터링을 불러오지 못했어요" : "모니터링 불러오는 중…" });
@@ -1035,19 +1035,19 @@ function monSeen() {
     ntMarkRead({ ids: mine.map(n => n.id) });
   }, 700);
 }
-
 // The list's place, kept while it is off screen (a hidden box forgets its scroll).
 $("#mon-side").addEventListener("scroll", ev => { MON.top = ev.currentTarget.scrollTop; }, { passive: true });
 let monRaf = 0;
 const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };   // the nav badge reads the same data (09-needs-you.js)
 function renderMonitoring() {
   monRaf = 0;
-  if (current !== "monitoring") { mbSeenReset(); if (monCtx && current === "chat") convSchedule(); return; }
+  if (current !== "monitoring") { mbSeenReset(); if (monCtx && current === "chat") { convSchedule(); monTickStart(); } return; }
   const items = monItems(), sel = mxScope(monSel(items)), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
   // An address whose item is not here (gone, or not loaded yet) shows the list, never an empty pane; an item that arrives later still opens.
   if (!sel && !MON.list) { MON.miss = true; MON.list = true; convChrome(); }
   else if (sel && MON.miss) { MON.miss = false; MON.list = false; convChrome(); }
-  const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.unreplied, r.badge, r.header, r.sel, r.chips, r.msig])]);
+  $("#v-monitoring").classList.toggle("mon-two", !!sel && !!sel.mon && !MON.list);
+  const rows = monListRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.unreplied, r.badge, r.header, r.sel, r.chips, r.msig])]);
   if (sideSig !== MON.side) {
     MON.side = sideSig;
     const top = side.scrollTop;
@@ -1163,9 +1163,9 @@ function monTick() {
 let monTickT = 0;
 function monTickStop() { if (monTickT) clearInterval(monTickT); monTickT = 0; }
 function monTickStart() {
-  if (monTickT || current !== "monitoring" || document.hidden) return;
+  if (monTickT || !monTicks() || document.hidden) return;
   monTick();
-  monTickT = setInterval(() => { if (document.hidden || current !== "monitoring") monTickStop(); else monTick(); }, 1000);
+  monTickT = setInterval(() => { if (document.hidden || !monTicks()) monTickStop(); else monTick(); }, 1000);
 }
 document.addEventListener("visibilitychange", () => { if (document.hidden) monTickStop(); else monTickStart(); });
 let monOlderObs = null;

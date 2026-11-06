@@ -484,7 +484,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 목적: 시트, 메뉴, 대화창, 화면을 히스토리 엔트리로 쌓아 안드로이드 뒤로가기/데스크톱 뒤로가기로 한 겹씩 닫아요.
 - 구성: 화면이 아니라 상태 모듈이에요. 엔트리마다 `{dz:1, c: 경로 체인, ov: 열린 오버레이 수, g?}`. `OV[]`가 열린 오버레이.
 - 기능: `go()`가 `navSync`로 원하는 체인(`H.want`)을 계산하고 `histSync`가 push(깊이), replace(옆 이동), `history.go(-n)`(위로)로 맞춰요. `ovOpen/ovDone`으로 오버레이가 엔트리를 하나씩 차지, `dialogHist(d)`가 `<dialog>`를 오버레이로 등록. 설치 앱(standalone)은 홈 아래 종료 가드: 홈에서 뒤로가면 토스트 `한 번 더 누르면 닫혀요`(2초), 다시 누르면 앱이 닫혀요(`guardHit`, `armExitGuard`).
-- 상태: 폰(`narrowChat`)에서 채팅 체인은 `home > chat/list > chat/<대상>`, 넓은 화면은 `home > chat/<대상>`. 모니터링에서 연 대화는 `home > monitoring > monitoring/<항목> > <대화>`. 알림에서 온 이동(`NSC.ret`)은 `home > notices > ...`. 넓은 화면은 오버레이가 엔트리를 안 쓰고 위/옆 이동은 현재 엔트리를 replace만 해요(`histFlat`, 주소창 깜박임 방지). 체인이 6번 시도로 안 맞으면 원하는 경로로 그냥 맞춰요.
+- 상태: 폰(`narrowChat`)에서 채팅 체인은 `home > chat/list > chat/<대상>`, 넓은 화면은 `home > chat/<대상>`. 모니터링에서 연 대화는 `home > monitoring > monitoring/<항목> > <대화>`, 감시 대화는 왼쪽 목록이 있어 `home > monitoring > <대화>`(`monChatIt`). 알림에서 온 이동(`NSC.ret`)은 `home > notices > ...`. 넓은 화면은 오버레이가 엔트리를 안 쓰고 위/옆 이동은 현재 엔트리를 replace만 해요(`histFlat`, 주소창 깜박임 방지). 체인이 6번 시도로 안 맞으면 원하는 경로로 그냥 맞춰요.
 - 데이터: 없음(브라우저 History API, 해시 `#chat/...`).
 - 근거: web/js/32-history-nav.js:14(routeChain), :33(navSync), :40(routeReplace), :48(histMove), :55(histSeed), :67(histSync), :90-94(ovOpen/ovDone/dialogHist), :96(guardHit), :104(armExitGuard), :112(popstate).
 - css: 없음(코드에서 확인 못 함: 이 모듈은 DOM을 그리지 않아요).
@@ -811,7 +811,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
   - 이름과 설명 인라인 편집: `pmEditable`(눌러서 입력칸, `저장`/`취소`, Enter 저장, Esc 취소, 여러 줄은 Cmd/Ctrl+Enter). 이름은 필수. `PUT /api/projects {key: recordKey||key, title|purpose}`.
   - 단계 줄 `pmStepRow`: 눌러서 완료 토글(role=checkbox, 낙관적 표시 후 `PUT milestones`, 실패하면 되돌리고 토스트).
   - 블록 머리글 버튼 `편집`(단계), `전체`(세션, 결과, 감시)는 `pmSheet(kind)`로 3단계 페이지를 열어요(작업 블록은 버튼 없음).
-  - `대화에서 답하기`는 `openTarget("lane:<name>")`. 세션 줄 `pmLaneRow`은 그 세션 대화로, 작업 줄 `pmWorkRow`는 `workGo`, 결과 줄은 보고이고 세션이 있을 때만 눌러서 `laneResultGo`. 감시 줄 `pmWatchRow`는 `pmSheet("routines")`.
+  - `대화에서 답하기`는 `openTarget("lane:<name>")`. 세션 줄 `pmLaneRow`은 그 세션 대화로, 작업 줄 `pmWorkRow`는 `workGo`, 결과 줄은 보고이고 세션이 있을 때만 눌러서 `laneResultGo`. 감시 줄 `pmWatchRow`는 모니터링 목록에 있는 감시면 그 감시 대화(`monRowGo`), 앱이 소유한 감시와 루틴은 `pmSheet("routines")`.
   - `프로젝트 채팅`은 채널이 있고 `validTarget(chat)`일 때만 보여요(없으면 버튼 자체를 뺌).
   - ⋯ 메뉴와 삭제는 아래 별도 항목.
 - 상태:
@@ -1148,14 +1148,14 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 모니터링 화면 (뷰 monitoring)
 
 - 목적: 감시, 예약, 앱(메일, 카카오톡, 댓글 등), 답장 확인, 다른 컴퓨터의 항목을 한 목록으로 보고, 항목 하나를 대화처럼 여는 탭이에요.
-- 구성: `#v-monitoring` 안에 `aside#mon-side.cv-side`(목록, aria-label `모니터링 목록`), `div#mon-head.cv-head`(열린 항목 머리), `.chatbox > #mon-timeline > #mon-tl`(열린 항목 본문). 카카오톡과 댓글 창(`#cm`, `.kk`)은 같은 `#v-monitoring` 뒤에 붙고 열리면 `.chatbox`를 대신해요.
+- 구성: `#v-monitoring` 안에 `aside#mon-side.cv-side`(목록, aria-label `모니터링 목록`), `div#mon-head.cv-head`(열린 항목 머리), `.chatbox > #mon-timeline > #mon-tl`(열린 항목 본문). 카카오톡과 댓글 창(`#cm`, `.kk`)은 같은 `#v-monitoring` 뒤에 붙고 열리면 `.chatbox`를 대신해요. 감시 항목은 채팅과 같은 두 칸으로 열려요(`web/js/30-monitor-chat.js`): 행을 누르면 `go("monitoring", "c:settings:w:<감시>")`로 `#v-chat.mon-ctx.mon-two`가 서고, 왼쪽 `#chat-convo`에 감시 행만(`monListRows`: 감시 소식, 답장 확인, 앱, 앱 관리, 앱이 소유한 감시는 빠져요), 오른쪽에 대화, 그 위 `#mon-chat-top`에 진행 막대, 끊김 안내, `지금 확인`, `소식`이 있어요. `소식`(`m:<이름>`, 알림과 홈에서 오는 주소, 대화가 없는 예약, 이 컴퓨터 감시와 이름이 같은 다른 컴퓨터 감시)은 `#v-monitoring.mon-two`로 같은 칸 폭에 확인 기록을 보여요. 앱 항목(메일, 카카오톡, 댓글 등 앱 화면이 있는 것)은 이 두 칸을 쓰지 않아요.
 - 기능: 항목 열기 `go("monitoring", key)` (key는 `notice`, `replies`, `i:<앱>`, `m:<이름>`, `p:<url>|...`), 목록으로 돌아가기(`MON.list = true`), 메일/설정 대화는 `go("monitoring", "c:<target>")`로 채팅 뷰를 모니터링 탭 안에서 그려요.
-- 상태: `MON.list`가 true면 목록만 보여요(`#v-monitoring.cv-listing`, 폭과 상관없이 목록이 `.cv-side`만 남기고 나머지는 숨김). 항목이 열려 있으면 `MON.list=false`, `MON.sel`이 열린 키예요. 데스크톱(1100px 이상)도 한 번에 한 층만 서고 최대 폭 920px로 가운데 정렬해요(카카오 채팅이 열린 경우 제외). 폰/태블릿은 `narrowChat()`가 `max-width:1099px`이고, 이때만 `monTopNodes`가 머리 대신 본문 맨 위에 카드를 그려요. 항목을 못 찾으면(`sel` 없음) 아무것도 그리지 않고 제목만 갱신해요. 모니터링 탭이 아니면 렌더하지 않고 `mbSeenReset()`만 해요.
+- 상태: `MON.list`가 true면 목록만 보여요(`#v-monitoring.cv-listing`, 폭과 상관없이 목록이 `.cv-side`만 남기고 나머지는 숨김). 항목이 열려 있으면 `MON.list=false`, `MON.sel`이 열린 키예요. 데스크톱(1100px 이상)도 앱 항목과 목록은 한 번에 한 층만 서고 최대 폭 920px로 가운데 정렬해요(카카오 채팅이 열린 경우 제외). 감시 항목은 채팅과 같은 `--cv-w:340px` 두 칸이에요. 폰은 채팅처럼 목록, 대화, 뒤로 순서예요(`#back`이 목록으로). 폰/태블릿은 `narrowChat()`가 `max-width:1099px`이고, 이때만 `monTopNodes`가 머리 대신 본문 맨 위에 카드를 그려요. 항목을 못 찾으면(`sel` 없음) 아무것도 그리지 않고 제목만 갱신해요. 모니터링 탭이 아니면 렌더하지 않고 `mbSeenReset()`만 해요.
 - 상태(주소): 목록은 `#monitoring`, 항목은 `#monitoring/<encodeURIComponent(key)>`(`monHash`), 메일이나 설정 대화는 `#monitoring/c:<target>`. 기록 뒤로가기는 항목 위 단계를 `home > monitoring > monitoring/<key> > 현재`로 쌓아요. INVENTORY의 `#comments`, `#watch/price` 같은 주소는 프로토타입 주소이고 코드에는 없어요.
 - 상태(갱신): 알림이 도착하면 다시 그려요(`monSchedule` = requestAnimationFrame, `renderMonitoring`). 모니터링 탭이 열려 있거나 `monCtx`가 있고 화면이 보이면 60초마다 `loadMonitors()`를 다시 불러요. 탭이 숨겨지면 1초 틱 타이머를 멈추고 다시 보이면 재개해요. 안 읽은 알림은 항목이 열린 채 700ms 보이면 읽음 처리해요(`monSeen`).
 - 데이터: `GET /api/monitors` (`{items:[{name, watch?, kind, channel?, last_run?, last_result?, next_run?, every?, connection?, since?, conn_reason?, paused?, last_summary?, scope?, project?, project_title?, app?, fails?, last_ok?, last_output?}]}`), `GET /api/integrations`, 알림(`NT.items`, SSE `notice`, `notice_read`, `notice_dismiss`), 대화(`CONV`, `MAILS`).
 - css: web/css/20-monitoring.css(대부분의 `mon-*`), web/css/10-conversations.css(`#v-monitoring` 그리드 2~7행, 114~137행), web/css/01-tokens.css:188(1100px 이상 여백), web/css/19-volume.css(`mon-bar`, `mon-tabs`, `fr-*`, `mon-more`, `mon-day`, `mon-sh`).
-- css(반응형): 10-conversations.css:6-7 목록 단계, :114 `max-width:1099px`, :128 `min-width:1100px`(`--cv-w:240px`, `#v-monitoring` 한 열 그리드, `max-width:920px`), 20-monitoring.css:107 `min-width:1100px`(열린 메일 대화가 목록 칸 없이 한 열을 차지: `#v-chat.mon-ctx`).
+- css(반응형): 10-conversations.css:6-7 목록 단계, :114 `max-width:1099px`, :128 `min-width:1100px`(`--cv-w:240px`, `#v-monitoring` 한 열 그리드, `max-width:920px`), 20-monitoring.css:107 `min-width:1100px`(열린 앱 대화는 목록 칸 없이 채팅 대화창 폭으로 가운데: `#v-chat.mon-ctx:not(.mon-two)`, 감시는 `.mon-two`로 채팅의 두 칸).
 - 근거: web/index.html:99-103(마크업), web/js/30-monitoring.js:9-18(상태와 `monHash`), :33(`monRoute`), :1032(`renderMonitoring`), :1031(`monSchedule`), :1179-1180(60초 갱신, 첫 로드), web/js/05-command-palette.js:117-143,162(`go`), web/js/31-conversations.js:438-441(`cv-listing`), web/js/32-history-nav.js:19-23.
 
 ### 모니터링 목록 (좌측 목록, list)
