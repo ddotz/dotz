@@ -141,7 +141,7 @@ function authorized(req: Request, cfOk = false, devOk = false, peerIp?: string):
 	const login = (req.headers.get("tailscale-user-login") ?? "").toLowerCase();
 	if (login && ALLOW.has(login) && webAccess.mode() === "tailscale") return true;
 	const seen = [...req.headers.keys()].filter(k => k.startsWith("tailscale-")).map(k => `${k}=${req.headers.get(k)}`).join(" ");
-	log(`denied ${new URL(req.url).pathname} ${seen || "(no tailscale identity headers)"}`);
+	log(`denied ${new URL(req.url).pathname} ${seen || "(no tailscale identity headers)"} from ${req.headers.get("x-forwarded-for") ?? "unknown"}`);
 	return false;
 }
 
