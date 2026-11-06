@@ -30,6 +30,7 @@ import { openerCommand, windowsToolDirs } from "./hub/opener.ts";
 import { LABEL, serviceFile, servicePath, UNIT } from "./onboard/service.ts";
 import { firstRunPending, issueToken, markTerminalDone } from "./firstrun/first-run.ts";
 import { cleanName, MAX_NAME } from "./hub/machine-name.ts";
+import { installDotzCommand } from "./hub/dotz-command.ts";
 
 const HOME = homedir();
 const PKG = import.meta.dir;
@@ -328,6 +329,7 @@ async function installService(load: boolean): Promise<string> {
 	mkdirSync(dirname(plistOut), { recursive: true });
 	writeFileSync(plistOut, plist);
 	console.log(`${kind}: ${plistOut}${load ? "" : plistOut === PLIST ? " (not loaded; re-run with --load)" : " (existing service kept; re-run with --load to install this one)"}`);
+	if (load) for (const l of installDotzCommand({ dir: DIR, pkg: PKG, bun, home: HOME, expose: true, shell: process.env.SHELL })) console.log(l);
 	if (load && !MAC) {
 		const r = await Bun.$`systemctl --user daemon-reload && systemctl --user enable --now ${UNIT} && systemctl --user restart ${UNIT}`.nothrow().quiet();
 		console.log(r.exitCode === 0 ? "systemd: gateway started (loginctl enable-linger $USER keeps it running after logout)" : `systemd: start failed: ${r.stderr.toString().trim()}`);
