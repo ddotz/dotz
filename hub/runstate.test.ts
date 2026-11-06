@@ -246,6 +246,33 @@ test("a session waiting for the owner with no open work is waiting, and gets no 
 	expect(waitsForOwner("[run] 빌드가 끝나길 기다리는 중이에요.")).toBe(false);
 });
 
+// web 2026-11-06 ("무슨 답 기다리냐"): a finished answer describing a fix read as a wait on the owner, under an orange line.
+test("a sentence with answer and wait words in it is no wait on the owner", () => {
+	const described = "이제 앞 메시지에 아직 답이 안 나갔으면 12초까지 기다려서 묶어요.";
+	for (const said of [described, `✅ ${described}`, `[run] ${described}`, "형 메시지를 기다리던 버그를 고쳤어요.\n이제 테스트도 다 통과해요.", "답을 기다려요 표시가 잘못 떴어요.", "앞 메시지에 답이 안 나갔으면 12초까지 기다려요.", "답이 오면 화면을 바꿔요.", "바깥 응답을 기다리는 중이에요.", "재시작은 아직 워커를 기다리고 있어요.", "답을 기다리지 않고 진행할게요."]) expect(waitsForOwner(said)).toBe(false);
+	const r = runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: described });
+	expect(r).toEqual({ kind: "done", since: iso(1_500_000) });
+});
+
+test("the owner wait is read from the close of the answer, in the session's own words", () => {
+	for (const said of ["다 끝냈어요.\n\n형 답을 기다릴게요.", "형이 고를 때까지 기다리고 있어요.", "승인 기다려요", "형 메시지를 기다립니다.", "수정은 끝났어요. 답 오면 이어갈게요.", "⏳ 형 메시지를 기다려요.", "Done here. Waiting for your reply.", "다음 지시가 올 때까지 대기해요.", "조사 지시를 기다리는 중이라 멈춰 있어요.", "지금은 형의 답을 기다리는 상태예요.", "형 답을 기다리고 있어요(1 켜기 / 2 끄기).", "답이 오길 기다릴게요.", "승인이 나길 기다려요.", "형 승인 대기", "형 답을 기다려요.\n\n1) 켜기\n2) 끄기\n3) 둘 다", "회신문은 다 썼어요. 형 답을 기다릴게요.\n<project-info>\nnext: 메일\n</project-info>"]) expect(waitsForOwner(said)).toBe(true);
+	expect(waitsForOwner("형 답을 기다렸어요.\n그 사이 빌드를 끝냈고 배포도 마쳤어요.\n로그도 깨끗해요.")).toBe(false);
+	expect(waitsForOwner("어느 쪽으로 할지 알려 주세요.")).toBe(false);
+});
+
+test("a status emoji opening an answer is its tone", () => {
+	const end = iso(1_500_000);
+	expect(waitsForOwner("✅ 형 메시지를 기다려요")).toBe(false);
+	expect(waitsForOwner("❌ 형 메시지를 기다려요")).toBe(false);
+	expect(waitsForOwner("⏸️ 빌드만 남았어요")).toBe(true);
+	expect(promisesWork("✅ 빌드 통과\n✅ 테스트 통과\n이제 배포 진행할게요.")).toBe(true); // a checklist line, not a closed answer
+	expect(promisesWork("❌ 테스트가 실패했어요. 지금 고칠게요.")).toBe(true);
+	expect(promisesWork("❓ 이대로 진행할게요")).toBe(false);
+	expect(promisesWork("⏳ 확인해 볼게요")).toBe(true);
+	expect(runState({ ...base, lastTurnEnd: end, lastAnswer: "✅ 다 끝냈어요", todos: todos(1) })).toMatchObject({ kind: "idle", reason: "unfinished" });
+	expect(runState({ ...base, lastTurnEnd: end, lastAnswer: "❓ 어느 쪽으로 할까요", todos: todos(1) })).toMatchObject({ kind: "waiting", reason: "standby" });
+});
+
 test("a promise still stands beside a wait; an explicit [wait] holds even with plan tasks open (ddotz/dotz#44)", () => {
 	const promised = runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: "[run] 형 메시지를 기다리는 동안 로그를 볼게요." });
 	expect(promised).toMatchObject({ kind: "idle", reason: "unfinished" });

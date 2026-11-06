@@ -13,16 +13,16 @@ import { msg } from "./i18n.ts";
 import { dir, hooks, type Lane, persist } from "./lanestate.ts";
 import { openTodos, promisesWork, waitsForOwner } from "./runstate.ts";
 import { readTodo, runCutOff, turnCutOff, workCutOff } from "./todo.ts";
-import { parseTone } from "./tone.ts";
+import { parseTone, statedTone } from "./tone.ts";
 
 const lastReport = (lane: Lane): string => {
 	const file = join(dir(lane.name), "report.md");
 	return existsSync(file) ? readFileSync(file, "utf8") : "";
 };
-const toneOf = (text: string) => parseTone(text).tone;
 const CLOSING = new Set(["done", "ask", "fail"]);
-/** The text ends the work or waits on the owner. */
-export const saysClosed = (said: string): boolean => CLOSING.has(toneOf(said) ?? "") || (waitsForOwner(said) && !promisesWork(said));
+const closes = (tone: string | undefined): boolean => CLOSING.has(tone ?? "");
+/** The text ends the work or waits on the owner. A marker settles it; a leading emoji does unless a promise follows it (promisesWork). */
+export const saysClosed = (said: string): boolean => closes(parseTone(said).tone) || ((closes(statedTone(said).tone) || waitsForOwner(said)) && !promisesWork(said));
 
 // Finished, failed, stopped by the owner, or waiting on him: nothing brings such a lane back by itself. A refused bare [ask]
 // (lanereport.ts) leaves no pendingAsk and an unmarked report.md, and it is still a question. A verified claim the owner has since

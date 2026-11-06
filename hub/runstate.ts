@@ -2,7 +2,7 @@
 // still has open tasks.
 // /api/state carries it under `runs` for the main conversation and every lane; the web chat shows it as one line above the
 // composer (web/js/41-runstate.js). The derivation is pure so every case is tested without a gateway.
-import { parseTone } from "./tone.ts";
+import { parseTone, statedTone, stripProjectInfo } from "./tone.ts";
 export type RunKind = "working" | "waiting" | "idle" | "limited" | "error" | "stopped" | "done";
 // waiting: ask | standby (no question, the session has nothing to do until the owner writes) | resume (unfinished work the gateway is bringing back) | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | interrupted · limited: rate | owner (a billing/auth block) · stopped: owner
 export type RunReason = "ask" | "standby" | "work" | "recover" | "child" | "later" | "capacity" | "resume" | "unfinished" | "interrupted" | "unknown" | "rate" | "owner";
@@ -83,7 +83,7 @@ export function runState(i: RunInput): RunState {
 	if (i.capacity) return { kind: "waiting", reason: "capacity", detail: short(i.capacity), ...todos };
 	// An [ask] or [wait] with no owner message after it: not unfinished, whatever the plan says (ddotz/dotz#44). pendingAsk is gone after a
 	// refused bare [ask]; the turn's own marker is not.
-	const said = parseTone(String(i.lastAnswer ?? "")).tone;
+	const said = statedTone(String(i.lastAnswer ?? "")).tone;
 	if (i.lastTurnEnd && (said === "ask" || said === "wait")) return { kind: "waiting", reason: "standby", since: i.lastTurnEnd, ...todos };
 	if (open) return { kind: "idle", reason: i.lastTurnEnd ? "unfinished" : "interrupted", since: i.lastTurnEnd, ...(short(i.todos?.current) ? { detail: short(i.todos?.current) } : {}), ...(i.acted === undefined ? {} : { acted: i.acted }), ...todos };
 	// A turn that ended promising work it did not start (2026-11-01 15:20Z) is unfinished even with no plan: the session rested 25
@@ -104,24 +104,35 @@ export type TodoLike = { phases?: { tasks?: { content?: string; status?: string 
 // Done/ask/fail reports, a closing question and a promise the owner must unlock first ("알려 주면 할게") are not promises.
 // "답을 기다릴게요" ends like a promise, but waiting is no work to go on with.
 const WAIT_PROMISE = /(?:(?:기다릴|대기할)게요?|(?:기다리|대기하)겠(?:습니다|어요|어))[^가-힣]*$/u;
-// Who it waits for and the waiting, in one clause: a build or a video is not the owner, and a watch of its own is caught before this.
-const OWNER_WAIT = /(?:(?<![가-힣])형|오너|답|메시지|지시|말씀|결정|승인|연락)[^\n.!?]{0,24}(?:기다|대기)|(?:답|메시지|지시|말씀|결정|승인|연락)[이가은는을를]?\s*(?:와야|오면|있어야|있으면|받으면)|\bwait(?:ing)?\s+(?:for|on)\s+(?:the\s+owner|your|you\b)/iu;
-/** The last answer says the session has nothing to do until the owner writes: an explicit [wait], or a [run]/unmarked report saying so. */
+const sentencesOf = (body: string): string[] => body.split(/\n+|(?<=[.!?！？。…])\s+/u).map(s => s.trim()).filter(Boolean);
+// The session's own closing word that it waits, about the owner: he is named anywhere before it, or his answer is what it waits for.
+// A build or a video is not the owner, a watch of its own is caught before this, and "답이 안 나갔으면 12초까지 기다려서 묶어요" only describes code.
+const OWNER = "(?<![가-힣])(?:형|오너)", ANSWER = "(?:(?<![응정])답|메시지|지시|말씀|결정|승인|연락)";
+const STANDS = "(?:중|상태)", SAYS = "(?:이에요|예요|입니다|이야)?", HOLDS = "(?:어요?|습니다|을게요?)", WILL = "(?:습니다|어요?)";
+const WAITS = `(?:기다(?:릴게요?|리겠${WILL}|려요?|립니다|리고 있${HOLDS}|리는\\s${STANDS}${SAYS})|대기(?:할게요?|하겠${WILL}|해요|합니다|하고 있${HOLDS}|\\s?${STANDS}${SAYS})?)`;
+const OWNER_WAIT = new RegExp(`(?:${OWNER}(?:(?![가-힣]면\\s)[^\\n.!?]){0,24}?|${ANSWER}[변장]?[을를이가만]?\\s*(?:(?:오길|나길|올 때까지)\\s*)?)(?:${WAITS}(?:\\s*\\([^)]*\\))?[^가-힣]*$|기다리(?:느라|는\\s${STANDS}(?:이라|라|이고)))|\\bwait(?:ing)?\\s+(?:for|on)\\s+(?:the\\s+owner|your|you\\b)`, "iu");
+// What it can only do once he has written: his message must come first, or it promises to go on after his answer ("답 오면 이어갈게요").
+const OWNER_FIRST = new RegExp(`${OWNER}[^\\n.!?]{0,24}?${ANSWER}[이가은는을를]?\\s*(?:와야|있어야)`, "u");
+const ANSWER_THEN = new RegExp(`${ANSWER}[이가은는을를]?\\s*(?:와야|오면|있어야|있으면|받으면)`, "u");
+const CLOSING_SENTENCES = 2, NOT_PROSE = /^(?:[-*>•]\s|\d+[.)]\s|-#\s)/u;
+/** The last answer closes on nothing to do until the owner writes: an explicit [wait], or a [run]/unmarked report whose closing sentences say so in the session's own words. */
 export function waitsForOwner(text: string | undefined): boolean {
-	const { tone, text: bare } = parseTone(String(text ?? ""));
-	return tone === "wait" || ((!tone || tone === "run") && OWNER_WAIT.test(bare));
+	const { tone, text: bare } = statedTone(String(text ?? ""));
+	return tone === "wait" || ((!tone || tone === "run") && closesOnOwner(bare));
 }
+const closesOnOwner = (body: string): boolean => sentencesOf(stripProjectInfo(body)).filter(s => !NOT_PROSE.test(s)).slice(-CLOSING_SENTENCES).some(s => OWNER_WAIT.test(s) || OWNER_FIRST.test(s) || (ANSWER_THEN.test(s) && promiseEnd(s) !== undefined));
 
 export function promisesWork(text: string | undefined): boolean {
 	if (!text) return false;
-	const { tone, text: bare } = parseTone(String(text));
-	if (tone === "done" || tone === "ask" || tone === "fail" || tone === "wait") return false;
+	const { tone: marked, text: bare } = parseTone(String(text));
+	const tone = statedTone(String(text)).tone;
+	// ✅ and ❌ open lines as well as answers ("✅ 빌드 통과\n이제 배포할게요"): unlike a marker, they do not outweigh a promise after them.
+	if (marked === "done" || marked === "fail" || tone === "ask" || tone === "wait") return false;
 	const body = bare.trim();
 	if (!body) return false;
 	// A closing question to the owner is a wait on him, not a promise to go on.
 	if (/[?？]\s*$/u.test(body)) return false;
-	return body.split(/\n+|(?<=[.!?！？。…])\s+/u).some(piece => {
-		const sentence = piece.trim();
+	return sentencesOf(body).some(sentence => {
 		const end = promiseEnd(sentence);
 		if (!end || WAIT_PROMISE.test(sentence)) return false;
 		const before = sentence.slice(0, sentence.length - end.length);

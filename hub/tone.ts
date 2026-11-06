@@ -131,6 +131,16 @@ export function parseTone(text: string): { tone?: Tone; text: string } {
 	return tone ? { tone, text: tone === "fail" ? shown.replace(LED_FAIL, "") : shown } : { text: shown };
 }
 
+// Where a session's state is read from its answer (hub/runstate.ts), a status emoji opening the text says what a marker would: sessions
+// write "✅ 끝냈어요" too. Display goes by the marker alone, so parseTone keeps inferring nothing.
+const EMOJI_TONE = new Map(Object.entries(TONE_EMOJI).map(([tone, emoji]) => [emoji.replace("\ufe0f", ""), tone as Tone]));
+const LED_EMOJI = new RegExp(`^\\s*(${[...EMOJI_TONE.keys()].join("|")})\\ufe0f?[ \\t]*`, "u");
+export function statedTone(text: string): { tone?: Tone; text: string } {
+	const read = parseTone(text);
+	const m = read.tone ? null : LED_EMOJI.exec(read.text);
+	return m ? { tone: EMOJI_TONE.get(m[1]!), text: read.text.slice(m[0].length) } : read;
+}
+
 // A messenger with no status style of its own: the status as its emoji, nothing else of the machine's.
 export function toneText(text: string): string {
 	const { tone, text: shown } = parseTone(text);

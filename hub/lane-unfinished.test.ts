@@ -11,7 +11,7 @@ import * as l from "./lanes.ts";
 import type * as Lanes from "./lanes.ts";
 import { report } from "./lanereport.ts";
 import { dir, persist } from "./lanestate.ts";
-import { laneClosed, RESUME_BACKOFF_MS, unfinishedWork } from "./laneunfinished.ts";
+import { laneClosed, RESUME_BACKOFF_MS, saysClosed, unfinishedWork } from "./laneunfinished.ts";
 import { runState, stallStep } from "./runstate.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
@@ -413,4 +413,12 @@ test("the budget gate holds a resume until its reset, and the lane keeps its pla
 	expect(lane.proc).toBeUndefined();
 	expect(await resumeUnfinished({}, now + 31 * MIN)).toEqual([lane.name]);
 	await clear(lane.name);
+});
+
+test("a status emoji closes an answer unless a promise follows it; a sentence about waiting closes nothing", () => {
+	expect(saysClosed("✅ 다 끝냈어요")).toBe(true);
+	expect(saysClosed("❌ 배포가 실패했어요")).toBe(true);
+	expect(saysClosed("✅ 빌드 통과\n이제 배포 진행할게요.")).toBe(false);
+	expect(saysClosed("[done] 끝났고 내일 다시 볼게요.")).toBe(true);
+	expect(saysClosed("이제 앞 메시지에 아직 답이 안 나갔으면 12초까지 기다려서 묶어요.")).toBe(false);
 });
