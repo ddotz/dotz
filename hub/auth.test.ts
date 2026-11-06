@@ -211,3 +211,15 @@ test("a chat message that asks for card, address or phone is flagged; the form p
 	expect(asksPersonalInChat("빌드가 끝났어요. 주소 변경은 필요 없어요")).toBe(false);
 	expect(asksPersonalInChat("서버 비밀번호 파일을 지웠어요")).toBe(false);
 });
+
+test("a data word and a request phrase in different sentences (explaining a login flow, reporting status) are not flagged", () => {
+	expect(asksPersonalInChat("로그인 창이 취소됐어요. 비밀번호는 저장하지 않았어요. 다시 하실 때 말씀해 주세요.")).toBe(false);
+	expect(asksPersonalInChat("계정 비밀번호를 바꾸면 연결이 멈춰요. 그때 알려 주세요.")).toBe(false);
+	expect(asksPersonalInChat("이 서비스는 비밀번호를 넘기지 않고 권한만 허용해요. 켜 주시고 말씀해 주세요.")).toBe(false);
+	expect(asksPersonalInChat("계정 비밀번호를 로그인 창에 넣어 주세요")).toBe(false);
+	expect(asksPersonalInChat("터미널에 비밀번호를 저는 모르게 쳐 주시고, 끝나면 확인 버튼을 눌러 주세요")).toBe(false);
+	expect(asksPersonalInChat("Your password stays on the device. Let me know when it is done, please tell me.")).toBe(false);
+	expect(asksPersonalInChat("결제할게요.\n카드 번호 알려 주세요")).toBe(true);
+	expect(asksPersonalInChat("로그인에 필요해서요. 비밀번호를 여기 적어 주세요.")).toBe(true);
+	expect(asksPersonalInChat("Almost done. Please paste your password here.")).toBe(true);
+});
