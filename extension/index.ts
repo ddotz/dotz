@@ -27,6 +27,7 @@ import { lockedCodeDir } from "../hub/selfupdate-local.ts";
 import { loadPlugins, pluginDeny } from "../hub/plugins.ts";
 import { createRefusals } from "./refusals.ts";
 import { connectText, type ConnectView } from "./connect-view.ts";
+import { staysInTerminal } from "./terminal-input.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
@@ -509,7 +510,7 @@ function terminalClient(pi: any): void {
 			show(await off());
 			return { handled: true };
 		}
-		if (text.startsWith("/") || text.startsWith("!")) return;
+		if (staysInTerminal(text)) return;
 		await call("/api/message", { method: "POST", body: JSON.stringify({ text, channel: "terminal" }) });
 		return { handled: true };
 	});
