@@ -21,6 +21,7 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { installGitHooks } from "./git-hooks.ts";
+import { rewriteNote, rewriteState } from "./history-rewrite.ts";
 import { issueBlock } from "./choices.ts";
 import { CONFIG_FILE, cfg, DATA_DIR, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
 import { FORMAT, type Keep, keepLine, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent, writeSavedSummary } from "./selfupdate-local.ts";
@@ -55,6 +56,7 @@ export type CheckResult = {
 	blocked: string[];
 	// Local work that cannot be carried onto the new version by itself (already saved): settings shows the 'keep and update' button.
 	keep?: Keep;
+	rewrite?: { saved?: Saved }; // this install is on a history the remote rewrote (hub/history-rewrite.ts); `saved` holds its local commits
 };
 type Job = {
 	id: number;
@@ -180,6 +182,7 @@ export function diskRelease(dir: string): string | undefined {
 // Does this check mean an install should move? Releases decide by version; a DOTZ_TARBALL install (no tags) still decides by bytes.
 export function updateAvailable(c: CheckResult): boolean {
 	if (!c.ok) return false;
+	if (c.rewrite) return true;
 	if (c.available) return !("release" in c.version) || !c.version.release || compareReleases(c.version.release, c.available) < 0;
 	return c.incomingTotal > 0;
 }
@@ -616,7 +619,8 @@ export async function check(o: Options): Promise<CheckResult> {
 		record(logDir, `check: ${remote} has no release tag; no update`);
 		return { ...base, ok: true, upstream, summary: "업데이트 없음 (릴리스 없음)" };
 	}
-	if (v.release && compareReleases(v.release, newest.version) >= 0) {
+	const old = await rewriteState(exec, dir, remote, ls.out, `refs/tags/${newest.tag}`).catch(e => (record(logDir, `check: history rewrite marker unreadable: ${e}`), undefined));
+	if (!old && v.release && compareReleases(v.release, newest.version) >= 0) {
 		record(logDir, `check: 업데이트 없음 (${v.release} is at or past ${newest.tag}; main may be ahead)`);
 		return { ...base, ok: true, available: newest.version, summary: `업데이트 없음 (${v.release})` };
 	}
@@ -646,12 +650,13 @@ export async function check(o: Options): Promise<CheckResult> {
 		// exec trims its output, which takes the first line's leading blank (" M hub/x.ts" -> "M hub/x.ts"): put the two-column status back,
 		// or the screen reads the path one letter short ("ub/x.ts").
 		dirty: dirty.out.split("\n").filter(Boolean).map(l => (/^\S /.test(l) ? ` ${l}` : l)).slice(0, 40),
+		...(old ? { ahead: old.local, incoming: [], incomingTotal: 0, rewrite: old.local.length ? { saved: await saveLocal(exec, dir, logDir, old.local, false).catch(e => (record(logDir, `check: save failed: ${e}`), undefined)) } : {} } : {}),
 	};
 	if (v.branch !== branch) r.blocked.push(`지금 브랜치가 ${v.branch}이에요. ${branch}에서만 업데이트해요.`);
 	if (r.remoteHead && (r.ahead.length || r.dirty.length)) {
 		let why: string | undefined;
 		if (r.ahead.length) {
-			const split = await splitEquivalent(exec, dir, upstream);
+			const split = old ? { dropped: [], rest: r.ahead } : await splitEquivalent(exec, dir, upstream);
 			r.dropped = split.dropped;
 			r.ahead = split.rest;
 			if (split.rest.length) {
@@ -751,7 +756,9 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	// same checks (bun install, tests) and only a clean, green result moves the live checkout. Anything else is saved first and moved
 	// aside: a local edit never stops a shipped update (owner 2026-10-29: "개별 사용자가 로컬에서 수정해서 사용하는거때문에 내가 배포한
 	// 업뎃이 실패하면 안됨"). Uncommitted changes come back on top below as a local patch; the rest is carried to the custom layer.
-	let target = to, hard = false, failed: string | undefined, saved: Saved | undefined, note = "";
+	if (c.rewrite && c.ahead.length && !c.rewrite.saved?.branch) return end("failed", "내 수정을 보관하지 못해서 아무것도 바꾸지 않았어요.");
+	let target = to, hard = false, failed: string | undefined, saved: Saved | undefined, note = c.rewrite ? rewriteNote(c.rewrite.saved?.branch) : "";
+	if (note) j.note = note.trim();
 	let lost: Commit[] = [];
 	if (c.dropped.length) step("확인", `이미 새 버전에 있는 로컬 커밋 ${c.dropped.length}개는 건너뛰어요: ${c.dropped.slice(0, 3).map(d => d.subject.slice(0, 40)).join(" / ")}`);
 	if (c.ahead.length) {
@@ -785,7 +792,7 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 		step("보관", `내 수정을 보관했어요: ${[saved.branch, saved.patch, saved.dirtyPatch].filter(Boolean).join(", ")}`);
 		if (failed) step("보관", `로컬 커밋 ${lost.length}개는 새 버전 위에 얹을 수 없어서 보관만 해요 — ${failed}`);
 		hard = true;
-		note = ` ${savedNote(saved, upstream)}`;
+		note += ` ${savedNote(saved, upstream)}`;
 		j.note = note.trim();
 		if (lost.length) {
 			try {
@@ -925,7 +932,7 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 	if (j.status === "updated") {
 		delete s.autoRefused;
 		delete s.autoFailed;
-		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${rel}, 커밋 ${c.incomingTotal}개, 테스트 통과).${j.note ? ` ${j.note}` : ""} 하던 일이 모두 끝나면 다시 시작해요.`);
+		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${rel}, ${c.rewrite ? "저장소 기록 정리" : `커밋 ${c.incomingTotal}개`}, 테스트 통과).${j.note ? ` ${j.note}` : ""} 하던 일이 모두 끝나면 다시 시작해요.`);
 		hooks.restartIdle();
 		return;
 	}

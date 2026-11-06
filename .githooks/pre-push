@@ -6,9 +6,11 @@ command -v bun >/dev/null 2>&1 || { echo "pre-push: bun not found, cannot run hu
 tmp=$(mktemp -d) || exit 1
 trap 'rm -rf "$tmp"' EXIT
 seen=""
+guard=$(dirname "$0")/../hub/history-rewrite.ts
 while read -r _ sha ref _; do
+	case "$sha" in *[!0]*) ;; *) continue ;; esac # all zeros: a ref being deleted
+	if [ -f "$guard" ]; then bun "$guard" --guard "$1" "$sha" </dev/null || exit 1; fi # rewritten-away history never goes back up, on any ref
 	case "$ref" in refs/heads/*) ;; *) continue ;; esac # a tag names a commit already checked on its branch
-	case "$sha" in *[!0]*) ;; *) continue ;; esac       # all zeros: a branch being deleted
 	case " $seen " in *" $sha "*) continue ;; esac
 	seen="$seen $sha"
 	rm -rf "$tmp/tree" && mkdir "$tmp/tree"

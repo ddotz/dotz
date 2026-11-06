@@ -28,5 +28,14 @@ One slot publishes once: `--auto` stops when the newest scheduled tag's commit i
 18:00 KST), so a cron run that lands hours late does nothing, and the workflow's `release` concurrency group runs both triggers one
 at a time. A hand-cut scheduled release takes its slot the same way; a forced `.M` does not.
 
+A rewrite of public history is the one case that moves commits under the tags, and the updater only trusts it through a marker: tag
+`history-rewrite-<n>` on a blob listing a hash of every old commit (`hub/history-rewrite.ts`), pushed in the same atomic force push as
+`main` and the tags. An install whose HEAD holds any listed commit moves at its next 10-minute check, even at the same version: commits
+not on the list are saved to `dotz-local/<stamp>` first, re-applied on the new history when they still apply and pass the tests, and
+the usual gate and rollback run. It lands on the newest release tag, like any update. Without the marker a divergence is left alone.
+The `pre-push` and `pre-rebase` hooks refuse old commits once the marker exists, so a stale checkout cannot put them back on GitHub.
+This code only reaches an install through a release, so ship it and let installs take it before any rewrite: an older install stays on
+the old history at the same version until the next release, then treats the whole old history as local commits.
+
 See the current version with `cat VERSION`, and what shipped with `git tag --list 'v*' | tail -3` or
 `git ls-remote --tags origin`; `git describe --tags --abbrev=0` names the last release marker.

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Refuses to rebase commits of a rewritten-away history (hub/history-rewrite.ts): a rebase onto the new main would replay them as fresh
+# commits, which a later push could not tell from new work. It needs the marker tag on origin; with none, every rebase passes.
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+guard=$(dirname "$0")/../hub/history-rewrite.ts
+if command -v bun >/dev/null 2>&1 && [ -f "$guard" ]; then exec bun "$guard" --guard origin "${2:-HEAD}" </dev/null; fi
