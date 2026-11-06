@@ -8,6 +8,7 @@
 //   the terminal are shown here. "<name>모드 꺼" or /dotz off stops forwarding. No terminal needs to stay open.
 // - orchestrator, lanes and their workers: the thinking of finished turns kept across a compaction is left out of
 //   later requests (compact-kept.ts).
+// - orchestrator, lanes and their workers also get the deferred dotz_recall tool (recall-tool.ts), a search of the owner's past conversations.
 // - every session above also gets the worker guard (guard.ts) and the /doctor, /handover, /token-audit commands (harness-tools.ts);
 //   config key `guard`, see README. Each skips itself when the owner's original ~/.omp extension of that name is installed.
 
@@ -36,6 +37,7 @@ import { installTaskCap } from "./task-cap.ts";
 import { installBgGuard } from "./bg-guard.ts";
 import { jsonZod, params } from "./schema.ts";
 import { secretIn } from "./peer-secrets.ts";
+import { recallTool } from "./recall-tool.ts";
 
 // The claude.ai connectors (Gmail, Calendar, Drive, Docs) reach a fresh Claude Code process only after its first request, so
 // its second request adds their 48 tools mid-conversation, and every such request lost the whole message cache: 126 of 126
@@ -304,6 +306,7 @@ function orchestratorTools(pi: any): void {
 	mergeTool(pi);
 	authTool(pi);
 	connectTool(pi);
+	recallTool(pi, DATA);
 	pi.on("session_compact", (_e: any, ctx: any) => {
 		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall() + (process.env.DOTZ_CONV ? `\n\n${convScope()}` : ""), display: false }, { deliverAs: "nextTurn" });
 	});
@@ -444,6 +447,7 @@ function laneSession(pi: any): void {
 	verifyTool(pi);
 	mergeTool(pi);
 	authTool(pi, process.env.DOTZ_LANE);
+	recallTool(pi, DATA);
 	shortCache(pi);
 }
 
@@ -628,6 +632,7 @@ export default function dotz(host: any) {
 	// parent's tools or commands (as before, no prompt growth).
 	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
 		keyProvider(pi, true);
+		recallTool(pi, DATA);
 		installTaskCap(pi);
 		installBgGuard(pi);
 		enforceRules(pi);

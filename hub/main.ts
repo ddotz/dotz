@@ -24,6 +24,7 @@ import { msg, textsToReport } from "./i18n.ts";
 import { broadcast, emit, emitDelivery, onEmit, recentEvents, sentFiles, subscriberCount } from "./events.ts";
 import { WORK_SWEEP_MS } from "./workrows.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
+import { startRecallIndexing } from "./recall-idle.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { setTrashChannels } from "./lanetrash.ts";
@@ -502,6 +503,7 @@ setInterval(() => void (subscriberCount() > 0 && refreshQuota().catch(e => log(`
 startLaneHygiene();
 startWorktreeCleanup();
 startDataCleanup();
+startRecallIndexing({ busy: busyNow });
 startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
 	// A conversation session's notice goes into its own conversation.
