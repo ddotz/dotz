@@ -63,6 +63,12 @@ export const withReplyLine = (text: string): string => {
 export const isNote = (text: string, key: keyof Leads): boolean =>
 	Object.values(CATALOGS).some(c => text.startsWith(c[key]));
 
+// The silent-wait nudge (hub/waitcheck.ts), bare or wrapped once by a restart replay. Only the head counts: an owner message that quotes one is still a request.
+export const isOpenNudge = (text: string): boolean => {
+	const [head = "", next = ""] = text.split("\n", 2);
+	return isNote(head, "openLead") || (isNote(head, "replayLead") && isNote(next, "openLead"));
+};
+
 // The MODE contract in the identity's language: $DOTZ_DIR/MODE.<l>.md, repo MODE.<l>.md, then the English chain.
 export function modeFile(): string {
 	const repo = join(import.meta.dir, "..");

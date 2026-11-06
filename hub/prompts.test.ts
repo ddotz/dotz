@@ -6,6 +6,9 @@ import { outEvent } from "./projectchat.ts";
 import { createPrompts, type OwnerMessage, type Pending, type PromptDeps, type WorkLink, type WorkRow } from "./prompts.ts";
 import { eventsFromFrame } from "./runtime/omp.ts";
 import { createWaitCheck, QUIET_MS } from "./waitcheck.ts";
+import { isOpenNudge } from "./i18n.ts";
+import { en } from "./i18n-en.ts";
+import { ko } from "./i18n-ko.ts";
 
 function setup(answered: string[] = [], recent: OwnerMessage[] = [], extra: Partial<PromptDeps> = {}) {
 	const state = { working: false, steerFails: false, delivered: [] as string[], steered: [] as string[], posts: [] as { target: string; text: string; replyTo?: string }[], saved: [] as Pending[][] };
@@ -1403,4 +1406,26 @@ test("a no-op answer wrapped in a short note posts nothing, with or without a pr
 	q.onAnswer("- first item\n- second item");
 	await Promise.resolve();
 	expect(state.posts.map(p => p.text)).toEqual(["- first item\n- second item"]);
+});
+
+test("a restart does not replay the gateway's silent-wait nudge, in any language, wrapped or not", () => {
+	const nudge = (c: typeof en) => c.openRequests([{ target: "web", workers: [] }], false);
+	for (const c of [en, ko]) {
+		expect(isOpenNudge(nudge(c))).toBe(true);
+		expect(isOpenNudge(c.openRequests([{ target: "web", workers: [] }], true))).toBe(true);
+	}
+	const quoted = `왜 이런 알림이 왔어?\n${nudge(ko)}`;
+	const { q, state } = setup([], [], { regenerated: isOpenNudge });
+	const at = Date.now();
+	const n = q.replay(
+		[
+			{ text: nudge(ko), at, target: "web" },
+			{ text: `${ko.replay}\n${nudge(en)}`, at, target: "web" },
+			{ text: "upload today's episode", at, target: "web" },
+			{ text: quoted, at, target: "web" },
+		],
+		t => `[replay] ${t}`,
+	);
+	expect(n).toBe(2);
+	expect(state.delivered).toEqual(["[replay] upload today's episode", `[replay] ${quoted}`]);
 });
