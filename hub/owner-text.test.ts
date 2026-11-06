@@ -34,16 +34,16 @@ describe("the two messages of 2026-11-05", () => {
 		expect(parseDecisions(out).blocks).toHaveLength(1);
 		expect(block!.title).toBe("새 시험판을 회사 메일로 보낼까요?");
 		expect(block!.options.map(o => o.label)).toEqual(["보내기", "보내지 않기"]);
-		expect(block!.options[0]!.desc).toContain("company-portable.zip");
+		expect(block!.options[0]!.desc).toContain("Pilot-portable.zip");
 		expect(parseTone(out).tone).toBe("ask");
-		expect(out).toContain("company 시험판의 마우스 지연");
+		expect(out).toContain("Pilot 시험판의 마우스 지연");
 		agree(SHOT_BULLETS);
 	});
 	test("the send approval keeps its id and its three labels, so the draft flow still reads it", () => {
 		const out = ownerText(SHOT_DRAFT);
 		expect(labels(SHOT_DRAFT)).toEqual([SEND]);
 		const d = parseDraftApproval(out);
-		expect(d?.ref).toBe("company-2769e70");
+		expect(d?.ref).toBe("pilot-2769e70");
 		expect(d?.to).toBe("owner@example.com");
 		agree(SHOT_DRAFT);
 	});
