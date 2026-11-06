@@ -569,11 +569,12 @@ export function createBgWork(deps: BgWorkDeps) {
 	}
 
 	/**
-	 * Workers OmO lists as running that have only gone silent past the stall window, not failed: a worker blocking on a long wait
-	 * writes nothing and looks the same as a hung one, so an idle stop must not take them for finished (laneidle.ts).
+	 * Workers OmO lists as running that went silent past the stall window or last hit a provider error: a worker blocking on a long
+	 * wait writes nothing and looks the same as a hung one, and one on a dead network is still there when it comes back, so an idle stop
+	 * must not take them for finished (laneidle.ts).
 	 */
 	function quietWork(file: string): BgWork[] {
-		return records(file).map(toWork).filter(w => w.status === "stalled" && !w.error);
+		return records(file).map(toWork).filter(w => w.status === "stalled");
 	}
 
 	/**
@@ -620,7 +621,7 @@ export const sessionProjects = (sessionFile: string) => join(dirname(dirname(dir
 export const runningOmoWorkers = (sessionFile: string | undefined): number => anySession.running(sessionFile);
 /** The running OmO workers under one session file (a lane's), as records with description, start and model; none for no session. */
 export const runningOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.runningWork(sessionFile) : []);
-/** The workers under one session file silent past the stall window, with no error of their own. */
+/** The workers under one session file OmO still lists as running that stopped working (the error says why, when one did). */
 export const quietOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.quietWork(sessionFile) : []);
 /** 중단 for a worker of another session (a lane's). */
 export const cancelOmoWorker = (id: string, sessionFile: string | undefined): Promise<CancelResult> => anySession.cancel(id, sessionFile);

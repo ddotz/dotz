@@ -7,11 +7,12 @@ const TICK = 20_000;
 const request = (replyTo: string, at = 0): OpenRequest => ({ target: "web", replyTo, at, workers: [] });
 
 function setup(open: OpenRequest[]) {
-	const s = { t: 0, open, busy: false, workers: 0, armed: false, restarting: false, turnEnd: 0, wakes: [] as { ids: (string | undefined)[]; last: boolean }[] };
+	const s = { t: 0, open, busy: false, down: false, workers: 0, armed: false, restarting: false, turnEnd: 0, wakes: [] as { ids: (string | undefined)[]; last: boolean }[] };
 	const session: WaitSession = {
 		key: "main",
 		open: () => s.open,
 		busy: () => s.busy,
+		down: () => s.down,
 		workers: () => s.workers,
 		armed: () => s.armed,
 		lastTurnEndAt: () => s.turnEnd,
@@ -77,4 +78,15 @@ test("a new request gets its own wake even after an older one used up its bound"
 	s.open = [request("a"), request("b", s.t)];
 	run(QUIET_MS + TICK * 2);
 	expect(s.wakes.at(-1)!.ids).toEqual(["b"]);
+});
+
+test("a session down on errors spends no wake while it waits for the model host; the wakes are all there once it answers", () => {
+	const { s, run } = setup([request("m1")]);
+	s.down = true;
+	run(QUIET_MS + RETRY_MS * 3);
+	expect(s.wakes).toEqual([]);
+	s.down = false;
+	run(QUIET_MS + TICK);
+	expect(s.wakes).toHaveLength(1);
+	expect(s.wakes[0]!.last).toBe(false);
 });

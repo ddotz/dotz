@@ -93,6 +93,10 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				if (ev.stop !== "error") {
 					refusedAnswered(lane);
 					lane.transientTries = 0;
+					if (lane.interrupted) {
+						lane.interrupted = undefined;
+						persist(lane);
+					}
 					laneRecovered(lane);
 				}
 				if (ev.text) {

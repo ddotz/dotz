@@ -18,6 +18,8 @@ export type WaitSession = {
 	/** A turn, a compaction or a usage-limit pause. */
 	busy: () => boolean;
 	workers: () => number;
+	/** Stopped on errors, its one resume still owed once the model host answers (orch-error.ts): a wake now is a turn that cannot run. */
+	down: () => boolean;
 	/** A one-shot watch for the orchestrator armed at or after `since` (ms). */
 	armed: (since: number) => boolean;
 	lastTurnEndAt: () => number;
@@ -50,7 +52,7 @@ export function createWaitCheck(deps: WaitCheckDeps) {
 				continue;
 			}
 			// The cheap checks first; workers() reads the task store and runs only while a request is open.
-			if (restarting || s.busy() || requests.some(r => s.armed(r.at)) || s.workers() > 0) {
+			if (restarting || s.busy() || s.down() || requests.some(r => s.armed(r.at)) || s.workers() > 0) {
 				quiet.set(s.key, t);
 				continue;
 			}
