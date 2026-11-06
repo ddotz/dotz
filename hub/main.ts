@@ -2,7 +2,7 @@
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, HOST, log, NAME, now, paths, PORT, TZ, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, HOME, HOST, log, NAME, now, paths, PORT, TZ, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import "../firstrun/first-run-boot.ts"; // a seed install still in its web onboarding serves only that and never gets past this line (firstrun/first-run-boot.ts)
 import { parseCommand, setGatewayRestart } from "./control.ts";
@@ -81,6 +81,7 @@ import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { telemetryOff } from "./runtime/omo.ts";
+import { installDotzCommand } from "./dotz-command.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, workRows, approvals, convOfTarget, setRefHandled, reconcileMailCards } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
@@ -533,6 +534,7 @@ startSchedules(s => {
 syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway" }), text => void steerOrchestrator(text));
 for (const l of telemetryOff()) log(l);
+for (const l of installDotzCommand({ dir: DATA_DIR, pkg: join(import.meta.dir, ".."), bun: Bun.which("bun") ?? process.execPath, home: HOME, expose: DATA_DIR === join(HOME, ".dotz"), shell: process.env.SHELL })) log(l);
 startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
 startTokenAudit(alert);
 // Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply

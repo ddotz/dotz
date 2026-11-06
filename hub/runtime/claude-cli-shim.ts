@@ -79,7 +79,7 @@ export function realClaude(env: Record<string, string | undefined>, agentDir: st
 		.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 }
 
-const sq = (s: string): string => `'${s.replaceAll("'", `'\\''`)}'`;
+export const sq = (s: string): string => `'${s.replaceAll("'", `'\\''`)}'`;
 
 // Writes the executable OmO spawns (a tiny sh script: senpi runs CLAUDE_CODE_EXECUTABLE directly, without a shell) and returns the env
 // to give the login process. Empty when there is no real CLI to wrap.

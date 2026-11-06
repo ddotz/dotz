@@ -8,6 +8,12 @@
 - **Cloudflare**: 고정 주소(예: `dotz.example.com`)를 열고 Cloudflare Access와 기기 연결(패스키)을 씁니다.
 - **이 컴퓨터만**: `127.0.0.1`에서만 엽니다. 다른 기기에서는 열리지 않습니다.
 
+## 이 컴퓨터에서 바로 열기: `dotz`
+
+게이트웨이가 도는 컴퓨터의 터미널에서 `dotz`를 치면 어떤 방식을 골랐든 기본 브라우저가 `http://127.0.0.1:<포트>`로 로그인된 채 열립니다. Tailscale은 쓰지 않습니다. `dotz --print`는 열지 않고 주소만 출력합니다(SSH·화면 없는 환경, `ssh -L`로 포트를 넘겨 씁니다). 설치와 업데이트가 명령을 알아서 깔고(macOS·Linux·WSL, Windows 자체는 WSL로 씁니다), 게이트웨이가 꺼져 있으면 한 줄로 알려 줍니다.
+
+주소에는 5분 동안 한 번만 쓸 수 있는 코드가 들어 있고, 이 코드는 hub 토큰을 가진 이 컴퓨터의 요청만 만들 수 있습니다. 코드와 그 쿠키(`dotz_local`, 원격 쿠키와 별개의 세션)는 접속 상대·Host가 모두 루프백이고 프록시·터널 헤더가 없을 때만 통합니다. `tailscale serve`, `cloudflared`, 다른 도메인을 거친 요청은 얻는 것이 없고, 토큰 없는 루프백 접속도 그대로 막힙니다. 평문 HTTP라 쿠키에 Secure는 붙지 않습니다(HttpOnly, SameSite=Strict). 원격 방식의 인증과 쿠키는 그대로이고, 접속 방식을 바꾸면 이 세션은 무효가 되니 `dotz`를 다시 치면 됩니다.
+
 ## Cloudflare를 고르면 하는 일
 
 1. `cloudflared`가 있는지 확인하고, 없으면 Homebrew로 설치합니다(`brew install cloudflared`).
