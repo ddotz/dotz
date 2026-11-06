@@ -40,10 +40,12 @@ test("a worker OmO calls completed but whose report is [fail] (token cap, st_01a
 	record("st_cap", { status: "completed", terminal_at: iso(T0 + 30_000), final_response: "[fail] token cap 8,768K. Tools are disabled, so I stopped.\n\n**Done (uncommitted):** x" });
 	record("st_ask", { status: "completed", terminal_at: iso(T0 + 20_000), final_response: "Ask: fix it\nFor you: none\n\n**[fail]** 빌드가 안 돼요" });
 	record("st_ok", { status: "completed", terminal_at: iso(T0 + 10_000), final_response: "[done] 커밋했어요\n안 된 것: [fail] 없음" });
+	record("st_bare", { status: "completed", terminal_at: iso(T0 + 5_000), final_response: "[fail]" });
 	const w = make(() => T0 + 60_000).list();
 	expect(w.find(x => x.id === "st_cap")).toMatchObject({ status: "failed", reason: "token cap 8,768K. Tools are disabled, so I stopped." });
 	expect(w.find(x => x.id === "st_ask")).toMatchObject({ status: "failed", reason: "빌드가 안 돼요" });
 	expect(w.find(x => x.id === "st_ok")!.status).toBe("done");
+	expect(w.find(x => x.id === "st_bare")).toMatchObject({ status: "failed", reason: "실패" });
 });
 
 test("a finished worker's [file] lines and backticked document paths that name an existing file become its result files, once each; a missing one, code or a failed worker's are left out", () => {

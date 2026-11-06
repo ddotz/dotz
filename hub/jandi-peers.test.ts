@@ -330,6 +330,7 @@ describe("a peer's new reply as a notification", () => {
 		expect(JSON.stringify(m)).not.toContain(String(cfg.room_id));
 	});
 	test("nothing goes out while that computer's chat is on a screen, and it notifies again once the page is gone", () => {
+		expect(peerReplyPush(peer, "[fail]", 10)).toMatchObject({ kind: "result", body: "❌" });
 		const m = peerReplyPush(peer, "빌드 끝났어요", 11)!;
 		expect(setViewing("tab-relay", `relay:jandi:${peer.keyword}`).ok).toBe(true);
 		expect(shouldNotify(m, 1_000, undefined, () => true)).toBe(false);

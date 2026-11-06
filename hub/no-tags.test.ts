@@ -27,7 +27,15 @@ const TABLE: [string, string][] = [
 	["[ok | 12ms] 결과", "결과"],
 	["[owner via web] 안녕", "안녕"],
 	["**[blocked]** 막혔어요", "막혔어요"],
-	["- [fail] 실패했어요", "- 실패했어요"],
+	["- [fail] 실패했어요", "- ❌ 실패했어요"],
+	["**[fail]** 막혔어요", "❌ 막혔어요"],
+	["요약 줄\n[fail] 둘째 줄", "요약 줄\n❌ 둘째 줄"],
+	["끝났어요. [fail]", "끝났어요. ❌"],
+	["**세션 a**: [fail] 멈췄어요", "**세션 a**: ❌ 멈췄어요"],
+	["- [fail]: 설명", "- ❌ 설명"],
+	["요약\n[fail] 원인은:", "요약\n❌ 원인은:"],
+	["#56은 `[fail]` 알림이 갈 수 있어요.", "#56은 실패 알림이 갈 수 있어요."],
+	["줄 중간 [done], [fail] 언급", "줄 중간 완료, 실패 언급"],
 	["**세션 a**: [done] 끝", "**세션 a**: 끝"],
 	["첫 줄\n[later]\n마지막", "첫 줄\n\n마지막"],
 	["[file] /tmp/a.png\n본문", "본문"],
@@ -35,7 +43,12 @@ const TABLE: [string, string][] = [
 	["[1] 각주 하나", "[1] 각주 하나"],
 	["[x] 할 일", "[x] 할 일"],
 	["[링크](https://a.b) 보세요", "[링크](https://a.b) 보세요"],
-	["결과는 [done] 입니다", "결과는 [done] 입니다"],
+	["결과는 [done] 입니다", "결과는 완료 입니다"],
+	["`[fail]` 표시를 고쳤어요.", "`[fail]` 표시를 고쳤어요."],
+	["파일은 [done].ts 예요", "파일은 [done].ts 예요"],
+	["결과([fail])에서 멈췄어요", "결과(실패)에서 멈췄어요"],
+	["줄 중간 [fail],다음", "줄 중간 실패,다음"],
+	["그 턴은 `[fail]`로 끝나요.", "그 턴은 `[fail]`로 끝나요."],
 	["Re: [Fwd] 제목", "Re: [Fwd] 제목"],
 	["[Re: 안녕하세요] 제목", "[Re: 안녕하세요] 제목"],
 	["```\n[done] 코드 안\n[file] x\n```", "```\n[done] 코드 안\n[file] x\n```"],
@@ -78,7 +91,13 @@ describe("owner-facing text has no [tag]", () => {
 		}
 	});
 	test("web stripMarkers gives the same text as the hub", () => {
-		for (const [input, shown] of TABLE) expect([input, web.stripMarkers(input)]).toEqual([input, shown]);
+		for (const [input, shown] of TABLE) expect([input, web.stripMarkers(input)]).toEqual([input, shown.replace(/❌ /g, "실패: ").replace(/❌/g, "실패")]);
+	});
+	test("web: a failure marker the tone did not read still draws the failure tag", () => {
+		expect(web.parseTone("**[fail]** 막혔어요")).toMatchObject({ tone: "fail", text: "막혔어요" });
+		expect(web.parseTone("[fail] **[fail]** 막혔어요")).toMatchObject({ tone: "fail", text: "막혔어요" });
+		expect(web.parseTone("[done] [fail] 막혔어요")).toMatchObject({ tone: "done", text: "실패: 막혔어요" });
+		expect(parseTone("[done] [fail] 막혔어요")).toEqual({ tone: "done", text: "❌ 막혔어요" });
 	});
 	test("parseTone keeps the status as data and shows no tag", () => {
 		const cases: [string, string | undefined, string][] = [
@@ -86,6 +105,8 @@ describe("owner-facing text has no [tag]", () => {
 			["[완료] 끝", "done", "끝"],
 			["[ask] 고르세요\n[lane error] x", "ask", "고르세요\nx"],
 			["[fail] [dotz gateway] 멈췄어요", "fail", "멈췄어요"],
+			["[fail] **[fail]** 막혔어요", "fail", "막혔어요"],
+			["[fail]\n[fail] 세부", "fail", "세부"],
 			["[blocked] 막힘", undefined, "막힘"],
 			["그냥 글", undefined, "그냥 글"],
 		];
@@ -114,6 +135,9 @@ describe("Discord posts and push text have no [tag]", () => {
 		expect(shown("[later]")).toBe("");
 		expect(shown("**세션 a**: [done] 끝")).toBe("**세션 a**: 끝");
 		expect(shown("[1] 각주")).toBe("[1] 각주");
+		expect(shown("**[fail]** 막혔어요")).toBe("❌ 막혔어요");
+		expect(shown("[fail] ❌ 빌드")).toBe("❌ 빌드");
+		expect(buildSingle("요약 줄\n[fail] 둘째 줄").content).toBe("요약 줄\n❌ 둘째 줄");
 		expect(buildSingle("[ask] 고를까요?").content).toBe("❓ 고를까요?");
 		expect(buildSingle("[partial] 일부만").content).toBe("일부만");
 	});

@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
+import { toneText } from "./tone.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 
 // Telegram as a built-in messenger, over the Bot API: long polling with getUpdates (a 5 s timer, offset kept in the config) for the owner's
@@ -149,11 +150,13 @@ export function createTelegramAdapter(dataDir: string = DATA_DIR, opts: { fetch?
 		// A project with no chat of its own talks in the main chat.
 		if (!dests.length && msg.kind === "project") dests = s.chats.filter(c => c.kind === "main");
 		if (!dests.length) return { delivered: false, reason: "no chat" };
+		const text = toneText(msg.text);
+		if (!text) return { delivered: false, reason: "internal" };
 		const ids: string[] = [];
 		let failed: unknown;
 		for (const chat of dests) {
 			try {
-				const r = await call(s.token, "sendMessage", { chat_id: chat.id, text: msg.text, ...(msg.link ? { reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: msg.link }]] } } : {}), ...(msg.replyTo ? { reply_to_message_id: Number(msg.replyTo) || undefined } : {}) });
+				const r = await call(s.token, "sendMessage", { chat_id: chat.id, text, ...(msg.link ? { reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: msg.link }]] } } : {}), ...(msg.replyTo ? { reply_to_message_id: Number(msg.replyTo) || undefined } : {}) });
 				if (!r.ok) throw new Error(`${chat.id}: ${replyError(r)}`);
 				if (r.result?.message_id !== undefined) ids.push(String(r.result.message_id));
 			} catch (e) {

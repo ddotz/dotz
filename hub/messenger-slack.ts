@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
 import type { Adapter, AdapterStatus, DeliverResult, OutMsg, Settings, SettingsPut, TestResult } from "./messenger.ts";
 import { SettingsError } from "./messenger.ts";
+import { toneText } from "./tone.ts";
 
 // Slack as a built-in messenger, over the Web API only: one bot token sent as a bearer header (never in a URL or a body), and one channel id
 // per message kind. Lean on purpose: no inbound (Slack needs a public request URL for events), no threads, no message edits. The token and the
@@ -95,11 +96,13 @@ export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: t
 		// A project with no channel of its own talks in the main channel.
 		if (!dests.length && msg.kind === "project") dests = s.channels.filter(ch => ch.kind === "main");
 		if (!dests.length) return { delivered: false, reason: "no channel" };
+		const shown = toneText(msg.text);
+		if (!shown) return { delivered: false, reason: "internal" };
 		const ids: string[] = [];
 		let failed: unknown;
 		for (const ch of dests) {
 			try {
-				const r = await call(s.token, "chat.postMessage", { channel: ch.id, text: msg.link ? `${msg.text}\n\n<${msg.link.replace(/[<>|\s]/g, encodeURIComponent)}|웹에서 보기>` : msg.text, unfurl_links: "false" });
+				const r = await call(s.token, "chat.postMessage", { channel: ch.id, text: msg.link ? `${shown}\n\n<${msg.link.replace(/[<>|\s]/g, encodeURIComponent)}|웹에서 보기>` : shown, unfurl_links: "false" });
 				if (!r.reply.ok) throw new Error(`${ch.id}: ${replyError(r.reply)}`);
 				if (typeof r.json?.ts === "string") ids.push(r.json.ts);
 			} catch (e) {
