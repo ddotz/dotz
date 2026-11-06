@@ -12,7 +12,7 @@
 import { peerFetch } from "./tailnet-fetch.ts";
 import { cfg, log } from "./config.ts";
 import { friendlyName, label, peerInfoName, resolveName } from "./machine-name.ts";
-import { bindPeer, boundPeer, type Bound } from "./peer-pair.ts";
+import { bindPeer, boundPeer, boundPeers, unbindPeer, type Bound } from "./peer-pair.ts";
 import { webBase } from "./weblink.ts";
 
 export { friendlyName };
@@ -78,16 +78,20 @@ export function countsFrom(body: unknown): { unread: number; need: number } | un
 
 // One-slot cache with a time limit; concurrent callers share the load in flight. A failed load is not kept.
 // With `staleMs`, an answer up to that old is handed out at once while a new one loads behind it, so the page's request never waits on the probes.
-export function cached<T>(ttlMs: number, load: () => Promise<T>, clock: () => number = Date.now, staleMs = 0): () => Promise<T> {
+export function cached<T>(ttlMs: number, load: () => Promise<T>, clock: () => number = Date.now, staleMs = 0): (() => Promise<T>) & { reset: () => void } {
 	let value: { at: number; v: T } | undefined;
 	let inflight: Promise<T> | undefined;
-	return () => {
+	let gen = 0;
+	const get = () => {
 		const age = value ? clock() - value.at : Infinity;
 		if (value && age < ttlMs) return Promise.resolve(value.v);
-		inflight ??= load().then(v => { value = { at: clock(), v }; return v; }).finally(() => { inflight = undefined; });
+		const mine = gen;
+		inflight ??= load().then(v => { if (mine === gen) value = { at: clock(), v }; return v; }).finally(() => { if (mine === gen) inflight = undefined; });
 		if (value && age < ttlMs + staleMs) { inflight.catch(() => {}); return Promise.resolve(value.v); }
 		return inflight;
 	};
+	// Drops the kept answer and any load in flight (it may predate a change), so the next call loads anew.
+	return Object.assign(get, { reset: () => { gen++; value = undefined; inflight = undefined; } });
 }
 
 // Runs fn over items, at most `limit` at a time; a throwing item yields undefined.
@@ -231,6 +235,27 @@ export async function refreshCounts(url: string, get: Fetcher = getJson): Promis
 	const v = await counts(url, get);
 	countsCache.set(url, { at: Date.now(), v });
 	return v;
+}
+
+// "Forget this computer": drops the bound record of an OFFLINE computer in `rows` (the list GET /api/peers answers), so it leaves the list. An online, public, relay or own row is never forgotten.
+export function forgetPeer(url: string, rows: Peer[], dir?: string): "ok" | "online" | "none" {
+	const p = rows.find(r => r.url === url && !r.self && !r.via && !r.public);
+	const host = p && Object.entries(boundPeers(dir)).find(([, b]) => b.url === url)?.[0];
+	if (!p || !host) return "none";
+	if (p.online) return "online";
+	return unbindPeer(host, dir) ? "ok" : "none";
+}
+
+// DELETE /api/peers?url=: the web's "지우기" on an offline row; an online computer is refused (409), an unknown one is 404.
+// The row's flag can be a minute old and only says its counts did not answer, so the computer itself is asked first; only a URL on the list is ever asked.
+export async function forgetRoute(u: URL, o: { rows?: () => Promise<Peer[]>; alive?: (url: string) => Promise<boolean>; dir?: string } = {}): Promise<Response> {
+	const url = u.searchParams.get("url") ?? "";
+	const rows = await (o.rows ?? listPeers)();
+	const row = rows.find(p => p.url === url);
+	if (row && !row.self && !row.public && !row.via && !row.online && (await (o.alive ?? isDotz)(url))) row.online = true;
+	const r = forgetPeer(url, rows, o.dir);
+	if (r === "ok") { discovered.reset(); countsCache.delete(url); }
+	return r === "ok" ? Response.json({ ok: true }) : Response.json({ error: r === "online" ? "computer is connected" : "not found" }, { status: r === "online" ? 409 : 404 });
 }
 
 const publicOnline = new Map<string, { at: number; v: boolean }>();

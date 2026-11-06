@@ -7,7 +7,7 @@
 @media (max-width: 639px) { .dsk-pill { flex: 0 1 auto; min-width: 0; max-width: 40%; } }
 .pr-line { display: flex; align-items: center; gap: var(--sp-1); }
 .pr-line .pr-row { flex: 1; min-width: 0; }
-.btn.tonal.pr-desk { flex: none; margin-right: var(--sp-2); background: var(--hover); white-space: nowrap; }
-.btn.tonal.pr-desk:hover { background: var(--active); }
-.anch .btn.tonal.pr-desk { margin-right: var(--sp-1); }
+.btn.tonal.pr-desk, .btn.tonal.pr-forget { flex: none; margin-right: var(--sp-2); background: var(--hover); white-space: nowrap; }
+.btn.tonal.pr-desk:hover, .btn.tonal.pr-forget:hover { background: var(--active); }
+.anch .btn.tonal.pr-desk, .anch .btn.tonal.pr-forget { margin-right: var(--sp-1); }
 @media (min-width: 700px) { .ds-bd.anch .ds-sheet.pr-sheet { width: 280px; } }

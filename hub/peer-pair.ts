@@ -8,7 +8,7 @@
 // Pairing also binds the two gateways to each other: <pairDir>/bound.json maps the peer's host name to the dotz URL it paired from/with,
 // so discovery (hub/peers.ts) asks that URL first instead of guessing ports (the same port can be another app on another computer).
 import { createHash, randomBytes } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 
@@ -88,6 +88,19 @@ export function bindPeer(host: string, url: string, name?: string, dir: string =
 		const keep = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, MAX_BOUND);
 		save(join(dir, "bound.json"), JSON.stringify(Object.fromEntries(keep)));
 	} catch {}
+}
+
+// Forgets `host`: its bound record and the two tokens kept for its current dotz URL (the one it was issued, the one it sent).
+// This tidies the list, it does not revoke: a same-login peer that comes back pairs again by itself. Returns whether a record was there.
+export function unbindPeer(host: string, dir: string = pairDir()): boolean {
+	const key = hostKey(host);
+	const all = boundPeers(dir);
+	const rec = all[key];
+	if (!rec) return false;
+	delete all[key];
+	save(join(dir, "bound.json"), JSON.stringify(all));
+	for (const sub of ["in", "out"]) rmSync(join(dir, sub, keyOf(rec.url)), { force: true });
+	return true;
 }
 
 // Tokens this gateway issued to its paired peers.
