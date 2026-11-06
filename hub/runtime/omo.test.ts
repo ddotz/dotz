@@ -161,7 +161,7 @@ test("the orchestrator's task workers get a dotz profile too: child processes, m
 });
 
 for (const [role, value] of [["DOTZ_LANE", "probe"], ["DOTZ_ORCHESTRATOR", "1"]] as const)
-test(`an OmO task worker of ${role === "DOTZ_LANE" ? "a lane" : "the orchestrator"} (its environment + OMO_SENPI_TASK_DEPTH) gets the output caps, the owner's rules and the 5-minute cache, but none of its tools`, async () => {
+test(`an OmO task worker of ${role === "DOTZ_LANE" ? "a lane" : "the orchestrator"} (its environment + OMO_SENPI_TASK_DEPTH) gets the output caps, the owner's rules and the 5-minute cache, and of its tools only the deferred dotz_recall`, async () => {
 	const names: string[] = [];
 	const handlers: Record<string, (e: any, ctx?: any) => any> = {};
 	const host = new Proxy({ registerTool: (t: { name: string }) => names.push(t.name), on: (n: string, fn: (e: any) => any) => (handlers[n] = fn) } as Record<string, unknown>, {
@@ -175,7 +175,7 @@ test(`an OmO task worker of ${role === "DOTZ_LANE" ? "a lane" : "the orchestrato
 	} finally {
 		process.env = saved;
 	}
-	expect(names).toEqual([]);
+	expect(names).toEqual(["dotz_recall"]);
 	const big = Array.from({ length: 1000 }, (_, i) => `${i} ${"x".repeat(95)}`).join("\n");
 	const capped = handlers.tool_result!({ toolName: "read", input: { path: "/x" }, content: [{ type: "text", text: big }] });
 	expect(capped.content[0].text.length).toBeLessThan(21_000);

@@ -629,7 +629,7 @@ export default function dotz(host: any) {
 	followAccount(pi);
 	// An OmO task worker of a lane or of the orchestrator (a child process with its parent's environment, hub/runtime/omo.ts
 	// WORKER_TASK; OmO sets OMO_SENPI_TASK_DEPTH): the owner's rules, the output caps and the 5-minute cache, none of the
-	// parent's tools or commands (as before, no prompt growth).
+	// parent's tools or commands except the deferred dotz_recall (no prompt growth: no schema until tool search finds it).
 	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
 		keyProvider(pi, true);
 		recallTool(pi, DATA);
