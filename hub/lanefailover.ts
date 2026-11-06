@@ -1,4 +1,4 @@
-import { type Lane, setStatus, hooks, pendingFile } from "./lanestate.ts";
+import { type Lane, setStatus, hooks, pendingFile, persist } from "./lanestate.ts";
 import { type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { TZ, log, parseSelector } from "./config.ts";
 import { pinnedLimitNotice } from "./accounts-api.ts";
@@ -88,6 +88,10 @@ function legacyError(lane: Lane, e: AgentError): void {
 	lane.failing = false;
 	if (e.kind === "rate" || e.kind === "owner") void pauseForRateLimit(lane, e.text, e.kind);
 	else if (e.kind !== "transient" || !retryTransient(lane, e.text)) {
+		if (e.kind === "transient") {
+			lane.interrupted ??= {};
+			persist(lane);
+		}
 		lane.lastText = `[lane error] ${(e.text || "model request failed").slice(0, 300)}`;
 		lane.unreported = true;
 		scheduleReport(lane);

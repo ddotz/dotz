@@ -61,20 +61,67 @@ export async function modelReachable(url = process.env.ANTHROPIC_BASE_URL || "ht
 }
 
 export const PROBE_EVERY_MS = 30_000;
-// Resumes once per episode (error.probed) as soon as the model host answers; the restart replays the owner's open
-// requests, or, with none open, one tiny probe turn runs (orchestrator.ts start()). Returns the timer.
-export function startErrorWatch(deps: { error: () => OrchError | undefined; reachable?: () => Promise<boolean>; resume: () => void; log: (s: string) => void; every?: number }): ReturnType<typeof setInterval> {
+// Resumes once per outage (error.probed) as soon as the model host answers; the restart replays the owner's open
+// requests, or, with none open, one tiny probe turn runs (orchestrator.ts start()). A resume that fails while the host answers
+// stays spent (an overload must not loop); the host seen down again makes the next answer a new outage. `ready` false (a turn runs,
+// the owner stopped it) waits. Returns the timer.
+export function startErrorWatch(deps: { error: () => OrchError | undefined; reachable?: () => Promise<boolean>; resume: () => void; log: (s: string) => void; ready?: () => boolean; every?: number }): ReturnType<typeof setInterval> {
 	let busy = false;
 	return setInterval(async () => {
 		const e = deps.error();
-		if (!e || e.probed || busy) return;
+		if (!e || busy) return;
 		busy = true;
 		try {
-			if (!(await (deps.reachable ?? modelReachable)())) return;
-			if (deps.error() !== e || e.probed) return;
+			const up = await (deps.reachable ?? modelReachable)();
+			if (deps.error() !== e) return;
+			if (!up) e.probed = false;
+			if (!up || e.probed || deps.ready?.() === false) return;
 			e.probed = true;
 			deps.log("orchestrator error: the model host answers again; one automatic resume");
 			deps.resume();
+		} finally {
+			busy = false;
+		}
+	}, deps.every ?? PROBE_EVERY_MS);
+}
+
+// One conversation session under the watch; `wake` brings a parked session back into its live set first.
+export type WatchedSession = { key: string; o: { orch: { error?: OrchError }; canResume: () => boolean; resumeAfterError: () => void } };
+export const watchSession = (c: WatchedSession, wake: (key: string) => void, log: (s: string) => void, reachable?: () => Promise<boolean>, every?: number): ReturnType<typeof setInterval> =>
+	startErrorWatch({
+		error: () => c.o.orch.error,
+		ready: c.o.canResume,
+		resume: () => {
+			wake(c.key);
+			c.o.resumeAfterError();
+		},
+		log: line => log(`${c.key}: ${line}`),
+		reachable,
+		every,
+	});
+
+// The same check for work that stopped without an orchestrator error episode: the 2026-11-06 outage ended inside the orchestrator's
+// retries, so no episode ever began, and a lane's stop must not depend on one. No probe runs with nothing interrupted, and none costs
+// a model turn. Each entry gets one resume per outage, by the rule above.
+export type Interrupted = { key: string; due: () => boolean; resume: () => void; rearm: () => void };
+export function startResumeWatch(deps: { interrupted: () => Interrupted[]; reachable?: () => Promise<boolean>; log: (s: string) => void; every?: number }): ReturnType<typeof setInterval> {
+	let busy = false;
+	return setInterval(async () => {
+		if (busy || !deps.interrupted().length) return;
+		busy = true;
+		try {
+			const up = await (deps.reachable ?? modelReachable)();
+			for (const i of deps.interrupted()) {
+				if (!up) i.rearm();
+				else if (i.due()) {
+					deps.log(`${i.key}: the model host answers again; one automatic resume`);
+					try {
+						i.resume();
+					} catch (e) {
+						deps.log(`${i.key}: automatic resume failed: ${(e as Error).message}`);
+					}
+				}
+			}
 		} finally {
 			busy = false;
 		}

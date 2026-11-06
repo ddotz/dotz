@@ -157,6 +157,20 @@ test("a worker silent in a long wait keeps its lane up; past the bound the lane 
 	await advance(300);
 });
 
+test("a worker stopped on a provider error keeps its lane up like a silent one; the lane is not parked with it", async () => {
+	const lane = await idleLane("idle-errored");
+	const agent = lane.proc as unknown as FakeAgent;
+	const silentFor = quietWorker(lane, "주석 통합");
+	const log = join(DATA, `agent-${lane.name}`, "projects", "p", "senpi-task", "logs", "st_quiet.jsonl");
+	writeFileSync(log, `${JSON.stringify({ type: "child_error", payload: { message: "Provider stream start timed out after 300000ms", stop_reason: "error" } })}\n`);
+	lane.lastFrameAt = Date.now() - 34 * MIN;
+	silentFor(16);
+	expect(parkIdleLanes(Date.now(), 20)).not.toContain("idle-errored");
+	expect(agent.killed).toBe(0);
+	l.stopLane("idle-errored");
+	await advance(300);
+});
+
 test("a lane's own shell holds the idle stop only up to the bound", async () => {
 	const lane = await idleLane("idle-shell");
 	const agent = lane.proc as unknown as FakeAgent;

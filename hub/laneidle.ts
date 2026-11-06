@@ -14,7 +14,8 @@
 // on 2026-11-05, read as stalled at 23:25:16, and the stop at 23:25:23 cut off an eval whose items were still landing at 23:25:21, with
 // no word to anyone. A silent worker or an awaited shell now holds the stop, which costs memory only (no turn). JOB_BOUND_MIN ends the
 // hold, and the owner is told what stopped: the longest silence of 224 workers over 7 days was that 28.5 min wait, and the longest wait
-// of a lane on its own shell over 10 days 72.6 min, while an abandoned job would keep ~1 GB up forever.
+// of a lane on its own shell over 10 days 72.6 min, while an abandoned job would keep ~1 GB up forever. A worker stopped on a provider
+// error holds it too: note-merge was stopped at 12:00 KST on 2026-11-06 with st_01a1aea0 on three stream timeouts, its worker lost.
 import { lanesIdleStopMin, log } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { type Lane, laneBusy, laneJobs, lanes, parkLane } from "./lanes.ts";

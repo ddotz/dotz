@@ -265,9 +265,14 @@ export function createOrchestrator(opts: OrchOpts) {
 	}
 	// One automatic resume: restart, and with no open request to replay, one tiny probe turn.
 	function resumeAfterError(): void {
+		clearTimeout(transientTimer); // a retry still pending would be a second resume
+		transientTimer = undefined;
 		probeAfterStart = true;
+		replayAfterStart = true; // a parked session exited without asking for it
 		restart("automatic resume after an error");
 	}
+	// Nothing runs that the resume would cut, and the owner did not stop this session.
+	const canResume = (): boolean => (orch.status === "idle" || orch.status === "stopped") && orch.stoppedBy !== "owner";
 	// The owner's 재개 (the stopped banner, the paused line, the error ask's 다시 시작): the pause ends now instead of at its timer, the
 	// process starts again, and the held or open requests go in; with none, one tiny probe turn tests the model. A success clears the
 	// error and sends the one recovery line; a failure pauses again quietly (the stoppage was already announced).
@@ -1109,7 +1114,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		return true;
 	}
 
-	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setWorkerHandlers, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
+	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setWorkerHandlers, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, canResume, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
 }
 export type Orchestrator = ReturnType<typeof createOrchestrator>;
 
