@@ -4,7 +4,7 @@ import { ADDRESS, IDENTITY_FILE, NAME, paths, tzLabel } from "./config.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import type { Catalog, Leads } from "./i18n-en.ts";
 
-const TOPIC_LABELS: Record<string, string> = { linebreak: "줄바꿈", copy: "문체·카피", "no-card": "카드 없는 질문", duplicate: "기능 중복", stalled: "멈춤·보고 끊김", misread: "지시 오해", "missing-output": "산출물 안 보임", ui: "UI 일관성", "ignored-setting": "설정 불이행", "not-applied": "미반영·반쯤 검증", other: "기타" };
+const TOPIC_LABELS: Record<string, string> = { linebreak: "줄바꿈", copy: "문체·카피", "no-card": "카드 없는 질문", duplicate: "기능 중복", stalled: "멈춤·보고 끊김", misread: "지시 오해", "missing-output": "산출물 안 보임", ui: "화면·디자인", "ignored-setting": "설정 불이행", "not-applied": "미반영·반쯤 검증", other: "기타" };
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
 // decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).

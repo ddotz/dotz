@@ -5,13 +5,13 @@ import { appendFileSync } from "node:fs";
 import { paths } from "./config.ts";
 import { eventTarget, isPeerMessage, recentEvents, type HubEvent } from "./events.ts";
 
-const SCAN_CHARS = 400;   // a long message is a brief: a correction says so at its start, and a word deep in a brief is not one
+export const SCAN_CHARS = 400;   // a long message is a brief: a correction says so at its start, and a word deep in a brief is not one
 const TEXT_MAX = 8000;
 const PREVIOUS_MAX = 300;
 
 // Tuned on a week of owner messages read and labeled by hand (hub/corrections.fixture.json, anonymized): recall 75%, precision 63%. Plain owner
 // corrections read "여전히 안되네", "너무 ~함", "이거 왜 이래", so a word list of refusals alone misses most of them.
-const CORRECTION = /아니|말고|하지\s*마|왜|틀렸|잘못|여전히|아직|안\s*(?:돼|되|됨|됐|뜨|떠|보|나오|나와|나옴|맞|오|왔|와|했|함|나가)|이상(?:해|함|하|한)|너무|없애|맞(?:냐|음|아|나)|된거|되었나|되었는|중복|깨지|깨져|어긋|멈(?:춰|췄|추|춤)|죽은|필요 없|합쳐|그대로|계속해|부실|별로|똑같|ai\s*티|ai 같|slop|no,|don't|\bstop\b|\bwrong\b|\bstill\b|not working|\bbroken\b|\bagain\b/i;
+export const CORRECTION = /아니|말고|하지\s*마|왜|틀렸|잘못|여전히|아직|안\s*(?:돼|되|됨|됐|뜨|떠|보|나오|나와|나옴|맞|오|왔|와|했|함|나가)|이상(?:해|함|하|한)|너무|없애|맞(?:냐|음|아|나)|된거|되었나|되었는|중복|깨지|깨져|어긋|멈(?:춰|췄|추|춤)|죽은|필요 없|합쳐|그대로|계속해|부실|별로|똑같|ai\s*티|ai 같|slop|no,|don't|\bstop\b|\bwrong\b|\bstill\b|not working|\bbroken\b|\bagain\b/i;
 // A gateway's handover (peer-monitor.ts) and other machine-written briefs open with a [tag]; they quote old complaints without being one.
 const HANDOVER = /^\s*\[[^\]\n]{1,60}\]|handoff|handover|인계/i;
 const COMMAND = /^\s*[/!]\S/;

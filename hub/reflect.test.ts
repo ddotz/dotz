@@ -148,20 +148,50 @@ test("three corrections on one topic raise exactly one alert, and the same topic
 
 test("a repeat card is due at 3 in 7 days and not at 2, older ones do not count, and the 7 days reopen", () => {
 	const at = (d: number) => new Date(now - d * DAY).toISOString();
-	const rows = [correction("a", "ui", at(1)), correction("b", "ui", at(2))];
+	const rows = [correction("여백이 이상함", "ui", at(1)), correction("여백이 또 이상함", "ui", at(2))];
 	expect(dueAlerts(rows, "", {}, now)).toEqual([]);
-	expect(dueAlerts([...rows, correction("c", "ui", at(8))], "", {}, now)).toEqual([]);
-	expect(dueAlerts([...rows, correction("c", "other", at(1)), correction("d", "other", at(1))], "", {}, now)).toEqual([]);
-	const three = [...rows, correction("c", "ui", at(3))];
+	expect(dueAlerts([...rows, correction("여백 왜 이상함", "ui", at(8))], "", {}, now)).toEqual([]);
+	expect(dueAlerts([...rows, correction("여백이 이상함", "other", at(1)), correction("여백이 이상함", "other", at(1))], "", {}, now)).toEqual([]);
+	const three = [...rows, correction("여백 왜 이상함", "ui", at(3))];
 	expect(dueAlerts(three, "", { ui: now - 6 * DAY }, now)).toEqual([]);
 	expect(dueAlerts(three, "", { ui: now - 7 * DAY }, now).map(a => a.count)).toEqual([3]);
+});
+
+test("four messages that only share a topic word raise no card, whatever the conversation", () => {
+	const rows = [
+		correction("전체적으로 검색 결과 ui를 개선하는 게 목적임. 지금은 너무 밋밋하게만 나오고 있어", "ui"),
+		correction("사진첩을 폴더별로 나누고 따로 설정하게 하자. 시안 먼저 디자인 만들어봐", "ui"),
+		{ ...correction("그리고 달력 띄우면 바로 닫히더라. 설정 아이콘도 누르면 메뉴가 뜨다가 사라지는데 수정해야함. 스크롤도 제대로 구현해야함", "ui"), conv: "lane:other-app" },
+		{ ...correction("첫 화면에서는 제목 앞 초록색 아이콘만 없애면 될듯. 나머지는 유지하고", "ui"), conv: "lane:other-app" },
+	];
+	expect(dueAlerts(rows, "", {}, now)).toEqual([]);
+});
+
+test("the same complaint said three ways fires across conversations, and the card shows that complaint alone", () => {
+	const rows = [
+		correction("설정 화면 저장 버튼이 여전히 안 눌려", "ui"),
+		correction("상단 메뉴 정렬 다시 맞춰봐", "ui"),
+		{ ...correction("저장 버튼 또 안 눌림. 설정 화면에서", "ui"), conv: "lane:work" },
+		correction("왜 저장 버튼이 안 눌리냐", "ui"),
+	];
+	const [a, ...more] = dueAlerts(rows, "", {}, now);
+	expect(more).toEqual([]);
+	expect([a.key, a.count]).toEqual(["ui", 3]);
+	expect(a.examples).toEqual([rows[3].text, rows[2].text, rows[0].text]);
+});
+
+test("words any complaint uses make no repeat, and two complaints linked by a third stay apart", () => {
+	const plain = ["메뉴가 너무 이상해 왜 안되냐", "색상이 너무 이상해 왜 안되냐", "간격이 너무 이상해 왜 안되냐"];
+	expect(dueAlerts(plain.map(t => correction(t, "ui")), "", {}, now)).toEqual([]);
+	const chain = ["저장 버튼 달력 위치", "달력 위치 사진 목록", "사진 목록 검색 결과"];
+	expect(dueAlerts(chain.map(t => correction(t, "ui")), "", {}, now)).toEqual([]);
 });
 
 test("a lesson broken on two nights raises a card under its topic, merged with that topic's corrections; an enforced one does not", () => {
 	const broken = "- [10-02] Keep the icon spacing even (broken: 10-03, 10-05)";
 	const a = dueAlerts([], broken, {}, now);
 	expect(a.map(x => [x.key, x.broken])).toEqual([["ui", 2]]);
-	const rows = ["a", "b", "c"].map(t => correction(t, "ui"));
+	const rows = ["여백이 이상함", "여백이 또 이상함", "여백 왜 이상함"].map(t => correction(t, "ui"));
 	expect(dueAlerts(rows, broken, {}, now).map(x => [x.key, x.count, x.broken])).toEqual([["ui", 3, 2]]);
 	expect(dueAlerts([], `${broken} (enforced: hub/x.test.ts)`, {}, now)).toEqual([]);
 	expect(dueAlerts([], "- [10-02] Sign the tag (broken: 10-03, 10-05)", {}, now).map(x => x.key)).toEqual(["lesson:- [10-02] Sign the tag (broken: 10-03, 10-05)"]);

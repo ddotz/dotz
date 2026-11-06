@@ -72,7 +72,7 @@ test("everyday 표현 and 설명 are no wording complaint; a complaint about the
 	for (const t of ["- [11-01] 딱딱한 표현을 쓰지 않아요", "- [11-01] Keep the wording plain"]) expect(topicOf(t)).toBe("copy");
 });
 
-test("replayed night by night, the labeled week raises one card per topic with a repeat", () => {
+test("replayed night by night, the labeled week raises a card only where words the mask left still repeat one complaint", () => {
 	const at = (ts: string) => Date.parse(`2026-${ts.replace(" ", "T")}:00+09:00`);
 	const entries = flagged.map(r => ({ ts: new Date(at(r.ts)).toISOString(), topic: topicOf(r.t), conv: "web", text: r.t, attachments: [], previous: "" }) as Correction);
 	const sent: Record<string, number> = {};
@@ -86,7 +86,7 @@ test("replayed night by night, the labeled week raises one card per topic with a
 	}
 	console.log(`repeat cards on the labeled week: ${cards.length} (${cards.join(", ")})`);
 	expect(new Set(cards).size).toBe(cards.length);
-	expect(cards.length).toBe(10);
+	expect(cards).toEqual(["not-applied", "ui"]);
 });
 
 test("a peer gateway's message is no owner correction; the owner's own message from the other computer's page still is", () => {

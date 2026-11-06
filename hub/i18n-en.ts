@@ -4,7 +4,7 @@ import { IDENTITY_FILE, NAME, paths, tzLabel } from "./config.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import type { FileText, HelpText, LaneFooterArgs, RecallArgs, SettingText, WorktreeArgs } from "./i18n.ts";
 
-const TOPIC_LABELS: Record<string, string> = { linebreak: "line breaks", copy: "copy and tone", "no-card": "questions without a card", duplicate: "duplicate features", stalled: "stalls and lost reports", misread: "misread instructions", "missing-output": "output not visible", ui: "UI consistency", "ignored-setting": "ignored settings", "not-applied": "not applied or half verified", other: "other" };
+const TOPIC_LABELS: Record<string, string> = { linebreak: "line breaks", copy: "copy and tone", "no-card": "questions without a card", duplicate: "duplicate features", stalled: "stalls and lost reports", misread: "misread instructions", "missing-output": "output not visible", ui: "screens and design", "ignored-setting": "ignored settings", "not-applied": "not applied or half verified", other: "other" };
 
 // Prefixes (leads) of notes that are matched later; every note that has a lead starts with it.
 export const enLeads = {

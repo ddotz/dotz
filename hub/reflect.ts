@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { pushBackup, unstageSecrets } from "./backup.ts";
 import { issueBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, log, paths, writeAtomic } from "./config.ts";
-import { type Correction, TOPIC_NAMES, type Topic, topicOf } from "./corrections.ts";
+import { CORRECTION, type Correction, SCAN_CHARS, TOPIC_NAMES, type Topic, topicOf } from "./corrections.ts";
 import { isPeerMessage } from "./events.ts";
 import { msg, withReplyLine } from "./i18n.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
@@ -184,18 +184,17 @@ export function gateLessons(tell: (text: string) => void, reset = false): Reject
 }
 
 export type RepeatAlert = { key: string; topic: Topic; count: number; broken: number; examples: string[] };
-// Three corrections on one topic in 7 days, or a lesson found broken on two nights: the words have failed, so the gateway says so itself, one card
-// per topic per 7 days. "other" holds no one subject, so it never counts; a broken lesson of no topic stands alone under its own key.
+// Three corrections repeating one complaint in 7 days, or a lesson found broken on two nights: the words have failed, so the gateway says so itself,
+// one card per topic per 7 days. A shared topic is no repeat (repeatCluster counts within it). "other" holds no one subject, so it never counts; a
+// broken lesson of no topic stands alone under its own key.
 export function dueAlerts(entries: readonly Correction[], lessons: string, sent: Record<string, number>, now: number): RepeatAlert[] {
 	const due = new Map<string, RepeatAlert>();
 	const week = entries.filter(e => Date.parse(e.ts) >= now - WEEK && e.topic !== "other");
-	for (const e of week) {
-		const a = due.get(e.topic) ?? { key: e.topic, topic: e.topic, count: 0, broken: 0, examples: [] };
-		a.count++;
-		a.examples = [e.text.replace(/\s+/g, " ").slice(0, 120), ...a.examples].slice(0, EXAMPLES);
-		due.set(e.topic, a);
+	for (const topic of new Set(week.map(e => e.topic))) {
+		const cluster = repeatCluster(week.filter(e => e.topic === topic));
+		if (cluster.length < 3) continue;
+		due.set(topic, { key: topic, topic, count: cluster.length, broken: 0, examples: cluster.slice(-EXAMPLES).toReversed().map(e => e.text.replace(/\s+/g, " ").slice(0, 120)) });
 	}
-	for (const [key, a] of due) if (a.count < 3) due.delete(key);
 	for (const c of lessonChecks(lessons, []).filter(c => c.broken >= 2)) {
 		const topic = lessonTopic(c.line);
 		const key = topic === "other" ? `lesson:${c.line.slice(0, 60)}` : topic;
@@ -329,6 +328,37 @@ export function lessonScore(lesson: string, correction: string): number {
 	const hit = own.filter(w => said.some(s => sameWord(w, s))).length;
 	return hit >= 2 ? Math.round((hit / own.length) * 100) / 100 : 0;
 }
+// Words any complaint or request uses, whatever it is about: they can add to a match between two messages but never make one.
+// The list holds stems: "이상해" reaches here as "이상", which CORRECTION alone would not catch.
+const PLAIN = new Set(["이상", "그대", "그리고", "근데", "그래서", "전반적", "제대로", "수정", "구현", "개선", "확인", "처리", "기능", "부분", "문제", "해야", "되네", "하자", "해놔", "해줘", "해봐"]);
+const plainWord = (w: string): boolean => PLAIN.has(w) || CORRECTION.test(w);
+// Two messages make the same complaint when they share two or more meaning words, 0.4 or more of the shorter one's, and not only plain words.
+function sameComplaint(a: readonly string[], b: readonly string[]): boolean {
+	const [small, big] = a.length <= b.length ? [a, b] : [b, a];
+	const hit = small.filter(w => big.some(s => sameWord(w, s)));
+	return hit.length >= 2 && hit.length / small.length >= LIKELY && !hit.every(plainWord);
+}
+/** The largest group of entries (oldest first) that all make the same complaint as each other: every pair must match, so a message that touches
+ *  two others cannot chain them. Two different complaints in a topic stay two groups. */
+export function repeatCluster(entries: readonly Correction[]): Correction[] {
+	const words = entries.map(e => meaningWords(e.text.slice(0, SCAN_CHARS)));
+	const near = words.map(() => new Set<number>());
+	for (let i = 0; i < words.length; i++) {
+		for (let j = i + 1; j < words.length; j++) {
+			if (!sameComplaint(words[i], words[j])) continue;
+			near[i].add(j);
+			near[j].add(i);
+		}
+	}
+	let best: number[] = [];
+	for (const [i, linked] of near.entries()) {
+		const group = [i];
+		for (const j of linked) if (group.every(g => near[g].has(j))) group.push(j);
+		if (group.length >= best.length) best = group;
+	}
+	return best.toSorted((x, y) => x - y).map(i => entries[i]);
+}
+
 const BROKEN = /\(broken:\s*([^)]*)\)/i;
 export type LessonCheck = { line: string; score: number; broken: number };
 /** Every lesson with no enforcer, with its best score against today's corrections and how many nights it was found broken; repeats first,
