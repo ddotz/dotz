@@ -86,7 +86,11 @@ function idleLane(name: string): Lanes.Lane {
 	persist(lane);
 	return lane;
 }
-const session = (lane: Lanes.Lane, rows: unknown[]) => writeFileSync(lane.sessionFile!, rows.map(r => JSON.stringify(r)).join("\n") + "\n");
+// Written now by the test clock, which the file system does not follow.
+function session(lane: Lanes.Lane, rows: unknown[], at = Date.now()): void {
+	writeFileSync(lane.sessionFile!, rows.map(r => JSON.stringify(r)).join("\n") + "\n");
+	utimesSync(lane.sessionFile!, at / 1000, at / 1000);
+}
 const reportFile = (name: string, text: string) => writeFileSync(join(dir(name), "report.md"), text + "\n");
 
 // The lane's task record, and the log whose age is the worker's silence.
@@ -124,6 +128,32 @@ async function clear(...names: string[]): Promise<void> {
 }
 const spawned = () => spawns.length;
 const lastAgent = () => spawns.at(-1)!.agent;
+
+test("stx-xhigh replay (2026-11-06): a last [run] with nothing open behind it wakes nobody, and neither does work that sat for days", async () => {
+	const lane = idleLane("uf-stale-run");
+	reportFile(lane.name, "[run] 메모에 두 계좌 잔액을 반영했고, 리스크관리부 소관은 메모리에도 저장했어요.");
+	await down(lane);
+	const back = await restart(lane.name);
+	session(back, [], Date.now() - 27 * 60 * MIN);
+	expect(unfinishedWork(back)).toBeUndefined();
+	session(back, []);
+	expect(unfinishedWork(back)).toBeUndefined();
+	const before = spawned();
+	expect(await resumeUnfinished({})).toEqual([]);
+	expect(spawned()).toBe(before);
+
+	// Even open tasks and a cut stop are history after days; the plan is what a fresh stop would wake on.
+	session(back, [todos(3), killedRow]);
+	expect(unfinishedWork(back)?.open).toBe(3);
+	session(back, [todos(3), killedRow], Date.now() - 72 * 60 * MIN);
+	expect(unfinishedWork(back)).toBeUndefined();
+
+	// An owner message it still holds is owed however long it sat.
+	back.held = [{ text: "이어서 해 줘", at: Date.now() }] as Lanes.Lane["held"];
+	expect(unfinishedWork(back)).toBeDefined();
+	back.held = undefined;
+	await clear(lane.name);
+});
 
 test("reply-voice timeline replay: the idle stop holds for the quiet worker, and a lane stopped anyway is resumed with its worker named", async () => {
 	const lane = idleLane("uf-replay");

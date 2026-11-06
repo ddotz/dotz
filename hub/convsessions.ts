@@ -15,6 +15,7 @@ import { createCapacity } from "./convcapacity.ts";
 import { omoSelector } from "./runtime/omo.ts";
 import type { createPrompts, Pending, Reply } from "./prompts.ts";
 import { CONV_KINDS, MAIN, primaryTarget, safeDir, sessionKeyOf } from "./session-key.ts";
+import type { ResumeSession } from "./sessionresume.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Prompts = ReturnType<typeof createPrompts>;
@@ -35,7 +36,7 @@ export type ConvDeps = {
 	wire: (c: Conv) => { queue: Prompts; bg: BgWork };
 	dataDir: string;
 	history: (target: string, limit: number) => HubEvent[];
-	workers: (c: Conv) => number;
+	workers: (c: Conv, file?: string) => number;
 	/** Main's model as a task pin: the workers of a conversation on its own model stay on it (extension/guard.ts ownWorkerPin). */
 	workerPin: () => string;
 	log: (line: string) => void;
@@ -145,6 +146,22 @@ export function createConvSessions(d: ConvDeps) {
 		if (c.queue.queued().some(p => !p.cancelled && !p.done && !c.queue.isAnswered(p.replyTo))) return false;
 		if (Date.parse(c.o.orch.rateLimitedUntil || "") > now()) return false;
 		return now() - c.o.lastTurnEndAt() >= idleMs;
+	}
+	// A parked session's process never reported its file this run: state.json holds it.
+	const fileOf = (c: Conv): string | undefined => c.o.orch.sessionFile || (c.dir ? (readJson(metaFile(c)).sessionFile as string | undefined) : undefined);
+	/** The resume sweep may look at it: nothing runs, is held or is paused, the owner did not stop it, and main is up. A parked session counts. */
+	function resting(c: Conv): boolean {
+		const o = c.o.orch;
+		if (o.status === "working" || o.status === "starting" || o.status === "rate-limited" || o.error || o.stoppedBy === "owner" || orchBusy(o)) return false;
+		if (Date.parse(o.rateLimitedUntil || "") > now() || c.o.heldCount() > 0) return false;
+		if (live(c) ? o.status !== "idle" : c.key === MAIN) return false;
+		return d.workers(c, fileOf(c)) === 0;
+	}
+	/** Past the cap with nothing that can make room, a resume waits (only an owner message starts over the cap). */
+	function full(c: Conv): string | undefined {
+		if (live(c)) return undefined;
+		const running = [...convs.values()].filter(x => x !== c && live(x));
+		return running.length < d.maxLive() || running.some(x => parkable(x, 0)) ? undefined : `${running.length} of ${d.maxLive()} sessions running`;
 	}
 	function park(c: Conv, why: string): void {
 		if (!c.o.park()) return;
@@ -274,6 +291,27 @@ export function createConvSessions(d: ConvDeps) {
 			if (c) park(c, "asked");
 		},
 		parkable,
+		/** Every session as the resume sweep sees it (hub/sessionresume.ts). */
+		resumeSessions: (asked: (c: Conv) => boolean, tell: (target: string, text: string) => void): ResumeSession[] =>
+			all().map(c => ({
+				key: c.key,
+				target: c.primary,
+				file: () => fileOf(c),
+				live: () => live(c),
+				resting: () => resting(c),
+				dead: () => {
+					const file = fileOf(c);
+					return file ? c.bg.deadWork(file) : [];
+				},
+				asked: () => asked(c),
+				taken: id => c.bg.handed.has(id),
+				full: () => full(c),
+				wake: (note, to, ids) => {
+					for (const id of ids) c.bg.handed.add(id);
+					deliverTo(c.key, note, to);
+				},
+				tell: text => tell(c.primary, text),
+			})),
 		all,
 		conversations: (): Conv[] => [...convs.values()],
 		live,
@@ -326,7 +364,7 @@ export const convs = createConvSessions({
 	dataDir: DATA_DIR,
 	history: historyEvents,
 	// Silent workers count: a long wait writes nothing, and the park would end it (the lanes' reply-voice stop, laneidle.ts).
-	workers: c => runningOmoWorkers(c.o.orch.sessionFile) + quietOmoWork(c.o.orch.sessionFile).length,
+	workers: (c, file = c.o.orch.sessionFile) => runningOmoWorkers(file) + quietOmoWork(file).length,
 	workerPin: () => omoSelector(selectorOf(orchestratorModel())),
 	log: hubLog,
 });

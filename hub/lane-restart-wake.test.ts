@@ -1,7 +1,7 @@
 // A gateway restart and a lane's open work. site-demo-proto (2026-11-04 01:10): a turn ended on purpose to wait for its own background
 // shell, the gate read that as idle, the restart killed the shell, and the lane came back idle with 7 tasks open for 90 minutes.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg } from "./config.ts";
 import { msg } from "./i18n.ts";
@@ -68,7 +68,11 @@ const monitor = { source: "terminal-monitors", activeCount: 1, items: [{ id: "mo
 const life = (state: string, background: unknown[], extra: object = {}) => ({ type: "custom", customType: "session-lifecycle", data: { state, waitingOn: { children: 0, background, human: [] }, ...extra } });
 const stopped = life("waiting_human", [], { lastStop: { cause: "no_wake" } });
 const todos = (open: number) => ({ type: "message", timestamp: "2026-11-04T01:00:00.000Z", message: { role: "toolResult", toolName: "todo", details: { phases: [{ name: "구현", tasks: Array.from({ length: open }, (_, i) => ({ content: `할 일 ${i}`, status: "pending" })) }] } } });
-const session = (lane: Lanes.Lane, rows: unknown[]) => writeFileSync(lane.sessionFile!, `${rows.map(r => JSON.stringify(r)).join("\n")}\n`);
+// Written now by the test clock, which the file system does not follow.
+function session(lane: Lanes.Lane, rows: unknown[]): void {
+	writeFileSync(lane.sessionFile!, `${rows.map(r => JSON.stringify(r)).join("\n")}\n`);
+	utimesSync(lane.sessionFile!, Date.now() / 1000, Date.now() / 1000);
+}
 
 function idleLane(name: string): Lanes.Lane {
 	const cwd = join(DATA, "wake-work");
