@@ -212,13 +212,24 @@ test("a chat message that asks for card, address or phone is flagged; the form p
 	expect(asksPersonalInChat("서버 비밀번호 파일을 지웠어요")).toBe(false);
 });
 
-test("a data word and a request phrase in different sentences (explaining a login flow, reporting status) are not flagged", () => {
+test("data words in a clause that says the value is not handled do not count; every other request stays flagged", () => {
 	expect(asksPersonalInChat("로그인 창이 취소됐어요. 비밀번호는 저장하지 않았어요. 다시 하실 때 말씀해 주세요.")).toBe(false);
-	expect(asksPersonalInChat("계정 비밀번호를 바꾸면 연결이 멈춰요. 그때 알려 주세요.")).toBe(false);
 	expect(asksPersonalInChat("이 서비스는 비밀번호를 넘기지 않고 권한만 허용해요. 켜 주시고 말씀해 주세요.")).toBe(false);
-	expect(asksPersonalInChat("계정 비밀번호를 로그인 창에 넣어 주세요")).toBe(false);
 	expect(asksPersonalInChat("터미널에 비밀번호를 저는 모르게 쳐 주시고, 끝나면 확인 버튼을 눌러 주세요")).toBe(false);
 	expect(asksPersonalInChat("Your password stays on the device. Let me know when it is done, please tell me.")).toBe(false);
+	// Paraphrased from real messages that were flagged by mistake.
+	expect(asksPersonalInChat("이 서비스는 인스타 공식 파트너예요. 댓글에 정해 둔 단어를 남기면 DM을 자동으로 보내 줘요. 인스타 비밀번호를 넘기지 않고 로그인 화면에서 권한만 허용하는 방식이라 계정 정지 걱정이 적어요.\n\n1) 앱 설정에서 \"메시지 액세스 허용\"을 켜 주세요.\n2) 가입과 연결은 제가 브라우저에서 해요. 인증 코드를 물으면 그때 부탁드릴게요.\n\n1번 스위치를 켜 주시고 말씀해 주세요.")).toBe(false);
+	expect(asksPersonalInChat("[ask] 회사 PC는 한 줄만 실행하시면 연결돼요. Ubuntu 창에 아래 줄을 붙여 넣고 Enter를 누르세요.\n\n```\nbash ./connect.sh\n```\n\n- 직접 하실 건 두 가지예요. 메신저 비밀번호를 한 번 쳐 주시고(화면에 안 보이고 저장되지 않아요), UAC 창이 뜨면 \"예\"를 눌러 주세요.\n- 중간에 \"실패:\"로 시작하는 줄이 나오면 다시 실행하지 말고 그 줄만 알려 주세요.")).toBe(false);
+
+	expect(asksPersonalInChat("카드 번호랑 유효기간, 그리고 이름을 알려 주세요")).toBe(true);
+	expect(asksPersonalInChat("이름, 전화번호, 주소를 알려 주세요")).toBe(true);
+	expect(asksPersonalInChat("로그인하려면 비밀번호가 필요해요. 알려 주세요.")).toBe(true);
+	expect(asksPersonalInChat("다음을 알려 주세요:\n- 카드 번호")).toBe(true);
+	expect(asksPersonalInChat("로그인 창이 안 떠요. 비밀번호를 여기 적어 주세요.")).toBe(true);
+	expect(asksPersonalInChat("비밀번호가 필요해요. 준비되면 보내 주세요")).toBe(true);
+	expect(asksPersonalInChat("제가 로그인 창에 입력할 테니 비밀번호를 알려 주세요")).toBe(true);
+	expect(asksPersonalInChat("비밀번호는 저장하지 않을 테니 알려 주세요")).toBe(true);
+	expect(asksPersonalInChat("비밀번호를 보내지 않으면 로그인할 수 없어요. 알려 주세요")).toBe(true);
 	expect(asksPersonalInChat("결제할게요.\n카드 번호 알려 주세요")).toBe(true);
 	expect(asksPersonalInChat("로그인에 필요해서요. 비밀번호를 여기 적어 주세요.")).toBe(true);
 	expect(asksPersonalInChat("Almost done. Please paste your password here.")).toBe(true);
