@@ -276,6 +276,7 @@ export const ko: Catalog = {
 	liveTool: { run: "명령 실행", read: "파일 읽기", edit: "파일 수정", search: "파일 검색", web: "웹 검색", fetch: "웹 페이지 읽기", task: "하위 작업", note: "기록 정리", other: "작업 진행" },
 	liveMore: n => `외 ${n}`,
 	inboxWatchNoChannel: (watch, reason) => `[dotz inbox] watch ${watch} ${reason} (이 턴을 기다리는 사람이 없어요). 실패, 이상, 깜빡임이면 ${koIssue}\n문제가 아니면 alert에는 올리지 말고 dotz_send worklog에 한 줄만 올리세요:`,
+	inboxWatchOnce: (watch, reason, ch) => `[dotz inbox] 1회 감시 ${watch} ${reason}. 기다리던 결과예요. 오너에게는 아직 아무것도 가지 않았으니 이어서 할 일을 하고, 무슨 일이 있었는지 ${ch ? `최종 답으로 작업 채널 ch:${ch}에` : "dotz_send alert로"} 평범한 말로 한 번 알려 주세요. 원문이나 표식은 옮기지 마세요. 출력:`,
 	inboxWatch: (watch, reason, ch) => `[dotz inbox] watch ${watch} ${reason}, 작업 채널 ch:${ch} (최종 답이 그 채널로 가요. 아무것도 올리지 않으려면 "-" 한 글자만 답하세요). 실패, 이상, 깜빡임이면 ${koIssue}\n문제가 아니면 alert에는 올리지 말고 dotz_send worklog에 한 줄만 올리세요:`,
 	inboxMail: to => `[dotz inbox] 새 메일. 이 메일의 대화(${to})는 이미 있고 최종 답이 그리로 가요(스레드를 새로 열지 마세요). 거기에 요약하세요. 답장이 필요하면 발송 승인 블록으로 물으세요: 인용 줄 "> 받는이: ...", "> 제목: ...", (메일에는 첨부 줄을 항상 써요: 보낼 파일마다 "> 첨부: 이름 (크기)", 없으면 "> 첨부: 없음"), 인용한 본문, 이어서 "결정: 보낼까요? (<메일 id>)"와 1) 보내기 / 2) 고치기 / 3) 보내지 않기. 먼저 정할 것이 있으면(예: 어느 파일을 보낼지) 그것부터 선택지로 묻고 답을 받은 뒤 초안을 보여 주세요. 이 대화에 게이트웨이가 이미 올린 답장 초안([ask])이 있으면 또 쓰지 마세요. 읽기와 처리는 zele로 하고, 보내기는 그 대화에서 오너가 1) 보내기를 고른 뒤에만 하세요. 답장이 필요 없으면 요약만 하고, 아무것도 올리지 않으려면 "-" 한 글자만 답하세요:`,
 	mailNote: (source, id, subject) => `(이 대화는 메일 한 통이에요: ${source} ${id}, "${subject}". 답장·보내기·전달·삭제는 먼저 발송 승인 블록(1) 보내기 / 2) 고치기 / 3) 보내지 않기)으로 초안을 보여 주고, 여기서 오너가 분명히 OK한 뒤에만 하세요.)`,

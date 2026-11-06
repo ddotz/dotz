@@ -80,6 +80,7 @@ function inboxBody(e: Record<string, any>): string {
 	if (e.kind === "lane_report") return `${m.inboxLaneReport(e.lane)}\n${e.text}`;
 	if (e.kind === "watch") {
 		const ch = e.channels?.[0];
+		if (e.wakeOnly) return [m.inboxWatchOnce(e.watch, e.reason, ch), e.text, ch ? channelContext(ch) : ""].filter(Boolean).join("\n");
 		if (!ch) return `${m.inboxWatchNoChannel(e.watch, e.reason)}\n${e.text}`;
 		return `${m.inboxWatch(e.watch, e.reason, ch)}\n${e.text}\n${channelContext(ch)}`;
 	}

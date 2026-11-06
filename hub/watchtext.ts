@@ -18,13 +18,13 @@ export const WATCH_UNCHANGED_KO = "내용은 그대로이고 시각 같은 값�
 export function watchReasonKo(reason: string): string {
 	const r = reason.trim();
 	if (r === "output changed" || r === "change") return "결과가 바뀌었어요";
-	if (r === "match" || r.startsWith("matched /")) return "찾던 내용이 나왔어요";
+	if (r === "match" || r.startsWith("matched /")) return "조건에 맞는 결과가 나왔어요";
 	if (r === "fail") return "점검에 실패했어요";
 	if (r === "recovered") return "다시 정상이에요";
 	const fails = /^failed (\d+) times in a row/.exec(r)?.[1];
 	if (fails) return `${fails}번 연속 실패했어요`;
 	if (r.startsWith("stopped after a password")) return `${LOGIN_NO_PASSWORD_KO}. 맥 암호에 저장하고 다시 연결을 눌러 주세요`;
-	if (r.startsWith("stopped after")) return "실패가 이어져 멈췄어요. 승인하면 다시 돌아요";
+	if (r.startsWith("stopped after")) return "실패가 이어져 멈췄어요. 승인하면 다시 확인해요";
 	if (r.startsWith("needs the owner's approval for a second factor")) return `${LOGIN_SECOND_FACTOR_KO}. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요`;
 	if (r.startsWith("needs the owner")) return "승인이 필요해요";
 	return r;
@@ -44,6 +44,8 @@ const PAIR = /(?:^|\s)[A-Za-z_][\w.-]*=\S+/g;
 const RAW_LINES = 5;
 const RAW_LINE_MAX = 160;
 const RAW_MAX = 600;
+// One token a check prints for its own filter ("repo-gone", "READY"): a program's word, not a line to read.
+const SENTINEL = /^(?:[a-z][a-z0-9]*(?:[-_][a-z0-9]+)+|[A-Z][A-Z0-9_-]{3,})$/;
 
 // A line meant for a program: two or more key=value pairs, an ISO timestamp, or JSON.
 export function isMachineOutput(text: string): boolean {
@@ -99,6 +101,9 @@ export function itemRefOf(output: string): ItemRef | undefined {
 	return { app: m[1]!, id: m[2]!, ...(subject ? { subject } : {}), ...(from ? { from } : {}) };
 }
 
+// A match whose whole output is that token: the reason says all there is, so no line, no 원문 and no model summary.
+export const sentinelMatch = (reason: string, output: string): boolean => reason.trim().startsWith("match") && SENTINEL.test(output.replace(ANSI, "").trim());
+
 export const isIssue = (reason: string) => /^(?:fail\b|failed \d+|stopped after|needs the owner)/.test(reason.trim());
 
 // A notice text that says a login was lost, from the words above and nothing broader: the reason line of a stopped check (password, second factor),
@@ -137,7 +142,7 @@ const linesOf = (s: string, now?: number, tz?: string): string[] =>
 	s.replace(ANSI, "").replace(/\r/g, "").split("\n").map(l => tidy(l, now, tz)).filter(Boolean);
 // A line a person can read as words: letters make most of it, and it is not key=value or a snake_case token.
 const plainLine = (l: string): boolean => {
-	if (l.length > 160 || /\S=\S/.test(l) || /\w_\w/.test(l)) return false;
+	if (l.length > 160 || /\S=\S/.test(l) || /\w_\w/.test(l) || SENTINEL.test(l)) return false;
 	const letters = (l.match(/[가-힣A-Za-z0-9]/g) ?? []).length;
 	return /[가-힣A-Za-z]{2,}/.test(l) && letters >= l.length * 0.6;
 };
@@ -200,7 +205,7 @@ export function describeOutput(output: string, opts: DescribeOpts = {}): Describ
 		const said = [added.length ? `새로 생겼어요: ${items(added)}` : "", removed.length ? `사라졌어요: ${items(removed)}` : ""].filter(Boolean);
 		return { text: said.join("\n") || WATCH_UNCHANGED_KO, readable: true };
 	}
-	if (HANGUL.test(out)) return { text: out, readable: true };
+	if (HANGUL.test(out)) return { text: out.split("\n").filter(l => !SENTINEL.test(l.trim())).join("\n"), readable: true };
 	if (cur.length <= 3 && cur.every(plainLine)) return { text: cur.join("\n"), readable: true };
 	return { text: "", readable: false };
 }
@@ -213,7 +218,7 @@ export type LineOpts = { raw?: boolean; now?: number; tz?: string; note?: string
 export function watchLine(label: string, reason: string, output = "", opts: LineOpts = {}): string {
 	const out = output.trim();
 	const lines = [`${humanLabel(label)}: ${watchReasonKo(reason)}${opts.note ? ` ${opts.note}` : ""}`];
-	if (!out) return lines[0]!;
+	if (!out || sentinelMatch(reason, out)) return lines[0]!;
 	const d = describeOutput(out, { prev: opts.prev, issue: isIssue(reason), now: opts.now, tz: opts.tz });
 	const text = d.readable ? d.text : opts.summary ?? "";
 	if (text && text === out) return `${lines[0]}\n${out}`;

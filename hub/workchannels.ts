@@ -99,6 +99,10 @@ export function watchLabel(name: string): string {
 // Boot: every watch without a readable name gets one, stored (hub/watch.ts relabelWatches). Returns how many.
 export const nameWatches = (): number => relabelWatches(w => setups.find(s => w.channels?.includes(s.channel))?.name);
 
+// OmO's monitor hands an event to the agent alone and the agent tells the user: a one-shot watch for the orchestrator works the same. Its change or match
+// only wakes the orchestrator, which reports in words; a failure, or no orchestrator to wake, still reaches the owner.
+export const wakeOnly = (w: Watch, reason: string, orchestratorUp: boolean): boolean => orchestratorUp && w.to === "orchestrator" && !!w.once && /^(?:output changed|matched \/)/.test(reason);
+
 // The inbox event a watch report becomes (hub/notices.ts and the web read label / to to word it).
 export const watchWakeEvent = (w: Watch, reason: string, output: string, prev?: string) =>
 	({ ts: now(), kind: "watch", source: `watch:${w.name}`, watch: w.name, label: watchLabel(w.name), to: w.to, channels: w.channels, reason, text: output, ...(prev ? { prev } : {}) });

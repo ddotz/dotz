@@ -8,7 +8,7 @@ import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
 import { dropClaim, isSilent, parkedTone } from "./tone.ts";
-import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, PROVIDER_BACK_KO, scheduleLine, watchLine } from "./watchtext.ts";
+import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, PROVIDER_BACK_KO, scheduleLine, sentinelMatch, watchLine } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
 import type { Decision, DecisionOpt, Notice, NoticeKind, NoticeTone } from "./notices-types.ts";
 import { appBlocked, appOf, closedHooks, decisionHooks, orchestratorUp, stampApp, summarizeWatch, unreadHooks, watchLabelOf } from "./notices-wiring.ts";
@@ -209,7 +209,7 @@ function fromInbox(e: HubEvent): void {
 		const prev = typeof e.prev === "string" ? e.prev : undefined;
 		const ref = recovered || isIssue(reason) ? undefined : itemRefOf(output);
 		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", ...(name ? { watch: name } : {}), read: recovered, at: e.ts, ...(recovered ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}) });
-		if (summarizeWatch && !isIssue(reason) && !recovered && !describeOutput(output, { prev }).readable)
+		if (summarizeWatch && !isIssue(reason) && !recovered && !sentinelMatch(reason, output) && !describeOutput(output, { prev }).readable)
 			void summarizeWatch(output).then(summary => summary && retextWatch(item.id, clean(watchLine(head, reason, output, { prev, summary })).text));
 		return;
 	}

@@ -4,13 +4,13 @@
 function watchReasonKo(reason) {
   const r = String(reason || "").trim();
   if (r === "output changed" || r === "change") return "결과가 바뀌었어요";
-  if (r === "match" || r.startsWith("matched /")) return "찾던 내용이 나왔어요";
+  if (r === "match" || r.startsWith("matched /")) return "조건에 맞는 결과가 나왔어요";
   if (r === "fail") return "점검에 실패했어요";
   if (r === "recovered") return "다시 정상이에요";
   const fails = (r.match(/^failed (\d+) times in a row/) || [])[1];
   if (fails) return `${fails}번 연속 실패했어요`;
   if (r.startsWith("stopped after a password")) return "저장된 비밀번호가 없어 다시 로그인하지 못했어요. 맥 암호에 저장하고 다시 연결을 눌러 주세요";
-  if (r.startsWith("stopped after")) return "실패가 이어져 멈췄어요. 승인하면 다시 돌아요";
+  if (r.startsWith("stopped after")) return "실패가 이어져 멈췄어요. 승인하면 다시 확인해요";
   if (r.startsWith("needs the owner's approval for a second factor")) return "2차 인증이 필요해요. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요";
   if (r.startsWith("needs the owner")) return "승인이 필요해요";
   return r;
@@ -46,6 +46,9 @@ function rawFence(raw) {
   else if (lines.length > 5) body += "\n…";
   return `\`\`\`원문\n${body.replace(/```/g, "'''")}\n\`\`\``;
 }
+// One token a check prints for its own filter: a program's word, not a line to read. A match whose whole output is that token says nothing more.
+const WT_SENTINEL = /^(?:[a-z][a-z0-9]*(?:[-_][a-z0-9]+)+|[A-Z][A-Z0-9_-]{3,})$/;
+const wtSentinelMatch = (reason, out) => String(reason || "").trim().startsWith("match") && WT_SENTINEL.test(String(out).replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, "").trim());
 const wtIssue = reason => /^(?:fail\b|failed \d+|stopped after|needs the owner)/.test(String(reason || "").trim());
 const WT_ANSI = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, WT_ISO_ALL = new RegExp(WT_ISO.source, "g");
 const WT_LONG_ID = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|\d{9,})\b/gi;
@@ -58,7 +61,7 @@ const WT_FAIL = {
 const wtTidy = (l, now, tz) => l.replace(WT_ANSI, "").replace(WT_ISO_ALL, m => clockKo(m, now, tz)).replace(WT_LONG_ID, "").replace(/\s+/g, " ").trim();
 const wtLines = (s, now, tz) => s.replace(WT_ANSI, "").replace(/\r/g, "").split("\n").map(l => wtTidy(l, now, tz)).filter(Boolean);
 const wtPlain = l => {
-  if (l.length > 160 || /\S=\S/.test(l) || /\w_\w/.test(l)) return false;
+  if (l.length > 160 || /\S=\S/.test(l) || /\w_\w/.test(l) || WT_SENTINEL.test(l)) return false;
   const letters = (l.match(/[가-힣A-Za-z0-9]/g) || []).length;
   return /[가-힣A-Za-z]{2,}/.test(l) && letters >= l.length * 0.6;
 };
@@ -109,13 +112,13 @@ function describeOutput(output, opts = {}) {
     const said = [added.length ? "새로 생겼어요: " + wtItems(added) : "", removed.length ? "사라졌어요: " + wtItems(removed) : ""].filter(Boolean);
     return { text: said.join("\n") || "내용은 그대로이고 시각 같은 값만 바뀌었어요", readable: true };
   }
-  if (WT_HANGUL.test(out)) return { text: out, readable: true };
+  if (WT_HANGUL.test(out)) return { text: out.split("\n").filter(l => !WT_SENTINEL.test(l.trim())).join("\n"), readable: true };
   if (cur.length <= 3 && cur.every(wtPlain)) return { text: cur.join("\n"), readable: true };
   return { text: "", readable: false };
 }
 function watchLine(label, reason, output = "", opts = {}) {
   const out = String(output || "").trim(), first = humanLabel(label) + ": " + watchReasonKo(reason) + (opts.note ? " " + opts.note : "");
-  if (!out) return first;
+  if (!out || wtSentinelMatch(reason, out)) return first;
   const d = describeOutput(out, { prev: opts.prev, issue: wtIssue(reason), now: opts.now, tz: opts.tz });
   const text = d.readable ? d.text : opts.summary || "";
   if (text && text === out) return first + "\n" + out;

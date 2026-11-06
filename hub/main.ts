@@ -61,7 +61,7 @@ import { CARD_AUDIT_ID, type CardAudit, runMigrations } from "./migrations.ts";
 import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
 import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
 import { pendingBackups } from "./carryover.ts";
-import { clearChannel, nameWatches, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
+import { clearChannel, nameWatches, setupChannel, wakeOnly, watchLabel, watchWakeEvent } from "./workchannels.ts";
 import { watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
@@ -145,7 +145,8 @@ setWatchGate(name => {
 const watchByName = (name: string) => allWatches().find(w => w.name === name);
 setAppBlocker(n => blockedByOff(DATA_DIR, n) || newsMuted(DATA_DIR, n, name => watchByName(name)?.notify === false));
 setWatchPushOff(name => watchByName(name)?.push === false);
-setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rate-limited");
+const orchestratorAvailable = () => orch.status !== "stopped" && orch.status !== "rate-limited";
+setOrchestratorAvailable(orchestratorAvailable);
 setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : conv.startsWith("settings:") ? appEntries(DATA_DIR).find(e => e.key === conv.slice(9))?.label : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
@@ -585,11 +586,13 @@ const watchRoute = (w: Watch) => {
 startWatches((w, reason, output, prev) => {
 	if (w.to === "orchestrator") {
 		const event = watchWakeEvent(w, reason, output, prev);
-		emit("inbox", event);
-		if (!w.channels?.length) return deliver(inboxText(event));
+		const quiet = wakeOnly(w, reason, orchestratorAvailable());
+		if (!quiet) emit("inbox", event);
+		const wake = inboxText(quiet ? { ...event, wakeOnly: true } : event);
+		if (!w.channels?.length) return deliver(wake);
 		const [first, ...others] = w.channels;
-		for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway", news: true, ...watchRoute(w) }).catch(() => undefined);
-		return deliver(inboxText(event), { target: `ch:${first}` });
+		if (!quiet) for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway", news: true, ...watchRoute(w) }).catch(() => undefined);
+		return deliver(wake, { target: `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);

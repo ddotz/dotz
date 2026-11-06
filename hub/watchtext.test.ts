@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { clockKo, deriveLabel, describeOutput, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLine, watchLine, watchSummary } from "./watchtext.ts";
+import { clockKo, deriveLabel, describeOutput, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
 
 const KAKAO = "kakao chat=100000000000001 new=1 from=3900000000000000001 to=3900000000000000001 at=2026-10-22T12:26:36.000Z";
 const NOW = Date.parse("2026-10-22T13:00:00.000Z");
@@ -34,7 +34,7 @@ test("a machine line is told from plain text, and only generic fields are summar
 test("the kakao-style post is the label, a human line and a folded raw text; the machine line is not in the prose", () => {
 	const text = watchLine("kakao-new", "matched /./", KAKAO, { now: NOW, tz: TZ });
 	const [title, summary, ...fence] = text.split("\n");
-	expect(title).toBe("kakao new: 찾던 내용이 나왔어요");
+	expect(title).toBe("kakao new: 조건에 맞는 결과가 나왔어요");
 	expect(summary).toBe("새 소식 1건 · 오후 9:26");
 	expect(fence.join("\n")).toBe(`${rawFence(KAKAO)}`);
 	expect(text.replace(/```원문[\s\S]*?```/, "")).not.toMatch(/=|\d{9,}|T\d\d:\d\d/);
@@ -73,7 +73,7 @@ test("web/js/11-watchtext.js words the same posts as this module", () => {
 	const src = readFileSync(join(import.meta.dir, "../web/js/11-watchtext.js"), "utf8");
 	const web = new Function(`${src}; return { watchLine, scheduleLine, humanLabel };`)() as Record<string, (...a: any[]) => string>;
 	const opts = { now: NOW, tz: TZ };
-	const cases: [string, string, string, string?][] = [["kakao-new", "matched /./", KAKAO], ["재고", "output changed", "새 메일이 1통 왔어요"], ["api-health", "failed 3 times in a row (exit 7)", "curl: (7) boom"], ["x", "recovered", ""], ["재고", "output changed", "Item A\nItem C", "Item A\nItem B"], ["재고", "fail", "DOTZ_FAIL login\nx"], ["상태", "output changed", '{"version":"8.2.36","id":"q"}'], ["상태", "output changed", "+ Build 9.1.0\n- Build 9.0.9"]];
+	const cases: [string, string, string, string?][] = [["kakao-new", "matched /./", KAKAO], ["재고", "output changed", "새 메일이 1통 왔어요"], ["저장소 감시", "matched /gone/", "sample-repo-gone"], ["저장소 감시", "matched /gone/", "READY\n재고가 들어왔어요"], ["저장소 감시", "output changed", "sample-repo-gone", "sample-repo-here"], ["api-health", "failed 3 times in a row (exit 7)", "curl: (7) boom"], ["x", "recovered", ""], ["재고", "output changed", "Item A\nItem C", "Item A\nItem B"], ["재고", "fail", "DOTZ_FAIL login\nx"], ["상태", "output changed", '{"version":"8.2.36","id":"q"}'], ["상태", "output changed", "+ Build 9.1.0\n- Build 9.0.9"]];
 	for (const [l, r, o, prev] of cases) expect(web.watchLine!(l, r, o, { ...opts, prev })).toBe(watchLine(l, r, o, { ...opts, prev }));
 	for (const t of ["ch:7 morning brief: summarize", "주간 보고 정리"]) expect(web.scheduleLine!(t)).toBe(scheduleLine(t));
 	expect(web.humanLabel!("kakao-new")).toBe(humanLabel("kakao-new"));
@@ -122,4 +122,17 @@ test("output the rules cannot read stays raw until a cached model sentence is gi
 	expect(describeOutput(blob).readable).toBe(false);
 	expect(watchLine("샘플 감시", "output changed", blob)).toBe("샘플 감시: 결과가 바뀌었어요\n" + rawFence(blob));
 	expect(watchLine("샘플 감시", "output changed", blob, { summary: "새 항목이 하나 늘었어요" })).toBe("샘플 감시: 결과가 바뀌었어요\n새 항목이 하나 늘었어요\n" + rawFence(blob));
+});
+
+test("a sentinel a check prints never reaches the prose, and a match on it alone is just the sentence", () => {
+	expect(watchLine("저장소 감시", "matched /gone/", "sample-repo-gone")).toBe("저장소 감시: 조건에 맞는 결과가 나왔어요");
+	expect(watchLine("저장소 감시", "match", "READY")).toBe("저장소 감시: 조건에 맞는 결과가 나왔어요");
+	expect(watchLine("저장소 감시", "matched /gone/", "저장소가 사라졌어요")).toBe("저장소 감시: 조건에 맞는 결과가 나왔어요\n저장소가 사라졌어요");
+	expect(watchLine("저장소 감시", "matched /x/", "READY\n재고가 들어왔어요").split("\n").slice(0, 2)).toEqual(["저장소 감시: 조건에 맞는 결과가 나왔어요", "재고가 들어왔어요"]);
+	expect(watchLine("상태 감시", "output changed", "build-failed", { prev: "build-passing", summary: "빌드가 깨졌어요" })).toBe(`상태 감시: 결과가 바뀌었어요\n빌드가 깨졌어요\n${rawFence("build-failed")}`);
+	expect(describeOutput("build-failed", { prev: "build-passing" }).readable).toBe(false);
+	expect(sentinelMatch("output changed", "build-failed")).toBe(false);
+	for (const value of ["2026-11-06", "BTC", "OK"]) expect(sentinelMatch("match", value)).toBe(false);
+	expect(sentinelMatch("matched /gone/", "sample-repo-gone")).toBe(true);
+	expect(watchLine("점검", "failed 3 times in a row (exit 1)", "repo-gone")).toBe(`점검: 3번 연속 실패했어요\n${rawFence("repo-gone")}`);
 });

@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { now } from "./config.ts";
 import { emit } from "./events.ts";
-import { keepWatchNewest, listNotices, NOTICE_CAP, setOrchestratorAvailable, setWatchLabelResolver, WATCH_DAYS, WATCH_KEEP } from "./notices.ts";
+import { inboxText } from "./intake.ts";
+import { keepWatchNewest, listNotices, NOTICE_CAP, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, WATCH_DAYS, WATCH_KEEP } from "./notices.ts";
 import { rawFence, watchLine, watchReasonKo } from "./watchtext.ts";
 import { addWatch, allWatches, relabelWatches, removeWatch } from "./watch.ts";
-import { clearChannel, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
+import { clearChannel, setupChannel, wakeOnly, watchLabel, watchWakeEvent } from "./workchannels.ts";
 
 setWatchLabelResolver(watchLabel);
 const CH = "1500000000003290227";
@@ -28,8 +29,8 @@ afterAll(() => {
 
 test("reasons of the watch runner read as Korean and unknown ones pass through", () => {
 	expect(watchReasonKo("output changed")).toBe("결과가 바뀌었어요");
-	expect(watchReasonKo("matched /재고/")).toBe("찾던 내용이 나왔어요");
-	expect(watchReasonKo("match")).toBe("찾던 내용이 나왔어요");
+	expect(watchReasonKo("matched /재고/")).toBe("조건에 맞는 결과가 나왔어요");
+	expect(watchReasonKo("match")).toBe("조건에 맞는 결과가 나왔어요");
 	expect(watchReasonKo("fail")).toBe("점검에 실패했어요");
 	expect(watchReasonKo("recovered")).toBe("다시 정상이에요");
 	expect(watchReasonKo("failed 3 times in a row (exit 1)")).toBe("3번 연속 실패했어요");
@@ -74,7 +75,7 @@ test("events routed to alert or chat, or an orchestrator event without a channel
 	emit("inbox", watchWakeEvent({ ...base, name: "plain-chat", to: "chat" }, "match", "b=2"));
 	emit("inbox", watchWakeEvent({ ...base, name: "no-channel", channels: undefined }, "fail", "c=3"));
 	expect(noticesFor("plain alert")[0]!.text).toBe(`plain alert: 결과가 바뀌었어요\n${rawFence("a=1")}`);
-	expect(noticesFor("plain chat")[0]!.text).toBe(`plain chat: 찾던 내용이 나왔어요\n${rawFence("b=2")}`);
+	expect(noticesFor("plain chat")[0]!.text).toBe(`plain chat: 조건에 맞는 결과가 나왔어요\n${rawFence("b=2")}`);
 	expect(noticesFor("no channel")[0]!.text).toBe(`no channel: 점검에 실패했어요\n${rawFence("c=3")}`);
 });
 
@@ -140,4 +141,39 @@ test("a report older than the age limit is dropped, a fresh one stays, an open d
 test("a report written through the hub is kept at the newest 50 per watch", () => {
 	for (let i = 0; i < WATCH_KEEP + 5; i++) report("정리 시험 라", ago((WATCH_KEEP + 5 - i) * 1000), "Item " + i);
 	expect(listNotices(300).items.filter(n => n.kind === "watch" && n.title === "정리 시험 라").length).toBeLessThanOrEqual(WATCH_KEEP);
+});
+
+test("a one-shot watch for the orchestrator only wakes it: the owner hears from it, or directly when it fails or nobody is up", () => {
+	const base = allWatches().find(x => x.channels?.includes(CH))!;
+	const once = { ...base, to: "orchestrator", once: true };
+	expect(wakeOnly(once, "matched /gone/", true)).toBe(true);
+	expect(wakeOnly(once, "output changed", true)).toBe(true);
+	expect(wakeOnly(once, "failed 3 times in a row (exit 1)", true)).toBe(false);
+	expect(wakeOnly(once, "matched /gone/", false)).toBe(false);
+	expect(wakeOnly({ ...once, once: undefined }, "matched /gone/", true)).toBe(false);
+	expect(wakeOnly({ ...once, to: "alert" }, "matched /gone/", true)).toBe(false);
+});
+
+test("the wake of a one-shot watch tells the orchestrator to report, in its channel or with dotz_send alert", () => {
+	const base = allWatches().find(x => x.channels?.includes(CH))!;
+	const once = { ...watchWakeEvent({ ...base, to: "orchestrator", once: true, channels: undefined }, "matched /gone/", "sample-repo-gone"), wakeOnly: true };
+	expect(inboxText(once)).toContain("dotz_send alert");
+	expect(inboxText(once)).not.toContain("worklog");
+	const inChannel = inboxText({ ...once, channels: [CH] });
+	expect(inChannel).toContain(`ch:${CH}`);
+	expect(inChannel).not.toContain("dotz_send alert");
+});
+
+test("a match on a sentinel alone asks no model for a summary, a changed token still does", async () => {
+	const base = allWatches().find(x => x.channels?.includes(CH))!;
+	const asked: string[] = [];
+	setWatchSummarizer(async output => void asked.push(output));
+	try {
+		emit("inbox", watchWakeEvent({ ...base, name: "token-match", to: "alert" }, "matched /gone/", "sample-repo-gone"));
+		expect(asked).toEqual([]);
+		emit("inbox", watchWakeEvent({ ...base, name: "token-change", to: "alert" }, "output changed", "build-failed"));
+		expect(asked).toEqual(["build-failed"]);
+	} finally {
+		setWatchSummarizer(undefined);
+	}
 });

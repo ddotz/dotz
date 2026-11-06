@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	boundaryEdges, cycles, deadExports, deadWebGlobals, duplicateGlobals, helperCopies, hubWebImports, importGraph, loadTree, longFunctions, metrics,
@@ -205,15 +205,34 @@ describe("detectors can fail", () => {
 
 // The repo is public. The owner's personal terms live one per line in an untracked file, so this list stays private; without the file (CI) nothing is checked.
 // A failure names the file and the term's line number, never the term.
+// The markdown files of the tree: the tracked ones in a checkout, every one in an export with no git (the pre-push hook's `git archive` tree).
+function treeDocs(root: string): Src[] {
+	const paths = existsSync(join(root, ".git"))
+		? execFileSync("git", ["ls-files", "*.md"], { cwd: root, encoding: "utf8", timeout: 10_000 }).split("\n").filter(Boolean)
+		: readdirSync(root, { recursive: true, encoding: "utf8" }).filter(p => p.endsWith(".md") && !p.split("/").includes("node_modules"));
+	return paths.map(path => ({ path, text: readFileSync(join(root, path), "utf8") }));
+}
+
 test("no term from the owner's local privacy list is in the tree", () => {
 	const list = process.env.PRIVACY_TERMS_FILE ?? join(homedir(), ".dotz", "secrets", "privacy-terms.txt");
 	if (!existsSync(list)) return;
 	const terms = readFileSync(list, "utf8").toLowerCase().split("\n").map((t, i) => ({ line: i + 1, term: t.trim() })).filter(t => t.term);
 	const root = join(import.meta.dir, "..");
-	const docs = execFileSync("git", ["ls-files", "*.md"], { cwd: root, encoding: "utf8", timeout: 10_000 }).split("\n").filter(Boolean).map(path => ({ path, text: readFileSync(join(root, path), "utf8") }));
-	const found = [...loadTree(root), ...docs].flatMap(src => {
+	const found = [...loadTree(root), ...treeDocs(root)].flatMap(src => {
 		const text = src.text.toLowerCase();
 		return terms.filter(t => text.includes(t.term)).map(t => `${src.path}: term ${t.line}`);
 	});
 	expect(found).toEqual([]);
+});
+
+test("the doc listing works in a tree without git, like the pre-push hook's archive", () => {
+	const root = mkdtempSync(join(tmpdir(), "tree-docs-"));
+	try {
+		mkdirSync(join(root, "sub"));
+		mkdirSync(join(root, "node_modules/x"), { recursive: true });
+		for (const f of ["a.md", "sub/b.md", "sub/c.txt", "node_modules/x/d.md"]) writeFileSync(join(root, f), f);
+		expect(treeDocs(root).map(d => d.path).sort()).toEqual(["a.md", "sub/b.md"]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });

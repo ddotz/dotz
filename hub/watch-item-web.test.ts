@@ -7,11 +7,11 @@ const at = (minutesAgo: number) => new Date(Date.parse(now()) - minutesAgo * 60_
 const report = (id: string, minutesAgo: number, title: string, text: string, item?: unknown) => ({ id, ts: at(minutesAgo), updated: at(minutesAgo), at: at(minutesAgo), kind: "watch", tone: "", title, open: "alert", src: "alert", read: true, text, ...(item ? { item } : {}) });
 const RAW = "```원문\nMAIL 1001 html=True atts=1\nDOTZ_ITEM mail:sample/1001\n```";
 const NOTICES = [
-	report("m", 5, "샘플 메일 점검", `샘플 메일 점검: 찾던 내용이 나왔어요\n${RAW}`, {
+	report("m", 5, "샘플 메일 점검", `샘플 메일 점검: 조건에 맞는 결과가 나왔어요\n${RAW}`, {
 		app: "mail", id: "sample/1001", key: "sample-1001",
 		card: { subject: "분기 보고서 검토 요청", from: "김샘플 <sample@example.com>", source: "sample", at: at(7), summary: "첫째 줄 요약\n둘째 줄 요약", attachments: [{ name: "report.pdf", type: "application/pdf", size: 2048 }], html: true },
 	}),
-	report("f", 20, "샘플 상대 점검", "샘플 상대 점검: 찾던 내용이 나왔어요\n```원문\nDOTZ_ITEM mail:peer/9\n```", { app: "mail", id: "peer/9", card: { subject: "상대 게이트웨이 메일", from: "상대" } }),
+	report("f", 20, "샘플 상대 점검", "샘플 상대 점검: 조건에 맞는 결과가 나왔어요\n```원문\nDOTZ_ITEM mail:peer/9\n```", { app: "mail", id: "peer/9", card: { subject: "상대 게이트웨이 메일", from: "상대" } }),
 	report("u", 40, "샘플 빈 점검", "샘플 빈 점검: 결과가 바뀌었어요\n새로 생겼어요: 샘플", { app: "mail", id: "peer/10" }),
 ];
 
