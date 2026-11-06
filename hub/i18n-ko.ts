@@ -234,6 +234,7 @@ export const ko: Catalog = {
 	laneShellJob: "백그라운드 명령",
 	laneIdleHeld: (jobs, minutes) => `[lane stuck] 쉬는 레인이 ${jobs.join(", ")} 때문에 계속 떠 있어요. ${minutes}분 넘게 소식이 없고 메모리를 1GB쯤 쓰고 있어요. 아직 필요하면 그대로 두고, 필요 없으면 이 레인을 멈춰 주세요.`,
 	laneRestartStuck: n => `[lane stuck] 작업이 끊겨서 ${n}번 다시 이어가게 했는데 계획이 그대로라 멈춰 뒀어요. 이어 가려면 이 세션에 메시지를 보내고, 그만두려면 세션을 멈춰 주세요.`,
+	sessionRestartStuck: n => `작업이 끊겨서 ${n}번 다시 이어가게 했는데 끝나지 않아 멈춰 뒀어요. 이어 가려면 여기에 메시지를 보내 주세요.`,
 	laneResumeContinue: (open, current) => `[dotz gateway] 일이 남은 채로 프로세스가 멈춰서 같은 대화로 다시 띄웠어요. 남은 결과(파일, 로그)를 확인하고, 없는 건 다시 돌려서 ${open ? `남은 할 일 ${open}개를 ${current ? `(지금 할 일: ${current}) ` : ""}` : ""}이어가세요. 더 할 일이 없으면 [done]으로, 오너를 기다리는 일이면 [ask]나 [wait]로 말하세요.`,
 	laneWorkersCut: workers => `이 워커들은 함께 멈췄고 결과도 오지 않으니 다시 돌리세요: ${workers.join(", ")}.`,
 	checkPassed: (n, landed) => `확인 통과: 확인 항목 ${n}개가 모두 통과했어요${landed ? ", 작업 브랜치도 main에 반영됐어요" : ""}`,

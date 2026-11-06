@@ -17,7 +17,12 @@ export const RESUME_SWEEP_MS = 60_000;
 // With no reset time from the usage report, the budget is asked again after this long (one usage call and one hub.log line per ask).
 const BUDGET_HOLD_MS = 5 * 60_000;
 
-export type ResumeDeps = { budget?: (name: string) => Promise<{ text: string; resetAt?: number } | undefined>; restarting?: () => boolean };
+export type ResumeDeps = {
+	budget?: (name: string) => Promise<{ text: string; resetAt?: number } | undefined>;
+	restarting?: () => boolean;
+	/** The pass over the orchestrator and conversation sessions (hub/sessionresume.ts), on this sweep's clock and budget hold. */
+	sessions?: (gate: (name: string) => Promise<boolean>) => Promise<string[]>;
+};
 
 let budgetHold = 0;
 let stopped = false;
@@ -34,9 +39,9 @@ function candidate(lane: Lane): boolean {
 	return existsSync(lane.sessionFile) && !runtimeMismatch(lane);
 }
 
-async function budgetBlocks(lane: Lane, deps: ResumeDeps, now: number): Promise<boolean> {
+async function budgetBlocks(name: string, deps: ResumeDeps, now: number): Promise<boolean> {
 	if (now < budgetHold) return true;
-	const blocked = await deps.budget?.(lane.name);
+	const blocked = await deps.budget?.(name);
 	if (!blocked) return false;
 	budgetHold = blocked.resetAt && blocked.resetAt > now ? blocked.resetAt : now + BUDGET_HOLD_MS;
 	log(`lane resume held until ${new Date(budgetHold).toISOString()}: ${blocked.text}`);
@@ -83,7 +88,7 @@ export async function resumeUnfinished(deps: ResumeDeps = {}, now = Date.now()):
 			lane.resumeDue = { state: "capacity", detail: full };
 			continue;
 		}
-		if (await budgetBlocks(lane, deps, now)) continue;
+		if (await budgetBlocks(lane.name, deps, now)) continue;
 		// The budget answer took a moment: a message may have reached the lane meanwhile.
 		if (stopped || deps.restarting?.() || !candidate(lane)) continue;
 		try {
@@ -95,8 +100,14 @@ export async function resumeUnfinished(deps: ResumeDeps = {}, now = Date.now()):
 	return woken;
 }
 
+const goingDown = (deps: ResumeDeps): boolean => stopped || Boolean(deps.restarting?.());
+async function pass(deps: ResumeDeps): Promise<void> {
+	await resumeUnfinished(deps);
+	if (!goingDown(deps)) await deps.sessions?.(async name => (await budgetBlocks(name, deps, Date.now())) || goingDown(deps));
+}
+
 export function startLaneResumeSweep(deps: ResumeDeps): void {
-	const tick = () => void resumeUnfinished(deps).catch(e => log(`lane resume sweep failed: ${e}`));
+	const tick = () => void pass(deps).catch(e => log(`lane resume sweep failed: ${e}`));
 	tick();
 	const timer = setInterval(tick, RESUME_SWEEP_MS);
 	timer.unref();

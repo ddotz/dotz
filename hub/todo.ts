@@ -68,7 +68,7 @@ const TAIL = 1024 * 1024;
 // What ends with the process and comes back to nobody: background shells and detached eval cells. OmO restores a monitor by itself
 // (terminal/durable-command.js) and leaves delivery:* receipts listed for hours, so neither is work a restart cuts off.
 const DIES_WITH_PROCESS = new Set(["terminal-background-sessions", "senpi-codemode"]);
-type Lifecycle = { desc?: string; dying: number; cut: boolean };
+type Lifecycle = { desc?: string; dying: number; cut: boolean; turnCut: boolean; interrupted: boolean; asked: boolean };
 const waitCache = new Map<string, { stamp: string; life: Lifecycle }>();
 function lifecycle(file: string | undefined): Lifecycle | undefined {
 	if (!file || !existsSync(file)) return undefined;
@@ -88,7 +88,7 @@ function lifecycle(file: string | undefined): Lifecycle | undefined {
 	} finally {
 		closeSync(fd);
 	}
-	const life: Lifecycle = { dying: 0, cut: false };
+	const life: Lifecycle = { dying: 0, cut: false, turnCut: false, interrupted: false, asked: false };
 	const lines = text.split("\n");
 	for (let i = lines.length - 1; i >= 0; i--) {
 		if (!lines[i]!.includes('"session-lifecycle"')) continue;
@@ -107,7 +107,13 @@ function lifecycle(file: string | undefined): Lifecycle | undefined {
 		// stalled / interrupted_run on the owner's side: OmO's own word that a run ended unanswered (reply-voice 2026-11-05 23:25 KST: the last
 		// record after the kill read waiting_human, 0 children, a stalled item, cause no_wake).
 		const human: any[] = Array.isArray(d.waitingOn?.human) ? d.waitingOn.human : [];
-		life.cut = life.dying > 0 || kids > 0 || d.lastStop?.cause === "no_wake" || human.some(h => h?.kind === "stalled" || h?.kind === "interrupted_run");
+		life.interrupted = human.some(h => h?.kind === "interrupted_run");
+		life.asked = human.some(h => h?.kind === "question");
+		// The last word of a killed turn is "running": nothing closed it. The owner's 중단 leaves the same state with cause "aborted".
+		const killed = d.state === "running" && d.lastStop?.cause !== "aborted";
+		life.turnCut = life.dying > 0 || kids > 0 || life.interrupted || killed;
+		// no_wake and stalled also mean a clean turn that ended with todos open: a plan left over for a lane, no interruption for a session.
+		life.cut = life.turnCut || d.lastStop?.cause === "no_wake" || human.some(h => h?.kind === "stalled");
 		if (String(d.state ?? "").startsWith("waiting")) {
 			const items = (src: string) => bg.filter(b => b?.source === src && b.activeCount > 0).flatMap(b => (Array.isArray(b.items) ? b.items : []));
 			const mon = items("terminal-monitors").map(x => str(x?.description)).find(Boolean);
@@ -124,3 +130,32 @@ export const openMonitor = (file: string | undefined): string | undefined => lif
 export const backgroundWork = (file: string | undefined): number => lifecycle(file)?.dying ?? 0;
 /** Read after the process ended: it stopped with work it was waiting on cut off. */
 export const workCutOff = (file: string | undefined): boolean => lifecycle(file)?.cut ?? false;
+/** workCutOff without the clean turn that merely left todos open. */
+export const turnCutOff = (file: string | undefined): boolean => lifecycle(file)?.turnCut ?? false;
+/** OmO's own word that a run was interrupted: true with a live process too, where waiting on children or shells is only waiting. */
+export const runCutOff = (file: string | undefined): boolean => lifecycle(file)?.interrupted ?? false;
+/** OmO holds an open question to the owner (its `question` wait, from the ask tool). */
+export const ownerAsked = (file: string | undefined): boolean => lifecycle(file)?.asked ?? false;
+/** The text of the session's last assistant message; "" when that message was only tool calls. Reads the tail: a once-a-minute sweep with work in sight, never /api/state. */
+export function lastAnswerText(file: string): string {
+	const size = statSync(file).size, start = Math.max(0, size - TAIL), buf = Buffer.alloc(size - start), fd = openSync(file, "r");
+	try {
+		readSync(fd, buf, 0, buf.length, start);
+	} finally {
+		closeSync(fd);
+	}
+	const lines = buf.toString("utf8").split("\n");
+	for (let i = lines.length - 1; i >= 0; i--) {
+		if (!lines[i]!.includes('"assistant"')) continue;
+		let e: any;
+		try {
+			e = JSON.parse(lines[i]!);
+		} catch {
+			continue;
+		}
+		if (e?.type !== "message" || e.message?.role !== "assistant") continue;
+		const parts: any[] = Array.isArray(e.message.content) ? e.message.content : [];
+		return parts.some(p => p?.type === "toolCall") ? "" : parts.filter(p => p?.type === "text").map(p => str(p.text)).join("\n");
+	}
+	return "";
+}
