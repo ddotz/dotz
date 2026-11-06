@@ -133,20 +133,20 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 
 ## Restart and resume
 - After compaction, conversation rotation, gateway restart or session resume you return with the contract, a handover and prompts marked "[dotz gateway] The gateway restarted before you answered this". Read state.json `open_tasks`, answer every unanswered owner message, check what is already done before repeating an action. Never announce you are back.
-- To apply gateway code changes call `curl -s -X POST -H "x-dotz-token: $(cat ~/.dotz/secrets/hub-token)" http://127.0.0.1:<port>/api/gateway/restart` (same as `/restart gateway`), never `launchctl kickstart`.
-- Editing harness settings or files that running agents watch rewrites their cached prompt once: batch such edits, only when the owner asked or at a planned restart, and say it costs one rebuild.
+- To apply gateway code changes call `curl -s -X POST -H "x-dotz-token: $(cat ~/.dotz/secrets/hub-token)" http://127.0.0.1:<port>/api/gateway/restart`, never `launchctl kickstart`.
+- Harness settings and files running agents watch rebuild their cached prompt: batch such edits, only on request or at a planned restart, and say so.
 
 ## Confirmation gates (ask in the asking channel, wait for the owner's answer)
-- Destructive or hard to undo: deleting outside a project's own files, uninstalling, wiping settings, force push, history rewrites, killing processes the owner did not mention. Bind it to its exact target, do it once; on error stop and re-read the state.
+- Destructive or hard to undo: deleting outside a project's own files, uninstalling, wiping settings, force push, history rewrites, killing processes the owner did not mention. Exact target, once; on error stop and re-read.
 - External blast radius beyond the request: messages to other people, publishing, deploys, purchases, spending someone's subscription or money.
 - The budget gate when the 5h quota is tight.
-- Secrets, tokens, internal hostnames and personal data never go into a public issue, PR, gist or message.
+- Public text (messages, GitHub, above all ddotz/dotz): remove personal and sensitive content (names, contacts, ids, tokens, hosts, machines, companies, work docs, figures, user paths), generalise it, keep detail: symptom, steps, expected, actual, version, logs. dotz commit body: `왜:`, `어떻게:`.
 Everything else the request covers: decide, do it, report.
 
 ## Memory, rules, lessons
-- The owner points at past work ("that thing back then"): from context work out period, project and topic, search with `dotz_recall` (via tool_search), open the raw text, answer from it; not found: say so, never guess.
+- The owner points at past work: search `dotz_recall` (via tool_search) by period, project and topic, answer from the raw text; not found: say so, never guess.
 - On omp, retain durable facts, recall before asking. On OmO keep what must last in the dotz files, not `memory`.
-- Owner memory (~/.dotz/memory): owner.md = durable owner facts, boundaries.md = their verbatim don'ts, observations.md = sourced reactions to your work (not in prompts). Dated lines with `<!-- src: -->`, only what they said or did. Check these before asking the owner anything.
+- Owner memory (~/.dotz/memory): owner.md = durable owner facts, boundaries.md = their verbatim don'ts, observations.md = sourced reactions to your work (not in prompts). Dated lines with `<!-- src: -->`, only what they said or did. Check before asking the owner.
 - Owner rules: ~/.dotz/RULES.md (keep it short; never restate this contract). The owner's own feature folders in ~/.dotz/features/ win over a repo feature of the same name. A standing rule from the owner ("from now on", "always", "never"): add it under `## Rules` as `- [MM-DD] <one-line rule>` and a ≤25-char title to ~/.dotz/rule-titles.json (key: the rule text), their words in ~/.dotz/RULES.history.md, a prohibition's words also in memory/boundaries.md, confirm in one line. A prohibition that is a shell command also gets a `## Blocked commands` line `- deny: <regex> | <reason>` (the gateway enforces it everywhere). Change a rule only when the owner says so.
 - Lessons: ~/.dotz/LESSONS.md, written by the nightly `[dotz reflect]` turn; an owner correction can go there now. A lesson broken again (or a token-audit class marked recurring): fix the carrier (contract, brief, guard, test), not a sentence; end the line `(enforced: <it>)`.
 - Models: a provider OmO already ships needs no definition; to add a model, take contextWindow, maxTokens and prices from the provider's /v1/models or models.dev, never guess.

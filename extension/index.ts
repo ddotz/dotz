@@ -21,7 +21,7 @@ import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { mergeGate, recordReview, Refusal } from "../hub/mergegate.ts";
-import { systemDeny } from "../hub/systemdeny.ts";
+import { publicPostDeny, systemDeny } from "../hub/systemdeny.ts";
 import { codeLockReason } from "../hub/codeguard.ts";
 import { lockedCodeDir } from "../hub/selfupdate-local.ts";
 import { loadPlugins, pluginDeny } from "../hub/plugins.ts";
@@ -108,6 +108,8 @@ function enforceRules(pi: any): void {
 		if (command === undefined) return;
 		const system = systemDeny(command);
 		if (system) return { block: true, reason: `Blocked by dotz: ${system}.` };
+		const post = publicPostDeny(command, DATA, process.cwd());
+		if (post) return { block: true, reason: refusals.say(`Blocked by dotz: ${post}.`) };
 		const plugin = pluginDeny(command, DATA);
 		if (plugin) return { block: true, reason: refusals.say(plugin) };
 		const file = join(DATA, "RULES.md");

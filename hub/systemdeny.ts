@@ -7,4 +7,6 @@ export const SYSTEM_DENY: [RegExp, string][] = [
 	[/\blaunchctl\s+(kickstart|stop|kill|bootout|unload|remove)\b[^;&|\n]*dev\.dotz\.gateway/i, "restarting the gateway cuts every session short; use /restart gateway (POST /api/gateway/restart)"],
 ];
 
+export { publicPostDeny } from "./public-scrub.ts";
+
 export const systemDeny = (command: string): string | undefined => SYSTEM_DENY.find(([re]) => re.test(command))?.[1];

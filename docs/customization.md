@@ -231,8 +231,8 @@ the wake is made (`<data dir>/self-update/carryover-handled.json`), so it is not
 
 1. reads the diff;
 2. ports each change to the custom layer where it fits: texts to `texts.json`, features to `~/.dotz/features`, rules to `RULES.md`;
-3. for a change that only makes sense in core, writes a short Korean report for the dotz maintainer in the worklog (no secrets or personal data)
-   and offers to open a GitHub issue on `ddotz/dotz`;
+3. for a change that only makes sense in core, writes a Korean report for the dotz maintainer in the worklog, de-identified and generalised
+   but still detailed (`CONTRIBUTING.md`), and offers to open a GitHub issue on `ddotz/dotz`;
 4. tells the owner in one message what was carried over and what was not.
 
 ## Rule for the bot

@@ -14,16 +14,18 @@ import { join } from "node:path";
 import { blockedByFeatures } from "../featuredirs.ts";
 import { codeLockReason } from "../codeguard.ts";
 import { lockedCodeDir } from "../selfupdate-local.ts";
-import { systemDeny } from "../systemdeny.ts";
+import { publicPostDeny, systemDeny } from "../systemdeny.ts";
 import { loadPlugins, pluginDeny } from "../plugins.ts";
 
 export const BLOCK_EXIT_CODE = 2;
 // Claude Code is told to wait 10 s (claude.ts writeSettings); the hook gives up and blocks before that.
 export const HOOK_DEADLINE_MS = 8000;
 
-export function denyReason(command: string, dataDir: string): string | undefined {
+export function denyReason(command: string, dataDir: string, cwd = process.cwd()): string | undefined {
 	const system = systemDeny(command);
 	if (system) return `Blocked by dotz: ${system}.`;
+	const post = publicPostDeny(command, dataDir, cwd);
+	if (post) return `Blocked by dotz: ${post}.`;
 	const plugin = pluginDeny(command, dataDir);
 	if (plugin) return plugin;
 	const rules = join(dataDir, "RULES.md");
@@ -56,7 +58,7 @@ if (import.meta.main) {
 		reason = locked && input.tool_name ? codeLockReason(input.tool_name, input.tool_input, input.cwd ?? process.cwd(), locked) : undefined;
 		if (command && !reason) {
 			await loadPlugins(dataDir);
-			reason = denyReason(command, dataDir);
+			reason = denyReason(command, dataDir, input.cwd);
 		}
 	} catch (e) {
 		reason = `dotz could not check this command (${e instanceof Error ? e.message : e}), so it is blocked. Report it if the task needs it.`;
