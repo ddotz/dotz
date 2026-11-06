@@ -59,6 +59,7 @@ export type PromptDeps = {
 	note: (target: string, replyTo: string | undefined, text: string) => string;
 	/** Is this prompt text a gateway note steered into a turn (not a new request)? */
 	isNote: (text: string) => boolean;
+	regenerated?: (text: string) => boolean; // a gateway nudge the silent-wait check (hub/waitcheck.ts) sends again while due: never replayed
 	/** Posts a turn's final answer to the channel that asked. */
 	post: (target: string, text: string, replyTo?: string) => Promise<{ delivered: boolean }>;
 	/** A gateway note in a conversation that answers nothing (the deferral acknowledgement must not settle the open prompt). */
@@ -770,7 +771,7 @@ export function createPrompts(deps: PromptDeps) {
 	function replay(unanswered: Pending[], wrap: (text: string) => string): number {
 		// A stored prompt without a message id (web messages had none) counts as answered when an answer to its target came after it.
 		const fresh = unanswered.filter(p => {
-			if (!p.text || Date.now() - (p.at ?? 0) >= REPLAY_MAX_AGE_MS) return false;
+			if (!p.text || Date.now() - (p.at ?? 0) >= REPLAY_MAX_AGE_MS || deps.regenerated?.(p.text)) return false;
 			const done = isAnswered(p.replyTo) || Boolean(!p.replyTo && p.target && p.at && deps.answeredSince?.(p.target, p.at));
 			if (done) deps.log(`not replaying ${p.target ?? "-"} ${p.replyTo ?? "(no id)"} after the restart: already answered`);
 			return !done;
@@ -782,10 +783,7 @@ export function createPrompts(deps: PromptDeps) {
 		const kept = fresh.filter(waits);
 		const again = fresh.filter(p => !waits(p));
 		for (const p of kept) deferred.push({ key: p.text.slice(0, 300), text: p.text, at: p.at ?? Date.now(), target: p.target, replyTo: p.replyTo, sent: [], deferred: true });
-		if (kept.length) {
-			deps.log(`${kept.length} request(s) keep waiting on their workers after the restart`);
-			save();
-		}
+		if (kept.length) { deps.log(`${kept.length} request(s) keep waiting on their workers after the restart`); save(); }
 		if (again.length) deps.log(`replaying ${again.length} unanswered prompt(s) from before the restart`);
 		for (const p of again) deliver(wrap(p.text), p.target ? { target: p.target, replyTo: p.replyTo } : undefined);
 		return again.length;

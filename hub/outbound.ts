@@ -90,6 +90,8 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		working: () => o.orch.status === "working",
 		note: (target, replyTo, text) => msg().newMessage(target, replyTo, text),
 		isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
+		// A replayed nudge comes back wrapped in the replay lead, so every line is checked.
+		regenerated: text => text.split("\n").some(line => isNote(line, "openLead")),
 		post: (target, text, replyTo) => out(target, text, replyTo, { auto: true, session: key }),
 		// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
 		announce: (target, text, worker) => void systemNote(target, text, "deferred", worker).catch(e => log(`deferral note to ${target} failed: ${e}`)),
