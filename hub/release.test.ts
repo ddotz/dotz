@@ -349,7 +349,7 @@ describe("release slots", () => {
 		} finally {
 			delete process.env.GIT_COMMITTER_DATE;
 		}
-	});
+	}, 20_000); // Real git repos and pushes: 2 s alone, over the default 5 s in a full run under load.
 
 	describe("dispatch", () => {
 		const stateDir = () => {
