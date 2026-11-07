@@ -23,6 +23,8 @@ export type HubOptions = {
 	fallback?: unknown;
 	// Page timers of 1 s or more (the page's 2 s / 4 s / 15 s / 60 s polls) become virtual: they only run when a test calls advanceTimers(view, ms).
 	slowTimers?: boolean;
+	// A script that runs before the page's own, after the slow timers; needs slowTimers.
+	headScript?: string;
 };
 
 const enc = new TextEncoder();
@@ -35,9 +37,9 @@ const SLOW_TIMERS = `(() => { const q = []; let now = 0, seq = 1e9; const rs = s
 	clearTimeout = clear(rc); clearInterval = clear(rci);
 	window.__advance = ms => { const end = now + ms; for (;;) { const due = q.filter(t => t.at <= end).sort((x, y) => x.at - y.at)[0]; if (!due) break; now = due.at; if (due.every) due.at += due.every; else q.splice(q.indexOf(due), 1); due.f(); } now = end; };
 })();`;
-async function slowIndex(req: Request): Promise<Response> {
+async function slowIndex(req: Request, head = ""): Promise<Response> {
 	const plain = await indexPage(new Request(req.url));
-	const html = (await plain.text()).replace(/<head[^>]*>/i, m => `${m}<script>${SLOW_TIMERS}</script>`);
+	const html = (await plain.text()).replace(/<head[^>]*>/i, m => `${m}<script>${SLOW_TIMERS}${head}</script>`);
 	return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
@@ -83,7 +85,7 @@ export function fakeHub(opts: HubOptions = {}) {
 		idleTimeout: 0,
 		async fetch(req) {
 			const url = new URL(req.url), p = url.pathname;
-			if (p === "/") return opts.slowTimers ? slowIndex(req) : indexPage(req);
+			if (p === "/") return opts.slowTimers ? slowIndex(req, opts.headScript) : indexPage(req);
 			const asset = appAsset(req, p);
 			if (asset) return asset;
 			const own = await opts.api?.(req, url);

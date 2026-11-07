@@ -46,8 +46,8 @@ const reader = (sseResponse().body as ReadableStream<Uint8Array>).getReader();
 		}
 	}
 })();
-// The suite's clock is manual (hub/runtime/test-clock.ts): real time passes for the sockets, the debounce and reconnect timers are advanced by hand.
-const tick = async () => { await Bun.sleep(5); await advance(25); };
+// The suite's clock is manual (hub/runtime/test-clock.ts): each advance yields to the event loop, so the sockets run, and moves the debounce and reconnect timers by hand.
+const tick = () => advance(25);
 const until = async (pred: () => boolean) => {
 	const deadline = performance.now() + 8000;
 	while (!pred()) {
@@ -55,11 +55,22 @@ const until = async (pred: () => boolean) => {
 		await tick();
 	}
 };
-const settle = async () => { for (let i = 0; i < 12; i++) await tick(); };
 const ofKind = (k: string) => heard.filter(f => f.kind === k);
+// A's stream is ordered: once this notice's frame and its counts are heard here, everything sent before it has been handled.
+const handled = async (id: string) => {
+	const counts = ofKind("peer_counts").length;
+	sendA({ kind: "notice", item: { id, kind: "worklog", tone: "run", title: "표시", read: false }, unread: 0 });
+	await until(() => ofKind("peer_notice_done").some(f => f.ids[0] === id) && ofKind("peer_counts").length > counts);
+};
+// Counts every arming of the debounce: a frame that reads A again is seen here even when a later frame's debounce replaces it.
+const DEBOUNCE_MS = 17;
+const clockSetTimeout = globalThis.setTimeout;
+let armed = 0;
+globalThis.setTimeout = ((fn: () => void, ms?: number) => { if (ms === DEBOUNCE_MS) armed++; return clockSetTimeout(fn, ms); }) as typeof setTimeout;
 
-const stop = startPeerStreams({ computers: async () => [A, { name: "나", url: "http://127.0.0.1:1", self: true }], countsDebounceMs: 10, scanMs: 60_000, backoffMs: [20] });
-afterAll(() => { stop(); reader.cancel().catch(() => {}); hubA.stop(true); });
+// The idle timeout is off: the manual clock runs far ahead of the real sockets here.
+const stop = startPeerStreams({ computers: async () => [A, { name: "나", url: "http://127.0.0.1:1", self: true }], countsDebounceMs: DEBOUNCE_MS, scanMs: 60_000, backoffMs: [20], idleMs: 2 ** 50 });
+afterAll(() => { stop(); globalThis.setTimeout = clockSetTimeout; reader.cancel().catch(() => {}); hubA.stop(true); });
 
 test("which notices toast, and a question with its [ask] twin is one matter", () => {
 	expect(toastWorthy(open("1"))).toBe(true);
@@ -103,7 +114,7 @@ test("a new notice on A reaches B's stream once, named for A, then A's counts fo
 	// a progress line and an already-read notice never toast
 	sendA({ kind: "notice", item: { id: "w1", kind: "worklog", tone: "run", title: "시작", read: false }, unread: 1 });
 	sendA({ kind: "notice", item: open("d2", { read: true }), unread: 0 });
-	await settle();
+	await handled("m1");
 	expect(ofKind("peer_notice")).toHaveLength(1);
 });
 
@@ -114,15 +125,15 @@ test("a state change on A (a mail answered, a draft sent, a room read) makes B r
 		sendA({ kind, target: "mail:k1" });
 		await until(() => ofKind("peer_counts").length > before);
 	}
-	const before = ofKind("peer_counts").length;
+	const before = armed;
 	sendA({ kind: "activity", source: "orchestrator", type: "tool" });
-	await settle();
-	expect(ofKind("peer_counts").length).toBe(before);
+	await handled("m2");
+	expect(armed - before).toBe(1);   // the marker's own, none for the activity
 });
 
 test("a peer's own peer_* frames and a lost connection: nothing is forwarded as a notice, the stream reconnects and the chip goes offline then back", async () => {
 	sendA({ kind: "peer_notice", peer: { name: "다른 곳", url: "http://x" }, id: "z", title: "되돌아온 프레임" });
-	await settle();
+	await handled("m3");
 	expect(ofKind("peer_notice")).toHaveLength(1);
 
 	const connects = aConnects;

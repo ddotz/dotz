@@ -119,10 +119,9 @@ describe("element picker at 390px (a phone)", () => {
 
 		const touch = `${FD} ${AT}
 			const tev = (type, id, list) => { const e = new Event(type, { bubbles: true, cancelable: true }); const p = at(id); Object.defineProperty(e, "touches", { value: list ? [p] : [] }); Object.defineProperty(e, "changedTouches", { value: [p] }); d.getElementById(id).dispatchEvent(e); return e.defaultPrevented; };`;
-		// A short tap: touchstart, touchend at once. No pick.
-		await v.evaluate(`(() => { ${touch} tev("touchstart", "intro", true); tev("touchend", "intro", false); return 0; })()`);
-		await v.evaluate(`new Promise(r => setTimeout(r, 700))`);
-		expect(await v.evaluate(`pkItems().length`)).toBe(0);
+		// A short tap: touchstart, touchend at once. The end drops the hold and its timer, so no pick can come later.
+		const tap = await get(v, `${touch} tev("touchstart", "intro", true); const held = !!pkPress; tev("touchend", "intro", false); return { held, left: !!pkPress, picks: pkItems().length };`);
+		expect(tap).toEqual({ held: true, left: false, picks: 0 });
 		// A long press on 저장: picked after the hold, and the end of the touch is cancelled so no click reaches 저장.
 		await v.evaluate(`(() => { ${touch} tev("touchstart", "save", true); return 0; })()`);
 		await waitOn(v, `pkItems().length === 1`, 2_000);

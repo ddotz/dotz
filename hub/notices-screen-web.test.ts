@@ -38,6 +38,8 @@ const live = () => notices.filter(n => !n.dismissed);
 
 const hub = fakeHub({
 	slowTimers: true,
+	// Marks the end of the boot's own ?n= timer (web/js/30-notices.js), which has no other trace when the id is stale.
+	headScript: `(() => { const st = setTimeout; setTimeout = (f, ms, ...a) => st(String(f).includes("noticeOpenId") ? async () => { await f(...a); window.__staleLinkDone = true; } : f, ms, ...a); })();`,
 	state: () => idleState({ notices_unread: unread() }),
 	api: async (req, url) => {
 		const p = url.pathname, key = `${req.method} ${p}`;
@@ -238,8 +240,7 @@ describe("the 알림 screen", () => {
 
 	test("a page load with a stale ?n= stays on its route, with no toast", async () => {
 		const v = await shown(await open(1280, "?n=gone#notices"));
-		// Queued after the boot's own 500 ms timer, so that timer has run; the two loads then end after the one it started.
-		await v.evaluate(`new Promise(r => setTimeout(r, 500)).then(() => loadNotices()).then(() => loadNotices())`);
+		await on(v).waitFor(`window.__staleLinkDone`);
 		await settled(v);
 		expect(await on(v).ev(`[current, location.search, document.querySelectorAll(".snack").length]`)).toEqual(["notices", "", 0]);
 	}, 30_000);

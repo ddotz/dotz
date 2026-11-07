@@ -149,7 +149,7 @@ Cleaned:
 Stays, and why:
 - web/js/30-kakao.js 1194/1200 and createPrompts 692/700 are still close to their ceilings; createPrompts holds state throughout, and 30-kakao.js was left for the second round.
 - MODE.md 29,993 of 30,000 bytes: 13 sessions tripped the byte cap in 7 days, but the text is the owner's contract, so shrinking it is not a refactor.
-- Fixed sleeps 8 and budget file 1: the worker's rule was to leave those where time is the behaviour under test or the fix needs a production change; they are not yet reviewed one by one.
+- Fixed sleeps 3 and budget file 1: the sleeps were reviewed one by one in the second round; the three left are deadlines in a `Promise.race` on an event (hub/remote-desktop.test.ts twice, hub/messenger-e2e-discord.test.ts), not waits. The budget file is not yet reviewed.
 - Same-name helpers `json` 17, `readJson` 13, `git` 7, `shq` 5: each validates or wraps differently, and a shared one crosses layers; no failure traces to them in 7 days.
 - Import cycles 5, unmapped modules 151: no failed attempt traces to them.
 - hub/conversations.ts `incoming` growth and `backfillNotices` at boot: fixing them is a behaviour change, so out of this round.
@@ -159,5 +159,4 @@ Second round, after the history rewrite:
 - Re-measure with `bun hub/failure-report.ts --days 7` and the turn breakdown once a release with the worker rule is installed: single-read turns (29% of worker tokens), eval language errors, last-edit-to-end turns (23%), reports lost to `repetitive-turns`.
 - Find the full-run-only sidebar failure: keep the failure output of the next one; 112 file runs under load did not reproduce it.
 - The rest of hub/approval-wire-out.test.ts: its fourth test fails under `--rerun-each` on the old code too, probably state left by the first pass.
-- web/js/25-settings-discord.js and web/js/25-settings-messengers.js have the same redraw pattern as the web access fix; a load failure there is an app race first.
 - Cache busts live in the runtime bundle: raise tool calls with images (38.8% bust rate) and resumed sessions with OmO.

@@ -7,6 +7,7 @@ import { loadFeatureDirs } from "./featuredirs.ts";
 import { checkPeer, PEER_GET, PEER_POST } from "./peer-auth.ts";
 import { binOf, createDesk, defaultDeps, deskPage, JXA, readSettings, viewerOf, voxlQuery, type DeskDeps, type PeerDesk, type Settings } from "./remote-desktop.ts";
 import { Bridge, HOLD } from "./remote-desktop-ws.ts";
+import { flush } from "./runtime/test-clock.ts";
 
 // A stand-in for voxl: a Bun server speaking the parts the gateway uses. It reports what happens to the test over a TCP side channel
 // ("<pid> <event>" lines), so a test waits for an event instead of a sleep.
@@ -16,18 +17,14 @@ const args = process.argv.slice(2);
 const port = Number(args.find(a => a.startsWith("--port="))?.split("=")[1]);
 const pw = process.env.VOXL_PASSWORD ?? "";
 const mode = process.env.FAKE_MODE ?? "";
-const sock = await Bun.connect({ hostname: "127.0.0.1", port: Number(process.env.FAKE_NOTIFY), socket: { data() {} } });
+const sock = await Bun.connect({ hostname: "127.0.0.1", port: Number(process.env.FAKE_NOTIFY), socket: { data() { process.exit(0); } } });
 const note = (m) => { sock.write(process.pid + " " + m + "\\n"); sock.flush(); };
 if (mode === "dyld-always" || (mode === "dyld-once" && !existsSync(process.env.FAKE_FLAG))) {
 	console.error("dyld[1]: Library not loaded: /opt/homebrew/opt/x264/lib/libx264.165.dylib");
 	process.exit(1);
 }
-process.on("SIGTERM", async () => {
-	note("TERM");
-	if (mode === "ignore-term") return;
-	await Bun.sleep(20);
-	process.exit(0);
-});
+// Exits on the test's answer to TERM (the socket's data handler above), so the note is never lost to the exit.
+process.on("SIGTERM", () => { note(mode === "ignore-term" ? "TERM ignored" : "TERM"); });
 const CHUNK = new Uint8Array(65536);
 let sent = 0, total = 0, fin = false;
 function pump(ws) {
@@ -79,8 +76,9 @@ beforeAll(() => {
 		hostname: "127.0.0.1",
 		port: 0,
 		socket: {
-			data(_s, d) {
+			data(s, d) {
 				for (const line of new TextDecoder().decode(d).split("\n").filter(Boolean)) {
+					if (line.endsWith(" TERM")) s.write("bye\n");
 					const w = waiters.findIndex(x => x.re.test(line));
 					if (w >= 0) waiters.splice(w, 1)[0]!.ok(line);
 					else inbox.push(line);
@@ -97,12 +95,12 @@ afterAll(() => {
 	rmSync(scratch, { recursive: true, force: true });
 });
 
-// A state change that has no event to subscribe to (the gateway's pause), awaited with a deadline instead of a fixed sleep.
+// A state change that has no event to subscribe to (the gateway's pause): re-checked every event-loop turn, with a real deadline (Date.now is the test clock).
 async function until(cond: () => boolean, ms = 20_000): Promise<void> {
-	const end = Date.now() + ms;
+	const deadline = AbortSignal.timeout(ms);
 	while (!cond()) {
-		if (Date.now() > end) throw new Error("timed out waiting for a state change");
-		await Bun.sleep(1);
+		if (deadline.aborted) throw new Error("timed out waiting for a state change");
+		await flush(1);
 	}
 }
 
@@ -321,7 +319,7 @@ describe("lifecycle", () => {
 		await m.d.host.ensure();
 		const { child } = m.spawned[0]!;
 		const stopped = m.d.stop();
-		await next(new RegExp(`^${child.pid} TERM$`));
+		await next(new RegExp(`^${child.pid} TERM ignored$`));
 		expect(child.exitCode).toBeNull();
 		expect(child.signalCode).toBeNull();
 		m.clock.advance(3_000);
