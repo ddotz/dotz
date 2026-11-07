@@ -11,7 +11,7 @@ const obj = (need, may = {}) => (v) => {
   return Object.keys(need).every((k) => need[k](o[k])) && Object.keys(o).every((k) => (need[k] ?? may[k])?.(o[k]) === true);
 };
 const list = (one) => (v) => Array.isArray(v) && v.length > 0 && v.length <= SPEC_LIMITS.rows && v.every(one);
-const WEB_URL = /^https?:\/\/[^\s<>]+$/i;
+const WEB_URL = /^https?:\/\/[^\s<>\p{Cc}]+$/iu;
 const BAD_LINK = /\]\(\s*<?(?!https?:\/\/)[a-z][a-z0-9+.-]*:|<(?!https?:\/\/)[a-z][a-z0-9+.-]{2,}:[^\s>]*>/i;
 const webUrl = (href) => typeof href === "string" && WEB_URL.test(href) && URL.canParse(href);
 const lines = (prefix, rows) => rows.map((r) => `${prefix}${r}`).join(`

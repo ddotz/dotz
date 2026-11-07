@@ -19,7 +19,7 @@ const obj = (need: Record<string, Check>, may: Record<string, Check> = {}): Chec
 const list = (one: Check): Check => v => Array.isArray(v) && v.length > 0 && v.length <= SPEC_LIMITS.rows && v.every(one);
 
 // Only a web link leaves the app. A markdown link or autolink with another scheme fails the whole spec; the answer then goes out as text.
-const WEB_URL = /^https?:\/\/[^\s<>]+$/i;
+const WEB_URL = /^https?:\/\/[^\s<>\p{Cc}]+$/iu;
 const BAD_LINK = /\]\(\s*<?(?!https?:\/\/)[a-z][a-z0-9+.-]*:|<(?!https?:\/\/)[a-z][a-z0-9+.-]{2,}:[^\s>]*>/i;
 export const webUrl = (href: unknown): boolean => typeof href === "string" && WEB_URL.test(href) && URL.canParse(href);
 

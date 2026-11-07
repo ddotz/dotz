@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { type HubEvent, emit, onEmit } from "./events.ts";
 import { deriveSpec, resolveSpecFence } from "./message-spec-derive.ts";
 import { specOf } from "./message-spec-of.ts";
-import { type SpecElement, specChildren, specOfElements, specPlain, validateSpec } from "./message-spec.ts";
+import { type SpecElement, specChildren, specOfElements, specPlain, validateSpec, webUrl } from "./message-spec.ts";
 import { ownerText } from "./owner-text.ts";
 
 const el = (type: string, props: Record<string, unknown>): SpecElement => ({ type, props });
@@ -114,4 +114,10 @@ test("a numbered list under a question stays text for a surface: its buttons rea
 	expect(specOf(text)).toBeNull();
 	expect(specOf("정리했어요.\n\n1. 열기\n2. 닫기")).not.toBeNull();
 	expect(specOf("결정: 어느 쪽으로 할까요?\n**1) 이쪽**\n빠르게\n**2) 저쪽**\n천천히")).not.toBeNull();
+});
+
+test("a link with a control character in it is not a web link", () => {
+	expect(webUrl("https://a.example/x")).toBe(true);
+	expect(webUrl("https://a.example/\u001b]0;x\u0007")).toBe(false);
+	expect(webUrl("https://a.example/\u009b1m")).toBe(false);
 });

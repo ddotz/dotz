@@ -6,6 +6,10 @@ import { specOfElements } from "./message-spec.ts";
 const ev = (over: Partial<HubEvent>): HubEvent => ({ ts: "2026-01-01T00:00:00Z", kind: "out", source: "orchestrator", text: "답", ...over });
 
 describe("dotz last", () => {
+	test("plain text loses its control characters too", () => {
+		expect(answerForTerminal("안녕\u001b]0;x\u0007하세요", false, () => null)).toBe("안녕]0;x하세요");
+	});
+
 	test("the newest answer of the assistant, not an owner message, a system line or an update", () => {
 		const events = [ev({ text: "첫째" }), ev({ text: "둘째" }), ev({ kind: "message", source: "web", text: "질문" }), ev({ text: "갱신", update_key: "k" }), ev({ text: "시스템", system: true }), ev({ text: "  " })];
 		expect(lastAnswer(events)).toBe("둘째");

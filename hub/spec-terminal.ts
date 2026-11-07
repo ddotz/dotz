@@ -5,7 +5,7 @@ import { inlineTokens } from "./spec-inline.ts";
 /** Colour only on a terminal, and never when NO_COLOR is set (no-color.org: set and not empty). */
 export const useColor = (env: Record<string, string | undefined>, isTTY: boolean): boolean => isTTY && !env.NO_COLOR;
 
-const clean = (s: string): string => s.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
+export const clean = (s: string): string => s.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, "");
 
 function styles(color: boolean) {
 	const on = (open: number, close: number) => (s: string) => (color && s ? `\u001b[${open}m${s}\u001b[${close}m` : s);

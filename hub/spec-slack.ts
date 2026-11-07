@@ -147,7 +147,7 @@ export function slackBlocks(spec: MessageSpec, o: { emoji?: string; link?: strin
 	for (const make of [rich, flat]) {
 		let blocks = make(els);
 		if (o.emoji) blocks = lead(blocks, o.emoji);
-		if (o.link) blocks.push(...context(o.link)!);
+		if (o.link) blocks.push(...(context(o.link) ?? []));
 		if (blocks.length && blocks.length <= SLACK_LIMITS.blocks) return blocks;
 	}
 	return undefined;
