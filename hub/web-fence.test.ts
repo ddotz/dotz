@@ -1,11 +1,11 @@
-// web/js/02-basic-markdown.js mdHtml: which ``` opens a code block.
+// hub/message-spec-derive.ts parse: which ``` opens a code block.
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const src = readFileSync(join(import.meta.dir, "..", "web", "js", "02-basic-markdown.js"), "utf8");
-const re = new Function(`return ${src.match(/split\((\/\(\?:\^[^\n]*\/)\);/)![1]};`)() as RegExp;
-// [text, lang, code, text, ...] like mdHtml
+const src = readFileSync(join(import.meta.dir, "message-spec-derive.ts"), "utf8");
+const re = new Function(`return ${src.match(/const FENCE_SPLIT = (\/.*\/);/)![1]};`)() as RegExp;
+// [text, lang, code, text, ...] like parse
 const fences = (s: string) => s.split(re).flatMap((p, i) => (i % 3 === 1 ? [{ lang: p, code: s.split(re)[i + 1] }] : []));
 
 test("a fence opens only at the start of a line; ``` inside a sentence stays text", () => {

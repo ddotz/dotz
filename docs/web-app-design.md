@@ -712,7 +712,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 기능: 첫 줄 상태 표시 `[done]/[완료]`, `[run]/[진행]`, `[ask]/[결정]`, `[fail]/[실패]/[warn]/[경고]`를 `parseTone`이 떼어 태그로 보여 줘요(`완료`=ok, `진행 중`=pri, `확인 필요`=warn, `실패`=err). 기계용 마커(`[lane ...]`, `[dotz ...]`, `[system]`, `[attachment]`, `[10-23]` 등)는 줄 시작에서만 제거(코드 울타리 안은 그대로, `[file]` 줄은 `keepFiles`일 때만 남김).
 - 상태: 울타리 여는 줄은 줄 시작에서만 인식. 닫는 울타리가 없으면 끝까지 코드.
 - 데이터: 없음. 같은 파일의 `api()`는 모든 호출의 공통 래퍼예요(아래 공통 항목).
-- 근거: web/js/02-basic-markdown.js:3(inline), :15(unquoteChoices), :27(blocks), :67(listBlockHtml), :77(mdHtml), :84(mdNode), :85-101(TONE_TAGS, toneTag, toneLead), :105(stripMarkers), :120(parseTone).
+- 근거: web/js/02-basic-markdown.js:3(inline), hub/message-spec-derive.ts(blocks, unquoteChoices), web/js/02-answer-shapes.js(specHtml, specRowsHtml), 02-basic-markdown.js(mdHtml, mdNode), :85-101(TONE_TAGS, toneTag, toneLead), :105(stripMarkers), :120(parseTone).
 - css: web/css/13-code-shell.css(`.mlist-*`), 04-files.css/16-result-card.css(`.tbl`), 01-tokens.css, 03-base.css(`.md`, `.st-tag`).
 
 ### 공통 요청 래퍼와 처리 중 버튼 (api, busy)

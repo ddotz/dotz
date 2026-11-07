@@ -107,3 +107,11 @@ test("a meta line for the bot needs the bot's own name", () => {
 	expect(kinds("봇이")).toEqual(["Text", "Steps", "Meta", "Bullets"]);
 	expect(kinds("")).toEqual(["Text", "Steps", "Facts"]);
 });
+
+test("a numbered list under a question stays text for a surface: its buttons read that text", () => {
+	const text = "두 가지가 있어요.\n\n어떻게 할까요?\n1) 그대로 두기\n2) 고치기";
+	expect(deriveSpec(text)).not.toBeNull();
+	expect(specOf(text)).toBeNull();
+	expect(specOf("정리했어요.\n\n1. 열기\n2. 닫기")).not.toBeNull();
+	expect(specOf("결정: 어느 쪽으로 할까요?\n**1) 이쪽**\n빠르게\n**2) 저쪽**\n천천히")).not.toBeNull();
+});

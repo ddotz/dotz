@@ -32,9 +32,13 @@ const fact = (r: Row): string => {
 const head = (h: unknown): string[] => (h ? [strong(String(h))] : []);
 const dot = (cells: (string | undefined)[]): string => cells.filter(Boolean).join(" · ");
 
+// Short rows read as a column; a row that runs to a sentence wraps on a phone, and only a list marker keeps the rows apart.
+const WORDY = 30;
+const facts = (rows: Row[]): string[] => (rows.some(r => (r.value ?? "").length > WORDY) ? rows.map(r => `- ${fact(r)}`) : rows.map(fact));
+
 export const DISCORD: Partial<Record<string, Render>> = {
-	Facts: p => [...head(p.head), ...p.rows.map(fact)].join("\n"),
-	Section: p => [strong(p.title), ...p.rows.map(fact)].join("\n"),
+	Facts: p => [...head(p.head), ...facts(p.rows)].join("\n"),
+	Section: p => [strong(p.title), ...facts(p.rows)].join("\n"),
 	Schedule: p => [...head(p.head), ...p.rows.map((r: { time: string; text: string }) => `${strong(r.time)} ${inline(r.text)}`)].join("\n"),
 	Table: p => {
 		const row = (r: string[]) => dot(r.map((c, i) => (i === 0 && c ? strong(c) : inline(c))));

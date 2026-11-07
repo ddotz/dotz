@@ -1,4 +1,4 @@
-// The 목록 block: a list the web shows as UI rows (web/js/02-basic-markdown.js listBlockHtml) - a round initial, title, subtitle,
+// The 목록 block: a list the web shows as UI rows (web/js/02-answer-shapes.js specRowsHtml) - a round initial, title, subtitle,
 // meta on the right and a count badge. Any list of things for the owner (rooms, files, mails, results) goes out as this block.
 export type ListRow = { title: string; sub?: string; meta?: string; badge?: number | string };
 
