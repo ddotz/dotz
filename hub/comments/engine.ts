@@ -1,8 +1,9 @@
 // The comment engine: collect (script only, no model), draft (a model call only on request or per-source auto-draft), send (only through
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { generateReply, lessonOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
+import { absorbComments, mergeIgTwins } from "./absorb.ts";
 import { createSendRecovery } from "./recover.ts";
-import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
+import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store, type Tokens } from "./store.ts";
@@ -362,43 +363,6 @@ export function createEngine(deps: EngineDeps) {
 		return undefined;
 	}
 
-	// Stores what an adapter read. New ids are added (and returned). A stored reply row keyed by position (Instagram's old `<comment>.<index>`) is replaced by
-	// the same reply under its real id, with everything that pointed at it (drafts, send records, 답장 안 함) moved along; a stored row whose author or
-	// `mine` could not be known then gets it once the adapter can tell. Reading the same thing again changes nothing.
-	function absorb(src: SourceConfig, raws: RawComment[]): Comment[] {
-		const incoming = raws.filter(r => watches(src, r.thread)).map(r => toComment(src, r, deps.collector));
-		if (!incoming.length) return [];
-		const stored = store.comments();
-		const byId = new Map(stored.map(c => [c.id, c]));
-		const matched = new Set<string>();
-		const renames: { from: string; to: Comment }[] = [];
-		const refine: Record<string, Partial<Comment>> = {};
-		const add: Comment[] = [];
-		for (const c of incoming) {
-			const old = byId.get(c.id);
-			if (old) {
-				const patch: Partial<Comment> = {};
-				if (c.mine && !old.mine) patch.mine = true;
-				// A reply first stored as a comment of its own (Instagram listed it top-level) gets its comment once a read names it (issue #31).
-				if (c.parent && !old.parent) patch.parent = c.parent;
-				if (old.author === UNKNOWN_USER && c.author !== UNKNOWN_USER) patch.author = c.author;
-				if (Object.keys(patch).length) refine[old.id] = { ...refine[old.id], ...patch };
-				continue;
-			}
-			const positional = c.parent
-				? stored.find(x => x.source === c.source && x.thread === c.thread && x.parent === c.parent && !matched.has(x.id) && x.text === c.text && x.native.startsWith(`${c.parent}.`) && /^\d+$/.test(x.native.slice(c.parent!.length + 1)))
-				: undefined;
-			if (positional) {
-				matched.add(positional.id);
-				renames.push({ from: positional.id, to: { ...c, collector: positional.collector, ...(positional.gone ? { gone: positional.gone } : {}) } });
-			} else add.push(c);
-			byId.set(c.id, c);
-		}
-		store.replaceComments(renames);
-		store.patchComments(refine);
-		return store.addComments(add);
-	}
-
 	// Whether the owner has answered a comment, whatever the platform or the app was the place: a comment of his under it, a reply sent from here, or the
 	// adapter's own sign (Instagram: he @mentioned the author).
 	const answeredBy = (c: Comment, replies: Reply[]): boolean => stream(c).some(x => x.mine && x.at >= c.at) || answeredOnPlatform(c) || replies.some(r => r.commentId === c.id && r.state === "sent");
@@ -439,30 +403,6 @@ export function createEngine(deps: EngineDeps) {
 		return [...all, ...all].slice(start, start + RECHECK_CAP);
 	}
 
-	// Issue #31: older Instagram reads stored each reply twice, as `<comment>.<n>` (no author, not his, the comment's time) and under its real id (often
-	// top-level, without its comment). Each such pair becomes one row: the real one, under its comment, with what pointed at the copy moved to it.
-	// Idempotent: once merged nothing of the pattern is left with a twin.
-	function mergeIgTwins(): number {
-		const ig = new Set(Object.values(store.config().sources).filter(s => s.kind === "instagram").map(s => s.key));
-		if (!ig.size) return 0;
-		const all = store.comments().filter(c => ig.has(c.source));
-		const synthetic = (c: Comment) => !!c.parent && c.native.startsWith(`${c.parent}.`) && /^\d+$/.test(c.native.slice(c.parent.length + 1));
-		const used = new Set<string>();
-		const pairs: { from: string; to: Comment }[] = [];
-		// The same short text (an emoji) can stand under several comments of one post: a twin already under this comment wins, else the earliest unused one
-		// not older than the copy (the copies are taken in order, as the replies came).
-		const order = (a: Comment, b: Comment) => a.at - b.at || (a.native < b.native ? -1 : 1);
-		for (const s of all.filter(synthetic).sort(order)) {
-			const cands = all.filter(t => !used.has(t.id) && t.source === s.source && t.thread === s.thread && !synthetic(t) && t.text === s.text && (!t.parent || t.parent === s.parent)).sort(order);
-			const twin = cands.find(t => t.parent === s.parent) ?? cands.find(t => t.at >= s.at) ?? cands[0];
-			if (!twin) continue;
-			used.add(twin.id);
-			pairs.push({ from: s.id, to: { ...twin, parent: s.parent, ...(twin.author === UNKNOWN_USER && s.author !== UNKNOWN_USER ? { author: s.author } : {}) } });
-		}
-		store.replaceComments(pairs);
-		return pairs.length;
-	}
-
 	// Makes the stored comments match the platforms, and is safe to run again and again: with `recheck` each adapter that can re-reads the still-open comments
 	// (owner's replies found later, deleted comments); then every pending draft whose comment no longer waits is closed (settle). Never posts anything.
 	async function reconcile(opts: { recheck?: boolean } = {}): Promise<ReconcileResult> {
@@ -472,7 +412,7 @@ export function createEngine(deps: EngineDeps) {
 		// A reply can have two copies (`k.0` and `k.1` of one reply, read twice with a shifted index): each pass merges one copy per real row, so it runs
 		// until nothing is left to merge.
 		let merged = 0;
-		for (let i = 0, n = mergeIgTwins(); n && i < 5; i++, n = mergeIgTwins()) merged += n;
+		for (let i = 0, n = mergeIgTwins(store, UNKNOWN_USER); n && i < 5; i++, n = mergeIgTwins(store, UNKNOWN_USER)) merged += n;
 		if (merged) out.merged = merged;
 		if (opts.recheck)
 			for (const src of Object.values(cfg.sources)) {
@@ -488,7 +428,7 @@ export function createEngine(deps: EngineDeps) {
 				const waiting = batch.filter(c => !c.parent && !c.mine && !answeredBy(c, replies));
 				try {
 					const res = await adapter.recheck(src, batch);
-					absorb(src, res.comments);
+					absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments);
 					const at = deps.now();
 					const gone = new Set(res.gone);
 					if (orphans.length) store.setCursor(parentsKey, { ranAt: at });
@@ -531,7 +471,7 @@ export function createEngine(deps: EngineDeps) {
 				// A time after the read (a source's clock or a misparsed stamp, issue #31) is the read time: a comment from the future would sort above
 				// everything that comes later and never age out of the unreplied list.
 				const now = deps.now();
-				fresh = absorb(src, res.comments.map(r => (r.at > now ? { ...r, at: now } : r)));
+				fresh = absorbComments(store, deps.collector, UNKNOWN_USER, src, res.comments.map(r => (r.at > now ? { ...r, at: now } : r)));
 				const wanted = src.autoDraft && replyOn(src) ? fresh.filter(c => c.at >= (src.autoSince ?? 0) && needsReply(c)).map(c => c.id) : [];
 				// Not capped: a waiting comment is never dropped silently. It is bounded anyway: only stored comments (MAX_COMMENTS) are queued, and a queue entry whose comment is gone or answered is settled without a model call.
 				const queue = [...new Set([...(prior.queue ?? []), ...wanted])];

@@ -39,6 +39,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 - mail: `hub/mail-move.ts` (moves a stored mail to another mail app, `/api/mail/move`)
 - mailboxes (메일함): `hub/mailbox.ts` (`custom/mailboxes.json`, the placing rules `pickBox`, pins; contract `docs/mailbox.md`), `hub/routes-mailbox.ts` (`placeMail`, the card's box lookup, `/api/mailbox/move|learn|box|tone|suggest`; the web screens 메일함 설정 and 메일함 추가 are `web/js/30-mailboxes-set.js`), `hub/mailbox-cli.ts` (`fold`: per-source mail instances into mailboxes, as data)
 - mail: `hub/mail-delete.ts` (삭제하면 원본도 삭제: the source adapters behind the owner's delete, `/api/mail/delete-original`)
+- comment store: `hub/comments/absorb.ts` (what the comment engine stores from an adapter read: new comments, position-keyed Instagram replies renamed to their real ids, old twin rows merged; no engine state)
 - messenger login: `hub/messenger-login.ts` (the browser login capture the messenger onboarding flows share: it reads one page value in the owner's background Aside tab, and the value reaches the flow in memory through a one-shot localhost inbox, never stdout, argv or logs), `hub/jandi-session.ts` (reads the owner's JANDI session: token exchange, team, member, bot and the 나와의 대화 room)
 - Relay chat (a computer reached only through a messenger, the adapter's `relay`): `hub/relay-route.ts`, web `web/js/42-relay-chat.js`
 
