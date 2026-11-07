@@ -179,7 +179,7 @@ export type PublishOptions = {
 async function releaseNote(root: string, tag: string, base: string | null, rev: string, terms: readonly Term[]): Promise<string> {
 	const log = await gitOutput(["log", "--no-merges", "--name-only", `--max-count=${NOTE_LOG_LIMIT}`, `--format=${NOTE_LOG_FORMAT}`, base ? `${base}..${rev}` : rev], root);
 	if (log.code !== 0) throw new Error(`릴리스 노트용 커밋을 읽지 못했어요: ${log.out}`);
-	return buildReleaseNote({ tag, previous: base, commits: parseNoteCommits(log.out), terms });
+	return buildReleaseNote({ tag, commits: parseNoteCommits(log.out), terms });
 }
 
 // A GitHub Release per tag, with the note as its body. The tag is already out, so a failure here reports and leaves the note in the log.
