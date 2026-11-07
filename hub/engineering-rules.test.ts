@@ -40,7 +40,7 @@ const IMPORT_CYCLES = [
 // Import edges (file to file) that cross a layer: the hub is the core, so a new edge into it from outside, or out of it into a feature, is a new coupling.
 const BOUNDARY_CEILINGS: Counts = {
 	"hub->features": 50, // the hub mounts feature routes and tools
-	"hub->onboard": 7, // setup flows the hub triggers
+	"hub->onboard": 6, // setup flows the hub triggers
 	"hub->extension": 2, // shared guard code
 	"extension->hub": 12, // the extension reuses hub helpers it cannot duplicate
 	"onboard->hub": 1, // onboarding reads hub config
@@ -48,11 +48,11 @@ const BOUNDARY_CEILINGS: Counts = {
 	"feature->feature": 18, // a feature importing another feature couples two things meant to be removable alone
 };
 // A swallowed error is a bug nobody sees. Per top dir: an empty catch or .catch(() => null) with no comment saying why the swallow is fine.
-const SWALLOW_CEILINGS: Counts = { extension: 11, features: 28, hub: 194, onboard: 4, "setup.ts": 1, web: 78 };
+const SWALLOW_CEILINGS: Counts = { extension: 11, features: 27, hub: 194, onboard: 4, "setup.ts": 1, web: 78 };
 // State a process can read back mid-write (a crash leaves half a file) must use writeAtomic from hub/config.ts; these are the plain writes left.
-const NON_ATOMIC_WRITE_CEILINGS: Counts = { extension: 3, features: 8, hub: 43, onboard: 1, "setup.ts": 8 };
+const NON_ATOMIC_WRITE_CEILINGS: Counts = { extension: 3, features: 8, hub: 43, onboard: 1, "setup.ts": 2 };
 // A fetch or process call with no timeout or abort can hang its caller for good; the web page is excluded because the browser owns that.
-const UNBOUNDED_CALL_CEILINGS: Counts = { extension: 2, features: 13, hub: 72, onboard: 7, "setup.ts": 5 };
+const UNBOUNDED_CALL_CEILINGS: Counts = { extension: 2, features: 13, hub: 71, onboard: 7, "setup.ts": 4 };
 // Timing assertions flake under load (the machine load average reaches 50 here) and fixed sleeps are luck, so tests wait on events instead.
 const TEST_TIMING_CEILINGS: Counts = { fixedSleeps: 12, budgetFiles: 5 };
 // Exports nothing refers to, not even their own file or a test; remove the export or the code (the entry is `file name`).
