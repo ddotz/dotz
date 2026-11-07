@@ -67,7 +67,7 @@ describe("fan-out", () => {
 		register(plain);
 		installFanout();
 		const gateway = (target: string, text: string, extra: Record<string, unknown> = {}) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target, text, ...extra });
-		gateway("main", "백그라운드 작업으로 맡겼어요: DEMO 취합", { system: "deferred" });
+		gateway("main", "백그라운드 작업으로 맡겼어요: 월간 보고서 정리", { system: "deferred" });
 		gateway("web", "게이트웨이를 다시 시작했어요 (오후 11:34 KST).");
 		gateway("worklog", "게이트웨이를 다시 시작했어요 (오후 11:34 KST).");
 		gateway("web", "[ask] 가져올까요?");

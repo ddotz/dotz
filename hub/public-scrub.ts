@@ -6,7 +6,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
 import { join, resolve } from "node:path";
 
-export type Term = { value: string; label: string };
+// `except`: ordinary words holding the value (a short name inside a common word), never masked.
+export type Term = { value: string; label: string; except?: readonly string[] };
 
 const MASK = "[비공개]";
 export const PUBLIC_REPO = "ddotz/dotz";
@@ -25,13 +26,14 @@ const PATTERNS: [label: string, re: RegExp, mask: string][] = [
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // An ASCII edge needs a word boundary (box1 is not box12); a Korean term takes particles, so its edge stays open.
-const termRe = (value: string) => new RegExp(`${/^\w/.test(value) ? "(?<!\\w)" : ""}${escapeRe(value)}${/\w$/.test(value) ? "(?!\\w)" : ""}`, "gi");
+const termRe = ({ value, except = [] }: Term) => new RegExp([...except.map(escapeRe), `${/^\w/.test(value) ? "(?<!\\w)" : ""}${escapeRe(value)}${/\w$/.test(value) ? "(?!\\w)" : ""}`].join("|"), "gi");
 
 export function scrub(input: string, terms: readonly Term[] = []): { text: string; hits: string[] } {
 	const hits = new Set<string>();
 	let text = input;
 	for (const term of [...terms].sort((a, b) => b.value.length - a.value.length)) {
-		text = text.replace(termRe(term.value), () => {
+		text = text.replace(termRe(term), found => {
+			if (term.except?.includes(found.toLowerCase())) return found;
 			hits.add(term.label);
 			return MASK;
 		});
@@ -77,6 +79,10 @@ function fileText(file: string): string {
 	}
 }
 
+export const PRIVACY_ALLOW = "privacy-terms-allow.txt"; // beside the list, one ordinary word per line
+export const listLines = (file: string) => fileText(file).split("\n").map(l => l.trim()).filter(Boolean);
+const NOT_A_SECRET = /^(?:privacy-terms(?:-allow)?\.txt$|[^/]+-tools\/)/; // the list itself, and folders of private scripts: their lines are code, not values
+
 // This install's identifying values: config fields that name a person, host or account, every secret, the owner's privacy list, and this machine.
 export function installTerms(dataDir: string): Term[] {
 	const terms: Term[] = [];
@@ -94,11 +100,12 @@ export function installTerms(dataDir: string): Term[] {
 	}
 	if (existsSync(secrets)) {
 		for (const name of readdirSync(secrets, { recursive: true }).map(String)) {
-			if (name === "privacy-terms.txt") continue;
+			if (NOT_A_SECRET.test(name)) continue;
 			for (const value of secretValues(fileText(join(secrets, name)))) if (value.length >= MIN_SECRET) terms.push({ value, label: "secret" });
 		}
 	}
-	for (const value of fileText(join(secrets, "privacy-terms.txt")).split("\n").map(l => l.trim())) if (value) terms.push({ value, label: "privacy list" });
+	const allow = listLines(join(secrets, PRIVACY_ALLOW)).map(w => w.toLowerCase());
+	for (const value of listLines(join(secrets, "privacy-terms.txt"))) terms.push({ value, label: "privacy list", except: allow.filter(w => w.includes(value.toLowerCase())) });
 	return terms.filter(t => !PUBLIC_URL.includes(t.value.toLowerCase()) && !GENERIC_MACHINE.test(t.value));
 }
 

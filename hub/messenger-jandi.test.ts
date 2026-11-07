@@ -202,7 +202,7 @@ describe("deliver", () => {
 			"[gateway check] [done] not accepted yet, sent back to the session:\n- NOT landed lane/mail-ui",
 			`${NAME} 몫: 없음`,
 		]) expect(await send("main", "main", text)).toEqual({ delivered: false, reason: "internal" });
-		expect(await send("main", "web", "백그라운드 작업으로 맡겼어요: DEMO 취합", { gatewayNote: true })).toEqual({ delivered: false, reason: "internal" });
+		expect(await send("main", "web", "백그라운드 작업으로 맡겼어요: 월간 보고서 정리", { gatewayNote: true })).toEqual({ delivered: false, reason: "internal" });
 		expect(captured).toHaveLength(0);
 	});
 	test("a failure with no words still reaches the room as the failure emoji", async () => {

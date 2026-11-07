@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { listLines, PRIVACY_ALLOW } from "./public-scrub.ts";
 import {
 	boundaryEdges, cycles, deadExports, deadWebGlobals, duplicateGlobals, helperCopies, hubWebImports, importGraph, loadTree, longFunctions, metrics,
 	nonAtomicWrites, oversizeFiles, pastedBlocks, prodOf, swallowedErrors, testTiming, unboundedCalls, unmappedModules, webJs, webStaticImports, type Src,
@@ -217,9 +218,10 @@ test("no term from the owner's local privacy list is in the tree", () => {
 	const list = process.env.PRIVACY_TERMS_FILE ?? join(homedir(), ".dotz", "secrets", "privacy-terms.txt");
 	if (!existsSync(list)) return;
 	const terms = readFileSync(list, "utf8").toLowerCase().split("\n").map((t, i) => ({ line: i + 1, term: t.trim() })).filter(t => t.term);
+	const allow = listLines(join(dirname(list), PRIVACY_ALLOW)).map(w => w.toLowerCase());
 	const root = join(import.meta.dir, "..");
 	const found = [...loadTree(root), ...treeDocs(root)].flatMap(src => {
-		const text = src.text.toLowerCase();
+		const text = allow.reduce((t, word) => t.replaceAll(word, " "), src.text.toLowerCase());
 		return terms.filter(t => text.includes(t.term)).map(t => `${src.path}: term ${t.line}`);
 	});
 	expect(found).toEqual([]);

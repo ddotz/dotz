@@ -76,13 +76,13 @@ test("only a draft with the three labels is a draft-approval decision", () => {
 });
 
 test("send modes: a reply + mail card keeps 1-3 and adds 답글만 / 메일만 / 직접 입력 …; it still reads as a draft", () => {
-	const card = { to: "커뮤니티 a 댓글", toLabel: "대상" as const, body: "메일 보내드렸습니다^^", ref: "indi:1", question: "이대로 보낼까?", mail: { to: "t@example.com", subject: "MR", body: "MR 보내드립니다", attachments: [{ name: "a.mp3", size: 2048 }] } };
+	const card = { to: "커뮤니티 a 댓글", toLabel: "대상" as const, body: "메일 보내드렸습니다^^", ref: "forum:1", question: "이대로 보낼까?", mail: { to: "t@example.com", subject: "MR", body: "MR 보내드립니다", attachments: [{ name: "a.mp3", size: 2048 }] } };
 	const block = draftApprovalBlock({ ...card, sendModes: true });
 	const opts = parseDecisions(block).blocks[0]!.options;
 	expect(opts.map(o => [o.n, o.label])).toEqual([[1, "보내기"], [2, "고치기"], [3, "보내지 않기"], [4, "답글만 보내기"], [5, "메일만 보내기"], [6, "어떻게 보낼지 직접 입력"]]);
 	expect(block).toContain("**6) 어떻게 보낼지 직접 입력 …**");
 	expect(opts[5]).toMatchObject({ detail: true });
-	expect(parseDraftApproval(block)).toMatchObject({ toLabel: "대상", ref: "indi:1", mail: { to: "t@example.com" } });
+	expect(parseDraftApproval(block)).toMatchObject({ toLabel: "대상", ref: "forum:1", mail: { to: "t@example.com" } });
 	// A card without a mail part has nothing to split: only the free-text mode is added. Without sendModes the card is the old three.
 	expect(parseDecisions(draftApprovalBlock({ ...card, mail: undefined, sendModes: true })).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "어떻게 보낼지 직접 입력"]);
 	expect(parseDecisions(draftApprovalBlock(card)).blocks[0]!.options).toHaveLength(3);

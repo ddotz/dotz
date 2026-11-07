@@ -107,10 +107,10 @@ describe("onboard", () => {
 		const engine = engineOf(adapter());
 		const args = (name: string) => ["on", "--app", "site", "--name", name, "--read-kind", "rss", "--read", "https://site.example/feed", "--post-kind", "webhook", "--post", "https://site.example/hook"];
 		await runOnboard(args("mapia"), { engine, gateway: gw.g });
-		await runOnboard(args("indi"), { engine, gateway: gw.g });
+		await runOnboard(args("forum"), { engine, gateway: gw.g });
 		expect(gw.apps).toEqual([
 			{ app: "site", id: "site-mapia", label: "웹사이트 댓글 (mapia)", filter: { source: "mapia" } },
-			{ app: "site", id: "site-forum", label: "웹사이트 댓글 (indi)", filter: { source: "indi" } },
+			{ app: "site", id: "site-forum", label: "웹사이트 댓글 (forum)", filter: { source: "forum" } },
 		]);
 		const named = await runOnboard([...args("blog"), "--label", "내 블로그"], { engine, gateway: gw.g });
 		expect(named.code).toBe(0);

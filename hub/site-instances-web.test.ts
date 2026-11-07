@@ -17,7 +17,7 @@ const data = mkdtempSync(join(tmpdir(), "site-inst-web-"));
 const put = (rel: string, text: string) => { mkdirSync(join(data, rel, ".."), { recursive: true }); writeFileSync(join(data, rel), text); };
 put("custom/apps.json", JSON.stringify({
 	"site-mapia": { app: "site", label: "마피아", filter: { source: "mapia" } },
-	"site-forum": { app: "site", label: "커뮤니티", filter: { source: "indi" } },
+	"site-forum": { app: "site", label: "커뮤니티", filter: { source: "forum" } },
 }));
 const SITES: Record<string, { label: string; post: string; text: string }> = {
 	"site-mapia": { label: "마피아", post: "마피아 규칙 질문", text: "첫 판은 몇 명부터 할 수 있나요?" },

@@ -386,7 +386,7 @@ describe("Instagram reply authors", () => {
 
 describe("issue #32: YouTube replies", () => {
 	const VIDEO = "FakeVideo01";
-	const HWA = "comment-id", GAME = "comment-id";
+	const HWA = "UgzFakeComment0000001AaABAg", GAME = "UgyFakeComment0000002AaABAg";
 	const at = (iso: string) => new Date(iso).toISOString();
 	function setup(replies: Record<string, { id: string; parentId: string; author: string; text: string; publishedAt: string }[]>, fail = false) {
 		config([source("youtube", "youtube", { autoDraft: true, autoSince: 0 })]);

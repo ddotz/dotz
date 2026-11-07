@@ -13,7 +13,7 @@ import { appEntries, commentOwner, integrationContext, integrationItems } from "
 // source list, needs and reply model; an install with no instance keeps all sites under the one `site` app.
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
 const raw = (native: string, thread: string, title: string): RawComment => ({ native, thread, author: "방문자", text: `질문 ${native}?`, postTitle: title, at: NOW - 1000 });
-const SITES = ["mapia", "indi", "old"];
+const SITES = ["mapia", "forum", "old"];
 
 let data: string;
 beforeEach(() => {
@@ -27,7 +27,7 @@ const apps = (doc: object) => {
 };
 const INSTANCES = {
 	"site-mapia": { app: "site", label: "마피아", filter: { source: "mapia" } },
-	"site-forum": { app: "site", label: "커뮤니티", filter: { source: "indi" } },
+	"site-forum": { app: "site", label: "커뮤니티", filter: { source: "forum" } },
 };
 
 async function engineWith(models: string[] = []) {

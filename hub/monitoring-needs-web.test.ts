@@ -33,7 +33,7 @@ for (const width of [1440, 390]) {
 		expect(got.map(([k, , unread]) => [k, unread])).toEqual([["i:mail", 2], ["i:kakao", 0], ["i:youtube", 2]]);
 		// the line carries the counts of `needs` (2 drafts, 3 unread for mail), never the latest item's title
 		expect(got[0]![1]).toMatch(/2.*3/);
-		expect(got.every(([, hint]) => hint && !hint.includes("환율"))).toBe(true);
+		expect(got.every(([, hint]) => hint && !hint.includes("날씨"))).toBe(true);
 		expect(await v.evaluate(`document.body.innerText`)).not.toContain("일일 날씨");
 		if (SHOTS) {
 			mkdirSync(SHOTS, { recursive: true });

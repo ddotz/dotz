@@ -37,6 +37,12 @@ describe("scrub", () => {
 		expect(scrub("/Users/name-kim/x").text).toBe("~/x");
 	});
 
+	test("a short term stays quiet inside the ordinary words excepted for it, and only there", () => {
+		const terms = [{ value: "푸른", label: "privacy list", except: ["푸른곰", "푸른별"] }];
+		expect(scrub("푸른곰과 푸른별이 떠요", terms)).toEqual({ text: "푸른곰과 푸른별이 떠요", hits: [] });
+		expect(scrub("푸른이가 푸른곰을 봐요", terms)).toEqual({ text: "[비공개]이가 푸른곰을 봐요", hits: ["privacy list"] });
+	});
+
 	test("install terms match whole words only", () => {
 		const terms = [{ value: "box1", label: "machine name" }];
 		expect(scrub("on Box1 now", terms)).toEqual({ text: "on [비공개] now", hits: ["machine name"] });
@@ -52,6 +58,17 @@ test("installTerms takes identifying config values, secrets and the privacy list
 	expect(values).not.toContain("discord-bot-token");
 	for (const setting of ["origin", "general-room"]) expect(values).not.toContain(setting);
 	expect(installTerms(join(dir, "missing"))).toEqual([]);
+});
+
+test("the allow file reaches the listed term that sits inside its words, and a private tools folder is no secret", () => {
+	const dir = install();
+	writeFileSync(join(dir, "secrets", "privacy-terms-allow.txt"), "우리회사원\n다른단어\n");
+	mkdirSync(join(dir, "secrets", "audit-tools"));
+	writeFileSync(join(dir, "secrets", "audit-tools", "run.py"), "print('a long line of code')\n");
+	const terms = installTerms(dir);
+	expect(terms.find(t => t.value === "우리회사")?.except).toEqual(["우리회사원"]);
+	expect(terms.map(t => t.value)).not.toContain("print('a long line of code')");
+	expect(terms.map(t => t.value)).not.toContain("우리회사원");
 });
 
 describe("publicPostDeny", () => {

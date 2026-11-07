@@ -208,7 +208,7 @@ describe("does an incoming mail expect a reply", () => {
 	});
 	test("machines, mailing lists, ads and a copy where the owner is only in CC never do", () => {
 		expect(m("[AntiSpam] 스팸 리포트 (10/27자)", "회신 바랍니다", { from: "Administrator" })).toBe(false);
-		expect(m("일일 운영 소식", "의견 주세요")).toBe(false);
+		expect(m("일일 리포트 안내", "의견 주세요")).toBe(false);
 		expect(m("SAP 리더들의 전략", "문의 주세요. 수신거부는 여기를 누르세요")).toBe(false);
 		expect(m("검토 요청", "검토 부탁드립니다", { to: "Lee <lee@example.com>", cc: "Owner <owner@example.com>" })).toBe(false);
 		expect(m("검토 요청", "검토 부탁드립니다", { to: "Owner <owner@example.com>" })).toBe(true);
