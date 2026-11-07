@@ -100,14 +100,6 @@ function guardHit() {
   // a second back inside the window finds nothing below and leaves the app; after it, 홈 gets its entry back
   H.guardTimer = setTimeout(() => { const S = history.state; if (S && S.g && !H.moving) history.pushState(hstate(["home"]), "", "#home"); }, 2000);
 }
-// Called once at 홈 with no other entry above it; boot does it by itself in the installed app.
-function armExitGuard() {
-  const S = history.state;
-  if (!S || !S.dz || S.g || S.ov || S.c.length !== 1 || OV.length || H.moving) return false;
-  history.replaceState({ dz: 1, g: 1, c: ["guard"], ov: 0 }, "", "#home");
-  history.pushState(hstate(["home"]), "", "#home");
-  return true;
-}
 
 window.addEventListener("popstate", ev => {
   const S = ev.state;

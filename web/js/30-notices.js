@@ -7,7 +7,6 @@ const NT = { items: [], unread: 0, loaded: false, failed: false, gone: new Set()
 // The 홈 알림 card lists alerts only: a reply in a conversation or a session's report (kind message / result) is not a notice there; it is
 // unread in its own conversation, which the 채팅 tab and the session list lead to (owner 2026-10-23).
 const ntHomeAlert = n => ntTabOf(n) === "alert" && n.kind !== "message" && n.kind !== "result";
-const ntUnreadIn = tab => NT.items.reduce((c, n) => c + (!n.read && (tab === "all" || ntTabOf(n) === tab) ? 1 : 0), 0);
 
 const ntAt = n => Date.parse(n.updated || n.ts) || 0;
 const ntTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
@@ -124,7 +123,6 @@ async function ntMarkRead(body) {
 // is fetched until the message's time is covered, the message is scrolled to the top of the timeline and flashed. A message the chat does not
 // show lands on the nearest one in time. Alert and worklog posts are messages of the 알림 / 작업 기록 conversations. Nothing here ever reports an error.
 const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
-const ntWait = ms => new Promise(r => setTimeout(r, ms));
 function ntGo(t) {
   if (t === "settings") { go("settings"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
   if (isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // the session is gone: its result card is in the main chat

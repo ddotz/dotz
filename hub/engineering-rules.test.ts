@@ -59,8 +59,7 @@ const TEST_TIMING_CEILINGS: Counts = { fixedSleeps: 12, budgetFiles: 5 };
 // stopAll stays until someone decides whether shutdown should call it (the messengers are never stopped today).
 const DEAD_EXPORTS = ["hub/messenger.ts stopAll"];
 // Page globals named once in the page, its markup, the hub tests and the site.
-// The names left sit in files other work is changing right now; armExitGuard's comment says boot calls it, so that one may be a lost call, not dead code.
-const DEAD_WEB_GLOBALS = ["NT_RESULT", "armExitGuard", "fillResult", "ntUnreadIn", "ntWait", "toolBox", "unrepNo"];
+const DEAD_WEB_GLOBALS: string[] = [];
 // docs/ARCHITECTURE.md is how one finds an existing feature before writing a second one; hub/*.ts files it does not name today, by count.
 const UNMAPPED_MODULES = 151;
 // A second private copy of a helper is how two paths drift; files defining each top-level helper today.

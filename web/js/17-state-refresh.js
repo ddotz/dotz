@@ -72,20 +72,6 @@ function toolLabel(a) {
   return "";
 }
 const firstLine = s => { const l = String(s).trim().split("\n")[0].trim(); return l.length > 90 ? `${l.slice(0, 89)}…` : l; };
-function fillResult(rec, a) {
-  rec.state.textContent = a.is_error ? "✗" : "✓";
-  rec.state.className = `tstate ${a.is_error ? "bad" : "ok"}`;
-  rec.body.append(el("div", { class: `cl${a.is_error ? " err" : ""}`, text: a.is_error ? "결과 (오류)" : "결과" }), el("pre", { class: a.is_error ? "err" : "" }, el("code", { text: String(a.text ?? "") })));
-}
-function toolBox(a, tool, withState) {
-  const state = el("span", { class: "tstate", text: withState ? "…" : "" });
-  const body = el("div", { class: "body" });
-  const label = toolLabel(a);
-  // collapsed row reads "tool · intent"; code and results live only in the expansion
-  const node = el("details", { class: "box" },
-    el("summary", {}, el("span", { class: "tname", text: capName(tool) }), label ? el("span", { class: "tsum", text: `· ${label}` }) : null, el("span", { class: "sp" }), el("span", { class: "ttime", text: kstTime(a.ts) }), state), body);
-  return { node, body, state };
-}
 function actNode(a, ctx) {
   const time = kstTime(a.ts);
   switch (a.type) {

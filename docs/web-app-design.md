@@ -483,10 +483,10 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 뒤로가기 레이어 (브라우저 히스토리 스택)
 - 목적: 시트, 메뉴, 대화창, 화면을 히스토리 엔트리로 쌓아 안드로이드 뒤로가기/데스크톱 뒤로가기로 한 겹씩 닫아요.
 - 구성: 화면이 아니라 상태 모듈이에요. 엔트리마다 `{dz:1, c: 경로 체인, ov: 열린 오버레이 수, g?}`. `OV[]`가 열린 오버레이.
-- 기능: `go()`가 `navSync`로 원하는 체인(`H.want`)을 계산하고 `histSync`가 push(깊이), replace(옆 이동), `history.go(-n)`(위로)로 맞춰요. `ovOpen/ovDone`으로 오버레이가 엔트리를 하나씩 차지, `dialogHist(d)`가 `<dialog>`를 오버레이로 등록. 설치 앱(standalone)은 홈 아래 종료 가드: 홈에서 뒤로가면 토스트 `한 번 더 누르면 닫혀요`(2초), 다시 누르면 앱이 닫혀요(`guardHit`, `armExitGuard`).
+- 기능: `go()`가 `navSync`로 원하는 체인(`H.want`)을 계산하고 `histSync`가 push(깊이), replace(옆 이동), `history.go(-n)`(위로)로 맞춰요. `ovOpen/ovDone`으로 오버레이가 엔트리를 하나씩 차지, `dialogHist(d)`가 `<dialog>`를 오버레이로 등록. 설치 앱(standalone)은 홈 아래 종료 가드: 홈에서 뒤로가면 토스트 `한 번 더 누르면 닫혀요`(2초), 다시 누르면 앱이 닫혀요(`guardHit`, 가드 엔트리는 `histSeed`가 만들어요).
 - 상태: 폰(`narrowChat`)에서 채팅 체인은 `home > chat/list > chat/<대상>`, 넓은 화면은 `home > chat/<대상>`. 모니터링에서 연 대화는 `home > monitoring > monitoring/<항목> > <대화>`, 감시 대화는 왼쪽 목록이 있어 `home > monitoring > <대화>`(`monChatIt`). 알림에서 온 이동(`NSC.ret`)은 `home > notices > ...`. 넓은 화면은 오버레이가 엔트리를 안 쓰고 위/옆 이동은 현재 엔트리를 replace만 해요(`histFlat`, 주소창 깜박임 방지). 체인이 6번 시도로 안 맞으면 원하는 경로로 그냥 맞춰요.
 - 데이터: 없음(브라우저 History API, 해시 `#chat/...`).
-- 근거: web/js/32-history-nav.js:14(routeChain), :33(navSync), :40(routeReplace), :48(histMove), :55(histSeed), :67(histSync), :90-94(ovOpen/ovDone/dialogHist), :96(guardHit), :104(armExitGuard), :112(popstate).
+- 근거: web/js/32-history-nav.js:14(routeChain), :33(navSync), :40(routeReplace), :48(histMove), :55(histSeed), :67(histSync), :90-94(ovOpen/ovDone/dialogHist), :96(guardHit), :104(popstate).
 - css: 없음(코드에서 확인 못 함: 이 모듈은 DOM을 그리지 않아요).
 
 ### 폰 키보드에 맞춘 입력창 (visualViewport)
@@ -1333,7 +1333,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 통합 목록 로더와 미답장 표시 (30-integrations.js)
 
 - 목적: 이 설치에서 켜진 앱(메일, 카카오톡, 인스타그램, 유튜브 등)을 모니터링 목록의 `앱` 그룹으로 공급하고 미답장 알약과 `답장 안 함` 칩을 제공해요.
-- 구성: 화면 없음(데이터와 두 공용 노드). `unrepPill(text="미답장")` = 주황 `.tag.unreplied`, `unrepNo(path, after)` = `.cchip.unrep-no` 버튼 `답장 안 함`.
+- 구성: 화면 없음(데이터와 공용 노드 하나). `unrepPill(text="미답장")` = 주황 `.tag.unreplied`.
 - 기능: 알림 수나 대화 안 읽음 수, 미답장 메일 수가 바뀌면 300ms 뒤 다시 읽어요(`intgWatch`). 켜 둔 앱의 아이콘 경로는 `ICONS`에 등록. 꺼진 앱의 메일도 보존해서 다른 컴퓨터 복사본에서 쓸 수 있어요(`intgHidden`). `답장 안 함` 탭은 알약과 버튼을 바로 숨기고 `POST <path>` 실패 시 되돌려요.
 - 상태: 성공 토스트 `답장 안 함으로 표시했어요`, 실패는 오류 토스트. 불러오기 실패는 조용히 이전 목록 유지.
 - 데이터: `GET /api/integrations`(위), `POST <path>`(호출자 지정, 예: 댓글 `/api/comments/comment/<id>/no-reply`).

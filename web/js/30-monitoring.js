@@ -7,7 +7,6 @@
 // Data: GET /api/monitors (hub/monitors.ts) -> {items: [{name, watch?, kind, channel?, last_run?, last_result?, next_run?, every?, connection?, since?, conn_reason?, paused?, last_summary?}]}, the notices (30-notices.js NT)
 // and the integrations. It repaints when a notice arrives and once a minute while it is open.
 const NM = { items: [], loaded: false, failed: false };
-const NT_RESULT = { ok: ["정상", "done"], changed: ["바뀜", "ask"], fail: ["실패", "fail"] };
 const MON_KIND = { watch: "모니터링", schedule: "예약" };
 // The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
 const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
