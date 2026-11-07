@@ -389,6 +389,153 @@ type Loop = { id: string; cursor?: string; timer?: ReturnType<typeof setTimeout>
 
 export type AgentAdapter = Adapter & { pollNow(): Promise<void> };
 
+/** The screen's view of the config: tokens only as set/unset; one room per chat, with its connection's type and its last in/out/error. */
+function settingsView(cfg: AgentConfig): Settings {
+	const status = connStatus();
+	const options = CONN_TYPES.map(t => ({ value: t.key, label: t.label }));
+	for (const c of cfg.connections) if (!options.some(o => o.value === typeKey(c))) options.push({ value: typeKey(c), label: `${c.platform} ${c.auth === "user" ? "사용자 계정" : "봇"}` });
+	return {
+		enabled: cfg.enabled,
+		help: HELP,
+		fields: [
+			{ key: "slack_bot_token", label: "Slack 봇 토큰", type: "secret", set: cfg.connections.some(c => c.platform === "slack" && c.auth === "bot" && c.token !== ""), hint: "xoxb- 로 시작해요" },
+			{ key: "slack_user_token", label: "Slack 사용자 토큰", type: "secret", as_user: true, set: cfg.connections.some(c => c.platform === "slack" && c.auth === "user" && c.token !== ""), hint: USER_TOKEN_NOTE },
+			{ key: "slack_cookie", label: "Slack 사용자 쿠키", type: "secret", set: cfg.connections.some(c => c.platform === "slack" && c.auth === "user" && !!c.cookie), hint: "사용자 토큰(xoxc-)을 쓸 때만 필요해요" },
+			{ key: "telegram_bot_token", label: "Telegram 봇 토큰", type: "secret", set: cfg.connections.some(c => c.platform === "telegram" && c.token !== "") },
+			{ key: "telegram_chat", label: "Telegram 채팅 ID", type: "text", value: cfg.connections.find(c => c.platform === "telegram")?.chats.find(x => x.kind === "main")?.id ?? "", hint: "Telegram은 봇이 채팅 목록을 볼 수 없어서 한 번 넣어요" },
+		],
+		allow: { label: "말을 걸 수 있는 사람", hint: "Slack 멤버 ID(U…)나 Telegram 숫자 ID", items: [...new Set(cfg.connections.flatMap(c => c.allow))] },
+		rooms: {
+			label: "채팅",
+			editable: true,
+			...(hintFor(cfg) ? { hint: hintFor(cfg) } : {}),
+			fields: [
+				{ key: "connection", label: "연결 종류", type: "select", options },
+				{ key: "chat", label: "채널 ID", type: "text", hint: "Slack 채널 ID(C…) 또는 Telegram 채팅 ID" },
+				{ key: "bot_token", label: "봇 토큰", type: "secret", hint: "Slack 봇(xoxb-)과 Telegram 봇의 토큰이에요" },
+				{ key: "user_token", label: "사용자 토큰", type: "secret", as_user: true, hint: USER_TOKEN_NOTE },
+				{ key: "cookie", label: "사용자 쿠키", type: "secret", hint: "Slack 사용자 계정(xoxd-)일 때만 필요해요" },
+			],
+			items: cfg.connections.flatMap(conn =>
+				conn.chats.map(chat => ({
+					id: roomId(conn.id, chat.id),
+					name: chat.name,
+					kind: chat.kind,
+					...(chat.project ? { project: { target: chat.project, name: chat.project } } : {}),
+					values: { connection: typeKey(conn), chat: chat.id },
+					set: { bot_token: conn.auth === "bot" && conn.token !== "", user_token: conn.auth === "user" && conn.token !== "", cookie: !!conn.cookie },
+					...status[`${conn.id}:${chat.id}`],
+				})),
+			),
+		},
+		projects: [],
+	};
+}
+
+/** A connection's token or cookie, or Telegram's chat, from the screen's top-level values; omitted keeps, "" clears. */
+function applyValues(next: AgentConfig, v: Record<string, string>, allow: string[] | undefined): void {
+	const conn = (platform: string, auth: "bot" | "user"): AgentConn => {
+		let c = next.connections.find(x => x.platform === platform && x.auth === auth);
+		if (!c) {
+			const key = `${platform}-${auth}`;
+			let id = key;
+			for (let n = 2; next.connections.some(x => x.id === id); n++) id = `${key}-${n}`;
+			c = { id, platform, auth, token: "", allow: allow ?? [...new Set(next.connections.flatMap(x => x.allow))], chats: [] };
+			next.connections.push(c);
+		}
+		return c;
+	};
+	for (const [k, spec] of Object.entries(TOKEN_KEYS)) {
+		if (v[k] === undefined) continue;
+		const c = conn(spec.platform, spec.auth);
+		const value = v[k]!.trim();
+		if (spec.field === "token") c.token = value;
+		else if (value) c.cookie = value;
+		else delete c.cookie;
+	}
+	if (v.telegram_chat !== undefined) {
+		const c = conn("telegram", "bot");
+		const id = v.telegram_chat.trim();
+		if (id.length > 128) throw fail("telegram_chat must be 1 to 128 characters");
+		c.chats = c.chats.filter(x => x.kind !== "main" && x.id !== id);
+		if (id) c.chats.unshift({ id, name: "메인 대화", kind: "main" });
+	}
+	next.connections = next.connections.filter(c => c.token || c.cookie || c.chats.length);
+}
+
+/** The `rooms` of a settings save: every room checked, then the connections rebuilt in `next`. Throws before anything is written. */
+function applyRooms(cfg: AgentConfig, next: AgentConfig, rooms: NonNullable<SettingsPut["rooms"]>, allow: string[] | undefined): void {
+	if (!Array.isArray(rooms)) throw fail("rooms must be a list");
+	const old = new Map(cfg.connections.flatMap(conn => conn.chats.map(chat => [roomId(conn.id, chat.id), { conn, chat }] as const)));
+	const conns = new Map(next.connections.map(c => [c.id, c]));
+	const known = new Set([...CONN_TYPES.map(t => t.key), ...cfg.connections.map(typeKey)]);
+	const baseAllow = allow ?? [...new Set(cfg.connections.flatMap(c => c.allow))];
+	const secrets = new Map<string, { token?: string; cookie?: string }>();
+	const give = (conn: AgentConn, id: string, field: "token" | "cookie", value: string) => {
+		const got = secrets.get(conn.id) ?? {};
+		if (got[field] !== undefined && got[field] !== value) throw fail(`${id}: two chats give different ${field === "token" ? "tokens" : "cookies"} for the same connection`);
+		secrets.set(conn.id, { ...got, [field]: value });
+	};
+	for (const r of rooms) {
+		if (!r || typeof r !== "object") throw fail("each room must be an object");
+		if (r.id !== undefined && typeof r.id !== "string") throw fail("room id must be a string");
+		const was = r.id !== undefined ? old.get(r.id) : undefined;
+		if (r.id !== undefined && !was) throw fail(`${r.id}: unknown room`);
+		const v = r.values ?? {};
+		if (typeof v !== "object" || Array.isArray(v)) throw fail("room values must be an object");
+		const bad = Object.keys(v).find(k => !ROOM_VALUES.includes(k));
+		if (bad) throw fail(`unknown room value ${bad}`);
+		const label = r.id ?? (typeof v.chat === "string" ? v.chat.trim() : "new chat");
+		const key = v.connection ?? (was && typeKey(was.conn));
+		if (typeof key !== "string" || !known.has(key)) throw fail(`${label}: pick a connection type`);
+		const type = /^([a-z]{2,20})-(bot|user)$/.exec(key)!;
+		const platform = type[1]!;
+		const auth = type[2] as "bot" | "user";
+		let conn = was && typeKey(was.conn) === key ? conns.get(was.conn.id) : [...conns.values()].find(c => c.platform === platform && c.auth === auth);
+		if (!conn) {
+			let id = key;
+			for (let n = 2; conns.has(id); n++) id = `${key}-${n}`;
+			conn = { id, platform, auth, token: "", allow: baseAllow, chats: [] };
+			conns.set(id, conn);
+		}
+		const chatId = v.chat !== undefined ? (typeof v.chat === "string" ? v.chat.trim() : "") : was?.chat.id;
+		if (!chatId || chatId.length > 128) throw fail(`${label}: chat id must be 1 to 128 characters`);
+		if (conn.chats.some(c => c.id === chatId)) throw fail(`${label}: duplicate chat ${chatId}`);
+		const kind = r.kind ?? was?.chat.kind;
+		if (typeof kind !== "string" || !KINDS.includes(kind)) throw fail(`${label}: kind must be main, project, alert or worklog`);
+		if (r.name !== undefined && typeof r.name !== "string") throw fail(`${label}: name must be a string`);
+		const project = kind === "project" ? (r.project !== undefined ? r.project : was?.chat.project) : undefined;
+		if (kind === "project" && (typeof project !== "string" || !project.trim())) throw fail(`${label}: a project chat needs a project`);
+		const secret = (field: string): string | undefined => {
+			const given = v[field];
+			if (given === undefined) return undefined;
+			if (typeof given !== "string") throw fail(`${label}: ${field} must be a string`);
+			return given.trim();
+		};
+		const [mine, other] = auth === "user" ? ["user_token", "bot_token"] : ["bot_token", "user_token"];
+		const token = secret(mine!);
+		if (token !== undefined) give(conn, label, "token", token);
+		if (secret(other!)) throw fail(`${label}: ${other} does not belong to a ${key} connection`);
+		const cookie = secret("cookie");
+		if (cookie) {
+			if (auth !== "user") throw fail(`${label}: a cookie belongs to a user connection`);
+			give(conn, label, "cookie", cookie);
+		} else if (cookie === "") give(conn, label, "cookie", "");
+		conn.chats.push({ id: chatId, name: (r.name ?? was?.chat.name ?? "").trim() || chatId, kind: kind as ChatKind, ...(typeof project === "string" && project.trim() ? { project: project.trim() } : {}) });
+	}
+	for (const [id, s] of secrets) {
+		const conn = conns.get(id)!;
+		if (s.token !== undefined) conn.token = s.token;
+		if (s.cookie !== undefined) {
+			if (s.cookie) conn.cookie = s.cookie;
+			else delete conn.cookie;
+		}
+	}
+	// A connection whose last chat was removed goes with its token; one that never had chats stays as it was.
+	const had = new Set(cfg.connections.filter(c => c.chats.length).map(c => c.id));
+	next.connections = [...conns.values()].filter(c => c.chats.length || !had.has(c.id));
+}
+
 export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport?: AgentTransport } = {}): AgentAdapter {
 	let ctx: MessengerCtx | undefined;
 	let transport: AgentTransport | undefined = opts.transport;
@@ -455,10 +602,10 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 		},
 		deliver: msg => deliver(msg),
 		hidden: () => !opts.transport && !available(),
-		settings: () => settings(),
+		settings: () => settingsView(loadAgentConfig(dataDir)),
 		saveSettings: body => {
 			apply(body);
-			return settings();
+			return settingsView(loadAgentConfig(dataDir));
 		},
 		test: () => test(),
 		syncRooms: d => syncRooms(d),
@@ -487,50 +634,6 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 		for (const conn of conns) startLoop(conn);
 	}
 
-	/** The screen's view of the config: tokens only as set/unset; one room per chat, with its connection's type and its last in/out/error. */
-	function settings(): Settings {
-		const cfg = loadAgentConfig(dataDir);
-		const status = connStatus();
-		const options = CONN_TYPES.map(t => ({ value: t.key, label: t.label }));
-		for (const c of cfg.connections) if (!options.some(o => o.value === typeKey(c))) options.push({ value: typeKey(c), label: `${c.platform} ${c.auth === "user" ? "사용자 계정" : "봇"}` });
-		return {
-			enabled: cfg.enabled,
-			help: HELP,
-			fields: [
-				{ key: "slack_bot_token", label: "Slack 봇 토큰", type: "secret", set: cfg.connections.some(c => c.platform === "slack" && c.auth === "bot" && c.token !== ""), hint: "xoxb- 로 시작해요" },
-				{ key: "slack_user_token", label: "Slack 사용자 토큰", type: "secret", as_user: true, set: cfg.connections.some(c => c.platform === "slack" && c.auth === "user" && c.token !== ""), hint: USER_TOKEN_NOTE },
-				{ key: "slack_cookie", label: "Slack 사용자 쿠키", type: "secret", set: cfg.connections.some(c => c.platform === "slack" && c.auth === "user" && !!c.cookie), hint: "사용자 토큰(xoxc-)을 쓸 때만 필요해요" },
-				{ key: "telegram_bot_token", label: "Telegram 봇 토큰", type: "secret", set: cfg.connections.some(c => c.platform === "telegram" && c.token !== "") },
-				{ key: "telegram_chat", label: "Telegram 채팅 ID", type: "text", value: cfg.connections.find(c => c.platform === "telegram")?.chats.find(x => x.kind === "main")?.id ?? "", hint: "Telegram은 봇이 채팅 목록을 볼 수 없어서 한 번 넣어요" },
-			],
-			allow: { label: "말을 걸 수 있는 사람", hint: "Slack 멤버 ID(U…)나 Telegram 숫자 ID", items: [...new Set(cfg.connections.flatMap(c => c.allow))] },
-			rooms: {
-				label: "채팅",
-				editable: true,
-				...(hintFor(cfg) ? { hint: hintFor(cfg) } : {}),
-				fields: [
-					{ key: "connection", label: "연결 종류", type: "select", options },
-					{ key: "chat", label: "채널 ID", type: "text", hint: "Slack 채널 ID(C…) 또는 Telegram 채팅 ID" },
-					{ key: "bot_token", label: "봇 토큰", type: "secret", hint: "Slack 봇(xoxb-)과 Telegram 봇의 토큰이에요" },
-					{ key: "user_token", label: "사용자 토큰", type: "secret", as_user: true, hint: USER_TOKEN_NOTE },
-					{ key: "cookie", label: "사용자 쿠키", type: "secret", hint: "Slack 사용자 계정(xoxd-)일 때만 필요해요" },
-				],
-				items: cfg.connections.flatMap(conn =>
-					conn.chats.map(chat => ({
-						id: roomId(conn.id, chat.id),
-						name: chat.name,
-						kind: chat.kind,
-						...(chat.project ? { project: { target: chat.project, name: chat.project } } : {}),
-						values: { connection: typeKey(conn), chat: chat.id },
-						set: { bot_token: conn.auth === "bot" && conn.token !== "", user_token: conn.auth === "user" && conn.token !== "", cookie: !!conn.cookie },
-						...status[`${conn.id}:${chat.id}`],
-					})),
-				),
-			},
-			projects: [],
-		};
-	}
-
 	/** Validates the whole body first, then writes once: a refused body changes nothing. */
 	function apply(body: SettingsPut): void {
 		const cfg = loadAgentConfig(dataDir);
@@ -549,113 +652,12 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 			if (!Array.isArray(body.allow) || body.allow.some(x => typeof x !== "string")) throw fail("allow must be a list of strings");
 			allow = [...new Set(strings(body.allow))];
 		}
-		if (body.rooms !== undefined) {
-			if (!Array.isArray(body.rooms)) throw fail("rooms must be a list");
-			const old = new Map(cfg.connections.flatMap(conn => conn.chats.map(chat => [roomId(conn.id, chat.id), { conn, chat }] as const)));
-			const conns = new Map(next.connections.map(c => [c.id, c]));
-			const known = new Set([...CONN_TYPES.map(t => t.key), ...cfg.connections.map(typeKey)]);
-			const baseAllow = allow ?? [...new Set(cfg.connections.flatMap(c => c.allow))];
-			const secrets = new Map<string, { token?: string; cookie?: string }>();
-			const give = (conn: AgentConn, id: string, field: "token" | "cookie", value: string) => {
-				const got = secrets.get(conn.id) ?? {};
-				if (got[field] !== undefined && got[field] !== value) throw fail(`${id}: two chats give different ${field === "token" ? "tokens" : "cookies"} for the same connection`);
-				secrets.set(conn.id, { ...got, [field]: value });
-			};
-			for (const r of body.rooms) {
-				if (!r || typeof r !== "object") throw fail("each room must be an object");
-				if (r.id !== undefined && typeof r.id !== "string") throw fail("room id must be a string");
-				const was = r.id !== undefined ? old.get(r.id) : undefined;
-				if (r.id !== undefined && !was) throw fail(`${r.id}: unknown room`);
-				const v = r.values ?? {};
-				if (typeof v !== "object" || Array.isArray(v)) throw fail("room values must be an object");
-				const bad = Object.keys(v).find(k => !ROOM_VALUES.includes(k));
-				if (bad) throw fail(`unknown room value ${bad}`);
-				const label = r.id ?? (typeof v.chat === "string" ? v.chat.trim() : "new chat");
-				const key = v.connection ?? (was && typeKey(was.conn));
-				if (typeof key !== "string" || !known.has(key)) throw fail(`${label}: pick a connection type`);
-				const type = /^([a-z]{2,20})-(bot|user)$/.exec(key)!;
-				const platform = type[1]!;
-				const auth = type[2] as "bot" | "user";
-				let conn = was && typeKey(was.conn) === key ? conns.get(was.conn.id) : [...conns.values()].find(c => c.platform === platform && c.auth === auth);
-				if (!conn) {
-					let id = key;
-					for (let n = 2; conns.has(id); n++) id = `${key}-${n}`;
-					conn = { id, platform, auth, token: "", allow: baseAllow, chats: [] };
-					conns.set(id, conn);
-				}
-				const chatId = v.chat !== undefined ? (typeof v.chat === "string" ? v.chat.trim() : "") : was?.chat.id;
-				if (!chatId || chatId.length > 128) throw fail(`${label}: chat id must be 1 to 128 characters`);
-				if (conn.chats.some(c => c.id === chatId)) throw fail(`${label}: duplicate chat ${chatId}`);
-				const kind = r.kind ?? was?.chat.kind;
-				if (typeof kind !== "string" || !KINDS.includes(kind)) throw fail(`${label}: kind must be main, project, alert or worklog`);
-				if (r.name !== undefined && typeof r.name !== "string") throw fail(`${label}: name must be a string`);
-				const project = kind === "project" ? (r.project !== undefined ? r.project : was?.chat.project) : undefined;
-				if (kind === "project" && (typeof project !== "string" || !project.trim())) throw fail(`${label}: a project chat needs a project`);
-				const secret = (field: string): string | undefined => {
-					const given = v[field];
-					if (given === undefined) return undefined;
-					if (typeof given !== "string") throw fail(`${label}: ${field} must be a string`);
-					return given.trim();
-				};
-				const [mine, other] = auth === "user" ? ["user_token", "bot_token"] : ["bot_token", "user_token"];
-				const token = secret(mine!);
-				if (token !== undefined) give(conn, label, "token", token);
-				if (secret(other!)) throw fail(`${label}: ${other} does not belong to a ${key} connection`);
-				const cookie = secret("cookie");
-				if (cookie) {
-					if (auth !== "user") throw fail(`${label}: a cookie belongs to a user connection`);
-					give(conn, label, "cookie", cookie);
-				} else if (cookie === "") give(conn, label, "cookie", "");
-				conn.chats.push({ id: chatId, name: (r.name ?? was?.chat.name ?? "").trim() || chatId, kind: kind as ChatKind, ...(typeof project === "string" && project.trim() ? { project: project.trim() } : {}) });
-			}
-			for (const [id, s] of secrets) {
-				const conn = conns.get(id)!;
-				if (s.token !== undefined) conn.token = s.token;
-				if (s.cookie !== undefined) {
-					if (s.cookie) conn.cookie = s.cookie;
-					else delete conn.cookie;
-				}
-			}
-			// A connection whose last chat was removed goes with its token; one that never had chats stays as it was.
-			const had = new Set(cfg.connections.filter(c => c.chats.length).map(c => c.id));
-			next.connections = [...conns.values()].filter(c => c.chats.length || !had.has(c.id));
-		}
+		if (body.rooms !== undefined) applyRooms(cfg, next, body.rooms, allow);
 		if (allow) for (const c of next.connections) c.allow = allow;
 		if (body.rooms === undefined) for (const c of next.connections) c.chats = cfg.connections.find(x => x.id === c.id)?.chats ?? [];
 		applyValues(next, values as Record<string, string>, allow);
 		saveAgentConfig(next, dataDir);
 		reconcile();
-	}
-
-	/** A connection's token or cookie, or Telegram's chat, from the screen's top-level values; omitted keeps, "" clears. */
-	function applyValues(next: AgentConfig, v: Record<string, string>, allow: string[] | undefined): void {
-		const conn = (platform: string, auth: "bot" | "user"): AgentConn => {
-			let c = next.connections.find(x => x.platform === platform && x.auth === auth);
-			if (!c) {
-				const key = `${platform}-${auth}`;
-				let id = key;
-				for (let n = 2; next.connections.some(x => x.id === id); n++) id = `${key}-${n}`;
-				c = { id, platform, auth, token: "", allow: allow ?? [...new Set(next.connections.flatMap(x => x.allow))], chats: [] };
-				next.connections.push(c);
-			}
-			return c;
-		};
-		for (const [k, spec] of Object.entries(TOKEN_KEYS)) {
-			if (v[k] === undefined) continue;
-			const c = conn(spec.platform, spec.auth);
-			const value = v[k]!.trim();
-			if (spec.field === "token") c.token = value;
-			else if (value) c.cookie = value;
-			else delete c.cookie;
-		}
-		if (v.telegram_chat !== undefined) {
-			const c = conn("telegram", "bot");
-			const id = v.telegram_chat.trim();
-			if (id.length > 128) throw fail("telegram_chat must be 1 to 128 characters");
-			c.chats = c.chats.filter(x => x.kind !== "main" && x.id !== id);
-			if (id) c.chats.unshift({ id, name: "메인 대화", kind: "main" });
-		}
-		next.connections = next.connections.filter(c => c.token || c.cookie || c.chats.length);
 	}
 
 	/** Maps each desired room to a channel of every connection that has none: a channel of the same name (channelName), else one made through the transport when it can. Mapped chats of a removed project go; the channels stay. */
