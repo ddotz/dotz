@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setImmediate as nextTick } from "node:timers/promises";
 import { baseLanguage, systemLanguage } from "../hub/language.ts";
-import { collectSessions, OMO_WAKE, type Runtime, type Src } from "../hub/session-sources.ts";
+import { addBigContext, addToolCalls, addTurn, addWake, collectSessions, newStreaks, OMO_WAKE, type Runtime, type Src } from "../hub/session-sources.ts";
 import { dataDir } from "./guard-config.ts";
 
 const BUST_UNCACHED = 50_000;
@@ -274,7 +274,8 @@ function analyze(src: Src, since: number, isExpensive: (model: string) => boolea
 	let compacted = false, modelChanged = false, thinkChanged = false, user = false;
 	let prev: { ts: number; ctx: number; ttlMin: number } | undefined;
 	let prevStop = "stop";
-	let errStreak = 0, bigStreak = 0, toolHash = "", toolStreak = 0, readTok = 0, readCost = 0;
+	let errStreak = 0, readTok = 0, readCost = 0;
+	const run = newStreaks();
 	let omoLong = false;
 	const text = readFileSync(src.file, "utf8");
 	for (const line of text.split("\n")) {
@@ -288,7 +289,7 @@ function analyze(src: Src, since: number, isExpensive: (model: string) => boolea
 		const ts = Date.parse(entry.timestamp ?? "");
 		if (entry.type === "compaction") {
 			compacted = true;
-			bigStreak = 0;
+			run.big = 0;
 			if (!(ts < since)) s.compactions++;
 			continue;
 		}
@@ -350,14 +351,7 @@ function analyze(src: Src, since: number, isExpensive: (model: string) => boolea
 			continue;
 		}
 		if (inWindow) {
-			s.start ??= ts;
-			s.turns++;
-			s.tokens += tokens;
-			s.cost += cost;
-			s.cw += cw;
-			s.cr += cr;
-			s.out += u.output ?? 0;
-			s.maxCtx = Math.max(s.maxCtx, ctx);
+			addTurn(s, ts, { tokens, cost, cw, cr, out: u.output ?? 0, ctx });
 			if (cr) {
 				readTok += cr;
 				readCost += u.cost?.cacheRead ?? 0;
@@ -378,40 +372,15 @@ function analyze(src: Src, since: number, isExpensive: (model: string) => boolea
 			const wakeBy = src.runtime === "omo" ? events.filter(e => OMO_WAKE.has(e)) : events;
 			if (newTurn && !user && wakeBy.length) {
 				if (!calls.length && (u.output ?? 0) <= IDLE_OUT) {
-					const key = wakeBy.at(-1) ?? "custom";
-					const w = (s.wakes[key] ??= { n: 0, tokens: 0, cost: 0 });
-					w.n++;
-					w.tokens += tokens;
-					w.cost += cost;
+					addWake(s, wakeBy.at(-1) ?? "custom", tokens, cost);
 				}
 			}
-			if (ctx > BIG_CTX) {
-				bigStreak++;
-				s.bigTokens += tokens;
-				s.bigCost += cost;
-				s.maxBigStreak = Math.max(s.maxBigStreak, bigStreak);
-			} else bigStreak = 0;
+			addBigContext(s, run, ctx, BIG_CTX, tokens, cost);
 			if (s.intended && !sameModel(model, s.intended)) {
 				s.fbTurns++;
 				s.fbModels.add(model);
 			}
-			for (const call of calls) {
-				const hash = `${call.name}${JSON.stringify(call.arguments ?? {}).slice(0, 4000)}`;
-				if (hash === toolHash) {
-					toolStreak++;
-					if (toolStreak >= 3) {
-						s.loopTokens += tokens / calls.length;
-						s.loopCost += cost / calls.length;
-					}
-					if (toolStreak > s.maxToolStreak) {
-						s.maxToolStreak = toolStreak;
-						s.maxToolDesc = `${call.name} ${JSON.stringify(call.arguments ?? {}).slice(0, 90)}`;
-					}
-				} else {
-					toolHash = hash;
-					toolStreak = 1;
-				}
-			}
+			addToolCalls(s, run, calls, tokens, cost);
 		}
 		s.intended ??= model;
 		// omp reports the cache TTL in cttl. OmO's record has no TTL (senpi's claude-sdk-oauth usage drops cacheWrite1h), so

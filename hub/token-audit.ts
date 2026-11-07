@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, HOME, log, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
-import { collectSessions, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
+import { addBigContext, addToolCalls, addTurn, addWake, collectSessions, newStreaks, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
 import { trackTimer } from "./shutdown.ts";
 
 // OmO (senpi) trims the context of every request once the last usage reaches 50% of the window; the trim is not saved, so
@@ -125,7 +125,8 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 	let prevStop = "stop";
 	let lastCompactTs = 0, fbOpen = false, unproven = false;
 	let omoLong = false;
-	let errStreak = 0, bigStreak = 0, toolHash = "", toolStreak = 0, readTok = 0, readCost = 0;
+	let errStreak = 0, readTok = 0, readCost = 0;
+	const run = newStreaks();
 	let level = "";
 	for (const line of readFileSync(src.file, "utf8").split("\n")) {
 		if (line.length < 20) continue;
@@ -146,7 +147,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 			if (!head.includes('"role":"assistant"')) continue;
 		} else if (head.startsWith('{"type":"compaction"')) {
 			compacted = true;
-			bigStreak = 0;
+			run.big = 0;
 			if (!(ts < since)) s.compactions++;
 			if (ts) lastCompactTs = ts;
 			continue;
@@ -224,14 +225,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 			unproven = false;
 		}
 		if (inWindow) {
-			s.start ??= ts;
-			s.turns++;
-			s.tokens += tokens;
-			s.cost += cost;
-			s.cw += cw;
-			s.cr += cr;
-			s.out += u.output ?? 0;
-			s.maxCtx = Math.max(s.maxCtx, ctx);
+			addTurn(s, ts, { tokens, cost, cw, cr, out: u.output ?? 0, ctx });
 			if (cr) {
 				readTok += cr;
 				readCost += u.cost?.cacheRead ?? 0;
@@ -279,18 +273,9 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 			// idle wake: a new turn started by notifications only, ending with no tool call and a tiny reply
 			const wakeBy = src.runtime === "omo" ? events.filter(e => OMO_WAKE.has(e)) : events;
 			if (newTurn && !user && wakeBy.length && !calls.length && (u.output ?? 0) <= IDLE_OUT) {
-				const key = wakeBy.at(-1) ?? "custom";
-				const w = (s.wakes[key] ??= { n: 0, tokens: 0, cost: 0 });
-				w.n++;
-				w.tokens += tokens;
-				w.cost += cost;
+				addWake(s, wakeBy.at(-1) ?? "custom", tokens, cost);
 			}
-			if (ctx > BIG_CTX) {
-				bigStreak++;
-				s.bigTokens += tokens;
-				s.bigCost += cost;
-				s.maxBigStreak = Math.max(s.maxBigStreak, bigStreak);
-			} else bigStreak = 0;
+			addBigContext(s, run, ctx, BIG_CTX, tokens, cost);
 			if (s.intended && !sameModel(model, s.intended)) {
 				s.fbTurns++;
 				s.fbModels.add(model);
@@ -299,23 +284,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 				fbOpen = true;
 				s.fbSegs.at(-1)!.push(ts);
 			} else fbOpen = false;
-			for (const call of calls) {
-				const hash = `${call.name}${JSON.stringify(call.arguments ?? {}).slice(0, 4000)}`;
-				if (hash === toolHash) {
-					toolStreak++;
-					if (toolStreak >= 3) {
-						s.loopTokens += tokens / calls.length;
-						s.loopCost += cost / calls.length;
-					}
-					if (toolStreak > s.maxToolStreak) {
-						s.maxToolStreak = toolStreak;
-						s.maxToolDesc = `${call.name} ${JSON.stringify(call.arguments ?? {}).slice(0, 90)}`;
-					}
-				} else {
-					toolHash = hash;
-					toolStreak = 1;
-				}
-			}
+			addToolCalls(s, run, calls, tokens, cost);
 		}
 		s.intended ??= model;
 		// omp reports the cache TTL in cttl. OmO's record has no TTL (senpi's claude-sdk-oauth usage drops cacheWrite1h), so

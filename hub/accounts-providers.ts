@@ -6,10 +6,11 @@
 // lists two accounts of a hand-made pool and `--provider google` one account of an API key, i.e. the pool is not Anthropic-only.
 // dotz's own switching (rules, order, the Claude pin env) stays Claude-only; here a group only shows its accounts and lets the
 // owner pin one in OmO, which OmO honours for its own account selection.
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { authFile } from "./apikey-policy.ts";
 import { log } from "./config.ts";
+import { lock } from "./file-lock.ts";
 
 const SUBSCRIPTION = "anthropic-subscription";
 // OmO's `anthropic-subscription` is the Claude login, which dotz (like omp) calls `anthropic`; its own `anthropic` entry is the
@@ -130,38 +131,6 @@ export function readProviderStore() {
 		pool: readJson(join(dirname(authFile()), "credential-pool-state.json")),
 		usage: readJson(join(dirname(authFile()), "subscription-usage.json")),
 	};
-}
-
-const LOCK_STALE_MS = 30_000;
-const LOCK_BUDGET_MS = 1_000;
-const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-// proper-lockfile's scheme as OmO uses it (hub/omo-pin.ts has the same, for the Claude pin): the lock is `<file>.lock`.
-function lock(file: string): () => void {
-	const dir = `${file}.lock`;
-	const started = Date.now();
-	for (let attempt = 0; ; attempt++) {
-		try {
-			mkdirSync(dir);
-			return () => {
-				try {
-					rmdirSync(dir);
-				} catch {}
-			};
-		} catch (e) {
-			if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-		}
-		try {
-			if (Date.now() - statSync(dir).mtimeMs > LOCK_STALE_MS) {
-				rmdirSync(dir);
-				continue;
-			}
-		} catch {
-			continue;
-		}
-		const waited = Date.now() - started;
-		if (waited >= LOCK_BUDGET_MS) throw new Error(`OmO의 계정 파일이 ${waited}ms 동안 잠겨 있어요 (${dir})`);
-		sleep(Math.min(100 * 2 ** attempt, 1000, LOCK_BUDGET_MS - waited));
-	}
 }
 
 // The entry of the provider the owner named, as auth.json keys it: `anthropic` is the subscription when there is one.

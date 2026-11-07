@@ -93,3 +93,64 @@ export function collectSessions(since: number, opts: SourceOptions): Src[] {
 	}
 	return out;
 }
+
+// What a session scan adds up per turn, shared by the nightly audit (hub/token-audit.ts) and the /token-audit command (extension/token-audit.ts).
+export type Tally = {
+	start?: number; turns: number; tokens: number; cost: number; cw: number; cr: number; out: number; maxCtx: number;
+	wakes: Record<string, { n: number; tokens: number; cost: number }>;
+	bigTokens: number; bigCost: number; maxBigStreak: number;
+	loopTokens: number; loopCost: number; maxToolStreak: number; maxToolDesc: string;
+};
+// Streaks that run across the turns of one session file.
+export type Streaks = { big: number; hash: string; tool: number };
+export const newStreaks = (): Streaks => ({ big: 0, hash: "", tool: 0 });
+
+export function addTurn(s: Tally, ts: number, t: { tokens: number; cost: number; cw: number; cr: number; out: number; ctx: number }): void {
+	s.start ??= ts;
+	s.turns++;
+	s.tokens += t.tokens;
+	s.cost += t.cost;
+	s.cw += t.cw;
+	s.cr += t.cr;
+	s.out += t.out;
+	s.maxCtx = Math.max(s.maxCtx, t.ctx);
+}
+
+// An idle wake: a turn started by notifications only. Counted under the last event that woke it.
+export function addWake(s: Tally, key: string, tokens: number, cost: number): void {
+	const w = (s.wakes[key] ??= { n: 0, tokens: 0, cost: 0 });
+	w.n++;
+	w.tokens += tokens;
+	w.cost += cost;
+}
+
+// Turns whose context is over `bigCtx`, and the longest run of them.
+export function addBigContext(s: Tally, run: Streaks, ctx: number, bigCtx: number, tokens: number, cost: number): void {
+	if (ctx > bigCtx) {
+		run.big++;
+		s.bigTokens += tokens;
+		s.bigCost += cost;
+		s.maxBigStreak = Math.max(s.maxBigStreak, run.big);
+	} else run.big = 0;
+}
+
+// The same tool call with the same arguments again and again: from the third in a row its share of the turn is loop cost.
+export function addToolCalls(s: Tally, run: Streaks, calls: { name?: string; arguments?: unknown }[], tokens: number, cost: number): void {
+	for (const call of calls) {
+		const hash = `${call.name}${JSON.stringify(call.arguments ?? {}).slice(0, 4000)}`;
+		if (hash === run.hash) {
+			run.tool++;
+			if (run.tool >= 3) {
+				s.loopTokens += tokens / calls.length;
+				s.loopCost += cost / calls.length;
+			}
+			if (run.tool > s.maxToolStreak) {
+				s.maxToolStreak = run.tool;
+				s.maxToolDesc = `${call.name} ${JSON.stringify(call.arguments ?? {}).slice(0, 90)}`;
+			}
+		} else {
+			run.hash = hash;
+			run.tool = 1;
+		}
+	}
+}

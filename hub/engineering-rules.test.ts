@@ -48,7 +48,7 @@ const BOUNDARY_CEILINGS: Counts = {
 	"feature->feature": 18, // a feature importing another feature couples two things meant to be removable alone
 };
 // A swallowed error is a bug nobody sees. Per top dir: an empty catch or .catch(() => null) with no comment saying why the swallow is fine.
-const SWALLOW_CEILINGS: Counts = { extension: 11, features: 27, hub: 194, onboard: 4, "setup.ts": 1, web: 78 };
+const SWALLOW_CEILINGS: Counts = { extension: 11, features: 27, hub: 193, onboard: 4, "setup.ts": 1, web: 78 };
 // State a process can read back mid-write (a crash leaves half a file) must use writeAtomic from hub/config.ts; these are the plain writes left.
 const NON_ATOMIC_WRITE_CEILINGS: Counts = { extension: 3, features: 8, hub: 43, onboard: 1, "setup.ts": 2 };
 // A fetch or process call with no timeout or abort can hang its caller for good; the web page is excluded because the browser owns that.
@@ -62,9 +62,9 @@ const DEAD_WEB_GLOBALS: string[] = [];
 // docs/ARCHITECTURE.md is how one finds an existing feature before writing a second one; hub/*.ts files it does not name today, by count.
 const UNMAPPED_MODULES = 151;
 // A second private copy of a helper is how two paths drift; files defining each top-level helper today.
-const HELPER_COPY_CEILINGS: Counts = { readJson: 13, json: 17, sameOrigin: 4, git: 7, shq: 5, sleep: 4 };
+const HELPER_COPY_CEILINGS: Counts = { readJson: 13, json: 17, sameOrigin: 4, git: 7, shq: 5, sleep: 3 };
 // A 12-line block pasted into two files gets fixed in one of them; blocks that exist today.
-const PASTED_BLOCKS = 4;
+const PASTED_BLOCKS = 0;
 
 const ratchet = (what: string, measured: Counts, ceilings: Counts) => {
 	for (const [k, ceil] of Object.entries(ceilings)) if ((measured[k] ?? 0) < ceil) console.info(`ratchet: ${what} ${k} is ${measured[k] ?? 0}, ceiling ${ceil}`);
