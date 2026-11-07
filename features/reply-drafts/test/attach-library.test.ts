@@ -235,6 +235,19 @@ export default { name: "work", reply: (d: any) => { if (d.source !== "work") ret
 		}
 		expect(canAttach("work")).toBe(false);
 	});
+	test("draft attach in its own process loads the plugins first, so a plugin source that sends files takes one", async () => {
+		const plugins = join(env.dir, "custom", "plugins");
+		mkdirSync(plugins, { recursive: true });
+		writeFileSync(join(plugins, "work.ts"), `export default { name: "work", repliesWithFiles: (s: string) => s === "work" };`);
+		enable(env);
+		await offerMailDraft({ ...teacherMail, key: "c-2", source: "work" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		const rec = listDrafts()[0]!;
+		const proc = Bun.spawn([process.execPath, join(import.meta.dir, "..", "bin", "draft.ts"), "attach", rec.id, join(lib, "견적서 양식.xlsx")], { env: { ...process.env, DOTZ_DIR: env.dir }, stdout: "pipe", stderr: "pipe" });
+		const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+		expect(stderr).not.toContain("파일을 붙여 보낼 수 없어요");
+		expect(code).toBe(0);
+		expect(stagedFiles(rec.id).map(f => f.name)).toEqual(["견적서 양식.xlsx"]);
+	});
 });
 
 describe("adding and removing files of a draft (the send sheet's routes)", () => {
