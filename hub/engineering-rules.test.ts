@@ -56,8 +56,7 @@ const UNBOUNDED_CALL_CEILINGS: Counts = { extension: 2, features: 13, hub: 71, o
 // Timing assertions flake under load (the machine load average reaches 50 here) and fixed sleeps are luck, so tests wait on events instead.
 const TEST_TIMING_CEILINGS: Counts = { fixedSleeps: 12, budgetFiles: 5 };
 // Exports nothing refers to, not even their own file or a test; remove the export or the code (the entry is `file name`).
-// stopAll stays until someone decides whether shutdown should call it (the messengers are never stopped today).
-const DEAD_EXPORTS = ["hub/messenger.ts stopAll"];
+const DEAD_EXPORTS: string[] = [];
 // Page globals named once in the page, its markup, the hub tests and the site.
 const DEAD_WEB_GLOBALS: string[] = [];
 // docs/ARCHITECTURE.md is how one finds an existing feature before writing a second one; hub/*.ts files it does not name today, by count.

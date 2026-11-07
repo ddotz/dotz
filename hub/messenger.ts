@@ -144,15 +144,6 @@ export async function restart(a: Adapter): Promise<void> {
 		log(`messenger ${a.id} failed to start: ${e}`);
 	}
 }
-export async function stopAll(): Promise<void> {
-	for (const a of registry.values()) {
-		try {
-			await a.stop();
-		} catch (e) {
-			log(`messenger ${a.id} failed to stop: ${e}`);
-		}
-	}
-}
 
 const FILE_LINE = /^[ \t]*\[file\][ \t]+(.+?)[ \t]*$/gm;
 // A deferral receipt, or the gateway's own record for the web conversation or the work log (a restart, an update). Asks, alerts and failures are never this.
