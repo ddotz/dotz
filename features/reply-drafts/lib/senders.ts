@@ -39,7 +39,7 @@ function storedMail(ref: string): { key?: string; account?: string; to?: string 
 	}
 }
 export const mailAccountOf = (ref: string): string | undefined => storedMail(ref)?.account || undefined;
-// A draft's `app` is its tone profile (`mail`), so a category mail (source score = instance mail-orders) finds its instance by the source. `zele` is the
+// A draft's `app` is its tone profile (`mail`), so a category mail (source orders = instance mail-orders) finds its instance by the source. `zele` is the
 // whole mailbox, not a category: an instance with that source says nothing about which account one mail came to.
 export function appAccountOf(app: string, source?: string): string | undefined {
 	const apps = readAppsFile(dataDir());

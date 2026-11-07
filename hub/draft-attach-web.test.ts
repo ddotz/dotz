@@ -20,8 +20,8 @@ for (const f of ["달빛정원_공유용.pdf", "하울의 움직이는 성_공�
 	writeFileSync(join(lib, f), `%PDF-1.4 ${f}`);
 }
 const SUBJECT = "선생님 숲과 나나미의 달빛정원 ost 문서 부탁드립니다";
-const BODY = "선생님 안녕하세요.\n\n요청주신 숲과 나나미의 달빛정원 자료 문서 보내드립니다. 공유용 문서는 1절까지 들어 있어요. 보내드린 문서는 개인 연습용으로만 써 주세요.";
-const reply = (to: string, subject = `Re: ${SUBJECT}`) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks for a score", to, subject, body: BODY, questions: [] })}\n\`\`\``;
+const BODY = "선생님 안녕하세요.\n\n요청주신 숲과 나나미의 달빛정원 문서 보내드립니다. 공유용 문서는 1절까지 들어 있어요. 보내드린 문서는 개인 연습용으로만 써 주세요.";
+const reply = (to: string, subject = `Re: ${SUBJECT}`) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks for a brief", to, subject, body: BODY, questions: [] })}\n\`\`\``;
 
 const hub = fakeHub({
 	api: async (req, url) => {
@@ -109,7 +109,7 @@ describe("files in the send sheet at 390px", () => {
 		const v = await open(390, 844);
 		await openSheet(v, ref);
 		await waitFor(v, `document.querySelector(".fs-ft .dr-warn")`);
-		expect(await texts(v, ".fs-ft .dr-wn")).toEqual(["본문에 문서·문서 파일을 보낸다고 썼지만 첨부파일이 없어요"]);
+		expect(await texts(v, ".fs-ft .dr-wn")).toEqual(["본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요"]);
 		const warn = (await box(v, ".fs-ft .dr-warn"))!, send = (await box(v, ".fs-ft .dc-act.main"))!;
 		expect(warn.b).toBeLessThanOrEqual(send.t);
 		expect(await v.evaluate(`getComputedStyle(document.querySelector(".fs-ft .dr-warn")).backgroundColor !== getComputedStyle(document.querySelector(".fs-card")).backgroundColor`)).toBe(true);

@@ -76,7 +76,7 @@ test("only a draft with the three labels is a draft-approval decision", () => {
 });
 
 test("send modes: a reply + mail card keeps 1-3 and adds 답글만 / 메일만 / 직접 입력 …; it still reads as a draft", () => {
-	const card = { to: "커뮤니티 a 댓글", toLabel: "대상" as const, body: "메일 보내드렸습니다^^", ref: "forum:1", question: "이대로 보낼까?", mail: { to: "t@example.com", subject: "MR", body: "MR 보내드립니다", attachments: [{ name: "a.mp3", size: 2048 }] } };
+	const card = { to: "커뮤니티 a 댓글", toLabel: "대상" as const, body: "메일 보내드렸습니다^^", ref: "forum:1", question: "이대로 보낼까?", mail: { to: "t@example.com", subject: "음원", body: "음원 보내드립니다", attachments: [{ name: "a.mp3", size: 2048 }] } };
 	const block = draftApprovalBlock({ ...card, sendModes: true });
 	const opts = parseDecisions(block).blocks[0]!.options;
 	expect(opts.map(o => [o.n, o.label])).toEqual([[1, "보내기"], [2, "고치기"], [3, "보내지 않기"], [4, "답글만 보내기"], [5, "메일만 보내기"], [6, "어떻게 보낼지 직접 입력"]]);
@@ -92,7 +92,7 @@ test("send modes: a reply + mail card keeps 1-3 and adds 답글만 / 메일만 /
 });
 
 test("직접 입력 needs the owner's words; they go out with the answer and draftVerdict returns them", async () => {
-	const card = { to: "커뮤니티 b 댓글", toLabel: "대상" as const, body: "답글", ref: "DOWN1", question: "직접 입력 카드 보낼까?", mail: { to: "t@example.com", subject: "MR", body: "본문" }, sendModes: true };
+	const card = { to: "커뮤니티 b 댓글", toLabel: "대상" as const, body: "답글", ref: "DOWN1", question: "직접 입력 카드 보낼까?", mail: { to: "t@example.com", subject: "음원", body: "본문" }, sendModes: true };
 	const since = Date.parse(ts()) - 1;
 	ask(draftApprovalBlock(card));
 	const n = noticeFor("직접 입력 카드");

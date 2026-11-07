@@ -48,7 +48,7 @@ describe("sendDraft with a mail whose files disagree with its words", () => {
 		const s = fakeSend();
 		const r = await sendDraft(rec.id, { send: s.send });
 		expect(r.ok).toBe(false);
-		expect(r.text).toStartWith(`${ATTACH_REFUSED} 본문에 문서·문서 파일을 보낸다고 썼지만 첨부파일이 없어요`);
+		expect(r.text).toStartWith(`${ATTACH_REFUSED} 본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요`);
 		expect(r.text).toContain("이대로 보내기");
 		expect(s.sent).toEqual([]);
 		expect(getDraft(rec.id)!.status).toBe("pending");
@@ -119,7 +119,7 @@ describe("the card every rendering carries", () => {
 	test("askText shows the finding and the 4th option each time it is rendered, and not once the file is on", () => {
 		const rec = draft(PROMISE);
 		for (const text of [askText(rec, ["the subject must start with 'Re:'"]), askText(rec, [])]) {
-			expect(text).toContain("-# ⚠️ 첨부 확인: 본문에 문서·문서 파일을 보낸다고 썼지만 첨부파일이 없어요");
+			expect(text).toContain("-# ⚠️ 첨부 확인: 본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요");
 			expect(parseDraftApproval(text)?.attachIssues).toHaveLength(1);
 			expect(parseDecisions(text).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "이대로 보내기"]);
 		}

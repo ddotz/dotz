@@ -1,8 +1,9 @@
-// The 첨부 파일 폴더 of a mail app instance: a folder on this machine that holds the files the owner sends again and again (shared document, forms).
+// The 첨부 파일 폴더 of a mail app instance: a folder on this machine that holds the files the owner sends again and again (shared documents, forms).
 // A reply that asks for or promises a file gets the best filename matches staged (offer.ts); filename matching is plain code, a model sees names only on a tie.
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { wordVariants } from "../../../hub/attach-check.ts";
+import { autoAttach } from "../../../hub/auto-attach.ts";
 
 export const LIBRARY_PICK_MAX = 3;
 const SCAN_FILES = 3000;
@@ -14,13 +15,14 @@ const SUBJECT_WEIGHT = 2;
 export type LibraryFile = { rel: string; path: string; size: number };
 
 // Words that say "a file" or are mail politeness: they never match a file by themselves.
-const GENERIC = new Set(["문서", "파일", "자료", "문서", "견적서", "사진", "양식", "첨부", "메일", "안녕하세요", "선생님", "감사합니다", "부탁드립니다", "부탁드려요", "부탁", "보내주세요", "보내드립니다", "보내", "주세요", "요청", "re", "fwd", "fw", "the", "and", "please", "send", "file", "pdf"]);
+const GENERIC = new Set(["파일", "자료", "문서", "견적서", "사진", "양식", "첨부", "메일", "안녕하세요", "선생님", "감사합니다", "부탁드립니다", "부탁드려요", "부탁", "보내주세요", "보내드립니다", "보내", "주세요", "요청", "re", "fwd", "fw", "the", "and", "please", "send", "file", "pdf"]);
 
 const norm = (s: string) => s.normalize("NFC").toLowerCase().replace(/[\s_\-.()[\]]+/g, "");
 
 export function keywords(text: string): string[] {
 	const out = new Set<string>();
-	for (const w of text.normalize("NFC").toLowerCase().split(/[^\p{L}\p{N}]+/u)) if (w.length >= 2 && !GENERIC.has(w)) out.add(w);
+	const own = autoAttach().genericWords;
+	for (const w of text.normalize("NFC").toLowerCase().split(/[^\p{L}\p{N}]+/u)) if (w.length >= 2 && !GENERIC.has(w) && !own.includes(w)) out.add(w);
 	return [...out];
 }
 

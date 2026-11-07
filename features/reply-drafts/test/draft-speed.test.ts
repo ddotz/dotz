@@ -79,7 +79,7 @@ describe("files are chosen with the draft", () => {
 		const call: ModelCall = async (_system, user) => {
 			order.push("draft");
 			prompts.push(user);
-			return j({ action: "draft", reason: "asks for a score", to: "kim@example.com", subject: "Re: 캐논 문서 부탁드립니다", body: "캐논 문서 보내드립니다.", questions: [], files: ["캐논_d.pdf"] });
+			return j({ action: "draft", reason: "asks for a brief", to: "kim@example.com", subject: "Re: 캐논 문서 부탁드립니다", body: "캐논 문서 보내드립니다.", questions: [], files: ["캐논_d.pdf"] });
 		};
 		let picks = 0;
 		const pick = async () => (picks++, ["캐논_a.pdf"]);

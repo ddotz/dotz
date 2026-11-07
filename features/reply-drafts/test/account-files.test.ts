@@ -63,8 +63,8 @@ const stored = (rows: unknown[]) => writeFileSync(join(env.dir, "mail-conversati
 describe("a mail of an install with several accounts", () => {
 	test("a draft of app mail takes the account of the instance of its source; the plain zele source is no instance", () => {
 		mkdirSync(join(env.dir, "custom"), { recursive: true });
-		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ "mail-orders": { app: "mail", filter: { source: "score", account: A1 } }, "mail-all": { app: "mail", filter: { source: "zele", account: A2 } } }));
-		expect(zeleAccountOf(rec({ source: "score", ref: "score-t42" }))).toBe(A1);
+		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ "mail-orders": { app: "mail", filter: { source: "orders", account: A1 } }, "mail-all": { app: "mail", filter: { source: "zele", account: A2 } } }));
+		expect(zeleAccountOf(rec({ source: "orders", ref: "order-t42" }))).toBe(A1);
 		expect(zeleAccountOf(rec())).toBeUndefined();
 	});
 
@@ -158,7 +158,7 @@ describe("zele argv with several accounts", () => {
 
 	test("a category instance (filter.source score) composes a new mail through zele, on its account", async () => {
 		mkdirSync(join(env.dir, "custom"), { recursive: true });
-		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ "mail-orders": { app: "mail", label: "문서 요청", filter: { source: "score", account: A1 } } }));
+		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ "mail-orders": { app: "mail", label: "문서 요청", filter: { source: "orders", account: A1 } } }));
 		enable(env, {});
 		const r = await realMailLink({}).compose({ app: "mail-orders", to: "kim@example.com", subject: "문서 보내드려요", body: "안녕하세요. 문서 보내드립니다." });
 		if (!r.ok) throw new Error(r.reason);
@@ -178,7 +178,7 @@ describe("zele argv with several accounts", () => {
 
 describe("files are picked before the words are written", () => {
 	const askMail = { ...mailFixture, key: "a-1", subject: "신청 문서 부탁드립니다", from: "Student <stu@example.com>", body: "선생님 신청 문서 보내 주세요." };
-	const claimed = { action: "draft", reason: "asks for a score", to: "stu@example.com", subject: "Re: 신청 문서 부탁드립니다", body: "문서 보내드립니다.", questions: ["첨부 폴더를 볼 수 없어 파일을 붙이지 못했습니다", "수업은 언제가 좋으세요?"] };
+	const claimed = { action: "draft", reason: "asks for a brief", to: "stu@example.com", subject: "Re: 신청 문서 부탁드립니다", body: "문서 보내드립니다.", questions: ["첨부 폴더를 볼 수 없어 파일을 붙이지 못했습니다", "수업은 언제가 좋으세요?"] };
 
 	test("a model text that says no file can be attached is dropped when a file is attached; other questions stay", async () => {
 		enable(env, { attachFolders: { mail: lib } });
@@ -354,13 +354,13 @@ describe("the account of a draft is settled when the draft is made", () => {
 	});
 
 	test("an older stored mail with no account: a plugin mailer gets the one account it was addressed to", async () => {
-		stored([{ key: "score-t42", to: `Owner <${A2}>` }]);
+		stored([{ key: "order-t42", to: `Owner <${A2}>` }]);
 		mkdirSync(join(env.dir, "custom", "plugins"), { recursive: true });
 		const plugin = join(env.dir, "custom", "plugins", "acct.ts");
 		writeFileSync(plugin, `export default { reply: async d => (globalThis.__acctGot = d.account, { ok: true, message: "보냈어요" }) };`);
 		await loadPlugins(env.dir);
 		const got = globalThis as { __acctGot?: string };
-		expect((await sendWith(rec({ source: "score", ref: "score-t42" }), twoAccounts().run)).ok).toBe(true);
+		expect((await sendWith(rec({ source: "orders", ref: "order-t42" }), twoAccounts().run)).ok).toBe(true);
 		expect(got.__acctGot).toBe(A2);
 		delete got.__acctGot;
 		rmSync(plugin);
@@ -379,18 +379,18 @@ describe("the account of a draft is settled when the draft is made", () => {
 			};
 		};
 		const got = globalThis as { __acctSent?: unknown[] };
-		const offerScore = async (key: string, run: Runner) => {
+		const offerOrder = async (key: string, run: Runner) => {
 			enable(env, {});
 			const out = sink();
-			expect(await offerMailDraft({ ...mailFixture, key, id: "T42.3", source: "score" }, { send: out.send, call: fakeModel([j(goodReply)]).call, run })).toBe("offered");
+			expect(await offerMailDraft({ ...mailFixture, key, id: "T42.3", source: "orders" }, { send: out.send, call: fakeModel([j(goodReply)]).call, run })).toBe("offered");
 			return { card: out.sent[0]!, made: listDrafts().find(d => d.ref === key)! };
 		};
 		beforeEach(() => void delete got.__acctSent);
 
 		test("one that sends through zele, undecided: same card and same refusal as zele, and the plugin is never called", async () => {
-			const done = await plugin("zele-way", `needsAccount: source => source === "score"`);
+			const done = await plugin("zele-way", `needsAccount: source => source === "orders"`);
 			const f = twoAccounts();
-			const { card, made } = await offerScore("score-none", f.run);
+			const { card, made } = await offerOrder("brief-none", f.run);
 			expect(made.accounts).toEqual([A1, A2]);
 			expect(card).toContain(ACCOUNT_HELD);
 			const out = await sendWith(made, f.run);
@@ -401,9 +401,9 @@ describe("the account of a draft is settled when the draft is made", () => {
 		});
 
 		test("one that sends through zele gets the one account that opens the thread", async () => {
-			const done = await plugin("zele-way2", `needsAccount: source => source === "score"`);
+			const done = await plugin("zele-way2", `needsAccount: source => source === "orders"`);
 			const f = twoAccounts([A2]);
-			const { card, made } = await offerScore("score-probe", f.run);
+			const { card, made } = await offerOrder("brief-probe", f.run);
 			expect(made.account).toBe(A2);
 			expect(card).not.toContain(ACCOUNT_HELD);
 			expect(f.calls.at(-1)).toEqual(["zele", "mail", "read", "T42", "--account", A2]);
@@ -413,9 +413,9 @@ describe("the account of a draft is settled when the draft is made", () => {
 		});
 
 		test("one that sends through zele with one account is not held", async () => {
-			const done = await plugin("zele-way3", `needsAccount: source => source === "score"`);
+			const done = await plugin("zele-way3", `needsAccount: source => source === "orders"`);
 			const run: Runner = async () => ({ code: 0, stdout: A1, stderr: "" });
-			const { card, made } = await offerScore("score-one", run);
+			const { card, made } = await offerOrder("brief-one", run);
 			expect(card).not.toContain(ACCOUNT_HELD);
 			expect((await sendWith(made, run)).ok).toBe(true);
 			await done();
@@ -424,7 +424,7 @@ describe("the account of a draft is settled when the draft is made", () => {
 		test("one with its own mailbox is never held by the zele accounts of the install", async () => {
 			const done = await plugin("own-box", "");
 			const f = twoAccounts();
-			const { card, made } = await offerScore("score-own", f.run);
+			const { card, made } = await offerOrder("brief-own", f.run);
 			expect(made.accounts).toBeUndefined();
 			expect(card).not.toContain(ACCOUNT_HELD);
 			expect((await sendWith(made, f.run)).ok).toBe(true);

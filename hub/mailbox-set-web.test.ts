@@ -6,9 +6,9 @@ import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 const CAN = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"];
 const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
 const full = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ id, name, icon: "mail", notify: true, conds: { from: [], subj: [], body: [], src: [] }, not: { from: [] }, judge: { on: false, text: "" }, how: "", greets: [], folders: [], bans: [], rules: [], ...extra });
-const score = () => full("b-score", "문서 요청", { mode: "ask", conds: { from: ["@team.example.org"], subj: ["문서"], body: [], src: ["mail-orders"] }, not: { from: ["spam@team.example.org"] }, how: "짧게 답해요", greets: [{ who: "김", addr: "kim@example.com", hello: "안녕하세요" }], folders: ["~/문서"], bans: ["죄송"], judge: { on: true, text: "문서를 달라는 메일" }, alone: true, rules: [{ when: "문서", how: "파일을 붙여요" }] });
+const brief = () => full("b-score", "문서 요청", { mode: "ask", conds: { from: ["@team.example.org"], subj: ["문서"], body: [], src: ["mail-orders"] }, not: { from: ["spam@team.example.org"] }, how: "짧게 답해요", greets: [{ who: "김", addr: "kim@example.com", hello: "안녕하세요" }], folders: ["~/문서"], bans: ["죄송"], judge: { on: true, text: "문서를 달라는 메일" }, alone: true, rules: [{ when: "문서", how: "파일을 붙여요" }] });
 const fresh = () => ({
-	mail: [{ ...full("base", "일반"), base: true }, score(), full("b-pay", "결제", { mode: "quiet", notify: false })],
+	mail: [{ ...full("base", "일반"), base: true }, brief(), full("b-pay", "결제", { mode: "quiet", notify: false })],
 	"mail-2": [{ ...full("base", "일반"), base: true }, full("b-score2", "문서 요청", { mode: "ask" })],
 });
 type Posts = { method: string; path: string; body: any };

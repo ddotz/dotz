@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 const scoreMail = { ...mailFixture, key: "corp-7", source: "corp", id: "7", subject: "문서 부탁드립니다", from: "Student <stu@example.com>", body: "숲과 나나미 ost 문서 부탁드립니다." };
-const scoreReply = { action: "draft", reason: "asks for a score", to: "stu@example.com", subject: "Re: 문서 부탁드립니다", body: "요청하신 문서 보내드립니다.", questions: [] };
+const scoreReply = { action: "draft", reason: "asks for a brief", to: "stu@example.com", subject: "Re: 문서 부탁드립니다", body: "요청하신 문서 보내드립니다.", questions: [] };
 const sink = () => {
 	const sent: string[] = [];
 	return { sent, send: (_target: string, text: string) => void sent.push(text) };

@@ -8,7 +8,7 @@ import { out } from "./outbound.ts";
 import { pickedSend } from "./reply-outcomes.ts";
 
 const CONV = "mail:attach-refused-test";
-const why = "본문에 문서·문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
+const why = "본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
 const REFS = ["att-refused-1", "att-failed-2"];
 const card = (ref: string) => `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: `${ref} 문서 보내드립니다`, ref, question: "이 답장 보낼까요?", attachIssues: [why] })}`;
 const all = () => listNotices(500).items as any[];

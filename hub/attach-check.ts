@@ -10,7 +10,7 @@ export type AttachIssue = { kind: AttachIssueKind; text: string };
 export type AttachCheck = { subject?: string; body: string; files: readonly string[]; /** What the draft answers; a kind asked for here is not "extra". Absent for a new mail. */ request?: string };
 
 type FileKind = "audio" | "document" | "image" | "video";
-const KIND_LABEL: Record<FileKind, string> = { audio: "음원", document: "문서·문서", image: "이미지", video: "영상" };
+const KIND_LABEL: Record<FileKind, string> = { audio: "음원", document: "문서", image: "이미지", video: "영상" };
 const KIND_EXT: [FileKind, RegExp][] = [
 	["audio", /\.(?:mp3|wav|m4a|aac|flac|ogg|aiff?)$/i],
 	["document", /\.(?:pdf|hwpx?|docx?|xlsx?|pptx?|txt|csv|zip)$/i],
@@ -18,19 +18,20 @@ const KIND_EXT: [FileKind, RegExp][] = [
 	["video", /\.(?:mp4|mov|m4v|webm|avi)$/i],
 ];
 const KIND_WORD: [FileKind, RegExp][] = [
-	["audio", /(?:^|[^a-z])(?:mr|mp3|wav)(?:[^a-z]|$)|음원|음원|녹음\s*파일/i],
-	["document", /문서|보고서|pdf|문서|서류|견적서|청구서|계약서|제안서|보고서|이력서|양식|서식|신청서|스캔본/i],
+	["audio", /(?:^|[^a-z])(?:mp3|wav)(?:[^a-z]|$)|음원|녹음\s*파일/i],
+	["document", /pdf|문서|서류|견적서|청구서|계약서|제안서|보고서|이력서|양식|서식|신청서|스캔본/i],
 	["image", /사진|이미지/],
 	["video", /영상\s*파일|동영상/],
 ];
-const NOISE_WORDS = "문서|문서집|보고서|파일|자료|문서|부분|전체|공유|공유용|회의|독서|정기|정기회의|회의실|보조|요약|버전|ver|mr|full|pdf|mp3|wav";
-// The built-in words plus the install's own, which name a document.
+const NOISE_WORDS = "파일|자료|문서|부분|전체|공유|공유용|버전|ver|full|pdf|mp3|wav";
+// The built-in words plus the install's own.
 const words = withFileWords(extra => {
-	const kinds = KIND_WORD.map(([k, re]): [FileKind, RegExp] => [k, k === "document" ? new RegExp(`${re.source}${extra}`, re.flags) : re]);
+	const own: Partial<Record<FileKind, string>> = { document: extra.document, audio: extra.audio };
+	const kinds = KIND_WORD.map(([k, re]): [FileKind, RegExp] => [k, new RegExp(`${re.source}${own[k] ?? ""}`, re.flags)]);
 	const any = kinds.map(([, re]) => re.source).join("|");
-	return { kinds, file: new RegExp(`${any}|파일|자료|첨부`, "i"), kind: new RegExp(any, "gi"), noise: new RegExp(`^(?:${NOISE_WORDS}${extra})$`, "i") };
+	return { kinds, file: new RegExp(`${any}|파일|자료|첨부`, "i"), kind: new RegExp(any, "gi"), noise: new RegExp(`^(?:${NOISE_WORDS}${extra.document}${extra.audio}${extra.noise})$`, "i") };
 });
-// A promise made now. "보내드리겠습니다" counts unless it waits on the reader ("곡을 알려 주시면 보내드리겠습니다"); "보내드린 문서는 ..." only refers back.
+// A promise made now. "보내드리겠습니다" counts unless it waits on the reader ("이름을 알려 주시면 보내드리겠습니다"); "보내드린 문서는 ..." only refers back.
 const SEND_NOW = /보내\s*드(?:립니다|려요|릴게요|릴께요|리겠습니다)|보냅니다|보낼게요|첨부\s*(?:합니다|해요|드립니다|드려요|드릴게요|해\s*드립니다|해\s*드려요|해\s*드릴게요)|\b(?:attached|attaching|I'm sending|I am sending)\b/i;
 const NOT_NOW = /(?:주시|하시|보시|되시|으시|시|으)면\s|못\s*보내|보내\s*(?:드리지|지)\s*못|보내\s*드릴 수 없|보낼 수 없|첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|\bnot\s+attach|\bno\s+attach|판매/i;
 const sentences = (text: string): string[] => text.split(/\n+|(?<=[.!?。])\s+/).map(s => s.trim()).filter(Boolean);
@@ -39,10 +40,10 @@ const kindsIn = (text: string): Set<FileKind> => new Set(words().kinds.filter(([
 const kindOf = (name: string): FileKind | undefined => KIND_EXT.find(([, re]) => re.test(name))?.[0];
 const labels = (kinds: Iterable<FileKind>) => [...kinds].map(k => KIND_LABEL[k]).join("·");
 
-// The words that say which kind of file, not which work: a mail's "MR" or "문서" matches every file of that kind in a library.
+// The words that say which kind of file, not which work: a mail's "음원" or "문서" matches every file of that kind in a library.
 export const withoutKindWords = (text: string): string => text.replace(words().kind, " ");
 
-// What the received mail itself asks for: sentences that ask, above any quote of an earlier mail. "문서를 구입했어요. MR 부탁드립니다" asks for the audio alone.
+// What the received mail itself asks for: sentences that ask, above any quote of an earlier mail. "문서를 구입했어요. 음원 부탁드립니다" asks for the audio alone.
 const ASKED = /부탁|주세요|주시|요청|신청|받을 수|받고 싶|\b(?:please|could you|can you)\b/i;
 export const ownWords = (text: string): string => text.split(/-{3,}\s*Original Message/i)[0]!.split("\n").filter(l => !l.trimStart().startsWith(">")).join("\n");
 const askedKinds = (request: string): Set<FileKind> => kindsIn(sentences(ownWords(request)).filter(s => ASKED.test(s)).join("\n"));
@@ -71,12 +72,12 @@ function offTopic(files: readonly string[], text: string): string[] {
 	const seen = words.flat();
 	const telling = (w: string) => w.length >= SHARED_TITLE_MIN || seen.indexOf(w) === seen.lastIndexOf(w);
 	const onTopic = (i: number) => words[i]!.some(w => telling(w) && wordVariants(w).some(v => v.length >= 2 && text.includes(v)));
-	// A title in another script ("Golden" for "혜성") is known from a file of that work that carries both.
+	// A title in another script ("Comet" for "혜성") is known from a file of that work that carries both.
 	const titles = new Set(words.flatMap((w, i) => (onTopic(i) ? w.filter(x => LATIN_TITLE.test(x)) : [])));
 	return files.filter((_, i) => !onTopic(i) && !words[i]!.some(w => titles.has(w)));
 }
 
-// The words of a name that say which file it is: "노래 MR (1).mp3" and "노래 MR (2).mp3" share all of theirs and are one file twice, "alpha song" and "beta song"
+// The words of a name that say which file it is: "노래 음원 (1).mp3" and "노래 음원 (2).mp3" share all of theirs and are one file twice, "alpha song" and "beta song"
 // too few. A date or a version ("26.10.22") tells nothing; a numbered word one side lacks ("1탄", "2탄") is a part of a series, a different file.
 const fileWords = (name: string) => [...new Set(nameWords(name).map(norm))].filter(w => !/^\d+$/.test(w));
 const letters = (words: string[]) => words.join("").length;

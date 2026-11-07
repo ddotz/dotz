@@ -19,8 +19,8 @@ real thing. UI words stay in Korean.
 ```json
 { "version": 1,
   "accounts": { "<instance>": { "boxes": [ {
-    "id": "b-xxxx", "name": "문서 요청", "icon": "file", "mode": "auto", "notify": true, "base": false,
-    "conds": { "from": ["@team.example.org"], "subj": ["문서"], "body": [], "src": [] },
+    "id": "b-xxxx", "name": "자료 요청", "icon": "file", "mode": "auto", "notify": true, "base": false,
+    "conds": { "from": ["@team.example.org"], "subj": ["자료"], "body": [], "src": [] },
     "not": { "from": [] },
     "judge": { "on": false, "text": "" },
     "how": "", "greets": [{ "who": "", "addr": "", "hello": "" }], "folders": [], "bans": [],

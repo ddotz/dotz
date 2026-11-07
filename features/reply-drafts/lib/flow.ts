@@ -152,11 +152,12 @@ export function withRecipient(rec: DraftRec): DraftRec {
 const ADDRESS_ASK = /e-?mail address|recipient|address|주소|받는\s*(?:사람|분|이)|수신자/i;
 
 // A question the model wrote because it could not see any file to attach ("첨부 폴더를 볼 수 없어 파일을 붙이지 못했습니다"). Once files are on the draft it is false and only confuses the card.
-const FILE_WORD = /파일|첨부|문서|attach|file/i;
+const FILE_WORD = "파일|첨부|attach|file";
+const fileWord = withFileWords(({ document }) => new RegExp(`${FILE_WORD}${document}`, "i"));
 const CANNOT = /못|없|불가|can'?not|can'?t|unable|not able|no access|don'?t have|do not have/i;
-export const claimsNoFile = (q: string): boolean => FILE_WORD.test(q) && CANNOT.test(q);
+export const claimsNoFile = (q: string): boolean => fileWord().test(q) && CANNOT.test(q);
 // The owner's change is about the files of the draft (not its wording): the model then chooses the files again.
-const fileChange = withFileWords(extra => new RegExp(`${FILE_WORD.source}|보고서|음원|자료|사진|음원|\\bmr\\b${extra}`, "i"));
+const fileChange = withFileWords(({ document, audio }) => new RegExp(`${FILE_WORD}|음원|자료|사진${document}${audio}`, "i"));
 type Revision = { /** Library files offered besides those on the draft. */ lib: LibraryFile[]; /** Names the model may choose from: the files on the draft, then the library matches. */ names: string[] };
 
 // Candidates for a revision whose change is about files: the files on the draft plus the library matches for the change.
@@ -286,7 +287,7 @@ export async function candidatesFor(item: ReplyItem, meta: { source: string; ref
 		if (!path) missing.push(entry);
 		else add(library.find(f => f.path === path) ?? { rel: basename(path), path, size: statSync(path).size });
 	}
-	// The words that name the work first: "MR" alone would fill the list with every song's audio and leave the asked song's score off it.
+	// The words that name the work first: "음원" alone would fill the list with every song's audio and leave the asked song's score off it.
 	const q = { subject: item.subject ?? "", text: item.text };
 	const work = { subject: withoutKindWords(q.subject), text: withoutKindWords(q.text) };
 	// A mail that quotes the earlier mail: the works its sender names himself go first, or the works of the quote fill the list and the asked one's files fall off it.

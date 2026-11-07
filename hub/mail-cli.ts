@@ -51,7 +51,7 @@ export function sourceOf(app: string): { source: string } | { error: string } {
 	const src = (raw?.filter?.source ?? "").trim().toLowerCase();
 	if (!src || src === "zele") return { source: "zele" };
 	const site = WEBMAIL.exec(src)?.[1] ?? webmailSite(src);
-	// Any other source is a category of the one mailbox (mail-orders = `score`, posted by a mail watch from zele threads): a new mail goes out through zele.
+	// Any other source is a category of the one mailbox (mail-orders = `orders`, posted by a mail watch from zele threads): a new mail goes out through zele.
 	return { source: site ? `webmail:${site}` : "zele" };
 }
 

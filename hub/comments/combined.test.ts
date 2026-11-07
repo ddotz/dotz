@@ -15,7 +15,7 @@ import { createCommentsWeb } from "./web.ts";
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
 const raw = (native: string): RawComment => ({ native, thread: "p1", author: "팬", text: "문서 받을 수 있나요? fan@example.com", postTitle: "Post one", at: NOW - 1000 });
 const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
-const MAIL = { app: "mail", to: "fan@example.com", subject: "문서 보내드립니다", body: "안녕하세요.\n요청하신 문서를 보내드립니다.", attach: ["/files/score.pdf"] };
+const MAIL = { app: "mail", to: "fan@example.com", subject: "문서 보내드립니다", body: "안녕하세요.\n요청하신 문서를 보내드립니다.", attach: ["/files/brief.pdf"] };
 const reply = (body: string) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [] })}\n\`\`\``;
 
 let dir: string;
@@ -105,7 +105,7 @@ describe("the combined card", () => {
 		expect(block.indexOf("> 함께 보낼 메일")).toBeLessThan(block.indexOf("> 받는이: fan@example.com"));
 		const card = parseDraftApproval(text);
 		expect(card).toMatchObject({ toLabel: "대상", to: "팬 댓글", body: "문서는 메일로 보내 드렸어요", ref: d.code });
-		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "문서 보내드립니다", body: "안녕하세요.\n요청하신 문서를 보내드립니다.", attachments: [{ name: "score.pdf", size: "2KB" }] });
+		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "문서 보내드립니다", body: "안녕하세요.\n요청하신 문서를 보내드립니다.", attachments: [{ name: "brief.pdf", size: "2KB" }] });
 		expect(card?.mail?.warning).toBeUndefined();
 		expect(card?.mail?.ref).toBe("M1");   // the mail draft id its files are staged under: the card opens them at /api/drafts/M1/files/<n>
 		// The split send of `comments.ts send --only` is on the card itself: 4) 답글만 보내기, 5) 메일만 보내기, 6) 직접 입력 after the three.
@@ -169,7 +169,7 @@ describe("the combined card", () => {
 	});
 
 	test("a mail whose files disagree with its words is refused before the reply is posted; the card shows why and offers 이대로 보내기", async () => {
-		const why = "본문에 문서·문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
+		const why = "본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
 		const t = setup({ issues: [why] });
 		const d = await withMail(t);
 		const text = commentAsk(source, t.engine.store.comments()[0]!, d, undefined, t.engine.mailView(d));
@@ -268,7 +268,7 @@ describe("the draft API", () => {
 		expect(ok.status).toBe(200);
 		expect(t.engine.store.drafts()[0]).toMatchObject({ code: ok.json.code, mail: "M1", clean: false, notes: [expect.stringContaining("문서 메일")] });
 		const view = t.engine.threadView("youtube", "p1")!;
-		expect(view.drafts[0]!.mail).toEqual({ id: "M1", to: "fan@example.com", subject: "문서 보내드립니다", body: MAIL.body, attachments: [{ name: "score.pdf", size: "2KB" }] });
+		expect(view.drafts[0]!.mail).toEqual({ id: "M1", to: "fan@example.com", subject: "문서 보내드립니다", body: MAIL.body, attachments: [{ name: "brief.pdf", size: "2KB" }] });
 	});
 
 	test("a string extra stays a note; a bad mail or a missing mail link is refused", async () => {

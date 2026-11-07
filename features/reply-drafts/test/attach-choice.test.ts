@@ -22,7 +22,7 @@ afterAll(() => {
 	env.cleanup();
 	rmSync(lib, { recursive: true, force: true });
 });
-for (const f of ["봄노래_문서.pdf", "봄노래_MR.mp3", "여름노래_문서.pdf", "시리즈_1부.pdf", "시리즈_2부.pdf", "시리즈_3부.pdf", "고정.pdf", "봄노래_독서_문서.pdf"]) writeFileSync(join(lib, f), `bytes of ${f}`);
+for (const f of ["봄노래_문서.pdf", "봄노래_음원.mp3", "여름노래_문서.pdf", "시리즈_1부.pdf", "시리즈_2부.pdf", "시리즈_3부.pdf", "고정.pdf", "봄노래_독서_문서.pdf"]) writeFileSync(join(lib, f), `bytes of ${f}`);
 beforeEach(() => {
 	for (const p of [paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "draft-files")]) rmSync(p, { force: true, recursive: true });
 });
@@ -32,7 +32,7 @@ const sink = () => {
 	return { sent, send: (_: string, text: string) => void sent.push(text) };
 };
 const springMail = { ...mailFixture, key: "c-1", subject: "봄노래 문서 부탁드립니다", from: "Kim <kim@example.com>", body: "봄노래 문서 부탁드립니다." };
-const answer = (extra: object = {}) => ({ action: "draft", reason: "asks for a score", to: "kim@example.com", subject: "Re: 봄노래 문서 부탁드립니다", body: "봄노래 문서 보내드립니다.", questions: [], ...extra });
+const answer = (extra: object = {}) => ({ action: "draft", reason: "asks for a brief", to: "kim@example.com", subject: "Re: 봄노래 문서 부탁드립니다", body: "봄노래 문서 보내드립니다.", questions: [], ...extra });
 const names = (id: string) => stagedFiles(id).map(f => f.name);
 
 describe("(a) the model chooses among the candidates", () => {
@@ -42,11 +42,11 @@ describe("(a) the model chooses among the candidates", () => {
 		expect(await offerMailDraft(springMail, { send: sink().send, call: model.call })).toBe("offered");
 		expect(model.calls).toHaveLength(1);
 		expect(names(listDrafts()[0]!.id)).toEqual(["봄노래_문서.pdf"]);
-		expect(model.calls[0]!.user).toContain('"봄노래_MR.mp3"');
+		expect(model.calls[0]!.user).toContain('"봄노래_음원.mp3"');
 		expect(model.calls[0]!.user).not.toContain('"여름노래_문서.pdf"');
 	});
 	test("a name outside the candidates is dropped; [] chooses none; no key is no choice", async () => {
-		const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", subject: "봄노래", text: "봄노래 문서 부탁드립니다", candidates: ["봄노래_문서.pdf", "봄노래_MR.mp3"] };
+		const item: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", subject: "봄노래", text: "봄노래 문서 부탁드립니다", candidates: ["봄노래_문서.pdf", "봄노래_음원.mp3"] };
 		const style: ReplyStyle = { samples: [], rules: [], corrections: [], forbidden: [] };
 		const chose = async (files?: string[]) => (await generateReply(item, style, fakeModel([j(answer({ body: "확인했어요.", ...(files ? { files } : {}) }))]).call)).files;
 		expect(await chose(["봄노래_문서.pdf", "없는 파일.pdf", "봄노래_문서.pdf"])).toEqual(["봄노래_문서.pdf"]);
@@ -104,14 +104,14 @@ describe("(d) a rule's files are candidates, not a replacement", () => {
 		expect(c!.files.map(f => f.rel)).toContain("가을노래.pdf");
 		rmSync(wide, { recursive: true, force: true });
 	});
-	test("words that say the kind of file do not fill the list: the asked song's score stays on it", async () => {
+	test("words that say the kind of file do not fill the list: the asked song's brief stays on it", async () => {
 		const wide = mkdtempSync(join(tmpdir(), "rd-choice-kinds-"));
-		for (let n = 0; n < 20; n++) writeFileSync(join(wide, `노래${n}_MR.mp3`), "x");
-		writeFileSync(join(wide, "봄노래_MR.mp3"), "x");
+		for (let n = 0; n < 20; n++) writeFileSync(join(wide, `노래${n}_음원.mp3`), "x");
+		writeFileSync(join(wide, "봄노래_음원.mp3"), "x");
 		writeFileSync(join(wide, "봄노래_문서.pdf"), "x");
 		enable(env, { attachFolders: { mail: wide } });
-		const c = await candidatesFor({ kind: "mail", from: "x", subject: "문서 MR 부탁드려요", text: "봄노래 문서와 MR 부탁드립니다" }, { source: "zele", ref: "c-3" });
-		expect(c!.files.map(f => f.rel)).toEqual(expect.arrayContaining(["봄노래_MR.mp3", "봄노래_문서.pdf"]));
+		const c = await candidatesFor({ kind: "mail", from: "x", subject: "문서 음원 부탁드려요", text: "봄노래 문서와 음원 부탁드립니다" }, { source: "zele", ref: "c-3" });
+		expect(c!.files.map(f => f.rel)).toEqual(expect.arrayContaining(["봄노래_음원.mp3", "봄노래_문서.pdf"]));
 		expect(c!.files).toHaveLength(CANDIDATE_MAX);
 		rmSync(wide, { recursive: true, force: true });
 	});
@@ -135,7 +135,7 @@ describe("(e) 고치기 about the files", () => {
 		const rec: DraftRec = { id: "RCHOICE1", kind: "mail", app: "mail", source: "zele", mailId: "T1", ref: "zele-t1", to: "kim@example.com", subject: "Re: 봄노래 문서", body: "문서 보내드립니다.", status: "pending", created: new Date().toISOString(), changes: [], questions: [], item: { kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "봄노래 문서", text: "봄노래 문서 부탁드립니다" } };
 		addDraft(rec);
 		addStagedFile(rec.id, join(lib, "봄노래_문서.pdf"));
-		addStagedFile(rec.id, join(lib, "봄노래_MR.mp3"));
+		addStagedFile(rec.id, join(lib, "봄노래_음원.mp3"));
 		return rec;
 	};
 	test("'one file only' leaves the file the model chose", async () => {
@@ -149,7 +149,7 @@ describe("(e) 고치기 about the files", () => {
 		enable(env, { attachFolders: { mail: lib } });
 		const rec = draft();
 		const step = await reviseDraft(rec.id, "더 짧게", { call: fakeModel([j(answer({ body: "문서 보내드립니다.", files: ["봄노래_문서.pdf"] }))]).call });
-		expect(names(step.id!)).toEqual(["봄노래_문서.pdf", "봄노래_MR.mp3"]);
+		expect(names(step.id!)).toEqual(["봄노래_문서.pdf", "봄노래_음원.mp3"]);
 	});
 });
 
@@ -222,13 +222,13 @@ describe("(f) a file that is slow to download is not lost", () => {
 });
 
 describe("(g) phrases that ask for or promise a file", () => {
-	test.each(["문서 요청드립니다", "문서 신청해요", "보고서 받을 수 있을까요", "문서집 받고 싶어요", "MR 부탁드립니다", "음원 보내주세요"])("%s asks for a file", t => {
+	test.each(["문서 요청드립니다", "문서 신청해요", "보고서 받을 수 있을까요", "문서집 받고 싶어요", "음원 부탁드립니다", "음원 보내주세요"])("%s asks for a file", t => {
 		expect(asksForFile(t)).toBe(true);
 	});
 	test.each(["Mr. Kim 잘 부탁드립니다", "회의 신청해요", "안녕하세요 감사합니다"])("%s does not", t => {
 		expect(asksForFile(t)).toBe(false);
 	});
-	test.each(["보고서 보내드립니다", "MR 보내드립니다", "문서집 보내드립니다"])("%s is a claim", t => {
+	test.each(["보고서 보내드립니다", "음원 보내드립니다", "문서집 보내드립니다"])("%s is a claim", t => {
 		expect(claimsAttachment(t)).toBe(true);
 	});
 });

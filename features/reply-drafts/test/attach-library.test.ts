@@ -29,10 +29,10 @@ beforeEach(() => {
 	for (const p of [paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "draft-files"), join(env.dir, "custom", "plugins")]) rmSync(p, { force: true, recursive: true });
 });
 
-const TEACHER_BODY = "선생님 안녕하세요.\n\n요청주신 숲과 나나미의 달빛정원 자료 문서 보내드립니다. 공유용 문서는 1절까지 들어 있어요. 보내드린 문서는 개인 연습용으로만 써 주세요.";
+const TEACHER_BODY = "선생님 안녕하세요.\n\n요청주신 숲과 나나미의 달빛정원 문서 보내드립니다. 공유용 문서는 1절까지 들어 있어요. 보내드린 문서는 개인 연습용으로만 써 주세요.";
 const TEACHER_SUBJECT = "Re: 선생님 숲과 나나미의 달빛정원 ost 문서 부탁드립니다";
 const teacherMail = { ...mailFixture, key: "t-1", subject: "선생님 숲과 나나미의 달빛정원 ost 문서 부탁드립니다", from: "Student <stu@example.com>", body: "선생님 숲과 나나미의 달빛정원 ost 문서 부탁드립니다." };
-const teacherReply = { action: "draft", reason: "asks for a score", to: "stu@example.com", subject: TEACHER_SUBJECT, body: TEACHER_BODY, questions: [] };
+const teacherReply = { action: "draft", reason: "asks for a brief", to: "stu@example.com", subject: TEACHER_SUBJECT, body: TEACHER_BODY, questions: [] };
 const sink = () => {
 	const sent: { target: string; text: string }[] = [];
 	return { sent, send: (target: string, text: string) => void sent.push({ target, text }) };

@@ -22,8 +22,8 @@ afterAll(() => {
 	env.cleanup();
 	rmSync(files, { recursive: true, force: true });
 });
-const score = join(files, "score.pdf");
-writeFileSync(score, "pdf bytes");
+const brief = join(files, "brief.pdf");
+writeFileSync(brief, "pdf bytes");
 const BODY = "안녕하세요.\n\n요청하신 문서를 보내드립니다.\n\n감사합니다.";
 
 function setup() {
@@ -50,7 +50,7 @@ function setup() {
 }
 type T = ReturnType<typeof setup>;
 const compose = (t: T, code: string, extra: string[] = []) =>
-	runMailCli(["compose", "--app", "mail", "--to", "fan@example.com", "--subject", "문서 보내드립니다", "--attach", score, "--with-comment", code, ...extra], BODY, t.deps);
+	runMailCli(["compose", "--app", "mail", "--to", "fan@example.com", "--subject", "문서 보내드립니다", "--attach", brief, "--with-comment", code, ...extra], BODY, t.deps);
 async function draftReply(t: T) {
 	await t.engine.collect({ force: true });
 	const s = await t.engine.addDraft(t.id, "문서는 메일로 보내 드릴게요");
@@ -67,7 +67,7 @@ describe("compose --with-comment", () => {
 		const text = out.lines.join("\n");
 		const card = parseDraftApproval(text);
 		expect(card).toMatchObject({ toLabel: "대상", to: "팬 댓글", body: "문서는 메일로 보내 드릴게요", ref: code });
-		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "문서 보내드립니다", attachments: [{ name: "score.pdf", size: "9B" }] });
+		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "문서 보내드립니다", attachments: [{ name: "brief.pdf", size: "9B" }] });
 		expect(card?.mail?.body).toContain("요청하신 문서를 보내드립니다.");
 		expect(card?.mail?.warning).toBeUndefined();
 		const mailId = listDrafts()[0]!.id;
@@ -78,7 +78,7 @@ describe("compose --with-comment", () => {
 	test("a mail that answers the comment (--origin comment:<id>) rides on its waiting reply draft even without --with-comment", async () => {
 		const t = setup();
 		const code = await draftReply(t);
-		const out = await runMailCli(["compose", "--app", "mail", "--to", "fan@example.com", "--subject", "문서 보내드립니다", "--attach", score, "--origin", `comment:${t.id}`], BODY, t.deps);
+		const out = await runMailCli(["compose", "--app", "mail", "--to", "fan@example.com", "--subject", "문서 보내드립니다", "--attach", brief, "--origin", `comment:${t.id}`], BODY, t.deps);
 		expect(out.code).toBe(0);
 		const card = parseDraftApproval(out.lines.join("\n"));
 		expect(card).toMatchObject({ toLabel: "대상", ref: code });
@@ -119,7 +119,7 @@ describe("compose --with-comment", () => {
 		expect(t.posted).toEqual(["문서는 메일로 보내 드릴게요"]);
 		expect(t.argvs).toHaveLength(1);
 		expect(t.argvs[0]!.slice(0, 5)).toEqual(["zele", "mail", "send", "--to", "fan@example.com"]);
-		expect(t.argvs[0]!.some(a => a.endsWith("score.pdf"))).toBe(true);
+		expect(t.argvs[0]!.some(a => a.endsWith("brief.pdf"))).toBe(true);
 		expect(getDraft(mailId)?.status).toBe("sent");
 	});
 

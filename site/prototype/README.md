@@ -30,7 +30,7 @@ dotz 웹 앱의 화면과 움직임을 눌러 보며 결정하려고 만든 **�
 - `#intro` 화면 안내 A안(시트), `#intro/spot` B안(진짜 메뉴를 가리키기)
 - `#form` 카드 추가 새 폼 시안 (실시간 미리보기 · 썸네일 보기 · 더 보기, 찬 상태는 `#form/filled`, 연 상태는 `#form/more`, 설정에 입힌 모습은 `#form/settings`)
 - `#answers` 채팅 답 모양 시안 (같은 글을 지금 모양과 제안 모양으로 나란히, 카드를 쓰지 않는 곳까지)
-- `#mailbox` 메일함 시안 (메일함별 목록은 `#mailbox/b/score` · `offer` · `school` · `pay` · `general`, 설정은 `#mailbox/set/score`, 펼친 모습은 `#mailbox/set/score/match` · `/tone`, 추가는 `#mailbox/new`, 한 메일함에 있는 대화는 `#mailbox/m/m6`)
+- `#mailbox` 메일함 시안 (메일함별 목록은 `#mailbox/b/orders` · `offer` · `school` · `pay` · `general`, 설정은 `#mailbox/set/score`, 펼친 모습은 `#mailbox/set/score/match` · `/tone`, 추가는 `#mailbox/new`, 한 메일함에 있는 대화는 `#mailbox/m/m6`)
 
 ## 문서
 

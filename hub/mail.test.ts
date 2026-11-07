@@ -110,10 +110,10 @@ describe("moveMail", () => {
 		const { deps } = fakes(false);
 		const id = uid("mv");
 		const first = await postMail({ source: "general", id, messageId: "m1", subject: "파트 문서 공유", from: "Kim <kim@example.com>", html: "<p>문서 부탁드립니다</p>", attachments: [{ name: "a.txt", data: Buffer.from("hi").toString("base64") }] }, deps);
-		const moved = await moveMail(first.key, "score", deps);
-		expect(moved.key).toBe(mailKey("score", id));
+		const moved = await moveMail(first.key, "orders", deps);
+		expect(moved.key).toBe(mailKey("orders", id));
 		expect(mailByKey(first.key)).toBeUndefined();
-		expect(mailByKey(moved.key)).toMatchObject({ source: "score", subject: "파트 문서 공유", msg: "m1" });
+		expect(mailByKey(moved.key)).toMatchObject({ source: "orders", subject: "파트 문서 공유", msg: "m1" });
 		expect(mailByKey(moved.key)!.attachments!.map(a => a.name)).toEqual(["a.txt"]);
 		expect(storedBodyText(moved.key)).toContain("문서 부탁드립니다");
 		expect(await postMail({ source: "general", id, messageId: "m1", subject: "파트 문서 공유" }, deps)).toMatchObject({ skipped: true });
@@ -122,12 +122,12 @@ describe("moveMail", () => {
 	test("a moved mail keeps its to-do and direct-answer lines", async () => {
 		const { deps } = fakes(false);
 		const first = await postMail({ source: "general", id: uid("mv"), subject: "일정 문의", summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] }, deps);
-		const moved = await moveMail(first.key, "score", deps);
+		const moved = await moveMail(first.key, "orders", deps);
 		expect(mailByKey(moved.key)).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] });
 	});
 
 	test("an unknown mail is refused", async () => {
-		await expect(moveMail("general-none", "score", fakes(false).deps)).rejects.toBeInstanceOf(MailError);
+		await expect(moveMail("general-none", "orders", fakes(false).deps)).rejects.toBeInstanceOf(MailError);
 	});
 });
 

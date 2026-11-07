@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 const mail = { ...mailFixture, key: "e2e-1", subject: "달빛정원 ost 문서 부탁드립니다", from: "Student <stu@example.com>", body: "선생님 달빛정원 ost 문서 부탁드립니다." };
-const replyJson = { action: "draft", reason: "asks for a score", to: "stu@example.com", subject: "Re: 달빛정원 ost 문서 부탁드립니다", body: "요청하신 문서 보내드립니다.", questions: [] };
+const replyJson = { action: "draft", reason: "asks for a brief", to: "stu@example.com", subject: "Re: 달빛정원 ost 문서 부탁드립니다", body: "요청하신 문서 보내드립니다.", questions: [] };
 
 // The fake mail CLI: records every argv; `reply` exits with `replyCode` (1 = zele refused).
 function fakeZele(o: { replyCode?: number } = {}) {

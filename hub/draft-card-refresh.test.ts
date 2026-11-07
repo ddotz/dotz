@@ -31,7 +31,7 @@ test("a file staged after the card was posted replaces its 첨부 row and clears
 });
 
 test("an open card follows the finding on its files: the line and the 4th option come and go, in the text, the parsed draft and the options", () => {
-	const why = "본문에 문서·문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
+	const why = "본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
 	const text = `[ask] 답장 초안을 만들었어요\n${draftApprovalBlock({ ...mail, sendResult: "kim@example.com에 보내요" })}`;
 	const labels = (n: Notice) => (n as any).decision.options.map((o: { label: string }) => o.label);
 	const open = { id: "a", text, decision: { options: parseDecisions(text).blocks[0]!.options, to: "mail:x", group: 1, state: "open", draft: parseDraftApproval(text)! } } as unknown as Notice;
@@ -56,7 +56,7 @@ test("an open card follows the finding on its files: the line and the 4th option
 });
 
 test("the finding set on a card already saying it leaves the card as draftApprovalBlock wrote it, source quote and reply + mail part included", () => {
-	const why = "본문에 문서·문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
+	const why = "본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
 	const text = draftApprovalBlock({ ...mail, origin: { text: "원문 한 줄" }, attachIssues: [why], mail: { to: "b@example.com", subject: "Re: 문서", body: "문서 보내드립니다", attachIssues: [] } });
 	expect(withAttachIssues(text, [why])).toBe(text);
 });

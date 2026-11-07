@@ -100,13 +100,13 @@ test("the conversation map stops at its cap and forgets the oldest", () => {
 
 describe("pickBox", () => {
 	const mk = (b: Partial<Box> & { id: string; conds?: Partial<Box["conds"]>; not?: Box["not"] }) => cleanBox({ name: b.id, ...b })!;
-	const facts = { src: "zele", from: "Kim <Kim@Team.example.org>", subj: "5월 문서", body: "첨부를 봐주세요" };
+	const facts = { src: "zele", from: "Kim <Kim@Team.Example.org>", subj: "5월 문서", body: "첨부를 봐주세요" };
 	test("source, address, @domain, subject and body each place a mail, lowercased", () => {
 		const base = cleanBox({ id: "base", name: "일반" })!;
 		const pick = (c: Partial<Box["conds"]>, f = facts) => pickBox(f, [base, mk({ id: "b", conds: c })]);
 		expect(pick({ src: ["ZELE"] })).toMatchObject({ box: { id: "b" }, why: { kind: "src" } });
 		expect(pick({ from: ["kim@team.example.org"] })).toMatchObject({ box: { id: "b" }, why: { kind: "from", value: "kim@team.example.org" } });
-		expect(pick({ from: ["@Team.example.org"] })).toMatchObject({ box: { id: "b" }, why: { kind: "from" } });
+		expect(pick({ from: ["@TEAM.example.org"] })).toMatchObject({ box: { id: "b" }, why: { kind: "from" } });
 		expect(pick({ from: ["@example.org"] }).box.id).toBe("base");
 		expect(pick({ subj: ["문서"] })).toMatchObject({ box: { id: "b" }, why: { kind: "subj", value: "문서" } });
 		expect(pick({ body: ["첨부"] })).toMatchObject({ box: { id: "b" }, why: { kind: "body" } });

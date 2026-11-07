@@ -22,8 +22,8 @@ beforeEach(() => {
 	setFollowupWake(() => {});
 });
 
-const score = join(files, "score.pdf");
-writeFileSync(score, "pdf bytes");
+const brief = join(files, "brief.pdf");
+writeFileSync(brief, "pdf bytes");
 const RULE = "문서를 달라는 댓글이고 메일 주소를 적었으면 그 주소로 문서를 메일로 보낸다";
 const BODY = "안녕하세요.\n\n요청하신 문서를 보내드립니다.\n\n감사합니다.";
 
@@ -41,7 +41,7 @@ const harness = () => {
 	};
 };
 const compose = (h: ReturnType<typeof harness>, extra: string[] = []) =>
-	runMailCli(["compose", "--app", "mail", "--to", "fan@example.com", "--subject", "문서 보내드립니다", "--attach", score, ...extra], BODY, h.deps);
+	runMailCli(["compose", "--app", "mail", "--to", "fan@example.com", "--subject", "문서 보내드립니다", "--attach", brief, ...extra], BODY, h.deps);
 
 describe("mail-cli compose", () => {
 	test("stages the attachment, records a draft and prints the shared approval block", async () => {
@@ -52,10 +52,10 @@ describe("mail-cli compose", () => {
 		const text = out.lines.join("\n");
 		const d = listDrafts()[0]!;
 		expect(d).toMatchObject({ compose: true, status: "pending", to: "fan@example.com", subject: "문서 보내드립니다", origin: { kind: "comment", id: "c1", text: "댓글 답글에 이어서" } });
-		expect(stagedFiles(d.id).map(f => f.name)).toEqual(["score.pdf"]);
+		expect(stagedFiles(d.id).map(f => f.name)).toEqual(["brief.pdf"]);
 		const card = parseDraftApproval(text);
 		expect(card).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "문서 보내드립니다", origin: { text: "댓글 답글에 이어서" } });
-		expect(card?.attachments?.map(a => a.name)).toEqual(["score.pdf"]);
+		expect(card?.attachments?.map(a => a.name)).toEqual(["brief.pdf"]);
 		expect(card?.body).toContain("요청하신 문서를 보내드립니다.");
 		expect(card?.warning).toBeUndefined();
 		for (const label of ["보내기", "고치기", "보내지 않기"]) expect(text).toContain(label);
@@ -89,7 +89,7 @@ describe("mail-cli compose", () => {
 		expect(h.argvs).toHaveLength(1);
 		expect(h.argvs[0]!.slice(0, 5)).toEqual(["zele", "mail", "send", "--to", "fan@example.com"]);
 		expect(h.argvs[0]).toContain("--attach");
-		expect(h.argvs[0]!.some(a => a.endsWith("score.pdf"))).toBe(true);
+		expect(h.argvs[0]!.some(a => a.endsWith("brief.pdf"))).toBe(true);
 		expect(getDraft(id)?.status).toBe("sent");
 		expect(h.posts).toEqual([{ path: "/api/mail/compose", body: { ref: id, source: "zele", state: "sent" } }]);
 		// a sent compose draft is never a trigger for another follow-up

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { attachIssues } from "../../../hub/attach-check.ts";
 import { realMailLink } from "../../../hub/comments/mail-link.ts";
 import { asksForFile, claimsAttachment } from "../../../hub/draft-approval.ts";
+import { keywords } from "../lib/library.ts";
 import { stagedFiles } from "../lib/staged.ts";
 import { enable, setupEnv } from "./helpers.ts";
 
@@ -14,7 +15,7 @@ afterAll(() => {
 	env.cleanup();
 	rmSync(songs, { recursive: true, force: true });
 });
-for (const [dir, name] of [["Orbit 오빗/문서", "Orbit 공개본.pdf"], ["Nova 노바/문서", "노바 공개본.pdf"], ["Nova 노바/문서", "노바 내부용.pdf".normalize("NFD")], ["Orbit 오빗/문서", "Orbit 내부용 score.pdf"], ["Orbit 오빗/소리", "오빗Orbit_내부용.mp3"], ["Comet 혜성/소리", "혜성_내부용.mp3"]]) {
+for (const [dir, name] of [["Orbit 오빗/문서", "Orbit 공개본.pdf"], ["Nova 노바/문서", "노바 공개본.pdf"], ["Nova 노바/문서", "노바 내부용.pdf".normalize("NFD")], ["Orbit 오빗/문서", "Orbit 내부용 brief.pdf"], ["Orbit 오빗/소리", "오빗Orbit_내부용.mp3"], ["Comet 혜성/소리", "혜성_내부용.mp3"]]) {
 	mkdirSync(join(songs, dir!), { recursive: true });
 	writeFileSync(join(songs, dir!, name!), "bytes");
 }
@@ -34,15 +35,15 @@ const compose = async (more: { fromLibrary: string; request?: string }) => {
 
 describe("files withheld from automatic mail drafts", () => {
 	test("a default install withholds nothing and narrows nothing", async () => {
-		const { names } = await compose({ fromLibrary: "Orbit 오빗 내부용 score 공개본", request: "샀어요" });
-		expect(names).toEqual(["Orbit 내부용 score.pdf"]);
+		const { names } = await compose({ fromLibrary: "Orbit 오빗 내부용 brief 공개본", request: "샀어요" });
+		expect(names).toEqual(["Orbit 내부용 brief.pdf"]);
 	});
 
 	test("a configured install withholds a file whose path matches; another pattern still lets the audio through", async () => {
 		setRules({ withhold: ["내부용"] });
-		expect((await compose({ fromLibrary: "Orbit 오빗 내부용 score 공개본" })).names).toEqual(["Orbit 공개본.pdf"]);
+		expect((await compose({ fromLibrary: "Orbit 오빗 내부용 brief 공개본" })).names).toEqual(["Orbit 공개본.pdf"]);
 		setRules({ withhold: ["^(?!.*\\.mp3$).*내부용"] });
-		expect((await compose({ fromLibrary: "Orbit 오빗 내부용 score 공개본" })).names).toEqual(["Orbit 공개본.pdf", "오빗Orbit_내부용.mp3"].sort());
+		expect((await compose({ fromLibrary: "Orbit 오빗 내부용 brief 공개본" })).names).toEqual(["Orbit 공개본.pdf", "오빗Orbit_내부용.mp3"].sort());
 	});
 
 	test("the install's narrowing rule takes only its files of one work, or nothing and the install's own note", async () => {
@@ -87,5 +88,40 @@ describe("the install's own file words", () => {
 		expect(attachIssues(check).map(i => i.kind)).toEqual(["unrelated"]);
 		setRules({ fileWords: ["쿼크본"] });
 		expect(attachIssues(check)).toEqual([]);
+	});
+
+	test("a sound word of the install counts as audio, and a default install knows it as nothing", () => {
+		const check = { subject: "자료", body: "쿼크음 보내드립니다.", files: ["alpha.pdf"] };
+		expect(asksForFile("쿼크음 부탁드립니다")).toBe(false);
+		expect(attachIssues(check)).toEqual([]);
+		setRules({ audioWords: ["쿼크음"] });
+		expect(asksForFile("쿼크음 부탁드립니다")).toBe(true);
+		expect(attachIssues(check).map(i => i.kind)).toContain("partial");
+	});
+
+	test("a Latin word matches whole, at a sentence end too; a two-letter one stays clear of an abbreviation", () => {
+		expect(asksForFile("Could you send the zine.")).toBe(false);
+		setRules({ fileWords: ["zine"], audioWords: ["qx"] });
+		expect(asksForFile("Could you send the zine.")).toBe(true);
+		expect(asksForFile("Could you send the zines?")).toBe(true);
+		expect(claimsAttachment("I'm sending the zines")).toBe(true);
+		expect(asksForFile("magazines 부탁드립니다")).toBe(false);
+		expect(claimsAttachment("Qx 보내드립니다")).toBe(true);
+		expect(claimsAttachment("Qx. Kim 보내드립니다")).toBe(false);
+		expect(claimsAttachment("Here's Qx Kim's address")).toBe(false);
+	});
+
+	test("a noise word in a name ties the file to nothing, and it is no file word", () => {
+		const check = { subject: "자료", body: "쿼크회 파일 보내드립니다.", files: ["쿼크회 alpha.pdf", "other beta.pdf"] };
+		expect(attachIssues(check).map(i => i.kind)).toEqual(["unrelated"]);
+		setRules({ noiseWords: ["쿼크회"] });
+		expect(attachIssues(check)).toEqual([]);
+		expect(asksForFile("쿼크회 부탁드립니다")).toBe(false);
+	});
+
+	test("a generic word of the install ranks no library file", () => {
+		expect(keywords("쿼크본 alpha")).toEqual(["쿼크본", "alpha"]);
+		setRules({ genericWords: ["쿼크본"] });
+		expect(keywords("쿼크본 alpha")).toEqual(["alpha"]);
 	});
 });

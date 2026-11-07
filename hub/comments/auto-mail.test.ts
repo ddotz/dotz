@@ -31,7 +31,7 @@ function fakeMail(o: { miss?: boolean; failSend?: string; failCompose?: string; 
 			if (o.failCompose) return { ok: false, reason: o.failCompose };
 			const id = `M${specs.push(spec)}`;
 			status.set(id, "pending");
-			views.set(id, { id, to: spec.to, subject: spec.subject, body: spec.body, attachments: o.miss ? [] : [{ name: "score.pdf", size: 2048 }] });
+			views.set(id, { id, to: spec.to, subject: spec.subject, body: spec.body, attachments: o.miss ? [] : [{ name: "brief.pdf", size: 2048 }] });
 			return { ok: true, id, notes: [], ...(o.miss ? { libraryMiss: true } : {}) };
 		},
 		state: id => status.get(id),
@@ -86,7 +86,7 @@ describe("autoMail", () => {
 		expect(t.mail.specs[0]!.fromLibrary).toContain("문서");
 		const text = commentAsk(t.source, t.engine.store.comments()[0]!, d, undefined, t.engine.mailView(d));
 		expect(text).toContain("메일 초안 작성됨");
-		expect(text).toContain("> 첨부: score.pdf");
+		expect(text).toContain("> 첨부: brief.pdf");
 	});
 
 	test("write: its text is the mail body; undefined, empty or a throw keep the fixed text", async () => {
