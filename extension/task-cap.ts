@@ -15,7 +15,10 @@
 // 5% and leaves 10. The compaction's summary request re-sends the whole context, so it is counted against the cap. ctx.compact aborts the running turn and only continues a session that has queued input, and a message
 // queued before it finishes starts a run that compaction then waits behind (seen on a real rpc run, where the compaction
 // ran after the whole task), so the hidden message that continues the worker is sent when the compaction ends, done or
-// failed. The orchestrator and lanes have their own compaction path and never load this file.
+// failed, unless the worker's last turn was already its final answer (a message then would start a turn that replaces the
+// report; OmO's post-compact-restoration message rides on the next turn start and starts none itself). The runtime ends an
+// aborted or superseded compaction with neither callback, so a tool turn that ends while one is pending re-arms it.
+// The orchestrator and lanes have their own compaction path and never load this file.
 // OmO itself has no per-task token budget (its tokenBudget is the goal tool's only), so the cap lives here.
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,6 +53,10 @@ export const capWarning = (spent: number, cap: number, handoff: string) =>
 const compactNote = (tokens: number, done: boolean) =>
 	`[dotz] your context (${k(tokens)}) ${done ? "was compacted" : "could not be compacted"} to keep turns cheap. Continue the task from ${done ? "the summary and " : ""}your last step; re-read a file only when you need its exact text.`;
 
+// A completed assistant answer that ended the run: stopReason "stop" (not aborted, not a tool-use turn) and no tool call in it.
+const isFinalAnswer = (message: any): boolean =>
+	message?.role === "assistant" && message.stopReason === "stop" && !(Array.isArray(message.content) && message.content.some((block: any) => block?.type === "toolCall"));
+
 type Host = { on: (name: string, fn: (event: any, ctx: any) => any) => void; sendMessage: (message: any, options?: any) => unknown };
 
 export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap, compactAt = loadGuardConfig().task_compact_tokens): void {
@@ -61,7 +68,10 @@ export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap,
 	// A context size at or above which the next turn end compacts; Infinity while a compaction is pending.
 	let compactFrom = compactAt;
 	let compacted = false;
+	// Whether the latest turn was the worker's final answer; a compaction that ends after it must not start another turn.
+	let finalAnswer = false;
 	pi.on("turn_end", (event: any, ctx: any) => {
+		finalAnswer = isFinalAnswer(event?.message);
 		const t = turnTokens(event?.message);
 		if (t > 0) {
 			spent += t;
@@ -73,10 +83,13 @@ export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap,
 			if (compacted) {
 				compacted = false;
 				compactFrom = Math.max(compactAt, context + REARM_GROWTH);
+			} else if (compactFrom === Number.POSITIVE_INFINITY) {
+				// A tool turn ran while a compaction was pending: the runtime ended it with neither onComplete nor onError (aborted or superseded), so re-arm.
+				compactFrom = Math.max(compactAt, context + REARM_GROWTH);
 			} else if (context >= compactFrom && !(cap > 0 && spent >= cap)) {
 				compactFrom = Number.POSITIVE_INFINITY;
 				spent += context;
-				const resume = (done: boolean) => pi.sendMessage({ customType: "dotz-task-compact", content: compactNote(context, done), display: false }, { triggerTurn: true, deliverAs: "followUp" });
+				const resume = (done: boolean) => finalAnswer || pi.sendMessage({ customType: "dotz-task-compact", content: compactNote(context, done), display: false }, { triggerTurn: true, deliverAs: "followUp" });
 				ctx.compact({
 					onComplete: () => {
 						compacted = true;

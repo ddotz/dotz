@@ -12,8 +12,10 @@ function worker(cap: number, compactAt = 0) {
 	const compacts: { onComplete?: (r: unknown) => void; onError?: (e: Error) => void }[] = [];
 	const ctx = { abort: () => aborted++, compact: (o: any) => compacts.push(o), sessionManager: { getSessionId: () => "sess-1" } };
 	const turn = (cacheRead: number, toolResults: unknown[] = [{}]) => handlers.turn_end?.[0]({ message: { role: "assistant", usage: { input: 400, cacheRead, cacheWrite: 0, output: 600 } }, toolResults }, ctx);
+	const answer = (stopReason = "stop", content: unknown[] = [{ type: "text", text: "report" }]) =>
+		handlers.turn_end?.[0]({ message: { role: "assistant", stopReason, content, usage: { input: 400, cacheRead: 10_000, cacheWrite: 0, output: 600 } }, toolResults: [] }, ctx);
 	const call = () => handlers.tool_call?.[0]({ toolName: "eval", toolCallId: "x" }, ctx);
-	return { turn, call, handlers, sent, compacts, aborted: () => aborted };
+	return { turn, answer, call, handlers, sent, compacts, aborted: () => aborted };
 }
 
 test("below the cap tools run; above it every call is blocked with what was spent", () => {
@@ -95,6 +97,44 @@ test("past the context threshold a worker compacts between tool steps, once per 
 	w.compacts[0].onComplete?.({});
 	w.turn(40_000);
 	w.turn(120_000);
+	expect(w.compacts).toHaveLength(2);
+});
+
+test("a compaction that ends after the worker's final answer sends no message; one that ends mid-work still resumes it", () => {
+	const w = worker(50_000_000, 100_000);
+	w.turn(120_000);
+	w.answer();
+	w.compacts[0].onComplete?.({});
+	expect(w.sent).toEqual([]);
+	const failed = worker(50_000_000, 100_000);
+	failed.turn(120_000);
+	failed.answer();
+	failed.compacts[0].onError?.(new Error("nope"));
+	expect(failed.sent).toEqual([]);
+	for (const [stopReason, content] of [["aborted", [{ type: "text", text: "x" }]], ["stop", [{ type: "toolCall", name: "eval" }]], ["toolUse", [{ type: "toolCall", name: "eval" }]]] as const) {
+		const mid = worker(50_000_000, 100_000);
+		mid.turn(120_000);
+		mid.answer(stopReason, [...content]);
+		mid.compacts[0].onComplete?.({});
+		expect(mid.sent).toHaveLength(1);
+	}
+	const later = worker(50_000_000, 100_000);
+	later.turn(120_000);
+	later.answer();
+	later.turn(10_000);
+	later.compacts[0].onComplete?.({});
+	expect(later.sent).toHaveLength(1);
+});
+
+test("a compaction the runtime ended with neither callback is retried after 50K more context", () => {
+	const w = worker(50_000_000, 100_000);
+	w.turn(120_000);
+	expect(w.compacts).toHaveLength(1);
+	w.turn(130_000);
+	expect(w.compacts).toHaveLength(1);
+	w.turn(160_000);
+	expect(w.compacts).toHaveLength(1);
+	w.turn(180_000);
 	expect(w.compacts).toHaveLength(2);
 });
 
