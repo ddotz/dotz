@@ -387,10 +387,11 @@ const replyHead = () => el("div", { class: "dr-mh" }, icon("chat"), el("span", {
 // The body of a draft, drawn as chat draws a message (relayed: words to read, no run button or settings card on what someone else may have written).
 const draftBodyNode = (text, cls, attrs = {}) => el("div", { ...attrs, class: `md ${cls}`, safeHtml: mdHtml(text, true) });
 // The mail a draft answers, above the draft (hub/draft-approval.ts DraftBrief): the draft is added to the card and never stands in for it.
-function draftBriefNode(b) {
+function draftBriefNode(b, seen) {
   if (!b) return null;
   const row = (k, v) => (v ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: k }), el("span", { class: "dc-dr-v" }, mailInlineFrag(v))) : null);
-  return el("div", { class: "dc-brief", "data-k": "draft-brief" }, row("보낸이", b.from), row("요약", b.summary), mailLinesNode(b.todo, b.questions));
+  const rows = [row("보낸이", b.from), row("요약", b.summary), seen ? null : mailLinesNode(b.todo, b.questions)].filter(Boolean);
+  return rows.length ? el("div", { class: "dc-brief", "data-k": "draft-brief" }, ...rows) : null;
 }
 function draftNode(d, o) {
   const both = !!d.mail && d.toLabel === "대상";
@@ -470,7 +471,7 @@ function renderSheet(box, dc, picks, step) {
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
   const orgDrawn = () => { delete box.dataset.sig; paintDecision(); };   // the sig does not hold the hub's answer, so the repaint is asked for
   const both = !!d && !!d.mail && d.toLabel === "대상" && orgHas(d.ref, dc.t, orgDrawn);   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), draftBodyNode(d.body, "dc-dr-b"), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftBriefNode(d.brief), decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), draftBodyNode(d.body, "dc-dr-b"), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");

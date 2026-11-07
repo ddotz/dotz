@@ -68,7 +68,7 @@ function mailSentNode(n) {
 function mailSentPaint() {
   if (typeof tl === "undefined" || !tl) return;
   const t = target, list = current === "chat" && isMailT(t) ? mailSentList(t) : [];
-  const sig = JSON.stringify([t, list.map(n => [msKey(n), n.updated, n.decision.state, n.decision.answer, MS.open.has(msKey(n))])]);
+  const sig = JSON.stringify([t, list.map(n => [msKey(n), n.updated, n.decision.state, n.decision.answer, MS.open.has(msKey(n))]), mailLinesOpen(t)]);
   let slot = tl.querySelector(":scope > .ms-slot");
   if (slot && slot.dataset.sig === sig) return;
   if (!list.length) { if (slot) slot.remove(); return; }

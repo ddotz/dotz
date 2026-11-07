@@ -270,6 +270,8 @@ function mailLinesNode(todo, questions) {
   const rows = [row("할 일", todo), row("직접 답할 것", questions)].filter(Boolean);
   return rows.length ? el("div", { class: "mln", "data-k": "mail-lines" }, ...rows) : null;
 }
+// The opened mail on screen already draws its lines (mailOpenSummary): a draft beside it leaves them out, a draft that stands alone keeps them.
+const mailLinesOpen = t => current === "chat" && target === t && !!tl.querySelector('.mopen [data-k="mail-lines"]');
 // In the opened mail's card the summary sections the result card drew give way to the block (the same place, right under the recipient line).
 function mailOpenSummary(t, card) {
   const secs = [...card.querySelectorAll(":scope > .rc-sec")];
