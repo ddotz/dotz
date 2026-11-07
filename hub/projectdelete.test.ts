@@ -24,7 +24,7 @@ const deps: DeleteDeps = {
 const archiveFile = join(DATA_DIR, "archive", "projects", "유튜브-7001.jsonl");
 
 function seed() {
-	setupChannel({ channel: "7001", purpose: "유튜브 채널 관리", standing: "새 영상 알림", basis: "알려 줘", monitors: [{ command: "echo hi", every_minutes: 60, on: "change" }], logins: [{ session_url: "https://example.test/studio" }] }, "유튜브", "");
+	setupChannel({ channel: "7001", purpose: "유튜브 채널 관리", standing: "새 영상 알림", basis: "알려 줘", scope: "task", monitors: [{ command: "echo hi", every_minutes: 60, on: "change" }], logins: [{ session_url: "https://example.test/studio" }] }, "유튜브", "");
 	saveProject({ key: "ch:7001", title: "유튜브" });
 	emit("outbox", { ts: now(), kind: "out", source: "orchestrator", target: "ch:7001", text: "영상 두 개가 올라왔어요" });
 }

@@ -560,7 +560,7 @@ when the project differs; fallback values are `[{model, when?, cap?, revert?}]` 
 `overrides` (how many fields differ), `files` (instruction files found in the session folder: `AGENTS.md`, `CLAUDE.md`,
 `GEMINI.md`, `.cursorrules`, `CONVENTIONS.md`, `.github/copilot-instructions.md` and the entries of `.omp/`: name, size,
 mtime, first heading only, never content), `setup` (the channel's purpose, login names and health, monitors, standing
-behaviour; no `basis`, no secrets), `features` (skills under the folder's `.omp/skills`, `.claude/skills`,
+behaviour with its term (`기한 없음` for one made before scopes); no `basis`, no secrets), `features` (skills under the folder's `.omp/skills`, `.claude/skills`,
 `.agents/skills` and watches tied to the project's channels or folder), `deny` (the `- deny:` lines of the instruction
 files' `## Blocked commands` section) and `map` (the project's own nodes and edges). A differing value is drawn like the 내 설정
 marker (`--mine` badge "바뀜", global value struck through, → project value); an equal one is muted with "전역 기본".

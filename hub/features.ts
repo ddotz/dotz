@@ -347,7 +347,7 @@ function watchFeatures(): Feature[] {
 
 function setupFeatures(): Feature[] {
 	return listSetups().map(s => ({
-		id: `setup-${s.channel}`, form: "작업 채널 설정" as const, name: s.name, what: `${clip(s.purpose, 90)} · 로그인 ${s.logins.length}개 · 모니터링 ${s.monitors.length}개${s.standing ? " · 상시 작업 있음" : ""}`,
+		id: `setup-${s.channel}`, form: "작업 채널 설정" as const, name: s.name, what: `${clip(s.purpose, 90)} · 로그인 ${s.logins.length}개 · 모니터링 ${s.monitors.length}개${s.standing ? ` · 상시 작업 ${s.standing_term}` : ""}`,
 		trigger: "변화 감지" as const, stage: "watch", strength: "enforced" as const, source: { label: `${short(paths.setups)} · ${s.channel}` }, lastRun: s.updated, enabled: true, toggleable: false,
 	}));
 }

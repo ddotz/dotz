@@ -9,7 +9,13 @@ import { deriveLabel, humanLabel, isKeyLabel, plainLabel } from "./watchtext.ts"
 
 export type Login = { session_url: string; expect?: string; login_url?: string; secret?: string; host?: string; profile?: string };
 export type Monitor = { command: string; every_minutes?: number; on?: "change" | "match" | "fail"; pattern?: string; label?: string };
-export type Setup = { channel: string; name: string; purpose: string; standing?: string; basis?: string; logins: string[]; monitors: string[]; updated: string };
+// A standing is the owner's leave to act on a wake without asking. `scope` and `expires` bound it; a record without them was made before scopes existed
+// and stays valid with no limit (shown as 기한 없음). `lapsed` marks that the owner was told it ended; `spent` keeps the last `basis` after a setup dropped the standing.
+export type StandingScope = "once" | "task" | "hours";
+export type Setup = { channel: string; name: string; purpose: string; standing?: string; basis?: string; scope?: StandingScope; expires?: string; lapsed?: string; spent?: string; logins: string[]; monitors: string[]; updated: string };
+// The longest grant, so a large number cannot stand in for a permanent one. `once` and `task` have this day as their limit if their end never comes.
+export const STANDING_HOURS_MAX = 720;
+const STANDING_BOUND_HOURS = 24;
 
 const setups: Setup[] = existsSync(paths.setups) ? JSON.parse(readFileSync(paths.setups, "utf8")) : [];
 const save = () => writeAtomic(paths.setups, `${JSON.stringify(setups, null, 2)}\n`);
@@ -37,11 +43,28 @@ function claimLogin(channel: string, l: Login, rulesText: string): Watch {
 	return addWatch({ name: `login-${slug(host)}${l.host || l.profile ? `-${where}` : ""}`, session_url: l.session_url, expect: l.expect, login_url: l.login_url, secret: l.secret, host: l.host, profile: l.profile, to: "orchestrator", channels: [channel], project: `ch:${channel}` }, rulesText);
 }
 
+// A repeated setup (a monitor changed) names the same standing with the same words: that is the same grant, so it neither needs a scope nor renews or
+// revives anything. Only new words from the owner make a new grant: old words under another standing, or after the standing was dropped, are refused.
+function grantOf(input: Record<string, any>, prev?: Setup): Pick<Setup, "standing" | "basis" | "scope" | "expires" | "lapsed" | "spent"> {
+	const used = prev?.basis ?? prev?.spent;
+	if (!input.standing) return used ? { spent: used } : {};
+	const standing = String(input.standing);
+	const basis = String(input.basis);
+	if (prev?.standing === standing && prev.basis === basis) return { standing, basis, ...(prev.scope ? { scope: prev.scope, expires: prev.expires } : {}), ...(prev.lapsed ? { lapsed: prev.lapsed } : {}) };
+	if (basis === used) throw new Error("a new standing needs the owner's new words as basis: these words already gave one");
+	const scope = input.scope as StandingScope;
+	if (scope !== "once" && scope !== "task" && scope !== "hours") throw new Error('a new standing needs scope: "once", "task" or "hours" (with hours); there is no permanent grant');
+	const hours = scope === "hours" ? Number(input.hours) : STANDING_BOUND_HOURS;
+	if (!(hours > 0 && hours <= STANDING_HOURS_MAX)) throw new Error(`scope "hours" needs hours: more than 0, at most ${STANDING_HOURS_MAX}`);
+	return { standing, basis, scope, expires: new Date(Date.now() + hours * 3_600_000).toISOString() };
+}
+
 export function setupChannel(input: Record<string, any>, channelName: string, rulesText: string): Setup {
 	const channel = String(input.channel ?? "").replace(/^ch:/, "");
 	if (!channel) throw new Error("channel required (the ch:<id> from the inbox header)");
 	if (!String(input.purpose ?? "").trim()) throw new Error("purpose required");
 	if (input.standing && !String(input.basis ?? "").trim()) throw new Error("standing actions need basis: the owner's words that asked for them, verbatim");
+	const grant = grantOf(input, setups.find(x => x.channel === channel));
 	const claimed = new Set<string>();
 	const logins = ((input.logins ?? []) as Login[]).map(l => {
 		const w = claimLogin(channel, l, rulesText);
@@ -56,7 +79,7 @@ export function setupChannel(input: Record<string, any>, channelName: string, ru
 		return w.name;
 	});
 	release(channel, claimed);
-	const s: Setup = { channel, name: channelName, purpose: String(input.purpose), ...(input.standing ? { standing: String(input.standing), basis: String(input.basis) } : {}), logins, monitors, updated: now() };
+	const s: Setup = { channel, name: channelName, purpose: String(input.purpose), ...grant, logins, monitors, updated: now() };
 	const i = setups.findIndex(x => x.channel === channel);
 	if (i >= 0) setups[i] = s;
 	else setups.push(s);
@@ -81,6 +104,31 @@ export function clearChannel(channel: string): boolean {
 }
 
 export const getSetup = (channel: string) => setups.find(s => s.channel === channel);
+
+export const standingLive = (s: Setup, at = Date.now()): boolean => !!s.standing && (!s.expires || at < Date.parse(s.expires));
+export const standingTerm = (s: Setup, at = Date.now()): StandingScope | "none" | "lapsed" | undefined => (!s.standing ? undefined : !standingLive(s, at) ? "lapsed" : (s.scope ?? "none"));
+const untilKo = (iso: string) => new Date(iso).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+export function standingLabelKo(s: Setup): string {
+	const term = standingTerm(s);
+	return term === "hours" ? `${untilKo(s.expires!)}까지` : term ? { none: "기한 없음", once: "한 번", task: "이 작업 동안", lapsed: "끝남" }[term] : "";
+}
+
+// The wake that carried a `once` standing used it; a `task` standing ends with its task. The owner hears about it from the next lapseStandings.
+export function endStanding(channel: string, scope: "once" | "task", at = Date.now()): void {
+	const s = getSetup(channel.replace(/^ch:/, ""));
+	if (s?.scope !== scope || !standingLive(s, at)) return;
+	s.expires = new Date(at).toISOString();
+	save();
+}
+
+// Every minute (hub/main.ts): each standing that ended since the last look is marked and told to the owner once. Nothing here touches a monitor or a login.
+export function lapseStandings(tell: (s: Setup) => void, at = Date.now()): void {
+	const ended = setups.filter(s => s.standing && s.expires && !s.lapsed && !standingLive(s, at));
+	if (!ended.length) return;
+	for (const s of ended) s.lapsed = new Date(at).toISOString();
+	save();
+	ended.forEach(tell);
+}
 // A session's home channel id: the gateway's live channel map, else the lane's own record (bare id, or "ch:<id>" on a lane row).
 export const homeChannel = (name: string, home: unknown, homes?: Record<string, string>): string | undefined => homes?.[name] ?? (typeof home === "string" && home ? home.replace(/^ch:/, "") : undefined);
 
@@ -125,7 +173,15 @@ function health(s: Setup) {
 	});
 }
 
-export const listSetups = () => setups.map(s => ({ ...s, login_health: health(s) }));
+export const listSetups = () => setups.map(s => ({ ...s, login_health: health(s), ...(s.standing ? { standing_term: standingLabelKo(s) } : {}) }));
+
+// What every wake reads, so a lapsed standing stops counting the moment it ends, before the minute sweep tells the owner.
+function standingLine(s: Setup): string {
+	if (!s.standing) return "No standing actions: monitoring only; on a wake, ask the owner before acting.";
+	if (!standingLive(s)) return `The standing actions of this channel ended at ${s.expires}: monitors keep running; on a wake, ask the owner before acting.`;
+	const term = s.scope === "once" ? "this one wake" : s.scope === "task" ? `this task, at most until ${s.expires}` : s.scope ? `until ${s.expires}` : "no limit set";
+	return `Standing actions the owner asked for ("${s.basis}"), for ${term}: ${s.standing}. Do them without asking; anything more needs the owner. No standing covers sending mail or personal data (address, contact, id numbers): those always get the owner's confirmation.`;
+}
 
 export function channelContext(channel?: string): string {
 	const s = channel && getSetup(channel);
@@ -133,7 +189,7 @@ export function channelContext(channel?: string): string {
 	const bad = health(s).filter(h => !h.ok).map(h => h.login);
 	return [
 		`channel #${s.name} setup: ${s.purpose}.`,
-		s.standing ? `Standing actions the owner asked for ("${s.basis}"): ${s.standing}. Do them without asking; anything more needs the owner.` : "No standing actions: monitoring only; actions follow the normal confirmation rules.",
+		standingLine(s),
 		s.logins.length ? `Kept logins: ${s.logins.join(", ")}.` : "",
 		s.monitors.length ? `Monitors: ${s.monitors.join(", ")}.` : "",
 		bad.length ? `Login not healthy: ${bad.join(", ")} - do not act on a broken login; follow the relogin rule first.` : "",
@@ -142,5 +198,5 @@ export function channelContext(channel?: string): string {
 }
 
 export function setupsSummary(): string {
-	return setups.length ? setups.map(s => `- #${s.name} (ch:${s.channel}): ${s.purpose}${s.standing ? ` | standing: ${s.standing}` : ""} | logins: ${s.logins.join(", ") || "none"} | monitors: ${s.monitors.length}`).join("\n") : "(none)";
+	return setups.length ? setups.map(s => `- #${s.name} (ch:${s.channel}): ${s.purpose}${s.standing ? ` | standing: ${standingLive(s) ? `${s.standing} (${s.scope ?? "no limit set"})` : "ended"}` : ""} | logins: ${s.logins.join(", ") || "none"} | monitors: ${s.monitors.length}`).join("\n") : "(none)";
 }

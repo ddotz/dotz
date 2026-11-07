@@ -61,7 +61,7 @@ import { CARD_AUDIT_ID, type CardAudit, runMigrations } from "./migrations.ts";
 import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
 import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
 import { pendingBackups } from "./carryover.ts";
-import { clearChannel, nameWatches, setupChannel, wakeOnly, watchLabel, watchWakeEvent } from "./workchannels.ts";
+import { clearChannel, endStanding, lapseStandings, nameWatches, setupChannel, wakeOnly, watchLabel, watchWakeEvent } from "./workchannels.ts";
 import { watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
@@ -591,6 +591,7 @@ startWatches((w, reason, output, prev) => {
 		const wake = inboxText(quiet ? { ...event, wakeOnly: true } : event);
 		if (!w.channels?.length) return deliver(wake);
 		const [first, ...others] = w.channels;
+		endStanding(first, "once");
 		if (!quiet) for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway", news: true, ...watchRoute(w) }).catch(() => undefined);
 		return deliver(wake, { target: `ch:${first}` });
 	}
@@ -599,6 +600,7 @@ startWatches((w, reason, output, prev) => {
 	const label = watchLabel(w.name);
 	void out(issue ? "alert" : w.to, watchLine(label, reason, output, { prev }).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway", news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
+setInterval(() => lapseStandings(s => void out(`ch:${s.channel}`, `이 채널의 자동 처리 기한이 끝났어요: ${s.standing}\n모니터링은 계속 돌아요. 앞으로 깨어나면 먼저 여쭤볼게요.`, undefined, { source: "gateway", news: true }).catch(e => log(`standing notice failed: ${e}`))), 60_000);
 syncFeatureWatches();
 startKakaoLive();
 startPlugins({

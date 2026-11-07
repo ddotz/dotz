@@ -525,7 +525,7 @@ export const ko: Catalog = {
 			channel: {
 				summary: (kind, purpose) => (purpose ? `${kind} · ${purpose}` : kind),
 				desc: "이 프로젝트의 세션이 답하는 채널이에요. 여기에 쓴 글은 이 채널의 맥락과 함께 세션의 프로젝트로 가요.",
-				kind: "종류", purpose: "목적", logins: "유지 중인 로그인", monitors: "모니터링", standing: "상시 처리", updated: "설정 갱신", noSetup: "이 채널에는 아직 설정이 없어요",
+				kind: "종류", purpose: "목적", logins: "유지 중인 로그인", monitors: "모니터링", standing: "상시 처리", terms: { none: "기한 없음", once: "한 번", task: "이 작업 동안", lapsed: "끝남" }, until: t => `${t}까지`, updated: "설정 갱신", noSetup: "이 채널에는 아직 설정이 없어요",
 			},
 			lane: {
 				label: name => `세션 ${name}`,

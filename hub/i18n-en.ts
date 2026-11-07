@@ -545,7 +545,7 @@ Do this, briefly:
 			channel: {
 				summary: (kind: string, purpose: string) => (purpose ? `${kind} · ${purpose}` : kind),
 				desc: "A channel this project's session answers in. Messages written here reach the session's project with this channel's context.",
-				kind: "Kind", purpose: "Purpose", logins: "Kept logins", monitors: "Monitors", standing: "Standing behaviour", updated: "Setup updated", noSetup: "No setup for this channel yet",
+				kind: "Kind", purpose: "Purpose", logins: "Kept logins", monitors: "Monitors", standing: "Standing behaviour", terms: { none: "no limit", once: "once", task: "this task", lapsed: "ended" }, until: (t: string) => `until ${t}`, updated: "Setup updated", noSetup: "No setup for this channel yet",
 			},
 			lane: {
 				label: (name: string) => `Session ${name}`,

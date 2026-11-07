@@ -15,7 +15,7 @@ import { doneProblem } from "./donesignals.ts";
 import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, startedIn } from "./threads.ts";
 import { addSchedule, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
-import { clearChannel, listSetups, setupChannel } from "./workchannels.ts";
+import { clearChannel, endStanding, listSetups, setupChannel, standingLabelKo } from "./workchannels.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { readScheduleSettings, writeScheduleSettings } from "./schedule-settings.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, runWatch, watchScript } from "./watch.ts";
@@ -67,7 +67,10 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				const b = await body(req);
 				const state = String(b.status);
 				if (state !== "working" && state !== "waiting" && state !== "done") return json({ error: "status must be working, waiting or done" }, 400);
-				return json({ ok: true, name: await discord.threadStatus(String(b.thread ?? ""), state) });
+				const name = await discord.threadStatus(String(b.thread ?? ""), state);
+				const parent = state === "done" ? discord.threadInfo(String(b.thread).replace(/^th:/, ""))?.parentTarget : undefined;
+				if (parent?.startsWith("ch:")) endStanding(parent, "task");
+				return json({ ok: true, name });
 			}
 			if (req.method === "POST" && parts[2] === "thread") {
 				const b = await body(req);
@@ -86,7 +89,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				const name = discord.channels.work[id];
 				if (!name) return json({ error: `ch:${id} is not a work channel (only channels under the ${NAME} category)` }, 400);
 				const setup = setupChannel(b, name, existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : "");
-				const kept = [setup.logins.length ? `로그인 유지: ${setup.logins.join(", ")}` : "", setup.monitors.length ? `모니터링 ${setup.monitors.length}개` : "", setup.standing ? `자동 처리: ${setup.standing}` : ""].filter(Boolean).join(" · ");
+				const kept = [setup.logins.length ? `로그인 유지: ${setup.logins.join(", ")}` : "", setup.monitors.length ? `모니터링 ${setup.monitors.length}개` : "", setup.standing ? `자동 처리: ${setup.standing} (${standingLabelKo(setup)})` : ""].filter(Boolean).join(" · ");
 				void out(`ch:${id}`, `이 채널 자동 관리: ${setup.purpose}${kept ? `\n${kept}` : ""}`, undefined, { source: "gateway" }).catch(e => log(`setup note failed: ${e}`));
 				return json({ ok: true, setup });
 			}

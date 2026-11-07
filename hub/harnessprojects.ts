@@ -11,7 +11,7 @@ import type { HarnessEdge, HarnessNode, Setting } from "./harness.ts";
 import { msg } from "./i18n.ts";
 import { type Lane, laneRunning, lanes } from "./lanes.ts";
 import { allWatches } from "./watch.ts";
-import { homeChannel, listSetups, type Setup } from "./workchannels.ts";
+import { homeChannel, listSetups, type Setup, standingTerm } from "./workchannels.ts";
 
 export type Field<T> = { value: T; source: "global" | "project"; global?: T };
 export type Fallback = FallbackEntry;
@@ -111,14 +111,18 @@ function buildProject(lane: Lane, chans: Chan[], ctx: { disk: Record<string, any
 	const deny = texts.flatMap(t => denyLines(t.text).slice(0, 10).map(m => ({ pattern: m[1]!, reason: m[2]!, file: t.file }))).slice(0, 20);
 
 	const setupOf = chans.map(c => ctx.setups.find(s => s.channel === c.id)).find(Boolean);
-	const setup = setupOf ? { channel: setupOf.name, purpose: setupOf.purpose, logins: setupOf.login_health.map(h => ({ name: h.login, ok: h.ok })), monitors: setupOf.monitors, standing: setupOf.standing ?? "", updated: setupOf.updated } : null;
+	const stamp = (t: string) => new Date(t).toLocaleString(H.locale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+	const standingWords = (s: Setup) => {
+		const term = standingTerm(s)!;
+		return `${s.standing} (${term === "hours" ? P.channel.until(stamp(s.expires!)) : P.channel.terms[term]})`;
+	};
+	const setup = setupOf ? { channel: setupOf.name, purpose: setupOf.purpose, logins: setupOf.login_health.map(h => ({ name: h.login, ok: h.ok })), monitors: setupOf.monitors, standing: setupOf.standing ? standingWords(setupOf) : "", updated: setupOf.updated } : null;
 	const features = projectFeatures(roots, chans.map(c => c.id), new Set([...(setupOf?.logins ?? []), ...(setupOf?.monitors ?? [])]));
 
 	const status = lane.status;
 	const tone: HarnessNode["status"] = ({ working: "busy", starting: "busy", idle: "ok", "rate-limited": "warn", exited: "off" } as const)[status];
 	const statusText = H.status[status] ?? status;
 	const channels = chans.map(c => ({ ...c, kind_text: P.channelKind[c.kind] }));
-	const stamp = (t: string) => new Date(t).toLocaleString(H.locale, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 	// -- the project's own map
 	const setting = (key: string, text: { label: string; hint?: string }, type: Setting["type"], f: Field<string>, applies: Setting["applies"], extra: Partial<Setting> = {}): Setting =>
@@ -136,7 +140,7 @@ function buildProject(lane: Lane, chans: Chan[], ctx: { disk: Record<string, any
 				{ label: P.channel.purpose, value: s.purpose },
 				...(s.logins.length ? [{ label: P.channel.logins, value: s.login_health.map(h => h.login).join(", ") }] : []),
 				...(s.monitors.length ? [{ label: P.channel.monitors, value: s.monitors.join(", ") }] : []),
-				...(s.standing ? [{ label: P.channel.standing, value: s.standing }] : []),
+				...(s.standing ? [{ label: P.channel.standing, value: standingWords(s) }] : []),
 				{ label: P.channel.updated, value: stamp(s.updated) },
 			] : [{ label: P.channel.purpose, value: P.channel.noSetup }])],
 			settings: [],
