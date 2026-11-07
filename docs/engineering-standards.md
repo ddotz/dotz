@@ -8,8 +8,8 @@
 
 | 항목 | 기준값 | 현재값 | 확인 방법 |
 |---|---|---|---|
-| 파일 크기 | 제품 코드 800줄 이하 | 12개 초과. 최대 `web/js/30-kakao.js` 1,194, `hub/orchestrator.ts` 1,122 | 규칙 1. 초과 파일은 이름별 상한(다음 25 단위) |
-| 함수 크기 | 맨 바깥 함수 300줄 이하 | 11개 초과. 최대 `createOrchestrator` 1,012, `createKakaoWeb` 695, `createPrompts` 692 | 규칙 2 |
+| 파일 크기 | 제품 코드 800줄 이하 | 10개 초과. 최대 `web/js/30-kakao.js` 1,194, `extension/guard.ts` 1,107 | 규칙 1. 초과 파일은 이름별 상한(다음 25 단위) |
+| 함수 크기 | 맨 바깥 함수 300줄 이하 | 11개 초과. 최대 `createOrchestrator` 967, `createPrompts` 692, `createKakaoWeb` 649 | 규칙 2 |
 | 순환 의존 | 새 순환 0 | 5묶음(레인 5개 모듈, 폴백 3개, 감시 3개, 계정 2개, 유튜브 2개) | 규칙 3 |
 | 층 경계 | 층을 넘는 import 증가 0. web은 hub를 import하지 않음 | hub→features 50, hub→onboard 6, hub→extension 2, extension→hub 12, onboard→hub 1, features→onboard 2, 기능끼리 18. web↔hub import 0 | 규칙 4 |
 | 첫 실행 층 | `firstrun/`은 hub와 onboard를 import할 수 있고, 이 층을 import하는 곳은 `hub/main.ts`, `hub/routes.ts`, `hub/routes-settings.ts`, `setup.ts`뿐. 삼킨 오류, 일반 쓰기, 제한 없는 호출은 0 | 0 | 규칙 4, 6, 7, 8 |
