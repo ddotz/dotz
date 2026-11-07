@@ -3,17 +3,13 @@
 // retry-after, restart after a crash (max 3 per 10 min), and rotate to a fresh session with a handover past 50MB.
 // The agent itself runs behind a runtime adapter (hub/runtime): this module is policy and talks to it only through
 // an AgentProcess and its events.
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
-import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_TOKEN, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
-import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
+import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_TOKEN, log, NAME, now, orchestratorModel, parseSelector, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
-import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
-import { dropSection, newestLines, renderState } from "./recall-parts.ts";
-import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { pinnedLimitNotice } from "./accounts-api.ts";
@@ -22,10 +18,11 @@ import { runtimeFor } from "./runtime/index.ts";
 import { writeOrchestratorProfile } from "./runtime/omo.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
-import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
 import { errorAskHold, noteErrorAsked, type OrchError, plainError } from "./orch-error.ts";
 import { LATER_LINE, stripLater } from "./tone.ts";
+import { checkSoon as checkAccountSoon } from "./account-rules.ts";
+import { handover, lastAnswerAt, newOrchState, recallText } from "./orchestrator-parts.ts";
 
 const ROTATE_BYTES = 50e6;
 // The compaction point of a session: the running model's own (config context.models, the 컨텍스트 screen) or
@@ -48,33 +45,6 @@ export const subscriptionCheck = {
 
 // The tiny turn that tests a resumed orchestrator when no owner request was open to replay; it answers "-" (never posted).
 export const PROBE_TEXT = "[dotz gateway] 연결 확인입니다. 아무 작업도 하지 말고 '-' 한 글자로만 답하세요.";
-
-// When the model last answered in a session file: the timestamp of its last assistant message, read from the file's tail
-// (startup bookkeeping lines after it and the file's mtime say nothing about the prompt cache).
-export function lastAnswerAt(file: string, tailBytes = 512 * 1024): number | undefined {
-	try {
-		const size = statSync(file).size;
-		const start = Math.max(0, size - tailBytes);
-		const buf = Buffer.alloc(size - start);
-		const fd = openSync(file, "r");
-		try {
-			readSync(fd, buf, 0, buf.length, start);
-		} finally {
-			closeSync(fd);
-		}
-		const lines = buf.toString("utf8").split("\n");
-		for (let i = lines.length - 1; i >= 0; i--) {
-			if (!lines[i]!.includes('"assistant"')) continue;
-			try {
-				const e = JSON.parse(lines[i]!);
-				if (e.type !== "message" || e.message?.role !== "assistant") continue;
-				const at = Date.parse(e.timestamp);
-				if (Number.isFinite(at)) return at;
-			} catch {}
-		}
-	} catch {}
-	return undefined;
-}
 
 // A failed keepalive ping is not retried, failed over or alerted (2026-10-20 12:14 KST: one ping on a dead network ran four
 // 5-minute retries, twice, and told the owner the model had stopped): it only kept a cache warm, so the next real message is
@@ -112,26 +82,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	const chosen = () => (opts.model?.() ? parseSelector(opts.model()!) : orchestratorModel());
 	// This session's compaction point, from the model it is running now (config context.models or orchestrator.rotate_tokens).
 	const compactAt = () => compactAtFor(orch.activeModel || selectorOf(chosen()), cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens);
-	const orch = {
-		status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
-		// Why a "rate-limited" pause is on: a usage limit, or a billing/auth problem only the owner can fix.
-		pauseKind: "rate" as "rate" | "owner",
-		// Who stopped it (the run state line says "주인님이 멈추게 했어요" for the owner's own stop, hub/runstate.ts).
-		stoppedBy: "" as "" | "owner",
-		stoppedAt: "",
-		sessionFile: "",
-		// The model the running process answers on now: the configured one, or the fallback it switched to (reset at every start).
-		activeModel: "",
-		startedAt: "",
-		lastText: "",
-		rateLimitedUntil: "",
-		// The limit lifted and the held work went back in: true until a turn starts on it (the web line says so) or the session pauses again.
-		resuming: false,
-		restarts: [] as number[],
-		// Set when the automatic retries gave up (markError); cleared by the next successful turn. The web banner reads it.
-		error: undefined as OrchError | undefined,
-		ctx: newCtx(),
-	};
+	const orch = newOrchState();
 	let proc: AgentProcess | undefined;
 	// The running turn stopped on a provider error (a usage limit, a dead login, a failure past its retries): its request was not
 	// answered and must stay open for the retry, not be closed as a turn that wrote nothing (prompts.ts settleTurn).
@@ -323,32 +274,6 @@ export function createOrchestrator(opts: OrchOpts) {
 	const save = (s: Saved) => writeAtomic(opts.stateFile, `${JSON.stringify({ ...saved(), ...s }, null, 2)}\n`);
 	// Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy orchestrator queues it until turn_end.
 	const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(), refreshUsage: () => proc?.refreshUsage() };
-
-	function recall(): string {
-		// The mail and calendar section is only useful while zele runs (zele.enabled defaults to on, as in zele.ts).
-		const zeleOn = (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false;
-		const modeText = readFileSync(modeFile(), "utf8");
-		const mode = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
-		const stateFile = join(DATA_DIR, "state.json");
-		const state = existsSync(stateFile) ? renderState(readFileSync(stateFile, "utf8"), stateFile) : "{}";
-		const id = cfg.identity;
-		const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : msg().identityFallback(id?.character ?? "", id?.tone ?? "");
-		// A cut file says so: RULES.md outgrew the old 6000-character cap and silently lost its last lines (blocked commands).
-		const whole = (p: string) => (existsSync(p) ? readFileSync(p, "utf8") : "");
-		const file = (p: string, max: number) => {
-			const t = whole(p);
-			return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
-		};
-		const features = featurePrompt(DATA_DIR, "orchestrator", log);
-		const scope = opts.scope?.() ?? "";
-		return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (scope ? `\n\n${scope}` : ""));
-	}
-
-	function handover(runtime: RuntimeAdapter, previous: string): string {
-		const tail = runtime.recentExchanges(previous);
-		if (tail === undefined) return "";
-		return msg().handover(previous, tail);
-	}
 
 	// A failed request: a usage limit or a billing/auth problem pauses the orchestrator, a temporary provider error is retried with backoff.
 	// With a hub-driven chain the next entry takes over first (a temporary error is retried a few times before that).
@@ -860,7 +785,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
 			// (a "followUp" would wait until the first answer is done and start an extra paid turn; a "prompt" would start one too),
 			// and a queued steer is not dropped when it arrives before the turn has begun.
-			proc.send(recall() + switchNote, "prompt");
+			proc.send(recallText(opts.scope?.() ?? "") + switchNote, "prompt");
 			const seed = rotate ? "" : (opts.seed?.() ?? "");
 		const later = (rotate ? handover(runtime, prior!) : seed) + (asks ? `${rotate || seed ? "\n\n" : ""}${asks}` : "");
 			if (later) proc.send(later, "steer");

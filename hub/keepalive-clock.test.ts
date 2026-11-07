@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { lastAnswerAt } from "./orchestrator.ts";
+import { lastAnswerAt } from "./orchestrator-parts.ts";
 
 const line = (o: unknown) => JSON.stringify(o);
 
