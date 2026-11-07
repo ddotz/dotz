@@ -13,7 +13,7 @@ import { createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfC
 import { createSessionMark } from "./jandi-session.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import type { MessageSpec } from "./message-spec.ts";
-import { specOf } from "./message-spec-derive.ts";
+import { specOf } from "./message-spec-of.ts";
 import { sameRoom } from "./messenger-rooms.ts";
 import { postClass } from "./notify-route.ts";
 import { renderJandi } from "./spec-jandi.ts";

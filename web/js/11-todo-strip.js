@@ -340,7 +340,7 @@ function msgNode(e) {
       const answer = (e.kind === "out" || e.kind === "lane_report") && !e.relay && (!e.update_key || e.target === "worklog") && e.source !== "gateway" && (mark !== "run" || (e.kind === "out" && !fromLane));
       const inl = pc && !isFixedT(target) && pc.blocks.some(b => b.options.length > 1);   // the card in the message (10-decision-card.js dcInline); in 알림 / 작업내역 a tap opens the sheet
       const shown = inl ? inlineBody(fl.text) : pc && pc.blocks.length ? choiceBody(fl.text) : fl.text;
-      const md = answer ? answerNode(shown, { shaped: fl.files.length > 0 }) : mdNode(shown, "md", !!e.relay), files = e.relay ? null : pathFiles(md, host);
+      const md = answer ? answerNode(shown, { shaped: fl.files.length > 0, spec: pc && pc.blocks.length ? null : e.spec }) : mdNode(shown, "md", !!e.relay), files = e.relay ? null : pathFiles(md, host);
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !e.relay && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);

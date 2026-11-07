@@ -4,7 +4,7 @@ import { DATA_DIR, writeAtomic } from "./config.ts";
 import type { Adapter, AdapterStatus, DeliverResult, OutMsg, Settings, SettingsPut, TestResult } from "./messenger.ts";
 import { SettingsError } from "./messenger.ts";
 import type { MessageSpec } from "./message-spec.ts";
-import { specOf } from "./message-spec-derive.ts";
+import { specOf } from "./message-spec-of.ts";
 import { slackBlocks } from "./spec-slack.ts";
 import { parseTone, TONE_EMOJI, toneText } from "./tone.ts";
 

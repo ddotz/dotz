@@ -3,7 +3,7 @@ import { join, posix } from "node:path";
 
 // Repo-wide code health detectors for hub/engineering-rules.test.ts. Pure text and regex scans (no TypeScript compiler); imports come from
 // Bun.Transpiler.scanImports. `bun hub/engineering-rules.ts --json` prints every metric, without the flag a short table.
-// Prod scope: hub, extension, features, onboard, setup.ts, web/js, minus tests, test helpers and the generated web/js/01-notice-ko.js.
+// Prod scope: hub, extension, features, onboard, setup.ts, web/js, minus tests, test helpers and the generated web/js/01-notice-ko.js and 01-message-spec.js.
 
 export type Src = { readonly path: string; readonly text: string };
 type Counts = Record<string, number>;
@@ -11,7 +11,7 @@ type Counts = Record<string, number>;
 const SKIP_DIRS = new Set(["node_modules", ".git", "vendor"]);
 const TREE_DIRS = ["hub", "extension", "features", "onboard", "firstrun", "web", "site"];
 const ARCH = "docs/ARCHITECTURE.md";
-const GENERATED = "web/js/01-notice-ko.js";
+const GENERATED = new Set(["web/js/01-notice-ko.js", "web/js/01-message-spec.js"]);
 const SELF_TEST = "hub/engineering-rules.test.ts";
 const PROD_ROOT = /^(?:hub|extension|features|onboard|firstrun|web\/js)\/|^setup\.ts$/;
 
@@ -34,7 +34,7 @@ export function loadTree(root: string): Src[] {
 export const isTest = (p: string) => p.endsWith(".test.ts");
 const isSupport = (p: string) => /(?:^|\/)(?:test|fixtures)\/|(?:^|\/)test-[^/]*$/.test(p);
 export const prodOf = (files: readonly Src[]) =>
-	files.filter(f => /\.(?:ts|js)$/.test(f.path) && PROD_ROOT.test(f.path) && !isTest(f.path) && !isSupport(f.path) && f.path !== GENERATED);
+	files.filter(f => /\.(?:ts|js)$/.test(f.path) && PROD_ROOT.test(f.path) && !isTest(f.path) && !isSupport(f.path) && !GENERATED.has(f.path));
 export const topDir = (p: string) => (p.startsWith("web/") ? "web" : p.split("/")[0]);
 const bump = (c: Counts, k: string, n = 1) => { if (n) c[k] = (c[k] ?? 0) + n; };
 const sorted = (c: Counts): Counts => Object.fromEntries(Object.entries(c).sort(([a], [b]) => (a < b ? -1 : 1)));
@@ -161,7 +161,7 @@ export const hubWebImports = (prod: readonly Src[]) =>
 
 // Rule 5 and 11: top-level names of the concatenated web/js script.
 const GLOBAL_DECL = /^(?:async\s+function\*?|function\*?|class|const|let|var)\s+([\w$]+)/gm;
-export const webJs = (files: readonly Src[]) => files.filter(f => /^web\/js\/[^/]+\.js$/.test(f.path) && f.path !== GENERATED);
+export const webJs = (files: readonly Src[]) => files.filter(f => /^web\/js\/[^/]+\.js$/.test(f.path) && !GENERATED.has(f.path));
 export function webGlobals(web: readonly Src[]): Map<string, string[]> {
 	const out = new Map<string, string[]>();
 	for (const f of web) for (const m of f.text.matchAll(GLOBAL_DECL)) {

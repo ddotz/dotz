@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
 import type { MessageSpec } from "./message-spec.ts";
-import { specOf } from "./message-spec-derive.ts";
+import { specOf } from "./message-spec-of.ts";
 import { telegramParts } from "./spec-telegram.ts";
 import { parseTone, TONE_EMOJI, toneText } from "./tone.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";

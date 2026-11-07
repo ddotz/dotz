@@ -13,64 +13,11 @@ function inline(s) {
     .replace(/~~([^~\n]+)~~/g, "<s>$1</s>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "$1<i>$2</i>")
     .replace(/\0(\d+)\0/g, (_, n) => codes[n]);
 }
-// "| a | b |" rows; the "|---|" separator row after the first one makes that row the header.
-const cells = line => line.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+// A "|---|" separator row of a table.
 const isSep = line => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
-// Meta lines: evidence/source/"for NAME" lines render small and muted.
 const escRe = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const metaRe = () => new RegExp(`^\\s*(?:-\\s+)?(?:근거:|출처:|Evidence:|Source:|For ${escRe(botName)}:|${escRe(botName)} 몫:)`, "i");
-// A run of "> " lines that contains an option line ("**1) ...") is a choice block: its quote prefixes are dropped. Other quotes stay.
-function unquoteChoices(lines) {
-  const out = [];
-  for (let i = 0; i < lines.length;) {
-    if (!/^\s*>/.test(lines[i])) { out.push(lines[i++]); continue; }
-    let j = i;
-    while (j < lines.length && /^\s*>/.test(lines[j])) j++;
-    const run = lines.slice(i, j), choice = run.some(l => /^\s*>?\s*\*\*\d+\)/.test(l));
-    out.push(...(choice ? run.map(l => l.replace(/^\s*>\s?/, "")) : run));
-    i = j;
-  }
-  return out;
-}
-// A source list at the end of an answer: a heading line (출처:, 참고:, 근거:, Sources:) over link lines (a bare URL, "이름: URL", "이름 - URL", [이름](URL)),
-// or a last run of two or more bare URL lines, becomes 목록 rows (the given name over the site and a short path, or the site over the short path). Everything comes from the URL string: no fetch, no favicon.
-// The full URL stays in the row as clipped text, the only selectable part, so copying the message gives the original URLs.
-const SRC_HEAD = /^\s*(?:#{1,6}\s+)?(?:\*\*)?(출처|참고(?: 자료| 링크)?|근거|Sources?|References?)(?:\*\*)?\s*:?\s*(?:\*\*)?\s*$/i;
-const SRC_BULLET = /^\s*(?:[-*•]|\d+[.)])\s/;
-const SRC_ITEM = /^\s*(?:(?:[-*•]|\d+[.)])\s+)?(?:\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(\S(?:(?!:\/\/).)*?)(?::|\s-)\s+<?(https?:\/\/[^\s<>]+)>?|<?(https?:\/\/[^\s<>]+)>?)\s*$/;
-function sourceItem(line) {
-  const m = line.match(SRC_ITEM), href = m && (m[2] || m[4] || m[5]);
-  return href && URL.canParse(href) ? { title: (m[1] || m[3] || "").replace(/\*\*|`/g, ""), href } : null;
-}
-// start line -> { head, items, end } for each source list in these lines; only the message's last text part (last) can hold a list without a heading.
-function sourceRuns(lines, last) {
-  const runs = new Map();
-  if (!lines.some(l => l.includes("://"))) return runs;
-  let taken = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const h = lines[i].match(SRC_HEAD);
-    if (!h) continue;
-    const items = [];
-    let end = i + 1, mixed = false;
-    for (let j = end; j < lines.length; j++) {
-      if (!lines[j].trim()) continue;
-      const item = sourceItem(lines[j]);
-      // A 근거: list keeps its shape unless every item in it is a link: the next line or bullet being something else leaves it as written.
-      if (!item) { mixed = h[1] === "근거" && (j === end || SRC_BULLET.test(lines[j])); break; }
-      items.push(item); end = j + 1;
-    }
-    if (mixed) taken = lines.length;   // nor does the last-run scan below take a piece of it
-    else if (items.length) { runs.set(i, { head: h[1], items, end }); taken = end; i = end - 1; }
-  }
-  if (!last) return runs;
-  let end = lines.length;
-  while (end && !lines[end - 1].trim()) end--;
-  const items = [];
-  let start = end;
-  for (let item; start > taken && (item = sourceItem(lines[start - 1])) && !item.title; start--) items.unshift(item);
-  if (items.length > 1) runs.set(start, { head: "", items, end });
-  return runs;
-}
+// Source lists (a heading line over link lines) are read in hub/message-spec-derive.ts; each becomes a row of the card drawn here from the URL string alone: no fetch, no favicon.
+// The given name over the site and a short path, or the site over the short path. The full URL stays in the row as clipped text, the only selectable part, so copying the message gives the original URLs.
 const sourcePart = s => { try { return decodeURIComponent(s); } catch { return s; } };
 // The last two path segments, "…/" when more came before them; a bare domain has none.
 function sourcePath(url) {
@@ -107,101 +54,18 @@ function rcRowHtml(key, text, tail = "") {
   const d = tail ? null : /^(.*?)\s+·\s+(.*)$/.exec(text);
   return `<div class="rc-row"><span class="rc-k">${esc(key)}</span><span class="rc-w"><b>${inline(d ? d[1] : text)}</b> ${d ? `<span class="rc-d">${inline(d[2])}</span>` : tail}</span></div>`;
 }
-// A list of "10:00 what" items and nothing else is a schedule: the rows of an answer's card (02-answer-shapes.js) and of a briefing (11-resultcard.js).
+// A schedule: the rows of an answer's card (02-answer-shapes.js) and of a briefing (11-resultcard.js).
 const TIME_ROW = /^(\d{1,2}:\d{2})\s+(\S.*)$/;
-const RULE_LINE = /^\s{0,3}(?:-{3,}|\*{3,}|_{3,})\s*$/;   // a "---" line divides a message: a hairline, never three dashes
-const timeList = l => l.t === "ul" && l.items.length >= 2 && l.items.every(i => !i.sub && TIME_ROW.test(i.text));
 function timeRowsHtml(items) {
   return `<div class="rc-rows">${items.map(i => { const m = TIME_ROW.exec(i.text); return rcRowHtml(m[1], m[2]); }).join("")}</div>`;
 }
-// answer: the shape state of one answer (02-answer-shapes.js), null for every other caller.
-function blocks(text, last, answer) {
-  const html = [], meta = metaRe(), lines = unquoteChoices(text.split("\n")), sources = sourceRuns(lines, last);
-  let list = null, para = [], table = null, quote = [];
-  const flushQ = () => { if (quote.length) html.push(`<blockquote>${quote.map(inline).join("<br>")}</blockquote>`); quote = []; };
-  const flushP = () => {
-    flushQ();
-    if (para.length) {
-      const p = `<p>${para.map(inline).join("<br>")}</p>`;
-      if (answer && !answer.opened && !html.length) { answer.plain = p; answer.rich = ansLeadHtml(para); }
-      html.push(p);
-    }
-    para = [];
-  };
-  const flushL = () => {
-    if (!list) return;
-    const head = list.head ? `<p>${inline(list.head)}</p>` : "", plain = `<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`;
-    const part = answer && head ? ansSection(list, head + plain) : null, card = answer && !part ? ansListHtml(list) : null;
-    if (card) answer.shaped = true;
-    html.push(part || head + (card || plain));
-    list = null;
-  };
-  const flushT = () => {
-    if (!table) return;
-    const [head, ...rest] = table.head ? table.rows : [null, ...table.rows], card = answer && head && rest.length > 0 && head.length <= ANS_TABLE_COLS;
-    if (card) answer.shaped = true;
-    html.push(`<div class="${card ? "ans-card ans-tb" : "tbl"}"><table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map((c, i) => card && !i ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
-    table = null;
-  };
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i], run = sources.get(i);
-    let m;
-    if (run) { flushT(); flushP(); flushL(); html.push(sourceListHtml(run)); i = run.end - 1; continue; }
-    if (/^\s*\|.*\|\s*$/.test(line)) {
-      flushP(); flushL();
-      if (!table) table = { rows: [], head: false };
-      if (isSep(line)) { if (table.rows.length === 1) table.head = true; } else table.rows.push(cells(line));
-      continue;
-    }
-    flushT();
-    // Discord's "-# " subtext line renders like the meta lines.
-    if (meta.test(line) || /^\s*-#\s/.test(line)) {
-      flushP(); flushL();
-      const ev = answer && last && ansEvidenceHtml(line, lines.slice(i + 1));
-      if (ev) answer.shaped = true;
-      html.push(ev || `<p class="meta">${inline(line.replace(/^\s*-#?\s+/, ""))}</p>`);
-      continue;
-    }
-    // An indented item (2+ spaces) is a sub-item of the list it sits in, whatever its own marker.
-    if ((m = line.match(/^(\s*)(?:[-*•]|(\d+)[.)])\s+(.*)/))) {
-      const head = answer && para.length === 1 && ANS_HEAD.test(para[0].trim()) ? para.pop().trim() : "";   // a title right above a list
-      flushP();
-      const t = m[2] ? "ol" : "ul", sub = m[1].length >= 2 && !!list;
-      if (!sub && (!list || list.t !== t)) { flushL(); list = { t, items: [], head }; }
-      list.items.push({ text: m[3], sub });
-    }
-    else if ((m = line.match(/^\s*>\s?(.*)/))) { flushL(); if (para.length) { const q = quote; quote = []; flushP(); quote = q; } quote.push(m[1]); }
-    else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flushP(); flushL(); html.push(`<p class="h"><b>${inline(m[1])}</b></p>`); }
-    else if (RULE_LINE.test(line)) { flushP(); flushL(); html.push("<hr>"); }
-    else if (!line.trim()) { flushP(); flushL(); }
-    else { flushL(); para.push(line); }
-  }
-  flushP(); flushL(); flushT();
-  if (answer && html.length) answer.opened = true;
-  return (answer ? ansJoin(html, answer) : html).join("");
-}
-// A fence tagged 목록 is a list shown as UI rows (hub/listblock.ts writes it): an optional "# " title line, then one row per line
-// "title | subtitle | meta | badge" (the last three optional). Each row gets a round initial, the meta on the right and a count badge.
-function listBlockHtml(src) {
-  const lines = String(src ?? "").split("\n").map(l => l.trim()).filter(Boolean);
-  const head = lines[0] && lines[0].startsWith("# ") ? lines.shift().slice(2) : "";
-  const rows = lines.map(l => {
-    const [t = "", s = "", meta = "", badge = ""] = l.split(" | ").map(x => x.trim());
-    const initial = Array.from(t.replace(/^[^\p{L}\p{N}]+/u, ""))[0] || "·";
-    return `<div class="mlist-row"><span class="mlist-av" aria-hidden="true">${esc(initial)}</span><div class="mlist-main"><div class="mlist-t" title="${esc(t)}">${esc(t)}</div>${s ? `<div class="mlist-s">${esc(s)}</div>` : ""}</div>${meta || badge ? `<div class="mlist-r">${meta ? `<span class="mlist-m">${esc(meta)}</span>` : ""}${/^\d+\+?$/.test(badge) && badge !== "0" ? `<span class="mlist-b">${esc(badge)}</span>` : ""}</div>` : ""}</div>`;
-  });
-  return `<div class="mlist">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
-}
 // relayed: another computer's reply (42-relay-chat.js) is text only: `[file]` lines stay text and a fence is a plain code block, with no run button and no settings card to act on here.
 // answer: a model's text is drawn by its shapes through answerNode (02-answer-shapes.js), the one caller that passes this; a direct mdNode() keeps its text (hub/answer-surfaces-web.test.ts).
+// Both read the blocks from hub/message-spec-derive.ts (01-message-spec.js): deriveSpec for an answer (answer.spec when the hub sent one), deriveBasicSpec for any other text.
 function mdHtml(src, relayed = false, answer = false) {
-  const shape = answer ? { shaped: !!answer.shaped, opened: false, plain: "", rich: "" } : null;
-  // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
-  // A fence opens only at the start of a line (``` in the middle of a sentence stays text) and closes with ``` at the end of a line.
-  const parts = stripRecMark(stripMarkers(src, relayed)).split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
-  // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
-  const out = parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1, shape) : i % 3 === 2 ? (relayed ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
-  return shape && shape.shaped && shape.rich && answer.lead !== false && out.startsWith(shape.plain) ? shape.rich + out.slice(shape.plain.length) : out;
+  const text = stripMarkers(src, relayed), spec = answer ? answer.spec || deriveSpec(text, botName) : null;
+  if (spec) return specHtml(spec, { shaped: !!answer.shaped, lead: answer.lead !== false });
+  return specHtml(deriveBasicSpec(text, relayed, botName), { basic: true, relayed, shaped: !!(answer && answer.shaped), lead: !answer || answer.lead !== false });
 }
 const mdNode = (src, cls = "md", relayed = false, answer = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed, answer) });
 

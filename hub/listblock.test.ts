@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { listBlock } from "./listblock.ts";
 
-// The web side: mdHtml of 02-basic-markdown.js turns the block into list rows.
+// The web side: the 목록 fence becomes a Rows element (hub/message-spec-derive.ts, the page runs the same code) and specRowsHtml of 02-answer-shapes.js draws it.
 function webListHtml(block: string): string {
-	const src = readFileSync(join(import.meta.dir, "..", "web", "js", "02-basic-markdown.js"), "utf8");
-	const fn = src.slice(src.indexOf("function listBlockHtml"), src.indexOf("function mdHtml"));
+	const read = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
+	const shapes = read("02-answer-shapes.js"), fn = shapes.slice(shapes.indexOf("function specRowsHtml"), shapes.indexOf("// A table of a head"));
 	const esc = (s: unknown) => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
-	return new Function("esc", `${fn}\nreturn listBlockHtml;`)(esc)(block.replace(/^```목록\n/, "").replace(/\n```$/, ""));
+	const rows = new Function(`${read("01-message-spec.js")}; return (text) => specChildren(deriveBasicSpec(text))[0].props;`)();
+	return new Function("esc", `${fn}\nreturn specRowsHtml;`)(esc)(rows(block));
 }
 
 test("a 목록 block: title line, one row per item, empty trailing fields and zero badges dropped, separators and fences neutralised", () => {
@@ -27,5 +28,5 @@ test("the web renders a 목록 block as rows: initial, title, subtitle, meta, an
 	expect(html).not.toContain("<b>");
 	expect(html.match(/class="mlist-b"/g)).toHaveLength(1);
 	expect(html).toContain('<span class="mlist-av" aria-hidden="true">C</span>');
-	expect(readFileSync(join(import.meta.dir, "..", "web", "js", "02-basic-markdown.js"), "utf8")).toContain('parts[i - 1].trim() === "목록" ? listBlockHtml(p)');
+	expect(readFileSync(join(import.meta.dir, "..", "web", "js", "02-answer-shapes.js"), "utf8")).toContain("Rows: specRowsHtml");
 });

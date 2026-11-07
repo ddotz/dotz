@@ -1,7 +1,7 @@
 // `dotz last` (hub/dotz-last-cli.ts): the newest answer of the main conversation as terminal text, read from /api/history.
 import type { HubEvent } from "./events.ts";
 import type { MessageSpec } from "./message-spec.ts";
-import { specOf } from "./message-spec-derive.ts";
+import { specOf } from "./message-spec-of.ts";
 import { renderTerminal } from "./spec-terminal.ts";
 import { parseTone, TONE_EMOJI } from "./tone.ts";
 

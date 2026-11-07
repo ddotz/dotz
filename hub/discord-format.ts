@@ -5,7 +5,7 @@ import { DECISION_HEAD } from "./choices.ts";
 import { dropForLine } from "./forline.ts";
 import { dropIdNote } from "./notice-ko.ts";
 import type { MessageSpec } from "./message-spec.ts";
-import { specOf } from "./message-spec-derive.ts";
+import { specOf } from "./message-spec-of.ts";
 import { renderDiscord } from "./spec-discord.ts";
 import { claimWord, dropClaim, metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
