@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import { clearTrackedTimers } from "./shutdown.ts";
-import { apply, autoCheck, CHECK_EVERY_MS, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, parseRelease, releaseTags, scrub, startSelfUpdate, updateAvailable } from "./selfupdate.ts";
+import { apply, autoCheck, CHECK_EVERY_MS, check, defaultExec, type Exec, fetchError, scrub, startSelfUpdate, updateAvailable } from "./selfupdate.ts";
+import { failedTestNames, failureBlocks, parseRelease, releaseTags } from "./selfupdate-parse.ts";
 
 setDefaultTimeout(30_000); // real git repos and test runs: seconds each, more under parallel load
 

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gateIn } from "./selfupdate.ts";
+import { gateIn } from "./selfupdate-parse.ts";
 import { pageAssets, smoke } from "./update-smoke.ts";
 
 const repo = join(import.meta.dir, "..");
