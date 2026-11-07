@@ -7,6 +7,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { appEntries, INTEGRATIONS, readAppsFile } from "./integrations.ts";
+import type { UnansweredSettings } from "./mail-unanswered.ts";
 import { instanceOf } from "./reply-model.ts";
 
 export type FieldType = "bool" | "enum" | "list" | "text" | "number" | "rules";
@@ -30,7 +31,7 @@ export type SettingField = {
 	/** Whole-number range (number); the longest text (text, default 500). */
 	min?: number;
 	max?: number;
-	def?: boolean | string | string[] | DraftRule[];
+	def?: boolean | string | string[] | number | DraftRule[];
 	/** Greyed text in an empty box that says how the value is used (text, rules). */
 	placeholder?: string;
 	/** A common setting the web draws as a control above the conversation: a switch (bool), a menu (enum) or a box (number, text). */
@@ -85,6 +86,21 @@ export const setDiscordProbe = (probe: () => boolean, news?: () => boolean): voi
 };
 export const discordConnectedNow = (): boolean => discordConnected();
 /** Whether the mail app instance that owns mail `<key>` (matched by its source like the other instance filters) has 디스코드에도 올리기 on. */
+/** The mail apps with 답 없는 메일 다시 묻기 on; undefined when there is none, so a default install reads no mail for it. */
+export function unansweredSettings(dataDir: string): UnansweredSettings | undefined {
+	const raw = readAppsFile(dataDir);
+	const daysOf = (app: string) => {
+		const n = raw[app]?.off ? 0 : raw[app]?.unanswered_days;
+		return typeof n === "number" && n > 0 ? n : 0;
+	};
+	const instances = Object.keys(raw).filter(daysOf);
+	if (!instances.length) return undefined;
+	const entries = appEntries(dataDir);
+	return { instances, of: key => {
+		const instance = instanceOf(entries, "mail", `mail:${key}`);
+		return { instance, days: daysOf(instance) };
+	} };
+}
 export const mailDiscordOn = (dataDir: string, key: string): boolean => readAppsFile(dataDir)[instanceOf(appEntries(dataDir), "mail", `mail:${key}`)]?.discord === true;
 // 삭제하면 원본도 삭제: custom/apps.json {"<mail instance>":{"delete_original":true}} (off when missing); hub/mail-delete.ts does it. routes.ts installs the probe.
 let mailTrashProbe = (_app: string): boolean => false;
@@ -103,6 +119,7 @@ const appDiscordField = (app: string): SettingField => ({ key: "discord", label:
 // 첨부 파일 폴더: where a mail instance looks for the file a reply promises or a mail asks for (features/reply-drafts/lib/library.ts); empty = none.
 const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "오너가 대화에서 알려 준, 자주 보내는 파일을 모아 둔 이 컴퓨터의 폴더예요. 답장에 파일이 필요하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300, section: "advanced", memory: true });
 // 이어서 할 일: free text; after an approved action of this app instance the bot checks it once (hub/followup.ts).
+const unansweredField = (app: string): SettingField => ({ key: "unanswered_days", label: "답 없는 메일 다시 묻기", type: "number", section: "draft", help: "답을 바라고 보낸 메일에 이 날수만큼 답이 없으면 다시 묻는 초안을 한 번 만들어 승인 카드로 보여 줘요. 0이면 꺼져 있고, 켠 뒤 보낸 메일부터 살펴요. 보내기를 눌러야 나가요", store: "custom/apps.json", path: `${app}.unanswered_days`, min: 0, max: 30, def: 0 });
 const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", section: "advanced", help: "오너가 대화에서 알려 준, 답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, max: 500 , memory: true });
 // 기본 규칙 (every draft of the instance) and the 자동 초안 규칙 list; both are edited in the settings screen and by bin/rules.ts through writeSettings.
 const draftDefaultField = (app: string): SettingField => ({ key: "draft_default", label: "기본 규칙", type: "text", help: "이 앱의 모든 초안에 함께 적용돼요", store: DRAFTS, path: `draftDefaults.${app}`, max: 1000, def: "", section: "draft", placeholder: "모든 초안에 공통으로 적용할 말투나 내용. 비워 두면 메일만 보고 써요" });
@@ -139,7 +156,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), notifyField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(NEWS_APPS.has(base) && discordConnected() ? [appDiscordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [deleteOriginalField(app), attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), notifyField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" ? [unansweredField(app)] : []), ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(NEWS_APPS.has(base) && discordConnected() ? [appDiscordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [deleteOriginalField(app), attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {

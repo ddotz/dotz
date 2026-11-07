@@ -89,6 +89,8 @@ in it reads 답장 필요, wakes the bot and gets a draft under the mailbox's mo
 subject or notice, a mail greeting another To recipient. Stored mails are read again by the next classification (a restart, a new account list): with it off that marks only recent mails,
 with it on again the gateway's own 답장 필요 on such mails goes; the owner's own mark stays either way.
 
+A sent mail stays out of the boxes; 답 없는 메일 다시 묻기 (`unanswered_days` of the mail app, `hub/mail-unanswered.ts`) follows it by the app it belongs to, and its follow-up draft takes that app's and box's reply settings like any draft.
+
 ## Moving
 
 `POST /api/mailbox/move {keys, box}` moves whole conversations inside one account and pins them; another account's box is refused. The response holds what

@@ -102,7 +102,7 @@ export const APPS_FILE = "custom/apps.json";
 export type AppFilter = { account?: string; source?: string; conv?: string[]; watches?: string[]; text?: string[]; data?: string[] };
 // `watches` at the instance level = extra watch names (or prefixes ending in "-") that are this instance's own, beside the registry's (a custom plugin's login keeper).
 // `discord` (mail instances): a Discord thread per new mail too (hub/app-settings.ts 디스코드에도 올리기); missing = web only.
-export type AppRaw = { app?: string; label?: string; off?: boolean; discord?: boolean; delete_original?: boolean; /** the default `mail` entry only: false turns the 받는 사람 rule off for the install (hub/mail-state.ts) */ to_only?: boolean; notify?: boolean; push?: boolean; deleted?: boolean; filter?: AppFilter; watches?: string[] };
+export type AppRaw = { app?: string; label?: string; off?: boolean; discord?: boolean; delete_original?: boolean; /** the default `mail` entry only: false turns the 받는 사람 rule off for the install (hub/mail-state.ts) */ to_only?: boolean; /** a mail app: days a sent mail waits for an answer before a follow-up draft, 0 or none = off (hub/mail-unanswered.ts) */ unanswered_days?: number; notify?: boolean; push?: boolean; deleted?: boolean; filter?: AppFilter; watches?: string[] };
 // Cached by the file's mtime and size: the notice lists ask on every call.
 const offCache = new Map<string, { sig: string; raw: Record<string, AppRaw>; off: Set<string> }>();
 function readApps(dataDir: string): { raw: Record<string, AppRaw>; off: Set<string> } {

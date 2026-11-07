@@ -73,9 +73,10 @@ import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele, zeleAccounts, zeleRead } from "./zele.ts";
 import { createReconciler } from "./mail-reconcile.ts";
+import { createUnansweredWatch } from "./mail-unanswered.ts";
 import { backfillMailSummaries, mailSummarizer } from "./mail-summary-live.ts";
 import { placeMail } from "./routes-mailbox.ts";
-import { mailByKey, mailDraftBrief, mailByThread, mailRecords, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailReply, setMailSuggest, type MailDeps } from "./mail.ts";
+import { mailByKey, mailDraftBrief, mailByThread, mailRecords, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailReply, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
 import { ownAddresses, ownAddressesFor, replyExpected } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
@@ -104,7 +105,7 @@ import { desk, type DeskWsData } from "./remote-desktop.ts";
 import type { ServerWebSocket } from "bun";
 import { appEntries, appKeyOf, integrationContext, readAppsFile } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
-import { applyMemory, mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
+import { applyMemory, mailDiscordOn, setDiscordProbe, unansweredSettings } from "./app-settings.ts";
 import { setAuthOpened, setFormLink } from "./auth.ts";
 import { openedText } from "./auth-wait.ts";
 import { webBase as getWebBase, webLink } from "./weblink.ts";
@@ -112,7 +113,7 @@ import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.
 import { commentDraftFacts } from "./comments/gateway.ts";
 import { draftHandled } from "./draft-handled.ts";
 import { syncCardFiles } from "./draft-attach.ts";
-import { answerDrafts, draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
+import { answerDrafts, draftHeads, listDrafts as listMailDrafts, setStatus as setDraftStatus } from "../features/reply-drafts/lib/store.ts";
 
 // 앱 기억 (hub/app-settings.ts applyMemory): a bot answer that keeps an app's attach folder or follow-up rule is stored at once, in whatever
 // conversation the owner said it; other setting changes stay a card the owner applies.
@@ -187,6 +188,21 @@ const mailReconciler = createReconciler({
 	},
 	answerDrafts,
 }, { perRun: MAIL_RECONCILE_PER_RUN, everyMs: MAIL_RECONCILE_EVERY_MS });
+// 답 없는 메일 다시 묻기, in the same 10-minute beat: no model call until a sent mail is due, and nothing at all while the setting is off.
+const unansweredWatch = createUnansweredWatch({
+	settings: () => unansweredSettings(DATA_DIR),
+	mails: mailRecords,
+	body: storedBodyText,
+	accounts: zeleAccounts,
+	read: zeleRead,
+	own: accounts => ownAddresses(accounts),
+	openDraft: key => draftHeads().findLast(d => d.ref === key && (d.status === "pending" || d.status === "held"))?.id,
+	closeDraft: id => setDraftStatus(id, "answered"),
+	clearChip: key => void setMailSuggest(key, undefined),
+	requestDraft: async m => (await mailDeps().requestDraft?.(m)) ?? "off",
+	target: mailTarget,
+	log,
+}, { file: join(DATA_DIR, "mail-unanswered.json"), everyMs: MAIL_RECONCILE_EVERY_MS });
 const reconcileLog = (r: { checked: number; replied: number; notChecked: number } | undefined) => void (r && (r.checked || r.notChecked) && log(`mail reconcile: ${r.checked} threads checked, ${r.replied} answered elsewhere, ${r.notChecked} not checked`));
 const reconcileMails = (limit: number) => mailReconciler.run(limit).then(r => (reconcileLog(r), r));
 const settleSweep = () => {
@@ -199,7 +215,8 @@ const settleSweep = () => {
 // Settle first; then the queue drops held cards that are handled or duplicated, then shows the next one (releaseAll does both, and is a no-op the second time).
 const startupSettled = settleSweep();
 const HANDLED_SWEEP_MS = 30_000;
-setInterval(() => void mailReconciler.tick().then(reconcileLog).catch(e => log(`mail reconcile failed: ${(e as Error).message}`)).then(settleSweep).then(() => approvals.releaseAll()).catch(e => log(`approval queue sweep failed: ${(e as Error).message}`)), HANDLED_SWEEP_MS);
+const watchUnanswered = () => void unansweredWatch.tick()?.catch(e => log(`mail unanswered failed: ${(e as Error).message}`));
+setInterval(() => void mailReconciler.tick().then(reconcileLog).catch(e => log(`mail reconcile failed: ${(e as Error).message}`)).then(watchUnanswered).then(settleSweep).then(() => approvals.releaseAll()).catch(e => log(`approval queue sweep failed: ${(e as Error).message}`)), HANDLED_SWEEP_MS);
 // Start: once, after the sweep above settled what it can (the migration of replies sent from outside dotz).
 void startupSettled.then(() => reconcileMails(MAIL_RECONCILE_AT_START)).catch(e => log(`mail reconcile failed: ${(e as Error).message}`));
 installLaneHandlers();
@@ -371,7 +388,7 @@ void startZele({
 	},
 	// The owner's own mail: listed as 내가 보냄, never new; a thread he answered becomes 답장함 (hub/mail-state.ts).
 	sent: async m => {
-		await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, ...(m.cc ? { cc: m.cc } : {}), subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, direction: "out" }, mailDeps()).catch(e => log(`zele: sent mail ${m.id} not recorded: ${(e as Error).message}`));
+		await postMail({ source: "zele", id: m.id, ...(m.account ? { account: m.account } : {}), from: m.from, to: m.to, ...(m.cc ? { cc: m.cc } : {}), subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, direction: "out" }, mailDeps()).catch(e => log(`zele: sent mail ${m.id} not recorded: ${(e as Error).message}`));
 	},
 	// Gmail's read / replied state of the listed threads, every poll: read there is read here, answered from anywhere is 답장함.
 	states: items => void applyMailStates("zele", items),

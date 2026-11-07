@@ -18,7 +18,7 @@ import { addDraft, isDrafted, markDrafted } from "./store.ts";
 import { FairQueue } from "./fair-queue.ts";
 import type { Runner } from "./tone.ts";
 
-export type OfferMail = { account?: string; key: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
+export type OfferMail = { account?: string; key: string; /** The card's first line instead of the usual one (hub/mail-unanswered.ts). */ headline?: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
 export type OfferDeps = BoxDeps & {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
@@ -284,7 +284,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 			if (missing.length) warnings.push(ruleFileMissing(missing));
 		} else warnings.push(...(await stageForReply(built.rec, flow).catch(notStaged)));
 		await settleDraft(built.rec, deps.run);
-		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings));
+		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings, m.headline));
 		addDraft(built.rec);
 		if (built.rec.wantFiles?.length) retryWanted(built.rec.id, flow.stage);
 		markDrafted(looked);

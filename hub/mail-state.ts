@@ -128,6 +128,9 @@ export function selfSent(m: Pick<ReplyCue, "source" | "account" | "from" | "to" 
 	return recipients.length === 1 && addressKey(recipients[0]) === from;
 }
 
+/** The addresses of a To or Cc line. */
+export const recipientKeys = (s: string | undefined): string[] => parts(s).map(addressKey).filter(Boolean);
+
 export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddressesFor(m.source)): boolean {
 	if (replyExclusion(m, own)) return false;
 	const text = (m.text ?? "").slice(0, 4000);
@@ -135,10 +138,17 @@ export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddress
 	// things goes back to the sender (회신, 제출, 작성해 보내기, 참석 여부...); "없음" or only reading and checking owes none.
 	const todo = TODO.exec(text)?.[0];
 	if (todo) return !TODO_NONE.test(todo) && REPLY_TODO.test(todo);
-	const hay = `${m.subject}\n${text}`;
-	if (!ASKS.test(hay)) return false;
+	return asksSomething(m.subject, text);
+}
+function asksSomething(subject: string, text: string): boolean {
+	if (!ASKS.test(`${subject}\n${text}`)) return false;
 	// A mail that only hands over an answer ("답변 전달", "회신 드립니다") and asks nothing else of its own.
-	return !(ANSWERS.test(m.subject) && !ASKS.test(text.replace(new RegExp(ANSWERS.source, "gi"), "")));
+	return !(ANSWERS.test(subject) && !ASKS.test(text.replace(new RegExp(ANSWERS.source, "gi"), "")));
+}
+/** Does the owner's own sent mail wait for an answer (hub/mail-unanswered.ts): the same reading as replyExpected, without the rules about who it came to. */
+export function sentExpectsReply(m: Pick<ReplyCue, "subject" | "text" | "list">): boolean {
+	const text = (m.text ?? "").slice(0, 4000);
+	return !m.list && !BULK_SUBJECT.test(m.subject) && !BULK_TEXT.test(text) && asksSomething(m.subject, text);
 }
 
 /** What older records say: `needsReply` / `noReply` flags and the suggested reply draft's state. */
