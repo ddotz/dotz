@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { run } from "./history-rewrite.ts";
+import { recordReview, type Run } from "./mergegate.ts";
 import { isPublicRemote, refusal } from "./push-identity.ts";
 
 const HOOKS = join(import.meta.dir, "..", ".githooks");
@@ -53,6 +55,33 @@ beforeEach(() => {
 	git(work, "config", "user.email", NOREPLY);
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+test("a PR commit pushed by hand to main is refused until that PR has a universal review; other branches and plain commits pass", async () => {
+	const main = "refs/heads/main";
+	const dataDir = join(root, "data");
+	commit(work, "plain");
+	expect(await refusal(run, work, publicRemote, "HEAD", main, dataDir)).toBeUndefined();
+	git(work, "commit", "-q", "--allow-empty", "-m", "다른 설치의 수정 (#7)");
+	const refused = await refusal(run, work, publicRemote, "HEAD", main, dataDir);
+	expect(refused).toContain("#7");
+	expect(refused).toContain("dotz_merge");
+	expect(await refusal(run, work, publicRemote, "HEAD", "refs/heads/topic", dataDir)).toBeUndefined();
+	expect(await refusal(run, work, fork, "HEAD", main, dataDir)).toBeUndefined();
+	const gh: Run = async () => ({ code: 0, stdout: `${"a".repeat(40)}\thttps://github.com/ddotz/dotz/pull/7\n`, stderr: "" });
+	await recordReview({ cwd: work, pr: "7", verdict: "CLEAR", scope: "personal" }, { dir: dataDir, gh });
+	expect(await refusal(run, work, publicRemote, "HEAD", main, dataDir)).toContain("#7");
+	await recordReview({ cwd: work, pr: "7", verdict: "CLEAR", scope: "universal" }, { dir: dataDir, gh });
+	expect(await refusal(run, work, publicRemote, "HEAD", main, dataDir)).toBeUndefined();
+});
+
+test("the hook passes the pushed ref, so a hand-landed PR commit never reaches main", () => {
+	const before = remoteMain(publicRemote);
+	git(work, "commit", "-q", "--allow-empty", "-m", "다른 설치의 수정 (#9)");
+	const r = raw(work, ["push", "-q", "origin", "main"], { DOTZ_DIR: join(root, "data") });
+	expect(r.code).not.toBe(0);
+	expect(r.err).toContain("#9");
+	expect(remoteMain(publicRemote)).toBe(before);
+}, SLOW);
 
 test("a push from a personal git config is refused on one line that says how to fix it and repeats no address", () => {
 	git(work, "config", "user.email", PERSONAL);

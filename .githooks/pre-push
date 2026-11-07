@@ -1,5 +1,5 @@
 #!/bin/sh
-# Refuses a push to public ddotz/dotz whose new commits carry a personal address (hub/push-identity.ts), and a push whose branch tips break the
+# Refuses a push to public ddotz/dotz whose new commits carry a personal address or land a PR by hand with no universal review (hub/push-identity.ts), and a push whose branch tips break the
 # repo-wide limits (hub/engineering-rules.test.ts). The limits check the pushed commit, not the working tree, so
 # an uncommitted change neither hides nor causes a failure. core.hooksPath points here: set by hub/git-hooks.ts, never by hand.
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -12,7 +12,7 @@ identity=$(dirname "$0")/../hub/push-identity.ts
 while read -r _ sha ref _; do
 	case "$sha" in *[!0]*) ;; *) continue ;; esac # all zeros: a ref being deleted
 	if [ -f "$guard" ]; then bun "$guard" --guard "$1" "$sha" </dev/null || exit 1; fi # rewritten-away history never goes back up, on any ref
-	bun "$identity" "$2" "$sha" </dev/null || exit 1
+	bun "$identity" "$2" "$sha" "$ref" </dev/null || exit 1
 	case "$ref" in refs/heads/*) ;; *) continue ;; esac # a tag names a commit already checked on its branch
 	case " $seen " in *" $sha "*) continue ;; esac
 	seen="$seen $sha"

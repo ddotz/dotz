@@ -1,6 +1,7 @@
 // Merge gate: a review verdict is bound to the exact commit it read, and dotz lands work (a PR through gh, or a lane
 // branch fast-forwarded into its base) only while the head is still that commit and, for a PR, every CI check passed.
 // A commit pushed after the review, a BLOCK verdict, or red/empty CI refuses with the reason and asks for a re-review.
+// A PR also needs scope universal: personal values and preferences stay out of what every install gets.
 // Node builtins only: extension/index.ts imports this (like receipts.ts). One small file per reviewed target.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -9,7 +10,8 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 export type Verdict = "CLEAR" | "BLOCK";
-type Review = { target: string; sha: string; verdict: Verdict; at: number };
+export type Scope = "universal" | "personal";
+type Review = { target: string; sha: string; verdict: Verdict; at: number; scope?: Scope };
 type Out = { code: number; stdout: string; stderr: string };
 export type Run = (args: string[], cwd: string) => Promise<Out>;
 type Deps = { gh?: Run; dir?: string };
@@ -29,12 +31,15 @@ async function must(run: Run, args: string[], cwd: string, what: string): Promis
 	return r.stdout.trim();
 }
 
-// A PR is keyed by its checkout and number; a lane by its repository and branch. The head is read live, never cached.
+const prKey = (repo: string, number: string) => `pr ${repo}#${number}`;
+
+// A PR is keyed by what GitHub says it is, whichever checkout and form (number, URL, branch) named it; a lane by its repository and branch. The head is read live, never cached.
 async function target(cwd: string, pr: string | undefined, gh: Run): Promise<Target> {
 	if (pr) {
-		const top = await must(git, ["rev-parse", "--show-toplevel"], cwd, "git rev-parse");
-		const head = await must(gh, ["pr", "view", pr, "--json", "headRefOid", "-q", ".headRefOid"], cwd, `gh pr view ${pr}`);
-		return { key: `pr ${realpathSync(top)}#${pr}`, label: `PR ${pr}`, head, pr };
+		const [head = "", url = ""] = (await must(gh, ["pr", "view", pr, "--json", "headRefOid,url", "-q", "[.headRefOid,.url]|@tsv"], cwd, `gh pr view ${pr}`)).split("\t");
+		const id = /\/\/[^/]+\/(.+)\/pull\/(\d+)/.exec(url);
+		if (!id) throw new Refusal(`gh pr view ${pr} gave no PR address`);
+		return { key: prKey(id[1]!, id[2]!), label: `PR ${pr}`, head, pr };
 	}
 	const branch = await must(git, ["symbolic-ref", "--short", "HEAD"], cwd, "reading the branch (detached HEAD?)");
 	const common = resolve(cwd, await must(git, ["rev-parse", "--git-common-dir"], cwd, "git rev-parse"));
@@ -54,18 +59,25 @@ function load(d: Deps, key: string): Review | undefined {
 	}
 }
 
+/** The pre-push hook's question for a PR commit landed by hand: its head changes in a rebase, so only the verdict and scope count here. */
+export function reviewedUniversal(repo: string, pr: string, d: Deps = {}): boolean {
+	const r = load(d, prKey(repo, pr));
+	return r?.verdict === "CLEAR" && r.scope === "universal";
+}
+
 /** Records a verdict for the commit the reviewer read: `sha` (7-40 hex, a prefix of the current head or another commit) or the current head. */
-export async function recordReview(p: { cwd: string; verdict: Verdict; pr?: string; sha?: string }, d: Deps = {}): Promise<string> {
+export async function recordReview(p: { cwd: string; verdict: Verdict; pr?: string; sha?: string; scope?: Scope }, d: Deps = {}): Promise<string> {
+	if (p.pr && !p.scope) throw new Refusal(`review of PR ${p.pr} needs scope: universal or personal (dotz_merge description)`);
 	const t = await target(p.cwd, p.pr, d.gh ?? runner("gh"));
 	const sha = (p.sha ?? t.head).toLowerCase();
 	if (!/^[0-9a-f]{7,40}$/.test(sha)) throw new Refusal(`sha ${p.sha} is not a commit id (7-40 hex)`);
-	const review: Review = { target: t.key, sha, verdict: p.verdict, at: Date.now() };
+	const review: Review = { target: t.key, sha, verdict: p.verdict, at: Date.now(), ...(p.pr ? { scope: p.scope } : {}) };
 	const file = fileOf(d, t.key);
 	mkdirSync(store(d), { recursive: true });
 	const tmp = `${file}.${process.pid}.tmp`;
 	writeFileSync(tmp, JSON.stringify(review));
 	renameSync(tmp, file);
-	return `REVIEW ${p.verdict} ${t.label} at ${short(sha)}${t.head.startsWith(sha) ? "" : ` (head is ${short(t.head)}: merge stays refused until the head is reviewed)`}`;
+	return `REVIEW ${p.verdict} ${t.label}${p.pr ? ` scope=${p.scope}` : ""} at ${short(sha)}${t.head.startsWith(sha) ? "" : ` (head is ${short(t.head)}: merge stays refused until the head is reviewed)`}`;
 }
 
 type Check = { name: string; bucket: string };
@@ -76,6 +88,8 @@ export async function mergeGate(p: { cwd: string; pr?: string; into?: string; dr
 	const t = await target(p.cwd, p.pr, gh);
 	const r = load(d, t.key);
 	if (!r) throw new Refusal(`no review recorded for ${t.label}; ${AGAIN} at ${short(t.head)}`);
+	if (t.pr && r.scope === "personal") throw new Refusal(`${t.label} was reviewed as personal, so it stays out of what every install gets: tell the author it belongs in their custom layer (docs/customization.md). A mixed PR's universal part lands alone, in a new commit`);
+	if (t.pr && r.scope !== "universal") throw new Refusal(`no universal scope recorded for ${t.label}; ${AGAIN} with scope`);
 	if (!t.head.startsWith(r.sha)) throw new Refusal(`${t.label} was reviewed at ${short(r.sha)} but its head is now ${short(t.head)} (commits after the review); ${AGAIN}`);
 	if (r.verdict !== "CLEAR") throw new Refusal(`the review of ${t.label} at ${short(r.sha)} is ${r.verdict}; fix it and ${AGAIN}`);
 	if (t.pr) {

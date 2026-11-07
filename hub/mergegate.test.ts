@@ -1,10 +1,10 @@
 // The merge gate lands only the CLEAR-reviewed head: a commit after the review, a BLOCK verdict, or red/empty CI refuses.
 // Lanes use a real local repo and worktree; gh is injected, so nothing touches the network.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mergeGate, recordReview, type Run } from "./mergegate.ts";
+import { mergeGate, recordReview, reviewedUniversal, type Run } from "./mergegate.ts";
 
 let root = "";
 let repo = "";
@@ -46,11 +46,11 @@ test("lane: no review refuses, and a base that is not checked out still only fas
 });
 
 // A fake gh: the PR head and the check list are set per test; every call is recorded.
-function fakeGh(state: { head: string; checks: unknown }) {
+function fakeGh(state: { head: string; checks: unknown; url?: string }) {
 	const calls: string[][] = [];
 	const gh: Run = async args => {
 		calls.push(args);
-		if (args[1] === "view") return { code: 0, stdout: `${state.head}\n`, stderr: "" };
+		if (args[1] === "view") return { code: 0, stdout: `${state.head}\t${state.url ?? "https://github.com/acme/app/pull/7"}\n`, stderr: "" };
 		if (args[1] === "checks") return { code: 1, stdout: JSON.stringify(state.checks), stderr: "" };
 		return { code: 0, stdout: "", stderr: "" };
 	};
@@ -61,7 +61,7 @@ test("PR: merge refused on red, empty or skip-only CI and after a new commit; al
 	const a = "a".repeat(40);
 	const state = { head: a, checks: [{ name: "test", bucket: "fail" }] as unknown };
 	const { gh, calls } = fakeGh(state);
-	await recordReview({ cwd: repo, pr: "7", verdict: "CLEAR" }, { dir, gh });
+	await recordReview({ cwd: repo, pr: "7", verdict: "CLEAR", scope: "universal" }, { dir, gh });
 	await expect(mergeGate({ cwd: repo, pr: "7" }, { dir, gh })).rejects.toThrow("CI not green for PR 7: test=fail");
 	state.checks = [];
 	await expect(mergeGate({ cwd: repo, pr: "7" }, { dir, gh })).rejects.toThrow("no CI checks reported");
@@ -74,4 +74,44 @@ test("PR: merge refused on red, empty or skip-only CI and after a new commit; al
 	state.head = a;
 	expect(await mergeGate({ cwd: repo, pr: "7" }, { dir, gh })).toBe(`MERGED PR 7 head=${a.slice(0, 12)}`);
 	expect(calls.at(-1)).toEqual(["pr", "merge", "7", "--squash", "--match-head-commit", a]);
+});
+
+const green = () => fakeGh({ head: "a".repeat(40), checks: [{ name: "test", bucket: "pass" }] });
+
+test("PR: a review without scope is refused and records nothing, so the merge stays refused", async () => {
+	const { gh, calls } = green();
+	await expect(recordReview({ cwd: repo, pr: "7", verdict: "CLEAR" }, { dir, gh })).rejects.toThrow("needs scope");
+	await expect(mergeGate({ cwd: repo, pr: "7" }, { dir, gh })).rejects.toThrow("no review recorded");
+	expect(calls.some(c => c[1] === "merge")).toBe(false);
+});
+
+test("PR: a personal scope refuses the merge and points the author at the custom layer", async () => {
+	const { gh, calls } = green();
+	expect(await recordReview({ cwd: repo, pr: "7", verdict: "CLEAR", scope: "personal" }, { dir, gh })).toContain("personal");
+	await expect(mergeGate({ cwd: repo, pr: "7" }, { dir, gh })).rejects.toThrow("docs/customization.md");
+	expect(calls.some(c => c[1] === "merge")).toBe(false);
+	await recordReview({ cwd: repo, pr: "7", verdict: "CLEAR", scope: "universal" }, { dir, gh });
+	expect(await mergeGate({ cwd: repo, pr: "7" }, { dir, gh })).toContain("MERGED PR 7");
+});
+
+test("PR: a review stored before scope existed does not pass", async () => {
+	const { gh, calls } = green();
+	await recordReview({ cwd: repo, pr: "7", verdict: "CLEAR", scope: "universal" }, { dir, gh });
+	const store = join(dir, "reviews");
+	const file = join(store, readdirSync(store)[0]!);
+	const { scope: _, ...old } = JSON.parse(readFileSync(file, "utf8"));
+	writeFileSync(file, JSON.stringify(old));
+	await expect(mergeGate({ cwd: repo, pr: "7" }, { dir, gh })).rejects.toThrow("no universal scope");
+	expect(calls.some(c => c[1] === "merge")).toBe(false);
+});
+
+test("PR: the scope belongs to the repository and number GitHub reports, however the PR was named", async () => {
+	const { gh } = green();
+	expect(reviewedUniversal("acme/app", "7", { dir })).toBe(false);
+	await recordReview({ cwd: lane, pr: "feature-10", verdict: "CLEAR", scope: "universal" }, { dir, gh });
+	expect(reviewedUniversal("acme/app", "7", { dir })).toBe(true);
+	expect(reviewedUniversal("acme/app", "10", { dir })).toBe(false);
+	expect(reviewedUniversal("other/repo", "7", { dir })).toBe(false);
+	await recordReview({ cwd: repo, pr: "7", verdict: "BLOCK", scope: "universal" }, { dir, gh });
+	expect(reviewedUniversal("acme/app", "7", { dir })).toBe(false);
 });

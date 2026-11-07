@@ -129,6 +129,42 @@ const VALUE = String.raw`("[^"]+"|'[^']+'|\x60[^\x60]+\x60|[^\s;&|)"'\x60]+)`;
 const BODY_FILE = new RegExp(`(?<=\\s)(?:(?:-F|--field|-d|--data(?:-binary)?|--json)[ =]*["']?(?:[\\w.-]+=)?@|(?:--body-file|--notes-file|--input|-F)[ =]*)${VALUE}|(?:\\bcat\\s+|(?<!<)<(?!<)\\s*)${VALUE}`, "g");
 const CHANGE_DIR = new RegExp(`\\b(?:cd\\s+|cwd:\\s*)${VALUE}`, "g");
 const NOT_THE_POST = /\b[A-Z_]*PATH=\S+|\bcd\s+\S+|\bgit\s+-C\s+\S+|\bcwd:\s*["'\x60][^"'\x60]*["'\x60]/g;
+const API_PATH = /(?:api\.github\.com\/|\bgh\s+api\s(?:[^\n]*?\s)??["']?\/?)(repos\/[^\s?"'\x60]+)/;
+const API_READ = /(?:\s-X\s*|\s--request[ =]|\s--method[ =])GET\b|\s--get\b|\s-[a-zA-Z]*G\b/;
+const API_ARGS = /\s(?:-[HfF]|--header|--field|--raw-field)[ =]?(?:"[^"]*"|'[^']*'|\S+)/g;
+const GH_POSTS = new RegExp(GH_POST, "gm");
+// Quoted strings and heredocs: a body can quote a command, so verbs and flags are read outside them.
+const QUOTED = /"(?:\\[\s\S]|[^"\\])*"|'[^']*'|<<-?\s*["']?(\w+)["']?\n[\s\S]*?\n\s*\1\b/g;
+const API_FILE = /^repos\/[^/]+\/[^/]+\/(?:issues|pulls)\/?$/;
+const API_MERGE = /\/pulls\/\d+\/merge\/?$/;
+const GQL_FILE = /\bmutation\b[^{]*\{\s*create(?:Issue|PullRequest)\s*\(/;
+const GQL_MERGE = /\bmutation\b[^{]*\{\s*(?:mergePullRequest|enablePullRequestAutoMerge)\s*\(/;
+// A line of its own: the start of a line or of the body's own value (--body, -b, a body field or variable, a JSON body, what echo, printf or <<< feeds stdin), up to the line's end.
+const CLASS_LINE = /(?:^|\\n|(?:--body[ =]|\s-b[ =]|\b\w*body=|\\?"body\\?":\s*|\bbody:\s*|\b(?:echo|printf)\s+(?:-\w+\s+)*|<<<\s*)\$?\\?["'\x60]?)[ \t]*분류:[ \t]*(소스 오류|보편 개선|개인 설정)[ \t\r]*(?=$|\\+[nr"']|["'\x60])/gim;
+const PERSONAL_SETTING = "개인 설정";
+const NEEDS_CLASS = `this post to ${PUBLIC_REPO} needs one line in its body: 분류: 소스 오류 or 분류: 보편 개선. Decide by evidence: reproduce on a clean default config or show the shipped default or code path at fault, after checking that this install's custom layer, RULES.md, features or config does not cause it. A body this check cannot see counts as having no line`;
+const PERSONAL_POST = "this is a personal setting: it belongs in this install's custom layer (docs/customization.md) and nothing goes upstream";
+const MERGE_POST = `a PR lands on ${PUBLIC_REPO} only through dotz_merge (action=review with scope, then action=merge), which records that it is right for every install`;
+
+function postKind(post: string): "file" | "merge" | undefined {
+	const code = post.slice(Math.max(0, post.search(/\b(?:gh|curl)\s/))).replace(QUOTED, " ");
+	const verbs = [...code.matchAll(GH_POSTS)].map(m => m[0]);
+	if (verbs.length) return verbs.some(v => /\b(?:issue|pr)\b[\s\S]*\bcreate$/.test(v)) ? "file" : verbs.some(v => /\bpr\b[\s\S]*\bmerge$/.test(v)) ? "merge" : undefined;
+	if (API_READ.test(code)) return undefined;
+	const path = API_PATH.exec(post.replace(API_ARGS, " "))?.[1] ?? "";
+	if (API_FILE.test(path) || GQL_FILE.test(post)) return "file";
+	return API_MERGE.test(path) || GQL_MERGE.test(post) ? "merge" : undefined;
+}
+
+// Personal settings stay out of the shared code (MODE.md, Customization): a new issue or PR says which kind it is, and a PR lands only through the gate that asks.
+function upstreamDeny(post: string, text: string): string | undefined {
+	const kind = postKind(post);
+	if (kind === "merge") return MERGE_POST;
+	if (kind !== "file") return undefined;
+	const classes = [...text.matchAll(CLASS_LINE)].map(m => m[1]);
+	if (classes.includes(PERSONAL_SETTING)) return PERSONAL_POST;
+	return classes.length ? undefined : NEEDS_CLASS;
+}
 
 function postStart(flat: string): number {
 	const post = GH_POST.exec(flat);
@@ -154,7 +190,7 @@ function postsToDotz(post: string, dir: string): boolean {
 	if (post.includes(PUBLIC_REPO)) return true;
 	if (OTHER_REPO.test(post)) return false;
 	try {
-		return execFileSync("git", ["remote", "get-url", "origin"], { cwd: dir, encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] }).includes(PUBLIC_REPO);
+		return execFileSync("git", ["remote", "-v"], { cwd: dir, encoding: "utf8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] }).includes(PUBLIC_REPO); // any remote: a fork's gh targets its upstream
 	} catch {
 		return false; // not a checkout, or no origin: nothing says this post goes to the public repo
 	}
@@ -181,6 +217,6 @@ export function publicPostDeny(command: string, dataDir: string, cwd: string): s
 	let text = flat.replace(NOT_THE_POST, " ");
 	for (const { raw, file } of bodies) text = `${text.replaceAll(raw, " ")}\n${fileText(file)}`;
 	const { hits } = scrub(text, installTerms(dataDir));
-	if (!hits.length) return undefined;
+	if (!hits.length) return upstreamDeny(flat.slice(start), text);
 	return `this post to ${PUBLIC_REPO} still carries personal or sensitive content (${hits.join(", ")}). Remove every such value, de-identify and generalise it, keep the detail (symptom, steps, expected, actual, version, generalised logs), and post again; do not work around this check`;
 }

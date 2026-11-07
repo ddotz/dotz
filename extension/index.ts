@@ -20,7 +20,7 @@ import { FIELD_TYPES } from "../hub/authfields.ts";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
-import { mergeGate, recordReview, Refusal } from "../hub/mergegate.ts";
+import { mergeGate, recordReview, Refusal, type Scope } from "../hub/mergegate.ts";
 import { publicPostDeny, systemDeny } from "../hub/systemdeny.ts";
 import { codeLockReason } from "../hub/codeguard.ts";
 import { lockedCodeDir } from "../hub/selfupdate-local.ts";
@@ -285,12 +285,12 @@ function mergeTool(pi: any): void {
 	pi.registerTool({
 		name: "dotz_merge",
 		label: "Dotz merge",
-		description: "Land reviewed work. action=review {cwd, verdict CLEAR|BLOCK, pr?, sha?}: record the verdict for the commit the reviewer read (sha, default the current head). action=merge {cwd, pr?, into?}: with pr (number or URL) squash-merge it via gh only if its head is still the CLEAR-reviewed commit and every CI check passed; without pr fast-forward the branch checked out in cwd into `into` (default the main checkout's branch) only if its head is the CLEAR-reviewed commit. A commit after the review, BLOCK or red/empty CI refuses with the reason: review again.",
-		parameters: z.object({ action: z.enum(["review", "merge"]), cwd: z.string(), verdict: z.enum(["CLEAR", "BLOCK"]).optional(), pr: z.string().optional(), sha: z.string().optional(), into: z.string().optional() }),
-		async execute(_id: string, p: { action: "review" | "merge"; cwd: string; verdict?: "CLEAR" | "BLOCK"; pr?: string; sha?: string; into?: string }) {
+		description: "Land reviewed work. action=review {cwd, verdict CLEAR|BLOCK, pr?, sha?, scope?}: record the verdict for the commit the reviewer read (sha, default the current head). scope is required with pr: universal means right for every install, with no personal value or preference, and off by default when optional; anything else is personal and refuses the merge, with the author pointed to the custom layer (docs/customization.md). A mixed PR: record personal, take the universal part alone in a new commit. action=merge {cwd, pr?, into?}: with pr (number or URL) squash-merge it via gh only if its head is still the CLEAR-reviewed commit and every CI check passed; without pr fast-forward the branch checked out in cwd into `into` (default the main checkout's branch) only if its head is the CLEAR-reviewed commit. A commit after the review, BLOCK, a PR with no universal scope or red/empty CI refuses with the reason: review again.",
+		parameters: z.object({ action: z.enum(["review", "merge"]), cwd: z.string(), verdict: z.enum(["CLEAR", "BLOCK"]).optional(), pr: z.string().optional(), sha: z.string().optional(), scope: z.enum(["universal", "personal"]).optional(), into: z.string().optional() }),
+		async execute(_id: string, p: { action: "review" | "merge"; cwd: string; verdict?: "CLEAR" | "BLOCK"; pr?: string; sha?: string; scope?: Scope; into?: string }) {
 			try {
 				if (p.action === "review" && !p.verdict) throw new Refusal("action=review needs verdict");
-				const text = p.action === "review" ? await recordReview({ cwd: p.cwd, verdict: p.verdict!, pr: p.pr, sha: p.sha }) : await mergeGate({ cwd: p.cwd, pr: p.pr, into: p.into });
+				const text = p.action === "review" ? await recordReview({ cwd: p.cwd, verdict: p.verdict!, pr: p.pr, sha: p.sha, scope: p.scope }) : await mergeGate({ cwd: p.cwd, pr: p.pr, into: p.into });
 				return { content: [{ type: "text", text }] };
 			} catch (e) {
 				if (e instanceof Refusal) return { content: [{ type: "text", text: `MERGE_REFUSED ${e.message}` }] };

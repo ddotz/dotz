@@ -120,7 +120,7 @@ describe("publicPostDeny", () => {
 			"grep -rn 'gh issue create --repo ddotz/dotz' . # 998877",
 			"git commit -m 'gh pr create on ddotz/dotz 998877'",
 			"curl -s https://api.github.com/repos/ddotz/dotz/issues # 998877",
-			"export PATH=/Users/somebody/bin:$PATH; gh issue create --repo ddotz/dotz --body generalised",
+			"export PATH=/Users/somebody/bin:$PATH; gh issue create --repo ddotz/dotz --body '분류: 소스 오류'",
 		]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
 	});
 
@@ -159,4 +159,125 @@ describe("publicPostDeny", () => {
 		execFileSync("git", ["remote", "set-url", "origin", "https://github.com/ddotz/dotz.git"], { cwd: repo });
 		expect(publicPostDeny("gh pr create --body 998877", dir, repo)).toBeDefined();
 	});
+});
+
+describe("filing classification", () => {
+	const FILE = "gh issue create -R ddotz/dotz --title t";
+
+	test("an issue or PR with no classification line is refused, with the accepted forms", () => {
+		const dir = install();
+		for (const command of [`${FILE} --body '증상과 재현 순서'`, "gh pr create -R ddotz/dotz --title t --body x", "gh pr create -R ddotz/dotz --fill", "gh pr create -R ddotz/dotz --body \"$OTHER\""]) {
+			const reason = publicPostDeny(command, dir, dir);
+			expect(reason).toContain("분류: 소스 오류");
+			expect(reason).toContain("분류: 보편 개선");
+		}
+		expect(publicPostDeny(`${FILE} --body '분류: 뭐든 좋아요'`, dir, dir)).toContain("분류: 소스 오류");
+		expect(publicPostDeny("gh issue create -R ddotz/dotz --title '분류: 소스 오류' --body x", dir, dir)).toContain("분류: 소스 오류");
+		expect(publicPostDeny(`${FILE} --body '설명에 분류: 소스 오류 라고 적었어요'`, dir, dir)).toContain("분류: 소스 오류");
+	});
+
+	test("a source bug or a universal improvement passes through every way a body arrives", () => {
+		const dir = install();
+		const file = join(dir, "body.md");
+		writeFileSync(file, "# 제목\r\n\r\n분류: 보편 개선\r\n\r\n본문\r\n");
+		for (const command of [
+			`${FILE} --body '분류: 소스 오류'`,
+			`${FILE} --body "분류: 보편 개선\\n\\n재현 순서"`,
+			`${FILE} --body "증상\n\n분류: 소스 오류\n"`,
+			"gh pr create -R ddotz/dotz --title t --body '분류: 보편 개선'",
+			`${FILE} --body-file ${file}`,
+			`${FILE} --body-file - < ${file}`,
+			`cat ${file} | ${FILE} --body-file -`,
+			`${FILE} --body-file - <<EOF\n분류: 소스 오류\n증상\nEOF`,
+			"gh api repos/ddotz/dotz/issues -f title=t -f body='분류: 소스 오류'",
+			`curl -s -X POST https://api.github.com/repos/ddotz/dotz/issues -d '{"body":"분류: 소스 오류\\n증상"}'`,
+		]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
+	});
+
+	test("a personal setting is refused with where it belongs, even beside another classification", () => {
+		const dir = install();
+		const file = join(dir, "body.md");
+		writeFileSync(file, "분류: 개인 설정\n이 설치에서만 필요한 값");
+		for (const command of [`${FILE} --body '분류: 개인 설정'`, `${FILE} --body-file ${file}`, `${FILE} --body "분류: 소스 오류\n분류: 개인 설정"`]) {
+			const reason = publicPostDeny(command, dir, dir);
+			expect(reason).toContain("docs/customization.md");
+		}
+	});
+
+	test("only the body's own line counts: a title, an inline mention or another command's text does not", () => {
+		const dir = install();
+		for (const command of [
+			"gh api repos/ddotz/dotz/issues -f title='분류: 소스 오류' -f body=x",
+			"curl -X POST https://api.github.com/repos/ddotz/dotz/issues -d '{\"title\":\"분류: 소스 오류\"}'",
+			"gh issue create -R ddotz/dotz -t'분류: 소스 오류' --body x",
+			`${FILE} --body 'see \`분류: 소스 오류\` here'`,
+			`git commit -m '분류: 소스 오류' && ${FILE} --body x`,
+		]) expect(publicPostDeny(command, dir, dir)).toContain("분류: 소스 오류");
+	});
+
+	test("a valid body may mention the personal form, and a JSON body in double quotes passes", () => {
+		const dir = install();
+		for (const command of [
+			`${FILE} --body "분류: 소스 오류\n\n\`분류: 개인 설정\` 이 거부돼요"`,
+			"curl -X POST https://api.github.com/repos/ddotz/dotz/issues -d \"{\\\"body\\\":\\\"분류: 소스 오류\\\"}\"",
+			"BODY='분류: 보편 개선'; gh issue create -R ddotz/dotz --body \"$BODY\"",
+			`echo '분류: 소스 오류' | ${FILE} --body-file -`,
+			`printf '분류: 보편 개선\\n본문' | ${FILE} --body-file -`,
+			`${FILE} --body-file - <<< '분류: 소스 오류'`,
+			"gh api graphql -f query='mutation { createIssue(input: {repositoryId: \"x\", title: \"t\", body: \"분류: 소스 오류\"}) { clientMutationId } }' # ddotz/dotz",
+		]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
+	});
+
+	test("reads through the API and comments that quote a command are not filings", () => {
+		const dir = install();
+		for (const command of [
+			"gh api -X GET repos/ddotz/dotz/issues -f state=open",
+			"gh api repos/ddotz/dotz/issues --method GET -f state=open",
+			"curl -sG https://api.github.com/repos/ddotz/dotz/issues -d state=open",
+			"gh issue comment 5 -R ddotz/dotz --body '다음으로 실행\ngh pr merge 3\n'",
+			"gh api repos/ddotz/dotz/issues/5/comments -f body='createIssue fails'",
+		]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
+	});
+
+	test("the API path is the URL itself, wherever curl writes it and with a query", () => {
+		const dir = install();
+		for (const command of [
+			"curl -X POST -d '{\"title\":\"see repos/a/b/issues/1\"}' https://api.github.com/repos/ddotz/dotz/issues",
+			"gh api -X POST 'repos/ddotz/dotz/issues?x=1' -f title=t",
+			"gh api -H 'X: repos/a/b/c' repos/ddotz/dotz/issues -f title=t",
+			"gh api repos/ddotz/dotz/issues -f title=t -f body='run with -debug flag'",
+			"gh api repos/ddotz/dotz/issues -f title=t -f body='method -X GET fails'",
+			"curl -g -X POST https://api.github.com/repos/ddotz/dotz/issues -d '{\"title\":\"t\"}'",
+		]) expect(publicPostDeny(command, dir, dir)).toContain("분류: 소스 오류");
+	});
+
+	test("creating through the API needs the line too; comments and other repos do not", () => {
+		const dir = install();
+		for (const command of ["gh api repos/ddotz/dotz/issues -f title=t -f body=x", "gh api repos/ddotz/dotz/pulls -f title=t -f head=a -f base=main", "curl -s -X POST https://api.github.com/repos/ddotz/dotz/issues -d '{\"title\":\"t\"}'", "gh api graphql -f query='mutation { createIssue(input: {repositoryId: \"ddotz/dotz\"}) { clientMutationId } }'"]) expect(publicPostDeny(command, dir, dir)).toContain("분류: 소스 오류");
+		for (const command of ["gh pr comment 5 -R ddotz/dotz --body 'see repos/ddotz/dotz/issues'", "gh issue comment 5 -R ddotz/dotz --body x", "gh api repos/ddotz/dotz/issues/5/comments -f body=x", "gh issue create --repo me/private --body x"]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
+	});
+
+	test("a clone whose origin is a fork of the public repo still files there", () => {
+		const dir = install();
+		const repo = join(dir, "fork");
+		mkdirSync(repo);
+		execFileSync("git", ["init", "-q"], { cwd: repo });
+		execFileSync("git", ["remote", "add", "origin", "https://github.com/someone/dotz.git"], { cwd: repo });
+		expect(publicPostDeny("gh pr create --body x", dir, repo)).toBeUndefined();
+		execFileSync("git", ["remote", "add", "upstream", "https://github.com/ddotz/dotz.git"], { cwd: repo });
+		expect(publicPostDeny("gh pr create --body x", dir, repo)).toContain("분류: 소스 오류");
+	});
+});
+
+test("every command of a chain counts, inside a shell string too", () => {
+	const dir = install();
+	expect(publicPostDeny("gh issue comment 5 -R ddotz/dotz --body x && gh issue create -R ddotz/dotz --body x", dir, dir)).toContain("분류: 소스 오류");
+	expect(publicPostDeny("gh pr comment 5 -R ddotz/dotz --body x && gh pr merge 5 -R ddotz/dotz", dir, dir)).toContain("dotz_merge");
+	expect(publicPostDeny("await tool.bash({ command: \"gh api -X GET repos/ddotz/dotz/issues -f state=open\" })", dir, dir)).toBeUndefined();
+});
+
+test("a direct merge into ddotz/dotz is refused toward dotz_merge; other repos are not", () => {
+	const dir = install();
+	for (const command of ["gh pr merge 3 -R ddotz/dotz --squash", "gh api -X PUT repos/ddotz/dotz/pulls/3/merge", "curl -X PUT https://api.github.com/repos/ddotz/dotz/pulls/3/merge -d '{}'", "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {repo: \"ddotz/dotz\"}) { clientMutationId } }'"]) expect(publicPostDeny(command, dir, dir)).toContain("dotz_merge");
+	expect(publicPostDeny("gh pr merge 3 -R me/private --squash", dir, dir)).toBeUndefined();
 });

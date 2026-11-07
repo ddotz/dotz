@@ -3,7 +3,10 @@
 // not hold yet counts, so commits already public never block a push. "Holds" means the remote's branches and tags right now, read live: tracking refs
 // go stale, and a pull request ref is a contributor's commit that still has to pass when it lands on a branch. Other remotes (a contributor's fork) pass
 // untouched. A refusal names commits by sha only and never repeats git's output, which can hold an address.
+// The same list closes the hand landing: a commit new to public main with a `(#N)` subject is a PR rebased in, which never met dotz_merge, so it needs PR N's
+// universal review from this install (hub/mergegate.ts).
 import { run } from "./history-rewrite.ts";
+import { reviewedUniversal } from "./mergegate.ts";
 import { PUBLIC_REPO } from "./public-scrub.ts";
 import type { Exec } from "./selfupdate.ts";
 
@@ -14,7 +17,7 @@ const FIX = "Set git config user.email <id>+<login>@users.noreply.github.com, th
 
 export const isPublicRemote = (url: string): boolean => PUBLIC_REMOTE.test(url.trim());
 
-export async function refusal(exec: Exec, dir: string, url: string, rev: string): Promise<string | undefined> {
+export async function refusal(exec: Exec, dir: string, url: string, rev: string, ref?: string, dataDir?: string): Promise<string | undefined> {
 	if (!isPublicRemote(url)) return undefined;
 	const held = await exec(["git", "ls-remote", "--heads", "--tags", "--refs", url], dir, 15_000);
 	if (held.code !== 0) return `could not read what ${PUBLIC_REPO} holds (git ls-remote exit ${held.code}), retry the push.`;
@@ -23,21 +26,26 @@ export async function refusal(exec: Exec, dir: string, url: string, rev: string)
 		const fetched = await exec(["git", "fetch", "--quiet", "--no-tags", "--no-write-fetch-head", url, ...tips], dir, 60_000);
 		if (fetched.code !== 0) return `could not read what ${PUBLIC_REPO} holds (git fetch exit ${fetched.code}), retry the push.`;
 	}
-	const log = await exec(["git", "log", "--no-show-signature", "--format=%H%x09%ae%x09%ce", rev, "--not", ...tips], dir, 30_000);
+	const log = await exec(["git", "log", "--no-show-signature", "--format=%H%x09%ae%x09%ce%x09%s", rev, "--not", ...tips], dir, 30_000);
 	if (log.code !== 0) return `could not read the commits being pushed (git log exit ${log.code}).`;
 	const commits = log.out.split("\n").map(l => l.split("\t")).filter(([sha]) => SHA.test(sha ?? "")); // the runner mixes stderr in; only commit lines count
 	const bad = commits.filter(([, author = "", committer = ""]) => !NOREPLY.test(author) || !NOREPLY.test(committer));
-	if (!bad.length) return undefined;
-	return `refused, ${bad.length} commit(s) new to ${PUBLIC_REPO} (first ${bad[0]?.[0]?.slice(0, 8)}) have an author or committer that is not a GitHub noreply address. ${FIX}`;
+	if (bad.length) return `refused, ${bad.length} commit(s) new to ${PUBLIC_REPO} (first ${bad[0]?.[0]?.slice(0, 8)}) have an author or committer that is not a GitHub noreply address. ${FIX}`;
+	if (ref !== "refs/heads/main") return undefined;
+	for (const [sha = "", , , subject = ""] of commits) {
+		const pr = /\(#(\d+)\)\s*$/.exec(subject)?.[1];
+		if (pr && !reviewedUniversal(PUBLIC_REPO, pr, { dir: dataDir })) return `refused, commit ${sha.slice(0, 8)} lands PR #${pr} by hand with no universal review recorded. Review it through dotz_merge (action=review with scope) and land it there; a mixed PR's universal part goes in a new commit without the PR number.`;
+	}
+	return undefined;
 }
 
 if (import.meta.main) {
-	const [url, rev] = process.argv.slice(2);
+	const [url, rev, ref] = process.argv.slice(2);
 	if (!url || !rev) {
-		console.error("usage: bun hub/push-identity.ts <url> <rev>");
+		console.error("usage: bun hub/push-identity.ts <url> <rev> [ref]");
 		process.exit(2);
 	}
-	const refused = await refusal(run, process.cwd(), url, rev);
+	const refused = await refusal(run, process.cwd(), url, rev, ref);
 	if (refused) {
 		console.error(`push-identity: ${refused}`);
 		process.exit(1);
