@@ -116,6 +116,8 @@ export const APP_SETTINGS: Record<string, SettingField[]> = {
 		draftSwitch("mail", "메일"),
 		{ key: "skip_senders", label: "초안에서 뺄 발신자", type: "list", help: "이 발신자(주소나 이름)의 메일에는 초안을 만들지 않아요", store: DRAFTS, path: "senders.skip", def: [], section: "draft" },
 		{ key: "only_senders", label: "초안을 만들 발신자", type: "list", help: "여기 적은 발신자에게만 초안을 만들어요. 비우면 모두에게 만들어요", store: DRAFTS, path: "senders.only", def: [], section: "draft" },
+		// One value for the install, whichever mail instance shows it: the fixed path, read by hub/mail-state.ts for every mail.
+		{ key: "to_only", label: "답장 필요는 받는 사람이 나인 메일만", type: "bool", help: "끄면 참조로 받은 메일이나 단체 주소로 온 메일도 다른 메일처럼 읽어서, 답할 거리가 있으면 답장 필요로 표시하고 알려 주고 초안도 만들어요. 공지와 자동 발송 메일은 그대로 빠져요. 이 설치의 모든 메일 계정에 함께 적용돼요", store: "custom/apps.json", path: "mail.to_only", def: true, section: "draft" },
 	],
 	kakao: [
 		{ key: "enabled", label: "카카오톡 감시", type: "bool", help: "끄면 어떤 방도 지켜보지 않아요", store: "custom/kakao/config.json", path: "enabled", def: false, switch: true, section: "watch" },

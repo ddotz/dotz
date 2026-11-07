@@ -8,7 +8,7 @@
 import { existsSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { mailCueText } from "./mail-lines.ts";
-import { addressKey, replyExpected, type StoredMail } from "./mail-state.ts";
+import { addressKey, replyExpected, setToOnlyDir, type StoredMail } from "./mail-state.ts";
 
 export type RepairRow = { key: string; at: string; subject: string; reply: string; expected: boolean };
 
@@ -55,6 +55,7 @@ if (import.meta.main) {
 	const conf = join(file, "..", "config.json");
 	const c = existsSync(conf) ? (JSON.parse(readFileSync(conf, "utf8")) as { mail?: { own_addresses?: unknown }; zele?: { aliases?: unknown } }) : {};
 	const own = new Set([c.mail?.own_addresses, c.zele?.aliases].flatMap(v => (Array.isArray(v) ? v : [])).filter((v): v is string => typeof v === "string").map(addressKey).filter(Boolean));
+	setToOnlyDir(join(file, ".."));
 	const records = JSON.parse(readFileSync(file, "utf8")) as StoredMail[];
 	const rows = unprovenMarks(records, own);
 	for (const line of repairReport(rows)) console.log(line);

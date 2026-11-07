@@ -78,6 +78,17 @@ gets a warning on its card; `folders` in front of the app's 첨부 파일 폴더
 `tone/<instance>/<box id>.md` (`ToneKey.room`), falling back to the instance (the shared mail profile when the instance has none of its own), then the install.
 A draft records its `box` and `instance`, so a revision and the send check use the same tone, and a correction goes to the box's tone only when that file exists. A mail a judge moved is not matched against that box's own `rules` (no second call); the box's mode and the other reply settings apply.
 
+### Who a mail must be addressed to
+
+By default a mail reads 답장 필요 only when one of the install's addresses is in To. A mail where the address is only in Cc, or that came to a group address, stays out
+(tags 참조로 받음, 단체 메일): no 답장 필요, no wake, and no automatic draft unless a draft rule matches.
+
+An install where people often ask in Cc turns this off: mail app 설정 > 답장 필요는 받는 사람이 나인 메일만, or `{"mail":{"to_only":false}}` in `custom/apps.json`. It is one
+value for the install, shown on every mail instance, and a change applies without a restart. Off, such a mail goes through the same reading as a mail in To, so a request
+in it reads 답장 필요, wakes the bot and gets a draft under the mailbox's mode. The other exclusions stay on: his own mail, a machine sender, a List-Id or unsubscribe mail, a bulk
+subject or notice, a mail greeting another To recipient. Stored mails are read again by the next classification (a restart, a new account list): with it off that marks only recent mails,
+with it on again the gateway's own 답장 필요 on such mails goes; the owner's own mark stays either way.
+
 ## Moving
 
 `POST /api/mailbox/move {keys, box}` moves whole conversations inside one account and pins them; another account's box is refused. The response holds what

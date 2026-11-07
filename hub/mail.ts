@@ -7,7 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, evictSurplus, migrateMails, nextReply, noteOwnSender, ownAddresses, replyExclusion, replyExpected, replyOf, selfSent, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
+import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, evictSurplus, migrateMails, nextReply, noteOwnSender, ownAddresses, replyExclusion, replyExpected, replyOf, selfSent, setOwnAddresses, setToOnlyDir, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 import { trackBox, type MailboxWhy, type Placed } from "./mailbox.ts";
 import { withSenderAddress } from "./reply-draft.ts";
@@ -66,8 +66,7 @@ const FILE = join(DATA_DIR, "mail-conversations.json");
 export const MAIL_FILES = join(DATA_DIR, "mail-files");
 // Every file of a mail is kept (owner 2026-10-27: a mail with more than 10 files lost the rest). The caps only stop a runaway poster.
 const FILE_MAX_BYTES = 1024 * 1024 * 1024;
-const FILES_MAX = 300;
-const PREVIEW_MAX = 240;
+const FILES_MAX = 300, PREVIEW_MAX = 240;
 // How many mails are kept (the newest win): `mail.keep` in config.json, 500 when unset, held between 50 and 20000 so a big mailbox can be
 // shown whole without the list file growing without bound.
 const KEEP_DEFAULT = 500, KEEP_MIN = 50, KEEP_MAX = 20_000;
@@ -106,6 +105,7 @@ const byKey = new Map(records.map(r => [r.key, r]));
 for (const r of records) trackBox(r);
 const aliases = cfg as unknown as { mail?: { own_addresses?: unknown }; zele?: { aliases?: unknown } };
 setOwnAddresses("config", [aliases.mail?.own_addresses, aliases.zele?.aliases].flatMap(v => (Array.isArray(v) ? v : [])).filter((v): v is string => typeof v === "string"));
+setToOnlyDir(DATA_DIR);
 if (migrateMails(records as StoredMail[])) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
 
 export const mailByKey = (key: string): MailRecord | undefined => byKey.get(key);

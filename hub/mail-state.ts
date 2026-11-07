@@ -16,6 +16,7 @@
 // refuses them without `by: "owner"`), and his mark records who and when (`reply_by: "owner"`, `reply_at`), so a skipped without that
 // evidence is known to be from older code (hub/mail-repair.ts lists them).
 // `nextReply` is the only place that moves between them.
+import { readAppsFile } from "./integrations.ts";
 import { mailCueText, type MailLines } from "./mail-lines.ts";
 
 export type MailDirection = "in" | "out";
@@ -79,6 +80,8 @@ export type ReplyCue = { source?: string; account?: string; from?: string; to?: 
 //   other  다른 사람 앞  he is one of 3+ To recipients and the mail greets another of them by name ("Lee님,", "Hi Lee,")
 //   self   (no tag)     he wrote it (selfSent)
 // A mail that is excluded still shows in the list, only never as 답장 필요, with the reason as a small tag (mailCard `why`).
+// cc, and list by a group address in To, are the 받는 사람 rule: 메일 앱 설정 > 답장 필요는 받는 사람이 나인 메일만 (custom/apps.json mail.to_only, one value for the
+// whole install; default on). Off, a mail without his address in To is read like any other, and every other exclusion still holds.
 export type ReplyExclusion = "self" | "cc" | "list" | "bulk" | "other";
 export const EXCLUSION_LABEL: Readonly<Record<Exclude<ReplyExclusion, "self">, string>> = { cc: "참조로 받음", list: "단체 메일", bulk: "자동 발송", other: "다른 사람 앞" };
 const GROUP_ADDRESS = /^(?:all|everyone|team|staff|group|groups|list|members?|announce\w*|notice|news|company|office|전체)(?:[._-][\w.-]*)?@|@googlegroups\.com$|@groups\./i;
@@ -86,6 +89,12 @@ const parts = (s: string | undefined): string[] => (s ?? "").split(/[,;](?=(?:[^
 const nameOf = (t: string): string => t.replace(/<[^>]*>/, "").replace(/["']/g, "").trim().toLowerCase();
 // The name a mail greets in its first line: "이영희님," / "영희 님" / "Dear Lee," / "Hi Lee".
 const GREETING = /^\s*(?:(?:dear|hi|hello)\s+([a-z][\w.-]*)|([가-힣a-z][가-힣\w.-]{0,20}?)\s*(?:님|씨))\s*[,.:!\s]/i;
+let toOnlyDir: string | undefined;
+/** Where the 받는 사람 rule is read from, live (the file's read is cached), so a change applies without a restart. Unset (a pure caller): the rule holds. */
+export const setToOnlyDir = (dataDir: string | undefined): void => {
+	toOnlyDir = dataDir;
+};
+const toOnly = (): boolean => !toOnlyDir || readAppsFile(toOnlyDir).mail?.to_only !== false;
 export function replyExclusion(m: ReplyCue, own: ReadonlySet<string> = ownAddressesFor(m.source)): ReplyExclusion | undefined {
 	if (selfSent(m, own)) return "self";
 	if (m.list) return "list";
@@ -95,7 +104,7 @@ export function replyExclusion(m: ReplyCue, own: ReadonlySet<string> = ownAddres
 	if (!own.size || !m.to) return undefined;
 	const to = parts(m.to), cc = parts(m.cc);
 	const mine = (t: string) => own.has(addressKey(t));
-	if (!to.some(mine)) {
+	if (!to.some(mine) && toOnly()) {
 		if (cc.some(mine)) return "cc";
 		return to.some(t => GROUP_ADDRESS.test(addressKey(t))) ? "list" : undefined;
 	}

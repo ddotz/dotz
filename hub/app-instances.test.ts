@@ -190,7 +190,7 @@ describe("a custom mail reader", () => {
 		expect(blockedByOff(dir, { src: "mail:acme-work-77" })).toBe(true);
 		expect(removalPlan(dir, "mail-2", ["acme-login", "acme-mail", "webmail-gmail"])).toMatchObject({ label: "회사 메일", watches: ["acme-login", "acme-mail"], features: [] });
 		expect(removalPlan(dir, "mail", ["acme-login", "acme-mail", "webmail-gmail"])!.watches).toEqual(["webmail-gmail"]);
-		expect(readSettings(dir, "mail-2").map(f => f.key)).toEqual(["use_here", "label", "notify", "push", "auto_draft", "skip_senders", "only_senders", "reply_model", "followup", "delete_original", "attach_folder", "draft_default", "draft_rules"]);
+		expect(readSettings(dir, "mail-2").map(f => f.key)).toEqual(["use_here", "label", "notify", "push", "auto_draft", "skip_senders", "only_senders", "to_only", "reply_model", "followup", "delete_original", "attach_folder", "draft_default", "draft_rules"]);
 	});
 });
 
