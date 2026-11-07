@@ -19,7 +19,7 @@ const M = metrics(loadTree(join(import.meta.dir, "..")));
 const FILE_LINE_LIMIT = 800;
 const FILE_LINE_CEILINGS: Counts = {
 	"extension/guard.ts": 1125, "hub/custom.ts": 900, "hub/discord.ts": 950, "hub/kakao/web.ts": 850, "hub/messenger-agent.ts": 875,
-	"hub/orchestrator.ts": 1125, "hub/prompts.ts": 825, "hub/providers.ts": 825, "hub/routes.ts": 1025, "hub/selfupdate.ts": 1000, "web/js/30-kakao.js": 1200, "web/js/30-monitoring.js": 1000,
+	"hub/orchestrator.ts": 1125, "hub/providers.ts": 825, "hub/routes.ts": 1025, "hub/selfupdate.ts": 1000, "web/js/30-kakao.js": 1200, "web/js/30-monitoring.js": 1000,
 };
 // A top-level function past 300 lines hides its own seams; same cap rule (next 25 up), key is `file name`.
 const FN_LINE_LIMIT = 300;
