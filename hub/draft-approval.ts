@@ -24,6 +24,7 @@
 // Discord modal ask for the change first, and the answer is "2) 고치기 - <change>".
 // The answer comes back as the owner's own inbox message with picks [{q: "<question> (<ref>)", n, label}] (hub/notices.ts answerDecision),
 // which is what the per-feature approval checks read (hub/kakao/send.ts verdict, orchestrator turn "결정 답: ... → 1) 보내기").
+import { mailLineText, type DraftBrief } from "./mail-lines.ts";
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { DECISION_HEAD, issueBlock, parseDecisions } from "./choices.ts";
 
@@ -61,7 +62,36 @@ const NOTE_ASKED = "받은 메일이 파일을 요청했어요";
 export type DraftFileIn = { name: string; size?: number };
 export type DraftFile = { name: string; size?: string };
 export type DraftOrigin = { text: string; link?: string };
-export type DraftApproval = { toLabel: string; to: string; /** What only the owner can decide, one point each (the card's 정할 것 list). */ decide?: string[]; cc?: string[]; mode?: "reply" | "all"; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; rule?: string; mail?: DraftApproval; /** recipientCheck's finding against the quoted source above the draft. */ recipientWarning?: string; /** The card's `첨부 확인` line: where the words and the files disagree. */ attachIssues?: string[] };
+const BRIEF_LINE_MAX = 400;
+const BRIEF_LINE = /^\s*(보낸이|요약|할 일|직접 답할 것)\s*[:：]\s*(.+?)\s*$/;
+const briefLine = (label: string, text: string): string => `${label}: ${text.replace(/\s+/g, " ").trim().slice(0, BRIEF_LINE_MAX)}`;
+export const briefLines = (b: DraftBrief | undefined): string[] => (b ? [...(b.from ? [briefLine("보낸이", b.from)] : []), ...(b.summary?.trim() ? [briefLine("요약", b.summary)] : []), ...mailLineText({ todo: b.todo, questions: b.questions }).map(l => l.slice(0, BRIEF_LINE_MAX + 10))] : []);
+// The labelled lines above a card's quoted draft.
+function briefRows(text: string): { i: number; label: string; value: string; line: string }[] {
+	const lines = text.split("\n"), rows: { i: number; label: string; value: string; line: string }[] = [];
+	for (let i = 0; i < lines.length && !/^\s*(?:>|```)/.test(lines[i]!); i++) {
+		const m = BRIEF_LINE.exec(lines[i]!);
+		if (m) rows.push({ i, label: m[1]!, value: m[2]!, line: lines[i]! });
+	}
+	return rows;
+}
+function parseBrief(text: string): DraftBrief | undefined {
+	const rows = briefRows(text);
+	const all = (label: string) => rows.filter(r => r.label === label).map(r => r.value);
+	const from = all("보낸이")[0], summary = all("요약").join(" "), todo = all("할 일"), questions = all("직접 답할 것").flatMap(q => q.split(/\s+\/\s+/));
+	return rows.length ? { ...(from ? { from } : {}), ...(summary ? { summary } : {}), ...(todo.length ? { todo } : {}), ...(questions.length ? { questions } : {}) } : undefined;
+}
+// A card that replaces an open card of the same item (a draft over the card the mail came with): the new text keeps the labelled lines only the old one had.
+export function keepBrief(old: string, next: string): string {
+	const rows = briefRows(next), have = new Set(rows.map(r => r.label));
+	const lost = briefRows(old).filter(r => !have.has(r.label)).map(r => r.line);
+	if (!lost.length) return next;
+	const lines = next.split("\n");
+	lines.splice((rows.at(-1)?.i ?? 0) + 1, 0, ...lost);
+	return lines.join("\n");
+}
+
+export type DraftApproval = { /** The mail behind the draft, read from the lines above it. */ brief?: DraftBrief; toLabel: string; to: string; /** What only the owner can decide, one point each (the card's 정할 것 list). */ decide?: string[]; cc?: string[]; mode?: "reply" | "all"; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; rule?: string; mail?: DraftApproval; /** recipientCheck's finding against the quoted source above the draft. */ recipientWarning?: string; /** The card's `첨부 확인` line: where the words and the files disagree. */ attachIssues?: string[] };
 
 // The recipient of a reply is the address the source wrote, copied as is (2026-10-31: a comment's "reader2@hannail.net" and the owner
 // having to say "hanmail.net 으로 주소 고쳐서 다시 보내"). recipientCheck compares a draft's recipient with the addresses in the source text
@@ -282,7 +312,7 @@ export function withStagedFiles(text: string, files: DraftFileIn[], part: "main"
 
 // A card made before a change to how drafts are read (the always-shown 첨부 row, 2026-10-26) re-read from its own text with the current
 // rules: the head (recipient, subject, files, warning, origin) is replaced, the body and ref stay (the stored text may be cut shorter).
-const HEAD_KEYS = ["toLabel", "to", "decide", "cc", "subject", "attachments", "noAttachments", "warning", "note", "origin", "rule", "recipientWarning", "attachIssues"] as const;
+const HEAD_KEYS = ["brief", "toLabel", "to", "decide", "cc", "subject", "attachments", "noAttachments", "warning", "note", "origin", "rule", "recipientWarning", "attachIssues"] as const;
 export function refreshDraft(old: DraftApproval, text: string): DraftApproval {
 	const fresh = parseQuotedDraft(text);
 	if (!fresh) return old;
@@ -368,10 +398,11 @@ export function parseQuotedDraft(text: string): DraftApproval | undefined {
 	// A quote above the draft (the comment being answered) is not part of it; it is the source its recipient is checked against.
 	const above = first > 0 ? quoted.splice(0, first) : [];
 	const decide = decideOf(text);
+	const brief = parseBrief(text);
 	const issues = ATTACH_LINE.exec(text)?.[1]?.split(" · ").map(s => s.trim()).filter(Boolean) ?? [];
 	const checked = (d: DraftApproval | undefined): DraftApproval | undefined => {
 		const w = d ? cardRecipientCheck(text, above.join("\n")) : undefined;
-		return d ? { ...d, ...(decide.length ? { decide } : {}), ...(w ? { recipientWarning: w } : {}), ...(issues.length ? { attachIssues: issues } : {}) } : d;
+		return d ? { ...d, ...(brief ? { brief } : {}), ...(decide.length ? { decide } : {}), ...(w ? { recipientWarning: w } : {}), ...(issues.length ? { attachIssues: issues } : {}) } : d;
 	};
 	const cut = quoted.findIndex(l => MAIL_LINE.test(l));
 	if (cut < 0) return checked(parseDraftLines(quoted));

@@ -2,6 +2,7 @@
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
+import type { DraftBrief } from "../../../hub/mail-lines.ts";
 import { hasBoxes } from "../../../hub/mailbox.ts";
 import { threadText } from "../../../hub/zele.ts";
 import { ownAddresses } from "../../../hub/mail-state.ts";
@@ -21,6 +22,8 @@ export type OfferMail = { account?: string; key: string; /** false: the gateway 
 export type OfferDeps = BoxDeps & {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
+	/** The mail as its draft card shows it (hub/mail.ts mailDraftBrief); without it the card has the sender and summary the offer came with. */
+	brief?: (key: string) => DraftBrief | undefined;
 	/** Picks among tied 첨부 파일 폴더 files by name (flow.ts stageForReply); tests inject it. */
 	pick?: (names: string[]) => Promise<string[]>;
 	/** How 첨부 파일 폴더 files are copied onto the draft (staged.ts stageLibraryFile); tests inject it. */
@@ -194,7 +197,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		if (!requested && !auto && !rules.length && !judges.length) return "off";
 		if (!requested && m.needs === false && !rules.length) return "off";
 		if (!requested && isDrafted(looked)) return "skipped";
-		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: deps.own?.(m.source) ?? addressesOf(m.to), to: addressesOf(m.to), ...(m.cc ? { cc: addressesOf(m.cc) } : {}), subject: m.subject, text: "", ...(requested ? { requested: true } : {}), ...(requested && m.instruction?.trim() ? { instruction: m.instruction.trim().slice(0, 500) } : {}) };
+		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: deps.own?.(m.source) ?? addressesOf(m.to), to: addressesOf(m.to), ...(m.cc ? { cc: addressesOf(m.cc) } : {}), subject: m.subject, text: "", ...(requested ? { requested: true } : {}), ...(m.needs === true ? { expected: true } : {}), ...(requested && m.instruction?.trim() ? { instruction: m.instruction.trim().slice(0, 500) } : {}) };
 		// Learning stays on the shared mail profile; only the writing, the revising and the send check read the instance's own profile.
 		if (hasOwnTone(instance)) item.profile = instance;
 		if (!requested && precheck(item, settings.senders, { addressLater: true })) {
@@ -256,9 +259,11 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		else if (cands && asked) item.files = [];
 		const built = await buildDraft(item, { ...(box ? { box: box.id, instance } : {}), source: m.source, mailId: m.id, ref: m.key, ...(m.account ? { account: m.account } : {}), ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
 		if (built.action !== "draft") {
+			log(`reply draft: mail ${m.key} skipped: ${built.reason}`);
 			markDrafted(looked);
 			return "skipped";
 		}
+		built.rec.brief = deps.brief?.(m.key) ?? { ...(m.from ? { from: m.from } : {}), ...(m.summary ? { summary: m.summary } : {}) };
 		// A mail draft starts as 답장 (the sender alone); the card's 전체 답장 switch reads the original's 받는 사람·참조 from the mail record.
 		built.rec.mode = "reply";
 		ensureSwitch();

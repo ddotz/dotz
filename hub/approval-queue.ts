@@ -13,7 +13,7 @@
 // load/sweep path too), and a held card whose item was handled meanwhile (deps.handled) is dropped instead of being shown.
 import { existsSync, readFileSync } from "node:fs";
 import { DECISION_HEAD } from "./choices.ts";
-import { parseDraftApproval, withRecipientMark } from "./draft-approval.ts";
+import { keepBrief, parseDraftApproval, withRecipientMark } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 
 export type Held = { ref: string; target: string; text: string; extra: Record<string, unknown> };
@@ -173,7 +173,7 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		const h = held.find(x => itemOf(conv, x.ref) === item && deps.convOf(x.target) === conv);
 		if (h) {
 			if (h.ref !== ref) Object.assign(h, { ref, target, extra });
-			h.text = parts?.card ?? text;
+			h.text = keepBrief(h.text, parts?.card ?? text);
 			save();
 			deps.log(`approval card ${ref} in ${conv} is already held (as one item); its text is replaced`);
 			return parts ? { action: "post", text: parts.lead } : { action: "same" };
@@ -243,7 +243,12 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	function dropRedundant(): void {
 		for (const conv of heldConvs()) {
 			const list = heldIn(conv);
-			drop(conv, list.filter((h, i) => list.some((o, j) => j > i && itemOf(conv, o.ref) === itemOf(conv, h.ref))), "a newer card of the same item is held");
+			const older = list.filter((h, i) => {
+				const newer = list.find((o, j) => j > i && itemOf(conv, o.ref) === itemOf(conv, h.ref));
+				if (newer) newer.text = keepBrief(h.text, newer.text);
+				return !!newer;
+			});
+			drop(conv, older, "a newer card of the same item is held");
 			for (const h of heldIn(conv)) {
 				const item = itemOf(conv, h.ref);
 				const s = shown.get(conv);

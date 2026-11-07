@@ -4,8 +4,8 @@ import { existsSync, statSync } from "node:fs";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimHolder, claimSend } from "../../../hub/draft-claim.ts";
-import { attachIssues, withoutKindWords } from "../../../hub/attach-check.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
+import { attachIssues, ownWords, withoutKindWords } from "../../../hub/attach-check.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
@@ -234,7 +234,7 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	const issues = draftAttachIssues(rec);
 	const keptBack = noFiles && staged.length ? { sendResult: "파일이 붙어 있어 보내지 않아요. 파일을 빼면 본문만 보내요" } : {};
 	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: withoutNoFileClaims(rec), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(several ? { sendResult: ACCOUNT_HELD } : {}), ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}), ...(issues.length ? { attachIssues: issues } : {}) });
-	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
+	return [`[ask] ${headline}`, ...briefLines(rec.brief), ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
 // The 첨부 파일 폴더 of the mail app instance that owns the mail `ref` (app setting attach_folder), or undefined.
@@ -288,7 +288,10 @@ export async function candidatesFor(item: ReplyItem, meta: { source: string; ref
 	// The words that name the work first: "MR" alone would fill the list with every song's audio and leave the asked song's score off it.
 	const q = { subject: item.subject ?? "", text: item.text };
 	const work = { subject: withoutKindWords(q.subject), text: withoutKindWords(q.text) };
-	for (const r of [...rankLibrary(library, work), ...rankLibrary(library, q)]) if (r.score > 0) add(r.file);
+	// A mail that quotes the earlier mail: the works its sender names himself go first, or the works of the quote fill the list and the asked one's files fall off it.
+	const own = ownWords(item.text);
+	const asked = own === item.text ? [] : rankLibrary(library, { subject: "", text: withoutKindWords(own) });
+	for (const r of [...asked, ...rankLibrary(library, work), ...rankLibrary(library, q)]) if (r.score > 0) add(r.file);
 	return { files, missing };
 }
 
@@ -386,6 +389,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	const rec = toRec(old.item, { ...(old.box && old.instance ? { box: old.box, instance: old.instance } : {}), source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	// The recipients the owner set on the card stay: a rewrite of the words is not a reason to send it to somebody else.
 	rec.to = old.to;
+	if (old.brief) rec.brief = old.brief;
 	if (old.cc?.length) rec.cc = old.cc;
 	if (old.mode) rec.mode = old.mode;
 	if (old.ownerRecipients) rec.ownerRecipients = true;

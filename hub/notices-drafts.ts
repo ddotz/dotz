@@ -69,6 +69,7 @@ export function markDraftSend(to: string, ref: string, state: NonNullable<Decisi
 	else announce([n], at);
 }
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.
+export const openDraftText = (to: string, ref: string): string | undefined => items.find(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref)?.text;
 export function rewriteOpenDraft(to: string, ref: string, text: string): number {
 	const hit = items.filter(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref);
 	if (!hit.length) return 0;

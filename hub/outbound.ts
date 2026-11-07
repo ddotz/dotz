@@ -33,7 +33,8 @@ import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { dropClaim, splitTone, stripHandoff, stripLater, stripProjectInfo } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
-import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
+import { keepBrief } from "./draft-approval.ts";
+import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
 import { draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
@@ -297,7 +298,9 @@ export const approvals = createApprovalQueue({
 	handled: (ref, conv) => refHandled(ref, conv),
 	post: (target, text, extra) => void out(target, text, undefined, { ...extra, queued: true }).catch(e => log(`held approval card to ${target} failed: ${e}`)),
 	// A card that went to Discord as one message is edited there too (a [file] line would show raw in an edit, so such a card keeps its first text).
-	rewrite: (conv, card, text) => {
+	rewrite: (conv, card, next) => {
+		// A card that replaces the open one keeps what only that one showed (hub/draft-approval.ts keepBrief).
+		const text = keepBrief(openDraftText(conv, card.ref) ?? "", next);
 		rewriteOpenDraft(conv, card.ref, text);
 		const id = card.ids?.length === 1 ? card.ids[0] : undefined;
 		if (id && !isLocal(card.target) && route({ target: card.target }).messengers.discord && !/^\s*\[file\]\s/m.test(text)) void discord.edit(card.target, id, text).catch(e => log(`approval card ${card.ref} not edited on Discord: ${e}`));

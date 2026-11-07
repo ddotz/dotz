@@ -36,7 +36,7 @@ export const withoutKindWords = (text: string): string => text.replace(KIND_WORD
 
 // What the received mail itself asks for: sentences that ask, above any quote of an earlier mail. "문서를 구입했어요. MR 부탁드립니다" asks for the audio alone.
 const ASKED = /부탁|주세요|주시|요청|신청|받을 수|받고 싶|\b(?:please|could you|can you)\b/i;
-const ownWords = (text: string): string => text.split(/-{3,}\s*Original Message/i)[0]!.split("\n").filter(l => !l.trimStart().startsWith(">")).join("\n");
+export const ownWords = (text: string): string => text.split(/-{3,}\s*Original Message/i)[0]!.split("\n").filter(l => !l.trimStart().startsWith(">")).join("\n");
 const askedKinds = (request: string): Set<FileKind> => kindsIn(sentences(ownWords(request)).filter(s => ASKED.test(s)).join("\n"));
 
 // "1탄, 2탄, 3탄", "1,2,3부": the numbered parts a sentence names. Names do not always carry the number, so parts are compared with a count of files, per kind.

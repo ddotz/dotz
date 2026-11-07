@@ -386,9 +386,16 @@ function draftMailNode(m, o = {}) {
 const replyHead = () => el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: "내 답글" }));
 // The body of a draft, drawn as chat draws a message (relayed: words to read, no run button or settings card on what someone else may have written).
 const draftBodyNode = (text, cls, attrs = {}) => el("div", { ...attrs, class: `md ${cls}`, safeHtml: mdHtml(text, true) });
+// The mail a draft answers, above the draft (hub/draft-approval.ts DraftBrief): the draft is added to the card and never stands in for it.
+function draftBriefNode(b) {
+  if (!b) return null;
+  const row = (k, v) => (v ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: k }), el("span", { class: "dc-dr-v" }, mailInlineFrag(v))) : null);
+  return el("div", { class: "dc-brief", "data-k": "draft-brief" }, row("보낸이", b.from), row("요약", b.summary), mailLinesNode(b.todo, b.questions));
+}
 function draftNode(d, o) {
   const both = !!d.mail && d.toLabel === "대상";
   return el("div", { class: "dc-draft" },
+    draftBriefNode(d.brief),
     both ? orgInline(d, o.t) : null, both ? replyHead() : null,
     !d.toLabel || d.toLabel === "받는이" ? draftToNode(d, o) : el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,

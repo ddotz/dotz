@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import "./conversations.ts"; // listens to the event bus: the first message of a mail conversation gives the mail its summary
 import { emit, eventTarget, type HubEvent } from "./events.ts";
-import { MailError, mailKeep, answeredBy, attachmentList, mailBriefOf, settleMailDrafts, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
+import { MailError, mailKeep, answeredBy, attachmentList, mailBriefOf, mailDraftBrief, settleMailDrafts, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
 import { moveMail } from "./mail-move.ts";
 import { setOwnAddresses } from "./mail-state.ts";
 import { outEvent } from "./projectchat.ts";
@@ -30,6 +30,52 @@ function fakes(discordOn: boolean, channel: string | undefined = "15000000000019
 }
 let seq = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${++seq}`;
+
+describe("to-do and direct-answer lines", () => {
+	const post = (extra: object) => postMail({ source: "lines", id: uid("l"), subject: "일정 문의", from: "Kim <kim@example.com>", ...extra }, fakes(false).deps);
+	test("fields of their own stay apart from the summary", async () => {
+		const { key } = await post({ summary: "회의 일정을 물어요.", todo: "회의 시간 확인", questions: ["참석 인원은요?", "장소는요?"] });
+		const rec = mailByKey(key!)!;
+		expect([rec.summary, rec.todo, rec.questions]).toEqual(["회의 일정을 물어요.", ["회의 시간 확인"], ["참석 인원은요?", "장소는요?"]]);
+		expect(mailCard(rec)).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["참석 인원은요?", "장소는요?"] });
+	});
+	test("labelled lines of a posted summary move into the fields; a field the poster sent wins", async () => {
+		const { key } = await post({ summary: "회의 일정을 물어요.\n할 일: 회의 시간 확인\n질문: 참석 인원은요? / 장소는요?" });
+		expect(mailByKey(key!)).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["참석 인원은요?", "장소는요?"] });
+		const own = await post({ summary: "요약이에요.\n할 일: 요약 쪽", todo: ["필드 쪽"] });
+		expect(mailByKey(own.key!)).toMatchObject({ summary: "요약이에요.", todo: ["필드 쪽"] });
+	});
+	test("a stored record without the fields keeps working: its labelled lines are read, an unlabelled summary stays whole", async () => {
+		const rec = mailByKey((await post({ summary: "회의 일정을 물어요." })).key!)!;
+		expect(mailCard({ ...rec, summary: "회의 일정을 물어요.\n할 일: 회의 시간 확인" })).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"] });
+		const card = mailCard({ ...rec, summary: "다음 할 일을 정리했어요" });
+		expect(card.summary).toBe("다음 할 일을 정리했어요");
+		expect(card).not.toHaveProperty("todo");
+		expect(mailDraftBrief(rec.key)).toEqual({ from: "Kim <kim@example.com>", summary: "회의 일정을 물어요." });
+	});
+	test("the 할 일 of a summary still decides 답장 필요 after it moved into its field", async () => {
+		const owed = await post({ summary: "다음 주 일정 안내예요.\n할 일: 일정 회신" });
+		expect(mailByKey(owed.key!)?.reply).toBe("needs");
+		const none = await post({ summary: "자료를 요청하는 메일이에요.\n할 일: 없음" });
+		expect(mailByKey(none.key!)).toMatchObject({ summary: "자료를 요청하는 메일이에요.", todo: ["없음"] });
+		expect(mailByKey(none.key!)?.reply).toBeUndefined();
+		const field = await post({ summary: "다음 주 일정 안내예요.", todo: ["일정 회신"] });
+		expect(mailByKey(field.key!)?.reply).toBe("needs");
+	});
+	test("a repeat post fills in lines the first post did not have; the first message on a messenger lists them", async () => {
+		const id = uid("rep");
+		const f = fakes(true);
+		const { key } = await postMail({ source: "lines", id, subject: "일정 문의", summary: "회의 일정을 물어요." }, f.deps);
+		await postMail({ source: "lines", id, subject: "일정 문의", todo: ["회의 시간 확인"] }, f.deps);
+		expect(mailByKey(key!)?.todo).toEqual(["회의 시간 확인"]);
+		const g = fakes(true);
+		await postMail({ source: "lines", id: uid("msg"), subject: "일정 문의", summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] }, g.deps);
+		expect(g.calls.threads[0]![2].split("\n")).toEqual(expect.arrayContaining(["할 일: 회의 시간 확인", "직접 답할 것: 장소는요?"]));
+	});
+	test("a line field that is not text is refused", async () => {
+		await expect(post({ todo: [1] })).rejects.toThrow(MailError);
+	});
+});
 
 describe("mail key", () => {
 	test("lowercase source-id limited to [a-z0-9._-]", () => {
@@ -71,6 +117,13 @@ describe("moveMail", () => {
 		expect(mailByKey(moved.key)!.attachments!.map(a => a.name)).toEqual(["a.txt"]);
 		expect(storedBodyText(moved.key)).toContain("전체본 부탁드립니다");
 		expect(await postMail({ source: "general", id, messageId: "m1", subject: "파트 전체본 공유" }, deps)).toMatchObject({ skipped: true });
+	});
+
+	test("a moved mail keeps its to-do and direct-answer lines", async () => {
+		const { deps } = fakes(false);
+		const first = await postMail({ source: "general", id: uid("mv"), subject: "일정 문의", summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] }, deps);
+		const moved = await moveMail(first.key, "score", deps);
+		expect(mailByKey(moved.key)).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] });
 	});
 
 	test("an unknown mail is refused", async () => {

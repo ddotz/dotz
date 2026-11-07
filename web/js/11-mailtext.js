@@ -245,6 +245,7 @@ function mailSumSplit(text) {
   }
   return { about: own[0] || "", todo: own.slice(1).join(" ") };
 }
+const mailInlineFrag = s => { const f = document.createDocumentFragment(); mailSumInline(f, s); return f; };
 function mailSumInline(parent, s) {
   String(s ?? "").replace(/`/g, "").split(/\*\*(.+?)\*\*/g).forEach((p, i) => { if (p) parent.append(i % 2 ? el("b", { text: p }) : p.replace(/\*\*/g, "")); });
 }
@@ -263,12 +264,18 @@ function mailSumBlock(text) {
   if (todo) { t.append(" "); mailSumInline(t, todo); }
   return el("div", { class: "msum", "data-k": "mail-summary" }, mailBoltIcon(), t);
 }
+// 할 일 and 직접 답할 것 (hub/mail-lines.ts): rows of their own, under the summary of the mail and above a draft (10-decision-card.js draftBriefNode).
+function mailLinesNode(todo, questions) {
+  const row = (k, list) => (list && list.length ? el("div", { class: "mln-r" }, el("div", { class: "mln-k", text: k }), el("ul", { class: "mln-l" }, ...list.map(x => el("li", { text: x })))) : null);
+  const rows = [row("할 일", todo), row("직접 답할 것", questions)].filter(Boolean);
+  return rows.length ? el("div", { class: "mln", "data-k": "mail-lines" }, ...rows) : null;
+}
 // In the opened mail's card the summary sections the result card drew give way to the block (the same place, right under the recipient line).
 function mailOpenSummary(t, card) {
   const secs = [...card.querySelectorAll(":scope > .rc-sec")];
   if (!secs.length) return;
-  const m = MAILS.get(t) || {}, node = mailSumBlock(m.summary || mailBrief(m, t));
-  if (!node) return;
-  secs[0].replaceWith(node);
+  const m = MAILS.get(t) || {}, nodes = [mailSumBlock(m.summary || mailBrief(m, t)), mailLinesNode(m.todo, m.questions)].filter(Boolean);
+  if (!nodes.length) return;
+  secs[0].replaceWith(...nodes);
   secs.slice(1).forEach(s => s.remove());
 }

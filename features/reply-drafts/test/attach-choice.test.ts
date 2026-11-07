@@ -93,6 +93,17 @@ describe("(d) a rule's files are candidates, not a replacement", () => {
 		expect((await candidatesFor({ kind: "mail", from: "x", subject: "봄노래", text: "봄노래 문서" }, { source: "zele", ref: "c-2" }))!.files).toHaveLength(CANDIDATE_MAX);
 		rmSync(wide, { recursive: true, force: true });
 	});
+	test("a mail that quotes earlier works: the work its sender asks for stays on the list", async () => {
+		const wide = mkdtempSync(join(tmpdir(), "rd-choice-quote-"));
+		const quoted = Array.from({ length: 20 }, (_, n) => `지난곡 ${n}`);
+		for (const name of quoted) writeFileSync(join(wide, `${name}.pdf`), "x");
+		writeFileSync(join(wide, "가을노래.pdf"), "x");
+		enable(env, { attachFolders: { mail: wide } });
+		const text = `가을노래도 부탁드립니다.\n\n-----Original Message-----\n${quoted.join("\n")} 보내드립니다.`;
+		const c = await candidatesFor({ kind: "mail", from: "x", subject: `Re: ${quoted.slice(0, 12).join(" ")}`, text }, { source: "zele", ref: "c-3" });
+		expect(c!.files.map(f => f.rel)).toContain("가을노래.pdf");
+		rmSync(wide, { recursive: true, force: true });
+	});
 	test("words that say the kind of file do not fill the list: the asked song's score stays on it", async () => {
 		const wide = mkdtempSync(join(tmpdir(), "rd-choice-kinds-"));
 		for (let n = 0; n < 20; n++) writeFileSync(join(wide, `노래${n}_MR.mp3`), "x");

@@ -51,6 +51,10 @@ span.mr-star:not(.on) { opacity: .45; }
 .msum-t { min-width: 0; overflow-wrap: anywhere; word-break: keep-all; }
 .msum-k { color: var(--fg-3); }
 .msum b { color: var(--fg); font-weight: 700; }
+.mln { display: grid; gap: var(--sp-1); margin: var(--sp-1) 0; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-ctl); font: 400 13px/20px var(--font); overflow-wrap: anywhere; word-break: keep-all; }
+.mln-k { color: var(--fg-3); }
+.mln-l { margin: 0; padding-left: var(--sp-4); color: var(--fg); }
+.mln-l li + li { margin-top: var(--sp-05); }
 .mopen > .rc-hd .rc-src { color: var(--fg-2); font-weight: 500; }
 .mopen > .rc-hd .rc-time { font-size: 12px; }
 /* the original: a quiet grey well, no border (principles 5, 9); the HTML frame stays a white page */

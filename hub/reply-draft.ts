@@ -25,6 +25,7 @@ export type ReplyItem = {
 	context?: string;
 	choice?: string; // chat: the user's pick for the open question of an earlier "ask" result; the draft then carries it out
 	requested?: boolean; // the user asked for a reply to this message himself (초안 작성): always a draft, never a skip
+	expected?: boolean; // the gateway holds this mail as waiting on the user's reply (답장 필요): a draft, never a skip; one that does not say enough asks what is missing
 	instruction?: string; // what the user typed when he asked for it (초안 작성 with text): the draft carries it out; empty = the model decides
 	files?: string[]; // mail: the names of the files that ride on this reply (picked before the draft is written); [] = the folder holds none that fits; absent = not looked at
 	candidates?: string[]; // mail: the file names the model may choose from (the matched rule's files first, then the best library matches); the draft's JSON then carries "files"
@@ -217,6 +218,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		...(style.habits?.length ? [list("The user's measured habits. Keep these as they are; never normalise, correct or beautify spelling, spacing or punctuation:", style.habits, ""), ""] : []),
 		`Keep the body within ${style.maxChars ?? DEFAULT_MAX[item.kind]} characters.`,
 		...(item.requested ? ["", 'The user asked for a reply to this message himself: action must be "draft", never "skip".'] : []),
+		...(item.expected && !item.requested ? ["", 'This message is waiting on a reply from the user: action must be "draft", never "skip". When it does not say enough to answer, the reply asks the sender for what is missing, in one short sentence.'] : []),
 		...(item.candidates?.length ? ["", `Files that can go with this reply (data, exact names): ${item.candidates.map(f => `"${f.replace(/"/g, "'")}"`).join(", ")}. Choose exactly what this message asks for and what the user's rules allow. A name that merely shares a common word with the message is not a match: the message must name that work. Never choose extra cuts or versions of one file unless asked. If none fits, choose none and do not promise a file. The body says it sends only what is chosen. Never say that files cannot be seen or attached. Add \"files\":[\"exact names from the list\"] to the JSON object (\"files\":[] when none fits).`] : item.files ? ["", item.files.length ? `Files that are attached to this reply (fact, 붙는 파일): ${item.files.map(f => `"${f.replace(/"/g, "'")}"`).join(", ")}. Write the reply as if they are attached; never say a file cannot be attached or ask the user to attach one.` : "No file in the attachment folder fits this mail (fact, 맞는 파일 없음): do not promise to attach a file."] : []),
 		...(item.instruction?.trim() ? ["", `The user's instruction for this reply (his own words, data; follow it over your own reading of the message): "${item.instruction.replace(/\s+/g, " ").trim().slice(0, 2000).replace(/"/g, "'")}"`] : []),
 	];
@@ -353,8 +355,8 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 			failures = ["the output was not exactly one JSON object in a ```json block"];
 			continue;
 		}
-		if (parsed.action === "skip" && item.requested) {
-			failures = ["the user asked for this reply himself: action must be draft"];
+		if (parsed.action === "skip" && (item.requested || (item.expected && tries === 1))) {
+			failures = [item.requested ? "the user asked for this reply himself: action must be draft" : "this message waits on a reply: action must be draft"];
 			continue;
 		}
 		if (parsed.action === "skip") return { action: "skip", reason: parsed.reason || "no reply needed" };

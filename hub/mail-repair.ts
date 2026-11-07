@@ -7,6 +7,7 @@
 // Stop the gateway first (it keeps the mails in memory and writes the file back), and keep a copy.
 import { existsSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { mailCueText } from "./mail-lines.ts";
 import { addressKey, replyExpected, type StoredMail } from "./mail-state.ts";
 
 export type RepairRow = { key: string; at: string; subject: string; reply: string; expected: boolean };
@@ -15,7 +16,7 @@ export type RepairRow = { key: string; at: string; subject: string; reply: strin
 export function unprovenMarks(records: readonly StoredMail[], own: ReadonlySet<string> = new Set()): RepairRow[] {
 	return records
 		.filter(r => r.dir !== "out" && (r.reply === "skipped" || r.reply === "fyi") && r.reply_by !== "owner")
-		.map(r => ({ key: r.key, at: r.at, subject: r.subject, reply: r.reply!, expected: replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "" }, own) }))
+		.map(r => ({ key: r.key, at: r.at, subject: r.subject, reply: r.reply!, expected: replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: mailCueText(r) || r.preview || "" }, own) }))
 		.sort((a, b) => a.at.localeCompare(b.at));
 }
 

@@ -6,7 +6,7 @@ import { askComponentsFor, askInteraction, ASK_PREFIX } from "./askbuttons.ts";
 import { parseDecisions } from "./choices.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { paths } from "./config.ts";
-import { draftActionOf, draftApprovalBlock, draftVerdict, parseDraftApproval, textVerdict } from "./draft-approval.ts";
+import { briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, parseDraftApproval, textVerdict } from "./draft-approval.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
 import { approval, createDraft, draftBlock } from "./kakao/send.ts";
@@ -248,4 +248,14 @@ test("a correct address from the source raises nothing; one the source does not 
 	expect(recipientCheck("lee@naver.com", "kim@naver.com 로 보내 주세요")).toContain("lee@naver.com");
 	const card = `[ask] 메일 답장 초안이에요\n> 원문: kim@gmail.com 로 부탁해요\n${block({ to: "kim@gmail.com", toLabel: "받는이", body: "네", ref: "RABCDEF", question: "이 답장 보낼까요?" })}`;
 	expect(withRecipientMark(card)).toBe(card);
+});
+
+test("a draft that replaces the mail's open card keeps the lines only that card had, and the draft itself is untouched", () => {
+	const block = draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", subject: "Re: 일정", body: "확인했어요.", ref: "D123", question: "보낼까요?" });
+	const old = "[ask] 답장이 필요한 메일이에요\n보낸이: Kim · me@example.net · 11-07\n답장 상태: 답장 필요\n요약: 일정을 물어요.\n할 일: 시간 확인\n직접 답할 것: 인원은요? / 장소는요?\n\n> 원문이에요";
+	const card = keepBrief(old, `[ask] 답장 초안을 만들었어요\n${block}`);
+	expect(parseDraftApproval(card)).toMatchObject({ brief: { from: "Kim · me@example.net · 11-07", summary: "일정을 물어요.", todo: ["시간 확인"], questions: ["인원은요?", "장소는요?"] }, to: "kim@example.com", body: "확인했어요.", ref: "D123" });
+	const own = `[ask] 답장 초안을 만들었어요\n${briefLines({ from: "Lee", summary: "새 요약" }).join("\n")}\n${block}`;
+	expect(parseDraftApproval(keepBrief(old, own))?.brief).toEqual({ from: "Lee", summary: "새 요약", todo: ["시간 확인"], questions: ["인원은요?", "장소는요?"] });
+	expect(keepBrief("", own)).toBe(own);
 });

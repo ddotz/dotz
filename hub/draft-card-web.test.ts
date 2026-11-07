@@ -50,6 +50,7 @@ const DRAFT = { toLabel: "받는이", to: "Alex Sender <sender@example.com>", su
 const note = (id: string, state: string, extra: object = {}) => ({ id, ts: now, updated: now, kind: "decision", tone: "ask", title: `${Q} (draft-1)`, text: `${QUOTE}\n${Q}`, open: "mail:fx-9", src: "mail:fx-9", at: now, read: false,
 	decision: { options: OPTS, to: "mail:fx-9", reply_to: now, group: 1, state, draft: DRAFT, ...extra } });
 const NOTES = [note("a", "open"), note("b", "answered", { answer: "1) 보내기", answered_at: now }), note("c", "answered", { answer: "2) 고치기 - 짧게", answered_at: now }), note("d", "answered", { answer: "3) 보내지 않기", answered_at: now }), note("e", "answered", { resolved: true, answered_at: now })];
+const BRIEF = { from: "Alex Sender <sender@example.com>", summary: "이번 달 점검이 끝났어요.", todo: ["보고서 확인"], questions: ["다음 점검 날짜는요?"] };
 const draw = `(() => {
 	cancelAnimationFrame(monRaf); window.renderMonitoring = () => {}; window.monSchedule = () => {};
 	window.__opened = []; window.__posts = [];
@@ -138,3 +139,23 @@ test("a draft sent back for 고치기 says 고치는 중… and gives way to the
 	expect(JSON.parse((await run([sentBack])) as string)).toEqual([["old", "고치는 중…"]]);
 	expect(JSON.parse((await run([sentBack, { ...note("new", "open"), ts: later }])) as string)).toEqual([["new", "승인 대기"]]);
 });
+
+for (const width of [1280, 390]) {
+	test(`draft card at ${width}px shows the mail above the draft: sender, summary, to-do and direct-answer lines`, async () => {
+		const v = await open(width);
+		const got = JSON.parse((await v.evaluate(`(() => {
+			cancelAnimationFrame(monRaf);
+			const draft = ${JSON.stringify({ ...DRAFT, brief: BRIEF })}, n = ${JSON.stringify(note("a", "open"))};
+			n.decision.draft = draft;
+			MAILS.set("mail:fx-9", { subject: "월간 점검 보고서 확인 요청", from: draft.brief.from, source: "fx", at: ${JSON.stringify(now)} });
+			const nodes = [draftNode(draft, { t: "mail:fx-9" }), draftCardNode(n), draftCardNode(n, { bare: true })];
+			document.body.replaceChildren(...nodes);
+			return JSON.stringify({ texts: nodes.map(x => x.textContent), over: document.documentElement.scrollWidth > innerWidth });
+		})()`)) as string) as any;
+		for (const text of got.texts) {
+			for (const line of [BRIEF.summary, ...BRIEF.todo, ...BRIEF.questions, "보내 주신 보고서는 잘 받았습니다."]) expect(text).toContain(line);
+			expect(text).toContain("Alex Sender");
+		}
+		expect(got.over).toBe(false);
+	});
+}

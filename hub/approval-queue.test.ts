@@ -132,6 +132,15 @@ describe("approval queue", () => {
 		expect(t.disk()[0]!.text).toContain("B2");
 	});
 
+	test("an older held card dropped for a newer one of its item hands over the lines only it had", async () => {
+		const brief = "[ask] 댓글 답글 초안이에요\n할 일: 회의 시간 확인\n";
+		const held = [{ ref: "cm-D", target: "ch:1", text: card("D").replace("[ask] 댓글 답글 초안이에요\n", brief), extra: {} }, { ref: "cm-D2", target: "ch:1", text: card("D2"), extra: {} }, { ref: "cm-C", target: "ch:1", text: card("C"), extra: {} }];
+		const t = setup(held, sameItem);
+		await t.q.releaseAll();
+		const kept = [...t.disk(), ...t.posts].find(h => h.text.includes("cm-D2"));
+		expect(kept!.text).toContain("할 일: 회의 시간 확인");
+	});
+
 	test("a newer card of an item that is open rewrites the open card in place, and the shown card follows its ref", () => {
 		const t = setup([], sameItem);
 		t.q.route("ch:1", card("A"));
@@ -232,6 +241,19 @@ describe("approval queue", () => {
 		expect(withLeft(withLeft(c, 3), 2).split("\n").filter(l => l.includes("남은"))).toEqual(["-# 남은 2건"]);
 		expect(withLeft(withLeft(c, 3), 0)).toBe(c);
 		expect(cardRef(withLeft(c, 3))).toBe("cm-A");
+	});
+});
+
+describe("a held card replaced by a newer card of the same item", () => {
+	const lines = "할 일: 시간 확인\n직접 답할 것: 장소는요?";
+	const withLines = (ref: string) => card(ref).replace("\n", `\n${lines}\n`);
+	test("keeps the lines only the older card had", () => {
+		const { q, show, disk } = setup([], { itemOf: (_c, r) => (r === "cm-A" ? "open" : "one") });
+		show("c", card("A"));
+		q.route("c", withLines("B"));
+		q.route("c", card("C"));
+		expect(disk()[0]!.text).toContain(lines);
+		expect(cardRef(disk()[0]!.text)).toBe("cm-C");
 	});
 });
 

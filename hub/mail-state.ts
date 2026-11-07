@@ -16,6 +16,8 @@
 // refuses them without `by: "owner"`), and his mark records who and when (`reply_by: "owner"`, `reply_at`), so a skipped without that
 // evidence is known to be from older code (hub/mail-repair.ts lists them).
 // `nextReply` is the only place that moves between them.
+import { mailCueText, type MailLines } from "./mail-lines.ts";
+
 export type MailDirection = "in" | "out";
 export type MailReply = "needs" | "draft" | "replied" | "skipped" | "fyi";
 /** need = a reply is expected; draft = a reply draft was offered; sent = a reply went out (dotz) or his own mail was found in the thread;
@@ -205,7 +207,7 @@ export function directionOf(f: DirectionFacts, own: ReadonlySet<string> = ownAdd
 
 // ---- migration ----
 
-export type StoredMail = LegacyReplyFacts & { source?: string; account?: string; list?: true; reply_by?: ReplyBy; reply_at?: string; key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
+export type StoredMail = LegacyReplyFacts & MailLines & { source?: string; account?: string; list?: true; reply_by?: ReplyBy; reply_at?: string; key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
 /** Mails older than this keep no reply state from replyExpected when the stored mails are brought up to the rules: history, not a backlog. */
 const JUDGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 export const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -236,7 +238,7 @@ export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<st
 			}
 		} else {
 			const fresh = now - Date.parse(r.at) <= JUDGE_WINDOW_MS;
-			const cue = { source: r.source, account: r.account, from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "", list: r.list };
+			const cue = { source: r.source, account: r.account, from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: mailCueText(r) || r.preview || "", list: r.list };
 			const mine = opts.own ?? ownAddressesFor(r.source);
 			let reply = opts.sentRefs?.has(r.key) ? "replied" : replyOf(r) ?? (fresh && replyExpected(cue, mine) ? "needs" : undefined);
 			// 답장 필요 the gateway or a poster set, on a mail he is not a main recipient of or wrote himself: none (his own 답장 필요로 표시 stays).

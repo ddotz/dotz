@@ -35,6 +35,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 - Discord routing: `hub/discord-post.ts` (`<DATA_DIR>/discord-post.json`; kind and per-notice-class switches, `postClass` names a post's class, `/api/discord/post`; the web app always gets everything, 설정 → 앱 · 알림 adds "디스코드로도 보내기" per class)
 - push: `hub/push.ts` (per-class switches in config `notify.push`, `/api/push/classes`; news also per app, `custom/apps.json <app>.push`), `hub/webpush.ts`
 - per-install custom code (not part of the product): `hub/custom.ts` (cards, pins, routines), `hub/plugins.ts` (plugin hooks, see `docs/custom-plugins.md`; loaded from `<DATA_DIR>/custom/plugins/`)
+- mail: `hub/mail-lines.ts` (a mail's 할 일 / 직접 답할 것 lines as fields of their own, and the brief a reply draft's card keeps)
 - mail: `hub/mail-move.ts` (moves a stored mail to another mail app, `/api/mail/move`)
 - mailboxes (메일함): `hub/mailbox.ts` (`custom/mailboxes.json`, the placing rules `pickBox`, pins; contract `docs/mailbox.md`), `hub/routes-mailbox.ts` (`placeMail`, the card's box lookup, `/api/mailbox/move|learn|box|tone|suggest`; the web screens 메일함 설정 and 메일함 추가 are `web/js/30-mailboxes-set.js`), `hub/mailbox-cli.ts` (`fold`: per-source mail instances into mailboxes, as data)
 - mail: `hub/mail-delete.ts` (삭제하면 원본도 삭제: the source adapters behind the owner's delete, `/api/mail/delete-original`)
