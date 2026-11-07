@@ -8,21 +8,21 @@
 
 | 항목 | 기준값 | 현재값 | 확인 방법 |
 |---|---|---|---|
-| 파일 크기 | 제품 코드 800줄 이하 | 12개 초과. 최대 `extension/guard.ts` 1271, TS 400개 중 p50 121, p90 473, p99 1107 | 규칙 1. 초과 파일은 이름별 상한(다음 25 단위) |
-| 함수 크기 | 맨 바깥 함수 300줄 이하 | 12개 초과. 최대 `createOrchestrator` 999, `makeRoute` 738, `createKakaoWeb` 687 | 규칙 2 |
+| 파일 크기 | 제품 코드 800줄 이하 | 12개 초과. 최대 `web/js/30-kakao.js` 1,194, `hub/orchestrator.ts` 1,122 | 규칙 1. 초과 파일은 이름별 상한(다음 25 단위) |
+| 함수 크기 | 맨 바깥 함수 300줄 이하 | 11개 초과. 최대 `createOrchestrator` 1,012, `createKakaoWeb` 695, `createPrompts` 692 | 규칙 2 |
 | 순환 의존 | 새 순환 0 | 5묶음(레인 5개 모듈, 폴백 3개, 감시 3개, 계정 2개, 유튜브 2개) | 규칙 3 |
-| 층 경계 | 층을 넘는 import 증가 0. web은 hub를 import하지 않음 | hub→features 50, hub→onboard 7, hub→extension 2, extension→hub 12, onboard→hub 1, features→onboard 2, 기능끼리 18. web↔hub import 0 | 규칙 4 |
+| 층 경계 | 층을 넘는 import 증가 0. web은 hub를 import하지 않음 | hub→features 50, hub→onboard 6, hub→extension 2, extension→hub 12, onboard→hub 1, features→onboard 2, 기능끼리 18. web↔hub import 0 | 규칙 4 |
 | 첫 실행 층 | `firstrun/`은 hub와 onboard를 import할 수 있고, 이 층을 import하는 곳은 `hub/main.ts`, `hub/routes.ts`, `hub/routes-settings.ts`, `setup.ts`뿐. 삼킨 오류, 일반 쓰기, 제한 없는 호출은 0 | 0 | 규칙 4, 6, 7, 8 |
 | 웹 전역 이름 | 파일 사이 중복 0 | 0 (이름 약 2,500개) | 규칙 5 |
-| 삼킨 오류 | 이유 주석 없는 빈 catch와 `.catch(() => null)` 증가 0 | hub 194, web 78, features 28, extension 11, onboard 4, setup 1 | 규칙 6. catch 안에 왜 무시해도 되는지 주석을 쓰면 세지 않음 |
-| 파일 쓰기 | 다른 프로세스가 읽는 상태 파일은 `writeAtomic` | 일반 쓰기 hub 43, features 8, setup 8, extension 3, onboard 1 | 규칙 7 |
-| 시간 제한 | 외부 호출에는 제한이나 중단 신호 | 제한 없는 호출 hub 72, features 13, onboard 7, setup 5, extension 2 | 규칙 8. 웹 페이지는 제외 |
-| 시험의 시간 의존 | 고정 대기와 벽시계 예산 단언 증가 0 | 고정 대기 12, 예산 단언 파일 5 | 규칙 9 |
-| 죽은 코드 | 아무도 부르지 않는 export·웹 전역 증가 0 | export 1, 웹 전역 7 | 규칙 10, 11. 목록 이름별 |
+| 삼킨 오류 | 이유 주석 없는 빈 catch와 `.catch(() => null)` 증가 0 | hub 193, web 78, features 27, extension 11, onboard 4, setup 1 | 규칙 6. catch 안에 왜 무시해도 되는지 주석을 쓰면 세지 않음 |
+| 파일 쓰기 | 다른 프로세스가 읽는 상태 파일은 `writeAtomic` | 일반 쓰기 hub 43, features 8, setup 2, extension 3, onboard 1 | 규칙 7 |
+| 시간 제한 | 외부 호출에는 제한이나 중단 신호 | 제한 없는 호출 hub 71, features 13, onboard 7, setup 4, extension 2 | 규칙 8. 웹 페이지는 제외 |
+| 시험의 시간 의존 | 고정 대기와 벽시계 예산 단언 증가 0 | 고정 대기 8, 예산 단언 파일 1 | 규칙 9 |
+| 죽은 코드 | 아무도 부르지 않는 export·웹 전역 증가 0 | export 0, 웹 전역 0 | 규칙 10, 11. 목록 이름별 |
 | 모듈 지도 | 새 `hub/*.ts`는 `docs/ARCHITECTURE.md`에 등재 | 260개 중 151개 미등재 | 규칙 12 |
-| 같은 이름 도우미 | 사본 증가 0 | `json` 17, `readJson` 13, `git` 7, `shq` 5, `sleep` 4, `sameOrigin` 4 | 규칙 13 |
-| 복사 덩어리 | 12줄 이상 덩어리 증가 0 | 4개. jscpd(8줄 이상) 기준 중복 0.22% | 규칙 14 |
-| 프롬프트 크기 | 상한은 바이트로 고정 | `MODE.md` 29,925 / 상한 30,000 | `hub/prompt-budget.ts`와 그 시험 |
+| 같은 이름 도우미 | 사본 증가 0 | `json` 17, `readJson` 13, `git` 7, `shq` 5, `sameOrigin` 4, `sleep` 3 | 규칙 13 |
+| 복사 덩어리 | 12줄 이상 덩어리 증가 0 | 0개 | 규칙 14 |
+| 프롬프트 크기 | 상한은 바이트로 고정 | `MODE.md` 29,993 / 상한 30,000 | `hub/prompt-budget.ts`와 그 시험 |
 
 ## 측정으로 지키는 기준
 

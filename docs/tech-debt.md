@@ -133,3 +133,28 @@ Largest hub file: 1319 lines -> 795.
 - Found, not fixed in this lane (owner-visible, a behavior change): the project screen (web/js/19-project-main.js
   pmLanes/pmSessionRow) titles a lane with its key (account-switch, speed-analysis) when the lane has no `title`, and
   its second line is the lane's raw `lastText`, which is the agent's English progress text.
+
+## Cleanup round (2026-11-07)
+
+Survey on 92349c01 with `bun hub/engineering-rules.ts`, ranked by repeated work and failed attempts removed. The token and failure numbers are in docs/resource-baseline.md, section 2026-11-07.
+
+Cleaned:
+- Dead code: seven web globals (NT_RESULT, armExitGuard, fillResult, ntUnreadIn, ntWait, toolBox, unrepNo) and `stopAll` in hub/messenger.ts. armExitGuard never had a caller since it was added; histSeed makes the exit guard. Dead exports 1 -> 0, dead web globals 7 -> 0.
+- Duplication: three blocks pasted between hub/token-audit.ts and extension/token-audit.ts moved to hub/session-sources.ts; OmO's file lock moved to hub/file-lock.ts. Pasted blocks 4 -> 0, `sleep` copies 4 -> 3.
+- Ceilings that blocked lanes mid-task (20 sessions, about 10M tokens in 7 days): hub/routes.ts 1150 -> 1003 (routes-apps.ts, routes-notices.ts), makeRoute 749 -> 607, extension/guard.ts 1275 -> 1107 (guard-shell.ts), createEngine 674 -> 613 (comments/absorb.ts), hub/selfupdate.ts 1100 -> 976 (selfupdate-parse.ts), web/js/30-monitoring.js 1199 -> 975 (30-monitoring-mail.js), createAgentAdapter 475 -> 330, hub/custom.ts 925 -> 879 (custom-text.ts). All are pure moves; each ceiling followed down.
+- Ratchets: hub->onboard 7 -> 6, swallowed features 28 -> 27 and hub 194 -> 193, writes setup.ts 8 -> 2, unbounded calls hub 72 -> 71 and setup.ts 5 -> 4.
+- Test timing: fixed sleeps 12 -> 8, wall-clock budget files 5 -> 1. Waits are now on the fake hub's own post, the server's abort or a query plan. hub/release.test.ts got a 20 s budget: real git work, 2 s alone, over the default 5 s at load 19.
+
+Stays, and why:
+- hub/prompts.ts, hub/orchestrator.ts, web/js/30-kakao.js, hub/providers.ts and createOrchestrator, createPrompts, createKakaoWeb are still close to their ceilings; see the second round below.
+- Fixed sleeps 8 and budget file 1: the worker's rule was to leave those where time is the behaviour under test or the fix needs a production change; they are not yet reviewed one by one.
+- Same-name helpers `json` 17, `readJson` 13, `git` 7, `shq` 5: each validates or wraps differently, and a shared one crosses layers; no failure traces to them in 7 days.
+- Import cycles 5, unmapped modules 151: no failed attempt traces to them.
+- hub/conversations.ts `incoming` growth and `backfillNotices` at boot: fixing them is a behaviour change, so out of this round.
+- `bun test --randomize` order dependence within a file: not measured this round.
+
+Second round, after the history rewrite:
+- Re-measure with `bun hub/failure-report.ts --days 7` and the turn breakdown once a release with the worker rule is installed: single-read turns (29% of worker tokens), eval language errors, last-edit-to-end turns (23%), reports lost to `repetitive-turns`.
+- Find the full-run-only sidebar failure: keep the failure output of the next one; 112 file runs under load did not reproduce it.
+- The rest of hub/approval-wire-out.test.ts: its fourth test fails under `--rerun-each` on the old code too, probably state left by the first pass.
+- Cache busts live in the runtime bundle: raise tool calls with images (38.8% bust rate) and resumed sessions with OmO.
