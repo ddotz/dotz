@@ -19,14 +19,14 @@ const M = metrics(loadTree(join(import.meta.dir, "..")));
 const FILE_LINE_LIMIT = 800;
 const FILE_LINE_CEILINGS: Counts = {
 	"extension/guard.ts": 1125, "hub/custom.ts": 900, "hub/discord.ts": 950, "hub/kakao/web.ts": 850, "hub/messenger-agent.ts": 875,
-	"hub/orchestrator.ts": 1125, "hub/prompts.ts": 825, "hub/providers.ts": 825, "hub/routes.ts": 1150, "hub/selfupdate.ts": 1100, "web/js/30-kakao.js": 1200, "web/js/30-monitoring.js": 1200,
+	"hub/orchestrator.ts": 1125, "hub/prompts.ts": 825, "hub/providers.ts": 825, "hub/routes.ts": 1025, "hub/selfupdate.ts": 1100, "web/js/30-kakao.js": 1200, "web/js/30-monitoring.js": 1200,
 };
 // A top-level function past 300 lines hides its own seams; same cap rule (next 25 up), key is `file name`.
 const FN_LINE_LIMIT = 300;
 const FN_LINE_CEILINGS: Counts = {
 	"extension/guard.ts installGuard": 375, "hub/bgwork.ts createBgWork": 375, "hub/comments/engine.ts createEngine": 625, "hub/devices.ts createDevices": 325,
 	"hub/kakao/web.ts createKakaoWeb": 700, "hub/messenger-agent.ts createAgentAdapter": 475,
-	"hub/orchestrator.ts createOrchestrator": 1025, "hub/peer-monitor.ts createPeerMonitor": 400, "hub/prompts.ts createPrompts": 700, "hub/routes.ts makeRoute": 750,
+	"hub/orchestrator.ts createOrchestrator": 1025, "hub/peer-monitor.ts createPeerMonitor": 400, "hub/prompts.ts createPrompts": 700, "hub/routes.ts makeRoute": 625,
 	"web/js/07-board.js makeBoard": 375,
 };
 // Modules that import each other cannot be loaded, tested or replaced one by one; these are the cycles that exist today (members, sorted).
