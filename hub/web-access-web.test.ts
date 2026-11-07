@@ -149,6 +149,13 @@ describe("웹 접속 화면", () => {
 		await waitFor(v, `current === "devices"`);
 	}, 30_000);
 
+	test("an open 직접 입력 stays open when the screen redraws before the toggle event arrives", async () => {
+		const v = await open();
+		await run(v, `document.querySelector("#webaccess details[data-wa-advanced] summary").click(); renderWebAccess()`);
+		expect(await ev<boolean>(v, `document.querySelector("#webaccess details[data-wa-advanced]").open`)).toBe(true);
+		await waitFor(v, `document.querySelector('#webaccess input[name="wa-token"]')`);
+	}, 30_000);
+
 	test("switching back to Tailscale sends only the mode, with no confirm", async () => {
 		wa = { ...wa, mode: "cloudflare", hostname: "dotz.example.com", token_set: true, tunnel: { state: "running" } };
 		const v = await open();

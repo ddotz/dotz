@@ -94,6 +94,9 @@ function renderWebAccess() {
     el("div", { class: "sup", "data-wa-plain": "1", text: "Cloudflare를 거치는 내용은 Cloudflare가 평문으로 볼 수 있어요. 암호화(TLS)가 거기서 끝나기 때문이에요." })))));
   if (cf && !d.cloudflared_found) nodes.push(el("div", { class: "list" }, el("div", { class: "li" }, el("span", { class: "tx" },
     el("div", { class: "hd", text: "터널 프로그램이 없어요" }), el("div", { class: "sup dcs-err", "data-wa-cf-missing": "1", text: "채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요." })))));
+  // The toggle event arrives after a redraw can already have replaced the element, so read the live state.
+  const prev = box.querySelector("details[data-wa-advanced]");
+  if (prev) WA.advOpen = prev.open;
   const det = msAdvanced("data-wa-advanced", WA.advOpen, () => waAdvanced(d, f));
   det.addEventListener("toggle", () => { WA.advOpen = det.open; });
   nodes.push(det);
