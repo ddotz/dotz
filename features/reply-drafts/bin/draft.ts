@@ -4,11 +4,12 @@
 import { existsSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 import { replyChoiceBlock } from "../../../hub/choices.ts";
+import { loadPlugins, pluginsLoaded } from "../../../hub/plugins.ts";
 import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../../../hub/followup.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, defaultCall, dropDraft, kindOf, mailAsksFile, realRunner, refineAfterCorrection, reviseDraft, sendDraft, settleDraft, stageForReply, type FlowDeps } from "../lib/flow.ts";
-import { INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
+import { dataDir, INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
 import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
 import { canAttach } from "../lib/senders.ts";
@@ -37,10 +38,12 @@ const positionals = (args: string[]): string[] => {
 
 const nfc = (s: string) => s.normalize("NFC");
 // The pending mail draft whose files `attach` / `detach` change, or why it cannot.
-function editable(id: string | undefined): DraftRec | string {
+async function editable(id: string | undefined): Promise<DraftRec | string> {
 	const rec = id ? getDraft(id) : undefined;
 	if (!rec) return `초안 ${id ?? ""}을(를) 찾지 못했어요`;
 	if (rec.status !== "pending" || rec.kind !== "mail") return `초안 ${id}은(는) 기다리는 메일 초안이 아니라서 파일을 바꿀 수 없어요`;
+	// A plugin source says whether it sends files (senders.ts canAttach), so this process loads the plugins first as sendWith does.
+	if (!pluginsLoaded()) await loadPlugins(dataDir());
 	if (!canAttach(rec.source)) return "이 메일은 파일을 붙여 보낼 수 없어요";
 	return rec;
 }
@@ -133,7 +136,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 		// The files of a pending mail draft: the owner's card follows them (its 첨부 확인 line too), and the refreshed [ask] is printed.
 		case "attach": {
 			if (!pos[0] || !pos[1]) return { lines: [USAGE], code: 2 };
-			const rec = editable(pos[0]);
+			const rec = await editable(pos[0]);
 			if (typeof rec === "string") return { lines: [rec], code: 1 };
 			const src = await fileToAttach(rec, pos[1]);
 			if (typeof src !== "string") return { lines: [src.error], code: 1 };
@@ -146,7 +149,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 		}
 		case "detach": {
 			if (!pos[0] || !pos[1]) return { lines: [USAGE], code: 2 };
-			const rec = editable(pos[0]);
+			const rec = await editable(pos[0]);
 			if (typeof rec === "string") return { lines: [rec], code: 1 };
 			// A file still waited for (wantFiles) that will not come is taken off by its name too.
 			const wanted = (rec.wantFiles ?? []).filter(w => nfc(w.name) !== nfc(pos[1]!));
