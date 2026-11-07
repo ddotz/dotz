@@ -259,6 +259,32 @@ describe.each([[390, 844], [1280, 900]])("답장 대기 at %ipx", (width, height
 		expect(localPosts).toEqual([]);
 	});
 
+	test("a long draft fits the sheet in the window: the head stays, the body scrolls down to the attachment line", async () => {
+		const body = localNote.decision.draft.body;
+		localNote.decision.draft.body = Array.from({ length: 60 }, (_, i) => `${i + 1}번째 줄: 견적서와 일정 안내를 함께 보내 드려요.`).join("\n");
+		try {
+			const v = await boot(width, Math.min(height, 800));
+			await openQueue(v);
+			await run(v, `${rowOf("n:|dl")}.querySelector(".tx").click()`);
+			await waitFor(v, `document.querySelector(".rq-sheet .dr-files")`);
+			await waitFor(v, `!document.querySelector(".rq-sheet").getAnimations().length`);   // the sheet has slid in
+			await run(v, `document.querySelector('.rq-sheet [data-k="more"]').click()`);   // 펼치기: the whole draft
+			await waitFor(v, `!document.querySelector(".rq-sheet .rq-body.clamp")`);
+			await run(v, `const b = document.querySelector(".rq-sheet .rq-sb"); b.scrollTop = b.scrollHeight`);
+			expect(await q<number>(v, `return document.querySelector(".rq-sheet .rq-sb").scrollTop`)).toBeGreaterThan(0);
+			const g = await q<{ sheetTop: number; sheetBottom: number; vh: number; hdTop: number; attBottom: number; sbBottom: number }>(v, `const s = document.querySelector(".rq-sheet").getBoundingClientRect(), hd = document.querySelector(".rq-sheet .fs-hd").getBoundingClientRect();
+				const a = document.querySelector(".rq-sheet .dr-files").getBoundingClientRect(), sb = document.querySelector(".rq-sheet .rq-sb").getBoundingClientRect();
+				return { sheetTop: s.top, sheetBottom: s.bottom, vh: innerHeight, hdTop: hd.top, attBottom: a.bottom, sbBottom: sb.bottom };`);
+			expect(g.sheetTop).toBeGreaterThanOrEqual(0);
+			expect(g.sheetBottom).toBeLessThanOrEqual(g.vh + 1);
+			expect(g.hdTop).toBeGreaterThanOrEqual(g.sheetTop - 1);   // the title and close button did not scroll away
+			expect(g.attBottom).toBeLessThanOrEqual(g.sbBottom + 1);   // the attachment line is inside the visible body
+			await Bun.write(join(SHOTS, `replies-long-draft-${width}.png`), await v.screenshot());
+		} finally {
+			localNote.decision.draft.body = body;
+		}
+	});
+
 	test("the head stays at the top of the scroll area after 40 rows are scrolled past", async () => {
 		const v = await boot(width, height);
 		sentList = [...SENT(), ...Array.from({ length: 40 }, (_, i) => ({ key: `X${i}`, kind: "mail", app: "mail", who: `받는이 ${i}`, what: "견적 요청", at: Date.now() - (40 + i) * 60_000, how: "owner", text: "보냈어요" }))];

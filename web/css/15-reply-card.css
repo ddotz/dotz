@@ -84,7 +84,8 @@
 .rq-g .nsc-tr svg { transition: transform var(--m-fast) var(--m-ease); }
 .rq-g .nsc-tx[aria-expanded="true"] ~ .nsc-tr svg { transform: rotate(180deg); }
 .rq-r[data-kid] { padding-left: calc(var(--row-px) + var(--sp-6)); }
-.rq-sheet .rq-sb { padding: 0 var(--sp-4) var(--sp-4); }
+/* the sheet's body under its fixed head: .fs-card caps the height and clips, so a long draft scrolls here down to its 첨부 줄 */
+.rq-sheet .rq-sb { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--sp-4) var(--sp-4); }
 .rq-sheet .rq-why { margin: 0 var(--sp-05) var(--sp-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); color: var(--fg-2); }
 /* the chat's one line above the composer when 2 or more send approvals wait (10-decision-card.js dcLine) */
 .qline { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; margin: 0 0 var(--sp-2); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 400 14px/20px var(--font); text-align: left; cursor: pointer; }
