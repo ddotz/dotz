@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
 import type { Adapter, AdapterStatus, DeliverResult, OutMsg, Settings, SettingsPut, TestResult } from "./messenger.ts";
 import { SettingsError } from "./messenger.ts";
-import { toneText } from "./tone.ts";
+import type { MessageSpec } from "./message-spec.ts";
+import { specOf } from "./message-spec-derive.ts";
+import { slackBlocks } from "./spec-slack.ts";
+import { parseTone, TONE_EMOJI, toneText } from "./tone.ts";
 
 // Slack as a built-in messenger, over the Web API only: one bot token sent as a bearer header (never in a URL or a body), and one channel id
 // per message kind. Lean on purpose: no inbound (Slack needs a public request URL for events), no threads, no message edits. The token and the
@@ -69,7 +72,7 @@ const scrub = (e: unknown, token = ""): string => {
 
 type Reply = { ok: boolean; status: number; error?: string };
 
-export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: typeof fetch } = {}): Adapter {
+export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: typeof fetch; spec?: (body: string) => MessageSpec | null } = {}): Adapter {
 	const cfg = () => loadSlackConfig(dataDir);
 	const doFetch = () => opts.fetch ?? fetch;
 
@@ -98,11 +101,15 @@ export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: t
 		if (!dests.length) return { delivered: false, reason: "no channel" };
 		const shown = toneText(msg.text);
 		if (!shown) return { delivered: false, reason: "internal" };
+		const link = msg.link ? `<${msg.link.replace(/[<>|\s]/g, encodeURIComponent)}|웹에서 보기>` : "";
+		const { tone, text: body } = parseTone(msg.text);
+		const spec = (opts.spec ?? specOf)(body.trim());
+		const blocks = spec && slackBlocks(spec, { ...(tone ? { emoji: TONE_EMOJI[tone] } : {}), ...(link ? { link } : {}) });
 		const ids: string[] = [];
 		let failed: unknown;
 		for (const ch of dests) {
 			try {
-				const r = await call(s.token, "chat.postMessage", { channel: ch.id, text: msg.link ? `${shown}\n\n<${msg.link.replace(/[<>|\s]/g, encodeURIComponent)}|웹에서 보기>` : shown, unfurl_links: "false" });
+				const r = await call(s.token, "chat.postMessage", { channel: ch.id, text: link ? `${shown}\n\n${link}` : shown, ...(blocks ? { blocks } : {}), unfurl_links: "false" });
 				if (!r.reply.ok) throw new Error(`${ch.id}: ${replyError(r.reply)}`);
 				if (typeof r.json?.ts === "string") ids.push(r.json.ts);
 			} catch (e) {

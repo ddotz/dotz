@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type MessageSpec, specOfElements } from "./message-spec.ts";
 import type { Settings } from "./messenger.ts";
 import { createSlackAdapter, loadSlackConfig, saveSlackConfig, slackConfigPath } from "./messenger-slack.ts";
 
@@ -168,5 +169,35 @@ describe("slack web link", () => {
 		const { a, fake } = setup(tempDir());
 		await a.deliver({ target: "main", kind: "main", text: "x", link: "https://dotz.example.com/a|b>c d" });
 		expect(fake.calls[0]!.body.get("text")).toBe("x\n\n<https://dotz.example.com/a%7Cb%3Ec%20d|웹에서 보기>");
+	});
+});
+
+describe("slack spec answers", () => {
+	const shaped = specOfElements([{ type: "Facts", props: { rows: [{ key: "상태", value: "<@U9> 정상" }] } }, { type: "Meta", props: { text: "3초" } }]);
+	const make = (spec: (body: string) => MessageSpec | null) => {
+		const fake = slackFetch();
+		const a = createSlackAdapter(tempDir(), { fetch: fake.fetch, spec });
+		a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "C0MAIN1234" }, allow: [] });
+		return { a, fake };
+	};
+	test("blocks go beside the shown text, with the tone emoji, the web link and no marker", async () => {
+		const { a, fake } = make(() => shaped);
+		await a.deliver({ target: "main", kind: "main", text: "[done] 끝났어요", link: "https://dotz.example.com/a" });
+		const body = fake.calls[0]!.body;
+		expect(body.get("text")).toBe("✅ 끝났어요\n\n<https://dotz.example.com/a|웹에서 보기>");
+		const blocks = JSON.parse(body.get("blocks")!);
+		expect(blocks.map((b: { type: string }) => b.type)).toEqual(["section", "section", "context", "context"]);
+		expect(blocks[0].text.text).toBe("✅");
+		expect(JSON.stringify(blocks)).toContain("&lt;@U9&gt;");
+		expect(JSON.stringify(blocks)).toContain("웹에서 보기");
+		expect(JSON.stringify(blocks)).not.toMatch(/\[(?:done|run|wait|ask|fail)\]/);
+	});
+	test("no spec, or one past the block limit, sends today's payload without blocks", async () => {
+		const none = make(() => null);
+		await none.a.deliver({ target: "main", kind: "main", text: "[done] 끝" });
+		expect([...none.fake.calls[0]!.body.keys()].sort()).toEqual(["channel", "text", "unfurl_links"]);
+		const huge = make(() => specOfElements(Array.from({ length: 60 }, () => ({ type: "Rule", props: {} }))));
+		await huge.a.deliver({ target: "main", kind: "main", text: "x" });
+		expect(huge.fake.calls[0]!.body.has("blocks")).toBe(false);
 	});
 });

@@ -4,9 +4,13 @@ import { isSnowflake } from "./threads.ts";
 import { DECISION_HEAD } from "./choices.ts";
 import { dropForLine } from "./forline.ts";
 import { dropIdNote } from "./notice-ko.ts";
+import type { MessageSpec } from "./message-spec.ts";
+import { specOf } from "./message-spec-derive.ts";
+import { renderDiscord } from "./spec-discord.ts";
 import { claimWord, dropClaim, metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
+const TARGET_REF = /(?<![\w<#])(?:ch|th):(\d{17,20})\b/g;
 export const noEmoji = (s: string) => s.replace(/ ?[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]+/gu, "");
 // The body keeps the one emoji that carries a meaning of the gateway's own: the failure stripMarkers leaves behind.
 const noModelEmoji = (s: string) => s.split(TONE_EMOJI.fail).map(noEmoji).join(TONE_EMOJI.fail);
@@ -76,11 +80,23 @@ export const reference = (replyTo?: string) => (replyTo && isSnowflake(replyTo) 
 
 // Plain message text: the explicit marker becomes the one status emoji, the model's own emoji are stripped (before the
 // status emoji is added), choice blocks lose their quote prefixes and meta lines become subtext.
-function plainParts(text: string): { emoji: string; body: string } {
+function plainParts(text: string, spec: (body: string) => MessageSpec | null = specOf): { emoji: string; body: string } {
 	const { tone, text: parsed } = parseTone(dropForLine(text));
 	const bare = tone ? parsed.trimStart() : parsed, claim = claimWord(bare);
-	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noModelEmoji(metaToSubtext(plainChoice(readable(dropClaim(bare))))).trimStart() + (claim ? `\n-# ${claim}` : "") };
+	const plain = (s: string) => noModelEmoji(metaToSubtext(plainChoice(readable(s))));
+	const shaped = spec(dropClaim(bare));
+	const body = shaped ? noModelEmoji(rowRefs(renderDiscord(shaped, plain))) : plain(dropClaim(bare));
+	return { emoji: tone ? TONE_EMOJI[tone] : "", body: body.trimStart() + (claim ? `\n-# ${claim}` : "") };
 }
+
+// The internal ids a row of a spec can hold, treated as readable() treats a line of text; fences stay.
+const rowRefs = (body: string): string => {
+	let fence = false;
+	return body.split("\n").map(line => {
+		if (/^\s*```/.test(line)) fence = !fence;
+		return fence || /^\s*```/.test(line) ? line : dropIdNote(line).replace(TARGET_REF, "<#$1>");
+	}).join("\n");
+};
 
 // Discord-mobile layout the model cannot break, outside ``` fences: a "# heading" becomes a bold line, a "| table |"
 // becomes "a · b" lines (separator rows dropped), and raw ch:<id> / th:<id> targets become channel links.
@@ -113,7 +129,7 @@ export function readable(text: string): string {
 			out.push(line.trim().replace(/^\|\s*|\s*\|$/g, "").split(/\s*\|\s*/).filter(Boolean).join(" · "));
 			continue;
 		}
-		out.push(line.replace(/(?<![\w<#])(?:ch|th):(\d{17,20})\b/g, "<#$1>"));
+		out.push(line.replace(TARGET_REF, "<#$1>"));
 	}
 	return out.join("\n");
 }
@@ -122,8 +138,8 @@ export function readable(text: string): string {
 // Pure, so it is testable offline.
 // `ping` is the owner's id for a late answer: the first part pings him, through the reply reference when it has one,
 // else with a mention (the only parts that may notify anyone).
-export function buildPayloads(text: string, replyTo?: string, limit = LIMIT, ping?: string): Body[] {
-	const { emoji, body } = plainParts(text);
+export function buildPayloads(text: string, replyTo?: string, limit = LIMIT, ping?: string, spec?: (body: string) => MessageSpec | null): Body[] {
+	const { emoji, body } = plainParts(text, spec);
 	const pieces = body.trim() ? chunks(body, limit) : emoji ? [""] : [];
 	return pieces.map((piece, i) => {
 		const lead = i === 0 && emoji ? (piece ? `${emoji} ${piece}` : emoji) : piece;

@@ -29,8 +29,9 @@ cd ${sq(o.pkg)} || exit 1
 case "$*" in
 "") exec "$bun" hub/web-login-cli.ts --open ;;
 --print) exec "$bun" hub/web-login-cli.ts ;;
+last) exec "$bun" hub/dotz-last-cli.ts ;;
 *)
-	echo "사용법: dotz [--print]" >&2
+	echo "사용법: dotz [--print|last]" >&2
 	exit 2
 	;;
 esac

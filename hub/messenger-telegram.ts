@@ -1,7 +1,10 @@
 import { chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
-import { toneText } from "./tone.ts";
+import type { MessageSpec } from "./message-spec.ts";
+import { specOf } from "./message-spec-derive.ts";
+import { telegramParts } from "./spec-telegram.ts";
+import { parseTone, TONE_EMOJI, toneText } from "./tone.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 
 // Telegram as a built-in messenger, over the Bot API: long polling with getUpdates (a 5 s timer, offset kept in the config) for the owner's
@@ -73,7 +76,7 @@ type Reply = { ok: boolean; status: number; error?: string; result?: any };
 
 export type TelegramAdapter = Adapter & { pollNow(): Promise<void> };
 
-export function createTelegramAdapter(dataDir: string = DATA_DIR, opts: { fetch?: typeof fetch; pollMs?: number } = {}): TelegramAdapter {
+export function createTelegramAdapter(dataDir: string = DATA_DIR, opts: { fetch?: typeof fetch; pollMs?: number; spec?: (body: string) => MessageSpec | null } = {}): TelegramAdapter {
 	let ctx: MessengerCtx | undefined;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let stopped = true;
@@ -143,6 +146,19 @@ export function createTelegramAdapter(dataDir: string = DATA_DIR, opts: { fetch?
 		}
 	}
 
+	/** A spec answer as HTML messages, the keyboard on the last and the reply on the first. A 400 means Telegram could not parse the markup: that part goes again as plain text, once. */
+	async function sendParts(token: string, chatId: string, parts: { html: string; plain: string }[], msg: OutMsg): Promise<string[]> {
+		const ids: string[] = [];
+		for (const [i, part] of parts.entries()) {
+			const extra = { ...(i === parts.length - 1 && msg.link ? { reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: msg.link }]] } } : {}), ...(i === 0 && msg.replyTo ? { reply_to_message_id: Number(msg.replyTo) || undefined } : {}) };
+			let r = await call(token, "sendMessage", { chat_id: chatId, text: part.html, parse_mode: "HTML", ...extra });
+			if (!r.ok && r.status === 400) r = await call(token, "sendMessage", { chat_id: chatId, text: part.plain, ...extra });
+			if (!r.ok) throw new Error(`${chatId}: ${replyError(r)}`);
+			if (r.result?.message_id !== undefined) ids.push(String(r.result.message_id));
+		}
+		return ids;
+	}
+
 	async function deliver(msg: OutMsg): Promise<DeliverResult> {
 		const s = cfg();
 		if (!s.token) return { delivered: false, reason: "no token" };
@@ -152,10 +168,17 @@ export function createTelegramAdapter(dataDir: string = DATA_DIR, opts: { fetch?
 		if (!dests.length) return { delivered: false, reason: "no chat" };
 		const text = toneText(msg.text);
 		if (!text) return { delivered: false, reason: "internal" };
+		const { tone, text: body } = parseTone(msg.text);
+		const spec = (opts.spec ?? specOf)(body.trim());
+		const parts = spec ? telegramParts(spec, tone ? { emoji: TONE_EMOJI[tone] } : {}) : [];
 		const ids: string[] = [];
 		let failed: unknown;
 		for (const chat of dests) {
 			try {
+				if (parts.length) {
+					ids.push(...(await sendParts(s.token, chat.id, parts, msg)));
+					continue;
+				}
 				const r = await call(s.token, "sendMessage", { chat_id: chat.id, text, ...(msg.link ? { reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: msg.link }]] } } : {}), ...(msg.replyTo ? { reply_to_message_id: Number(msg.replyTo) || undefined } : {}) });
 				if (!r.ok) throw new Error(`${chat.id}: ${replyError(r)}`);
 				if (r.result?.message_id !== undefined) ids.push(String(r.result.message_id));

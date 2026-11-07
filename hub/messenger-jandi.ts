@@ -12,8 +12,11 @@ import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
 import { createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
 import { createSessionMark } from "./jandi-session.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
+import type { MessageSpec } from "./message-spec.ts";
+import { specOf } from "./message-spec-derive.ts";
 import { sameRoom } from "./messenger-rooms.ts";
 import { postClass } from "./notify-route.ts";
+import { renderJandi } from "./spec-jandi.ts";
 import { parkedTone, parseTone, plainChoice, stripHandoff, TONE_EMOJI } from "./tone.ts";
 
 // JANDI (on-prem, LAN) as a built-in messenger. Inbound: a JANDI Team Outgoing Webhook POSTs to /jandi/<room id> on our own listener
@@ -114,14 +117,15 @@ const targetOf = (r: JandiRoom): string | undefined => (r.kind === "main" ? "mai
 const isFinal = (m: OutMsg) => !!m.options?.length || /^\s*\[(ask|done|fail)\]/m.test(m.text);
 
 /** What JANDI shows for a post, undefined when nothing of it is for the owner. Only the answer leaves, like Discord's plain text: the status marker becomes its emoji, and JANDI has no subtext line, so a `-# ` line stays as plain text (a recipient warning lives there). Options stay in the text, each once. */
-function jandiText(msg: OutMsg): string | undefined {
+function jandiText(msg: OutMsg, spec: (body: string) => MessageSpec | null = specOf): string | undefined {
 	const raw = stripHandoff(msg.text);
 	if (msg.gatewayNote || GATEWAY_LINE.test(raw)) return undefined;
 	let fence = false;
-	const lines: string[] = [];
+	const lines: string[] = [], unmarked: string[] = [];
 	for (const line of raw.split("\n")) {
 		if (/^\s*```/.test(line)) fence = !fence;
 		else if (!fence && GATEWAY_LINE.test(line)) continue;
+		unmarked.push(line);
 		lines.push(fence ? line : line.replace(/^-# /, ""));
 	}
 	const kept = lines.join("\n");
@@ -129,7 +133,8 @@ function jandiText(msg: OutMsg): string | undefined {
 	if (shown === kept && forLines(kept)) return undefined;
 	const { tone, text } = parseTone(shown);
 	if (parkedTone(tone) && !msg.options?.length) return undefined;
-	let body = plainChoice(text).trim();
+	const shaped = spec(parseTone(dropForLine(unmarked.join("\n"))).text.trim());
+	let body = shaped ? renderJandi(shaped).trim() : plainChoice(text).trim();
 	if (!body) return msg.files?.length ? FILES_IN_WEB : tone === "fail" ? TONE_EMOJI.fail : undefined;
 	if (NO_REPLY.test(body)) return undefined;
 	if (msg.options?.length && parseChoices(body).options.length !== msg.options.length) body += `\n\n${msg.options.map(o => `${o.n}) ${o.label}`).join("\n")}`;
@@ -291,7 +296,7 @@ async function sendFiles(selfChat: SelfChat | undefined, cfg: JandiConfig, msg: 
 
 export type JandiAdapter = Adapter & { port(): number | undefined; selfChat(): SelfChat | undefined };
 
-export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
+export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: string) => MessageSpec | null): JandiAdapter {
 	let server: ReturnType<typeof Bun.serve> | undefined;
 	let selfChat: SelfChat | undefined;
 	let ctx: MessengerCtx | undefined;
@@ -550,7 +555,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 
 	async function deliver(msg: OutMsg): Promise<DeliverResult> {
 		if (msg.updateKey && !isFinal(msg)) return { delivered: false, reason: "edit" };
-		const text = jandiText(msg);
+		const text = jandiText(msg, spec);
 		if (!text) return { delivered: false, reason: "internal" };
 		const cfg = loadJandiConfig(dataDir);
 		const ready = cfg.rooms.map(room => ({ room, url: room.incoming_url || cfg.incoming_url || "" })).filter(r => r.url);

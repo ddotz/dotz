@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type MessageSpec, specOfElements } from "./message-spec.ts";
 import type { Incoming, Settings } from "./messenger.ts";
 import { createTelegramAdapter, loadTelegramConfig, saveTelegramConfig, telegramConfigPath } from "./messenger-telegram.ts";
 
@@ -192,5 +193,52 @@ describe("telegram web link", () => {
 		await a.deliver({ target: "main", kind: "main", text: "[fail] 보내지 못했어요" });
 		await a.deliver({ target: "main", kind: "main", text: "[done] 끝났어요" });
 		expect(fake.calls.map(c => (c.body as { text: string }).text)).toEqual(["❌ 보내지 못했어요", "✅ 끝났어요"]);
+	});
+});
+
+describe("telegram spec answers", () => {
+	const shaped = specOfElements([{ type: "Facts", props: { rows: [{ key: "상태", value: "<script>정상</script>" }] } }]);
+	const make = (fake: Fake, spec: (body: string) => MessageSpec | null) => {
+		const a = createTelegramAdapter(tempDir(), { fetch: fake.fetch, pollMs: 60_000, spec });
+		a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "111" }, allow: [] });
+		return a;
+	};
+	test("HTML goes with the keyboard and the reply, the tone emoji leads, nothing raw", async () => {
+		const fake = telegramFetch();
+		await make(fake, () => shaped).deliver({ target: "main", kind: "main", text: "[done] 끝", link: "https://dotz.example.com/a", replyTo: "55" });
+		expect(fake.calls).toHaveLength(1);
+		expect(fake.calls[0]!.body).toEqual({
+			chat_id: "111",
+			text: "✅ <b>상태</b>: &lt;script&gt;정상&lt;/script&gt;",
+			parse_mode: "HTML",
+			reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: "https://dotz.example.com/a" }]] },
+			reply_to_message_id: 55,
+		});
+	});
+	test("a 400 for parsing resends the plain text once with the same keyboard", async () => {
+		const calls: Call[] = [];
+		const fake: Fake = {
+			calls,
+			fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+				const body = JSON.parse(String(init?.body ?? "{}"));
+				calls.push({ method: String(input).split("/").pop() ?? "", body });
+				if (body.parse_mode) return Response.json({ ok: false, description: "Bad Request: can't parse entities" }, { status: 400 });
+				return Response.json({ ok: true, result: { message_id: 7 } });
+			}) as typeof fetch,
+		};
+		const res = await make(fake, () => shaped).deliver({ target: "main", kind: "main", text: "[done] 끝", link: "https://dotz.example.com/a" });
+		expect(res).toEqual({ delivered: true, ids: ["7"] });
+		expect(calls.map(c => c.body.parse_mode)).toEqual(["HTML", undefined]);
+		expect(calls[1]!.body.text).toBe("✅ - 상태: <script>정상</script>");
+		expect(calls[1]!.body.reply_markup).toEqual(calls[0]!.body.reply_markup);
+	});
+	test("a failure that is not a 400 is not resent, and no spec keeps today's body", async () => {
+		const bad = telegramFetch({ apiError: true });
+		const res = await make(bad, () => shaped).deliver({ target: "main", kind: "main", text: "x" });
+		expect(res.delivered).toBe(false);
+		expect(bad.calls.filter(c => c.method === "sendMessage")).toHaveLength(1);
+		const plain = telegramFetch();
+		await make(plain, () => null).deliver({ target: "main", kind: "main", text: "[done] 끝" });
+		expect(plain.calls[0]!.body).toEqual({ chat_id: "111", text: "✅ 끝" });
 	});
 });

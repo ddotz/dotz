@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { normalizeAsk } from "./ask-normalize.ts";
 import { parseChoices } from "./choices.ts";
 import { NAME } from "./config.ts";
+import { specOfElements } from "./message-spec.ts";
 import type { Incoming } from "./messenger.ts";
 import { commandOf } from "./jandi-selfchat.ts";
 import { desiredRooms } from "./messenger-rooms.ts";
@@ -445,5 +446,42 @@ describe("self-chat keyword", () => {
 		expect(commandOf("곰돌들 다 어디 갔어", "곰돌")).toBeUndefined();
 		expect(commandOf("곰돌아", "곰돌")).toBeUndefined();
 		expect(commandOf("dotzz 안녕", "dotz")).toBeUndefined();
+	});
+});
+
+describe("spec answers", () => {
+	const sent: Captured[] = [];
+	let server: ReturnType<typeof Bun.serve>;
+	let d: string;
+	let a: JandiAdapter;
+	beforeAll(async () => {
+		d = mkdtempSync(join(tmpdir(), "jandi-spec-"));
+		server = Bun.serve({
+			port: 0,
+			hostname: "127.0.0.1",
+			async fetch(req) {
+				sent.push({ path: new URL(req.url).pathname, headers: req.headers, body: await req.json() });
+				return new Response("{}");
+			},
+		});
+		saveJandiConfig({ enabled: true, listen: { host: "127.0.0.1", port: 0 }, allow_emails: [], rooms: [{ id: "m1", name: "메인", kind: "main", outgoing_token: "t", incoming_url: `http://127.0.0.1:${server.port}/in/m1` }] }, d);
+		a = createJandiAdapter(d, body => (body.includes("표") ? specOfElements([{ type: "Facts", props: { rows: [{ key: "상태", value: "<@1> 정상" }] } }, { type: "Meta", props: { text: "3초" } }]) : null));
+		await a.start({ receive: () => {}, log: () => {} });
+	});
+	afterAll(async () => {
+		await a.stop();
+		server.stop(true);
+		rmSync(d, { recursive: true, force: true });
+	});
+	test("a spec answer is plain lines under the tone emoji, and the web link keeps its card", async () => {
+		sent.length = 0;
+		await a.deliver({ kind: "main", target: "main", text: "[done] 표 있어요\n\n-# 3초", link: "https://dotz.example.com/a" });
+		expect(sent[0]!.body).toEqual({ body: "✅ 상태: <@1> 정상\n\n3초", connectInfo: [{ title: "웹에서 보기", description: "https://dotz.example.com/a" }] });
+		expect(JSON.stringify(sent[0]!.body)).not.toMatch(/\[(?:done|run|wait|ask|fail)\]/);
+	});
+	test("an answer with no spec stays today's text", async () => {
+		sent.length = 0;
+		await a.deliver({ kind: "main", target: "main", text: "[done] 그냥 글" });
+		expect(sent[0]!.body).toEqual({ body: "✅ 그냥 글" });
 	});
 });
