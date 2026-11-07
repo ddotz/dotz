@@ -196,6 +196,14 @@ describe("메신저 설정", () => {
 		expect(puts).toEqual([{ notify: { news: false } }]);
 	}, 30_000);
 
+	test("an open 직접 입력 stays open when the screen redraws before the toggle event arrives", async () => {
+		const v = await open(1280, 800, "light", "slack");
+		await waitFor(v, `document.querySelector("#slack details[data-ms-advanced] summary")`);
+		await run(v, `document.querySelector("#slack details[data-ms-advanced] summary").click(); renderMessenger("slack")`);
+		expect(await ev<boolean>(v, `document.querySelector("#slack details[data-ms-advanced]").open`)).toBe(true);
+		await waitFor(v, `document.querySelector('#slack input[name="ms-token"]')`);
+	}, 30_000);
+
 	test("typing a token in 직접 입력 sends only that value, and the field is emptied after the save", async () => {
 		const v = await open(390, 844, "light", "slack");
 		await waitFor(v, `document.querySelector("#slack details[data-ms-advanced] summary")`);

@@ -131,7 +131,8 @@ function msAdvanced(attr, open, body) {
   const d = el("details", { class: "ms-adv", [attr]: "1", ...(open ? { open: true } : {}) }, el("summary", { class: "ms-adv-sum", text: "직접 입력" }), box);
   let built = false;
   const fill = () => { if (!built) { built = true; box.append(body()); } };
-  d.addEventListener("toggle", () => { d.dataset.open = d.open ? "1" : ""; if (d.open) fill(); });
+  // A redraw can replace this element before its toggle event arrives; filling it then would pull shared inputs (the Discord form) out of the new one.
+  d.addEventListener("toggle", () => { d.dataset.open = d.open ? "1" : ""; if (d.open && d.isConnected) fill(); });
   d.dataset.open = open ? "1" : "";
   if (open) fill();
   return d;

@@ -215,6 +215,9 @@ function renderMessenger(id) {
   nodes.push(el("div", { class: "list" }, el("div", { class: "li", "data-ms-test-row": "1" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "연결 확인" }),
     p.test ? el("div", { class: "dcs-res" }, ...(p.test.length ? p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })) : [el("div", { class: "sup", text: "방이 없어요" })])) : null),
   liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "확인" })))));
+  // The toggle event arrives after a redraw can already have replaced the element, so read the live state.
+  const prev = box.querySelector("details[data-ms-advanced]");
+  if (prev) p.advOpen = prev.open;
   nodes.push(msAdvanced("data-ms-advanced", p.advOpen, () => msAdvancedBody(p, s)));
   const det = nodes[nodes.length - 1];
   det.addEventListener("toggle", () => { p.advOpen = det.open; });

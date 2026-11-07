@@ -166,6 +166,15 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		expect(restarts).toEqual([{}]);
 	}, 60_000);
 
+	test("an open 직접 입력 stays open when the screen redraws before the toggle event arrives", async () => {
+		const v = await settings(width, height);
+		await openScreen(v);
+		await waitForView(v, `document.querySelector("#discord details[data-ms-advanced] summary")`);
+		await run(v, `document.querySelector("#discord details[data-ms-advanced] summary").click(); renderDiscord()`);
+		expect(await q<boolean>(v, `document.querySelector("#discord details[data-ms-advanced]").open`)).toBe(true);
+		await waitForView(v, `document.querySelector("#discord input[name=discord-guild]")`);
+	}, 30_000);
+
 	test("not configured: the row and screen say 설정 안 됨, and 연결 starts onboarding", async () => {
 		reset(false);
 		const v = await settings(width, height);
