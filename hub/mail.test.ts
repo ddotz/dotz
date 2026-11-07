@@ -109,14 +109,14 @@ describe("moveMail", () => {
 	test("a mail filed under the wrong app moves with its body and files, the old key is gone and stays gone", async () => {
 		const { deps } = fakes(false);
 		const id = uid("mv");
-		const first = await postMail({ source: "general", id, messageId: "m1", subject: "파트 전체본 공유", from: "Kim <kim@example.com>", html: "<p>전체본 부탁드립니다</p>", attachments: [{ name: "a.txt", data: Buffer.from("hi").toString("base64") }] }, deps);
+		const first = await postMail({ source: "general", id, messageId: "m1", subject: "파트 문서 공유", from: "Kim <kim@example.com>", html: "<p>문서 부탁드립니다</p>", attachments: [{ name: "a.txt", data: Buffer.from("hi").toString("base64") }] }, deps);
 		const moved = await moveMail(first.key, "score", deps);
 		expect(moved.key).toBe(mailKey("score", id));
 		expect(mailByKey(first.key)).toBeUndefined();
-		expect(mailByKey(moved.key)).toMatchObject({ source: "score", subject: "파트 전체본 공유", msg: "m1" });
+		expect(mailByKey(moved.key)).toMatchObject({ source: "score", subject: "파트 문서 공유", msg: "m1" });
 		expect(mailByKey(moved.key)!.attachments!.map(a => a.name)).toEqual(["a.txt"]);
-		expect(storedBodyText(moved.key)).toContain("전체본 부탁드립니다");
-		expect(await postMail({ source: "general", id, messageId: "m1", subject: "파트 전체본 공유" }, deps)).toMatchObject({ skipped: true });
+		expect(storedBodyText(moved.key)).toContain("문서 부탁드립니다");
+		expect(await postMail({ source: "general", id, messageId: "m1", subject: "파트 문서 공유" }, deps)).toMatchObject({ skipped: true });
 	});
 
 	test("a moved mail keeps its to-do and direct-answer lines", async () => {

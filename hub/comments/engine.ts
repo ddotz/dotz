@@ -13,8 +13,8 @@ import { createPastRefresh, type PastDeps, storedPairs } from "./past-refresh.ts
 
 // The mail that rides on a comment reply (hub/comments/mail-link.ts is the real one): written with the draft, shown in the same card, sent right
 // after the reply is posted, revised or dropped with it.
-// `library: "mr"`: only audio (MR) files of one song are taken from the library (a narrowed request); see hub/mail-cli.ts composeMail.
-export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; library?: "mr" };
+// `request`: the writer's own words, for the install's narrow rule (hub/auto-attach.ts; see hub/mail-cli.ts composeMail).
+export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; request?: string };
 export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number }[]; asksFile?: boolean; libraryMiss?: boolean; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
 /** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
 export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string };
@@ -77,7 +77,6 @@ const RECHECK_EVERY_MS = 30 * 60_000;
 export const MAIL_KEPT_NOTE = "확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요";
 export const MAIL_NO_APP_NOTE = "확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요";
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
-const ASKED = /요청함/;
 const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/;
 /** The linked mail of a comment as the item shows it: 메일 초안 작성됨 / 메일 보냄 / 메일 실패: <이유>. */
 export type MailMark = { state: "drafted" | "sent" | "failed"; label: string };
@@ -258,8 +257,7 @@ export function createEngine(deps: EngineDeps) {
 				subject: title ? `${title} 자료 보내드립니다` : "요청하신 자료 보내드립니다",
 				body: (await deps.mail.write?.({ app: src.mailApp, to, author: c.author, text: c.text, postTitle: title }).catch(e => (addNote(`확인: 메일 본문을 쓰지 못해 기본 문구로 했어요 - ${e instanceof Error && e.message ? clip(e.message, 160) : "알 수 없는 이유"}`), undefined)))?.trim() || `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
 				fromLibrary: clip(`${title} ${c.text.replace(to, " ")}`, 200),
-				// A writer who says he asked the score already has it: only the MR is attached (the owner's rule; 전체본 goes by hand only).
-				...(ASKED.test(c.text) ? { library: "mr" as const } : {}),
+				request: c.text,
 			}).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" }));
 			if (!made.ok) {
 				addNote(`확인: 메일 초안을 만들지 못했어요 - ${made.reason}`);

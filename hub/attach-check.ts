@@ -1,7 +1,10 @@
 // Does what a mail draft says it sends match the files on it? The check behind the send gate (features/reply-drafts/lib/flow.ts sendDraft) and the card's
-// `첨부 확인` line. Plain code over the draft's words and file names: no model, no fs, no config, so it runs on every card read and right before every send.
+// `첨부 확인` line. Plain code over the draft's words and file names, no model, so it runs on every card read and right before every send; the only config is the
+// install's own file words (hub/auto-attach.ts).
 // It knows kinds of files, never particular ones: a draft that promises a file and has none, promises a kind it does not carry, carries a kind nobody
 // promised or asked for, carries files the draft has nothing to do with, or carries several cuts of one file.
+import { withFileWords } from "./auto-attach.ts";
+
 export type AttachIssueKind = "missing" | "partial" | "extra" | "unrelated" | "variants";
 export type AttachIssue = { kind: AttachIssueKind; text: string };
 export type AttachCheck = { subject?: string; body: string; files: readonly string[]; /** What the draft answers; a kind asked for here is not "extra". Absent for a new mail. */ request?: string };
@@ -16,23 +19,28 @@ const KIND_EXT: [FileKind, RegExp][] = [
 ];
 const KIND_WORD: [FileKind, RegExp][] = [
 	["audio", /(?:^|[^a-z])(?:mr|mp3|wav)(?:[^a-z]|$)|음원|음원|녹음\s*파일/i],
-	["document", /문서|보고서|전체본|pdf|문서|서류|견적서|청구서|계약서|제안서|보고서|이력서|양식|서식|신청서|스캔본/i],
+	["document", /문서|보고서|pdf|문서|서류|견적서|청구서|계약서|제안서|보고서|이력서|양식|서식|신청서|스캔본/i],
 	["image", /사진|이미지/],
 	["video", /영상\s*파일|동영상/],
 ];
-const FILE_WORD = new RegExp(`${KIND_WORD.map(([, re]) => re.source).join("|")}|파일|자료|첨부`, "i");
+const NOISE_WORDS = "문서|문서집|보고서|파일|자료|문서|부분|전체|공유|공유용|회의|독서|정기|정기회의|회의실|보조|요약|버전|ver|mr|full|pdf|mp3|wav";
+// The built-in words plus the install's own, which name a document.
+const words = withFileWords(extra => {
+	const kinds = KIND_WORD.map(([k, re]): [FileKind, RegExp] => [k, k === "document" ? new RegExp(`${re.source}${extra}`, re.flags) : re]);
+	const any = kinds.map(([, re]) => re.source).join("|");
+	return { kinds, file: new RegExp(`${any}|파일|자료|첨부`, "i"), kind: new RegExp(any, "gi"), noise: new RegExp(`^(?:${NOISE_WORDS}${extra})$`, "i") };
+});
 // A promise made now. "보내드리겠습니다" counts unless it waits on the reader ("곡을 알려 주시면 보내드리겠습니다"); "보내드린 문서는 ..." only refers back.
 const SEND_NOW = /보내\s*드(?:립니다|려요|릴게요|릴께요|리겠습니다)|보냅니다|보낼게요|첨부\s*(?:합니다|해요|드립니다|드려요|드릴게요|해\s*드립니다|해\s*드려요|해\s*드릴게요)|\b(?:attached|attaching|I'm sending|I am sending)\b/i;
 const NOT_NOW = /(?:주시|하시|보시|되시|으시|시|으)면\s|못\s*보내|보내\s*(?:드리지|지)\s*못|보내\s*드릴 수 없|보낼 수 없|첨부\s*(?:파일)?\s*(?:은|는|이|가)?\s*(?:없|못|불가)|첨부(?:하지|할 수 없)|\bnot\s+attach|\bno\s+attach|판매/i;
 const sentences = (text: string): string[] => text.split(/\n+|(?<=[.!?。])\s+/).map(s => s.trim()).filter(Boolean);
-const promises = (text: string): string[] => sentences(text).filter(s => SEND_NOW.test(s) && FILE_WORD.test(s) && !NOT_NOW.test(s));
-const kindsIn = (text: string): Set<FileKind> => new Set(KIND_WORD.filter(([, re]) => re.test(text)).map(([k]) => k));
+const promises = (text: string): string[] => sentences(text).filter(s => SEND_NOW.test(s) && words().file.test(s) && !NOT_NOW.test(s));
+const kindsIn = (text: string): Set<FileKind> => new Set(words().kinds.filter(([, re]) => re.test(text)).map(([k]) => k));
 const kindOf = (name: string): FileKind | undefined => KIND_EXT.find(([, re]) => re.test(name))?.[0];
 const labels = (kinds: Iterable<FileKind>) => [...kinds].map(k => KIND_LABEL[k]).join("·");
 
 // The words that say which kind of file, not which work: a mail's "MR" or "문서" matches every file of that kind in a library.
-const KIND_WORDS = new RegExp(KIND_WORD.map(([, re]) => re.source).join("|"), "gi");
-export const withoutKindWords = (text: string): string => text.replace(KIND_WORDS, " ");
+export const withoutKindWords = (text: string): string => text.replace(words().kind, " ");
 
 // What the received mail itself asks for: sentences that ask, above any quote of an earlier mail. "문서를 구입했어요. MR 부탁드립니다" asks for the audio alone.
 const ASKED = /부탁|주세요|주시|요청|신청|받을 수|받고 싶|\b(?:please|could you|can you)\b/i;
@@ -45,8 +53,10 @@ const partsIn = (text: string): string[] => [...new Set([...text.matchAll(PART)]
 
 const norm = (s: string) => s.normalize("NFC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 // Words that say "a file" or how it was marked: they tie a file to nothing.
-const NOISE = /^(?:문서|문서집|보고서|전체본|파일|자료|문서|부분|전체|공유|공유용|회의|독서|정기|정기회의|회의실|보조|요약|버전|ver|mr|full|pdf|mp3|wav)$/i;
-const nameWords = (name: string): string[] => name.normalize("NFC").replace(/\.[^.]+$/, "").replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/([가-힣])([A-Za-z])|([A-Za-z])([가-힣])/g, "$1$3 $2$4").split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 2 && !NOISE.test(w));
+const nameWords = (name: string): string[] => {
+	const { noise } = words();
+	return name.normalize("NFC").replace(/\.[^.]+$/, "").replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/([가-힣])([A-Za-z])|([A-Za-z])([가-힣])/g, "$1$3 $2$4").split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 2 && !noise.test(w));
+};
 /** A Korean word carries particles ("달빛정원을", "나나미의"): the word, or the word without its last one or two letters. */
 export function wordVariants(word: string): string[] {
 	const v = [word];

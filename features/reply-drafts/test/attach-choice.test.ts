@@ -222,13 +222,13 @@ describe("(f) a file that is slow to download is not lost", () => {
 });
 
 describe("(g) phrases that ask for or promise a file", () => {
-	test.each(["문서 요청드립니다", "문서 신청해요", "보고서 받을 수 있을까요", "문서집 받고 싶어요", "전체본 부탁드립니다", "MR 부탁드립니다", "음원 보내주세요"])("%s asks for a file", t => {
+	test.each(["문서 요청드립니다", "문서 신청해요", "보고서 받을 수 있을까요", "문서집 받고 싶어요", "MR 부탁드립니다", "음원 보내주세요"])("%s asks for a file", t => {
 		expect(asksForFile(t)).toBe(true);
 	});
 	test.each(["Mr. Kim 잘 부탁드립니다", "회의 신청해요", "안녕하세요 감사합니다"])("%s does not", t => {
 		expect(asksForFile(t)).toBe(false);
 	});
-	test.each(["보고서 보내드립니다", "MR 보내드립니다", "전체본를 보내드릴게요", "문서집 보내드립니다"])("%s is a claim", t => {
+	test.each(["보고서 보내드립니다", "MR 보내드립니다", "문서집 보내드립니다"])("%s is a claim", t => {
 		expect(claimsAttachment(t)).toBe(true);
 	});
 });

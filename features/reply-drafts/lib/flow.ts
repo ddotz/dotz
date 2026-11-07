@@ -5,6 +5,7 @@ import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimHolder, claimSend } from "../../../hub/draft-claim.ts";
 import { attachIssues, ownWords, withoutKindWords } from "../../../hub/attach-check.ts";
+import { withFileWords } from "../../../hub/auto-attach.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
@@ -155,12 +156,12 @@ const FILE_WORD = /파일|첨부|문서|attach|file/i;
 const CANNOT = /못|없|불가|can'?not|can'?t|unable|not able|no access|don'?t have|do not have/i;
 export const claimsNoFile = (q: string): boolean => FILE_WORD.test(q) && CANNOT.test(q);
 // The owner's change is about the files of the draft (not its wording): the model then chooses the files again.
-const FILE_CHANGE = new RegExp(`${FILE_WORD.source}|보고서|전체본|음원|자료|사진|음원|\\bmr\\b`, "i");
+const fileChange = withFileWords(extra => new RegExp(`${FILE_WORD.source}|보고서|음원|자료|사진|음원|\\bmr\\b${extra}`, "i"));
 type Revision = { /** Library files offered besides those on the draft. */ lib: LibraryFile[]; /** Names the model may choose from: the files on the draft, then the library matches. */ names: string[] };
 
 // Candidates for a revision whose change is about files: the files on the draft plus the library matches for the change.
 async function revisionCandidates(old: DraftRec, change: string): Promise<Revision | undefined> {
-	if (old.kind !== "mail" || !canAttach(old.source) || !FILE_CHANGE.test(change)) return undefined;
+	if (old.kind !== "mail" || !canAttach(old.source) || !fileChange().test(change)) return undefined;
 	const folder = await attachFolder(old.ref);
 	if (!folder) return undefined;
 	const held = stagedFiles(old.id).map(f => f.name);

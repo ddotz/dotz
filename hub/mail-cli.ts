@@ -21,6 +21,7 @@ import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../featur
 import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
 import { dataDir, loadSettings, loadStyle, validApp } from "../features/reply-drafts/lib/settings.ts";
 import { addDraft, getDraft, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { autoAttach } from "./auto-attach.ts";
 
 export type MailCliDeps = FlowDeps & { hub?: HubLike };
 type Out = { lines: string[]; code: number; notes?: string[] };
@@ -70,9 +71,8 @@ function originOf(spec: string | undefined): DraftRec["origin"] | { error: strin
 	return { kind, id, text: kind === "mail" ? "메일 답장에 이어서" : "카카오톡 메시지에 이어서" };
 }
 
-const AUDIO = /\.(mp3|wav|m4a|aac|flac|ogg)$/i;
-const HELD_FILES = /전체본|score|보조 자료|보조 자료/i;
-export type ComposeInput = { app: string; to: string[]; subject: string; body: string; attach?: string[]; fromLibrary?: string; /** "mr": only audio files of one song, else nothing and a 확인 필요 note (a narrowed request). */ library?: "mr"; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
+const NARROW_MIN_SCORE = 2;
+export type ComposeInput = { app: string; to: string[]; subject: string; body: string; attach?: string[]; fromLibrary?: string; /** What the writer asked in his own words: the install's narrow rule (hub/auto-attach.ts) reads it. */ request?: string; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
 export type Composed = { ok: true; rec: DraftRec; notes: string[] } | { ok: false; error: string; code: number };
 
 // A new mail draft: stages the files, lints, records it as pending and (unless `notify` is false) tells the gateway. Sends nothing.
@@ -92,23 +92,27 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	if (keywords) {
 		const folder = loadSettings().attachFolders?.[app];
 		if (!folder) return fail(`${app}에 첨부 파일 폴더가 정해져 있지 않아요 (설정 > 첨부 파일 폴더)`);
-		// Held sheets (전체본, Score, 보조 자료) are never picked by keywords: they go by hand only, attached by hand. Audio is fine.
-		const ranked = rankLibrary(listLibrary(folder), { subject: keywords, text: keywords }).filter(r => r.score > 0 && (AUDIO.test(r.file.rel) || !HELD_FILES.test(r.file.rel)));
+		const rules = autoAttach();
+		if (rules.error) notes.push(`확인: auto-attach.json을 쓸 수 없어 첨부는 비워 뒀어요 - ${rules.error}`);
+		// The install's withheld files are never picked by keywords; they are attached by hand.
+		const ranked = rules.error ? [] : rankLibrary(listLibrary(folder), { subject: keywords, text: keywords }).filter(r => r.score > 0 && !rules.withhold.some(re => re.test(r.file.rel.normalize("NFC"))));
 		// Only the best-scoring files, and only when the best is a real match: three different songs on one mail were never asked for.
 		const top = ranked[0]?.score ?? 0;
 		let found = top >= MIN_SCORE ? ranked.filter(r => r.score === top).slice(0, LIBRARY_PICK_MAX) : [];
-		if (i.library === "mr") {
-			// A narrowed request gets the MR of the one song he names; a weak match or MR files of several songs is a guess, so nothing is attached.
-			const mr = ranked.filter(r => AUDIO.test(r.file.rel));
-			const mrTop = mr[0]?.score ?? 0;
-			const best = mr.filter(r => r.score === mrTop);
-			found = mrTop >= 2 && new Set(best.map(r => r.file.rel.split("/")[0])).size === 1 ? best.slice(0, LIBRARY_PICK_MAX) : [];
-			if (!found.length) notes.push("확인 필요: 정해 둔 요청이라 MR만 붙이는데, 맞는 MR을 확실히 찾지 못했어요. 첨부는 비워 뒀어요");
+		const request = i.request?.toLowerCase();
+		const narrow = request === undefined ? undefined : rules.narrow?.when.some(w => request.includes(w)) ? rules.narrow : undefined;
+		if (narrow) {
+			// Only the files of the one work he names; a weak match or files of several works is a guess, so nothing is attached.
+			const only = ranked.filter(r => narrow.only.test(r.file.rel.normalize("NFC")));
+			const onlyTop = only[0]?.score ?? 0;
+			const best = only.filter(r => r.score === onlyTop);
+			found = onlyTop >= NARROW_MIN_SCORE && new Set(best.map(r => r.file.rel.split("/")[0])).size === 1 ? best.slice(0, LIBRARY_PICK_MAX) : [];
+			if (!found.length) notes.push(narrow.note ?? "확인 필요: 이 요청에 맞는 파일을 확실히 찾지 못했어요. 첨부는 비워 뒀어요");
 		}
 		for (const r of found) if (!paths.includes(r.file.path)) paths.push(r.file.path);
-		if (!found.length) {
+		if (!found.length && !rules.error) {
 			libraryMiss = true;
-			if (i.library !== "mr") notes.push(`확인: 첨부 파일 폴더에서 '${keywords}'에 맞는 파일을 찾지 못했어요`);
+			if (!narrow) notes.push(`확인: 첨부 파일 폴더에서 '${keywords}'에 맞는 파일을 찾지 못했어요`);
 		}
 	}
 	if (paths.length > STAGED_MAX) return fail(`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`);

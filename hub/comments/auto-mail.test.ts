@@ -87,7 +87,6 @@ describe("autoMail", () => {
 		const text = commentAsk(t.source, t.engine.store.comments()[0]!, d, undefined, t.engine.mailView(d));
 		expect(text).toContain("메일 초안 작성됨");
 		expect(text).toContain("> 첨부: score.pdf");
-		expect(t.mail.specs[0]!.library).toBeUndefined();
 	});
 
 	test("write: its text is the mail body; undefined, empty or a throw keep the fixed text", async () => {
@@ -107,10 +106,11 @@ describe("autoMail", () => {
 		expect(await bodyWith(async () => { throw new Error("model down"); })).toBe(fixed);
 	});
 
-	test("a writer who says he asked it gets the MR only (library: mr)", async () => {
-		const t = setup({ source: { autoMail: true, mailApp: "mail" }, text: "문서 요청했는데 MR도 보내주세요 Fan@Example.com" });
+	test("the comment's own words go with the spec, for the install's narrowing rule", async () => {
+		const text = "자료 받고 싶어요 보내주세요 Fan@Example.com";
+		const t = setup({ source: { autoMail: true, mailApp: "mail" }, text });
 		await t.engine.collect({ force: true });
-		expect(t.mail.specs[0]).toMatchObject({ library: "mr" });
+		expect(t.mail.specs[0]).toMatchObject({ request: text });
 	});
 
 	test("library miss: the card gets a 확인 line", async () => {
