@@ -5,6 +5,7 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
 import { recordCorrection } from "./corrections.ts";
+import { recipeAnswer } from "./recipes.ts";
 import { askedText, emit, emitDelivery, onEmit } from "./events.ts";
 import { attachmentLine, attachmentLines, type Upload } from "./files.ts";
 import { pickedLines, type Picked } from "./picked.ts";
@@ -187,6 +188,8 @@ export function flush(target: string): void {
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
 	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
+	const recipe = b.events.length === 1 && !head.attachments?.length ? recipeAnswer(String(head.text ?? "")) : undefined;
+	if (recipe) return void out(target, recipe, b.replyTo, { source: "gateway" }).catch(e => log(`recipe reply failed: ${e}`));
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
 	const was = convs.stateOf(target);

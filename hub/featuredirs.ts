@@ -167,6 +167,27 @@ export function loadFeatureDirs(dataDir: string, warn?: (msg: string) => void): 
 	return { features: [...byId.values()].sort((a, b) => a.id.localeCompare(b.id)), skipped: [...skipped.values()] };
 }
 
+// Saved recipes (hub/recipes.ts) cost one line each in the prompt, newest first and bounded; the steps stay in the file, read when the work matches.
+const RECIPE_LINES_MAX = 700;
+export const recipesDir = (dataDir: string) => join(dataDir, "custom", "recipes");
+function recipeIndex(dataDir: string): string {
+	const dir = recipesDir(dataDir);
+	if (!existsSync(dir)) return "";
+	const files = readdirSync(dir).map(id => ({ id, file: join(dir, id, "recipe.md") })).filter(r => existsSync(r.file)).map(r => ({ ...r, at: statSync(r.file).mtimeMs })).toSorted((a, b) => b.at - a.at);
+	const lines: string[] = [];
+	let room = RECIPE_LINES_MAX;
+	for (const { id, file } of files) {
+		const p = parse(readFileSync(file, "utf8"));
+		const line = `- ${[id, ...(typeof p === "string" ? [] : [p.meta.name, p.meta.when])].filter(Boolean).join(": ")}`;
+		if (line.length + 1 > room) break;
+		room -= line.length + 1;
+		lines.push(line);
+	}
+	if (!files.length) return "";
+	const more = files.length - lines.length;
+	return `## Saved recipes (${dir}/<id>/recipe.md, read it when the work matches, before working it out again; nothing here starts by itself)\n${lines.join("\n")}${more ? `\n+${more} more: ls that folder` : ""}`;
+}
+
 const CAP = 12_000;
 // Enabled bodies for one audience, one heading per feature, cut like the RULES.md block (marker names where to read the rest).
 export function featurePrompt(dataDir: string, role: "orchestrator" | "lanes", warn?: (msg: string) => void, max = CAP): string {
@@ -175,10 +196,11 @@ export function featurePrompt(dataDir: string, role: "orchestrator" | "lanes", w
 	// Off features cost one line each, so a request like "connect X" finds its setup without the full body in every prompt.
 	const off = role === "orchestrator" ? all.filter(f => !f.enabled && f.setup) : [];
 	const offText = off.length ? `\n\nOff until the owner asks (then run the setup; it is the whole onboarding):\n${off.map(f => `- ${f.name}: ${f.what} Setup: ${f.setup}`).join("\n")}` : "";
-	if (!mine.length && !offText) return "";
+	const recipes = recipeIndex(dataDir);
+	if (!mine.length && !offText) return recipes;
 	const text = mine.map(f => `### ${f.name} (${f.file}${f.appliesTo === "workers" ? "; pass this to your task workers in their briefs" : ""})\n${f.body}`).join("\n\n");
 	const body = (text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; read the feature.md named in each heading for the rest]` : text) + offText;
-	return `## Features (shipped ones from ${SHIPPED_ROOT}, the owner's own from ${featuresRoot(dataDir)}; same weight as the owner rules above)\n\n${body.trim()}`;
+	return `## Features (shipped ones from ${SHIPPED_ROOT}, the owner's own from ${featuresRoot(dataDir)}; same weight as the owner rules above)\n\n${body.trim()}${recipes ? `\n\n${recipes}` : ""}`;
 }
 
 // Same matching as the RULES.md "- deny:" lines (case-insensitive regex on the whole command).

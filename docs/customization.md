@@ -25,6 +25,7 @@ writing files in the data folder. The repo is never forked, and no gateway resta
   cards/<id>/card.json         a card as a folder ...
   cards/<id>/render.js         ... with an optional render script
   apps/<id>/app.json           a whole app of the owner's own (docs/custom-apps.md)
+  recipes/<id>/recipe.md       a saved recipe, with its script if it has one (see Recipes)
   pins.json                    sidebar: projects, routines, links
 ```
 
@@ -197,6 +198,20 @@ All routes sit behind the same auth as every other `/api` route.
 - `POST /api/custom/routine {id}` runs a routine now.
 
 구성 lists every card, routine and the pins file under the form `웹 맞춤`.
+
+## Recipes
+
+Work that went well can be kept so it is not worked out again. The nightly reflection looks at sessions of the last 7 days that
+passed the gateway's check: the same task shape at least twice, else one costly session (a session file of 20 MB or more). A night
+with no such candidate, or with a card still open, adds nothing to the turn. With one, the turn drafts the steps and posts one
+card: 레시피 저장 or 레시피 건너뛰기.
+
+The gateway settles the answer with no model turn. Until a save, the draft stays in `recipe-choices.json`. A save writes
+`recipes/<id>/recipe.md` (frontmatter `name` and `when`, then the steps) and the script next to it. A skip is remembered: the same
+shape is never proposed again, even from new work. A candidate passed over or a card left unanswered may return after 30 days.
+
+Every session prompt lists saved recipes in one line each (id, name, when), at most 700 characters, and the steps are read from the
+file only when the work matches. A recipe never runs by itself and no watch comes with it. Delete the folder to drop one.
 
 ## Surviving updates
 

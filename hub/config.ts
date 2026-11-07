@@ -321,6 +321,7 @@ export const paths = {
 	lessons: join(DATA_DIR, "LESSONS.md"),
 	corrections: join(DATA_DIR, "corrections.jsonl"),
 	repeatAlerts: join(DATA_DIR, "repeat-alerts.json"),
+	recipeChoices: join(DATA_DIR, "recipe-choices.json"),
 	// Owner memory (modeled on the earlier secretary's human card / boundaries / observations): owner.md and boundaries.md go into the
 	// orchestrator's start prompt, observations.md only into the nightly reflection.
 	memory: join(DATA_DIR, "memory"),

@@ -333,14 +333,14 @@ export function lessonScore(lesson: string, correction: string): number {
 const PLAIN = new Set(["이상", "그대", "그리고", "근데", "그래서", "전반적", "제대로", "수정", "구현", "개선", "확인", "처리", "기능", "부분", "문제", "해야", "되네", "하자", "해놔", "해줘", "해봐"]);
 const plainWord = (w: string): boolean => PLAIN.has(w) || CORRECTION.test(w);
 // Two messages make the same complaint when they share two or more meaning words, 0.4 or more of the shorter one's, and not only plain words.
-function sameComplaint(a: readonly string[], b: readonly string[]): boolean {
+export function sameComplaint(a: readonly string[], b: readonly string[]): boolean {
 	const [small, big] = a.length <= b.length ? [a, b] : [b, a];
 	const hit = small.filter(w => big.some(s => sameWord(w, s)));
 	return hit.length >= 2 && hit.length / small.length >= LIKELY && !hit.every(plainWord);
 }
 /** The largest group of entries (oldest first) that all make the same complaint as each other: every pair must match, so a message that touches
  *  two others cannot chain them. Two different complaints in a topic stay two groups. */
-export function repeatCluster(entries: readonly Correction[]): Correction[] {
+export function repeatCluster<T extends { text: string }>(entries: readonly T[]): T[] {
 	const words = entries.map(e => meaningWords(e.text.slice(0, SCAN_CHARS)));
 	const near = words.map(() => new Set<number>());
 	for (let i = 0; i < words.length; i++) {
@@ -400,14 +400,14 @@ function lessonBlock(now: number): string {
 	return msg().lessonCandidates(stale, duplicates.map(d => `${d.a}\n  ~ ${d.b} (${d.score})`), over);
 }
 
-export const reflectPrompt = (d: string, now = Date.now(), corrections: readonly string[] = []): string => withReplyLine(msg().reflect(d, paths.lessons) + candidateBlock(now, corrections));
+export const reflectPrompt = (d: string, now = Date.now(), corrections: readonly string[] = [], recipe = ""): string => withReplyLine(msg().reflect(d, paths.lessons) + candidateBlock(now, corrections) + recipe);
 
 if (import.meta.main && process.argv[2] === "--candidates" && process.argv[3]) {
 	console.log(JSON.stringify(lessonCandidates(readFileSync(process.argv[3], "utf8"), Date.now()), null, 2));
 }
 
 // `note` tells a running turn what the lessons gate refused. It starts no turn: the 7 turns the refusal started in 7 days (2026-11-05, 1.7M tokens) all answered "-".
-export function startReflection(deliver: (text: string) => void, sessionFile: () => string, post: (text: string) => Promise<unknown>, note: (text: string) => void): void {
+export function startReflection(deliver: (text: string) => void, sessionFile: () => string, post: (text: string) => Promise<unknown>, note: (text: string) => void, recipe: () => string): void {
 	gateLessons(note, true);
 	let gate: ReturnType<typeof setTimeout> | undefined;
 	// The folder, not the file: an edit that replaces the file by rename ends a watch on the file itself.
@@ -432,7 +432,7 @@ export function startReflection(deliver: (text: string) => void, sessionFile: ()
 		const d = digest(sessionFile());
 		if (d) {
 			log("reflection: delivering nightly self-review");
-			deliver(reflectPrompt(d, Date.now(), ownerCorrections()));
+			deliver(reflectPrompt(d, Date.now(), ownerCorrections(), recipe()));
 		} else log("reflection: quiet day, skipped");
 		await sendRepeatAlerts(post).catch(e => log(`repeat alerts failed: ${e}`));
 		trackTimer("reflection", setTimeout(run, next()));
