@@ -167,7 +167,7 @@ describe("a room that is not watched opens read-only", () => {
 		t.close();
 	});
 
-	test("168 rooms x 5,000 messages: each open stays under 100 ms of server time and the room list is read once", async () => {
+	test("168 rooms x 5,000 messages: each open reads the messages through an index and the room list is read once", async () => {
 		const p = kakaoPaths(dir, dir);
 		const dbPath = join(dir, "big.sqlite");
 		const ROOMS = 168, PER = 5000;
@@ -182,22 +182,21 @@ describe("a room that is not watched opens read-only", () => {
 		writeFileSync(p.config, JSON.stringify({ enabled: true, dbPath, userId: OWNER, watch_chats: ["5000"] }));
 		const db = sqliteDb(dbPath);
 		let roomReads = 0;
-		const counted: KakaoDb = { query: (sql, params) => ((roomReads += /FROM NTChatRoom r\b/.test(sql) && /ORDER BY r\.lastUpdatedAt/.test(sql) && !/WHERE r\.chatId/.test(sql) ? 1 : 0), db.query(sql, params)) };
+		const asked: Array<[string, (string | number)[] | undefined]> = [];
+		const counted: KakaoDb = { query: (sql, params) => (asked.push([sql, params]), (roomReads += /FROM NTChatRoom r\b/.test(sql) && /ORDER BY r\.lastUpdatedAt/.test(sql) && !/WHERE r\.chatId/.test(sql) ? 1 : 0), db.query(sql, params)) };
 		const web = createKakaoWeb({ paths: p, runner: async () => ({ code: 0, stdout: "", stderr: "" }), now: () => (BASE_TIME + 1000) * 1000, openDb: async () => counted, broadcast: () => {}, collector: "mac-a" });
 		const open = async (chatId: number) => {
 			const url = new URL(`http://local/api/kakao/chat/${chatId}`);
-			const t0 = performance.now();
 			const res = await web.route(new Request(url), url, url.pathname.split("/").filter(Boolean));
-			const ms = performance.now() - t0;
 			expect(res!.status).toBe(200);
 			expect(((await res!.json()) as any).messages).toHaveLength(50);
-			return ms;
 		};
-		const times = [];
-		for (const chatId of [5000, 5001, 5005, 5100, 5167, 5003]) times.push(await open(chatId));
-		times.sort((a, b) => a - b);
-		expect(times[Math.floor(times.length / 2)]!).toBeLessThan(100);
-		expect(times.at(-1)!).toBeLessThan(250);
+		for (const chatId of [5000, 5001, 5005, 5100, 5167, 5003]) await open(chatId);
+		// An open stays fast because every query that reads the messages walks an index and never the whole 840,000-row table.
+		const plans: string[] = [];
+		for (const [sql, params] of asked) if (/\bNTChatMessage\b/.test(sql)) for (const row of await db.query(`EXPLAIN QUERY PLAN ${sql}`, params)) plans.push(String(row.detail));
+		expect(plans.length).toBeGreaterThan(0);
+		expect(plans.filter(d => /^SCAN (?:m\b|NTChatMessage)/.test(d))).toEqual([]);
 		expect(roomReads).toBeLessThanOrEqual(1);
 		db.close();
 		w.close();

@@ -99,9 +99,9 @@ afterAll(() => {
 
 // A state change that has no event to subscribe to (the gateway's pause), awaited with a deadline instead of a fixed sleep.
 async function until(cond: () => boolean, ms = 20_000): Promise<void> {
-	const end = performance.now() + ms;
+	const end = Date.now() + ms;
 	while (!cond()) {
-		if (performance.now() > end) throw new Error("timed out waiting for a state change");
+		if (Date.now() > end) throw new Error("timed out waiting for a state change");
 		await Bun.sleep(1);
 	}
 }

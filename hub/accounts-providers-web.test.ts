@@ -57,6 +57,7 @@ const body = () => ({
 });
 
 const calls: Array<[string, unknown]> = [];
+let cancelSeen: (() => void) | undefined;
 const te = new TextEncoder();
 const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
 let streamWaiters: (() => void)[] = [];
@@ -100,6 +101,7 @@ const server = Bun.serve({
 		}
 		if (p.startsWith("/api/providers/") && p.endsWith("/login") && req.method === "DELETE") {
 			calls.push(["cancel", p.split("/")[3]]);
+			cancelSeen?.();
 			return json({ ok: true });
 		}
 		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
@@ -170,10 +172,11 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 900]] as con
 		expect(await q(v, `return document.querySelector('dialog[open] .dtitle').textContent`)).toBe("Claude 구독 계정 추가");
 		expect(calls).toEqual([["login", "anthropic"]]);
 		await shot(v, `accounts-login-claude-${w}.png`);
+		const cancelled = new Promise<void>(ok => { cancelSeen = ok; });
 		await run(v, `[...document.querySelectorAll('dialog[open] button')].find(b => b.textContent.trim() === "취소").click()`);
 		await waitFor(v, `!document.querySelector("dialog[open]")`);
 		// 취소 cancels the login; its call can land after the dialog's close fade, so wait for it here, not in the next test
-		for (let i = 0; i < 100 && !calls.some(c => c[0] === "cancel"); i++) await Bun.sleep(20);
+		if (!calls.some(c => c[0] === "cancel")) await cancelled;
 		expect(calls).toContainEqual(["cancel", "anthropic"]);
 	});
 

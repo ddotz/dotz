@@ -7,6 +7,8 @@ import { createLinkPreview } from "./linkpreview.ts";
 const IMG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
 let fetches: string[] = [];
 let dir: string;
+// The /slow route answers only once the client has dropped the request, so the timeout is what ends it.
+let slowCut: (() => void) | undefined;
 
 const server = Bun.serve({
 	port: 0,
@@ -34,7 +36,8 @@ const server = Bun.serve({
 		if (p === "/img/html.png") return new Response("<html>", { headers: { "Content-Type": "text/html" } });
 		if (p === "/big") return new Response(`<html><head><meta property="og:title" content="큰 페이지"></head><body>${"가".repeat(400_000)}</body></html>`, { headers: { "Content-Type": "text/html" } });
 		if (p === "/slow") {
-			await new Promise(r => setTimeout(r, 300));
+			await new Promise<void>(done => req.signal.addEventListener("abort", () => done()));
+			slowCut?.();
 			return new Response("<html><head><title>느림</title></head></html>", { headers: { "Content-Type": "text/html" } });
 		}
 		const hop = /^\/r\/(\d+)$/.exec(p);
@@ -130,10 +133,10 @@ describe("SSRF", () => {
 describe("fetch limits", () => {
 	test("the whole request is cut at the timeout", async () => {
 		const lp = make({ timeoutMs: 60 });
-		const t0 = performance.now();
+		const cut = new Promise<void>(ok => { slowCut = ok; });
 		const r = await ask(lp, `${base()}/slow`);
 		expect(r.json.ok).toBe(false);
-		expect(performance.now() - t0).toBeLessThan(250);
+		await cut;   // the server saw the request dropped: the preview gave up on its own, the server never answered
 	});
 
 	test("at most 5 redirects are followed", async () => {

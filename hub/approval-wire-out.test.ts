@@ -25,12 +25,12 @@ const outs: HubEvent[] = [];
 onEmit(e => void (e.kind === "out" && e.target === CONV && outs.push(e)));
 // The next card the queue posts here, awaited with a deadline.
 const nextCard = (ref: string) =>
-	new Promise<number>((resolve, reject) => {
+	new Promise<void>((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
 		onEmit(e => {
 			if (e.kind === "out" && e.target === CONV && String(e.text).includes(`(${ref})`)) {
 				clearTimeout(timer);
-				resolve(performance.now());
+				resolve();
 			}
 		});
 	});
@@ -46,12 +46,11 @@ test("보내기 shows the next card at once with no model turn; the send runs in
 	expect(openCards().map((n: any) => n.decision.draft.ref)).toEqual([refs[0]]);
 	const bot: string[] = [];
 	const next = nextCard(refs[1]!);
-	const t0 = performance.now();
 	const r = await webAnswer(openCards()[0].id, { n: 1 }, "owner@example.com", async a => void bot.push(a.text));
 	expect(r.status).toBe(200);
-	const ms = (await next) - t0;
-	console.log(`next card after 보내기: ${ms.toFixed(1)} ms`);
-	expect(ms).toBeLessThan(1000);
+	// The answer came back while the send was still queued or running: neither it nor the next card waited for the send.
+	expect(sender.results(CONV).find(x => x.ref === refs[0])?.state).not.toBe("failed");
+	await next;
 	expect(bot).toEqual([]);
 	await sender.idle();
 	const first = listNotices(500).items.find((n: any) => n.decision?.draft?.ref === refs[0]) as any;
@@ -72,13 +71,11 @@ test("the batch answer: picked cards go (sends by the gateway, 고치기 to the 
 	]);
 	const delivered: string[] = [];
 	const next = nextCard(refs[3]!);
-	const t0 = performance.now();
 	const res = await route("POST", "/api/approvals", { items: [{ ref: refs[1], to: CONV, n: 1 }, { ref: refs[2], to: CONV, n: 2, note: "더 짧게" }] }, delivered);
-	const answeredMs = performance.now() - t0;
+	// The batch answered while its send was still queued or running.
+	expect(sender.results(CONV).find(x => x.ref === refs[1])?.state).not.toBe("failed");
 	expect(await res!.json()).toEqual({ ok: true, sending: 1, toBot: 1 });
-	const nextMs = (await next) - t0;
-	console.log(`batch answer returned: ${answeredMs.toFixed(1)} ms, next card: ${nextMs.toFixed(1)} ms`);
-	expect(answeredMs).toBeLessThan(1000);
+	await next;
 	expect(delivered).toHaveLength(1);
 	expect(delivered[0]).toContain(`(${refs[2]}): 2) 고치기 - 더 짧게`);
 	expect(openCards().map((n: any) => n.decision.draft.ref)).toEqual([refs[3]]);

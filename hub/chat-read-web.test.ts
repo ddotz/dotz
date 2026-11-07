@@ -45,6 +45,7 @@ const server = Bun.serve({
 		if (p === "/api/read" && req.method === "POST") {
 			const b = (await req.json()) as { target: string; ts: string };
 			posts.push(b);
+			wake?.();
 			if (b.target === "main" && (!read || b.ts > read)) read = b.ts;
 			return json({ ok: true, target: b.target, ts: read, moved: true });
 		}
@@ -61,8 +62,13 @@ const waitFor = (v: View, expr: string, ms = 10_000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
-// A bounded wait for a post the page makes to the fake hub (no fixed sleep decides anything).
-const until = async (ok: () => boolean, ms = 5000) => { const t0 = Date.now(); while (!ok()) { if (Date.now() - t0 > ms) throw new Error("timeout waiting for the hub"); await Bun.sleep(20); } };
+// A bounded wait for a post the page makes to the fake hub: it wakes on each post, no timer polls.
+let wake: (() => void) | undefined;
+const until = async (ok: () => boolean, ms = 5000) => {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<never>((_, bad) => { timer = setTimeout(() => bad(new Error("timeout waiting for the hub")), ms); });
+	try { while (!ok()) await Promise.race([new Promise<void>(r => { wake = r; }), late]); } finally { clearTimeout(timer); }
+};
 
 // The page boots on the conversation list; `hidden` makes it report a hidden page before the conversation opens. Scroll events are counted
 // so a test can say none was needed.

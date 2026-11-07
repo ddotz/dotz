@@ -69,13 +69,14 @@ const server = Bun.serve({
 		if (p === "/api/read" && req.method === "POST") {
 			const b = (await req.json()) as { target: string; ts: string };
 			readPosts.push(b);
+			wake?.();
 			const m = mails.find(x => `mail:${x.key}` === b.target);
 			if (m && Date.parse(b.ts) >= Date.parse(m.at)) m.unread = 0;
 			return json({ ok: true, target: b.target, ts: b.ts, moved: true });
 		}
 		if (p === "/api/peer/proxy") {
 			const pp = url.searchParams.get("p") ?? "";
-			if (req.method === "POST") { acts.push((await req.json()) as (typeof acts)[number]); return json({ ok: true }); }
+			if (req.method === "POST") { acts.push((await req.json()) as (typeof acts)[number]); wake?.(); return json({ ok: true }); }
 			if (pp.startsWith("/api/history")) return json({ target: PEER_T, events: [{ kind: "mail", ts: peerMail.at, conv: PEER_T, target: PEER_T, subject: peerMail.subject, from: peerMail.from, source: "acme", text: `[mail] ${peerMail.subject}\n\n${BODY}` }] });
 			return json({});
 		}
@@ -90,8 +91,13 @@ const waitFor = (v: View, expr: string, ms = 10_000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
-// A bounded wait for an answer the page posts to the fake hub (no fixed sleep decides anything).
-const until = async (ok: () => boolean, ms = 5000) => { const t0 = Date.now(); while (!ok()) { if (Date.now() - t0 > ms) throw new Error("timeout waiting for the hub"); await Bun.sleep(20); } };
+// A bounded wait for an answer the page posts to the fake hub: it wakes on each post, no timer polls.
+let wake: (() => void) | undefined;
+const until = async (ok: () => boolean, ms = 5000) => {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<never>((_, bad) => { timer = setTimeout(() => bad(new Error("timeout waiting for the hub")), ms); });
+	try { while (!ok()) await Promise.race([new Promise<void>(r => { wake = r; }), late]); } finally { clearTimeout(timer); }
+};
 
 async function boot(width: number, height: number, key: string): Promise<View> {
 	const v = new Bun.WebView({ width, height });

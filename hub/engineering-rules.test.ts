@@ -54,7 +54,7 @@ const NON_ATOMIC_WRITE_CEILINGS: Counts = { extension: 3, features: 8, hub: 43, 
 // A fetch or process call with no timeout or abort can hang its caller for good; the web page is excluded because the browser owns that.
 const UNBOUNDED_CALL_CEILINGS: Counts = { extension: 2, features: 13, hub: 71, onboard: 7, "setup.ts": 4 };
 // Timing assertions flake under load (the machine load average reaches 50 here) and fixed sleeps are luck, so tests wait on events instead.
-const TEST_TIMING_CEILINGS: Counts = { fixedSleeps: 12, budgetFiles: 5 };
+const TEST_TIMING_CEILINGS: Counts = { fixedSleeps: 8, budgetFiles: 1 };
 // Exports nothing refers to, not even their own file or a test; remove the export or the code (the entry is `file name`).
 const DEAD_EXPORTS: string[] = [];
 // Page globals named once in the page, its markup, the hub tests and the site.
