@@ -7,7 +7,8 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { DATA_DIR } from "./config.ts";
 import { featureCatalog } from "./features.ts";
 import { saveProject } from "./projects.ts";
-import { BUILTIN_KEY, type CustomDeps, customRoute, type DetailInput, projectDetailView, newestRules, projectsView, readCards, readPins, reportHead, ruleTitle, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
+import { BUILTIN_KEY, type CustomDeps, customRoute, type DetailInput, projectDetailView, projectsView, readCards, readPins, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
+import { newestRules, reportHead, ruleTitle } from "./custom-text.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
 import { addSchedule, listSchedules, removeSchedule } from "./schedule.ts";
 
