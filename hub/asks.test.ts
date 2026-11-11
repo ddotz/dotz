@@ -1,0 +1,275 @@
+// A lane's [ask] report is a question for the owner that the gateway remembers until it is answered, and that a
+// (re)started orchestrator hears in full. Lanes and the orchestrator run on a fake runtime adapter (as claim.test.ts).
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { pendingAskFile, pendingAsks, pendingAsksBlock } from "./asks.ts";
+import { cfg } from "./config.ts";
+import { msg } from "./i18n.ts";
+import { decisionsOf } from "./notices.ts";
+import type * as Lanes from "./lanes.ts";
+import type * as Orchestrator from "./orchestrator.ts";
+import { adapters } from "./runtime/index.ts";
+import { omp } from "./runtime/omp.ts";
+import { advance, flush } from "./runtime/test-clock.ts";
+import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode } from "./runtime/types.ts";
+
+const DATA = process.env.DOTZ_DIR!;
+// Own copies of the stateful modules (the query makes a new instance): the scenario test drives the originals in this process.
+const l: typeof Lanes = await import("./lanes.ts");
+(await import("./lanestate.ts")).resetLaneStateForTest();
+const o: typeof Orchestrator = await import("./orchestrator.ts?asks");
+
+class FakeAgent implements AgentProcess {
+	pid = 7300;
+	sent: { text: string; mode: SendMode }[] = [];
+	private queue: AgentEvent[] = [];
+	private wake = Promise.withResolvers<void>();
+	private exit = Promise.withResolvers<number>();
+	readonly exited = this.exit.promise;
+	readonly events = this.stream();
+	private async *stream(): AsyncGenerator<AgentEvent> {
+		for (;;) {
+			while (this.queue.length) yield this.queue.shift()!;
+			await this.wake.promise;
+			this.wake = Promise.withResolvers<void>();
+		}
+	}
+	async push(...events: AgentEvent[]): Promise<void> {
+		this.queue.push(...events);
+		this.wake.resolve();
+		await flush();
+	}
+	send(text: string, mode: SendMode): void {
+		this.sent.push({ text, mode });
+	}
+	abort = () => {};
+	compact = () => {};
+	refreshUsage = () => {};
+	refreshSession = () => {};
+	watchSubagents = () => {};
+	kill = () => this.exit.resolve(0);
+}
+
+const agents: FakeAgent[] = [];
+const fake: RuntimeAdapter = {
+	id: "omp",
+	caps: { steer: "native", subagents: "none", contextNumbers: "none", compact: "none", sessionTranscript: false, promptCacheKeepalive: false },
+	start() {
+		const agent = new FakeAgent();
+		agents.push(agent);
+		return agent;
+	},
+	classifyError: omp.classifyError,
+	recentExchanges: () => "user: earlier question\nassistant: earlier answer",
+};
+
+const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes };
+beforeAll(() => {
+	adapters.fake = fake;
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake" };
+	cfg.lanes = { ...cfg.lanes, runtime: "fake" };
+});
+afterAll(() => {
+	delete adapters.fake;
+	Object.assign(cfg, savedCfg);
+});
+
+async function turn(agent: FakeAgent, text: string): Promise<void> {
+	await agent.push({ type: "alive" }, { type: "turn_start" }, { type: "assistant", text, stop: "stop" }, { type: "turn_end" });
+	await advance(500);
+}
+const laneJson = () => JSON.parse(readFileSync(join(DATA, "lanes", "pa", "lane.json"), "utf8"));
+const BLOCK = "결정: 어느 브랜치로 올릴까요?\n**1) main**\n**2) dev**";
+const question = (n: number) => `[ask] Which branch should this go to?\n${"detail ".repeat(Math.ceil(n / 7))}`.slice(0, n - BLOCK.length - 2) + `\n\n${BLOCK}`;
+
+test("pending ask: an [ask] report is saved whole, gateway notices keep it, the owner's answer or a plain report clears it", async () => {
+	const cwd = join(DATA, "asks-work");
+	mkdirSync(cwd, { recursive: true });
+	rmSync(join(DATA, "lanes", "pa"), { recursive: true, force: true });
+	l.setReportHandler(() => {});
+	l.setIdleHandler(() => {});
+	const lane = l.launch("pa", cwd, "Build it.\nDone when: tests pass");
+	const agent = agents.at(-1)!;
+	await advance(3000);
+
+	const ask = question(1800);
+	await turn(agent, ask);
+	expect(lane.pendingAsk).toMatchObject({ text: ask });
+	expect(laneJson().pendingAsk).toMatchObject({ text: ask });
+	expect(typeof laneJson().pendingAsk.at).toBe("string");
+	expect(readFileSync(pendingAskFile("pa"), "utf8")).toBe(`${ask}\n`);
+	expect(l.laneSummary().find(s => s.name === "pa")?.pendingAsk).toMatchObject({ text: ask });
+	expect(pendingAsks()).toMatchObject([{ lane: "pa", text: ask }]);
+
+	// A gateway-written lane error is not the lane speaking: the question stays.
+	await agent.push({ type: "alive" }, { type: "turn_start" }, { type: "assistant", text: "", stop: "error", error: { text: "boom", kind: undefined, compaction: false } }, { type: "turn_end" });
+	await advance(500);
+	expect(lane.pendingAsk?.text).toBe(ask);
+
+	// The owner's answer clears it (and removes the file).
+	l.sendToLane("pa", "[owner via web] main");
+	expect(lane.pendingAsk).toBeUndefined();
+	expect(laneJson().pendingAsk).toBeUndefined();
+	expect(existsSync(pendingAskFile("pa"))).toBe(false);
+	expect(pendingAsks()).toEqual([]);
+	expect(pendingAsksBlock()).toBe("");
+
+	// A following non-[ask] report also clears a pending question; a new [ask] sets it again.
+	const second = `[ask] second question\n\n${BLOCK}`;
+	await turn(agent, second);
+	expect(lane.pendingAsk?.text).toBe(second);
+	await turn(agent, "[run] still working");
+	expect(lane.pendingAsk).toBeUndefined();
+	expect(laneJson().pendingAsk).toBeUndefined();
+
+	// lane.json keeps a new question, which is what a restarted gateway reads back (restoreLanes spreads the record).
+	const third = `[ask] third question\n\n${BLOCK}`;
+	await turn(agent, third);
+	expect(laneJson().pendingAsk.text).toBe(third);
+	l.sendToLane("pa", "answer");
+	l.stopLane("pa");
+	await advance(300);
+});
+
+test("pending asks block: a >700 char question is whole, a >1500 char one is cut with the file path", () => {
+	const lanesDir = join(DATA, "lanes");
+	const put = (name: string, text: string) => {
+		mkdirSync(join(lanesDir, name), { recursive: true });
+		writeFileSync(join(lanesDir, name, "lane.json"), JSON.stringify({ name, pendingAsk: { text, at: "2026-10-19T03:04:00.000Z" } }));
+	};
+	const mid = question(1000);
+	const long = question(1800);
+	put("pa-mid", mid);
+	put("pa-long", long);
+	mkdirSync(join(lanesDir, "pa-stray"), { recursive: true }); // a folder without lane.json is ignored
+
+	const block = pendingAsksBlock();
+	expect(block).toContain(msg().pendingAsksHead);
+	expect(block).toContain("pa-mid");
+	expect(block).toContain(mid); // the old 700 cut would fail here
+	expect(block).toContain("12:04"); // 03:04Z is KST afternoon
+	expect(block).toContain("pa-long");
+	expect(block).toContain(long.slice(0, 1500));
+	expect(block).not.toContain(long.slice(0, 1501));
+	expect(block).toContain(pendingAskFile("pa-long"));
+	expect(block).not.toContain(pendingAskFile("pa-mid"));
+	expect(block).not.toContain("pa-stray");
+
+	rmSync(join(lanesDir, "pa-mid"), { recursive: true, force: true });
+	rmSync(join(lanesDir, "pa-long"), { recursive: true, force: true });
+	rmSync(join(lanesDir, "pa-stray"), { recursive: true, force: true });
+	expect(pendingAsksBlock()).toBe("");
+});
+
+test("orchestrator: a fresh start sends pending asks in a second steer message, not in the pinned first prompt; a resumed one on the next owner message once", async () => {
+	const lanesDir = join(DATA, "lanes");
+	const long = question(1000);
+	mkdirSync(join(lanesDir, "pa-orch"), { recursive: true });
+	writeFileSync(join(lanesDir, "pa-orch", "lane.json"), JSON.stringify({ name: "pa-orch", pendingAsk: { text: long, at: "2026-10-19T03:04:00.000Z" } }));
+
+	// No saved session: a fresh start.
+	rmSync(join(DATA, "orchestrator.json"), { force: true });
+	o.start();
+	const fresh = agents.at(-1)!;
+	expect(fresh.sent).toHaveLength(2);
+	expect(fresh.sent[0]!.mode).toBe("prompt");
+	expect(fresh.sent[0]!.text).not.toContain(msg().pendingAsksHead);
+	expect(fresh.sent[0]!.text).not.toContain(long);
+	expect(fresh.sent[1]!.mode).toBe("steer");
+	expect(fresh.sent[1]!.text).toContain(msg().pendingAsksHead);
+	expect(fresh.sent[1]!.text).toContain(long);
+	await advance(4000);
+	o.stop();
+	await advance(1000);
+
+	// A saved session on the same model: resumed, so the first prompt is not re-sent; the next owner message carries the block once.
+	const session = join(DATA, "asks-orch-session.jsonl");
+	writeFileSync(session, "{}\n");
+	writeFileSync(join(DATA, "orchestrator.json"), JSON.stringify({ sessionFile: session }));
+	o.start();
+	const resumed = agents.at(-1)!;
+	expect(resumed.sent).toHaveLength(0);
+	await advance(4000);
+	o.deliver("hello");
+	expect(resumed.sent.at(-1)!.text).toContain("hello");
+	expect(resumed.sent.at(-1)!.text).toContain(long);
+	o.deliver("again");
+	expect(resumed.sent.at(-1)!.text).toBe("again");
+
+	o.stop();
+	await advance(1000);
+	rmSync(join(DATA, "orchestrator.json"), { force: true });
+	rmSync(join(lanesDir, "pa-orch"), { recursive: true, force: true });
+});
+
+const REAL = "[ask] 디자인 문서를 다 썼어요.\n\n결정: 자기 주소가 있는 컴퓨터를 고르면 어떻게 열까요?\n**1) 그 주소의 웹앱으로 이동**\n화면과 기능이 그대로예요.\n**2) 평소 채팅 화면에서 중계**\n앱 안에 머물러요.";
+const fresh = async (name: string) => {
+	mkdirSync(join(DATA, "w", name), { recursive: true });
+	rmSync(join(DATA, "lanes", name), { recursive: true, force: true });
+	const reports: string[] = [], progress: string[] = [];
+	l.setReportHandler((_, text) => reports.push(text));
+	l.setProgressHandler((_, text) => progress.push(text));
+	l.setIdleHandler(() => {});
+	const lane = l.launch(name, join(DATA, "w", name), "Build it.\nDone when: tests pass");
+	const agent = agents.at(-1)!;
+	await advance(3000);
+	return { lane, agent, reports, progress };
+};
+const said = (agent: FakeAgent, ...texts: string[]) => agent.push({ type: "alive" }, { type: "turn_start" }, ...texts.map(text => ({ type: "assistant", text, stop: "stop" }) as AgentEvent), { type: "turn_end" });
+
+test("a question stays the turn's report when a continuation of the same turn says it is waiting (the lost ask of 2026-11-05)", async () => {
+	const { lane, agent, reports, progress } = await fresh("pc");
+	await said(agent, REAL, "형의 방향 답을 기다리느라 멈춰 있어요.", "[ask] 형의 답이 올 때까지 여기서 멈춰 있을게요.");
+	await advance(500);
+	expect(reports).toEqual([REAL]);
+	expect(progress).toEqual([]);
+	expect(lane.pendingAsk?.text).toBe(REAL);
+	l.sendToLane("pc", "답이에요");
+	await said(agent, REAL, "[done] 끝났어요");
+	await advance(500);
+	expect(progress).toEqual([REAL]);   // a tagged text takes the turn's report, and the question has gone out as a real message first
+	expect(reports).toEqual([REAL, "[done] 끝났어요"]);
+});
+
+test("an [ask] without choices raises nothing: it goes back to the session once, then stays a plain note", async () => {
+	const { lane, agent, reports } = await fresh("pd");
+	const bare = "[ask] 형의 답을 기다리는 중이에요. 앞서 올린 두 결정에 답해 주시면 구현을 시작할게요.";
+	await said(agent, bare);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(lane.pendingAsk).toBeUndefined();
+	expect(agent.sent.at(-1)!.text).toContain(msg().askRefused(bare.slice(6)));
+	const count = agent.sent.length;
+	await said(agent, bare);
+	await advance(500);
+	expect(agent.sent.length).toBe(count);   // once
+	expect(reports).toEqual([bare.slice(6)]);
+	expect(lane.pendingAsk).toBeUndefined();
+	expect(decisionsOf({ ts: "t", kind: "lane_report", source: "lane:pd", lane: "pd", text: reports[0]! })).toEqual([]);
+});
+
+test("a report that says something is unverified without why and what was checked instead goes back once", async () => {
+	const { lane, agent, reports } = await fresh("pu");
+	const bare = "[done] 키보드가 안 내려가게 고쳤어요.\n- 실기기 미확인";
+	await said(agent, bare);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(agent.sent.at(-1)!.text).toContain(msg().unverifiedRefused(["- 실기기 미확인"]));
+	const reasoned = "[done] 키보드가 안 내려가게 고쳤어요.\n- 실기기: 이 맥에 폰이 연결돼 있지 않아요. 대신 확인: 헤드리스 390px 화면에서 입력 중 새 메시지 수신";
+	await said(agent, reasoned);
+	await advance(500);
+	expect(reports).toEqual([reasoned]);
+	expect(lane.unverifiedRefused).toBeUndefined();
+});
+
+test("a \"still waiting\" [ask] on a card the owner still has open makes nothing, however its words differ", async () => {
+	const { agent, reports } = await fresh("pe");
+	l.setOpenCardCheck(name => name === "pe");
+	const count = agent.sent.length;
+	await said(agent, "[ask] 아직 답을 기다리고 있어요. 언제쯤 답을 받을 수 있을까요?");
+	await advance(500);
+	l.setOpenCardCheck(() => false);
+	expect(reports).toEqual([]);
+	expect(agent.sent.length).toBe(count);
+});

@@ -1,0 +1,178 @@
+/* ---------- chat: decision card above the composer, todo strip above the timeline ---------- */
+/* 터미널 보기 토글은 제품에서 없앴어요 (owner 2026-11-03): 대화를 터미널로 바꾸지 않고, 명령은 컴포저의 /셸이나 코드 블록의
+   '터미널에서 실행'이 셸 시트로 보내요 (web/js/14-slash-commands.js, 35-code-blocks.js, 36-shell.js). LOG_VIEW가 켜져도 이 버튼은 돌아오지 않습니다. */
+#vtog { display: none !important; }
+
+/* 대화 화면의 모양 (시제품 s-chat.js·proto.css "/* chat *\/"): 컴포저는 카드와 같은 18px, 회색 상자와 그 아래 힌트 줄, 답은 한 페이지처럼 조용히 (원칙 9·5) */
+.sendrow { border-radius: var(--r-card) !important; }
+.sendrow.ulw { border-radius: var(--r-card) !important; }   /* ulw 테두리는 그대로, 모서리만 토큰에서 */
+/* 내 말풍선 (proto .msg.me .bub): 회색 면, 18/18/6/18 모서리, 10x14 안여백. 봇 답은 말풍선 없이 한 페이지처럼 15/24, 문단 8px, 글머리표 2px (proto .bub) */
+.ub { padding: var(--sp-2) var(--sp-3); border-radius: 18px 18px 6px 18px; background: var(--layer); }
+.bm .md { font-size: 15px; line-height: 24px; }
+.bm .md p { margin: 0 0 var(--sp-2); }
+.bm .md ul, .bm .md ol { margin: 0 0 var(--sp-2); padding-left: var(--sp-5); }
+.bm .md li + li { margin-top: var(--sp-05); }
+.dc-wait { border-radius: var(--r-ctl); }
+
+/* ---------- 채팅 대화 카드 안의 차례 (proto .cv: 머리 -> todo -> 타임라인 -> 진행 줄 -> 확인 카드 -> 컴포저) ---------- */
+/* todo 스트립: 대화 카드 안, 타임라인 바로 위, 카드와 같은 회색 면 (proto .todo) */
+:is(#v-chat, .pane-chat) > .todo { background: var(--layer); }
+/* 타임라인 위아래 경계는 .kk-tl(17-kakao.css)과 같은 12px 마스크로 글자를 흐려요. 더 스크롤할 쪽에만 걸려요(edgeFade의 fade-t, fade-b).
+   맨 아래에서는 마지막 줄이 그대로 보이고, 맨 아래로 버튼과 입력창은 .timeline 밖이라 흐려지지 않아요. 03-base의 덮개 페이드는 여기서 꺼요.
+   메일을 열면 .mtop이 맨 위에 붙어 있어서 위쪽은 흐리지 않아요. */
+:is(#v-chat, .pane-chat) .chatbox::before, :is(#v-chat, .pane-chat) .chatbox::after { content: none; transition: none; }
+:is(#v-chat, .pane-chat) .timeline { --edge-t: 0px; --edge-b: 0px; -webkit-mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); }
+:is(#v-chat, .pane-chat) .chatbox.fade-t:not(:has(.mtop)) > .timeline { --edge-t: var(--sp-3); }
+:is(#v-chat, .pane-chat) .chatbox.fade-b > .timeline { --edge-b: var(--sp-3); }
+
+/* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
+   .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 카카오톡 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
+   (선택) .cbar 칩 줄을 두면 같은 모양이에요. 채팅 컴포저의 힌트 줄(#cbar: 모델·컨텍스트 칩)은 상자 밖 아래에 서요. */
+.sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" "bar bar bar" !important; align-items: flex-end; gap: 0 var(--sp-1); }   /* no row gap: the empty tray row above would add 4px of padding to the top only */
+.sendrow:not(.ulw) { padding: var(--sp-15) !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
+.sendrow:not(.ulw):focus-within { border-color: transparent !important; }
+.sendrow textarea { grid-area: ta; padding: 7px var(--sp-1); /* nudge: 22px line + 2 x 7px = 36px, the height of the send button beside it */ font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
+.sendrow textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }   /* 폰에서 긴 안내 글이 두 줄로 접혀 상자를 키우지 않게 한 줄로 (시제품 .cmp는 한 줄) */
+:is(#c-attach, .pane-chat [data-c="c-attach"]), .sendrow > .cmp-plus { grid-area: plus; display: inline-flex; align-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
+:is(#c-attach, .pane-chat [data-c="c-attach"]) .ic, .sendrow > .cmp-plus .ic { width: 20px; height: 20px; }
+@media (hover: hover) { :is(#c-attach, .pane-chat [data-c="c-attach"]):hover, .sendrow > .cmp-plus:hover { background: var(--hover); color: var(--fg); } }
+.sendrow > .ib { grid-area: send; width: 36px; height: 36px; border-radius: 50%; }
+.sendrow > .cbar { grid-area: bar; margin: 0; padding: var(--sp-1) var(--sp-1) var(--sp-05); min-height: 0; }
+:is(#cbar, .pane-chat .cbar) { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-15); min-height: 20px; margin: var(--sp-1) 0 0; padding: 0 var(--sp-05); overflow-x: auto; scrollbar-width: none; }
+:is(#cbar, .pane-chat .cbar)::-webkit-scrollbar { display: none; }
+:is(#cbar, .pane-chat .cbar) .cchip { height: auto; min-height: 20px; padding: 0 var(--sp-05); background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+:is(#cbar, .pane-chat .cbar) button.cchip { cursor: pointer; }
+@media (hover: hover) { :is(#cbar, .pane-chat .cbar) button.cchip:hover { background: transparent; color: var(--fg); } }
+:is(#cbar, .pane-chat .cbar) .cchip.cown { opacity: 1; color: var(--fg-3); }
+@media (pointer: coarse) { :is(#cbar, .pane-chat .cbar) { min-height: var(--btn-h-sm); margin-top: 0; } :is(#cbar, .pane-chat .cbar) button.cchip { min-height: var(--btn-h-sm); padding: 0 var(--sp-15); } }
+:is(#cbar, .pane-chat .cbar) .working { display: none !important; }
+@media (pointer: coarse) { :is(#c-attach, .pane-chat [data-c="c-attach"]), .sendrow > .cmp-plus { width: 36px; height: 36px; } }
+
+/* 실행 상태 줄 (41-runstate.js, 시제품 .run): 입력 상자 위 한 줄, 12/16 회색 글이에요. 경고·오류는 색만 바뀝니다 */
+.runstate { min-height: 20px; margin: 0 0 var(--sp-15) var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
+
+/* 상태 태그 (시제품 .bub .st .tag): 봇 메시지 첫 줄 맨 앞에 [확인 필요 / 완료 / 진행 중 / 실패] — 02-basic-markdown.js toneLead가 넣어요 */
+.bm .st-tag { height: 22px; margin-right: var(--sp-2); font-size: 12px; line-height: 16px; vertical-align: 1px; }
+
+/* 확인/질문 카드: 컴포저 바로 위에 붙어 있고, 흰 대화 카드 안에서도 한 면으로 읽히게 회색 위에 놓여요 (얇은 모양·동작은 그대로) */
+#composer > .dcard { background: var(--layer); }
+
+
+/* dotz_auth 입력 요청 (16-target-switcher-conversation.js authCard): 새 토큰의 입력칸과 버튼. 비밀 값은 type=password 그대로, 화면에만 보기/숨기기 */
+.au input:not([type=checkbox]) { height: var(--field-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); font-size: var(--fs-body); }
+.au input:not([type=checkbox]):focus { outline: 0; box-shadow: var(--ff-ring); }
+.au .fld label { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.au .eye { height: var(--field-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg-2); font: 500 13px/20px var(--font); }
+@media (hover: hover) { .au .eye:hover { background: var(--hover); color: var(--fg); } }
+.au input.bad, .au input.bad:not([type=checkbox]):focus { box-shadow: inset 0 0 0 1.5px var(--err); }
+.au .ferr { color: var(--err); }
+.au .rem { color: var(--fg-2); font-size: 13px; }
+@media (pointer: coarse), (max-width: 639px) { .au input:not([type=checkbox]) { height: var(--field-h-touch); font-size: 16px; } .au .eye { height: var(--field-h-touch); } }
+/* 확인 카드 (owner 2026-11-03): 머리 한 줄(답 기다림), 카드 제목 크기의 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */
+/* At most ~40% of the screen (owner 2026-11-04: at 60% a several-draft card hid the conversation above it); its body scrolls inside */
+.dcard { display: flex; flex-direction: column; max-height: max(40dvh, 200px); margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.dcard[hidden] { display: none; }
+/* a waiting send-approval card that later posts pushed up: one row in the dock that opens it (10-decision-card.js dcPointer) */
+.dc-wait { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; padding: var(--sp-2) var(--row-px); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dc-wait-k { flex: none; font-weight: 600; color: var(--accent); }
+.dc-wait-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-wait-n { flex: none; opacity: .7; font-size: .9em; }
+.dc-wait-go { flex: none; font-weight: 600; }
+.dc-hd { flex: none; display: flex; align-items: flex-start; gap: var(--sp-1); padding: var(--sp-2) var(--sp-1) var(--sp-05) var(--sp-4); }
+.dc-tt { flex: 1; min-width: 0; }
+/* 답 기다림: the whole header on one 20px line; the question under it is the card's one lead */
+.dc-meta { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
+.dc-wt { flex: none; }
+.dc-q { margin-top: var(--sp-05); font-size: var(--fs-card); line-height: var(--lh-card); font-weight: 600; }
+.dc-q p { margin: 0; }
+.dc-decide { margin: var(--sp-1) 0 var(--sp-05); font: 400 13px/20px var(--font); letter-spacing: 0; }
+.dc-decide-k { font-weight: 600; }
+.dc-decide ul { margin: var(--sp-05) 0 0; padding-left: var(--sp-4); }
+.dc-decide li + li { margin-top: var(--sp-05); }
+.dcard.fold .dc-q { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.dcard.fold .dc-hd { padding-bottom: var(--sp-2); }
+.dcard.fold .dc-decide { display: none; }
+.dc-fold { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-3); }
+@media (hover: hover) { .dc-fold:hover { background: var(--hover); } }
+.dc-fold .ic { width: 16px; height: 16px; transition: transform var(--m-fast) var(--m-ease); }
+.dcard.fold .dc-fold .ic { transform: rotate(180deg); }
+.dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-05); padding: 0 var(--sp-15) var(--sp-15); overflow-y: auto; overscroll-behavior: contain; }
+.dc-steps { flex: none; display: flex; gap: var(--sp-15); padding-bottom: var(--sp-05); overflow-x: auto; scrollbar-width: none; }
+.dc-steps::-webkit-scrollbar { display: none; }
+.dc-chip { flex: none; max-width: 70%; height: var(--btn-h-sm); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: var(--btn-h-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-chip.got { color: var(--fg); }
+.dc-chip.on { background: var(--fg); color: var(--bg); }
+.dc-sub, .dcm-sub { padding: var(--sp-05) var(--sp-1) 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dc-inl { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-card); background: var(--card); }
+.dc-inl .dc-q { margin: 0 0 var(--sp-05); padding: 0 var(--sp-1); }
+.dc-inl > .dc-ds { padding: 0 var(--sp-1); }
+.dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: var(--sp-2); width: 100%; min-height: 40px; padding: var(--sp-15) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+@media (hover: hover) { .dc-row:hover:not(:disabled), .dcm-row:hover:not(:disabled) { background: var(--hover); } }
+.dc-row:active:not(:disabled), .dcm-row:active:not(:disabled) { background: var(--active); }
+.dc-row:disabled, .dcm-row:disabled { cursor: default; }
+.dc-row:disabled:not(.on), .dcm-row:disabled:not(.on) { opacity: .6; }
+
+.dc-row.on, .dcm-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+.dc-key { flex: none; display: grid; place-items: center; min-width: 18px; height: 20px; padding: 0; color: var(--fg-3); font-size: 12px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.dc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
+.dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); font-size: 14px; line-height: 20px; font-weight: 500; }
+.dc-ds { color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.dc-draft { flex: none; display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 0 var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.dc-brief { display: grid; gap: var(--sp-05); padding-bottom: var(--sp-2); margin-bottom: var(--sp-2); border-bottom: 1px solid var(--line); }
+.dc-brief .dc-dr-v { font-weight: 400; overflow-wrap: anywhere; word-break: keep-all; }
+.dc-brief .dc-dr-v b { font-weight: 700; }
+.dc-brief .mln { margin: var(--sp-05) 0 0; }
+.dc-dr-h { display: flex; gap: var(--sp-2); font-size: 13px; line-height: 20px; }
+.dc-dr-k { flex: none; color: var(--fg-3); }
+.dc-dr-v { min-width: 0; color: var(--fg); font-weight: 500; }
+.dc-dr-b { max-height: min(22dvh, 180px); margin-top: var(--sp-05); overflow-y: auto; overscroll-behavior: contain; color: var(--fg); font-size: 14px; line-height: 22px; white-space: pre-wrap; }
+.dc-edit { flex: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.dc-ctx { display: flex; align-items: center; gap: var(--sp-2); }
+.dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); resize: vertical; font-size: 14px; line-height: 22px; }
+.dc-note:focus { outline: 0; box-shadow: var(--ff-ring); }
+.dc-eb { display: flex; gap: var(--sp-2); }
+.dc-fl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.dc-fl .dr-add { flex: none; padding: 0 var(--sp-3); }
+.dc-fl .fatt { height: 48px; max-width: 100%; }
+/* 돌아가기 (secondary) and the send button (primary) are the one button system (01-tokens.css); only the row layout is here */
+.dc-back, .dc-go { flex: 1; }
+@media (pointer: coarse) { .dc-note { font-size: 16px; } }
+.dc-st { flex: none; padding: var(--sp-1) var(--sp-4) var(--sp-2); color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+/* 답한 결정의 기록 (10-decision-card.js dcRecordNode): 카드가 접힌 뒤 대화에 남는 조용한 한 줄 — 질문과 고른 답만, 바탕·테두리 없이 */
+.tl-in > .dc-rec { align-self: flex-end; display: grid; gap: var(--sp-05); max-width: 80%; min-width: 0; margin-top: var(--sp-3); color: var(--fg-3); font: 400 12.5px/18px var(--font); text-align: right; }
+.tl-in > .dc-rec:first-child { margin-top: 0; }
+.dc-rec-r { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 0 var(--sp-15); min-width: 0; }
+.dc-rec-k { flex: none; color: var(--fg-3); }
+.dc-rec-q, .dc-rec-a { min-width: 0; overflow-wrap: anywhere; }
+.dc-rec-q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dc-rec-a { color: var(--fg-2); }
+.dc-rec .mt { margin: 0; color: var(--fg-3); }
+@container tlcol (max-width: 559.98px) { .tl-in > .dc-rec { max-width: 90%; } }
+/* In the 알림 / 작업내역 conversations the rows are not answer buttons: a tap on the message opens the decision sheet (30-notices.js). */
+.dcm.fx { cursor: pointer; }
+.dcm.fx .dcm-row { pointer-events: none; }
+.dcm { display: flex; flex-direction: column; gap: var(--sp-05); max-width: 520px; margin-top: var(--sp-2); }
+.todo { --td-lh: 20px; --td-g: 14px; flex: none; margin: 0 0 var(--sp-2); border-radius: 12px; background: var(--card); }
+.todo[hidden] { display: none; }
+.td-bar { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 36px; padding: var(--sp-1) var(--sp-3); border: 0; border-radius: 12px; background: transparent; color: var(--fg); font: inherit; font-size: 13.5px; line-height: 20px; text-align: left; cursor: pointer; }
+.td-bar .td-g { margin-top: 0; }
+.td-cur { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.td-n { flex: none; color: var(--fg-3); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.td-ch { flex: none; width: 16px; height: 16px; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
+.td-bar[aria-expanded="true"] .td-ch { transform: rotate(180deg); }
+.td-list { max-height: min(40dvh, 320px); padding: 0 var(--sp-3) var(--sp-2); overflow-y: auto; overscroll-behavior: contain; }
+.td-ph { margin: var(--sp-2) 0 var(--sp-05); color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }
+.td-r { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-1) 0; color: var(--fg-2); font-size: 13.5px; line-height: var(--td-lh); }
+.tr-act .td-tx { color: var(--fg); font-weight: 500; }
+.td-tx { min-width: 0; }
+.tr-done .td-tx { color: var(--fg-3); }
+.tr-drop .td-tx { color: var(--fg-3); text-decoration: line-through; }
+.td-g { flex: none; position: relative; width: var(--td-g); height: var(--td-g); margin-top: calc((var(--td-lh) - var(--td-g)) / 2); box-sizing: border-box; border-radius: 50%; }
+.tg-pend { border: 1.5px solid var(--fg-3); }
+.tg-act { border: 1.5px solid var(--fg); }
+.tg-act::after { content: ""; position: absolute; inset: 2px; border-radius: 50%; background: var(--fg); }
+.tg-done { background: var(--fg-3); }
+.tg-done::after { content: ""; position: absolute; left: 4px; top: 1.5px; width: 3px; height: 6px; border: solid var(--card); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+.tg-drop { border: 1.5px dashed var(--fg-3); }
+@media (pointer: coarse) { .dc-fold { width: 44px; height: 44px; margin: calc(var(--sp-15) * -1) calc(var(--sp-1) * -1) 0 0; } .td-bar { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { .dc-fold .ic, .td-ch { transition: none; } }

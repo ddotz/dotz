@@ -1,0 +1,391 @@
+// Web-login auth requests: values are typed only in the web app (GET /api/state `auth`, answered by POST /api/auth/<id>), so a
+// password or code never passes through Discord's servers. When Discord is set up the gateway also posts a message there
+// whose buttons open the web app, approve or cancel; no Discord button or modal ever carries a value. It works before
+// Discord is connected (the Discord bot setup itself). It is written to a 0600 secrets file (secret),
+// held in memory until it is taken once (otp) or not kept at all (approve). Values are never logged, put in events, state
+// or any prompt: log lines carry id, site, kind and status only. See hub/main.ts for the /api/auth* routes.
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
+import { cfg, DATA_DIR, HUB_TOKEN, log, TZ } from "./config.ts";
+import { ASK_PREFIX, askInteraction } from "./askbuttons.ts";
+import * as discord from "./discord.ts";
+import { msg } from "./i18n.ts";
+import { authRequested, authSettled } from "./notices.ts";
+import { buildForm, type FormField, normalizeValue } from "./authfields.ts";
+import { writeSecretFile } from "./secretbox.ts";
+
+type Kind = "secret" | "otp" | "approve" | "form";
+type Field = "username" | "password" | "code";
+type Status = "pending" | "entered" | "approved" | "cancelled" | "timeout" | "failed";
+type AuthRequest = {
+	id: string;
+	site: string;
+	kind: Kind;
+	fields: Field[];
+	purpose: string;
+	expiresAt: number;
+	status: Status;
+	channelId: string;
+	messageId: string;
+	// Where it was asked (dotz_auth `target`), and the session whose turn waits on it ("" when none does: a lane's own step, kakao
+	// onboarding): the gateway answers owner messages to that session while this waits (hub/auth-wait.ts).
+	target: string;
+	session: string;
+	form?: FormField[];
+	remember: boolean;
+	keys?: string[];
+	path?: string;
+	otp?: string;
+	// Why the owner's answer could not be stored (status failed): an error message only, never a value.
+	error?: string;
+	timer?: ReturnType<typeof setTimeout>;
+	waiters: Set<() => void>;
+};
+
+const PREFIX = "dotz-auth";
+const SITE_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const TARGET_RE = /^(chat|alert|worklog|dm|lane:.+|ch:\d+|th:\d+)$/;
+const FIELDS: Field[] = ["username", "password", "code"];
+const DEFAULT_MINUTES = 10;
+const MAX_MINUTES = 30;
+const KEEP_MS = 30 * 60_000;
+const OTP_MS = 5 * 60_000;
+const MAX_WAIT_S = 55;
+const OWNER = String(cfg.discord?.owner_id ?? "");
+const RESERVED = new Set(["once", "hub-token", "discord-bot-token", basename(String(cfg.discord?.token_file ?? "")).toLowerCase()].filter(Boolean));
+const SECRETS_DIR = join(DATA_DIR, "secrets");
+const ONCE_DIR = join(SECRETS_DIR, "once");
+const ONCE_MS = 60 * 60_000;
+const reqs = new Map<string, AuthRequest>();
+
+// Plain text like every gateway message (MODE "Message layout"): one leading status emoji, no embed.
+const MARKS: Record<Status, string> = { pending: "❓", entered: "✅", approved: "✅", cancelled: "❌", timeout: "❌", failed: "❌" };
+// One-time form files are removed an hour after they are written; a restart loses the timers, so start-up sweeps what is left.
+function sweepOnce(): void {
+	if (!existsSync(ONCE_DIR)) return;
+	for (const name of readdirSync(ONCE_DIR)) {
+		const file = join(ONCE_DIR, name);
+		if (Date.now() - statSync(file).mtimeMs > ONCE_MS) rmSync(file, { force: true });
+	}
+}
+sweepOnce();
+
+// The web app's address for the Discord link button of a form (set by main.ts once the tailnet address is known).
+let formLink: () => string | undefined = () => undefined;
+export const setFormLink = (fn: () => string | undefined): void => {
+	formLink = fn;
+};
+const clock = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
+
+// A pending request as the gateway's own replies need it (hub/auth-wait.ts): no values, no form.
+export type AuthWait = { id: string; site: string; purpose: string; expiresAt: number; target: string; session: string };
+const waitOf = (r: AuthRequest): AuthWait => ({ id: r.id, site: r.site, purpose: r.purpose, expiresAt: r.expiresAt, target: r.target, session: r.session });
+// Told when a session's request opens, besides Discord's button message (`discordPosted`): main.ts posts it to that session's
+// conversation, so a messenger room (JANDI, Slack, Telegram) learns that a form is open in the web app and how to close it.
+let onOpened: (w: AuthWait, discordPosted: boolean) => void = () => undefined;
+export const setAuthOpened = (fn: typeof onOpened): void => {
+	onOpened = fn;
+};
+
+function contentOf(r: AuthRequest): string {
+	const m = msg().auth;
+	const head = `${MARKS[r.status]} ${m.titles[r.kind]} (${m.site}: ${r.site})`;
+	const tail = r.status === "pending" ? m.expires(clock.format(r.expiresAt)) : m.statuses[r.status];
+	const hint = r.kind !== "approve" ? `\n${formLink() ? m.formHint : m.formHintNoLink}` : "";
+	return `${head}\n${r.purpose}${hint}\n${tail}`.slice(0, 1900);
+}
+
+function componentsOf(r: AuthRequest) {
+	const m = msg().auth;
+	const off = r.status !== "pending";
+	const button = (action: string, label: string, style: number) => ({ type: 2, style, label, custom_id: `${PREFIX}:${r.id}:${action}`, disabled: off });
+	const url = formLink();
+	const first = r.kind === "approve" ? button("approve", m.approve, 3) : url ? { type: 2, style: 5, label: m.openForm, url: `${url}/`, disabled: off } : undefined;
+	return [{ type: 1, components: [first, button("cancel", m.cancel, 2)].filter(Boolean) }];
+}
+
+const view = (r: AuthRequest) => ({
+	id: r.id,
+	site: r.site,
+	kind: r.kind,
+	status: r.status,
+	...(r.status === "entered" && r.path ? { path: r.path } : {}),
+	...(r.status === "entered" && r.keys ? { keys: r.keys, once: !r.remember } : {}),
+	...(r.otp !== undefined ? { take: `/api/auth/${r.id}/take` } : {}),
+	...(r.status === "failed" && r.error ? { error: r.error } : {}),
+});
+
+// A store that throws (no key, unwritable folder) finishes the request as failed, so the waiting dotz_auth call hears why instead of
+// waiting for a value that never comes. The message is the error's, which carries paths and never a value.
+function storeFailed(r: AuthRequest, e: unknown): string {
+	const why = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+	log(`auth ${r.id} ${r.site} ${r.kind} store failed: ${why}`);
+	r.error = `store failed: ${why}`;
+	settle(r, "failed");
+	refresh(r);
+	return r.error;
+}
+
+// A request is finished once, whoever finishes it: the timer, an owner click, a web answer or DELETE.
+function settle(r: AuthRequest, status: Status): void {
+	if (r.status !== "pending") return;
+	r.status = status;
+	clearTimeout(r.timer);
+	log(`auth ${r.id} ${r.site} ${r.kind} ${status}`);
+	authSettled(r.id, status);
+	for (const wake of [...r.waiters]) wake();
+	setTimeout(() => reqs.delete(r.id), KEEP_MS).unref();
+}
+
+// Re-renders the original message (text + buttons) after a change that did not come from a button on it.
+const refresh = (r: AuthRequest): void => {
+	if (!r.messageId) return;
+	void discord.editRich(r.channelId, r.messageId, { content: contentOf(r), components: componentsOf(r) }).catch(e => log(`auth ${r.id} message update failed: ${e}`));
+};
+
+function waitChange(r: AuthRequest, seconds: number, signal: AbortSignal): Promise<void> {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	const done = () => {
+		clearTimeout(timer);
+		r.waiters.delete(done);
+		signal.removeEventListener("abort", done);
+		resolve();
+	};
+	const timer = setTimeout(done, seconds * 1000);
+	r.waiters.add(done);
+	signal.addEventListener("abort", done);
+	return promise;
+}
+
+// ---- Discord interactions ----
+
+const ephemeral = (content: string) => ({ content, flags: 64, allowed_mentions: { parse: [] } });
+const reply = (d: discord.Interaction, type: number, data?: unknown) => discord.interactionCallback(d, type, data);
+
+function store(r: AuthRequest, values: Record<string, string>): void {
+	if (r.form) {
+		const dir = r.remember ? SECRETS_DIR : ONCE_DIR;
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		chmodSync(SECRETS_DIR, 0o700);
+		chmodSync(dir, 0o700);
+		const file = r.remember ? join(SECRETS_DIR, r.site) : join(ONCE_DIR, `${r.site}-${r.id}`);
+		writeSecretFile(file, `${JSON.stringify(values)}\n`);
+		r.path = file;
+		r.keys = Object.keys(values);
+		if (!r.remember) setTimeout(() => rmSync(file, { force: true }), ONCE_MS).unref();
+	} else if (r.kind === "secret") {
+		mkdirSync(SECRETS_DIR, { recursive: true, mode: 0o700 });
+		chmodSync(SECRETS_DIR, 0o700);
+		const file = join(SECRETS_DIR, r.site);
+		writeSecretFile(file, `${JSON.stringify(values)}\n`);
+		r.path = file;
+	} else {
+		r.otp = values.code;
+		setTimeout(() => {
+			r.otp = undefined;
+		}, OTP_MS).unref();
+	}
+}
+
+// Exported for tests; the gateway reaches it through discord.setInteractionHandler below.
+export async function interaction(d: discord.Interaction): Promise<void> {
+	const cid = String(d?.data?.custom_id ?? "");
+	if (cid.startsWith(`${ASK_PREFIX}:`)) return askInteraction(d, { owner: OWNER, reply });
+	if (!cid.startsWith(`${PREFIX}:`)) return;
+	const m = msg().auth;
+	const [, id, action] = cid.split(":");
+	const user = String(d.member?.user?.id ?? d.user?.id ?? "");
+	if (!OWNER || user !== OWNER) {
+		log(`auth ${id} refused user ${user}`);
+		return reply(d, 4, ephemeral(m.notOwner));
+	}
+	const r = reqs.get(id);
+	if (!r || r.status !== "pending") return reply(d, 4, ephemeral(m.finished));
+	if (d.type === 3) {
+		// "input" is the button of a message posted before values moved to the web app.
+		if (action === "input") return reply(d, 4, ephemeral(m.webOnly));
+		if (action === "approve" && r.kind === "approve") settle(r, "approved");
+		else if (action === "cancel") settle(r, "cancelled");
+		else return reply(d, 4, ephemeral(m.finished));
+		return reply(d, 7, { content: contentOf(r), components: componentsOf(r) });
+	}
+	// A modal opened from an old message: its value is dropped unread, so a password never goes the Discord way.
+	if (d.type === 5) return reply(d, 4, ephemeral(m.webOnly));
+	return reply(d, 4, ephemeral(m.finished));
+}
+
+discord.setInteractionHandler(d => {
+	interaction(d).catch(e => log(`auth interaction failed: ${e}`));
+});
+
+// ---- HTTP ----
+
+const json = (data: unknown, status = 200) => Response.json(data, { status });
+const err = (error: string, status: number) => json({ error }, status);
+
+async function create(req: Request): Promise<Response> {
+	const b = (await req.json().catch(() => undefined)) as Record<string, unknown> | undefined;
+	if (!b || typeof b !== "object" || Array.isArray(b)) return err("body must be a JSON object", 400);
+	const kind = b.kind;
+	if (kind !== "secret" && kind !== "otp" && kind !== "approve" && kind !== "form") return err("kind must be secret, otp, approve or form", 400);
+	const site = b.site;
+	if (typeof site !== "string" || !SITE_RE.test(site)) return err("site must match /^[a-z0-9][a-z0-9._-]{0,63}$/", 400);
+	if ((kind === "secret" || kind === "form") && RESERVED.has(site)) return err(`site ${site} is reserved`, 400);
+	const purpose = typeof b.purpose === "string" ? b.purpose.trim().slice(0, 500) : "";
+	if (!purpose) return err("purpose is required", 400);
+	const target = b.target;
+	if (typeof target !== "string" || !TARGET_RE.test(target)) return err("target must be chat, alert, lane:<name>, ch:<id> or th:<id>", 400);
+	const minutes = b.timeout_minutes === undefined ? DEFAULT_MINUTES : b.timeout_minutes;
+	if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes <= 0 || minutes > MAX_MINUTES) return err(`timeout_minutes must be in (0, ${MAX_MINUTES}]`, 400);
+	let fields: Field[] = kind === "secret" ? ["username", "password"] : kind === "otp" ? ["code"] : [];
+	if (b.fields !== undefined) {
+		if (!Array.isArray(b.fields) || b.fields.some(f => !FIELDS.includes(f as Field))) return err("fields must be a list of username, password, code", 400);
+		if (kind === "secret") fields = [...new Set(b.fields as Field[])];
+		if (kind === "secret" && !fields.length) return err("fields must not be empty for secret", 400);
+	}
+	let form: FormField[] | undefined;
+	if (kind === "form") {
+		const built = buildForm(b.form, t => msg().auth.formLabels[t] ?? t);
+		if (typeof built === "string") return err(built, 400);
+		form = built;
+	}
+	if (b.remember !== undefined && typeof b.remember !== "boolean") return err("remember must be true or false", 400);
+	const r: AuthRequest = { id: randomBytes(6).toString("hex"), site, kind, fields, form, remember: b.remember === true, purpose, expiresAt: Date.now() + minutes * 60_000, status: "pending", channelId: "", messageId: "", target, session: typeof b.session === "string" ? b.session.slice(0, 200) : "", waiters: new Set() };
+	// Discord is one way to answer; the web app is always the other, so a failed or missing Discord post is not fatal.
+	if (discord.status.enabled) {
+		try {
+			const sent = await discord.postRich(target, { content: contentOf(r), components: componentsOf(r) });
+			r.channelId = sent.channelId;
+			r.messageId = sent.messageId;
+		} catch (e) {
+			log(`auth ${r.id} ${r.site}: discord post to ${target} failed, web only: ${e}`);
+		}
+	}
+	reqs.set(r.id, r);
+	authRequested({ id: r.id, kind, title: msg().auth.titles[kind], site, purpose });
+	r.timer = setTimeout(() => {
+		settle(r, "timeout");
+		refresh(r);
+	}, minutes * 60_000);
+	log(`auth ${r.id} ${r.site} ${r.kind} pending`);
+	try {
+		if (r.session) onOpened(waitOf(r), Boolean(r.messageId));
+	} catch (e) {
+		log(`auth ${r.id} open notice failed: ${e}`);
+	}
+	return json({ id: r.id });
+}
+
+/** Requests still waiting for the owner, for the gateway's own replies while one is open (hub/auth-wait.ts). */
+export const pendingWaits = (): AuthWait[] => [...reqs.values()].filter(r => r.status === "pending").map(waitOf);
+
+/** The owner closed a pending request from a conversation ("취소"): the same as DELETE /api/auth/<id>. False when it is not pending. */
+export function cancelAuth(id: string): boolean {
+	const r = reqs.get(id);
+	if (!r || r.status !== "pending") return false;
+	settle(r, "cancelled");
+	refresh(r);
+	return true;
+}
+
+// OTP values leave the gateway only to a caller holding the hub token itself: a tailscale-authorized web login gets 403.
+function takeOtp(req: Request, r: AuthRequest | undefined): Response {
+	const sent = Buffer.from(req.headers.get("x-dotz-token") ?? "");
+	const real = Buffer.from(HUB_TOKEN);
+	if (sent.length !== real.length || !timingSafeEqual(sent, real)) return new Response("forbidden", { status: 403 });
+	if (!r) return err("unknown request", 404);
+	if (r.kind !== "otp") return err("not an otp request", 400);
+	if (r.status === "pending") return err("not entered yet", 409);
+	const value = r.otp;
+	r.otp = undefined;
+	if (value === undefined) return new Response("gone", { status: 410 });
+	log(`auth ${r.id} ${r.site} ${r.kind} taken`);
+	return new Response(value, { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
+// Pending requests for the web app: no values, only what the form needs.
+export function pendingAuth() {
+	const m = msg().auth;
+	return [...reqs.values()].filter(r => r.status === "pending").map(r => ({
+		id: r.id,
+		site: r.site,
+		kind: r.kind,
+		title: m.titles[r.kind],
+		purpose: r.purpose,
+		expiresAt: new Date(r.expiresAt).toISOString(),
+		fields: r.form ? r.form.map(f => ({ name: f.key, label: f.label, type: f.input, inputmode: f.inputmode, autocomplete: f.autocomplete, mask: f.mask, optional: f.optional, maxlength: f.maxlength, placeholder: f.placeholder })) : r.fields.map(f => ({ name: f, label: m.labels[f] })),
+		...(r.form ? { remember: r.remember } : {}),
+	}));
+}
+
+// The web app's answer: {action: "submit", values} | {action: "approve"} | {action: "cancel"}. The caller already passed
+// the gateway's owner check (hub token or an allowed tailnet login).
+async function answer(req: Request, r: AuthRequest | undefined): Promise<Response> {
+	if (!r) return err("unknown request", 404);
+	if (r.status !== "pending") return json(view(r));
+	const b = (await req.json().catch(() => undefined)) as { action?: unknown; values?: unknown; remember?: unknown } | undefined;
+	const action = b?.action;
+	if (action === "cancel") settle(r, "cancelled");
+	else if (action === "approve" && r.kind === "approve") settle(r, "approved");
+	else if (action === "submit" && r.form) {
+		const raw = (b?.values && typeof b.values === "object" ? b.values : {}) as Record<string, unknown>;
+		const values: Record<string, string> = {};
+		for (const f of r.form) {
+			const v = raw[f.key];
+			if (typeof v !== "string" || !v.trim()) {
+				if (f.optional) continue;
+				return json({ error: "required", field: f.key }, 400);
+			}
+			const clean = normalizeValue(f, v);
+			if (clean === undefined) return json({ error: "invalid", field: f.key }, 400);
+			values[f.key] = clean;
+		}
+		if (typeof b?.remember === "boolean") r.remember = b.remember;
+		try {
+			store(r, values);
+		} catch (e) {
+			return err(storeFailed(r, e), 500);
+		}
+		settle(r, "entered");
+	} else if (action === "submit" && (r.kind === "secret" || r.kind === "otp")) {
+		const raw = (b?.values && typeof b.values === "object" ? b.values : {}) as Record<string, unknown>;
+		const values: Record<string, string> = {};
+		for (const f of r.fields) {
+			const v = raw[f];
+			if (typeof v !== "string" || !v || v.length > 1000) return err(`${f} is required`, 400);
+			values[f] = v;
+		}
+		try {
+			store(r, values);
+		} catch (e) {
+			return err(storeFailed(r, e), 500);
+		}
+		settle(r, "entered");
+	} else return err("action must be submit, approve or cancel", 400);
+	refresh(r);
+	return json({ id: r.id, status: r.status });
+}
+
+export function authRoute(req: Request, url: URL): Promise<Response> | undefined {
+	if (url.pathname !== "/api/auth" && !url.pathname.startsWith("/api/auth/")) return undefined;
+	const parts = url.pathname.split("/").filter(Boolean);
+	if (parts.length === 2) return req.method === "POST" ? create(req) : Promise.resolve(err("method not allowed", 405));
+	const r = reqs.get(parts[2]);
+	if (parts.length === 4 && parts[3] === "take" && req.method === "GET") return Promise.resolve(takeOtp(req, r));
+	if (parts.length !== 3) return Promise.resolve(err("not found", 404));
+	if (req.method === "DELETE") {
+		if (!r) return Promise.resolve(err("unknown request", 404));
+		if (r.status === "pending") {
+			settle(r, "cancelled");
+			refresh(r);
+		}
+		return Promise.resolve(json(view(r)));
+	}
+	if (req.method === "POST") return answer(req, r);
+	if (req.method !== "GET") return Promise.resolve(err("method not allowed", 405));
+	if (!r) return Promise.resolve(err("unknown request", 404));
+	const wait = Math.min(Math.max(Number(url.searchParams.get("wait") ?? 0) || 0, 0), MAX_WAIT_S);
+	if (r.status !== "pending" || wait === 0) return Promise.resolve(json(view(r)));
+	return waitChange(r, wait, req.signal).then(() => json(view(r)));
+}

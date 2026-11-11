@@ -1,0 +1,285 @@
+// Terminal-view activity: stamps and scrubs the rows a runtime adapter emits, keeps the task-worker lists, and maps saved
+// omp session transcripts to the same shape.
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { broadcast, emitActivity } from "./events.ts";
+import { mask, secretValues } from "./providers.ts";
+import { now } from "./config.ts";
+import { ownerView } from "./gateway-added.ts";
+import { isNote } from "./i18n.ts";
+import { stripLater } from "./tone.ts";
+import { stripSteerMark } from "./steer-mark.ts";
+import type { AgentEvent, SubagentUpdate } from "./runtime/types.ts";
+
+export type Block = { type?: string; text?: string; thinking?: string };
+
+const MAX = 4000;
+// Credential-shaped tokens that could surface in tool output (the saved keys themselves are redacted exactly).
+const TOKEN_RE = /\b(?:sk-[A-Za-z0-9_-]{16,}|AIza[0-9A-Za-z_-]{30,}|gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16})\b/g;
+
+export function scrub(text: string): string {
+	let out = text.replace(TOKEN_RE, m => mask(m));
+	for (const secret of secretValues()) out = out.split(secret).join(mask(secret));
+	return out.length > MAX ? `${out.slice(0, MAX)}…` : out;
+}
+
+export const blocks = (content: Block[] | string | undefined): Block[] => (Array.isArray(content) ? content : []);
+export const joined = (content: Block[] | string | undefined) => (typeof content === "string" ? content : blocks(content).filter(b => b.type === "text").map(b => b.text ?? "").join("")).trim();
+
+// A short plain label for a collapsed tool call: the model's own intent (`i`; omp moves it out of the args into the
+// frame's `intent` field; OmO's eval names it `summary`) when present, else the first line of the command / path / pattern, cut to one short line.
+export function summary(args: unknown, intent?: string): string {
+	const a = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+	const v = a.i ?? a.intent ?? intent ?? a.summary ?? a.command ?? a.cmd ?? a.path ?? a.file_path ?? a.pattern ?? a.query ?? a.url;
+	if (typeof v !== "string" || !v.trim()) return "";
+	const line = v.trim().split("\n")[0].trim();
+	return line.length > 90 ? `${line.slice(0, 89)}…` : line;
+}
+
+// Whether summary() above has the model's own words rather than a raw command, path or query. The progress note shows only those.
+export function ownIntent(args: unknown, intent?: string): boolean {
+	const a = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+	const v = a.i ?? a.intent ?? intent ?? a.summary;
+	return typeof v === "string" && !!v.trim();
+}
+
+// Stamps a runtime's activity row with time and source, scrubs secrets from it, and feeds the terminal view; task-worker
+// updates go to the subagent lists. Other events are not display material.
+export function emitEventActivity(source: string, ev: AgentEvent): void {
+	if (ev.type === "subagent") return trackSubagent(source, ev.update);
+	if (ev.type !== "activity") return;
+	const a = ev.row.type === "text" ? { ...ev.row, text: stripLater(ev.row.text) } : ev.row;
+	if (a.type === "text" && !a.text) return;
+	emitActivity({ ts: now(), kind: "activity", source, ...a, text: scrub(a.text), ...(a.args !== undefined ? { args: scrub(a.args) } : {}), ...(a.intent ? { intent: scrub(a.intent) } : {}) });
+}
+
+// Subagents (task-tool workers) of each agent process, from the runtime's subagent events. Kept as one current list
+// per source (finished ones for 10 min) and streamed whole on every change.
+export type Subagent = { id: string; agent?: string; description?: string; status: "running" | "done" | "failed" | "aborted"; tool?: string; intent?: string; started_at: number; updated_at: number };
+const subagents = new Map<string, Map<string, Subagent>>();
+// Transcript file of each subagent (`<source>\n<id>` -> path); server-side only, never sent to the UI.
+const transcripts = new Map<string, string>();
+const FINISHED_KEEP_MS = 10 * 60_000;
+
+function trackSubagent(source: string, u: SubagentUpdate): void {
+	let list = subagents.get(source);
+	if (!list) subagents.set(source, (list = new Map()));
+	const prev = list.get(u.id);
+	if (u.transcript) transcripts.set(`${source}\n${u.id}`, u.transcript);
+	list.set(u.id, {
+		id: u.id,
+		agent: u.agent ?? prev?.agent,
+		description: u.description ? scrub(u.description).slice(0, 120) : prev?.description,
+		status: u.status,
+		tool: u.tool ?? prev?.tool,
+		intent: u.intent ? scrub(u.intent).slice(0, 120) : prev?.intent,
+		started_at: prev?.started_at ?? Date.now(),
+		updated_at: Date.now(),
+	});
+	for (const [key, s] of list) {
+		if (s.status === "running" || Date.now() - s.updated_at <= FINISHED_KEEP_MS) continue;
+		list.delete(key);
+		transcripts.delete(`${source}\n${key}`);
+	}
+	broadcast({ kind: "subagents", source, items: [...list.values()] });
+}
+
+// Task workers still running under one omp process (a lane's turn can end while its background workers keep going).
+export const runningSubagents = (source: string): number => [...(subagents.get(source)?.values() ?? [])].filter(s => s.status === "running").length;
+// The process is gone, so are its workers; their entries would otherwise stay "running" forever.
+export function endSubagents(source: string): void {
+	const list = subagents.get(source);
+	if (!list) return;
+	for (const s of list.values()) if (s.status === "running") s.status = "aborted";
+	broadcast({ kind: "subagents", source, items: [...list.values()] });
+}
+
+export function subagentLists(): Record<string, Subagent[]> {
+	return Object.fromEntries([...subagents].map(([source, list]) => [source, [...list.values()]]));
+}
+
+// OmO hands a refused nested task spawn (its depth limit) back as plain tool text, not as an error (omo-task.js; seen
+// 2026-10-20, st_01a15660: recorded is_error:false, and the blocked worker wrote the expected answer itself), so dotz
+// reads that refusal as a failed call wherever it reads tool results.
+const DEPTH_REFUSAL = /Subagent nesting limit reached/;
+export const failedCall = (tool: string | undefined, text: string, isError: unknown) => Boolean(isError) || (tool === "task" && DEPTH_REFUSAL.test(text));
+
+export type TranscriptItem = { ts: string; type: "status" | "thinking" | "text" | "tool_call" | "tool_result"; text: string; tool?: string; intent?: string; args?: string; is_error?: boolean };
+const TRANSCRIPT_MAX = 200;
+// The fields read from an omp session transcript line; every field is optional and checked before use.
+type TranscriptBlock = Block & { name?: string; arguments?: unknown; intent?: string };
+type TranscriptEntry = { type?: string; timestamp?: string; message?: { role?: string; content?: TranscriptBlock[] | string; toolName?: string; isError?: boolean } };
+
+// An omp session transcript (a subagent's, or a lane's after its live activity is gone) mapped to activity-shaped
+// items, oldest first, the last `max` of them.
+export async function transcriptItems(file: string | undefined, max = TRANSCRIPT_MAX): Promise<TranscriptItem[]> {
+	const lines = file && (await Bun.file(file).exists()) ? (await Bun.file(file).text()).split("\n") : [];
+	return itemsOf(lines).slice(-max);
+}
+
+// The newest items of a transcript for the subagent sheet, which polls every 3 s while a worker runs: only the last
+// TAIL_BYTES of the file are read (a worker transcript grows to megabytes), and only again when its size or time changed.
+const TAIL_BYTES = 512 * 1024;
+const TAIL_CACHE_MAX = 32;
+const tailCache = new Map<string, { stamp: string; items: TranscriptItem[] }>();
+export async function transcriptTail(file: string | undefined, max = TRANSCRIPT_MAX): Promise<TranscriptItem[]> {
+	if (!file) return [];
+	let size: number, stamp: string;
+	try {
+		const s = statSync(file);
+		size = s.size;
+		stamp = `${s.mtimeMs}:${s.size}:${max}`;
+	} catch {
+		return [];
+	}
+	const hit = tailCache.get(file);
+	if (hit?.stamp === stamp) return hit.items;
+	const from = Math.max(0, size - TAIL_BYTES);
+	const lines = (await Bun.file(file).slice(from, size).text()).split("\n");
+	// A cut-off first line is no JSON line.
+	if (from > 0) lines.shift();
+	const items = itemsOf(lines).slice(-max);
+	tailCache.delete(file);
+	tailCache.set(file, { stamp, items });
+	if (tailCache.size > TAIL_CACHE_MAX) tailCache.delete(tailCache.keys().next().value!);
+	return items;
+}
+
+function itemsOf(lines: string[]): TranscriptItem[] {
+	const items: TranscriptItem[] = [];
+	for (const line of lines) {
+		let e: TranscriptEntry;
+		try {
+			e = JSON.parse(stripSteerMark(line)) as TranscriptEntry;
+		} catch {
+			continue;
+		}
+		const m = e?.type === "message" ? e.message : undefined;
+		if (!m) continue;
+		const ts = String(e.timestamp ?? "");
+		if (m.role === "user") {
+			const text = ownerView(joined(m.content));
+			if (text) items.push({ ts, type: "status", text: `> ${scrub(text).slice(0, 2000)}` });
+		} else if (m.role === "assistant") {
+			for (const b of Array.isArray(m.content) ? m.content : []) {
+				if (b.type === "thinking" && b.thinking?.trim()) items.push({ ts, type: "thinking", text: scrub(b.thinking.trim()) });
+				else if (b.type === "text" && stripLater(b.text ?? "").trim()) items.push({ ts, type: "text", text: scrub(stripLater(b.text!).trim()) });
+				else if (b.type === "toolCall") {
+					const label = summary(b.arguments, b.intent);
+					items.push({ ts, type: "tool_call", tool: b.name, intent: scrub(label), text: label ? `${b.name}: ${scrub(label)}` : String(b.name ?? ""), args: scrub(JSON.stringify(b.arguments ?? {}, null, 2)) });
+				}
+			}
+		} else if (m.role === "toolResult") {
+			const text = joined(m.content);
+			items.push({ ts, type: "tool_result", tool: m.toolName, text: scrub(text), is_error: failedCall(m.toolName, text, m.isError) });
+		}
+	}
+	return items;
+}
+
+// One page of a session transcript for the activity view: the newest `limit` items older than `before` (every item when
+// it is absent), and whether older ones remain.
+export async function transcriptPage(file: string | undefined, limit: number, before?: string): Promise<{ items: TranscriptItem[]; more: boolean }> {
+	const all = await transcriptItems(file, Number.POSITIVE_INFINITY);
+	const older = before ? all.filter(i => i.ts < before) : all;
+	return { items: limit > 0 ? older.slice(-limit) : [], more: older.length > Math.max(0, limit) };
+}
+
+// One subagent with its own transcript: a worker the runtime reported live (omp, Claude Code), else an OmO worker of the
+// source's session (`sessionFile`), read from OmO's task store, since OmO sends no worker frames (omoTaskDetail).
+export async function subagentDetail(source: string, id: string, sessionFile?: string): Promise<(Subagent & { items: TranscriptItem[] }) | undefined> {
+	const sub = subagents.get(source)?.get(id);
+	if (sub) return { ...sub, items: await transcriptTail(transcripts.get(`${source}\n${id}`)) };
+	return omoTaskDetail(sessionFile, id);
+}
+
+// What the task metadata says against a [done] claim (2026-10-19 lat-probe: a worker blocked by the nesting limit wrote
+// the expected answer itself and the lane reported success): workers that failed or were aborted, and `task` spawns that
+// returned an error, in worker transcripts or the lane's own session, since `since`. The reply text is not consulted.
+export function taskProblems(subs: Subagent[], items: { id: string; items: TranscriptItem[] }[], since: number): string[] {
+	const out = subs.filter(s => s.updated_at >= since && (s.status === "failed" || s.status === "aborted")).map(s => `worker ${s.id}${s.agent ? ` (${s.agent})` : ""} ${s.status}`);
+	for (const t of items)
+		for (const i of t.items)
+			if (i.type === "tool_result" && i.is_error && i.tool === "task" && Date.parse(i.ts) >= since) out.push(`${t.id}: task spawn failed: ${i.text.slice(0, 160)}`);
+	return out;
+}
+
+// OmO sends no worker frames (caps.subagents "transcript-only"), so an OmO lane's workers, nested ones included, are read
+// from its task store: <agent dir>/projects/*/senpi-task/tasks/<id>.json whose root_session_id is the lane session's id
+// (the uuid ending its file name; the agent dir is three levels above it), each worker's transcript in
+// children/<id>/sessions/<id>/. A process without such records (omp, Claude Code) gets nothing from here.
+type OmoTaskRecord = { task_id?: string; status?: string; root_session_id?: string; category?: string; agent_type?: string; updated_at?: string };
+const OMO_STATUS: Record<string, Subagent["status"]> = { completed: "done", running: "running", queued: "running", pending: "running", failed: "failed", cancelled: "aborted", aborted: "aborted", killed: "aborted" };
+export async function omoTasks(sessionFile: string): Promise<{ subs: Subagent[]; items: { id: string; items: TranscriptItem[] }[] }> {
+	const root = /_([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(sessionFile)?.[1];
+	const projects = join(dirname(dirname(dirname(sessionFile))), "projects");
+	const subs: Subagent[] = [];
+	const items: { id: string; items: TranscriptItem[] }[] = [];
+	if (!root || !existsSync(projects)) return { subs, items };
+	for (const project of readdirSync(projects)) {
+		const store = join(projects, project, "senpi-task");
+		const tasks = join(store, "tasks");
+		if (!existsSync(tasks)) continue;
+		for (const f of readdirSync(tasks).filter(f => f.endsWith(".json"))) {
+			let r: OmoTaskRecord;
+			try {
+				r = JSON.parse(readFileSync(join(tasks, f), "utf8"));
+			} catch {
+				continue;
+			}
+			if (r.root_session_id !== root || !r.task_id) continue;
+			const at = Date.parse(r.updated_at ?? "") || 0;
+			subs.push({ id: r.task_id, agent: r.category ?? r.agent_type, status: OMO_STATUS[r.status ?? ""] ?? "failed", started_at: at, updated_at: at });
+			const dir = join(store, "children", r.task_id, "sessions", r.task_id);
+			for (const t of existsSync(dir) ? readdirSync(dir).filter(n => n.endsWith(".jsonl")) : []) items.push({ id: r.task_id, items: await transcriptItems(join(dir, t), 2000) });
+		}
+	}
+	return { subs, items };
+}
+
+// One OmO worker of a session: its record <agent dir>/projects/*/senpi-task/tasks/<id>.json when its root_session_id is
+// that session's, and the tail of its newest transcript in children/<id>/sessions/<id>/ (the whole store is not scanned).
+export async function omoTaskDetail(sessionFile: string | undefined, id: string): Promise<(Subagent & { items: TranscriptItem[] }) | undefined> {
+	const root = sessionFile && /_([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(sessionFile)?.[1];
+	if (!root || !/^[\w-]+$/.test(id)) return undefined;
+	const projects = join(dirname(dirname(dirname(sessionFile))), "projects");
+	if (!existsSync(projects)) return undefined;
+	for (const project of readdirSync(projects)) {
+		const store = join(projects, project, "senpi-task");
+		let r: OmoTaskRecord & { description?: string; task_summary?: string; started_at?: string; created_at?: string };
+		try {
+			r = JSON.parse(readFileSync(join(store, "tasks", `${id}.json`), "utf8"));
+		} catch {
+			continue;
+		}
+		if (r.root_session_id !== root) continue;
+		const dir = join(store, "children", id, "sessions", id);
+		const file = existsSync(dir) ? readdirSync(dir).filter(n => n.endsWith(".jsonl")).sort().at(-1) : undefined;
+		const description = scrub(String(r.description || r.task_summary || "")).replace(/\s+/g, " ").trim().slice(0, 120);
+		const updated = Date.parse(r.updated_at ?? "") || 0;
+		return {
+			id,
+			agent: r.category ?? r.agent_type,
+			...(description ? { description } : {}),
+			status: OMO_STATUS[r.status ?? ""] ?? "failed",
+			started_at: Date.parse(r.started_at ?? r.created_at ?? "") || updated,
+			updated_at: updated,
+			items: await transcriptTail(file && join(dir, file)),
+		};
+	}
+	return undefined;
+}
+
+export async function workerCheck(source: string, since: number, ownSession?: string): Promise<string[]> {
+	const subs = [...(subagents.get(source)?.values() ?? [])];
+	const items = await Promise.all([
+		...subs.map(async s => ({ id: s.id, items: await transcriptItems(transcripts.get(`${source}\n${s.id}`), 2000) })),
+		...(ownSession ? [transcriptItems(ownSession, 2000).then(items => ({ id: source, items }))] : []),
+	]);
+	const omo = ownSession ? await omoTasks(ownSession) : { subs: [], items: [] };
+	return taskProblems([...subs, ...omo.subs], [...items, ...omo.items], since);
+}
+
+export function statusActivity(source: string, text: string): void {
+	emitActivity({ ts: now(), kind: "activity", source, type: "status", text });
+}

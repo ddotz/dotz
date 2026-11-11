@@ -1,0 +1,59 @@
+this is not json
+{"type":"response","id":"o1","command":"set_subagent_subscription","success":true}
+{"type":"agent_start"}
+{"type":"message_start","message":{"role":"user"}}
+{"type":"message_end","message":{"role":"user","content":"[dotz gateway] 당신은 땃쥐입니다. recall follows"}}
+{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"  hello from the owner  "},{"type":"text","text":"second block"}]}}
+{"type":"message_end","message":{"role":"user","content":"LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"}}
+{"type":"message_end","message":{"role":"user","content":[{"type":"image","data":"..."}]}}
+{"type":"message_update","message":{"role":"assistant","content":[{"type":"text","text":"partial"}]}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":" weighing options "},{"type":"text","text":" Let me check. "},{"type":"toolCall","name":"bash","arguments":{}}],"stopReason":"toolUse","usage":{"input":100,"cacheRead":50,"cacheWrite":10,"output":5}}}
+{"type":"tool_execution_start","toolCallId":"t1","toolName":"bash","args":{"command":"ls -la\nfoo","i":"list the files"},"intent":"ignored because args.i wins"}
+{"type":"tool_execution_start","toolCallId":"t2","toolName":"read","args":{"path":"/a/b/c.ts"}}
+{"type":"tool_execution_start","toolCallId":"t3","toolName":"weird","args":"raw string args"}
+{"type":"tool_execution_start","toolCallId":"t4","toolName":"task","args":{"tasks":[1]},"intent":"IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"}
+{"type":"tool_execution_start","toolName":"noargs"}
+{"type":"tool_execution_end","toolCallId":"t1","toolName":"bash","result":{"content":[{"type":"text","text":"total 0\nkey sk-abcdefghijklmnopqrstuvwxyz0123456 leaked"}]},"isError":false}
+{"type":"tool_execution_end","toolCallId":"t2","toolName":"read","result":"plain string result","isError":true}
+{"type":"tool_execution_end","toolCallId":"t4","toolName":"task","result":{"content":[{"type":"text","text":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}]}}
+{"type":"tool_execution_end","toolCallId":"t3","toolName":"weird"}
+{"type":"subagent_lifecycle","payload":{"id":"sa1","agent":"task","description":"implement the thing","status":"running","sessionFile":"/tmp/sa1.jsonl"}}
+{"type":"subagent_progress","payload":{"agent":"task","progress":{"id":"sa1","status":"running","currentTool":"bash","lastIntent":"run the tests sk-abcdefghijklmnopqrstuvwxyz0123456","description":"implement the thing"}}}
+{"type":"subagent_lifecycle","payload":{"id":"sa2","agent":"scout","description":"look around","status":"running"}}
+{"type":"subagent_lifecycle","payload":{"id":"sa1","status":"completed"}}
+{"type":"subagent_lifecycle","payload":{"id":"sa2","status":"Error: boom"}}
+{"type":"subagent_lifecycle","payload":{"id":"sa3","agent":"task","status":"cancelled"}}
+{"type":"subagent_progress","payload":{"progress":{"status":"running"}}}
+{"type":"subagent_progress","payload":{"id":"sa4","status":"queued"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"All done: three files changed."}],"stopReason":"stop","usage":{"input":200,"cacheRead":100,"cacheWrite":20,"output":30}}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Truncated at the token limit"}],"stopReason":"length","usage":{"input":1,"cacheRead":2,"cacheWrite":3,"output":4}}}
+{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"429 usage limit reached for the week"}}
+{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"overloaded_error: please retry"}}
+{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"Your credit balance is too low"}}
+{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"something odd happened"}}
+{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"partial text before dying"}],"stopReason":"error","errorMessage":"Compaction failed: provider returned 500"}}
+{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"error","errorMessage":"auto-compaction aborted: Compaction error"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"stopped by the owner"}],"stopReason":"aborted"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"only thinking"}],"stopReason":"stop"}}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"no usage block"}],"stopReason":"stop"}}
+{"type":"auto_retry_start","attempt":2,"maxAttempts":5,"errorMessage":"overloaded"}
+{"type":"auto_retry_start"}
+{"type":"auto_compaction_start"}
+{"type":"auto_compaction_end"}
+{"type":"auto_compaction_end","errorMessage":"auto compaction failed: !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"}
+{"type":"extension_error","error":"deny hook crashed"}
+{"type":"extension_error"}
+{"type":"agent_end"}
+{"type":"response","id":"o2","command":"get_state","success":true,"data":{"sessionFile":"/tmp/sessions/abc.jsonl","contextUsage":{"tokens":1234,"contextWindow":200000,"percent":0.6},"model":{"contextWindow":999}}}
+{"type":"response","id":"o3","command":"get_session_stats","success":true,"data":{"contextUsage":{"tokens":4321,"contextWindow":0},"model":{"contextWindow":1000000}}}
+{"type":"response","id":"o4","command":"get_session_stats","success":true,"data":{"model":{"contextWindow":500000}}}
+{"type":"response","id":"o5","command":"get_state","success":false,"error":"not ready","data":{"sessionFile":"/tmp/sessions/failed.jsonl","contextUsage":{"tokens":77}}}
+{"type":"response","id":"o6","command":"get_state","success":true,"data":{}}
+{"type":"response","id":"o7","command":"compact","success":true,"data":{"tokensBefore":123456}}
+{"type":"response","id":"o8","command":"compact","success":true}
+{"type":"response","id":"o9","command":"compact","success":false,"error":"compaction failed: ?????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????"}
+{"type":"response","id":"o10","command":"compact","success":false}
+{"type":"response","id":"o11","command":"abort","success":true}
+{"type":"something_new","payload":{"a":1}}
+{}

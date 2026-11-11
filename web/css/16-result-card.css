@@ -1,0 +1,289 @@
+/* result card (11-resultcard.js): a mail or a monitoring result - header, title, labelled sections, the original folded */
+.tl-in > .bm.rc, #mon-tl > .bm.rc { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rc-hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.rc-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: 13px; line-height: 18px; font-weight: 600; }
+.rc-time { flex: none; margin-left: auto; white-space: nowrap; }
+.rc-title { color: var(--fg); font-size: 18px; line-height: 26px; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.rc-sec { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+/* key-column rows (11-resultcard.js rcRowsNode): time / 답장 / 가격, what it is, the detail muted */
+.rc-rows { display: flex; flex-direction: column; min-width: 0; }
+.rc-rows > .rc-sh { margin-top: var(--sp-3); }
+.rc-rows > .rc-sh:first-child { margin-top: 0; }
+.rc-row { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; padding: var(--sp-05) 0; }
+.rc-k { flex: none; width: var(--rc-k-w, 48px); color: var(--fg-3); font: 400 13px/22px var(--font); font-variant-numeric: tabular-nums; }
+.rc-w { min-width: 0; font: 400 15px/22px var(--font); overflow-wrap: anywhere; }
+.rc-w b { font-weight: 500; }
+.rc-d { margin-left: var(--sp-1); color: var(--fg-3); font-size: 13px; }
+.rc-w > .rc-d.nw-chg { margin-left: 0; font-size: inherit; }
+.rc-row > .rc-w.rc-d { margin-left: 0; }
+.rc-d.nw-chg s { color: var(--fg-3); }
+.rc-d.nw-chg em { color: var(--fg-2); font-style: normal; font-weight: 500; }
+.rc-sh { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
+.bm.rc .rc-sec .md { font-size: 15px; line-height: 24px; }
+.rc-raw > summary { display: flex; align-items: center; gap: var(--sp-15); width: fit-content; min-height: 32px; padding: 0 var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; list-style: none; }
+.rc-raw > summary::-webkit-details-marker { display: none; }
+.rc-raw > summary::before { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--fg-2); border-bottom: 1.5px solid var(--fg-2); transform: rotate(-45deg); transition: transform var(--m-fast) var(--m-ease); }
+.rc-raw[open] > summary::before { transform: rotate(45deg); }
+@media (hover: hover) { .rc-raw > summary:hover { background: var(--hover); color: var(--fg); } }
+.rc-rawbody { margin-top: var(--sp-2); padding: var(--sp-3) var(--sp-4); max-height: 60vh; overflow: auto; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); }
+.bm.rc .rc-rawbody .md { font-size: 14px; line-height: 22px; }
+.rc-rawbody .md .tbl { background: var(--card); }
+/* the original of a mail (11-mailbody.js): the HTML frame (white page, auto height, no inner scroll) or the laid-out text */
+.rc-rawbody.own { padding: 0; max-height: none; overflow: visible; background: none; }
+.mb { display: flex; flex-direction: column; gap: var(--sp-15); min-width: 0; }
+.mb-bar { display: flex; align-items: center; gap: var(--sp-2); min-height: 28px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.mopen .mb-bar .btn { min-height: 32px; height: 32px; padding: 0 var(--sp-3); font-size: 13px; }
+.mb-bar .mb-note { min-width: 0; flex: 1; }
+.mb-frame { display: block; width: 100%; height: 120px; border: 1px solid var(--line); border-radius: var(--r-ctl); background: #fff; }
+.mb-fail { padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-3); }
+.mb-txt { max-width: 46em; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font-size: 15px; line-height: 24px; overflow-wrap: anywhere; word-break: keep-all; text-wrap: pretty; }
+.mb-txt > :first-child { margin-top: 0; }
+.mb-txt > :last-child { margin-bottom: 0; }
+.mb-txt p { margin: 0 0 var(--sp-3); line-height: 26px; }
+.mb-txt li { line-height: 26px; }
+.mb-txt .mt-lb { color: var(--fg); font-weight: 600; }
+.mb-txt a { color: var(--accent); }
+.mb-txt hr { margin: var(--sp-3) 0; border: 0; border-top: 1px solid var(--line-2); }
+.mb-txt .mt-h { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-4) 0 var(--sp-2); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 600; }
+.mb-txt .mt-h::before { content: ""; flex: none; width: 3px; height: 14px; border-radius: 2px; background: var(--accent); }
+.mb-txt ul, .mb-txt ol { margin: 0 0 var(--sp-3); padding-left: var(--sp-5); }
+.mb-txt li { margin: var(--sp-05) 0; padding-left: var(--sp-05); }
+.mb-txt li::marker { color: var(--fg-3); }
+.mb-txt .mt-kv { display: flex; flex-direction: column; margin: 0 0 var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--layer); overflow: hidden; }
+.mb-txt .mt-kv > div { display: grid; grid-template-columns: minmax(84px, 30%) minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); padding: var(--sp-2) var(--sp-3); }
+.mb-txt .mt-kv > div + div { border-top: 1px solid var(--line); }
+.mb-txt .mt-kv dt { margin: 0; color: var(--fg-3); font-size: 13px; line-height: 22px; }
+.mb-txt .mt-kv dd { margin: 0; min-width: 0; font-size: 14px; line-height: 22px; }
+/* the mail text is also drawn in the draft sheet (no timeline there), which keeps the window query; inside a timeline the column decides */
+@media (max-width: 520px) { .mb-txt:not(.timeline *) .mt-kv > div { grid-template-columns: 1fr; gap: 0; } }
+@container tlcol (max-width: 520px) { .mb-txt .mt-kv > div { grid-template-columns: 1fr; gap: 0; } }
+.mb-txt .mt-tbl { max-width: 100%; margin: 0 0 var(--sp-3); overflow-x: auto; border: 1px solid var(--line-2); border-radius: 12px; }
+.mb-txt .mt-tbl table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
+.mb-txt .mt-tbl th, .mb-txt .mt-tbl td { padding: var(--sp-2) var(--sp-3); text-align: left; vertical-align: top; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; }
+.mb-txt .mt-tbl th { background: var(--layer); color: var(--fg-2); font-weight: 600; }
+.mb-txt .mt-tbl td + td, .mb-txt .mt-tbl th + th { border-left: 1px solid var(--line); }
+.mb-txt .mt-tbl tr + tr td { border-top: 1px solid var(--line); }
+.mb-txt .mt-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+/* a run of market quotes (label, value, change, low, high): compact, numbers right-aligned, Korean-market colors (up red, down blue) */
+.mb-txt .mt-nt caption { padding: var(--sp-2) var(--sp-3); text-align: left; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 600; border-bottom: 1px solid var(--line); }
+.mb-txt .mt-nt th, .mb-txt .mt-nt td { padding: var(--sp-15) var(--sp-3); }
+.mb-txt .mt-nt td + td, .mb-txt .mt-nt th + th { border-left: 0; }
+.mb-txt .mt-nt th { padding-top: var(--sp-1); padding-bottom: var(--sp-1); color: var(--fg-3); font-size: 12px; font-weight: 500; }
+.mb-txt .mt-nt .lb { font-weight: 600; color: var(--fg); }
+.mb-txt .mt-nt .up { color: var(--err); }
+.mb-txt .mt-nt .dn { color: var(--accent); }
+.mb-txt .mt-nt td:nth-child(n+4) { color: var(--fg-2); }
+@media (max-width: 520px) { .mb-txt:not(.timeline *) .mt-nt th, .mb-txt:not(.timeline *) .mt-nt td { padding: var(--sp-15); } .mb-txt:not(.timeline *) .mt-nt { font-size: 13px; } }
+@container tlcol (max-width: 520px) { .mb-txt .mt-nt th, .mb-txt .mt-nt td { padding: var(--sp-15); } .mb-txt .mt-nt { font-size: 13px; } }
+.mb-txt blockquote.mt-quote { margin: 0 0 var(--sp-3); padding-left: var(--sp-3); border-left: 3px solid var(--line-2); }
+.mb-txt .mt-quote-body, .mb-txt .mt-fold-body { color: var(--fg-2); }
+.mb-txt .mt-quote-body > :last-child, .mb-txt .mt-fold-body > :last-child { margin-bottom: 0; }
+.mb-txt details.mt-quote, .mb-txt details.mt-fold { margin: 0 0 var(--sp-3); }
+.mb-txt details > summary { display: flex; align-items: center; gap: var(--sp-15); width: fit-content; min-height: 32px; padding: 0 var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; list-style: none; }
+.mb-txt details > summary::-webkit-details-marker { display: none; }
+.mb-txt details > summary::before { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--fg-2); border-bottom: 1.5px solid var(--fg-2); transform: rotate(-45deg); transition: transform var(--m-fast) var(--m-ease); }
+.mb-txt details[open] > summary::before { transform: rotate(45deg); }
+@media (hover: hover) { .mb-txt details > summary:hover { background: var(--hover); color: var(--fg); } }
+.mb-txt details > div { margin-top: var(--sp-2); padding-left: var(--sp-3); border-left: 3px solid var(--line-2); font-size: 14px; line-height: 22px; }
+.rc-rawbody .md th { background: var(--layer); }
+@media (max-width: 1099px) { .appbar.cvconv h1 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; font-size: var(--fs-card); line-height: var(--lh-card); overflow-wrap: anywhere; } }
+/* mail row (30-monitoring.js monConvNode): a compact result card that is one tap target (role=button); in the original view (11-todo-strip.js) its files */
+#mon-tl > .bm.rc.mr { gap: var(--sp-05); padding: var(--sp-2) var(--sp-4); cursor: pointer; }
+/* Rows off screen are not styled or painted until they scroll near, so adding a page of mail costs what the visible rows do. */
+#mon-tl > .bm.rc.mr { content-visibility: auto; contain-intrinsic-block-size: auto var(--row-h); }
+@media (hover: hover) { #mon-tl > .bm.rc.mr:hover { background: var(--hover); } }
+#mon-tl > .bm.rc.mr:focus-visible { outline-offset: -2px; }
+/* A mail row is one compact line each: who and when, the subject, two summary points, the first thing to do (owner 2026-10-27). */
+.mr .rc-title { overflow: hidden; font-size: 14.5px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.mr-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--fg-2); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
+.mr-pts li { position: relative; overflow: hidden; padding-left: var(--sp-3); text-overflow: ellipsis; white-space: nowrap; }
+.mr-pts li::before { content: ""; position: absolute; left: 3px; top: 8px; width: 3px; height: 3px; border-radius: 50%; background: var(--fg-3); }
+.mr-todo { display: flex; gap: var(--sp-15); min-width: 0; color: var(--fg-2); font-size: 12.5px; line-height: 18px; }
+.mr-todo b { flex: none; color: var(--warn); font-weight: 600; }
+.mr-todo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mr-slot { margin-top: var(--sp-15); display: flex; gap: var(--sp-15); }
+/* the 초안 작성 dialog (30-monitoring.js mailDraftDialog): the mail it answers as a tonal block (sender, subject, summary), then the box.
+   The block is a --bg well in the floating dialog (its --pop equals --layer in dark), and --card on the phone's full-screen --bg (14-overlay.css) */
+.md-dlg { gap: var(--sp-4); }
+.md-ctx { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctl); background: var(--bg); }
+@media (max-width: 639px) { .md-ctx { background: var(--card); } }
+.md-from { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.md-from span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-from .ic { width: 14px; height: 14px; }
+.md-subj { color: var(--fg); font-size: 16px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.md-ctx .mr-sum { margin-top: var(--sp-05); font-size: 14px; line-height: 22px; -webkit-line-clamp: 3; }
+.md-ctx ul.mr-pts li { position: relative; padding-left: var(--sp-3); }
+.md-ctx ul.mr-pts li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 3px; height: 3px; border-radius: 50%; background: var(--fg-3); }
+.md-ctx .mr-todo { margin-top: var(--sp-05); font-size: 13px; line-height: 20px; }
+.md-ask { display: flex; flex-direction: column; gap: var(--sp-2); }
+.md-lbl { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 500; }
+/* the one filled button stays at the footer's right end at its own width, like 새 메일's 초안 만들기 (ui-spec .fs-ft), not the phone's full-width lone button */
+.fs-card.md-d .fs-ft.row .btn:only-child { flex: none; }
+.md-ask textarea.fi { min-height: 88px; font-size: 15px; line-height: 22px; padding: var(--sp-2) var(--sp-3); resize: none; }
+/* the ⋯ of a mail card (30-monitoring.js mailMenuBtn): the last item of the header, at the top right; the negative margin keeps the 16px header line */
+/* --fg-2 and a larger icon (owner 2026-10-29): the --fg-3 dots were easy to miss on the card */
+.rc-hd .mr-more { margin: calc(var(--sp-15) * -1) calc(var(--sp-2) * -1) calc(var(--sp-15) * -1) 0; color: var(--fg-2); }
+.rc-hd .mr-more .ic { width: 20px; height: 20px; }
+.rc-hd .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); } @media (hover: hover) { .rc-hd .mr-more:hover { background: var(--active); color: var(--fg); } }
+/* 초안 작성 on the open mail's card (11-todo-strip.js): below 1100px, where the conversation head and its 초안 작성 are hidden */
+.rc-hd .rc-src + .mr-more, .rc-hd .tag + .mr-more { margin-left: auto; }
+@media (pointer: coarse), (max-width: 639px) { .rc-hd .mr-more { margin: calc((var(--sp-15) + var(--sp-1)) * -1) calc((var(--sp-2) + var(--sp-05)) * -1) calc((var(--sp-15) + var(--sp-1)) * -1) 0; } }
+.mr-clip { flex: none; display: inline-flex; align-items: center; gap: var(--sp-05); color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.mr-clip .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.mr-files { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-1); padding-top: var(--sp-2); border-top: 1px solid var(--line); }
+.mr-fh { color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
+.mr-file { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 44px; padding: 0 var(--sp-2); border-radius: var(--r-ctl); color: var(--fg); font-size: 14px; line-height: 20px; text-decoration: none; }
+@media (hover: hover) { .mr-file:hover { background: var(--hover); } }
+.mr-file .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; color: var(--fg-2); }
+.mr-fname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mr-fsize { flex: none; color: var(--fg-3); font-size: 12px; }
+/* send-approval draft card (30-monitoring.js draftCardNode): the mail it would send, its state as a badge with the time, the choices below */
+#mon-tl > .bm.rc.dr { gap: var(--sp-3); }
+.dr-ic { flex: none; display: inline-flex; color: var(--fg-3); }
+.dr-ic .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.dr-st { margin-left: auto; height: 24px; font-size: 13px; line-height: 20px; font-weight: 600; white-space: nowrap; }
+.dr-q { font-size: 15px; line-height: 22px; }
+.dr-orig { display: flex; flex-direction: column; gap: var(--sp-05); padding: var(--sp-05) 0 var(--sp-05) var(--sp-3); border-left: 3px solid var(--line-2); min-width: 0; }
+.dr-ok { color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dr-os { color: var(--fg-2); font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
+.dr-os b { color: var(--fg); font-weight: 600; }
+.dr-ob { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--fg-3); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
+.dr-mail { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line-2); border-radius: var(--r-ctl); }
+.dr-to { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.dr-k { flex: none; color: var(--fg-3); font-size: 13px; line-height: 20px; }
+.dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: var(--sp-05) var(--sp-3); border-radius: 12px; background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; }
+.dr-sub { color: var(--fg); font-size: 16px; line-height: 24px; font-weight: 700; overflow-wrap: anywhere; }
+/* 받는이·참조 of a mail reply draft (10-decision-card.js draftToNode): 답장 | 전체 답장, chips with x, one add field per row */
+.dr-recv { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.dr-recv[hidden] { display: none; }
+.dr-seg { align-self: flex-start; flex-wrap: nowrap; }
+.dr-seg button { flex: none; padding: 0 var(--sp-3); }
+.dr-rcrow { align-items: flex-start; }
+.dr-rc-list { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-15); min-width: 0; }
+.dr-rc { display: inline-flex; align-items: center; gap: var(--sp-05); max-width: 100%; padding-right: var(--sp-05); }
+.dr-rc-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
+.dr-rc-t:disabled { cursor: default; }
+.dr-rc-x { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 14px; background: transparent; color: var(--fg-3); cursor: pointer; }
+@media (hover: hover) { .dr-rc-x:hover { background: var(--hover); color: var(--fg); } }
+.dr-rc-x .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.dr-rc-add { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 28px; padding: 0 var(--sp-3); border: 1px dashed var(--line-2); border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+@media (hover: hover) { .dr-rc-add:hover { background: var(--hover); } }
+.dr-rc-add .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.dr-rc-edit { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-width: 0; }
+.dr-rc-in { min-width: 0; width: 15em; max-width: 100%; height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); font: inherit; font-size: 13px; }
+.dr-rc-in:focus { outline: 0; box-shadow: var(--ff-ring); }
+.dr-rc-edit .btn { height: 32px; min-height: 32px; padding: 0 var(--sp-3); }
+@media (pointer: coarse) { .dr-rc-x { width: 36px; height: 36px; } .dr-rc-add, .dr-rc-in, .dr-rc-edit .btn { min-height: 38px; } }
+/* the mail that goes out right after a comment reply, in the same card (10-decision-card.js draftMailNode) */
+.dr-mailpart { display: flex; flex-direction: column; gap: var(--sp-15); min-width: 0; margin-top: var(--sp-3); }
+.dr-mh { display: flex; align-items: center; gap: var(--sp-15); color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dr-mh svg { flex: none; width: 14px; height: 14px; }
+.dr-rulebar { display: flex; margin: var(--sp-05) 0 var(--sp-1); }
+.dr-origin { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; color: var(--fg-3); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.dr-origin a { color: inherit; text-decoration: underline; }
+.dr-origin svg { flex: none; width: 14px; height: 14px; }
+.dr-body { display: flex; flex-direction: column; gap: var(--sp-2); color: var(--fg); font-size: 15px; line-height: 24px; overflow-wrap: anywhere; }
+.dr-body p, .bm .md.dr-body p { margin: 0; white-space: pre-wrap; }
+.bm .md.dr-body { font-size: 15px; line-height: 24px; }
+/* the files a draft sends along, and what is missing (10-decision-card.js draftFilesNode); the send sheet and the card share it */
+.dr-files { display: flex; flex-direction: column; gap: var(--sp-15); min-width: 0; margin-top: var(--sp-3); }
+.dr-fh { color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dr-att { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: var(--row-h); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); text-decoration: none; }
+@media (hover: hover) { a.dr-att:hover { background: var(--hover); } }
+a.dr-att:active { background: var(--active); }
+.dr-fi { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card); color: var(--fg-2); }
+.dr-fi .ic, .dr-att > .ic, .dr-none .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.dr-att > .ic { width: 16px; height: 16px; color: var(--fg-3); }
+.dr-fn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; font-weight: 500; }
+.dr-fm { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.dr-none, .dr-warn { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--fg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.dr-none .ic { color: var(--warn); }
+/* the 첨부 line saying there is none is a fact, not a warning (only .dr-warn and the cannot-attach note are bands): a quiet line */
+.dr-none:not(:has(.dr-wn)) { padding: 0; background: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.dr-none:not(:has(.dr-wn)) .ic { width: 14px; height: 14px; color: inherit; stroke-width: 2; }
+.dr-note, .dc-gone { color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.dr-note { margin-top: var(--sp-1); }
+.dc-gone { padding: var(--sp-1) var(--sp-3) var(--sp-2); text-align: center; }
+.dr-warn { font-weight: 600; background: color-mix(in srgb, var(--warn) 18%, var(--card)); }
+.dr-warn > .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--warn); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.dr-wt { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
+.dr-wn { font-weight: 500; color: var(--fg-2); font-size: 12px; line-height: 18px; }
+.dr-files[hidden], .dr-warnbox[hidden] { display: none; }
+.dr-warnbox { display: flex; flex-direction: column; gap: var(--sp-15); margin-bottom: var(--sp-2); }
+.dr-ar { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
+.dr-ar > .dr-att { flex: 1; }
+.dr-x { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-3); cursor: pointer; }
+@media (hover: hover) { .dr-x:hover { background: var(--hover); color: var(--fg); } }
+.dr-x .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; }
+.dr-add { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px dashed var(--line-2); border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+@media (hover: hover) { .dr-add:hover { background: var(--hover); } }
+.dr-add:disabled { opacity: 0.6; cursor: default; }
+.dr-add .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.dr-menu { display: flex; flex-direction: column; gap: var(--sp-15); }
+.dr-menu .btn { width: 100%; min-height: 44px; }
+.dr-lib { display: flex; flex-direction: column; gap: var(--sp-1); max-height: 220px; overflow-y: auto; }
+.dr-li { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; padding: var(--sp-15) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+@media (hover: hover) { .dr-li:hover { background: var(--hover); } }
+.dr-hit { --tone: var(--accent); display: inline-flex; align-items: center; gap: var(--sp-15); flex: none; color: var(--fg-2); font-size: 11px; font-weight: 600; line-height: 18px; }
+.dr-q2 { margin: var(--sp-3) 0 var(--sp-2); color: var(--fg-2); font: 500 13px/18px var(--font); }
+.dr-edit.ask { min-height: 64px; }
+.dr-act .dr-manual { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--fg-2); }
+.dr-act .dr-manual .ic { width: 14px; height: 14px; }
+.dr-act { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
+.dr-act.dr-row, .dr-row { flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+.dr-act .btn { height: var(--btn-h); padding: 0 var(--sp-4); font-size: 15px; }
+.dr-act .btn.text { padding: 0 var(--sp-3); }
+.dr-edit { width: 100%; box-sizing: border-box; min-height: 160px; padding: var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); font: inherit; font-size: 15px; line-height: 24px; resize: vertical; }
+.dr-edit:focus { outline: 0; box-shadow: var(--ff-ring); }
+@media (pointer: coarse), (max-width: 639px) { .dr-mail { padding: var(--sp-3); } .dr-row .dr-send { flex: 1; } .dr-add, .dr-act .btn { height: var(--btn-hit); } }
+.dr-rm { color: var(--fg-3); cursor: pointer; }
+@media (hover: hover) { .dr-rm:hover { background: var(--hover); color: var(--fg); } }
+.dr-rm .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; }
+/* a handled reply draft folded under its mail in the conversation (30-mail-sent.js): one line, a tap unfolds the mail as it went out */
+.ms-slot { display: flex; flex-direction: column; gap: var(--sp-15); min-width: 0; margin: var(--sp-1) 0 var(--sp-2); }
+.ms-card { display: flex; flex-direction: column; min-width: 0; border-radius: var(--r-card); background: var(--card); }
+.ms-line { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; min-height: var(--row-h); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-card); background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); text-align: left; cursor: pointer; }
+@media (hover: hover) { .ms-line:hover { background: var(--card-hover); } }
+.ms-line .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.ms-k { flex: none; color: var(--fg); font-weight: 600; white-space: nowrap; }
+.ms-m { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 13px; }
+.ms-ch { color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
+.ms-card.open .ms-ch { transform: rotate(180deg); }
+.ms-body { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: 0 var(--sp-4) var(--sp-3); }
+.ms-ft { display: flex; justify-content: flex-end; }
+.ms-hd { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-width: 0; padding: 0 var(--sp-1); }
+.ms-hd .ms-n { color: var(--fg-3); font-size: 12px; }
+.ms-rm .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.mr-filter { position: sticky; top: 0; z-index: 2; display: flex; gap: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: var(--sp-1) 0 var(--sp-2); background: var(--bg); }
+.mr-filter::-webkit-scrollbar { display: none; }
+/* every filter row of an app, a mail list, 프로젝트, 답장 대기 and 알림 (web/DESIGN.md 필터): one segmented track (--r-seg) drawn by the segments
+   themselves, so the row keeps the chip height and each segment stays the button; the chosen one is a --seg-on cell (--r-seg-in) inside it.
+   A long row scrolls sideways (segKeep keeps the chosen one in view). */
+:is(.mr-filter, .pl-chips) .mr-f, .nsc-fb { position: relative; isolation: isolate; flex: none; height: var(--chip-h); padding: 0 var(--sp-3); border: 0; border-radius: 0; background: var(--seg-track); color: var(--fg-2); font: 500 13px/20px var(--font); }
+:is(.mr-filter, .pl-chips) .mr-f:first-child, .nsc-fb:first-child { border-top-left-radius: var(--r-seg); border-bottom-left-radius: var(--r-seg); }
+:is(.mr-filter, .pl-chips) .mr-f:last-child, .nsc-fb:last-child { border-top-right-radius: var(--r-seg); border-bottom-right-radius: var(--r-seg); }
+:is(.mr-filter, .pl-chips) .mr-f::before, .nsc-fb::before { content: ""; position: absolute; inset: var(--sp-05); z-index: -1; border-radius: var(--r-seg-in); }
+@media (hover: hover) { :is(.mr-filter, .pl-chips) .mr-f:hover, .nsc-fb:hover { background: var(--seg-track); color: var(--fg); } }
+@media (hover: hover) { :is(.mr-filter, .pl-chips) .mr-f:not(.on):hover::before, .nsc-fb:not(.on):hover::before { background: color-mix(in srgb, var(--seg-on) 50%, transparent); } }
+:is(.mr-filter, .pl-chips) .mr-f.on, .nsc-fb.on { color: var(--fg); font-weight: 600; }
+:is(.mr-filter, .pl-chips) .mr-f.on::before, .nsc-fb.on::before { background: var(--seg-on); }
+:is(.mr-filter, .pl-chips) .mr-fn { margin-left: var(--sp-05); font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
+
+/* a briefing-shaped answer in chat (11-resultcard.js hcBriefNode): schedule rows with a muted time column, the mail line as a chip, counts as numbers */
+.hcb { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); min-width: 0; font-size: 15.5px; line-height: 28px; }
+.hcb > .md { align-self: stretch; }
+.hcb-card { align-self: stretch; max-width: 400px; padding: 0 var(--sp-3); border-radius: var(--r-card); background: var(--layer); }
+.hcb-hd { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; padding-top: var(--sp-2); }
+.hcb-hd .tag { height: 22px; font-size: 11.5px; font-weight: 600; }
+.hcb-h { min-width: 0; color: var(--fg-2); font: 500 13px/20px var(--font); }
+/* time rows of a briefing, sized from the landing page's phone scene */
+.hcb-card .rc-row { padding: var(--sp-15) 0; }
+.hcb-card .rc-row + .rc-row { border-top: 1px solid var(--line); }
+.hcb-card .rc-k { width: 40px; }
+.hcb-card .rc-w b { font-weight: 400; }
+.hcb-chip { display: inline-flex; align-items: center; gap: var(--sp-2); max-width: 100%; min-height: 32px; padding: var(--sp-1) var(--sp-3); border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: 14px; line-height: 22px; }
+.hcb-chip .ic { color: var(--accent); }
+.hcb-ln { color: var(--fg-2); font-size: 14px; line-height: 22px; }
+.hcb-n { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hcb-h .hcb-n { color: var(--fg-2); }

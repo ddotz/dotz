@@ -1,0 +1,21 @@
+/* 캔버스 (web/js/30-canvas.js): the 앱 screen's header and frame (20-apps.css) for an HTML page the bot made. From 1100px a third
+   column beside the conversation; below that a full-screen sheet on the page canvas, under the pick outline (21-picker.css, z 70). */
+#v-chat > #canvas { display: none; }
+#v-chat.canvas-open > #canvas:not([hidden]) { display: flex; }
+@media (max-width: 1099px) {
+  #v-chat.canvas-open > #canvas { position: fixed; inset: 0; z-index: 60; padding: calc(var(--sp-2) + env(safe-area-inset-top, 0px)) var(--sp-3) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px)); background: var(--bg); }
+}
+/* beside the conversation the canvas is never narrower than --cnv-min, and the conversation keeps the width a split pane keeps (--cnv-conv, 43-panes-view.js paneDrag).
+   When the window cannot give both with the list column, the column folds like split panes' (.cnv-fold, 26-panes.css; 43-panes-view.js cnvFoldSync) and the list comes from its 목록 button. */
+@media (min-width: 1100px) {
+  #v-chat { --cnv-conv: 280px; --cnv-min: 400px; }
+  #v-chat.canvas-open { grid-template-columns: var(--cv-w) minmax(var(--cnv-conv), 1fr) minmax(var(--cnv-min), 1.25fr); }
+  #v-chat.canvas-open > #canvas { grid-column: 3; grid-row: 1 / -1; min-width: var(--cnv-min); min-height: 0; margin-bottom: var(--sp-4); }
+  #v-chat.cnv-fold.canvas-open { grid-template-columns: minmax(var(--cnv-conv), 1fr) minmax(var(--cnv-min), 1.25fr); }
+  #v-chat.cnv-fold.canvas-open::before, #v-chat.cnv-fold.canvas-open > * { grid-column: 1; }
+  #v-chat.cnv-fold.canvas-open > #canvas { grid-column: 2; }
+  #v-chat.cnv-fold > #cv-head { padding-left: calc(var(--sp-12) + var(--sp-4)); }
+}
+
+/* the header's file mark sits on a surface of its own: the pane is on the page (--bg), where a --layer circle would vanish */
+.cvs-pane .apps-hd .cv-av, .apps-pane .apps-hd .cv-av { background: var(--card); color: var(--fg-2); }

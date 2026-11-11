@@ -1,0 +1,36 @@
+#!/bin/sh
+# Refuses a push to public ddotz/dotz whose new commits carry a personal address or land a PR by hand with no universal review (hub/push-identity.ts), and a push whose branch tips break the
+# repo-wide limits (hub/engineering-rules.test.ts), and one that raises a ceiling or adds a ceiling key compared with the remote main (hub/engineering-ceilings.json). The limits check the pushed commit, not the working tree, so
+# an uncommitted change neither hides nor causes a failure. core.hooksPath points here: set by hub/git-hooks.ts, never by hand.
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+command -v bun >/dev/null 2>&1 || { echo "pre-push: bun not found, cannot run hub/engineering-rules.test.ts" >&2; exit 1; }
+tmp=$(mktemp -d) || exit 1
+trap 'rm -rf "$tmp"' EXIT
+seen=""
+guard=$(dirname "$0")/../hub/history-rewrite.ts
+identity=$(dirname "$0")/../hub/push-identity.ts
+rules=$(dirname "$0")/../hub/engineering-rules.ts
+ceilings=hub/engineering-ceilings.json
+while read -r _ sha ref remotesha; do
+	case "$sha" in *[!0]*) ;; *) continue ;; esac # all zeros: a ref being deleted
+	if [ -f "$guard" ]; then bun "$guard" --guard "$1" "$sha" </dev/null || exit 1; fi # rewritten-away history never goes back up, on any ref
+	bun "$identity" "$2" "$sha" "$ref" </dev/null || exit 1
+	case "$ref" in refs/heads/*) ;; *) continue ;; esac # a tag names a commit already checked on its branch
+	case " $seen " in *" $sha "*) continue ;; esac
+	seen="$seen $sha"
+	# Baseline = the remote main this push targets: its sha when the push updates main, else the remote-tracking main. Unreadable (no ref, shallow, first push) warns and passes.
+	base=""
+	case "$ref:$remotesha" in refs/heads/main:*[!0]*) base=$remotesha ;; *) base=$(git rev-parse --verify -q "refs/remotes/$1/main^{commit}") ;; esac
+	if [ -f "$rules" ] && [ -n "$base" ] && git show "$base:$ceilings" >"$tmp/base.json" 2>/dev/null && git show "$sha:$ceilings" >"$tmp/head.json" 2>/dev/null; then
+		bun "$rules" --ceiling-freeze "$tmp/base.json" "$tmp/head.json" </dev/null || { echo "pre-push: refused, $ref at $sha raises a ceiling. Shrink the code; never raise a ceiling (docs/engineering-standards.md)." >&2; exit 1; }
+	else
+		echo "pre-push: ceiling freeze skipped, no readable baseline ceilings for $ref" >&2
+	fi
+	rm -rf "$tmp/tree" && mkdir "$tmp/tree"
+	git archive "$sha" | tar -x -C "$tmp/tree" || exit 1
+	if ! (cd "$tmp/tree" && DOTZ_TEST_NO_DEPS=1 bun test hub/engineering-rules.test.ts) >"$tmp/out" 2>&1; then
+		grep -E '^\+ +"|\(fail\)' "$tmp/out" >&2 || tail -n 30 "$tmp/out" >&2
+		echo "pre-push: refused, $ref at $sha is over a limit. Shrink the code; never raise a ceiling (docs/engineering-standards.md)." >&2
+		exit 1
+	fi
+done

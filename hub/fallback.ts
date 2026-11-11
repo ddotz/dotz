@@ -1,0 +1,476 @@
+// Conditional model fallback chains that the hub drives itself (the orchestrator and every lane): an entry can be used only
+// after a usage limit or after a provider error, stop at a spend cap, come back when an earlier entry's limit resets, and
+// run through its own API key. omp's native chain (retry.fallbackChains) cannot express any of that, so a layer whose chain
+// has such an entry is switched by restarting the process with the next model in a fresh session with a handover (owner
+// 2026-10-21: a model switch never continues the same session, it would write the whole prompt cache again; see
+// hub/orchestrator.ts switchTo); a chain of bare models stays with omp (hub/runtime/omp.ts). Usage and limit state persists in <data dir>/fallback-usage.json.
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
+import { cfg, DATA_DIR, entryId, entryOn, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
+import { API_KEY_OFF, apiKeyBan } from "./apikey-policy.ts";
+import { rateLimitDelay } from "./providers.ts";
+
+// A chain the hub switches itself: any entry omp cannot walk.
+const hubOwned = (entries: FallbackEntry[]) => entries.some(e => !isPlain(e));
+
+export const clock = { now: () => Date.now() };
+const FILE = join(DATA_DIR, "fallback-usage.json");
+
+// ---- periods (KST month / day) --------------------------------------------------------------------------------------
+const KST_MS = 9 * 3600e3;
+export type Period = "month" | "day";
+const periodKey = (period: Period, at: number) => new Date(at + KST_MS).toISOString().slice(0, period === "month" ? 7 : 10);
+function periodEnd(period: Period, at: number): number {
+	const d = new Date(at + KST_MS);
+	const [y, m, day] = [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()];
+	return (period === "month" ? Date.UTC(y, m + 1, 1) : Date.UTC(y, m, day + 1)) - KST_MS;
+}
+
+// ---- persisted state ------------------------------------------------------------------------------------------------
+type Counter = { key: string; tokens: number; usd: number };
+type Blocked = { until: number; why: "quota" | "error"; since?: number; tries?: number };
+type State = { pools: Record<string, Partial<Record<Period, Counter>>>; blocked: Record<string, Blocked> };
+let state: State | undefined;
+function load(): State {
+	if (state) return state;
+	try {
+		const j = JSON.parse(readFileSync(FILE, "utf8")) as Partial<State>;
+		state = { pools: j.pools ?? {}, blocked: j.blocked ?? {} };
+	} catch {
+		state = { pools: {}, blocked: {} };
+	}
+	return state;
+}
+const save = () => writeAtomic(FILE, `${JSON.stringify(load(), null, 1)}\n`);
+// Tests start from a clean slate.
+export function resetFallbackState(): void {
+	state = { pools: {}, blocked: {} };
+	save();
+}
+
+// The provider's usage report says a subscription's usage limit is over (or a 리셋권 was just spent): ends the recorded quota blocks of the
+// subscription pools so no chain waits for a reset time that no longer applies. Never an API key's pool, a spend cap or an error block.
+export function liftQuotaBlocks(at = clock.now()): number {
+	const blocked = load().blocked;
+	let n = 0;
+	for (const [pool, b] of Object.entries(blocked)) {
+		if (b.why !== "quota" || b.until <= at || !/^anthropic(-subscription)?\//.test(pool)) continue;
+		delete blocked[pool];
+		n++;
+	}
+	if (n) save();
+	return n;
+}
+
+// What an entry spends from: its API key when it has one (every entry using that key shares it), else its model (a thinking
+// suffix does not make another pool).
+const poolOf = (e: FallbackEntry) => (e.key_file ? `key:${e.key_file}` : parseSelector(e.model).model);
+function usageOf(e: FallbackEntry, period: Period, at = clock.now()): { key: string; tokens: number; usd: number } {
+	const c = load().pools[poolOf(e)]?.[period];
+	const key = periodKey(period, at);
+	return c && c.key === key ? c : { key, tokens: 0, usd: 0 };
+}
+// Counts a request a task worker made through an API key against the key's pool (the workers of an orchestrator or lane
+// process run in child processes whose usage frames never reach the hub; their extension reports it). The process that owns
+// the chain notices a reached cap at its next own request, and a fresh start sees it in Chain.down.
+export function spendOnKey(keyFile: string, tokens: number, usd: number | undefined, at = clock.now()): void {
+	const pool = (load().pools[`key:${keyFile}`] ??= {});
+	for (const period of ["month", "day"] as const) {
+		const key = periodKey(period, at);
+		const c = pool[period]?.key === key ? pool[period]! : (pool[period] = { key, tokens: 0, usd: 0 });
+		c.tokens += tokens;
+		c.usd += usd ?? 0;
+	}
+	save();
+}
+// What one API key spent in the current KST month (zero when none is recorded), and when that month ends. Read-only view for the usage screen.
+export function keySpend(keyFile: string, at = clock.now()): { usd: number; tokens: number; resets_at: number } {
+	const c = load().pools[`key:${keyFile}`]?.month;
+	const now = c && c.key === periodKey("month", at) ? c : undefined;
+	return { usd: now?.usd ?? 0, tokens: now?.tokens ?? 0, resets_at: periodEnd("month", at) };
+}
+const capReached = (e: FallbackEntry, at: number) => {
+	if (!e.cap) return false;
+	const u = usageOf(e, e.cap.period, at);
+	return Boolean((e.cap.usd && u.usd >= e.cap.usd) || (e.cap.tokens && u.tokens >= e.cap.tokens));
+};
+
+// ---- API keys -------------------------------------------------------------------------------------------------------
+// The key lives in <data dir>/secrets/<file>; the config holds only the file name. Never logged, never put in a config or event.
+// Only files named as API keys ("…api-key…", "…api_key…") qualify, so an entry cannot point at the hub token or a bot token
+// in the same folder and send it to a base_url.
+const KEY_FILE_NAME = /^(?!\.)[\w.-]*api[-_]?key[\w.-]*$/i;
+export const keyPath = (file: string) => join(DATA_DIR, "secrets", basename(file));
+export const keyFileOk = (file: string) => KEY_FILE_NAME.test(file) && existsSync(keyPath(file));
+const readKey = (file: string) => (keyFileOk(file) ? readFileSync(keyPath(file), "utf8").trim() : "");
+
+// Provider ids omp has no key-only endpoint for need `base_url` and `api` on the entry.
+const KEY_APIS: Record<string, { api: string; baseUrl: string }> = {
+	anthropic: { api: "anthropic-messages", baseUrl: "https://api.anthropic.com" },
+	openai: { api: "openai-responses", baseUrl: "https://api.openai.com/v1" },
+	openrouter: { api: "openai-completions", baseUrl: "https://openrouter.ai/api/v1" },
+};
+// Where an API key may be sent: https only, to a provider's official API host or a host the owner listed in config.json
+// `key_hosts`. Checked when a chain is saved and again before a process gets the key.
+const keyBaseUrl = (e: FallbackEntry) => e.base_url ?? KEY_APIS[e.model.split("/")[0]]?.baseUrl;
+export function keyHostOk(url: string | undefined): boolean {
+	let u: URL;
+	try {
+		u = new URL(url ?? "");
+	} catch {
+		return false;
+	}
+	const allowed = new Set([...Object.values(KEY_APIS).map(a => new URL(a.baseUrl).hostname), ...(cfg.key_hosts ?? []).map(h => String(h).toLowerCase())]);
+	return u.protocol === "https:" && !u.username && !u.password && allowed.has(u.hostname.toLowerCase());
+}
+export const keyProviderOk = (e: FallbackEntry) => Boolean(e.key_file) && Boolean((e.base_url && e.api) || KEY_APIS[e.model.split("/")[0]]) && keyHostOk(keyBaseUrl(e));
+
+type ModelDef = { id?: string; name?: string; provider?: string; reasoning?: boolean; input?: string[]; contextWindow?: number; maxTokens?: number; cost?: Record<string, number> };
+let defs: Map<string, ModelDef> | undefined;
+// The catalog row of a model (omp lists it with its prices), read once with a blocking call: spawning a process is synchronous.
+// Bounded to 15 s; a failed read is remembered (the entry then runs with default limits) so it is not retried at every spawn.
+function modelDef(selector: string): ModelDef | undefined {
+	if (!defs) {
+		defs = new Map();
+		try {
+			const r = Bun.spawnSync([OMP, "models", "--json"], { stdout: "pipe", stderr: "ignore", timeout: 15_000 });
+			for (const m of (JSON.parse(r.stdout.toString()).models ?? []) as Array<ModelDef & { selector: string }>) defs.set(m.selector, m);
+		} catch {}
+	}
+	if (!defs.has(selector)) defs.set(selector, modelsDevDef(selector));
+	return defs.get(selector);
+}
+
+// A model OmO does not list is looked up on models.dev (owner 2026-10-29: a window guessed at 131072 for a 1M model made
+// compaction fire far too early), never guessed. The catalog is cached in <data dir>/models-dev.json for a day; the fetch is
+// blocking like the omp read above and bounded to 5 s. `modelsDev` is the cache file and the network boundary (tests replace both).
+export const modelsDev = {
+	file: join(DATA_DIR, "models-dev.json"),
+	fetch: (): string | undefined => {
+		const r = Bun.spawnSync(["curl", "-sf", "--max-time", "5", "https://models.dev/api.json"], { stdout: "pipe", stderr: "ignore" });
+		return r.success ? r.stdout.toString() : undefined;
+	},
+};
+type DevModel = { name?: string; reasoning?: boolean; modalities?: { input?: string[] }; limit?: { context?: number; output?: number }; cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number } };
+let devCatalog: Record<string, { models?: Record<string, DevModel> }> | undefined;
+function modelsDevDef(selector: string): ModelDef | undefined {
+	if (!devCatalog) {
+		devCatalog = {};
+		try {
+			const { file } = modelsDev;
+			const fresh = existsSync(file) && Date.now() - statSync(file).mtimeMs < 86_400_000;
+			const text = fresh ? readFileSync(file, "utf8") : modelsDev.fetch();
+			if (text) {
+				devCatalog = JSON.parse(text);
+				if (!fresh) writeAtomic(file, text);
+			}
+		} catch {}
+	}
+	const [provider, ...rest] = selector.split("/");
+	const m = devCatalog[provider]?.models?.[rest.join("/")];
+	if (!m?.limit?.context) return undefined;
+	const c = m.cost;
+	return {
+		name: m.name,
+		reasoning: m.reasoning,
+		input: m.modalities?.input?.filter(i => i === "text" || i === "image"),
+		contextWindow: m.limit.context,
+		maxTokens: m.limit.output,
+		...(c ? { cost: { input: c.input ?? 0, output: c.output ?? 0, cacheRead: c.cache_read ?? 0, cacheWrite: c.cache_write ?? 0 } } : {}),
+	};
+}
+
+// An entry with a key runs as its own provider ("<provider>-apikey"), because omp prefers a stored login over an API key for
+// the provider's own id. The provider is registered inside the process by the dotz extension from DOTZ_KEY_PROVIDER (no
+// secret); the key travels in DOTZ_KEY_VALUE, which the extension removes from the environment once it has registered it.
+// Whether a model selector is a key entry's own provider (keyedModel below): the process runs on an API key, not the subscription.
+export const keyedSelector = (s: string | undefined): boolean => Boolean(s && /^[^/]+-apikey\//.test(s));
+const keyedModel = (e: FallbackEntry) => {
+	const [provider, ...rest] = e.model.split("/");
+	return `${provider}-apikey/${rest.join("/")}`;
+};
+// `worker` (the selector the process's task workers would run on) is given only for an entry with `workers` on: the provider
+// then also lists the worker model (the entry's own model when the worker's provider differs), the workers get the same
+// provider spec and the key's file name (never the key: a worker's extension reads the file itself) in their environment.
+function keyEnv(e: FallbackEntry, worker?: string): Record<string, string> {
+	if (!keyHostOk(keyBaseUrl(e))) throw new Error(`API-key entry ${e.model}: base URL host is not allowed`);
+	const ban = apiKeyBan();
+	if (ban) throw new Error(`API-key entry ${e.model}: no API key (${ban === API_KEY_OFF ? `${API_KEY_OFF} is not true` : `${ban} is pinned`})`);
+	const base = parseSelector(e.model).model;
+	const [provider, ...rest] = base.split("/");
+	const api = KEY_APIS[provider];
+	const w = worker ? parseSelector(worker) : undefined;
+	const workerBase = w && w.model.split("/")[0] === provider ? w.model : base;
+	const row = (full: string) => {
+		const def = modelDef(full);
+		const id = full.split("/").slice(1).join("/");
+		if (!def?.contextWindow) console.warn(`[dotz] API-key entry ${full}: neither OmO nor models.dev lists this model; it runs with assumed limits (context 200000, output 32000). Check the model id.`);
+		return { id, name: `${def?.name ?? id} (API key)`, reasoning: Boolean(def?.reasoning), input: def?.input ?? ["text"], contextWindow: def?.contextWindow ?? 200_000, maxTokens: def?.maxTokens ?? 32_000, ...(def?.cost ? { cost: def.cost } : {}) };
+	};
+	const spec = {
+		id: `${provider}-apikey`,
+		baseModel: base,
+		baseUrl: e.base_url ?? api?.baseUrl,
+		api: e.api ?? api?.api,
+		models: [row(base), ...(worker && workerBase !== base ? [row(workerBase)] : [])],
+		...(worker ? { worker: { id: workerBase.split("/").slice(1).join("/"), thinking: w!.model === workerBase && w!.thinking ? w!.thinking : undefined } } : {}),
+	};
+	return { DOTZ_KEY_PROVIDER: JSON.stringify(spec), DOTZ_KEY_VALUE: readKey(e.key_file!), ...(worker ? { DOTZ_KEY_WORKERS: "1", DOTZ_KEY_FILE: basename(e.key_file!) } : {}) };
+}
+// The selector a keyed process's task workers run as, read from the environment keyEnv built (undefined when the process's
+// workers do not use the key).
+export function keyedWorker(env: Record<string, string | undefined>): string | undefined {
+	if (env.DOTZ_KEY_WORKERS !== "1" || !env.DOTZ_KEY_PROVIDER) return undefined;
+	const spec = JSON.parse(env.DOTZ_KEY_PROVIDER) as { id: string; worker?: { id: string; thinking?: string } };
+	return spec.worker ? `${spec.id}/${spec.worker.id}${spec.worker.thinking ? `:${spec.worker.thinking}` : ""}` : undefined;
+}
+
+// The task workers' own chain may end in an API-key entry. omp and OmO resolve a chain entry through their live model registry
+// and skip a provider they hold no login for, and the `<provider>-apikey` provider exists only in a process that registered it
+// with a key, so the native chain cannot carry the key entry. It is applied at spawn, as the lanes' and the orchestrator's key
+// entries are: when the first usable entry of the workers' chain (primary model, then the entries by `when`, cap and `enabled`)
+// is a key entry, the process gets the provider spec and the key's file name for its workers (never the key: a worker's extension
+// reads the file itself) and keeps its own subscription model. Nothing is given while a subscription entry is usable; a worker
+// already running keeps its model, so a cap or a revert applies at the next process start.
+export function workerKeyEnv(workerSelector: string, entries: FallbackEntry[]): Record<string, string> {
+	if (!entries.some(e => e.key_file)) return {};
+	const primary = parseSelector(workerSelector);
+	const chain = new Chain(primary.model, entries, primary.thinking);
+	const at = chain.initial();
+	const e = chain.list[at];
+	if (!e.key_file || chain.down(at)) return {};
+	const own = parseSelector(e.model);
+	const { DOTZ_KEY_VALUE: _key, ...env } = keyEnv(e, `${own.model}:${e.model === own.model ? primary.thinking : own.thinking}`);
+	return env;
+}
+
+// ---- the chain ------------------------------------------------------------------------------------------------------
+// A usage limit whose reset nothing names (no usage report window, no retry-after) is not guessed at 10 minutes: the entry is
+// tried again after 30 min, then 1 h, 2 h, 4 h, at most 5 h (2026-10-22: a 10-minute probe fell back and returned every
+// ~10 min for hours while the real reset, 16:01, was recorded). Every try that fails doubles the wait.
+const UNKNOWN_RESET_MS = 30 * 60_000;
+const UNKNOWN_RESET_MAX_MS = 5 * 3_600_000;
+// A block written this soon after the previous one ended (or was lifted) is a failed try of the same episode.
+const PROBE_WINDOW_MS = 30 * 60_000;
+// Consecutive failed turns (any cause) after which automatic retries, failovers and keepalives stop until a turn succeeds;
+// the owner is told once (2026-10-20: nine "stream start timed out" turns in a row, each retried).
+export const ERROR_STREAK_STOP = 5;
+export class ErrorStreak {
+	private n = 0;
+	get stopped(): boolean {
+		return this.n >= ERROR_STREAK_STOP;
+	}
+	// One more failed turn: "stop" exactly when the run reaches the limit (alert then), "stopped" past it.
+	fail(): "go" | "stop" | "stopped" {
+		this.n++;
+		return this.n < ERROR_STREAK_STOP ? "go" : this.n === ERROR_STREAK_STOP ? "stop" : "stopped";
+	}
+	ok(): void {
+		this.n = 0;
+	}
+}
+export type Why = "quota" | "error" | "cap" | "revert";
+export type Move = { from: number; to: number; why: Why };
+type Down = { why: "quota" | "error" | "cap" | "off"; until: number; since?: number; tries?: number };
+const ERROR_BLOCK_MS = 10 * 60_000;
+const KEY_BLOCK_MS = 60_000;
+
+export class Chain {
+	// Entry 0 is the process's own primary model; the others follow in order.
+	readonly list: FallbackEntry[];
+	active = 0;
+	constructor(primary: string, entries: FallbackEntry[], private readonly thinking: string) {
+		this.list = [{ model: parseSelector(primary).model }, ...entries];
+	}
+	// Why entry i cannot be used now (a limit it hit, its spend cap, a missing key), and until when.
+	down(i: number, at = clock.now()): Down | undefined {
+		const e = this.list[i];
+		// Switched off in the settings: never used, and never part of a limit or exhaustion decision.
+		if (!entryOn(e)) return { why: "off", until: Number.POSITIVE_INFINITY };
+		const b = load().blocked[poolOf(e)];
+		if (b && b.until > at) return b;
+		if (capReached(e, at)) return { why: "cap", until: periodEnd(e.cap!.period, at) };
+		// No API key while keys are off or a no-API-key account is pinned (hub/apikey-policy.ts); re-checked each minute, like a missing key.
+		if (e.key_file && (apiKeyBan() || !readKey(e.key_file) || !keyHostOk(keyBaseUrl(e)))) return { why: "error", until: at + KEY_BLOCK_MS };
+		return undefined;
+	}
+	// A fallback entry takes over after `reason` only when its condition allows it (a cap counts as a quota).
+	private fits(i: number, reason: "quota" | "error") {
+		const w = this.list[i].when;
+		return !w || w === reason;
+	}
+	next(after: number, reason: "quota" | "error", at = clock.now()): number | undefined {
+		for (let i = after + 1; i < this.list.length; i++) if (this.fits(i, reason) && !this.down(i, at)) return i;
+		return undefined;
+	}
+	// The entry a fresh process starts on: the first one not down, walking on from each down entry by its own reason.
+	initial(at = clock.now()): number {
+		let i = 0;
+		for (;;) {
+			const d = this.down(i, at);
+			if (!d) return i;
+			const n = this.next(i, d.why === "error" ? "error" : "quota", at);
+			if (n === undefined) return i;
+			i = n;
+		}
+	}
+	// Set when no entry can run and at least one is out for its spend cap: nothing may start until the earliest block ends
+	// (a cap period, or the usage limit of an entry before it).
+	exhaustedUntil(at = clock.now()): number | undefined {
+		const downs = this.list.map((_, i) => this.down(i, at));
+		if (downs.some(d => !d) || !downs.some(d => d?.why === "cap")) return undefined;
+		return Math.min(...downs.map(d => d!.until));
+	}
+	// The active entry failed (`quota`: usage limit until `until`; `error`: provider error): the entry to switch to, if any.
+	// A quota without `until` (the reset is unknown) waits UNKNOWN_RESET_MS, doubled for each failed try of this episode.
+	fail(reason: "quota" | "error", until?: number, at = clock.now()): Move | undefined {
+		const pool = poolOf(this.list[this.active]);
+		const prev = load().blocked[pool];
+		const tries = reason === "quota" && prev?.why === "quota" && at >= prev.until && at - prev.until < PROBE_WINDOW_MS ? (prev.tries ?? 0) + 1 : 0;
+		const wait = reason === "quota" ? Math.min(UNKNOWN_RESET_MS * 2 ** tries, UNKNOWN_RESET_MAX_MS) : ERROR_BLOCK_MS;
+		load().blocked[pool] = { why: reason, until: until ?? at + wait, since: at, ...(tries ? { tries } : {}) };
+		save();
+		const to = this.next(this.active, reason, at);
+		return to === undefined ? undefined : { from: this.active, to, why: reason };
+	}
+	// Counts one finished request on the active entry's pool. `capped` is set when that reached the entry's cap; `move` then names
+	// the entry to switch to (none left: the chain is exhausted).
+	spend(tokens: number, usd: number | undefined, at = clock.now()): { capped: boolean; move?: Move } | undefined {
+		const e = this.list[this.active];
+		const pool = (load().pools[poolOf(e)] ??= {});
+		for (const period of ["month", "day"] as const) {
+			const key = periodKey(period, at);
+			const c = pool[period]?.key === key ? pool[period]! : (pool[period] = { key, tokens: 0, usd: 0 });
+			c.tokens += tokens;
+			c.usd += usd ?? 0;
+		}
+		save();
+		if (!capReached(e, at)) return undefined;
+		// The next entry that takes over after a quota, else an earlier one that is usable again.
+		let to = this.next(this.active, "quota", at);
+		for (let j = 0; to === undefined && j < this.active; j++) if (!this.down(j, at)) to = j;
+		return { capped: true, ...(to === undefined ? {} : { move: { from: this.active, to, why: "cap" as const } }) };
+	}
+	// An earlier entry is usable again and the active one is marked `revert`: where to go back to.
+	// Every fallback entry goes back (a keyed or conditional one too, 2026-10-20: an API-key fallback stayed ~30 min after the
+	// subscription's limit reset because only bare entries were marked); `revert: false` keeps an entry. An earlier entry out
+	// on a usage limit comes back only when its recorded reset has passed (down() ends by itself); no try starts a turn before
+	// that. `lifted`: the provider's usage report says the limit is over, so an earlier entry out on a usage limit is usable
+	// now, once per episode: a try that fails anyway (tries > 0) waits for the recorded time again.
+	revertTarget(at = clock.now(), lifted = false): Move | undefined {
+		if (this.active === 0 || this.list[this.active].revert === false) return undefined;
+		for (let j = 0; j < this.active; j++) {
+			const d = this.down(j, at);
+			if (!d) return { from: this.active, to: j, why: "revert" };
+			if (d.why === "quota" && lifted && !d.tries) {
+				// The restart picks its entry from the recorded limits (initial()), so the try ends this one (kept, for the count of tries).
+				load().blocked[poolOf(this.list[j])]!.until = at;
+				save();
+				return { from: this.active, to: j, why: "revert" };
+			}
+		}
+		return undefined;
+	}
+	// The model selector a process runs entry i as (thinking as the primary's unless the entry names one).
+	selector(i: number): string {
+		const e = this.list[i];
+		const split = parseSelector(e.model);
+		const hasLevel = e.model !== split.model;
+		const model = e.key_file ? keyedModel({ ...e, model: split.model }) : split.model;
+		return `${model}:${hasLevel ? split.thinking : this.thinking}`;
+	}
+	// Environment a process of entry i needs (the key provider); nothing for an entry without a key. `worker`: the selector the
+	// process's task workers run on, used only when the entry lets workers use the key.
+	env(i: number, worker?: string): Record<string, string> {
+		const e = this.list[i];
+		return e.key_file ? keyEnv(e, e.workers ? worker : undefined) : {};
+	}
+	label(i: number): string {
+		const e = this.list[i];
+		return e.key_file ? `${e.model} (API key)` : e.model;
+	}
+	// Spend of entry i in its cap period, for the settings view.
+	usage(i: number) {
+		const e = this.list[i];
+		return e.cap ? { period: e.cap.period, ...usageOf(e, e.cap.period) } : undefined;
+	}
+}
+
+// One entry's cap period figures for the settings tab, computed without a running process.
+export function entryView(e: FallbackEntry) {
+	const used = e.cap ? usageOf(e, e.cap.period) : undefined;
+	const d = new Chain(e.model, [e], "off").down(1);
+	const why = d && d.why !== "off" ? d : undefined;
+	// an API-key entry is down because OmO is pinned to an account that forbids keys (hub/apikey-policy.ts): say so, with that account
+	const ban = e.key_file && why?.why === "error" ? apiKeyBan() : undefined;
+	return { ...e, enabled: entryOn(e), ...(ban === API_KEY_OFF ? { down_reason: "api_key_off" } : ban ? { down_reason: "api_key_ban", down_account: ban } : {}), ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(why ? { down: why.why, until: new Date(why.until).toISOString() } : {}), id: entryId(e) };
+}
+
+// Failures the chain moves on from: a usage limit, a billing/auth problem only the owner can fix, a provider error. Anything
+// else (a bad request, context too long, a tool or schema error) is the turn's own problem and stays with the process.
+export const failsOver = (kind?: string) => kind === "rate" || kind === "owner" || kind === "transient";
+// A failed turn is a quota problem when the provider says so (usage limit, spent credit or balance), else a plain error.
+export const failureReason = (e: { kind?: string; text: string }): "quota" | "error" => (e.kind === "rate" || /quota|credit|balance|billing|insufficient|usage limit|spend limit/i.test(e.text) ? "quota" : "error");
+// The entries the hub switches itself for a process of `runtimeId`, or undefined when the runtime gets them as its own list.
+// omp walks a chain of bare models natively (retry.fallbackChains in its per-run overlay), so the hub takes an omp chain only
+// when an entry needs a condition, cap, revert or key. OmO runs with --no-model-fallback: its own chain would follow the
+// owner's global settings, and its per-process override (RPC set_retry_fallback) is refused once a session has turn
+// history, i.e. on every resume. So the hub drives every OmO chain (restart on the same session with the next entry; OmO's
+// usage frames give the spend and the dotz extension registers key providers there too), and a bare entry goes back to the
+// primary once that is usable again, as omp's cooldown-expiry revert does. Claude Code gets a plain --fallback-model list.
+export function hubChain(runtimeId: string, entries: FallbackEntry[]): FallbackEntry[] | undefined {
+	if (runtimeId === "omo") return entries.length ? entries.map(e => (isPlain(e) ? { ...e, revert: true } : e)) : undefined;
+	return runtimeId === "omp" && hubOwned(entries) ? entries : undefined;
+}
+
+// Runs `fn` at `until` (at least 1 s from now). setTimeout cannot wait longer than 2^31-1 ms (~24.8 days; a monthly cap
+// period is longer), so a longer wait re-arms itself; `keep` receives each timer so the caller can still clear it.
+const MAX_TIMER_MS = 2 ** 31 - 1;
+export function atTime(until: number, keep: (t: Timer) => void, fn: () => void): void {
+	const left = until - Date.now();
+	keep(left > MAX_TIMER_MS ? setTimeout(() => atTime(until, keep, fn), MAX_TIMER_MS) : setTimeout(fn, Math.max(1000, left)));
+}
+
+// When a usage limit ends, if a usage report window or the error's retry-after says (else undefined: the chain backs off, see fail()).
+export async function quotaResetAt(text: string, model: string, role: "orchestrator" | "lane"): Promise<number | undefined> {
+	const d = await rateLimitDelay(text, model, role);
+	return d.reset || /retry-after-ms:\s*\d+/.test(text) ? Date.now() + d.ms : undefined;
+}
+
+// ---- going back after the runtime's own fallback walk --------------------------------------------------------------------
+// A runtime that moves a process to the next model by itself (omp's native chain, also on a refusal) never comes back: the
+// process then stays on the fallback until it restarts. One Reverter per process remembers the configured model and says when
+// to switch back: a refusal or a provider error before the next turn, a usage limit once it has reset. It only switches
+// between turns, so it cannot loop inside one; a turn that falls back again is undone again before the next (a refusal is
+// about one request, and a limit that had not reset yet just re-arms the wait). A process whose chain the hub drives
+// itself does not use one (the hub restarts it on the entry it wants).
+const QUOTA_REVERT_MS = 15 * 60_000;
+type RevertWhy = "refusal" | "quota" | "error";
+export const revertWhy = (reason: string, kind?: string): RevertWhy => (/refusal/i.test(reason) ? "refusal" : failureReason({ kind, text: reason }));
+export class Reverter {
+	private plan?: { to: string; due: number };
+	// A fallback happened while the process ran `original` (its configured selector). A second hop of the same walk keeps
+	// the first one's original.
+	note(original: string, why: RevertWhy, from: string, reason: string): void {
+		const plan = (this.plan ??= { to: original, due: 0 });
+		if (why !== "quota") return;
+		plan.due = Math.max(plan.due, clock.now() + QUOTA_REVERT_MS);
+		// A usage report or the error's retry-after names the reset; the default above holds until it is known.
+		const mine = plan;
+		void rateLimitDelay(reason, from).then(d => {
+			if (this.plan === mine && (d.reset || /retry-after-ms:\s*\d+/.test(reason))) mine.due = clock.now() + d.ms;
+		}).catch(() => {});
+	}
+	pending = (): string | undefined => this.plan?.to;
+	// The configured selector when switching back is due, and it is spent: the caller must now switch the process to it.
+	// `idle`: the caller has no turn to start, so only a usage limit that has reset counts (a refusal waits for the next turn).
+	take(idle = false, at = clock.now()): string | undefined {
+		if (!this.plan || at < this.plan.due || (idle && !this.plan.due)) return undefined;
+		const { to } = this.plan;
+		this.plan = undefined;
+		return to;
+	}
+	reset(): void {
+		this.plan = undefined;
+	}
+}

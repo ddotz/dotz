@@ -1,0 +1,796 @@
+// Mail as conversations: each mail (zele, a webmail watcher, a custom plugin) is one web conversation `mail:<key>`, and, only when the
+// owner turned on 디스코드에도 올리기 for the mail's app instance (MailDeps.threadOn), one thread in the mail channel. A web message in that conversation reaches the orchestrator the way a message in
+// the mail's Discord thread does (hub/intake.ts sendWeb `mail`). Posters come in through POST /api/mail (docs/custom-plugins.md).
+// Discord and the event bus are injected (MailDeps), so this module has no hub imports beyond config.
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, sep } from "node:path";
+import { cfg, DATA_DIR, log, readJsonOrQuarantine, writeAtomic } from "./config.ts";
+import { FileError, replyFilesOf, safeName, serveFile, type ReplyFile } from "./files.ts";
+import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
+import { addressesOf, addressKey, directionOf, EXCLUSION_LABEL, evictSurplus, migrateMails, nextReply, noteOwnSender, ownAddresses, replyExclusion, replyExpected, replyOf, selfSent, setOwnAddresses, setToOnlyDir, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
+import { mailUnreplied } from "./unreplied.ts";
+import { trackBox, type MailboxWhy, type Placed } from "./mailbox.ts";
+import { withSenderAddress } from "./reply-draft.ts";
+import { fillMailLines, mailCueText, mailLinesOf, mailLineText, parseMailLines, type DraftBrief } from "./mail-lines.ts";
+import { isFailedSummary, needsHubSummary, shownSummary } from "./mail-summary.ts";
+
+/** One attached file of a mail. `file` is relative to the mail files folder (`<key>/<n>/<name>`); it never leaves that folder. */
+export type MailAttachment = { name: string; type: string; size: number; file: string; cid?: string; /** a picture the HTML body shows (cid:), not a file of the mail */ inline?: true };
+/** What a poster sends: the bytes inline (`data`, base64) or a file it already put in the mail files folder (`path`, absolute or relative to it). */
+export type AttachmentInput = { name: string; type?: string; data?: string; path?: string; cid?: string };
+// A suggested next action the web shows in the mail's row and conversation slot (only when present): `reply-draft` = a reply draft
+// was offered as a send-approval [ask] whose question ends in "(<ref>)" (features/reply-drafts). `state` is the reply state the row shows
+// (web 30-monitoring.js mailReplyChip): "draft" (default) a draft waits for approval, "sent" the reply went out, "waiting" a reply is expected.
+// `rule`: the name of the 자동 초안 규칙 that drafted it (features/reply-drafts/lib/rules.ts); it is kept on the mail as `rule`, the row's badge.
+export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; state?: "draft" | "sent" | "waiting"; at?: string; rule?: string };
+// `dir: "out"` = written by the owner (hub/mail-state.ts); `reply` = the reply state of an incoming mail, `sentAt` = when his reply was sent or found.
+// `needsReply` / `noReply` are the flags of older records; migrateMails turns them into `reply`. `reply_by: "owner"` / `reply_at` = the current reply
+// state is his own mark and when he set it; any other change of the state drops them.
+// `msg` = the id of the newest incoming message the record stands for (MailInput.messageId); a post with another id is a newer message of the
+// same thread and reopens it (postMail). `reopenedAt` = when that happened: a reply draft sent before it answered an older message.
+// `list` = the poster saw a List-Id / List-Unsubscribe header; `account` = the mailbox it came to (zele: the account, for marking it read there).
+export type MailRecord = { /** the mailbox (hub/mailbox.ts) it was placed in or moved to; none = the base mailbox */ mbox?: string; mwhy?: MailboxWhy; /** archived in dotz (hub/mail-sync.ts); a newer message of the thread makes a new record and clears it */ archived?: true; starred?: true; /** the last state the mailbox reported (hub/mail-sync.ts applyMailboxFlags): only a change of it is applied */ box?: { read?: boolean; archived?: boolean; starred?: boolean; trashed?: boolean }; list?: true; account?: string; msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; /** 할 일 / 직접 답할 것, apart from the summary (hub/mail-lines.ts); an older record has them in its summary */ todo?: string[]; questions?: string[]; preview?: string; attachments?: MailAttachment[]; replyFiles?: ReplyFile[]; html?: true; suggest?: MailSuggest; rule?: string; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true };
+export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; /** when the mail was sent (ISO 8601 with a zone); an outgoing mail is kept at that time */ at?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; todo?: string[]; questions?: string[]; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; replyFiles?: ReplyFile[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[]; /** a List-Id / List-Unsubscribe header was on the mail (`list: true`, `listId` or `listUnsubscribe`) */ list?: boolean; account?: string };
+export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true; /** a sent mail's body is kept (it opens in full) */ html?: true };
+export type MailDeps = {
+	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
+	createThread: (parent: string, name: string, starter: string) => Promise<{ id: string }>;
+	/** Posts into a thread (`th:<id>`); discord.ts send. */
+	send: (target: string, text: string) => Promise<unknown>;
+	/** The mail work channel id, made when missing; undefined without Discord. */
+	mailChannel: () => Promise<string | undefined>;
+	discordOn: boolean;
+	/** Whether the app instance of this mail has 디스코드에도 올리기 on; missing = off (web conversation only, no mail channel made). */
+	threadOn?: (source: string, key: string) => boolean;
+	/** Whether the app instance of this mail has 새 메일 (hub/app-feature-flags.ts) on; off = the mail is not posted at all. Missing = on. */
+	newMailOn?: (source: string, key: string) => boolean;
+	emit: (event: Record<string, any>) => void;
+	/** One orchestrator turn for the mail event, its answer going to `target`. */
+	wake: (event: Record<string, any>, target: string) => void;
+	/** Offered every new mail (never a duplicate), fire-and-forget: a throw is logged and never breaks postMail. features/reply-drafts offers an [ask] reply draft here. */
+	offerDraft?: (m: { account?: string; key: string; target: string; needs?: boolean; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size: number }[]; replyFiles?: ReplyFile[] }) => void;
+	/** 초안 작성: a reply draft the owner asked for on a recorded mail (features/reply-drafts requestMailDraft); resolves with how it went. */
+	requestDraft?: (m: { account?: string; key: string; instruction?: string; headline?: string; body?: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; attachments?: { name: string; size: number }[]; replyFiles?: ReplyFile[] }) => Promise<string>;
+	/** Asked for every new incoming mail that has no usable summary (hub/mail-summary.ts): queues the hub's own summary, never blocks the post. `body` = the text the poster sent. */
+	summarize?: (key: string, hint: { body?: string }) => void;
+	/** Where a new mail goes (hub/routes-mailbox.ts placeMail), asked once per new record; `quiet` / `mute` say which notices to hold back. */ placeMail?: (m: { key: string; source: string; id: string; account?: string; from?: string; to?: string; subject: string; summary?: string; body?: string }) => Placed;
+	now?: () => string;
+};
+
+export class MailError extends Error {
+	status = 400;
+}
+
+const FILE = join(DATA_DIR, "mail-conversations.json");
+/** Attachments live only here: <data dir>/mail-files/<key>/<n>/<name>. The route serves nothing outside it. */
+export const MAIL_FILES = join(DATA_DIR, "mail-files");
+// Every file of a mail is kept (owner 2026-10-27: a mail with more than 10 files lost the rest). The caps only stop a runaway poster.
+const FILE_MAX_BYTES = 1024 * 1024 * 1024;
+const FILES_MAX = 300, PREVIEW_MAX = 240;
+// How many mails are kept (the newest win): `mail.keep` in config.json, 500 when unset, held between 50 and 20000 so a big mailbox can be
+// shown whole without the list file growing without bound.
+const KEEP_DEFAULT = 500, KEEP_MIN = 50, KEEP_MAX = 20_000;
+export const mailKeep = (c: unknown = cfg): number => {
+	const v = (c as { mail?: { keep?: unknown } } | undefined)?.mail?.keep;
+	return typeof v === "number" && Number.isFinite(v) ? Math.min(KEEP_MAX, Math.max(KEEP_MIN, Math.floor(v))) : KEEP_DEFAULT;
+};
+const BODY_MAX = 20_000;
+const SUMMARY_MAX = 2000;
+const THREAD_ID = /^\d{15,22}$/;
+
+const clean = (s: string) =>
+	s
+		.toLowerCase()
+		.replace(/[^a-z0-9._-]+/g, "-")
+		.replace(/^[-.]+|[-.]+$/g, "")
+		.slice(0, 100);
+
+/** `${source}-${id}` limited to [a-z0-9._-]; throws when either part has nothing left. */
+export function mailKey(source: string, id: string): string {
+	const s = clean(source);
+	const i = clean(id);
+	if (!s || !i) throw new MailError(`mail key needs a source and an id with letters or digits (got "${source}", "${id}")`);
+	return `${s}-${i}`;
+}
+
+export const mailTarget = (key: string) => `mail:${key}`;
+
+// An unreadable history is moved aside as a .corrupt-<time> file (readJsonOrQuarantine), so the first save cannot overwrite it with the empty list.
+let records: MailRecord[] = readJsonOrQuarantine<MailRecord[]>(FILE, () => [], { keepGood: false });
+const byKey = new Map(records.map(r => [r.key, r]));
+for (const r of records) trackBox(r);
+const aliases = cfg as unknown as { mail?: { own_addresses?: unknown }; zele?: { aliases?: unknown } };
+setOwnAddresses("config", [aliases.mail?.own_addresses, aliases.zele?.aliases].flatMap(v => (Array.isArray(v) ? v : [])).filter((v): v is string => typeof v === "string"));
+setToOnlyDir(DATA_DIR);
+if (migrateMails(records as StoredMail[])) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+
+export const mailByKey = (key: string): MailRecord | undefined => byKey.get(key);
+const cueOf = (r: MailRecord) => ({ source: r.source, account: r.account, from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: mailCueText(r) || r.preview || "", list: r.list });
+
+/** The hub-made summary of a mail (hub/mail-summary.ts): kept instead of its empty or failure-placeholder summary, the preview given up. False when the mail is gone or has a usable summary. */
+export function setMailSummary(key: string, summary: string): boolean {
+	const r = byKey.get(key);
+	if (!r || !needsHubSummary(r) || !summary.trim()) return false;
+	r.summary = summary;
+	delete r.preview;
+	if (r.dir !== "out" && !replyOf(r) && replyExpected(cueOf(r))) r.reply = "needs";
+	persistSoon();
+	return true;
+}
+
+// Sets (or clears) the suggested action of a known mail; false when the mail is not recorded.
+export function setMailSuggest(key: string, suggest: MailSuggest | undefined): boolean {
+	const r = byKey.get(key);
+	if (!r) return false;
+	if (suggest?.state === "waiting" && selfSent(r)) return true;
+	const { suggest: _old, needsReply: _n, noReply: _o, reply_by, reply_at, ...rest } = r;
+	const event: MailReplyEvent | undefined = !suggest ? undefined : suggest.state === "sent" ? "sent" : suggest.state === "waiting" ? "need" : "draft";
+	const reply = event && r.dir !== "out" ? nextReply(replyOf(rest), event) : replyOf(rest);
+	const mark = reply_by && reply === r.reply ? { reply_by, ...(reply_at ? { reply_at } : {}) } : {};
+	recordMail({ ...rest, ...(suggest?.rule ? { rule: suggest.rule } : {}), ...(reply ? { reply } : {}), ...mark, ...(suggest ? { suggest: suggest.state === "sent" ? { ...suggest, at: suggest.at ?? new Date().toISOString() } : suggest } : {}) });
+	return true;
+}
+
+// The one write path of an incoming mail's reply state (transitions: hub/mail-state.ts nextReply). A reply that went out also takes the waiting
+// draft chip off the row. False when the mail is not recorded.
+// `by: "owner"` = his own mark, kept with the time (reply_by / reply_at). 답장 안 함 (skip / fyi) is his alone: without `by` it changes nothing,
+// so no automatic judgment can ever close a mail as his mark. Any other change of the state drops the mark.
+export function setMailReply(key: string, event: MailReplyEvent, at = new Date().toISOString(), by?: ReplyBy): boolean {
+	const r = byKey.get(key);
+	if (!r) return false;
+	if (r.dir === "out") return true;
+	if ((event === "skip" || event === "fyi" || (event === "need" && selfSent(r))) && by !== "owner") return true;
+	const next = replyNext(r, event, at, by);
+	if (JSON.stringify(next) !== JSON.stringify(r)) recordMail(next);
+	return true;
+}
+function replyNext(r: MailRecord, event: MailReplyEvent, at: string, by?: ReplyBy): MailRecord {
+	const { needsReply: _n, noReply: _o, suggest, reply_by, reply_at, ...rest } = r;
+	const reply = nextReply(replyOf(r), event);
+	const sentNow = event === "sent" && r.reply !== "replied";
+	const keep = suggest && !(event === "sent" && suggest.state !== "sent") ? { suggest } : {};
+	const mark = by ? { reply_by: by, reply_at: at } : reply_by && reply === replyOf(r) ? { reply_by, ...(reply_at ? { reply_at } : {}) } : {};
+	return { ...rest, ...(reply ? { reply } : {}), ...mark, ...(sentNow ? { sentAt: at } : {}), ...keep };
+}
+/** A mail whose reply draft was dropped or replaced (보내지 않기, a newer draft, a stale one) and has no other draft waiting no longer has a draft:
+ *  its 초안 있음 chip goes and the state goes back to 답장 필요. `drafts` is the reply-drafts list; true when a record changed. */
+export function settleMailDrafts(drafts: ReadonlyArray<{ id: string; ref: string; status: string }>): boolean {
+	const live = new Set(drafts.filter(d => d.status === "pending" || d.status === "held").map(d => d.ref));
+	const ended = new Map(drafts.filter(d => d.status === "dropped" || d.status === "stale").map(d => [d.id, d.ref]));
+	let changed = false;
+	for (const r of [...records]) {
+		if (r.dir === "out" || live.has(r.key)) continue;
+		const chip = r.suggest && (r.suggest.state ?? "draft") === "draft" && r.suggest.ref && ended.get(r.suggest.ref) === r.key;
+		if (!chip) continue;
+		const { suggest: _s, ...rest } = r;
+		recordMail({ ...rest, ...(r.reply === "draft" ? { reply: "needs" as const } : {}) });
+		changed = true;
+	}
+	return changed;
+}
+/** The keys whose reply draft was sent (from the drafts list); a draft sent before the thread was reopened by a newer message does not count. */
+export function sentReplyRefs(drafts: ReadonlyArray<{ ref: string; status: string; created: string }>): Set<string> {
+	return new Set(drafts.filter(d => d.status === "sent" && !(d.created < (byKey.get(d.ref)?.reopenedAt ?? ""))).map(d => d.ref));
+}
+export const mailRecords = (): readonly MailRecord[] => records;
+export const mailByThread = (thread: string): MailRecord | undefined => records.find(r => r.thread === thread);
+// 미답장 (hub/unreplied.ts): the mails still waiting for a reply, given the keys whose reply draft was sent. 답장 안 함 (`noReply`) is the owner's own mark.
+export const unrepliedMails = (sentRefs: ReadonlySet<string>, now = Date.now()): MailRecord[] => records.filter(r => mailUnreplied(r, sentRefs, now));
+// The owner's marks (the routes POST / DELETE /api/mail/<key>/no-reply|fyi, also when another computer forwards his tap): 답장 안 함 and 답장 필요로 표시.
+export const setMailNoReply = (key: string, on: boolean): boolean => setMailReply(key, on ? "skip" : "reopen", undefined, "owner");
+export const setMailFyi = (key: string, on: boolean): boolean => setMailReply(key, on ? "fyi" : "reopen", undefined, "owner");
+/** The same mark on many mails (POST /api/mail/fyi) in one write of the store, whatever the count. `at` never changes, so the order stands. Returns the keys that are recorded. */
+export function setMailsFyi(keys: readonly string[], on: boolean, at = new Date().toISOString()): string[] {
+	const found = keys.filter(k => byKey.has(k)), changed = new Map<string, MailRecord>();
+	for (const k of found) {
+		const r = byKey.get(k)!;
+		if (r.dir === "out") continue;
+		const next = replyNext(r, on ? "fyi" : "reopen", at, "owner");
+		if (JSON.stringify(next) !== JSON.stringify(r)) changed.set(k, next);
+	}
+	if (!changed.size) return found;
+	for (const [k, r] of changed) byKey.set(k, r);
+	records = records.map(r => changed.get(r.key) ?? r);
+	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	return found;
+}
+
+// 삭제 on a mail card: the mail leaves dotz (its record and files), never the real mailbox. The key is remembered with the message id it stood for,
+// so the watcher posting the same message again does not bring it back; a newer message of the thread (another messageId) is a new mail (postMail).
+const DELETED_FILE = join(DATA_DIR, "mail-deleted.json");
+const DELETED_KEEP = 2000;
+let deleted: Record<string, string> = {};
+try {
+	if (existsSync(DELETED_FILE)) deleted = JSON.parse(readFileSync(DELETED_FILE, "utf8"));
+} catch (error) {
+	log(`mail: ${DELETED_FILE} unreadable, starting empty: ${error}`);
+}
+const saveDeleted = () => {
+	const keys = Object.keys(deleted);
+	if (keys.length > DELETED_KEEP) for (const k of keys.slice(0, keys.length - DELETED_KEEP)) delete deleted[k];
+	writeAtomic(DELETED_FILE, `${JSON.stringify(deleted, null, 2)}\n`);
+};
+/** Removes the mail from dotz; false when it is not recorded. */
+export function deleteMail(key: string): boolean {
+	const r = byKey.get(key);
+	if (!r) return false;
+	byKey.delete(key);
+	records = records.filter(x => x.key !== key);
+	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	delete deleted[key];
+	deleted[key] = r.msg ?? "";
+	saveDeleted();
+	rmSync(join(MAIL_FILES, key), { recursive: true, force: true });
+	return true;
+}
+
+/** The stored mails brought up to the current rules (hub/mail-state.ts migrateMails), saved when anything changed. Safe to run any number of times. */
+export function migrateStoredMails(sentRefs?: ReadonlySet<string>): number {
+	const n = migrateMails(records as StoredMail[], { sentRefs });
+	if (n) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	return n;
+}
+/** What a mailbox says now about one of its mails (POST /api/mail/state, the zele poll): `read` = read there (Gmail no UNREAD label, IMAP \Seen,
+ *  a webmail read flag), `replied` = a mail of the owner's own came after it in the thread (the newest message is his, or the site's answered flag). */
+export type MailSourceState = { id: string; read?: boolean; unread?: boolean; replied?: boolean; archived?: boolean; trashed?: boolean; starred?: boolean };
+/**
+ * Brings the stored mails of `source` to what the mailbox says on this poll, so read and 답장함 are the real state, not the one copied at the
+ * first post: a mail read in the mailbox is read in dotz (`markRead` moves the conversation's read position up to the mail; true when it
+ * moved), and a thread he answered outside dotz (phone, Gmail) is 답장함. Unread in the mailbox never unreads what he opened in dotz.
+ * Then every stored mail's 답장 필요 is checked again against the main-recipient rules (hub/mail-state.ts replyExclusion), so older
+ * records follow them with no migration. Returns the mail targets that changed (read or reply state). Ids it does not hold are ignored.
+ */
+export function syncMailStates(source: string, items: readonly MailSourceState[], markRead: (target: string, ts: string) => boolean, at = new Date().toISOString()): string[] {
+	const changed = new Set<string>();
+	for (const it of items) {
+		let key: string;
+		try {
+			key = mailKey(source, it.id);
+		} catch {
+			continue;
+		}
+		const r = byKey.get(key);
+		if (!r || r.dir === "out") continue;
+		if (it.read && r.box?.read === undefined && markRead(mailTarget(key), r.at)) changed.add(mailTarget(key));
+		if (it.replied && r.reply !== "replied" && setMailReply(key, "sent", at)) changed.add(mailTarget(key));
+	}
+	for (const k of settleNotMine()) changed.add(mailTarget(k));
+	return [...changed];
+}
+// The other way: a mail he opened in dotz is marked read in its mailbox where that is one cheap call (zele: `zele mail read-mark`, wired in
+// hub/main.ts). Called once per move of the read position (POST /api/read), never by the sync above.
+let readOut: ((r: MailRecord) => void) | undefined;
+export const setMailReadOut = (fn: ((r: MailRecord) => void) | undefined): void => void (readOut = fn);
+export function mailOpened(target: string): void {
+	const r = target.startsWith("mail:") ? byKey.get(target.slice(5)) : undefined;
+	if (!r || r.dir === "out" || !readOut) return;
+	try {
+		readOut(r);
+	} catch (error) {
+		log(`mail ${r.key}: not marked read in its mailbox: ${(error as Error).message}`);
+	}
+}
+/** 답장 필요 that the gateway or a poster set on a mail he is not a main recipient of or wrote himself goes (his own 답장 필요로 표시 stays). One write. */
+function settleNotMine(): string[] {
+	const gone: string[] = [];
+	for (const r of records) {
+		if (r.dir === "out" || r.reply !== "needs" || r.reply_by === "owner") continue;
+		if (!replyExclusion(cueOf(r))) continue;
+		delete r.reply;
+		gone.push(r.key);
+	}
+	if (gone.length) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	return gone;
+}
+// The reply states of the mails (the 모니터링 app lines count them: hub/integrations.ts).
+export const mailSuggests = (): Array<{ target: string; state?: string; at: string }> => records.flatMap(r => r.suggest ? [{ target: mailTarget(r.key), state: r.suggest.state ?? "draft", at: r.suggest.at ?? r.at }] : []);
+export const mailTargets = (): string[] => [...records].sort((a, b) => b.at.localeCompare(a.at)).map(r => mailTarget(r.key));
+
+// One add is O(n): the list stays sorted by time (a tie goes after the older ones, as a stable sort would), the old copy is cut out, the new one is
+// inserted from the end (a new mail is nearly always the newest), and the surplus is taken from the oldest end.
+export function recordMail(r: MailRecord): void {
+	const old = byKey.get(r.key);
+	if (old) {
+		const i = records.indexOf(old);
+		if (i >= 0) records.splice(i, 1);
+	}
+	byKey.set(r.key, r), trackBox(r);
+	if (r.dir === "out") noteOwnSender(r.source, r.from);
+	let at = records.length;
+	while (at > 0 && records[at - 1]!.at.localeCompare(r.at) > 0) at--;
+	records.splice(at, 0, r);
+	records = evictSurplus(records, mailKeep(), KEEP_MAX, k => byKey.delete(k));
+	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+}
+
+// A derived summary is written a moment later, in one write however many mails the start-up fills in.
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+function persistSoon(): void {
+	if (flushTimer) return;
+	flushTimer = setTimeout(() => {
+		flushTimer = undefined;
+		writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	}, 200);
+	flushTimer.unref?.();
+}
+
+const str = (v: unknown, name: string, max: number, required: boolean): string | undefined => {
+	if (v === undefined || v === null || (!required && v === "")) {
+		if (required) throw new MailError(`${name} is required`);
+		return undefined;
+	}
+	if (typeof v !== "string") throw new MailError(`${name} must be a string`);
+	const t = v.trim();
+	if (required && !t) throw new MailError(`${name} is required`);
+	return t.slice(0, max);
+};
+
+function parseAttachments(v: unknown): AttachmentInput[] | undefined {
+	if (v === undefined || v === null) return undefined;
+	if (!Array.isArray(v)) throw new MailError("attachments must be an array");
+	if (v.length > FILES_MAX) log(`mail: ${v.length} attachments, the first ${FILES_MAX} are kept`);
+	return v.slice(0, FILES_MAX).map((a, i) => {
+		if (!a || typeof a !== "object") throw new MailError(`attachments[${i}] must be an object`);
+		const { name, type, data, path, cid } = a as Record<string, unknown>;
+		if (typeof name !== "string" || !name.trim()) throw new MailError(`attachments[${i}].name is required`);
+		if ((typeof data === "string") === (typeof path === "string")) throw new MailError(`attachments[${i}] needs exactly one of data (base64) or path`);
+		return { name: name.slice(0, 200), ...(typeof type === "string" ? { type: type.slice(0, 100) } : {}), ...(typeof cid === "string" && cid.trim() ? { cid: cid.trim().replace(/^<|>$/g, "").slice(0, 200) } : {}), ...(typeof data === "string" ? { data } : { path: path as string }) };
+	});
+}
+
+// A poster's time of the mail (`at`, or `date`): ISO 8601 with a zone, else ignored.
+const isoAt = (v: unknown): v is string => typeof v === "string" && /[zZ]|[+-]\d\d:?\d\d$/.test(v.trim()) && !Number.isNaN(Date.parse(v));
+
+export function parseMail(raw: unknown): MailInput {
+	if (!raw || typeof raw !== "object") throw new MailError("body must be a JSON object");
+	const b = raw as Record<string, unknown>;
+	const thread = str(b.thread, "thread", 30, false);
+	if (thread && !THREAD_ID.test(thread)) throw new MailError("thread must be a Discord thread id (15-22 digits)");
+	if (b.wake !== undefined && typeof b.wake !== "boolean") throw new MailError("wake must be a boolean");
+	if (b.direction !== undefined && b.direction !== "in" && b.direction !== "out") throw new MailError('direction must be "in" or "out"');
+	if (b.labels !== undefined && (!Array.isArray(b.labels) || b.labels.some(l => typeof l !== "string"))) throw new MailError("labels must be an array of strings");
+	return {
+		source: str(b.source, "source", 60, true)!,
+		id: str(b.id, "id", 200, true)!,
+		subject: str(b.subject, "subject", 300, true)!,
+		from: str(b.from, "from", 300, false),
+		to: str(b.to, "to", 500, false),
+		cc: str(b.cc, "cc", 500, false),
+		...parseMailLines(b, str(b.summary, "summary", SUMMARY_MAX, false), m => new MailError(m)),
+		body: str(b.body, "body", BODY_MAX, false),
+		html: str(b.html, "html", MAIL_HTML_MAX, false),
+		thread,
+		messageId: str(b.messageId, "messageId", 200, false),
+		wake: b.wake === true,
+		needsReply: b.needsReply === true,
+		...(isoAt(b.at ?? b.date) ? { at: new Date(String(b.at ?? b.date)).toISOString() } : {}),
+		attachments: parseAttachments(b.attachments), replyFiles: replyFilesOf(b.reply_files, e => new MailError(e)),
+		...(b.direction ? { direction: b.direction as "in" | "out" } : {}),
+		folder: str(b.folder, "folder", 100, false),
+		...(b.labels ? { labels: (b.labels as string[]).slice(0, 50) } : {}),
+		...(b.list === true || (typeof b.listId === "string" && b.listId.trim()) || (typeof b.listUnsubscribe === "string" && b.listUnsubscribe.trim()) ? { list: true } : {}),
+		...(str(b.account, "account", 200, false) ? { account: str(b.account, "account", 200, false) } : {}),
+	};
+}
+
+const real = (p: string): string | undefined => {
+	try {
+		return realpathSync(p);
+	} catch {
+		return undefined;
+	}
+};
+
+/** The real path of `p` when it is a regular file inside MAIL_FILES (symlinks and `..` resolved first), else undefined. */
+export function insideMailFiles(p: string): string | undefined {
+	const root = real(MAIL_FILES);
+	const r = real(isAbsolute(p) ? p : join(MAIL_FILES, p));
+	return root && r && r.startsWith(root + sep) && statSync(r).isFile() ? r : undefined;
+}
+
+// Stores each attachment under mail-files/<key>/<n>/<safe name> and returns what the record keeps. A file that cannot be stored
+// is skipped with a log line: the mail still opens, only that file is missing.
+function saveAttachments(key: string, inputs: AttachmentInput[] | undefined, start = 0): MailAttachment[] {
+	const out: MailAttachment[] = [];
+	for (const [i, a] of (inputs ?? []).entries()) {
+		const n = start + i;
+		try {
+			const name = safeName(a.name);
+			const file = `${key}/${n}/${name}`;
+			const dest = join(MAIL_FILES, file);
+			// A file the poster put under mail-files is copied as it is (a big file never passes through memory or JSON).
+			const src = a.data === undefined ? insideMailFiles(a.path!) : undefined;
+			if (a.data === undefined && !src) throw new Error("path is not a file inside the mail files folder");
+			const bytes = a.data !== undefined ? Buffer.from(a.data, "base64") : undefined;
+			const size = bytes ? bytes.length : statSync(src!).size;
+			if (!size || size > FILE_MAX_BYTES) throw new Error(`size ${size} not accepted`);
+			mkdirSync(join(MAIL_FILES, key, String(n)), { recursive: true });
+			if (bytes) writeFileSync(dest, bytes);
+			else copyFileSync(src!, dest);
+			out.push({ name, type: a.type || Bun.file(dest).type || "application/octet-stream", size, file, ...(a.cid ? { cid: a.cid } : {}) });
+		} catch (error) {
+			log(`mail ${key}: attachment ${n} (${a.name}) not stored: ${(error as Error).message}`);
+		}
+	}
+	return out;
+}
+
+/** First lines of a body as one short text, for the list row when no summary came with the mail. */
+export function mailPreview(body: string | undefined): string {
+	const lines = (body ?? "").split(/\r?\n/).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean);
+	return lines.slice(0, 3).join("\n").slice(0, PREVIEW_MAX);
+}
+
+const BRIEF_LABELS = new Set(["요약", "할 일", "할일", "다음 할 일", "핵심", "결과", "변경", "참고", "상세", "확인할 것"]);
+// "요약", "## 요약", "**할 일**", "할 일:" -> the label; any other line -> "" (web/js/11-resultcard.js rcLabel).
+const briefLabel = (line: string): string => {
+	const m = line.trim().match(/^(?:#{1,6}\s*)?(?:\*\*)?\s*([^*#:\n]{1,12}?)\s*:?\s*(?:\*\*)?\s*:?$/);
+	return m && BRIEF_LABELS.has(m[1]!.trim()) ? m[1]!.trim() : "";
+};
+
+/**
+ * The row text of a mail that came without a summary, from a conversation message (the web does the same, web/js/30-monitoring.js mailFromMsg):
+ * up to 3 lines of its "요약" section, else the first 3 lines of its original (the text after a "원문" line). Lines that only repeat the
+ * sender or the subject do not count; "" when nothing is left.
+ */
+export function mailBriefOf(text: string, from: string, subject: string): string {
+	const plain = (s: string) => s.replace(/^\s*#{1,6}\s*/, "").replace(/\*\*/g, "").replace(/^(?:[-*•]|\d+[.)])\s+/, "").replace(/\s+/g, " ").trim();
+	const name = plain(from.replace(/<[^>]*>/g, "").replace(/["']/g, "")) || plain(from);
+	const skip = new Set([plain(subject), plain(`${from} · ${subject}`), plain(from), name].filter(Boolean));
+	const lines = (s: string[]) => s.map(plain).filter(l => l && !briefLabel(l) && !skip.has(l)).slice(0, 3);
+	const t = text.replace(/\r/g, "").trim();
+	const cut = /(?:^|\n)원문[ \t]*\n([\s\S]*)$/.exec(t);
+	const head = (cut ? t.slice(0, cut.index) : t).split("\n");
+	const start = head.findIndex(l => briefLabel(l) === "요약");
+	let section: string[] = [];
+	if (start >= 0) {
+		const rest = head.slice(start + 1);
+		const end = rest.findIndex(l => briefLabel(l));
+		section = rest.slice(0, end < 0 ? undefined : end);
+	}
+	const own = lines(section);
+	return (own.length ? own : lines(cut ? cut[1]!.split("\n") : [])).join("\n").slice(0, PREVIEW_MAX);
+}
+
+/**
+ * Gives a recorded mail that has neither summary nor preview the brief of one conversation message (called for each message that is not the
+ * owner's, oldest first, until one yields text; hub/conversations.ts). Stored once, so the list never reads a conversation. True when stored.
+ */
+export function briefMail(key: string, text: string): boolean {
+	const r = byKey.get(key);
+	if (!r || r.summary || r.preview) return false;
+	const brief = mailBriefOf(text, r.from, r.subject);
+	if (!brief) return false;
+	r.summary = brief;
+	if (r.dir !== "out" && !replyOf(r) && replyExpected(cueOf(r))) r.reply = "needs";
+	persistSoon();
+	return true;
+}
+
+const plainAsHtml = (body: string | undefined): string | undefined => (body?.trim() ? `<div style="white-space:pre-wrap">${body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>` : undefined);
+export const BODY_FILE = (key: string) => join(MAIL_FILES, key, "body.html");
+
+// Stores the sanitized HTML body next to the attachments (not in the records file, which stays small). True when a body was kept.
+async function saveHtml(key: string, html: string | undefined, attachments: MailAttachment[]): Promise<boolean> {
+	if (!html?.trim()) return false;
+	try {
+		const cids: Record<string, string> = {};
+		for (const [n, a] of attachments.entries()) if (a.cid) cids[a.cid] = `/api/mail/${key}/files/${n}`;
+		const clean = await sanitizeMailHtml(html, cids);
+		if (!clean) return false;
+		mkdirSync(join(MAIL_FILES, key), { recursive: true });
+		writeFileSync(BODY_FILE(key), clean);
+		return true;
+	} catch (error) {
+		log(`mail ${key}: html body not stored: ${(error as Error).message}`);
+		return false;
+	}
+}
+
+/** The text of a mail's stored HTML body (tags dropped); undefined when none is kept. */
+export function storedBodyText(key: string): string | undefined {
+	try {
+		const path = insideMailFiles(BODY_FILE(key));
+		if (!path) return undefined;
+		return readFileSync(path, "utf8").replace(/<(?:style|script)[\s\S]*?<\/(?:style|script)>/gi, " ").replace(/<br\s*\/?>|<\/(?:p|div|li|tr)>/gi, "\n").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n").trim() || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** GET /api/mail/<key>/body: the stored, sanitized HTML of a known mail. The CSP header keeps even a direct visit inert. */
+export function mailBodyRoute(key: string): Response {
+	const rec = mailByKey(key);
+	const path = rec?.html ? insideMailFiles(BODY_FILE(key)) : undefined;
+	if (!path) return Response.json({ error: "메일 본문을 찾을 수 없어요" }, { status: 404 });
+	return new Response(Bun.file(path), { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox", "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=300" } });
+}
+
+/** The public face of a mail's files for the web: no stored paths. */
+export const attachmentList = (m: Pick<MailRecord, "attachments">) => (m.attachments ?? []).map(({ name, type, size, inline }) => ({ name, type, size, ...(inline ? { inline } : {}) }));
+/** The files a reply can mention or forward: the mail's attachments without the pictures of its body. */
+const realFiles = (atts: MailAttachment[]) => attachmentList({ attachments: atts.filter(a => !a.inline) });
+// A cid: picture the HTML body shows is part of the body (drawn in place), not a file of the mail.
+const markInline = (atts: MailAttachment[], html: string | undefined): MailAttachment[] => atts.map(a => (a.cid && html && html.toLowerCase().includes(`cid:${a.cid.toLowerCase()}`) ? { ...a, inline: true as const } : a));
+
+/** The direction and reply state a row shows (`sent` = a dotz send of a draft for this mail is on record). */
+export const mailStateOf = (m: MailRecord, sent: boolean) => {
+	const reply = m.dir === "out" ? undefined : sent ? ("replied" as const) : replyOf(m);
+	return { ...(m.dir === "out" ? { dir: "out" as const } : {}), ...(reply ? { reply } : {}), ...(m.sentAt ? { sentAt: m.sentAt } : {}) };
+};
+
+/** Why an incoming mail is not 답장 필요 although it may look like it: he is not a main recipient (hub/mail-state.ts replyExclusion). */
+const whyOf = (m: MailRecord): string | undefined => {
+	if (m.dir === "out") return undefined;
+	const x = replyExclusion(cueOf(m));
+	return x && x !== "self" ? EXCLUSION_LABEL[x] : undefined;
+};
+export const mailDraftBrief = (key: string, m = byKey.get(key)): DraftBrief | undefined => (m ? { ...(m.from ? { from: m.from } : {}), ...mailLinesOf(m, shownSummary) } : undefined);
+/** What the web draws a mail row from (GET /api/conversations `mail`, and a watch report that points at the mail): no stored paths.
+ *  `why` = the small reason tag of a mail he is not a main recipient of (참조로 받음, 단체 메일...). */
+export const mailCard = (m: MailRecord, unreplied = false, sent = false, extra: { read?: boolean; can?: string[]; trashOriginal?: boolean; /** the mailbox of the row (hub/routes-mailbox.ts boxPass), one lookup table per pass */ place?: (m: MailRecord) => { box: string; boxWhy?: MailboxWhy } } = {}) => ({ ...mailStateOf(m, sent), ...(extra.place?.(m) ?? {}), ...(extra.read !== undefined ? { read: extra.read } : {}), ...(extra.trashOriginal ? { trashOriginal: true as const } : {}), ...(m.archived ? { archived: true as const } : {}), ...(m.starred ? { starred: true as const } : {}), ...(extra.can ? { can: extra.can } : {}), ...(whyOf(m) ? { why: whyOf(m) } : {}), subject: m.subject, base: baseSubject(m.subject), from: m.from, ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), source: m.source, at: m.at, ...mailLinesOf(m, shownSummary), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(m.rule ? { rule: m.rule } : {}), ...(unreplied ? { unreplied: true as const } : {}) });
+
+/** GET/HEAD /api/mail/<key>/files/<n>[?dl=1]: main.ts adds the web auth in front. Only files of a known mail, only inside MAIL_FILES. */
+export function mailFileRoute(req: Request, url: URL, key: string, index: string): Response {
+	try {
+		const a = /^\d{1,3}$/.test(index) ? mailByKey(key)?.attachments?.[Number(index)] : undefined;
+		if (!a) throw new FileError("첨부파일을 찾을 수 없어요", 404);
+		const path = insideMailFiles(a.file);
+		if (!path) throw new FileError("첨부파일을 찾을 수 없어요", 404);
+		const res = serveFile(path, req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
+		// The file's own name, as RFC 5987 wants it: a Korean name survives, and ' ( ) * (which encodeURIComponent leaves) are percent-encoded too.
+		const kind = res.headers.get("content-disposition")?.startsWith("attachment") ? "attachment" : "inline";
+		res.headers.set("Content-Disposition", `${kind}; filename="${a.name.replace(/[^\x20-\x7e]|["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(a.name).replace(/['()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)}`);
+		return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
+	} catch (error) {
+		return Response.json({ error: (error as Error).message }, { status: error instanceof FileError ? error.status : 400 });
+	}
+}
+
+/** POST /api/mail/compose: the mail app lists a new-mail draft like a reply draft (a row with its draft chip); `state: "sent"` flips the chip. Never wakes the bot or offers a draft. */
+export function composeMail(raw: unknown, deps: Pick<MailDeps, "emit" | "now">): { ok: true; key: string } {
+	const b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+	const ref = str(b.ref, "ref", 64, true)!;
+	if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/.test(ref)) throw new MailError("ref is not a draft id");
+	const source = str(b.source, "source", 100, true)!;
+	const key = mailKey(source, `compose-${ref.toLowerCase()}`);
+	const known = byKey.get(key);
+	if (b.state === "sent") {
+		if (!known?.suggest) throw Object.assign(new MailError("no such draft mail"), { status: 404 });
+		setMailSuggest(key, { ...known.suggest, state: "sent" });
+		return { ok: true, key };
+	}
+	if (known) return { ok: true, key };
+	const to = str(b.to, "to", 500, true)!;
+	const subject = str(b.subject, "subject", 300, true)!;
+	const origin = str(b.origin, "origin", 100, false);
+	const at = deps.now?.() ?? new Date().toISOString();
+	const summary = `새 메일 초안 · ${to}${origin ? ` · ${origin}` : ""}`;
+	recordMail({ key, source, id: `compose-${ref}`, subject, from: "", at, dir: "out", summary, suggest: { kind: "reply-draft", label: "메일 초안", ref, state: "draft" } });
+	deps.emit({ ts: at, kind: "mail", source, channel: mailTarget(key), conv: mailTarget(key), mail: key, subject, from: "", summary, text: summary });
+	return { ok: true, key };
+}
+
+export function mailText(m: Pick<MailInput, "from" | "subject" | "summary" | "body" | "todo" | "questions">): string {
+	return [m.from ? `${m.from} · ${m.subject}` : m.subject, [m.summary ?? "", ...mailLineText(m)].filter(Boolean).join("\n"), m.body ? `원문\n${m.body}` : ""].filter(Boolean).join("\n\n");
+}
+
+// A watcher retrying the same mail while the first post still opens its thread must not open a second one.
+const inflight = new Map<string, Promise<MailResult>>();
+
+// An outside watch names the mailbox among the recipients, not as `account`: the one logged-in account there is the mail's, so its reply can go through it.
+function accountOfRecipients(to: string | undefined): string | undefined {
+	const logins = addressesOf("zele");
+	const mine = new Set((to ?? "").split(",").map(a => addressKey(a)).filter(a => logins.has(a)));
+	return mine.size === 1 ? [...mine][0] : undefined;
+}
+
+export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult> {
+	const m = parseMail(raw);
+	m.account ??= accountOfRecipients(m.to);
+	if (isFailedSummary(m.summary)) delete m.summary;
+	// A source that reports the sender by name only (a list view's cut-off display name): the address is read from the mail's own text, so the
+	// list, the draft's recipient and every reply rule see a real sender.
+	if (m.from) m.from = withSenderAddress(m.from, `${m.body ?? ""}\n${(m.html ?? "").replace(/<[^>]*>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")}`, [...ownAddresses(), ...(m.to ? [m.to] : [])]);
+	const key = mailKey(m.source, m.id);
+	const target = mailTarget(key);
+	if (deps.newMailOn && !deps.newMailOn(m.source, key)) return { ok: true, key, target, skipped: true };
+	const known = byKey.get(key);
+	if (directionOf({ from: m.from, direction: m.direction, folder: m.folder, labels: m.labels }) === "out") return await recordOutgoing(m, key, target, deps);
+	// An outgoing mail of the thread was recorded first; the answer that comes in now is a new incoming mail and replaces it.
+	// A known incoming thread is a repeat, unless the post names another message than the one recorded: then the thread got a newer
+	// message and it is a new mail again, whatever state it was in (answered, 답장 안 함, 답장 불필요).
+	const again = known && known.dir !== "out" && !!m.messageId && m.messageId !== known.msg ? known : undefined;
+	if (known && known.dir !== "out" && !again) {
+		await completeKnown(known, m, deps.now?.() ?? new Date().toISOString());
+		return { ok: true, key, target, ...(known.thread ? { thread: known.thread } : {}), duplicate: true };
+	}
+	// A mail the owner deleted stays gone for the message it stood for. A record kept before message ids has none on file: the first id seen
+	// after the delete is taken as that message, and only a later, different one brings the mail back.
+	if (!known && key in deleted) {
+		const was = deleted[key]!;
+		if (!m.messageId || m.messageId === was) return { ok: true, key, target, duplicate: true, skipped: true };
+		if (!was) {
+			deleted[key] = m.messageId;
+			saveDeleted();
+			return { ok: true, key, target, duplicate: true, skipped: true };
+		}
+		delete deleted[key];
+		saveDeleted();
+	}
+	const running = inflight.get(key);
+	if (running) return { ...(await running), duplicate: true };
+	const job = post(m, key, target, deps, again);
+	inflight.set(key, job);
+	try {
+		return await job;
+	} finally {
+		inflight.delete(key);
+	}
+}
+
+// A repeat of a known mail completes what its first post left out, and changes nothing else (no event, no wake, no draft): the 받는 사람 /
+// 참조 it had none of, a sender that was a name only and now comes with an address, and the body's pictures (cid:) when none were kept.
+// A poster that learned to send them can so post its earlier mails again to fill them in. Its `at` (not in the future) is the mail's time:
+// a mail first posted without one (stamped with the post time) gets its real date that way.
+async function completeKnown(known: MailRecord, m: MailInput, now: string): Promise<void> {
+	const next: MailRecord = { ...known, ...fillMailLines(known, m) };
+	if (m.at && m.at < now && m.at !== known.at) next.at = m.at;
+	if (m.to && !known.to) next.to = m.to;
+	if (m.cc && !known.cc) next.cc = m.cc;
+	if (m.from && m.from.includes("@") && !known.from.includes("@")) next.from = m.from;
+	const had = known.attachments ?? [];
+	const pics = (m.attachments ?? []).filter(a => a.cid && m.html?.toLowerCase().includes(`cid:${a.cid.toLowerCase()}`));
+	if (pics.length && m.html && !had.some(a => a.inline)) {
+		const added = markInline(saveAttachments(known.key, pics, had.length), m.html);
+		if (added.length) {
+			next.attachments = [...had, ...added];
+			if (await saveHtml(known.key, m.html, next.attachments)) next.html = true;
+		}
+	}
+	if (JSON.stringify(next) !== JSON.stringify(known)) {
+		recordMail(next);
+		log(`mail ${known.key}: completed from a repeat post (${[next.at !== known.at && "at", next.to !== known.to && "to", next.cc !== known.cc && "cc", next.from !== known.from && "from", next.todo !== known.todo && "todo", next.questions !== known.questions && "questions", next.attachments !== known.attachments && "pictures"].filter(Boolean).join(", ")})`);
+	}
+}
+
+// The owner's own mail: nothing is posted, no thread, no event (so no unread, notice or wake) and no reply draft. A known incoming thread
+// becomes 답장함; an unknown mail is kept as 내가 보냄 for the 보낸 메일 list.
+async function recordOutgoing(m: MailInput, key: string, target: string, deps: MailDeps): Promise<MailResult> {
+	const known = byKey.get(key);
+	const at = deps.now?.() ?? new Date().toISOString();
+	// A sent mail first reported without its body (a sent-folder poll that only read the list) takes the body when it is posted again with one.
+	if (known?.dir === "out" && !known.html && (m.html || m.body?.trim())) {
+		const attachments = markInline(saveAttachments(key, m.attachments), m.html);
+		if (!(await saveHtml(key, m.html ?? plainAsHtml(m.body), attachments))) return { ok: true, key, target, duplicate: true, direction: "out" };
+		const preview = known.summary ? "" : mailPreview(m.body);
+		recordMail({ ...known, html: true, ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}) });
+		return { ok: true, key, target, duplicate: true, direction: "out", html: true };
+	}
+	if (known) {
+		const replied = known.dir !== "out" && known.reply !== "replied";
+		if (replied) setMailReply(key, "sent", at);
+		// `html` = the body is kept: a poster marks the sent mail done on it alone, so a repost answered by an older gateway is tried again.
+		return { ok: true, key, target, duplicate: true, direction: "out", ...(replied ? { replied: true as const } : {}), ...(known.html ? { html: true as const } : {}) };
+	}
+	const summary = m.summary ?? "";
+	const preview = summary ? "" : mailPreview(m.body);
+	const sentAt = m.at ?? at;
+	// The body the poster sent is kept like an incoming mail's (the sanitized HTML next to the record), so the sent mail can be opened in full.
+	const attachments = markInline(saveAttachments(key, m.attachments), m.html);
+	const html = await saveHtml(key, m.html ?? plainAsHtml(m.body), attachments);
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.account ? { account: m.account } : {}), at: sentAt, dir: "out", ...(summary ? { summary } : {}), ...(m.todo ? { todo: m.todo } : {}), ...(m.questions ? { questions: m.questions } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}) });
+	const answered = answeredBy({ subject: m.subject, to: m.to, cc: m.cc, at: sentAt });
+	for (const k of answered) setMailReply(k, "sent", sentAt);
+	return { ok: true, key, target, direction: "out", ...(answered.length ? { replied: true as const } : {}), ...(html ? { html: true as const } : {}) };
+}
+
+/**
+ * The opening message of a sent mail's conversation (GET /api/history of `mail:<key>`): a sent mail is recorded without a conversation event, so
+ * without this its conversation opened empty. Built from the record, like the mail event an incoming mail gets: subject, recipients, preview and
+ * the kept body (`html`, read from GET /api/mail/<key>/body). Undefined for a key that is no sent mail.
+ */
+export function sentMailEvent(key: string): Record<string, unknown> | undefined {
+	const r = byKey.get(key);
+	if (!r || r.dir !== "out") return undefined;
+	const target = mailTarget(key), brief = r.summary || r.preview || "";
+	return { ts: r.at, kind: "mail", dir: "out", source: r.source, channel: target, conv: target, mail: key, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.preview ? { preview: r.preview } : {}), ...(r.attachments?.length ? { attachments: attachmentList({ attachments: r.attachments }) } : {}), ...(r.html ? { html: true } : {}), text: [r.from ? `${r.from} · ${r.subject}` : r.subject, brief].filter(Boolean).join("\n\n") };
+}
+
+/** What dotz sent for the owner (a reply he approved, or a new mail): the draft's text and the files it carried (absolute paths of the staged copies). */
+export type SentByDotz = { id: string; source: string; to: string; cc?: string[]; subject?: string; body: string; files: { name: string; path: string }[] };
+
+/**
+ * A mail dotz just sent is a sent mail at once (`dir: "out"`, to, time, body preview, the full body and the files it carried), not only when the mailbox's sent
+ * folder is polled later (a reply shares its thread's id there, so that poll never lists it). `answers` = the incoming mail it replied to: the sent mail
+ * takes its subject (Re:) and account, so both read as one thread. `compose` = the key of the row a new-mail draft already has: that row becomes the sent mail.
+ * Returns its key.
+ */
+export async function recordSentByDotz(d: SentByDotz, opts: { answers?: string; compose?: string; at?: string } = {}): Promise<string | undefined> {
+	const incoming = opts.answers ? byKey.get(opts.answers) : undefined;
+	const row = opts.compose ? byKey.get(opts.compose) : undefined;
+	if (opts.answers && !incoming) return undefined;
+	if (opts.compose && !row) return undefined;
+	const key = row?.key ?? mailKey(d.source, `sent-${d.id}`);
+	const at = opts.at ?? new Date().toISOString();
+	const subject = d.subject || (incoming ? (/^\s*(?:re|답장)\s*:/i.test(incoming.subject) ? incoming.subject : `Re: ${incoming.subject}`) : "(제목 없음)");
+	const stored = d.files.flatMap((f, n) => {
+		try {
+			const name = safeName(f.name), file = `${key}/${n}/${name}`;
+			mkdirSync(join(MAIL_FILES, key, String(n)), { recursive: true });
+			copyFileSync(f.path, join(MAIL_FILES, file));
+			return [{ name, type: Bun.file(f.path).type || "application/octet-stream", size: statSync(f.path).size, file }];
+		} catch (error) {
+			log(`mail ${key}: sent file ${f.name} not kept: ${(error as Error).message}`);
+			return [];
+		}
+	});
+	const html = await saveHtml(key, plainAsHtml(d.body), []);
+	const preview = mailPreview(d.body);
+	const { summary: _s, ...base } = row ?? ({} as MailRecord);
+	recordMail({ ...base, key, source: row?.source ?? d.source, id: row?.id ?? `sent-${d.id}`, subject: row?.subject || subject, from: row?.from ?? "", to: d.to, ...(d.cc?.length ? { cc: d.cc.join(", ") } : {}), at: row ? row.at : at, dir: "out", ...(preview ? { preview } : {}), ...(stored.length ? { attachments: stored } : {}), ...(html ? { html: true as const } : {}), ...(incoming?.account ? { account: incoming.account } : {}), } as MailRecord);
+	return key;
+}
+
+// The incoming mails an outgoing one answers: the same subject once Re: / Fwd: / 답장: prefixes are dropped, received before it, from a sender
+// the outgoing mail went to. A mailbox that reports its sent folder (a reply written in the webmail itself, or sent by a helper) so marks the
+// mail it answered 답장함, whichever way the reply was written.
+export const baseSubject = (s: string): string => {
+	let x = s.trim();
+	for (let prev = ""; prev !== x; ) { prev = x; x = x.replace(/^\s*(?:re|fw|fwd|답장|회신|전달)\s*(?:\[\d+\])?\s*[:：]\s*/i, ""); }
+	return x.replace(/\s+/g, " ").toLowerCase();
+};
+const addresses = (s: string | undefined): string[] => (s ?? "").toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) ?? [];
+export function answeredBy(out: { subject: string; to?: string; cc?: string; at: string }): string[] {
+	const base = baseSubject(out.subject), to = new Set([...addresses(out.to), ...addresses(out.cc)]);
+	if (!base || !to.size) return [];
+	return records.filter(r => r.dir !== "out" && r.at <= out.at && baseSubject(r.subject) === base && addresses(r.from).some(a => to.has(a)) && !selfSent(r)).map(r => r.key);
+}
+
+async function post(m: MailInput, key: string, target: string, deps: MailDeps, reopened?: MailRecord): Promise<MailResult> {
+	let thread = m.thread ?? reopened?.thread;
+	let parent: string | undefined;
+	const place = deps.placeMail?.({ key, source: m.source, id: m.id, ...(m.account ? { account: m.account } : {}), ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), subject: m.subject, ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}) });
+	if (reopened?.thread && !m.thread && deps.discordOn) {
+		const note = [m.from ?? "", m.summary ?? "", ...mailLineText(m), m.body ? `원문\n${m.body}` : ""].filter(Boolean).join("\n").slice(0, 1900);
+		if (note) await deps.send(`th:${reopened.thread}`, note).catch(e => log(`mail ${key}: new message not posted to its thread: ${e}`));
+	}
+	if (!thread && deps.discordOn && !place?.quiet && deps.threadOn?.(m.source, key)) {
+		try {
+			const channel = await deps.mailChannel();
+			if (channel) {
+				const starter = [m.from ?? "", m.summary ?? "", ...mailLineText(m)].filter(Boolean).join("\n").slice(0, 1900) || m.subject;
+				thread = (await deps.createThread(`ch:${channel}`, m.subject, starter)).id;
+				parent = `ch:${channel}`;
+				if (m.body) await deps.send(`th:${thread}`, `원문\n${m.body}`).catch(e => log(`mail ${key}: body not posted to its thread: ${e}`));
+			}
+		} catch (error) {
+			log(`mail ${key}: no Discord thread (${(error as Error).message}); web conversation only`);
+		}
+	}
+	const now = deps.now?.() ?? new Date().toISOString();
+	// The poster's own time of the mail (a backfill of older mail) orders the list; never later than now, and now without one.
+	const at = m.at && m.at < now ? m.at : now;
+	const attachments = markInline(saveAttachments(key, m.attachments), m.html);
+	const html = await saveHtml(key, m.html, attachments);
+	const summary = m.summary ?? "";
+	const preview = summary ? "" : mailPreview(m.body);
+	// 답장 필요: the poster's word, else the gateway reads the mail (hub/mail-state.ts replyExpected).
+	// Never when he is not a main recipient (only in Cc, a list or group mail, a machine sender) or wrote it himself, whatever the poster says.
+	const cue = { source: m.source, account: m.account, from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: mailCueText(m) || m.body || "", list: m.list };
+	const needs = (m.needsReply && !replyExclusion(cue)) || replyExpected(cue);
+	recordMail({ ...(m.list ? { list: true as const } : {}), ...(m.account ? { account: m.account } : {}), key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(m.todo ? { todo: m.todo } : {}), ...(m.questions ? { questions: m.questions } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(m.replyFiles ? { replyFiles: m.replyFiles } : {}), ...(reopened ? { reopenedAt: now } : {}), ...(place?.box ? { mbox: place.box, ...(place.why ? { mwhy: place.why } : {}) } : {}) });
+	// `incoming`: a mail that came in (not the owner's own draft, composeMail): the bell's 새 소식 and the phone notification for it (hub/notices.ts fromInbox).
+	const event = { ts: at, kind: "mail", ...(place?.quiet || place?.mute ? {} : { incoming: true }), source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(m.todo ? { todo: m.todo } : {}), ...(m.questions ? { questions: m.questions } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
+	deps.emit(event);
+	if (m.wake && !place?.quiet) deps.wake(event, thread ? `th:${thread}` : target);
+	// `needs`: a mail that does not need a reply gets no automatic draft unless one of its app's draft rules is on (features/reply-drafts/lib/offer.ts).
+	// His own mail gets none at all.
+	try {
+		if (!selfSent(cue) && !place?.quiet) deps.offerDraft?.({ ...(m.account ? { account: m.account } : {}), key, target, needs, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}), ...(m.replyFiles ? { replyFiles: m.replyFiles } : {}) });
+	} catch (error) {
+		log(`mail ${key}: reply draft offer failed: ${(error as Error).message}`);
+	}
+	if (!summary) deps.summarize?.(key, { ...(m.body ? { body: m.body } : {}) });
+	return { ok: true, key, target, ...(thread ? { thread } : {}) };
+}

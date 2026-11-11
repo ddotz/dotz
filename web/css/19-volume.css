@@ -1,0 +1,55 @@
+/* A lot piled up (web/js/30-monitoring.js monBar / monFeedNodes / monGroupNode): the view chips with their
+   counts and 읽음 처리 on one sticky bar, section and day lines, one compact row per report or per source, and the 더 보기 button of a page. */
+.mon-bar { align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: var(--sp-2); }
+.mon-tabs { display: flex; gap: 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.mon-tabs::-webkit-scrollbar { display: none; }
+.mon-read { flex: none; height: 32px; padding: 0 var(--sp-3); font-size: 13px; }
+.mon-read:disabled { color: var(--fg-3); }
+.mon-sh { padding: var(--sp-3) var(--sp-1) 0; color: var(--fg-2); font: 600 13px/18px var(--font); }
+.mon-sh:first-of-type { padding-top: 0; }
+.mon-day { padding: var(--sp-1) var(--sp-1) 0; color: var(--fg-3); font: 500 12px/16px var(--font); }
+
+/* a report or a folded source as one compact row: source, state, time on the first line, the summary under it (two lines at most) */
+:is(#mon-tl, .fr-list) > .bm.rc.fr { gap: var(--sp-1); padding: var(--sp-2) var(--sp-4); cursor: pointer; }
+.fr-list > .bm.alert { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.fr-list > .bm.rc { display: flex; flex-direction: column; gap: var(--sp-3); }
+@media (hover: hover) { :is(#mon-tl, .fr-list) > .bm.rc.fr:not(.fr-all):hover { background: var(--hover); } }
+/* a report said whole on its row: nothing to unfold, so it is not a button and its line is not clipped */
+:is(#mon-tl, .fr-list) > .bm.rc.fr.fr-all { cursor: auto; }
+.fr-all .fr-sum { display: block; }
+:is(#mon-tl, .fr-list) > .bm.rc.fr:focus-visible { outline-offset: -2px; }
+.fr-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--fg-2); font-size: 14px; line-height: 20px; overflow-wrap: break-word; }
+/* unread: the source in full weight and a dot before it (never a coloured edge) */
+.fr.un .rc-src { color: var(--fg); font-weight: 700; }
+.fr.un .rc-src::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 var(--sp-15) 1px 0; /* nudge: dot centred on the text's x-height */ border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.fr .fr-n { font-variant-numeric: tabular-nums; }
+.fr-chev { flex: none; display: inline-flex; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
+.fr-chev .ic { width: 16px; height: 16px; }
+.fr.grp.open .fr-chev { transform: rotate(180deg); }
+.fr.grp.open { background: var(--layer); }
+.fr-list { display: flex; flex-direction: column; gap: var(--sp-2); padding-left: var(--sp-3); }
+.fr-list > .fr-open, #mon-tl > .fr-open { gap: var(--sp-3); }
+/* 작업내역 (web/js/11-worklog.js): a day's posts as the feed's rows inside ONE list card, hairlines between them; the title is one line */
+.fr-list.wl-list { gap: 0; padding: 0; overflow: hidden; border-radius: var(--r-card); background: var(--card); }
+.wl-list > .wl-row { border-radius: 0; background: transparent; justify-content: center; }
+.wl-list > .wl-row + .wl-row { border-top: 1px solid var(--line); }
+.wl-list > .wl-row[role="button"] { min-height: 44px; }
+@media (hover: hover) { .wl-list > .wl-row[role="button"]:hover { background: var(--hover); } }
+.wl-row:not(.fr-all, .fr-open) .fr-sum { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wl-row .rc-hd .tag, .wl-row .rc-src { flex: none; }
+.wl-row .rc-src { min-width: 0; flex: 0 1 auto; }
+.wl-plain .rc-hd { align-items: flex-start; }
+.wl-plain .rc-hd > .fr-sum { flex: 1; min-width: 0; }
+.wl-sess { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.wl-quiet .rc-src { flex: none; }
+.wl-q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.wl-full { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.mon-more { align-self: center; min-height: 44px; padding: 0 var(--sp-4); font-size: 14px; }
+.mon-rep { color: var(--fg-3); font-size: 12px; line-height: 16px; }
+
+/* 더 보기 (moreRow): a list card's own last line. Centered muted text across the whole card, so it reads as the card's foot, not one more row. */
+.cv-more { display: block; width: 100%; min-height: 44px; padding: var(--sp-2) var(--sp-4); border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg-3); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); text-align: center; cursor: pointer; }
+@media (hover: hover) { .cv-more:hover { background: var(--card-hover); color: var(--fg-2); } }
+.cv-more:active { background: var(--row-sel); }
+.cv-empty { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .fr-chev { transition: none; } }

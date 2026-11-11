@@ -1,0 +1,187 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { now } from "./config.ts";
+import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
+import { emit } from "./events.ts";
+import { inboxText } from "./intake.ts";
+import { keepWatchNewest, listNotices, NOTICE_CAP, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, WATCH_DAYS, WATCH_KEEP } from "./notices.ts";
+import { rawFence, watchLine, watchReasonKo } from "./watchtext.ts";
+import { addWatch, allWatches, relabelWatches, removeWatch } from "./watch.ts";
+import { clearChannel, setupChannel, wakeOnly, watchLabel, watchWakeEvent } from "./workchannels.ts";
+
+setWatchLabelResolver(watchLabel);
+const CH = "1500000000003290227";
+const CH2 = "1500000000003290228";
+const NAME = "부티크-재고-구매";
+// The whole store, not the first page: the notice store is shared with every test file in the run, and unread ones from earlier files fill a 100-item page.
+const noticesFor = (title: string) => listNotices(NOTICE_CAP).items.filter(n => n.kind === "watch" && n.title === title);
+
+// The channels and their monitors are the fixture of the tests below, set up once so no test depends on another having run first.
+let a: ReturnType<typeof setupChannel>, b: ReturnType<typeof setupChannel>;
+beforeAll(() => {
+	a = setupChannel({ channel: `ch:${CH}`, purpose: "재고 확인", monitors: [{ command: "echo boutique_mails=0" }, { command: "echo boutique_mails=1" }] }, NAME, "");
+	b = setupChannel({ channel: `ch:${CH2}`, purpose: "다른 일", monitors: [{ command: "echo 1", label: "메일 감시" }] }, "다른-채널", "");
+});
+afterAll(() => {
+	for (const w of allWatches().filter(x => x.channels?.includes(CH) || x.channels?.includes(CH2))) removeWatch(w.id);
+	setOrchestratorAvailable(() => true);
+	clearChannel(CH);
+	clearChannel(CH2);
+});
+
+test("a skipped release slot is not counted in failed ticks: the reason reads the same however many minutes it has failed", () => {
+	const skipped = (fails: number) => watchReasonKo(`failed ${fails} times in a row (exit ${SLOT_SKIPPED_EXIT})`);
+	expect(skipped(2)).toBe(skipped(300));
+	expect(skipped(2)).not.toContain("2");
+	expect(skipped(2)).not.toBe(watchReasonKo("failed 2 times in a row (exit 1)"));
+});
+
+test("reasons of the watch runner read as Korean and unknown ones pass through", () => {
+	expect(watchReasonKo("output changed")).toBe("결과가 바뀌었어요");
+	expect(watchReasonKo("matched /재고/")).toBe("조건에 맞는 결과가 나왔어요");
+	expect(watchReasonKo("match")).toBe("조건에 맞는 결과가 나왔어요");
+	expect(watchReasonKo("fail")).toBe("점검에 실패했어요");
+	expect(watchReasonKo("recovered")).toBe("다시 정상이에요");
+	expect(watchReasonKo("failed 3 times in a row (exit 1)")).toBe("3번 연속 실패했어요");
+	expect(watchReasonKo("바뀌었어요")).toBe("바뀌었어요");
+	expect(watchLine("재고 감시", "output changed", "boutique_mails=1")).toBe("재고 감시: 결과가 바뀌었어요\n```원문\nboutique_mails=1\n```");
+	expect(watchLine("재고 감시", "output changed", "boutique_mails=1", { raw: false })).toBe("재고 감시: 결과가 바뀌었어요");
+	expect(watchLine("재고 감시", "output changed", " ")).toBe("재고 감시: 결과가 바뀌었어요");
+});
+
+test("channel monitors are named by the channel, and two Korean channels never share a key", () => {
+	expect(new Set([...a.monitors, ...b.monitors]).size).toBe(3);
+	expect(a.monitors[1]).toMatch(/^ch-[a-z0-9-]+$/);
+	expect(watchLabel(a.monitors[0]!)).toBe(`${NAME} 감시 1`);
+	expect(watchLabel(a.monitors[1]!)).toBe(`${NAME} 감시 2`);
+	expect(watchLabel(b.monitors[0]!)).toBe("메일 감시");
+	expect(watchLabel("not-a-watch")).toBe("not a watch");
+});
+
+test("a channel monitor event routed to the orchestrator makes no notice while the orchestrator is up", () => {
+	const name = allWatches().find(w => w.channels?.includes(CH) && watchLabel(w.name) === `${NAME} 감시 2`)!;
+	setOrchestratorAvailable(() => true);
+	const before = noticesFor(`${NAME} 감시 2`).length;
+	emit("inbox", watchWakeEvent(name, "output changed", "boutique_mails=1"));
+	expect(noticesFor(`${NAME} 감시 2`)).toHaveLength(before);
+});
+
+test("with the orchestrator unavailable the same event is a Korean notice titled by the channel", () => {
+	const w = allWatches().find(x => x.channels?.includes(CH) && watchLabel(x.name) === `${NAME} 감시 2`)!;
+	setOrchestratorAvailable(() => false);
+	try {
+		emit("inbox", watchWakeEvent(w, "output changed", "boutique_mails=1"));
+	} finally {
+		setOrchestratorAvailable(() => true);
+	}
+	const text = `${NAME} 감시 2: 결과가 바뀌었어요\n${rawFence("boutique_mails=1")}`;
+	expect(noticesFor(`${NAME} 감시 2`).find(n => n.text === text)).toMatchObject({ kind: "watch", open: "alert" });
+});
+
+test("events routed to alert or chat, or an orchestrator event without a channel, keep their notice", () => {
+	const base = allWatches().find(x => x.channels?.includes(CH))!;
+	emit("inbox", watchWakeEvent({ ...base, name: "plain-alert", to: "alert" }, "output changed", "a=1"));
+	emit("inbox", watchWakeEvent({ ...base, name: "plain-chat", to: "chat" }, "match", "b=2"));
+	emit("inbox", watchWakeEvent({ ...base, name: "no-channel", channels: undefined }, "fail", "c=3"));
+	expect(noticesFor("plain alert")[0]!.text).toBe(`plain alert: 결과가 바뀌었어요\n${rawFence("a=1")}`);
+	expect(noticesFor("plain chat")[0]!.text).toBe(`plain chat: 조건에 맞는 결과가 나왔어요\n${rawFence("b=2")}`);
+	expect(noticesFor("no channel")[0]!.text).toBe(`no channel: 점검에 실패했어요\n${rawFence("c=3")}`);
+});
+
+test("a notice stored with the raw watch name and English reason renders with the label and Korean", () => {
+	const w = allWatches().find(x => x.channels?.includes(CH) && watchLabel(x.name) === `${NAME} 감시 1`)!;
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target: "ch:123", text: `[${w.name}] output changed\nboutique_mails=1` });
+	const shown = listNotices(NOTICE_CAP).items.find(n => n.kind === "watch" && n.title === `${NAME} 감시 1`);
+	expect(shown?.text).toBe(`${NAME} 감시 1: 결과가 바뀌었어요`);
+});
+
+test("a watch added without a label is named in Korean once, and a key-shaped label is replaced at boot", () => {
+	const a = addWatch({ name: "sample-stock-check", command: "echo a=1" }, "");
+	const b = addWatch({ name: "ch-9-3", command: "echo a=1" }, "");
+	const c = addWatch({ name: "sample-keep", command: "echo a=1", label: "sample keep" }, "");
+	try {
+		expect(a.label).toBe("sample 재고 확인");
+		expect(b.label).toBe("프로젝트 감시 3");
+		expect(relabelWatches(() => "샘플")).toBe(1);
+		expect(allWatches().find(w => w.id === c.id)!.label).toBe("샘플 sample keep");
+		expect(watchLabel("ch-9-3")).toBe("프로젝트 감시 3");
+		expect(watchLabel("ch ch 2")).toBe("프로젝트 감시 2");
+	} finally {
+		for (const w of [a, b, c]) removeWatch(w.id);
+	}
+});
+
+test("a stored label that still carries an app's key is rewritten at boot, and an old notice reads the same words", () => {
+	const a = addWatch({ name: "kakao-new", command: "echo a=1", label: "kakao 새 소식" }, "");
+	const b = addWatch({ name: "sample-typed", command: "echo a=1", label: "GitHub 감시" }, "");
+	try {
+		expect(watchLabel("kakao-new")).toBe("카카오톡 새 소식");
+		expect(relabelWatches(() => undefined)).toBe(1);
+		expect(allWatches().find(w => w.id === a.id)!.label).toBe("카카오톡 새 소식");
+		expect(allWatches().find(w => w.id === b.id)!.label).toBe("GitHub 감시");
+		expect(watchLabel("kakao 새 소식")).toBe("카카오톡 새 소식");
+	} finally {
+		for (const w of [a, b]) removeWatch(w.id);
+	}
+});
+
+const ago = (ms: number) => new Date(Date.parse(now()) - ms).toISOString();
+const report = (label: string, ts: string, text: string) => emit("inbox", { ts, kind: "watch", watch: "sample-prune", label, to: "alert", reason: "output changed", text });
+
+const aged = (title: string, ms: number, state?: string) => ({ kind: "watch", title, updated: ago(ms), ...(state ? { decision: { state } } : {}) });
+
+test(`each watch keeps its newest ${WATCH_KEEP} reports and only those, the other watches and kinds are left alone`, () => {
+	const mine = Array.from({ length: WATCH_KEEP + 10 }, (_, i) => aged("정리 시험 가", (i + 1) * 60_000));
+	const other = [aged("정리 시험 나", 1000), { kind: "message", title: "정리 시험 가", updated: ago(1) }];
+	const kept = keepWatchNewest([...other, ...mine], Date.parse(now()));
+	const keptMine = kept.filter(n => n.kind === "watch" && n.title === "정리 시험 가");
+	expect(keptMine).toHaveLength(WATCH_KEEP);
+	expect(keptMine).toEqual(mine.slice(0, WATCH_KEEP));
+	expect(kept).toHaveLength(WATCH_KEEP + 2);
+});
+
+test("a report older than the age limit is dropped, a fresh one stays, an open decision is never dropped", () => {
+	const old = aged("정리 시험 다", (WATCH_DAYS + 1) * 86_400_000);
+	const fresh = aged("정리 시험 다", 3_600_000);
+	const open = aged("정리 시험 다", (WATCH_DAYS + 2) * 86_400_000, "open");
+	expect(keepWatchNewest([old, fresh, open], Date.parse(now()))).toEqual([fresh, open]);
+});
+
+test("a report written through the hub is kept at the newest 50 per watch", () => {
+	for (let i = 0; i < WATCH_KEEP + 5; i++) report("정리 시험 라", ago((WATCH_KEEP + 5 - i) * 1000), "Item " + i);
+	expect(listNotices(300).items.filter(n => n.kind === "watch" && n.title === "정리 시험 라").length).toBeLessThanOrEqual(WATCH_KEEP);
+});
+
+test("a one-shot watch for the orchestrator only wakes it: the owner hears from it, or directly when it fails or nobody is up", () => {
+	const base = allWatches().find(x => x.channels?.includes(CH))!;
+	const once = { ...base, to: "orchestrator", once: true };
+	expect(wakeOnly(once, "matched /gone/", true)).toBe(true);
+	expect(wakeOnly(once, "output changed", true)).toBe(true);
+	expect(wakeOnly(once, "failed 3 times in a row (exit 1)", true)).toBe(false);
+	expect(wakeOnly(once, "matched /gone/", false)).toBe(false);
+	expect(wakeOnly({ ...once, once: undefined }, "matched /gone/", true)).toBe(false);
+	expect(wakeOnly({ ...once, to: "alert" }, "matched /gone/", true)).toBe(false);
+});
+
+test("the wake of a one-shot watch tells the orchestrator to report, in its channel or with dotz_send alert", () => {
+	const base = allWatches().find(x => x.channels?.includes(CH))!;
+	const once = { ...watchWakeEvent({ ...base, to: "orchestrator", once: true, channels: undefined }, "matched /gone/", "sample-repo-gone"), wakeOnly: true };
+	expect(inboxText(once)).toContain("dotz_send alert");
+	expect(inboxText(once)).not.toContain("worklog");
+	const inChannel = inboxText({ ...once, channels: [CH] });
+	expect(inChannel).toContain(`ch:${CH}`);
+	expect(inChannel).not.toContain("dotz_send alert");
+});
+
+test("a match on a sentinel alone asks no model for a summary, a changed token still does", async () => {
+	const base = allWatches().find(x => x.channels?.includes(CH))!;
+	const asked: string[] = [];
+	setWatchSummarizer(async output => void asked.push(output));
+	try {
+		emit("inbox", watchWakeEvent({ ...base, name: "token-match", to: "alert" }, "matched /gone/", "sample-repo-gone"));
+		expect(asked).toEqual([]);
+		emit("inbox", watchWakeEvent({ ...base, name: "token-change", to: "alert" }, "output changed", "build-failed"));
+		expect(asked).toEqual(["build-failed"]);
+	} finally {
+		setWatchSummarizer(undefined);
+	}
+});

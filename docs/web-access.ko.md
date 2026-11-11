@@ -1,0 +1,83 @@
+# 웹 접속 (온보딩)
+
+설정 → 웹 접속에서 접속 방식을 고르면 dotz가 그 방식에 필요한 설정을 스스로 마칩니다. 기본값은 **Tailscale**이고, 지금 쓰는 tailnet 주소는 바뀌지 않습니다.
+
+## 방식
+
+- **Tailscale** (기본): tailnet에 연결한 기기에서 `https://<기기>.<tailnet>.ts.net`으로 엽니다. dotz가 `tailscale serve`를 확인하고, 없으면 설정합니다.
+- **Cloudflare**: 고정 주소(예: `dotz.example.com`)를 열고 Cloudflare Access와 기기 연결(패스키)을 씁니다.
+- **이 컴퓨터만**: `127.0.0.1`에서만 엽니다. 다른 기기에서는 열리지 않습니다.
+
+## 이 컴퓨터에서 바로 열기: `dotz`
+
+게이트웨이가 도는 컴퓨터의 터미널에서 `dotz`를 치면 어떤 방식을 골랐든 기본 브라우저가 `http://127.0.0.1:<포트>`로 로그인된 채 열립니다. Tailscale은 쓰지 않습니다. `dotz --print`는 열지 않고 주소만 출력합니다(SSH·화면 없는 환경, `ssh -L`로 포트를 넘겨 씁니다). 설치와 업데이트가 명령을 알아서 깔고(macOS·Linux·WSL, Windows 자체는 WSL로 씁니다), 게이트웨이가 꺼져 있으면 한 줄로 알려 줍니다.
+
+주소에는 5분 동안 한 번만 쓸 수 있는 코드가 들어 있고, 이 코드는 hub 토큰을 가진 이 컴퓨터의 요청만 만들 수 있습니다. 코드와 그 쿠키(`dotz_local`, 원격 쿠키와 별개의 세션)는 접속 상대·Host가 모두 루프백이고 프록시·터널 헤더가 없을 때만 통합니다. `tailscale serve`, `cloudflared`, 다른 도메인을 거친 요청은 얻는 것이 없고, 토큰 없는 루프백 접속도 그대로 막힙니다. 평문 HTTP라 쿠키에 Secure는 붙지 않습니다(HttpOnly, SameSite=Strict). 원격 방식의 인증과 쿠키는 그대로이고, 접속 방식을 바꾸면 이 세션은 무효가 되니 `dotz`를 다시 치면 됩니다.
+
+## Cloudflare를 고르면 하는 일
+
+1. `cloudflared`가 있는지 확인하고, 없으면 Homebrew로 설치합니다(`brew install cloudflared`).
+2. Cloudflare 로그인이 안 되어 있으면 `cloudflared tunnel login`이 출력한 주소를 오너의 Aside 브라우저(백그라운드)로 엽니다. 오너가 **Authorize**를 누르면 `~/.cloudflared/cert.pem`이 생깁니다.
+3. `dotz` 터널을 재사용합니다. 없으면 만듭니다.
+4. 주소가 없으면 Cloudflare 계정의 첫 도메인을 읽어 `dotz.<도메인>`을 제안합니다.
+5. `cloudflared tunnel route dns`로 DNS를 연결하고, 터널 토큰을 `~/.dotz/secrets/cloudflared-tunnel-token`에 0600으로 저장합니다.
+6. 게이트웨이를 다시 시작하지 않고 터널을 켭니다. 화면에 최종 주소가 표시됩니다.
+
+이 컴퓨터만을 고르면 터널을 끄고 로컬 주소만 남깁니다. Tailscale로 되돌리면 tailnet 주소를 다시 확인합니다.
+
+## 이 컴퓨터만: 로그인
+
+Tailscale 로그인 없이 설치하면 처음부터 이 모드로 시작합니다. 이 모드에서도 로그인은 있습니다. 같은 컴퓨터의 브라우저로 주소를 열면 버튼 하나가 있는 로그인 페이지가 나오고, **로그인**을 누르면 게이트웨이(오너 계정으로 실행 중)가 이 컴퓨터 화면에 확인 창을 띄웁니다. 창과 페이지에 같은 4자리 번호가 보이면 **허용**을 누르세요. 허용하면 번호를 요청한 그 브라우저만 30일짜리 쿠키(`dotz_local`)를 받아 앱으로 들어갑니다. 한 번에 요청은 하나만 받고(120초 안에 답이 없으면 만료), 거부하거나 시간이 지나면 3초 동안 새 요청을 받지 않습니다. 확인 창을 띄울 수 없으면(화면이 꺼져 있거나 창 도구가 없을 때) 페이지가 그렇게 알려 줍니다.
+
+확인 창을 쓸 수 없을 때는 봇에게 "웹 로그인 링크 줘"라고 말하면 됩니다. 봇이 5분 안에 한 번만 쓸 수 있는 링크(`http://127.0.0.1:<포트>/local-login?code=…`)를 만들어 이 컴퓨터의 브라우저로 열어 줍니다.
+
+고급 대체 경로: 터미널에서 `bun hub/web-login-cli.ts`를 실행하면 같은 링크가 출력되고, `--open`을 붙이면 기본 브라우저로 바로 엽니다.
+
+쿠키는 해시만 `web-local-sessions.json`(0600)에 저장되어 게이트웨이를 다시 시작해도 유지되지만, 대기 중인 요청과 링크는 다시 시작하면 사라집니다. 다른 모드로 바꾸면 쿠키와 링크가 모두 무효가 되어 다시 이 모드로 돌아와도 새로 로그인해야 합니다. 한계: 쿠키는 포트별로 분리되지 않아서, 같은 브라우저로 `127.0.0.1`의 다른 서비스를 열면 그 서비스도 이 쿠키를 받습니다.
+
+## 오너가 하는 일
+
+- Cloudflare 로그인과 **Authorize** 클릭
+- Cloudflare가 요구하는 2단계 인증·캡차
+- (선택) Cloudflare Access 정책에 본인 이메일만 허용
+
+화면에 한 단계로 표시됩니다. 끝나면 dotz가 이어서 진행합니다.
+
+## 처음 한 번만 하는 일
+
+Cloudflare를 처음 쓰면 기기를 하나 연결해야 합니다. 새 주소를 열면 `/pair` 화면이 나오고, **기기 연결**을 눌러 패스키를 만듭니다. 연결된 기기가 없으면 설정 화면에 다시 들어올 수 없으므로, 연결 전에 Tailscale 주소를 지우지 마세요.
+
+## 저장되는 것
+
+| 무엇 | 어디 | 권한 |
+| --- | --- | --- |
+| 접속 방식, 주소, Access 팀·AUD, 토큰 파일 이름 | `~/.dotz/web-access.json` | 0600 |
+| Cloudflare 터널 토큰 | `~/.dotz/secrets/cloudflared-tunnel-token` | 0600 |
+| cloudflared 로그인 인증서 | `~/.cloudflared/cert.pem` | 0600 |
+| 온보딩 진행 상태(비밀 없음) | `~/.dotz/onboarding/web-access.json` | 0600 |
+
+## 입구 검사
+
+게이트웨이는 모든 요청을 로그인 확인 전에 한 번 더 걸러요(`hub/entry-check.ts`).
+
+- Host가 게이트웨이 자기 이름일 때만 받아요: `127.0.0.1`·`localhost`·`[::1]`에 게이트웨이 포트, 이 컴퓨터의 tailnet 이름(포트 없이 또는 `web.tailscale_https_port`), Cloudflare 방식일 때 그 주소, `web.public_url`의 호스트. 다른 Host는 403이에요.
+- Tailscale 로그인 헤더는 Host가 이 컴퓨터의 tailnet 이름일 때(= `tailscale serve`를 거쳐 온 요청)만 믿어요. 루프백 주소로 온 같은 헤더는 무시하고, 피어 페어링도 같은 조건이에요.
+- 토큰 없이 들어온 쓰기 요청(Tailscale 로그인, `dotz_local` 쿠키, Cloudflare 기기 세션)은 웹앱 자기 페이지에서 보낸 것이어야 해요: `Sec-Fetch-Site`가 `same-origin`이나 `none`, 그 헤더가 없으면 `Origin`이 같은 주소. 둘 다 없는 요청은 브라우저가 보낸 것이 아니라서(피어 게이트웨이의 푸시 릴레이) 통과해요. `/api/` 쓰기는 JSON 본문만 받고, 파일 올리기(`/api/upload`)만 multipart를 받아요. `x-dotz-token`이나 피어 토큰이 있는 요청은 해당하지 않아요.
+- 거절할 때마다 `hub.log`에 이유, Host, Origin을 한 줄 남겨요(같은 이유는 10초에 한 줄, 토큰 값은 남기지 않아요).
+
+앞단에 다른 프록시를 둬서 Host가 바뀌는 바람에 들어가지 못하게 되면 `config.json`에 `"web": { "entry_check": false }`를 넣고 게이트웨이를 다시 시작해요. 이전 동작으로 돌아가요. 프록시가 원래 Host를 넘기게 고친 뒤에는 다시 지워 주세요.
+
+## 복구와 되돌리기
+
+- 화면의 **직접 입력**을 열면 주소, 팀 이름, AUD, 터널 토큰을 직접 넣을 수 있습니다. Cloudflare 화면이 바뀌어 자동화가 실패했을 때의 복구 경로입니다.
+- 자동 온보딩이 실패하면 이유 한 줄과 다음 할 일 한 단계가 표시됩니다. **다시 시도**를 누르면 저장된 것부터 이어서 합니다.
+- Tailscale로 되돌리려면 접속 방식을 **Tailscale**로 고르고 저장합니다. 터널이 닫히고 tailnet 주소가 다시 쓰입니다.
+- 화면에 들어가지 못하게 되었을 때는 이 컴퓨터에서 `x-dotz-token` 헤더로 `PUT /api/web-access` `{"mode":"tailscale"}`을 보내거나 `~/.dotz/web-access.json`을 지우고 게이트웨이를 다시 시작합니다.
+
+## 한계
+
+- Cloudflare를 쓰려면 Cloudflare 계정과 도메인이 있어야 합니다. 도메인이 없으면 `docs/web-access-cloudflare.ko.md`의 workers.dev 방식을 씁니다.
+- 터널 토큰과 인증서는 이 컴퓨터에만 저장합니다. 다른 컴퓨터에 복사하면 그 컴퓨터가 같은 터널에 붙습니다.
+- 자동 설치는 Homebrew가 있는 macOS를 전제로 합니다. Homebrew가 없으면 설치 안내가 표시되고, 직접 설치한 뒤 다시 시도합니다.
+- Cloudflare Access를 쓰면 `config.json`의 `web.allow_logins`에 허용 이메일을 적어야 합니다.
+- 자동 온보딩은 오너의 Aside 브라우저 세션을 씁니다. 브라우저 창을 앞으로 올리지 않고, 연 탭은 닫습니다.

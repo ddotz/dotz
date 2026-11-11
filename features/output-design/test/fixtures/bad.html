@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff">
+<title>나쁜 예</title>
+<style>
+:root { --accent: #3182f6; }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #111; background: #fff; }
+section { padding: 8px 16px; }
+.card { background: #f2f4f6; border-radius: 12px; padding: 16px; margin: 0 0 12px; }
+.inner { background: #fff; border-radius: 8px; padding: 12px; }
+.ibox { width: 40px; height: 40px; background: #e8f0fe; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.chips span { display: inline-block; padding: 4px 8px; margin: 2px; color: #000; font-size: 14px; }
+h2 { font-size: 20px; margin: 0; }
+body { min-height: 100vh; }
+.dock { position: fixed; left: 0; right: 0; bottom: 0; height: 44px; padding-bottom: env(safe-area-inset-bottom); background: #fff; font-size: 14px; }
+.card:hover { background: #e5e8eb; }
+.fx { transition: all 0.5s ease-in; }
+.slide { transition: width 200ms ease-out, transform 200ms ease-out; }
+.pop { animation: pop 200ms ease-out; }
+@keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
+@media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
+</style>
+</head>
+<body>
+<section>
+	<p id="contrast" style="color:#bbbbbb">연한 회색 글자라서 흰 바탕에서 잘 안 읽혀요</p>
+	<button id="touch" style="height:24px;width:60px;font-size:14px">작은 단추</button>
+</section>
+<section>
+	<div class="card" id="one-lead"><h2>서울 날씨</h2><h2>부산 날씨</h2></div>
+	<div class="card" id="repeat"><b>결제 실패</b> <span>결제 실패 · 카드를 확인해 주세요</span></div>
+	<div class="card" id="state-word"><span>진행 중</span></div>
+</section>
+<section>
+	<p id="accent-text" style="color:var(--accent)">3월 14일</p>
+	<div id="accent-area" style="background:var(--accent);height:120px"></div>
+</section>
+<section class="chips" id="colors">
+	<span style="background:#e11d48">빨강</span><span style="background:#f97316">주황</span><span style="background:#eab308">노랑</span><span style="background:#22c55e">초록</span><span style="background:#06b6d4">청록</span><span style="background:#3182f6">파랑</span><span style="background:#8b5cf6">보라</span><span style="background:#ec4899">분홍</span>
+</section>
+<section>
+	<div class="ibox" id="icon-box"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12M10 4v12" stroke="#333" stroke-width="2" fill="none"/></svg></div>
+	<div class="card" id="nested-card"><div class="inner">안쪽 카드에 든 내용이에요</div></div>
+	<div class="card" id="side-stripe" style="border-left:4px solid #e11d48">한쪽에 색 줄이 있는 둥근 카드예요</div>
+	<div class="card" id="glow" style="box-shadow:0 0 24px rgba(49,130,246,.5)">색이 번지는 그림자가 있어요</div>
+	<h2 id="gradient-text" style="background:linear-gradient(90deg,#f0f,#0ff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent">그라데이션 제목</h2>
+</section>
+<section>
+	<p id="body-size" style="font-size:10px">아주 작은 글자예요</p>
+	<p id="line-height" style="line-height:1.1;width:200px">줄 간격이 좁은 글이 여러 줄로 이어져서 읽기가 답답해요 줄 간격이 좁은 글이 여러 줄로 이어져서 읽기가 답답해요</p>
+	<p id="line-length" style="font-size:14px">한 줄이 너무 길어서 눈이 다음 줄을 찾기 어려운 글이에요 한 줄이 너무 길어서 눈이 다음 줄을 찾기 어려운 글이에요 한 줄이 너무 길어서 눈이 다음 줄을 찾기 어려운 글이에요 한 줄이 너무 길어서 눈이 다음 줄을 찾기 어려운 글이에요</p>
+	<div id="overflow-x" style="width:600px;height:20px;background:#ddd"></div>
+</section>
+<section>
+	<p id="raw-value">남은 횟수: NaN, 담당자 undefined</p>
+	<input id="input-font" aria-label="검색" value="검색어" style="font-size:14px;height:44px">
+	<div class="fx slide pop" id="motion">움직이는 상자예요</div>
+</section>
+<div class="dock">도움말은 아래에 있어요</div>
+</body>
+</html>

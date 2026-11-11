@@ -1,0 +1,65 @@
+/* 분할 창 (web/js/43-panes*.js): from the second pane on, #split takes the place of the one section on a wide screen and the chat tab - [list column, folded to nothing][tree of panes].
+   A pane is a card like the conversation card; the active one carries the real section (.in-pane), the others are mirrors (.pane-mir). The active one is told by its head (the others' title is quieter), not by a line around it.
+   The panes take the list column's width (owner 8f7c8c3d); the chat list comes back as a layer over the panes' left (.ls-open) without moving either of them. */
+#split { --cv-w: 280px; display: grid; grid-template-columns: 0 minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 0; max-width: none; margin: 0; padding-left: var(--edge); padding-right: var(--edge); }
+#split > .pane-side { grid-column: 1; position: relative; min-width: 0; min-height: 0; margin-bottom: var(--sp-4); }
+:is(#split > .pane-side, #v-chat.cnv-fold) > .cv-side { display: none; position: absolute; z-index: 5; top: 0; bottom: calc(var(--sp-4) * -1); left: 0; width: var(--cv-w); padding: 0; border-radius: var(--r-card); background: var(--card); overflow-y: auto; box-shadow: var(--float); }
+:is(#split.ls-open > .pane-side, #v-chat.cnv-fold.ls-open) > .cv-side { display: block; }
+#split > .pane-tree { grid-column: 2; display: flex; min-width: 0; min-height: 0; }
+
+.pane, .pane-row, .pane-col { flex: 1 1 0; display: flex; min-width: 0; min-height: 0; }
+.pane-row { flex-direction: row; }
+.pane-col, .pane { flex-direction: column; }
+.pane { position: relative; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.pane > .pane-x { position: absolute; top: var(--sp-4); right: var(--sp-3); z-index: 3; }
+/* the active pane's 목록 button: at its head's left, a full touch target; the heads leave it room so a title starts at the same place in both panes */
+:is(.pane, #v-chat.cnv-fold) > .pane-ls { position: absolute; top: var(--sp-2); left: var(--sp-2); z-index: 3; width: 44px; height: 44px; border-radius: var(--r-ctl); }
+
+.pane-bar { position: relative; flex: none; touch-action: none; }
+.pane-row > .pane-bar { width: var(--sp-4); cursor: col-resize; }
+.pane-col > .pane-bar { height: var(--sp-4); cursor: row-resize; }
+.pane-bar::after { content: ""; position: absolute; inset: 0; margin: auto; border-radius: var(--r-ctl); background: transparent; }
+.pane-row > .pane-bar::after { width: var(--sp-05); }
+.pane-col > .pane-bar::after { height: var(--sp-05); }
+.pane-bar:active::after { background: var(--accent); } @media (hover: hover) { .pane-bar:hover::after { background: var(--accent); } }
+
+#split :is(#v-chat.in-pane, .pane-chat) { flex: 1; height: auto; min-height: 0; width: 100%; max-width: none; margin: 0; padding: 0; grid-template-columns: minmax(0, 1fr); }
+#split :is(#v-chat.in-pane, .pane-chat)::before { display: none; }
+#split :is(#v-chat.in-pane, .pane-chat) > * { grid-column: 1; }
+#split :is(#cv-head, .pane-chat > .cv-head) { padding-right: calc(var(--sp-8) + var(--sp-4)); }
+#split :is(#cv-head, .pane-hd) { padding-left: calc(var(--sp-12) + var(--sp-4)); }
+/* 모니터링 in a pane scrolls inside its card. A pane is as narrow as the phone's column: an open room, thread or DM takes the whole pane the way it does
+   below 1100px (17-kakao.css), and the app bar's back closes it (30-kakao.js kkBack, 30-monitoring-comments.js cmBack). */
+#split .pane .kk.chat-open .kk-rooms { display: none; }
+/* the room's request bar sits on the pane's floor however long the chat is (docs/split-panes.md 입력창): the reply cards move above it and scroll on
+   their own, the chat window keeps 40% of the column and gives way first; the full screen scrolls the whole column with the cards under the bar */
+#split .pane .kk-chat { overflow: hidden; }
+#split .pane .kk-chat > .kk-box { flex: 1 1 0; min-height: 40%; }
+#split .pane .kk-chat > .kk-composer { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 0; }
+#split .pane .kk-composer > * { flex: none; }
+#split .pane .kk-composer > .kk-drafts { order: -1; flex: 0 1 auto; min-height: 0; margin: 0 0 var(--sp-2); overflow-y: auto; }
+/* 메일 쓰기 floats over its pane's corner, not the window's (20-mail-box.css .mbox-fab is fixed to the window) */
+#split .pane .mbox-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); }
+/* the copy in an inactive pane has no ids, so what #v-monitoring.kk-on hides on the real screen is hidden here by class */
+.pane-pj > .view.kk-on > .chatbox { display: none; }
+#split .view.in-pane:not(#v-chat) { flex: 1; min-height: 0; height: auto; max-width: none; margin: 0; padding: var(--sp-4); overflow-y: auto; }
+
+.pane-mir { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.pane-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); }
+.pane-hd .pane-x { margin-left: auto; }
+/* the open pane is told by its head: the title of the others is quieter (the state line is --fg-3 already) */
+.pane:not(.on) .pane-hd .cv-hd-t { color: var(--fg-3); }
+.pane-pj { flex: 1; min-height: 0; overflow-y: auto; }
+.pane-pj > .view { max-width: none; margin: 0; padding: var(--sp-4); }
+
+/* dragging a tab, a row or a pane head (43-panes-drag.js): a ghost of the title at the pointer with what letting go does under it, the row it came from
+   in its hover look, the hovered zone drawn over its pane like the file drop (accent fill, --ff-ring edge). A row a pane cannot show: a muted ghost, no zone. */
+body.pn-drag, body.pn-drag * { cursor: grabbing !important; user-select: none; }
+body.pn-drag.pn-no, body.pn-drag.pn-no * { cursor: not-allowed !important; }
+.pn-src { background: var(--card-hover); }
+.pn-ghost { position: fixed; z-index: 2100; max-width: 240px; padding: var(--sp-1) var(--sp-3); border-radius: var(--r-ctl); background: var(--card); box-shadow: var(--float); color: var(--fg); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); pointer-events: none; }
+.pn-ghost > div { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-gh { color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.pn-ghost.no > .pn-gt { color: var(--fg-3); }
+/* the zone glides from edge to edge and pane to pane like the board's placeholder (05-log.css .bph); 01-tokens.css turns it off with reduced motion */
+.pn-zone { position: fixed; z-index: 2099; border-radius: var(--r-card); background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: var(--ff-ring); pointer-events: none; transition: left var(--m-fast) var(--m-ease), top var(--m-fast) var(--m-ease), width var(--m-fast) var(--m-ease), height var(--m-fast) var(--m-ease); }

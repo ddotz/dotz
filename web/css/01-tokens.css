@@ -1,0 +1,284 @@
+/* dotz design foundation, ported from site/prototype/proto.css (docs/ui-spec.md, web/DESIGN.md).
+   Two palettes are tuned separately - light on a grey canvas, dark on a near-black canvas with lifted surfaces - and every
+   screen reads its colour, type step, space, radius, height and duration from these names. No screen hard-codes one. */
+:root {
+  color-scheme: light;
+
+  /* colour - light: grey canvas, white cards, ink in three steps, one sparing blue accent */
+  --bg: #f2f4f6; --side: #f2f4f6;
+  --card: #ffffff; --pop: #ffffff;
+  /* fields: a filled surface with no border, a line only on focus or error. --ff-fill is the fill for the surface the field sits on (see .card below) */
+  --ff-fill: var(--card); --ff-pop: var(--layer);
+  --ff-ring: inset 0 0 0 1.5px var(--accent);
+  --layer: #f2f4f6; --hover: #e9ecf0; --active: #e5e8eb; --track: #e5e8eb;
+  --card-hover: #f9fafb;
+  /* a selected or pressed row inside a card: never the page's own grey (--bg/--layer), so a first or last row keeps the card's edge */
+  --row-sel: #e8ebee;
+  --line: #e5e8eb; --line-2: #d1d6db;
+  --fg: #191f28; --fg-2: #4e5968; --fg-3: #616b78;
+  --accent: #3182f6; --on-accent: #ffffff;
+  --ok: #0a8754; --warn: #ae5900; --err: #e32435;
+  /* text of the .tag.warn status word: --warn darkened (same hue) so it clears 4.5:1 on every light surface, hovered and selected rows too (4.15 with --warn itself); its dot stays --warn */
+  --warn-ink: #8f4900; --on-err: #ffffff;
+  /* 미답장 (waiting for the owner's reply): orange fill + its text colour, 5.2:1 on white (light), 8:1 on the dark card (dark) */
+  --unreplied: #c2410c; --on-unreplied: #ffffff;
+  /* KakaoTalk chat (30-kakao.js): the room's backdrop, incoming / own bubbles, time and date chip */
+  --kk-bg: #dbe5ee; --kk-in: #ffffff; --kk-in-fg: #191f28; --kk-own: #fee500; --kk-own-fg: #191919; --kk-time: #5b6877; --kk-chip: rgb(25 31 40 / .38); --kk-chip-fg: #ffffff;
+  /* a filter row: the segmented track and its chosen cell (web/DESIGN.md 필터) */
+  --seg-track: var(--line); --seg-on: var(--card);
+  --scrim: rgb(0 0 0 / .4);
+  /* terminal panel: dark in both themes */
+  --tb: #101012; --tf: #e6e6ea; --td: #8d8d96; --tl2: #2b2b30; --tok: #4ade80; --terr: #ff7b7b; --tac: #a9a9ff;
+
+  /* type scale (web/DESIGN.md Type): every screen uses a step, never a one-off size */
+  --fs-page: 22px; --lh-page: 30px;          /* page title in the top bar */
+  --fs-page-sm: 20px; --lh-page-sm: 28px;    /* page title on a phone */
+  --fs-big: 20px; --lh-big: 28px;            /* the one big value in a card */
+  --fs-card: 16px; --lh-card: 22px;          /* card title */
+  --fs-sec: 14px; --lh-sec: 20px;            /* section label */
+  --fs-row: 15px; --lh-row: 22px;            /* list row title */
+  --fs-chat: 15px; --lh-chat: 24px;          /* chat body */
+  --fs-body: 14px; --lh-body: 22px;          /* body copy */
+  --fs-meta: 12px; --lh-meta: 16px;          /* meta, descriptions, captions */
+  --fs-tag: 11px; --lh-tag: 16px;            /* status tag */
+
+  /* space (web/DESIGN.md Space scale): --sp-N = N x 4px. Rows breathe by count, not by growing a row */
+  --sp-05: 2px; --sp-1: 4px; --sp-15: 6px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
+
+  /* shape: soft boxes, one small control radius; only a status tag and the two-value toggle are fully rounded (알약 규칙) */
+  --r-card: 18px; --r-sheet: 20px; --r-menu: 14px; --r-ctl: 10px; --r-seg: 8px; --r-seg-in: 6px; --r-pill: 999px;
+  --edge: 28px; --view-w: 920px; --sheet-w: 480px; --lead-ind: calc(var(--row-px) + var(--sp-6) + var(--sp-3)); --back-x: calc(var(--sp-6) - var(--sp-15)); --back-w: calc(var(--sp-8) + var(--sp-05));
+
+  /* heights: rows, menu items, controls and every button tier take their height here (docs/ui-spec.md) */
+  --row-h: 44px; --row-py: 8px; --row-px: 16px;
+  --menu-h: 30px; --menu-py: 4px; --menu-px: 8px; --menu-h-sheet: 44px;
+  --sheet-h: 44px;
+  --btn-h: 36px; --btn-h-sm: 32px; --btn-h-row: 28px; --btn-hit: 44px;
+  --ctl-h: 32px;
+  --field-h: 36px; --field-h-touch: 40px;
+  --chip-h: 28px; --tag-h: 20px; --tag-px: 6px;
+
+  /* shadows: cards stay flat; only what floats over the page carries one */
+  --float: 0 8px 24px rgb(0 0 0 / .10), 0 1px 3px rgb(0 0 0 / .06);
+  --shadow-menu: 0 8px 24px rgb(0 0 0 / .14);
+  --shadow-sheet: 0 -4px 28px rgb(0 0 0 / .22);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / .22);
+  --shadow-panel: 0 6px 24px rgba(0, 0, 0, .06);
+
+  /* motion (web/DESIGN.md Motion): every move has a cause, ease-out, transform/opacity only */
+  --m-fast: 150ms; --m-base: 220ms; --m-slow: 300ms; --m-ease: cubic-bezier(.2, .7, .2, 1);
+
+  --font: Pretendard, "Pretendard Variable", -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Geist Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* colour - dark: tuned on its own, not derived from light; depth comes from lifted surfaces first, shadows second */
+  --bg: #121214; --side: #121214;
+  --card: #1d1d21; --pop: #26262b;
+  --ff-pop: var(--active);
+  --layer: #26262b; --hover: #2b2b31; --active: #303036; --track: #34343b;
+  --card-hover: #232328;
+  --row-sel: #2b2b31;
+  --line: #2b2b31; --line-2: #3d3d45;
+  --fg: #ececf0; --fg-2: #b0b4bc; --fg-3: #8e939c;
+  --accent: #6ca7ff; --on-accent: #121214;
+  --ok: #3ecf8e; --warn: #f5a524; --err: #ff6369; --warn-ink: #f5a524; --on-err: #121214;
+  --unreplied: #ff9a4d; --on-unreplied: #1b1206;
+  --kk-bg: #161c23; --kk-in: #2b2f36; --kk-in-fg: #ececf0; --kk-own: #d9bd00; --kk-own-fg: #1b1b1b; --kk-time: #8e98a5; --kk-chip: rgb(255 255 255 / .12); --kk-chip-fg: #b0b4bc;
+  --seg-track: var(--layer); --seg-on: var(--line-2);
+  --scrim: rgb(0 0 0 / .6);
+  --float: 0 8px 24px rgb(0 0 0 / .5), 0 1px 3px rgb(0 0 0 / .4);
+  --shadow-menu: 0 8px 24px rgb(0 0 0 / .5);
+  --shadow-sheet: 0 -4px 28px rgb(0 0 0 / .55);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / .6);
+  --shadow-panel: 0 6px 24px rgba(0, 0, 0, .35);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+/* manipulation: a double tap does not zoom the page (iPhone web app, owner 2026-10-26); pinch zoom still works. On every element, because a
+   scrolling container (the chat timeline) starts its own touch-action chain; rules that set their own (pan-y, none) are more specific and stay. */
+*, *::before, *::after { touch-action: manipulation; }
+body { font: 400 var(--fs-body)/var(--lh-body) var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; word-break: keep-all; overflow-wrap: break-word; line-break: strict; }
+/* Korean line breaks like Netflix subtitles (web/DESIGN.md Type): whole words, balanced titles, no one-word last line in body text;
+   only code and paths may break inside a token. .phr keeps a fixed phrase ("무엇이 어디에") on one line when it fits. */
+h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
+/* short fixed copy (empty states, notes, card questions, meta lines): balanced, so a phrase never leaves one word on the last line */
+.empty, .hc-none, .cv-empty, .bell-none, .note, .cc-note, .dr-none, .od-note, .mb-note, .sup, .dc-q, .dc-ds, .cc-hd { text-wrap: balance; }
+p, li, blockquote, dd { text-wrap: pretty; }
+code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
+.phr { display: inline-block; max-width: 100%; }
+/* a sentence / clause / phrase chunk of copy text (01-phrase-wrap.js): the line breaks between chunks, inside one only when it is
+   wider than the line; a box that clamps its lines keeps plain inline text so its ellipsis still trims the last line */
+.wph { display: inline-block; max-width: 100%; }
+.dcard.fold .wph { display: inline; }
+.m-dg { display: inline-block; }
+button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+button { cursor: pointer; }
+code, pre { font-family: var(--mono); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The field fill by surface: --card on the grey page (the default), --layer on a white one, one step lighter on a dark dialog (--pop equals --layer there). */
+.card, .list, .fs-card, .ccard, .cv-card, .ms-card, .pj-card, .fc-card, .hcb-card, .apps-card, .kk-draft, .kk-lp, .kk-chat, .kk-rooms, .mbox-reply, .tr-n, .rq, .sheet, .bm.rep, .bm.alert, .cv-side, .cv-list { --ff-fill: var(--layer); }
+dialog.dlg { --ff-fill: var(--ff-pop); }
+.fs-body.panel { --ff-fill: var(--card); }
+@media (max-width: 639px) { .fs-card, dialog.dlg.fs-card[open] { --ff-fill: var(--card); } .fs-body.panel { --ff-fill: var(--layer); } #v-chat { --ff-fill: var(--layer); } } /* a phone sheet is grey with white panels; the phone chat is white */
+svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+button:disabled { opacity: .4; cursor: default; pointer-events: none; }
+kbd { display: inline-block; flex: none; padding: 0 var(--sp-15); border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
+/* 동작 줄이기: every transition and animation is off, pseudo-elements included (no motion on/off switch in the product) */
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after, ::backdrop { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
+
+/* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), #cmdk (search) and the app bar items.
+   Wide: .side, .main and .appbar are display: contents, so each of their children is a cell of the .app grid and sits in the one row. Below 1100px they are the usual flex boxes. The 1100px edge is also where 채팅 puts its list next to the conversation. */
+.app { display: grid; grid-template-columns: 20px auto auto auto auto auto minmax(0, 1fr) auto auto auto auto 12px; grid-template-rows: 48px auto auto auto minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
+.side, .main, .appbar { display: contents; }
+.brand, .rail, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
+.gban { grid-row: 2; grid-column: 1 / -1; }
+.oerr { grid-row: 4; grid-column: 1 / -1; }
+.views { grid-row: 5; grid-column: 1 / -1; }
+.brand { grid-column: 2; }
+.brand { display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 32px; padding: 0 var(--sp-2); border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: -.01em; text-align: left; cursor: pointer; }
+@media (hover: hover) { .brand:hover { background: var(--card); } }
+#brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the ddotz.dev brand mark (site/index.html .brand-mark, web/icons/dotz.svg): four dots, big top-left and bottom-right, small top-right and bottom-left.
+   Two masks of the same box: the three --fg dots, and the bottom-right one in --accent (site/style.css .brand-mark-accent). Light and dark follow the tokens. */
+.logo { position: relative; flex: none; width: 16px; height: 16px; }
+.logo::before, .logo::after { content: ""; position: absolute; inset: 0; -webkit-mask: center / 100% 100% no-repeat; mask: center / 100% 100% no-repeat; }
+.logo::before { background: var(--fg); -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='7.4' cy='7.4' r='3.1'/%3E%3Ccircle cx='16.6' cy='7.4' r='1.9'/%3E%3Ccircle cx='7.4' cy='16.6' r='1.9'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='7.4' cy='7.4' r='3.1'/%3E%3Ccircle cx='16.6' cy='7.4' r='1.9'/%3E%3Ccircle cx='7.4' cy='16.6' r='1.9'/%3E%3C/svg%3E"); }
+.logo::after { background: var(--accent); -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='16.6' cy='16.6' r='3.1'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='16.6' cy='16.6' r='3.1'/%3E%3C/svg%3E"); }
+.brand { width: auto; }
+.rail { grid-column: 4; display: flex; gap: var(--sp-05); margin-left: var(--sp-3); }
+.ni { position: relative; display: flex; flex: none; align-items: center; gap: var(--sp-1); height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap; }
+@media (hover: hover) { .ni:hover { background: var(--hover); color: var(--fg); } }
+.ni:disabled { background: transparent; color: var(--fg-3); opacity: .5; cursor: default; } @media (hover: hover) { .ni:disabled:hover { background: transparent; color: var(--fg-3); opacity: .5; cursor: default; } }
+.ni.on { color: var(--fg); font-weight: 700; }
+.ni .ic { display: none; }
+.ni .nl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the current tab: bold with an accent line under it; the unread count is a plain number after the label, the new-version mark a small dot */
+.ni.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -4px; height: 2px; border-radius: 1px; background: var(--accent); }
+.ni .nnb { min-width: 0; height: 16px; padding: 0; background: transparent; color: var(--warn); font-size: 12px; line-height: 16px; }
+/* a dot on a tab or menu label overlaps the label's bottom-right corner (the bot name's computer dot, docs/ui-spec.md 점 배지) */
+.ni .nub { position: absolute; right: 4px; bottom: 6px; width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
+.ni .nub[hidden] { display: none; }
+/* dark only: the tab dot takes the color of the tab number beside it (owner 2026-11-05); light keeps the .nb grey (03-base.css) */
+:root[data-theme="dark"] .ni .nub.att { background: var(--warn); }
+.appbar .cmdk { grid-column: 9; display: flex; align-items: center; gap: var(--sp-15); width: auto; height: 28px; margin-left: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
+@media (hover: hover) { .cmdk:hover { background: var(--card-hover); } }
+.cmdk .tx { display: none; }
+#back { grid-column: 5; margin-left: var(--sp-2); }
+.appbar h1 { grid-column: 6; min-width: 0; max-width: 320px; margin: 0 0 0 var(--sp-2); font: 700 var(--fs-page)/var(--lh-page) var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* wide: the active tab names the page, so the big title shows only on a page with a back arrow (a project, a settings sub-page) */
+.appbar:not(.back) h1 { display: none; }
+.thead { grid-column: 7; }
+.conn { grid-column: 8; margin-left: var(--sp-2); }
+#vtog { grid-column: 10; margin-left: var(--sp-1); }
+.ustrip { grid-column: 11; margin-left: var(--sp-1); }
+/* 연결 끊김 is a status (web/DESIGN.md 상태): the red dot and the word, no capsule; it stays the button that reconnects */
+.conn { display: inline-flex; align-items: center; gap: var(--sp-15); flex: none; height: 20px; padding: 0; background: none; color: var(--err); font-size: 12px; line-height: 20px; font-weight: 600; white-space: nowrap; }
+.conn::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+button.conn { border: 0; font-family: inherit; cursor: pointer; }
+button.conn:disabled { cursor: default; }
+.ustrip { flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 var(--sp-2); border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; }
+@media (hover: hover) { .ustrip:hover { background: var(--hover); color: var(--fg); } }
+.ustrip .ubar { width: 48px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.ustrip .ubar i { display: block; height: 100%; border-radius: 2px; background: var(--fg-2); }
+.ustrip.warn { color: var(--warn); } .ustrip.warn .ubar i { background: var(--warn); }
+.ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
+.ustrip .uring, .ustrip .upct { display: none; }
+.ustrip .uring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--fg-2) calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
+.ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
+.views { min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.view { max-width: var(--view-w); margin: 0 auto; padding: var(--sp-6); }
+.view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
+/* wide: only the two-pane 채팅 screens start at the left like the top bar (--edge = where the logo starts); 프로젝트 does it in .views.pp; every other page stays centered */
+@media (min-width: 1100px) { #v-chat, #v-activity, #v-monitoring { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } }
+/* wide: the top row holds only logo, computer, tabs and the right-side controls. A page with a back arrow (a settings sub-page, 모니터링) gets the arrow and its title as a page header in row 3, just above the page: both sit in the full-width cell and are offset to the left edge of the centered 920px column (.view max-width) */
+@media (min-width: 1100px) {
+  .appbar #back, .appbar h1 { grid-row: 3; grid-column: 1 / -1; align-self: start; justify-self: start; }
+  .appbar #back { margin: var(--sp-4) 0 0 calc(max(0px, (100% - var(--view-w)) / 2) + var(--back-x)); }
+  .appbar h1 { max-width: min(560px, 100%); margin: var(--sp-4) 0 0 calc(max(0px, (100% - var(--view-w)) / 2) + var(--back-x) + var(--back-w)); font: 700 var(--fs-page-sm)/var(--lh-page-sm) var(--font); }
+}
+@media (max-width: 1099px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-top: 0; }
+  .main { order: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .appbar { display: flex; flex: none; align-items: center; gap: var(--sp-1); height: calc(60px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) var(--sp-3) 0 var(--sp-6); background: var(--bg); }
+  .appbar.back { padding-left: var(--sp-3); }
+  .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; max-width: none; margin: 0; }
+  #back, .conn { margin: 0; }
+  #vtog, .ustrip { margin: 0; }
+  .gban, .oerr, .views { grid-row: auto; grid-column: auto; }
+  .views { flex: 1; }
+  /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
+  .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(var(--sp-05), calc(env(safe-area-inset-bottom) - var(--sp-4))); border-top: 1px solid var(--line); background: var(--card); }
+  .brand { display: none; }
+  .rail { flex: 1; min-width: 0; gap: 0; margin: 0; }
+  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: var(--sp-05); height: 46px; padding: 0 var(--sp-05); border-radius: 0; font-size: 10px; line-height: 13px; text-align: center; }
+  @media (hover: hover) { .ni:hover { background: transparent; } }
+  .ni.on { font-weight: 600; }
+  .ni .ic { display: block; width: 20px; height: 20px; }
+  .ni.on::after { content: none; }
+  .ni .nnb { position: absolute; top: 3px; left: calc(50% + 4px); min-width: 16px; height: 16px; padding: 0 var(--sp-15); background: var(--warn); color: var(--bg); font-size: var(--fs-tag); }
+  .ni .nub { position: absolute; top: 5px; left: calc(50% + 6px); width: 8px; min-width: 8px; height: 8px; }
+  .ni.on::before { content: ""; position: absolute; top: -1px; left: 25%; right: 25%; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent); }
+  /* search: the one #cmdk button is an icon in the app bar here (its label and key hint are for the top row) */
+  .appbar .cmdk { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; margin: 0; padding: 0; background: transparent; color: var(--fg-2); }
+  @media (hover: hover) { .appbar .cmdk:hover { background: var(--hover); color: var(--fg); } }
+  .cmdk kbd { display: none; }
+}
+@media (max-width: 1099px) and (pointer: coarse) { .appbar .cmdk { width: 36px; height: 36px; } }
+@media (max-width: 639px) {
+  /* typing: the keyboard covers the bar's place, so the bar steps aside instead of floating above the keyboard. It goes when the keyboard
+     arrives (data-kb, web/js/34-composer-viewport.js), not at the focus, so a docked card's reason field moves once, with the keyboard. */
+  :root[data-kb] .app:has(.composer textarea:focus) .side { display: none; }
+  .appbar { height: calc(52px + env(safe-area-inset-top)); padding-left: var(--sp-4); }
+  .appbar h1 { font-size: 20px; line-height: 28px; }
+  .main .composer { padding-bottom: var(--sp-2); }
+  .ustrip { gap: var(--sp-1); padding: 0 var(--sp-1); font-size: 11px; }
+  .ustrip .ulab, .ustrip .ubar { display: none; }
+  .ustrip .uring, .ustrip .upct { display: inline-block; }
+  .view { padding: var(--sp-4) var(--sp-3) var(--sp-6); }
+  .view.fill { padding-bottom: 0; }
+}
+@media (max-width: 1099px) and (pointer: coarse) { :root[data-kb] .app:has(.composer textarea:focus) .side { display: none; } }
+/* buttons: one system for every page and card. Kind: primary (accent fill, the default), secondary (.tonal), quiet (.text), danger;
+   size: md (default, 40px) and .sm (36px). A touch screen gets a 44px target. Card buttons keep their own class names (.dc-act,
+   .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
+/* size tiers (docs/ui-spec.md 버튼, tokens in the :root above): 기본 --btn-h 36, 작은 --btn-h-sm 32 (.sm), 행 안 --btn-h-row 28 (.inrow).
+   --btn-hit is the touch target, not a tier: a phone raises the box to it, a row button reaches 40px with padding (::after). */
+.bk-l { display: none; }
+#back.mon-up .bk-l { display: inline; }
+.ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); padding: 0; }
+@media (hover: hover) { .ib:hover { background: var(--hover); color: var(--fg); } }
+.ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
+@media (hover: hover) { .ib.pri:hover { background: var(--accent); opacity: .88; } }
+/* An empty text box with nothing attached has nothing to send: the arrow takes the switched-off look (the stop square of a running turn stays). */
+.sendrow:not(.has-att):has(textarea:placeholder-shown) > .ib.pri:not(.stop) { opacity: .4; pointer-events: none; }
+.menu .mi.more { color: var(--fg-2); }
+.menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
+.btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
+.btn, .dc-go, .dc-act.main { background: var(--accent); color: var(--on-accent); }
+.btn.tonal, .btn.outlined, .dc-back, .dc-act.alt { background: var(--layer); color: var(--fg); }
+.btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
+.btn.sm { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
+.btn, .dc-act, .dc-go, .dc-back, .dc-manual { transition: opacity var(--m-fast) var(--m-ease); }
+.btn:active:not(:disabled), .dc-go:active:not(:disabled), .dc-back:active:not(:disabled) { opacity: .7; }
+@media (hover: hover) { .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; } }
+@media (hover: hover) { .btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; } }
+@media (hover: hover) { .btn.text:hover, .dc-act:not(.main):not(.alt):hover, .dc-manual:hover { background: var(--hover); color: var(--fg); opacity: 1; } }
+.btn.danger { background: transparent; color: var(--err); padding: 0 var(--sp-3); }
+@media (hover: hover) { .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; } }
+.btn.danger.fill { background: var(--err); color: var(--on-err); padding: 0 var(--sp-3); }
+.btns { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+/* 행 안 tier (docs/ui-spec.md 버튼, 설정 행): the button or field in the right slot of a row. 32px high, 13px; on a touch screen the box stays 32px and ::after widens the hit area to 44px. */
+.btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 var(--sp-3); font-size: 13px; }
+.btn.inrow.text, .btn.inrow.danger { padding: 0 var(--sp-2); }
+@media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
+@media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) calc(var(--sp-05) * -1); } }
+/* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
+   vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.
+   A row-level add action is not a row: it is a text or tonal .sm button in the section header (.sec.sec-act, 06-harness.css). */
+.li > .li-end { flex: none; display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+.li-end .fi, .li-end .sel { width: 160px; height: var(--ctl-h); }
+@media (pointer: coarse) { .li-end .fi, .li-end .sel { height: var(--field-h-touch); } }

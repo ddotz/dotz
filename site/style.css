@@ -1,0 +1,1106 @@
+:root {
+  color-scheme: light dark;
+
+  /* Colours follow the product's web/css/01-tokens.css (web/DESIGN.md). The demo scenes (stageshow-src/look.css) read these names. */
+  --bg: #f2f4f6;
+  --surface: #ffffff;
+  --surface-2: #f2f4f6;
+  --surface-hover: #f9fafb;
+  --ink: #191f28;
+  --body: #4e5968;
+  --muted: #616b78;
+  --line: #e5e8eb;
+  --line-strong: #d1d6db;
+  --accent: #3182f6;
+  --accent-ink: #1b64da;
+  --accent-soft: #e8f1fe;
+  --on-accent: #ffffff;
+  --ok: #0a8754;
+  --warn: #b85e00;
+  --err: #e42939;
+  --code-bg: #101012;
+  --code-ink: #e6e6ea;
+  --code-body: #b0b4bc;
+  --code-muted: #8d8d96;
+  --code-line: #2b2b31;
+  --code-link: #7ab0ff;
+  --btn-bg: #3182f6;
+  --btn-bg-hover: #1b64da;
+  --btn-ink: #ffffff;
+  --focus: #3182f6;
+  --float: 0 8px 24px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
+  /* The fill of a command box and a quiet button: white on the page, a layer inside a card. */
+  --tonal: var(--surface);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Space: the product's scale (--sp-N = N x 4px). 16, 20 and 24 are page-level steps the app, a dense tool, stops short of. */
+  --sp-05: 2px;
+  --sp-1: 4px;
+  --sp-15: 6px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  --sp-20: 80px;
+  --sp-24: 96px;
+
+  --fs-meta: 0.8125rem;
+  --fs-sm: 0.9375rem;
+  --fs-body: 1rem;
+  --fs-lede: 1.125rem;
+  --fs-h3: 1.375rem;
+  --fs-h2: clamp(1.625rem, 1.25rem + 1.6vw, 2.25rem);
+  --fs-h1: clamp(2.125rem, 1.25rem + 3.4vw, 3.5rem);
+
+  --wrap: 1120px;
+  --gutter: var(--sp-6);
+  --hero-shot: 340px;
+  --hit: 44px;
+  --r-card: 18px;
+  --r-menu: 14px;
+  --r-ctl: 10px;
+  --r-seg-in: 6px;
+  --radius-sm: var(--r-ctl);
+  --radius-md: var(--r-menu);
+  --radius-lg: var(--r-card);
+
+  --m-fast: 150ms;
+  --m-base: 220ms;
+  --m-slow: 300ms;
+  --m-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121214;
+    --surface: #1d1d21;
+    --surface-2: #26262b;
+    --surface-hover: #232328;
+    --ink: #ececf0;
+    --body: #b0b4bc;
+    --muted: #8e939c;
+    --line: #2b2b31;
+    --line-strong: #3d3d45;
+    --accent: #4c94ff;
+    --accent-ink: #7ab0ff;
+    --accent-soft: #1b2a44;
+    --ok: #3ecf8e;
+    --warn: #f5a524;
+    --err: #ff6369;
+    --code-bg: #0b0b0d;
+    --btn-bg: #4c94ff;
+    --btn-bg-hover: #6aa6ff;
+    --focus: #4c94ff;
+    --float: 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scrollbar-color: var(--line-strong) var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--body);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-break: strict;
+}
+
+html:lang(ja) body,
+html:lang(zh-CN) body {
+  word-break: normal;
+}
+
+/* Where the browser can, Japanese breaks between phrases instead of inside a word. */
+html:lang(ja) body {
+  word-break: auto-phrase;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+h1,
+h2,
+h3,
+p,
+dl,
+dd,
+figure {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+p,
+dd {
+  text-wrap: pretty;
+}
+
+/* A phrase that never breaks inside, so a headline wraps only between phrases. */
+.ph {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.ln {
+  display: block;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+a {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: var(--line-strong);
+  transition: color var(--m-fast) var(--m-ease), text-decoration-color var(--m-fast) var(--m-ease);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.wrap {
+  width: min(var(--wrap), calc(100% - var(--gutter) * 2));
+  margin-inline: auto;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  top: var(--sp-3);
+  left: var(--sp-3);
+  z-index: 10;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: var(--r-ctl);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+.note {
+  max-width: 34em;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+}
+
+
+.site-header {
+  padding: var(--sp-3) 0;
+}
+
+.header-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-1) var(--sp-6);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: var(--hit);
+  color: var(--ink);
+  font-size: var(--fs-lede);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+.brand-mark-accent {
+  fill: var(--accent);
+}
+
+.header-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--sp-3);
+  min-width: 0;
+}
+
+.header-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--sp-2);
+  min-width: 0;
+}
+
+.header-nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--hit);
+  min-height: var(--hit);
+  padding: 0 var(--sp-1);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+
+.lang {
+  position: relative;
+}
+
+.lang summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--hit);
+  padding: 0 var(--sp-1);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  list-style: none;
+  cursor: pointer;
+}
+
+.lang summary::-webkit-details-marker {
+  display: none;
+}
+
+.lang details[open] summary {
+  color: var(--ink);
+}
+
+.lang summary svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lang ul {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  min-width: 160px;
+  padding: var(--sp-1);
+  border-radius: var(--r-menu);
+  background: var(--surface);
+  box-shadow: var(--float);
+}
+
+.lang ul a {
+  display: flex;
+  align-items: center;
+  min-height: var(--hit);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-ctl);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+
+.lang ul a[aria-current] {
+  font-weight: 600;
+}
+
+
+.hero {
+  padding: var(--sp-4) 0 var(--sp-20);
+}
+
+/* What it is and the command on the left, the moment it is for on the right. The words and the command are two cells so a phone can show the scene between them. */
+.hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--hero-shot);
+  column-gap: var(--sp-16);
+  align-content: center;
+}
+
+.hero-copy {
+  grid-column: 1;
+  align-self: end;
+}
+
+.hero-act {
+  grid-column: 1;
+  align-self: start;
+  margin-top: var(--sp-8);
+}
+
+.hero h1 {
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+html:lang(ko) .hero h1,
+html:lang(ja) .hero h1,
+html:lang(zh-CN) .hero h1 {
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+}
+
+/* The longest Japanese phrase is twelve full-width characters: it has to fit a phone's width on one line. */
+html:lang(ja) .hero h1 {
+  font-size: clamp(1.75rem, 1rem + 3.2vw, 3rem);
+}
+
+.hero-lede {
+  max-width: 34em;
+  margin-top: var(--sp-5);
+  font-size: var(--fs-lede);
+  line-height: 1.6;
+}
+
+.hero-more {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.hero-more a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-height: var(--hit);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.hero-more svg,
+.btn svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.shot {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  min-width: 0;
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--r-card);
+  box-shadow: 0 0 0 1px var(--line), var(--float);
+}
+
+.ss-slot {
+  display: none;
+}
+
+.ss .shot picture {
+  display: none;
+}
+
+.ss .ss-slot {
+  display: block;
+}
+
+.ss .ss-slot:empty {
+  aspect-ratio: 340 / 676;
+}
+
+
+.cmd {
+  border-radius: var(--r-menu);
+  background: var(--tonal);
+}
+
+.cmd pre {
+  margin: 0;
+  padding: var(--sp-4) var(--sp-5) 0;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cmd code {
+  font-size: inherit;
+}
+
+.cmd code::before {
+  content: "$ ";
+  color: var(--muted);
+}
+
+.cmd-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-5);
+}
+
+.cmd-os {
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+.copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-15);
+  min-width: 5.5rem;
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: var(--r-seg-in);
+  background: var(--btn-bg);
+  color: var(--btn-ink);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--m-fast) var(--m-ease);
+}
+
+.copy svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: var(--hit);
+  padding: 0 var(--sp-5);
+  border-radius: var(--r-ctl);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color var(--m-fast) var(--m-ease);
+}
+
+.btn-primary {
+  background: var(--btn-bg);
+  color: var(--btn-ink);
+}
+
+
+.section {
+  padding-top: var(--sp-24);
+}
+
+main {
+  padding-bottom: var(--sp-24);
+}
+
+.section h2 {
+  max-width: 22em;
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+.section .wrap > h2,
+.section-head {
+  margin-bottom: var(--sp-8);
+}
+
+/* One white band on the gray page: its cards are the page's gray, the colour the scenes are drawn on, so a scene and its words are one card. */
+.band {
+  padding: var(--sp-20) 0;
+  background: var(--surface);
+}
+
+.section-head p {
+  max-width: 38em;
+  margin-top: var(--sp-3);
+  font-size: 1.0625rem;
+}
+
+/* Hangul reads best at about 40 characters a line. */
+html:lang(ko) .section-head p {
+  max-width: 30em;
+}
+
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-5);
+}
+
+.card {
+  overflow: hidden;
+  border-radius: var(--r-card);
+  background: var(--bg);
+}
+
+.card-copy {
+  padding: var(--sp-4) var(--sp-6) var(--sp-6);
+}
+
+.card h3 {
+  font-size: var(--fs-h3);
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+
+.card p {
+  margin-top: var(--sp-2);
+}
+
+.card .card-meta {
+  margin-top: var(--sp-4);
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.card-demo {
+  display: none;
+}
+
+/* Without the module build the scene's text alternative is the visible example. */
+html:not(.ss) .card-demo {
+  display: block;
+  padding: var(--sp-6) var(--sp-6) 0;
+  font-size: var(--fs-sm);
+}
+
+html:not(.ss) .card-demo::before {
+  content: attr(aria-label);
+}
+
+.ss .card-demo {
+  display: block;
+  overflow: hidden;
+}
+
+.ss .card-demo:empty {
+  aspect-ratio: 520 / 280;
+}
+
+
+.app-shot {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--float);
+}
+
+.app-shot iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Where a finger scrolls the page, the embedded app would trap the scroll: there it is a preview, and a tap opens the demo itself. */
+.app-open {
+  display: none;
+  position: absolute;
+  inset: 0;
+}
+
+@media (hover: none), (max-width: 860px) {
+  .app-shot iframe {
+    pointer-events: none;
+  }
+
+  .app-open {
+    display: block;
+  }
+}
+
+.app-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-5);
+  margin-top: var(--sp-6);
+}
+
+
+.why-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+  column-gap: var(--sp-16);
+  align-items: start;
+}
+
+.facts > div {
+  padding: var(--sp-5) 0;
+  border-top: 1px solid var(--line-strong);
+}
+
+.facts > div:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.facts > div:last-child {
+  padding-bottom: 0;
+}
+
+.facts dt {
+  color: var(--ink);
+  font-size: var(--fs-lede);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.facts dd {
+  max-width: 34em;
+  margin-top: var(--sp-1);
+}
+
+/* The data folder as it is on disk: the proof that what it keeps stays here. */
+.tree {
+  padding: var(--sp-6);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.tree li {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  column-gap: var(--sp-3);
+  align-items: baseline;
+  margin-left: var(--sp-1);
+  padding: var(--sp-15) 0 var(--sp-15) var(--sp-4);
+  border-left: 1px solid var(--line-strong);
+}
+
+.tree .tree-root {
+  display: block;
+  margin-left: 0;
+  padding: 0 0 var(--sp-2);
+  border-left: 0;
+}
+
+.tree code {
+  color: var(--ink);
+  font-size: var(--fs-meta);
+}
+
+.tree-root code {
+  font-weight: 600;
+}
+
+.tree span {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+}
+
+.tree figcaption {
+  margin-top: var(--sp-5);
+  font-size: var(--fs-sm);
+}
+
+
+/* The close: the same command, with what happens after it. The card is the terminal, so the command sits on it with no box of its own. Dark in both themes, so its tokens are set here. */
+.start {
+  --ink: var(--code-ink);
+  --body: var(--code-body);
+  --muted: var(--code-muted);
+  --line-strong: var(--code-line);
+  --accent-ink: var(--code-link);
+  --focus: var(--code-link);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 18.75rem);
+  column-gap: var(--sp-12);
+  row-gap: var(--sp-8);
+  padding: var(--sp-12);
+  border: 1px solid var(--code-line);
+  border-radius: var(--r-card);
+  background: var(--code-bg);
+  color: var(--body);
+}
+
+.start h2 {
+  grid-column: 1 / -1;
+}
+
+.start-main {
+  min-width: 0;
+}
+
+.start .cmd {
+  background: none;
+}
+
+.start .cmd pre {
+  padding: 0;
+}
+
+.start .cmd-foot {
+  padding: var(--sp-3) 0 0;
+}
+
+.start .note {
+  margin-top: var(--sp-3);
+}
+
+.win {
+  margin-top: var(--sp-2);
+}
+
+.win summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--hit);
+  color: var(--body);
+  font-size: var(--fs-sm);
+  list-style: none;
+  cursor: pointer;
+}
+
+.win summary::-webkit-details-marker {
+  display: none;
+}
+
+.win summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--m-fast) var(--m-ease);
+}
+
+.win[open] summary::after {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.win ol {
+  padding-left: var(--sp-5);
+  list-style: decimal;
+  color: var(--body);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+.win ol code {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.steps {
+  display: grid;
+  gap: var(--sp-5);
+  align-content: start;
+  counter-reset: step;
+}
+
+.steps li {
+  position: relative;
+  padding-left: var(--sp-8);
+  font-size: var(--fs-sm);
+  counter-increment: step;
+}
+
+.steps li::before {
+  content: counter(step);
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1.85;
+}
+
+.steps code {
+  color: var(--ink);
+}
+
+
+.site-footer {
+  padding: var(--sp-3) 0 var(--sp-6);
+  border-top: 1px solid var(--line);
+}
+
+.footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--sp-5);
+}
+
+.footer-brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit);
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--sp-5);
+}
+
+.footer-nav a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--hit);
+  min-height: var(--hit);
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.footer-year {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+
+@media (max-width: 1100px) {
+  .hero-grid,
+  .why-grid {
+    column-gap: var(--sp-10);
+  }
+}
+
+@media (max-width: 860px) {
+  .hero-grid,
+  .why-grid,
+  .start {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero-grid {
+    row-gap: var(--sp-8);
+  }
+
+  .hero-act {
+    order: 2;
+    margin-top: 0;
+  }
+
+  .shot {
+    grid-column: 1;
+    grid-row: auto;
+    order: 1;
+    width: min(100%, 360px);
+    justify-self: center;
+  }
+
+  .why-grid {
+    row-gap: var(--sp-8);
+  }
+}
+
+@media (max-width: 640px) {
+  :root {
+    --gutter: var(--sp-5);
+  }
+
+  .lang {
+    margin-left: auto;
+  }
+
+  .header-nav a:not(:last-child) {
+    display: none;
+  }
+
+  .hero {
+    padding-top: var(--sp-3);
+  }
+
+  .hero-lede {
+    font-size: var(--fs-body);
+  }
+
+  .hero .cmd pre {
+    padding: var(--sp-4) var(--sp-4) 0;
+  }
+
+  .hero .cmd-foot {
+    padding-left: var(--sp-4);
+  }
+
+  .copy {
+    min-height: var(--hit);
+  }
+
+  .hero {
+    padding-bottom: var(--sp-12);
+  }
+
+  .section {
+    padding-top: var(--sp-16);
+  }
+
+  .band {
+    padding: var(--sp-12) 0;
+  }
+
+  main {
+    padding-bottom: var(--sp-16);
+  }
+
+  .section .wrap > h2,
+  .section-head {
+    margin-bottom: var(--sp-6);
+  }
+
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-4);
+  }
+
+  .ss .card-demo:empty {
+    aspect-ratio: 350 / 270;
+  }
+
+  /* Tall enough for the app's phone layout: its bar, a screen of chat and its tab bar. */
+  .app-shot {
+    aspect-ratio: 350 / 560;
+  }
+
+  .tree {
+    padding: var(--sp-5);
+  }
+
+  .tree li {
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+
+  .start {
+    padding: var(--sp-6) var(--sp-5);
+  }
+}
+
+@media (hover: hover) {
+  a:hover {
+    text-decoration-color: currentColor;
+  }
+
+  .header-nav a:hover,
+  .footer-nav a:hover,
+  .lang summary:hover,
+  .win summary:hover {
+    color: var(--ink);
+  }
+
+  .lang ul a:hover {
+    background: var(--surface-2);
+  }
+
+  .hero-more a:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+
+  .copy:hover,
+  .btn-primary:hover {
+    background: var(--btn-bg-hover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,296 @@
+import { expect, spyOn, test } from "bun:test";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { DATA_DIR, paths } from "./config.ts";
+import * as discord from "./discord.ts";
+import { authRoute, interaction, pendingAuth, setFormLink } from "./auth.ts";
+import { HUB_TOKEN } from "./config.ts";
+import { msg } from "./i18n.ts";
+import { normalizeValue } from "./authfields.ts";
+import { asksPersonalInChat } from "./personal-ask.ts";
+import { readSecretFile, setSecretKey, systemKey } from "./secretbox.ts";
+
+const call = (path: string, method = "GET", body?: unknown) =>
+	authRoute(new Request(`http://local${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }), new URL(`http://local${path}`))!;
+const mode = (p: string) => statSync(p).mode & 0o777;
+
+const FORM = [{ type: "name" }, { type: "phone" }, { type: "email" }, { type: "postal_code" }, { type: "address1" }, { type: "address2", optional: true }, { type: "card_holder" }, { type: "card_number" }, { type: "card_expiry" }, { type: "card_cvc" }, { type: "birth_date" }, { type: "id_number" }, { type: "other", label: "Gift code" }];
+const VALUES: Record<string, string> = {
+	name: "Kim Minsu",
+	phone: "010-6183-4720-5519",
+	email: "minsu.p7k2w9x4q8@example.com",
+	postal_code: "06236",
+	address1: "Zebra Unique Street 77 q8w3e6r1t5y0",
+	card_holder: "KIM MINSU",
+	card_number: "4539 7712 0384 6918",
+	card_expiry: "12/30",
+	card_cvc: "6047",
+	birth_date: "1990-04-05",
+	id_number: "QX-55512-ZZ-j3h8d2s6a1",
+	other_gift_code: "GIFT-8472-PLUM-m4n9b7v2c5",
+};
+// Long values that cannot occur by chance (the CVC is 4 digits by definition, so it is matched as a standalone number).
+const SECRET_BITS = ["4539771203846918", "4539 7712 0384 6918", "010-6183-4720-5519", "Zebra Unique Street 77 q8w3e6r1t5y0", "QX-55512-ZZ-j3h8d2s6a1", "GIFT-8472-PLUM-m4n9b7v2c5", "minsu.p7k2w9x4q8@example.com"];
+const SECRET_CVC = /(?<!\d)6047(?!\d)/;
+// The bytes an append-only file gained since `from` (missing file: empty).
+const sizeOf = (p: string) => (existsSync(p) ? statSync(p).size : 0);
+const gained = (p: string, from: number) => (existsSync(p) ? readFileSync(p).subarray(from).toString("utf8") : "");
+
+async function ask(body: Record<string, unknown>): Promise<string> {
+	const r = await call("/api/auth", "POST", { site: "shop", kind: "form", purpose: "배송 정보", target: "chat", form: FORM, ...body });
+	expect(r.status).toBe(200);
+	return ((await r.json()) as { id: string }).id;
+}
+
+test("a form request renders typed inputs and masks card, CVC and ID fields", async () => {
+	const id = await ask({ site: "shop-render" });
+	const req = pendingAuth().find(a => a.id === id)!;
+	expect(req.kind).toBe("form");
+	const f = Object.fromEntries(req.fields.map(x => [x.name, x])) as Record<string, any>;
+	expect(f.phone).toMatchObject({ type: "tel", inputmode: "tel", autocomplete: "tel" });
+	expect(f.email).toMatchObject({ type: "email", autocomplete: "email" });
+	expect(f.postal_code.autocomplete).toBe("postal-code");
+	expect(f.address1.autocomplete).toBe("address-line1");
+	expect(f.address2).toMatchObject({ autocomplete: "address-line2", optional: true });
+	expect(f.card_number).toMatchObject({ inputmode: "numeric", autocomplete: "cc-number", mask: true });
+	expect(f.card_expiry).toMatchObject({ inputmode: "numeric", autocomplete: "cc-exp", placeholder: "MM/YY" });
+	expect(f.card_cvc).toMatchObject({ inputmode: "numeric", autocomplete: "cc-csc", mask: true });
+	expect(f.id_number.mask).toBe(true);
+	expect(f.other_gift_code.label).toBe("Gift code");
+	expect(req.remember).toBe(false);
+	await call(`/api/auth/${id}`, "DELETE");
+});
+
+test("light validation: Luhn card number, expiry format, phone, date", async () => {
+	const id = await ask({ site: "shop-check" });
+	const bad = async (key: string, value: string) => {
+		const r = await call(`/api/auth/${id}`, "POST", { action: "submit", values: { ...VALUES, [key]: value } });
+		expect(r.status).toBe(400);
+		expect(await r.json()).toEqual({ error: "invalid", field: key });
+	};
+	await bad("card_number", "4242 4242 4242 4241");
+	await bad("card_expiry", "13/30");
+	await bad("phone", "abc");
+	await bad("birth_date", "2090-01-01");
+	await bad("email", "no-at-sign");
+	const miss = await call(`/api/auth/${id}`, "POST", { action: "submit", values: { ...VALUES, name: "" } });
+	expect(await miss.json()).toEqual({ error: "required", field: "name" });
+	expect(((await (await call(`/api/auth/${id}`)).json()) as { status: string }).status).toBe("pending");
+	expect(normalizeValue({ check: "expiry", maxlength: 7 }, "1230")).toBe("12/30");
+	expect(normalizeValue({ check: "luhn", maxlength: 23 }, "4242-4242-4242-4242")).toBe("4242424242424242");
+	await call(`/api/auth/${id}`, "DELETE");
+});
+
+test("one-time form: 0600 file under secrets/once, path and field names only, no value anywhere", async () => {
+	// Cause of the old flake: it searched short values ("7391", "9876-5432") in hub.log/notices/outbox that other test files had filled with random ids and numbers.
+	const before = [paths.log, paths.outbox].map(sizeOf);
+	const id = await ask({ site: "shop-once" });
+	const r = await call(`/api/auth/${id}`, "POST", { action: "submit", values: VALUES });
+	expect(r.status).toBe(200);
+	const answered = await r.text();
+	const view = await (await call(`/api/auth/${id}?wait=1`)).text();
+	const parsed = JSON.parse(view) as { status: string; path: string; keys: string[]; once: boolean };
+	expect(parsed.status).toBe("entered");
+	expect(parsed.once).toBe(true);
+	expect(parsed.path.startsWith(join(DATA_DIR, "secrets", "once"))).toBe(true);
+	expect(parsed.keys).toEqual(["name", "phone", "email", "postal_code", "address1", "card_holder", "card_number", "card_expiry", "card_cvc", "birth_date", "id_number", "other_gift_code"]);
+	expect(mode(parsed.path)).toBe(0o600);
+	expect(mode(join(DATA_DIR, "secrets"))).toBe(0o700);
+	const raw = readFileSync(parsed.path, "utf8");
+	expect(raw.startsWith("dotzenc1:")).toBe(true);   // stored encrypted: no value in the file as text
+	for (const bit of SECRET_BITS) expect(raw).not.toContain(bit);
+	const stored = JSON.parse(readSecretFile(parsed.path)) as Record<string, string>;
+	expect(stored.card_number).toBe("4539771203846918");
+	expect(stored.card_expiry).toBe("12/30");
+	expect(stored.address2).toBeUndefined();
+	const leaks = [answered, view, JSON.stringify(pendingAuth()), gained(paths.log, before[0]!), gained(paths.outbox, before[1]!)].join("\n");
+	for (const bit of SECRET_BITS) expect(leaks).not.toContain(bit);
+	expect(SECRET_CVC.test(leaks)).toBe(false);
+	// notices.json is rewritten whole (not appended), so it is read whole; the long values still cannot match by chance.
+	const notices = existsSync(paths.notices) ? readFileSync(paths.notices, "utf8") : "";
+	for (const bit of SECRET_BITS) expect(notices).not.toContain(bit);
+});
+
+const TEST_KEY = Buffer.from(process.env.SECRETBOX_TEST_KEY!, "hex");
+const secretAsk = async (site: string) => {
+	const r = await call("/api/auth", "POST", { site, kind: "secret", purpose: "login", target: "chat" });
+	return ((await r.json()) as { id: string }).id;
+};
+
+test("Linux/WSL (no macOS security): a secret answer is stored with the key file, the waiting call gets the path, and it reads back", async () => {
+	const keyFile = join(DATA_DIR, "linux-key", "secretbox.key");
+	setSecretKey(create => systemKey(create, { platform: "linux", which: () => null, keyFile }));
+	try {
+		const id = await secretAsk("naver-linux");
+		const waiting = call(`/api/auth/${id}?wait=5`);
+		const r = await call(`/api/auth/${id}`, "POST", { action: "submit", values: { username: "dummy-user", password: "dummy-pass-1" } });
+		expect(r.status).toBe(200);
+		const view = (await (await waiting).json()) as { status: string; path: string };
+		expect(view.status).toBe("entered");
+		expect(view.path).toBe(join(DATA_DIR, "secrets", "naver-linux"));
+		expect(mode(keyFile)).toBe(0o600);
+		expect(readFileSync(view.path, "utf8")).not.toContain("dummy-pass-1");
+		expect(JSON.parse(readSecretFile(view.path)).password).toBe("dummy-pass-1");
+	} finally {
+		setSecretKey(TEST_KEY);
+	}
+});
+
+test("a failed store answers the form with an error and finishes the waiting call as failed, never as entered", async () => {
+	setSecretKey(() => {
+		throw new Error("the secrets key is not in the Keychain (service dotz.secrets)");
+	});
+	try {
+		const id = await secretAsk("naver-fail");
+		const waiting = call(`/api/auth/${id}?wait=5`);
+		const r = await call(`/api/auth/${id}`, "POST", { action: "submit", values: { username: "dummy-user", password: "dummy-pass-2" } });
+		expect(r.status).toBe(500);
+		const body = (await r.json()) as { error: string };
+		expect(body.error).toStartWith("store failed: ");
+		const view = (await (await waiting).json()) as { status: string; error?: string; path?: string };
+		expect(view.status).toBe("failed");
+		expect(view.error).toContain("Keychain");
+		expect(view.path).toBeUndefined();
+		expect(JSON.stringify([body, view])).not.toContain("dummy-pass-2");
+		expect(existsSync(join(DATA_DIR, "secrets", "naver-fail"))).toBe(false);
+		expect(pendingAuth().some(a => a.id === id)).toBe(false);
+	} finally {
+		setSecretKey(TEST_KEY);
+	}
+});
+
+test("remember keeps the file as secrets/<site>; the owner's choice in the form wins", async () => {
+	const id = await ask({ site: "shop-keep", remember: false, form: [{ type: "phone" }, { type: "card_number" }] });
+	await call(`/api/auth/${id}`, "POST", { action: "submit", values: { phone: "010-1111-2222", card_number: "4242424242424242" }, remember: true });
+	const parsed = (await (await call(`/api/auth/${id}`)).json()) as { path: string; once: boolean; keys: string[] };
+	expect(parsed.path).toBe(join(DATA_DIR, "secrets", "shop-keep"));
+	expect(parsed.once).toBe(false);
+	expect(parsed.keys).toEqual(["phone", "card_number"]);
+	expect(mode(parsed.path)).toBe(0o600);
+});
+
+test("bad form requests are refused", async () => {
+	const post = (body: Record<string, unknown>) => call("/api/auth", "POST", { site: "shop-bad", kind: "form", purpose: "x", target: "chat", ...body });
+	expect((await post({})).status).toBe(400);
+	expect((await post({ form: [{ type: "ssn" }] })).status).toBe(400);
+	expect((await post({ form: [{ type: "other" }] })).status).toBe(400);
+	expect((await post({ form: [{ type: "phone" }, { type: "phone" }] })).status).toBe(400);
+	expect((await post({ form: [{ type: "phone" }], remember: "yes" })).status).toBe(400);
+	expect((await post({ site: "once", form: [{ type: "phone" }] })).status).toBe(400);
+});
+
+test("Discord carries a button that opens the web form and never a value input", async () => {
+	const sent: { content: string; components: { components: { style: number; url?: string; custom_id?: string }[] }[] }[] = [];
+	const post = spyOn(discord, "postRich").mockImplementation((async (_t: string, payload: any) => {
+		sent.push(payload);
+		return { channelId: "c1", messageId: "m1" };
+	}) as never);
+	const wasEnabled = discord.status.enabled;
+	discord.status.enabled = true;
+	setFormLink(() => "https://mac.example.ts.net");
+	try {
+		const id = await ask({ site: "shop-discord", form: [{ type: "address1" }, { type: "card_number" }] });
+		const buttons = sent[0]!.components[0]!.components;
+		expect(buttons[0]).toMatchObject({ style: 5, url: "https://mac.example.ts.net/" });
+		expect(buttons[0]!.custom_id).toBeUndefined();
+		expect(buttons).toHaveLength(2);
+		expect(sent[0]!.content).toContain("배송 정보");
+		await call(`/api/auth/${id}`, "DELETE");
+	} finally {
+		post.mockRestore();
+		discord.status.enabled = wasEnabled;
+		setFormLink(() => undefined);
+	}
+});
+
+type Sent = { content: string; components: { components: { style: number; url?: string; custom_id?: string }[] }[] };
+// Posts a request with Discord on (postRich mocked) and returns its id and what Discord got.
+async function discordAsk(body: Record<string, unknown>, link: string | undefined): Promise<{ id: string; sent: Sent }> {
+	const sent: Sent[] = [];
+	const post = spyOn(discord, "postRich").mockImplementation((async (_t: string, payload: any) => {
+		sent.push(payload);
+		return { channelId: "c1", messageId: "m1" };
+	}) as never);
+	const wasEnabled = discord.status.enabled;
+	discord.status.enabled = true;
+	setFormLink(() => link);
+	try {
+		const r = await call("/api/auth", "POST", { purpose: "로그인", target: "chat", ...body });
+		expect(r.status).toBe(200);
+		return { id: ((await r.json()) as { id: string }).id, sent: sent[0]! };
+	} finally {
+		post.mockRestore();
+		discord.status.enabled = wasEnabled;
+		setFormLink(() => undefined);
+	}
+}
+
+for (const kind of ["secret", "otp"] as const) {
+	test(`${kind}: the request is answered only in the web app: Discord gets a link button and cancel, never an input or modal`, async () => {
+		const { id, sent } = await discordAsk({ site: `web-only-${kind}`, kind }, "https://mac.example.ts.net");
+		const buttons = sent.components[0]!.components;
+		expect(buttons).toHaveLength(2);
+		expect(buttons[0]).toMatchObject({ style: 5, url: "https://mac.example.ts.net/" });
+		expect(buttons[0]!.custom_id).toBeUndefined();
+		expect(buttons[1]!.custom_id).toBe(`dotz-auth:${id}:cancel`);
+		expect(sent.content).toContain(msg().auth.formHint);
+		await call(`/api/auth/${id}`, "DELETE");
+		// No web address known: only cancel, and the text says to open the app.
+		const bare = await discordAsk({ site: `web-only-${kind}-nolink`, kind }, undefined);
+		expect(bare.sent.components[0]!.components.map(b => b.custom_id)).toEqual([`dotz-auth:${bare.id}:cancel`]);
+		expect(bare.sent.content).toContain(msg().auth.formHintNoLink);
+		await call(`/api/auth/${bare.id}`, "DELETE");
+	});
+}
+
+test("a Discord modal submit or input click from an old message stores nothing and is told to use the web app", async () => {
+	const replies: { type: number; data: any }[] = [];
+	const cb = spyOn(discord, "interactionCallback").mockImplementation((async (_d: unknown, type: number, data: unknown) => {
+		replies.push({ type, data });
+	}) as never);
+	try {
+		const id = await secretAsk("old-modal");
+		const owner = { member: { user: { id: "1" } }, id: "i1", token: "t1" };
+		await interaction({ ...owner, type: 5, data: { custom_id: `dotz-auth:${id}`, components: [{ components: [{ custom_id: "username", value: "dummy-user" }] }, { components: [{ custom_id: "password", value: "dummy-pass-9" }] }] } });
+		await interaction({ ...owner, type: 3, data: { custom_id: `dotz-auth:${id}:input` } });
+		expect(replies).toEqual([
+			{ type: 4, data: expect.objectContaining({ content: msg().auth.webOnly, flags: 64 }) },
+			{ type: 4, data: expect.objectContaining({ content: msg().auth.webOnly, flags: 64 }) },
+		]);
+		expect(existsSync(join(DATA_DIR, "secrets", "old-modal"))).toBe(false);
+		const view = (await (await call(`/api/auth/${id}`)).json()) as { status: string };
+		expect(view.status).toBe("pending");
+		await call(`/api/auth/${id}`, "DELETE");
+	} finally {
+		cb.mockRestore();
+	}
+});
+
+test("the web form still stores a secret encrypted in a 0600 file, and an otp is taken once", async () => {
+	const id = await secretAsk("web-secret");
+	expect((await call(`/api/auth/${id}`, "POST", { action: "submit", values: { username: "dummy-user", password: "dummy-pass-7" } })).status).toBe(200);
+	const view = (await (await call(`/api/auth/${id}`)).json()) as { status: string; path: string };
+	expect(view.status).toBe("entered");
+	expect(mode(view.path)).toBe(0o600);
+	expect(readFileSync(view.path, "utf8")).not.toContain("dummy-pass-7");
+	expect(JSON.parse(readSecretFile(view.path)).password).toBe("dummy-pass-7");
+
+	const otp = ((await (await call("/api/auth", "POST", { site: "web-otp", kind: "otp", purpose: "code", target: "chat" })).json()) as { id: string }).id;
+	expect((await call(`/api/auth/${otp}`, "POST", { action: "submit", values: { code: "481516" } })).status).toBe(200);
+	const take = () => authRoute(new Request(`http://local/api/auth/${otp}/take`, { headers: { "x-dotz-token": HUB_TOKEN } }), new URL(`http://local/api/auth/${otp}/take`))!;
+	const first = await take();
+	expect(first.status).toBe(200);
+	expect(await first.text()).toBe("481516");
+	expect((await take()).status).toBe(410);
+});
+
+test("a chat message that asks for card, address or phone is flagged; the form pointer and plain talk are not", () => {
+	expect(asksPersonalInChat("배송받을 집 주소랑 전화번호 알려주세요")).toBe(true);
+	expect(asksPersonalInChat("결제하려면 카드 번호를 보내 주세요")).toBe(true);
+	expect(asksPersonalInChat("Please send me your card number and CVC")).toBe(true);
+	expect(asksPersonalInChat("What is your home address?")).toBe(true);
+	expect(asksPersonalInChat("카드 번호는 앱의 입력 창에서 입력해 주세요")).toBe(false);
+	expect(asksPersonalInChat("I opened the secure form for your card number")).toBe(false);
+	expect(asksPersonalInChat("빌드가 끝났어요. 주소 변경은 필요 없어요")).toBe(false);
+	expect(asksPersonalInChat("서버 비밀번호 파일을 지웠어요")).toBe(false);
+});

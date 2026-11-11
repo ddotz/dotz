@@ -1,0 +1,10 @@
+/* A long title in a list row stays on one line and fades out at its end (docs/ui-spec.md 목록 행). The fade lives in the box's own right
+   padding, past the content edge: text that fits ends before the gradient starts, and only text that runs on reaches it, so a short title
+   (a shrink-to-fit box too) is never touched and no script has to measure a row. Last in the file order, so it wins over each list's own
+   ellipsis. The full title stays in the row's open view or its title attribute. A new list title joins this selector, not a new rule. */
+.li .hd:not(.pmv-wrap), .row .nm, .rt-row .nm, .fc-card .top .nm, .mt-use-tx .nm, .pal-i .nm, .subrow .nm b, .hr .hn1 .nm, .ended .en, .pl-n, .pj-nm,
+.cv-n, .nsc-r .hd, .hc-row .t, .hc-mon .n, .mr .rc-title, .mth-subj, .mbox-cn, .mon-ov-n, .mon-l1, .hm-row .l, .lg-t, .lw-n, .fatt .fi-n, .mr-fname, .md .mlist-t {
+  display: block; min-width: 0; padding-right: var(--sp-5); overflow: hidden; white-space: nowrap; text-overflow: clip;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-5)), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-5)), transparent);
+}

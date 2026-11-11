@@ -1,0 +1,97 @@
+// Real wiring of the comment engine: the YouTube/Instagram connection of features/youtube-instagram, the website adapter, the owner's tone
+// profiles of features/reply-drafts, and the one subscription-only model call. The gateway and the watch/onboard scripts build the engine here.
+import { homedir, hostname } from "node:os";
+import { join } from "node:path";
+import { loadPairs, loadStyle, markLearned, readLearned, recordCorrection, savePairs } from "../../features/reply-drafts/lib/settings.ts";
+import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
+import { commentsFor, commentsRead, mediaHistory, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
+import { readCommentsSince } from "../../features/youtube-instagram/lib/yt-read.ts";
+import { ownerHistory, ownReplies, recentUploads, replyToComment, threadsByIds, videoInfos } from "../../features/youtube-instagram/lib/youtube.ts";
+import { appBase, appEntries, commentOwner } from "../integrations.ts";
+import { featureEnabled } from "../app-feature-flags.ts";
+import { callReplyModel } from "../reply-model.ts";
+import { appOf, type DraftModel, createEngine, type Engine, type EngineDeps, type MailLink } from "./engine.ts";
+import { realMailLink } from "./mail-link.ts";
+import type { MailQuery } from "./mail-match.ts";
+import { instagramAdapter, youtubeAdapter } from "./adapters/google-meta.ts";
+import { bunExec, websiteAdapter } from "./adapters/website.ts";
+import { commentsDir, createStore } from "./store.ts";
+
+const requireYoutube = () => {
+	const y = loadConfig().youtube;
+	if (!y) throw new Error("유튜브가 연결돼 있지 않아요");
+	return y;
+};
+const requireInstagram = () => {
+	const i = loadConfig().instagram;
+	if (!i) throw new Error("인스타가 연결돼 있지 않아요");
+	return i;
+};
+
+export const realModel: DraftModel = async (system, user, app) => {
+	const r = await callReplyModel(app ?? "site", undefined, system, user);
+	return { text: r.text, inputTokens: r.inputTokens, outputTokens: r.outputTokens };
+};
+
+export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink } = {}): Engine {
+	const dir = commentsDir(dataDir);
+	const authors = createStore(dir);
+	const secretsDir = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "secrets");
+	return createEngine({
+		dir,
+		now: Date.now,
+		collector: opts.collector ?? hostname(),
+		model: opts.model ?? realModel,
+		mail: opts.mail ?? realMailLink(),
+		// Used only by sources whose owner turned `mailMatch` on; read-only zele search over his own mail. Loaded on first use: zele.ts reads
+		// the gateway config at import, and the comments CLIs (onboard.ts) must run before there is one.
+		mailMatch: async (q: MailQuery) => {
+			const [{ mailMatchLines, zeleMailSearch }, { zeleAccounts, zeleState }] = await Promise.all([import("./mail-match.ts"), import("../zele.ts")]);
+			return zeleState() === "on" ? mailMatchLines(q, zeleMailSearch(zeleAccounts), Date.now()) : [];
+		},
+		// custom/apps.json is read live: a site added as its own app instance owns its threads, its needs and its reply model setting.
+		owner: src => commentOwner(appEntries(dataDir), appOf(src), src.key),
+		broadcast: opts.broadcast,
+		// Only the website app (or an instance of it) has its own 댓글 답글 switch; YouTube and Instagram follow their 자동 초안 setting, which the reply-drafts flow reads (appOn).
+		featureOn: (app, id) => appBase(app) !== "site" || featureEnabled(dataDir, app, id),
+		...(opts.sent ? { sent: opts.sent } : {}),
+		style: src => loadStyle({ app: src.key }),
+		learn: (src, change) => recordCorrection({ app: src.key }, change, new Date()),
+		// The past pairs of a source live in the reply-drafts pair file of its key (a comment pair carries no `source` tag): comment <-> received, author <-> from.
+		pairs: {
+			load: key => loadPairs(key).map(p => ({ comment: p.received, reply: p.reply, at: p.at, thread: p.thread ?? "", ...(p.from ? { from: p.from } : {}), ...(p.edited ? { edited: true as const } : {}) })),
+			save: (key, list) => savePairs(key, list.map(p => ({ received: p.comment, reply: p.reply, at: p.at, ...(p.from ? { from: p.from } : {}), ...(p.thread ? { thread: p.thread } : {}), ...(p.edited ? { edited: true as const } : {}) }))),
+		},
+		learned: { read: readLearned, mark: markLearned },
+		// Loaded on first use, like mailMatch: persona.ts pulls in the mail tone code.
+		identity: async (src, replies, where, call, now) => {
+			const [{ COMMENT_TONE_VERSION, learnFirst }, { SWEEP_LIMIT }] = await Promise.all([import("../../features/reply-drafts/lib/persona.ts"), import("../../features/reply-drafts/lib/tone.ts")]);
+			return learnFirst({ app: src.key }, async () => replies.slice(0, SWEEP_LIMIT), where, call, now, COMMENT_TONE_VERSION);
+		},
+		adapters: {
+			youtube: youtubeAdapter(() => ({
+				channelId: () => requireYoutube().channel_id,
+				threadsSince: async (id, since) => (await readCommentsSince(realCtx(), id, since, 3, { scope: "app", allowApi: true, answered: true }))!,
+				threadsByIds: (id, ids) => threadsByIds(realCtx(), id, ids),
+				uploads: id => recentUploads(realCtx(), id, 50),
+				videos: ids => videoInfos(realCtx(), ids),
+				reply: (parent, text) => replyToComment(realCtx(), parent, text),
+				ownReplies: (id, limit) => ownReplies(realCtx(), id, limit),
+				history: (id, opts) => ownerHistory(realCtx(), id, opts),
+			})),
+			instagram: instagramAdapter(() => ({
+				username: () => requireInstagram().username,
+				userId: () => requireInstagram().user_id,
+				media: () => mediaWithCounts(realCtx(), 50),
+				comments: id => commentsFor(realCtx(), id),
+				read: id => commentsRead(realCtx(), id),
+				author: id => replyAuthor(realCtx(), id),
+				mediaHistory: () => mediaHistory(realCtx()),
+				authorCache: { get: id => authors.authors()[id], put: e => authors.putAuthors(e) },
+				reply: (id, text) => igReply(realCtx(), id, text),
+			})),
+			// A site's JSON/RSS read or webhook post gets 30 s (a script gets 60 s in bunExec), so a hung site cannot hold the watch.
+			website: websiteAdapter({ exec: bunExec, fetch: ((url, init) => fetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(30_000) })) as typeof fetch, secretsDir, siteDir: join(dir, "sites") }),
+		},
+	});
+}

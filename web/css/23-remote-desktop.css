@@ -1,0 +1,13 @@
+/* 화면 공유 (features/remote-desktop/DESIGN.md Web): the app-bar pill that names who is watching, and the button on a computer's row in the switcher. The settings rows are the plain .li + .hs-sw. */
+.dsk-pill { position: relative; grid-row: 1; grid-column: 8; align-self: center; max-width: 220px; margin-left: var(--sp-2); border: 0; font-family: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsk-pill[hidden] { display: none; }
+@media (hover: hover) { .dsk-pill:hover { color: var(--fg); } }
+.conn:not([hidden]) ~ .dsk-pill { display: none; }
+@media (max-width: 1099px) { .dsk-pill { margin-left: 0; } }
+@media (max-width: 639px) { .dsk-pill { flex: 0 1 auto; min-width: 0; max-width: 40%; } }
+.pr-line { display: flex; align-items: center; gap: var(--sp-1); }
+.pr-line .pr-row { flex: 1; min-width: 0; }
+.btn.tonal.pr-desk, .btn.tonal.pr-forget { flex: none; margin-right: var(--sp-2); background: var(--hover); white-space: nowrap; }
+@media (hover: hover) { .btn.tonal.pr-desk:hover, .btn.tonal.pr-forget:hover { background: var(--active); } }
+.anch .btn.tonal.pr-desk, .anch .btn.tonal.pr-forget { margin-right: var(--sp-1); }
+@media (min-width: 700px) { .ds-bd.anch .ds-sheet.pr-sheet { width: 280px; } }

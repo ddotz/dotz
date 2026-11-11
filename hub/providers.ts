@@ -1,0 +1,825 @@
+// Model providers as the gateway sees them, all kept in the runtime's own credential store: OAuth logins (`omp login`,
+// started and finished through the gateway), API keys (`omp auth import`), sign-out (`omp auth-broker logout`), plus
+// the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { log, OMP, THINKING_LEVELS, writeAtomic } from "./config.ts";
+import { label } from "./account-alias.ts";
+import { authFile } from "./apikey-policy.ts";
+import { OMO } from "./runtime/omo-hosts.ts";
+import { OmoRpc, omoLoginProviders, type RpcFrame } from "./runtime/omo-login.ts";
+import { mergeSameAccount } from "./accounts-providers.ts";
+import { writeOmoPin } from "./omo-pin.ts";
+import { hardPinned, stickyAccount } from "./account-sticky.ts";
+import { labeledAccountView } from "./accounts-api.ts";
+import { apiBudget } from "./api-budget.ts";
+import { codexUsage, withCodex } from "./codex-usage.ts";
+import { type AccountReport, AccountUsage, type ClaudeResets, type QuotaLimit, cliTokensSettled, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
+
+// omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
+const PROVIDER_ENV: Record<string, string> = {
+	anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", google: "GEMINI_API_KEY", "google-vertex": "GOOGLE_CLOUD_API_KEY",
+	groq: "GROQ_API_KEY", openrouter: "OPENROUTER_API_KEY", mistral: "MISTRAL_API_KEY", xai: "XAI_API_KEY", azure: "AZURE_OPENAI_API_KEY",
+	abliteration: "ABLITERATION_API_KEY", aiand: "AIAND_API_KEY", cerebras: "CEREBRAS_API_KEY", "alibaba-token-plan": "ALIBABA_TOKEN_PLAN_API_KEY",
+	baseten: "BASETEN_API_KEY", commandcode: "COMMAND_CODE_API_KEY", coralbricks: "CORAL_API_KEY", deepinfra: "DEEPINFRA_API_KEY",
+	deepseek: "DEEPSEEK_API_KEY", siliconflow: "SILICONFLOW_API_KEY", "siliconflow-cn": "SILICONFLOW_CN_API_KEY", fireworks: "FIREWORKS_API_KEY",
+	together: "TOGETHER_API_KEY", typesafe: "TYPESAFE_API_KEY", coreweave: "COREWEAVE_API_KEY", nvidia: "NVIDIA_API_KEY", devin: "DEVIN_API_KEY",
+	"gmi-cloud": "GMI_API_KEY", huggingface: "HUGGINGFACE_HUB_TOKEN", moonshot: "MOONSHOT_API_KEY", stepfun: "STEPFUN_API_KEY",
+	helmcode: "HELMCODE_API_KEY", meta: "MODEL_API_KEY", nanogpt: "NANO_GPT_API_KEY", novita: "NOVITA_API_KEY", venice: "VENICE_API_KEY",
+	"vercel-ai-gateway": "AI_GATEWAY_API_KEY", litellm: "LITELLM_API_KEY", kilo: "KILO_API_KEY", zai: "ZAI_API_KEY", zenmux: "ZENMUX_API_KEY",
+	"zhipu-coding-plan": "ZHIPU_API_KEY", umans: "UMANS_AI_CODING_PLAN_API_KEY", qianfan: "QIANFAN_API_KEY", synthetic: "SYNTHETIC_API_KEY",
+	"minimax-code": "MINIMAX_CODE_API_KEY", "minimax-code-cn": "MINIMAX_CODE_CN_API_KEY", minimax: "MINIMAX_API_KEY",
+	"alibaba-coding-plan": "ALIBABA_CODING_PLAN_API_KEY", sakana: "SAKANA_API_KEY", sambanova: "SAMBANOVA_API_KEY", aimlapi: "AIMLAPI_API_KEY",
+	"opencode-zen": "OPENCODE_API_KEY", "opencode-go": "OPENCODE_API_KEY", "cline-pass": "CLINE_API_KEY", firepass: "FIREPASS_API_KEY",
+	"wafer-serverless": "WAFER_SERVERLESS_API_KEY", xiaomi: "XIAOMI_API_KEY", "xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+	"xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY", "xiaomi-token-plan-sgp": "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+	"ollama-cloud": "OLLAMA_CLOUD_API_KEY", ollama: "OLLAMA_API_KEY", "lm-studio": "LM_STUDIO_API_KEY", "llama.cpp": "LLAMA_CPP_API_KEY",
+	vllm: "VLLM_API_KEY", "yolo-auto": "YOLO_AUTO_API_KEY", "charm-hyper": "CHARM_HYPER_API_KEY", "singularityapi-dev": "SINGULARITYAPI_DEV_API_KEY",
+	"singularityapi-tech": "SINGULARITYAPI_TECH_API_KEY",
+};
+
+export class ControlError extends Error {
+	constructor(message: string, readonly status = 400) {
+		super(message);
+	}
+}
+
+export const mask = (key: string): string => (key.length < 12 ? `…${key.slice(-2)}` : `${key.startsWith("sk-") ? "sk-" : key.slice(0, 2)}…${key.slice(-4)}`);
+
+export async function saveProviderKey(provider: string, rawKey: string): Promise<string> {
+	const key = rawKey.trim();
+	if (!PROVIDER_ENV[provider]) throw new ControlError(`"${provider}"은(는) API 키로 추가할 수 없는 공급자예요`);
+	if (key.length < 8 || key.length > 512 || /\s/.test(key)) throw new ControlError("키 형식이 올바르지 않아요 (공백 없이 8~512자)");
+	// OmO reads keys from its own auth.json (what its RPC login_api_key writes); `omp auth import` only fills omp's store, so on an OmO
+	// install a key saved there never showed up or got used.
+	if (usesOmo()) saveOmoKey(provider, key);
+	if (usesOmp()) {
+		const proc = Bun.spawn([OMP, "auth", "import", "-"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
+		proc.stdin.write(JSON.stringify({ version: 1, credentials: [{ provider, credential: { type: "api_key", key } }] }));
+		await proc.stdin.end();
+		if ((await proc.exited) !== 0) throw new ControlError("키를 저장하지 못했어요", 500);
+	}
+	invalidate();
+	return mask(key);
+}
+
+// One API-key entry in OmO's auth.json, the same shape OmO writes ({ type: "api_key", key }); a copy of the file is kept first (0600).
+export function saveOmoKey(provider: string, key: string, now = Date.now()): void {
+	const file = authFile();
+	const auth = omoAuth() ?? {};
+	if (existsSync(file)) copyFileSync(file, `${file}.bak-${now}`);
+	mkdirSync(dirname(file), { recursive: true });
+	writeAtomic(file, `${JSON.stringify({ ...auth, [provider]: { type: "api_key", key } }, null, 2)}\n`, 0o600);
+}
+
+// Provider keys set in the gateway's own environment, redacted from anything shown to the owner.
+export function secretValues(): string[] {
+	return Object.values(PROVIDER_ENV)
+		.map(v => process.env[v] ?? "")
+		.filter(v => v.length >= 8);
+}
+
+type OmpModel = { kind?: string; selector: string; id?: string; name?: string; provider: string; reasoning?: boolean; thinking?: unknown };
+type OmpCredential = { provider: string; credential?: Record<string, unknown> };
+type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string; scope?: string; active?: boolean };
+type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string; plan?: string; resets?: ClaudeResets };
+
+async function ompJson<T>(args: string[], timeoutMs = 30_000): Promise<T | undefined> {
+	try {
+		const proc = Bun.spawn([OMP, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+		const timer = setTimeout(() => proc.kill(), timeoutMs);
+		const text = await new Response(proc.stdout).text();
+		clearTimeout(timer);
+		return (await proc.exited) === 0 ? (JSON.parse(text) as T) : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+type Cached<T> = { at: number; value: T; stamp?: string };
+const TTL_MS = 20_000;
+// The model catalog is a child process (`omo --list-models`: ~0.5 s CPU, ~280 MB peak RSS, measured 2026-10-26) that every open page asked
+// for each minute (and 구성 every 15 s). It only changes with a login (auth.json, or invalidate() after a web login), a model added to the
+// agent's models.json or a runtime update (the binary), so it is kept until one of those changes, re-read at most every MODELS_TTL_MS as a backstop.
+const MODELS_TTL_MS = 10 * 60_000;
+const mtimeOf = (path: string | null | undefined): number => {
+	try {
+		return path ? statSync(path).mtimeMs : 0;
+	} catch {
+		return 0;
+	}
+};
+const modelsStamp = (): string => [authFile(), join(dirname(authFile()), "models.json"), Bun.which(OMO), Bun.which(OMP)].map(mtimeOf).join(":");
+// The credential store moves between reads (a login, a key import, a pin) and a test or a second agent dir swaps the file: the
+// cache holds only the store it read, so a path or mtime change reads again instead of serving another store's accounts.
+const authStamp = (): string => `${authFile()}:${mtimeOf(authFile())}`;
+let cache: { models?: Cached<ModelInfo[]>; auth?: Cached<AuthInfo[]>; usage?: Cached<OmpUsageReport[]> } = {};
+// A read in flight is shared: pages asking at the same moment wait for one process instead of starting one each.
+const loading = new Map<keyof typeof cache, Promise<unknown>>();
+function invalidate(): void {
+	cache = {};
+	loading.clear();
+}
+async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<NonNullable<(typeof cache)[K]>["value"] | undefined>): Promise<NonNullable<(typeof cache)[K]>["value"] | undefined> {
+	type V = NonNullable<(typeof cache)[K]>["value"] | undefined;
+	const stamp = key === "models" ? modelsStamp() : key === "auth" ? authStamp() : undefined;
+	const hit = cache[key];
+	if (hit && Date.now() - hit.at < (key === "models" ? MODELS_TTL_MS : TTL_MS) && hit.stamp === stamp) return hit.value;
+	const pending = loading.get(key);
+	if (pending) return pending as Promise<V>;
+	const run = (async (): Promise<V> => {
+		const value = await load();
+		if (value !== undefined && loading.get(key) === run) cache = { ...cache, [key]: { at: Date.now(), value, stamp } };
+		return value;
+	})().finally(() => {
+		if (loading.get(key) === run) loading.delete(key);
+	});
+	loading.set(key, run);
+	return run;
+}
+
+// Runtimes keep separate credential stores: omp has its own (`omp auth export`), OmO reads <agent dir>/auth.json. A role that
+// runs on OmO lists what OmO can run, not what omp happens to hold (a fresh OmO machine has an empty omp store).
+const ROLES = ["orchestrator", "lane"] as const;
+const usesOmo = (): boolean => ROLES.some(r => runtimeIdOf(r) === "omo");
+const usesOmp = (): boolean => ROLES.some(r => runtimeIdOf(r) !== "omo");
+
+async function cliText(bin: string, args: string[], timeoutMs = 30_000): Promise<string | undefined> {
+	try {
+		const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+		const timer = setTimeout(() => proc.kill(), timeoutMs);
+		const text = await new Response(proc.stdout).text();
+		clearTimeout(timer);
+		return (await proc.exited) === 0 ? text : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function omoAuth(): Record<string, unknown> | undefined {
+	try {
+		const j = JSON.parse(readFileSync(authFile(), "utf8"));
+		return j && typeof j === "object" ? j : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+// OmO's `anthropic-subscription` is the Claude login, which dotz (like omp) calls `anthropic`; OmO's own `anthropic` is the
+// API-key provider and stays out of the way while a subscription login exists (hub/runtime/omo.ts omoSelector maps back).
+const SUBSCRIPTION = "anthropic-subscription";
+const dotzProvider = (id: string): string => (id === SUBSCRIPTION ? "anthropic" : id);
+const shadowed = (id: string, auth: Record<string, unknown>): boolean => id === "anthropic" && SUBSCRIPTION in auth;
+
+// Pure: the credentials in OmO's auth.json (provider ids, types, masked key tails; never the secrets).
+export function omoAuthInfos(auth: Record<string, unknown> | undefined): AuthInfo[] {
+	if (!auth) return [];
+	return Object.entries(auth).flatMap(([id, v]): AuthInfo[] => {
+		if (!v || typeof v !== "object" || shadowed(id, auth)) return [];
+		const c = v as Record<string, unknown>;
+		const accounts = Array.isArray(c.accounts) ? (c.accounts as { name?: unknown }[]) : [];
+		const name = typeof c.pinned === "string" ? c.pinned : accounts.find(a => typeof a?.name === "string")?.name;
+		const key = ["key", "apiKey", "api_key"].map(k => c[k]).find((x): x is string => typeof x === "string" && x.length > 0);
+		return [{ provider: dotzProvider(id), type: String(c.type ?? (key ? "api_key" : "oauth")), label: typeof name === "string" ? name : undefined, masked: key ? mask(key) : undefined, ...(key ? {} : { pool: true }), ...(accounts.length > 1 ? { accounts: accounts.length } : {}) }];
+	});
+}
+
+// The thinking levels one model accepts, from `omp models --json` (`.models[].thinking`), in the runtime's own order. undefined means the
+// runtime did not say (a provider-discovered OmO model: `omo --list-models` only says yes/no); an empty list means it said it has none.
+export function modelThinking(levels: unknown): string[] | undefined {
+	if (!Array.isArray(levels)) return undefined;
+	const set = new Set(levels.filter((l): l is string => typeof l === "string"));
+	return THINKING_LEVELS.filter(l => set.has(l));
+}
+
+// Pure: `omo --list-models` (a table: provider, model, context, max-out, thinking, images) cut down to the providers OmO
+// holds credentials for (auth.json keys, or the provider's API-key env var), under dotz's provider names.
+export function omoModels(table: string, auth: Record<string, unknown> | undefined, env: Record<string, string | undefined>): ModelInfo[] {
+	const a = auth ?? {};
+	const ready = new Set(Object.keys(a).filter(id => !shadowed(id, a)));
+	for (const [id, v] of Object.entries(PROVIDER_ENV)) if (env[v] && !shadowed(id, a)) ready.add(id);
+	return table.split("\n").flatMap((line): ModelInfo[] => {
+		const [provider, model, , , thinking] = line.trim().split(/\s+/);
+		if (!provider || !model || provider === "provider" || !ready.has(provider)) return [];
+		const dotz = dotzProvider(provider);
+		return [{ selector: `${dotz}/${model}`, name: model, provider: dotz, reasoning: thinking === "yes", thinking: thinking === "yes" ? undefined : [] }];
+	});
+}
+
+export type ModelInfo = { selector: string; name: string; provider: string; reasoning: boolean; thinking?: string[] };
+const ompModels = async (): Promise<ModelInfo[] | undefined> => {
+	const j = await ompJson<{ models?: OmpModel[] }>(["models", "--json"]);
+	return Array.isArray(j?.models)
+		? j.models.filter(m => m.kind === "chat").map(m => {
+				const levels = modelThinking(m.thinking) ?? (m.reasoning ? undefined : []);
+				return { selector: m.selector, name: m.name ?? m.id ?? m.selector, provider: m.provider, reasoning: Boolean(m.reasoning), ...(levels ? { thinking: levels } : {}) };
+			})
+		: undefined;
+};
+export const availableModels = async (): Promise<ModelInfo[]> =>
+	(await cached("models", async () => {
+		const [omo, omp] = await Promise.all([usesOmo() ? cliText(OMO, ["--list-models"]).then(t => (t === undefined ? undefined : omoModels(t, omoAuth(), process.env))) : [], usesOmp() ? ompModels() : []]);
+		if (omo === undefined && omp === undefined) return undefined;
+		const seen = new Set<string>();
+		return [...(omo ?? []), ...(omp ?? [])].filter(m => !seen.has(m.selector) && seen.add(m.selector));
+	})) ?? [];
+
+// What omp itself has stored (`omp auth export`): only provider ids, credential types and masked key tails are kept.
+type AuthInfo = { provider: string; type: string; label?: string; masked?: string; accounts?: number; pool?: boolean };
+const authInfos = async (): Promise<AuthInfo[]> =>
+	(await cached("auth", async () => {
+		const own = usesOmo() ? omoAuthInfos(omoAuth()) : [];
+		if (!usesOmp()) return own;
+		const j = await ompJson<{ credentials?: OmpCredential[] }>(["auth", "export"]);
+		if (!Array.isArray(j?.credentials)) return own.length ? own : undefined;
+		return [...own, ...j.credentials.map((c): AuthInfo => {
+			const cred = c.credential ?? {};
+			const key = ["key", "apiKey", "api_key", "token"].map(k => cred[k]).find((v): v is string => typeof v === "string" && v.length > 0);
+			return { provider: c.provider, type: String(cred.type), label: typeof cred.email === "string" ? cred.email : undefined, masked: key ? mask(key) : undefined };
+		})];
+	})) ?? [];
+
+const usageReports = async (): Promise<OmpUsageReport[]> =>
+	(await cached("usage", async () => (await ompJson<{ reports?: OmpUsageReport[] }>(["usage", "--json"], 45_000))?.reports)) ?? [];
+
+// The Anthropic limits of the account the role really runs on (hub/usage-account.ts): OmO's own subscription account
+// under OmO, else omp's login. `force` asks again sooner (a 429 just happened). Undefined: nothing to read.
+const accountUsage = new AccountUsage();
+// An account switch: the account it lands on is read again at once (main.ts calls this from the switch listener).
+export const forgetAccountUsage = (name: string): void => accountUsage.forget(name);
+export async function anthropicUsage(role: "orchestrator" | "lane" = "orchestrator", force = false): Promise<AccountReport | undefined> {
+	const acct = runtimeIdOf(role) === "omo" ? subscriptionAccount(undefined, undefined, stickyAccount(), hardPinned()) : undefined;
+	if (acct) return accountUsage.report(acct, force);
+	if (force) invalidate();
+	const r = (await usageReports()).find(x => x.provider === "anthropic");
+	return r && fromOmp(r);
+}
+
+// The percent left in each OmO subscription account's 5-hour and 7-day windows, from the cached oauth/usage reads (not a model
+// call; each account is asked at most every 2 minutes). The owner's account rules (hub/account-rules.ts) read it.
+export async function usageSnapshot(): Promise<Record<string, { five_hour_left?: number; seven_day_left?: number }>> {
+	if (runtimeIdOf("orchestrator") !== "omo" && runtimeIdOf("lane") !== "omo") return {};
+	const out: Record<string, { five_hour_left?: number; seven_day_left?: number }> = {};
+	await Promise.all(
+		subscriptionAccounts().map(async acct => {
+			const r = await accountUsage.report(acct).catch(() => undefined);
+			if (!r) return;
+			const five = r.limits.find(l => l.id === "anthropic:5h")?.amount.remaining;
+			const week = r.limits.find(l => l.id === "anthropic:7d")?.amount.remaining;
+			out[acct.name] = { ...(five !== undefined ? { five_hour_left: five } : {}), ...(week !== undefined ? { seven_day_left: week } : {}) };
+		}),
+	);
+	return out;
+}
+
+// Which runtime a web login goes to: OmO when the assistant runs on OmO (its auth.json is what OmO reads), else omp.
+const loginVia = (): "omo" | "omp" => (runtimeIdOf("orchestrator") === "omo" ? "omo" : "omp");
+
+// Every provider that runtime can log into with its human label: OmO's OAuth providers (`get_auth_providers`, under dotz's names),
+// or omp's `auth-broker list`; fixed for the runtime's lifetime. Before, an OmO-only install asked omp, which is not installed
+// there, so 추가 offered no login at all.
+type LoginProvider = { id: string; name: string };
+let loginCatalog: { via: "omo" | "omp"; list: LoginProvider[] } | undefined;
+export async function loginProviders(): Promise<LoginProvider[]> {
+	const via = loginVia();
+	if (loginCatalog?.via === via) return loginCatalog.list;
+	const j = via === "omo" ? (await omoLoginProviders())?.map(p => ({ ...p, id: dotzProvider(p.id) })) : await ompJson<LoginProvider[]>(["auth-broker", "list", "--json"]);
+	if (!Array.isArray(j)) return [];
+	loginCatalog = { via, list: j.filter(p => typeof p?.id === "string").map(p => ({ id: p.id, name: String(p.name ?? p.id) })) };
+	return loginCatalog.list;
+}
+
+type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; accounts?: number; masked?: string; models: number; in_use: boolean; can_login: boolean; can_add_account?: boolean; can_logout: boolean };
+type AddableProvider = { id: string; name: string; kind: "oauth" | "api_key"; add_account?: boolean };
+
+// Providers that have an API-key env var but whose primary sign-in is the subscription (OAuth) login.
+const OAUTH_FIRST = new Set(["anthropic"]);
+
+// Pure: merges the runtime's stored credentials, env vars, the login catalog and the model catalog into the configured
+// rows and the addable providers: the not-yet-configured ones, plus a signed-in login that holds several accounts (Claude, an OmO pool),
+// where a login adds an account. A provider that holds one key stays out once it is set.
+export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
+	const names = new Map(input.catalog.map(p => [p.id, p.name]));
+	const nameOf = (id: string) => names.get(id) ?? id;
+	const ids = new Set<string>([...input.auth.map(a => a.provider), ...input.models.map(m => m.provider)]);
+	for (const [id, v] of Object.entries(PROVIDER_ENV)) if (input.env[v]) ids.add(id);
+	const providers = [...ids].sort().map((id): ProviderRow => {
+		const base = { id, name: nameOf(id), models: input.models.filter(m => m.provider === id).length, in_use: input.inUse.has(id), can_login: names.has(id) };
+		const oauth = input.auth.find(a => a.provider === id && a.type === "oauth");
+		if (oauth) return { ...base, auth: "oauth", account: oauth.label, ...(oauth.accounts ? { accounts: oauth.accounts } : {}), ...((id === "anthropic" || oauth.pool) && base.can_login ? { can_add_account: true } : {}), can_logout: true };
+		const key = input.auth.find(a => a.provider === id);
+		if (key) return { ...base, auth: "api_key", masked: key.masked, can_logout: true };
+		const v = PROVIDER_ENV[id];
+		if (v && input.env[v]) return { ...base, auth: "api_key", can_logout: false };
+		return { ...base, auth: "none", can_logout: false };
+	});
+	const addable: AddableProvider[] = [];
+	for (const p of input.catalog) {
+		const kind = PROVIDER_ENV[p.id] && !OAUTH_FIRST.has(p.id) ? "api_key" : "oauth";
+		if (!ids.has(p.id)) addable.push({ id: p.id, name: p.name, kind });
+		else if (providers.find(r => r.id === p.id)?.can_add_account) addable.push({ id: p.id, name: p.name, kind: "oauth", add_account: true });
+	}
+	for (const id of Object.keys(PROVIDER_ENV)) if (!ids.has(id) && !names.has(id)) addable.push({ id, name: id, kind: "api_key" });
+	return { providers, addable: addable.sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+export async function listProviders(inUse: Set<string>): Promise<{ providers: ProviderRow[]; addable: AddableProvider[] }> {
+	return buildProviders({ auth: await authInfos(), env: process.env, models: await availableModels(), catalog: await loginProviders(), inUse });
+}
+
+// ---- Sign-in (OAuth and subscription logins) ------------------------------------------------------------------------
+// The runtime's login command prints an authorize URL, listens on a localhost callback and, in parallel, reads the
+// authorization code (or the whole redirect URL) from stdin, so it can be finished from a browser on another device.
+// One login runs at a time; it is cancelled after LOGIN_TTL_MS. Output is parsed in memory only, never logged.
+const LOGIN_TTL_MS = 10 * 60_000;
+const LOGIN_START_MS = 20_000;
+const LOGIN_COMPLETE_MS = 60_000;
+const LOGIN_QUIET_MS = 400;
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
+const PROVIDER_ID = /^[a-z0-9][a-z0-9._-]*$/;
+
+type Login = {
+	via: "omp";
+	id: string;
+	provider: string;
+	proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+	out: string;
+	lastOutAt: number;
+	exited: boolean;
+	status: "waiting" | "done" | "failed";
+	error?: string;
+	cancelled: boolean;
+	timer: ReturnType<typeof setTimeout>;
+};
+// The same sign-in through OmO's RPC (hub/runtime/omo-login.ts): the URL and prompts arrive as frames instead of terminal output.
+type OmoLogin = {
+	via: "omo";
+	id: string;
+	provider: string;
+	rpcId: string;
+	rpc: OmoRpc;
+	url: string;
+	ask?: { id: string; title?: string; options?: string[]; url?: string; placeholder?: string };
+	exited: boolean;
+	status: "waiting" | "done" | "failed";
+	error?: string;
+	cancelled: boolean;
+	timer: ReturnType<typeof setTimeout>;
+	before?: PoolState;
+	result?: LoginResult;
+	waiters: Set<() => void>;
+};
+let login: Login | OmoLogin | undefined;
+
+// What a finished login did to the provider's pool. No result: a first sign-in, or a runtime that keeps one login.
+export type LoginResult = { outcome: "added" | "refreshed"; account: string };
+type PoolState = { pinned?: string; accounts: { name: string; email?: string; signedInAt?: unknown }[] };
+type LoginView = { url: string; needs_code: boolean; prompt?: string; instructions?: string; options?: string[]; placeholder?: string };
+
+// A start while a login is still open (a closed tab, chat /login) names it, so the web can offer resume or restart before LOGIN_TTL_MS.
+export class LoginBusy extends ControlError {
+	constructor(readonly pending: { provider: string; same: boolean }) {
+		super(`이미 진행 중인 로그인이 있어요 (${pending.provider}). 먼저 취소해 주세요`, 409);
+	}
+}
+
+// Pure: what the owner has to do next, read off the login process output (an unterminated last line is a pending prompt).
+function parseLoginOutput(out: string): LoginView {
+	const lines = out.replace(/\r/g, "").split("\n");
+	const prompt = out.length > 0 && !out.endsWith("\n") ? lines[lines.length - 1].trim() || undefined : undefined;
+	const finished = prompt === undefined ? lines : lines.slice(0, -1);
+	const at = finished.map(l => l.trim()).findLastIndex(l => /^https?:\/\/\S+$/.test(l));
+	const url = at >= 0 ? finished[at].trim() : "";
+	const instructions = at < 0 ? [] : finished.slice(at + 1).map(l => l.trim()).reduce<{ lines: string[]; open: boolean }>((acc, l) => {
+		if (!l) acc.open = false;
+		else if (acc.open && !/^(Local shortcut|Waiting for)/.test(l) && !/omp/i.test(l)) acc.lines.push(l);
+		return acc;
+	}, { lines: [], open: true }).lines;
+	return { url, needs_code: prompt !== undefined, ...(prompt ? { prompt } : {}), ...(instructions.length ? { instructions: instructions.join("\n") } : {}) };
+}
+
+function finishLogin(l: Login, code: number): void {
+	clearTimeout(l.timer);
+	l.exited = true;
+	if (code === 0 && !l.cancelled) l.status = "done";
+	else {
+		l.status = "failed";
+		l.error = l.cancelled ? "로그인이 취소됐어요" : "로그인에 실패했어요. 코드를 확인하고 다시 시도해 주세요";
+	}
+	if (l.status === "done") invalidate();
+}
+
+async function pump(l: Login, stream: ReadableStream<Uint8Array>): Promise<void> {
+	const dec = new TextDecoder();
+	for await (const chunk of stream) {
+		if (l.out.length < 262_144) l.out += dec.decode(chunk, { stream: true }).replace(ANSI, "");
+		l.lastOutAt = Date.now();
+	}
+}
+
+function killLogin(l: Login, reason: string): void {
+	if (l.exited) return;
+	l.cancelled = true;
+	if (reason) l.error = reason;
+	l.proc.kill();
+	setTimeout(() => !l.exited && l.proc.kill(9), 2000).unref();
+}
+
+// Resolves when the process exited, when it asks for input (or shows its URL) after at least `after` characters of
+// output and then falls quiet, or at the deadline.
+function settle(l: Login, after: number, maxMs: number, needUrl: boolean): Promise<void> {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	const started = Date.now();
+	const tick = () => {
+		if (l.exited || Date.now() - started > maxMs) return resolve();
+		if (l.out.length > after && Date.now() - l.lastOutAt >= LOGIN_QUIET_MS) {
+			const v = parseLoginOutput(l.out);
+			if (v.prompt || (needUrl && v.url)) return resolve();
+		}
+		setTimeout(tick, 100);
+	};
+	tick();
+	return promise;
+}
+
+function loginOf(provider: string, loginId: string): Login | OmoLogin {
+	if (!login || login.provider !== provider || login.id !== loginId) throw new ControlError("진행 중인 로그인이 없어요", 404);
+	return login;
+}
+
+// `pending`: what to do with a login still open. resume hands back that login (same provider only) at its current step, restart cancels it first.
+export async function startLogin(provider: string, pending?: "resume" | "restart"): Promise<{ login_id: string } & LoginView> {
+	if (!PROVIDER_ID.test(provider) || !(await loginProviders()).some(p => p.id === provider)) throw new ControlError(`"${provider}"은(는) 로그인할 수 없는 공급자예요`, 404);
+	if (login && !login.exited) {
+		const l = login;
+		if (pending === "resume" && l.provider === provider) return { login_id: l.id, ...(l.via === "omo" ? omoView(l) : parseLoginOutput(l.out)) };
+		if (pending !== "restart") throw new LoginBusy({ provider: l.provider, same: l.provider === provider });
+		await cancelLogin(l.provider);
+	}
+	// `omp login` writes omp's store, which OmO never reads: on OmO the login goes through OmO's own RPC.
+	if (loginVia() === "omo") return startOmoLogin(provider);
+	const proc = Bun.spawn([OMP, "login", provider], { stdin: "pipe", stdout: "pipe", stderr: "pipe", env: { ...process.env, BROWSER: "true" } });
+	const l: Login = { via: "omp", id: crypto.randomUUID(), provider, proc, out: "", lastOutAt: Date.now(), exited: false, status: "waiting", cancelled: false, timer: setTimeout(() => killLogin(l, "시간이 지나 로그인이 취소됐어요"), LOGIN_TTL_MS) };
+	l.timer.unref();
+	login = l;
+	void pump(l, proc.stdout);
+	void pump(l, proc.stderr);
+	void proc.exited.then(code => finishLogin(l, code));
+	await settle(l, 0, LOGIN_START_MS, true);
+	const view = parseLoginOutput(l.out);
+	if (l.exited || (!view.url && !view.prompt)) {
+		killLogin(l, "");
+		throw new ControlError("로그인을 시작하지 못했어요. 잠시 후 다시 시도해 주세요", 502);
+	}
+	return { login_id: l.id, ...view };
+}
+
+export function loginStatus(provider: string, loginId: string): { status: Login["status"]; error?: string } & Partial<LoginResult> {
+	const l = loginOf(provider, loginId);
+	return { status: l.status, ...(l.error ? { error: l.error } : {}), ...(l.via === "omo" ? l.result : undefined) };
+}
+
+// Hands the pasted authorization code (or the full redirect URL, or whatever the sign-in asks for) to the login process
+// and waits for it to finish. A multi-step sign-in answers with status "waiting" and the next prompt instead.
+export async function completeLogin(provider: string, loginId: string, rawCode: string): Promise<{ provider: string; status: "done" | "waiting" } & Partial<LoginView> & Partial<LoginResult>> {
+	const l = loginOf(provider, loginId);
+	if (l.status === "done") return { provider, status: "done" };
+	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
+	if (l.via === "omo") return completeOmoLogin(l, rawCode);
+	const code = rawCode.trim();
+	const wantsCode = parseLoginOutput(l.out).needs_code;
+	if (wantsCode) {
+		if (!code || code.length > 4096 || /[\r\n\0]/.test(code)) throw new ControlError("코드 형식이 올바르지 않아요", 400);
+		l.out += "\n";
+		const mark = l.out.length;
+		l.lastOutAt = Date.now();
+		l.proc.stdin.write(`${code}\n`);
+		await l.proc.stdin.flush();
+		await settle(l, mark, LOGIN_COMPLETE_MS, false);
+	} else {
+		await settle(l, Number.MAX_SAFE_INTEGER, LOGIN_COMPLETE_MS, false);
+	}
+	if (l.status === "done") return { provider, status: "done" };
+	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
+	const view = parseLoginOutput(l.out);
+	if (view.needs_code && wantsCode) return { provider, status: "waiting", ...view };
+	throw new ControlError("아직 로그인이 끝나지 않았어요. 잠시 후 다시 확인해 주세요", 408);
+}
+
+export async function cancelLogin(provider: string): Promise<void> {
+	if (!login || login.provider !== provider || login.exited) return;
+	const l = login;
+	if (l.via === "omo") {
+		l.cancelled = true;
+		l.rpc.send({ type: "login_cancel", provider: l.rpcId });
+		await settleOmo(l, () => l.exited, 2000);
+		if (!l.exited) finishOmo(l, false, "로그인이 취소됐어요");
+		return;
+	}
+	killLogin(l, "");
+	for (let i = 0; i < 40 && !l.exited; i++) await Bun.sleep(100);
+}
+
+// ---- OmO sign-in over RPC ---------------------------------------------------------------------------------------------
+// OmO adds each login to the provider's account pool and keeps the pin; dotz still notes the Claude pin before and puts it back if it
+// moved, so adding an account never changes which account requests run on.
+const OMO_START_MS = 45_000;
+const ANSWERED = new Set(["input", "select", "editor"]);
+
+type StoredSlot = { name?: unknown; signedInAt?: unknown; profile?: { email?: unknown } };
+function poolState(rpcId: string): PoolState | undefined {
+	const c = omoAuth()?.[rpcId] as { type?: unknown; pinned?: unknown; accounts?: StoredSlot[] } | undefined;
+	if (!c || typeof c !== "object" || c.type === "api_key") return undefined;
+	// an older store keeps one login on the entry itself, which OmO lists as an account named default
+	const slots: StoredSlot[] = Array.isArray(c.accounts) ? c.accounts : [{ name: "default" }];
+	return { ...(typeof c.pinned === "string" ? { pinned: c.pinned } : {}), accounts: slots.flatMap(a => (typeof a?.name === "string" ? [{ name: a.name, signedInAt: a.signedInAt, ...(typeof a.profile?.email === "string" ? { email: a.profile.email } : {}) }] : [])) };
+}
+
+// Pure: the same login seen twice. OmO replaces a pool entry only when the login names it or the provider reports an identity; a Claude
+// login under a fresh name stores a second slot of an account the pool already has, told apart only by the email on its profile.
+export function loginResult(before: PoolState | undefined, after: PoolState | undefined): (LoginResult & { copyOf?: string }) | undefined {
+	if (!before?.accounts.length || !after) return undefined;
+	const known = new Set(before.accounts.map(a => a.name));
+	const fresh = after.accounts.find(a => !known.has(a.name));
+	if (!fresh) return { outcome: "refreshed", account: after.accounts.find(a => before.accounts.find(b => b.name === a.name)?.signedInAt !== a.signedInAt)?.name ?? after.accounts[0]?.name ?? "" };
+	const same = fresh.email ? before.accounts.find(a => a.email === fresh.email) : undefined;
+	return same ? { outcome: "refreshed", account: same.name, copyOf: fresh.name } : { outcome: "added", account: fresh.name };
+}
+
+function keepPin(l: OmoLogin): void {
+	const before = l.before;
+	if (!before) return;
+	const after = poolState(l.rpcId);
+	if (l.rpcId === SUBSCRIPTION && after && after.pinned !== before.pinned) {
+		writeOmoPin(before.pinned);
+		log(`login: OmO moved the Claude pin to ${after.pinned ?? "(none)"}; put back ${before.pinned ?? "(none)"}`);
+	}
+	const lost = before.accounts.map(a => a.name).filter(n => !after?.accounts.some(a => a.name === n));
+	if (lost.length) log(`login: ${l.rpcId} account(s) missing after the login: ${lost.join(", ")}`);
+	const result = loginResult(before, after);
+	if (!result) return;
+	const { copyOf, ...shown } = result;
+	l.result = shown;
+	if (!copyOf) return;
+	try {
+		mergeSameAccount(l.provider, shown.account, copyOf);
+	} catch (e) {
+		log(`login: could not merge ${copyOf} into ${shown.account}: ${(e as Error).message}`);
+		l.result = { outcome: "added", account: copyOf };
+	}
+}
+
+function finishOmo(l: OmoLogin, ok: boolean, error?: string): void {
+	if (l.exited) return;
+	l.exited = true;
+	l.ask = undefined;
+	clearTimeout(l.timer);
+	if (ok && !l.cancelled) {
+		l.status = "done";
+		keepPin(l);
+		invalidate();
+	} else {
+		l.status = "failed";
+		l.error = l.cancelled ? "로그인이 취소됐어요" : error ?? "로그인에 실패했어요. 코드를 확인하고 다시 시도해 주세요";
+	}
+	l.rpc.close();
+	for (const w of l.waiters) w();
+}
+
+function onOmoFrame(l: OmoLogin, f: RpcFrame): void {
+	if (f.type === "auth_login_url" && f.provider === l.rpcId && typeof f.url === "string") l.url = f.url;
+	else if (f.type === "extension_ui_request" && typeof f.id === "string" && ANSWERED.has(String(f.method))) {
+		const options = Array.isArray(f.options) ? f.options.filter((o): o is string => typeof o === "string") : undefined;
+		// The Claude sign-in asks for an account name and a method before its URL, and its paste prompt carries the manual sign-in URL
+		// (the code page) as the placeholder: that URL works from any device, unlike the browser-mode URL that calls back to the hub's localhost.
+		// Any other placeholder is the answer Enter takes (the account name's default), which the web fills in.
+		const hint = typeof f.placeholder === "string" ? f.placeholder.trim() : "";
+		const url = /^https?:\/\/\S+$/.test(hint) ? hint : undefined;
+		l.ask = { id: f.id, ...(typeof f.title === "string" ? { title: f.title } : {}), ...(options?.length ? { options } : {}), ...(url ? { url } : hint ? { placeholder: hint } : {}) };
+	} else if (f.type === "response" && f.command === "login_start" && f.success === false) finishOmo(l, false, `로그인을 시작하지 못했어요 (${String(f.error ?? "알 수 없는 오류")})`);
+	else if (f.type === "auth_login_end" && f.provider === l.rpcId) finishOmo(l, f.success === true, `로그인에 실패했어요 (${String(f.error ?? "알 수 없는 오류")})`);
+	for (const w of l.waiters) w();
+}
+
+// Resolves as soon as a frame makes `done` true or the login ends, or after maxMs.
+function settleOmo(l: OmoLogin, done: () => boolean, maxMs: number): Promise<void> {
+	if (l.exited || done()) return Promise.resolve();
+	const { promise, resolve } = Promise.withResolvers<void>();
+	const check = () => {
+		if (l.exited || done()) finish();
+	};
+	const finish = () => {
+		clearTimeout(timer);
+		l.waiters.delete(check);
+		resolve();
+	};
+	const timer = setTimeout(finish, maxMs);
+	l.waiters.add(check);
+	return promise;
+}
+
+const omoView = (l: OmoLogin): LoginView => ({ url: l.ask?.url || l.url, needs_code: Boolean(l.ask), ...(l.ask?.title ? { prompt: l.ask.title } : {}), ...(l.ask?.options ? { options: l.ask.options } : {}), ...(l.ask?.placeholder ? { placeholder: l.ask.placeholder } : {}) });
+
+async function startOmoLogin(provider: string): Promise<{ login_id: string } & LoginView> {
+	const rpcId = provider === "anthropic" ? SUBSCRIPTION : provider;
+	let rpc: OmoRpc;
+	try {
+		rpc = new OmoRpc();
+	} catch {
+		throw new ControlError("OmO를 실행하지 못했어요. OmO가 설치돼 있는지 확인해 주세요", 502);
+	}
+	const l: OmoLogin = { via: "omo", id: crypto.randomUUID(), provider, rpcId, rpc, url: "", exited: false, status: "waiting", cancelled: false, before: poolState(rpcId), waiters: new Set(), timer: setTimeout(() => cancelLogin(provider), LOGIN_TTL_MS) };
+	l.timer.unref();
+	login = l;
+	rpc.on(f => onOmoFrame(l, f));
+	void rpc.exited.then(() => finishOmo(l, false, "로그인 과정이 중간에 끝났어요. 다시 시도해 주세요"));
+	rpc.send({ id: "dotz-login", type: "login_start", provider: rpcId });
+	await settleOmo(l, () => Boolean(l.url || l.ask), OMO_START_MS);
+	if (l.exited || (!l.url && !l.ask)) {
+		const why = l.error;
+		finishOmo(l, false);
+		throw new ControlError(why ?? "로그인을 시작하지 못했어요. 잠시 후 다시 시도해 주세요", 502);
+	}
+	// The prompt for the pasted code follows the URL at once; wait a moment so the first answer already says a code is wanted.
+	if (!l.ask) await settleOmo(l, () => Boolean(l.ask), 1500);
+	return { login_id: l.id, ...omoView(l) };
+}
+
+async function completeOmoLogin(l: OmoLogin, rawCode: string): Promise<{ provider: string; status: "done" | "waiting" } & Partial<LoginView>> {
+	const ask = l.ask;
+	if (ask) {
+		const code = rawCode.trim();
+		if (!code || code.length > 4096 || /[\r\n\0]/.test(code)) throw new ControlError("코드 형식이 올바르지 않아요", 400);
+		if (ask.options && !ask.options.includes(code)) throw new ControlError(`다음 중 하나를 골라 주세요: ${ask.options.join(", ")}`, 400);
+		l.ask = undefined;
+		l.rpc.send({ type: "extension_ui_response", id: ask.id, value: code });
+		await settleOmo(l, () => Boolean(l.ask), LOGIN_COMPLETE_MS);
+	} else await settleOmo(l, () => false, LOGIN_COMPLETE_MS);
+	if (l.status === "done") return { provider: l.provider, status: "done", ...l.result };
+	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
+	if (l.ask) return { provider: l.provider, status: "waiting", ...omoView(l) };
+	throw new ControlError("아직 로그인이 끝나지 않았어요. 잠시 후 다시 확인해 주세요", 408);
+}
+
+export const pendingLogin = (): { provider: string; id: string } | undefined => (login && !login.exited ? { provider: login.provider, id: login.id } : undefined);
+
+// Signs the provider out: removes every credential (login or API key) the runtime stored for it.
+export async function logoutProvider(provider: string): Promise<void> {
+	if (!PROVIDER_ID.test(provider)) throw new ControlError("알 수 없는 공급자예요", 404);
+	invalidate();
+	if (!(await authInfos()).some(a => a.provider === provider)) {
+		const env = PROVIDER_ENV[provider];
+		throw new ControlError(env && process.env[env] ? "환경 설정으로 지정된 키라서 여기서 지울 수 없어요" : "로그인된 계정이 없어요", 404);
+	}
+	// OmO keeps its logins in its own auth.json and has no sign-out command (its /logout edits that file), so for OmO the entry the row
+	// shows is removed there, after a copy next to it. `omp auth-broker logout` only touches omp's store: on an OmO install it changed
+	// nothing and the 공급자 screen stayed as it was (Mac mini, 2026-10-26).
+	const removed = usesOmo() && removeOmoLogin(provider);
+	if (usesOmp() && (await ompHasCredential(provider))) {
+		const proc = Bun.spawn([OMP, "auth-broker", "logout", provider], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+		if ((await proc.exited) !== 0 && !removed) throw new ControlError("로그아웃하지 못했어요", 500);
+	} else if (!removed) throw new ControlError("로그아웃하지 못했어요", 500);
+	invalidate();
+}
+
+// The OmO auth.json entry behind the dotz provider row: the subscription login for `anthropic` when there is one (it shadows OmO's
+// `anthropic` key entry, which stays), else the entry of that id. A copy of the file is kept as auth.json.bak-<time> (0600).
+export function removeOmoLogin(provider: string, now = Date.now()): boolean {
+	const auth = omoAuth();
+	if (!auth) return false;
+	const id = provider === "anthropic" && SUBSCRIPTION in auth ? SUBSCRIPTION : provider in auth ? provider : undefined;
+	if (!id) return false;
+	const file = authFile();
+	if (existsSync(file)) copyFileSync(file, `${file}.bak-${now}`);
+	const { [id]: _gone, ...rest } = auth;
+	writeAtomic(file, `${JSON.stringify(rest, null, 2)}\n`, 0o600);
+	return true;
+}
+const ompHasCredential = async (provider: string): Promise<boolean> => ((await ompJson<{ credentials?: OmpCredential[] }>(["auth", "export"]))?.credentials ?? []).some(c => c.provider === provider);
+
+// Pure: maps the usage reports to the API shape; providers holding credentials but absent from the reports
+// (or reporting no limits) are listed as unavailable with a plain reason.
+export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): { providers: { provider: string; account?: string; account_label?: string; plan?: string; resets?: ClaudeResets; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
+	const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+	const providers = reports
+		.filter((r): r is OmpUsageReport & { limits: OmpLimit[] } => Array.isArray(r.limits) && r.limits.length > 0)
+		.map(r => ({
+			provider: r.provider,
+			...(r.account ?? r.metadata?.email ? { account: r.account ?? r.metadata?.email, account_label: label((r.account ?? r.metadata?.email)!) } : {}), ...(r.plan ? { plan: r.plan } : {}), ...(r.resets ? { resets: r.resets } : {}),
+			limits: r.limits.map((l): QuotaLimit => ({
+				id: String(l.id), label: String(l.label ?? l.id), window: String(l.window?.id ?? l.window?.label ?? ""),
+				used: num(l.amount?.used), limit: num(l.amount?.limit), remaining: num(l.amount?.remaining), unit: String(l.amount?.unit ?? ""),
+				resets_at: num(l.window?.resetsAt), status: String(l.status ?? "unknown"), ...(typeof l.scope === "string" ? { scope: l.scope } : {}), ...(typeof l.active === "boolean" ? { active: l.active } : {}),
+			})),
+		}));
+	const reported = new Set(providers.map(p => p.provider));
+	// A report with no numbers but a problem says why (an OmO login whose token no longer works read as "does not report usage", Mac mini 2026-10-26).
+	const why = (provider: string): string => {
+		const problem = (reports.find(r => r.provider === provider) as { problem?: string } | undefined)?.problem;
+		return problem === "expired" ? `로그인이 풀려서 사용량을 읽지 못해요. 이 컴퓨터에서 /login ${provider}를 실행해 주세요` : problem === "rate_limited" ? "사용량 조회가 잠시 막혔어요. 조금 뒤 다시 읽어요" : problem === "failed" ? "사용량을 읽지 못했어요. 조금 뒤 다시 읽어요" : "사용량 정보를 제공하지 않아요";
+	};
+	const unavailable = credentialed.filter(p => !reported.has(p)).map(provider => ({ provider, reason: why(provider) }));
+	return { providers, unavailable };
+}
+
+async function readQuota() {
+	// a Claude CLI login kept in the keychain: its token is read in the background first, so the usage below has it
+	subscriptionAccounts();
+	await cliTokensSettled();
+	const rows = (await listProviders(new Set())).providers;
+	const anthropic = await anthropicUsage();
+	const reports = [...(anthropic ? [anthropic] : []), ...(await usageReports()).filter(r => r.provider !== "anthropic")];
+	const [budget, codex] = await Promise.all([apiBudget().catch(() => undefined), codexUsage()]);
+	return { fetched_at: Date.now(), ...withCodex(buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), codex), ...(budget ? { budget } : {}), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
+}
+
+// GET /api/quota answers from the last read, never waiting on a CLI, the keychain or the usage endpoint (only the very first
+// read is waited for). main.ts refreshes it every QUOTA_REFRESH_MS while a page is connected, and a request finding it older
+// starts one refresh; a read whose numbers changed goes to the listeners (main.ts pushes it to the pages as a "quota" event).
+export const QUOTA_REFRESH_MS = 60_000;
+type Quota = Awaited<ReturnType<typeof readQuota>>;
+let quotaSnap: Quota | undefined;
+let quotaRead: Promise<Quota> | undefined;
+const quotaListeners: ((q: Quota) => void)[] = [];
+export const onQuota = (fn: (q: Quota) => void): void => void quotaListeners.push(fn);
+const quotaKey = (q: Quota | undefined): string => JSON.stringify(q ? { ...q, fetched_at: 0 } : null);
+export function refreshQuota(): Promise<Quota> {
+	quotaRead ??= readQuota()
+		.then(q => {
+			const changed = quotaKey(q) !== quotaKey(quotaSnap);
+			quotaSnap = q;
+			if (changed) for (const fn of quotaListeners) fn(q);
+			return q;
+		})
+		.finally(() => (quotaRead = undefined));
+	return quotaRead;
+}
+export async function quota(now = Date.now()): Promise<Quota> {
+	if (!quotaSnap) return refreshQuota();
+	if (now - quotaSnap.fetched_at >= QUOTA_REFRESH_MS) void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
+	return quotaSnap;
+}
+export const resetQuotaForTest = (): void => {
+	quotaSnap = undefined;
+	quotaRead = undefined;
+	quotaListeners.length = 0;
+};
+
+// How long a 429 pause lasts. The provider's usage report names the window that ran out and when it resets, so the
+// pause ends right after that reset (a spent week waits for the week, not a blind 6h retry). Without a spent window in
+// the report, the error's retry-after is used, else 10 minutes. One minute of margin so the first retry lands after it.
+const RESUME_MARGIN_MS = 60_000;
+const RESUME_MAX_MS = 8 * 24 * 3600_000;
+// OmO's account pool, when every account is blocked, names the time the first one frees: "Soonest automatic retry: 2026-10-19T16:40:00.000Z."
+export function poolRetryAt(err: string): number | undefined {
+	const t = Date.parse(err.match(/(?:automatic retry:|blocked \(rate limit\) until)\s*(\d{4}-\d\d-\d\dT[\d:.]+Z)/i)?.[1] ?? "");
+	return Number.isFinite(t) ? t : undefined;
+}
+export function resumeDelay(err: string, limits: QuotaLimit[], at: number): { ms: number; reset: boolean } {
+	// That time is the reset: OmO tracks each account's block itself, a usage report would only add a guess.
+	const pool = poolRetryAt(err);
+	if (pool !== undefined && pool > at) return { ms: Math.min(pool - at, RESUME_MAX_MS) + RESUME_MARGIN_MS, reset: true };
+	const resets = limits
+		.filter(l => (l.remaining !== null && l.remaining <= 0) || (l.used !== null && l.limit !== null && l.used >= l.limit) || /exhaust|exceed|blocked/i.test(l.status))
+		.flatMap(l => (l.resets_at !== null && l.resets_at > at ? [l.resets_at] : []));
+	const hint = Number(err.match(/retry-after-ms:\s*(\d+)/)?.[1] ?? Number.NaN);
+	const base = resets.length ? Math.max(...resets) - at : Number.isFinite(hint) ? hint : 10 * 60_000;
+	return { ms: Math.min(base, RESUME_MAX_MS) + RESUME_MARGIN_MS, reset: resets.length > 0 };
+}
+export async function rateLimitDelay(err: string, model: string, role: "orchestrator" | "lane" = "orchestrator"): Promise<{ ms: number; reset: boolean }> {
+	if ((poolRetryAt(err) ?? 0) > Date.now()) return resumeDelay(err, [], Date.now());
+	const provider = model.split("/")[0];
+	invalidate();
+	// Anthropic: the account the role runs on, which may not be omp's login
+	const reports = provider === "anthropic" ? [await anthropicUsage(role, true).catch(() => undefined)].filter(r => r !== undefined) : await usageReports().catch(() => []);
+	const limits = buildQuota(reports, []).providers.find(p => p.provider === provider)?.limits ?? [];
+	return resumeDelay(err, limits, Date.now());
+}
+
+// What a failed model turn means: "rate" = a usage limit (pause until the
+// window resets, rateLimitDelay); "owner" = credit/billing exhausted or auth rejected (only the owner can fix it, so the
+// pause is a slow probe and the owner is told once); "transient" = overloaded/5xx/network (retry with backoff). Owner is
+// checked first because some billing errors arrive as a 429 (insufficient_quota). Patterns are checked against the
+// error rows of real OmO and omp sessions (~/.omo/agent/sessions): a failed OAuth refresh, a disabled provider and a model
+// the account cannot use are owner problems; stream breaks (WebSocket/SSE, OmO's "Invalid ... event order") are transient.
+export type ProviderErrorKind = "rate" | "owner" | "transient";
+const OWNER_ERR_RE = /credit balance|provider is (?:not configured|disabled)|insufficient[_ ]?(?:quota|funds|credits?)|out of credits|requires more credits|billing|payment required|\b402\b|exceeded your current quota|\b401\b|\b403\b|unauthorized|forbidden|authentication[_ ](?:error|failed)|invalid[_ ]?api[_ ]?key|invalid x-api-key|no api key|oauth token|oauth refresh failed|token (?:has )?(?:expired|been revoked)|not logged in|\/login|not a valid model id|model is not supported when using/i;
+const RATE_ERR_RE = /429|rate_limit|usage limit|session limit/i;
+// OmO's account pool when every subscription account is out (the 5h/weekly limit as OmO reports it). Checked before the
+// owner patterns: the message also names "/login" as a way to add another account.
+// also a pinned account on its limit: "Claude account 'x' for anthropic-subscription is blocked (rate limit) until <time>, and account fallback is off"
+const POOL_BLOCKED_RE = /accounts? for [\w-]+ (?:are|is) currently blocked \(rate limit|account '[^']+' for [\w-]+ is blocked \(rate limit\)|no credential slots available/i;
+const TRANSIENT_ERR_RE = /overloaded|\b5(?:00|02|03|04|29)\b|server error|internal error|bad gateway|service unavailable|gateway time-?out|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|fetch failed|network|socket hang up|other side closed|connection (?:error|reset|closed|lost|ended)|websocket (?:error|closed)|error injected into sse stream|timed? ?out|terminated|invalid (?:native tool call|assistant content) event order/i;
+export function classifyProviderError(err: string): ProviderErrorKind | undefined {
+	if (POOL_BLOCKED_RE.test(err)) return "rate";
+	if (OWNER_ERR_RE.test(err)) return "owner";
+	if (RATE_ERR_RE.test(err)) return "rate";
+	if (TRANSIENT_ERR_RE.test(err)) return "transient";
+	return undefined;
+}
+
+// Transient errors are retried TRANSIENT_RETRIES times at 5s, 15s, 45s, 135s (DOTZ_RETRY_BASE_MS scales it); an owner
+// problem is probed every 30 minutes (DOTZ_OWNER_RETRY_MS) until a turn succeeds.
+export const TRANSIENT_RETRIES = 4;
+export const transientBackoff = (attempt: number): number => Number(process.env.DOTZ_RETRY_BASE_MS ?? 5000) * 3 ** attempt;
+export const OWNER_RETRY_MS = Number(process.env.DOTZ_OWNER_RETRY_MS ?? 30 * 60_000);

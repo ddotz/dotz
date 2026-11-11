@@ -1,0 +1,82 @@
+/* 설정 목록과 하위 화면들: one row look. A row's icon sits on its own tile (prototype .ico), a status dot stays a dot. */
+:is(#settings, #notifications, #display, #update, #runtime) > .list + .sec, #settings > .set-col > .list + .sec { margin-top: var(--sp-6); }
+:is(#settings, #notifications, #display, #update, #runtime) > .sec, #settings > .set-col > .sec { margin-bottom: var(--sp-2); }
+:is(#settings, #notifications, #display, #update, #runtime) > .sec:first-child, #settings > .set-col:first-child > .sec:first-child { margin-top: var(--sp-2); }
+:is(#settings, #notifications, #display, #update, #runtime) > .list + .list { margin-top: var(--sp-3); }
+:is(#settings, #notifications, #display, #update, #runtime) > .list:first-child { margin-top: var(--sp-2); }
+:is(#settings, #notifications, #display, #update, #runtime, #models, #accounts, #usage, #context, #messengers, #discord, #jandi, #slack, #telegram, #devices, #webaccess) .li > .lead:has(> .ic) {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--layer); color: var(--fg-2);
+}
+:is(#settings, #notifications, #display, #update, #runtime, #messengers, #devices, #webaccess) .li > .lead:has(> .ic) .ic { width: 16px; height: 16px; }
+:is(#notifications, #update, #runtime) .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }
+
+/* a state said once at a row's right: the dot and its word */
+#models .fb-sw, #context .cx-state { display: inline-flex; align-items: center; gap: var(--sp-15); }
+#context .cx-state { color: var(--fg-2); }
+
+/* 모델 · 폴백: each target is a title and one list: its model and effort as rows with the picker on the right, then the numbered chain */
+#models .mt { gap: 0; }
+#models .mt-top { margin-bottom: var(--sp-1); }
+#models .mt-card { display: block; padding: 0; background: none; box-shadow: none; }
+#models .mt-head { margin: var(--sp-6) var(--sp-1) var(--sp-2); gap: var(--sp-2); align-items: baseline; }
+#models .mt-head .t { font: 600 var(--fs-sec)/var(--lh-sec) var(--font); color: var(--fg-2); }
+#models .mt-pick { flex: 1; min-width: 0; display: flex; gap: var(--sp-2); }
+#models .mt-list > .mt-pick { padding: var(--row-py) var(--row-px); }
+#models .mt-model { flex: 3 1 0; min-width: 0; max-width: none; }
+#models .mt-eff { flex: 2 1 0; min-width: 0; max-width: 160px; }
+#models .fb-sub, #models .mt-list > :is(.mt-note, .mt-apply) { border-top: 1px solid var(--line); }
+#models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+#models .mt-pick .tf > .lb { font: 500 var(--fs-row)/var(--lh-row) var(--font); color: var(--fg); }
+#models :is(.mt-pick, .mt-filter) .sel { height: var(--ctl-h); min-height: 0; font-size: var(--fs-row); line-height: var(--lh-row); }
+#models .mt-pick .sel { --ff-fill: var(--layer); flex: 1 1 auto; width: auto; min-width: 0; }
+#models .mt-pick:not(:has(.mt-eff)) .sel { flex: none; width: min(60%, 220px); }
+/* the pickers' values say what they are: their names stay on the button's aria-label */
+#models .mt-pick:has(.mt-eff) .tf > .lb, #models .mt-filter .lb { display: none; }
+#models :is(.mt-list, .fb-sub) > .mt-note { margin: 0; padding: var(--sp-2) var(--row-px); }
+#models .mt-apply { margin: 0; padding: var(--sp-2) var(--row-px); }
+#models .sec .sup { margin-left: var(--sp-2); font-weight: 400; }
+#models [data-target^="lane:"] .mt-head { margin-block: var(--sp-3) var(--sp-1); }
+#models .fb-list { --fb-n-w: 20px; gap: 0; }
+#models .fb-item { flex-wrap: wrap; border-radius: 0; background: transparent; padding: var(--sp-2) var(--row-px); border-top: 1px solid var(--line); }
+#models .fb-item.base { border-top: 0; }
+@media (hover: hover) { #models .fb-item[data-i]:hover { background: var(--card-hover); } }
+#models .fb-item.open { background: var(--layer); } @media (hover: hover) { #models .fb-item.open:hover { background: var(--layer); } }
+#models .fb-item > .fb-usage { padding-left: calc(var(--fb-n-w) + var(--sp-2)); margin-top: var(--sp-1); }
+#models .fb-item.in-use { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+#models .fb-n { width: var(--fb-n-w); height: auto; border-radius: 0; background: none; color: var(--fg-3); font-size: 13px; line-height: 18px; }
+#models .fb-item.in-use .fb-n { background: none; color: var(--accent); }
+#models .mt-fb-foot { padding: var(--sp-1) var(--sp-2); border-top: 1px solid var(--line); }
+#models .fbe { --ff-fill: var(--card); margin: 0; border-radius: 0; padding: var(--sp-3) var(--row-px); }
+#models .fbe .tf { gap: var(--sp-1); }
+@media (min-width: 640px) {
+  #models .fbe > .tf, #models .fbe-cap > .tf:first-child { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; gap: var(--sp-3); }
+}
+#models .mt-use-row { padding: var(--sp-15) var(--row-px); }
+@media (max-width: 639px) { #models .mt-pick:not(:has(.mt-eff)) .sel { width: min(58%, 200px); } }
+@media (pointer: coarse), (max-width: 639px) { #models :is(.mt-pick, .mt-filter) .sel { height: var(--field-h-touch); } }
+
+/* 공급자: the usage windows ride under the row, thin */
+#accounts .prow-lim { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
+#accounts .prow-lim .k { flex: none; min-width: 64px; }
+#accounts .prow-lim .bar { flex: 1; max-width: 160px; margin-top: 0; }
+/* a card that holds accounts: the usage windows lead, small section names split it, 계정 추가 closes the accounts */
+#accounts .li.prow .prow-lim:first-child { margin-top: 0; }
+@media (pointer: coarse), (max-width: 639px) { #accounts .li.prow .ib { width: var(--btn-hit); height: var(--btn-hit); } }
+#accounts .li.acc-lbl { min-height: 0; }
+#accounts .li.acc-lbl .lbl { margin: 0; }
+#accounts .li.acc-add { min-height: 0; gap: var(--sp-2); color: var(--fg-2); }
+#accounts .sec.sec-act > .tag.acc-use { margin-left: auto; }
+/* 사용량과 월 한도 */
+#usage .lim .kv b { font-weight: 500; }
+#usage .lim .bar { margin-top: var(--sp-15); }
+#usage .lim > .sup { margin-top: var(--sp-1); }
+/* 리셋권 row: the count and its 사용 button share the right edge where the other rows keep "N% 남음" */
+#usage .lim.rc .kv { align-items: center; }
+#usage .rc-end { display: flex; align-items: center; gap: var(--sp-2); }
+#usage > .list + :is(.grid, .sec, .empty) { margin-top: var(--sp-3); }
+:is(#accounts, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) var(--sp-1) 0; }
+
+/* 계정 창: the delete actions stand together on the left of the button row */
+dialog.dlg .dact .ac-gap { margin-right: auto; }
+/* a dialog's failure note (usErr) takes no room until it has a reason */
+dialog.dlg .dbody .err-t:empty { display: none; }

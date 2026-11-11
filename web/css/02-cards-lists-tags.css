@@ -1,0 +1,120 @@
+/* cards, lists, tags, bars: the base every screen draws on (tokens in 01-tokens.css) */
+.col { display: flex; flex-direction: column; gap: var(--sp-3); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--sp-3); }
+.card { position: relative; min-width: 0; border: 0; border-radius: var(--r-card); background: var(--card); padding: var(--sp-5); }
+.card.tap { cursor: pointer; }
+@media (hover: hover) { .card.tap:hover { background: var(--card-hover); } }
+.card.tap:focus-visible { outline-offset: 0; }
+.card.foot { display: flex; flex-direction: column; }
+.cf { display: flex; align-items: center; gap: var(--sp-2); margin-top: auto; padding-top: var(--sp-3); }
+.cf .btn { flex: 0 1 auto; min-width: 0; height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+/* a path shown inside a row's text (25-settings-accounts.js): one short line, the full path in the row's title */
+code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch { display: flex; align-items: center; gap: var(--sp-2); min-height: 20px; margin-bottom: var(--sp-3); }
+.ch h3 { flex: 1; min-width: 0; margin: 0; font: 600 var(--fs-card)/var(--lh-card) var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a quiet card head: on a screen of several cards only the lead card keeps the card-title step, the rest take the section-label step (docs/ui-principles.md 1) */
+.ch.lo h3 { font: 600 var(--fs-sec)/var(--lh-sec) var(--font); color: var(--fg-2); }
+.ch .chev { width: 14px; height: 14px; color: var(--fg-3); }
+@media (hover: hover) { .card.tap:hover .chev { color: var(--fg); } }
+.big { font: 700 var(--fs-big)/var(--lh-big) var(--font); letter-spacing: -.01em; }
+.sup { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.err-t { color: var(--err); }
+.muted { color: var(--fg-2); }
+.empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--fg-3); font-size: 12px; }
+.empty > .btn { margin-top: var(--sp-3); }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
+.dot.ok { background: var(--ok); } .dot.warn, .dot.att { background: var(--warn); } .dot.err { background: var(--err); }
+.dot.pri { background: var(--accent); }
+/* a status is a tone dot and a word, never a capsule (web/DESIGN.md 상태·필터·화면 탭); a tag with no tone is a meta word.
+   Blue words stay --fg-2 (--accent text is under 4.5:1 on white); the dot carries the blue. */
+.tag { --tone: var(--fg-3); display: inline-flex; align-items: center; gap: var(--sp-15); flex: none; height: var(--tag-h); padding: 0; background: none; color: var(--fg-3); font-size: var(--fs-tag); line-height: var(--lh-tag); font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.tag.ok { --tone: var(--ok); color: var(--ok); font-weight: 600; }
+.tag.warn { --tone: var(--warn); color: var(--warn-ink); font-weight: 600; }
+.tag.err { --tone: var(--err); color: var(--err); font-weight: 600; }
+.tag.pri { --tone: var(--accent); color: var(--fg-2); font-weight: 600; }
+.tag.off { font-weight: 600; }
+.tag.unreplied { --tone: var(--unreplied); color: var(--unreplied); font-weight: 600; }
+.nb.unreplied { background: color-mix(in srgb, var(--unreplied) 14%, transparent); color: var(--unreplied); font-weight: 600; }
+:is(.tag, .mon-ptag, .tr-st):is(.ok, .warn, .err, .pri, .off, .unreplied, .sent, .failed, .sending, .queued, .undo)::before, .dr-hit::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
+.dot.unreplied { background: var(--unreplied); }
+button.cchip.unrep-no { height: 22px; padding: 0 var(--sp-2); font-size: 11.5px; color: var(--unreplied); }
+/* 초안 작성 beside 답장 안 함: the one action that moves the mail forward, so it carries the accent (30-monitoring.js mailDraftButton).
+   A tonal pill with the pencil (owner 2026-10-29: bare accent text looked unfinished); --layer on the card, --hover under the pointer. */
+button.cchip.mr-draft { height: 24px; gap: var(--sp-1); padding: 0 var(--sp-3) 0 var(--sp-2); background: var(--layer); font-size: 12px; font-weight: 600; color: var(--accent); }
+@media (hover: hover) { button.cchip.mr-draft:hover { background: var(--hover); } }
+button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
+/* a mail's row buttons on a phone: a finger-sized target (the row itself opens the mail, so a near miss must not) */
+@media (pointer: coarse), (max-width: 639px) { button.cchip.mr-act { height: 32px; padding: 0 var(--sp-3); font-size: 13px; } button.cchip.mr-draft { padding: 0 var(--sp-3); } button.cchip.mr-draft .ic { width: 16px; height: 16px; } }
+.row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.row + .row { margin-top: var(--sp-2); }
+.row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.tap { cursor: pointer; }
+@media (hover: hover) { .row.tap:hover .nm { color: var(--accent); } }
+.kv { display: flex; justify-content: space-between; gap: var(--sp-3); align-items: baseline; }
+.kv .k { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv + .kv { margin-top: var(--sp-2); }
+.kv .v { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-size: 12px; }
+.bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; margin-top: var(--sp-2); }
+.bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--accent)); transition: width var(--m-slow) var(--m-ease); }
+.bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--err); }
+.lim + .lim { margin-top: var(--sp-3); }
+.more { margin-top: var(--sp-3); color: var(--fg-3); font-size: 12px; }
+.sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); color: var(--fg-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
+.sec:first-child { margin-top: 0; }
+.list { border: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.list > * + * { border-top: 1px solid var(--line); }
+.li { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: var(--row-h); padding: var(--row-py) var(--row-px); color: inherit; text-align: left; width: 100%; border: 0; background: transparent; }
+@media (hover: hover) { button.li:hover, .li.tap:hover { background: var(--card-hover); } }
+.li .lead { flex: none; display: inline-flex; color: var(--fg-3); }
+.li .tx { flex: 1; min-width: 0; }
+.li .hd { font-size: var(--fs-row); line-height: var(--lh-row); font-weight: 500; }
+.avatar { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--layer); border: 1px solid var(--line); color: var(--fg-2); font: 600 11px/16px var(--font); text-transform: uppercase; }
+.heads { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.li.prow .heads { flex-wrap: wrap; row-gap: var(--sp-05); }
+.li.prow .heads .hd { white-space: nowrap; }
+.heads .t { min-width: 0; font: 600 13px/20px var(--font); }
+.sp { flex: 1; }
+.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.clamp.c4 { -webkit-line-clamp: 4; white-space: pre-line; }
+.pickbox { display: flex; flex-direction: column; gap: var(--sp-4); }
+.kb:empty { display: none; }
+.li.on, button.li:active, .li.tap:active { background: var(--row-sel); }
+.li.off { background: transparent; cursor: default; } @media (hover: hover) { .li.off:hover { background: transparent; cursor: default; } }
+.li.off .hd, .li.off .lead { color: var(--fg-3); }
+/* 계정 card rows (web/js/25-settings-accounts.js): grip, order number, the tap area; a dragged row lifts and the rows it passes shift */
+.li.acc { gap: var(--sp-1); padding-left: var(--sp-15); padding-right: var(--sp-2); }
+.acc-main { flex: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.acc-no { justify-content: center; min-width: 20px; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.acc-grip { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); cursor: grab; touch-action: none; }
+.acc-grip::before { content: ""; width: 10px; height: 16px; background: radial-gradient(circle, currentColor 1.4px, transparent 1.7px) 0 0 / 5px 5.34px; }
+@media (hover: hover) { .acc-grip:hover { background: var(--card-hover); color: var(--fg-2); } }
+.acc-mv { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-2); font-size: 16px; }
+@media (hover: hover) { .acc-mv:hover:not(:disabled) { background: var(--card-hover); color: var(--fg); } }
+.acc-dragging .li.acc { transition: transform var(--m-fast) var(--m-ease); }
+.acc-dragging .li.acc.drag { position: relative; z-index: 2; transition: none; background: var(--card); box-shadow: 0 6px 20px rgb(0 0 0 / .18); cursor: grabbing; }
+.rt-roles { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.rt-roles .seg { flex: none; flex-wrap: nowrap; }
+.rt-roles .seg button { flex: none; padding: 0 var(--sp-3); }
+.rt-rows { max-height: min(48dvh, 400px); overflow-y: auto; }
+.rt-row { padding: var(--sp-2) var(--sp-3); min-width: 0; }
+.rt-row .top { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
+.rt-row .nm { min-width: 0; color: var(--fg); font-size: 13px; line-height: 20px; font-weight: 500; }
+.rt-row .sup { margin-top: var(--sp-05); }
+.tools-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+.tools-bar .sec { margin: 0; }
+.sub { margin-top: var(--sp-1); }
+.mt8 { margin-top: var(--sp-2); } .mt12 { margin-top: var(--sp-3); }
+
+/* tabs */
+.chips { display: flex; gap: var(--sp-1); overflow-x: auto; scrollbar-width: none; padding: 0 0 var(--sp-3); min-width: 0; flex: none; }
+.chips::-webkit-scrollbar { display: none; }
+/* chips are small boxes; a filter row is a segmented track (16-result-card.css), a screen tab an underline (20-mailboxes.css) */
+.chip { display: inline-flex; align-items: center; gap: var(--sp-15); flex: none; height: var(--chip-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: 13px; font-weight: 500; max-width: 100%; }
+@media (hover: hover) { .chip:hover { background: var(--hover); color: var(--fg); } }
+.chip.on { background: var(--fg); color: var(--bg); }
+/* 두 값 설정 (rowToggle): the current value in one segment-shaped cell on the row's card; the small mark says a tap swaps it */
+.chip.tgl { border-radius: var(--r-seg); background: var(--layer); color: var(--fg); font-weight: 500; }
+.chip.tgl::after { content: "⇄"; color: var(--fg-3); font-size: 11px; }
+.chip.tgl.unset { color: var(--fg-2); }
+.chip.tgl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chip .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

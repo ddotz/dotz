@@ -1,0 +1,97 @@
+#!/usr/bin/env bun
+// Fake zele. Reads fake mail from the JSON file named by $LOAD_QA_ZELE_MAIL, so the harness can inject mail by
+// appending to `mails` (later in the array = newer; lists print newest first):
+//   { accounts?: string[], mails: Mail[], events?: Event[] }
+//   Mail  = { id, account, folder?: "inbox"|"sent", from, to, cc?, subject, snippet?, body?, date?, messages?, flags?, labels?, thread?: {from,to,date,body}[] }
+//   Event = { id, summary, start, end, calendar?, account? }
+// send / reply / forward are only recorded (shim-calls.jsonl, would_send: true), never performed.
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { begin } from "./_lib.ts";
+
+type Msg = { from: string; to: string; date: string; body: string };
+type Mail = { id: string; account: string; folder?: string; from: string; to: string; cc?: string; subject: string; snippet?: string; body?: string; date?: string; messages?: number; flags?: string; labels?: string; thread?: Msg[] };
+type Event = { id: string; summary: string; start: string; end: string; calendar?: string; account?: string };
+type Data = { accounts?: string[]; mails?: Mail[]; events?: Event[] };
+
+const argv = process.argv.slice(2);
+const opt = (name: string): string | undefined => {
+	const i = argv.indexOf(name);
+	return i >= 0 ? argv[i + 1] : undefined;
+};
+const WRITE = new Set(["send", "reply", "forward"]);
+const [group, verb] = argv;
+// A send fails while $LOAD_QA_RUN/fail-mail exists and waits (at most 120 s) while $LOAD_QA_RUN/hang-mail exists.
+const flagged = (name: string): boolean => Boolean(process.env.LOAD_QA_RUN) && existsSync(join(process.env.LOAD_QA_RUN!, name));
+const isSend = group === "mail" && WRITE.has(verb ?? "");
+const failing = isSend && flagged("fail-mail");
+begin("zele", argv, isSend ? (failing ? { would_send: false, failed: true } : { would_send: true }) : {});
+// hang-mail-<account> holds the sends of that one account (--account), so another account's send can be checked beside it.
+const account = opt("--account");
+const hanging = (): boolean => flagged("hang-mail") || (Boolean(account) && flagged(`hang-mail-${account}`));
+if (isSend) for (let i = 0; i < 1200 && hanging(); i++) await Bun.sleep(100);
+if (isSend && flagged("fail-mail")) {
+	console.error("load-qa: fake mail failure (fail-mail)");
+	process.exit(1);
+}
+
+const load = (): Data => {
+	const file = process.env.LOAD_QA_ZELE_MAIL;
+	if (!file) return {};
+	try {
+		return JSON.parse(readFileSync(file, "utf8")) as Data;
+	} catch {
+		return {};
+	}
+};
+const fail = (text: string): never => {
+	console.error(text);
+	process.exit(1);
+};
+const out = (items: object[]): void => console.log(Bun.YAML.stringify({ items }, null, 2));
+const accountsOf = (d: Data): string[] => d.accounts ?? [...new Set((d.mails ?? []).map(m => m.account))];
+
+function listMail(d: Data, query?: string): Mail[] {
+	const folder = opt("--folder") ?? "inbox";
+	const account = opt("--account");
+	const filter = query ?? opt("--filter") ?? "";
+	const limit = Number(opt("--limit") ?? 30);
+	let rows = (d.mails ?? []).filter(m => (m.folder ?? "inbox") === folder && (!account || m.account === account));
+	if (/\bis:unread\b/.test(filter)) rows = rows.filter(m => /unread/i.test(m.flags ?? ""));
+	const free = filter.replace(/\b\w+:\S+/g, "").trim().toLowerCase();
+	if (query && free) rows = rows.filter(m => `${m.subject} ${m.from} ${m.body ?? m.snippet ?? ""}`.toLowerCase().includes(free));
+	return rows.reverse().slice(0, limit);
+}
+
+const row = (m: Mail) => ({ id: m.id, account: m.account, from: m.from, to: m.to, ...(m.cc ? { cc: m.cc } : {}), subject: m.subject, snippet: m.snippet ?? (m.body ?? "").slice(0, 120), messages: m.messages ?? 1, date: m.date ?? "2026-11-05 09:00", flags: m.flags ?? "", labels: m.labels ?? (m.folder === "sent" ? "SENT" : "INBOX") });
+
+function readThread(m: Mail): string {
+	const msgs = m.thread ?? [{ from: m.from, to: m.to, date: m.date ?? "2026-11-05 09:00", body: m.body ?? m.snippet ?? "" }];
+	const bar = "─".repeat(40);
+	const head = `Thread: ${m.subject}\nId: ${m.id}\nMessages: ${msgs.length}`;
+	const blocks = msgs.map((x, i) => `${bar}\nFrom: ${x.from}${i === msgs.length - 1 && /unread/i.test(m.flags ?? "") ? " [unread]" : ""}\nTo: ${x.to}\nDate: ${x.date}\n\n${x.body}`);
+	return [head, ...blocks].join("\n");
+}
+
+const data = load();
+if (argv[0] === "whoami") {
+	const accounts = accountsOf(data);
+	if (!accounts.length) fail("not authenticated");
+	console.log(`Logged in accounts:\n${accounts.map(a => `  ${a} (imap)`).join("\n")}`);
+} else if (group === "mail") {
+	if (verb === "list") out(listMail(data).map(row));
+	else if (verb === "search") out(listMail(data, argv[2] ?? "").map(row));
+	else if (verb === "read") {
+		const m = (data.mails ?? []).find(x => x.id === argv[2] && (!opt("--account") || x.account === opt("--account")));
+		if (!m) fail(`thread ${argv[2]} not found`);
+		else console.log(readThread(m));
+	} else if (WRITE.has(verb ?? "")) console.log(`recorded by the load-qa shim; nothing was sent (${verb})`);
+	else console.log(`ok (${verb})`);
+} else if (group === "cal") {
+	if (verb === "get") {
+		const e = (data.events ?? []).find(x => x.id === argv[2]);
+		if (!e) fail(`event ${argv[2]} not found`);
+		else console.log(`id: ${e.id}\nsummary: ${e.summary}\nstatus: confirmed`);
+	} else if (verb === "events" || verb === "list") out(opt("--from") ? [] : (data.events ?? []).slice(0, Number(opt("--limit") ?? 100)));
+	else console.log(`ok (${verb})`);
+} else fail(`zele ${argv.join(" ")}: not supported by the load-qa shim`);

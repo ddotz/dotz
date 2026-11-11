@@ -1,0 +1,27 @@
+/* Settings sub-screens (설정, 모델·폴백, 공급자, 사용량, 컨텍스트) and the small settings dialogs (dialog.dlg.cl) on a phone.
+   Scoped to those surfaces so the rest of the app keeps its compact controls. Loaded last: same-specificity rules here win. */
+@media (max-width: 639px) {
+  /* editor options that do not fit side by side wrap to the next line instead of being cut with an ellipsis */
+  #models .fbe .seg button { flex: 1 0 auto; padding: 0 var(--sp-3); }
+  /* update: commit subjects and paths wrap */
+  #settings .upd-log span { white-space: normal; overflow-wrap: anywhere; }
+}
+@media (max-width: 639px), (pointer: coarse) {
+  #harness .hm-row { height: 40px; }
+  #harness .hm-chip { min-height: 36px; }
+  :is(#settings, #models, #accounts, #usage, #context) .ib { width: 40px; height: 40px; }
+  :is(#models, dialog.dlg) :is(.fi, .sel) { min-height: 44px; }
+  :is(#models, dialog.dlg) .seg button { height: 40px; }
+  dialog.dlg summary { padding: var(--sp-3) 0; }
+  dialog.dlg.cl .btn { min-height: 40px; }
+  #settings .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }
+  /* a row's two controls keep a 40px target without making the row taller */
+  #models :is(.fb-sw, .fb-grip) { height: 40px; margin-block: calc(var(--sp-1) * -1); }
+  #models .fb-sw { min-width: 40px; }
+  #models .fb-grip { width: 40px; }
+  #models .fb-add { height: 40px; }
+  dialog.dlg.cl .dhd .dx { --dx-grow: var(--sp-2); width: 44px; height: 44px; margin: calc((var(--dx-grow) + var(--sp-05)) * -1) calc((var(--dx-grow) + var(--sp-15)) * -1) 0 auto; }
+  dialog.dlg.cl .dact .btn { min-height: 44px; }
+  dialog.dlg.cl .chip { height: 40px; min-width: 40px; justify-content: center; }
+  dialog.dlg.cl .rl-days .chip { flex: 1 1 0; min-width: 0; padding: 0; }
+}

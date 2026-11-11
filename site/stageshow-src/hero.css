@@ -1,0 +1,173 @@
+.hz-phone {
+  position: absolute;
+  top: 8px;
+  left: 20px;
+}
+
+/* The phone's screen is 402pt wide and drawn at 300 / 426 of that; the zoom brings the chat's own px back to about 1:1. */
+.hz-app {
+  zoom: 1.36;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-bottom: 14px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.dz-mark { flex: none; fill: var(--ink); }
+.dz-mark__dot { fill: var(--accent); }
+
+.hz-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 8px 0 10px;
+  color: var(--body);
+}
+.hz-back { flex: none; color: var(--muted); }
+.hz-bar h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 28px;
+  letter-spacing: -0.02em;
+}
+.hz-bell {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--body);
+}
+.hz-bd {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--warn);
+  color: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.hz-cv {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 8px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.hz-thread {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 14px;
+  min-height: 0;
+  padding: 0 14px 10px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 36px);
+  mask-image: linear-gradient(to bottom, transparent, #000 36px);
+}
+.hz-thread > * { will-change: transform; flex: none; }
+.hz-thread .ss-collapse__inner { min-width: 0; }
+
+.hz-msg { display: flex; flex-direction: column; gap: 4px; }
+.hz-me { align-items: flex-end; }
+.hz-mm { color: var(--muted); font-size: 12px; line-height: 16px; }
+.hz-mm b { color: var(--ink); font-weight: 600; }
+.hz-bub {
+  max-width: 86%;
+  padding: 9px 14px;
+  border-radius: 18px 18px 6px 18px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.hz-text { color: var(--ink); font-size: 13.5px; line-height: 1.55; }
+.hz-sys {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 4px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+.hz-sys > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hz-sys .ss-icon { flex: none; color: var(--accent); }
+
+.hz-q {
+  display: grid;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.hz-q__hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hz-q__hd .hz-mm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hz-q__body { color: var(--body); font-size: 13px; line-height: 1.55; }
+
+.hz-dock {
+  display: grid;
+  gap: 10px;
+  margin: 0 8px 6px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+.hz-dock__q { display: flex; align-items: center; gap: 8px; }
+.hz-dock__t { color: var(--ink); font-size: 14px; font-weight: 600; line-height: 1.4; }
+.hz-dock .dz-btn { padding: 0 11px; }
+.hz-dock .dz-btn--text { padding: 0 6px; }
+.hz-dock .dz-btn:not(.dz-btn--send):not(.dz-btn--text) { background: var(--surface); }
+
+.hz-cmp { flex: none; padding: 4px 8px 8px; }
+.hz-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 42px;
+  padding: 0 6px 0 14px;
+  border-radius: 18px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 14px;
+}
+.hz-ph { flex: 1; min-width: 0; }
+.hz-send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  color: var(--surface);
+}
+
+/* The status bar takes the page's ink, so it follows the same scheme as everything drawn on the screen. */
+.hz-phone .ss-phone__screen { color: var(--ink); }

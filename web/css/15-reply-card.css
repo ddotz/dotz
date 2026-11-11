@@ -1,0 +1,118 @@
+/* 답장 초안 카드 (web/js/10-reply-card.js) and the 답장 대기 screen (web/js/30-replies.js) */
+/* 머리: 한 줄 (받는 사람 + 출처), 상태는 오른쪽 (owner 2026-11-03: 머리줄은 한 줄, 초안이 주인공) */
+.rq-hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 20px; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+/* who the card answers is the line; where it came from and the computer follow only when they fit whole (a part that does not fit wraps under and is clipped, never cut to "· 노…") */
+.rq-meta { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; min-width: 0; max-height: 18px; overflow: hidden; white-space: nowrap; color: var(--fg-2); font-weight: 400; line-height: 18px; }
+.rq-meta .rq-wt { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-size: 13px; line-height: 18px; font-weight: 600; }
+.rq-meta .rq-src { flex: none; color: var(--fg-3); font-weight: 400; white-space: pre; }
+.rq-meta .mon-pc { flex: none; white-space: pre; }
+.rq-hd .rc-time { flex: none; }
+.rq-lb { margin-top: var(--sp-2); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq-to { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
+.rq-to .dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-sub { margin-top: var(--sp-15); }
+/* 원문: 회색·왼쪽 괘선·두 줄, 길면 원문 보기 (원칙 5: 남의 글은 조용한 인용, 초안과 눈에 띄게 나뉨) */
+.rq-og-wrap { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; margin-top: var(--sp-2); }
+.rq-orig { min-width: 0; max-width: 100%; padding: 0 0 0 var(--sp-3); border-left: 2px solid var(--line-2); color: var(--fg-2); font: 400 13px/19px var(--font); overflow-wrap: anywhere; }
+.rq-orig .rq-oh { margin-bottom: var(--sp-05); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq-orig .rq-ot { display: block; }
+.rq-orig.clamp .rq-ot { --fade: 19px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
+.rq-og { height: 28px; min-height: 0; margin-top: var(--sp-05); padding: 0 var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); }
+@media (hover: hover) { .rq-og:hover { color: var(--fg); } }
+.rq-og-wrap .rq-op { align-self: stretch; margin-top: var(--sp-2); }   /* the full original (10-reply-card.js rqOrigNode) takes the card's width */
+/* 초안: 카드의 본문, 상자 없이 (원칙 1·5) */
+.rq-body { margin-top: var(--sp-2); font: 400 15px/24px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rq-body.clamp { --fade: 48px; max-height: calc(24px * 6); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
+.rq-body .kk-dt { max-height: none; margin: 0; overflow: visible; }
+.rq-parts { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); white-space: normal; }
+.rq-part { max-width: 85%; padding: var(--sp-15) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 14%, var(--card)); white-space: pre-wrap; }
+.rq-part.sent { opacity: .55; }
+.rq-more { height: 28px; margin-top: var(--sp-05); padding: 0 var(--sp-1); font-size: 13px; }
+.rq-edit { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); }
+.rq-edit .kk-rv { min-height: 40px; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
+.rq-edit .sel { height: var(--field-h-touch); font: 400 16px/22px var(--font); }
+.rq-edit .btns { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
+
+/* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */
+.rq[data-kind="comment"] .rq-sub { margin-top: var(--sp-15); color: var(--fg-2); font: 500 13px/19px var(--font); }
+.rq-orig .rq-ow { color: var(--fg-2); font-weight: 500; }
+.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: var(--sp-2); }
+/* 보냈어요: 버튼 행과 같은 높이, 그 자리에서 바뀝니다(원칙 6) */
+.rq-sent { display: flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); margin-top: var(--sp-3); color: var(--fg); font: 500 14px/20px var(--font); }
+.rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.kk-st > .rq-sent { height: auto; margin-top: 0; }
+.rq-sent-at { color: var(--fg-3); font: 400 12px/16px var(--font); }
+
+/* 메일 초안 (10-reply-card.js rqMailParts): the 답장 확인 sheet, the 답장 대기 sheet and the mail's own card draw the same parts. 받는이 is one text button under the body (aria-expanded) that opens its rows in place. */
+.rq.cm .rq-recvfold { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; margin-top: var(--sp-1); }
+.rq-recvfold[hidden], .rq-recvbox[hidden] { display: none; }
+.rq-recvfold .rq-recv { height: 28px; min-height: 0; padding: 0; gap: var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); font-weight: 400; max-width: 100%; }
+.rq-recvfold .rq-recv .rq-rs { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-recvfold .rq-recv .ic { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--m-fast) var(--m-ease); }
+.rq-recvfold .rq-recv[aria-expanded="true"] .ic { transform: rotate(180deg); }
+.rq-recvbox { align-self: stretch; min-width: 0; margin-top: var(--sp-3); }   /* clear of the fold button's tap area */
+.rq.cm.rq-ml .rq-brief { margin-top: var(--sp-2); display: grid; gap: var(--sp-1); }
+.bm.dr.rq-ml { gap: 0; }   /* the parts carry their own margins, as in the sheet */
+.rq.cm.rq-ml .rq-og { padding-left: 0; }
+.rq.cm.rq-ml .dr-files { margin-top: var(--sp-2); }
+.rq-acts .rq-manual { margin-left: auto; gap: var(--sp-1); color: var(--fg-3); }
+.rq-acts .rq-manual .ic { width: 14px; height: 14px; }
+
+/* the queue: one list, newest first, an app filter on top */
+.rq-q { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rq-q > .rq { padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.rq-q > .rq.busy { opacity: .6; }
+.rq-chips .sel { width: 160px; }
+@media (max-width: 639px) { .rq-chips .sel { width: 100%; } .rq-chips:not(:empty) { padding-top: var(--sp-1); } }
+.rq-open { margin-left: auto; height: 28px; padding: 0 var(--sp-2); font-size: 12px; }
+.rq-sheet .rq-hd .rc-time { display: none; }   /* the sheet's head line has room for who and where only; the time stands in the list row */
+.rq-fail { margin-top: var(--sp-2); color: var(--err); font-size: var(--fs-meta); line-height: var(--lh-meta); }   /* a failed press: above the buttons, in the card's flow */
+@media (pointer: coarse), (max-width: 639px) { .rq-q > .rq { padding: var(--sp-3); } }
+
+/* 댓글 답글 카드: 작은 아바타 + 이름과 출처가 한 줄, 댓글은 조용한 인용, 초안이 본문, 버튼은 작은 단계 하나 줄 (원칙 1·5·9) */
+.rq-who { gap: var(--sp-2); }
+.rq-av { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 600 var(--fs-tag)/var(--lh-tag) var(--font); text-transform: uppercase; }
+.rq.cm .rq-sub { margin-top: var(--sp-1); color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq.cm.dr .rq-sub, .rq.cm.rq-ml .rq-sub { margin-top: var(--sp-2); color: var(--fg); font: 600 14px/20px var(--font); }   /* a mail draft: its reply subject heads the body */
+.rq.cm .rq-body, .rq.cm .rq-bodywrap { margin-top: var(--sp-2); }
+.rq.cm .rq-body, .rq.cm .rq-bodywrap > .rq-body { padding: 0; background: none; }
+.rq.cm .rq-acts { margin-top: var(--sp-2); }
+.rq-acts { flex-wrap: wrap; gap: var(--sp-2); }
+/* one row, one height: primary (accent) / secondary (tonal) / text, the same 32px box and --r-ctl corner on every card, never a pill (the prototype's .cf row) */
+.rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 var(--sp-3); border-radius: var(--r-ctl); font: 600 13px/20px var(--font); }
+/* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼) */
+@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } }
+.rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
+.rq-acts.dr-row .dr-send { flex: none; }
+
+/* 답장 대기 (web/js/30-replies.js): the prototype's #queue. Rows and tabs are the notice screen's own classes (09-notices-screen.css); the head sticks to the top of the scroll area. */
+.rq-hd2 { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-bottom: var(--sp-1); }
+.rq-hd2 .nsc-f { margin-top: 0; }
+/* a wide screen: 빠른 처리 sits at the tabs' right end, not on a row of its own; a phone keeps the rows stacked so the button never moves with the tab counts */
+@media (min-width: 640px) { .rq-hd2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); } .rq-hd2 > .nsc-f { flex: none; max-width: 100%; margin-bottom: 0; } .rq-hd2 > .rq-qm { flex: 1; min-width: 0; margin-block: 0; } .rq-hd2 > .rq-chips { flex: none; } }
+#v-monitoring.rq-on > .cv-head { display: none; }
+#v-monitoring.rq-on .tl-in { max-width: none; }
+.bm.q-fold .md > :not(:first-child) { display: none; }
+.rq-qm .sp { flex: 1; }
+.rq-qm[hidden], .rq-fast[hidden], .rq-chips:empty { display: none; }
+.nsc-fb .n.err { color: var(--err); } .nsc-fb.on .n.err { color: inherit; }
+.rq-ls .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); } .rq-ls .sec:first-child { margin-top: 0; }
+.rq-r .hd { font-weight: 500; color: var(--fg); } .rq-r.sent .hd { font-weight: 400; color: var(--fg-2); }
+.rq-r .ln .tag { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-g .rq-retry { position: relative; z-index: 1; flex: none; align-self: center; height: var(--btn-h-sm); min-height: 0; }
+.rq-g .rq-retry:disabled { opacity: .4; pointer-events: none; }
+.rq-g .nsc-tr svg { transition: transform var(--m-fast) var(--m-ease); }
+.rq-g .nsc-tx[aria-expanded="true"] ~ .nsc-tr svg { transform: rotate(180deg); }
+.rq-r[data-kid] { padding-left: calc(var(--row-px) + var(--sp-6)); }
+/* the sheet's body under its fixed head: .fs-card caps the height and clips, so a long draft scrolls here down to its 첨부 줄 */
+.rq-sheet .rq-sb { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--sp-4) var(--sp-4); }
+.rq-sheet .rq-why { margin: 0 var(--sp-05) var(--sp-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); color: var(--fg-2); }
+/* a wide screen: the large draft dialog keeps its height but the draft box is as tall as its text (the dialog's empty rest is not a grey band); a long draft still scrolls inside it */
+@media (min-width: 640px) { .fs-card.tall .fs-body.panel { flex: 0 1 auto; } }
+/* the chat's one line above the composer when 2 or more send approvals wait (10-decision-card.js dcLine) */
+.qline { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; margin: 0 0 var(--sp-2); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 400 14px/20px var(--font); text-align: left; cursor: pointer; }
+.qline[hidden] { display: none; }
+@media (hover: hover) { .qline:hover { background: var(--hover); } }
+.qline .tx { flex: none; } .qline .tx b { font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.qline .sep { color: var(--fg-3); } .qline .go { font-weight: 600; color: var(--fg); }
+.qline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

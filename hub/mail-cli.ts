@@ -1,0 +1,203 @@
+// `bun hub/mail-cli.ts compose|send`: a NEW mail the bot writes (not an answer to a received one), with the same owner approval as every reply.
+//   compose --app <mail instance> --to <addr> --subject <s> [--account <logged-in zele account>] [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] [--with-comment <comment draft code>] (body on stdin)
+//     stages the files, records a draft and prints the shared approval block (hub/draft-approval.ts) to post unchanged as an [ask].
+//     --with-comment: the mail rides on that pending comment reply draft (hub/comments): the printed block is ONE card with the reply and then the
+//     mail, and the owner's 보내기 posts the reply and sends the mail (features/comments/bin/comments.ts send).
+//   ask --draft <code>
+//     prints the approval block of a pending mail draft again (e.g. the mail of a comment reply that was posted but whose mail failed).
+//   send --draft <code>
+//     sends only after the owner picked 1) 보내기 for exactly that draft (features/reply-drafts/lib/flow.ts sendDraft, the same check as the reply path).
+// Attachments go out through the reply path's sender (zele `--attach`); a mail source that cannot send a new mail is refused at compose time.
+import { existsSync, statSync } from "node:fs";
+import { addressesOf, lintReply } from "./reply-draft.ts";
+import { appEntries, instanceIdOf, readAppsFile } from "./integrations.ts";
+import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
+import { commentAsk } from "./comments/ask.ts";
+import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
+import { commentsDir, createStore } from "./comments/store.ts";
+import { accountHold, askText, draftAttachIssues, realRunner, sendDraft, settleDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
+import { webmailSite, zeleLogins } from "../features/reply-drafts/lib/senders.ts";
+import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
+import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
+import { dataDir, loadSettings, loadStyle, validApp } from "../features/reply-drafts/lib/settings.ts";
+import { addDraft, getDraft, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { autoAttach } from "./auto-attach.ts";
+
+export type MailCliDeps = FlowDeps & { hub?: HubLike };
+type Out = { lines: string[]; code: number; notes?: string[] };
+
+const USAGE = "usage: mail-cli.ts compose --app <mail app> --to <addr> --subject <s> [--account <addr>] [--attach <path>]... [--from-library <keywords>] [--origin comment|mail|kakao:<id>] [--with-comment <comment draft code>] (body on stdin) | send --draft <code> | ask --draft <code>";
+const MULTI = new Set(["--attach"]);
+const WEBMAIL = /^webmail[:/-]([a-z0-9-]+)$/;
+
+function parse(args: string[]): { flags: Record<string, string[]>; rest: string[] } {
+	const flags: Record<string, string[]> = {};
+	const rest: string[] = [];
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i]!;
+		if (!a.startsWith("--")) rest.push(a);
+		else (flags[a] ??= []).push(args[++i] ?? "");
+	}
+	for (const k of Object.keys(flags)) if (!MULTI.has(k)) flags[k] = [flags[k]!.at(-1)!];
+	return { flags, rest };
+}
+
+// The mail source that sends for an instance: zele (the default, or an instance filtered to it) or a webmail-no-api site.
+export function sourceOf(app: string): { source: string } | { error: string } {
+	if (!validApp(app) || !instanceIdOf("mail", app)) return { error: `메일 앱 이름이 아니에요: ${app}` };
+	const raw = readAppsFile(dataDir())[app];
+	if (app !== "mail" && (!raw || raw.deleted || !appEntries(dataDir()).some(e => e.key === app))) return { error: `그런 메일 앱이 없어요: ${app}` };
+	if (raw?.off) return { error: `${app} 앱이 꺼져 있어요` };
+	const src = (raw?.filter?.source ?? "").trim().toLowerCase();
+	if (!src || src === "zele") return { source: "zele" };
+	const site = WEBMAIL.exec(src)?.[1] ?? webmailSite(src);
+	// Any other source is a category of the one mailbox (mail-orders = `orders`, posted by a mail watch from zele threads): a new mail goes out through zele.
+	return { source: site ? `webmail:${site}` : "zele" };
+}
+
+function originOf(spec: string | undefined): DraftRec["origin"] | { error: string } | undefined {
+	if (!spec) return undefined;
+	const i = spec.indexOf(":");
+	const kind = spec.slice(0, i);
+	const id = spec.slice(i + 1);
+	if (i < 1 || !id || (kind !== "comment" && kind !== "mail" && kind !== "kakao")) return { error: "--origin은 comment:<id>, mail:<id>, kakao:<id> 형식이에요" };
+	if (kind === "comment") {
+		let link: string | undefined;
+		try {
+			link = createStore(commentsDir(dataDir())).comments().find(c => c.id === id)?.postLink;
+		} catch {}
+		return { kind, id, text: "댓글 답글에 이어서", ...(link ? { link } : {}) };
+	}
+	return { kind, id, text: kind === "mail" ? "메일 답장에 이어서" : "카카오톡 메시지에 이어서" };
+}
+
+const NARROW_MIN_SCORE = 2;
+export type ComposeInput = { app: string; to: string[]; subject: string; body: string; /** The logged-in zele account to send from; refused when it is not one. */ account?: string; attach?: string[]; fromLibrary?: string; /** What the writer asked in his own words: the install's narrow rule (hub/auto-attach.ts) reads it. */ request?: string; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
+export type Composed = { ok: true; rec: DraftRec; notes: string[] } | { ok: false; error: string; code: number };
+
+// A new mail draft: stages the files, lints, records it as pending and (unless `notify` is false) tells the gateway. Sends nothing.
+export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Promise<Composed> {
+	const fail = (error: string, code = 2): Composed => ({ ok: false, error, code });
+	const { app, subject, body, to, origin } = i;
+	const via = sourceOf(app);
+	if ("error" in via) return fail(via.error);
+	if (i.account && (via.source !== "zele" || !(await zeleLogins(deps.run ?? realRunner)).includes(i.account))) return fail(`이 앱으로 보낼 수 있는 메일 계정이 아니에요: ${i.account}`);
+	const paths: string[] = [];
+	for (const p of i.attach ?? []) {
+		if (!existsSync(p) || !statSync(p).isFile()) return fail(`첨부파일을 찾지 못했어요: ${p}`);
+		paths.push(p);
+	}
+	const notes: string[] = [];
+	let libraryMiss = false;
+	const keywords = i.fromLibrary;
+	if (keywords) {
+		const folder = loadSettings().attachFolders?.[app];
+		if (!folder) return fail(`${app}에 첨부 파일 폴더가 정해져 있지 않아요 (설정 > 첨부 파일 폴더)`);
+		const rules = autoAttach();
+		if (rules.error) notes.push(`확인: auto-attach.json을 쓸 수 없어 첨부는 비워 뒀어요 - ${rules.error}`);
+		// The install's withheld files are never picked by keywords; they are attached by hand.
+		const ranked = rules.error ? [] : rankLibrary(listLibrary(folder), { subject: keywords, text: keywords }).filter(r => r.score > 0 && !rules.withhold.some(re => re.test(r.file.rel.normalize("NFC"))));
+		// Only the best-scoring files, and only when the best is a real match: three different songs on one mail were never asked for.
+		const top = ranked[0]?.score ?? 0;
+		let found = top >= MIN_SCORE ? ranked.filter(r => r.score === top).slice(0, LIBRARY_PICK_MAX) : [];
+		const request = i.request?.toLowerCase();
+		const narrow = request === undefined ? undefined : rules.narrow?.when.some(w => request.includes(w)) ? rules.narrow : undefined;
+		if (narrow) {
+			// Only the files of the one work he names; a weak match or files of several works is a guess, so nothing is attached.
+			const only = ranked.filter(r => narrow.only.test(r.file.rel.normalize("NFC")));
+			const onlyTop = only[0]?.score ?? 0;
+			const best = only.filter(r => r.score === onlyTop);
+			found = onlyTop >= NARROW_MIN_SCORE && new Set(best.map(r => r.file.rel.split("/")[0])).size === 1 ? best.slice(0, LIBRARY_PICK_MAX) : [];
+			if (!found.length) notes.push(narrow.note ?? "확인 필요: 이 요청에 맞는 파일을 확실히 찾지 못했어요. 첨부는 비워 뒀어요");
+		}
+		for (const r of found) if (!paths.includes(r.file.path)) paths.push(r.file.path);
+		if (!found.length && !rules.error) {
+			libraryMiss = true;
+			if (!narrow) notes.push(`확인: 첨부 파일 폴더에서 '${keywords}'에 맞는 파일을 찾지 못했어요`);
+		}
+	}
+	if (paths.length > STAGED_MAX) return fail(`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`);
+
+	const item = { kind: "mail" as const, app, from: to.join(", "), text: body };
+	const draft = { to: to.join(", "), subject, body };
+	const failures = lintReply(draft, item, loadStyle(toneKey({ app })));
+	if (failures.length) return fail(`초안 검사에서 걸렸어요: ${failures.join("; ")}`, 1);
+
+	const id = newId();
+	for (const p of paths) addStagedFile(id, p);
+	const rec: DraftRec = { id, kind: "mail", app, source: via.source, mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, ...(i.account ? { account: i.account } : {}), ...(libraryMiss ? { libraryMiss: true } : {}), ...(origin ? { origin } : {}), ...draft, status: "pending", created: (deps.now ?? (() => new Date()))().toISOString(), changes: [], questions: [], item };
+	await settleDraft(rec, deps.run);
+	addDraft(rec);
+	if (i.notify !== false) await notifyGateway({ path: "/api/mail/compose", body: { ref: id, source: via.source, app, to: draft.to, subject, ...(origin ? { origin: origin.text } : {}) } }, deps.hub);
+	return { ok: true, rec, notes };
+}
+
+export async function runMailCli(args: string[], stdin: string, deps: MailCliDeps = {}): Promise<Out> {
+	const [cmd, ...more] = args;
+	const { flags } = parse(more);
+	const one = (k: string) => flags[k]?.[0]?.trim() || undefined;
+	if (cmd === "send") {
+		const id = one("--draft");
+		if (!id) return { lines: [USAGE], code: 2 };
+		const rec = getDraft(id);
+		if (rec && !rec.compose) return { lines: ["이 초안은 받은 메일의 답장이에요. features/reply-drafts/bin/draft.ts send로 보내 주세요"], code: 2 };
+		const r = await sendDraft(id, deps);
+		if (r.sendFailed && rec) await reportSendFailed(rec, r.text, deps.hub);
+		if (r.ok && rec) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);
+		return { lines: [r.text], code: r.ok ? 0 : 1 };
+	}
+	if (cmd === "move") {
+		const key = one("--key"), source = readAppsFile(dataDir())[one("--app") ?? ""]?.filter?.source?.trim();
+		if (!key || !source) return { lines: ["usage: mail-cli.ts move --key <mail key> --app <mail app with a filter source>"], code: 2 };
+		return (await notifyGateway({ path: "/api/mail/move", body: { key, source } }, deps.hub)) ? { lines: [`${key} 메일을 ${one("--app")} 앱으로 옮겼어요`], code: 0 } : { lines: ["메일을 옮기지 못했어요. 메일 키와 게이트웨이를 확인해 주세요"], code: 1 };
+	}
+	if (cmd === "ask") {
+		const rec = getDraft(one("--draft") ?? "");
+		if (!rec?.compose || rec.status !== "pending") return { lines: ["그런 메일 초안이 없거나 이미 처리됐어요"], code: 2 };
+		const card = linkedComment(rec.id);
+		return card ? { lines: [`이 메일은 댓글 답글(${card})과 한 장으로 승인해요`], code: 2 } : { lines: [askText(rec, [])], code: 0 };
+	}
+	if (cmd !== "compose") return { lines: [USAGE], code: 2 };
+
+	const app = one("--app");
+	const subject = one("--subject");
+	const to = addressesOf(flags["--to"]?.[0]);
+	const body = stdin.replace(/\r\n?/g, "\n").trim();
+	if (!app || !subject || !to.length || !body) return { lines: [USAGE], code: 2 };
+	const origin = originOf(one("--origin"));
+	if (origin && "error" in origin) return { lines: [origin.error], code: 2 };
+	// A mail that answers a comment whose reply draft still waits rides on that reply's card even without --with-comment: one item is
+	// one card (owner 2026-10-31: a reply card and a mail card per comment, 28 comments, made her answer twice per item).
+	const pairStore = origin?.kind === "comment" && !one("--with-comment") ? createStore(commentsDir(dataDir())) : undefined;
+	const paired = pairStore?.drafts().find(d => d.status === "pending" && d.commentId === origin!.id && !d.mail)?.code;
+	const withComment = one("--with-comment") ?? paired;
+	const store = withComment ? (pairStore ?? createStore(commentsDir(dataDir()))) : undefined;
+	const reply = withComment ? store!.drafts().find(d => d.code === withComment) : undefined;
+	if (withComment && reply?.status !== "pending") return { lines: [`댓글 답글 초안 ${withComment}이(가) 없거나 이미 처리됐어요`], code: 2 };
+
+	const account = one("--account");
+	const made = await composeMail({ app, to, subject, body, ...(account ? { account } : {}), attach: flags["--attach"], fromLibrary: one("--from-library"), ...(origin ? { origin } : {}), notify: !withComment }, deps);
+	if (!made.ok) return { lines: [made.error], code: made.code };
+	if (!reply) return { lines: [askText(made.rec, [])], code: 0, notes: made.notes };
+	const now = (deps.now ?? (() => new Date()))().getTime();
+	const linked = attachMail(store!, reply.code, made.rec.id, now);
+	const c = store!.comments().find(x => x.id === linked.commentId);
+	const src = store!.config().sources[linked.source];
+	if (!c || !src) return { lines: ["원댓글을 찾지 못했어요"], code: 2 };
+	const hold = accountHold(made.rec);
+	return { lines: [commentAsk(src, c, linked, "댓글 답글과 이어서 보낼 메일 초안을 만들었어요", { ...mailPartOf(made.rec), attachIssues: draftAttachIssues(made.rec), ...(hold ? { notes: [`확인: ${hold}`] } : {}) })], code: 0, notes: made.notes };
+}
+
+if (import.meta.main) {
+	const args = process.argv.slice(2);
+	const stdin = args[0] === "compose" ? await Bun.stdin.text() : "";
+	try {
+		const out = await runMailCli(args, stdin, { run: realRunner });
+		for (const l of out.lines) (out.code === 0 ? console.log : console.error)(l);
+		for (const n of out.notes ?? []) console.error(n);
+		process.exit(out.code);
+	} catch (e) {
+		console.error(`실패했어요: ${(e as Error).message}`);
+		process.exit(1);
+	}
+}

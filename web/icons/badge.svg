@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96">
+  <!-- Android draws the push badge as a mask: the brand mark, pure white, filling the middle 80 of 96 -->
+  <circle cx="23.745" cy="23.745" r="15.708" fill="#fff"/>
+  <circle cx="72.255" cy="72.255" r="15.708" fill="#fff"/>
+  <circle cx="72.255" cy="23.745" r="9.24" fill="#fff"/>
+  <circle cx="23.745" cy="72.255" r="9.24" fill="#fff"/>
+</svg>

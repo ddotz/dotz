@@ -1,0 +1,316 @@
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { draftAttachRoute } from "../../../hub/draft-attach.ts";
+import { ATTACH_REFUSED, asksForFile, claimsAttachment, LIBRARY_MISS, NO_ATTACHMENT_WARNING, parseDraftApproval } from "../../../hub/draft-approval.ts";
+import { loadPlugins } from "../../../hub/plugins.ts";
+import { reviseDraft } from "../lib/flow.ts";
+import { matchLibrary } from "../lib/library.ts";
+import { offerMailDraft } from "../lib/offer.ts";
+import { canAttach, sendWith } from "../lib/senders.ts";
+import { addStagedFile, EVICTED, EVICTED_LATER, removeStagedFile, stagedFiles } from "../lib/staged.ts";
+import { paths } from "../lib/settings.ts";
+import { getDraft, listDrafts, setStatus } from "../lib/store.ts";
+import type { Runner } from "../lib/tone.ts";
+import { enable, fakeModel, j, mailFixture, setupEnv } from "./helpers.ts";
+import { sealLine } from "../../../hub/approval-seal.ts";
+
+const env = setupEnv();
+const lib = mkdtempSync(join(tmpdir(), "rd-lib-"));
+afterAll(() => {
+	env.cleanup();
+	rmSync(lib, { recursive: true, force: true });
+});
+for (const f of ["달빛정원_공유용.pdf", "하울의 움직이는 성_공유용.pdf", "견적서 양식.xlsx", "문서/기타/캐논.pdf"]) {
+	mkdirSync(join(lib, f, ".."), { recursive: true });
+	writeFileSync(join(lib, f), `bytes of ${f}`);
+}
+beforeEach(() => {
+	for (const p of [paths.config(), paths.drafts(), paths.inbox(), join(env.dir, "draft-files"), join(env.dir, "custom", "plugins")]) rmSync(p, { force: true, recursive: true });
+});
+
+const TEACHER_BODY = "선생님 안녕하세요.\n\n요청주신 숲과 나나미의 달빛정원 문서 보내드립니다. 공유용 문서는 1절까지 들어 있어요. 보내드린 문서는 개인 연습용으로만 써 주세요.";
+const TEACHER_SUBJECT = "Re: 선생님 숲과 나나미의 달빛정원 ost 문서 부탁드립니다";
+const teacherMail = { ...mailFixture, key: "t-1", subject: "선생님 숲과 나나미의 달빛정원 ost 문서 부탁드립니다", from: "Student <stu@example.com>", body: "선생님 숲과 나나미의 달빛정원 ost 문서 부탁드립니다." };
+const teacherReply = { action: "draft", reason: "asks for a brief", to: "stu@example.com", subject: TEACHER_SUBJECT, body: TEACHER_BODY, questions: [] };
+const sink = () => {
+	const sent: { target: string; text: string }[] = [];
+	return { sent, send: (target: string, text: string) => void sent.push({ target, text }) };
+};
+
+describe("the warning heuristic", () => {
+	test("the teacher's body (문서 보내드립니다) is a claim", () => {
+		expect(claimsAttachment(TEACHER_BODY)).toBe(true);
+		expect(claimsAttachment("견적서를 보내드릴게요")).toBe(true);
+		expect(claimsAttachment("사진 보냈습니다")).toBe(true);
+		expect(claimsAttachment("보내드린 PDF는 확인해 주세요")).toBe(true);
+	});
+	test.each(["문서를 보내드리지 못했어요", "확인했어요. 내일 회신드릴게요", "수업 일정을 보내드립니다", "사진 보낸 분께 감사드려요", ""])("%s is not a claim", t => {
+		expect(claimsAttachment(t)).toBe(false);
+	});
+	test("the mail being answered asks for a file", () => {
+		expect(asksForFile("선생님 숲과 나나미의 달빛정원 ost 문서 부탁드립니다")).toBe(true);
+		expect(asksForFile("견적서 보내주세요.")).toBe(true);
+		expect(asksForFile("Could you please send the PDF?")).toBe(true);
+		expect(asksForFile("수업 시간 문의드립니다. 감사합니다.")).toBe(false);
+		expect(asksForFile("문서 잘 받았습니다")).toBe(false);
+	});
+	test("the Discord block says 첨부: 없음 with the reason, and the parser raises the warning from it", async () => {
+		enable(env);
+		const out = sink();
+		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call });
+		const text = out.sent[0]!.text;
+		expect(text).not.toContain("받는이 확인");
+		expect(parseDraftApproval(text)).toMatchObject({ warning: NO_ATTACHMENT_WARNING, note: "본문에는 보낸다고 썼어요", attachIssues: [expect.stringContaining("첨부파일이 없어요")] });
+	});
+});
+
+describe("the 첨부 파일 폴더", () => {
+	test("'달빛정원 ost 문서' finds 달빛정원_공유용.pdf and nothing else", async () => {
+		const found = await matchLibrary(lib, { subject: "달빛정원 ost 문서", text: "" });
+		expect(found.map(f => f.rel)).toEqual(["달빛정원_공유용.pdf"]);
+		expect((await matchLibrary(lib, { subject: TEACHER_SUBJECT, text: "" })).map(f => f.rel)).toEqual(["달빛정원_공유용.pdf"]);
+	});
+	test("a mail that names nothing in the folder matches nothing (a generic 문서 alone is not enough)", async () => {
+		expect(await matchLibrary(lib, { subject: "문서 부탁드립니다", text: "문서 보내주세요" })).toEqual([]);
+		expect(await matchLibrary(join(lib, "none"), { subject: "달빛정원", text: "" })).toEqual([]);
+	});
+	test("more than three files tied: one pick call that sees names only; otherwise no call at all", async () => {
+		const tie = mkdtempSync(join(tmpdir(), "rd-tie-"));
+		for (const n of ["a", "b", "c", "d", "e"]) writeFileSync(join(tie, `캐논_${n}.pdf`), n);
+		const seen: string[][] = [];
+		const found = await matchLibrary(tie, { subject: "캐논 문서", text: "" }, async names => (seen.push(names), ["캐논_d.pdf", "캐논_b.pdf"]));
+		expect(found.map(f => f.rel)).toEqual(["캐논_b.pdf", "캐논_d.pdf"]);
+		expect(seen).toHaveLength(1);
+		expect(seen[0]).toEqual(["캐논_a.pdf", "캐논_b.pdf", "캐논_c.pdf", "캐논_d.pdf", "캐논_e.pdf"]);
+		let calls = 0;
+		await matchLibrary(lib, { subject: "달빛정원", text: "" }, async () => (calls++, []));
+		expect(calls).toBe(0);
+		rmSync(tie, { recursive: true, force: true });
+	});
+});
+
+describe("drafting a reply that promises a file", () => {
+	test("the best match is staged and shown, with no warning; the model is called once for the draft and never for the match", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const out = sink();
+		const model = fakeModel([j(teacherReply)]);
+		expect(await offerMailDraft(teacherMail, { send: out.send, call: model.call })).toBe("offered");
+		expect(model.calls).toHaveLength(1);
+		const d = parseDraftApproval(out.sent[0]!.text)!;
+		expect(d.attachments).toEqual([{ name: "달빛정원_공유용.pdf", size: "35B" }]);
+		expect(d.warning).toBeUndefined();
+		const rec = listDrafts()[0]!;
+		expect(stagedFiles(rec.id).map(f => f.name)).toEqual(["달빛정원_공유용.pdf"]);
+		expect(rec.status).toBe("pending");
+	});
+	test("no match: the warning plus 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const out = sink();
+		await offerMailDraft({ ...teacherMail, subject: "다른 곡 문서 부탁드립니다", body: "다른 곡 문서 부탁드립니다" }, { send: out.send, call: fakeModel([j(teacherReply)]).call });
+		const d = parseDraftApproval(out.sent[0]!.text)!;
+		expect(d.attachments).toBeUndefined();
+		expect(d.warning).toBe(NO_ATTACHMENT_WARNING);
+		expect(d.note).toContain(LIBRARY_MISS);
+		expect(listDrafts()[0]!.libraryMiss).toBe(true);
+	});
+	test("an iCloud file that is not downloaded (EDEADLK) is downloaded and staged once it is back", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const out = sink();
+		const asked: string[] = [];
+		let evicted = 2;
+		const copy = (src: string, to: string) => {
+			if (evicted-- > 0) throw Object.assign(new Error("EDEADLK: resource deadlock avoided, copyfile"), { code: "EDEADLK" });
+			copyFileSync(src, to);
+		};
+		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call, stage: { copy, download: src => void asked.push(src), waitMs: 1 } });
+		expect(asked).toEqual([join(realpathSync(lib), "달빛정원_공유용.pdf")]);
+		expect(parseDraftApproval(out.sent[0]!.text)!.attachments).toEqual([{ name: "달빛정원_공유용.pdf", size: "35B" }]);
+	});
+	test("an iCloud file that stays away is named on the card and leaves no empty slot behind", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const out = sink();
+		const copy = () => {
+			throw Object.assign(new Error("EDEADLK"), { code: "EDEADLK" });
+		};
+		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call, stage: { copy, download: () => undefined, tries: 0, retry: false } });
+		const rec = listDrafts()[0]!;
+		expect(out.sent[0]!.text).toContain(EVICTED_LATER("달빛정원_공유용.pdf"));
+		expect(rec.wantFiles).toEqual([{ name: "달빛정원_공유용.pdf", path: join(realpathSync(lib), "달빛정원_공유용.pdf") }]);
+		expect(existsSync(join(env.dir, "draft-files", rec.id, "0"))).toBe(false);
+		expect(() => addStagedFile(rec.id, join(lib, "견적서 양식.xlsx"), undefined, copy, () => undefined)).toThrow(EVICTED("견적서 양식.xlsx"));
+		expect(existsSync(join(env.dir, "draft-files", rec.id, "0"))).toBe(false);
+	});
+	test("no folder set: the warning only, nothing is searched; a plain reply gets neither", async () => {
+		enable(env);
+		const out = sink();
+		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call });
+		const d = parseDraftApproval(out.sent[0]!.text)!;
+		expect(d.warning).toBe(NO_ATTACHMENT_WARNING);
+		expect(d.note).not.toContain(LIBRARY_MISS);
+		const plain = sink();
+		await offerMailDraft({ ...mailFixture, key: "plain-1" }, { send: plain.send, call: fakeModel([j({ action: "draft", to: "kim@example.com", subject: "Re: x", body: "확인했어요.", questions: [] })]).call });
+		expect(parseDraftApproval(plain.sent[0]!.text)!.warning).toBeUndefined();
+	});
+	test("a webmail account cannot send files: nothing is staged, the warning stays", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const out = sink();
+		await offerMailDraft({ ...teacherMail, key: "w-1", source: "webmail:corp" }, { send: out.send, call: fakeModel([j(teacherReply)]).call });
+		expect(parseDraftApproval(out.sent[0]!.text)!.attachments).toBeUndefined();
+		expect(canAttach("webmail:corp")).toBe(false);
+		expect(canAttach("zele")).toBe(true);
+	});
+	test("a revised draft keeps the files of the one it replaces", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		await offerMailDraft(teacherMail, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		const old = listDrafts()[0]!;
+		const step = await reviseDraft(old.id, "더 짧게", { call: fakeModel([j({ ...teacherReply, body: "문서 보내드립니다." })]).call });
+		expect(step.ok).toBe(true);
+		const fresh = listDrafts().find(d => d.status === "pending")!;
+		expect(fresh.id).not.toBe(old.id);
+		expect(stagedFiles(fresh.id).map(f => f.name)).toEqual(["달빛정원_공유용.pdf"]);
+		expect(parseDraftApproval(step.text)!.attachments).toHaveLength(1);
+	});
+});
+
+describe("sending", () => {
+	const runner = () => {
+		const argv: string[][] = [];
+		const run: Runner = async a => (a[1] === "whoami" || argv.push(a), { code: 0, stdout: "", stderr: "" });
+		return { argv, run };
+	};
+	test("zele reply carries every staged file as --attach, after the read zele demands", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		await offerMailDraft(teacherMail, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		const rec = getDraft(listDrafts()[0]!.id)!;
+		addStagedFile(rec.id, join(lib, "견적서 양식.xlsx"));
+		const { argv, run } = runner();
+		expect(await sendWith(rec, run)).toMatchObject({ ok: true });
+		expect(argv[0]).toEqual(["zele", "mail", "read", "msg-1"]);
+		const reply = argv[1]!;
+		expect(reply.slice(0, 8)).toEqual(["zele", "mail", "reply", "msg-1", "--to", "stu@example.com", "--body", TEACHER_BODY]);
+		const files = reply.slice(8);
+		expect(files.filter(a => a === "--attach")).toHaveLength(2);
+		expect(files.filter(a => a !== "--attach").map(p => p.split("/").pop())).toEqual(["달빛정원_공유용.pdf", "견적서 양식.xlsx"]);
+		for (const p of files.filter(a => a !== "--attach")) expect(existsSync(p)).toBe(true);
+	});
+	test("a draft without files sends no --attach", async () => {
+		enable(env);
+		await offerMailDraft({ ...mailFixture, key: "p-2" }, { send: sink().send, call: fakeModel([j({ action: "draft", to: "kim@example.com", subject: "Re: x", body: "확인했어요.", questions: [] })]).call });
+		const { argv, run } = runner();
+		await sendWith(listDrafts()[0]!, run);
+		expect(argv[1]).not.toContain("--attach");
+	});
+	test("a source that cannot send files refuses a draft that holds files instead of dropping them", async () => {
+		enable(env);
+		await offerMailDraft({ ...teacherMail, key: "w-2", source: "webmail:corp" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		const rec = listDrafts()[0]!;
+		addStagedFile(rec.id, join(lib, "달빛정원_공유용.pdf"));
+		const { argv, run } = runner();
+		const out = await sendWith(rec, run);
+		expect(out.ok).toBe(false);
+		expect(argv).toEqual([]);
+	});
+	test("a custom plugin gets the files in its reply hook; its repliesWithFiles decides canAttach", async () => {
+		const plugins = join(env.dir, "custom", "plugins");
+		mkdirSync(plugins, { recursive: true });
+		const got = join(env.dir, "plugin-got.json");
+		writeFileSync(join(plugins, "work.ts"), `import { writeFileSync } from "node:fs";
+export default { name: "work", reply: (d: any) => { if (d.source !== "work") return undefined; writeFileSync(${JSON.stringify(got)}, JSON.stringify(d)); return { ok: true, message: "plugin sent" }; }, repliesWithFiles: (s: string) => s === "work" };`);
+		await loadPlugins(env.dir);
+		try {
+			enable(env);
+			await offerMailDraft({ ...teacherMail, key: "c-1", source: "work" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+			const rec = listDrafts()[0]!;
+			addStagedFile(rec.id, join(lib, "달빛정원_공유용.pdf"));
+			expect(canAttach("work")).toBe(true);
+			expect(await sendWith(rec, async () => ({ code: 1, stdout: "", stderr: "" }))).toEqual({ ok: true, message: "plugin sent" });
+			const draft = JSON.parse(await Bun.file(got).text());
+			expect(draft).toMatchObject({ source: "work", id: "msg-1", to: "stu@example.com", body: TEACHER_BODY });
+			expect(draft.attachments).toHaveLength(1);
+			expect(draft.attachments[0]).toMatchObject({ name: "달빛정원_공유용.pdf", size: 35 });
+			expect(existsSync(draft.attachments[0].path)).toBe(true);
+		} finally {
+			await loadPlugins(join(env.dir, "none"));
+		}
+		expect(canAttach("work")).toBe(false);
+	});
+	describe("the draft CLI in its own process knows a plugin source that sends files", () => {
+		const cli = async (...args: string[]) => {
+			const proc = Bun.spawn([process.execPath, join(import.meta.dir, "..", "bin", "draft.ts"), ...args], { env: { ...process.env, DOTZ_DIR: env.dir }, stdout: "pipe", stderr: "pipe" });
+			const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+			return { code, stderr };
+		};
+		const pluginDraft = async (key: string) => {
+			const plugins = join(env.dir, "custom", "plugins"), got = join(env.dir, "plugin-sent.json");
+			mkdirSync(plugins, { recursive: true });
+			writeFileSync(join(plugins, "work.ts"), `import { writeFileSync } from "node:fs";
+export default { name: "work", reply: () => { writeFileSync(${JSON.stringify(got)}, "sent"); return { ok: true, message: "plugin sent" }; }, repliesWithFiles: (s: string) => s === "work" };`);
+			enable(env);
+			await offerMailDraft({ ...teacherMail, key, source: "work" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+			return { rec: listDrafts()[0]!, got };
+		};
+		test("attach and detach change the draft's files", async () => {
+			const { rec } = await pluginDraft("c-2");
+			expect(await cli("attach", rec.id, join(lib, "견적서 양식.xlsx"))).toMatchObject({ code: 0 });
+			expect(stagedFiles(rec.id).map(f => f.name)).toEqual(["견적서 양식.xlsx"]);
+			expect(await cli("detach", rec.id, "견적서 양식.xlsx")).toMatchObject({ code: 0 });
+			expect(stagedFiles(rec.id)).toEqual([]);
+		}, 30_000);
+		test("send refuses a draft that promises a file it does not carry, as the gateway's check does", async () => {
+			const { rec, got } = await pluginDraft("c-3");
+			writeFileSync(paths.inbox(), `${sealLine(paths.inbox(), { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `이 답장 보낼까요? (${rec.id})`, n: 1, label: "보내기" }] })}\n`);
+			const out = await cli("send", rec.id);
+			expect(out.stderr).toContain(ATTACH_REFUSED);
+			expect(out.code).toBe(1);
+			expect(existsSync(got)).toBe(false);
+		}, 30_000);
+	});
+});
+
+describe("adding and removing files of a draft (the send sheet's routes)", () => {
+	const call = async (method: string, ref: string, tail: string, body?: object, query = "") => {
+		const url = new URL(`http://x/api/drafts/${ref}/${tail}${query}`);
+		const res = await draftAttachRoute(new Request(url, { method, ...(body ? { body: JSON.stringify(body), headers: { "content-type": "application/json" } } : {}) }), url, ref, tail);
+		return { status: res.status, body: (await res.json()) as any };
+	};
+	async function draft() {
+		enable(env, { attachFolders: { mail: lib } });
+		await offerMailDraft({ ...teacherMail, subject: "다른 곡 문서 부탁드립니다", body: "다른 곡 문서 부탁드립니다" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		return listDrafts()[0]!.id;
+	}
+	test("the library lists its files; picking one stages it, bytes stage a file, x takes one off", async () => {
+		const ref = await draft();
+		expect((await call("GET", ref, "files")).body).toEqual({ files: [], canAttach: true, library: true, editable: true, attachIssues: [expect.stringContaining("첨부파일이 없어요")], tracked: true, original: true });
+		const listed = (await call("GET", ref, "library")).body.items as { rel: string }[];
+		expect(listed.map(i => i.rel)).toContain("문서/기타/캐논.pdf");
+		expect((await call("GET", ref, "library", undefined, "?q=캐논")).body.items.map((i: { rel: string }) => i.rel)).toEqual(["문서/기타/캐논.pdf"]);
+		const added = await call("POST", ref, "files", { library: "문서/기타/캐논.pdf" });
+		expect(added.body.files).toEqual([{ name: "캐논.pdf", size: "33B" }]);
+		const bytes = await call("POST", ref, "files", { name: "../../메모.txt", data: Buffer.from("hello").toString("base64") });
+		expect(bytes.body.files.map((f: { name: string }) => f.name)).toEqual(["캐논.pdf", "메모.txt"]);
+		const removed = await call("POST", ref, "files", { remove: 0 });
+		expect(removed.body.files).toEqual([{ name: "메모.txt", size: "5B" }]);
+		expect(stagedFiles(ref).map(f => f.name)).toEqual(["메모.txt"]);
+		expect((await call("POST", ref, "files", { remove: 5 })).status).toBe(404);
+	});
+	test("a path outside the folder, an unknown draft and a sent draft change nothing", async () => {
+		const ref = await draft();
+		expect((await call("POST", ref, "files", { library: "../secret.txt" })).status).toBe(404);
+		expect((await call("POST", ref, "files", { library: "/etc/hosts" })).status).toBe(404);
+		expect((await call("POST", "RNOSUCH0001", "files", { library: "달빛정원_공유용.pdf" })).status).toBe(404);
+		expect((await call("GET", "RNOSUCH0001", "files")).body.editable).toBe(false);
+		expect((await call("POST", ref, "files", {})).status).toBe(400);
+		expect(stagedFiles(ref)).toEqual([]);
+		setStatus(ref, "sent");
+		expect((await call("POST", ref, "files", { library: "달빛정원_공유용.pdf" })).status).toBe(409);
+		expect(removeStagedFile(ref, 0)).toBe(false);
+	});
+	test("a webmail draft reports canAttach false", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		await offerMailDraft({ ...teacherMail, key: "w-3", source: "webmail:corp" }, { send: sink().send, call: fakeModel([j(teacherReply)]).call });
+		const ref = listDrafts()[0]!.id;
+		expect((await call("GET", ref, "files")).body).toMatchObject({ canAttach: false, editable: true });
+	});
+});

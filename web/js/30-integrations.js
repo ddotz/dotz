@@ -1,0 +1,39 @@
+/* ---------- 모니터링 sources: one per integration that contacts the owner first (메일, 카카오톡, 인스타그램, 유튜브 ...) ---------- */
+// Data: GET /api/integrations (hub/integrations.ts) -> {items: [{key, label, icon, iconPath?, conv, unread, notices}]}: only the integrations enabled on
+// this install, with the ids of their notices and the unread count. The registry lives in the hub; the 모니터링 tab (30-monitoring.js) lists
+// whatever it returns beside the dotz_watch monitors and 알림.
+const INTG = { items: [], available: [], sig: "", timer: 0 };
+// An app switched off on this install keeps its mails here (data is kept): a peer's copy of the same mail must still show (34-peer-monitoring.js pqMail).
+// An instance owns a conversation under its `conv` prefixes, minus the prefixes its siblings claim (`convNot`, hub/integrations.ts appEntries).
+const intgHas = (it, t) => (it.conv || []).some(p => String(t).startsWith(p)) && !(it.convNot || []).some(p => String(t).startsWith(p));
+const intgHidden = t => INTG.available.some(a => a.off && intgHas(a, t));
+
+// 미답장 (hub/unreplied.ts), reading never clears it. One item that is owed is a state: a dot and a word (unrepPill). "미답장 N" is a count: the
+// orange count badge (unrepCount), beside the unread count badge. Both look the same on every row that shows them.
+const unrepPill = (text = "미답장") => el("span", { class: "tag unreplied", text });
+const unrepCount = n => el("span", { class: "nb unreplied", "aria-label": `미답장 ${n}개`, text: `미답장 ${n > 99 ? "99+" : n}` });
+
+// Callers that ask while a request is out share it (opening a mail thread asks from the thread, the unread sync and the list at once).
+let intgFlight = null;
+const loadIntegrations = () => intgFlight || (intgFlight = intgFetch().finally(() => { intgFlight = null; }));
+async function intgFetch() {
+  clearTimeout(INTG.timer);   // a refetch queued by intgWatch is this one
+  try {
+    const r = await api("/api/integrations");
+    INTG.items = Array.isArray(r.items) ? r.items : []; INTG.loaded = true;
+    INTG.available = Array.isArray(r.available) ? r.available : [];
+    for (const it of INTG.available) if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
+    for (const it of INTG.items) if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
+  } catch { return; }
+  monSchedule();
+  homeSoon();
+}
+// Refetch when the notices or a conversation's unread count changed (cheap signature, checked on every list build).
+function intgWatch() {
+  const sig = `${NT.items.length}:${NT.unread}:${[...CONV.keys()].map(t => ts(t).unread).join(",")}:${[...MAILS.values()].filter(m => m && m.unreplied).length}`;
+  if (sig === INTG.sig) return;
+  INTG.sig = sig;
+  clearTimeout(INTG.timer);
+  INTG.timer = setTimeout(loadIntegrations, 300);
+}
+loadIntegrations();

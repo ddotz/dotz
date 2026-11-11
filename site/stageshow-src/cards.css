@@ -1,0 +1,120 @@
+.cz .ss-stage { overflow: hidden; }
+
+.cz-panel {
+  position: absolute;
+  top: 24px;
+  left: 28px;
+  width: 560px;
+  height: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+}
+.cz-panel--bare { gap: 10px; background: transparent; padding: 14px 0 14px 4px; }
+.cz-panel > * { flex: none; will-change: transform; }
+
+.cz-meta { color: var(--muted); font-size: 12px; }
+.cz-meta b { color: var(--ink); font-weight: 600; }
+.cz-tag {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+.cz-text { display: block; color: var(--ink); font-size: 14px; line-height: 1.55; }
+.cz-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cz-list {
+  display: grid;
+  max-width: 400px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.cz-list > :not(:first-child) .cz-ev { border-top: 1px solid var(--line); }
+.cz-ev {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+}
+.cz-ev__t { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.cz-ev__title { font-size: 13.5px; }
+
+.cz-phone { margin-top: 4px; }
+/* the kit draws a phone screen in iPhone points and scales it down to 304px */
+.cz-chat { zoom: 1.55; display: flex; flex-direction: column; gap: 8px; padding: 0 10px; color: var(--ink); font-size: 13px; }
+.cz-chat__hd { display: flex; align-items: center; justify-content: center; gap: 6px; padding-bottom: 4px; font-size: 13px; }
+.cz-chat__hd b { font-weight: 600; }
+.cz-chat .cz-text { font-size: 13px; }
+.cz-chat .cz-ev { height: 30px; grid-template-columns: 44px 1fr; padding: 0 10px; }
+.cz-chat .cz-ev__t { font-size: 12px; }
+.cz-chat .cz-ev__title { font-size: 12.5px; }
+.cz-me { display: flex; justify-content: flex-end; }
+.cz-me > span {
+  padding: 7px 12px;
+  border-radius: 16px 16px 6px 16px;
+  background: var(--surface-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.cz-busy { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+
+.cz-watch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 440px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+}
+.cz-watch .cz-nt__b b { font-weight: 600; }
+.cz-amt { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cz-amt em { font-style: normal; color: var(--accent-ink); }
+
+.cz-nts { display: grid; max-width: 440px; border-radius: var(--r-card); background: var(--surface); overflow: hidden; }
+.cz-nts > :not(:first-child) .cz-nt,
+.cz-nts > .cz-nt:not(:first-child) { border-top: 1px solid var(--line); }
+.cz-nt {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 9px 16px;
+}
+.cz-nt__dot { width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--line-strong); }
+.cz-nt[data-unread] .cz-nt__dot { background: var(--accent); }
+.cz-nt__b { display: grid; gap: 2px; min-width: 0; }
+.cz-nt__b b { font-weight: 500; font-size: 14px; line-height: 22px; }
+.cz-nt[data-unread] .cz-nt__b b { font-weight: 700; }
+.cz-nt__b > span { color: var(--body); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.cz-nt__time { color: var(--muted); font-size: 12px; line-height: 22px; white-space: nowrap; }
+.cz-price s { color: var(--muted); }
+.cz-price em { font-style: normal; font-weight: 600; color: var(--accent-ink); }
+
+.cz .ss-stage[data-layout='compact'] .cz-panel {
+  top: 18px;
+  left: 16px;
+  /* still bleeds off the right edge, but its content ends inside the 350px stage */
+  width: 360px;
+  padding: 16px 40px 16px 16px;
+}
+
+.cz.cz--phone .ss-stage .cz-panel { top: 0; left: 0; width: 100%; height: 100%; align-items: center; padding: 0; background: transparent; }
+
+/* The status bar takes the page's ink, so it follows the same scheme as everything drawn on the screen. */
+.cz-phone .ss-phone__screen { color: var(--ink); }

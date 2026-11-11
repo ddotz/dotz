@@ -1,0 +1,167 @@
+import { afterAll, describe, expect, test } from "bun:test";
+import { isSettingsTarget, viewOf } from "./app-settings.ts";
+import { WATCH_FIELDS } from "./watch-settings.ts";
+import { fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
+
+// A monitor kept on the Mac mini (a peer's watch) looks exactly like the same monitor on this computer: the list row, the detail, the status card, the
+// chips, the settings conversation (chat only) and the settings screen behind its ⋯ button; only the machine chip differs. A peer's app has the same
+// title-bar gear and its name is a field of the settings screen. Headless; both computers are fixtures with the same data.
+const MINI = "http://mini.test";
+const at = (min: number) => new Date(Date.UTC(2026, 9, 23, 3, min)).toISOString();
+const TITLE = "나스 패키지 새 버전";
+const watch = (watch: string) => ({ name: TITLE, watch, kind: "watch", last_run: at(32), last_result: "fail", next_run: at(62), every: "30분마다", fails: 2, last_ok: at(2), last_output: "로그인이 풀렸어요", keeper: true });
+const report = (n: number) => ({ id: `n${n}`, ts: at(n), updated: at(n), at: at(n), kind: "watch", tone: "fail", title: TITLE, open: "alert", src: "alert", read: true, text: "새 버전을 확인하지 못했어요" });
+const fields = () => WATCH_FIELDS.map(f => viewOf(f, f.key === "enabled" ? true : f.key === "every_minutes" ? 30 : f.key === "to" ? "alert" : TITLE));
+const LOCAL_W = "nas-pkg-local", PEER_W = "nas-pkg-mini";
+const LOCAL_T = `settings:w:${LOCAL_W}`, PEER_T = `settings:w:${PEER_W}`;
+const labelField = (value: string) => ({ key: "label", label: "앱 이름", type: "text", help: "", max: 30, switch: true, value });
+const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } };
+
+const acts = inbox<{ action: string; args: Record<string, unknown> }>();
+const sent = inbox<Record<string, unknown>>();
+const history: Record<string, Record<string, unknown>[]> = {
+	[LOCAL_T]: [{ ts: at(40), kind: "message", source: "web", channel: LOCAL_T, author: "owner", text: "왜 실패했어?" }, { ts: at(41), kind: "out", source: "orchestrator", target: LOCAL_T, text: "로그인이 풀렸어요." }],
+	[PEER_T]: [{ ts: at(40), kind: "message", source: "web", channel: PEER_T, author: "owner", text: "왜 실패했어?" }, { ts: at(41), kind: "out", source: "orchestrator", target: PEER_T, text: "로그인이 풀렸어요." }],
+};
+const peers = [{ name: "맥미니", url: MINI, online: true, stale: false, items: { name: "맥미니", rev: "r1", monitors: [watch(PEER_W)], notices: [report(30)], integrations: [MAIL], conversations: [] } }];
+let mailName = "메일";
+
+const historyOf = (target: string) => (isSettingsTarget(target) ? json({ target, events: history[target] ?? [] }) : json({ error: "target must be main" }, 400));
+async function proxy(req: Request, url: URL): Promise<Response> {
+	const p = url.searchParams.get("p") ?? "";
+	if (req.method === "POST") {
+		const a = (await req.json()) as (typeof acts)[number];
+		acts.push(a);
+		if (a.action === "app" && a.args.op === "settings") { mailName = String((a.args.values as { label: string }).label); return json({ ok: true, fields: [labelField(mailName)] }); }
+		return json({ ok: true });
+	}
+	if (p === `/api/watches/${PEER_W}/settings`) return json({ key: PEER_W, fields: fields() });
+	if (p === "/api/integrations/mail/settings") return json({ key: "mail", fields: [labelField(mailName)] });
+	if (p.startsWith("/api/history")) return historyOf(new URL(p, MINI).searchParams.get("target") ?? "");
+	return json({});
+}
+const hub = fakeHub({
+	api: async (req, url) => {
+		const p = url.pathname;
+		if (p === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(x => ({ name: x.name, url: x.url, self: false, online: x.online }))]);
+		if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
+		if (p === "/api/monitors") return json({ items: [watch(LOCAL_W)] });
+		if (p === "/api/notices") return json({ unread: 0, items: [report(30)] });
+		if (p === "/api/integrations") return json({ items: [] });
+		if (p === "/api/conversations") return json({ items: [] });
+		if (p === "/api/monitoring/peers") return json(peers);
+		if (p === "/api/peer/proxy") return proxy(req, url);
+		if (p === "/api/history") return historyOf(url.searchParams.get("target") ?? "");
+		if (/^\/api\/watches\/[a-z-]+\/settings$/.test(p)) return json({ key: "local", fields: fields() });
+		if (p === "/api/message") { sent.push((await req.json()) as Record<string, unknown>); return json({ ok: true }); }
+	},
+});
+
+afterAll(() => hub.stop());
+const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
+const KEYS = { local: `m:${TITLE}`, peer: `p:${MINI}|m:${TITLE}` };
+const boot = async (width: number, height: number, key: string) => {
+	const v = await hub.view({ width, height });
+	await v.navigate(`${hub.origin}/`);
+	await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh`);
+	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
+	await run(v, `go("monitoring")`);
+	await waitFor(v, `PQ.loaded && PQ.list.length && monItems().some(i => i.key === ${JSON.stringify(key)})`);
+	await run(v, `go("monitoring", ${JSON.stringify(key)})`);
+	await waitFor(v, `document.querySelector("#mon-tl .mon-lr") && document.querySelector("#mon-tl [data-chip]") && document.querySelector("#mon-head .as-hd")`);
+	return v;
+};
+const NORMALIZE = `
+const clean = n => {
+	const c = n.cloneNode(true);
+	for (const x of c.querySelectorAll(".mon-pc")) x.remove();
+	for (const x of c.querySelectorAll(".tag")) if (x.textContent === "맥미니") x.remove();
+	// a peer row names its computer in its subtitle ("맥미니에서 돌아요 · …"); what follows the name is the local row's sub line
+	for (const x of c.querySelectorAll(".cv-p")) if (x.textContent.startsWith("맥미니에서 돌아요")) { x.closest(".cv-row")?.classList.remove("pv"); const rest = x.textContent.replace(/^맥미니에서 돌아요( · )?/, ""); if (rest) x.textContent = rest; else x.remove(); }
+	if (c.classList.contains("cv-row")) c.classList.remove("pv");
+	for (const x of [c, ...c.querySelectorAll("*")]) for (const a of [...x.attributes]) if (/^(data-k|data-t|data-run|data-watch|data-nid|data-as-open|data-as-more|data-sig|id|aria-labelledby)$/.test(a.name)) x.removeAttribute(a.name);
+	return c.outerHTML;
+};`;
+const parts = (v: View, side: "local" | "peer") =>
+	q<{ row: string; detail: string; head: string; box: Record<string, number> }>(v, `${NORMALIZE}
+		const row = [...document.querySelectorAll("#mon-side .cv-row")].find(r => r.dataset.k === ${JSON.stringify(KEYS[side])});
+		const r = n => { const b = n.getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)]; };
+		return { row: clean(row), detail: clean(document.querySelector("#mon-tl")), head: clean(document.querySelector("#mon-head")), box: { row: r(row), tl: r(document.querySelector("#mon-tl")), head: r(document.querySelector("#mon-head")) } };`);
+const openScreen = async (v: View) => {
+	await waitFor(v, `[...document.querySelectorAll("[data-as-more]")].some(b => b.offsetParent && !b.hidden)`);
+	await run(v, `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden).click()`);
+	await waitFor(v, `document.querySelector(".as-screen #app-sw .as-stat") && document.querySelector('.as-screen #app-sw [data-k="enabled"]')`);
+};
+
+describe.each([[390, 844], [1280, 800]])("a monitor on the Mac mini and the same one here at %ipx", (width, height) => {
+	test("the list row, the detail and the title bar are the same except the machine chip", async () => {
+		const local = await parts(await boot(width, height, KEYS.local), "local");
+		const peerView = await boot(width, height, KEYS.peer);
+		const peer = await parts(peerView, "peer");
+		expect(peer.row).toBe(local.row);
+		expect(peer.detail).toBe(local.detail);
+		expect(peer.head).toBe(local.head);
+		expect({ ...peer.box, row: peer.box.row[0] }).toEqual({ ...local.box, row: local.box.row[0] });
+		expect(await q(peerView, `return document.querySelector("#mon-head .mon-pc").textContent`)).toBe("맥미니");
+		expect(await q(peerView, `return [...document.querySelectorAll("#mon-side .cv-row")].find(r => r.dataset.k === ${JSON.stringify(KEYS.peer)}).querySelector(".cv-p").textContent`)).toStartWith("맥미니에서 돌아요 · ");
+		expect(await q<number>(peerView, `return document.documentElement.scrollWidth`)).toBeLessThanOrEqual(width);
+	});
+
+	test("the screenshots", async () => {
+		for (const side of ["local", "peer"] as const) {
+			const v = await boot(width, height, KEYS[side]);
+		}
+	});
+
+	test("the conversation is chat only; ⋯ opens the settings screen with the same status card and rows, back returns", async () => {
+		const screens: string[] = [];
+		for (const side of ["local", "peer"] as const) {
+			const v = await boot(width, height, KEYS[side]);
+			const t = side === "local" ? LOCAL_T : PEER_T;
+			await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+			await waitFor(v, `target === ${JSON.stringify(t)} && document.querySelector("#tl").textContent.includes("로그인이 풀렸어요.") && document.querySelector("#mon-chips [data-chip]")`);
+			expect(await q(v, `return document.querySelector("#app-sw")`)).toBeNull();
+			expect(await q(v, `return [...document.querySelectorAll("#mon-chips [data-chip]")].map(b => b.dataset.chip)`)).toEqual(["다시 로그인해 줘", "원인 찾아 줘", "일시정지"]);
+			expect(await q(v, `return document.querySelector("#tl").textContent.includes("대화를 불러오지 못했어요")`)).toBe(false);
+			await openScreen(v);
+			screens.push(await q<string>(v, `${NORMALIZE} return clean(document.querySelector(".as-screen #app-sw"))`));
+			expect(await q<number>(v, `return document.querySelector(".as-screen").scrollWidth`)).toBeLessThanOrEqual(width);
+			await waitFor(v, `document.getAnimations().length === 0`);
+			await run(v, `document.querySelector('.as-screen [data-k="as-back"]').click()`);
+			await waitFor(v, `!document.querySelector(".as-screen") && target === ${JSON.stringify(t)}`);
+		}
+		expect(screens[1]).toBe(screens[0]);
+	});
+});
+
+describe("a peer's app", () => {
+	test("has the title-bar gear; its name is a field of the settings screen and is written through the peer", async () => {
+		const key = `p:${MINI}|i:mail`;
+		const v = await boot0(1280, 800, key);
+		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
+		expect(await q(v, `return document.querySelector("#mon-tl .as-name")`)).toBeNull();
+		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+		await openScreen0(v);
+		expect(await q(v, `return document.querySelector('.as-screen #app-sw [data-k="label"]').value`)).toBe("메일");
+		await run(v, `const i = document.querySelector('.as-screen #app-sw [data-k="label"]'); i.value = "맥미니 메일"; i.dispatchEvent(new Event("change"))`);
+		await waitFor(v, `document.querySelector('.as-screen #app-sw [data-k="label"]').value === "맥미니 메일"`);
+		await acts.until(() => !(!acts.some(a => a.action === "app")));
+		expect(acts.find(a => a.action === "app")).toEqual({ action: "app", args: { op: "settings", app: "mail", values: { label: "맥미니 메일" } } });
+		expect(sent).toEqual([]);
+	});
+});
+
+const boot0 = async (width: number, height: number, key: string) => {
+	const v = await hub.view({ width, height });
+	await v.navigate(`${hub.origin}/`);
+	await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh`);
+	await run(v, `go("monitoring")`);
+	await waitFor(v, `PQ.loaded && PQ.list.length && monItems().some(i => i.key === ${JSON.stringify(key)})`);
+	await run(v, `go("monitoring", ${JSON.stringify(key)})`);
+	return v;
+};
+const openScreen0 = async (v: View) => {
+	await waitFor(v, `[...document.querySelectorAll("[data-as-more]")].some(b => b.offsetParent && !b.hidden)`);
+	await run(v, `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden).click()`);
+	await waitFor(v, `document.querySelector('.as-screen #app-sw [data-k="label"]')`);
+};

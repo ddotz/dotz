@@ -1,0 +1,15 @@
+/* 화면 안내 (web/js/42-intro.js): the spotlight is a hole in the scrim over a real menu, the card sits next to it (above the tab bar on a phone) or in the middle. */
+.intro { position: fixed; inset: 0; z-index: 1500; }
+.intro-spot { position: fixed; border-radius: var(--r-ctl); box-shadow: 0 0 0 200vmax var(--scrim); outline: 2px solid var(--accent); }
+.intro-spot.none { outline: 0; inset: 0; border-radius: 0; box-shadow: none; background: var(--scrim); }
+.intro-tip { position: fixed; display: flex; flex-direction: column; width: min(340px, calc(100% - var(--sp-6))); padding: var(--sp-5); border-radius: var(--r-sheet); background: var(--pop); box-shadow: var(--float); }
+.intro-tip.mid { inset: 0; margin: auto; height: fit-content; width: min(var(--sheet-w), calc(100% - var(--sp-6))); }
+.intro-n { margin-bottom: var(--sp-15); color: var(--fg-3); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); }
+.intro-tip h2 { margin-top: var(--sp-3); font: 700 var(--fs-big)/var(--lh-big) var(--font); text-wrap: balance; }
+.intro-b { margin-top: var(--sp-2); color: var(--fg-2); font: 400 var(--fs-body)/var(--lh-body) var(--font); }
+.intro-keys { display: flex; flex-direction: column; margin-top: var(--sp-3); }
+.intro-key { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--btn-h); color: var(--fg-2); font: 400 var(--fs-body)/var(--lh-body) var(--font); }
+.intro-key kbd { min-width: calc(var(--sp-8) * 3); text-align: center; }
+.intro-ft { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-5); }
+.intro-skip { margin-right: auto; }
+@media (max-width: 1023px) { .intro-tip:not(.mid) { left: var(--sp-3); right: var(--sp-3); width: auto; } }

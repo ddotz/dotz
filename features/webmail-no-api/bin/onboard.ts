@@ -1,0 +1,102 @@
+// The one command behind "use this mail": bun onboard.ts <site> --url <inbox URL> [--channel ch:<id>] [--label <이름>] [--approve] [--har <file>]
+// [--restart] | --status. Runs lib/onboard.ts with the live Io: the owner's Aside browser in the background only (a tab that
+// is never focused and is closed at once; Aside itself is started hidden if it is not running), the browser's saved
+// password through `aside repl` (autofill, submitted by our own code; no `aside exec`, no secret ever goes into a prompt), the local gateway for the watches and the one
+// evolving progress message. Exit 0 done, 3 waiting for the owner (the printed ask), 1 failed (the printed reason).
+import { join } from "node:path";
+import { blockedByFeatures } from "../../../hub/featuredirs.ts";
+import { dataDir, liveCtx } from "../lib/config.ts";
+import { cookieHeaderFromAside } from "../lib/cookies.ts";
+import { liveGateway } from "../lib/gateway.ts";
+import { beforeKill, loginViaRepl } from "../lib/login.ts";
+import { loadOnboard, render, runOnboard, type Io, type LoginResult } from "../lib/onboard.ts";
+import { readRecording, recordSentViaAside, recordViaAside } from "./capture.ts";
+
+async function run(argv: string[], ms: number): Promise<string> {
+	const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
+	const timer = setTimeout(() => proc.kill(9), ms);
+	const out = await new Response(proc.stdout).text().catch(() => "");
+	await proc.exited;
+	clearTimeout(timer);
+	return out;
+}
+
+async function asideReady(): Promise<boolean> {
+	if (!Bun.which("aside")) return false;
+	const running = (await run(["pgrep", "-x", "Aside"], 5_000)).trim();
+	if (!running) await run(["open", "-g", "-j", "-a", "Aside"], 15_000);
+	return true;
+}
+
+async function loginState(url: string): Promise<"in" | "form" | "unknown"> {
+	const code = `const pg = await openTab(${JSON.stringify(url)});
+try {
+	await new Promise((r) => setTimeout(r, 4000));
+	const s = await pg.evaluate(() => ({ pw: !!document.querySelector('input[type=password]'), href: location.href }));
+	console.log('WM_LOGIN ' + (s.pw ? 'form' : 'in'));
+} finally { await closeTab(pg).catch(() => {}); }`;
+	const out = await run(["aside", "repl", beforeKill(code, 45_000)], 45_000);
+	const m = out.match(/WM_LOGIN (form|in)/);
+	return m ? (m[1] as "form" | "in") : "unknown";
+}
+
+async function login(url: string, allowSecondFactor: boolean): Promise<LoginResult> {
+	return loginViaRepl((code, ms) => run(["aside", "repl", beforeKill(code, ms)], ms), url, allowSecondFactor);
+}
+
+// The newest sent mails through mail.ts (the same read-only command the orchestrator uses), learned by reply-drafts as past replies and, for an instance
+// with no tone profile yet, as its own profile. Loaded on use: reply-drafts is not needed to connect a site.
+async function learnSent(site: string): Promise<string | undefined> {
+	const out = await run(["bun", join(import.meta.dir, "mail.ts"), site, "sent"], 30 * 60_000);
+	const items = out.split("\n").filter((l) => l.startsWith("{")).flatMap((l) => {
+		try {
+			return [JSON.parse(l)];
+		} catch {
+			return [];
+		}
+	});
+	if (!items.length) return "보낸편지함에서 읽을 수 있는 메일이 없어요: 예시 없이 씁니다";
+	const [{ learnSiteSent }, { defaultCall }, { loadSettings }] = await Promise.all([import("../../reply-drafts/lib/persona.ts"), import("../../reply-drafts/lib/flow.ts"), import("../../reply-drafts/lib/settings.ts")]);
+	return learnSiteSent(site, items, `mail-${site}`, defaultCall(loadSettings().model));
+}
+
+function liveIo(site: string, channel?: string): Io {
+	return {
+		ctx: liveCtx(cookieHeaderFromAside),
+		mailElsewhere: () => blockedByFeatures(dataDir(), "zele mail list")?.reason,
+		asideReady,
+		loginState,
+		login,
+		record: recordViaAside,
+		recordSent: recordSentViaAside,
+		learnSent,
+		gateway: liveGateway,
+		progress: async (text) => {
+			await liveGateway("POST", "/api/send", { target: channel ?? "chat", update_key: `webmail-onboard-${site}`, text });
+		},
+	};
+}
+
+async function main(argv: string[]): Promise<number> {
+	const site = argv[0] ?? "";
+	const get = (flag: string) => (argv.indexOf(flag) >= 0 ? argv[argv.indexOf(flag) + 1] : undefined);
+	if (!site || site.startsWith("--")) {
+		console.log("사용법: onboard.ts <site> --url <받은메일함 URL> [--channel ch:<id>] [--label <이름>] [--approve] [--har <파일>] [--restart] | <site> --status");
+		return 1;
+	}
+	if (argv.includes("--status")) {
+		const s = loadOnboard(site);
+		console.log(s ? render(s) : `${site}: 연결을 시작한 적이 없어요`);
+		return 0;
+	}
+	const har = get("--har");
+	const channel = get("--channel") ?? loadOnboard(site)?.channel;
+	const res = await runOnboard(liveIo(site, channel), { site, url: get("--url"), channel, label: get("--label"), approve: argv.includes("--approve"), restart: argv.includes("--restart"), ...(har ? { har: readRecording(har) } : {}) });
+	console.log(render(res.state));
+	console.log(`WEBMAIL_ONBOARD ${res.status}${res.step ? ` ${res.step}` : ""}`);
+	if (res.status === "waiting") console.log(`다음: 위 질문을 오너에게 한 번에 묻고, 답을 받으면 같은 명령에 --approve를 붙여 다시 실행해요`);
+	if (res.status === "failed") console.log("다음: 원인을 오너에게 알리고, 고친 뒤 같은 명령을 다시 실행하면 멈춘 단계부터 이어서 해요");
+	return res.status === "done" ? 0 : res.status === "waiting" ? 3 : 1;
+}
+
+if (import.meta.main) main(process.argv.slice(2)).then((code) => process.exit(code));

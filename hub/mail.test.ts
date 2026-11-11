@@ -1,0 +1,485 @@
+// Mail as conversations (hub/mail.ts): key rules, postMail with and without Discord, idempotency, validation and the wake turn,
+// with Discord and the event bus injected as fakes.
+import { describe, expect, test } from "bun:test";
+import "./conversations.ts"; // listens to the event bus: the first message of a mail conversation gives the mail its summary
+import { emit, eventTarget, type HubEvent } from "./events.ts";
+import { MailError, mailKeep, answeredBy, attachmentList, mailBriefOf, mailDraftBrief, settleMailDrafts, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, storedBodyText, type MailDeps } from "./mail.ts";
+import { moveMail } from "./mail-move.ts";
+import { setOwnAddresses } from "./mail-state.ts";
+import { outEvent } from "./projectchat.ts";
+
+function fakes(discordOn: boolean, channel: string | undefined = "1500000000001908448", threadOn: MailDeps["threadOn"] = () => true) {
+	const calls = { channels: 0, threads: [] as [string, string, string][], sends: [] as [string, string][], events: [] as Record<string, any>[], wakes: [] as [Record<string, any>, string][] };
+	let n = 0;
+	const deps: MailDeps = {
+		createThread: async (parent, name, starter) => {
+			calls.threads.push([parent, name, starter]);
+			return { id: `14300000000000000${++n}` };
+		},
+		send: async (target, text) => void calls.sends.push([target, text]),
+		mailChannel: async () => {
+			calls.channels++;
+			return channel;
+		},
+		discordOn,
+		threadOn,
+		emit: e => void calls.events.push(e),
+		wake: (e, target) => void calls.wakes.push([e, target]),
+	};
+	return { deps, calls };
+}
+let seq = 0;
+const uid = (p: string) => `${p}${Date.now().toString(36)}${++seq}`;
+
+describe("to-do and direct-answer lines", () => {
+	const post = (extra: object) => postMail({ source: "lines", id: uid("l"), subject: "일정 문의", from: "Kim <kim@example.com>", ...extra }, fakes(false).deps);
+	test("fields of their own stay apart from the summary", async () => {
+		const { key } = await post({ summary: "회의 일정을 물어요.", todo: "회의 시간 확인", questions: ["참석 인원은요?", "장소는요?"] });
+		const rec = mailByKey(key!)!;
+		expect([rec.summary, rec.todo, rec.questions]).toEqual(["회의 일정을 물어요.", ["회의 시간 확인"], ["참석 인원은요?", "장소는요?"]]);
+		expect(mailCard(rec)).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["참석 인원은요?", "장소는요?"] });
+	});
+	test("labelled lines of a posted summary move into the fields; a field the poster sent wins", async () => {
+		const { key } = await post({ summary: "회의 일정을 물어요.\n할 일: 회의 시간 확인\n질문: 참석 인원은요? / 장소는요?" });
+		expect(mailByKey(key!)).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["참석 인원은요?", "장소는요?"] });
+		const own = await post({ summary: "요약이에요.\n할 일: 요약 쪽", todo: ["필드 쪽"] });
+		expect(mailByKey(own.key!)).toMatchObject({ summary: "요약이에요.", todo: ["필드 쪽"] });
+	});
+	test("a stored record without the fields keeps working: its labelled lines are read, an unlabelled summary stays whole", async () => {
+		const rec = mailByKey((await post({ summary: "회의 일정을 물어요." })).key!)!;
+		expect(mailCard({ ...rec, summary: "회의 일정을 물어요.\n할 일: 회의 시간 확인" })).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"] });
+		const card = mailCard({ ...rec, summary: "다음 할 일을 정리했어요" });
+		expect(card.summary).toBe("다음 할 일을 정리했어요");
+		expect(card).not.toHaveProperty("todo");
+		expect(mailDraftBrief(rec.key)).toEqual({ from: "Kim <kim@example.com>", summary: "회의 일정을 물어요." });
+	});
+	test("the 할 일 of a summary still decides 답장 필요 after it moved into its field", async () => {
+		const owed = await post({ summary: "다음 주 일정 안내예요.\n할 일: 일정 회신" });
+		expect(mailByKey(owed.key!)?.reply).toBe("needs");
+		const none = await post({ summary: "자료를 요청하는 메일이에요.\n할 일: 없음" });
+		expect(mailByKey(none.key!)).toMatchObject({ summary: "자료를 요청하는 메일이에요.", todo: ["없음"] });
+		expect(mailByKey(none.key!)?.reply).toBeUndefined();
+		const field = await post({ summary: "다음 주 일정 안내예요.", todo: ["일정 회신"] });
+		expect(mailByKey(field.key!)?.reply).toBe("needs");
+	});
+	test("a repeat post fills in lines the first post did not have; the first message on a messenger lists them", async () => {
+		const id = uid("rep");
+		const f = fakes(true);
+		const { key } = await postMail({ source: "lines", id, subject: "일정 문의", summary: "회의 일정을 물어요." }, f.deps);
+		await postMail({ source: "lines", id, subject: "일정 문의", todo: ["회의 시간 확인"] }, f.deps);
+		expect(mailByKey(key!)?.todo).toEqual(["회의 시간 확인"]);
+		const g = fakes(true);
+		await postMail({ source: "lines", id: uid("msg"), subject: "일정 문의", summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] }, g.deps);
+		expect(g.calls.threads[0]![2].split("\n")).toEqual(expect.arrayContaining(["할 일: 회의 시간 확인", "직접 답할 것: 장소는요?"]));
+	});
+	test("a line field that is not text is refused", async () => {
+		await expect(post({ todo: [1] })).rejects.toThrow(MailError);
+	});
+});
+
+describe("mail key", () => {
+	test("lowercase source-id limited to [a-z0-9._-]", () => {
+		expect(mailKey("Zele", "18F3a.B_c")).toBe("zele-18f3a.b_c");
+		expect(mailKey("work mail", "<abc@host>")).toBe("work-mail-abc-host");
+		expect(mailTarget("zele-1")).toBe("mail:zele-1");
+	});
+	test("a source or id with nothing usable is rejected", () => {
+		expect(() => mailKey("", "1")).toThrow(MailError);
+		expect(() => mailKey("zele", "한글만")).toThrow(MailError);
+		expect(() => mailKey("...", "1")).toThrow(MailError);
+	});
+});
+
+describe("the account of a mail an outside watch posts", () => {
+	test("the one zele account among its recipients is the account; none or two leave it unknown", async () => {
+		const { deps } = fakes(false);
+		setOwnAddresses("zele", ["a@example.com", "b@example.com"]);
+		try {
+			const post = async (to: string) => mailByKey((await postMail({ source: "cat", id: uid("acct"), subject: "문서 요청", from: "Kim <kim@example.com>", to }, deps)).key)?.account;
+			expect(await post("Owner <a@example.com>")).toBe("a@example.com");
+			expect(await post("kim@example.com")).toBeUndefined();
+			expect(await post("a@example.com, b@example.com")).toBeUndefined();
+		} finally {
+			setOwnAddresses("zele", []);
+		}
+	});
+});
+
+describe("moveMail", () => {
+	test("a mail filed under the wrong app moves with its body and files, the old key is gone and stays gone", async () => {
+		const { deps } = fakes(false);
+		const id = uid("mv");
+		const first = await postMail({ source: "general", id, messageId: "m1", subject: "파트 문서 공유", from: "Kim <kim@example.com>", html: "<p>문서 부탁드립니다</p>", attachments: [{ name: "a.txt", data: Buffer.from("hi").toString("base64") }] }, deps);
+		const moved = await moveMail(first.key, "orders", deps);
+		expect(moved.key).toBe(mailKey("orders", id));
+		expect(mailByKey(first.key)).toBeUndefined();
+		expect(mailByKey(moved.key)).toMatchObject({ source: "orders", subject: "파트 문서 공유", msg: "m1" });
+		expect(mailByKey(moved.key)!.attachments!.map(a => a.name)).toEqual(["a.txt"]);
+		expect(storedBodyText(moved.key)).toContain("문서 부탁드립니다");
+		expect(await postMail({ source: "general", id, messageId: "m1", subject: "파트 문서 공유" }, deps)).toMatchObject({ skipped: true });
+	});
+
+	test("a moved mail keeps its to-do and direct-answer lines", async () => {
+		const { deps } = fakes(false);
+		const first = await postMail({ source: "general", id: uid("mv"), subject: "일정 문의", summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] }, deps);
+		const moved = await moveMail(first.key, "orders", deps);
+		expect(mailByKey(moved.key)).toMatchObject({ summary: "회의 일정을 물어요.", todo: ["회의 시간 확인"], questions: ["장소는요?"] });
+	});
+
+	test("an unknown mail is refused", async () => {
+		await expect(moveMail("general-none", "orders", fakes(false).deps)).rejects.toBeInstanceOf(MailError);
+	});
+});
+
+describe("postMail", () => {
+	test("with a poster's thread: recorded, one mail event in mail:<key>, no thread opened", async () => {
+		const { deps, calls } = fakes(true);
+		const id = uid("t");
+		const r = await postMail({ source: "acme", id, subject: "견적 요청", from: "Kim <kim@example.com>", summary: "금요일까지 회신 요청", body: "본문입니다", thread: "1430000000000009999" }, deps);
+		expect(r).toEqual({ ok: true, key: `acme-${id}`, target: `mail:acme-${id}`, thread: "1430000000000009999" });
+		expect(calls.threads).toEqual([]);
+		expect(calls.sends).toEqual([]);
+		expect(calls.events).toHaveLength(1);
+		const e = calls.events[0]!;
+		expect(e).toMatchObject({ kind: "mail", source: "acme", channel: r.target, conv: r.target, mail: r.key });
+		expect(String(e.text).split("\n")[0]).toBe("Kim <kim@example.com> · 견적 요청");
+		expect(e.text).toContain("금요일까지 회신 요청");
+		expect(e.text).toContain("원문\n본문입니다");
+		expect(eventTarget(e as HubEvent)).toBe(r.target);
+		expect(mailByThread("1430000000000009999")?.key).toBe(r.key);
+		expect(mailTargets()).toContain(r.target);
+		expect(calls.wakes).toEqual([]);
+	});
+
+	// The mail view always names who sent it, who it is for and, when there is one, the 참조 list (web 30-mail-thread.js draws it);
+	// the poster's strings are kept as sent (a header list of "Name <addr>", comma separated) and come back in the card the web reads.
+	test("to and cc are stored as sent and come back in the mail card and its event", async () => {
+		const { deps, calls } = fakes(false);
+		const id = uid("cc");
+		const to = "나 <me@example.com>";
+		const cc = "Lee <lee@example.com>, Park <park@example.com>";
+		const r = await postMail({ source: "plug", id, subject: "참조 확인", from: "Kim <kim@example.com>", to, cc }, deps);
+		expect(mailByKey(r.key)).toMatchObject({ to, cc });
+		expect(mailCard(mailByKey(r.key)!)).toMatchObject({ to, cc, subject: "참조 확인", from: "Kim <kim@example.com>" });
+		expect(calls.events[0]).toMatchObject({ to, cc });
+		// an outgoing mail keeps them too
+		const out = await postMail({ source: "plug", id: uid("cc-out"), subject: "보낸 메일", from: "나 <me@example.com>", to: "Kim <kim@example.com>", cc, direction: "out" }, deps);
+		expect(mailCard(mailByKey(out.key)!)).toMatchObject({ to: "Kim <kim@example.com>", cc, dir: "out" });
+	});
+
+	test("no thread, Discord on: the hub opens one thread in the mail channel and puts the body in it", async () => {
+		const { deps, calls } = fakes(true);
+		const id = uid("d");
+		const r = await postMail({ source: "zele", id, subject: "회의 안내", from: "Lee", summary: "내일 10시", body: "자세한 내용" }, deps);
+		expect(calls.threads).toEqual([["ch:1500000000001908448", "회의 안내", "Lee\n내일 10시"]]);
+		expect(r.thread).toBe("143000000000000001");
+		expect(calls.sends).toEqual([[`th:${r.thread}`, "원문\n자세한 내용"]]);
+		expect(mailByKey(r.key)?.thread).toBe(r.thread);
+	});
+
+	test("Discord off: no thread, the mail lives in the web conversation only", async () => {
+		const { deps, calls } = fakes(false);
+		const r = await postMail({ source: "zele", id: uid("w"), subject: "web only" }, deps);
+		expect(calls.threads).toEqual([]);
+		expect(r.thread).toBeUndefined();
+		expect(r.target).toBe(`mail:${r.key}`);
+		expect(calls.events[0]).toMatchObject({ channel: r.target, conv: r.target });
+	});
+
+	test("Discord connected but 디스코드에도 올리기 not set (the default): web conversation only, no mail channel made, the wake goes to the web conversation", async () => {
+		for (const threadOn of [undefined, () => false]) {
+			const { deps, calls } = fakes(true, undefined, threadOn);
+			if (!threadOn) delete deps.threadOn;
+			const r = await postMail({ source: "zele", id: uid("off"), subject: "웹만", body: "본문", wake: true }, deps);
+			expect(calls.channels).toBe(0);
+			expect(calls.threads).toEqual([]);
+			expect(calls.sends).toEqual([]);
+			expect(r.thread).toBeUndefined();
+			expect(calls.wakes.map(w => w[1])).toEqual([r.target]);
+		}
+	});
+
+	test("디스코드에도 올리기 is per mail: it gets the source and key of each mail, so one instance can open threads while another stays on the web", async () => {
+		const { deps, calls } = fakes(true, "1500000000001908448", source => source === "naver");
+		const on = await postMail({ source: "naver", id: uid("i"), subject: "켜진 계정", wake: true }, deps);
+		const off = await postMail({ source: "zele", id: uid("i"), subject: "꺼진 계정", wake: true }, deps);
+		expect(on.thread).toBeDefined();
+		expect(off.thread).toBeUndefined();
+		expect(calls.threads.map(t => t[1])).toEqual(["켜진 계정"]);
+		expect(calls.wakes.map(w => w[1])).toEqual([`th:${on.thread}`, off.target]);
+	});
+
+	test("the same mail posted again is a duplicate: nothing emitted, no second thread", async () => {
+		const { deps, calls } = fakes(true);
+		const input = { source: "zele", id: uid("dup"), subject: "다시" };
+		const [a, b] = await Promise.all([postMail(input, deps), postMail(input, deps)]);
+		const c = await postMail(input, deps);
+		expect(a.duplicate).toBeUndefined();
+		expect(b.duplicate).toBe(true);
+		expect(c).toMatchObject({ key: a.key, thread: a.thread, duplicate: true });
+		expect(calls.threads).toHaveLength(1);
+		expect(calls.events).toHaveLength(1);
+	});
+
+	test("invalid input is refused before anything happens", async () => {
+		const { deps, calls } = fakes(true);
+		for (const bad of [null, "x", { id: "1", subject: "s" }, { source: "a", subject: "s" }, { source: "a", id: "1" }, { source: "a", id: "1", subject: " " }, { source: "a", id: "1", subject: "s", thread: "abc" }, { source: "a", id: "1", subject: "s", wake: "yes" }, { source: 3, id: "1", subject: "s" }])
+			await expect(postMail(bad, deps)).rejects.toBeInstanceOf(MailError);
+		expect(calls.events).toEqual([]);
+		expect(calls.threads).toEqual([]);
+	});
+
+	test("body and summary are capped", async () => {
+		const { deps, calls } = fakes(false);
+		await postMail({ source: "zele", id: uid("cap"), subject: "긴 메일", summary: "s".repeat(5000), body: "b".repeat(30000) }, deps);
+		const text = String(calls.events[0]!.text);
+		expect(text).toContain("s".repeat(2000));
+		expect(text).not.toContain("s".repeat(2001));
+		expect(text).toContain("b".repeat(20000));
+		expect(text).not.toContain("b".repeat(20001));
+	});
+
+	test("wake: one orchestrator turn, answered in the thread when there is one, else in the web conversation", async () => {
+		const on = fakes(true);
+		const r1 = await postMail({ source: "zele", id: uid("k"), subject: "깨우기", wake: true }, on.deps);
+		expect(on.calls.wakes.map(([, t]) => t)).toEqual([`th:${r1.thread}`]);
+		expect(on.calls.wakes[0]![0]).toBe(on.calls.events[0]);
+		const off = fakes(false);
+		const r2 = await postMail({ source: "zele", id: uid("k"), subject: "깨우기", wake: true }, off.deps);
+		expect(off.calls.wakes.map(([, t]) => t)).toEqual([r2.target]);
+		const quiet = fakes(false);
+		await postMail({ source: "acme", id: uid("k"), subject: "조용히" }, quiet.deps);
+		expect(quiet.calls.wakes).toEqual([]);
+	});
+
+	test("offerDraft: called once for a new mail with its key, target, thread and body; never for the duplicate; a throw does not break postMail", async () => {
+		const { deps, calls } = fakes(true);
+		const offers: Record<string, any>[] = [];
+		deps.offerDraft = m => void offers.push(m);
+		const input = { source: "zele", id: uid("o"), subject: "회의 일정 문의", from: "kim@example.com", body: "목요일 가능할까요?" };
+		const a = await postMail(input, deps);
+		await postMail(input, deps);
+		expect(offers).toHaveLength(1);
+		expect(offers[0]).toMatchObject({ key: a.key, target: a.target, thread: a.thread, source: "zele", id: input.id, subject: "회의 일정 문의", from: "kim@example.com", body: "목요일 가능할까요?" });
+		expect(calls.events).toHaveLength(1);
+		deps.offerDraft = () => {
+			throw new Error("boom");
+		};
+		const r = await postMail({ source: "zele", id: uid("o"), subject: "던짐" }, deps);
+		expect(r.duplicate).toBeUndefined();
+		expect(mailByKey(r.key)).toBeDefined();
+		expect(calls.events).toHaveLength(2);
+	});
+
+	test("offerDraft is told which mail needs a reply: a CC copy, list mail or a notice does not", async () => {
+		const { deps } = fakes(false);
+		const offers: string[] = [];
+		deps.offerDraft = m => void offers.push(`${m.subject}:${m.needs}`);
+		setOwnAddresses("test", ["owner@example.com"]);
+		try {
+			const ask = { source: "zele", from: "kim@example.com", body: "검토 부탁드립니다" };
+			await postMail({ ...ask, id: uid("g"), subject: "to", to: "owner@example.com" }, deps);
+			await postMail({ ...ask, id: uid("g"), subject: "cc", to: "lee@example.com", cc: "owner@example.com" }, deps);
+			await postMail({ ...ask, id: uid("g"), subject: "list", to: "team@example.com" }, deps);
+			await postMail({ ...ask, id: uid("g"), subject: "[공지] 일정", to: "owner@example.com" }, deps);
+			expect(offers).toEqual(["to:true", "cc:false", "list:false", "[공지] 일정:false"]);
+		} finally {
+			setOwnAddresses("test", []);
+		}
+	});
+
+	test("a suggested reply draft is kept on the mail record and can be cleared; an unknown mail takes none", async () => {
+		const { deps } = fakes(false);
+		const r = await postMail({ source: "zele", id: uid("sg"), subject: "회의 일정 문의", from: "kim@example.com" }, deps);
+		expect(setMailSuggest(r.key, { kind: "reply-draft", label: "답장 초안", ref: "RABC234" })).toBe(true);
+		expect(mailByKey(r.key)?.suggest).toEqual({ kind: "reply-draft", label: "답장 초안", ref: "RABC234" });
+		expect(mailByKey(r.key)?.subject).toBe("회의 일정 문의");
+		expect(setMailSuggest(r.key, undefined)).toBe(true);
+		expect(mailByKey(r.key)?.suggest).toBeUndefined();
+		expect(setMailSuggest("zele-nope-unknown", { kind: "reply-draft", label: "답장 초안", ref: "RX" })).toBe(false);
+	});
+
+	test("a thread that cannot be opened leaves the mail web-only", async () => {
+		const { deps, calls } = fakes(true);
+		deps.createThread = async () => {
+			throw new Error("discord down");
+		};
+		const r = await postMail({ source: "zele", id: uid("f"), subject: "실패" }, deps);
+		expect(r.thread).toBeUndefined();
+		expect(calls.events).toHaveLength(1);
+	});
+});
+
+describe("a backfill keeps each mail's own time", () => {
+	const NOW = "2026-10-31T10:00:00.000Z";
+	test("a valid `at` (or `date`) is the mail's time in the record and its event; a future one or none is now", async () => {
+		const { deps, calls } = fakes(false);
+		deps.now = () => NOW;
+		const [a, b, c, d] = [uid("at"), uid("at"), uid("at"), uid("at")];
+		await postMail({ source: "zele", id: a, subject: "old", at: "2026-10-24T11:00:00+09:00" }, deps);
+		await postMail({ source: "zele", id: b, subject: "old by date", date: "2026-10-20T08:30:00Z" }, deps);
+		await postMail({ source: "zele", id: c, subject: "future", at: "2099-01-01T00:00:00Z" }, deps);
+		await postMail({ source: "zele", id: d, subject: "locale text", at: "10월 24일, 오전 11:00" }, deps);
+		expect([a, b, c, d].map(id => mailByKey(`zele-${id}`)!.at)).toEqual(["2026-10-24T02:00:00.000Z", "2026-10-20T08:30:00.000Z", NOW, NOW]);
+		expect(calls.events.map(e => e.ts)).toEqual(["2026-10-24T02:00:00.000Z", "2026-10-20T08:30:00.000Z", NOW, NOW]);
+	});
+	test("a repeat with an `at` gives a mail stamped at the post time its real date, as a duplicate with no event; a future `at` changes nothing", async () => {
+		const { deps, calls } = fakes(false);
+		deps.now = () => NOW;
+		const id = uid("at");
+		await postMail({ source: "zele", id, messageId: "1|Jul 30", subject: "old" }, deps);
+		expect(mailByKey(`zele-${id}`)!.at).toBe(NOW);
+		const r = await postMail({ source: "zele", id, messageId: "1|Jul 30", subject: "old", at: "2026-07-30T09:15:00+09:00" }, deps);
+		expect(r.duplicate).toBe(true);
+		expect(mailByKey(`zele-${id}`)!.at).toBe("2026-07-30T00:15:00.000Z");
+		await postMail({ source: "zele", id, messageId: "1|Jul 30", subject: "old", at: "2099-01-01T00:00:00Z" }, deps);
+		expect(mailByKey(`zele-${id}`)!.at).toBe("2026-07-30T00:15:00.000Z");
+		expect(calls.events.length).toBe(1);
+	});
+});
+
+describe("mail.keep", () => {
+	test("500 when unset or not a number, the configured count otherwise, held between 50 and 20000", () => {
+		expect(mailKeep({})).toBe(500);
+		expect(mailKeep({ mail: { keep: "2000" } })).toBe(500);
+		expect(mailKeep({ mail: { keep: 2000 } })).toBe(2000);
+		expect(mailKeep({ mail: { keep: 10 } })).toBe(50);
+		expect(mailKeep({ mail: { keep: 1e9 } })).toBe(20000);
+	});
+});
+
+describe("mail conversation identity", () => {
+	test("a send to a mail's thread carries its conversation; other threads do not", () => {
+		const mailOf = (t: string) => (t === "77" ? "mail:zele-x" : undefined);
+		const e = outEvent({ ts: "x", kind: "out", source: "orchestrator", target: "th:77", text: "답" }, () => undefined, mailOf);
+		expect(e.conv).toBe("mail:zele-x");
+		expect(eventTarget(e as HubEvent)).toBe("mail:zele-x");
+		expect(outEvent({ ts: "x", kind: "out", source: "orchestrator", target: "th:78", text: "답" }, () => undefined, mailOf)).not.toHaveProperty("conv");
+	});
+	test("a web-only answer, its delivery state and an inbound thread message all land in the mail conversation", () => {
+		expect(eventTarget({ ts: "x", kind: "out", source: "orchestrator", target: "mail:zele-x", text: "답" })).toBe("mail:zele-x");
+		expect(eventTarget({ ts: "x", kind: "delivery", source: "gateway", target: "mail:zele-x", text: "" })).toBe("mail:zele-x");
+		expect(eventTarget({ ts: "x", kind: "message", source: "discord", channel: "th:77", conv: "mail:zele-x", parent: "ch:5", text: "ㅇㅇ" })).toBe("mail:zele-x");
+	});
+});
+
+describe("a mail posted without a summary", () => {
+	const from = "Alex Sender <sender@example.com>";
+	test("mailBriefOf: the 요약 lines (max 3), else the original's first lines; never the sender or the subject", () => {
+		const both = [`${from} · 월간 점검`, "", "요약", "- 점검이 끝났어요.", "- 결과 확인이 필요해요.", "- 금요일까지 회신해 주세요.", "- 네 번째는 버려요.", "", "할 일", "- 회신", "", "원문", "안녕하세요."].join("\n");
+		expect(mailBriefOf(both, from, "월간 점검")).toBe("점검이 끝났어요.\n결과 확인이 필요해요.\n금요일까지 회신해 주세요.");
+		const orig = [`${from} · 월간 점검`, "", "원문", "월간 점검", "Alex Sender", "첫 줄입니다.", "둘째 줄입니다."].join("\n");
+		expect(mailBriefOf(orig, from, "월간 점검")).toBe("첫 줄입니다.\n둘째 줄입니다.");
+		expect(mailBriefOf(`${from} · 월간 점검`, from, "월간 점검")).toBe("");
+		expect(mailBriefOf("요약\n월간 점검\n\n원문\n본문입니다.", from, "월간 점검")).toBe("본문입니다.");
+	});
+
+	test("the first conversation message with text sets summary once; the owner's words and a header-only mail event do not", async () => {
+		const { deps } = fakes(false);
+		const id = uid("b");
+		const r = await postMail({ source: "plug", id, subject: "월간 점검", from }, deps);
+		expect(mailByKey(r.key)?.summary).toBeUndefined();
+		const at = (n: number) => new Date(Date.UTC(2099, 0, 1, 0, 0, n)).toISOString();
+		emit("outbox", { ts: at(1), kind: "mail", source: "plug", channel: r.target, conv: r.target, mail: r.key, subject: "월간 점검", from, text: `${from} · 월간 점검` });
+		emit("inbox", { ts: at(2), kind: "message", source: "web", channel: r.target, text: "요약\n- 내가 쓴 말" });
+		expect(mailByKey(r.key)?.summary).toBeUndefined();
+		emit("outbox", { ts: at(3), kind: "out", source: "orchestrator", target: r.target, text: `${from} · 월간 점검\n\n요약\n- 점검이 끝났어요.\n- 확인이 필요해요.\n\n원문\n본문입니다.` });
+		expect(mailByKey(r.key)?.summary).toBe("점검이 끝났어요.\n확인이 필요해요.");
+		emit("outbox", { ts: at(4), kind: "out", source: "orchestrator", target: r.target, text: "요약\n- 나중 말" });
+		expect(mailByKey(r.key)?.summary).toBe("점검이 끝났어요.\n확인이 필요해요.");
+	});
+
+	test("a conversation with neither a 요약 section nor an original leaves the mail without a summary", async () => {
+		const { deps } = fakes(false);
+		const r = await postMail({ source: "plug", id: uid("n"), subject: "본문 없는 메일", from }, deps);
+		emit("outbox", { ts: "2099-01-01T01:00:00.000Z", kind: "out", source: "orchestrator", target: r.target, text: `${from} · 본문 없는 메일` });
+		expect(mailByKey(r.key)?.summary).toBeUndefined();
+	});
+});
+
+test("a source that reports the sender by a cut-off name only: the mail is recorded with the address its own text names", async () => {
+	const { deps } = fakes(false);
+	const id = uid("nm");
+	const r = await postMail({ source: "plug", id, subject: "Re: 자료", from: "Jisoo Han (KR - A", to: "me@corp.example", body: "감사합니다.\nJisoo Han (KR)\nEmail: jisoo.han@audit.example" }, deps);
+	expect(mailByKey(r.key)!.from).toBe("Jisoo Han <jisoo.han@audit.example>");
+	const html = await postMail({ source: "plug", id: uid("nh"), subject: "Re: 자료", from: "Jisoo Han (KR - A", html: "<p>보낸 사람: Jisoo Han (KR - Assurance) &lt;jisoo.han@audit.example&gt;</p>" }, deps);
+	expect(mailByKey(html.key)!.from).toBe("Jisoo Han <jisoo.han@audit.example>");
+	const none = await postMail({ source: "plug", id: uid("nn"), subject: "Re: 자료", from: "Jisoo Han (KR - A", body: "주소 없음" }, deps);
+	expect(mailByKey(none.key)!.from).toBe("Jisoo Han (KR - A");
+});
+
+describe("a repeat post completes the record", () => {
+	const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64").toString("base64");
+	test("받는 사람 / 참조, an address-less sender and the body's pictures fill in; nothing else changes and nothing is posted again", async () => {
+		const { deps, calls } = fakes(false);
+		let offered: { attachments?: { name: string }[] } | undefined;
+		deps.offerDraft = m => void (offered = m);
+		const id = uid("rep");
+		await postMail({ source: "zele", id, subject: "견적", from: "Han (KR - A", html: "<p>본문</p><img src=\"cid:pic-1\">", body: "본문" }, deps);
+		const key = mailKey("zele", id), before = mailByKey(key)!;
+		expect([before.to, before.cc, before.attachments]).toEqual([undefined, undefined, undefined]);
+		const events = calls.events.length;
+		const html = "<p>본문</p><img src=\"cid:pic-1\">";
+		const r = await postMail({ source: "zele", id, subject: "견적", from: "\"Han (KR - ASR)\" <lee@example.com>", to: "kim@example.com", cc: "\"Park\" <park@example.com>", html, body: "본문",
+			attachments: [{ name: "image.png", type: "image/png", data: PNG, cid: "pic-1" }, { name: "견적서.pdf", data: PNG }] }, deps);
+		expect(r.duplicate).toBe(true);
+		const after = mailByKey(key)!;
+		expect([after.from, after.to, after.cc]).toEqual(["\"Han (KR - ASR)\" <lee@example.com>", "kim@example.com", "\"Park\" <park@example.com>"]);
+		// only the body's picture is added (a real file of a known mail is not this path's business); it is marked inline and drawn in place
+		expect(attachmentList(after)).toEqual([{ name: "image.png", type: "image/png", size: Buffer.from(PNG, "base64").length, inline: true }]);
+		expect(after.reply).toBe(before.reply);
+		expect(calls.events.length).toBe(events);
+		const body = await (await import("./mail.ts")).mailBodyRoute(key).text();
+		expect(body).toContain(`src="/api/mail/${key}/files/0"`);
+		// a second repeat changes nothing more
+		await postMail({ source: "zele", id, subject: "견적", from: "x <x@example.com>", to: "y@example.com", html, attachments: [{ name: "image.png", data: PNG, cid: "pic-1" }] }, deps);
+		expect(mailByKey(key)).toEqual(after);
+		expect(offered).toBeDefined();
+	});
+	test("a new mail's body pictures are inline and are not offered to the reply draft as files", async () => {
+		const { deps } = fakes(false);
+		let offered: { attachments?: { name: string }[] } | undefined;
+		deps.offerDraft = m => void (offered = m);
+		const id = uid("pic");
+		await postMail({ source: "zele", id, subject: "그림", from: "a@example.com", body: "자료 검토 부탁드립니다", html: "<img src=\"cid:p2\">", attachments: [{ name: "logo.png", data: PNG, cid: "p2" }, { name: "자료.xlsx", data: PNG }, { name: "unused.png", data: PNG, cid: "not-in-body" }] }, deps);
+		expect(attachmentList(mailByKey(mailKey("zele", id))!).map(a => [a.name, !!a.inline])).toEqual([["logo.png", true], ["자료.xlsx", false], ["unused.png", false]]);
+		expect(offered?.attachments?.map(a => a.name)).toEqual(["자료.xlsx", "unused.png"]);
+	});
+});
+
+describe("the sent folder and the reply state", () => {
+	test("a sent mail answering a received one (Re:, to its sender, later) marks it 답장함 and is listed as 보낸 메일 at its own time", async () => {
+		const { deps } = fakes(false);
+		const a = uid("in"), b = uid("in"), s = uid("out");
+		await postMail({ source: "zele", id: a, subject: "견적 요청", from: "\"김 과장\" <kim@example.com>" }, deps);
+		await postMail({ source: "zele", id: b, subject: "견적 요청", from: "lee@example.com" }, deps);   // same subject, another sender
+		const at = new Date(Date.now() + 60_000).toISOString().replace("Z", "+00:00");
+		const r = await postMail({ source: "zele", id: s, subject: "RE: Re: 견적 요청", from: "me@example.com", to: "\"김 과장\" <KIM@example.com>", direction: "out", at }, deps);
+		expect(r.replied).toBe(true);
+		expect(mailByKey(mailKey("zele", a))!.reply).toBe("replied");
+		expect(mailByKey(mailKey("zele", b))!.reply).not.toBe("replied");
+		const out = mailByKey(mailKey("zele", s))!;
+		expect([out.dir, out.at]).toEqual(["out", new Date(at).toISOString()]);
+	});
+	test("a sent mail older than the received one, or to someone else, answers nothing", async () => {
+		const { deps } = fakes(false);
+		const a = uid("in");
+		await postMail({ source: "zele", id: a, subject: "일정", from: "kim@example.com" }, deps);
+		expect(answeredBy({ subject: "Re: 일정", to: "kim@example.com", at: "2000-01-01T00:00:00.000Z" })).toEqual([]);
+		expect(answeredBy({ subject: "Re: 일정", to: "park@example.com", at: "2999-01-01T00:00:00.000Z" })).toEqual([]);
+		expect(answeredBy({ subject: "Fwd: 일정", to: "kim@example.com", at: "2999-01-01T00:00:00.000Z" })).toContain(mailKey("zele", a));
+	});
+	test("a dropped draft takes its 초안 있음 off and the mail goes back to 답장 필요; a waiting one stays", async () => {
+		const { deps } = fakes(false);
+		const a = uid("dr"), b = uid("dr");
+		for (const id of [a, b]) await postMail({ source: "zele", id, subject: "질문 있어요?", from: "kim@example.com" }, deps);
+		const ka = mailKey("zele", a), kb = mailKey("zele", b);
+		setMailSuggest(ka, { kind: "reply-draft", label: "답장 초안", ref: "D1" });
+		setMailSuggest(kb, { kind: "reply-draft", label: "답장 초안", ref: "D2" });
+		expect([mailByKey(ka)!.reply, mailByKey(kb)!.reply]).toEqual(["draft", "draft"]);
+		expect(settleMailDrafts([{ id: "D1", ref: ka, status: "dropped" }, { id: "D2", ref: kb, status: "pending" }])).toBe(true);
+		expect([mailByKey(ka)!.reply, mailByKey(ka)!.suggest]).toEqual(["needs", undefined]);
+		expect([mailByKey(kb)!.reply, mailByKey(kb)!.suggest?.ref]).toEqual(["draft", "D2"]);
+		expect(settleMailDrafts([{ id: "D1", ref: ka, status: "dropped" }, { id: "D2", ref: kb, status: "pending" }])).toBe(false);
+	});
+});

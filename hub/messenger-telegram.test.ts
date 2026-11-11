@@ -1,0 +1,244 @@
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type MessageSpec, specOfElements } from "./message-spec.ts";
+import type { Incoming, Settings } from "./messenger.ts";
+import { createTelegramAdapter, loadTelegramConfig, saveTelegramConfig, telegramConfigPath } from "./messenger-telegram.ts";
+
+const TOKEN = "123456789:test-token-not-real";
+const dirs: string[] = [];
+
+const tempDir = (): string => {
+	const dir = mkdtempSync(join(tmpdir(), "telegram-test-"));
+	dirs.push(dir);
+	return dir;
+};
+
+type Call = { method: string; body: any };
+type Fake = { calls: Call[]; fetch: typeof fetch };
+
+function telegramFetch(options: { updates?: unknown[]; rejectGetMe?: boolean; apiError?: boolean } = {}): Fake {
+	const calls: Call[] = [];
+	const doFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+		const method = String(input).split("/").pop() ?? "";
+		const body = init?.body ? JSON.parse(String(init.body)) : {};
+		calls.push({ method, body });
+		if (options.rejectGetMe) throw new Error(`network failed for ${TOKEN}`);
+		if (options.apiError) return Response.json({ ok: false, description: "Unauthorized" }, { status: 401 });
+		if (method === "getMe") return Response.json({ ok: true, result: { id: 7, is_bot: true, username: "dotz_bot" } });
+		if (method === "getUpdates") {
+			const offset = Number(body.offset ?? -Infinity);
+			return Response.json({ ok: true, result: (options.updates ?? []).filter(u => Number((u as { update_id?: number }).update_id) >= offset) });
+		}
+		if (method === "sendMessage") return Response.json({ ok: true, result: { message_id: 100 + calls.length, chat: { id: body.chat_id } } });
+		return Response.json({ ok: false, description: "unknown method" }, { status: 404 });
+	};
+	return { calls, fetch: doFetch as typeof fetch };
+}
+
+const ctx = (received: Incoming[]) => ({ receive: (m: Incoming) => received.push(m), log: () => {} });
+
+afterAll(() => {
+	for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+});
+
+describe("telegram messenger", () => {
+	test("the config is written 0600 and the settings show the token only as set", () => {
+		const dir = tempDir();
+		const a = createTelegramAdapter(dir, { fetch: telegramFetch().fetch });
+		const seen = a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "123456789" }, allow: ["42", "42"] }) as Settings;
+		expect(statSync(telegramConfigPath(dir)).mode & 0o777).toBe(0o600);
+		expect(loadTelegramConfig(dir)).toMatchObject({ enabled: true, token: TOKEN, allow: ["42"] });
+		expect(JSON.parse(readFileSync(telegramConfigPath(dir), "utf8")).token).toBe(TOKEN);
+		expect(JSON.stringify(seen)).not.toContain(TOKEN);
+		const token = seen.fields.find(f => f.key === "token")!;
+		expect(token).toMatchObject({ type: "secret", set: true });
+		expect(token).not.toHaveProperty("value");
+		expect(a.configured!()).toBe(true);
+	});
+
+	test("start verifies getMe and reports ok or a scrubbed error", async () => {
+		const okDir = tempDir();
+		const okFake = telegramFetch();
+		const a = createTelegramAdapter(okDir, { fetch: okFake.fetch, pollMs: 60_000 });
+		a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "123456789" }, allow: ["42"] });
+		await a.start(ctx([]));
+		try {
+			expect(a.status.state).toBe("ok");
+			expect(okFake.calls[0]!.method).toBe("getMe");
+		} finally {
+			a.stop();
+		}
+
+		const badDir = tempDir();
+		const bad = createTelegramAdapter(badDir, { fetch: telegramFetch({ rejectGetMe: true }).fetch, pollMs: 60_000 });
+		bad.saveSettings!({ enabled: true, values: { token: TOKEN, main: "123456789" }, allow: ["42"] });
+		await bad.start(ctx([]));
+		expect(bad.status.state).toBe("error");
+		expect(bad.status.error).toContain("***");
+		expect(bad.status.error).not.toContain(TOKEN);
+		bad.stop();
+
+		const apiDir = tempDir();
+		const refused = createTelegramAdapter(apiDir, { fetch: telegramFetch({ apiError: true }).fetch, pollMs: 60_000 });
+		refused.saveSettings!({ enabled: true, values: { token: TOKEN, main: "123456789" } });
+		await refused.start(ctx([]));
+		expect(refused.status.state).toBe("error");
+		expect(refused.status.error).toBe("Unauthorized");
+		refused.stop();
+	});
+
+	test("deliver sends to the chat of the message kind, and a project falls back to main", async () => {
+		const dir = tempDir();
+		saveTelegramConfig(
+			{
+				enabled: true,
+				token: TOKEN,
+				chats: [
+					{ id: "111", name: "dotz", kind: "main" },
+					{ id: "-222", name: "dotz-알림", kind: "alert" },
+					{ id: "-333", name: "dotz-site", kind: "project", project: "ch:9" },
+				],
+				allow: [],
+			},
+			dir,
+		);
+		const fake = telegramFetch();
+		const a = createTelegramAdapter(dir, { fetch: fake.fetch, pollMs: 60_000 });
+		const alert = await a.deliver({ target: "alert", kind: "alert", text: "알림 본문" });
+		expect(alert.delivered).toBe(true);
+		expect(fake.calls[0]).toMatchObject({ method: "sendMessage", body: { chat_id: "-222", text: "알림 본문" } });
+
+		const project = await a.deliver({ target: "ch:9", kind: "project", text: "프로젝트 본문" });
+		expect(project.delivered).toBe(true);
+		expect(fake.calls[1]!.body.chat_id).toBe("-333");
+
+		const other = await a.deliver({ target: "ch:404", kind: "project", text: "다른 프로젝트" });
+		expect(other.delivered).toBe(true);
+		expect(fake.calls[2]!.body.chat_id).toBe("111");
+	});
+
+	test("a poll takes only allow-listed authors' text messages and persists the offset", async () => {
+		const dir = tempDir();
+		const updates = [
+			{ update_id: 10, message: { message_id: 1, text: "안녕", from: { id: 42 }, chat: { id: 111 } } },
+			{ update_id: 11, message: { message_id: 2, text: "남의 말", from: { id: 43 }, chat: { id: 111 } } },
+			{ update_id: 12, message: { message_id: 3, photo: [{ file_id: "x" }], from: { id: 42 }, chat: { id: 111 } } },
+			{ update_id: 13, message: { message_id: 4, text: "알림방", from: { id: 42 }, chat: { id: -222 } } },
+			{ update_id: 14, message: { message_id: 5, text: "취소", forward_date: 1, from: { id: 42 }, chat: { id: 111 } } },
+			{ update_id: 15, message: { message_id: 6, text: "취소", reply_to_message: { text: "메일 보낼까요?" }, from: { id: 42 }, chat: { id: 111 } } },
+		];
+		const fake = telegramFetch({ updates });
+		const a = createTelegramAdapter(dir, { fetch: fake.fetch, pollMs: 60_000 });
+		a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "111", alert: "-222" }, allow: ["42"] });
+		const received: Incoming[] = [];
+		await a.start(ctx(received));
+		await a.pollNow();
+		a.stop();
+
+		expect(received).toEqual([
+			{ adapter: "telegram", target: "main", text: "안녕", author: "42", messageId: "1" },
+			{ adapter: "telegram", target: "alert", text: "알림방", author: "42", messageId: "4" },
+			{ adapter: "telegram", target: "main", text: "취소", author: "42", messageId: "5", quoted: "취소" },
+			{ adapter: "telegram", target: "main", text: "취소", author: "42", messageId: "6", quoted: "메일 보낼까요?" },
+		]);
+		expect(loadTelegramConfig(dir).cursor).toBe(16);
+		const polls = fake.calls.filter(c => c.method === "getUpdates");
+		expect(polls).toHaveLength(1);
+		expect(polls[0]!.body).toMatchObject({ limit: 100, timeout: 0 });
+
+		await a.start(ctx(received));
+		await a.pollNow();
+		a.stop();
+		const second = fake.calls.filter(c => c.method === "getUpdates");
+		expect(second[1]!.body).toMatchObject({ offset: 16, limit: 100, timeout: 0 });
+		expect(received).toHaveLength(4);
+
+		const settings = a.settings!() as Settings;
+		expect(JSON.stringify(settings)).not.toContain(TOKEN);
+	});
+
+	test("a refused body changes nothing", () => {
+		const dir = tempDir();
+		const a = createTelegramAdapter(dir, { fetch: telegramFetch().fetch });
+		a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "111" }, allow: ["42"] });
+		const before = readFileSync(telegramConfigPath(dir), "utf8");
+		for (const bad of [{ values: { token: "not-a-token" } }, { values: { main: "bad id!" } }, { values: { nope: "x" } }, { allow: [1] }, { enabled: "yes" }]) {
+			expect(() => a.saveSettings!(bad as never)).toThrow();
+		}
+		expect(readFileSync(telegramConfigPath(dir), "utf8")).toBe(before);
+	});
+});
+
+describe("telegram web link", () => {
+	const LINK = "https://dotz.example.com/#chat/main";
+	test("a link rides as one inline URL button; a message without one has no keyboard", async () => {
+		const dir = tempDir();
+		saveTelegramConfig({ enabled: true, token: TOKEN, chats: [{ id: "111", name: "main", kind: "main" }], allow: [] }, dir);
+		const fake = telegramFetch();
+		const a = createTelegramAdapter(dir, { fetch: fake.fetch, pollMs: 60_000 });
+		expect(a.ownsLink).toBe(true);
+		await a.deliver({ target: "main", kind: "main", text: "끝났어요", link: LINK });
+		await a.deliver({ target: "main", kind: "main", text: "링크 없음" });
+		expect(fake.calls[0]!.body).toEqual({ chat_id: "111", text: "끝났어요", reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: LINK }]] } });
+		expect(fake.calls[1]!.body).toEqual({ chat_id: "111", text: "링크 없음" });
+	});
+
+	test("a status marker goes out as its emoji, never as the literal word", async () => {
+		const dir = tempDir();
+		saveTelegramConfig({ enabled: true, token: TOKEN, chats: [{ id: "111", name: "main", kind: "main" }], allow: [] }, dir);
+		const fake = telegramFetch();
+		const a = createTelegramAdapter(dir, { fetch: fake.fetch, pollMs: 60_000 });
+		await a.deliver({ target: "main", kind: "main", text: "[fail] 보내지 못했어요" });
+		await a.deliver({ target: "main", kind: "main", text: "[done] 끝났어요" });
+		expect(fake.calls.map(c => (c.body as { text: string }).text)).toEqual(["❌ 보내지 못했어요", "✅ 끝났어요"]);
+	});
+});
+
+describe("telegram spec answers", () => {
+	const shaped = specOfElements([{ type: "Facts", props: { rows: [{ key: "상태", value: "<script>정상</script>" }] } }]);
+	const make = (fake: Fake, spec: (body: string) => MessageSpec | null) => {
+		const a = createTelegramAdapter(tempDir(), { fetch: fake.fetch, pollMs: 60_000, spec });
+		a.saveSettings!({ enabled: true, values: { token: TOKEN, main: "111" }, allow: [] });
+		return a;
+	};
+	test("HTML goes with the keyboard and the reply, the tone emoji leads, nothing raw", async () => {
+		const fake = telegramFetch();
+		await make(fake, () => shaped).deliver({ target: "main", kind: "main", text: "[done] 끝", link: "https://dotz.example.com/a", replyTo: "55" });
+		expect(fake.calls).toHaveLength(1);
+		expect(fake.calls[0]!.body).toEqual({
+			chat_id: "111",
+			text: "✅ <b>상태</b>: &lt;script&gt;정상&lt;/script&gt;",
+			parse_mode: "HTML",
+			reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: "https://dotz.example.com/a" }]] },
+			reply_to_message_id: 55,
+		});
+	});
+	test("a 400 for parsing resends the plain text once with the same keyboard", async () => {
+		const calls: Call[] = [];
+		const fake: Fake = {
+			calls,
+			fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+				const body = JSON.parse(String(init?.body ?? "{}"));
+				calls.push({ method: String(input).split("/").pop() ?? "", body });
+				if (body.parse_mode) return Response.json({ ok: false, description: "Bad Request: can't parse entities" }, { status: 400 });
+				return Response.json({ ok: true, result: { message_id: 7 } });
+			}) as typeof fetch,
+		};
+		const res = await make(fake, () => shaped).deliver({ target: "main", kind: "main", text: "[done] 끝", link: "https://dotz.example.com/a" });
+		expect(res).toEqual({ delivered: true, ids: ["7"] });
+		expect(calls.map(c => c.body.parse_mode)).toEqual(["HTML", undefined]);
+		expect(calls[1]!.body.text).toBe("✅ - 상태: <script>정상</script>");
+		expect(calls[1]!.body.reply_markup).toEqual(calls[0]!.body.reply_markup);
+	});
+	test("a failure that is not a 400 is not resent, and no spec keeps today's body", async () => {
+		const bad = telegramFetch({ apiError: true });
+		const res = await make(bad, () => shaped).deliver({ target: "main", kind: "main", text: "x" });
+		expect(res.delivered).toBe(false);
+		expect(bad.calls.filter(c => c.method === "sendMessage")).toHaveLength(1);
+		const plain = telegramFetch();
+		await make(plain, () => null).deliver({ target: "main", kind: "main", text: "[done] 끝" });
+		expect(plain.calls[0]!.body).toEqual({ chat_id: "111", text: "✅ 끝" });
+	});
+});

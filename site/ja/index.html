@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dotz - 自分のパソコンで動き続けるパーソナルアシスタント</title>
+<meta name="description" content="dotz は自分のパソコンで動きます。新着メールを読んで返信の下書きを用意し、スマホで送信を押すまで待ちます。">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f2f4f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://ddotz.dev/ja/">
+<link rel="alternate" hreflang="en" href="https://ddotz.dev/">
+<link rel="alternate" hreflang="ko" href="https://ddotz.dev/ko/">
+<link rel="alternate" hreflang="ja" href="https://ddotz.dev/ja/">
+<link rel="alternate" hreflang="zh-CN" href="https://ddotz.dev/zh-cn/">
+<link rel="alternate" hreflang="es" href="https://ddotz.dev/es/">
+<link rel="alternate" hreflang="x-default" href="https://ddotz.dev/">
+<meta property="og:title" content="dotz - 自分のパソコンで動き続けるパーソナルアシスタント">
+<meta property="og:description" content="dotz は自分のパソコンで動きます。新着メールを読んで返信の下書きを用意し、スマホで送信を押すまで待ちます。">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:locale:alternate" content="ko_KR">
+<meta property="og:locale:alternate" content="zh_CN">
+<meta property="og:locale:alternate" content="es_ES">
+<meta property="og:url" content="https://ddotz.dev/ja/">
+<meta property="og:image" content="https://ddotz.dev/img/og.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="dotz の Web アプリのチャット画面。承認を待つ返信の下書きカードがある。">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css?v=690de961e260">
+<!-- The demo embedded below links back to this page. Opened inside that frame, the page reloads the window around it instead of nesting itself. -->
+<script>try { if (top !== self) top.location.replace(top.location.pathname); } catch {}</script>
+<script src="/app.js?v=690de961e260" defer></script>
+<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');</script>
+<script type="module" src="/js/stageshow.js?v=690de961e260" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">本文へ移動</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/ja/">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="7.4" cy="7.4" r="3.1"></circle>
+        <circle cx="16.6" cy="7.4" r="1.9"></circle>
+        <circle cx="7.4" cy="16.6" r="1.9"></circle>
+        <circle class="brand-mark-accent" cx="16.6" cy="16.6" r="3.1"></circle>
+      </svg>
+      <span>dotz</span>
+    </a>
+    <div class="header-end">
+      <nav class="header-nav">
+        <a href="/demo/">デモ</a>
+        <a href="https://github.com/ddotz/dotz/blob/main/docs/reference.md">ドキュメント</a>
+        <a href="https://github.com/ddotz/dotz">GitHub</a>
+      </nav>
+      <nav class="lang" aria-label="言語">
+        <details>
+          <summary>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"></circle><path d="M3.5 12h17"></path><path d="M12 3.5c2.4 2.4 3.6 5.2 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.2-3.6-8.5S9.6 5.9 12 3.5z"></path></svg>
+            <span>日本語</span>
+          </summary>
+          <ul>
+            <li><a href="/" lang="en" hreflang="en">English</a></li>
+            <li><a href="/ko/" lang="ko" hreflang="ko">한국어</a></li>
+            <li><a href="/ja/" lang="ja" hreflang="ja" aria-current="page">日本語</a></li>
+            <li><a href="/zh-cn/" lang="zh-CN" hreflang="zh-CN">简体中文</a></li>
+            <li><a href="/es/" lang="es" hreflang="es">Español</a></li>
+          </ul>
+        </details>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1 id="hero-title"><span class="ln"><span class="ph">作業はパソコンが</span><span class="ph">進めておきます。</span></span><span class="ln"><span class="ph">あなたはスマホで</span><span class="ph">確認するだけ。</span></span></h1>
+        <p class="hero-lede">dotz は自分のパソコンで動き続けるパーソナルアシスタントです。新着メールを読んで返信の下書きを用意し、あなたが送信を押すまで待ちます。</p>
+      </div>
+
+      <div class="hero-act">
+        <div class="cmd">
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/<wbr>ddotz/dotz/main/install.sh | sh</code></pre>
+          <div class="cmd-foot">
+            <span class="cmd-os">macOS · Linux · Windows（WSL 2）</span>
+            <button class="copy" type="button" data-copy data-label="コピー" data-copied="コピーしました" data-fail="コピーできませんでした。コマンドを選択してコピーしてください。" data-done="インストールコマンドをコピーしました。">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="8.5" y="8.5" width="11" height="11" rx="2"></rect>
+                <path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"></path>
+              </svg>
+              <span class="copy-label">コピー</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="hero-more">
+          <a href="/demo/">まずデモで触ってみる<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 16.5 16.5 7.5"></path><path d="M9 7.5h7.5V15"></path></svg></a>
+        </p>
+      </div>
+
+      <figure class="shot">
+        <picture>
+          <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="dotz のチャット画面。新着メールが届くと dotz が要約と返信の下書きを出し、確認カードで送信を押すと下書きが「送信しました」に変わる。">
+        </picture>
+        <div class="ss-slot" data-ss="hero" role="img" aria-label="dotz のチャット画面。新着メールが届くと dotz が要約と返信の下書きを出し、確認カードで送信を押すと下書きが「送信しました」に変わる。"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section band" id="more" aria-labelledby="more-title">
+    <div class="wrap">
+      <h2 id="more-title">メールだけではありません。</h2>
+
+      <ul class="cards">
+        <li class="card">
+          <div class="card-demo" data-ss="phone" role="img" aria-label="スマホで dotz に今日の予定を聞くと、少しして予定が二つ返ってくる。"></div>
+          <div class="card-copy">
+            <h3>スマホから話しかける</h3>
+            <p>席を外していても、いつものメッセンジャーで今日の予定やメールのことを聞けます。</p>
+            <p class="card-meta">Web アプリ、Discord、Telegram、JANDI で会話でき、Slack では通知と返事を受け取れます。</p>
+          </div>
+        </li>
+        <li class="card">
+          <div class="card-demo" data-ss="watch" role="img" aria-label="見ていたキャンプチェアが 8,900 円から 7,200 円に下がり、通知一覧のいちばん上に「価格が変わりました」が届く。"></div>
+          <div class="card-copy">
+            <h3>値下がりを逃さない</h3>
+            <p>見ておきたい商品を決めておけば、値段が下がったときにスマホへ知らせます。</p>
+            <p class="card-meta">メール、カレンダー、YouTube・Instagram、Web サイトのコメントも見ています。</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" id="app" aria-labelledby="app-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="app-title">席に戻れば、すべてがひとつのアプリに。</h2>
+        <p>会話、プロジェクト、見守っているものが、ひとつの Web アプリにまとまっています。プロジェクトごとにセッションが分かれていて、再起動や回線の切断で止まった作業は自動で再開します。</p>
+      </div>
+
+      <div class="app-shot">
+        <iframe src="/demo/" title="dotz の Web アプリのデモ" loading="lazy"></iframe>
+        <a class="app-open" href="/demo/" tabindex="-1" aria-hidden="true"></a>
+      </div>
+
+      <div class="app-foot">
+        <a class="btn btn-primary" href="/demo/">
+          デモを開く
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 16.5 16.5 7.5"></path><path d="M9 7.5h7.5V15"></path></svg>
+        </a>
+        <p class="note">実際のアプリが、サンプルデータを使ってブラウザの中で動いています。画面は今のところ韓国語です。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="why" aria-labelledby="why-title">
+    <div class="wrap">
+      <h2 id="why-title">自分のパソコンの中で動き、送る前に確認します。</h2>
+
+      <div class="why-grid">
+        <dl class="facts">
+          <div>
+            <dt>承認しないと外に出ない</dt>
+            <dd>メール、返信、投稿はチャットで承認するまで送られません。</dd>
+          </div>
+          <div>
+            <dt>自分のパソコンで動く</dt>
+            <dd>パソコンにあるログイン情報やファイルをそのまま使い、秘密情報は ~/.dotz/secrets に保存します。</dd>
+          </div>
+          <div>
+            <dt>過去の会話を探せる</dt>
+            <dd>「先週のあれ」のような聞き方で大丈夫です。インデックス作成と検索はこのパソコンの中だけで行います。</dd>
+          </div>
+          <div>
+            <dt>オープンソース</dt>
+            <dd>MIT ライセンスです。コードはすべて <a href="https://github.com/ddotz/dotz">GitHub</a> にあります。</dd>
+          </div>
+        </dl>
+
+        <figure class="tree">
+          <ul>
+            <li class="tree-root"><code>~/.dotz</code></li>
+            <li><code>config.json</code><span>設定（秘密情報は入りません）</span></li>
+            <li><code>secrets/</code><span>トークン（自分だけが読めます）</span></li>
+            <li><code>identity/</code><span>名前と話し方</span></li>
+            <li><code>memory/</code><span>あなたについて覚えたこと</span></li>
+            <li><code>RULES.md</code><span>あなたが決めたルール</span></li>
+          </ul>
+          <figcaption>保存するものは、すべてこのフォルダーにあります。</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="install" aria-labelledby="install-title">
+    <div class="wrap">
+      <div class="start">
+        <h2 id="install-title">インストールはコマンド一行。</h2>
+
+        <div class="start-main">
+          <div class="cmd">
+            <pre><code>curl -fsSL https://raw.githubusercontent.com/<wbr>ddotz/dotz/main/install.sh | sh</code></pre>
+            <div class="cmd-foot">
+              <span class="cmd-os">macOS · Linux · Windows（WSL 2）</span>
+              <button class="copy" type="button" data-copy data-label="コピー" data-copied="コピーしました" data-fail="コピーできませんでした。コマンドを選択してコピーしてください。" data-done="インストールコマンドをコピーしました。">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="8.5" y="8.5" width="11" height="11" rx="2"></rect>
+                  <path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"></path>
+                </svg>
+                <span class="copy-label">コピー</span>
+              </button>
+            </div>
+          </div>
+
+          <details class="win">
+            <summary>Windows でインストールする</summary>
+            <ol>
+              <li>管理者として開いた PowerShell で <code>wsl --install</code> を実行します。</li>
+              <li>再起動後、Ubuntu のウィンドウに上のコマンドを貼り付けます。</li>
+              <li>dotz は WSL の中で動き、そこから Windows を操作します。<a href="https://github.com/ddotz/dotz/blob/main/docs/windows.md">手順（韓国語）</a></li>
+            </ol>
+          </details>
+          <p class="note">セットアップ画面は英語と韓国語で、アシスタントは設定した言語で返事をします。</p>
+        </div>
+
+        <ol class="steps">
+          <li>macOS か Linux のターミナルにコマンドを貼り付けます。</li>
+          <li>ブラウザが開くので、アシスタントの名前、話し方、つなぐサービスを選び、モデルのアカウントにログインします。</li>
+          <li>終わったら、ターミナルで dotz と打つと Web アプリが開きます。アップデートは自動で届きます。</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+<p class="visually-hidden" id="copy-status" aria-live="polite"></p>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <span class="footer-brand">dotz</span>
+    <nav class="footer-nav" aria-label="リポジトリと表示">
+      <a href="https://github.com/ddotz/dotz">GitHub</a>
+      <a href="https://github.com/ddotz/dotz/blob/main/THIRD_PARTY_NOTICES.md">オープンソースの表示</a>
+    </nav>
+    <nav class="footer-nav footer-lang" aria-label="言語">
+      <a href="/" lang="en" hreflang="en">English</a>
+      <a href="/ko/" lang="ko" hreflang="ko">한국어</a>
+      <a href="/ja/" lang="ja" hreflang="ja" aria-current="page">日本語</a>
+      <a href="/zh-cn/" lang="zh-CN" hreflang="zh-CN">简体中文</a>
+      <a href="/es/" lang="es" hreflang="es">Español</a>
+    </nav>
+    <span class="footer-year">2026</span>
+  </div>
+</footer>
+</body>
+</html>

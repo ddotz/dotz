@@ -1,0 +1,201 @@
+/* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, one-line preview, status; never a time) and the "새 메시지" divider.
+   Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
+.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
+.cv-side { display: none; }
+.cv-head { display: none; }
+#v-chat.cv-listing > .cv-side, #v-monitoring.cv-listing > .cv-side { display: block; }
+#v-chat.cv-listing > :not(.cv-side), #v-monitoring.cv-listing > :not(.cv-side) { display: none; }
+
+.cv-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0; min-height: var(--row-h); padding: var(--row-py) var(--sp-4); border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
+.cv-row + .cv-row { margin-top: var(--sp-05); }
+/* the open conversation: a small accent dot in the row's left padding (the slot every row already has, so text never shifts); phone only — the wide layout already highlights the row */
+.cv-row { position: relative; }
+@media (max-width: 1099px) { .cv-row.on::before { content: ""; position: absolute; top: 50%; left: 5px; --dot: 6px; width: var(--dot); height: var(--dot); margin-top: calc(var(--dot) / -2); border-radius: 50%; background: var(--accent); } }
+@media (hover: hover) { .cv-row:hover { background: var(--card-hover); } }
+.cv-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 15px/24px var(--font); }
+.cv-av .ic { width: 20px; height: 20px; }
+/* 아이콘이 든 면은 둥근 사각 (시제품 .li .ico, 10px); 이니셜이 든 사람 아바타는 원 */
+.cv-av:has(> .ic), .cv-av:has(> .logo) { border-radius: var(--r-ctl); }
+/* the app's own mark (the top bar's .logo) as the main assistant's icon */
+.cv-av .logo { width: 55%; height: 55%; }
+.cv-av.nt { background: var(--layer); color: var(--fg); }
+.cv-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cv-n, .cv-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-n { font: 500 15px/22px var(--font); }
+.cv-p { color: var(--fg-2); font: 400 13px/18px var(--font); }
+.mon-pc { margin-left: var(--sp-2); white-space: nowrap; color: var(--fg-3); font: 400 11px/16px var(--font); }
+.cv-id { margin-left: var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
+.cv-row.unread .cv-n { font-weight: 600; }
+/* the unread count and the 미답장 count: 11px, one step up from the tab bar's 10.5 (docs/ui-spec.md 배지·점); the same size on a list row, a home row and the head of a card or app */
+.cv-row .nb, .hr .nb, .hn-h .nb, #mon-head .nb { min-width: 18px; height: 18px; border-radius: 9px; font-size: 11px; line-height: 18px; }
+/* a session under its project: indented, smaller avatar; the group label for sessions started from chat */
+.cv-row.sub { min-height: 40px; padding-left: var(--sp-8); }
+.cv-row.sub .cv-av { width: 28px; height: 28px; }
+.cv-row.sub .cv-n { font-size: 14px; }
+.cv-gh { padding: var(--sp-3) var(--sp-4) var(--sp-1); color: var(--fg-3); font: 500 12px/16px var(--font); }
+.cv-m { flex: 0 1 auto; min-width: 0; max-width: 50%; display: flex; align-items: center; gap: var(--sp-15); }
+/* 오른쪽 시각 (시제품 .li .end): 목록 행에서 제목·미리보기 다음, 상태 표시 앞 */
+.cv-t { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
+/* 대화 머리 (시제품 .cv-hd): 제목 한 줄과 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작 */
+#cv-head .cv-hd-b, .pane-hd .cv-hd-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#cv-head .cv-hd-t, .pane-hd .cv-hd-t { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; color: var(--fg); font: 600 16px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#cv-head .cv-hd-s, .pane-hd .cv-hd-s { color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#cv-head .cv-hd-a, .pane-hd .cv-hd-a { flex: none; display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
+#cv-head .cvmenu, .pane-hd .cvmenu { margin-left: 0; }
+/* a row with a preview line (running sessions, 모니터링) */
+.cv-row.pv { align-items: flex-start; padding-block: var(--sp-2); }
+.cv-row.pv .cv-p { font-size: 13px; line-height: 18px; }
+.cv-row.pv .cv-m { align-self: center; }
+.cv-m2 { display: flex; align-items: center; gap: var(--sp-15); }
+.cv-m2:empty { display: none; }
+/* a status word that ends the row keeps the old tag's inset, so its last letter lines up with a count badge's digit on the next row */
+.cv-m2 > .tag:last-child { margin-right: var(--tag-px); }
+.cv-head .cvmenu { margin-left: auto; }
+
+/* the header picker (chips / caret menu) is replaced by the list in 대화; 로그 keeps it */
+.thead[data-mode="chat"] :is(.tsw, .tdrop) { display: none !important; }
+/* phone, inside a conversation: back arrow + the conversation's name take the whole bar */
+.appbar.cvconv h1 { flex: 1 1 0; min-width: 0; margin-right: 0; }
+.appbar.cvconv .thead { flex: 0 0 auto; margin: 0; }
+
+.tl-in > .a-div { color: var(--fg-3); }
+.tl-in > .cv-new { display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-2) 0 0; color: var(--accent); font: 600 12px/16px var(--font); }
+.tl-in > .cv-new::before, .tl-in > .cv-new::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
+/* a gateway system line (11-todo-strip.js sysLine): small, muted and centered like the divider above, no bubble */
+.tl-in > .cv-sys { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-15); align-self: center; width: fit-content; max-width: 100%; margin: var(--sp-2) auto 0; padding: var(--sp-05) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-3); font: 500 12px/16px var(--font); text-align: center; overflow-wrap: anywhere; }
+.tl-in > button.cv-sys { cursor: pointer; }
+@media (hover: hover) { .tl-in > button.cv-sys:hover { background: var(--line-2); color: var(--fg-2); } }
+.cv-sys .ic { width: 14px; height: 14px; flex: none; }
+.cv-sys .cv-sys-st { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--fg-2); }
+.cv-sys .cv-sys-st[hidden] { display: none; }
+.cv-sys .cv-sys-mt { font-variant-numeric: tabular-nums; }
+/* 백그라운드 작업 카드 (소개 페이지 작업 카드): 이어진 작업은 한 격자(.cv-tasks)로 묶여 채팅 폭을 꽉 채워요. 한 줄 3장까지, 남는 줄은 그 줄 안에서 폭을 나눠 가져요(4장 = 3 + 1, 5장 = 3 + 2).
+   장 수는 창이 아니라 격자 폭으로 정해요. 6칸 격자라 1·2·3장이 모두 나눠떨어져요.
+   카드는 내용만큼만 높아요(제목 아래 빈 자리 없음): 한 줄의 카드는 가장 높은 카드에 맞춰 늘어나고, 결과 파일은 제목 아래 줄에 붙고, 막대는 카드 아래 여백에 떠요(원칙 3·6·7·9). */
+.tl-in > .cv-tasks { container: cv-tasks / inline-size; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); align-self: stretch; margin: var(--sp-2) 0 0; }
+.cv-tasks:empty { display: none; }
+.cv-task { container: cv-task / inline-size; position: relative; grid-column: span 6; min-width: 0; padding: var(--sp-3) var(--sp-4) var(--sp-4); border-radius: var(--r-card); background: var(--layer); color: var(--fg); text-align: left; }
+@container cv-tasks (min-width: 320px) and (max-width: 559.98px) {
+  .cv-task { grid-column: span 3; }
+  .cv-task:nth-child(odd):last-child { grid-column: span 6; }
+}
+@container cv-tasks (min-width: 560px) {
+  .cv-task { grid-column: span 2; }
+  .cv-task:nth-child(3n+1):last-child { grid-column: span 6; }
+  .cv-task:nth-child(3n+1):nth-last-child(2), .cv-task:nth-child(3n+2):last-child { grid-column: span 3; }
+}
+.cv-task .ct-hd { display: grid; grid-template: "lb st" minmax(24px, auto) "t t" auto / minmax(0, 1fr) auto; align-items: center; gap: var(--sp-05) var(--sp-2); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cv-task .ct-nm { display: contents; }
+.cv-task .ct-lb { grid-area: lb; overflow: hidden; color: var(--fg-2); font: 400 12px/16px var(--font); text-overflow: ellipsis; white-space: nowrap; }
+.cv-task .ct-t { grid-area: t; display: -webkit-box; min-height: 1lh; overflow: hidden; color: var(--fg); font: 500 15px/22px var(--font); overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+@container cv-task (max-width: 299.98px) { .cv-task .ct-kind:not(:only-child) { display: none; } }   /* 좁은 카드는 알약 옆에 시각만 */
+.cv-task:has(.ct-file) .ct-t { min-height: 1lh; -webkit-line-clamp: 1; }
+/* the card's state: its own dot and the word in --fg-2, no fill (web/DESIGN.md 상태) */
+.cv-task .ct-pill { grid-area: st; flex: none; gap: var(--sp-15); height: 24px; padding: 0; background: none; color: var(--fg-2); font: 600 12px/16px var(--font); }
+.cv-task .ct-body { display: flex; gap: var(--sp-3); overflow-x: auto; scrollbar-width: none; }
+.cv-task .ct-file { display: flex; flex: 1 1 0; align-items: center; gap: var(--sp-15); min-width: 96px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.cv-task .ct-file .ic { flex: none; width: 16px; height: 16px; color: var(--fg-2); }
+.cv-task .ct-ft { display: flex; align-items: baseline; gap: var(--sp-15); min-width: 0; }
+.cv-task .ct-ft b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 500 14px/22px var(--font); }
+.cv-task .ct-ft span { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.cv-task .ct-bar { position: absolute; right: var(--sp-4); bottom: var(--sp-15); left: var(--sp-4); height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.cv-task .ct-bar span { display: block; height: 100%; background: var(--ok); }
+
+/* 목록 행 (시제품 채팅 목록 proto .li) — 모든 너비의 공통 기반이에요: 48px 두 줄, 36px 둥근 사각 아이콘 면, 오른쪽 시각·대기 표시, 구분선 한 줄, 고른 행은 회색 면.
+   프로젝트·모니터링 목록 패널도 이 형식(.cv-side 안의 .cv-row)에 맞춰요. */
+#chat-convo { padding: 0; }
+/* 채팅 목록 (proto listHtml): 대화는 한 장의 카드에, '메일 · 카카오톡'은 제목과 그 아래 카드로. */
+#chat-convo:not(.mon-side) { background: transparent; border-radius: 0; }
+.cv-foot { display: flex; justify-content: center; margin-top: var(--sp-2); }
+.cv-card { overflow: hidden; border-radius: var(--r-card); background: var(--card); }
+.cv-sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); color: var(--fg-2); font: 600 14px/20px var(--font); }
+.cv-sec:first-child { margin-top: 0; }
+.cv-card + :is(.cv-card, .card.empty) { margin-top: var(--sp-6); }   /* the list's loading / failed card keeps the gap between groups */
+#chat-convo .cv-gh { padding: var(--sp-3) var(--sp-4) var(--sp-1); }
+#chat-convo .cv-row { min-height: 48px; padding: var(--sp-2) var(--sp-4); gap: var(--sp-3); border-radius: 0; }
+#chat-convo .cv-row + .cv-row { margin-top: 0; border-top: 1px solid var(--line); }
+#chat-convo .cv-row.on { background: var(--row-sel); }
+#chat-convo .cv-row.sub { min-height: 44px; padding-left: var(--sp-8); }
+#chat-convo .cv-row .cv-n, #chat-convo .cv-row.sub .cv-n { font: 500 15px/22px var(--font); }
+#chat-convo .cv-row.unread .cv-n { font-weight: 600; }
+#chat-convo .cv-row .cv-p { color: var(--fg-2); font: 400 12px/16px var(--font); }
+#chat-convo .cv-row.pv { align-items: center; padding-block: var(--sp-2); }
+#chat-convo .cv-row.pv .cv-m { align-self: center; }
+#chat-convo .cv-av { width: 36px; height: 36px; }
+#chat-convo .cv-av .ic { width: 20px; height: 20px; }
+#chat-convo .cv-row.sub .cv-av { width: 28px; height: 28px; }
+#chat-convo .cv-m { gap: var(--sp-2); }
+#chat-convo .cv-row.on::before { content: none; }   /* 폰 목록에서도 고른 행은 회색 면 하나로 (점 표시는 쓰지 않아요) */
+
+@media (max-width: 1099px) {
+  .cv-row.on { background: transparent; }
+  /* 폰·태블릿: 대화는 시제품처럼 한 장의 흰 카드 (proto .cv)이고, 목록은 따로 한 화면이에요. */
+  #v-chat { position: relative; height: calc(100% - 8px); margin: 0 var(--sp-3) var(--sp-2); padding: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+  #v-chat::before { content: none; }
+  #v-chat > .cv-head { display: none; }
+  #v-chat > .todo { order: 1; margin: var(--sp-2) var(--sp-3) var(--sp-1); }
+  #v-chat > .chatbox { order: 4; }
+  #v-chat > .composer { order: 6; padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+  #v-chat.cv-listing { height: 100%; margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-6); border-radius: 0; background: transparent; overflow: visible; }
+  #v-chat.cv-listing > .cv-side { border-radius: var(--r-card); }
+}
+
+@media (min-width: 1100px) {
+  :root { --cv-w: 240px; }
+  /* 모니터링: 폰과 같은 흐름으로 한 번에 한 층만 서요(목록, 또는 앱). 페이지 폭(.view)을 쓰고, 앱에서 항목을 고르면 그때만 전체 폭의 두 단(.kk.chat-open)이 돼요 */
+  #v-monitoring { display: grid; max-width: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #v-monitoring:not(:has(> .kk.chat-open:not([hidden]))) { width: 100%; max-width: 920px; margin: 0 auto; }
+  #v-monitoring > * { grid-column: 1; }
+  #v-monitoring > .cv-side { grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); padding: var(--sp-2); }
+  #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 var(--sp-3); }
+  #v-monitoring > .chatbox { grid-row: 4; }
+  /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
+  :is(#v-chat, .pane-chat) { --cv-w: 340px; position: relative; display: grid; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
+  #v-chat::before { content: ""; grid-column: 2; grid-row: 1 / -1; border-radius: var(--r-card); background: var(--card); }
+  #v-chat.mail-open { --cv-w: 240px; }   /* 메일 스레드 패널이 대화 옆에 서면 목록 단을 좁혀 메일 원문 폭을 지켜요 */
+  :is(#v-chat, .pane-chat) > * { grid-column: 2; position: relative; z-index: 1; }
+  #v-chat > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: var(--sp-4); padding: 0; }
+  :is(#v-chat, .pane-chat) > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); }
+  :is(#v-chat, .pane-chat) > .todo { grid-row: 2; margin: 0 var(--sp-3) var(--sp-1); }
+  :is(#v-chat, .pane-chat) > .chatbox { grid-row: 4; }
+  :is(#v-chat, .pane-chat) > .composer { grid-row: 6; width: auto; max-width: none; margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+  .cv-row.pv { padding-block: var(--sp-15); }
+  .cv-row { min-height: 36px; padding: var(--sp-1) var(--sp-3); gap: var(--sp-2); border-radius: var(--r-ctl); }
+  .cv-row.sub { min-height: 36px; padding-left: var(--sp-5); }
+  .cv-row .cv-n, .cv-row.sub .cv-n { font-size: 14px; line-height: 20px; }
+  .cv-row + .cv-row { margin-top: var(--sp-05); border-top: 0; }
+  .cv-row.on { background: var(--row-sel); }
+  :is(.cv-side, .cv-list) .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
+  :is(.cv-side, .cv-list) .cv-av .ic { width: 14px; height: 14px; }
+  .cv-list { padding: var(--sp-2); }
+  /* 프로젝트: the list beside the open project's page, like 채팅 (go() in 05-command-palette.js sets .pp) */
+  .views.pp { display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: var(--sp-4); overflow: hidden; width: 100%; padding: var(--sp-6) var(--edge) 0; }
+  .views.pp > .view { min-height: 0; max-width: none; margin: 0; padding: 0 0 var(--sp-6); overflow-y: auto; }
+  .views.pp > #v-projects { grid-column: 1; grid-row: 1; margin-bottom: var(--sp-4); padding: 0; background: transparent; }
+  .views.pp > #v-project { grid-column: 2; grid-row: 1; max-width: none; }
+  .cv-head .cv-av { width: 36px; height: 36px; font-size: 15px; }
+}
+
+/* a tab is its name and its count: the count is a plain number after the name, not a pill badge (proto .tabs) */
+.nb.err { background: var(--err); }
+.hr .dot.un { background: var(--accent); }
+/* A watch change in a row's sub line or a card (nwChangeNode): the old value grey and struck, the new one the only emphasis (the landing page's 가격 알림 card). */
+.nw-chg s { color: var(--fg-3); }
+.nw-chg em { font-style: normal; font-weight: 600; color: var(--accent); }
+/* In the 알림 timeline every message carried a red dot; it is a quiet grey now, the new one arrives by moving in, not by colour. */
+#tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }
+
+/* the result file of a finished worker under its system line (11-todo-strip.js hcSysFiles); a running line does not pulse */
+.tl-in > .cv-sys-f { display: flex; flex-wrap: wrap; justify-content: center; align-self: center; gap: var(--sp-15); max-width: 100%; margin: var(--sp-15) auto 0; }
+.cv-sys-f .fatt { height: 44px; max-width: 100%; background: var(--card); text-decoration: none; cursor: pointer; }
+@media (hover: hover) { .cv-sys-f .fatt:hover { background: var(--hover); } }
+
+/* 감시 변화 알림 행 (소개 페이지 가격 알림): 32px 둥근 아이콘 칸, 500 제목, 아래 13px 회색 변화 줄(옛값 취소선·새값 600 강조색), 오른쪽 회색 시각(원칙 2·4) */
+.hr.nt-w .hn1 { font-weight: 500; }
+.hr.nt-w .ha { color: var(--fg-3); }
+.nt-wi { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--layer); color: var(--fg-2); }
+.nt-wi.new { background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--accent); }
+.nt-wi .ic { width: 16px; height: 16px; }
+.nt-wt { flex: none; align-self: flex-start; padding-top: var(--sp-05); color: var(--fg-3); font: 400 12px/16px var(--font); font-variant-numeric: tabular-nums; }
+.nw-chg em { font-weight: 600; }
+.nw-line { margin-top: var(--sp-1); color: var(--fg-3); font: 400 13px/20px var(--font); }

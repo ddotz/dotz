@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dotz - 在你自己的电脑上一直运行的个人助理</title>
+<meta name="description" content="dotz 运行在你自己的电脑上。它读新邮件、写好回复草稿，然后等你在手机上点发送。">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f2f4f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
+<link rel="canonical" href="https://ddotz.dev/zh-cn/">
+<link rel="alternate" hreflang="en" href="https://ddotz.dev/">
+<link rel="alternate" hreflang="ko" href="https://ddotz.dev/ko/">
+<link rel="alternate" hreflang="ja" href="https://ddotz.dev/ja/">
+<link rel="alternate" hreflang="zh-CN" href="https://ddotz.dev/zh-cn/">
+<link rel="alternate" hreflang="es" href="https://ddotz.dev/es/">
+<link rel="alternate" hreflang="x-default" href="https://ddotz.dev/">
+<meta property="og:title" content="dotz - 在你自己的电脑上一直运行的个人助理">
+<meta property="og:description" content="dotz 运行在你自己的电脑上。它读新邮件、写好回复草稿，然后等你在手机上点发送。">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:locale:alternate" content="ko_KR">
+<meta property="og:locale:alternate" content="ja_JP">
+<meta property="og:locale:alternate" content="es_ES">
+<meta property="og:url" content="https://ddotz.dev/zh-cn/">
+<meta property="og:image" content="https://ddotz.dev/img/og.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="dotz 网页应用的聊天界面，里面有一张等待你确认的回复草稿卡片。">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css?v=690de961e260">
+<!-- The demo embedded below links back to this page. Opened inside that frame, the page reloads the window around it instead of nesting itself. -->
+<script>try { if (top !== self) top.location.replace(top.location.pathname); } catch {}</script>
+<script src="/app.js?v=690de961e260" defer></script>
+<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');</script>
+<script type="module" src="/js/stageshow.js?v=690de961e260" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到正文</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="/zh-cn/">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <circle cx="7.4" cy="7.4" r="3.1"></circle>
+        <circle cx="16.6" cy="7.4" r="1.9"></circle>
+        <circle cx="7.4" cy="16.6" r="1.9"></circle>
+        <circle class="brand-mark-accent" cx="16.6" cy="16.6" r="3.1"></circle>
+      </svg>
+      <span>dotz</span>
+    </a>
+    <div class="header-end">
+      <nav class="header-nav">
+        <a href="/demo/">演示</a>
+        <a href="https://github.com/ddotz/dotz/blob/main/docs/reference.md">文档</a>
+        <a href="https://github.com/ddotz/dotz">GitHub</a>
+      </nav>
+      <nav class="lang" aria-label="语言">
+        <details>
+          <summary>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"></circle><path d="M3.5 12h17"></path><path d="M12 3.5c2.4 2.4 3.6 5.2 3.6 8.5s-1.2 6.1-3.6 8.5c-2.4-2.4-3.6-5.2-3.6-8.5S9.6 5.9 12 3.5z"></path></svg>
+            <span>简体中文</span>
+          </summary>
+          <ul>
+            <li><a href="/" lang="en" hreflang="en">English</a></li>
+            <li><a href="/ko/" lang="ko" hreflang="ko">한국어</a></li>
+            <li><a href="/ja/" lang="ja" hreflang="ja">日本語</a></li>
+            <li><a href="/zh-cn/" lang="zh-CN" hreflang="zh-CN" aria-current="page">简体中文</a></li>
+            <li><a href="/es/" lang="es" hreflang="es">Español</a></li>
+          </ul>
+        </details>
+      </nav>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <h1 id="hero-title"><span class="ln"><span class="ph">事情交给你的电脑，</span></span><span class="ln"><span class="ph">你在手机上确认就行。</span></span></h1>
+        <p class="hero-lede">dotz 是在你自己的电脑上一直运行的个人助理。它读新邮件、写好回复草稿，然后等你点发送。</p>
+      </div>
+
+      <div class="hero-act">
+        <div class="cmd">
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/<wbr>ddotz/dotz/main/install.sh | sh</code></pre>
+          <div class="cmd-foot">
+            <span class="cmd-os">macOS · Linux · Windows（WSL 2）</span>
+            <button class="copy" type="button" data-copy data-label="复制" data-copied="已复制" data-fail="复制失败，请手动选中命令。" data-done="已复制安装命令。">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <rect x="8.5" y="8.5" width="11" height="11" rx="2"></rect>
+                <path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"></path>
+              </svg>
+              <span class="copy-label">复制</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="hero-more">
+          <a href="/demo/">先去演示里点点看<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 16.5 16.5 7.5"></path><path d="M9 7.5h7.5V15"></path></svg></a>
+        </p>
+      </div>
+
+      <figure class="shot">
+        <picture>
+          <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="dotz 聊天界面。收到新邮件后，dotz 发出摘要和回复草稿；在确认卡片上点发送后，草稿变为“已发送”。">
+        </picture>
+        <div class="ss-slot" data-ss="hero" role="img" aria-label="dotz 聊天界面。收到新邮件后，dotz 发出摘要和回复草稿；在确认卡片上点发送后，草稿变为“已发送”。"></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section band" id="more" aria-labelledby="more-title">
+    <div class="wrap">
+      <h2 id="more-title">不只是邮件。</h2>
+
+      <ul class="cards">
+        <li class="card">
+          <div class="card-demo" data-ss="phone" role="img" aria-label="在手机上问 dotz 今天的日程，过一会儿收到两条日程作为回答。"></div>
+          <div class="card-copy">
+            <h3>在手机上问一句</h3>
+            <p>不在电脑前，也能用常用的聊天软件问今天的日程或邮件。</p>
+            <p class="card-meta">可以通过网页应用、Discord、Telegram 或 JANDI 对话，Slack 用来接收通知和回复。</p>
+          </div>
+        </li>
+        <li class="card">
+          <div class="card-demo" data-ss="watch" role="img" aria-label="关注的露营椅从 ¥599 降到 ¥469，通知列表最上面出现一条“价格变了”。"></div>
+          <div class="card-copy">
+            <h3>降价不错过</h3>
+            <p>选好要关注的商品，价格一降，手机上就会收到通知。</p>
+            <p class="card-meta">邮件、日历、YouTube、Instagram 和网站评论，它也一并盯着。</p>
+          </div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" id="app" aria-labelledby="app-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="app-title">回到电脑前，一切都在一个应用里。</h2>
+        <p>对话、项目和它盯着的东西，都在同一个网页应用里。每个项目有自己的会话，因重启或断网中断的工作会自动接着做完。</p>
+      </div>
+
+      <div class="app-shot">
+        <iframe src="/demo/" title="dotz 网页应用演示" loading="lazy"></iframe>
+        <a class="app-open" href="/demo/" tabindex="-1" aria-hidden="true"></a>
+      </div>
+
+      <div class="app-foot">
+        <a class="btn btn-primary" href="/demo/">
+          打开演示
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 16.5 16.5 7.5"></path><path d="M9 7.5h7.5V15"></path></svg>
+        </a>
+        <p class="note">这就是真实的应用，用示例数据在你的浏览器里运行。界面目前是韩文。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="why" aria-labelledby="why-title">
+    <div class="wrap">
+      <h2 id="why-title">只在你的电脑上运行，发出去之前先问你。</h2>
+
+      <div class="why-grid">
+        <dl class="facts">
+          <div>
+            <dt>不经你同意，什么都不发</dt>
+            <dd>邮件、回复和帖子都会留在聊天里，等你批准。</dd>
+          </div>
+          <div>
+            <dt>在你的电脑上运行</dt>
+            <dd>直接使用这台电脑上已有的登录状态和文件，密钥保存在 ~/.dotz/secrets。</dd>
+          </div>
+          <div>
+            <dt>能找回以前的对话</dt>
+            <dd>像“上周那个”这样随口一问也行。建索引和搜索都只在这台电脑上进行。</dd>
+          </div>
+          <div>
+            <dt>代码开源</dt>
+            <dd>采用 MIT 许可证，全部代码都在 <a href="https://github.com/ddotz/dotz">GitHub</a> 上。</dd>
+          </div>
+        </dl>
+
+        <figure class="tree">
+          <ul>
+            <li class="tree-root"><code>~/.dotz</code></li>
+            <li><code>config.json</code><span>设置（里面没有密钥）</span></li>
+            <li><code>secrets/</code><span>令牌（只有你能读）</span></li>
+            <li><code>identity/</code><span>名字和说话方式</span></li>
+            <li><code>memory/</code><span>它记住的关于你的事</span></li>
+            <li><code>RULES.md</code><span>你定下的规则</span></li>
+          </ul>
+          <figcaption>它保存的东西都在这一个文件夹里。</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="install" aria-labelledby="install-title">
+    <div class="wrap">
+      <div class="start">
+        <h2 id="install-title">一行命令就能安装。</h2>
+
+        <div class="start-main">
+          <div class="cmd">
+            <pre><code>curl -fsSL https://raw.githubusercontent.com/<wbr>ddotz/dotz/main/install.sh | sh</code></pre>
+            <div class="cmd-foot">
+              <span class="cmd-os">macOS · Linux · Windows（WSL 2）</span>
+              <button class="copy" type="button" data-copy data-label="复制" data-copied="已复制" data-fail="复制失败，请手动选中命令。" data-done="已复制安装命令。">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="8.5" y="8.5" width="11" height="11" rx="2"></rect>
+                  <path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"></path>
+                </svg>
+                <span class="copy-label">复制</span>
+              </button>
+            </div>
+          </div>
+
+          <details class="win">
+            <summary>在 Windows 上安装</summary>
+            <ol>
+              <li>以管理员身份打开 PowerShell，运行 <code>wsl --install</code>。</li>
+              <li>重启后，把上面的命令粘贴到 Ubuntu 窗口里。</li>
+              <li>dotz 在 WSL 里运行，并从那里操作 Windows。<a href="https://github.com/ddotz/dotz/blob/main/docs/windows.md">安装说明（韩文）</a></li>
+            </ol>
+          </details>
+          <p class="note">设置页面有英文和韩文，助理会用你设定的语言回复。</p>
+        </div>
+
+        <ol class="steps">
+          <li>把这行命令粘贴到 macOS 或 Linux 的终端里。</li>
+          <li>浏览器会打开设置页面：选好助理的名字、说话方式和要连接的服务，再登录模型账号。</li>
+          <li>完成后，在终端输入 dotz 就能打开网页应用。更新会自动获取。</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+</main>
+<p class="visually-hidden" id="copy-status" aria-live="polite"></p>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <span class="footer-brand">dotz</span>
+    <nav class="footer-nav" aria-label="仓库和声明">
+      <a href="https://github.com/ddotz/dotz">GitHub</a>
+      <a href="https://github.com/ddotz/dotz/blob/main/THIRD_PARTY_NOTICES.md">开源声明</a>
+    </nav>
+    <nav class="footer-nav footer-lang" aria-label="语言">
+      <a href="/" lang="en" hreflang="en">English</a>
+      <a href="/ko/" lang="ko" hreflang="ko">한국어</a>
+      <a href="/ja/" lang="ja" hreflang="ja">日本語</a>
+      <a href="/zh-cn/" lang="zh-CN" hreflang="zh-CN" aria-current="page">简体中文</a>
+      <a href="/es/" lang="es" hreflang="es">Español</a>
+    </nav>
+    <span class="footer-year">2026</span>
+  </div>
+</footer>
+</body>
+</html>

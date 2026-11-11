@@ -1,0 +1,150 @@
+# Webmail without an API (design of record)
+
+Shipped feature folder (hub/featuredirs.ts), **off by default** (`enabled: false` in feature.md, per the owner rules
+[10-22]: shipped integrations start off; onboarding is one request, automated end to end, with owner steps batched into
+one ask). It turns on only when the owner asks to use a mail zele cannot reach (MODE, Mail and calendar), through
+`bin/onboard.ts`, which writes this install's switch (a personal feature.md copy with `enabled: true`). zele stays the first choice for mail/calendar; this
+feature is only for sites that have no API, no official CLI and no zele support. An install where another machine owns mail
+(features/no-mail-calendar-here) keeps that rule.
+
+## What was generalized from the owner's working setup
+
+The owner's Mac mini runs a hand-built watcher for one company webmail. This feature keeps the *mechanism* it proved and
+drops everything specific to that company. Generalized, in order:
+
+- reaching a no-API webmail by replaying its own web-client XHR/JSON calls with the browser's cookies, instead of an API;
+- reading the login session out of the Aside cookie store (Chromium v10 keychain + AES-128-CBC decrypt), filtered to the
+  site's own hosts;
+- telling "logged in" from "logged out" from the list response (JSON array = in; redirect / 401 / 403 / a 200 login page
+  = out), not from the HTTP status alone;
+- keeping the session alive cheaply (a cookie-bearing request extends the server's sliding session; a real tab load every
+  few hours renews rotating cookies, done by the gateway's `session` watch);
+- a baseline of seen ids so only genuinely new mail is reported, with a numeric high-water mark so an old mail sliding back
+  into the window after a delete is not re-reported;
+- recover from a dropped login once (a silent background tab load, no second factor), then ask the owner;
+- reconnect from the app (2026-10-27, the Mac mini's company mail): the second factor goes out only on the owner's yes, and the yes is
+  the 다시 연결 tap itself. The new-mail watch carries `approval_minutes`; the tap approves it (hub/routes.ts: a disconnected gated
+  watch is approved instead of re-run), and that run signs in again with the saved password and waits for the push
+  (`bin/watch.ts signInApproved`, `lib/watchkit.ts pollOnce` `relogin`). A plain re-run after the silent recover was spent did
+  nothing, which is how the company mail sat disconnected for days. A second tap while the sign-in waits cancels it and starts over
+  (hub/watch.ts approveWatch kills the running check), and a sign-in that succeeds turns the row 연결됨 in that same run;
+- draft-only sending: compose locally, send only after the owner's explicit OK in the mail thread.
+
+Left out (never in the repo): the company name, its hosts, endpoints, mailbox ids, account ids, any mail content or hint,
+secrets, and the owner's own launchd jobs. Each install captures its own `spec.json` into `~/.dotz/custom/webmail/<site>/`.
+
+## Onboarding (lib/onboard.ts, bin/onboard.ts)
+
+`onboard.ts <site> --url <inbox> --channel ch:<id> [--label <name>]` runs seven idempotent steps and records each in
+`custom/webmail/<site>/onboard.json`, so a rerun resumes at the step that stopped (`--status` shows it):
+
+| step | does | owner touch |
+|---|---|---|
+| preflight | mail handed to another machine? (a personal deny on zele), https URL, Aside present (started hidden) | none |
+| login | background tab: password field? then `aside repl` submits the form the browser's saved password autofilled (`lib/login.ts`; no password is typed or read, no Aside agent) | one batched ask: save the password / approve the 2nd factor; `--approve` resumes |
+| capture | records the client's calls (load-time calls replayed from Performance entries, fetch/XHR hooked, one mail opened by clicking a listed subject); a second, deep pass if the first finds no list | none; HTML-only sites get a Korean fallback (IMAP/zele, or `--har`) |
+| test | live list + read; if no mail was opened, probes likely read endpoints with a real id; a lost login goes back to login once | none |
+| apply | config, home card, sidebar project, this install's feature switch | none |
+| watch | POST /api/watches: the new-mail watch (to orchestrator, in the mail channel) and a session watch (https only) | none |
+| app | POST /api/apps: the site as its own 메일 instance (below); a 409 = already there; the gateway down stops here and the next run retries only this step | none |
+
+Progress is one message edited in place (POST /api/send with an update_key). Exit codes: 0 done, 3 waiting for the
+owner (the printed ask), 1 failed (the printed reason).
+
+## The site as a 메일 app instance
+
+Like the owner's company mail on the Mac mini, a site is a mail reader of one install, so onboarding registers it as another instance of the
+메일 app (docs/custom-plugins.md "Registering a mail reader as a mail instance"; `lib/onboard.ts appInstance`):
+`{app: "mail", id: "mail-<site>", label: <--label or "<site> 메일">, filter: {source: <site>, watches: ["webmail-<site>", "webmail-<site>-login"], data: ["custom/webmail/<site>"]}}`.
+
+- `source` is what the watch posts (POST /api/mail `source`), so the instance owns `mail:<site>-…`; reply-drafts reads a source that names an
+  onboarded site (`custom/webmail/<site>/spec.json`) as that site (`senders.ts webmailSite`) and sends through `bin/mail.ts`.
+- The instance has its own 모니터링 row, settings (답장 모델, 자동 초안, 발신자 필터) and memory: 이어서 할 일 and 첨부 파일 폴더 are learned
+  from conversation (hub/app-settings.ts applyMemory), never asked as settings.
+- 연결 끊김: the watches are the instance's own, and a logged-out poll always fails (`DOTZ_FAIL webmail-login`, the session watch fails its
+  `expect`), so after two failing runs that row (never the default 메일 row) shows "연결 끊김 · <since> · 다시 로그인 필요"
+  (hub/watch-status.ts) until a poll passes. A check that alerts by itself and exits 0 prints `DOTZ_DISCONNECTED since=<ISO>` instead.
+- Files: the reply-drafts card treats a site as unable to attach (bin/mail.ts can send files only through a spec's `send.upload`, below). A reply that promises a file, or a draft with staged files, gets
+  `> 첨부: 없음 (이 메일은 파일을 붙여 보낼 수 없어요 · 빠진 파일: …)` and a draft that holds files is not sent. A site whose replies must carry
+  files (the Mac mini's company mail: reply or forward with files taken from other mails, a pre-send attachment check) needs a site plugin with
+  `reply` + `repliesWithFiles` instead of this feature.
+
+## The SiteSpec (lib/spec.ts)
+
+The one generalization boundary. A spec describes a site's own API shape with no personal data: `origin`, `cookieHosts`,
+the `list` / `read` / `search` / `send` endpoints as URL-path templates (`{mailbox}`, `{id}`, `{q}`), the JSON path to the
+mail array (`listPath`), and the field paths within a mail (`id` required; `from` / `subject` / `time` / `read`
+best-effort). `lib/capture.ts` infers a spec from a recording; the owner confirms it at setup.
+
+## Layout
+
+```
+features/webmail-no-api/
+  feature.md        prompt body (off by default): setup order, read/draft/send rules, login + optimization
+  DESIGN.md         this file
+  lib/spec.ts       SiteSpec type, dot-path read, URL templating, validate
+  lib/config.ts     paths (custom/webmail/<site>), per-site config, injected Ctx
+  lib/session.ts    logged-in/out classification, conditional keep-alive request
+  lib/adapter.ts    generic list/read/search + makeDraft (never sends), html->text
+  lib/upload.ts     a draft's files streamed to send.upload in parts, accepted-status check
+  lib/capture.ts    the adapter generator: a recording -> a SiteSpec proposal
+  lib/cookies.ts    live cookie header from the Aside store (live scripts only; tests inject a fake)
+  lib/gateway.ts    local gateway API (watches, the evolving progress message), hub token read at call time
+  lib/onboard.ts    the resumable onboarding state machine (all I/O injected)
+  bin/onboard.ts    the one onboarding command with the live I/O (Aside background, saved password, gateway)
+  bin/capture.ts    record XHR from a background Aside tab (or --from a HAR) -> write spec
+  bin/setup.ts      write config, home card, sidebar project; print the watch spec to register
+  bin/mail.ts       action CLI: list | read | search | draft | send (send guarded by owner approval)
+  bin/watch.ts      one-shot watch the gateway runs every poll_minutes
+  bin/card.ts       home card data command (offline/pre-setup safe)
+  test/*.test.ts    adapter, generator, keepalive, watch, onboarding dry run with resume, the mail instance and its 연결 끊김, unusual sites, off-by-default
+```
+
+All TypeScript, run with `bun <abs path>`. No npm dependencies (Bun builtins only, like the rest of dotz). Pure logic
+(`lib/*`) takes an injected `Ctx` (`fetch`, `cookieHeader`, `now`, `sleep`, `log`); the `bin/*` scripts build the live Ctx
+from the Aside cookie store and global fetch. Tests pass a fake Ctx and a fake mail server, so no test touches the
+keychain, a browser or the network.
+
+## Optimization defaults
+
+- `poll_minutes` 5, `refresh_hours` 6, `keepalive` true (all in the per-site config).
+- Each poll is one conditional request to the list endpoint with `If-None-Match` / `If-Modified-Since`; an unchanged inbox
+  answers 304 with no body, so there is nothing to parse and no new mail to diff: zero model tokens, minimal bytes.
+- Minimal fields are requested through `list.params` (e.g. a `fields=id,subject,date` selector the site supports).
+- The watch prints one line per new mail and nothing otherwise, so the gateway wakes a model only on real mail.
+- The watch posts each new mail with `POST /api/mail` (docs/custom-plugins.md "Posting a mail", `wake: true`), so it becomes its own thread and web conversation with one orchestrator turn; only a mail the gateway did not take is printed as a line.
+
+## Send gate (the only write path)
+
+`bin/mail.ts send <draftId>` refuses unless `~/.dotz/custom/webmail/<site>/send-approved` was touched within 15 minutes.
+The orchestrator writes that marker only after the owner says OK (ㅇㅇ/보내) in the mail thread, then runs send once; the
+marker and the draft are removed after a send. An install that wants a hard, hook-enforced gate can add a `deny` in a
+custom plugin that blocks the raw send command until an OK token appears in the thread; the shipped default is the in-code
+TTL guard plus the approval convention.
+
+## Large attachments (lib/upload.ts, spec `send.upload`)
+
+Learned from a hand-built sender on the owner's Mac mini: putting file bytes into a command line fails past ~1MB (E2BIG, a
+106MB send), and the site turned large files into download links and needed every file finished before send. Generalized:
+
+- `draft --file <path>` stores path, name and size only. After the approval gate, `send` streams each file from disk
+  (`Bun.file().slice().stream()`) into a multipart body with an exact Content-Length, one request per `chunkBytes` part
+  (or one part), carrying `form` fields with `{name} {size} {index} {count} {offset} {chunk} {upload}` tokens; the site's
+  upload id (`uploadIdPath`) links the parts.
+- A file is accepted only if its last response has `idPath` and a `statusPath` value matching `okStatus`. A refused part,
+  a bad status, a changed file size or a spec without `send.upload` stops before the send call: nothing leaves half-attached,
+  and the draft and approval stay for a retry.
+- `large: {minBytes, path?, form?, linkPath?}`: files at or over `minBytes` go to the site's big-attachment upload and are
+  sent as `{link: true, url?}`; a `linkPath` value in any response also marks a link.
+- The send body lists `{name, size, id, link?, url?}` under `sendField` (default `attachments`).
+- reply-drafts still treats webmail sites as unable to attach (`senders.ts canAttach`); that card path is unchanged.
+
+## Unusual sites handled
+
+- JSON behind an anti-hijacking prefix (`)]}',`, `while(1);`, `for(;;);`) is parsed like the page does.
+- POST list/read/search calls keep their method and a body template (`{id}`, `{q}`; form or JSON).
+- A read addressed by a query parameter (`?msgId=...`) and the site's own query params (paging, field selectors) are kept.
+- Read flags as `Y`/`N`, `0`/`1` or booleans; cookie hosts never include a public suffix (`co.kr`, `com`).
+- A recording that never opened a mail: the read endpoint is found by probing with a real id.
+- A site with no JSON calls (server-rendered HTML): a clear Korean message pointing to IMAP/zele or a HAR file.
+- A backlog after an outage: the 10 newest mails get a thread line each, the rest one `mail-backlog` line.

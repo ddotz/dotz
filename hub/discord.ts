@@ -1,0 +1,950 @@
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
+import { askComponentsFor } from "./askbuttons.ts";
+import { hasDecisionHead, parseDecisions } from "./choices.ts";
+import { ownerText } from "./owner-text.ts";
+import { kindOf } from "./messenger.ts";
+import { convPath, webLink } from "./weblink.ts";
+import type { Pick } from "./intake.ts";
+import { msg } from "./i18n.ts";
+import { pushReachesOwner } from "./push.ts";
+import { gatewayDryRun } from "./live-guard.ts";
+import { threadForReply, threadTitle } from "./threads.ts";
+import { type Body, buildPayloads, buildSingle, mentionsOff, noEmoji, reference } from "./discord-format.ts";
+
+export { buildPayloads, buildSingle, chunks, noEmoji, readable } from "./discord-format.ts";
+import { attach, type Attach, chartFiles, fileLines, linkLine, planFiles, withNotes } from "./discord-files.ts";
+export { attach, fileLines, setFileLink, setFileResolver } from "./discord-files.ts";
+
+// An answer longer than this goes out as a few messages cut at paragraph breaks: a wall of text reads badly on a phone.
+const SOFT_LIMIT = 1200;
+const INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
+const tokenPath = expand(String(cfg.discord?.token_file ?? ""));
+const TOKEN = tokenPath && existsSync(tokenPath) ? readFileSync(tokenPath, "utf8").trim() : "";
+const GUILD = String(cfg.discord?.guild ?? "");
+const OWNER = String(cfg.discord?.owner_id ?? "");
+const AVATAR_MARK = join(DATA_DIR, "identity", ".avatar-applied");
+
+export type Thread = { parent: string; name: string };
+// `adopted`: ids of existing channels and categories taken over from another bot, which
+// that bot may still post in: they keep their name, category, position and permission overwrites (ensureChannels).
+// `brief`: the morning brief's channel; without it the brief goes to chat.
+export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; brief?: string; adopted?: string[]; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; local?: string[]; localNext?: number; threads: Record<string, Thread>; archiveAt: Record<string, number> };
+export const channels: Channels = existsSync(paths.channels) ? JSON.parse(readFileSync(paths.channels, "utf8")) : { lanes: {} };
+channels.lanes ??= {};
+// A home lane lives in a thread of an existing work channel: lanes[name] is the thread id, homes[name] the parent channel id.
+channels.homes ??= {};
+channels.work ??= {};
+// Web-only projects made while Discord was off: a small number from channels.localNext (never a 17-20 digit snowflake), named in work like any project.
+// Discord reconcile and sends leave them alone, also after Discord is turned on later.
+const localIds = new Set(channels.local ?? []);
+export const isLocalChannel = (id: string): boolean => localIds.has(id);
+channels.threads ??= {};
+// Done threads stay open (and visible in the sidebar) for ARCHIVE_DELAY_MS so the owner can still track them, then archive.
+channels.archiveAt ??= {};
+const ARCHIVE_DELAY_MS = 3600_000;
+delete (channels as any).rails;
+delete (channels as any).railCategory;
+let onGone: (id: string) => void = () => {};
+export function setChannelGoneHandler(fn: (id: string) => void): void {
+	onGone = fn;
+}
+// The project list (channels.work) changed: a project was added, renamed or removed (messengers mirror it, hub/messenger-rooms.ts).
+let onWork: () => void = () => {};
+export function setWorkChangeHandler(fn: () => void): void {
+	onWork = fn;
+}
+// A stopped lane gives up its channel (deleted = true) or parks it; the notices of that channel follow (hub/notices.ts dropChannelNotices).
+let onLaneRelease: (id: string, deleted: boolean) => void = () => {};
+export function setLaneReleaseHandler(fn: (id: string, deleted: boolean) => void): void {
+	onLaneRelease = fn;
+}
+const save = () => writeAtomic(paths.channels, `${JSON.stringify(channels, null, 2)}\n`);
+// A gateway on a temp data dir (a test or a copy, hub/live-guard.ts) never connects, even with a real token in its config.
+export const dryRunReason = gatewayDryRun(DATA_DIR);
+export const status = { enabled: Boolean(TOKEN && GUILD && OWNER && !dryRunReason), connected: false, user: "", error: dryRunReason ? `dry run: ${dryRunReason}` : "" };
+
+// Discord lowercases text channel names and turns spaces into dashes; compare in that form.
+const textName = (s: string) => s.toLowerCase().replace(/\s+/g, "-");
+// Layout without emoji: category "<name>" holds the three main channels (chat, alerts, worklog in the identity's language);
+// the work category holds one channel per project, topic or lane, named plainly, with no bot-name prefix.
+const fixedNames = () => { const n = msg().channelNames; return { chat: n.chat, alert: n.alert, worklog: n.worklog } as const; };
+// config discord.category / discord.work_category rename them (a shared server, e.g. one category per bot); the same
+// name for both keeps every channel, work and lane ones too, under that one category.
+const categoryName = () => String(cfg.discord?.category || NAME);
+const workCategoryName = () => String(cfg.discord?.work_category || msg().channelNames.workCategory(NAME));
+const scrub = (s: string) => noEmoji(s).replace(/[┃|]/g, " ").replace(/\s+/g, " ").trim();
+const cleanName = (s: string) => scrub(s).slice(0, 90) || "work";
+// Thread names are plain words of what the work is (threads.ts threadTitle); the old "[kind]" prefix is gone.
+const threadName = (title: string, fallback?: string): string => threadTitle(title, fallback);
+// A thread starts from a real message in its parent channel (as the earlier secretary does), so it shows under that message with its
+// content instead of appearing empty with a "you were added" notice. Falls back to a bare thread if the post fails.
+// With `fromMessage` (the owner's own message in that channel) the thread hangs from it and nothing new is posted.
+async function threadFromMessage(parentId: string, starter: string, name: string, fromMessage?: string): Promise<{ id: string; name: string }> {
+	const mid = fromMessage ?? await post(parentId, buildPayloads(starter)[0]!).catch(e => {
+		log(`discord: thread starter post failed in ${parentId}: ${e}`);
+		return undefined;
+	});
+	const body = { name, auto_archive_duration: 10080 };
+	const t = mid ? await rest("POST", `/channels/${parentId}/messages/${mid}/threads`, body) : await rest("POST", `/channels/${parentId}/threads`, { ...body, type: 11 });
+	return { id: String(t.id), name: String(t.name) };
+}
+// Thread status is a traffic-light reaction on the parent-channel message the thread hangs from (owner 2026-10-19,
+// option 3): working 🟡, waiting 🔴 (needs the owner or someone else), done 🟢. Names are never changed for status:
+// every rename posts a "changed the channel name" system message that cannot be deleted (50021), and a channel allows
+// only 2 renames per 10 minutes. A thread started from a message has that message's id; a bare thread gets no light.
+type ThreadState = "working" | "waiting" | "done";
+const LIGHT: Record<ThreadState, string> = { working: "🟡", waiting: "🔴", done: "🟢" };
+async function setLight(id: string, parentId: string, state: ThreadState): Promise<void> {
+	const base = `/channels/${parentId}/messages/${id}/reactions`;
+	for (const [s, e] of Object.entries(LIGHT)) if (s !== state) await rest("DELETE", `${base}/${encodeURIComponent(e)}/@me`).catch(() => undefined);
+	await rest("PUT", `${base}/${encodeURIComponent(LIGHT[state])}/@me`).catch(e => log(`thread light ${state} failed on ${id}: ${e}`));
+}
+// Marks a thread done now and archives it an hour later (kept across restarts in channels.archiveAt).
+async function markDone(id: string, parentId: string): Promise<void> {
+	await setLight(id, parentId, "done");
+	channels.archiveAt[id] = Date.now() + ARCHIVE_DELAY_MS;
+	save();
+}
+let archiveTimer: Timer | undefined;
+function startArchiveTimer(): void {
+	if (archiveTimer) return;
+	archiveTimer = setInterval(() => {
+		const now = Date.now();
+		for (const [id, at] of Object.entries(channels.archiveAt)) {
+			if (at > now) continue;
+			delete channels.archiveAt[id];
+			save();
+			void rest("PATCH", `/channels/${id}`, { archived: true }).catch(e => log(`discord: thread ${id} archive failed: ${e}`));
+		}
+	}, 60_000);
+}
+const isWorkParent = (parent?: string) => !!parent && (parent === channels.category || parent === channels.workCategory);
+
+// With `files` the body goes as multipart (payload_json + files[i]), the way Discord takes message attachments.
+async function rest(method: string, path: string, body?: unknown, files?: Attach[]): Promise<any> {
+	for (let attempt = 0; ; attempt++) {
+		let payload: string | FormData | undefined = body === undefined ? undefined : JSON.stringify(body);
+		if (files?.length) {
+			const form = new FormData();
+			form.append("payload_json", JSON.stringify({ ...(body as object), attachments: files.map((f, i) => ({ id: i, filename: f.name })) }));
+			files.forEach((f, i) => form.append(`files[${i}]`, Bun.file(f.path), f.name));
+			payload = form;
+		}
+		const r = await fetch(`${process.env.DOTZ_DISCORD_API || "https://discord.com/api/v10"}${path}`, {
+			method,
+			headers: { Authorization: `Bot ${TOKEN}`, ...(files?.length ? {} : { "Content-Type": "application/json" }) },
+			body: payload,
+		});
+		if (r.status === 429 && attempt < 3) {
+			const wait = Number(((await r.json().catch(() => ({}))) as { retry_after?: number }).retry_after ?? 1);
+			await Bun.sleep(Math.min(wait, 30) * 1000 + 250);
+			continue;
+		}
+		if (!r.ok) throw new Error(`discord ${method} ${path}: ${r.status} ${(await r.text()).slice(0, 200)}`);
+		return r.status === 204 ? null : r.json();
+	}
+}
+
+export async function ensureChannels(): Promise<void> {
+	if (!status.enabled) return;
+	const all = (await rest("GET", `/guilds/${GUILD}/channels`)) as any[];
+	const existing = new Map(all.map(c => [String(c.id), String(c.name)]));
+	const parentOf = new Map(all.map(c => [String(c.id), c.parent_id ? String(c.parent_id) : ""]));
+	const adopted = new Set(channels.adopted ?? []);
+	const place = async (id: string, want: string, parent?: string, text = true) => {
+		if (adopted.has(id)) return;
+		const patch: Record<string, string> = {};
+		if (existing.get(id) !== (text ? textName(want) : want)) patch.name = want;
+		if (parent && parentOf.get(id) !== parent) patch.parent_id = parent;
+		if (Object.keys(patch).length) await rest("PATCH", `/channels/${id}`, patch);
+	};
+	if (!channels.category || !existing.has(channels.category)) channels.category = (await rest("POST", `/guilds/${GUILD}/channels`, { name: categoryName(), type: 4 })).id;
+	else await place(channels.category, categoryName(), undefined, false);
+	if (workCategoryName() === categoryName()) channels.workCategory = channels.category;
+	else if (!channels.workCategory || channels.workCategory === channels.category || !existing.has(channels.workCategory)) channels.workCategory = (await rest("POST", `/guilds/${GUILD}/channels`, { name: workCategoryName(), type: 4 })).id;
+	else await place(channels.workCategory, workCategoryName(), undefined, false);
+	const fixed = fixedNames();
+	for (const [key, name] of Object.entries(fixed) as [keyof typeof fixed, string][]) {
+		if (!channels[key] || !existing.has(channels[key]!)) channels[key] = (await rest("POST", `/guilds/${GUILD}/channels`, { name, type: 0, parent_id: channels.category })).id;
+		else await place(channels[key]!, name, channels.category);
+	}
+	// Lane channels keep the owner-facing name they were created or renamed with; only their category is fixed here.
+	for (const [lane, id] of Object.entries(channels.lanes)) {
+		if (channels.homes[lane]) continue; // a home lane is a thread; the channel list does not include threads
+		if (!existing.has(id)) delete channels.lanes[lane];
+		else await place(id, existing.get(id)!, channels.workCategory);
+	}
+	for (const lane of Object.keys(channels.homes)) if (!channels.lanes[lane]) delete channels.homes[lane];
+	if (channels.brief && !existing.has(channels.brief)) {
+		log(`discord: brief channel ${channels.brief} is gone; the morning brief goes to chat`);
+		delete channels.brief;
+	}
+	const me = await selfInfo().catch(() => undefined);
+	const byId = new Map(all.map(c => [String(c.id), c]));
+	for (const id of Object.keys(channels.work)) {
+		if (localIds.has(id)) continue; // web-only project: Discord never had it
+		// Gone, or another gateway's (an earlier build adopted anything under a shared category): dropped.
+		if (!existing.has(id) || (me && foreign(byId.get(id), me))) {
+			delete channels.work[id];
+			onGone(id);
+		} else channels.work[id] = existing.get(id)!;
+	}
+	for (const [id, t] of Object.entries(channels.threads)) if (!existing.has(t.parent)) delete channels.threads[id];
+	save();
+	onWork();
+	startArchiveTimer();
+	await keepPrivate(all, adopted).catch(e => log(`discord: could not hide channels from other bots (needs administrator): ${e}`));
+}
+
+// The bot's categories belong to it alone: other bots in the server (each has a managed role tagged with its bot id)
+// get View Channel denied on both categories and every channel in them, so they neither read nor answer there. An adopted
+// category or channel is not the bot's alone: it is left as it is, and of the channels in an adopted category only the
+// lane channels dotz made are hidden.
+async function keepPrivate(all: any[], adopted: Set<string>): Promise<void> {
+	const VIEW = 1n << 10n;
+	const me = (await rest("GET", "/users/@me")) as { id: string };
+	const others = ((await rest("GET", `/guilds/${GUILD}/roles`)) as any[]).filter(r => r.tags?.bot_id && r.tags.bot_id !== me.id);
+	if (!others.length) return;
+	const cats = [channels.category, channels.workCategory].filter(Boolean) as string[];
+	const byId = new Map(all.map(c => [String(c.id), c]));
+	const own = cats.filter(id => !adopted.has(id));
+	const laneIds = new Set(Object.values(channels.lanes));
+	const inside = all.filter(c => own.includes(String(c.parent_id)) || (cats.includes(String(c.parent_id)) && laneIds.has(String(c.id)))).map(c => String(c.id));
+	const targets = new Set([...own, ...inside].filter(id => !adopted.has(id)));
+	let changed = 0;
+	for (const id of targets)
+		for (const role of others) {
+			const ow = (byId.get(id)?.permission_overwrites ?? []).find((o: any) => o.id === role.id);
+			if (ow && (BigInt(ow.deny) & VIEW) === VIEW) continue;
+			await rest("PUT", `/channels/${id}/permissions/${role.id}`, { type: 0, deny: String((ow ? BigInt(ow.deny) : 0n) | VIEW), allow: String(ow ? BigInt(ow.allow) & ~VIEW : 0n) });
+			changed++;
+		}
+	if (changed) log(`discord: hid ${targets.size} channel(s) from ${others.map(r => r.name).join(", ")}`);
+}
+
+// Threads under chat or a work channel are sub-topics of that channel (one item, one mail, one task): the owner's
+// messages there arrive with the parent's context and the answer goes back into the thread.
+const threadParent = (parentId: string) => (parentId === channels.chat ? "chat" : channels.work[parentId] ? `ch:${parentId}` : undefined);
+
+// `starter` is the message posted in the parent channel that the thread hangs from (defaults to the thread name).
+export async function createThread(parent: string, name: string, starter?: string): Promise<{ id: string; name: string }> {
+	const parentId = resolve(parent);
+	if (!status.enabled || !parentId || !threadParent(parentId)) throw new Error(`threads can be made in chat or a work channel (ch:<id>), not ${parent}`);
+	const full = threadName(name, starter);
+	const t = await threadFromMessage(parentId, starter?.trim() || full, full);
+	channels.threads[t.id] = { parent: parentId, name: t.name };
+	save();
+	return t;
+}
+
+// Thread id -> parent channel id, for sub-topic threads and lane threads (a thread made from a message has its id).
+const starterThreads = (): Record<string, string> => ({ ...Object.fromEntries(Object.entries(channels.threads).map(([id, x]) => [id, x.parent])), ...Object.fromEntries(Object.entries(channels.homes).map(([lane, parent]) => [channels.lanes[lane], parent])) });
+
+export const threadInfo = (id: string) => {
+	const t = channels.threads[id];
+	return t ? { ...t, parentTarget: threadParent(t.parent) ?? "chat", parentName: t.parent === channels.chat ? msg().channelNames.chat : (channels.work[t.parent] ?? "?") } : undefined;
+};
+
+// Work channels: the owner hands out work by channel, so any other text channel under this bot's categories is a work
+// channel with its own context (the server is shared with other bots, so channels elsewhere are never answered).
+const notWork = new Set<string>();
+// This bot's id and its managed role (what other gateways' keepPrivate denies View Channel to), asked once.
+let selfMemo: Promise<{ id: string; role?: string }> | undefined;
+const selfInfo = () => (selfMemo ??= (async () => {
+	const id = String(((await rest("GET", "/users/@me")) as { id: string }).id);
+	const roles = (await rest("GET", `/guilds/${GUILD}/roles`).catch(() => [])) as any[];
+	return { id, role: roles.find(r => r.tags?.bot_id === id)?.id as string | undefined };
+})().catch(e => { selfMemo = undefined; throw e; }));
+// Another gateway's channel: it is tagged with that bot's id in its topic (createWorkChannel), or that gateway hid it from this bot
+// (keepPrivate denied View Channel to our role). Two gateways in one server (MacBook, Mac mini) must not adopt each other's work channels.
+const TOPIC_TAG = "dotz:";
+const foreign = (c: any, me: { id: string; role?: string }): boolean => {
+	const topic = String(c?.topic ?? "");
+	if (topic.startsWith(TOPIC_TAG) && topic.slice(TOPIC_TAG.length).split(/\s/)[0] !== me.id) return true;
+	return !!me.role && (c?.permission_overwrites ?? []).some((o: any) => o.id === me.role && (BigInt(o.deny) & (1n << 10n)) !== 0n);
+};
+async function classify(id: string): Promise<{ work: string } | { thread: string } | undefined> {
+	if (channels.work[id]) return { work: channels.work[id] };
+	if (channels.threads[id]) return { thread: channels.threads[id].name };
+	if (notWork.has(id) || !channels.category) return undefined;
+	const c = await rest("GET", `/channels/${id}`).catch(() => undefined);
+	if (c && (c.type === 11 || c.type === 12)) {
+		const parentKnown = threadParent(c.parent_id) || ("work" in ((await classify(c.parent_id)) ?? {}) ? c.parent_id : undefined);
+		if (parentKnown) {
+			channels.threads[id] = { parent: c.parent_id, name: String(c.name) };
+			save();
+			return { thread: String(c.name) };
+		}
+	}
+	const me = c && c.type === 0 && isWorkParent(c.parent_id) ? await selfInfo().catch(() => undefined) : undefined;
+	if (c && c.type === 0 && isWorkParent(c.parent_id) && !me) return undefined; // cannot tell whose it is yet: not remembered as "not work"
+	if (!c || c.type !== 0 || !isWorkParent(c.parent_id) || (me && foreign(c, me)) || [channels.chat, channels.worklog, channels.alert, channels.brief, ...Object.values(channels.lanes)].includes(id)) {
+		notWork.add(id);
+		return undefined;
+	}
+	channels.work[id] = String(c.name);
+	save();
+	log(`work channel #${c.name} (${id}) registered`);
+	onWork();
+	return { work: channels.work[id] };
+}
+
+export async function createWorkChannel(name: string): Promise<{ id: string; name: string }> {
+	if (!status.enabled) {
+		let n = channels.localNext ?? 1;
+		while (channels.work[String(n)]) n++;
+		const id = String(n);
+		channels.localNext = n + 1;
+		channels.local = [...(channels.local ?? []), id];
+		localIds.add(id);
+		channels.work[id] = name.trim() || id;
+		save();
+		onWork();
+		return { id, name: channels.work[id] };
+	}
+	if (!channels.workCategory) throw new Error("discord not configured");
+	const me = await selfInfo().catch(() => undefined);
+	const c = await rest("POST", `/guilds/${GUILD}/channels`, { name: cleanName(name), type: 0, parent_id: channels.workCategory, ...(me ? { topic: `${TOPIC_TAG}${me.id}` } : {}) });
+	channels.work[c.id] = String(c.name);
+	save();
+	onWork();
+	return { id: c.id, name: c.name };
+}
+
+export async function syncProfile(): Promise<void> {
+	if (!status.enabled) return;
+	const me = await rest("GET", "/users/@me");
+	if (me.username !== NAME) {
+		await rest("PATCH", "/users/@me", { username: NAME }).then(
+			() => log(`discord username set to ${NAME}`),
+			e => log(`discord username not changed (Discord allows two changes per hour): ${e}`),
+		);
+	}
+	const avatar = cfg.identity?.avatar ? expand(cfg.identity.avatar) : "";
+	if (!avatar || !existsSync(avatar)) return;
+	const bytes = readFileSync(avatar);
+	const sha = createHash("sha256").update(bytes).digest("hex");
+	if (existsSync(AVATAR_MARK) && readFileSync(AVATAR_MARK, "utf8").trim() === sha) return;
+	const mime = avatar.toLowerCase().endsWith(".png") ? "image/png" : avatar.toLowerCase().endsWith(".gif") ? "image/gif" : "image/jpeg";
+	const data = `data:${mime};base64,${bytes.toString("base64")}`;
+	await rest("PATCH", "/users/@me", { avatar: data });
+	await rest("PATCH", "/applications/@me", { icon: data }).catch(e => log(`app icon not changed: ${e}`));
+	mkdirSync(dirname(AVATAR_MARK), { recursive: true });
+	writeFileSync(AVATAR_MARK, `${sha}\n`);
+	log(`discord avatar set from ${avatar}`);
+}
+
+// Where a lane lives is recorded in its lane.json (hub/lanestate.ts: channel, home); main.ts installs the reader and writer.
+// lane:<name> falls back to that record when channels.json has no entry (a thread home dropped on stop, a resumed lane).
+type LaneRecords = { read: (lane: string) => { channel?: string; home?: string; title?: string; web?: boolean } | undefined; remember: (lane: string, channel: string | undefined, home?: string) => void };
+let laneRecords: LaneRecords = { read: () => undefined, remember: () => {} };
+export function setLaneRecords(r: LaneRecords): void {
+	laneRecords = r;
+}
+function laneId(lane: string): string | undefined {
+	if (channels.lanes[lane]) return channels.lanes[lane];
+	const rec = laneRecords.read(lane);
+	if (!rec?.channel) return undefined;
+	channels.lanes[lane] = rec.channel;
+	if (rec.home) channels.homes[lane] = rec.home;
+	save();
+	return rec.channel;
+}
+// Gateway restart: lanes launched before the record held a channel get it from the channel map.
+export function recordLaneChannels(): void {
+	for (const [lane, id] of Object.entries(channels.lanes)) if (!laneRecords.read(lane)?.channel) laneRecords.remember(lane, id, channels.homes[lane]);
+}
+
+// `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key. `place`
+// (threads.ts lanePlace) says where it works: a new channel, a thread in a work channel (hanging from the owner's own
+// message when it came from there), or an existing sub-topic thread the lane takes over.
+type LaneSpot = { kind: "web" } | { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
+export async function laneChannel(lane: string, title: string | undefined, place: LaneSpot, starter?: string, goal?: string): Promise<string | undefined> {
+	if (!status.enabled || !channels.category || place.kind === "web") return undefined;
+	if (!channels.lanes[lane]) {
+		if (place.kind === "adopt") {
+			channels.lanes[lane] = place.thread;
+			channels.homes[lane] = place.parent;
+			delete channels.threads[place.thread];
+			delete channels.archiveAt[place.thread];
+			await setLight(place.thread, place.parent, "working");
+		} else if (place.kind === "thread") {
+			const full = threadName(title?.trim() || lane, goal);
+			const t = await threadFromMessage(place.parent, starter?.trim() || `[run] ${full}`, full, place.fromMessage);
+			channels.lanes[lane] = t.id;
+			channels.homes[lane] = place.parent;
+			await setLight(t.id, place.parent, "working");
+		} else channels.lanes[lane] = (await rest("POST", `/guilds/${GUILD}/channels`, { name: cleanName(title?.trim() || lane), type: 0, parent_id: channels.workCategory ?? channels.category })).id;
+		save();
+		laneRecords.remember(lane, channels.lanes[lane], channels.homes[lane]);
+	}
+	return channels.lanes[lane];
+}
+
+// Validates a lane `home` argument (ch:<id> of a known work channel) and returns the channel id.
+export function homeChannel(home: string): string {
+	const id = home.startsWith("ch:") ? home.slice(3) : "";
+	if (!id || !channels.work[id]) throw new Error(`home must be a work channel (ch:<id> from the inbox header or dotz_channel list), not ${home}`);
+	return id;
+}
+
+// Lane stop for a home lane: a short done marker, a done light and an archive an hour later, the mapping dropped. The parent
+// channel is never touched and the thread is not locked, so an owner message there still reaches the orchestrator as a
+// thread of that work channel. Other lanes keep their channel.
+// A lane with its own channel keeps it while its session can be resumed (an owner message there resumes the lane) and
+// gets a one-line stopped marker; a throwaway lane (cwd under /tmp) or one whose session file is gone loses the channel,
+// since nothing could come back to it (owner 2026-10-20, option 1).
+// The lane's parent project while the channel map still has it (releaseLane drops it); the lane record keeps a copy.
+export function homeOf(lane: string): { home: string; homeName?: string } | undefined {
+	const id = channels.homes[lane];
+	return id ? { home: id, ...(channels.work[id] ? { homeName: channels.work[id] } : {}) } : undefined;
+}
+
+export async function releaseLane(lane: string, info?: { cwd?: string; sessionFile?: string }): Promise<void> {
+	const id = channels.lanes[lane];
+	const parentId = channels.homes[lane];
+	if (id) laneRecords.remember(lane, id, parentId);
+	if (id && !parentId) {
+		const throwaway = /^\/(private\/)?tmp\//.test(info?.cwd ?? "") || !info?.sessionFile || !existsSync(info.sessionFile);
+		onLaneRelease(id, throwaway);
+		if (throwaway) {
+			laneRecords.remember(lane, undefined);
+			delete channels.lanes[lane];
+			save();
+			if (status.enabled) await rest("DELETE", `/channels/${id}`).catch(e => log(`lane ${lane} channel delete failed: ${e}`));
+		} else if (status.enabled) await post(id, buildPayloads(msg().laneParked)[0]!, true).catch(e => log(`lane ${lane} stopped marker failed: ${e}`));
+		return;
+	}
+	if (!parentId || !id) return;
+	delete channels.lanes[lane];
+	delete channels.homes[lane];
+	save();
+	if (!status.enabled) return;
+	await post(id, buildPayloads(msg().threadDone)[0]!, true).catch(e => log(`lane ${lane} done marker failed: ${e}`));
+	await markDone(id, parentId).catch(e => log(`lane ${lane} thread done failed: ${e}`));
+}
+
+// A deleted lane (lanetrash.ts) gives up its channel mapping; restore puts it back. deleteChannel removes the lane's own
+// channel; lanetrash never calls it for a home thread, and the fixed channels and work channels are refused here too.
+export function takeLaneChannel(lane: string): { id: string; home?: string } | undefined {
+	const id = channels.lanes[lane];
+	if (!id) return undefined;
+	const home = channels.homes[lane];
+	delete channels.lanes[lane];
+	delete channels.homes[lane];
+	save();
+	return home ? { id, home } : { id };
+}
+export function putLaneChannel(lane: string, ch: { id: string; home?: string }): void {
+	channels.lanes[lane] = ch.id;
+	if (ch.home) channels.homes[lane] = ch.home;
+	save();
+}
+export async function deleteChannel(id: string): Promise<void> {
+	if ([channels.category, channels.workCategory, channels.chat, channels.worklog, channels.alert, channels.brief, channels.dm, ...Object.values(channels.lanes), ...Object.values(channels.homes)].includes(id) || channels.work[id]) throw new Error(`channel ${id} is still in use`);
+	if (!status.enabled) throw new Error("discord not configured");
+	await rest("DELETE", `/channels/${id}`).catch(e => {
+		// Already gone (deleted by hand): nothing left to do.
+		if (!/: 404 /.test(String(e))) throw e;
+	});
+}
+
+// Deletes a project's work channel on Discord and forgets it here (its threads too). The local mapping goes even when Discord refuses,
+// so the project is gone from the list; the error is thrown after, for the caller to report. Already gone (404) is fine.
+export async function deleteWorkChannel(id: string): Promise<void> {
+	if (!channels.work[id]) throw new Error(`ch:${id} is not a work channel`);
+	let failed: Error | undefined;
+	if (localIds.delete(id)) channels.local = (channels.local ?? []).filter(x => x !== id);
+	else if (!status.enabled) failed = new Error("discord not configured");
+	else await rest("DELETE", `/channels/${id}`).catch(e => {
+		if (!/: 404 /.test(String(e))) failed = e as Error;
+	});
+	delete channels.work[id];
+	for (const [tid, t] of Object.entries(channels.threads)) if (t.parent === id) delete channels.threads[tid];
+	save();
+	onWork();
+	if (failed) throw failed;
+}
+
+function resolve(target: string): string | undefined {
+	if (target.startsWith("lane:")) return laneId(target.slice(5));
+	if (target.startsWith("ch:")) return channels.work[target.slice(3)] && !localIds.has(target.slice(3)) ? target.slice(3) : undefined;
+	if (target.startsWith("th:")) return channels.threads[target.slice(3)] ? target.slice(3) : undefined;
+	if (target === "chat" || target === "worklog" || target === "alert" || target === "brief" || target === "dm") return channels[target];
+	return undefined;
+}
+
+// `reopen` allows unarchiving a thread that Discord auto-archived (50083); lane threads and sub-topic threads qualify.
+async function post(id: string, body: Body, reopen = false, files?: Attach[]): Promise<string> {
+	try {
+		return (await rest("POST", `/channels/${id}/messages`, body, files)).id;
+	} catch (error) {
+		const laneThread = Object.keys(channels.homes).some(lane => channels.lanes[lane] === id);
+		if (!(reopen || laneThread || channels.threads[id]) || !/50083/.test(String(error))) throw error;
+		await rest("PATCH", `/channels/${id}`, { archived: false });
+		return (await rest("POST", `/channels/${id}/messages`, body, files)).id;
+	}
+}
+
+// ---- Result files: a `[file] /abs/path` line (outside a ``` block) in an outgoing message becomes an attachment of that
+// message, posted by the bot. main.ts installs the resolver (the /api/file roots and secret deny-list, so nothing goes out
+// that the file route would refuse) and the download link of the gateway, used for a file over the upload limit or one
+// Discord rejects as too large (413). The limit is the guild's (10MB unboosted); config discord.attach_max_mb raises it.
+
+// Posts the message part that carries the files; Discord's 413 (too large for this guild) re-posts it with download links.
+async function postWithFiles(id: string, body: Body, files: Attach[], notes: string[]): Promise<string> {
+	if (!files.length) return post(id, withNotes(body, notes));
+	try {
+		return await post(id, withNotes(body, notes), false, files);
+	} catch (error) {
+		if (!/: 413 /.test(String(error))) throw error;
+		log(`discord: ${files.length} attachment(s) too large for ${id}; sending download links`);
+		return post(id, withNotes(body, [...files.map(linkLine), ...notes]));
+	}
+}
+
+// ---- Interactive messages (hub/auth.ts): content + components, edits, interaction callbacks ----
+
+type RichBody = { content: string; components: unknown[] };
+/** The part of an INTERACTION_CREATE payload the hub reads. Its values are never logged. */
+export type Interaction = {
+	id: string;
+	token: string;
+	type: number;
+	member?: { user?: { id?: string } };
+	user?: { id?: string };
+	message?: { content?: string };
+	data?: { custom_id?: string; components?: { components?: { custom_id?: string; value?: string }[] }[] };
+};
+let onInteraction: (d: Interaction) => void = () => {};
+export function setInteractionHandler(fn: (d: Interaction) => void): void {
+	onInteraction = fn;
+}
+
+export async function postRich(target: string, body: RichBody): Promise<{ channelId: string; messageId: string }> {
+	const channelId = resolve(target);
+	if (!channelId) throw new Error(`no discord channel for ${target}`);
+	// Body has no `components`; the payload is sent as-is.
+	const payload = { allowed_mentions: mentionsOff, ...body } as unknown as Body;
+	return { channelId, messageId: await post(channelId, payload) };
+}
+
+export async function editRich(channelId: string, messageId: string, body: RichBody): Promise<void> {
+	await rest("PATCH", `/channels/${channelId}/messages/${messageId}`, { ...body, allowed_mentions: mentionsOff });
+}
+
+// The interaction token is part of the URL; it is stripped from any error text so it cannot reach a log.
+export async function interactionCallback(d: Interaction, type: number, data?: unknown): Promise<void> {
+	try {
+		await rest("POST", `/interactions/${d.id}/${d.token}/callback`, data === undefined ? { type } : { type, data });
+	} catch (error) {
+		throw new Error(String(error).split(d.token).join("<token>"));
+	}
+}
+
+const sentAt = new Map<string, number>();
+// When the last message (not a progress note) went to a target through send(); the live status line reads it to know
+// whether an answer already reached the channel.
+export const lastSendAt = (target: string): number => sentAt.get(target) ?? 0;
+const unplaced = new Set<string>();
+
+// A REST failure worth retrying: no HTTP answer at all (network down, DNS, reset) or a Discord 5xx. A 4xx is final.
+export function isRetryable(error: unknown): boolean {
+	const m = /^Error: discord \S+ \S+: (\d{3})/.exec(String(error));
+	return !m || Number(m[1]) >= 500;
+}
+
+// An [ask] with a choice block carries one button per option on its last part (hub/askbuttons.ts).
+// Only a decision or an alert also carries a link button to its web conversation; an ordinary message carries none. The link holds no token.
+// The address comes from the same rule as hub/messenger.ts: the kind of the target, then convPath; a lane or any target the web has no chat route for gets no button.
+// Several decisions have no one answer to click: the link is their button.
+function messageButtons(target: string, bare: string, shown: string): unknown[] {
+	const components = askComponentsFor(target, bare, shown);
+	const kind = components.length || target === "alert" || hasDecisionHead(parseDecisions(bare).blocks) ? kindOf(target) : undefined;
+	const path = kind ? convPath(kind, target) : undefined;
+	const link = path ? webLink(path) : undefined;
+	if (link && components.length < 5) components.push({ type: 1, components: [{ type: 2, style: 5, label: "웹에서 보기", url: link }] });
+	return components;
+}
+
+// `opts` (sendlog.ts): parts below `skip` were already accepted, and each part carries nonce+index with enforce_nonce, so
+// Discord returns the earlier message instead of posting a part twice.
+export async function send(
+	target: string,
+	text: string,
+	replyTo?: string,
+	opts?: { nonce: string; skip: number; onPart: (index: number) => void; ping?: boolean },
+): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
+	text = ownerText(text);
+	let id = resolve(target);
+	// Nothing recorded for the lane: its message goes to the worklog with the lane title in front, never dropped. A web lane
+	// (started from the web, threads.ts lanePlace) has no Discord place on purpose, so nothing of it goes to Discord.
+	if (!id && target.startsWith("lane:") && channels.worklog && !laneRecords.read(target.slice(5))?.web) {
+		const lane = target.slice(5);
+		if (!unplaced.has(lane)) {
+			unplaced.add(lane);
+			log(`discord: no channel recorded for ${target}; its messages go to the worklog`);
+		}
+		id = channels.worklog;
+		text = `**${laneRecords.read(lane)?.title ?? lane}**: ${text}`;
+	}
+	if (!id) return { delivered: false, reason: `unknown target ${target}` };
+	const ids: string[] = [];
+	sentAt.set(target, Date.now());
+	const { text: bare, files: paths } = await chartFiles(fileLines(text));
+	const bodies = buildPayloads(bare, replyTo, SOFT_LIMIT, opts?.ping && OWNER && !pushReachesOwner() ? OWNER : undefined);
+	if (paths.length && !bodies.length) bodies.push({ content: "", allowed_mentions: mentionsOff, ...reference(replyTo) });
+	// The files go with the last part, planned only when that part is still to be sent (a retry may have sent it already).
+	const last = bodies.length - 1;
+	if (last >= 0) {
+		const components = messageButtons(target, bare, bodies[last]!.content);
+		if (components.length) bodies[last] = { ...bodies[last]!, components };
+	}
+	const plan = paths.length && last >= (opts?.skip ?? 0) ? planFiles(paths) : undefined;
+	for (let i = opts?.skip ?? 0; i < bodies.length; i++) {
+		const body = opts ? ({ ...bodies[i]!, nonce: `${opts.nonce}${i}`, enforce_nonce: true } as Body) : bodies[i]!;
+		ids.push(i === last && plan ? await postWithFiles(id, body, plan.files, plan.notes) : await post(id, body));
+		opts?.onPart(i);
+	}
+	return { delivered: true, ids };
+}
+
+export async function edit(target: string, messageId: string, text: string, opts?: { clearComponents?: boolean; buttons?: boolean }): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+	text = ownerText(text);
+	const id = resolve(target);
+	if (!status.enabled || !id) return { delivered: false, reason: `unknown target ${target}` };
+	// `embeds: []` clears the embed of a legacy message (sent before messages became plain text) when it is edited in place.
+	// `buttons`: the card's options may have changed; a text too long to hold them keeps the buttons it has.
+	const body = buildSingle(text), buttons = opts?.buttons && askComponentsFor(target, text, body.content).length ? messageButtons(target, text, body.content) : [];
+	await rest("PATCH", `/channels/${id}/messages/${messageId}`, { ...body, embeds: [], ...(opts?.clearComponents ? { components: [] } : buttons.length ? { components: buttons } : {}) });
+	return { delivered: true, ids: [messageId] };
+}
+
+/** The Discord link of a message the bot posted to `target` (a pending card the bot's turn names), or undefined off Discord. */
+export function messageLink(target: string, messageId: string): string | undefined {
+	const id = resolve(target);
+	return GUILD && id && /^\d{5,25}$/.test(messageId) ? `https://discord.com/channels/${GUILD}/${id}/${messageId}` : undefined;
+}
+
+// A message that is already gone (404 / Unknown Message) is the state the caller wanted.
+async function deleteMessage(target: string, messageId: string): Promise<void> {
+	const id = resolve(target);
+	if (!status.enabled || !id) return;
+	await rest("DELETE", `/channels/${id}/messages/${messageId}`).catch(e => {
+		if (!/ 404 |10008/.test(String(e))) throw e;
+	});
+}
+
+// One evolving status per (target, key) is a single message edited in place (Dori: grow one message only when it is one
+// evolving answer). A progress note is not the answer: clearProgress removes it once the turn's answer is posted.
+// Kept on disk (PROGRESS_FILE) so a gateway start can delete the ones left by turns that ran before it (clearLeftProgress).
+const progressIds = new Map<string, Map<string, string>>();
+const PROGRESS_FILE = join(DATA_DIR, "discord-progress.json");
+const saveProgress = () => writeAtomic(PROGRESS_FILE, `${JSON.stringify(Object.fromEntries([...progressIds].map(([t, m]) => [t, Object.fromEntries(m)])))}\n`);
+export async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
+	text = ownerText(text);
+	const prev = progressIds.get(target)?.get(key);
+	if (prev) return { ...(await edit(target, prev, text)), edited: true };
+	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
+	const id = resolve(target);
+	if (!id) return { delivered: false, reason: `unknown target ${target}` };
+	const mid = await post(id, { ...buildSingle(text), allowed_mentions: mentionsOff, ...reference(replyTo) });
+	if (!progressIds.has(target)) progressIds.set(target, new Map());
+	progressIds.get(target)!.set(key, mid);
+	saveProgress();
+	return { delivered: true, ids: [mid] };
+}
+
+// Runs first in clearProgress: the live status line stops its ticker there (and waits for a post still in flight), so no
+// late tick can put a message back after the clearing.
+let beforeClear: (target: string) => Promise<void> | void = () => {};
+export function setBeforeClearHook(fn: (target: string) => Promise<void> | void): void {
+	beforeClear = fn;
+}
+
+export async function clearProgress(target: string): Promise<void> {
+	await beforeClear(target);
+	const tracked = progressIds.get(target);
+	if (!tracked) return;
+	progressIds.delete(target);
+	saveProgress();
+	for (const mid of tracked.values()) await deleteMessage(target, mid).catch(e => log(`progress message ${mid} in ${target} not deleted: ${e}`));
+}
+
+// At gateway start no turn reports progress yet, so every progress message recorded by the gateway before it belongs to a turn
+// that is no longer reported (and would stay on the owner's screen: "5분째 작업 중" with nothing running): it is deleted.
+export async function clearLeftProgress(): Promise<void> {
+	if (!status.enabled || !existsSync(PROGRESS_FILE)) return;
+	let left: Record<string, Record<string, string>> = {};
+	try {
+		left = JSON.parse(readFileSync(PROGRESS_FILE, "utf8"));
+	} catch (e) {
+		log(`${PROGRESS_FILE} unreadable, left progress messages not cleared: ${e}`);
+	}
+	for (const [target, keys] of Object.entries(left))
+		for (const [key, mid] of Object.entries(keys)) {
+			// One this run posted already (same target and key) is live; only the earlier one is left over.
+			if (progressIds.get(target)?.get(key) === mid) continue;
+			await deleteMessage(target, mid).catch(e => log(`left progress message ${mid} in ${target} not deleted: ${e}`));
+		}
+	saveProgress();
+}
+
+// Thread status as in Dori, shown as the traffic-light reaction above; done archives it an hour later, other states
+// reopen it and cancel a pending archive.
+export async function threadStatus(target: string, state: ThreadState): Promise<string> {
+	const id = resolve(target);
+	const t = id && channels.threads[id];
+	if (!status.enabled || !t) throw new Error(`${target} is not a known thread (th:<id>)`);
+	if (state === "done") await markDone(id, t.parent);
+	else {
+		delete channels.archiveAt[id];
+		await rest("PATCH", `/channels/${id}`, { archived: false });
+		await setLight(id, t.parent, state);
+	}
+	save();
+	return `${LIGHT[state]} ${t.name}`;
+}
+
+export function ack(channelId: string, messageId: string): void {
+	void rest("PUT", `/channels/${channelId}/messages/${messageId}/reactions/${encodeURIComponent("👀")}/@me`).catch(e => log(`ack failed: ${e}`));
+}
+export function typing(target: string): void {
+	const id = resolve(target);
+	if (status.enabled && id) void rest("POST", `/channels/${id}/typing`).catch(() => undefined);
+}
+
+export type Incoming = {
+	id: string;
+	channelId: string;
+	// Where the owner wrote it (the 👀 goes there); differs from channelId when a reply to a thread's starter is routed into the thread.
+	ackChannelId: string;
+	channel: "chat" | "dm" | "worklog" | "alert" | "brief" | { lane: string } | { work: string; name: string; first: boolean } | { thread: string; name: string };
+	author: string;
+	content: string;
+	attachments: { name: string; url: string; type?: string }[];
+	replyTo?: { author: string; content: string };
+	picks?: Pick[];
+};
+
+// Owner messages sent while the gateway restarts or is disconnected are fetched after the next READY, as the earlier secretary handles
+// "messages between restarts": the id of the last handled owner message is kept on disk, and ids already handled in this
+// process are skipped so a message seen both live and in the catch-up is delivered once.
+const SEEN_FILE = join(DATA_DIR, "discord-seen.json");
+const CATCHUP_MS = 12 * 3600_000;
+let lastSeen: string = existsSync(SEEN_FILE) ? String(JSON.parse(readFileSync(SEEN_FILE, "utf8")).last ?? "") : "";
+const handled = new Set<string>();
+// Shutdown: intake closes first (incoming messages are dropped, lastSeen stays put so the next start's catch-up replays
+// them), the socket closes later; `closing` stops the reconnect loop.
+let intakeOpen = true;
+let closing = false;
+let socket: WebSocket | undefined;
+export function stopIntake(): void {
+	intakeOpen = false;
+}
+// Closes the gateway socket and resolves once it is closed (at most 3 s); no reconnect afterwards.
+export function disconnect(): Promise<void> {
+	closing = true;
+	const ws = socket;
+	if (!ws || ws.readyState === WebSocket.CLOSED) return Promise.resolve();
+	return new Promise(resolve => {
+		const timer = setTimeout(resolve, 3000);
+		ws.addEventListener("close", () => {
+			clearTimeout(timer);
+			resolve();
+		});
+		ws.close(1000, "shutdown");
+	});
+}
+const snowflakeMs = (id: string) => Number((BigInt(id) >> 22n) + 1420070400000n);
+
+// Edits of recent owner messages: the text of each delivered owner message is kept by id so MESSAGE_UPDATE can be delivered
+// as a correction carrying the old text (as the earlier secretary does). An edit is delivered once per distinct content.
+const EDIT_WINDOW_MS = 15 * 60_000;
+const recentTexts = new Map<string, string>();
+const remember = (id: string, text: string) => {
+	recentTexts.delete(id);
+	recentTexts.set(id, text);
+	if (recentTexts.size > 500) recentTexts.delete(recentTexts.keys().next().value!);
+};
+
+// Returns the text to deliver for a MESSAGE_UPDATE, or undefined when it is not a fresh owner edit (embed unfurl, same text, too old).
+function editedText(m: { id: string; content?: unknown; edited_timestamp?: unknown; author?: { id?: unknown; bot?: boolean } }, now = Date.now()): string | undefined {
+	if (m.author?.bot || String(m.author?.id) !== OWNER || !m.edited_timestamp || typeof m.content !== "string") return undefined;
+	if (now - snowflakeMs(m.id) > EDIT_WINDOW_MS) return undefined;
+	const previous = recentTexts.get(m.id);
+	if (previous === m.content) return undefined;
+	remember(m.id, m.content);
+	return `[edited message: the owner changed an earlier message, treat this as a correction, do not answer the original again; previous text: ${JSON.stringify(previous ?? "(unknown)")}]\n${m.content}`;
+}
+
+// Channels outside this bot's categories that a custom plugin claims (hub/plugins.ts): `raw` gets the owner's messages there
+// as they are (not the orchestrator); `thread` is delivered as a sub-topic thread of `parent` under that name.
+export type Claim = { raw: (m: Incoming) => void } | { thread: string; parent: string };
+let claimOf: (channelId: string) => Claim | undefined = () => undefined;
+export function setClaimHandler(fn: (channelId: string) => Claim | undefined): void {
+	claimOf = fn;
+}
+
+// A plain message to a channel by id (a claimed channel has no target name).
+export async function postTo(channelId: string, text: string): Promise<void> {
+	if (!status.enabled) return;
+	await post(channelId, { ...buildSingle(text), allowed_mentions: mentionsOff });
+}
+
+export function connect(onMessage: (m: Incoming) => void): void {
+	if (!status.enabled) return;
+	const deliverIncoming = (m: any, channel: Incoming["channel"], edited?: string, sink = onMessage) => {
+		if (!intakeOpen) return;
+		if (edited === undefined) {
+			if (handled.has(m.id)) return;
+			handled.add(m.id);
+			remember(m.id, String(m.content ?? ""));
+		}
+		if (handled.size > 500) handled.delete(handled.values().next().value!);
+		if (!lastSeen || BigInt(m.id) > BigInt(lastSeen)) {
+			lastSeen = m.id;
+			writeAtomic(SEEN_FILE, `${JSON.stringify({ last: lastSeen })}\n`);
+		}
+		const ref = m.referenced_message;
+		sink({
+			id: m.id,
+			channelId: m.channel_id,
+			ackChannelId: m.ack_channel_id ?? m.channel_id,
+			channel,
+			author: m.author.global_name ?? m.author.username,
+			content: edited ?? String(m.content ?? ""),
+			attachments: (m.attachments ?? []).map((a: any) => ({ name: a.filename, url: a.url, type: a.content_type })),
+			...(ref ? { replyTo: { author: ref.author?.bot ? NAME : (ref.author?.global_name ?? ref.author?.username ?? "?"), content: String(ref.content ?? "").slice(0, 300) } } : {}),
+		});
+	};
+	let seq: number | null = null;
+	let sessionId = "";
+	let resumeUrl = "";
+	let heartbeat: ReturnType<typeof setInterval> | undefined;
+	const open = () => {
+		if (closing) return;
+		const ws = new WebSocket(resumeUrl || process.env.DOTZ_DISCORD_GATEWAY || "wss://gateway.discord.gg/?v=10&encoding=json");
+		socket = ws;
+		let acked = true;
+		ws.onmessage = ev => {
+			const p = JSON.parse(String(ev.data));
+			if (p.s) seq = p.s;
+			if (p.op === 10) {
+				heartbeat = setInterval(() => {
+					// No ACK since the last beat = zombie connection: close and resume.
+					if (!acked) return ws.close(4000, "heartbeat ack missing");
+					acked = false;
+					ws.send(JSON.stringify({ op: 1, d: seq }));
+				}, p.d.heartbeat_interval);
+				ws.send(JSON.stringify(sessionId && resumeUrl
+					? { op: 6, d: { token: TOKEN, session_id: sessionId, seq } }
+					: { op: 2, d: { token: TOKEN, intents: INTENTS, properties: { os: "darwin", browser: "dotz", device: "dotz" } } }));
+			} else if (p.op === 11) acked = true;
+			else if (p.op === 1) ws.send(JSON.stringify({ op: 1, d: seq }));
+			else if (p.op === 7) ws.close();
+			else if (p.op === 9) {
+				sessionId = resumeUrl = "";
+				ws.close();
+			} else if (p.op === 0 && p.t === "READY") {
+				sessionId = p.d.session_id;
+				resumeUrl = `${p.d.resume_gateway_url}/?v=10&encoding=json`;
+				status.connected = true;
+				status.error = "";
+				status.user = p.d.user?.username ?? "";
+				log(`discord connected as ${status.user}`);
+				void catchUp().catch(e => log(`discord catch-up failed: ${e}`));
+			} else if (p.op === 0 && p.t === "RESUMED") status.connected = true;
+			else if (p.op === 0 && p.t === "MESSAGE_CREATE") handle(p.d);
+			else if (p.op === 0 && p.t === "INTERACTION_CREATE") onInteraction(p.d);
+			else if (p.op === 0 && p.t === "MESSAGE_UPDATE") {
+				const edited = editedText(p.d);
+				if (edited !== undefined) handle(p.d, edited);
+			} else if (p.op === 0 && p.t === "THREAD_DELETE" && (channels.threads[p.d.id] || Object.values(channels.lanes).includes(p.d.id))) {
+				delete channels.threads[p.d.id];
+				for (const [lane, id] of Object.entries(channels.lanes)) if (id === p.d.id && channels.homes[lane]) {
+					delete channels.lanes[lane];
+					delete channels.homes[lane];
+				}
+				save();
+			} else if (p.op === 0 && p.t === "CHANNEL_DELETE" && channels.work[p.d.id]) {
+				delete channels.work[p.d.id];
+				for (const [id, t] of Object.entries(channels.threads)) if (t.parent === p.d.id) delete channels.threads[id];
+				save();
+				onWork();
+				onGone(p.d.id);
+			} else if (p.op === 0 && p.t === "CHANNEL_UPDATE" && channels.work[p.d.id]) {
+				if (!isWorkParent(p.d.parent_id)) {
+					delete channels.work[p.d.id];
+					onGone(p.d.id);
+				} else channels.work[p.d.id] = String(p.d.name);
+				save();
+				onWork();
+			}
+		};
+		ws.onclose = ev => {
+			clearInterval(heartbeat);
+			status.connected = false;
+			status.error = `closed ${ev.code}`;
+			if ([4004, 4010, 4011, 4012, 4013, 4014].includes(ev.code)) {
+				log(`discord fatal close ${ev.code}; not reconnecting`);
+				return;
+			}
+			if (!closing) setTimeout(open, 5000);
+		};
+	};
+	const catchUp = async () => {
+		if (!lastSeen) return;
+		const floor = Date.now() - CATCHUP_MS;
+		const ids = [channels.chat, channels.dm, channels.worklog, channels.alert, channels.brief, ...Object.values(channels.lanes), ...Object.keys(channels.work).filter(id => !localIds.has(id)), ...Object.keys(channels.threads)].filter((x): x is string => !!x);
+		const missed: any[] = [];
+		for (const id of new Set(ids)) {
+			const list = await rest("GET", `/channels/${id}/messages?after=${lastSeen}&limit=50`).catch(() => []);
+			if (Array.isArray(list)) missed.push(...list.filter(m => !m.author?.bot && String(m.author?.id) === OWNER && snowflakeMs(m.id) >= floor && !handled.has(m.id)));
+		}
+		missed.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+		if (missed.length) log(`discord: catching up ${missed.length} owner message(s) sent while offline`);
+		for (const m of missed) handle({ ...m, guild_id: m.guild_id ?? (m.channel_id === channels.dm ? undefined : GUILD) });
+	};
+	const handle = (m: any, edited?: string) => {
+		if (!intakeOpen) return;
+		if (m.author?.bot || String(m.author?.id) !== OWNER) return;
+		const into = threadForReply(m.message_reference?.message_id, m.channel_id, starterThreads());
+		if (into) m = { ...m, channel_id: into, ack_channel_id: m.channel_id };
+		const claim = claimOf(m.channel_id);
+		if (claim && "raw" in claim) {
+			if (edited === undefined) deliverIncoming(m, "alert", undefined, claim.raw);
+			return;
+		}
+		if (claim) {
+			if (!channels.threads[m.channel_id]) {
+				channels.threads[m.channel_id] = { parent: claim.parent, name: claim.thread };
+				save();
+			}
+			return deliverIncoming(m, { thread: m.channel_id, name: channels.threads[m.channel_id]!.name }, edited);
+		}
+		const lane = Object.entries(channels.lanes).find(([, id]) => id === m.channel_id)?.[0];
+		// chat, worklog and alert are the orchestrator level: owner messages there reach the orchestrator, which routes them.
+		const fixed = lane ? { lane } : m.channel_id === channels.chat ? "chat" : m.channel_id === channels.worklog ? "worklog" : m.channel_id === channels.alert ? "alert" : m.channel_id === channels.brief ? "brief" : !m.guild_id ? "dm" : undefined;
+		if (!fixed && m.guild_id === GUILD) {
+			const first = edited === undefined && !channels.work[m.channel_id] && !channels.threads[m.channel_id];
+			void classify(m.channel_id).then(c => {
+				if (c && "work" in c) deliverIncoming(m, { work: m.channel_id, name: c.work, first }, edited);
+				else if (c) deliverIncoming(m, { thread: m.channel_id, name: c.thread }, edited);
+			});
+			return;
+		}
+		const channel = fixed;
+		if (!channel) return;
+		if (channel === "dm" && channels.dm !== m.channel_id) {
+			channels.dm = m.channel_id;
+			save();
+		}
+		deliverIncoming(m, channel, edited);
+	};
+	open();
+}

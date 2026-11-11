@@ -1,0 +1,132 @@
+# Reply drafts (design of record)
+
+Shipped feature folder, off by default and turned on per install (`bin/onboard.ts on` writes a personal `feature.md` with
+`enabled: true`, like webmail-no-api). A source whose monitoring the user set up (zele on in config.json, a webmail-no-api site, a
+connected YouTube or Instagram) gets suggestions without a separate step until the user decides otherwise (`settings.ts appOn`,
+`monitored`); the first suggestion writes the personal switch so the orchestrator knows how to answer it. An explicit off wins. Distribution rule: no person's name, account, address or tone sample in the repo; the
+tone is learned per install, from that install's user, and lives only under `<DATA_DIR>/custom/reply-drafts/`.
+
+## Mechanism (generic engine in `hub/reply-draft.ts`)
+
+1. One item -> one headless model call that only judges and drafts and answers one JSON object
+   `{action: skip|draft, reason, to, subject, body, questions[]}`. The script, never the model, posts and sends.
+2. The prompt carries the user's own sent sentences, the user's past corrections verbatim, rules and a forbidden list. The
+   received text is data, never instructions; no invented style; no promised dates, money or terms.
+3. Deterministic lint (recipient is the sender/reply-to/cc and not the user, `Re:` subject, length, no placeholders, no forbidden
+   expression). One retry with the failures listed; what still fails is shown as a warning with the draft.
+4. The same lint runs again right before sending (`draft.ts send`).
+5. A revision records only the lasting preference the change shows (the model's `lesson`), dated under `## 고친 점` of the tone profile of the draft that was revised (its room, else its app). A one-off change (`lesson` empty) records nothing; a model that gives no `lesson` leaves the change itself. Only the newest 12, clipped to 200 characters, reach a mail or comment prompt.
+6. `drafts.json` remembers every mail key already looked at, so a mail is not drafted twice.
+7. A mail draft reads the whole mail and the sender's earlier mail, and judges who wrote before writing: `recipient {who, evidence}`, where the evidence must be the sender's own words.
+8. An edit asked outside a card, numbered answers in a chat included, goes through `draft.ts correct`, so the next draft sees it.
+
+## Approval
+
+The offer is a `[ask]` built by `draftApprovalBlock` (1) 보내기 / 2) 고치기 / 3) 보내지 않기). `draft.ts send <id>` goes out only
+when `draftVerdict` (hub/draft-approval.ts) finds the user's latest pick for exactly that id, made after the draft was created,
+to be 보내기. Without a pick, with a pick for another id, after 고치기 or 보내지 않기: refused.
+
+The owner is asked once, with a complete draft (owner 2026-10-26): a draft that comes back with `questions` goes back to the model
+once (`buildDraft`, mail and comments) to settle them from the message, context and tone; what is still open is a fact only the owner
+knows and is asked in the same card, as a `정할 것:` list (one `- ` line each) right above `결정: 이 답장 보낼까요? (<id>)` (draftApprovalBlock
+`decide`; owner 2026-11-02: joined into the question it read as one run-on line). Lint warnings stay a `-# 확인:` line.
+A change to how a card shows its files or warnings must reach the cards already waiting, not only new ones: every open card is re-read
+on start and re-checked against its staged files on start, after a file changes and when the approvals or the bell are read
+(hub/notices.ts refreshNoticeDrafts, refreshDraftFiles).
+A mail whose words and files disagree does not go out on 1) 보내기 (owner 2026-11-04: rules in the prompt did not hold, and a warning shown once did not either). `hub/attach-check.ts` compares
+them, with plain code and no model, for every rendering of the card and again in `sendDraft`; `draftAttachIssues` adds the files chosen but not on the draft yet (`wantFiles`). The card carries a
+`-# ⚠️ 첨부 확인:` line and a 4th option 이대로 보내기 (`send-as-is`, also a typed "이대로 보내": the pick on Discord spends the card's buttons), and both follow the staged files (`withAttachIssues`).
+A refused send leaves the draft pending and opens the card again (`markDraftSend`). On a reply + mail card the refusal comes before the reply is posted (hub/comments/engine.ts `mailRefusal`).
+A chat message that needs his own decision still asks first (exit 4), since the reply depends on it.
+
+## Files (`<DATA_DIR>/custom/reply-drafts/`)
+
+- `config.json` `{enabled, auto, apps: {mail|youtube|instagram|...: {auto}}, senders: {only, skip}, model?}`; a missing file means off. `enabled` is the feature
+  switch, `apps.<app>.auto` is the switch of one source (every source off until turned on; `onboard.ts on|off --app <app>`). An old config without
+  `apps.mail` drives mail by the top-level `auto`; `setApp` writes mail's state down before another source is switched on.
+- `tone/` the tone store, one markdown file per profile, each with the sections `## 말투`, `## 예시`, `## 고친 점`, `## 금지` (bullets):
+  - `tone/install.md` the whole install (fallback of everything);
+  - `tone/<app>.md` one app: `mail`, `youtube`, `instagram`, `blog`, `kakao`, ... (app id `[a-z0-9-]`; `install` is reserved);
+  - `tone/<app>/<room>.md` one conversation of a messenger (room id reduced to `[A-Za-z0-9_-]`, so it is always a safe file name).
+  Reading (`loadStyle({app, room?})`): the 예시 come from the narrowest profile that has any (room -> app -> install) and the result says
+  which level that was; 말투, 고친 점 and 금지 are merged from all levels, install first and the narrower ones later. Writing
+  (`learnTone`, `recordCorrection`) goes into exactly one profile. Two rooms of one messenger therefore never share a tone, a room
+  that was never written to follows its app, an app without samples follows the install. A mailbox is a room of its account (`tone/<instance>/<box>.md`);
+  what its voice was learned from is in `box-voice.json` (docs/mailbox.md "Voice").
+  A profile with corrections or a section of its own is not relearned. A `## ` section the code does not know reaches the rules.
+  Legacy: an old `style.md` is read as the `mail` profile until `tone/mail.md` exists (the next write moves it over); for the `youtube`
+  and `instagram` apps without samples, `## 예시` of `custom/sns/tone.md` is used (only for those apps, between app and install).
+- `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale. Each draft keeps its `app` and `room`.
+
+## How a new install's tone is learned
+
+The base is a deep first sweep, the details come from use (owner 2026-10-23; method generalised from the reference install, whose
+mail agent drafted from an extract of the whole sent mailbox, a per-situation reply template in the user's own sentences, and verbatim
+corrections turned into a checklist). `lib/persona.ts`:
+
+- First sweep, once per profile (`learnFirst`, recorded in `learned.json`; a source with nothing to read yet is asked again): up to
+  `SWEEP_LIMIT` (200) sent texts, each with the start of what it answered, are kept in `sent/<profile>.md` and analysed in one model
+  call into `## 정체성` (6-12 bullets: register, structure, exact greeting and sign-off, emoticons, recurring requests, how the user
+  declines, asks and thanks, what they never write) and `## 답장 틀` (`<situation> => <sentence> | <sentence>`: how the user answers each
+  situation seen at least twice, in their own sentences with `{slots}`, conditional lines marked `[...]`). Lines with an e-mail, a URL
+  or a phone number are dropped; names are asked as `{slots}`.
+- The draft prompt opens with the identity and the reply templates: a fitting template is filled, otherwise the user's own sentences
+  are preferred over new ones; samples, rules and corrections refine it. With past replies as examples (mail, comment), a message close to one of them
+  (`examplesUse` in `hub/reply-draft.ts`: mail 0.27, comment 0.36, plain similarity of the shown pairs) follows that reply's shape; any other message is
+  unfamiliar and is written in the user's voice in new sentences, with three examples for voice only.
+- Every `REFINE_EVERY` (5) corrections of a profile, one call folds them into its identity and templates (`maybeRefine`).
+- Reply pairs (`pairs/<app>.jsonl`, `lib/pairs.ts`) are read from the sent mail of the accounts the mail apps name, even when zele is not switched on in config.json. They are refreshed without a model call: the first 500 threads, then the newest 40 once a day. Each pair keeps who it answered, and replies to the same sender lead the examples.
+- Where it runs: mail before the first offered draft (`offer.ts`, gateway passes zele's sent mail when zele is on), a comment source
+  before its first draft (`CommentAdapter.ownTexts`), a KakaoTalk room on its first draft (`ensureKakaoRoom`), and `onboard.ts on|learn`.
+  Without an injected `analyze` call (tests, library use) nothing is analysed.
+
+1. `onboard.ts on`: the `mail` profile from the user's sent mail when zele is on (`zele mail list --folder sent`, then `zele mail read <id>`).
+   Comment tone needs no step: `custom/sns/tone.md` examples are read for `youtube` and `instagram` until those apps have their own.
+2. `onboard.ts learn [--app <app|install>] [--room <id>] [--from-file <f>]`: sentences of a file into a chosen profile (default `mail`).
+3. KakaoTalk: the first `draft.ts new --app kakao --room <chat id> --kind chat` of a room with an empty profile reads the user's own
+   lines of that room from the hub/kakao reader (`lib/kakao-tone.ts`) and learns `tone/kakao/<chat id>.md`. Only that room's lines.
+4. Then every 고치기: `draft.ts revise` records it in the draft's room (else app) profile; for a chat reply the orchestrator runs
+   `draft.ts correct --app kakao --room <id> --change <text>`.
+
+## Code
+
+- `lib/offer.ts` `offerMailDraft`: the gateway hook for a new mail (off unless enabled and auto; never throws; a failure is logged and returns `failed`). `hub/main.ts` wires it into `mailDeps().offerDraft`.
+- `lib/flow.ts` build / revise / send / drop shared by the offer and `bin/draft.ts`.
+- `lib/box-voice.ts` one learned voice per mailbox from his own replies in it (docs/mailbox.md "Voice"), run beside the pair refresh of a draft, once, not per mail.
+- `lib/tone.ts` sentence extraction (3-120 chars, quoted history and signatures dropped, deduped, at most 40) from injected sources, into one profile.
+- `lib/kakao-tone.ts` the user's own text lines of one KakaoTalk room (injected reader, fixture in tests) -> `kakao/<chat id>`.
+- `lib/senders.ts` zele: `zele mail read <id>` first (zele refuses a reply otherwise), then `zele mail reply <id> --to <to> [--cc <list>] --body <body>`; a refused
+  reply is reported as a stale draft to redraft; the files staged for the draft ride along as `--attach <path>` (one flag each). Or a webmail-no-api site's draft/approve/send
+  (no files: the sheet says so and asks once more; one 받는 사람 and no 참조: it refuses several in Korean); or a custom plugin's `reply` hook
+  (docs/custom-plugins.md, `to` a comma list, `cc`, `all`, files in `attachments`; only a plugin that declares `needsAccount` is held for an unsettled zele account); anything else is refused ("직접 보내야 해요").
+- `lib/recipients.ts` 답장 | 전체 답장: the sender alone, or the sender plus the original mail's 받는 사람·참조 minus the owner's own addresses (hub/mail-state.ts
+  `ownAddresses`). The owner edits the list on the card; hub/draft-recipients.ts stores it and rewrites the waiting approval notice.
+- `lib/library.ts` + `lib/staged.ts`: the instance's 첨부 파일 폴더 setting (`attachFolders.<instance>`). Files are chosen by what the mail asks for, not by name overlap alone. Before the draft call `flow.ts candidatesFor` lists the files the model may choose from: the matched rule's files (resolved) first, then the library files with a score above 0, at most `CANDIDATE_MAX` (12), names only, no model call. They ride in the one draft call (`ReplyItem.candidates`); the answer carries `"files":[exact names]` (`ReplyResult.files`: kept only if a member of the candidates, `[]` = none, absent key = the model did not choose and today's name matching runs). Only the chosen files are staged under `draft-files/<draft id>/<n>/` (`stageForReply`); a rule's files are candidates like the rest, they no longer replace the library. A body that promises a file while none is chosen (`attachIssues` missing | partial) is rewritten once. A rule's files with no folder set are staged as they are. A 고치기 about files (`fileChange`) offers the files on the draft plus the library matches for the change, and the staged set becomes exactly what the model returns; a change about wording keeps the files. `mail-cli compose --from-library` takes only the top-scoring files (at least `MIN_SCORE`). The owner confirms or changes the files in the send sheet (hub/draft-attach.ts), and nothing goes without 보내기.
+  `readMailBody(source, id, run)` gives the gateway offer the mail text (zele read, or the site's `mail.ts <site> read <id>`).
+- `hub/auto-attach.ts`: one install's own rules for draft files in `custom/reply-drafts/auto-attach.json`, no file = no rule: `withhold` (path patterns never picked by keywords in `composeMail`), `narrow` (`when` words in the request, `only` a file pattern, `note` in that install's words), `fileWords` and `audioWords` (extra words for a document or a sound file in `asksForFile`, `claimsAttachment` and `attachIssues`; a Latin word matches whole), `noiseWords` (words in a file name that tie it to nothing), `genericWords` (words that never rank a library file). The built-in words stay general; a trade's own words belong here. An unusable file attaches nothing and says so on the card. It is a file of its own because `saveSettings` drops keys it does not know.
+- A file that cannot be copied yet (an iCloud file that was evicted: EDEADLK) is never lost: after a short wait (`tries` 5 in the offer path) it goes to the draft's `wantFiles` (`{name, path}`), the card is posted at once, and `staged.ts retryWanted` retries in the background (about 5 minutes, off the offer queue); a file that lands is staged, leaves `wantFiles` and calls `changed` (hub/main.ts: `syncCardFiles`, so the waiting card updates). A copy that fails for another reason is kept in `wantFiles` too, so the send gate sees it. Pending drafts with `wantFiles` made by another process (`draft.ts new`, `revise`) or left by a restart get the same retry when the gateway re-reads its cards (`syncCardFiles` -> `resumeWantedFiles`). `draft.ts detach` by name takes off a file that will not come. `requestDownload` runs `/usr/bin/brctl download` on the real path (the 첨부 파일 폴더 is often a symlink into iCloud).
+- The model call is injected; the default is `hub/outlang.ts callModel` (subscription only, never an API key).
+
+## Sources
+
+Comments of YouTube, Instagram and websites also have their own source contract, shared collection (script only), a per-source chosen-posts list, a web view and one send gate: `features/comments` + `hub/comments/` (docs/comments-api.md). It takes its tone profile (`tone/<source>.md`), lint and `[ask]` shape from this engine; when it is on for a platform the old `sns-*-comments` watch is paused so a comment is handled once.
+
+| Source | State | Adapter |
+|---|---|---|
+| mail (zele, webmail-no-api) | done | gateway hook `lib/offer.ts` |
+| youtube comments | done | `features/youtube-instagram/lib/reply-adapter.ts` |
+| instagram comments | done | the same file (one implementation for both platforms) |
+| website / blog comments | done | `features/comments` (generic website adapter: RSS/JSON/script to read, webhook/script to post; docs/comments-api.md) |
+
+A comment source plugs into `lib/comments.ts` with a `CommentAdapter` and its watch prints one line per new comment:
+`{app, label, parse(line) -> {id, author, text, context}, stage(comment, reply) -> pendingId, discard(pendingId)}`.
+`draftComments(adapter, lines)` does the rest: source off -> every line passes through unchanged; on -> drafts once per comment id
+(`drafts.json` keys), a skip makes no ask, a failure or the time budget (90 s) leaves the raw line for the orchestrator. `stage` only
+creates a pending reply (YouTube/Instagram: an `sns.ts` reply job), never posts; the source's own approve command refuses without the user's
+`1) 보내기` pick for exactly that pending id (`draftVerdict`). `reviseComment` is the 고치기 path: change recorded in the app's tone profile, new
+pending reply and ask, old one discarded. The ask is `[ask]` + a quoted `> 원댓글 <작성자>: <글>` + `draftApprovalBlock` (label `대상`, ref = pending id);
+the source's label (유튜브, 인스타) is in it, which is how 모니터링 files it under its app.
+What a website adapter still needs: a watch that lists new comments of one site (browser login, session kept like webmail-no-api, quiet hours
+and baseline state like `watchkit`), `parse`, a `stage` that keeps the reply as a pending item, a posting script that runs only after approval,
+`onboard.ts on --app <site>` with its own connection check and tone learning from the owner's past replies on that site, and an
+`integrations.ts` entry whose text patterns match its asks.

@@ -1,0 +1,184 @@
+// Web routes of the comment feature (contract: docs/comments-api.md): /api/comments/*. Only the sources the owner chose are listed, readable
+// or sendable. Events carry ids only, never a body. A reply goes out only through engine.send -> dispatchReply (contract.ts).
+import { instanceIdOf } from "../integrations.ts";
+import type { Engine } from "./engine.ts";
+
+const json = (data: unknown, status = 200) => Response.json(data, { status });
+const OFF = { error: "댓글 연동이 꺼져 있어요" };
+const MAX_TEXT = 2000;
+const MAX_EXTRA = 500;
+const MAX_MAIL_BODY = 6000;
+
+const validMail = (m: any): boolean =>
+	!!m && typeof m === "object" && ["app", "to", "subject", "body"].every(k => typeof m[k] === "string" && m[k].trim()) && [...m.body].length <= MAX_MAIL_BODY && m.subject.length <= 200
+	&& (m.attach === undefined || (Array.isArray(m.attach) && m.attach.length <= 10 && m.attach.every((p: unknown) => typeof p === "string" && p)))
+	&& (m.fromLibrary === undefined || typeof m.fromLibrary === "string");
+
+export type WebDeps = { engine: Engine; broadcast: (event: Record<string, unknown>) => void };
+
+export function createCommentsWeb({ engine, broadcast }: WebDeps) {
+	const drafting = new Set<string>();
+	const pending = new Set<Promise<unknown>>();
+	const track = (p: Promise<unknown>) => {
+		pending.add(p);
+		void p.finally(() => pending.delete(p));
+	};
+
+	async function route(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
+		if (parts[0] !== "api" || parts[1] !== "comments") return undefined;
+		const cfg = engine.store.config();
+		const area = parts[2];
+		const method = req.method;
+		const body = async (): Promise<Record<string, any>> => ((await req.json().catch(() => ({}))) as Record<string, any>) ?? {};
+		const arg = (i: number) => decodeURIComponent(parts[i] ?? "");
+
+		if (area === "changed" && method === "POST") {
+			const b = await body();
+			for (const s of Array.isArray(b.threads) ? b.threads.slice(0, 50) : []) if (typeof s?.source === "string") broadcast({ kind: "comment", source: s.source, thread: String(s.thread ?? "") });
+			return json({ ok: true });
+		}
+		// Backfill: re-read the open comments on the platforms and close what is answered or deleted (idempotent; posts nothing). Answers the counts.
+		if (area === "reconcile" && parts.length === 3 && method === "POST") {
+			if (!cfg.enabled) return json(OFF, 409);
+			const r = await engine.reconcile({ recheck: true });
+			for (const src of Object.values(cfg.sources)) broadcast({ kind: "comment", source: src.key, thread: "" });
+			return json(r);
+		}
+		// Backfill: puts a linked mail (hub/comments/engine.ts linkMail) on an existing pending reply draft; idempotent. Posts and sends nothing.
+		if (area === "link-mail" && parts.length === 3 && method === "POST") {
+			if (!cfg.enabled) return json(OFF, 409);
+			const code = (await body()).code;
+			if (typeof code !== "string" || !code) return json({ error: "code (초안 코드)가 필요해요" }, 400);
+			if (!engine.store.drafts().some(d => d.code === code)) return json({ error: "그 초안을 찾지 못했어요" }, 404);
+			const r = await engine.linkMail(code);
+			return json(r.ok ? { ok: true, mail: r.mail, ...(r.existing ? { existing: true } : {}) } : { ok: false, skipped: r.reason });
+		}
+		if (area === "sources" && parts.length === 3 && method === "GET") {
+			if (!cfg.enabled) return json({ on: false, sources: [] });
+			const cursors = engine.store.cursors();
+			return json({
+				on: true,
+				sources: Object.values(cfg.sources).map(s => ({ key: s.key, kind: s.kind, app: engine.ownerOf(s), label: s.label, watch: s.watch, autoDraft: s.autoDraft, autoSend: s.autoSend?.on === true, autoMail: s.autoMail === true, mailApp: s.mailApp ?? null, error: cursors[s.key]?.error ?? null, ranAt: cursors[s.key]?.ranAt ?? null })),
+			});
+		}
+		if (area === "sources" && parts.length >= 4) {
+			if (!cfg.enabled) return json(OFF, 409);
+			const key = arg(3);
+			if (!cfg.sources[key]) return json({ error: "그 댓글 출처를 찾지 못했어요" }, 404);
+			if (parts.length === 5 && parts[4] === "posts" && method === "GET") {
+				try {
+					const watch = cfg.sources[key]!.watch;
+					return json({ posts: (await engine.posts(key)).map(p => ({ ...p, watched: watch.includes("*") || watch.includes(p.id) })), all: watch.includes("*") });
+				} catch {
+					return json({ posts: [], error: "글 목록을 불러오지 못했어요" });
+				}
+			}
+			if (parts.length === 4 && method === "PUT") {
+				const b = await body();
+				const okList = b.watch === undefined || (Array.isArray(b.watch) && b.watch.every((x: unknown) => typeof x === "string" && x.length <= 200) && b.watch.length <= 500);
+				if (!okList || (b.autoDraft !== undefined && typeof b.autoDraft !== "boolean")) return json({ error: "watch (글 id 목록) / autoDraft (true/false) 형식이 아니에요" }, 400);
+				// autoMail (true/false) and mailApp (a mail app instance id, "" = none): see docs/comments-api.md.
+				if ((b.autoMail !== undefined && typeof b.autoMail !== "boolean") || (b.mailApp !== undefined && (typeof b.mailApp !== "string" || (b.mailApp !== "" && !instanceIdOf("mail", b.mailApp))))) return json({ error: "autoMail (true/false) / mailApp (메일 앱 이름) 형식이 아니에요" }, 400);
+				const next = engine.update(key, { ...(b.watch !== undefined ? { watch: b.watch } : {}), ...(b.autoDraft !== undefined ? { autoDraft: b.autoDraft } : {}), ...(b.autoMail !== undefined ? { autoMail: b.autoMail } : {}), ...(b.mailApp !== undefined ? { mailApp: b.mailApp } : {}) });
+				return json({ ok: true, watch: next?.watch ?? [], autoDraft: next?.autoDraft === true, autoMail: next?.autoMail === true, mailApp: next?.mailApp ?? null });
+			}
+			return undefined;
+		}
+		if (area === "threads" && parts.length === 3 && method === "GET") {
+			if (!cfg.enabled) return json(OFF, 409);
+			return json({ threads: engine.threads(url.searchParams.get("app") ?? "") });
+		}
+		if (area === "thread" && parts.length >= 5) {
+			if (!cfg.enabled) return json(OFF, 409);
+			const source = arg(3);
+			const thread = arg(4);
+			if (parts.length === 5 && method === "GET") {
+				const view = engine.threadView(source, thread);
+				return view ? json(view) : json({ error: "이 글은 보고 있지 않아요" }, 404);
+			}
+			if (parts.length === 6 && parts[5] === "read" && method === "POST") {
+				if (!engine.threadView(source, thread)) return json({ error: "이 글은 보고 있지 않아요" }, 404);
+				engine.markRead(source, thread);
+				return json({ ok: true });
+			}
+			return undefined;
+		}
+		if (area === "comment" && parts.length === 5 && parts[4] === "no-reply" && (method === "POST" || method === "DELETE")) {
+			if (!cfg.enabled) return json(OFF, 409);
+			return engine.noReply(arg(3), method === "POST") ? json({ ok: true }) : json({ error: "원댓글을 찾지 못했어요" }, 404);
+		}
+		if (area === "comment" && parts.length === 5 && parts[4] === "draft" && method === "POST") {
+			if (!cfg.enabled) return json(OFF, 409);
+			const id = arg(3);
+			const c = engine.store.comments().find(x => x.id === id);
+			if (!c || !cfg.sources[c.source]) return json({ error: "원댓글을 찾지 못했어요" }, 404);
+			if (drafting.has(id)) return json({ error: "이 댓글은 초안을 만드는 중이에요" }, 409);
+			// `{ text, extra? }`: a draft written outside (a script of the owner), no model call; it still waits for the owner's 보내기.
+			// `extra` is a note (text) or `{ note?, mail: { app, to, subject, body, attach?, fromLibrary? } }`: with a mail the card shows the reply and then the mail,
+			// and one 보내기 posts the reply and sends the mail (a failed mail is told in the comment_send event: `mail: "failed"`, `mailReason`).
+			const b = await body();
+			if (b.text !== undefined || b.extra !== undefined) {
+				if (typeof b.text !== "string" || !b.text.trim() || [...b.text].length > MAX_TEXT) return json({ error: `text: 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
+				const x = b.extra;
+				const mail = x && typeof x === "object" ? x.mail : undefined;
+				const note = x && typeof x === "object" ? x.note : x;
+				if (note !== undefined && (typeof note !== "string" || [...note].length > MAX_EXTRA)) return json({ error: `extra: ${MAX_EXTRA}자 이하 글이어야 해요` }, 400);
+				if (x !== undefined && typeof x === "object" && (x === null || Array.isArray(x) || !mail)) return json({ error: "extra: 글이거나 { note?, mail } 이어야 해요" }, 400);
+				if (mail !== undefined && !validMail(mail)) return json({ error: `extra.mail: app, to, subject, body(${MAX_MAIL_BODY}자 이하)가 글이어야 하고 attach는 경로 글 목록이어야 해요` }, 400);
+				const s = await engine.addDraft(id, b.text, note?.trim() || undefined, mail ? { app: mail.app, to: mail.to, subject: mail.subject, body: mail.body, ...(mail.attach ? { attach: mail.attach } : {}), ...(mail.fromLibrary ? { fromLibrary: mail.fromLibrary } : {}) } : undefined);
+				return s.ok ? json({ code: s.draft.code, state: "pending" }) : json({ error: s.reason }, 409);
+			}
+			drafting.add(id);
+			track(
+				engine
+					.makeDraft(id)
+					.then(s => {
+						if (!s.ok) broadcast({ kind: "comment_draft", source: c.source, thread: c.thread, error: s.reason });
+					})
+					.finally(() => drafting.delete(id)),
+			);
+			return json({ state: "drafting" }, 202);
+		}
+		// The pending drafts of every source (the 답장 확인 queue across apps).
+		if (area === "drafts" && parts.length === 3 && method === "GET") return json({ items: cfg.enabled ? engine.pendingDrafts() : [] });
+		// A failed reply: 다시 보내기 (the same text through the same gate) or 지우기 (the record goes, the draft stays). An unsure one (recover.ts): 다시 보내기 or 완료 (`done`: closed as sent, nothing is posted).
+		if (area === "sends" && parts.length === 5 && method === "POST" && (parts[4] === "retry" || parts[4] === "dismiss" || parts[4] === "done")) {
+			if (!cfg.enabled) return json(OFF, 409);
+			if (parts[4] !== "retry") {
+				const r = parts[4] === "done" ? engine.markPosted(arg(3)) : engine.dismissSend(arg(3));
+				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
+			}
+			const r = engine.retrySend(arg(3));
+			return r.ok ? json({ id: r.reply.id, state: "sending" }, 202) : json({ error: r.reason }, 409);
+		}
+		if (area === "drafts" && parts.length === 5 && method === "POST") {
+			if (!cfg.enabled) return json(OFF, 409);
+			const code = arg(3);
+			const d = engine.store.drafts().find(x => x.code === code);
+			if (!d) return json({ error: "그 초안을 찾지 못했어요" }, 404);
+			if (parts[4] === "drop" || parts[4] === "restore") {
+				const r = parts[4] === "drop" ? engine.drop(code) : engine.restore(code);
+				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
+			}
+			if (parts[4] === "revise") {
+				const b = await body();
+				if (b.part !== undefined && b.part !== "reply" && b.part !== "mail") return json({ error: "part: reply 또는 mail이어야 해요" }, 400);
+				const step = await engine.revise(code, String(b.change ?? ""), b.part);
+				return step.ok ? json({ ok: true, code: step.draft.code }) : json({ error: step.reason }, 409);
+			}
+			if (parts[4] === "send") {
+				const text = (await body()).text;
+				if (text !== undefined && (typeof text !== "string" || !text.trim() || [...text].length > MAX_TEXT)) return json({ error: `글은 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
+				const r = engine.send(code, { by: "owner", ...(text !== undefined ? { text } : {}) });
+				return r.ok ? json({ id: r.reply.id, state: "sending" }, 202) : json({ error: r.reason }, 409);
+			}
+		}
+		return undefined;
+	}
+
+	const idle = async () => {
+		while (pending.size) await Promise.all([...pending]);
+		await engine.idle();
+	};
+	return { route, idle };
+}

@@ -1,0 +1,354 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { parseChoices } from "./choices.ts";
+import type * as Orchestrator from "./orchestrator.ts";
+import { cfg, paths } from "./config.ts";
+import { ERROR_ASK_HOLD_MS, ERROR_ASK_REPEAT_HOLD_MS, errorAnswer, errorAsk, errorAskFile, type OrchError, plainError, startErrorWatch, startResumeWatch, watchSession } from "./orch-error.ts";
+import { createPrompts } from "./prompts.ts";
+import { adapters } from "./runtime/index.ts";
+import { omp } from "./runtime/omp.ts";
+import { advance, flush } from "./runtime/test-clock.ts";
+import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode } from "./runtime/types.ts";
+import { parseTone } from "./tone.ts";
+
+const o: typeof Orchestrator = await import("./orchestrator.ts?orch-error");
+
+class FakeAgent implements AgentProcess {
+	pid = 7300;
+	sent: { text: string; mode: SendMode }[] = [];
+	private buf: AgentEvent[] = [];
+	private wake?: () => void;
+	private exit = Promise.withResolvers<number>();
+	readonly exited = this.exit.promise;
+	readonly events = (async function* (self: FakeAgent): AsyncGenerator<AgentEvent> {
+		for (;;) {
+			while (self.buf.length) yield self.buf.shift()!;
+			await new Promise<void>(r => (self.wake = r));
+		}
+	})(this);
+	push(e: AgentEvent): void {
+		this.buf.push(e);
+		this.wake?.();
+	}
+	send(text: string, mode: SendMode): void {
+		this.sent.push({ text, mode });
+	}
+	abort = () => {};
+	compact = () => {};
+	refreshUsage = () => {};
+	refreshSession = () => {};
+	watchSubagents = () => {};
+	kill = () => this.exit.resolve(0);
+}
+
+const started: FakeAgent[] = [];
+const fake: RuntimeAdapter = {
+	id: "omp",
+	caps: { steer: "native", subagents: "none", contextNumbers: "none", compact: "none", sessionTranscript: false, promptCacheKeepalive: false },
+	start: () => {
+		const a = new FakeAgent();
+		started.push(a);
+		return a;
+	},
+	classifyError: omp.classifyError,
+	recentExchanges: () => undefined,
+};
+const savedCfg = { orchestrator: cfg.orchestrator, lanes: cfg.lanes };
+beforeAll(() => {
+	adapters.fake = fake;
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake" };
+	cfg.lanes = { ...cfg.lanes, runtime: "fake" };
+});
+afterAll(() => {
+	delete adapters.fake;
+	Object.assign(cfg, savedCfg);
+});
+
+const failed = (text: string): AgentEvent => ({ type: "assistant", text: "", stop: "error", error: { text, kind: "transient", compaction: false } });
+
+test("plain Korean reasons for the raw errors", () => {
+	expect(plainError("stream start timed out after 300s")).toMatchObject({ kind: "timeout", text: "모델 연결이 계속 시간 초과로 끊겨요" });
+	expect(plainError("getaddrinfo ENOTFOUND api.anthropic.com")).toMatchObject({ kind: "dns", text: "네트워크(DNS)가 안 돼요" });
+	expect(plainError("something odd").kind).toBe("other");
+});
+
+test("the ask is one [ask] with the restart option first, and its answers are read", () => {
+	const e: OrchError = { since: "2026-10-23T03:05:00.000Z", ...plainError("timed out"), raw: "timed out" };
+	const text = errorAsk("dotz", e);
+	expect(parseTone(text).tone).toBe("ask");
+	expect(parseChoices(text).options.map(x => [x.n, x.label])).toEqual([[1, "다시 시작"], [2, "기다리기"]]);
+	expect(errorAnswer("1) 다시 시작")).toBe("restart");
+	expect(errorAnswer("2) 기다리기")).toBe("wait");
+	expect(errorAnswer("다시 시작")).toBeUndefined();
+});
+
+test("five failed turns in a row give up once: the error is marked at once, the ask goes out once after the hold", async () => {
+	rmSync(errorAskFile(), { force: true });
+	const asked: OrchError[] = [];
+	o.setErrorHandler(e => asked.push(e));
+	o.start();
+	const agent = started.at(-1)!;
+	for (let i = 0; i < 6; i++) {
+		agent.push(failed("stream start timed out"));
+		await flush();
+	}
+	expect(o.orch.error).toBeDefined();
+	expect(asked).toHaveLength(0);
+	await advance(ERROR_ASK_HOLD_MS);
+	expect(asked).toHaveLength(1);
+	expect(o.orch.error).toMatchObject({ kind: "timeout", text: "모델 연결이 계속 시간 초과로 끊겨요" });
+	expect(Date.parse(o.orch.error!.since)).toBeGreaterThan(0);
+	expect(asked[0]).toBe(o.orch.error!);
+});
+
+test("a restart starts only the orchestrator and replays the open prompts once; a resume with nothing to replay sends one tiny probe", async () => {
+	let replays = 0;
+	let replayed = 2;
+	o.setRestartedHandler(() => (replays++, { replayed, texts: [] }));
+	const before = started.length;
+	o.restart("the test asked");
+	await flush();
+	expect(started.length).toBe(before + 1);
+	expect(readFileSync(paths.log, "utf8")).toContain("restart: the test asked");
+	expect(replays).toBe(1);
+
+	replayed = 1;
+	o.resumeAfterError();
+	await flush();
+	expect(replays).toBe(2);
+	expect(started.at(-1)!.sent.some(s => s.text === o.PROBE_TEXT)).toBe(false);
+
+	replayed = 0;
+	o.resumeAfterError();
+	await flush();
+	expect(started.at(-1)!.sent.filter(s => s.text === o.PROBE_TEXT)).toHaveLength(1);
+
+	started.at(-1)!.push({ type: "assistant", text: "-", stop: "stop" });
+	await flush();
+	expect(o.orch.error).toBeUndefined();
+});
+
+test("an episode over inside the hold goes to the worklog with no ask and no recovery alert; a repeat within the cooldown waits longer", async () => {
+	const asked: OrchError[] = [];
+	const alerts: string[] = [];
+	const notices: string[] = [];
+	o.setErrorHandler(e => asked.push(e));
+	o.setAlertHandler(t => alerts.push(t));
+	o.setNoticeHandler(t => notices.push(t));
+	const episode = async () => {
+		for (let i = 0; i < 6; i++) {
+			started.at(-1)!.push(failed("stream start timed out"));
+			await flush();
+		}
+		expect(o.orch.error).toBeDefined();
+	};
+	const recover = async () => {
+		started.at(-1)!.push({ type: "assistant", text: "-", stop: "stop" });
+		await flush();
+		expect(o.orch.error).toBeUndefined();
+	};
+
+	// the ask of the first test was sent moments ago: past the normal hold, still quiet, and over before the longer one
+	await episode();
+	await advance(ERROR_ASK_HOLD_MS + 60_000);
+	expect(asked).toHaveLength(0);
+	await recover();
+	await advance(ERROR_ASK_REPEAT_HOLD_MS);
+	expect(asked).toHaveLength(0);
+	expect(alerts).toEqual([]);
+	expect(notices).toHaveLength(1);
+	expect(notices[0]).toContain("스스로 다시 연결됐어요");
+
+	// no ask in the cooldown: a lasting episode is asked after the normal hold, and its end is told
+	rmSync(errorAskFile(), { force: true });
+	await episode();
+	await advance(ERROR_ASK_HOLD_MS);
+	expect(asked).toHaveLength(1);
+	await recover();
+	expect(alerts).toHaveLength(1);
+	expect(alerts[0]).toContain("다시 연결됐어요");
+	expect(notices).toHaveLength(1);
+});
+
+test("the watch resumes once per episode, only after the model host answers", async () => {
+	const e: OrchError = { since: new Date().toISOString(), ...plainError("timed out"), raw: "timed out" };
+	let reachable = false;
+	let resumed = 0;
+	const t = startErrorWatch({ error: () => e, reachable: async () => reachable, resume: () => resumed++, log: () => {}, every: 1 });
+	await advance(3);
+	await flush();
+	expect(resumed).toBe(0);
+	reachable = true;
+	await advance(3);
+	await flush();
+	await advance(3);
+	await flush();
+	clearInterval(t);
+	expect(resumed).toBe(1);
+	expect(e.probed).toBe(true);
+});
+
+test("a resume that fails while the host answers stays spent; only the host seen down makes the next answer a new outage", async () => {
+	const e: OrchError = { since: new Date().toISOString(), ...plainError("timed out"), raw: "timed out" };
+	let reachable = true;
+	let resumed = 0;
+	const t = startErrorWatch({ error: () => e, reachable: async () => reachable, resume: () => resumed++, log: () => {}, every: 1 });
+	const tick = async () => {
+		await advance(1);
+		await flush();
+	};
+	await tick();
+	await tick();
+	await tick();
+	expect(resumed).toBe(1);
+	reachable = false;
+	await tick();
+	await tick();
+	expect(resumed).toBe(1);
+	reachable = true;
+	await tick();
+	await tick();
+	clearInterval(t);
+	expect(resumed).toBe(2);
+});
+
+test("a conversation session parked on a lost turn resumes once when the host answers, and its open request replays; an owner-stopped one stays stopped", async () => {
+	const c = o.createOrchestrator({ key: "conv:lost", stateFile: join(process.env.DOTZ_DIR!, "conv-lost.json"), source: "conv:lost", keepalive: false });
+	let replays = 0;
+	c.setRestartedHandler(() => (replays++, { replayed: 1, texts: [] }));
+	c.start();
+	const agent = started.at(-1)!;
+	for (let i = 0; i < 6; i++) {
+		agent.push(failed("stream start timed out"));
+		await flush();
+	}
+	expect(c.orch.error).toBeDefined();
+	c.park();
+	await flush();
+	expect(c.orch.status).toBe("stopped");
+	const before = started.length;
+	let reachable = false;
+	const woken: string[] = [];
+	const t = watchSession({ key: "conv:lost", o: c }, k => woken.push(k), () => {}, async () => reachable, 1);
+	await advance(3);
+	await flush();
+	expect(started.length).toBe(before);
+	reachable = true;
+	await advance(1);
+	await flush();
+	await advance(3);
+	await flush();
+	expect(woken).toEqual(["conv:lost"]);
+	expect(started.length).toBe(before + 1);
+	expect(replays).toBe(1);
+	reachable = false;
+	await advance(1);
+	await flush();
+	c.stop();
+	await flush();
+	reachable = true;
+	await advance(3);
+	await flush();
+	clearInterval(t);
+	expect(started.length).toBe(before + 1);
+	expect(replays).toBe(1);
+});
+
+test("the resume watch probes nothing with nothing interrupted, resumes one entry once, and a second outage gives one more", async () => {
+	let probes = 0;
+	let reachable = false;
+	let pending = false;
+	let spent = false;
+	const resumes: string[] = [];
+	const entry = { key: "lane x", due: () => !spent, resume: () => (spent = true, void resumes.push("x")), rearm: () => void (spent = false) };
+	const t = startResumeWatch({ interrupted: () => (pending ? [entry] : []), reachable: async () => (probes++, reachable), log: () => {}, every: 1 });
+	const tick = async () => {
+		await advance(1);
+		await flush();
+	};
+	await tick();
+	expect(probes).toBe(0);
+	pending = true;
+	await tick();
+	await tick();
+	expect(probes).toBe(2);
+	expect(resumes).toEqual([]);
+	reachable = true;
+	await tick();
+	await tick();
+	expect(resumes).toEqual(["x"]);
+	reachable = false;
+	await tick();
+	reachable = true;
+	await tick();
+	await tick();
+	clearInterval(t);
+	expect(resumes).toEqual(["x", "x"]);
+});
+
+function queue() {
+	const delivered: string[] = [];
+	const answered: string[] = [];
+	const q = createPrompts({
+		deliver: text => delivered.push(text),
+		steer: () => false,
+		working: () => false,
+		note: (_t, _r, text) => text,
+		isNote: () => false,
+		post: async () => ({ delivered: true }),
+		clearProgress: () => {},
+		persist: () => {},
+		log: () => {},
+		answered,
+	});
+	return { q, delivered };
+}
+
+test("open prompts replay once after a restart, oldest first, without the answered ones", () => {
+	const { q, delivered } = queue();
+	const wrap = (t: string) => (t.startsWith("[gateway restarted]") ? t : `[gateway restarted] ${t}`);
+	q.deliver("second", { target: "chat", replyTo: "m2" });
+	q.deliver("first", { target: "chat", replyTo: "m1" });
+	q.deliver("done", { target: "chat", replyTo: "m3" });
+	q.markAnswered("m3");
+	delivered.length = 0;
+	expect(q.reopen(wrap).replayed).toBe(2);
+	expect(delivered).toEqual(["[gateway restarted] second", "[gateway restarted] first"]);
+	delivered.length = 0;
+	q.markAnswered("m1");
+	expect(q.reopen(wrap).replayed).toBe(1);
+	expect(delivered).toEqual(["[gateway restarted] second"]);
+});
+
+test("the banner shows with the reason, since when and the restart button, and clears when the error is gone", async () => {
+	const src = readFileSync(join(import.meta.dir, "..", "web", "js", "40-orch-error.js"), "utf8");
+	const els: Record<string, { hidden: boolean; innerHTML: string; title: string; onclick?: (ev: unknown) => Promise<void> }> = {};
+	const $ = (s: string) => (els[s] ??= { hidden: true, innerHTML: "", title: "" });
+	const calls: string[] = [];
+	const env = {
+		S: { orchestrator: { error: { text: "네트워크(DNS)가 안 돼요", since: "2026-10-23T03:36:00.000Z", raw: "ENOTFOUND" } } as { error?: unknown } },
+		$,
+		kstHM: () => "12:36",
+		busy: (_b: unknown, fn: () => Promise<void>) => fn(),
+		api: async (path: string, method: string) => void calls.push(`${method} ${path}`),
+		toast: () => {},
+		refreshState: () => {},
+		clear: (n: { innerHTML: string }) => { n.innerHTML = ""; return Object.assign(n, { append: (...xs: (string | { text: string })[]) => { n.innerHTML += xs.map(x => (typeof x === "string" ? x : x.text)).join(""); } }); },
+		el: (_tag: string, o: { text: string }) => o,
+		iGa: (s: string) => `${s}가`,
+		botName: "비서",
+		noticeKo: (s: string) => s,
+		NK: {},
+	};
+	const { paintOrchError } = new Function(...Object.keys(env), `${src}\nreturn { paintOrchError };`)(...Object.values(env));
+	paintOrchError();
+	expect($("#oerr").hidden).toBe(false);
+	expect($("#oerr-tx").innerHTML).toContain("네트워크(DNS)가 안 돼요");
+	expect($("#oerr-tx").innerHTML).toContain("12:36부터");
+	await $("#oerr-btn").onclick!({ currentTarget: {} });
+	expect(calls).toEqual(["POST /api/orchestrator/resume"]);
+	env.S.orchestrator.error = undefined;
+	paintOrchError();
+	expect($("#oerr").hidden).toBe(true);
+});

@@ -1,0 +1,155 @@
+# Custom plugins
+
+Per-install code that is not part of the product lives in `<DATA_DIR>/custom/plugins/*.ts` (or `*.js`). The gateway, the agent extension and the Claude deny hook import every such file once when they start (`*.test.ts` and `*.d.ts` next to a plugin are ignored), in file-name order. There is no hot reload: restart the gateway after changing a plugin. Types and loader: `hub/plugins.ts`.
+
+A plugin default-exports an object; every hook is optional:
+
+```ts
+import type { Plugin } from "<dotz repo>/hub/plugins.ts"; // type only, erased at runtime
+
+export default {
+	name: "example",
+	start(ctx) {},                       // hub, once, after the watches are armed
+	claim(channelId) {},                 // Discord channel outside the bot's categories
+	thread({ thread, text }) {},         // owner message in a thread
+	deny(command, dataDir) {},           // shell command about to run
+	reply(draft) {},                     // an approved mail reply of a source this plugin posts (files included)
+	repliesWithFiles(source) {},         // true when reply sends draft.attachments for that source
+	mailThread(mail) {},                 // a mail's real thread, to see a reply sent outside dotz
+} satisfies Plugin;
+```
+
+- `start(ctx)`: `ctx` has `dataDir`, `log`, `postTo(channelId, text)`, `ack(channelId, messageId)`, `ensureWatch(spec)` (a dotz watch; same name and command is kept, another command replaces it) and `approveWatch(name)`.
+- `claim(channelId)`: return `{ raw: (m) => void }` to take the owner's messages in that channel yourself, or `{ thread, parent }` to deliver them as a thread named `thread` under channel `parent`; `undefined` leaves the channel alone.
+- `thread({ thread, text })`: runs for each owner message in a thread; may do side effects and return `{ note, parentName }`: `note` is appended to the orchestrator's inbox turn for that message, `parentName` replaces the parent's name.
+- `deny(command, dataDir)`: return a reason to block the command (agent sessions and Claude), `undefined` to let it pass. A call refused again for the same reason before the owner's next message is answered with an "end this turn" line (extension/refusals.ts). The agent only learns a rule before its call from the turn's `note` (`thread` hook) or MODE.md, so put the exact accepted form of a gated command in that `note` (for example: the command names the mail id literally, never through a variable, loop or list).
+
+Claim and thread hooks can run before `start`; keep what they need at module level. The extension and the Claude hook run in separate processes and call only `deny`. `reply` and `repliesWithFiles` also run in the reply-drafts CLI (`features/reply-drafts/bin/draft.ts`), which loads the plugins itself when it starts.
+
+A plugin that fails to load, whose `start` throws (it is dropped for the run), or whose hook throws is logged (`plugin <name>: ...`) and skipped; the hub keeps running. With no plugin installed the hooks return at once, and nothing is added to prompts.
+
+A plugin may also serve as a watch check: `ensureWatch({ command: "bun '<plugin file>' check" })` with `if (import.meta.main)` in the file. Pass `app: "<instance key>"` in the spec when the check serves an app (its mail, files, login): 모니터링 then lists it under that app, not in 일반 모니터링 (`project` / `internal: true` likewise).
+A check that sends its own alerts and exits 0 while its source is logged out should print `DOTZ_DISCONNECTED since=<ISO time>`: the app's 모니터링 row then shows 연결 끊김 with that time (hub/watch-status.ts). Without it the row reads as connected.
+
+### A login keeper the owner can reconnect from the app
+
+What a site login with a second factor (a push to the owner's phone) needs, learned from a company webmail that sat disconnected for days while 다시 연결 did nothing:
+
+- Gate the push: give the watch `approval_minutes`. The check gets `DOTZ_APPROVED=1` only after the owner's yes and prints `DOTZ_APPROVAL_USED` when it starts the sign-in (one yes, one attempt). The 다시 연결 tap in 모니터링 is that yes: the gateway approves a disconnected gated watch instead of re-running it, so the check must actually sign in on an approved run, not only report that it waits.
+- Report the state: a logged-out run fails (`DOTZ_FAIL <kind>`) or prints `DOTZ_DISCONNECTED`; a run that signed in exits 0 without it, so the row turns 연결됨 in that same run. If an outside process does the sign-in, have it record success at once and run the dotz watch (`POST /api/watches/<name>/run`) instead of waiting for the next interval.
+- A second tap restarts: approving a watch whose check is still running kills that check's process group and starts a fresh approved run. Keep the sign-in inside the check (or make an outside sign-in stop when a new approval arrives) so the owner never waits on an attempt he already gave up on.
+- Bound every step: a hard timeout on each browser or `osascript` call, `timeout_seconds` on the watch long enough for the push wait, a few tries per outage, and no automatic retry after a wrong-password or locked answer.
+- Browser automation on macOS: work in one dedicated, minimized window and never focus the owner's windows; find that window by reading each window's name by id, not with an AppleScript `whose` filter (Aside answered one only after about 110 s, and every event queued behind it timed out); type a password only into the page (never OS keystrokes) and submit only after checking the field holds it, so a mistyped password cannot lock the account.
+
+## Posting a mail
+
+A watcher or plugin that finds new mail posts it to the gateway, and each mail becomes its own conversation: `mail:<key>` in the web app (group "메일") and, with Discord on, one thread in the mail channel. Same auth as every `/api` route (the hub token or a tailnet login):
+
+```sh
+curl -s -X POST http://127.0.0.1:<web.port>/api/mail \
+  -H "x-dotz-token: $(cat ~/.dotz/secrets/hub-token)" -H "Content-Type: application/json" \
+  -d '{"source":"work","id":"8812","from":"Kim <kim@example.com>","subject":"Q4 plan","summary":"Asks for the draft by Friday.","body":"..."}'
+# {"ok":true,"key":"work-8812","target":"mail:work-8812","thread":"1430..."}
+```
+
+- Required: `source`, `id`, `subject`. Optional: `from`, `to`, `cc` (참조), `summary` (up to 2000 chars), `body` (up to 20000), `html` (the HTML body, up to 400000; the gateway reduces it to a safe subset and the web shows it in a sandboxed frame; send it only when the mail really has one), `thread`, `wake`.
+- `attachments` (every file of the mail; at most 300): `[{"name":"quote.pdf","type":"application/pdf","data":"<base64>"}]`, or `{"name":...,"path":"<file>"}` for a file the poster already put under `<data dir>/mail-files/` (any other path is refused). Each file is limited to 1 GB; a `path` file is copied as it is, so post big files that way rather than as base64, and stored as `mail-files/<key>/<n>/<name>`. The mail row in 모니터링 then shows a 첨부 button, and the file is served by `GET /api/mail/<key>/files/<n>` (`?dl=1` to download) with the same auth as every `/api` route, never from outside that folder.
+- `reply_files` (files the poster already chose to send WITH the reply, not files that came with the mail; at most 10): `[{"path":"/Users/me/Documents/scores/answer.pdf"}]`. Each `path` must be an absolute path (no `..`) of a non-empty regular file the gateway can read, not a folder or a symlink, up to 1 GB; any bad entry refuses the post with a 400 that names it. The files are read from where they are and copied onto the mail's reply draft the way `draft.ts attach` copies a file, so its approval card lists them, the 첨부 확인 check sees them and the send carries them. The draft is told they are attached (its text may say so) and no 첨부 파일 폴더 pick runs for that mail; a later 초안 작성 on the same mail uses them too. A post without the field drafts as before, and an older gateway ignores it.
+- `todo` (할 일) and `questions` (직접 답할 것): a string or a list of strings, up to 10 lines of 500 chars. The opened mail and the card of its reply draft show them in rows of their own, apart from the summary, and a mail's first message on a messenger lists them. Lines `할 일: ...` and `질문: a / b` (or `직접 답할 것: a / b`) in `summary` are moved into these fields.
+- A mail without `summary` shows the first lines of `body` in the list.
+- The opened mail shows its `summary` as a block at the top: write two short sentences on two lines, what the mail is about and then what the owner has to do, with the to-do and its deadline in `**bold**` (`다음 주 미팅 시간을 정하려는 메일이에요.\n**화요일 오후 2시와 수요일 오전 10시 중 편한 시간을 회신**해 주세요.`). A one-line summary or the older `**요약**` / `**할 일**` sections still draw. The gateway writes a summary in this form for mail that comes without one.
+- `at` (or `date`, optional): when the mail came, ISO 8601 with a zone (`2026-10-24T11:00:00+09:00`). The mail is listed and ordered at that time, so a backfill of older mail keeps its own dates; a time in the future counts as now, and without one (or one that is not ISO with a zone) the mail is stamped with the time of the post. A repeat post of a known mail with an `at` moves the stored time to it, so mail first posted without one can be given its real date (the conversation's first message keeps the time it was posted at).
+- At most `mail.keep` mails are kept (config.json, default 500, held between 50 and 20000); past that the oldest drop out of the list. Raise it before backfilling a big mailbox.
+- Direction: a mail written by the owner is outgoing. Post it with `"direction":"out"`, a sent `folder` (`SENT`, `보낸편지함`) or `labels` containing `SENT`; the gateway also treats a `from` that is one of his own addresses as outgoing (`zele whoami` accounts, `mail.own_addresses` / `zele.aliases` in config.json; plus-tags and Gmail dots are ignored). An outgoing mail is listed under 보낸 메일 and never counts as unread, never wakes the bot and never gets a reply draft; posted for a thread already recorded, it marks that thread 답장함. A sent mail of its own (a sent folder the poster reads) is kept at its `at` (ISO 8601 with a zone, the time it was sent) and marks 답장함 the received mail it answers: the same subject once `Re:` / `Fwd:` / `답장:` prefixes are dropped, received before it, from a sender it went to.
+- `messageId` (optional): names the newest message of the thread. The same id posted again is a repeat. Another id for a known thread is a newer message: the thread becomes a new mail again (any reply state is reset, even 답장함, 답장 안 함 or 답장 불필요), and the wake, notice and reply draft fire for it once. A mail the owner deleted from dotz (the ⋯ menu of its card, `DELETE /api/mail/<key>`) stays gone when the same message is posted again; a post with another `messageId` brings it back as a new mail.
+- The key is `<source>-<id>`, lowercased and limited to `[a-z0-9._-]`. Posting the same key again changes nothing and answers `"duplicate": true`, so a retry is safe.
+- `thread`: the Discord thread id when the poster already put the mail on Discord. The gateway records it and posts nothing; without it the gateway opens the thread itself (Discord on) or keeps the mail web-only.
+- 답장 필요 only when the owner is a main recipient: a mail where his address is only in Cc (참조로 받음), a list or group mail (post `list: true`, `listId` or `listUnsubscribe` when the mail has a List-Id / List-Unsubscribe header; a group To address, an unsubscribe footer or a bulk subject count too: 단체 메일), a machine sender (자동 발송) or one of 3+ To recipients greeting another of them by name (다른 사람 앞) is listed but never 답장 필요, even with `needsReply`; the card's `why` holds the tag.
+- A mail the owner wrote to himself is never 답장 필요 and gets no reply draft, also with other recipients and whatever `needsReply` says; only his own 답장 필요로 표시 sets it. It is recognized by its sender: one of his addresses (see Direction), the mail's `account`, or the sender of an outgoing mail the same `source` posted. With none of these known, a mail from an address to that address alone counts. It stays in the list as it came, read state unchanged.
+- Real read / replied state: `POST /api/mail/state` `{"source":"<source>","items":[{"id":"<id>","read":true,"replied":true}]}`, once per poll with every listed mail the mailbox reports read (read there) or answered (the owner's reply is in the thread, sent from anywhere). A recorded mail becomes read in dotz and 답장함; ids it does not hold are ignored, and unread there never unreads what he opened in dotz. zele and the webmail watch send it on every poll.
+- `wake: true` gives the orchestrator one turn for the mail (zele does this). Leave it off when the poster already summarised it.
+- The owner's reply in that web conversation reaches the orchestrator as a message in the mail's thread: your plugin's `thread` hook runs and its `note` goes into the turn, so an OK recorded there gates `deny` exactly as on Discord. A mail with no plugin note gets a built-in note: draft first, send only after the owner's OK there.
+
+## Sending a reply, with files
+
+The reply-drafts feature sends a reply the owner approved (보내기). For a mail whose `source` is neither `zele` nor a webmail-no-api site, it asks the plugins, in file-name order, until one returns a result:
+
+```ts
+reply(draft) { // draft: { source, id, account? (the zele account, when dotz settled it), to, cc?, all?, subject?, body, attachments: [{ name, path, size }] }
+	if (draft.source !== "work") return undefined;           // not mine: the next plugin, else "send it by hand"
+	// ... send draft.body to every address of draft.to (one address or a comma list), with draft.cc as 참조 when it is there,
+	// and attach every file at draft.attachments[i].path (absolute, on this computer)
+	return { ok: true, message: "답장을 보냈어요" };            // or { ok: false, message: "why" }
+},
+repliesWithFiles(source) { return source === "work"; },     // true only when reply really sends draft.attachments
+needsAccount(source) { return source === "work"; },         // true only when reply sends through a zele account (a plugin with its own mailbox leaves it out)
+```
+
+- `to` is what the owner left on the card's 받는 사람 rows: one address or a comma list. `cc` is the 참조 list the same way, absent when there is none, and `all` is true when the owner picked 전체 답장 (the sender plus the original's 받는 사람·참조). Send every address you are given; a source that cannot (one recipient only, no 참조) should return `{ ok: false, message }` saying so rather than dropping them.
+- `attachments` are the files staged for that draft: the owner added them in the send sheet, or reply-drafts matched them in the mail instance's 첨부 파일 폴더 setting and the owner confirmed them. Without `repliesWithFiles`, the sheet says the account cannot send files, asks once more before 보내기, and a draft that holds files is not sent at all.
+- zele sends them with `zele mail reply <id> --attach <path>` (one flag per file). A webmail-no-api site cannot send files: its adapter only saves a text draft.
+- A throw in `reply` is a failed send (logged, the owner sees why); returning `undefined` means the source is not this plugin's.
+- `account` is optional because a plugin may send from its own mailbox, which zele's accounts say nothing about. A plugin that sends through zele declares `needsAccount`: dotz then settles the account like a zele mail when the draft is made, and with several accounts and none settled the card says so and `reply` is not called until the mail app has an account. Without it a draft is never held for an account, `reply` gets what is on record, and refuses by itself if that is not enough.
+
+## Syncing what the owner does in dotz to the mailbox
+
+읽음, 안읽음, 보관, 별표 and 휴지통 in the mail app change dotz at once and then ask the mailbox (`hub/mail-sync.ts` has the whole contract). zele does all of them; a webmail-no-api site none. For any other source the plugins are asked, in file-name order:
+
+```ts
+mailAction(a) { // a: { source, id, action: "read" | "unread" | "archive" | "unarchive" | "trash" | "star" | "unstar" }
+	if (a.source !== "work") return undefined; // not mine
+	// do it in the real mailbox; true = done, false = refused, a throw = failed
+},
+mailActions(source) { return source === "work" ? ["read", "unread", "trash"] : undefined; }, // the card's `can`
+```
+
+- Without `mailActions` the source counts as read-only toward its mailbox: every action still works in dotz and the action's toast says the mailbox did not follow.
+- `"trash"` runs only when the owner deletes a mail in the web app with the app's 삭제하면 원본도 삭제 switch on (off by default, shown disabled for a source that does not list it). Move only the mail `id` names to the mailbox's trash, never a permanent delete; a mail stays in dotz unless the hook returns true.
+- The other way, post what the mailbox shows on every poll: `POST /api/mail/state` items may carry `read`/`unread`, `archived`, `starred` and `trashed` besides `replied`. Only a change from the last report is applied, so a poll that has not seen a dotz action yet never undoes it; `trashed` removes the mail from dotz.
+
+## Seeing a reply sent outside dotz
+
+zele's mail that waits for an answer is checked against its real thread, and a mail the owner answered from another app or script becomes 답장함 (`POST /api/mail/reconcile`, and every 10 minutes at most 20 threads). For a plugin's source that needs `mailThread`:
+
+```ts
+async mailThread(mail) { // mail: { source, id, account? }, the id the mail was posted with
+	if (mail.source !== "work") return undefined; // not mine
+	return [ // the whole thread, oldest first
+		{ from: "Kim <kim@example.com>", date: "2026-10-24T11:00:00+09:00" },
+		{ from: "me@example.com", date: "2026-10-24T13:20:00+09:00" },
+	];
+},
+```
+
+- An owner's message after the newest incoming one (no newer than the mail dotz holds) closes the mail and its waiting reply draft. dotz never reopens a mail this way and reads a closed mail no more.
+- The owner is an address in `mail.own_addresses` or `zele.aliases` in config.json, a logged-in zele account, or the sender of an outgoing mail this source posted. With none of them known the mail counts as `notChecked`.
+- Read-only, no model call: it runs only for mail that waits, inside the same limit as zele mail, one at a time. `undefined` from every plugin puts the source in the answer's `skipped` for that round and costs one question per source per round. A throw or 15 seconds without an answer is logged, and that source's other waiting mail counts as `notChecked` for the round without another question; the next round tries again, the failed mail last.
+- A poster that reads the sent folder can do without the hook: an outgoing mail posted to `/api/mail` marks the mail it answers, and `/api/mail/state` takes `replied`.
+
+## Feeding the sent folder to the reply examples
+
+A reply draft is written from the owner's real past replies. zele's sent mail and a webmail-no-api site's sent folder (its onboarding captures it) are read by dotz itself; a mail plugin whose mailbox dotz cannot read says what the owner sent with `sentMail`:
+
+```ts
+async sentMail({ limit }) { // newest first, at most `limit`
+	return { source: "work", items: [{ to: "kim@example.com", subject: "Re: 일정", at: 1760000000000, body: "네 가능해요.\n\n> 다음 주 일정 가능한가요?", received: "다음 주 일정 가능한가요?" }] };
+},
+```
+
+- `source` = the `source` the plugin posts mails with: only drafts of that source see these examples (zele's and other sources' stay apart). `at` is epoch ms, `to` the receivers; `received` is the message the mail answered and may be left out when `body` quotes it.
+- dotz drops forwards, mail to automated senders, long texts and the owner's unedited bot drafts. The first call asks for the newest 3000 (`limit`), later ones once a day for the newest 40. A throw is logged and skips only this plugin. Read-only: nothing is sent or posted.
+- A site CLI of webmail-no-api does the same through its `sent` command (`mail.ts <site> sent [--limit n]`, one JSON line `{id,to,subject,at,body}` per mail).
+
+## Registering a mail reader as a mail instance
+
+A mail reader of one install (a company webmail with no API, read by a plugin) is another instance of the 메일 app: it gets its own row in 모니터링, settings panel, name, off/제거/삭제, its own watches and only its own source's mails, with the same reply-draft and summary options. Once the plugin posts mails with a fixed `source`, register the instance once (same auth as `POST /api/mail`):
+
+```sh
+curl -s -X POST http://127.0.0.1:<web.port>/api/apps -H "x-dotz-token: <hub token>" -H "Content-Type: application/json" \
+  -d '{"app":"mail","label":"회사 메일","filter":{"source":"work","watches":["work-login","work-mail"]}}'
+# {"ok":true,"id":"mail-2","label":"회사 메일"}
+```
+
+- `filter.source` = the `source` the plugin posts; the instance owns the mails `mail:<source>-…` (a source must not be the start of another one joined with a hyphen). `filter.watches` = the plugin's watch names (a name ending in `-` is a prefix): they pause when the instance is off and go with 제거 and 삭제, and the default 메일 instance stops claiming them.
+- The default 메일 instance keeps every mail no other instance claims, so existing installs look the same. By hand, `custom/apps.json` takes the same shape (`{"mail-2":{"app":"mail","label":"…","filter":{…}}}`) and `{"mail":{"watches":["acme-login"]}}` adds watch names to an instance without a filter.
+- The owner renames an instance in its settings panel (`label`) and deletes an off one in 앱 관리; `DELETE /api/apps/<id>[?data=1]` is the same call.

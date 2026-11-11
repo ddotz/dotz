@@ -1,0 +1,6 @@
+[test]
+preload = ["./hub/runtime/test-setup.ts"]
+
+# Which files failed, for the repeat-run limit in hub/runtime/test-slot.ts.
+[test.reporter]
+junit = ".dotz-last-test.xml"

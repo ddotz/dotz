@@ -1,0 +1,172 @@
+// What an app owns, as data (모니터링 > 앱 > ⋯ > 기능 / 내부 기능). Everything an app does is the app's own function:
+//   features  what the app does for the owner (댓글 답글, 릴스 올리기 승인 ...): a name, a short line, a switch. `ready: false` = the API or the
+//             feature folder does not do it yet: it is declared so nobody invents it, and it is never listed.
+//   internal  the machinery that keeps the app working: a login keeper (a watch with a session) is 로그인 유지, any other watch the app owns is 동기화.
+//             They are rows of the app's settings screen, never rows of 일반 모니터링, and their failures notify under the app.
+// A watch belongs to an app by name (the registry's `watches`, an instance's filter.watches), or - for a login keeper - by the site it keeps
+// (`sites` below). A new app gets all of this by adding an entry here and its registry entry; no UI code.
+//   GET   /api/integrations/<app>/features        -> {features, internal, approvals}
+//   PATCH /api/integrations/<app>/features        -> {id, on}: a feature bound to a setting writes that setting, else custom/apps.json <app>.features.<id>
+//   POST  /api/integrations/<app>/retry           -> {watch}: runs one owned watch now (다시 시도)
+import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { readSettings, SettingsError, writeSettings, type SettingSection } from "./app-settings.ts";
+import { APP_FEATURES, declOf, type FeatureDecl, featureOn, readApps } from "./app-feature-flags.ts";
+import { APPS_FILE, appBase, appEntries, belongsTo, type IntegrationEntry, named } from "./integrations.ts";
+import { watchFacts } from "./monitors.ts";
+import type { Watch, WatchOwner } from "./watch.ts";
+import { watchConnection } from "./watch-status.ts";
+
+/** What ownership needs of a watch: its name and the words a derivation reads, the owner it names, and the site a login keeper keeps. */
+export type WatchLike = { name: string; label?: string; command?: string; script?: string; owner?: WatchOwner; session?: { url: string }; approval_minutes?: number };
+const hostOf = (url: string): string => {
+	try {
+		return new URL(url).hostname.replace(/^www\./, "");
+	} catch {
+		return "";
+	}
+};
+const siteOf = (e: IntegrationEntry, w: WatchLike): boolean => {
+	const host = w.session ? hostOf(w.session.url) : "";
+	return !!host && (APP_FEATURES[appBase(e.key)]?.sites ?? []).some(s => host === s || host.endsWith(`.${s}`));
+};
+
+// A watch that names no app but serves one by what it does (the words of its name, label, command and script): the app, default instance only. A mail plugin's
+// library check created ad hoc, a comments sync - found on any install without an edit of custom/apps.json. First match wins.
+const DERIVED: [string, RegExp][] = [
+	["site", /comments?|댓글|features\/comments/i],
+	["kakao", /kakao|카카오/i],
+	// `library` only as a word of its own: a check that reads macOS's ~/Library (Messages, Mail caches) is not a library check.
+	["mail", /webmail|reply-drafts|(?<![\/\\\w])library|icloud|첨부\s*(?:파일\s*)?폴더|mail|메일/i],
+	["instagram", /instagram|인스타|sns-ig/i],
+	["youtube", /youtube|유튜브|sns-yt/i],
+];
+
+/** The instance (entry key) a watch belongs to, or undefined: the owner it names (when that instance is live), by name (registry, instance filter), a login keeper by its site, then by what it does (default instance only). */
+export function watchOwner(entries: readonly IntegrationEntry[], w: WatchLike): string | undefined {
+	const live = entries.filter(e => !e.gone), claimed = w.owner?.app;
+	if (claimed && live.some(e => e.key === claimed)) return claimed;
+	const byName = live.find(e => named(e.watches ?? [], w.name) && !named(e.not?.watches ?? [], w.name));
+	if (byName) return byName.key;
+	const bySite = live.find(e => !e.created && siteOf(e, w) && !named(e.not?.watches ?? [], w.name));
+	if (bySite || w.owner?.project || w.owner?.internal) return bySite?.key;
+	const words = [w.name, w.label, w.command, w.script].filter(Boolean).join(" ");
+	const app = DERIVED.find(([, re]) => re.test(words))?.[0];
+	return app ? live.find(e => !e.created && appBase(e.key) === app && !named(e.not?.watches ?? [], w.name))?.key : undefined;
+}
+/** Instance key -> the names of the watches it owns (every watch, whatever the app's switch says). */
+export function ownedWatches(dataDir: string, watches: readonly WatchLike[]): Map<string, string[]> {
+	const entries = appEntries(dataDir), out = new Map<string, string[]>();
+	for (const w of watches) {
+		const o = watchOwner(entries, w);
+		if (o) out.set(o, [...(out.get(o) ?? []), w.name]);
+	}
+	return out;
+}
+
+export { APP_FEATURES, type AppDecl, type FeatureDecl, featureEnabled } from "./app-feature-flags.ts";
+
+// `setting`/`section`: a feature whose switch IS a settings row says which key and group, so the screen draws that row once and never a second switch
+// under 기능 (자동 초안, 감시). The screen groups every row by its section key.
+export type FeatureView = { id: string; name: string; status: string; on: boolean; setting?: string; section?: SettingSection };
+export type ApprovalOption = { n: number; label: string };
+export type InternalView = { id: string; kind: "login" | "sync" | "files"; name: string; dot: "ok" | "fail" | "idle"; status: string; last_run?: string; reason?: string; every_minutes?: number; down?: boolean };
+/** An approval row: `title` is the item (post title or the start of the caption), `kind` what is approved, `options` the answers the owner can give from the row (고치기 needs a text, so it stays in the sheet). */
+export type ApprovalView = { id: string; title: string; kind?: string; feature?: string; state: string; at?: string; note?: string; options: ApprovalOption[] };
+export type FeaturesView = { app: string; features: FeatureView[]; internal: InternalView[]; approvals: ApprovalView[] };
+type NoticeLike = { id: string; title?: string; text?: string; src?: string; open?: string; ts?: string; updated?: string; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: { subject?: string; body?: string } | unknown; options?: { n: number; label: string }[] } };
+
+const KIND_KO = { login: "로그인 유지", sync: "동기화", files: "파일 점검" } as const;
+// A watch that checks an app's files (a downloaded attachment library, an iCloud folder) is a 파일 점검, not a 동기화.
+const FILES_WATCH = /library|icloud|첨부|파일\s*폴더/i;
+const HANGUL = /[가-힣]/;
+const oneLine = (s: unknown, max: number): string => {
+	const t = String(s ?? "").replace(/\s+/g, " ").trim();
+	return t.length > max ? `${t.slice(0, max - 1)}…` : t;
+};
+// A name written for people has Hangul and no bare lowercase key word ("ig site 로그인" is a key in words, "카카오 로그인 유지" is a name).
+const readableName = (s: string): boolean => HANGUL.test(s) && !/(?:^|\s)[a-z][a-z0-9]*(?:\s|$)/.test(s);
+// What a sync does, from the words of its watch name; the owner never reads the key ("sns-ig-comments").
+const SYNC_NAMES: [RegExp, string][] = [[/comment/, "댓글 가져오기"], [/token/, "로그인 토큰 가져오기"], [/due|publish|job|upload/, "올릴 글 확인"], [/mail|inbox/, "새 메일 가져오기"], [/kakao|chat|msg/, "새 메시지 가져오기"]];
+/** The name of an owned watch for the owner: its own label when it is words, else derived from what it does (a login keeper: "<앱> 로그인"). */
+export function internalName(w: Pick<Watch, "name" | "label" | "session">, appLabel: string): string {
+	const own = (w.label ?? "").trim();
+	if (own && readableName(own)) return own;
+	if (w.session) return `${appLabel} 로그인`;
+	return SYNC_NAMES.find(([re]) => re.test(w.name))?.[1] ?? `${appLabel} 새 소식 확인`;
+}
+// The item an approval is about: the start of the post title or caption it carries, never the question's id ("(j-1)").
+const ID_TAIL = /\s*\(([A-Za-z0-9][\w.:-]*)\)\s*$/;
+const KEY_WORD = /\b[a-z]+-\d+\b/gi;
+function approvalTitle(n: NoticeLike): string {
+	const d = n.decision?.draft as { subject?: string; body?: string } | undefined;
+	const item = oneLine(d?.subject, 60) || oneLine(d?.body, 60);
+	if (item) return item;
+	return oneLine((n.title ?? "").replace(ID_TAIL, "").replace(KEY_WORD, ""), 60) || "승인 요청";
+}
+
+// A watch whose last output is a progress line the owner reads as the row's status (the YouTube multilingual bulk apply).
+const PROGRESS_WATCH = /bulk/;
+/** One internal row of a watch the app owns. The reason is the words the watch's own failure carries (hub/watchtext.ts), never the raw output. */
+export function internalOf(w: Watch, appLabel = "앱"): InternalView {
+	const f = watchFacts(w), kind = w.session ? "login" : FILES_WATCH.test(`${w.name} ${w.label ?? ""} ${w.command}`) ? "files" : "sync", last = w.state.lastRun;
+	// A watch whose check exits 0 but says it is logged out (DOTZ_DISCONNECTED, hub/watch-status.ts) is down too, so its row offers 다시 연결.
+	const conn = watchConnection(w), down = conn.state === "disconnected" && !f.fails;
+	const dot = f.fails || down ? "fail" : !last || w.paused || w.state.paused ? "idle" : "ok";
+	const status = down ? `연결이 끊겼어요 · ${conn.reason === "login" ? "다시 로그인이 필요해요" : "확인이 계속 실패해요"}` : dot === "fail" ? `${f.fails}번 연달아 실패했어요` : dot === "idle" ? (w.paused || w.state.paused ? "멈춰 있어요" : "아직 확인 전이에요") : PROGRESS_WATCH.test(w.name) && f.last_output ? f.last_output : "정상이에요";
+	return { id: w.name, kind, name: `${KIND_KO[kind]} · ${internalName(w, appLabel)}`, dot, status, every_minutes: w.every_minutes, ...(last ? { last_run: last } : {}), ...(dot === "fail" && !down ? { reason: f.last_output || "확인에 실패했어요" } : {}), ...(down ? { down: true } : {}) };
+}
+
+/** Why a Reels upload cannot go out yet: the Instagram token lacks instagram_business_content_publish (features/youtube-instagram/lib/ig-publish.ts writes the flag). */
+export const REELS_BLOCKED = "아직 릴스를 올릴 수 없어요. instagram_business_content_publish 권한이 필요해요. Meta 앱 대시보드의 Instagram API 설정에서 '액세스 토큰 생성'으로 토큰을 다시 만들어 주세요";
+const reelsBlocked = (dataDir: string): boolean => existsSync(join(dataDir, "custom", "sns", "cache", "ig-publish.json"));
+
+export function featuresOf(dataDir: string, app: string, watches: readonly Watch[], notices: readonly NoticeLike[]): FeaturesView {
+	const entries = appEntries(dataDir), entry = entries.find(e => e.key === app && !e.gone);
+	if (!entry) throw new SettingsError(`${app}: 알 수 없는 앱이에요`, 404);
+	const decls = declOf(app), settings = new Map(readSettings(dataDir, app).map(s => [s.key, s.value]));
+	const mine = new Set(ownedWatches(dataDir, watches).get(app) ?? []);
+	// An approval is an open question with a draft in the app's own conversation or about the app (hub/integrations.ts belongsTo).
+	const open = notices.filter(n => !n.dismissed && !n.ignored && n.decision?.state === "open" && !!n.decision.draft && belongsTo(entry, n, [...mine]));
+	const featureOfNotice = (n: NoticeLike): FeatureDecl | undefined => {
+		const hay = `${n.title ?? ""}\n${n.text ?? ""}`;
+		const hit = (f: FeatureDecl, any: boolean) => (f.approves ?? []).some(p => (p === "." ? any : new RegExp(p, "i").test(hay)));
+		return decls.find(f => hit(f, false)) ?? decls.find(f => hit(f, true));
+	};
+	const blocked = app === "instagram" && reelsBlocked(dataDir);
+	const approvals: ApprovalView[] = open.map(n => ({ id: n.id, title: approvalTitle(n), ...(featureOfNotice(n) ? { feature: featureOfNotice(n)!.id, kind: featureOfNotice(n)!.name } : {}), ...(blocked && featureOfNotice(n)?.id === "reels_approval" ? { note: REELS_BLOCKED } : {}), state: "open", ...(n.updated ?? n.ts ? { at: n.updated ?? n.ts } : {}), options: (n.decision?.options ?? []).filter(o => !o.label.startsWith("고치기")).map(o => ({ n: o.n, label: o.label })) }));
+	const features = decls.map(f => {
+		const on = featureOn(dataDir, app, f, settings), waiting = approvals.filter(a => a.feature === f.id).length;
+		return { id: f.id, name: f.name, on, status: !on ? "꺼져 있어요" : blocked && f.id === "reels_approval" ? REELS_BLOCKED : waiting ? `승인 대기 ${waiting}건` : f.hint, ...(f.setting ? { setting: f.setting } : {}), ...(f.section ? { section: f.section } : {}) };
+	});
+	const internal = watches.filter(w => mine.has(w.name)).map(w => internalOf(w, entry.label));
+	return { app, features, internal, approvals };
+}
+
+/** Switches one feature. Unknown or not-ready ids are 404 (a hidden feature has no switch). */
+export function setFeature(dataDir: string, app: string, id: unknown, on: unknown): void {
+	if (typeof on !== "boolean") throw new SettingsError("on: true 또는 false여야 해요");
+	const f = declOf(app).find(x => x.id === id);
+	if (!f || !appEntries(dataDir).some(e => e.key === app && !e.gone)) throw new SettingsError(`${String(id)}: 알 수 없는 기능이에요`, 404);
+	if (f.setting) {
+		writeSettings(dataDir, app, { [f.setting]: on });
+		return;
+	}
+	const doc = readApps(dataDir), mine = doc[app] && typeof doc[app] === "object" ? doc[app] : (doc[app] = {});
+	const flags = mine.features && typeof mine.features === "object" ? mine.features : (mine.features = {});
+	if (on) delete flags[f.id];
+	else flags[f.id] = false;
+	if (!Object.keys(flags).length) delete mine.features;
+	const file = join(dataDir, APPS_FILE), tmp = `${file}.${process.pid}.tmp`;
+	mkdirSync(dirname(file), { recursive: true });
+	writeFileSync(tmp, `${JSON.stringify(doc, null, 2)}\n`, { mode: 0o644 });
+	renameSync(tmp, file);
+}
+
+/** Runs one watch the app owns (다시 시도 / 다시 연결). Not the app's = 404. The owner's tap is his yes: a watch behind an approval gate
+ * (approval_minutes, e.g. a login that sends a push to his phone) is approved, which runs it with the approval; a plain run would only report that it waits. */
+export async function retryInternal(dataDir: string, app: string, watch: unknown, watches: readonly WatchLike[], run: (name: string) => Promise<void>, approve?: (name: string) => void): Promise<void> {
+	if (typeof watch !== "string" || !(ownedWatches(dataDir, watches).get(app) ?? []).includes(watch)) throw new SettingsError(`${String(watch)}: 이 앱의 내부 기능이 아니에요`, 404);
+	if (approve && watches.find(w => w.name === watch)?.approval_minutes) approve(watch);
+	else await run(watch);
+}

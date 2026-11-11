@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko" data-motion="on">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>dotz prototype</title>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="proto.css?v=ac1159a3e56d">
+<link rel="stylesheet" href="onboard.css?v=1f1807505c3f">
+<link rel="stylesheet" href="answers.css?v=8d5c8d2947a7">
+<link rel="stylesheet" href="mailbox.css?v=9eef6be23bd2">
+<script>
+(function () {
+  var d = document.documentElement, t = localStorage.getItem("dz-proto-theme");
+  d.dataset.theme = t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  d.dataset.motion = matchMedia("(prefers-reduced-motion: reduce)").matches ? "off" : (localStorage.getItem("dz-proto-motion") || "on");
+})();
+</script>
+</head>
+<body>
+<div class="ptb" id="ptb" role="toolbar" aria-label="프로토타입 도구">
+  <b>PROTOTYPE</b>
+  <span class="g"><span>테마</span><button data-act="theme-set" data-theme-set="light" aria-pressed="false">라이트</button><button data-act="theme-set" data-theme-set="dark" aria-pressed="false">다크</button></span>
+  <span class="g"><span>모션</span><button data-act="motion-set" data-motion-set="on" aria-pressed="false">켜기</button><button data-act="motion-set" data-motion-set="off" aria-pressed="false">끄기</button></span>
+  <span class="sp"></span>
+  <a href="#index">화면 목록</a>
+</div>
+<div class="app" id="app">
+  <aside class="side" id="side"></aside>
+  <div class="main">
+    <header class="appbar" id="appbar"></header>
+    <main class="views" id="views"><div class="view" id="view"></div></main>
+    <nav class="tabbar" id="tabbar" aria-label="메뉴"></nav>
+  </div>
+</div>
+<div id="layer"></div>
+<div id="toasts" aria-live="polite"></div>
+<script src="data.js?v=d0fd279eda49"></script>
+<script src="proto.js?v=9d66b196a258"></script>
+<script src="s-chat.js?v=f5a5115f87e0"></script>
+<script src="s-work.js?v=b46510da331a"></script>
+<script src="s-notices.js?v=ea035b7f3a19"></script>
+<script src="s-settings.js?v=d057414feedc"></script>
+<script src="s-form.js?v=a55c7aeb2cb3"></script>
+<script src="s-queue.js?v=093dafbbcb4b"></script>
+<script src="s-answers.js?v=9a343ed67e2e"></script>
+<script src="s-mailbox.js?v=772f9545927e"></script>
+<script src="s-onboard.js?v=f80bd37c5986"></script>
+<script>P.boot();</script>
+</body>
+</html>

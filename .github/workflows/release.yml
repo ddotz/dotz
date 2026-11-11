@@ -1,0 +1,36 @@
+# Releases are signed on the owner's machine (docs/releases.md). This workflow stays only for the one unsigned transition release: hub/release.ts
+# refuses to release here once the repo has a signed release tag, since the runner has no signing key.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit whose full suite was green (the owner's release-slot watch sets it); empty releases the head of main untested"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ inputs.sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun hub/release.ts --auto ${SHA:+--sha "$SHA"}
+        env:
+          SHA: ${{ inputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PRIVACY_TERMS: ${{ secrets.PRIVACY_TERMS }}

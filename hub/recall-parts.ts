@@ -1,0 +1,65 @@
+// Pure pieces of the orchestrator's recall prompt (the first message of a session, and the re-read after a compaction: the
+// runtime drops every entry before a compaction's first kept one, the first message included).
+
+export const STATE_CAP = 2500;
+export const OWNER_CAP = 3000;
+
+type OpenTask = { id?: unknown; what?: unknown; next?: unknown; lane?: unknown };
+
+// state.json as a compact listing: one line per open task, the other top-level keys by name only, cut at a line
+// boundary under `max` characters with a marker that names the file. Newest first (state.json appends new tasks at the end),
+// so a cut drops the oldest. Not a JSON object: the old raw slice.
+export function renderState(raw: string, path: string, max = STATE_CAP): string {
+	let state: unknown;
+	try {
+		state = JSON.parse(raw);
+	} catch {
+		return raw.slice(0, 4000);
+	}
+	if (!state || typeof state !== "object" || Array.isArray(state)) return raw.slice(0, 4000);
+	const { open_tasks: tasks, ...rest } = state as Record<string, unknown>;
+	const lines: string[] = [];
+	if (Array.isArray(tasks)) {
+		lines.push("open_tasks:");
+		for (const t of (tasks as OpenTask[]).toReversed()) {
+			const task = t && typeof t === "object" ? t : {};
+			const text = (v: unknown) => (typeof v === "string" ? v : v === undefined || v === null ? "" : JSON.stringify(v));
+			lines.push(`- ${text(task.id)}: ${text(task.what)}${task.next ? ` (next: ${text(task.next)})` : ""}${task.lane ? ` [lane: ${text(task.lane)}]` : ""}`);
+		}
+	}
+	const others = Object.keys(rest);
+	if (others.length) lines.push(`other keys: ${others.join(", ")}`);
+	const text = lines.join("\n");
+	if (text.length <= max) return text;
+	const marker = `[... cut at ${max} characters; read ${path} for the rest]`;
+	const room = max - marker.length - 1;
+	const cut = text.slice(0, Math.max(0, room));
+	const end = cut.lastIndexOf("\n");
+	return `${end >= 0 ? cut.slice(0, end) : ""}\n${marker}`;
+}
+
+// owner.md grows at the end, so an old head-only cut kept the oldest facts and lost every recent one. Over `max` characters
+// the card goes newest line first, whole lines only, and ends with a marker that names the file.
+export function newestLines(text: string, path: string, max = OWNER_CAP): string {
+	if (text.length <= max) return text;
+	const lines = text.split("\n").filter(line => line.trim());
+	const room = max - path.length - 60;
+	const kept: string[] = [];
+	let used = 0;
+	for (const line of lines.toReversed()) {
+		if (used + line.length + 1 > room) break;
+		kept.push(line);
+		used += line.length + 1;
+	}
+	return `${kept.join("\n")}\n[... newest ${kept.length} of ${lines.length} lines; read ${path} for the rest]`;
+}
+
+// MODE.md without one `## ` section: from the heading that starts with `heading` to the next `## ` heading (or the end).
+export function dropSection(mode: string, heading: string): string {
+	const lines = mode.split("\n");
+	const from = lines.findIndex(l => l.startsWith(heading));
+	if (from < 0) return mode;
+	let to = lines.findIndex((l, i) => i > from && l.startsWith("## "));
+	if (to < 0) to = lines.length;
+	return [...lines.slice(0, from), ...lines.slice(to)].join("\n");
+}

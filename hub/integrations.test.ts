@@ -1,0 +1,259 @@
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { commentAsk, type CommentAdapter } from "../features/reply-drafts/lib/comments.ts";
+import { appKeyOf, belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn, withStoreDrafts } from "./integrations.ts";
+
+const dirs: string[] = [];
+afterAll(() => dirs.forEach(d => rmSync(d, { recursive: true, force: true })));
+
+// A data dir whose personal copies of the shipped feature folders are switched on, as the onboarding does (enabled: false -> true).
+function install(on: string[], sns?: Record<string, unknown>): string {
+	const dir = mkdtempSync(join(tmpdir(), "dotz-intg-"));
+	dirs.push(dir);
+	for (const id of on) {
+		mkdirSync(join(dir, "features", id), { recursive: true });
+		const shipped = readFileSync(join(import.meta.dir, "..", "features", id, "feature.md"), "utf8");
+		writeFileSync(join(dir, "features", id, "feature.md"), shipped.replace(/^enabled: false$/m, "enabled: true"));
+	}
+	if (sns) {
+		mkdirSync(join(dir, "custom", "sns"), { recursive: true });
+		writeFileSync(join(dir, "custom", "sns", "config.json"), JSON.stringify(sns));
+	}
+	return dir;
+}
+const keys = (dir: string, flags: string[] = []) => integrationItems(integrationContext(dir, flags), []).map(i => i.key);
+
+describe("which integrations show", () => {
+	test("none enabled: no sub-items", () => {
+		expect(keys(install([]))).toEqual([]);
+	});
+
+	test("kakao and webmail enabled: 메일 and 카카오톡, in registry order", () => {
+		expect(keys(install(["kakao", "webmail-no-api"]))).toEqual(["mail", "kakao"]);
+	});
+
+	test("one feature enabled shows only its own entry", () => {
+		expect(keys(install(["kakao"]))).toEqual(["kakao"]);
+		expect(keys(install(["webmail-no-api"]))).toEqual(["mail"]);
+	});
+
+	test("a runtime flag (zele) alone turns 메일 on", () => {
+		expect(keys(install([]), ["zele"])).toEqual(["mail"]);
+	});
+
+	test("a mail conversation or a mail notice turns 메일 on without any switch; none leaves it off", () => {
+		const ctx = integrationContext(install([]), []);
+		const on = (notices: Parameters<typeof integrationItems>[1], convUnread: Record<string, number> = {}) => integrationItems(ctx, notices, convUnread).map(i => i.key);
+		expect(on([], { "mail:k1": 0 })).toEqual(["mail"]);
+		expect(on([{ id: "n", src: "mail:k1" }])).toEqual(["mail"]);
+		expect(on([{ id: "n", open: "alert", title: "디스크 경고" }], { "ch:7": 3 })).toEqual([]);
+		expect(on([])).toEqual([]);
+	});
+
+	test("YouTube and Instagram follow the channels set up in the sns config, each on its own", () => {
+		expect(keys(install([], { youtube: { channel_id: "c" } }))).toEqual(["youtube"]);
+		expect(keys(install([], { instagram: { user_id: "u" } }))).toEqual(["instagram"]);
+		expect(keys(install([], { instagram: { user_id: "u" }, youtube: { channel_id: "c" } }))).toEqual(["instagram", "youtube"]);
+		expect(keys(install([], {}))).toEqual([]);
+	});
+
+	test("an unreadable sns config counts as off", () => {
+		const dir = install([]);
+		mkdirSync(join(dir, "custom", "sns"), { recursive: true });
+		writeFileSync(join(dir, "custom", "sns", "config.json"), "{not json");
+		expect(keys(dir)).toEqual([]);
+	});
+});
+
+const notice = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: "", text: "", open: "alert", read: false, ...extra });
+const by = (key: string) => INTEGRATIONS.find(e => e.key === key)!;
+
+describe("which notices belong to an integration", () => {
+	test("a notice in a mail conversation belongs to 메일, by where it lives", () => {
+		expect(belongsTo(by("mail"), notice("a", { src: "mail:k1", open: "mail:k1" }))).toBe(true);
+		expect(belongsTo(by("mail"), notice("b", { open: "main", decision: { to: "mail:k2" } }))).toBe(true);
+		expect(belongsTo(by("kakao"), notice("c", { src: "mail:k1" }))).toBe(false);
+	});
+
+	test("the draft label of an approval decides between kakao and mail", () => {
+		const draft = (label: string) => notice("d", { text: `> ${label}: 예시\n>\n> 본문`, decision: { to: "main" } });
+		expect(belongsTo(by("kakao"), draft("대화방"))).toBe(true);
+		expect(belongsTo(by("mail"), draft("대화방"))).toBe(false);
+		expect(belongsTo(by("mail"), draft("받는이"))).toBe(true);
+		expect(belongsTo(by("kakao"), draft("받는이"))).toBe(false);
+	});
+
+	test("a title or text pattern matches case-insensitively and a plain alert matches nothing", () => {
+		expect(belongsTo(by("kakao"), notice("e", { title: "카톡 새 메시지" }))).toBe(true);
+		expect(belongsTo(by("youtube"), notice("f", { text: "New YouTube comment" }))).toBe(true);
+		expect(belongsTo(by("instagram"), notice("g", { text: "인스타 댓글" }))).toBe(true);
+		for (const e of INTEGRATIONS) expect(belongsTo(e, notice("h", { title: "디스크 경고", text: "90% 찼어요" }))).toBe(false);
+		// A work session's report about the app is not a notice of the app.
+		for (const src of ["lane:kakao-rooms", "ch:123", "worklog", "main"]) expect(belongsTo(by("kakao"), notice("i", { src, title: "카톡 보내기를 고쳤어요" }))).toBe(false);
+		expect(belongsTo(by("kakao"), notice("j", { src: "alert", title: "카톡 새 메시지" }))).toBe(true);
+	});
+
+	const report = (id: string, watch: string, text: string) => notice(id, { kind: "watch", src: "alert", watch, title: "깃허브 PR·이슈 확인", text });
+
+	test("a monitor's report that merely names an app stays out of that app, in every app", () => {
+		const words = "새 이슈: 메일 보내기 실패, 카톡과 인스타그램, 유튜브, 웹사이트 답글도 확인";
+		for (const e of INTEGRATIONS) expect(belongsTo(e, report("k", "github-prs", words))).toBe(false);
+		const ctx = integrationContext(install(["kakao", "webmail-no-api"], { instagram: { user_id: "u" }, youtube: { channel: "c" } }), []);
+		expect(appKeyOf(report("k", "github-prs", words), ctx)).toBeUndefined();
+		for (const i of integrationItems(ctx, [report("k", "github-prs", words)])) expect([i.key, i.notices, i.unread]).toEqual([i.key, [], 0]);
+	});
+
+	test("an app keeps its own watcher's report: owned by name, or by what the hub resolved", () => {
+		expect(belongsTo(by("mail"), report("l", "webmail-naver", "메일 로그인이 끊겼어요"))).toBe(true);
+		const ctx = integrationContext(install(["webmail-no-api"]), []);
+		const listed = (own?: Map<string, string[]>) => integrationItems({ ...ctx, ...(own ? { own } : {}) }, [report("m", "library-check", "메일 확인이 실패했어요")]).find(i => i.key === "mail")!.notices;
+		expect(listed()).toEqual([]);
+		expect(listed(new Map([["mail", ["library-check"]]]))).toEqual(["m"]);
+	});
+
+	test("a watch's mail in a mail conversation stays the mail app's, whoever posted it", () => {
+		expect(belongsTo(by("mail"), notice("n", { kind: "watch", watch: "github-prs", src: "mail:k1", open: "mail:k1" }))).toBe(true);
+	});
+});
+
+describe("unread counts and notice lists per sub-item", () => {
+	const ctx = integrationContext(install(["kakao", "webmail-no-api"], { instagram: { user_id: "u" } }), []);
+	const notices = [
+		notice("k1", { title: "카톡 새 메시지" }),
+		notice("k2", { title: "카톡 새 메시지", read: true }),
+		notice("k3", { title: "카톡 새 메시지", dismissed: true }),
+		notice("m1", { src: "mail:a", open: "mail:a" }),
+		notice("x1", { title: "디스크 경고" }),
+		notice("i1", { text: "인스타그램 댓글" }),
+	];
+
+	test("counts unread notices only; read and dismissed ones neither count nor list as unread", () => {
+		const items = integrationItems(ctx, notices);
+		const kakao = items.find(i => i.key === "kakao")!;
+		expect(kakao.unread).toBe(1);
+		expect(kakao.notices).toEqual(["k1", "k2"]);
+	});
+
+	test("mail adds one per conversation with unread messages, however many, and only of its own prefix", () => {
+		const items = integrationItems(ctx, notices, { "mail:a": 2, "mail:b": 1, "ch:7": 5 });
+		// m1 lives in mail:a, so it is the same item as that conversation: two items, mail:a and mail:b
+		expect(items.find(i => i.key === "mail")).toMatchObject({ unread: 2, notices: ["m1"], conv: ["mail:"] });
+		expect(items.find(i => i.key === "kakao")!.unread).toBe(1);
+	});
+
+	test("a notice outside every integration is in no list, and a disabled integration is not returned", () => {
+		const items = integrationItems(ctx, notices);
+		expect(items.flatMap(i => i.notices)).not.toContain("x1");
+		expect(items.map(i => i.key)).toEqual(["mail", "kakao", "instagram"]);
+		expect(items.find(i => i.key === "instagram")!.notices).toEqual(["i1"]);
+	});
+
+	test("the cap holds for finished notices only: every open decision of the app stays listed", () => {
+		const open = Array.from({ length: 150 }, (_, i) => notice(`o${i}`, { title: "카톡", decision: { to: "main", state: "open" } }));
+		const done = Array.from({ length: 150 }, (_, i) => notice(`d${i}`, { title: "카톡", decision: { to: "main", state: "done" } }));
+		// Closed ones come first and last, so the cap cuts among them while the open ones sit in the middle.
+		const ids = integrationItems(ctx, [...done.slice(0, 75), ...open, ...done.slice(75)], {}, 100).find(i => i.key === "kakao")!.notices;
+		expect(ids.filter(id => id.startsWith("o"))).toEqual(open.map(n => n.id));
+		expect(ids.filter(id => id.startsWith("d"))).toEqual(done.slice(0, 100).map(n => n.id));
+	});
+
+	test("the notice list is capped, newest first as given", () => {
+		const many = Array.from({ length: 5 }, (_, i) => notice(`c${i}`, { title: "카톡" }));
+		expect(integrationItems(ctx, many, {}, 3).find(i => i.key === "kakao")!.notices).toEqual(["c0", "c1", "c2"]);
+	});
+});
+
+describe("the registry itself", () => {
+	test("keys are unique and each entry can be drawn: label, icon, a stroke path and a way to be switched on", () => {
+		expect(new Set(INTEGRATIONS.map(e => e.key)).size).toBe(INTEGRATIONS.length);
+		for (const e of INTEGRATIONS) {
+			expect(e.key).toMatch(/^[a-z0-9-]+$/);
+			expect(e.label.length).toBeGreaterThan(0);
+			expect(e.kind).toBe("app");
+			expect(e.icon.length).toBeGreaterThan(0);
+			expect(e.iconPath).toMatch(/^M[\d .,a-zA-Z-]+$/);
+			expect(Object.values(e.on).some(v => v && v.length)).toBe(true);
+			expect(Object.values(e.match).some(v => v && v.length)).toBe(true);
+		}
+	});
+
+	test("an entry with nothing enabled stays off", () => {
+		const off = integrationContext(install([]), []);
+		expect(INTEGRATIONS.some(e => integrationOn(e, off))).toBe(false);
+	});
+});
+
+describe("comment reply asks of the reply-drafts adapter", () => {
+	const adapter = (label: string) => ({ app: "x", label }) as CommentAdapter;
+	const ask = (label: string) => notice("k", { text: commentAsk(adapter(label), { id: "c1", author: "Bob", text: "hi", context: "" }, "고마워요", "j-203006151200-ab12", []), decision: { to: "main" } });
+	test("a 대상 ask lands under its own app only", () => {
+		expect(belongsTo(by("youtube"), ask("유튜브"))).toBe(true);
+		expect(belongsTo(by("instagram"), ask("유튜브"))).toBe(false);
+		expect(belongsTo(by("instagram"), ask("인스타"))).toBe(true);
+		expect(belongsTo(by("youtube"), ask("인스타"))).toBe(false);
+		expect(belongsTo(by("mail"), ask("유튜브"))).toBe(false);
+		expect(belongsTo(by("kakao"), ask("인스타"))).toBe(false);
+	});
+});
+
+describe("needs: what waits on the owner per app", () => {
+	const ctx = integrationContext(install(["kakao", "webmail-no-api"]), []);
+	const now = Date.parse("2026-10-23T15:00:00+09:00");
+	const draft = (id: string, extra: Record<string, unknown> = {}) => notice(id, { kind: "decision", text: "> 받는이: a@example.com\n초안", decision: { to: "main", state: "open", draft: { toLabel: "받는이", to: "a@example.com", body: "초안" } }, ...extra });
+	const mail = (items: Parameters<typeof integrationItems>[1], convUnread: Record<string, number> = {}, suggests: Parameters<typeof integrationItems>[5] = []) =>
+		integrationItems(ctx, items, convUnread, 100, undefined, suggests, now).find(i => i.key === "mail")!;
+
+	test("2 waiting drafts + 3 unread: drafts are not counted twice as unread", () => {
+		const m = mail([draft("d1"), draft("d2")], { "mail:a": 2, "mail:b": 1 });
+		expect(m.needs).toEqual({ drafts: 2, unread: 2, sentToday: 0, unreplied: 0 });
+	});
+	test("one mail is one unread item: its unread notice and its conversation's unread messages are not added up (owner 2026-10-28)", () => {
+		const own = notice("n1", { open: "mail:a", src: "mail:a", read: false });
+		const m = mail([own], { "mail:a": 2 });
+		expect([m.unread, m.needs.unread]).toEqual([1, 1]);
+		const elsewhere = mail([notice("n2", { open: "mail:z", src: "mail:z", read: false })], { "mail:a": 2 });
+		expect(elsewhere.needs.unread).toBe(2);
+	});
+	test("one draft per mail counts: a newer draft of the same mail replaces the older one, which waits on nobody", () => {
+		const mailDraft = (id: string, at: string) => notice(id, { ts: at, updated: at, kind: "decision", text: "> 받는이: a@example.com\n초안", decision: { to: "mail:m1", state: "open", draft: { toLabel: "받는이", to: "a@example.com", body: "초안" } } });
+		expect(mail([mailDraft("d1", "2026-10-23T10:00:00+09:00"), mailDraft("d2", "2026-10-23T11:00:00+09:00")], { "mail:m1": 0 }).needs.drafts).toBe(1);
+	});
+	test("answered, ignored or dismissed drafts do not wait; no item: all zero", () => {
+		const items = [draft("d1", { read: true, decision: { to: "main", state: "answered", draft: {} } }), draft("d2", { read: true, ignored: "x" }), draft("d3", { read: true, dismissed: true })];
+		expect(mail(items, { "mail:a": 0 }).needs).toEqual({ drafts: 0, unread: 0, sentToday: 0, unreplied: 0 });
+	});
+	test("sentToday counts the sent replies of this app set today (local day), not older ones or drafts", () => {
+		const m = mail([], { "mail:a": 0 }, [
+			{ target: "mail:a", state: "sent", at: "2026-10-23T09:00:00+09:00" },
+			{ target: "mail:b", state: "sent", at: "2026-10-22T09:00:00+09:00" },
+			{ target: "mail:c", state: "draft", at: "2026-10-23T09:00:00+09:00" },
+			{ target: "ch:1", state: "sent", at: "2026-10-23T09:00:00+09:00" },
+		]);
+		expect(m.needs.sentToday).toBe(1);
+	});
+});
+
+describe("appKeyOf: which notices are an app's, from data", () => {
+	const ctx = integrationContext(install(["kakao"]), []);
+	test("a notice in an app's conversation or about an enabled app is the app's", () => {
+		expect(appKeyOf(notice("m", { open: "mail:a", src: "mail:a" }), ctx)).toBe("mail");
+		expect(appKeyOf(notice("k", { title: "카톡 새 글" }), ctx)).toBe("kakao");
+	});
+	test("a plain monitor, or text of an app this install does not have, is not", () => {
+		expect(appKeyOf(notice("p", { title: "샘플 점검", text: "샘플 점검: 결과가 바뀌었어요" }), ctx)).toBeUndefined();
+		expect(appKeyOf(notice("y", { title: "유튜브 확인" }), ctx)).toBeUndefined();
+	});
+});
+
+describe("needs: drafts an app keeps in its own store", () => {
+	test("KakaoTalk room drafts count as the kakao app's drafts beside a comment app's, and leave the others alone", () => {
+		const ctx = integrationContext(install(["kakao"]), []);
+		const needs = withStoreDrafts({ youtube: { drafts: 1, unread: 0 } }, "kakao", 2);
+		expect(needs).toEqual({ youtube: { drafts: 1, unread: 0 }, kakao: { drafts: 2, unread: 0, unreplied: 0 } });
+		const kk = integrationItems(ctx, [], {}, 100, undefined, [], Date.now(), needs).find(i => i.key === "kakao")!;
+		expect(kk.needs.drafts).toBe(2);
+		expect(withStoreDrafts({ kakao: { drafts: 1, unread: 3 } }, "kakao", 2).kakao).toEqual({ drafts: 3, unread: 3 });
+	});
+});

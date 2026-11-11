@@ -1,0 +1,238 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadSpec, paths, writeJson, type Ctx } from "../lib/config.ts";
+import { loadOnboard, NO_SENT, runOnboard, type Io, type LoginResult } from "../lib/onboard.ts";
+import { runSent } from "../bin/mail.ts";
+import { learnSiteSent } from "../../reply-drafts/lib/persona.ts";
+import { identityOf, loadPairs } from "../../reply-drafts/lib/settings.ts";
+import { cardFile, personalFeatureFile } from "../bin/setup.ts";
+import type { CapturedRequest } from "../lib/capture.ts";
+import { startFakeServer, mkMail, mkSent } from "./fakeserver.ts";
+
+const prevDir = process.env.DOTZ_DIR;
+beforeAll(() => {
+	process.env.DOTZ_DIR = mkdtempSync(join(tmpdir(), "wm-onboard-"));
+});
+afterAll(() => {
+	process.env.DOTZ_DIR = prevDir;
+});
+
+// A recording the way the live recorder returns it: the list call, and (when a mail was opened) its read call.
+async function recordFrom(srv: ReturnType<typeof startFakeServer>, withRead: boolean): Promise<CapturedRequest[]> {
+	const get = async (path: string): Promise<CapturedRequest> => {
+		const r = await fetch(srv.origin + path, { headers: { cookie: "session=good" } });
+		return { url: srv.origin + path, method: "GET", status: r.status, contentType: r.headers.get("content-type") ?? "", responseBody: await r.text() };
+	};
+	const out = [await get("/mail/mboxes/100/mails")];
+	if (withRead) out.push(await get("/mail/mails/2"));
+	return out;
+}
+
+// The calls the site's client makes when its sent folder is opened.
+async function recordSentFrom(srv: ReturnType<typeof startFakeServer>): Promise<CapturedRequest[]> {
+	const path = "/mail/mboxes/200/mails?page=1";
+	const r = await fetch(srv.origin + path, { headers: { cookie: "session=good" } });
+	return [{ url: srv.origin + path, method: "GET", status: r.status, contentType: r.headers.get("content-type") ?? "", responseBody: await r.text() }];
+}
+
+const identityJson = "```json\n" + JSON.stringify({ identity: ["해요체로 짧게 답한다"], templates: [] }) + "\n```";
+
+// The live learnSent with the same reading code (mail.ts sent) and a fake model.
+const learnWith = (io: Io, call: (system: string, user: string) => Promise<string>) => async (site: string) => {
+	const { lines } = await runSent(io.ctx, loadSpec(site)!);
+	return learnSiteSent(site, lines.map((l) => JSON.parse(l)), `mail-${site}`, call);
+};
+
+type Calls = { loginState: number; login: boolean[]; record: number; recordSent: number; learnSent: number; gateway: { method: string; path: string; body: any }[]; progress: string[] };
+
+function fakeIo(srv: ReturnType<typeof startFakeServer>, over: Partial<Io> & { loginResults?: LoginResult[]; recordings?: (() => Promise<CapturedRequest[]>)[] } = {}): { io: Io; calls: Calls } {
+	const calls: Calls = { loginState: 0, login: [], record: 0, recordSent: 0, learnSent: 0, gateway: [], progress: [] };
+	const ctx: Ctx = { fetch: (...a) => fetch(...a), cookieHeader: srv.cookieHeader, now: () => 1_700_000_000_000, sleep: async () => {}, log: () => {} };
+	const io: Io = {
+		ctx,
+		mailElsewhere: () => undefined,
+		asideReady: async () => true,
+		loginState: async () => {
+			calls.loginState++;
+			return "form";
+		},
+		login: async (_url, allow) => {
+			calls.login.push(allow);
+			return over.loginResults?.shift() ?? "in";
+		},
+		record: async () => {
+			calls.record++;
+			const next = over.recordings?.shift();
+			return next ? next() : recordFrom(srv, true);
+		},
+		recordSent: async () => {
+			calls.recordSent++;
+			return [];
+		},
+		learnSent: async () => {
+			calls.learnSent++;
+			return undefined;
+		},
+		gateway: async (method, path, body) => {
+			calls.gateway.push({ method, path, body });
+			return {};
+		},
+		progress: async (text) => {
+			calls.progress.push(text);
+		},
+		...over,
+	};
+	return { io, calls };
+}
+
+test("one request runs to the end: one batched ask, an interruption, resume, read probe, watch", async () => {
+	const srv = startFakeServer([mkMail(2), mkMail(1)]);
+	try {
+		const site = "work";
+		const { io, calls } = fakeIo(srv, {
+			loginResults: ["need-2fa", "in"],
+			recordings: [
+				async () => {
+					throw new Error("aside repl exited");
+				},
+				() => recordFrom(srv, false),
+			],
+		});
+
+		let r = await runOnboard(io, { site, url: `${srv.origin}/mail/`, channel: "ch:123" });
+		expect(r.status).toBe("waiting");
+		expect(r.step).toBe("login");
+		expect(r.ask).toBeTruthy();
+		expect(calls.login).toEqual([false]);
+		expect(calls.progress.at(-1)).toContain("❓");
+
+		r = await runOnboard(io, { site, approve: true });
+		expect(r.status).toBe("failed");
+		expect(r.step).toBe("capture");
+		expect(loadOnboard(site)?.done).toEqual(["preflight", "login"]);
+
+		const loginChecks = calls.loginState;
+		r = await runOnboard(io, { site });
+		expect(r.status).toBe("done");
+		expect(calls.loginState).toBe(loginChecks);
+		expect(loadSpec(site)?.read.path).toBe("/mail/mails/{id}");
+
+		const watches = calls.gateway.filter((c) => c.path === "/api/watches");
+		expect(watches).toHaveLength(1);
+		expect(watches[0].body.to).toBe("orchestrator");
+		expect(watches[0].body.channels).toEqual(["123"]);
+		expect(readFileSync(personalFeatureFile(), "utf8")).toMatch(/^enabled: true$/m);
+		expect(existsSync(cardFile(site))).toBe(true);
+		expect(calls.progress.at(-1)).not.toContain("⏳");
+	} finally {
+		srv.close();
+	}
+});
+
+test("onboarding captures the sent folder, reads every page and learns its pairs and an own profile", async () => {
+	const srv = startFakeServer([mkMail(2), mkMail(1)]);
+	try {
+		srv.setSent([11, 12, 13, 14, 15].map(mkSent), { pageSize: 2 });
+		const { io, calls } = fakeIo(srv, { recordSent: async () => recordSentFrom(srv) });
+		io.learnSent = learnWith(io, async () => identityJson);
+		const r = await runOnboard(io, { site: "sentsite", url: `${srv.origin}/mail/` });
+		expect(r.status).toBe("done");
+		expect(r.state.summary).not.toContain(NO_SENT);
+		const sent = loadSpec("sentsite")?.sent;
+		expect(sent).toMatchObject({ path: "/mail/mboxes/{mailbox}/mails", mailbox: "200", params: { page: "{page}" }, listPath: "mails", fields: { id: "id", to: "to" } });
+		// the recording, the one-list test, then the walk: 5 mails over pages of 2, the page after the short one is empty
+		expect(srv.sentPages).toEqual([1, 1, 1, 2, 3, 4]);
+		const pairs = loadPairs("mail").filter((p) => p.source === "sentsite");
+		expect(pairs.map((p) => [p.reply, p.received, p.from]).sort()).toEqual([11, 12, 13, 14, 15].map((n) => [`reply ${n} 가능해요.`, `question ${n}인가요?`, `rcpt${n}@example.test`]));
+		expect(identityOf({ app: "mail-sentsite" })).toEqual(["해요체로 짧게 답한다"]);
+		expect(calls.gateway.filter((c) => c.method === "POST" && c.path !== "/api/watches" && c.path !== "/api/apps")).toEqual([]);
+	} finally {
+		srv.close();
+	}
+});
+
+test("a site with no sent link finishes onboarding with the note and learns nothing", async () => {
+	const srv = startFakeServer([mkMail(2), mkMail(1)]);
+	try {
+		const { io, calls } = fakeIo(srv);
+		const r = await runOnboard(io, { site: "nosent", url: `${srv.origin}/mail/` });
+		expect(r.status).toBe("done");
+		expect(r.state.done).toContain("sent");
+		expect(r.state.summary).toContain(NO_SENT);
+		expect(loadSpec("nosent")?.sent).toBeUndefined();
+		expect(calls.learnSent).toBe(0);
+	} finally {
+		srv.close();
+	}
+});
+
+test("an already connected site runs only the sent step when the command is run again", async () => {
+	const srv = startFakeServer([mkMail(2), mkMail(1)]);
+	try {
+		srv.setSent([mkSent(21)]);
+		const { io, calls } = fakeIo(srv);
+		await runOnboard(io, { site: "older", url: `${srv.origin}/mail/` });
+		const file = paths.onboard("older");
+		const state = JSON.parse(readFileSync(file, "utf8"));
+		writeJson(file, { ...state, done: state.done.filter((d: string) => d !== "sent") });
+		const before = { login: calls.loginState, record: calls.record, watches: calls.gateway.length };
+		io.recordSent = async () => {
+			calls.recordSent++;
+			return recordSentFrom(srv);
+		};
+		const r = await runOnboard(io, { site: "older" });
+		expect(r.status).toBe("done");
+		expect([calls.loginState, calls.record, calls.gateway.length]).toEqual([before.login, before.record, before.watches]);
+		expect(calls.learnSent).toBe(1);
+		expect(loadSpec("older")?.sent?.mailbox).toBe("200");
+	} finally {
+		srv.close();
+	}
+});
+
+test("an install that hands mail to another computer stops at preflight", async () => {
+	const srv = startFakeServer([mkMail(1)]);
+	try {
+		const { io } = fakeIo(srv, { mailElsewhere: () => "메일은 다른 컴퓨터 몫" });
+		const r = await runOnboard(io, { site: "elsewhere", url: `${srv.origin}/mail/` });
+		expect(r.status).toBe("failed");
+		expect(r.step).toBe("preflight");
+		expect(r.message).toContain("메일은 다른 컴퓨터 몫");
+	} finally {
+		srv.close();
+	}
+});
+
+test("a site with no JSON calls gets a clear fallback, then a HAR resumes it", async () => {
+	const srv = startFakeServer([mkMail(1)]);
+	try {
+		const html: CapturedRequest = { url: `${srv.origin}/mail/`, status: 200, contentType: "text/html", responseBody: "<html>inbox</html>" };
+		const { io, calls } = fakeIo(srv, { recordings: [async () => [html], async () => [html]] });
+		let r = await runOnboard(io, { site: "htmlsite", url: `${srv.origin}/mail/` });
+		expect(r.status).toBe("failed");
+		expect(r.step).toBe("capture");
+		expect(r.message).toContain("HTML");
+		expect(r.message).toContain("--har");
+		expect(calls.record).toBe(2);
+
+		r = await runOnboard(io, { site: "htmlsite", har: await recordFrom(srv, true) });
+		expect(r.status).toBe("done");
+	} finally {
+		srv.close();
+	}
+});
+
+test("the first run needs the inbox URL", async () => {
+	const srv = startFakeServer([]);
+	try {
+		const { io } = fakeIo(srv);
+		const r = await runOnboard(io, { site: "nourl" });
+		expect(r.status).toBe("failed");
+		expect(r.message).toContain("--url");
+		expect(existsSync(paths.onboard("nourl"))).toBe(false);
+	} finally {
+		srv.close();
+	}
+});

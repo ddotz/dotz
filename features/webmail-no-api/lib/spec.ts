@@ -1,0 +1,195 @@
+// A "site spec" is the generalized, personal-data-free description of one webmail site's own XHR/JSON API, captured from a
+// logged-in browser session (lib/capture.ts). It holds no company name, host, account or mail content by itself: every
+// install writes its own spec into the custom layer (DATA_DIR/custom/webmail/<site>/spec.json). The adapter (lib/adapter.ts)
+// speaks a site only through this spec, so the shipped code never knows any specific mail site.
+
+export type FieldMap = {
+	// JSON paths, relative to one list item, of the fields the adapter needs. `id` is required (it is the baseline key the
+	// watch de-duplicates on); the rest are best-effort and shown to the owner.
+	id: string;
+	from?: string;
+	to?: string; // the receiver(s); the sent folder's mails are told apart by it
+	subject?: string;
+	time?: string;
+	read?: string; // truthy = already read (a field named like "unread" is read the other way round)
+	answered?: string; // truthy = the owner replied to it (the site's own replied / answered flag)
+};
+
+export type Endpoint = {
+	// URL path with `{...}` templates filled at call time: {mailbox}, {id}, {q}, {page}. A path starting with http(s):// is
+	// used as-is; otherwise it is resolved against `origin`.
+	path: string;
+	method?: "GET" | "POST";
+	// Extra query params merged into the URL (minimal-fields selectors belong here, e.g. {"fields":"id,subject,date"}).
+	params?: Record<string, string>;
+	// Request body template for sites whose client POSTs (form or JSON), with the same {...} tokens as the path.
+	body?: string;
+	bodyType?: "json" | "form";
+};
+
+// Where a mail's attached files sit in the read response (JSON paths relative to one attachment). A file is fetched either
+// from its own `url` (same origin only) or from `SiteSpec.download` with {id} = the mail and {att} = this file's `id`.
+export type AttachmentMap = { listPath: string; name: string; id?: string; url?: string; size?: string; type?: string };
+
+// How a draft's files reach the site before send (lib/upload.ts). Each file is read from disk as a stream and posted as
+// multipart/form-data, whole or in parts of `chunkBytes`; the bytes never pass through a command line or one in-memory
+// string. Tokens in `path` and `form` values: {name} {size} {index} {count} {offset} {chunk} (this part's bytes) and
+// {upload} (the site's upload id from an earlier part, via `uploadIdPath`).
+export type UploadSpec = {
+	path: string; // multipart POST endpoint (same origin)
+	field?: string; // multipart field that carries the bytes (default "file")
+	form?: Record<string, string>; // other multipart fields the site's client sends with each part
+	chunkBytes?: number; // send each file in parts of this many bytes; unset = one streamed part per file
+	uploadIdPath?: string; // JSON path to the site's upload id in a part's response, sent back as {upload}
+	idPath: string; // JSON path, in a file's last response, to the id the send body refers to
+	statusPath?: string; // JSON path to the site's per-file status in that response
+	okStatus?: string; // regex the status must match for the file to count as accepted (default: any non-empty status)
+	// Sites that turn a large file into a download link (a "big attachment"): files of at least `minBytes` go to `path`
+	// (default the normal one) with `form` added, and are marked as links; `linkPath` reads the link from the response.
+	large?: { minBytes: number; path?: string; form?: Record<string, string>; linkPath?: string };
+	sendField?: string; // key of the send body that lists the accepted files (default "attachments")
+};
+
+export type SiteSpec = {
+	version: 1;
+	site: string; // slug, [a-z0-9][a-z0-9-]{0,39}
+	origin: string; // "https://<host>"; owner-provided, never shipped
+	cookieHosts: string[]; // cookie host_key values whose cookies the adapter sends (e.g. ["mail.example.com", ".example.com"])
+	headers?: Record<string, string>; // request headers the site's own XHR sends (e.g. X-Requested-With, Accept)
+	list: Endpoint & {
+		mailbox?: string; // default {mailbox} token
+		listPath: string; // JSON path to the array of mails in the response, e.g. "mails" or "data.items"
+		fields: FieldMap;
+	};
+	// The sent folder, read page by page for the owner's own past replies (adapter.ts sentList). Same tokens as `list`: {mailbox}, {page}.
+	sent?: Endpoint & { mailbox?: string; listPath: string; fields: FieldMap };
+	read: Endpoint & {
+		bodyPath: string; // JSON path to the mail body in the detail response
+		bodyIsHtml?: boolean; // body is HTML and should be rendered to text
+		attachments?: AttachmentMap; // without it the watcher posts mails without files
+	};
+	download?: Endpoint; // one attached file, for sites that serve it by id instead of a url in the read response
+	search?: Endpoint & {
+		queryParam: string; // query-string parameter that carries the search text (filled from {q} if path has it, else added)
+		listPath?: string; // defaults to list.listPath
+	};
+	// Draft/send endpoint. The adapter NEVER calls this on its own: it only prepares a draft. Sending is a separate,
+	// owner-approved step (see feature.md and the send guard).
+	send?: Endpoint & { draftOnly: true; upload?: UploadSpec };
+};
+
+export const SITE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+// JSON as a web client receives it. Some sites prefix their XHR JSON with an anti-hijacking guard (")]}',", "while(1);",
+// "for(;;);") that the page strips before parsing; do the same so those sites are not mistaken for logged out.
+export function parseJson(text: string): unknown {
+	const t = text.replace(/^\uFEFF/, "").replace(/^\s*(\)\]\}',?|while\s*\(1\);|for\s*\(;;\);)\s*/, "");
+	return JSON.parse(t);
+}
+
+// Cookie host_key values to read for a host: the host itself and each parent domain that is not a public suffix. A
+// two-letter country code with a generic second level (co.kr, co.jp, com.au, ac.uk ...) is a suffix, so for
+// mail.example.co.kr the parents are example.co.kr only, never co.kr.
+const GENERIC_SLD = /^(co|com|net|org|ac|go|or|ne|re|gov|edu|mil|pe|ltd|plc)$/;
+export function cookieHostsFor(host: string): string[] {
+	if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || !host.includes(".")) return [host];
+	const labels = host.split(".");
+	const tld = labels[labels.length - 1];
+	const minLabels = tld.length === 2 && labels.length >= 3 && GENERIC_SLD.test(labels[labels.length - 2]) ? 3 : 2;
+	const out = [host, `.${host}`];
+	for (let i = 1; labels.length - i >= minLabels; i++) out.push(`.${labels.slice(i).join(".")}`, labels.slice(i).join("."));
+	return [...new Set(out)];
+}
+
+const isLocalHost = (h: string) => h === "localhost" || h === "127.0.0.1";
+
+// Read a dot path ("a.b.c") out of a parsed JSON value. Returns undefined when any step is missing. No array indexing: the
+// list array is addressed by `listPath` and iterated by the caller.
+export function getPath(obj: unknown, path: string): unknown {
+	if (!path) return obj;
+	let cur: unknown = obj;
+	for (const key of path.split(".")) {
+		if (cur == null || typeof cur !== "object") return undefined;
+		cur = (cur as Record<string, unknown>)[key];
+	}
+	return cur;
+}
+
+// Fill `{token}` placeholders in a path. Unknown tokens are left as-is (so a malformed spec fails loudly at fetch time
+// rather than silently hitting a wrong URL).
+export function fillPath(path: string, tokens: Record<string, string | number | undefined>): string {
+	return path.replace(/\{(\w+)\}/g, (m, k) => (tokens[k] === undefined ? m : encodeURIComponent(String(tokens[k]))));
+}
+
+// Absolute URL for one endpoint call, with templates filled and `params` merged into the query string.
+export function endpointUrl(origin: string, ep: Endpoint, tokens: Record<string, string | number | undefined> = {}): string {
+	const filled = fillPath(ep.path, tokens);
+	const base = /^https?:\/\//i.test(filled) ? filled : origin.replace(/\/+$/, "") + (filled.startsWith("/") ? "" : "/") + filled;
+	if (!ep.params || !Object.keys(ep.params).length) return base;
+	const u = new URL(base);
+	for (const [k, v] of Object.entries(ep.params)) u.searchParams.set(k, v.replace(/\{(\w+)\}/g, (m, t) => (tokens[t] === undefined ? m : String(tokens[t]))));
+	return u.toString();
+}
+
+export const fillRaw = (s: string, tokens: Record<string, string | number | undefined>) => s.replace(/\{(\w+)\}/g, (m, k) => (tokens[k] === undefined ? m : String(tokens[k])));
+
+// fetch() init pieces for one endpoint call: method, filled body and its content type.
+export function requestInit(ep: Endpoint, tokens: Record<string, string | number | undefined> = {}): { method: string; body?: string; contentType?: string } {
+	const method = ep.method ?? (ep.body ? "POST" : "GET");
+	if (!ep.body || method === "GET") return { method };
+	return { method, body: fillRaw(ep.body, tokens), contentType: ep.bodyType === "json" ? "application/json" : "application/x-www-form-urlencoded; charset=UTF-8" };
+}
+
+// Boundary check of a spec read from disk or produced by capture. Returns an owner-facing Korean problem string, or
+// undefined when the spec is usable.
+export function validateSpec(s: any): string | undefined {
+	if (!s || typeof s !== "object") return "스펙이 JSON 객체가 아니에요";
+	if (s.version !== 1) return "version은 1이어야 해요";
+	if (!SITE_ID.test(String(s.site ?? ""))) return "site는 [a-z0-9-] (최대 40자)여야 해요";
+	let origin: URL;
+	try {
+		origin = new URL(String(s.origin ?? ""));
+	} catch {
+		return "origin이 올바른 URL이 아니에요";
+	}
+	if (origin.protocol !== "https:" && !(origin.protocol === "http:" && isLocalHost(origin.hostname))) return "origin은 https여야 해요";
+	if (!Array.isArray(s.cookieHosts) || !s.cookieHosts.length || !s.cookieHosts.every((h: unknown) => typeof h === "string" && h.trim())) return "cookieHosts에 쿠키 호스트를 하나 이상 넣어야 해요";
+	if (!s.list || typeof s.list.path !== "string" || !s.list.path) return "list.path가 비어 있어요";
+	if (typeof s.list.listPath !== "string" || !s.list.listPath) return "list.listPath(메일 배열 경로)가 비어 있어요";
+	if (!s.list.fields || typeof s.list.fields.id !== "string" || !s.list.fields.id) return "list.fields.id가 비어 있어요";
+	if (s.sent && (typeof s.sent.path !== "string" || !s.sent.path || typeof s.sent.listPath !== "string" || !s.sent.listPath || typeof s.sent.fields?.id !== "string" || !s.sent.fields.id)) return "sent에는 path, listPath, fields.id가 필요해요";
+	if (!s.read || typeof s.read.path !== "string" || !s.read.path) return "read.path가 비어 있어요";
+	if (typeof s.read.bodyPath !== "string" || !s.read.bodyPath) return "read.bodyPath가 비어 있어요";
+	const at = s.read.attachments;
+	if (at && (typeof at.listPath !== "string" || !at.listPath || typeof at.name !== "string" || !at.name || (!at.url && !at.id))) return "read.attachments에는 listPath, name, 그리고 url이나 id가 필요해요";
+	if (at && at.id && !(s.download && typeof s.download.path === "string")) return "read.attachments가 id만 쓰면 download.path도 필요해요";
+	if (s.search && (typeof s.search.path !== "string" || typeof s.search.queryParam !== "string")) return "search에는 path와 queryParam이 필요해요";
+	if (s.send && !s.send.draftOnly) return "send에는 draftOnly: true가 있어야 해요 (전송은 승인 단계에서만)";
+	if (s.send?.upload) return uploadProblem(s.send.upload, origin.origin);
+	return undefined;
+}
+
+const isRegex = (r: unknown) => {
+	try {
+		return typeof r === "string" && !!new RegExp(r);
+	} catch {
+		return false;
+	}
+};
+const isPath = (p: unknown) => typeof p === "string" && !!p;
+const isForm = (f: unknown) => f === undefined || (!!f && typeof f === "object" && Object.values(f).every((v) => typeof v === "string"));
+// An upload path that names a full URL must stay on the site's origin: the session cookie and the files go nowhere else.
+const sameOrigin = (p: string, origin: string) => !/^https?:\/\//i.test(p) || new URL(p.replace(/\{\w+\}/g, "x")).origin === origin;
+
+function uploadProblem(u: any, origin: string): string | undefined {
+	if (!u || typeof u !== "object" || !isPath(u.path) || !isPath(u.idPath)) return "send.upload에는 path와 idPath가 필요해요";
+	if (!sameOrigin(u.path, origin) || (u.large?.path && !sameOrigin(u.large.path, origin))) return "send.upload 주소는 origin과 같은 사이트여야 해요";
+	if (u.field !== undefined && !isPath(u.field)) return "send.upload.field가 비어 있어요";
+	if (!isForm(u.form)) return "send.upload.form 값은 문자열이어야 해요";
+	if (u.chunkBytes !== undefined && !(Number.isInteger(u.chunkBytes) && u.chunkBytes >= 1024)) return "send.upload.chunkBytes는 1024 이상의 정수여야 해요";
+	if (u.okStatus !== undefined && !isRegex(u.okStatus)) return "send.upload.okStatus가 올바른 정규식이 아니에요";
+	if (u.okStatus !== undefined && !isPath(u.statusPath)) return "send.upload.okStatus를 쓰려면 statusPath도 필요해요";
+	const l = u.large;
+	if (l !== undefined && (!l || typeof l !== "object" || !(Number.isInteger(l.minBytes) && l.minBytes > 0) || (l.path !== undefined && !isPath(l.path)) || !isForm(l.form) || (l.linkPath !== undefined && !isPath(l.linkPath)))) return "send.upload.large에는 양의 정수 minBytes가 필요하고 path·form·linkPath는 문자열이어야 해요";
+	return undefined;
+}

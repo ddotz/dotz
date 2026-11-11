@@ -1,0 +1,104 @@
+/* The mail app's mailboxes (web/js/30-mailboxes.js), ported from site/prototype/mailbox.css onto the web tokens: the pane beside the list (wide) or the tab row (narrow),
+   the box title and note, the account mark and the box name on a row, the account chip of the app bar, the move button and the small box after a move. */
+.mx-pane { display: none; }
+/* the mailbox tabs switch the whole list, so they are screen tabs (web/DESIGN.md 화면 탭): words over a hairline, the chosen one --fg with a 2px
+   underline; each tab is the full 44px tall with side padding, so the whole cell is the tap target */
+.mx-tabs { display: flex; flex: none; gap: 0; overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 -1px 0 var(--line); }
+.mx-tabs::-webkit-scrollbar { display: none; }
+/* a strip wider than its pane fades at the right end: the fade says there are more tabs to scroll to */
+.mx-tabs { padding-right: var(--sp-5); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--sp-5)), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - var(--sp-5)), transparent); }
+.mx-tab { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--btn-hit); padding: 0 var(--sp-3); border: 0; border-radius: 0; background: none; color: var(--fg-2); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mx-tab > span:last-child { color: var(--fg-3); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+@media (hover: hover) { .mx-tab:hover { color: var(--fg); } }
+.mx-tab.on { color: var(--fg); font-weight: 600; box-shadow: inset 0 -2px 0 var(--fg); }
+.mx-tab .ic { width: 16px; height: 16px; }
+
+/* the pane: all, then the boxes in one card, then 메일함 추가 */
+.mx-pr { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: calc(var(--row-h) + var(--sp-3)); padding: var(--sp-2) var(--sp-3); border: 0; background: none; color: var(--fg); text-align: left; }
+.mx-pr + .mx-pr { box-shadow: inset 0 1px 0 var(--line); }
+@media (hover: hover) { .mx-pr:hover { background: var(--card-hover); } }
+.mx-pr.on { background: var(--row-sel); } @media (hover: hover) { .mx-pr.on:hover { background: var(--row-sel); } }
+.mx-pr .av { flex: none; display: grid; place-items: center; width: var(--sp-8); height: var(--sp-8); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); }
+.mx-pr.on .av { background: var(--card); }
+.mx-pr .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mx-pr .hd { display: flex; align-items: center; gap: var(--sp-15); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mx-pr .sup { overflow: hidden; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-overflow: ellipsis; white-space: nowrap; }
+.mx-pn { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); font-variant-numeric: tabular-nums; }
+.mx-base { height: var(--tag-h); padding: 0 var(--tag-px); font-size: var(--fs-tag); }
+.mx-add { justify-content: flex-start; padding: 0 var(--sp-3); }
+
+/* an account's mark: one letter in a small circle, in one of four looks */
+.mx-am { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: var(--fs-tag); line-height: 1; font-weight: 700; font-style: normal; }
+.mx-am.t-0 { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.mx-am.t-1 { background: var(--hover); color: var(--fg); }
+.mx-am.t-2 { background: var(--layer); color: var(--accent); }
+.mx-am.t-3 { background: var(--layer); color: var(--fg-2); }
+.mx-al { display: inline-flex; align-items: center; gap: var(--sp-15); }
+.mx-bt { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-overflow: ellipsis; white-space: nowrap; }
+
+/* above the filter tabs: the box title, an account that needs its login, the base box's note */
+.mx-bh { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--sp-8); margin-bottom: calc(var(--sp-2) * -1); }
+.mx-bh h2 { font: 700 var(--fs-big)/var(--lh-big) var(--font); white-space: nowrap; }
+.mx-bh .meta { min-width: 0; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.mx-setb { margin-left: auto; }
+.mx-note, .mx-exp { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); color: var(--fg-2); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+.mx-note { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.mx-exp.down { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.mx-exp .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mx-exp b { color: var(--fg); font-weight: 500; }
+.mx-exp .btn { flex: none; height: var(--btn-h-sm); background: var(--card); }
+
+/* the account chip of the app bar: only while the mail screen is open */
+.mx-acc { display: none; flex: none; align-items: center; gap: var(--sp-1); height: 28px; margin-right: var(--sp-1); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: var(--fs-meta); font-weight: 500; white-space: nowrap; }
+@media (hover: hover) { .mx-acc:hover { background: var(--card-hover); } }
+.mx-acc .ic { width: 14px; height: 14px; }
+/* on a phone the bar also holds back, title, the app buttons, search, bell and usage: the chip gives way (its name ends in …) before the title is squeezed */
+@media (max-width: 639px) {
+  .mx-acc { flex: 0 1 auto; min-width: 0; }
+  .mx-acc > :not(.mx-ac-t) { flex: none; }
+  .mx-ac-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .main:has(#v-monitoring.mx-on:not(.mx-scr):not([hidden])) #title { min-width: calc(var(--btn-hit) * 2); }
+}
+.main:has(#v-monitoring.mx-on:not(.mx-scr):not([hidden])) .mx-acc { display: inline-flex; }
+
+.mr-mv { flex: none; }
+
+/* the small box after a move */
+.mx-teach { display: none; position: fixed; z-index: 120; left: calc(50% - 84px); bottom: var(--sp-6); width: 400px; max-width: calc(100vw - var(--sp-6)); padding: var(--sp-3) var(--sp-4) var(--sp-2); border-radius: var(--r-card); background: var(--pop); box-shadow: var(--float); }
+body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
+.mx-tt { display: flex; align-items: center; gap: var(--sp-2); }
+.mx-tt b { font: 600 var(--fs-body)/var(--lh-sec) var(--font); }
+.mx-tt .ib { width: 28px; height: 28px; margin-left: auto; }
+.mx-tq { margin-top: var(--sp-05); color: var(--fg-2); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+.mx-to { display: flex; flex-direction: column; margin-top: var(--sp-1); }
+.mx-to button { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--sp-10); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg); font-size: var(--fs-body); line-height: var(--lh-sec); text-align: left; }
+@media (hover: hover) { .mx-to button:hover { background: var(--hover); } }
+.mx-rd { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--line-2); border-radius: 50%; }
+.mx-tf { display: flex; justify-content: flex-end; gap: var(--sp-1); margin-top: var(--sp-1); }
+.mx-tf .btn { height: var(--btn-h-sm); }
+
+@media (min-width: 1100px) {
+  /* the pane stands beside the scrolling list, the head over both; the page is wider than a plain item's 920px to leave the list its width */
+  #v-monitoring.mx-on:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: 1180px; grid-template-columns: 256px minmax(0, 1fr); column-gap: var(--sp-5); }
+  #v-monitoring.mx-on:not(.cv-listing) > * { grid-column: 2; }
+  body:has(#v-monitoring.mx-on:not(.mx-scr)) { --mbox-r: calc(max(0px, (100vw - var(--side-w) - 1180px) / 2) + var(--edge)); }   /* the page is 1180 wide beside the mailbox pane: 20-mail-box.css --mbox-r */
+  #v-monitoring.mx-on:not(.cv-listing) > .cv-head { grid-column: 1 / -1; }
+  #v-monitoring.mx-on:not(.cv-listing) > #mx-pane { grid-column: 1; grid-row: 4; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; overflow-y: auto; scrollbar-width: none; }
+  #mon-tl > .mx-tabs:not(.mr-place) { display: none; }
+  #v-monitoring.mx-on #mon-tl { padding-top: 0; }
+  /* 메일함 설정 and 메일함 추가 take the whole view */
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: var(--view-w); grid-template-columns: minmax(0, 1fr); }
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing) > * { grid-column: 1; }
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing) > #mx-pane { display: none; }
+  #mon-tl > .mr .rc-hd > .mr-mv { order: 9; }
+  /* the sender gives its column to the account mark and the box name */
+  #mon-tl > .mr .rc-hd > .rc-src:has(+ .mx-am, + .mx-bt) { flex-basis: 104px; }
+  #mon-tl > .mr .rc-hd > .mx-bt { flex: none; max-width: 96px; }
+}
+@media (max-width: 639px) {
+  .mx-bh .meta, .mx-setb span { display: none; }
+  .mx-setb { width: var(--field-h); padding: 0; }
+  .mx-note { align-items: flex-start; }
+  .mr .mx-am + .mx-bt { display: none; }
+  .mx-teach { left: var(--sp-3); right: var(--sp-3); bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; }
+}

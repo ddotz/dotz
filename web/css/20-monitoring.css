@@ -1,0 +1,161 @@
+/* 모니터링 (web/js/30-monitoring.js): a monitor's wait drawn as a thin bar from its last run to its next, the result as a tag, the connection
+   banner of a down app or watch, and the 감시 소식 overview of every plain monitor. One blue accent, grey track; overdue turns warn, a stopped
+   one grey, a running check a moving shimmer. */
+.mon-prog-wrap { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; width: 100%; }
+.mon-prog-top { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.mon-prog { display: block; flex: 1; min-width: 32px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.mon-prog i { display: block; width: 0; height: 100%; border-radius: 2px; background: var(--accent); }
+.mon-prog.ok i { background: var(--ok); }
+.mon-prog.warn i { background: var(--warn); }
+.mon-prog.err i { background: var(--err); }
+.mon-prog.off i { background: var(--line-2); }
+.mon-prog.none i { background: transparent; }
+.mon-prog.none.ok, .mon-prog.none.warn, .mon-prog.none.err { background: currentColor; }
+.mon-prog.none.ok { color: var(--ok); } .mon-prog.none.warn { color: var(--warn); } .mon-prog.none.err { color: var(--err); }
+/* Running: the extent is unknown, so the bar is a still pale accent track (no sweep: only the composer's dot moves, ui-spec 진행 표시); the 확인 중 tag next to it says it. */
+.mon-prog.run i { width: 100% !important; background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.mon-prog-tx { display: block; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mon-prog-wrap.compact { margin-top: var(--sp-15); }
+.mon-prog-wrap.compact .mon-prog { height: 3px; }
+.mon-prog-wrap.compact .mon-prog-tx { font-size: 11px; line-height: 15px; }
+/* the result tag (same look as .tag, its own class so the row's other tags keep their place in a query) */
+.mon-ptag { --tone: var(--fg-3); display: inline-flex; align-items: center; align-self: center; gap: var(--sp-15); flex: none; height: 20px; padding: 0; background: none; color: var(--fg-3); font-size: var(--fs-tag); line-height: var(--lh-tag); font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.mon-ptag.pri { --tone: var(--accent); color: var(--fg-2); font-weight: 600; }
+.mon-ptag.ok { --tone: var(--ok); color: var(--ok); font-weight: 600; }
+.mon-ptag.warn { --tone: var(--warn); color: var(--warn); font-weight: 600; }
+.mon-ptag.off { font-weight: 600; }
+.mon-ptag.err { --tone: var(--err); color: var(--err); font-weight: 600; }
+
+/* the open item's head: the row of icon, name and state, then the bar / banner under it (wide screens; a phone puts them in the timeline) */
+.mon-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--sp-2); }
+
+/* a connection that is down: said at the top of the conversation, with 지금 다시 확인; the row says the same in its status line */
+.mon-banner { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2) var(--sp-3); border-radius: 12px; background: color-mix(in srgb, var(--err) 10%, transparent); font-size: 13px; line-height: 18px; }
+.mon-banner .ic { flex: none; color: var(--err); }
+.mon-banner-tx { flex: 1; min-width: 0; color: var(--fg-2); overflow-wrap: break-word; }
+.mon-banner-tx b { color: var(--err); font-weight: 600; }
+.mon-banner .btn { flex: none; }
+/* disconnected: only the owner can reconnect it, so orange; a failed check stays red (web/DESIGN.md status color rule) */
+.mon-banner.down { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.mon-banner.down .ic, .mon-banner.down .mon-banner-tx b { color: var(--warn); }
+/* connected, but the last check failed: a warning, not the outage colour */
+
+/* 감시 소식 opens with this: one compact row per plain monitor, what needs the owner first */
+.mon-ov { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3); border-radius: var(--r-card); background: var(--card); }
+.mon-ov-h { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--btn-hit); padding: 0 var(--sp-1); border: 0; background: transparent; color: var(--fg); font: 700 14px/20px var(--font); text-align: left; cursor: pointer; }
+.mon-ov-ht { flex: none; }
+.mon-ov-sum { min-width: 0; color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-ov-h .chev { flex: none; width: 14px; height: 14px; margin-left: auto; color: var(--fg-3); transform: rotate(90deg); transition: transform var(--m-fast) var(--m-ease); }
+.mon-ov-h[aria-expanded="false"] .chev { transform: none; }
+.mon-ov-row { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; min-width: 0; padding: var(--sp-2); border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; }
+@media (hover: hover) { .mon-ov-row:hover { background: var(--hover); } }
+.mon-ov-hd { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
+.mon-ov-n { min-width: 0; font: 600 14px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-ov-peer { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.mon-ov-s { color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-ov-empty { padding: var(--sp-1); color: var(--fg-3); font-size: 13px; }
+
+/* the top of an older page: the reports above load when this reaches the view (the button under it stays as a fallback) */
+.mon-sentinel { width: 100%; height: 1px; }
+
+/* 대화로 이어가기 (30-monitoring.js monHead / monTopNodes): the item's own settings conversation, one small button in the head.
+   It sits on the page (--bg), where a --layer tonal button would vanish, so it takes the card colour like a chip. */
+.mon-continue { flex: none; }
+.mon-continue.btn.tonal { background: var(--card); }
+@media (hover: hover) { .mon-continue.btn.tonal:hover { background: var(--hover); } }
+
+
+/* ---------- the monitoring list: the prototype's sections and rows (site/prototype/s-work.js #monitoring, proto.css .sec/.list/.li) ----------
+   The list column is a stack of section labels and one card per section, never one long card: 감시 소식 and 답장 확인 stand alone, then
+   앱 and 일반 모니터링 (and a project's own group) each get a label and a card. A row is the prototype's row: a 16px line icon, the name
+   and its one-line summary, the status tag of the moment, and the chevron that says the row opens. The wait bar stays under the row (its
+   own product feature), aligned with the text. */
+#v-monitoring > #mon-side, #v-chat > #chat-convo.mon-side { padding: 0 0 var(--sp-4); background: transparent; border-radius: 0; }
+:is(#mon-side, #chat-convo.mon-side) .mon-grp + .card.empty { margin-top: var(--sp-4); }
+:is(#mon-side, #chat-convo.mon-side) .mon-sec { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin: var(--sp-4) var(--sp-1) var(--sp-15); color: var(--fg-2); font: 600 13px/18px var(--font); }
+:is(#mon-side, #chat-convo.mon-side) .mon-sec:first-child { margin-top: 0; }
+:is(#mon-side, #chat-convo.mon-side) .mon-grp { min-width: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+:is(#mon-side, #chat-convo.mon-side) .mon-grp > .cv-row { align-items: center; min-height: 48px; padding: var(--sp-2) var(--sp-4); gap: var(--sp-3); border-radius: 0; }
+/* the rule between rows is an inset line, not a border: a row is as tall first in its card as anywhere below it */
+:is(#mon-side, #chat-convo.mon-side) .mon-grp > .cv-row + .cv-row { margin-top: 0; border-top: 0; box-shadow: inset 0 1px 0 var(--line); }
+@media (hover: hover) { :is(#mon-side, #chat-convo.mon-side) .cv-row:hover { background: var(--card-hover); } }
+:is(#mon-side, #chat-convo.mon-side) .cv-row.on { background: var(--row-sel); } @media (hover: hover) { #mon-side .cv-row.on:hover { background: var(--row-sel); } }
+:is(#mon-side, #chat-convo.mon-side) .cv-av { width: 36px; height: 36px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font-size: 15px; }
+:is(#mon-side, #chat-convo.mon-side) .cv-av .ic { width: 20px; height: 20px; }
+:is(#mon-side, #chat-convo.mon-side) .cv-row .cv-n { font: 500 15px/22px var(--font); }
+:is(#mon-side, #chat-convo.mon-side) .cv-row .cv-p { color: var(--fg-2); font: 400 12px/16px var(--font); }
+:is(#mon-side, #chat-convo.mon-side) .cv-row .cv-m { gap: var(--sp-15); }
+/* the row's way in: a small chevron at the right edge, after its tags (the prototype's .li .end chev) */
+:is(#mon-side, #chat-convo.mon-side) .cv-row::after { align-self: center; content: ""; flex: none; width: 6px; height: 6px; margin-left: var(--sp-05); border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); }
+/* one panel width in every 모니터링 state (list, app, mail, watch): the open mail conversation draws the same column (owner 2026-11-04) */
+/* an app's conversation stands alone, as wide as a conversation of 채팅; a monitor's (.mon-two) keeps 채팅's own two columns with the list of monitors (owner 2026-11-06) */
+@media (min-width: 1100px) {
+  #v-chat.mon-ctx:not(.mon-two) { grid-template-columns: minmax(0, 1fr); }
+  #v-chat.mon-ctx:not(.mon-two):not(.canvas-open) { width: 100%; max-width: calc(100% - var(--cv-w) - var(--sp-4)); margin-inline: auto; }
+  #v-chat.mon-ctx:not(.mon-two)::before, #v-chat.mon-ctx:not(.mon-two) > * { grid-column: 1; }
+  #v-chat.mon-ctx:not(.mon-two) > .cv-side { display: none; }
+  #v-chat.mon-ctx:not(.mon-two).canvas-open { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.25fr); }
+  #v-chat.mon-ctx:not(.mon-two).canvas-open > #canvas { grid-column: 2; }
+  /* a monitor's reports stand in the same place: 채팅's column widths on the same grid, so going between 대화 and 소식 moves nothing */
+  #v-monitoring.mon-two:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { --cv-w: 340px; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); }
+  #v-monitoring.mon-two:not(.cv-listing) > * { grid-column: 2; }
+  #v-monitoring.mon-two:not(.cv-listing) > .cv-side { grid-column: 1; display: block; padding: 0; }
+  #v-chat > .mon-chat-top { grid-row: 3; }
+}
+/* over a monitor's conversation: the wait, a down banner, 지금 확인 and 소식 */
+#v-chat > .mon-chat-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-width: 0; padding: var(--sp-1) var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--line); }
+#v-chat > .mon-chat-top[hidden] { display: none; }
+.mon-chat-top > .mon-prog-wrap { flex: 1 1 200px; width: auto; margin-top: 0; }
+.mon-chat-top > .mon-banner { flex: 1 1 100%; }
+.mon-chat-top > .mon-actions { flex: none; margin-left: auto; }
+@media (max-width: 1099px) { #v-chat > .mon-chat-top { order: 2; } }
+
+/* the open item's header (owner 2026-11-04, compact and the same for a mail and a watch): one row - icon, name, place, the moment, the actions -
+   and under it one 20px line indented to the name: a mail's state, or a watch's words, slim 3px bar and result tag. No empty band, no second row of buttons. */
+#mon-head .mon-hdwrap { display: flex; flex: 1; flex-direction: column; gap: var(--sp-05); min-width: 0; padding: var(--sp-2) var(--sp-4) var(--sp-2); border-radius: var(--r-card); background: var(--card); }
+#mon-head .mon-hdrow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); min-width: 0; min-height: 32px; }
+#mon-head .mon-hdrow .cv-av { width: 32px; height: 32px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font-size: 14px; }
+#mon-head .mon-hdrow .cv-b { flex: 1 1 160px; min-width: 0; }
+#mon-head .mon-hdrow .cv-n { font: 600 16px/22px var(--font); letter-spacing: -.01em; }
+#mon-head .mon-hd-time { flex: none; margin-left: auto; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
+#mon-head .mon-hdacts { display: flex; flex: none; align-items: center; gap: var(--sp-2); min-width: 0; }
+#mon-head .mon-hdacts .as-hd { margin-left: 0; }
+#mon-head .mon-hdwrap > .cv-p, #mon-head .mon-hdwrap > .mon-prog-wrap, #mon-head .mon-hdwrap > .mon-banner { margin-left: calc(var(--sp-8) + var(--sp-3)); width: auto; }
+#mon-head .mon-hdwrap > .cv-p { min-height: 20px; color: var(--fg-2); font: 400 13px/20px var(--font); }
+#mon-head .mon-hdwrap > .mon-banner { margin-top: var(--sp-1); }
+#mon-head .mon-prog-wrap { flex-direction: row; align-items: center; gap: var(--sp-3); min-height: 20px; margin-top: 0; }
+#mon-head .mon-prog-wrap .mon-prog-tx { order: -1; flex: 0 1 auto; min-width: 0; color: var(--fg-2); font: 400 13px/20px var(--font); }
+#mon-head .mon-prog-wrap .mon-prog-top { flex: 1 1 96px; min-width: 0; }
+#mon-head .mon-prog-wrap .mon-prog { height: 3px; }
+
+/* One column for every 모니터링 screen: the head card, the cards under it and the section labels share the view's left and right edges, so nothing here insets
+   the column or caps it at the chat's reading width (--col). A label's text starts on the card's outer edge, the same in the KakaoTalk pane (#kk-rooms .kk-lh). */
+#v-monitoring .tl-in { max-width: none; }
+/* the timeline of an open item: the prototype's section label above its rows (확인 기록), and the cards on the page's surface */
+#mon-tl > .mon-sec { margin: var(--sp-2) 0 calc(var(--sp-2) - var(--sp-4)); /* the list's 16px gap adds to these: 24px above, 8px to its card, like .sec */ color: var(--fg-2); font: 600 13px/18px var(--font); }
+#mon-tl > .mon-sec:first-child { margin-top: 0; }
+/* a phone opens the conversation with the same card: the wait, a down banner and the actions sit together, not loose on the page */
+#mon-tl > .mon-topcard { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+#mon-tl > .mon-topcard .mon-actions { justify-content: flex-end; }
+
+/* a monitor's 확인 기록 / 실행 기록 (30-monitoring.js monLogRow): the prototype's detail list - one card, compact rows (dot, result line, small line, time at the right) */
+#mon-tl > .mon-log { min-width: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.mon-lr { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: 48px; padding: var(--sp-2) var(--sp-4); }
+.mon-lr + .mon-lr { box-shadow: inset 0 1px 0 var(--line); }
+.mon-lr[role="button"] { cursor: pointer; }
+@media (hover: hover) { .mon-lr[role="button"]:hover { background: var(--card-hover); } }
+.mon-lr > .dot { align-self: center; }
+.mon-lb { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.mon-l1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 500 15px/22px var(--font); }
+.mon-lr.un .mon-l1 { font-weight: 600; }
+.mon-l2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font: 400 12px/16px var(--font); }
+.mon-l2:empty { display: none; }
+.mon-lr:not([role="button"]) :is(.mon-l1, .mon-l2) { white-space: normal; overflow-wrap: anywhere; }   /* a row with nothing to unfold shows every word */
+.mon-lt { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mon-l1 .nw-chg s { color: var(--fg-3); }
+.mon-l1 .nw-chg em { font-style: normal; font-weight: 600; color: var(--accent); }
+#mon-tl > .mon-chips { justify-content: flex-start; margin-top: var(--sp-2); }
+/* the inner screens of 모니터링 on a phone (an app, a mail, a room) drop the usage ring from the app bar: the title keeps the room (31-conversations.js convChrome) */
+.appbar.mon-in .ustrip { display: none; }
+/* a phone inside a watch: the machine's name stands in the description line under the bar (monTopNodes), so the title does not carry it a second time */
+.main:has(#mon-tl > .mon-topcard .mon-pc) .appbar.mon-in h1 > .mon-pc { display: none; }

@@ -1,0 +1,4 @@
+{
+	"cmd": ["bun", "test", "./hub/update-smoke-run.ts"],
+	"timeoutMinutes": 5
+}

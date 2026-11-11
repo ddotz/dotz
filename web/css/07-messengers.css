@@ -1,0 +1,8 @@
+/* 메신저 화면: the primary action row, the shared onboarding panel, and the closed "직접 입력" disclosure. */
+.ms-adv { margin: var(--sp-5) var(--sp-1) var(--sp-2); }
+.ms-adv > summary { display: flex; align-items: center; min-height: 32px; color: var(--fg-2); font: 600 13px/20px var(--font); cursor: pointer; list-style: none; }
+.ms-adv > summary::-webkit-details-marker { display: none; }
+.ms-adv > summary::before { content: "+"; display: inline-block; width: 18px; color: var(--fg-3); font-weight: 500; }
+.ms-adv[open] > summary::before { content: "-"; }
+.ms-adv-body { margin-top: var(--sp-2); }
+.ms-adv-body > .list + .sec { margin-top: var(--sp-5); }

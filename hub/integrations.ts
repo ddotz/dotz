@@ -1,0 +1,275 @@
+// Integrations that contact the owner first and ask for approval (webmail, KakaoTalk, Instagram, YouTube ...). Each one is a sub-item
+// of 모니터링 in the chat list (web/js/30-integrations.js). A feature adds its entry to INTEGRATIONS below: that is data only, the web
+// code draws whatever this file lists.
+//
+//   key        stable id, [a-z0-9-]
+//   label      the Korean name in the list
+//   kind       "app": an interactive (app-type) source the owner talks to; 모니터링 lists these as the 앱 group, between 감시 소식 and the plain monitors
+//   icon       an icon name of web/js/01-core.js ICONS; `iconPath` (24x24 stroke path) registers it when the web has none yet
+//   on         shown only when one of these holds on this install: a feature folder that is enabled (feature.md `enabled`), a data file
+//              that exists ("dir/file.json", or "dir/file.json#key" = the file has that key), or a named runtime flag set by the caller.
+//              An entry with a `match.conv` prefix is also on when this install has a conversation or a notice under that prefix.
+//   match      which notices belong to it: a conversation prefix on where the notice lives (`conv`, e.g. "mail:"), the label of an
+//              approval draft (`draft`, the "> 대화방:" line of hub/draft-approval.ts), or a case-insensitive pattern on title + text
+//   watches    gateway watches this app owns (a name, or a prefix ending in "-"): paused while the app is off, deleted by 제거
+//   data       what 제거 deletes only when the owner also picks "데이터 지우기": "dir" (a folder) or "dir/file.json#key" (one key of a file)
+// This install can switch any entry off (custom/apps.json, hub/app-off.ts): off wins over every `on` rule, the conversation prefix included.
+// An entry is the DEFAULT instance of its app (id = key). The owner can add more instances of one app (two mail accounts) and rename each:
+// custom/apps.json {"mail":{"label":"회사"},"mail-2":{"app":"mail","label":"개인","filter":{"conv":["mail:naver-"],"watches":["webmail-naver"]}}}.
+// An instance id is `<app key>` or `<app key>-<slug>` (so an app key has no hyphen). `filter` says what is the instance's: conversation prefixes,
+// watch names/prefixes, text patterns and stored data. The default instance owns what no sibling's filter claims (appEntries below).
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { loadFeatureDirs } from "./featuredirs.ts";
+import { appConnection, connectionText, type WatchStatusLike } from "./watch-status.ts";
+
+export type IntegrationEntry = {
+	key: string;
+	label: string;
+	kind: "app";
+	icon: string;
+	iconPath?: string;
+	on: { features?: string[]; files?: string[]; flags?: string[] };
+	match: { conv?: string[]; draft?: string[]; text?: string[] };
+	watches?: string[];
+	data?: string[];
+	/** An app whose items carry a comment source (hub/comments): `filter.source` is a site name and the source key is `<srcBase><name>`. */
+	srcBase?: string;
+	/** Instance fields (appEntries): the registry key, an added instance, a deleted default, and what sibling instances claim from this one. */
+	app?: string;
+	created?: boolean;
+	gone?: boolean;
+	/** The comment-source keys this instance owns (its `filter.source`). */
+	src?: string[];
+	not?: { conv: string[]; watches: string[]; src?: string[] };
+};
+
+export const INTEGRATIONS: IntegrationEntry[] = [
+	{
+		key: "mail", label: "메일", kind: "app", icon: "mail",
+		iconPath: "M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1zM3.5 7.5l8.5 6 8.5-6",
+		on: { features: ["webmail-no-api"], flags: ["zele"] },
+		match: { conv: ["mail:"], draft: ["받는이"], text: ["메일"] },
+		watches: ["webmail-"], data: ["custom/webmail"],
+	},
+	{
+		key: "kakao", label: "카카오톡", kind: "app", icon: "kakao",
+		iconPath: "M12 4c4.7 0 8.5 2.9 8.5 6.5S16.7 17 12 17c-.8 0-1.6-.1-2.3-.3L5.5 19.5l1-3.6C4.7 14.6 3.5 12.7 3.5 10.5 3.5 6.9 7.3 4 12 4z",
+		on: { features: ["kakao"] },
+		match: { draft: ["대화방"], text: ["카카오톡", "카톡", "kakao"] },
+		watches: ["kakao-new"], data: ["custom/kakao"],
+	},
+	{
+		key: "instagram", label: "인스타그램", kind: "app", icon: "instagram",
+		iconPath: "M7 3.5h10A3.5 3.5 0 0 1 20.5 7v10a3.5 3.5 0 0 1-3.5 3.5H7A3.5 3.5 0 0 1 3.5 17V7A3.5 3.5 0 0 1 7 3.5zM9 12a3 3 0 1 0 6 0a3 3 0 1 0-6 0M17 7h.01",
+		on: { files: ["custom/sns/config.json#instagram"] },
+		match: { text: ["인스타", "instagram"] },
+		watches: ["sns-ig-"], data: ["custom/sns/config.json#instagram"],
+	},
+	{
+		key: "youtube", label: "유튜브", kind: "app", icon: "youtube",
+		iconPath: "M4 6.5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zM10 9.5v5l4.5-2.5z",
+		on: { files: ["custom/sns/config.json#youtube"] },
+		match: { text: ["유튜브", "youtube"] },
+		watches: ["sns-yt-"], data: ["custom/sns/config.json#youtube"],
+	},
+	{
+		key: "site", label: "웹사이트 댓글", kind: "app", icon: "comment",
+		iconPath: "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 3.5V16H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM8 9.5h8M8 12.5h5",
+		on: { flags: ["comments-site"] },
+		match: { text: ["웹사이트 댓글"] },
+		srcBase: "site-",
+	},
+];
+
+// `own`: instance key -> the watches the hub resolved it owns (hub/app-features.ts ownedWatches), for the ownership a name cannot show (a site, what the watch does).
+export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string>; off: ReadonlySet<string>; entries?: readonly IntegrationEntry[]; own?: ReadonlyMap<string, readonly string[]> };
+type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; watch?: string; ts?: string; updated?: string; read?: boolean; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
+// What waits on the owner in one app, counted here so the web scans nothing: `drafts` = reply drafts that wait for his 보내기 (open send-approval
+// [ask]s), `unread` = unread notices and conversation messages (the draft asks are not counted twice), `sentToday` = replies sent by themselves today.
+export type IntegrationNeeds = { drafts: number; unread: number; sentToday: number; unreplied: number };
+// 미답장 facts the gateway collects per app (hub/unreplied.ts): the mail targets that wait for a reply, and counts an app keeps itself (kakao rooms).
+export type ReplyWaits = { targets: readonly string[]; apps: Readonly<Record<string, number>> };
+export type IntegrationItem = Pick<IntegrationEntry, "key" | "label" | "kind" | "icon" | "iconPath"> & { app: string; conv: string[]; convNot?: string[]; unread: number; unreplied: number; notices: string[]; needs: IntegrationNeeds };
+// A mail's suggested reply state (hub/mail.ts MailSuggest) with the time the state was set (or the mail's own time): the "sent today" count reads these.
+export type SuggestLike = { target: string; state?: string; at?: string };
+
+export const APPS_FILE = "custom/apps.json";
+// What custom/apps.json holds per instance id: {"mail":{"off":true}} (the old shape: one default instance per app, read as it is), a label the owner
+// set, an added instance's `app` and `filter`, and `deleted` on a default instance that was deleted (it stays off). A missing or unreadable file = {}.
+// `source` = a mail item's source key (POST /api/mail source): the instance owns `mail:<source>-…`, the same as the conv prefix `mail:<source>-`.
+// `account` (mail instances): the zele account this instance sends and reads through (`--account`); needed when zele holds several accounts.
+export type AppFilter = { account?: string; source?: string; conv?: string[]; watches?: string[]; text?: string[]; data?: string[] };
+// `watches` at the instance level = extra watch names (or prefixes ending in "-") that are this instance's own, beside the registry's (a custom plugin's login keeper).
+// `discord` (mail instances): a Discord thread per new mail too (hub/app-settings.ts 디스코드에도 올리기); missing = web only.
+export type AppRaw = { app?: string; label?: string; off?: boolean; discord?: boolean; /** a mail app: "<model>:<thinking>" its conversations run on, missing = main's (hub/conv-model.ts) */ conv_model?: string; delete_original?: boolean; /** the default `mail` entry only: false turns the 받는 사람 rule off for the install (hub/mail-state.ts) */ to_only?: boolean; /** a mail app: days a sent mail waits for an answer before a follow-up draft, 0 or none = off (hub/mail-unanswered.ts) */ unanswered_days?: number; notify?: boolean; push?: boolean; deleted?: boolean; filter?: AppFilter; watches?: string[] };
+// Cached by the file's mtime and size: the notice lists ask on every call.
+const offCache = new Map<string, { sig: string; raw: Record<string, AppRaw>; off: Set<string> }>();
+function readApps(dataDir: string): { raw: Record<string, AppRaw>; off: Set<string> } {
+	const file = join(dataDir, APPS_FILE);
+	try {
+		const st = statSync(file), sig = `${st.mtimeMs}:${st.size}`, hit = offCache.get(file);
+		if (hit?.sig === sig) return hit;
+		const v = JSON.parse(readFileSync(file, "utf8"));
+		const raw: Record<string, AppRaw> = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+		const off = new Set(Object.entries(raw).filter(([, s]) => s?.off === true).map(([k]) => k));
+		const next = { sig, raw, off };
+		offCache.set(file, next);
+		return next;
+	} catch {
+		return { raw: {}, off: new Set() };
+	}
+}
+/** The instances this install switched off (ids): custom/apps.json {"mail":{"off":true}}. */
+export const readAppOff = (dataDir: string): Set<string> => readApps(dataDir).off;
+export const readAppsFile = (dataDir: string): Record<string, AppRaw> => readApps(dataDir).raw;
+
+const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x) : []);
+// The same cleaning hub/mail.ts mailKey applies to a source, so the prefix matches the keys the mails get.
+export const srcKey = (s: string): string => s.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[-.]+|[-.]+$/g, "").slice(0, 100);
+const convPrefixes = (reg: IntegrationEntry, f?: AppFilter): string[] => {
+	const src = typeof f?.source === "string" ? srcKey(f.source) : "", base = reg.match.conv?.[0];
+	return [...strs(f?.conv), ...(src && base ? [`${base}${src}-`] : [])];
+};
+// The comment-source key a `filter.source` names, for an app that has `srcBase` (site: "mapia" -> "site-mapia", the key features/comments/bin/onboard.ts gives it).
+const srcKeys = (reg: IntegrationEntry, f?: AppFilter): string[] => (reg.srcBase && typeof f?.source === "string" && srcKey(f.source) ? [`${reg.srcBase}${srcKey(f.source)}`] : []);
+export const appLabel = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim().slice(0, 30) : undefined);
+export const instanceIdOf = (app: string, id: string): boolean => id === app || (id.startsWith(`${app}-`) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(id));
+/** The app key an instance id belongs to (ids are `<app>` or `<app>-<slug>`). */
+export const appBase = (id: string): string => id.split("-")[0]!;
+
+/** Every instance as a registry-shaped entry, deleted defaults included (`gone`): a registry entry is the default instance of its app, then come the added
+ *  ones (`created`, shown whenever they are on). A label replaces the registry's. An added instance matches only its own filter; the default keeps the registry
+ *  rules minus what the added ones claim (`not`), unless it has a filter of its own. */
+export function appEntries(dataDir: string): IntegrationEntry[] {
+	const raw = readAppsFile(dataDir), out: IntegrationEntry[] = [];
+	for (const reg of INTEGRATIONS) {
+		const kids = Object.entries(raw).filter(([id, r]) => id !== reg.key && instanceIdOf(reg.key, id) && r && typeof r === "object" && !r.deleted);
+		const mine = raw[reg.key] && typeof raw[reg.key] === "object" ? raw[reg.key]! : {}, own = convPrefixes(reg, mine.filter);
+		const theirs = (r: AppRaw) => [...strs(r.filter?.watches), ...strs(r.watches)];
+		out.push({ ...reg, app: reg.key, label: appLabel(mine.label) ?? reg.label, ...(mine.deleted ? { gone: true } : {}),
+			match: own.length ? { ...reg.match, conv: own } : reg.match,
+			...(strs(mine.watches).length ? { watches: [...(reg.watches ?? []), ...strs(mine.watches)] } : {}),
+			...(srcKeys(reg, mine.filter).length ? { src: srcKeys(reg, mine.filter) } : {}),
+			not: { conv: own.length ? [] : kids.flatMap(([, r]) => convPrefixes(reg, r.filter)), watches: kids.flatMap(([, r]) => theirs(r)), ...(reg.srcBase ? { src: kids.flatMap(([, r]) => srcKeys(reg, r.filter)) } : {}) } });
+		for (const [id, r] of kids)
+			out.push({ key: id, app: reg.key, created: true, label: appLabel(r.label) ?? reg.label, kind: reg.kind, icon: reg.icon, ...(reg.iconPath ? { iconPath: reg.iconPath } : {}),
+				on: reg.on, match: { conv: convPrefixes(reg, r.filter), text: strs(r.filter?.text) }, watches: theirs(r), data: strs(r.filter?.data), ...(reg.srcBase ? { src: srcKeys(reg, r.filter) } : {}) });
+	}
+	return out;
+}
+
+/** The instance (key) that owns comment source `source` of `app`: the added instance whose `filter.source` names it, else the app's default instance. */
+export const commentOwner = (entries: readonly IntegrationEntry[], app: string, source: string): string => entries.find(e => e.created && e.app === app && e.src?.includes(source))?.key ?? app;
+
+// What is on at this install, read from disk: enabled feature folders (a personal copy of a shipped folder wins), data files, and the flags the caller knows.
+export function integrationContext(dataDir: string, flags: Iterable<string> = []): IntegrationContext {
+	const features = new Set(loadFeatureDirs(dataDir).features.filter(f => f.enabled).map(f => f.id));
+	const files = (spec: string): boolean => {
+		const [rel, key] = spec.split("#");
+		const file = join(dataDir, rel!);
+		if (!existsSync(file)) return false;
+		if (!key) return true;
+		try {
+			const v = JSON.parse(readFileSync(file, "utf8"));
+			return v != null && typeof v === "object" && v[key] != null;
+		} catch {
+			return false;
+		}
+	};
+	return { features, files, flags: new Set(flags), off: readAppOff(dataDir), entries: appEntries(dataDir).filter(e => !e.gone) };
+}
+
+export const integrationOn = (e: IntegrationEntry, ctx: IntegrationContext): boolean =>
+	!ctx.off.has(e.key) && !!(e.created || e.on.features?.some(f => ctx.features.has(f)) || e.on.files?.some(f => ctx.files(f)) || e.on.flags?.some(f => ctx.flags.has(f)));
+
+export const whereOf = (n: NoticeLike): string[] => [n.src, n.open, n.decision?.to].filter((s): s is string => typeof s === "string");
+
+// Where the entry's `conv` prefixes reach, minus what a sibling instance claims.
+export const inConv = (e: IntegrationEntry, where: string): boolean => (e.match.conv ?? []).some(p => where.startsWith(p)) && !(e.not?.conv ?? []).some(p => where.startsWith(p));
+
+// Conversations or notices already live under the entry's `conv` prefixes: this install receives through it, whatever its switches say.
+const hasConvs = (e: IntegrationEntry, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>>): boolean =>
+	Object.keys(convUnread).some(t => inConv(e, t)) || notices.some(n => whereOf(n).some(w => inConv(e, w)));
+
+const SESSION_SRC = /^(?:lane:|ch:|worklog$|main$)/;
+
+export const named = (list: readonly string[], watch: string): boolean => list.some(w => (w.endsWith("-") ? watch.startsWith(w) : watch === w));
+export const owns = (e: IntegrationEntry, watch: string): boolean => named(e.watches ?? [], watch) && !named(e.not?.watches ?? [], watch);
+
+export function belongsTo(e: IntegrationEntry, n: NoticeLike, own: readonly string[] = []): boolean {
+	const { draft = [], text = [] } = e.match;
+	const where = whereOf(n);
+	if (where.some(w => inConv(e, w))) return true;
+	if (where.some(w => (e.not?.conv ?? []).some(p => w.startsWith(p)))) return false;
+	const body = n.text ?? "";
+	if (n.decision && draft.some(l => body.includes(`> ${l}:`))) return true;
+	// A work session's or channel's own report ("카톡 보내기를 고쳤어요") talks about the app; it is not a notice of the app.
+	if (SESSION_SRC.test(n.src ?? "")) return false;
+	// Likewise a monitor's report ("새 이슈: 메일 보내기 실패"): only the app that owns the watch can claim it by its words.
+	if (n.watch && !own.includes(n.watch) && !owns(e, n.watch)) return false;
+	const hay = `${n.title ?? ""}\n${body}`.toLowerCase();
+	return text.some(t => hay.includes(t.toLowerCase()));
+}
+
+// The key of the app (an entry on at this install, or one whose conversation the notice lives in) the notice belongs to; none = the owner's own monitor.
+export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS): string | undefined {
+	const where = whereOf(n);
+	return entries.find(e => belongsTo(e, n, ctx.own?.get(e.key)) && (integrationOn(e, ctx) || ctx.off.has(e.key) || where.some(w => inConv(e, w))))?.key;
+}
+
+// The ids an app lists, newest first as given: every open decision stays (an open card must never lose its app), the cap holds for finished notices only.
+const listed = (mine: readonly NoticeLike[], cap: number): string[] => {
+	let closed = 0;
+	return mine.filter(n => n.decision?.state === "open" || closed++ < cap).map(n => n.id);
+};
+
+// The enabled entries with their notices (newest first as given, open decisions always, finished ones at most `cap`) and the unread count, counted by item (owner 2026-10-28: one mail
+// showed 2 because its unread notice and its unread conversation were both counted): each conversation under the entry's `conv` prefixes with
+// unread messages is one (`convUnread`: target -> unread messages, however many), and an unread notice counts only when it lives outside those. `suggests` = the mails' reply states, `now` = the clock.
+export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number; unreplied?: number }>> = {}, waits: ReplyWaits = { targets: [], apps: {} }): IntegrationItem[] {
+	const today = new Date(now).toDateString();
+	return entries.filter(e => !ctx.off.has(e.key) && (integrationOn(e, ctx) || hasConvs(e, notices, convUnread))).map(e => {
+		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n, ctx.own?.get(e.key)));
+		const convs = e.match.conv ?? [];
+		const unreadConvs = new Set(Object.entries(convUnread).filter(([t, n]) => n > 0 && inConv(e, t)).map(([t]) => t));
+		const fromConvs = unreadConvs.size;
+		const ownItem = (n: NoticeLike) => !whereOf(n).some(w => unreadConvs.has(w));
+		const waitsDraft = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
+		// One draft per mail counts: a draft a newer one replaced for the same mail thread is stale and waits on nobody (the web drops it too).
+		// A draft of anything else (a comment reply ask, a decision of another conversation) is its own.
+		const atOf = (n: NoticeLike) => Date.parse(String(n.updated ?? n.ts ?? "")) || 0;
+		const newestDraft = new Map<string, NoticeLike>();
+		for (const n of mine) if (waitsDraft(n)) {
+			const to = n.decision!.to ?? "", k = to.startsWith("mail:") ? to : `#${n.id}`, cur = newestDraft.get(k);
+			if (!cur || atOf(n) > atOf(cur)) newestDraft.set(k, n);
+		}
+		const sentToday = suggests.filter(s => s.state === "sent" && inConv(e, s.target) && s.at && new Date(s.at).toDateString() === today).length;
+		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
+		const unreplied = waits.targets.filter(t => inConv(e, t)).length + (waits.apps[e.key] ?? 0) + (cm.unreplied ?? 0);
+		const needs = { drafts: newestDraft.size + cm.drafts, unread: mine.filter(n => !n.read && !waitsDraft(n) && ownItem(n)).length + fromConvs + cm.unread, sentToday, unreplied };
+		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read && ownItem(n)).length + fromConvs + cm.unread, unreplied, notices: listed(mine, cap), needs };
+	});
+}
+
+// The drafts an app keeps in its own store (KakaoTalk rooms: hub/kakao/send.ts drafts.json) added to what that app waits on, beside the comment apps'
+// counts (`needs`, hub/comments engine.needs): the app row and its badge then count every reply draft that waits for 보내기.
+export const withStoreDrafts = (needs: Readonly<Record<string, { drafts: number; unread: number; unreplied?: number }>>, app: string, drafts: number): Record<string, { drafts: number; unread: number; unreplied?: number }> => {
+	const cur = needs[app] ?? { drafts: 0, unread: 0, unreplied: 0 };
+	return { ...needs, [app]: { ...cur, drafts: cur.drafts + drafts } };
+};
+
+// The item's connection from the watches it owns (`own`, GET /api/integrations): `state` "connected" | "disconnected" whatever was alerted, and for a
+// disconnected one `since` (ISO) and `hint`, the row text ("연결 끊김 · 10월 23일 21:29부터 · 다시 로그인 필요") that replaces the needs line.
+export function withConnection<T extends { own?: string[] }>(item: T, watches: readonly WatchStatusLike[], timeZone?: string): T & { state: "connected" | "disconnected"; since?: string; hint?: string } {
+	const c = appConnection(watches.filter(w => item.own?.includes(w.name)));
+	if (c.state === "connected") return { ...item, state: "connected" };
+	return { ...item, state: "disconnected", ...(c.since ? { since: c.since } : {}), hint: connectionText(c, timeZone)! };
+}
+
+// The apps the 앱 추가 sheet lists: only those the owner switched off or removed here (`off`). An entry never set up on this install is not listed;
+// the owner asks for it and 새로 추가하기 builds it (hub/app-templates.ts). `conv` lets the web tell a mail this install still holds (data is kept
+// while off) from one that only a peer shows.
+export type AvailableApp = Pick<IntegrationEntry, "key" | "label" | "icon" | "iconPath"> & { app: string; off: boolean; conv: string[]; convNot?: string[] };
+export const integrationAvailable = (shown: readonly { key: string }[], ctx: IntegrationContext, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS): AvailableApp[] =>
+	entries.filter(e => ctx.off.has(e.key) && !shown.some(i => i.key === e.key)).map(e => ({ key: e.key, app: e.app ?? e.key, label: e.label, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), off: ctx.off.has(e.key), conv: e.match.conv ?? [], ...(e.not?.conv.length ? { convNot: e.not.conv } : {}) }));

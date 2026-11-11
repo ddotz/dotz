@@ -1,0 +1,92 @@
+/* The two screens that replace the mail list in the same view (web/js/30-mailboxes-set.js): 메일함 설정 and 메일함 추가, ported from site/prototype/mailbox.css onto the web tokens. */
+.mxs { display: flex; flex-direction: column; width: 100%; max-width: calc(var(--view-w) - var(--sp-8)); margin: 0 auto; padding-bottom: var(--sp-8); --ff-fill: var(--layer); }
+.mxs > .sec:first-child, .mxs > .mxs-note + .sec { margin-top: var(--sp-6); }
+#v-monitoring.mx-scr > .cv-head { display: none; }
+.mxs-hd { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.mxs-hd .av { flex: none; display: grid; place-items: center; width: calc(var(--sp-8) + var(--sp-1)); height: calc(var(--sp-8) + var(--sp-1)); border-radius: 50%; background: var(--layer); color: var(--fg-2); }
+.mxs-hd .btn { flex: none; }
+.mxs-hd .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mxs-hd .hd { display: flex; align-items: center; gap: var(--sp-2); font: 600 var(--fs-row)/var(--lh-row) var(--font); }
+.mxs-hd .sup { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.mxs-note, .mxs-h { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.mxs-note { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+.mxs-h { margin: var(--sp-2) var(--sp-1) 0; }
+.mxs-ab .mxs-h, .mxs-pad .mxs-h { margin: 0; }
+.mxs-inh { align-self: flex-start; margin-top: var(--sp-2); }
+.mxs-h.mxs-inh { margin-left: var(--sp-1); }
+
+/* 처리 방식 */
+.mxs-modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
+.mxs-mode { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; padding: var(--sp-3); border: 0; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
+@media (hover: hover) { .mxs-mode:hover { background: var(--card-hover); } }
+.mxs-mode.on { background: color-mix(in srgb, var(--accent) 10%, var(--card)); } @media (hover: hover) { .mxs-mode.on:hover { background: color-mix(in srgb, var(--accent) 10%, var(--card)); } }
+.mxs-mt { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mxs-mt .ic { flex: none; color: var(--accent); }
+/* suggested groups (메일함 추가): the sub line is one line with an ellipsis, the mail count has its own place at the right */
+.mxs-sg .sup { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mxs-cnt { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.mxs-md { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+
+/* one folding item at a time */
+.mxs .list > button.li + button.li { border-top: 1px solid var(--line); }
+.mxs-ah { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: calc(var(--row-h) + var(--sp-1)); padding: var(--sp-2) var(--sp-4); border: 0; background: none; color: var(--fg); text-align: left; }
+@media (hover: hover) { .mxs-ah:hover { background: var(--card-hover); } }
+.mxs-al { flex: none; font: 500 var(--fs-row)/var(--lh-row) var(--font); }
+.mxs-av { flex: 1; min-width: 0; overflow: hidden; color: var(--fg-3); font-size: var(--fs-body); line-height: var(--lh-sec); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.mxs-ah .ic { flex: none; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
+.mxs-ac.open .mxs-ah .ic { transform: rotate(180deg); }
+.mxs-ab { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-1) var(--sp-4) var(--sp-4); }
+.mxs-pad { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
+.mxs-kv { display: grid; grid-template-columns: calc(var(--sp-8) * 3 + var(--sp-4)) minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
+.mxs-k { color: var(--fg-2); font: 500 var(--fs-meta)/var(--field-h) var(--font); }
+.mxs-ac .mxs-k:not(.mxs-kv > .mxs-k) { line-height: var(--lh-sec); }
+.mxs-am2 { display: inline-flex; align-items: center; gap: var(--sp-15); color: var(--fg-2); font-size: var(--fs-meta); }
+
+/* chips with an x, and the input that adds one */
+.mxs-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-width: 0; }
+.mxs-c { max-width: 100%; padding: 0 var(--sp-1) 0 var(--sp-3); background: var(--card); }
+.mxs-c .tx { min-width: 0; }
+.mxs-cx { display: grid; place-items: center; width: var(--sp-6); height: var(--sp-6); padding: 0; border: 0; border-radius: var(--r-pill); background: none; color: var(--fg-3); }
+@media (hover: hover) { .mxs-cx:hover { background: var(--active); color: var(--fg); } }
+.mxs-cx .ic { width: 14px; height: 14px; }
+.mxs-c2 { background: transparent; color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+@media (hover: hover) { .mxs-c2:hover { background: var(--hover); } }
+.mxs-c2 .ic { width: 14px; height: 14px; }
+.mxs-ci { width: calc(var(--sp-10) * 4 + var(--sp-5)); max-width: 100%; height: var(--ctl-h); }
+.mxs-ic { padding: 0 var(--sp-3); }
+.mxs-ic.on { background: color-mix(in srgb, var(--accent) 10%, var(--card)); color: var(--accent); } @media (hover: hover) { .mxs-ic.on:hover { background: color-mix(in srgb, var(--accent) 10%, var(--card)); } }
+.mxs-ab > .mxs-c2 { align-self: flex-start; }   /* the add button is the small chip here too, not the width of the column */
+.mxs-ig { display: flex; flex-direction: column; gap: var(--sp-2); }
+.mxs-ic .ic { width: 16px; height: 16px; }
+.mxs-jr { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: var(--ctl-h); }
+
+/* 말투, 답장 지시, 인사말 */
+.mxs-sum { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.mxs-rowb { display: flex; align-items: center; gap: var(--sp-3); }
+.mxs-rowb .mxs-h { flex: 1; min-width: 0; }
+.mxs-vb { flex: none; display: flex; gap: var(--sp-2); }
+.mxs-ex { display: flex; flex-direction: column; gap: var(--sp-5); min-height: 0; overflow-y: auto; padding: var(--sp-2) var(--sp-6) var(--sp-5); }
+.mxs-exi { display: flex; flex-direction: column; gap: var(--sp-2); }
+.mxs-exi .mxs-k { line-height: var(--lh-sec); }
+.mxs-exi .mxs-h { margin: 0; }
+.mxs-exi .mxs-sum { white-space: pre-wrap; }
+@media (max-width: 639px) { .mxs-rowb { flex-direction: column; align-items: flex-start; } .mxs-ex { padding-left: var(--sp-4); padding-right: var(--sp-4); } }
+.mxs-fx { margin: 0; padding-left: var(--sp-5); color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.mxs-ta { height: auto; min-height: calc(var(--field-h) * 2); padding: var(--sp-2) var(--sp-3); font-family: inherit; line-height: var(--lh-body); resize: vertical; }
+.mxs-gl { display: flex; flex-direction: column; }
+.mxs-g { display: grid; grid-template-columns: calc(var(--sp-10) * 4 + var(--sp-2)) minmax(0, 1fr) var(--sp-8); gap: var(--sp-2); align-items: center; padding: var(--sp-2) 0; }
+.mxs-g + .mxs-g { box-shadow: inset 0 1px 0 var(--line); }
+.mxs-g .tx { display: flex; flex-direction: column; min-width: 0; }
+.mxs-in { width: 100%; padding: 0; border: 0; outline: 0; background: none; color: var(--fg); font: 500 var(--fs-body)/var(--lh-sec) var(--font); }
+.mxs-in.s { color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.mxs-in::placeholder { color: var(--fg-3); }
+
+.mxs-del { display: flex; justify-content: flex-end; margin-top: var(--sp-4); }
+.mxs-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-5); }
+
+@media (max-width: 639px) {
+  .mxs-modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mxs-kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .mxs-g { grid-template-columns: minmax(0, 1fr) var(--sp-8); }
+  .mxs-g .fi { grid-column: 1 / -1; }
+}
