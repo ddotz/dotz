@@ -9,9 +9,11 @@
 // conversation stays findable; deleting its session folder, or `recall-cli forget`, still removes them.
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { TEMP_PATH } from "./live-guard.ts";
+import { parseNote } from "./day-note-format.ts";
+import { msg } from "./i18n.ts";
 import { maskSecrets } from "./public-scrub.ts";
 import { ANSWER_CAP, EXTRACT_VERSION, extractPairs, OWNER_CAP, sessionHeader, type Pair, type RawLine, type RecallCtx } from "./recall-extract.ts";
 
@@ -218,7 +220,7 @@ export function forget(db: Database, pathOrSession: string): number {
 	return rows.length;
 }
 
-export interface IngestOpts { readonly roots: readonly string[]; readonly budgetMs?: number; readonly convKeys?: ReadonlyMap<string, string>; readonly secrets?: readonly string[] }
+export interface IngestOpts { readonly roots: readonly string[]; readonly budgetMs?: number; readonly convKeys?: ReadonlyMap<string, string>; readonly secrets?: readonly string[]; /** The day notes folder (hub/day-note.ts): each section of a note is one doc. */ readonly notesDir?: string }
 export interface IngestResult { files: number; docs: number; removed: number; complete: boolean }
 interface FileRow { size: number; mtime: number; head: string; tail: string; off: number; line: number; cwd: string; session: string; title: string; skip: number; complete: number; after_brief: number }
 interface Stat { path: string; size: number; mtime: number }
@@ -289,6 +291,48 @@ function ingestFile(db: Database, st: Stat, deadline: number, convKeys: Readonly
 	return docs;
 }
 
+// A day note is not a session file: it has no row in `files`, its docs are found by their file, and it is read again only when its size or time changed.
+function ingestNotes(db: Database, dir: string, secrets: readonly string[]): number {
+	const seen = new Set<string>();
+	let docs = 0;
+	if (existsSync(dir)) {
+		for (const name of readdirSync(dir).filter(f => /^\d{4}-\d\d-\d\d\.md$/.test(f)).sort()) {
+			const path = join(dir, name);
+			seen.add(path);
+			const st = statSync(path);
+			const stamp = `${st.size}:${st.mtimeMs}:${MASK_VERSION}`;
+			if (db.query<{ v: string }, [string]>("SELECT v FROM meta WHERE k = ?").get(`note:${path}`)?.v === stamp) continue;
+			const note = parseNote(readFileSync(path, "utf8"));
+			db.exec("BEGIN");
+			try {
+				for (const r of db.query<{ n: number }, [string]>("SELECT n FROM docs WHERE file = ?").all(path)) deleteDoc(db, r.n);
+				for (const [i, s] of (note?.sections ?? []).entries()) {
+					const owner = maskSecrets(`${note!.day} ${msg().dayNote.headings[s.key]}`, secrets).text;
+					const answer = maskSecrets(s.lines.join("\n"), secrets).text;
+					const tsMs = note!.windowEnd;
+					const p = { owner, answer, title: `day note ${note!.day}`, project: "day-note", room: "memory", kind: "note" };
+					const n = Number(db.query("INSERT INTO docs(id, file, line, off, entry, ts, ts_ms, room, project, cwd, session, title, kind, owner, answer, text_hash) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?)")
+						.run(sha(`note:${note!.day}#${s.key}`), path, i + 1, `${note!.day}#${s.key}`, new Date(tsMs).toISOString(), tsMs, p.room, p.project, p.title, p.kind, owner, answer, sha(`${owner}\0${answer}`)).lastInsertRowid);
+					putFts(db, n, p);
+					docs++;
+				}
+				db.query("INSERT OR REPLACE INTO meta(k, v) VALUES (?, ?)").run(`note:${path}`, stamp);
+				db.exec("COMMIT");
+			} catch (e) {
+				db.exec("ROLLBACK");
+				throw e;
+			}
+		}
+	}
+	for (const r of db.query<{ k: string }, []>("SELECT k FROM meta WHERE k LIKE 'note:%'").all()) {
+		const path = r.k.slice(5);
+		if (seen.has(path)) continue;
+		for (const d of db.query<{ n: number }, [string]>("SELECT n FROM docs WHERE file = ?").all(path)) deleteDoc(db, d.n);
+		db.query("DELETE FROM meta WHERE k = ?").run(r.k);
+	}
+	return docs;
+}
+
 export function ingest(db: Database, opts: IngestOpts): IngestResult {
 	const deadline = Date.now() + (opts.budgetMs ?? Number.POSITIVE_INFINITY);
 	const result: IngestResult = { files: 0, docs: 0, removed: 0, complete: true };
@@ -312,6 +356,7 @@ export function ingest(db: Database, opts: IngestOpts): IngestResult {
 		result.docs += docs;
 		if (Date.now() > deadline && !db.query("SELECT 1 FROM files WHERE path = ? AND complete = 1").get(st.path)) result.complete = false;
 	}
+	if (opts.notesDir) result.docs += ingestNotes(db, opts.notesDir, secrets);
 	return result;
 }
 

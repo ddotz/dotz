@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
+import { buildNote } from "./day-note.ts";
 import { ingest, openRecall, pendingDocs, putVec, tokenize } from "./recall-index.ts";
 import { openDoc, search } from "./recall-search.ts";
 
@@ -188,5 +189,51 @@ describe("files on disk", () => {
 		const ro = openRecall(dataDir, true);
 		expect(search(ro, { query: "visible" }, { mode: "keyword" }).length).toBe(1);
 		ro.close();
+	});
+});
+
+describe("day notes", () => {
+	const HOUR = 3_600_000;
+	const END = Date.UTC(2026, 10, 10, 19, 36);
+	const notesDir = () => join(dataDir, "memory", "days");
+	const putNote = (day: string, ...lines: string[]): string => {
+		mkdirSync(notesDir(), { recursive: true });
+		const file = join(notesDir(), `${day}.md`);
+		writeFileSync(file, buildNote({ day, start: END - 24 * HOUR, end: END, writer: "w" }, [{ key: "done", lines }, { key: "know", lines: ["- a second section stays its own doc (src: web m9)"] }]));
+		return file;
+	};
+	const syncNotes = (secrets: string[] = []) => ingest(db, { roots: [root], notesDir: notesDir(), secrets });
+
+	test("each section is one doc that a search finds, ingesting twice adds nothing, secrets are masked", () => {
+		putNote("2026-11-10", "- the zebra migration finished with token SECRETVALUE-123 (src: web m1)");
+		syncNotes(["SECRETVALUE-123"]);
+		const first = db.query<{ id: string }, []>("SELECT id FROM docs ORDER BY id").all();
+		expect(first).toHaveLength(2);
+		const hits = find("zebra");
+		expect(hits).toHaveLength(1);
+		expect(hits[0]!.kind).toBe("note");
+		expect(hits[0]!.answer).not.toContain("SECRETVALUE-123");
+		expect(openDoc(db, hits[0]!.id)?.answer).toContain("zebra");
+		syncNotes(["SECRETVALUE-123"]);
+		expect(db.query<{ id: string }, []>("SELECT id FROM docs ORDER BY id").all()).toEqual(first);
+		expect(db.query<{ c: number }, []>("SELECT count(*) AS c FROM fts").get()?.c).toBe(2);
+	});
+
+	test("a changed note replaces its docs, a deleted one takes them away, a session pass leaves them alone", () => {
+		const file = putNote("2026-11-10", "- the zebra migration finished (src: web m1)");
+		write("a", ask("visible", "2026-10-01T01:00:00.000Z"), reply("yes", "2026-10-01T01:01:00.000Z"));
+		syncNotes();
+		expect(count()).toBe(3);
+		syncNotes();
+		expect(count()).toBe(3);
+		putNote("2026-11-10", "- the giraffe migration finished and the file is longer now (src: web m1)");
+		syncNotes();
+		expect(count()).toBe(3);
+		expect(find("zebra")).toHaveLength(0);
+		expect(find("giraffe")).toHaveLength(1);
+		rmSync(file);
+		syncNotes();
+		expect(count()).toBe(1);
+		expect(find("giraffe")).toHaveLength(0);
 	});
 });

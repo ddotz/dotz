@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from
 import { homedir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { bunBin, embedPending, loadEmbedder, MODEL_NAME, modelReady, notReadyReason, provision, vectorCount } from "./recall-embed.ts";
+import { daysDir } from "./day-note-format.ts";
 import { secretFileValues } from "./public-scrub.ts";
 import { forget, indexPath, ingest, openRecall } from "./recall-index.ts";
 import { provisionRerank, rerankHits, rerankReady, RERANK_NAME, RERANK_POOL } from "./recall-rerank.ts";
@@ -94,7 +95,7 @@ function dump(db: Database, out: string): number {
 async function refresh(budgetMs: number): Promise<number> {
 	const t0 = Date.now();
 	const db = openRecall(DATA_DIR);
-	const r = ingest(db, { roots: sessionDirs(), budgetMs, convKeys: convKeys(), secrets: secretFileValues(DATA_DIR) });
+	const r = ingest(db, { roots: sessionDirs(), budgetMs, convKeys: convKeys(), secrets: secretFileValues(DATA_DIR), notesDir: daysDir() });
 	const lines = [`indexed ${r.docs} docs from ${r.files} files, removed ${r.removed} gone files${r.complete ? "" : " (budget reached)"}`];
 	let code = 0;
 	if (!modelReady(DATA_DIR)) {
@@ -144,7 +145,7 @@ async function main(argv: readonly string[]): Promise<void> {
 	if (cmd === "index") {
 		const budget = one("budget-ms");
 		const db = openRecall(DATA_DIR);
-		const r = ingest(db, { roots: sessionDirs(), budgetMs: budget ? Number(budget) : undefined, convKeys: convKeys(), secrets: secretFileValues(DATA_DIR) });
+		const r = ingest(db, { roots: sessionDirs(), budgetMs: budget ? Number(budget) : undefined, convKeys: convKeys(), secrets: secretFileValues(DATA_DIR), notesDir: daysDir() });
 		console.log(`indexed ${r.docs} docs from ${r.files} files, removed ${r.removed} gone files${r.complete ? "" : " (budget reached, run again to continue)"}`);
 		return;
 	}

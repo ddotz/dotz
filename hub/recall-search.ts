@@ -125,7 +125,7 @@ export function openDoc(db: Database, id: string, secrets: readonly string[] = [
 		db.query<{ id: string }, [string, number]>(`SELECT id FROM docs WHERE file = ? AND line ${cmp} ? ORDER BY line ${order} LIMIT 1`).get(d.file, d.line)?.id ?? "";
 	const head = { id: d.id, ts: kst(d.ts_ms), room: d.room, project: d.project, kind: d.kind, file: d.file, line: d.line, prev: near("<", "DESC"), next: near(">", "ASC") };
 	let raw: { owner: string; answer: string } | undefined;
-	if (existsSync(d.file)) {
+	if (d.kind !== "note" && existsSync(d.file)) {
 		const ctx: RecallCtx = { file: d.file, cwd: d.cwd, session: d.session, title: d.title, convKey: d.project, afterBrief: d.kind !== "brief", ownerCap: OPEN_CAP, answerCap: OPEN_CAP };
 		for (const p of extractPairs(readLines(d.file, d.off, d.line, { end: d.off, line: d.line }), ctx)) {
 			if (p.id === d.id) raw = { owner: maskSecrets(p.owner, secrets).text, answer: maskSecrets(p.answer, secrets).text };
