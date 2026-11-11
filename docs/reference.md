@@ -327,7 +327,7 @@ subagents and Fable or max/xhigh use. A class flagged on consecutive days is mar
 only when something is flagged, and the reflection digest cites the result. Nothing is changed automatically. 14 days of
 totals stay in `~/.dotz/token-audit.json`. Try it with `bun hub/token-audit.ts --dry [--hours N]`.
 
-**Failure report.** `bun hub/failure-report.ts [--days 7] [--json | --md <path> | --check --state <file>]` measures repeated work and failed attempts (workers cut or capped, tool errors by cause, repeated calls, model error turns, wakes, hub.log retries/replays/restarts) from the session logs, task workers included, without a model call or a gateway timer; `--check` prints one line per class that grew since the baseline in the state file and nothing otherwise, for a watch to run.
+**Failure report.** `bun hub/failure-report.ts [--days 7] [--json | --md <path> | --check --state <file>]` measures repeated work and failed attempts (workers cut or capped, tool errors by cause, repeated calls, model error turns, wakes, hub.log retries/replays/restarts) from the session logs, task workers included, without a model call or a gateway timer; `--check` prints one line per class whose share grew since the baseline in the state file (tokens over all tokens of the window; count over assistant turns for classes with no tokens) and nothing otherwise, for a watch to run.
 
 **Subagent guard and harness commands** (`extension/guard.ts`, `extension/harness-tools.ts`, `extension/token-audit.ts`) load with
 the dotz extension into every agent it runs in: the orchestrator, sessions and their subagents (and omp terminals). `guard.enabled: false` turns the guard off.

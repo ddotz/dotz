@@ -5,10 +5,14 @@
 //   no flag      prints the Korean table
 //   --json       prints the full result
 //   --md <path>  writes the Korean table to <path>
-//   --check      watch mode: compares with the baseline in --state (first run, missing or corrupt file: baseline only, prints nothing), prints one
-//                line per class that grew past the threshold, biggest first, then replaces the baseline. Exit code stays 0 either way.
+//   --check      watch mode: compares with the baseline in --state (first run, missing, corrupt or old-format file: baseline only, prints nothing),
+//                prints one line per class whose SHARE grew past the threshold, biggest first, then replaces the baseline. Exit code stays 0 either way.
+//                A busy day moves every absolute number, so the decision is by share: tokens / all tokens of the window, and for the classes that
+//                carry no tokens (hub.log counters, model errors, whose failed turn is charged 0) count / assistant turns of the window. The floors
+//                --min-tokens / --min-count apply to what the class cost beyond its old share, so they stay noise floors.
 // A class' tokens are what its turns cost: a failed tool call is charged the tokens of the turn that issued it (split over that turn's calls),
-// a cut worker its whole session, a no-op wake the one turn it ran. Classes overlap (a cut worker also holds tool errors), so never add them up.
+// a cut worker its whole session (a worker that reached a normal stop and only failed on a later wake is finished; just the turns after that stop are the
+// error class), a no-op wake the one turn it ran. Classes overlap (a cut worker also holds tool errors), so never add them up.
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DATA_DIR, HOME, writeAtomic } from "./config.ts";
@@ -20,7 +24,7 @@ type Entry = { count: number; tokens: number; chars: number; noop: number; lost:
 type Tally = Map<string, Entry>;
 export type Report = {
 	generatedAt: string; days: number; since: string; files: { total: number; workers: number; skipped: number; emptyWorkers: number };
-	tokens: number; roles: Row[]; workers: Row[]; toolErrors: Row[]; repeats: Row[]; errorTurns: Row[]; toolOutput: Row[]; wakes: Row[]; hubLog: Row[]; lost: Row[];
+	tokens: number; turns: number; roles: Row[]; workers: Row[]; toolErrors: Row[]; repeats: Row[]; errorTurns: Row[]; toolOutput: Row[]; wakes: Row[]; hubLog: Row[]; lost: Row[];
 	run: { ms: number; peakRssMb: number };
 };
 
@@ -107,14 +111,14 @@ function eachLine(file: string, fn: (line: string) => void) {
 	if (tail) fn(tail);
 }
 
-type Acc = { tokens: number; roles: Tally; workers: Tally; toolErrors: Tally; repeats: Tally; errorTurns: Tally; toolOutput: Tally; wakes: Tally; skipped: number; emptyWorkers: number };
+type Acc = { tokens: number; turns: number; roles: Tally; workers: Tally; toolErrors: Tally; repeats: Tally; errorTurns: Tally; toolOutput: Tally; wakes: Tally; skipped: number; emptyWorkers: number };
 const text = (blocks: unknown): string => (Array.isArray(blocks) ? blocks : []).map(b => (b && typeof b === "object" && typeof (b as Json).text === "string" ? (b as Json).text : "")).join("");
 const roleOf = (src: Src): string => (src.child ? "워커" : src.file.includes(".dotz-projects") ? "프로젝트" : src.label.startsWith("orchestrator") ? "오케스트레이터" : src.label.startsWith("lane") ? "레인" : "기타");
 
 function scanFile(src: Src, since: number, acc: Acc) {
 	const role = roleOf(src);
 	const calls = new Map<string, { name: string; share: number }>();
-	let lastSig = "", lastStop: string | null = null, cap = false, fileTokens = 0, turns = 0;
+	let lastSig = "", lastStop: string | null = null, cap = false, fileTokens = 0, turns = 0, stopTokens = 0, stopped = false;
 	let wake = "start", groupTokens = 0, groupTurns = 0, lastText = "";
 	const endGroup = () => {
 		if (!groupTurns) return;
@@ -167,10 +171,15 @@ function scanFile(src: Src, since: number, acc: Acc) {
 				acc.tokens += tok;
 				fileTokens += tok;
 				turns++;
+				acc.turns++;
 				bump(acc.roles, role, tok);
 				groupTokens += tok;
 				groupTurns++;
 				lastText = text(m.content).trim();
+			}
+			if (m.stopReason === "stop") {
+				stopped = true;
+				stopTokens = fileTokens;
 			}
 			const share = tok / Math.max(1, toolCalls.length);
 			for (const c of toolCalls) {
@@ -190,7 +199,12 @@ function scanFile(src: Src, since: number, acc: Acc) {
 	endGroup();
 	if (!src.child) return;
 	if (!turns) acc.emptyWorkers++;
-	else bump(acc.workers, cap ? CAP : lastStop === "stop" ? FRESH_WORKER : lastStop === "error" ? ERR_CUT : TOOL_CUT, fileTokens);
+	else if (!cap && stopped && lastStop === "error") {
+		// It answered and stopped normally; only a later wake died (the follow-up or notification found its launch gone). That is a finished worker,
+		// and the error class holds just the turns after the last stop (count = the cut wakes that cost tokens; the failed turn itself is charged 0).
+		bump(acc.workers, FRESH_WORKER, stopTokens);
+		if (fileTokens > stopTokens) bump(acc.workers, ERR_CUT, fileTokens - stopTokens);
+	} else bump(acc.workers, cap ? CAP : lastStop === "stop" ? FRESH_WORKER : lastStop === "error" ? ERR_CUT : TOOL_CUT, fileTokens);
 }
 
 // OmO keeps task workers in <home>/.omo/agent/projects/<project>/senpi-task/children/**, and the collector only knows the stores listed in task-stores.json,
@@ -249,7 +263,7 @@ export function failureReport(opts: { home?: string; dataDir?: string; days?: nu
 	const words = { orchestrator: "orchestrator", lane: "lane", worker: "worker" };
 	const files = new Map<string, Src>();
 	for (const s of [...collectSessions(since, { home, dataDir, words }), ...workerFiles(home, since)]) if (!files.has(s.file)) files.set(s.file, s);
-	const acc: Acc = { tokens: 0, roles: new Map(), workers: new Map(), toolErrors: new Map(), repeats: new Map(), errorTurns: new Map(), toolOutput: new Map(), wakes: new Map(), skipped: 0, emptyWorkers: 0 };
+	const acc: Acc = { tokens: 0, turns: 0, roles: new Map(), workers: new Map(), toolErrors: new Map(), repeats: new Map(), errorTurns: new Map(), toolOutput: new Map(), wakes: new Map(), skipped: 0, emptyWorkers: 0 };
 	for (const src of files.values()) {
 		try {
 			scanFile(src, since, acc);
@@ -278,17 +292,19 @@ export function failureReport(opts: { home?: string; dataDir?: string; days?: nu
 	return {
 		generatedAt: new Date(t0).toISOString(), days, since: new Date(since).toISOString(),
 		files: { total: files.size, workers: [...files.values()].filter(s => s.child).length, skipped: acc.skipped, emptyWorkers: acc.emptyWorkers },
-		tokens: total, roles: rows(acc.roles, total), workers, toolErrors, repeats, errorTurns,
+		tokens: total, turns: acc.turns, roles: rows(acc.roles, total), workers, toolErrors, repeats, errorTurns,
 		toolOutput: rows(acc.toolOutput, sum(acc.toolOutput)).slice(0, 12), wakes: wakes.slice(0, 14), hubLog, lost,
 		run: { ms: Date.now() - t0, peakRssMb: Math.round(process.resourceUsage().maxRSS / 1024) },
 	};
 }
 
-type Baseline = { version: 1; at: string; classes: Record<string, { count: number; tokens: number }> };
+// version 2 adds the totals the share is taken against; a version 1 file (volume only) is replaced silently like a missing one.
+type Baseline = { version: 2; at: string; tokens: number; turns: number; classes: Record<string, { count: number; tokens: number }> };
 const M = (n: number) => `${(n / 1e6).toFixed(1)}M`;
+const P = (s: number) => `${(s * 100).toFixed(2)}%`;
 const isBaseline = (b: unknown): b is Baseline => {
-	const c = (b as Json | null)?.classes;
-	return !!c && typeof c === "object" && Object.values(c).every((v: any) => Number.isFinite(v?.count) && Number.isFinite(v?.tokens));
+	const o = b as Json | null, c = o?.classes;
+	return o?.version === 2 && Number.isFinite(o.tokens) && Number.isFinite(o.turns) && !!c && typeof c === "object" && Object.values(c).every((v: any) => Number.isFinite(v?.count) && Number.isFinite(v?.tokens));
 };
 function loadBaseline(file: string): Baseline | undefined {
 	if (!existsSync(file)) return undefined;
@@ -300,24 +316,30 @@ function loadBaseline(file: string): Baseline | undefined {
 	}
 }
 export type Thresholds = { pct: number; minTokens: number; minCount: number };
-// A class grew when it gained at least the minimum (tokens, or count for classes that carry no tokens) and by at least pct percent.
+// A class grew when its share grew by at least pct percent and it cost at least the floor beyond what its old share predicts for this window
+// (tokens, or count for classes that carry no tokens). Share = tokens / all tokens, or count / assistant turns for a count-only class: counts have
+// no token total, and turns are what a model error or a hub.log retry happens per, so a longer or busier window dilutes them like it dilutes tokens.
 export function grownClasses(r: Report, base: Baseline | undefined, th: Thresholds): { name: string; line: string; weight: number }[] {
 	if (!base) return [];
 	const out: { name: string; line: string; weight: number }[] = [];
 	for (const c of r.lost) {
 		const b = base.classes[c.name] ?? { count: 0, tokens: 0 };
 		const byTokens = c.tokens > 0 || b.tokens > 0;
-		const d = byTokens ? c.tokens - b.tokens : c.count - b.count;
 		const was = byTokens ? b.tokens : b.count, now = byTokens ? c.tokens : c.count;
-		if (d < (byTokens ? th.minTokens : th.minCount) || now < was * (1 + th.pct / 100)) continue;
-		const pct = was ? `+${Math.round((d / was) * 100)}%` : "새로 생김";
-		out.push({ name: c.name, weight: byTokens ? d : d * 1e3, line: `${c.name}: ${byTokens ? `토큰 ${M(b.tokens)} → ${M(c.tokens)}, ` : ""}건수 ${b.count} → ${c.count} (${pct})` });
+		const wasTotal = byTokens ? base.tokens : base.turns, nowTotal = byTokens ? r.tokens : r.turns;
+		if (!wasTotal || !nowTotal) continue;
+		const before = was / wasTotal, after = now / nowTotal;
+		const excess = now - before * nowTotal;
+		if (excess < (byTokens ? th.minTokens : th.minCount) || after < before * (1 + th.pct / 100)) continue;
+		const pct = before ? `+${Math.round((after / before - 1) * 100)}%` : "새로 생김";
+		const share = byTokens ? `비중 ${P(before)} → ${P(after)}` : `1천 턴당 ${(before * 1e3).toFixed(2)} → ${(after * 1e3).toFixed(2)}`;
+		out.push({ name: c.name, weight: byTokens ? excess : excess * 1e3, line: `${c.name}: ${byTokens ? `토큰 ${M(b.tokens)} → ${M(c.tokens)}, ` : ""}건수 ${b.count} → ${c.count}, ${share} (${pct})` });
 	}
 	return out.sort((a, b) => b.weight - a.weight);
 }
 export function check(r: Report, stateFile: string, th: Thresholds): string[] {
 	const lines = grownClasses(r, loadBaseline(stateFile), th).map(g => g.line);
-	const next: Baseline = { version: 1, at: r.generatedAt, classes: Object.fromEntries(r.lost.map(c => [c.name, { count: c.count, tokens: c.tokens }])) };
+	const next: Baseline = { version: 2, at: r.generatedAt, tokens: r.tokens, turns: r.turns, classes: Object.fromEntries(r.lost.map(c => [c.name, { count: c.count, tokens: c.tokens }])) };
 	mkdirSync(dirname(stateFile), { recursive: true });
 	writeAtomic(stateFile, `${JSON.stringify(next)}\n`);
 	return lines;
