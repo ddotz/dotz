@@ -815,11 +815,11 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
   - 행 상태 태그(`prjState`): `일시 정지`, `답을 기다려요`, 세션 상태 단어(`runStatus`가 주는 단어), `끝남`, `쉬는 중`, `세션 없음`. 정렬은 확인 필요, 진행 중, 최근 활동 순이고 `pinned`는 `고정` 그룹으로 먼저 나와요.
   - 안 읽음 배지 aria `읽지 않은 메시지 N개`, 99 넘으면 `99+`. 현재 보는 프로젝트 행은 `.on`.
   - `세션` 섹션은 칩이 `전체`이고 검색어가 없을 때만, `내 설정` 행은 `전체`이면서 검색어가 없거나 `커스텀`에 포함될 때만 나와요. 줄은 `일하는 세션 N개 · 작업 채널 N개`와 `내가 바꾼 것을 봐요`.
-  - 폰 vs 데스크톱: 폭 1100px 이상(`ppWide`=`!narrowChat`, `04-state.js:13-15`)에서는 `go("projects")`가 곧바로 `project`로 바뀌고 목록은 왼쪽 304px 칸에 남아요. 1099px 이하(폰)에서는 목록이 한 화면이에요.
+  - 폰 vs 데스크톱: 폭 1100px 이상(`ppWide`=`!narrowChat`, `04-state.js:13-15`)에서는 `go("projects")`가 곧바로 `project`로 바뀌고 목록은 왼쪽 칸(채팅 목록과 같은 `--frame-list-w` 340px, 틀은 `01-tokens.css:50,195-196`)에 남고 열린 프로젝트 본문은 채팅 본문 칸과 같은 상자(같은 x, 폭, 오른쪽 여백 `--edge`)예요. 1099px 이하(폰)에서는 목록이 한 화면이에요.
   - 20초마다 `prjLoad`로 새로고침(`19-project-main.js:490`).
 - 데이터: `GET /api/custom`(`prjLoad`), 상태 `S.lanes`, 채널별 안 읽음 `ts(chat).unread`. SSE는 이 화면 코드에서 확인 못 함.
 - 근거: `web/js/18-lanes.js:307`(renderProjects), `:269`(pjPaintRows), `:230`(prjRow), `:185`(prjState), `:218`(projRows), `:141`(prjLoad); 진입 `web/js/05-command-palette.js:126,161`.
-- css: `web/css/20-projects.css`(`.pl-*`, 칩 가로 스크롤). 미디어쿼리 `20-projects.css:105`(min-width 1100px: `.views.pp` 304px 칸, `.pl-chips` 끝 페이드).
+- css: `web/css/20-projects.css`(`.pl-*`, 칩 가로 스크롤). 미디어쿼리 `20-projects.css:96`(min-width 1100px: `.pl-chips` 끝 페이드, 열린 세부 쪽 `.fs-bd:has(> .fs-card.pdv)`가 본문 칸 상자에 앉음). `.views.pp`의 칸 폭은 `10-conversations.css:172`가 채팅과 같은 `--frame-*` 토큰으로 정해요.
 
 ### 프로젝트 개요 (`#v-project`, 뷰 `project`, 2단계)
 - 목적: 프로젝트 하나의 이름, 설명, 진행, 확인 필요, 단계, 세션, 작업, 결과, 감시를 한 화면에 요약해요.
@@ -844,7 +844,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
   - 내장 `builtin:custom`이면 이 화면 대신 `cmPaint`(아래 `내 설정` 항목).
 - 데이터: `GET /api/custom/project?key=`(`pmLoad`), `GET /api/custom`(`prjLoad`), `PUT /api/projects`. 쓰기 뒤에는 둘 다 다시 읽어서 서버가 보관한 값으로 그려요(`pmReload`). SSE는 코드에서 확인 못 함.
 - 근거: `web/js/19-project-main.js:53`(pmPaint), `:107`(pmOverview), `:122`(pmSection), `:184`(pmHead), `:152`(pmEditable), `:75`(pmPrimary), `:85`(pmStepRow), `:99`(pmWatchRow), `:398`(pmLaneRow), `:406`(pmWorkRow), `:6`(pmOpen), `:19`(pmReload); 진입 `05-command-palette.js:163`.
-- css: `web/css/08-project-sessions.css`(`.pmv-*`), `web/css/20-projects.css`(`.pm-*`, 목록 열). 미디어쿼리 `08-project-sessions.css:4`(max 639: 머리 패딩), `:14`(max 479: 진행 막대 순서), `:37`(min 640), `:59`(coarse 또는 max 639: 단계 추가 입력 높이), `20-projects.css:110`(min 1100: `.pm-o` 최대 760px).
+- css: `web/css/08-project-sessions.css`(`.pmv-*`), `web/css/20-projects.css`(`.pm-*`, 목록 열). 미디어쿼리 `08-project-sessions.css:4`(max 639: 머리 패딩), `:14`(max 479: 진행 막대 순서), `:37`(min 640), `:59`(coarse 또는 max 639: 단계 추가 입력 높이), `08-project-sessions.css:4`와 `20-projects.css:58`(max 1099: 머리와 `.pm-o` 최대 760px, 1100px 이상에서는 최대 폭 없이 본문 칸을 채움).
 
 ### 프로젝트 ⋯ 메뉴 (`pmMenuButton`)
 - 목적: 프로젝트 수정/삭제 진입. 프로젝트 페이지 머리와 프로젝트 채팅 머리(주석에 `31-conversations.js`로 적혀 있음)가 같이 써요.
@@ -871,7 +871,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 상태: 목표 자리표시자 `아직 목표가 없어요 · 눌러서 적어 주세요`. 단계 없고 목표만 있으면 `단계를 더하면 진행률이 보여요`. 쓰기 실패는 노트 `저장하지 못했어요 · <메시지>`. 프로젝트 데이터가 없으면 `불러오는 중…`. 포커스가 입력칸에 있으면 자동 새로고침이 그 페이지를 안 덮어써요(`pmSheetsPaint`). 오버레이라 뒤로가기 한 번에 닫혀요(주석: `32-history-nav`).
 - 데이터: `PUT /api/projects`. 읽기는 개요와 같은 `PM.D`.
 - 근거: `web/js/19-project-main.js:132`(pmSheet), `:131`(PM_PAGE), `:265`(pmGoalBody).
-- css: `web/css/20-projects.css`(`.pdv-*`, `.fs-card.pdv`), `08-project-sessions.css`(`.pmv-goal/.pmv-ms/.pmv-add`). 미디어쿼리 `20-projects.css:98`(min 640: 폭 760px, 높이 86dvh), `:99`(max 639: 좌우 패딩).
+- css: `web/css/20-projects.css`(`.pdv-*`, `.fs-card.pdv`), `08-project-sessions.css`(`.pmv-goal/.pmv-ms/.pmv-add`). 미디어쿼리 `20-projects.css:89`(640~1099: 가운데 대화창 폭 760px, 높이 86dvh), `:90`(max 639: 좌우 패딩), `:96-101`(min 1100: 가운데 대화창이 아니라 채팅 본문 칸과 같은 상자, `--frame-top`/`--frame-x`).
 
 ### 프로젝트 3단계 페이지: 세션 기록 (`pmSheet("sessions")`)
 - 목적: 지금 도는 세션과 끝난 세션, 백그라운드 작업을 봐요.
@@ -2602,11 +2602,15 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 | `--m-slow` | `300ms` | 같음 | 65 | 10회: css/15-draft-original.css x9, css/02-cards-lists-tags.css x1 |
 | `--m-ease` | `cubic-bezier(.2, .7, .2, 1)` | 같음 | 65 | 75회: css/05-log.css x22, css/03-base.css x9, css/15-draft-original.css x9 외 14개 파일; 토큰 파일 내 파생 2회 |
 
-### 레이아웃 (6개)
+### 레이아웃 (10개)
 
 | 토큰 | 라이트 | 다크 | 선언 줄 | 사용처 (var() 횟수, 상위 파일) |
 |---|---|---|---|---|
 | `--edge` | `28px` | 같음 | 46 | 3회: css/20-apps.css x2, css/10-conversations.css x1; 토큰 파일 내 파생 2회 |
+| `--frame-list-w` | `340px` | 같음 | 50 | 채팅과 프로젝트의 왼쪽 목록 칸 폭 (css/10-conversations.css 두 곳) |
+| `--frame-gap` | `var(--sp-4)` | 같음 | 50 | 두 칸 사이 간격 (css/10-conversations.css 두 곳) |
+| `--frame-x` | `calc(var(--side-w) + var(--edge) + var(--frame-list-w) + var(--frame-gap))` | 같음 | 196 | 1100px 이상에서 본문 칸의 왼쪽 x. 열린 세부 쪽(css/20-projects.css) |
+| `--frame-top` | `calc(var(--bar-h) + var(--sp-2))` | 같음 | 196 | 1100px 이상에서 본문 칸의 위 y. 열린 세부 쪽(css/20-projects.css) |
 | `--view-w` | `920px` | 같음 | 46 | 0회; 토큰 파일 내 파생 3회 |
 | `--sheet-w` | `480px` | 같음 | 46 | 2회: css/05-log.css x1, css/06-harness.css x1 |
 | `--lead-ind` | `calc(var(--row-px) + var(--sp-6) + var(--sp-3))` | 같음 | 46 | 2회: css/03-base.css x1, css/06-harness.css x1 |

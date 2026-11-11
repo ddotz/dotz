@@ -150,7 +150,7 @@
   #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 var(--sp-3); }
   #v-monitoring > .chatbox { grid-row: 4; }
   /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
-  :is(#v-chat, .pane-chat) { --cv-w: 340px; position: relative; display: grid; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
+  :is(#v-chat, .pane-chat) { --cv-w: var(--frame-list-w); position: relative; display: grid; max-width: none; column-gap: var(--frame-gap); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
   #v-chat::before { content: ""; grid-column: 2; grid-row: 1 / -1; border-radius: var(--r-card); background: var(--card); }
   #v-chat.mail-open { --cv-w: 240px; }   /* 메일 스레드 패널이 대화 옆에 서면 목록 단을 좁혀 메일 원문 폭을 지켜요 */
   :is(#v-chat, .pane-chat) > * { grid-column: 2; position: relative; z-index: 1; }
@@ -168,8 +168,8 @@
   :is(.cv-side, .cv-list) .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
   :is(.cv-side, .cv-list) .cv-av .ic { width: 14px; height: 14px; }
   .cv-list { padding: var(--sp-2); }
-  /* 프로젝트: the list beside the open project's page, like 채팅 (go() in 05-command-palette.js sets .pp) */
-  .views.pp { display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: var(--sp-4); overflow: hidden; width: 100%; padding: var(--sp-6) var(--edge) 0; }
+  /* 프로젝트: the list beside the open project's page, in 채팅's frame (the same --frame-* tokens; go() in 05-command-palette.js sets .pp) */
+  .views.pp { --cv-w: var(--frame-list-w); display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: var(--frame-gap); overflow: hidden; width: 100%; padding: var(--sp-6) var(--edge) 0; }
   .views.pp > .view { min-height: 0; max-width: none; margin: 0; padding: 0 0 var(--sp-6); overflow-y: auto; }
   .views.pp > #v-projects { grid-column: 1; grid-row: 1; margin-bottom: var(--sp-4); padding: 0; background: transparent; }
   .views.pp > #v-project { grid-column: 2; grid-row: 1; max-width: none; }

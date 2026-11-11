@@ -54,7 +54,8 @@
 .pl-row > .li-end > .chev { width: 14px; height: 14px; color: var(--fg-3); }
 
 /* ---- level 2: the overview ---- */
-.pm-o { display: flex; flex-direction: column; gap: var(--sp-3); max-width: 760px; margin-top: var(--sp-4); }
+.pm-o { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
+@media (max-width: 1099px) { .pm-o { max-width: 760px; } }
 .pm-need { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
 /* 확인 필요: the prototype's card header (title + state tag) over the question, then the one filled action */
 .pm-need .ch { width: 100%; margin-bottom: var(--sp-05); }
@@ -85,7 +86,7 @@
 .pdv-stack { display: flex; flex-direction: column; min-width: 0; }
 .pdv-stack .sec:first-child { margin-top: var(--sp-1); }
 /* a page, not a dialog: wide screens get the same tall surface as .fs-card.tall */
-@media (min-width: 640px) { .fs-card.pdv { width: min(760px, calc(100% - 48px)); height: min(86dvh, 860px); max-height: none; } }
+@media (min-width: 640px) and (max-width: 1099px) { .fs-card.pdv { width: min(760px, calc(100% - 48px)); height: min(86dvh, 860px); max-height: none; } }
 @media (max-width: 639px) {
   .pdv-hd { padding-left: max(var(--sp-2), env(safe-area-inset-left)); padding-right: max(var(--sp-3), env(safe-area-inset-right)); }
   .pdv-body { padding-left: max(var(--sp-4), env(safe-area-inset-left)); padding-right: max(var(--sp-4), env(safe-area-inset-right)); }
@@ -93,10 +94,10 @@
 
 /* ---- wide: the list beside the overview, like 채팅's conversation list ---- */
 @media (min-width: 1100px) {
-  .views.pp { grid-template-columns: 304px minmax(0, 1fr); }
-  .views.pp > #v-projects { padding: 0 var(--sp-2) 0 var(--sp-1); }
   /* the chip row is wider than the column most of the time: the fade shows there is more to scroll */
   .pl-chips { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); }
   .pl-groups > .sec { margin: var(--sp-4) var(--sp-1) var(--sp-2); }
-  .pm-o { max-width: 760px; }
+  /* the open page of a project (세션 기록, 결과 전체 ...) takes the content column's box of the frame, not a centered dialog */
+  .fs-bd:has(> .fs-card.pdv) { align-items: stretch; justify-content: flex-start; padding: var(--frame-top) var(--edge) var(--sp-4) var(--frame-x); }
+  .fs-card.pdv { width: 100%; height: auto; max-height: none; }
 }

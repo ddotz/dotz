@@ -47,7 +47,7 @@
 
   /* shape: soft boxes, one small control radius; only a status tag and the two-value toggle are fully rounded (알약 규칙) */
   --r-card: 18px; --r-sheet: 20px; --r-menu: 14px; --r-ctl: 10px; --r-seg: 8px; --r-seg-in: 6px; --r-pill: 999px;
-  --edge: 28px; --view-w: 920px; --sheet-w: 480px; --lead-ind: calc(var(--row-px) + var(--sp-6) + var(--sp-3)); --back-x: calc(var(--sp-6) - var(--sp-15)); --back-w: calc(var(--sp-8) + var(--sp-05));
+  --edge: 28px; --frame-list-w: 340px; --frame-gap: var(--sp-4); --view-w: 920px; --sheet-w: 480px; --lead-ind: calc(var(--row-px) + var(--sp-6) + var(--sp-3)); --back-x: calc(var(--sp-6) - var(--sp-15)); --back-w: calc(var(--sp-8) + var(--sp-05));
 
   /* heights: rows, menu items, controls and every button tier take their height here (docs/ui-spec.md) */
   --row-h: 44px; --row-py: 8px; --row-px: 16px;
@@ -192,8 +192,8 @@ button.conn:disabled { cursor: default; }
 .views { min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .view { max-width: var(--view-w); margin: 0 auto; padding: var(--sp-6); }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
-/* wide: only the two-pane 채팅 screens start at the left like the top bar (--edge = where the logo starts); 프로젝트 does it in .views.pp; every other page stays centered */
-@media (min-width: 1100px) { #v-chat, #v-activity, #v-monitoring { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } }
+/* wide: the two-column frame of 채팅 and 프로젝트 starts at the left like the top bar (--edge = where the logo starts): list column --frame-list-w, gap --frame-gap, the content column takes the rest up to --edge from the window's right (#v-chat and .views.pp in 10-conversations.css; the open project's drill-in page in 20-projects.css sits in the same box, --frame-x). 모니터링 and every other page stay centered */
+@media (min-width: 1100px) { #v-chat, #v-activity, #v-monitoring { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } :root { --frame-top: calc(var(--bar-h) + var(--sp-2)); --frame-x: calc(var(--side-w) + var(--edge) + var(--frame-list-w) + var(--frame-gap)); } }
 /* wide: the top row holds only logo, computer, tabs and the right-side controls. A page with a back arrow (a settings sub-page, 모니터링) gets the arrow and its title as a page header in row 3, just above the page: both sit in the full-width cell and are offset to the left edge of the centered 920px column (.view max-width) */
 @media (min-width: 1100px) {
   .appbar #back, .appbar h1 { grid-row: 3; grid-column: 1 / -1; align-self: start; justify-self: start; }

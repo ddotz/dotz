@@ -8,13 +8,13 @@
 body { display: flow-root; }
 .side-tog { display: none; }
 @media (min-width: 1024px) {
-  :root { --side-w: 232px; }
+  :root { --side-w: 232px; --bar-h: 60px; }
   .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: 0; }
   .side { order: 0; display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; min-height: 0; padding: var(--sp-3); overflow-y: auto; border-top: 0; background: var(--bg); }
   .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .gban, .oerr { flex: none; grid-row: auto; grid-column: auto; }
   .views { flex: 1; min-height: 0; grid-row: auto; grid-column: auto; }
-  .appbar { display: flex; flex: none; align-items: center; gap: var(--sp-1); height: 60px; padding: 0 var(--sp-5) 0 var(--sp-6); background: transparent; }
+  .appbar { display: flex; flex: none; align-items: center; gap: var(--sp-1); height: var(--bar-h); padding: 0 var(--sp-5) 0 var(--sp-6); background: transparent; }
   .appbar .ib { width: 32px; height: 32px; }
   /* usage lives in the sidebar's lower row here (#sf-usage); the top bar copy is for the phone only */
   .appbar .ustrip { display: none; }
