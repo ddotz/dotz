@@ -714,6 +714,8 @@ chooses it with `<data dir>/accounts/rules.json` (manual pick, time-window and u
 `hub/account-rules.ts`; decisions: `accounts/decisions.jsonl`). A switch needs no restart: the dotz extension asks
 `POST /api/accounts/check` at the start of every turn (workers included) and pins the answer in its own process.
 
+**Work ledger** (`hub/ledger.ts`, `hub/ledger-api.ts`, `hub/ledger-tick.ts`). What the owner must handle, in one file, `<data dir>/ledger.json` (mode 600, written whole and atomically; a broken file is moved aside, never overwritten). An item has `id`, `what` (up to 300 characters), `source` (`kind` conversation|mail, `ref`, `project`), `due` (local date `YYYY-MM-DD`), `next`, `state` (open|done|cancelled), `created`, `closed`, and `told` (`before`, `morning`: when the gateway told it). The agent fills it with the `dotz_ledger` tool (`action` add|list|done|cancel|edit; `list` takes `range: "week"` = due within 7 days, overdue ones and items with no due date, and `state: "all"`, and returns rows `what | next · source | due MM-DD | state` for a ```목록 block). The routes behind it: `GET /api/ledger?range=week&state=all`, `POST /api/ledger {what, due?, next?, mail?, project?}`, `PATCH /api/ledger/<id>` (`due` or `next` null clears it; a new `due` clears `told`, so the new date is told again), `POST /api/ledger/<id>/done` and `/cancel`. The route checks the fields (400); done, cancel and edit work on an open item only (409 otherwise, 404 for an unknown id). The deadline tick tells the owner without a model call: see docs/notifications.md.
+
 ## Updating a running gateway
 
 Releases are cut from batches of commits at 12:00, 18:00 and 24:00 KST (at most three a day, `YYMMDD.N`): a commit on `main`
