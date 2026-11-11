@@ -59,7 +59,7 @@ const relayOpen = async () => {
 };
 const show = async (name: string) => {
 	await run(`go(${JSON.stringify(name)})`);
-	await waitFor(`current === ${JSON.stringify(name)} && document.querySelector("#v-${name} > .rv")`);
+	await waitFor(`current === ${JSON.stringify(name)} && document.querySelector("#v-${name} > .rv") && (${JSON.stringify(name)} === "settings" || RV.by[target]?.loaded)`);
 	return ev<string>(`document.querySelector("#v-${name} > .rv").textContent`);
 };
 // This computer's own markup of the screen stays in place but must not be drawn under the snapshot.
@@ -136,7 +136,7 @@ describe("a relayed computer chosen, read-only screens", () => {
 		await waitFor(`document.querySelector("#pl-list .pl-pc")`);
 		await waitFor(`[...document.querySelectorAll("#pl-list .pl-row .pl-n")].some(n => n.textContent === "회사 사이트")`);
 		await run(`[...document.querySelectorAll("#pl-list .pl-row")].find(r => r.querySelector(".pl-n")?.textContent === "회사 사이트").click()`);
-		await waitFor(`target === "relay:jandi:work" && current === "projects" && document.querySelector("#v-projects > .rv")`);
+		await waitFor(`target === "relay:jandi:work" && current === "projects" && document.querySelector("#v-projects > .rv") && RV.by[target]?.loaded`);
 		const text = await ev<string>(`document.querySelector("#v-projects > .rv").textContent`);
 		expect(text).toContain("회사 사이트");
 		expect(text).not.toContain(OWN);
