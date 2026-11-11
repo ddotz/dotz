@@ -22,6 +22,7 @@ import { laneClosed, unfinishedWork, withWorkers } from "./laneunfinished.ts";
 import { backgroundWork } from "./todo.ts";
 import { parseTone } from "./tone.ts";
 import { activeCount, laneLimits, launchWait, waitingLanes } from "./lanelimits.ts";
+import { startMachineSampler } from "./limits.ts";
 import { trackTimer } from "./shutdown.ts";
 import { diskGuardTick } from "./diskguard.ts";
 import { ABORT_GRACE_MS, takeSnapshot } from "./stuck.ts";
@@ -38,7 +39,7 @@ export const QUEUE_TELL_MS = 30 * 60_000;
 export function startQueuedLanes(): string[] {
 	const started: string[] = [];
 	for (const lane of waitingLanes()) {
-		const why = launchWait(0, lane.cwd);
+		const why = launchWait(lane.cwd);
 		if (why) {
 			if (lane.waiting !== why) {
 				lane.waiting = why;
@@ -70,6 +71,7 @@ export function startLaneQueue(): void {
 	}, 5000);
 	timer.unref();
 	trackTimer("lane queue", timer);
+	trackTimer("machine sampler", startMachineSampler());
 }
 
 function footer(lane: Lane): string {
@@ -77,7 +79,7 @@ function footer(lane: Lane): string {
 	// The owner's verbatim don'ts (memory/boundaries.md) bind a lane too; the empty template adds nothing.
 	const boundaries = existsSync(paths.boundaries) ? readFileSync(paths.boundaries, "utf8").trim() : "";
 	const donts = boundaries.includes("\n- [") ? `\n\n${boundaries}` : "";
-	return withReplyLine(msg().footer({ lane: lane.name, language: languageName(lang()), mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(0, lane).workers, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
+	return withReplyLine(msg().footer({ lane: lane.name, language: languageName(lang()), mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(lane).workers, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
 }
 
 export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean, title?: string, from?: string): Lane {
@@ -87,7 +89,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	if (prior?.proc) throw new Error(`lane ${name} is already running; use send`);
 	const problem = checkBrief(brief);
 	if (problem) throw new Error(problem);
-	const why = launchWait(0, cwd) ?? waitingLanes()[0]?.waiting;
+	const why = launchWait(cwd) ?? waitingLanes()[0]?.waiting;
 	const selector = model ?? selectorOf(lanesModel());
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);

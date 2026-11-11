@@ -19,19 +19,19 @@ const runningNow = (except?: Lane): Running => ({
 	ramping: [...lanes.values()].filter(l => l !== except && l.proc && Date.now() - (l.spawnedAt ?? 0) < RAMP_MS).length,
 });
 const caps = () => ({ lanes: lanesMaxActive(), workers: lanesMaxWorkers() });
-export const laneLimits = (maxAgeMs = 0, except?: Lane) => limitsNow(runningNow(except), caps(), maxAgeMs);
+export const laneLimits = (except?: Lane) => limitsNow(runningNow(except), caps());
 // Why a lane launched now has to wait (undefined = it may start). Lanes already waiting go first. `cwd`: the lane's working
 // directory, whose volume must have room as well as the data dir's.
-export function launchWait(maxAgeMs = 0, cwd?: string): string | undefined {
+export function launchWait(cwd?: string): string | undefined {
 	const disk = diskShort(cwd ? [DATA_DIR, cwd] : [DATA_DIR]);
 	if (disk) return diskWaitText(disk);
-	const l = laneLimits(maxAgeMs);
+	const l = laneLimits();
 	return activeCount() < l.lanes ? undefined : waitText(l.reason ?? "memory", caps());
 }
-export const laneSlotsNow = (): number => laneLimits(5000).lanes;
-export const workerSlotsNow = (): number => laneLimits(5000).workers;
+export const laneSlotsNow = (): number => laneLimits().lanes;
+export const workerSlotsNow = (): number => laneLimits().workers;
 /** What /api/state shows: the limits right now and, when launches wait, why. */
 export function laneCapacity(): Record<string, unknown> {
-	const l = laneLimits(5000);
-	return { lanes: l.lanes, workers: l.workers, spare_agents: l.spare, reserve_gb: Math.round(l.reserveGb), active: activeCount(), waiting: waitingLanes().length, wait_reason: waitingLanes()[0]?.waiting ?? launchWait(5000) ?? null, caps: caps() };
+	const l = laneLimits();
+	return { lanes: l.lanes, workers: l.workers, spare_agents: l.spare, reserve_gb: Math.round(l.reserveGb), active: activeCount(), waiting: waitingLanes().length, wait_reason: waitingLanes()[0]?.waiting ?? launchWait() ?? null, caps: caps() };
 }

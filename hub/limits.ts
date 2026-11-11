@@ -6,8 +6,11 @@
 // already out of `availableGb`; agents still starting are taken off as `ramping`); a lane takes one spare agent and, with its task workers, up to
 // TYPICAL_WORKERS more. lanes.max_active and lanes.max_workers, when set in config.json, are hard caps on top of this, never
 // fixed numbers. launch() and a lane's spawn call `limitsNow()` each time, so the answer follows the load of that moment.
+// Load rule (one place, lanes and conversation sessions): while the 1-minute load is above the core count every core is taken,
+// so no further session starts (`overloaded`). The memory reading is async (no child process blocks the event loop): `sampleMachine`
+// returns the newest sample at once and refreshes it in the background; the load itself is a syscall and is read at every call.
 import { readFileSync } from "node:fs";
-import { availableParallelism, freemem, totalmem } from "node:os";
+import { availableParallelism, freemem, loadavg, totalmem } from "node:os";
 
 export const AGENT_GB = 1;
 export const RESERVE_FRACTION = 0.15;
@@ -18,7 +21,7 @@ export const MAX_LANES = 16;
 export const MAX_WORKERS = 8;
 const GB = 2 ** 30;
 
-export type Machine = { totalGb: number; availableGb: number; cpus: number };
+export type Machine = { totalGb: number; availableGb: number; cpus: number; /** 1-minute load average; unset = not measured (a pinned test machine). */ load1?: number };
 export type Running = { lanes: number; workers: number; ramping?: number };
 export type Caps = { lanes?: number; workers?: number };
 export type WaitReason = "memory" | "cpu" | "cap";
@@ -36,13 +39,17 @@ export type Limits = {
 
 export const reserveGb = (totalGb: number): number => Math.max(RESERVE_MIN_GB, totalGb * RESERVE_FRACTION);
 
+/** A load above the core count means every core is taken: nothing further may start (running work is never stopped by this). */
+export const overloaded = (load1: number | undefined, cpus: number): boolean => (load1 ?? 0) > Math.max(1, cpus);
+
 const whole = (n: number | undefined): number | undefined => (typeof n === "number" && Number.isFinite(n) && n >= 1 ? Math.floor(n) : undefined);
 
 // Pure: the lanes and the per-lane workers this machine allows, given what already runs.
 export function agentLimits(m: Machine, running: Running, caps: Caps = {}): Limits {
 	const reserve = reserveGb(m.totalGb);
 	const byMemory = Math.max(0, Math.floor((m.availableGb - (running.ramping ?? 0) * AGENT_GB - reserve) / AGENT_GB));
-	const byCpu = Math.max(0, Math.floor(m.cpus) - running.lanes - running.workers);
+	const busy = overloaded(m.load1, m.cpus);
+	const byCpu = busy ? 0 : Math.max(0, Math.floor(m.cpus) - running.lanes - running.workers);
 	const spare = Math.min(byMemory, byCpu);
 	const laneCap = Math.min(whole(caps.lanes) ?? MAX_LANES, MAX_LANES);
 	const workerCap = Math.min(whole(caps.workers) ?? MAX_WORKERS, MAX_WORKERS);
@@ -53,7 +60,7 @@ export function agentLimits(m: Machine, running: Running, caps: Caps = {}): Limi
 	const lanes = Math.min(wanted, laneCap);
 	const sharing = Math.max(1, running.lanes + Math.max(0, lanes - running.lanes));
 	const workers = Math.max(1, Math.min(workerCap, Math.floor(Math.max(0, spare - Math.max(0, lanes - running.lanes)) / sharing)));
-	const reason: WaitReason | undefined = running.lanes < lanes ? undefined : running.lanes >= laneCap ? "cap" : byMemory <= byCpu ? "memory" : "cpu";
+	const reason: WaitReason | undefined = running.lanes < lanes ? undefined : running.lanes >= laneCap ? "cap" : !busy && byMemory <= byCpu ? "memory" : "cpu";
 	return { lanes, workers, spare, reserveGb: reserve, ...(reason ? { reason } : {}) };
 }
 
@@ -77,19 +84,22 @@ export function memoryPressureFreeFraction(text: string): number | undefined {
 	return pct === undefined ? undefined : Number(pct) / 100;
 }
 
-const run = (cmd: string[]): string => {
+export type Run = (cmd: string[]) => Promise<string>;
+const run: Run = async cmd => {
 	try {
-		const r = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "ignore", timeout: 3000 });
-		return r.exitCode === 0 ? r.stdout.toString() : "";
+		const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore", timeout: 3000 });
+		const out = await new Response(p.stdout).text();
+		return (await p.exited) === 0 ? out : "";
 	} catch {
 		return "";
 	}
 };
 
-function availableBytes(total: number): number {
+async function availableBytes(total: number, exec: Run): Promise<number> {
 	if (process.platform === "darwin") {
-		const reclaimable = vmStatAvailableBytes(run(["vm_stat"]));
-		const fraction = memoryPressureFreeFraction(run(["memory_pressure"]));
+		const [vm, pressure] = await Promise.all([exec(["vm_stat"]), exec(["memory_pressure"])]);
+		const reclaimable = vmStatAvailableBytes(vm);
+		const fraction = memoryPressureFreeFraction(pressure);
 		// The smaller of the two readings: a wrong high number would admit work the machine cannot hold.
 		const readings = [reclaimable, fraction === undefined ? undefined : fraction * total].filter((n): n is number => n !== undefined);
 		if (readings.length) return Math.min(...readings);
@@ -102,29 +112,52 @@ function availableBytes(total: number): number {
 	return freemem();
 }
 
-export function readMachine(): Machine {
+export async function readMachine(exec: Run = run): Promise<Machine> {
 	const total = totalmem();
-	return { totalGb: total / GB, availableGb: Math.min(total, availableBytes(total)) / GB, cpus: availableParallelism() };
+	return { totalGb: total / GB, availableGb: Math.min(total, await availableBytes(total, exec)) / GB, cpus: availableParallelism() };
 }
 
 // Tests pin the machine (test-setup.ts) so a lane launch never depends on the memory of the box running them.
 let probe: (() => Machine) | undefined;
 let sampled: { at: number; machine: Machine } | undefined;
+let inflight: Promise<Machine> | undefined;
 export function setMachineProbe(fn: (() => Machine) | undefined): void {
 	probe = fn;
 	sampled = undefined;
 }
 
-/** `maxAgeMs` > 0 reuses a reading that young (the web page polls); a launch decision reads fresh. */
-export function sampleMachine(maxAgeMs = 0): Machine {
-	if (sampled && maxAgeMs > 0 && Date.now() - sampled.at < maxAgeMs) return sampled.machine;
-	const machine = (probe ?? readMachine)();
-	sampled = { at: Date.now(), machine };
-	return machine;
+// A launch decision uses the newest sample: at most REFRESH_MS old, plus the 3 s a stuck vm_stat may take before it is cut off. The
+// 1-minute load average moves slowly, and the load is read live anyway.
+export const REFRESH_MS = 10_000;
+
+/** Reads memory in the background (one read at a time) and keeps it as the newest sample. */
+export function refreshMachine(exec: Run = run): Promise<Machine> {
+	if (probe) return Promise.resolve(probe());
+	inflight ??= readMachine(exec)
+		.then(machine => ((sampled = { at: Date.now(), machine }), machine))
+		.finally(() => (inflight = undefined));
+	return inflight;
+}
+
+/** Refreshes now and then every REFRESH_MS; the gateway starts it once, so a first launch has a reading within milliseconds. */
+export function startMachineSampler(): ReturnType<typeof setInterval> {
+	void refreshMachine();
+	const timer = setInterval(() => void refreshMachine(), REFRESH_MS);
+	timer.unref?.();
+	return timer;
+}
+
+/** The newest sample, never waiting for a child process. Before the first one lands it is os.freemem() (free pages only: low, so cautious). */
+export function sampleMachine(): Machine {
+	if (probe) return probe();
+	if (!sampled || Date.now() - sampled.at >= REFRESH_MS) void refreshMachine();
+	const total = totalmem();
+	const machine = sampled?.machine ?? { totalGb: total / GB, availableGb: freemem() / GB, cpus: availableParallelism() };
+	return { ...machine, load1: loadavg()[0] ?? 0 };
 }
 
 /** The limits for this machine right now; `running` is what the gateway already runs. */
-export const limitsNow = (running: Running, caps: Caps = {}, maxAgeMs = 0): Limits => agentLimits(sampleMachine(maxAgeMs), running, caps);
+export const limitsNow = (running: Running, caps: Caps = {}): Limits => agentLimits(sampleMachine(), running, caps);
 
 export function waitText(reason: WaitReason, caps: Caps = {}): string {
 	if (reason === "memory") return "메모리 여유가 없어 대기 중";

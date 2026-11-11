@@ -38,6 +38,7 @@ import { resolveAllowed, UPLOAD_MAX_BYTES } from "./files.ts";
 import { setDiskNotify } from "./diskguard.ts";
 import { budgetProblem } from "./routes-lanes.ts";
 import { approvesBudget, estimateOf, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
+import { refreshMachine } from "./limits.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
@@ -481,6 +482,8 @@ const startupCards = startupSettled.then(async closed => {
 	}
 	return { closed, replaced };
 });
+// The first machine reading lands before any restored lane asks for room (later ones refresh in the background).
+await refreshMachine();
 const resumedLanes = restoreLanes();
 discord.recordLaneChannels();
 for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));

@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { agentLimits, memoryPressureFreeFraction, readMachine, reserveGb, vmStatAvailableBytes, waitText } from "./limits.ts";
+import { expect, spyOn, test } from "bun:test";
+import { agentLimits, limitsNow, memoryPressureFreeFraction, overloaded, readMachine, refreshMachine, reserveGb, sampleMachine, setMachineProbe, vmStatAvailableBytes, waitText } from "./limits.ts";
 
 const mac = { totalGb: 48, availableGb: 24.8, cpus: 12 };
 const none = { lanes: 0, workers: 0 };
@@ -66,8 +66,8 @@ test("macOS readings: vm_stat counts free + inactive + speculative pages, memory
 	expect(memoryPressureFreeFraction("")).toBeUndefined();
 });
 
-test("this machine's sample is sane", () => {
-	const m = readMachine();
+test("this machine's sample is sane", async () => {
+	const m = await readMachine();
 	expect(m.totalGb).toBeGreaterThan(0);
 	expect(m.availableGb).toBeGreaterThan(0);
 	expect(m.availableGb).toBeLessThanOrEqual(m.totalGb);
@@ -77,4 +77,45 @@ test("this machine's sample is sane", () => {
 test("a 16 GB machine with 4.3 GB available starts a second lane", () => {
 	expect(agentLimits({ totalGb: 16, availableGb: 4.3, cpus: 10 }, { lanes: 1, workers: 0 })).toMatchObject({ lanes: 2, spare: 1 });
 	expect(agentLimits({ totalGb: 16, availableGb: 3, cpus: 10 }, { lanes: 1, workers: 0 })).toMatchObject({ lanes: 1, reason: "memory" });
+});
+
+// The Mac mini on 2026-11-11: load 105-120 on 10 cores; lanes and workers kept starting because only memory and core counts were read.
+test("a load above the core count starts no further lane, gives the smallest worker allowance and the CPU reason", () => {
+	const busy = { ...mac, load1: 14 };
+	expect(overloaded(14, 12)).toBe(true);
+	expect(overloaded(12, 12)).toBe(false);
+	expect(agentLimits(busy, { lanes: 1, workers: 0 })).toMatchObject({ lanes: 1, workers: 1, reason: "cpu" });
+	expect(agentLimits({ ...busy, load1: 11 }, { lanes: 1, workers: 0 }).lanes).toBeGreaterThan(1);
+	expect(waitText("cpu")).toBe("CPU 여유가 없어 대기 중");
+});
+
+test("with nothing running one lane is always allowed, even at a high load; the config caps stay", () => {
+	expect(agentLimits({ ...mac, load1: 100 }, none)).toMatchObject({ lanes: 1, workers: 1 });
+	expect(agentLimits({ ...mac, load1: 100 }, { lanes: 2, workers: 0 }, { lanes: 2 })).toMatchObject({ lanes: 2, reason: "cap" });
+});
+
+test("the machine reading starts no synchronous child process; a refresh reads through the async runner", async () => {
+	const sync = spyOn(Bun, "spawnSync");
+	setMachineProbe(undefined);
+	try {
+		limitsNow(none, {});
+		sampleMachine();
+		await refreshMachine(async () => "");
+		expect(sync).not.toHaveBeenCalled();
+	} finally {
+		sync.mockRestore();
+		setMachineProbe(() => ({ totalGb: 64, availableGb: 56, cpus: 16 }));
+	}
+});
+
+test.if(process.platform === "darwin")("a refresh keeps the smaller of the vm_stat and memory_pressure readings as the newest sample", async () => {
+	const vm = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 65536.\nPages inactive: 0.\nPages speculative: 0.\n";
+	setMachineProbe(undefined);
+	try {
+		const m = await refreshMachine(async cmd => (cmd[0] === "vm_stat" ? vm : "System-wide memory free percentage: 100%"));
+		expect(m.availableGb).toBeCloseTo(1);
+		expect(sampleMachine().availableGb).toBeCloseTo(1);
+	} finally {
+		setMachineProbe(() => ({ totalGb: 64, availableGb: 56, cpus: 16 }));
+	}
 });

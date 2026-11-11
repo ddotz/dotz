@@ -122,7 +122,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	// On a keyed entry that lets workers use the key, the lane's task workers run on the key provider's copy of the worker model.
 	const keyedWorkers = keyedWorker(env);
 	const workerModel = keyedWorkers ?? laneWorkerModel(lane);
-	lane.workerSlots = laneLimits(0, lane).workers;
+	lane.workerSlots = laneLimits(lane).workers;
 	let proc: ReturnType<ReturnType<typeof runtimeFor>["start"]>;
 	try {
 	// posix_spawn with a missing cwd reports ENOENT for the binary (`omo`), which hides the real cause.

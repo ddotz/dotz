@@ -40,6 +40,7 @@ const fake: RuntimeAdapter = {
 	detect: async () => ({ installed: true }),
 };
 const rich = () => ({ totalGb: 64, availableGb: 56, cpus: 16 });
+const loaded = () => ({ totalGb: 64, availableGb: 56, cpus: 12, load1: 40 });
 const tight = () => ({ totalGb: 48, availableGb: 5.2, cpus: 12 });
 const savedCfg = { lanes: cfg.lanes };
 beforeAll(() => {
@@ -81,6 +82,25 @@ test("short on memory a launch waits with its reason in the lane summary and /ap
 	expect(spawns.length).toBe(before + 1);
 	l.stopLane("q-first");
 	l.stopLane("q-second");
+	await advance(300);
+});
+
+test("on a busy computer a launch waits with the CPU reason, and the lane queue timer starts it once the load falls", async () => {
+	setMachineProbe(loaded);
+	const first = launch("load-first");
+	expect(first.proc).toBeDefined();
+	const second = launch("load-second");
+	expect(second.waiting).toBe("CPU 여유가 없어 대기 중");
+	expect(l.laneCapacity()).toMatchObject({ waiting: 1, wait_reason: "CPU 여유가 없어 대기 중" });
+	l.startLaneQueue();
+	await advance(5000);
+	expect(second.proc).toBeUndefined();
+	setMachineProbe(rich);
+	await advance(5000);
+	expect(second.waiting).toBeUndefined();
+	expect(second.proc).toBeDefined();
+	l.stopLane("load-first");
+	l.stopLane("load-second");
 	await advance(300);
 });
 

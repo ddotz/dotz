@@ -4,7 +4,7 @@
 // (capacityFrom) is what the tests pin. `conversations.max_live` in config still fixes the number when the owner sets it.
 import { cpus, freemem, loadavg, platform, totalmem } from "node:os";
 import { readFileSync } from "node:fs";
-import { reserveGb } from "./limits.ts";
+import { overloaded, reserveGb } from "./limits.ts";
 
 export type Sample = { availBytes: number; totalBytes: number; cpus: number; load1: number; live: number; perSessionBytes: number };
 export type Capacity = { max: number; reason: string };
@@ -26,7 +26,7 @@ export function capacityFrom(s: Sample): Capacity {
 	const byMem = s.live + extra;
 	const cores = Math.max(1, s.cpus);
 	// A busy computer starts no more than it already runs: a load above the core count means every core is taken.
-	const byCpu = s.load1 > cores ? Math.max(1, s.live) : Math.max(1, Math.floor(cores * 0.75));
+	const byCpu = overloaded(s.load1, cores) ? Math.max(1, s.live) : Math.max(1, Math.floor(cores * 0.75));
 	const max = Math.min(MAX_LIVE_CEILING, Math.max(1, Math.min(byMem, byCpu)));
 	const reason = `메모리 여유 ${mb(s.availBytes)} (예비 ${mb(reserve)}, 세션당 ${mb(per)}) → ${byMem}개, CPU ${cores}코어 · 부하 ${s.load1.toFixed(1)} → ${byCpu}개`;
 	return { max, reason };

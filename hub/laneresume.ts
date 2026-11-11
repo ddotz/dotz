@@ -83,7 +83,7 @@ export async function resumeUnfinished(deps: ResumeDeps = {}, now = Date.now()):
 		}
 		lane.resumeDue = { state: "due" };
 		if (step === "backoff") continue;
-		const full = lane.proc ? undefined : (launchWait(0, lane.cwd) ?? waitingLanes()[0]?.waiting);
+		const full = lane.proc ? undefined : (launchWait(lane.cwd) ?? waitingLanes()[0]?.waiting);
 		if (full) {
 			lane.resumeDue = { state: "capacity", detail: full };
 			continue;
