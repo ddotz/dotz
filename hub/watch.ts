@@ -12,8 +12,8 @@
 // the next run, also after a gateway restart, misses nothing. A watch may name a `script` (an executable file in the
 // project's folder) instead of a shell `command`; the gateway runs it directly and the project page can read and edit it.
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, type FSWatcher, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, watch as fsWatch, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { chmodSync, existsSync, type FSWatcher, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, watch as fsWatch, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { blockedBy } from "../extension/index.ts";
 import { ensureAside, replInTab } from "./aside.ts";
 import { type Relogin, relogin } from "./autologin.ts";
@@ -23,7 +23,7 @@ import { cfg, DATA_DIR, log, now, paths, readJsonOrQuarantine, TZ, writeAtomic }
 import { blockedByFeatures } from "./featuredirs.ts";
 import { msg } from "./i18n.ts";
 import { convTargetOf } from "./session-key.ts";
-import { classifyFailure, type FailClass, healTarget, type NotifyInfo } from "./watch-heal.ts";
+import { backupFile, classifyFailure, type FailClass, healTarget, type NotifyInfo, readHealNote } from "./watch-heal.ts";
 import { deriveLabel, isKeyLabel, plainLabel, watchReasonKo } from "./watchtext.ts";
 
 export type WatchOwner = { app?: string; project?: string; internal?: true };
@@ -136,13 +136,7 @@ const today = () => new Date(Date.now()).toLocaleDateString("en-CA", { timeZone:
 const healTriesToday = (w: Watch) => (w.state.healDay === today() ? (w.state.healN ?? 0) : 0);
 // Read at use, so a changed setting applies to the next failure.
 const healEnabled = () => (Reflect.get(cfg, "watch") as { self_heal?: unknown } | undefined)?.self_heal !== false;
-function readNote(w: Watch): string {
-	try {
-		return readFileSync(notePath(w), "utf8").replace(/\s+/g, " ").trim().slice(0, NOTE_MAX);
-	} catch {
-		return "";
-	}
-}
+const readNote = (w: Watch): string => readHealNote(notePath(w), NOTE_MAX);
 function stopHeal(id: string): void {
 	clearTimeout(healTimers.get(id));
 	healTimers.delete(id);
@@ -205,13 +199,7 @@ function startHeal(w: Watch, output: string, code: number, cls: FailClass, tried
 		log(`watch ${w.name} self-heal: not started (${HEAL_MAX_TRIES} tries today)`);
 		return false;
 	}
-	const dir = join(stateDir(w), "heal");
-	mkdirSync(dir, { recursive: true });
-	const stamp = new Date(Date.now()).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
-	let backup = join(dir, `${stamp}-${basename(target.file)}`);
-	for (let i = 2; existsSync(backup); i++) backup = join(dir, `${stamp}.${i}-${basename(target.file)}`);
-	copyFileSync(target.file, backup);
-	for (const old of readdirSync(dir).sort().slice(0, -HEAL_BACKUPS)) rmSync(join(dir, old), { force: true });
+	const backup = backupFile(target.file, join(stateDir(w), "heal"), HEAL_BACKUPS);
 	rmSync(notePath(w), { force: true });
 	const n = healTriesToday(w) + 1;
 	w.state.healDay = today();
@@ -440,7 +428,7 @@ async function runOnce(w: Watch): Promise<void> {
 			const cls = classifyFailure({ output, code, timedOut, kind });
 			log(`watch ${w.name} failed (${code}, ${kind}, ${w.state.fails} in a row) ${cls}`);
 			try {
-				writeFileSync(failLog(w), output);
+				writeAtomic(failLog(w), output);
 			} catch (error) {
 				log(`watch ${w.name} could not write last-fail.log: ${error}`);
 			}

@@ -1,8 +1,8 @@
 // Self-healing of a watch whose check script is broken (design: classify the failure with rules only, then let the orchestrator fix the one file the watch
 // runs; the gateway re-runs the check). This file holds the pure parts: what kind of failure it is, and which file a watch runs.
-import { readFileSync, realpathSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, resolve, sep } from "node:path";
 
 export type FailClass = "script" | "outside" | "owner" | "unknown";
 /** What notify() is told about a failure: the class, the file holding the last output and, after a heal, the note it left. */
@@ -58,6 +58,26 @@ export function classifyFailure(i: { output: string; code: number; timedOut?: bo
 	if (OWNER.some(r => r.test(output))) return "owner";
 	if (SCRIPT.some(r => r.test(output)) || (code !== 0 && STACK_LINE.test(output)) || code === 126 || code === 127) return "script";
 	return "unknown";
+}
+
+/** The heal turn's one-line note, flattened and cut; "" while it is not written. */
+export function readHealNote(path: string, max: number): string {
+	try {
+		return readFileSync(path, "utf8").replace(/\s+/g, " ").trim().slice(0, max);
+	} catch {
+		return "";
+	}
+}
+
+/** Copies `file` into `dir` as <UTC stamp>-<name> (a same-second copy gets .2, .3) and keeps the newest `keep`. Returns the copy's path. */
+export function backupFile(file: string, dir: string, keep: number): string {
+	mkdirSync(dir, { recursive: true });
+	const stamp = new Date(Date.now()).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+	let backup = join(dir, `${stamp}-${basename(file)}`);
+	for (let i = 2; existsSync(backup); i++) backup = join(dir, `${stamp}.${i}-${basename(file)}`);
+	copyFileSync(file, backup);
+	for (const old of readdirSync(dir).sort().slice(0, -keep)) rmSync(join(dir, old), { force: true });
+	return backup;
 }
 
 export type HealRefusal = "none" | "shipped" | "secret" | "session" | "text" | "size";
