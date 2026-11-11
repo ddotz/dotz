@@ -57,7 +57,8 @@ export function sendArgv(kind: SendKind, ref: string, action: SendAction, bun = 
 export type SenderDeps = {
 	/** Which store knows `ref` (undefined = the gateway cannot send it). */
 	kind: (ref: string, action?: SendAction) => SendTarget | undefined;
-	run: (argv: string[]) => Promise<{ code: number; out: string }>;
+	/** `timedOut`: the command was killed at its limit, so it may have sent before that (the job ends `unsure`, never `failed`). */
+	run: (argv: string[]) => Promise<{ code: number; out: string; timedOut?: boolean }>;
 	/** The state of one job changed (marks the card; a failure is reported once by the caller). */
 	report: (r: SendResult) => void;
 	log: (line: string) => void;
@@ -179,7 +180,7 @@ export function createApprovalSender(deps: SenderDeps) {
 		for (let j = jobs.shift(); j; j = jobs.shift() ?? (lanes.delete(key), undefined)) {
 			const argv = sendArgv(j.kind, j.ref, j.action, process.execPath, j.retry === true)!;
 			set(j, "sending");
-			let r: { code: number; out: string };
+			let r: { code: number; out: string; timedOut?: boolean };
 			try {
 				r = await deps.run(argv);
 			} catch (e) {
@@ -187,7 +188,8 @@ export function createApprovalSender(deps: SenderDeps) {
 			}
 			const line = r.out.trim().split("\n").filter(Boolean).slice(-1)[0] ?? "";
 			deps.log(`approved send ${j.ref} in ${j.conv}: exit ${r.code}${line ? ` (${line.slice(0, 200)})` : ""}`);
-			set(j, r.code === 0 ? "sent" : "failed", line.slice(0, 500));
+			if (r.timedOut) set(j, "unsure", MAY_HAVE_GONE_OUT);
+			else set(j, r.code === 0 ? "sent" : "failed", line.slice(0, 500));
 		}
 	}
 
@@ -256,11 +258,12 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 }
 
-const SEND_CLI_MS = 5 * 60_000; // one message over the network, with a file upload at worst: seconds, minutes for a big file
+// Killing a send in the middle is worse than waiting (it may have gone out already): this only catches a sender that hangs for good.
+const SEND_CLI_MS = 15 * 60_000;
 /** Runs one CLI with the gateway's environment; stdout and stderr together, bounded. */
-export async function runCli(argv: string[]): Promise<{ code: number; out: string }> {
+export async function runCli(argv: string[]): Promise<{ code: number; out: string; timedOut?: boolean }> {
 	// `env` is passed on purpose: without it Bun hands the child the environment the process started with, not process.env as it is now
 	// (the data folder a test or the gateway set at run time would be lost, and the CLI would read another install's drafts).
 	const r = await runLimited(argv, SEND_CLI_MS, { env: { ...process.env, DOTZ_GATEWAY_SEND: "1" } });
-	return { code: r.code, out: `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`.slice(-4000) };
+	return { code: r.code, out: `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`.slice(-4000), ...(r.timedOut ? { timedOut: true } : {}) };
 }
