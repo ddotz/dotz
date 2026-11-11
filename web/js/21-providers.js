@@ -310,9 +310,9 @@ function fixCard(u) {
       }) }] });
     const end = f.fix === "check" ? el("span", { class: "sup", text: TX("settings.usage.fix.check_cause") })
       : f.applied_at ? el("span", { class: "sup", text: TX("settings.usage.fix.applied") })
-      : el("button", { class: "btn tonal inrow", type: "button", onclick: apply }, TX(btnKey));
+      : el("button", { class: "btn tonal inrow", type: "button", "data-fix": f.id, onclick: apply }, TX(btnKey));
     card.append(el("div", { class: "lim rc" }, el("div", { class: "kv" }, el("span", { class: "k", text: TX(rowKey, vars) }), el("span", { class: "rc-end" }, end)),
-      el("div", { class: "sup", text: f.n ? TX("settings.usage.fix.cost", { cost: `${f.cost.toFixed(2)}`, n: f.n }) : TX("settings.usage.fix.cost_only", { cost: `${f.cost.toFixed(2)}` }) })));
+      el("div", { class: "sup", text: f.n ? TX("settings.usage.fix.cost", { cost: `$${f.cost.toFixed(2)}`, n: f.n }) : TX("settings.usage.fix.cost_only", { cost: `$${f.cost.toFixed(2)}` }) })));
   }
   return card;
 }
