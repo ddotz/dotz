@@ -13,7 +13,7 @@ import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_T
 import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { compactInstructions } from "./compact-instructions.ts";
-import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
+import { abandonCompact, abortAhead, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact, restAhead } from "./context.ts";
 import { limitPauseState, limitWatchNow } from "./limit-watch.ts";
 import { stalePauseEnded } from "./pause-ended.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -275,7 +275,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	let currentModel = "";
 	const save = (s: Saved) => writeAtomic(opts.stateFile, `${JSON.stringify({ ...saved(), ...s }, null, 2)}\n`);
 	// Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy orchestrator queues it until turn_end.
-	const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(compactInstructions()), refreshUsage: () => proc?.refreshUsage() };
+	const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(compactInstructions()), refreshUsage: () => proc?.refreshUsage(), abort: () => proc?.abortCompaction?.() };
 
 	// A failed request: a usage limit or a billing/auth problem pauses the orchestrator, a temporary provider error is retried with backoff.
 	// With a hub-driven chain the next entry takes over first (a temporary error is retried a few times before that).
@@ -839,6 +839,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// Whether this runtime's prompt cache pays for an idle ping (the 구성 view shows the keep-alive only then).
 	const keepaliveSupported = (): boolean => Boolean(adapter?.caps.promptCacheKeepalive);
 	if (opts.keepalive) setInterval(() => {
+		restAhead(orch.ctx, port, who, { ready: Boolean(proc && adapter?.caps.abortCompact) && orch.status === "idle" && !(rotating || restarting || rotateWhenIdle || pendingRestart || pendingModel || orch.error || errorStreak.stopped), busy: held.length + unstarted.length > 0 || runningSubagents(opts.source) > 0, quietMs: Date.now() - lastTurnEnd }, compactAt());
 		const idle = Date.now() - lastTurnEnd;
 		if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX || errorStreak.stopped) return;
 		if (idle < KEEPALIVE_FROM_MS || idle > KEEPALIVE_TO_MS) return;
@@ -861,7 +862,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		// A prompt sent while a requested compaction runs is refused by OmO and was lost; it waits for the compaction's end.
 		if (rotating || restarting || orch.status === "rate-limited" || orch.ctx.compaction.state === "compacting") {
 			held.push({ text, header: owner });
-			return;
+			return void (owner && abortAhead(orch.ctx, port));
 		}
 		if (!proc) start();
 		sendOwner(text, owner);

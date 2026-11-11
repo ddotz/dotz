@@ -19,6 +19,7 @@ export interface RuntimeCaps {
 	// memory of the work (a fresh session only when compaction fails, the model changes or at the nightly handover);
 	// "rotate" = a fresh session with a handover of recent exchanges.
 	contextLimit?: "compact" | "rotate";
+	abortCompact?: boolean; // a running compaction can be cancelled at once without harming the session (OmO abort_compaction)
 }
 
 // One row of the terminal view, before the hub stamps time and source on it and scrubs secrets.
@@ -74,6 +75,8 @@ export interface AgentProcess {
 	// prompt: a new turn; followUp: queued behind a running turn; steer: injected into the running turn.
 	send(text: string, mode: SendMode): void;
 	abort(): void;
+	// Cancels a requested compaction that is running (the compact answer then reports it as cancelled); only where caps.abortCompact.
+	abortCompaction?(): void;
 	// The hub calls this only when the process is idle (a runtime may cut a running turn short to compact). `instructions`: how the
 	// summary is to be written (OmO: RPC customInstructions); a runtime without such a channel ignores it.
 	compact(instructions?: string): void;

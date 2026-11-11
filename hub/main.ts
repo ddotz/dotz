@@ -45,6 +45,7 @@ import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
 import { activeHarness, runtimeFor } from "./runtime/index.ts";
 import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, steer as steerOrchestrator, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
+import { restGuard } from "./context.ts";
 import { errorAsk, startResumeWatch, watchSession } from "./orch-error.ts";
 import { interruptedLanes } from "./lanereconnect.ts";
 import { queuedTargets } from "./queue.ts";
@@ -423,6 +424,8 @@ setOrchIdleHandler(() => {
 	laneRelay.flush();
 	flushQueue("main");
 });
+// The main conversation is at rest only with nothing queued, open or deferred for it (hub/context.ts restDue).
+restGuard.blocked = () => queuedTargets().length > 0 || queue.queued().length > 0 || queue.deferredOpen().length > 0;
 setLaneIdleHandler(name => flushQueue(`lane:${name}`));
 // Safety net for what the idle hooks miss: items kept over a gateway restart, a lane that went idle without a turn end.
 setInterval(() => queuedTargets().forEach(flushQueue), QUEUE_SWEEP_MS);
