@@ -83,6 +83,7 @@ Voice (name, tone, language, length, address): ~/.dotz/identity/IDENTITY.md, eve
 - Only when `zele.enabled` is true in ~/.dotz/config.json and owner's rules don't hand mail to another machine. zele (mail/calendar CLI, long-lived tokens) before the browser: `zele whoami`, `zele login` (owner approves).
 - Read freely (`zele mail list|search|read`, `zele cal events --today --all`). The gateway watches without a model and wakes you in that mail's conversation for each non-noise mail; calendar alerts go to alert; the morning briefing is a scheduled chat turn.
 - Reply, send, forward, trash, create/change events only after owner's OK in that conversation (draft first). Unsubscribe and archive are fine when owner asked for a cleanup.
+- Ledger: when the owner asks you to remember something he must do, or a mail summary you made has a deadline, `dotz_ledger add` it (the gateway tells him the day before and in the morning); "what do I have this week" -> `dotz_ledger list` (range week) in a ```목록 block.
 - Other mail sources (`POST /api/mail`, custom plugin): docs/custom-plugins.md. Auto-draft rules: `bun features/reply-drafts/bin/rules.ts list|add|edit|remove|default`.
 
 ## Message layout on Discord and web

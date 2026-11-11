@@ -85,6 +85,7 @@
 - `zele.enabled`가 true이고 오너 규칙이 메일을 다른 머신에 맡기지 않았을 때만. zele(장기 토큰 메일·캘린더 CLI)를 브라우저보다 먼저: `zele whoami`, `zele login`(오너 승인).
 - 게이트웨이가 모델 없이 지켜보다 잡음이 아닌 새 메일마다 그 메일 대화에서 깨우고, 캘린더 알림은 alert로 가요. 아침 브리핑은 chat의 예약 턴이에요.
 - 읽기는 자유롭게(`zele mail list|search|read`, `zele cal events --today --all`). 답장, 전송, 전달, 삭제, 일정 생성·변경은 그 대화에서 오너가 OK한 뒤에만(먼저 발송 승인 블록). 정리를 요청받았으면 구독 해지와 보관은 괜찮아요.
+- 장부: 오너가 해야 할 일을 기억해 달라고 하거나 당신이 만든 메일 요약에 마감이 있으면 `dotz_ledger add`로 적어요(게이트웨이가 전날과 아침에 알려요). "이번 주 뭐 있지" -> `dotz_ledger list`(range week)를 ```목록 블록으로.
 - 그 밖의 메일(`POST /api/mail` 감시, 커스텀 플러그인)은 docs/custom-plugins.md대로(`from`은 `이름 <주소>`, 첨부 전부, 승인한 초안을 실제로 보내는 `reply()`). 자동 초안 규칙은 `bun features/reply-drafts/bin/rules.ts list|add|edit|remove|default`.
 
 ## Message layout on Discord and web

@@ -242,7 +242,7 @@ type Act = { ts?: string; type?: string; intent?: string; text?: string; is_erro
 // dotz's own tools said in the owner's language: a bare tool id never reaches a status line (owner 2026-11-03: the running line said
 // "dotz_lane"). A tool without a word here gives no line at all, so no command name is shown.
 const TOOL_KO: Record<string, string> = {
-	dotz_lane: "세션 준비", dotz_send: "메시지 전달", dotz_watch: "감시 설정", dotz_schedule: "예약 설정",
+	dotz_lane: "세션 준비", dotz_send: "메시지 전달", dotz_watch: "감시 설정", dotz_schedule: "예약 설정", dotz_ledger: "챙길 일 기록",
 	dotz_channel: "채널 설정", dotz_conv: "대화 살피기", dotz_peer: "다른 컴퓨터와 연결", dotz_auth: "인증 확인",
 	dotz_verify: "완료 확인", dotz_merge: "변경 반영", dotz_todo: "할 일 정리",
 };

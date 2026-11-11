@@ -15,6 +15,8 @@ import { MAIN } from "./session-key.ts";
 import { doneProblem } from "./donesignals.ts";
 import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, startedIn } from "./threads.ts";
+import { ledger } from "./ledger.ts";
+import { ledgerApi } from "./ledger-api.ts";
 import { addSchedule, checksSharingSlot, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
 import { clearChannel, endStanding, listSetups, setupChannel, standingLabelKo } from "./workchannels.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
@@ -146,6 +148,14 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			if (req.method === "DELETE" && parts[2]) return json({ ok: removeSchedule(parts[2]) });
 		} catch (error) {
 			return json({ error: (error as Error).message }, 400);
+		}
+	}
+	if (parts[0] === "api" && parts[1] === "ledger") {
+		try {
+			const answer = ledgerApi(ledger, req.method, parts.slice(2), url.searchParams, req.method === "GET" ? {} : await body(req));
+			if (answer) return json(answer.body, answer.status);
+		} catch (error) {
+			return json({ error: (error as Error).message }, (error as { status?: number }).status ?? 400);
 		}
 	}
 	if (parts[0] === "api" && parts[1] === "lanes") {

@@ -424,6 +424,18 @@ Do this, briefly:
 	},
 
 	// Owner-facing strings of the 구성 map (hub/harness.ts); `locale` formats its dates and numbers.
+	// The owner's work ledger (hub/ledger-api.ts rows, hub/ledger-tick.ts notices).
+	ledger: {
+		none: "Nothing to handle.",
+		source: { conversation: "chat", mail: "mail" },
+		state: { open: "open", done: "done", cancelled: "cancelled" },
+		item: (what: string, next?: string) => `- ${what}${next ? ` (next: ${next})` : ""}`,
+		tomorrow: (n: number) => `${n} thing${n === 1 ? " is" : "s are"} due tomorrow.`,
+		late: (n: number) => `${n} thing${n === 1 ? " is" : "s are"} past due and still open.`,
+		morning: (today: string[], overdue: string[], waiting: number) =>
+			[today.length ? [`${today.length} thing${today.length === 1 ? " is" : "s are"} due today.`, ...today].join("\n") : "", overdue.length ? [`${overdue.length} thing${overdue.length === 1 ? " is" : "s are"} past due and still open.`, ...overdue].join("\n") : "", waiting ? `${waiting} approval${waiting === 1 ? " is" : "s are"} still waiting for you.` : ""].filter(Boolean).join("\n\n"),
+	},
+
 	doctor: {
 		head: (n: number) => `Doctor check: ${n} thing${n === 1 ? "" : "s"} to look at`,
 		fixedLine: (items: string) => `Fixed by itself: ${items}.`,

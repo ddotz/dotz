@@ -434,6 +434,25 @@ function orchestratorTools(pi: any): void {
 			return { content: [{ type: "text", text: JSON.stringify(out).slice(0, 3000) }] };
 		},
 	});
+	pi.registerTool({
+		name: "dotz_ledger",
+		label: "Dotz ledger",
+		description: "The owner's list of what he must handle; the gateway tells him the day before a due date and in the morning, with no model call. action=add {what (up to 300 characters), due? (YYYY-MM-DD, local date), next? (the next step), mail? (the mail id when it comes from a mail summary)}; list {range? week = due within 7 days plus items with no due date; state? all also shows done and cancelled}: returns rows ready for a ```목록 block; done {id}; cancel {id}; edit {id, what?, due? (\"\" clears), next? (\"\" clears)}.",
+		parameters: z.object({ action: z.enum(["add", "list", "done", "cancel", "edit"]), what: z.string().optional(), due: z.string().optional(), next: z.string().optional(), mail: z.string().optional(), project: z.string().optional(), id: z.string().optional(), range: z.enum(["week", "all"]).optional(), state: z.enum(["open", "all"]).optional() }),
+		async execute(_id: string, p: any) {
+			const { action, id, range, state, ...fields } = p;
+			if (action === "edit") for (const k of ["due", "next"]) if (fields[k] === "") fields[k] = null;
+			if (action === "list") {
+				const out = await call(`/api/ledger?range=${range ?? "all"}&state=${state ?? "open"}`);
+				return { content: [{ type: "text", text: String(out.text).slice(0, 3000) }] };
+			}
+			const out =
+				action === "add" ? await call("/api/ledger", { method: "POST", body: JSON.stringify({ ...fields, session: process.env.DOTZ_CONV ?? "main" }) })
+				: action === "edit" ? await call(`/api/ledger/${id}`, { method: "PATCH", body: JSON.stringify(fields) })
+				: await call(`/api/ledger/${id}/${action}`, { method: "POST" });
+			return { content: [{ type: "text", text: JSON.stringify(out).slice(0, 3000) }] };
+		},
+	});
 }
 
 // Lanes and their workers write the 5-minute prompt cache (they inherit PI_CACHE_RETENTION=long from the gateway).
