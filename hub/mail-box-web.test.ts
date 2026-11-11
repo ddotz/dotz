@@ -644,13 +644,21 @@ describe("the mail column's corner on a wide screen", () => {
 		expect([bar.l, bar.r]).toEqual([0, 360]);
 	}, 30_000);
 
-	test("at 1280 an open mail stands in the list's column: the same left and right edge", async () => {
+	test("at 1280 an open mail's conversation column is the list's column, and its text sits as far inside as in the general chat", async () => {
 		const v = await openList(1280, 800);
 		await still(v);
 		const col = await ev<any>(v, rect("#mon-tl"));
 		await openMail(v, "회의 일정 변경");
 		await still(v);
-		const tl = await ev<any>(v, rect("#tl"));
-		expect([tl.l, tl.r]).toEqual([col.l, col.r]);
+		const box = await ev<any>(v, rect("#v-chat .chatbox"));
+		expect([box.l, box.r]).toEqual([col.l, col.r]);   // the column itself stays where the list's column is
+		const inset = (b: any, t: any) => [t.l - b.l, b.r - t.r];
+		const mail = inset(box, await ev<any>(v, rect("#tl")));
+		const g = await hub.view({ width: 1280, height: 800 });
+		await g.navigate(`${hub.origin}/#chat`);
+		await waitFor(g, `typeof go === "function" && current === "chat" && document.querySelector("#tl") && document.querySelector("#v-chat .chatbox")`);
+		await still(g);
+		const chat = inset(await ev<any>(g, rect("#v-chat .chatbox")), await ev<any>(g, rect("#tl")));
+		expect(mail).toEqual(chat);
 	}, 30_000);
 });
