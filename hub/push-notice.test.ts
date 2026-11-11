@@ -56,6 +56,22 @@ test("one matter is one notification: the same tag again within the window, or a
 	resetPushDedupeForTest();
 });
 
+test("an answer in a monitor's or a project's own conversation is one phone push (event and bell notice share the tag), none while that conversation is on screen", () => {
+	const t = Date.parse("2026-11-11T00:00:00Z"), at = new Date(t).toISOString();
+	for (const conv of ["settings:w:harness-failures", "ch:4242"]) {
+		resetPushDedupeForTest();
+		const byEvent = classify({ ts: at, kind: "out", source: "orchestrator", target: conv, text: "[done] 끝났어요" }, 5 * 60_000);
+		const byNotice = noticePush(notice({ kind: "message", open: conv, text: "[done] 끝났어요" }));
+		expect(byEvent?.tag).toBe(`answer:${conv}`);
+		expect(byNotice?.tag).toBe(byEvent?.tag);
+		expect([shouldNotify(byEvent!, t, () => false), shouldNotify(byNotice!, t + 1, () => false)]).toEqual([true, false]);
+		resetPushDedupeForTest();
+		expect(shouldNotify(byNotice!, t, c => c === conv)).toBe(false);
+		expect(noticePush(notice({ kind: "message", open: conv, read: true }))).toBeUndefined();
+	}
+	resetPushDedupeForTest();
+});
+
 test("a focused page quiets only the conversation it shows; an older or relayed presence quiets everything", () => {
 	const t = 1_000_000;
 	expect(convOfUrl("/#chat/lane:ui-pwa")).toBe("lane:ui-pwa");

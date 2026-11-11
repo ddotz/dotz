@@ -50,11 +50,9 @@ let replaying = false;
 export const noticeFilePaths = (): string[] => items.flatMap(n => n.files?.map(f => f.path) ?? []);
 export const save = () => writeAtomic(paths.notices, `${JSON.stringify(items, null, 1)}\n`);
 
-// The 알림 screen does not list these (web/js/31-notices-screen.js nscListed), so the count must not hold what the owner cannot read there.
-const unlisted = (i: Notice) => {
-	const { cls } = classOfNotice(i);
-	return cls === "conv" || cls === "log";
-};
+// The 알림 screen does not list quiet records (web/js/31-notices-screen.js nscListed), so the count must not hold what the owner cannot read there.
+// A conversation's unread answer (conv) is listed and counted: it is the bell's way to say an answer finished while he was elsewhere.
+const unlisted = (i: Notice) => classOfNotice(i).cls === "log";
 export const unreadCount = () => {
 	const at = now();
 	return items.reduce((n, i) => n + (i.read || i.dismissed || appBlocked(i) || unlisted(i) || (i.decision?.state === "open" && hasExpired(i.decision, at)) ? 0 : 1), 0);

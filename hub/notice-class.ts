@@ -5,7 +5,7 @@
 //   alert  경고       gateway failures, lost logins (any kind of notice, loginLost), monitors failing again and again: push, red badge.
 //   result 결과       a session's or background job's [done] / [fail], a work log entry that finished: push.
 //   news   새 소식    mail, KakaoTalk, comments, monitors, schedules: push per app (that app's own switch), grouped by app in the bell.
-//   conv   대화       a new answer in a conversation the owner is not looking at: push only then (hub/push.ts shouldNotify).
+//   conv   대화       a new answer in a conversation the owner is not looking at: push only then (hub/push.ts shouldNotify); one unread item per conversation in 알림 / bell, under 새 소식, read by looking.
 //   log    기록       [run] progress, routine records and a monitor report that found nothing new (watchUnchanged): no push, no badge, only in 작업내역 / 모니터링.
 import type { Notice, NoticeKind, NoticeTone } from "./notices.ts";
 import { parkedTone } from "./tone.ts";

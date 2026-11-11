@@ -27,7 +27,7 @@ const reset = () => {
 	];
 };
 reset();
-const unread = () => notices.filter(n => !n.dismissed && !n.read && n.cls !== "log" && n.cls !== "conv").length;
+const unread = () => notices.filter(n => !n.dismissed && !n.read && n.cls !== "log").length;
 let calls: string[] = [];
 let bodies: Record<string, unknown> = {};
 const waiters = new Set<{ ok: () => boolean; done: () => void }>();
@@ -87,7 +87,7 @@ describe("the 알림 screen", () => {
 		expect(await ev(`document.querySelectorAll("#v-notices .bm").length`)).toBe(0);
 		expect(await ev<string[]>(`[...document.querySelectorAll("#v-notices .sec")].map(s => s.textContent)`)).toEqual(["처리할 것", "새 소식", "지난 알림"]);   // no 오늘 / 어제 divider
 		expect(await ev<string[][]>(`[...document.querySelectorAll("#v-notices .list[data-g]")].map(l => [l.dataset.g, ...[...l.querySelectorAll(".nsc-r")].map(r => r.dataset.nid)])`)).toEqual([
-			["need", "dec", "fail", "login"], ["news", "price", "cmt", "res"], ["past", "old", ...Array.from({ length: 14 }, (_, i) => `a${13 - i}`)]]);   // log and conv are not on the screen
+			["need", "dec", "fail", "login"], ["news", "price", "cmt", "res", "conv"], ["past", "old", ...Array.from({ length: 14 }, (_, i) => `a${13 - i}`)]]);   // a log item is not on the screen; a conversation's unread answer is, under 새 소식
 		expect(await ev(`document.querySelectorAll("#v-notices .nsc-m .meta, #v-notices [data-nu]").length`)).toBe(0);   // the unread count is said once, by the tabs
 		// 모두 읽음 has no band of its own: on a phone it stands on the row under the tabs so every tab stays in view; on a wide screen it ends the tabs' row. A 44px tap area either way.
 		type Bar = { tabsRight: number; tabsBottom: number; lastRight: number; btnLeft: number; btnTop: number; btnMid: number; tabsMid: number; hit: number; band: number; vw: number };
@@ -100,7 +100,7 @@ describe("the 알림 screen", () => {
 		const wide = await on(await shown(await open(1280))).ev<Bar>(BAR);
 		expect(wide.btnLeft).toBeGreaterThanOrEqual(wide.tabsRight - 1);
 		expect(Math.abs(wide.btnMid - wide.tabsMid)).toBeLessThan(12);
-		expect(await ev<string[]>(`[...document.querySelectorAll("#v-notices .nsc-fb")].map(b => b.textContent)`)).toEqual(["전체6", "답변 필요1", "결과1", "새 소식2", "경고2"]);
+		expect(await ev<string[]>(`[...document.querySelectorAll("#v-notices .nsc-fb")].map(b => b.textContent)`)).toEqual(["전체7", "답변 필요1", "결과1", "새 소식3", "경고2"]);
 		// one row shape: the title with its time, the summary with its tag, one cell at the end
 		expect(await ev(`[...document.querySelectorAll("#v-notices .nsc-r")].every(r => r.querySelectorAll(".ln").length === 2 && r.querySelector(".ln .hd") && r.querySelector(".ln .t") && r.querySelector(".ln .tag") && r.querySelectorAll(".nsc-x, .nsc-tr, .nsc-fold").length === (r.dataset.nid === "fail" ? 2 : 1))`)).toBe(true);
 		expect(await ev<string[]>(`[...document.querySelectorAll("#v-notices .nsc-r")].slice(0, 6).map(r => r.querySelector(".tag").textContent)`)).toEqual(["결정", "실패", "로그인", "가격 변경", "댓글", "작업 완료"]);
@@ -118,7 +118,7 @@ describe("the 알림 screen", () => {
 		expect((await ids(v)).slice(0, 2)).toEqual(["fail", "login"]);
 		expect(await ev<string[]>(`[...document.querySelectorAll("#v-notices .nsc-fb.on")].map(b => b.dataset.f)`)).toEqual(["alert"]);
 		await click(v, '#v-notices .nsc-fb[data-f="all"]');
-		await waitFor(`document.querySelectorAll("#v-notices .nsc-r").length === 21`);
+		await waitFor(`document.querySelectorAll("#v-notices .nsc-r").length === 22`);
 		expect(calls).toEqual([]);   // switching a filter reads and writes nothing
 	}, 30_000);
 
@@ -162,7 +162,7 @@ describe("the 알림 screen", () => {
 
 		await click(v, '#v-notices [data-k="read-all"]');
 		await hubState(() => has("POST /api/notices/read"));
-		expect((bodies["POST /api/notices/read"] as { ids: string[] }).ids.slice().sort()).toEqual(["cmt", "fail", "login", "price", "res"]);
+		expect((bodies["POST /api/notices/read"] as { ids: string[] }).ids.slice().sort()).toEqual(["cmt", "conv", "fail", "login", "price", "res"]);
 		expect(notices.find(n => n.id === "dec")!.read).toBe(false);
 		await waitFor(`document.querySelector(".snack") && document.querySelector('#v-notices [data-k="read-all"]').hidden`);
 		expect(await ev(`document.querySelector(".snack").textContent`)).toContain("답이 필요한 알림은 그대로 뒀어요");
@@ -177,7 +177,7 @@ describe("the 알림 screen", () => {
 		await run(`__advance(60000)`);   // every page timer of 1 s or more
 		await settled(v);
 		expect(calls).toEqual([]);
-		expect(await ev(`NT.unread`)).toBe(6);
+		expect(await ev(`NT.unread`)).toBe(7);
 	}, 30_000);
 
 	test("#chat/alert opens the screen, by address and by go(); only ntGo (a row's way to its source message) opens the record conversation, without a composer", async () => {

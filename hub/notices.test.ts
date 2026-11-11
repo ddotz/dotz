@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CONFIG_FILE, NAME, paths } from "./config.ts";
-import { decisionsOf, resetNoticesForTest } from "./notices.ts";
+import { decisionsOf, onNoticeUnread, resetNoticesForTest } from "./notices.ts";
 import { classOfNotice } from "./notice-class.ts";
 import { shortTitle } from "./notice-title.ts";
 import { DRAFT_SEND, draftApprovalBlock, draftVerdict } from "./draft-approval.ts";
@@ -454,8 +454,8 @@ test("on load, an alert item stored next to the decision of the same message rea
 	expect(run.exitCode).toBe(0);
 	const out = JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!) as { ids: string[]; unread: number };
 	expect(out.ids.sort()).toEqual(["dec00001", "fail0001", "msg00001"]);
-	// The old open question (2026-10-22, alert) is past its 24 hour window and msg:alert is a conversation item: listed here, but neither is counted.
-	expect(out.unread).toBe(1);
+	// The old open question (2026-10-22, alert) is past its 24 hour window and msg:alert is a conversation item: listed and counted (the open question is not).
+	expect(out.unread).toBe(2);
 	// kept in the file, only folded away
 	const after = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8")) as Notice[];
 	expect(after).toHaveLength(4);
@@ -1150,7 +1150,7 @@ test("on load, a notice of a channel the gateway no longer has is retired; known
 	});
 	const fresh = loadIn(dir);
 	expect(fresh.items.map(n => n.id).sort()).toEqual(["ddddddd2", "ddddddd3", "ddddddd4"]);
-	expect(fresh.unread).toBe(0);   // conversation items are never counted
+	expect(fresh.unread).toBe(2);   // the two unread conversation items count, the read one does not
 	const saved: Notice[] = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8"));
 	expect(saved.find(n => n.id === "ddddddd1")).toMatchObject({ dismissed: true, read: true });
 	// a title that is only the raw channel id is replaced by a plain label (the session's title where the channel is a session's)
@@ -1558,22 +1558,63 @@ test("monitor reports within a day fold into one unread row, newest first, 20 x 
 	expect(alerts[0]!.repeats!.every(r => r.text.length <= 160)).toBe(true);
 });
 
-test("the count is what the 알림 screen lists: conversation and log items do not count, and reading the listed one reaches 0", () => {
+test("the count is what the 알림 screen lists: a conversation's unread answer counts, a log item does not, and reading each reaches 0", () => {
 	post("main", "대화 답변 하나");
 	post("worklog", "[run] 기록 한 줄");
 	const conv = stored().find(n => n.key === "msg:main")!;
 	const log = byText("기록 한 줄")[0]!;
 	expect([conv.read, log.read]).toEqual([false, false]);
 	expect([classOfNotice(conv).cls, classOfNotice(log).cls]).toEqual(["conv", "log"]);
-	expect(unreadCount()).toBe(0);
+	expect(unreadCount()).toBe(1);
 
 	post("worklog", "[done] 끝난 일");
 	const done = byText("끝난 일")[0]!;
 	expect(classOfNotice(done).cls).toBe("result");
-	expect(unreadCount()).toBe(1);
+	expect(unreadCount()).toBe(2);
 	markNoticesRead({ ids: [done.id] });
+	expect(unreadCount()).toBe(1);
+	markNoticesRead({ ids: [conv.id] });
 	expect(unreadCount()).toBe(0);
-	expect(stored().find(n => n.id === conv.id)!.read).toBe(false);   // nothing stored changes: the conversation item stays unread
+});
+
+// An answer finished while the owner is elsewhere is one bell item and one phone push, in a monitor's own conversation and a project's alike (owner 2026-11-11).
+const unreadHits: string[] = [];
+onNoticeUnread(n => unreadHits.push(n.key ?? ""));
+const awayCases: [string, string][] = [["monitor", "settings:w:harness-failures"], ["project", "ch:4242"], ["mail thread", "mail:abc"]];
+for (const [name, conv] of awayCases) {
+	test(`an answer in a ${name} conversation while away: one counted notice that opens it, one unread hook, and reading the conversation clears it`, () => {
+		unreadHits.length = 0;
+		post(conv, "답이 이렇게 나왔어요");
+		post(conv, "하나 더 있어요");
+		const items = stored().filter(n => n.key === `msg:${conv}`);
+		expect(items).toHaveLength(1);
+		expect(items[0]).toMatchObject({ kind: "message", open: conv, src: conv, read: false });
+		expect(unreadCount()).toBe(1);
+		expect(unreadHits.filter(k => k === `msg:${conv}`)).toHaveLength(1);
+		expect(setViewing("tab-x", conv, Date.now())).toMatchObject({ ok: true });
+		expect(stored().find(n => n.key === `msg:${conv}`)!.read).toBe(true);
+		expect(unreadCount()).toBe(0);
+		setViewing("tab-x", "", Date.now());
+	});
+}
+
+test("an answer in a conversation he is looking at leaves no notice; a keepalive, a silent turn and a gateway line leave none either", () => {
+	const conv = "settings:w:harness-failures";
+	setViewing("tab-x", conv, Date.now());
+	post(conv, "보고 있는 동안의 답이에요");
+	setViewing("tab-x", "", Date.now());
+	post(conv, "-");
+	post(conv, "ok");
+	post(conv, "상태 알려 드려요", { source: "gateway" });
+	expect(stored().filter(n => n.key === `msg:${conv}`)).toHaveLength(0);
+	expect(unreadCount()).toBe(0);
+});
+
+test("what a conversation's own session posts as the answer to work main handed it is an answer too", () => {
+	const conv = "ch:4343";
+	post(conv, "넘겨받은 일의 답이에요", { session: conv, cross: "dotz_send" });
+	expect(stored().find(n => n.key === `msg:${conv}`)).toMatchObject({ kind: "message", open: conv, read: false });
+	expect(unreadCount()).toBe(1);
 });
 
 // dotz_send `resolves` from one session closes only its own conversations' questions (a pick in one conversation answered another's question before).

@@ -12,10 +12,11 @@ const NSC_X = { need: TX("misc.nsc.x_done"), news: TX("misc.nsc.x_read"), past: 
 const NSC_FIRST = 24, NSC_STEP = 48;
 let nscTodo = [], nscFillRaf = 0;   // lists whose last rows are still to come: { list, tail, g, more }
 
-// The list: a notice with an id that is neither a quiet watch check (log) nor a chat message (conv). Every count is this list's unread.
-const nscListed = n => !!n.id && n.cls !== "log" && n.cls !== "conv" && !n.dismissed;
-const nscIn = k => NT.items.filter(n => nscListed(n) && (k === "all" || n.cls === k));
-const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read && (k === "all" || n.cls === k) ? 1 : 0), 0);
+// The list: a notice with an id that is not a quiet watch check (log). A conversation's unread answer (conv) is listed too, under 새 소식. Every count is this list's unread.
+const nscListed = n => !!n.id && n.cls !== "log" && !n.dismissed;
+const nscFits = (n, k) => k === "all" || n.cls === k || (k === "news" && n.cls === "conv");
+const nscIn = k => NT.items.filter(n => nscListed(n) && nscFits(n, k));
+const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read && nscFits(n, k) ? 1 : 0), 0);
 const nscGroup = n => (ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
 const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n));
 const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
@@ -37,6 +38,7 @@ function nscTag(n) {
   if (n.kind === "watch") return TX("misc.nsc.tag_watch");
   if (n.cls === "alert" && /^[^\n]*: 다시 정상이에요/.test(n.text || "")) return TX("misc.nsc.tag_back");
   if (n.cls === "alert") return TX("settings.notify.alert_label");
+  if (n.cls === "conv") return TX("common.conversation");
   return ntPlain(n.app || "") || TX("settings.notify.news_label");
 }
 // A decision's second line follows its state: waiting says so, an answer says what was chosen, the rest say how it ended (the words of monDecisionNode).
