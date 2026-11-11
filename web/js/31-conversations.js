@@ -31,7 +31,7 @@ function convPreview(raw) {
 function convLastOf(e) {
   if (!convReal(e) || typeof e.ts !== "string") return null;
   const title = e.card && typeof e.card.title === "string" ? e.card.title : "";
-  const text = convPreview(e.text) || convPreview(title) || (Array.isArray(e.files) && e.files.length ? "파일" : "");
+  const text = convPreview(e.text) || convPreview(title) || (Array.isArray(e.files) && e.files.length ? TX("chat.att.file") : "");
   if (!text) return null;
   const from = e.kind === "message" || e.kind === "lane_message" ? "owner" : e.kind === "lane_report" || (typeof e.source === "string" && e.source.startsWith("lane:")) ? "session" : "bot";
   return { ts: e.ts, text, from };
@@ -185,7 +185,7 @@ function convCapture() {
   if (CV.seeded) CV.placed = false;
   return true;
 }
-const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽음" }));
+const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": TX("conv.unread_from") }, el("span", { text: TX("conv.read_to") }));
 /* ---- where the timeline sits while an opening settles ---- */
 // The first paint of an opening needs three answers: the history, the read position (/api/conversations, which decides the divider)
 // and the todo plan (its strip pushes the timeline down). Until then "불러오는 중…" stays, so nothing is drawn at the wrong place
@@ -342,15 +342,15 @@ function convRows() {
   // A card per group, and last the 메일 · 카카오톡 card of what waits there.
   const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
   const out = [MAIN, "worklog"].map(mk);
-  if (now.length) out.push({ header: "진행 중", sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true });
-  if (page.length) out.push({ header: "프로젝트", sec: true }, ...page);
+  if (now.length) out.push({ header: TX("home.sys.running"), sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true });
+  if (page.length) out.push({ header: TX("common.projects"), sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
   const listed = new Set(now);
   out.push(...all.filter(l => { const t = `lane:${l.name}`; return !listed.has(l) && (t === target || (laneAlive(l) && (ts(t).unread || convNeeds(t)))); }).map(sess));
   const ended = endedLanes();
   if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
   const waits = convWaiting();
-  if (waits.length) out.push({ header: "메일 · 카카오톡", sec: true }, ...waits);
+  if (waits.length) out.push({ header: [TX("common.mail"), TX("decision.app.kakao")].join(" · "), sec: true }, ...waits);
   out.push({ read: true });
   return out;
 }
@@ -359,9 +359,9 @@ function convWaiting() {
   const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
   const mails = [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).map(([t, m]) => {
     const who = mailSender(m.from), owed = !!m.unreplied;
-    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || "(제목 없음)", hint: m.reply === "draft" ? `${who} · 답장 초안이 기다려요` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [["미답장", "unreplied"]] : undefined, open: () => paneRowOpen("chat", t) || go("monitoring", `c:${t}`) };
+    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || TX("mail.no_subject"), hint: m.reply === "draft" ? `${who} · ${TX("conv.draft_waits")}` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [[TX("conv.unreplied"), "unreplied"]] : undefined, open: () => paneRowOpen("chat", t) || go("monitoring", `c:${t}`) };
   });
-  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [["미답장", "unreplied"]], open: () => { if (paneRowOpen("app", paneKkT(r.chatId))) return; go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
+  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [[TX("conv.unreplied"), "unreplied"]], open: () => { if (paneRowOpen("app", paneKkT(r.chatId))) return; go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
   return [...mails, ...rooms].sort((a, b) => b.at - a.at).slice(0, 5);
 }
 // Rows in their cards: a section label stands on the page, every run of rows between them is one card.
@@ -379,8 +379,8 @@ function convCards(rows) {
   return nodes;
 }
 // The two fixed rows alone cannot tell a list still loading, or one that failed, from a settled one: the line under them says which (never both, never before the first load).
-const cvState = () => CV.loaded ? null : CV.failed ? emptyNode("대화 목록을 불러오지 못했어요", () => convLoad()) : emptyNode("불러오는 중…");
-const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
+const cvState = () => CV.loaded ? null : CV.failed ? emptyNode(TX("conv.load_failed"), () => convLoad()) : emptyNode(TX("common.loading"));
+const FIXED_DESC = { alert: TX("conv.fixed.alert"), worklog: TX("conv.fixed.worklog") };
 
 /* ---- a long list: a page of projects, 읽음 처리 ---- */
 // more: projects drawn (CVF_PAGE more per 더 보기). What waits on an answer is on the 알림 screen's 처리할 것.
@@ -393,7 +393,7 @@ const convListed = () => [MAIN, "worklog", ...((S && S.lanes) || []).filter(lane
 // 읽음 처리, under the list: it takes only what needs no answer, so a conversation waiting on the owner keeps its unread.
 function convReadBtn() {
   const fyi = convListed().filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
-  return fyi.length ? el("div", { class: "cv-foot" }, el("button", { class: "btn text cv-read", type: "button", "data-k": "read", title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: `${fyi.length}개 읽음 처리` })) : null;
+  return fyi.length ? el("div", { class: "cv-foot" }, el("button", { class: "btn text cv-read", type: "button", "data-k": "read", title: TX("conv.read_title"), onclick: ev => convReadAll(ev.currentTarget, fyi), text: TX("conv.read_n", { n: fyi.length }) })) : null;
 }
 // The listed conversations are read up to their newest message here at once and on the hub (POST /api/read, one per conversation); a failure
 // re-reads the counts from the hub and says why (busy toasts it).
@@ -406,9 +406,9 @@ const convReadAll = (btn, list) => busy(btn, async () => {
   if (bad.length) {
     for (const [t, r, u] of was) if (res[list.indexOf(t)].status === "rejected") { READ[t] = r; ts(t).unread = u; }
     renderBars(); convSig = ""; convSchedule(); convLoad();
-    throw new Error(`${bad.length}개를 읽음으로 표시하지 못했어요: ${bad[0].reason.message}`);
+    throw new Error(TX("conv.read_failed", { n: bad.length, why: bad[0].reason.message }));
   }
-  toast(`대화 ${list.length}개를 읽음으로 표시했어요`);
+  toast(TX("conv.read_done", { n: list.length }));
 });
 // Every row has an icon, never a letter (so any name reads the same): the app's own mark for the main assistant, a bell / list for the fixed
 // feeds, the folder the 프로젝트 tab uses for a project, the session icon for a session.
@@ -422,7 +422,7 @@ function convAvatar(t) {
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
   if (r.empty) return el("div", { class: "cv-empty", text: r.empty });
-  if (r.more) return moreRow(`프로젝트 ${r.more}개 더 보기`, () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); });
+  if (r.more) return moreRow(TX("conv.more_projects", { n: r.more }), () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); });
   if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
   // 채팅 목록은 시제품의 채팅 행 (proto .li): 아이콘, 제목·미리보기, 오른쪽에 시각과 대기 표시. 모니터링 목록은 시각 없이 그대로예요.
@@ -430,9 +430,9 @@ function convRow(r) {
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread || r.bold ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k && !r.badge ? el("span", { class: "dot warn", role: "img", "aria-label": "답변 필요" }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
+    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k && !r.badge ? el("span", { class: "dot warn", role: "img", "aria-label": TX("common.needs_reply") }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": TX("conv.unread_n", { n: r.unread }) }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
 }
-const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
+const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": TX("conv.list_aria") });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
 const convHead = el("div", { id: "cv-head", class: "cv-head" });
 $("#v-chat").prepend(convSide, convHead);
@@ -443,7 +443,7 @@ convHead.after(monChatTop);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : targetState(target)[0], k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || TX("common.mail") : isSettingsT(target) ? TX("conv.settings_hint") : targetState(target)[0], k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   // 시제품의 대화 머리 (proto .cv-hd): 제목 16/22 600 한 줄, 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작.
@@ -456,7 +456,7 @@ function convPaintHead() {
 // A project's conversation gets the project page's ⋯ menu (수정 / 삭제, built by pmMenuButton in 19-project-main.js) once the project is known.
 const pjMenuOn = () => isProjT(target) && !!pmOfTarget(target);
 // A session's actions (stop, restart, model) are the home card's ⋯ menu (08-home.js homeMenu), here in the conversation's header: in the head on wide screens, in the app bar on a phone.
-const cvMenuBtn = () => el("button", { class: "ib cvmenu", type: "button", "aria-label": "세션 메뉴", title: "세션 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, target, true) }, icon("more"));
+const cvMenuBtn = () => el("button", { class: "ib cvmenu", type: "button", "aria-label": TX("misc.pane.menu"), title: TX("misc.pane.menu"), "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, target, true) }, icon("more"));
 const cvAppMenu = cvMenuBtn();
 cvAppMenu.id = "cvmenu"; cvAppMenu.hidden = true;
 $("#vtog").before(cvAppMenu);
@@ -474,10 +474,10 @@ function convPaint() {
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
-    convSide.setAttribute("aria-label", two ? "메일함" : monCtx ? "모니터링 목록" : "채팅 목록");
+    convSide.setAttribute("aria-label", two ? TX("common.mailbox") : monCtx ? TX("shell.aria.monitoring_list") : TX("conv.list_aria"));
     // 진행 중 grows and shrinks under 작업내역: a list read further down stays where it is when a session starts or ends, held by where 진행 중 (or, without it, 작업내역) ends.
     // Measured in fractions and rounded once at the end: offsetTop rounds each place and scrollTop truncates, which moved the list by a pixel or more.
-    const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === "진행 중") || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.getBoundingClientRect().bottom + convSide.scrollTop : 0; };
+    const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === TX("home.sys.running")) || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.getBoundingClientRect().bottom + convSide.scrollTop : 0; };
     const top = convSide.scrollTop, was = end();
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
     clear(convSide).append(...(two ? mxPaneNodes(two) : monCtx ? monSideNodes(rows) : [...convCards(rows), cvState()].filter(Boolean)));
@@ -518,7 +518,7 @@ function convChrome() {
   $("#back").hidden = !back;
   // Inside an app on a wide screen the bar's back button reads ‹ 모니터링 in the title's place; the app's own name stands in its head.
   $("#back").classList.toggle("mon-up", up);
-  $("#back").setAttribute("aria-label", up ? (MX.it && MX.scr ? "메일 목록으로" : "모니터링 목록으로") : "뒤로");
+  $("#back").setAttribute("aria-label", up ? (MX.it && MX.scr ? TX("conv.back_mail") : TX("conv.back_mon")) : TX("common.back"));
   bar.classList.toggle("back", back);
   bar.classList.toggle("cvconv", conv);
   bar.classList.toggle("mon-in", narrowChat() && (monConv() || (!!monCtx && current === "chat")));   // an app, a mail or a room of 모니터링 on a phone: no usage ring, the title gets the room (20-monitoring.css)
@@ -545,5 +545,5 @@ convLoad();
 /* ---- shell: the notice bell and the sidebar's computer row (22-shell.css) ---- */
 // The bell opens the 알림 screen (31-notices-screen.js); its count comes from paintBell (09-needs-you.js), fed by every notice change.
 $("#bell").prepend(icon("bell"));
-$("#bell").title = `알림 (${isMac ? "⌘/" : "Ctrl+/"})`;
+$("#bell").title = TX("conv.bell_title", { key: isMac ? "⌘/" : "Ctrl+/" });
 $("#bell").onclick = nscGo;

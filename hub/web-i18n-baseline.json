@@ -149,8 +149,8 @@
       "why": "Matches server-sent Korean values (draft option labels, recipient label, hub status words) and parses Korean clock/report text"
     },
     "web/js/30-notices.js": {
-      "count": 171,
-      "why": "pending"
+      "count": 9,
+      "why": "server value comparison (recipient label, the stale-card error text) and the agent-written decision prefix"
     },
     "web/js/30-replies.js": {
       "count": 143,
@@ -158,10 +158,6 @@
     },
     "web/js/30-triage.js": {
       "count": 189,
-      "why": "pending"
-    },
-    "web/js/31-conversations.js": {
-      "count": 84,
       "why": "pending"
     },
     "web/js/31-notices-screen.js": {
