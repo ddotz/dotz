@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, paths } from "./config.ts";
 import { SUMMARY_MAX_CHARS } from "./compact-instructions.ts";
 import { newCtx } from "./context.ts";
+import { yesterdayNote } from "./day-note-format.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { modeFile, msg, withReplyLine } from "./i18n.ts";
 import type { OrchError } from "./orch-error.ts";
@@ -56,7 +57,9 @@ export function recallText(scope: string, ledger = ""): string {
 		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
 	};
 	const features = featurePrompt(DATA_DIR, "orchestrator", log);
-	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
+	const text = withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
+	const note = yesterdayNote();
+	return note ? `${text}\n${msg().dayNote.line(note)}` : text;
 }
 
 // The whole handover (framing, the previous session's last compaction summary, recent exchanges) is cut at this many characters, about 6K tokens:

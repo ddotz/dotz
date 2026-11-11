@@ -1,10 +1,13 @@
 // The day note with synthetic sessions in temp folders only; the model, the clock and the sleep are injected, no real omo runs.
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { attempt, buildNote, chainVariant, collectInput, type Known, latestNote, mainSessionFiles, noteWindow, resolveQuick, type Resolution, runDayNote, type RunDeps, validate } from "./day-note.ts";
-import { NOTE_MAX_CHARS, noteFile, parseNote } from "./day-note-format.ts";
+import { cfg } from "./config.ts";
+import { daysDir, kstDay, NOTE_MAX_CHARS, noteFile, parseNote, yesterdayNote } from "./day-note-format.ts";
+import { recallText } from "./orchestrator-parts.ts";
+import { rmSync } from "node:fs";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 10, 10, 19, 36);
@@ -311,5 +314,31 @@ describe("mainSessionFiles", () => {
 		mkdirSync(join(base, "--home-x-.dotz-lanes-a--"));
 		writeFileSync(join(base, "--home-x-.dotz-lanes-a--", "lane.jsonl"), "");
 		expect(mainSessionFiles(statSync(fresh).mtimeMs - 1000, [base, join(base, "nope")], "/home/x/.dotz")).toEqual([fresh]);
+	});
+});
+
+describe("the pointer to yesterday's note in a new session's first prompt", () => {
+	const holder = cfg as { day_note?: { enabled?: boolean } };
+	const file = () => noteFile(kstDay(Date.now() - 24 * HOUR), daysDir());
+	const writeYesterday = () => {
+		mkdirSync(daysDir(), { recursive: true });
+		writeFileSync(file(), "x");
+	};
+	afterEach(() => {
+		delete holder.day_note;
+		rmSync(file(), { force: true });
+	});
+
+	test("off, or no note for yesterday: the text is what it was; on with the note: one more line names the file", () => {
+		const plain = recallText("");
+		writeYesterday();
+		expect(recallText("")).toBe(plain);
+		holder.day_note = { enabled: true };
+		const withNote = recallText("");
+		expect(withNote).toBe(`${plain}\n${withNote.split("\n").at(-1)}`);
+		expect(withNote.split("\n").at(-1)).toContain(file());
+		rmSync(file());
+		expect(recallText("")).toBe(plain);
+		expect(yesterdayNote(Date.now(), daysDir())).toBeUndefined();
 	});
 });
