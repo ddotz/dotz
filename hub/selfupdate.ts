@@ -556,6 +556,9 @@ const readState = (): State => {
 };
 const saveState = (s: State) => writeAtomic(STATE_FILE, `${JSON.stringify(s)}\n`);
 
+// The stored check only counts while the disk is still the version it was made on: after an update it describes the old install.
+const sameInstall = (a: Version, b: Version) => ("commit" in a && "commit" in b ? a.commit.sha === b.commit.sha : a.kind === b.kind && ("release" in a ? a.release : "") === ("release" in b ? b.release : ""));
+
 // The version this process runs (captured at start), so a pulled-but-not-restarted update shows as such.
 let running: Version | undefined;
 // The commit this gateway started from (read once at start, so an update applied since does not move it): hub/done-live.ts.
@@ -727,7 +730,8 @@ export async function updateRoute(req: Request, url: URL, deps: RouteDeps): Prom
 	if (req.method === "GET" && p === "/api/update") {
 		const disk = await version(o);
 		running ??= disk;
-		return json({ boot: deps.boot, running, disk, lastCheck: readState().lastCheck ?? null, job: job ?? null, flow: deps.now?.flow() ?? null, busy: deps.busy(), settings: settings() });
+		const last = readState().lastCheck;
+		return json({ boot: deps.boot, running, disk, lastCheck: last && sameInstall(last.version, disk) ? last : null, job: job ?? null, flow: deps.now?.flow() ?? null, busy: deps.busy(), settings: settings() });
 	}
 	if (req.method === "POST" && p === "/api/update/check") {
 		const c = await check(o);

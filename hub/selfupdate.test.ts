@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import { clearTrackedTimers } from "./shutdown.ts";
-import { apply, autoCheck, CHECK_EVERY_MS, check, defaultExec, type Exec, fetchError, scrub, startSelfUpdate, updateAvailable } from "./selfupdate.ts";
+import { apply, autoCheck, CHECK_EVERY_MS, check, defaultExec, type Exec, fetchError, scrub, startSelfUpdate, updateAvailable, updateRoute } from "./selfupdate.ts";
 import { failedTestNames, failureBlocks, parseRelease, releaseTags } from "./selfupdate-parse.ts";
 
 setDefaultTimeout(30_000); // real git repos and test runs: seconds each, more under parallel load
@@ -291,6 +291,28 @@ describe("against temp git repos", () => {
 		const j = await apply(opts(exec));
 		expect(j.status).toBe("current");
 		expect(seen).not.toContain(testCmd.join(" "));
+	});
+
+	// What GET /api/update hands to `dotz status` and the settings screen: a check made on another version than the disk's is no state.
+	const reported = async () => {
+		const url = new URL("http://localhost/api/update");
+		const res = await updateRoute(new Request(url), url, { boot: "b", busy: () => [], restartIdle: () => "", restartNow: () => "", options: opts() });
+		return ((await res!.json()) as { lastCheck: { incomingTotal: number } | null }).lastCheck;
+	};
+
+	test("a stored check made on the version now on disk still reports its incoming count", async () => {
+		setSelfUpdateCfg({ auto_apply: false });
+		r.release("a.txt", "2\n", "second");
+		await autoCheck(opts());
+		expect((await reported())?.incomingTotal).toBe(1);
+	});
+
+	test("after an update is applied the check made before it is no longer reported", async () => {
+		setSelfUpdateCfg({ auto_apply: false });
+		r.release("a.txt", "2\n", "second");
+		await autoCheck(opts());
+		expect((await apply(opts())).status).toBe("updated");
+		expect(await reported()).toBeNull();
 	});
 
 	test("a fetch failure says why", async () => {
