@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export type BannedHit = { word: string; use?: string };
+// `at: "start"`: the word counts only where the text opens (after a status tag such as [done]), e.g. an address the owner does not want as the first word.
 type Entry = BannedHit & { re: RegExp };
 
 const defaultDir = (): string => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -13,7 +14,8 @@ export const wordsFile = (dataDir: string = defaultDir()): string => join(dataDi
 
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // A space in the word matches any run of whitespace, including none.
-const compile = (word: string): RegExp => new RegExp(word.split(/\s+/).map(escape).join("\\s*"), "iu");
+const STATUS = "^\\s*(?:\\[[^\\]\n]{1,12}\\]\\s*)?";
+const compile = (word: string, start: boolean): RegExp => new RegExp((start ? STATUS : "") + word.split(/\s+/).map(escape).join("\\s*"), "iu");
 
 const cache = new Map<string, { mtimeMs: number; entries: Entry[] }>();
 
@@ -38,7 +40,7 @@ function load(dataDir: string): Entry[] {
 			for (const w of words) {
 				const word = typeof w?.word === "string" ? w.word.trim() : "";
 				if (!word) continue;
-				entries.push({ word, ...(typeof w.use === "string" && w.use.trim() ? { use: w.use.trim() } : {}), re: compile(word) });
+				entries.push({ word, ...(typeof w.use === "string" && w.use.trim() ? { use: w.use.trim() } : {}), re: compile(word, w.at === "start") });
 			}
 		}
 	} catch {

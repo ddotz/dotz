@@ -67,3 +67,11 @@ test("a malformed file is an empty list and never throws", () => {
 	put(dir, { words: [null, 3, { word: "" }, { word: "ok" }] }, 1_700_000_300);
 	expect(bannedHits("this is ok", dir).map(h => h.word)).toEqual(["ok"]);
 });
+
+test("a start-only word counts where the text opens, after a status tag, and nowhere else", () => {
+	const dir = fresh();
+	put(dir, { words: [{ word: "Boss,", at: "start" }] });
+	expect(bannedHits("Boss, it is done", dir).map(h => h.word)).toEqual(["Boss,"]);
+	expect(bannedHits("[done] Boss, it is done", dir).map(h => h.word)).toEqual(["Boss,"]);
+	expect(bannedHits("It is done, Boss, as asked", dir)).toEqual([]);
+});

@@ -272,7 +272,8 @@ Words the owner does not want to read, each with the wording to use instead. Re-
 { "words": [ { "word": "빨간 시험", "use": "red test" }, { "word": "게이트 머리", "use": "gate HEAD 또는 최신 커밋" } ] }
 ```
 
-- Matching ignores case, and a space in `word` matches any run of whitespace (or none). `use` is optional.
+- Matching ignores case, and a space in `word` matches any run of whitespace (or none). `use` is optional. `"at": "start"` makes a
+  word count only where the text opens (after a status tag such as `[done]`), for an address the owner does not want as the first word.
 - Checked: every text the bot sends with `dotz_send` (any target but `lane:<name>`, where a brief may quote a listed word to forbid it) and the reports of sessions. A text with a listed word is refused and
   the bot gets the words and their replacements to rewrite it. A session's report goes back once; if it still has the word, it passes
   unchanged, so no report is lost.
