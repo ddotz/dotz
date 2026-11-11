@@ -38,7 +38,7 @@ function appsRows() {
   rows.push({ header: "사용자 앱" });
   if (!tools.length) rows.push({ k: "empty-apps", name: "아직 내 앱이 없어요", av: appsAv("add"), hint: "채팅에서 앱을 추가해 달라고 하면 돼요", open: () => go("chat") });
   for (const a of tools) {
-    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon), hint: appsStatusLine(a), badge: appsBadge(a), sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
+    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon), hint: appsStatusLine(a), badge: appsBadge(a), sel: APP_STATE_ON() && a.id === (appsPicked() || {}).id, open: () => appsPick(a.id) });
   }
   const reg = APPS.items.filter(a => a.source === "registry");
   if (reg.length) {
@@ -63,6 +63,13 @@ function appsPicked() {
   const picked = APPS.sel && APPS.items.find(a => a.id === APPS.sel);
   if (appsNarrow()) return APPS.list ? null : picked || null;
   return picked || APPS.items.find(a => appsTool(a)) || APPS.items[0] || null;
+}
+// A row picked beside the open app (wide) is the same screen: the address changes in place, so back does not step through every row picked. A phone's pick is a screen of its own.
+function appsPick(id) {
+  if (current !== "apps" || appsNarrow()) { go("apps", id); return; }
+  APPS.sel = id; APPS.list = false;
+  routeReplace(`apps/${enc(id)}`);
+  appsRender();
 }
 const appsHash = () => (APPS.sel && !(appsNarrow() && APPS.list) ? `apps/${enc(APPS.sel)}` : "apps");
 function appsOpen(tgt) {
@@ -154,7 +161,7 @@ function appsRender() {
   if (sig !== APPS.sig) {
     APPS.sig = sig;
     const top = appsRowScrollOn();
-    clear(side).append(...rows.map(convRow));
+    clear(side).append(...convCards(rows));   // the cards of the chat list, so a row stands where chat's row stands
     side.scrollTop = top;
   }
   const a = appsPicked();

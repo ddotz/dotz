@@ -260,13 +260,13 @@ describe("댓글 at 1280x800", async () => {
 		const seen = () => q<Record<string, unknown>>(v, `return { list: !!document.querySelector("#mon-side").offsetParent, chat: !!document.querySelector("#cm-chat").offsetParent, rooms: document.querySelector("#cm-rooms").offsetWidth, back: document.querySelector("#back").hidden ? "" : document.querySelector("#back").textContent, hash: location.hash }`);
 		await boot(v);
 		const app = await seen();
-		expect(app).toMatchObject({ list: false, chat: true, back: "모니터링" });
+		expect(app).toMatchObject({ list: false, chat: true, back: "유튜브" });   // the bar names the app, the way mail's does (‹ 메일); it still leads to 모니터링
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
 		await waitFor(v, `CM.open && document.querySelector("#cm-chat").offsetParent`);
 		expect((await seen()).rooms).toBe(app.rooms);
 		await run(v, `document.querySelector("#back").click()`);
 		await waitFor(v, `!CM.open`);
-		expect(await seen()).toMatchObject({ list: false, rooms: app.rooms, back: "모니터링" });
+		expect(await seen()).toMatchObject({ list: false, rooms: app.rooms, back: "유튜브" });
 		await run(v, `document.querySelector("#back").click()`);
 		await waitFor(v, `MON.list && document.querySelector("#mon-side").offsetParent`);
 		expect(await seen()).toMatchObject({ back: "", hash: "#monitoring" });

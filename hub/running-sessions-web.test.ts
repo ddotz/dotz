@@ -62,7 +62,7 @@ test("in the chat list a running session ends in no dot or word when read, in it
 	await run(v, `go("chat", "list")`);
 	await listed(chatRows, CHAT_WANT);
 	expect(await ev<string[]>(v, endOf("lane:audit"))).toEqual([]);
-	expect(await ev<string[]>(v, endOf("lane:ask"))).toEqual(["dot warn:", "tag warn:답을 기다림"]);
+	expect(await ev<string[]>(v, endOf("lane:ask"))).toEqual(["tag warn:답을 기다림"]);   // the word carries its own dot: no second dot beside it
 	await run(v, `ts("lane:audit").unread = 3; convSig = ""; convSchedule()`);
 	await waitFor(v, `JSON.stringify(${endOf("lane:audit")}) === ${JSON.stringify(JSON.stringify(["nb:3"]))}`);
 	await run(v, `ts("lane:audit").unread = 0; convSig = ""; convSchedule()`);

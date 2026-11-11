@@ -429,7 +429,7 @@ function convRow(r) {
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread || r.bold ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k ? el("span", { class: "dot warn", role: "img", "aria-label": "답변 필요" }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
+    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k && !r.badge ? el("span", { class: "dot warn", role: "img", "aria-label": "답변 필요" }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -503,7 +503,8 @@ function convOnPhone() { return current === "chat" && narrowChat() && !chatList;
 function convTitle() {
   if (current === "chat") $("#title").textContent = convOnPhone() ? targetName(target) : monCtx ? titles.monitoring : titles.chat;
   else if (current === "monitoring") $("#title").textContent = monConv() && narrowChat() ? monName() : titles.monitoring;
-  if (current === "monitoring") $("#back .bk-l").textContent = monConv() && (MON.sel === RQ_KEY || MX.it) ? monName() : titles.monitoring;   // 답장 대기 has no item head: the bar names it (the prototype's ‹ 대기함)
+  // Inside any item the bar's back names that item (‹ 메일, ‹ 카카오톡, ‹ 답장 대기); a mail screen names itself (monName); the list and the home say 모니터링.
+  if (current === "monitoring") { const at = monConv() ? monItems().find(i => i.key === MON.sel) : null; $("#back .bk-l").textContent = at ? (MX.it ? monName() : at.name) : titles.monitoring; }
   const tag = (current === "chat" && monCtx && convOnPhone()) || (monConv() && narrowChat()) ? pqLabel(monItems().find(i => i.key === MON.sel)) : null;
   if (tag) $("#title").replaceChildren(el("span", { class: "ttx", text: $("#title").textContent }), tag);
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
@@ -524,6 +525,7 @@ function convChrome() {
   const listing = current === "monitoring" && MON.list, was = $("#v-monitoring").classList.contains("cv-listing");
   $("#v-monitoring").classList.toggle("cv-listing", listing);
   if (listing && !was) $("#mon-side").scrollTop = MON.top | 0;
+  asPaneSync();
   if (current === "monitoring") monSchedule();
   if (convListing()) $("#vtog").hidden = true;
   convTitle();

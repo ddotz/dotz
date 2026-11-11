@@ -9,7 +9,7 @@
 // a notice through its answer path (answerInline / ntPost, a peer's through /api/peer/act), a store draft through its app's route or the peer act, a held card
 // through trPost. 모두 다시 보내기 hands back only sends the owner already approved and that failed, each by its own route; nothing else sends from here.
 // Reached from 홈 답장 대기, the app rows' 답장 대기 button, the chat's 답장 초안 line and the list row itself; the row shows only while something waits (or it is open).
-const RQ = { local: [], failed: [], done: [], stops: {}, loaded: false, app: "", tab: "all", edit: "", note: {}, busy: new Set(), gone: new Set(), just: new Map(), fold: new Set(), cur: "", sheet: null, shSig: "", rows: null, t: 0, lim: {}, reset: false };   // just: a store draft just sent stays as its card, 보냈어요 in the action row's place, until the queue is opened again
+const RQ = { local: [], failed: [], done: [], stops: {}, loaded: false, app: "", tab: "all", edit: "", note: {}, busy: new Set(), gone: new Set(), just: new Map(), fold: new Set(), cur: "", sheet: null, shSig: "", rows: null, top: null, mark: "", err: "", t: 0, lim: {}, reset: false };   // just: a store draft just sent stays as its card, 보냈어요 in the action row's place, until the queue is opened again
 const RQ_KEY = "replies";
 
 async function rqLoad() {
@@ -19,7 +19,8 @@ async function rqLoad() {
     RQ.failed = Array.isArray(r.failed) ? r.failed : [];
     RQ.done = Array.isArray(r.sent) ? r.sent : [];
     RQ.stops = r.stops && typeof r.stops === "object" ? r.stops : {};
-  } catch { RQ.local = RQ.local || []; }
+    RQ.err = "";
+  } catch (e) { RQ.local = RQ.local || []; RQ.err = appFail(e, "답장 대기를 불러오지 못했어요"); }
   RQ.loaded = true;
   monSchedule(); homeSoon(); rqSheetPaint(); paintDecision();
 }
@@ -104,9 +105,9 @@ const rqWaiting = () => rqRows().filter(r => r.state !== "sent").length;
 const rqAskCount = () => rqRows().filter(r => r.state === "ask").length;
 
 // The 모니터링 list row (monItems, 30-monitoring.js): under 감시 소식, only while something waits or the queue is open.
-function rqMonItem() {
+function rqMonItem(home) {   // home: the wide home shows the queue also while nothing waits
   const rows = rqRows().filter(r => r.state !== "sent"), n = rows.length;
-  if (!n && MON.sel !== RQ_KEY) return null;
+  if (!n && MON.sel !== RQ_KEY && !home) return null;
   // the line under the name is the home row's (08-home.js homeRepliesRow): the count per source, the total at the row's right
   const by = new Map(), at = Math.max(0, ...rows.map(r => r.at || 0));
   for (const r of rows) { const k = r.app || "기타"; by.set(k, (by.get(k) || 0) + 1); }
@@ -344,14 +345,15 @@ const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -
 // One row, the notice row's own classes: the state dot, who and the time, then "앱 · 무엇" with the tag (the stop reason, or how a sent one went).
 function rqRowNode(r, kid) {
   const at = rqWhen(r.at), head = r.who || r.what || r.app, sub = [r.app, r.who ? r.what : ""].filter(Boolean).join(" · ");
-  return el("div", { class: `li nsc-r rq-r ${r.state}`, "data-qr": r.key, ...(kid ? { "data-kid": kid } : {}) },
+  const open = RQ.mark === r.key;   // the row whose card stands (or stood) in the right column: marked the way 채팅 marks its open row
+  return el("div", { class: `li nsc-r rq-r ${r.state}${open ? " on" : ""}`, "data-qr": r.key, ...(kid ? { "data-kid": kid } : {}) },
     el("span", { class: "lead" }, el("span", { class: `dot ${RQ_TONE[r.state]}` })),
-    el("button", { class: "tx nsc-tx", type: "button", onclick: () => rqSheetOpen(rqRows().find(x => x.key === r.key) || r) },
+    el("button", { class: "tx nsc-tx", type: "button", "aria-current": open ? "true" : null, onclick: () => rqSheetOpen(rqRows().find(x => x.key === r.key) || r) },
       el("span", { class: "ln" }, el("span", { class: "hd", text: head }), at ? el("span", { class: "t", text: at }) : null),
       sub || r.why ? el("span", { class: "ln" }, sub ? el("span", { class: "nsc-s", text: sub }) : null, r.why ? el("span", { class: `tag${r.state === "fail" ? " err" : ""}`, text: r.why }) : null) : null));
 }
 // A row as a keyed descriptor: rqSync keeps its node while the signature (everything the row shows) is the same.
-const rqRowDesc = (r, kid) => ({ key: `r:${r.key}`, sig: JSON.stringify([r.state, r.who, r.what, r.app, r.why, rqWhen(r.at), kid || ""]), make: () => rqRowNode(r, kid) });
+const rqRowDesc = (r, kid) => ({ key: `r:${r.key}`, sig: JSON.stringify([r.state, r.who, r.what, r.app, r.why, rqWhen(r.at), kid || "", RQ.mark === r.key]), make: () => rqRowNode(r, kid) });
 // 2 or more failures of one app with the same reason fold into one row; the others stay plain rows.
 function rqFailDescs(rows) {
   const by = new Map(), out = [];
@@ -431,7 +433,8 @@ function rowHold(a) {
 const rqAnchor = () => rowAnchor(rqUi().ls, ".rq-r", "rk");
 // What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).
 function rqDescs(shown) {
-  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…"; return [{ key: "empty", sig: text, make: () => el("div", { class: "list" }, el("div", { class: "empty", text })) }]; }
+  if (!shown.length && RQ.err && !(RQ.rows || []).length) return [{ key: "empty", sig: RQ.err, make: () => el("div", { class: "rq-empty", role: "status" }, el("div", { text: RQ.err }), appRetry(() => rqLoad())) }];   // the load failed: a sentence and 다시 시도
+  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…"; return [{ key: "empty", sig: text, make: () => el("div", { class: "rq-empty", role: "status", text }) }]; }
   const out = [];
   for (const [s, label] of RQ_SECS) {
     const part = shown.filter(r => r.state === s);
@@ -470,12 +473,37 @@ function rqPaint(rows) {
   rqSheetPaint();
 }
 // The nodes of the screen: the sticky head, then the list.
+// 답장 대기 in the right column of 모니터링: the rows of the queue, or the open row's card (wide), redrawn only when an item or the screen's own state changes.
+function rqScreen(qSel, box, tl) {
+  const sig = rqSig();
+  if (sig !== MON.sig || MON.shown !== qSel.key) {
+    const pane = !!(RQ.sheet && RQ.sheet.pane), back = RQ.top != null && !pane, keep = pane ? 0 : back ? RQ.top : MON.shown === qSel.key ? box.scrollTop : 0, anchor = keep > 0 && !back && !pane ? rqAnchor() : null;   // the first row in view stays where it was
+    if (!pane) RQ.top = null;
+    MON.sig = sig; MON.shown = qSel.key;
+    clear($("#mon-head")).append(...monHead(qSel));
+    clear(tl).append(...(pane ? [RQ.sheet.box] : rqNodes()));
+    box.scrollTop = keep;
+    rowHold(anchor);
+    edgeFade(box);
+    rqSheetPaint();
+  }
+  convTitle();
+}
 function rqNodes() { rqPaint(RQ.rows || rqRows()); return [rqUi().hd, rqUi().ls]; }
 
 /* ---- the sheet: ONE sheet for every row, holding the reply card (10-reply-card.js) with the why line on top ---- */
+// A wide window opens the card in the right column in place of the queue (no modal); a phone keeps the sheet. Back (the card's x, the app bar) returns to the queue with the row marked.
+function rqPaneOpen() {
+  RQ.top = $("#mon-timeline").scrollTop;
+  const h = { pane: true, box: el("div", { class: "rq-sheet rq-pane" }), close: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; MON.sig = ""; monSchedule(); } } };
+  RQ.sheet = h; MON.sig = ""; monSchedule();
+}
+const rqBack = () => !!(current === "monitoring" && RQ.sheet && RQ.sheet.pane && (RQ.sheet.close(), true));
 function rqSheetOpen(r) {
   if (RQ.sheet) RQ.sheet.close(false);
   RQ.cur = r.key; RQ.shSig = "";
+  if (current === "monitoring" && !narrowChat()) { RQ.mark = r.key; rqPaneOpen(); rqSheetPaint(r); return; }
+  RQ.mark = "";
   const h = fsOpen({ label: "답장 확인", cls: "mid rq-sheet", onClose: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; } } });
   RQ.sheet = h;
   rqSheetPaint(r);
@@ -500,7 +528,7 @@ const rqXSig = r => [r.x ? [rqFail.get(rqFk(r.x)), rqPress.get(rqFk(r.x))] : nul
 // What the screen shows; it is redrawn only when this changes.
 function rqSig() {
   const rows = (RQ.rows = rqRows());
-  return JSON.stringify([RQ.app, RQ.tab, RQ.edit, RQ.lim, rqSending(), [...RQ.busy], [...RQ.just.keys()], [...RQ.fold], TR.min, RQ.loaded, rows.map(r => [r.key, r.state, r.at, r.who, r.what, r.app, r.why, rqXSig(r)])]);
+  return JSON.stringify([RQ.app, RQ.tab, RQ.edit, RQ.lim, RQ.err, RQ.mark, !!(RQ.sheet && RQ.sheet.pane), rqSending(), [...RQ.busy], [...RQ.just.keys()], [...RQ.fold], TR.min, RQ.loaded, rows.map(r => [r.key, r.state, r.at, r.who, r.what, r.app, r.why, rqXSig(r)])]);
 }
 rqLoad();
 // A press on a waiting draft's button: the card is drawn again at once with the buttons off in place (the pressed one says what is going on), and again

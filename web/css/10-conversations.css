@@ -142,11 +142,12 @@
 
 @media (min-width: 1100px) {
   :root { --cv-w: 240px; }
-  /* 모니터링: 폰과 같은 흐름으로 한 번에 한 층만 서요(목록, 또는 앱). 페이지 폭(.view)을 쓰고, 앱에서 항목을 고르면 그때만 전체 폭의 두 단(.kk.chat-open)이 돼요 */
-  #v-monitoring { display: grid; max-width: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
-  #v-monitoring:not(:has(> .kk.chat-open:not([hidden]))) { width: 100%; max-width: 920px; margin: 0 auto; }
-  #v-monitoring > * { grid-column: 1; }
-  #v-monitoring > .cv-side { grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); padding: var(--sp-2); }
+  /* 모니터링: 채팅과 같은 두 단 (docs/web-app-design.md 앱 틀). 왼쪽은 --frame-list-w의 목록(또는 앱의 패널), 오른쪽은 채팅 내용 상자까지 이어지는 내용이에요 */
+  #v-monitoring { display: grid; width: 100%; max-width: none; column-gap: var(--frame-gap); grid-template-columns: var(--frame-list-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #v-monitoring > * { grid-column: 2; }
+  #v-monitoring > .cv-side { grid-column: 1; grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); padding: var(--sp-2); }
+  #v-monitoring:not(.app-two):not(.kk-on):not(.mx-on) > .cv-side { display: block; }
+  :root:has(#v-monitoring:not([hidden])) { --mbox-r: var(--edge); }   /* the mail column now ends at the frame's right margin, not at a centred page */
   #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 var(--sp-3); }
   #v-monitoring > .chatbox { grid-row: 4; }
   /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */

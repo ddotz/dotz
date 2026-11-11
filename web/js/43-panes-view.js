@@ -59,7 +59,7 @@ function cnvNeed(c) {
 function cnvFoldSync() {
   const c = $("#v-chat");
   if (current !== "chat") return;
-  const want = c.classList.contains("canvas-open") && !narrowChat() && !(PNV.el && !PNV.el.hidden) && !c.matches(".mon-ctx:not(.mon-two)") && c.clientWidth < cnvNeed(c);
+  const want = c.classList.contains("canvas-open") && !narrowChat() && !(PNV.el && !PNV.el.hidden) && c.clientWidth < cnvNeed(c);
   if (want === c.classList.contains("cnv-fold")) return;
   if (!want) { paneListShut(true); $(":scope > .pane-ls", c)?.remove(); }
   c.classList.toggle("cnv-fold", want);

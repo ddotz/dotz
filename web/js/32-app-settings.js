@@ -506,10 +506,37 @@ function asPaint() {
 // The settings screen: a view pushed over the conversation (back button on a phone and on a wide screen) with the status card and every option row.
 // The conversation keeps only the chat; its header's ⋯ button opens this.
 const ASC = { app: "", h: null };
+// 모니터링 on a wide screen: the settings stand in the right column of the app frame (the item's list or panel stays at the left), not in a window. Back, the x and Esc close it.
+function asPaneOpen(onClose) {
+  let pane = $("#as-pane");
+  if (!pane) { pane = el("div", { class: "as-pane", id: "as-pane" }); $("#v-monitoring").append(pane); }
+  const box = el("section", { class: "as-screen as-card", role: "region", "aria-labelledby": "as-scr-t", tabindex: "-1", onkeydown: ev => { if (ev.key === "Escape") { ev.stopPropagation(); h.close(); } } });
+  let ov = null, closed = false;
+  const h = { pane: true, sel: MON.sel, box, ends: [], close() {
+    if (closed) return;
+    closed = true; h.ends.splice(0).forEach(f => f());
+    ovDone(ov); box.remove(); $("#v-monitoring").classList.remove("as-on");
+    onClose();
+  } };
+  ov = ovOpen(() => h.close());
+  clear(pane).append(box);
+  $("#v-monitoring").classList.add("as-on");
+  return h;
+}
+// Called by renderMonitoring and convChrome: the pane goes with its item (another item, the list, another view, a phone width). An item its own settings renamed
+// (a schedule's 내용 is its name) is the same item under a new key: the pane follows it.
+function asPaneSync() {
+  const h = ASC.h;
+  if (!h || !h.pane) return;
+  if (MON.sel && MON.sel !== h.sel && !monItems().some(i => i.key === h.sel)) h.sel = MON.sel;
+  if (current !== "monitoring" || narrowChat() || MON.list || MON.sel !== h.sel) h.close();
+}
+const asBack = () => !!(current === "monitoring" && ASC.h && ASC.h.pane && (ASC.h.close(), true));
 function asScreen(app) {
   if (ASC.h || !app) return;
   asLoad(app);
-  const h = ASC.h = fsOpen({ labelledby: "as-scr-t", cls: "tall as-screen", onClose: () => { if (ASC.h === h) { ASC.h = null; ASC.app = ""; } } });
+  const onClose = () => { if (ASC.h === h) { ASC.h = null; ASC.app = ""; } };
+  const h = ASC.h = current === "monitoring" && !narrowChat() ? asPaneOpen(onClose) : fsOpen({ labelledby: "as-scr-t", cls: "tall as-screen", onClose });
   ASC.app = app;
   if (!asOwn(app)) asFeatLoad(app);
   // The window of a wide screen closes with the ✕ at the right, the one way its sibling sheets have (fsHead); a phone's full screen keeps the back arrow.

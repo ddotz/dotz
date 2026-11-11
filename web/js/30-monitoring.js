@@ -864,6 +864,14 @@ function renderMonitoring() {
   kkMode(kakao, kakao && !MON.list, kakao ? sel.pc : null);
   cmMode(cm, !!cm && !MON.list, cm ? sel.pc : null);
   mailLand(sel); mxPaint(sel);
+  asPaneSync();
+  // The wide home (the list, nothing opened): the item list at the left and the 답장 대기 queue at the right (10-conversations.css, the frame); the address stays 모니터링.
+  const homeQ = MON.list && !narrowChat(), qSel = sel && sel.rq ? sel : homeQ ? rqMonItem(true) : null;
+  $("#v-monitoring").classList.toggle("mon-home", homeQ);
+  $("#v-monitoring").classList.toggle("rq-on", !!qSel);   // the screen's own head is its tabs: no item head above them (the prototype's #queue)
+  if (qSel) { rqScreen(qSel, box, tl); return; }   // 답장 대기: the queue, or the open row's card (30-replies.js)
+  RQ.mark = "";
+  if (RQ.sheet && RQ.sheet.pane) RQ.sheet.close();   // the card of a queue row stays with the queue
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
     $("#v-monitoring").classList.toggle("app-two", !MON.list && !narrowChat() && !paneMonIn());   // wide: the app frame (20-monitoring.css), the rooms or posts are its panel; after mxPaint, which clears it for any item but a mailbox
@@ -874,21 +882,6 @@ function renderMonitoring() {
     return;
   }
   MON.kkHead = "";
-  $("#v-monitoring").classList.toggle("rq-on", !!sel.rq);   // the screen's own head is its tabs: no item head above them (the prototype's #queue)
-  if (sel.rq) {   // 답장 대기: the rows of 30-replies.js, redrawn only when an item or the screen's own state changes
-    const sig = rqSig();
-    if (sig !== MON.sig) {
-      const keep = MON.shown === sel.key ? box.scrollTop : 0, anchor = keep > 0 ? rqAnchor() : null;   // the first row in view stays where it was
-      MON.sig = sig; MON.shown = sel.key;
-      clear($("#mon-head")).append(...monHead(sel));
-      clear(tl).append(...rqNodes());
-      box.scrollTop = keep;
-      rowHold(anchor);
-      edgeFade(box);
-    }
-    convTitle();
-    return;
-  }
   const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.unreplied | 0, sel.conn | 0, sel.mon && !!sel.mon.watch && MON.running.has(sel.mon.watch), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone, n.item, n.item && n.item.key ? MAILS.get(`mail:${n.item.key}`) : null]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded, MON.mailFilter || "all", pqSig(sel), sel.mxk]);
   if (sig !== MON.sig) {
     MON.sig = sig;

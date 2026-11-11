@@ -2,7 +2,7 @@
 // The UI adapts to the workload: with `triageMin` (web.triage_min, default 3) or more waiting cards in one group (an app instance: a mail
 // category, a comment source), the 답장 대기 screen's head offers 빠른 처리 and opening one of those cards opens it here instead of the one-card sheet.
 // One item fills the view (what it answers, the lines above the draft, the draft and its mail, files, rule), the draft text is edited in
-// place, and 보내기 / 고치기 / 건너뛰기 answer it and move on at once: the answer goes out in the background (POST /api/approvals) and the
+// place, and 보내기 / 고치기 / 보내지 않기 answer it and move on at once: the answer goes out in the background (POST /api/approvals) and the
 // gateway sends it itself; each card's progress comes back as approval_send events. 목록 shows every card of the group with its whole draft
 // and a pick per card; 확인한 것 보내기 answers the picked ones together. Nothing is sent that was not picked one by one.
 const TR = { groups: [], min: 3, results: {}, t: 0, h: null, key: "", label: "", items: [], i: 0, list: false, picks: {}, edits: {}, notes: {}, done: {}, org: {}, open: {}, busy: {}, noting: false };
@@ -259,7 +259,7 @@ function trDoneView() {
   return [body, foot];
 }
 
-const TR_PICK = [[1, "보내기"], [2, "고치기"], [3, "건너뛰기"]];
+const TR_PICK = [[1, "보내기"], [2, "고치기"], [3, "보내지 않기"]];
 function trListView() {
   const picked = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim()))).length;
   const body = el("div", { class: "fs-body tr-body tr-list" }, ...TR.items.map((c, i) => {

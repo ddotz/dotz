@@ -80,8 +80,9 @@
 .rq-acts { flex-wrap: wrap; gap: var(--sp-2); }
 /* one row, one height: primary (accent) / secondary (tonal) / text, the same 32px box and --r-ctl corner on every card, never a pill (the prototype's .cf row) */
 .rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 var(--sp-3); border-radius: var(--r-ctl); font: 600 13px/20px var(--font); }
-/* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼) */
-@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } }
+/* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼).
+   The keyboard hint of the quick triage has no keys to name on a touch screen. */
+@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } .tr-keys { display: none; } }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
 
@@ -91,6 +92,12 @@
 /* a wide screen: 빠른 처리 sits at the tabs' right end, not on a row of its own; a phone keeps the rows stacked so the button never moves with the tab counts */
 @media (min-width: 640px) { .rq-hd2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); } .rq-hd2 > .nsc-f { flex: none; max-width: 100%; margin-bottom: 0; } .rq-hd2 > .rq-qm { flex: 1; min-width: 0; margin-block: 0; } .rq-hd2 > .rq-chips { flex: none; } }
 #v-monitoring.rq-on > .cv-head { display: none; }
+/* a queue row's card: in the right column in place of the queue on a wide screen (30-replies.js rqPaneOpen), the row it came from marked as chat marks its open row */
+.rq-r.on { background: var(--row-sel); }
+/* the card fits the column the way the sheet fits the window: its head stays and a long draft scrolls in its body */
+#mon-tl:has(> .rq-pane) { display: flex; flex-direction: column; height: 100%; }
+.rq-pane { --ff-fill: var(--layer); display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: var(--card); }
+.rq-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-align: center; text-wrap: balance; }
 #v-monitoring.rq-on .tl-in { max-width: none; }
 .bm.q-fold .md > :not(:first-child) { display: none; }
 .rq-qm .sp { flex: 1; }
