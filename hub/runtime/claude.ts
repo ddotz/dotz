@@ -25,6 +25,7 @@ import { isNote } from "../i18n.ts";
 import { classifyProviderError } from "../providers.ts";
 import { stripSteerMark } from "../steer-mark.ts";
 import { type Probes, makeProbes } from "./claude-probes.ts";
+import { killAgent, spawnAgent, writeQuietly } from "./agent-proc.ts";
 import { detectBinary } from "./detect.ts";
 import { touchedPath, withTouchedFiles } from "./handover-files.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
@@ -357,12 +358,7 @@ class ClaudeProcess implements AgentProcess {
 		}
 	}
 	private write(frame: Record<string, unknown>): void {
-		try {
-			this.proc.stdin.write(`${JSON.stringify(frame)}\n`);
-			this.proc.stdin.flush();
-		} catch {
-			// the process is gone; `exited` tells the hub
-		}
+		writeQuietly(this.proc.stdin, `${JSON.stringify(frame)}\n`);
 	}
 	private control(subtype: string, kind: "usage" | "interrupt"): void {
 		const id = `${kind}${++this.seq}`;
@@ -391,8 +387,7 @@ class ClaudeProcess implements AgentProcess {
 	// Task workers are always reported (task_* frames).
 	watchSubagents(): void {}
 	kill(force?: boolean): void {
-		if (force) this.proc.kill(9);
-		else this.proc.kill();
+		killAgent(this.proc, force);
 	}
 }
 
@@ -498,11 +493,8 @@ const base: RuntimeAdapter = {
 		// a --agents definition were both ignored by claude 2.1.296), so workers are not pinned to the lane's worker model.
 		// The CLI compacts itself at a token count (100k..1M); keepRecent has no counterpart.
 		const autocompact = o.lane ? Math.min(1_000_000, Math.max(100_000, o.lane.compactAt)) : undefined;
-		const proc = Bun.spawn([CLAUDE, ...args(o, settings, autocompact)], {
+		const proc = spawnAgent([CLAUDE, ...args(o, settings, autocompact)], {
 			cwd: o.cwd,
-			stdin: "pipe",
-			stdout: "pipe",
-			stderr: "pipe",
 			env: { ...process.env, ...o.env },
 		});
 		return new ClaudeProcess(proc, autocompact);

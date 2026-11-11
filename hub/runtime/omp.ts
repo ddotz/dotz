@@ -12,6 +12,7 @@ import { keyedWorker } from "../fallback.ts";
 import { classifyProviderError } from "../providers.ts";
 import { stripSteerMark } from "../steer-mark.ts";
 import { isLater, isSilent } from "../tone.ts";
+import { killAgent, spawnAgent, writeQuietly } from "./agent-proc.ts";
 import { detectBinary } from "./detect.ts";
 import { touchedPath, withTouchedFiles } from "./handover-files.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
@@ -220,6 +221,8 @@ export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEv
 	return out;
 }
 
+export { writeQuietly };
+
 export class OmpProcess implements AgentProcess {
 	private seq = 0;
 	private readonly workerModels = new Map<string, string>();
@@ -257,8 +260,7 @@ export class OmpProcess implements AgentProcess {
 		}
 	}
 	protected write(frame: Record<string, unknown>): void {
-		this.proc.stdin.write(`${JSON.stringify({ id: `${this.idPrefix}${++this.seq}`, ...frame })}\n`);
-		this.proc.stdin.flush();
+		writeQuietly(this.proc.stdin, `${JSON.stringify({ id: `${this.idPrefix}${++this.seq}`, ...frame })}\n`);
 	}
 	send(text: string, mode: SendMode): void {
 		if (mode === "steer") this.write({ type: "steer", message: text });
@@ -289,8 +291,7 @@ export class OmpProcess implements AgentProcess {
 		this.write({ type: "set_subagent_subscription", level: "progress" });
 	}
 	kill(force?: boolean): void {
-		if (force) this.proc.kill(9);
-		else this.proc.kill();
+		killAgent(this.proc, force);
 	}
 }
 
@@ -376,11 +377,8 @@ export const omp: RuntimeAdapter = {
 		// starts on the entry's own model and is switched to the key provider's copy before the first prompt (RPC commands run in order).
 		const key = o.env.DOTZ_KEY_PROVIDER && o.env.DOTZ_KEY_VALUE ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined;
 		const startModel = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
-		const proc = Bun.spawn([OMP, "--mode", "rpc", "--model", startModel, ...mode, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])], {
+		const proc = spawnAgent([OMP, "--mode", "rpc", "--model", startModel, ...mode, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])], {
 			cwd: o.cwd,
-			stdin: "pipe",
-			stdout: "pipe",
-			stderr: "pipe",
 			env: { ...process.env, ...o.env },
 		});
 		const agent = new OmpProcess(proc, o.role === "orchestrator" ? "o" : "h");

@@ -20,13 +20,14 @@ import { PIN_ENV } from "./account-sticky.ts";
 import { withoutApiKeys } from "./apikey-policy.ts";
 import { blockOf, subscriptionAccount } from "./usage-account.ts";
 import { cfg, DATA_DIR, log, TZ } from "./config.ts";
+import { killAgent, spawnAgent, writeQuietly } from "./runtime/agent-proc.ts";
 import { OMO, recordStarted } from "./runtime/omo-hosts.ts";
 
 export type Reply = { text: string; inputTokens: number; outputTokens: number; ms: number; firstTokenMs?: number };
 
 // Tests swap `spawn` for a fake `omo`; nothing else starts a process.
 export const runnerDeps = {
-	spawn: (argv: string[], o: { cwd: string; env: Record<string, string | undefined> }) => Bun.spawn(argv, { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: "ignore" }),
+	spawn: (argv: string[], o: { cwd: string; env: Record<string, string | undefined> }) => spawnAgent(argv, { cwd: o.cwd, env: o.env, stderr: "ignore" }),
 	now: () => Date.now(),
 	// A draft process that has been quiet this long is stopped; the next call starts a fresh one.
 	idleMs: 10 * 60_000,
@@ -224,12 +225,7 @@ class WarmRunner {
 	}
 
 	private write(frame: Json): void {
-		try {
-			this.proc.stdin.write(`${JSON.stringify({ id: `d-${++this.seq}`, ...frame })}\n`);
-			void this.proc.stdin.flush();
-		} catch {
-			// stdin closed: the process is exiting and `exited` fails the pending call
-		}
+		writeQuietly(this.proc.stdin, `${JSON.stringify({ id: `d-${++this.seq}`, ...frame })}\n`);
 	}
 
 	private armIdle(): void {
@@ -250,7 +246,7 @@ class WarmRunner {
 	killNow(): void {
 		this.stopped = true;
 		try {
-			this.proc.kill();
+			killAgent(this.proc);
 		} catch {}
 	}
 
@@ -261,7 +257,7 @@ class WarmRunner {
 		this.pending?.fail(new Error("warm model process stopped"));
 		this.pending = undefined;
 		try {
-			this.proc.kill();
+			killAgent(this.proc);
 		} catch {}
 	}
 

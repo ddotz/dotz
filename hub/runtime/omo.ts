@@ -12,6 +12,7 @@ import { chainAfter, fallbackChain, lanesMaxWorkers, log, orchestratorModel, par
 import { keyedWorker } from "../fallback.ts";
 import { workersOf } from "../lanegates.ts";
 import { classifyProviderError } from "../providers.ts";
+import { spawnAgent } from "./agent-proc.ts";
 import { detectBinary } from "./detect.ts";
 import { closeHostsOf, OMO, recordStarted, TELEMETRY_OFF_ENV } from "./omo-hosts.ts";
 import { makeOmoProbes } from "./omo-probes.ts";
@@ -320,7 +321,7 @@ export const omo: RuntimeAdapter = {
 		telemetryOff();
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
-		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...TELEMETRY_OFF_ENV, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
+		const proc = spawnAgent(omoArgs(o), { cwd: o.cwd, env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...TELEMETRY_OFF_ENV, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);

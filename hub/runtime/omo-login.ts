@@ -11,6 +11,7 @@
 // --no-session: nothing is saved as a session; memory and the question tool are off as for every dotz process (omo.ts).
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { writeQuietly } from "./agent-proc.ts";
 import { claudeShimEnv } from "./claude-cli-shim.ts";
 import { OMO, TELEMETRY_OFF_ENV } from "./omo-hosts.ts";
 
@@ -63,12 +64,7 @@ export class OmoRpc {
 	}
 
 	send(frame: RpcFrame): void {
-		try {
-			this.proc.stdin.write(`${JSON.stringify(frame)}\n`);
-			void this.proc.stdin.flush();
-		} catch {
-			// stdin closed: the process is exiting
-		}
+		writeQuietly(this.proc.stdin, `${JSON.stringify(frame)}\n`);
 	}
 
 	// Sends a command and resolves with its response frame (undefined on timeout or exit).

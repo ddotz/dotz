@@ -132,7 +132,8 @@ test("spawn arguments: model, effort, fallback, settings with the deny hook, res
 		lane: { name: "x", dir, workerModel: "anthropic/claude-haiku-5-5", compactAt: 300_000, keepRecent: 30_000 },
 	});
 	const arg = (flag: string) => script.cmd[script.cmd.indexOf(flag) + 1];
-	expect(script.cmd.slice(1, 4)).toEqual(["-p", "--input-format", "stream-json"]);
+	expect(script.cmd.slice(0, 3)).toEqual(["/usr/bin/nice", "-n", "10"]);
+	expect(script.cmd.slice(4, 7)).toEqual(["-p", "--input-format", "stream-json"]);
 	expect(arg("--model")).toBe("claude-opus-4-5");
 	expect(arg("--effort")).toBe("xhigh");
 	expect(arg("--fallback-model")).toBe("claude-sonnet-4-5,haiku"); // the openai model cannot run here
