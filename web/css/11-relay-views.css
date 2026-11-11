@@ -1,5 +1,7 @@
 /* A messenger-only computer's 홈 / 프로젝트 / 모니터링 / 설정, drawn read-only from its last snapshot (js/44-relay-views.js). Rows are the screens' own (.hr, .pl-row, .li). */
-.view.rv-on > :not(.rv) { display: none; }
+/* !important: the screens' own id rules (#v-monitoring > .cv-side, #home-now) would otherwise draw this computer's data under the snapshot */
+.view.rv-on > :not(.rv) { display: none !important; }
+#v-monitoring.rv-on > .rv { display: block !important; grid-column: 1 / -1; grid-row: 1 / -1; }   /* its list mode (.cv-listing) hides every child but the list */
 .rv { min-width: 0; }
 .view.fill.rv-on > .rv { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: var(--sp-6); }
 .rv-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; margin: 0 var(--sp-1) var(--sp-2); }

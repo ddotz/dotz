@@ -62,6 +62,8 @@ const show = async (name: string) => {
 	await waitFor(`current === ${JSON.stringify(name)} && document.querySelector("#v-${name} > .rv")`);
 	return ev<string>(`document.querySelector("#v-${name} > .rv").textContent`);
 };
+// This computer's own markup of the screen stays in place but must not be drawn under the snapshot.
+const ownHidden = (name: string) => ev<boolean>(`[...document.querySelectorAll("#v-${name} > :not(.rv)")].every(n => getComputedStyle(n).display === "none") && getComputedStyle(document.querySelector("#v-${name} > .rv")).display !== "none"`);
 const buttons = (name: string) => ev<string[]>(`[...document.querySelectorAll("#v-${name} > .rv button")].map(b => b.dataset.k)`);
 
 describe("a relayed computer chosen, read-only screens", () => {
@@ -72,6 +74,7 @@ describe("a relayed computer chosen, read-only screens", () => {
 		for (const s of ["마지막 갱신", "빌드 세션", "문서 정리", "배포가 끝났어요", "읽기 전용이에요"]) expect(text).toContain(s);
 		expect(await ev(`document.querySelector("#brand-name").textContent`)).toBe("work");
 		expect(await buttons("home")).toEqual(["relay-chat"]);
+		expect(await ownHidden("home")).toBe(true);
 	});
 
 	test("프로젝트 lists its projects, not this computer's, without create or edit controls", async () => {
@@ -92,6 +95,7 @@ describe("a relayed computer chosen, read-only screens", () => {
 		expect(text).toContain("문제 없어요");
 		expect(text).not.toContain(OWN_MON);
 		expect(await buttons("monitoring")).toEqual(["relay-chat"]);
+		expect(await ownHidden("monitoring")).toBe(true);
 	});
 
 	test("설정 gives way to a note, with the way back to this computer's settings", async () => {
