@@ -35,7 +35,8 @@
 #kk-add .kk-pd-b { padding: var(--sp-1) var(--sp-6) var(--sp-6); }
 .kk-search + .kk-pl { margin-top: var(--sp-3); }
 /* in the sheet the check says "watched"; the grey fill is the selected row of a list, so the sheet's rows keep none */
-#kk-add .kk-pr.on, #kk-add .kk-pr.on:hover { background: none; }
+#kk-add .kk-pr.on { background: none; }
+@media (hover: hover) { #kk-add .kk-pr.on:hover { background: none; } }
 .kk-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .kk-ck { flex: none; width: 18px; height: 18px; color: var(--accent); }
 @media (pointer: coarse), (max-width: 639px) { #kk-add .kk-search { height: 40px; font-size: 16px; } }

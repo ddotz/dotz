@@ -42,7 +42,7 @@ type Box = { l: number; r: number };
 const edges = async (view: InstanceType<typeof Bun.WebView>, sels: string[]) =>
 	JSON.parse(await view.evaluate(`JSON.stringify(${JSON.stringify(sels)}.flatMap(s => [...document.querySelectorAll(s)].filter(e => e.getClientRects().length).map(e => { const r = e.getBoundingClientRect(); return { s, l: r.left, r: r.right }; })))`) as string) as (Box & { s: string })[];
 
-describe.each([[412, 844], [1280, 800]])("모니터링 한 열 at %ipx", (width, height) => {
+describe.each([[412, 844], [1280, 800]])("모니터링 앱 칸 at %ipx", (width, height) => {
 	const view = new Bun.WebView({ width, height });
 	afterAll(() => view.close());
 	const open = async (key: string, ready: string) => {
@@ -54,16 +54,21 @@ describe.each([[412, 844], [1280, 800]])("모니터링 한 열 at %ipx", (width,
 	const shot = async (name: string) => { if (SHOTS) await Bun.write(join(SHOTS, `${name}-${width}.png`), await view.screenshot({ format: "png" })); };
 	const headShown = width >= 1100;
 
-	test("카카오톡: 머리, 감시 상태, 대화방 카드가 한 폭이고 제목과 + 추가도 같은 끝에 서요", async () => {
+	// The rooms are the app's panel (the left column on a wide window, the one column on a phone): its state and room cards share the panel's width and its
+	// title and + 추가 its edges. On a wide window the head card is the content column's, to the right of the panel (the boxes against 채팅: kakao-comments-two-pane-web).
+	test("카카오톡: 감시 상태와 대화방 카드가 방 목록 칸과 한 폭이고 제목과 + 추가도 같은 끝에 서요, 넓은 창의 머리는 그 오른쪽 칸에", async () => {
 		await open("i:kakao", `document.querySelector("#kk-rooms .kk-own") && document.querySelector("#kk-rooms .kk-watch .kk-row")${headShown ? ` && document.querySelector("#mon-head .mon-hdwrap")` : ""}`);
 		await shot("kakao");
-		const cards = await edges(view, ["#mon-head .mon-hdwrap", "#kk-rooms .kk-own", "#kk-rooms .kk-watch"]);
-		expect(cards.length).toBe(headShown ? 3 : 2);
+		const cards = await edges(view, ["#kk-rooms", "#kk-rooms .kk-own", "#kk-rooms .kk-watch"]);
+		expect(cards.length).toBe(3);
 		const [one] = cards;
 		for (const c of cards) expect({ s: c.s, l: c.l, r: c.r }).toEqual({ s: c.s, l: one.l, r: one.r });
 		const [title] = await edges(view, ["#kk-rooms .kk-views .mr-f"]), [add] = await edges(view, ["#kk-add-btn"]);
 		expect(title.l).toBe(one.l);
 		expect(add.r).toBe(one.r);
+		const head = await edges(view, ["#mon-head .mon-hdwrap"]);
+		expect(head.length).toBe(headShown ? 1 : 0);
+		if (headShown) expect(head[0].l).toBeGreaterThan(one.r);
 	});
 
 	test("카카오톡: 보기 알약이 지켜보는 방을 거르고, 빈 보기는 그렇다고 말해요", async () => {
