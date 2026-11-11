@@ -151,14 +151,17 @@ function lineOk(line: string, key: SectionKey, k: Known): boolean {
 }
 
 /** The model's reply cut down to the lines that may stay: a section is found by its heading or, for a heading the writer made up, by its place. */
-export function validate(reply: string, known: Known): { sections: Section[]; dropped: number } {
+export function validate(reply: string, known: Known): { sections: Section[]; dropped: number; description: string } {
 	const by = new Map<SectionKey, string[]>();
 	let current: SectionKey | undefined;
+	let said: string | undefined;
 	let seen = 0;
 	let dropped = 0;
 	for (const raw of reply.split("\n")) {
 		const line = raw.trim();
-		if (line.startsWith("#")) {
+		if (said === undefined && /^description:/i.test(line)) {
+			said = line.replace(/^description:\s*/i, "");
+		} else if (line.startsWith("#")) {
 			current = headingKey(line) ?? SECTION_KEYS[seen];
 			seen++;
 		} else if (line.startsWith("- ")) {
@@ -172,17 +175,27 @@ export function validate(reply: string, known: Known): { sections: Section[]; dr
 		const lines = (by.get(key) ?? []).slice(0, cap);
 		return lines.length ? [{ key, lines }] : [];
 	});
-	return { sections, dropped };
+	return { sections, dropped, description: dayDescription(said, sections) };
 }
 
-export type NoteMeta = { day: string; start: number; end: number; writer: string };
+const plain = (s: string): string => s.replace(/\s+/g, " ").trim();
+const bare = (line: string): string => line.replace(/^- /, "").replace(/\s*\(src: [^)]*\)$/, "");
+
+/** The description of the day: the writer's sentence, unless it is empty or repeats a note line word for word; then the counts per section, built from the note. */
+export function dayDescription(said: string | undefined, sections: readonly Section[]): string {
+	const own = plain(said ?? "");
+	const copy = sections.some(s => s.lines.some(l => plain(bare(l)).toLowerCase() === own.toLowerCase() || plain(l).toLowerCase() === own.toLowerCase()));
+	if (own && !copy) return own;
+	return sections.filter(s => s.lines.length).map(s => `${msg().dayNote.headings[s.key]} ${s.lines.length}`).join(", ");
+}
+
+export type NoteMeta = { day: string; start: number; end: number; writer: string; description?: string };
 
 /** The file text: front matter and the sections in design order. Over NOTE_MAX_CHARS whole lines go, from the last section upward. "" when no line is left. */
 export function buildNote(meta: NoteMeta, sections: readonly Section[]): string {
 	const keep = sections.map(s => ({ key: s.key, lines: [...s.lines] }));
 	const render = (): string => {
-		const first = keep.find(s => s.lines.length)?.lines[0]?.replace(/^- /, "").replace(/\s*\(src: [^)]*\)$/, "") ?? "";
-		const head = ["---", `description: ${msg().dayNote.description(meta.day, first).replace(/\s+/g, " ").slice(0, 160)}`, `day: ${meta.day}`, `window: ${new Date(meta.start).toISOString()}/${new Date(meta.end).toISOString()}`, `writer: ${meta.writer}`, "---"];
+		const head = ["---", `description: ${msg().dayNote.description(meta.day, meta.description?.trim() || dayDescription(undefined, keep)).replace(/\s+/g, " ").slice(0, 160)}`, `day: ${meta.day}`, `window: ${new Date(meta.start).toISOString()}/${new Date(meta.end).toISOString()}`, `writer: ${meta.writer}`, "---"];
 		const body = keep.filter(s => s.lines.length).map(s => `\n## ${msg().dayNote.headings[s.key]}\n${s.lines.join("\n")}`);
 		return `${head.join("\n")}\n${body.join("\n")}\n`;
 	};
@@ -199,7 +212,7 @@ export function buildNote(meta: NoteMeta, sections: readonly Section[]): string 
 export const systemPrompt = (language: string): string =>
 	[
 		"You write one day note: a short memory file of one day of work between an owner and an AI assistant. A reader finds it later by search, so every line must stand alone, with the names and ids needed to understand it.",
-		"Use only the input and do not guess. Output only sections, each starting with a line `## <key>`; the keys are: open, done, decided, know, lessons.",
+		"Use only the input and do not guess. Output a first line `description: <ONE sentence about the day as a whole, in your own words; never a copy of a line below>`, then only sections, each starting with a line `## <key>`; the keys are: open, done, decided, know, lessons.",
 		"open: requests and tasks still unfinished, at most 8; keep the open items of the previous note that are still open. done: what was finished. decided: what the owner decided or corrected; quote the owner's own words in at most 80 characters. know: facts the next day needs. lessons: at most 3 candidates for a rule to learn.",
 		`Every line is \`- \`, then ONE sentence of at most ${LINE_MAX_CHARS} characters, then \` (src: <ref>)\`. A ref is copied from a bracket in the input: \`<room> <message id>\`, \`session <id8>#L<line>\`, \`task <id>\` or \`commit <sha>\`. A line without a ref copied from the input is dropped. Leave out a section that has no line. No other text.`,
 		`Write the sentences in ${language}.`,
@@ -335,10 +348,10 @@ export async function attempt(d: RunDeps, model: () => Promise<Chosen>): Promise
 	} catch (e) {
 		return { kind: "retry", reason: (e as Error).message };
 	}
-	const { sections } = validate(reply.text, input.known);
+	const { sections, description } = validate(reply.text, input.known);
 	const secrets = d.secrets();
 	const masked = sections.map(s => ({ key: s.key, lines: s.lines.map(l => maskSecrets(l, secrets).text) }));
-	const text = buildNote({ day: w.day, start: w.start, end: w.end, writer: chosen.label }, masked);
+	const text = buildNote({ day: w.day, start: w.start, end: w.end, writer: chosen.label, description: maskSecrets(description, secrets).text }, masked);
 	if (!text) return { kind: "skipped", reason: `${w.day}: no valid line in the reply` };
 	if (existsSync(file)) return { kind: "skipped", reason: `${w.day}: note exists` };
 	mkdirSync(d.dir, { recursive: true });

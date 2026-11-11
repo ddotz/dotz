@@ -102,6 +102,18 @@ describe("validate", () => {
 		expect(r.dropped).toBe(5);
 	});
 
+	test("a description that is empty or repeats a note line is replaced by the counts per section, built by code", () => {
+		const body = "## open\n- first open item (src: web m1)\n- second open item (src: web m1)\n## done\n- good line (src: web m1)";
+		const own = "One fix went out and two questions are still open.";
+		expect(validate(`description: ${own}\n${body}`, known).description).toBe(own);
+		for (const said of ["first open item", "- first open item (src: web m1)", "FIRST open  item", ""]) {
+			const d = validate(`description: ${said}\n${body}`, known).description;
+			expect(d).not.toBe(said);
+			expect(d).toMatch(/2.*1/);
+		}
+		expect(validate(body, known).description).toMatch(/2.*1/);
+	});
+
 	test("a decided line needs a message id and owner words of at most 80 characters", () => {
 		const r = validate(`## decided\n- the owner said "keep it" (src: web m1)\n- the owner said "${"y".repeat(81)}" (src: web m1)\n- decided with no message (src: task t1)`, known);
 		expect(r.sections[0]!.lines).toEqual(['- the owner said "keep it" (src: web m1)']);
@@ -140,6 +152,14 @@ describe("buildNote", () => {
 		expect(note.sections.find(s => s.key === "lessons")).toBeUndefined();
 		expect(note.sections.find(s => s.key === "open")!.lines).toHaveLength(8);
 		expect(note.sections.find(s => s.key === "done")!.lines.length).toBeGreaterThan(0);
+	});
+
+	test("the front matter carries the given description, else the counts per section", () => {
+		const description = (text: string) => /^description: (.*)$/m.exec(text)![1]!;
+		const sections = [{ key: "open" as const, lines: ["- o (src: web m1)", "- p (src: web m1)"] }];
+		expect(description(buildNote({ ...meta, description: "A quiet day." }, sections))).toContain("A quiet day.");
+		expect(description(buildNote(meta, sections))).toMatch(/2/);
+		expect(description(buildNote(meta, sections))).not.toContain("o (src");
 	});
 
 	test("no line, no file text", () => {
