@@ -76,13 +76,32 @@ Quiet screen: nothing moves without a cause, nothing loops or decorates. Causes 
 
 - something arrives (decision card, answer, sheet): `motionIn(el)` rise 8px + fade; new row at the top of a list: `motionIn(el, "top")`, picked with `freshKeys(store, keys)` so a first paint never animates
 - the same thing changes state in place (보내기 -> 보냈어요, a task finishing): `motionSwap(el, change)`
-- something leaves (sheet, dismissed row): `await motionOut(el)`, then remove it
+- something leaves that the owner closed (sheet, menu, toast): `await motionOut(el)`, then remove it
+- a result the hub confirmed (approve, send, drop, answer, dismiss, delete, move): see Result motion below
 - a count changes: `rollCount(el, n)` rolls only the changed digit
 - a split pane is dragged (`web/js/43-panes-motion.js`): the ghost lifts in (`--m-fast`), the drop zone glides (`--m-fast`, a script-placed box like the board's `.bph`),
   a new pane grows its flex share from 0 (`--m-base`, its text reflows, nothing is stretched), a replaced pane is `motionSwap`, a cancel sends the ghost back (`--m-base`)
 
 `prefers-reduced-motion: reduce` turns every transition and animation off (pseudo-elements included) and makes each helper an
 instant change. The product has no motion on/off setting: the system setting is the only switch.
+
+### Result motion
+
+The answer to "did it really go?": a card or row leaves only after the hub said yes. Four motions, three helpers (01-motion.js):
+
+| Motion | When | Helper |
+|---|---|---|
+| press, then wait | the tap that posts: the button says the screen's existing pending text, keeps its width, is disabled and `aria-busy` | `undo = pressWait(btn, label?)` |
+| fold away | after the hub's OK only: the card fades (`--m-fast`) where it stands | `await motionGone(el)` |
+| rows rise | same moment: what was below glides into place (`--m-base`, FLIP on transform, layout read once); a rounded list box keeps its height and wipes its bottom edge with a clip-path on the same curve | inside `motionGone` |
+| failure in place | the hub refused or the line dropped: no motion; the card stays, `undo()` gives the button back, the reason is the screen's existing failure line (`role=alert`) or the failure toast | `undo()` + existing failure |
+
+- Order on success: change the local data first (so no redraw can draw the row again), then `motionGone(row)`. A list drawn as a whole calls `if (motionAfter(box, () => paint())) return;` first: a redraw asked for while a row leaves runs once, after it is gone.
+- The rows that glide are `inert` until they stand still (at most `--m-base`, also with reduced motion), so a second tap on the same spot never presses the next card's button. Everything else stays live.
+- Focus inside the leaving card goes to the card that took its place (else the one above, else the list). The leaving card is `aria-hidden` at once; the result is read by the existing toast (`role=status`) or failure line.
+- `motionGone(el, { keep: true })` hides a box that is used again (the decision dock) instead of removing it; `motionStay(el)` stops that leave when the box is needed again. `{ with: [...] }` adds elements that move but are not after it.
+- It fires `motion-gone` on document (`detail.el`) when the element is out of the DOM; tests wait on that, never on time.
+- Not for: entrances, hover, press-to-grow, tab or view changes, anything whose result does not come from the hub.
 
 ## Per-form spec
 
