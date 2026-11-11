@@ -18,9 +18,14 @@ const stamp = ["style.css", "app.js", "js/stageshow.js"]
 const phrases = (s: string, sep: string) => s.split("|").map((p) => `<span class="ph">${esc(p)}</span>`).join(sep);
 const lines = (s: string, sep: string) => s.split("||").map((l) => `<span class="ln">${phrases(l, sep)}</span>`).join(sep);
 
+// In English and Spanish a short word ("It", "a", "to", "y") is tied to the word after it with a no-break space,
+// so a line never ends on it ("...own computer. It / reads new mail"). Only plain text goes through this, never raw HTML.
+const glue = (s: string) => s.replace(/(^|[\s("“¿¡])([\p{L}]{1,3})\s+(?=\S)/gu, "$1$2\u00a0");
+
 const render = (lang: string) => {
   const c = copy[lang];
   const sep = /^(ja|zh)/.test(c.htmlLang) ? "" : " ";
+  const text = (s: string) => (/^(en|es)/.test(c.htmlLang) ? glue(esc(s)) : esc(s));
   const others = langs.filter((l) => l !== lang);
   const vars: Record<string, string> = {
     ...c,
@@ -37,7 +42,7 @@ const render = (lang: string) => {
   return template
     .replace(/\{\{#(\w+)\}\}([\s\S]*?)\{\{\/\1\}\}\n?/g, (_, k, body) => (vars[k] ? body : ""))
     .replace(/\{\{\{(\w+)\}\}\}/g, (_, k) => get(vars, k))
-    .replace(/\{\{(\w+)\}\}/g, (_, k) => (raw.has(k) ? get(vars, k) : esc(get(vars, k))));
+    .replace(/\{\{(\w+)\}\}/g, (_, k) => (raw.has(k) ? get(vars, k) : text(get(vars, k))));
 };
 
 const get = (vars: Record<string, string>, k: string) => {
