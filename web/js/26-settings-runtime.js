@@ -1,8 +1,8 @@
 /* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */
 let RT = null, rtLive = null;
 const RT_ICON = { omp: "term", claude: "spark", codex: "code", omo: "braces" };
-const RT_ROLE = { orchestrator: "어시스턴트", lanes: "세션" };
-const RT_RESULT = { ok: ["통과", "ok"], adapted: ["대체", "pri"], disabled: ["끔", ""], unsupported: ["미지원", "warn"], fail: ["실패", "err"] };
+const RT_ROLE = { orchestrator: TX("common.assistant"), lanes: TX("common.session") };
+const RT_RESULT = { ok: [TX("project.res.passed"), "ok"], adapted: [TX("connect.rt.adapted"), "pri"], disabled: [TX("connect.rt.disabled"), ""], unsupported: [TX("connect.rt.unsupported"), "warn"], fail: [TX("home.sys.failed"), "err"] };
 async function loadRuntimes(refresh) {
   try { RT = await api(`/api/runtimes${refresh ? "?refresh=1" : ""}`); } catch { return; }
   if (current === "settings" || current === "runtime") renderSettings();
@@ -11,15 +11,15 @@ function rtSection() {
   if (!RT) return [];
   // Only the running harness is listed (two rows when the assistant and the sessions run on different ones); tapping a row opens the
   // shared menu with the other installed harnesses, and picking one starts the existing compatibility-check + switch flow.
-  const others = RT.runtimes.filter(r => r.installed).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", r.roles.length ? "현재 쓰는 중" : ""].filter(Boolean).join(" · ") || undefined }));
+  const others = RT.runtimes.filter(r => r.installed).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", r.roles.length ? TX("connect.rt.current") : ""].filter(Boolean).join(" · ") || undefined }));
   const rows = RT.runtimes.filter(r => r.roles.length > 0).map(r => {
-    const sub = [r.version ? `v${r.version}` : "", r.roles.length === 2 ? "사용 중" : `${r.roles.map(k => RT_ROLE[k]).join("·")} 사용 중`].filter(Boolean).join(" · ");
-    const b = el("button", { class: "li tap", type: "button", "data-runtime": r.id, "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `작업 프로그램: ${r.label}. 눌러서 바꾸기` },
+    const sub = [r.version ? `v${r.version}` : "", r.roles.length === 2 ? TX("settings.fb.in_use") : TX("settings.upd.roles_in_use", { roles: r.roles.map(k => RT_ROLE[k]).join("·") })].filter(Boolean).join(" · ");
+    const b = el("button", { class: "li tap", type: "button", "data-runtime": r.id, "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": TX("connect.rt.row_aria", { name: r.label }) },
       el("span", { class: "lead" }, icon(RT_ICON[r.id] || "harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: r.label }), el("div", { class: "sup", text: sub })), icon("drop"));
     b.addEventListener("click", () => showMenu(b, others.filter(o => o.value !== r.id), { onPick: id => rtFlow(RT.runtimes.find(x => x.id === id)) }));
     return b;
   });
-  return [el("div", { class: "sec", text: "작업 프로그램" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요." })];
+  return [el("div", { class: "sec", text: TX("settings.page.runtime") }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: TX("settings.upd.rt_note") })];
 }
 function rtBadge(it) {
   const [label, tone] = RT_RESULT[it.result] || [it.result, ""];
@@ -29,15 +29,15 @@ function rtReportView(r, report) {
   const core = report.items.filter(i => i.core && (i.result === "fail" || i.result === "unsupported"));
   const changed = report.items.filter(i => i.result === "adapted" || i.result === "disabled").length;
   const stale = !!(r.version && report.version !== r.version);
-  const sum = !r.hasAdapter ? "dotz가 아직 지원하지 않아서 바꿀 수 없어요."
-    : report.verdict === "blocked" ? `핵심 항목이 통과하지 못해서 바꿀 수 없어요: ${core.map(i => i.label).join(", ")}`
-    : stale ? `검사한 뒤 버전이 바뀌었어요 (v${report.version || "?"} → v${r.version}). 다시 검사해 주세요.`
-    : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 게이트웨이가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
-  const meta = `${new Date(report.at).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}${report.version ? ` · v${report.version}` : ""}`;
+  const sum = !r.hasAdapter ? TX("connect.rt.no_adapter")
+    : report.verdict === "blocked" ? TX("connect.rt.blocked", { list: core.map(i => i.label).join(", ") })
+    : stale ? TX("connect.rt.stale", { from: report.version || "?", to: r.version })
+    : report.verdict === "adjusted" ? TX("connect.rt.adjusted", { n: changed }) : TX("connect.rt.all_ok");
+  const meta = `${new Date(report.at).toLocaleString(TX_LOCALE, { dateStyle: "short", timeStyle: "short" })}${report.version ? ` · v${report.version}` : ""}`;
   return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:var(--sp-2)" },
-    el("p", { text: sum }), el("div", { class: "note", text: `검사 ${meta}` }),
+    el("p", { text: sum }), el("div", { class: "note", text: TX("connect.rt.checked", { meta }) }),
     el("div", { class: "list rt-rows" }, ...report.items.map(i => el("div", { class: "rt-row" },
-      el("div", { class: "top" }, el("span", { class: "nm", title: i.label, text: i.label }), i.core ? el("span", { class: "tag", text: "핵심" }) : null, el("span", { class: "sp" }), rtBadge(i)),
+      el("div", { class: "top" }, el("span", { class: "nm", title: i.label, text: i.label }), i.core ? el("span", { class: "tag", text: TX("connect.rt.core") }) : null, el("span", { class: "sp" }), rtBadge(i)),
       i.note ? el("div", { class: "sup", text: i.note }) : null))));
 }
 function rtFlow(r) {
@@ -45,7 +45,7 @@ function rtFlow(r) {
   let report = null, st = null, timer = 0, checking = false;
   const box = el("div", { style: "display:flex;flex-direction:column;gap:var(--sp-3)" });
   const err = usErr();
-  const d = dialog({ classic: true, title: `${r.label}로 바꾸기`, body: [box, err], wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
+  const d = dialog({ classic: true, title: TX("connect.rt.switch_to", { name: r.label }), body: [box, err], wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
   const usable = () => r.hasAdapter && (r.id === "omp" || (r.id === "omo" && r.installed !== false) || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
   async function pull() {
     try { const x = await api(`/api/runtimes/${r.id}`); report = x.report; st = x.state; } catch { return; }
@@ -53,13 +53,13 @@ function rtFlow(r) {
     paint();
   }
   // The two targets are separate on/off choices (switch rows), not one either/or pick; 바꾸기 needs at least one on.
-  const roleBar = () => el("div", { class: "col" }, el("div", { class: "sup", text: "적용 대상" }),
+  const roleBar = () => el("div", { class: "col" }, el("div", { class: "sup", text: TX("connect.rt.applies") }),
     el("div", { class: "list" }, ...Object.entries(RT_ROLE).map(([k, v]) => {
       const flip = () => { roles.has(k) ? roles.delete(k) : roles.add(k); err.textContent = ""; paint(); };
       return el("div", { class: "li tap", "data-role": k, onclick: flip }, el("span", { class: "tx" }, el("div", { class: "hd", text: v })),
         liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(roles.has(k)), "aria-label": v, onclick: ev => { ev.stopPropagation(); flip(); } })));
     })),
-    roles.size ? null : el("div", { class: "sup", text: "하나는 켜 두어야 해요." }));
+    roles.size ? null : el("div", { class: "sup", text: TX("connect.rt.need_one") }));
   async function check() {
     try { await api(`/api/runtimes/${r.id}/verify`, "POST", { real: true }); } catch (e) { toast(e.message, true); return; }
     checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(pull, 1000); paint();
@@ -68,15 +68,15 @@ function rtFlow(r) {
     clear(box);
     const running = checking || (st && st.running);
     if (r.id !== "omp") {
-      if (running) box.append(el("div", {}, el("p", { text: `작동을 검사하는 중이에요${st && st.current ? ` · ${st.current}` : ""}` }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? `${st.done}/${st.total} 항목` : "시작하는 중…" })));
+      if (running) box.append(el("div", {}, el("p", { text: [TX("connect.rt.checking"), st && st.current].filter(Boolean).join(" · ") }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? TX("connect.rt.progress", { done: st.done, total: st.total }) : TX("connect.rt.starting") })));
       else if (report) box.append(rtReportView(r, report));
-      else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: "OmO는 기본 작업 프로그램이라서 검사 없이 쓸 수 있어요." }));
-      else box.append(el("p", { text: r.hasAdapter ? "바꾸기 전에 잘 작동하는지 검사해요. 짧은 작업을 실제로 돌려 보기 때문에 1~2분쯤 걸릴 수 있어요." : "dotz가 아직 지원하지 않아서 바꿀 수 없어요. 작동 검사를 하면 어떤 항목이 막히는지 볼 수 있어요." }));
-    } else box.append(el("p", { text: "omp는 선택해서 쓰는 작업 프로그램이에요. 처음에 쓰던 것이라 검사 없이 바꿀 수 있어요." }));
+      else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: TX("connect.rt.omo_note") }));
+      else box.append(el("p", { text: r.hasAdapter ? TX("connect.rt.check_note") : TX("connect.rt.no_adapter_check") }));
+    } else box.append(el("p", { text: TX("connect.rt.omp_note") }));
     if (r.hasAdapter) box.append(roleBar());
-    const acts = [{ label: "취소", onclick: c => c() }];
-    if (r.id !== "omp" && !running) acts.push({ label: report ? "다시 검사" : "작동 검사", kind: report ? "text" : "tonal", onclick: () => check() });
-    acts.push({ label: "바꾸기", kind: "pri", disabled: running || !usable() || !roles.size, onclick: (c, btn) => usRun(btn, err, async () => {
+    const acts = [{ label: TX("common.cancel"), onclick: c => c() }];
+    if (r.id !== "omp" && !running) acts.push({ label: report ? TX("connect.rt.recheck") : TX("connect.rt.run_check"), kind: report ? "text" : "tonal", onclick: () => check() });
+    acts.push({ label: TX("connect.rt.switch"), kind: "pri", disabled: running || !usable() || !roles.size, onclick: (c, btn) => usRun(btn, err, async () => {
       try { const res = await api(`/api/runtimes/${r.id}/use`, "POST", { roles: [...roles] }); toast(res.applies); c(); }
       catch (e) { await pull(); throw e; } }) });
     d.setActions(acts);

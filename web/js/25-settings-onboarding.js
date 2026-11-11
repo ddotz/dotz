@@ -8,7 +8,7 @@ const OB_AUTO_MAX = 1;
 const obKeyOk = key => key === "web-access" || key === "discord" || key === "jandi" || key === "slack" || key === "telegram";
 const obVisible = key => key === "web-access" ? current === "webaccess" : current === key;
 const OB_TONE = { running: "pri", waiting: "warn", done: "ok", failed: "err" };
-const obLine = v => v.state === "waiting" ? "내가 할 일이 하나 남았어요." : v.state === "running" ? "자동으로 연결하는 중이에요." : v.state === "done" ? "연결했어요." : v.state === "failed" ? "연결하지 못했어요." : "아직 시작하지 않았어요.";
+const obLine = v => v.state === "waiting" ? TX("connect.onb.waiting") : v.state === "running" ? TX("connect.onb.running") : v.state === "done" ? TX("connect.onb.done") : v.state === "failed" ? TX("connect.onb.failed") : TX("connect.onb.idle");
 function obPaint(key) {
   if (key === "web-access") { if (current === "webaccess") renderWebAccess(); return; }
   if (current !== key) return;
@@ -78,7 +78,7 @@ async function obStart(key) {
   try {
     await busy(null, async () => {
       try { obApply(key, await api(`/api/onboarding/${enc(key)}/start`, "POST")); }
-      catch (e) { throw new Error(`연결을 시작하지 못했어요 · ${e.message}. 잠시 뒤에 다시 눌러 주세요`); }
+      catch (e) { throw new Error(TX("connect.onb.start_failed", { error: e.message })); }
     });
   } finally { OB_WAIT.delete(key); OB_PRESSED.delete(key); obPaint(key); }
 }
@@ -104,7 +104,7 @@ function obPoll(key) {
 const obSection = (key, live) => {
   const s = OB[key] && OB[key].state;
   if (!OB_WAIT.has(key) && (!s || s === "idle")) return [];   // nothing started: the connect row's button is the way in, an empty panel only says so again
-  return live && s !== "running" && s !== "waiting" && s !== "failed" ? [] : [el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(key)];
+  return live && s !== "running" && s !== "waiting" && s !== "failed" ? [] : [el("div", { class: "sec", text: TX("connect.onb.title") }), onboardingPanel(key)];
 };
 // The panel: state, current step, error (only when the API sent one), the single owner line, and its actions.
 function onboardingPanel(key) {
@@ -114,12 +114,12 @@ function onboardingPanel(key) {
   // One state row: the dot (blue running, orange waiting, green done, red failed; never pulsing), the line, and the actions in .li-end.
   // A state change swaps in this same row.
   const acts = [
-    ...((waiting && !v.choices) || failed ? [el("button", { type: "button", class: "btn inrow", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
-    ...(failed ? [el("button", { type: "button", class: "btn tonal inrow", "data-onb-start": "1", onclick: () => obStart(key) }, "다시 시작")] : []),
-    ...((running && !pend) || waiting ? [el("button", { type: "button", class: "btn text inrow", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
+    ...((waiting && !v.choices) || failed ? [el("button", { type: "button", class: "btn inrow", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, TX("connect.onb.continue"))] : []),
+    ...(failed ? [el("button", { type: "button", class: "btn tonal inrow", "data-onb-start": "1", onclick: () => obStart(key) }, TX("connect.onb.restart"))] : []),
+    ...((running && !pend) || waiting ? [el("button", { type: "button", class: "btn text inrow", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, TX("common.cancel"))] : []),
   ];
   const head = el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: `dot ${OB_TONE[v.state] || ""}`, "aria-hidden": "true" })), el("span", { class: "tx" },
-    el("div", { class: "hd", text: "자동 연결" }), el("div", { class: "sup", "data-onb-line": "1", text: obLine(v) })), acts.length ? liEnd(...acts) : null);
+    el("div", { class: "hd", text: TX("connect.onb.title") }), el("div", { class: "sup", "data-onb-line": "1", text: obLine(v) })), acts.length ? liEnd(...acts) : null);
   const rows = [head];
   if (v.swap) requestAnimationFrame(() => motionSwap(head, () => {}));
   if (v.step && !((waiting || failed) && v.owner && v.owner.label === v.step.title)) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: v.step.title }), el("div", { class: "sup", text: v.step.detail }))));
@@ -127,12 +127,12 @@ function onboardingPanel(key) {
   if ((waiting || failed) && v.owner) rows.push(el("div", { class: "li", "data-onb-owner": v.owner.label },
     el("span", { class: "tx" }, el("div", { class: "hd", text: v.owner.label }), el("div", { class: "sup", text: v.owner.hint }))));
   if (waiting && v.choices) for (const c of v.choices) rows.push(el("div", { class: "li", "data-onb-choice": c.id }, el("span", { class: "tx" }, el("div", { class: "hd", text: c.label })),
-    liEnd(el("button", { type: "button", class: "btn tonal inrow", onclick: ev => obPick(key, c.id, ev.currentTarget) }, "고르기"))));
+    liEnd(el("button", { type: "button", class: "btn tonal inrow", onclick: ev => obPick(key, c.id, ev.currentTarget) }, TX("connect.onb.pick")))));
   if (v.url) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("a", { class: "ms-link", href: v.url, target: "_blank", rel: "noopener noreferrer", "data-onb-url": "1", text: v.url }))));
   return el("div", { class: "list ms-onb", "data-onb": key, "data-onb-state": v.state }, ...rows);
 }
 // A save ends in the button it was pressed on: the label swaps to "저장했어요" for a moment (the button keeps its width), with no toast.
-function stFlash(sel, label = "저장했어요") {
+function stFlash(sel, label = TX("settings.saved")) {
   const b = document.querySelector(sel);
   if (!b) return;
   const was = b.textContent;
@@ -140,7 +140,7 @@ function stFlash(sel, label = "저장했어요") {
   setTimeout(() => { if (b.isConnected && b.textContent === label) motionSwap(b, () => { b.textContent = was; }); }, 1800);
 }
 // The closed disclosure that keeps manual fields out of the default view: its body is built only when opened.
-function msAdvanced(attr, open, body, label = "직접 입력") {
+function msAdvanced(attr, open, body, label = TX("connect.manual")) {
   const box = el("div", { class: "ms-adv-body" });
   const d = el("details", { class: "ms-adv", [attr]: "1", ...(open ? { open: true } : {}) }, el("summary", { class: "ms-adv-sum", text: label }), box);
   let built = false;

@@ -3,14 +3,14 @@
 // onboarding panel. Manual IDs/tokens live only in the closed "직접 입력" disclosure.
 const MS_IDS = ["discord", "jandi", "slack", "telegram"];
 const MS_LABELS = { discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram" };
-const MS_KINDS = [["main", "메인 대화"], ["project", "프로젝트"], ["alert", "알림"], ["worklog", "작업내역"]];
-const MS_AS_USER = "내 계정으로 보냅니다";
+const MS_KINDS = [["main", TX("common.main_chat")], ["project", TX("common.project")], ["alert", TX("common.alerts")], ["worklog", TX("common.worklog")]];
+const MS_AS_USER = TX("connect.ms.as_user");
 const MSS = { items: null, fail: "", asked: false, loading: false, page: null };
 const msItem = id => (MSS.items || []).find(x => x.id === id) || null;
-const msTag = m => !m ? ["", ""] : !m.configured ? ["설정 안 됨", "warn"] : m.state === "error" ? ["연결 안 됨", "err"] : ["연결됨", "ok"];
-const msConnectLabel = m => (!m || !m.configured || m.error ? "연결" : !m.enabled ? "켜기" : "다시 연결");
+const msTag = m => !m ? ["", ""] : !m.configured ? [TX("connect.state.unset"), "warn"] : m.state === "error" ? [TX("settings.prov.not_connected"), "err"] : [TX("connect.state.on"), "ok"];
+const msConnectLabel = m => (!m || !m.configured || m.error ? TX("connect.connect") : !m.enabled ? TX("connect.turn_on") : TX("mail.reconnect"));
 const msKind = k => (MS_KINDS.find(x => x[0] === k) || [k, k])[1];
-const msAgo = t => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? "방금" : s < 3600 ? `${Math.floor(s / 60)}분 전` : s < 86400 ? `${Math.floor(s / 3600)}시간 전` : `${Math.floor(s / 86400)}일 전`; };
+const msAgo = t => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? TX("home.ago.now") : s < 3600 ? TX("home.ago.m", { n: Math.floor(s / 60) }) : s < 86400 ? TX("home.ago.h", { n: Math.floor(s / 3600) }) : TX("project.ago.d", { n: Math.floor(s / 86400) }); };
 const msPage = id => {
   if (!MSS.page || MSS.page.id !== id) MSS.page = { id, s: null, fail: "", enabled: false, vals: {}, allow: null, add: "", test: null, advOpen: false };
   return MSS.page;
@@ -20,11 +20,11 @@ function msSummary() {
   if (!MSS.asked) loadMessengerIndex();
   if (!MSS.items) return "";
   const on = MS_IDS.map(msItem).filter(m => m && msTag(m)[1] === "ok").map(m => m.label || MS_LABELS[m.id]);
-  return on.length ? `${on[0]}${on.length > 1 ? ` 외 ${on.length - 1}개` : ""} 연결됨` : "설정 안 됨";
+  return on.length ? (on.length > 1 ? TX("connect.ms.sum_more", { name: on[0], n: on.length - 1 }) : TX("connect.ms.sum_one", { name: on[0] })) : TX("connect.state.unset");
 }
 function msHubRow() {
   const r = el("button", { class: "li tap", type: "button", onclick: () => go("messengers") }, el("span", { class: "lead" }, icon("chat")),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: "메신저" }), el("div", { class: "sup", text: msSummary() })), el("span", { class: "li-end" }, icon("chev", "chev")));
+    el("span", { class: "tx" }, el("div", { class: "hd", text: TX("connect.ms.title") }), el("div", { class: "sup", text: msSummary() })), el("span", { class: "li-end" }, icon("chev", "chev")));
   r.dataset.msHub = "";
   return r;
 }
@@ -68,15 +68,15 @@ async function loadMessengerSettings(id) {
   if (current === id) renderMessenger(id);
 }
 // After a run the owner started ends, the row says when it did (the 자동 연결 panel is gone by then).
-const msConnectedNote = id => (OB[id] && OB[id].doneAt ? `${msAgo(OB[id].doneAt)} 연결했어요` : "");
+const msConnectedNote = id => (OB[id] && OB[id].doneAt ? TX("connect.ms.connected_ago", { ago: msAgo(OB[id].doneAt) }) : "");
 function msLine(id, m, s) {
   if (m && m.error) return m.error;
   if (!m) return "";
   const run = OB[id] && OB[id].state;
   if (OB_WAIT.has(id) || run === "running" || run === "waiting" || run === "failed") return "";   // the 자동 연결 row under the card says where it is
-  if (!m.configured) return "연결을 누르면 자동으로 설정해요.";
-  if (!m.enabled) return "설정은 돼 있어요. 켜기를 누르면 알림을 보내요.";
-  return [id === "jandi" && s && s.rooms ? `방 ${s.rooms.items.length}개` : "", msConnectedNote(id)].filter(Boolean).join(" · ");   // the tag beside it already says 연결됨
+  if (!m.configured) return TX("connect.ms.tap_connect");
+  if (!m.enabled) return TX("connect.ms.tap_on");
+  return [id === "jandi" && s && s.rooms ? TX("connect.ms.rooms_n", { n: s.rooms.items.length }) : "", msConnectedNote(id)].filter(Boolean).join(" · ");   // the tag beside it already says 연결됨
 }
 // JANDI's 나와의 대화 login: one row, every word from settings(); 다시 연결 (lost) is the lead, the other states offer a small button.
 function msSelfChatRow(id, s) {
@@ -85,7 +85,7 @@ function msSelfChatRow(id, s) {
   const lost = c.state === "lost";
   return el("div", { class: "li", "data-ms-selfchat": c.state }, el("span", { class: "lead" }, icon("chat")),
     el("span", { class: "tx" }, el("div", { class: "hd", text: c.label }), el("div", { class: lost ? "dcs-err" : "sup", text: c.hint })),
-    liEnd(el("button", { type: "button", class: lost ? "btn inrow" : "btn tonal inrow", "data-ms-selfchat-connect": id, disabled: OB_WAIT.has(id), onclick: () => obStart(id), text: OB_WAIT.has(id) ? "연결하는 중" : c.connect })));
+    liEnd(el("button", { type: "button", class: lost ? "btn inrow" : "btn tonal inrow", "data-ms-selfchat-connect": id, disabled: OB_WAIT.has(id), onclick: () => obStart(id), text: OB_WAIT.has(id) ? TX("connect.connecting") : c.connect })));
 }
 function msConnect(id, btn) {
   const m = msItem(id);
@@ -151,24 +151,24 @@ async function msTest() {
   p.testing = true; p.testFail = "";
   renderMessenger(p.id);
   try { p.test = (await api(`/api/messengers/${enc(p.id)}/test`, "POST", {})).results; p.testAt = Date.now(); }
-  catch (e) { p.test = null; p.testFail = `확인하지 못했어요 · ${e.message}. 잠시 뒤에 다시 눌러 주세요`; }
+  catch (e) { p.test = null; p.testFail = TX("connect.ms.test_failed", { error: e.message }); }
   p.testing = false;
   if (current === p.id) renderMessenger(p.id);
 }
 function msTestResult(p) {
-  if (p.testing) return el("div", { class: "sup", text: "확인하는 중…" });
+  if (p.testing) return el("div", { class: "sup", text: TX("settings.upd.checking") });
   if (p.testFail) return el("div", { class: "dcs-err", role: "alert", text: p.testFail });
   if (!p.test) return null;
   const bad = p.test.some(t => !t.ok);
-  return el("div", { class: "dcs-res" }, el("div", { class: "sup", "data-ms-test-sum": "1", text: `${msAgo(p.testAt)} 확인했어요 · ${!p.test.length ? "방이 없어요" : bad ? "보내지 못한 방이 있어요" : "정상이에요"}` }),
-    ...p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })));
+  return el("div", { class: "dcs-res" }, el("div", { class: "sup", "data-ms-test-sum": "1", text: [TX("connect.ms.checked_ago", { ago: msAgo(p.testAt) }), !p.test.length ? TX("connect.ms.no_rooms") : bad ? TX("connect.ms.some_failed") : TX("connect.ms.all_ok")].join(" · ") }),
+    ...p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? TX("connect.ms.sent_to", { name: t.name }) : `${t.name}: ${t.error || TX("connect.ms.send_failed")}` })));
 }
 function msFieldInput(f) {
   const p = MSS.page;
   if (f.type === "readonly") return el("div", { class: "tf" }, el("span", { class: "lb", text: f.label }), el("div", { class: "sup", text: String(f.value ?? "") }));
   if (f.type === "secret") {
-    const i = input({ type: "password", autocomplete: "new-password", name: `ms-${f.key}`, placeholder: f.set ? "바꾸려면 새로 붙여 넣기" : f.label, oninput: ev => { const v = ev.target.value.trim(); if (v) p.vals[f.key] = v; else delete p.vals[f.key]; msSync(); } });
-    return el("div", {}, textField(f.label, i), f.set ? el("div", { class: "tag ok dcs-saved", "data-set": f.key, text: "저장됨" }) : null,
+    const i = input({ type: "password", autocomplete: "new-password", name: `ms-${f.key}`, placeholder: f.set ? TX("connect.paste_new") : f.label, oninput: ev => { const v = ev.target.value.trim(); if (v) p.vals[f.key] = v; else delete p.vals[f.key]; msSync(); } });
+    return el("div", {}, textField(f.label, i), f.set ? el("div", { class: "tag ok dcs-saved", "data-set": f.key, text: TX("connect.saved_tag") }) : null,
       f.as_user ? el("div", { class: "tag warn", "data-as-user": f.key, text: MS_AS_USER }) : null, f.hint ? el("div", { class: "sup", text: f.hint }) : null);
   }
   const cur = p.vals[f.key] !== undefined ? p.vals[f.key] : f.value;
@@ -177,21 +177,21 @@ function msFieldInput(f) {
 }
 function msAllowEditor(p, s) {
   const rows = p.allow.map((a, i) => el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: a })),
-    el("button", { type: "button", class: "ib", "aria-label": `${a} 빼기`, onclick: () => { p.allow.splice(i, 1); renderMessenger(p.id); } }, icon("close"))));
+    el("button", { type: "button", class: "ib", "aria-label": TX("decision.remove_named", { name: a }), onclick: () => { p.allow.splice(i, 1); renderMessenger(p.id); } }, icon("close"))));
   rows.push(el("div", { class: "li ms-addrow" },
     el("span", { class: "tx" }, input({ value: p.add, placeholder: s.allow.hint || "", name: "ms-allow", oninput: ev => { p.add = ev.target.value; } })),
-    liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-allow-add": "1", onclick: () => { const v = p.add.trim(); if (v && !p.allow.includes(v)) { p.allow.push(v); p.add = ""; renderMessenger(p.id); } }, text: "추가" }))));
+    liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-allow-add": "1", onclick: () => { const v = p.add.trim(); if (v && !p.allow.includes(v)) { p.allow.push(v); p.add = ""; renderMessenger(p.id); } }, text: TX("decision.add") }))));
   return rows;
 }
 function msAdvancedBody(p, s) {
   const head = el("div", { class: "list" });
   if (s.fields.length) head.append(el("div", { class: "li dcs-form" }, ...s.fields.map(msFieldInput)));
   head.append(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" },
-    el("div", { class: "hd", text: "사용" }), el("div", { class: "sup", text: p.enabled ? "켜져 있어요" : "꺼져 있어요" })),
-  liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(p.enabled), "aria-label": "사용", "data-ms-enabled": "1",
+    el("div", { class: "hd", text: TX("settings.fb.enabled") }), el("div", { class: "sup", text: p.enabled ? TX("connect.ms.on") : TX("connect.ms.off") })),
+  liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(p.enabled), "aria-label": TX("settings.fb.enabled"), "data-ms-enabled": "1",
     onclick: ev => { p.enabled = !p.enabled; ev.currentTarget.setAttribute("aria-checked", String(p.enabled)); msSync(); } }))));
   head.append(el("div", { class: "li dcs-form" }, el("div", { class: "dcs-acts" },
-    el("button", { type: "button", class: "btn", "data-ms-save": "1", disabled: !msDirty(p).any, onclick: ev => msSave(ev.currentTarget), text: "저장" }))));
+    el("button", { type: "button", class: "btn", "data-ms-save": "1", disabled: !msDirty(p).any, onclick: ev => msSave(ev.currentTarget), text: TX("common.save") }))));
   const out = el("div", {}, head);
   if (s.allow) out.append(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" }, ...msAllowEditor(p, s)));
   return out;
@@ -201,7 +201,7 @@ function renderMessenger(id) {
   if (!box) return;
   const p = msPage(id), m = msItem(id);
   if (!p.s) {
-    clear(box).append(emptyNode(p.fail ? "메신저 설정을 불러오지 못했어요" : "불러오는 중"));
+    clear(box).append(emptyNode(p.fail ? TX("connect.ms.load_failed") : TX("connect.loading")));
     if (!p.fail && !p.loading) loadMessengerSettings(id);
     return;
   }
@@ -210,19 +210,19 @@ function renderMessenger(id) {
   const loginOnly = c && (!m || !m.configured || c.state === "lost"), turnOn = m && m.configured && !m.enabled && !m.error;
   // Before it is connected the screen holds the connect card alone: switches, rooms, people and the check have nothing to show yet.
   const fresh = Boolean(m && !m.configured), line = msLine(id, m, s);
-  const nodes = [el("div", { class: "sec", text: "연결" }),
+  const nodes = [el("div", { class: "sec", text: TX("connect.sec") }),
     el("div", { class: "list" },
       loginOnly ? null : el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
         el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), line ? el("div", { class: "sup", text: line }) : null),
-        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, c && !turnOn ? null : el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, disabled: OB_WAIT.has(id), onclick: ev => msConnect(id, ev.currentTarget) }, OB_WAIT.has(id) ? "연결하는 중" : msConnectLabel(m)))),
+        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, c && !turnOn ? null : el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, disabled: OB_WAIT.has(id), onclick: ev => msConnect(id, ev.currentTarget) }, OB_WAIT.has(id) ? TX("connect.connecting") : msConnectLabel(m)))),
       msSelfChatRow(id, s)),
     ...obSection(id, !!m && m.state === "ok")];
-  if (s.notify && !fresh) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
+  if (s.notify && !fresh) nodes.push(el("div", { class: "sec", text: TX("common.alerts") }), el("div", { class: "list" },
     ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on))));
   if (s.rooms && !fresh) nodes.push(el("div", { class: "sec", text: s.rooms.label }), el("div", { class: "list" },
     ...s.rooms.items.map(r => el("div", { class: "li", "data-room": r.id },
       el("span", { class: "lead" }, el("span", { class: `dot ${r.last_error ? "err" : r.last_in || r.last_out ? "ok" : ""}`, "aria-hidden": "true" })),
-      el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup", text: [`→ ${msKind(r.kind)}${r.project ? ` · ${r.project.name}` : ""}`, r.last_in ? `받음 ${msAgo(r.last_in)}` : "", r.last_out ? `보냄 ${msAgo(r.last_out)}` : ""].filter(Boolean).join(" · ") }),
+      el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup", text: [`→ ${msKind(r.kind)}${r.project ? ` · ${r.project.name}` : ""}`, r.last_in ? TX("connect.ms.received", { ago: msAgo(r.last_in) }) : "", r.last_out ? TX("connect.ms.sent", { ago: msAgo(r.last_out) }) : ""].filter(Boolean).join(" · ") }),
         r.last_error ? el("div", { class: "dcs-err", text: r.last_error }) : null))),
     ...(s.rooms.hint ? [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", "data-ms-hint": "1", text: s.rooms.hint })))] : [])));
   if (!fresh) nodes.push(...msRelaySection(p, s));
@@ -232,9 +232,9 @@ function renderMessenger(id) {
   if (s.allow && !fresh) nodes.push(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" },
     ...p.allow.map(a => { const r = who(a); return el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: r ? r.name : idOf(a) }), r ? el("div", { class: "sup", text: idOf(a) }) : null)); })));
   // 연결 확인 is one row: the result shows in this row (under the title), the action sits in .li-end.
-  if (!fresh) nodes.push(el("div", { class: "list" }, el("div", { class: "li", "data-ms-test-row": "1" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "연결 확인" }),
+  if (!fresh) nodes.push(el("div", { class: "list" }, el("div", { class: "li", "data-ms-test-row": "1" }, el("span", { class: "tx" }, el("div", { class: "hd", text: TX("connect.check_conn") }),
     msTestResult(p)),
-  liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-test": "1", disabled: !!p.testing, onclick: () => msTest(), text: "확인" })))));
+  liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-test": "1", disabled: !!p.testing, onclick: () => msTest(), text: TX("connect.check") })))));
   // The toggle event arrives after a redraw can already have replaced the element, so read the live state.
   const prev = box.querySelector("details[data-ms-advanced]");
   if (prev) p.advOpen = prev.open;

@@ -104,34 +104,6 @@
       "count": 2,
       "why": "server value comparison"
     },
-    "web/js/25-settings-accounts.js": {
-      "count": 310,
-      "why": "pending"
-    },
-    "web/js/25-settings-devices.js": {
-      "count": 162,
-      "why": "pending"
-    },
-    "web/js/25-settings-discord.js": {
-      "count": 204,
-      "why": "pending"
-    },
-    "web/js/25-settings-messengers.js": {
-      "count": 98,
-      "why": "pending"
-    },
-    "web/js/25-settings-onboarding.js": {
-      "count": 34,
-      "why": "pending"
-    },
-    "web/js/25-settings-web-access.js": {
-      "count": 147,
-      "why": "pending"
-    },
-    "web/js/26-settings-runtime.js": {
-      "count": 136,
-      "why": "pending"
-    },
     "web/js/27-harness.js": {
       "count": 132,
       "why": "pending"

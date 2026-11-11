@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "26-settings-runtime.js"), "utf8");
 
@@ -38,7 +39,7 @@ function harness(runtimes = RUNTIMES) {
 	const dialog = (o: { title: string; body: any }) => { const d = { title: o.title, body: o.body, actions: [] as any[] }; dialogs.push(d); return { setActions: (a: any[]) => { d.actions = a; } }; };
 	const g = new Function(
 		"api", "el", "icon", "dialog", "showMenu", "toast", "clear", "busy", "renderSettings", "current", "usErr", "usRun", "liEnd",
-		`${src}\nreturn { loadRuntimes, rtSection };`,
+		`${i18nPrelude()}${src}\nreturn { loadRuntimes, rtSection };`,
 	)(api, el, icon, dialog, (anchor: Node, items: any[], opts: any) => menus.push({ anchor, items, opts }), () => {}, (n: Node) => { n.kids.length = 0; return n; },
 		(_b: unknown, fn: () => Promise<void>) => fn(), () => {}, "home", () => mkNode("p", {}, []), (_b: unknown, _e: unknown, fn: () => Promise<void>) => fn(), (...k: Node[]) => mkNode("span", {}, k)) as { loadRuntimes: () => Promise<void>; rtSection: () => Node[] };
 	return { g, calls, menus, dialogs };

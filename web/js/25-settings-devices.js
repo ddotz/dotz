@@ -6,10 +6,10 @@ const DEV = { items: null, fail: "", asked: false };
 const dvDate = iso => {
   const t = Date.parse(iso || "");
   if (isNaN(t)) return "";
-  const yr = x => new Date(x).toLocaleDateString("ko-KR", { ...KST, year: "numeric" });
-  return new Date(t).toLocaleDateString("ko-KR", { ...KST, ...(yr(t) === yr(Date.now()) ? {} : { year: "numeric" }), month: "long", day: "numeric" });
+  const yr = x => new Date(x).toLocaleDateString(TX_LOCALE, { ...KST, year: "numeric" });
+  return new Date(t).toLocaleDateString(TX_LOCALE, { ...KST, ...(yr(t) === yr(Date.now()) ? {} : { year: "numeric" }), month: "long", day: "numeric" });
 };
-const dvUsed = d => d.last_used ? `마지막 사용 ${msAgo(Date.parse(d.last_used))}` : "아직 쓰지 않음";
+const dvUsed = d => d.last_used ? TX("connect.dev.last_used", { ago: msAgo(Date.parse(d.last_used)) }) : TX("connect.dev.never");
 
 async function loadDevices() {
   DEV.asked = true;
@@ -20,25 +20,25 @@ async function loadDevices() {
 /* the 설정 row: only where the gateway keeps paired devices */
 function devicesRow(row) {
   if (!DEV.items) return null;
-  return row("desktop", "연결된 기기", `${DEV.items.length}대`, () => go("devices"));
+  return row("desktop", TX("connect.dev.title"), TX("connect.dev.count", { n: DEV.items.length }), () => go("devices"));
 }
 
 function renderDevices() {
   const box = $("#devices");
-  if (!DEV.items) { clear(box).append(DEV.asked && DEV.fail ? emptyNode("연결된 기기를 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
+  if (!DEV.items) { clear(box).append(DEV.asked && DEV.fail ? emptyNode(TX("connect.dev.load_failed")) : emptyNode(TX("connect.loading"))); return; }
   const row = d => el("button", { type: "button", class: "li tap", "data-dev": d.id, onclick: () => dvOpen(d) },
     el("span", { class: "lead" }, icon("desktop")),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: d.name }), el("div", { class: "sup", text: `${dvDate(d.created)} 연결 · ${dvUsed(d)}` })),
-    el("span", { class: "li-end" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: "이 기기" }) : null, icon("chev", "chev")));
+    el("span", { class: "tx" }, el("div", { class: "hd", text: d.name }), el("div", { class: "sup", text: [TX("connect.dev.connected_on", { date: dvDate(d.created) }), dvUsed(d)].join(" · ") })),
+    el("span", { class: "li-end" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: TX("settings.app.this_device") }) : null, icon("chev", "chev")));
   const self = DEV.items.some(d => d.current);
   // the add action lives in the section header (docs/ui-spec.md 설정 행); a browser without a passkey gets one more row in the list
   const addSelf = el("button", { type: "button", class: "li tap", "data-dev-self": "1", onclick: () => dvNew(true) },
-    el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: "이 기기에 패스키 추가" }), el("div", { class: "sup", text: "이 브라우저는 패스키 없이 들어왔어요" })));
+    el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: TX("connect.dev.add_passkey") }), el("div", { class: "sup", text: TX("connect.dev.no_passkey") })));
   clear(box).append(
-    el("div", { class: "sec", text: "이 웹앱을 쓸 수 있는 기기" }),
-    el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결된 기기가 없어요" })))]), self ? null : addSelf,
+    el("div", { class: "sec", text: TX("connect.dev.sec") }),
+    el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: TX("connect.dev.none") })))]), self ? null : addSelf,
       el("button", { type: "button", class: "li tap", "data-dev-new": "1", onclick: () => dvNew(false) },
-        el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 기기 연결" })))));
+        el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: TX("connect.dev.add") })))));
 }
 
 /* ---------- one device: rename, unpair ---------- */
@@ -46,30 +46,30 @@ function dvOpen(d) {
   const name = input({ value: d.name, maxlength: "60", name: "dev-name" });
   const nameErr = el("p", { class: "err-t", hidden: true, role: "alert" });   // under the field, as the login dialog does
   const err = usErr();
-  const body = el("div", { class: "col" }, textField("기기 이름", name), nameErr,
-    el("div", { class: "sup", text: `${dvDate(d.created)} 연결 · ${dvUsed(d)}` }),
-    d.current ? el("div", { class: "tag ok dcs-saved", text: "지금 쓰고 있는 기기" }) : null, err);
+  const body = el("div", { class: "col" }, textField(TX("connect.dev.name"), name), nameErr,
+    el("div", { class: "sup", text: [TX("connect.dev.connected_on", { date: dvDate(d.created) }), dvUsed(d)].join(" · ") }),
+    d.current ? el("div", { class: "tag ok dcs-saved", text: TX("connect.dev.current") }) : null, err);
   const dlg = dialog({ title: d.name, body, mid: true, actions: acGap([
-    { label: "해제", kind: "danger", onclick: async (c, b) => {
+    { label: TX("connect.dev.remove"), kind: "danger", onclick: async (c, b) => {
       const text = d.current
-        ? "이 기기는 바로 로그아웃돼요. 다시 쓰려면 메신저로 받은 코드로 새로 연결해야 해요."
-        : `${d.name}의 로그인이 바로 끊겨요. 다시 쓰려면 코드로 새로 연결해야 해요.`;
+        ? TX("connect.dev.remove_self")
+        : TX("connect.dev.remove_other", { name: d.name });
       b.disabled = true;
-      if (!(await ask("기기 해제", text, "해제", true))) { b.disabled = false; return; }
+      if (!(await ask(TX("connect.dev.remove_title"), text, TX("connect.dev.remove"), true))) { b.disabled = false; return; }
       await usRun(b, err, async () => {
         await api(`/api/devices/${enc(d.id)}`, "DELETE");
         c();
         if (d.current) { snapForget(); return location.replace("/pair"); }
-        toast("기기를 해제했어요");
+        toast(TX("connect.dev.removed"));
         await motionGone(document.querySelector(`[data-dev="${CSS.escape(String(d.id))}"]`));   // the unpaired device's row folds away once the hub said yes, then the list is read again
         await loadDevices();
       });
     } },
-    { label: "저장", kind: "pri", onclick: (c, b) => {
+    { label: TX("common.save"), kind: "pri", onclick: (c, b) => {
       const v = name.value.trim();
       nameErr.hidden = Boolean(v);
-      if (!v) { nameErr.textContent = "이름을 적어 주세요"; return; }
-      return usRun(b, err, async () => { await api(`/api/devices/${enc(d.id)}`, "PATCH", { name: v }); c(); toast("저장했어요"); await loadDevices(); });
+      if (!v) { nameErr.textContent = TX("connect.dev.need_name"); return; }
+      return usRun(b, err, async () => { await api(`/api/devices/${enc(d.id)}`, "PATCH", { name: v }); c(); toast(TX("settings.saved")); await loadDevices(); });
     } }]) });
   usDirty(dlg, [name]);
 }
@@ -77,15 +77,15 @@ function dvOpen(d) {
 /* ---------- a new device (or this one) ---------- */
 function dvQr(q) {
   const NS = "http://www.w3.org/2000/svg", part = (name, attrs) => { const n = document.createElementNS(NS, name); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
-  const box = q.size + 8, svg = part("svg", { viewBox: `-4 -4 ${box} ${box}`, class: "dv-qr", role: "img", "aria-label": "새 기기 연결 QR 코드", "data-dev-qr": "1", "shape-rendering": "crispEdges" });
+  const box = q.size + 8, svg = part("svg", { viewBox: `-4 -4 ${box} ${box}`, class: "dv-qr", role: "img", "aria-label": TX("connect.dev.qr"), "data-dev-qr": "1", "shape-rendering": "crispEdges" });
   svg.append(part("rect", { x: -4, y: -4, width: box, height: box, class: "dv-qr-bg" }), part("path", { d: q.path, class: "dv-qr-ink" }));
   return svg;
 }
 function dvNew(self) {
   const res = el("div", { class: "dcs-res" });
   const steps = o => self
-    ? ["'연결 화면 열기'를 눌러 코드와 이 기기 이름을 넣어요.", "패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요."]
-    : ["새 기기의 브라우저에서 이 웹앱 주소를 열어요. '기기 연결' 화면이 나와요.", o.qr ? "QR을 찍거나 위의 코드를 넣어요." : "위의 코드를 넣어요.", "기기 이름을 넣고 패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요."];   // the QR is named only when one is drawn
+    ? [TX("connect.dev.step_self"), TX("connect.dev.step_passkey")]
+    : [TX("connect.dev.step_open"), o.qr ? TX("connect.dev.step_qr") : TX("connect.dev.step_code"), TX("connect.dev.step_name")];   // the QR is named only when one is drawn
   const make = btn => busy(btn, async () => {
     const o = await api("/api/devices/code", "POST", {});
     const addr = input({ value: o.url, readonly: true, name: "dev-url", onfocus: ev => ev.target.select() });
@@ -93,13 +93,13 @@ function dvNew(self) {
       !self && o.qr ? dvQr(o.qr) : null,
       el("div", { class: "dv-code", "data-dev-code": o.code, text: o.code }),
       el("ol", { class: "steps" }, ...steps(o).map(s => el("li", { text: s }))),
-      el("div", { class: "tf" }, el("label", { text: "연결 화면 주소", for: addr.id }), el("div", { class: "ms-copy" }, addr,
-        self ? el("a", { class: "btn tonal", href: o.url, target: "_blank", rel: "noopener", text: "연결 화면 열기" })
-          : el("button", { type: "button", class: "btn tonal", onclick: () => { try { navigator.clipboard.writeText(o.url); } catch {} toast("복사했어요"); }, text: "복사" }))));
+      el("div", { class: "tf" }, el("label", { text: TX("connect.dev.addr"), for: addr.id }), el("div", { class: "ms-copy" }, addr,
+        self ? el("a", { class: "btn tonal", href: o.url, target: "_blank", rel: "noopener", text: TX("connect.dev.open_page") })
+          : el("button", { type: "button", class: "btn tonal", onclick: () => { try { navigator.clipboard.writeText(o.url); } catch {} toast(TX("connect.copied")); }, text: TX("connect.copy") }))));
   });
   const body = el("div", { class: "col" },
-    el("div", { class: "sup", text: "코드는 10분 동안 한 번만 쓸 수 있고, 메신저와 이 화면을 합쳐 한 시간에 3번까지 만들 수 있어요." }),
-    el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", "data-dev-make": "1", onclick: ev => make(ev.currentTarget), text: "여기서 코드 만들기" })),
+    el("div", { class: "sup", text: TX("connect.dev.code_note") }),
+    el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", "data-dev-make": "1", onclick: ev => make(ev.currentTarget), text: TX("connect.dev.make_code") })),
     res);
-  dialog({ title: self ? "이 기기에 패스키 추가" : "새 기기 연결", body, onclose: () => loadDevices(), mid: true });
+  dialog({ title: self ? TX("connect.dev.add_passkey") : TX("connect.dev.add"), body, onclose: () => loadDevices(), mid: true });
 }
