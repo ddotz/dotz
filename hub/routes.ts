@@ -42,8 +42,7 @@ import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
 import { openMonitor, readTodo } from "./todo.ts";
-import { type CustomDeps, customRoute, snapshotProjects } from "./custom.ts";
-import { setSnapshotSource } from "./relay-snapshot-send.ts";
+import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { updateNow } from "./update-now.ts";
@@ -298,13 +297,6 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			},
 		}),
 	);
-	const customDeps: CustomDeps = { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }), machine: () => resolveName(cfg.web?.machine_name, machineHost()), peerProjects };
-	// What this computer posts about itself when its JANDI status sharing is on (hub/relay-snapshot-send.ts).
-	setSnapshotSource(() => {
-		const sessions = laneSummary().map(s => ({ ...s, lastReportAt: lanes.get(String(s.name))?.lastReportAt }));
-		const open = [orch.sessionFile, ...sessions.filter(s => s.live).map(s => s.sessionFile as string | undefined)].flatMap(f => readTodo(f).phases.flatMap(p => p.tasks)).filter(t => t.status === "pending" || t.status === "in_progress");
-		return { projects: snapshotProjects(customDeps), sessions, monitors: listMonitors(), todos: { open: open.length, items: open.slice(0, 5).map(t => t.content) }, notices: listNotices(5).items };
-	});
 	const handle = async (req: Request, srv?: Server<unknown>): Promise<Response> => {
 		const url = new URL(req.url);
 		const tailnet = await entryHost(req, srv?.port ?? PORT, tailnetName, webAccess.hostname()); if (tailnet instanceof Response) return tailnet; // entry check (hub/entry-check.ts); true: this came through tailscale serve, so a tailnet login counts
@@ -398,7 +390,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		// Settings → 업데이트 → 실행 하네스 (hub/harness-update.ts): the harness binary itself, from the package registry.
 		const harnessUpdateResponse = await harnessUpdateRoute(req, url, { busy: busyNow, restartIdle: restartGateway });
 		if (harnessUpdateResponse) return harnessUpdateResponse;
-		const customResponse = await customRoute(req, url, customDeps);
+		const customResponse = await customRoute(req, url, { lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, work: () => bgWork.list(), send: (target, text, login) => sendWeb({ ...(target === "main" ? {} : { lane: target.slice(5) }), channel: "web", text, mode: "default", login }), machine: () => resolveName(cfg.web?.machine_name, machineHost()), peerProjects });
 		if (customResponse) return customResponse;
 		// Project records (hub/projects.ts) and the todo strip (hub/todo.ts), docs/layers.md §4.
 		if (url.pathname === "/api/projects" && req.method === "PUT") {

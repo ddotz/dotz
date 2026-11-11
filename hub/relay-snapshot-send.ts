@@ -82,7 +82,7 @@ export function snapshotFileStore(file: string): SnapshotStore {
 export type SnapshotSenderDeps = {
 	config: () => SelfChatConfig | undefined;
 	/** The raw snapshot now, or undefined while there is nothing to read from yet. */
-	build: () => Snapshot | undefined;
+	build: () => Snapshot | undefined | Promise<Snapshot | undefined>;
 	post: (text: string) => Promise<void>;
 	now: () => number;
 	store: SnapshotStore;
@@ -102,7 +102,7 @@ export function createSnapshotSender(deps: SnapshotSenderDeps) {
 		try {
 			const c = deps.config();
 			if (!selfChatReady(c) || !c.share_status || !c.reply_prefix) return;
-			const raw = deps.build();
+			const raw = await deps.build();
 			// The cleaned, cut-to-limits form is what is compared and kept: a change past a list's limit is not a change the reader sees.
 			const snap = raw && normalizeSnapshot(raw);
 			if (!snap) return;
@@ -141,11 +141,3 @@ export function createSnapshotSender(deps: SnapshotSenderDeps) {
 
 	return { tick, start, stop };
 }
-
-let source: (() => SnapshotSources) | undefined;
-/** Where the running gateway's data is read from (set once by hub/routes.ts, which holds the project, session and channel state). */
-export const setSnapshotSource = (read: () => SnapshotSources): void => {
-	source = read;
-};
-/** The raw snapshot of the running gateway, undefined before its source is set. */
-export const currentSnapshot = (now: number): Snapshot | undefined => (source ? buildSnapshot(source(), now) : undefined);

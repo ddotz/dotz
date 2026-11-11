@@ -772,21 +772,11 @@ async function listAll(deps: CustomDeps) {
 	return { dir: customDirLabel(), cards, projects: [builtinProject(), ...projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins, records: loadProjects(), ...(deps.machine ? { computer: deps.machine() } : {}) }).map(withPurpose)], routines, links: pins.links, errors };
 }
 
-// What a peer reads (GET /api/peer/projects, hub/peer-auth.ts): this computer's own projects, by key, name and purpose only.
-function ownProjects(deps: CustomDeps): { name: string; projects: RemoteProject[] } {
+// What a peer reads (GET /api/peer/projects) and this computer's status snapshot (hub/relay-snapshot-source.ts): its own projects, by key, name, purpose, live sessions.
+export function ownProjects(deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): { name: string; projects: Array<RemoteProject & { live?: number }> } {
 	const name = deps.machine?.() ?? "";
 	const list = projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins: readPins({ sync: false }).pins, records: loadProjects(), computer: name }).map(withPurpose);
-	return { name, projects: list.filter(p => p.computer === name).slice(0, 30).map(p => ({ key: p.key, name: p.name, ...(p.purpose || p.note ? { note: String(p.purpose || p.note).slice(0, 200) } : {}) })) };
-}
-
-/** This computer's own projects with the number of live sessions in each, for the status snapshot it posts (hub/relay-snapshot-send.ts); no folder path. */
-export function snapshotProjects(deps: CustomDeps): Array<{ key: string; name: string; note?: string; live?: number }> {
-	const name = deps.machine?.() ?? "";
-	const list = projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins: readPins({ sync: false }).pins, records: loadProjects(), computer: name }).map(withPurpose);
-	return list.filter(p => p.computer === name).map(p => {
-		const live = p.lanes.filter(l => l.live).length;
-		return { key: p.key, name: p.name, ...(p.purpose || p.note ? { note: String(p.purpose || p.note) } : {}), ...(live ? { live } : {}) };
-	});
+	return { name, projects: list.filter(p => p.computer === name).slice(0, 30).map(p => ({ key: p.key, name: p.name, ...(p.purpose || p.note ? { note: String(p.purpose || p.note).slice(0, 200) } : {}), ...(p.lanes.some(l => l.live) ? { live: p.lanes.filter(l => l.live).length } : {}) })) };
 }
 
 async function computersView(deps: CustomDeps): Promise<ComputerGroup[]> {

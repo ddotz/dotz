@@ -49,6 +49,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 - comment store: `hub/comments/absorb.ts` (what the comment engine stores from an adapter read: new comments, position-keyed Instagram replies renamed to their real ids, old twin rows merged; no engine state)
 - messenger login: `hub/messenger-login.ts` (the browser login capture the messenger onboarding flows share: it reads one page value in the owner's background Aside tab, and the value reaches the flow in memory through a one-shot localhost inbox, never stdout, argv or logs), `hub/jandi-session.ts` (reads the owner's JANDI session: token exchange, team, member, bot and the 나와의 대화 room)
 - Relay chat (a computer reached only through a messenger, the adapter's `relay`): `hub/relay-route.ts`, web `web/js/42-relay-chat.js`
+- Relay status (that computer's summary of itself, posted into the same room and shown read-only): the format `hub/relay-snapshot.ts`, the sender `hub/relay-snapshot-send.ts` with its gateway data `hub/relay-snapshot-source.ts`, web `web/js/44-relay-views.js`
 - KakaoTalk rooms on the web: `hub/kakao/web.ts` (routes and caches), `hub/kakao/web-shape.ts` (unreplied scan, draft card, chat payload and watch lists built from their arguments)
 
 ## Accounts, providers, runtimes
