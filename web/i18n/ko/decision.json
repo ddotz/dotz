@@ -139,5 +139,9 @@
   "decision.wait.confirm": "보내기 확인",
   "decision.record.aria": "결정 기록",
   "decision.record.q": "질문",
-  "decision.record.a": "· 답:"
+  "decision.record.a": "· 답:",
+  "decision.deliv.queued": "받았어요 · 작업 중이라 끝나면 읽어요",
+  "decision.deliv.compacting": "받았어요 · 대화 정리가 끝나면 읽어요",
+  "decision.deliv.held": "받았어요 · 한도가 풀리면 읽어요",
+  "decision.deliv.update": "받았어요 · 업데이트 뒤에 읽어요"
 }

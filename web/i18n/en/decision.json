@@ -142,5 +142,9 @@
   "decision.wait.confirm": "Confirm send",
   "decision.record.aria": "Decision record",
   "decision.record.q": "Question",
-  "decision.record.a": "· Answer:"
+  "decision.record.a": "· Answer:",
+  "decision.deliv.queued": "Received · will be read when the work ends",
+  "decision.deliv.compacting": "Received · will be read after the compaction",
+  "decision.deliv.held": "Received · will be read after the limit resets",
+  "decision.deliv.update": "Received · will be read after the update"
 }

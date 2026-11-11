@@ -106,12 +106,14 @@ function streamIn(root, key, ts) {
 const DELIV = { nodes: new Map(), state: new Map() };
 const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, compacting: 1, update: 1, resumed: 1, answered: 2, failed: 2 };
 const DELIV_LABEL = { steered: TX("home.deliv.steered"), received: TX("home.deliv.received"), queued: TX("home.deliv.queued"), held: TX("home.deliv.held"), compacting: TX("home.deliv.compacting"), update: TX("home.deliv.update"), resumed: TX("home.deliv.resumed"), answered: TX("home.deliv.answered") };
-const delivLabel = d => d.state === "failed" ? `${TX("home.deliv.failed")}${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
+// The record of an answered decision (dcRecordNode) says the answer arrived and why it waits; every other state reads as on any message.
+const DELIV_REC = { queued: TX("decision.deliv.queued"), compacting: TX("decision.deliv.compacting"), held: TX("decision.deliv.held"), update: TX("decision.deliv.update") };
+const delivLabel = (d, rec) => d.state === "failed" ? `${TX("home.deliv.failed")}${d.text ? ` · ${d.text}` : ""}` : (rec && DELIV_REC[d.state]) || DELIV_LABEL[d.state] || "";
 function paintDelivery(mid) {
   const n = DELIV.nodes.get(mid), d = DELIV.state.get(mid);
   if (!n || !d) return;
   const rq = n.mt.querySelector(".rp-btn");   // the hover quote button (39-reply.js) lives in the meta line
-  n.mt.textContent = [n.base, delivLabel(d)].filter(Boolean).join(" · ");
+  n.mt.textContent = [n.base, delivLabel(d, n.rec)].filter(Boolean).join(" · ");
   if (rq) n.mt.append(rq);
   n.mt.classList.add("dv"); n.mt.classList.toggle("dv-fail", d.state === "failed");
 }
@@ -253,7 +255,7 @@ function msgNode(e) {
       if (long) ub.classList.add("clamp");
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? TX("home.msg.more") : TX("home.fold.close"); } }, TX("home.msg.more")) : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
-      if (mid) { DELIV.nodes.set(mid, { mt, base }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
+      if (mid) { DELIV.nodes.set(mid, { mt, base, rec: e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length > 0 }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
       // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
       const pc = Array.isArray(e.files) && e.files.length ? pqPc(eventTarget(e) || "") : null;
       // An answered decision is a quiet record of what was decided, not a "1) …" bubble (10-decision-card.js dcRecordNode); the options
