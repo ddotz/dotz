@@ -108,3 +108,25 @@ describe("a phone", () => {
 		expect(await visible(v, "#mx-pane")).toBe(false);
 	}, 40_000);
 });
+
+describe("the sizes of the shared frame", () => {
+	const box = (v: View, sel: string) => ev<{ x: number; w: number; r: number }>(v, `(() => { const b = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: Math.round(b.left), w: Math.round(b.width), r: Math.round(b.right) }; })()`);
+	test("at 1280 the mail panel and the main slot stand in the boxes of the 채팅 list and content columns, with the list showing and with a mail open", async () => {
+		const v = await openList(1280);
+		const still = () => waitFor(v, `document.getAnimations().length === 0`);
+		await still();
+		const listing = { panel: await box(v, "#mx-pane"), main: await box(v, "#mon-head") };
+		await run(v, `go("chat")`);
+		await waitFor(v, `current === "chat" && !monCtx && document.querySelector("#chat-convo")`);
+		await still();
+		const chat = { panel: await box(v, "#chat-convo"), main: await box(v, "#cv-head") };
+		expect(listing.panel).toEqual(chat.panel);
+		expect({ x: listing.main.x, r: listing.main.r }).toEqual({ x: chat.main.x, r: chat.main.r });
+		await openMail(v);
+		await waitFor(v, `document.querySelector("#v-chat.app-two > #chat-convo .mx-pr")`);
+		await still();
+		const open = { panel: await box(v, "#chat-convo"), main: await box(v, "#cv-head") };
+		expect(open.panel).toEqual(chat.panel);
+		expect({ x: open.main.x, r: open.main.r }).toEqual({ x: chat.main.x, r: chat.main.r });
+	}, 40_000);
+});

@@ -104,9 +104,9 @@
   /* The app frame (owner 2026-11-11): an app's own panel at the left edge, its content beside it - the way 채팅 stands. The view takes .app-two, its panel is the child with
      .app-side (column 1, the whole height), and every other child is the main slot (column 2), so what opens in the main slot (a list, then one mail) changes nothing else.
      The mail app uses it on #v-monitoring (the list) and on #v-chat (the open mail, whose side column is the same panel: mxTwo in 30-mailboxes.js). */
-  #v-monitoring.app-two, #v-chat.app-two { --app-side: 256px; }
+  #v-monitoring.app-two, #v-chat.app-two { --app-side: var(--frame-list-w); }   /* the sizes of 채팅 and 프로젝트: 01-tokens.css --frame-list-w, --frame-gap */
   #v-chat.app-two { --cv-w: var(--app-side); }
-  #v-monitoring.app-two:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: none; margin: 0; column-gap: var(--sp-4); grid-template-columns: var(--app-side) minmax(0, 1fr); }
+  #v-monitoring.app-two:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: none; margin: 0; column-gap: var(--frame-gap); grid-template-columns: var(--app-side) minmax(0, 1fr); }
   #v-monitoring.app-two:not(.cv-listing) > * { grid-column: 2; }
   :is(#v-monitoring, #v-chat).app-two > .app-side { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; margin-bottom: var(--sp-4); padding: 0; border-radius: 0; background: none; overflow: hidden auto; scrollbar-width: none; }
   body:has(:is(#v-monitoring, #v-chat).app-two:not([hidden])) { --mbox-r: var(--edge); }   /* the page runs to the right edge beside the panel: 20-mail-box.css --mbox-r */
