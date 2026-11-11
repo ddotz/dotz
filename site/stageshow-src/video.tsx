@@ -1,5 +1,5 @@
 import { ArrowUp, Bell, ChevronLeft, Plus, Search } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Stage } from './kit/stage'
 import { Phone } from './kit/phone'
@@ -113,10 +113,14 @@ const STAGE = { width: 960, height: 700 }
 const TIMES = ['9:20', '9:41', '9:44', '9:45']
 
 function Lines({ children, className }: { children: string[]; className?: string }) {
+  const { sep } = strings()
   return (
     <div className={className}>
       {children.map((l, i) => (
-        <span key={i} className="vd-ln">{l}</span>
+        <Fragment key={i}>
+          {i > 0 && sep}
+          <span className="vd-ln">{l}</span>
+        </Fragment>
       ))}
     </div>
   )

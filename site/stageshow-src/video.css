@@ -86,3 +86,15 @@
 .vd .hz-dock .dz-btn--text { padding: 0 4px; }
 .vd .cz-nt__b { min-width: 0; }
 .vd .cz-nt__b > b { overflow-wrap: anywhere; }
+
+/* Line breaks. In English and Spanish a caption is one paragraph whose phrases (vd-ln) stay whole, so its lines are
+   balanced instead of cut where the Korean was, and a chat phrase too long for its line splits evenly inside itself
+   (balance is inherited) instead of leaving its last word alone. Korean, Japanese and Chinese keep their written lines.
+   Rows on the phone balance in every language, so no word is left alone under a row title.
+   record.ts fails the build when a last line is shorter than wrap-check.ts allows. */
+html:is(:lang(en), :lang(es)) .vd-ln { display: inline-block; }
+html:is(:lang(en), :lang(es)) :is(.vd-tag, .vd-cap__t, .vd-cap__s, .hz-text, .hz-q__body, .hz-dock__t, .hz-bub, .vd-task__hd b) { text-wrap: balance; }
+.vd .cz-nt__b > * { text-wrap: balance; }
+html:is(:lang(ja), :lang(zh-CN)) .vd .cz-nt__b > * { word-break: normal; }
+/* The question goes under the tag when the two do not fit on one line */
+.vd .hz-dock__q { flex-wrap: wrap; row-gap: 6px; }

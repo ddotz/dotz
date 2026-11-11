@@ -12,12 +12,14 @@
 //   --out dir        where the .webp files go (default: docs/assets)
 //   --lossy          lossy frames instead, at --quality n (0-100, default 80); the comparison still has to pass
 //   --frames dir     also keep every merged frame as a PNG, for looking at
+//   --check          only run the line-break check (wrap-check.ts) and print every text box's lines; no encoding
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { installVirtualClock } from './kit/clock'
 import { inlineCss } from './inline-css'
 import { BAD_DIFF, verifyVideo } from './verify-video'
+import { LAST_LINE_MIN, TEXT_BOXES, measureLines, type BoxLines } from './wrap-check'
 
 const FPS = 25
 const STAGE = { width: 960, height: 700 }
@@ -37,6 +39,7 @@ const outDir = resolve(opt('--out', join(repo, 'docs/assets')))
 const quality = Number(opt('--quality', '80'))
 const lossless = !flag('--lossy')
 const framesDir = args.includes('--frames') ? resolve(opt('--frames', '')) : null
+const checkOnly = flag('--check')
 for (const l of langs) if (!FILES[l]) throw new Error(`unknown language ${l}; use ${Object.keys(FILES).join(', ')}`)
 
 const work = mkdtempSync(join(tmpdir(), 'dotz-video-'))
@@ -103,6 +106,13 @@ async function record(lang: string) {
     if (Math.abs(rect.x) > 0.5 || Math.abs(rect.y) > 0.5 || Math.abs(rect.width - STAGE.width) > 0.5 || Math.abs(rect.height - STAGE.height) > 0.5) {
       throw new Error(`the stage is ${rect.width}x${rect.height} at ${rect.x},${rect.y}, not the page: ${JSON.stringify(rect)}`)
     }
+
+    const boxes = JSON.parse(await view.evaluate(`JSON.stringify((${measureLines.toString()})(${JSON.stringify(TEXT_BOXES)}))`)) as BoxLines[]
+    const short = boxes.filter((b) => b.ratio < LAST_LINE_MIN)
+    if (checkOnly) for (const b of boxes) console.log(`${lang.padEnd(6)} ${b.ratio.toFixed(2)} ${b.box.padEnd(22)} ${b.lines.join(' | ')}`)
+    else console.log(`${lang.padEnd(6)} line breaks: ${boxes.length} text boxes, shortest last line ${Math.min(...boxes.map((b) => b.ratio)).toFixed(2)} of its longest (needs ${LAST_LINE_MIN})`)
+    if (short.length) throw new Error(`${lang}: a last line shorter than ${LAST_LINE_MIN} of the longest: ${short.map((b) => `${b.box} "${b.lines.join(' | ')}" ${b.ratio.toFixed(2)}`).join('; ')}`)
+    if (checkOnly) return
 
     const runs: Run[] = []
     let last = ''
