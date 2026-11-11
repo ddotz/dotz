@@ -24,10 +24,11 @@ const source = (rel: string) => {
 const files = (kind: "js" | "css") => readdirSync(join(WEB, kind)).filter(f => f.endsWith(`.${kind}`)).sort();
 const joined = (kind: "js" | "css") => files(kind).map(f => source(`${kind}/${f}`)).join("\n");
 // The demo is Korean: the ko catalog is carried the way the gateway carries it, read from the same committed tree.
-const koCatalog = injectedConsts(resolveView("ko", {
+// It is screen text like the bundle's own, so it goes through the same scrub (site/banned-words.ts).
+const koCatalog = scrubBundle(injectedConsts(resolveView("ko", {
   areas: lang => { try { return readdirSync(join(WEB, "i18n", lang)).filter(f => f.endsWith(".json")).map(f => f.slice(0, -5)).sort(); } catch { return []; } },
   read: (lang, area) => source(`i18n/${lang}/${area}.json`),
-}));
+})));
 
 // The page names no server asset: /custom.js (appended by 99-boot.js) becomes the demo's own empty layer beside app.js.
 // Absolute /app.css and /app.js never appear in the sources; /demo/app.* are what demo/index.html loads.
