@@ -7,7 +7,7 @@ import { en as shippedEn } from "./i18n-en.ts";
 import { webWords } from "./texts.ts";
 import { loadCatalog, diskReader, setCatalogProvider, setOwnerWords, placeholders, type Catalog, type Value } from "./web-i18n.ts";
 import { bundle, indexPage, setAppLang, webSources } from "./webapp.ts";
-import { createGenerator, valueProblem, type CacheFile, type Call, type Generator } from "./web-i18n-gen.ts";
+import { createGenerator, parseReply, valueProblem, type CacheFile, type Call, type Generator } from "./web-i18n-gen.ts";
 
 let dir = "";
 beforeEach(() => {
@@ -29,7 +29,7 @@ function fake(answer: (it: Sent, call: number) => unknown = it => german(it.en))
 	const call: Call = async (_system, text) => {
 		const items = JSON.parse(text) as Sent[];
 		sent.push(items.map(i => i.k));
-		return { text: JSON.stringify(items.map(i => answer(i, sent.length))) };
+		return { text: JSON.stringify(items.map(i => ({ k: i.k, t: answer(i, sent.length) }))) };
 	};
 	return { call, sent, calls: () => sent.length };
 }
@@ -107,6 +107,18 @@ test("a reply that breaks a rule leaves that key English, its neighbours transla
 	const before = model.calls();
 	await gen.signal("start");
 	expect(model.calls()).toBe(before);
+});
+
+test("a reply is read by key: typographic quotes as delimiters, a corrected second array, a skipped or foreign key", () => {
+	const keys = ["a", "b", "c"];
+	const got = (reply: string) => { const m = parseReply(reply, keys); return m && Object.fromEntries(m); };
+	expect(got('[{"k":"a","t":"A"},{"k":"b","t":"B"},{"k":"c","t":{"one":"{n} x","other":"{n} xs"}}]')).toEqual({ a: "A", b: "B", c: { one: "{n} x", other: "{n} xs" } });
+	expect(got("[{\u201Ck\u201D:\u201Ca\u201D,\u201Ct\u201D:\u201CAccueil\u201D}, {\u201Ck\u201D: \u201Cb\u201D, \u201Ct\u201D: \u201CR\u00E9glages\u201D}]\n")).toEqual({ a: "Accueil", b: "R\u00E9glages" });
+	expect(got('[{"k":"a","t":"Il a dit \u201Coui\u201D"}]')).toEqual({ a: "Il a dit \u201Coui\u201D" });
+	expect(got('[{"A"},{"B"}]\n\nWait, corrected:\n\n[{"k":"a","t":"A"},{"k":"b","t":"B"}]\n')).toEqual({ a: "A", b: "B" });
+	expect(got('[{"k":"b","t":"B"},{"k":"zz","t":"Z"},{"k":"b","t":"again"}]')).toEqual({ b: "B" });
+	expect(got('["A","B","C"]')).toBeUndefined();
+	expect(got("sorry")).toBeUndefined();
 });
 
 test("markup the English does not have is not taken", () => {

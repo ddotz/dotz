@@ -381,7 +381,7 @@ describe("first-run setup gate", () => {
 		const call = async (_system: string, text: string) => {
 			modelCalls++;
 			const items = JSON.parse(text) as Sent[];
-			return { text: JSON.stringify(items.map(i => (typeof i.en === "string" ? `pt: ${i.en}` : Object.fromEntries(Object.entries(i.en as object).map(([c, t]) => [c, `pt: ${t}`]))))) };
+			return { text: JSON.stringify(items.map(i => ({ k: i.k, t: typeof i.en === "string" ? `pt: ${i.en}` : Object.fromEntries(Object.entries(i.en as object).map(([c, t]) => [c, `pt: ${t}`])) }))) };
 		};
 		const cache = mkdtempSync(join(tmpdir(), "web-i18n-cache-"));
 		dirs.push(cache);
