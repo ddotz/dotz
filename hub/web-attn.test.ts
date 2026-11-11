@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // The "확인 필요" toast (09-needs-you.js toastAttn) driven by the real event intake (13-data.js ingestMsg / onActivity).
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
@@ -37,7 +38,7 @@ function page(opts: { current?: string; phone?: boolean; notices?: number; badge
 	let api: any;
 	// renderBars repaints the badge, and paintAttn's toastAttn runs with it (as in the page).
 	env.renderBars = () => api.toastAttn();
-	api = new Function(...Object.keys(env), `${tone}\n${needs}\n${intake}\nreturn { noteStatus, toastAttn, onActivity, ingestMsg, chatUnreadCount, paintAttn };`)(...Object.values(env));
+	api = new Function(...Object.keys(env), `${i18nPrelude()}${tone}\n${needs}\n${intake}\nreturn { noteStatus, toastAttn, onActivity, ingestMsg, chatUnreadCount, paintAttn };`)(...Object.values(env));
 	api.noteStatus(); api.toastAttn();   // page load
 	return { api, S, notes };
 }

@@ -50,9 +50,9 @@ const rcWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === k
 const rcPlain = s => dropIdNote(plainTable(String(s ?? ""))).replace(/<#(\d{10,})>/g, (_, id) => targetName(`ch:${id}`)).replace(/^\s*#{1,6}\s*/, "").replace(/\*\*|`/g, "").trim();
 // The original folded behind "원문 보기" (raw: the text; opts.rawNode draws it itself, opts.rawOpen starts it open).
 function rcRawFold(raw, opts = {}) {
-  const sum = el("summary", { text: opts.rawOpen ? "원문 접기" : "원문 보기" }), box = el("div", { class: `rc-rawbody${opts.rawNode ? " own" : ""}` }), d = el("details", { class: "rc-raw" }, sum, box);
+  const sum = el("summary", { text: opts.rawOpen ? TX("home.result.raw_close") : TX("home.result.raw_open") }), box = el("div", { class: `rc-rawbody${opts.rawNode ? " own" : ""}` }), d = el("details", { class: "rc-raw" }, sum, box);
   const fill = () => { if (d.open && !box.firstChild) box.append(opts.rawNode ? opts.rawNode(raw) : mdNode(rcRawMd(raw))); };
-  d.addEventListener("toggle", () => { sum.textContent = d.open ? "원문 접기" : "원문 보기"; fill(); });
+  d.addEventListener("toggle", () => { sum.textContent = d.open ? TX("home.result.raw_close") : TX("home.result.raw_open"); fill(); });
   if (opts.rawOpen) { d.open = true; fill(); }
   return d;
 }
@@ -62,14 +62,14 @@ const RC_KEY = /^(\d{1,2}:\d{2}|답장|가격|재고|새 글|확인|변경)\s+(\
 // A changed item a watch reports (hub/watchtext.ts): "[<old kind> → ]<kind>: <owner/repo>#<n> <author> <title>". It is a row of its own: the kind as a
 // small tag, the number and title in front, the repository, author and old kind muted. The other lines of such a list are plain rows.
 const RC_ITEM = /^(?:([^:\n]{1,20}?) → )?([^:\n]{1,20}?):\s+([\w.-]+\/[\w.-]+)#(\d+)\s+(\S+)\s+(\S.*)$/;
-const rcItemHtml = m => `<div class="rc-row rc-it"><span class="rc-w"><span class="tag">${esc(m[2])}</span> <b>#${esc(m[4])} ${inline(m[6])}</b> <span class="rc-d">${esc([m[3], m[5], m[1] ? `${m[1]}에서 바뀜` : ""].filter(Boolean).join(" · "))}</span></span></div>`;
+const rcItemHtml = m => `<div class="rc-row rc-it"><span class="rc-w"><span class="tag">${esc(m[2])}</span> <b>#${esc(m[4])} ${inline(m[6])}</b> <span class="rc-d">${esc([m[3], m[5], m[1] ? TX("home.result.changed_from", { from: m[1] }) : ""].filter(Boolean).join(" · "))}</span></span></div>`;
 function rcRowsNode(text) {
   const lines = String(text ?? "").split("\n").map(l => l.trim()).filter(Boolean), out = [];
   const items = lines.some(l => RC_ITEM.test(l.replace(/^[-*\u2022]\s+/, "")));
   let n = 0;
   for (const l of lines) {
     const m = /^[-*\u2022]\s+(.*)$/.exec(l), k = m && RC_KEY.exec(m[1]), it = items && m && RC_ITEM.exec(m[1]);
-    if (items && m && !k) { out.push(it ? rcItemHtml(it) : `<div class="rc-row"><span class="rc-w${/^외 \d+건$/.test(m[1]) ? " rc-d" : ""}">${inline(m[1])}</span></div>`); n++; continue; }
+    if (items && m && !k) { out.push(it ? rcItemHtml(it) : `<div class="rc-row"><span class="rc-w${/^(?:외 \d+건|\+\d+ more)$/.test(m[1]) ? " rc-d" : ""}">${inline(m[1])}</span></div>`); n++; continue; }
     if (!m) {   // a short line without punctuation is a small heading over the rows below it (오늘 일정 / 메일 / 감시)
       if (l.length > 16 || /[.!?,]/.test(l)) return null;
       out.push(`<div class="rc-sh">${esc(l)}</div>`);
@@ -137,7 +137,7 @@ function hcBriefNode(text) {
   if (!p) return null;
   const kids = [];
   if (p.pre) kids.push(answerNode(p.pre));
-  const tag = /브리핑|아침/.test(text) ? el("span", { class: "tag pri", text: "아침 점검" }) : null;
+  const tag = /브리핑|아침/.test(text) ? el("span", { class: "tag pri", text: TX("home.result.morning") }) : null;
   const card = el("div", { class: "hcb-card", safeHtml: timeRowsHtml(p.rows) });
   if (tag || p.head) card.prepend(el("div", { class: "hcb-hd" }, tag, p.head ? el("span", { class: "hcb-h" }, ...hcbNums(p.head)) : null));
   kids.push(card);

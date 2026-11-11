@@ -191,7 +191,7 @@ function mtNode(blocks) {
         const inner = el("div", { class: b.t === "fold" ? "mt-fold-body" : "mt-quote-body" });
         inner.append(mtNode(b.blocks));
         if (b.t === "quote" && b.n <= MT.quoteFold) box.append(el("blockquote", { class: "mt-quote" }, inner));
-        else box.append(el("details", { class: b.t === "fold" ? "mt-fold" : "mt-quote" }, el("summary", { text: b.t === "fold" ? "이전 메일 " + b.n + "줄 보기" : "인용 " + b.n + "줄 보기" }), inner));
+        else box.append(el("details", { class: b.t === "fold" ? "mt-fold" : "mt-quote" }, el("summary", { text: b.t === "fold" ? TX("home.mailtext.fold", { n: b.n }) : TX("home.mailtext.quote", { n: b.n }) }), inner));
         break;
       }
     }
@@ -259,7 +259,7 @@ function mailBoltIcon() {
 function mailSumBlock(text) {
   const { about, todo } = mailSumSplit(text);
   if (!about && !todo) return null;
-  const t = el("span", { class: "msum-t" }, el("span", { class: "msum-k", text: "요약 · " }));
+  const t = el("span", { class: "msum-t" }, el("span", { class: "msum-k", text: TX("home.mailtext.summary_k") }));
   mailSumInline(t, about);
   if (todo) { t.append(" "); mailSumInline(t, todo); }
   return el("div", { class: "msum", "data-k": "mail-summary" }, mailBoltIcon(), t);
@@ -267,7 +267,7 @@ function mailSumBlock(text) {
 // 할 일 and 직접 답할 것 (hub/mail-lines.ts): rows of their own, under the summary of the mail and above a draft (10-decision-card.js draftBriefNode).
 function mailLinesNode(todo, questions) {
   const row = (k, list) => (list && list.length ? el("div", { class: "mln-r" }, el("div", { class: "mln-k", text: k }), el("ul", { class: "mln-l" }, ...list.map(x => el("li", { text: x })))) : null);
-  const rows = [row("할 일", todo), row("직접 답할 것", questions)].filter(Boolean);
+  const rows = [row(TX("home.mailtext.todo"), todo), row(TX("home.mailtext.ask"), questions)].filter(Boolean);
   return rows.length ? el("div", { class: "mln", "data-k": "mail-lines" }, ...rows) : null;
 }
 // The opened mail on screen already draws its lines (mailOpenSummary): a draft beside it leaves them out, a draft that stands alone keeps them.

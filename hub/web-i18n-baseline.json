@@ -45,12 +45,12 @@
       "why": "pending"
     },
     "web/js/08-home.js": {
-      "count": 275,
-      "why": "pending"
+      "count": 19,
+      "why": "server value comparison"
     },
     "web/js/09-needs-you.js": {
-      "count": 101,
-      "why": "pending"
+      "count": 8,
+      "why": "server value comparison"
     },
     "web/js/10-decision-card.js": {
       "count": 376,
@@ -68,29 +68,21 @@
       "count": 93,
       "why": "pending"
     },
-    "web/js/11-mailbody.js": {
-      "count": 24,
-      "why": "pending"
-    },
     "web/js/11-mailtext.js": {
-      "count": 68,
-      "why": "pending"
+      "count": 55,
+      "why": "agent-text parsing"
     },
     "web/js/11-resultcard.js": {
-      "count": 48,
-      "why": "pending"
+      "count": 36,
+      "why": "agent-text parsing"
     },
     "web/js/11-todo-strip.js": {
-      "count": 139,
-      "why": "pending"
+      "count": 32,
+      "why": "server value comparison"
     },
     "web/js/11-watchtext.js": {
-      "count": 197,
-      "why": "pending"
-    },
-    "web/js/11-worklog.js": {
-      "count": 14,
-      "why": "pending"
+      "count": 24,
+      "why": "Korean text handling"
     },
     "web/js/12-terminal-view.js": {
       "count": 159,

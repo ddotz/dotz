@@ -116,7 +116,7 @@ function mailHtmlNode(key) {
   const st = MB.cache.get(key) || mbPut(key, { html: null, remote: false, prep: new Map(), h: 0, w: 0 });
   const bar = el("div", { class: "mb-bar", hidden: true }), note = el("span", { class: "mb-note" }), tog = el("button", { class: "btn text", type: "button" });
   bar.append(note, tog);
-  const frame = el("iframe", { class: "mb-frame", sandbox: "allow-popups allow-popups-to-escape-sandbox", title: "메일 원문", referrerpolicy: "no-referrer" });
+  const frame = el("iframe", { class: "mb-frame", sandbox: "allow-popups allow-popups-to-escape-sandbox", title: TX("home.mailbody.title"), referrerpolicy: "no-referrer" });
   const host = el("div", { class: "mb" }, bar, frame);
   let seq = 0, shownW = 0;
   const show = async () => {
@@ -134,9 +134,9 @@ function mailHtmlNode(key) {
       if (my !== seq) return;
       const base = mbDoc(p.body, remote);
       bar.hidden = !(p.held || remote);
-      const paint = () => { note.textContent = !remote ? `바깥 이미지 ${p.held}개를 막았어요` : st.broken ? `바깥 이미지 ${st.broken}개는 이 기기에서 열리지 않아요` : "바깥 이미지를 보고 있어요"; };
+      const paint = () => { note.textContent = !remote ? TX("home.mailbody.blocked", { n: p.held }) : st.broken ? TX("home.mailbody.broken", { n: st.broken }) : TX("home.mailbody.showing"); };
       paint();
-      tog.textContent = remote ? "이미지 숨기기" : "이미지 보기";
+      tog.textContent = remote ? TX("home.mailbody.hide") : TX("home.mailbody.show");
       const known = st.h && st.w === w && st.base === base;
       if (known) frame.style.height = `${st.h}px`;
       const first = known ? st.doc : base;
@@ -158,7 +158,7 @@ function mailHtmlNode(key) {
       }
       shownW = w;
     } catch {
-      if (my === seq) { clear(host); host.append(el("div", { class: "mb-fail", text: "원문을 불러오지 못했어요" })); }
+      if (my === seq) { clear(host); host.append(el("div", { class: "mb-fail", text: TX("home.mailbody.failed") })); }
     }
   };
   tog.onclick = () => { st.remote = !st.remote; st.h = 0; show(); };

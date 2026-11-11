@@ -6,7 +6,7 @@
    Kind (`wk`) and state (`wst`) come from the hub; an event without them (the demo, an older hub) falls back as wlKind / wlState say.
    The same helpers draw 홈's 작업내역 card (08-home.js hcNotices), so the two never disagree. */
 const WL = { open: new Set() };   // unfolded rows, by wlRowKey
-const WL_LABEL = { session: "세션", check: "예약 점검", night: "야간 정리", update: "업데이트", account: "계정", system: "시스템", note: "기록" };
+const WL_LABEL = { session: TX("common.session"), check: TX("home.worklog.check"), night: TX("home.worklog.night"), update: TX("home.worklog.update"), account: TX("home.worklog.account"), system: TX("home.worklog.system"), note: TX("home.worklog.note") };
 const WL_STATES = new Set(["done", "run", "wait", "ask", "fail"]);
 const wlKey = o => String(o.update_key || o.key || "");
 const wlRowKey = o => `${o.ts}|${wlKey(o)}`;
@@ -59,7 +59,7 @@ const wlClaim = c => { const t = CLAIM_TAG[c]; return t ? el("span", { class: `t
 // A row that turns out to show more than it says becomes a button (the quiet check line, once it is laid out and clipped).
 function wlPress(row, toggle, label) {
   row.classList.remove("fr-all");
-  row.setAttribute("role", "button"); row.tabIndex = 0; row.setAttribute("aria-expanded", "false"); row.setAttribute("aria-label", `${label} 펼치기`);
+  row.setAttribute("role", "button"); row.tabIndex = 0; row.setAttribute("aria-expanded", "false"); row.setAttribute("aria-label", TX("home.fold.open_label", { label }));
   row.onclick = toggle; row.onkeydown = ev => monKey(ev, toggle);
 }
 let wlFitQ = [];
@@ -82,7 +82,7 @@ function wlFull(e) {
 }
 function wlNode(e) {
   const sp = wlSplit(e), st = wlState(e), kind = wlKind(e), key = wlRowKey(e), open = WL.open.has(key), hm = kstHM(e.ts);
-  const quiet = kind === "check" && st !== "fail" && !open, button = sp.more && !open, label = WL_LABEL[kind] || "알림";   // an 알림 post has no kind label: the conversation is the label
+  const quiet = kind === "check" && st !== "fail" && !open, button = sp.more && !open, label = WL_LABEL[kind] || TX("common.alerts");   // an 알림 post has no kind label: the conversation is the label
   // The title does not say the kind a second time ("야간 정리: ..." under the label 야간 정리), and a note with no state and no claim has nothing
   // for a head line to say: its title stands in the head's place, beside the time (what is absent leaves no slot).
   const title = sp.title.startsWith(`${label}:`) ? sp.title.slice(label.length + 1).trim() || sp.title : sp.title;
@@ -102,10 +102,10 @@ function wlNode(e) {
   const full = open ? wlFull(e) : null;
   const unread = !!(CV.div && e.ts > CV.div && convIncoming(e));
   const row = el("div", { class: `bm rc fr wl-row${unread ? " un" : ""}${quiet ? " wl-quiet" : ""}${plain ? " wl-plain" : ""}${button ? "" : " fr-all"}${open ? " fr-open" : ""}`, "data-ts": e.ts, "data-wk": kind, "data-wst": st || null,
-    role: button ? "button" : null, tabindex: button ? "0" : null, "aria-expanded": button ? "false" : null, "aria-label": button ? `${label} 펼치기` : null, onclick: button ? toggle : null, onkeydown: button ? ev => monKey(ev, toggle) : null },
+    role: button ? "button" : null, tabindex: button ? "0" : null, "aria-expanded": button ? "false" : null, "aria-label": button ? TX("home.fold.open_label", { label }) : null, onclick: button ? toggle : null, onkeydown: button ? ev => monKey(ev, toggle) : null },
     hd,
     quiet || plain ? null : open ? full : el("div", { class: "fr-sum", text: title }),
-    open ? el("div", { class: "btns cc-act" }, el("button", { class: "btn text", type: "button", "aria-label": `${label} 접기`, onclick: toggle, text: "접기" })) : null);
+    open ? el("div", { class: "btns cc-act" }, el("button", { class: "btn text", type: "button", "aria-label": TX("home.fold.close_label", { label }), onclick: toggle, text: TX("home.fold.close") })) : null);
   if (quiet && !button) wlFitLater(row, toggle, label);
   return row;
 }

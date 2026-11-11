@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 import { clockKo, deriveLabel, describeOutput, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLabel, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
 
 const KAKAO = "kakao chat=100000000000001 new=1 from=3900000000000000001 to=3900000000000000001 at=2026-10-22T12:26:36.000Z";
@@ -112,7 +113,7 @@ test("a JSON report reads in Korean key words, a long log says its lines and las
 
 test("web/js/11-watchtext.js words the same posts as this module", () => {
 	const src = readFileSync(join(import.meta.dir, "../web/js/11-watchtext.js"), "utf8");
-	const web = new Function(`${src}; return { watchLine, scheduleLine, humanLabel };`)() as Record<string, (...a: any[]) => string>;
+	const web = new Function(`${i18nPrelude()}${src}; return { watchLine, scheduleLine, humanLabel };`)() as Record<string, (...a: any[]) => string>;
 	const opts = { now: NOW, tz: TZ };
 	const cases: [string, string, string, string?][] = [["kakao-new", "matched /./", KAKAO], ["재고", "output changed", "새 메일이 1통 왔어요"], ["저장소 감시", "matched /gone/", "sample-repo-gone"], ["저장소 감시", "matched /gone/", "READY\n재고가 들어왔어요"], ["저장소 감시", "output changed", "sample-repo-gone", "sample-repo-here"], ["api-health", "failed 3 times in a row (exit 7)", "curl: (7) boom"], ["x", "recovered", ""], ["x", "recovered", "ok"], ["상태", "output changed", '{"status":"ok","latest":{"at":"2025-01-02T01:00:00Z"}}'], ["로그", "output changed", "2025-01-02T01:10:00Z a=1 b=2\n2025-01-02T01:11:00Z a=1 b=3\n2025-01-02T01:12:00Z a=1 b=4"], ["재고", "output changed", "Item A\nItem C", "Item A\nItem B"], ["재고", "fail", "DOTZ_FAIL login\nx"], ["상태", "output changed", '{"version":"8.2.36","id":"q"}'], ["상태", "output changed", "+ Build 9.1.0\n- Build 9.0.9"], ["sample-items", "match", ITEMS_NOW, ITEMS_PREV]];
 	for (const [l, r, o, prev] of [...cases, ...MATCHES.map(([l, r, o]) => [l, r, o] as [string, string, string])]) expect(web.watchLine!(l, r, o, { ...opts, prev })).toBe(watchLine(l, r, o, { ...opts, prev }));

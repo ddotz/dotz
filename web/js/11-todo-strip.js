@@ -63,7 +63,7 @@ function speakerOf(e) {
   if (e.kind === "out") return "bot";
   return "";
 }
-const SYS_LABEL = { schedule: "예약", watch: "모니터링", mail: "메일" };
+const SYS_LABEL = { schedule: TX("common.schedule"), watch: TX("common.monitoring"), mail: TX("common.mail") };
 // Gateway restart notices: a clean one (nothing was cut off) leaves the chat and only counts toward the top banner.
 const isRestart = e => e.kind === "out" && e.source === "gateway" && /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(e.text ?? ""));
 const cleanRestart = e => isRestart(e) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
@@ -77,8 +77,8 @@ function paintRestartBanner() {
   b.hidden = !last || (!!seen && seen.day === today && cut <= (seen.cut || 0));
   if (b.hidden) return;
   $("#gban-dot").className = `dot ${cut ? "warn" : ""}`;
-  $("#gban-tx").innerHTML = `오늘 재시작 <b>${list.length}회</b> · 끊긴 작업 <b>${cut}</b>`;
-  b.title = `오늘 게이트웨이 재시작 ${list.length}회, 끊긴 작업 ${cut}, 마지막 ${kstHM(last)}`;
+  $("#gban-tx").innerHTML = TX("home.gban.tx", { restarts: `<b>${TX("home.gban.times", { n: list.length })}</b>`, cut: `<b>${cut}</b>` });
+  b.title = TX("home.gban.title", { n: list.length, cut, time: kstHM(last) });
   $("#gban-x").onclick = () => { try { localStorage.setItem(BAN_KEY, JSON.stringify({ day: today, cut })); } catch {} b.hidden = true; };
 }
 // Alerts: one plain Korean line; the raw text (provider error strings, report lines) folds under 자세히.
@@ -86,9 +86,8 @@ function humanAlert(text) {
   const m = text.match(/^(.+?): 모델 제공자 오류\(([\s\S]*)\)가 (\d+)번 재시도해도 계속돼서 멈췄(?:습니다|어요)/);
   if (m) {
     const c = m[2];
-    const why = /timed out|timeout/i.test(c) ? "모델 응답이 너무 오래 없어서" : /ENOTFOUND|reach|network|ECONN|fetch failed/i.test(c) ? "모델 서버에 연결되지 않아서" : /rate|limit|429/i.test(c) ? "사용 한도에 걸려서" : /overload|529|50\d/i.test(c) ? "모델 서버가 바빠서" : "모델 오류가 계속돼서";
-    const last = m[1].charCodeAt(m[1].length - 1) - 0xac00, josa = last >= 0 && last < 11172 && last % 28 ? "이" : "가";
-    return `${m[1]}${josa} ${why} ${m[3]}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.`;
+    const key = /timed out|timeout/i.test(c) ? "home.alert.model_timeout" : /ENOTFOUND|reach|network|ECONN|fetch failed/i.test(c) ? "home.alert.model_network" : /rate|limit|429/i.test(c) ? "home.alert.model_limit" : /overload|529|50\d/i.test(c) ? "home.alert.model_busy" : "home.alert.model_error";
+    return key === "home.alert.model_timeout" ? TX("home.alert.model_timeout", { name: m[1], n: Number(m[3]) }) : key === "home.alert.model_network" ? TX("home.alert.model_network", { name: m[1], n: Number(m[3]) }) : key === "home.alert.model_limit" ? TX("home.alert.model_limit", { name: m[1], n: Number(m[3]) }) : key === "home.alert.model_busy" ? TX("home.alert.model_busy", { name: m[1], n: Number(m[3]) }) : TX("home.alert.model_error", { name: m[1], n: Number(m[3]) });
   }
   return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
 }
@@ -104,8 +103,8 @@ function streamIn(root, key, ts) {
 // received by an idle session / waited in the queue / resumed a stopped session / held on a limit), answered, or not delivered.
 const DELIV = { nodes: new Map(), state: new Map() };
 const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, update: 1, resumed: 1, answered: 2, failed: 2 };
-const DELIV_LABEL = { steered: "받음 · 지금 작업에 전달", received: "받음 · 바로 전달", queued: "받음 · 기다렸다 전달", held: "받음 · 한도가 풀리면 전달", update: "받음 · 업데이트 뒤 전달", resumed: "다시 시작해서 전달", answered: "답함" };
-const delivLabel = d => d.state === "failed" ? `전달하지 못했어요${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
+const DELIV_LABEL = { steered: TX("home.deliv.steered"), received: TX("home.deliv.received"), queued: TX("home.deliv.queued"), held: TX("home.deliv.held"), update: TX("home.deliv.update"), resumed: TX("home.deliv.resumed"), answered: TX("home.deliv.answered") };
+const delivLabel = d => d.state === "failed" ? `${TX("home.deliv.failed")}${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
 function paintDelivery(mid) {
   const n = DELIV.nodes.get(mid), d = DELIV.state.get(mid);
   if (!n || !d) return;
@@ -141,8 +140,8 @@ function cardNode(c) {
 const SYS_NODES = new Map();   // worker id -> every line drawn for it: { st, at, w } (a follow-up joined to a job writes a second line)
 const WORK_ROWS = new Map();   // worker id -> the gateway's newest word on its job
 const WORK_ROWS_MAX = 600, SYS_SLACK_MS = 5000, SYS_FRESH_MS = 60_000;
-const SYS_ST = { running: ["pri", "진행 중"], stalled: ["warn", "멈춤"], done: ["ok", "완료"], failed: ["err", "실패"], gone: ["off", "끝남"] };
-const SYS_STOPPED = ["off", "중단됨"];
+const SYS_ST = { running: ["pri", TX("home.sys.running")], stalled: ["warn", TX("common.status.stopped")], done: ["ok", TX("home.sys.done")], failed: ["err", TX("home.sys.failed")], gone: ["off", TX("common.status.ended")] };
+const SYS_STOPPED = ["off", TX("home.sys.stopped")];
 function workRowNote(w, at) {
   const o = WORK_ROWS.get(w.id);
   if (o && o.at > at) return;
@@ -166,7 +165,7 @@ function paintSysLine(row, job) {
   st.hidden = !s;
   if (!s) return;
   const open = st.closest("button");
-  if (open) open.title = w.result_at ? "결과 보기" : "작업 열기";
+  if (open) open.title = w.result_at ? TX("home.sys.view_result") : TX("home.sys.open_task");
   if (st.dataset.s === s[1]) return;
   const was = st.dataset.s, card = st.classList.contains("ct-pill"), paint = () => {
     if (card) { st.className = `cv-sys-st ct-pill ${s[0]}`; st.replaceChildren(el("span", { class: `dot ${s[0]}` }), el("span", { text: s[1] })); }
@@ -205,7 +204,7 @@ function hcTaskBody(line, w) {
   const old = line.querySelector(":scope > .ct-body");
   const files = w.status === "done" && !w.cancelled && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
   const chips = files.map(f => { const name = f.name || String(f.path).split("/").pop(), size = f.size ? fsize(f.size) : "", opt = VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) };
-    return el(opt.href ? "a" : "button", { class: "ct-file", ...(opt.href ? { href: opt.href, target: "_blank", rel: "noopener" } : { type: "button", onclick: opt.onclick }), title: `${name} · 열기` },
+    return el(opt.href ? "a" : "button", { class: "ct-file", ...(opt.href ? { href: opt.href, target: "_blank", rel: "noopener" } : { type: "button", onclick: opt.onclick }), title: TX("home.sys.open_file", { name }) },
       icon("file"), el("span", { class: "ct-ft" }, el("b", { text: name }), size ? el("span", { text: size }) : null)); });
   const done = w.status === "done" && !w.cancelled;
   const body = chips.length || done ? el("div", { class: "ct-body" }, ...chips, done ? el("div", { class: "ct-bar" }, el("span")) : null) : null;
@@ -223,8 +222,8 @@ function tlHome(n) {
 function sysTaskLine(e, title, hm, id) {
   const st = el("span", { class: "cv-sys-st ct-pill", hidden: true }, el("span", { class: "dot" }), el("span"));
   const row = sysRow(id, st, e);
-  const hd = el("button", { class: "ct-hd", type: "button", title: "작업 열기", onclick: () => sysOpen(row, id, title, e) },
-    el("span", { class: "ct-nm" }, el("span", { class: "ct-lb" }, el("span", { class: "ct-kind", text: hm ? "백그라운드 작업 · " : "백그라운드 작업" }), hm ? el("span", { text: hm }) : null), el("span", { class: "cv-sys-tx ct-t", text: title })), st);
+  const hd = el("button", { class: "ct-hd", type: "button", title: TX("home.sys.open_task"), onclick: () => sysOpen(row, id, title, e) },
+    el("span", { class: "ct-nm" }, el("span", { class: "ct-lb" }, el("span", { class: "ct-kind", text: hm ? `${TX("home.sys.bg")} · ` : TX("home.sys.bg") }), hm ? el("span", { text: hm }) : null), el("span", { class: "cv-sys-tx ct-t", text: title })), st);
   return el("div", { class: "cv-sys cv-task", role: "group" }, hd);
 }
 function sysLine(e, text, hm) {
@@ -236,7 +235,7 @@ function sysLine(e, text, hm) {
   const kids = [icon("lanes"), el("span", { class: "cv-sys-tx", text }), st, hm ? el("span", { class: "cv-sys-mt", text: hm }) : null];
   if (!id) return el("div", { class: "cv-sys", role: "note" }, ...kids);
   const row = sysRow(id, st, e);
-  return el("button", { class: "cv-sys", type: "button", title: "작업 열기", onclick: () => sysOpen(row, id, text.replace(/^[^:]*:\s*/, ""), e) }, ...kids);
+  return el("button", { class: "cv-sys", type: "button", title: TX("home.sys.open_task"), onclick: () => sysOpen(row, id, text.replace(/^[^:]*:\s*/, ""), e) }, ...kids);
 }
 function msgNode(e) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
@@ -247,10 +246,10 @@ function msgNode(e) {
   if (peer) return peerMsgCard(e, peer, hm);
   switch (e.kind) {
     case "message": case "lane_message": case "_cmd": {
-      const via = e.kind === "_cmd" ? "명령" : e.source === "discord" ? "Discord" : e.source === "terminal" ? "터미널" : "";
+      const via = e.kind === "_cmd" ? TX("home.msg.cmd") : e.source === "discord" ? "Discord" : e.source === "terminal" ? TX("home.msg.terminal") : "";
       const ub = el("div", { class: "ub" }, ...atkParts(text, e.files, e)), long = text.length > 420 || text.split("\n").length > 6;
       if (long) ub.classList.add("clamp");
-      const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
+      const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? TX("home.msg.more") : TX("home.fold.close"); } }, TX("home.msg.more")) : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
       if (mid) { DELIV.nodes.set(mid, { mt, base }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
       // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
@@ -263,15 +262,15 @@ function msgNode(e) {
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, e.card ? cardNode(e.card) : el("pre", { text }), el("div", { class: "mt", text: hm }));
     case "notice": case "notice_read": return null;
     case "result": {
-      const go = el("button", { class: "btn tonal", type: "button", text: "세션 열기" });
+      const go = el("button", { class: "btn tonal", type: "button", text: TX("home.lane.open") });
       go.onclick = () => pickTarget(e.open || "main");
       // The hub stores a report's first three lines (hub/notices-read.ts summary), which can end on a heading with nothing below it.
       const body = parseTone(previewSrc(choiceBody(text))).text.replace(/\n\*\*[^*\n]+\*\*$/, "").trim();
-      return el("div", { class: "bm res" }, el("div", { class: "mt", text: ["세션 결과", hm].filter(Boolean).join(" · ") }),
-        el("div", { class: "ccard" }, el("div", { class: "cc-hd" }, el("span", { class: "dot ok" }), el("span", { text: `${e.title || "세션"} 끝났어요` }), e.verified ? el("span", { class: "tag ok", text: "확인됨" }) : null),
+      return el("div", { class: "bm res" }, el("div", { class: "mt", text: [TX("home.lane.result"), hm].filter(Boolean).join(" · ") }),
+        el("div", { class: "ccard" }, el("div", { class: "cc-hd" }, el("span", { class: "dot ok" }), el("span", { text: TX("home.lane.finished", { title: e.title || TX("common.session") }) }), e.verified ? el("span", { class: "tag ok", text: TX("home.lane.verified") }) : null),
           body ? answerParts(fileLines(body), { lead: false }) : null, el("div", { class: "btns cc-act" }, go)));
     }
-    case "lane_start": return el("div", { class: "a-div", text: `세션 시작 · ${hm}` });
+    case "lane_start": return el("div", { class: "a-div", text: TX("home.lane.started", { hm }) });
     case "mail": {
       // A mail conversation's first message (hub/mail.ts postMail): sender, subject, then the summary and the body (원문).
       if (e.subject) {
@@ -321,7 +320,7 @@ function msgNode(e) {
       const parked = parkedTone(mark) && !e.live && !isNote, tone = parked || (mark === "done" && asProposalPending(parsed)) ? "" : isNote ? mark || "run" : mark;
       // The marker is a status tag in front of the first line (02-basic-markdown.js toneLead), for the orchestrator and a session alike.
       const body = isNote ? noteText(parsed.replace(/^진행 중:\s*/, "")) : parsed;
-      const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업내역" : isRestart(e) ? "게이트웨이" : e.relay ? targetName(e.target) : botName;
+      const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? TX("common.alerts") : e.target === "worklog" ? TX("common.worklog") : isRestart(e) ? TX("home.gateway") : e.relay ? targetName(e.target) : botName;
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), rpQuote(e), cardNode(e.card));
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null);
@@ -336,7 +335,7 @@ function msgNode(e) {
         const line = humanAlert(shown);
         // A watch's change line (89,000원 → 72,000원) stands under the sentence with the old value struck, not only folded in the raw text.
         const chg = nwChangeNode(nwChangeLine(body));
-        return el("div", { class: `bm${card}` }, head, toneLead(mdNode(line), tone), chg ? el("div", { class: "nw-line" }, chg) : null, line.trim() === shown.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: shown })));
+        return el("div", { class: `bm${card}` }, head, toneLead(mdNode(line), tone), chg ? el("div", { class: "nw-line" }, chg) : null, line.trim() === shown.trim() ? null : el("details", { class: "more" }, el("summary", { text: TX("home.msg.details") }), el("pre", { text: shown })));
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       // A relayed line is another computer's text, not this gateway's: no file chips, no path chips, no choice card; its `[file]` lines stay text (e.relay, 42-relay-chat.js).
@@ -378,10 +377,10 @@ function newGroup(a) {
   const node = el("details", { class: "work" }, el("summary", { onclick: () => fill() }, el("span", { class: "wdot" }), wsum), body);
   const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
   g.update = () => {
-    const parts = [g.t1 - g.t0 >= 1000 ? `${fmtDur(g.t1 - g.t0)} 작업` : g.tools ? "작업" : g.think ? "생각" : "작업"];
-    if (g.live) { const d = Math.max(g.t1, Date.now()) - g.t0; parts[0] = `작업 중${d >= 1000 ? ` ${fmtDur(d)}` : ""}`; }
-    for (const [k, v] of g.kinds) parts.push(`${k} ${v}`);
-    if (g.errs) parts.push(`오류 ${g.errs}`);
+    const parts = [g.t1 - g.t0 >= 1000 ? TX("home.work.dur", { dur: fmtDur(g.t1 - g.t0) }) : g.tools ? TX("home.work.work") : g.think ? TX("home.work.think") : TX("home.work.work")];
+    if (g.live) { const d = Math.max(g.t1, Date.now()) - g.t0; parts[0] = `${TX("common.status.working")}${d >= 1000 ? ` ${fmtDur(d)}` : ""}`; }
+    for (const [k, v] of g.kinds) parts.push(`${({ 명령: TX("home.kind.cmd"), 읽기: TX("home.kind.read"), 수정: TX("home.kind.edit"), 검색: TX("home.kind.search"), 서브에이전트: TX("home.kind.subagent"), 웹: TX("home.kind.web"), 기록: TX("home.kind.notes"), 도구: TX("home.kind.tool") })[k] || k} ${v}`);
+    if (g.errs) parts.push(TX("home.work.errs", { n: g.errs }));
     wsum.textContent = parts.join(" · ");
     node.classList.toggle("bad", g.errs > 0);
   };

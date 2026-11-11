@@ -46,19 +46,19 @@ function attnRaw(t) {
   return msOf(DONE[t]) > msOf(SEEN[t]) ? "done" : "";
 }
 const attnKind = t => watching(t) ? "" : attnRaw(t);
-const attnLabel = k => ({ ask: "답변 필요", limit: "한도 걸림" })[k] || "확인 필요";
+const attnLabel = k => ({ ask: TX("common.needs_reply"), limit: TX("common.status.rate_limited") })[k] || TX("home.attn.check");
 // The 채팅 nav badge and the page title count what the chat list shows and the owner can clear there: the listed conversations (the main
 // chat, 알림, 작업내역 and the projects) that have unread messages, by the hub's read position (synced across devices). A session lives under
 // 세션; its question, rate limit and finished turn keep their own marks (home, 세션, toasts) and never hold this badge.
 const chatUnreadCount = (targets, unreadOf) => targets.filter(t => unreadOf(t) > 0).length;
 function paintAttn() {
   const n = S ? chatUnreadCount([MAIN, "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
-  const say = n ? `읽지 않은 대화 ${n}개` : "", rise = n && b.hidden && b.dataset.seen;
+  const say = n ? TX("home.attn.unread_chats", { n }) : "", rise = n && b.hidden && b.dataset.seen;
   b.hidden = !n; b.title = say;
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";   // the digit that changed rolls; a hidden badge forgets, so it appears whole
   if (rise) motionPop(b);   // 0 -> n pops in; the first paint (before the state has loaded) only learns the number
   if (S) b.dataset.seen = "1";
-  b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
+  b.parentElement.setAttribute("aria-label", n ? TX("home.attn.chat_aria", { say }) : TX("common.chat"));
   document.title = n ? `(${n}) ${botName}` : botName;
   paintBell();
   toastAttn();
@@ -88,13 +88,13 @@ function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
   const n = rqWaiting(), faults = monAttnCount([{ apps: INTG.items, mons: NM.items }]), news = !n && !faults && monNews();
-  const say = n ? `확인할 것 ${n}개` : faults ? `확인할 것 ${faults}개` : news ? "새 소식" : "", rise = n && b.hidden && b.dataset.seen;
+  const say = n ? TX("home.attn.to_check", { n }) : faults ? TX("home.attn.to_check", { n: faults }) : news ? TX("home.attn.news") : "", rise = n && b.hidden && b.dataset.seen;
   b.hidden = !say; b.title = say;
   b.classList.toggle("nnb", !!n); b.classList.toggle("nub", !n && !!say);
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";
   if (rise) motionPop(b);
   if (NM.loaded && NT.loaded && INTG.loaded) b.dataset.seen = "1";
-  b.parentElement.setAttribute("aria-label", say ? `모니터링, ${say}` : "모니터링");
+  b.parentElement.setAttribute("aria-label", say ? TX("home.attn.mon_aria", { say }) : TX("common.monitoring"));
 }
 // The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
 // The other computers' snapshot (pqLoad) is read only by 모니터링.
@@ -120,7 +120,7 @@ function toastAttn() {
   else if (first.length) {
     const box = document.querySelector(".ntf-box"), before = box && box.firstElementChild;
     const names = first.map(targetName), newest = first.map(t => targetInfo(t).ask.at).sort().pop();
-    notify({ kind: "needs", target: "home", tone: "warn", title: `답변 필요 ${first.length}개`, ts: newest, text: `${names.slice(0, 2).join(", ")}${names.length > 2 ? ` 외 ${names.length - 2}개` : ""}가 답을 기다려요` });
+    notify({ kind: "needs", target: "home", tone: "warn", title: TX("home.attn.needs_n", { n: first.length }), ts: newest, text: names.length > 2 ? TX("home.attn.waiting_more", { names: names.slice(0, 2).join(", "), n: names.length - 2 }) : TX("home.attn.waiting", { names: names.join(", ") }) });
     const c = document.querySelector(".ntf-box .ntf");
     if (c && c !== before) { c.dataset.ny = "home"; attnHomeClick(); }
   }
@@ -143,7 +143,7 @@ function attnToast(t, k) {
     const ask = targetInfo(t).ask;
     notify({ kind: "needs", target: t, open: t, ask: k === "ask", tone: "warn", title: `${targetName(t)} · ${attnLabel(k)}`,
       ts: k === "ask" ? ask.at : k === "done" ? DONE[t] : new Date().toISOString(),
-      text: k === "ask" ? ask.text : k === "limit" ? "사용량 한도로 대기 중이에요" : "답을 마쳤어요. 확인해 주세요" });
+      text: k === "ask" ? ask.text : k === "limit" ? TX("home.attn.limit_wait") : TX("home.attn.done_check") });
 }
 
 /* ---------- 홈 답변 필요: only what the owner must do, the most important first ---------- */
@@ -155,12 +155,12 @@ function attnToast(t, k) {
 const NY_LOGIN = /로그인|인증|2단계|OTP|비밀번호/i;
 function nyOf(n) {
   const d = ntOpenDec(n) ? n.decision : null, gw = n.by === "gateway", text = `${n.title || ""}\n${n.text || ""}`;
-  if (d && d.to.startsWith("auth:")) return { n, rank: 0, crit: true, act: "로그인" };
+  if (d && d.to.startsWith("auth:")) return { n, rank: 0, crit: true, act: TX("home.ny.login") };
   if (d && d.draft) return null;   // a send approval is a row of 답장 대기 (30-replies.js), not of 답변 필요
-  if (gw && NY_LOGIN.test(text)) return { n, rank: 0, crit: true, act: "로그인" };
-  if (gw && (d || n.tone === "fail")) return { n, rank: 0, crit: true, act: "선택" };
+  if (gw && NY_LOGIN.test(text)) return { n, rank: 0, crit: true, act: TX("home.ny.login") };
+  if (gw && (d || n.tone === "fail")) return { n, rank: 0, crit: true, act: TX("home.ny.choose") };
   if (gw) return null;
-  return d ? { n, rank: 2, crit: n.tone === "fail", act: "선택" } : { n, rank: 4, crit: false, act: "답변" };
+  return d ? { n, rank: 2, crit: n.tone === "fail", act: TX("home.ny.choose") } : { n, rank: 4, crit: false, act: TX("home.ny.reply") };
 }
 // A question waiting on the owner that is a gateway notice it handles itself (not listed in 답변 필요).
 const nyHandled = n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n) && !nyOf(n);
@@ -170,13 +170,13 @@ const NY_FAILS = 3;
 function nyMonFails() {
   const out = [];
   for (const i of monItems()) if (!i.pc) for (const m of i.mon ? [i.mon] : i.owned || [])
-    if (!m.paused && (m.fails | 0) >= NY_FAILS) out.push({ m, key: i.key, pc: i.pc || null, rank: 2, crit: false, act: "확인 필요", at: m.last_run || "" });
+    if (!m.paused && (m.fails | 0) >= NY_FAILS) out.push({ m, key: i.key, pc: i.pc || null, rank: 2, crit: false, act: TX("home.attn.check"), at: m.last_run || "" });
   return out;
 }
 // Only this computer's: another computer's question is listed in 모니터링, and here only the computer chip's dot says it waits (owner 2026-10-31).
 function nyList() {
   const lanes = ((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`);
-  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t)).map(t => ({ t, rank: 3, crit: false, act: "답변", at: (targetInfo(t).ask || {}).at || "" }));
+  const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t)).map(t => ({ t, rank: 3, crit: false, act: TX("home.ny.reply"), at: (targetInfo(t).ask || {}).at || "" }));
   const loose = ntLooseAsks().filter(n => !asks.some(x => x.t === (n.src || n.open)));
   const items = [...ntDecisions(), ...loose].map(nyOf).filter(Boolean).concat(asks, nyMonFails());
   const when = x => x.n ? ntAt(x.n) : Date.parse(x.at) || 0;
@@ -188,7 +188,7 @@ function nyRows(items) {
   const mark = (node, it) => {
     if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
     for (const hs of node.querySelectorAll(".hrx-m .hs")) hs.textContent = it.act;
-    for (const b of node.querySelectorAll(".hrx-m")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(/답변 필요$/, it.crit ? `중요 · ${it.act}` : it.act));
+    for (const b of node.querySelectorAll(".hrx-m")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(new RegExp(`${TX("common.needs_reply")}$`), it.crit ? TX("home.ny.critical", { act: it.act }) : it.act));
     if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs")) e.classList.add("err"); }   // a login stays orange; only a failure is red
     return nyBare(node);
   };
@@ -212,29 +212,29 @@ function nyLogins() {
   return out;
 }
 function nyLoginRow(n) {
-  const node = nyBare(ntHomeRow(n, "다시 로그인")), app = (/^(.*?)\s*로그인이 풀렸어요/.exec(hcLine(n)) || [])[1], ha = node.querySelector(".ha");
+  const node = nyBare(ntHomeRow(n, TX("home.ny.relogin"))), app = (/^(.*?)\s*로그인이 풀렸어요/.exec(hcLine(n)) || [])[1], ha = node.querySelector(".ha");
   if (app && ha) ha.textContent = `${app} · ${ntWhen(n)}`;
   return node;
 }
 function nyDownRow(i) {
-  const title = `${i.label || "앱"} 로그인이 풀렸어요`;
+  const title = TX("home.ny.login_lost", { app: i.label || TX("home.ny.app") });
   return el("div", { class: "hr hrx", "data-login": i.key },
-    el("button", { class: "hrx-m", type: "button", onclick: () => go("monitoring", `i:${i.key}`), "aria-label": `${title} · 다시 로그인` },
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: "다시 로그인해야 이어서 볼 수 있어요" })),
-      el("span", { class: "hs warn", text: "다시 로그인" })));
+    el("button", { class: "hrx-m", type: "button", onclick: () => go("monitoring", `i:${i.key}`), "aria-label": `${title} · ${TX("home.ny.relogin")}` },
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: TX("home.ny.relogin_hint") })),
+      el("span", { class: "hs warn", text: TX("home.ny.relogin") })));
 }
 // A monitor failing again and again: its name, the computer, how many times in a row; a tap opens it in 모니터링.
 function nyMonRow(it) {
   const m = it.m, who = it.pc ? it.pc.name : pqSelf(), title = monTitle(m);
   return el("button", { class: "hr", type: "button", "data-mon": it.key, onclick: () => go("monitoring", it.key), "aria-label": `${title} · ${it.act}` },
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title }), who ? el("span", { class: "tag mon-pc", text: who }) : null),
-      el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, monClean(m.last_summary || "")].filter(Boolean).join(" · ") })),
+      el("span", { class: "ha", text: [TX("home.watch.fails", { n: Number(m.fails) }), monClean(m.last_summary || "")].filter(Boolean).join(" · ") })),
     el("span", { class: "hs warn", text: it.act }));
 }
 // The list of the 홈 card: every row, six in sight (08-home.js capLists). lead: the login rows above what is asked; tail: the rows that close it.
 function nyListNode(items, lead = [], tail = []) {
   const rows = [...lead, ...nyRows(items).map(r => r.node), ...tail];
-  return el("div", { class: "hn", "data-k": "needs", "data-cap": "needs" }, ...rows, ...(rows.length ? [] : [hcNone(hcState() || hmState() || "답변할 항목이 없어요")]));
+  return el("div", { class: "hn", "data-k": "needs", "data-cap": "needs" }, ...rows, ...(rows.length ? [] : [hcNone(hcState() || hmState() || TX("home.ny.none"))]));
 }
 function attnChanged() {
   renderBars();
@@ -247,7 +247,7 @@ const limitWord = l => {
   const m = `${l.id} ${l.window} ${l.label}`.match(/(\d+)\s*(h|d|w)/i);
   if (!m) return l.label || l.id;
   const n = Number(m[1]), u = m[2].toLowerCase();
-  return u === "h" ? `${n}시간` : u === "d" ? `${n}일` : `${n}주`;
+  return u === "h" ? TX("home.dur.h", { n }) : u === "d" ? TX("home.dur.d", { n }) : TX("home.dur.w", { n });
 };
 function tightLimit(q) {
   const provs = (q.providers || []).filter(p => (p.limits || []).length), an = provs.filter(p => /anthropic|claude/i.test(p.provider));
@@ -263,13 +263,13 @@ function paintStrip() {
   const pct = Math.round(t.f * 100), word = limitWord(t.l);
   b.className = `ustrip${pct <= 40 ? " warn" : ""}`;
   b.style.setProperty("--p", pct);
-  b.title = `사용량 · ${word} ${pct}% 남음`; b.setAttribute("aria-label", b.title);
-  clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}% 남음` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
+  b.title = TX("home.usage.title", { word, pct }); b.setAttribute("aria-label", b.title);
+  clear(b).append(el("span", { class: "ulab", text: TX("home.usage.left", { word, pct }) }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
   // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left; the folded rail shows only the ring
   if (side) {
     side.classList.toggle("warn", pct <= 40);
-    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring pring", style: `--p:${pct}`, text: String(pct) }));
-    side.title = `사용량 · ${word} ${pct}% 남음`; side.setAttribute("aria-label", side.title);
+    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: TX("common.usage") }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring pring", style: `--p:${pct}`, text: String(pct) }));
+    side.title = TX("home.usage.title", { word, pct }); side.setAttribute("aria-label", side.title);
   }
 }
 // 헤더의 종: the unread notice count, kept current by every notice change (30-notices.js ntPaint -> paintAttn).
@@ -284,7 +284,7 @@ function paintBell() {
   if (n && direct && n0.dataset.seen) motionPop(n0);   // 0 -> n pops; the first draw, before the notices have loaded, only learns the number
   try { if (NT.loaded) n0.dataset.seen = "1"; } catch {}
   const b = $("#bell");
-  if (b) b.setAttribute("aria-label", n ? `알림, 안 읽은 알림 ${n}개` : "알림");
+  if (b) b.setAttribute("aria-label", n ? TX("home.attn.alerts_aria", { n }) : TX("common.alerts"));
 }
 $("#sf-usage").onclick = () => go("usage");
 function noteQuota(q) { SQ = q; stripAt = Date.now(); paintStrip(); }
@@ -363,18 +363,18 @@ function scrollTerm(force) {
   if (force || termStick) requestAnimationFrame(() => { term.scrollTop = term.scrollHeight; termStick = true; $("#act-jump").hidden = true; });
 }
 // One formatter each: toLocale*String builds a new one per call, and a conversation asks for these on every row (a fifth of the time of opening one).
-const KST_HM = new Intl.DateTimeFormat("ko-KR", { ...KST, hour: "numeric", minute: "2-digit" });
-const KST_DAY = new Intl.DateTimeFormat("ko-KR", { ...KST, year: "numeric", month: "numeric", day: "numeric" });
-const KST_LABEL = new Intl.DateTimeFormat("ko-KR", { ...KST, month: "long", day: "numeric", weekday: "short" });
+const KST_HM = new Intl.DateTimeFormat(TX_LOCALE, { ...KST, hour: "numeric", minute: "2-digit" });
+const KST_DAY = new Intl.DateTimeFormat(TX_LOCALE, { ...KST, year: "numeric", month: "numeric", day: "numeric" });
+const KST_LABEL = new Intl.DateTimeFormat(TX_LOCALE, { ...KST, month: "long", day: "numeric", weekday: "short" });
 const kstHM = t => { const d = new Date(t); return isNaN(d) ? "" : KST_HM.format(d); };
 const kstDay = t => { const d = new Date(t); return isNaN(d) ? "" : KST_DAY.format(d); };
-const dayLabel = t => { const d = new Date(t); return isNaN(d) ? "" : kstDay(t) === kstDay(Date.now()) ? "오늘" : KST_LABEL.format(d); };
+const dayLabel = t => { const d = new Date(t); return isNaN(d) ? "" : kstDay(t) === kstDay(Date.now()) ? TX("home.today") : KST_LABEL.format(d); };
 function fmtDur(ms) {
   const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}초`;
+  if (s < 60) return TX("home.dur.s", { n: s });
   const m = Math.floor(s / 60);
-  if (m < 60) return s % 60 ? `${m}분 ${s % 60}초` : `${m}분`;
-  return m % 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${Math.floor(m / 60)}시간`;
+  if (m < 60) return s % 60 ? TX("home.dur.ms", { m, s: s % 60 }) : TX("home.dur.m", { n: m });
+  return m % 60 ? TX("home.dur.hm", { h: Math.floor(m / 60), m: m % 60 }) : TX("home.dur.h", { n: Math.floor(m / 60) });
 }
 let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened

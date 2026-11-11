@@ -11,6 +11,7 @@ import { noticeKo, plainTable } from "./notice-ko.ts";
 import { classify } from "./push.ts";
 import { makeRoute } from "./routes.ts";
 import { LATER_LINE } from "./tone.ts";
+import { i18nPrelude } from "./web-i18n.ts";
 
 const WEB = join(import.meta.dir, "..", "web");
 const web = (f: string) => readFileSync(join(WEB, "js", f), "utf8");
@@ -49,7 +50,7 @@ function page() {
 		targetOfSource: () => "web", actKey: (a: { ts: string }) => a.ts,
 	};
 	const names = Object.keys(env);
-	const api = new Function(...names, `${web("01-peer-msg.js")}\n${tone}\n${home}\n${conv}\n${data}\nreturn { actLine, convPreview, friendlyLine, ingestAct };`)(...names.map(n => (env as Record<string, unknown>)[n])) as {
+	const api = new Function(...names, `${i18nPrelude()}${web("01-peer-msg.js")}\n${tone}\n${home}\n${conv}\n${data}\nreturn { actLine, convPreview, friendlyLine, ingestAct };`)(...names.map(n => (env as Record<string, unknown>)[n])) as {
 		actLine: (a: unknown) => string; convPreview: (s: string) => string; friendlyLine: (s: string) => string; ingestAct: (a: unknown) => void;
 	};
 	return { ...api, TS };

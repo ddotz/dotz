@@ -3,21 +3,21 @@
 // summary where it is generic, the raw text folded under a "원문" fence (02-basic-markdown.js renders it collapsed).
 function watchReasonKo(reason) {
   const r = String(reason || "").trim();
-  if (r === "output changed" || r === "change") return "결과가 바뀌었어요";
-  if (r === "match" || r.startsWith("matched /")) return "조건에 맞는 결과가 나왔어요";
-  if (r === "fail") return "점검에 실패했어요";
-  if (r === "recovered") return "다시 정상이에요";
+  if (r === "output changed" || r === "change") return TX("home.watch.changed");
+  if (r === "match" || r.startsWith("matched /")) return TX("home.watch.matched");
+  if (r === "fail") return TX("home.watch.check_failed");
+  if (r === "recovered") return TX("home.watch.recovered");
   // hub/release-exit.ts SLOT_SKIPPED_EXIT: the release-slot watch fails every minute of a skipped slot; that is one skipped slot, not that many failed checks.
-  if (/^failed \d+ times in a row.*\(exit 3\)$/.test(r)) return "이 시간대의 릴리스를 건너뛰었어요";
+  if (/^failed \d+ times in a row.*\(exit 3\)$/.test(r)) return TX("home.watch.slot_skipped");
   const fails = (r.match(/^failed (\d+) times in a row/) || [])[1];
-  if (fails) return `${fails}번 연속 실패했어요`;
-  if (r.startsWith("stopped after a password")) return "저장된 비밀번호가 없어 다시 로그인하지 못했어요. 맥 암호에 저장하고 다시 연결을 눌러 주세요";
-  if (r.startsWith("stopped after")) return "실패가 이어져 멈췄어요. 승인하면 다시 확인해요";
-  if (r.startsWith("needs the owner's approval for a second factor")) return "2차 인증이 필요해요. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요";
-  if (r.startsWith("needs the owner")) return "승인이 필요해요";
+  if (fails) return TX("home.watch.fails", { n: Number(fails) });
+  if (r.startsWith("stopped after a password")) return TX("home.watch.no_password");
+  if (r.startsWith("stopped after")) return TX("home.watch.stopped");
+  if (r.startsWith("needs the owner's approval for a second factor")) return TX("home.watch.second_factor");
+  if (r.startsWith("needs the owner")) return TX("home.watch.needs_approval");
   return r;
 }
-function humanLabel(label, fallback = "모니터링") {
+function humanLabel(label, fallback = TX("common.monitoring")) {
   const s = String(label || "").trim();
   if (!s) return fallback;
   return /^[a-z0-9][a-z0-9_-]*$/.test(s) ? s.replace(/[-_]+/g, " ") : s;
@@ -32,15 +32,15 @@ function isMachineOutput(text) {
 function clockKo(iso, now = Date.now(), tz = "Asia/Seoul") {
   const ms = Date.parse(iso);
   if (!Number.isFinite(ms)) return "";
-  const time = new Intl.DateTimeFormat("ko-KR", { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(ms);
+  const time = new Intl.DateTimeFormat(TX_LOCALE, { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(ms);
   const day = t => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(t);
   if (day(ms) === day(now)) return time;
-  return `${new Intl.DateTimeFormat("ko-KR", { timeZone: tz, month: "long", day: "numeric" }).format(ms)} ${time}`;
+  return `${new Intl.DateTimeFormat(TX_LOCALE, { timeZone: tz, month: "long", day: "numeric" }).format(ms)} ${time}`;
 }
 function watchSummary(output, now, tz) {
   const o = String(output || ""), count = Number((o.match(/(?:^|\s)new=(\d+)(?:\s|$)/) || [])[1] || 0);
   const lines = o.split("\n").filter(l => l.trim()).length, log = !count && lines > 2, at = (log ? (o.match(WT_ISO_ALL) || []).at(-1) : undefined) || (o.match(WT_ISO) || [])[0];
-  return [count > 0 ? `새 소식 ${count}건` : "", log ? `기록 ${lines}줄` : "", at ? `${log ? "마지막 " : ""}${clockKo(at, now, tz)}` : ""].filter(Boolean).join(" · ");
+  return [count > 0 ? TX("home.watch.news", { n: count }) : "", log ? TX("home.watch.log_lines", { n: lines }) : "", at ? (log ? TX("home.watch.last", { time: clockKo(at, now, tz) }) : clockKo(at, now, tz)) : ""].filter(Boolean).join(" · ");
 }
 function rawFence(raw) {
   const lines = String(raw || "").trim().split("\n").filter(l => l.trim());
@@ -56,10 +56,10 @@ const wtIssue = reason => /^(?:fail\b|failed \d+|stopped after|needs the owner)/
 const WT_ANSI = /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, WT_ISO_ALL = new RegExp(WT_ISO.source, "g");
 const WT_LONG_ID = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|\d{9,})\b/gi;
 const WT_FAIL = {
-  login: "로그인이 풀렸어요", session: "로그인이 풀렸어요", auth: "로그인이 풀렸어요", expired: "로그인이 풀렸어요",
-  approval: "승인이 필요해요", fetch: "내용을 가져오지 못했어요", network: "네트워크에 연결하지 못했어요", timeout: "시간이 너무 오래 걸렸어요",
-  captcha: "보안 확인(캡차)이 필요해요", off: "연동이 꺼져 있어요", app: "앱이 꺼져 있어요", browser: "브라우저를 열지 못했어요",
-  parse: "화면 구조가 바뀌어 읽지 못했어요", rate: "요청이 너무 잦아 잠시 막혔어요", limit: "요청이 너무 잦아 잠시 막혔어요",
+  login: TX("home.watch.fail_login"), session: TX("home.watch.fail_login"), auth: TX("home.watch.fail_login"), expired: TX("home.watch.fail_login"),
+  approval: TX("home.watch.needs_approval"), fetch: TX("home.watch.fail_fetch"), network: TX("home.watch.fail_network"), timeout: TX("home.watch.fail_timeout"),
+  captcha: TX("home.watch.fail_captcha"), off: TX("home.watch.fail_off"), app: TX("home.watch.fail_app"), browser: TX("home.watch.fail_browser"),
+  parse: TX("home.watch.fail_parse"), rate: TX("home.watch.fail_rate"), limit: TX("home.watch.fail_rate"),
 };
 const wtTidy = (l, now, tz) => l.replace(WT_ANSI, "").replace(WT_ISO_ALL, m => clockKo(m, now, tz)).replace(WT_LONG_ID, "").replace(/\s+/g, " ").trim();
 const wtLines = (s, now, tz) => s.replace(WT_ANSI, "").replace(/\r/g, "").split("\n").map(l => wtTidy(l, now, tz)).filter(Boolean);
@@ -69,7 +69,7 @@ const wtPlain = l => {
   return /[가-힣A-Za-z]{2,}/.test(l) && letters >= l.length * 0.6;
 };
 const wtCut = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
-const wtRows = list => [...list.slice(0, 3), ...(list.length > 3 ? ["외 " + (list.length - 3) + "건"] : [])].map(l => "- " + l);
+const wtRows = list => [...list.slice(0, 3), ...(list.length > 3 ? [TX("home.watch.more", { n: list.length - 3 })] : [])].map(l => "- " + l);
 // hub/watchtext.ts keepMoved / changeTitle: a removed item still among the added ones changed kind, it did not go; the title counts the change.
 const WT_KIND = /^([^:\n]{1,20}?):\s+(\S.*)$/;
 const WT_REF = /(?:^|\s)([\w.-]+\/[\w.-]+#\d+)(?=\s|$)/;
@@ -89,22 +89,22 @@ function wtKeepMoved(added, removed) {
 function wtKindTitle(lines) {
   const kinds = [...new Set(lines.map(wtKind))];
   if (kinds.length > 2 || !kinds.every(k => k && k.length <= 12)) return undefined;
-  return kinds.map(k => k + " " + lines.filter(l => wtKind(l) === k).length + "건").join(" · ");
+  return kinds.map(k => TX("home.watch.kind_count", { kind: k, n: lines.filter(l => wtKind(l) === k).length })).join(" · ");
 }
 function wtChangeTitle(added, removed) {
-  const a = added.length ? [wtKindTitle(added) ?? "새 항목 " + added.length + "건"] : [];
-  return [...a, ...(removed.length ? ["사라진 항목 " + removed.length + "건"] : [])].join(" · ");
+  const a = added.length ? [wtKindTitle(added) ?? TX("home.watch.new_items", { n: added.length })] : [];
+  return [...a, ...(removed.length ? [TX("home.watch.removed_items", { n: removed.length })] : [])].join(" · ");
 }
 // hub/watchtext.ts matchTitle: a match that lists items one per line is counted as a change is.
 function wtMatchTitle(output) {
   if (!WT_HANGUL.test(output) || isMachineOutput(output)) return undefined;
   const items = wtLines(output).map(l => l.replace(/^[-•]\s+/, "")).filter(l => !WT_SENTINEL.test(l));
   if (!items.length || !items.every(l => /^\S.{0,40}?:\s+\S/.test(l))) return undefined;
-  return wtKindTitle(items) ?? (items.length > 1 ? "조건에 맞는 항목 " + items.length + "건" : undefined);
+  return wtKindTitle(items) ?? (items.length > 1 ? TX("home.watch.matching_items", { n: items.length }) : undefined);
 }
 // hub/watchtext.ts matchItems: under a count that names one kind ("새 PR 1건"), an item does not say that kind again.
 function wtMatchItems(text, title) {
-  const kind = (/^(.+) \d+건$/.exec(title) || [])[1];
+  const kind = (/^(.+?)(?: \d+건| \(\d+\))$/.exec(title) || [])[1];
   if (!kind || kind.includes(" · ")) return text;
   return text.replace(/^([ \t]*(?:[-•][ \t]+)?)([^:\n]{1,20}?):[ \t]+(?=\S)/gm, (m, pre, k) => (k === kind ? pre : m));
 }
@@ -116,20 +116,20 @@ function wtFlat(v, key, out, now, tz) {
   }
   const val = Array.isArray(v) ? v.map(x => (x && typeof x === "object" ? JSON.stringify(x) : String(x))).join(", ") : String(v);
   const shown = wtTidy(val, now, tz);
-  if (shown) out.push((key ? key.split(".").map(k => WT_JSON_KEY[k.toLowerCase()] || k).filter((w, i, a) => w !== a[i - 1]).join(" ") : "값") + ": " + wtCut(WT_JSON_VALUE[shown.toLowerCase()] || shown, 80));
+  if (shown) out.push((key ? key.split(".").map(k => WT_JSON_KEY[k.toLowerCase()] || k).filter((w, i, a) => w !== a[i - 1]).join(" ") : TX("home.watch.value")) + ": " + wtCut(WT_JSON_VALUE[shown.toLowerCase()] || shown, 80));
 }
 const WT_JSON_KEY = {
-  status: "상태", state: "상태", count: "개수", total: "전체", title: "제목", name: "이름", at: "시각", time: "시각", date: "날짜", updated_at: "갱신 시각",
-  created_at: "만든 시각", checked_at: "확인 시각", latest: "최근", last: "마지막", price: "가격", message: "메시지", error: "오류", version: "버전", items: "항목", url: "주소",
+  status: TX("home.watch.json_status"), state: TX("home.watch.json_status"), count: TX("home.watch.json_count"), total: TX("home.watch.json_total"), title: TX("home.watch.json_title"), name: TX("home.watch.json_name"), at: TX("home.watch.json_time"), time: TX("home.watch.json_time"), date: TX("home.watch.json_date"), updated_at: TX("home.watch.json_updated"),
+  created_at: TX("home.watch.json_created"), checked_at: TX("home.watch.json_checked"), latest: TX("home.watch.json_latest"), last: TX("home.watch.json_last"), price: TX("home.watch.json_price"), message: TX("home.watch.json_message"), error: TX("home.watch.json_error"), version: TX("home.watch.json_version"), items: TX("home.watch.json_items"), url: TX("home.watch.json_url"),
 };
-const WT_JSON_VALUE = { ok: "정상", true: "예", false: "아니요", error: "오류", fail: "실패", failed: "실패" };
+const WT_JSON_VALUE = { ok: TX("home.watch.json_ok"), true: TX("home.watch.json_yes"), false: TX("home.watch.json_no"), error: TX("home.watch.json_error"), fail: TX("home.watch.json_failed"), failed: TX("home.watch.json_failed") };
 function describeOutput(output, opts = {}) {
   const out = String(output || "").replace(WT_ANSI, "").trim();
   if (!out) return { text: "", readable: true };
   const fail = /^DOTZ_FAIL[ =:]([a-z0-9-]{1,20})\b/m.exec(out);
   if (fail) {
     const said = wtLines(out, opts.now, opts.tz).filter(l => !l.startsWith("DOTZ_") && WT_HANGUL.test(l) && !isMachineOutput(l)).slice(0, 2);
-    return { text: [WT_FAIL[fail[1]] || "점검에 실패했어요", ...said.map(l => wtCut(l, 120))].join("\n"), readable: true };
+    return { text: [WT_FAIL[fail[1]] || TX("home.watch.check_failed"), ...said.map(l => wtCut(l, 120))].join("\n"), readable: true };
   }
   if (/^[{[]/.test(out)) {
     try {
@@ -155,10 +155,10 @@ function describeOutput(output, opts = {}) {
   }
   if (added) {
     if (![...added, ...removed].every(wtPlain)) return { text: "", readable: false };
-    if (!added.length && !removed.length) return { text: "내용은 그대로이고 시각 같은 값만 바뀌었어요", readable: true };
+    if (!added.length && !removed.length) return { text: TX("home.watch.unchanged"), readable: true };
     ({ added, removed } = wtKeepMoved(added, removed));
-    const head = added.length && removed.length && !added.every(wtKind) ? ["새로 생겼어요"] : [];
-    return { text: [...head, ...wtRows(added), ...(removed.length ? ["사라졌어요", ...wtRows(removed)] : [])].join("\n"), title: wtChangeTitle(added, removed), readable: true };
+    const head = added.length && removed.length && !added.every(wtKind) ? [TX("home.watch.fresh")] : [];
+    return { text: [...head, ...wtRows(added), ...(removed.length ? [TX("home.watch.gone"), ...wtRows(removed)] : [])].join("\n"), title: wtChangeTitle(added, removed), readable: true };
   }
   if (WT_HANGUL.test(out)) return { text: out.split("\n").filter(l => !WT_SENTINEL.test(l.trim())).join("\n"), readable: true };
   if (cur.length <= 3 && cur.every(wtPlain)) return { text: cur.join("\n"), readable: true };
@@ -167,9 +167,9 @@ function describeOutput(output, opts = {}) {
 function watchLine(label, reason, output = "", opts = {}) {
   const out = String(output || "").trim(), head = said => humanLabel(label) + ": " + said + (opts.note ? " " + opts.note : "");
   if (!out || wtSentinelMatch(reason, out)) return head(watchReasonKo(reason));
-  if (String(reason).trim() === "recovered" && /^[\w.-]{1,12}$/.test(out)) return head(watchReasonKo(reason)) + "\n점검이 다시 통과했어요";
+  if (String(reason).trim() === "recovered" && /^[\w.-]{1,12}$/.test(out)) return head(watchReasonKo(reason)) + "\n" + TX("home.watch.passes_again");
   const d = describeOutput(out, { prev: opts.prev, issue: wtIssue(reason), now: opts.now, tz: opts.tz });
-  const listed = String(reason).trim().startsWith("match") && d.text !== "내용은 그대로이고 시각 같은 값만 바뀌었어요" ? wtMatchTitle(out) : undefined;
+  const listed = String(reason).trim().startsWith("match") && d.text !== TX("home.watch.unchanged") ? wtMatchTitle(out) : undefined;
   const said = /^(output changed|change|match|matched \/)/.test(String(reason).trim()) && d.readable && (d.title ?? listed);
   const first = head(said || watchReasonKo(reason));
   const text = d.readable ? d.text : opts.summary || "";
@@ -203,8 +203,8 @@ function wtScheduleLabel(text) {
 function scheduleLine(text, opts = {}) {
   const body = String(text || "").replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "").trim(), label = wtScheduleLabel(body);
   const said = WT_HANGUL.test(label) ? label : "";
-  if (opts.raw === false) return said || "예약한 일이 시작됐어요";
-  const lines = ["예약한 일이 시작됐어요"];
+  if (opts.raw === false) return said || TX("home.watch.schedule_started");
+  const lines = [TX("home.watch.schedule_started")];
   if (said) lines.push(said);
   if (body && body !== said) lines.push(rawFence(body));
   return lines.join("\n");
