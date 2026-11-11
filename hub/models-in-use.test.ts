@@ -7,6 +7,7 @@ const SONNET = "anthropic/claude-sonnet-5-5:high";
 const base = (o: Partial<InUseSnapshot> = {}): InUseSnapshot => ({
 	orchestrator: { configured: OPUS },
 	lanesDefault: OPUS,
+	lookups: LOOKUP_MODEL,
 	workers: SONNET,
 	lanes: [],
 	replyDefault: "anthropic/claude-sonnet-5-5:high",
@@ -37,9 +38,15 @@ describe("실제로 쓰는 모델", () => {
 		expect(row(modelsInUse(base({ orchestrator: { configured: OPUS, active: "anthropic/claude-opus-5-5:low" } })), "main").fallback).toBeUndefined();
 		expect(row(modelsInUse(base()), "main")).toMatchObject({ model: OPUS });
 	});
-	test("lookups run Sonnet 5.5 medium on the subscription and follow the main model on an API key", () => {
+	test("lookups show the configured lookup model (the default when none is set) and follow the main model on an API key", () => {
 		expect(row(modelsInUse(base()), "lookups").model).toBe(LOOKUP_MODEL);
 		expect(row(modelsInUse(base({ orchestrator: { configured: OPUS, active: "anthropic-apikey/claude-opus-5-5:high" } })), "lookups").model).toBe("anthropic-apikey/claude-opus-5-5:high");
+	});
+	test("the lookups row shows the configured lookup model and is not changed on the model screen", () => {
+		const rows = modelsInUse(base({ lookups: "acme/scout-1:low" }));
+		expect(row(rows, "lookups").model).toBe("acme/scout-1:low");
+		expect("none" in row(rows, "lookups").change).toBe(true);
+		expect(row(modelsInUse(base({ lookups: "acme/scout-1:low", orchestrator: { configured: OPUS, active: "anthropic-apikey/claude-opus-5-5:high" } })), "lookups").model).toBe("anthropic-apikey/claude-opus-5-5:high");
 	});
 	test("a running session gets its own row (its fallback marked), and its workers one only when they moved off the configured model", () => {
 		const rows = modelsInUse(base({ lanes: [

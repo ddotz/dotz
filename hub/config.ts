@@ -54,7 +54,8 @@ export type ContextLimits = { window?: number; compact_at?: number };
 // One target's model, thinking level and ordered fallback chain: the orchestrator, the lanes (default of every lane) and the
 // lanes' task workers. Missing values take the defaults below.
 type TargetModels = { model?: string; thinking?: string; fallback?: Array<string | FallbackEntry> };
-type ModelsConfig = Partial<Record<FallbackTarget, TargetModels>>;
+// `lookups`: the model lookup work (the `quick` category, explore, librarian) runs on; missing or empty = the built-in default (read by hub/lanegates.ts lookupModel through extension/guard-config.ts lookupModelFrom).
+type ModelsConfig = Partial<Record<FallbackTarget, TargetModels>> & { lookups?: { model?: string; thinking?: string } };
 
 export const CONFIG_FILE = join(DATA_DIR, "config.json");
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"] as const;

@@ -1,7 +1,7 @@
-import { DATA_DIR, workerModel } from "./config.ts";
-import { blockedBy, expensiveMatch, loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "../extension/guard-config.ts";
+import { cfg, DATA_DIR, log, workerModel } from "./config.ts";
+import { blockedBy, DEFAULT_LOOKUP_MODEL, expensiveMatch, loadGuardConfig, lookupModelFrom, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "../extension/guard-config.ts";
 // The hub reads the guard config through here only (one hub->extension edge, hub/engineering-rules.test.ts).
-export { blockedBy, expensiveMatch, loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP };
+export { blockedBy, DEFAULT_LOOKUP_MODEL, expensiveMatch, loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP };
 import { basename } from "node:path";
 
 const BRIEF_MAX = 8000;
@@ -32,6 +32,11 @@ export function checkBrief(brief: string): string | undefined {
 // A model or thinking level the install's guard config names (guard.expensive_models, on only with guard.ask_before_expensive) is spent
 // only when the owner asked for it; a default install names none. The same rule as the work guard (extension/guard-config.ts).
 export const isExpensive = (selector: string) => expensiveMatch(selector, loadGuardConfig(DATA_DIR)) !== undefined;
+
+// The model lookup work runs on, "<model>:<thinking>": config.json models.lookups, the default when it is missing or malformed (one log line).
+// Read from the in-memory config where the orchestrator's profile is written and the models screen is built; the warning is logged once per process.
+let lookupWarned = false;
+export const lookupModel = () => lookupModelFrom(cfg.models?.lookups, m => { if (!lookupWarned) log(m); lookupWarned = true; });
 
 // The model task workers run on under a main `main`: it follows the main model, except an expensive main, whose workers use models.workers.
 export const workersOf = (main: string) => (isExpensive(main) ? workerModel() : main);

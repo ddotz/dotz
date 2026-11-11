@@ -1,11 +1,12 @@
 // The worker guard and its config: brief checks, output trimming, external-action list, the personal expensive-model
 // gate (off by default), budget gate, repeat/cycle block, deferral to an installed original, and the config defaults.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
-import { LOOKUP_MODEL, omoSelector } from "../hub/runtime/omo.ts";
+import { cfg } from "../hub/config.ts";
+import { LOOKUP_MODEL, ORCHESTRATOR_WORKERS, omoSelector, writeOrchestratorProfile } from "../hub/runtime/omo.ts";
 import { stateSummary, addProjectFooter, FOLDER_RULES_MARKER, PROJECT_MARKER, budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
@@ -357,6 +358,53 @@ test("lookup subagents (explore, librarian) run Sonnet 5.5 medium on the subscri
 	const keyed: any = { subagent_type: "explore", prompt: "a" };
 	pinOmoTaskModel(keyed, "anthropic-apikey/claude-opus-5-5:high");
 	expect(keyed.model).toBe("anthropic-apikey/claude-opus-5-5:high");
+});
+
+// The pin of explore and librarian follows the same config.json models.lookups the profile reads (hub/runtime/omo.ts); the ids are made up.
+async function lookupPinFor(lookups: unknown, raw?: string) {
+	const data = mkdtempSync(join(tmpdir(), "dotz-lookup-"));
+	writeFileSync(join(data, "config.json"), raw ?? JSON.stringify({ models: { lookups } }));
+	const saved = { ...process.env };
+	process.env.DOTZ_DIR = data;
+	process.env.DOTZ_ORCHESTRATOR = "1";
+	delete process.env.DOTZ_LANE;
+	try {
+		const { pi, handlers } = fakePi(join(dir, "agent-empty"));
+		(pi as any).getThinkingLevel = () => "medium";
+		installGuard(pi, noGate);
+		const ctx = { agent: { kind: "main" }, cwd: dir, model: { provider: "anthropic-subscription", id: "claude-opus-5-5" }, sessionManager: { getSessionId: () => "look" } };
+		const input = { tasks: [{ subagent_type: "explore", prompt: "a\nDone when: x" }, { subagent_type: "librarian", prompt: "b\nDone when: y" }, { subagent_type: "oracle", prompt: "c\nDone when: z" }] };
+		const r = await handlers.tool_call[0]({ toolName: "task", input }, ctx);
+		return r.input.tasks.map((t: any) => t.model);
+	} finally {
+		process.env = saved;
+		rmSync(data, { recursive: true, force: true });
+	}
+}
+
+test("explore and librarian are pinned to the configured lookup model in OmO's provider names, the same one the quick profile starts with", async () => {
+	const live = "anthropic-subscription/claude-opus-5-5:medium";
+	expect(await lookupPinFor({ model: "acme/scout-1", thinking: "low" })).toEqual(["acme/scout-1:low", "acme/scout-1:low", live]);
+	expect(await lookupPinFor({ model: "anthropic/scout-1", thinking: "high" })).toEqual(["anthropic-subscription/scout-1:high", "anthropic-subscription/scout-1:high", live]);
+	// the pin and the profile come from one setting: both give the same first quick model
+	const saved = cfg.models;
+	cfg.models = { lookups: { model: "anthropic/scout-1", thinking: "high" } } as typeof cfg.models;
+	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
+	try {
+		writeOrchestratorProfile(file, "acme/main-1:high", []);
+	} finally {
+		cfg.models = saved;
+	}
+	const first = JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].categories.quick.models[0];
+	expect((await lookupPinFor({ model: "anthropic/scout-1", thinking: "high" }))[0]).toBe(`${first.model}:${first.reasoning}`);
+});
+
+test("no lookup setting, an empty or a malformed one pins explore and librarian to the built-in default", async () => {
+	const live = "anthropic-subscription/claude-opus-5-5:medium";
+	for (const setting of [undefined, {}, { model: "" }, { model: 42 }, { model: "no-provider" }, { thinking: "turbo" }]) {
+		expect(await lookupPinFor(setting)).toEqual([LOOKUP_PIN, LOOKUP_PIN, live]);
+	}
+	expect(await lookupPinFor(undefined, "{ not json")).toEqual([LOOKUP_PIN, LOOKUP_PIN, live]);
 });
 
 test("the orchestrator's task workers are pinned to its live model and effort; a category worker's model is left to the profile (OmO refuses both)", async () => {

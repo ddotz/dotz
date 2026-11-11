@@ -129,6 +129,34 @@ export function expensiveMatch(value: unknown, g: GuardConfig): string | undefin
 	return list.map(v => (typeof v === "string" ? v : JSON.stringify(v))).find(s => patterns.some(p => p.test(s)));
 }
 
+// The model lookup work runs on (the `quick` category, explore, librarian): config.json `models.lookups` = { model?, thinking? }.
+// Missing or empty is the built-in default; a value that is not a "<provider>/<id>" model (no colon, no space) or a thinking level
+// falls back to the default whole, with one warn line. The hub (profile) and the extension (task pin) both read it through here.
+const DEFAULT_LOOKUP = { model: "anthropic/claude-sonnet-5-5", thinking: "medium" };
+export const DEFAULT_LOOKUP_MODEL = `${DEFAULT_LOOKUP.model}:${DEFAULT_LOOKUP.thinking}`;
+const LOOKUP_THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"];
+export function lookupModelFrom(raw: unknown, warn: (message: string) => void = () => {}): string {
+	if (raw === undefined || raw === null) return DEFAULT_LOOKUP_MODEL;
+	const o = typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
+	const model = o?.model ?? "", thinking = o?.thinking ?? "";
+	const good = o && typeof model === "string" && typeof thinking === "string" && (!model || /^[^\s/:]+\/[^\s:]+$/.test(model)) && (!thinking || LOOKUP_THINKING.includes(thinking));
+	if (!good) {
+		warn(`dotz: models.lookups in config.json is not { model: "<provider>/<id>", thinking: <level> }; lookups use ${DEFAULT_LOOKUP_MODEL}`);
+		return DEFAULT_LOOKUP_MODEL;
+	}
+	return `${model || DEFAULT_LOOKUP.model}:${thinking || DEFAULT_LOOKUP.thinking}`;
+}
+export function loadLookupModel(dir = dataDir(), warn?: (message: string) => void): string {
+	try {
+		return lookupModelFrom(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).models?.lookups, warn);
+	} catch {
+		return DEFAULT_LOOKUP_MODEL;
+	}
+}
+// In OmO `anthropic` is the API-key provider (billed per token) and `anthropic-subscription` the Claude subscription login, which is
+// what omp's `anthropic` is; dotz selectors keep omp's names, so they are mapped here (the lookup pin; hub/runtime/omo.ts omoSelector does the same, tied by a test in extension/guard.test.ts).
+export const omoProviderName = (selector: string) => (selector.startsWith("anthropic/") ? `anthropic-subscription/${selector.slice("anthropic/".length)}` : selector);
+
 export function loadGuardConfig(dir = dataDir()): GuardConfig {
 	try {
 		return guardConfigFrom(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).guard);

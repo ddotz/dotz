@@ -10,7 +10,7 @@ import { stickyEnv } from "../account-sticky.ts";
 import { apiKeyBan, withoutApiKeys } from "../apikey-policy.ts";
 import { chainAfter, fallbackChain, lanesMaxWorkers, log, orchestratorModel, parseSelector, selectorOf, workerIdleMin, writeAtomic } from "../config.ts";
 import { keyedWorker } from "../fallback.ts";
-import { workersOf } from "../lanegates.ts";
+import { DEFAULT_LOOKUP_MODEL, lookupModel, workersOf } from "../lanegates.ts";
 import { classifyProviderError } from "../providers.ts";
 import { spawnAgent } from "./agent-proc.ts";
 import { detectBinary } from "./detect.ts";
@@ -232,11 +232,12 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 // (`worker` is the key provider's copy of the worker model, `<provider>-apikey/<id>`, which the child registers itself.)
 export const ORCHESTRATOR_WORKERS = "dotz-orchestrator-workers";
 // Lookup work runs lighter (owner 2026-10-27): the `quick` category (and the read-only explore/librarian subagent types,
-// pinned in extension/guard.ts LOOKUP_PIN) runs Sonnet 5.5 medium on the subscription login, then the orchestrator's own
-// models; every other category keeps the orchestrator's model. On an API-key entry (`lookup` null) lookups follow the worker.
-export const LOOKUP_MODEL = "anthropic/claude-sonnet-5-5:medium";
+// pinned from the same setting in extension/guard.ts) runs the configured lookup model (config.json models.lookups, default
+// LOOKUP_MODEL = Sonnet 5.5 medium) on the subscription login, then the orchestrator's own models; every other category keeps
+// the orchestrator's model. On an API-key entry (`lookup` null) lookups follow the worker.
+export const LOOKUP_MODEL = DEFAULT_LOOKUP_MODEL;
 export const LOOKUP_CATEGORIES = ["quick"];
-export function writeOrchestratorProfile(file = omoConfigFile(), main = selectorOf(orchestratorModel()), chain = fallbackChain("orchestrator"), lookup: string | null = LOOKUP_MODEL): string | undefined {
+export function writeOrchestratorProfile(file = omoConfigFile(), main = selectorOf(orchestratorModel()), chain = fallbackChain("orchestrator"), lookup: string | null = lookupModel()): string | undefined {
 	const worker = workersOf(main);
 	const models = [worker, ...chainAfter(worker, chain).filter(e => !e.key_file).map(e => e.model)].map(categoryModel);
 	const lookups = lookup ? [categoryModel(lookup), ...models].filter((m, i, all) => all.findIndex(x => x.model === m.model && x.reasoning === m.reasoning) === i) : models;

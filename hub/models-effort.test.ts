@@ -42,6 +42,7 @@ const MODELS = {
 	in_use: modelsInUse({
 		orchestrator: { configured: `${OPUS}:high`, active: `${DEEP}:medium` },
 		lanesDefault: `${OPUS}:high`,
+		lookups: `${SONNET}:medium`,
 		workers: `${SONNET}:high`,
 		lanes: [
 			{ name: "pay", title: "메일함 개선", configured: `${OPUS}:high`, active: `${DEEP}:high`, worker: `${SONNET}:high` },

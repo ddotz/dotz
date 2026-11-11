@@ -142,6 +142,42 @@ test("lookup work (the quick category) runs Sonnet 5.5 medium first, then the or
 	expect(JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].categories.quick.models).toEqual([{ model: "anthropic-apikey/claude-opus-5-5", reasoning: "high" }]);
 });
 
+// The lookup model is the install's setting (config.json models.lookups); the ids here are made up.
+function quickOf(lookups: unknown, lookup?: string | null) {
+	const saved = cfg.models;
+	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
+	try {
+		cfg.models = lookups === undefined ? undefined : ({ lookups } as typeof cfg.models);
+		if (lookup === undefined) writeOrchestratorProfile(file, "acme/main-1:high", []);
+		else writeOrchestratorProfile(file, "acme/main-1:high", [], lookup);
+	} finally {
+		cfg.models = saved;
+	}
+	return JSON.parse(readFileSync(file, "utf8")).profiles[ORCHESTRATOR_WORKERS].categories as Record<string, { models: Array<{ model: string; reasoning: string }> }>;
+}
+const DEFAULT_QUICK = { model: "anthropic-subscription/claude-sonnet-5-5", reasoning: "medium" };
+
+test("a configured lookup model is the first model of the quick category; other categories keep the orchestrator's", () => {
+	const cats = quickOf({ model: "acme/scout-1", thinking: "low" });
+	expect(cats.quick.models).toEqual([{ model: "acme/scout-1", reasoning: "low" }, { model: "acme/main-1", reasoning: "high" }]);
+	expect(cats["unspecified-high"].models[0]).toEqual({ model: "acme/main-1", reasoning: "high" });
+	expect(quickOf({ model: "acme/scout-1" }).quick.models[0]).toEqual({ model: "acme/scout-1", reasoning: "medium" });
+	expect(quickOf({ thinking: "high" }).quick.models[0]).toEqual({ ...DEFAULT_QUICK, reasoning: "high" });
+	expect(quickOf({ model: "anthropic/scout-1", thinking: "low" }).quick.models[0]).toEqual({ model: "anthropic-subscription/scout-1", reasoning: "low" });
+});
+
+test("no lookup setting, an empty one or a malformed one gives the built-in default first in the quick category", () => {
+	expect(LOOKUP_MODEL).toBe("anthropic/claude-sonnet-5-5:medium");
+	for (const setting of [undefined, {}, { model: "", thinking: "" }, { model: 42 }, { model: "no-provider" }, { model: "acme/scout-1 extra" }, { thinking: "turbo" }, "acme/scout-1", null, []]) {
+		expect(quickOf(setting).quick.models[0]).toEqual(DEFAULT_QUICK);
+	}
+});
+
+test("on an API-key entry the lookup setting is ignored: lookups follow the worker", () => {
+	const cats = quickOf({ model: "acme/scout-1", thinking: "low" }, null);
+	expect(cats.quick.models).toEqual([{ model: "acme/main-1", reasoning: "high" }]);
+});
+
 test("the orchestrator's task workers get a dotz profile too: child processes, memory off, every category on the subscription (never the API key), the owner's own config untouched", () => {
 	const file = join(mkdtempSync(join(tmpdir(), "omo-home-")), "omo.json");
 	writeFileSync(file, JSON.stringify({ categories: { quick: { model: "x/y" } }, profiles: { mine: { categories: {} } } }));

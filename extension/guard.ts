@@ -34,9 +34,9 @@ import { grantedHere, ownerPickedHere, swapExpensiveModels, workerPin } from "./
 export { shellText };
 import { limitStopProblem } from "./guard-limit.ts";
 import { callRules, expandCellVars, OMO_PROJECTS, readPaths, workerTrail } from "./guard-notes.ts";
-import { dataDir, expensiveMatch, type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, laneShareReason, loadGuardConfig, logOnce, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
+import { dataDir, expensiveMatch, type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, laneShareReason, loadGuardConfig, loadLookupModel, logOnce, omoProviderName, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
 import { debug } from "./guard-debug.ts";
-import { BUDGET_MARKER, budgetLine as briefBudgetLine, checkOmoTaskInput as briefCheckOmoTask, checkTaskInput as briefCheckTask, checkoutRoots, gitTop, isOmoTaskInput, livePin, ownWorkerPin, pinOmoTaskModel, shouldIsolate, addProjectFooter } from "./guard-brief.ts";
+import { BUDGET_MARKER, budgetLine as briefBudgetLine, checkOmoTaskInput as briefCheckOmoTask, checkTaskInput as briefCheckTask, checkoutRoots, gitTop, isOmoTaskInput, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, shouldIsolate, addProjectFooter } from "./guard-brief.ts";
 export { addProjectFooter, FOLDER_RULES_MARKER, livePin, LOOKUP_PIN, ownWorkerPin, pinOmoTaskModel, PROJECT_MARKER, projectFooter, relativizeRoots, shouldIsolate } from "./guard-brief.ts";
 import { applyDirsOf, GIT_APPLY, GIT_APPLY_NAMED, GIT_APPLY_RE, patchIsApplied, patchLanded } from "./guard-patches.ts";
 import { detectCycle, REPEAT_ESCALATION_ATTEMPTS, REPEAT_HISTORY, REPEAT_MAX_SESSIONS, REPEAT_MIN_LAPS, REPEAT_WINDOW_MS, repeatArgsDigest, repeatBlockReason, repeatResultDigest, repeatStopReason, repeatSubject, type RepeatCall, type RepeatRow } from "./guard-repeat.ts";
@@ -46,6 +46,8 @@ import { detectCycle, REPEAT_ESCALATION_ATTEMPTS, REPEAT_HISTORY, REPEAT_MAX_SES
 let G: GuardConfig = GUARD_DEFAULTS;
 // The host `pi` object, for the agent directory the state files live under.
 let host: unknown;
+// The pin of explore and librarian: the configured lookup model in OmO's provider names, read once when the guard installs, not per task call.
+let lookupPin = LOOKUP_PIN;
 const WRAP_UP_STEER = "[orchestrator-guard] Your context was just compacted: this assignment is larger than one worker should hold. Finish only the step in progress, then return your final answer now: what is done (with changed paths), what remains, and how you verified. Do not start new steps.";
 const STOP_REASON = "[orchestrator-guard] Context compacted twice: tools are disabled for this worker. Write your final answer now with partial findings: done (changed paths), remaining work, verification state.";
 const EXTERNAL_COMMANDS: [RegExp, string][] = [
@@ -337,7 +339,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		return;
 	}
 	G = config;
-	host = pi;
+	host = pi; lookupPin = omoProviderName(loadLookupModel(dataDir(), m => logOnce(pi, "lookup-model", m)));
 	let state: ProjectState | undefined;
 	let budgetOkUntil = 0;
 	let fableOkUntil = 0;
@@ -627,7 +629,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			const wanted = process.env.DOTZ_ORCHESTRATOR === "1" && !process.env.DOTZ_LANE && isOmoTaskInput(event.input) ? (ownWorkerPin(process.env.DOTZ_WORKER_PIN_FILE) ?? livePin(ctx?.model, pi.getThinkingLevel?.())) : undefined;
 			const pin = wanted && gated && expensiveModel(wanted) ? workerPin() : wanted;
 			if (pin) {
-				pinOmoTaskModel(event.input, pin, model => gateExpensive && !gated && Boolean(expensiveModel(model)));
+				pinOmoTaskModel(event.input, pin, model => gateExpensive && !gated && Boolean(expensiveModel(model)), lookupPin);
 				debug({ phase: "task-model-pin", pin });
 			}
 			// Last net: only a worker model that is itself on the expensive list gets here.

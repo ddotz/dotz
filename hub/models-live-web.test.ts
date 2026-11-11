@@ -36,6 +36,7 @@ const MODELS = {
 	in_use: modelsInUse({
 		orchestrator: { configured: `${OPUS}:high`, active: `${SONNET}:high` },
 		lanesDefault: `${OPUS}:high`,
+		lookups: `${SONNET}:medium`,
 		workers: `${SONNET}:high`,
 		lanes: [{ name: "pay", title: "결제", configured: `${OPUS}:high`, active: `${SONNET}:high`, worker: `${SONNET}:high` }],
 		replyDefault: REPLY_DEFAULT,

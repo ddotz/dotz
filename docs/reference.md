@@ -222,6 +222,13 @@ sent right after the next `agent_end` (a compact aborts a running turn, so it is
 `done` (with time and the size before), `error`; they show in `/context`, `/status` and the web UI.
 Compaction rewrites the conversation into a summary, so the prompt cache is re-written once on the next turn.
 
+**Lookup model.** Lookup work (OmO's `quick` category and the read-only `explore` and `librarian` subagents) runs on
+`models.lookups` in `config.json`: `{ "model": "<provider>/<id>", "thinking": "<level>" }`, both optional. Missing or empty
+is the default `anthropic/claude-sonnet-5-5:medium`; a `model` alone runs at `medium`, a `thinking` alone on the default
+model. A value that is not a `<provider>/<id>` without colon or space, or not a thinking level, logs one line and falls back to
+the default. On the subscription login the orchestrator's profile and the task pin both read it, so a change applies when the
+orchestrator next starts; on an API-key entry lookups follow the worker model. The model screen shows the row and does not change it.
+
 **Session subagent model.** A session plans and reviews on its own model and delegates implementation, tests, renders and grind
 work to task subagents on a cheaper model: `models.workers` in `config.json` (default
 `anthropic/claude-sonnet-5-5:high`; `/model workers <model> [<thinking>]` or the web UI's model page writes it). How

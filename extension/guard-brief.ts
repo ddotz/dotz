@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { dataDir, type GuardConfig } from "./guard-config.ts";
+import { DEFAULT_LOOKUP_MODEL, dataDir, type GuardConfig, omoProviderName } from "./guard-config.ts";
 
 const WRITING_AGENTS = new Set(["task", "sonic"]);
 const DONE_MARKER = /acceptance|done when|done-condition|end state|success criteria|완료 조건|완료 기준|끝 조건/i;
@@ -191,16 +191,17 @@ export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = 
 // `model` only beside `subagent_type` and refuses it beside `category` (category_with_model), so a subagent_type worker is
 // pinned here and a category worker's model is dropped: its category runs on the same model through the
 // dotz-orchestrator-workers profile (hub/runtime/omo.ts). Edited in place, as checkOmoTaskInput.
-// Lookups run lighter (owner 2026-10-27): explore and librarian take Sonnet 5.5 medium on the subscription login (hub/runtime/omo.ts
-// LOOKUP_MODEL in OmO's provider names; the quick category gets it through the profile). On an API-key session they follow the pin.
-export const LOOKUP_PIN = "anthropic-subscription/claude-sonnet-5-5:medium";
+// Lookups run lighter (owner 2026-10-27): explore and librarian take the configured lookup model (config.json models.lookups, default
+// Sonnet 5.5 medium) on the subscription login, in OmO's provider names; the quick category gets it through the profile (hub/runtime/omo.ts),
+// from the same setting. On an API-key session they follow the pin. `lookupPin` is the configured one; LOOKUP_PIN is the default's.
+export const LOOKUP_PIN = omoProviderName(DEFAULT_LOOKUP_MODEL);
 const LOOKUP_AGENTS = /^(explore|librarian)$/;
-export function pinOmoTaskModel(input: any, pin: string, keep: (model: unknown) => boolean = () => false): void {
+export function pinOmoTaskModel(input: any, pin: string, keep: (model: unknown) => boolean = () => false, lookupPin = LOOKUP_PIN): void {
 	for (const item of Array.isArray(input?.tasks) ? input.tasks : [input]) {
 		if (!item || typeof item !== "object") continue;
 		const agent = typeof item.subagent_type === "string" ? item.subagent_type.trim() : "";
 		if (agent && keep(item.model)) continue; // an expensive model the owner allowed for this job (grant) stays
-		if (agent) item.model = LOOKUP_AGENTS.test(agent) && pin.startsWith("anthropic-subscription/") ? LOOKUP_PIN : pin;
+		if (agent) item.model = LOOKUP_AGENTS.test(agent) && pin.startsWith("anthropic-subscription/") ? lookupPin : pin;
 		else delete item.model;
 	}
 	if (Array.isArray(input?.tasks)) delete input.model;
