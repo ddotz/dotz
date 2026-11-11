@@ -635,9 +635,8 @@ function dcLeave(box, dc) {
   box.dataset.out = "1";
   void (async () => {
     if (DC.cur) { delete box.dataset.out; return; }
-    delete box.dataset.hold;   // the hold stops following the dock; motionGone keeps the same box from here
-    const tl = $("#tl"), tr = $("#timeline") && $("#timeline").getBoundingClientRect();
-    const shown = tl && tr ? [...tl.children].filter(n => { const r = n.getBoundingClientRect(); return r.height && r.bottom > tr.top && r.top < tr.bottom; }).slice(-12) : [];
+    delete box.dataset.hold;   // the hold stops following the dock; motionGone keeps the same box from here, with the messages shown above it
+    const tr = $("#timeline").getBoundingClientRect(), shown = [...$("#tl").children].filter(n => { const r = n.getBoundingClientRect(); return r.height && r.bottom > tr.top && r.top < tr.bottom; }).slice(-12);
     if (!(await motionGone(box, { keep: true, with: shown }))) { delete box.dataset.out; return; }
     dcLast = null; dcHold(box, false); if (dc.each) { delete DC.st[dc.key]; delete DC.picks[dc.key]; } delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; delete box.dataset.out; clear(box);
     paintDecision();

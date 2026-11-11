@@ -188,7 +188,7 @@ async function mGone(el, o) {
   const fade = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: M_MS.fast, easing: M_EASE, fill: "forwards" });
   let stayed = false;
   if (o.keep) M_STAY.set(el, () => { stayed = true; for (const a of [fade, ...glides]) a.cancel(); mUnstyle(el); });
-  await Promise.all([fade, ...glides].map(a => a.finished.catch(() => {})));
+  await Promise.all([fade, ...glides].map(a => a.finished.catch(() => { /* cancelled (motionStay, a redraw that dropped the node): it ends the same way */ })));
   M_STAY.delete(el);
   unguard();
   if (stayed) { mLater(parent); return false; }
