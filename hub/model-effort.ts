@@ -3,7 +3,7 @@
 // owner set (config.json, a `model:high` selector, a request) is never looked up here.
 // A model the table does not name still gets a value without anyone editing it: an unknown version of a known family takes the
 // nearest earlier row of that family (fable-5-3 takes fable-5-2); an unknown family gets medium. Never above high.
-// Evidence: handoffs/model-sweet-spot/report.md (2026-11-11). AA = Artificial Analysis leaderboard, index / cost per task.
+// Evidence is on each row, read 2026-11-11. AA = Artificial Analysis leaderboard, index / cost per task.
 
 export const EFFORT_ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORT_ORDER)[number];
