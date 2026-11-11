@@ -1,7 +1,7 @@
 import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import { cfg, DEFAULT_MODEL, DEFAULT_WORKER_MODEL, lanesModel, orchestratorModel, parseSelector, splitThinking, workerModel } from "./config.ts";
 import { targetView, setModel } from "./control.ts";
-import { clampEffort, sweetSpot } from "./model-effort.ts";
+import { clampEffort, sweetSpot, useLearned } from "./model-effort.ts";
 import "./outbound.ts";
 
 test("every table row gives its effort, with or without a provider prefix and an effort suffix", () => {
@@ -25,14 +25,41 @@ test("an unknown family gets medium and says it is the default", () => {
 	expect(sweetSpot("anthropic/claude-mythos-5-1")).toEqual({ effort: "medium", source: "default" });
 });
 
-test("a new version of a known family takes the nearest earlier row of that family", () => {
-	expect(sweetSpot("anthropic/claude-fable-5-3")).toEqual({ effort: "high", source: "family" });
-	expect(sweetSpot("anthropic/claude-opus-5-6")).toEqual({ effort: "medium", source: "family" });
-	expect(sweetSpot("anthropic/claude-opus-6")).toEqual({ effort: "medium", source: "family" });
-	expect(sweetSpot("openai/gpt-6.2-sol")).toEqual({ effort: "medium", source: "family" });
-	expect(sweetSpot("openai/gpt-7-astra")).toEqual({ effort: "high", source: "family" });
-	expect(sweetSpot("deepseek/deepseek-v4.2-flash")).toEqual({ effort: "high", source: "family" });
-	expect(sweetSpot("anthropic/claude-fable-5-1")).toEqual({ effort: "medium", source: "default" });
+test("a new version of a known family takes the nearest earlier row of that family, marked provisional", () => {
+	expect(sweetSpot("anthropic/claude-fable-5-3")).toEqual({ effort: "high", source: "provisional" });
+	expect(sweetSpot("anthropic/claude-opus-5-6")).toEqual({ effort: "medium", source: "provisional" });
+	expect(sweetSpot("anthropic/claude-opus-6")).toEqual({ effort: "medium", source: "provisional" });
+	expect(sweetSpot("openai/gpt-6.2-sol")).toEqual({ effort: "medium", source: "provisional" });
+	expect(sweetSpot("openai/gpt-7-astra")).toEqual({ effort: "high", source: "provisional" });
+	expect(sweetSpot("deepseek/deepseek-v4.2-flash")).toEqual({ effort: "high", source: "provisional" });
+});
+
+test("a version of a known family with no earlier row takes the nearest later row", () => {
+	expect(sweetSpot("anthropic/claude-fable-5-1")).toEqual({ effort: "high", source: "provisional" });
+	expect(sweetSpot("openai/gpt-5-sol")).toEqual({ effort: "medium", source: "provisional" });
+});
+
+test("precedence: a table row, then the install's benchmark value, then the provisional stand-in, then medium", () => {
+	const learned = new Map<string, { effort: "low" | "high"; status: "benchmark" | "provisional" }>([
+		["claude-fable-5-3", { effort: "low", status: "benchmark" }],
+		["claude-opus-5-5", { effort: "high", status: "benchmark" }],
+		["claude-opus-5-6", { effort: "high", status: "provisional" }],
+		["acme-9", { effort: "high", status: "benchmark" }],
+	]);
+	useLearned(() => learned);
+	try {
+		expect(sweetSpot("claude-opus-5-5")).toEqual({ effort: "medium", source: "table" });
+		expect(sweetSpot("anthropic/claude-fable-5-3")).toEqual({ effort: "low", source: "benchmark" });
+		expect(sweetSpot("anthropic/claude-fable-5-3", ["medium", "high"])).toEqual({ effort: "medium", source: "benchmark" });
+		expect(sweetSpot("anthropic/claude-opus-5-6")).toEqual({ effort: "medium", source: "provisional" });
+		expect(sweetSpot("acme-9")).toEqual({ effort: "high", source: "benchmark" });
+		expect(sweetSpot("acme-8")).toEqual({ effort: "medium", source: "default" });
+		expect(sweetSpot("anthropic/claude-fable-5-4")).toEqual({ effort: "low", source: "provisional" });
+		useLearned(() => undefined);
+		expect(sweetSpot("anthropic/claude-fable-5-3")).toEqual({ effort: "high", source: "provisional" });
+	} finally {
+		useLearned(() => undefined);
+	}
 });
 
 test("a level the model does not list is clamped the way OmO does: nearest above, else nearest below, else the first listed", () => {
