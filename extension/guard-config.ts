@@ -46,6 +46,10 @@ export interface GuardConfig {
 	task_token_cap: number;
 	// Context tokens past which an OmO task worker compacts itself at a turn end between tool steps, once per crossing (task-cap.ts); 0 = never.
 	task_compact_tokens: number;
+	// A task worker that shows progress at a checkpoint (task-cap-grow.ts) gets its cap raised by `task_cap_step` tokens each time, up to `task_cap_ceiling` per allowance; false = the fixed `task_token_cap`.
+	task_cap_grow: boolean;
+	task_cap_step: number;
+	task_cap_ceiling: number;
 }
 
 // A subagent's compactions: the first steers it to wrap up, the second disables its tools (guard.ts).
@@ -72,6 +76,9 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	harness_tools: true,
 	task_token_cap: 12_000_000,
 	task_compact_tokens: 150_000,
+	task_cap_grow: true,
+	task_cap_step: 3_000_000,
+	task_cap_ceiling: 24_000_000,
 };
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -104,6 +111,9 @@ export function guardConfigFrom(raw: unknown): GuardConfig {
 		harness_tools: flag(g.harness_tools, D.harness_tools),
 		task_token_cap: g.task_token_cap === 0 ? 0 : positive(g.task_token_cap, D.task_token_cap),
 		task_compact_tokens: g.task_compact_tokens === 0 ? 0 : positive(g.task_compact_tokens, D.task_compact_tokens),
+		task_cap_grow: flag(g.task_cap_grow, D.task_cap_grow),
+		task_cap_step: positive(g.task_cap_step, D.task_cap_step),
+		task_cap_ceiling: Math.max(positive(g.task_cap_ceiling, D.task_cap_ceiling), g.task_token_cap === 0 ? 0 : positive(g.task_token_cap, D.task_token_cap)),
 	};
 }
 
