@@ -4,7 +4,7 @@ import { existsSync, lutimesSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, u
 import { lstat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { sweepTemp, type SweepDeps } from "./temp-sweep.ts";
+import { sweepTemp, sweepTempRepeating, type SweepDeps } from "./temp-sweep.ts";
 
 const NOW = Date.parse("2026-11-11T12:00:00Z");
 const DAY = 86_400_000;
@@ -18,6 +18,7 @@ const made = (path: string, days: number, kind: "dir" | "file" = "dir") => {
 	old(path, days);
 	return path;
 };
+const sweepArgs = (o: Partial<SweepDeps> = {}): Partial<SweepDeps> => ({ tmp: dir("tmp"), scratch: dir("scratch"), dataDir: dir("data"), installDir: dir("install"), log: l => lines.push(l), ...o });
 const sweep = (o: Partial<SweepDeps> = {}) => sweepTemp({ tmp: dir("tmp"), scratch: dir("scratch"), dataDir: dir("data"), installDir: dir("install"), now: () => NOW, log: l => lines.push(l), ...o });
 
 beforeEach(() => {
@@ -126,4 +127,58 @@ test("a failing delete is counted once in the pass line and does not stop the pa
 	const r = await sweep({ rm: async (p, recursive) => (p.endsWith("bad123") ? Promise.reject(new Error("EACCES")) : rmSync(p, { recursive, force: true })) });
 	expect(r).toEqual({ removed: 1, left: 0, failed: 1 });
 	expect(lines).toEqual(["temp sweep: removed 1 stale temp entries, 0 left for the next pass, 1 failed"]);
+});
+
+// Fake file calls: `n` stale dotz-test dirs in the injected tmp root, nothing on disk; `tick` ms pass per delete.
+const fake = (n: number, tick = 0, rm: SweepDeps["rm"] = async () => {}) => {
+	let clock = NOW;
+	const names = Array.from({ length: n }, (_, i) => `dotz-test-${i.toString(36).padStart(6, "0")}`);
+	const stat = { isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false, uid: 1, mtimeMs: NOW - 4 * DAY };
+	return {
+		uid: 1,
+		now: () => clock,
+		readdir: async (p: string) => (p.endsWith("tmp") ? names : []),
+		lstat: async (p: string) => (/dotz-test-/.test(p) ? stat : Promise.reject(Object.assign(new Error("ENOENT"), { code: "ENOENT" }))),
+		rm: async (p: string, recursive: boolean) => {
+			clock += tick;
+			await rm(p, recursive);
+		},
+	};
+};
+
+test("with the default budget a pass removes far more than 2,000 entries when time allows; the entry ceiling still stops a runaway pass", async () => {
+	expect(await sweep(fake(10_000))).toEqual({ removed: 10_000, left: 0, failed: 0 });
+	const r = await sweep(fake(60_000));
+	expect(r.removed).toBe(50_000);
+	expect(r.left).toBe(10_000);
+});
+
+test("the time limit still stops a pass past the old entry cap and reports what is left", async () => {
+	const r = await sweep(fake(30_000, 1));
+	expect(r).toEqual({ removed: 20_000, left: 10_000, failed: 0 });
+	expect(lines).toEqual(["temp sweep: removed 20000 stale temp entries, 10000 left for the next pass"]);
+});
+
+test("a pass with entries left schedules one follow-up in 5 minutes, a finished pass none, and two passes never overlap", async () => {
+	const timers: { fn: () => void; ms: number }[] = [];
+	const schedule = (fn: () => void, ms: number) => (timers.push({ fn, ms }), setTimeout(() => {}, 0));
+	await sweepTempRepeating(sweepArgs(fake(30_000, 1)), schedule);
+	expect(timers.map(t => t.ms)).toEqual([300_000]);
+	await sweepTempRepeating(sweepArgs(fake(100, 1)), schedule); // the pass that finishes
+	expect(timers.length).toBe(1);
+
+	let running = 0;
+	let peak = 0;
+	let release = () => {};
+	const gate = new Promise<void>(r => (release = r));
+	const slow = fake(3, 0, async () => {
+		peak = Math.max(peak, ++running);
+		await gate;
+		running--;
+	});
+	const first = sweepTempRepeating(sweepArgs(slow), schedule);
+	await sweepTempRepeating(sweepArgs(slow), schedule); // second call while the first runs: skipped
+	release();
+	await first;
+	expect(peak).toBe(1);
 });

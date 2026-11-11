@@ -7,18 +7,22 @@
 // - /tmp: directories named dotz-* older than 7 days (agent scratch: screenshots, probes).
 // Left out on purpose: rd- (too generic a name to claim) and dz-sns- (only a test helper makes it), dotz-verify-<id>- (the
 // runtime check removes it itself). The data dir, the install dir and the live data dir are never targets and never inside
-// a swept root. A pass has a budget (entries and time), so a backlog of 500,000 folders is worked off over days.
+// a swept root. A pass has a budget (time first, entries as a ceiling), so a backlog of 500,000 folders is worked off in about a day.
 import { lstat, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { DATA_DIR, log } from "./config.ts";
 import { liveDataDir } from "./live-guard.ts";
+import { trackTimer } from "./shutdown.ts";
 
 const DAY = 86_400_000;
 const TEST_AGE_MS = 3 * DAY;
 const SCRATCH_AGE_MS = 7 * DAY;
-const MAX_ENTRIES = 2000;
+// Time is the limit of a pass: 20 s at the measured 1,200 removals/s is about 24,000 a pass, 576,000 a day hourly, against 80,000 made a day.
+// The entry ceiling (50,000) sits above that and only stops a runaway pass. A pass that ends with entries left re-runs after RETRY_MS.
+const MAX_ENTRIES = 50_000;
 const MAX_MS = 20_000;
+const RETRY_MS = 5 * 60_000;
 const SUFFIX = /^[A-Za-z0-9]{6}$/;
 // Each is created and removed inside one call of non-test code (a failed or killed run leaves it); nothing reads it later.
 const OWNED = new Set(["dotz-permprobe-", "dotz-rebase-", "dotz-release-note-", "dotz-sigcheck-", "dotz-smoke-", "dotz-verify-", "dotz-video-", "kakao-dry-"]);
@@ -146,4 +150,28 @@ export async function sweepTemp(o: Partial<SweepDeps> = {}): Promise<SweepResult
 	}
 	if (res.removed || res.failed) d.log(`temp sweep: removed ${res.removed} stale temp entries, ${res.left} left for the next pass${res.failed ? `, ${res.failed} failed` : ""}`);
 	return res;
+}
+
+// The hourly entry point: one pass at a time; a pass that stopped on its budget with entries left (and made progress) runs again
+// after RETRY_MS, so a backlog does not wait an hour per slice. An hourly call cancels the pending re-run and starts the same pass.
+let busy = false;
+let retry: Timer | undefined;
+const later = (fn: () => void, ms: number): Timer => {
+	const t = setTimeout(fn, ms);
+	trackTimer("temp sweep retry", t);
+	return t;
+};
+export async function sweepTempRepeating(o: Partial<SweepDeps> = {}, schedule: (fn: () => void, ms: number) => Timer = later): Promise<void> {
+	if (busy) return;
+	busy = true;
+	clearTimeout(retry);
+	retry = undefined;
+	try {
+		const r = await sweepTemp(o);
+		if (r.left > 0 && r.removed > 0) retry = schedule(() => void sweepTempRepeating(o, schedule), RETRY_MS);
+	} catch (e) {
+		log(`temp sweep failed: ${e instanceof Error ? e.message : e}`);
+	} finally {
+		busy = false;
+	}
 }
