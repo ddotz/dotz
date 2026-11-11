@@ -41,6 +41,15 @@ test("a whole answer comes out as its blocks in order", () => {
 	expect(specChildren(deriveSpec(text)!).map(e => e.type)).toEqual(["Text", "Steps", "Section", "Table", "Code", "Rule", "Evidence"]);
 });
 
+test("a row is a change only when both sides are short values; a sentence around an arrow stays a value", () => {
+	const rows = (text: string) => specChildren(deriveSpec(text)!).flatMap(e => (e.props.rows as Record<string, unknown>[] | undefined) ?? []);
+	const sentence = "폰에서 \"전체\" 큰 제목 줄을 없애 첫 메일이 78px쯤 올라왔어요. 좁은 창에서 제목이 잘리던 것(28 → 173px)도 같이 고쳤어요.";
+	expect(rows(`고쳤어요.\n\n- **메일**: ${sentence}\n- **상태:** 정상`)[0]).toEqual({ key: "메일", value: sentence });
+	expect(rows("빨라졌어요.\n\n- 응답 시간: 445.8 → 52.4ms\n- 통과: 7461 → 7498\n- 버전: 261110.1 → 261111.1")).toEqual([
+		{ key: "응답 시간", from: "445.8", to: "52.4ms" }, { key: "통과", from: "7461", to: "7498" }, { key: "버전", from: "261110.1", to: "261111.1" },
+	]);
+});
+
 test("Code keeps its language, 원문 and dotz-settings included", () => {
 	const spec = deriveSpec("```원문\nraw\n```\n\n```dotz-settings\n{}\n```\n\n근거: 로그");
 	expect(specChildren(spec!).map(e => e.props.lang)).toEqual(["원문", "dotz-settings", undefined]);

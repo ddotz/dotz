@@ -157,6 +157,8 @@ const ANS_PLAIN = /^((?:`[^`\n]+`|[^*:：`.,?!()\n])+?)\s*[:：]\s+(\S.*)$/;
 const ANS_NAME_MAX = 24, ANS_PLAIN_MAX = 60;
 const ANS_SENTENCE_END = /[.!?요다죠]\s*$/;
 const ANS_CHANGE = /^([^→\n]*\d[^→\n]*?)\s*→\s*([^→\n]*\d[^→\n]*)$/;
+const ANS_SIDE_MAX = 24, ANS_NOT_VALUE = /[()[\]{}"'“”‘’!?;:]|(?<!\d)[.,]|[.,](?!\d)/;
+const isValueSide = (s) => s.length <= ANS_SIDE_MAX && !ANS_NOT_VALUE.test(s);
 const ANS_EVIDENCE = /^근거:\s*(\S.*)$/;
 const ANS_HEAD = /^\*\*([^*\n]+)\*\*$/, ANS_COUNT = /^(.+?)\s*\((\d+회)\)$/;
 const TIME_ROW = /^(\d{1,2}:\d{2})\s+(\S.*)$/;
@@ -175,7 +177,7 @@ const kvOf = (text) => {
 };
 const changeOf = (value) => {
   const c = ANS_CHANGE.exec(value);
-  return c ? { from: c[1], to: c[2] } : { value };
+  return c && isValueSide(c[1]) && isValueSide(c[2]) ? { from: c[1], to: c[2] } : { value };
 };
 const REC_MARK = /^([ \t]*>?[ \t]*(?:\*\*)?[ \t]*\d{1,2}(?:\)|\.[ \t]).*?)[ \t]*(?:(?:←|<-)[ \t]*(?:추천|recommended)|\([ \t]*(?:추천|권장|recommended)[ \t]*\))/gim;
 function unquoteChoices(src) {

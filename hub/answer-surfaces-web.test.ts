@@ -108,6 +108,16 @@ test("a sentence with a colon stays a list, and words around an arrow are not a 
 	expect(await drawn(SURFACES["main chat"]!(flow), ".nw-chg")).toBe(0);
 });
 
+// Owner 2026-11-11: a sentence that only holds "28 → 173px" was drawn with everything before the arrow struck through.
+test("a sentence that holds an arrow is a plain row, and a short before → after is still a change", async () => {
+	const sentence = "- **메일**: 폰에서 \"전체\" 큰 제목 줄을 없애 첫 메일이 78px쯤 올라왔어요. 폰에서 같은 스레드 목록이 화면 밖으로 넘치던 것, 좁은 창에서 제목이 잘리던 것(28 → 173px)도 같이 고쳤어요.";
+	expect(await drawn(SURFACES["main chat"]!(`고쳤어요.\n\n${sentence}\n- **상태:** 정상`), "s")).toBe(0);
+	expect(await drawn(SURFACES["main chat"]!(`고쳤어요.\n\n${sentence}\n- **상태:** 정상`), ".ans-keys .rc-row")).toBe(2);
+	expect(await shown(SURFACES["main chat"]!(`고쳤어요.\n\n${sentence}\n- **상태:** 정상`))).toContain("(28 → 173px)도 같이 고쳤어요.");
+	const changes = "빨라졌어요.\n\n- 응답 시간: 445.8 → 52.4ms\n- 통과: 7461 → 7498\n- 버전: 261110.1 → 261111.1";
+	expect(await drawn(SURFACES["main chat"]!(changes), ".nw-chg s")).toBe(3);
+});
+
 test("an id in brackets goes and a channel tag never shows raw on any surface", async () => {
 	const text = "알림 워커(st_01a1a07f)가 <#1500000000005984746>에 올렸어요.";
 	for (const [surface, draw] of Object.entries(SURFACES)) {

@@ -13,8 +13,10 @@ const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
 const ANS_PLAIN = /^((?:`[^`\n]+`|[^*:：`.,?!()\n])+?)\s*[:：]\s+(\S.*)$/;
 const ANS_NAME_MAX = 24, ANS_PLAIN_MAX = 60;
 const ANS_SENTENCE_END = /[.!?요다죠]\s*$/;
-// "5,308ms → 36ms": numbers on both sides are a change; words around an arrow are a path or a flow ("설정 → 앱").
+// "5,308ms → 36ms": a digit on both sides is a change, and each side is a short value (<= 24 chars, no brackets, quotes or sentence punctuation outside numbers); words or a sentence around an arrow are a path, a flow or prose ("설정 → 앱").
 const ANS_CHANGE = /^([^→\n]*\d[^→\n]*?)\s*→\s*([^→\n]*\d[^→\n]*)$/;
+const ANS_SIDE_MAX = 24, ANS_NOT_VALUE = /[()[\]{}"'“”‘’!?;:]|(?<!\d)[.,]|[.,](?!\d)/;
+const isValueSide = (s: string): boolean => s.length <= ANS_SIDE_MAX && !ANS_NOT_VALUE.test(s);
 const ANS_EVIDENCE = /^근거:\s*(\S.*)$/;
 const ANS_HEAD = /^\*\*([^*\n]+)\*\*$/, ANS_COUNT = /^(.+?)\s*\((\d+회)\)$/;
 const TIME_ROW = /^(\d{1,2}:\d{2})\s+(\S.*)$/;
@@ -33,7 +35,7 @@ const kvOf = (text: string): RegExpExecArray | null => {
 };
 const changeOf = (value: string): Props => {
 	const c = ANS_CHANGE.exec(value);
-	return c ? { from: c[1], to: c[2] } : { value };
+	return c && isValueSide(c[1]!) && isValueSide(c[2]!) ? { from: c[1], to: c[2] } : { value };
 };
 
 // Older messages still mark one option as recommended (hub/choices.ts stripRecommendMark): nothing shows on it.
