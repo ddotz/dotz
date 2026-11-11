@@ -456,7 +456,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 			if (warm?.id === axKey) forgetWarm();
 			if (opened.reason === REFUSE.mismatch) await closeWindow(deps.runner, input.roomName);
 			// KakaoTalk has no window and its own menu did not open one: no rung of the ladder can change that.
-			if (opened.reason === REFUSE.noList) break;
+			if (opened.reason === REFUSE.noList || opened.final) break;
 			continue;
 		}
 		const s = performance.now();

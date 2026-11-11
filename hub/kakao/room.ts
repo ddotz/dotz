@@ -23,7 +23,8 @@ export type AxStep = { step: string; ms: number; ok: boolean; why?: string };
 export type Focus = { from?: string; took: boolean; restored: boolean };
 // `found`: only on a failure of the menu step. The row was found and checked, nothing was opened; the next try may open it again without a new list read.
 export type FoundRow = { row: number; texts: string[] };
-export type Opened = { ok: true; steps: AxStep[]; focus?: Focus; row?: number } | { ok: false; reason: string; steps: AxStep[]; focus?: Focus; found?: FoundRow };
+// `final`: another try cannot change the answer (the whole list was read without the room, or its window has no message input), so the ladder stops.
+export type Opened = { ok: true; steps: AxStep[]; focus?: Focus; row?: number } | { ok: false; reason: string; steps: AxStep[]; focus?: Focus; found?: FoundRow; final?: true };
 
 const READ_ROWS = 60;
 // The measured native scan is ~13-30 ms a row (299 rows ≈ 4-9 s). Every rung relies on the hint and stops at the first name hit, but
@@ -43,6 +44,7 @@ export const REFUSE = {
 	mismatch: "방 이름이나 인원이 달라요",
 	noList: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요",
 	openFailed: "방을 열지 못했어요",
+	noInput: "이 방의 대화창에는 글을 쓰는 칸이 없어서 보낼 수 없어요",
 	partial: "같은 이름의 방을 목록 끝까지 확인하지 못해서 고르지 않았어요",
 	timeout: "방을 여는 데 너무 오래 걸려서 멈췄어요",
 } as const;
@@ -266,7 +268,8 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		steps.push({ step: deep ? "rows:deep" : "rows", ms: listed.ms, ok: choice.ok, why: `${scanned}:${stopped}${listed.out.pages ? `:p${listed.out.pages}` : ""}${choice.ok ? `:row${choice.index}:${choice.via}` : `:${choice.why}`}` });
 		if (!choice.ok) {
 			if (choice.why !== "none") return stop(REFUSE.mismatch);
-			return stop(stopped === "budget" ? `카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundTime}(${seen(scanned, total)})` : `카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundEnd}(${seen(scanned, total)}). 카카오톡에서 방 이름이 바뀌었거나 나간 방인지 확인해 주세요`);
+			if (stopped === "budget") return stop(`카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundTime}(${seen(scanned, total)})`);
+			return { ...stop(`카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundEnd}(${seen(scanned, total)}). 카카오톡에서 방 이름이 바뀌었거나 나간 방인지 확인해 주세요`), final: true };
 		}
 		if (shared && !opts.reuse && stopped !== "end" && !(stopped === "found" && hits.length >= need)) return stop(`${named} 이름의 방이 ${need}개라 ${REFUSE.partial}(${seen(scanned, total)})`);
 		if (left() < 1_000) return stop(timedOut());
@@ -284,6 +287,8 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 				return { ...again, steps: [...steps, ...again.steps] };
 			}
 			if (row.out.step === "window") await closeWindow(runner, room.name);
+			// The window that came up has no message input (room.jxa.js closed it): no rung can send into it.
+			if (row.out.step === "window" && row.out.why === "no_input") return { ...stop(`${named} ${REFUSE.noInput}`), final: true };
 			const failed = stop(row.timedOut ? timedOut() : openFailed(row.out.step ?? "open"));
 			return row.out.step === "menu" && !row.timedOut ? { ...failed, found: chosen } : failed;
 		}

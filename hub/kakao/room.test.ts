@@ -252,6 +252,23 @@ test("a failing open is retried through the ladder, one context menu per attempt
 	expect(ok.screen.menus()).toBe(1);
 });
 
+test("a room whose window has no message input is refused on the first rung, without the ladder", async () => {
+	const { r, screen } = await send([familyRow], family, [family], { openFail: { step: "window", why: "no_input" } });
+	expect(r.ok).toBe(false);
+	expect(r.reason).toContain(REFUSE.noInput);
+	expect(r.attempts).toHaveLength(1);
+	expect(screen.menus()).toBe(1);
+	expect(r.ax!.at(-1)).toMatchObject({ step: "window", ok: false });
+});
+
+test("a room the list does not show is read for once: the list end is final, later rungs do not read the whole list again", async () => {
+	const { r, screen } = await send([familyRow], { chatId: "41", name: "없는방", kind: "group", members: 3 }, [family, { chatId: "41", name: "없는방", kind: "group", members: 3 }]);
+	expect(r.ok).toBe(false);
+	expect(r.reason).toContain(REFUSE.notFoundEnd);
+	expect(screen.rowCalls).toHaveLength(1);
+	expect(r.attempts).toHaveLength(1);
+});
+
 test("a menu that does not open does not make the next rungs read the list again: the chosen row is opened again, also for a shared name", async () => {
 	const rows: FakeRow[] = [
 		{ id: "chat_g1", title: "민수", count: 5 },

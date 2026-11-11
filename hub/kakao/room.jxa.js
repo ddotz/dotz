@@ -16,7 +16,8 @@
 // open opens list row number `row` by Accessibility actions only: its title is read again (a list that moved is refused), then the row
 // cell's AXShowMenu once, then AXPress on its "채팅방 열기" item (list rows have no AXPress/AXOpen; kmsg selects the row and posts an Enter
 // key, which needs KakaoTalk in front). KakaoTalk is not activated and the owner's front app and focus stay (measured 2026-10-23). At most
-// one context menu per call. Prints {ok:true, ms} or {ok:false, step:"list"|"recheck"|"menu"|"press"|"window", why, err?, ms}.
+// one context menu per call. Prints {ok:true, ms} or {ok:false, step:"list"|"recheck"|"menu"|"press"|"window", why, err?, ms}. A window that
+// appeared since the press but is not the room is closed (why "no_input": it has no message input; "untitled": it has an input, no title).
 // send puts `text` into the input of the one window titled `name` (AXValue) and presses its 전송 button (AXPress): no key event, no
 // activation. Setting AXValue enables the button (measured 2026-10-23). The input is compared normalized (NFC, line breaks, invisible
 // marks, ends): a value equal to one dotz typed into this room (`ours`, or this text) is dotz's leftover and is cleared for real (read back,
@@ -392,8 +393,8 @@ function facts(w, deep, budgetMs) {
 	return info;
 }
 
-function closeAll(name) {
-	var wins = chatWindows();
+function closeAll(name, wins) {
+	wins = wins || chatWindows();
 	if (typeof name === "string") wins = wins.filter(function (w) { return sameTitle(attr(w, "name"), name); });
 	for (var i = 0; i < wins.length; i++) {
 		try {
@@ -424,6 +425,29 @@ function windowNamed(name) {
 	return null;
 }
 
+// A window has no identity System Events can compare, so the title, position and size stand for it.
+function winKey(w) {
+	return [attr(w, "name"), attr(w, "position"), attr(w, "size")].join("|");
+}
+
+// The chat windows that were not open when `before` (their winKeys) was taken; equal windows are counted one by one.
+function windowsSince(before) {
+	var left = before.slice();
+	return chatWindows().filter(function (w) {
+		var at = left.indexOf(winKey(w));
+		return at < 0 || (left.splice(at, 1), false);
+	});
+}
+
+// A failed press or wait closes exactly the chat windows that appeared since `before` (a window of ours, even without a title) and says
+// what it was: no_input is a window without a message input (nothing can be sent there), untitled one that has an input but no title.
+function sweepSince(before) {
+	var fresh = windowsSince(before);
+	var blind = fresh.length > 0 && !inputOf(fresh[0]);
+	closeAll(null, fresh);
+	return !fresh.length ? "no_window" : blind ? "no_input" : "untitled";
+}
+
 // The message input of a chat window, null when it has none.
 function inputOf(w) {
 	var areas = w.scrollAreas();
@@ -445,12 +469,6 @@ function until(fn, seconds) {
 		if (v || Date.now() > end) return v;
 		delay(0.03);
 	}
-}
-
-// The title is the first static text of a row cell, its member count (groups only) the second when it is all digits; both are told apart
-// in room.ts. A row is one Accessibility read; the title is in the name of the static text (its value is empty for some rows).
-function rowTexts(rows, i) {
-	return rows[i].uiElements[0].staticTexts.name().map(function (t) { return t === null || t === undefined ? "" : String(t); });
 }
 
 // openlist brings the chat list window back when KakaoTalk runs with no window (menu bar only): AXPress on the menu item 채팅 of the
@@ -515,36 +533,9 @@ function openList() {
 }
 
 function readRows(name, max, budgetMs, first, hint, need, memo) {
-	var t0 = Date.now();
 	if (windowNamed(name)) return { ok: true, opened: true };
-	var native = axScan(name, first, budgetMs, hint, need, memo);
-	if (native) return native;
-	// No AX API in this process: the older System Events wording of the same scan (one AppleEvent per attribute, ~100 ms a read).
-	var list = listTable();
-	if (!list) return { ok: false, step: "list", why: "no_list", ms: { table: Date.now() - t0 } };
-	var tableMs = Date.now() - t0;
-	var rows = list.table.rows;
-	var out = [];
-	var stopped = "end";
-	var want = norm(name);
-	for (var i = 0; i < max; i++) {
-		if (Date.now() - t0 > budgetMs) {
-			stopped = "budget";
-			break;
-		}
-		var texts;
-		try {
-			texts = rowTexts(rows, i);
-		} catch (e) {
-			break;
-		}
-		out.push(texts);
-		if (first && norm(texts[0]) === want) {
-			stopped = "found";
-			break;
-		}
-	}
-	return { ok: true, rows: out, stopped: stopped, ms: { table: tableMs, read: Date.now() - t0 - tableMs } };
+	// The rows are read with the AX API of this process; without a list (or without that API) the answer is no_list.
+	return axScan(name, first, budgetMs, hint, need, memo) || { ok: false, step: "list", why: "no_list", ms: {} };
 }
 
 // The texts of list row `index` read the same way the scan read them (native AX values), so a recheck compares like with like; null when
@@ -576,8 +567,9 @@ function axScrollTo(list, index) {
 
 function axReveal(list, index) {
 	var vis = axVisibleRows(list.table);
-	if (!vis.length || vis.indexOf(index) >= 0) return { moved: false };
-	var first = Math.min.apply(null, vis);
+	// A list window that was just opened can report no visible rows yet: the row is scrolled to all the same (it was at the top).
+	if (vis.indexOf(index) >= 0) return { moved: false };
+	var first = vis.length ? Math.min.apply(null, vis) : 0;
 	if (!axScrollTo(list, index)) return { moved: false };
 	until(function () { return axVisibleRows(list.table).indexOf(index) >= 0; }, 0.6);
 	return { moved: true, first: first };
@@ -660,16 +652,18 @@ function openRowIn(index, name, expect, axl, rev) {
 		return fail("menu", "no_item", labels.join("|"));
 	}
 	lap("menu");
+	var before = chatWindows().map(winKey);
 	try {
 		item.actions.byName("AXPress").perform();
 	} catch (e) {
+		sweepSince(before);
 		return fail("press", "press_error", e);
 	}
 	lap("press");
 	var shown = until(function () {
 		return windowNamed(name);
 	}, 1.2);
-	if (!shown) return fail("window", "no_window");
+	if (!shown) return fail("window", sweepSince(before));
 	lap("window");
 	return { ok: true, ms: ms };
 }

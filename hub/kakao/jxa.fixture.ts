@@ -10,6 +10,9 @@ export type Jxa = {
 	sendInto: (name: string, text: string, ours: string[], priorPressed: string[]) => { ok: boolean; why?: string; pressed?: boolean; left?: string; preview?: string };
 	attachFile: (name: string, path: string) => { ok: boolean; why?: string; pressed?: boolean; clipboard?: boolean };
 	setWindowNamed: (fn: (name: string) => unknown) => void;
+	setChatWindows: (fn: () => unknown[]) => void;
+	winKey: (w: unknown) => string;
+	sweepSince: (before: string[]) => string;
 	norm: (s: string) => string;
 	axListNative: () => { table: unknown; rows: unknown[] } | null;
 	axVisibleRows: (table: unknown) => number[];
@@ -75,7 +78,7 @@ export function loadJxa(opts: { app?: ReturnType<typeof axList>; msPerRead?: num
 				},
 			}
 		: (opts.objc ?? {});
-	const body = `${src}\n${attachSrc}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, attachFile: attachFile, norm: norm, axListNative: axList, axVisibleRows: axVisibleRows, axReveal: axReveal, axRestore: axRestore, axScan: axScan, setWindowNamed: function (fn) { windowNamed = fn; } };`;
+	const body = `${src}\n${attachSrc}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, attachFile: attachFile, norm: norm, axListNative: axList, axVisibleRows: axVisibleRows, axReveal: axReveal, axRestore: axRestore, axScan: axScan, setWindowNamed: function (fn) { windowNamed = fn; }, setChatWindows: function (fn) { chatWindows = fn; }, winKey: winKey, sweepSince: sweepSince };`;
 	const application = opts.systemEvents ? () => opts.systemEvents : noApp;
 	return new Function("ObjC", "$", "Application", "delay", "Ref", "Date", body)(objc, $, application, delay, () => [], fakeDate) as Jxa;
 }

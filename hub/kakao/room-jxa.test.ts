@@ -177,3 +177,53 @@ test("a main window on another tab gets its chat tab pressed and the list is rea
 	(bare.AXWindows[0] as { AXChildren: unknown[] }).AXChildren = [];
 	expect(loadJxa({ app: bare }).axScan("방 0", true, 3_500, 0)).toBeNull();
 });
+
+// A list window that was just opened can report no visible rows at all; the reveal then used to be skipped and the menu of a top row failed.
+test("a list that reports no visible rows yet still has the row scrolled into view", () => {
+	const app = axList(Array.from({ length: 299 }, (_, i) => ({ title: `방 ${i}` })), { visible: 8 });
+	const table = app.AXWindows[0]!.AXChildren[0]!.AXChildren[0] as { AXRows: { AXChildren: { onScroll: () => void }[] }[] };
+	const shown = Object.getOwnPropertyDescriptor(table, "AXVisibleRows")!.get!;
+	let laidOut = false;
+	const cell = table.AXRows[3]!.AXChildren[0]!;
+	const scroll = cell.onScroll;
+	cell.onScroll = () => {
+		scroll();
+		laidOut = true;
+	};
+	Object.defineProperty(table, "AXVisibleRows", { get: () => (laidOut ? shown.call(table) : []) });
+	const jxa = loadJxa({ app });
+	const list = jxa.axListNative()!;
+	expect(jxa.axVisibleRows(list.table)).toEqual([]);
+	expect(jxa.axReveal(list, 3)).toEqual({ moved: true, first: 0 });
+});
+
+// A press that brings up a window without a title: the window is ours, so it is closed, and a window that was open before is not touched.
+const fakeChat = (title: string, at: number, input: boolean) => {
+	const clicks: string[] = [];
+	const win = {
+		name: () => title,
+		position: () => [at, at],
+		size: () => [340, 581],
+		scrollAreas: () => [{ textAreas: () => (input ? [{}] : []) }],
+		buttons: { whose: () => [{ click: () => clicks.push(title || "(untitled)") }] },
+	};
+	return { win, clicks };
+};
+test("a window that came up untitled is closed, one that was open before is not, and a window without an input is named", () => {
+	const kept = fakeChat("가족방", 0, true);
+	const blind = fakeChat("", 40, false);
+	const jxa = loadJxa();
+	const before = [kept.win].map(jxa.winKey);
+	jxa.setChatWindows(() => [kept.win, blind.win]);
+	expect(jxa.sweepSince(before)).toBe("no_input");
+	expect(blind.clicks).toEqual(["(untitled)"]);
+	expect(kept.clicks).toEqual([]);
+	// With an input the window is still not the room (no title), and nothing new means nothing is closed.
+	const typed = fakeChat("", 80, true);
+	jxa.setChatWindows(() => [kept.win, typed.win]);
+	expect(jxa.sweepSince(before)).toBe("untitled");
+	expect(typed.clicks).toEqual(["(untitled)"]);
+	jxa.setChatWindows(() => [kept.win]);
+	expect(jxa.sweepSince(before)).toBe("no_window");
+	expect(kept.clicks).toEqual([]);
+});
