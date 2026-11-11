@@ -115,5 +115,15 @@ export function decodeSnapshot(text: string): Snapshot | undefined {
 	}
 }
 
-/** What changed between two snapshots, ignoring the time stamp: the sender posts only when this is true (or the heartbeat is due). */
-export const snapshotChanged = (a: Snapshot | undefined, b: Snapshot): boolean => !a || JSON.stringify({ ...a, at: 0 }) !== JSON.stringify({ ...b, at: 0 });
+// What a reader would call a change: the times a watch ran or runs next, its last output line and a session's last report move on every run, so they
+// do not count (a fresh copy of them still goes out with the next real change or the heartbeat). Every post is a message in the owner's room.
+const stable = (s: Snapshot) =>
+	JSON.stringify({
+		projects: s.projects,
+		sessions: s.sessions.map(({ at: _at, ...rest }) => rest),
+		monitors: s.monitors.map(({ last: _l, next: _n, summary: _s, ...rest }) => rest),
+		todos: s.todos,
+		notices: s.notices,
+	});
+/** Whether `b` differs from `a` in what a reader would notice: the sender posts only when this is true (or the heartbeat is due). */
+export const snapshotChanged = (a: Snapshot | undefined, b: Snapshot): boolean => !a || stable(a) !== stable(b);

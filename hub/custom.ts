@@ -779,6 +779,16 @@ function ownProjects(deps: CustomDeps): { name: string; projects: RemoteProject[
 	return { name, projects: list.filter(p => p.computer === name).slice(0, 30).map(p => ({ key: p.key, name: p.name, ...(p.purpose || p.note ? { note: String(p.purpose || p.note).slice(0, 200) } : {}) })) };
 }
 
+/** This computer's own projects with the number of live sessions in each, for the status snapshot it posts (hub/relay-snapshot-send.ts); no folder path. */
+export function snapshotProjects(deps: CustomDeps): Array<{ key: string; name: string; note?: string; live?: number }> {
+	const name = deps.machine?.() ?? "";
+	const list = projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins: readPins({ sync: false }).pins, records: loadProjects(), computer: name }).map(withPurpose);
+	return list.filter(p => p.computer === name).map(p => {
+		const live = p.lanes.filter(l => l.live).length;
+		return { key: p.key, name: p.name, ...(p.purpose || p.note ? { note: String(p.purpose || p.note) } : {}), ...(live ? { live } : {}) };
+	});
+}
+
 async function computersView(deps: CustomDeps): Promise<ComputerGroup[]> {
 	const self = deps.machine?.() ?? "";
 	const projects = projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins: readPins({ sync: false }).pins, records: loadProjects(), computer: self });

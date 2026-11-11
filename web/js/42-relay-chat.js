@@ -98,6 +98,14 @@ function msRelaySave(p, items, btn) {
     if (current === p.id) renderMessenger(p.id);
   });
 }
+// This computer's own switch in the same screen: whether it posts its status into the room (settings().relays.share, PUT { share_status }).
+function msShareSave(p, on, btn) {
+  return busy(btn, async () => {
+    p.s = await api(`/api/messengers/${enc(p.id)}`, "PUT", { share_status: on });
+    prLoad();
+    if (current === p.id) renderMessenger(p.id);
+  });
+}
 function msRelaySection(p, s) {
   const r = s.relays;
   if (!r) return [];
@@ -110,5 +118,9 @@ function msRelaySection(p, s) {
   const form = el("div", { class: "li dcs-form", "data-relay-add": "1" },
     ...r.fields.map(f => el("div", {}, textField(f.label, input({ value: add[f.key] || "", name: `ms-relay-${f.key}`, oninput: ev => { add[f.key] = ev.target.value; } })), el("div", { class: "sup", text: f.hint }))),
     el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn tonal", onclick: ev => msRelaySave(p, [...r.items, { ...add }], ev.currentTarget), text: r.add })));
-  return [el("div", { class: "sec", text: r.label }), el("div", { class: "list" }, ...rows, form, el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: r.hint }))))];
+  const share = r.share && el("div", { class: "li", "data-relay-share": "1" },
+    el("span", { class: "tx" }, el("div", { class: "hd", text: r.share.label }), el("div", { class: "sup", text: r.share.hint })),
+    liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(r.share.on), "aria-label": r.share.label, title: r.share.label,
+      onclick: ev => msShareSave(p, !r.share.on, ev.currentTarget) })));
+  return [el("div", { class: "sec", text: r.label }), el("div", { class: "list" }, ...rows, form, el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: r.hint }))), ...(share ? [share] : []))];
 }

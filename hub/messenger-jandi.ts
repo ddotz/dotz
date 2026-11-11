@@ -11,6 +11,7 @@ import { msg } from "./i18n.ts";
 import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
 import { createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
 import { createSessionMark } from "./jandi-session.ts";
+import { createSnapshotSender, currentSnapshot, snapshotFileStore } from "./relay-snapshot-send.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import type { MessageSpec } from "./message-spec.ts";
 import { specOf } from "./message-spec-of.ts";
@@ -191,8 +192,15 @@ function relaySettings(sc: SelfChatConfig | undefined): Pick<Settings, "relays">
 			add: t.add,
 			fields: [field("name", t.name, t.nameHint), field("keyword", t.keyword, t.keywordHint), field("reply_prefix", t.prefix, t.prefixHint)],
 			items: (sc.peers ?? []).map(p => ({ name: p.name, keyword: p.keyword, reply_prefix: p.reply_prefix, notify: p.notify !== false })),
+			share: { label: t.share, hint: t.shareHint, on: sc.share_status === true },
 		},
 	};
+}
+/** The self chat with the status sharing switched `on` or off; it needs the login-based connection. */
+function withShare(sc: SelfChatConfig | undefined, on: unknown): SelfChatConfig {
+	if (typeof on !== "boolean") throw new SettingsError("share_status must be true or false");
+	if (!selfChatReady(sc)) throw new SettingsError("share_status needs the JANDI login connection");
+	return normalizeSelfChat({ ...sc, share_status: on })!;
 }
 /** The self chat with `list` as its peers. A list the config would cut down is refused whole: the owner sees why, and nothing changes. */
 function withRelays(sc: SelfChatConfig | undefined, list: unknown): SelfChatConfig {
@@ -299,6 +307,7 @@ export type JandiAdapter = Adapter & { port(): number | undefined; selfChat(): S
 export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: string) => MessageSpec | null): JandiAdapter {
 	let server: ReturnType<typeof Bun.serve> | undefined;
 	let selfChat: SelfChat | undefined;
+	let sharer: ReturnType<typeof createSnapshotSender> | undefined;
 	let ctx: MessengerCtx | undefined;
 	const peerChats = createPeerChats({ config: () => loadJandiConfig(dataDir).self_chat, client: () => selfChat, log, dataDir });
 	const a: JandiAdapter = {
@@ -352,9 +361,24 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 					onSessionLost: loss.lost,
 				});
 				void selfChat.run();
+				const chat = selfChat;
+				sharer = createSnapshotSender({
+					config: () => loadJandiConfig(dataDir).self_chat,
+					build: () => currentSnapshot(Date.now()),
+					post: async text => {
+						await chat.post(`message-api/v3/teams/${sc.team_id}/rooms/${sc.room_id}/messages`, 3, messageBody(text));
+						mark("self_chat", { last_out: Date.now() });
+					},
+					now: Date.now,
+					store: snapshotFileStore(join(dataDir, "messengers", "jandi-snapshot.json")),
+					log: c.log,
+				});
+				sharer.start();
 			}
 		},
 		stop() {
+			sharer?.stop();
+			sharer = undefined;
 			selfChat?.stop();
 			selfChat = undefined;
 			server?.stop(true);
@@ -498,6 +522,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 			next.rooms = rooms;
 		}
 		if (body.relays !== undefined) next.self_chat = withRelays(cfg.self_chat, body.relays);
+		if (body.share_status !== undefined) next.self_chat = withShare(next.self_chat, body.share_status);
 		saveJandiConfig(next, dataDir);
 	}
 

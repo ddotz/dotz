@@ -69,6 +69,8 @@ export const ko: Catalog = {
 		prefix: "답 머리말",
 		prefixHint: "그 컴퓨터가 답 맨 앞에 붙이는 말이에요.",
 		invalid: "키워드와 답 머리말을 확인해 주세요. 다른 컴퓨터와 겹치면 안 되고, 8대까지 넣을 수 있어요.",
+		share: "이 컴퓨터 상태를 잔디로 보내기",
+		shareHint: "프로젝트, 세션, 모니터, 남은 할 일, 최근 알림을 짧게 요약해 나와의 대화에 올려요. 바뀌었을 때만, 30분에 한 번까지 올리고 비밀번호나 개인 경로는 빼요. 이 컴퓨터에 답 머리말이 있어야 쓸모가 있어요.",
 	},
 
 	// Messenger connect flows (hub/onboarding*.ts, hub/messenger-login.ts): owner-facing lines, plain and short.
