@@ -37,10 +37,10 @@ const read = (file: string): string | undefined => {
 	}
 };
 
-// When the holder of the first slot took it and what it runs, for the progress line of a waiter.
-export const holderInfo = (dir: string): { at: number; label: string } | undefined => {
-	const [, at, , ...label] = (read(join(dir, "slot.1")) ?? "").split(" ");
-	return at ? { at: Number(at), label: label.join(" ") } : undefined;
+// Who holds the first slot, when it took it and what it runs, for the progress line of a waiter (and for a gate that counts its limit from the hold).
+export const holderInfo = (dir: string): { pid: number; at: number; label: string } | undefined => {
+	const [pid, at, , ...label] = (read(join(dir, "slot.1")) ?? "").split(" ");
+	return at ? { pid: Number(pid), at: Number(at), label: label.join(" ") } : undefined;
 };
 
 // Holder line: "<pid> <takenAt ms> <uuid> <label>".
