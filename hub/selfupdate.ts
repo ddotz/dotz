@@ -956,12 +956,6 @@ export async function updateRoute(req: Request, url: URL, deps: RouteDeps): Prom
 		settled(c);
 		return json(c);
 	}
-	if (req.method === "POST" && p === "/api/update/apply") {
-		if (job?.status === "running") return json({ error: "업데이트가 이미 진행 중이에요", job }, 409);
-		const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-		void apply(o, { keep: b.keep === true }).then(j => j.check && saveState({ ...readState(), lastCheck: j.check }), e => log(`self-update failed: ${e}`));
-		return json({ job }, 202);
-	}
 	if (req.method === "POST" && p === "/api/update/now" && deps.now) {
 		const f = deps.now.flow() as { phase?: string } | undefined;
 		const active = f && ["download", "waiting", "restarting"].includes(f.phase ?? "");
