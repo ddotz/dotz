@@ -30,15 +30,22 @@
 <meta property="og:image:alt" content="dotz 网页应用的聊天界面，里面有一张等待你确认的回复草稿卡片。">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css?v=690de961e260">
+<link rel="stylesheet" href="/style.css?v=48ceb47235bf">
 <!-- The demo embedded below links back to this page. Opened inside that frame, the page reloads the window around it instead of nesting itself. -->
 <script>try { if (top !== self) top.location.replace(top.location.pathname); } catch {}</script>
-<script src="/app.js?v=690de961e260" defer></script>
-<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');</script>
-<script type="module" src="/js/stageshow.js?v=690de961e260" defer></script>
+<script src="/app.js?v=48ceb47235bf" defer></script>
+<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');
+var d = document.documentElement;
+if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  d.classList.add('rv');
+  /* If app.js has not taken over by then, drop the hidden start state so nothing stays invisible. */
+  setTimeout(function () { if (!d.dataset.rv) d.classList.remove('rv'); }, 2500);
+}</script>
+<script type="module" src="/js/stageshow.js?v=48ceb47235bf" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">跳到正文</a>
+<div class="scroll-line" aria-hidden="true"></div>
 
 <header class="site-header">
   <div class="wrap header-inner">
@@ -105,20 +112,27 @@
       </div>
 
       <figure class="shot">
-        <picture>
-          <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="dotz 聊天界面。收到新邮件后，dotz 发出摘要和回复草稿；在确认卡片上点发送后，草稿变为“已发送”。">
-        </picture>
-        <div class="ss-slot" data-ss="hero" role="img" aria-label="dotz 聊天界面。收到新邮件后，dotz 发出摘要和回复草稿；在确认卡片上点发送后，草稿变为“已发送”。"></div>
+        <div class="stage-back" aria-hidden="true"></div>
+        <div class="stage-phone">
+          <picture>
+            <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="dotz 聊天界面。收到新邮件后，dotz 发出摘要和回复草稿；在确认卡片上点发送后，草稿变为“已发送”。">
+          </picture>
+          <div class="ss-slot" data-ss="hero" role="img" aria-label="dotz 聊天界面。收到新邮件后，dotz 发出摘要和回复草稿；在确认卡片上点发送后，草稿变为“已发送”。"></div>
+        </div>
+        <div class="stage-float" aria-hidden="true">
+          <div class="ss-slot" data-ss="watch"></div>
+        </div>
       </figure>
     </div>
   </section>
 
   <section class="section band" id="more" aria-labelledby="more-title">
     <div class="wrap">
-      <h2 id="more-title">不只是邮件。</h2>
+      <div class="idx" data-r aria-hidden="true">01</div>
+      <h2 id="more-title" data-r>不只是邮件。</h2>
 
       <ul class="cards">
-        <li class="card">
+        <li class="card" data-r>
           <div class="card-demo" data-ss="phone" role="img" aria-label="在手机上问 dotz 今天的日程，过一会儿收到两条日程作为回答。"></div>
           <div class="card-copy">
             <h3>在手机上问一句</h3>
@@ -126,7 +140,7 @@
             <p class="card-meta">可以通过网页应用、Discord、Telegram 或 JANDI 对话，Slack 用来接收通知和回复。</p>
           </div>
         </li>
-        <li class="card">
+        <li class="card" data-r>
           <div class="card-demo" data-ss="watch" role="img" aria-label="关注的露营椅从 ¥599 降到 ¥469，通知列表最上面出现一条“价格变了”。"></div>
           <div class="card-copy">
             <h3>降价不错过</h3>
@@ -140,17 +154,18 @@
 
   <section class="section" id="app" aria-labelledby="app-title">
     <div class="wrap">
-      <div class="section-head">
+      <div class="idx" data-r aria-hidden="true">02</div>
+      <div class="section-head" data-r>
         <h2 id="app-title">回到电脑前，一切都在一个应用里。</h2>
         <p>对话、项目和它盯着的东西，都在同一个网页应用里。每个项目有自己的会话，因重启或断网中断的工作会自动接着做完。</p>
       </div>
 
-      <div class="app-shot">
+      <div class="app-shot" data-r>
         <iframe src="/demo/" title="dotz 网页应用演示" loading="lazy"></iframe>
         <a class="app-open" href="/demo/" tabindex="-1" aria-hidden="true"></a>
       </div>
 
-      <div class="app-foot">
+      <div class="app-foot" data-r>
         <a class="btn btn-primary" href="/demo/">
           打开演示
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 16.5 16.5 7.5"></path><path d="M9 7.5h7.5V15"></path></svg>
@@ -160,25 +175,27 @@
     </div>
   </section>
 
+  <div class="ink">
   <section class="section" id="why" aria-labelledby="why-title">
     <div class="wrap">
-      <h2 id="why-title">只在你的电脑上运行，发出去之前先问你。</h2>
+      <div class="idx" data-r aria-hidden="true">03</div>
+      <h2 id="why-title" data-r>只在你的电脑上运行，发出去之前先问你。</h2>
 
       <div class="why-grid">
         <dl class="facts">
-          <div>
+          <div data-r>
             <dt>不经你同意，什么都不发</dt>
             <dd>邮件、回复和帖子都会留在聊天里，等你批准。</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>在你的电脑上运行</dt>
             <dd>直接使用这台电脑上已有的登录状态和文件，密钥保存在 ~/.dotz/secrets。</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>能找回以前的对话</dt>
             <dd>像“上周那个”这样随口一问也行。建索引和搜索都只在这台电脑上进行。</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>代码开源</dt>
             <dd>采用 MIT 许可证，全部代码都在 <a href="https://github.com/ddotz/dotz">GitHub</a> 上。</dd>
           </div>
@@ -187,11 +204,11 @@
         <figure class="tree">
           <ul>
             <li class="tree-root"><code>~/.dotz</code></li>
-            <li><code>config.json</code><span>设置（里面没有密钥）</span></li>
-            <li><code>secrets/</code><span>令牌（只有你能读）</span></li>
-            <li><code>identity/</code><span>名字和说话方式</span></li>
-            <li><code>memory/</code><span>它记住的关于你的事</span></li>
-            <li><code>RULES.md</code><span>你定下的规则</span></li>
+            <li data-r><code>config.json</code><span>设置（里面没有密钥）</span></li>
+            <li data-r><code>secrets/</code><span>令牌（只有你能读）</span></li>
+            <li data-r><code>identity/</code><span>名字和说话方式</span></li>
+            <li data-r><code>memory/</code><span>它记住的关于你的事</span></li>
+            <li data-r><code>RULES.md</code><span>你定下的规则</span></li>
           </ul>
           <figcaption>它保存的东西都在这一个文件夹里。</figcaption>
         </figure>
@@ -202,9 +219,10 @@
   <section class="section" id="install" aria-labelledby="install-title">
     <div class="wrap">
       <div class="start">
-        <h2 id="install-title">一行命令就能安装。</h2>
+        <div class="idx" data-r aria-hidden="true">04</div>
+        <h2 id="install-title" data-r>一行命令就能安装。</h2>
 
-        <div class="start-main">
+        <div class="start-main" data-r>
           <div class="cmd">
             <pre><code>curl -fsSL https://raw.githubusercontent.com/<wbr>ddotz/dotz/main/install.sh | sh</code></pre>
             <div class="cmd-foot">
@@ -231,17 +249,18 @@
         </div>
 
         <ol class="steps">
-          <li>把这行命令粘贴到 macOS 或 Linux 的终端里。</li>
-          <li>浏览器会打开设置页面：选好助理的名字、说话方式和要连接的服务，再登录模型账号。</li>
-          <li>完成后，在终端输入 dotz 就能打开网页应用。更新会自动获取。</li>
+          <li data-r>把这行命令粘贴到 macOS 或 Linux 的终端里。</li>
+          <li data-r>浏览器会打开设置页面：选好助理的名字、说话方式和要连接的服务，再登录模型账号。</li>
+          <li data-r>完成后，在终端输入 dotz 就能打开网页应用。更新会自动获取。</li>
         </ol>
       </div>
     </div>
   </section>
+  </div>
 </main>
 <p class="visually-hidden" id="copy-status" aria-live="polite"></p>
 
-<footer class="site-footer">
+<footer class="site-footer ink">
   <div class="wrap footer-inner">
     <span class="footer-brand">dotz</span>
     <nav class="footer-nav" aria-label="仓库和声明">

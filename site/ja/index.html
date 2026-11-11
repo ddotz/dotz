@@ -30,15 +30,22 @@
 <meta property="og:image:alt" content="dotz の Web アプリのチャット画面。承認を待つ返信の下書きカードがある。">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css?v=690de961e260">
+<link rel="stylesheet" href="/style.css?v=48ceb47235bf">
 <!-- The demo embedded below links back to this page. Opened inside that frame, the page reloads the window around it instead of nesting itself. -->
 <script>try { if (top !== self) top.location.replace(top.location.pathname); } catch {}</script>
-<script src="/app.js?v=690de961e260" defer></script>
-<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');</script>
-<script type="module" src="/js/stageshow.js?v=690de961e260" defer></script>
+<script src="/app.js?v=48ceb47235bf" defer></script>
+<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');
+var d = document.documentElement;
+if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  d.classList.add('rv');
+  /* If app.js has not taken over by then, drop the hidden start state so nothing stays invisible. */
+  setTimeout(function () { if (!d.dataset.rv) d.classList.remove('rv'); }, 2500);
+}</script>
+<script type="module" src="/js/stageshow.js?v=48ceb47235bf" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">本文へ移動</a>
+<div class="scroll-line" aria-hidden="true"></div>
 
 <header class="site-header">
   <div class="wrap header-inner">
@@ -105,20 +112,27 @@
       </div>
 
       <figure class="shot">
-        <picture>
-          <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="dotz のチャット画面。新着メールが届くと dotz が要約と返信の下書きを出し、確認カードで送信を押すと下書きが「送信しました」に変わる。">
-        </picture>
-        <div class="ss-slot" data-ss="hero" role="img" aria-label="dotz のチャット画面。新着メールが届くと dotz が要約と返信の下書きを出し、確認カードで送信を押すと下書きが「送信しました」に変わる。"></div>
+        <div class="stage-back" aria-hidden="true"></div>
+        <div class="stage-phone">
+          <picture>
+            <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="dotz のチャット画面。新着メールが届くと dotz が要約と返信の下書きを出し、確認カードで送信を押すと下書きが「送信しました」に変わる。">
+          </picture>
+          <div class="ss-slot" data-ss="hero" role="img" aria-label="dotz のチャット画面。新着メールが届くと dotz が要約と返信の下書きを出し、確認カードで送信を押すと下書きが「送信しました」に変わる。"></div>
+        </div>
+        <div class="stage-float" aria-hidden="true">
+          <div class="ss-slot" data-ss="watch"></div>
+        </div>
       </figure>
     </div>
   </section>
 
   <section class="section band" id="more" aria-labelledby="more-title">
     <div class="wrap">
-      <h2 id="more-title">メールだけではありません。</h2>
+      <div class="idx" data-r aria-hidden="true">01</div>
+      <h2 id="more-title" data-r>メールだけではありません。</h2>
 
       <ul class="cards">
-        <li class="card">
+        <li class="card" data-r>
           <div class="card-demo" data-ss="phone" role="img" aria-label="スマホで dotz に今日の予定を聞くと、少しして予定が二つ返ってくる。"></div>
           <div class="card-copy">
             <h3>スマホから話しかける</h3>
@@ -126,7 +140,7 @@
             <p class="card-meta">Web アプリ、Discord、Telegram、JANDI で会話でき、Slack では通知と返事を受け取れます。</p>
           </div>
         </li>
-        <li class="card">
+        <li class="card" data-r>
           <div class="card-demo" data-ss="watch" role="img" aria-label="見ていたキャンプチェアが 8,900 円から 7,200 円に下がり、通知一覧のいちばん上に「価格が変わりました」が届く。"></div>
           <div class="card-copy">
             <h3>値下がりを逃さない</h3>
@@ -140,17 +154,18 @@
 
   <section class="section" id="app" aria-labelledby="app-title">
     <div class="wrap">
-      <div class="section-head">
+      <div class="idx" data-r aria-hidden="true">02</div>
+      <div class="section-head" data-r>
         <h2 id="app-title">席に戻れば、すべてがひとつのアプリに。</h2>
         <p>会話、プロジェクト、見守っているものが、ひとつの Web アプリにまとまっています。プロジェクトごとにセッションが分かれていて、再起動や回線の切断で止まった作業は自動で再開します。</p>
       </div>
 
-      <div class="app-shot">
+      <div class="app-shot" data-r>
         <iframe src="/demo/" title="dotz の Web アプリのデモ" loading="lazy"></iframe>
         <a class="app-open" href="/demo/" tabindex="-1" aria-hidden="true"></a>
       </div>
 
-      <div class="app-foot">
+      <div class="app-foot" data-r>
         <a class="btn btn-primary" href="/demo/">
           デモを開く
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 16.5 16.5 7.5"></path><path d="M9 7.5h7.5V15"></path></svg>
@@ -160,25 +175,27 @@
     </div>
   </section>
 
+  <div class="ink">
   <section class="section" id="why" aria-labelledby="why-title">
     <div class="wrap">
-      <h2 id="why-title">自分のパソコンの中で動き、送る前に確認します。</h2>
+      <div class="idx" data-r aria-hidden="true">03</div>
+      <h2 id="why-title" data-r>自分のパソコンの中で動き、送る前に確認します。</h2>
 
       <div class="why-grid">
         <dl class="facts">
-          <div>
+          <div data-r>
             <dt>承認しないと外に出ない</dt>
             <dd>メール、返信、投稿はチャットで承認するまで送られません。</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>自分のパソコンで動く</dt>
             <dd>パソコンにあるログイン情報やファイルをそのまま使い、秘密情報は ~/.dotz/secrets に保存します。</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>過去の会話を探せる</dt>
             <dd>「先週のあれ」のような聞き方で大丈夫です。インデックス作成と検索はこのパソコンの中だけで行います。</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>オープンソース</dt>
             <dd>MIT ライセンスです。コードはすべて <a href="https://github.com/ddotz/dotz">GitHub</a> にあります。</dd>
           </div>
@@ -187,11 +204,11 @@
         <figure class="tree">
           <ul>
             <li class="tree-root"><code>~/.dotz</code></li>
-            <li><code>config.json</code><span>設定（秘密情報は入りません）</span></li>
-            <li><code>secrets/</code><span>トークン（自分だけが読めます）</span></li>
-            <li><code>identity/</code><span>名前と話し方</span></li>
-            <li><code>memory/</code><span>あなたについて覚えたこと</span></li>
-            <li><code>RULES.md</code><span>あなたが決めたルール</span></li>
+            <li data-r><code>config.json</code><span>設定（秘密情報は入りません）</span></li>
+            <li data-r><code>secrets/</code><span>トークン（自分だけが読めます）</span></li>
+            <li data-r><code>identity/</code><span>名前と話し方</span></li>
+            <li data-r><code>memory/</code><span>あなたについて覚えたこと</span></li>
+            <li data-r><code>RULES.md</code><span>あなたが決めたルール</span></li>
           </ul>
           <figcaption>保存するものは、すべてこのフォルダーにあります。</figcaption>
         </figure>
@@ -202,9 +219,10 @@
   <section class="section" id="install" aria-labelledby="install-title">
     <div class="wrap">
       <div class="start">
-        <h2 id="install-title">インストールはコマンド一行。</h2>
+        <div class="idx" data-r aria-hidden="true">04</div>
+        <h2 id="install-title" data-r>インストールはコマンド一行。</h2>
 
-        <div class="start-main">
+        <div class="start-main" data-r>
           <div class="cmd">
             <pre><code>curl -fsSL https://raw.githubusercontent.com/<wbr>ddotz/dotz/main/install.sh | sh</code></pre>
             <div class="cmd-foot">
@@ -231,17 +249,18 @@
         </div>
 
         <ol class="steps">
-          <li>macOS か Linux のターミナルにコマンドを貼り付けます。</li>
-          <li>ブラウザが開くので、アシスタントの名前、話し方、つなぐサービスを選び、モデルのアカウントにログインします。</li>
-          <li>終わったら、ターミナルで dotz と打つと Web アプリが開きます。アップデートは自動で届きます。</li>
+          <li data-r>macOS か Linux のターミナルにコマンドを貼り付けます。</li>
+          <li data-r>ブラウザが開くので、アシスタントの名前、話し方、つなぐサービスを選び、モデルのアカウントにログインします。</li>
+          <li data-r>終わったら、ターミナルで dotz と打つと Web アプリが開きます。アップデートは自動で届きます。</li>
         </ol>
       </div>
     </div>
   </section>
+  </div>
 </main>
 <p class="visually-hidden" id="copy-status" aria-live="polite"></p>
 
-<footer class="site-footer">
+<footer class="site-footer ink">
   <div class="wrap footer-inner">
     <span class="footer-brand">dotz</span>
     <nav class="footer-nav" aria-label="リポジトリと表示">

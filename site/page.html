@@ -26,11 +26,18 @@
 <!-- The demo embedded below links back to this page. Opened inside that frame, the page reloads the window around it instead of nesting itself. -->
 <script>try { if (top !== self) top.location.replace(top.location.pathname); } catch {}</script>
 <script src="/app.js?v={{stamp}}" defer></script>
-<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');</script>
+<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');
+var d = document.documentElement;
+if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  d.classList.add('rv');
+  /* If app.js has not taken over by then, drop the hidden start state so nothing stays invisible. */
+  setTimeout(function () { if (!d.dataset.rv) d.classList.remove('rv'); }, 2500);
+}</script>
 <script type="module" src="/js/stageshow.js?v={{stamp}}" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">{{skip}}</a>
+<div class="scroll-line" aria-hidden="true"></div>
 
 <header class="site-header">
   <div class="wrap header-inner">
@@ -93,20 +100,27 @@
       </div>
 
       <figure class="shot">
-        <picture>
-          <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="{{heroAlt}}">
-        </picture>
-        <div class="ss-slot" data-ss="hero" role="img" aria-label="{{heroAlt}}"></div>
+        <div class="stage-back" aria-hidden="true"></div>
+        <div class="stage-phone">
+          <picture>
+            <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="{{heroAlt}}">
+          </picture>
+          <div class="ss-slot" data-ss="hero" role="img" aria-label="{{heroAlt}}"></div>
+        </div>
+        <div class="stage-float" aria-hidden="true">
+          <div class="ss-slot" data-ss="watch"></div>
+        </div>
       </figure>
     </div>
   </section>
 
   <section class="section band" id="more" aria-labelledby="more-title">
     <div class="wrap">
-      <h2 id="more-title">{{usageTitle}}</h2>
+      <div class="idx" data-r aria-hidden="true">01</div>
+      <h2 id="more-title" data-r>{{usageTitle}}</h2>
 
       <ul class="cards">
-        <li class="card">
+        <li class="card" data-r>
           <div class="card-demo" data-ss="phone" role="img" aria-label="{{c2Alt}}"></div>
           <div class="card-copy">
             <h3>{{c2Title}}</h3>
@@ -114,7 +128,7 @@
             <p class="card-meta">{{c2Meta}}</p>
           </div>
         </li>
-        <li class="card">
+        <li class="card" data-r>
           <div class="card-demo" data-ss="watch" role="img" aria-label="{{c3Alt}}"></div>
           <div class="card-copy">
             <h3>{{c3Title}}</h3>
@@ -128,17 +142,18 @@
 
   <section class="section" id="app" aria-labelledby="app-title">
     <div class="wrap">
-      <div class="section-head">
+      <div class="idx" data-r aria-hidden="true">02</div>
+      <div class="section-head" data-r>
         <h2 id="app-title">{{appTitle}}</h2>
         <p>{{appBody}}</p>
       </div>
 
-      <div class="app-shot">
+      <div class="app-shot" data-r>
         <iframe src="/demo/" title="{{appAlt}}" loading="lazy"></iframe>
         <a class="app-open" href="/demo/" tabindex="-1" aria-hidden="true"></a>
       </div>
 
-      <div class="app-foot">
+      <div class="app-foot" data-r>
         <a class="btn btn-primary" href="/demo/">
           {{appDemo}}
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 16.5 16.5 7.5"></path><path d="M9 7.5h7.5V15"></path></svg>
@@ -148,25 +163,27 @@
     </div>
   </section>
 
+  <div class="ink">
   <section class="section" id="why" aria-labelledby="why-title">
     <div class="wrap">
-      <h2 id="why-title">{{whyTitle}}</h2>
+      <div class="idx" data-r aria-hidden="true">03</div>
+      <h2 id="why-title" data-r>{{whyTitle}}</h2>
 
       <div class="why-grid">
         <dl class="facts">
-          <div>
+          <div data-r>
             <dt>{{w2Title}}</dt>
             <dd>{{w2Body}}</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>{{w1Title}}</dt>
             <dd>{{w1Body}}</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>{{w4Title}}</dt>
             <dd>{{w4Body}}</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>{{w5Title}}</dt>
             <dd>{{{w5Body}}}</dd>
           </div>
@@ -175,11 +192,11 @@
         <figure class="tree">
           <ul>
             <li class="tree-root"><code>~/.dotz</code></li>
-            <li><code>config.json</code><span>{{t1}}</span></li>
-            <li><code>secrets/</code><span>{{t2}}</span></li>
-            <li><code>identity/</code><span>{{t3}}</span></li>
-            <li><code>memory/</code><span>{{t4}}</span></li>
-            <li><code>RULES.md</code><span>{{t5}}</span></li>
+            <li data-r><code>config.json</code><span>{{t1}}</span></li>
+            <li data-r><code>secrets/</code><span>{{t2}}</span></li>
+            <li data-r><code>identity/</code><span>{{t3}}</span></li>
+            <li data-r><code>memory/</code><span>{{t4}}</span></li>
+            <li data-r><code>RULES.md</code><span>{{t5}}</span></li>
           </ul>
           <figcaption>{{treeCaption}}</figcaption>
         </figure>
@@ -190,9 +207,10 @@
   <section class="section" id="install" aria-labelledby="install-title">
     <div class="wrap">
       <div class="start">
-        <h2 id="install-title">{{installTitle}}</h2>
+        <div class="idx" data-r aria-hidden="true">04</div>
+        <h2 id="install-title" data-r>{{installTitle}}</h2>
 
-        <div class="start-main">
+        <div class="start-main" data-r>
           <div class="cmd">
             <pre><code>curl -fsSL https://raw.githubusercontent.com/<wbr>ddotz/dotz/main/install.sh | sh</code></pre>
             <div class="cmd-foot">
@@ -219,17 +237,18 @@
 {{/setupNote}}        </div>
 
         <ol class="steps">
-          <li>{{s1}}</li>
-          <li>{{s2}}</li>
-          <li>{{s3}}</li>
+          <li data-r>{{s1}}</li>
+          <li data-r>{{s2}}</li>
+          <li data-r>{{s3}}</li>
         </ol>
       </div>
     </div>
   </section>
+  </div>
 </main>
 <p class="visually-hidden" id="copy-status" aria-live="polite"></p>
 
-<footer class="site-footer">
+<footer class="site-footer ink">
   <div class="wrap footer-inner">
     <span class="footer-brand">dotz</span>
     <nav class="footer-nav" aria-label="{{footerNav}}">

@@ -38,3 +38,43 @@ if (langMenu) {
     langMenu.querySelector("summary").focus();
   });
 }
+
+const root = document.documentElement;
+
+if (root.classList.contains("rv")) {
+  // Tells the head script that scroll motion is in hand; without it the head script drops the hidden start state.
+  root.dataset.rv = "1";
+
+  const items = [...document.querySelectorAll("[data-r]")];
+  const show = (el) => el.classList.add("in");
+  const reveal = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      show(entry.target);
+      reveal.unobserve(entry.target);
+    }
+  });
+  items.forEach((el) => reveal.observe(el));
+
+  const header = document.querySelector(".site-header");
+  const line = document.querySelector(".scroll-line");
+  const shot = document.querySelector(".shot");
+  const wide = matchMedia("(min-width: 861px)");
+  let queued = false;
+
+  const paint = () => {
+    queued = false;
+    const y = scrollY;
+    const max = root.scrollHeight - innerHeight;
+    line.style.transform = "scaleX(" + (max > 0 ? Math.min(y / max, 1) : 0) + ")";
+    header.classList.toggle("scrolled", y > 8);
+    shot.style.setProperty("--py", wide.matches ? Math.min(y * 0.08, 48) : 0);
+    // At the very bottom everything is shown, whatever the observer has or has not reported.
+    if (y + innerHeight >= root.scrollHeight - 4) items.forEach(show);
+  };
+
+  addEventListener("scroll", () => {
+    if (!queued) { queued = true; requestAnimationFrame(paint); }
+  }, { passive: true });
+  paint();
+}

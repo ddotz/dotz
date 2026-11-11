@@ -30,15 +30,22 @@
 <meta property="og:image:alt" content="La pantalla de chat de la app web de dotz, con un borrador de respuesta esperando tu aprobación.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/style.css?v=690de961e260">
+<link rel="stylesheet" href="/style.css?v=48ceb47235bf">
 <!-- The demo embedded below links back to this page. Opened inside that frame, the page reloads the window around it instead of nesting itself. -->
 <script>try { if (top !== self) top.location.replace(top.location.pathname); } catch {}</script>
-<script src="/app.js?v=690de961e260" defer></script>
-<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');</script>
-<script type="module" src="/js/stageshow.js?v=690de961e260" defer></script>
+<script src="/app.js?v=48ceb47235bf" defer></script>
+<script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');
+var d = document.documentElement;
+if ('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  d.classList.add('rv');
+  /* If app.js has not taken over by then, drop the hidden start state so nothing stays invisible. */
+  setTimeout(function () { if (!d.dataset.rv) d.classList.remove('rv'); }, 2500);
+}</script>
+<script type="module" src="/js/stageshow.js?v=48ceb47235bf" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Saltar al contenido</a>
+<div class="scroll-line" aria-hidden="true"></div>
 
 <header class="site-header">
   <div class="wrap header-inner">
@@ -105,20 +112,27 @@
       </div>
 
       <figure class="shot">
-        <picture>
-          <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="La pantalla de chat de dotz. Llega un correo, dotz publica un resumen y un borrador, y al pulsar Enviar en la tarjeta de confirmación el borrador pasa a Enviado.">
-        </picture>
-        <div class="ss-slot" data-ss="hero" role="img" aria-label="La pantalla de chat de dotz. Llega un correo, dotz publica un resumen y un borrador, y al pulsar Enviar en la tarjeta de confirmación el borrador pasa a Enviado."></div>
+        <div class="stage-back" aria-hidden="true"></div>
+        <div class="stage-phone">
+          <picture>
+            <img src="/img/web-phone.png" width="390" height="844" fetchpriority="high" decoding="async" alt="La pantalla de chat de dotz. Llega un correo, dotz publica un resumen y un borrador, y al pulsar Enviar en la tarjeta de confirmación el borrador pasa a Enviado.">
+          </picture>
+          <div class="ss-slot" data-ss="hero" role="img" aria-label="La pantalla de chat de dotz. Llega un correo, dotz publica un resumen y un borrador, y al pulsar Enviar en la tarjeta de confirmación el borrador pasa a Enviado."></div>
+        </div>
+        <div class="stage-float" aria-hidden="true">
+          <div class="ss-slot" data-ss="watch"></div>
+        </div>
       </figure>
     </div>
   </section>
 
   <section class="section band" id="more" aria-labelledby="more-title">
     <div class="wrap">
-      <h2 id="more-title">No es solo el correo.</h2>
+      <div class="idx" data-r aria-hidden="true">01</div>
+      <h2 id="more-title" data-r>No es solo el correo.</h2>
 
       <ul class="cards">
-        <li class="card">
+        <li class="card" data-r>
           <div class="card-demo" data-ss="phone" role="img" aria-label="En el móvil le preguntas a dotz por la agenda de hoy y al poco llegan dos citas como respuesta."></div>
           <div class="card-copy">
             <h3>Pregunta desde el móvil</h3>
@@ -126,7 +140,7 @@
             <p class="card-meta">Por la app web, Discord, Telegram o JANDI. En Slack recibes avisos y respuestas.</p>
           </div>
         </li>
-        <li class="card">
+        <li class="card" data-r>
           <div class="card-demo" data-ss="watch" role="img" aria-label="Una silla de camping vigilada baja de 89 € a 72 € y aparece el aviso El precio ha cambiado arriba de la lista."></div>
           <div class="card-copy">
             <h3>No se te pasa la bajada de precio</h3>
@@ -140,17 +154,18 @@
 
   <section class="section" id="app" aria-labelledby="app-title">
     <div class="wrap">
-      <div class="section-head">
+      <div class="idx" data-r aria-hidden="true">02</div>
+      <div class="section-head" data-r>
         <h2 id="app-title">De vuelta en tu mesa, todo está en una sola app.</h2>
         <p>Las conversaciones, los proyectos y lo que vigila están en una misma app web. Cada proyecto tiene su propia sesión y, si un reinicio o un corte de red detiene una tarea, la retoma solo.</p>
       </div>
 
-      <div class="app-shot">
+      <div class="app-shot" data-r>
         <iframe src="/demo/" title="Demo de la app web de dotz" loading="lazy"></iframe>
         <a class="app-open" href="/demo/" tabindex="-1" aria-hidden="true"></a>
       </div>
 
-      <div class="app-foot">
+      <div class="app-foot" data-r>
         <a class="btn btn-primary" href="/demo/">
           Abrir la demo
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M7.5 16.5 16.5 7.5"></path><path d="M9 7.5h7.5V15"></path></svg>
@@ -160,25 +175,27 @@
     </div>
   </section>
 
+  <div class="ink">
   <section class="section" id="why" aria-labelledby="why-title">
     <div class="wrap">
-      <h2 id="why-title">Funciona en tu ordenador y pregunta antes de enviar nada.</h2>
+      <div class="idx" data-r aria-hidden="true">03</div>
+      <h2 id="why-title" data-r>Funciona en tu ordenador y pregunta antes de enviar nada.</h2>
 
       <div class="why-grid">
         <dl class="facts">
-          <div>
+          <div data-r>
             <dt>Nada sale sin tu permiso</dt>
             <dd>Cada correo, respuesta o publicación espera en el chat hasta que lo apruebas.</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>Funciona en tu ordenador</dt>
             <dd>Usa las sesiones iniciadas y los archivos que ya tienes. Los secretos se guardan en ~/.dotz/secrets.</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>Encuentra conversaciones antiguas</dt>
             <dd>Puedes preguntar por &quot;aquello de la semana pasada&quot;. El índice y la búsqueda se hacen solo en este ordenador.</dd>
           </div>
-          <div>
+          <div data-r>
             <dt>Es de código abierto</dt>
             <dd>Licencia MIT. Todo el código está en <a href="https://github.com/ddotz/dotz">GitHub</a>.</dd>
           </div>
@@ -187,11 +204,11 @@
         <figure class="tree">
           <ul>
             <li class="tree-root"><code>~/.dotz</code></li>
-            <li><code>config.json</code><span>ajustes, sin secretos dentro</span></li>
-            <li><code>secrets/</code><span>tokens que solo tú puedes leer</span></li>
-            <li><code>identity/</code><span>su nombre y su tono</span></li>
-            <li><code>memory/</code><span>lo que sabe de ti</span></li>
-            <li><code>RULES.md</code><span>las reglas que le diste</span></li>
+            <li data-r><code>config.json</code><span>ajustes, sin secretos dentro</span></li>
+            <li data-r><code>secrets/</code><span>tokens que solo tú puedes leer</span></li>
+            <li data-r><code>identity/</code><span>su nombre y su tono</span></li>
+            <li data-r><code>memory/</code><span>lo que sabe de ti</span></li>
+            <li data-r><code>RULES.md</code><span>las reglas que le diste</span></li>
           </ul>
           <figcaption>Todo lo que guarda está en esta carpeta.</figcaption>
         </figure>
@@ -202,9 +219,10 @@
   <section class="section" id="install" aria-labelledby="install-title">
     <div class="wrap">
       <div class="start">
-        <h2 id="install-title">Se instala con un solo comando.</h2>
+        <div class="idx" data-r aria-hidden="true">04</div>
+        <h2 id="install-title" data-r>Se instala con un solo comando.</h2>
 
-        <div class="start-main">
+        <div class="start-main" data-r>
           <div class="cmd">
             <pre><code>curl -fsSL https://raw.githubusercontent.com/<wbr>ddotz/dotz/main/install.sh | sh</code></pre>
             <div class="cmd-foot">
@@ -231,17 +249,18 @@
         </div>
 
         <ol class="steps">
-          <li>Pega el comando en una terminal de macOS o Linux.</li>
-          <li>Se abre el navegador para la configuración: eliges el nombre del asistente, su tono y qué conectar, e inicias sesión con tu proveedor de modelos.</li>
-          <li>Después, escribe dotz en una terminal para abrir la app web. Las actualizaciones llegan solas.</li>
+          <li data-r>Pega el comando en una terminal de macOS o Linux.</li>
+          <li data-r>Se abre el navegador para la configuración: eliges el nombre del asistente, su tono y qué conectar, e inicias sesión con tu proveedor de modelos.</li>
+          <li data-r>Después, escribe dotz en una terminal para abrir la app web. Las actualizaciones llegan solas.</li>
         </ol>
       </div>
     </div>
   </section>
+  </div>
 </main>
 <p class="visually-hidden" id="copy-status" aria-live="polite"></p>
 
-<footer class="site-footer">
+<footer class="site-footer ink">
   <div class="wrap footer-inner">
     <span class="footer-brand">dotz</span>
     <nav class="footer-nav" aria-label="Repositorio y avisos">

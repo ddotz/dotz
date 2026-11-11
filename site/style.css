@@ -56,12 +56,15 @@
   --fs-body: 1rem;
   --fs-lede: 1.125rem;
   --fs-h3: 1.375rem;
-  --fs-h2: clamp(1.625rem, 1.25rem + 1.6vw, 2.25rem);
+  --fs-h2: clamp(1.75rem, 1.25rem + 1.8vw, 2.5rem);
   --fs-h1: clamp(2.125rem, 1.25rem + 3.4vw, 3.5rem);
 
   --wrap: 1120px;
   --gutter: var(--sp-6);
-  --hero-shot: 340px;
+  --hero-shot: 300px;
+  --hero-stage: 520px;
+  --hero-float: 264px;
+  --fs-hero: clamp(2.25rem, 1rem + 4.4vw, 4.25rem);
   --hit: 44px;
   --r-card: 18px;
   --r-menu: 14px;
@@ -246,7 +249,35 @@ a {
 
 
 .site-header {
+  position: relative;
+  z-index: 15;
+  isolation: isolate;
   padding: var(--sp-3) 0;
+}
+
+/* Once the page scrolls, the bar gets a hairline and a frosted fill; only its opacity changes. */
+.site-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  transition: opacity var(--m-fast) var(--m-ease);
+}
+
+.site-header.scrolled::before {
+  opacity: 1;
+}
+
+@media (min-width: 861px) {
+  .site-header {
+    position: sticky;
+    top: 0;
+  }
 }
 
 .header-inner {
@@ -376,7 +407,7 @@ a {
 /* What it is and the command on the left, the moment it is for on the right. The words and the command are two cells so a phone can show the scene between them. */
 .hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--hero-shot);
+  grid-template-columns: minmax(0, 1fr) var(--hero-stage);
   column-gap: var(--sp-16);
   align-content: center;
 }
@@ -393,7 +424,7 @@ a {
 }
 
 .hero h1 {
-  font-size: var(--fs-h1);
+  font-size: var(--fs-hero);
   font-weight: 700;
   line-height: 1.12;
   letter-spacing: -0.03em;
@@ -446,10 +477,48 @@ html:lang(ja) .hero h1 {
 }
 
 .shot {
+  position: relative;
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
   min-width: 0;
+  padding: var(--sp-6);
+}
+
+/* The layer under the phone: the white surface on the gray page, flat, with the brand's dots as its grain. Only the things that float above it carry a shadow. */
+.stage-back {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+  background: radial-gradient(var(--line-strong) 1px, transparent 1.5px) 0 0 / var(--sp-4) var(--sp-4), var(--surface);
+}
+
+.stage-phone {
+  position: relative;
+  width: var(--hero-shot);
+  max-width: 100%;
+  margin-left: auto;
+}
+
+/* The second scene floats over the corner of the first, the way the card list sits over the page in the app. */
+.stage-float {
+  display: none;
+  position: absolute;
+  left: calc(var(--sp-12) * -1);
+  bottom: var(--sp-16);
+  width: var(--hero-float);
+  overflow: hidden;
+  border-radius: var(--r-card);
+  background: var(--bg);
+  box-shadow: var(--float);
+}
+
+.ss .stage-float {
+  display: block;
+}
+
+.ss .stage-float .ss-slot:empty {
+  aspect-ratio: 350 / 270;
 }
 
 .shot img {
@@ -571,6 +640,10 @@ html:lang(ja) .hero h1 {
 }
 
 main {
+  padding-bottom: 0;
+}
+
+#app {
   padding-bottom: var(--sp-24);
 }
 
@@ -786,25 +859,40 @@ html:not(.ss) .card-demo::before {
 
 
 /* The close: the same command, with what happens after it. The card is the terminal, so the command sits on it with no box of its own. Dark in both themes, so its tokens are set here. */
-.start {
+/* The ending: the page turns dark for what it keeps and the one command, and the footer sits on the same ground. Dark in both themes, so its tokens are set here. */
+.ink {
   --ink: var(--code-ink);
   --body: var(--code-body);
   --muted: var(--code-muted);
+  --line: var(--code-line);
   --line-strong: var(--code-line);
   --accent-ink: var(--code-link);
   --focus: var(--code-link);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 18.75rem);
-  column-gap: var(--sp-12);
-  row-gap: var(--sp-8);
-  padding: var(--sp-12);
-  border: 1px solid var(--code-line);
-  border-radius: var(--r-card);
+  --surface: #17171b;
   background: var(--code-bg);
   color: var(--body);
 }
 
+main .ink {
+  padding-top: var(--sp-24);
+}
+
+.ink .section {
+  padding: 0 0 var(--sp-24);
+}
+
+.start {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 18.75rem);
+  column-gap: var(--sp-12);
+}
+
 .start h2 {
+  grid-column: 1 / -1;
+  margin-bottom: var(--sp-8);
+}
+
+.start .idx {
   grid-column: 1 / -1;
 }
 
@@ -950,6 +1038,135 @@ html:not(.ss) .card-demo::before {
 }
 
 
+/* Section numbers: a mono number and a hairline that draws across. */
+.idx {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
+.idx::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-strong);
+  transform-origin: left;
+}
+
+.copy,
+.btn {
+  transition: background-color var(--m-fast) var(--m-ease), transform var(--m-fast) var(--m-ease);
+}
+
+.copy:active,
+.btn:active {
+  transform: scale(0.97);
+}
+
+/* Scroll motion. The rv class is set in the head only when the browser can observe scrolling and motion is allowed, so without it nothing here applies and everything is simply visible. Only opacity and transform move, each for 300ms at most. */
+.scroll-line {
+  display: none;
+}
+
+.rv .scroll-line {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  height: 2px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  pointer-events: none;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--sp-3));
+  }
+}
+
+.rv .hero h1 .ln,
+.rv .hero-lede,
+.rv .hero-act,
+.rv .shot,
+.rv .stage-float {
+  animation: rise var(--m-slow) var(--m-ease) both;
+}
+
+.rv .hero h1 .ln + .ln {
+  animation-delay: 60ms;
+}
+
+.rv .hero-lede {
+  animation-delay: 120ms;
+}
+
+.rv .hero-act {
+  animation-delay: 180ms;
+}
+
+.rv .shot {
+  animation-delay: 60ms;
+}
+
+.rv .stage-float {
+  animation-delay: 240ms;
+}
+
+.rv .stage-phone {
+  transform: translate3d(0, calc(var(--py, 0) * 1px), 0);
+}
+
+.rv .stage-float {
+  transform: translate3d(0, calc(var(--py, 0) * 0.5px), 0);
+}
+
+.rv [data-r] {
+  transition: opacity var(--m-slow) var(--m-ease), transform var(--m-slow) var(--m-ease);
+  transition-delay: calc(var(--i, 0) * 50ms);
+}
+
+.rv [data-r]:not(.in) {
+  opacity: 0;
+  transform: translateY(var(--sp-3));
+}
+
+.rv .idx::after {
+  transition: transform var(--m-slow) var(--m-ease) 100ms;
+}
+
+.rv .idx:not(.in)::after {
+  transform: scaleX(0);
+}
+
+[data-r]:nth-child(2) { --i: 1; }
+[data-r]:nth-child(3) { --i: 2; }
+[data-r]:nth-child(4) { --i: 3; }
+[data-r]:nth-child(5) { --i: 4; }
+[data-r]:nth-child(6) { --i: 5; }
+
+@media (hover: hover) {
+  .copy:hover,
+  .btn-primary:hover {
+    transform: translateY(-1px);
+  }
+
+  .copy:active,
+  .btn:active {
+    transform: scale(0.97);
+  }
+}
+
 @media (max-width: 1100px) {
   .hero-grid,
   .why-grid {
@@ -977,12 +1194,31 @@ html:not(.ss) .card-demo::before {
     grid-column: 1;
     grid-row: auto;
     order: 1;
-    width: min(100%, 360px);
+    width: min(100%, 30rem);
     justify-self: center;
+    padding: var(--sp-5) var(--sp-4);
+  }
+
+  .stage-phone {
+    width: 80%;
+    margin-inline: auto;
+  }
+
+  /* On a phone the second scene hangs under the first, over the foot of its screen. */
+  .stage-float {
+    position: relative;
+    left: auto;
+    bottom: auto;
+    width: 84%;
+    margin: calc(var(--sp-12) * -1) auto 0 0;
   }
 
   .why-grid {
     row-gap: var(--sp-8);
+  }
+
+  .start-main {
+    margin-bottom: var(--sp-8);
   }
 }
 
@@ -1031,7 +1267,15 @@ html:not(.ss) .card-demo::before {
     padding: var(--sp-12) 0;
   }
 
-  main {
+  #app {
+    padding-bottom: var(--sp-16);
+  }
+
+  main .ink {
+    padding-top: var(--sp-16);
+  }
+
+  .ink .section {
     padding-bottom: var(--sp-16);
   }
 
@@ -1062,9 +1306,6 @@ html:not(.ss) .card-demo::before {
     grid-template-columns: 6rem minmax(0, 1fr);
   }
 
-  .start {
-    padding: var(--sp-6) var(--sp-5);
-  }
 }
 
 @media (hover: hover) {
