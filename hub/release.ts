@@ -279,7 +279,7 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 	if (opts.sha) {
 		const head = await gitOutput(["rev-parse", "HEAD"], root);
 		if (head.out !== opts.sha) {
-			print(`체크아웃이 시험을 통과한 커밋(${opts.sha.slice(0, 8)})이 아니라서 버전을 내지 않았어요 (${head.out.slice(0, 8)}).`);
+			print(`체크아웃이 테스트를 통과한 커밋(${opts.sha.slice(0, 8)})이 아니라서 버전을 내지 않았어요 (${head.out.slice(0, 8)}).`);
 			return 1;
 		}
 	}
@@ -506,7 +506,7 @@ export async function dispatchSlot(opts: DispatchOptions): Promise<number> {
 		return 0;
 	}
 	if (opts.dryRun) {
-		print(`[--dry-run] ${slot} 시간대의 시험과 릴리스를 시작할 차례예요.`);
+		print(`[--dry-run] ${slot} 시간대의 테스트와 릴리스를 시작할 차례예요.`);
 		return 0;
 	}
 	const env = opts.gate ?? realGateEnv(`https://github.com/${RELEASE_REPO}.git`);
@@ -515,35 +515,35 @@ export async function dispatchSlot(opts: DispatchOptions): Promise<number> {
 	if (gate.kind === "idle") {
 		const key = opts.signingKey ?? signingKeyPath(process.env);
 		if (keyMissing(key)) {
-			print(`서명 키가 없어서 시험과 릴리스를 시작하지 않아요 (${key}). 키가 있는 기기에서만 내요.`);
+			print(`서명 키가 없어서 테스트와 릴리스를 시작하지 않아요 (${key}). 키가 있는 기기에서만 내요.`);
 			return 1;
 		}
 		startGate(ctx, [process.execPath, fileURLToPath(import.meta.url), "--gate-run", opts.stateDir, slot, env.origin]);
-		print(`전체 시험을 따로 돌리기 시작했어요 (${slot}). 다음 틱부터 결과를 읽어요.`);
+		print(`전체 테스트를 따로 돌리기 시작했어요 (${slot}). 다음 틱부터 결과를 읽어요.`);
 		return 0;
 	}
 	if (gate.kind === "running") {
-		print("전체 시험이 아직 돌고 있어요.");
+		print("전체 테스트가 아직 돌고 있어요.");
 		return 0;
 	}
 	if (gate.kind === "nothing") {
 		writeAtomic(stateFile, `${slot}\n`); // not a failure: the slot is used, no alert, the next slot looks again
 		clearGate(opts.stateDir);
-		print(`릴리스할 새 커밋이 없어서 시험 없이 이 시간대를 건너뛰었어요 (${gate.sha.slice(0, 8)}).`);
+		print(`릴리스할 새 커밋이 없어서 테스트 없이 이 시간대를 건너뛰었어요 (${gate.sha.slice(0, 8)}).`);
 		return 0;
 	}
 	if (gate.kind === "unrunnable") {
-		print(`릴리스 전 시험을 돌리지 못했어요: ${gate.reason} · 이 시간대는 그대로 두고 다음 틱에 다시 시도해요.`);
+		print(`릴리스 전 테스트를 돌리지 못했어요: ${gate.reason} · 이 시간대는 그대로 두고 다음 틱에 다시 시도해요.`);
 		return 1;
 	}
 	if (gate.kind === "green" && gate.release?.code === 0) {
 		writeAtomic(stateFile, `${slot}\n`);
 		clearGate(opts.stateDir);
-		print(`시험이 초록이고 릴리스를 냈어요 (${gate.sha.slice(0, 8)}).`);
+		print(`테스트가 green이고 릴리스를 냈어요 (${gate.sha.slice(0, 8)}).`);
 		for (const line of gate.release.out.split("\n").slice(-3)) print(line);
 		if (gate.flaky.length) {
 			const names = gate.flaky.slice(0, FLAKY_SHOWN).join(", ") + (gate.flaky.length > FLAKY_SHOWN ? ` 외 ${gate.flaky.length - FLAKY_SHOWN}개` : "");
-			print(`한 번 다시 돌려서 통과한 시험 ${gate.flaky.length}개: ${names}`);
+			print(`한 번 다시 돌려서 통과한 테스트 ${gate.flaky.length}개: ${names}`);
 			try {
 				(opts.hubLog ?? appendHubLog)(`release gate: ${gate.flaky.length} flaky test file(s) passed on retry (${gate.sha.slice(0, 8)}): ${gate.flaky.join(", ")}`);
 			} catch {
@@ -554,8 +554,8 @@ export async function dispatchSlot(opts: DispatchOptions): Promise<number> {
 	}
 	const message =
 		gate.kind === "red"
-			? `전체 시험이 빨개서 이 시간대의 릴리스를 건너뛰었어요 (${gate.sha.slice(0, 8)}): ${failedList(gate.failures.length ? gate.failures.map(f => f.name) : gate.failed) || "실패한 시험을 읽지 못했어요"} · 다음 시간대에 새 main으로 다시 시험해요.`
-			: `시험은 초록이지만 릴리스를 내지 못했어요 (${gate.sha.slice(0, 8)}, 코드 ${gate.release?.code ?? "없음"}): ${(gate.release?.out ?? "릴리스 결과가 없어요").split("\n").slice(-3).join(" / ")} · 다음 시간대에 다시 시도해요.`;
+			? `전체 테스트가 red라서 이 시간대의 릴리스를 건너뛰었어요 (${gate.sha.slice(0, 8)}): ${failedList(gate.failures.length ? gate.failures.map(f => f.name) : gate.failed) || "실패한 테스트를 읽지 못했어요"} · 다음 시간대에 새 main으로 다시 테스트해요.`
+			: `테스트는 green이지만 릴리스를 내지 못했어요 (${gate.sha.slice(0, 8)}, 코드 ${gate.release?.code ?? "없음"}): ${(gate.release?.out ?? "릴리스 결과가 없어요").split("\n").slice(-3).join(" / ")} · 다음 시간대에 다시 시도해요.`;
 	if (gate.kind === "red") saveRedEvidence(opts.stateDir, slot, gate.sha, gate, now); // clearGate below removes the result: this is what stays
 	writeAtomic(stateFile, `${slot}\n`);
 	writeAtomic(join(opts.stateDir, "release-run.json"), `${JSON.stringify({ slot, startedAt: now.toISOString(), state: "failed", message } satisfies RunState)}\n`);

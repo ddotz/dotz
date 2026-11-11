@@ -881,7 +881,7 @@ describe("release slots", () => {
 			await tick(kit, { stateDir: dir, exec, print, now });
 			await kit.finish(dir, now, join(dir, "no-such-origin"));
 			expect(await tick(kit, { stateDir: dir, exec, print: l => lines.push(l), now: kst("2026-11-05T12:01:10") })).toBe(1);
-			expect(lines.at(-1)).toContain("시험을 돌리지 못했어요");
+			expect(lines.at(-1)).toContain("테스트를 돌리지 못했어요");
 			expect(calls).toEqual([]);
 			expect(existsSync(join(dir, "release-slot"))).toBe(false);
 			expect(await tick(kit, { stateDir: dir, exec, print, now: kst("2026-11-05T12:02:10") })).toBe(0);

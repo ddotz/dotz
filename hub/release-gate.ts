@@ -91,11 +91,11 @@ export function gateStatus(c: GateCtx): GateOutcome {
 	}
 	if (c.now.getTime() - Date.parse(run.startedAt) > MAX_RUN_MS) {
 		stopRun(c, run);
-		return { kind: "unrunnable", reason: "45분이 지나도 시험이 끝나지 않아 멈췄어요" };
+		return { kind: "unrunnable", reason: "45분이 지나도 테스트가 끝나지 않아 멈췄어요" };
 	}
 	if (!c.alive(run.pid)) {
 		stopRun(c, run);
-		return { kind: "unrunnable", reason: "시험 프로세스가 결과 없이 끝났어요" };
+		return { kind: "unrunnable", reason: "테스트 프로세스가 결과 없이 끝났어요" };
 	}
 	return { kind: "running" };
 }
@@ -182,7 +182,7 @@ export async function runGate(o: RunGateOptions): Promise<void> {
 		rmSync(tree, { recursive: true, force: true });
 		await o.git(["worktree", "prune"], repo);
 		const added = await o.git(["worktree", "add", "--detach", tree, sha], repo);
-		if (added.code !== 0) throw new Error(`시험용 작업 폴더를 만들지 못했어요: ${added.out}`);
+		if (added.code !== 0) throw new Error(`테스트용 작업 폴더를 만들지 못했어요: ${added.out}`);
 		try {
 			const suite = await o.runSuite(tree);
 			if (suite.flaky?.length) (o.log ?? console.log)(`flaky: ${suite.flaky.length} test file(s) failed the full run and passed the retry: ${suite.flaky.join(", ")}`);
