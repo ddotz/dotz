@@ -78,7 +78,7 @@
     "one": "{n} handled draft",
     "other": "{n} handled drafts"
   },
-  "mail.sent.clear": "Remove all",
+  "mail.sent.clear": "Clear all",
   "mail.people.more": "+{n} more",
   "mail.people.aria": "Sender and recipients",
   "mail.from": "From",
@@ -91,7 +91,7 @@
   "mail.people.details": "Sender and recipient details",
   "mail.thread.aria": "Emails with the same person",
   "mail.thread.title": "Emails with this person",
-  "mail.thread.fold": "Hide",
+  "mail.thread.fold": "Collapse",
   "mail.thread.fold_aria": "Hide emails with this person",
   "mail.mode.auto_desc": "Drafts a reply when email arrives. You check it before it's sent.",
   "mail.mode.ask_desc": "Asks whether to reply first, and drafts only when you say so.",
@@ -319,5 +319,5 @@
   "mail.reply.aria": "Write a reply",
   "mail.reply.quote": "Earlier email",
   "mail.reply.ph": "Your reply",
-  "mail.reply.fold": "Hide"
+  "mail.reply.fold": "Collapse"
 }

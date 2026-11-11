@@ -35,7 +35,7 @@
   "chat.inbox.lane_from": "Session report · {name}",
   "chat.inbox.lane": "Session report",
   "chat.inbox.watch": "Monitoring · {name}",
-  "chat.inbox.mail": "New mail",
+  "chat.inbox.mail": "New email",
   "chat.inbox.schedule": "Scheduled task",
   "chat.prompt.keepalive": "Cache keep-alive",
   "chat.prompt.reflect": "Nightly self-check",

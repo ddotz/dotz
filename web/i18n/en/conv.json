@@ -1,5 +1,5 @@
 {
-  "conv.unread_from": "Unread messages start here",
+  "conv.unread_from": "Unread from here",
   "conv.read_to": "Read up to here",
   "conv.draft_waits": "Reply draft waiting",
   "conv.unreplied": "Unanswered",
@@ -23,7 +23,7 @@
   },
   "conv.list_aria": "Chat list",
   "conv.settings_hint": "Describe the change, then press Apply",
-  "conv.back_mail": "Back to mail list",
+  "conv.back_mail": "Back to email list",
   "conv.back_mon": "Back to monitoring list",
   "conv.bell_title": "Alerts ({key})",
   "conv.nt.no_screen": "Can't find this screen",

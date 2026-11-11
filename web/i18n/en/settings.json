@@ -250,7 +250,7 @@
   "settings.fb.key_saved": "Key verified and saved ({masked})",
   "settings.fb.use_omo": "Use OmO key",
   "settings.fb.key_off": "Turn key off",
-  "settings.fb.key_hidden": "A saved key is never shown again.",
+  "settings.fb.key_hidden": "A saved key isn't shown again.",
   "settings.fb.workers_too": "Also used by subagents and sessions",
   "settings.fb.drag": "Drag to reorder",
   "settings.fb.reorder_aria": "Reorder {name}, up and down arrow keys",
@@ -371,7 +371,7 @@
     "one": "{n} new commit · {upstream}",
     "other": "{n} new commits · {upstream}"
   },
-  "settings.upd.more_n": "{n} more",
+  "settings.upd.more_n": "+{n} more",
   "settings.upd.release_notes": "View release notes",
   "settings.upd.ahead_note": {
     "one": "Your {n} local commit is placed on top of the update automatically. If tests fail, nothing changes and you are told.",

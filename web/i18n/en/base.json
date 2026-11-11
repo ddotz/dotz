@@ -18,7 +18,7 @@
   "base.mark.wait": "Waiting",
   "base.mark.ask": "Needs a look",
   "base.mark.fail": "Failed",
-  "base.tone.wait": "Waiting for a reply",
+  "base.tone.wait": "Waiting for your reply",
   "base.claim.verified": "Verified",
   "base.claim.reported": "Reported only",
   "base.peer.read_only": "Read-only on this computer",
@@ -106,7 +106,7 @@
   "base.work.just_started": "Just started",
   "base.work.minutes": "{n} min",
   "base.just_now": "Just now",
-  "base.min_ago": "{n} min ago",
+  "base.min_ago": "{n}m ago",
   "base.hours_ago": "{n}h ago",
   "base.work.more": "+{n} more",
   "base.sub.running": {

@@ -187,7 +187,7 @@
     "other": "{n} settings were changed by you ({path})"
   },
   "system.own.saved_in": "Settings are saved in {path}",
-  "system.set.pending": "Waiting for restart",
+  "system.set.pending": "Waiting to restart",
   "system.set.models": "Change in Model · Fallback",
   "system.set.ro": "Read-only",
   "system.set.ro_note": "This is security or connection info, so it can't be changed here.",
