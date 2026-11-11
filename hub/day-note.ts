@@ -346,7 +346,7 @@ export async function attempt(d: RunDeps, model: () => Promise<Chosen>): Promise
 	return { kind: "written", day: w.day, chars: text.length, inTokens: reply.inputTokens, outTokens: reply.outputTokens, ms: reply.ms, model: chosen.label };
 }
 
-/** One run: the model is chosen once, a failed call is retried with a doubling wait until `deadline`, and one log line says what came of it. */
+/** One run: the model is chosen once, a failed call is retried with a doubling wait while the wait and the next call (at most CALL_TIMEOUT_MS) still end before `deadline`, and one log line says what came of it. */
 export async function runDayNote(d: RunDeps, sleep: (ms: number) => Promise<void>, deadline: number): Promise<Attempt> {
 	let chosen: Promise<Chosen> | undefined;
 	const model = () => (chosen ??= choose(d));
@@ -354,7 +354,7 @@ export async function runDayNote(d: RunDeps, sleep: (ms: number) => Promise<void
 		const a = await attempt(d, model);
 		if (a.kind === "retry") {
 			const wait = BACKOFF_FIRST_MS * 2 ** n;
-			if (d.now() + wait < deadline) {
+			if (d.now() + wait + CALL_TIMEOUT_MS < deadline) {
 				await sleep(wait);
 				continue;
 			}

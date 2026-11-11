@@ -265,6 +265,14 @@ describe("a run", () => {
 		expect(logs[0]).toContain("boom");
 	});
 
+	test("a retry does not start when its wait plus the call timeout would pass the deadline", async () => {
+		fail = true;
+		let clock = NOW;
+		const a = await runDayNote({ ...run(), now: () => clock }, async ms => void (clock += ms), NOW + 100_000);
+		expect(a.kind).toBe("skipped");
+		expect(calls).toHaveLength(2);
+	});
+
 	test("a reply with no valid line writes no file and is not retried", async () => {
 		reply = "## done\n- nothing cited";
 		const a = await runDayNote(run(), sleep, NOW + 4 * 60_000);
