@@ -3,15 +3,15 @@
 // (30-kakao.js kkDraftCard) and a comment thread (30-monitoring-comments.js cmDraftCard): the same head (앱 · 계정 · 컴퓨터 · 모델 when known),
 // the body clamped to about six lines with 펼치기, and the same three actions with the same words, 보내기 · 고치기 · 보내지 않기.
 // Each caller passes what its actions do; the card never decides where a draft is sent.
-const RQ_APPS = { mail: ["메일", "mail"], kakao: ["카카오톡", "chat"], instagram: ["인스타그램", "chat"], youtube: ["유튜브", "chat"], site: ["웹사이트 댓글", "chat"] };
+const RQ_APPS = { mail: [TX("common.mail"), "mail"], kakao: [TX("decision.app.kakao"), "chat"], instagram: [TX("decision.app.instagram"), "chat"], youtube: [TX("decision.app.youtube"), "chat"], site: [TX("decision.app.site"), "chat"] };
 const RQ_LINES = 6;
 const RQ_OPEN = new Set();   // card keys whose long body was unfolded (펼치기); kept across repaints
 // A press waits for its answer in the card itself: rqPress = the action in flight (its button says so, the others stay off in place), rqFail = the line a failed
 // action leaves right above the buttons (never a toast over the card's rows). Both are keyed by rqFk (30-replies.js): a notice by its id, any other draft by its key.
 const rqPress = new Map(), rqFail = new Map();
-const RQ_PRESS = { send: "보내는 중…", edit: "고치는 중…", drop: "처리하는 중…" };
+const RQ_PRESS = { send: TX("decision.pending.send"), edit: TX("decision.pending.edit"), drop: TX("decision.pending.drop") };
 const rqNtKey = n => `nt:${n.id}`;
-const rqFailOf = (e, act) => ({ text: `${e instanceof TypeError ? "연결이 끊겨 " : ""}${act === "send" ? "보내지 못했어요 · 다시 보내기" : "처리하지 못했어요 · 다시 눌러 주세요"}`, why: e instanceof TypeError ? "" : String((e && e.message) || "") });
+const rqFailOf = (e, act) => ({ text: act === "send" ? (e instanceof TypeError ? TX("decision.fail.send_offline") : TX("decision.fail.send")) : e instanceof TypeError ? TX("decision.fail.act_offline") : TX("decision.fail.act"), why: e instanceof TypeError ? "" : String((e && e.message) || "") });
 // The app key of an instance id ("mail-2" -> "mail", a peer's "kakao~h1" -> "kakao").
 const rqBase = app => String(app || "").split("~")[0].split("-")[0];
 const rqAppName = app => (RQ_APPS[rqBase(app)] || [""])[0];
@@ -19,9 +19,9 @@ const rqAppName = app => (RQ_APPS[rqBase(app)] || [""])[0];
 // ONE tight line (owner 2026-11-03): who the draft answers and where it came from, the state at the right. The author's initial is a small
 // 20px mark, so the head never takes a second line and the original below it is the only thing that reads as a quote.
 function rqHeadNode(h) {
-  const [name, ic] = RQ_APPS[rqBase(h.app)] || [h.appName || "답장", "send"];
+  const [name, ic] = RQ_APPS[rqBase(h.app)] || [h.appName || TX("decision.reply"), "send"];
   const at = h.at ? new Date(h.at) : null, when = at && !isNaN(at) ? rcWhen(at.toISOString()) : "";
-  const to = h.who ? `${h.who}님께 답장` : name, src = h.who ? h.src ?? name : [h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
+  const to = h.who ? TX("decision.rq.reply_to", { who: h.who }) : name, src = h.who ? h.src ?? name : [h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
   return el("div", { class: `rq-hd${h.who ? " rq-who" : ""}` },
     h.who && !h.ic ? el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }) : el("span", { class: "dr-ic" }, icon(h.ic || (ICONS[ic] ? ic : "send"))),   // h.ic (a mail draft): the app's icon, as on a card with no person
     el("span", { class: "rq-meta", title: [to, src].filter(Boolean).join(" · ") }, el("b", { class: "rq-wt", text: to }),
@@ -37,11 +37,11 @@ function rqBodyNode(key, b) {
   const inner = b.node || (parts ? el("div", { class: `${b.cls || "rq-text"} rq-parts` }, ...parts.map((p, i) => el("div", { class: `${b.partCls || "rq-part"}${i < (b.sentParts | 0) ? " sent" : ""}`, text: p }))) : el("div", { class: b.cls || "rq-text", text: b.text }));
   const box = el("div", { class: `rq-body${long && !open ? " clamp" : ""}` }, inner);
   if (!long) return box;
-  const more = el("button", { class: "btn text rq-more", type: "button", "data-k": "more", "aria-expanded": String(open), text: open ? "접기" : "펼치기", onclick: ev => {
+  const more = el("button", { class: "btn text rq-more", type: "button", "data-k": "more", "aria-expanded": String(open), text: open ? TX("decision.less") : TX("decision.more"), onclick: ev => {
     ev.stopPropagation();
     if (RQ_OPEN.has(key)) RQ_OPEN.delete(key); else RQ_OPEN.add(key);
     const on = RQ_OPEN.has(key);
-    box.classList.toggle("clamp", !on); more.textContent = on ? "접기" : "펼치기"; more.setAttribute("aria-expanded", String(on));
+    box.classList.toggle("clamp", !on); more.textContent = on ? TX("decision.less") : TX("decision.more"); more.setAttribute("aria-expanded", String(on));
   } });
   return el("div", { class: "rq-bodywrap" }, box, more);
 }
@@ -49,32 +49,32 @@ function rqBodyNode(key, b) {
 // stands at the right end of the row.
 function rqActsNode(a) {
   const b = (cls, k, text, fn) => el("button", { class: cls, type: "button", "data-k": k, disabled: !!a.busy || !fn, text: a.busy && a.press === k ? RQ_PRESS[k] : text, onclick: fn });
-  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn sm dr-send", "send", "보내기", a.send), b("btn tonal sm", "edit", "고치기", a.edit), b("btn text sm dr-drop", "drop", a.dropText || "보내지 않기", a.drop), a.manual ? rqManualBtn(a.manual, a.busy) : null);
+  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn sm dr-send", "send", TX("common.send"), a.send), b("btn tonal sm", "edit", TX("decision.edit"), a.edit), b("btn text sm dr-drop", "drop", a.dropText || TX("decision.drop"), a.drop), a.manual ? rqManualBtn(a.manual, a.busy) : null);
 }
-const rqManualBtn = (fn, busy) => el("button", { class: "btn text sm rq-manual", type: "button", "data-k": "manual", "aria-label": "직접 수정", disabled: !!busy, onclick: fn }, icon("pencil"), el("span", { text: "직접 수정" }));
+const rqManualBtn = (fn, busy) => el("button", { class: "btn text sm rq-manual", type: "button", "data-k": "manual", "aria-label": TX("decision.manual"), disabled: !!busy, onclick: fn }, icon("pencil"), el("span", { text: TX("decision.manual") }));
 // 고치기: what to change, typed once; the bot rewrites the draft. o: { go(change), cancel(), manual() (직접 수정, optional), pick (a node before the field, such
 // as which part of a comment reply with a mail to change), value, onInput(text), busy }
 function rqReviseNode(o) {
-  const inp = el("input", { class: "kk-rv rq-rv", type: "text", maxlength: "500", placeholder: DRAFT_HINT, "aria-label": "고칠 내용", autocomplete: "off", disabled: !!o.busy });
+  const inp = el("input", { class: "kk-rv rq-rv", type: "text", maxlength: "500", placeholder: DRAFT_HINT, "aria-label": TX("decision.revise.what"), autocomplete: "off", disabled: !!o.busy });
   inp.value = o.value || "";
-  const go = el("button", { class: "btn", type: "button", "data-k": "revise-go", text: "고쳐 달라고 하기", disabled: !!o.busy || !inp.value.trim(), onclick: () => { const change = inp.value.trim(); if (change) o.go(change); } });
+  const go = el("button", { class: "btn", type: "button", "data-k": "revise-go", text: TX("decision.revise.go"), disabled: !!o.busy || !inp.value.trim(), onclick: () => { const change = inp.value.trim(); if (change) o.go(change); } });
   inp.oninput = () => { if (o.onInput) o.onInput(inp.value); go.disabled = !inp.value.trim(); };
   inp.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); go.click(); } };
-  return el("div", { class: "rq-edit" }, el("div", { class: "kk-rq", text: "어떻게 고칠까요?" }), o.pick || null, inp,
+  return el("div", { class: "rq-edit" }, el("div", { class: "kk-rq", text: TX("decision.revise.ask") }), o.pick || null, inp,
     el("div", { class: "btns" }, go,
-      el("button", { class: "btn text", type: "button", "data-k": "revise-cancel", text: "취소", disabled: !!o.busy, onclick: o.cancel }),
-      o.manual ? el("button", { class: "btn text kk-manual", type: "button", "data-k": "manual", "aria-label": "직접 수정", onclick: o.manual }, icon("pencil"), el("span", { text: "직접 수정" })) : null));
+      el("button", { class: "btn text", type: "button", "data-k": "revise-cancel", text: TX("common.cancel"), disabled: !!o.busy, onclick: o.cancel }),
+      o.manual ? el("button", { class: "btn text kk-manual", type: "button", "data-k": "manual", "aria-label": TX("decision.manual"), onclick: o.manual }, icon("pencil"), el("span", { text: TX("decision.manual") })) : null));
 }
 // The attachment line: every card says what goes with the draft before 보내기 - the files that go (name + size), or 첨부: 없음, or, for a source that cannot
 // attach, the names of the files that stay behind (hub/draft-approval.ts attachments / attachmentsNone / cannotAttach); nothing when none stay behind.
 function rqAttachNode(d = {}) {
   const fl = Array.isArray(d.attachments) ? d.attachments : [], left = Array.isArray(d.cannotAttach) ? d.cannotAttach.filter(n => n && String(n).trim()) : null;
-  if (fl.length) return el("div", { class: "rq-att", "data-k": "files" }, el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }),
+  if (fl.length) return el("div", { class: "rq-att", "data-k": "files" }, el("div", { class: "dr-fh", text: TX("decision.attach.count", { n: fl.length }) }),
     ...fl.map(f => el("div", { class: "rq-af" }, icon("file"), el("span", { class: "rq-afn", text: f.name }), f.size ? el("span", { class: "dr-fm", text: f.size }) : null)));
   if (left && !left.length) return null;   // a place that cannot attach and leaves no file behind (a comment reply) says nothing
   return el("div", { class: "rq-att", "data-k": "none" }, el("div", { class: "dr-none", role: "status" }, icon("clip"),
-    el("span", { text: left ? "첨부: 없음 · 파일을 붙일 수 없는 곳이에요" : "첨부: 없음" }),
-    left && left.length ? el("span", { class: "dr-wn", text: `남는 파일: ${left.join(", ")}` }) : null));
+    el("span", { text: left ? TX("decision.attach.none_here") : TX("decision.attach.none") }),
+    left && left.length ? el("span", { class: "dr-wn", text: TX("decision.attach.left", { files: left.join(", ") }) }) : null));
 }
 // The original a draft answers, as a quiet quote (owner 2026-11-03): muted, behind one 2px left rule, two lines by default with a
 // 원문 보기 toggle. It reads as someone else's words, plainly separate from the draft under it (원칙 5). Open state is kept per card key.
@@ -84,17 +84,17 @@ const RQ_OG = new Set();
 function rqOrigNode(key, o) {
   const text = String(o.text || ""), long = [...text].length > 84 || text.includes("\n"), open = RQ_OG.has(key), full = !!o.ref;
   const box = el("div", { class: `rq-orig${long && !open ? " clamp" : ""}`, title: text },
-    el("div", { class: "rq-oh" }, el("span", { class: "rq-ow", text: o.who || "원문" })),
+    el("div", { class: "rq-oh" }, el("span", { class: "rq-ow", text: o.who || TX("decision.org.original") })),
     el("span", { class: "rq-ot", text }));
   if (!long && !full) return el("div", { class: "rq-og-wrap" }, box);
-  const pane = full ? el("div", { class: "od-pane rq-op", role: "region", "aria-label": "원문", hidden: !open }) : null;
+  const pane = full ? el("div", { class: "od-pane rq-op", role: "region", "aria-label": TX("decision.org.original"), hidden: !open }) : null;
   const s = full ? orgSt(o.ref) : null;
   const paint = () => { if (!RQ_OG.has(key)) return; orgFill(pane, { ref: o.ref }, o.t, () => { s.load = ""; load(); }); };
   const load = () => { (s.subs ||= new Set()).add(paint); orgLoad(o.ref, o.t, paint); paint(); };
-  const btn = el("button", { class: "btn text rq-og", type: "button", "aria-expanded": String(open), text: open ? "원문 접기" : "원문 보기", onclick: ev => {
+  const btn = el("button", { class: "btn text rq-og", type: "button", "aria-expanded": String(open), text: open ? TX("decision.org.hide") : TX("decision.org.show"), onclick: ev => {
     ev.stopPropagation();
     const on = !RQ_OG.has(key); if (on) RQ_OG.add(key); else RQ_OG.delete(key);
-    box.classList.toggle("clamp", long && !on); btn.setAttribute("aria-expanded", String(on)); btn.textContent = on ? "원문 접기" : "원문 보기";
+    box.classList.toggle("clamp", long && !on); btn.setAttribute("aria-expanded", String(on)); btn.textContent = on ? TX("decision.org.hide") : TX("decision.org.show");
     if (pane) { pane.hidden = !on; if (on) { load(); motionIn(pane, "fade", M_MS.fast); } }   // the opened original fades in (opacity only; reduced motion: none)
   } });
   if (pane && open) load();
@@ -113,7 +113,7 @@ function rqMailOriginal(dr, t) {
 }
 function rqMailParts(dr, o) {
   const m = String(o.t || "").startsWith("mail:") ? MAILS.get(o.t) : null, b = dr.brief || {}, who = (m && mailSender(m.from)) || rqRcptName(dr.to);
-  return { cls: "rq-ml", head: { app: "mail", who, src: o.src ?? "메일", ic: "mail", pc: o.pc || "", at: o.at || null, tail: o.tail || [] }, original: rqMailOriginal(dr, o.t),
+  return { cls: "rq-ml", head: { app: "mail", who, src: o.src ?? TX("common.mail"), ic: "mail", pc: o.pc || "", at: o.at || null, tail: o.tail || [] }, original: rqMailOriginal(dr, o.t),
     brief: b.summary || (!o.seen && (b.todo || b.questions)) ? el("div", { class: "rq-brief" }, b.summary ? el("div", { class: "rq-sumline", text: b.summary }) : null, o.seen ? null : mailLinesNode(b.todo, b.questions)) : null, recv: draftRecvFold(dr, { t: o.t, edit: o.edit, hold: o.hold }), subject: dr.subject,
     attach: draftFilesNode(dr, { t: o.t, edit: o.edit, warn: o.warn, hold: o.hold }) };
 }
@@ -137,10 +137,10 @@ function rqCard(c) {
     c.fail ? el("div", { class: "rq-fail", role: "alert", title: c.fail.why || "", text: c.fail.text }) : null, foot);
 }
 // 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
-const rqSentNode = (at = "방금") => el("div", { class: "rq-sent", role: "status", "data-state": "send" }, icon("check"), el("span", { text: "보냈어요" }), el("span", { class: "rq-sent-at", text: `· ${at}` }));
+const rqSentNode = (at = TX("decision.just_now")) => el("div", { class: "rq-sent", role: "status", "data-state": "send" }, icon("check"), el("span", { text: TX("decision.sent") }), el("span", { class: "rq-sent-at", text: `· ${at}` }));
 // What an answer did, in the same words everywhere: 보냈어요, and 보내지 않았어요 with 되돌리기 where the store can bring the draft back.
-const rqSentToast = action => toast("보냈어요", false, action || null);
-const rqDroppedToast = undo => toast("보내지 않았어요", false, undo ? { label: "되돌리기", onclick: undo } : null, undo ? 6000 : undefined);
+const rqSentToast = action => toast(TX("decision.sent"), false, action || null);
+const rqDroppedToast = undo => toast(TX("decision.not_sent"), false, undo ? { label: TX("common.undo"), onclick: undo } : null, undo ? 6000 : undefined);
 // The 받는이 of a mail draft, folded to one text button under the body ("받는이 한서윤 · 답장"); it opens the rows of draftToNode in place. A draft with nobody to send to,
 // or an address that is not one, stands open from the start. Once the owner presses the button, that choice stays.
 const DR_ADDR = /^[^\s<>@,]+@[^\s<>@,]+\.[^\s<>@,]+$/;
@@ -150,9 +150,9 @@ function draftRecvFold(d, o = {}) {
   const text = el("span", { class: "rq-rs" }), btn = el("button", { class: "btn text sm rq-recv", type: "button", "aria-expanded": "false", onclick: () => { open = !(open ?? bad); sync(); } }, text, icon("drop"));
   const sync = () => { const on = open ?? bad; btn.setAttribute("aria-expanded", String(on)); if (panel) panel.hidden = !on; };
   const inner = draftToNode(d, { ...o, always: true, onpaint: live => {
-    const first = rqRcptName(live.to[0]), more = live.to.length > 1 ? ` 외 ${live.to.length - 1}명` : "";
+    const first = rqRcptName(live.to[0]) || TX("decision.rcpt.none"), more = live.to.length - 1;
     bad = !live.to.length || live.to.some(a => !draftAddr(a));
-    text.textContent = `받는이 ${first || "없음"}${more}${live.reply ? (live.mode === "all" ? " · 전체 답장" : " · 답장") : ""}${live.cc.length ? ` · 참조 ${live.cc.length}` : ""}`;
+    text.textContent = [more > 0 ? TX("decision.rcpt.to_more", { first, n: more }) : TX("decision.rcpt.to", { first }), live.reply ? (live.mode === "all" ? TX("decision.reply_all") : TX("decision.reply")) : "", live.cc.length ? TX("decision.rcpt.cc", { n: live.cc.length }) : ""].filter(Boolean).join(" · ");
     sync();
   } });
   panel = el("div", { class: "rq-recvbox" }, inner);
@@ -162,9 +162,9 @@ function draftRecvFold(d, o = {}) {
 // A mail draft's sheet (owner 2026-11-10): the same sheet as the 답장 확인 of a comment (30-replies.js rqSheetOpen) - one head, 답장 확인 and a close x - with the
 // reply card's parts (10-reply-card.js rqMailParts) straight on the sheet and the choices in the footer. Only the body scrolls.
 function mailSheetBody(dc, d, st, warnBox) {
-  const open = String(dc.t || "").startsWith("mail:") ? el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: "열기", onclick: () => { dc.close(); go("monitoring", `c:${dc.t}`); } }) : null;
+  const open = String(dc.t || "").startsWith("mail:") ? el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: TX("decision.open"), onclick: () => { dc.close(); go("monitoring", `c:${dc.t}`); } }) : null;
   const p = rqMailParts(d, { t: dc.t, at: dc.at, edit: true, hold: !!st, warn: warnBox, tail: [open] });   // sending: the rows stay where they are, off, so nothing under them moves
-  return el("div", { class: "fs-body rq-sb", tabindex: "0", role: "region", "aria-label": "보낼 내용" },
-    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: `받는이 확인: ${d.recipientWarning}` })) : null, decideNode(d), draftRuleNode(d),
+  return el("div", { class: "fs-body rq-sb", tabindex: "0", role: "region", "aria-label": TX("decision.body_label") },
+    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: TX("decision.rcpt.check", { warning: d.recipientWarning }) })) : null, decideNode(d), draftRuleNode(d),
     rqCard({ key: dc.key, ...p, body: { node: draftBodyNode(d.body, "dc-dr-b"), full: true }, extra: [draftOriginNode(d)] }));
 }

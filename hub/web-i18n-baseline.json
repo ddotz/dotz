@@ -53,20 +53,12 @@
       "why": "server value comparison"
     },
     "web/js/10-decision-card.js": {
-      "count": 376,
-      "why": "pending"
-    },
-    "web/js/10-decision-undo.js": {
-      "count": 5,
-      "why": "pending"
+      "count": 85,
+      "why": "agent-text parsing and fixed answer phrases"
     },
     "web/js/10-draft-original.js": {
-      "count": 57,
-      "why": "pending"
-    },
-    "web/js/10-reply-card.js": {
-      "count": 93,
-      "why": "pending"
+      "count": 5,
+      "why": "server value comparison"
     },
     "web/js/11-mailtext.js": {
       "count": 55,

@@ -87,7 +87,7 @@ const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h *
 // notice at once and the block leaves the card; the rest wait. A newer question of the conversation takes the dock first.
 // An open question with buttons stays here too once later messages pushed it up (decisionOne reads only the newest), until the owner answers its notice.
 const dcGone = t => isLaneT(t) && (i => i.known && !i.alive && !i.resumable)(targetInfo(t));   // a session that ended takes no answer
-const DC_GONE = "이 세션이 끝나서 답을 보낼 수 없어요";
+const DC_GONE = TX("decision.gone");
 function decisionGroup(t) {
   if (dcGone(t)) return null;
   const open = NT.items.filter(n => ntOpenDec(n) && !n.pc && !n.decision.draft && !n.decision.assumed && n.decision.options.length && n.decision.to === t && n.decision.reply_to);
@@ -168,7 +168,7 @@ function pickOption(dc, bi, opt, note) {
   if (DC.st[dc.key]) return;
   // A mail whose files disagree with its words is not sent by 보내기: the owner is shown what is off and 이대로 보내기 is the pick that sends it (cancel keeps the card).
   const asIs = dc.draft && (dc.draft.attachIssues || []).length && dc.blocks[bi] && dc.blocks[bi].options.find(o => o.label === "이대로 보내기");
-  if (asIs && opt.label === "보내기" && !opt.sure) { ask("첨부를 확인해 주세요", `${dc.draft.to ? `${dc.draft.to}에게 보낼 메일이에요. ` : ""}${dc.draft.attachIssues.join(". ")}. 이대로 보내면 지금 상태 그대로 나가요. 보낼까요?`, "이대로 보내기").then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
+  if (asIs && opt.label === "보내기" && !opt.sure) { ask(TX("decision.attach.check_title"), (dc.draft.to ? TX("decision.attach.asis_to", { to: dc.draft.to, issues: dc.draft.attachIssues.join(". ") }) : TX("decision.attach.asis", { issues: dc.draft.attachIssues.join(". ") })), TX("decision.attach.send_asis")).then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
   if (dc.draft && (dc.draft.warning || (dc.draft.attachments || []).length) && opt.label === "보내기" && !opt.sure) { drfSure(dc.draft, dc.t).then(ok => { if (ok) pickOption(dc, bi, { ...opt, sure: true }, note); }); return; }
   // fresh: the paint that draws the field this tap opened gives it the focus, once; a later live repaint never takes the focus
   if (!note && needsNote(dc, opt)) { DC.edit[dc.key] = { bi, opt }; DC.fresh = dc.key; paintDecision(); return; }
@@ -197,8 +197,8 @@ function dcSendAll(dc) {
 // Every decision of a several-decision card at once, each with its title and options, then one 보내기 that is on once each has a pick.
 function multiNodes(dc, picks, st) {
   const got = dc.blocks.filter((_, i) => picks[i]).length, all = got === dc.blocks.length;
-  return [...dc.blocks.flatMap((b, i) => [el("div", { class: "dc-sub", text: `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}` }), ...b.options.map(o => choiceRow(dc, i, o, picks, st))]),
-    dc.each ? null : el("button", { class: "btn dc-send", type: "button", disabled: !!st || !all, onclick: () => dcSendAll(dc) }, all ? "보내기" : `보내기 (${got}/${dc.blocks.length} 선택)`)].filter(Boolean);
+  return [...dc.blocks.flatMap((b, i) => [el("div", { class: "dc-sub", text: `${picks[i] ? "✓ " : ""}${b.title || TX("decision.n", { n: i + 1 })}` }), ...b.options.map(o => choiceRow(dc, i, o, picks, st))]),
+    dc.each ? null : el("button", { class: "btn dc-send", type: "button", disabled: !!st || !all, onclick: () => dcSendAll(dc) }, all ? TX("common.send") : TX("decision.send_progress", { got, total: dc.blocks.length }))].filter(Boolean);
 }
 // The files a draft sends along (hub/draft-approval.ts `> 첨부:` lines): one row per file, the row opens the file that will go out
 // (GET /api/drafts/<ref>/files/<n>, hub/draft-files.ts; through the peer proxy for a peer's draft). `첨부 없음` = the mail it answers had
@@ -221,7 +221,7 @@ async function drfWrite(ref, body) {
 const drfBase64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(f); });
 async function drfUpload(ref, f) {
   if (DRF.pc[ref]) {
-    if (f.size > DRF_WIRE_MAX) throw new Error("다른 컴퓨터의 초안에는 10MB 이하 파일만 붙일 수 있어요");
+    if (f.size > DRF_WIRE_MAX) throw new Error(TX("decision.file.peer_max"));
     return drfWrite(ref, { name: f.name, data: await drfBase64(f) });
   }
   return drfWrite(ref, { upload: await uploadFile(f) });
@@ -237,16 +237,16 @@ async function drfSure(d, t) {
   if (!ref || d.toLabel !== "받는이") return true;
   if (!DRF.st[ref]) { DRF.pc[ref] = t ? pqPc(t) : null; await drfLoad(ref); }
   const st = DRF.st[ref];
-  if (st.tracked === false && (d.attachments || []).length) return ask("첨부를 확인하지 못했어요", `${iGa(botName)} 붙인 파일이 아니라서 실제로 가는지 몰라요. 보낼까요?`, "그래도 보내기");
-  return !(st.editable && !st.canAttach && (st.files.length || d.warning)) || ask("첨부 없이 보낼까요?", "이 계정은 파일을 못 보내요. 본문만 가요.", "그래도 보내기");
+  if (st.tracked === false && (d.attachments || []).length) return ask(TX("decision.attach.unknown_title"), TX("decision.attach.unknown_body", { name: botName }), TX("decision.send_anyway"));
+  return !(st.editable && !st.canAttach && (st.files.length || d.warning)) || ask(TX("decision.attach.without_title"), TX("decision.attach.without_body"), TX("decision.send_anyway"));
 }
 function draftFilesNode(d, o = {}) {
   const ref = d.ref, box = el("div", { class: "dr-files" });
   if (ref) DRF.pc[ref] = o.t ? pqPc(o.t) : null;
-  const pickers = el("input", { type: "file", multiple: true, hidden: true, "aria-label": "파일 고르기" });
+  const pickers = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
   const run = async job => {
     DRF.busy[ref] = true; paint();
-    try { await job(); } catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 처리하지 못했어요" : e.message, true); }
+    try { await job(); } catch (e) { toast(e instanceof TypeError ? TX("decision.err.offline_act") : e.message, true); }
     DRF.busy[ref] = false; paint();
   };
   const addAll = list => run(async () => { for (const f of list) await drfUpload(ref, f); DRF.menu[ref] = ""; });
@@ -268,29 +268,29 @@ function draftFilesNode(d, o = {}) {
     const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
     const issues = live && st.attachIssues ? st.attachIssues : d.attachIssues || [];
     const warns = [
-      issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부 확인" }), el("span", { class: "dr-wn", text: issues.join(" · ") }))) : null,
+      issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: TX("decision.attach.check") }), el("span", { class: "dr-wn", text: issues.join(" · ") }))) : null,
       warn && !issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
-      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null];
+      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: TX("decision.attach.no_send") })) : null];
     const rows = fl.map((f, i) => {
       const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
       const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
-      const link = ref && !named ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${i}`)), target: "_blank", rel: "noopener", title: `${f.name} 열기`, "aria-label": `${f.name} 열기${f.size ? ` (${f.size})` : ""}` }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
-      return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: "첨부에서 빼기", "aria-label": `${f.name} 빼기`, onclick: () => run(() => drfWrite(ref, { remove: i })) }, icon("close"))) : link;
+      const link = ref && !named ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${i}`)), target: "_blank", rel: "noopener", title: TX("decision.file.open", { name: f.name }), "aria-label": f.size ? TX("decision.file.open_size", { name: f.name, size: f.size }) : TX("decision.file.open", { name: f.name }) }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
+      return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: TX("decision.file.detach"), "aria-label": TX("decision.remove_named", { name: f.name }), onclick: () => run(() => drfWrite(ref, { remove: i })) }, icon("close"))) : link;
     });
     const items = DRF.lib[ref] || [];
     const lib = can && DRF.menu[ref] === "lib" ? el("div", { class: "dr-lib", role: "list" }, ...(items.length ? items.map(it => el("button", { class: "dr-li", type: "button", role: "listitem", disabled: busy, title: it.rel, onclick: () => run(async () => { await drfWrite(ref, { library: it.rel }); DRF.menu[ref] = ""; }) },
-      el("span", { class: "dr-fn", text: it.rel }), it.match ? el("span", { class: "dr-hit", text: "맞음" }) : null, el("span", { class: "dr-fm", text: it.size }))) : [el("div", { class: "dr-none", text: DRF.lib[ref] ? "폴더가 비어 있어요" : "불러오는 중…" })])) : null;
+      el("span", { class: "dr-fn", text: it.rel }), it.match ? el("span", { class: "dr-hit", text: TX("decision.file.match") }) : null, el("span", { class: "dr-fm", text: it.size }))) : [el("div", { class: "dr-none", text: DRF.lib[ref] ? TX("decision.file.folder_empty") : TX("common.loading") })])) : null;
     const menu = can && DRF.menu[ref] === "menu" ? el("div", { class: "dr-menu" },
-      el("button", { class: "btn tonal", type: "button", onclick: () => pickers.click() }, "이 기기에서 고르기"),
-      st.library ? el("button", { class: "btn tonal", type: "button", onclick: openLib }, "첨부 파일 폴더에서 고르기") : null) : null;
-    const add = can && st.canAttach ? el("button", { class: "dr-add", type: "button", disabled: busy, "aria-expanded": String(!!DRF.menu[ref]), onclick: () => { if (!st.library) pickers.click(); else { DRF.menu[ref] = DRF.menu[ref] ? "" : "menu"; paint(); } } }, icon("clip"), el("span", { text: busy ? "붙이는 중…" : "파일 추가" })) : null;
+      el("button", { class: "btn tonal", type: "button", onclick: () => pickers.click() }, TX("decision.file.from_device")),
+      st.library ? el("button", { class: "btn tonal", type: "button", onclick: openLib }, TX("decision.file.from_folder")) : null) : null;
+    const add = can && st.canAttach ? el("button", { class: "dr-add", type: "button", disabled: busy, "aria-expanded": String(!!DRF.menu[ref]), onclick: () => { if (!st.library) pickers.click(); else { DRF.menu[ref] = DRF.menu[ref] ? "" : "menu"; paint(); } } }, icon("clip"), el("span", { text: busy ? TX("decision.file.attaching") : TX("decision.file.add") })) : null;
     if (o.warn) { clear(o.warn).append(...warns.filter(Boolean)); o.warn.hidden = !warns.some(Boolean); }
     // A mail draft with no file shows no 첨부 band (owner 2026-11-10): the 파일 추가 button stands alone; a file, or a real problem, is still listed.
     const mailDraft = d.toLabel === "받는이";
     // o.live (the mail of a combined card, read only): the list is read from the staged files, so a ✓ says they are on the mail.
-    clear(box).append(...[fl.length ? el("div", { class: o.live && live ? "dr-fh ok" : "dr-fh", text: o.live && live ? `✓ 첨부 ${fl.length}개 붙어 있어요` : `첨부 ${fl.length}개` }) : null, ...rows,
-      named ? el("div", { class: "dr-note", text: "열람 불가" }) : null,
-      !fl.length && d.noAttachments && !mailDraft ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부: 없음" })) : null,
+    clear(box).append(...[fl.length ? el("div", { class: o.live && live ? "dr-fh ok" : "dr-fh", text: o.live && live ? TX("decision.attach.attached", { n: fl.length }) : TX("decision.attach.count", { n: fl.length }) }) : null, ...rows,
+      named ? el("div", { class: "dr-note", text: TX("decision.file.locked") }) : null,
+      !fl.length && d.noAttachments && !mailDraft ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: TX("decision.attach.none") })) : null,
       add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
     box.hidden = !box.querySelector(".dr-fh, .dr-none, .dr-warn, .dr-add");
   }
@@ -324,7 +324,7 @@ function draftToNode(d, o = {}) {
     if (!ref || DRR.busy[ref]) return;
     DRR.busy[ref] = true; paint();
     try { const st = await job(); Object.assign(d, { to: st.to.join(", ") }); if (st.cc.length) d.cc = st.cc; else delete d.cc; d.mode = st.mode; }
-    catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 바꾸지 못했어요" : e.message, true); }
+    catch (e) { toast(e instanceof TypeError ? TX("decision.err.offline_change") : e.message, true); }
     DRR.busy[ref] = false; paint();
   };
   const change = (row, list) => run(() => drrWrite(ref, { [row]: list }));
@@ -337,18 +337,18 @@ function draftToNode(d, o = {}) {
   };
   const editor = (label, value, done) => {
     const f = field(label, value, done);
-    return el("span", { class: "dr-rc-edit" }, f.i, el("button", { class: "btn text dr-rc-go", type: "button", disabled: busy(), text: "확인", onclick: f.go }),
-      el("button", { class: "btn text", type: "button", disabled: busy(), text: "취소", onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = ""; paint(); } }));
+    return el("span", { class: "dr-rc-edit" }, f.i, el("button", { class: "btn text dr-rc-go", type: "button", disabled: busy(), text: TX("common.ok"), onclick: f.go }),
+      el("button", { class: "btn text", type: "button", disabled: busy(), text: TX("common.cancel"), onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = ""; paint(); } }));
   };
   const row = (name, label, list, editable) => {
     const editing = String(DRR.edit[ref] || "");
     const chips = list.map((a, i) => (editing === `${name}:${i}`
-      ? editor(name === "to" ? "받는 사람 주소" : "참조 주소", a, v => change(name, list.map((x, n) => (n === i ? v : x))))
+      ? editor(name === "to" ? TX("decision.rc.to_addr") : TX("decision.rc.cc_addr"), a, v => change(name, list.map((x, n) => (n === i ? v : x))))
       : el("span", { class: "dr-chip dr-rc" },
-        editable ? el("button", { class: "dr-rc-t", type: "button", title: "고치기", "aria-label": `${a} 고치기`, disabled: busy(), text: a, onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = `${name}:${i}`; paint(); } }) : el("span", { class: "dr-rc-t", text: a }),
-        editable ? el("button", { class: "dr-rc-x", type: "button", title: "빼기", "aria-label": `${a} 빼기`, disabled: busy(), onclick: () => change(name, list.filter((_, n) => n !== i)) }, icon("close")) : null)));
-    if (editable && DRR.add[ref] === name) chips.push(editor(name === "to" ? "메일 주소 추가" : "참조 주소 추가", "", v => change(name, [...list, v])));
-    else if (editable) chips.push(el("button", { class: "dr-rc-add", type: "button", "aria-label": `${label} 추가`, disabled: busy(), onclick: () => { DRR.edit[ref] = ""; DRR.add[ref] = name; paint(); } }, icon("add"), el("span", { text: "추가" })));
+        editable ? el("button", { class: "dr-rc-t", type: "button", title: TX("decision.rc.edit"), "aria-label": TX("decision.edit_named", { name: a }), disabled: busy(), text: a, onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = `${name}:${i}`; paint(); } }) : el("span", { class: "dr-rc-t", text: a }),
+        editable ? el("button", { class: "dr-rc-x", type: "button", title: TX("decision.remove"), "aria-label": TX("decision.remove_named", { name: a }), disabled: busy(), onclick: () => change(name, list.filter((_, n) => n !== i)) }, icon("close")) : null)));
+    if (editable && DRR.add[ref] === name) chips.push(editor(name === "to" ? TX("decision.rc.add_to") : TX("decision.rc.add_cc"), "", v => change(name, [...list, v])));
+    else if (editable) chips.push(el("button", { class: "dr-rc-add", type: "button", "aria-label": TX("decision.add_named", { name: label }), disabled: busy(), onclick: () => { DRR.edit[ref] = ""; DRR.add[ref] = name; paint(); } }, icon("add"), el("span", { text: TX("decision.add") })));
     return el("div", { class: "dr-to dr-rcrow", "data-row": name }, el("span", { class: "dr-k", text: label }), chips.length ? el("div", { class: "dr-rc-list" }, ...chips) : el("span", { class: "dr-k", text: "-" }));
   };
   function paint() {
@@ -356,10 +356,10 @@ function draftToNode(d, o = {}) {
     // No record of this draft (a block a session wrote): the hub has no list, the card's own 받는이 stands and nothing here can change it.
     const live = st && !st.failed && (st.to.length || st.editable) ? st : { to: drrSplit(d.to), cc: Array.isArray(d.cc) ? d.cc : [], mode: d.mode || "reply", editable: !!st && !!st.failed && !!ref && o.edit !== false, reply: !!d.mode };
     const editable = live.editable && o.edit !== false, off = busy();
-    const seg = live.reply ? el("div", { class: "seg dr-seg", role: "group", "aria-label": "답장 범위" },
-      ...[['reply', '답장'], ['all', '전체 답장']].map(([k, text]) => el("button", { class: live.mode === k ? "on" : "", type: "button", "data-k": `mode-${k}`, "aria-pressed": String(live.mode === k), disabled: off || !editable, text, onclick: () => { if (editable && !off && live.mode !== k) run(() => drrWrite(ref, { mode: k })); } }))) : null;
-    const ccRow = live.cc.length || (live.reply && editable) ? row("cc", "참조", live.cc, editable) : null;
-    clear(box).append(...[seg, live.reply || live.to.length || o.always ? row("to", "받는이", live.to, editable) : null, ccRow].filter(Boolean));
+    const seg = live.reply ? el("div", { class: "seg dr-seg", role: "group", "aria-label": TX("decision.reply_scope") },
+      ...[["reply", TX("decision.reply")], ["all", TX("decision.reply_all")]].map(([k, text]) => el("button", { class: live.mode === k ? "on" : "", type: "button", "data-k": `mode-${k}`, "aria-pressed": String(live.mode === k), disabled: off || !editable, text, onclick: () => { if (editable && !off && live.mode !== k) run(() => drrWrite(ref, { mode: k })); } }))) : null;
+    const ccRow = live.cc.length || (live.reply && editable) ? row("cc", TX("decision.cc"), live.cc, editable) : null;
+    clear(box).append(...[seg, live.reply || live.to.length || o.always ? row("to", TX("decision.to"), live.to, editable) : null, ccRow].filter(Boolean));
     box.hidden = !box.querySelector(".dr-rcrow");
     if (o.onpaint) o.onpaint(live);
   }
@@ -369,7 +369,7 @@ function draftToNode(d, o = {}) {
 }
 // The 자동 초안 규칙 that drafted a draft or a mail (hub/draft-approval.ts "> 규칙:", hub/mail.ts rule): its name as a plain tag, the same on the mail row,
 // the reply card and the chat card.
-const draftRuleTag = (name, cls) => el("span", { class: `tag ${cls}`, "data-rule": name, title: `자동 초안 규칙: ${name}`, text: name });
+const draftRuleTag = (name, cls) => el("span", { class: `tag ${cls}`, "data-rule": name, title: TX("decision.rule.title", { name }), text: name });
 const draftRuleNode = d => d.rule ? el("div", { class: "dr-rulebar" }, draftRuleTag(d.rule, "dr-rule")) : null;
 // "댓글 답글에 이어서" (+ the comment's link): a draft made as the follow-up of an approved action says where it came from (hub/draft-approval.ts 이어서).
 function draftOriginNode(d) {
@@ -383,21 +383,21 @@ function draftMailNode(m, o = {}) {
   if (!m) return null;
   const ref = m.ref || m.id, part = ref ? { ...m, ref } : m;
   return el("div", { class: "dr-mailpart" },
-    el("div", { class: "dr-mh" }, icon("mail"), el("span", { text: "함께 보낼 메일" })),
-    el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: m.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: m.to || "-" })),
-    m.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: m.subject })) : null,
-    draftBodyNode(m.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": "함께 보낼 메일 내용" }),
+    el("div", { class: "dr-mh" }, icon("mail"), el("span", { text: TX("decision.mail.along") })),
+    el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: m.toLabel || TX("decision.to") }), el("span", { class: "dc-dr-v", text: m.to || "-" })),
+    m.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: TX("decision.subject") }), el("span", { class: "dc-dr-v sub", text: m.subject })) : null,
+    draftBodyNode(m.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": TX("decision.mail.along_body") }),
     draftFilesNode(part, { edit: false, live: !!ref, t: o.t }));
 }
 // A combined card (comment reply + mail): the comment it answers on top, then 내 답글, then the mail (draftMailNode).
-const replyHead = () => el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: "내 답글" }));
+const replyHead = () => el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: TX("decision.my_reply") }));
 // The body of a draft, drawn as chat draws a message (relayed: words to read, no run button or settings card on what someone else may have written).
 const draftBodyNode = (text, cls, attrs = {}) => el("div", { ...attrs, class: `md ${cls}`, safeHtml: mdHtml(text, true) });
 // The mail a draft answers, above the draft (hub/draft-approval.ts DraftBrief): the draft is added to the card and never stands in for it.
 function draftBriefNode(b, seen) {
   if (!b) return null;
   const row = (k, v) => (v ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: k }), el("span", { class: "dc-dr-v" }, mailInlineFrag(v))) : null);
-  const rows = [row("보낸이", b.from), row("요약", b.summary), seen ? null : mailLinesNode(b.todo, b.questions)].filter(Boolean);
+  const rows = [row(TX("decision.from"), b.from), row(TX("decision.summary"), b.summary), seen ? null : mailLinesNode(b.todo, b.questions)].filter(Boolean);
   return rows.length ? el("div", { class: "dc-brief", "data-k": "draft-brief" }, ...rows) : null;
 }
 function draftNode(d, o) {
@@ -406,54 +406,54 @@ function draftNode(d, o) {
     draftBriefNode(d.brief),
     both ? orgInline(d, o.t) : null, both ? replyHead() : null,
     !d.toLabel || d.toLabel === "받는이" ? draftToNode(d, o) : el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
-    d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
+    d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: TX("decision.subject") }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
     draftRuleNode(d), draftOriginNode(d),
-    draftBodyNode(d.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": "보낼 내용" }), draftFilesNode(d, o), draftMailNode(d.mail, o));
+    draftBodyNode(d.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": TX("decision.body_label") }), draftFilesNode(d, o), draftMailNode(d.mail, o));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
-const dcStText = (dc, st) => (st === "undo" ? dcUndoText(dc) : dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? (((DC.picks[dc.key] || [])[0] || {}).label === "보내지 않기" ? "처리하는 중…" : "보내는 중…") : "보냈어요 · 처리하는 중");
+const dcStText = (dc, st) => (st === "undo" ? dcUndoText(dc) : dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? TX("decision.pending.edit") : st === "sending" ? (((DC.picks[dc.key] || [])[0] || {}).label === "보내지 않기" ? TX("decision.pending.drop") : TX("decision.pending.send")) : TX("decision.st.sent_processing"));
 // 고치기 on a draft, or an option that needs detail (안 됨 …): the owner types the change / reason, then the answer goes out with it.
 // 고치기 on a draft asks "어떻게 고칠까요?" and the bot rewrites it; 직접 수정 (ed.manual) is the owner's own text, sent as the change "이 내용으로 고쳐 주세요: ...".
-const DRAFT_HINT = "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", MANUAL_LEAD = "이 내용으로 고쳐 주세요: ";
+const DRAFT_HINT = TX("decision.hint.revise"), MANUAL_LEAD = "이 내용으로 고쳐 주세요: ";
 // The button under the typed text names what it does with the choice made, never a bare "보내기": after 고치기 on a draft a 내용 보내기 read as if
 // the mail would go out (owner 2026-10-28). One rule for the chat card and the notice sheet.
-const noteGoLabel = (opt, drf, man) => (man ? "이 내용으로 고치기" : drf && opt.label === DRAFT_OWN ? "이렇게 보내 달라고 하기" : drf ? "고쳐 달라고 하기" : `${opt.label}(으)로 답하기`);
+const noteGoLabel = (opt, drf, man) => (man ? TX("decision.note.go_manual") : drf && opt.label === DRAFT_OWN ? TX("decision.note.go_own") : drf ? TX("decision.revise.go") : TX("decision.note.go_answer", { label: opt.label }));
 // What the text box of a draft option asks: 고치기 = the change, 직접 입력 = how to send it.
-const OWN_HINT = "메일 먼저 보내고 답글은 내일 올려 줘";
+const OWN_HINT = TX("decision.hint.own");
 // A draft card's question without its "(<id>)", and what only the owner can decide (hub/draft-approval.ts decide) as a list of its own.
 // A card made before the list kept the points in the question ("... 정할 것: a., b."); that tail is left out here, the list shows them.
 const draftQ = t => String(t || "").replace(/\s*\([^()]*\)\s*$/, "").replace(/\s*정할 것\s*[:：][\s\S]*$/, "");
-const decideNode = d => (d && d.decide && d.decide.length ? el("div", { class: "dc-decide" }, el("div", { class: "dc-decide-k", text: "정할 것" }), el("ul", {}, ...d.decide.map(q => el("li", { text: q })))) : null);
-const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: "보내는 방법", ask: "어떻게 보낼까요?" } : { hint: DRAFT_HINT, aria: "고칠 내용", ask: "어떻게 고칠까요?" });
+const decideNode = d => (d && d.decide && d.decide.length ? el("div", { class: "dc-decide" }, el("div", { class: "dc-decide-k", text: TX("decision.decide") }), el("ul", {}, ...d.decide.map(q => el("li", { text: q })))) : null);
+const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: TX("decision.own.aria"), ask: TX("decision.own.ask") } : { hint: DRAFT_HINT, aria: TX("decision.revise.what"), ask: TX("decision.revise.ask") });
 // 직접 수정 with files: the bot is told to attach them (the hub appends one [attachment] line per file with its path).
 const manualNote = (text, files) => (files.length ? `첨부할 파일 ${files.length}개(${files.map(f => f.name).join(", ")})를 이 초안에 붙여 주세요. ` : "") + MANUAL_LEAD + text;
 function editNode(dc, ed, st) {
   const opt = ed.opt, drf = !!dc.draft, man = !!ed.manual;
   const dt = draftNoteText(opt);
-  const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? "보낼 내용을 직접 고쳐 주세요" : dt.hint) : "이유나 내용을 적어 주세요", "aria-label": man ? "직접 수정" : drf ? dt.aria : "자세한 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
+  const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? TX("decision.note.manual_ph") : dt.hint) : TX("decision.note.reason_ph"), "aria-label": man ? TX("decision.manual") : drf ? dt.aria : TX("decision.note.details"), disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = DC.note[dc.key] ?? (man ? dc.draft.body : "");
   const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? manualNote(note, DC.files[dc.key] || []) : note); } }, noteGoLabel(opt, drf, man));
-  const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; delete DC.files[dc.key]; paintDecision(); } }, "돌아가기");
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? "직접 수정" : drf ? dt.ask : opt.label })), ta, man ? editFilesNode(dc, st) : null, el("div", { class: "dc-eb" }, back, go));
+  const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; delete DC.files[dc.key]; paintDecision(); } }, TX("decision.back"));
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? TX("decision.manual") : drf ? dt.ask : opt.label })), ta, man ? editFilesNode(dc, st) : null, el("div", { class: "dc-eb" }, back, go));
 }
 // 파일 첨부 in 직접 수정. A draft dotz tracks and can change (a reply-drafts mail draft) takes the file onto its 첨부 rows at once (the same
 // drfUpload as 파일 추가); any other draft uploads it here and shows it as a chip, and the 고치기 answer goes out with it as the message's `files`.
 function editFilesNode(dc, st) {
   const key = dc.key, ref = dc.draft.ref, files = DC.files[key] || [], busy = !!DC.fbusy[key];
-  const pk = el("input", { type: "file", multiple: true, hidden: true, "aria-label": "파일 고르기" });
+  const pk = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
   pk.onchange = async () => {
     const list = [...pk.files]; pk.value = "";
     const s = ref ? DRF.st[ref] : null;
     if (!list.length || DC.st[key]) return;
     if (s && !s.failed && s.tracked !== false && s.editable && s.canAttach && DRF.add[ref]) { if (!DRF.busy[ref]) DRF.add[ref](list); return; }
-    if (dc.t && pqPc(dc.t)) { toast("다른 컴퓨터의 이 초안에는 파일을 붙일 수 없어요", true); return; }
+    if (dc.t && pqPc(dc.t)) { toast(TX("decision.file.cross_peer"), true); return; }
     DC.fbusy[key] = true; paintDecision();
     try { for (const f of list) { if ((DC.files[key] || []).length >= 10) break; DC.files[key] = (DC.files[key] || []).concat(await uploadFile(f)); } }
-    catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 올리지 못했어요" : e.message, true); }
+    catch (e) { toast(e instanceof TypeError ? TX("decision.err.offline_upload") : e.message, true); }
     delete DC.fbusy[key]; paintDecision();
   };
-  const chips = files.map(f => fileChip(f.name, [extOf(f.name), fsize(f.size)].filter(Boolean).join(" · "), { x: el("button", { class: "ax", type: "button", disabled: !!st, "aria-label": `${f.name} 빼기`, onclick: () => { DC.files[key] = (DC.files[key] || []).filter(x => x !== f); paintDecision(); } }, icon("close")) }));
-  return el("div", { class: "dc-fl" }, el("button", { class: "dr-add", type: "button", disabled: !!st || busy, onclick: () => pk.click() }, icon("clip"), el("span", { text: busy ? "올리는 중…" : "파일 첨부" })), ...chips, pk);
+  const chips = files.map(f => fileChip(f.name, [extOf(f.name), fsize(f.size)].filter(Boolean).join(" · "), { x: el("button", { class: "ax", type: "button", disabled: !!st, "aria-label": TX("decision.remove_named", { name: f.name }), onclick: () => { DC.files[key] = (DC.files[key] || []).filter(x => x !== f); paintDecision(); } }, icon("close")) }));
+  return el("div", { class: "dc-fl" }, el("button", { class: "dr-add", type: "button", disabled: !!st || busy, onclick: () => pk.click() }, icon("clip"), el("span", { text: busy ? TX("decision.file.uploading") : TX("decision.file.attach") })), ...chips, pk);
 }
 // A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
 // A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
@@ -468,17 +468,17 @@ function renderSheet(box, dc, picks, step) {
   const oldNote = $(".dc-note", box), refocus = !!oldNote && document.activeElement === oldNote, caret = refocus ? oldNote.selectionStart : 0;
   const qText = d ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
   // A mail draft's 받는이·참조 live in its own rows at the top of the body and change in place, so the head does not repeat them.
-  const head = mail ? fsHead([el("div", { class: "fs-t" }, "답장 확인", dc.left ? el("span", { class: "fs-left", text: ` · ${dc.left}` }) : null)], { close: dc.close }) : fsHead(d ? [
-    el("span", { class: "fs-ey" }, qText || "보내기 전에 확인해요", dc.left ? el("span", { class: "fs-left", text: ` · ${dc.left}` }) : null),
+  const head = mail ? fsHead([el("div", { class: "fs-t" }, TX("decision.check_reply"), dc.left ? el("span", { class: "fs-left", text: ` · ${dc.left}` }) : null)], { close: dc.close }) : fsHead(d ? [
+    el("span", { class: "fs-ey" }, qText || TX("decision.check_before"), dc.left ? el("span", { class: "fs-left", text: ` · ${dc.left}` }) : null),
     !d.toLabel || d.toLabel !== "받는이" ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })) : null,
-    d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null,
+    d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: TX("decision.subject") }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null,
     // hub/draft-approval.ts recipientCheck: a likely typo or an address the source does not have; the address itself is never changed.
-    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: `받는이 확인: ${d.recipientWarning}` })) : null]
-    : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
+    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: TX("decision.rcpt.check", { warning: d.recipientWarning }) })) : null]
+    : [el("span", { class: "fs-ey", text: dc.blocks.length ? TX("decision.needs_decision") : TX("decision.needs_reply") })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
   const orgDrawn = () => { delete box.dataset.sig; paintDecision(); };   // the sig does not hold the hub's answer, so the repaint is asked for
   const both = !!d && !!d.mail && d.toLabel === "대상" && orgHas(d.ref, dc.t, orgDrawn);   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
-  const body = mail ? mailSheetBody(dc, d, st, warnBox) : d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftBriefNode(d.brief), decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), draftBodyNode(d.body, "dc-dr-b"), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
+  const body = mail ? mailSheetBody(dc, d, st, warnBox) : d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": TX("decision.body_label") }, draftBriefNode(d.brief), decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), draftBodyNode(d.body, "dc-dr-b"), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");
@@ -497,7 +497,7 @@ function renderSheet(box, dc, picks, step) {
       foot.append(el("div", { class: "dr-act dr-row rq-acts" }, ...bs, ...(manual ? [rqManualBtn(manual)] : [])));
     } else {
     const btns = st === "undo" ? [dcUndoBtn(dc, "dc-act main")] : opts.map((o, i) => el("button", { class: `dc-act${i === 0 ? " main" : o.label === DRAFT_EDIT ? " alt" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label));
-    const man = manual ? el("button", { class: "dc-manual", type: "button", title: "직접 수정", "aria-label": "직접 수정", onclick: manual }, icon("pencil"), el("span", { text: "직접 수정" })) : null;
+    const man = manual ? el("button", { class: "dc-manual", type: "button", title: TX("decision.manual"), "aria-label": TX("decision.manual"), onclick: manual }, icon("pencil"), el("span", { text: TX("decision.manual") })) : null;
     foot.append(el("div", { class: "dc-acts" }, ...btns, ...(man ? [man] : [])));
     }
   } else if (dc.blocks.length > 1) foot.append(...multiNodes(dc, picks, st));
@@ -547,10 +547,10 @@ function renderDecision(box, dc, picks, step) {
   const qText = dc.draft ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
   // ONE tight header (owner 2026-11-03): the status 답 기다림 on one line, then the short question as the card's one lead (a 확인 필요 label said it twice); the card asks only what it must.
   const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
-    el("div", { class: "dc-meta" }, el("span", { class: "tag warn dc-wt", text: "답 기다림" })),
+    el("div", { class: "dc-meta" }, el("span", { class: "tag warn dc-wt", text: TX("decision.waiting_tag") })),
     qText ? mdNode(qText, "md dc-q") : null, decideNode(dc.draft)),
     el("div", { class: "dc-hb" },
-      el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.t] = !fold; paintDecision(); } }, icon("drop"))));
+      el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? TX("decision.more") : TX("decision.less"), onclick: () => { DC.fold[dc.t] = !fold; paintDecision(); } }, icon("drop"))));
   const kids = [head];
   if (!fold) {
     const body = el("div", { class: "dc-body" });
@@ -612,15 +612,15 @@ async function answerInline(nd, opt) {
 function dcAnswerToast(nd, opt, held) {
   const to = String(nd.decision.to || "");
   if (!nd.decision.draft) return;
-  if (opt.label === "보내기" && held && held.state === "undo") toast("곧 보내요", false, { label: "보내기 취소", onclick: () => dcUndoPost(nd.decision.draft.ref) }, held.left);
-  else if (opt.label === "보내기") toast("보냈어요", false, to.startsWith("mail:") ? { label: "메일 열기", onclick: () => go("monitoring", `c:${to}`) } : null);
-  else if (opt.label === "보내지 않기") toast("보내지 않았어요", false, { label: "되돌리기", onclick: () => dcReopen(nd) });
+  if (opt.label === "보내기" && held && held.state === "undo") toast(TX("decision.toast.sending_soon"), false, { label: TX("decision.undo.cancel"), onclick: () => dcUndoPost(nd.decision.draft.ref) }, held.left);
+  else if (opt.label === "보내기") toast(TX("decision.sent"), false, to.startsWith("mail:") ? { label: TX("decision.mail.open"), onclick: () => go("monitoring", `c:${to}`) } : null);
+  else if (opt.label === "보내지 않기") toast(TX("decision.not_sent"), false, { label: TX("common.undo"), onclick: () => dcReopen(nd) });
 }
 async function dcReopen(nd) {
   try {
     if (nd.pc) await pqNotice(nd, "notice", { op: "reopen", id: String(nd.id) });
     else { const r = await api("/api/notices/reopen", "POST", { ids: [String(nd.id)] }); ntApply(null, r.unread); await loadNotices(); }
-    toast("초안을 되돌렸어요");
+    toast(TX("decision.toast.restored"));
   } catch (e) { toast(e.message, true); }
 }
 // Decision cards already docked: only one that really arrives rises in (not on the first paint, nor when another conversation opens).
@@ -680,12 +680,12 @@ function paintInline(box, live) {
     if (docked) kids.push(...i.blocks.map(b => mdNode(draftQ(b.title), "md dc-q")));
     else if (dc && i.blocks.length > 1) kids.push(...multiNodes(dc, picks, st));
     else for (const [bi, b] of i.blocks.entries()) kids.push(...[b.title ? mdNode(draftQ(b.title), "md dc-q") : null, ...b.options.map(o => choiceRow(dc || { key: "" }, bi, o, picks, st))].filter(Boolean));
-    if (!dc && !picks.some(Boolean)) kids.push(el("div", { class: "dc-ds", text: "지난 결정이에요" }));
+    if (!dc && !picks.some(Boolean)) kids.push(el("div", { class: "dc-ds", text: TX("decision.past") }));
     // No docked card to type in (a session's mid-turn question): what to change is asked here. Its text outlives a repaint (DC.note).
     if (edit) {
-      note = el("textarea", { class: "dc-note", rows: 2, placeholder: "내용을 적어 주세요", oninput: () => { DC.note[dc.key] = note.value; } });
+      note = el("textarea", { class: "dc-note", rows: 2, placeholder: TX("decision.note.detail_ph"), oninput: () => { DC.note[dc.key] = note.value; } });
       note.value = DC.note[dc.key] || "";
-      kids.push(note, el("button", { class: "btn dc-send", type: "button", onclick: () => note.value.trim() && pickOption(dc, edit.bi, edit.opt, note.value.trim()) }, "보내기"));
+      kids.push(note, el("button", { class: "btn dc-send", type: "button", onclick: () => note.value.trim() && pickOption(dc, edit.bi, edit.opt, note.value.trim()) }, TX("common.send")));
     }
   }
   if (!paintKeep(box, kids, paintDecision)) return;
@@ -762,7 +762,7 @@ function dcLine(n) {
   if (!n) { q.hidden = true; return; }
   const shown = !q.hidden;
   q.hidden = false;
-  if (!q.firstChild) clear(q).append(el("span", { class: "dot warn" }), el("span", { class: "tx" }, "답장 초안 ", el("b", { "data-qn": "" }), "건 기다려요"), el("span", { class: "sep", text: "·" }), el("span", { class: "go", text: "확인하기" }));
+  const [qHead, qTail] = TX("decision.qline", { n: "\u0001" }).split("\u0001"); if (!q.firstChild) clear(q).append(el("span", { class: "dot warn" }), el("span", { class: "tx" }, qHead, el("b", { "data-qn": "" }), qTail), el("span", { class: "sep", text: "·" }), el("span", { class: "go", text: TX("decision.review") }));
   rollCount(q.querySelector("b"), String(n));
   q.onclick = () => rqOpen();
   if (!shown) motionIn(q);
@@ -776,7 +776,7 @@ function dcPointer(box, n) {
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig; box.dataset.key = sig;
   const title = draftQ(n.title), left = draftProgress(n.text);
-  clear(box).append(el("button", { class: "dc-wait", type: "button", onclick: () => noticeSheetOpen(n.id) }, el("span", { class: "dc-wait-k", text: "답 대기" }), el("span", { class: "dc-wait-t", text: title || "보내기 확인" }), left ? el("span", { class: "dc-wait-n", text: left }) : null, el("span", { class: "dc-wait-go", text: "열기" })));
+  clear(box).append(el("button", { class: "dc-wait", type: "button", onclick: () => noticeSheetOpen(n.id) }, el("span", { class: "dc-wait-k", text: TX("decision.wait.tag") }), el("span", { class: "dc-wait-t", text: title || TX("decision.wait.confirm") }), left ? el("span", { class: "dc-wait-n", text: left }) : null, el("span", { class: "dc-wait-go", text: TX("decision.open") })));
 }
 // What a decision card shows; the card (docked or in the sheet) is redrawn only when this changes. A redraw replaces the reason field, and on
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
@@ -792,9 +792,9 @@ function dcRecordNode(e, files, mt) {
   const picks = (Array.isArray(e.picks) ? e.picks : []).filter(p => p && Number.isFinite(Number(p.n)));
   if (!picks.length) return null;
   const q = p => String(p.q ?? "").trim();
-  return el("div", { class: "dc-rec", role: "note", "aria-label": "결정 기록" },
+  return el("div", { class: "dc-rec", role: "note", "aria-label": TX("decision.record.aria") },
     picks.map(p => el("div", { class: "dc-rec-r" },
-      q(p) ? el("span", { class: "dc-rec-k", text: "질문" }) : null, q(p) ? el("span", { class: "dc-rec-q", text: q(p) }) : null,
-      el("span", { class: "dc-rec-k", text: "· 답:" }), el("span", { class: "dc-rec-a", text: `${p.n}) ${p.label}${p.note ? ` - ${p.note}` : ""}` }))),
+      q(p) ? el("span", { class: "dc-rec-k", text: TX("decision.record.q") }) : null, q(p) ? el("span", { class: "dc-rec-q", text: q(p) }) : null,
+      el("span", { class: "dc-rec-k", text: TX("decision.record.a") }), el("span", { class: "dc-rec-a", text: `${p.n}) ${p.label}${p.note ? ` - ${p.note}` : ""}` }))),
     files || null, mt || null);
 }
