@@ -78,7 +78,7 @@ const DONE_MARKER = /acceptance|done when|done-condition|end state|success crite
 // Shared with the owner's original extension and the harness doctor, so a brief marked by either copy is never marked twice.
 const BUDGET_MARKER = "[orchestrator-guard]";
 export const budgetLine = (g: GuardConfig = G) =>
-	`${BUDGET_MARKER} Final answer: at most ${g.worker_answer_chars} characters - outcome, changed paths, verification, blockers. Context budget ${Math.round(g.worker_context_tokens / 1000)}K tokens; if you near it, stop and hand back partial findings. Never end a turn to wait for a background run (a text-only turn ends your run and the wake-up can fail to start): wait inside one blocking call, e.g. an eval cell that polls up to 280s, then report.`;
+	`${BUDGET_MARKER} Final answer: at most ${g.worker_answer_chars} characters - outcome, changed paths, verification, blockers. Context budget ${Math.round(g.worker_context_tokens / 1000)}K tokens; if you near it, stop and hand back partial findings. Settle reversible choices yourself and note them in the report; stop to ask only for what cannot be undone. Never end a turn to wait for a background run (a text-only turn ends your run and the wake-up can fail to start): wait inside one blocking call, e.g. an eval cell that polls up to 280s, then report.`;
 // Per-job estimate in a brief: "Estimate: N%" = share of the 5h window the worker is expected to use (absent -> budget_default_estimate_percent).
 const ESTIMATE_RE = /^\s*Estimate:\s*(\d+(?:\.\d+)?)\s*%?/im;
 const USAGE_CACHE_MS = 120_000;
