@@ -6,6 +6,7 @@
 import { lookup } from "node:dns/promises";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { json } from "./routes-util.ts";
 
 export type LinkPreview = { url: string; ok: true; site?: string; title?: string; description?: string; image?: string; at: number } | { url: string; ok: false; error: string; at: number };
 export type Resolver = (host: string) => Promise<string[]>;
@@ -178,7 +179,6 @@ async function readCapped(res: Response, max: number): Promise<{ text: string; c
 	return { text: new TextDecoder("utf-8", { fatal: false }).decode(Buffer.concat(chunks)), cut: false };
 }
 
-const json = (data: unknown, status = 200) => Response.json(data, { status });
 const HOST_LIMIT = "허용되지 않는 주소예요";
 
 export function createLinkPreview(deps: PreviewDeps = {}) {

@@ -2,8 +2,8 @@
 // or sendable. Events carry ids only, never a body. A reply goes out only through engine.send -> dispatchReply (contract.ts).
 import { instanceIdOf } from "../integrations.ts";
 import type { Engine } from "./engine.ts";
+import { json } from "../routes-util.ts";
 
-const json = (data: unknown, status = 200) => Response.json(data, { status });
 const OFF = { error: "댓글 연동이 꺼져 있어요" };
 const MAX_TEXT = 2000;
 const MAX_EXTRA = 500;

@@ -16,6 +16,7 @@ import { PEER_HEADER, peerHeaders, peerTokenFor } from "./peer-auth.ts";
 import { knownComputers, tailscaleStatus } from "./peers.ts";
 import { Bridge } from "./remote-desktop-ws.ts";
 import { peerFetch } from "./tailnet-fetch.ts";
+import { json, sameOrigin } from "./routes-util.ts";
 
 const IDLE_MS = 60_000; // no viewer for this long -> stop voxl
 const KILL_MS = 3_000; // SIGTERM, then SIGKILL after this
@@ -222,16 +223,6 @@ export class DeskHost {
 	}
 }
 
-const sameOrigin = (req: Request): boolean => {
-	const origin = req.headers.get("origin");
-	if (!origin) return true;
-	try {
-		return new URL(origin).host === req.headers.get("host");
-	} catch {
-		return false;
-	}
-};
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 const text = (s: string, status: number) => new Response(s, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 const page = (s: string, status: number, refresh = false) =>
 	new Response(`<!doctype html><meta charset="utf-8">${refresh ? '<meta http-equiv="refresh" content="3">' : ""}<title>화면 공유</title><p>${s}</p>`, { status, headers: { "content-type": "text/html; charset=utf-8" } });

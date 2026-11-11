@@ -17,6 +17,7 @@ import { newCtx } from "./context.ts";
 import { broadcast } from "./events.ts";
 import { type Lane, laneRunning, lanes } from "./lanes.ts";
 import { dropChannelNotices, dropLaneNotices } from "./notices.ts";
+import { git } from "./lanetree.ts";
 
 export const TRASH_DIR = join(DATA_DIR, "trash");
 export const TRASH_KEEP_MS = 7 * 86_400_000;
@@ -44,10 +45,6 @@ type RestoreResult = { id: string; name?: string; ok: true; notes: string[] } | 
 
 class LaneDeleteRefused extends Error {}
 
-const git = (cwd: string, ...args: string[]) => {
-	const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
-	return { ok: r.exitCode === 0, out: r.stdout.toString().trim(), err: r.stderr.toString().trim() };
-};
 // Same filesystem in practice (all under the home folder); a cross-device move falls back to copy + remove.
 function move(from: string, to: string): void {
 	mkdirSync(dirname(to), { recursive: true });

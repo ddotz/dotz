@@ -2,8 +2,7 @@
 // "DM 읽기" off (hub/app-features.ts) nothing is listed and nothing is requested. The messages come from cache/ig-dm.json, which the watch
 // `sns-ig-dm` and the refresh route fill (features/youtube-instagram/lib/ig-dm.ts).
 import { type DmState, type SyncResult, PERMISSION_LINE } from "../features/youtube-instagram/lib/ig-dm.ts";
-
-const json = (data: unknown, status = 200) => Response.json(data, { status });
+import { json } from "./routes-util.ts";
 
 export type IgDmDeps = {
 	enabled: () => boolean;

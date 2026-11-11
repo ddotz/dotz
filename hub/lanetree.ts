@@ -18,7 +18,7 @@ export function worktreeNote(w: Worktree | undefined): string {
 	return w ? msg().worktree(w) : msg().noGit;
 }
 
-const git = (cwd: string, ...args: string[]) => {
+export const git = (cwd: string, ...args: string[]) => {
 	const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
 	return { ok: r.exitCode === 0, out: r.stdout.toString().trim(), err: r.stderr.toString().trim() };
 };

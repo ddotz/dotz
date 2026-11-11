@@ -24,10 +24,10 @@ import { fileLinePaths, messageFiles, resolveAllowed } from "./files.ts";
 import { commentDraftOf, commentOriginalOf } from "./comments/gateway.ts";
 import type { CommentOriginal } from "./comments/original.ts";
 import { attachmentList, mailByKey } from "./mail.ts";
+import { json } from "./routes-util.ts";
 
 const FILE_MAX = 25 * 1024 * 1024;
 const LIBRARY_LIST_MAX = 100;
-const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 // A send approval dotz did not make (a block a session wrote, sent by its own tool with the file, e.g. acme-mail-act.ts --att-file): its
 // `> 첨부:` files are the ones the asking message (a post, or a session's report) names in its [file] lines, matched by file name. Each has to be a file GET /api/file

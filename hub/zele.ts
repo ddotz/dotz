@@ -30,7 +30,7 @@ type Hooks = {
 };
 
 const STATE = join(DATA_DIR, "zele-state.json");
-const zcfg = ((cfg as any).zele ?? {}) as { enabled?: boolean; poll_sec?: number; brief_hour?: number; mail_noise?: string[] };
+const zcfg = cfg.zele ?? {};
 const POLL_MS = Math.max(60, Number(zcfg.poll_sec ?? DEFAULTS.zele_poll_sec)) * 1000;
 // With no account yet, look again after this long.
 export const NO_ACCOUNT_RETRY_MS = 600_000;

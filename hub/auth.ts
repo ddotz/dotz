@@ -14,6 +14,7 @@ import { msg } from "./i18n.ts";
 import { authRequested, authSettled } from "./notices.ts";
 import { buildForm, type FormField, normalizeValue } from "./authfields.ts";
 import { writeSecretFile } from "./secretbox.ts";
+import { json } from "./routes-util.ts";
 
 type Kind = "secret" | "otp" | "approve" | "form";
 type Field = "username" | "password" | "code";
@@ -221,7 +222,6 @@ discord.setInteractionHandler(d => {
 
 // ---- HTTP ----
 
-const json = (data: unknown, status = 200) => Response.json(data, { status });
 const err = (error: string, status: number) => json({ error }, status);
 
 async function create(req: Request): Promise<Response> {

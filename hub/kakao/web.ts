@@ -17,6 +17,7 @@ import { type AxStep, type Focus, sameText } from "./room.ts";
 import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, readDrafts, restoreDraft, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 import { chatView, clip, owedRooms, pendingRow, watchLists, withSummary } from "./web-shape.ts";
+import { json } from "../routes-util.ts";
 
 export type WebDeps = {
 	paths: KakaoPaths;
@@ -124,7 +125,6 @@ const readJsonText = (file: string): string | undefined => {
 	}
 };
 
-const json = (data: unknown, status = 200) => Response.json(data, { status });
 const digits = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v);
 
 export function createKakaoWeb(deps: WebDeps) {

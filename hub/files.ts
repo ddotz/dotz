@@ -11,7 +11,7 @@ import { FILES, queueSnapshots, snapshotFor } from "./filesnap.ts";
 import { readMultipart } from "./upload-stream.ts";
 
 export const UPLOADS = join(DATA_DIR, "uploads");
-export const UPLOAD_MAX_BYTES = Math.max(1, Number((cfg as any).web?.upload_max_mb ?? 50)) * 1024 * 1024;
+export const UPLOAD_MAX_BYTES = Math.max(1, Number(cfg.web?.upload_max_mb ?? 50)) * 1024 * 1024;
 
 export class FileError extends Error {
 	constructor(message: string, readonly status: number) {
@@ -148,7 +148,7 @@ const real = (p: string): string | undefined => {
 // Allowed roots: uploads, the lanes' report folders, each lane's working folder (never the home folder itself or the data
 // dir root, which holds secrets), and config web.file_roots.
 export function allowedRoots(laneCwds: string[] = []): string[] {
-	const extra = ((cfg as any).web?.file_roots ?? []) as string[];
+	const extra = cfg.web?.file_roots ?? [];
 	const list = [UPLOADS, join(DATA_DIR, "lanes"), ...laneCwds, ...extra];
 	const home = real(HOME) ?? HOME, data = real(DATA_DIR) ?? DATA_DIR;
 	const roots = new Set<string>();

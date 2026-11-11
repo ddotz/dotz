@@ -8,7 +8,7 @@ import { cfg } from "./config.ts";
 import type { Body } from "./discord-format.ts";
 
 export type Attach = { path: string; name: string; size: number };
-export const attach = { maxBytes: Math.max(1, Number((cfg as any).discord?.attach_max_mb ?? 10)) * 1024 * 1024 };
+export const attach = { maxBytes: Math.max(1, Number(cfg.discord?.attach_max_mb ?? 10)) * 1024 * 1024 };
 const MAX_FILES = 10;
 let resolveFile: (path: string) => string = () => {
 	throw new Error("file sending is not set up");

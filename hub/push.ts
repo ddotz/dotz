@@ -17,6 +17,7 @@ import { dropIdNote, noticeKo, plainTable } from "./notice-ko.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
+import { json } from "./routes-util.ts";
 
 // A notification's kind is its notice class (hub/notice-class.ts); whether it goes out is the owner's switch for that class (config.json notify.push)
 // and, for news, the app's own switch (custom/apps.json <app>.push). `prefs` on a subscription are the per-device toggles of before; kept, not read.
@@ -556,7 +557,6 @@ export function startPush(opts: { subject: () => string }): void {
 	});
 }
 
-const json = (data: unknown, status = 200) => Response.json(data, { status });
 const findSub = (endpoint: unknown) => subs.find(s => s.endpoint === endpoint);
 
 // /api/push*: the app's subscribe/settings surface. Same tailnet auth as every other /api route (checked by main.ts).

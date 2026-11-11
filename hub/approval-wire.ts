@@ -25,6 +25,7 @@ import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, sendAct
 import { answerBatch, batchCard, STALE_OPTIONS, type BatchCard, type BatchPick } from "./approval-batch.ts";
 import { DRAFT_BODY_MAX, DRAFT_UNDO, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
 import { askText, pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
+import { json } from "./routes-util.ts";
 
 // How many waiting cards of one conversation make the web open its triage view instead of one card at a time (settings: web.triage_min).
 export const TRIAGE_MIN_DEFAULT = 3;
@@ -228,7 +229,6 @@ export function cardGroups(cards = waitingCards()): CardGroup[] {
 	return [...by.values()].sort((x, y) => y.count - x.count);
 }
 
-const json = (body: unknown, status = 200) => Response.json(body, { status });
 const FAILED_BATCH_MAX = 100;
 
 /** The 보내지 않기 of a comment draft or a mail draft of the store, the same steps as the card's. */

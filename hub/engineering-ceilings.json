@@ -7,6 +7,6 @@
 	"unboundedCalls": { "extension": 2, "features": 13, "hub": 71, "onboard": 7, "setup.ts": 4 },
 	"testTiming": { "fixedSleeps": 3, "budgetFiles": 0 },
 	"moduleMap": { "hub": 150 },
-	"helperCopies": { "readJson": 13, "json": 17, "sameOrigin": 4, "git": 7, "shq": 5, "sleep": 3 },
+	"helperCopies": { "readJson": 13, "json": 6, "sameOrigin": 3, "git": 6, "shq": 5, "sleep": 3 },
 	"pastedBlocks": { "blocks": 0 }
 }

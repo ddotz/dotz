@@ -11,8 +11,8 @@ import { mailByKey } from "./mail.ts";
 
 import { ownAddresses } from "./mail-state.ts";
 import { updateDraftRecipients } from "./notices.ts";
+import { json } from "./routes-util.ts";
 
-const json = (body: unknown, status = 200) => Response.json(body, { status });
 const editable = (rec: { kind: string; status: string } | undefined) => !!rec && rec.kind === "mail" && rec.status === "pending";
 
 // The sender a 답장 goes to: the address the reply follows (a 회신 주소 first), else the draft's own recipient.

@@ -22,6 +22,7 @@ import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
 import { telemetryOff } from "./runtime/omo.ts";
 import { trackTimer } from "./shutdown.ts";
 import { newer } from "./update.ts";
+import { json } from "./routes-util.ts";
 
 export type InstallMethod = "bun-global" | "omp-update" | "managed" | "app" | "unknown";
 export type JobStatus = "running" | "deferred" | "updated" | "failed" | "current";
@@ -351,7 +352,6 @@ async function installWhenIdle(id: string, st: HarnessState, j: Job, t: Tools, s
 }
 
 type RouteDeps = { busy: () => string[]; restartIdle: () => string; dataDir?: string; tools?: Tools };
-const json = (data: unknown, status = 200) => Response.json(data, { status });
 
 // /api/harness/update: settings → 업데이트 → 실행 하네스. Same tailnet auth as every other /api route (main.ts).
 export async function harnessUpdateRoute(req: Request, url: URL, deps: RouteDeps): Promise<Response | undefined> {
