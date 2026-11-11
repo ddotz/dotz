@@ -100,6 +100,11 @@ const trChip = c => {
   if (s && s.state === "undo") return el("span", { class: "tr-st undo", "data-trst": trK(c) }, TR_ST.undo, el("button", { class: "btn text sm", type: "button", onclick: () => trUndo(c) }, "보내기 취소"));
   return s ? el("span", { class: `tr-st ${s.state}`, "data-trst": trK(c), title: s.text || null, text: TR_ST[s.state] || s.state }) : el("span", { class: "tr-st", "data-trst": trK(c), hidden: true });
 };
+// The reason behind 확인이 필요해요 / 보내지 못했어요 as visible text under the card's header (the chip's title is not seen on a phone).
+const trWhy = c => {
+  const s = trState(c), t = s && (s.state === "unsure" || s.state === "failed") ? s.text : "";
+  return el("div", { class: "tr-why", "data-trwhy": trK(c), role: "note", text: t || "", hidden: !t });
+};
 // 보내기 취소 inside the gateway's cancel window: nothing is sent and the card waits again.
 async function trUndo(c) {
   if (!(await dcUndoPost(c.ref))) return;
@@ -113,6 +118,8 @@ function trLive(e) {
   for (const c of TR.items) if (c.ref === e.ref) {
     const n = TR.h.box.querySelector(`[data-trst="${CSS.escape(trK(c))}"]`), next = trChip(c);
     if (n) n.replaceWith(next);
+    const w = TR.h.box.querySelector(`[data-trwhy="${CSS.escape(trK(c))}"]`);
+    if (w) w.replaceWith(trWhy(c));
   }
   if (TR.i >= TR.items.length) trPaint();
 }
@@ -125,7 +132,7 @@ function trNext() {
 }
 
 // Each item names the label of its button (1 보내기, 2 고치기, 3 보내지 않기); a hub that refuses a changed card (409) makes the list read again.
-const TR_LABEL = { 1: "보내기", 2: "고치기", 3: "보내지 않기" };
+const TR_LABEL = { 1: "보내기", 2: "고치기", 3: "보내지 않기", 4: "이대로 보내기" };
 async function trPost(items) {
   try {
     const r = await api("/api/approvals", "POST", { items: items.map(i => ({ ...i, label: TR_LABEL[i.n] })) });
@@ -145,18 +152,38 @@ async function trSaveEdits(c) {
 // Answers one card and moves on once the gateway took the answer. While it waits, the card's buttons stay in place, disabled, and the pressed one says what is
 // happening (the 답장 확인 sheet's way); a second press is ignored. A failure keeps the owner on that card, with the reason where the buttons are and nothing counted.
 const TR_BUSY = { 1: "보내는 중…", 2: "고치는 중…", 3: "처리하는 중…" };
+// 보내기 goes through the reply card's own refusals: a mail whose files disagree with its words is sent only by 이대로 보내기 (pick 4, after the same
+// question), and a draft with files or a warning on an account that cannot send files asks once more (drfSure). Answering no leaves the card as it was.
+const TR_SURE = new Set(), TR_SEEN = new Set();
+const trIssues = d => [...(d.attachIssues || []), ...((d.mail && d.mail.attachIssues) || [])];
+const trNeedsSure = d => trIssues(d).length > 0 || !!d.warning || (d.attachments || []).length > 0;
+async function trSure(c) {
+  const d = { ...(c.draft || {}), ref: (c.draft && c.draft.ref) || c.ref }, issues = trIssues(d);
+  let n = 1;
+  if (issues.length) {
+    const list = issues.join(". ");
+    if (!(await ask(TX("decision.attach.check_title"), d.to ? TX("decision.attach.asis_to", { to: d.to, issues: list }) : TX("decision.attach.asis", { issues: list }), TX("decision.attach.send_asis")))) return 0;
+    n = 4;
+  }
+  return (!d.warning && !(d.attachments || []).length) || (await drfSure(d, c.to)) ? n : 0;
+}
 async function trAnswer(c, n, note) {
-  const k = trK(c);
-  if (TR.busy[k] || (TR.done[k] && TR.done[k].state !== "err")) return;
-  TR.busy[k] = n;
+  const k = trK(c), idle = () => !TR.busy[k] && !TR_SURE.has(k) && !(TR.done[k] && TR.done[k].state !== "err");
+  if (!idle()) return;
+  if (n === 1 && trNeedsSure(c.draft || {})) {
+    TR_SURE.add(k);
+    try { n = await trSure(c); } finally { TR_SURE.delete(k); }
+    if (!n || !idle()) return;
+  }
+  TR.busy[k] = n === 4 ? 1 : n;
   trPaint();
   let fail = null;
   try {
-    if (n === 1) await trSaveEdits(c);
+    if (n === 1 || n === 4) await trSaveEdits(c);
     await trPost([{ ref: c.ref, to: c.to, n, ...(note ? { note } : {}) }]);
   } catch (err) { fail = err; }
   delete TR.busy[k];
-  TR.done[k] = fail ? { state: "err", text: fail.message } : { state: n === 1 ? "send" : n === 3 ? "drop" : "edit", at: Date.now() };
+  TR.done[k] = fail ? { state: "err", text: fail.message } : { state: n === 1 || n === 4 ? "send" : n === 3 ? "drop" : "edit", at: Date.now() };
   if (fail || !TR.items[TR.i] || trK(TR.items[TR.i]) !== k) trPaint(); else trNext();
 }
 // ← / →: look at the previous / next card without answering (the last step past the end shows the summary).
@@ -208,44 +235,95 @@ function trPaint() {
   if (t && TR.noting) t.focus({ preventScroll: true });
 }
 
-function trOriginal(c) {
-  const k = c.ref, o = TR.org[k];
-  if (o === undefined) {
-    TR.org[k] = null;
-    api(`/api/drafts/${enc(c.ref)}/original`).then(r => { TR.org[k] = r && !r.error ? r : false; }, () => { TR.org[k] = false; }).then(() => { if (TR.h && TR.items[TR.i] && TR.items[TR.i].ref === k && !TR.list) trPaint(); });
-    return el("div", { class: "tr-org muted", text: "원문을 불러오는 중…" });
-  }
-  if (!o) return null;
-  const who = o.kind === "mail" ? [o.from, o.subject].filter(Boolean).join(" · ") : [o.author, o.post && o.post.title].filter(Boolean).join(" · ");
-  const text = String((o.kind === "mail" ? mailOwnBody(o.text, o.subject) : o.text) || "").slice(0, o.kind === "mail" ? 600 : 2000);
-  if (!who && !text.trim()) return null;   // an original with nothing in it draws no box
-  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, text.trim() ? el("div", { class: "tr-otx", text }) : null);
+// The four things the owner decides on, in this order on every card whatever its kind: 받는 사람, 원본, 답장, 첨부. The parts are the reply card's own
+// (draftToNode, rqOrigNode, draftFilesNode, rqAttachNode); this screen only puts them under four fixed labels.
+const trSec = (name, label, ...kids) => el("div", { class: "tr-sec", role: "group", "data-sec": name, "aria-label": label }, el("div", { class: "tr-k", text: label }), ...kids.filter(Boolean));
+const trNone = text => el("div", { class: "tr-none", role: "status", text });
+const trRow = (label, value) => el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: label }), el("span", { class: "dr-chip", title: value || "", text: value || "-" }));
+// The original a card answers as { who, text }: the comment, the mail the list call carried (c.original), or what the per-card read brought; null when there is none.
+function trOrigSrc(c) {
+  const x = c.comment, o = c.original, r = TR.org[c.ref];
+  if (x) return { who: [x.who, x.at ? trKst(x.at) : ""].filter(Boolean).join(" · "), text: x.text || "" };
+  if (o && trCutLoaded(c)) return { who: [mailSender(o.from), o.at ? trKst(o.at) : ""].filter(Boolean).join(" · "), text: mailOwnBody(r.text, r.subject || o.subject) };
+  if (o) return { who: [mailSender(o.from), o.at ? trKst(o.at) : ""].filter(Boolean).join(" · "), text: mailOwnBody(o.text, o.subject) };
+  if (!r) return null;
+  return r.kind === "mail" ? { who: mailSender(r.from), text: mailOwnBody(r.text, r.subject) } : { who: [r.author, r.post && r.post.title].filter(Boolean).join(" · "), text: r.text };
 }
-// A comment draft: the comment it answers, with the post, who and when (KST) and the linked-mail mark, right above the draft.
-function trCommentCtx(c) {
-  const x = c.comment;
-  return el("div", { class: "tr-org tr-cmt" }, el("div", { class: "tr-k", text: "답하는 댓글" }),
-    x.post ? el("div", { class: "tr-post", text: x.post }) : null,
-    el("div", { class: "tr-who" }, el("b", { text: x.who || "" }), x.at ? el("span", { text: ` · ${trKst(x.at)}` }) : null, x.mailMark ? el("span", { class: "tag", "data-mail": x.mailMark.state, text: x.mailMark.label }) : null),
-    x.text ? el("div", { class: "tr-otx", text: x.text }) : null);
+// The list carries only the start of a long mail (original.cut): the whole text is read once when the card opens or its row is pressed. A hub that sent no original
+// at all gets it read once per card, as before.
+const trCutLoaded = c => !!(c.original && c.original.cut && TR.org[c.ref] && TR.org[c.ref].kind === "mail");
+function trOrigLoad(c, whole) {
+  const k = c.ref;
+  if (c.comment || TR.org[k] !== undefined || (c.original && !(whole && c.original.cut))) return;
+  TR.org[k] = null;
+  api(`/api/drafts/${enc(c.ref)}/original`).then(r => { TR.org[k] = r && !r.error ? r : false; }, () => { TR.org[k] = false; }).then(() => { if (TR.h && (TR.list || (TR.items[TR.i] && TR.items[TR.i].ref === k))) trPaint(); });
 }
-
-const trFiles = files => (files && files.length ? el("div", { class: "tr-files" }, ...files.map(f => el("span", { class: "tr-file", text: f.size ? `${f.name} (${f.size})` : f.name }))) : null);
+// 받는 사람: a mail's 받는이 and 참조 rows (read only), its subject, the sending account when the install has more than one; a comment's target and post;
+// the recipient of the mail that goes along with a comment reply.
+function trToNodes(c) {
+  const d = c.draft || {}, x = c.comment, m = d.mail;
+  return [
+    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: TX("decision.rcpt.check", { warning: d.recipientWarning }) })) : null,
+    d.toLabel === "받는이" ? draftToNode({ ...d, ref: d.ref || c.ref }, { t: c.to, edit: false, always: true }) : trRow(d.toLabel || TX("decision.to"), d.to),
+    d.toLabel === "받는이" && d.subject ? el("div", { class: "dr-sub rq-sub", text: d.subject }) : null,
+    x && x.post ? trRow(TX("triage.post"), x.post) : null,
+    c.account && c.account.many ? trRow(TX("triage.account"), c.account.label) : null,
+    m ? trRow(TX("decision.mail.along"), [m.to, m.subject].filter(Boolean).join(" · ")) : null];
+}
+// 원본: the quote of the reply card (open here, in a box that scrolls, so a long mail never pushes the reply off the screen), the post a comment sits on,
+// one muted line when the card answers nothing, and what the thread did since the draft was made.
+function trOrigNodes(c) {
+  trOrigLoad(c, true);
+  const key = `tr:${trK(c)}`, src = trOrigSrc(c), x = c.comment, o = c.original, t = c.thread, has = !!src && !!(src.who || src.text.trim());
+  if (!TR_SEEN.has(key)) { TR_SEEN.add(key); RQ_OG.add(key); }   // a card starts with its original open; the owner's 원문 접기 stays
+  const quote = has ? rqOrigNode(key, src) : null;
+  return [
+    x ? el("div", { class: "tr-cmt" }, x.post ? el("div", { class: "tr-post", text: x.post }) : null, quote, x.mailMark ? el("span", { class: "tag", "data-mail": x.mailMark.state, text: x.mailMark.label }) : null) : quote,
+    has ? null : trNone(TR.org[c.ref] === null ? TX("triage.org_loading") : TX("triage.no_org")),
+    o && o.cut && !trCutLoaded(c) ? trNone(TX("triage.org_cut")) : null,
+    t && t.newer ? el("div", { class: "dr-warn", role: "status" }, el("span", { text: TX("triage.thread_newer") })) : null,
+    t && t.earlier > 0 ? trNone(TX("triage.thread_earlier", { n: t.earlier })) : null];
+}
+// 첨부: the send sheet's file rows (each opens the staged file) with their warnings, the mail that goes along with a comment reply likewise, or the plain 첨부: 없음.
+function trAttNodes(c) {
+  const d = c.draft || {}, m = d.mail, mref = m && (m.ref || m.id), n = (d.attachments || []).length + (m ? (m.attachments || []).length : 0);
+  return [
+    draftFilesNode({ ...d, ref: d.ref || c.ref }, { t: c.to, edit: false }),
+    m ? draftFilesNode(mref ? { ...m, ref: mref } : m, { t: c.to, edit: false, live: !!mref }) : null,
+    n ? null : rqAttachNode({})];
+}
+// A row of the list: the file names, or how many when there are many.
+function trRowFiles(c) {
+  const d = c.draft || {}, fl = [...(d.attachments || []), ...((d.mail && d.mail.attachments) || [])];
+  if (!fl.length) return trNone(TX("triage.row.no_files"));
+  return el("div", { class: "tr-files", title: fl.map(f => f.name).join(", ") }, ...(fl.length > 3 ? [el("span", { class: "tr-file", text: TX("decision.attach.count", { n: fl.length }) })] : fl.map(f => el("span", { class: "tr-file", text: f.size ? `${f.name} (${f.size})` : f.name }))));
+}
+// A row of the list: the original as two lines that open fully on a press (the reply card's quote, its 원문 보기 on the quote itself).
+function trRowOrig(c, k) {
+  trOrigLoad(c);
+  const src = trOrigSrc(c);
+  if (!src || !(src.who || src.text.trim())) return trNone(TR.org[c.ref] === null ? TX("triage.org_loading") : TX("triage.no_org"));
+  const wrap = rqOrigNode(`trl:${k}`, src), btn = $(".rq-og", wrap);
+  if (btn) wrap.firstChild.onclick = () => btn.click();
+  if (c.original && c.original.cut) wrap.addEventListener("click", () => trOrigLoad(c, true));
+  return wrap;
+}
 
 function trOneView(c) {
   const k = trK(c), d = c.draft || {}, st = trState(c), gone = dcGone(c.to), busy = TR.busy[k] || 0, locked = gone || !!busy || (!!st && st.state !== "err");
   const e = (TR.edits[k] ||= {});
   // A draft the gateway cannot change in place (a block a session wrote) is read here and goes back to the session with 고치기.
-  const area = (part, value) => c.editable === false ? draftBodyNode(value, "dc-dr-b") : el("textarea", { class: "tr-ta", rows: "6", "aria-label": part === "mail" ? "함께 보낼 메일 본문" : "보낼 글", disabled: locked, oninput: ev => { e[part] = ev.target.value; trSendLabel(c); } }, value);
+  const area = (part, value) => c.editable === false ? draftBodyNode(value, "dc-dr-b") : el("textarea", { class: "tr-ta", rows: "6", "aria-label": part === "mail" ? TX("decision.mail.along_body") : TX("decision.body_label"), disabled: locked, oninput: ev => { e[part] = ev.target.value; trSendLabel(c); } }, value);
   const body = el("div", { class: "fs-body tr-body", tabindex: "-1" },
     el("div", { class: "tr-q" }, el("span", { text: trQ(c) || "이대로 보낼까요?" }), trChip(c)),
+    trWhy(c),
     decideNode(d),
-    el("div", { class: "tr-meta" }, d.toLabel ? el("span", { class: "tr-to" }, el("b", { text: d.toLabel }), ` ${d.to || ""}`) : null, d.subject ? el("span", { class: "tr-to" }, el("b", { text: "제목" }), ` ${d.subject}`) : null, d.rule ? el("span", { class: "tr-rule", text: `규칙: ${d.rule}` }) : null, !c.sendable ? el("span", { class: "tr-rule", text: "보내기를 누르면 봇이 보내요" }) : null),
-    c.comment ? trCommentCtx(c) : trOriginal(c),
+    trSec("to", TX("triage.sec.to"), ...trToNodes(c)),
+    trSec("org", TX("triage.sec.org"), ...trOrigNodes(c)),
     c.info && c.info.length ? el("ul", { class: "tr-info" }, ...c.info.map(l => el("li", { text: l }))) : null,
-    d.warning ? el("div", { class: "tr-warn", text: d.warning }) : null,
-    el("label", { class: "tr-k", text: d.mail ? "답글" : "보낼 글" }), area("reply", e.reply ?? d.body ?? ""), trFiles(d.attachments),
-    d.mail ? el("div", { class: "tr-mail" }, el("div", { class: "tr-k", text: "함께 보낼 메일" }), el("div", { class: "tr-meta" }, el("span", { class: "tr-to" }, el("b", { text: "받는이" }), ` ${d.mail.to || ""}`), d.mail.subject ? el("span", { class: "tr-to" }, el("b", { text: "제목" }), ` ${d.mail.subject}`) : null), area("mail", e.mail ?? d.mail.body ?? ""), trFiles(d.mail.attachments)) : null);
+    trSec("reply", TX("triage.sec.reply"), draftRuleNode(d), area("reply", e.reply ?? d.body ?? ""), !c.sendable ? el("span", { class: "tr-rule", text: "보내기를 누르면 봇이 보내요" }) : null,
+      d.mail ? el("div", { class: "tr-mail" }, el("div", { class: "tr-k", text: TX("decision.mail.along") }), area("mail", e.mail ?? d.mail.body ?? "")) : null),
+    trSec("att", TX("triage.sec.att"), ...trAttNodes(c)));
   const foot = el("div", { class: "fs-ft tr-ft" });
   // a failed answer: the reason stands where the buttons are (the card stays, its head says which answer failed)
   if (st && st.state === "err") foot.append(el("div", { class: "tr-hint tr-fail", role: "alert", text: st.text ? `${st.text} · 다시 눌러 주세요` : "다시 눌러 주세요" }));
@@ -290,8 +368,11 @@ function trListView() {
     const k = trK(c), d = c.draft || {}, st = trState(c), locked = dcGone(c.to) || (!!st && st.state !== "err"), p = TR.picks[k] || 0;   // no choice stands marked before the owner presses one
     return el("div", { class: `tr-row${locked ? " locked" : ""}` },
       el("button", { class: "tr-rh", type: "button", onclick: () => { TR.i = i; TR.list = false; trPaint(); } }, el("span", { class: "tr-n", text: String(i + 1) }), el("span", { class: "tr-rq", text: [d.to, trQ(c)].filter(Boolean).join(" · ") }), trChip(c)),
+      trWhy(c),
+      trRowOrig(c, k),
       draftBodyNode((TR.edits[k] && TR.edits[k].reply) ?? d.body ?? "", `tr-rb${p === 1 || TR.open[k] ? " open" : ""}`, { title: "눌러서 전체 보기", onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); } }),
       d.mail ? el("div", { class: `tr-rb mail${p === 1 || TR.open[k] ? " open" : ""}`, onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); }, text: `함께 보낼 메일 → ${d.mail.to || ""}${d.mail.subject ? ` · ${d.mail.subject}` : ""}\n${(TR.edits[k] && TR.edits[k].mail) ?? d.mail.body ?? ""}` }) : null,
+      trRowFiles(c),
       locked ? null : el("div", { class: "tr-seg", role: "radiogroup", "aria-label": `${i + 1}번 카드` }, ...TR_PICK.map(([n, t]) => el("button", { class: `tr-sg${p === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(p === n), onclick: () => { TR.picks[k] = n; trPaint(); } }, t))),
       !locked && p === 2 ? el("input", { class: "tr-rn", type: "text", placeholder: "어떻게 고칠까요?", value: TR.notes[k] || "", "aria-label": `${i + 1}번 고칠 내용`, oninput: ev => { TR.notes[k] = ev.target.value; trListCount(); } }) : null);
   }));
@@ -307,14 +388,29 @@ function trListCount() {
 }
 
 async function trSendPicked() {
-  const go = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim())));
-  if (!go.length) return;
+  if (TR_SURE.has("*")) return;
+  const want = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim()))), go = [], ns = {};
+  let kept = 0;
+  TR_SURE.add("*");
+  try {
+    for (const c of want) {
+      const k = trK(c);
+      if (TR.picks[k] === 1 && trNeedsSure(c.draft || {})) {
+        const n = await trSure(c);
+        if (!n) { TR.picks[k] = 0; kept++; continue; }
+        ns[k] = n;
+      }
+      if (!TR.done[k]) go.push(c);
+    }
+  } finally { TR_SURE.delete("*"); }
+  if (kept) toast(TX("triage.kept", { n: kept }));
+  if (!go.length) { trPaint(); return; }
   const at = Date.now();
   for (const c of go) TR.done[trK(c)] = { state: TR.picks[trK(c)] === 1 ? "send" : "edit", at };
   trPaint();
   try {
     for (const c of go) if (TR.picks[trK(c)] === 1) await trSaveEdits(c);
-    const r = await trPost(go.map(c => ({ ref: c.ref, to: c.to, n: TR.picks[trK(c)], ...(TR.picks[trK(c)] === 2 ? { note: TR.notes[trK(c)].trim() } : {}) })));
+    const r = await trPost(go.map(c => ({ ref: c.ref, to: c.to, n: ns[trK(c)] ?? TR.picks[trK(c)], ...(TR.picks[trK(c)] === 2 ? { note: TR.notes[trK(c)].trim() } : {}) })));
     toast(`${go.length}건 답했어요${r.sending ? ` · ${r.sending}건 보내는 중` : ""}`);
   } catch (err) {
     for (const c of go) TR.done[trK(c)] = { state: "err", text: err.message };

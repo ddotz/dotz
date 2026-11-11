@@ -1,0 +1,15 @@
+{
+  "triage.sec.to": "Recipient",
+  "triage.sec.org": "Original",
+  "triage.sec.reply": "Reply",
+  "triage.sec.att": "Attachments",
+  "triage.post": "Post",
+  "triage.account": "Sending account",
+  "triage.no_org": "There is no original this answers",
+  "triage.org_loading": "Loading the original…",
+  "triage.org_cut": "The original is long, so only the start is shown",
+  "triage.thread_newer": "A new message came in this thread after the draft was made. Check it before sending",
+  "triage.thread_earlier": "This thread has {n} earlier messages",
+  "triage.row.no_files": "No attachments",
+  "triage.kept": "{n} cards were left unsent because their attachments were not confirmed"
+}
