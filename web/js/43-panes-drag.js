@@ -61,17 +61,17 @@ function paneDragAim(x, y) {
   PD.hit = box ? { id: box.id, r: box.r, side: paneDragZone(box.r, x, y, edges), full: !edges, narrow: edges && !paneSplitFits(box.r) } : null;
   paneDragPaint();
 }
-const PD_SIDE = { left: "왼쪽", right: "오른쪽" };
+const PD_SIDE = { left: [TX("misc.pd.move_left"), TX("misc.pd.new_left")], right: [TX("misc.pd.move_right"), TX("misc.pd.new_right")] };
 // The ghost's second line says what letting go does.
 function paneDragHint() {
   const { src, hit } = PD;
-  if (src.off) return "분할은 채팅 탭에서만 할 수 있어요";
-  if (src.no) return "칸에 넣을 수 없어요";
+  if (src.off) return TX("misc.pd.chat_only");
+  if (src.no) return TX("misc.pd.no");
   if (!hit) return "";
-  if (src.pane) return hit.side === "center" ? "자리 바꾸기" : `${PD_SIDE[hit.side]}으로 옮기기`;
-  if (paneCount() > 1 && paneOpenIn(src.kind, src.t)) return "열려 있는 칸으로 가요";
-  if (hit.side !== "center") return `${PD_SIDE[hit.side]}에 새 칸`;
-  return hit.full ? "칸은 2개까지라 이 칸을 바꿔요" : paneCount() > 1 ? "이 칸을 바꿔요" : hit.narrow ? "창이 좁아 여기서 열어요" : "여기서 열기";
+  if (src.pane) return hit.side === "center" ? TX("misc.pd.swap") : PD_SIDE[hit.side][0];
+  if (paneCount() > 1 && paneOpenIn(src.kind, src.t)) return TX("misc.pd.goes_open");
+  if (hit.side !== "center") return PD_SIDE[hit.side][1];
+  return hit.full ? TX("misc.pd.full") : paneCount() > 1 ? TX("misc.pd.replace") : hit.narrow ? TX("misc.pd.narrow") : TX("misc.pd.here");
 }
 function paneDragPaint() {
   const h = PD.hit, hint = PD.ghost && PD.ghost.querySelector(".pn-gh");

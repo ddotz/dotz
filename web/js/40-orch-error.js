@@ -17,13 +17,13 @@ function paintPause() {
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // 지금 다시 시도: this computer's bot only (a peer's is resumed on that computer); the pause ends and the held messages go in now.
-  clear(box).append(el("span", { text: `${name ? `${name} ` : ""}봇이 멈춰 있어요: ${o.pauseKind === "owner" ? "로그인 필요" : "사용량 한도"}` }),
-    pqPc(target) ? null : el("button", { class: "btn text pn-go", type: "button", onclick: ev => orchResume(ev.currentTarget) }, "지금 다시 시도"));
+  clear(box).append(el("span", { text: TX(name ? "misc.oe.paused_named" : "misc.oe.paused", { name, why: TX(o.pauseKind === "owner" ? "misc.oe.why_login" : "misc.oe.why_limit") }) }),
+    pqPc(target) ? null : el("button", { class: "btn text pn-go", type: "button", onclick: ev => orchResume(ev.currentTarget) }, TX("misc.retry_now")));
 }
 // 재개 (POST /api/orchestrator/resume, hub/orchestrator.ts resumeNow): the same for the paused line and the stopped banner.
 const orchResume = btn => busy(btn, async () => {
   await api("/api/orchestrator/resume", "POST", {});
-  toast("다시 시도해요. 멈춘 동안 온 메시지도 이어서 처리해요");
+  toast(TX("misc.oe.resuming"));
   refreshState();
 });
 
@@ -34,7 +34,7 @@ function paintOrchError() {
   const e = S && S.orchestrator && S.orchestrator.error, box = $("#oerr");
   box.hidden = !e;
   if (!e) return;
-  clear($("#oerr-tx")).append(el("b", { text: `${iGa(botName)} 멈췄어요` }), ` · ${noticeKo(String(e.text ?? ""), NK)} · ${kstHM(e.since)}부터`);
+  clear($("#oerr-tx")).append(el("b", { text: TX("misc.oe.stopped", { bot: botName }) }), ` · ${noticeKo(String(e.text ?? ""), NK)} · ${TX("misc.oe.since", { at: kstHM(e.since) })}`);
   box.title = e.raw || "";
   $("#oerr-btn").onclick = ev => orchResume(ev.currentTarget);
 }

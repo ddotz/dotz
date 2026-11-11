@@ -7,19 +7,19 @@ const PANE_KEY_SIDE = { Backslash: "right" };
 const paneTourKeys = () => {
   if (narrowChat()) return [];
   const m = isMac ? "⌥⌘" : "Ctrl+Alt+";
-  return [[isMac ? "⌥⌘\\" : "Ctrl+Shift+\\", "칸 나누기"], [`${m}1 · ${m}2`, "칸 이동"], [`${m}W`, "칸 닫기"]];
+  return [[isMac ? "⌥⌘\\" : "Ctrl+Shift+\\", TX("misc.pk.split")], [`${m}1 · ${m}2`, TX("misc.pk.move")], [`${m}W`, TX("misc.pk.close")]];
 };
 
 // A split from the keyboard opens the main chat, or when that is open 작업내역, or the first running session that is not open yet.
 function paneKeySplit(side) {
-  if (paneCount() >= PANE_MAX) { toast("창은 두 개까지 열 수 있어요", true); return; }
+  if (paneCount() >= PANE_MAX) { toast(TX("misc.pk.max"), true); return; }
   // the drag's rule: no split that leaves a pane under 280px (43-panes-drag.js paneSplitFits)
   const box = paneDragBoxes()[0];
-  if (box && !paneSplitFits(box.r)) { toast("창이 좁아 칸을 나눌 수 없어요", true); return; }
+  if (box && !paneSplitFits(box.r)) { toast(TX("misc.pk.narrow"), true); return; }
   const here = paneHere(), shown = t => (paneCount() > 1 ? !!paneOpenIn("chat", t) : here.kind === "chat" && here.t === t);
   const { wait, run } = sessionsNow();
   const t = [MAIN, "worklog", ...[...wait, ...run].map(l => `lane:${l.name}`)].find(x => !shown(x));
-  if (!t) { toast("나란히 열 대화가 더 없어요", true); return; }
+  if (!t) { toast(TX("misc.pk.none"), true); return; }
   paneSplit(t, "chat", side);
 }
 document.addEventListener("keydown", ev => {

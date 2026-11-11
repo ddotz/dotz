@@ -177,84 +177,16 @@
       "why": "pending"
     },
     "web/js/31-notices-screen.js": {
-      "count": 91,
-      "why": "pending"
+      "count": 4,
+      "why": "server value comparison: alert titles and recovery text"
     },
     "web/js/32-app-settings.js": {
       "count": 7,
       "why": "server value comparison, and the app request prefix the assistant instructions name"
     },
-    "web/js/33-peers.js": {
-      "count": 115,
-      "why": "pending"
-    },
-    "web/js/34-input-diag.js": {
-      "count": 34,
-      "why": "pending"
-    },
-    "web/js/34-peer-monitoring.js": {
-      "count": 51,
-      "why": "pending"
-    },
-    "web/js/35-code-blocks.js": {
-      "count": 10,
-      "why": "pending"
-    },
     "web/js/36-shell.js": {
-      "count": 82,
-      "why": "pending"
-    },
-    "web/js/37-api-budget.js": {
-      "count": 83,
-      "why": "pending"
-    },
-    "web/js/37-remote-desktop.js": {
-      "count": 92,
-      "why": "pending"
-    },
-    "web/js/38-overlay.js": {
-      "count": 2,
-      "why": "pending"
-    },
-    "web/js/39-reply.js": {
-      "count": 21,
-      "why": "pending"
-    },
-    "web/js/40-orch-error.js": {
-      "count": 20,
-      "why": "pending"
-    },
-    "web/js/41-runstate.js": {
-      "count": 84,
-      "why": "pending"
-    },
-    "web/js/42-intro.js": {
-      "count": 107,
-      "why": "pending"
-    },
-    "web/js/42-relay-chat.js": {
-      "count": 14,
-      "why": "pending"
-    },
-    "web/js/43-panes-drag.js": {
-      "count": 37,
-      "why": "pending"
-    },
-    "web/js/43-panes-keys.js": {
-      "count": 23,
-      "why": "pending"
-    },
-    "web/js/43-panes-layouts.js": {
-      "count": 38,
-      "why": "pending"
-    },
-    "web/js/43-panes-mirror.js": {
-      "count": 20,
-      "why": "pending"
-    },
-    "web/js/43-panes-view.js": {
-      "count": 15,
-      "why": "pending"
+      "count": 3,
+      "why": "terminal prompt matching"
     },
     "web/custom.js": {
       "count": 468,

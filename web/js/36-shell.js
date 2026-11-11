@@ -20,7 +20,7 @@ let shLibP = null;
 // xterm.js loads when the terminal first opens, not with the app.
 function shLib() {
   if (window.Terminal && window.FitAddon) return Promise.resolve();
-  const add = (tag, attrs) => new Promise((res, rej) => { const n = el(tag, { ...attrs, onload: res, onerror: () => rej(new Error("터미널 구성요소를 불러오지 못했어요")) }); document.head.append(n); });
+  const add = (tag, attrs) => new Promise((res, rej) => { const n = el(tag, { ...attrs, onload: res, onerror: () => rej(new Error(TX("misc.sh.load_failed"))) }); document.head.append(n); });
   return (shLibP ||= (async () => {
     if (!document.querySelector("link[data-sh]")) document.head.append(el("link", { rel: "stylesheet", href: "/vendor/xterm.css", "data-sh": "1" }));
     await add("script", { src: "/vendor/xterm.js" });
@@ -65,11 +65,11 @@ function shFrame(raw) {
   if (ev === "reset") {
     SH.term.reset(); SH.term.write(d.data || "", shSchedulePw);
     SH.alive = d.alive !== false;
-    shStatus(SH.alive ? "연결됨" : "셸이 꺼져 있어요", SH.alive ? "ok" : "err");
-    if (!SH.alive) shNote("셸이 꺼져 있어요. Enter를 누르면 다시 시작해요.");
+    shStatus(SH.alive ? TX("connect.state.on") : TX("misc.sh.off"), SH.alive ? "ok" : "err");
+    if (!SH.alive) shNote(TX("misc.sh.off_note"));
     else if (SH.pend) { const c = SH.pend; SH.pend = ""; shSend(c); }
   } else if (ev === "out") SH.term.write(d.data || "", shSchedulePw);
-  else if (ev === "exit") { SH.alive = false; shShowPw(false); shStatus("셸이 끝났어요", "err"); shNote("셸이 끝났어요. Enter를 누르면 다시 시작해요."); }
+  else if (ev === "exit") { SH.alive = false; shShowPw(false); shStatus(TX("misc.sh.ended"), "err"); shNote(TX("misc.sh.ended_note")); }
 }
 async function shConnect() {
   shDisconnect();
@@ -77,7 +77,7 @@ async function shConnect() {
   if (!t) return;
   const ctl = new AbortController();
   SH.ctl = ctl;
-  shStatus("연결 중…");
+  shStatus(TX("misc.sh.connecting"));
   try {
     const r = await fetch(`/api/pty/stream?cols=${t.cols}&rows=${t.rows}`, { signal: ctl.signal, cache: "no-store" });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -89,9 +89,9 @@ async function shConnect() {
       buf += dec.decode(value, { stream: true });
       for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) { shFrame(buf.slice(0, i)); buf = buf.slice(i + 2); }
     }
-    if (SH.ctl === ctl) { SH.alive = false; shStatus("연결이 끊겼어요", "err"); shNote("연결이 끊겼어요. Enter를 누르면 다시 연결해요."); }
+    if (SH.ctl === ctl) { SH.alive = false; shStatus(TX("misc.sh.lost"), "err"); shNote(TX("misc.sh.lost_note")); }
   } catch (e) {
-    if (SH.ctl === ctl && e.name !== "AbortError") { SH.alive = false; shStatus("연결하지 못했어요", "err"); shNote("연결하지 못했어요. Enter를 누르면 다시 연결해요."); }
+    if (SH.ctl === ctl && e.name !== "AbortError") { SH.alive = false; shStatus(TX("misc.sh.failed"), "err"); shNote(TX("misc.sh.failed_note")); }
   }
 }
 function shDisconnect() { if (SH.ctl) { SH.ctl.abort(); SH.ctl = null; } }
@@ -141,43 +141,43 @@ function shResize() {
 function shSetCommand(command) {
   if (command == null || command === "") return;
   if (SH.alive) shSend(command); else SH.pend = command;
-  toast("명령을 입력해 뒀어요. Enter를 누르면 실행돼요");
+  toast(TX("misc.sh.typed"));
   if (SH.term) SH.term.focus();
 }
 
 async function openShell({ command } = {}) {
   if (SH.dlg && SH.dlg.node.isConnected) { shSetCommand(command); return; }
-  const host = el("div", { class: "sh-term", "aria-label": "터미널" });
+  const host = el("div", { class: "sh-term", "aria-label": TX("misc.sh.terminal") });
   const st = el("span", { class: "sh-st", role: "status", "aria-live": "polite" });
-  const pwIn = el("input", { class: "sh-pw-in", type: "password", name: "dz-shell-secret", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": "암호", placeholder: "암호", "data-lpignore": "true", "data-1p-ignore": "true", "data-bwignore": "true", "data-form-type": "other" });
+  const pwIn = el("input", { class: "sh-pw-in", type: "password", name: "dz-shell-secret", autocomplete: "off", autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": TX("misc.sh.pw"), placeholder: TX("misc.sh.pw"), "data-lpignore": "true", "data-1p-ignore": "true", "data-bwignore": "true", "data-form-type": "other" });
   const pw = el("div", { class: "sh-pw", hidden: true },
-    el("div", { class: "sh-pw-t", text: "암호를 입력해요. 화면에 보이지도, 저장되지도 않아요." }),
-    el("div", { class: "sh-pw-r" }, pwIn, el("button", { type: "button", class: "btn sh-pw-send", onclick: shSendPw }, "보내기"), el("button", { type: "button", class: "btn text", onclick: () => shShowPw(false) }, "닫기")));
-  const keys = shTouch() ? el("div", { class: "sh-keys", role: "toolbar", "aria-label": "특수 키" },
+    el("div", { class: "sh-pw-t", text: TX("misc.sh.pw_note") }),
+    el("div", { class: "sh-pw-r" }, pwIn, el("button", { type: "button", class: "btn sh-pw-send", onclick: shSendPw }, TX("common.send")), el("button", { type: "button", class: "btn text", onclick: () => shShowPw(false) }, TX("common.close"))));
+  const keys = shTouch() ? el("div", { class: "sh-keys", role: "toolbar", "aria-label": TX("misc.sh.keys") },
     ...SH_KEYS.map(([label, seq]) => el("button", { type: "button", class: "btn tonal sh-k", "data-k": seq === "ctrl" ? "ctrl" : seq,
       // pointerdown keeps the terminal focused, so the soft keyboard stays up while a key is pressed
       onpointerdown: ev => ev.preventDefault(),
       onclick: () => { if (seq === "ctrl") { SH.ctrl = !SH.ctrl; shCtrlPaint(); } else { shInput(seq); } if (SH.term) SH.term.focus(); } }, label))) : null;
   // a failed load answers in the body, where it has room, with the way to try again (the header holds only short states)
-  const fail = el("div", { class: "sh-fail", role: "alert", hidden: true }, el("p", { class: "sup" }), el("button", { type: "button", class: "btn tonal", onclick: () => boot() }, "다시 시도"));
+  const fail = el("div", { class: "sh-fail", role: "alert", hidden: true }, el("p", { class: "sup" }), el("button", { type: "button", class: "btn tonal", onclick: () => boot() }, TX("misc.retry")));
   const body = el("div", { class: "sh-wrap" }, host, fail, pw, keys);
-  const name = (typeof prSelf === "function" && prSelf() && prSelf().name) || "이 컴퓨터";
-  const h = dialog({ title: `터미널 · ${name}`, body, wide: true, onclose: () => {
+  const name = (typeof prSelf === "function" && prSelf() && prSelf().name) || TX("project.pc.this");
+  const h = dialog({ title: TX("misc.sh.title", { name }), body, wide: true, onclose: () => {
     shDisconnect(); if (SH.ro) SH.ro.disconnect();
     if (SH.term) SH.term.dispose();
     Object.assign(SH, { dlg: null, term: null, fit: null, ro: null, ui: null, ctrl: false, pend: "", sendBuf: "", alive: false });
   } });
   h.node.classList.add("shell");
   // header: connection state, the small 암호 action, and the menu that holds 셸 다시 시작
-  const pwBtn = el("button", { type: "button", class: "ib sh-k-pw", title: "암호 입력", "aria-label": "암호 입력", onclick: () => shShowPw(pw.hidden) }, icon("shell"), el("span", { class: "sh-k-t", text: "암호" }));
-  const more = el("button", { type: "button", class: "ib sh-more", title: "더 보기", "aria-label": "더 보기", text: "⋯" });
-  more.onclick = () => showMenu(more, [{ value: "restart", label: "셸 다시 시작" }], { onPick: v => { if (v === "restart") shRestart(); } });
+  const pwBtn = el("button", { type: "button", class: "ib sh-k-pw", title: TX("misc.sh.pw_enter"), "aria-label": TX("misc.sh.pw_enter"), onclick: () => shShowPw(pw.hidden) }, icon("shell"), el("span", { class: "sh-k-t", text: TX("misc.sh.pw") }));
+  const more = el("button", { type: "button", class: "ib sh-more", title: TX("misc.more"), "aria-label": TX("misc.more"), text: "⋯" });
+  more.onclick = () => showMenu(more, [{ value: "restart", label: TX("misc.sh.restart") }], { onPick: v => { if (v === "restart") shRestart(); } });
   const hb = h.node.querySelector(".fs-hb");
   if (hb) hb.prepend(st, pwBtn, more);
   SH.dlg = h; SH.ui = { host, st, pw, pwIn, pwBtn, keys };
   pwIn.addEventListener("keydown", ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === "Enter") { ev.preventDefault(); shSendPw(); } });
   async function boot() {
-  fail.hidden = true; shStatus("불러오는 중…");
+  fail.hidden = true; shStatus(TX("common.loading"));
   try { await shLib(); } catch (e) { shStatus(""); fail.firstChild.textContent = e.message; fail.hidden = false; host.hidden = true; return; }
   if (SH.dlg !== h) return;
   host.hidden = false;

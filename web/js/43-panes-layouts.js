@@ -9,7 +9,7 @@ function paneLayouts() {
   } catch { return Object.create(null); }
 }
 function paneLayoutPut(all) {
-  try { localStorage.setItem(PANE_LAYOUTS, JSON.stringify(all)); } catch { toast("배치를 저장하지 못했어요", true); }
+  try { localStorage.setItem(PANE_LAYOUTS, JSON.stringify(all)); } catch { toast(TX("misc.pl.save_failed"), true); }
 }
 function paneLayoutSave(name) {
   const all = paneLayouts();
@@ -24,24 +24,24 @@ function paneLayoutDrop(name) {
 // The saved tree replaces the panes; the page goes to the layout's active pane. Mirrors are dropped: ids of another layout mean other panes.
 function paneLayoutApply(name) {
   const r = panePrune(paneLayouts()[name]);
-  if (!r) { toast("이 배치는 열 수 없어요", true); return; }
+  if (!r) { toast(TX("misc.pl.cant_open"), true); return; }
   paneMirrorsClear();
   PN = { ...r, seq: Math.max(PN.seq, r.seq) };
   paneEnter(paneFind(PN.active));
   panePersist();
 }
 function paneLayoutAsk() {
-  const inp = input({ type: "text", maxlength: "24", placeholder: "예: 메일 보면서 작업", "aria-label": "배치 이름" });
+  const inp = input({ type: "text", maxlength: "24", placeholder: TX("misc.pl.ph"), "aria-label": TX("misc.pl.name") });
   const err = usErr();
   const save = close => {
     const name = inp.value.trim();
     paneLayoutSave(name);
     close();
-    toast(`'${name}' 배치를 저장했어요`);
+    toast(TX("misc.pl.saved", { name }));
   };
-  const d = dialog({ classic: true, title: "배치 저장", body: el("div", { class: "col" }, el("div", { class: "sup", text: "같은 이름이 있으면 덮어써요." }), inp, err), actions: [{ label: "저장", kind: "pri", onclick: c => save(c) }] });
+  const d = dialog({ classic: true, title: TX("misc.pl.save"), body: el("div", { class: "col" }, el("div", { class: "sup", text: TX("misc.pl.overwrite") }), inp, err), actions: [{ label: TX("common.save"), kind: "pri", onclick: c => save(c) }] });
   usDirty(d, [inp]);
-  inp.addEventListener("input", () => { err.textContent = inp.value.trim() ? "" : "이름을 적어 주세요."; });
+  inp.addEventListener("input", () => { err.textContent = inp.value.trim() ? "" : TX("misc.pl.need_name"); });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   inp.focus();
 }
@@ -50,8 +50,8 @@ function paneLayoutItems(v) {
   if (narrowChat()) return [];
   const names = Object.keys(paneLayouts()), has = s => !v || s.toLowerCase().includes(v), row = (label, act) => ({ kind: "act", ic: "lanes", label, act });
   return [
-    ...(paneCount() > 1 && has("배치 저장") ? [row("배치 저장", paneLayoutAsk)] : []),
-    ...names.filter(n => has(`배치: ${n}`)).map(n => row(`배치: ${n}`, () => paneLayoutApply(n))),
-    ...names.filter(n => has(`배치 지우기: ${n}`)).map(n => row(`배치 지우기: ${n}`, () => { paneLayoutDrop(n); toast(`'${n}' 배치를 지웠어요`); })),
+    ...(paneCount() > 1 && has(TX("misc.pl.save")) ? [row(TX("misc.pl.save"), paneLayoutAsk)] : []),
+    ...names.filter(n => has(TX("misc.pl.open", { name: n }))).map(n => row(TX("misc.pl.open", { name: n }), () => paneLayoutApply(n))),
+    ...names.filter(n => has(TX("misc.pl.drop", { name: n }))).map(n => row(TX("misc.pl.drop", { name: n }), () => { paneLayoutDrop(n); toast(TX("misc.pl.dropped", { name: n })); })),
   ];
 }

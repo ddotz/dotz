@@ -88,7 +88,7 @@ function pqAct(path, body) {
   const rm = /^\/api\/kakao\/rooms\/([^/?]+)$/.exec(path);
   if (rm) return { pc: KK.pc, action: "kakao", args: { op: "room", chatId: decodeURIComponent(rm[1]), ...(typeof b.watched === "boolean" ? { watched: b.watched } : {}), ...(typeof b.autoDraft === "boolean" ? { autoDraft: b.autoDraft } : {}) } };
   if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: `draft-${k[3]}`, code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
-  throw new Error(`${KK.pc.name}에서 바꿔 주세요`);
+  throw new Error(TX("misc.pq.change_there", { name: KK.pc.name }));
 }
 // The files of a message to another computer's conversation: the bytes kept in the composer go to THAT computer (act "upload", one file per
 // request), and its own upload paths are what the message carries; a path of this computer never goes there. Any failure throws, so the
@@ -97,12 +97,12 @@ const PQ_WIRE_MAX = 50 * 1024 * 1024;
 async function pqUpload(pc, atts) {
   const out = [];
   for (const a of atts) {
-    if (!a.raw) throw new Error(`${a.name}: 파일을 다시 붙여 주세요`);
-    if (a.raw.size > PQ_WIRE_MAX) throw new Error(`${a.name}: 다른 컴퓨터의 대화에는 50MB 이하 파일만 보낼 수 있어요`);
+    if (!a.raw) throw new Error(TX("misc.pq.reattach", { name: a.name }));
+    if (a.raw.size > PQ_WIRE_MAX) throw new Error(TX("misc.pq.too_big", { name: a.name }));
     let r;
     try { r = await api(pqProxy(pc, "/api/peer/act"), "POST", { action: "upload", args: { files: [{ name: a.name, type: a.type || "", data: await drfBase64(a.raw) }] } }); }
-    catch (e) { throw new Error(`${pc.name}에 ${a.name}을(를) 올리지 못해서 보내지 않았어요 (${e.message})`); }
-    if (!r || !Array.isArray(r.files) || !r.files[0]) throw new Error(`${pc.name}에 ${a.name}을(를) 올리지 못해서 보내지 않았어요`);
+    catch (e) { throw new Error(TX("misc.pq.upload_failed_why", { pc: pc.name, name: a.name, why: e.message })); }
+    if (!r || !Array.isArray(r.files) || !r.files[0]) throw new Error(TX("misc.pq.upload_failed", { pc: pc.name, name: a.name }));
     out.push(r.files[0]);
   }
   return out;
@@ -202,8 +202,8 @@ function pqMail(c, pc, itemKey) {
 
 // A peer row keeps one status on the right like every row (docs/ui-spec.md 모니터링 줄의 상태): 꺼짐 > 연결 안 됨 (that computer does not answer, so
 // what it last sent is old) > the item's own status. Which computer it runs on, and that it does not answer, is the subtitle's opening phrase.
-const pqStatus = (p, own, off) => off ? ["꺼짐", "off"] : p.online ? own : ["연결 안 됨", "warn"];
-const pqWhere = (p, line) => [`${p.name}에서 돌아요`, p.online ? line : `${p.name} 연결 안 됨`].filter(Boolean).join(" · ");
+const pqStatus = (p, own, off) => off ? [TX("misc.pq.off"), "off"] : p.online ? own : [TX("settings.prov.not_connected"), "warn"];
+const pqWhere = (p, line) => [TX("misc.pq.runs_on", { name: p.name }), p.online ? line : TX("misc.pq.pc_offline", { name: p.name })].filter(Boolean).join(" · ");
 
 // Peer rows into monItems(): apps after the local apps, monitors after the local monitors, watch reports into 감시 소식.
 function pqMerge(items) {
@@ -212,7 +212,7 @@ function pqMerge(items) {
   const apps = [], proj = [], plain = [], off = [], news = [];
   for (const p of peers) {
     const pc = pqPcOf(p), s = p.items, key = k => `p:${p.url}|${k}`;
-    if (!s) { off.push({ key: key("off"), group: MON_GROUP.plain, name: `${p.name} 모니터링`, ic: "activity", notices: [], mails: [], unread: 0, hint: `${p.name} 연결 안 됨 · 아직 받은 목록이 없어요`, badge: ["연결 안 됨", "warn"], at: "", pc, off: true }); continue; }
+    if (!s) { off.push({ key: key("off"), group: MON_GROUP.plain, name: TX("misc.pq.pc_monitoring", { name: p.name }), ic: "activity", notices: [], mails: [], unread: 0, hint: TX("misc.pq.pc_offline_empty", { name: p.name }), badge: [TX("settings.prov.not_connected"), "warn"], at: "", pc, off: true }); continue; }
     const sn = (s.notices || []).map(n => ({ ...n, pc })), shown = new Set();
     const owned = monOwnedBy(s.integrations || [], s.monitors || []), ownedNames = new Set([...owned.values()].flat());
     for (const it of s.integrations || []) {
@@ -223,7 +223,7 @@ function pqMerge(items) {
       const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 }, conn = it.state === "disconnected";
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
       PQ.of.set(`settings:${pqApp(it.key, pc)}`, { pc, key: key(`i:${it.key}`), app: true, label: it.label });   // the app's settings conversation lives on that computer
-      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, conn, hint: pqWhere(p, conn && it.hint ? it.hint : monNeedLine(needs, conn)), at, pc, hostOff: !p.online, owned: owned.get(it.key) || [], badge: pqStatus(p, conn ? ["연결 끊김", "err"] : monFail(owned.get(it.key) || []), false) });
+      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, conn, hint: pqWhere(p, conn && it.hint ? it.hint : monNeedLine(needs, conn)), at, pc, hostOff: !p.online, owned: owned.get(it.key) || [], badge: pqStatus(p, conn ? [TX("mail.disconnected"), "err"] : monFail(owned.get(it.key) || []), false) });
       if (it.app === "mail") mxPeerMerge(apps[apps.length - 1], it, pc);
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));

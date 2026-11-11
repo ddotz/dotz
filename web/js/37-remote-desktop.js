@@ -39,17 +39,17 @@ async function openScreen(p) {
       const href = r.go ? `${path}?go=${enc(r.go)}` : path;
       const win = tab || window.open(href, "_blank");
       if (tab) tab.location.href = href;
-      if (!win) { toast("새 탭이 막혔어요. 팝업을 허용해 주세요", true); return; }
+      if (!win) { toast(TX("misc.dsk.blocked"), true); return; }
       if (r.note) toast(r.note);
     } else {
       if (tab) tab.close();
-      if (r.action === "opened") toast(`${r.name || "그 컴퓨터"}의 크롬에서 열었어요`);
+      if (r.action === "opened") toast(TX("misc.dsk.opened_in", { name: r.name || TX("misc.dsk.that_pc") }));
       // an off computer can only be switched on over there: the one step, with the way to it
-      else toast(r.reason || "지금은 화면을 열 수 없어요", true, peer && typeof r.to === "string" ? { label: `${peer.name} 열기`, onclick: () => prGo(`${peer.url}/?did=${enc(DEVICE_ID)}${r.to}`) } : undefined, peer ? 10000 : undefined);
+      else toast(r.reason || TX("misc.dsk.cant_now"), true, peer && typeof r.to === "string" ? { label: TX("misc.dsk.open_peer", { name: peer.name }), onclick: () => prGo(`${peer.url}/?did=${enc(DEVICE_ID)}${r.to}`) } : undefined, peer ? 10000 : undefined);
     }
   } catch (e) {
     if (tab) tab.close();
-    toast(e.message || "화면을 열지 못했어요", true);
+    toast(e.message || TX("misc.dsk.open_failed"), true);
   } finally { DSK.busy = false; }
 }
 
@@ -58,13 +58,13 @@ async function openScreen(p) {
 function dskRowBtn(p) {
   if (selfDown || p.via || p.public || (p.self ? !(S && S.desk) : !p.online)) return null;
   const off = p.self && !S.desk.on;
-  return el("button", { type: "button", class: "btn tonal inrow pr-desk", text: off ? "켜고 보기" : "화면 보기", "aria-label": `${p.name} ${off ? "화면 공유 켜고 보기" : "화면 보기"}`, onclick: () => { prClose(false); openScreen(p); } });
+  return el("button", { type: "button", class: "btn tonal inrow pr-desk", text: off ? TX("misc.dsk.on_view") : TX("misc.dsk.view"), "aria-label": TX(off ? "misc.dsk.aria_on_view" : "misc.dsk.aria_view", { name: p.name }), onclick: () => { prClose(false); openScreen(p); } });
 }
 
 /* ---------- state ---------- */
 const dskViewers = () => (S && S.desk && Array.isArray(S.desk.viewers) ? S.desk.viewers : []);
-const dskWho = v => (v && (v.device || v.who)) || "기기";
-const dskPillText = vs => (vs.length === 1 ? `${dskWho(vs[0])}에서 보는 중` : `${vs.length}곳에서 보는 중`);
+const dskWho = v => (v && (v.device || v.who)) || TX("misc.dsk.device");
+const dskPillText = vs => (vs.length === 1 ? TX("misc.dsk.viewing_from", { who: dskWho(vs[0]) }) : TX("misc.dsk.viewing_n", { n: vs.length }));
 // An answer of GET/PUT /api/desk/... is the new status; S.desk follows it at once instead of waiting for the next state refresh.
 function dskTake(st) {
   DSK.st = st;
@@ -100,7 +100,7 @@ function dskPaint() {
   DSK.painted = true;
   if (vs.length) {
     const text = dskPillText(vs);
-    p.setAttribute("aria-label", `${text}. 설정에서 보기`);
+    p.setAttribute("aria-label", TX("misc.dsk.pill_aria", { text }));
     if (p.hidden) { p.textContent = text; p.hidden = false; if (fresh) motionIn(p, "fade"); }
     else if (p.textContent !== text) motionSwap(p, () => { p.textContent = text; });
   } else if (!p.hidden) {
@@ -119,10 +119,10 @@ function dskSettings() {
   if (!d) return [];
   const cf = !!(WA.data && WA.data.mode === "cloudflare");
   if (cf && !DSK.asked) dskLoad();
-  const opens = dskRow("open", "이 컴퓨터 화면", d.on ? "다른 기기에서 보고 조작해요" : "꺼져 있어요. 누르면 켜고 열어요", el("button", { type: "button", class: "btn inrow", text: d.on ? "화면 보기" : "켜고 보기", onclick: () => openScreen() }));
-  const rows = [opens, dskRow("on", "화면 공유", "이 컴퓨터 화면을 내 다른 기기에서 보고 조작해요", dskSwitch(d.on, "화면 공유", () => dskSet({ on: !d.on }, d.on ? "화면 공유를 껐어요" : "화면 공유를 켰어요")))];
-  if (cf && DSK.st) rows.push(dskRow("allow_public", "공개 주소", "Cloudflare 주소로 들어온 기기도 화면을 볼 수 있어요", dskSwitch(DSK.st.allow_public, "공개 주소", () => dskSet({ allow_public: !DSK.st.allow_public }, DSK.st.allow_public ? "공개 주소로는 막았어요" : "공개 주소로도 열었어요"))));
-  return [stSec("화면 공유"), stList(...rows)];
+  const opens = dskRow("open", TX("misc.dsk.this_screen"), d.on ? TX("misc.dsk.on_note") : TX("misc.dsk.off_note"), el("button", { type: "button", class: "btn inrow", text: d.on ? TX("misc.dsk.view") : TX("misc.dsk.on_view"), onclick: () => openScreen() }));
+  const rows = [opens, dskRow("on", TX("misc.dsk.share"), TX("misc.dsk.share_note"), dskSwitch(d.on, TX("misc.dsk.share"), () => dskSet({ on: !d.on }, d.on ? TX("misc.dsk.share_off") : TX("misc.dsk.share_on"))))];
+  if (cf && DSK.st) rows.push(dskRow("allow_public", TX("misc.dsk.public"), TX("misc.dsk.public_note"), dskSwitch(DSK.st.allow_public, TX("misc.dsk.public"), () => dskSet({ allow_public: !DSK.st.allow_public }, DSK.st.allow_public ? TX("misc.dsk.public_off") : TX("misc.dsk.public_on")))));
+  return [stSec(TX("misc.dsk.share")), stList(...rows)];
 }
 
 dskPillNode();

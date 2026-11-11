@@ -49,7 +49,7 @@ function paneListShut(now) {
   else motionOut(convSide, "fade", M_MS.fast).then(() => { if (!PNV.open) paneListGone(); });
 }
 // The 목록 button of the pane that is open (also the one the conversation shows beside a 캔버스 that has no room for the list column).
-const paneLsBtn = () => el("button", { class: "ib pane-ls", type: "button", "aria-label": "대화 목록", "aria-expanded": String(PNV.open), title: "대화 목록", onclick: () => (PNV.open ? paneListShut() : paneListOpen()) }, icon("list"));
+const paneLsBtn = () => el("button", { class: "ib pane-ls", type: "button", "aria-label": TX("misc.pane.list"), "aria-expanded": String(PNV.open), title: TX("misc.pane.list"), onclick: () => (PNV.open ? paneListShut() : paneListOpen()) }, icon("list"));
 // With a 캔버스 open in the conversation, the list column folds exactly as in split panes when the window cannot give the canvas cnv-min wide next to the
 // conversation's own minimum (the width a split pane keeps, 20-canvas.css): the list lies over the conversation from the 목록 button, and comes back as a column when the canvas closes.
 function cnvNeed(c) {
@@ -150,7 +150,7 @@ function paneDraw() {
 function paneNode(n, sec) {
   if (paneLeaf(n)) return paneLeafEl(n, sec);
   const row = n.dir === "row", a = paneNode(n.a, sec), b = paneNode(n.b, sec);
-  const bar = el("div", { class: "pane-bar", role: "separator", "aria-orientation": row ? "vertical" : "horizontal", title: "끌어서 크기를 바꿔요, 두 번 누르면 반반이에요" });
+  const bar = el("div", { class: "pane-bar", role: "separator", "aria-orientation": row ? "vertical" : "horizontal", title: TX("misc.pane.bar_tip") });
   const box = el("div", { class: `pane-${n.dir}` }, a, bar, b);
   paneShare(n, box);
   bar.addEventListener("pointerdown", ev => paneDrag(ev, n, box, bar));
@@ -163,7 +163,7 @@ function paneShare(n, box) {
 }
 function paneLeafEl(p, sec) {
   const on = p.id === PN.active;
-  const x = el("button", { class: "ib pane-x", type: "button", "aria-label": "창 닫기", title: "창 닫기", onclick: () => paneClose(p.id) }, icon("close"));
+  const x = el("button", { class: "ib pane-x", type: "button", "aria-label": TX("misc.pane.close"), title: TX("misc.pane.close"), onclick: () => paneClose(p.id) }, icon("close"));
   // the active pane's 목록 button sits at its head's left, over the head (the head leaves room for it, 26-panes.css)
   const ls = on && paneLsBtn();
   const kids = !on ? (p.kind === "chat" ? [paneMirror(p), x] : [paneMirror(p)]) : p.kind === "app" ? [paneHeadEl(p).head, sec, ls] : [sec, x, ls];

@@ -17,7 +17,7 @@ function rpMark(n, e) {
   n.dataset.rid = e.mid || e.message_id || e.ts;
   RP.src.set(n, e);
   // A small quote button next to the meta line (name · time), shown while the row is hovered; a row without a meta line keeps it at its corner.
-  const btn = el("button", { class: "rp-btn", type: "button", "aria-label": "인용", title: "인용", onclick: () => rpStart(n) }, icon("quote"));
+  const btn = el("button", { class: "rp-btn", type: "button", "aria-label": TX("misc.rp.quote"), title: TX("misc.rp.quote"), onclick: () => rpStart(n) }, icon("quote"));
   const mt = n.querySelector(":scope > .mt");
   if (mt) mt.append(btn); else { btn.classList.add("out"); n.append(btn); }
 }
@@ -36,8 +36,8 @@ function rpPaint() {
   const r = RP.cur && RP.cur.t === target ? RP.cur : null;
   if (!RP.bar) {
     if (!r) return;
-    const tx = el("button", { class: "rp-tx", type: "button", "aria-label": "인용한 메시지로 이동", onclick: ev => rpJump(RP.cur && RP.cur.id, ev.currentTarget) }, el("span", { class: "rp-tg" }), el("span", { class: "rp-ct" }));
-    RP.bar = el("div", { class: "rpbar", id: "replybar", role: "group", "aria-label": "인용할 메시지", onpointerdown: ev => ev.preventDefault() }, icon("quote", "rp-ic"), tx, el("button", { class: "ib rp-x", type: "button", "aria-label": "인용 취소", title: "인용 취소", onclick: rpClear }, icon("close")));
+    const tx = el("button", { class: "rp-tx", type: "button", "aria-label": TX("misc.rp.jump"), onclick: ev => rpJump(RP.cur && RP.cur.id, ev.currentTarget) }, el("span", { class: "rp-tg" }), el("span", { class: "rp-ct" }));
+    RP.bar = el("div", { class: "rpbar", id: "replybar", role: "group", "aria-label": TX("misc.rp.bar"), onpointerdown: ev => ev.preventDefault() }, icon("quote", "rp-ic"), tx, el("button", { class: "ib rp-x", type: "button", "aria-label": TX("misc.rp.cancel"), title: TX("misc.rp.cancel"), onclick: rpClear }, icon("close")));
     $("#composer").insertBefore(RP.bar, $("#send"));
   }
   RP.bar.hidden = !r;
@@ -63,13 +63,13 @@ async function rpJump(id, from) {
   if (drawn) { drawn.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" }); ntFlash(drawn); return; }   // an explicit "smooth" would win over the CSS scroll-behavior that reduced motion sets
   let at = s.msgs.find(e => rpRid(e) === id)?.ts;
   if (!at) {
-    if (from) { from.classList.add("busy"); from.dataset.wait = "찾는 중…"; }
+    if (from) { from.classList.add("busy"); from.dataset.wait = TX("misc.rp.finding"); }
     try {
       const r = await api(`/api/history?target=${enc(t)}&limit=150&around=${enc(id)}`);
       if (seq !== rpJumpSeq || t !== target) return;
       at = r.at;
       if (at) { chatMerge(s, r); s.whole = true; renderAll(true); }
-      else toast("원래 메시지를 찾지 못했어요 · 지워졌거나 너무 오래됐어요");
+      else toast(TX("misc.rp.not_found"));
     } catch (e) { toast(e.message, true); }
     finally { if (from) from.classList.remove("busy"); }
     if (!at || seq !== rpJumpSeq) return;
@@ -93,7 +93,7 @@ function rpAsked(e) {
 function rpQuote(e) {
   const r = rpAsked(e);
   if (!r || !r.content) return null;
-  return el("button", { class: "rpq", type: "button", onclick: ev => rpJump(r.id, ev.currentTarget) }, el("span", { class: "rpq-au", text: e.kind === "out" || r.author === e.author ? "나" : r.author }), el("span", { class: "rpq-ct", text: peerMsgLine(r.content) }));
+  return el("button", { class: "rpq", type: "button", onclick: ev => rpJump(r.id, ev.currentTarget) }, el("span", { class: "rpq-au", text: e.kind === "out" || r.author === e.author ? TX("misc.rp.me") : r.author }), el("span", { class: "rpq-ct", text: peerMsgLine(r.content) }));
 }
 // Swipe a message from right to left (touch / pen; a mouse uses the hover button). The row follows the finger with a rubber band to the
 // left and the reply icon shows on the right; it snaps at RP_PULL. A vertical drag (scroll) or a start at a screen edge (the system back

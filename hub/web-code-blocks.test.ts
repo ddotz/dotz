@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 type Blocks = { isShellBlock: (lang: string, text: string) => boolean; shellCommand: (text: string) => string; codeBlockHtml: (lang: string, code: string) => string };
-const blocks = new Function("esc", "document", "el", "navigator", "window", `${web("35-code-blocks.js")}\nreturn { isShellBlock, shellCommand, codeBlockHtml };`)(esc, { addEventListener() {} }, () => null, {}, {}) as Blocks;
+const blocks = new Function("esc", "document", "el", "navigator", "window", `${i18nPrelude()}${web("35-code-blocks.js")}\nreturn { isShellBlock, shellCommand, codeBlockHtml };`)(esc, { addEventListener() {} }, () => null, {}, {}) as Blocks;
 
 type Shell = { isPasswordPrompt: (line: string) => boolean };
 const shell = new Function("ICONS", `${web("36-shell.js")}\nreturn { isPasswordPrompt };`)({}) as Shell;

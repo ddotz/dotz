@@ -2,10 +2,10 @@
 // Three groups of one row shape: 처리할 것 (an answer, a failure or a lost login that still waits), 새 소식 (unread) and 지난 알림. The filter only hides
 // rows. Unread changes by a tap on a row, the x and 모두 읽음, never by looking (the old ntSeen is gone). Data: NT.items (30-notices.js); API:
 // POST /api/notices/read {ids}, /:id/handled, /:id/dismiss, /:id/undismiss. State NSC lives in 04-state.js (go() needs it before this file runs).
-const NSC_FILTERS = [["all", "전체"], ["ask", "답변 필요"], ["result", "결과"], ["news", "새 소식"], ["alert", "경고"]];
-const NSC_GROUPS = [["need", "처리할 것"], ["news", "새 소식"], ["past", "지난 알림"]];
+const NSC_FILTERS = [["all", TX("misc.nsc.all")], ["ask", TX("common.needs_reply")], ["result", TX("settings.notify.result_label")], ["news", TX("settings.notify.news_label")], ["alert", TX("settings.notify.alert_label")]];
+const NSC_GROUPS = [["need", TX("misc.nsc.g_need")], ["news", TX("settings.notify.news_label")], ["past", TX("misc.nsc.g_past")]];
 const NSC_PAGE = 50;   // 새 소식 / 지난 알림 rows drawn at a time (NSC.lim starts at the same 50, 04-state.js)
-const NSC_X = { need: "처리했어요", news: "읽음으로 표시", past: "지우기" };
+const NSC_X = { need: TX("misc.nsc.x_done"), news: TX("misc.nsc.x_read"), past: TX("misc.clear") };
 // 처리할 것 lists every open question, so a busy day is hundreds of rows. A list opened from the top builds the first NSC_FIRST rows (a screenful and more) and the
 // rest follow NSC_STEP per frame (nscFill), so the screen shows at once and no single task runs long. A paint that must find a row at once (the way back to a place, a live update
 // that holds the reader's place) builds them all.
@@ -21,33 +21,33 @@ const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n));
 const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
 // The tag word of the prototype's D.notices, from the notice's own kind, tone and app: the app is the integration key (mail, kakao, instagram/youtube/site = 댓글)
 // or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
-const NSC_APP_TAG = { mail: "메일", kakao: "카카오톡", instagram: "댓글", youtube: "댓글", site: "댓글" };
+const NSC_APP_TAG = { mail: TX("common.mail"), kakao: TX("decision.app.kakao"), instagram: TX("misc.nsc.comments"), youtube: TX("misc.nsc.comments"), site: TX("misc.nsc.comments") };
 const nscApp = n => String(n.app || (n.item && n.item.app) || n.src || n.open || "").split(/[-:]/)[0];
 function nscTag(n) {
   const app = nscApp(n);
-  if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? "카카오톡" : "답장 대기") : "결정";
-  if (n.waits === "login") return "로그인";
-  if (n.waits === "fail" || n.tone === "fail") return "실패";
-  if (n.tone === "ask") return "질문";
-  if (n.cls === "result") return n.tone === "done" ? "작업 완료" : "결과";
-  if (n.kind === "watch" && nwChangeLine(n.text)) return "가격 변경";
+  if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? TX("decision.app.kakao") : TX("misc.nsc.tag_reply")) : TX("common.decision");
+  if (n.waits === "login") return TX("misc.nsc.tag_login");
+  if (n.waits === "fail" || n.tone === "fail") return TX("home.sys.failed");
+  if (n.tone === "ask") return TX("misc.nsc.tag_ask");
+  if (n.cls === "result") return n.tone === "done" ? TX("misc.nsc.tag_done") : TX("settings.notify.result_label");
+  if (n.kind === "watch" && nwChangeLine(n.text)) return TX("misc.nsc.tag_price");
   if (NSC_APP_TAG[app]) return NSC_APP_TAG[app];
-  if (n.kind === "watch" && n.title === "예약") return "일정";
-  if (/아침/.test(n.title || "")) return "아침 점검";
-  if (n.kind === "watch") return "감시";
-  if (n.cls === "alert" && /^[^\n]*: 다시 정상이에요/.test(n.text || "")) return "복구";
-  if (n.cls === "alert") return "경고";
-  return ntPlain(n.app || "") || "새 소식";
+  if (n.kind === "watch" && n.title === "예약") return TX("misc.nsc.tag_sched");
+  if (/아침/.test(n.title || "")) return TX("misc.nsc.tag_morning");
+  if (n.kind === "watch") return TX("misc.nsc.tag_watch");
+  if (n.cls === "alert" && /^[^\n]*: 다시 정상이에요/.test(n.text || "")) return TX("misc.nsc.tag_back");
+  if (n.cls === "alert") return TX("settings.notify.alert_label");
+  return ntPlain(n.app || "") || TX("settings.notify.news_label");
 }
 // A decision's second line follows its state: waiting says so, an answer says what was chosen, the rest say how it ended (the words of monDecisionNode).
 function nscDecLine(n) {
   const d = n.decision, ctx = ntDecCtx(n);
-  if (d.state === "open") return `${ctx} · 답을 기다리고 있어요`;
-  if (d.state === "ignored") return `${ctx} · 무시했어요`;
-  if (d.expired) return `${ctx} · 기한 지남`;
-  if (d.resolved) return `${ctx} · 답 없이 끝났어요`;
+  if (d.state === "open") return `${ctx} · ${TX("misc.nsc.d_open")}`;
+  if (d.state === "ignored") return `${ctx} · ${TX("misc.nsc.d_ignored")}`;
+  if (d.expired) return `${ctx} · ${TX("misc.nsc.d_expired")}`;
+  if (d.resolved) return `${ctx} · ${TX("misc.nsc.d_closed")}`;
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && (d.options || []).find(x => x.n === Number(m[1]));
-  return `${ctx} · 답했어요${o ? ` · ${o.label}` : ""}`;
+  return `${ctx} · ${TX("misc.nsc.d_answered")}${o ? ` · ${o.label}` : ""}`;
 }
 // The second line: a price change as the old value struck and the new one bold, else the first line of the text that is not the title, else the place.
 function nscSummary(n, text = n.text) {
@@ -58,13 +58,13 @@ function nscSummary(n, text = n.text) {
   const title = ntPlain(hcLine(n)), src = n.src || n.open;
   // the feed's own summary: the name is not said twice, nor the title when the summary opens with it
   if (n.kind === "watch") { const s = monSummary({ ...n, text }, []); return typeof s === "string" && title && s.startsWith(title) ? s.slice(title.length).replace(/^[.\s·]+/, "") || s : s; }
-  return String(text || "").split("\n").map(ntPlain).find(l => l && l !== title) || ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림");
+  return String(text || "").split("\n").map(ntPlain).find(l => l && l !== title) || ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : TX("misc.nsc.one"));
 }
 // The time at the row's end stays short: 방금, the hour today, 어제, then the date.
 function nscWhen(t) {
-  if (Date.now() - Date.parse(t) < 60000) return "방금";
+  if (Date.now() - Date.parse(t) < 60000) return TX("home.ago.now");
   if (kstDay(t) === kstDay(Date.now())) return kstHM(t);
-  return kstDay(t) === kstDay(Date.now() - 86400000) ? "어제" : dayLabel(t).replace(/ \(.\)$/, "");
+  return kstDay(t) === kstDay(Date.now() - 86400000) ? TX("project.yesterday") : dayLabel(t).replace(/ \(.\)$/, "");
 }
 function nscLines(n, group, summary, when, tag, prefix = "") {
   return [el("span", { class: "ln" }, el("span", { class: "hd", title: ntPlain(hcLine(n)), text: ntPlain(hcLine(n)) }), el("span", { class: "t", text: when })),
@@ -73,13 +73,13 @@ function nscLines(n, group, summary, when, tag, prefix = "") {
 function nscRow(n, group) {
   const tone = group === "past" ? "" : nscTone(n), rep = n.repeats && n.repeats.length ? n.repeats : null, open = rep && NSC.open.has(n.id);
   // One cell at the end; a repeated failure or past notice keeps its ✕ beside the fold, or it could not be handled or cleared.
-  const fold = rep ? el("button", { class: "ib nsc-fold", type: "button", "aria-expanded": String(!!open), "aria-label": "반복 알림 펼치기", onclick: ev => { ev.stopPropagation(); nscFold(n); } }, icon("chev")) : null;
+  const fold = rep ? el("button", { class: "ib nsc-fold", type: "button", "aria-expanded": String(!!open), "aria-label": TX("misc.nsc.unfold"), onclick: ev => { ev.stopPropagation(); nscFold(n); } }, icon("chev")) : null;
   const end = group === "need" && n.waits !== "fail" ? (fold || el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("chev")))
     : fold && group === "news" ? fold
     : el("button", { class: "ib nsc-x", type: "button", "aria-label": NSC_X[group], title: NSC_X[group], onclick: ev => { ev.stopPropagation(); nscX(n, group, ev.currentTarget); } }, icon("close"));
   return el("div", { class: `li nsc-r${n.read ? "" : " unread"}`, "data-nid": n.id },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
-    el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, group, nscSummary(n), nscWhen(n.updated || n.ts), nscTag(n), rep ? `${rep.length + 1}번 · ` : "")),
+    el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, group, nscSummary(n), nscWhen(n.updated || n.ts), nscTag(n), rep ? `${TX("misc.nsc.times", { n: rep.length + 1 })} · ` : "")),
     end === fold ? null : fold, end);
 }
 // An older occurrence folded into the head row: the same title, its own time and text; a tap opens the head's notice.
@@ -91,15 +91,15 @@ const nscRows = (n, group) => [nscRow(n, group), ...(n.repeats && n.repeats.leng
 
 function nscList(rows, defer = false) {
   nscTodo = [];
-  if (!NT.loaded) return [el("div", { class: "list" }, el("div", { class: "empty", text: NT.failed ? "알림을 불러오지 못했어요" : "불러오는 중이에요" }))];
-  if (!rows.length) return [el("div", { class: "list" }, el("div", { class: "empty", text: "새 알림이 없어요" }))];
+  if (!NT.loaded) return [el("div", { class: "list" }, el("div", { class: "empty", text: NT.failed ? TX("misc.nsc.load_failed") : TX("misc.nsc.loading") }))];
+  if (!rows.length) return [el("div", { class: "list" }, el("div", { class: "empty", text: TX("misc.nsc.empty") }))];
   const out = [];
   let room = defer ? NSC_FIRST : Infinity;   // rows to build now, over all groups
   for (const [g, label] of NSC_GROUPS) {
     const all = rows.filter(n => nscGroup(n) === g);
     if (!all.length) continue;
     const shown = g === "need" ? all : all.slice(0, NSC.lim[g]);   // 새 소식 and 지난 알림 draw 50 at a time: 300 rows are never all in the page
-    const more = all.length > shown.length ? moreRow(`${all.length - shown.length}개 더 보기`, () => { NSC.lim[g] += NSC_PAGE; nscPaint(true); }) : null;
+    const more = all.length > shown.length ? moreRow(TX("misc.more_n", { n: all.length - shown.length }), () => { NSC.lim[g] += NSC_PAGE; nscPaint(true); }) : null;
     const head = shown.slice(0, room), tail = shown.slice(room);
     room -= head.length;
     const list = el("div", { class: "list", "data-g": g }, ...head.flatMap(n => nscRows(n, g)), tail.length ? null : more);
@@ -126,9 +126,9 @@ function nscInit() {
   if (nscBox) return;
   const v = $("#v-notices");
   nscBox = {
-    tabs: segKeep(el("div", { class: "nsc-f", role: "tablist", "aria-label": "알림 종류" }, ...NSC_FILTERS.map(([k, l]) =>
+    tabs: segKeep(el("div", { class: "nsc-f", role: "tablist", "aria-label": TX("misc.nsc.kinds") }, ...NSC_FILTERS.map(([k, l]) =>
       el("button", { class: "nsc-fb", type: "button", role: "tab", "data-f": k, onclick: () => nscFilter(k) }, l, el("span", { class: "n", "data-n": k }))))),
-    all: el("button", { class: "btn text sm", type: "button", "data-k": "read-all", hidden: true, text: "모두 읽음", onclick: ev => nscReadAll(ev.currentTarget) }),
+    all: el("button", { class: "btn text sm", type: "button", "data-k": "read-all", hidden: true, text: TX("misc.nsc.read_all"), onclick: ev => nscReadAll(ev.currentTarget) }),
     list: el("div", { class: "nsc-l" }),
   };
   v.append(el("div", { class: "nsc-bar" }, nscBox.tabs, nscBox.all), nscBox.list);   // 모두 읽음 at the right end of the tabs' row
@@ -249,14 +249,14 @@ async function nscHandled(n) {
 async function nscDismiss(n) {
   try {
     const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
-    if (!r || !r.ok) throw new Error("지우지 못했어요");
+    if (!r || !r.ok) throw new Error(TX("misc.nsc.clear_failed"));
     return () => {
       NT.items = NT.items.filter(x => x.id !== n.id); NT.mut++;
       if (n.at) NT.gone.add(n.at);
       if (typeof r.unread === "number") NT.unread = r.unread;
-      toast("알림을 지웠어요", false, { label: "되돌리기", onclick: () => nscUndo(n) }, 6000);
+      toast(TX("misc.nsc.cleared"), false, { label: TX("common.undo"), onclick: () => nscUndo(n) }, 6000);
     };
-  } catch (err) { toast("알림을 지우지 못했어요", true); return null; }
+  } catch (err) { toast(TX("misc.nsc.clear_one_failed"), true); return null; }
 }
 async function nscUndo(n) {
   try {
@@ -281,5 +281,5 @@ async function nscReadAll(btn) {
   ntPaint(); homeSoon();
   await Promise.all(leaving);
   undo();
-  if (kept) toast("답이 필요한 알림은 그대로 뒀어요");
+  if (kept) toast(TX("misc.nsc.kept"));
 }

@@ -19,11 +19,11 @@ function paneLeave(p) {
 }
 
 // An app pane is a KakaoTalk room: named by it, the state line says where it is from.
-const paneName = p => (p.kind === "app" ? (KK.rooms.find(r => r.chatId === paneKkId(p.t)) || {}).name || "대화방" : targetName(p.t));
+const paneName = p => (p.kind === "app" ? (KK.rooms.find(r => r.chatId === paneKkId(p.t)) || {}).name || TX("misc.pane.room") : targetName(p.t));
 function paneState(p) {
-  if (p.kind === "app") return "카카오톡";
+  if (p.kind === "app") return TX("decision.app.kakao");
   const i = targetInfo(p.t);
-  return isRelayT(p.t) ? RELAY.note[p.t] || "" : isFixedT(p.t) ? FIXED_DESC[p.t] : i.alive ? statusKo(i.status) : "종료됨";
+  return isRelayT(p.t) ? RELAY.note[p.t] || "" : isFixedT(p.t) ? FIXED_DESC[p.t] : i.alive ? statusKo(i.status) : TX("common.status.ended");
 }
 // A copy that lives on its own: no id twice on the page, no hidden or in-pane marks of the real section.
 function paneBare(n) {
@@ -48,7 +48,7 @@ function paneMirror(p) {
     m.node = el("div", { class: `pane-mir pane-chat${p.t === "alert" ? " no-composer" : ""}` }, head, m.todo, el("div", { class: "chatbox" }, m.wrap), paneComposerEl(m));
     if (!TD.by[p.t]) loadTodo(p.t);
   } else {
-    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : el("div", { class: "empty", text: "이 창을 누르면 대화방이 열려요" })));
+    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : el("div", { class: "empty", text: TX("misc.pane.tap_room") })));
   }
   PNM.set(p.id, m);
   if (m.k) paneStrip(m);
@@ -78,7 +78,7 @@ function paneStrip(m) {
   k.run.hidden = !r.show; k.run.classList.toggle("warn", r.st === "rate-limited"); k.run.classList.toggle("only-subs", !r.has); k.runTx.textContent = r.text;
   paintSubsBtn(k.subs, subsSourceOf(t), r.subs, r.has);
   const stop = (working || r.bg.length > 0) && !k.ta.value.trim();
-  k.send.classList.toggle("stop", stop); k.send.setAttribute("aria-label", stop ? "중단" : "보내기"); k.send.title = stop ? "지금 하는 일 중단" : "";
+  k.send.classList.toggle("stop", stop); k.send.setAttribute("aria-label", stop ? TX("common.stop") : TX("common.send")); k.send.title = stop ? TX("misc.pane.stop_tip") : "";
   k.ta.placeholder = composerHint(t, false);
   paintChips(t, k);
   k.model.classList.toggle("run", working);
@@ -100,8 +100,8 @@ function paneTodoTouch(own) {
 function paneHeadEl(p) {
   const name = paneName(p), s = paneState(p), dot = el("span", { class: `dot ${p.dot}` }), state = el("span", { class: "cv-hd-s", text: s }), chat = p.kind === "chat";
   dot.hidden = !p.dot;
-  const x = chat ? null : el("button", { class: "ib pane-x", type: "button", "aria-label": "창 닫기", title: "창 닫기", onclick: () => paneClose(p.id) }, icon("close"));
-  const acts = chat && (isLaneT(p.t) || (isProjT(p.t) && pmOfTarget(p.t))) ? el("span", { class: "cv-hd-a" }, el("button", { class: "ib cvmenu", type: "button", tabindex: "-1", "aria-label": "세션 메뉴" }, icon("more"))) : null;
+  const x = chat ? null : el("button", { class: "ib pane-x", type: "button", "aria-label": TX("misc.pane.close"), title: TX("misc.pane.close"), onclick: () => paneClose(p.id) }, icon("close"));
+  const acts = chat && (isLaneT(p.t) || (isProjT(p.t) && pmOfTarget(p.t))) ? el("span", { class: "cv-hd-a" }, el("button", { class: "ib cvmenu", type: "button", tabindex: "-1", "aria-label": TX("misc.pane.menu") }, icon("more"))) : null;
   return { head: el("div", { class: chat ? "cv-head pane-hd" : "pane-hd" }, el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: name }, dot, name), state), acts, x), dot, state };
 }
 // A mirror without a copy (the page was reloaded, or the pane lost its screen to another pane): drawn from the messages the page holds.

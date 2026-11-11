@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "33-peers.js"), "utf8");
 const follow = src.slice(src.indexOf("function prTryFollow"), src.indexOf('if ("serviceWorker"'));
@@ -19,7 +20,7 @@ function page(href: string, list: Peer[], fresh: boolean) {
 		prGo: (u: string) => nav.push(u),   // 33-peers.js prGo: this address, or the in-app frame in the installed app (peers-web.test.ts)
 		history: { state: null, replaceState: () => {} },
 	};
-	const run = new Function(...Object.keys(env), "href", `let prFollowHref = href;\n${follow}\nprTryFollow();\nreturn () => prFollowHref;`)(...Object.values(env), href) as () => string;
+	const run = new Function(...Object.keys(env), "href", `${i18nPrelude()}let prFollowHref = href;\n${follow}\nprTryFollow();\nreturn () => prFollowHref;`)(...Object.values(env), href) as () => string;
 	return { nav, toasts, pending: run };
 }
 

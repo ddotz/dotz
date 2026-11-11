@@ -6,6 +6,7 @@ import { buildPayloads } from "./discord-format.ts";
 import { emit, ownerMessage } from "./events.ts";
 import { createPrompts } from "./prompts.ts";
 import { isLate, lateQuote, lateRequestId, LATE_MS, replyRef, snowflakeTime, withQuote } from "./threads.ts";
+import { i18nPrelude } from "./web-i18n.ts";
 
 const SNOW = "1500000000001908448";
 const snowAt = (ms: number) => ((BigInt(ms) - 1420070400000n) << 22n).toString();
@@ -75,7 +76,7 @@ const part = (name: string) => reply.match(new RegExp(`function ${name}\\([^)]*\
 type Node = { cls: string; kids: unknown[]; click?: () => void };
 const el = (_tag: string, p: { class?: string; text?: string; onclick?: () => void } | null, ...kids: unknown[]): Node => ({ cls: p?.class ?? "", kids: p?.text !== undefined ? [p.text, ...kids] : kids, click: p?.onclick });
 const quoteOf = (msgs: Record<string, unknown>[]) =>
-	new Function("el", "ts", "target", "rpJump", `${peerMsg}\nconst RP_QUOTE = 300;\n${part("rpText")}\n${part("rpAsked")}\n${part("rpQuote")}\nreturn rpQuote;`)(el, () => ({ msgs }), "ch:1", () => {}) as (e: Record<string, unknown>) => Node | null;
+	new Function("el", "ts", "target", "rpJump", `${i18nPrelude()}${peerMsg}\nconst RP_QUOTE = 300;\n${part("rpText")}\n${part("rpAsked")}\n${part("rpQuote")}\nreturn rpQuote;`)(el, () => ({ msgs }), "ch:1", () => {}) as (e: Record<string, unknown>) => Node | null;
 const texts = (n: Node): string[] => n.kids.map(k => (typeof k === "string" ? k : (k as Node).kids[0] as string));
 
 test("the web draws a bot message that replies to an owner message with the same quote block, from the hub's reply or from the loaded message", () => {

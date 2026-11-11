@@ -11,6 +11,7 @@ import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode } from "./runtime/types.ts";
 import { parseTone } from "./tone.ts";
+import { i18nPrelude } from "./web-i18n.ts";
 
 const o: typeof Orchestrator = await import("./orchestrator.ts?orch-error");
 
@@ -341,7 +342,7 @@ test("the banner shows with the reason, since when and the restart button, and c
 		noticeKo: (s: string) => s,
 		NK: {},
 	};
-	const { paintOrchError } = new Function(...Object.keys(env), `${src}\nreturn { paintOrchError };`)(...Object.values(env));
+	const { paintOrchError } = new Function(...Object.keys(env), `${i18nPrelude()}${src}\nreturn { paintOrchError };`)(...Object.values(env));
 	paintOrchError();
 	expect($("#oerr").hidden).toBe(false);
 	expect($("#oerr-tx").innerHTML).toContain("네트워크(DNS)가 안 돼요");

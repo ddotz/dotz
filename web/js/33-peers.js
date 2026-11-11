@@ -16,7 +16,7 @@ const prSelf = () => PR.list.find(p => p.self);
 const prOthers = () => PR.list.filter(p => !p.self);
 /** The computer to switch to when this one is down: a relay row needs this gateway and a public row opens its own app, so only a direct one counts. */
 const prFailover = () => prOthers().find(p => !p.via && !p.public);
-const prText = p => [p.need > 0 ? `답변 필요 ${p.need}` : "", p.unread > 0 ? `새 알림 ${p.unread}` : ""].filter(Boolean).join(" · ");
+const prText = p => [p.need > 0 ? TX("misc.pr.need", { n: p.need }) : "", p.unread > 0 ? TX("misc.pr.unread", { n: p.unread }) : ""].filter(Boolean).join(" · ");
 
 async function prLoad() {
   try {
@@ -41,7 +41,7 @@ function prTryFollow() {
   const p = prOthers().find(x => x.url === u.searchParams.get("pc"));
   if (!p && !PR.fresh) return;   // the cached list may predate this computer; wait for the fresh one
   prFollowHref = "";
-  if (!p || !p.online) { toast(p ? `${p.name}에 연결할 수 없어요` : "그 컴퓨터를 찾지 못했어요", true); history.replaceState(history.state, "", location.pathname + location.hash); return; }
+  if (!p || !p.online) { toast(p ? TX("misc.pr.cant_reach", { name: p.name }) : TX("misc.pr.not_found"), true); history.replaceState(history.state, "", location.pathname + location.hash); return; }
   const q = new URLSearchParams(p.public ? {} : { did: DEVICE_ID });   // a public computer is its own web app: no device id goes to it
   for (const k of ["n", "m"]) if (u.searchParams.has(k)) q.set(k, u.searchParams.get(k));
   prGo(`${p.url}/${q.size ? `?${q}` : ""}${u.hash}`, true);
@@ -79,8 +79,8 @@ function prLive(e) {
   prSeen.add(key);
   p.online = true;
   const ask = e.notice === "decision" || e.tone === "ask";
-  const text = e.title ? (ask ? `답변이 필요해요 · ${e.title}` : e.title) : ask ? "답변이 필요해요" : "새 알림";
-  toast(`${p.name} · ${text}`, false, { label: "열기", onclick: () => prOpenItem(p, e.id) }, 8000);
+  const text = e.title ? (ask ? TX("misc.pr.ask_title", { title: e.title }) : e.title) : ask ? TX("misc.pr.ask") : TX("misc.pr.new_alert");
+  toast(`${p.name} · ${text}`, false, { label: TX("misc.open"), onclick: () => prOpenItem(p, e.id) }, 8000);
   const s = document.querySelector(".snack:last-of-type");
   if (s) s.dataset.peerNid = String(e.id);
 }
@@ -100,7 +100,7 @@ function prPaint() {
   chev.hidden = !on;
   if (!on) {
     for (const n of names) n.classList.remove("pdot", "p-need");
-    brand.setAttribute("aria-label", "홈으로"); brand.title = "홈으로"; brand.removeAttribute("aria-haspopup");
+    brand.setAttribute("aria-label", TX("shell.aria.home")); brand.title = TX("shell.aria.home"); brand.removeAttribute("aria-haspopup");
     title.removeAttribute("tabindex"); title.removeAttribute("aria-haspopup");
     prClose(false); return;
   }
@@ -108,9 +108,9 @@ function prPaint() {
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("p-need", need); }
-  const label = `컴퓨터 바꾸기, 지금은 ${relayOn() ? targetName(target) : me.name}${more ? ", 다른 컴퓨터에 새 알림" : ""}`;
+  const label = TX(more ? "misc.pr.switch_more" : "misc.pr.switch", { name: relayOn() ? targetName(target) : me.name });
   brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
-  brand.title = `컴퓨터 바꾸기 (${prKeyHint}, 다음 컴퓨터로)`;
+  brand.title = TX("misc.pr.switch_tip", { key: prKeyHint });
   title.tabIndex = 0; title.setAttribute("aria-haspopup", "dialog");
   if (PR.node) prSheet();
 }
@@ -130,7 +130,7 @@ const PRF = { node: null, ov: null };
 function prGo(href, replace = false) {
   if (!PR_EMBED()) { if (replace) location.replace(href); else location.href = href; return; }
   if (!PRF.node) {
-    PRF.node = el("div", { class: "pr-frame" }, el("iframe", { title: "다른 컴퓨터", allow: "clipboard-write; fullscreen" }));
+    PRF.node = el("div", { class: "pr-frame" }, el("iframe", { title: TX("misc.pr.other"), allow: "clipboard-write; fullscreen" }));
     document.body.append(PRF.node);
     PRF.ov = ovOpen(() => prFrameClose(false));
   }
@@ -161,8 +161,8 @@ function prPick(p, o = {}) {
   if (prEmbedded && !p.self && !p.public) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
   if (p.self) { prClose(); if (isRelayT(target)) relayLeave(); return; }
   // the online flags come from this computer's gateway: while it is unreachable they are stale, so the switch is tried anyway
-  if (!p.online && !selfDown) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
-  if (!o.quiet) toast(`${p.name}(으)로 넘어가요`);
+  if (!p.online && !selfDown) { toast(TX("misc.pr.cant_reach", { name: p.name }), true); return; }
+  if (!o.quiet) toast(TX("misc.pr.going", { name: p.name }));
   prClose(false);
   // a public address is the real web app there (its own login, no device id to hand over): the installed app opens it in the browser, never in the frame
   if (p.public) { const href = prUrl(p); if (PR_EMBED() || prEmbedded) window.open(href, "_blank", "noopener"); else prGo(href); return; }
@@ -172,9 +172,9 @@ function prPick(p, o = {}) {
 // 지우기: an offline computer that paired with this one can be forgotten (DELETE /api/peers); an online, relay or public row never gets the button.
 function prForgetBtn(p, off) {
   if (!off || p.via || p.public) return null;
-  return el("button", { type: "button", class: "btn tonal inrow pr-forget", text: "제거", "aria-label": `내 컴퓨터에서 ${p.name} 제거`, onclick: async () => {
-    if (!await ask(`내 컴퓨터에서 ${p.name} 제거`, "내 컴퓨터 목록에서만 제거해요. 그 컴퓨터는 그대로이고, 다시 켜면 목록에 돌아와요.", "제거", true)) return;
-    try { await api(`/api/peers?url=${enc(p.url)}`, "DELETE"); toast(`${p.name}을(를) 제거했어요`); } catch (e) { toast(`${p.name}을(를) 제거하지 못했어요`, true); }
+  return el("button", { type: "button", class: "btn tonal inrow pr-forget", text: TX("misc.pr.remove"), "aria-label": TX("misc.pr.remove_title", { name: p.name }), onclick: async () => {
+    if (!await ask(TX("misc.pr.remove_title", { name: p.name }), TX("misc.pr.remove_body"), TX("misc.pr.remove"), true)) return;
+    try { await api(`/api/peers?url=${enc(p.url)}`, "DELETE"); toast(TX("misc.pr.removed", { name: p.name })); } catch (e) { toast(TX("misc.pr.remove_failed", { name: p.name }), true); }
     prLoad();
   } });
 }
@@ -184,21 +184,21 @@ function prSheet() {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
     const here = relayOn() ? isRelayRow(p) && target === relayTargetOf(p) : p.self;
     const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
-    const st = p.self ? (selfDown ? "연결 안 됨" : "") : selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨";
+    const st = p.self ? (selfDown ? TX("settings.prov.not_connected") : "") : selfDown ? TX("misc.pr.unchecked") : p.online ? TX("connect.state.on") : TX("settings.prov.not_connected");
     // the prototype's switcher row: a status dot, the name over one quiet line, and at the right the check (this one) or the count of what waits there
     // a computer that cannot be reached says so at the right as a dot and one word (row anatomy: the status is last), not as the quiet line
-    const bad = !alert && !isRelayRow(p) && (st === "연결 안 됨" || st === "확인 못 함");
-    const sub = p.self ? (bad ? "이 컴퓨터" : st || "이 컴퓨터") : isRelayRow(p) ? [p.note, p.online ? "" : st].filter(Boolean).join(" · ") : alert ? prText(p) : bad ? "" : st;
+    const bad = !alert && !isRelayRow(p) && (st === TX("settings.prov.not_connected") || st === TX("misc.pr.unchecked"));
+    const sub = p.self ? (bad ? TX("project.pc.this") : st || TX("project.pc.this")) : isRelayRow(p) ? [p.note, p.online ? "" : st].filter(Boolean).join(" · ") : alert ? prText(p) : bad ? "" : st;
     const row = el("button", { type: "button", class: `pr-row${here ? " on" : ""}${off ? " off" : ""}`, "aria-current": here ? "true" : null, "aria-disabled": off ? "true" : null,
-      "aria-label": [p.name, here ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
+      "aria-label": [p.name, here ? TX("misc.pr.here") : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
       el("span", { class: `dot${(p.self ? !selfDown : p.online && !selfDown) ? " ok" : ""}` }),
       el("span", { class: "pr-tx" }, el("span", { class: "pr-t", text: p.name }), sub ? el("span", { class: "pr-sub", text: sub }) : null),
       bad ? el("span", { class: "tag off", text: st }) : alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : here ? icon("check", "pr-ck") : null);
     const screen = dskRowBtn(p) || prForgetBtn(p, off);
     return screen ? el("div", { class: "pr-line" }, row, screen) : row;
   });
-  const manage = el("button", { type: "button", class: "pr-row pr-manage", onclick: () => { prClose(false); go("settings"); } }, icon("settings"), el("span", { class: "pr-t", text: "컴퓨터 관리" }));
-  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "내 컴퓨터" }), el("div", { class: "pr-list" }, rows, manage));
+  const manage = el("button", { type: "button", class: "pr-row pr-manage", onclick: () => { prClose(false); go("settings"); } }, icon("settings"), el("span", { class: "pr-t", text: TX("misc.pr.manage") }));
+  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: TX("misc.pr.mine") }), el("div", { class: "pr-list" }, rows, manage));
 }
 
 function prKey(ev) {
@@ -258,17 +258,17 @@ async function mnFetch() {
 }
 function mnDialog() {
   const i = MN.info;
-  const inp = el("input", { class: "fi", type: "text", value: i.custom || "", maxlength: "24", autocomplete: "off", placeholder: i.default, "aria-label": "컴퓨터 이름" });
+  const inp = el("input", { class: "fi", type: "text", value: i.custom || "", maxlength: "24", autocomplete: "off", placeholder: i.default, "aria-label": TX("misc.pr.name_aria") });
   const save = (v, msg) => (btn, close) => busy(btn, async () => { MN.info = await api("/api/machine", "PUT", { name: v }); close(); toast(msg); prLoad(); renderSettings(); });
-  const d = dialog({ title: "이 컴퓨터 이름", mid: true, body: el("div", { class: "col" }, inp), actions: [
-    i.custom ? { label: "기본 이름으로", kind: "text", onclick: (c, b) => save("", "기본 이름으로 돌렸어요")(b, c) } : null,
-    { label: "저장", kind: "pri", onclick: (c, b) => save(inp.value.trim(), "이름을 저장했어요")(b, c) }].filter(Boolean) });
+  const d = dialog({ title: TX("misc.pr.this_name"), mid: true, body: el("div", { class: "col" }, inp), actions: [
+    i.custom ? { label: TX("misc.pr.name_default"), kind: "text", onclick: (c, b) => save("", TX("misc.pr.name_reset"))(b, c) } : null,
+    { label: TX("common.save"), kind: "pri", onclick: (c, b) => save(inp.value.trim(), TX("misc.pr.name_saved"))(b, c) }].filter(Boolean) });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   inp.focus();
 }
 const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", onclick: mnDialog },
   el("span", { class: "lead" }, icon("term")),
-  el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" }), MN.info.name ? el("div", { class: "sup", text: MN.info.name }) : null),
+  el("span", { class: "tx" }, el("div", { class: "hd", text: TX("misc.pr.this_name") }), MN.info.name ? el("div", { class: "sup", text: MN.info.name }) : null),
   el("span", { class: "li-end" }, icon("chev", "chev")));
 mnLoad();
 
@@ -285,7 +285,7 @@ function prNext(step = 1) {
   const l = prOrder(PR.list), n = l.length, at = l.findIndex(p => p.self);
   if (n < 2 || at < 0) return false;
   const next = Array.from({ length: n - 1 }, (_, i) => l[(((at + step * (1 + i)) % n) + n) % n]).find(p => p.online || selfDown);
-  if (next) prPick(next); else toast("다른 컴퓨터에 연결할 수 없어요", true);
+  if (next) prPick(next); else toast(TX("misc.pr.none_reachable"), true);
   return true;
 }
 document.addEventListener("keydown", ev => {

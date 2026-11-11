@@ -19,10 +19,10 @@ function relayNames() { for (const p of PR.list) if (isRelayRow(p)) { RELAY.name
 function relayPaint() {
   const on = relayOn(), note = $("#relaynote"), line = on ? RELAY.note[target] || "" : "";
   document.body.classList.toggle("rl", on);
-  if (note) { note.hidden = !line; note.textContent = line ? `${line}. 파일 첨부와 진행 표시는 쓸 수 없어요.` : ""; }
+  if (note) { note.hidden = !line; note.textContent = line ? TX("misc.rl.note", { line }) : ""; }
   const name = relayBrand();
   if ($("#brand-name").textContent !== name) $("#brand-name").textContent = name;
-  if (on) { ta.placeholder = `${targetName(target)}에게 보내요`; ta.disabled = false; $("#send-btn").disabled = false; }
+  if (on) { ta.placeholder = TX("misc.rl.ph", { name: targetName(target) }); ta.disabled = false; $("#send-btn").disabled = false; }
   if (on !== RELAY.on) { RELAY.on = on; prPaint(); }
 }
 function relayEnter(p) {
@@ -67,7 +67,7 @@ async function relayLoad(t, quiet) {
 }
 // After the lines (renderAll0): what was sent and is not in the room yet, and the last error of a read or a send.
 function relayTail(s) {
-  for (const p of s.rpend || []) tl.append(el("div", { class: "um rl-pend" }, el("div", { class: "ub", text: p.text }), el("div", { class: "mt", text: "보내는 중…" })));
+  for (const p of s.rpend || []) tl.append(el("div", { class: "um rl-pend" }, el("div", { class: "ub", text: p.text }), el("div", { class: "mt", text: TX("misc.rl.sending") })));
   for (const m of [s.rerr, s.serr]) if (m) tl.append(el("div", { class: "a-error", role: "alert", text: m }));
 }
 async function relaySend(text) {
@@ -78,7 +78,7 @@ async function relaySend(text) {
   chatStick = true; renderAll(); scrollChat(true);
   try { await api(`${relayApi(t)}/send`, "POST", { text }); }
   catch (e) {
-    s.rpend = s.rpend.filter(p => p !== mine); s.serr = `보내지 못했어요: ${e.message}`;
+    s.rpend = s.rpend.filter(p => p !== mine); s.serr = TX("misc.rl.failed", { why: e.message });
     if (t === target) { if (!ta.value) { ta.value = text; autosize(); } renderAll(); scrollChat(true); }
     return;
   }
@@ -106,7 +106,7 @@ function msRelaySection(p, s) {
     el("span", { class: "tx" }, el("div", { class: "hd", text: c.name }), el("div", { class: "sup", text: `${label("keyword")} ${c.keyword} · ${label("reply_prefix")} ${c.reply_prefix}` })),
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(c.notify), "aria-label": `${c.name} ${r.notify}`, title: r.notify,
       onclick: ev => msRelaySave(p, r.items.map((x, j) => (j === i ? { ...x, notify: !x.notify } : x)), ev.currentTarget) }),
-    el("button", { type: "button", class: "ib", "aria-label": `${c.name} 빼기`, onclick: ev => msRelaySave(p, r.items.filter((_, j) => j !== i), ev.currentTarget) }, icon("close")))));
+    el("button", { type: "button", class: "ib", "aria-label": TX("misc.rl.drop", { name: c.name }), onclick: ev => msRelaySave(p, r.items.filter((_, j) => j !== i), ev.currentTarget) }, icon("close")))));
   const form = el("div", { class: "li dcs-form", "data-relay-add": "1" },
     ...r.fields.map(f => el("div", {}, textField(f.label, input({ value: add[f.key] || "", name: `ms-relay-${f.key}`, oninput: ev => { add[f.key] = ev.target.value; } })), el("div", { class: "sup", text: f.hint }))),
     el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn tonal", onclick: ev => msRelaySave(p, [...r.items, { ...add }], ev.currentTarget), text: r.add })));

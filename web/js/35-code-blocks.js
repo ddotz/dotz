@@ -26,8 +26,8 @@ function codeBlockHtml(lang, code) {
   const text = String(code ?? "").replace(/\n$/, ""), l = String(lang ?? "").trim().split(/\s+/)[0].toLowerCase().replace(/[^\w.+#-]/g, "").slice(0, 16);
   const pre = `<pre><code>${esc(text)}</code></pre>`;
   if (!text.trim()) return pre;
-  const run = isShellBlock(l, text) ? '<button type="button" class="cb-btn run" data-cb="run" data-label="터미널에서 실행" aria-label="터미널에서 실행"></button>' : "";
-  return `<div class="cb"><div class="cb-bar"${l ? ` data-lang="${esc(l)}"` : ""}><button type="button" class="cb-btn" data-cb="copy" data-label="복사" aria-label="코드 복사"></button>${run}</div>${pre}</div>`;
+  const run = isShellBlock(l, text) ? `<button type="button" class="cb-btn run" data-cb="run" data-label="${esc(TX("misc.cb.run"))}" aria-label="${esc(TX("misc.cb.run"))}"></button>` : "";
+  return `<div class="cb"><div class="cb-bar"${l ? ` data-lang="${esc(l)}"` : ""}><button type="button" class="cb-btn" data-cb="copy" data-label="${esc(TX("connect.copy"))}" aria-label="${esc(TX("misc.cb.copy_code"))}"></button>${run}</div>${pre}</div>`;
 }
 
 /* ---------- clipboard ---------- */
@@ -61,6 +61,6 @@ function cbClick(ev) {
   ev.preventDefault(); ev.stopPropagation();
   const text = code.textContent;
   if (btn.dataset.cb === "run") openShell({ command: shellCommand(text) });
-  else copyText(text).then(ok => cbFlash(btn, ok ? "복사했어요" : "복사하지 못했어요"));
+  else copyText(text).then(ok => cbFlash(btn, ok ? TX("connect.copied") : TX("chat.att.copy_failed")));
 }
 document.addEventListener("click", cbClick, true);

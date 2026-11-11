@@ -96,18 +96,18 @@ function kbdSet(on) {
 }
 async function kbdCopy() {
   const out = { app: typeof WEB_BUILD === "string" ? WEB_BUILD : "", agent: navigator.userAgent, coarse: matchMedia("(pointer: coarse)").matches, entries: kbdLoad() };
-  if (await copyText(JSON.stringify(out, null, 1))) toast("복사했어요"); else toast("복사하지 못했어요", true);
+  if (await copyText(JSON.stringify(out, null, 1))) toast(TX("connect.copied")); else toast(TX("chat.att.copy_failed"), true);
 }
 function kbdClear() { kbdBuf = []; kbdSave(); }
 // The settings rows (22-settings-pages.js displayPage): the switch, and while it is on the buffer's size with 복사 and 지우기.
 function kbdRows() {
   const row = (title, sub, end) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("list")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: sub })), liEnd(...end));
-  const rows = [row("입력 진단", kbdActive ? "입력칸에서 나올 때마다 기록해요. 쓴 글은 남기지 않아요" : "키보드가 내려갈 때를 기록해요. 쓴 글은 남기지 않아요",
-    [el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(kbdActive), "aria-label": "입력 진단", "data-k": "kbdiag", onclick: () => { kbdSet(!kbdActive); renderSettings(); } })])];
+  const rows = [row(TX("misc.kbd.title"), kbdActive ? TX("misc.kbd.on_note") : TX("misc.kbd.off_note"),
+    [el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(kbdActive), "aria-label": TX("misc.kbd.title"), "data-k": "kbdiag", onclick: () => { kbdSet(!kbdActive); renderSettings(); } })])];
   // one control per row (docs/ui-spec.md 설정 행): 복사 and 지우기 are two rows
-  if (kbdActive) rows.push(row("진단 기록", `${kbdCount()}건 · 이 기기에만 있어요`, [
-    el("button", { type: "button", class: "btn tonal inrow", "data-k": "kbdiag-copy", onclick: () => kbdCopy(), text: "복사" })]),
-    row("진단 기록 지우기", "", [el("button", { type: "button", class: "btn text inrow", "data-k": "kbdiag-clear", onclick: () => { kbdClear(); renderSettings(); }, text: "지우기" })]));
+  if (kbdActive) rows.push(row(TX("misc.kbd.log"), TX("misc.kbd.count", { n: kbdCount() }), [
+    el("button", { type: "button", class: "btn tonal inrow", "data-k": "kbdiag-copy", onclick: () => kbdCopy(), text: TX("connect.copy") })]),
+    row(TX("misc.kbd.clear"), "", [el("button", { type: "button", class: "btn text inrow", "data-k": "kbdiag-clear", onclick: () => { kbdClear(); renderSettings(); }, text: TX("misc.clear") })]));
   return rows;
 }
 try {

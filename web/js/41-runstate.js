@@ -3,14 +3,14 @@
 // conversation and every lane. The line always says one of 작업 중 / 답을 기다려요 / 쉬는 중 / 한도에 걸렸어요 / 오류로 멈췄어요 /
 // 멈춤 / 끝났어요. An idle conversation with plan tasks left names the reason (no button): the owner's complaint was
 // "todo는 남아있는데 아무것도 안하고 있을때 왜 안하는지 모르는 경우가 많음", so "쉬는 중" alone is never the answer.
-const RUN_LABEL = { working: "작업 중", waiting: "답을 기다려요", idle: "쉬는 중", limited: "한도에 걸렸어요", error: "오류로 멈췄어요", stopped: "멈춤", done: "끝났어요" };
+const RUN_LABEL = { working: TX("common.status.working"), waiting: TX("misc.run.waiting"), idle: TX("home.word.resting"), limited: TX("misc.run.limited"), error: TX("misc.run.error_stop"), stopped: TX("common.status.stopped"), done: TX("misc.run.done") };
 // When a pause ends, in KST, 24-hour, no seconds: "12:39까지" today, "11.13 12:39까지" on another day (kstShort: mm.dd, yy.mm.dd for another year).
-const pauseUntilText = t => { const ms = Date.parse(t); return isNaN(ms) ? "" : `${kstDay(ms) === kstDay(Date.now()) ? "" : `${kstShort(ms)} `}${REL_HM.format(ms)}까지`; };
+const pauseUntilText = t => { const ms = Date.parse(t); return isNaN(ms) ? "" : TX("misc.run.until", { at: `${kstDay(ms) === kstDay(Date.now()) ? "" : `${kstShort(ms)} `}${REL_HM.format(ms)}` }); };
 const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", error: "err", stopped: "", done: "ok" };
 // "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
 // recover: a background worker failed and the agent takes it up itself (hub/runstate.ts failedRun) - its progress, not a request to the owner.
-const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" || r.reason === "resume" ? "이어서 처리 중" : "맡긴 작업 진행 중";
+const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? TX("misc.run.queued") : r.reason === "recover" || r.reason === "resume" ? TX("misc.run.resuming") : TX("misc.run.work");
 // standby: no question, but nothing moves until the owner writes (a [wait] report, hub/runstate.ts waitsForOwner).
 const waitsOnOwner = r => r.kind === "waiting" && (r.reason === "ask" || r.reason === "standby");
 // A conversation waiting on work it handed off is progressing: blue on every row that shows it, like this line. One whose turn or whose
@@ -25,18 +25,18 @@ const runMoving = r => r.kind === "working" || (r.kind === "waiting" && !waitsOn
 // blue runs or progresses, orange needs the owner or sits at a limit, red failed, gray rests or ended. The word differs for every tone, so colour never speaks alone.
 function runStatus(t, status, ask) {
   const r = runOf(t);
-  if (laneQueued(t)) return ["순서 대기", ""];
+  if (laneQueued(t)) return [TX("home.todo.queued"), ""];
   if (status === "working" || status === "starting") return [statusKo(status), "pri"];
   if (ask || (r && waitsOnOwner(r))) return [RUN_LABEL.waiting, "warn"];
   if (r && r.kind === "working") return [RUN_LABEL.working, "pri"];
-  if (runQueued(r)) return ["순서 대기", ""];
-  if (runBusy(t)) return ["진행 중", "pri"];
+  if (runQueued(r)) return [TX("home.todo.queued"), ""];
+  if (runBusy(t)) return [TX("home.sys.running"), "pri"];
   if (status === "rate-limited" || (r && r.kind === "limited")) return [statusKo("rate-limited"), "warn"];
-  if (r && r.kind === "error" && !r.cancelled) return ["오류", "err"];
-  if (r && r.kind === "done") return ["끝남", ""];
+  if (r && r.kind === "error" && !r.cancelled) return [TX("misc.run.error"), "err"];
+  if (r && r.kind === "done") return [TX("project.word.ended"), ""];
   return [statusKo(status), statusTone(status)];
 }
-const targetState = t => { const i = targetInfo(t); return i.alive ? runStatus(t, i.status, i.ask) : ["종료됨", ""]; };
+const targetState = t => { const i = targetInfo(t); return i.alive ? runStatus(t, i.status, i.ask) : [TX("common.status.ended"), ""]; };
 const RUN_MEMO = { sig: "" };
 const runStateOf = () => {
   if (isFixedT(target) || isSettingsT(target) || isRelayT(target)) return null;
@@ -53,20 +53,20 @@ const projOnMain = t => isProjT(t) && !!C && !(C.conversation_kinds || []).inclu
 const runClock = () => (typeof workNow === "function" ? workNow() : Date.now());
 function runSince(iso) {
   const d = runClock() - (Date.parse(iso) || 0);
-  return !(d >= 0) ? "" : d < 60000 ? "방금" : d < 3600000 ? `${Math.floor(d / 60000)}분` : `${Math.floor(d / 3600000)}시간 ${Math.floor((d % 3600000) / 60000)}분`;
+  return !(d >= 0) ? "" : d < 60000 ? TX("home.ago.now") : d < 3600000 ? TX("home.dur.m", { n: Math.floor(d / 60000) }) : TX("home.dur.hm", { h: Math.floor(d / 3600000), m: Math.floor((d % 3600000) / 60000) });
 }
 function runText(r) {
-  const label = RUN_LABEL[r.kind] || "알 수 없음", left = r.todos ? `할 일 ${r.todos}개 남음` : "";
+  const label = RUN_LABEL[r.kind] || TX("settings.unknown"), left = r.todos ? TX("misc.run.todos_left", { n: r.todos }) : "";
   switch (r.kind) {
     case "working": return [label, r.detail, r.since ? runSince(r.since) : ""].filter(Boolean).join(" · ");
-    case "waiting": return [waitLabel(r), r.reason === "later" ? "" : r.reason === "recover" && r.detail ? `${r.detail.split(" · ")[0]} 실패` : r.detail, r.reason === "work" && r.since ? runSince(r.since) : "", left].filter(Boolean).join(" · ");
+    case "waiting": return [waitLabel(r), r.reason === "later" ? "" : r.reason === "recover" && r.detail ? TX("misc.run.what_failed", { what: r.detail.split(" · ")[0] }) : r.detail, r.reason === "work" && r.since ? runSince(r.since) : "", left].filter(Boolean).join(" · ");
     case "idle": {
-      const why = r.reason === "unfinished" ? "이번 턴이 끝났는데 할 일이 남아 있어요" : r.reason === "interrupted" || r.reason === "unknown" ? "마지막 턴이 끝나기 전에 멈췄어요" : "";
+      const why = r.reason === "unfinished" ? TX("misc.run.unfinished") : r.reason === "interrupted" || r.reason === "unknown" ? TX("misc.run.interrupted") : "";
       return [label, left, why].filter(Boolean).join(" · ");
     }
-    case "limited": return [label, pauseUntilText(r.detail) || "잠시 쉬어요"].join(" · ");
-    case "error": return [r.reason === "work" ? (r.cancelled ? "중단됨" : "실패") : label, r.detail].filter(Boolean).join(" · ");
-    case "stopped": return [label, r.reason === "owner" ? "직접 멈췄어요" : "", left].filter(Boolean).join(" · ");
+    case "limited": return [label, pauseUntilText(r.detail) || TX("misc.run.resting")].join(" · ");
+    case "error": return [r.reason === "work" ? (r.cancelled ? TX("home.sys.stopped") : TX("home.sys.failed")) : label, r.detail].filter(Boolean).join(" · ");
+    case "stopped": return [label, r.reason === "owner" ? TX("misc.run.by_owner") : "", left].filter(Boolean).join(" · ");
     case "done": return [label, r.detail, r.since ? kstHM(r.since) : ""].filter(Boolean).join(" · ");
     default: return label;
   }
@@ -76,19 +76,19 @@ function runText(r) {
 // session to resume or restart; a feed (알림, 작업내역) gets nothing that stops or restarts anything. The other computer's worker is
 // that computer's to act on, so its line offers no button here.
 function runAction(r, t = target) {
-  if (r.kind === "waiting" && r.reason === "ask") return { label: "질문으로 가기", run: () => runAskGo() };
+  if (r.kind === "waiting" && r.reason === "ask") return { label: TX("misc.run.go_ask"), run: () => runAskGo() };
   if (isFixedT(t)) return null;
   const peer = isMailT(t) && typeof pqPc === "function" && !!pqPc(t);
   if (r.work && !peer) {
     // 중단 is the send button itself while work runs (14-slash-commands.js renderWorking: send turns into stop), not a second button here.
     if (r.kind === "working" || (r.kind === "waiting" && (r.reason === "work" || r.reason === "recover"))) return null;
-    if (r.kind === "error" && r.reason === "work") return { label: "다시 맡기기", run: ev => workRetry(r.work, ev.currentTarget) };
+    if (r.kind === "error" && r.reason === "work") return { label: TX("home.wk.retry"), run: ev => workRetry(r.work, ev.currentTarget) };
   }
   if (isMailT(t)) return null;
   // idle with tasks left only says why; no 계속하기 button (owner 2026-10-28: "계속하기 버튼 너무 거슬린다") - a message continues it.
-  if (isLaneT(t)) return r.kind === "error" || r.kind === "stopped" ? { label: "다시 시작", run: ev => runLaneRestart(laneOf(t), ev.currentTarget) } : null;
-  if (r.kind === "limited" || r.kind === "error") return { label: r.kind === "limited" ? "지금 다시 시도" : "다시 시도", run: ev => orchResume(ev.currentTarget) };
-  if (r.kind === "stopped") return { label: "다시 시작", run: ev => runRestart(ev.currentTarget) };
+  if (isLaneT(t)) return r.kind === "error" || r.kind === "stopped" ? { label: TX("misc.run.restart"), run: ev => runLaneRestart(laneOf(t), ev.currentTarget) } : null;
+  if (r.kind === "limited" || r.kind === "error") return { label: r.kind === "limited" ? TX("misc.retry_now") : TX("misc.retry"), run: ev => orchResume(ev.currentTarget) };
+  if (r.kind === "stopped") return { label: TX("misc.run.restart"), run: ev => runRestart(ev.currentTarget) };
   return null;
 }
 // The live tag of a report: the conversation's state now. `of` is the session the report came from, else the open conversation.
@@ -163,17 +163,17 @@ async function runAskGo() {
     return to === target || (target === MAIN && (to === "main" || String(to).startsWith("auth:")));
   });
   if (d) return noticeOpenId(d.id);
-  toast("질문을 찾지 못했어요. 알림에서 확인해 주세요");
+  toast(TX("misc.run.ask_missing"));
 }
 // 다시 시작 (a stopped session): the gateway's restart, the same as the stopped banner (08-home.js).
 const runRestart = btn => busy(btn, async () => {
   await api("/api/orchestrator/restart", "POST", {});
-  toast("다시 시작할게요");
+  toast(TX("misc.run.restarting"));
   scheduleState();
 });
 // 다시 시작 (a session that stopped or failed): that session's own restart, the same as its ⋯ menu on 홈 (08-home.js).
 const runLaneRestart = (name, btn) => busy(btn, async () => {
   await api(`/api/lanes/${enc(name)}/restart`, "POST", {});
-  toast("다시 시작할게요");
+  toast(TX("misc.run.restarting"));
   scheduleState();
 });

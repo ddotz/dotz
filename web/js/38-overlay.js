@@ -60,6 +60,6 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
 function fsHead(tt, { ignore, ignoreOff, close } = {}) {
   return el("div", { class: "fs-hd" }, el("div", { class: "fs-tt" }, ...tt),
     el("div", { class: "fs-hb" },
-      ignore ? el("button", { class: "fs-ign", type: "button", "data-k": "ignore", disabled: !!ignoreOff, onclick: ignore }, el("span", { text: "무시" })) : null,
-      close ? el("button", { class: "ib fs-x", type: "button", "aria-label": "닫기", onclick: close }, icon("close")) : null));
+      ignore ? el("button", { class: "fs-ign", type: "button", "data-k": "ignore", disabled: !!ignoreOff, onclick: ignore }, el("span", { text: TX("misc.ignore") })) : null,
+      close ? el("button", { class: "ib fs-x", type: "button", "aria-label": TX("common.close"), onclick: close }, icon("close")) : null));
 }

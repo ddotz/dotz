@@ -17,7 +17,7 @@ describe("a public computer on the web side", () => {
 	test("the remote desktop list draws no button for it, and still draws one for a direct computer", () => {
 		const row = between(web("37-remote-desktop.js"), "function dskRowBtn", "/* ---------- state");
 		const env: Record<string, unknown> = { selfDown: false, S: { desk: { on: true } }, el: (_tag: string, attrs: unknown) => attrs, prClose: () => {}, openScreen: () => {} };
-		const draw = (p: unknown): unknown => new Function(...Object.keys(env), `${row}\nreturn dskRowBtn(${JSON.stringify(p)});`)(...Object.values(env));
+		const draw = (p: unknown): unknown => new Function(...Object.keys(env), `${i18nPrelude()}${row}\nreturn dskRowBtn(${JSON.stringify(p)});`)(...Object.values(env));
 		expect(draw(PUBLIC)).toBeNull();
 		expect(draw(DIRECT)).not.toBeNull();
 	});

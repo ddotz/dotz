@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // The keyboard shortcuts, run on the real source text: Cmd/Ctrl+1..5 open the tabs (web/js/04-state.js) and Cmd/Ctrl+` goes to the
 // next computer without the sheet (web/js/33-peers.js prNext). Only the page around the handlers is faked.
@@ -41,7 +42,7 @@ function gateways(platform: string, list: Peer[], o: { dialog?: boolean } = {}) 
 		document: { addEventListener: (_: string, h: Handler) => handlers.push(h), querySelector: () => (o.dialog ? {} : null) },
 		prPick: (p: Peer) => log.push(`pick:${p.name}`), toast: (m: string, bad?: boolean) => log.push(`toast:${bad ? "bad:" : ""}${m}`),
 	};
-	new Function(...Object.keys(env), gwSrc)(...Object.values(env));
+	new Function(...Object.keys(env), `${i18nPrelude()}${gwSrc}`)(...Object.values(env));
 	return { handlers, log };
 }
 

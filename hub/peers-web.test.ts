@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // The computer chip's loader (web/js/33-peers.js prLoad), run on the real source text. The page starts from the service worker's cached
 // shell before the phone's network is back after a trip to the other computer, so the first /api/peers can fail.
@@ -71,7 +72,7 @@ function shell(standalone: boolean) {
 		isStandalone: () => standalone, window: win, location: loc, document: { body: { append: (n: unknown) => appended.push(n) } }, el,
 		ovOpen: () => ({ n: ++open }), ovDone: () => {}, prLoad: () => {}, PR: { list: [MAC, MINI] }, prUrl: (p: Peer, x = "") => `${p.url}/${x}`, enc: encodeURIComponent, DEVICE_ID: "d1",
 	};
-	const api = new Function(...Object.keys(env), `${embed}\nreturn { prGo, PRF };`)(...Object.values(env)) as { prGo: (h: string) => void; PRF: { node: any } };
+	const api = new Function(...Object.keys(env), `${i18nPrelude()}${embed}\nreturn { prGo, PRF };`)(...Object.values(env)) as { prGo: (h: string) => void; PRF: { node: any } };
 	return { ...api, appended, loc, message: (origin: string, data: unknown) => listeners.message!({ origin, data }) };
 }
 
@@ -115,7 +116,7 @@ describe("a computer reached only through JANDI", () => {
 			enc: encodeURIComponent,
 			DEVICE_ID: "d1",
 		};
-		new Function(...Object.keys(env), `${isRelayRow}\n${pick}\nprPick(${JSON.stringify(p)});`)(...Object.values(env));
+		new Function(...Object.keys(env), `${i18nPrelude()}${isRelayRow}\n${pick}\nprPick(${JSON.stringify(p)});`)(...Object.values(env));
 		return calls;
 	}
 	test("a relay row opens its chat in this app's chat view even while it shows as not connected, and never leaves for another address", () => {
