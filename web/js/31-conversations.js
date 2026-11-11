@@ -8,7 +8,7 @@ const CONV_KINDS = new Set(["message", "lane_message", "out", "lane_report", "re
 // A message the conversation shows (same rule as hub/conversations.ts isRealMessage), and one that can be unread: not the owner's own, no restart note.
 // A post edited in place (update_key) is a message only in 알림 / 작업 기록; elsewhere it is a progress note.
 const convKeyedOk = e => e.update_key !== "progress" && isFixedT(eventTarget(e) || "");
-const convReal = e => CONV_KINDS.has(e.kind) && !(e.kind === "out" && e.update_key && !convKeyedOk(e));
+const convReal = e => CONV_KINDS.has(e.kind) && !gatewayWake(e) && !(e.kind === "out" && e.update_key && !convKeyedOk(e));
 // A gateway system line (`system`, 11-todo-strip.js sysLine) is a status, never unread (hub/conversations.ts countIncoming).
 const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e) && !e.system;
 

@@ -38,7 +38,7 @@ const server = Bun.serve({
 		if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (p === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }]);
 		if (p === "/api/conversations") {
-			const last = msgs.at(-1);
+			const last = msgs.findLast(e => e.kind !== "schedule");   // the hub does not list the gateway's own wake (hub/conversations.ts)
 			return json({ items: [{ target: "main", unread: unread(), read, last: last ? { ts: last.ts, text: last.text, from: last.kind === "out" ? "bot" : "owner" } : null }] });
 		}
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: url.searchParams.get("target") === "main" && !url.searchParams.get("before") ? msgs : [] });
@@ -150,4 +150,14 @@ test("a hidden page reads nothing; it reads once it shows", async () => {
 	await until(() => posts.length > 0);
 	expect(posts.at(-1)).toEqual({ target: "main", ts: iso(2) });
 	await waitFor(v, `ts(MAIN).unread === 0`);
+}, 30_000);
+
+test("a hidden gateway wake as the newest event does not hold the read back", async () => {
+	// the quiet check's wake (hub/main.ts wakeOnce) has no card: showing the last drawn message reads the conversation
+	reset([say(0, "어제 얘기"), say(1, "확인했어요", true), say(2, "새 답이에요"), { kind: "schedule", ts: iso(3), source: "gateway", channel: "web", text: "조용한 확인" }], iso(1));
+	const v = await boot(1280, 900);
+	await until(() => posts.length > 0);
+	expect(posts.at(-1)).toEqual({ target: "main", ts: iso(2) });
+	await waitFor(v, `ts(MAIN).unread === 0`);
+	expect(await q<number>(v, `return chatUnreadCount([MAIN], t => ts(t).unread)`)).toBe(0);
 }, 30_000);

@@ -53,7 +53,7 @@ export function previewOf(raw: string): string {
 }
 
 function lastOf(e: HubEvent): ConversationLast | undefined {
-	if (!isRealMessage(e)) return undefined;
+	if (!isRealMessage(e) || gatewayWake(e)) return undefined;
 	const card = e.card && typeof e.card === "object" ? (e.card as { title?: unknown }).title : undefined;
 	const hasFiles = Array.isArray(e.files) && e.files.length > 0;
 	const text = previewOf(String(e.text ?? "")) || previewOf(typeof card === "string" ? card : "") || (hasFiles ? "파일" : "");
@@ -70,6 +70,8 @@ let sorted: { target: string; last: ConversationLast | null }[] | undefined;
 // same message meet here, so the key keeps it counted once.
 const UNREAD_KEEP = 500;
 const incoming = new Map<string, Map<string, string>>();
+// The gateway's own wake for a check (hub/main.ts wakeOnce) is an instruction to the assistant: the chat draws no card for it, so it is no message (web/js/11-todo-strip.js gatewayWake).
+const gatewayWake = (e: HubEvent) => e.kind === "schedule" && e.source === "gateway";
 const cleanRestart = (e: HubEvent) => e.kind === "out" && e.source === "gateway" && /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(e.text ?? "")) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
 
 function countIncoming(target: string, e: HubEvent, last: ConversationLast): void {

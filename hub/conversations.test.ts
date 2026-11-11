@@ -2,6 +2,7 @@ import { appendFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 import { paths } from "./config.ts";
 import { emit } from "./events.ts";
+import { markRead } from "./reads.ts";
 
 // The list is built once per module instance, from the log as it is then. Another test file that asks /api/conversations first
 // would freeze it before this file writes its log lines, so this file loads its own instances: one here for the live tests and
@@ -23,6 +24,23 @@ test("the first list is built from the log tail, newest real message per target 
 	const first = (await import("./conversations.ts?first-list")).conversationList();
 	expect(first.find(c => c.target === "ch:12")?.last).toEqual({ ts: "2026-10-20T01:00:00.000Z", text: "첫 답", from: "bot" });
 	expect(first.some(c => c.target === "lane:old")).toBe(false);
+});
+
+test("the gateway's own wake is no message: not unread after a load, no preview; an owner schedule still counts", async () => {
+	const line = (e: object) => `${JSON.stringify(e)}\n`;
+	appendFileSync(paths.outbox, line({ ts: "2026-10-21T01:00:00.000Z", kind: "out", source: "orchestrator", target: "web", text: "마지막 답" }));
+	appendFileSync(paths.inbox, line({ ts: "2026-10-21T01:30:00.000Z", kind: "schedule", source: "gateway", channel: "web", quiet: true, id: "c1", ids: ["c1"], text: "조용한 확인" }));
+	markRead({ target: "main", ts: "2026-10-21T01:00:00.000Z" });
+	// a count stuck from before (the wake after the read position) is gone on the next load, with nothing for the owner to do
+	const fresh = await import("./conversations.ts?quiet-wake");
+	expect(fresh.unreadOf("main")).toBe(0);
+	expect(fresh.conversationList().find(c => c.target === "main")?.last?.ts).toBe("2026-10-21T01:00:00.000Z");
+	emit("inbox", { ts: "2026-10-21T01:40:00.000Z", kind: "schedule", source: "gateway", channel: "web", quiet: true, text: "또 확인" });
+	expect(fresh.unreadOf("main")).toBe(0);
+	expect(fresh.conversationList().find(c => c.target === "main")?.last?.ts).toBe("2026-10-21T01:00:00.000Z");
+	emit("inbox", { ts: "2026-10-21T01:50:00.000Z", kind: "schedule", source: "web", channel: "web", id: "s1", text: "예약한 일" });
+	expect(fresh.unreadOf("main")).toBe(1);
+	expect(fresh.conversationList().find(c => c.target === "main")?.last?.ts).toBe("2026-10-21T01:50:00.000Z");
 });
 
 test("a live message replaces the preview; progress, delivery and notice events do not", () => {
