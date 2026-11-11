@@ -40,7 +40,8 @@ class FakeAgent implements AgentProcess {
 	sent: string[] = [];
 	send = (text: string) => void this.sent.push(text);
 	abort = () => {};
-	compact = () => {};
+	compacts = 0;
+	compact = () => void this.compacts++;
 	refreshUsage = () => {};
 	refreshSession = () => {};
 	watchSubagents = () => {};
@@ -112,6 +113,32 @@ test("a failed compaction restarts the session without a chat message or an orch
 	expect(reports[0]).toStartWith("[lane stuck]");
 	expect(reports[0]).not.toContain("Compaction cancelled");
 	l.stopLane("recover-quiet");
+	await advance(300);
+});
+
+test("a compaction the engine refused because the session changed is asked again once, without restarting the lane", async () => {
+	const { lane, agent } = await working("recover-retry");
+	const session = join(DATA, "recover-retry.jsonl");
+	writeFileSync(session, "");
+	lane.sessionFile = session;
+	agent.push({ type: "turn_end" });
+	await flush();
+	expect(lane.status).toBe("idle");
+	const refused = { type: "compaction", state: "error", error: "Compaction rejected: session changed, retry compaction", requested: true } as const;
+	const before = spawns.length;
+	lane.ctx.compaction = { state: "compacting", at: "t" };
+	agent.push(refused);
+	await flush();
+	expect(spawns.length).toBe(before);
+	expect(agent.compacts).toBe(1);
+	expect(lane.ctx.compaction.state).toBe("compacting");
+	agent.push(refused);
+	await flush();
+	await advance(300);
+	await flush();
+	expect(agent.compacts).toBe(1);
+	expect(spawns.length).toBe(before + 1);
+	l.stopLane("recover-retry");
 	await advance(300);
 });
 

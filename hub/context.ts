@@ -7,7 +7,7 @@ import type { AgentEvent } from "./runtime/types.ts";
 
 type CompactState = "queued" | "compacting" | "done" | "error";
 export type Compaction = { state?: CompactState; at?: string; tokensBefore?: number; error?: string };
-export type Ctx = { tokens: number; window: number; compaction: Compaction };
+export type Ctx = { tokens: number; window: number; compaction: Compaction; retried?: boolean };
 
 export const newCtx = (): Ctx => ({ tokens: 0, window: 0, compaction: {} });
 
@@ -62,11 +62,21 @@ export function noteEvent(c: Ctx, ev: AgentEvent, port: CompactPort): void {
 		if (ev.window !== undefined) c.window = ev.window;
 	} else if (ev.type === "compaction" && ev.state === "done") {
 		c.compaction = { state: "done", at: now(), tokensBefore: ev.tokensBefore };
+		c.retried = false;
 		port.refreshUsage();
 	} else if (ev.type === "compaction" && ev.state === "error" && ev.requested) {
 		c.compaction = { state: "error", at: now(), error: ev.error };
 		log(`compaction failed: ${c.compaction.error}`);
 	}
+}
+
+// OmO refuses a summary when the session changed while it was made ("retry compaction"). A requested compaction refused that way
+// is queued again once, for the next idle point; a second refusal is a failure. True when it was queued.
+export function requeueRefused(c: Ctx, error: string): boolean {
+	if (c.retried || c.compaction.state !== "error" || !/retry compaction/i.test(error)) return false;
+	c.retried = true;
+	c.compaction = { state: "queued", at: now() };
+	return true;
 }
 
 // The process went away before a queued or running compaction finished.

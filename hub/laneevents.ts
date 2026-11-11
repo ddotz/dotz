@@ -1,7 +1,7 @@
 import { type Lane, portOf, pendingFile, setStatus, ownerNotes, persist, hooks } from "./lanestate.ts";
 import { type AgentProcess } from "./runtime/types.ts";
 import { emitEventActivity } from "./activity.ts";
-import { noteEvent, compactDue, requestCompact, flushCompact } from "./context.ts";
+import { noteEvent, compactDue, requestCompact, flushCompact, requeueRefused } from "./context.ts";
 import { rmSync } from "node:fs";
 import { handleError, laneRanOn, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
 import { nextLastText, scheduleReport, REPORT_DEBOUNCE_MS, report } from "./lanereport.ts";
@@ -159,7 +159,10 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				break;
 			}
 			case "compaction":
-				if (ev.state === "error") recover(lane, "컨텍스트 압축이 실패했어요", wasWorking);
+				if (ev.state === "error" && requeueRefused(lane.ctx, ev.error)) {
+					log(`lane ${lane.name} compaction refused (${ev.error.slice(0, 120)}); retrying at the next idle point`);
+					flushCompact(lane.ctx, portOf(lane));
+				} else if (ev.state === "error") recover(lane, "컨텍스트 압축이 실패했어요", wasWorking);
 				else {
 					lane.retainNext = true;
 					if (lane.status === "idle" && lane.held?.length) {
