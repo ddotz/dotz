@@ -45,9 +45,9 @@ if (!process.env.DOTZ_TEST_DIR) {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-test-"));
 	process.env.DOTZ_TEST_DIR = dir;
 	// bun test never fires the process "exit" event, so a handler here removed nothing and every test process left its folder behind. A shell
-	// that outlives this process (a killed one too) removes the folder once the pid is gone. It is started by a shell that exits at once: a
-	// --parallel worker kills its own children when it ends, detached or not, and only a process that is no longer its child survives that.
-	Bun.spawn(["/bin/sh", "-c", '(while kill -0 "$1" 2>/dev/null; do sleep 1; done; rm -rf "$2") &', "sh", String(process.pid), dir], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }).unref();
+	// that outlives this process (a killed one too) removes the folder once the pid is gone. It is started by a shell that exits at once, and
+	// that exit is awaited (milliseconds): a --parallel worker kills the children it still has when it ends, detached or not.
+	await Bun.spawn(["/bin/sh", "-c", '(while kill -0 "$1" 2>/dev/null; do sleep 1; done; rm -rf "$2") &', "sh", String(process.pid), dir], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }).exited;
 }
 const dir = process.env.DOTZ_TEST_DIR;
 if (liveDataDir(dir)) throw new Error(`refused: DOTZ_TEST_DIR ${dir} is not a temp dir`);

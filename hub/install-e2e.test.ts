@@ -52,9 +52,13 @@ beforeAll(() => {
 	release = join(root, "release-tree");
 	copyTree(join(release, "dotz"));
 });
-// The root holds some twenty installs by now: removing it took 7 to 11 s on a busy machine, more than a hook may take. A child of its own
-// removes it and outlives this process, so the removal is on no test's clock.
-afterAll(() => Bun.spawn(["rm", "-rf", root], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }).unref());
+// The root holds some twenty installs by now: removing it took 7 to 11 s on a busy machine, more than a hook may take. An `rm` that outlives
+// this process removes it, so the removal is on no test's clock. A shell that exits at once starts it, and the hook waits for that shell
+// (milliseconds): a --parallel worker kills the children it still has when it ends, detached or not, and an `rm` started directly left the
+// whole root (1.1 GB) behind in a full run.
+afterAll(async () => {
+	await Bun.spawn(["/bin/sh", "-c", 'rm -rf "$1" &', "sh", root], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }).exited;
+});
 
 test("tarball install writes the stamp, then self-updates to a newer local tarball and keeps the old dir for rollback", () => {
 	const app = join(root, "app-tar");
