@@ -21,6 +21,7 @@ import { projectTarget } from "./projectchat.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, setWatchPushOff, startPush } from "./push.ts";
 import { msg, textsToReport } from "./i18n.ts";
+import { startWebI18n } from "./web-i18n-boot.ts";
 import { broadcast, emit, emitDelivery, onEmit, recentEvents, sentFiles, subscriberCount } from "./events.ts";
 import { WORK_SWEEP_MS } from "./workrows.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
@@ -500,6 +501,7 @@ function wakeOnce(id: string, text: string) {
 	deliver(inboxText(event), { target: channel });
 }
 if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
+	startWebI18n();
 	const lines = textsToReport();
 	if (lines.length) wakeOnce("texts-override", msg().textsReport(lines.join("\n")));
 	void pendingBackups(defaultExec, join(import.meta.dir, ".."), join(DATA_DIR, "logs"), DATA_DIR)

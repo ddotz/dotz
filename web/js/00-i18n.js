@@ -3,8 +3,9 @@
 // this file reads those two constants and nothing else, and touches no DOM, so hub/web-i18n.ts runs the same source on the server.
 // A catalog value is a string with {name} placeholders, {name+이/가} Korean particles (picked from the word's last letter), or an
 // object of plural forms ({ one, other }) chosen by Intl.PluralRules on vars.n.
-const TX_LOCALE = I18N_LANG === "ko" ? "ko-KR" : I18N_LANG;
-const TX_PLURAL = new Intl.PluralRules(I18N_LANG);
+// Any language tag the gateway serves (pt-br, zh-hant-tw): canonicalised once (pt-BR), and a tag Intl rejects falls back to en-US instead of breaking the page.
+const TX_LOCALE = (() => { try { return Intl.getCanonicalLocales(I18N_LANG === "ko" ? "ko-KR" : I18N_LANG)[0]; } catch { return "en-US"; } })();
+const TX_PLURAL = new Intl.PluralRules(TX_LOCALE);
 // word + the first form of `pair` ("이/가", "을/를", "은/는", "과/와", "으로/로") when the word ends in a final consonant, else the second;
 // a last letter that is not Hangul takes the second form, and 로 follows ㄹ.
 function txJosa(word, pair) {

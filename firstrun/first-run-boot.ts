@@ -21,6 +21,10 @@ if (firstRunPending(DATA_DIR)) {
 		return "restarting";
 	};
 	const route = makeRoute({ busyNow: () => [], restartGateway: exit, restartGatewayNow: exit });
+	const { startWebI18n } = await import("../hub/web-i18n-boot.ts");
+	const { readFirstRun } = await import("./first-run.ts");
+	const { draftLang } = await import("./setup-state.ts");
+	startWebI18n({ lang: () => draftLang(readFirstRun(DATA_DIR)?.draft ?? {}) });
 	writeAtomic(paths.pid, String(process.pid));
 	log(`hub listening on 127.0.0.1:${server.port} in first-run mode (web onboarding; no orchestrator, Discord, watches or mail polling)`);
 	for (const sig of ["SIGTERM", "SIGINT"] as const) process.on(sig, () => void exit());

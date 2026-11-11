@@ -12,6 +12,7 @@ import { baseLanguage, detectLanguage, languageName } from "./language.ts";
 import { en, enLeads, type Catalog, type Leads } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
 import { applyTexts, reportTexts } from "./texts.ts";
+import { diskReader, loadCatalog } from "./web-i18n.ts";
 
 export type LaneFooterArgs = { lane: string; language: string; mode: string; workerModel: string; slots: number; worktree: string };
 export type WorktreeArgs = { path: string; repo: string; branch: string; base: string };
@@ -47,7 +48,7 @@ const shipped = (): Catalog => CATALOGS[baseLanguage(lang())] ?? en;
 export const msg = (): Catalog => applyTexts(shipped(), DATA_DIR, LOCKED_TEXTS);
 
 // Overrides that no longer fit the shipped catalog and were not reported yet, one line each (see reportTexts).
-export const textsToReport = (): string[] => reportTexts(shipped(), DATA_DIR, LOCKED_TEXTS);
+export const textsToReport = (): string[] => reportTexts(shipped(), DATA_DIR, LOCKED_TEXTS, loadCatalog("en", diskReader()));
 
 // The reply-language line for a prompt that carries instructions; empty when the instructions are already in that language.
 function replyLine(): string {

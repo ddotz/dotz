@@ -44,13 +44,27 @@ let revision = 0;
 export const catalogRevision = (): number => revision;
 export const setCatalogProvider = (fn: CatalogProvider | undefined): void => { provider = fn; revision++; };
 
+// The owner's own words (`web:<key>` in custom/texts.json, hub/texts.ts webWords): applied over whatever catalog the page gets, ko and en too.
+// `stamp` changes with the file; a word whose key is unknown or whose placeholder names differ from the catalog's is not used.
+export type OwnerWords = { stamp: string; words: Record<string, string> };
+let ownerWords: (() => OwnerWords) | undefined;
+export const setOwnerWords = (fn: (() => OwnerWords) | undefined): void => { ownerWords = fn; revision++; };
+export const ownerStamp = (): string => ownerWords?.().stamp ?? "";
+export const ownerWordProblem = (catalog: Catalog, key: string, text: string): "missing" | "broken" | undefined =>
+	catalog[key] === undefined ? "missing" : !text.trim() || placeholders(text).join() !== placeholders(catalog[key]!).join() ? "broken" : undefined;
+function withOwnerWords(view: View): View {
+	const words = ownerWords?.().words ?? {};
+	const use = Object.entries(words).filter(([k, t]) => !ownerWordProblem(view.catalog, k, t));
+	return use.length ? { lang: view.lang, catalog: { ...view.catalog, ...Object.fromEntries(use) } } : view;
+}
+
 /** The language the page really shows: ko stays ko, anything else is en until a provider has a catalog for it. */
 export function resolveView(code: string, reader: Reader): View {
 	const norm = code.trim().toLowerCase().replace(/_/g, "-") || "ko";
 	const base = norm.split("-")[0]!;
-	if (base === "ko") return { lang: "ko", catalog: loadCatalog("ko", reader) };
+	if (base === "ko") return withOwnerWords({ lang: "ko", catalog: loadCatalog("ko", reader) });
 	const made = base === "en" ? undefined : provider?.(norm);
-	return made ? { lang: norm, catalog: made } : { lang: "en", catalog: loadCatalog("en", reader) };
+	return withOwnerWords(made ? { lang: norm, catalog: made } : { lang: "en", catalog: loadCatalog("en", reader) });
 }
 
 export const injectedConsts = (view: View): string => `const I18N_LANG = ${JSON.stringify(view.lang)}, I18N = ${JSON.stringify(view.catalog)};`;

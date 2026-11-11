@@ -6,7 +6,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { compressResponse } from "./compress.ts";
 import { publishedWeb } from "./web-committed.ts";
-import { catalogRevision, diskReader, fillPage, fillScript, injectedConsts, mapReader, resolveView, setWebView, webText, type Reader, type View } from "./web-i18n.ts";
+import { catalogRevision, diskReader, fillPage, fillScript, injectedConsts, loadCatalog, mapReader, ownerStamp, resolveView, setWebView, webText, type Catalog, type Reader, type View } from "./web-i18n.ts";
 
 const WEB_DIR = process.env.DOTZ_WEB_DIR ?? join(import.meta.dir, "..", "web");
 // The committed web/ (hub/web-committed.ts), or undefined to read the working tree.
@@ -42,13 +42,19 @@ function i18nView(): { key: string; view: View; consts: string } {
 		reader = diskReader(WEB_DIR);
 		for (const lang of ["ko", "en"]) for (const a of reader.areas(lang)) { const st = statSync(join(WEB_DIR, "i18n", lang, `${a}.json`)); stamp += `${lang}/${a}:${st.size}:${st.mtimeMs}|`; }
 	}
-	const key = `${appLang}#${catalogRevision()}#${stamp}`;
+	const key = `${appLang}#${catalogRevision()}#${ownerStamp()}#${stamp}`;
 	if (viewHit && viewHit.key === key) return viewHit;
 	const view = resolveView(appLang, reader);
 	viewHit = { key, view, consts: injectedConsts(view) };
 	return viewHit;
 }
 setWebView(() => i18nView().view);
+/** The ko and en lists the page is drawn from (the generator's sources). */
+export function webSources(): { ko: Catalog; en: Catalog } {
+	const snap = committed();
+	const reader = snap ? mapReader(snap.files) : diskReader(WEB_DIR);
+	return { ko: loadCatalog("ko", reader), en: loadCatalog("en", reader) };
+}
 /** Manifest fields that follow the app language. */
 export const manifestI18n = (name: string): { lang: string; description: string } => ({ lang: i18nView().view.lang, description: webText("shell.manifest.description", { name }) });
 /** sw.js with its notification texts in the app language. */

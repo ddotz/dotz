@@ -21,6 +21,7 @@
   const job = id => S.jobs.find(r => r.id === id) || { id, state: "idle", detail: "", owner: "" };
   const busy = () => S.jobs.some(r => r.state === "running");
   const furthest = () => Math.max(ORDER.indexOf(S.step === "apply" ? "review" : S.step), 0);
+  const webLine = () => { const w = S.web, t = u().webText; return w ? (w.state === "preparing" ? fmt(t.preparing, w) : t[w.state]) : ""; };
   const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const IC_CHECK = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 
@@ -73,7 +74,7 @@
   async function refresh(all) {
     const f = await api(`/api/setup/state${all ? "" : "?fresh=1"}`);
     S.scan = f.scan; S.saved = f.saved; S.jobs = f.jobs;
-    if (all) Object.assign(S, { text: f.text, lang: f.lang, draft: f.draft });
+    if (all) Object.assign(S, { text: f.text, lang: f.lang, draft: f.draft, web: f.web });
     if (["start", "harness", "tools"].includes(V.view)) render();
   }
 
@@ -237,7 +238,7 @@
       return i <= f && !V.applying ? `<a class="ni${s === v ? " on" : ""}" href="#${s}"${cur}>${dot(st)}<span>${h(x.steps[s])}</span></a>` : `<span class="ni off"${cur}>${dot(st)}<span>${h(x.steps[s])}</span></span>`;
     }).join("");
     const top = at < 0 ? "" : `<div class="ob-top"><span class="meta">${at + 1}/${STEPS.length} ${h(x.steps[v])}</span><div class="bar pri"><i style="width:${((at + 1) / STEPS.length) * 100}%"></i></div></div>`;
-    return `<div class="ob"><aside class="ob-rail"><div class="brand"><span class="logo"></span><span>dotz</span></div><nav class="nav" aria-label="${h(x.nav)}">${rail}</nav></aside><div class="ob-main"><div class="ob-scroll">${top}<div class="ob-col"><h1 tabindex="-1">${h(view.title)}</h1>${view.sup ? `<p class="ob-sup">${h(view.sup)}</p>` : ""}<div data-ob-body>${view.body}</div></div></div><footer class="ob-ft"><div class="ob-ft-in">${view.foot}</div><div class="note ob-msg" id="ob-msg" role="status" aria-live="polite"></div></footer></div></div>`;
+    return `<div class="ob"><aside class="ob-rail"><div class="brand"><span class="logo"></span><span>dotz</span></div><nav class="nav" aria-label="${h(x.nav)}">${rail}</nav></aside><div class="ob-main"><div class="ob-scroll">${top}<div class="ob-col"><h1 tabindex="-1">${h(view.title)}</h1>${view.sup ? `<p class="ob-sup">${h(view.sup)}</p>` : ""}<div data-ob-body>${view.body}</div></div></div><footer class="ob-ft"><div class="ob-ft-in">${view.foot}</div><div class="note ob-web" id="ob-web">${h(webLine())}</div><div class="note ob-msg" id="ob-msg" role="status" aria-live="polite"></div></footer></div></div>`;
   }
   function render(opts = {}) {
     const keep = qs(".ob-scroll")?.scrollTop ?? 0;
@@ -434,6 +435,7 @@
   function listen() {
     const es = new EventSource("/api/setup/stream");
     es.addEventListener("snapshot", e => { S.jobs = JSON.parse(e.data).jobs; });
+    es.addEventListener("webtext", e => { S.web = JSON.parse(e.data) || undefined; const el = qs("#ob-web"); if (el) el.textContent = webLine(); });
     es.addEventListener("line", e => { const d = JSON.parse(e.data); V.lines[d.job] = d.text; (V.log[d.job] ||= []).push(d.text); paintJob(d.job); });
     es.addEventListener("state", e => {
       const r = JSON.parse(e.data);

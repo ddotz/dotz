@@ -44,6 +44,8 @@ html, body, #setup { height: 100%; }
 .ob-ft-in { display: flex; align-items: center; gap: var(--sp-2); max-width: 512px; margin: 0 auto; }
 .ob-ft .btn { text-decoration: none; }
 .ob-sp { flex: 1; }
+.ob-web { max-width: 512px; margin: var(--sp-2) auto 0; }
+.ob-web:empty { display: none; }
 .ob-msg { max-width: 512px; min-height: var(--sp-4); margin: var(--sp-15) auto 0; }
 .ob-wait { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--fg-2); font-size: 14px; }
 .ob-dead { display: flex; align-items: center; justify-content: center; }
@@ -63,5 +65,5 @@ html, body, #setup { height: 100%; }
   .ob-col h1 { font-size: 20px; line-height: 28px; }
   .ob-col .fi, .ob-sheet .fi { font-size: 16px; }
   .ob-ft { padding: var(--sp-2) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom)); background: var(--card); }
-  .ob-ft-in, .ob-msg { max-width: none; }
+  .ob-ft-in, .ob-msg, .ob-web { max-width: none; }
 }

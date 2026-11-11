@@ -12,10 +12,13 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { writeAtomic } from "./config.ts";
+import { type Catalog, ownerWordProblem, type OwnerWords } from "./web-i18n.ts";
 
 export const TEXTS_FILE = "texts.json";
 export type Entry = { text: string; default?: string };
-export type Problem = { key: string; kind: "missing" | "stale" | "locked" };
+export type Problem = { key: string; kind: "missing" | "stale" | "locked" | "broken" };
+// `web:<key>` entries are words of the web app's own catalog (web/i18n), not of the messenger catalog this file overrides.
+export const WEB_PREFIX = "web:";
 type Fn = (...args: string[]) => string;
 
 export const textsPath = (dataDir: string): string => join(dataDir, "custom", TEXTS_FILE);
@@ -76,10 +79,34 @@ export function applyTexts<T extends object>(base: T, dataDir: string, locked: R
 	return out as T;
 }
 
-/** Overrides that no longer fit the shipped catalog: key gone or locked, or the shipped default changed since the override was written. */
-export function textProblems(base: object, dataDir: string, locked: ReadonlySet<string> = new Set()): Problem[] {
+const webStamp = new Map<string, { stamp: string; out: OwnerWords }>();
+/** The owner's `web:<key>` words (key without the prefix), re-read only when the file changes. */
+export function webWords(dataDir: string): OwnerWords {
+	let stamp = "";
+	try {
+		const st = statSync(textsPath(dataDir));
+		stamp = `${st.mtimeMs}:${st.size}`;
+	} catch {
+		return { stamp: "", words: {} };
+	}
+	const hit = webStamp.get(dataDir);
+	if (hit?.stamp === stamp) return hit.out;
+	const words: Record<string, string> = {};
+	for (const [key, e] of Object.entries(readTexts(dataDir))) if (key.startsWith(WEB_PREFIX)) words[key.slice(WEB_PREFIX.length)] = e.text;
+	const out = { stamp, words };
+	webStamp.set(dataDir, { stamp, out });
+	return out;
+}
+
+/** Overrides that no longer fit the shipped catalog: key gone or locked, or the shipped default changed since the override was written. `web` (the web catalog) also checks the `web:` words. */
+export function textProblems(base: object, dataDir: string, locked: ReadonlySet<string> = new Set(), web?: Catalog): Problem[] {
 	const out: Problem[] = [];
+	if (web) for (const [key, text] of Object.entries(webWords(dataDir).words)) {
+		const bad = ownerWordProblem(web, key, text);
+		if (bad) out.push({ key: WEB_PREFIX + key, kind: bad });
+	}
 	for (const [key, e] of Object.entries(readTexts(dataDir))) {
+		if (key.startsWith(WEB_PREFIX)) continue;
 		if (locked.has(key)) out.push({ key, kind: "locked" });
 		else if (defaultTemplate(base, key) === undefined) out.push({ key, kind: "missing" });
 		else if (e.default !== undefined && e.default !== defaultHash(base, key)) out.push({ key, kind: "stale" });
@@ -90,7 +117,7 @@ export function textProblems(base: object, dataDir: string, locked: ReadonlySet<
 const reportedFile = (dataDir: string) => join(dataDir, "texts-reported.json");
 /** The problems not reported yet, as one line per key. A problem is reported once per state (a key gone, or one shipped text hash);
  *  fixing it and breaking it again, or another change of the shipped text, reports it again. */
-export function reportTexts(base: object, dataDir: string, locked: ReadonlySet<string> = new Set()): string[] {
+export function reportTexts(base: object, dataDir: string, locked: ReadonlySet<string> = new Set(), web?: Catalog): string[] {
 	let seen: Record<string, string> = {};
 	try {
 		seen = JSON.parse(readFileSync(reportedFile(dataDir), "utf8")) ?? {};
@@ -99,10 +126,10 @@ export function reportTexts(base: object, dataDir: string, locked: ReadonlySet<s
 	}
 	const now: Record<string, string> = {};
 	const lines: string[] = [];
-	for (const p of textProblems(base, dataDir, locked)) {
+	for (const p of textProblems(base, dataDir, locked, web)) {
 		now[p.key] = p.kind === "stale" ? `stale:${defaultHash(base, p.key)}` : p.kind;
 		if (seen[p.key] === now[p.key]) continue;
-		lines.push(`- ${p.key}: ${p.kind === "stale" ? "새 버전에서 기본 문구가 바뀌었어요" : p.kind === "locked" ? "고칠 수 없는 키예요" : "이 키가 새 버전에는 없어요"}`);
+		lines.push(`- ${p.key}: ${p.kind === "stale" ? "새 버전에서 기본 문구가 바뀌었어요" : p.kind === "locked" ? "고칠 수 없는 키예요" : p.kind === "broken" ? "{자리표시자}가 원문과 달라서 쓰지 않아요" : "이 키가 새 버전에는 없어요"}`);
 	}
 	if (JSON.stringify(now) !== JSON.stringify(seen)) writeAtomic(reportedFile(dataDir), `${JSON.stringify(now, null, 1)}\n`);
 	return lines;

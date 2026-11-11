@@ -8,6 +8,11 @@ import { HUB_TOKEN } from "./config.ts";
 import { introOf, issueToken, markDone, markTerminalDone, SETUP_COOKIE } from "../firstrun/first-run.ts";
 import { makeRoute } from "./routes.ts";
 import { createSetupGate, type SetupDeps } from "../firstrun/setup-gate.ts";
+import { readFirstRun } from "../firstrun/first-run.ts";
+import { draftLang } from "../firstrun/setup-state.ts";
+import { setCatalogProvider } from "./web-i18n.ts";
+import { createGenerator } from "./web-i18n-gen.ts";
+import { bundle, indexPage, setAppLang, webSources } from "./webapp.ts";
 import { createOnboarding, type OnboardDeps, type OnboardKey, onboardingRoute, type OnboardView } from "./onboarding.ts";
 
 const API = "https://discord.com/api/v10";
@@ -367,6 +372,61 @@ describe("first-run setup gate", () => {
 		expect(await scanOf("/api/setup/state?fresh=1")).toBe(2);
 		expect(await scanOf("/api/setup/state")).toBe(2);
 		expect(scans).toBe(2);
+	});
+
+	test("a language with no shipped list: the status line goes waiting, preparing, ready, and the first app page after the onboarding is in that language", async () => {
+		type Sent = { k: string; en: unknown };
+		let connected = false;
+		let modelCalls = 0;
+		const call = async (_system: string, text: string) => {
+			modelCalls++;
+			const items = JSON.parse(text) as Sent[];
+			return { text: JSON.stringify(items.map(i => (typeof i.en === "string" ? `pt: ${i.en}` : Object.fromEntries(Object.entries(i.en as object).map(([c, t]) => [c, `pt: ${t}`]))))) };
+		};
+		const cache = mkdtempSync(join(tmpdir(), "web-i18n-cache-"));
+		dirs.push(cache);
+		let gateDir = "";
+		const make = (lang: () => string) => {
+			const g = createGenerator({ call, dir: cache, ko: () => webSources().ko, en: () => webSources().en, lang, connected: () => connected, onLanguage: setAppLang, schedule: () => () => {} });
+			g.install();
+			return g;
+		};
+		const gen = make(() => draftLang(readFirstRun(gateDir)?.draft ?? {}));
+		let signedIn = false;
+		const gate = open({ i18n: gen, scan: async () => ({ harnesses: [{ login_ready: signedIn }] }), jobs: { permissions: async () => ({ ok: true }) } });
+		gateDir = gate.dir;
+		try {
+			const cookie = await gate.login();
+			const stateOf = async () => ((await (await gate.call("/api/setup/state", { cookie })).json()) as { web?: { state: string } }).web?.state;
+			expect((await gate.call("/api/setup/draft", json({ step: "identity", values: { lang: "pt", name: "Dotty" } }, cookie, "PUT"))).status).toBe(200);
+			expect(await stateOf()).toBe("waiting");
+			expect(modelCalls).toBe(0);
+
+			// The work program gets signed in; the next scan of the wizard sees it and nothing else is pressed.
+			const seen: string[] = [];
+			const ready = new Promise<void>(done => gen.subscribe(s => { seen.push(s.state); if (s.state === "ready") done(); }));
+			connected = true;
+			signedIn = true;
+			expect((await gate.call("/api/setup/state?fresh=1", { cookie })).status).toBe(200);
+			await ready;
+			expect(seen[0]).toBe("preparing");
+			expect(seen.at(-1)).toBe("ready");
+			expect(await stateOf()).toBe("ready");
+
+			expect((await gate.call("/api/setup/run/permissions", json({}, cookie))).status).toBe(202);
+			expect((await gate.call("/api/setup/apply", json({}, cookie))).status).toBe(200);
+			const before = modelCalls;
+
+			const restarted = make(() => "pt");
+			await restarted.signal("start");
+			expect(modelCalls).toBe(before);
+			const html = await (await indexPage(new Request("http://localhost/"))).text();
+			expect(html).toContain('<html lang="pt">');
+			expect(bundle("js").text).toContain('const I18N_LANG = "pt"');
+		} finally {
+			setCatalogProvider(undefined);
+			setAppLang("ko");
+		}
 	});
 });
 

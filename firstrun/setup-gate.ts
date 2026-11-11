@@ -10,6 +10,7 @@ import { tokenFile, peerTokenFile } from "./apply.ts";
 import { readFileSync } from "node:fs";
 import { bundle } from "../hub/webapp.ts";
 import { localBrowser } from "../hub/web-access.ts";
+import { generatedLang, webI18n, type Generator } from "../hub/web-i18n-gen.ts";
 
 // The first-run gate (docs/web-onboarding.md, "보안" and "API 계약"): /setup, /setup.js, /setup.css and /api/setup/* answer only while first-run.json is
 // pending, the request is a browser on this computer (localBrowser) and it holds the dotz_setup cookie. Anything else is a plain 404, so a request
@@ -27,6 +28,8 @@ export type SetupDeps = {
 	scan?: () => Promise<unknown>;
 	jobs?: Partial<Record<JobId, JobFn>>;
 	terms?: (id: TermId) => string[] | undefined;
+	/** The generator of the app's generated screen-text list; default: the gateway's (hub/web-i18n-boot.ts). */
+	i18n?: Generator;
 };
 
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'";
@@ -54,14 +57,24 @@ export function createSetupGate(deps: SetupDeps) {
 	const { dir } = deps;
 	const draft = (): Record<string, unknown> => readFirstRun(dir)?.draft ?? {};
 	const text = () => setupText(draftLang(draft()));
+	const i18n = (): Generator | undefined => deps.i18n ?? webI18n();
+	// The line about the app's own language list: only for a language that has no shipped list.
+	const webLine = () => { const l = generatedLang(draftLang(draft())); return l ? i18n()?.status(l) : undefined; };
 	// A scan takes seconds (it asks every CLI), so the state answers from the last one; ?fresh=1 looks again and joins a scan already running.
 	let scanned: Promise<unknown> | undefined;
 	let scanning = false;
+	let signedIn = false;
 	const scanNow = (): Promise<unknown> => {
 		if (scanning) return scanned!;
 		scanning = true;
 		const run = (deps.scan ?? scanMachine)().finally(() => { scanning = false; });
 		scanned = run;
+		// The scan that first sees a signed-in work program is the model connection of the onboarding: the app's language list starts then.
+		void run.then(s => {
+			const now = (s as { harnesses?: { login_ready?: boolean }[] } | undefined)?.harnesses?.some(h => h.login_ready === true) === true;
+			if (now && !signedIn) void i18n()?.signal("connected");
+			signedIn = now;
+		}, () => {});
 		run.catch(() => { if (scanned === run) scanned = undefined; });
 		return run;
 	};
@@ -114,7 +127,10 @@ export function createSetupGate(deps: SetupDeps) {
 					}
 				};
 				send("snapshot", { jobs: jobs.snapshot() });
-				off = jobs.subscribe(e => (e.type === "line" ? send("line", { job: e.job, text: e.text }) : send("state", e.row)));
+				send("webtext", webLine() ?? null);
+				const offJobs = jobs.subscribe(e => (e.type === "line" ? send("line", { job: e.job, text: e.text }) : send("state", e.row)));
+				const offWeb = i18n()?.subscribe(() => send("webtext", webLine() ?? null));
+				off = () => { offJobs(); offWeb?.(); };
 				ping = setInterval(() => { try { c.enqueue(": ping\n\n"); } catch { /* the stream is closed; cancel() stops this timer */ } }, PING_MS);
 			},
 			cancel() {
@@ -133,13 +149,14 @@ export function createSetupGate(deps: SetupDeps) {
 		const body = async (): Promise<Record<string, unknown>> => ((await req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
 		if (name === "state" && get) {
 			const f = readFirstRun(dir)!;
-			return reply({ step: f.step, draft: f.draft, saved: savedSecrets(dir), scan: await (url.searchParams.has("fresh") ? scanNow() : (scanned ?? scanNow())), lang: draftLang(f.draft), text: text(), jobs: jobs.snapshot() });
+			return reply({ step: f.step, draft: f.draft, saved: savedSecrets(dir), scan: await (url.searchParams.has("fresh") ? scanNow() : (scanned ?? scanNow())), lang: draftLang(f.draft), text: text(), jobs: jobs.snapshot(), web: webLine() });
 		}
 		if (name === "draft" && req.method === "PUT") {
 			const b = await body();
 			const values = parseDraft(b.values);
 			if (!values || typeof b.step !== "string" || !/^[a-z0-9-]{1,40}$/.test(b.step) || jobs.busy()) return reply({ error: text().errors.badDraft }, 400);
 			saveDraft(dir, b.step, values);
+			void i18n()?.signal("language");
 			return reply({ ok: true });
 		}
 		if (name === "secret" && post) {

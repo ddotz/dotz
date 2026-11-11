@@ -4,6 +4,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { log, OMP, THINKING_LEVELS, writeAtomic } from "./config.ts";
+import { modelConnected } from "./web-i18n-gen.ts";
 import { label } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
@@ -59,7 +60,7 @@ export async function saveProviderKey(provider: string, rawKey: string): Promise
 		await proc.stdin.end();
 		if ((await proc.exited) !== 0) throw new ControlError("키를 저장하지 못했어요", 500);
 	}
-	invalidate();
+	invalidate(); modelConnected();
 	return mask(key);
 }
 
@@ -117,8 +118,7 @@ let cache: { models?: Cached<ModelInfo[]>; auth?: Cached<AuthInfo[]>; usage?: Ca
 // A read in flight is shared: pages asking at the same moment wait for one process instead of starting one each.
 const loading = new Map<keyof typeof cache, Promise<unknown>>();
 function invalidate(): void {
-	cache = {};
-	loading.clear();
+	cache = {}; loading.clear();
 }
 async function cached<K extends keyof typeof cache>(key: K, load: () => Promise<NonNullable<(typeof cache)[K]>["value"] | undefined>): Promise<NonNullable<(typeof cache)[K]>["value"] | undefined> {
 	type V = NonNullable<(typeof cache)[K]>["value"] | undefined;
@@ -406,7 +406,7 @@ function finishLogin(l: Login, code: number): void {
 		l.status = "failed";
 		l.error = l.cancelled ? "로그인이 취소됐어요" : "로그인에 실패했어요. 코드를 확인하고 다시 시도해 주세요";
 	}
-	if (l.status === "done") invalidate();
+	if (l.status === "done") { invalidate(); modelConnected(); }
 }
 
 async function pump(l: Login, stream: ReadableStream<Uint8Array>): Promise<void> {
@@ -577,7 +577,7 @@ function finishOmo(l: OmoLogin, ok: boolean, error?: string): void {
 	if (ok && !l.cancelled) {
 		l.status = "done";
 		keepPin(l);
-		invalidate();
+		invalidate(); modelConnected();
 	} else {
 		l.status = "failed";
 		l.error = l.cancelled ? "로그인이 취소됐어요" : error ?? "로그인에 실패했어요. 코드를 확인하고 다시 시도해 주세요";
