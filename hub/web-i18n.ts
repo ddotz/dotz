@@ -145,6 +145,8 @@ export function catalogProblems(ko: Record<string, Catalog>, en: Record<string, 
 			const k = kc[key]!, e = ec[key];
 			if (e === undefined || valueProblem(k) || valueProblem(e)) continue;
 			if (placeholders(k).join() !== placeholders(e).join()) out.push(`${area} ${key}: placeholders differ (ko {${placeholders(k)}} en {${placeholders(e)}})`);
+			// A value that starts with a space, or ends with one in only one language, is a word glued between variables: the other language loses the space.
+			if ([...forms(k), ...forms(e)].some(t => /^\s/.test(t)) || forms(k).some(t => /\s$/.test(t)) !== forms(e).some(t => /\s$/.test(t))) out.push(`${area} ${key}: edge spaces (write the whole phrase with placeholders, not a joining word)`);
 			if (forms(e).some(t => /\{\w+\+/.test(t))) out.push(`web/i18n/en/${area}.json ${key}: Korean particle form is for ko only`);
 			if (forms(e).some(t => HANGUL.test(t)) && !enHangul.includes(key)) out.push(`web/i18n/en/${area}.json ${key}: Hangul in an en value`);
 		}

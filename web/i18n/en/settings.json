@@ -102,7 +102,7 @@
   "settings.login.need_code": "Paste the code or address",
   "settings.login.title_add": "Add {name} account",
   "settings.login.title": "Sign in to {name}",
-  "settings.reset.join": " and ",
+  "settings.reset.pair": "{a} and {b}",
   "settings.reset.kind_label": "{kind} reset pass",
   "settings.reset.label": "Reset pass",
   "settings.reset.when_limited": "Usable once you hit a limit",

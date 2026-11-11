@@ -88,7 +88,7 @@
   "settings.login.need_code": "코드나 주소를 붙여 넣어 주세요",
   "settings.login.title_add": "{name} 계정 추가",
   "settings.login.title": "{name} 로그인",
-  "settings.reset.join": "와",
+  "settings.reset.pair": "{a}와 {b}",
   "settings.reset.kind_label": "{kind} 리셋권",
   "settings.reset.label": "리셋권",
   "settings.reset.when_limited": "한도에 걸리면 쓸 수 있어요",

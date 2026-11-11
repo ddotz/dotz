@@ -68,6 +68,15 @@ test("catalog parity: a missing key, a placeholder that differs, Hangul in en, a
 	expect(out).toContain("Korean particle form is for ko only");
 });
 
+test("a joining word fails: a value that starts with a space, or ends with one in one language only; a label with a trailing space in both passes", () => {
+	const with2 = (ko: Record<string, string>, en: Record<string, string>) => problems({ ...GOOD, "web/i18n/ko/a.json": JSON.stringify(ko), "web/i18n/en/a.json": JSON.stringify(en), "web/js/x.js": `TX("a.j");` });
+	expect(with2({ "a.j": "\uC640" }, { "a.j": " and " })).toContain("a.j: edge spaces");
+	expect(with2({ "a.j": "\uC640 " }, { "a.j": " and " })).toContain("a.j: edge spaces");
+	expect(with2({ "a.j": "\uB05D" }, { "a.j": "end " })).toContain("a.j: edge spaces");
+	expect(with2({ "a.j": "\uC774\uB984 " }, { "a.j": "Name " })).toBe("");
+	expect(with2({ "a.j": "{a}\uC640 {b}" }, { "a.j": "{a} and {b}" })).toBe("");
+});
+
 test("an area file without a twin, and a bad key, fail", () => {
 	const out = problems({ ...GOOD, "web/i18n/ko/b.json": JSON.stringify({ "Bad Key": "x" }) });
 	expect(out).toContain("web/i18n/ko/b.json has no en twin");

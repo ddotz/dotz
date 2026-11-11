@@ -240,7 +240,7 @@ function resetRow(p, name) {
   return ks.map(k => resetLine(p, name, k));
 }
 function resetLine(p, name, k) {
-  const r = p.resets, claude = p.provider === "anthropic", wins = (p.limits || []).map(limitName).join(TX("settings.reset.join"));
+  const r = p.resets, claude = p.provider === "anthropic", wins = (p.limits || []).map(limitName).reduce((a, b) => a ? TX("settings.reset.pair", { a, b }) : b, "");
   const held = k ? k.left : r.held, usable = k ? k.usable : r.usable, expires = k ? k.expires_at : r.expires_at, grant = k ? (k.grant_id ? { id: k.grant_id, kind: k.kind } : null) : r.grant;
   const label = k ? TX("settings.reset.kind_label", { kind: k.kind }) : TX("settings.reset.label");
   const why = !claude && r.held && !r.usable ? TX("settings.reset.when_limited") : "";
