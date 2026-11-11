@@ -23,10 +23,18 @@ test("renderState: an oversized state is cut at a line boundary under the cap, w
 	const out = renderState(JSON.stringify({ open_tasks }), PATH);
 	expect(out.length).toBeLessThanOrEqual(STATE_CAP);
 	const lines = out.split("\n");
-	expect(lines.at(-1)).toBe(`[... cut at ${STATE_CAP} characters; read ${PATH} for the rest]`);
+	const shown = lines.filter(l => l.startsWith("- ")).length;
+	expect(lines.at(-1)).toBe(`[... cut at ${STATE_CAP} characters: ${shown} of 200 tasks shown, ${200 - shown} cut, 0 older than 14 days; close the finished ones in ${PATH}]`);
 	expect(lines.at(-2)).toMatch(/^- task-\d+: work item number \d+ \(next: keep going\)$/);
 	expect(lines[1]).toMatch(/^- task-199:/);
 	expect(out).not.toContain("task-0:");
+});
+
+test("renderState: the cut line counts the tasks older than 14 days, by their since or started date", () => {
+	const now = Date.parse("2026-11-11T12:00:00Z");
+	const open_tasks = Array.from({ length: 100 }, (_, i) => ({ id: `task-${i}`, what: `work item number ${i}`, next: "keep going", ...(i % 2 ? { since: "2026-10-01" } : { started: "2026-11-10" }) }));
+	const lines = renderState(JSON.stringify({ open_tasks }), PATH, STATE_CAP, now).split("\n");
+	expect(lines.at(-1)).toMatch(/ 50 older than 14 days; /);
 });
 
 test("renderState: invalid JSON (or a non-object) falls back to the raw 4000-character slice", () => {

@@ -5,6 +5,7 @@
 // nothing is ever spawned here. outbound.ts wires each instance's prompt queue and background-work view (setWiring).
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { ledgerIn } from "./recall-parts.ts";
 import type { createBgWork } from "./bgwork.ts";
 import { quietOmoWork, runningOmoWorkers } from "./bgwork.ts";
 import { convIdleStopMin, convKinds, convMaxLive, convSessionsOn, DATA_DIR, log as hubLog, NAME, orchestratorModel, selectorOf, writeAtomic } from "./config.ts";
@@ -129,7 +130,7 @@ export function createConvSessions(d: ConvDeps) {
 			keepalive: false,
 			asks: false,
 			model: () => effective(c),
-			env: { DOTZ_CONV: key, DOTZ_WORKER_PIN_FILE: join(dir, "worker-pin"), ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}) },
+			env: { DOTZ_CONV: key, DOTZ_LEDGER_FILE: ledgerIn(dir), DOTZ_WORKER_PIN_FILE: join(dir, "worker-pin"), ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}) },
 			scope: () => scopeText(c.meta),
 			seed: () => {
 				const owed = owedIds(c.queue);

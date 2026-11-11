@@ -39,7 +39,7 @@ export function lastAnswerAt(file: string, tailBytes = 512 * 1024): number | und
 	return undefined;
 }
 
-export function recallText(scope: string): string {
+export function recallText(scope: string, ledger = ""): string {
 	// The mail and calendar section is only useful while zele runs (zele.enabled defaults to on, as in zele.ts).
 	const zeleOn = (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false;
 	const modeText = readFileSync(modeFile(), "utf8");
@@ -55,7 +55,7 @@ export function recallText(scope: string): string {
 		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
 	};
 	const features = featurePrompt(DATA_DIR, "orchestrator", log);
-	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (scope ? `\n\n${scope}` : ""));
+	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
 }
 
 export function handover(runtime: RuntimeAdapter, previous: string): string {

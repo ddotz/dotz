@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { FIELD_TYPES } from "../hub/authfields.ts";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
-import { renderState } from "../hub/recall-parts.ts";
+import { openRequestsBlock, renderState } from "../hub/recall-parts.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { mergeGate, recordReview, Refusal, type Scope } from "../hub/mergegate.ts";
@@ -240,6 +240,18 @@ function language(): string {
 	}
 }
 
+// The owner's open requests, which the gateway keeps in a file beside the session's pending.json (hub/open-ledger.ts): the summary does not carry them.
+function ledger(): string {
+	let tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	try {
+		tz = JSON.parse(readFileSync(join(DATA, "config.json"), "utf8")).identity?.timezone || tz;
+	} catch {
+		// no readable config: the machine's zone stands in
+	}
+	const block = openRequestsBlock(process.env.DOTZ_LEDGER_FILE ?? join(DATA, "pending-ledger.json"), tz);
+	return block ? `\n\n${block}` : "";
+}
+
 function recall(): string {
 	const file = (p: string, max: number) => (existsSync(p) ? readFileSync(p, "utf8").slice(0, max) : "");
 	const code = language();
@@ -319,7 +331,7 @@ function orchestratorTools(pi: any): void {
 	connectTool(pi);
 	recallTool(pi, DATA);
 	pi.on("session_compact", (_e: any, ctx: any) => {
-		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall() + (process.env.DOTZ_CONV ? `\n\n${convScope()}` : ""), display: false }, { deliverAs: "nextTurn" });
+		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall() + ledger() + (process.env.DOTZ_CONV ? `\n\n${convScope()}` : ""), display: false }, { deliverAs: "nextTurn" });
 	});
 	pi.registerTool({
 		name: "dotz_send",

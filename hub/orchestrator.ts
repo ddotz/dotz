@@ -4,7 +4,8 @@
 // The agent itself runs behind a runtime adapter (hub/runtime): this module is policy and talks to it only through
 // an AgentProcess and its events.
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { ledgerIn, openRequestsBlock } from "./recall-parts.ts";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
 import { workersOf } from "./lanegates.ts";
@@ -805,7 +806,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
 			// (a "followUp" would wait until the first answer is done and start an extra paid turn; a "prompt" would start one too),
 			// and a queued steer is not dropped when it arrives before the turn has begun.
-			proc.send(recallText(opts.scope?.() ?? "") + switchNote, "prompt");
+			proc.send(recallText(opts.scope?.() ?? "", openRequestsBlock(ledgerIn(dirname(opts.stateFile)), TZ)) + switchNote, "prompt");
 			const seed = rotate ? "" : (opts.seed?.() ?? "");
 		const later = (rotate ? handover(runtime, prior!) : seed) + (asks ? `${rotate || seed ? "\n\n" : ""}${asks}` : "");
 			if (later) proc.send(later, "steer");

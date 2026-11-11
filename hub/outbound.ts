@@ -3,7 +3,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { createLedger } from "./open-ledger.ts";
+import { ledgerIn } from "./recall-parts.ts";
 import { DATA_DIR, log, NAME, now, paths, TZ, writeAtomic } from "./config.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
@@ -91,7 +93,9 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 	} catch (e) {
 		log(`worker links in ${linksFile} not read: ${e}`);
 	}
-	return createPrompts({
+	// The owner's open requests, rewritten whenever the queue saves (hub/open-ledger.ts): what a compaction summary no longer has to carry.
+	const ledger = createLedger(ledgerIn(dirname(pendingFile)), { isAnswered: id => q.isAnswered(id), write: writeAtomic, log });
+	const q: ReturnType<typeof createPrompts> = createPrompts({
 		links,
 		persistLinks: all => writeAtomic(linksFile, `${JSON.stringify(all)}\n`),
 		report: id => bg()?.reportOf(id),
@@ -110,7 +114,10 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		handBack: (from, text, replyTo) => void convs.deliverTo(from, `${msg().handbackLead} ${text}`, { target: convs.get(from)?.primary ?? primaryTarget(from), replyTo, handback: true }),
 		// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
 		announce: (target, text, worker) => void systemNote(target, text, "deferred", worker).catch(e => log(`deferral note to ${target} failed: ${e}`)),
-		interim: (target, text) => void out(target, text, undefined, { auto: true, session: key, keepsOpen: true }).catch(e => log(`note to ${target} failed: ${e}`)),
+		interim: (target, text) => {
+			ledger.interim(target);
+			void out(target, text, undefined, { auto: true, session: key, keepsOpen: true }).catch(e => log(`note to ${target} failed: ${e}`));
+		},
 		// The worker the [later] turn just spawned, as OmO's task store lists it (bgWork is created below and read at call time).
 		workFor: target => {
 			const w = bg()?.list().find(w => w.status === "running" && w.target === target);
@@ -129,7 +136,10 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		cardsNote: target => cardsNoteFor(target),
 		hasCardsNote: text => text.startsWith(CARDS_LEAD) || text.includes(`\n${CARDS_LEAD}`),
 		clearProgress: target => void discord.clearProgress(target),
-		persist: open => writeAtomic(pendingFile, `${JSON.stringify(open, null, 2)}\n`),
+		persist: open => {
+			writeAtomic(pendingFile, `${JSON.stringify(open, null, 2)}\n`);
+			ledger.sync(open, q.openRequests());
+		},
 		log,
 		answered: answeredIds(),
 		pending: sends.pending,
@@ -137,6 +147,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		answeredSince,
 		settled: settleRefs,
 	});
+	return q;
 }
 // A failed worker no turn took up is handed back to its own session, answering in the conversation it served (bgwork.ts handover).
 // A stalled worker (still "running" in OmO's store, no longer working) wakes its session once the same way, and is named in
