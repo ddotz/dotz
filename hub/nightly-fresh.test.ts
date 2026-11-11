@@ -2,7 +2,7 @@
 // after NIGHTLY_RETRY_MS, the config switch, and the one log line after a start.
 import { afterEach, expect, test } from "bun:test";
 import { newCtx, REST_QUIET_MS, type RestFacts, restBlockers, restGuard } from "./context.ts";
-import { createNightly, NIGHTLY_RETRY_MS } from "./nightly-fresh.ts";
+import { createNightly, NIGHTLY_COMPACT_STARTS, NIGHTLY_RETRY_MS } from "./nightly-fresh.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { clearTrackedTimers } from "./shutdown.ts";
 
@@ -123,4 +123,100 @@ test("a fresh start for another reason settles a waiting nightly one", async () 
 	await advance(NIGHTLY_RETRY_MS + MIN);
 	expect(state.rotated).toBe(0);
 	expect(lines).toEqual([]);
+});
+
+// The nightly start with a summary that may be stale: the compaction is started through deps.compact (the ctx plays the runtime's part).
+function staleNight(over: Partial<RestFacts> = {}, stale = true) {
+	const base = night(over);
+	const w = { stale, compactions: 0, canStart: true };
+	const n = createNightly({
+		who: "orchestrator", every: () => true, bytes: () => 1e6, facts: () => base.state.facts, ctx: () => base.ctx, rotate: () => void base.state.rotated++, open: () => 0, log: l => base.lines.push(l),
+		stale: () => w.stale,
+		compact: () => {
+			if (!w.canStart) return false;
+			w.compactions++;
+			base.ctx.compaction = { state: "compacting" };
+			return true;
+		},
+	});
+	return { ...base, n, w };
+}
+
+test("a stale summary is compacted first: nothing rotates until the compaction has ended, then the start follows on the next minute tick with the seconds in the line", async () => {
+	const { n, state, w, ctx, lines } = staleNight();
+	expect(n.ask(50e6)).toBeUndefined();
+	expect(w.compactions).toBe(1);
+	expect(state.rotated).toBe(0);
+	await advance(5 * MIN);
+	expect(state.rotated).toBe(0);
+	expect(w.compactions).toBe(1);
+	ctx.compaction = { state: "done" };
+	w.stale = false;
+	await advance(MIN);
+	expect(state.rotated).toBe(1);
+	expect(w.compactions).toBe(1);
+	expect(n.started(100)?.compacted).toBe(6 * 60);
+	expect(lines).toHaveLength(2);
+});
+
+test("a summary that is not stale rotates at once with no compaction, and the line says none ran", () => {
+	const { n, state, w, lines } = staleNight({}, false);
+	expect(n.ask(50e6)).toBeDefined();
+	expect(state.rotated).toBe(1);
+	expect(w.compactions).toBe(0);
+	expect(n.started(100)?.compacted).toBeUndefined();
+	expect(lines).toHaveLength(1);
+});
+
+test("a runtime that cannot abort a compaction rotates at once without one", () => {
+	const { n, state, w } = staleNight({ canAbort: false });
+	expect(n.ask(50e6)).toBeDefined();
+	expect(state.rotated).toBe(1);
+	expect(w.compactions).toBe(0);
+});
+
+test("a compaction aborted by an owner message lets the night go on: stale again after the owner's turn it compacts once more, then rotates", async () => {
+	const { n, state, w, ctx, lines } = staleNight();
+	n.ask(50e6);
+	ctx.compaction = {};
+	state.facts = { ...REST, idle: false };
+	await advance(MIN);
+	expect(state.rotated).toBe(0);
+	expect(w.compactions).toBe(1);
+	state.facts = { ...REST, quietMs: 0 };
+	await advance(MIN);
+	expect(w.compactions).toBe(1);
+	state.facts = REST;
+	await advance(MIN);
+	expect(w.compactions).toBe(2);
+	ctx.compaction = { state: "done" };
+	w.stale = false;
+	await advance(MIN);
+	expect(state.rotated).toBe(1);
+	expect(lines).toHaveLength(1);
+});
+
+test("a second abort, a compaction error, or a summary stale again after the last allowed compaction skips the night with one log line", async () => {
+	for (const ending of ["second abort", "error", "stale again"]) {
+		const { n, state, w, ctx, lines } = staleNight();
+		n.ask(50e6);
+		if (ending === "error") ctx.compaction = { state: "error", error: "boom" };
+		else {
+			ctx.compaction = {};
+			await advance(MIN);
+			expect(w.compactions, ending).toBe(2);
+			ctx.compaction = ending === "second abort" ? {} : { state: "done" };
+			// The owner's turn is still running after the second abort: the night is given up already, it does not wait for rest.
+			if (ending === "second abort") state.facts = { ...REST, idle: false };
+		}
+		await advance(MIN);
+		expect(state.rotated, ending).toBe(0);
+		expect(w.compactions, ending).toBe(ending === "error" ? 1 : NIGHTLY_COMPACT_STARTS);
+		expect(lines, ending).toHaveLength(1);
+		expect(n.waiting(), ending).toBe(false);
+		state.facts = { ...REST };
+		await advance(NIGHTLY_RETRY_MS);
+		expect(state.rotated, ending).toBe(0);
+		expect(lines, ending).toHaveLength(1);
+	}
 });

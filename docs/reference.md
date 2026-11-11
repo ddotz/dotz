@@ -291,7 +291,7 @@ conversation every night whatever its size, with the open-request list, a handov
 only; a session file over `rotate_mb` starts fresh in both cases, and conversation sessions always follow the size rule.
 The start waits until the session is at rest (no turn, held or unstarted prompt, running worker, open or deferred request,
 queued or running compaction, armed usage-limit resume timer, pending restart or model switch, error or error streak, and quiet for
-10 minutes), asking again every minute for two hours after `nightly_at`; then the night is skipped with one hub-log line. The last run date is kept
+10 minutes), asking again every minute for two hours after `nightly_at`; then the night is skipped with one hub-log line. When the session has a real exchange after its last compaction summary (OmO only, read from the session file), it is compacted first through the compaction ahead of time (an owner message aborts it) and starts fresh once that has ended, so the handover carries a fresh summary; at most two such compactions a night, then the night is skipped with the same line. The last run date is kept
 in `~/.dotz/lane-hygiene.json`; a run missed while the gateway was down is made up a minute after the next start.
 Settings apply when a session starts or resumes.
 

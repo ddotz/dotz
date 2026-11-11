@@ -125,6 +125,8 @@ export interface RuntimeAdapter {
 	recentExchanges(sessionRef: string): string | undefined;
 	// The summary the runtime wrote at its latest compaction of a saved session (carried into the handover); a runtime without one leaves it out.
 	lastCompactionSummary?(sessionRef: string): string | undefined;
+	// Whether that summary is out of date: a real exchange after it, or exchanges and no summary at all; false when unreadable. A runtime without it is never stale.
+	summaryStale?(sessionRef: string): boolean;
 	// Is the runtime's CLI installed here, and which version (a short `--version` run); never throws.
 	detect(): Promise<DetectResult>;
 }

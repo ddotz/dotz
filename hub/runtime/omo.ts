@@ -16,7 +16,7 @@ import { spawnAgent } from "./agent-proc.ts";
 import { detectBinary } from "./detect.ts";
 import { closeHostsOf, OMO, recordStarted, TELEMETRY_OFF_ENV } from "./omo-hosts.ts";
 import { makeOmoProbes } from "./omo-probes.ts";
-import { lastCompactionSummary } from "./omo-summary.ts";
+import { lastCompactionSummary, summaryStale } from "./omo-summary.ts";
 import { senpiLauncher } from "./senpi-bin.ts";
 import { EXTENSION, type Frame, OmpProcess, recentExchanges } from "./omp.ts";
 import type { RuntimeAdapter, SpawnOpts } from "./types.ts";
@@ -335,6 +335,7 @@ export const omo: RuntimeAdapter = {
 	classifyError: classifyProviderError,
 	recentExchanges,
 	lastCompactionSummary,
+	summaryStale,
 	detect: () => detectBinary(OMO),
 };
 

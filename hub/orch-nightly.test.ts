@@ -43,7 +43,10 @@ class FakeAgent implements AgentProcess {
 		this.sent.push({ text, mode });
 	}
 	abort = () => {};
-	compact = () => {};
+	compacts = 0;
+	aborts = 0;
+	compact = () => void this.compacts++;
+	abortCompaction = () => void this.aborts++;
 	refreshUsage = () => {};
 	refreshSession = () => {};
 	watchSubagents = () => {};
@@ -51,6 +54,9 @@ class FakeAgent implements AgentProcess {
 }
 
 const SUMMARY = "SUMMARY-OF-THE-LAST-COMPACTION";
+const NEW_SUMMARY = "SUMMARY-WRITTEN-BY-THE-NIGHTLY-COMPACTION";
+// What the session file says: the summary the handover reads, and whether it is out of date.
+const file = { summary: SUMMARY, stale: false };
 const started: FakeAgent[] = [];
 const fake: RuntimeAdapter = {
 	id: "omp",
@@ -62,20 +68,25 @@ const fake: RuntimeAdapter = {
 	},
 	classifyError: omp.classifyError,
 	recentExchanges: () => "IN: before\n\nYOU: after",
-	lastCompactionSummary: () => SUMMARY,
+	lastCompactionSummary: () => file.summary,
+	summaryStale: () => file.stale,
 };
+const abortable: RuntimeAdapter = { ...fake, caps: { ...fake.caps, abortCompact: true } };
 
 const savedCfg = { orchestrator: cfg.orchestrator };
 beforeAll(() => {
 	adapters.fake = fake;
+	adapters.fakeabort = abortable;
 	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake" };
 });
 afterEach(() => {
 	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake", nightly_fresh: undefined };
+	Object.assign(file, { summary: SUMMARY, stale: false });
 	clearTrackedTimers();
 });
 afterAll(() => {
 	delete adapters.fake;
+	delete adapters.fakeabort;
 	Object.assign(cfg, savedCfg);
 });
 
@@ -205,6 +216,100 @@ test("with orchestrator.nightly_fresh off only a file past the limit starts a fr
 	expect(s.o.nightlyHandover(50e6)).toBeDefined();
 	await flush();
 	expect(s.agent()).not.toBe(second);
+	s.o.stop();
+	await flush();
+});
+
+const compactionEnds = (state: "done" | "aborted"): AgentEvent => (state === "done" ? { type: "compaction", state: "done" } : { type: "compaction", state: "error", error: "cancelled", requested: true });
+
+test("a stale summary: the nightly start compacts first, the owner's message aborts it and is answered by the old session, and the night goes on with a second compaction and the NEW summary in the handover", async () => {
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fakeabort" };
+	const s = await setup();
+	s.o.deliver("first", true);
+	await s.turn();
+	const old = s.agent();
+	await s.quiet();
+	file.stale = true;
+	expect(s.o.nightlyHandover(50e6)).toBeUndefined();
+	await flush();
+	expect([s.agent() === old, old.compacts]).toEqual([true, 1]);
+
+	s.o.deliver("지금 급해요", true);
+	await flush();
+	expect(old.aborts).toBe(1);
+	expect(old.sent.some(m => m.text.includes("지금 급해요"))).toBe(false);
+	await old.push(compactionEnds("aborted"));
+	expect(old.sent.filter(m => m.text.includes("지금 급해요"))).toHaveLength(1);
+	expect(s.agent()).toBe(old);
+	await s.turn();
+	await s.quiet();
+	expect([s.agent() === old, old.compacts]).toEqual([true, 2]);
+
+	// The compaction ends: the quiet time went on counting while it ran, so the first minute tick after its end rotates.
+	file.summary = NEW_SUMMARY;
+	file.stale = false;
+	await old.push(compactionEnds("done"));
+	await advance(60_000);
+	const fresh = s.agent();
+	expect(fresh).not.toBe(old);
+	expect(fresh.compacts).toBe(0);
+	const later = fresh.sent.filter(m => m.mode === "steer").map(m => m.text).join("\n");
+	expect(later).toContain(NEW_SUMMARY);
+	expect(later).not.toContain(SUMMARY);
+	s.o.stop();
+	await flush();
+});
+
+test("a second abort of the nightly compaction gives the night up: the old session stays, answers the owner, and no third compaction starts", async () => {
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fakeabort" };
+	const s = await setup();
+	s.o.deliver("first", true);
+	await s.turn();
+	const old = s.agent();
+	file.stale = true;
+	for (const round of [1, 2]) {
+		await s.quiet();
+		if (round === 1) s.o.nightlyHandover(50e6);
+		expect(old.compacts).toBe(round);
+		s.o.deliver(`owner ${round}`, true);
+		await flush();
+		await old.push(compactionEnds("aborted"));
+		await s.turn();
+	}
+	await s.quiet();
+	await advance(60_000);
+	expect([s.agent() === old, old.compacts]).toEqual([true, 2]);
+	expect(old.sent.filter(m => m.text.includes("owner 2"))).toHaveLength(1);
+	s.o.stop();
+	await flush();
+});
+
+test("a runtime that cannot abort a compaction rotates a stale session at once, without one", async () => {
+	const s = await setup();
+	s.o.deliver("first", true);
+	await s.turn();
+	const old = s.agent();
+	await s.quiet();
+	file.stale = true;
+	expect(s.o.nightlyHandover(50e6)).toBeDefined();
+	await flush();
+	expect(old.compacts).toBe(0);
+	expect(s.agent()).not.toBe(old);
+	s.o.stop();
+	await flush();
+});
+
+test("a summary that is not stale rotates at once with no compaction", async () => {
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fakeabort" };
+	const s = await setup();
+	s.o.deliver("first", true);
+	await s.turn();
+	const old = s.agent();
+	await s.quiet();
+	expect(s.o.nightlyHandover(50e6)).toBeDefined();
+	await flush();
+	expect(old.compacts).toBe(0);
+	expect(s.agent()).not.toBe(old);
 	s.o.stop();
 	await flush();
 });

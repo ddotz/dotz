@@ -14,7 +14,7 @@ import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_T
 import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { compactInstructions } from "./compact-instructions.ts";
-import { abandonCompact, abortAhead, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact, type RestFacts, restAhead } from "./context.ts";
+import { abandonCompact, abortAhead, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestAhead, requestCompact, type RestFacts, restAhead } from "./context.ts";
 import { limitPauseState, limitWatchNow } from "./limit-watch.ts";
 import { stalePauseEnded } from "./pause-ended.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -680,7 +680,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// What the session is doing as far as being at rest goes: the compaction ahead of time and the nightly fresh start read the same facts.
 	const restFacts = (): RestFacts => ({ alive: Boolean(proc), canAbort: Boolean(adapter?.caps.abortCompact), idle: orch.status === "idle", switching: rotating || restarting || rotateWhenIdle || pendingRestart || pendingModel, failing: Boolean(orch.error) || errorStreak.stopped, held: held.length + unstarted.length, workers: runningSubagents(opts.source), limitHold: Boolean(resumeTimer), quietMs: Date.now() - lastTurnEnd });
 	// The nightly handover (hygiene.ts, hub/nightly-fresh.ts): the main session every night (orchestrator.nightly_fresh), any session past `limitBytes`.
-	const nightly = createNightly({ who, every: () => opts.key === "main" && cfg.orchestrator?.nightly_fresh !== false, bytes: () => (proc && orch.sessionFile && existsSync(orch.sessionFile) ? statSync(orch.sessionFile).size : undefined), facts: restFacts, ctx: () => orch.ctx, rotate: () => rotate(), open: () => loadLedger(ledgerIn(dirname(opts.stateFile))).length });
+	const nightly = createNightly({ who, every: () => opts.key === "main" && cfg.orchestrator?.nightly_fresh !== false, bytes: () => (proc && orch.sessionFile && existsSync(orch.sessionFile) ? statSync(orch.sessionFile).size : undefined), facts: restFacts, stale: () => Boolean(orch.sessionFile && adapter?.summaryStale?.(orch.sessionFile)), compact: () => requestAhead(orch.ctx, port, who, "nightly fresh start"), ctx: () => orch.ctx, rotate: () => rotate(), open: () => loadLedger(ledgerIn(dirname(opts.stateFile))).length });
 	const nightlyHandover = nightly.ask;
 
 	function rotate(): void {

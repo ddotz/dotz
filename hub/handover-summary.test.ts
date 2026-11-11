@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { SUMMARY_MAX_CHARS } from "./compact-instructions.ts";
 import { HANDOVER_MAX_CHARS, handover } from "./orchestrator-parts.ts";
 import { omo } from "./runtime/omo.ts";
-import { lastCompactionSummary } from "./runtime/omo-summary.ts";
+import { lastCompactionSummary, summaryStale } from "./runtime/omo-summary.ts";
 import type { RuntimeAdapter } from "./runtime/types.ts";
 
 const runtime = (exchanges: string | undefined, summary?: string): RuntimeAdapter => ({ recentExchanges: () => exchanges, lastCompactionSummary: summary === undefined ? undefined : () => summary }) as unknown as RuntimeAdapter;
@@ -47,4 +47,24 @@ test("a summary longer than the compaction cap is cut at the cap, and the whole 
 	const first = text.match(/(IN|YOU): turn (\d{3})/g)![0];
 	expect(first.startsWith("IN: ") || first.startsWith("YOU: ")).toBe(true);
 	expect(text.match(/(?:IN|YOU): turn \d{3} x{180}/g)!.length).toBe(text.match(/turn \d{3}/g)!.length);
+});
+
+test("the summary is stale when a real exchange follows the latest compaction entry, or exchanges exist and there is no entry; keepalive pings and silent answers do not count", () => {
+	const dir = mkdtempSync(join(tmpdir(), "stale-"));
+	const file = join(dir, "s.jsonl");
+	const line = (o: unknown) => `${JSON.stringify(o)}\n`;
+	const msg = (role: "user" | "assistant", text: string) => line({ type: "message", message: { role, content: role === "user" ? text : [{ type: "text", text }], stopReason: role === "assistant" ? "stop" : undefined } });
+	const check = (body: string) => {
+		writeFileSync(file, body);
+		return [summaryStale(file), omo.summaryStale?.(file)];
+	};
+	const compaction = line({ type: "compaction", summary: "summary" });
+	expect(check(msg("user", "hello") + msg("assistant", "hi"))).toEqual([true, true]);
+	expect(check(msg("user", "hello") + compaction)).toEqual([false, false]);
+	expect(check(msg("user", "hello") + compaction + msg("user", "after") + msg("assistant", "done"))).toEqual([true, true]);
+	expect(check(msg("user", "hello") + compaction + msg("user", "[keepalive] ping") + msg("assistant", "ok") + msg("assistant", "-") + msg("assistant", "[later]"))[0]).toBe(false);
+	expect(check(msg("user", "hello") + line({ type: "compaction", summary: "old" }) + msg("user", "mid") + compaction)[0]).toBe(false);
+	expect(check("")[0]).toBe(false);
+	expect(summaryStale(join(dir, "missing.jsonl"))).toBe(false);
+	rmSync(dir, { recursive: true, force: true });
 });

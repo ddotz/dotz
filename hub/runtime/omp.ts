@@ -339,7 +339,16 @@ function writeOverlay(o: SpawnOpts, lane: NonNullable<SpawnOpts["lane"]>): strin
 // body of a handover into a fresh session, then the paths its edit and write calls touched. Assistant text from a
 // tool-use step is mid-turn monologue, not an answer, so only `stop`/`length` assistant messages count. undefined when
 // the session file cannot be read.
-type SessionMessage = { role?: string; stopReason?: string; content?: string | Array<{ type?: string; text?: string; name?: string; arguments?: { path?: unknown } }> };
+export type SessionMessage = { role?: string; stopReason?: string; content?: string | Array<{ type?: string; text?: string; name?: string; arguments?: { path?: unknown } }> };
+// The text of a real exchange (what a handover and the summary-staleness check count), undefined for what is not one: a reply that did not end its
+// turn, an empty message, a keepalive ping, "ok", a `[later]` or silent answer, a note, a lane message.
+export function realTurn(m: SessionMessage): string | undefined {
+	if (m.role === "assistant" && m.stopReason !== "stop" && m.stopReason !== "length") return undefined;
+	const t = stripSteerMark(Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : (m.content ?? "")).trim();
+	if (!t || t.startsWith("[keepalive]") || t === "ok" || (m.role === "assistant" && (isLater(t) || isSilent(t))) || isNote(t, "youAre") || t.includes("\n[dotz lane ")) return undefined;
+	return t;
+}
+
 export function recentExchanges(sessionFile: string): string | undefined {
 	const turns: string[] = [];
 	const files: string[] = [];
@@ -354,9 +363,8 @@ export function recentExchanges(sessionFile: string): string | undefined {
 					const p = b?.type === "toolCall" && (b.name === "edit" || b.name === "write") ? touchedPath(b.arguments?.path) : undefined;
 					if (p) files.push(p);
 				}
-			if (m.role === "assistant" && m.stopReason !== "stop" && m.stopReason !== "length") continue;
-			const t = stripSteerMark(Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : (m.content ?? "")).trim();
-			if (!t || t.startsWith("[keepalive]") || t === "ok" || (m.role === "assistant" && (isLater(t) || isSilent(t))) || isNote(t, "youAre") || t.includes("\n[dotz lane ")) continue;
+			const t = realTurn(m);
+			if (t === undefined) continue;
 			turns.push(`${m.role === "user" ? "IN" : "YOU"}: ${t.length > 700 ? `${t.slice(0, 700)}...` : t}`);
 		}
 	} catch {
