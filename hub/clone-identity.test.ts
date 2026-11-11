@@ -180,6 +180,67 @@ test("only the commit command's own text is checked, up to a separator outside a
 	expect(prepare("git commit -m \"$(cat <<'EOF'\nok && call 010-1234-5678\nEOF\n)\" && echo done")).toContain("message: phone");
 });
 
+test("a path in the command is not recorded: a clean message file by an absolute path holding the term, and -C into such a folder, are accepted", () => {
+	const folder = join(root, `${VALUE}-folder`);
+	mkdirSync(folder);
+	writeFileSync(join(folder, "msg.txt"), "Tidy the build\n\nWhy: it was slow.\n");
+	expect(prepare(`git commit -F ${join(folder, "msg.txt")}`)).toBeUndefined();
+	expect(prepare(`git commit --file=${join(folder, "msg.txt")} --allow-empty`)).toBeUndefined();
+	expect(prepare(`git commit -m "ok" 2>&1 > ${folder}/out.log`)).toBeUndefined();
+	const clone = join(folder, "clone");
+	git(root, "clone", "-q", join(root, "ddotz", "dotz.git"), clone);
+	expect(prepare(`git -C ${clone} commit -m ok`, root)).toBeUndefined();
+	expect(prepare(`cd ${clone} && git commit -m ok`, root)).toBeUndefined();
+	expect(prepare(`git -C ${clone} commit -F ${join(folder, "msg.txt")}`, root)).toBeUndefined();
+});
+
+test("the content of a -F / --file message file is the message: a term in it is refused by label, relative to the working folder or -C", () => {
+	writeFileSync(join(work, "bad.txt"), `Fix it\n\nnote about ${VALUE}\n`);
+	for (const command of ["git commit -F bad.txt", "git commit --file bad.txt", "git commit --file=bad.txt", `git commit -F ${join(work, "bad.txt")}`, "git commit -aF bad.txt"]) {
+		const refused = prepare(command);
+		expect(refused).toContain("message:");
+		expect(refused).not.toContain(VALUE);
+	}
+	expect(prepare("git -C work commit -F bad.txt", root)).toContain("message:");
+	writeFileSync(join(work, "good.txt"), "fine\n");
+	expect(prepare("git commit -F good.txt")).toBeUndefined();
+});
+
+test("every -m form is read: attached, quoted, with =, long, repeated", () => {
+	for (const command of [`git commit -m ${VALUE}`, `git commit -m"x ${VALUE}"`, `git commit -m=${VALUE}`, `git commit --message="${VALUE}"`, `git commit --message '${VALUE}'`, `git commit -m ok -m ${VALUE}`, `git commit -am "${VALUE}"`, `git commit -m "a -b" -m ${VALUE}`]) expect(prepare(command)).toContain("message:");
+	expect(prepare("git commit -m ok -m fine")).toBeUndefined();
+});
+
+test("a heredoc message is checked, also with double quotes inside it; the path words around it are not", () => {
+	const folder = `/home/${VALUE}`;
+	expect(prepare(`git -C ${work} commit -F - <<'EOF'\nok ${VALUE}\nEOF`)).toContain("message:");
+	expect(prepare(`git commit -m "$(cat <<'EOF'\nsay "hi"; and ${VALUE}\nEOF\n)" && echo done`)).toContain("message:");
+	expect(prepare(`git commit -m "$(cat <<'EOF'\nsay "hi"; fine\nEOF\n)" && cat ${folder}/x`)).toBeUndefined();
+	expect(prepare(`git commit -F - <<'EOF'\nfine\nEOF`)).toBeUndefined();
+});
+
+test("a message file that cannot be read passes, one above the bound is refused, stdin from a pipe cannot be seen and passes", () => {
+	expect(prepare("git commit -F missing.txt")).toBeUndefined();
+	expect(prepare("git commit -F $MSG_FILE")).toBeUndefined();
+	expect(prepare("git commit -F .")).toBeUndefined();
+	expect(prepare(`echo ${VALUE} | git commit -F -`)).toBeUndefined();
+	writeFileSync(join(work, "big.txt"), "x".repeat(64 * 1024 + 1));
+	expect(prepare("git commit -F big.txt")).toContain("64 KB");
+	writeFileSync(join(work, "edge.txt"), "word ".repeat(64 * 1024 / 5).slice(0, 64 * 1024));
+	expect(prepare("git commit -F edge.txt")).toBeUndefined();
+});
+
+test("commits that reuse a message carry no new text: nothing to check and nothing to crash on", () => {
+	for (const command of ["git commit --amend --no-edit", "git commit --amend", "git commit -C HEAD", "git commit -c HEAD~1", "git commit --reuse-message=HEAD", "git commit --fixup HEAD", "git commit --fixup=amend:HEAD --no-edit"]) expect(prepare(command)).toBeUndefined();
+});
+
+test("the added lines are still checked next to a clean message file", () => {
+	writeFileSync(join(work, "good.txt"), "fine\n");
+	writeFileSync(join(work, "new.txt"), `has ${VALUE} inside\n`);
+	git(work, "add", "new.txt");
+	expect(prepare(`git commit -F ${join(work, "good.txt")}`)).toContain("added line");
+});
+
 test("-a is read from the commit command's own text only", () => {
 	git(work, "config", "--local", "user.name", LOGIN);
 	git(work, "config", "--local", "user.email", NOREPLY);
