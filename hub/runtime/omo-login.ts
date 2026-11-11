@@ -20,6 +20,9 @@ export type RpcFrame = { type?: string; id?: string; [k: string]: unknown };
 // Tests swap `argv` for a fake RPC; nothing else reads it.
 export const omoRpcCommand = { argv: (): string[] => [OMO, "--mode", "rpc", "--no-session", "--omo-senpi-memory-disabled", "--no-ask-user"] };
 
+// A login waits for a person (hub/providers.ts ends it after 10 min); this only catches a helper nobody closed.
+const RPC_MAX_MS = 30 * 60_000;
+
 export class OmoRpc {
 	readonly proc: Bun.Subprocess<"pipe", "pipe", "ignore">;
 	readonly exited: Promise<number>;
@@ -30,7 +33,7 @@ export class OmoRpc {
 		// BROWSER=true: nothing opens a browser on the gateway's computer; the owner opens the URL on their own device.
 		// The Claude CLI it runs for a sign-in goes through hub/runtime/claude-cli-shim.ts, so a pasted code is not judged a failure.
 		const agentDir = process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent");
-		this.proc = Bun.spawn(omoRpcCommand.argv(), { cwd: tmpdir(), stdin: "pipe", stdout: "pipe", stderr: "ignore", env: { ...process.env, ...TELEMETRY_OFF_ENV, BROWSER: "true", ...claudeShimEnv(process.env, agentDir) } });
+		this.proc = Bun.spawn(omoRpcCommand.argv(), { cwd: tmpdir(), stdin: "pipe", stdout: "pipe", stderr: "ignore", timeout: RPC_MAX_MS, killSignal: "SIGKILL", env: { ...process.env, ...TELEMETRY_OFF_ENV, BROWSER: "true", ...claudeShimEnv(process.env, agentDir) } });
 		this.exited = this.proc.exited;
 		void this.read();
 	}

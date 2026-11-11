@@ -19,6 +19,7 @@
 // Refs the gateway does not know (a card the bot wrote by hand, a KakaoTalk draft, a 직접 입력 pick) still go to the bot as before.
 import { join } from "node:path";
 import { draftActionOf } from "./draft-approval.ts";
+import { runLimited } from "./run-limited.ts";
 
 export type SendKind = "comment" | "mail";
 /** What the gateway knows of a ref: which CLI sends it, and the place it goes to (sends to one place stay in order). */
@@ -255,11 +256,11 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 }
 
+const SEND_CLI_MS = 5 * 60_000; // one message over the network, with a file upload at worst: seconds, minutes for a big file
 /** Runs one CLI with the gateway's environment; stdout and stderr together, bounded. */
 export async function runCli(argv: string[]): Promise<{ code: number; out: string }> {
 	// `env` is passed on purpose: without it Bun hands the child the environment the process started with, not process.env as it is now
 	// (the data folder a test or the gateway set at run time would be lost, and the CLI would read another install's drafts).
-	const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...process.env, DOTZ_GATEWAY_SEND: "1" } });
-	const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-	return { code, out: `${out}\n${err}`.slice(-4000) };
+	const r = await runLimited(argv, SEND_CLI_MS, { env: { ...process.env, DOTZ_GATEWAY_SEND: "1" } });
+	return { code: r.code, out: `${r.stdout}\n${r.timedOut ? "timed out" : r.stderr}`.slice(-4000) };
 }

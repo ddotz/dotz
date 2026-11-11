@@ -147,7 +147,7 @@ function modelDef(selector: string): ModelDef | undefined {
 export const modelsDev = {
 	file: join(DATA_DIR, "models-dev.json"),
 	fetch: (): string | undefined => {
-		const r = Bun.spawnSync(["curl", "-sf", "--max-time", "5", "https://models.dev/api.json"], { stdout: "pipe", stderr: "ignore" });
+		const r = Bun.spawnSync(["curl", "-sf", "--max-time", "5", "https://models.dev/api.json"], { stdout: "pipe", stderr: "ignore", timeout: 10_000 /* curl stops itself at 5 s */ });
 		return r.success ? r.stdout.toString() : undefined;
 	},
 };

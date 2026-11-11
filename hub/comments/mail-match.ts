@@ -2,6 +2,7 @@
 // read-only (zele `mail search` / `mail read`: never send, never mark) for a mail from the same person around the time of the comment, so the card
 // says whether the commenter already mailed and whether that mail was answered. The lines become notes of the draft (`메일 대조:`, `근거:`, `초안 메모:`).
 import { addressKey, isOwnAddress } from "../mail-state.ts";
+import { runLimited } from "../run-limited.ts";
 import { parseThread, type ThreadMessage } from "../zele.ts";
 
 export type MailQuery = { author: string; postTitle: string; text: string; at: number };
@@ -95,14 +96,12 @@ export async function findMail(q: MailQuery, s: MailSearch, now: number): Promis
 export const mailMatchLines = async (q: MailQuery, s: MailSearch, now: number): Promise<string[]> => matchLines(await findMail(q, s, now));
 
 // The real search: the zele CLI dotz already uses for mail (hub/zele.ts), read-only.
+const MAIL_SEARCH_MS = 60_000; // a mail search or read over the network: seconds, a minute at most
 export function zeleMailSearch(accounts: () => Promise<string[]>): MailSearch {
 	const run = async (args: string[]): Promise<string> => {
-		const p = Bun.spawn(["zele", "mail", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
-		const timer = setTimeout(() => p.kill(), 60_000);
-		const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-		clearTimeout(timer);
-		if (code !== 0) throw new Error(`zele mail ${args[0]}: ${err.trim().slice(-160) || `exit ${code}`}`);
-		return out.normalize("NFC");
+		const r = await runLimited(["zele", "mail", ...args], MAIL_SEARCH_MS);
+		if (r.code !== 0) throw new Error(`zele mail ${args[0]}: ${r.timedOut ? "timed out" : r.stderr.trim().slice(-160) || `exit ${r.code}`}`);
+		return r.stdout.normalize("NFC");
 	};
 	return {
 		search: async (query, account) => ((Bun.YAML.parse(await run(["search", query, "--limit", "50", ...(account ? ["--account", account] : [])])) as { items?: Record<string, unknown>[] } | null)?.items ?? []).map(t => ({ id: String(t.id), from: String(t.from ?? ""), subject: String(t.subject ?? ""), snippet: String(t.snippet ?? ""), ...(t.date ? { date: String(t.date) } : {}) })),

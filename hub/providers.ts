@@ -14,6 +14,7 @@ import { writeOmoPin } from "./omo-pin.ts";
 import { hardPinned, stickyAccount } from "./account-sticky.ts";
 import { labeledAccountView } from "./accounts-api.ts";
 import { apiBudget } from "./api-budget.ts";
+import { runLimited } from "./run-limited.ts";
 import { codexUsage, withCodex } from "./codex-usage.ts";
 import { type AccountReport, AccountUsage, type ClaudeResets, type QuotaLimit, cliTokensSettled, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
@@ -55,10 +56,8 @@ export async function saveProviderKey(provider: string, rawKey: string): Promise
 	// install a key saved there never showed up or got used.
 	if (usesOmo()) saveOmoKey(provider, key);
 	if (usesOmp()) {
-		const proc = Bun.spawn([OMP, "auth", "import", "-"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
-		proc.stdin.write(JSON.stringify({ version: 1, credentials: [{ provider, credential: { type: "api_key", key } }] }));
-		await proc.stdin.end();
-		if ((await proc.exited) !== 0) throw new ControlError("키를 저장하지 못했어요", 500);
+		const saved = await runLimited([OMP, "auth", "import", "-"], OMP_AUTH_MS, { stdin: JSON.stringify({ version: 1, credentials: [{ provider, credential: { type: "api_key", key } }] }) });
+		if (saved.code !== 0) throw new ControlError("키를 저장하지 못했어요", 500);
 	}
 	invalidate(); modelConnected();
 	return mask(key);
@@ -85,13 +84,13 @@ type OmpCredential = { provider: string; credential?: Record<string, unknown> };
 type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string; scope?: string; active?: boolean };
 type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string; plan?: string; resets?: ClaudeResets };
 
+// A local credential store write or read: seconds.
+const OMP_AUTH_MS = 30_000;
+
 async function ompJson<T>(args: string[], timeoutMs = 30_000): Promise<T | undefined> {
+	const text = await cliText(OMP, args, timeoutMs);
 	try {
-		const proc = Bun.spawn([OMP, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-		const timer = setTimeout(() => proc.kill(), timeoutMs);
-		const text = await new Response(proc.stdout).text();
-		clearTimeout(timer);
-		return (await proc.exited) === 0 ? (JSON.parse(text) as T) : undefined;
+		return text === undefined ? undefined : (JSON.parse(text) as T);
 	} catch {
 		return undefined;
 	}
@@ -145,15 +144,8 @@ const usesOmo = (): boolean => ROLES.some(r => runtimeIdOf(r) === "omo");
 const usesOmp = (): boolean => ROLES.some(r => runtimeIdOf(r) !== "omo");
 
 async function cliText(bin: string, args: string[], timeoutMs = 30_000): Promise<string | undefined> {
-	try {
-		const proc = Bun.spawn([bin, ...args], { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-		const timer = setTimeout(() => proc.kill(), timeoutMs);
-		const text = await new Response(proc.stdout).text();
-		clearTimeout(timer);
-		return (await proc.exited) === 0 ? text : undefined;
-	} catch {
-		return undefined;
-	}
+	const r = await runLimited([bin, ...args], timeoutMs);
+	return r.code === 0 ? r.stdout : undefined;
 }
 
 function omoAuth(): Record<string, unknown> | undefined {
@@ -676,8 +668,8 @@ export async function logoutProvider(provider: string): Promise<void> {
 	// nothing and the 공급자 screen stayed as it was (Mac mini, 2026-10-26).
 	const removed = usesOmo() && removeOmoLogin(provider);
 	if (usesOmp() && (await ompHasCredential(provider))) {
-		const proc = Bun.spawn([OMP, "auth-broker", "logout", provider], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-		if ((await proc.exited) !== 0 && !removed) throw new ControlError("로그아웃하지 못했어요", 500);
+		const out = await runLimited([OMP, "auth-broker", "logout", provider], OMP_AUTH_MS);
+		if (out.code !== 0 && !removed) throw new ControlError("로그아웃하지 못했어요", 500);
 	} else if (!removed) throw new ControlError("로그아웃하지 못했어요", 500);
 	invalidate();
 }

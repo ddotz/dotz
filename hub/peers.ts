@@ -14,6 +14,7 @@ import { cfg, log } from "./config.ts";
 import { friendlyName, label, peerInfoName, resolveName } from "./machine-name.ts";
 import { PEER_HEADER, peerTokenFor } from "./peer-auth.ts";
 import { bindPeer, boundPeer, boundPeers, unbindPeer, type Bound } from "./peer-pair.ts";
+import { runJson } from "./run-limited.ts";
 import { webBase } from "./weblink.ts";
 
 export { friendlyName };
@@ -148,9 +149,10 @@ async function counts(url: string, get: Fetcher = getJson, token: (url: string) 
 	}
 }
 
+const TAILSCALE_STATUS_MS = 10_000; // a status read from the local daemon: seconds
 export async function tailscaleStatus(): Promise<TsStatus | undefined> {
 	for (const bin of ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
-		const st = await Bun.$`${bin} status --json`.quiet().json().catch(() => undefined) as TsStatus | undefined;
+		const st = await runJson([bin, "status", "--json"], TAILSCALE_STATUS_MS) as TsStatus | undefined;
 		if (st?.Self?.DNSName) return st;
 	}
 	return undefined;

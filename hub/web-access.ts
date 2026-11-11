@@ -5,6 +5,7 @@ import { startTunnel, stopTunnel, tunnelStatus } from "./cloudflared.ts";
 import { cfg, log } from "./config.ts";
 import { createDevices, type Devices } from "./devices.ts";
 import { body, json } from "./routes-util.ts";
+import { runJson, runLimited } from "./run-limited.ts";
 import { cfBase, setWebBase } from "./weblink.ts";
 
 // How the web app is reached, switchable at runtime (설정 → 웹 접속). The state is web-access.json in the data dir (0600); an install that never
@@ -62,16 +63,18 @@ const tailscaleBins = (): string[] => (process.env.DOTZ_TAILSCALE_BIN !== undefi
 // The web app is reachable only through `tailscale serve`. Setup sets it up once, but an upgrade, a scripted install or a
 // skipped step left the port with no proxy (2026-10-20, a second Mac). The gateway restores it on start, and never takes
 // over a port another service already serves.
+const TAILSCALE_STATUS_MS = 10_000; // a status read from the local daemon: seconds
+const TAILSCALE_SERVE_MS = 30_000; // `serve --bg` writes the serve config (and may wait on the daemon): a few seconds, 30 s at most
 async function ensureServe(bin: string, httpsPort: number, localPort: number): Promise<void> {
-	const st = (await Bun.$`${bin} serve status --json`.quiet().json().catch(() => undefined)) as { TCP?: Record<string, unknown>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> } | undefined;
+	const st = (await runJson([bin, "serve", "status", "--json"], TAILSCALE_STATUS_MS)) as { TCP?: Record<string, unknown>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> } | undefined;
 	if (!st) return log("web: tailscale serve status unreadable; not touching the serve config");
 	if (st.TCP?.[String(httpsPort)]) {
 		const proxy = Object.entries(st.Web ?? {}).find(([k]) => k.endsWith(`:${httpsPort}`))?.[1]?.Handlers?.["/"]?.Proxy ?? "";
 		if (!new RegExp(`:${localPort}/?$`).test(proxy)) log(`web: tailnet port ${httpsPort} already serves ${proxy || "something else"}; set web.tailscale_https_port to a free port`);
 		return;
 	}
-	const r = await Bun.$`${bin} serve --bg --https=${httpsPort} http://127.0.0.1:${localPort}`.nothrow().quiet();
-	log(r.exitCode === 0 ? `web: tailscale serve was missing; opened port ${httpsPort} -> ${localPort}` : `web: tailscale serve failed: ${`${r.stdout}${r.stderr}`.trim().slice(0, 300)}`);
+	const r = await runLimited([bin, "serve", "--bg", `--https=${httpsPort}`, `http://127.0.0.1:${localPort}`], TAILSCALE_SERVE_MS);
+	log(r.code === 0 ? `web: tailscale serve was missing; opened port ${httpsPort} -> ${localPort}` : `web: tailscale serve failed: ${`${r.stdout}${r.stderr}`.trim().slice(0, 300)}`);
 }
 
 /** The tailnet address of this computer; undefined when tailscale is not there. Sets up `tailscale serve` when allow_logins is configured. */
@@ -79,7 +82,8 @@ async function tailscaleBase(): Promise<string | undefined> {
 	const port = cfg.web?.tailscale_https_port;
 	if (!port) return undefined;
 	for (const bin of tailscaleBins()) {
-		const dns = await Bun.$`${bin} status --json`.quiet().json().then(s => String(s?.Self?.DNSName ?? "").replace(/\.$/, ""), () => "");
+		const status = (await runJson([bin, "status", "--json"], TAILSCALE_STATUS_MS)) as { Self?: { DNSName?: unknown } } | undefined;
+		const dns = String(status?.Self?.DNSName ?? "").replace(/\.$/, "");
 		if (!dns) continue;
 		if (cfg.web?.allow_logins?.length) await ensureServe(bin, port, cfg.web.port);
 		return `https://${dns}${port === 443 ? "" : `:${port}`}`;

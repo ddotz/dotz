@@ -16,13 +16,16 @@ export const parallelOk = (v: [number, number, number]) => v[0] > 1 || (v[0] ===
 // More failed files than this is a broken change, not a host that did not start: no second run.
 const RERUN_MAX = 40;
 const GATE_MS = 19 * 60_000;
+const KILL_GRACE_MS = 60_000; // the run stops itself at GATE_MS; the hard kill only catches one that did not
 
 async function run(args: string[]): Promise<{ code: number; out: string }> {
 	// The suite's own preload makes its throwaway data dir; this file's one must not leak into it.
 	const env = { ...process.env };
 	delete env.DOTZ_TEST_DIR;
 	env.DOTZ_TEST_MAX_MS = String(GATE_MS); // the run stops itself no sooner than this gate's own limit
-	const p = Bun.spawn([process.execPath, "test", ...args], { cwd: root, env, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+	const p = Bun.spawn([process.execPath, "test", ...args], { cwd: root, env, stdout: "pipe", stderr: "pipe", stdin: "ignore", timeout: GATE_MS + KILL_GRACE_MS, killSignal: "SIGKILL" });
+	const stop = () => p.kill("SIGKILL"); // this process ends first (its own test limit, an error): the run it started goes with it
+	process.once("exit", stop);
 	let out = "";
 	const pump = async (s: ReadableStream<Uint8Array>, to: NodeJS.WriteStream) => {
 		const dec = new TextDecoder();
@@ -33,7 +36,9 @@ async function run(args: string[]): Promise<{ code: number; out: string }> {
 		}
 	};
 	await Promise.all([pump(p.stdout, process.stdout), pump(p.stderr, process.stderr)]);
-	return { code: await p.exited, out };
+	const code = await p.exited;
+	process.off("exit", stop);
+	return { code, out };
 }
 
 test(`the whole suite passes (bun ${Bun.version})`, async () => {

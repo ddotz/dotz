@@ -16,7 +16,7 @@ if (!r.ok || !data.url) {
 console.log(data.url);
 if (process.argv.includes("--open")) {
 	const opened = await Promise.resolve()
-		.then(() => Bun.spawn(openerCommand(data.url), { stdin: "ignore", stdout: "ignore", stderr: "ignore" }).exited)
+		.then(() => Bun.spawn(openerCommand(data.url), { stdin: "ignore", stdout: "ignore", stderr: "ignore", timeout: 15_000 /* opening a page */, killSignal: "SIGKILL" }).exited)
 		.catch(() => 1); // a headless Linux has no xdg-open
 	if (opened !== 0) {
 		console.error("브라우저를 열지 못했어요. 위 주소를 브라우저에서 열어 주세요");

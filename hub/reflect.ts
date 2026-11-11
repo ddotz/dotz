@@ -11,6 +11,7 @@ import { msg, withReplyLine } from "./i18n.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { trackTimer } from "./shutdown.ts";
 import { listSchedules, type Schedule } from "./schedule.ts";
+import { runLimited } from "./run-limited.ts";
 import { auditSummaryLine } from "./token-audit.ts";
 
 const DAY = 24 * 3600_000;
@@ -239,7 +240,7 @@ export async function sendRepeatAlerts(post: (text: string) => Promise<unknown>,
 // Local history of the files the bot edits itself (rules, lessons, identity, schedules), so a bad edit can be undone.
 const SNAPSHOT = ["RULES.md", "LESSONS.md", "memory", "identity", "features", "schedules.json", "watches.json", "channel-setups.json", "config.json", "channels.json"];
 export async function snapshot(): Promise<string | undefined> {
-	const git = (...a: string[]) => Bun.$`git -C ${DATA_DIR} ${a}`.nothrow().quiet();
+	const git = (...a: string[]) => runLimited(["git", "-C", DATA_DIR, ...a], 60_000 /* a local snapshot: seconds */);
 	if (!existsSync(join(DATA_DIR, ".git"))) {
 		writeFileSync(join(DATA_DIR, ".gitignore"), ["*", ...SNAPSHOT.flatMap(f => [`!${f}`, `!${f}/**`]), "!.gitignore", ""].join("\n"));
 		await git("init", "-q");
@@ -249,7 +250,7 @@ export async function snapshot(): Promise<string | undefined> {
 	const remote = String((cfg as { backup?: { remote?: string } }).backup?.remote ?? "").trim();
 	const flagged = remote ? await unstageSecrets(DATA_DIR) : [];
 	const r = await git("-c", "user.name=dotz", "-c", "user.email=dotz@localhost", "commit", "-q", "-m", `snapshot ${new Date().toISOString().slice(0, 10)}`);
-	log(`snapshot: ${r.exitCode === 0 ? "committed" : "no changes"}`);
+	log(`snapshot: ${r.code === 0 ? "committed" : "no changes"}`);
 	return remote ? pushBackup(DATA_DIR, remote, flagged) : undefined;
 }
 

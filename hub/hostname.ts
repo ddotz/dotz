@@ -7,7 +7,7 @@ export function machineHost(): string {
 	if (cached) return cached;
 	if (process.platform === "darwin") {
 		try {
-			const r = Bun.spawnSync(["/usr/sbin/scutil", "--get", "LocalHostName"], { stdout: "pipe", stderr: "ignore" });
+			const r = Bun.spawnSync(["/usr/sbin/scutil", "--get", "LocalHostName"], { stdout: "pipe", stderr: "ignore", timeout: 3000 /* a local lookup */ });
 			const name = r.stdout.toString().trim();
 			if (r.exitCode === 0 && name) return (cached = name);
 		} catch {}

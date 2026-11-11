@@ -151,7 +151,7 @@ const WORKTREE_MIN_AGE_MS = 3600_000;
 type WorktreeEntry = { path: string; orphanReason?: string };
 
 async function listWorktrees(): Promise<WorktreeEntry[]> {
-	const proc = Bun.spawn([OMP, "worktree", "list", "--json"], { stdout: "pipe", stderr: "ignore" });
+	const proc = Bun.spawn([OMP, "worktree", "list", "--json"], { stdout: "pipe", stderr: "ignore", timeout: 30_000 /* a local listing: seconds */, killSignal: "SIGKILL" });
 	const out = await new Response(proc.stdout).text();
 	if ((await proc.exited) !== 0) throw new Error(`omp worktree list exited ${proc.exitCode}`);
 	const parsed: unknown = JSON.parse(out);
@@ -168,7 +168,7 @@ function underRoot(path: string, root: string): boolean {
 }
 
 function sizeKb(path: string): number {
-	const r = Bun.spawnSync(["du", "-sk", path], { stdout: "pipe", stderr: "ignore" });
+	const r = Bun.spawnSync(["du", "-sk", path], { stdout: "pipe", stderr: "ignore", timeout: 60_000 /* du of one folder: seconds, a minute for a huge one */ });
 	return Number(r.stdout.toString().split("\t")[0]) || 0;
 }
 
@@ -180,7 +180,7 @@ async function cleanWorktrees(entries?: WorktreeEntry[], root = WORKTREE_ROOT): 
 		if (!entry.orphanReason || !existsSync(entry.path) || !underRoot(entry.path, root)) continue;
 		if (Date.now() - statSync(entry.path).mtimeMs < WORKTREE_MIN_AGE_MS) continue;
 		const size = sizeKb(entry.path);
-		Bun.spawnSync(["chmod", "-R", "u+w", entry.path], { stdout: "ignore", stderr: "ignore" });
+		Bun.spawnSync(["chmod", "-R", "u+w", entry.path], { stdout: "ignore", stderr: "ignore", timeout: 60_000 /* one worktree: seconds */ });
 		try {
 			rmSync(entry.path, { recursive: true, force: true });
 			removed++;
@@ -237,7 +237,7 @@ function etimeMinutes(etime: string): number {
 }
 
 function psRows(): PsRow[] {
-	const r = Bun.spawnSync(["ps", "-U", String(process.getuid?.() ?? ""), "-o", "pid=,ppid=,etime=,command="], { stdout: "pipe", stderr: "ignore" });
+	const r = Bun.spawnSync(["ps", "-U", String(process.getuid?.() ?? ""), "-o", "pid=,ppid=,etime=,command="], { stdout: "pipe", stderr: "ignore", timeout: 10_000 /* one process table read */ });
 	if (r.exitCode !== 0) throw new Error(`ps exited ${r.exitCode}`);
 	const rows: PsRow[] = [];
 	for (const line of r.stdout.toString().split("\n")) {

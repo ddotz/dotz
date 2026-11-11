@@ -34,7 +34,7 @@ export const hubPid = (dataDir: string): number | undefined => {
 export function ancestorPids(pid = process.pid, maxDepth = 32): number[] {
 	let listing = "";
 	try {
-		listing = execFileSync("ps", ["-axo", "pid=,ppid="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+		listing = execFileSync("ps", ["-axo", "pid=,ppid="], { encoding: "utf8", timeout: 10_000 /* one process table read */, stdio: ["ignore", "pipe", "ignore"] });
 	} catch {
 		return [];
 	}

@@ -29,6 +29,7 @@
 //
 // Everything outside (zele, plugins, the read position, deleting) is injected (SyncDeps), so the tests run it with fakes.
 import { mailByKey, recordMail, type MailRecord, type MailSourceState } from "./mail.ts";
+import { runLimited } from "./run-limited.ts";
 
 export const MAIL_ACTIONS = ["read", "unread", "archive", "unarchive", "trash", "star", "unstar"] as const;
 export type MailAction = (typeof MAIL_ACTIONS)[number];
@@ -80,10 +81,10 @@ async function provider(r: MailRecord, action: SyncedAction, d: SyncDeps): Promi
 }
 
 /** SyncDeps.exec for real: runs the command; only its code and stderr are kept. */
+const MAIL_ACTION_MS = 120_000; // one mailbox action over the network: seconds, 2 min at most
 export const spawnExec: SyncDeps["exec"] = async argv => {
-	const p = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
-	const [code, stderr] = await Promise.all([p.exited, new Response(p.stderr).text()]);
-	return { code, stderr };
+	const r = await runLimited(argv, MAIL_ACTION_MS);
+	return { code: r.code, stderr: r.timedOut ? "timed out" : r.stderr };
 };
 
 const patch = (r: MailRecord, change: Partial<MailRecord>, drop: (keyof MailRecord)[] = []): void => {

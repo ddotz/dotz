@@ -16,6 +16,7 @@ import { slackFlow } from "./onboarding-slack.ts";
 import { telegramFlow } from "./onboarding-telegram.ts";
 import { webAccessFlow } from "./onboarding-web-access.ts";
 import { json } from "./routes-util.ts";
+import { runLimited } from "./run-limited.ts";
 import { writeSecretFile } from "./secretbox.ts";
 
 export const ONBOARD_KEYS = ["discord", "jandi", "slack", "telegram", "web-access"] as const;
@@ -607,13 +608,16 @@ function createAsideBrowser(): BrowserLike {
 	};
 }
 
+const EXEC_MS = 60_000; // `which` and the cloudflared tunnel list, create, route and token calls answer in seconds
+const BREW_MS = 15 * 60_000; // `brew install` downloads and may build
+const LOGIN_MS = 15 * 60_000; // `cloudflared tunnel login` waits for the owner to sign in in a browser
+
 function defaultExec(argv: string[]): Promise<{ code: number; out: string }> {
-	const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
-	return Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]).then(([out, err, code]) => ({ code, out: out + err }));
+	return runLimited(argv, argv[0] === "brew" ? BREW_MS : EXEC_MS).then(r => ({ code: r.code, out: r.stdout + r.stderr + (r.timedOut ? "\n(timed out)" : "") }));
 }
 
 function defaultExecLines(argv: string[], onLine: (line: string) => void): Promise<{ code: number; out: string }> {
-	const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
+	const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", timeout: LOGIN_MS, killSignal: "SIGKILL" });
 	let out = "";
 	const pump = async (stream: ReadableStream<Uint8Array>) => {
 		const decoder = new TextDecoder();
@@ -629,7 +633,10 @@ function defaultExecLines(argv: string[], onLine: (line: string) => void): Promi
 		}
 		if (rest) onLine(rest);
 	};
-	return Promise.all([pump(proc.stdout), pump(proc.stderr), proc.exited]).then(([, , code]) => ({ code, out }));
+	return Promise.all([pump(proc.stdout), pump(proc.stderr), proc.exited]).then(([, , code]) => {
+		if (proc.signalCode === "SIGKILL") log(`${argv[0]}: no answer in ${LOGIN_MS / 60_000} min, killed`);
+		return { code, out };
+	});
 }
 
 export function defaultOnboardDeps(dir: string = DATA_DIR, overrides: Partial<OnboardDeps> = {}): OnboardDeps {

@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type ProbeOutcome, type Probes, type ProbeStart, Run } from "./claude-probes.ts";
 import type { AgentEvent, RuntimeAdapter } from "./types.ts";
+import { runLimited } from "../run-limited.ts";
 import type { ProbeCtx } from "./verify.ts";
 
 const CHEAP = "anthropic/claude-sonnet-5-5:low";
@@ -205,8 +206,8 @@ export function makeOmoProbes(adapter: RuntimeAdapter): Probes {
 		// stays untouched, and `git apply` of that patch is refused until the patch has been read.
 		workers_isolated_patch: probe(async (ctx, start, ms) => {
 			writeFileSync(join(ctx.cwd, "probe.txt"), "before\n");
-			const git = await Bun.$`git init -q && git add probe.txt && git -c user.name=probe -c user.email=probe@invalid commit -qm init`.cwd(ctx.cwd).nothrow().quiet();
-			if (git.exitCode !== 0) return fail(`could not make a probe repo: ${git.stderr.toString().slice(0, 120)}`);
+			const git = await runLimited(["sh", "-c", "git init -q && git add probe.txt && git -c user.name=probe -c user.email=probe@invalid commit -qm init"], 30_000 /* a local git setup: seconds */, { cwd: ctx.cwd });
+			if (git.code !== 0) return fail(`could not make a probe repo: ${git.stderr.slice(0, 120)}`);
 			const run = start();
 			const wait = Math.max(ms, 300_000);
 			const events = await run.turn('Use the task tool to spawn ONE subagent (category "quick") with this brief: "Replace the contents of probe.txt in the current directory with the single line after. Acceptance: probe.txt contains exactly after." Do not edit any file yourself. When its completion is back, reply with the full path of the .patch file it reports, and nothing else.', wait);

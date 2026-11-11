@@ -12,7 +12,7 @@ export type WebSnapshot = { tree: string; files: Map<string, string> };
 const WANTED = /^(js\/[^/]+\.js|css\/[^/]+\.css|index\.html|sw\.js|manifest\.webmanifest|i18n\/[^/]+\/[^/]+\.json)$/;
 const CHECK_EVERY_MS = 1000;
 const RETRY_NO_GIT_MS = 30_000;
-const git = (cwd: string, args: string[], input?: Buffer): Buffer => execFileSync("git", args, { cwd, input, maxBuffer: 64 << 20, stdio: ["pipe", "pipe", "ignore"] });
+const git = (cwd: string, args: string[], input?: Buffer): Buffer => execFileSync("git", args, { cwd, input, maxBuffer: 64 << 20, timeout: 30_000 /* a local git read or write: seconds */, stdio: ["pipe", "pipe", "ignore"] });
 const mtime = (p: string): number => { try { return statSync(p).mtimeMs; } catch { return 0; } };
 
 type State = { gitDir: string; headKey: string; published: WebSnapshot; pending?: { snap: WebSnapshot; since: number }; checkedAt: number };

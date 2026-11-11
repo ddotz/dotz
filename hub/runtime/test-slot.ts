@@ -90,11 +90,11 @@ function waitLine(dir: string, heldBy: string): string {
 	return `[dotz] this test run has not started: a heavy test run holds the slot (${(info?.label ?? heldBy).slice(0, 80)}${held}); waiting for it`;
 }
 
-const commandLine = (pid: number): string[] => Bun.spawnSync(["/bin/ps", "-o", "command=", "-p", String(pid)]).stdout.toString().trim().split(/\s+/);
+const commandLine = (pid: number): string[] => Bun.spawnSync(["/bin/ps", "-o", "command=", "-p", String(pid)], { timeout: 10_000 }).stdout.toString().trim().split(/\s+/);
 
 // The pid and everything above it, read from one process table.
 function ancestors(pid: number): number[] {
-	const parent = new Map(Bun.spawnSync(["/bin/ps", "-axo", "pid=,ppid="]).stdout.toString().trim().split("\n").map(l => l.trim().split(/\s+/).map(Number) as [number, number]));
+	const parent = new Map(Bun.spawnSync(["/bin/ps", "-axo", "pid=,ppid="], { timeout: 10_000 }).stdout.toString().trim().split("\n").map(l => l.trim().split(/\s+/).map(Number) as [number, number]));
 	const out: number[] = [];
 	for (let p = pid; p > 1 && out.length < 32; p = parent.get(p) ?? 0) out.push(p);
 	return out;

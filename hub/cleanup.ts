@@ -89,7 +89,7 @@ function newestMtime(dir: string): number {
 }
 
 function sizeKb(path: string): number {
-	const r = Bun.spawnSync(["du", "-sk", path], { stdout: "pipe", stderr: "ignore" });
+	const r = Bun.spawnSync(["du", "-sk", path], { stdout: "pipe", stderr: "ignore", timeout: 60_000 /* du of one folder: seconds, a minute for a huge one */ });
 	return Number(r.stdout.toString().split("\t")[0]) || 0;
 }
 
