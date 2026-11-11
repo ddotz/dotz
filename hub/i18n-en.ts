@@ -412,6 +412,7 @@ Do this, briefly:
 			"orchestrator.thinking": { label: "Thinking effort" },
 			"orchestrator.rotate_tokens": { label: "Switch-to-new-conversation threshold", unit: "tokens", hint: "When the conversation gets this long, it moves to a new conversation with a handover while idle" },
 			"orchestrator.nightly_fresh": { label: "Start a new conversation every night", hint: "On: the assistant moves to a new conversation every night while idle, whatever its size; the last compaction summary and the open requests go along. Off: only when the file grows big" },
+			"orchestrator.keep_recent": { label: "Recent conversation kept as is when compacting", unit: "tokens", hint: "A token is about four characters, so roughly four times this many characters stay as written; the rest is summarized" },
 			"lanes.model": { label: "Default model for new sessions" },
 			"lanes.thinking": { label: "Thinking effort for new sessions" },
 			"lanes.max_active": { label: "Sessions working at once", unit: "sessions", hint: "Unset, it is computed from this computer's free memory and cores. A number here is a hard cap" },

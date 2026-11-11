@@ -390,6 +390,7 @@ export const ko: Catalog = {
 			"orchestrator.thinking": { label: "추론 강도" },
 			"orchestrator.rotate_tokens": { label: "새 대화 기록으로 넘어가는 기준", unit: "토큰", hint: "대화가 이만큼 길어지면 한가한 때 새 대화 기록으로 넘어가요" },
 			"orchestrator.nightly_fresh": { label: "매일 밤 새 대화로 시작", hint: "켜면 어시스턴트가 크기와 상관없이 매일 밤 한가한 때 새 대화로 넘어가요. 지난 압축 요약과 열려 있는 요청은 그대로 넘어가요. 끄면 파일이 커졌을 때만 넘어가요" },
+			"orchestrator.keep_recent": { label: "압축해도 그대로 남기는 최근 대화", unit: "토큰", hint: "토큰 하나는 글자 약 네 개라서, 이 값의 네 배쯤 되는 글자가 그대로 남고 나머지는 요약해요" },
 			"lanes.model": { label: "새 세션 기본 모델" },
 			"lanes.thinking": { label: "새 세션 추론 강도" },
 			"lanes.max_active": { label: "동시 실행 세션 수", unit: "개", hint: "비워 두면 이 컴퓨터의 여유 메모리·CPU로 계산해요. 숫자를 적으면 그 값이 상한이에요" },

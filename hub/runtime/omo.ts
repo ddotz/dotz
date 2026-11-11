@@ -17,6 +17,7 @@ import { detectBinary } from "./detect.ts";
 import { closeHostsOf, OMO, recordStarted, TELEMETRY_OFF_ENV } from "./omo-hosts.ts";
 import { makeOmoProbes } from "./omo-probes.ts";
 import { lastCompactionSummary, summaryStale } from "./omo-summary.ts";
+import { syncKeepRecent } from "./omo-settings.ts";
 import { senpiLauncher } from "./senpi-bin.ts";
 import { EXTENSION, type Frame, OmpProcess, recentExchanges } from "./omp.ts";
 import type { RuntimeAdapter, SpawnOpts } from "./types.ts";
@@ -274,6 +275,8 @@ const MEMORY_OFF = "--omo-senpi-memory-disabled";
 // The question tool waits for an interactive UI answer that no dotz process gives (it would hang the turn); dotz asks the
 // owner in its channels instead.
 const NO_ASK = "--no-ask-user";
+// OmO reads the data folder's <cwd>/.omo/settings.json (omo-settings.ts) only for a trusted project; this trusts that folder for this process, as it is without the file.
+const APPROVE = "--approve";
 
 // Every dotz session's replies are chat messages for the owner. senpi's `chat` prompt surface drops the routing line, the
 // Ask / For you / Now / Next handoff block and the todo handoff cues, which otherwise leaked into owner-facing replies
@@ -308,7 +311,7 @@ export function orchestratorWorkerModel(o: SpawnOpts): string {
 export function omoArgs(o: SpawnOpts): string[] {
 	const key = keyProviderOf(o);
 	const model = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
-	return [OMO, "--mode", "rpc", "--model", omoSelector(model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, "--exclude-tools", excludedTools(o.role), ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--session", o.resume] : [])];
+	return [OMO, "--mode", "rpc", "--model", omoSelector(model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, ...(o.role === "orchestrator" ? [APPROVE] : []), "--exclude-tools", excludedTools(o.role), ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--session", o.resume] : [])];
 }
 
 export const omo: RuntimeAdapter = {
@@ -323,6 +326,7 @@ export const omo: RuntimeAdapter = {
 		const key = keyProviderOf(o);
 		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, [], null) : writeOrchestratorProfile(undefined, o.workers ?? orchestratorWorkerModel(o))) : undefined;
 		telemetryOff();
+		if (o.role === "orchestrator" && !o.lane) try { syncKeepRecent(o.cwd); } catch (e) { log(`omo keep_recent not written: ${(e as Error).message}`); }
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
 		const proc = spawnAgent(omoArgs(o), { cwd: o.cwd, env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...TELEMETRY_OFF_ENV, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
