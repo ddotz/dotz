@@ -1,6 +1,7 @@
 // A user app's web UI through the gateway (hub/app-proxy.ts): GET a page, POST a body, status and query passthrough, the
 // prefix modes, the auth of the API, an app that is off, and a websocket bridged to the app's own server.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { appProxySocket } from "./app-proxy.ts";
@@ -137,10 +138,10 @@ describe("the proxied page", () => {
 	test("a websocket on /apps/<id>/ is bridged to the app", async () => {
 		const ws = new WebSocket(`ws://127.0.0.1:${gateway.port}/apps/ws/ws`, { headers: { "x-dotz-token": HUB_TOKEN } } as never);
 		const got = await new Promise<string>((res, rej) => {
-			const t = setTimeout(() => rej(new Error("websocket timeout")), 8000);
+			const t = realSetTimeout(() => rej(new Error("websocket timeout")), 8000);
 			ws.onopen = () => ws.send("hello");
-			ws.onmessage = ev => { clearTimeout(t); res(String(ev.data)); };
-			ws.onerror = () => { clearTimeout(t); rej(new Error("websocket error")); };
+			ws.onmessage = ev => { realClearTimeout(t); res(String(ev.data)); };
+			ws.onerror = () => { realClearTimeout(t); rej(new Error("websocket error")); };
 		});
 		expect(got).toBe("echo:hello");
 		ws.close();

@@ -4,6 +4,7 @@
 // (one forwarded read, /api/peer/act), and nothing is posted here. Headless (Bun.WebView) against a fake hub.
 // Screenshots go to MAIL_READ_SHOTS (default /tmp/dotz-mail-read): the list before and after reading at 390 and 1280.
 import { afterAll, describe, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { sseResponse } from "./events.ts";
@@ -95,8 +96,8 @@ const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 let wake: (() => void) | undefined;
 const until = async (ok: () => boolean, ms = 5000) => {
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	const late = new Promise<never>((_, bad) => { timer = setTimeout(() => bad(new Error("timeout waiting for the hub")), ms); });
-	try { while (!ok()) await Promise.race([new Promise<void>(r => { wake = r; }), late]); } finally { clearTimeout(timer); }
+	const late = new Promise<never>((_, bad) => { timer = realSetTimeout(() => bad(new Error("timeout waiting for the hub")), ms); });
+	try { while (!ok()) await Promise.race([new Promise<void>(r => { wake = r; }), late]); } finally { realClearTimeout(timer); }
 };
 
 async function boot(width: number, height: number, key: string): Promise<View> {

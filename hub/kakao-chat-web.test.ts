@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
@@ -52,8 +53,8 @@ const expectReq = (pred: (r: Req) => boolean, ms = 3500): Promise<Req> => {
 	const have = reqs.find(pred);
 	if (have) return Promise.resolve(have);
 	return new Promise((res, rej) => {
-		const t = setTimeout(() => rej(new Error(`no matching request; got ${JSON.stringify(reqs.map(r => `${r.method} ${r.path}`))}`)), ms);
-		waiters.push({ pred, res: r => { clearTimeout(t); res(r); } });
+		const t = realSetTimeout(() => rej(new Error(`no matching request; got ${JSON.stringify(reqs.map(r => `${r.method} ${r.path}`))}`)), ms);
+		waiters.push({ pred, res: r => { realClearTimeout(t); res(r); } });
 	});
 };
 const isReq = (method: string, path: string) => (r: Req) => r.method === method && r.path === path;
@@ -821,12 +822,11 @@ describe("카카오톡 방 목록 실시간 갱신", async () => {
 		msgs = [...msgs, mk("9100", "다라", "라마바 새 말", at(26, 2, 0))];
 		await boot(v);
 		await openRoom(v, "100");
-		const t0 = performance.now();
 		emit({ kind: "kakao", chatId: "300", logId: "9100" });
 		await waitFor(v, `document.querySelector('.kk-row[data-chat="300"] .cv-p').textContent === "라마바 새 말"`);
-		const latency = performance.now() - t0;
 		expect(await q(v, `const r = document.querySelector('.kk-row[data-chat="300"]'); return { hint: r.querySelector(".cv-p").textContent, badge: r.querySelector(".nb")?.textContent ?? "", time: r.querySelector(".kk-t").textContent }`)).toMatchObject({ hint: "라마바 새 말", badge: "1" });
-		expect(latency).toBeLessThan(1000);
+		// The refresh came from the event: the room was read again by its own request, not by a timer's reload of the list.
+		await expectReq(isReq("GET", "/api/kakao/rooms/300/latest"));
 
 		msgs.push(mk("9101", "다라", "열린 방 새 말", at(26, 2, 1)));
 		emit({ kind: "kakao", chatId: "100", logId: "9101" });

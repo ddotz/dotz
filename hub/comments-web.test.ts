@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
@@ -28,8 +29,8 @@ const expectReq = (pred: (r: Req) => boolean, ms = 3500): Promise<Req> => {
 	const have = reqs.find(pred);
 	if (have) return Promise.resolve(have);
 	return new Promise((res, rej) => {
-		const t = setTimeout(() => rej(new Error(`no matching request; got ${JSON.stringify(reqs.map(r => `${r.method} ${r.path}`))}`)), ms);
-		waiters.push({ pred, res: r => { clearTimeout(t); res(r); } });
+		const t = realSetTimeout(() => rej(new Error(`no matching request; got ${JSON.stringify(reqs.map(r => `${r.method} ${r.path}`))}`)), ms);
+		waiters.push({ pred, res: r => { realClearTimeout(t); res(r); } });
 	});
 };
 

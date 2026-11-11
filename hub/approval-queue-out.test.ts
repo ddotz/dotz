@@ -1,6 +1,7 @@
 // The approval queue on the real outbound path (outbound.out -> events -> notices): cards the assistant posts in one conversation are
 // shown one at a time, the same card again is not a second post, and closing the shown card brings the next one.
 import { afterAll, expect, spyOn, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { rmSync } from "node:fs";
 import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
@@ -18,10 +19,10 @@ onEmit(e => void (e.kind === "out" && e.target === CONV && typeof e.text === "st
 // The next card the queue posts in the web conversation, awaited with a deadline.
 const nextCard = (ref: string) =>
 	new Promise<HubEvent>((resolve, reject) => {
-		const timer = setTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
+		const timer = realSetTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
 		onEmit(e => {
 			if (e.kind === "out" && e.target === CONV && String(e.text).includes(`(${ref})`)) {
-				clearTimeout(timer);
+				realClearTimeout(timer);
 				resolve(e);
 			}
 		});

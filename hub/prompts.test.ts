@@ -11,14 +11,18 @@ import { en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
 
 function setup(answered: string[] = [], recent: OwnerMessage[] = [], extra: Partial<PromptDeps> = {}) {
-	const state = { working: false, steerFails: false, delivered: [] as string[], steered: [] as string[], posts: [] as { target: string; text: string; replyTo?: string }[], saved: [] as Pending[][] };
+	const state = { working: false, steerFails: false, delivered: [] as string[], steered: [] as string[], posts: [] as { target: string; text: string; replyTo?: string }[], settling: [] as Promise<unknown>[], saved: [] as Pending[][] };
 	const q = createPrompts({
 		deliver: text => state.delivered.push(text),
 		steer: text => (state.steered.push(text), !state.steerFails),
 		working: () => state.working,
 		note: (_t, _r, text) => `[note] ${text}`,
 		isNote: text => text.startsWith("[note]"),
-		post: async (target, text, replyTo) => (state.posts.push({ target, text, replyTo }), { delivered: true }),
+		post: (target, text, replyTo) => {
+			const sent = (async () => (state.posts.push({ target, text, replyTo }), { delivered: true }))();
+			state.settling.push(sent);
+			return sent;
+		},
 		clearProgress: () => {},
 		persist: open => state.saved.push(open),
 		log: () => {},
@@ -648,7 +652,7 @@ test("an answer that came without a prompt settles the deferred settings request
 	// A run a worker's result woke answers with no prompt of ours: it goes to the owner's message, which is then answered.
 	q.workersDone(["st_login"]);
 	q.onAnswer("원인을 찾았어요. 로그인 화면이 바뀌었어요.");
-	await Bun.sleep(0);
+	await Promise.all(state.settling);
 	expect(state.posts).toEqual([{ target: SETTINGS, text: "원인을 찾았어요. 로그인 화면이 바뀌었어요.", replyTo: "m1" }]);
 	expect(q.isAnswered("m1")).toBe(true);
 	expect(q.deferredOpen()).toEqual([]);
@@ -664,7 +668,7 @@ test("a turn pairs with its own prompt when older prompts without a message are 
 	later.q.deliver("셋째", chat("m3"));
 	later.q.onPrompt("둘째");
 	later.q.onAnswer("둘째 답");
-	await Bun.sleep(0);
+	await Promise.all(later.state.settling);
 	expect(later.state.posts).toEqual([{ target: "chat", text: "둘째 답", replyTo: "m2" }]);
 
 	const last = setup();
@@ -672,7 +676,7 @@ test("a turn pairs with its own prompt when older prompts without a message are 
 	last.q.deliver("첫째", chat("m1"));
 	last.q.onPrompt("첫째");
 	last.q.onAnswer("첫째 답");
-	await Bun.sleep(0);
+	await Promise.all(last.state.settling);
 	expect(last.state.posts).toEqual([{ target: "chat", text: "첫째 답", replyTo: "m1" }]);
 });
 
@@ -688,7 +692,7 @@ test("a worker spawned in a turn a note started serves the owner message steered
 
 	q.workersDone(["st_fix"]);
 	q.onAnswer("고쳐서 올렸어요.");
-	await Bun.sleep(0);
+	await Promise.all(state.settling);
 	expect(state.posts).toEqual([{ target: "web:worklog", text: "고쳐서 올렸어요.", replyTo: "m1" }]);
 	expect(q.isAnswered("m1")).toBe(true);
 	expect(open().filter(p => p.replyTo)).toEqual([]);
@@ -698,7 +702,7 @@ test("an answer no label explains goes to the session's home, names no message a
 	const SETTINGS = "settings:w:login-boutique-com";
 	const { q, state, open } = setup([], [{ target: SETTINGS, replyTo: "m7", at: Date.now() - 60_000 }], { home: SETTINGS });
 	q.onAnswer("다시 로그인했어요. 다음 확인 때 정상으로 바뀌는지 볼게요.");
-	await Bun.sleep(0);
+	await Promise.all(state.settling);
 	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([[SETTINGS, undefined]]);
 	expect(q.isAnswered("m7")).toBe(false);
 	expect(open()).toEqual([]);

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
@@ -19,14 +20,14 @@ afterEach(() => { for (const h of hosts.splice(0)) h.kill(); });
 function until(host: PtyHost, done: (all: string) => boolean, ms = 8000): Promise<string> {
 	return new Promise((resolve, reject) => {
 		let all = "";
-		const timer = setTimeout(() => { sub.off(); reject(new Error(`timed out; saw ${JSON.stringify(all)}`)); }, ms);
+		const timer = realSetTimeout(() => { sub.off(); reject(new Error(`timed out; saw ${JSON.stringify(all)}`)); }, ms);
 		const sub = host.subscribe(e => {
 			if (e.type !== "out") return;
 			all += e.data;
-			if (done(all)) { clearTimeout(timer); sub.off(); resolve(all); }
+			if (done(all)) { realClearTimeout(timer); sub.off(); resolve(all); }
 		});
 		all = sub.backlog;
-		if (done(all)) { clearTimeout(timer); sub.off(); resolve(all); }
+		if (done(all)) { realClearTimeout(timer); sub.off(); resolve(all); }
 	});
 }
 
@@ -93,8 +94,12 @@ describe("web terminal route", () => {
 		expect(same!.status).toBe(200);
 		const plain = new Request("http://hub.test/api/pty/input", { method: "POST", headers: { "content-type": "text/plain", host: "hub.test" }, body: "{}" });
 		expect((await ptyRoute(plain, url("/api/pty/input"), host))!.status).toBe(415);
+		const exited = new Promise<void>((resolve, reject) => {
+			const timer = realSetTimeout(() => { sub.off(); reject(new Error("the shell never reported its exit")); }, 8000);
+			const sub = host.subscribe(e => { if (e.type === "exit") { realClearTimeout(timer); sub.off(); resolve(); } });
+		});
 		host.kill();
-		await Bun.sleep(0);
+		await exited;
 		const stopped = make("cat");
 		expect((await ptyRoute(post("/api/pty/input", { data: "x" }), url("/api/pty/input"), stopped))!.status).toBe(409);
 		expect(await ptyRoute(new Request("http://hub.test/api/state"), url("/api/state"), host)).toBeUndefined();

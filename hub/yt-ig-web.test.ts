@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createIgDmWeb } from "./ig-dm-web.ts";
@@ -34,7 +35,7 @@ let dm: DmState;
 let enabled = true;
 let refreshes = 0;
 let refreshWaiters: (() => void)[] = [];
-const nextRefresh = (): Promise<void> => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("no refresh request")), 3500); refreshWaiters.push(() => { clearTimeout(t); res(); }); });
+const nextRefresh = (): Promise<void> => new Promise((res, rej) => { const t = realSetTimeout(() => rej(new Error("no refresh request")), 3500); refreshWaiters.push(() => { realClearTimeout(t); res(); }); });
 const msgs = (list: [string, boolean, string, number, string[]?][]) => list.map(([id, mine, text, t, attach]) => ({ id, mine, text, from: mine ? "owner_ig" : "fan", at: t, attach: attach ?? [] }));
 const reset = () => {
 	enabled = true;

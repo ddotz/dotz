@@ -111,7 +111,9 @@ for (const [width, height, phone] of [[390, 844, true], [1280, 800, false]] as c
 			decisions = [];
 			ROOM.unreplied = true;
 			await boot(v);
-			await run(v, `go("monitoring", "i:kakao"); setTimeout(() => kkOpen("100"), 50)`);
+			await run(v, `go("monitoring", "i:kakao")`);
+			await waitFor(v, `kkRoom("100")`);
+			await run(v, `kkOpen("100")`);
 			await waitFor(v, `KK.open === "100" && !KK.loading`);
 			const shown = await q<{ owed: boolean; tags: string[]; inHead: number; order: string[] }>(v, `const o = $("#kk-owed"); return { owed: getComputedStyle(o).display !== "none" && o.offsetHeight > 0, tags: [...o.querySelectorAll(".tag.unreplied, .unrep-no")].map(n => n.textContent), inHead: $("#kk-head").querySelectorAll(".tag.unreplied, .unrep-no").length, order: [...document.querySelectorAll("#kk-head, #kk-owed, #kk-chat > .kk-box")].map(e => e.id || "box") }`);
 			expect(shown).toEqual({ owed: true, tags: ["미답장", "답장 안 함"], inHead: 0, order: ["kk-head", "kk-owed", "box"] });

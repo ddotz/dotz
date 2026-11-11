@@ -3,6 +3,7 @@
 // [fail] note, and the batch answer sends the picked cards, hands 고치기 to the bot in one message and leaves the skipped ones waiting.
 // The drafts are mails of a source this machine cannot send from, refused after the approval check, so nothing leaves this machine.
 import { afterAll, beforeEach, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { ignoreNotice, listNotices } from "./notices.ts";
@@ -27,10 +28,10 @@ onEmit(e => void (e.kind === "out" && e.target === CONV && outs.push(e)));
 // The next card the queue posts here, awaited with a deadline.
 const nextCard = (ref: string) =>
 	new Promise<void>((resolve, reject) => {
-		const timer = setTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
+		const timer = realSetTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
 		onEmit(e => {
 			if (e.kind === "out" && e.target === CONV && String(e.text).includes(`(${ref})`)) {
-				clearTimeout(timer);
+				realClearTimeout(timer);
 				resolve();
 			}
 		});
@@ -89,9 +90,9 @@ test("a send a session's CLI ran fails: the gateway report reaches the owner whe
 	const ref = draft("세션이 보낸 답");
 	await out(conv, card(ref));
 	const told = new Promise<string>((resolve, reject) => {
-		const timer = setTimeout(() => reject(new Error("no [fail] note came")), 5000);
+		const timer = realSetTimeout(() => reject(new Error("no [fail] note came")), 5000);
 		onEmit(e => {
-			if (e.kind === "out" && e.target === conv && String(e.text).startsWith("[fail]")) (clearTimeout(timer), resolve(String(e.text)));
+			if (e.kind === "out" && e.target === conv && String(e.text).startsWith("[fail]")) (realClearTimeout(timer), resolve(String(e.text)));
 		});
 	});
 	// The CLI knows only the draft, so the conversation it names is not the card's: the card is found by its ref.

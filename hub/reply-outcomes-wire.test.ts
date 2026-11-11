@@ -2,6 +2,7 @@
 // button (discordGatewayAnswer) and the batch answer. A retry of a failed send is only offered for a card whose answer it can read.
 // The drafts are mails of a source this machine cannot send from, refused after the approval check, so nothing leaves this machine.
 import { afterAll, beforeEach, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { ignoreNotice, listNotices } from "./notices.ts";
@@ -33,8 +34,8 @@ onEmit(e => {
 const shown = (ref: string) =>
 	new Promise<void>((resolve, reject) => {
 		if (posted.has(ref)) return resolve();
-		const timer = setTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
-		waiters.set(ref, () => (clearTimeout(timer), resolve()));
+		const timer = realSetTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
+		waiters.set(ref, () => (realClearTimeout(timer), resolve()));
 	});
 
 test("the web button, a Discord button and the batch answer each leave an answer pickedSend reads as 보내기", async () => {

@@ -5,7 +5,7 @@
 	"swallowedErrors": { "extension": 11, "features": 27, "hub": 193, "onboard": 4, "setup.ts": 1, "web": 78 },
 	"nonAtomicWrites": { "extension": 3, "features": 8, "hub": 43, "onboard": 1, "setup.ts": 2 },
 	"unboundedCalls": { "extension": 2, "features": 13, "hub": 71, "onboard": 7, "setup.ts": 4 },
-	"testTiming": { "fixedSleeps": 3, "budgetFiles": 1 },
+	"testTiming": { "fixedSleeps": 3, "budgetFiles": 0 },
 	"moduleMap": { "hub": 150 },
 	"helperCopies": { "readJson": 13, "json": 17, "sameOrigin": 4, "git": 7, "shq": 5, "sleep": 3 },
 	"pastedBlocks": { "blocks": 0 }

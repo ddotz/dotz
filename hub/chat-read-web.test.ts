@@ -3,6 +3,7 @@
 // never waiting for a scroll. The read position goes up to the last message whose bottom is visible, and a hidden page reads nothing until it
 // shows. Headless (Bun.WebView) against a fake hub; the read position is posted like the real page does (POST /api/read).
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { emit, sseResponse } from "./events.ts";
@@ -66,8 +67,8 @@ const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 let wake: (() => void) | undefined;
 const until = async (ok: () => boolean, ms = 5000) => {
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	const late = new Promise<never>((_, bad) => { timer = setTimeout(() => bad(new Error("timeout waiting for the hub")), ms); });
-	try { while (!ok()) await Promise.race([new Promise<void>(r => { wake = r; }), late]); } finally { clearTimeout(timer); }
+	const late = new Promise<never>((_, bad) => { timer = realSetTimeout(() => bad(new Error("timeout waiting for the hub")), ms); });
+	try { while (!ok()) await Promise.race([new Promise<void>(r => { wake = r; }), late]); } finally { realClearTimeout(timer); }
 };
 
 // The page boots on the conversation list; `hidden` makes it report a hidden page before the conversation opens. Scroll events are counted

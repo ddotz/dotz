@@ -1,6 +1,7 @@
 // Options without the contract's block on the real send paths (outbound.out, lanereport.report -> events -> notices): each ends as an open
 // decision with options, and carries Discord buttons, whoever wrote it. No model call and nothing leaves the test data folder.
 import { afterAll, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync, rmSync } from "node:fs";
 import { askComponentsFor } from "./askbuttons.ts";
 import { ASK_A, ASK_B } from "./ask-normalize.fixture.ts";
@@ -18,10 +19,10 @@ const labels = (n: any) => n.decision.options.map((o: any) => o.label);
 const buttons = (text: string) => (askComponentsFor("t", text) as { components: { label: string }[] }[]).flatMap(r => r.components.map(c => c.label));
 const posted = (target: string) =>
 	new Promise<HubEvent>((resolve, reject) => {
-		const timer = setTimeout(() => reject(new Error(`nothing posted to ${target}`)), 5000);
+		const timer = realSetTimeout(() => reject(new Error(`nothing posted to ${target}`)), 5000);
 		onEmit(e => {
 			if (e.kind === "out" && e.target === target) {
-				clearTimeout(timer);
+				realClearTimeout(timer);
 				resolve(e);
 			}
 		});

@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 
 // The review queue (web/js/30-triage.js, key "*"): every waiting draft of every comment app and mail app, one card at a time, answered with
@@ -22,8 +23,8 @@ let waiters: { n: number; res: () => void }[] = [];
 const arrived = (n: number): Promise<void> => {
 	if (reqs.length >= n) return Promise.resolve();
 	return new Promise((res, rej) => {
-		const t = setTimeout(() => rej(new Error(`only ${reqs.length} of ${n} answers arrived`)), 3500);
-		waiters.push({ n, res: () => { clearTimeout(t); res(); } });
+		const t = realSetTimeout(() => rej(new Error(`only ${reqs.length} of ${n} answers arrived`)), 3500);
+		waiters.push({ n, res: () => { realClearTimeout(t); res(); } });
 	});
 };
 const hub = fakeHub({

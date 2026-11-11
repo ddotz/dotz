@@ -7,6 +7,11 @@ const tasks = new Map<number, Task>();
 let seq = 0;
 export const clock = { now: 1_800_000_000_000 };
 const realSetImmediate = setImmediate;
+// The real timers, for a deadline on a wait that the fake clock would never fire: a test's `setTimeout(() => reject(...), 5000)` hangs to
+// the test timeout and names no step. Kept on globalThis so a preload run again in the same realm (--isolate) never captures the fakes.
+const realTimers = ((globalThis as any)[Symbol.for("dotz.realTimers")] ??= { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }) as { setTimeout: typeof setTimeout; clearTimeout: typeof clearTimeout };
+export const realSetTimeout: typeof setTimeout = realTimers.setTimeout;
+export const realClearTimeout: typeof clearTimeout = realTimers.clearTimeout;
 // Lets pending promise/stream continuations run (frames pushed into a fake stdout are read asynchronously).
 export const flush = async (rounds = 6): Promise<void> => {
 	for (let i = 0; i < rounds; i++) await new Promise<void>(r => realSetImmediate(r));

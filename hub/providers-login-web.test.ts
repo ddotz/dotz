@@ -1,4 +1,5 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { appAsset, indexPage } from "./webapp.ts";
@@ -161,7 +162,7 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 		expect(await q(v, `return [...document.querySelectorAll("a.btn")].find(a => a.textContent.includes("로그인 페이지 열기"))?.getAttribute("href")`)).toBe("https://claude.ai/oauth/authorize?state=stub");
 		expect(await q(v, `return [...document.querySelectorAll("a.btn")].find(a => a.textContent.includes("로그인 페이지 열기")).classList.contains("tonal")`)).toBe(false);
 		await shot(v, `providers-login-${w}.png`);
-		const refetched = new Promise<void>((res, rej) => { const t = setTimeout(() => rej(new Error("설정 → 계정 was not read again")), 4000); onAccounts = () => { clearTimeout(t); res(); }; });
+		const refetched = new Promise<void>((res, rej) => { const t = realSetTimeout(() => rej(new Error("설정 → 계정 was not read again")), 4000); onAccounts = () => { realClearTimeout(t); res(); }; });
 		await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "code-abc"; i.dispatchEvent(new Event("input")); ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
 		await waitFor(v, `document.querySelectorAll("#accounts .li.acc").length === 3`);
 		await refetched;

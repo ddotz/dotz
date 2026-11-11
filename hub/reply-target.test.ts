@@ -7,13 +7,18 @@ const LONG_AGO = () => Date.now() - 60 * 60_000;
 
 function setup() {
 	const posts: { text: string; replyTo?: string }[] = [];
+	const settling: Promise<unknown>[] = [];
 	const q = createPrompts({
 		deliver: () => {},
 		steer: () => true,
 		working: () => false,
 		note: (_t, _r, text) => `[note] ${text}`,
 		isNote: text => text.startsWith("[note]"),
-		post: async (_target, text, replyTo) => (posts.push({ text, replyTo }), { delivered: true }),
+		post: (_target, text, replyTo) => {
+			const sent = (async () => (posts.push({ text, replyTo }), { delivered: true }))();
+			settling.push(sent);
+			return sent;
+		},
 		clearProgress: () => {},
 		persist: () => {},
 		log: () => {},
@@ -33,7 +38,7 @@ function setup() {
 		if (ref) q.markAnswered(ref);
 		posts.push({ text, replyTo: ref });
 	};
-	return { q, posts, waiting, dotzSend };
+	return { q, posts, settling, waiting, dotzSend };
 }
 
 test("three posts of 01:08, 01:25 and 01:33 that named no message attach to nothing and close no waiting request", () => {
@@ -78,11 +83,11 @@ test("three posts of 01:08, 01:25 and 01:33 that named no message attach to noth
 });
 
 test("00:29: a run's answer woken by a worker no request is linked to reaches the conversation, on no message, and leaves the request open", async () => {
-	const { q, posts, waiting } = setup();
+	const { q, posts, settling, waiting } = setup();
 	waiting("e6d8285d", "st_cloudflare");
 	q.workersDone(["st_lessons"]);
 	q.onAnswer("✅ 교훈 구조 수정 중 금지 사항 잘림과 UI 규칙 전달, 두 건이 끝났어요");
-	await Bun.sleep(0);
+	await Promise.all(settling);
 	expect(posts).toEqual([{ text: "✅ 교훈 구조 수정 중 금지 사항 잘림과 UI 규칙 전달, 두 건이 끝났어요", replyTo: undefined }]);
 	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["e6d8285d"]);
 });

@@ -1,6 +1,7 @@
 // The gateway's send of a card whose files disagree with its words is refused by the CLI (sendDraft). The draft stays pending, and the card the owner
 // answered opens again with the reason, so 이대로 보내기 can still be picked; any other failed send keeps the card answered, as before.
 import { afterAll, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { onEmit } from "./events.ts";
 import { ATTACH_REFUSED, draftApprovalBlock } from "./draft-approval.ts";
 import { answerDecision, ignoreNotice, listNotices, markDraftSend } from "./notices.ts";
@@ -22,8 +23,8 @@ onEmit(e => {
 const shown = (ref: string) =>
 	new Promise<void>((resolve, reject) => {
 		if (seen.has(ref)) return resolve();
-		const timer = setTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
-		waiting.set(ref, () => (clearTimeout(timer), resolve()));
+		const timer = realSetTimeout(() => reject(new Error(`card ${ref} never came`)), 5000);
+		waiting.set(ref, () => (realClearTimeout(timer), resolve()));
 	});
 
 test("a send refused for its files opens the card again with the reason; 이대로 보내기 is then a pick the gateway sends", async () => {

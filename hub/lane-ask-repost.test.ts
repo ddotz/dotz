@@ -2,6 +2,7 @@
 // cannot post it again in other words. Replays 2026-11-05 14:20 UTC through the real report path, the real /api/send and the real notice store;
 // only the model's turn is absent, the route calls stand in for its tools.
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ASK_A } from "./ask-normalize.fixture.ts";
@@ -146,10 +147,10 @@ const ASK_LABELS = ["그대로 반영", "알림 행만 조정하고 반영", "�
 const labelsOf = (to: string) => cards().filter(c => c.decision!.to === to).map(c => c.decision!.options.map(o => o.label));
 const posted = (target: string) =>
 	new Promise<void>((resolve, reject) => {
-		const timer = setTimeout(() => reject(new Error(`nothing posted to ${target}`)), 5000);
+		const timer = realSetTimeout(() => reject(new Error(`nothing posted to ${target}`)), 5000);
 		onEmit(e => {
 			if (e.kind === "out" && e.target === target) {
-				clearTimeout(timer);
+				realClearTimeout(timer);
 				resolve();
 			}
 		});
