@@ -253,6 +253,8 @@ button.conn:disabled { cursor: default; }
 @media (hover: hover) { .ib:hover { background: var(--hover); color: var(--fg); } }
 .ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
 @media (hover: hover) { .ib.pri:hover { background: var(--accent); opacity: .88; } }
+/* An empty text box with nothing attached has nothing to send: the arrow takes the switched-off look (the stop square of a running turn stays). */
+.sendrow:not(.has-att):has(textarea:placeholder-shown) > .ib.pri:not(.stop) { opacity: .4; pointer-events: none; }
 .menu .mi.more { color: var(--fg-2); }
 .menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
 .btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
@@ -261,6 +263,7 @@ button.conn:disabled { cursor: default; }
 .btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
 .btn.sm { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
 .btn, .dc-act, .dc-go, .dc-back, .dc-manual { transition: opacity var(--m-fast) var(--m-ease); }
+.btn:active:not(:disabled), .dc-go:active:not(:disabled), .dc-back:active:not(:disabled) { opacity: .7; }
 @media (hover: hover) { .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; } }
 @media (hover: hover) { .btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; } }
 @media (hover: hover) { .btn.text:hover, .dc-act:not(.main):not(.alt):hover, .dc-manual:hover { background: var(--hover); color: var(--fg); opacity: 1; } }
@@ -272,7 +275,7 @@ button.conn:disabled { cursor: default; }
 .btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 var(--sp-3); font-size: 13px; }
 .btn.inrow.text, .btn.inrow.danger { padding: 0 var(--sp-2); }
 @media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
-@media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: -6px 0; } }
+@media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) calc(var(--sp-05) * -1); } }
 /* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
    vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.
    A row-level add action is not a row: it is a text or tonal .sm button in the section header (.sec.sec-act, 06-harness.css). */
@@ -303,6 +306,7 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .err-t { color: var(--err); }
 .muted { color: var(--fg-2); }
 .empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--fg-3); font-size: 12px; }
+.empty > .btn { margin-top: var(--sp-3); }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
 .dot.ok { background: var(--ok); } .dot.warn, .dot.att { background: var(--warn); } .dot.err { background: var(--err); }
 .dot.pri { background: var(--accent); }
@@ -316,7 +320,7 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .tag.off { font-weight: 600; }
 .tag.unreplied { --tone: var(--unreplied); color: var(--unreplied); font-weight: 600; }
 .nb.unreplied { background: color-mix(in srgb, var(--unreplied) 14%, transparent); color: var(--unreplied); font-weight: 600; }
-:is(.tag, .mon-ptag, .tr-st):is(.ok, .warn, .err, .pri, .off, .unreplied, .sent, .failed, .sending, .queued)::before, .dr-hit::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
+:is(.tag, .mon-ptag, .tr-st):is(.ok, .warn, .err, .pri, .off, .unreplied, .sent, .failed, .sending, .queued, .undo)::before, .dr-hit::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--tone); }
 .dot.unreplied { background: var(--unreplied); }
 button.cchip.unrep-no { height: 22px; padding: 0 var(--sp-2); font-size: 11.5px; color: var(--unreplied); }
 /* 초안 작성 beside 답장 안 함: the one action that moves the mail forward, so it carries the accent (30-monitoring.js mailDraftButton).
@@ -407,15 +411,20 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
 .mt-filter { flex: 0 0 148px; }
 .mt-card { display: flex; flex-direction: column; gap: var(--sp-4); scroll-margin-top: 12px; }
 .mt-use-list { display: flex; flex-direction: column; }
-.mt-use-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-05) var(--sp-2); padding: var(--sp-15) 0; border-top: 1px solid var(--line); }
+.mt-use-row { display: flex; flex-wrap: wrap; align-items: center; min-height: var(--btn-hit); gap: var(--sp-05) var(--sp-2); padding: var(--sp-15) 0; border-top: 1px solid var(--line); }
 .mt-use-row:first-child { border-top: 0; }
 .mt-use-tx { flex: 1 1 100%; display: flex; flex-direction: column; min-width: 0; }
 .mt-use-rest { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: var(--sp-05) var(--sp-2); }
 .mt-use-m { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .mt-use-row .tag { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mt-use-act { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-2); }
-@media (hover: hover) { .mt-use-act:hover { background: var(--hover); color: var(--fg); } }
-.mt-use-act .ic { width: 16px; height: 16px; }
+.mt-use-row[role="button"] { cursor: pointer; }
+.mt-use-row:focus-visible { outline-offset: -2px; }   /* the card clips a ring drawn outside the row */
+@media (hover: hover) { .mt-use-row[role="button"]:hover { background: var(--hover); } }
+.mt-use-end { flex: none; display: inline-grid; place-items: center; min-width: 16px; color: var(--fg-3); }
+.mt-use-end .ic { width: 16px; height: 16px; transition: transform var(--m-fast) var(--m-ease); }
+.mt-use-row[aria-expanded="true"] .mt-use-end .ic { transform: rotate(180deg); }
+.mt-use-fb { flex: none; }
+.mt-use-tx .nm .dot { display: inline-block; margin-right: var(--sp-2); vertical-align: middle; }
 /* From 900px every row is one line: the label column takes the room, the model and tag shorten, the icon sits at the far right. */
 @media (min-width: 900px) {
   .mt-use-row { flex-wrap: nowrap; gap: 0 var(--sp-3); }
@@ -423,7 +432,7 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
   .mt-use-rest { flex: 0 1 auto; }
   .mt-use-m { max-width: 300px; }
   .mt-use-row .tag { max-width: 260px; }
-  .mt-use-act { margin-left: auto; }
+  .mt-use-end { margin-left: auto; }
 }
 .mt-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .mt-head .t { min-width: 0; font: 700 17px/24px var(--font); overflow-wrap: anywhere; }
@@ -495,16 +504,18 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
 .menu { position: fixed; z-index: 1400; display: flex; flex-direction: column; padding: var(--sp-15); overflow-y: auto; border: 0; border-radius: var(--r-menu); background: var(--pop); box-shadow: var(--shadow-menu); outline: 0; }
 .menu .mh, .ph { z-index: 2; padding: var(--sp-2) var(--sp-2) var(--sp-1); color: var(--fg-3); font: 500 11px/16px var(--font); }
 .menu .mh { position: sticky; top: calc(-1 * var(--sp-15)); background: var(--pop); }
+.menu .msep { margin: var(--sp-1) var(--sp-2); border-top: 1px solid var(--line); }
 :root[data-theme="dark"] .menu { --hover: var(--active); }
 .menu.msheet { border-radius: var(--r-sheet); padding: var(--sp-2); box-shadow: var(--shadow-sheet); }
 .menu.msheet .mh { top: calc(-1 * var(--sp-2)); }
 .menu.msheet .mi { min-height: var(--menu-h-sheet); }
 .mi { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--menu-h); padding: var(--menu-py) var(--menu-px); border: 0; border-radius: var(--r-ctl); background: transparent; text-align: left; font-size: 13px; line-height: 20px; }
 .mi:focus-visible { background: var(--hover); outline: 0; } @media (hover: hover) { .mi:hover { background: var(--hover); outline: 0; } }
+.mi.danger, .mi.danger .ml { color: var(--err); }
 .mi.ind { padding-left: calc(var(--menu-px) + var(--sp-5)); }
 .mi .ck { flex: none; width: 14px; height: 14px; color: var(--accent); }
-.mi .ml { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--sp-2); overflow-wrap: anywhere; }
-.mi .ml small { flex: 0 1 auto; min-width: 0; margin-left: auto; color: var(--fg-3); font-size: 11px; line-height: 16px; }
+.mi .ml { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; column-gap: var(--sp-2); overflow-wrap: anywhere; }   /* space-between: the secondary text ends the label's line, and starts at the left when it drops under the label */
+.mi .ml small { flex: 0 1 auto; min-width: 0; color: var(--fg-3); font-size: 11px; line-height: 16px; }
 :root[data-theme="dark"] .mi .ml small { color: var(--fg-2); }
 .mi.sel-on { font-weight: 500; }
 @media (pointer: coarse) { .mi { min-height: var(--menu-h-sheet); font-size: 14px; } }
@@ -607,7 +618,8 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
 .ntf .x { flex: none; width: 24px; height: 24px; margin-top: calc(var(--sp-05) * -1); padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); font-size: 16px; line-height: 24px; }
 @media (hover: hover) { .ntf .x:hover { background: var(--hover); color: var(--fg); } }
 @keyframes ntf-in { from { opacity: 0; transform: translateX(16px) scale(.98); } }
-@media (max-width: 639px) { .ntf-box { top: calc(8px + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); } }
+/* On a phone the cards come down under the app bar (60px), so the back arrow and the title stay in reach. */
+@media (max-width: 639px) { .ntf-box { top: calc(60px + var(--sp-2) + env(safe-area-inset-top)); right: 8px; width: calc(100vw - 16px); } }
 
 /* 채팅 uses the same app bar as every page (title, 돋보기, usage); it only adds the session switcher right after the title
    and one 대화/로그 icon button next to the 돋보기 (shared by both views) */
@@ -629,9 +641,7 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
 .tchip.tmore .ic { width: 14px; height: 14px; }
 .nb.warn { background: var(--warn); }
 .nb { flex: none; min-width: 16px; height: 16px; padding: 0 var(--sp-15); border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 11px/16px var(--font); text-align: center; }
-/* light: an unread count is a quiet grey number, blue is only for what you press (docs/ui-principles.md 16); status counts, nav dots and draft counts keep their own color */
-.nb:not(.warn, .err, .unreplied, .nnb, .nub, .drafted) { background: transparent; color: var(--fg-2); }
-/* dark only: an unread count is orange (owner 2026-11-05) */
+/* an unread count is a count badge on every row: blue in light (the .nb above), orange in dark (owner 2026-11-05); status counts, nav dots and draft counts keep their own color */
 :root[data-theme="dark"] .nb:not(.warn, .err, .unreplied, .nnb, .nub, .drafted) { background: var(--unreplied); color: var(--bg); }
 :root[data-theme="dark"] .hr .dot.un, :root[data-theme="dark"] .fr.un .rc-src::before { background: var(--unreplied); }
 .sb { flex: none; height: 16px; padding: 0 var(--sp-15); border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
@@ -661,9 +671,10 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
      lane reports and alerts = tonal card (--layer + hairline); work in between folds into one quiet summary row
    - secondary text uses --fg-2 (AA on both themes); --fg-3 stays for non-text only */
 .chatbox { position: relative; flex: 1; min-height: 0; }
-.timeline { height: 100%; overflow-y: auto; overflow-x: hidden; padding-inline: var(--sp-2); margin-inline: calc(var(--sp-2) * -1); }   /* the 8px gutter (padding, given back as margin) is room for the notice highlight's ring and bar: overflow-x hidden would clip them at the column edge (09-notices.css) */
+/* container tlcol: the narrow rules of everything drawn inside a timeline ask this column's width, not the window's, so a 340 pane lays cards out like a 390 phone; 560px is where the column of a phone-wide window (<= ~615px) ends */
+.timeline { container: tlcol / inline-size; height: 100%; overflow-y: auto; overflow-x: hidden; padding-inline: var(--sp-2); margin-inline: calc(var(--sp-2) * -1); }   /* the 8px gutter (padding, given back as margin) is room for the notice highlight's ring and bar: overflow-x hidden would clip them at the column edge (09-notices.css) */
 .tl-in { display: flex; flex-direction: column; gap: var(--sp-4); width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto; padding: var(--sp-2) 0 var(--sp-8); }
-@media (max-width: 639px) { .tl-in { padding: 0 0 var(--sp-6); } .tl-in > .bm { padding: var(--sp-3) var(--sp-4); } }
+@container tlcol (max-width: 559.98px) { .tl-in { padding: 0 0 var(--sp-6); } .tl-in > .bm { padding: var(--sp-3) var(--sp-4); } }
 /* a clamped text that has a 더 보기 / 펼치기 button fades out over its last two lines instead of a hard cut (owner 2026-11-04); open removes .clamp, so the fade goes with it.
    .ub.clamp here, .rq-body.clamp and .rq-orig.clamp in 15-reply-card.css use the same gradient with their own --fade (the height the fade covers). */
 .ub.clamp { --fade: calc(2 * var(--lh-chat)); padding-bottom: 0; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
@@ -762,7 +773,7 @@ details.work[open] { padding: var(--sp-15) var(--sp-2) var(--sp-2); border-radiu
 .composer.dropping .sendrow { background: color-mix(in srgb, var(--accent) 7%, var(--card)) !important; }
 .mfiles { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-15); max-width: 100%; }
 .bm .mfiles { justify-content: flex-start; margin-top: var(--sp-2); }
-.lg-x .mfiles, .a-text .mfiles { justify-content: flex-start; margin-top: var(--sp-2); }
+.lg-x .mfiles, .a-text .mfiles, .fs-body > .mfiles { justify-content: flex-start; margin-top: var(--sp-2); }   /* a sheet's body: the files start where its text starts */
 .mfiles .thumb { display: block; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--layer); cursor: zoom-in; }
 .mfiles .thumb img { display: block; max-width: min(240px, 60vw); max-height: 200px; object-fit: cover; }
 .mfiles .fatt { cursor: pointer; padding-right: var(--sp-3); text-decoration: none; }
@@ -776,10 +787,10 @@ details.work[open] { padding: var(--sp-15) var(--sp-2) var(--sp-2); border-radiu
 /* the path under each file: one short line (shortPath in 15-attachments.js), the full path in the title, a tap copies it.
    width:0 + min-width:100% keeps a path inside its own chip's column: it never widens .fitem, so two files side by side keep
 two separate paths under their own chips and a long one ends in an ellipsis. */
-.fpath, .lb-p, .tv-p { display: block; width: 0; min-width: 100%; max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg-3); font: 400 12px/18px var(--font); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: copy; }
+.fpath, .lb-p { display: block; width: 0; min-width: 100%; max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg-3); font: 400 12px/18px var(--font); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: copy; }
 .fpath { margin-top: var(--sp-1); }
-@media (hover: hover) { .fpath:hover, .lb-p:hover, .tv-p:hover { color: var(--fg-2); } }
-.fbox > .fatt { padding-right: var(--sp-12); max-width: 260px; }
+@media (hover: hover) { .fpath:hover, .lb-p:hover { color: var(--fg-2); } }
+.fbox > .fatt { padding-right: var(--sp-12); max-width: min(260px, 90cqw); }
 .fdl { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 16px; color: var(--fg-2); text-decoration: none; }
 .fdl svg { width: 16px; height: 16px; }
 .fbox > .fatt + .fdl { top: 12px; right: 8px; }
@@ -791,7 +802,7 @@ two separate paths under their own chips and a long one ends in an ellipsis. */
 @media (pointer: coarse) { .fdl { width: 36px; height: 36px; border-radius: 18px; } .fbox > .fatt + .fdl { top: 10px; } }
 .bm .md code.path.fp { cursor: pointer; }
 .bm .md code.path.fp:hover { text-decoration: underline; text-underline-offset: 3px; }
-dialog.lbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: rgb(0 0 0 / .86); color: #fff; }
+dialog.lbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: rgb(0 0 0); color: #fff; }
 dialog.lbox::backdrop { background: transparent; }
 .lbox .lb-in { display: grid; grid-template-rows: auto auto minmax(0, 1fr); width: 100%; height: 100%; }
 .lbox .lb-bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); font-size: 14px; }
@@ -831,7 +842,8 @@ dialog.lbox::backdrop { background: transparent; }
 @media (hover: hover) { .ended .erow .edel:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); } }
 .ended .er .tag { flex: none; }
 .ended .erow .er .en { flex: 0 1 auto; min-width: 3em; }
-.ended .erow .er .sup { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ended .erow .er .eproj { flex: 0 20 auto; min-width: 0; max-width: 35%; overflow: hidden; text-overflow: ellipsis; }
+.ended .er .eproj + .edate { margin-left: 0; }
 .ended .en { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ended label.er { cursor: pointer; min-height: var(--row-h); }
 .ended label.ck-all { color: var(--fg-2); font-weight: 600; }
@@ -886,7 +898,7 @@ dialog.lbox::backdrop { background: transparent; }
 /* the session-result card sits straight in the timeline column: as wide as the replies and the composer, not the 560px a command answer gets */
 .bm.res > .ccard { max-width: none; }
 .bm.res .cc-hd + .md { margin-top: var(--sp-2); }
-@media (max-width: 639px) { .tl-in > .bm.res { padding: 0; } .bm.res > .mt { padding: 0 var(--sp-4); } }
+@container tlcol (max-width: 559.98px) { .tl-in > .bm.res { padding: 0; } .bm.res > .mt { padding: 0 var(--sp-4); } }
 /* a message from another computer's gateway (01-peer-msg.js): the computer, the kind, then the words */
 .bm.pmc > .ccard { padding: var(--sp-3) var(--sp-4); background: var(--layer); }
 .pmc-hd .mt { margin: 0 0 0 auto; flex: none; }
@@ -899,7 +911,7 @@ dialog.lbox::backdrop { background: transparent; }
 .pmc-b.clamp { max-height: calc(6 * var(--lh-chat)); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2 * var(--lh-chat)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 2 * var(--lh-chat)), transparent); }
 .pmc-b + .ubm { display: block; margin-left: auto; }
 .pmc-n { margin-top: var(--sp-2); color: var(--fg); }
-@media (max-width: 639px) { .tl-in > .bm.pmc { padding: 0; } }
+@container tlcol (max-width: 559.98px) { .tl-in > .bm.pmc { padding: 0; } }
 .cc-hd { display: flex; align-items: center; gap: var(--sp-2); font-size: 16px; line-height: 22px; font-weight: 600; }
 .cc-facts { display: grid; grid-template-columns: fit-content(40%) minmax(0, 1fr); gap: var(--sp-1) var(--sp-4); margin: var(--sp-2) 0 0; font-size: 14px; line-height: 22px; }
 .cc-facts dt { color: var(--fg-3); }
@@ -907,7 +919,7 @@ dialog.lbox::backdrop { background: transparent; }
 .cc-note { margin-top: var(--sp-2); color: var(--fg-3); font-size: 13px; line-height: 20px; white-space: pre-line; }
 .cc-act { margin-top: var(--sp-3); }
 .cc-act .btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 420px) { .cc-facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .cc-facts dd { margin-bottom: var(--sp-2); } }
+@container tlcol (max-width: 420px) { .cc-facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .cc-facts dd { margin-bottom: var(--sp-2); } }
 .cmdbox pre { margin: 0 0 var(--sp-1); font-family: var(--mono); }
 .lv { min-width: 0; font-size: var(--fs-chat); line-height: var(--lh-chat); }
 .lv[role="button"] { cursor: pointer; }
@@ -962,7 +974,7 @@ details.work.live .wdot { display: block; }
 .tl-in > .a-div { margin: var(--sp-2) 0 0; font: 500 12px/16px var(--font); color: var(--fg-2); }
 .tl-in > .a-div:first-child { margin-top: 0; }
 .tl-in > details.work:not([open]) + .bm { margin-top: calc(var(--sp-15) * -1); }
-@media (max-width: 639px) { .um { max-width: 90%; } .bm pre { padding: var(--sp-2) var(--sp-3); } .bm.rep, .bm.alert { padding: var(--sp-2) var(--sp-3) var(--sp-3); } }
+@container tlcol (max-width: 559.98px) { .um { max-width: 90%; } .bm pre { padding: var(--sp-2) var(--sp-3); } .bm.rep, .bm.alert { padding: var(--sp-2) var(--sp-3) var(--sp-3); } }
 :root { --col: 736px; }
 .composer { flex: none; width: 100%; max-width: var(--col); margin: 0 auto; padding: 0 0 max(var(--sp-4), env(safe-area-inset-bottom)); }
 .composer.tmode { max-width: var(--col); }
@@ -993,6 +1005,15 @@ details.work.live .wdot { display: block; }
   .runstate.warn .rs-tx, .runstate.err .rs-tx { white-space: normal; }
   .runstate .rs-go { height: 30px; padding: 0 var(--sp-3); }
 }
+/* The subagent count sits at the right end of the status line; with no status text it is the whole line (14-slash-commands.js paintSubsBtn). */
+.runstate .rs-subs { margin-left: auto; }
+.runline.only-subs > :is(.dot, .rs-tx) { display: none; }
+.runline.only-subs .rs-subs { margin-left: 0; }
+/* A message waiting for the turn to end: the owner's bubble, dimmed, with its two ways out in a small line under it (14-slash-commands.js qdBubble). */
+.um.qd > .ub { opacity: .6; }
+.qd-ln { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0 var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
+.qd-ln .btn { flex: none; }
+.qd-ln > span:first-child { margin-right: var(--sp-2); }   /* the text buttons carry this much side padding: both dots sit evenly between their neighbours */
 /* The top of the timeline: older messages load as it comes into view; the button is the fallback. */
 .tl-top { display: flex; justify-content: center; margin: 0 0 calc(var(--sp-15) * -1); }
 .tl-top[hidden] { display: none; }
@@ -1004,20 +1025,10 @@ details.work.live .wdot { display: block; }
 .runline.warn { color: var(--warn); }
 #working > .dot, #working-tx, #working > .sp, #working-stop { display: none !important; }
 
-#send-btn.stop { background: var(--fg); color: var(--bg); }
-#send-btn.stop > svg { display: none; }
-#send-btn.stop::before { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-radius: 3px; }
+:is(#send-btn, .pane-chat [data-c="send-btn"]).stop { background: var(--fg); color: var(--bg); }
+:is(#send-btn, .pane-chat [data-c="send-btn"]).stop > svg { display: none; }
+:is(#send-btn, .pane-chat [data-c="send-btn"]).stop::before { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-radius: 3px; }
 @media (pointer: coarse) { .working .btn { height: 36px; padding: 0 var(--sp-3); } }
-.qlist { display: flex; flex-direction: column; gap: var(--sp-15); margin-bottom: var(--sp-2); }
-.qitem { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-15) var(--sp-15) var(--sp-15) var(--sp-3); border: 0; border-radius: 12px; background: var(--layer); min-width: 0; }
-.qitem .qb { flex: 1; min-width: 0; }
-.qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; font-weight: 400; }
-.qitem .qm { margin-top: var(--sp-05); color: var(--fg-3); font-size: 11px; line-height: 16px; }
-.qitem .btn { flex: none; }
-@media (max-width: 639px) { .qitem { flex-wrap: wrap; } .qitem .qb { flex-basis: 100%; } .qitem .qa { margin-left: auto; } }
-.qitem .qa { display: flex; gap: var(--sp-2); flex: none; }
-.composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
-.composer.tmode .qitem .qm { color: var(--td); }
 /* phone working actions: no row of their own - stop is the send button (with text typed it sends into the running turn)
    and the end is the floating jump button; no extra chip in the composer bar (owner 2026-10-21: a ⋯ there breaks the bar) */
 @media (max-width: 639px) {
@@ -1043,7 +1054,7 @@ details.work.live .wdot { display: block; }
 .sl-i { flex: none; display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 40px; padding: 0 var(--sp-3); border: 0; border-radius: 10px; background: transparent; color: var(--fg); text-align: left; font: 400 13px/20px var(--font); white-space: nowrap; }
 .sl-i.on { background: var(--row-sel); }
 .sl-i .c { flex: none; font-weight: 700; font-size: 14px; }
-.sl-i .ar { flex: none; color: var(--fg-3); font-size: 12.5px; }
+.sl-i .ar { flex: none; display: flex; gap: var(--sp-1); }
 .sl-i .d { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: var(--sp-1); color: var(--fg-3); font-size: 12.5px; }
 @media (max-width: 639px) { .sl-i { height: 44px; } .sl-i .ar { display: none; } }
 .sendrow { display: flex; align-items: flex-end; gap: var(--sp-2); padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4); border: 1px solid transparent; border-radius: 24px; background: var(--layer); }
@@ -1071,7 +1082,6 @@ details.work.live .wdot { display: block; }
 .prompt { display: none; }
 @media (pointer: coarse) { .sendrow textarea { font-size: 16px; line-height: 1.5; min-height: calc(1.5em + 2 * var(--ta-pad)); min-height: calc(1lh + 2 * var(--ta-pad)); } }
 .composer.tmode .sendrow { background: var(--card); }
-.composer.tmode .qitem { background: var(--card); border-color: transparent; }
 
 /* terminal: the same data as a terminal session */
 .termbox { position: relative; flex: 1; min-height: 0; margin-bottom: var(--sp-3); }
@@ -1082,11 +1092,10 @@ details.work.live .wdot { display: block; }
 button.fatt { border: 0; font: inherit; text-align: left; cursor: pointer; }
 dialog.tbox { width: min(760px, 100vw); height: min(80dvh, 100dvh); max-width: none; max-height: none; margin: auto; padding: 0; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 12px 40px rgb(0 0 0 / .22); overflow: hidden; }
 dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
-.tbox .tv-in { display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100%; }
-.tbox .tv-p { padding: var(--sp-2) var(--sp-5); border-bottom: 1px solid var(--line); color: var(--fg-3); }
+.tbox .tv-in { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
 .tbox .tv-bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--line); font-size: 14px; }
 .tbox .tv-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-.tbox .tv-bar a, .tbox .tv-bar button { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; text-decoration: none; }
+.tbox .tv-bar a, .tbox .tv-bar button { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--active); color: var(--fg-2); font-size: 13px; text-decoration: none; }
 .tbox .tv-bar button.x { width: 32px; padding: 0; }
 .tbox .tv-body { min-height: 0; overflow: auto; padding: var(--sp-4) var(--sp-5) var(--sp-6); font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
 .tbox .tv-body:focus { outline: 0; }
@@ -1213,7 +1222,7 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .sheet { position: fixed; z-index: 900; top: 0; right: 0; bottom: 0; display: flex; flex-direction: column; width: min(var(--sheet-w), 100vw); border-left: 1px solid var(--line-2); background: var(--bg); box-shadow: -8px 0 24px rgb(0 0 0 / .12); }
 .sh-head { flex: none; display: flex; align-items: center; gap: var(--sp-2); height: calc(48px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) var(--sp-2) 0 var(--sp-4); border-bottom: 1px solid var(--line); }
 .sh-t { flex: 1; min-width: 0; }
-.sh-name { font: 600 13px/20px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-name { font: 600 var(--fs-card)/var(--lh-card) var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-t .sup { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-4); }
 .sh-body:not(.term) > * + * { margin-top: var(--sp-1); }
@@ -1222,10 +1231,10 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .tl-in > .a-div { margin: 0; }
 /* 채팅 대화 (시제품 proto .cv .tl): 흰 대화 카드의 폭을 다 쓰고 좌우 16px, 메시지 사이는 14px로 한 호흡씩 읽어요.
    타임라인의 8px 홈은 알림 강조 테두리 자리라 남기고, 왼쪽 여백만 24px로 주어 카드 안 16px에 서요. */
-#v-chat .timeline { padding: var(--sp-1) var(--sp-6) var(--sp-3); }
-#v-chat #tl { max-width: none; gap: var(--sp-3); padding: var(--sp-1) 0 var(--sp-3); }
-#v-chat #tl .um, #v-chat #tl .bm { margin-top: 0; }
-#v-chat #tl .um.cont { margin-top: 0; }
+:is(#v-chat, .pane-chat) .timeline { padding: var(--sp-1) var(--sp-6) var(--sp-3); }
+:is(#v-chat #tl, .pane-chat .tl-in) { max-width: none; gap: var(--sp-3); padding: var(--sp-1) 0 var(--sp-3); }
+:is(#v-chat #tl, .pane-chat .tl-in) .um, :is(#v-chat #tl, .pane-chat .tl-in) .bm { margin-top: 0; }
+:is(#v-chat #tl, .pane-chat .tl-in) .um.cont { margin-top: 0; }
 
 /* home: '답 필요' and '지금 진행 중' lists as one card per kind (docs/ui-spec.md 홈 상태 카드): the head sits inside the card's top edge,
    every row is a 48px two-line row, and the count/status word is small grey text, never another tag. */
@@ -1265,7 +1274,6 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hr .ha { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hr .ha:empty { display: none; }
 .hr .hp { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); font-variant-numeric: tabular-nums; }
-.hr .hs.unreplied { color: var(--unreplied); font-weight: 600; }
 .hr .hs { flex: none; min-width: 44px; text-align: right; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; }
 .hr .hs.pri { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-15); color: var(--accent); }
 .hr .hs.pri::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }   /* the word keeps its color; the dot is the tag pattern */
@@ -1522,6 +1530,7 @@ button.hm-sh { cursor: pointer; }
   #harness .hm-bar > .seg { flex: 1 1 100%; }
   #harness .hm-bar > .seg button { flex: 1 1 0; }
   #harness .hm-bar > .btn { flex: 1 1 0; padding: 0 var(--sp-3); }
+  #harness .hm-bar > .btn[data-hm-refresh] { flex: none; }
   .hm-simple > .hm-st > .hm-ar, .hm-simple > .hm-st:nth-of-type(n) > .hm-ar { top: calc(var(--hm-gap) / -2); left: 32px; margin: var(--hm-ar-h) 0 0 var(--hm-ar-h); transform: rotate(90deg); }
   /* the vertical connector: a hairline through the gap behind the chevron */
   .hm-simple > .hm-st + .hm-st::before { content: ""; position: absolute; top: calc(var(--hm-gap) * -1); left: 31px; width: 2px; height: var(--hm-gap); background: var(--line-2); }
@@ -1547,6 +1556,9 @@ button.hm-sh { cursor: pointer; }
 .note.ok { color: var(--ok); }
 .note.err { color: var(--err); }
 textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); line-height: 18px; resize: vertical; }
+textarea.hs-ta { resize: none; }
+.hs-fw > .err-t { margin: var(--sp-2) 0 0; }
+.hs-fw > .err-t:empty { display: none; }
 .hs-mono { font: 12px/18px var(--mono); min-height: 280px; }
 .hs-sw { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: var(--track); }
 .hs-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform var(--m-base) var(--m-ease); }
@@ -1602,10 +1614,10 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .hs-chips { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
 .hs-chips .chip { height: auto; min-height: 28px; padding: var(--sp-1) var(--sp-3); text-align: left; }
 .hs-chips .chip .tx { white-space: normal; overflow-wrap: anywhere; }
-@media (min-width: 640px) { #harness.hs-open { padding-right: var(--sheet-w); } }
+@media (min-width: 1700px) { #harness.hs-open { padding-right: var(--sheet-w); } }   /* below this the flow cannot keep its card width beside the drawer: the drawer lies over it, as on a phone */
 /* 구성: 기능 보기 (badges on the map, 기능 목록 panel, 상세의 "여기서 작동하는 기능") */
 .btn.tonal[aria-pressed="true"] { background: var(--active); color: var(--accent); }
-[data-hm-refresh] { min-width: 112px; }
+[data-hm-refresh] { min-width: var(--btn-hit); }
 .hm-bd { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-05); }
 .bd { display: inline-flex; align-items: center; height: 16px; padding: 0 var(--sp-15); border-radius: 4px; font: 500 var(--fs-tag)/var(--lh-tag) var(--font); white-space: nowrap; }
 .bd.f { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
@@ -1690,20 +1702,14 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 
 /* ---------- 채팅 대화 카드 안의 차례 (proto .cv: 머리 -> todo -> 타임라인 -> 진행 줄 -> 확인 카드 -> 컴포저) ---------- */
 /* todo 스트립: 대화 카드 안, 타임라인 바로 위, 카드와 같은 회색 면 (proto .todo) */
-#v-chat > .todo { background: var(--layer); }
-/* 서브에이전트 줄: 타임라인 아래 한 줄 (proto .run), 카드가 아니라 조용한 글줄 */
-#v-chat > .subs { flex: none; border-radius: 0; background: transparent; overflow: visible; }
-#v-chat > .subs .subsum { min-height: 28px; padding: var(--sp-1) var(--sp-3); border-radius: var(--r-ctl); color: var(--fg-2); font: 500 12px/16px var(--font); }
-#v-chat > .subs .subsum .dot { width: 6px; height: 6px; }
-#v-chat > .subs .subsum .chev { width: 14px; height: 14px; }
-#v-chat > .subs .sublist { padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
+:is(#v-chat, .pane-chat) > .todo { background: var(--layer); }
 /* 타임라인 위아래 경계는 .kk-tl(17-kakao.css)과 같은 12px 마스크로 글자를 흐려요. 더 스크롤할 쪽에만 걸려요(edgeFade의 fade-t, fade-b).
    맨 아래에서는 마지막 줄이 그대로 보이고, 맨 아래로 버튼과 입력창은 .timeline 밖이라 흐려지지 않아요. 03-base의 덮개 페이드는 여기서 꺼요.
    메일을 열면 .mtop이 맨 위에 붙어 있어서 위쪽은 흐리지 않아요. */
-#v-chat .chatbox::before, #v-chat .chatbox::after { content: none; }
-#v-chat .timeline { --edge-t: 0px; --edge-b: 0px; -webkit-mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); }
-#v-chat .chatbox.fade-t:not(:has(.mtop)) > .timeline { --edge-t: var(--sp-3); }
-#v-chat .chatbox.fade-b > .timeline { --edge-b: var(--sp-3); }
+:is(#v-chat, .pane-chat) .chatbox::before, :is(#v-chat, .pane-chat) .chatbox::after { content: none; transition: none; }
+:is(#v-chat, .pane-chat) .timeline { --edge-t: 0px; --edge-b: 0px; -webkit-mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); }
+:is(#v-chat, .pane-chat) .chatbox.fade-t:not(:has(.mtop)) > .timeline { --edge-t: var(--sp-3); }
+:is(#v-chat, .pane-chat) .chatbox.fade-b > .timeline { --edge-b: var(--sp-3); }
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
    .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 메신저 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
@@ -1713,20 +1719,20 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .sendrow:not(.ulw):focus-within { border-color: transparent !important; }
 .sendrow textarea { grid-area: ta; padding: 7px var(--sp-1); /* nudge: 22px line + 2 x 7px = 36px, the height of the send button beside it */ font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
 .sendrow textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }   /* 폰에서 긴 안내 글이 두 줄로 접혀 상자를 키우지 않게 한 줄로 (시제품 .cmp는 한 줄) */
-#c-attach, .sendrow > .cmp-plus { grid-area: plus; display: inline-flex; align-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
-#c-attach .ic, .sendrow > .cmp-plus .ic { width: 20px; height: 20px; }
-@media (hover: hover) { #c-attach:hover, .sendrow > .cmp-plus:hover { background: var(--hover); color: var(--fg); } }
+:is(#c-attach, .pane-chat [data-c="c-attach"]), .sendrow > .cmp-plus { grid-area: plus; display: inline-flex; align-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
+:is(#c-attach, .pane-chat [data-c="c-attach"]) .ic, .sendrow > .cmp-plus .ic { width: 20px; height: 20px; }
+@media (hover: hover) { :is(#c-attach, .pane-chat [data-c="c-attach"]):hover, .sendrow > .cmp-plus:hover { background: var(--hover); color: var(--fg); } }
 .sendrow > .ib { grid-area: send; width: 36px; height: 36px; border-radius: 50%; }
 .sendrow > .cbar { grid-area: bar; margin: 0; padding: var(--sp-1) var(--sp-1) var(--sp-05); min-height: 0; }
-#cbar { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-15); min-height: 20px; margin: var(--sp-1) 0 0; padding: 0 var(--sp-05); overflow-x: auto; scrollbar-width: none; }
-#cbar::-webkit-scrollbar { display: none; }
-#cbar .cchip { height: auto; min-height: 20px; padding: 0 var(--sp-05); background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
-#cbar button.cchip { cursor: pointer; }
-@media (hover: hover) { #cbar button.cchip:hover { background: transparent; color: var(--fg); } }
-#cbar .cchip.cown { opacity: 1; color: var(--fg-3); }
-@media (pointer: coarse) { #cbar { min-height: var(--btn-h-sm); margin-top: 0; } #cbar button.cchip { min-height: var(--btn-h-sm); padding: 0 var(--sp-15); } }
-#cbar .working { display: none !important; }
-@media (pointer: coarse) { #c-attach, .sendrow > .cmp-plus { width: 36px; height: 36px; } }
+:is(#cbar, .pane-chat .cbar) { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-15); min-height: 20px; margin: var(--sp-1) 0 0; padding: 0 var(--sp-05); overflow-x: auto; scrollbar-width: none; }
+:is(#cbar, .pane-chat .cbar)::-webkit-scrollbar { display: none; }
+:is(#cbar, .pane-chat .cbar) .cchip { height: auto; min-height: 20px; padding: 0 var(--sp-05); background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+:is(#cbar, .pane-chat .cbar) button.cchip { cursor: pointer; }
+@media (hover: hover) { :is(#cbar, .pane-chat .cbar) button.cchip:hover { background: transparent; color: var(--fg); } }
+:is(#cbar, .pane-chat .cbar) .cchip.cown { opacity: 1; color: var(--fg-3); }
+@media (pointer: coarse) { :is(#cbar, .pane-chat .cbar) { min-height: var(--btn-h-sm); margin-top: 0; } :is(#cbar, .pane-chat .cbar) button.cchip { min-height: var(--btn-h-sm); padding: 0 var(--sp-15); } }
+:is(#cbar, .pane-chat .cbar) .working { display: none !important; }
+@media (pointer: coarse) { :is(#c-attach, .pane-chat [data-c="c-attach"]), .sendrow > .cmp-plus { width: 36px; height: 36px; } }
 
 /* 실행 상태 줄 (41-runstate.js, 시제품 .run): 입력 상자 위 한 줄, 12/16 회색 글이에요. 경고·오류는 색만 바뀝니다 */
 .runstate { min-height: 20px; margin: 0 0 var(--sp-15) var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
@@ -1827,7 +1833,7 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .dc-rec-q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .dc-rec-a { color: var(--fg-2); }
 .dc-rec .mt { margin: 0; color: var(--fg-3); }
-@media (max-width: 639px) { .tl-in > .dc-rec { max-width: 90%; } }
+@container tlcol (max-width: 559.98px) { .tl-in > .dc-rec { max-width: 90%; } }
 /* In the 알림 / 작업내역 conversations the rows are not answer buttons: a tap on the message opens the decision sheet (30-notices.js). */
 .dcm.fx { cursor: pointer; }
 .dcm.fx .dcm-row { pointer-events: none; }
@@ -1882,6 +1888,9 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .pmv-hrow { display: flex; align-items: center; gap: var(--sp-2); }
 .pmd { display: flex; flex-direction: column; gap: var(--sp-3); }
 .pmd .as-h { overflow-wrap: anywhere; }
+.pmd-ft .btn { flex: 1; }
+.pmd-ft .note { flex: 1 0 100%; }   /* the failure sits on its own line right above the buttons */
+.pmd-ft .note:empty { display: none; }
 .pmv-edit { display: block; width: 100%; margin: 0 calc(var(--sp-2) * -1); padding: var(--sp-05) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: transparent; color: inherit; font: inherit; text-align: left; cursor: text; overflow-wrap: anywhere; box-sizing: content-box; }
 @media (hover: hover) { .pmv-edit:hover { background: var(--hover); } }
 .pmv-edit.empty { color: var(--fg-3); }
@@ -1932,6 +1941,13 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .nsc-fb .n { color: var(--fg-3); font-variant-numeric: tabular-nums; }
 .nsc-fb.on .n { color: inherit; }
 .nsc-fb .n:empty { display: none; }
+/* the tabs and 모두 읽음 are one row on a wide screen; a phone puts the button on the row under the tabs (as 답장 대기 does, 15-reply-card.css), so no tab hides behind it. A 44px tap area either way */
+.nsc-bar { display: flex; align-items: center; gap: var(--sp-2); }
+@media (max-width: 639px) { .nsc-bar { flex-wrap: wrap; row-gap: 0; } .nsc-bar > .nsc-f { flex: 1 0 100%; } }
+.nsc-bar > .nsc-f { flex: 0 1 auto; min-width: 0; }
+.nsc-bar > .btn { flex: none; margin-left: auto; position: relative; }
+.nsc-bar > .btn[hidden] { display: none; }
+.nsc-bar > .btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
 .nsc-m { display: flex; align-items: center; min-height: var(--btn-h); margin: 0 var(--sp-1); }
 .nsc-m[hidden] { display: none; }
 .nsc-m .meta { color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); font-variant-numeric: tabular-nums; }
@@ -1973,18 +1989,20 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 /* The one highlight rule, for ntFlash (30-notices.js, .nt-hl) and a Messenger quote (17-kakao.css): an overlay painted over the host, so a highlight never changes the host's size, radius, padding or margin.
    - anything with its own fill (a card, a bubble, a work card) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
    - plain text (.nt-hl.nt-bar) gets only a faint tint around the message (no left bar: owner 2026-10-22).
-   It fades in ~0.2s after the scroll lands (delay), holds, and is gone at ~2s. The ring and glow stay within 8px: the timeline's own 8px gutter (03-base.css) keeps them from being clipped. */
+   It fades in --m-base after the scroll lands (delay), holds, and is gone after --nt-hl-t, one length for a notice row and a Messenger bubble.
+   (The "원래 메시지" label of a quote stays longer: kkFlash in 30-kakao.js.) The ring and glow stay within 8px: the timeline's own 8px gutter (03-base.css) keeps them from being clipped. */
+:root { --nt-hl-t: calc(var(--m-slow) * 6); }
 .nt-hl { position: relative; --hl: 9%; --hl-ring: 34%; --hl-glow: 20%; }
 :root[data-theme="dark"] .nt-hl { --hl: 13%; --hl-ring: 46%; --hl-glow: 26%; }
 .nt-hl::after, .kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--accent) var(--hl), transparent); box-shadow: 0 0 0 var(--hl-spread, 2px) color-mix(in srgb, var(--accent) var(--hl-ring), transparent), 0 0 8px 0 color-mix(in srgb, var(--accent) var(--hl-glow), transparent); opacity: 0; pointer-events: none; }
-.nt-hl::after { animation: nt-hl 1.8s ease-in-out .2s both; }
+.nt-hl::after { animation: nt-hl var(--nt-hl-t) var(--m-ease) var(--m-base) both; }
 /* Plain text: the phone's message already has 16px side padding, so the tint sits in it. From 640px up the tint hangs 8px past each side, into the timeline's gutter. */
 .nt-hl.nt-bar::after { border-radius: var(--r-ctl); box-shadow: none; }
-@media (min-width: 640px) { .tl-in > .nt-hl.nt-bar::after { inset-inline: calc(var(--sp-2) * -1); } }
+@container tlcol (min-width: 560px) { .tl-in > .nt-hl.nt-bar::after { inset-inline: calc(var(--sp-2) * -1); } }
 @keyframes nt-hl { 0% { opacity: 0; } 14% { opacity: 1; } 50% { opacity: 1; } 100% { opacity: 0; } }
 /* Reduced motion: no fade or scroll animation, just a still tint for a moment (a step animation; !important beats the global animation: none). */
 @media (prefers-reduced-motion: reduce) {
-  .nt-hl::after { animation: nt-hl-still 1.4s step-end both !important; }
+  .nt-hl::after { animation: nt-hl-still var(--nt-hl-t) step-end both !important; }
 }
 @keyframes nt-hl-still { 0% { opacity: 1; } 100% { opacity: 0; } }
 
@@ -2095,7 +2113,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .dc-hb { flex: none; display: flex; align-items: center; gap: var(--sp-05); }
 
 /* 알림 conversation: the record behind the 알림 screen has no composer (31-conversations.js convPaint sets .no-composer) */
-#v-chat.no-composer > .composer { display: none; }
+:is(#v-chat, .pane-chat).no-composer > .composer { display: none; }
 
 /* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, one-line preview, status; never a time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
@@ -2125,8 +2143,8 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .mon-pc { margin-left: var(--sp-2); white-space: nowrap; color: var(--fg-3); font: 400 11px/16px var(--font); }
 .cv-id { margin-left: var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cv-row.unread .cv-n { font-weight: 600; }
-/* the unread count: 11px, one step up from the tab bar's 10.5 (docs/ui-spec.md 배지·점) */
-.cv-row .nb { min-width: 18px; height: 18px; border-radius: 9px; font-size: 11px; line-height: 18px; }
+/* the unread count and the 미답장 count: 11px, one step up from the tab bar's 10.5 (docs/ui-spec.md 배지·점); the same size on a list row, a home row and the head of a card or app */
+.cv-row .nb, .hr .nb, .hn-h .nb, #mon-head .nb { min-width: 18px; height: 18px; border-radius: 9px; font-size: 11px; line-height: 18px; }
 /* a session under its project: indented, smaller avatar; the group label for sessions started from chat */
 .cv-row.sub { min-height: 40px; padding-left: var(--sp-8); }
 .cv-row.sub .cv-av { width: 28px; height: 28px; }
@@ -2139,8 +2157,8 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 #cv-head .cv-hd-b, .pane-hd .cv-hd-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 #cv-head .cv-hd-t, .pane-hd .cv-hd-t { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; color: var(--fg); font: 600 16px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #cv-head .cv-hd-s, .pane-hd .cv-hd-s { color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#cv-head .cv-hd-a { flex: none; display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
-#cv-head .cvmenu { margin-left: 0; }
+#cv-head .cv-hd-a, .pane-hd .cv-hd-a { flex: none; display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
+#cv-head .cvmenu, .pane-hd .cvmenu { margin-left: 0; }
 /* a row with a preview line (running sessions, 모니터링) */
 .cv-row.pv { align-items: flex-start; padding-block: var(--sp-2); }
 .cv-row.pv .cv-p { font-size: 13px; line-height: 18px; }
@@ -2170,7 +2188,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .cv-sys .cv-sys-mt { font-variant-numeric: tabular-nums; }
 /* 백그라운드 작업 카드 (소개 페이지 작업 카드): 이어진 작업은 한 격자(.cv-tasks)로 묶여 채팅 폭을 꽉 채워요. 한 줄 3장까지, 남는 줄은 그 줄 안에서 폭을 나눠 가져요(4장 = 3 + 1, 5장 = 3 + 2).
    장 수는 창이 아니라 격자 폭으로 정해요. 6칸 격자라 1·2·3장이 모두 나눠떨어져요.
-   상태가 바뀌어도 카드 높이는 그대로예요: 제목은 두 줄 칸을 늘 차지하고, 결과 파일은 그 둘째 줄 자리에 들어오고, 막대는 카드 아래 여백에 떠요(원칙 3·6·7·9). */
+   카드는 내용만큼만 높아요(제목 아래 빈 자리 없음): 한 줄의 카드는 가장 높은 카드에 맞춰 늘어나고, 결과 파일은 제목 아래 줄에 붙고, 막대는 카드 아래 여백에 떠요(원칙 3·6·7·9). */
 .tl-in > .cv-tasks { container: cv-tasks / inline-size; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); align-self: stretch; margin: var(--sp-2) 0 0; }
 .cv-tasks:empty { display: none; }
 .cv-task { container: cv-task / inline-size; position: relative; grid-column: span 6; min-width: 0; padding: var(--sp-3) var(--sp-4) var(--sp-4); border-radius: var(--r-card); background: var(--layer); color: var(--fg); text-align: left; }
@@ -2186,7 +2204,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .cv-task .ct-hd { display: grid; grid-template: "lb st" minmax(24px, auto) "t t" auto / minmax(0, 1fr) auto; align-items: center; gap: var(--sp-05) var(--sp-2); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .cv-task .ct-nm { display: contents; }
 .cv-task .ct-lb { grid-area: lb; overflow: hidden; color: var(--fg-2); font: 400 12px/16px var(--font); text-overflow: ellipsis; white-space: nowrap; }
-.cv-task .ct-t { grid-area: t; display: -webkit-box; min-height: 2lh; overflow: hidden; color: var(--fg); font: 500 15px/22px var(--font); overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.cv-task .ct-t { grid-area: t; display: -webkit-box; min-height: 1lh; overflow: hidden; color: var(--fg); font: 500 15px/22px var(--font); overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 @container cv-task (max-width: 299.98px) { .cv-task .ct-kind:not(:only-child) { display: none; } }   /* 좁은 카드는 알약 옆에 시각만 */
 .cv-task:has(.ct-file) .ct-t { min-height: 1lh; -webkit-line-clamp: 1; }
 /* the card's state: its own dot and the word in --fg-2, no fill (web/DESIGN.md 상태) */
@@ -2209,7 +2227,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .cv-card { overflow: hidden; border-radius: var(--r-card); background: var(--card); }
 .cv-sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); color: var(--fg-2); font: 600 14px/20px var(--font); }
 .cv-sec:first-child { margin-top: 0; }
-.cv-card + .cv-card { margin-top: var(--sp-6); }
+.cv-card + :is(.cv-card, .card.empty) { margin-top: var(--sp-6); }   /* the list's loading / failed card keeps the gap between groups */
 #chat-convo .cv-gh { padding: var(--sp-3) var(--sp-4) var(--sp-1); }
 #chat-convo .cv-row { min-height: 48px; padding: var(--sp-2) var(--sp-4); gap: var(--sp-3); border-radius: 0; }
 #chat-convo .cv-row + .cv-row { margin-top: 0; border-top: 1px solid var(--line); }
@@ -2234,7 +2252,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
   #v-chat > .cv-head { display: none; }
   #v-chat > .todo { order: 1; margin: var(--sp-2) var(--sp-3) var(--sp-1); }
   #v-chat > .chatbox { order: 4; }
-  #v-chat > .subs { order: 5; margin: 0 var(--sp-3) var(--sp-1); }
   #v-chat > .composer { order: 6; padding: var(--sp-2) var(--sp-3) var(--sp-3); }
   #v-chat.cv-listing { height: 100%; margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-6); border-radius: 0; background: transparent; overflow: visible; }
   #v-chat.cv-listing > .cv-side { border-radius: var(--r-card); }
@@ -2250,16 +2267,15 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
   #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 var(--sp-3); }
   #v-monitoring > .chatbox { grid-row: 4; }
   /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
-  #v-chat { --cv-w: 340px; position: relative; display: grid; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
+  :is(#v-chat, .pane-chat) { --cv-w: 340px; position: relative; display: grid; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
   #v-chat::before { content: ""; grid-column: 2; grid-row: 1 / -1; border-radius: var(--r-card); background: var(--card); }
   #v-chat.mail-open { --cv-w: 240px; }   /* 메일 스레드 패널이 대화 옆에 서면 목록 단을 좁혀 메일 원문 폭을 지켜요 */
-  #v-chat > * { grid-column: 2; position: relative; z-index: 1; }
+  :is(#v-chat, .pane-chat) > * { grid-column: 2; position: relative; z-index: 1; }
   #v-chat > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: var(--sp-4); padding: 0; }
-  #v-chat > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); }
-  #v-chat > .todo { grid-row: 2; margin: 0 var(--sp-3) var(--sp-1); }
-  #v-chat > .chatbox { grid-row: 4; }
-  #v-chat > .subs { grid-row: 5; margin: 0 var(--sp-3); }
-  #v-chat > .composer { grid-row: 6; width: auto; max-width: none; margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+  :is(#v-chat, .pane-chat) > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); }
+  :is(#v-chat, .pane-chat) > .todo { grid-row: 2; margin: 0 var(--sp-3) var(--sp-1); }
+  :is(#v-chat, .pane-chat) > .chatbox { grid-row: 4; }
+  :is(#v-chat, .pane-chat) > .composer { grid-row: 6; width: auto; max-width: none; margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-3); }
   .cv-row.pv { padding-block: var(--sp-15); }
   .cv-row { min-height: 36px; padding: var(--sp-1) var(--sp-3); gap: var(--sp-2); border-radius: var(--r-ctl); }
   .cv-row.sub { min-height: 36px; padding-left: var(--sp-5); }
@@ -2318,8 +2334,8 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .brand-c.p-need::after { background: var(--warn); }
 .appbar.hasp:not(.back) h1 { position: relative; padding-right: var(--sp-4); }
 .appbar.hasp:not(.back) h1::before { position: absolute; right: 2px; top: 50%; margin-top: calc(var(--sp-15) * -1); }
-.appbar.hasp:not(.back) h1.pdot { padding-right: calc(var(--sp-4) + var(--sp-2) + var(--sp-05)); }
-.appbar.hasp:not(.back) h1.pdot::after { right: 14px; }
+.appbar.hasp:not(.back) h1.pdot { min-width: var(--btn-hit); }
+.appbar.hasp:not(.back) h1.pdot::after { right: 0; bottom: auto; top: calc(50% - var(--sp-4)); }
 .appbar:not(.back) h1.p-need::after { background: var(--warn); }
 /* the switcher (proto.css .pop): "내 컴퓨터" over one low row per computer - status dot, name over one quiet line, the check or the waiting count at the right -
    and 컴퓨터 관리 under a line. With the sidebar's brand row on screen it is a popover right under that row (no scrim, .anch); the phone keeps its bottom sheet. */
@@ -2354,7 +2370,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .pr-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
 
 /* a relayed computer's chat (42-relay-chat.js): the normal chat view; what its messenger cannot carry is not drawn */
-body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-api, #c-fb, #working, #runline, #runstate, #pausenote, #dcard, #queue, #hints, #atray, #todo, #vtog, #cvmenu, #pjmenu) { display: none !important; }
+body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-api, #c-fb, #working, #runline, #runstate, #pausenote, #dcard, #hints, #atray, #todo, #vtog, #cvmenu, #pjmenu) { display: none !important; }
 .relaynote { margin: 0 0 var(--sp-15); padding: 0 var(--sp-1); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .rl-pend { opacity: 0.6; }
 
@@ -2388,6 +2404,7 @@ dialog.dlg.shell .dact { display: none; }
 .sh-st { margin-right: var(--sp-1); font: 500 12px/16px var(--font); color: var(--fg-3); white-space: nowrap; }
 .sh-st[data-tone="ok"] { color: var(--ok); }
 .sh-st[data-tone="err"] { color: var(--err); }
+.sh-fail { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3); }
 .sh-term { flex: 1; min-height: 120px; min-width: 0; padding: var(--sp-2) var(--sp-1) var(--sp-1) var(--sp-2); border-radius: 12px; background: var(--tb); overflow: hidden; }
 .sh-term .xterm { height: 100%; }
 .sh-term .xterm-viewport { background: transparent !important; scrollbar-width: thin; }
@@ -2440,15 +2457,15 @@ dialog.dlg.shell .dact { display: none; }
 .md .mlist-url { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .md .mlist-b { min-width: 20px; height: 20px; padding: 0 var(--sp-15); border-radius: 10px; background: var(--err); color: #fff; font: 600 11px/20px var(--font); text-align: center; }
 
-/* menus: they open where they are anchored, fading in from the edge they came from (150ms, 8px, --m-ease); a phone menu sheet rises from the bottom (280ms).
+/* menus: they open where they are anchored, fading in from the edge they came from (--m-fast, 8px); a phone menu sheet rises from the bottom (--m-base). Both fade out (--m-fast) in closeMenu (03-menu.js).
    The global reduced-motion rule (01-tokens.css) turns both off. */
 .menu { animation: menu-in var(--m-fast) var(--m-ease); }
 @keyframes menu-in { from { opacity: 0; transform: translateY(-8px); } }
-.menu.msheet { animation: menu-sheet-in 280ms var(--m-ease); }
+.menu.msheet { animation: menu-sheet-in var(--m-base) var(--m-ease); }
 @keyframes menu-sheet-in { from { transform: translateY(100%); } }
-/* The scrim of a native <dialog> (dialog(), the palette): fades in with it (220ms; the palette 180ms) and out while it leaves (motionDialog sets [data-leaving], 150ms). */
+/* The scrim of a native <dialog> (dialog(), the palette): fades in with it (--m-base; the palette --m-fast) and out while it leaves (motionDialog sets [data-leaving], 150ms). */
 dialog[open]::backdrop { animation: m-scrim-in var(--m-base) var(--m-ease); }
-dialog.pal[open]::backdrop { animation-duration: 180ms; }
+dialog.pal[open]::backdrop { animation-duration: var(--m-fast); }
 dialog[data-leaving][open]::backdrop { animation: m-scrim-out var(--m-fast) var(--m-ease) forwards; }
 @keyframes m-scrim-in { from { opacity: 0; } }
 @keyframes m-scrim-out { to { opacity: 0; } }
@@ -2466,6 +2483,8 @@ dialog.pal .pal-i .pd { flex: 0 1 auto; max-width: 45%; margin-left: auto; text-
 dialog.pal .pal-i.on, dialog.pal .pal-i:focus-visible { background: var(--row-sel); }
 dialog.pal .pal-out { flex: 1 1 auto; min-height: 0; }
 dialog.pal .pal-ft { flex: none; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line); color: var(--fg-3); font: 400 12px/16px var(--font); }
+:root[data-pointer] dialog :focus-visible { outline: 0; }
+@media (hover: none) and (pointer: coarse) { dialog.pal .pal-ft, dialog.pal .pd.key { display: none; } }
 @media (max-width: 639px) {
   dialog.pal { margin-top: 12vh; }
   dialog.pal .pal-i { min-height: 44px; }
@@ -2485,6 +2504,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .fs-tt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
 .fs-ey { display: block; color: var(--fg-2); font: 600 13px/20px var(--font); }
 .fs-ey .fs-left { color: var(--accent); }
+.fs-t .fs-left { color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); letter-spacing: 0; }   /* the mail sheet's progress, quiet beside the title */
 .fs-t { margin: 0; font: 700 var(--fs-page-sm)/var(--lh-page-sm) var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .fs-ey.warn { color: var(--warn); }
 .fs-ey.err { color: var(--err); }
@@ -2515,6 +2535,8 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   .fs-bd.kb { bottom: auto; }
   .fs-card, .fs-card.tall, dialog.dlg.fs-card[open] { --fs-fill: var(--card); width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; border-radius: 0; background: var(--bg); box-shadow: none; padding-top: env(safe-area-inset-top); }
   dialog.dlg.fs-card[open] { height: var(--vvh, 100dvh); }
+  .fs-card:not(.mid) .btn.tonal, .fs-card:not(.mid) .btn.outlined { background: var(--card); }
+  .fs-card:not(.mid) :is(.card, .list, .app-sw) :is(.btn.tonal, .btn.outlined) { background: var(--layer); }   /* but a pale button on a card inside the sheet keeps its own grey, or it would vanish into the card */   /* the sheet is --bg and a pale button is --layer, the same grey in light: the button sits on --card */
   .fs-hd { padding-left: max(var(--sp-4), env(safe-area-inset-left)); padding-right: max(var(--sp-2), env(safe-area-inset-right)); }
   .fs-body { padding-left: max(var(--sp-4), env(safe-area-inset-left)); padding-right: max(var(--sp-4), env(safe-area-inset-right)); }
   .fs-body.panel { margin: 0 max(var(--sp-2), env(safe-area-inset-left)); padding: var(--sp-4); }
@@ -2524,7 +2546,9 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* .mid: a middle sheet for one short input with a short list under it (앱 관리). PC the centered card above; phone a sheet from the bottom, not full screen. */
 @media (max-width: 639px) {
   .fs-bd:has(> .fs-card.mid) { align-items: flex-end; background: var(--scrim); }
-  .fs-card.mid { height: auto; max-height: min(86dvh, 820px); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
+  dialog.dlg.fs-card.mid[open] { margin: auto 0 0; }
+  /* the sheet is a card, so a field in it takes the fill a field has on a card (on the full screen it sits on --bg) */
+  .fs-card.mid, dialog.dlg.fs-card.mid[open] { --ff-fill: var(--ff-pop); height: fit-content; max-height: min(86dvh, 820px); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
 }
 
 /* ---------- 원문 보기 (web/js/10-draft-original.js): the mail or comment a draft answers, as its own panel next to the draft ---------- */
@@ -2625,9 +2649,11 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* 답장 초안 카드 (web/js/10-reply-card.js) and the 답장 대기 screen (web/js/30-replies.js) */
 /* 머리: 한 줄 (받는 사람 + 출처), 상태는 오른쪽 (owner 2026-11-03: 머리줄은 한 줄, 초안이 주인공) */
 .rq-hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 20px; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
-.rq-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-weight: 400; }
-.rq-meta .rq-wt { color: var(--fg); font-size: 13px; line-height: 18px; font-weight: 600; }
-.rq-meta .rq-src { color: var(--fg-3); font-weight: 400; }
+/* who the card answers is the line; where it came from and the computer follow only when they fit whole (a part that does not fit wraps under and is clipped, never cut to "· 노…") */
+.rq-meta { display: flex; flex: 1; flex-wrap: wrap; align-items: baseline; min-width: 0; max-height: 18px; overflow: hidden; white-space: nowrap; color: var(--fg-2); font-weight: 400; line-height: 18px; }
+.rq-meta .rq-wt { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-size: 13px; line-height: 18px; font-weight: 600; }
+.rq-meta .rq-src { flex: none; color: var(--fg-3); font-weight: 400; white-space: pre; }
+.rq-meta .mon-pc { flex: none; white-space: pre; }
 .rq-hd .rc-time { flex: none; }
 .rq-lb { margin-top: var(--sp-2); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
 .rq-to { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
@@ -2658,27 +2684,44 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */
 .rq[data-kind="comment"] .rq-sub { margin-top: var(--sp-15); color: var(--fg-2); font: 500 13px/19px var(--font); }
 .rq-orig .rq-ow { color: var(--fg-2); font-weight: 500; }
-.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: var(--sp-2); padding: 0; background: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
-.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) .ic { width: 14px; height: 14px; color: inherit; stroke-width: 2; }
+.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: var(--sp-2); }
 /* 보냈어요: 버튼 행과 같은 높이, 그 자리에서 바뀝니다(원칙 6) */
 .rq-sent { display: flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); margin-top: var(--sp-3); color: var(--fg); font: 500 14px/20px var(--font); }
 .rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .kk-st > .rq-sent { height: auto; margin-top: 0; }
 .rq-sent-at { color: var(--fg-3); font: 400 12px/16px var(--font); }
 
+/* 메일 초안 (10-reply-card.js rqMailParts): the 답장 확인 sheet, the 답장 대기 sheet and the mail's own card draw the same parts. 받는이 is one text button under the body (aria-expanded) that opens its rows in place. */
+.rq.cm .rq-recvfold { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; margin-top: var(--sp-1); }
+.rq-recvfold[hidden], .rq-recvbox[hidden] { display: none; }
+.rq-recvfold .rq-recv { height: 28px; min-height: 0; padding: 0; gap: var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); font-weight: 400; max-width: 100%; }
+.rq-recvfold .rq-recv .rq-rs { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-recvfold .rq-recv .ic { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--m-fast) var(--m-ease); }
+.rq-recvfold .rq-recv[aria-expanded="true"] .ic { transform: rotate(180deg); }
+.rq-recvbox { align-self: stretch; min-width: 0; margin-top: var(--sp-3); }   /* clear of the fold button's tap area */
+.rq.cm.rq-ml .rq-brief { margin-top: var(--sp-2); display: grid; gap: var(--sp-1); }
+.bm.dr.rq-ml { gap: 0; }   /* the parts carry their own margins, as in the sheet */
+.rq.cm.rq-ml .rq-og { padding-left: 0; }
+.rq.cm.rq-ml .dr-files { margin-top: var(--sp-2); }
+.rq-acts .rq-manual { margin-left: auto; gap: var(--sp-1); color: var(--fg-3); }
+.rq-acts .rq-manual .ic { width: 14px; height: 14px; }
+
 /* the queue: one list, newest first, an app filter on top */
 .rq-q { display: flex; flex-direction: column; gap: var(--sp-3); }
 .rq-q > .rq { padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
 .rq-q > .rq.busy { opacity: .6; }
-.rq-filter { display: flex; }
+.rq-chips .sel { width: 160px; }
+@media (max-width: 639px) { .rq-chips .sel { width: 100%; } .rq-chips:not(:empty) { padding-top: var(--sp-1); } }
 .rq-open { margin-left: auto; height: 28px; padding: 0 var(--sp-2); font-size: 12px; }
+.rq-sheet .rq-hd .rc-time { display: none; }   /* the sheet's head line has room for who and where only; the time stands in the list row */
+.rq-fail { margin-top: var(--sp-2); color: var(--err); font-size: var(--fs-meta); line-height: var(--lh-meta); }   /* a failed press: above the buttons, in the card's flow */
 @media (pointer: coarse), (max-width: 639px) { .rq-q > .rq { padding: var(--sp-3); } }
 
 /* 댓글 답글 카드: 작은 아바타 + 이름과 출처가 한 줄, 댓글은 조용한 인용, 초안이 본문, 버튼은 작은 단계 하나 줄 (원칙 1·5·9) */
 .rq-who { gap: var(--sp-2); }
 .rq-av { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 600 var(--fs-tag)/var(--lh-tag) var(--font); text-transform: uppercase; }
 .rq.cm .rq-sub { margin-top: var(--sp-1); color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
-.rq.cm.dr .rq-sub { margin-top: var(--sp-2); color: var(--fg); font: 600 14px/20px var(--font); }   /* a mail draft: its reply subject heads the body */
+.rq.cm.dr .rq-sub, .rq.cm.rq-ml .rq-sub { margin-top: var(--sp-2); color: var(--fg); font: 600 14px/20px var(--font); }   /* a mail draft: its reply subject heads the body */
 .rq.cm .rq-body, .rq.cm .rq-bodywrap { margin-top: var(--sp-2); }
 .rq.cm .rq-body, .rq.cm .rq-bodywrap > .rq-body { padding: 0; background: none; }
 .rq.cm .rq-acts { margin-top: var(--sp-2); }
@@ -2686,13 +2729,15 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* one row, one height: primary (accent) / secondary (tonal) / text, the same 32px box and --r-ctl corner on every card, never a pill (the prototype's .cf row) */
 .rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 var(--sp-3); border-radius: var(--r-ctl); font: 600 13px/20px var(--font); }
 /* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼) */
-@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: -6px -2px; } }
+@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
 
 /* 답장 대기 (web/js/30-replies.js): the prototype's #queue. Rows and tabs are the notice screen's own classes (09-notices-screen.css); the head sticks to the top of the scroll area. */
 .rq-hd2 { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-bottom: var(--sp-1); }
 .rq-hd2 .nsc-f { margin-top: 0; }
+/* a wide screen: 빠른 처리 sits at the tabs' right end, not on a row of its own; a phone keeps the rows stacked so the button never moves with the tab counts */
+@media (min-width: 640px) { .rq-hd2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); } .rq-hd2 > .nsc-f { flex: none; max-width: 100%; margin-bottom: 0; } .rq-hd2 > .rq-qm { flex: 1; min-width: 0; margin-block: 0; } .rq-hd2 > .rq-chips { flex: none; } }
 #v-monitoring.rq-on > .cv-head { display: none; }
 #v-monitoring.rq-on .tl-in { max-width: none; }
 .bm.q-fold .md > :not(:first-child) { display: none; }
@@ -2700,7 +2745,6 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-qm[hidden], .rq-fast[hidden], .rq-chips:empty { display: none; }
 .nsc-fb .n.err { color: var(--err); } .nsc-fb.on .n.err { color: inherit; }
 .rq-ls .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); } .rq-ls .sec:first-child { margin-top: 0; }
-.rq-ls .sec .meta { color: var(--fg-3); font-weight: 400; font-variant-numeric: tabular-nums; }
 .rq-r .hd { font-weight: 500; color: var(--fg); } .rq-r.sent .hd { font-weight: 400; color: var(--fg-2); }
 .rq-r .ln .tag { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rq-g .rq-retry { position: relative; z-index: 1; flex: none; align-self: center; height: var(--btn-h-sm); min-height: 0; }
@@ -2711,6 +2755,8 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* the sheet's body under its fixed head: .fs-card caps the height and clips, so a long draft scrolls here down to its 첨부 줄 */
 .rq-sheet .rq-sb { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--sp-4) var(--sp-4); }
 .rq-sheet .rq-why { margin: 0 var(--sp-05) var(--sp-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); color: var(--fg-2); }
+/* a wide screen: the large draft dialog keeps its height but the draft box is as tall as its text (the dialog's empty rest is not a grey band); a long draft still scrolls inside it */
+@media (min-width: 640px) { .fs-card.tall .fs-body.panel { flex: 0 1 auto; } }
 /* the chat's one line above the composer when 2 or more send approvals wait (10-decision-card.js dcLine) */
 .qline { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; margin: 0 0 var(--sp-2); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 400 14px/20px var(--font); text-align: left; cursor: pointer; }
 .qline[hidden] { display: none; }
@@ -2766,9 +2812,9 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .msg-gap .btn { color: var(--fg-3); }
 
 /* 설정 목록과 하위 화면들: one row look. A row's icon sits on its own tile (prototype .ico), a status dot stays a dot. */
-:is(#settings, #notifications, #display, #update, #runtime) > .list + .sec { margin-top: var(--sp-6); }
-:is(#settings, #notifications, #display, #update, #runtime) > .sec { margin-bottom: var(--sp-2); }
-:is(#settings, #notifications, #display, #update, #runtime) > .sec:first-child { margin-top: var(--sp-2); }
+:is(#settings, #notifications, #display, #update, #runtime) > .list + .sec, #settings > .set-col > .list + .sec { margin-top: var(--sp-6); }
+:is(#settings, #notifications, #display, #update, #runtime) > .sec, #settings > .set-col > .sec { margin-bottom: var(--sp-2); }
+:is(#settings, #notifications, #display, #update, #runtime) > .sec:first-child, #settings > .set-col:first-child > .sec:first-child { margin-top: var(--sp-2); }
 :is(#settings, #notifications, #display, #update, #runtime) > .list + .list { margin-top: var(--sp-3); }
 :is(#settings, #notifications, #display, #update, #runtime) > .list:first-child { margin-top: var(--sp-2); }
 :is(#settings, #notifications, #display, #update, #runtime, #models, #accounts, #usage, #context, #messengers, #discord, #jandi, #slack, #telegram, #devices, #webaccess) .li > .lead:has(> .ic) {
@@ -2776,6 +2822,10 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 }
 :is(#settings, #notifications, #display, #update, #runtime, #messengers, #devices, #webaccess) .li > .lead:has(> .ic) .ic { width: 16px; height: 16px; }
 :is(#notifications, #update, #runtime) .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }
+
+/* a state said once at a row's right: the dot and its word */
+#models .fb-sw, #context .cx-state { display: inline-flex; align-items: center; gap: var(--sp-15); }
+#context .cx-state { color: var(--fg-2); }
 
 /* 모델 · 폴백: each target is a title and one list: its model and effort as rows with the picker on the right, then the numbered chain */
 #models .mt { gap: 0; }
@@ -2814,8 +2864,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 @media (min-width: 640px) {
   #models .fbe > .tf, #models .fbe-cap > .tf:first-child { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; gap: var(--sp-3); }
 }
-#models .mt-use-row { padding: var(--sp-15) var(--row-px); border-top: 0; }
-#models .mt-use-row + .mt-use-row { border-top: 1px solid var(--line); }
+#models .mt-use-row { padding: var(--sp-15) var(--row-px); }
 @media (max-width: 639px) { #models .mt-pick:not(:has(.mt-eff)) .sel { width: min(58%, 200px); } }
 @media (pointer: coarse), (max-width: 639px) { #models :is(.mt-pick, .mt-filter) .sel { height: var(--field-h-touch); } }
 
@@ -2823,6 +2872,13 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 #accounts .prow-lim { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
 #accounts .prow-lim .k { flex: none; min-width: 64px; }
 #accounts .prow-lim .bar { flex: 1; max-width: 160px; margin-top: 0; }
+/* a card that holds accounts: the usage windows lead, small section names split it, 계정 추가 closes the accounts */
+#accounts .li.prow .prow-lim:first-child { margin-top: 0; }
+@media (pointer: coarse), (max-width: 639px) { #accounts .li.prow .ib { width: var(--btn-hit); height: var(--btn-hit); } }
+#accounts .li.acc-lbl { min-height: 0; }
+#accounts .li.acc-lbl .lbl { margin: 0; }
+#accounts .li.acc-add { min-height: 0; gap: var(--sp-2); color: var(--fg-2); }
+#accounts .sec.sec-act > .tag.acc-use { margin-left: auto; }
 /* 사용량과 월 한도 */
 #usage .lim .kv b { font-weight: 500; }
 #usage .lim .bar { margin-top: var(--sp-15); }
@@ -2830,8 +2886,13 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* 리셋권 row: the count and its 사용 button share the right edge where the other rows keep "N% 남음" */
 #usage .lim.rc .kv { align-items: center; }
 #usage .rc-end { display: flex; align-items: center; gap: var(--sp-2); }
-#usage > .list + :is(.grid, .sec) { margin-top: var(--sp-3); }
+#usage > .list + :is(.grid, .sec, .empty) { margin-top: var(--sp-3); }
 :is(#accounts, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) var(--sp-1) 0; }
+
+/* 계정 창: the delete actions stand together on the left of the button row */
+dialog.dlg .dact .ac-gap { margin-right: auto; }
+/* a dialog's failure note (usErr) takes no room until it has a reason */
+dialog.dlg .dbody .err-t:empty { display: none; }
 
 /* Settings sub-screens (설정, 모델·폴백, 공급자, 사용량, 컨텍스트) and the small settings dialogs (dialog.dlg.cl) on a phone.
    Scoped to those surfaces so the rest of the app keeps its compact controls. Loaded last: same-specificity rules here win. */
@@ -2858,6 +2919,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   dialog.dlg.cl .dhd .dx { --dx-grow: var(--sp-2); width: 44px; height: 44px; margin: calc((var(--dx-grow) + var(--sp-05)) * -1) calc((var(--dx-grow) + var(--sp-15)) * -1) 0 auto; }
   dialog.dlg.cl .dact .btn { min-height: 44px; }
   dialog.dlg.cl .chip { height: 40px; min-width: 40px; justify-content: center; }
+  dialog.dlg.cl .rl-days .chip { flex: 1 1 0; min-width: 0; padding: 0; }
 }
 
 /* 빠른 처리 (web/js/30-triage.js): the banner that offers it, and the full view that answers many waiting send approvals of one kind fast.
@@ -2869,7 +2931,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .tr .tr-pos { display: flex; align-items: baseline; gap: var(--sp-05); font-variant-numeric: tabular-nums; }
 .tr .tr-sum { color: var(--fg-3); font: 500 14px/20px var(--font); }
 .tr-bar { height: 4px; margin-top: var(--sp-15); border-radius: 2px; background: var(--track); overflow: hidden; }
-.tr-bar > span { display: block; height: 100%; background: var(--accent); transition: width var(--m-base) var(--m-ease); }
+.tr-bar > span { display: block; height: 100%; background: var(--accent); transition: width var(--m-slow) var(--m-ease); }
 .tr-tog { gap: var(--sp-1); }
 .tr-tog .ic { width: 16px; height: 16px; }
 .tr-body { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -2885,7 +2947,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .tr-otx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; max-height: 9.5em; overflow-y: auto; }
 .tr-info { margin: 0; padding: 0 0 0 var(--sp-5); color: var(--fg-2); font-size: 13px; line-height: 20px; }
 .tr-warn { padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--warn); font-size: 13px; line-height: 20px; }
-.tr-ta { width: 100%; min-height: 88px; max-height: 52vh; field-sizing: content; padding: var(--sp-3); border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/24px var(--font); resize: vertical; box-sizing: border-box; }
+.tr-ta { width: 100%; min-height: 88px; max-height: 52vh; field-sizing: content; padding: var(--sp-3); border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/24px var(--font); resize: none; box-sizing: border-box; }
 .tr-ta:focus { outline: 0; box-shadow: var(--ff-ring); }
 .tr-ta:disabled { opacity: .7; }
 .tr-mail { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
@@ -2894,11 +2956,12 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .tr-st { --tone: var(--fg-3); display: inline-flex; align-items: center; gap: var(--sp-15); flex: none; color: var(--fg-2); font: 600 12px/22px var(--font); }
 .tr-st.sent { --tone: var(--ok); color: var(--ok); }
 .tr-st.failed, .tr-st.err { --tone: var(--err); color: var(--err); }
-.tr-st.sending, .tr-st.queued { --tone: var(--accent); }
+.tr-st.sending, .tr-st.queued, .tr-st.undo { --tone: var(--accent); }
 .tr-ft { gap: var(--sp-2); }
 .tr-acts { display: flex; gap: var(--sp-2); justify-content: flex-start; flex-wrap: wrap; }
 .tr-b { height: 40px; min-width: 0; padding: 0 var(--sp-4); font-size: 15px; }
 .tr-hint, .tr-keys { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.tr-fail { color: var(--err); }
 .tr-note { min-height: 84px; }
 .tr-empty { align-items: center; justify-content: center; text-align: center; }
 .tr-done-t { font: 700 20px/28px var(--font); }
@@ -2921,7 +2984,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .tr-rn { min-height: 40px; padding: 0 var(--sp-3); border: 0; border-radius: 10px; background: var(--ff-fill); color: var(--fg); font: 400 14px/20px var(--font); }
 .tr-rn:focus { outline: 0; box-shadow: var(--ff-ring); }
 @media (max-width: 639px) {
-  .fs-card.tr { width: 100%; height: 100%; }
+  .fs-card.tr { width: 100%; height: 100%; max-height: none; }   /* the whole screen: the desktop's max-height would stop the card short and lift its buttons off the bottom */
   .tr-keys { display: none; }
   .tr-b, .tr-go { height: 44px; padding: 0 var(--sp-4); }
   .tr-list .tr-seg { align-self: stretch; }
@@ -2977,7 +3040,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .ans-files .fbox > .fatt + .fdl { top: 50%; right: 0; transform: translateY(-50%); }
 .ans-ev { display: flex; flex-wrap: wrap; column-gap: var(--sp-3); margin-top: var(--sp-3); padding: 0 var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .ans-ev code { padding: 0; background: none; font-size: var(--fs-meta); }
-@media (max-width: 759px) {
+@container tlcol (max-width: 559.98px) {
   .ans-wordy .rc-row { display: block; }
   .ans-wordy .rc-k { display: block; width: auto; line-height: var(--lh-sec); }
 }
@@ -3038,7 +3101,9 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .mb-txt .mt-kv > div + div { border-top: 1px solid var(--line); }
 .mb-txt .mt-kv dt { margin: 0; color: var(--fg-3); font-size: 13px; line-height: 22px; }
 .mb-txt .mt-kv dd { margin: 0; min-width: 0; font-size: 14px; line-height: 22px; }
-@media (max-width: 520px) { .mb-txt .mt-kv > div { grid-template-columns: 1fr; gap: 0; } }
+/* the mail text is also drawn in the draft sheet (no timeline there), which keeps the window query; inside a timeline the column decides */
+@media (max-width: 520px) { .mb-txt:not(.timeline *) .mt-kv > div { grid-template-columns: 1fr; gap: 0; } }
+@container tlcol (max-width: 520px) { .mb-txt .mt-kv > div { grid-template-columns: 1fr; gap: 0; } }
 .mb-txt .mt-tbl { max-width: 100%; margin: 0 0 var(--sp-3); overflow-x: auto; border: 1px solid var(--line-2); border-radius: 12px; }
 .mb-txt .mt-tbl table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
 .mb-txt .mt-tbl th, .mb-txt .mt-tbl td { padding: var(--sp-2) var(--sp-3); text-align: left; vertical-align: top; overflow-wrap: normal; word-break: keep-all; white-space: nowrap; }
@@ -3055,7 +3120,8 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .mb-txt .mt-nt .up { color: var(--err); }
 .mb-txt .mt-nt .dn { color: var(--accent); }
 .mb-txt .mt-nt td:nth-child(n+4) { color: var(--fg-2); }
-@media (max-width: 520px) { .mb-txt .mt-nt th, .mb-txt .mt-nt td { padding: var(--sp-15); } .mb-txt .mt-nt { font-size: 13px; } }
+@media (max-width: 520px) { .mb-txt:not(.timeline *) .mt-nt th, .mb-txt:not(.timeline *) .mt-nt td { padding: var(--sp-15); } .mb-txt:not(.timeline *) .mt-nt { font-size: 13px; } }
+@container tlcol (max-width: 520px) { .mb-txt .mt-nt th, .mb-txt .mt-nt td { padding: var(--sp-15); } .mb-txt .mt-nt { font-size: 13px; } }
 .mb-txt blockquote.mt-quote { margin: 0 0 var(--sp-3); padding-left: var(--sp-3); border-left: 3px solid var(--line-2); }
 .mb-txt .mt-quote-body, .mb-txt .mt-fold-body { color: var(--fg-2); }
 .mb-txt .mt-quote-body > :last-child, .mb-txt .mt-fold-body > :last-child { margin-bottom: 0; }
@@ -3099,7 +3165,9 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .md-ctx .mr-todo { margin-top: var(--sp-05); font-size: 13px; line-height: 20px; }
 .md-ask { display: flex; flex-direction: column; gap: var(--sp-2); }
 .md-lbl { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 500; }
-.md-ask textarea.fi { min-height: 88px; font-size: 15px; line-height: 22px; padding: var(--sp-2) var(--sp-3); }
+/* the one filled button stays at the footer's right end at its own width, like 새 메일's 초안 만들기 (ui-spec .fs-ft), not the phone's full-width lone button */
+.fs-card.md-d .fs-ft.row .btn:only-child { flex: none; }
+.md-ask textarea.fi { min-height: 88px; font-size: 15px; line-height: 22px; padding: var(--sp-2) var(--sp-3); resize: none; }
 /* the ⋯ of a mail card (30-monitoring.js mailMenuBtn): the last item of the header, at the top right; the negative margin keeps the 16px header line */
 /* --fg-2 and a larger icon (owner 2026-10-29): the --fg-3 dots were easy to miss on the card */
 .rc-hd .mr-more { margin: calc(var(--sp-15) * -1) calc(var(--sp-2) * -1) calc(var(--sp-15) * -1) 0; color: var(--fg-2); }
@@ -3178,6 +3246,9 @@ a.dr-att:active { background: var(--active); }
 .dr-fm { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .dr-none, .dr-warn { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--fg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 .dr-none .ic { color: var(--warn); }
+/* the 첨부 line saying there is none is a fact, not a warning (only .dr-warn and the cannot-attach note are bands): a quiet line */
+.dr-none:not(:has(.dr-wn)) { padding: 0; background: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.dr-none:not(:has(.dr-wn)) .ic { width: 14px; height: 14px; color: inherit; stroke-width: 2; }
 .dr-note, .dc-gone { color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
 .dr-note { margin-top: var(--sp-1); }
 .dc-gone { padding: var(--sp-1) var(--sp-3) var(--sp-2); text-align: center; }
@@ -3310,10 +3381,9 @@ a.dr-att:active { background: var(--active); }
 .kk-pr { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--row-py) var(--sp-4); }
 .kk-pr + .kk-pr { border-top: 1px solid var(--line); }
 /* 자동 초안: the room's one two-value switch, a thin card above the chat window */
-.kk-auto { display: flex; align-items: center; gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.kk-auto { display: flex; align-items: center; gap: var(--sp-3); margin-left: auto; }
 .kk-auto[hidden] { display: none; }
-.kk-auto .cv-n { font: 600 15px/22px var(--font); }
-.kk-auto .cv-p { font-size: 12px; line-height: 16px; color: var(--fg-2); }
+.kk-auto .cv-n { font: 400 15px/22px var(--font); }
 .kk-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: hsl(var(--h) 45% 82%); color: hsl(var(--h) 45% 26%); font: 600 15px/var(--lh-row) var(--font); }
 .kk-av.sp { background: transparent; }
 :root[data-theme="dark"] .kk-av { background: hsl(var(--h) 22% 30%); color: hsl(var(--h) 45% 86%); }
@@ -3339,7 +3409,6 @@ a.dr-att:active { background: var(--active); }
 #kk-rooms .kk-row.on { background: var(--row-sel); }
 #kk-rooms .kk-row .cv-m { align-self: flex-start; gap: var(--sp-05); padding-top: var(--sp-05); }
 #kk-rooms .kk-av { width: 36px; height: 36px; font-size: 15px; }
-#kk-rooms .kk-row .nb.warn { min-width: 18px; height: 18px; padding: 0 var(--sp-15); background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
 #kk-chat { gap: var(--sp-3); }
 /* the room's bar sits on the page, not on a card like the main chat's: it is the card itself, or it vanishes into the light page */
 #kk-chat .kk-composer .sendrow:not(.ulw) { background: var(--card) !important; }
@@ -3358,9 +3427,11 @@ a.dr-att:active { background: var(--active); }
 .kk-head:not(:empty) { display: flex; }
 @media (max-width: 1099px) { .kk-head, .kk-head:not(:empty) { display: none; } }
 .kk-owed { display: none; }
-@media (max-width: 1099px) { .kk-owed:not([hidden]) { display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-1); } }
+.kk-owed:not([hidden]) { display: flex; align-items: center; gap: var(--sp-2); min-height: 44px; padding: 0 var(--sp-1); }
+.kk-owed-l { display: flex; align-items: center; gap: var(--sp-2); }
 .kk-box { position: relative; flex: 1 0 auto; min-height: 260px; display: flex; border-radius: var(--r-card); background: var(--kk-bg); overflow: hidden; }
 .kk-chat > .kk-box { flex: 1 0 min(400px, 52dvh); }
+#kk-chat > .kk-box { flex: 1 1 0; min-height: 0; }
 /* Messages leaving the list fade out at both edges instead of being cut; the padding keeps the first and last one clear of the fade at rest. */
 .kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-4); -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
 /* the chat window's column is centered with a width cap: on a wide pane both sides keep the same distance to the edge, like a Messenger window */
@@ -3464,10 +3535,9 @@ a.dr-att:active { background: var(--active); }
 /* a quote tap flashes the original message (30-kakao.js kkFlash) */
 /* the overlay is the shared highlight (09-notices.css); a photo or sticker has no radius of its own to copy */
 .kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker) { position: relative; --hl: 22%; --hl-ring: 22%; --hl-glow: 0%; --hl-spread: var(--sp-1); }
-.kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker)::after { animation: kk-hl 3.2s ease; }
+.kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker)::after { animation: kk-hl var(--nt-hl-t) var(--m-ease); }
 .kk-m.kk-hl :is(.kk-media, .kk-sticker)::after { border-radius: var(--r-ctl); }
 @keyframes kk-hl { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker)::after { animation-duration: .01s; } }
 .kk-qn { font-weight: 600; opacity: .85; }
 .kk-qt { opacity: .75; }
 .kk-qt { overflow-wrap: anywhere; }
@@ -3502,6 +3572,12 @@ a.dr-att:active { background: var(--active); }
 .kk-draft .btns { gap: var(--sp-15); }
 .kk-choices { flex-wrap: wrap; }
 .kk-draft .btn { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
+/* the room's reply card sits under the chat: at most 40% of the screen, only the bubbles scroll, the buttons stay */
+#kk-chat .kk-drafts { margin: 0 0 var(--sp-2); min-height: 0; max-height: 40dvh; overflow-y: auto; }
+#kk-chat .kk-draft { display: flex; flex-direction: column; min-height: 0; max-height: 40dvh; }
+#kk-chat .kk-draft > * { flex: none; }
+#kk-chat .kk-draft > .rq-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+#kk-chat .kk-draft .kk-dt.kk-dps { max-height: none; overflow: visible; }
 .kk-dt { max-height: min(16dvh, 120px); margin: var(--sp-05) 0 var(--sp-2); overflow-y: auto; font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* a draft of several messages: one bubble each, in send order (a part already in the room is muted) */
 .kk-dt.kk-dps { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); max-height: min(28dvh, 220px); white-space: normal; }
@@ -3545,9 +3621,7 @@ a.dr-att:active { background: var(--active); }
 /* a room row's second line on the right: 미답장 then the unread count, side by side (30-kakao.js kkRow) */
 .kk-row .kk-rmeta { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-15); }
 
-/* a room row: one bold thing (the name, only while unread), the count a plain accent number, 미답장 a status word with its dot (docs/ui-spec.md 목록 행·배지) */
-.kk-row .nb { min-width: 0; height: auto; padding: 0; background: none; color: var(--accent); font: 600 12px/16px var(--font); }
-:root[data-theme="dark"] .kk-row .nb:not(.warn, .unreplied, .drafted) { background: none; color: var(--unreplied); }
+/* a room row: one bold thing (the name, only while unread), the unread count the same .nb badge as every other row, 미답장 of one room a status word with its dot (docs/ui-spec.md 목록 행·배지) */
 
 /* 설정 screens (docs/ui-spec.md 설정 행): one row = lead icon, title + one-line description, then the single right slot (.li-end) with a value or
    status tag and the chevron. Sections are plain .sec labels above one .list card, the same as the prototype's 설정. */
@@ -3557,15 +3631,21 @@ a.dr-att:active { background: var(--active); }
 .sec.sec-act > .tag { margin-left: 0; }
 .sec.sec-act > .tag + .btn { margin-left: auto; }
 /* a section label sits 8px above its card and 24px below the card before it (proto.css .sec) */
-#settings > .list + .sec { margin-top: var(--sp-6); }
-#settings > .sec { margin-bottom: var(--sp-2); }
-#settings > .sec:first-child { margin-top: var(--sp-2); }
+#settings > .list + .sec, #settings > .set-col > .list + .sec { margin-top: var(--sp-6); }
+#settings > .sec, #settings > .set-col > .sec { margin-bottom: var(--sp-2); }
+#settings > .sec:first-child, #settings > .set-col:first-child > .sec:first-child { margin-top: var(--sp-2); }
+/* the first screen is two columns from 1100px (22-settings-pages.js settingsCols); one column below, where the second box's first title keeps the gap a title after a card has */
+#settings > .set-col + .set-col > .sec:first-child { margin-top: var(--sp-6); }
+@media (min-width: 1100px) {
+  #settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-6); align-items: start; }
+  #settings > .set-col + .set-col > .sec:first-child { margin-top: var(--sp-2); }
+}
 #settings .list + .list { margin-top: var(--sp-3); }
 #settings .sec .tag { height: var(--tag-h); }
 
 /* 모니터링 > 앱 > 설정 대화 (web/js/32-app-settings.js): the switches above the conversation, the 설정 button of a detail's title bar and the change card.
    The switch itself is the kakao one (.kk-sw, 17-kakao.css). */
-.app-sw { display: flex; flex-direction: column; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.app-sw { display: flex; flex-direction: column; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto var(--sp-2); }
 .app-sw[hidden] { display: none; }
 .as-row { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--row-py) var(--row-px); }
 .as-row + .as-row { border-top: 1px solid var(--line); }
@@ -3608,10 +3688,10 @@ a.dr-att:active { background: var(--active); }
 .as-step .as-in[type="number"] { width: 40px; padding: 0; border: 0; background: transparent; text-align: center; appearance: textfield; }
 .as-step .as-in[type="number"]::-webkit-inner-spin-button, .as-step .as-in[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
 /* the settings screen (asScreen): a pushed view with a back button, the options card as its body */
-.as-screen .fs-hd { gap: var(--sp-1); padding-left: max(var(--sp-1), env(safe-area-inset-left)); }
+.as-screen .fs-hd:has(> .as-back) { gap: var(--sp-1); padding-left: max(var(--sp-1), env(safe-area-inset-left)); }
 .as-screen .fs-tt { flex: 1; min-width: 0; }
-.as-screen .fs-body { padding-top: var(--sp-2); }
-.as-screen .app-sw { margin: 0 auto var(--sp-4); background: var(--card); }
+.as-screen .fs-body { padding-top: var(--sp-2); padding-bottom: max(var(--sp-4), env(safe-area-inset-bottom)); }
+.as-screen .app-sw { margin: 0 auto; }
 .as-screen .fs-body .as-row { padding: var(--sp-2) var(--sp-4); }
 .as-screen .fs-body .as-rm { padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--line); }
 
@@ -3643,19 +3723,11 @@ a.dr-att:active { background: var(--active); }
 .as-dot.ok { background: var(--ok); }
 .as-dot.fail { background: var(--err); }
 .as-why { color: var(--err); overflow-wrap: anywhere; }
-/* an approval has up to three answers: they sit under its text, not three controls at the row's right end (docs/ui-spec.md 설정 행) */
-.as-appr { flex-wrap: wrap; }
-.as-appr .as-b { flex-basis: 100%; }
-.as-appr .as-btns { flex-basis: 100%; justify-content: flex-start; }
-.app-sw > .as-sec { margin: var(--sp-4) 0 0; padding: 0 var(--sp-4); }
-.app-sw > .as-sec:first-child, .app-sw > .as-conn + .as-sec { margin-top: 0; padding-top: var(--sp-3); }
-/* 연결 상태 sits above every section, on the card's own top edge. */
-.app-sw > .as-conn { min-height: 56px; }
-.app-sw > .as-conn + .as-row, .app-sw > .as-conn + .as-sec + .as-row { border-top: 0; }
-/* 승인 대기 is a sub-heading inside 자동 초안과 승인, not a section of its own. */
-.app-sw > .as-sub { margin: var(--sp-2) 0 0; padding: var(--sp-1) var(--sp-4) 0; color: var(--fg-3); font: 600 12px/18px var(--font); }
-.as-every-wrap { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); margin-left: var(--sp-2); }
-.as-every { flex: none; width: 68px; height: 32px; text-align: right; }
+/* 연결 상태 is the first card, above every section's own card (the 설정 pages' .sec + .list shape). */
+.app-sw .as-conn { min-height: 56px; }
+/* the sub-heading of a group inside 자동 초안과 승인 (자동 초안 규칙): no hairline around it, it belongs to the rows it names. */
+.app-sw .as-sub { margin: var(--sp-2) 0 0; padding: var(--sp-1) var(--sp-4) 0; border-top: 0; color: var(--fg-3); font: 600 12px/18px var(--font); }
+.app-sw .as-sub + * { border-top: 0; }
 .as-unit { color: var(--fg-3); font: 400 12px/18px var(--font); }
 /* 자동 초안 규칙 (32-app-settings.js arNodes): the 기본 규칙 box and a rule's form take the row's full width; the boxes grow with their text. */
 .as-col { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
@@ -3664,7 +3736,7 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .as-rule .as-n { display: flex; }
 .as-rform .as-act { margin-top: 0; }
 .as-rl { display: flex; flex-direction: column; gap: var(--sp-1); }
-.as-new-in { display: block; width: 100%; min-height: 88px; margin: 0 0 var(--sp-2); padding: var(--sp-3); border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/22px var(--font); resize: vertical; }
+.as-new-in { display: block; width: 100%; min-height: 88px; margin: 0 0 var(--sp-2); padding: var(--sp-3); border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/22px var(--font); resize: none; }
 .as-new-in:focus { outline: 0; box-shadow: var(--ff-ring); }
 .as-new-in::placeholder { color: var(--fg-3); }
 
@@ -3674,7 +3746,10 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 
 /* choose what to follow */
 .kk-pick-src { padding: var(--sp-1) 0 var(--sp-2); border-top: 1px solid var(--line); }
-.kk-pick-src > .btn { margin: 0 var(--sp-4); }
+.kk-pick-src > .kk-pr + .li { border-top: 1px solid var(--line); }
+#cm-pick .sec { margin-inline: var(--sp-4); }   /* section names start on the rows' left line */
+#cm-pick .sec + .kk-pick-src { border-top: 0; }
+#cm-pick .fs-hd { padding-left: max(var(--sp-4), env(safe-area-inset-left)); }   /* the head starts on the rows' left line (this sheet's rows sit at --sp-4 at every width) */
 #cm-empty + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }
 .cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: var(--sp-2) var(--sp-3); border-radius: 12px; border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
 .cm .kk-draft input.kk-ta:focus { outline: 0; box-shadow: var(--ff-ring); }
@@ -3719,16 +3794,17 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .cm-c > .kk-av.cm-me { background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--accent); font-size: 12px; }
 .cm-c > .kk-mb { flex: 1; max-width: none; min-width: 0; align-items: stretch; gap: var(--sp-05); }
 .cm-hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-.cm-hd .kk-name { min-width: 0; margin: 0; overflow: hidden; color: var(--fg); font: 600 13px/20px var(--font); text-overflow: ellipsis; white-space: nowrap; }
+.cm-hd .kk-name { min-width: 0; margin: 0; overflow: hidden; color: var(--fg); font: 500 13px/20px var(--font); text-overflow: ellipsis; white-space: nowrap; }
 .cm-hd .kk-time { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cm-hd .tag.unreplied { margin-left: auto; }
-.cm-mine { color: var(--accent); font: 600 13px/20px var(--font); }
+.cm-mine { color: var(--accent); font: 500 13px/20px var(--font); }
 .cm-c .kk-reply { margin: 0; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cm-c .kk-bub { padding: 0; border-radius: 0; background: none; color: var(--fg); font: 400 14px/21px var(--font); }
 .cm-c.mine .kk-bub { color: var(--fg-2); }
 .cm-c [hidden] { display: none; }
 .cm-acts { display: flex; align-items: center; gap: var(--sp-15); margin-top: var(--sp-15); }
 .cm-acts > .btn.text:first-child { margin-left: calc(var(--sp-2) * -1); }
+.cm .kk-draft .kk-dh { font-weight: 500; }   /* one bold per card: the card's lead is the head (rq-wt), its sub-head stays regular */
 .cm .od-bar { margin: 0 0 var(--sp-15); }
 .cm .od-tg { min-height: 28px; padding: 0 var(--sp-3); font-size: 13px; }
 
@@ -3736,12 +3812,7 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
    done = green, busy (on its way) = blue, ask (waits for him) = orange, err = red (the shared state colors) */
 .cm-pg { display: flex; flex-wrap: wrap; gap: var(--sp-05) var(--sp-4); margin-top: var(--sp-1); min-width: 0; }
 .cm-tr { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; color: var(--fg-3); font: 400 12px/18px var(--font); }
-/* a post's row: counts, not steps of one comment, so no line between them */
-.cm-tr.sum { margin-top: var(--sp-05); }
-.cm-tr.sum .cm-st { flex: none; white-space: nowrap; }
-.cm-tr.sum .cm-st + .cm-st { padding-left: 0; }
-.cm-tr.sum .cm-st + .cm-st::after { display: none; }
-.cm-tn { margin-right: var(--sp-2); color: var(--fg-2); font-weight: 600; }
+.cm-tn { margin-right: var(--sp-2); color: var(--fg-2); font-weight: 500; }
 .cm-st { position: relative; display: inline-flex; align-items: center; --cm-link: 10px; gap: var(--sp-1); min-width: 0; overflow-wrap: anywhere; }
 .cm-st::before { content: ""; flex: none; width: 8px; height: 8px; box-sizing: border-box; border: 1.5px solid var(--line-2); border-radius: 50%; }
 .cm-st + .cm-st { margin-left: var(--sp-15); padding-left: calc(var(--cm-link) + var(--sp-1)); }
@@ -3763,8 +3834,6 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .cm .kk-st { color: var(--fg-3); }
 .cm .kk-m.pend.failed .kk-st { color: var(--err); }
 
-/* 인스타그램 DM thread: one line per message (20-monitoring.css .dm-m), so nothing overlaps */
-.cm .dm-m { padding: var(--sp-2) 0; }
 
 /* A lot piled up (web/js/30-monitoring.js monBar / monFeedNodes / monGroupNode): the view chips with their
    counts and 읽음 처리 on one sticky bar, section and day lines, one compact row per report or per source, and the 더 보기 button of a page. */
@@ -3781,7 +3850,10 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 :is(#mon-tl, .fr-list) > .bm.rc.fr { gap: var(--sp-1); padding: var(--sp-2) var(--sp-4); cursor: pointer; }
 .fr-list > .bm.alert { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
 .fr-list > .bm.rc { display: flex; flex-direction: column; gap: var(--sp-3); }
-@media (hover: hover) { :is(#mon-tl, .fr-list) > .bm.rc.fr:hover { background: var(--hover); } }
+@media (hover: hover) { :is(#mon-tl, .fr-list) > .bm.rc.fr:not(.fr-all):hover { background: var(--hover); } }
+/* a report said whole on its row: nothing to unfold, so it is not a button and its line is not clipped */
+:is(#mon-tl, .fr-list) > .bm.rc.fr.fr-all { cursor: auto; }
+.fr-all .fr-sum { display: block; }
 :is(#mon-tl, .fr-list) > .bm.rc.fr:focus-visible { outline-offset: -2px; }
 .fr-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--fg-2); font-size: 14px; line-height: 20px; overflow-wrap: break-word; }
 /* unread: the source in full weight and a dot before it (never a coloured edge) */
@@ -3794,6 +3866,21 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .fr.grp.open { background: var(--layer); }
 .fr-list { display: flex; flex-direction: column; gap: var(--sp-2); padding-left: var(--sp-3); }
 .fr-list > .fr-open, #mon-tl > .fr-open { gap: var(--sp-3); }
+/* 작업내역 (web/js/11-worklog.js): a day's posts as the feed's rows inside ONE list card, hairlines between them; the title is one line */
+.fr-list.wl-list { gap: 0; padding: 0; overflow: hidden; border-radius: var(--r-card); background: var(--card); }
+.wl-list > .wl-row { border-radius: 0; background: transparent; justify-content: center; }
+.wl-list > .wl-row + .wl-row { border-top: 1px solid var(--line); }
+.wl-list > .wl-row[role="button"] { min-height: 44px; }
+@media (hover: hover) { .wl-list > .wl-row[role="button"]:hover { background: var(--hover); } }
+.wl-row:not(.fr-all, .fr-open) .fr-sum { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wl-row .rc-hd .tag, .wl-row .rc-src { flex: none; }
+.wl-row .rc-src { min-width: 0; flex: 0 1 auto; }
+.wl-plain .rc-hd { align-items: flex-start; }
+.wl-plain .rc-hd > .fr-sum { flex: 1; min-width: 0; }
+.wl-sess { text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.wl-quiet .rc-src { flex: none; }
+.wl-q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.wl-full { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .mon-more { align-self: center; min-height: 44px; padding: 0 var(--sp-4); font-size: 14px; }
 .mon-rep { color: var(--fg-3); font-size: 12px; line-height: 16px; }
 
@@ -3813,12 +3900,6 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 #v-apps:not(.cv-listing) > .apps-pane { display: flex; }
 #v-apps > .cv-side { display: none; }
 
-/* the status dot on the app's own mark (a row and the header): green = running, red = no answer, gray = off / unknown */
-.cv-av.app-av { position: relative; }
-.app-dot { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border: 2px solid var(--card); border-radius: 50%; background: var(--fg-3); }
-.app-dot.ok { background: var(--ok); }
-.app-dot.err { background: var(--err); }
-.app-dot.off { background: var(--line-2); }
 
 .apps-pane { flex-direction: column; min-width: 0; min-height: 0; }
 .apps-hd { display: flex; flex: none; align-items: center; gap: var(--sp-2); min-height: 56px; padding: var(--sp-2) var(--sp-1) var(--sp-3); }
@@ -3843,7 +3924,7 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 
 @media (min-width: 1100px) {
   #v-apps { display: grid; max-width: none; margin: 0; padding-left: var(--edge); padding-right: var(--edge); column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-  #v-apps > .cv-side { grid-column: 1; grid-row: 1; display: block; min-height: 0; margin-bottom: var(--sp-4); padding: var(--sp-2); }
+  #v-apps > .cv-side { grid-column: 1; grid-row: 1; align-self: start; display: block; min-height: 0; max-height: calc(100% - var(--sp-4)); margin-bottom: var(--sp-4); padding: var(--sp-2); }
   #v-apps.cv-listing > .cv-side, #v-apps > .apps-pane, #v-apps:not(.cv-listing) > .apps-pane { display: flex; }
   #v-apps > .apps-pane { grid-column: 2; grid-row: 1; min-height: 0; margin-bottom: var(--sp-4); }
   #v-apps > .apps-pane:not(:has(.apps-frame)) { display: block; }
@@ -3856,9 +3937,16 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 @media (max-width: 1099px) {
   #v-chat.canvas-open > #canvas { position: fixed; inset: 0; z-index: 60; padding: calc(var(--sp-2) + env(safe-area-inset-top, 0px)) var(--sp-3) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px)); background: var(--bg); }
 }
+/* beside the conversation the canvas is never narrower than --cnv-min, and the conversation keeps the width a split pane keeps (--cnv-conv, 43-panes-view.js paneDrag).
+   When the window cannot give both with the list column, the column folds like split panes' (.cnv-fold, 26-panes.css; 43-panes-view.js cnvFoldSync) and the list comes from its 목록 button. */
 @media (min-width: 1100px) {
-  #v-chat.canvas-open { grid-template-columns: var(--cv-w) minmax(360px, 1fr) minmax(0, 1.25fr); }
-  #v-chat.canvas-open > #canvas { grid-column: 3; grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); }
+  #v-chat { --cnv-conv: 280px; --cnv-min: 400px; }
+  #v-chat.canvas-open { grid-template-columns: var(--cv-w) minmax(var(--cnv-conv), 1fr) minmax(var(--cnv-min), 1.25fr); }
+  #v-chat.canvas-open > #canvas { grid-column: 3; grid-row: 1 / -1; min-width: var(--cnv-min); min-height: 0; margin-bottom: var(--sp-4); }
+  #v-chat.cnv-fold.canvas-open { grid-template-columns: minmax(var(--cnv-conv), 1fr) minmax(var(--cnv-min), 1.25fr); }
+  #v-chat.cnv-fold.canvas-open::before, #v-chat.cnv-fold.canvas-open > * { grid-column: 1; }
+  #v-chat.cnv-fold.canvas-open > #canvas { grid-column: 2; }
+  #v-chat.cnv-fold > #cv-head { padding-left: calc(var(--sp-12) + var(--sp-4)); }
 }
 
 /* the header's file mark sits on a surface of its own: the pane is on the page (--bg), where a --layer circle would vanish */
@@ -3879,7 +3967,8 @@ span.mr-star:not(.on) { opacity: .45; }
 .mr.mr-new .rc-src { color: var(--fg); }
 .mr.mr-new .rc-title { color: var(--fg); font-weight: 600; }
 .mr:not(.mr-new) .rc-title { color: var(--fg-2); font-weight: 400; }
-.mr > .mr-dot { position: absolute; left: 5px; top: 15px; }
+.mr .rc-src > .mr-dot { display: inline-block; margin-right: var(--sp-15); vertical-align: middle; }   /* the unread dot stands before the sender, clear of the checkbox */
+.mr-filter { padding-right: var(--sp-5); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--sp-5)), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - var(--sp-5)), transparent); }
 .mr .tag.mr-unread { display: none; }
 #mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 
@@ -3895,11 +3984,12 @@ span.mr-star:not(.on) { opacity: .45; }
 @media (hover: hover) { .mbox-b:hover:not(:disabled) { background: var(--hover); } }
 .mbox-b:disabled { opacity: .45; cursor: not-allowed; }
 .mbox-b .ic { width: 16px; height: 16px; }
+.mbox-b.mbox-ic { width: 32px; padding: 0; justify-content: center; }
 .mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-left: auto; }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
 .tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }
-@media (max-width: 639px) { .tl-in > .bm.rc.mopen { --mpx: 16px; padding-bottom: var(--sp-3); } }
+@container tlcol (max-width: 559.98px) { .tl-in > .bm.rc.mopen { --mpx: 16px; padding-bottom: var(--sp-3); } }
 .mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 40px; margin: 0 calc(var(--mpx) * -1) var(--sp-2); padding: 0 calc(var(--mpx) - var(--sp-2)); border-radius: var(--r-card) var(--r-card) var(--r-ctl) var(--r-ctl); background: var(--layer); }
 .mtop .mtop-b { flex: 0 1 36px; min-width: 32px; width: 36px; height: 32px; border-radius: var(--r-ctl); color: var(--fg-2); }
 .mtop .mtop-b .ic { width: 16px; height: 16px; }
@@ -3909,6 +3999,11 @@ span.mr-star:not(.on) { opacity: .45; }
 @media (max-width: 639px) { .mtop { padding: 0 var(--sp-05); } }
 /* the day / 지난 기록 lines above an open mail only push it down: the mail's own time is in its header */
 #tl > .a-div:has(~ .bm.mopen) { display: none; }
+/* an open mail stands in the list's column (the page's width and the list's own 8px gutter), so opening one keeps the text's left line */
+@media (min-width: 1100px) {
+  #v-chat.mon-ctx:not(.mon-two):not(.canvas-open):has(#tl > .bm.mopen) { max-width: var(--view-w); }
+  #v-chat.mon-ctx:not(.mon-two):not(.canvas-open):has(#tl > .bm.mopen) .timeline { padding-inline: var(--sp-2); }
+}
 .mopen > .rc-title { margin-top: var(--sp-1); font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .mopen > .rc-hd { margin-top: 0; font-size: 13px; }
 /* the summary (11-mailtext.js mailSumBlock): a grey block, the lightning mark in grey (blue is only for what you press), 요약 ·, two short sentences with the to-do in bold */
@@ -3937,21 +4032,30 @@ span.mr-star:not(.on) { opacity: .45; }
 .mopen > .rc-raw { margin-top: var(--sp-1); }
 .mopen > .rc-raw > .rc-rawbody { margin-top: 0; }
 
-.mbox-fab { position: fixed; z-index: 40; right: 24px; bottom: 24px; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-width: 56px; height: 56px; padding: 0 var(--sp-5); border: 0; border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; box-shadow: 0 2px 8px rgba(0, 0, 0, .16); cursor: pointer; }
+.mbox-fab { position: fixed; z-index: 40; right: var(--mbox-r); bottom: 24px; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-width: 56px; height: 56px; padding: 0 var(--sp-5); border: 0; border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; box-shadow: 0 2px 8px rgba(0, 0, 0, .16); cursor: pointer; }
+/* --mbox-r: how far the mail column's right edge is from the window's right edge (the sidebar and the centred page are taken out); the round button, the folded bar and the open sheet all end there, so folding and unfolding never jumps. A phone sets its own edge below. */
+:root { --mbox-r: calc(max(0px, (100vw - var(--side-w, 0px) - var(--view-w)) / 2) + var(--sp-6)); }
+@media (min-width: 1100px) { :root { --mbox-r: calc(max(0px, (100vw - var(--side-w) - var(--view-w)) / 2) + var(--edge)); } }
+.mbox-fab-gap { flex: none; height: calc(var(--sp-12) + var(--sp-8)); }   /* the button's 56px and its 24px from the edge */
 .mbox-fab:hover { filter: brightness(1.06); }
 .mbox-fab .ic { width: 20px; height: 20px; }
 /* A phone keeps the button above the compact tab bar (web/css/01-tokens.css .side: a 46px row), not on top of its tabs. */
-@media (max-width: 639px) { .mbox-fab { right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); width: 56px; height: 56px; padding: 0; } .mbox-fab-t { display: none; } }
+@media (max-width: 639px) { .mbox-fab-gap { height: calc(var(--sp-12) + var(--sp-12) + var(--sp-8) + env(safe-area-inset-bottom)); } .mbox-fab { right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); width: 56px; height: 56px; padding: 0; } .mbox-fab-t { display: none; } }
 
 /* 메일 쓰기 is a centered sheet on a wide screen (ui-spec 시트·대화창: 560px, 20px corners, --pop, --float), a full screen on a phone (editing); minimized it docks as a bar at the bottom right */
 .mbox-sheet { position: fixed; z-index: 60; inset: 0; margin: auto; display: flex; flex-direction: column; width: min(560px, calc(100% - 48px)); height: fit-content; max-height: min(86dvh, 820px); border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: var(--float); overflow: hidden; }
-.mbox-sheet.min { inset: auto 24px 0 auto; margin: 0; width: 360px; max-height: 56px; border-radius: 20px 20px 0 0; }
+@media (min-width: 640px) { .mbox-sheet:not(.min) { inset: auto var(--mbox-r) 0 auto; margin: 0; border-radius: 20px 20px 0 0; } }   /* open, it docks where its folded bar stands */
+.mbox-sheet.min { inset: auto var(--mbox-r) var(--mbox-lift, 0px) auto; margin: 0; width: 360px; max-height: 56px; border-radius: 20px 20px 0 0; }
 .mbox-sheet.min > :not(.mbox-sh) { display: none; }
+.mbox-sheet.min { cursor: pointer; }
+body:has(.mbox-sheet.min) .mbox-fab { display: none; }   /* the folded bar stands where 메일 쓰기 does: tap the bar to open it again */
+.mbox-sheet.min .mbox-min svg { transform: rotate(180deg); }   /* the chevron points up: the bar opens upwards */
 .mbox-sh { display: flex; align-items: center; gap: var(--sp-05); flex: none; padding: var(--sp-4) var(--sp-2) var(--sp-2) var(--sp-6); }
 .mbox-st { flex: 1; font-size: 20px; line-height: 28px; font-weight: 700; }
 .mbox-sb, .mbox-rb { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: var(--sp-1) var(--sp-6) var(--sp-4); }
 /* the fields are rows split by one hairline (the label is a grey word, principle 3); the body has none */
 .mbox-f { position: relative; display: flex; align-items: center; gap: var(--sp-2); min-height: 48px; border-bottom: 1px solid var(--line); }
+.mbox-err { padding: var(--sp-1) 0; color: var(--err); font-size: 12px; line-height: 16px; }
 .mbox-fk { flex: none; width: 64px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 500; }
 .mbox-in { flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 14px; }
 .mbox-cc { flex: none; height: 28px; padding: 0 var(--sp-2); border: 0; border-radius: 6px; background: none; color: var(--fg-3); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
@@ -3978,7 +4082,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mbox-sheet { inset: auto 0 var(--kb, 0px) 0; width: auto; height: var(--vvh, 100dvh); max-height: none; border: 0; border-radius: 0; }
   /* the body is the room left between the subject and the send row and shrinks with it, so its whole focus ring shows above the row */
   .mbox-sheet textarea.mbox-ta { min-height: 0; }
-  .mbox-sheet.min { inset: auto 0 0 0; height: fit-content; max-height: 56px; border-radius: 20px 20px 0 0; }
+  .mbox-sheet.min { inset: auto 0 var(--mbox-lift, 0px) 0; height: fit-content; max-height: 56px; border-radius: 20px 20px 0 0; }
   .mbox-sb { flex: 1; padding: var(--sp-1) var(--sp-5) var(--sp-4); }
   .mbox-sf { padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom)); }
 }
@@ -4006,7 +4110,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 
 /* Phone: one scrolling row of slim folder chips, an icon-only selection bar on one line, 44px targets in the sheet and the reply. The sheet and the reply keep their buttons clear of the home indicator. */
 @media (max-width: 639px) {
-  .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--sp-3) * -1); padding: var(--sp-05) var(--sp-3) var(--sp-15); overscroll-behavior-x: contain; }
+  .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--sp-3) * -1); padding: var(--sp-05) var(--sp-5) var(--sp-15) var(--sp-3); overscroll-behavior-x: contain; }
   .mr-filter::-webkit-scrollbar { display: none; }
   .mr-star { width: 28px; height: 28px; }
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
@@ -4016,6 +4120,8 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
+  .mbox-bar.on .mbox-b.mbox-w { width: auto; padding: 0 var(--sp-3); background: var(--layer); }   /* 읽음 and 보관 keep their word on a phone */
+  .mbox-bar.on .mbox-w .mbox-bt { display: inline; }
   .mbox-reply { margin: var(--sp-3) 0 var(--sp-4); padding: var(--sp-4); }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }
@@ -4052,7 +4158,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
      start at one left line (the row's 16px, the select-all box on the row checkbox's x) and the extra width goes to the subject and the preview */
   .mbox-bar { padding-left: var(--sp-3); }
   #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: var(--sp-2); height: 48px; padding: 0 var(--sp-3) 0 var(--sp-4); }
-  #mon-tl > .mr > .mr-dot { top: 50%; margin-top: calc(var(--sp-1) * -1); }
   #mon-tl > .mr > .rc-hd { display: contents; }
   #mon-tl > .mr .rc-hd > * { order: 2; }
   #mon-tl > .mr .rc-hd > .mr-lead { order: 0; }
@@ -4072,7 +4177,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .mhd-r { display: flex; gap: var(--sp-2); min-width: 0; }
 .mhd-k { flex: none; width: 56px; color: var(--fg-3); }
 .mhd-v { min-width: 0; overflow-wrap: anywhere; }
-.mhd-none { color: var(--fg-3); }
 .mhd-n { color: var(--fg); font-weight: 600; }
 .mhd-a { color: var(--fg-3); }
 .mhd-more { min-height: 24px; padding: 0 var(--sp-15); border: 0; border-radius: 6px; background: var(--card); color: var(--accent); font: 500 12px/20px var(--font); cursor: pointer; }
@@ -4154,9 +4258,11 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .mxs-mode { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; padding: var(--sp-3); border: 0; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
 @media (hover: hover) { .mxs-mode:hover { background: var(--card-hover); } }
 .mxs-mode.on { background: color-mix(in srgb, var(--accent) 10%, var(--card)); } @media (hover: hover) { .mxs-mode.on:hover { background: color-mix(in srgb, var(--accent) 10%, var(--card)); } }
-.mxs-mt { display: flex; align-items: center; gap: var(--sp-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
-.mxs-rd { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--line-2); border-radius: 50%; }
-.mxs-mode.on .mxs-rd { border: 5px solid var(--accent); }
+.mxs-mt { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mxs-mt .ic { flex: none; color: var(--accent); }
+/* suggested groups (메일함 추가): the sub line is one line with an ellipsis, the mail count has its own place at the right */
+.mxs-sg .sup { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mxs-cnt { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .mxs-md { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 
 /* one folding item at a time */
@@ -4186,7 +4292,9 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .mxs-c2 .ic { width: 14px; height: 14px; }
 .mxs-ci { width: calc(var(--sp-10) * 4 + var(--sp-5)); max-width: 100%; height: var(--ctl-h); }
 .mxs-ic { padding: 0 var(--sp-3); }
-.mxs-ic.on { background: var(--fg); color: var(--bg); } @media (hover: hover) { .mxs-ic.on:hover { background: var(--fg); color: var(--bg); } }
+.mxs-ic.on { background: color-mix(in srgb, var(--accent) 10%, var(--card)); color: var(--accent); } @media (hover: hover) { .mxs-ic.on:hover { background: color-mix(in srgb, var(--accent) 10%, var(--card)); } }
+.mxs-ab > .mxs-c2 { align-self: flex-start; }   /* the add button is the small chip here too, not the width of the column */
+.mxs-ig { display: flex; flex-direction: column; gap: var(--sp-2); }
 .mxs-ic .ic { width: 16px; height: 16px; }
 .mxs-jr { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: var(--ctl-h); }
 
@@ -4228,6 +4336,8 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
    underline; each tab is the full 44px tall with side padding, so the whole cell is the tap target */
 .mx-tabs { display: flex; flex: none; gap: 0; overflow-x: auto; scrollbar-width: none; box-shadow: inset 0 -1px 0 var(--line); }
 .mx-tabs::-webkit-scrollbar { display: none; }
+/* a strip wider than its pane fades at the right end: the fade says there are more tabs to scroll to */
+.mx-tabs { padding-right: var(--sp-5); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - var(--sp-5)), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - var(--sp-5)), transparent); }
 .mx-tab { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--btn-hit); padding: 0 var(--sp-3); border: 0; border-radius: 0; background: none; color: var(--fg-2); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
 .mx-tab > span:last-child { color: var(--fg-3); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
 @media (hover: hover) { .mx-tab:hover { color: var(--fg); } }
@@ -4273,6 +4383,13 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .mx-acc { display: none; flex: none; align-items: center; gap: var(--sp-1); height: 28px; margin-right: var(--sp-1); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: var(--fs-meta); font-weight: 500; white-space: nowrap; }
 @media (hover: hover) { .mx-acc:hover { background: var(--card-hover); } }
 .mx-acc .ic { width: 14px; height: 14px; }
+/* on a phone the bar also holds back, title, the app buttons, search, bell and usage: the chip gives way (its name ends in …) before the title is squeezed */
+@media (max-width: 639px) {
+  .mx-acc { flex: 0 1 auto; min-width: 0; }
+  .mx-acc > :not(.mx-ac-t) { flex: none; }
+  .mx-ac-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .main:has(#v-monitoring.mx-on:not(.mx-scr):not([hidden])) #title { min-width: calc(var(--btn-hit) * 2); }
+}
 .main:has(#v-monitoring.mx-on:not(.mx-scr):not([hidden])) .mx-acc { display: inline-flex; }
 
 .mr-mv { flex: none; }
@@ -4295,9 +4412,10 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
   /* the pane stands beside the scrolling list, the head over both; the page is wider than a plain item's 920px to leave the list its width */
   #v-monitoring.mx-on:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: 1180px; grid-template-columns: 256px minmax(0, 1fr); column-gap: var(--sp-5); }
   #v-monitoring.mx-on:not(.cv-listing) > * { grid-column: 2; }
+  body:has(#v-monitoring.mx-on:not(.mx-scr)) { --mbox-r: calc(max(0px, (100vw - var(--side-w) - 1180px) / 2) + var(--edge)); }   /* the page is 1180 wide beside the mailbox pane: 20-mail-box.css --mbox-r */
   #v-monitoring.mx-on:not(.cv-listing) > .cv-head { grid-column: 1 / -1; }
   #v-monitoring.mx-on:not(.cv-listing) > #mx-pane { grid-column: 1; grid-row: 4; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; overflow-y: auto; scrollbar-width: none; }
-  #mon-tl > .mx-tabs { display: none; }
+  #mon-tl > .mx-tabs:not(.mr-place) { display: none; }
   #v-monitoring.mx-on #mon-tl { padding-top: 0; }
   /* 메일함 설정 and 메일함 추가 take the whole view */
   #v-monitoring.mx-on.mx-scr:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: var(--view-w); grid-template-columns: minmax(0, 1fr); }
@@ -4336,10 +4454,6 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .mon-prog-wrap.compact { margin-top: var(--sp-15); }
 .mon-prog-wrap.compact .mon-prog { height: 3px; }
 .mon-prog-wrap.compact .mon-prog-tx { font-size: 11px; line-height: 15px; }
-/* a list row's bar is a second full-width line under the title and status, so a peer row's machine chip and badge never squeeze its meta text */
-.cv-row.has-mon-prog { flex-wrap: wrap; row-gap: var(--sp-05); }
-.cv-row.has-mon-prog > .mon-row-status { flex: 1 0 100%; order: 8; margin-top: var(--sp-05); }
-.cv-row.has-mon-prog > .mon-prog-wrap { flex: 1 0 100%; order: 9; margin-top: var(--sp-05); }
 /* the result tag (same look as .tag, its own class so the row's other tags keep their place in a query) */
 .mon-ptag { --tone: var(--fg-3); display: inline-flex; align-items: center; align-self: center; gap: var(--sp-15); flex: none; height: 20px; padding: 0; background: none; color: var(--fg-3); font-size: var(--fs-tag); line-height: var(--lh-tag); font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .mon-ptag.pri { --tone: var(--accent); color: var(--fg-2); font-weight: 600; }
@@ -4364,7 +4478,11 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 
 /* 감시 소식 opens with this: one compact row per plain monitor, what needs the owner first */
 .mon-ov { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3); border-radius: var(--r-card); background: var(--card); }
-.mon-ov-h { padding: 0 var(--sp-1) var(--sp-1); color: var(--fg); font: 700 14px/20px var(--font); }
+.mon-ov-h { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--btn-hit); padding: 0 var(--sp-1); border: 0; background: transparent; color: var(--fg); font: 700 14px/20px var(--font); text-align: left; cursor: pointer; }
+.mon-ov-ht { flex: none; }
+.mon-ov-sum { min-width: 0; color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mon-ov-h .chev { flex: none; width: 14px; height: 14px; margin-left: auto; color: var(--fg-3); transform: rotate(90deg); transition: transform var(--m-fast) var(--m-ease); }
+.mon-ov-h[aria-expanded="false"] .chev { transform: none; }
 .mon-ov-row { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; min-width: 0; padding: var(--sp-2); border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; }
 @media (hover: hover) { .mon-ov-row:hover { background: var(--hover); } }
 .mon-ov-hd { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
@@ -4376,16 +4494,6 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 /* the top of an older page: the reports above load when this reaches the view (the button under it stays as a fallback) */
 .mon-sentinel { width: 100%; height: 1px; }
 
-/* 모니터링 > 인스타그램 DM (web/js/30-monitoring-comments-dm.js): 읽기만 하는 스레드 (owner 2026-11-03).
-   말풍선을 쌓지 않고 한 메시지 한 줄 - 보낸 사람·시각 줄, 아래 본문, 메시지 사이는 얇은 선. 겹치거나 둥근 회색 알약이 생기지 않아요. */
-.dm-m { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; padding: var(--sp-2) var(--sp-05); }
-.dm-m + .dm-m { border-top: 1px solid var(--line); }
-.dm-mh { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
-.dm-mn { min-width: 0; color: var(--fg); font: 600 13px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-mt { flex: none; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); font-variant-numeric: tabular-nums; }
-.dm-mb { color: var(--fg); font: 400 var(--fs-body)/var(--lh-body) var(--font); overflow-wrap: anywhere; }
-.dm-m.mine .dm-mn { color: var(--fg-2); }
-.dm-m.mine .dm-mb { color: var(--fg-2); }
 /* 대화로 이어가기 (30-monitoring.js monHead / monTopNodes): the item's own settings conversation, one small button in the head.
    It sits on the page (--bg), where a --layer tonal button would vanish, so it takes the card colour like a chip. */
 .mon-continue { flex: none; }
@@ -4399,6 +4507,7 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
    and its one-line summary, the status tag of the moment, and the chevron that says the row opens. The wait bar stays under the row (its
    own product feature), aligned with the text. */
 #v-monitoring > #mon-side, #v-chat > #chat-convo.mon-side { padding: 0 0 var(--sp-4); background: transparent; border-radius: 0; }
+:is(#mon-side, #chat-convo.mon-side) .mon-grp + .card.empty { margin-top: var(--sp-4); }
 :is(#mon-side, #chat-convo.mon-side) .mon-sec { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin: var(--sp-4) var(--sp-1) var(--sp-15); color: var(--fg-2); font: 600 13px/18px var(--font); }
 :is(#mon-side, #chat-convo.mon-side) .mon-sec:first-child { margin-top: 0; }
 :is(#mon-side, #chat-convo.mon-side) .mon-grp { min-width: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
@@ -4414,13 +4523,6 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 :is(#mon-side, #chat-convo.mon-side) .cv-row .cv-m { gap: var(--sp-15); }
 /* the row's way in: a small chevron at the right edge, after its tags (the prototype's .li .end chev) */
 :is(#mon-side, #chat-convo.mon-side) .cv-row::after { align-self: center; content: ""; flex: none; width: 6px; height: 6px; margin-left: var(--sp-05); border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); }
-:is(#mon-side, #chat-convo.mon-side) .cv-row.has-mon-prog { row-gap: var(--sp-1); }
-:is(#mon-side, #chat-convo.mon-side) .cv-row.has-mon-prog > .mon-prog-wrap { flex: 1 0 100%; order: 9; margin-top: var(--sp-05); }
-:is(#mon-side, #chat-convo.mon-side) .cv-row.has-mon-prog .mon-prog { height: 3px; }
-:is(#mon-side, #chat-convo.mon-side) .cv-row.has-mon-prog .mon-prog-tx { font-size: 11px; line-height: 15px; }
-:is(#mon-side, #chat-convo.mon-side) .cv-row > .mon-row-status { flex: 1 0 100%; order: 8; margin-left: var(--sp-12); color: var(--fg-3); font-size: 11px; line-height: 15px; }
-/* the wait bar lines up with the name, not under the icon (36px icon + 12px gap) */
-:is(#mon-side, #chat-convo.mon-side) .cv-row.has-mon-prog > .mon-prog-wrap { margin-left: var(--sp-12); width: auto; flex-basis: calc(100% - 48px); }
 /* one panel width in every 모니터링 state (list, app, mail, watch): the open mail conversation draws the same column (owner 2026-11-04) */
 /* an app's conversation stands alone, as wide as a conversation of 채팅; a monitor's (.mon-two) keeps 채팅's own two columns with the list of monitors (owner 2026-11-06) */
 @media (min-width: 1100px) {
@@ -4484,10 +4586,15 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .mon-lr.un .mon-l1 { font-weight: 600; }
 .mon-l2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font: 400 12px/16px var(--font); }
 .mon-l2:empty { display: none; }
+.mon-lr:not([role="button"]) :is(.mon-l1, .mon-l2) { white-space: normal; overflow-wrap: anywhere; }   /* a row with nothing to unfold shows every word */
 .mon-lt { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .mon-l1 .nw-chg s { color: var(--fg-3); }
 .mon-l1 .nw-chg em { font-style: normal; font-weight: 600; color: var(--accent); }
 #mon-tl > .mon-chips { justify-content: flex-start; margin-top: var(--sp-2); }
+/* the inner screens of 모니터링 on a phone (an app, a mail, a room) drop the usage ring from the app bar: the title keeps the room (31-conversations.js convChrome) */
+.appbar.mon-in .ustrip { display: none; }
+/* a phone inside a watch: the machine's name stands in the description line under the bar (monTopNodes), so the title does not carry it a second time */
+.main:has(#mon-tl > .mon-topcard .mon-pc) .appbar.mon-in h1 > .mon-pc { display: none; }
 
 /* 프로젝트 (web/js/18-lanes.js, 19-project-main.js): three levels on one tab.
    1 list  - search + chips (전체 / 진행 중 / 확인 필요), compact rows (name, one status line, last activity), 더 보기.
@@ -4646,7 +4753,7 @@ body { display: flow-root; }
   .ni .ic { display: block; width: 16px; height: 16px; }
   .ni .nl { min-width: 0; }
   /* a tab with something new carries one small dot at the bottom right of its text, no count (the count stays in the aria-label and the title); the phone tab bar draws the same badges */
-  .ni .nnb, .ni .nub { position: static; flex: none; align-self: flex-end; width: 6px; min-width: 6px; height: 6px; margin: 0 0 13px calc(var(--sp-15) * -1); /* nudge: dot at the text's bottom right, 3px above the text line */ padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; line-height: 0; }
+  .ni .nnb, .ni .nub { position: static; flex: none; align-self: flex-end; width: 6px; min-width: 6px; height: 6px; margin: 0 0 13px calc(var(--sp-1) * -1); /* nudge: dot at the text's bottom right, 3px above the text line */ padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; line-height: 0; }
   .ni .nnb { background: var(--warn); }
   /* lower area: what the limits say now; a tap opens 사용량 */
   .sfoot { margin-top: auto; padding-top: var(--sp-2); }
@@ -4711,10 +4818,13 @@ body { display: flow-root; }
   .appbar h1, .appbar:not(.back) h1 { font-size: 20px; line-height: 28px; }
   .appbar .ib { width: 36px; height: 36px; }
 }
+/* The computer beside a title (.mon-pc, convTitle) stays on the title's one line when it fits; when it does not it wraps to a second row, which the bar clips (1lh), so the head never grows a second line. The row is one tap height tall so the clip is clean. */
+.appbar h1:has(> .mon-pc) { display: flex; flex-wrap: wrap; align-items: center; max-height: 1lh; line-height: var(--btn-hit); overflow: hidden; white-space: nowrap; }
+.appbar h1 > .ttx { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 
 /* ---------- 홈: the prototype's layout (site/prototype/s-work.js home, proto.css .view / .col / .grid2 / .card) ----------
-   One full-width column on top (greeting, alert row, 답변 필요) and the card grid below it (two cards to a row from 720px,
+   One full-width column on top (greeting, 답변 필요) and the card grid below it (two cards to a row from 720px,
    one below). The grid is the home board (07-board.js), so the cards still drag and resize; the card sizes are the prototype's. */
 #v-home { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) var(--sp-6) var(--sp-10); }
 #home-now { display: flex; flex-direction: column; gap: var(--sp-3); order: 1; }
@@ -4737,23 +4847,22 @@ body { display: flow-root; }
 .hstrip { min-height: 48px; background: var(--card); border-radius: var(--r-card); }
 .hstrip .tx { display: flex; flex-direction: column; gap: var(--sp-05); }
 @media (hover: hover) { .hstrip:hover { background: var(--card-hover); } }
-.hstrip .sup { color: var(--fg-2); }
 .hstrip .end { flex: none; display: flex; align-items: center; }
 
-/* 답변 필요: the prototype's full-width card, its count an orange badge after the title, 답장 대기 a quieter second list in it */
+/* 답변 필요: the prototype's full-width card, its count an orange badge after the title; every row (a login, a question, the drafts, the comments) starts on one left line */
 .hneeds { display: flex; flex-direction: column; min-width: 0; }
 .hneeds .hn-h { margin-top: 0; padding: var(--sp-4) var(--sp-5) var(--sp-1); }
 .hneeds .hn-h h2 { order: 0; font: 600 16px/22px var(--font); letter-spacing: -.01em; }
 .hneeds .hn-h .sup { order: 1; margin-left: 0; min-width: 18px; height: 18px; padding: 0 var(--sp-15); border-radius: 9px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
 .hneeds .hn-h .tag { order: 2; }
 .hneeds .hn { border-radius: 0 0 var(--r-card) var(--r-card); }
-.hneeds .hn:has(+ .hn-h) { border-radius: 0; padding-bottom: var(--sp-1); }
 /* nothing to answer: the same box as an empty grid card (20px around, the state line 8px under the title) */
 .hneeds:has(> .hn > .hc-none) > .hn-h:first-child { padding: var(--sp-5) var(--sp-5) 0; }
 .hneeds .hn:has(> .hc-none) { padding: 0 var(--sp-5) var(--sp-5); }
-.hneeds .hn-h.hsub { padding: var(--sp-3) var(--sp-5) var(--sp-1); border-top: 1px solid var(--line); border-radius: 0; }
-.hneeds .hn-h.hsub h2 { font: 600 13px/18px var(--font); color: var(--fg-2); }
 .hneeds .hn > .hr { padding-left: var(--sp-5); padding-right: var(--sp-5); }
+.hneeds .hn > .hr.hrx { padding-left: 0; padding-right: 0; }
+.hneeds .hn > .hr.hrx > .hrx-m { padding-left: var(--sp-5); }
+.hneeds .hn > .hr.hrx > .hrx-m:last-child { padding-right: var(--sp-5); }
 
 /* the grid cards keep the prototype's card box: 20px padding, the header 8px above its list, rows to the card's edge; a row is as tall
    as its taller card (07-board.js rows mode) but each card is as tall as its content, so an empty card beside a long one leaves no blank
@@ -4794,15 +4903,17 @@ body { display: flow-root; }
   .appbar :is(.ib, .ustrip, .conn) { position: relative; }
   .appbar :is(.ib, .ustrip, .conn)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
   .appbar #back::after { left: 0; transform: translateY(-50%); }
+  .appbar h1.pdot { padding-block: var(--sp-3); margin-block: calc(var(--sp-3) * -1); }   /* the title clips its overflow (ellipsis), so its area is padding with the same margin back */
+  .appbar.cvconv h1.pdot { padding-block: 0; margin-block: 0; min-height: var(--btn-hit); -webkit-box-pack: center; }   /* a title cut at two lines (-webkit-line-clamp) shows its third line in vertical padding: it keeps the tap height as min-height instead */
 }
 
 /* phone / touch: a control in the page body keeps its drawn size and answers a tap over --btn-hit through ::after, like the app bar above (a list row only needs 40). A row that scrolls sideways clips what hangs out above and below it (overflow-x: auto clips y too), so it carries the area as padding and gives the same back as negative margin: nothing moves. Where two areas would share a strip, the line gap or the end of the stack gives way, not the drawn size. */
 @media (pointer: coarse), (max-width: 639px) {
-  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn) { position: relative; }
-  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
+  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-manual, .rq-open, .hrx-n) { position: relative; }
+  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-manual, .rq-open, .hrx-n)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
   .subsum { z-index: 1; }
   .subsum::after { top: calc(var(--sp-3) * -1); bottom: calc(var(--sp-1) * -1); height: auto; transform: translateX(-50%); }
-  .qa .btn.inrow::after { inset: calc(var(--sp-2) * -1 - 1px) calc(var(--sp-05) * -1); }
+  .qd-ln .btn.inrow::after { inset: calc(var(--sp-2) * -1 - 1px) calc(var(--sp-05) * -1); }
   .nsc-f { padding-block: var(--sp-2); margin: calc(var(--sp-1) - var(--sp-2)) 0 0; }
   .rq-hd2 .nsc-f { margin-top: calc(var(--sp-2) * -1); }
   .pl-chips { padding-block: var(--sp-2); margin-block: calc(var(--sp-2) * -1); }
@@ -4811,16 +4922,27 @@ body { display: flow-root; }
   #kk-rooms .kk-lh { padding-bottom: var(--sp-3); }
   #kk-rooms .kk-views .mr-f::after, .kk-add-btn::after { top: 0; height: var(--btn-hit); transform: translateX(-50%); }
   #kk-rooms .kk-views .mr-f::after { top: calc(var(--sp-05) * -1); }
-  .ct-body { padding-block: var(--sp-3); margin-block: calc(var(--sp-3) * -1); }
+  .ct-body { padding-block: var(--sp-4); margin-block: calc(var(--sp-4) * -1); }
   .ct-file { z-index: 1; }
+  .ct-file::after, .hrx-n::after { height: calc(var(--btn-hit) + var(--sp-2)); }   /* a fraction of a pixel under the rows measured 42 and 43 of 44 */
   #c-attach::after { top: calc(var(--sp-2) * -1); height: var(--btn-hit); transform: translateX(-50%); }
-  #cbar { padding-block: var(--sp-15); margin-block: calc(var(--sp-15) * -1); }
+  #cbar { padding-block: var(--sp-15) calc(var(--sp-4) + var(--sp-05)); margin-block: calc(var(--sp-15) * -1) calc((var(--sp-4) + var(--sp-05)) * -1); }
+  .cbar .cchip::after { top: calc(var(--sp-15) * -1); height: var(--btn-hit); transform: translateX(-50%); }   /* the text box ends 6px above the chips: the area grows down, over the composer's bottom padding */
   .hm-chips { row-gap: var(--sp-2); padding-bottom: var(--sp-05); }
   .pmv-edit::after { left: 0; width: 100%; height: var(--btn-hit); transform: none; }
   .mtop .mtop-b::after { left: 0; width: 100%; transform: translateY(-50%); }   /* nine buttons in the bar leave under 37px each: an area wider than the button would take a strip of its neighbour */
   .pmv-title::after { top: calc(var(--sp-3) * -1); }
   .pmv-purpose::after { top: calc(var(--sp-1) * -1); }
   .pmv-hrow { padding-top: var(--sp-15); }
+  /* the controls the list above missed (ui F7) */
+  :where(.td-bar, .rq-og, .nsc-x, .nsc-fold, .dr-rc-x, .dr-seg button) { position: relative; }
+  :where(.td-bar, .rq-og, .nsc-x, .nsc-fold, .dr-rc-x, .dr-seg button)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
+  .dr-seg button { overflow: visible; }
+  .dr-seg button::after { left: 0; width: 100%; transform: translateY(-50%); }   /* the two segments share an edge: tall, not wider */
+  .rp-btn::before { content: ""; position: absolute; left: 50%; top: 50%; width: var(--btn-hit); height: var(--btn-hit); transform: translate(-50%, -50%); }
+  .dr-rc { overflow: visible; }
+  .ch > .btn.inrow::after { top: calc(var(--sp-15) * -1); bottom: calc((var(--sp-2) + var(--sp-05)) * -1); }   /* a card head sits 6px under the card's top edge, which clips */
+  .dr-rc-x::after { left: calc(var(--sp-05) * -1); width: var(--btn-hit); transform: translateY(-50%); }   /* grows into the gap after it, not over the name */
 }
 
 /* 화면 공유 (features/remote-desktop/DESIGN.md Web): the app-bar pill that names who is watching, and the button on a computer's row in the switcher. The settings rows are the plain .li + .hs-sw. */
@@ -4864,20 +4986,22 @@ body { display: flow-root; }
   mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-5)), transparent);
 }
 
-/* 분할 창 (web/js/43-panes*.js): from the second pane on, #split takes the place of the one section on a wide screen - [list column][tree of panes].
-   A pane is a card like the conversation card; the active one carries the real section (.in-pane) and the focus ring, the others are mirrors (.pane-mir). */
-#split { --cv-w: 280px; display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: var(--sp-4); max-width: none; margin: 0; padding-left: var(--edge); padding-right: var(--edge); }
-#split > .pane-side { grid-column: 1; display: flex; flex-direction: column; min-height: 0; margin-bottom: var(--sp-4); }
-#split > .pane-side > .cv-side { display: block; flex: 1; min-height: 0; padding: 0; }
-#split > .pane-side > #v-projects { flex: 1; min-height: 0; max-width: none; margin: 0; padding: 0 var(--sp-2) 0 var(--sp-1); background: transparent; overflow-y: auto; }
+/* 분할 창 (web/js/43-panes*.js): from the second pane on, #split takes the place of the one section on a wide screen and the chat tab - [list column, folded to nothing][tree of panes].
+   A pane is a card like the conversation card; the active one carries the real section (.in-pane), the others are mirrors (.pane-mir). The active one is told by its head (the others' title is quieter), not by a line around it.
+   The panes take the list column's width (owner 8f7c8c3d); the chat list comes back as a layer over the panes' left (.ls-open) without moving either of them. */
+#split { --cv-w: 280px; display: grid; grid-template-columns: 0 minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: 0; max-width: none; margin: 0; padding-left: var(--edge); padding-right: var(--edge); }
+#split > .pane-side { grid-column: 1; position: relative; min-width: 0; min-height: 0; margin-bottom: var(--sp-4); }
+:is(#split > .pane-side, #v-chat.cnv-fold) > .cv-side { display: none; position: absolute; z-index: 5; top: 0; bottom: calc(var(--sp-4) * -1); left: 0; width: var(--cv-w); padding: 0; border-radius: var(--r-card); background: var(--card); overflow-y: auto; box-shadow: var(--float); }
+:is(#split.ls-open > .pane-side, #v-chat.cnv-fold.ls-open) > .cv-side { display: block; }
 #split > .pane-tree { grid-column: 2; display: flex; min-width: 0; min-height: 0; }
 
 .pane, .pane-row, .pane-col { flex: 1 1 0; display: flex; min-width: 0; min-height: 0; }
 .pane-row { flex-direction: row; }
 .pane-col, .pane { flex-direction: column; }
 .pane { position: relative; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
-.pane.on::after { content: ""; position: absolute; inset: 0; z-index: 2; border-radius: inherit; box-shadow: var(--ff-ring); pointer-events: none; }
 .pane > .pane-x { position: absolute; top: var(--sp-4); right: var(--sp-3); z-index: 3; }
+/* the active pane's 목록 button: at its head's left, a full touch target; the heads leave it room so a title starts at the same place in both panes */
+:is(.pane, #v-chat.cnv-fold) > .pane-ls { position: absolute; top: var(--sp-2); left: var(--sp-2); z-index: 3; width: 44px; height: 44px; border-radius: var(--r-ctl); }
 
 .pane-bar { position: relative; flex: none; touch-action: none; }
 .pane-row > .pane-bar { width: var(--sp-4); cursor: col-resize; }
@@ -4887,11 +5011,11 @@ body { display: flow-root; }
 .pane-col > .pane-bar::after { height: var(--sp-05); }
 .pane-bar:active::after { background: var(--accent); } @media (hover: hover) { .pane-bar:hover::after { background: var(--accent); } }
 
-#split #v-chat.in-pane { flex: 1; height: auto; min-height: 0; width: 100%; max-width: none; margin: 0; padding: 0; grid-template-columns: minmax(0, 1fr); }
-#split #v-chat.in-pane::before { display: none; }
-#split #v-chat.in-pane > * { grid-column: 1; }
-#split #cv-head { padding-right: calc(var(--sp-8) + var(--sp-4)); }
-#split #v-project.in-pane { flex: 1; min-height: 0; max-width: none; margin: 0; padding: var(--sp-4); overflow-y: auto; }
+#split :is(#v-chat.in-pane, .pane-chat) { flex: 1; height: auto; min-height: 0; width: 100%; max-width: none; margin: 0; padding: 0; grid-template-columns: minmax(0, 1fr); }
+#split :is(#v-chat.in-pane, .pane-chat)::before { display: none; }
+#split :is(#v-chat.in-pane, .pane-chat) > * { grid-column: 1; }
+#split :is(#cv-head, .pane-chat > .cv-head) { padding-right: calc(var(--sp-8) + var(--sp-4)); }
+#split :is(#cv-head, .pane-hd) { padding-left: calc(var(--sp-12) + var(--sp-4)); }
 /* 모니터링 in a pane scrolls inside its card. A pane is as narrow as the phone's column: an open room, thread or DM takes the whole pane the way it does
    below 1100px (17-kakao.css), and the app bar's back closes it (30-kakao.js kkBack, 30-monitoring-comments.js cmBack). */
 #split .pane .kk.chat-open .kk-rooms { display: none; }
@@ -4906,21 +5030,13 @@ body { display: flow-root; }
 #split .pane .mbox-fab { position: absolute; right: var(--sp-4); bottom: var(--sp-4); }
 /* the copy in an inactive pane has no ids, so what #v-monitoring.kk-on hides on the real screen is hidden here by class */
 .pane-pj > .view.kk-on > .chatbox { display: none; }
-#split .view.in-pane:not(#v-chat):not(#v-project) { flex: 1; min-height: 0; height: auto; max-width: none; margin: 0; padding: var(--sp-4); overflow-y: auto; }
+#split .view.in-pane:not(#v-chat) { flex: 1; min-height: 0; height: auto; max-width: none; margin: 0; padding: var(--sp-4); overflow-y: auto; }
 
 .pane-mir { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .pane-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); }
 .pane-hd .pane-x { margin-left: auto; }
-.pane-tl { --edge-t: 0px; --edge-b: 0px; flex: 1; height: auto; min-height: 0; margin-inline: 0; padding: var(--sp-1) var(--sp-6) var(--sp-3); overflow: hidden auto; -webkit-mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); }
-.pane-mir.fade-t > .pane-tl { --edge-t: var(--sp-3); }
-.pane-mir.fade-b > .pane-tl { --edge-b: var(--sp-3); }
-.pane-tl > .tl-in { max-width: none; gap: var(--sp-3); padding: var(--sp-1) 0 var(--sp-3); }
-.pane-tl > .tl-in > .um, .pane-tl > .tl-in > .bm { margin-top: 0; }
-.pane-cmp { flex: none; display: flex; align-items: center; gap: var(--sp-1); min-height: var(--sp-12); margin: var(--sp-2) var(--sp-3) var(--sp-3); padding: var(--sp-15); border: 0; border-radius: var(--r-card); background: var(--layer); color: var(--fg); font: 400 var(--fs-row)/var(--lh-row) var(--font); text-align: left; cursor: text; }
-.pane-cmp-plus { flex: none; display: grid; place-items: center; width: 36px; height: 36px; color: var(--fg-2); }
-.pane-cmp-plus .ic { width: 20px; height: 20px; }
-.pane-cmp-t { flex: 1; min-width: 0; padding: 0 var(--sp-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pane-cmp-ph { color: var(--fg-3); }
+/* the open pane is told by its head: the title of the others is quieter (the state line is --fg-3 already) */
+.pane:not(.on) .pane-hd .cv-hd-t { color: var(--fg-3); }
 .pane-pj { flex: 1; min-height: 0; overflow-y: auto; }
 .pane-pj > .view { max-width: none; margin: 0; padding: var(--sp-4); }
 

@@ -1,7 +1,19 @@
 "use strict";
-const WEB_BUILD = "bf89a10c1c00";
+const WEB_BUILD = "6be5e111a4d0";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// A .btn whose click handler returns a promise (it sends a request) is disabled until the answer comes, so a second press sends nothing.
+function holdWhileSending(btn, fn) {
+  return ev => {
+    const r = fn.call(btn, ev);
+    if (r && typeof r.then === "function" && !btn.disabled) {
+      btn.disabled = true;
+      const free = () => { btn.disabled = false; };
+      r.then(free, e => { free(); throw e; });
+    }
+    return r;
+  };
+}
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
 function el(tag, props, ...kids) {
   const n = document.createElement(tag);
@@ -10,6 +22,7 @@ function el(tag, props, ...kids) {
     if (k === "class") n.className = v;
     else if (k === "text") n.textContent = v;
     else if (k === "safeHtml") n.innerHTML = v;
+    else if (k === "onclick" && tag === "button" && /(^| )btn( |$)/.test(props.class || "")) n.addEventListener("click", holdWhileSending(n, v));
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, v === true ? "" : v);
   }
@@ -126,11 +139,24 @@ function leftText(ms) {
   const m = Math.floor(ms / 60000), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
   return d ? `${d}일${h ? ` ${h}시간` : ""}` : h ? `${h}시간${mm ? ` ${mm}분` : ""}` : `${mm}분`;
 }
-// When a usage window or budget resets (epoch ms): the time left until then, or that it is resetting now.
+// The short date of a row or a reset, KST, every part two digits: "11.10" this year, "25.12.31" another year ("" for a value that is not a date).
+const KST_YMD = new Intl.DateTimeFormat("en-GB", { ...KST, year: "2-digit", month: "2-digit", day: "2-digit" });
+const ymdOf = t => Object.fromEntries(KST_YMD.formatToParts(t).map(x => [x.type, x.value]));
+const kstShort = t => {
+  const d = new Date(t);
+  if (isNaN(d)) return "";
+  const p = ymdOf(d);
+  return `${p.year === ymdOf(Date.now()).year ? "" : `${p.year}.`}${p.month}.${p.day}`;
+};
+// The clock time of a reset in KST, 24-hour: "09:05".
+const REL_HM = new Intl.DateTimeFormat("en-GB", { ...KST, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+// When a usage window or budget resets (epoch ms): the time left until then with the clock time it falls on
+// ("3시간 38분 후 초기화 (14:18)", "12시간 후 초기화 (11.12 09:05)"), or that it is resetting now.
 function rel(ms) {
-  const d = ms - Date.now();
+  const now = Date.now(), d = ms - now;
   if (d <= 0) return "초기화 중";
-  return d < 60000 ? "1분 안에 초기화" : `${leftText(d)} 후 초기화`;
+  if (d < 60000) return "1분 안에 초기화";
+  return `${leftText(d)} 후 초기화 (${kstDay(ms) === kstDay(now) ? "" : `${kstShort(ms)} `}${REL_HM.format(ms)})`;
 }
 const oneLine = s => String(s).replace(/\s+/g, " ").trim().slice(0, 160);
 // The one line a 생각 row shows: the model's thinking when it is Korean, else a Korean label (the raw English stays in the row's fold).
@@ -727,20 +753,20 @@ function motionIn(el, from = "rise", ms = M_MS.base, delay = 0) {
 
 const phoneWide = () => matchMedia("(max-width: 639px)").matches;
 
-// A sheet or dialog opens: on a phone it slides up from the bottom edge, wider it fades in 16px low (both 280ms); its scrim fades in (220ms).
+// A sheet or dialog opens: on a phone it slides up from the bottom edge, wider it fades in 16px low; box and scrim take one length (--m-base), so they end together.
 // The close is motionSheetOut: a plain 150ms fade, nothing moves.
 function motionSheet(box, scrim) {
   if (reducedMotion()) return;
-  if (box && box.animate) box.animate(phoneWide() ? [{ transform: "translateY(100%)" }, { transform: "none" }] : [{ opacity: 0, transform: "translateY(16px)" }, { opacity: 1, transform: "none" }], { duration: 280, easing: M_EASE });
+  if (box && box.animate) box.animate(phoneWide() ? [{ transform: "translateY(100%)" }, { transform: "none" }] : [{ opacity: 0, transform: "translateY(16px)" }, { opacity: 1, transform: "none" }], { duration: M_MS.base, easing: M_EASE });
   if (scrim && scrim.animate) scrim.animate([{ opacity: 0 }, { opacity: 1 }], { duration: M_MS.base, easing: M_EASE });
 }
 const motionSheetOut = (...els) => Promise.all(els.filter(Boolean).map(e => motionOut(e, "fade", M_MS.fast)));
 
-// A native <dialog> (dialog(), the palette): it opens with the sheet motion (the palette: scale .98 -> 1, 180ms), and its close() fades it out first
+// A native <dialog> (dialog(), the palette): it opens with the sheet motion (the palette: scale .98 -> 1, --m-fast), and its close() fades it out first
 // (150ms, [data-leaving] fades the ::backdrop in CSS), so every d.close() caller, Esc and the back button included, gets the same leave.
 function motionDialog(d, enter = "sheet") {
   if (reducedMotion() || !d.animate) return;
-  if (enter === "pop") d.animate([{ opacity: 0, transform: "scale(.98)" }, { opacity: 1, transform: "scale(1)" }], { duration: 180, easing: M_EASE });
+  if (enter === "pop") d.animate([{ opacity: 0, transform: "scale(.98)" }, { opacity: 1, transform: "scale(1)" }], { duration: M_MS.fast, easing: M_EASE });
   else motionSheet(d);
   const real = d.close.bind(d); let leaving = false;
   d.close = rv => {
@@ -752,10 +778,10 @@ function motionDialog(d, enter = "sheet") {
   d.addEventListener("cancel", ev => { if (ev.defaultPrevented) return; ev.preventDefault(); d.close(); });
 }
 
-// A count badge that went from nothing to a number: it pops in (scale .6 -> 1, 200ms).
+// A count badge that went from nothing to a number: it pops in (scale .6 -> 1, --m-base).
 function motionPop(el) {
   if (!el || !el.animate || reducedMotion()) return;
-  el.animate([{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "scale(1)" }], { duration: 200, easing: M_EASE });
+  el.animate([{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "scale(1)" }], { duration: M_MS.base, easing: M_EASE });
 }
 
 // The owner moved to a different view (go(), 05-command-palette.js): the shown view rises in and its first 8 rows follow 12ms apart, all in about 240ms.
@@ -1675,21 +1701,24 @@ async function busy(btn, fn) {
 /* ---------- snackbar ---------- */
 // How notification text names things (01-notice-ko.js): a session by its title, never its code name.
 const NK = { lane: name => { try { const l = S && S.lanes.find(x => x.name === name); return (l && l.title) || undefined; } catch { return undefined; } } };
-let toastTimer;
+let toastTimer, toastNew = null;   // toastNew: the toast raised in this very run; it tells of the move that follows it, so go() leaves it up
 // A toast that times out or whose 되돌리기 was pressed fades out (150ms) and is then removed; a new toast replaces the old one at once.
 function toastGone(n) {
   if (!n.isConnected) return;
   n.style.pointerEvents = "none";
   motionOut(n).then(() => n.remove());
 }
+// A written alternation after a name ("메모장을(를)", "맥미니(으)로") settles by the name's last syllable; a name that does not end in hangul keeps it as written.
+const koPick = s => String(s).replace(/([가-힣])(을\(를\)|이\(가\)|은\(는\)|\(으\)로)/g, (_, ch, p) => { const b = (ch.charCodeAt(0) - 0xac00) % 28; return ch + (p === "(으)로" ? (b === 0 || b === 8 ? "로" : "으로") : b ? p[0] : p[2]); });
 function toast(msg, bad, action, ms) {
   document.querySelectorAll(".snack").forEach(n => n.remove());
-  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: noticeKo(msg, { ...NK, error: !!bad }) }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { toastGone(n); action.onclick(); } }) : null);
+  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: noticeKo(koPick(msg), { ...NK, error: !!bad }) }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { toastGone(n); action.onclick(); } }) : null);
   (document.querySelector("dialog[open]:not([data-leaving])") || document.body).append(n);
-  // A conversation has its composer at the bottom instead of the tab bar, and the subagent line sits right above it: the toast rises above the highest of them, a token gap clear of its top edge.
-  const tops = ["#composer", "#v-chat > .subs"].map(s => document.querySelector(s)).map(x => x && x.getBoundingClientRect()).filter(r => r && r.height > 0 && r.top > innerHeight / 2).map(r => r.top);
+  // A conversation has its composer at the bottom instead of the tab bar: the toast rises above its top edge, a token gap clear of it.
+  const tops = ["#composer"].map(s => document.querySelector(s)).map(x => x && x.getBoundingClientRect()).filter(r => r && r.height > 0 && r.top > innerHeight / 2).map(r => r.top);
   if (tops.length) n.style.setProperty("--snack-b", `${Math.round(innerHeight - Math.min(...tops) + parseFloat(getComputedStyle(n).getPropertyValue("--sp-2")))}px`);
   clearTimeout(toastTimer);
+  toastNew = n; queueMicrotask(() => { if (toastNew === n) toastNew = null; });
   motionIn(n, "rise");
   toastTimer = setTimeout(() => toastGone(n), ms || (bad || action ? 6000 : 3500));
 }
@@ -1761,7 +1790,9 @@ function notify(e) {
 // confirm: a short confirm (a title, a sentence or two, two buttons): on a PC a small box next to the click that opened it (centered when
 // nothing was clicked just before), a low bottom sheet on a phone (docs/ui-spec.md 확인 상자).
 let CF_PT = null;
-document.addEventListener("pointerdown", ev => { CF_PT = { x: ev.clientX, y: ev.clientY, t: Date.now() }; }, true);
+document.addEventListener("pointerdown", ev => { CF_PT = { x: ev.clientX, y: ev.clientY, t: Date.now() }; document.documentElement.dataset.pointer = "1"; }, true);
+// The ring on a window's first control (the ✕ or 취소, which a window takes focus on opening) shows only after a key was pressed (14-overlay.css).
+document.addEventListener("keydown", () => { delete document.documentElement.dataset.pointer; }, true);
 function cfPlace(d) {
   if (!CF_PT || Date.now() - CF_PT.t > 2000 || matchMedia("(max-width: 639px)").matches) return;
   const r = d.getBoundingClientRect(), vw = innerWidth, vh = innerHeight, gap = 12;
@@ -1804,13 +1835,13 @@ function confirmInSheet({ host, onEnd }, { title, body, actions, onclose }) {
   watch.observe(host, { childList: true });
   addEventListener("keydown", esc, true); host.addEventListener("cancel", noCancel);
   onEnd(() => end(false));
-  const first = actBox.querySelector(".btn:last-child"); if (first) first.focus({ preventScroll: true });
+  ovFocus(host, actBox.querySelector(".btn:last-child"));
   return h;
 }
-function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) {
+function dialog({ title, body, actions = [], onclose, wide, classic, confirm, mid }) {
   if (confirm) { const sheet = openSheet(); if (sheet) return confirmInSheet(sheet, { title, body, actions, onclose }); }
   const small = classic || confirm;
-  const d = el("dialog", { class: `dlg${wide ? " wide" : ""}${confirm ? " cf" : classic ? " cl" : " fs-card"}` });
+  const d = el("dialog", { class: `dlg${wide ? " wide" : ""}${confirm ? " cf" : classic ? " cl" : mid ? " fs-card mid" : " fs-card"}` });
   const bodyBox = el("div", { class: small ? "dbody" : "dbody fs-body" }, body);
   const actBox = el("div", { class: small ? "dact" : "dact fs-ft row" });
   // The ✕ and a tap outside the box both close it and drop the edit, like Esc and the Android back gesture (dialogHist) already do.
@@ -1832,6 +1863,7 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) 
   d.addEventListener("cancel", ev => { if (openMenu) ev.preventDefault(); });
   document.body.append(d);
   d.showModal(); dialogHist(d);
+  if (document.documentElement.dataset.pointer) ovFocus(d);   // showModal puts the focus on the first control; a pointer open keeps it on the window
   if (confirm) cfPlace(d);
   motionDialog(d);
   return h;
@@ -1884,25 +1916,29 @@ if (typeof document !== "undefined" && document.body && typeof MutationObserver 
 
 /* ---------- menu: the single dropdown component ---------- */
 let openMenu = null;
-function closeMenu(restore = true) {
+// The state is released at once; the node fades out (150ms, [data-leaving] like a dialog) and is removed after. `now`: remove it at once (another menu opens in its place).
+function closeMenu(restore = true, now = false) {
   if (!openMenu) return;
   const m = openMenu; openMenu = null;
   ovDone(m.ov);
-  m.node.remove();
   for (const [t, f, o] of m.listeners) t.removeEventListener(f.type, f.fn, o);
+  if (now || reducedMotion()) m.node.remove();
+  else { m.node.dataset.leaving = "1"; m.node.style.pointerEvents = "none"; motionOut(m.node).then(() => m.node.remove()); }
   m.anchor.setAttribute("aria-expanded", "false");
   if (restore && m.anchor.isConnected) m.anchor.focus();
 }
 // items: [{value, label, sub?}] or [{header}]. onPick(value) runs after the menu closes.
 // sheet: a bottom sheet across the screen above the anchor (the phone tab bar), instead of a dropdown at the anchor.
-function showMenu(anchor, items, { value, onPick, sheet }) {
+function showMenu(anchor, items, { value, onPick, sheet, end }) {
   if (openMenu && openMenu.anchor === anchor) { closeMenu(); return; }
-  closeMenu(false);
+  closeMenu(false, true);
+  for (const n of document.querySelectorAll(".menu[data-leaving]")) n.remove();   // a menu still fading out never sits beside the new one
   const node = el("div", { class: sheet ? "menu msheet" : "menu", role: "listbox", tabindex: "-1" });
   const opts = [];
   // An item with `fold` (a list of items) is a "더 보기" row that expands in place.
   const mk = it => {
     if (it.header != null) return [el("div", { class: "mh", role: "presentation", text: it.header }), null];
+    if (it.sep) return [el("div", { class: "msep", role: "separator" }), null];
     if (it.fold) {
       const b = el("button", { type: "button", class: "mi more", tabindex: "-1", onclick: ev => {
         ev.stopPropagation();
@@ -1914,7 +1950,7 @@ function showMenu(anchor, items, { value, onPick, sheet }) {
       return [b, b];
     }
     const on = it.value === value;
-    const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}${it.indent ? " ind" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", onclick: () => { closeMenu(); onPick(it.value); } },
+    const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}${it.indent ? " ind" : ""}${it.danger ? " danger" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", onclick: () => { closeMenu(); onPick(it.value); } },
       on ? icon("check", "ck") : el("span", { class: "ck" }),
       it.tone != null ? el("span", { class: `dot ${it.tone}` }) : null,
       el("span", { class: "ml" }, it.label, it.sub ? el("small", { text: it.sub }) : null),
@@ -1931,9 +1967,12 @@ function showMenu(anchor, items, { value, onPick, sheet }) {
     if (sheet) {
       node.style.left = "8px"; node.style.width = `${vw - 16}px`;
       // an anchor with no box (the tab bar hides while typing) puts the sheet at the screen's bottom edge
-      const top = r.height ? r.top : vh;
-      node.style.bottom = `${vh - top + 8}px`;
-      node.style.maxHeight = `${Math.max(160, Math.min(vh * 0.6, top - 16))}px`;
+      const top = r.height ? r.top : vh, above = top - 16, below = vh - r.bottom - 16;
+      // an anchor high on the screen (the app bar) leaves no room above for its menu: the sheet opens below it instead
+      const under = !!r.height && above < Math.min(node.scrollHeight, vh * 0.6) && below > above;
+      node.style.top = under ? `${r.bottom + 8}px` : "auto";
+      node.style.bottom = under ? "auto" : `${vh - top + 8}px`;
+      node.style.maxHeight = `${Math.max(160, Math.min(vh * 0.6, under ? below : above))}px`;
       return;
     }
     node.style.minWidth = `${Math.max(112, r.width)}px`;
@@ -1942,7 +1981,7 @@ function showMenu(anchor, items, { value, onPick, sheet }) {
     const up = below < 220 && above > below;
     node.style.maxHeight = `${Math.min(400, up ? above : below)}px`;
     const w = node.offsetWidth, h = node.offsetHeight;
-    let left = Math.max(8, r.left);
+    let left = Math.max(8, end && r.left + r.width / 2 > vw / 2 ? r.right - w : r.left);   // end: a ⋯ in the right half of the screen ends its menu where it ends; one in the left half opens rightwards as before
     if (left + w > vw - 8) left = Math.max(8, r.right - w);
     node.style.left = `${left}px`;
     node.style.top = `${Math.max(8, up ? r.top - h - 4 : r.bottom + 4)}px`;
@@ -2037,7 +2076,7 @@ const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return
 const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "accounts", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "messengers", "devices", "webaccess"]);
 const views = ["home", "chat", "activity", "harness", "settings", "models", "accounts", "usage", "context", "discord", "jandi", "slack", "telegram", "messengers", "devices", "webaccess", "project", "projects", "monitoring", "apps", "notices", "cardform"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", accounts: "계정", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: "메신저", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱", notices: "알림", cardform: "카드 추가" };
+const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델", accounts: "계정", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: "메신저", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱", notices: "알림", cardform: "카드 추가" };
 // 카드 추가·수정 (web/custom.js cardForm) has its section made here: go() needs one for every view, and the demo's own index.html has no custom layer.
 $("#views").append(el("section", { class: "view cu-page", id: "v-cardform", hidden: true }));
 // 알림 화면 (31-notices-screen.js): f filter, lim rows drawn per group, open unfolded repeats, keep/scroll = come back from a row to the same place,
@@ -2072,13 +2111,15 @@ function endedGroup() {
   const all = sel && el("label", { class: "er ck-all" },
     el("input", { type: "checkbox", class: "ck", checked: sel.size === list.length, onchange: ev => { endedSel = new Set(ev.currentTarget.checked ? list.map(l => l.name) : []); refreshEnded(); } }),
     el("span", { text: "전체 선택" }), el("span", { class: "sup", text: `${sel.size}/${list.length}` }));
+  // The start date is its own element (short, never cut; the full date and time are its title), apart from the project name that may shrink.
+  const when = l => l.startedAt ? el("span", { class: "sup edate", title: `${kstDay(l.startedAt)} ${kstHM(l.startedAt)}`, text: kstShort(l.startedAt) }) : null;
   const row = l => sel
     ? el("label", { class: "er" },
         el("input", { type: "checkbox", class: "ck", checked: sel.has(l.name), onchange: ev => { if (ev.currentTarget.checked) sel.add(l.name); else sel.delete(l.name); refreshEnded(); } }),
-        el("span", { class: "en", text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" }))
+        el("span", { class: "en", text: l.name }), when(l))
     : el("div", { class: "erow" },
         el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
-          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), el("span", { class: "sup", text: [laneProject(l), l.startedAt ? kstDay(l.startedAt) : ""].filter(Boolean).join(" · ") }),
+          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), laneProject(l) ? el("span", { class: "sup eproj", text: laneProject(l) }) : null, when(l),
           marks.get(l.name).need ? el("span", { class: "tag warn", text: "답변 필요" }) : null,
           marks.get(l.name).unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${marks.get(l.name).unread}개`, text: marks.get(l.name).unread > 99 ? "99+" : String(marks.get(l.name).unread) }) : null),
         el("button", { class: "ib edel", type: "button", "aria-label": `${l.name} 삭제`, title: "삭제", onclick: () => deleteEnded([l.name]) }, icon("trash")));
@@ -2119,9 +2160,10 @@ const keptWhy = err => /uncommitted/i.test(err) ? "아직 커밋하지 않은 �
   : "작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.";
 function keptLanes(bad) {
   dialog({ title: bad.length === 1 ? `${bad[0].name} 세션은 그대로 뒀어요` : `세션 ${bad.length}개는 그대로 뒀어요`,
-    body: el("div", { class: "dl-body" }, el("p", { text: "아무것도 지우지 않고 그대로 뒀어요." }),
-      el("ul", { class: "dl-list" }, ...bad.map(x => el("li", { text: `${x.name} · ${keptWhy(String(x.error || ""))}` })))),
-    actions: [{ label: "확인", kind: "fill", onclick: c => c() }] });
+    body: el("div", { class: "dl-body" },
+      bad.length === 1 ? el("p", { text: keptWhy(String(bad[0].error || "")) })
+        : el("ul", { class: "dl-list" }, ...bad.map(x => el("li", { text: `${x.name} · ${keptWhy(String(x.error || ""))}` })))),
+    actions: [{ label: "확인", kind: "fill", onclick: c => c() }], mid: true });
 }
 async function restoreEnded(ids) {
   try {
@@ -2146,7 +2188,7 @@ const modelThinkLevels = sel => {
 };
 const effortLevels = (sel, cur) => [...new Set([...(modelThinkLevels(sel).includes("off") ? [] : ["off"]), ...modelThinkLevels(sel), ...(cur ? [cur] : [])])];
 const effortItems = (sel, cur) => effortLevels(sel, cur).map(v => ({ value: v, label: thinkKo(v) }));
-const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
+const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : modelShort(sel); };
 
 /* ---------- chrome: nav, theme, back ---------- */
 // Narrow screens: tapping 채팅 again while a conversation is open opens the chat list (rows: 대화, 알림, 작업내역, 진행 중인 세션, 프로젝트); tapping it once more closes the list
@@ -2174,8 +2216,9 @@ function closeChatList() {
 const CHAT_TAB_KEY = "dotz-chat-tab";
 const chatTabMode = () => { try { return localStorage.getItem(CHAT_TAB_KEY) === "main" ? "main" : "last"; } catch { return "last"; } };
 const chatTabModeSet = v => { try { localStorage.setItem(CHAT_TAB_KEY, v); } catch {} };
-const chatTabEnter = () => { if (chatTabMode() === "main" || monOwned(target)) setTarget(MAIN); go(lastChatView()); };
-const chatTabTap = () => (monCtx ? chatTabEnter() : convListing() ? closeChatList() : narrowChat() && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());
+// A relayed computer (42-relay-chat.js) has one conversation and none of this computer's: while it is picked, 채팅 stays on it (no switch to the main chat, no phone list of this computer's chats).
+const chatTabEnter = () => { if (paneReturn()) return; if ((chatTabMode() === "main" && !isRelayT(target)) || monOwned(target)) setTarget(MAIN); go(lastChatView()); };
+const chatTabTap = () => (monCtx ? chatTabEnter() : convListing() ? closeChatList() : narrowChat() && !isRelayT(target) && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
 // ⌘/Ctrl+1..6 open the shown tabs in NAV order (a hidden tab has no number); the browser may keep ⌘1..9 for its own tabs in a normal tab (it reaches the page in an installed app window).
 const navTabs = () => NAV.filter(n => !navOff(n[0]));
@@ -2232,7 +2275,7 @@ const setBrand = () => { $("#brand-name").textContent = relayBrand(); paintAttn(
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"), el("span", { class: "bk-l", text: titles.monitoring }));
 const backTarget = () => current === "cardform" ? "home" : NSC.ret && current !== "home" ? "notices" : current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : ["discord", "jandi", "slack", "telegram"].includes(current) ? "messengers" : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat") ? "monitoring" : null;
-$("#back").onclick = () => (nscBack() || kkBack() || cmBack() || mxsBack() ? 0 : monCtx && current === "chat" ? go("monitoring", narrowChat() && !monChatIt() ? MON.sel : undefined) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
+$("#back").onclick = () => (nscBack() || kkBack() || cmBack() || mxsBack() ? 0 : monCtx && current === "chat" ? go("monitoring", (narrowChat() ? !monChatIt() : !isSettingsT(target)) ? MON.sel : undefined) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
 
 /* ---------- command palette: jump to a view or run a /command ---------- */
 // A command's answer (the card /api/command returns) in the app's own components: a status line, the facts as list rows,
@@ -2257,7 +2300,8 @@ function palResult(c, run) {
 // Words a 도구 row is also found by: the names a screen used to have and the commands it replaced in this list.
 const PAL_WORDS = { accounts: "공급자 provider 로그인", usage: "한도 quota" };
 // A command row: one that cannot run without its first argument opens that argument's choices instead of failing.
-const palCmd = x => ({ kind: "cmd", ic: "chev", label: x.c, desc: x.d, run: x.c, fill: !!(x.args && x.args[0] && !x.args[0].opt) });
+// A row that opens a second step says what is picked there (the argument's name, as on the chips of the composer's list) where other rows say what the command does.
+const palCmd = x => { const fill = !!(x.args && x.args[0] && !x.args[0].opt); return { kind: "cmd", ic: "chev", label: x.c, desc: fill ? `${x.args[0].n} 고르기` : x.d, run: x.c, fill }; };
 function openPalette() {
   if (document.querySelector("dialog.pal")) return;
   closeMenu(false);
@@ -2324,7 +2368,7 @@ function openPalette() {
       const g = it.kind === "nav" ? "도구" : it.kind === "act" ? "화면" : "명령";
       if (g !== last) { list.append(el("div", { class: "ph", role: "presentation", text: g })); last = g; }
       list.append(el("button", { type: "button", role: "option", tabindex: "-1", class: `pal-i${it.kind === "cmd" ? " cmd" : ""}`, onmouseenter: () => { idx = i; mark(); }, onclick: () => exec(it) },
-        icon(it.ic), el("span", { class: "nm", text: it.label }), it.desc ? el("span", { class: "pd", text: it.desc }) : null));
+        icon(it.ic), el("span", { class: "nm", text: it.label }), it.desc ? el("span", { class: it.kind === "nav" ? "pd key" : "pd", text: it.desc }) : null));
     });
     if (!items.length) list.append(el("div", { class: "a-div", text: "결과가 없어요" }));
     mark();
@@ -2364,8 +2408,12 @@ const alertAddr = (name, tgt) => (name === "chat" || name === "activity") && tgt
 const routeAlias = (name, tgt) => (alertAddr(name, tgt) ? ["notices", undefined] : name === "lanes" ? ["chat", "list"] : name === "providers" || name === "provider" ? ["accounts", tgt] : name === "settings" && tgt === "accounts" ? ["accounts", undefined] : [name, tgt]);
 function go(name, tgt) {
   closeMenu(false);
+  // A toast belongs to the screen it was raised on: moving on takes it down. One that offers 되돌리기 stays until its time is up, and so
+  // does one raised together with the move ("프로젝트를 지웠어요" and then the list).
+  document.querySelectorAll("body > .snack:not(.act)").forEach(n => { if (n !== toastNew) toastGone(n); });
   [name, tgt] = routeAlias(name, tgt);
   NSC.pass = 0;
+  if (!PN.going) PN.app = false;   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
   const viaRow = NSC.arm > Date.now();
   NSC.arm = 0;
   if (name === "notices") NSC.ret = false;
@@ -2374,12 +2422,12 @@ function go(name, tgt) {
   const inChat = name === "chat" || name === "activity";
   let mc = false;
   if (name === "monitoring" && tgt && tgt.startsWith("c:")) { if (validTarget(tgt.slice(2))) { name = "chat"; tgt = tgt.slice(2); mc = true; } else tgt = undefined; }
-  else if (inChat && (tgt ? tgt !== "list" && monOwned(tgt) : monOwned(target))) { name = "chat"; mc = true; }
-  else if (inChat && !tgt && monCtx && target === monCtx) mc = true;
+  else if (inChat && !paneKeeps(tgt && tgt !== "list" ? tgt : target) && (tgt ? tgt !== "list" && monOwned(tgt) : monOwned(target))) { name = "chat"; mc = true; }
+  else if (inChat && !tgt && monCtx && target === monCtx && !paneKeeps(target)) mc = true;
   monCtx = mc ? tgt || target : "";
   if (mc) { const k = monItemOf(tgt || target); if (k) MON.sel = k; MON.list = false; }
   if (!views.includes(name) || navOff(name)) name = "home";
-  if (name === "projects" && ppWide()) { name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : "builtin:custom"; }
+  if (name === "projects" && ppWide()) { H.auto = true; name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { H.auto = true; go("project", prjFirst()); } }); }
   if (name === "project" && !tgt) name = "projects";
   if (name === "accounts") accFocus = tgt || "";
   if (name === "project") ppCur = tgt;
@@ -2387,10 +2435,12 @@ function go(name, tgt) {
   // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
   chatList = name === "chat" && tgt === "list" && narrowChat();
   if (name === "chat" && tgt === "list") tgt = undefined;
-  if (tgt && name !== "project" && name !== "accounts" && name !== "cardform" && tgt !== target && validTarget(tgt)) setTarget(tgt);
+  if (tgt && name !== "project" && name !== "accounts" && name !== "cardform" && tgt !== target && validTarget(tgt)) setTarget(tgt, !PN.going);   // a pane coming forward changes the address in place
   if (name === "activity" && (!LOG_VIEW || isFixedT(target) || isRelayT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
   if (name !== current) prevView = current;
+  if (current === "chat" && name !== "chat") paneStash();
   current = name;
+  bkKkSync(); bkCmSync();   // leaving 모니터링 (or its item list) releases an open room's or post's history step before the new view stacks
   relayPaint();
   if (name === "apps") appsOpen(tgt);   // after current is set: appsRender draws only the shown 앱 tab
   if (convSync()) renderAll();
@@ -2403,7 +2453,7 @@ function go(name, tgt) {
   $("#views").classList.toggle("pp", pp);
   paneSync();
   if ((name === "chat" || name === "activity") && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
-  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : mc ? "monitoring" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
+  document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : mc ? "monitoring" : paneLit(name) ? "chat" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#appbar").classList.toggle("tv", tv);
   const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
   th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
@@ -2456,7 +2506,8 @@ const limitKo = s => String(s).replace(/^Claude\s+/i, "").replace(/^7\s*Day\s*\(
 const limitLabel = (p, l, multi) => `${multi ? `${p.name || providerName(p.provider)} · ` : ""}${limitKo(l.label || l.id)}`;
 const isConnected = p => p.auth && p.auth !== "none";
 const needsAttention = p => p.in_use && !isConnected(p);
-const emptyNode = t => el("div", { class: "card empty", text: t });
+// A card that failed to load passes `retry`: its 다시 시도 button asks again (a load that gave no data is never a dead end).
+const emptyNode = (t, retry) => (retry ? el("div", { class: "card empty" }, el("div", { text: t }), el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: "다시 시도", onclick: ev => busy(ev.currentTarget, async () => retry()) })) : el("div", { class: "card empty", text: t }));
 // The one 더 보기 of a list: the card's own last line, inside the card, never a control floating under it (.cv-more, 19-volume.css).
 const moreRow = (text, onclick) => el("button", { class: "cv-more", type: "button", "data-k": "more", onclick, text });
 
@@ -2465,6 +2516,8 @@ const moreRow = (text, onclick) => el("button", { class: "cv-more", type: "butto
 let SUBS = {};
 const subKo = { running: "진행 중", done: "완료", failed: "실패", aborted: "중단됨" };
 const subTone = s => ({ running: "pri", done: "ok", failed: "err", aborted: "" })[s] || "";
+// Subagents are listed per agent session (hub/convsessions.ts): a conversation of its own has `conv:<its target>`, the main chat `orchestrator`. A conversation never shows another's.
+const subsSourceOf = t => (isConvT(t) ? `conv:${t}` : sourceOf(t));
 const runningSubs = src => (SUBS[src] || []).filter(s => s.status === "running");
 
 /* ---------- 백그라운드 작업: S.work from /api/state (hub/bgwork.ts). A request answered with [later] keeps working after its turn ended. ---------- */
@@ -2481,9 +2534,13 @@ const workTone = w => w.queued ? "" : w.status === "running" || workRecovering(w
 const workFailText = w => (w.cancelled ? "중단됨" : `실패 · ${w.reason || "이유가 기록되지 않았어요"}`);
 // 중단: the worker's process ends (POST /api/workers/:id/cancel); 다시 맡기기: its request goes to the orchestrator again in its own conversation.
 const workCancel = (id, btn) => busy(btn, async () => {
-  if (!await ask("백그라운드 작업 중단", "하던 작업을 멈춰요. 필요하면 다시 맡길 수 있어요.", "중단", true)) return;
+  const job = ((S && S.work) || []).find(w => w.id === id);
+  if (!await ask("백그라운드 작업 중단", `${job ? `'${job.description}' 작업을 멈춰요.` : "하던 작업을 멈춰요."} 필요하면 다시 맡길 수 있어요.`, "중단", true)) return;
   await api(`/api/workers/${enc(id)}/cancel`, "POST", {});
-  toast("작업을 중단했어요");
+  // The work card in the chat shows the stop itself (중단됨, gray dot); a toast is only for a job with no card on screen.
+  workRowNote({ id, status: "failed", cancelled: true }, workNow());
+  paintSysLines();
+  if (![...(SYS_NODES.get(id) || [])].some(r => r.st.isConnected)) toast("작업을 중단했어요");
   refreshState();
 });
 const workRetry = (id, btn) => busy(btn, async () => {
@@ -2501,8 +2558,8 @@ function workAgo(w) {
   const m = workMin(workNow() - (w.ended_at || w.started_at));
   return m < 1 ? "방금" : m < 60 ? `${m}분 전` : `${Math.floor(m / 60)}시간 전`;
 }
-// The model the worker runs on follows its description (hub/bgwork.ts workModel), so the owner sees which model does the work.
-const workLine = ws => `백그라운드 작업 중 · ${ws[0].description}${ws[0].model ? ` · ${ws[0].model}` : ""} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · 외 ${ws.length - 1}개` : ""}`;
+// The left of the status line above the composer: what the background work is and how long it has run. The model is in the chip under the box, so the line does not say it.
+const workLine = ws => `${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · 외 ${ws.length - 1}개` : ""}`;
 // Re-read the state while work runs, so a finished or failed one leaves the line without waiting for another event.
 setInterval(() => { if (!document.hidden && (workRunning().length || Object.values((S && S.runs) || {}).some(runMoving))) refreshState(); }, 15000);
 function setSubs(source, items) {
@@ -2524,7 +2581,7 @@ function subLine(src) {
   if (!n) return null;
   return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
 }
-function openTarget(t, view) { setTarget(t); go(isLaneT(t) && (view === "chat" || view === "activity") ? viewFor(t) : view); }
+function openTarget(t, view) { setTarget(t, true); go(isLaneT(t) && (view === "chat" || view === "activity") ? viewFor(t) : view); }
 // A switcher pick: the chat/log view follows the picked target's own choice.
 function pickTarget(t) { setTarget(t); const v = viewFor(t); if ((current === "chat" || current === "activity") && v !== current) go(v); }
 // The subagents of the selected target: one summary line; clicking it (or any subagent count) opens the side panel,
@@ -2532,21 +2589,23 @@ function pickTarget(t) { setTarget(t); const v = viewFor(t); if ((current === "c
 const spawnOrder = list => list.sort((a, b) => (a.started_at || 0) - (b.started_at || 0) || String(a.id).localeCompare(String(b.id)));
 // Running ones only, in spawn order (oldest first, the newest added at the bottom); rows never reorder on progress.
 function renderSubs() {
-  const src = sourceOf(target);
-  const list = spawnOrder(runningSubs(src));
-  const run = list.length;
-  const sig = JSON.stringify([src, list.length]);
-  for (const box of document.querySelectorAll(".subs")) {
-    box.hidden = !list.length;
-    if (box.dataset.sig === sig) continue;
-    box.dataset.sig = sig;
-    clear(box);
-    if (!list.length) continue;
-    box.append(el("button", { class: "subsum", type: "button", onclick: () => openSubs([src]) },
-      el("span", { class: `dot ${run ? "pri" : ""}` }),
-      el("span", { class: "nm", text: `서브에이전트 ${run}개 진행 중` }),
-      icon("chev", "chev")));
-  }
+  const src = subsSourceOf(target);
+  for (const box of document.querySelectorAll(".subs")) if (!box.closest(".pane-chat")) paintSubs(box, src);
+  paneStrips();
+}
+// The line of source src in box: the open conversation's, or the one in an inactive pane (43-panes-mirror.js).
+function paintSubs(box, src) {
+  const run = spawnOrder(runningSubs(src)).length;
+  const sig = JSON.stringify([src, run]);
+  box.hidden = !run;
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  clear(box);
+  if (!run) return;
+  box.append(el("button", { class: "subsum", type: "button", onclick: () => openSubs([src]) },
+    el("span", { class: "dot pri" }),
+    el("span", { class: "nm", text: `서브에이전트 ${run}개 진행 중` }),
+    icon("chev", "chev")));
 }
 let SUBD = null;
 const sheet = $("#sheet"), shBody = $("#sh-body");
@@ -2693,6 +2752,12 @@ const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .l
 // items: [{id, node, head (selector of the drag handle inside node), def {w,h}, min {w,h}, max {w,h}, fit}]. `keep(id)` tells which saved
 // cards that are not in `items` only wait for their data (and so keep their place) instead of being gone.
 // opts.px: heights are pixels (h of an item is still given in rows and converted); an item with `fit` is as tall as its content (measured).
+// The press of 배치 초기화 says what it did: the cards are in their first order again (with 되돌리기), or the stored order could not be cleared.
+function hmResetSaid(reset) {
+  const undo = reset();
+  if (undo) toast("카드를 처음 순서로 돌려놨어요", false, { label: "되돌리기", onclick: undo });
+  else toast("카드 순서를 처음으로 돌리지 못했어요", true);
+}
 function makeBoard(container, key, opts = {}) {
   const store = `dotz-board-${key}`, px = !!opts.px, U = px ? 1 : BSTEP;
   let raw0 = [], saved = px ? bLoadPx(store) : bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
@@ -2704,8 +2769,16 @@ function makeBoard(container, key, opts = {}) {
   // carry it across a data change (a card leaving collapses the two columns to one row and x would decide).
   let userOrder = rawStore && rawStore._g === "rows" && Array.isArray(rawStore._order) ? rawStore._order : null;
   const wraps = new Map(), fitH = new Map();
+  // opts.onEdit(on): a card is lifted or resized (on), then dropped (off). The owner's cards that are hidden while empty show for that time,
+  // so the board is rebuilt while the lift is still being set up (editing lets set and measure run with a card in hand).
+  let editing = false, edited = false;
+  function edit(on) {
+    if (!opts.onEdit || edited === on) return;
+    edited = on; editing = true;
+    try { opts.onEdit(on); } finally { editing = false; }
+  }
   const ph = el("div", { class: "bph", hidden: true });
-  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => reset() }, "배치 초기화"));
+  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => hmResetSaid(reset) }, "배치 초기화"));
   container.classList.add("board");
   if (opts.rows) container.classList.add("rows");
   container.before(bar);
@@ -2759,7 +2832,7 @@ function makeBoard(container, key, opts = {}) {
   const shown = new Set();   // card ids already drawn: only a card that newly arrives rises in
   // The fit cards' heights are read from the page: each takes its content's height, then the cards below slide up (no transition) and are saved.
   function measure() {
-    if (!px || act || narrowMQ.matches) return;
+    if (!px || (act && !editing) || narrowMQ.matches) return;
     if (opts.rows) return measureRows();
     let changed = false;
     for (const r of lay) {
@@ -2808,7 +2881,7 @@ function makeBoard(container, key, opts = {}) {
   }
   const ro = px && typeof ResizeObserver === "function" ? new ResizeObserver(() => measure()) : null;
   function set(raw, keep = () => false) {
-    if (act) { pending = [raw, keep]; return; }
+    if (act && !editing) { pending = [raw, keep]; return; }
     raw0 = raw;
     const items = raw.map(norm);
     cur = items;
@@ -2843,11 +2916,18 @@ function makeBoard(container, key, opts = {}) {
     if (ro) { ro.disconnect(); for (const it of items) { const n = it.fit && bodyOf(wraps.get(it.id)); if (n) ro.observe(n); } }
     measure();
   }
+  // Returns what takes the reset back (the order there was, kept in memory), or null when the stored order could not be cleared.
   function reset() {
+    const was = { saved, userOrder, json: lastJson };
+    try { was.stored = localStorage.getItem(store); localStorage.removeItem(store); } catch { return null; }
     if (opts.onReset) opts.onReset();
     saved = {}; ghost = []; userOrder = null; lastJson = "{}";
-    try { localStorage.removeItem(store); } catch { /* ignore */ }
     set(raw0);
+    return () => {
+      saved = was.saved; userOrder = was.userOrder; lastJson = was.json;
+      try { if (was.stored !== null) localStorage.setItem(store, was.stored); } catch { /* the order is back for this visit */ }
+      set(raw0);
+    };
   }
   function settle() {
     const p = pending; pending = null;
@@ -2872,6 +2952,8 @@ function makeBoard(container, key, opts = {}) {
     if (views.scrollTop !== before) track();
   }
   function begin() {
+    edit(true);
+    act.base = lay.map(x => ({ ...x })); act.r = lay.find(x => x.id === act.id);
     const wr = act.w.getBoundingClientRect();
     act.on = true; act.ox = act.x0 - wr.left; act.oy = act.y0 - wr.top; act.w0 = wr.width; act.h0 = wr.height; act.s0 = views.scrollTop;
     closeMenu(false);
@@ -2977,6 +3059,7 @@ function makeBoard(container, key, opts = {}) {
       swallow = true; setTimeout(() => { swallow = false; }, 60);
     }
     settle();
+    edit(false);
     if (on && a.mode !== "order" && opts.rows) measureRows();   // a free drop settles back into the two-column rows
   }
   // The pointer was lost (the browser took it for a scroll) or Esc was pressed: the card goes back where it was.
@@ -2987,6 +3070,7 @@ function makeBoard(container, key, opts = {}) {
     const a = finish();
     if (on) { a.next = null; swallow = true; setTimeout(() => { swallow = false; }, 60); }
     settle();
+    edit(false);
   }
   container.addEventListener("pointerdown", ev => {
     if (act || (ev.pointerType === "mouse" ? ev.button !== 0 : !ev.isPrimary)) return;   // a second finger never starts a drag
@@ -3080,29 +3164,31 @@ function homeMenu(anchor, id, inChat) {
     add("카드로 나누기", () => setHomeGroup(kind, false));
     add(`${HOME_KINDS[kind][0]} 열기`, () => go(HOME_KINDS[kind][1]));
     homeMoveActs(id, inChat, add);
-    return showMenu(anchor, acts, { onPick: i => acts[i].run() });
+    return showMenu(anchor, acts, { onPick: i => acts[i].run(), end: true });
   }
   if (id.startsWith("notices:")) {
     const [label, to] = { alert: ["알림", nscGo], worklog: ["작업내역", () => openTarget("worklog", "chat")], watch: ["모니터링", () => go("monitoring")] }[id.slice(8)];
     add(`${label} 열기`, to);
     homeMoveActs(id, inChat, add);
-    return showMenu(anchor, acts, { onPick: i => acts[i].run() });
+    return showMenu(anchor, acts, { onPick: i => acts[i].run(), end: true });
   }
   if (id === MAIN || isLaneT(id)) {
     const key = id === MAIN ? "orchestrator" : id, name = targetName(id), restartNote = id === MAIN ? "어시스턴트가 다시 시작돼요." : "";
     const cur = M && (id === MAIN ? M.orchestrator : (M.lanes || []).find(l => `lane:${l.name}` === id));
     if (cur) {
-      add("모델 변경…", () => showMenu(anchor, modelItems(key, cur.model, ""), { value: cur.model, onPick: v => busy(null, () => putModel(key, name, { model: v }, restartNote, `${modelName(v)} · ${cur.thinking}`)) }));
-      add("추론 강도…", () => showMenu(anchor, effortItems(cur.model, cur.thinking), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, name, { thinking: v }, restartNote, `${modelName(cur.model)} · ${thinkKo(v)}`)) }));
-      add("모델 · 폴백 설정", () => openModels(key));
+      add("모델 변경…", () => showMenu(anchor, modelItems(key, cur.model, ""), { value: cur.model, onPick: v => busy(null, () => putModel(key, { model: v }, restartNote, `${modelName(v)} · ${cur.thinking}`)) }));
+      add("추론 강도…", () => showMenu(anchor, effortItems(cur.model, cur.thinking), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, { thinking: v }, restartNote, `${modelName(cur.model)} · ${thinkKo(v)}`)) }));
+      add("모델 설정", () => openModels(key));
     }
     if (id === MAIN) {
       if (S && S.orchestrator && S.orchestrator.status === "working") add("중단", () => abortOrch(null));
+      if (acts.length) acts.push({ sep: true });   // a restart stops what is running: set apart from the rest
       add("재시작", () => restartOrch(null));
     } else {
       const n = laneOf(id);
       add("중단", () => busy(null, async () => { await api(`/api/lanes/${enc(n)}/abort`, "POST", {}); toast("작업을 중단했어요"); refreshState(); }));
-      add("재시작", () => busy(null, async () => { if (!await ask(`${n} 재시작`, "이 세션을 다시 시작할까요?", "재시작", true)) return; await api(`/api/lanes/${enc(n)}/restart`, "POST", {}); toast("재시작했어요"); refreshState(); }));
+      if (acts.length) acts.push({ sep: true });
+      add("재시작", () => busy(null, async () => { if (!await ask(`${n} 재시작`, "작업 중인 내용이 있으면 멈추고 세션을 다시 시작해요.", "재시작")) return; await api(`/api/lanes/${enc(n)}/restart`, "POST", {}); toast("재시작했어요"); refreshState(); }));
     }
   } else if (id.startsWith("prov:")) {
     const p = ((P && P.providers) || []).find(x => x.id === id.slice(5));
@@ -3126,7 +3212,7 @@ function homeMenu(anchor, id, inChat) {
   const kind = homeKind(id);
   if (kind && !inChat && !homeGroups.has(kind)) add(`${HOME_KINDS[kind][0]} 한 카드로 묶기`, () => setHomeGroup(kind, true));
   homeMoveActs(id, inChat, add);
-  showMenu(anchor, acts, { onPick: i => acts[i].run() });
+  showMenu(anchor, acts, { onPick: i => acts[i].run(), end: true });
 }
 // 앞으로 / 뒤로 옮기기: the drag (a long press on a phone) said as a menu item, one place in the reading order per pick.
 function homeMoveActs(id, inChat, add) {
@@ -3182,18 +3268,20 @@ function laneLastFetch(name) {
 
 // The 알림 / 작업내역 / 모니터링 cards: data live in 30-notices.js and 30-monitoring.js; they repaint from its live frames (homeSoon) and open the conversation or screen.
 const hcState = () => (NT.loaded ? "" : NT.failed ? "불러오지 못했어요" : "불러오는 중…");
+// The same for what comes from the hub's state (세션 · 할일 · 지금 진행 중): not loaded yet says so, a failed load says so, and only a loaded empty one says 없어요.
+const hmState = () => (S && !S.seeded ? "" : selfDown ? "불러오지 못했어요" : "불러오는 중…");
 const hcCard = (open, ...kids) => { const c = tapCard(open, ...kids); c.classList.add("hc"); return c; };
 const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
 // A generic title (작업 기록, 알림) says nothing in a card's row: the row shows the entry's first line instead.
-const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "작업내역" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
+const hcLine = n => { if (wlNotice(n)) { const w = wlTitle(n); if (w) return w; } const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "작업내역" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
 // Each row opens its own item by kind (30-notices.js noticeOpen); a tap beside the rows still opens the card's conversation.
-const hcNotices = (list, cap) => el("div", { class: "hc-list", "data-cap": cap }, ...list.map(n => el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); noticeOpen(n); } } }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), ...resultMarker(`n:${n.id}`, resultChips(n)), el("span", { class: "m", text: ntWhen(n) }), ntNeeds(n) ? ntIgnoreBtn(n) : null)));
+// The dot is the 알림 screen's (31-notices-screen.js nscTone): a login that waits or a warning is orange, not red.
+const hcNotices = (list, cap) => el("div", { class: "hc-list", "data-cap": cap }, ...list.map(n => el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); noticeOpen(n); } } }, hcDot(wlNotice(n) ? wlDot(n) : n.waits === "login" || n.tone === "warn" ? "ask" : n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), ...resultMarker(`n:${n.id}`, resultChips(n)), el("span", { class: "m", text: ntWhen(n) }), ntNeeds(n) ? ntIgnoreBtn(n) : null)));
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
 const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a));
 // Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time; a gateway question it
 // handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
 const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
-const hcUnread = () => nscUnreadIn("all");
 // One head for every home card: [status dot] title, an optional count, an optional grey note, in the quiet head step (.ch.lo) so 답변 필요 above is the one card title that leads. An empty card keeps the head and says why under it (hcNone); what is absent leaves no slot (docs/ui-principles.md 13).
 const hcHead = (title, o = {}) => el("div", { class: "ch lo" }, o.dot ? el("span", { class: `dot ${o.dot}` }) : null, el("h3", { text: title }),
   o.n ? el("span", { class: "hc-n" }, ...[].concat(o.n)) : null, o.note ? el("span", { class: "hc-n", text: o.note }) : null, o.menu ? menuBtn(o.menu) : null);
@@ -3219,9 +3307,12 @@ function capLists(root, kept) {
     if (row) row.focus({ preventScroll: true });
   }
 }
-function homeAlertCard() {
-  const unread = hcUnread(), fresh = hcRecent(hcFyi), state = hcState(), none = !!state || !fresh.length;
-  return hcCard(nscGo, hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null }),
+// 알림 is a card only while it has something to say: a loaded, empty one is not drawn (a loading or failed one stays, and so does every card while one is being moved).
+// taken: the notices that are already a row of 답변 필요 (homeLogins), so one notice is on 홈 once.
+function homeAlertCard(taken) {
+  const fresh = hcRecent(hcFyi).filter(n => !taken.has(n.id)), state = hcState(), none = !!state || !fresh.length;
+  if (!state && !fresh.length && !homeEdit) return null;
+  return hcCard(nscGo, hcHead("알림", { menu: "notices:alert", n: !state && fresh.length ? String(fresh.length) : null }),
     none ? hcNone(state || "새 알림이 없어요") : hcNotices(fresh, "alert"));
 }
 function homeWorklogCard() {
@@ -3242,6 +3333,7 @@ function homeMonitorCard() {
 }
 
 let homeBoard = null;
+let homeEdit = false;   // a card is being moved (07-board.js opts.onEdit): the cards that are hidden while empty show, so one can be placed too
 // Every card is as tall as its content (07-board.js fit): only the width is sized, half of the 12 columns by default so the cards make the prototype's two-column grid.
 const HOME_FIT = { fit: true, min: { w: 6, h: 1 }, max: { w: 12, h: 1 } };
 // Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
@@ -3296,44 +3388,68 @@ function askOf(t) {
 }
 // A row's preview is the conversation's state said in Korean (the run line above the composer, 41-runstate.js), not its last message.
 const homeRunLine = t => { const r = S && S.runs && S.runs[t === MAIN ? "main" : t]; return r ? runText(r) : ""; };
-function homeNowRow(t, label, tone, head) {
-  const i = targetInfo(t), st = tone === "att" ? "warn" : targetState(t)[1], subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
+// end: the right end of the row. Not given: the state word. A text: a time (the dot says the state; the aria-label keeps the word). "": nothing.
+function homeNowRow(t, label, tone, head, end) {
+  const i = targetInfo(t), st = tone === "att" ? "warn" : targetState(t)[1], subs = SUBS[subsSourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
   const lane = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null;
   if (lane && !homeRunLine(t)) laneLastFetch(lane.name);
   // A session waiting on the owner says its question, so the row tells what to answer.
   const line = (tone === "att" && i.ask && friendlyLine(i.ask.text)) || homeRunLine(t) || nowLine(t) || modelChipText(String(liveModel(t).sel || "").split(":")[0]) || targetState(t)[0];
   // A session moved to a fallback model says so on its row (the board has no session card): the model it runs now and why.
   const lv = lane ? liveModel(t) : null, extra = lv && lv.fallback ? el("span", { class: "smodel" }, selText(lv.sel), fbTag(lv.fallback, lv.conf)) : null;
-  if (lane) return sessionRow(lane, { line, extra, head, ...(tone === "att" ? { word: label, tone: "warn" } : {}) });   // a session: title, project, status, one tap to its chat
-  return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
+  // a session: title, project, status, one tap to its chat
+  const row = lane ? sessionRow(lane, { line, extra, head, ...(tone === "att" ? { word: label, tone: "warn" } : {}) }) : el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
     el("span", { class: `dot ${st}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: targetName(t) })), el("span", { class: "ha", text: line })),
     subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
     el("span", { class: `hs ${st}`, text: label }));
+  return end === undefined ? row : homeEnd(row, end);
 }
+function homeEnd(row, time) {
+  const hs = row.querySelector(":scope > .hs");
+  if (hs && time) hs.replaceWith(el("span", { class: "hs", text: time })); else if (hs) hs.remove();
+  return row;
+}
+// How long a running conversation has run, and how long ago a finished one ended (the gateway's clock, 06-subagents.js workNow).
+function homeSince(t) {
+  const r = runOf(t), s = r && (r.kind === "working" || r.kind === "waiting") && r.since ? runSince(r.since) : "";
+  return s === "방금" ? "방금 시작" : s ? `${s}째` : "";
+}
+function homeAgo(at) {
+  const m = workMin(workNow() - at);
+  return m < 1 ? "방금" : m < 60 ? `${m}분 전` : `${Math.floor(m / 60)}시간 전`;
+}
+const homeDoneAgo = t => { const r = runOf(t), at = r && Date.parse(r.since || ""); return at ? homeAgo(at) : ""; };
 // An app conversation with a session of its own (a mail, a project channel, an app's settings: /api/state `convs`) runs apart from the
 // assistant, so while its turn or its worker runs it is a row here: its title (the mail's subject, the app or project name), what it
 // does now (its run line: the tool-call intent or plan task, elapsed), one tap to that conversation in its app view (go: a mail opens in 모니터링).
 const convWebT = t => t === "web:alert" ? "alert" : t === "web:worklog" ? "worklog" : t;
 const convRunning = c => { const r = runOf(c.target); return !!r && (r.kind === "working" || runBusy(c.target)); };
 function homeConvRow(c) {
-  const t = convWebT(c.target), r = runOf(c.target), name = c.name || targetName(t), state = r.kind === "working" ? "작업 중" : "진행 중";
+  const t = convWebT(c.target), r = runOf(c.target), name = c.name || targetName(t), state = r.kind === "working" ? "작업 중" : "진행 중", end = homeSince(c.target);
   return el("button", { class: "hr", type: "button", "data-t": t, onclick: () => go("chat", t), "aria-label": `${name} · ${state} · 대화 열기` },
     el("span", { class: "dot pri" }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: name })), el("span", { class: "ha", text: runText(r) })),
-    el("span", { class: "hs pri", text: state }));
+    end ? el("span", { class: "hs", text: end }) : null);
 }
-// 미답장 (hub/unreplied.ts): the apps whose items still wait for the owner's reply, each one row, apart from the read/unread counts.
-function homeOwedRow(it) {
-  return el("button", { class: "hr", type: "button", onclick: () => go("monitoring", it.key), "aria-label": `${it.name} · 미답장 ${it.unreplied}건` },
-    el("span", { class: "dot unreplied" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: it.name })), el("span", { class: "ha", text: "답장을 기다리는 것이 있어요" })),
-    el("span", { class: "hs unreplied", text: `미답장 ${it.unreplied}` }));
+// The two rows of 답변 필요 for what the apps hold: a title, the count per source under it (most first, none with 0) and the total as a badge at the right.
+const countsLine = by => [...by].filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]).map(([name, c]) => `${name} ${c}`).join(" · ");
+function homeCountRow(k, title, by, n, open) {
+  const sub = countsLine(by);
+  return el("button", { class: "hr", type: "button", "data-k": k, onclick: open, "aria-label": `${title} · ${n}건` },
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: sub })),
+    el("span", { class: "nb unreplied", "aria-hidden": "true", text: n > 99 ? "99+" : String(n) }));
 }
-// 답장 대기: what waits on the owner in the apps (a draft to send or a failed send, of every computer), one row that opens the screen (30-replies.js).
-function homeRepliesRow(n) {
-  return el("button", { class: "hr", type: "button", "data-k": "replies", onclick: () => rqOpen(), "aria-label": `답장 대기 ${n}건` },
-    el("span", { class: "dot att" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: "답장 대기" })), el("span", { class: "ha", text: "확인할 답장이 있어요" })),
-    el("span", { class: "hs warn", text: `${n}건` }));
+// 미답장 (hub/unreplied.ts): the comments the owner has not answered, per app; a tap opens the app when it is the only source, else 모니터링.
+function homeOwedRow(owed) {
+  const by = new Map(owed.map(it => [it.name, it.unreplied]));
+  return homeCountRow("owed", "답 안 한 댓글", by, owed.reduce((c, it) => c + it.unreplied, 0), () => go("monitoring", owed.length === 1 ? owed[0].key : undefined));
+}
+// 답장 대기: the drafts that wait for the owner's check (a draft to send or a failed send, of every computer; rqRows, 30-replies.js), per source; a tap opens the screen.
+function homeRepliesRow(rows) {
+  const by = new Map();
+  for (const r of rows) { const k = r.app || "기타"; by.set(k, (by.get(k) || 0) + 1); }
+  return homeCountRow("replies", "답장 초안 확인", by, rows.length, () => rqOpen());
 }
 // 할일 (/api/state `waitlist`, hub/waitlist.ts): what was received but has not started, oldest first. A row is its place in line and a plain title;
 // work deferred to the usage-limit reset also says when it resumes (resume_at). It leaves by itself once the work starts.
@@ -3375,7 +3491,7 @@ function resultChips(x) {
   const fs = x && Array.isArray(x.files) ? x.files.filter(f => f && f.path) : [], ls = x && Array.isArray(x.links) ? x.links.filter(l => l && /^https?:\/\//.test(l.url)) : [];
   if (!fs.length && !ls.length) return null;
   return el("div", { class: "hrx-f", onclick: ev => ev.stopPropagation(), onkeydown: ev => ev.stopPropagation() },   // a chip acts, not the row around it
-    ...fs.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) }); }),
+    ...fs.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), fileOpen(f, name)); }),
     ...ls.map(l => l.kind === "commit" ? fileChip(l.hash, "커밋", { href: l.url, icon: "code" }) : fileChip(linkName(l.url), "링크", { href: l.url, icon: "open" })));
 }
 // A finished row with its chips under it: a session row (.hr) takes a finished task's shape (workRow); a list row (.li) is wrapped as is.
@@ -3421,7 +3537,7 @@ function resultHide(b) {
   b.setAttribute("aria-expanded", "false");
   homeResOpen = "";
 }
-/* The prototype's home (site/prototype/s-work.js): a full-width column of the greeting, the one alert row and 답변 필요, then the
+/* The prototype's home (site/prototype/s-work.js): a full-width column of the greeting and 답변 필요, then the
    two-column card grid. Every card keeps the product's data, links and empty states; the board (07-board.js) still moves and sizes them. */
 const homeGreetWord = () => { const h = new Date().getHours(); return h < 5 ? "편안한 밤이에요" : h < 12 ? "좋은 아침이에요" : h < 18 ? "좋은 오후예요" : "좋은 저녁이에요"; };
 // What runs on this computer now: the rows of 지금 진행 중 and the greeting's word both read this, so they cannot disagree. ask: nothing may run while a
@@ -3468,46 +3584,39 @@ function homeGreeting(h) {
     el("div", { class: "meta", text: line }),
     live.fallback ? el("div", { class: "hgreet-fb" }, fbTag(live.fallback, live.conf)) : null, subLine("orchestrator"));
 }
-// The one row above the cards: a login that dropped (the prototype's 경고 strip), else the newest unread alert notice.
-function homeStrip() {
-  const down = (typeof INTG !== "undefined" ? INTG.items : []).find(i => i.state === "disconnected");
-  if (down) return homeStripRow(`${down.label || "앱"} 로그인이 풀렸어요`, "경고 · 다시 로그인해야 이어서 볼 수 있어요", "경고", "err", () => go("monitoring", `i:${down.key}`));
-  const n = (typeof NT !== "undefined" ? NT.items : []).filter(x => x.id && !x.read && ntHomeAlert(x) && x.cls === "alert").sort((a, b) => ntAt(b) - ntAt(a))[0];
-  if (!n) return null;
-  const fail = n.tone === "fail";
-  return homeStripRow(hcLine(n), ntWhen(n), fail ? "경고" : "알림", fail ? "err" : "", () => noticeOpen(n));
-}
-function homeStripRow(title, sup, tag, tone, open) {
-  return el("button", { class: "li hstrip", type: "button", onclick: open },
-    el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
-    el("span", { class: "tx" }, el("span", { class: "hd", text: title }), el("span", { class: "sup", text: sup })),
-    el("span", { class: "end" }, el("span", { class: `tag ${tone}`, text: tag }), icon("chev", "chev")));
+// While no model account is connected the bot cannot answer: one line and one button to the settings accounts screen, on 홈 and in the empty chat.
+// It waits for the first read of /api/providers (P), so it never flashes while the list loads.
+function acctConnectRow() {
+  if (!P || P.providers.some(isConnected)) return null;
+  return el("div", { class: "li hstrip", "data-connect-account": "" },
+    el("span", { class: "tx" }, el("span", { class: "hd", text: "계정을 연결해야 답할 수 있어요" })),
+    liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => go("accounts") }, "계정 연결")));
 }
 function renderHomeNow() {
   const now = $("#home-now"), box = $("#home-cards");
   if (!now || !box) return;
   const kept = capPlaces(), needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
   // 홈 is this computer's alone (owner 2026-10-31): the other computers' items live in 모니터링, and the computer chip's dot says they want something.
-  const owed = monItems().filter(i => i.app && i.unreplied && !i.pc), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqWaiting();
-  const waiting = needs.length;
+  // A login that dropped is the first row of 답변 필요 card, the notice itself is left out of 알림 (taken); the drafts and the unanswered comments close the list as one row each.
+  const logins = nyLogins(), taken = new Set(logins.map(x => x.id));
+  const owed = monItems().filter(i => i.app && i.unreplied && !i.pc), drafts = rqRows().filter(r => r.state !== "sent");
+  const list = nyListNode(needs, logins.map(x => x.node), [...(drafts.length ? [homeRepliesRow(drafts)] : []), ...(owed.length ? [homeOwedRow(owed)] : [])]);
+  const waiting = list.querySelectorAll(":scope > .hr").length;
   // Four groups, and an item sits in exactly one (the table in docs/ui-spec.md): 할일 was received and has not started; 지금 진행 중 runs now (a turn, a
   // background worker); 대기 중 started and stopped; 최근 끝난 작업 ended within the hour (실패 · 이유 · 다시 맡기기). A session resting with nothing left is in none.
   // A session the run line calls busy (41-runstate.js runBusy: waiting on its own worker) runs too, so its 진행 중 label sits in this section, and one waiting on the owner stays on top of it.
   const h = homeRunning(), { all, runT, waitT, convWork, runW, n: working } = h, restT = all.filter(t => !runT.includes(t) && !waitT.includes(t));
   const settled = hcSettled(), bg = [...runW, ...settled], over = workEnded().filter(w => !settled.includes(w)), todo = (S && S.waitlist) || [];
   const heldT = restT.filter(homeHeld), heldW = over.filter(homeWorkHeld), ended = over.filter(w => !homeWorkHeld(w)), doneT = restT.filter(t => !heldT.includes(t) && homeLaneDone(t));
-  const restRow = t => homeNowRow(t, targetState(t)[0], ""), doneRow = t => withResults(restRow(t), resultChips(laneResult(t)), `t:${t}`);
-  // Above the grid, the prototype's full-width column: the greeting, the one alert row and 답변 필요. The replies the owner owes stay in
-  // that card under its list, as the prototype's 답변 필요 rows do; each row still opens its own item.
-  const running = el("div", { class: "hn", "data-k": "running", "data-cap": "running" }, ...waitT.map(t => homeNowRow(t, SESSION_WORD.wait[0], "att", true)), ...runT.map(t => homeNowRow(t, targetState(t)[0], "", true)), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow),
-    ...(working || waitT.length || bg.length ? [] : [hcNone(S && S.seeded ? "불러오는 중…" : "진행 중인 작업이 없어요")]));
-  const owedBlock = owed.length || drafts ? [
-    el("div", { class: "hn-h hsub" }, el("h2", { text: "답장" }), owedN ? unrepPill(`미답장 ${owedN}`) : null),
-    el("div", { class: "hn", "data-k": "replies", "data-cap": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
-  clear(now).append(homeGreeting(h), ...[homeStrip()].filter(Boolean),
+  const restRow = t => homeNowRow(t, targetState(t)[0], ""), doneRow = t => withResults(homeNowRow(t, targetState(t)[0], "", undefined, homeDoneAgo(t)), resultChips(laneResult(t)), `t:${t}`);
+  // Above the grid, the prototype's full-width column: the greeting and 답변 필요. The replies the owner owes are the last two rows of that
+  // card (the drafts to check, the comments not answered), each with a count per source; every row still opens its own item.
+  const running = el("div", { class: "hn", "data-k": "running", "data-cap": "running" }, ...waitT.map(t => homeNowRow(t, SESSION_WORD.wait[0], "att", true)), ...runT.map(t => homeNowRow(t, targetState(t)[0], "", true, homeSince(t))), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow),
+    ...(working || waitT.length || bg.length ? [] : [hcNone(hmState() || "진행 중인 작업이 없어요")]));
+  clear(now).append(homeGreeting(h), ...[acctConnectRow()].filter(Boolean),
     el("div", { class: "hneeds" },
       el("div", { class: "hn-h hneeds-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null),
-      nyListNode(needs), ...owedBlock));
+      list));
   for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? now.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
   if (S && NT.loaded && HOME_READY) {
     const rows = [...now.querySelectorAll(".hr")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
@@ -3521,10 +3630,15 @@ function renderHomeNow() {
   if (!homeBoard || (openMenu && box.contains(openMenu.anchor))) { capLists($("#v-home"), kept); return; }   // a ⋯ menu is open: repaint after it closes
   const items = [], seen = new Set();
   const add = (id, node) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def: { w: 6, h: 1 }, ...HOME_FIT }); } };
-  add("now:todo", el("div", { class: "card" }, hcHead("할일", { n: todo.length ? `${todo.length}개` : null }), el("div", { class: "hn", "data-k": "todo", "data-cap": "todo" }, ...todo.map(homeTodoRow), ...(todo.length ? [] : [hcNone("아직 시작 전인 일이 없어요")]))));
-  items[0].pin = true;
-  add("notices:alert", homeAlertCard());
-  add("now:running", el("div", { class: "card" }, hcHead("지금 진행 중", { n: working ? `${working}개 작업 중` : null }), running));
+  // 할일 is drawn while it has rows, while it loads, and while a card is moved; it stays first (pin).
+  const todoLoaded = !!S && !S.seeded;
+  if (todo.length || !todoLoaded || homeEdit) {
+    add("now:todo", el("div", { class: "card" }, hcHead("할일", { n: todo.length ? `${todo.length}개` : null }), el("div", { class: "hn", "data-k": "todo", "data-cap": "todo" }, ...todo.map(homeTodoRow), ...(todo.length ? [] : [hcNone(hmState() || "아직 시작 전인 일이 없어요")]))));
+    items[0].pin = true;
+  }
+  const alertCard = homeAlertCard(taken);
+  if (alertCard) add("notices:alert", alertCard);
+  add("now:running", el("div", { class: "card" }, hcHead("지금 진행 중", { n: working ? `${working}개` : null }), running));
   if (heldT.length || heldW.length) add("now:waiting", el("div", { class: "card" }, hcHead("대기 중"), el("div", { class: "hn", "data-k": "waiting", "data-cap": "waiting" }, ...heldT.map(restRow), ...heldW.map(workRow))));
   if (ended.length || doneT.length) add("now:ended", el("div", { class: "card" }, hcHead("최근 끝난 작업"), el("div", { class: "hn", "data-k": "ended-work", "data-cap": "ended-work" }, ...doneT.map(doneRow), ...ended.map(workRow))));
   add("notices:watch", homeMonitorCard());
@@ -3567,7 +3681,7 @@ function renderHomeNow() {
     const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length, none = !list.length;
     const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : "없어요";
     add(`group:${kind}`, itemCard(view, "",
-      hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", n: none ? null : String(list.length), menu: `group:${kind}` }),
+      hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", menu: `group:${kind}` }),
       none ? hcNone(empty) : el("div", { class: "glist", "data-cap": `group:${kind}` }, ...list.map(homeRow))));
   }
 
@@ -3585,14 +3699,14 @@ function renderHome() {
   const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
   if (!box || current !== "home") return;
   $("#title").textContent = titles.home;
-  if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, rows: true, actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
+  if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, rows: true, onEdit: on => { homeEdit = on; renderHomeNow(); }, actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
   renderHomeNow();
   window.dotzCustom && dotzCustom.home();
 }
 
 /* ---------- assistant actions ---------- */
 const restartOrch = btn => busy(btn, async () => {
-  if (!await ask("어시스턴트 재시작", "작업 중인 내용이 있으면 멈춰요.", "재시작")) return;
+  if (!await ask("어시스턴트 재시작", "어시스턴트가 하던 일이 있으면 멈추고 다시 시작해요.", "재시작")) return;
   await api("/api/orchestrator/restart", "POST", {});
   toast("재시작을 요청했어요");
   refreshState();
@@ -3633,9 +3747,11 @@ const RELAY = { name: {}, note: {}, back: MAIN, on: false };
 const mailSender = f => String(f || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || String(f || "");
 const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9) || isRelayT(t);
 // A conversation that can have an agent session of its own (hub/session-key.ts CONV_KINDS): its target is its session key.
+// A conversation whose chips pick its own model: a project, or a mail while mail has sessions of its own (else it runs on main).
+const isModelT = t => isProjT(t) || (isMailT(t) && !!C && (C.conversation_kinds || []).includes("mail"));
 const isConvT = t => isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t);
 const sourceOf = t => t === MAIN || isConvT(t) || isRelayT(t) ? "orchestrator" : t;
-const targetOfSource = s => s === "orchestrator" ? MAIN : s;
+const targetOfSource = s => s === "orchestrator" ? MAIN : s.startsWith("conv:") ? s.slice(5) : s;
 // Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
 // The name of a target on the computer `pc` it belongs to (an item from another gateway carries pc = {name, url, bot}): there the main chat is
 // that gateway's own bot, never this one's (owner 2026-10-31: 맥북's question read "땃쥐" on 회사). No pc: this computer's targetName.
@@ -3679,12 +3795,14 @@ function workRow(w) {
   // stalled: OmO still says running but the worker stopped working (hub/bgwork.ts); its session was woken to take it over.
   const run = w.status === "running", done = w.status === "done", rec = workRecovering(w), stall = w.status === "stalled", tone = workTone(w);
   const state = run ? "작업 중" : stall ? "멈춤" : done ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패";
-  const line = run ? [workElapsed(w), w.model].filter(Boolean).join(" · ") : stall ? `${w.reason || "활동이 없어요"} · ${workAgo(w)}` : done ? `끝남 · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
+  // The right end of a running or finished row is a time (the dot and the aria-label say the state); a stopped or failed one keeps its word.
+  const line = run || done ? w.model || "" : stall ? `${w.reason || "활동이 없어요"} · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
+  const end = run ? workElapsed(w) : done ? workAgo(w) : state;
   const act = w.cancelled ? ["다시 맡기기", b => workRetry(w.id, b)] : null;
   const m = el("button", { class: "hrx-m", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${state} · ${run || stall || rec ? "대화로 가기" : "결과 보기"}` },
     el("span", { class: `dot ${tone}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
-    el("span", { class: `hs ${tone}`, text: state }));
+    el("span", { class: run || done ? "hs" : `hs ${tone}`, text: end }));
   const row = el("div", { class: "hr hrx", "data-work": w.id }, m,
     act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:var(--sp-2)", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
   return done ? markerFirst(row, m, resultMarker(`w:${w.id}`, resultChips(w))) : row;
@@ -3881,25 +3999,52 @@ function nyRows(items) {
     if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
     for (const hs of node.querySelectorAll(".hrx-m .hs")) hs.textContent = it.act;
     for (const b of node.querySelectorAll(".hrx-m")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(/답변 필요$/, it.crit ? `중요 · ${it.act}` : it.act));
-    if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs, .dot")) e.classList.add("err"); }   // a login stays orange; only a failure is red
-    return node;
+    if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs")) e.classList.add("err"); }   // a login stays orange; only a failure is red
+    return nyBare(node);
   };
-  for (const it of items) out.push({ node: it.n ? mark(ntHomeRow(it.n), it) : it.m ? nyMonRow(it) : homeNowRow(it.t, it.act, "att"), count: 1 });
+  for (const it of items) out.push({ node: it.n ? mark(ntHomeRow(it.n), it) : it.m ? nyMonRow(it) : nyBare(homeNowRow(it.t, it.act, "att")), count: 1 });
   return out;
+}
+// The rows of 답변 필요 have no dot in front, so every title starts at the same left line.
+function nyBare(node) {
+  for (const d of node.querySelectorAll(":scope > .dot, :scope > .hrx-m > .dot")) d.remove();
+  return node;
+}
+// A login that dropped is the first row of 답변 필요, not a strip above it: the notice the hub says still waits on a login (waits, hub/notices-rules.ts;
+// id: the notice, which 알림 then leaves out), else an app whose login is gone. The word at the right opens what the strip used to open.
+// A notice the hub has not classed (the demo's fixtures) is told by its unread title.
+const NY_LOGIN_LOST = /로그인이 풀렸어요/;
+const nyLoginLost = n => n.waits === "login" || (!n.read && n.cls === "alert" && n.tone !== "done" && NY_LOGIN_LOST.test(`${n.title || ""}\n${n.text || ""}`));
+function nyLogins() {
+  const ns = NT.items.filter(n => n.id && !n.ignored && !n.dismissed && ntHomeAlert(n) && !ntNeeds(n) && nyLoginLost(n)).sort((a, b) => ntAt(b) - ntAt(a));
+  const out = ns.map(n => ({ id: n.id, node: nyLoginRow(n) }));
+  for (const i of typeof INTG !== "undefined" ? INTG.items : []) if (i.state === "disconnected" && !ns.some(n => i.label && hcLine(n).includes(i.label))) out.push({ id: `i:${i.key}`, node: nyDownRow(i) });
+  return out;
+}
+function nyLoginRow(n) {
+  const node = nyBare(ntHomeRow(n, "다시 로그인")), app = (/^(.*?)\s*로그인이 풀렸어요/.exec(hcLine(n)) || [])[1], ha = node.querySelector(".ha");
+  if (app && ha) ha.textContent = `${app} · ${ntWhen(n)}`;
+  return node;
+}
+function nyDownRow(i) {
+  const title = `${i.label || "앱"} 로그인이 풀렸어요`;
+  return el("div", { class: "hr hrx", "data-login": i.key },
+    el("button", { class: "hrx-m", type: "button", onclick: () => go("monitoring", `i:${i.key}`), "aria-label": `${title} · 다시 로그인` },
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: "다시 로그인해야 이어서 볼 수 있어요" })),
+      el("span", { class: "hs warn", text: "다시 로그인" })));
 }
 // A monitor failing again and again: its name, the computer, how many times in a row; a tap opens it in 모니터링.
 function nyMonRow(it) {
   const m = it.m, who = it.pc ? it.pc.name : pqSelf(), title = monTitle(m);
   return el("button", { class: "hr", type: "button", "data-mon": it.key, onclick: () => go("monitoring", it.key), "aria-label": `${title} · ${it.act}` },
-    el("span", { class: "dot att" }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title }), who ? el("span", { class: "tag mon-pc", text: who }) : null),
       el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, monClean(m.last_summary || "")].filter(Boolean).join(" · ") })),
     el("span", { class: "hs warn", text: it.act }));
 }
-// The list of the 홈 card: every row, six in sight (08-home.js capLists).
-function nyListNode(items) {
-  const rows = nyRows(items);
-  return el("div", { class: "hn", "data-k": "needs", "data-cap": "needs" }, ...rows.map(r => r.node), ...(rows.length ? [] : [hcNone("답변할 항목이 없어요")]));
+// The list of the 홈 card: every row, six in sight (08-home.js capLists). lead: the login rows above what is asked; tail: the rows that close it.
+function nyListNode(items, lead = [], tail = []) {
+  const rows = [...lead, ...nyRows(items).map(r => r.node), ...tail];
+  return el("div", { class: "hn", "data-k": "needs", "data-cap": "needs" }, ...rows, ...(rows.length ? [] : [hcNone(hcState() || hmState() || "답변할 항목이 없어요")]));
 }
 function attnChanged() {
   renderBars();
@@ -4064,7 +4209,7 @@ const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 const DETAIL_MARK = /\s*…\s*$/, DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/, DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
 const detailOf = o => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc || "");
 const CH_FENCE = /^\s*```/;
-const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx) && !CH_FENCE.test(nx);
+const isDescLine = nx => nx !== undefined && !!nx.trim() && !/^\s*\[file\]\s+\S/.test(nx) && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx) && !CH_FENCE.test(nx);
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
 function stripChoices(text) {
   const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];
@@ -4128,7 +4273,7 @@ function parseChoices(text) {
 const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
 const isHeadedChoice = pc => pc.blocks.some(b => b.headed && b.options.length > 1);
 const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
-const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {}, files: {}, fbusy: {} };   // files: uploads picked in 직접 수정 (sent as the answer's `files`), fbusy: one is going up
+const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {}, files: {}, fbusy: {}, undo: {} };   // files: uploads picked in 직접 수정 (sent as the answer's `files`), fbusy: one is going up
 // A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
 const DRAFT_EDIT = "고치기", DRAFT_OWN = "어떻게 보낼지 직접 입력";
 // The draft options that carry the owner's text: 고치기 (what to change) and the send mode 직접 입력 (how to send). Mirrors hub draftNeedsText.
@@ -4204,14 +4349,14 @@ async function answerDecision(dc, text, opt, note) {
   try {
     // A card with one block whose question is a decision notice answers through the notice path (30-notices.js), so both stay in step.
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
-    if (nd) await ntPost(nd, opt.n, note, files, opt.label);
+    const held = nd ? await ntPost(nd, opt.n, note, files, opt.label) : null;
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
     const r = nd ? null : await api("/api/message", "POST", { text, ...(files.length ? { files } : {}), ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
-    DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
+    DC.st[dc.key] = held && held.state === "undo" && dc.draft ? dcUndoStart(dc, held) : "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
     if (t === target) { chatStick = true; scrollChat(true); }
-  } catch (e) { delete DC.st[dc.key]; toast(e.message, true); }   // the picks stay, so a retry does not start the card over
+  } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; toast(e.message, true); }   // a lone question lets go of the chosen row; several keep their picks, so a retry does not start the card over
   paintDecision();
 }
 // A draft asks for text on 고치기 only; any other decision on an option that needs detail (안 됨 …): what to change / why is typed first, nothing is sent before.
@@ -4221,7 +4366,7 @@ function pickOption(dc, bi, opt, note) {
   if (DC.st[dc.key]) return;
   // A mail whose files disagree with its words is not sent by 보내기: the owner is shown what is off and 이대로 보내기 is the pick that sends it (cancel keeps the card).
   const asIs = dc.draft && (dc.draft.attachIssues || []).length && dc.blocks[bi] && dc.blocks[bi].options.find(o => o.label === "이대로 보내기");
-  if (asIs && opt.label === "보내기" && !opt.sure) { ask("첨부를 확인해 주세요", `${dc.draft.attachIssues.join(" · ")}. 이대로 보낼까요?`, "이대로 보내기").then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
+  if (asIs && opt.label === "보내기" && !opt.sure) { ask("첨부를 확인해 주세요", `${dc.draft.to ? `${dc.draft.to}에게 보낼 메일이에요. ` : ""}${dc.draft.attachIssues.join(". ")}. 이대로 보내면 지금 상태 그대로 나가요. 보낼까요?`, "이대로 보내기").then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
   if (dc.draft && (dc.draft.warning || (dc.draft.attachments || []).length) && opt.label === "보내기" && !opt.sure) { drfSure(dc.draft, dc.t).then(ok => { if (ok) pickOption(dc, bi, { ...opt, sure: true }, note); }); return; }
   // fresh: the paint that draws the field this tap opened gives it the focus, once; a later live repaint never takes the focus
   if (!note && needsNote(dc, opt)) { DC.edit[dc.key] = { bi, opt }; DC.fresh = dc.key; paintDecision(); return; }
@@ -4316,7 +4461,7 @@ function draftFilesNode(d, o = {}) {
     // Files named in the message that dotz did not stage itself: the names stand, with a plain line saying the session attaches them.
     const named = !!st && st.tracked === false && Array.isArray(d.attachments) && d.attachments.length > 0;
     const fl = live ? st.files : Array.isArray(d.attachments) ? d.attachments : [];
-    const can = live && st.editable && o.edit !== false, busy = !!DRF.busy[ref];
+    const can = live && st.editable && o.edit !== false, busy = !!DRF.busy[ref] || !!o.hold;   // o.hold: the sheet is sending; the rows stay, off
     const warn = d.warning && !fl.length;
     const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
     const issues = live && st.attachIssues ? st.attachIssues : d.attachIssues || [];
@@ -4338,12 +4483,12 @@ function draftFilesNode(d, o = {}) {
       st.library ? el("button", { class: "btn tonal", type: "button", onclick: openLib }, "첨부 파일 폴더에서 고르기") : null) : null;
     const add = can && st.canAttach ? el("button", { class: "dr-add", type: "button", disabled: busy, "aria-expanded": String(!!DRF.menu[ref]), onclick: () => { if (!st.library) pickers.click(); else { DRF.menu[ref] = DRF.menu[ref] ? "" : "menu"; paint(); } } }, icon("clip"), el("span", { text: busy ? "붙이는 중…" : "파일 추가" })) : null;
     if (o.warn) { clear(o.warn).append(...warns.filter(Boolean)); o.warn.hidden = !warns.some(Boolean); }
-    // A mail draft always shows its 첨부 row, files or 없음, so the owner can tell a missing file from a hidden one (owner 2026-10-26).
+    // A mail draft with no file shows no 첨부 band (owner 2026-11-10): the 파일 추가 button stands alone; a file, or a real problem, is still listed.
     const mailDraft = d.toLabel === "받는이";
     // o.live (the mail of a combined card, read only): the list is read from the staged files, so a ✓ says they are on the mail.
     clear(box).append(...[fl.length ? el("div", { class: o.live && live ? "dr-fh ok" : "dr-fh", text: o.live && live ? `✓ 첨부 ${fl.length}개 붙어 있어요` : `첨부 ${fl.length}개` }) : null, ...rows,
-      named ? el("div", { class: "dr-note", text: "세션이 직접 붙여 보내는 파일이라 여기서는 열어 볼 수 없어요" }) : null,
-      !fl.length && (d.noAttachments || mailDraft) ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부: 없음" })) : null,
+      named ? el("div", { class: "dr-note", text: "열람 불가" }) : null,
+      !fl.length && d.noAttachments && !mailDraft ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부: 없음" })) : null,
       add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
     box.hidden = !box.querySelector(".dr-fh, .dr-none, .dr-warn, .dr-add");
   }
@@ -4372,7 +4517,7 @@ function draftToNode(d, o = {}) {
   // Which computer holds the draft: a peer's rows change there (the same map the 첨부 줄 uses for its own requests).
   if (ref && o.t !== undefined) DRF.pc[ref] = DRR.pc[ref] = o.t ? pqPc(o.t) : null;
   const box = el("div", { class: "dr-recv" });
-  const busy = () => !!DRR.busy[ref];
+  const busy = () => !!DRR.busy[ref] || !!o.hold;
   const run = async job => {
     if (!ref || DRR.busy[ref]) return;
     DRR.busy[ref] = true; paint();
@@ -4412,8 +4557,9 @@ function draftToNode(d, o = {}) {
     const seg = live.reply ? el("div", { class: "seg dr-seg", role: "group", "aria-label": "답장 범위" },
       ...[['reply', '답장'], ['all', '전체 답장']].map(([k, text]) => el("button", { class: live.mode === k ? "on" : "", type: "button", "data-k": `mode-${k}`, "aria-pressed": String(live.mode === k), disabled: off || !editable, text, onclick: () => { if (editable && !off && live.mode !== k) run(() => drrWrite(ref, { mode: k })); } }))) : null;
     const ccRow = live.cc.length || (live.reply && editable) ? row("cc", "참조", live.cc, editable) : null;
-    clear(box).append(...[seg, live.reply || live.to.length ? row("to", "받는이", live.to, editable) : null, ccRow].filter(Boolean));
+    clear(box).append(...[seg, live.reply || live.to.length || o.always ? row("to", "받는이", live.to, editable) : null, ccRow].filter(Boolean));
     box.hidden = !box.querySelector(".dr-rcrow");
+    if (o.onpaint) o.onpaint(live);
   }
   paint();
   if (ref && o.edit !== false && !DRR.st[ref]) drrLoad(ref).then(paint);
@@ -4463,7 +4609,7 @@ function draftNode(d, o) {
     draftBodyNode(d.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": "보낼 내용" }), draftFilesNode(d, o), draftMailNode(d.mail, o));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
-const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? "보내는 중…" : "보냈어요 · 처리하는 중");
+const dcStText = (dc, st) => (st === "undo" ? dcUndoText(dc) : dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? (((DC.picks[dc.key] || [])[0] || {}).label === "보내지 않기" ? "처리하는 중…" : "보내는 중…") : "보냈어요 · 처리하는 중");
 // 고치기 on a draft, or an option that needs detail (안 됨 …): the owner types the change / reason, then the answer goes out with it.
 // 고치기 on a draft asks "어떻게 고칠까요?" and the bot rewrites it; 직접 수정 (ed.manual) is the owner's own text, sent as the change "이 내용으로 고쳐 주세요: ...".
 const DRAFT_HINT = "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", MANUAL_LEAD = "이 내용으로 고쳐 주세요: ";
@@ -4515,12 +4661,12 @@ const DRAFT_PROGRESS = /^-# ((?:남은 \d+건|마지막 카드예요)(?: \(\d+\/
 const draftProgress = text => (DRAFT_PROGRESS.exec(text || "") || [])[1] || "";
 const draftIsLast = text => draftProgress(text).startsWith("마지막");
 function renderSheet(box, dc, picks, step) {
-  const st = DC.st[dc.key] || "", d = dc.draft, edit = DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null;
+  const st = DC.st[dc.key] || "", d = dc.draft, edit = DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null, mail = !!d && d.toLabel === "받는이";
   const old = $(".fs-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   const oldNote = $(".dc-note", box), refocus = !!oldNote && document.activeElement === oldNote, caret = refocus ? oldNote.selectionStart : 0;
   const qText = d ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
   // A mail draft's 받는이·참조 live in its own rows at the top of the body and change in place, so the head does not repeat them.
-  const head = fsHead(d ? [
+  const head = mail ? fsHead([el("div", { class: "fs-t" }, "답장 확인", dc.left ? el("span", { class: "fs-left", text: ` · ${dc.left}` }) : null)], { close: dc.close }) : fsHead(d ? [
     el("span", { class: "fs-ey" }, qText || "보내기 전에 확인해요", dc.left ? el("span", { class: "fs-left", text: ` · ${dc.left}` }) : null),
     !d.toLabel || d.toLabel !== "받는이" ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })) : null,
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null,
@@ -4530,11 +4676,11 @@ function renderSheet(box, dc, picks, step) {
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
   const orgDrawn = () => { delete box.dataset.sig; paintDecision(); };   // the sig does not hold the hub's answer, so the repaint is asked for
   const both = !!d && !!d.mail && d.toLabel === "대상" && orgHas(d.ref, dc.t, orgDrawn);   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftBriefNode(d.brief), decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), draftBodyNode(d.body, "dc-dr-b"), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
+  const body = mail ? mailSheetBody(dc, d, st, warnBox) : d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftBriefNode(d.brief), decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), draftBodyNode(d.body, "dc-dr-b"), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");
-  const col = d && d.ref && body && !d.mail && (d.toLabel === "대상" || d.toLabel === "받는이") && orgHas(d.ref, dc.t, orgDrawn) ? el("div", { class: "od-draftcol" }) : null;
+  const col = d && d.ref && body && !d.mail && d.toLabel === "대상" && orgHas(d.ref, dc.t, orgDrawn) ? el("div", { class: "od-draftcol" }) : null;
   const org = col ? orgNodes(d, dc.t, box, col) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);
@@ -4543,9 +4689,15 @@ function renderSheet(box, dc, picks, step) {
   else if (d) {
     // One compact row: the first choice (보내기) filled, 고치기 tonal, the rest as text, and 직접 수정 as a small link at the end.
     const opts = dc.blocks[0].options, oe = opts.find(o => o.label === DRAFT_EDIT);
-    const btns = opts.map((o, i) => el("button", { class: `dc-act${i === 0 ? " main" : o.label === DRAFT_EDIT ? " alt" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label));
-    const man = oe && !st ? el("button", { class: "dc-manual", type: "button", title: "직접 수정", "aria-label": "직접 수정", onclick: () => { delete DC.note[dc.key]; DC.edit[dc.key] = { bi: 0, opt: oe, manual: true }; paintDecision(); } }, icon("pencil"), el("span", { text: "직접 수정" })) : null;
+    const manual = oe && !st ? () => { delete DC.note[dc.key]; DC.edit[dc.key] = { bi: 0, opt: oe, manual: true }; paintDecision(); } : null;
+    if (mail) {   // the reply card's row: 보내기 filled, 고치기 tonal, the rest as text, 직접 수정 at the right end
+      const bs = st === "undo" ? [dcUndoBtn(dc, "btn sm dr-send")] : opts.map((o, i) => el("button", { class: i === 0 ? "btn sm dr-send" : o.label === DRAFT_EDIT ? "btn tonal sm" : `btn text sm${o.label === "보내지 않기" ? " dr-drop" : ""}`, type: "button", "data-n": String(o.n), disabled: !!st, onclick: () => pickOption(dc, 0, o) }, st && picks[0] && picks[0].n === o.n ? dcStText(dc, st) : o.label));
+      foot.append(el("div", { class: "dr-act dr-row rq-acts" }, ...bs, ...(manual ? [rqManualBtn(manual)] : [])));
+    } else {
+    const btns = st === "undo" ? [dcUndoBtn(dc, "dc-act main")] : opts.map((o, i) => el("button", { class: `dc-act${i === 0 ? " main" : o.label === DRAFT_EDIT ? " alt" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label));
+    const man = manual ? el("button", { class: "dc-manual", type: "button", title: "직접 수정", "aria-label": "직접 수정", onclick: manual }, icon("pencil"), el("span", { text: "직접 수정" })) : null;
     foot.append(el("div", { class: "dc-acts" }, ...btns, ...(man ? [man] : [])));
+    }
   } else if (dc.blocks.length > 1) foot.append(...multiNodes(dc, picks, st));
   else {
     const blk = dc.blocks[step];
@@ -4554,9 +4706,9 @@ function renderSheet(box, dc, picks, step) {
       for (const o of blk.options) foot.append(choiceRow(dc, step, o, picks, st));
     }
   }
-  if (st) foot.append(el("div", { class: "dc-st", role: "status", text: dcStText(dc, st) }));
-  if (org) col.append(body, foot);
-  if (!paintKeep(box, org ? [head, org.bar, el("div", { class: "od-stage" }, org.orig, col)] : [head, ...(body ? [body] : []), foot], dcAgain(box))) return;
+  const sn = mail && st && st !== "undo" ? null : dcStNode(dc, st); if (sn) foot.append(sn);
+  if (org) col.append(body);   // the button row stays outside the sliding column: it is the same under 초안 and 원문
+  if (!paintKeep(box, org ? [head, org.bar, el("div", { class: "od-stage" }, org.orig, col), foot] : [head, ...(body ? [body] : []), foot], dcAgain(box))) return;
   if (body) body.scrollTop = top;
   const nn = $(".dc-note", box);
   if (nn && (refocus || (edit && !oldNote))) { nn.focus({ preventScroll: true }); nn.setSelectionRange(caret || nn.value.length, caret || nn.value.length); }
@@ -4608,14 +4760,15 @@ function renderDecision(box, dc, picks, step) {
     if (blk) {
       if (blk.title && dc.blocks.length > 1) body.append(el("div", { class: "dc-sub", text: blk.title }));
       // Once the answer goes out the card keeps only the chosen row (the others leave), so 보냈어요 reads in the same place.
-      for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+      if (st === "undo" && dc.draft) body.append(dcUndoBtn(dc, "dc-row dc-undo"));
+      else for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
         el("span", { class: "dc-key", text: String(o.n) }),
         el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
     }
     kids.push(body);
     }
   }
-  if (st) kids.push(el("div", { class: "dc-st", role: "status", text: dcStText(dc, st) }));
+  const sn = dcStNode(dc, st); if (sn) kids.push(sn);
   if (!paintKeep(box, kids, dcAgain(box))) return;
   box.classList.toggle("fold", fold);
   const nb = $(".dc-body", box); if (nb) nb.scrollTop = top;
@@ -4640,21 +4793,25 @@ function syncInlineChoices() {
 }
 // A tap on a message that is no longer the pending card: answered through the notice path, so the notice and the buttons settle together.
 async function answerInline(nd, opt) {
+  if (dcSending.has(nd.id)) return false;   // a second press while the first waits sends nothing
   // An option that needs detail opens the notice sheet with its text field; nothing is sent from the row. A draft's own sheet
   // (ntDraftSheet) is the decision card, so its 고치기 field is that card's edit state.
   if (ntNeedsNote(nd, opt)) {
     if (nd.decision.draft && !nd.pc) { DC.edit[`dk:${nd.id}`] = { bi: 0, opt }; ntDraftSheet(nd); return; }
     await noticeSheetOpen(nd.pc ? nd : nd.id); ntAnswer(nd, opt); return;
   }
-  dcSending.add(nd.id); syncInlineChoices();
-  try { await ntPost(nd, opt.n, undefined, undefined, opt.label); dcAnswerToast(nd, opt); } catch (e) { toast(e.message, true); }
-  dcSending.delete(nd.id); syncInlineChoices();
+  const fk = rqNtKey(nd), act = opt.label === "보내기" ? "send" : opt.label === "고치기" ? "edit" : "drop";
+  dcSending.add(nd.id); rqFail.delete(fk); rqPress.set(fk, act); syncInlineChoices(); let ok = true;
+  try { dcAnswerToast(nd, opt, await ntPost(nd, opt.n, undefined, undefined, opt.label)); } catch (e) { ok = false; if (nd.decision.draft) rqFail.set(fk, rqFailOf(e, act)); else toast(e.message, true); }
+  dcSending.delete(nd.id); rqPress.delete(fk); syncInlineChoices();
+  return ok;
 }
 // What a draft answered in place did, with the next step: 보냈어요 · 메일 열기 (the mail it answered), 보내지 않았어요 · 되돌리기 (the draft waits again).
-function dcAnswerToast(nd, opt) {
+function dcAnswerToast(nd, opt, held) {
   const to = String(nd.decision.to || "");
   if (!nd.decision.draft) return;
-  if (opt.label === "보내기") toast("보냈어요", false, to.startsWith("mail:") ? { label: "메일 열기", onclick: () => go("monitoring", `c:${to}`) } : null);
+  if (opt.label === "보내기" && held && held.state === "undo") toast("곧 보내요", false, { label: "보내기 취소", onclick: () => dcUndoPost(nd.decision.draft.ref) }, held.left);
+  else if (opt.label === "보내기") toast("보냈어요", false, to.startsWith("mail:") ? { label: "메일 열기", onclick: () => go("monitoring", `c:${to}`) } : null);
   else if (opt.label === "보내지 않기") toast("보내지 않았어요", false, { label: "되돌리기", onclick: () => dcReopen(nd) });
 }
 async function dcReopen(nd) {
@@ -4760,16 +4917,31 @@ function paintDecision() {
     box.hidden = false;
     if (box.dataset.sig !== sig) {
       // The answer goes out: this same card turns into 보내는 중 / 보냈어요 in place instead of being replaced.
-      const st = DC.st[dc.key] || "", swap = box.dataset.key === dc.key && (box.dataset.st || "") !== st;
+      const st = DC.st[dc.key] || "", fresh = box.dataset.key !== dc.key, swap = box.dataset.key === dc.key && (box.dataset.st || "") !== st;
       const draw = () => renderDecision(box, dc, picks, step);
       if (swap) motionSwap(box, draw); else draw();
       box.dataset.sig = sig; box.dataset.key = dc.key; box.dataset.st = st;
       if (arrived) motionIn(box);
+      if (fresh && dc.draft) dcShowDraft(dc);
     }
   }
   syncInlineChoices();
   dkPaint();
   if (had !== !!dc) updateComposerMeta();
+}
+// "이대로 보낼까요?" sits in the dock, so the draft it asks about must be on the screen with it: when a draft card docks and the end of the draft's message is out of
+// the timeline's view (the dock took the room, or the owner was reading higher), the view moves just far enough to put that end right above the card.
+function dcShowDraft(dc) {
+  requestAnimationFrame(() => {
+    const m = dc.at && [...document.querySelectorAll("#timeline .bm[data-ts]")].find(x => x.dataset.ts === dc.at);
+    if (!m || target !== dc.t) return;
+    const tb = timeline.getBoundingClientRect(), mb = m.getBoundingClientRect();
+    if (mb.bottom <= tb.bottom && mb.bottom > tb.top) return;
+    chatUnpin();
+    timeline.scrollTop += mb.bottom - tb.bottom + 12;
+    chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+    $("#chat-jump").hidden = chatStick;
+  });
 }
 // A docked question that is a send approval: a draft notice was made from its message.
 const dcDraftAsk = dc => !dc.each && ntDecisions().some(n => n.decision.draft && n.decision.to === dc.t && n.decision.reply_to === dc.at);
@@ -4807,7 +4979,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key], dcBackNote(dc)]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a
@@ -4823,6 +4995,43 @@ function dcRecordNode(e, files, mt) {
       el("span", { class: "dc-rec-k", text: "· 답:" }), el("span", { class: "dc-rec-a", text: `${p.n}) ${p.label}${p.note ? ` - ${p.note}` : ""}` }))),
     files || null, mt || null);
 }
+
+// The cancel window of an approved send (hub/approval-send.ts, web.send_undo_sec): the card stays with the seconds left and one 보내기 취소 in the place of the
+// choices until the gateway sends; the countdown is text, changed in place once a second.
+const dcLeft = dc => Math.max(0, Math.ceil((((DC.undo[dc.key] || {}).end || 0) - Date.now()) / 1000));
+const dcUndoText = dc => `${dcLeft(dc)}초 뒤에 보내요`;
+let dcUndoT = 0;
+function dcUndoStart(dc, held) {
+  DC.undo[dc.key] = { ref: dc.draft.ref, end: Date.now() + (held.left ?? 10000) };
+  dcUndoTick();
+  return "undo";
+}
+function dcUndoTick() {
+  clearTimeout(dcUndoT); dcUndoT = 0;
+  for (const [key, u] of Object.entries(DC.undo)) if (Date.now() >= u.end) dcUndoEnd(key, "sent");
+  for (const n of document.querySelectorAll(".dc-st[data-undo]")) { const key = n.dataset.undo; if (DC.undo[key]) n.textContent = dcUndoText({ key }); }
+  if (Object.keys(DC.undo).length) dcUndoT = setTimeout(dcUndoTick, 250);
+}
+function dcUndoEnd(key, st) {
+  delete DC.undo[key];
+  if (st) DC.st[key] = st; else { delete DC.st[key]; delete DC.picks[key]; }
+  paintDecision(); if (DK.node) dkPaint();
+}
+async function dcUndoPost(ref) {
+  try { await api("/api/approvals/undo", "POST", { ref }); await loadNotices(); return true; } catch (e) { toast(e.message, true); return false; }
+}
+const dcUndo = async key => { const u = DC.undo[key]; if (u && await dcUndoPost(u.ref)) dcUndoEnd(key, ""); };
+// The gateway's frame for a held send: it went out (or started), or it was taken back and the card waits for approval again (the notice reopens).
+function dcUndoLive(e) {
+  if (e.state !== "undo") for (const [key, u] of Object.entries(DC.undo)) if (u.ref === e.ref) dcUndoEnd(key, e.state === "back" ? "" : "sent");
+}
+const dcUndoBtn = (dc, cls) => el("button", { class: cls, type: "button", onclick: () => dcUndo(dc.key) }, "보내기 취소");
+// A send that was taken back (cancelled, or the gateway restarted in its window) tells the owner once, on the card that waits again.
+const dcBackNote = dc => {
+  const r = dc.draft && dc.draft.ref, n = r && NT.items.find(x => ntOpenDec(x) && x.decision.draft && x.decision.draft.ref === r);
+  return n && n.decision.send && n.decision.send.state === "back" ? n.decision.send.text || "" : "";
+};
+const dcStNode = (dc, st) => { const bk = st ? "" : dcBackNote(dc); return st || bk ? el("div", { class: "dc-st", role: "status", ...(st === "undo" ? { "data-undo": dc.key } : {}), text: st ? dcStText(dc, st) : bk }) : null; };
 
 /* ---------- 원문 보기: the mail or comment a reply draft answers, as its own panel next to the draft (the send sheet, the comment view's draft card) ---------- */
 // The draft stays as it was. A wide screen (>= 900px) opens the original as a SEPARATE panel (own header 원문 + x, own scroll) to the left while the draft slides to the
@@ -4871,7 +5080,10 @@ function orgFill(pane, d, t, retry) {
   if (pc) PQ.of.set(`mail:${m.key}`, { pc, key: m.key });   // its body and files are read from the computer that owns the mail
   const files = mailRealFiles(m.attachments);   // the body's own pictures are drawn in it, not listed as files
   // 보낸 사람 / 받는 사람 / 참조 come from the mail view's own header (30-mail-thread.js), so every place a mail is read names them the same way
-  pane.append(...[mailHeadNode({ ...m, ...mailPeople(m, m.text, m.subject) }), orgRow("날짜", kstStamp(m.date)), orgRow("제목", m.subject),
+  const pp = mailPeople(m, m.text, m.subject), blank = v => !String(v || "").replace(/[\s\-–—]+/g, "");   // a lone "-" names nobody
+  const people = mailHeadNode({ ...m, from: blank(m.from) ? "" : m.from, to: blank(pp.to) ? "" : pp.to, cc: blank(pp.cc) ? "" : pp.cc });   // no 보낸 사람 / 받는 사람 / 참조 known: no box at all
+  if (!people.childElementCount && !m.date && !m.subject && !m.html && !String(m.text || "").trim() && !files.length) { note("원문이 없어요"); return; }   // nothing known: say so, not a few empty rows
+  pane.append(...[people.childElementCount ? people : null, orgRow("날짜", kstStamp(m.date)), orgRow("제목", m.subject),
     el("div", { class: "od-body" }, mailBodyNode(m.key, m.html, m.text, m.subject)),
     files.length ? el("div", { class: "od-files" }, ...files.map(({ f, i }) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
       icon("clip"), el("span", { class: "dr-fn", text: f.name }), f.size ? el("span", { class: "dr-fs", text: mailSize(f.size) }) : null))) : null].filter(Boolean));
@@ -4953,6 +5165,12 @@ function orgNodes(d, t, host, draftEl) {
 const RQ_APPS = { mail: ["메일", "mail"], kakao: ["메신저", "chat"], instagram: ["인스타그램", "chat"], youtube: ["유튜브", "chat"], site: ["웹사이트 댓글", "chat"] };
 const RQ_LINES = 6;
 const RQ_OPEN = new Set();   // card keys whose long body was unfolded (펼치기); kept across repaints
+// A press waits for its answer in the card itself: rqPress = the action in flight (its button says so, the others stay off in place), rqFail = the line a failed
+// action leaves right above the buttons (never a toast over the card's rows). Both are keyed by rqFk (30-replies.js): a notice by its id, any other draft by its key.
+const rqPress = new Map(), rqFail = new Map();
+const RQ_PRESS = { send: "보내는 중…", edit: "고치는 중…", drop: "처리하는 중…" };
+const rqNtKey = n => `nt:${n.id}`;
+const rqFailOf = (e, act) => ({ text: `${e instanceof TypeError ? "연결이 끊겨 " : ""}${act === "send" ? "보내지 못했어요 · 다시 보내기" : "처리하지 못했어요 · 다시 눌러 주세요"}`, why: e instanceof TypeError ? "" : String((e && e.message) || "") });
 // The app key of an instance id ("mail-2" -> "mail", a peer's "kakao~h1" -> "kakao").
 const rqBase = app => String(app || "").split("~")[0].split("-")[0];
 const rqAppName = app => (RQ_APPS[rqBase(app)] || [""])[0];
@@ -4962,18 +5180,19 @@ const rqAppName = app => (RQ_APPS[rqBase(app)] || [""])[0];
 function rqHeadNode(h) {
   const [name, ic] = RQ_APPS[rqBase(h.app)] || [h.appName || "답장", "send"];
   const at = h.at ? new Date(h.at) : null, when = at && !isNaN(at) ? rcWhen(at.toISOString()) : "";
-  const to = h.who ? `${h.who}님께 답장` : name, src = h.who ? h.src || name : [h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
+  const to = h.who ? `${h.who}님께 답장` : name, src = h.who ? h.src ?? name : [h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
   return el("div", { class: `rq-hd${h.who ? " rq-who" : ""}` },
-    h.who ? el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }) : el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")),
+    h.who && !h.ic ? el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }) : el("span", { class: "dr-ic" }, icon(h.ic || (ICONS[ic] ? ic : "send"))),   // h.ic (a mail draft): the app's icon, as on a card with no person
     el("span", { class: "rq-meta", title: [to, src].filter(Boolean).join(" · ") }, el("b", { class: "rq-wt", text: to }),
       src ? el("span", { class: "rq-src", text: ` · ${src}` }) : null, h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
     when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
 }
 // A body is long when it would take more than RQ_LINES lines at a phone's width (about 36 Korean characters a line).
 const rqLong = text => String(text || "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil([...l].length / 36)), 0) > RQ_LINES;
-// b: { text, parts (a Messenger draft's messages: one bubble each, sentParts of them already in the room), node (the caller's own body), cls, partCls }
+// c.bare: a card with only its label, body and buttons (the room's draft card sits right under the chat it answers, 30-kakao.js); b.one: a single part is a bubble too.
+// b: { text, parts (a Messenger draft's messages: one bubble each, sentParts of them already in the room), node (the caller's own body), cls, partCls, full (never clamped: a sheet scrolls it) }
 function rqBodyNode(key, b) {
-  const parts = Array.isArray(b.parts) && b.parts.length > 1 ? b.parts : null, long = rqLong(parts ? parts.join("\n") : b.text), open = RQ_OPEN.has(key);
+  const parts = Array.isArray(b.parts) && b.parts.length > (b.one ? 0 : 1) ? b.parts : null, long = !b.full && rqLong(parts ? parts.join("\n") : b.text), open = RQ_OPEN.has(key);
   const inner = b.node || (parts ? el("div", { class: `${b.cls || "rq-text"} rq-parts` }, ...parts.map((p, i) => el("div", { class: `${b.partCls || "rq-part"}${i < (b.sentParts | 0) ? " sent" : ""}`, text: p }))) : el("div", { class: b.cls || "rq-text", text: b.text }));
   const box = el("div", { class: `rq-body${long && !open ? " clamp" : ""}` }, inner);
   if (!long) return box;
@@ -4985,11 +5204,13 @@ function rqBodyNode(key, b) {
   } });
   return el("div", { class: "rq-bodywrap" }, box, more);
 }
-// The three actions, the same words everywhere. A missing handler leaves its button disabled; `busy` disables all three.
+// The three actions, the same words everywhere. A missing handler leaves its button disabled; `busy` disables all three. a.manual (a mail draft's 직접 수정)
+// stands at the right end of the row.
 function rqActsNode(a) {
-  const b = (cls, k, text, fn) => el("button", { class: cls, type: "button", "data-k": k, disabled: !!a.busy || !fn, text, onclick: fn });
-  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn sm dr-send", "send", "보내기", a.send), b("btn tonal sm", "edit", "고치기", a.edit), b("btn text sm dr-drop", "drop", "보내지 않기", a.drop));
+  const b = (cls, k, text, fn) => el("button", { class: cls, type: "button", "data-k": k, disabled: !!a.busy || !fn, text: a.busy && a.press === k ? RQ_PRESS[k] : text, onclick: fn });
+  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn sm dr-send", "send", "보내기", a.send), b("btn tonal sm", "edit", "고치기", a.edit), b("btn text sm dr-drop", "drop", a.dropText || "보내지 않기", a.drop), a.manual ? rqManualBtn(a.manual, a.busy) : null);
 }
+const rqManualBtn = (fn, busy) => el("button", { class: "btn text sm rq-manual", type: "button", "data-k": "manual", "aria-label": "직접 수정", disabled: !!busy, onclick: fn }, icon("pencil"), el("span", { text: "직접 수정" }));
 // 고치기: what to change, typed once; the bot rewrites the draft. o: { go(change), cancel(), manual() (직접 수정, optional), pick (a node before the field, such
 // as which part of a comment reply with a mail to change), value, onInput(text), busy }
 function rqReviseNode(o) {
@@ -5004,11 +5225,12 @@ function rqReviseNode(o) {
       o.manual ? el("button", { class: "btn text kk-manual", type: "button", "data-k": "manual", "aria-label": "직접 수정", onclick: o.manual }, icon("pencil"), el("span", { text: "직접 수정" })) : null));
 }
 // The attachment line: every card says what goes with the draft before 보내기 - the files that go (name + size), or 첨부: 없음, or, for a source that cannot
-// attach, that it cannot and the names of the files that stay behind (hub/draft-approval.ts attachments / attachmentsNone / cannotAttach). Never hidden.
+// attach, the names of the files that stay behind (hub/draft-approval.ts attachments / attachmentsNone / cannotAttach); nothing when none stay behind.
 function rqAttachNode(d = {}) {
   const fl = Array.isArray(d.attachments) ? d.attachments : [], left = Array.isArray(d.cannotAttach) ? d.cannotAttach.filter(n => n && String(n).trim()) : null;
   if (fl.length) return el("div", { class: "rq-att", "data-k": "files" }, el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }),
     ...fl.map(f => el("div", { class: "rq-af" }, icon("file"), el("span", { class: "rq-afn", text: f.name }), f.size ? el("span", { class: "dr-fm", text: f.size }) : null)));
+  if (left && !left.length) return null;   // a place that cannot attach and leaves no file behind (a comment reply) says nothing
   return el("div", { class: "rq-att", "data-k": "none" }, el("div", { class: "dr-none", role: "status" }, icon("clip"),
     el("span", { text: left ? "첨부: 없음 · 파일을 붙일 수 없는 곳이에요" : "첨부: 없음" }),
     left && left.length ? el("span", { class: "dr-wn", text: `남는 파일: ${left.join(", ")}` }) : null));
@@ -5032,34 +5254,79 @@ function rqOrigNode(key, o) {
     ev.stopPropagation();
     const on = !RQ_OG.has(key); if (on) RQ_OG.add(key); else RQ_OG.delete(key);
     box.classList.toggle("clamp", long && !on); btn.setAttribute("aria-expanded", String(on)); btn.textContent = on ? "원문 접기" : "원문 보기";
-    if (pane) { pane.hidden = !on; if (on) load(); }
+    if (pane) { pane.hidden = !on; if (on) { load(); motionIn(pane, "fade", M_MS.fast); } }   // the opened original fades in (opacity only; reduced motion: none)
   } });
   if (pane && open) load();
   return el("div", { class: "rq-og-wrap" }, box, btn, pane);
+}
+// A mail draft's parts, the same on every screen that shows one (the notice's sheet, the 답장 대기 sheet, the mail's own card): the head line (who it answers, 메일,
+// the time), the mail it answers as a quote, the subject, the 받는이 line folded to one button (draftRecvFold, below) and the 첨부 줄.
+// o: { t (the mail's conversation), at, edit (the 받는이 and 첨부 rows can change), pc, tail (nodes at the head's end), warn (a box for the 첨부 warnings),
+// seen (the brief lines were shown already: 11-mailtext.js mailLinesOpen), src (the head's source word; "" inside the 메일 screen, where it says nothing new) }
+const rqRcptName = s => { const a = String(s || "").split(/\s*,\s*/)[0].trim(), m = /^"?([^"<]*?)"?\s*<([^>]*)>$/.exec(a); return m ? m[1].trim() || m[2] : a; };
+function rqMailOriginal(dr, t) {
+  const m = String(t || "").startsWith("mail:") ? MAILS.get(t) : null, src = { ref: dr.ref, t };   // ref: 원문 보기 loads the full original
+  if (m) return { who: mailSender(m.from), text: m.subject || mailBrief(m, t), ...src };
+  if (dr.origin && dr.origin.text) return { who: "", text: dr.origin.text, ...src };
+  return dr.ref ? { who: "", text: dr.subject || "", ...src } : null;
+}
+function rqMailParts(dr, o) {
+  const m = String(o.t || "").startsWith("mail:") ? MAILS.get(o.t) : null, b = dr.brief || {}, who = (m && mailSender(m.from)) || rqRcptName(dr.to);
+  return { cls: "rq-ml", head: { app: "mail", who, src: o.src ?? "메일", ic: "mail", pc: o.pc || "", at: o.at || null, tail: o.tail || [] }, original: rqMailOriginal(dr, o.t),
+    brief: b.summary || (!o.seen && (b.todo || b.questions)) ? el("div", { class: "rq-brief" }, b.summary ? el("div", { class: "rq-sumline", text: b.summary }) : null, o.seen ? null : mailLinesNode(b.todo, b.questions)) : null, recv: draftRecvFold(dr, { t: o.t, edit: o.edit, hold: o.hold }), subject: dr.subject,
+    attach: draftFilesNode(dr, { t: o.t, edit: o.edit, warn: o.warn, hold: o.hold }) };
 }
 // The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"), to: [label, value],
 // recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode; given instead of `to`), subject,
 // original: {who, text} (what the draft answers), body, attach (a draft's attachments / attachmentsNone / cannotAttach, or the caller's own files node),
 // extra (nodes under the body: the mail that goes along), then one of: status (a line such as 고치는 중…), revise (rqReviseNode or the caller's own),
-// acts (rqActsNode) }.
+// acts (rqActsNode: { send, edit, drop, manual, busy, press }), fail ({ text, why }: the line above the buttons after a failed action) }.
 function rqCard(c) {
   const foot = c.sent ? rqSentNode(c.sentAt) : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
-  const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
-  const cm = !!c.head.who;   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
+  const att = c.bare ? null : c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
+  const cm = !!(c.head && c.head.who);   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
-    rqHeadNode(c.head),
-    c.original && c.original.text ? rqOrigNode(c.key, c.original) : null,
+    c.bare ? null : rqHeadNode(c.head),
+    !c.bare && c.original && c.original.text ? rqOrigNode(c.key, c.original) : null,
     c.brief || null,
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
     c.to ? (cm ? null : el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" }))) : c.recv || null,   // a mail keeps its 받는이 rows
     c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
-    rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
+    rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean),
+    c.fail ? el("div", { class: "rq-fail", role: "alert", title: c.fail.why || "", text: c.fail.text }) : null, foot);
 }
 // 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
 const rqSentNode = (at = "방금") => el("div", { class: "rq-sent", role: "status", "data-state": "send" }, icon("check"), el("span", { text: "보냈어요" }), el("span", { class: "rq-sent-at", text: `· ${at}` }));
 // What an answer did, in the same words everywhere: 보냈어요, and 보내지 않았어요 with 되돌리기 where the store can bring the draft back.
 const rqSentToast = action => toast("보냈어요", false, action || null);
 const rqDroppedToast = undo => toast("보내지 않았어요", false, undo ? { label: "되돌리기", onclick: undo } : null, undo ? 6000 : undefined);
+// The 받는이 of a mail draft, folded to one text button under the body ("받는이 한서윤 · 답장"); it opens the rows of draftToNode in place. A draft with nobody to send to,
+// or an address that is not one, stands open from the start. Once the owner presses the button, that choice stays.
+const DR_ADDR = /^[^\s<>@,]+@[^\s<>@,]+\.[^\s<>@,]+$/;
+const draftAddr = a => DR_ADDR.test(String(a).replace(/^.*<([^>]*)>\s*$/, "$1").trim());
+function draftRecvFold(d, o = {}) {
+  let open = null, bad = false, panel = null;   // open: null until the owner presses the button
+  const text = el("span", { class: "rq-rs" }), btn = el("button", { class: "btn text sm rq-recv", type: "button", "aria-expanded": "false", onclick: () => { open = !(open ?? bad); sync(); } }, text, icon("drop"));
+  const sync = () => { const on = open ?? bad; btn.setAttribute("aria-expanded", String(on)); if (panel) panel.hidden = !on; };
+  const inner = draftToNode(d, { ...o, always: true, onpaint: live => {
+    const first = rqRcptName(live.to[0]), more = live.to.length > 1 ? ` 외 ${live.to.length - 1}명` : "";
+    bad = !live.to.length || live.to.some(a => !draftAddr(a));
+    text.textContent = `받는이 ${first || "없음"}${more}${live.reply ? (live.mode === "all" ? " · 전체 답장" : " · 답장") : ""}${live.cc.length ? ` · 참조 ${live.cc.length}` : ""}`;
+    sync();
+  } });
+  panel = el("div", { class: "rq-recvbox" }, inner);
+  sync();
+  return el("div", { class: "rq-recvfold" }, btn, panel);
+}
+// A mail draft's sheet (owner 2026-11-10): the same sheet as the 답장 확인 of a comment (30-replies.js rqSheetOpen) - one head, 답장 확인 and a close x - with the
+// reply card's parts (10-reply-card.js rqMailParts) straight on the sheet and the choices in the footer. Only the body scrolls.
+function mailSheetBody(dc, d, st, warnBox) {
+  const open = String(dc.t || "").startsWith("mail:") ? el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: "열기", onclick: () => { dc.close(); go("monitoring", `c:${dc.t}`); } }) : null;
+  const p = rqMailParts(d, { t: dc.t, at: dc.at, edit: true, hold: !!st, warn: warnBox, tail: [open] });   // sending: the rows stay where they are, off, so nothing under them moves
+  return el("div", { class: "fs-body rq-sb", tabindex: "0", role: "region", "aria-label": "보낼 내용" },
+    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: `받는이 확인: ${d.recipientWarning}` })) : null, decideNode(d), draftRuleNode(d),
+    rqCard({ key: dc.key, ...p, body: { node: draftBodyNode(d.body, "dc-dr-b"), full: true }, extra: [draftOriginNode(d)] }));
+}
 
 /* ---------- a mail's original: its HTML body in a sandboxed frame, else its text laid out ---------- */
 // GET /api/mail/<key>/body is the HTML the hub kept and already reduced to a safe subset (hub/mailhtml.ts). It is drawn here in an iframe whose sandbox
@@ -5683,22 +5950,23 @@ async function loadTodo(t = target) {
   try { r = await api(`/api/todo?target=${enc(t)}`); } catch { TD.by[t] = TD.by[t] || []; r = null; }
   if (r) TD.by[t] = Array.isArray(r.phases) ? r.phases : [];
   if (t === target) { paintTodo(); paintRunState(); if (CV.key && !CV.placed) renderAll(); }   // the first paint of an opening waits for the plan (chatReady)
+  paneStrips(t);
 }
 const todoState = x => x.status === "in_progress" ? "act" : x.status === "completed" ? "done" : x.status === "abandoned" ? "drop" : "pend";
-function paintTodo() {
-  const box = $("#todo");
+// The strip of conversation t in box: the open conversation's #todo, or the one in an inactive pane (43-panes-mirror.js).
+function paintTodo(box = $("#todo"), t = target) {
   if (!box) return;
-  const phases = TD.by[target] || [], all = phases.flatMap(p => p.tasks || []);
+  const phases = TD.by[t] || [], all = phases.flatMap(p => p.tasks || []);
   if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; delete box.dataset.ph; clear(box); return; }
-  const open = !!TD.open[target], sig = JSON.stringify([phases, open]);
+  const open = !!TD.open[t], sig = JSON.stringify([phases, open]);
   box.hidden = false;
   if (box.dataset.sig === sig) return;
   // A step finishing changes the strip in place (the new look fades up); opening the list or the first paint just draws.
-  const ph = JSON.stringify(phases), swap = box.dataset.ph !== undefined && box.dataset.ph !== ph;
-  box.dataset.sig = sig; box.dataset.ph = ph;
+  const ph = JSON.stringify(phases), swap = box.dataset.ph !== undefined && box.dataset.t === t && box.dataset.ph !== ph;   // another conversation's plan in the box (the pane changed hands) is no change of this one
+  box.dataset.sig = sig; box.dataset.ph = ph; box.dataset.t = t;
   const live = all.filter(x => todoState(x) !== "drop"), done = live.filter(x => todoState(x) === "done").length;
   const cur = all.find(x => todoState(x) === "act") || all.find(x => todoState(x) === "pend"), g = x => el("span", { class: `td-g tg-${todoState(x)}`, "aria-hidden": "true" });
-  const bar = el("button", { class: "td-bar", type: "button", "aria-expanded": String(open), onclick: () => { TD.open[target] = !open; paintTodo(); } },
+  const bar = el("button", { class: "td-bar", type: "button", "aria-expanded": String(open), onclick: () => { TD.open[t] = !open; paintTodo(box, t); } },
     g(cur), el("span", { class: "td-cur", text: cur.content }), el("span", { class: "td-n", text: `${done}/${live.length}` }), icon("drop", "td-ch"));
   const kids = [bar];
   if (open) kids.push(el("div", { class: "td-list" }, ...phases.flatMap(p => [
@@ -5715,6 +5983,7 @@ function todoActivity(a) {
   if (a.type !== "tool_result" || !(isTodo || (a.call_id && TD.calls.delete(a.call_id)))) return;
   const own = targetOfSource(a.source);
   if (own === target || (own === MAIN && isProjT(target))) { clearTimeout(TD.timer); TD.timer = setTimeout(() => loadTodo(target), 250); }
+  paneTodoTouch(own);
 }
 // The top of the timeline is the older-messages loader: it sits above the messages (the observer in 09-needs-you.js loads when it comes
 // into view) and holds the button for a click. Kept across redraws, never counted as a message or trimmed with the oldest ones.
@@ -5872,7 +6141,7 @@ function hcSysFiles(st, w) {
   const old = line.nextElementSibling;
   if (old && old.classList.contains("cv-sys-f")) old.remove();
   const files = w.status === "done" && !w.cancelled && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
-  if (files.length) line.after(el("div", { class: "cv-sys-f" }, ...files.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) }); })));
+  if (files.length) line.after(el("div", { class: "cv-sys-f" }, ...files.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), fileOpen(f, name)); })));
 }
 // The same line as the landing page's 작업 card (hcTaskBody fills what is under the title): label, title, state pill, then the result files and a full bar once done.
 const SYS_TASK = /^백그라운드 작업으로 맡겼어요:\s*(\S[\s\S]*)$/;
@@ -5889,8 +6158,9 @@ function hcTaskBody(line, w) {
 }
 // A row's place in the chat: a work card joins the run of cards that ends the chat, or starts one. A chat message ends a run; a folded tool group does not (the orchestrator's calls land between the rows it deferred).
 function tlHome(n) {
+  if (n.classList.contains("wl-row")) return wlHome();
   if (!n.classList.contains("cv-task")) return tl;
-  let last = tl.lastElementChild;
+  let last = tlTail();
   while (last && last.matches("details.work")) last = last.previousElementSibling;
   return last && last.classList.contains("cv-tasks") ? last : tl.appendChild(el("div", { class: "cv-tasks" }));
 }
@@ -5992,7 +6262,7 @@ function msgNode(e) {
       const { tone: mark, claim, text: parsed, emoji } = e.kind === "out" || e.kind === "lane_report" ? statedTone(noHandoff(text), true) : { tone: "", text };
       const isNote = e.kind === "out" && !!e.update_key && !e.live && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:"))) && !parseChoices(parsed).blocks.length;
       // A stored [run] or [wait] draws no tag of its own: syncLiveTags gives the newest report the state of now.
-      const parked = parkedTone(mark) && !e.live && !isNote, tone = parked ? "" : isNote ? mark || "run" : mark;
+      const parked = parkedTone(mark) && !e.live && !isNote, tone = parked || (mark === "done" && asProposalPending(parsed)) ? "" : isNote ? mark || "run" : mark;
       // The marker is a status tag in front of the first line (02-basic-markdown.js toneLead), for the orchestrator and a session alike.
       const body = isNote ? noteText(parsed.replace(/^진행 중:\s*/, "")) : parsed;
       const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업내역" : isRestart(e) ? "게이트웨이" : e.relay ? targetName(e.target) : botName;
@@ -6071,7 +6341,7 @@ function newGroup(a) {
   };
   return g;
 }
-function dropProgress(key) { const p = CS.prog.get(key); if (p) { p.node.remove(); CS.prog.delete(key); } }
+function dropProgress(key) { const p = CS.prog.get(key); if (p) { const home = p.node.parentNode; p.node.remove(); wlTidy(home); CS.prog.delete(key); } }
 // entry: {m: conversation event} or {a: activity item}. Work between messages folds into one collapsed group.
 function chatPush(en, bulk) {
   let fresh = null;   // an incoming message node: a tall one is scrolled to by its top (scrollChat)
@@ -6098,14 +6368,14 @@ function chatPush(en, bulk) {
     // Repeated [run]/[wait] reports are one message, as on Discord (hub/lanewire.ts): the newest takes the place of the one before it, until another message stands between.
     const parked = e.kind === "lane_report" && !e.answering && parkedTone(statedTone(noHandoff(String(e.text ?? ""))).tone);
     if (parked && CS.parked) { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; }
-    const n = msgNode(e);
+    const n = wlIs(e) ? wlNode(e) : msgNode(e);
     if (n) {
       if (!pkey) CS.parked = parked ? n : null;
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
-      rpMark(n, e);
+      if (!n.classList.contains("wl-row")) rpMark(n, e);
       if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
       // A status goes when the answer comes, so it never carries a run of speaker heads: the answer keeps its own.
-      const who = n.matches(".um, .bm") && !n.querySelector(":scope > .lv") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
+      const who = n.matches(".um, .bm:not(.wl-row)") && !n.querySelector(":scope > .lv") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000 && !(e.target === "alert" && n.querySelector(":scope > .mt > .tag"))) n.classList.add("cont");   // an 알림 row that carries a status tag keeps its head, so the tag shows
       CS.who = who; CS.whoT = t;
       if (convIncoming(e)) fresh = n;
@@ -6122,7 +6392,7 @@ function chatPush(en, bulk) {
   const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;
   while (tl.children.length > ts(target).cap + fixed) (fixed ? tl.children[1] : tl.firstElementChild)?.remove();
   markLive();
-  if (!bulk) scrollChat(false, fresh);
+  if (!bulk) { paintQueue(tl, target); scrollChat(false, fresh); }
 }
 // A work group that stops running: its summary line changes from 작업 중 to the finished count in place, once.
 function workDone(g) {
@@ -6132,7 +6402,7 @@ function workDone(g) {
 function markLive() {
   const g = CS.group;
   if (!g) return;
-  const live = isWorking(target) && tl.lastElementChild === g.node;
+  const live = isWorking(target) && tlTail() === g.node;
   if (g.live === live) return;
   if (live) { g.live = true; g.node.classList.add("live"); g.update(); } else workDone(g);
 }
@@ -6146,6 +6416,8 @@ function watchReasonKo(reason) {
   if (r === "match" || r.startsWith("matched /")) return "조건에 맞는 결과가 나왔어요";
   if (r === "fail") return "점검에 실패했어요";
   if (r === "recovered") return "다시 정상이에요";
+  // hub/release-exit.ts SLOT_SKIPPED_EXIT: the release-slot watch fails every minute of a skipped slot; that is one skipped slot, not that many failed checks.
+  if (/^failed \d+ times in a row.*\(exit 3\)$/.test(r)) return "이 시간대의 릴리스를 건너뛰었어요";
   const fails = (r.match(/^failed (\d+) times in a row/) || [])[1];
   if (fails) return `${fails}번 연속 실패했어요`;
   if (r.startsWith("stopped after a password")) return "저장된 비밀번호가 없어 다시 로그인하지 못했어요. 맥 암호에 저장하고 다시 연결을 눌러 주세요";
@@ -6347,6 +6619,125 @@ function scheduleLine(text, opts = {}) {
   return lines.join("\n");
 }
 
+/* ---------- 작업내역 rows ----------
+   The 작업내역 conversation draws the gateway's and the sessions' posts as the rows of the 감시 소식 feed (30-monitoring.js monRowNode, CSS .fr-list / .bm.rc.fr):
+   a head line (state dot, kind label, state tag, claim tag, time) and ONE title line, the post's first sentence. The posts of one day sit in one list card
+   (tlHome puts a row into the list that ends the timeline; the day divider, the owner's message and the answer to it end it). A row is a button only
+   when unfolding shows more than the title says (like monHasMore); unfolded it is the message as the chat draws it, with 접기.
+   Kind (`wk`) and state (`wst`) come from the hub; an event without them (the demo, an older hub) falls back as wlKind / wlState say.
+   The same helpers draw 홈's 작업내역 card (08-home.js hcNotices), so the two never disagree. */
+const WL = { open: new Set() };   // unfolded rows, by wlRowKey
+const WL_LABEL = { session: "세션", check: "예약 점검", night: "야간 정리", update: "업데이트", account: "계정", system: "시스템", note: "기록" };
+const WL_STATES = new Set(["done", "run", "wait", "ask", "fail"]);
+const wlKey = o => String(o.update_key || o.key || "");
+const wlRowKey = o => `${o.ts}|${wlKey(o)}`;
+const wlKind = o => WL_LABEL[o.wk] ? o.wk : o.target === "alert" ? "alert" : wlKey(o).startsWith("lane:") ? "session" : o.source === "gateway" ? "system" : "note";
+const wlParse = o => statedTone(noHandoff(String(o.text ?? "")), true);
+// The state of a post: the hub's `wst`, else (a session only) the mark of its text, else the tone a stored notice carries.
+function wlState(o) {
+  if (WL_STATES.has(o.wst)) return o.wst;
+  if (wlKind(o) !== "session" && wlKind(o) !== "alert") return "";
+  const t = wlParse(o).tone || (o.tone === "warn" ? "ask" : o.tone);
+  return WL_STATES.has(t) ? t : "";
+}
+// The dot class of a state (09-notices.css .nt-dot.tone-*): a wait is the orange of a question.
+const wlDot = o => { const s = wlState(o); return s === "wait" ? "ask" : s; };
+// The first sentence of a post, without its mark and claim word, files, choice blocks and markdown; `more`: the post says more than that.
+// An 알림 post says its one human line (humanAlert) and keeps the raw text folded; `hold`: it is drawn whole, never as a row (a choice, files, or a question that says more).
+function wlSplit(o) {
+  const p = wlParse(o), alert = o.target === "alert", fl = fileLines(p.text), shown = alert ? noticeKo(p.text, NK) : "", head = alert ? humanAlert(shown) : "";
+  const lines = (alert ? [head] : choiceFree(fl.text).split("\n")).map(l => ntPlain(l)).filter(Boolean);
+  const first = lines[0] || "", m = /^(.+?[.!?。…])\s+(?=\S)/.exec(first), blocks = parseChoices(p.text).blocks.length, files = fl.files.length || (Array.isArray(o.files) && o.files.length);
+  const more = !!(m || lines.length > 1 || files || blocks || (alert && (head.trim() !== shown.trim() || nwChangeLine(p.text))));
+  return { title: (m ? m[1] : first).replace(/[.。]$/, ""), more, claim: p.claim, hold: alert && !!(blocks || files || (p.tone === "ask" && more)) };
+}
+const wlTitle = o => wlSplit(o).title;
+// A stored notice that is a 작업내역 post (홈's card): drawn with the same dot and title as the conversation's row.
+const wlNotice = n => n.kind === "worklog" || (n.kind === "result" && n.msg === "worklog");
+// Which events are drawn as rows: the gateway's and the assistant's posts of the 작업내역 and 알림 conversations. The owner's message, the answer to it (`reply_to`), a card,
+// a work row and a live status stay as they are, and so does an 알림 post that waits on the owner (a choice, a question, files).
+function wlIs(e) {
+  if (e.kind !== "out" || e.system || e.relay || e.card || e.reply_to || e.live || peerMsgOf(e)) return false;
+  if (e.target !== "worklog" && (e.target !== "alert" || e.ask)) return false;
+  const sp = wlSplit(e);
+  return !!sp.title && !sp.hold;
+}
+function wlSession(o) {
+  const k = wlKey(o), s = String(o.source || "");
+  return k.startsWith("lane:") ? k.slice(5) : s.startsWith("lane:") ? s.slice(5) : "";
+}
+function wlLabel(o) {
+  const kind = wlKind(o), lane = kind === "session" ? wlSession(o) : "";
+  if (!lane) return el("span", { class: "rc-src", text: WL_LABEL[kind] });
+  const open = () => openTarget(`lane:${lane}`, "chat"), known = !!(S && (S.lanes || []).some(l => l.name === lane));
+  const name = known
+    ? el("span", { class: "wl-sess", role: "link", tabindex: "0", text: targetName(`lane:${lane}`), onclick: ev => { ev.stopPropagation(); open(); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); open(); } } })
+    : el("span", { text: targetName(`lane:${lane}`) });
+  return el("span", { class: "rc-src" }, `${WL_LABEL.session} · `, name);
+}
+const wlTag = s => { const t = LANE_TONE[s]; return t ? el("span", { class: `tag ${t[0]}`, text: t[1] }) : null; };
+const wlClaim = c => { const t = CLAIM_TAG[c]; return t ? el("span", { class: `tag${t[0] ? ` ${t[0]}` : ""}`, text: t[1] }) : null; };
+// A row that turns out to show more than it says becomes a button (the quiet check line, once it is laid out and clipped).
+function wlPress(row, toggle, label) {
+  row.classList.remove("fr-all");
+  row.setAttribute("role", "button"); row.tabIndex = 0; row.setAttribute("aria-expanded", "false"); row.setAttribute("aria-label", `${label} 펼치기`);
+  row.onclick = toggle; row.onkeydown = ev => monKey(ev, toggle);
+}
+let wlFitQ = [];
+// The quiet check line is one line, never a button unless its text is clipped: measured once the row sits in the page.
+function wlFitLater(row, toggle, label) {
+  wlFitQ.push([row, toggle, label]);
+  if (wlFitQ.length === 1) requestAnimationFrame(() => {
+    const q = wlFitQ; wlFitQ = [];
+    const clipped = q.map(([r]) => { const t = r.isConnected && r.querySelector(".wl-q"); return !!t && t.scrollWidth > t.clientWidth; });
+    q.forEach(([r, toggle2, label2], i) => { if (clipped[i]) wlPress(r, toggle2, label2); });
+  });
+}
+// The whole message as the chat draws it (its head line and the state tags the row's own head shows are left out).
+function wlFull(e) {
+  const b = msgNode({ ...e, update_key: undefined });
+  if (!b) return null;
+  const body = el("div", { class: "wl-full" }, ...[...b.children].filter(c => !c.classList.contains("mt")));
+  for (const t of body.querySelectorAll(":is(p, li):first-child > .st-tag")) { const p = t.parentElement; t.remove(); if (!p.children.length && !p.textContent.trim()) p.remove(); }
+  return body;
+}
+function wlNode(e) {
+  const sp = wlSplit(e), st = wlState(e), kind = wlKind(e), key = wlRowKey(e), open = WL.open.has(key), hm = kstHM(e.ts);
+  const quiet = kind === "check" && st !== "fail" && !open, button = sp.more && !open, label = WL_LABEL[kind] || "알림";   // an 알림 post has no kind label: the conversation is the label
+  // The title does not say the kind a second time ("야간 정리: ..." under the label 야간 정리), and a note with no state and no claim has nothing
+  // for a head line to say: its title stands in the head's place, beside the time (what is absent leaves no slot).
+  const title = sp.title.startsWith(`${label}:`) ? sp.title.slice(label.length + 1).trim() || sp.title : sp.title;
+  const plain = (kind === "note" || kind === "alert") && !st && !sp.claim && !open;
+  const toggle = () => {
+    if (WL.open.has(key)) WL.open.delete(key); else WL.open.add(key);
+    const nn = wlNode(e);
+    row.replaceWith(nn);
+    for (const p of CS.prog.values()) if (p.node === row) p.node = nn;
+    (nn.querySelector(".cc-act .btn") || nn).focus({ preventScroll: true });
+  };
+  const time = el("span", { class: "rc-time", text: hm });
+  // The state is said once, by its tag (the tag draws its own dot): no second dot before the label, so every label starts on one left line.
+  const hd = quiet ? el("div", { class: "rc-hd" }, wlLabel(e), el("span", { class: "wl-q", text: title }), time)
+    : plain ? el("div", { class: "rc-hd" }, el("div", { class: "fr-sum", text: title }), time)
+    : el("div", { class: "rc-hd" }, kind === "alert" ? null : wlLabel(e), wlTag(st), wlClaim(sp.claim), time);
+  const full = open ? wlFull(e) : null;
+  const unread = !!(CV.div && e.ts > CV.div && convIncoming(e));
+  const row = el("div", { class: `bm rc fr wl-row${unread ? " un" : ""}${quiet ? " wl-quiet" : ""}${plain ? " wl-plain" : ""}${button ? "" : " fr-all"}${open ? " fr-open" : ""}`, "data-ts": e.ts, "data-wk": kind, "data-wst": st || null,
+    role: button ? "button" : null, tabindex: button ? "0" : null, "aria-expanded": button ? "false" : null, "aria-label": button ? `${label} 펼치기` : null, onclick: button ? toggle : null, onkeydown: button ? ev => monKey(ev, toggle) : null },
+    hd,
+    quiet || plain ? null : open ? full : el("div", { class: "fr-sum", text: title }),
+    open ? el("div", { class: "btns cc-act" }, el("button", { class: "btn text", type: "button", "aria-label": `${label} 접기`, onclick: toggle, text: "접기" })) : null);
+  if (quiet && !button) wlFitLater(row, toggle, label);
+  return row;
+}
+// A row joins the list card that ends the timeline, or starts one (the card ends at a day divider, a bubble or any other row).
+function wlHome() {
+  const last = tlTail();
+  return last && last.classList.contains("wl-list") ? last : tl.appendChild(el("div", { class: "fr-list wl-list" }));
+}
+// A row that goes (a session line edited in place is drawn again at its new time) leaves no empty card behind.
+function wlTidy(parent) { if (parent && parent.classList.contains("wl-list") && !parent.firstElementChild) parent.remove(); }
+
 /* ---------- terminal view (터미널): the same data as a session transcript ---------- */
 let LG = { cur: null, steps: null, calls: new Map(), workers: [] }, termEmpty = null;
 function resetTerm() { clear(term); LG = { cur: null, steps: null, calls: new Map(), workers: [] }; termEmpty = null; }
@@ -6532,7 +6923,7 @@ function termNode(a) {
 // Subagents have no link to the call that started them: each goes under the worker row whose run window holds its start.
 function paintWorkers() {
   if (!LG.workers.length) return;
-  const src = sourceOf(target), subs = SUBS[src] || [];
+  const src = subsSourceOf(target), subs = SUBS[src] || [];
   for (const w of LG.workers) {
     const end = w.tEnd || Infinity;
     const mine = subs.filter(x => x.started_at >= w.t - 2000 && x.started_at <= end + 1000);
@@ -6776,11 +7167,16 @@ function renderAll0(keepScroll) {
     } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); if (LOG_VIEW) termPush(a, true); }
   }
   if (isRelayT(target)) relayTail(s);   // a send still waiting for its line and the last error, before the "no conversation yet" line is considered
-  if (tl.children.length <= 1) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));   // only the top sentinel is there
+  if (tl.children.length <= 1) {
+    const none = el("div", { class: "empty", text: "아직 대화가 없어요" });
+    CS.empty = tl.appendChild(s.herr ? emptyNode("대화를 불러오지 못했어요", () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, none, acctConnectRow()));
+    if (!P && !s.herr) loadProviderData().then(() => current === "chat" && CS.empty && renderAll(true), () => {});   // the account line needs the list: draw again once it has come
+  }   // only the top sentinel is there
   if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
   if (lit) { const n = [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === lit); if (n) ntFlash(n); }
   if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else { CV.snap = null; CV.full = true; }
   markLive();
+  paintQueue(tl, target);
   CV.drawn = CV.divNode ? "" : chatSig(s);   // a divider belongs to one opening: the next one draws anew
 }
 // Coming back to the conversation still in the timeline, with nothing new while it was away: the drawn rows stay (their images too) and only the place is set.
@@ -6801,7 +7197,7 @@ function onActivity(a) {
 /* ---------- switching the target ---------- */
 const DRAFT_KEY = t => `dotz-draft:${t}`;
 function saveDraft() { ts(target).draft = ta.value; try { if (ta.value) localStorage.setItem(DRAFT_KEY(target), ta.value); else localStorage.removeItem(DRAFT_KEY(target)); } catch {} }
-function setTarget(t) {
+function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself (an item pressed); without it the conversation changes in place
   if (!validTarget(t) || t === target) return;
   saveDraft();
   ts(target).att = ATT;   // the files waiting in the composer stay with their conversation, like the typed text
@@ -6809,7 +7205,7 @@ function setTarget(t) {
   closeSheet();
   target = t;
   if (!isRelayT(t)) try { localStorage.setItem(TARGET_KEY, t); } catch {}   // a relayed computer is entered by the address (#chat/relay:<adapter>:<key>), never restored from here
-  if (current === "chat" || current === "activity") routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
+  if (!nav && (current === "chat" || current === "activity")) routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
   s.whole = false;
   convSync();
@@ -6822,7 +7218,9 @@ function setTarget(t) {
   loadTodo(t);
 }
 function enterTarget() {
-  $(current === "activity" ? "#v-activity" : "#v-chat").append($("#composer"));
+  // Appending moves the node and a moved focused field loses its focus (and a phone its keyboard): the composer moves only when it is on the other view, and keeps the focus there.
+  const view = $(current === "activity" ? "#v-activity" : "#v-chat"), typing = document.activeElement === ta;
+  if ($("#composer").parentNode !== view) { view.append($("#composer")); if (typing) ta.focus({ preventScroll: true }); }
   markSeen();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking(); paintDecision();
   if (current === "chat") { if (!CV.placed) scrollChat(true); } else scrollTerm(true);
@@ -7013,7 +7411,7 @@ function updateHints() {
   const list = el("div", { class: "sl-list", role: "listbox", id: "sl-list" }, ...items.map((it, i) => {
     const b = el("button", { type: "button", role: "option", class: "sl-i", id: `sl-${i}`, tabindex: "-1" },
       it.kind === "cmd"
-        ? [el("span", { class: "c", text: it.x.c }), (it.x.args || []).length ? el("span", { class: "ar", text: it.x.args.map(x => x.opt ? `[${x.n}]` : `<${x.n}>`).join(" ") }) : null, el("span", { class: "d", text: it.x.d })]
+        ? [el("span", { class: "c", text: it.x.c }), (it.x.args || []).length ? el("span", { class: "ar" }, ...it.x.args.map(x => el("span", { class: "sl-a", text: `${x.n}${x.opt ? "?" : ""}` }))) : null, el("span", { class: "d", text: it.x.d })]
         : it.kind === "mn" ? [el("span", { class: "c", text: `@${it.it.label}` }), el("span", { class: "d", text: it.it.sub })]
         : [el("span", { class: "c", text: it.val }), it.lab ? el("span", { class: "d", text: it.lab }) : null]);
     // Taps and clicks must not take focus from the textarea (the phone keyboard stays up).
@@ -7042,6 +7440,13 @@ function slPick(i) {
   ta.value = it.fill; ta.focus(); ta.setSelectionRange(at, at);
   autosize(); saveDraft(); updateHints();
 }
+// Enter and the send arrow take the highlighted line: a command that runs as it is goes out at once; one that needs a value (or an argument line) is put in the box.
+function slAccept(i) {
+  const it = SL.items[i];
+  if (it && it.kind === "cmd" && !(it.x.args && it.x.args[0] && !it.x.args[0].opt)) { ta.value = it.x.c; sendChat(); return; }
+  slPick(i);
+}
+const slOpen = () => !$("#hints").hidden && SL.idx >= 0 && !!SL.items[SL.idx];
 const ta = $("#text");
 ta.setAttribute("aria-controls", "sl-list");
 // The box itself is measured (the same "auto" then scrollHeight as ever, so the default height and the 140px cap are the original ones), but the
@@ -7105,7 +7510,7 @@ ta.addEventListener("keydown", ev => {
   if (ev.key === "ArrowDown") { stop(); SL.idx = (SL.idx + 1) % n; slMark(); }
   else if (ev.key === "ArrowUp") { stop(); SL.idx = SL.idx <= 0 ? n - 1 : SL.idx - 1; slMark(); }
   else if (ev.key === "Tab" && !ev.shiftKey) { stop(); slPick(Math.max(0, SL.idx)); }
-  else if (ev.key === "Enter" && !ev.shiftKey && !ev.metaKey && !ev.ctrlKey && !ev.altKey && SL.idx >= 0) { stop(); slPick(SL.idx); }
+  else if (ev.key === "Enter" && !ev.shiftKey && !ev.metaKey && !ev.ctrlKey && !ev.altKey && SL.idx >= 0) { stop(); slAccept(SL.idx); }
   else if (ev.key === "Escape") { stop(); SL.hide = ta.value; updateHints(); }
 });
 // While the target works: Enter steers into the running turn, ⌘/Ctrl+Enter queues it for the next turn, ⌥/Alt+Enter stops it and sends, Esc stops it.
@@ -7120,7 +7525,7 @@ ta.addEventListener("keydown", ev => {
 // and the click never lands (owner 2026-10-21: the first tap only hid the keyboard). The click then submits once; sendChat clears the box,
 // so a repeat is a no-op, and the box is refocused so the keyboard stays up like a messenger.
 $("#send-btn").addEventListener("pointerdown", ev => ev.preventDefault());
-$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length && !pkCount()) stopTarget(); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
+$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length && !pkCount()) stopTarget(); else if (slOpen()) slAccept(SL.idx); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
 // With no turn running, the line is a background worker's (renderWorking): 중단 ends that worker (06-subagents.js workCancel).
 $("#working-stop").onclick = ev => (workingBg.length ? workCancel(workingBg[0].id, ev.currentTarget) : stopTarget());
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
@@ -7153,6 +7558,7 @@ async function sendCommand(text) {
 }
 async function sendChat(how) {
   const text = ta.value.trim();
+  if (text === "/") return;   // a lone slash is the start of a command, not a message
   if (isRelayT(target)) { if (text && !ta.disabled) relaySend(text); return; }
   if (ATT.some(a => !a.file)) { toast(ATT.some(a => (upJob(target, a.id) || {}).error) ? "못 올린 파일을 다시 올리거나 빼 주세요" : "파일을 올리는 중이에요"); return; }
   const files = ATT.map(a => ({ ...a.file, label: a.no })), picks = pkItems();
@@ -7184,7 +7590,8 @@ async function sendChat(how) {
   try {
     // One id per send, kept while it fails, so a retry of the same text is the same send to the hub (hub/routes.ts cid).
     if (!sendCid || sendCid.text !== text) sendCid = { text, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10) };
-    const body = { text, cid: sendCid.id, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}), ...(refs.length ? { refs } : {}) };
+    const { decision, ...quote } = reply || {};   // decision: the question the quote answers (30-notices.js ntDirect)
+    const body = { text, cid: sendCid.id, ...(reply ? { reply: quote } : {}), ...(decision ? { decision } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}), ...(refs.length ? { refs } : {}) };
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
     if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
@@ -7203,13 +7610,19 @@ async function sendChat(how) {
     toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }
+// The hint in the message box of conversation t. Only the open composer (open) has a pending decision card (DC.cur) or the activity view's term mode;
+// an inactive pane's mirror asks with open = false and gets its own conversation's hint (43-panes-mirror.js).
+function composerHint(t, open) {
+  const info = targetInfo(t), gone = isLaneT(t) && info.known && !info.alive, off = gone && !info.resumable;
+  return off ? "종료된 세션이에요" : open && DC.cur ? "번호를 누르거나 직접 입력해 주세요" : gone ? "재개하면서 보내기" : open && modeOf() === "term" ? "메시지 또는 /명령" : isProjT(t) ? `${targetName(t)} 프로젝트의 ${botName}에게 메시지 · /명령` : isMailT(t) ? `이 메일 답장·전달은 ${botName}에게 · /명령` : isSettingsT(t) ? `${targetName(t)} 설정은 ${botName}에게 말해요 · /명령` : `${targetName(t)}에게 메시지 · /명령`;
+}
 // The composer follows the selected target and the view mode.
 function updateComposerMeta() {
   const info = targetInfo(target), isTerm = modeOf() === "term";
   const gone = isLaneT(target) && info.known && !info.alive;
   const off = gone && !info.resumable;
   ta.disabled = off; $("#send-btn").disabled = off;
-  ta.placeholder = off ? "종료된 세션이에요" : DC.cur ? "번호를 누르거나 직접 입력해 주세요" : gone ? "재개하면서 보내기" : isWorking(target) ? "메시지 보내기" : isTerm ? "메시지 또는 /명령" : isProjT(target) ? `${targetName(target)} 프로젝트의 ${botName}에게 메시지 · /명령` : isMailT(target) ? `이 메일 답장·전달은 ${botName}에게 · /명령` : `${targetName(target)}에게 메시지 · /명령`;
+  ta.placeholder = composerHint(target, true);
   $("#composer").classList.toggle("tmode", isTerm);
   paintPause();
   rpPaint();
@@ -7218,34 +7631,47 @@ function updateComposerMeta() {
 }
 // The elapsed time ticks every second on its own; events only arrive when a tool runs, so a time drawn only on events
 // froze (owner 2026-10-20: stuck at 18s until the answer came).
-let workingLabel = "", workingSubs = 0, workingBg = [];
+let workingLabel = "", workingBg = [];
 function tickWorking() {
   if ($("#working").hidden) return;
   // The bottom line shows only the state (owner 2026-10-20); elapsed time lives on the work card.
   const g = CS.group;
-  $("#working-tx").textContent = $("#runline-tx").textContent = workingBg.length ? workLine(workingBg) : `${workingLabel}${workingSubs ? ` · 서브에이전트 ${workingSubs}` : ""}`;
+  $("#working-tx").textContent = $("#runline-tx").textContent = workingBg.length ? workLine(workingBg) : workingLabel;
   if (g && g.live) g.update();
 }
 setInterval(() => { if (!document.hidden) tickWorking(); }, 1000);
-function renderWorking() {
-  const info = targetInfo(target), box = $("#working");
-  const st = info.alive ? info.status : "";
+// What the bottom line says about conversation t (the open one's runline, or an inactive pane's): running, its words, background work left.
+function runLineOf(t) {
+  const info = targetInfo(t), st = info.alive ? info.status : "";
   const on = st === "working" || st === "starting" || st === "rate-limited";
   // A request answered with [later] has no running turn, but its background work is still going: the line stays with that work.
-  const bg = on ? [] : workOfTarget(target), show = on || bg.length > 0;
+  const bg = on ? [] : workOfTarget(t), subs = runningSubs(subsSourceOf(t)).length, has = on || bg.length > 0;
+  const text = bg.length ? workLine(bg) : has ? (st === "rate-limited" ? "사용량 한도로 대기 중" : "작업 중…") : "";
+  // has: something is working (the left text); show: the line is there at all, which subagents alone also make (only their count then).
+  return { st, on, bg, text, subs, has, show: has || subs > 0 };
+}
+// The right end of the one status line: the subagent count, which opens the sheet. With no status text it is the whole line.
+function paintSubsBtn(b, src, n, lead) {
+  b.hidden = !n;
+  if (!n) return;
+  b.textContent = lead ? `서브에이전트 ${n} ›` : `서브에이전트 ${n}개 진행 중 ›`;
+  b.onclick = () => openSubs([src]);
+}
+function renderWorking() {
+  const box = $("#working"), { st, on, bg, has, subs, show } = runLineOf(target);
   workingBg = bg;
-  box.hidden = !show;
+  box.hidden = !has;
   // Only while the gateway reports this target running: status line, and stop in place of send
   // (with text typed the button sends it into the running turn instead).
   // The send button is the one stop control (owner 2026-10-28): it stops the running turn, or, with no turn running, this conversation's background worker.
   const line = $("#runline"), stopMode = ((on && st !== "rate-limited") || bg.length > 0) && !ta.value.trim() && !ATT.length && !pkCount();
-  line.hidden = !show; line.classList.toggle("warn", st === "rate-limited");
+  line.hidden = !show; line.classList.toggle("warn", st === "rate-limited"); line.classList.toggle("only-subs", !has);
+  paintSubsBtn($("#runline-subs"), subsSourceOf(target), subs, has); paintSubsBtn($("#runstate-subs"), subsSourceOf(target), subs, true);
   $("#c-model").classList.toggle("run", on && st !== "rate-limited");
   const sb = $("#send-btn"); sb.classList.toggle("stop", stopMode); sb.setAttribute("aria-label", stopMode ? "중단" : "보내기"); sb.title = stopMode ? "지금 하는 일 중단" : "";
   if (on) {
-    const n = runningSubs(sourceOf(target)).length;
     $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
-    workingLabel = `${st === "rate-limited" ? "사용량 한도로 대기 중" : "작업 중…"}`; workingSubs = n;
+    workingLabel = st === "rate-limited" ? "사용량 한도로 대기 중" : "작업 중…";
     tickWorking();
     $("#working-stop").hidden = true;
   } else if (bg.length) {
@@ -7263,15 +7689,29 @@ async function loadQueue() {
   try { QUEUE = (await api("/api/queue")).items || []; } catch { return; }
   renderQueue();
 }
-function renderQueue() {
-  const box = $("#queue"), mine = QUEUE.filter(i => i.target === target);
-  box.hidden = !mine.length;
-  if (!mine.length) { clear(box); return; }
-  clear(box).append(...mine.map(i => el("div", { class: "qitem" },
-    el("div", { class: "qb" }, el("div", { class: "qt", text: i.text }), el("div", { class: "qm", text: "작업이 끝나면 전달" })),
-    el("div", { class: "qa" },
-      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
-      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")))));
+function renderQueue() { if (paintQueue(tl, target)) scrollChat(false); paneStrips(); }
+// A queued message is a dimmed bubble of the owner's at the end of the conversation, with its two ways out under it; it goes when the server delivers it, and
+// the delivered message is then the ordinary bubble. The last child of a timeline that is not one of these is tlTail.
+const QD = new WeakMap();
+const tlTail = () => { let n = tl.lastElementChild; while (n && n.classList.contains("qd")) n = n.previousElementSibling; return n; };
+function qdBubble(i) {
+  const sep = () => el("span", { class: "qd-sep", "aria-hidden": "true", text: "·" });
+  return el("div", { class: "um qd" }, el("div", { class: "ub", text: i.text }),
+    el("div", { class: "qd-ln" }, el("span", { text: "작업이 끝나면 전달" }), sep(),
+      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"), sep(),
+      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")));
+}
+// The queued messages of conversation t at the end of list: the open timeline, or an inactive pane's. A message drawn after them moves them to the end again.
+// True when there are more of them than were there.
+function paintQueue(list, t) {
+  const mine = QUEUE.filter(i => i.target === t), sig = JSON.stringify(mine.map(i => [i.id, i.text]));
+  const rec = QD.get(list) || { sig: "", nodes: [] }, found = [...list.querySelectorAll(":scope > .qd")];
+  if (rec.sig === sig && found.length === rec.nodes.length && found.every((n, k) => n === rec.nodes[k]) && (!found.length || list.lastElementChild === found[found.length - 1])) return false;
+  for (const n of found) n.remove();
+  const nodes = mine.map(qdBubble);
+  QD.set(list, { sig, nodes });
+  list.append(...nodes);
+  return nodes.length > found.length;
 }
 // Taking a queued message back puts its text into the box; a box with a draft keeps it and the message stays queued.
 async function takeBack(i) {
@@ -7321,60 +7761,64 @@ function ctxSession(t) {
   if (projOnMain(t)) return main();
   return ((C && C.conversations) || []).find(x => x.key === t);
 }
-function renderCtxRing() {
-  const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
-  const orchT = target === MAIN || isProjT(target);
+// The model / effort / context chips of conversation t in the chip set k: the open conversation's (renderCtxRing), or the line under an inactive pane's box.
+function paintChips(t, k) {
+  const mb = k.model, lane = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null;
+  const orchT = t === MAIN || isModelT(t);
   // A conversation with a session of its own but no model choice (작업내역, 알림, a mail thread, app settings) follows main's model: its chip reads that
   // session's model from the context list, main's configured one while the session has no figure yet. The chips only show it; the model is main's to change.
-  const convOnly = isConvT(target) && !isProjT(target), cs = convOnly ? ctxSession(target) : null;
+  const convOnly = isConvT(t) && !isModelT(t), cs = convOnly ? ctxSession(t) : null;
   // The model it answers on now, a fallback included (20-models.js liveModel), with 폴백 중 beside it when that is not the configured one.
-  const live = orchT ? liveModel(target) : convOnly ? { sel: (cs && cs.model) || liveModel(MAIN).conf, conf: "", fallback: null } : lane ? liveModel(`lane:${lane.name}`) : null, sel = live && live.sel;
+  const live = orchT ? liveModel(t) : convOnly ? { sel: (cs && cs.model) || liveModel(MAIN).conf, conf: "", fallback: null } : lane ? liveModel(`lane:${lane.name}`) : null, sel = live && live.sel;
   // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
   const owner = orchT || convOnly ? botName : lane ? `세션 ${lane.title || lane.name}` : "";
-  const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
+  const ob = k.own, wb = k.worker, wsel = lane && lane.worker_model;
   // The row reads as in main; a project's own choice shows in the tooltips and in the menus' first row (inheritRow).
-  const chipOwner = isProjT(target) ? "이 프로젝트" : convOnly ? "이 대화" : owner;
+  const chipOwner = isProjT(t) ? "이 프로젝트" : isModelT(t) ? "이 메일" : convOnly ? "이 대화" : owner;
   ob.hidden = !(sel && owner); ob.textContent = owner;
   wb.hidden = !wsel;
   if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `서브에이전트 ${modelChipText(wbase)}${wlevel ? ` · ${thinkKo(wlevel)}` : ""}`; wb.title = `이 세션의 서브에이전트 모델`; }
   // model and effort are separate chips, each with its own popover
-  const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
+  const [base, level] = String(sel || "").split(":"), eb = k.effort;
   mb.hidden = !sel; eb.hidden = !level;
   if (sel) prefetchTV();
-  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${chipOwner} 모델 · ${t}${base && base !== t ? ` (${base})` : ""}`; }
+  if (sel) { const nm = modelChipText(base); mb.textContent = nm; mb.title = `${chipOwner} 모델 · ${nm}${base && base !== nm ? ` (${base})` : ""}`; }
   if (level) { eb.textContent = thinkKo(level); eb.title = `${chipOwner} 추론 강도 · ${thinkKo(level)}`; }
   const keyed = !!(orchT ? S && S.orchestrator && S.orchestrator.key_fallback : lane && lane.key_fallback);
-  $("#c-api").hidden = !keyed;
-  const fbc = $("#c-fb"), fb = live && live.fallback;
+  k.api.hidden = !keyed;
+  const fbc = k.fb, fb = live && live.fallback;
   fbc.hidden = !fb;
   if (fb) { fbc.textContent = fbTagText(fb); fbc.title = `${owner} 기본 모델 ${selText(live.conf)} 대신 쓰는 중`; }
-  $("#cbar").classList.toggle("api", keyed);
-  const b = $("#ctx-ring"), p = ctxSession(target);
+  k.bar.classList.toggle("api", keyed);
+  const b = k.ring, p = ctxSession(t);
   // A parked conversation keeps its last figure; a session with no figure yet has no chip.
   b.hidden = !(p && (p.kind === "conversation" ? p.tokens > 0 : p.running && p.tokens != null));
   if (b.hidden) return;
   const pct = p.percent != null ? Math.min(100, Math.max(0, p.percent)) : 0;
-  const who = isProjT(target) ? chipOwner : isConvT(target) ? "이 대화" : owner;
+  const who = isModelT(t) ? chipOwner : isConvT(t) ? "이 대화" : owner;
   const label = `${who} 컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}${p.running ? "" : " · 쉬는 중이라 마지막 값이에요"}`;
   b.title = label; b.setAttribute("aria-label", label);
   b.textContent = p.percent != null ? `컨텍스트 ${Math.round(p.percent)}%` : `컨텍스트 ${kfmt(p.tokens)}`;
   b.classList.toggle("warn", pct >= 80);
 }
+function realChips() { return { own: $("#c-own"), model: $("#c-model"), effort: $("#c-effort"), worker: $("#c-worker"), ring: $("#ctx-ring"), api: $("#c-api"), fb: $("#c-fb"), bar: $("#cbar") }; }
+function renderCtxRing() { paintChips(target, realChips()); paneStrips(); }
 /* ---------- composer chips: model / effort / context of the current target (GET/PUT /api/target) ---------- */
 // The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
-const MODELS_LINK = { value: "__models", label: "모델 · 폴백 설정", sub: "폴백 순서까지" };
-const targetParam = () => isLaneT(target) || isProjT(target) ? target : "main";
+const MODELS_LINK = { value: "__models", label: "모델 설정", sub: "대체 모델 순서까지" };
+const targetParam = () => isLaneT(target) || isModelT(target) ? target : "main";
 // The context ring and its 압축 stay on the session they read; the hub maps the target to it (hub/control.ts convOf).
 const ctxParam = () => target;
-// A project conversation's way back: the first row of its menus, checked while it made no choice (T.own is absent elsewhere).
+// A project or mail conversation's way back: the first row of its menus, checked while it made no choice (T.own is absent elsewhere).
 const INHERIT = "__inherit";
-const inheritRow = T => T.own === undefined ? [] : [{ value: INHERIT, label: "메인 대화와 같게", sub: selText(T.inherited) }];
+const inheritRow = T => T.own === undefined ? [] : [{ value: INHERIT, label: T.inherited_kind ? "이 메일 기본값과 같게" : "메인 대화와 같게", sub: selText(T.inherited) }];
 const chipValue = (T, v) => T.own === false ? INHERIT : v;
 // GET /api/target per target, kept so a chip opens its menu at once; the server builds it from the CLI model list, which is slow while cold.
 // The first click used to wait for that response (owner 2026-10-22: first click on the model/effort chip felt slow).
 const TV = new Map(), TV_BUSY = new Set();
-async function fetchTV(k) { const T = await api(`/api/target?target=${enc(k)}`); TV.set(k, T); return T; }
+// A mail with a default model has no entry in the model list until its session exists (20-models.js liveModel reads this view), so its chip is drawn again.
+async function fetchTV(k) { const T = await api(`/api/target?target=${enc(k)}`); TV.set(k, T); if (isMailT(k) && T.inherited_kind) renderCtxRing(); return T; }
 // Fills the cache at idle once the chips render, so even the first click finds it.
 function prefetchTV() {
   const k = targetParam();
@@ -7403,20 +7847,20 @@ async function targetChange(title, change, label, t = targetParam()) {
   TV.delete(body.target);
   await Promise.all([loadModels(true), loadContext(true), fetchTV(body.target).catch(() => {})]); refreshState();
 }
-const followsMain = () => isConvT(target) && !isProjT(target);
+const followsMain = () => isConvT(target) && !isModelT(target);
 $("#c-model").onclick = ev => busy(null, () => {
   if (followsMain()) return;
   const anchor = ev.currentTarget;
   return chipMenu(anchor, T => {
     const name = targetName(target), items = [...inheritRow(T), ...modelPickItems(T.models, T.model), MODELS_LINK];
-    showMenu(anchor, items, { value: chipValue(T, T.model), onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, v === INHERIT ? { inherit: true } : { model: v }, `${modelName(v)} · ${T.thinking}`)) });
+    showMenu(anchor, items, { value: chipValue(T, T.model), onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, v === INHERIT ? { inherit: true } : { model: v }, `${modelName(T.model)} → ${v === INHERIT ? selText(T.inherited) : modelName(v)}`)) });
   });
 });
 // A session's subagent model: the same model list, saved as the lane's worker_model (its effort is kept).
 $("#c-worker").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget, lane = S && S.lanes.find(x => x.name === laneOf(target));
   const [base, level] = String((lane && lane.worker_model) || "").split(":");
-  return chipMenu(anchor, T => showMenu(anchor, modelPickItems(T.models, base), { value: base, onPick: v => busy(null, () => targetChange(targetName(target), { worker_model: level ? `${v}:${level}` : v }, `서브에이전트 ${modelName(v)}`)) }));
+  return chipMenu(anchor, T => showMenu(anchor, modelPickItems(T.models, base), { value: base, onPick: v => busy(null, () => targetChange(targetName(target), { worker_model: level ? `${v}:${level}` : v }, `서브에이전트 ${base ? `${modelName(base)} → ` : ""}${modelName(v)}`)) }));
 });
 // Effort only: the levels this target's model accepts (04-state.js effortItems), the model is never touched.
 $("#c-effort").onclick = ev => busy(null, () => {
@@ -7424,7 +7868,7 @@ $("#c-effort").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget;
   return chipMenu(anchor, T => {
     const name = targetName(target);
-    showMenu(anchor, [...inheritRow(T), { header: "추론 강도" }, ...effortItems(T.model, T.thinking), MODELS_LINK], { value: chipValue(T, T.thinking), onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, v === INHERIT ? { inherit: true } : { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
+    showMenu(anchor, [...inheritRow(T), { header: "추론 강도" }, ...effortItems(T.model, T.thinking), MODELS_LINK], { value: chipValue(T, T.thinking), onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, v === INHERIT ? { inherit: true } : { thinking: v }, v === INHERIT ? modelName(T.model) : `${modelName(T.model)} · 추론 강도 ${thinkKo(T.thinking)} → ${thinkKo(v)}`)) });
   });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");
@@ -7699,11 +8143,13 @@ const VIEW_RE = /\.(md|markdown|txt|log|json|ya?ml|csv|tsv)$/i;   // opens in th
 const offChip = (f, why) => fileChip(f.name, why, { cls: "off" });
 const imgNo = n => el("span", { class: "tag img-no", text: typeof n === "number" ? `이미지 ${n}` : n });
 // sibs: the images of the same message, the lightbox pages through them.
+// What a press on a file's chip opens, one rule for every chip of a made or attached file: the reader for a text file, the canvas for this computer's HTML page, else the file in a tab.
+const fileOpen = (f, name = f.name) => VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : !f.pc && canvasIsHtml(name) ? { onclick: () => canvasOpen(f.path, name) } : { href: fileUrl(f.path, false, f.pc) };
 function fileItem(f, n = 0, sibs = null) {
   const img = IMG_RE.test(f.name || f.path);
   const main = img
     ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name, f.pc, sibs) }, el("img", { src: thumbUrl(f.path, f.pc), alt: f.name, loading: "lazy", decoding: "async" }))
-    : fileChip(f.name, fileMeta(f.name, f.size), { row: f.row, ...(VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : !f.pc && canvasIsHtml(f.name) ? { onclick: () => canvasOpen(f.path, f.name) } : { href: fileUrl(f.path, false, f.pc) }) });
+    : fileChip(f.name, fileMeta(f.name, f.size), { row: f.row, ...fileOpen(f) });
   const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), n ? imgNo(n) : null, img && f.label ? null : pathCopy(f.path));   // an image with its token is named by the chip; the viewer keeps the path
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
@@ -7775,7 +8221,6 @@ async function viewer(path, name, pc) {
       el("div", { class: "tv-bar" }, el("span", { class: "tv-n", text: name }),
         el("a", { href: fileUrl(path, true, pc), download: name }, "다운로드"),
         el("button", { class: "x", type: "button", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
-      pathCopy(path, "tv-p"),
       body));
   d.addEventListener("close", () => d.remove());
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
@@ -8283,7 +8728,7 @@ function renderBars() {
     const i = targetInfo(t);
     const k = attnKind(t);
     if (isFixedT(t)) return { t, name: targetName(t), tone: "", attn: "", status: "", unread: ts(t).unread, subs: 0 };
-    return { t, name: targetName(t), tone: k ? "warn" : targetState(t)[1], attn: k, status: targetState(t)[0], unread: ts(t).unread, subs: runningSubs(sourceOf(t)).length };
+    return { t, name: targetName(t), tone: k ? "warn" : targetState(t)[1], attn: k, status: targetState(t)[0], unread: ts(t).unread, subs: runningSubs(subsSourceOf(t)).length };
   };
   const A = alive.map(view), D = dead.map(view), FA = A.filter(v => isFixedT(v.t)), PA = A.filter(v => isProjT(v.t)), LA = A.filter(v => isLaneT(v.t));
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
@@ -8364,13 +8809,19 @@ new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); })
 // A credential the agent asked for: answered here or on Discord. Values go straight to the gateway, which stores them in a
 // 0600 secrets file; they are never kept in the page.
 const AUTH_DONE = new Set(), AUTH_HID = new Set(), AUTH_CARDS = new Map();   // AUTH_HID: closed with the x or back, still waiting (the notice's 입력 창으로 가기 shows it again)
-let authH = null, authId = "";
-function paintAuth() {
+let authH = null, authId = "", authWaits = false;
+// `force` = the owner asked for it (the notice's 입력 창으로 가기); otherwise a request that arrives while a text field has the focus waits until the field is left, so its sheet does not take the focus (and a phone's keyboard) from what is being typed.
+function paintAuth(force) {
   const list = ((S && S.auth) || []).filter(a => !AUTH_DONE.has(a.id));
   for (const id of [...AUTH_CARDS.keys()]) if (!list.some(a => a.id === id)) { AUTH_CARDS.get(id).remove(); AUTH_CARDS.delete(id); }
   for (const a of list) if (!AUTH_CARDS.has(a.id)) AUTH_CARDS.set(a.id, authCard(a));
   const cur = list.find(a => !AUTH_HID.has(a.id));
   if (!cur) { if (authH) { authId = ""; authH.close(false); } return; }
+  const typing = !authH && !force && typingIn();
+  if (typing) {
+    if (!authWaits) { authWaits = true; typing.addEventListener("focusout", () => { authWaits = false; afterTap(() => paintAuth()); }, { once: true }); }
+    return;
+  }
   if (!authH) { const h = fsOpen({ onClose: () => { if (authId) AUTH_HID.add(authId); authId = ""; if (authH === h) authH = null; } }); authH = h; }
   if (authId === cur.id) return;
   authId = cur.id;
@@ -8390,10 +8841,11 @@ function authCard(a) {
     inp.addEventListener("input", () => { inp.classList.remove("bad"); err.textContent = ""; });
     return el("div", { class: "fld" }, el("label", { for: inp.id, text: f.label + (f.optional ? "(선택)" : "") }), el("div", { class: "ctl" }, inp, eye), err);
   };
-  const rem = isForm ? el("input", { type: "checkbox", id: `au-${a.id}-remember` }) : null;
-  if (rem) rem.checked = !!a.remember;
+  // The app's own switch row (as 설정), not a browser checkbox: the whole row is the tap target.
+  const rem = isForm ? el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!a.remember), "aria-label": "다음에도 쓰게 저장해 두기", id: `au-${a.id}-remember` }) : null;
+  const remRow = rem ? el("div", { class: "list" }, el("div", { class: "li tap", onclick: () => rem.setAttribute("aria-checked", String(rem.getAttribute("aria-checked") !== "true")) }, el("span", { class: "tx" }, el("div", { class: "hd", text: "다음에도 쓰게 저장해 두기" }), el("div", { class: "sup", text: "끄면 한 번 쓰고 지워요" })), liEnd(rem))) : null;
   const done = async (action, values) => {
-    try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}), ...(rem && action === "submit" ? { remember: rem.checked } : {}) }); }
+    try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}), ...(rem && action === "submit" ? { remember: rem.getAttribute("aria-checked") === "true" } : {}) }); }
     catch (e) {
       const bad = e && e.data && inputs.find(i => i.name === e.data.field);
       if (bad) { bad.classList.add("bad"); bad.closest(".fld").querySelector(".ferr").textContent = e.data.error === "required" ? "비워 둘 수 없어요" : "형식을 확인해 주세요"; bad.focus(); return; }
@@ -8407,9 +8859,9 @@ function authCard(a) {
   const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인" : "보내기" });
   const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
   const card = el("form", { class: "au", "data-id": a.id },
-    fsHead([el("span", { class: "fs-ey", text: a.kind === "approve" ? "승인 요청" : "입력 요청" }), el("h3", { class: "fs-t", id: `au-t-${a.id}`, text: a.title })], { close: () => { AUTH_HID.add(a.id); paintAuth(); } }),
+    fsHead([el("span", { class: "fs-ey", text: `${a.site ? `${a.site} · ` : ""}${a.kind === "approve" ? "승인 요청" : "입력 요청"}` }), el("h3", { class: "fs-t", id: `au-t-${a.id}`, text: a.title })], { close: () => { AUTH_HID.add(a.id); paintAuth(); } }),
     el("div", { class: "fs-body abd" }, el("p", { text: a.purpose }), ...(isForm ? a.fields.map((f, k) => wrap(f, inputs[k])) : inputs),
-    rem ? el("label", { class: "rem", for: rem.id }, rem, el("span", { text: "다음에도 쓰게 저장해 두기 (끄면 한 번 쓰고 지워요)" })) : null,
+    remRow,
     a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." })),
     el("div", { class: "fs-ft row" }, no, ok));
   card.addEventListener("submit", ev => {
@@ -8437,8 +8889,37 @@ function setConn(ok) {
   if (ok) { selfDown = false; everConnected = true; $("#conn").hidden = true; return; }
   connTimer = setTimeout(() => { selfDown = true; paintConn(); autoSwitch(); }, 2000);
 }
+matchMedia("(max-width: 639px)").addEventListener("change", () => { if (!$("#conn").hidden) paintConn(); });
 const cameByAuto = new URLSearchParams(location.search).has("auto");
 if (cameByAuto) { const u = new URL(location.href); u.searchParams.delete("auto"); history.replaceState(history.state, "", u.pathname + u.search + u.hash); }
+// A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K), unless a tapped notice opened that session's report (ntKeep).
+// A project's work channel that was deleted falls back the same way. While the owner has text in the composer or the focus there, the move waits (endedHold)
+// until the box is blurred and empty; a session that cannot be written to (gone from the list, ended for good, a deleted project) carries the text into main instead.
+let endedHold = "";
+function endedNow(t) {
+  if (isLaneT(t)) return !S.lanes.some(l => `lane:${l.name}` === t) || (t !== ntKeep && targetInfo(t).status === "exited" && (endedHold === t || (!!PREV[t] && PREV[t] !== "exited")));
+  return isProjT(t) && !projTargets().includes(t);
+}
+function endedLeave() {
+  const t = target, held = document.activeElement === ta, text = ta.value;
+  if (!text.trim() && !held) { endedHold = ""; setTarget(MAIN); return; }
+  const i = targetInfo(t);
+  if (isLaneT(t) && i.known && (i.alive || i.resumable)) { endedHold = t; return; }   // it can still be written to: stay while there is text or focus
+  endedHold = "";
+  setTarget(MAIN);
+  try { localStorage.removeItem(DRAFT_KEY(t)); } catch (e) { console.warn("draft", e); }
+  ts(t).draft = "";
+  ta.value = [ta.value, text].filter(x => x.trim()).join("\n");
+  saveDraft(); autosize(); updateHints();
+  if (held) { ta.focus({ preventScroll: true }); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
+function endedSettle() {
+  if (!endedHold) return;
+  if (endedHold !== target || !S || !endedNow(target)) { endedHold = ""; return; }
+  if (!ta.value.trim() && document.activeElement !== ta) endedLeave();
+}
+ta.addEventListener("blur", endedSettle);
+ta.addEventListener("input", endedSettle);
 let autoTried = false;
 function autoSwitch() {
   const other = typeof prFailover === "function" ? prFailover() : null;
@@ -8448,8 +8929,11 @@ function autoSwitch() {
 }
 function paintConn() {
   const c = $("#conn"), other = typeof prFailover === "function" ? prFailover() : null;
+  const full = other ? koPick(`연결 끊김 · ${other.name}(으)로 전환`) : "연결 끊김 · 다시 연결 중";
   c.hidden = !selfDown;
-  c.textContent = other ? `연결 끊김 · ${other.name}(으)로 전환` : "연결 끊김 · 다시 연결 중";
+  // A phone's bar has no room for the sentence: the dot and the word 끊김 stay, the sentence is the label.
+  c.textContent = matchMedia("(max-width: 639px)").matches ? "끊김" : full;
+  c.title = full; c.setAttribute("aria-label", full);
   c.disabled = !other;
   c.onclick = other ? () => prPick(other) : null;
 }
@@ -8462,9 +8946,7 @@ async function refreshState() {
     webBuildCheck(S.web_build);
     ntSync(S);
     if (S.name && S.name !== botName) { botName = S.name; setBrand(); if (current === "home") $("#title").textContent = botName; if (ts(target).hLoaded) renderAll(); }
-    // A lane that exits disappears at once: the view falls back to the main assistant (it stays reachable from ⌘K), unless a tapped notice opened that session's report (ntKeep).
-    if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && target !== ntKeep && targetInfo(target).status === "exited"))) setTarget(MAIN);
-    if (isProjT(target) && !projTargets().includes(target)) setTarget(MAIN);   // its work channel was deleted
+    if (endedNow(target)) endedLeave();
     noteStatus(); paintAuth(); paintDecision(); paintOrchError(); paintPause(); paintRunState();
     renderBars(); renderWorking(); paintSysLines(); updateComposerMeta(); dskPaint();
     if (current === "project") pmPaint();
@@ -8698,6 +9180,8 @@ function sessionRow(l, o = {}) {
     el("span", { class: `hs ${tone}`, text: word }));
 }
 
+// The project a wide screen opens first: the first pinned one (the list shows 고정 on top), else the top of the list.
+const prjFirst = () => { const r = projRows((PRJ && PRJ.projects) || []); return ((r.find(x => x.p.pinned) || r[0] || {}).p || {}).key || ""; };
 /* ---------- 프로젝트 level 1: a compact list (name, one status line, last activity), filtered and paged ----------
    Rows sort by what needs the owner, then what runs, then the most recent. A row opens the project's overview (level 2); the overview's
    sections open one drill-in page each (level 3). The built-in 커스텀 project is a settings page, so it sits at the end, outside the filters. */
@@ -8716,7 +9200,7 @@ function prjState(p) {
   if (stuck) return { k: "need", tone: stuck.st[1], word: stuck.st[0], lane: stuck.l };
   const queued = open.find(x => x.st[0] === "순서 대기");
   if (queued) return { k: "run", tone: "", word: queued.st[0], lane: queued.l };
-  return { k: "idle", tone: "", word: ls.length ? "쉬는 중" : "아직 세션이 없어요" };
+  return { k: "idle", tone: "", word: ls.length ? "쉬는 중" : "세션 없음" };
 }
 // The newest thing that happened in the project: a session's report or start, or the record's last save.
 function prjLastAt(p) {
@@ -8762,8 +9246,8 @@ function prjRow(r) {
     el("span", { class: "li-end" }, unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null,
       el("span", { class: `tag ${tone}`, text: st.word })));
 }
-// The prototype's section headers: 고정 first, then 전체, the same rows sorted by what needs the owner (projRows).
-const prjGroups = rows => [["고정", rows.filter(r => r.p.pinned)], ["전체", rows.filter(r => !r.p.pinned)]].filter(g => g[1].length);
+// The prototype's section headers: 고정 first, then 프로젝트 (not 전체: that is the filter chip's word), the same rows sorted by what needs the owner (projRows).
+const prjGroups = rows => [["고정", rows.filter(r => r.p.pinned)], ["프로젝트", rows.filter(r => !r.p.pinned)]].filter(g => g[1].length);
 // With two or more computers: one folding header per computer (이 컴퓨터 first), its rows pinned first. Another computer's project opens
 // that computer's own web app at the project page; an offline computer keeps its header, marked 연결 안 됨, like the computer switcher.
 const PJ_FOLD = new Set((() => { try { const l = JSON.parse(localStorage.getItem("dotz-pj-fold") || "[]"); return Array.isArray(l) ? l : []; } catch { return []; } })());
@@ -8866,7 +9350,7 @@ function pjPaintRows() {
 }
 function renderProjects() {
   const box = $("#v-projects");
-  if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
+  if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…", PRJ_FAIL ? () => prjLoad() : null)); return; }
   const list = PRJ.projects || [];
   if (!list.length) {
     delete box.dataset.sig;
@@ -8922,6 +9406,7 @@ async function pmDo(note, fn) {
   await pmReload();
   return true;
 }
+const pmNames = {};   // project key -> the name last shown for it
 function pmProject() {
   const found = ((PRJ && PRJ.projects) || []).find(x => x.key === PM.key || x.recordKey === PM.key);
   if (found) return found;
@@ -8948,15 +9433,20 @@ function pmSessionRank(r) {
 function pmPaint() {
   if (current !== "project" || PM.open > 0) return;
   const root = $("#v-project"), D = PM.D, p = pmProject();
-  if (!p) { delete root.dataset.sig; clear(root).append(emptyNode(PM.fail || PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
+  // The name stays in the app bar when the project cannot be read now: the last one seen, or the chat channel's own name.
+  if (!p) { if (!ppWide()) $("#title").textContent = pmNames[PM.key] || (isProjT(PM.key) ? targetName(PM.key) : "프로젝트"); delete root.dataset.sig; clear(root).append(emptyNode(PM.fail || PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…", PM.fail || PRJ_FAIL ? () => Promise.all([pmLoad(), prjLoad()]) : null)); return; }
   if (p.builtin) { cmPaint(root, p, D); return; }
   const q = { ...p, record: (D && D.record) || p.record }, rows = pmSessionRows(p, D);
+  pmNames[PM.key] = prjTitle(q);
   // A phone shows one screen at a time, so its app bar carries the project's name (the prototype's detail); wide keeps the list beside it under "프로젝트".
   $("#title").textContent = ppWide() ? "프로젝트" : prjTitle(q);
-  const sig = JSON.stringify([q, D, rows, botName]);
+  const sig = JSON.stringify([q, D, rows, botName, PM.fail]);
   if (root.dataset.sig === sig) return;
   root.dataset.sig = sig;
-  clear(root).append(pmHead(q), pmOverview(q, D, rows));
+  // Not read yet is not empty: what is already known (확인 필요, the sessions) shows, and under it a pending load says so, a failed one offers 다시 시도.
+  const o = pmOverview(q, D, rows);
+  if (!D) o.append(emptyNode(PM.fail ? "나머지를 불러오지 못했어요" : "불러오는 중…", PM.fail ? () => { PM.fail = false; pmPaint(); pmLoad(); } : null));
+  clear(root).append(pmHead(q), o);
   pmSheetsPaint();
 }
 // An open drill-in page follows the detail: a save or a 20 s refresh repaints it from the re-fetched data, never under a field being typed in.
@@ -8991,15 +9481,19 @@ function pmOverview(q, D, rows) {
   const work = (D && D.work) || [], results = (D && D.results) || [], items = pmRoutineItems(D);
   const works = [...work.filter(w => w.status === "running"), ...work.filter(w => w.status !== "running")];
   const info = (D && D.info) || {}, files = info.files || [];
-  return el("div", { class: "pm-o" },
+  // A section with nothing in it is left out, title and all.
+  const parts = [
     pmPrimary(rows),
     pmSection({ kind: "info", label: "지금 상황", count: "", action: D && D.info ? "전체" : "", head: info.summary ? el("div", { class: "pm-goal sup", text: info.summary }) : null,
-      nodes: pmInfoRows(info), empty: info.summary ? "" : "대화하면서 정한 내용이 여기에 모여요" }),
-    pmSection({ kind: "sessions", label: "세션", count: rows.length, action: rows.length ? "전체" : "", nodes: rows.slice(0, 5).map(pmLaneRow), empty: "아직 세션이 없어요" }),
-    pmSection({ kind: "sessions", label: "작업", count: work.length, nodes: works.slice(0, 4).map(pmWorkRow), empty: "진행 중인 작업이 없어요" }),
-    pmSection({ kind: "results", label: "결과", count: results.length, action: results.length ? "전체" : "", nodes: results.slice(0, 4).map(pmResultRow), empty: "아직 결과가 없어요" }),
+      nodes: pmInfoRows(info) }),
+    pmSection({ kind: "sessions", label: "세션", count: rows.length, action: rows.length ? "전체" : "", nodes: rows.slice(0, 5).map(pmLaneRow) }),
+    pmSection({ kind: "sessions", label: "작업", count: work.length, nodes: works.slice(0, 4).map(pmWorkRow) }),
+    pmSection({ kind: "results", label: "결과", count: results.length, action: results.length ? "전체" : "", nodes: results.slice(0, 4).map(pmResultRow) }),
     files.length ? pmSection({ kind: "info", label: "파일", count: files.length, action: files.length > 3 ? "전체" : "", nodes: files.slice(-3).toReversed().map(pmFileRow) }) : null,
-    pmSection({ kind: "routines", label: "감시", count: items.length, action: items.length ? "전체" : "", nodes: items.slice(0, 4).map(pmWatchRow), empty: "연결된 감시가 없어요" }));
+    pmSection({ kind: "routines", label: "감시", count: items.length, action: items.length ? "전체" : "", nodes: items.slice(0, 4).map(pmWatchRow) })].filter(Boolean);
+  // Nothing to draw once the detail is read: one line says what will appear and how to start (before it is read, the load line speaks).
+  if (D && !parts.length) parts.push(emptyNode("아직 쌓인 내용이 없어요. 채팅에서 이 프로젝트의 일을 맡기면 세션과 결과가 여기에 모여요"));
+  return el("div", { class: "pm-o" }, ...parts);
 }
 // A line of what the project's turns kept (hub/projectinfo.ts), with what kind of line it is.
 const pmInfoRow = (text, tag, tone = "") => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp pmv-wrap", text })), tag ? el("span", { class: "li-end" }, el("span", { class: `tag ${tone}`, text: tag })) : null);
@@ -9018,18 +9512,19 @@ function pmInfoBody(D) {
   return nodes.length ? el("div", {}, ...nodes) : emptyNode("대화하면서 정한 내용이 여기에 모여요");
 }
 // The prototype's section header + list (s-work.js project detail: 지금 상황 · 세션 · 작업 · 결과 · 감시); the header button opens the section's full page.
-function pmSection({ kind, label, count, action, head, nodes, empty }) {
+function pmSection({ kind, label, count, action, head, nodes }) {
+  if (!nodes.length && !head) return null;
   return el("div", { class: "pm-block" },
     el("div", { class: "sec sec-act pm-sec" }, el("span", { text: `${label}${count !== "" ? ` ${count}` : ""}` }),
       action ? el("button", { class: "btn text sm", type: "button", "data-k": kind, onclick: () => pmSheet(kind), text: action }) : null),
     head,
-    nodes.length ? el("div", { class: "list pm-sec-list" }, ...nodes) : empty ? el("div", { class: "empty", text: empty }) : null);
+    nodes.length ? el("div", { class: "list pm-sec-list" }, ...nodes) : null);
 }
 // Level 3: one section page over the overview. It is an overlay, so 32-history-nav gives it its own history entry: the back arrow
 // (or the browser's back) returns to the overview. Every function of the old one-page layout lives here, unchanged.
 const PM_PAGE = { info: ["지금 상황", "대화에서 정리된 내용이에요"], rules: ["내 규칙", "최근에 정한 순서예요"], sessions: ["세션 기록", "이 프로젝트의 세션과 백그라운드 작업"], results: ["결과 전체", "보고, 확인, 커밋"], routines: ["루틴과 모니터링", "주기적으로 도는 일"] };
 function pmSheet(kind) {
-  const [title, ey] = PM_PAGE[kind] || [kind, ""];
+  const [title, ey] = PM_PAGE[kind] || ["프로젝트", ""];
   let entry;
   const h = fsOpen({ cls: "pdv", labelledby: "pdv-t", onClose: () => PM.sheets.delete(entry) });
   entry = { h, paint: () => {
@@ -9106,7 +9601,7 @@ function pmMenuButton(q, cls = "pmv-more") {
   b.addEventListener("click", () => {
     const p = typeof q === "function" ? q() : q;
     if (!p) return toast("이 프로젝트를 찾을 수 없어요");
-    showMenu(b, [{ value: "edit", label: "프로젝트 수정" }, { value: "delete", label: "프로젝트 삭제" }], { onPick: v => {
+    showMenu(b, [{ value: "edit", label: "프로젝트 수정" }, { value: "delete", label: "프로젝트 삭제", danger: true }], { onPick: v => {
       if (v === "delete") return pmDeleteAsk(p);
       if (current === "project" && PM.key === p.key) { const t = $("#v-project .pmv-title"); if (t) t.click(); } else go("project", p.key);
     } });
@@ -9131,14 +9626,16 @@ async function pmDeleteAsk(q) {
   try { p = await pmDeleteCall(q, "delete-plan"); } catch (e) { return toast(e.message || "지울 내용을 읽지 못했어요", true); }
   const st = { drop: false, busy: false }, err = el("div", { class: "note err" });
   const h = fsOpen({ labelledby: "pmd-t" });
-  const cb = el("input", { type: "checkbox", "data-k": "drop-archive", onchange: () => { st.drop = cb.checked; } });
+  // The app's own switch row (as 설정), not a browser checkbox: the whole row is the tap target.
+  const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": "false", "aria-label": "보관 파일도 같이 지우기", "data-k": "drop-archive" });
+  const drop = el("div", { class: "li tap", onclick: () => { st.drop = !st.drop; sw.setAttribute("aria-checked", String(st.drop)); } }, el("span", { class: "tx" }, el("div", { class: "hd", text: "보관 파일도 같이 지워요" })), liEnd(sw));
   const go1 = el("button", { class: "btn danger fill", type: "button", "data-k": "delete", disabled: p.running.length > 0, onclick: async () => {
     if (st.busy) return;
     st.busy = true; go1.disabled = true; err.textContent = "";
     try {
       const r = await pmDeleteCall(q, "delete", { archive: !st.drop });
       h.close(false);
-      toast(r.discord && !r.discord.ok ? `프로젝트는 지웠지만 Discord 채널은 남아 있어요 · ${r.discord.error}` : `${r.name} 프로젝트를 지웠어요`, !!(r.discord && !r.discord.ok));
+      toast(r && r.discord && !r.discord.ok ? `프로젝트는 지웠지만 Discord 채널은 남아 있어요 · ${r.discord.error}` : `${(r && r.name) || p.name} 프로젝트를 지웠어요`, !!(r && r.discord && !r.discord.ok));
       PM = pmReset();
       if (fromChat) pickTarget(MAIN); else go("projects");
       prjLoad();
@@ -9149,10 +9646,8 @@ async function pmDeleteAsk(q) {
     el("div", { class: "fs-body pmd" },
       p.running.length ? el("div", { class: "note err", text: `실행 중인 세션이 있어서 지울 수 없어요: ${p.running.join(", ")}` }) : null,
       el("ul", { class: "as-rml" }, ...pmDeleteLines(p).map(t => el("li", { text: t }))),
-      el("label", { class: "as-del" }, cb, el("span", { text: "보관 파일도 같이 지우기. 체크하지 않으면 남겨요" })),
-      el("div", { class: "as-h", text: `보관 파일: ${p.archive}` }),
-      err),
-    el("div", { class: "fs-ft row" }, el("button", { class: "btn text", type: "button", onclick: () => h.close() }, "취소"), go1));
+      el("div", { class: "list" }, drop)),
+    el("div", { class: "fs-ft row pmd-ft" }, err, el("button", { class: "btn text", type: "button", onclick: () => h.close() }, "취소"), go1));
 }
 
 // 세션 기록 page: what runs now, then the ended sessions and finished background work, newest first.
@@ -9194,7 +9689,7 @@ function pmRoutine(x) {
   const url = x.kind === "monitor" ? `/api/watches/${enc(x.id)}` : x.kind === "schedule" ? `/api/schedules/${enc(x.id)}` : "";
   const name = pmRoutineName(x);
   const note = el("div", { class: "note" }), box = el("div", { class: "pmv-rt" });
-  const meta = [PM_KIND[x.kind], mins ? pmEvery(mins) : once ? "한 번" : "", x.script ? String(x.script).split("/").pop() : "", x.lastRun ? `마지막 ${kstStamp(x.lastRun)}` : x.kind === "monitor" ? "아직 안 돌았어요" : "", !x.paused && next ? `다음 ${kstStamp(next)}` : ""].filter(Boolean);
+  const meta = [PM_KIND[x.kind], mins ? pmEvery(mins) : once ? "한 번" : "", x.kind === "monitor" ? (x.on === "match" ? "패턴이 나오면 알려요" : "확인해서 알려요") : "", x.lastRun ? `마지막 ${kstStamp(x.lastRun)}` : x.kind === "monitor" ? "아직 안 돌았어요" : "", !x.paused && next ? `다음 ${kstStamp(next)}` : ""].filter(Boolean);
   const patch = body => pmDo(note, () => api(url, "PATCH", body));
   const view = () => {
     PM.open = Math.max(0, PM.open - (box.dataset.editing ? 1 : 0)); delete box.dataset.editing;
@@ -9234,12 +9729,13 @@ function pmRoutine(x) {
   };
   const form = () => {
     PM.open++; box.dataset.editing = "1";
-    const iv = mins ? input({ type: "number", min: "1", step: "1", inputmode: "numeric", value: String(mins), "aria-label": "간격(분)" }) : null;
+    const hrs = mins > 0 && mins % 60 === 0, mul = hrs ? 60 : 1;   // the form counts in the unit the card says (매 12시간 -> 12 시간마다)
+    const iv = mins ? input({ type: "number", min: "1", step: "1", inputmode: "numeric", value: String(mins / mul), "aria-label": hrs ? "간격(시간)" : "간격(분)" }) : null;
     const pt = x.kind === "monitor" && x.on === "match" ? input({ value: x.pattern || "", placeholder: "패턴", "aria-label": "패턴" }) : null;
     const err = el("div", { class: "note err" }), ok = el("button", { class: "btn sm", type: "button", text: "저장" });
     ok.onclick = async () => {
       const body = {};
-      if (iv) { const n = Number(iv.value); if (!Number.isInteger(n) || n < 1) { err.textContent = "간격은 1분 이상의 정수로 적어 주세요"; return; } if (n !== mins) body.every_minutes = n; }
+      if (iv) { const r = Number(iv.value), n = r * mul; if (!Number.isInteger(r) || r < 1) { err.textContent = `간격은 1${hrs ? "시간" : "분"} 이상의 정수로 적어 주세요`; return; } if (n !== mins) body.every_minutes = n; }
       if (pt && pt.value.trim() !== (x.pattern || "")) body.pattern = pt.value.trim();
       if (!Object.keys(body).length) return view();
       ok.disabled = true; err.textContent = "";
@@ -9248,7 +9744,7 @@ function pmRoutine(x) {
     };
     const field = (label, node, unit) => [el("span", { class: "sup", text: label }), el("span", { class: "pmv-fld" }, node, unit ? el("span", { class: "sup", text: unit }) : null)];
     clear(box).append(el("div", { class: "pmv-rt-top" }, el("span", { class: "pmv-rt-name", text: name })),
-      el("div", { class: "pmv-rt-form" }, ...(iv ? field("간격", iv, "분마다") : []), ...(pt ? field("패턴", pt) : [])),
+      el("div", { class: "pmv-rt-form" }, ...(iv ? field("간격", iv, hrs ? "시간마다" : "분마다") : []), ...(pt ? field("패턴", pt) : [])),
       err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text sm", type: "button", text: "취소", onclick: view }), ok));
     (iv || pt).focus();
   };
@@ -9260,21 +9756,23 @@ function pmRoutine(x) {
 const pmSessionRow = (r, open) => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line, ...(typeof open === "function" ? { open } : {}) });
 // The prototype's session row (s-work.js project 세션): a state dot, the title, the lane name, and the state tag at the right.
 function pmLaneRow(r) {
-  const [word, tone] = pmLaneState(r);
+  const [word, tone] = pmLaneState(r), sub = (r.waiting && r.ask) || r.line;   // what it does now, not its internal name
   return el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()), "aria-label": `${r.title} · ${word} · 대화 열기` },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: r.name })),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), sub ? el("div", { class: "sup", text: sub }) : null),
     el("span", { class: "li-end" }, el("span", { class: `tag ${tone}`, text: word })));
 }
 // A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on its result, or on the asking message while it runs.
 const pmWorkRow = w => {
   const run = w.status === "running" && !w.queued, stall = w.status === "stalled", rec = workRecovering(w);
   const word = w.queued ? "순서 대기" : run ? "진행 중" : stall ? "멈춤" : w.status === "done" ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서" : "실패";
-  const tag = workTone(w);
-  return withResults(el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
+  const tag = workTone(w), ok = run || w.status === "done";
+  // Same as home's workRow: the dot says the state, the quiet line what or why, the right end a time; a stopped or failed one keeps its word.
+  const sub = w.queued ? "순서를 기다려요" : ok ? w.model || "" : stall ? `${w.reason || "활동이 없어요"} · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
+  return withResults(el("button", { class: "li tap", type: "button", onclick: () => workGo(w), "aria-label": `${friendlyLine(w.description)} · ${word}` },
     el("span", { class: "lead" }, el("span", { class: `dot ${tag}` })),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: friendlyLine(w.description) }), el("div", { class: "sup", text: w.queued ? "순서를 기다려요" : run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
-    el("span", { class: "li-end" }, el("span", { class: `tag ${tag}`, text: word }))), w.status === "done" ? resultChips(w) : null);
+    el("span", { class: "tx" }, el("div", { class: "hd", text: friendlyLine(w.description) }), sub ? el("div", { class: "sup", text: sub }) : null),
+    el("span", { class: "li-end" }, ok && !w.queued ? el("span", { class: "sup", text: run ? workElapsed(w) : workAgo(w) }) : el("span", { class: `tag ${tag}`, text: word }))), w.status === "done" ? resultChips(w) : null);
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
 function pmDoing(live, running) {
@@ -9394,12 +9892,12 @@ async function loadContext(quiet) {
 // "<model>:<thinking>" selector -> readable "model · thinking".
 function selLabel(sel) {
   const i = sel.lastIndexOf(":"), level = sel.slice(i + 1);
-  return i > 0 && ((M && M.thinking_levels) || []).includes(level) ? `${modelName(sel.slice(0, i))} · ${level}` : modelName(sel);
+  return i > 0 && ((M && M.thinking_levels) || []).includes(level) ? `${modelName(sel.slice(0, i))} · ${thinkKo(level)}` : modelName(sel);
 }
 function renderContext() {
   const box = $("#context");
   if (!C) { clear(box).append(emptyNode("불러오는 중…")); return; }
-  const list = el("div", { class: "col" });
+  const list = el("div", { class: "col" }), offList = el("div", { class: "list" });
   // Exited lanes leave this list at once, like the lanes board; the orchestrator always stays.
   // Then each conversation with its own session, by the same row; a parked one shows its last figure.
   const convRows = (C.conversations || []).map(x => ({ ...x, name: targetName(x.key) }));
@@ -9414,14 +9912,20 @@ function renderContext() {
     // A waiting session whose process is off (it starts again on its next message) keeps 대기 like every other screen, and says why it has no numbers.
     const off = !p.running && (p.status === "idle" || !!p.key);
     const t = p.key || (p.kind === "lane" ? `lane:${p.name}` : MAIN), [word, tone] = runStatus(t, off ? "idle" : p.status, targetInfo(t).ask);
+    // A session that is not running is one plain list row (its display name, 꺼짐 said once at the right); only a running one keeps a card.
+    if (!p.running) {
+      offList.append(el("div", { class: "li", "data-cx-off": "1" }, el("span", { class: "tx" }, el("div", { class: "hd", text: p.kind === "orchestrator" ? botName : targetName(t) }), cs ? el("div", { class: "sup", text: cs.text }) : null),
+        liEnd(el("span", { class: "cx-state" }, el("span", { class: "dot", "aria-hidden": "true" }), "꺼짐"))));
+      continue;
+    }
     list.append(el("div", { class: "card" },
-      el("div", { class: "heads" }, el("span", { class: `dot ${tone}` }), el("span", { class: "t", text: p.kind === "orchestrator" ? botName : p.name }), el("span", { class: "sp" }), el("span", { class: `tag ${tone}`, text: word })),
+      el("div", { class: "heads" }, el("span", { class: `dot ${tone}` }), el("span", { class: "t", text: p.kind === "orchestrator" ? botName : p.name }), el("span", { class: "sp" }), word === statusKo("") ? null : el("span", { class: `tag ${tone}`, text: word })),   // a state nobody knows is left out, not named 알 수 없음
       p.model ? el("div", { class: "sup sub", text: selLabel(p.model) }) : null,
       p.running || (p.key && p.tokens > 0) ? el("div", { class: "mt8" }, ctxBar(p)) : null,
       p.running ? null : el("div", { class: "sup mt8", text: off ? "꺼져 있어요. 다음 메시지가 오면 다시 시작해요" : "실행 중이 아니에요" }),
       el("div", { class: "row mt12", style: "justify-content:space-between" }, cs ? el("span", { class: `tag ${cs.tone}`, text: cs.text }) : el("span"), btn)));
   }
-  clear(box).append(list, ...ctxModels());
+  clear(box).append(list, ...(offList.firstChild ? [offList] : []), ...ctxModels());
 }
 /* Per-model context window and auto-compaction point (PUT /api/context/model, stored in config context.models). */
 const ctxUser = n => n === "orchestrator" ? botName : n === "lanes" ? "새 세션 기본" : n;
@@ -9450,12 +9954,11 @@ function ctxModels() {
 }
 function ctxDialog(m) {
   const L = C.limits || {};
-  const win = input({ type: "text", inputmode: "numeric", value: m.window ? String(m.window) : "", placeholder: m.window_default ? `기본 ${num(m.window_default)}` : "기본 (런타임 값)" });
-  const at = input({ type: "text", inputmode: "numeric", value: m.compact_at ? String(m.compact_at) : "", placeholder: `기본 ${num(m.compact_at_default)}` });
-  const err = el("p", { class: "sup err-t", role: "alert" });
-  const save = (c, btn, body, msg) => busy(btn, async () => {
-    try { C = await api("/api/context/model", "PUT", { model: m.model, ...body }); }
-    catch (e) { err.textContent = e.message; return; }
+  const win = input({ type: "text", inputmode: "numeric", value: m.window ? String(m.window) : "", placeholder: m.window_default ? `기본 ${num(m.window_default)}` : "기본값" });
+  const at = input({ type: "text", inputmode: "numeric", value: m.compact_at ? String(m.compact_at) : "", placeholder: m.compact_at_default ? `기본 ${num(m.compact_at_default)}` : "비우면 자동으로 정해요" });
+  const err = usErr();
+  const save = (c, btn, body, msg) => usRun(btn, err, async () => {
+    C = await api("/api/context/model", "PUT", { model: m.model, ...body });
     c(); toast(msg); renderContext();
   });
   const actions = [{ label: "취소", onclick: c => c() }];
@@ -9467,28 +9970,33 @@ function ctxDialog(m) {
     if (Number.isNaN(a)) { err.textContent = "자동 압축 시점은 토큰 수나 %로 적어 주세요 (예: 300k, 80%). %는 컨텍스트 크기를 알 때만 써요"; return; }
     return save(c, btn, { window: w, compact_at: a }, "저장했어요. 다음 턴부터 적용돼요");
   } });
-  dialog({
+  const d = dialog({
     classic: true,
     title: `${modelName(m.model)} 컨텍스트`,
     body: el("div", { class: "col" },
-      el("p", { class: "sup", text: `이 모델을 쓰는 모든 세션(${m.used_by.map(ctxUser).join(", ")})에 적용돼요. 비우면 기본값을 써요.` }),
+      el("p", { class: "sup", text: `이 모델을 쓰는 모든 세션(${m.used_by.map(ctxUser).join(", ")})에 적용돼요.` }),
       textField("컨텍스트 크기 (토큰)", win),
-      el("p", { class: "sup", text: L.window ? `${num(L.window.min)}~${num(L.window.max)} 토큰. 화면의 사용률과 기본 압축 시점의 기준이 돼요.` : "" }),
+      el("p", { class: "sup", text: L.window ? `${num(L.window.min)}~${num(L.window.max)} 토큰` : "" }),
       textField("자동 압축 시작 (토큰 또는 %)", at),
-      el("p", { class: "sup", text: `컨텍스트가 이만큼 차면 한가할 때 요약해서 줄여요. ${L.compact_at ? num(L.compact_at.min) : ""} 토큰 이상, 컨텍스트 크기보다 작게. 낮게 할수록 매 턴 다시 읽는 토큰과 비용이 줄어요.` }),
+      el("p", { class: "sup", text: `${L.compact_at ? `${num(L.compact_at.min)} 토큰부터 컨텍스트 크기 미만까지 적을 수 있고,` : "컨텍스트 크기보다 작게 적고,"} 낮을수록 매 턴 다시 읽는 토큰과 비용이 줄어요.` }),
       el("p", { class: "sup", text: L.applies || "" }),
       err),
     actions,
   });
+  usDirty(d, [win, at]);
+  win.focus();
 }
 
 /* ---------- models ---------- */
 const pending = {};
 let providerFilter = "";
 const applyKo = { live: "적용했어요", restarted: "적용했어요 · 재시작됨", "next-start": "다음 시작부터 적용돼요", "next-turn": "다음 턴부터 적용돼요" };
+// A load that failed stays said until one succeeds: a later redraw (the providers arriving) must not turn it back into 불러오는 중.
+let modelsFail = false;
+const modelsFailNode = () => emptyNode("모델 정보를 불러오지 못했어요", () => loadModels());
 async function loadModels(quiet) {
-  try { M = await api("/api/models"); }
-  catch (e) { if (!quiet && current === "models") clear($("#models")).append(emptyNode("모델 정보를 불러오지 못했어요")); return; }
+  try { M = await api("/api/models"); modelsFail = false; }
+  catch (e) { modelsFail = true; if (!quiet && current === "models") clear($("#models")).append(modelsFailNode()); return; }
   if (current === "models") renderModels();
   if (current === "home") renderHome();
   if (current === "settings") renderSettings();
@@ -9531,16 +10039,18 @@ function modelItems(key, curModel, filter = providerFilter) {
   return items;
 }
 // PUT /api/models for one target (the 모델 view and the 홈 card menus share it); confirms first when `confirmText` is set and again when the cache would be rewritten.
-async function putModel(key, title, change, confirmText, label) {
+async function putModel(key, change, confirmText, label) {
   const body = { target: key, ...change };
-  if (confirmText && !await ask(title, `${confirmText}\n${label}`, "적용")) return false;
+  if (confirmText && !await ask("모델 설정을 적용할까요?", `${confirmText}\n${label}`, "적용")) return false;
   let r;
-  try { r = await api("/api/models", "PUT", body); }
-  catch (e) {
-    if (!(e.data && e.data.requires_force)) throw e;
-    if (!await ask(title, `캐시가 다시 쓰여요 · 컨텍스트 ${num(e.data.context_tokens)} 토큰\n${label}`, "적용")) return false;
-    r = await api("/api/models", "PUT", { ...body, force: true });
-  }
+  try {
+    try { r = await api("/api/models", "PUT", body); }
+    catch (e) {
+      if (!(e.data && e.data.requires_force)) throw e;
+      if (!await ask("모델 설정을 적용할까요?", `캐시가 다시 쓰여요 · 컨텍스트 ${num(e.data.context_tokens)} 토큰\n${label}`, "적용")) return false;
+      r = await api("/api/models", "PUT", { ...body, force: true });
+    }
+  } catch (e) { toast(`적용하지 못했어요. ${e.message}`, true); return false; }   // the choice stays on the screen, still unapplied
   delete pending[key];
   toast(applyKo[r.applied] || "적용했어요");
   await loadModels(true); refreshState();
@@ -9548,61 +10058,79 @@ async function putModel(key, title, change, confirmText, label) {
 }
 async function logoutProvider(p) {
   const name = p.name || p.id, key = p.auth === "api_key";
-  if (!await ask(key ? `${name} 키 삭제` : `${name} 로그아웃`, key ? "저장된 API 키를 삭제할까요?" : "저장된 로그인 정보가 삭제돼요.", key ? "삭제" : "로그아웃", true)) return;
-  await api(`/api/providers/${enc(p.id)}/logout`, "POST", {});
+  // the server signs out every login of the provider, so a provider with several accounts says so
+  const text = key ? "저장된 API 키를 삭제할까요?" : `${p.account ? `${accName(p.account)} 계정의 ` : ""}저장된 로그인 정보가 삭제돼요.${p.accounts > 1 ? ` ${name}의 계정 ${p.accounts}개가 모두 로그아웃돼요.` : ""}`;
+  if (!await ask(key ? `${name} 키 삭제` : `${name} 로그아웃`, text, key ? "삭제" : "로그아웃", true)) return;
+  try { await api(`/api/providers/${enc(p.id)}/logout`, "POST", {}); }
+  catch (e) { toast(`${key ? "키를 삭제하지" : "로그아웃하지"} 못했어요. ${e.message}`, true); return; }
   toast(key ? "키를 삭제했어요" : "로그아웃했어요");
   await loadProviders(); loadModels(true);
   if (current === "home") renderHome();
 }
-// 모델 · 폴백: one card per target - its model and effort on one row, which is step 1 of the fallback chain that target's harness walks
-// where it has one (orchestrator, lane default, workers). The composer chips, the home card menu, 구성 and 설정 all open this screen.
-let modelsFocus = "";
-const openModels = key => { modelsFocus = key || ""; if (current === "models") renderModels(); else go("models"); };
-function targetCard(key, title, status, cur, confirmText, extra = {}) {
+// A dialog's save button (accounts, API 한도, API 키, context model, device): `usDirty` keeps it off until a field differs from what was
+// loaded (or `also()` says there is something to do); `usRun` sends once (the button stays off while it waits) and a failure stays in the
+// dialog, in the `usErr` note that sits last in the body, right above the buttons.
+const usErr = () => el("p", { class: "sup err-t", role: "alert" });
+async function usRun(btn, err, fn) {
+  btn.disabled = true; btn.dataset.usBusy = "1"; err.textContent = "";
+  try { await fn(); }
+  catch (e) { err.textContent = noticeKo(String(e.message ?? e), { ...NK, error: true }); btn.disabled = false; delete btn.dataset.usBusy; }
+}
+function usDirty(d, inputs, also = () => false) {
+  const save = d.node.querySelector(".dact .btn.pri"), init = inputs.map(i => i.value.trim());
+  const sync = () => { if (!save.dataset.usBusy) save.disabled = !(inputs.some((i, k) => i.value.trim() !== init[k]) || also()); };
+  for (const i of inputs) i.addEventListener("input", sync);
+  sync();
+}
+// 모델 · 폴백 (owner 2026-11-11): one list of every place a model runs (hub/models-in-use.ts); pressing a row opens that target's editor right
+// under it, one at a time: its model and effort on one row, which is step 1 of the fallback chain that target's harness walks where it has one
+// (orchestrator, lane default, workers). The composer chips, the home card menu, 구성 and 설정 all open this screen on a row.
+let modelsFocus = "", modelsOpen = "", modelsRefocus = "";
+const openModels = key => { modelsFocus = key || ""; if (key) modelsOpen = key; if (current === "models") renderModels(); else go("models"); };
+function targetEdit(key, title, cur, confirmText, extra = {}) {
   const p = pending[key] || {};
   const model = p.model ?? cur.model, thinking = p.thinking ?? cur.thinking;
   const dirty = (p.model != null && p.model !== cur.model) || (p.thinking != null && p.thinking !== cur.thinking);
   const modelField = selectField("모델", modelName(model), () => modelItems(key, cur.model), model, v => { (pending[key] ||= {}).model = v; renderModels(); });
   // Effort is a dropdown next to the model, not a row of eight buttons (owner 2026-10-20: "드랍다운으로 모델이랑 추론정도 각각"), and it
   // lists what this model accepts, so picking another model rebuilds it with that model's levels.
-  const effField = selectField("추론 강도", thinking ? thinkKo(thinking) : "–", effortItems(model, thinking), thinking, v => { (pending[key] ||= {}).thinking = v; renderModels(); });
+  // A model with no level to choose (only 'off') gets no effort cell at all, not an empty "–" one.
+  const effItems = effortItems(model, thinking);
+  const effField = effItems.length > 1 ? selectField("추론 강도", thinking ? thinkKo(thinking) : "–", effItems, thinking, v => { (pending[key] ||= {}).thinking = v; renderModels(); }) : null;
   const info = (M.available || []).find(a => a.selector === model);
   const apply = el("button", { class: "btn", type: "button", disabled: !dirty, onclick: ev => busy(ev.currentTarget, async () => {
     const change = {};
     if (p.model != null && p.model !== cur.model) change.model = p.model;
     if (p.thinking != null && p.thinking !== cur.thinking) change.thinking = p.thinking;
-    await putModel(key, title, change, confirmText, `${modelName(model)} · ${thinkKo(thinking)}`);
+    await putModel(key, change, confirmText, `${modelName(model)} · ${thinkKo(thinking)}`);
   }) }, "적용");
-  const run = status ? runStatus(key, status, targetInfo(key).ask) : null, sub = [run && run[0], extra.sub].filter(Boolean).join(" · ");
-  const pick = el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, modelField), el("div", { class: "mt-eff" }, effField));
+  const pick = el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, modelField), effField ? el("div", { class: "mt-eff" }, effField) : null);
   const notes = [
     info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt-note", text: "이 모델은 추론 강도를 쓰지 않아요" }) : null,
     dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기"), apply) : null,
   ].filter(Boolean);
-  return el("section", { class: "mt-card", "data-target": key, "aria-label": title },
-    el("div", { class: "mt-head" }, run ? el("span", { class: `dot ${run[1]}` }) : null, el("span", { class: "t", text: title }), sub ? el("span", { class: "sup", text: sub }) : null, el("span", { class: "sp" })),
-    el("div", { class: "list mt-list" }, ...(extra.chain ? [extra.chain(pick, notes)] : [pick, ...notes])));
+  return el("div", { class: "mt-list mt-edit", role: "group", "data-target": key, "aria-label": title }, ...(extra.chain ? [extra.chain(pick, notes)] : [pick, ...notes]));
 }
 function renderModels() {
   const box = $("#models");
   if (fbDragging) return;
   closeMenu(false);
-  if (!M) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  if (!M) { clear(box).append(modelsFail ? modelsFailNode() : emptyNode("불러오는 중…")); return; }
   const provs = [...new Set((M.available || []).map(a => a.provider))].sort((a, b) => providerName(a).localeCompare(providerName(b)));
   const filter = selectField("공급자", providerFilter ? providerName(providerFilter) : "공급자 전체", [{ value: "", label: "전체" }, ...provs.map(p => ({ value: p, label: providerName(p) }))], providerFilter, v => { providerFilter = v; renderModels(); });
-  const lanes = (M.lanes || []).filter(laneAlive);
   clear(box).append(
     el("div", { class: "col mt" },
       el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "막히면 번호 순서대로 넘어가요." }), el("div", { class: "mt-filter" }, filter)),
-      inUseSection(),
-      ...FB_LAYERS.map(L => targetCard(L.id, L.title(), "", L.cur(), L.confirm, fbParts(L))),
-      repliesCard(),
-      lanes.length ? el("div", { class: "sec" }, "실행 중 세션", el("span", { class: "sup", text: "폴백은 세션 기본값 순서를 따라요" })) : null,
-      ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, ""))));
+      ...modelGroups()));
+  if (modelsRefocus) {
+    const r = box.querySelector(`[data-use="${CSS.escape(modelsRefocus)}"]`);
+    modelsRefocus = "";
+    if (r) r.focus();
+  }
   if (modelsFocus) {
     const n = box.querySelector(`[data-target="${CSS.escape(modelsFocus)}"]`);
     modelsFocus = "";
-    if (n) requestAnimationFrame(() => n.scrollIntoView({ block: "start" }));
+    if (n) requestAnimationFrame(() => n.previousElementSibling.scrollIntoView({ block: "start" }));
   }
 }
 
@@ -9616,11 +10144,12 @@ function fbWhy(layer) {
   return { reason: pd ? FB_DOWN_KO[pd.down] || "" : "", until: pd && pd.until && isFinite(Date.parse(pd.until)) ? pd.until : "" };
 }
 function liveModel(t) {
-  // A project conversation: its own choice and its session's model, or main's as it is with no choice.
-  if (isProjT(t)) {
-    const c = M && M.conversations && M.conversations[t], m = liveModel(MAIN);
-    if (!c) return m;
-    const conf = c.own || m.conf, act = c.active;
+  // A project or mail conversation: its own choice, else its kind's default (the mail app's), plus its session's model; main's as it is with neither.
+  if (isModelT(t)) {
+    const c = M && M.conversations && M.conversations[t], m = liveModel(MAIN), tv = TV.get(t);
+    const kind = c ? c.kind : tv && tv.inherited_kind ? tv.inherited : "";
+    if (!c && !kind) { const p = isMailT(t) && ctxSession(t); return p && p.model ? { sel: p.model, conf: "", fallback: null } : m; }
+    const conf = (c && c.own) || kind || m.conf, act = c && c.active;
     return { sel: act || conf, conf, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy("orchestrator") : null };
   }
   const main = t === MAIN, om = M && M.orchestrator;
@@ -9630,30 +10159,63 @@ function liveModel(t) {
   const sel = act || conf;
   return { sel, conf, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy(main ? "orchestrator" : "lanes") : null };
 }
-const fbTagText = f => ["폴백 중", f.reason, f.until ? `${kstStamp(Date.parse(f.until))}에 복귀` : ""].filter(Boolean).join(" · ");
+const fbTagText = f => ["대체 모델 사용 중", f.reason, f.until ? `${kstStamp(Date.parse(f.until))}에 복귀` : ""].filter(Boolean).join(" · ");
 const selText = sel => { const [b, lv] = String(sel || "").split(":"); return b ? `${modelChipText(b)}${lv ? ` · ${thinkKo(lv)}` : ""}` : "–"; };
 const fbTag = (f, conf) => el("span", { class: "tag warn", title: [fbTagText(f), conf ? `기본 모델 ${selText(conf)} 대신 쓰는 중` : ""].filter(Boolean).join(" · "), text: fbTagText(f) });
-// 실제로 쓰는 모델 (owner 2026-10-27): every place a model runs and the model it runs on now (hub/models-in-use.ts), each row opening
-// where it is changed: a card on this screen, or that app's settings screen.
-function inUseSection() {
-  const rows = M.in_use || [];
-  if (!rows.length) return null;
-  const row = r => {
-    const ch = r.change || {};
-    const open = ch.models ? () => { modelsFocus = ch.models; renderModels(); } : ch.app ? () => asScreen(ch.app) : null;
-    const why = r.fallback ? (r.key === "main" ? fbWhy("orchestrator") : r.key.startsWith("lane:") ? fbWhy("lanes") : { reason: "", until: "" }) : null;
-    const model = selText(r.model);
-    return el("div", { class: "mt-use-row", "data-use": r.key },
-      el("div", { class: "mt-use-tx" }, el("span", { class: "nm", title: r.label, text: r.label }), r.sub || ch.none ? el("span", { class: "sup", text: [r.sub, ch.none].filter(Boolean).join(" · ") }) : null),
-      el("div", { class: "mt-use-rest" }, el("span", { class: "mt-use-m", title: model, text: model }), why ? fbTag(why, r.configured) : null),
-      open ? el("button", { class: "mt-use-act", type: "button", title: "바꾸기", "aria-label": `${r.label} 바꾸기`, onclick: open }, icon("pencil")) : null);
-  };
-  return el("section", { class: "mt-card mt-use", "data-target": "in-use", "aria-label": "실제로 쓰는 모델" },
-    el("div", { class: "mt-head" }, el("span", { class: "t", text: "실제로 쓰는 모델" }), el("span", { class: "sup", text: "지금 돌고 있는 모델이에요" })),
-    el("div", { class: "list mt-use-list" }, ...rows.map(row)));
+// 실제로 쓰는 모델 (owner 2026-10-27): every place a model runs and the model it runs on now (hub/models-in-use.ts), in three groups. A row
+// that is changed on this screen opens its editor in place, one at a time; one that is changed in an app's settings opens that screen.
+const MT_GROUPS = ["어시스턴트", "세션", "답장과 요약"];
+const mtGroupOf = key => key === "main" || key === "background" || key === "lookups" ? 0 : key === "lanes" || key.startsWith("lane:") || key === "workers" || key.startsWith("workers:") ? 1 : 2;
+// A hub that names no place to change a row (an older one, the demo's) still gets every row this screen edits, and a session that is alive
+// but has no row from the hub its own.
+const MT_OWN = { main: "orchestrator", lanes: "lanes", workers: "workers", replies: "replies" };
+function mtRows() {
+  const rows = (M.in_use || []).map(r => r.change || !MT_OWN[r.key] ? r : { ...r, change: { models: MT_OWN[r.key] } }), own = new Set(rows.map(r => (r.change || {}).models));
+  for (const L of FB_LAYERS) if (!own.has(L.id) && L.cur()) rows.push({ key: L.id === "orchestrator" ? "main" : L.id, label: L.title(), sub: L.sub, model: withLevel(L.cur().model, L.cur().thinking), change: { models: L.id } });
+  if (M.replies && !own.has("replies")) rows.push({ key: "replies", label: "답장 기본값", model: M.replies.value || "", change: { models: "replies" } });
+  const have = new Set(rows.map(r => r.key));
+  const extra = (M.lanes || []).filter(l => laneAlive(l) && !have.has(`lane:${l.name}`)).map(l => {
+    const conf = withLevel(l.model, l.thinking), act = l.active_model;
+    return { key: `lane:${l.name}`, label: `세션 · ${l.title || l.name}`, model: act || conf, ...(act && runBaseOf(act) !== runBaseOf(conf) ? { configured: conf, fallback: true } : {}), change: { models: `lane:${l.name}` } };
+  });
+  rows.splice(rows.findLastIndex(r => r.key === "lanes" || r.key.startsWith("lane:")) + 1, 0, ...extra);
+  return rows;
+}
+function mtEditor(target, title) {
+  const L = FB_LAYERS.find(x => x.id === target), lm = (M.lanes || []).find(x => `lane:${x.name}` === target);
+  return L ? targetEdit(L.id, title, L.cur(), L.confirm, fbParts(L)) : target === "replies" ? repliesEdit(title) : lm ? targetEdit(target, title, lm, "") : null;
+}
+// `primary`: the first row that points at a target owns its editor; a later row on the same target (the background work, a session's subagents) only reads.
+function mtRow(r, primary) {
+  const ch = r.change || {}, target = primary ? ch.models : "", isOpen = Boolean(target) && modelsOpen === target;
+  const lm = r.key.startsWith("lane:") ? (M.lanes || []).find(x => `lane:${x.name}` === r.key) : null;
+  const run = lm ? runStatus(r.key, lm.status, targetInfo(r.key).ask) : null, sub = [run && run[0], r.sub].filter(Boolean).join(" · ");
+  const why = r.fallback ? (r.key === "main" ? fbWhy("orchestrator") : r.key.startsWith("lane:") ? fbWhy("lanes") : { reason: "", until: "" }) : null;
+  const chain = FB_LAYERS.some(L => L.id === target) ? ((M.fallbacks || {})[target] || {}).chain || [] : [];
+  const model = selText(r.model);
+  const act = target ? () => { modelsOpen = isOpen ? "" : target; modelsRefocus = r.key; renderModels(); } : ch.app ? () => asScreen(ch.app) : null;
+  const attrs = { class: "mt-use-row", "data-use": r.key };
+  if (act) Object.assign(attrs, { role: "button", tabindex: "0", onclick: act, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); act(); } } });
+  if (target) attrs["aria-expanded"] = String(isOpen);
+  const end = ch.none ? el("span", { class: "mt-use-end sup", title: ch.none, text: "고정" }) : el("span", { class: "mt-use-end" }, target ? icon("drop") : ch.app ? icon("chev") : null);
+  const row = el("div", attrs,
+    el("div", { class: "mt-use-tx" }, el("span", { class: "nm", title: r.label }, run ? el("span", { class: `dot ${run[1]}` }) : null, r.label), sub ? el("span", { class: "sup", text: sub }) : null),
+    el("div", { class: "mt-use-rest" }, el("span", { class: "mt-use-m", title: model, text: model }), chain.length ? el("span", { class: "sup mt-use-fb", text: `대체 ${chain.length}` }) : null, why ? fbTag(why, r.configured) : null),
+    end);
+  const editor = isOpen ? mtEditor(target, r.label) : null;
+  return editor ? [row, editor] : [row];
+}
+function modelGroups() {
+  const groups = MT_GROUPS.map(() => []), seen = new Set();
+  for (const r of mtRows()) {
+    const t = (r.change || {}).models;
+    groups[mtGroupOf(r.key)].push(...mtRow(r, Boolean(t) && !seen.has(t)));
+    if (t) seen.add(t);
+  }
+  return groups.map((nodes, i) => nodes.length ? el("section", { class: "mt-card", "aria-label": MT_GROUPS[i] }, el("div", { class: "mt-head" }, el("span", { class: "t", text: MT_GROUPS[i] })), el("div", { class: "list mt-use-list" }, ...nodes)) : null);
 }
 // 답장 기본값: the reply model of every app that has none of its own (hub/reply-model-choices.ts setReplyDefault).
-function repliesCard() {
+function repliesEdit(title) {
   const R = M.replies;
   if (!R) return null;
   const items = R.options.map(v => ({ value: v, label: v ? R.labels[v] || v : R.default_label }));
@@ -9661,10 +10223,9 @@ function repliesCard() {
     try { await api("/api/models", "PUT", { target: "replies", model: v }); toast("적용했어요"); await loadModels(true); }
     catch (e) { toast(e.message || "저장하지 못했어요", true); }
   }));
-  return el("section", { class: "mt-card", "data-target": "replies", "aria-label": "답장 기본값" },
-    el("div", { class: "mt-head" }, el("span", { class: "t", text: "답장 기본값" }), el("span", { class: "sup", text: "앱마다 따로 고르지 않은 답장 초안" })),
-    el("div", { class: "list mt-list" }, el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, pick))),
-    el("div", { class: "note", text: "앱 설정의 답장 모델이 있으면 그 모델이 먼저예요. 답장 초안은 API 키로 넘어가지 않아요." }));
+  return el("div", { class: "mt-list mt-edit", role: "group", "data-target": "replies", "aria-label": title },
+    el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, pick)),
+    el("div", { class: "sup mt-note", text: "답장 초안은 API 키로 넘어가지 않아요." }));
 }
 
 /* ---------- providers ---------- */
@@ -9686,21 +10247,27 @@ function limitName(l) {
   const m = /^Claude\s+(\d+)\s+(Hour|Day)s?\b\s*(.*)$/i.exec(l.label || "");
   return m ? `${m[1]}${/hour/i.test(m[2]) ? "시간" : "일"} 한도${m[3] ? ` ${m[3]}` : ""}` : l.label || l.id;
 }
+// The window name without the word 한도, for the usage lines at the top of an account card: 5시간, 7일, 7일 Opus.
+const limitShort = l => (/^Claude\s/i.test(l.label || "") ? limitName(l).replace(" 한도", "") : limitName(l));
+// The usage windows the report holds for one provider (the ones with a figure).
+function provLimits(p) {
+  const q = typeof SQ !== "undefined" && SQ ? (SQ.providers || []).find(x => x.provider === p.id || (p.id === "anthropic" && x.provider === "claude")) : null;
+  return q ? (q.limits || []).filter(l => limitFrac(l) != null) : [];
+}
 // One provider's row on the 계정 screen: its way in (login or key), status, usage windows and actions. In a provider's own section
 // (`own`) the section head names it; in 다른 공급자 the row does, and a key with a pool entry opens its alias.
 function provRow(p, g, own) {
   const on = isConnected(p), key = p.auth === "api_key", tone = on ? "ok" : needsAttention(p) ? "warn" : "";
   const out = key ? "키 삭제" : "로그아웃";
   const act = p.can_add_account ? null
-    : p.can_login ? el("button", { class: `btn inrow ${on ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, on ? "다시 로그인" : "로그인") : null;
+    : p.can_login ? el("button", { class: `btn inrow ${on ? "text" : "tonal"}`, type: "button", onclick: ev => busy(ev.currentTarget, () => startLogin(p)) }, on ? "다시 로그인" : "로그인") : null;   // the start can take seconds: the button stays off until the dialog is up, so a second press cannot start a second login
   const rm = (p.can_logout ?? p.removable) ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, icon("trash")) : null;
   const slot = key && g ? g.accounts[0] : null;
-  const sub = [slot && slot.label !== "API 키" ? slot.label : "", p.account || p.masked || "", p.in_use ? "지금 사용 중" : "", p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
-  const q = typeof SQ !== "undefined" && SQ ? (SQ.providers || []).find(x => x.provider === p.id || (p.id === "anthropic" && x.provider === "claude")) : null;
+  const sub = [slot && slot.label !== "API 키" ? slot.label : "", p.account ? accName(p.account) : p.masked || "", p.in_use ? "지금 사용 중" : "", p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
   const tx = el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: own ? (key ? "API 키" : "로그인") : p.name || p.id }),
-      el("span", { class: `tag ${tone}`, text: p.auth === "oauth" ? "로그인됨" : key ? "API 키" : "연결 안 됨" })),
+      own && on ? null : el("span", { class: `tag ${tone}`, text: p.auth === "oauth" ? "로그인됨" : key ? "API 키" : "연결 안 됨" })),
     sub ? el("div", { class: "sup", text: sub }) : null,
-    ...(q ? (q.limits || []).filter(l => limitFrac(l) != null) : []).map(l => el("div", { class: "prow-lim" }, el("span", { class: "k", text: limitName(l) }), bar(l), el("span", { class: "v", text: pctText(l) }))));
+    ...provLimits(p).map(l => el("div", { class: "prow-lim" }, el("span", { class: "k", text: limitName(l) }), bar(l), el("span", { class: "v", text: pctText(l) }))));
   return el("div", { class: "li prow", "data-prov": own ? null : p.id, "data-prov-conn": p.id },
     slot ? el("button", { class: "acc-main", type: "button", onclick: () => accProviderDialog(g, slot) }, tx) : tx, liEnd(act, rm));
 }
@@ -9708,7 +10275,7 @@ function provRow(p, g, own) {
 // provider is the group: a login provider has its own section with its accounts, and the rest (keys, not set up) share one list.
 function renderAccounts() {
   const box = $("#accounts");
-  if (!P) { clear(box).append(emptyNode(provFail ? "계정을 불러오지 못했어요" : "불러오는 중…")); return; }
+  if (!P) { clear(box).append(emptyNode(provFail ? "계정을 불러오지 못했어요" : "불러오는 중…", provFail ? () => loadProviders() : null)); return; }
   const groupOf = p => ((ACC && ACC.providers) || []).find(x => x.id === p.id);
   const own = p => p.auth === "oauth" || (p.id === "anthropic" && ACC && ACC.accounts.length > 0) || (groupOf(p) || {}).multi;
   const list = P.providers, rest = list.filter(p => !own(p));
@@ -9719,7 +10286,6 @@ function renderAccounts() {
   // the ones that can log in come first, then the API keys and the providers not set up yet
   const canLogin = p => p.auth === "none" && p.can_login;
   if (rest.length) wrap.append(el("div", { class: "sec", text: "다른 공급자" }), el("div", { class: "list" }, ...[...rest.filter(canLogin), ...rest.filter(p => !canLogin(p))].map(p => provRow(p, groupOf(p), false))));
-  wrap.append(el("div", { class: "note", text: "모델은 어느 경로로 쓰는지 공급자 줄에서 구분해요." }));
   clear(box).append(wrap);
   // an old provider address or a home card lands on that provider, once both lists are in
   if (accFocus && ACC) { const n = box.querySelector(`[data-prov="${CSS.escape(accFocus)}"]`); accFocus = ""; if (n) n.scrollIntoView({ block: "start" }); }
@@ -9735,7 +10301,7 @@ function addProviderDialog() {
     clear(keyBox); keyIn = null;
     for (const [id, n] of rowsByKey) { n.classList.toggle("on", !!pick && pick.id === id); n.setAttribute("aria-pressed", pick && pick.id === id ? "true" : "false"); }
     if (pick && pick.kind === "api_key") { keyIn = input({ type: "password", autocomplete: "new-password" }); keyBox.append(textField(free ? "API 키" : `${pick.name || pick.id} API 키`, keyIn)); if (!free) keyIn.focus(); }
-    const actions = [{ label: "취소", onclick: c => c() }];
+    const actions = pick && pick.kind === "api_key" ? [{ label: "취소", kind: "tonal", onclick: c => c() }] : [];   // only a list to pick from: the ✕ is the one way out
     if (pick && pick.kind === "api_key") actions.push({ label: "저장", kind: "pri", onclick: (c, btn) => busy(btn, async () => {
       const provider = free ? free.value.trim() : pick.id, key = keyIn.value;
       if (!provider || !key.trim()) { toast("공급자와 API 키를 입력해 주세요", true); return; }
@@ -9744,14 +10310,14 @@ function addProviderDialog() {
     }) });
     dlg && dlg.setActions(actions);
   }
-  const group = (title, hint, items) => {
+  const group = (title, items) => {
     const box = el("div", {}, el("div", { class: "sec", text: title }), el("div", { class: "list" }));
     for (const a of items) {
       const n = el("button", { type: "button", class: "li tap", "aria-pressed": "false", onclick: () => {
         if (a.kind === "oauth") { dlg.close(); startLogin(a); return; }
         pick = a; paintKey();
       } }, el("span", { class: "avatar", text: [...(a.name || a.id)][0] || "?" }), el("span", { class: "tx" }, el("div", { class: "hd", text: a.name || a.id })),
-        el("span", { class: "sup", text: a.add_account ? "계정 추가" : hint }), icon(a.kind === "oauth" ? "chev" : "key", "lead"));
+        liEnd(a.add_account ? el("span", { class: "sup", text: "계정 추가" }) : null, icon("chev")));   // the whole row is the tap target: the section says login or key, the arrow says it opens
       rowsByKey.set(a.id, n); box.lastChild.append(n);
     }
     return box;
@@ -9761,24 +10327,25 @@ function addProviderDialog() {
     if (!addable.length) body.append(el("p", { text: "추가할 공급자가 없어요" }));
     else {
       const pk = el("div", { class: "pickbox" });
-      if (login.length) pk.append(group("로그인", "계정으로 로그인", login));
-      if (keys.length) pk.append(group("API 키", "키 입력", keys));
+      if (login.length) pk.append(group("로그인", login));
+      if (keys.length) pk.append(group("API 키", keys));
       body.append(pk, keyBox);
     }
   } else { free = input({ type: "text" }); pick = { kind: "api_key" }; body.append(textField("공급자", free), keyBox); }
-  dlg = dialog({ title: "공급자 추가", body });
-  if (addable && !addable.length) dlg.setActions([{ label: "닫기", onclick: c => c() }]);
+  dlg = dialog({ title: "공급자 추가", body, mid: true });
+  if (addable && !addable.length) dlg.setActions([]);
   else paintKey();
 }
 // A login still open (a closed tab, /login in the chat) blocks a new one: pick it up where it stopped, or drop it and start over.
 function pendingLoginAsk(p, pending) {
   const same = pending.provider === p.id;
   const go = mode => c => { c(); startLogin(p, mode); };
-  dialog({ confirm: true, title: "끝나지 않은 로그인이 있어요",
-    body: el("p", { text: same ? "전에 시작한 로그인을 이어서 하거나, 취소하고 처음부터 다시 할 수 있어요." : `${providerName(pending.provider)} 로그인을 취소하고 ${p.name || p.id} 로그인을 새로 시작할까요?` }),
+  const dg = dialog({ confirm: true, title: "끝나지 않은 로그인이 있어요",
+    body: same ? null : el("p", { text: `지금 ${providerName(pending.provider)} 로그인이 열려 있어요.` }),
     actions: [{ label: "닫기", onclick: c => c() }, ...(same
       ? [{ label: "새로 시작", onclick: go("restart") }, { label: "이어서 하기", kind: "pri", onclick: go("resume") }]
       : [{ label: "새로 시작", kind: "pri", onclick: go("restart") }])] });
+  ovFocus(dg.node, dg.node.querySelector(".dact .btn.pri"));   // by the keyboard the main way out gets the focus, not the close beside it
 }
 async function startLogin(p, pending) {
   let r;
@@ -9798,15 +10365,31 @@ async function startLogin(p, pending) {
   const label = el("label", { for: code.id });
   const field = el("div", { class: "tf" }, label, code);
   const intro = el("p", { hidden: true });
+  const how = el("p", { class: "sup", hidden: true });   // where the code comes from, and what to do with it
   const picks = el("div", { class: "list", hidden: true });
   const ask = el("div", { class: "sup", hidden: true });
-  const open = el("a", { class: "btn tonal", target: "_blank", rel: "noopener noreferrer" }, icon("open"), "로그인 페이지 열기");
+  // One filled button at a time: the page link leads until it was opened, then 완료 does.
+  const open = el("a", { class: "btn", target: "_blank", rel: "noopener noreferrer" }, icon("open"), "로그인 페이지 열기");
   const openBox = el("div", {}, open);
-  let lastUrl = "";
+  let lastUrl = "", opened = false, choosing = false, plain = false;
+  const paintHow = () => {
+    how.hidden = !plain;
+    how.textContent = !lastUrl ? "브라우저에서 로그인한 뒤 나온 코드나 주소를 아래에 붙여 넣어요." : opened ? "열린 페이지에서 로그인한 뒤 나온 코드나 주소를 아래에 붙여 넣어요." : "‘로그인 페이지 열기’를 눌러 로그인한 뒤, 나온 코드나 주소를 아래에 붙여 넣어요.";
+  };
+  // 완료 stays off while there is nothing to send: the field is empty and has no default
+  const syncDone = () => { const b = choosing ? null : dlg.node.querySelector(".dact .btn:last-child"); if (b && b.textContent === "완료") b.disabled = !(code.value.trim() || code.placeholder); };
+  const paintActs = () => {
+    dlg.setActions([{ label: "취소", kind: "tonal", onclick: c => c() },
+      ...(choosing ? [] : [{ label: "완료", kind: openBox.hidden || opened ? "pri" : "tonal", onclick: (c, btn) => submit(btn) }])]);
+    syncDone();
+  };
+  code.addEventListener("input", syncDone);
+  open.addEventListener("click", () => { opened = true; open.className = "btn tonal"; paintHow(); paintActs(); });
   const paintStep = v => {
-    if (/^https?:\/\//.test(v.url || "")) lastUrl = v.url;
+    if (/^https?:\/\//.test(v.url || "")) { if (v.url !== lastUrl) opened = false; lastUrl = v.url; }
     const choose = !!(v.options && v.options.length), url = !choose && !!lastUrl, question = !choose && !url && !!v.prompt;
     intro.textContent = choose ? v.prompt || "" : ""; intro.hidden = !choose || !v.prompt;
+    plain = !choose && !question; paintHow();
     clear(picks); picks.hidden = !choose;
     for (const o of choose ? v.options : []) picks.append(el("button", { type: "button", class: "li tap", onclick: ev => { code.value = o; submit(ev.currentTarget); } },
       el("span", { class: "tx" }, el("div", { class: "hd", text: o })), icon("chev", "lead")));
@@ -9817,7 +10400,9 @@ async function startLogin(p, pending) {
     ask.textContent = url ? v.prompt || "" : ""; ask.hidden = !url || !v.prompt;
     if (url) open.href = lastUrl; else open.removeAttribute("href");
     openBox.hidden = !url;
-    dlg.setActions([{ label: "취소", onclick: c => c() }, ...(choose ? [] : [{ label: "완료", kind: "pri", onclick: (c, btn) => submit(btn) }])]);
+    open.className = opened ? "btn tonal" : "btn";
+    choosing = choose;
+    paintActs();
   };
   const stop = () => { clearTimeout(timer); };
   // the hub says what the login did to the pool: a new account, or one it already held and refreshed (hub/providers.ts loginResult)
@@ -9855,10 +10440,11 @@ async function startLogin(p, pending) {
   });
   dlg = dialog({
     title: p.can_add_account || p.add_account ? `${name} 계정 추가` : `${name} 로그인`,
-    body: [intro, openBox, field, ask, picks, msg],
+    body: [intro, how, openBox, field, ask, picks, msg], mid: true,
     onclose: () => { stop(); if (!finished) api(`/api/providers/${enc(p.id)}/login`, "DELETE").catch(() => {}); },
   });
   paintStep(r);
+  const first = choosing ? null : openBox.hidden ? code : open; if (first) first.focus({ preventScroll: true });   // not the ✕ in the head
   code.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
   timer = setTimeout(poll, 2000);
 }
@@ -9885,26 +10471,33 @@ function resetLine(p, name, k) {
   const use = () => dialog({ confirm: true, title: "리셋권을 쓸까요?",
     body: el("div", { class: "sup", text: `${name} ${what} 지금 다시 채워요. 쓰고 나면 ${label}이 ${held - 1}개 남아요. 되돌릴 수는 없어요.` }),
     actions: [{ label: "취소", onclick: c => c() }, { label: "리셋권 쓰기", kind: "pri", onclick: (c, b) => busy(b, async () => {
-      try { const out = await api("/api/quota/reset-credit", "POST", send); c(); toast(say[out.outcome] || "리셋권을 썼어요"); loadQuota(true); }
-      catch (e) { c(); toast(e.message || "리셋권을 쓰지 못했어요", true); loadQuota(true); }
+      // whatever the answer, the usage is read again so the percent and the 리셋권 count on screen are the server's
+      try { const out = await api("/api/quota/reset-credit", "POST", send); c(); toast(say[out.outcome] || "리셋권을 썼어요"); }
+      catch (e) { c(); toast(e.message || "리셋권을 쓰지 못했어요. 잠시 뒤 다시 눌러 주세요", true); }
+      finally { loadQuota(true); }
     }) }] });
   return el("div", { class: "lim rc" },
     el("div", { class: "kv" }, el("span", { class: "k", text: label }),
       el("span", { class: "rc-end" }, el("b", { text: `${held}개` }), el("button", { class: "btn tonal inrow", type: "button", disabled: !(held > 0 && usable), "aria-label": `${name} ${label} 사용`, onclick: use }, "사용"))),
     sub ? el("div", { class: "sup", text: sub }) : null);
 }
+// The bar above the cards: when it was read, and the one 새로고침 (also the way out of a failed read: no second retry button).
+const quotaBar = at => el("div", { class: "tools-bar" }, el("span", { class: "sup", text: at ? monTime(at) : "" }),
+  el("button", { class: "btn text sm", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), "새로고침"));
+// The same 새로고침 at the right end of the first card's head (the screen has no bar of its own above the cards), with when it was read.
+const usRefresh = at => [at ? el("span", { class: "sup", text: monTime(at) }) : null,
+  el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), "새로고침")].filter(Boolean);
 async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
   const box = $("#usage");
+  if (!box.firstChild) box.append(emptyNode("불러오는 중…"));
   let q;
   // the cards are titled by provider name (providerName reads P), so a direct open of 사용량 loads the providers too
   try { [q] = await Promise.all([api(fresh === true ? "/api/quota?fresh=1" : "/api/quota"), P ? null : loadProviderData().catch(() => null)]); }
-  catch (e) { clear(box).append(emptyNode("사용량을 불러오지 못했어요")); return; }
+  catch (e) { clear(box).append(quotaBar(""), emptyNode("사용량을 불러오지 못했어요")); return; }
   noteQuota(q);
   if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
   clear(box);
-  box.append(el("div", { class: "tools-bar" }, el("span", { class: "sup", text: q.fetched_at ? kstStamp(q.fetched_at) : "" }),
-    el("button", { class: "btn text sm", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), "새로고침")));
   const grid = el("div", { class: "grid" });
   for (const p of q.providers || []) {
     // a subscription names its plan as Anthropic does (Pro, Max 5x, Max 20x, Ultra, ...; hub/usage-account.ts planName)
@@ -9924,6 +10517,8 @@ async function loadQuota(fresh) {
   if (q.budget) grid.prepend(budgetCard(q.budget));
   else box.append(el("div", { class: "list" }, budgetRow()));
   if (grid.children.length) box.append(grid);
+  const firstHead = grid.querySelector(".ch");
+  if (firstHead) firstHead.append(...usRefresh(q.fetched_at)); else box.prepend(quotaBar(q.fetched_at));
   // The one Claude account the assistant and its lanes run on, and every switch with its reason (hub/account-sticky.ts).
   if (q.account && q.account.account) {
     const A = q.account, KIND = { start: "처음 선택", limit: "한도", owner: "직접 변경", gone: "계정 사라짐" };
@@ -9935,7 +10530,7 @@ async function loadQuota(fresh) {
     // the why is said once: the reason line, or the kind when there is no reason
     const row = s => el("div", { class: "li" }, el("span", { class: "tx" },
       el("div", { class: "hd", text: `${s.from ? `${s.from_label || s.from} → ` : ""}${s.to_label || s.to}` }),
-      el("div", { class: "sup", text: `${kstStamp(Date.parse(s.at))} · ${s.reason || s.kind_text || KIND[s.kind] || s.kind}` })),
+      el("div", { class: "sup", text: `${monTime(Date.parse(s.at))} · ${s.reason || s.kind_text || KIND[s.kind] || s.kind}` })),
       el("button", { class: "ib", type: "button", "aria-label": "이 기록 지우기", onclick: () => drop(s.at, "기록을 지웠어요") }, icon("close")));
     const older = all.slice(SHOWN).map(row);
     older.forEach(n => { n.hidden = true; });
@@ -9944,17 +10539,18 @@ async function loadQuota(fresh) {
       older.forEach(n => { n.hidden = !open; });
       ev.currentTarget.textContent = open ? "이전 기록 접기" : `이전 기록 ${older.length}개 더 보기`;
     } }) : null;
+    const cur = [A.since ? `${monTime(Date.parse(A.since))}부터` : "", A.pinned ? "고정한 계정이에요" : ""].filter(Boolean).join(" · ");
     box.append(el("div", { class: "list" },
-      el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}${A.pinned ? "고정한 계정이에요. 한도에 걸리면 다른 계정 대신 폴백 순서를 따라요" : "규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요"}` })),
+      el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), cur ? el("div", { class: "sup", text: cur }) : null),
       ...all.slice(0, SHOWN).map(row), ...older));
     if (more) box.append(more);
-    if (all.length) box.append(el("button", { class: "btn text danger", type: "button", text: "기록 모두 지우기", onclick: () => dialog({ confirm: true, title: "기록을 모두 지울까요?", body: el("div", { class: "sup", text: `계정 전환 기록 ${all.length}개를 지워요. 되돌릴 수 없어요.` }), actions: [{ label: "취소" , onclick: c => c() }, { label: "모두 지우기", kind: "danger", onclick: c => { c(); drop("", "기록을 모두 지웠어요"); } }] }) }));
+    if (all.length) box.append(el("button", { class: "btn text danger", type: "button", text: "기록 모두 지우기", onclick: () => dialog({ confirm: true, title: "기록을 모두 지울까요?", body: el("div", { class: "sup", text: `계정 전환 기록 ${all.length}개를 지워요. 되돌릴 수 없어요.` }), actions: [{ label: "취소" , onclick: c => c() }, { label: "모두 지우기", kind: "danger fill", onclick: c => { c(); drop("", "기록을 모두 지웠어요"); } }] }) }));
   }
   if ((q.unavailable || []).length) {
     box.append(el("div", { class: "sec", text: "정보가 없어요" }));
     box.append(el("div", { class: "list" }, ...q.unavailable.map(u => el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: u.name || providerName(u.provider) }), el("div", { class: "sup", text: u.reason })))));
   }
-  if (!(q.providers || []).length && !(q.unavailable || []).length) box.append(emptyNode("사용량 정보가 없어요"));
+  if (!(q.providers || []).length && !(q.unavailable || []).length && !q.budget) box.append(emptyNode("사용량 정보가 없어요"));
 }
 
 /* ---------- settings: the short list and its sub-pages (prototype #settings and #settings/<page>) ---------- */
@@ -9965,7 +10561,7 @@ const SET_PAGE = {
   notifications: { title: "앱과 알림", ic: "bell", build: () => pushSection() },
   display: { title: "표시", ic: "settings", build: () => displayPage() },
   update: { title: "업데이트", ic: "download", build: () => updateSection() },
-  runtime: { title: "실행 하네스", ic: "term", build: () => { const s = hvSection(); return s.length ? s : [emptyNode(UPD.info && UPD.info.error ? "실행 하네스를 확인하지 못했어요" : "실행 하네스를 확인하는 중이에요")]; } },
+  runtime: { title: "작업 프로그램", ic: "term", build: () => { const s = hvSection(); return s.length ? s : [emptyNode(UPD.info && UPD.info.error ? "작업 프로그램을 확인하지 못했어요" : "작업 프로그램을 확인하는 중이에요")]; } },
 };
 for (const [id, p] of Object.entries(SET_PAGE)) {
   views.push(id); SUB.add(id); titles[id] = p.title; VIEW_ICON[id] = p.ic;
@@ -10017,6 +10613,11 @@ function stUpdateSub() {
   const c = updState(i).c;
   return `지금 ${stUpdShort(i.running) || "알 수 없음"}${c && c.ok && !updAvailable() ? " · 최신" : ""}`;
 }
+// The main conversation's context share, from the figure the page already holds (no request); empty until it is loaded.
+function stContextSub() {
+  const p = typeof C !== "undefined" && C ? ctxSession(MAIN) : null;
+  return p && p.running && p.percent != null ? `${Math.round(p.percent)}% 사용 중` : "";
+}
 function stRuntimeSub() {
   const names = [...new Set(hvRt().filter(r => (r.roles || []).length).map(r => r.label))];
   return names.join(" · ");
@@ -10028,15 +10629,25 @@ function stPushSub() {
 }
 
 /* ---------- 설정 (the list) ---------- */
+// The first screen's groups (a .sec title + its .list) go into two .set-col boxes: 앱 and 시스템 on the right, every other group on the left. One column on a narrow window (18-app-settings.css).
+function settingsCols(nodes) {
+  const left = el("div", { class: "set-col" }), right = el("div", { class: "set-col" });
+  let col = left;
+  for (const n of nodes) {
+    if (n.classList.contains("sec")) col = n.textContent === "앱" || n.textContent === "시스템" ? right : left;
+    col.append(n);
+  }
+  return [left, right];
+}
 function settingsList(go) {
   const om = M && M.orchestrator;
   const connected = P ? P.providers.filter(isConnected).length : null;
   const nodes = [
-    stSec("모델"), stList(
+    stSec("계정과 모델"), stList(
       stRow("key", "계정", [stAccountSub(), connected != null ? `${connected}개 연결` : ""].filter(Boolean).join(" · "), () => go("accounts")),
-      stRow("model", "모델 · 폴백", om ? [modelName(om.model), thinkKo(om.thinking)].filter(Boolean).join(" · ") : "", () => openModels("orchestrator")),
+      stRow("model", "모델", om ? [modelName(om.model), thinkKo(om.thinking)].filter(Boolean).join(" · ") : "", () => openModels("orchestrator")),
       stRow("usage", "사용량과 월 한도", stUsageSub(), () => go("usage")),
-      stRow("context", "컨텍스트", "", () => go("context"))),
+      stRow("context", "컨텍스트", stContextSub(), () => go("context"))),
     stSec("연결"), stList(
       msHubRow(),
       webAccessRow(stRow),
@@ -10046,12 +10657,12 @@ function settingsList(go) {
     stSec("앱"), stList(
       stRow("bell", "앱과 알림", stPushSub(), () => go("notifications")),
       navOff("apps") ? null : stRow("apps", "앱 관리", "", () => go("apps")),
-      stRow("spark", "화면 안내 다시 보기", "화면 설명과 단축키", () => introOpen()),
+      stRow("spark", "화면 안내 다시 보기", "", () => introOpen()),
       stRow(themeIc(), "표시", `${themeIs() === "dark" ? "다크" : "라이트"} · 대화 탭 ${chatTabMode() === "main" ? "메인" : "마지막"}`, () => go("display"))),
     stSec("시스템"), stList(
       stRow("download", "업데이트", stUpdateSub(), () => go("update"), updRestartPending() ? stTag("재시작 필요") : updAvailable() ? stTag("새 버전") : undefined),
-      stRow("term", "실행 하네스", stRuntimeSub(), () => go("runtime"), hvNew() ? stTag("새 버전") : undefined),
-      stRow("harness", "구성", "시스템 지도", () => go("harness"))),
+      stRow("term", "작업 프로그램", stRuntimeSub(), () => go("runtime"), hvNew() ? stTag("새 버전") : undefined),
+      stRow("harness", "구성", "", () => go("harness"))),
   ];
   return nodes;
 }
@@ -10059,8 +10670,9 @@ function settingsList(go) {
 /* ---------- 표시 ---------- */
 function displayPage() {
   return [stList(
-    stToggle(themeIc(), "화면 모드", "밝게 또는 어둡게", "화면 모드", [["light", "라이트"], ["dark", "다크"]], themeIs(), v => { if (v !== themeIs()) toggleTheme(); renderSettings(); }),
-    stToggle("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막으로 보던 대화부터 시작해요", "대화 탭", [["main", "메인"], ["last", "마지막"]], chatTabMode(), v => { chatTabModeSet(v); renderSettings(); }))];
+    stToggle(themeIc(), "화면 모드", "", "화면 모드", [["light", "라이트"], ["dark", "다크"]], themeIs(), v => { if (v !== themeIs()) toggleTheme(); renderSettings(); }),
+    stToggle("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막 대화부터 시작해요", "대화 탭", [["main", "메인"], ["last", "마지막"]], chatTabMode(), v => { chatTabModeSet(v); renderSettings(); })),
+    stSec("진단"), stList(...kbdRows())];
 }
 
 /* ---------- settings: model fallback chains (orchestrator / lanes / task workers) ---------- */
@@ -10175,19 +10787,21 @@ async function fbKeyDialog(e, done) {
   const custom = e.key_file && e.key_file !== cur.file ? e.key_file : "";
   const file = input({ value: custom, placeholder: cur.file });
   const status = el("p", { class: "sup", text: cur.present ? `저장된 키: ${cur.masked}${e.key_file === cur.file ? " (사용 중)" : ""}` : "저장된 키가 없어요" });
-  const adv = el("details", custom ? { open: "" } : {}, el("summary", { class: "sup", text: "고급: 키 파일 이름으로 지정" }), el("p", { class: "sup", text: "데이터 폴더 secrets 안의 파일 이름(이름에 api-key 포함). 키를 붙여 넣으면 이 칸은 쓰지 않아요." }), textField("파일 이름", file));
+  const adv = msAdvanced("data-fbk-advanced", Boolean(custom), () => el("div", { class: "col" }, el("p", { class: "sup", text: "키를 붙여 넣으면 이 칸은 쓰지 않아요." }), textField("파일 이름", file)), "고급: 키 파일 이름으로 지정");
+  const err = usErr();
   const saveWith = async (c, body) => { const r = await api("/api/apikeys", "PUT", body); key.value = ""; toast(`키를 확인하고 저장했어요 (${r.masked})`); done(r.file); c(); };
   const actions = [{ label: "취소", onclick: c => c() }];
-  if (provider === "anthropic" && K.omo_anthropic) actions.push({ label: "OmO 키 쓰기", onclick: (c, b) => busy(b, () => saveWith(c, { from: "omo" })) });
+  if (provider === "anthropic" && K.omo_anthropic) actions.push({ label: "OmO 키 쓰기", onclick: (c, b) => usRun(b, err, () => saveWith(c, { from: "omo" })) });
   if (e.key_file) actions.push({ label: "키 끄기", onclick: c => { done(""); c(); } });
-  actions.push({ label: "저장", kind: "pri", onclick: (c, b) => busy(b, async () => {
+  // off until there is something to save: a pasted key, a changed file name, or the stored key that is not the one in use yet
+  actions.push({ label: "저장", kind: "pri", onclick: (c, b) => usRun(b, err, async () => {
     const v = key.value.trim();
     if (v) return saveWith(c, { provider, key: v });
     if (file.value.trim()) { done(file.value.trim()); return c(); }
-    if (cur.present) { done(cur.file); return c(); }
-    toast("API 키를 붙여 넣어 주세요", true);
+    done(cur.file); c();
   }) });
-  dialog({ title: "API 키", body: el("div", { class: "col" }, el("p", { class: "sup", text: "구독 대신 API 키로 쓸 때 키를 붙여 넣어요. 저장하기 전에 한 번 확인하고, 키 값은 다시 보여주거나 기록에 남기지 않아요. 비워 두면 저장된 키를 써요." }), status, textField("API 키", key), adv), actions });
+  const d = dialog({ title: `${providerName(provider)} API 키`, body: el("div", { class: "col" }, el("p", { class: "sup", text: "저장한 키는 다시 보여 주지 않아요." }), status, textField("API 키", key), adv, err), actions, mid: true });
+  usDirty(d, [key, file], () => cur.present && e.key_file !== cur.file);
   setTimeout(() => key.focus(), 0);
 }
 // Drag a fallback step by its handle to another place in its chain (pointer events); the handle's arrow keys and the editor's arrow
@@ -10239,7 +10853,7 @@ function fbParts(L) {
     if (!ok && wasOpen) { fbOpen = null; renderModels(); }
   };
   const itemFor = (e, i) => {
-    const nm = modelName(fbBase(e.model)), inUse = used.has(fbRunId(e)), on = e.enabled !== false;
+    const nm = modelChipText(fbBase(e.model)), inUse = used.has(fbRunId(e)), on = e.enabled !== false;
     const facts = fbFacts(e), short = facts.slice(0, 2).join(" · ");
     const all = [fbBase(e.model), ...facts, e.key_file && e.workers ? "서브에이전트·세션도 사용" : ""].filter(Boolean).join(" · ");
     const grip = list.length > 1 ? el("button", { type: "button", class: "fb-grip", title: "끌어서 순서 바꾸기", "aria-label": `${nm} 순서 바꾸기, 위아래 화살표 키`, onkeydown: ev => {
@@ -10256,7 +10870,7 @@ function fbParts(L) {
         inUse ? el("span", { class: "tag pri", text: "사용 중" }) : null,
         fbDownTag(e),
         runs(e) ? null : el("span", { class: "tag warn", text: `여기서 못 써요` })),
-      el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? "켜짐 · 눌러서 끄기" : "꺼짐 · 눌러서 켜기", "aria-label": `${nm} ${on ? "끄기" : "켜기"}`, onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, on ? "켜짐" : "꺼짐"),
+      el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? "켜짐 · 눌러서 끄기" : "꺼짐 · 눌러서 켜기", "aria-label": `${nm} ${on ? "끄기" : "켜기"}`, onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, el("span", { class: `dot${on ? " ok" : ""}`, "aria-hidden": "true" }), on ? "켜짐" : "꺼짐"),
       grip,
       open(i) ? null : fbBar(e, true));
     if (grip) fbDrag(grip, node, i, move);
@@ -10275,14 +10889,14 @@ function fbParts(L) {
       else if (list.some(x => x.model === v && !x.key_file) || fbBase(v) === prim) toast("이미 있는 모델이에요", true);
       else { fbOpen = { layer: L.id, i: list.length, draft: fbDraftOf({ model: v }) }; fbSave(L.id, [...list, { model: v }]); }
     } });
-  } }, icon("add"), full ? "더 넣을 수 없어요" : "폴백 추가");
+  } }, icon("add"), full ? "더 넣을 수 없어요" : "대체 모델 추가");
   const how = L.id === "workers" ? "실행 중인 서브에이전트는 다음 시작부터 반영돼요."
     : F.harness && F.harness.id === "claude" ? "Claude Code는 Anthropic 모델만, 조건 없이 넘어가요."
     : "";
   return {
     sub: L.sub,
     chain: (pick, notes) => el("div", { class: "mt-fb" },
-      el("ol", { class: "fb-list", "aria-label": `${L.title()} 폴백 순서` },
+      el("ol", { class: "fb-list", "aria-label": `${L.title()} 대체 모델 순서` },
         el("li", { class: `fb-item base${used.has(prim) ? " in-use" : ""}` }, el("span", { class: "fb-n", text: "1" }), pick),
         notes.length ? el("li", { class: "fb-sub" }, ...notes) : null,
         ...list.flatMap((e, i) => (open(i) ? [itemFor(e, i), fbEditor(L, F, list, i, move)] : [itemFor(e, i)]))),
@@ -10329,9 +10943,21 @@ async function sharedIntake() {
 window.addEventListener("load", sharedIntake);
 // a tapped notification asks an open window to show its conversation; listened for as the script runs (not after the page's load
 // event) so a tap that lands while the page is still starting is not dropped
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}, h = d.open ? new URL(d.open, location.href).hash : ""; if (!h || d.notice) return;   // a decision push (d.notice) is opened by its id (30-notices.js)
+// A tap the worker hands an open window says how it got here ({tap}: path, tag) and brings a port: the page answers on it that it got the tap (else sw.js opens the
+// address instead), and reports where it landed (POST /api/push/tap, one line in the gateway log).
+const pushTapGot = ev => { try { ev.ports[0].postMessage(1); } catch { /* no port (an older sw) or it stopped waiting: sw.js opens the address itself */ } };
+function pushTapReport(tap, reason) {
+  if (!tap || !tap.path) return;
+  const screen = current === "chat" ? `chat:${target}` : current;
+  fetch("/api/push/tap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag: tap.tag || "", path: tap.path, why: tap.why || "", screen, reason: typeof reason === "string" ? reason : "" }), keepalive: true }).catch(e => console.warn("push tap report", e));
+}
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}, h = d.open ? new URL(d.open, location.href).hash : "";
+  if (d.open && !d.notice) pushTapGot(ev);   // a decision push (d.notice) is answered and opened by its id (30-notices.js)
+  if (!h || d.notice) { if (d.open && !d.notice) pushTapReport(d.tap, "no-address"); return; }
   ovCloseAll();   // nothing left open covers the landing
-  if (d.ts) pushOpen(h, d.ts, d.nid); else if (location.hash !== h) { const p = parseHash(h); go(p.view, p.t); } });
+  const landed = d.ts ? pushOpen(h, d.ts, d.nid) : location.hash !== h ? (p => go(p.view, p.t))(parseHash(h)) : "";
+  Promise.resolve(landed).then(r => pushTapReport(d.tap, r), () => pushTapReport(d.tap, "error"));
+});
 // A new shell version: sw.js refreshShell posts {type:"shell-updated"} when its background fetch brought a changed page, script or styles.
 // The page reloads onto it only while it is hidden and nothing would be lost (empty composer, no attachment, sheet, dialog, or viewer open): a reload
 // under a visible page closes the phone keyboard, even with an empty box. Otherwise a chip offers it, and the reload comes when the page is next hidden. The route is the hash and survives the reload; the scroll place is kept in sessionStorage and put back (chatOpen, shellRestoreViews).
@@ -10419,6 +11045,18 @@ async function pushTapCheck() {
     localStorage.setItem(PUSH_SPENT, JSON.stringify(spent));
     history.replaceState(null, "", tap.href);
     reloadPage();
+  } catch (e) { console.warn("push tap", e); }
+}
+// The tap that started this page (its record in the cache, web/sw.js openAt) reports where the page landed, once; `landing`: the open's result, awaited.
+let PUSH_REPORTED = false;
+async function pushTapCold(landing) {
+  if (PUSH_REPORTED || PUSH_REPLAY) return;   // a spent address reloads at the real tap (pushTapCheck), and that page reports
+  PUSH_REPORTED = true;
+  try {
+    const hit = await (await caches.open("dotz-share")).match("/push/tap"), tap = hit && await hit.json();
+    if (!tap || tap.href !== PUSH_HREF || Date.now() - tap.at > 5 * PUSH_TAP_MS) return;
+    const reason = await landing;
+    pushTapReport(tap, PUSH_FOLLOW && !reason ? "follow" : reason);
   } catch (e) { console.warn("push tap", e); }
 }
 async function pwaInit() {
@@ -10542,7 +11180,7 @@ function pushSection() {
   const li = (ic, title, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), trail.length ? liEnd(...trail) : null);
   const ios = isIOS(), standalone = isStandalone();
   const rows = [];
-  if (!standalone) rows.push(li("home", "앱 설치", el("button", { class: "btn tonal inrow", type: "button", onclick: () => installApp() }, "앱 설치")));
+  if (!standalone) rows.push(li("home", "홈 화면에 추가", el("button", { class: "btn tonal inrow", type: "button", onclick: () => installApp() }, "앱 설치")));
   const subscribed = PWA.sub && PWA.info && PWA.info.subscribed;
   if (PWA.gw && PWA.gw.app) {
     // The device has the app: one row per gateway, whichever gateway's page this is. A gateway that does not answer cannot be switched.
@@ -10550,7 +11188,7 @@ function pushSection() {
       const label = `${g.name || "이 컴퓨터"} 알림`;
       rows.push(li("bell", label, g.online ? el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(g.on), "aria-label": label, onclick: () => pushGw(g, !g.on) }) : el("span", { class: "sup", text: "연결 안 됨" })));
     }
-  } else if (!pushCapable()) rows.push(li("bell", ios && !standalone ? "iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요" : "이 브라우저는 알림을 지원하지 않아요"));
+  } else if (!pushCapable()) rows.push(li("bell", ios && !standalone ? "iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요" : "이 브라우저는 알림을 지원하지 않아요. Chrome이나 설치한 앱에서 켤 수 있어요"));
   else if (Notification.permission === "denied") rows.push(li("bell", "알림 권한이 막혀 있어요"));
   else if (!subscribed) rows.push(li("bell", "알림", el("button", { class: "btn inrow", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
   const kinds = appNotifyRows();
@@ -10563,18 +11201,20 @@ function pushSection() {
 /* ---------- settings: 업데이트 (hub/selfupdate.ts, /api/update*) ---------- */
 // Version on disk vs the version this gateway runs, the last check, the running/finished update job, and the restart that
 // applies it. After a restart request the page polls until the gateway answers with a new boot id.
-const UPD = { info: null, wait: null, timer: 0, at: 0 };
+const UPD = { info: null, wait: null, timer: 0, at: 0, checking: false };
 // Opening settings reads both again only when the last read (boot, the 5 min tick, an update_available event) is older than that tick.
 const UPD_FRESH_MS = 5 * 60000;
 const updFresh = () => !!UPD.info && !UPD.info.error && !!HV.info && Date.now() - UPD.at < UPD_FRESH_MS;
 // 실행 하네스 (hub/harness-update.ts, /api/harness/update): the harness binary itself, checked beside dotz's own version.
-const HV = { info: null, timer: 0 };
+const HV = { info: null, timer: 0, press: false, at: 0 };
 const updWhen = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }); };
-const updVer = v => !v ? "알 수 없음" : v.kind === "git" ? `${v.release ? `v${v.release} · ` : ""}${v.commit.short} · ${updWhen(v.commit.date)}${v.branch !== "main" ? ` · ${v.branch}` : ""}` : v.kind === "tarball" ? `${v.release ? `v${v.release} · ` : ""}설치본 ${v.commit.short} · ${updWhen(v.installed)}${v.ref && v.ref !== "main" ? ` · ${v.ref}` : ""}` : v.kind === "install" ? `설치본 · ${updWhen(v.installed)}` : "알 수 없음";
+// A released version is the version: the commit and the branch are printed only for a checkout that has no release.
+const updVer = v => !v ? "알 수 없음" : v.kind === "git" ? (v.release ? `v${v.release}` : `${v.commit.short} · ${updWhen(v.commit.date)}${v.branch !== "main" ? ` · ${v.branch}` : ""}`) : v.kind === "tarball" ? (v.release ? `v${v.release} · 설치본` : `설치본 ${v.commit.short} · ${updWhen(v.installed)}${v.ref && v.ref !== "main" ? ` · ${v.ref}` : ""}`) : v.kind === "install" ? `설치본 · ${updWhen(v.installed)}` : "알 수 없음";
 // Released versions (hub/selfupdate.ts compareReleases): numeric on date, N, then the forced part; missing sorts below any version.
 const updRel = s => { const m = /^(\d{6})\.([1-3])(?:\.(\d+))?$/.exec(String(s || "").replace(/^v/, "")); return m ? [Number(m[1]), Number(m[2]), Number(m[3] || 0)] : null; };
 const updRelNewer = (disk, available) => { const a = updRel(disk), b = updRel(available); if (!b) return false; if (!a) return true; for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i]; return false; };
 // `cmd` spans in server hints become <code>.
+const updAgo = at => { const t = Date.parse(at); return isNaN(t) ? "" : `${msAgo(t)} 확인`; };
 const updCode = s => String(s || "").split("`").map((p, i) => i % 2 ? el("code", { text: p }) : p);
 // A pulled-but-not-restarted update (running != disk), and the last check when it still describes the checkout. A check made
 // before the checkout moved (an update just landed) no longer describes it.
@@ -10650,7 +11290,8 @@ function paintUpdBar() {
   b.className = `upd-bar ${s.phase}`;
   const tap = s.phase === "new" || s.phase === "failed";
   const run = UPD.info && UPD.info.running && UPD.info.running.commit;
-  const text = s.phase === "failed" ? `업데이트하지 못했어요: ${s.text}${tap ? " · 눌러서 다시 시도" : ""}` : s.phase === "done" && run ? `${s.text} · 지금 버전 ${run.short}` : s.text;
+  const failHead = "업데이트하지 못했어요";
+  const text = s.phase === "failed" ? `${!s.text || s.text.startsWith(failHead) ? s.text || failHead : `${failHead}: ${s.text}`}${tap ? " · 눌러서 다시 시도" : ""}` : s.phase === "done" && run ? `${s.text} · 지금 버전 ${run.short}` : s.text;
   b.replaceChildren(
     el(tap ? "button" : "span", { class: "ub-tx", ...(tap ? { type: "button", onclick: updNow } : {}), text }),
     ...(UB_ACTIVE.includes(s.phase) || s.phase === "done" ? [] : [el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: () => ubSee(s.id) })]));
@@ -10694,12 +11335,18 @@ async function loadUpdate() {
   else if (HV.info && (HV.info.checking || hvJob())) HV.timer = setTimeout(loadUpdate, 2000);
   if (inSettings()) renderSettings();
 }
+// The pressed button says 확인하는 중… and the list stays; the cards' sub lines keep when it was checked after the band is gone.
 async function hvCheck(btn) {
+  if (HV.press) return;
+  HV.press = true;
+  renderSettings();
   await busy(btn, async () => {
     HV.info = await api("/api/harness/update/check", "POST");
+    HV.at = Date.now();
     const n = hvNew();
-    toast(n ? `실행 하네스 새 버전 ${n}개가 있어요` : "실행 하네스는 최신이에요");
+    toast(n ? `작업 프로그램 새 버전 ${n}개가 있어요` : "작업 프로그램은 최신이에요");
   });
+  HV.press = false;
   paintUpdBadge();
   renderSettings();
 }
@@ -10707,13 +11354,18 @@ async function hvApply(btn, id) {
   await busy(btn, async () => { await api("/api/harness/update/apply", "POST", { id }); });
   loadUpdate();
 }
+// The pressed row says 확인하는 중… and keeps its card while the check runs; the result comes back into the same row.
 async function updCheck(btn) {
+  if (UPD.checking) return;
+  UPD.checking = true;
+  renderSettings();
   await busy(btn, async () => {
     const c = await api("/api/update/check", "POST");
     UPD.info = { ...UPD.info, lastCheck: c };
     paintUpdBadge();
     if (c.ok) toast(c.rewrite ? "저장소 기록이 바뀌어서 새 기록으로 옮겨요" : c.available && updRelNewer(c.version && c.version.release, c.available) ? `새 버전 ${c.available}이 있어요` : c.incomingTotal ? `새 커밋 ${c.incomingTotal}개가 있어요` : "최신 버전이에요");
   });
+  UPD.checking = false;
   renderSettings();
 }
 // Local work the update carries as a local patch (hub/selfupdate.ts apply): one Korean line and what was saved; the update itself goes on.
@@ -10732,15 +11384,20 @@ function updRestart() {
   const working = (UPD.info && UPD.info.busy) || [];
   const fire = async when => {
     const boot = UPD.info.boot;
-    try { await api("/api/update/restart", "POST", { when }); } catch (e) { return toast(e.message, true); }
+    await api("/api/update/restart", "POST", { when });
     UPD.wait = { boot, when };
     renderSettings();
     updWaitTick();
   };
-  if (!working.length) return fire("idle");
-  dialog({ classic: true, title: "재시작", body: el("div", { class: "col" }, el("p", { class: "sup", text: `작업 중: ${working.join(", ")}` }), el("p", { class: "sup", text: "작업이 끝난 뒤 재시작하거나, 지금 끊고 재시작할 수 있어요. 끊긴 요청은 다시 켜질 때 이어서 보내요." })), actions: [
-    { label: "작업이 끝나면", onclick: c => { c(); fire("idle"); } },
-    { label: "지금 재시작", kind: "pri", onclick: c => { c(); fire("now"); } }] });
+  if (!working.length) return fire("idle").catch(e => toast(e.message, true));
+  // a failure stays in the dialog (usErr) so the person can press again; both buttons send once
+  const err = usErr();
+  let sending = false;
+  const send = when => (c, b) => { if (sending) return; sending = true; return usRun(b, err, async () => { try { await fire(when); } catch (e) { sending = false; throw e; } c(); }); };
+  const d = dialog({ classic: true, title: "재시작", body: el("div", { class: "col" }, el("p", { class: "sup", text: `작업 중: ${working.join(", ")}` }), el("p", { class: "sup", text: "끊긴 요청은 다시 켜질 때 이어서 보내요." }), err), actions: [
+    { label: "작업이 끝나면", onclick: send("idle") },
+    { label: "지금 재시작", kind: "pri", onclick: send("now") }] });
+  ovFocus(d.node, d.node.querySelector(".dact .btn"));   // by the keyboard the safer way gets the focus first, not the ✕
 }
 async function updWaitTick() {
   if (!UPD.wait) return;
@@ -10766,7 +11423,7 @@ const hvSub = h => {
   const rt = hvRt().find(r => r.id === h.id);
   const role = hvRoles(rt);
   const ver = `지금 ${h.current}${h.latest && h.latest !== h.current ? ` → ${h.latest}` : ""}`;
-  const withRole = s => (role ? `${s} · ${role}` : s);
+  const withRole = s => [s, role, HV.at ? `${msAgo(HV.at)} 확인` : ""].filter(Boolean).join(" · ");
   if (h.installMethod === "managed") return withRole(`${ver} · ${h.managedBy || "다른 프로그램"}이 관리해요`);
   if (h.installMethod === "app") return withRole(`${ver} · 앱으로 설치됨`);
   if (h.error) return withRole(`${ver} · ${h.error}`);
@@ -10775,9 +11432,10 @@ const hvSub = h => {
 };
 function hvSwitcher(h) {
   const rt = hvRt().find(r => r.id === h.id);
-  const others = hvRt().filter(r => r.installed && r.id !== h.id).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", hvRoles(r)].filter(Boolean).join(" · ") || undefined }));
-  if (!rt || !others.length) return null;
-  return el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "실행 하네스 바꾸기", onclick: ev => showMenu(ev.currentTarget, others, { onPick: id => rtFlow(hvRt().find(x => x.id === id)) }) }, icon("drop"));
+  // Every installed program is listed and the one in use carries the check, like any other choice menu.
+  const all = hvRt().filter(r => r.installed).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", hvRoles(r)].filter(Boolean).join(" · ") || undefined }));
+  if (!rt || all.length < 2) return null;
+  return el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "작업 프로그램 바꾸기", onclick: ev => showMenu(ev.currentTarget, all, { value: rt.roles.length ? h.id : "", onPick: id => { if (id !== h.id) rtFlow(hvRt().find(x => x.id === id)); } }) }, icon("drop"));
 }
 const hvNote = text => el("div", { class: "note", text });
 function hvJobLine(j) {
@@ -10806,10 +11464,9 @@ function hvSection() {
   });
   if (pending) list.push(hvJobLine(pending));
   else for (const h of hs) if (h.job && h.job.status !== "current") list.push(hvJobLine(h.job));
-  const notes = [hvNote("6시간마다 새 버전을 확인해요. 업데이트는 하던 일이 끝난 뒤에 설치하고, 새 버전으로 다시 시작해요. 설치가 실패하면 지금 버전을 그대로 써요.")];
-  if (running.length) notes.push(hvNote("바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요."));
-  return [el("div", { class: "sec sec-act" }, el("span", { text: "하네스 버전" }), hvNew() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
-    el("button", { class: "btn tonal sm", type: "button", disabled: !!(HV.info && HV.info.checking), onclick: ev => hvCheck(ev.currentTarget) }, "확인")), el("div", { class: "list" }, ...list), ...notes];
+  const notes = [hvNote("바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요.")];
+  return [el("div", { class: "sec sec-act" }, el("span", { text: "작업 프로그램 버전" }), hvNew() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
+    el("button", { class: "btn tonal sm", type: "button", disabled: HV.press || !!(HV.info && HV.info.checking), onclick: ev => hvCheck(ev.currentTarget) }, HV.press ? "확인하는 중…" : "새 버전 확인")), el("div", { class: "list" }, ...list), ...notes];
 }
 function updateSection() {
   const i = UPD.info;
@@ -10819,28 +11476,30 @@ function updateSection() {
   const { running: run, disk, job, settings: s } = i;
   const jobRunning = job && job.status === "running";
   const { pending, c } = updState(i);
-  const off = jobRunning || UPD.wait ? { disabled: true } : {};
-  const rows = [li("앱 버전", `실행 중 ${updVer(run)}`, el("button", { class: "btn tonal inrow", type: "button", ...off, onclick: ev => updCheck(ev.currentTarget) }, "확인"))];
+  const off = jobRunning || UPD.wait || UPD.checking ? { disabled: true } : {};
+  // One row says the version; after a check its sub line also says it is the latest and when it was checked.
+  const latest = !!(c && c.ok && !updAvailable() && !pending);
+  const sub = UPD.checking ? "확인하는 중…" : [`실행 중 ${updVer(run)}`, latest ? "최신 버전이에요" : "", latest ? updAgo(c.at) : "", latest && c.ahead.length ? `로컬 커밋 ${c.ahead.length}개 (아직 올리지 않음)` : "", latest && c.dirty.length ? `커밋 안 한 변경 ${c.dirty.length}개` : ""].filter(Boolean).join(" · ");
+  const rows = [li("앱 버전", sub, el("button", { class: "btn tonal inrow", type: "button", ...off, onclick: ev => updCheck(ev.currentTarget) }, "새 버전 확인"))];
   if (c && !c.ok) rows.push(el("div", { class: "upd-box err" }, el("div", { class: "hd", text: c.error.reason }), el("div", { class: "sup" }, ...updCode(c.error.fix)), c.error.detail ? el("div", { class: "upd-detail", text: c.error.detail }) : null));
-  else if (c && !updAvailable()) rows.push(li("최신 버전이에요", `${c.version && c.version.release ? `v${c.version.release} · ` : ""}${c.upstream} · 확인 ${updWhen(c.at)}${c.ahead.length ? ` · ${c.upstream}에 없는 로컬 커밋 ${c.ahead.length}개 (아직 올리지 않음)` : ""}${c.dirty.length ? ` · 커밋 안 한 변경 ${c.dirty.length}개` : ""}`));
-  else if (c) {
+  else if (c && updAvailable()) {
     const more = c.incomingTotal - c.incoming.slice(0, 8).length;
     rows.push(el("div", { class: "upd-box" },
-      el("div", { class: "hd", text: c.available ? `새 버전 ${c.version && c.version.release ? c.version.release : "설치본"} → ${c.available} · ${c.upstream}` : `새 커밋 ${c.incomingTotal}개 · ${c.upstream}` }),
+      el("div", { class: "hd", text: c.available ? `새 버전 ${c.version && c.version.release ? c.version.release : "설치본"} → ${c.available}` : `새 커밋 ${c.incomingTotal}개 · ${c.upstream}` }),
       el("ul", { class: "upd-log" }, ...c.incoming.slice(0, 8).map(x => el("li", {}, el("code", { text: x.short }), el("span", { text: x.subject, title: x.subject }))), more > 0 ? el("li", { class: "dim" }, el("span", { text: `외 ${more}개` })) : null),
       c.available ? el("a", { class: "sup", href: `https://github.com/ddotz/dotz/releases/tag/v${c.available}`, target: "_blank", rel: "noopener", text: "릴리스 노트 보기" }) : null,
       c.blocked.length ? el("div", { class: "upd-block" }, ...c.blocked.map(b => el("div", { text: b }))) : null,
       c.keep ? updKeepBox(c.keep) : null,
       c.ahead.length && !c.keep ? el("div", { class: "sup", text: `로컬 커밋 ${c.ahead.length}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.` }) : null,
-      el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: () => updNow() }, "지금 업데이트"), el("span", { class: "sup", text: disk && disk.kind === "tarball" ? "새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요." : "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
+      el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: () => updNow() }, "지금 업데이트"), el("span", { class: "sup", text: "테스트가 실패하면 그대로 있어요." }))));
   }
   if (jobRunning) rows.push(liDot(`업데이트 중 · ${job.phase}`, job.message));
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.keep && !(c && c.keep) ? job.keep.line : job.message }), job.keep && !(c && c.keep) ? updKeepBox(job.keep) : null));
   if (UPD.wait) rows.push(liDot("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`));
   else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn inrow", type: "button", onclick: () => updRestart() }, "재시작")));
-  const prefs = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
+  const prefs = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알려요." : "알림만 보내요. 적용은 직접 해요." })),
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) }))),
-    el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
+    el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요." })),
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) })))];
   return [el("div", { class: "list", id: "upd-sec" }, ...rows, ...prefs)];
 }
@@ -10848,30 +11507,32 @@ function updateSection() {
 /* ---------- settings: 앱 알림 per class (hub/notify-route.ts pushClasses; GET/PUT /api/push/classes) ---------- */
 // The web app and the phone are one place, "앱 알림": one switch per notice class, the same on every device. The bell keeps every notice
 // either way; a switch decides whether that class notifies. Each messenger has its own 알림 switches in its connection sheet (설정 → 메신저).
-const NOTIFY_CLASSES = [["ask", "답변 필요", "질문 · 승인 · 로그인"], ["alert", "경고", "게이트웨이 오류 · 로그인 끊김 · 감시 반복 실패"], ["result", "결과", "세션 · 작업 완료 · 실패"],
+const NOTIFY_CLASSES = [["ask", "답변 필요", "질문 · 승인 · 로그인"], ["alert", "경고", "dotz 오류 · 로그인 끊김 · 감시 반복 실패"], ["result", "결과", "세션 · 작업 완료 · 실패"],
   ["news", "새 소식", "메일 · 댓글 · 감시 · 예약"], ["conv", "대화", "보고 있지 않은 대화의 새 답"], ["log", "진행", "진행 중 보고 · 작업 기록"]];
 // One plain row per class with a switch; `on(k)` reads a class's state, `set(k, on)` changes it, `only` limits the classes shown.
 const notifyRows = (on, set, only) => NOTIFY_CLASSES.filter(([k]) => !only || only.includes(k)).map(([k, label, desc]) => el("div", { class: "li", "data-notify": k }, el("span", { class: "tx" }, el("div", { class: "hd", text: label }), el("div", { class: "sup", text: desc })),
   liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on(k)), "aria-label": `${label} 알림`, "data-k": k, onclick: () => set(k, !on(k)) }))));
 const APPN = { v: null, asked: false };
 async function appNotifyLoad() { APPN.asked = true; try { APPN.v = (await api("/api/push/classes")).classes; } catch { APPN.v = null; } if (inSettings()) renderSettings(); }
+// Only the switches change: the page is not drawn again, so no section blinks away while the answer is on its way.
+const appNotifyFlip = v => { for (const [k] of NOTIFY_CLASSES) { const b = document.querySelector(`[data-notify="${k}"] .hs-sw`); if (b) b.setAttribute("aria-checked", String(v[k] === true)); } };
 async function appNotifySet(k, on) {
   const was = APPN.v[k];
-  APPN.v = { ...APPN.v, [k]: on }; renderSettings();
+  APPN.v = { ...APPN.v, [k]: on }; appNotifyFlip(APPN.v);
   try { APPN.v = (await api("/api/push/classes", "PUT", { classes: { [k]: on } })).classes; } catch (e) { APPN.v = { ...APPN.v, [k]: was }; toast(e.message, true); }
-  renderSettings();
+  appNotifyFlip(APPN.v);
 }
 function appNotifyRows() {
   if (!APPN.v && !APPN.asked) appNotifyLoad();
   if (!APPN.v) return [];
-  return [...notifyRows(k => APPN.v[k] === true, appNotifySet), el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "웹앱과 휴대폰에 같이 적용돼요. 꺼도 알림 목록에는 남아요. 메신저 알림은 설정 → 메신저의 각 연결에서 따로 정해요." })))];
+  return [...notifyRows(k => APPN.v[k] === true, appNotifySet), el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "꺼도 목록에는 남아요." })))];
 }
 
 function renderSettings() {
   const page = Object.hasOwn(SET_PAGE, current) ? SET_PAGE[current] : null;
   const box = $(page ? `#${current}` : "#settings");
   if (box.contains(document.activeElement) && openMenu) return;
-  clear(box).append(...(page ? page.build() : settingsList(go)));
+  clear(box).append(...(page ? page.build() : settingsCols(settingsList(go))));
 }
 
 /* ---------- settings: 계정 (/api/accounts: aliases, current account and why, switch rules, script) ---------- */
@@ -10886,19 +11547,29 @@ async function loadAccounts() {
 }
 let accFocus = "";   // the provider an old address or a home card asked for (21-providers.js renderAccounts)
 const accPaint = () => { if (current === "accounts") renderAccounts(); else if (current === "settings") renderSettings(); };
-// A provider's section head on the 계정 screen; `add` starts one more login for its pool.
-const accHead = (p, g, add) => el("div", { class: "sec sec-act", "data-prov": p.id }, (g || p).name || p.id, add ? el("button", { class: "btn tonal sm", type: "button", "data-acc-add": "", onclick: () => startLogin({ id: p.id, name: (g || p).name || p.id, add_account: true }) }, icon("add"), "계정 추가") : null);
+const accName = n => (n === "default" ? "기본" : n);   // the stored name stays "default"; the screen says 기본
+// A provider's section head on the 계정 screen: its name, 사용 중 on the right while requests go through it, and (a provider with no account yet) `add` for its first login.
+const accHead = (p, g, add) => el("div", { class: "sec sec-act", "data-prov": p.id }, (g || p).name || p.id, p.in_use ? el("span", { class: "tag pri acc-use", text: "사용 중" }) : null, add ? el("button", { class: "btn tonal sm", type: "button", "data-acc-add": "", onclick: () => startLogin({ id: p.id, name: (g || p).name || p.id, add_account: true }) }, icon("add"), "계정 추가") : null);
+// The rows of a card that holds accounts: the usage windows on top (none for a provider that reports none), a small section name, and 계정 추가 at the foot of the accounts.
+const accLimRow = p => { const ls = provLimits(p); return ls.length ? el("div", { class: "li prow" }, el("div", { class: "tx" }, ...ls.map(l => el("div", { class: "prow-lim" }, el("span", { class: "k", text: limitShort(l) }), bar(l), el("span", { class: "v", text: pctText(l) }))))) : null; };
+const accLbl = text => el("div", { class: "li acc-lbl" }, el("span", { class: "lbl", text }));
+const accAddRow = (p, g) => el("button", { class: "li tap acc-add", type: "button", "data-acc-add": "", onclick: () => startLogin({ id: p.id, name: (g || p).name || p.id, add_account: true }) }, icon("add"), el("span", { class: "tx", text: "계정 추가" }));
+// Only an account whose login ran out gets this; the row itself still opens its window.
+const accRelogin = p => el("button", { class: "btn text inrow", type: "button", "data-acc-relogin": p.id, onclick: () => startLogin(p) }, "다시 로그인");
 const accSection = (p, g, conn) => (p.id === "anthropic" ? accountSection(p, g, conn) : accProviderSection(p, g, conn));
-const accLabel = id => { const a = ACC && ACC.accounts.find(x => x.name === id || x.alias === id); return a ? a.label || a.alias || a.name : id; };
-const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); accPaint(); if (current === "usage") loadQuota(); });
+const accLabel = id => { const a = ACC && ACC.accounts.find(x => x.name === id || x.alias === id); return a ? accName(a.label || a.alias || a.name) : id; };
+// `err` (a dialog's usErr note): a failure stays in that dialog; without it a failure is a toast
+const accMut = (btn, call, msg, close, err) => {
+  const run = async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); accPaint(); if (current === "usage") loadQuota(); };
+  return err ? usRun(btn, err, run) : busy(btn, run);
+};
 async function accCopy(text) { try { await navigator.clipboard.writeText(text); toast("복사했어요"); } catch { toast("복사하지 못했어요", true); } }
 function accTags(a, pin) {
   const t = [];
   // a.current: the account requests really use (OmO skips a blocked one); blocked_tag: "한도 걸림 · 01:00까지"
   // 고정: the fixed account (pin) carries the badge instead
   if (pin ? a.name === pin : a.current) t.push([pin ? "사용 중 · 고정" : "사용 중", "pri"]);
-  if (a.blocked) t.push([a.blocked_tag || "쓸 수 없음", "warn"]);   // a limit or a login only the owner can fix: orange
-  else if (!(pin ? a.name === pin : a.current)) t.push(["쓸 수 있음", "ok"]);
+  if (a.blocked && a.blocked !== "auth_error") t.push([a.blocked_tag || "쓸 수 없음", "warn"]);   // a limit only time fixes: orange; a lost login has the 다시 로그인 button instead
   return t;
 }
 // Drag a 계정 row to reorder: from its grip at once (after a 4px move), or after a long press on the row (touch; a move before that is a scroll).
@@ -10943,8 +11614,7 @@ function accDrag(ev, row, longPress, onDrop) {
   else ev.preventDefault();
 }
 function accountSection(p, g, conn) {
-  const head = accHead(p, g, p.can_add_account);
-  if (!ACC) return [head, el("div", { class: "list" }, conn)];
+  if (!ACC) return [accHead(p, g, p.can_add_account), el("div", { class: "list" }, conn)];
   const dec = ACC.decision, sc = ACC.script, lines = ACC.rules_text || [], pct = n => `${Math.round(n)}%`;
   const tx = (hd, ...sup) => el("span", { class: "tx" }, hd ? el("div", { class: "hd", text: hd }) : null, sup.length ? el("div", { class: "sup" }, ...sup) : null);
   // two modes: 자동 전환 (rules, and a switch when the account is blocked) or 고정 (one account, requests never move to another)
@@ -10952,9 +11622,11 @@ function accountSection(p, g, conn) {
   const setMode = (btn, body, msg) => accMut(btn, () => api("/api/accounts/mode", "PUT", body), msg);
   // the order is the fallback order of 자동 전환: the first usable account by number takes over when the current one is blocked
   const reorder = (btn, from, to) => { const names = ACC.accounts.map(x => x.name); names.splice(to, 0, names.splice(from, 1)[0]); return accMut(btn, () => api("/api/accounts/order", "PUT", { order: names })); };
-  const rows = ACC.accounts.map((a, i) => {
-    const label = a.label || a.alias || a.name;
-    const sub = [a.name !== label ? a.name : "", a.five_hour_left != null ? `5시간 ${pct(a.five_hour_left)} 남음` : "", a.seven_day_left != null ? `주간 ${pct(a.seven_day_left)} 남음` : ""].filter(Boolean).join(" · ");
+  const accRows = ACC.accounts.map((a, i) => {
+    const label = accName(a.label || a.alias || a.name);
+    // every account's own windows with their reset time (the group mirrors OmO's usage file), else the two numbers dotz read
+    const wins = ((g && g.accounts.find(x => x.name === a.name)) || {}).windows || [];
+    const sub = [accName(a.name) !== label ? accName(a.name) : "", ...(wins.length ? accUsage(wins) : a.five_hour_left != null || a.seven_day_left != null ? [a.five_hour_left != null ? `5시간 ${pct(a.five_hour_left)} 남음` : "", a.seven_day_left != null ? `주간 ${pct(a.seven_day_left)} 남음` : ""] : [ACC_NO_USAGE])].filter(Boolean).join(" · ");
     // 고정: tapping a row fixes that account; 자동 전환: tapping it opens its name and details (not the click right after a drag)
     const onclick = ev => { if (accSwallow) { accSwallow = false; return; } if (pinned) { if (a.name !== pin) setMode(ev.currentTarget, { mode: "pinned", account: a.name }, "고정 계정을 바꿨어요"); } else accDialog(a); };
     const rowOf = ev => ev.currentTarget.closest(".li.acc");
@@ -10971,73 +11643,96 @@ function accountSection(p, g, conn) {
       el("button", { class: "acc-main", type: "button", ...(pinned ? { role: "radio", "aria-checked": String(a.name === pin) } : {}), onclick,
         onpointerdown: ev => { if (ev.pointerType !== "mouse") accDrag(ev, rowOf(ev), true, to => reorder(ev.target.closest(".acc-main"), i, to)); } },
         el("span", { class: "lead acc-no", text: String(a.order || i + 1) }), tx(label, sub), ...accTags(a, pin).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t }))),
+      a.blocked === "auth_error" ? accRelogin(p) : null,
       pinned ? el("button", { class: "acc-mv", type: "button", "aria-label": `${label} 이름 바꾸기`, onclick: () => accDialog(a) }, icon("chev", "lead")) : null);
   });
-  const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 폴백 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가고, 모두 막히면 폴백 순서(API 키 포함)를 따라요. 답장 초안은 API 키로 넘어가지 않아요.";
+  const rows = [];
+  const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? accName(ch.label) : "고른 계정"}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 대체 모델 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.`) : "";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
-  rows.unshift(el("div", { class: "li" }, tx("자동 전환", caption),
+  rows.unshift(el("div", { class: "li" }, tx("자동 전환", ...(caption ? [caption] : [])),
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!pinned), "aria-label": "자동 전환", onclick: ev => setMode(ev.currentTarget, { mode: pinned ? "auto" : "pinned" }, pinned ? "자동 전환으로 바꿨어요" : "고정했어요") }))));
   // What a 고정 account at its limit does next: unset asks once (the alert's question), then this is followed quietly.
   const onLimit = (ACC.rules && ACC.rules.on_limit) || "";
-  const onLimitSub = onLimit === "switch" ? "한도에 걸리면 자동 전환으로 넘어가요" : onLimit === "wait" ? "한도에 걸린 동안 기다려요" : "아직 안 정했어요 · 한도에 걸리면 한 번 물어봐요";
+  const onLimitSub = onLimit === "switch" ? "한도에 걸리면 자동 전환으로 넘어가요" : onLimit === "wait" ? "한도에 걸린 동안 기다려요" : "아직 정하지 않았어요";
   const setOnLimit = (btn, value) => accMut(btn, () => api("/api/accounts/on-limit", "PUT", { on_limit: value }), value === "wait" ? "한도에 걸렸을 때 기다리기로 정했어요" : "한도에 걸렸을 때 자동 전환으로 넘어가기로 정했어요");
-  rows.splice(1, 0, el("div", { class: "li" }, tx("한도에 걸렸을 때", onLimitSub),
-    liEnd(rowToggle({ label: "한도에 걸렸을 때", opts: [["wait", "기다리기"], ["switch", "자동 전환"]], value: onLimit, onPick: (v, btn) => setOnLimit(btn, v) }))));
+  rows.splice(1, 0, el("div", { class: "li" }, tx("물어보기", onLimitSub),
+    liEnd(rowToggle({ label: "물어보기", opts: [["wait", "기다리기"], ["switch", "자동 전환"]], value: onLimit, onPick: (v, btn) => setOnLimit(btn, v) }))));
   if (!pinned) {
-    rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => rulesDialog() }, "편집"))));
-    for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
+    rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? [lines[0].text, lines.length > 1 ? `외 ${lines.length - 1}개` : ""].filter(Boolean).join(" · ") : "계정이 막힐 때만 자동으로 바꿔요."), liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => rulesDialog() }, "편집"))));
   }
   const run = sc && [sc.timeout_ms ? `${Math.round(sc.timeout_ms / 1000)}초 안에 끝나요` : "", sc.every_minutes ? `${sc.every_minutes}분마다` : ""].filter(Boolean).join(" · ");
   if (!pinned && sc && sc.path) rows.push(el("button", { class: "li tap", type: "button", title: sc.path, onclick: () => accCopy(sc.path) }, tx("스크립트", el("code", { class: "path-short", text: shortPath(sc.path) }), run ? ` · ${run}` : "")));
   const last = sc && sc.last;
   if (!pinned && last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? "마지막 실행이 실패했어요" : `마지막 결과 · ${last.label || (last.account ? accLabel(last.account) : "고르지 않음")}`, [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
-  return [head, el("div", { class: "list" }, conn, ...rows)];
+  rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "답장 초안은 API 키로 넘어가지 않아요." }))));
+  // accounts first (their usage on top); a provider with none keeps its login row and the 계정 추가 button in the head
+  const hasAcc = accRows.length > 0;
+  const top = hasAcc ? [accLimRow(p), accLbl("계정"), ...accRows, p.can_add_account ? accAddRow(p, g) : null] : [conn];
+  return [accHead(p, g, !hasAcc && p.can_add_account), el("div", { class: "list", "data-prov-conn": hasAcc ? p.id : null }, ...top.filter(Boolean), accLbl("한도에 걸리면"), ...rows)];
 }
+// An account's usage as row parts: what is left in each window, then the soonest reset still ahead (one reset per row, not one per window).
+// A logged-in subscription account whose usage has not been read yet (it has made no request so far).
+const ACC_NO_USAGE = "사용량 아직 확인 안 됨";
+const accUsage = ws => { const next = Math.min(...ws.map(w => w.resets_at).filter(t => t > Date.now())); return [...ws.map(w => `${w.label} ${Math.round(w.left)}% 남음`), ...(Number.isFinite(next) ? [rel(next)] : [])]; };
 // A provider OmO holds accounts for besides Claude 구독 (its own block above): its login row, then its accounts with their state and usage
 // windows, and an empty state when the pool has none.
 function accProviderSection(p, g, conn) {
-  const rows = [conn];
-  if (g && !g.accounts.length) rows.push(el("div", { class: "li" }, accTx(`${g.name} 계정이 없어요`, g.can_add ? "계정을 하나 넣으면 여기 보여요." : "로그인이나 API 키를 넣어 주세요.")));
-  for (const a of g ? g.accounts : []) {
-    const sub = (a.windows || []).map(w => `${w.label} ${Math.round(w.left)}% 남음`).join(" · ");
+  const add = p.can_add_account || (g && g.can_add);
+  if (!g || !g.accounts.length) {
+    const rows = [conn];
+    if (g) rows.push(el("div", { class: "li" }, accTx(`${g.name} 계정이 없어요`, g.can_add ? "계정을 하나 넣으면 여기 보여요." : "로그인이나 API 키를 넣어 주세요.")));
+    return [accHead(p, g, add), el("div", { class: "list" }, ...rows)];
+  }
+  const rows = [];
+  for (const a of g.accounts) {
+    const sub = accUsage(a.windows || []).join(" · ");
     const tags = [];
     if (a.current) tags.push(["사용 중", "pri"]);
     if (a.pinned) tags.push(["고정", "ok"]);
-    if (a.blocked) tags.push([a.blocked_tag || (a.blocked === "auth_error" ? "로그인 필요" : "쓸 수 없음"), "warn"]);
-    else if (!a.current && !a.pinned) tags.push(["쓸 수 있음", "ok"]);
-    const label = a.label || a.name;
+    if (a.blocked && a.blocked !== "auth_error") tags.push([a.blocked_tag || "쓸 수 없음", "warn"]);
+    const label = accName(a.label || a.name);
     rows.push(el("div", { class: `li acc gen${a.current ? " on" : ""}` },
       el("button", { class: "acc-main", type: "button", onclick: () => accProviderDialog(g, a) },
-        el("span", { class: "lead acc-no", text: String(a.order) }), accTx(label, sub), ...tags.map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t })))));
+        el("span", { class: "lead acc-no", text: String(a.order) }), accTx(label, sub), ...tags.map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t }))),
+      a.blocked === "auth_error" ? accRelogin(p) : null));
   }
-  return [accHead(p, g, p.can_add_account || (g && g.can_add)), el("div", { class: "list" }, ...rows)];
+  return [accHead(p, g), el("div", { class: "list", "data-prov-conn": p.id }, ...[accLimRow(p), accLbl("계정"), ...rows, add ? accAddRow(p, g) : null].filter(Boolean))];
 }
 // One account of another provider: its alias (kept per provider so two pools can hold the same account name), OmO's pin, deletion.
+// The delete actions stand together on the left of the button row; the rest (pin, save) stay on the right.
+function acGap(list) {
+  const k = list.findLastIndex(a => a.kind === "danger");
+  return k < 0 ? list : list.map((a, i) => (i === k ? { ...a, kind: "danger ac-gap" } : a));
+}
 function accProviderDialog(g, a) {
-  const label = a.label || a.name;
+  const label = accName(a.label || a.name);
   const key = `${g.id}:${a.name}`;
   const inp = el("input", { class: "fi", type: "text", value: a.label !== a.name ? a.label : "", maxlength: "40", autocomplete: "off", placeholder: "별칭 (예: 회사, 개인)", "aria-label": "별칭" });
-  const alias = (v, msg) => (btn, close) => accMut(btn, () => api("/api/accounts/alias", "PUT", { key, alias: v }), msg, close);
+  const err = usErr();
+  const alias = (v, msg) => (btn, close) => accMut(btn, () => api("/api/accounts/alias", "PUT", { key, alias: v }), msg, close, err);
   const actions = [
-    a.label !== a.name ? { label: "지우기", kind: "danger", onclick: (c, b) => alias("", "별칭을 지웠어요")(b, c) } : null,
-    g.can_delete ? { label: "계정 삭제", kind: "danger", onclick: async (c, b) => { if (!await ask(`${label} 삭제`, "OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.", "삭제", true)) return; accMut(b, () => api(`/api/accounts?provider=${enc(g.id)}&name=${enc(a.name)}`, "DELETE"), `${label}을(를) 지웠어요`, c); } } : null,
-    g.can_pin ? (a.pinned ? { label: "고정 풀기", kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: null }), "고정을 풀었어요", c) } : { label: "이 계정으로 고정", kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: a.name }), `${label}로 고정했어요`, c) }) : null,
+    g.can_delete ? { label: "계정 삭제", kind: "danger", onclick: async (c, b) => { b.disabled = true; if (!await ask(`${label} 삭제`, "OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.", "삭제", true)) { b.disabled = false; return; } accMut(b, () => api(`/api/accounts?provider=${enc(g.id)}&name=${enc(a.name)}`, "DELETE"), `${label}을(를) 삭제했어요`, c, err); } } : null,
+    g.can_pin ? (a.pinned ? { label: "고정 풀기", kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: null }), "고정을 풀었어요", c, err) } : { label: "이 계정으로 고정", kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: a.name }), `${label}로 고정했어요`, c, err) }) : null,
     { label: "저장", kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? "별칭을 저장했어요" : "별칭을 지웠어요")(b, c) },
   ].filter(Boolean);
-  const d = dialog({ classic: true, title: `${g.name} · ${label}`, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: "별칭" }), inp)), actions });
+  const d = dialog({ classic: true, title: `${g.name} · ${label}`, body: el("div", { class: "col" }, accName(a.name) !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: accName(a.name) })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: "별칭" }), inp), err), actions: acGap(actions) });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  usDirty(d, [inp]);
   inp.focus();
 }
 function accDialog(a) {
-  const label = a.label || a.alias || a.name;
+  const label = accName(a.label || a.alias || a.name);
   const inp = el("input", { class: "fi", type: "text", value: a.alias || "", maxlength: "40", autocomplete: "off", placeholder: "별칭 (예: 회사, 개인)", "aria-label": "별칭" });
-  const alias = (v, msg) => (btn, close) => accMut(btn, () => api("/api/accounts/alias", "PUT", { key: a.name, alias: v }), msg, close);
-  const d = dialog({ classic: true, title: label, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: "별칭" }), inp)), actions: [
-    a.alias ? { label: "지우기", kind: "danger", onclick: (c, b) => alias("", "별칭을 지웠어요")(b, c) } : null,
-    ACC.accounts.length > 1 ? { label: "계정 삭제", kind: "danger", onclick: async (c, b) => { if (!await ask(`${label} 삭제`, "OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.", "삭제", true)) return; accMut(b, () => api(`/api/accounts?name=${enc(a.name)}`, "DELETE"), `${label}을(를) 지웠어요`, c); } } : null,
-    { label: "이 계정으로 고정", kind: "tonal", disabled: ACC.mode === "pinned" && ACC.chosen && ACC.chosen.name === a.name, onclick: (c, b) => accMut(b, () => api("/api/accounts/mode", "PUT", { mode: "pinned", account: a.name }), `${label}로 고정했어요`, c) },
-    { label: "저장", kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? "별칭을 저장했어요" : "별칭을 지웠어요")(b, c) }].filter(Boolean) });
+  const err = usErr();
+  const alias = (v, msg) => (btn, close) => accMut(btn, () => api("/api/accounts/alias", "PUT", { key: a.name, alias: v }), msg, close, err);
+  // the only account cannot be deleted from the pool; leaving it is the provider's 로그아웃 (the card has no trash can)
+  const out = ACC.accounts.length > 1 ? null : (P.providers || []).find(x => x.id === "anthropic" && (x.can_logout ?? x.removable));
+  const d = dialog({ classic: true, title: label, body: el("div", { class: "col" }, accName(a.name) !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: accName(a.name) })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: "별칭" }), inp), err), actions: acGap([
+    ACC.accounts.length > 1 ? { label: "계정 삭제", kind: "danger", onclick: async (c, b) => { b.disabled = true; if (!await ask(`${label} 삭제`, "OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.", "삭제", true)) { b.disabled = false; return; } accMut(b, () => api(`/api/accounts?name=${enc(a.name)}`, "DELETE"), `${label}을(를) 삭제했어요`, c, err); } } : out ? { label: "로그아웃", kind: "danger", onclick: c => { c(); logoutProvider(out); } } : null,
+    { label: "이 계정으로 고정", kind: "tonal", disabled: ACC.mode === "pinned" && ACC.chosen && ACC.chosen.name === a.name, onclick: (c, b) => accMut(b, () => api("/api/accounts/mode", "PUT", { mode: "pinned", account: a.name }), `${label}로 고정했어요`, c, err) },
+    { label: "저장", kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? "별칭을 저장했어요" : "별칭을 지웠어요")(b, c) }].filter(Boolean)) });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  usDirty(d, [inp]);
   inp.focus();
 }
 function rulesDialog() {
@@ -11049,11 +11744,16 @@ function rulesDialog() {
     if (Array.isArray(c.rules)) { for (const r of c.rules) { if (!r.name) delete r.name; if (r.when && !Object.keys(r.when).length) delete r.when; } if (!c.rules.length) delete c.rules; }
     return c;
   };
-  const acctPairs = cur => { const p = accts.map(a => [a.name, a.label || a.alias || a.name]); if (cur && !p.some(([v]) => v === cur)) p.push([cur, accLabel(cur)]); return p; };
-  const select = (pairs, cur, label, onPick) => selectButton({ label, items: pairs.map(([value, text]) => ({ value, label: text })), value: cur, onPick });
+  const acctPairs = cur => { const p = accts.map(a => [a.name, accName(a.label || a.alias || a.name)]); if (cur && !p.some(([v]) => v === cur)) p.push([cur, accLabel(cur)]); return p; };
+  const select = (pairs, cur, label, onPick) => selectButton({ label, items: pairs.map(([value, text]) => ({ value, label: text })), value: cur, onPick: v => { onPick(v); touch(); } });
   const field = (label, ...ctrl) => el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: label }), el("div", { class: "row", style: "flex-wrap:wrap" }, ...ctrl));
+  // the seven weekdays are one row of seven equal chips (a phone cannot leave one on a second line)
+  const dayField = (...ctrl) => el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: "요일 (선택)" }), el("div", { class: "row rl-days" }, ...ctrl));
   const ta = el("textarea", { class: "fi hs-ta hs-mono", rows: 14, spellcheck: "false", "aria-label": "규칙 JSON" });
-  const box = el("div", { class: "col" });
+  const box = el("div", { class: "col" }), err = usErr(), tick = el("input");
+  // 저장 stays off until the rules differ from what was loaded: any edit in the rows pings `tick`, which usDirty listens to
+  const touch = () => tick.dispatchEvent(new Event("input"));
+  box.addEventListener("input", touch); box.addEventListener("change", touch);
   const move = (i, to) => { const l = list(); [l[i], l[to]] = [l[to], l[i]]; paint(); };
   function card(r, i, n) {
     r.do = r.do || { auto: true };
@@ -11082,36 +11782,41 @@ function rulesDialog() {
       const pref = Array.isArray(r.do.prefer) ? r.do.prefer : (r.do.prefer = []);
       for (const [v, t] of acctPairs()) { const at = pref.indexOf(v); doCtl.push(el("button", { type: "button", class: `chip${at >= 0 ? " on" : ""}`, "aria-pressed": String(at >= 0), text: at >= 0 ? `${at + 1} ${t}` : t, onclick: () => { at >= 0 ? pref.splice(at, 1) : pref.push(v); paint(); } })); }
     }
-    const many = Object.keys(w).filter(k => ACC_COND.some(([c]) => c === k)).length > 1;
+    const nCond = Object.keys(w).filter(k => ACC_COND.some(([c]) => c === k)).length;
     return el("div", { class: "list" }, el("div", { class: "li", style: "flex-direction:column;align-items:stretch;gap:var(--sp-3)" },
       el("div", { class: "row", style: "flex-wrap:wrap" }, nm,
-        el("button", { type: "button", class: "btn text", disabled: i === 0, onclick: () => move(i, i - 1) }, "위로"),
-        el("button", { type: "button", class: "btn text", disabled: i === n - 1, onclick: () => move(i, i + 1) }, "아래로"),
-        el("button", { type: "button", class: "btn danger", onclick: () => { list().splice(i, 1); paint(); } }, "삭제")),
-      field("요일 (선택)", ...days),
+        el("div", { class: "row rl-ord" },
+          el("button", { type: "button", class: "btn text", disabled: i === 0, onclick: () => move(i, i - 1) }, "위로"),
+          el("button", { type: "button", class: "btn text", disabled: i === n - 1, onclick: () => move(i, i + 1) }, "아래로"),
+          el("button", { type: "button", class: "btn danger", onclick: () => { list().splice(i, 1); paint(); } }, "삭제"))),
+      dayField(...days),
       field("시간 (선택)", time("from", "시작"), el("span", { class: "sup", text: "~" }), time("to", "끝")),
-      field("조건", ...condCtl), many ? el("div", { class: "sup", text: "조건이 여러 개예요. 모두 바꾸려면 채팅에서 말해 주세요." }) : null,
+      field("조건", ...condCtl), nCond > 1 ? el("div", { class: "sup", text: `조건 ${nCond}개` }) : null,
       field("동작", ...doCtl)));
   }
   function paint() {
     clear(box);
     if (json) { box.append(ta); return; }
     const l = Array.isArray(R.rules) ? R.rules : [];
-    if (!l.length) box.append(el("div", { class: "sup", text: "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요." }));
+    if (!l.length) box.append(el("div", { class: "sup", text: "계정이 막힐 때만 자동으로 바꿔요." }));
     l.forEach((r, i) => box.append(card(r, i, l.length)));
     box.append(el("div", {}, el("button", { type: "button", class: "btn tonal", onclick: () => { list().push({ do: { auto: true } }); paint(); } }, "규칙 추가")));
+    touch();
   }
   const parse = () => { let o; try { o = JSON.parse(ta.value || "{}"); } catch { throw new Error("JSON 모양이 맞지 않아요"); } if (!o || typeof o !== "object" || Array.isArray(o)) throw new Error("JSON 모양이 맞지 않아요"); return o; };
   const toggle = () => {
     if (!json) { ta.value = JSON.stringify(clean(R), null, 2); json = true; }
     else { try { R = parse(); } catch (e) { return toast(e.message, true); } json = false; }
-    d.setActions(acts()); paint();
+    d.node.querySelector(".dact .ac-gap").textContent = json ? "항목으로 보기" : "직접 편집";
+    paint(); touch();
   };
-  const acts = () => [
+  const snap = () => json ? parse() : clean(R), start = JSON.stringify(clean(R));
+  const dirty = () => { try { return JSON.stringify(snap()) !== start; } catch { return true; } };
+  const d = dialog({ classic: true, title: "전환 규칙", body: [box, err], wide: true, actions: [
+    { label: "직접 편집", kind: "text ac-gap", onclick: toggle },
     { label: "취소", onclick: c => c() },
-    { label: json ? "폼으로 보기" : "JSON으로 편집", onclick: toggle },
-    { label: "저장", kind: "pri", onclick: (c, b) => accMut(b, () => api("/api/accounts/rules", "PUT", { rules: json ? parse() : clean(R) }), "규칙을 저장했어요", c) }];
-  const d = dialog({ classic: true, title: "전환 규칙", body: box, wide: true, actions: acts() });
+    { label: "저장", kind: "pri", onclick: (c, b) => accMut(b, () => api("/api/accounts/rules", "PUT", { rules: snap() }), "규칙을 저장했어요", c, err) }] });
+  usDirty(d, [tick], dirty);
   paint();
 }
 
@@ -11119,7 +11824,13 @@ function rulesDialog() {
 // POST /api/devices/code). The settings entry shows only when that list answers, which it does only in cloudflare mode; other installs never see it.
 // A row opens a dialog to rename or unpair the device; "새 기기 연결" explains the /pair flow and can make a code right here.
 const DEV = { items: null, fail: "", asked: false };
-const dvDate = iso => { const t = Date.parse(iso || ""); return isNaN(t) ? "" : new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" }); };
+// This year's date drops the year ("9월 30일") so the line under the name stays on one line on a phone; an older one keeps it.
+const dvDate = iso => {
+  const t = Date.parse(iso || "");
+  if (isNaN(t)) return "";
+  const yr = x => new Date(x).toLocaleDateString("ko-KR", { ...KST, year: "numeric" });
+  return new Date(t).toLocaleDateString("ko-KR", { ...KST, ...(yr(t) === yr(Date.now()) ? {} : { year: "numeric" }), month: "long", day: "numeric" });
+};
 const dvUsed = d => d.last_used ? `마지막 사용 ${msAgo(Date.parse(d.last_used))}` : "아직 쓰지 않음";
 
 async function loadDevices() {
@@ -11149,22 +11860,25 @@ function renderDevices() {
     el("div", { class: "sec", text: "이 웹앱을 쓸 수 있는 기기" }),
     el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결된 기기가 없어요" })))]), self ? null : addSelf,
       el("button", { type: "button", class: "li tap", "data-dev-new": "1", onclick: () => dvNew(false) },
-        el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 기기 연결" }), el("div", { class: "sup", text: "코드를 만들어 다른 기기를 연결해요" })))));
+        el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 기기 연결" })))));
 }
 
 /* ---------- one device: rename, unpair ---------- */
 function dvOpen(d) {
   const name = input({ value: d.name, maxlength: "60", name: "dev-name" });
-  const body = el("div", { class: "col" }, textField("기기 이름", name),
+  const nameErr = el("p", { class: "err-t", hidden: true, role: "alert" });   // under the field, as the login dialog does
+  const err = usErr();
+  const body = el("div", { class: "col" }, textField("기기 이름", name), nameErr,
     el("div", { class: "sup", text: `${dvDate(d.created)} 연결 · ${dvUsed(d)}` }),
-    d.current ? el("div", { class: "tag ok dcs-saved", text: "지금 쓰고 있는 기기" }) : null);
-  dialog({ title: d.name, body, actions: [
+    d.current ? el("div", { class: "tag ok dcs-saved", text: "지금 쓰고 있는 기기" }) : null, err);
+  const dlg = dialog({ title: d.name, body, mid: true, actions: acGap([
     { label: "해제", kind: "danger", onclick: async (c, b) => {
       const text = d.current
-        ? "지금 쓰고 있는 이 기기를 해제해요. 바로 로그아웃되고, 다시 쓰려면 메신저로 받은 코드로 새로 연결해야 해요."
+        ? "이 기기는 바로 로그아웃돼요. 다시 쓰려면 메신저로 받은 코드로 새로 연결해야 해요."
         : `${d.name}의 로그인이 바로 끊겨요. 다시 쓰려면 코드로 새로 연결해야 해요.`;
-      if (!(await ask("기기 해제", text, "해제", true))) return;
-      await busy(b, async () => {
+      b.disabled = true;
+      if (!(await ask("기기 해제", text, "해제", true))) { b.disabled = false; return; }
+      await usRun(b, err, async () => {
         await api(`/api/devices/${enc(d.id)}`, "DELETE");
         c();
         if (d.current) { snapForget(); return location.replace("/pair"); }
@@ -11173,13 +11887,13 @@ function dvOpen(d) {
         await loadDevices();
       });
     } },
-    { label: "닫기", onclick: c => c() },
-    { label: "저장", kind: "pri", onclick: async (c, b) => {
+    { label: "저장", kind: "pri", onclick: (c, b) => {
       const v = name.value.trim();
-      if (!v) return toast("이름을 적어 주세요", true);
-      if (v === d.name) return c();
-      await busy(b, async () => { await api(`/api/devices/${enc(d.id)}`, "PATCH", { name: v }); c(); toast("저장했어요"); await loadDevices(); });
-    } }] });
+      nameErr.hidden = Boolean(v);
+      if (!v) { nameErr.textContent = "이름을 적어 주세요"; return; }
+      return usRun(b, err, async () => { await api(`/api/devices/${enc(d.id)}`, "PATCH", { name: v }); c(); toast("저장했어요"); await loadDevices(); });
+    } }]) });
+  usDirty(dlg, [name]);
 }
 
 /* ---------- a new device (or this one) ---------- */
@@ -11191,35 +11905,32 @@ function dvQr(q) {
 }
 function dvNew(self) {
   const res = el("div", { class: "dcs-res" });
-  const steps = self
-    ? ["아래에서 코드를 만들어요.", "'연결 화면 열기'를 눌러 코드와 이 기기 이름을 넣어요.", "패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요."]
-    : ["새 기기의 브라우저에서 이 웹앱 주소를 열어요. '기기 연결' 화면이 나와요.", "'코드 받기'를 누르면 6자리 코드가 메신저 알림으로 와요. 메신저를 볼 수 없으면 아래에서 바로 만들 수 있어요.", "코드와 기기 이름을 넣고 패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요."];
+  const steps = o => self
+    ? ["'연결 화면 열기'를 눌러 코드와 이 기기 이름을 넣어요.", "패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요."]
+    : ["새 기기의 브라우저에서 이 웹앱 주소를 열어요. '기기 연결' 화면이 나와요.", o.qr ? "QR을 찍거나 위의 코드를 넣어요." : "위의 코드를 넣어요.", "기기 이름을 넣고 패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요."];   // the QR is named only when one is drawn
   const make = btn => busy(btn, async () => {
     const o = await api("/api/devices/code", "POST", {});
     const addr = input({ value: o.url, readonly: true, name: "dev-url", onfocus: ev => ev.target.select() });
     clear(res).append(
       !self && o.qr ? dvQr(o.qr) : null,
-      !self && o.qr ? el("div", { class: "sup", text: "새 기기의 카메라로 찍으면 코드가 들어간 연결 화면이 열려요." }) : null,
       el("div", { class: "dv-code", "data-dev-code": o.code, text: o.code }),
-      el("div", { class: "sup", text: `${o.minutes}분 동안 한 번만 쓸 수 있어요. 새 코드를 만들면 이 코드는 사라져요.` }),
+      el("ol", { class: "steps" }, ...steps(o).map(s => el("li", { text: s }))),
       el("div", { class: "tf" }, el("label", { text: "연결 화면 주소", for: addr.id }), el("div", { class: "ms-copy" }, addr,
         self ? el("a", { class: "btn tonal", href: o.url, target: "_blank", rel: "noopener", text: "연결 화면 열기" })
           : el("button", { type: "button", class: "btn tonal", onclick: () => { try { navigator.clipboard.writeText(o.url); } catch {} toast("복사했어요"); }, text: "복사" }))));
   });
   const body = el("div", { class: "col" },
-    self ? null : el("div", { class: "sup", text: "휴대폰이라면 아래에서 코드를 만들고 카메라로 QR을 찍으면 돼요. 코드를 입력할 필요가 없어요." }),
-    el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))),
     el("div", { class: "sup", text: "코드는 10분 동안 한 번만 쓸 수 있고, 메신저와 이 화면을 합쳐 한 시간에 3번까지 만들 수 있어요." }),
-    el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn tonal", "data-dev-make": "1", onclick: ev => make(ev.currentTarget), text: "여기서 코드 만들기" })),
+    el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", "data-dev-make": "1", onclick: ev => make(ev.currentTarget), text: "여기서 코드 만들기" })),
     res);
-  dialog({ title: self ? "이 기기에 패스키 추가" : "새 기기 연결", body, onclose: () => loadDevices(), actions: [{ label: "닫기", onclick: c => c() }] });
+  dialog({ title: self ? "이 기기에 패스키 추가" : "새 기기 연결", body, onclose: () => loadDevices(), mid: true });
 }
 
 // 설정 → Discord: the bot connection (token, server id, owner id; GET/PUT/DELETE /api/discord/connection, POST .../check, hub/discord-connection.ts)
 // and what also goes to Discord by conversation (GET/PUT /api/discord/post, hub/discord-post.ts; the per-class switches are in 설정 → 앱과 알림). The web app always gets everything; a switch that is off
 // keeps that kind on the web only. The switches show once Discord is enabled; the gateway reads the connection only at start, so a change
 // waits for a restart (restart_needed).
-const DP_KINDS = [["chat", "대화 답장", "내가 디스코드에서 묻지 않은 대화의 답"], ["lanes", "세션 보고", "세션이 올리는 진행·완료 보고"], ["worklog", "작업내역", "작업 기록 메시지"], ["web_lanes", "웹에서 시작한 세션", "웹이나 터미널에서 시작한 세션도 디스코드에 채널을 만들어요"]];
+const DP_KINDS = [["chat", "대화 답장", "내가 Discord에서 묻지 않은 대화의 답"], ["lanes", "세션 보고", "세션이 올리는 진행·완료 보고"], ["worklog", "작업내역", "작업 기록 메시지"], ["web_lanes", "웹에서 시작한 세션", "웹이나 터미널에서 시작한 세션도 Discord에 채널을 만들어요"]];
 const DP = { v: null };
 const DCS = { v: null, fail: "", err: "", chk: null, asked: false, advOpen: false,
   guild: input({ inputmode: "numeric", placeholder: "예: 123456789012345678", name: "discord-guild" }),
@@ -11271,8 +11982,8 @@ async function dcCheck(btn) {
   renderDiscord();
 }
 async function dcClear(btn) {
-  if (!await ask("봇 토큰 지우기", "저장된 봇 토큰을 지워요. 게이트웨이를 다시 시작하면 디스코드 연결이 끊겨요.", "지우기", true)) return;
-  await busy(btn, async () => { DCS.v = await api("/api/discord/connection", "DELETE"); DCS.chk = null; DCS.err = ""; });
+  if (!await ask("봇 토큰 삭제", "저장된 봇 토큰을 삭제해요. dotz를 다시 시작하면 Discord 연결이 끊겨요.", "삭제", true)) return;
+  await busy(btn, async () => { DCS.v = await api("/api/discord/connection", "DELETE"); DCS.chk = null; DCS.err = ""; toast("봇 토큰을 삭제했어요"); });
   renderDiscord();
 }
 const dcRestart = btn => busy(btn, async () => {
@@ -11281,13 +11992,13 @@ const dcRestart = btn => busy(btn, async () => {
 });
 function dcStatus() {
   const v = DCS.v;
-  if (!v.enabled) return ["설정 안 됨", "warn", v.has_token ? "토큰은 저장돼 있어요. 서버 ID와 내 사용자 ID까지 저장하고 게이트웨이를 다시 시작하면 연결돼요." : "아직 디스코드 봇이 연결되지 않았어요."];
-  if (v.connected) return ["연결됨", "ok", v.user ? `${v.user} 봇으로 연결돼 있어요.` : "연결돼 있어요."];
+  if (!v.enabled) return ["설정 안 됨", "warn", v.has_token ? "토큰은 저장돼 있어요. 서버 ID와 내 사용자 ID까지 저장하고 게이트웨이를 다시 시작하면 연결돼요." : "아직 Discord 봇이 연결되지 않았어요."];
+  if (v.connected) return ["연결됨", "ok", v.user || ""];   // the tag says 연결됨; the line is the bot's name only
   if (v.error) return ["연결 안 됨", "err", v.error];
   return ["연결 중", "warn", "연결하는 중이에요."];
 }
 function dcSwitch(label, on, key, onclick) {
-  return el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": `${label} 디스코드로도 보내기`, "data-dc": key, onclick });
+  return el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": `${label} Discord로도 보내기`, "data-dc": key, onclick });
 }
 function dcSwitches() {
   const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc })), liEnd(dcSwitch(title, on, k, () => dpSet(k, !on))));
@@ -11297,10 +12008,9 @@ function dcSwitches() {
     // Which notice classes Discord gets (discord-post.json ask/alert/result/news/conv; 진행 follows the conversation switches below).
     el("div", { class: "sec", text: "알림" }),
     el("div", { class: "list" }, ...(on ? [...notifyRows(k => DP.v[k] !== false, dpSet, ["ask", "alert", "result", "news", "conv"]),
-      el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 디스코드로 가지 않고 앱에만 와요. 디스코드에서 직접 물은 것의 답은 디스코드에도 가요." })))] : [hint()])),
-    el("div", { class: "sec", text: "대화별로 디스코드에도 보내기" }),
-    el("div", { class: "list" }, ...(on ? [...DP_KINDS.map(([k, label, desc]) => li(label, desc, k, k === "web_lanes" ? DP.v[k] === true : DP.v[k] !== false)),
-      el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 웹에만 와요. 디스코드에서 직접 물은 것의 답은 디스코드에도 가요." })))] : [hint()])),
+      el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "Discord에서 직접 물은 것의 답은 Discord에도 가요." })))] : [hint()])),
+    el("div", { class: "sec", text: "대화별로 Discord에도 보내기" }),
+    el("div", { class: "list" }, ...(on ? [...DP_KINDS.map(([k, label, desc]) => li(label, desc, k, k === "web_lanes" ? DP.v[k] === true : DP.v[k] !== false))] : [hint()])),
   ];
 }
 function dcChecked() {
@@ -11309,11 +12019,11 @@ function dcChecked() {
   if (!c.ok) return el("div", { class: "dcs-res err" }, el("div", { text: c.error || "확인하지 못했어요" }), c.intent_note ? el("div", { class: "sup", text: c.intent_note }) : null);
   return el("div", { class: "dcs-res" },
     el("div", { class: "dcs-ok", text: `봇 ${c.bot_name || "이름 없음"}` }),
-    c.admin === true ? el("div", { class: "dcs-ok", text: "관리자 권한 확인됨" }) : c.invite_url ? el("div", {}, el("div", { text: "관리자 권한이 없어요." }), el("a", { class: "btn tonal", href: c.invite_url, target: "_blank", rel: "noopener noreferrer", text: "봇 권한 다시 승인" })) : el("div", { class: "sup", text: "서버 ID를 저장하면 관리자 권한도 확인해요" }),
+    c.admin === true ? el("div", { class: "dcs-ok", text: "관리자 권한 확인됨" }) : c.invite_url ? el("div", {}, el("div", { text: "관리자 권한이 없어요." }), el("a", { class: "btn tonal", href: c.invite_url, target: "_blank", rel: "noopener noreferrer", text: "봇 권한 다시 승인" })) : null,
     c.intent_note ? el("div", { class: "sup", text: c.intent_note }) : null);
 }
-function dcConnect(btn) {
-  return obStart("discord", btn);
+function dcConnect() {
+  return obStart("discord");
 }
 function dcAdvanced(v) {
   const rows = [el("div", { class: "li dcs-form" }, textField("서버 ID", DCS.guild), textField("내 사용자 ID", DCS.owner),
@@ -11321,28 +12031,28 @@ function dcAdvanced(v) {
     v.has_token ? el("div", { class: "tag ok dcs-saved", text: "저장됨" }) : null,
     DCS.err ? el("div", { class: "dcs-err", role: "alert", text: DCS.err }) : null,
     el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", "data-ms-save": "1", onclick: ev => dcSave(ev.currentTarget), text: "저장" }), el("button", { type: "button", class: "btn tonal", onclick: ev => dcCheck(ev.currentTarget), text: "연결 확인" }),
-      v.has_token ? el("button", { type: "button", class: "btn text", onclick: ev => dcClear(ev.currentTarget), text: "토큰 지우기" }) : null),
+      v.has_token ? el("button", { type: "button", class: "btn text", onclick: ev => dcClear(ev.currentTarget), text: "토큰 삭제" }) : null),
     dcChecked())];
   if (v.restart_needed) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), liEnd(el("button", { type: "button", class: "btn inrow", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" }))));
   return el("div", { class: "list" }, ...rows);
 }
 function renderDiscord() {
   const box = $("#discord");
-  if (!DCS.v) { clear(box).append(DCS.asked && DCS.fail ? emptyNode("디스코드 설정을 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
-  const v = DCS.v, m = msItem("discord"), [, , line] = dcStatus();
+  if (!DCS.v) { clear(box).append(DCS.asked && DCS.fail ? emptyNode("Discord 설정을 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
+  const v = DCS.v, m = msItem("discord"), line = [dcStatus()[2], msConnectedNote("discord")].filter(Boolean).join(" · ");
   const [tag, tone] = m ? msTag(m) : v.enabled ? (v.connected ? ["연결됨", "ok"] : v.error ? ["연결 안 됨", "err"] : ["연결됨", "ok"]) : ["설정 안 됨", "warn"];
-  const guide = v.enabled ? [] : [el("div", { class: "sec", text: "연결하는 방법" }), el("div", { class: "list" }, el("div", { class: "li", "data-dc-guide": "1" }, el("ol", { class: "steps" },
-    el("li", { text: "디스코드 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요" }),
+  const guide = v.enabled ? [] : [el("div", { class: "list" }, el("div", { class: "li", "data-dc-guide": "1" }, el("details", {}, el("summary", { class: "sup", text: "연결하는 방법" }), el("ol", { class: "steps" },
+    el("li", { text: "Discord 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요" }),
     el("li", { text: "초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)" }),
-    el("li", { text: "봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요" }))))];
+    el("li", { text: "봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요" })))))];
   // The toggle event arrives after a redraw can already have replaced the element, so read the live state.
   const prev = box.querySelector("details[data-ms-advanced]");
   if (prev) DCS.advOpen = prev.open;
   const det = msAdvanced("data-ms-advanced", DCS.advOpen, () => dcAdvanced(v));
   det.addEventListener("toggle", () => { DCS.advOpen = det.open; });
   clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
-    el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })),
-      liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
+    el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), line ? el("div", { class: "sup", text: line }) : null),
+      liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": "discord", disabled: OB_WAIT.has("discord"), onclick: dcConnect }, OB_WAIT.has("discord") ? "연결하는 중" : msConnectLabel(m))))),
   ...obSection("discord", m ? m.state === "ok" : v.connected), ...dcSwitches(), ...guide, det);
 }
 
@@ -11356,7 +12066,7 @@ const MS_AS_USER = "내 계정으로 보냅니다";
 const MSS = { items: null, fail: "", asked: false, loading: false, page: null };
 const msItem = id => (MSS.items || []).find(x => x.id === id) || null;
 const msTag = m => !m ? ["", ""] : !m.configured ? ["설정 안 됨", "warn"] : m.state === "error" ? ["연결 안 됨", "err"] : ["연결됨", "ok"];
-const msConnectLabel = m => (!m || !m.configured || m.error ? "연결" : !m.enabled ? "켜기" : "연결");
+const msConnectLabel = m => (!m || !m.configured || m.error ? "연결" : !m.enabled ? "켜기" : "다시 연결");
 const msKind = k => (MS_KINDS.find(x => x[0] === k) || [k, k])[1];
 const msAgo = t => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? "방금" : s < 3600 ? `${Math.floor(s / 60)}분 전` : s < 86400 ? `${Math.floor(s / 3600)}시간 전` : `${Math.floor(s / 86400)}일 전`; };
 const msPage = id => {
@@ -11382,11 +12092,11 @@ function renderMessengers() {
   clear($("#messengers")).append(el("div", { class: "list" }, ...MS_IDS.map(id => {
     const m = msItem(id), [tag, tone] = m ? msTag(m) : ["", ""];
     const r = el("button", { class: "li tap", type: "button", onclick: () => go(id) }, el("span", { class: "lead" }, icon(id === "discord" ? "discord" : "chat")),
-      el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: m && m.error ? m.error : tag })),
-      el("span", { class: "li-end" }, ...(tag ? [el("span", { class: `dot ${tone}`, "aria-hidden": "true", title: tag })] : []), icon("chev", "chev")));
+      el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), m && m.error ? el("div", { class: "sup", text: m.error }) : null),
+      el("span", { class: "li-end" }, tag ? el("span", { class: `tag ${tone}`, text: tag }) : null, icon("chev", "chev")));
     r.dataset.msRow = id;
     return r;
-  })), el("div", { class: "note", text: "메신저로도 같은 대화를 받을 수 있어요. 웹 앱은 항상 모두 받아요." }));
+  })));
 }
 function msPaint() {
   if (inSettings()) renderSettings();
@@ -11415,13 +12125,16 @@ async function loadMessengerSettings(id) {
   p.loading = false;
   if (current === id) renderMessenger(id);
 }
+// After a run the owner started ends, the row says when it did (the 자동 연결 panel is gone by then).
+const msConnectedNote = id => (OB[id] && OB[id].doneAt ? `${msAgo(OB[id].doneAt)} 연결했어요` : "");
 function msLine(id, m, s) {
   if (m && m.error) return m.error;
   if (!m) return "";
-  if (!m.configured) return "아직 연결되지 않았어요. 연결을 누르면 자동으로 설정해요.";
+  const run = OB[id] && OB[id].state;
+  if (OB_WAIT.has(id) || run === "running" || run === "waiting" || run === "failed") return "";   // the 자동 연결 row under the card says where it is
+  if (!m.configured) return "연결을 누르면 자동으로 설정해요.";
   if (!m.enabled) return "설정은 돼 있어요. 켜기를 누르면 알림을 보내요.";
-  if (id === "jandi" && s && s.rooms) return `연결돼 있어요 · 방 ${s.rooms.items.length}개`;
-  return "연결돼 있어요.";
+  return [id === "jandi" && s && s.rooms ? `방 ${s.rooms.items.length}개` : "", msConnectedNote(id)].filter(Boolean).join(" · ");   // the tag beside it already says 연결됨
 }
 // JANDI's 나와의 대화 login: one row, every word from settings(); 다시 연결 (lost) is the lead, the other states offer a small button.
 function msSelfChatRow(id, s) {
@@ -11430,7 +12143,7 @@ function msSelfChatRow(id, s) {
   const lost = c.state === "lost";
   return el("div", { class: "li", "data-ms-selfchat": c.state }, el("span", { class: "lead" }, icon("chat")),
     el("span", { class: "tx" }, el("div", { class: "hd", text: c.label }), el("div", { class: lost ? "dcs-err" : "sup", text: c.hint })),
-    liEnd(el("button", { type: "button", class: lost ? "btn inrow" : "btn tonal inrow", "data-ms-selfchat-connect": id, onclick: ev => obStart(id, ev.currentTarget), text: c.connect })));
+    liEnd(el("button", { type: "button", class: lost ? "btn inrow" : "btn tonal inrow", "data-ms-selfchat-connect": id, disabled: OB_WAIT.has(id), onclick: () => obStart(id), text: OB_WAIT.has(id) ? "연결하는 중" : c.connect })));
 }
 function msConnect(id, btn) {
   const m = msItem(id);
@@ -11443,7 +12156,7 @@ function msConnect(id, btn) {
       if (current === id) renderMessenger(id);
     });
   }
-  return obStart(id, btn);
+  return obStart(id);
 }
 // 알림 switches save at once (PUT { notify }): they need no restart and no other field.
 async function msNotifySet(id, k, on) {
@@ -11489,11 +12202,24 @@ async function msSave(btn) {
   if (current === p.id) renderMessenger(p.id);
   if (saved) stFlash(`#${p.id} [data-ms-save]`);
 }
-async function msTest(btn) {
+// The check leaves its result in its own row: "확인하는 중…" while it runs, then when it ran and how it went; a failure says what to do.
+async function msTest() {
   const p = MSS.page;
-  if (!p || !p.s) return;
-  await busy(btn, async () => { p.test = (await api(`/api/messengers/${enc(p.id)}/test`, "POST", {})).results; });
+  if (!p || !p.s || p.testing) return;
+  p.testing = true; p.testFail = "";
+  renderMessenger(p.id);
+  try { p.test = (await api(`/api/messengers/${enc(p.id)}/test`, "POST", {})).results; p.testAt = Date.now(); }
+  catch (e) { p.test = null; p.testFail = `확인하지 못했어요 · ${e.message}. 잠시 뒤에 다시 눌러 주세요`; }
+  p.testing = false;
   if (current === p.id) renderMessenger(p.id);
+}
+function msTestResult(p) {
+  if (p.testing) return el("div", { class: "sup", text: "확인하는 중…" });
+  if (p.testFail) return el("div", { class: "dcs-err", role: "alert", text: p.testFail });
+  if (!p.test) return null;
+  const bad = p.test.some(t => !t.ok);
+  return el("div", { class: "dcs-res" }, el("div", { class: "sup", "data-ms-test-sum": "1", text: `${msAgo(p.testAt)} 확인했어요 · ${!p.test.length ? "방이 없어요" : bad ? "보내지 못한 방이 있어요" : "정상이에요"}` }),
+    ...p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })));
 }
 function msFieldInput(f) {
   const p = MSS.page;
@@ -11540,29 +12266,33 @@ function renderMessenger(id) {
   const s = p.s, [tag, tone] = m ? msTag(m) : ["", ""], c = s.self_chat;
   // With the login row on screen the status row stays only for what the login row does not say, and 연결 would start the same flow a second time.
   const loginOnly = c && (!m || !m.configured || c.state === "lost"), turnOn = m && m.configured && !m.enabled && !m.error;
+  // Before it is connected the screen holds the connect card alone: switches, rooms, people and the check have nothing to show yet.
+  const fresh = Boolean(m && !m.configured), line = msLine(id, m, s);
   const nodes = [el("div", { class: "sec", text: "연결" }),
     el("div", { class: "list" },
       loginOnly ? null : el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
-        el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
-        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, c && !turnOn ? null : el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m)))),
+        el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), line ? el("div", { class: "sup", text: line }) : null),
+        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, c && !turnOn ? null : el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, disabled: OB_WAIT.has(id), onclick: ev => msConnect(id, ev.currentTarget) }, OB_WAIT.has(id) ? "연결하는 중" : msConnectLabel(m)))),
       msSelfChatRow(id, s)),
     ...obSection(id, !!m && m.state === "ok")];
-  if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
-    ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on)),
-    el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 여기로 보내지 않고 앱에만 와요." })))));
-  if (s.rooms) nodes.push(el("div", { class: "sec", text: s.rooms.label }), el("div", { class: "list" },
+  if (s.notify && !fresh) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
+    ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on))));
+  if (s.rooms && !fresh) nodes.push(el("div", { class: "sec", text: s.rooms.label }), el("div", { class: "list" },
     ...s.rooms.items.map(r => el("div", { class: "li", "data-room": r.id },
       el("span", { class: "lead" }, el("span", { class: `dot ${r.last_error ? "err" : r.last_in || r.last_out ? "ok" : ""}`, "aria-hidden": "true" })),
       el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup", text: [`→ ${msKind(r.kind)}${r.project ? ` · ${r.project.name}` : ""}`, r.last_in ? `받음 ${msAgo(r.last_in)}` : "", r.last_out ? `보냄 ${msAgo(r.last_out)}` : ""].filter(Boolean).join(" · ") }),
         r.last_error ? el("div", { class: "dcs-err", text: r.last_error }) : null))),
     ...(s.rooms.hint ? [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", "data-ms-hint": "1", text: s.rooms.hint })))] : [])));
-  nodes.push(...msRelaySection(p, s));
-  if (s.allow) nodes.push(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" },
-    ...p.allow.map(a => el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: a }))))));
+  if (!fresh) nodes.push(...msRelaySection(p, s));
+  // A person who is also one of the rooms shows by name with the id under it (Telegram's private chats); a bare number says whose id it is.
+  const who = a => (s.rooms ? s.rooms.items.find(r => String(r.id) === String(a) && r.name && r.name !== String(a)) : null);
+  const idOf = a => (/^-?\d+$/.test(String(a)) ? `${MS_LABELS[id]} ID ${a}` : String(a));
+  if (s.allow && !fresh) nodes.push(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" },
+    ...p.allow.map(a => { const r = who(a); return el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: r ? r.name : idOf(a) }), r ? el("div", { class: "sup", text: idOf(a) }) : null)); })));
   // 연결 확인 is one row: the result shows in this row (under the title), the action sits in .li-end.
-  nodes.push(el("div", { class: "list" }, el("div", { class: "li", "data-ms-test-row": "1" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "연결 확인" }),
-    p.test ? el("div", { class: "dcs-res" }, ...(p.test.length ? p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })) : [el("div", { class: "sup", text: "방이 없어요" })])) : null),
-  liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "확인" })))));
+  if (!fresh) nodes.push(el("div", { class: "list" }, el("div", { class: "li", "data-ms-test-row": "1" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "연결 확인" }),
+    msTestResult(p)),
+  liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-test": "1", disabled: !!p.testing, onclick: () => msTest(), text: "확인" })))));
   // The toggle event arrives after a redraw can already have replaced the element, so read the live state.
   const prev = box.querySelector("details[data-ms-advanced]");
   if (prev) p.advOpen = prev.open;
@@ -11617,7 +12347,9 @@ function obApply(key, next) {
   const sameWait = next.state === "waiting" && was === "waiting";
   obStop(before);
   if (!sameWait) obAutoStop(before);
-  OB[key] = { ...before, manual: undefined, choices: undefined, ...next, timer: 0, swap: was != null && was !== next.state, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
+  // When a run the owner started (or watched running) ends, the screen keeps the time: the status row says it after the panel is gone.
+  const doneAt = next.state !== "done" ? 0 : before.doneAt || (OB_PRESSED.has(key) || (was && was !== "done") ? Date.now() : 0);
+  OB[key] = { ...before, manual: undefined, choices: undefined, ...next, doneAt, timer: 0, swap: was != null && was !== next.state, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
   if (next.state === "waiting" && !sameWait) { OB[key].autoTries = 0; OB[key].autoBusy = false; }
   obPaint(key);
   obPoll(key);
@@ -11639,10 +12371,20 @@ async function loadOnboarding(key) {
   try { obApply(key, await api(`/api/onboarding/${enc(key)}`)); }
   catch { obPaint(key); }
 }
-async function obStart(key, btn) {
+// The keys whose start is on its way: the pressed row says 연결하는 중 until the answer comes (the start can take a while), and a failure says what to do.
+const OB_WAIT = new Set();
+const OB_PRESSED = new Set();
+async function obStart(key) {
+  if (OB_WAIT.has(key)) return;
   if (OB[key]) obAutoStop(OB[key]);
   delete OB[key];
-  await busy(btn, async () => { obApply(key, await api(`/api/onboarding/${enc(key)}/start`, "POST")); });
+  OB_WAIT.add(key); OB_PRESSED.add(key); obPaint(key);
+  try {
+    await busy(null, async () => {
+      try { obApply(key, await api(`/api/onboarding/${enc(key)}/start`, "POST")); }
+      catch (e) { throw new Error(`연결을 시작하지 못했어요 · ${e.message}. 잠시 뒤에 다시 눌러 주세요`); }
+    });
+  } finally { OB_WAIT.delete(key); OB_PRESSED.delete(key); obPaint(key); }
 }
 async function obPick(key, choice, btn) {
   await busy(btn, async () => { obApply(key, await api(`/api/onboarding/${enc(key)}/continue`, "POST", { choice })); });
@@ -11665,18 +12407,20 @@ function obPoll(key) {
 // A live messenger has nothing left to connect, so its section goes; a run in progress or failed stays whatever the link says.
 const obSection = (key, live) => {
   const s = OB[key] && OB[key].state;
+  if (!OB_WAIT.has(key) && (!s || s === "idle")) return [];   // nothing started: the connect row's button is the way in, an empty panel only says so again
   return live && s !== "running" && s !== "waiting" && s !== "failed" ? [] : [el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(key)];
 };
 // The panel: state, current step, error (only when the API sent one), the single owner line, and its actions.
 function onboardingPanel(key) {
-  const v = OB[key] || { state: "idle", step: null, owner: null, error: null, url: null };
+  const pend = OB_WAIT.has(key) && !OB[key];   // start pressed, no answer yet: shown as running, without a cancel (nothing to cancel yet)
+  const v = OB[key] || { state: pend ? "running" : "idle", step: null, owner: null, error: null, url: null };
   const waiting = v.state === "waiting", failed = v.state === "failed", running = v.state === "running";
   // One state row: the dot (blue running, orange waiting, green done, red failed; never pulsing), the line, and the actions in .li-end.
   // A state change swaps in this same row.
   const acts = [
     ...((waiting && !v.choices) || failed ? [el("button", { type: "button", class: "btn inrow", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
-    ...(failed ? [el("button", { type: "button", class: "btn tonal inrow", "data-onb-start": "1", onclick: ev => obStart(key, ev.currentTarget) }, "다시 시작")] : []),
-    ...(running || waiting ? [el("button", { type: "button", class: "btn text inrow", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
+    ...(failed ? [el("button", { type: "button", class: "btn tonal inrow", "data-onb-start": "1", onclick: () => obStart(key) }, "다시 시작")] : []),
+    ...((running && !pend) || waiting ? [el("button", { type: "button", class: "btn text inrow", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
   ];
   const head = el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: `dot ${OB_TONE[v.state] || ""}`, "aria-hidden": "true" })), el("span", { class: "tx" },
     el("div", { class: "hd", text: "자동 연결" }), el("div", { class: "sup", "data-onb-line": "1", text: obLine(v) })), acts.length ? liEnd(...acts) : null);
@@ -11700,9 +12444,9 @@ function stFlash(sel, label = "저장했어요") {
   setTimeout(() => { if (b.isConnected && b.textContent === label) motionSwap(b, () => { b.textContent = was; }); }, 1800);
 }
 // The closed disclosure that keeps manual fields out of the default view: its body is built only when opened.
-function msAdvanced(attr, open, body) {
+function msAdvanced(attr, open, body, label = "직접 입력") {
   const box = el("div", { class: "ms-adv-body" });
-  const d = el("details", { class: "ms-adv", [attr]: "1", ...(open ? { open: true } : {}) }, el("summary", { class: "ms-adv-sum", text: "직접 입력" }), box);
+  const d = el("details", { class: "ms-adv", [attr]: "1", ...(open ? { open: true } : {}) }, el("summary", { class: "ms-adv-sum", text: label }), box);
   let built = false;
   const fill = () => { if (!built) { built = true; box.append(body()); } };
   // A redraw can replace this element before its toggle event arrives; filling it then would pull shared inputs (the Discord form) out of the new one.
@@ -11719,7 +12463,7 @@ const WA_MODES = [["tailscale", "Tailscale"], ["cloudflare", "Cloudflare"], ["lo
 const WA_HELP = {
   tailscale: "Tailscale로 연결한 내 기기에서 열어요. 기본값이에요.",
   cloudflare: "Cloudflare 터널로 고정 주소를 열어요. 연결은 자동으로 진행하고, 필요한 한 가지 동작만 알려드려요.",
-  local: "이 컴퓨터에서만 열어요. 다른 기기에서는 열리지 않아요."
+  local: "이 컴퓨터에서만 열어요."
 };
 const WA = { data: null, draft: null, fail: "", asked: false, advOpen: false };
 const waLabel = m => (WA_MODES.find(x => x[0] === m) || [m, m])[1];
@@ -11795,7 +12539,6 @@ function renderWebAccess() {
   const d = WA.data, f = WA.draft, cf = f.mode === "cloudflare";
   const modes = el("div", { class: "list", role: "radiogroup", "aria-label": "접속 방식" },
     ...WA_MODES.map(([v, t]) => el("button", { type: "button", role: "radio", "aria-checked": String(v === f.mode), class: "li tap", "data-v": v, onclick: ev => v === "tailscale" ? waPickTailscale(ev.currentTarget) : waOnboard(v) },
-      el("span", { class: "lead" }, el("span", { class: `dot ${v === f.mode ? "pri" : ""}`, "aria-hidden": "true" })),
       el("span", { class: "tx" }, el("div", { class: "hd", text: t }), el("div", { class: "sup", "data-wa-help": v, text: WA_HELP[v] })),
       el("span", { class: "li-end" }, v === f.mode ? icon("check") : null))));
   const nodes = [el("div", { class: "sec", text: "접속 방식" }), modes,
@@ -11853,12 +12596,12 @@ function rtSection() {
   const others = RT.runtimes.filter(r => r.installed).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", r.roles.length ? "현재 쓰는 중" : ""].filter(Boolean).join(" · ") || undefined }));
   const rows = RT.runtimes.filter(r => r.roles.length > 0).map(r => {
     const sub = [r.version ? `v${r.version}` : "", r.roles.length === 2 ? "사용 중" : `${r.roles.map(k => RT_ROLE[k]).join("·")} 사용 중`].filter(Boolean).join(" · ");
-    const b = el("button", { class: "li tap", type: "button", "data-runtime": r.id, "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `실행 하네스: ${r.label}. 눌러서 바꾸기` },
+    const b = el("button", { class: "li tap", type: "button", "data-runtime": r.id, "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `작업 프로그램: ${r.label}. 눌러서 바꾸기` },
       el("span", { class: "lead" }, icon(RT_ICON[r.id] || "harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: r.label }), el("div", { class: "sup", text: sub })), icon("drop"));
     b.addEventListener("click", () => showMenu(b, others.filter(o => o.value !== r.id), { onPick: id => rtFlow(RT.runtimes.find(x => x.id === id)) }));
     return b;
   });
-  return [el("div", { class: "sec", text: "실행 하네스" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요." })];
+  return [el("div", { class: "sec", text: "작업 프로그램" }), el("div", { class: "list" }, ...rows), el("div", { class: "note", text: "바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요." })];
 }
 function rtBadge(it) {
   const [label, tone] = RT_RESULT[it.result] || [it.result, ""];
@@ -11868,7 +12611,7 @@ function rtReportView(r, report) {
   const core = report.items.filter(i => i.core && (i.result === "fail" || i.result === "unsupported"));
   const changed = report.items.filter(i => i.result === "adapted" || i.result === "disabled").length;
   const stale = !!(r.version && report.version !== r.version);
-  const sum = !r.hasAdapter ? "이 하네스용 어댑터가 없어서 바꿀 수 없어요."
+  const sum = !r.hasAdapter ? "dotz가 아직 지원하지 않아서 바꿀 수 없어요."
     : report.verdict === "blocked" ? `핵심 항목이 통과하지 못해서 바꿀 수 없어요: ${core.map(i => i.label).join(", ")}`
     : stale ? `검사한 뒤 버전이 바뀌었어요 (v${report.version || "?"} → v${r.version}). 다시 검사해 주세요.`
     : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 게이트웨이가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
@@ -11883,15 +12626,22 @@ function rtFlow(r) {
   const roles = new Set(["orchestrator", "lanes"]);
   let report = null, st = null, timer = 0, checking = false;
   const box = el("div", { style: "display:flex;flex-direction:column;gap:var(--sp-3)" });
-  const d = dialog({ classic: true, title: `${r.label}로 바꾸기`, body: box, wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
+  const err = usErr();
+  const d = dialog({ classic: true, title: `${r.label}로 바꾸기`, body: [box, err], wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
   const usable = () => r.hasAdapter && (r.id === "omp" || (r.id === "omo" && r.installed !== false) || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
   async function pull() {
     try { const x = await api(`/api/runtimes/${r.id}`); report = x.report; st = x.state; } catch { return; }
     if (checking && !(st && st.running)) { checking = false; clearInterval(timer); rtLive = null; }
     paint();
   }
-  const roleBar = () => el("div", { class: "rt-roles" }, el("span", { class: "sup", text: "적용 대상" }),
-    el("div", { class: "seg", role: "group" }, ...Object.entries(RT_ROLE).map(([k, v]) => el("button", { type: "button", class: roles.has(k) ? "on" : "", "aria-pressed": roles.has(k) ? "true" : "false", text: v, onclick: () => { roles.has(k) ? roles.delete(k) : roles.add(k); paint(); } }))));
+  // The two targets are separate on/off choices (switch rows), not one either/or pick; 바꾸기 needs at least one on.
+  const roleBar = () => el("div", { class: "col" }, el("div", { class: "sup", text: "적용 대상" }),
+    el("div", { class: "list" }, ...Object.entries(RT_ROLE).map(([k, v]) => {
+      const flip = () => { roles.has(k) ? roles.delete(k) : roles.add(k); err.textContent = ""; paint(); };
+      return el("div", { class: "li tap", "data-role": k, onclick: flip }, el("span", { class: "tx" }, el("div", { class: "hd", text: v })),
+        liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(roles.has(k)), "aria-label": v, onclick: ev => { ev.stopPropagation(); flip(); } })));
+    })),
+    roles.size ? null : el("div", { class: "sup", text: "하나는 켜 두어야 해요." }));
   async function check() {
     try { await api(`/api/runtimes/${r.id}/verify`, "POST", { real: true }); } catch (e) { toast(e.message, true); return; }
     checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(pull, 1000); paint();
@@ -11900,15 +12650,15 @@ function rtFlow(r) {
     clear(box);
     const running = checking || (st && st.running);
     if (r.id !== "omp") {
-      if (running) box.append(el("div", {}, el("p", { text: `호환성을 검사하는 중이에요${st && st.current ? ` · ${st.current}` : ""}` }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? `${st.done}/${st.total} 항목` : "시작하는 중…" })));
+      if (running) box.append(el("div", {}, el("p", { text: `작동을 검사하는 중이에요${st && st.current ? ` · ${st.current}` : ""}` }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? `${st.done}/${st.total} 항목` : "시작하는 중…" })));
       else if (report) box.append(rtReportView(r, report));
-      else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: "OmO는 기본 하네스라서 검사 없이 돌아갈 수 있어요. 호환성 검사로 항목별 상태도 볼 수 있어요." }));
-      else box.append(el("p", { text: r.hasAdapter ? "바꾸기 전에 호환성을 검사해요. 짧은 실행을 실제로 해 보기 때문에 1~2분쯤 걸릴 수 있어요." : "이 하네스용 어댑터가 없어서 이 하네스로는 바꿀 수 없어요. 호환성 검사를 하면 어떤 항목이 막히는지 볼 수 있어요." }));
-    } else box.append(el("p", { text: "omp는 옵션 하네스예요. 처음 기준이었던 하네스라 검사 없이 바꿀 수 있어요." }));
+      else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: "OmO는 기본 작업 프로그램이라서 검사 없이 쓸 수 있어요." }));
+      else box.append(el("p", { text: r.hasAdapter ? "바꾸기 전에 잘 작동하는지 검사해요. 짧은 작업을 실제로 돌려 보기 때문에 1~2분쯤 걸릴 수 있어요." : "dotz가 아직 지원하지 않아서 바꿀 수 없어요. 작동 검사를 하면 어떤 항목이 막히는지 볼 수 있어요." }));
+    } else box.append(el("p", { text: "omp는 선택해서 쓰는 작업 프로그램이에요. 처음에 쓰던 것이라 검사 없이 바꿀 수 있어요." }));
     if (r.hasAdapter) box.append(roleBar());
     const acts = [{ label: "취소", onclick: c => c() }];
-    if (r.id !== "omp" && !running) acts.push({ label: report ? "다시 검사" : "호환성 검사", kind: report ? "text" : "tonal", onclick: () => check() });
-    acts.push({ label: r.id === "omp" ? "사용" : "조정 후 사용", kind: "pri", disabled: running || !usable() || !roles.size, onclick: (c, btn) => busy(btn, async () => {
+    if (r.id !== "omp" && !running) acts.push({ label: report ? "다시 검사" : "작동 검사", kind: report ? "text" : "tonal", onclick: () => check() });
+    acts.push({ label: "바꾸기", kind: "pri", disabled: running || !usable() || !roles.size, onclick: (c, btn) => usRun(btn, err, async () => {
       try { const res = await api(`/api/runtimes/${r.id}/use`, "POST", { roles: [...roles] }); toast(res.applies); c(); }
       catch (e) { await pull(); throw e; } }) });
     d.setActions(acts);
@@ -12101,11 +12851,11 @@ function renderHarness() {
   })) : null;
   const bar = el("div", { class: "hm-bar" },
     pj ? hProjHead(pj) : null,
-    el("div", { class: "sup", text: pj ? `이 프로젝트만의 지도예요. 카드를 누르면 값과 설명이 열리고, 고칠 때는 프로젝트 범위를 붙여 ${botName}에게 요청이 가요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.` : hDetail ? "카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요." : `큰 카드가 메시지가 흐르는 길이에요. 카드 안의 작은 칩은 함께 실행되는 시스템·파일이고, ${mobile ? "눌러서" : "칩에 마우스를 올리거나 눌러서"} 이어진 곳과 설정을 봐요. 고칠 때는 ${botName}에게 요청이 가요.` }),
+    el("div", { class: "sup", text: pj ? `이 프로젝트만의 지도예요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.` : hDetail ? "점선 카드는 곁에서 돕는 시스템이에요." : `큰 카드가 메시지가 흐르는 길이에요. 작은 칩은 함께 실행되는 시스템·파일이에요.` }),
     onlySeg,
-    FC && !pj ? el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
     el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
-    el("button", { class: "btn tonal sm", type: "button", "data-hm-refresh": "", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); hFlash($("#harness [data-hm-refresh]"), "새로 불러왔어요"); }) }, "새로고침"),
+    FC && !pj ? el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
+    el("button", { class: "btn tonal sm", type: "button", "data-hm-refresh": "", title: "새로고침", "aria-label": "새로고침", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); }) }, icon("refresh")),
     hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 기본값이에요 (${shortPath(hData())}).`) : null);
   const parts = [bar];
   const keep = box.querySelector(".hm-scroll");
@@ -12160,7 +12910,7 @@ function hProjCard(p) {
 function hProjBand() {
   const list = HGB.projects || [];
   const head = el("div", { class: "pj-hd" }, el("span", { class: "t", text: `프로젝트 · ${list.length}` }),
-    el("span", { class: "sup", text: list.length ? "작업 채널·홈 채널에 묶인 세션이에요. 나란히 놓고 비교해 보고, 카드를 누르면 그 프로젝트만의 지도가 열려요." : "작업 채널이나 홈 채널에 묶인 세션이 아직 없어요. 세션을 채널에 묶으면 여기서 프로젝트별로 비교해 볼 수 있어요." }),
+    el("span", { class: "sup", text: list.length ? "작업 채널·홈 채널에 묶인 세션이에요." : "작업 채널이나 홈 채널에 묶인 세션이 아직 없어요." }),
     list.length ? el("span", { class: "pj-lg" }, el("span", { class: "bd m", text: "바뀜" }), "전역과 다른 값", el("span", { class: "pj-g", text: "전역 기본" }), "전역 그대로") : null);
   return list.length ? [head, el("div", { class: "pj-row" }, ...list.map(hProjCard))] : [head];
 }
@@ -12282,7 +13032,7 @@ function hFrom(stages, i) {
   return [el("span", { class: "hm-ar", "aria-hidden": "true" }, icon("chev")), el("div", { class: "hm-from", title: `${from}에서${lb ? ` · ${lb}` : ""}` }, `${from}에서`, lb ? el("b", { text: lb }) : null)];
 }
 const hNo = i => el("span", { class: "hm-no", "aria-hidden": "true", text: String(i + 1) });
-const hCount = (n, title) => (n ? el("span", { class: "tag hm-ct", title, text: String(n) }) : null);
+const hCount = (n, title) => (n ? el("span", { class: "tag hm-ct", title, text: `항목 ${n}` }) : null);
 // A source path as people read it (like custom.js shortPath): the last two names, the full path in the title.
 const hPath = p => { const parts = String(p).split("/").filter(Boolean); return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : String(p); };
 
@@ -12295,7 +13045,7 @@ function hStageCard(s, i, stages) {
       hNo(i),
       one ? el("span", { class: `dot ${H_TONE[one.status] || ""}` }) : null,
       el("span", { class: "l", text: one ? one.label : s.label }),
-      hCount(one ? s.chips.length : s.main.length + s.chips.length, "이 단계의 항목 수"),
+      one ? null : hCount(s.main.length + s.chips.length, "이 단계의 항목 수"),   // a one-item stage says its extras below (함께 실행되는 항목 · N)
       one && one.status !== "ok" ? el("span", { class: `tag ${H_TONE[one.status] || ""}`, text: H_STATE[one.status] || "" }) : null,
       bad.length ? el("span", { class: `tag ${bad.some(n => n.status === "err") ? "err" : "warn"}`, title: bad.map(n => n.label).join(", "), text: `주의 ${bad.length}` }) : null),
     one ? el("span", { class: "s", text: one.summary }) : null,
@@ -12475,13 +13225,15 @@ async function openHSheet(id, focus = {}) {
   hHead();
   const body = clear($("#hs-body"));
   body.scrollTop = 0;
-  body.append(el("p", { class: "hs-desc", text: n.desc }));
+  const more = n.desc.startsWith(n.summary) ? n.desc.slice(n.summary.length).trim() : n.desc;   // the head already says the summary
+  if (more) body.append(el("p", { class: "hs-desc", text: more }));
   if (hOrigin()) body.append(hOriginLine(n));
-  if (n.facts.length) body.append(el("div", { class: "sec", text: "지금 상태" }), el("div", { class: "hs-facts" }, ...n.facts.map(f => el("div", { class: "hs-fact" }, el("span", { class: "k", text: f.label }), el("span", { class: "v", text: f.value })))));
+  const facts = n.facts.filter(f => !(n.summary.includes(f.label) && n.summary.includes(f.value)));   // what the head already says is not said again below
+  if (facts.length) body.append(el("div", { class: "sec", text: "지금 상태" }), el("div", { class: "hs-facts" }, ...facts.map(f => el("div", { class: "hs-fact" }, el("span", { class: "k", text: f.label }), el("span", { class: "v", text: f.value })))));
   body.append(...(hPj() ? [] : fcSheetSection(n, focus.feature)));
-  if (n.settings.some(s => s.editable) || n.fileEditable) body.append(el("div", { class: "note", text: `이 화면에서는 직접 고치지 않아요. 수정 요청을 보내면 ${botName} 쪽에서 적용해요.` }));
+  if (n.settings.some(s => s.editable) || n.fileEditable) body.append(el("div", { class: "note", text: `수정 요청은 ${botName}에게 가요.` }));
   if (n.settings.length) body.append(el("div", { class: "sec", text: "설정" }), ...n.settings.map(s => hSetting(s, drafts)));
-  if (n.file) body.append(el("div", { class: "sec", text: `파일 · ${n.file.split("/").pop()}` }), hFileEditor(n, drafts, focus.line));
+  if (n.file) { const fname = n.file.split("/").pop(); body.append(el("div", { class: "sec", text: n.label.includes(fname) ? "파일" : `파일 · ${fname}` }), hFileEditor(n, drafts, focus.line)); }   // the name is said once
   const near = [...HG.edges.filter(e => e.to === id).map(e => ({ id: e.from, t: `← ${hNode(e.from).label}`, l: e.label })), ...HG.edges.filter(e => e.from === id).map(e => ({ id: e.to, t: `${hNode(e.to).label} →`, l: e.label }))];
   if (near.length) body.append(el("div", { class: "sec", text: "이어진 곳" }), el("div", { class: "hs-chips" }, ...near.map(x => el("button", { class: "chip", type: "button", title: x.l, onclick: () => openHSheet(x.id) }, el("span", { class: "tx", text: `${x.t} · ${x.l}` })))));
   if (hPj()) body.append(el("div", { class: "sec", text: "이 카드에 대한 요청" }), hProjAsk(hPj(), n, drafts));
@@ -12653,8 +13405,8 @@ function hFileRequest(r, orig, draft, note) {
 function hFileEditor(n, drafts, line) {
   const ta = el("textarea", { class: "fi hs-ta hs-mono", rows: 18, spellcheck: "false", "aria-label": n.file });
   ta.readOnly = !n.fileEditable;
-  const note = n.fileEditable ? el("input", { class: "fi", type: "text", autocomplete: "off", maxlength: 500, placeholder: "무엇을 왜 바꾸는지 (선택) · 글은 두고 메모만 보내도 돼요", "aria-label": "수정 요청 메모" }) : null;
-  const info = el("div", { class: "note" }), stat = el("div", { class: "note" });
+  const note = n.fileEditable ? el("input", { class: "fi", type: "text", autocomplete: "off", maxlength: 500, placeholder: "무엇을 왜 바꾸는지 (선택)", "aria-label": "수정 요청 메모" }) : null;
+  const info = el("div", { class: "note" }), stat = el("div", { class: "note" }), err = usErr();
   const send = el("button", { class: "btn sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
   const undo = el("button", { class: "btn text sm", type: "button", disabled: true }, "되돌리기");
   let file = null, orig = "", sentKey = "", dt = 0;
@@ -12674,14 +13426,14 @@ function hFileEditor(n, drafts, line) {
   ta.addEventListener("input", edited);
   if (note) note.addEventListener("input", edited);
   undo.onclick = () => { ta.value = orig; edited(); };
-  send.onclick = async () => {
-    send.disabled = true;
-    try {
-      const at = await hRequest(hFileRequest(file, orig, ta.value, note.value.trim()), hScope("personal", `${hData()}/${file.name}`));
-      sentKey = key(); stat.className = "note ok"; stat.textContent = `요청 보냄 · ${at}`; hFlash(send, "요청했어요");
-    } catch (e) { stat.className = "note err"; stat.textContent = e.message; toast(e.message, true); }
-    finally { mark(); }
-  };
+  send.onclick = () => usRun(send, err, async () => {
+    const at = await hRequest(hFileRequest(file, orig, ta.value, note.value.trim()), hScope("personal", `${hData()}/${file.name}`));
+    sentKey = key(); stat.className = "note ok"; stat.textContent = `요청 보냄 · ${at}`; hFlash(send, "요청했어요");
+    delete send.dataset.usBusy; mark();
+  });
+  const clearErr = () => { err.textContent = ""; };
+  ta.addEventListener("input", clearErr);
+  if (note) note.addEventListener("input", clearErr);
   drafts.push(unsent);
   // Puts the caret on a 1-based line and scrolls the editor there (a hidden copy of the text measures wrapped lines).
   const gotoLine = ln => {
@@ -12696,13 +13448,17 @@ function hFileEditor(n, drafts, line) {
     ta.scrollTop = Math.max(0, top - 60);
   };
   hGoto = gotoLine;
+  // the text is shown only once it is read: until then the box says so, and a read that fails (or has no text) is the usual retry card
+  ta.readOnly = true; ta.placeholder = "불러오는 중…";
+  const box = el("div", { class: "hs-fw" }, ta, note, err, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? hScopeTag("personal", shortPath(`${hData()}/${n.file}`)) : null, n.fileEditable ? send : null), info, stat);
   api(url).then(r => {
-    file = r; orig = r.text; ta.value = r.text;
-    info.textContent = `${num(r.text.length)}자${r.cap ? ` (시작 지침에는 앞 ${num(r.cap)}자까지)` : ""} · ${r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일"} · ${r.note}`;
+    if (typeof r.text !== "string") throw new Error("no text");
+    file = r; orig = r.text; ta.value = r.text; ta.readOnly = !n.fileEditable; ta.placeholder = "";
+    info.textContent = [`${num(r.text.length)}자${r.cap ? ` (시작 지침에는 앞 ${num(r.cap)}자까지)` : ""}`, r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일", r.note].filter(Boolean).join(" · ");
     mark();
     if (line) gotoLine(line);
-  }, e => { info.className = "note err"; info.textContent = e.message; });
-  return el("div", { class: "hs-fw" }, ta, note, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? hScopeTag("personal", shortPath(`${hData()}/${n.file}`)) : null, n.fileEditable ? send : null), info, stat);
+  }).catch(() => { hGoto = null; clear(box).append(emptyNode("파일을 불러오지 못했어요", () => { box.replaceWith(hFileEditor(n, drafts, line)); })); });
+  return box;
 }
 
 /* ---------- 구성: 기능 보기 (what the owner added, by implementation form; data from /api/features) ---------- */
@@ -12841,8 +13597,7 @@ function fcPaintList() {
   const off = (FC.off || []).filter(fcMatch);
   if (off.length) {
     const shut = fcCollapsed.has("__off");
-    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: "이 하네스에선 꺼짐" }), el("span", { class: "tag", text: `${off.length}개` }),
-      el("div", { class: "note", text: `다른 하네스 폴더에 설치돼 있지만 ${fcHarness()}는 불러오지 않는 확장이에요. 지금은 아무것도 강제하지 않아요.` }));
+    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: "이 하네스에선 꺼짐" }), el("span", { class: "tag", text: `${off.length}개` }));
     head.addEventListener("click", () => { if (fcCollapsed.has("__off")) fcCollapsed.delete("__off"); else fcCollapsed.add("__off"); fcPaintList(); });
     fcList.append(head);
     if (!shut) fcList.append(el("div", { class: "fc-grid" }, ...off.map(fcCard)));
@@ -12864,7 +13619,7 @@ function fcBuild(box) {
   fcCount = el("div", { class: "sup fc-count" });
   fcList = el("div");
   box.append(el("div", { class: "sec", text: "기능 목록" }),
-    el("div", { class: "sup", text: "내가 더한 기능을 구현 형식별로 모았어요. 회색으로 채운 카드(강제)는 코드가 막거나 실행하는 것, 테두리만 있는 카드(권고)는 모델에게 따르라고 부탁한 글이에요. 카드를 누르면 작동하는 자리와 파일이 열려요." }),
+    el("div", { class: "sup", text: "회색으로 채운 카드(강제)는 코드가 막거나 실행하는 것, 테두리만 있는 카드(권고)는 모델에게 따르라고 부탁한 글이에요." }),
     el("div", { class: "fc-bar" }, q, pick("form", "형식", () => FC.forms), pick("trigger", "트리거", () => FC.triggers), hOrigin() ? pick("origin", "출처", () => Object.values(FC_ORIGIN)) : null, seg), fcCount, fcList);
 }
 
@@ -12931,31 +13686,33 @@ async function loadApps() {
   appsLoadIcons();
   appsSchedule();
 }
-const APP_DOT = { running: "ok", unreachable: "err", off: "off" };
-const appsAv = (ic, status) => el("span", { class: "cv-av app-av", "aria-hidden": "true" }, icon(ic || "file"), el("i", { class: `app-dot ${APP_DOT[status] || ""}` }));
+// An app's icon: a name the icon set does not know (an app that sent none) takes the app list's file icon, never an empty box.
+const appsAv = ic => el("span", { class: "cv-av app-av", "aria-hidden": "true" }, icon(ICONS[ic] ? ic : "file"));
+// The state is said once, at the row's right as dot + word (appsBadge); the line under the name says only what the word does not (why it does not answer, what kind of app).
+const appsBadge = a => { const s = a.off ? APP_STATUS.off : APP_STATUS[a.status] || APP_STATUS.unknown; return [s[0], s[1]]; };
 const appsStatusLine = a => {
-  const s = APP_STATUS[a.status] || APP_STATUS.unknown;
-  if (a.source === "registry") return a.status === "unreachable" ? a.hint || "연결 끊김" : "모니터링에서 확인해요";
-  if (a.off) return "꺼 두었어요 · 켜면 다시 열 수 있어요";
-  return a.status === "unreachable" ? `응답 없음${a.reason ? ` · ${a.reason}` : ""}` : a.kind === "monitor" ? "상태만 확인하는 앱이에요" : s[0];
+  if (a.source === "registry") return a.status === "unreachable" ? a.hint || "" : "";
+  if (a.off) return "";
+  return a.status === "unreachable" ? a.reason || "" : a.kind === "monitor" ? "상태만 확인하는 앱이에요" : "";
 };
 
 // The list: 사용자 앱 (the manifests), then 모니터링 앱 (the shipped contact-first apps), then the manifests that did not load.
 function appsRows() {
   const rows = [], tools = APPS.items.filter(a => a.source === "manifest");
   rows.push({ header: "사용자 앱" });
-  if (!tools.length) rows.push({ k: "empty-apps", name: "아직 내 앱이 없어요", av: appsAv("add", ""), hint: "채팅에서 앱을 추가해 달라고 하면 돼요", open: () => go("chat") });
+  if (!tools.length) rows.push({ k: "empty-apps", name: "아직 내 앱이 없어요", av: appsAv("add"), hint: "채팅에서 앱을 추가해 달라고 하면 돼요", open: () => go("chat") });
   for (const a of tools) {
-    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon, a.off ? "off" : a.status), hint: appsStatusLine(a), badge: a.off ? ["꺼짐", ""] : a.status === "unreachable" ? ["응답 없음", "err"] : null, sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
+    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon), hint: appsStatusLine(a), badge: appsBadge(a), sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
   }
   const reg = APPS.items.filter(a => a.source === "registry");
   if (reg.length) {
     rows.push({ header: "모니터링 앱" });
-    for (const a of reg) rows.push({ k: `r:${a.id}`, name: a.label, av: appsAv(a.icon, a.status), hint: appsStatusLine(a), open: () => go("monitoring", `i:${a.id}`) });
+    for (const a of reg) rows.push({ k: `r:${a.id}`, name: a.label, av: appsAv(a.icon), hint: appsStatusLine(a), badge: appsBadge(a), open: () => go("monitoring", `i:${a.id}`) });
   }
   if (APPS.errors.length) {
     rows.push({ header: "불러오지 못한 앱" });
-    for (const e of APPS.errors) rows.push({ k: `e:${e.id}`, name: e.id, av: appsAv("file", "err"), hint: e.reason, badge: ["오류", "err"], open: () => dialog({ title: `${e.id}을(를) 불러오지 못했어요`, body: el("div", { class: "apps-err" }, el("p", { text: e.reason }), el("p", { class: "sup", text: e.dir })), actions: [{ label: "닫기", onclick: c => c() }] }) });
+    for (const e of APPS.errors) rows.push({ k: `e:${e.id}`, name: e.id, av: appsAv("file"), hint: e.reason, badge: ["오류", "err"], open: () => dialog({ title: "앱을 불러오지 못했어요", body: el("div", { class: "apps-err" }, el("p", {}, el("b", { text: e.id })), el("p", { text: e.reason }), el("p", { class: "sup", text: e.dir })), mid: true,
+      actions: [{ label: "다시 확인", kind: "pri", onclick: close => { close(); loadApps().then(() => { APPS.sig = ""; appsSchedule(); }); } }] }) });
   }
   if (!APPS.loaded) rows.push({ header: APPS.failed ? "앱을 불러오지 못했어요" : "앱 불러오는 중…" });
   return rows;
@@ -12984,7 +13741,7 @@ function appsHeader(a) {
   const hint = appsTool(a) && !a.off && a.status !== "unreachable" ? pkHint() : null;   // a phone: a line under the status, the title keeps its width
   return el("header", { class: "apps-hd" },
     appsNarrow() ? el("button", { class: "ib", type: "button", "aria-label": "앱 목록", title: "앱 목록", onclick: () => go("apps") }, icon("back")) : null,
-    appsAv(a.icon, a.off ? "off" : a.status),
+    appsAv(a.icon),
     el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: a.label }), el("p", { class: "apps-p" }, st[0], a.reason && !a.off ? ` · ${a.reason}` : ""), appsNarrow() ? hint : null),
     appsNarrow() ? null : hint,
     appsTool(a) && !a.off ? el("a", { class: "ib", href: a.web.href, target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")) : null,
@@ -12997,13 +13754,12 @@ function appsSettings(a) {
     kvRows({ 주소: a.web ? a.web.href : a.kind === "monitor" ? "모니터링에서 확인해요" : "", 상태: (APP_STATUS[a.off ? "off" : a.status] || APP_STATUS.unknown)[0] }),
     a.start ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "앱 실행" }), el("p", { class: "apps-note", text: "이 앱은 스스로 실행되지 않아요. 아래 명령으로 띄워 주세요." }), el("pre", { class: "apps-pre", text: [a.start.cwd ? `cd ${a.start.cwd}` : "", `${a.start.env ? Object.entries(a.start.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : ""}${a.start.command}`].filter(Boolean).join("\n") })) : null,
     a.watches && a.watches.length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "감시" }), el("p", { class: "apps-note", text: a.watches.join(", ") })) : null,
-    a.settings && Object.keys(a.settings).length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "설정" }), kvRows(a.settings)) : null,
-    el("p", { class: "apps-note", text: "이 값들은 채팅에서 바꿔 달라고 하면 돼요." }));
-  dialog({ title: `${a.label} 설정`, body, actions: [{ label: "닫기", onclick: c => c() }] });
+    a.settings && Object.keys(a.settings).length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "설정" }), kvRows(a.settings)) : null);
+  dialog({ title: `${a.label} 설정`, body, mid: true });
 }
 function appsMenu(anchor, a) {
   const own = a.source === "manifest";
-  const items = [{ value: "settings", label: "설정" }, ...(own ? [{ value: "off", label: a.off ? "켜기" : "끄기" }] : []), ...(own ? [{ value: "remove", label: "제거" }] : [])];
+  const items = [{ value: "settings", label: "설정" }, ...(own ? [{ value: "off", label: a.off ? "켜기" : "끄기" }] : []), ...(own ? [{ value: "remove", label: "제거", danger: true }] : [])];
   showMenu(anchor, items, { onPick: v => { if (v === "settings") appsSettings(a); else if (v === "off") appsToggle(a); else if (v === "remove") appsRemove(a); } });
 }
 async function appsToggle(a) {
@@ -13014,7 +13770,7 @@ async function appsToggle(a) {
   } catch (e) { toast(e.message, true); }
 }
 async function appsRemove(a) {
-  const sure = await ask(`${a.label} 제거`, "이 기기에서 앱을 목록에서 뺄게요. 파일은 custom/apps-removed에 남겨 두니 되돌릴 수 있어요.", "제거", true);
+  const sure = await ask(`${a.label} 제거`, "목록에서 빼요. 파일은 남아서 되돌릴 수 있어요.", "제거", true);
   if (!sure) return;
   try {
     await api(`/api/apps/${enc(a.id)}`, "DELETE");
@@ -13031,15 +13787,23 @@ function appsBody(a) {
       el("p", { class: "apps-note", text: a.kind === "monitor" ? "이 앱은 모니터링에서 소식을 모아 보여 줘요." : "이 앱은 자체 화면이 없어요." }),
       a.source === "registry" ? el("button", { class: "btn tonal sm", type: "button", text: "모니터링에서 열기", onclick: () => go("monitoring", `i:${a.id}`) }) : null);
   }
-  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "꺼 둔 앱이에요. 켜면 화면이 다시 열려요." }), el("button", { class: "btn tonal sm", type: "button", text: "켜기", onclick: () => appsToggle(a) }));
+  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "꺼짐" }), el("button", { class: "btn tonal sm", type: "button", text: "켜기", onclick: () => appsToggle(a) }));
   if (a.status === "unreachable") {
     return el("div", { class: "apps-card" },
-      el("p", { class: "apps-note", text: `${a.label}이(가) 응답하지 않아요${a.reason ? ` (${a.reason})` : ""}.` }),
+      el("p", { class: "apps-note", text: `${a.label} 앱이 응답하지 않아요${a.reason ? ` (${a.reason})` : ""}.` }),
       a.start ? el("p", { class: "apps-note", text: "앱이 떠 있는지 확인해 주세요." }) : null,
       el("button", { class: "btn tonal sm", type: "button", text: "다시 확인", onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
   }
-  const frame = el("iframe", { class: "apps-frame", src: a.web.href, title: a.label, referrerpolicy: "same-origin" });
+  const frame = el("iframe", { class: "apps-frame", src: a.web.href, title: a.label, referrerpolicy: "same-origin", onload: () => appsFrameCheck(frame, a) });
   return frame;
+}
+// The gateway answers a plain-text page ("not found", or why the app did not answer) when the app is not there; an app's own page is never plain text.
+// Say that in the app's words, with a way to open it again.
+function appsFrameCheck(frame, a) {
+  let plain = false;
+  try { plain = frame.contentDocument.contentType === "text/plain"; } catch { return; }
+  if (!plain) return;
+  frame.replaceWith(emptyNode(`${a.label} 앱이 열리지 않아요. 앱이 켜져 있는지 확인하고 다시 열어 보세요`, async () => { await loadApps(); APPS.sig = ""; $("#apps-pane").dataset.key = ""; appsRender(); }));
 }
 
 let appsRaf = 0;
@@ -13063,7 +13827,7 @@ function appsRender() {
   if (pane.dataset.key === bodyKey && pane.firstChild) { /* same app, same state: keep the frame (a reload would lose the app's own state) */ }
   else {
     pane.dataset.key = bodyKey;
-    clear(pane).append(head, a ? appsBody(a) : el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "왼쪽에서 앱을 골라 주세요." })));
+    clear(pane).append(head, a ? appsBody(a) : el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "앱을 골라 주세요." })));
   }
 }
 
@@ -13072,7 +13836,7 @@ function appsRender() {
 //   in monRows(), the row's opener:            open: () => it.tool ? go("apps", it.id) : go("monitoring", it.key)
 window.appsMonItems = () => APPS.items.filter(a => a.source === "manifest" && a.kind === "tool").map(a => ({
   key: `x:${a.id}`, id: a.id, tool: true, group: "앱", name: a.label, ic: a.icon, notices: [], mails: [], app: true, unread: 0, unreplied: 0,
-  hint: appsStatusLine(a), at: "",
+  hint: appsStatusLine(a), badge: appsBadge(a), at: "",
 }));
 
 loadApps();
@@ -13188,8 +13952,10 @@ const INTG = { items: [], available: [], sig: "", timer: 0 };
 const intgHas = (it, t) => (it.conv || []).some(p => String(t).startsWith(p)) && !(it.convNot || []).some(p => String(t).startsWith(p));
 const intgHidden = t => INTG.available.some(a => a.off && intgHas(a, t));
 
-// 미답장 (hub/unreplied.ts): the orange pill (reading never clears it).
+// 미답장 (hub/unreplied.ts), reading never clears it. One item that is owed is a state: a dot and a word (unrepPill). "미답장 N" is a count: the
+// orange count badge (unrepCount), beside the unread count badge. Both look the same on every row that shows them.
 const unrepPill = (text = "미답장") => el("span", { class: "tag unreplied", text });
+const unrepCount = n => el("span", { class: "nb unreplied", "aria-label": `미답장 ${n}개`, text: `미답장 ${n > 99 ? "99+" : n}` });
 
 // Callers that ask while a request is out share it (opening a mail thread asks from the thread, the unread sync and the list at once).
 let intgFlight = null;
@@ -13602,25 +14368,29 @@ function kkPersonPaint(d, body, r) {
   const unanswered = Array.isArray(s.recentUnanswered) ? s.recentUnanswered : [];
   const sum = el("div", { class: "kk-sum" });
   const paintSum = a => clear(sum).append(...[
-    el("div", { class: "kk-dh", text: "요약 분석" }),
+    a && a.text ? el("div", { class: "kk-dh", text: "요약" }) : null,
     a && a.text ? el("div", { class: "kk-dt", text: a.text }) : null,
     a && a.at ? el("div", { class: "kk-sub", text: `${kstStamp(a.at)}에 만든 요약` }) : null,
     el("button", { class: "btn tonal", type: "button", "data-k": "analyze", text: a ? "다시 분석" : "요약 분석", onclick: ev => kkAnalyze(d, ev.currentTarget, paintSum) }),
   ].filter(Boolean));
   paintSum(r && r.analysis);
-  clear(body).append(
-    el("div", { class: "kk-psec" },
-      row("메시지", `이 방 ${s.roomMessages | 0}개 · 지켜보는 방 ${s.watchedMessages | 0}개 (${s.watchedRooms | 0}곳)`),
-      span ? row("기간", span) : null,
-      row(`답장 (${s.windowDays || 30}일)`, reply),
-      row("나를 부른 메시지", `${Math.round((s.mentionShare || 0) * 100)}% (${s.mentions | 0}개)`)),
-    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "활동 시간" }), kkBars(s.hours || Array(24).fill(0), Array.from({ length: 24 }, (_, i) => String(i))),
-      el("div", { class: "kk-hax" }, el("span", { text: "0시" }), el("span", { text: "6시" }), el("span", { text: "12시" }), el("span", { text: "18시" }), el("span", { text: "24시" }))),
-    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "요일" }), kkBars(s.weekdays || Array(7).fill(0), ["일", "월", "화", "수", "목", "금", "토"]),
-      el("div", { class: "kk-hax kk-hax7" }, ...["일", "월", "화", "수", "목", "금", "토"].map(t => el("span", { text: t })))),
+  // A section whose numbers are all 0 is not drawn: no empty charts, no "0개 · 0개 (0곳)".
+  const some = a => Array.isArray(a) && a.some(v => v > 0);
+  const rows = [
+    (s.roomMessages | 0) || (s.watchedMessages | 0) ? row("메시지", `이 방 ${s.roomMessages | 0}개 · 지켜보는 방 ${s.watchedMessages | 0}개 (${s.watchedRooms | 0}곳)`) : null,
+    span ? row("기간", span) : null,
+    s.replyToOwnerMs !== undefined || s.ownerReplyMs !== undefined ? row(`답장 (${s.windowDays || 30}일)`, reply) : null,
+    s.mentions | 0 ? row("나를 부른 메시지", `${Math.round((s.mentionShare || 0) * 100)}% (${s.mentions | 0}개)`) : null,
+  ].filter(Boolean);
+  clear(body).append(...[
+    rows.length ? el("div", { class: "kk-psec" }, ...rows) : null,
+    some(s.hours) ? el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "활동 시간" }), kkBars(s.hours, Array.from({ length: 24 }, (_, i) => String(i))),
+      el("div", { class: "kk-hax" }, el("span", { text: "0시" }), el("span", { text: "6시" }), el("span", { text: "12시" }), el("span", { text: "18시" }), el("span", { text: "24시" }))) : null,
+    some(s.weekdays) ? el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "요일" }), kkBars(s.weekdays, ["일", "월", "화", "수", "목", "금", "토"]),
+      el("div", { class: "kk-hax kk-hax7" }, ...["일", "월", "화", "수", "목", "금", "토"].map(t => el("span", { text: t })))) : null,
     el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "답장을 기다리는 메시지" }),
       ...(unanswered.length ? unanswered.map(m => el("div", { class: "kk-pun" }, el("span", { class: "kk-sub", text: kstStamp(m.at) }), el("span", { class: "kk-put", text: m.text }))) : [el("div", { class: "kk-sub", text: "없어요" })])),
-    sum);
+    sum].filter(Boolean));
 }
 async function kkAnalyze(d, btn, paint) {
   const id = KK.open, uid = d.getAttribute("data-uid");
@@ -13666,7 +14436,7 @@ const kkPill = el("button", { class: "btn kk-pill", id: "kk-pill", type: "button
 const kkDrafts = el("div", { class: "kk-drafts", id: "kk-drafts" });
 const kkEditBar = el("div", { class: "kk-edit", id: "kk-edit", hidden: true }, el("span", { text: "답장 초안을 고치는 중이에요" }), el("button", { class: "btn text", type: "button", "data-k": "cancel", text: "취소", onclick: () => kkEditCancel() }));
 // The bar under the chat window is a request to the assistant (kkAskBot): it revises the open draft or writes a new one, and the reply card below asks for 보내기.
-const KK_ASK = "요청을 입력하세요 · 예: 좀 더 짧게";
+const KK_ASK = "요청을 입력하세요 · 예: 좀 더 짧게", KK_REVISE = "초안을 어떻게 고칠까요? · 예: 좀 더 짧게";
 const kkTa = el("textarea", { id: "kk-text", rows: "1", autocomplete: "off", maxlength: "500", placeholder: KK_ASK, "aria-label": "답장 요청" });
 const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "submit", "aria-label": "요청 보내기", title: "요청 보내기" }, icon("send"));
 const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: "답장 초안" }));
@@ -13675,20 +14445,25 @@ const kkDirectBtn = el("button", { class: "cchip kk-dbtn", id: "kk-direct-btn", 
 const kkDirectSync = () => { kkDirectBtn.hidden = !kkTa.value.trim() || !!KK.edit || !!KK.pc; };
 kkTa.addEventListener("input", kkDirectSync);
 const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn, kkDirectBtn), kkSendBtn);
-const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkEditBar, kkForm, kkDrafts);
+// The room's reply card sits right under the chat it answers, above the request bar.
+const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkForm);
 // 자동 초안 of the open room: the one two-value switch of this screen (the watch toggles are eyes). Built once; kkPaintAuto only flips it.
 const kkAutoSw = el("button", { class: "kk-sw", type: "button", role: "switch", "aria-checked": "false", "aria-label": "자동 초안", "data-k": "auto", onclick: () => { const r = kkRoom(KK.open); if (r) kkSetRoom(r, { autoDraft: !r.autoDraft }); } }, el("span", { class: "kk-knob" }));
-const kkAuto = el("div", { class: "kk-auto", id: "kk-auto", hidden: true }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" }), el("span", { class: "cv-p", text: "답할 거리가 있으면 초안을 만들어요" })), kkAutoSw);
+const kkAuto = el("span", { class: "kk-auto", id: "kk-auto", hidden: true }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" })), kkAutoSw);
+// The one line under the room head: 미답장 (with 답장 안 함 while no draft card carries it) on the left, 자동 초안 on the right. Its left part is rebuilt only when what it shows changes.
+const kkOwedL = el("span", { class: "kk-owed-l" });
+const kkOwed = el("div", { class: "kk-owed", id: "kk-owed", hidden: true }, kkOwedL, kkAuto);
+let kkOwedSig = "";
 function kkPaintAuto() {
-  const r = KK.open ? kkRoom(KK.open) : null, show = !!r && !!r.watched;
+  const r = KK.open ? kkRoom(KK.open) : null, show = !!r && !!r.watched, owed = !!r && kkWatching() && !!r.unreplied, bare = owed && !KK.drafts.length, sig = `${KK.open}|${owed}|${bare}`;
   kkAuto.hidden = !show;
   if (show) { kkAutoSw.classList.toggle("on", !!r.autoDraft); kkAutoSw.setAttribute("aria-checked", r.autoDraft ? "true" : "false"); }
+  if (sig !== kkOwedSig) { kkOwedSig = sig; clear(kkOwedL).append(...(owed ? [unrepPill(), ...(bare ? [kkNoReply(r)] : [])] : [])); }
+  kkOwed.hidden = !show && !owed;
 }
 // A room that is not watched opens read-only: this bar (at every width) says so in place of the composer and starts watching it.
 const kkRo = el("div", { class: "kk-ro", id: "kk-ro", role: "status", hidden: true });
-// A phone hides the room head (17-kakao.css), so 미답장 and 답장 안 함 of the open room sit in this bar above the messages there.
-const kkOwed = el("div", { class: "kk-owed", id: "kk-owed", hidden: true });
-const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, kkOwed, kkAuto, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
+const kkChat = el("div", { class: "kk-chat", id: "kk-chat" }, kkHead, kkOwed, el("div", { class: "kk-box" }, kkTl, kkPill), kkRo, kkFoot);
 const kkPane = el("div", { class: "kk", id: "kk", hidden: true }, kkRooms, kkChat);
 $("#v-monitoring").append(kkPane);
 // Tapping a sender's avatar or name in a room opens his 사용자별 분석 panel.
@@ -13788,7 +14563,7 @@ function kkAddOpen() {
   KK.q = ""; kkSearch.value = "";
   const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": "지켜볼 대화방" },
     el("div", { class: "kk-pd-in", tabindex: "-1", autofocus: true },
-      fsHead([el("h2", { class: "fs-t", text: "지켜볼 대화방" }), el("span", { class: "sup", text: "누르면 추가되고, 다시 누르면 빠져요" })], { close: () => d.close() }),
+      fsHead([el("h2", { class: "fs-t", text: "지켜볼 대화방" })], { close: () => d.close() }),
       el("div", { class: "kk-pd-b" }, el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows()))));
   KK.adding = d;
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
@@ -13797,13 +14572,14 @@ function kkAddOpen() {
 }
 function kkRow(r) {
   const on = KK.open === r.chatId, sub = kkSubLine(r), time = r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null;
+  const owed = r.unreplied && kkViewOf()[0] !== "unreplied";   // inside the 미답장 filter every row is one, so the word is not repeated; the unread number stays
   return el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
       kkAvatar(r.name),
       el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name })), sub ? el("span", { class: "cv-p", text: sub }) : null),
       // The row end like every list: the time on top, 미답장 and the unread count under it.
-      time || r.unread || r.unreplied ? el("span", { class: "cv-m" }, time, r.unread || r.unreplied ? el("span", { class: "kk-rmeta" },
-        r.unreplied ? unrepPill() : null,
-        r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
+      time || r.unread || owed ? el("span", { class: "cv-m" }, time, r.unread || owed ? el("span", { class: "kk-rmeta" },
+        owed ? unrepPill() : null,
+        r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
 }
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
@@ -13847,9 +14623,7 @@ function kkPaintChat() {
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
-    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...(owed ? [unrepPill(), kkNoReply(room)] : []), ...asEntry(app));
-    clear(kkOwed).append(...(open && owed ? [unrepPill(), kkNoReply(room)] : []));
-    kkOwed.hidden = !(open && owed);
+    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...asEntry(app));
     monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
@@ -13880,7 +14654,7 @@ const kkDateNode = t => el("div", { class: "kk-date", text: kkDate(t) });
 const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽었어요" }));
 function kkMsgNode(m, first, last) {
   if (kkSys(m)) { const line = kkSysText(m.text); return line ? el("div", { class: "kk-sys", role: "note", "data-log": m.logId, text: line }) : null; }
-  const group = !!(KK.room && KK.room.group), { text, ph } = kkBody(m);
+  const group = m.group ?? !!(KK.room && KK.room.group), { text, ph } = kkBody(m);
   // Plain words with an address: the address is a link and each one gets a preview card under the bubble.
   const urls = !m.media && !ph ? kkUrls(text) : [];
   const bub = (m.media && kkMediaNode(m, m.media)) || el("div", { class: `kk-bub${ph ? " ph" : ""}${urls.length ? " kk-lb" : ""}` }, urls.length ? kkLinkText(text) : text);
@@ -13970,7 +14744,7 @@ async function kkOpen(id) {
   Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
     loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "", revise: null, reviseCode: "" });
   kkTa.value = KK.typed.get(id) || ""; kkAutosize();
-  kkPaintAll(); convTitle();
+  kkPaintAll(); convTitle(); bkKkSync();
   try {
     const d = await api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}`);
     if (seq !== KK.seq) return;
@@ -13989,9 +14763,9 @@ async function kkOpen(id) {
 function kkClose() {
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
   KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = ""; KK.edit = null;
-  kkPaintAll(); convTitle();
+  kkPaintAll(); convTitle(); bkKkSync();
 }
-// Phone, or a split pane (43-panes-view.js paneMonIn): the app bar's back arrow leaves the chat for the room list first (04-state.js #back).
+// Phone, or a Messenger room in a split pane (43-panes-view.js paneMonIn): the app bar's back arrow leaves the chat for the room list first (04-state.js #back).
 function kkBack() {
   if (!(KK.vis && KK.open && (narrowChat() || paneMonIn()) && current === "monitoring" && !MON.list)) return false;
   kkClose();
@@ -14244,17 +15018,13 @@ async function kkRestore(code) {
 function kkDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); kkTail(); } finally { btn.disabled = false; } };
   const making = !!KK.open && KK.drafting === KK.open && KK.reviseCode === d.code, rv = !making && KK.revise && KK.revise.code === d.code ? KK.revise : null;
-  const parts = kkDraftParts(d), inst = (INTG.items.find(i => i.key === "kakao") || {}).label;
-  // The message the draft answers (its basis): "<이름>님께 답장" and the original quoted, as the prototype's reply card has it; a new message (intent) has none.
-  const basis = d.intent ? null : KK.msgs.find(m => m.logId === d.basisLogId && !m.fromMe && !kkSys(m)) || null;
-  // A Messenger draft is text only: its card says so in the 첨부 줄 (10-reply-card.js rqAttachNode), never hiding it.
-  const card = { key: `kk:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: "kakao", ...(basis ? { who: basis.sender || "상대", src: KK.pc ? "" : inst } : { label: KK.pc ? "" : inst }), pc: KK.pc ? KK.pc.name : pqSelf(), at: d.created },
-    ...(basis ? { original: { who: `${basis.sender || "상대"} · ${rcWhen(new Date(basis.sentAt).toISOString())}`, text: kkBody(basis).text } } : {}),
-    label: kkDraftLabel(d), labelCls: "kk-dh",
-    body: { text: d.text, parts, sentParts: d.sentParts, cls: parts.length > 1 ? "kk-dt kk-dps" : "kk-dt", partCls: "kk-dp" }, attach: { attachmentsNone: true, cannotAttach: [] } };
+  // The card sits right under the chat it answers: no head, quoted original or 첨부 line (10-reply-card.js bare); the draft's messages are yellow bubbles that scroll inside the card, the buttons stay.
+  const card = { key: `kk:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, bare: true, label: kkDraftLabel(d), labelCls: "kk-dh",
+    body: { text: d.text, parts: kkDraftParts(d), one: true, full: true, sentParts: d.sentParts, cls: "kk-dt kk-dps", partCls: "kk-dp" } };
   if (making) return rqCard({ ...card, status: "고치는 중…" });
   if (rv) return rqCard({ ...card, revise: kkReviseBox(d, rv) });
   return rqCard({ ...card, acts: {
+    dropText: d.intent ? "" : "답장 안 함",   // a new message answers nothing: its draft keeps 보내지 않기
     send: ev => run(ev.currentTarget, async () => {
       const id = KK.open, r = await api(`/api/kakao/drafts/${enc(d.code)}/send`, "POST", {});
       if (KK.open !== id) return;
@@ -14263,9 +15033,9 @@ function kkDraftCard(d) {
     }),
     edit: () => { KK.revise = { code: d.code, text: "" }; kkPaintFoot(); const i = $(".kk-rv", kkDrafts); if (i) i.focus(); },
     drop: ev => run(ev.currentTarget, async () => {
-      const id = KK.open;
+      const id = KK.open, r = kkRoom(id), wave = !d.intent && !!r && !!r.unreplied, nr = `/api/kakao/chat/${enc(id)}/no-reply`;   // on a reply's draft 답장 안 함 also ends the room's 미답장 (되돌리기 brings both back)
       await api(`/api/kakao/drafts/${enc(d.code)}/drop`, "POST", {});
-      rqDroppedToast(() => kkRestore(d.code));
+      if (wave) { await api(nr, "POST", {}); r.unreplied = false; kkPaintRooms(); loadIntegrations(); toast("답장 안 함으로 표시했어요", false, { label: "되돌리기", onclick: () => api(nr, "DELETE").then(() => { r.unreplied = true; kkPaintRooms(); kkPaintAuto(); return kkRestore(d.code); }, e => toast(e.message, true)) }, 6000); } else rqDroppedToast(() => kkRestore(d.code));
       if (KK.open !== id) return;
       KK.drafts = KK.drafts.filter(x => x.code !== d.code);
       if (KK.edit && KK.edit.code === d.code) kkEditCancel(); else kkPaintFoot();
@@ -14299,9 +15069,10 @@ function kkPaintFoot() {
   if (hadRv) { const i = $(".kk-rv", kkDrafts); if (i) i.focus({ preventScroll: true }); }
   kkEditBar.hidden = !edit;
   kkDraftBtn.disabled = making;
+  kkPaintAuto();
   kkDraftBtn.lastChild.textContent = making ? "초안 만드는 중…" : "답장 초안";
   // 직접 수정 puts a draft's text in the bar: then the bar sends it (the draft's own route); otherwise it is the request to the assistant.
-  kkTa.placeholder = edit ? "고친 메시지" : KK_ASK;
+  kkTa.placeholder = edit ? "고친 메시지" : KK.drafts.length ? KK_REVISE : KK_ASK;
   const label = edit ? "보내기" : "요청 보내기";
   kkSendBtn.setAttribute("aria-label", label); kkSendBtn.title = label;
 }
@@ -14419,6 +15190,7 @@ function kkMode(item, shown, pc) {
   } else if (!shown && KK.vis) {
     KK.vis = false; KK.open = ""; KK.seq++; clearInterval(KK.timer); clearInterval(KK.peerT);
   }
+  bkKkSync();
 }
 
 /* ---------- the mailbox of the mail app: read / unread, star, 완료(보관), 삭제 on one mail or a selection, the floating 메일 쓰기 and the inline reply ---------- */
@@ -14529,8 +15301,9 @@ async function mbRun(keys, action, quiet = false) {
 const mailOriginal = t => { const m = MAILS.get(t); return !!m && m.trashOriginal === true && !pqPc(t); };
 async function mbTrashOriginal(keys, orig) {
   const n = keys.length, rest = keys.filter(t => !orig.includes(t));
-  const what = n > 1 ? `메일 ${n}개를 삭제할까요? ${orig.length === n ? "원본" : `그중 ${orig.length}개는 원본`}도 메일함 휴지통으로 옮겨요` : "이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요";
+  const what = n > 1 ? `메일 ${n}개를 삭제할까요? ${orig.length === n ? "원본" : `그중 ${orig.length}개는 원본`}도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요` : "이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요";
   if (!await ask("메일 삭제", what, n > 1 ? `${n}개 삭제` : "삭제", true)) return [];
+  mbDeleting();
   let res;
   try { res = (await api("/api/mail/delete-original", "POST", { keys: orig.map(mbKey) })).results.map(x => ({ ...x, key: `mail:${x.key}` })); }
   catch (e) { const note = (e && e.data && e.data.error) || (e && e.message) || "원본을 지우지 못했어요"; res = orig.map(key => ({ key, ok: false, note })); }
@@ -14547,17 +15320,23 @@ async function mbTrashOriginal(keys, orig) {
   Promise.allSettled([convLoad(), loadIntegrations(), loadNotices()]);
   return [...done, ...local];
 }
-// 삭제 into the mailbox's trash can be undone: the mail leaves at once and 실행 취소 brings it back; the trash is sent when the toast's
+// 삭제 into the mailbox's trash can be undone: the mail leaves at once and 되돌리기 brings it back; the trash is sent when the toast's
 // time is up or the page goes away (Gmail's way, owner 11-03). A mailbox that will not follow, or an older hub, only drops the row from
 // dotz and cannot bring it back, so that asks first in the small confirm box.
 const MB_UNDO_MS = 6000;
+// The one sentence under both 삭제 confirms (a row's ⋯ and an open mail): dotz drops the mail from its list. One mail that its mailbox will not trash stays there, so the box says so plainly;
+// of several, the ones a mailbox can trash go and the rest stay.
+// The answer to a 삭제 confirm can take a moment (the mailbox is asked): say at once that it is going on; the toast of the result replaces this one.
+const mbDeleting = () => toast("삭제하는 중이에요");
+const mailStays = n => n > 1 ? "메일함에는 남아 있을 수 있어요." : "메일함에는 그대로 남아 있어요.";
 async function mbTrash(keys) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
   const orig = keys.filter(mailOriginal);
   if (orig.length) return mbTrashOriginal(keys, orig);
   if (!keys.every(t => mailCan(t, "trash"))) {
-    if (!await ask("메일 삭제", `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
+    if (!await ask("메일 삭제", `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지워요. ${mailStays(keys.length)}`, "삭제", true)) return [];
+    mbDeleting();
     const done = await mbRun(keys, "trash");
     mbLeave(keys);
     return done;
@@ -14571,7 +15350,7 @@ async function mbTrash(keys) {
     const end = v => { clearTimeout(timer); removeEventListener("pagehide", send); res(v); };
     const send = () => end(false), timer = setTimeout(send, MB_UNDO_MS);
     addEventListener("pagehide", send);
-    toast(keys.length > 1 ? `${keys.length}개를 삭제했어요` : "삭제했어요", false, { label: "실행 취소", onclick: () => end(true) }, MB_UNDO_MS);
+    toast(keys.length > 1 ? `${keys.length}개를 삭제했어요` : "삭제했어요", false, { label: "되돌리기", onclick: () => end(true) }, MB_UNDO_MS);
   });
   for (const f of back) f();
   if (undone) { mbRefresh(); mbPaintBar(); return []; }
@@ -14654,12 +15433,12 @@ function mbPaintBar() {
     return;
   }
   const arch = mailFilterOf()[0] === "archived";
-  const acts = [["read", "읽음으로 표시", "check"], ["unread", "안 읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]];
-  const owed = mbOwed(keys).length;
-  const btns = acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}`, short: MB_SHORT[a] }));
-  // 답장 안 함 sits before 삭제, and only while a chosen mail owes a reply; a mixed selection says how many it reaches.
-  if (owed) btns.splice(3, 0, mbBtn("답장 안 함", "replyoff", () => mbFyi(keys).then(() => mbPaintBar()), { k: "mail-fyi", cls: "mbox-fyi", count: owed < keys.length ? owed : 0 }));
-  if (keys.some(mxCanMove)) btns.unshift(mbBtn("메일함 옮기기", "folder", ev => mxMoveOpen(ev.currentTarget, keys), { k: "mail-move-sel", short: "옮기기" }));
+  // The two used most stand as words (읽음, 보관); the rest is in the ⋯, so 삭제 is never the button beside the × that clears the choice.
+  const owed = mbOwed(keys).length, run = a => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar());
+  const btns = [["read", "읽음으로 표시", "check"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"]].map(([a, label, ic]) => mbBtn(label, ic, () => run(a), { k: `mail-${a}`, short: MB_SHORT[a], cls: "mbox-w" }));
+  const items = [{ value: "unread", label: "안 읽음으로 표시" }, ...(keys.some(mxCanMove) ? [{ value: "move", label: "메일함 옮기기" }] : []), ...(owed ? [{ value: "fyi", label: `답장 안 함${owed < keys.length ? ` ${owed}개` : ""}` }] : []), { value: "trash", label: "삭제", danger: true }];
+  btns.push(el("button", { class: "mbox-b mbox-ic", type: "button", "data-k": "mail-more", title: "더 보기", "aria-label": "더 보기", "aria-haspopup": "listbox",
+    onclick: ev => { const b = ev.currentTarget; showMenu(b, items, { onPick: v => (v === "move" ? mxMoveOpen(b, keys) : v === "fyi" ? mbFyi(keys).then(() => mbPaintBar()) : run(v)) }); } }, icon("more")));
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
@@ -14706,9 +15485,11 @@ function mbObserve() {
   if (!mbObs) mbObs = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) mbMore(); }, { root: box, rootMargin: "240px 0px" });
   mbObs.observe(s);
 }
+// No bar over a list with no mail rows (확인 대기, an empty folder): there is nothing to select.
 function mbList(vis) {
   MBOX.vis = vis;
   for (const t of [...MBOX.sel]) if (!vis.includes(t)) MBOX.sel.delete(t);
+  if (!vis.length) return null;
   const bar = mbBar();
   queueMicrotask(mbPaintBar);
   return bar;
@@ -14716,7 +15497,7 @@ function mbList(vis) {
 
 /* ---------- the open mail: one slim bar of icons at its top, like Gmail ---------- */
 // 보관, 삭제, 읽음 / 안 읽음, 답장, 전체답장, 전달, 초안 작성, 답장 안 함 / 답장 필요로 표시, 원문 보기 / 접기: every action of the open mail once, no ⋯ (owner 11-05). The way
-// back is the head's (#back, .cv-up); the row's ⋯ keeps 삭제 from dotz only. Icons only: the name is the aria-label and the title. The bar sticks while
+// back is the bar's (#back); the row's ⋯ keeps 삭제 from dotz only. Icons only: the name is the aria-label and the title. The bar sticks while
 // the mail scrolls. A mailbox that will not follow an action says so in the action's toast, not in a standing line.
 const mbIco = (label, ic, onclick, k) => el("button", { class: "ib mtop-b", type: "button", "data-k": k, title: label, "aria-label": label, onclick }, icon(ic));
 // The mark a tap sets now names the button, and mailSetFyi turns it to the other one.
@@ -14740,18 +15521,21 @@ function mailRawBtn(d) {
 }
 function mailOpenBar(t, card) {
   const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived, out = m.dir === "out";
-  const acts = [arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "보관", "archive"], ["trash", "삭제", "trash"], out ? null : unread ? ["read", "읽음으로 표시", "mailopen"] : ["unread", "안 읽음으로 표시", "mail"]].filter(Boolean);
+  // 삭제 is the last button of the bar, away from the ones used most.
+  const acts = [arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "보관", "archive"], out ? null : unread ? ["read", "읽음으로 표시", "mailopen"] : ["unread", "안 읽음으로 표시", "mail"]].filter(Boolean);
+  const act = ([a, label, ic]) => mbIco(label, ic, ev => busy(ev.currentTarget, async () => {
+    const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
+    if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
+  }), `mail-open-${a}`);
   const raw = card && card.querySelector(":scope > .rc-raw");
   if (card) mailOpenSummary(t, card);
   return el("div", { class: "mtop", role: "toolbar", "aria-label": "메일 처리" },
-    ...acts.map(([a, label, ic]) => mbIco(label, ic, ev => busy(ev.currentTarget, async () => {
-      const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
-      if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
-    }), `mail-open-${a}`)),
+    ...acts.map(act),
     ...MB_MODES.map(([k, label, ic]) => el("button", { class: "ib mtop-b mbox-mode", type: "button", "data-mode": k, title: label, "aria-label": label, onclick: () => { mbOpenReply(t, k); const s = tl.querySelector(":scope > .mbox-reply"); if (s) s.scrollIntoView({ block: "nearest" }); } }, icon(ic))),
     out ? null : mailDraftButton(t, "ib mtop-b mr-draft"),
     out ? null : mailFyiBtn(t),
-    raw ? mailRawBtn(raw) : null);
+    raw ? mailRawBtn(raw) : null,
+    act(["trash", "삭제", "trash"]));
 }
 
 /* ---------- 메일 쓰기: the floating button and its sheet ---------- */
@@ -14788,16 +15572,21 @@ function mbForm(st, host, o) {
   ccBtn.hidden = !ccRow.hidden;
   const to = field("to", "받는 사람", "쉼표로 여러 명");
   to.append(ccBtn);
+  // a missing 받는 사람 is said under its row and stays until something is typed there
+  const err = el("div", { class: "mbox-err", role: "alert", text: "받는 사람을 적어 주세요", hidden: true });
+  const toIn = to.querySelector("input");
+  toIn.addEventListener("input", () => { err.hidden = true; });
+  st.needTo = () => { err.hidden = false; toIn.focus(); };
   paintFiles();
   // append(null) would print the word "null": the quote block is added only when there is an original
-  clear(host).append(to, ccRow, field("subject", "제목", "제목"), body, files, picker);
+  clear(host).append(to, err, ccRow, field("subject", "제목", "제목"), body, files, picker);
   if (o.quote) host.insertBefore(o.quote, files);
   return { pick: () => picker.click(), body, files: paintFiles };
 }
 const mbPayload = (st, extra = {}) => ({ to: st.to.trim(), cc: st.cc.trim(), subject: st.subject.trim(), body: st.body, attachments: st.files.map(f => ({ name: f.name, path: f.path, size: f.size })), ...extra });
 const mbEmpty = st => !st.to.trim() && !st.cc.trim() && !st.subject.trim() && !st.body.trim() && !st.files.length;
 async function mbSave(st, extra, btn) {
-  if (!st.to.trim()) { toast("받는 사람을 적어 주세요", true); return null; }
+  if (!st.to.trim()) { st.needTo(); return null; }
   if (st.up.length) { toast("파일을 올리는 중이에요", true); return null; }
   let r = null;
   await busy(btn, async () => {
@@ -14808,24 +15597,38 @@ async function mbSave(st, extra, btn) {
   return r;
 }
 // The floating sheet: docked at the bottom right of a wide screen (minimize / close), the whole screen on a phone. Closing a sheet with text asks first.
+// Folded or open. A folded bar on a phone sits right above the tab bar (--mbox-lift = the room under it), and its button says which way it goes.
+function mbFold(node, min) {
+  node.classList.toggle("min", min);
+  const b = node.querySelector(".mbox-min"), word = min ? "펼치기" : "최소화";
+  b.setAttribute("aria-label", word); b.title = word; b.replaceChildren(icon(min ? "drop" : "minus"));
+  // folded, the bar names the mail (its subject, else who it goes to) instead of "새 메일"
+  const st = MBOX.cs && MBOX.cs.node === node ? MBOX.cs.st : null;
+  node.querySelector(".mbox-st").textContent = min && st ? st.subject.trim() || st.to.trim() || "새 메일" : "새 메일";
+  const nr = $("#nav").getBoundingClientRect();
+  node.style.setProperty("--mbox-lift", min && nr.height > 0 && nr.top > innerHeight / 2 ? `${Math.ceil(innerHeight - nr.top)}px` : "0px");
+}
 function mbCompose(init = {}) {
-  if (MBOX.cs && MBOX.cs.node.isConnected) { MBOX.cs.node.classList.remove("min"); MBOX.cs.node.querySelector(".mbox-in").focus(); return; }
+  if (MBOX.cs && MBOX.cs.node.isConnected) { mbFold(MBOX.cs.node, false); MBOX.cs.node.querySelector(".mbox-in").focus(); return; }
   const st = { to: "", cc: "", subject: "", body: "", files: [], up: [], showCc: false, ...init };
   const host = el("div", { class: "mbox-sb" });
   const form = mbForm(st, host, { rows: "10" });
   const node = el("div", { class: "mbox-sheet", role: "dialog", "aria-label": "새 메일" });
   // The sheet fades down and away before it is removed; it is no longer the open one from the first moment.
-  const leave = async () => { MBOX.cs = null; node.inert = true; await motionOut(node, "rise"); node.remove(); };
+  const leave = async () => { MBOX.cs = null; refit.disconnect(); node.inert = true; await motionOut(node, "rise"); node.remove(); };
   const close = async () => { if (!mbEmpty(st) && !await ask("작성 중인 메일", "쓰던 내용을 버릴까요?", "버리기", true)) return; leave(); };
   const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) leave(); });
   node.append(
-    el("div", { class: "mbox-sh" }, el("span", { class: "mbox-st", text: "새 메일" }),
-      el("button", { class: "ib mbox-min", type: "button", "aria-label": "최소화", title: "최소화", onclick: () => node.classList.toggle("min") }, icon("minus")),
+    el("div", { class: "mbox-sh", onclick: ev => { if (node.classList.contains("min") && !ev.target.closest("button")) mbFold(node, false); } }, el("span", { class: "mbox-st", text: "새 메일" }),
+      el("button", { class: "ib mbox-min", type: "button", "aria-label": "최소화", title: "최소화", onclick: () => mbFold(node, !node.classList.contains("min")) }, icon("minus")),
       el("button", { class: "ib mbox-close", type: "button", "aria-label": "닫기", title: "닫기", onclick: close }, icon("close"))),
     host,
     el("div", { class: "mbox-sf" }, el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-compose-save", onclick: save }, "초안 만들기"),
       el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip"))));
   document.body.append(node);
+  // the tab bar comes and goes with the screen and the window: a folded bar follows it
+  const refit = new ResizeObserver(() => { if (node.classList.contains("min")) mbFold(node, true); });
+  refit.observe($("#nav")); refit.observe(document.documentElement);
   motionIn(node, "rise", 240);
   MBOX.cs = { node, st };
   node.querySelector(".mbox-in").focus();
@@ -14868,7 +15671,7 @@ function mbReplyPaint(force) {
   let slot = tl.querySelector(":scope > .mbox-reply");
   if (!ok) { if (slot) slot.remove(); return; }
   const b = mbBox(t), sig = JSON.stringify([t, b.open, b.mode]);
-  if (slot && slot.dataset.sig === sig && !force && slot.isConnected && slot === tl.lastElementChild) return;
+  if (slot && slot.dataset.sig === sig && !force && slot.isConnected && slot === tlTail()) return;
   if (slot) slot.remove();
   slot = el("section", { class: `mbox-reply${b.open ? " open" : ""}`, "aria-label": "답장 쓰기", "data-sig": sig });
   // closed, the slot stays empty (and hidden): 답장 / 전체답장 / 전달 are icons in the mail's top bar
@@ -15044,8 +15847,8 @@ function mailPeople(m, raw, subject) {
 function mailHeadNode(m) {
   const src = m || {};
   const from = mailAddrList(src.from), to = mailAddrList(src.to), cc = mailAddrList(src.cc);
-  const row = (k, list) => el("div", { class: "mhd-r" }, el("span", { class: "mhd-k", text: k }), list.length ? mailAddrNode(list) : el("span", { class: "mhd-v mhd-none", text: "-" }));
-  return el("div", { class: "mhd", role: "group", "aria-label": "보낸 사람과 받는 사람" }, row("보낸 사람", from), row("받는 사람", to), cc.length ? row("참조", cc) : null);
+  const row = (k, list) => (list.length ? el("div", { class: "mhd-r" }, el("span", { class: "mhd-k", text: k }), mailAddrNode(list)) : null);   // a row with nobody in it is left out, not shown as "-"
+  return el("div", { class: "mhd", role: "group", "aria-label": "보낸 사람과 받는 사람" }, row("보낸 사람", from), row("받는 사람", to), row("참조", cc));
 }
 
 // A mail list row's one-line version: two names then 외 N명, no buttons inside the row (the whole row opens the mail).
@@ -15224,7 +16027,7 @@ const mxsHead = (b, sup) => el("div", { class: "mxs-hd" }, el("span", { class: "
 const mxsSec = text => el("div", { class: "sec", text });
 function mxsTiles(cur, pick) {
   return el("div", { class: "mxs-modes", role: "radiogroup", "aria-label": "처리 방식" }, ...Object.entries(MXS_MODES).map(([k, [l, t]]) => el("button", { class: `mxs-mode${cur === k ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(cur === k), "data-m": k, onclick: () => pick(k) },
-    el("span", { class: "mxs-mt" }, el("span", { class: "mxs-rd" }), l), el("span", { class: "mxs-md", text: t }))));
+    el("span", { class: "mxs-mt" }, el("span", { text: l }), cur === k ? icon("check") : null), el("span", { class: "mxs-md", text: t }))));
 }
 // A list of short texts as chips: each one has an x, an input opens at the end (Enter adds and stays, Esc closes), more than MXS_CAP fold.
 function mxsChips(o, path, add, ph, apply) {
@@ -15247,9 +16050,9 @@ function mxsConds(o, apply) {
   return [...MXS_KINDS.map(([k, l, ph]) => el("div", { class: "mxs-kv" }, el("div", { class: "mxs-k", text: l }), mxsChips(o, `conds.${k}`, "추가", ph, apply))),
     ...(o.not ? [el("div", { class: "mxs-kv" }, el("div", { class: "mxs-k", text: "넣지 않을 보낸 사람" }), mxsChips(o, "not.from", "추가", "주소나 @도메인", apply))] : [])];
 }
-const mxsJudge = (o, apply) => [el("div", { class: "mxs-jr" }, el("span", { class: "mxs-h", text: "메일을 읽고 이 설명에 맞는지 판단해요" }), mxsSw(o.judge.on, "내용을 보고 판단", () => apply(x => { x.judge.on = !x.judge.on; }))),
+const mxsJudge = (o, apply) => [el("div", { class: "mxs-jr" }, mxsSw(o.judge.on, "내용을 보고 판단", () => apply(x => { x.judge.on = !x.judge.on; }))),
   o.judge.on ? el("input", { class: "fi", value: o.judge.text, placeholder: "예: 강의 자료를 달라는 메일", "aria-label": "판단 설명", onchange: ev => apply(x => { x.judge.text = ev.target.value.trim(); }, false) }) : null];
-const mxsIcons = (o, apply) => el("div", { class: "mxs-chips", role: "radiogroup", "aria-label": "아이콘" }, ...MXS_ICONS.map(([n, label]) => el("button", { class: `chip mxs-ic${o.icon === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(o.icon === n), "aria-label": label, onclick: () => apply(x => { x.icon = n; }) }, mxIc(n))));
+const mxsIcons = (o, apply) => el("div", { class: "mxs-ig" }, el("div", { class: "mxs-h", text: "아이콘" }), el("div", { class: "mxs-chips", role: "radiogroup", "aria-label": "아이콘" }, ...MXS_ICONS.map(([n, label]) => el("button", { class: `chip mxs-ic${o.icon === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(o.icon === n), "aria-label": label, onclick: () => apply(x => { x.icon = n; }) }, mxIc(n)))));
 function mxsGreets(o, apply) {
   const row = (g, i) => el("div", { class: "mxs-g" }, el("div", { class: "tx" }, el("input", { class: "mxs-in", value: g.who, placeholder: "이름", "aria-label": "이름" }), el("input", { class: "mxs-in s", value: g.addr, placeholder: "주소나 @도메인", "aria-label": "주소" })),
     el("input", { class: "fi", value: g.hello, placeholder: "첫 인사", "aria-label": "첫 인사" }), el("button", { class: "ib", type: "button", "aria-label": "지우기", onclick: () => { if (i < o.greets.length) apply(x => { x.greets.splice(i, 1); }); else { MXS.blank--; mxsPaint(); } } }, icon("close")));
@@ -15307,15 +16110,17 @@ function mxsVoiceRow(a, b, t) {
   return [el("div", { class: "mxs-rowb" }, el("span", { class: "mxs-h", text: t.learning ? "지난 메일을 다시 읽고 있어요" : mxsVoiceText(v) }),
     el("span", { class: "mxs-vb" }, el("button", { class: "btn tonal sm mxs-vx", type: "button", disabled: !v.count, onclick: () => mxsExamples(a, b) }, "예시 보기"),
       el("button", { class: "btn tonal sm mxs-vl", type: "button", disabled: !!t.learning, onclick: () => mxsRelearn(a, b) }, "다시 배우기"))),
-    b.how ? el("div", { class: "mxs-h", text: "기본 지시를 적어 두면 배운 말투보다 먼저 따라요" }) : null];
+    b.how ? el("div", { class: "mxs-h", text: "기본 지시가 배운 말투보다 먼저예요" }) : null];
 }
 function mxsToneBody(a, b) {
   const t = MXS.tone.get(`${a.key}|${b.id}`) || { busy: true }, more = MXS.more.has("fix");
   if (t.busy) return [el("div", { class: "mxs-h", text: "불러오는 중이에요" })];
   if (t.failed) return [el("div", { class: "mxs-h", text: "말투를 읽지 못했어요" })];
   const fixes = more ? t.corrections : t.corrections.slice(0, MXS_FIX);
-  return [t.summary ? el("div", { class: "mxs-sum", text: t.summary }) : el("div", { class: "mxs-h", text: "아직 정리된 말투가 없어요. 메일 앱 말투를 그대로 써요." }),
-    ...(t.voice.state !== "single" ? mxsVoiceRow(a, b, t) : [t.own ? null : el("div", { class: "mxs-h", text: "이 메일함만의 말투는 아직 없어요. 초안을 고치면 여기에 쌓여요." })]),
+  // No tone yet: say how one comes to exist (the sent mails are read by themselves); a single mailbox has no voice row, so 다시 배우기 comes with the line.
+  return [t.summary ? el("div", { class: "mxs-sum", text: t.summary }) : el("div", { class: "mxs-h", text: "아직 정리된 말투가 없어요. 보낸 메일이 모이면 알아서 배워요." }),
+    !t.summary && t.voice.state === "single" ? el("button", { class: "btn tonal sm mxs-vl", type: "button", disabled: !!t.learning, onclick: () => mxsRelearn(a, b) }, "다시 배우기") : null,
+    ...(t.voice.state !== "single" ? mxsVoiceRow(a, b, t) : [t.own || !t.summary ? null : el("div", { class: "mxs-h", text: "이 메일함만의 말투는 아직 없어요." })]),
     t.corrections.length ? el("div", { class: "mxs-k", text: "고친 점" }) : null, t.corrections.length ? el("ul", { class: "mxs-fx" }, ...fixes.map(f => el("li", { text: f }))) : null,
     t.corrections.length > MXS_FIX && !more ? el("button", { class: "chip mxs-c2", type: "button", onclick: () => { MXS.more.add("fix"); mxsPaint(); } }, `더 보기 · ${t.corrections.length - MXS_FIX}개`) : null];
 }
@@ -15330,34 +16135,33 @@ function mxsSetNodes() {
     const v = ev.target.value.trim();
     if (v) ap(x => { x.name = v; }, false); else { ev.target.value = b.name; toast("이름을 비워 둘 수 없어요", true); }
   } }), mxsIcons(b, ap)];
-  const reply = [["tone", "말투", "", () => mxsToneBody(a, b)], ["how", "기본 지시", b.how ? b.how.slice(0, 24) : "없음", () => [text(b.how, (x, v) => { x.how = v; }, "이 메일함의 초안을 쓸 때마다 지킬 말", "기본 지시", 3), el("div", { class: "mxs-h", text: "이 메일함의 모든 초안에 붙어요." })]],
+  const tt = MXS.tone.get(`${a.key}|${b.id}`), toneSum = tt && tt.voice ? (tt.summary ? "있음" : "없음") : "보기";
+  const reply = [["tone", "말투", toneSum, () => mxsToneBody(a, b)], ["how", "기본 지시", b.how ? b.how.slice(0, 24) : "없음", () => [text(b.how, (x, v) => { x.how = v; }, "이 메일함의 초안을 쓸 때마다 지킬 말", "기본 지시", 3)]],
     ["greet", "받는 사람별 인사", b.greets.length ? `${b.greets.length}명` : "없음", () => mxsGreets(b, ap)],
-    ["files", "첨부 폴더", mxsFirst(b.folders), () => [mxsChips(b, "folders", "폴더 추가", "~/폴더", ap), el("div", { class: "mxs-h", text: "초안이 약속한 파일을 이 폴더에서 찾아 붙여요." })]],
-    ["bans", "금지 문구", b.bans.length ? `${b.bans.length}개` : "없음", () => [mxsChips(b, "bans", "문구 추가", "쓰지 않을 말", ap), el("div", { class: "mxs-h", text: "초안에 이 말이 나오면 카드에 알려 줘요." })]]];
+    ["files", "첨부 폴더", mxsFirst(b.folders), () => [mxsChips(b, "folders", "폴더 추가", "~/폴더", ap)]],
+    ["bans", "금지 문구", b.bans.length ? `${b.bans.length}개` : "없음", () => [mxsChips(b, "bans", "문구 추가", "쓰지 않을 말", ap)]]];
   const quiet = b.mode === "quiet", srcs = b.conds.src.length;
   const match = b.base ? mxsRow("분류 기준", `기준이 없어요. ${MX.accts.size > 1 ? `${a.label} 계정의 ` : ""}다른 메일함에 맞지 않는 메일이 모두 여기로 와요.`, el("span", { class: "tag", text: "기본" }))
-    : mxsItem("match", "분류 기준", mxsCondSum(b), () => [...mxsConds(b, ap), srcs ? el("div", { class: "mxs-h", text: `처음부터 정해진 분류 기준 ${srcs}개도 함께 쓰여요. 여기서는 바꾸지 않아요.` }) : null,
-      el("div", { class: "mxs-h", text: `여러 메일함에 맞으면 목록에서 위에 있는 메일함으로 가요. 지금 조건으로 메일 ${mails.length}통이 여기 있어요.` })]);
+    : mxsItem("match", "분류 기준", mxsCondSum(b), () => [...mxsConds(b, ap), srcs ? el("div", { class: "mxs-h", text: `처음부터 정해진 분류 기준 ${srcs}개도 함께 쓰여요. 여기서는 바꾸지 않아요.` }) : null]);
   return [mxsHead(b, `메일 ${mails.length}통 · 안 읽음 ${unread}`), MXS.note ? el("div", { class: "mxs-note", text: MXS.note }) : null,
     mxsSec("처리 방식"), mxsTiles(b.mode, m => ap(x => { if (x.mode === "quiet" && m !== "quiet") x.notify = true; x.mode = m; })),
     b.base && b.mode ? el("button", { class: "btn text sm mxs-inh", type: "button", onclick: () => ap(x => { delete x.mode; }) }, "앱 설정대로 되돌리기") : null,
-    b.base && !b.mode ? el("div", { class: "mxs-h mxs-inh", text: "고르지 않으면 메일 앱 설정대로 움직여요." }) : null,
     mxsSec("이 메일함"), el("div", { class: "list" }, MX.accts.size > 1 ? mxsRow("계정", a.account ? `답장은 메일을 받은 주소 ${a.account}에서 나가요` : "", el("span", { class: "mxs-am2" }, mxMark(a), a.label)) : null, mxsItem("name", "이름", b.name, nameBody), match,
       b.base ? null : mxsItem("judge", "판단 조건", b.judge.on ? b.judge.text || "켜짐" : "꺼짐", () => mxsJudge(b, ap))),
     mxsSec("답장 쓸 때"), drafts || MXS.reply === b.id ? el("div", { class: "list" }, ...reply.map(([k, l, s, body]) => mxsItem(k, l, s, body)))
       : el("div", { class: "list" }, el("button", { class: "li", type: "button", onclick: () => { MXS.reply = b.id; mxsPaint(); } }, el("span", { class: "tx" }, el("span", { class: "hd", text: "말투와 기본 지시" }), el("span", { class: "sup", text: `${MXS_MODES[b.mode][0]} 메일함은 초안을 쓰지 않아서 접어 뒀어요` })), icon("drop"))),
-    mxsSec("알림"), el("div", { class: "list" }, mxsRow("알림 켜기", quiet ? "조용히 모으는 메일함은 알리지 않아요" : "새 메일이 오면 알려 줘요", mxsSw(!quiet && b.notify !== false, "알림 켜기", () => ap(x => { x.notify = x.notify === false; }), quiet))),
-    b.base ? null : el("div", { class: "mxs-del" }, el("button", { class: "btn danger sm", type: "button", onclick: () => mxsDelete(a, b) }, "메일함 지우기"))];
+    mxsSec("알림"), el("div", { class: "list" }, mxsRow("알림 켜기", quiet ? "조용히 모으는 메일함은 알리지 않아요" : "", mxsSw(!quiet && b.notify !== false, "알림 켜기", () => ap(x => { x.notify = x.notify === false; }), quiet))),
+    b.base ? null : el("div", { class: "mxs-del" }, el("button", { class: "btn danger sm", type: "button", onclick: () => mxsDelete(a, b) }, "메일함 삭제"))];
 }
 async function mxsDelete(a, b) {
   const n = mxsMails(a, b).length;
-  if (!(await ask(`${b.name} 지우기`, `${n ? `메일 ${n}통은` : "이 메일함의 메일은"} 일반으로 옮겨요. 메일은 지워지지 않아요.`, "지우기", true))) return;
+  if (!(await ask(`${b.name} 삭제`, `${n ? `메일 ${n}통은` : "이 메일함의 메일은"} 일반으로 옮겨요. 메일은 지워지지 않아요.`, "삭제", true))) return;
   try { await api("/api/mailbox/box", "DELETE", { app: a.key, id: b.id }); } catch (e) { toast(mxsErr(e), true); return; }
   await Promise.allSettled([loadIntegrations(), convLoad()]);
   MX.box = a.base.id;
   MX.scr = "";
   mxsGo("");
-  toast(`${b.name} 메일함을 지웠어요`);
+  toast(`${b.name} 메일함을 삭제했어요`);
 }
 
 /* ---- 메일함 추가 ---- */
@@ -15374,17 +16178,17 @@ function mxsPickNodes(d) {
 }
 function mxsStartNodes(d) {
   mxsSuggest(d.acct);
-  const groups = MXS.sug, row = (title, sup, onclick) => el("button", { class: "li", type: "button", onclick }, el("span", { class: "tx" }, el("span", { class: "hd", text: title }), el("span", { class: "sup", text: sup })), icon("chev"));
+  const groups = MXS.sug, row = (title, sup, onclick, n) => el("button", { class: n ? "li mxs-sg" : "li", type: "button", onclick }, el("span", { class: "tx" }, el("span", { class: "hd", text: title }), el("span", { class: "sup", text: sup })), n ? liEnd(el("span", { class: "mxs-cnt", text: n }), icon("chev")) : icon("chev"));
   const copyable = [...MX.accts.values()].flatMap(a => a.boxes.filter(b => !b.base).map(b => ({ a, b })));
-  return [...mxsAcctRow(d), mxsSec("메일을 보니 이런 묶음이 있어요"), el("div", { class: "list" }, ...(groups === null ? [el("div", { class: "empty", text: "묶음을 찾는 중이에요" })] : groups.length ? groups.map(g => row(g.label, `${g.domain} · ${g.senders.join(", ")} · 메일 ${g.count}통`,
-    () => mxsStart(d, { name: g.label, conds: { from: [g.domain], subj: [], body: [] }, keys: g.keys, count: g.count }))) : [el("div", { class: "empty", text: "지금은 눈에 띄는 묶음이 없어요" })])),
+  return [...mxsAcctRow(d), mxsSec("메일을 보니 이런 묶음이 있어요"), el("div", { class: "list" }, ...(groups === null ? [el("div", { class: "empty", text: "묶음을 찾는 중이에요" })] : groups.length ? groups.map(g => row(g.label, `${g.domain} · ${g.senders.join(", ")}`,
+    () => mxsStart(d, { name: g.label, conds: { from: [g.domain], subj: [], body: [] }, keys: g.keys, count: g.count }), `메일 ${g.count}통`)) : [el("div", { class: "empty", text: "지금은 눈에 띄는 묶음이 없어요" })])),
   mxsSec("직접 만들기"), el("div", { class: "list" }, row("빈 메일함으로 시작", "이름과 조건을 직접 정해요", () => mxsStart(d, {})),
     copyable.length ? row("다른 메일함 설정 복사", "같은 처리 방식과 기본 지시를 다시 적지 않아도 돼요", () => { d.step = "copy"; mxsPaint(); }) : null)];
 }
 function mxsCopyNodes(d) {
   return [...mxsAcctRow(d), mxsSec("어느 메일함 설정을 가져올까요?"), el("div", { class: "list" }, ...[...MX.accts.values()].flatMap(a => a.boxes.filter(b => !b.base).map(b => el("button", { class: "li", type: "button", onclick: () => mxsStart(d, structuredClone({ name: b.name, icon: b.icon, mode: b.mode || "ask", conds: { from: b.conds.from, subj: b.conds.subj, body: b.conds.body }, judge: b.judge, how: b.how, greets: b.greets, folders: b.folders, bans: b.bans, copied: b.name })) },
     el("span", { class: "tx" }, el("span", { class: "hd", text: b.name }), el("span", { class: "sup", text: `${MX.accts.size > 1 ? `${a.label} · ` : ""}${b.mode ? MXS_MODES[b.mode][0] : "기본 방식"} · ${mxsCondSum(b)}` })), icon("chev"))))),
-  el("div", { class: "mxs-h", text: "처리 방식, 분류 기준, 기본 지시, 인사말을 그대로 가져와요. 말투는 이 메일함에서 따로 쌓여요. 원래 메일함은 바뀌지 않아요." })];
+  el("div", { class: "mxs-h", text: "원래 메일함은 바뀌지 않아요." })];
 }
 function mxsSetupNodes(d) {
   const ap = mxsNewApply(), base = MX.accts.get(d.acct).base.name, fix = (node, f) => node.addEventListener("input", f);
@@ -15573,7 +16377,7 @@ const mxTitle = it => {
   if (mxGroup(MX.box)) return el("div", { class: "mx-bh" }, el("h2", { text: e.b.name }), el("span", { class: "meta", text: `계정 ${e.n}개를 합쳐서 보여요` }), set(e.b.id));
   return el("div", { class: "mx-bh" }, el("h2", { text: e.b.name }), mxAcctMark(it, e), el("span", { class: "tag", text: mxModeOf(e.b) }), set(e.b.id));
 };
-const mxNote = it => { const e = it.rows.find(x => x.id === MX.box); return e && e.b.base ? el("div", { class: "mx-note" }, el("div", { text: e.n ? "계정마다 어느 메일함에도 맞지 않는 메일이 여기로 와요. 빠지는 메일은 없어요." : "어느 메일함에도 맞지 않는 메일은 여기로 와요. 빠지는 메일은 없어요." })) : null; };
+const mxNote = it => { const e = it.rows.find(x => x.id === MX.box); return e && e.b.base ? el("div", { class: "mx-note" }, el("div", { text: e.n ? "계정마다 어느 메일함에도 맞지 않는 메일이 여기로 와요." : "어느 메일함에도 맞지 않는 메일은 여기로 와요." })) : null; };
 // An account whose login is gone says so above the list, with the app's own way to connect again (monRecheckApp). With one account the head's banner does it.
 const mxDown = it => it.accounts.length < 2 ? [] : it.accounts.filter(a => a.conn && (MX.acct === "all" || MX.acct === a.key)).map(a => {
   const names = a.owned.map(m => m.watch).filter(Boolean);
@@ -15592,7 +16396,7 @@ function mxChip(it) {
   if (!multi) return;
   const a = it.accounts.find(x => x.key === MX.acct), hid = it.accounts.filter(x => x.conn || (a && x !== a)), tone = hid.some(x => x.conn) ? "warn" : hid.map(mxTone).includes("warn") ? "warn" : hid.map(mxTone).includes("pri") ? "pri" : "";
   $("#appbar").insertBefore(el("button", { class: "mx-acc", type: "button", "aria-haspopup": "menu", "aria-label": "메일 계정 바꾸기", onclick: ev => mxAcctPop(ev.currentTarget) },
-    a ? mxMark(a) : null, el("span", { text: a ? a.label : "모든 계정" }), tone ? el("span", { class: `dot ${tone}` }) : null, icon("drop")), $("#cmdk"));
+    a ? mxMark(a) : null, el("span", { class: "mx-ac-t", text: a ? a.label : "모든 계정" }), tone ? el("span", { class: `dot ${tone}` }) : null, icon("drop")), $("#cmdk"));
 }
 function mxAcctPop(btn) {
   const it = MX.it;
@@ -15737,8 +16541,10 @@ const monTicks = () => current === "monitoring" || (current === "chat" && !!monC
 /* ---------- 모니터링 > 앱 > 인스타그램 > DM: the conversation list and its messages, read only ---------- */
 // API: docs/ig-dm-api.md. It draws into the comment pane (30-monitoring-comments.js: cmRooms / cmHead / cmIn) when its DM tab is chosen and reuses
 // the Messenger pane's classes (30-kakao.js, 17-kakao.css). This file sorts before the comment file, so it only touches CM / cm* inside functions.
-// There is no composer and no send: a DM is never answered from here. Text only goes through el({text}), never innerHTML.
+// There is no composer and no send: a DM is never answered from here (one read-only line at the bottom, the Messenger room's .kk-ro). Text only goes through el({text}), never innerHTML.
 const DM_APP = "instagram";
+// The one line at the bottom of an open DM, where the Messenger room has its composer; it is put in place on the first paint (the comment pane is built after this file).
+const dmRo = el("div", { class: "kk-ro", id: "dm-ro", role: "status", hidden: true }, el("span", { class: "kk-ro-t", text: "여기서는 DM에 답장할 수 없어요" }));
 const DM = { on: false, connected: false, perm: "unknown", line: "", convs: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, busy: false };
 
 async function dmLoadList() {
@@ -15770,7 +16576,7 @@ function dmPaintRooms() {
   const sig = JSON.stringify(["dm", DM.perm, DM.line, DM.error, DM.convs, DM.loaded, DM.busy, DM.open && DM.open.id, !!tabs]);
   if (sig === CM.roomsSig) return;
   CM.roomsSig = sig;
-  const bar = el("div", { class: "dm-bar" }, el("span", { class: "dm-note", text: "받은 DM을 읽기만 해요. 답장은 보내지 않아요" }),
+  const bar = el("div", { class: "dm-bar" }, el("span", { class: "dm-note", text: "여기서는 DM에 답장할 수 없어요" }),
     el("button", { class: "btn text", type: "button", id: "dm-refresh", disabled: DM.busy, text: DM.busy ? "불러오는 중…" : "새로고침", onclick: dmRefresh }));
   const list = el("section", { class: "kk-watch", "aria-label": "DM 대화" });
   list.append(el("div", { class: "cv-gh", role: "presentation", text: "대화" }));
@@ -15784,7 +16590,7 @@ function dmPaintRooms() {
 async function dmOpen(c) {
   const seq = ++DM.seq;
   DM.open = { id: c.id, peer: c.peer }; DM.view = null; DM.loading = true; DM.viewErr = "";
-  cmPaintAll();
+  cmPaintAll(); convTitle(); bkCmSync();
   await dmReload(seq, true);
 }
 async function dmReload(seq = DM.seq, scroll = false) {
@@ -15800,22 +16606,20 @@ async function dmReload(seq = DM.seq, scroll = false) {
   }
   dmPaintChat(scroll);
 }
-function dmClose() { DM.open = null; DM.view = null; DM.seq++; DM.loading = false; cmPaintAll(); convTitle(); }
+function dmClose() { DM.open = null; DM.view = null; DM.seq++; DM.loading = false; cmPaintAll(); convTitle(); bkCmSync(); }
 const DM_ATTACH = { image: "(사진)", video: "(동영상)", audio: "(음성 메시지)", file: "(파일)" };
 const dmText = m => m.text || (m.attach && m.attach.length ? DM_ATTACH[m.attach[0]] || "(파일)" : "(내용 없음)");
-function dmMsgNode(m, peer) {
-  // 읽기 전용 스레드 (owner 2026-11-03): 한 메시지 한 줄 - 보낸 사람·시각 줄, 아래 본문, 메시지 사이는 얇은 선. 말풍선을 쌓지 않아 겹치지 않아요.
-  return el("div", { class: `dm-m${m.mine ? " mine" : ""}`, "data-id": m.id },
-    el("div", { class: "dm-mh" }, el("span", { class: "dm-mn", text: m.mine ? "나" : peer }), el("span", { class: "dm-mt", text: kkTime(m.at) })),
-    el("div", { class: "dm-mb", text: dmText(m) }));
-}
+// A DM message in the shape of a Messenger one, so the room's own renderer draws it (30-kakao.js kkMsgNode: bubbles, the time under a run, the date line).
+const dmAsKk = (m, peer) => ({ logId: m.id, fromMe: !!m.mine, sender: peer, type: 1, text: dmText(m), sentAt: new Date(m.at).getTime(), group: false });
 function dmPaintChat(stick) {
   const open = DM.open, v = DM.view;
   cmFoot.hidden = true;
+  if (!dmRo.isConnected) cmChat.insertBefore(dmRo, cmFoot);
+  dmRo.hidden = !open;
   const sig = open ? `dm/${open.id}/${open.peer}` : "";
   if (sig !== CM.headSig) {
     CM.headSig = sig; clear(cmHead);
-    if (open) cmHead.append(kkAvatar(open.peer), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.peer }), el("span", { class: "cv-p", text: "받은 DM · 읽기만 해요" })));
+    if (open) cmHead.append(kkAvatar(open.peer), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.peer })));
   }
   const csig = JSON.stringify(["dm", open, DM.loading, DM.viewErr, v]);
   if (!stick && csig === CM.chatSig) return;
@@ -15823,12 +16627,12 @@ function dmPaintChat(stick) {
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "대화를 골라 주세요" })); return; }
   if (DM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
   if (DM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: DM.viewErr })); return; }
-  const nodes = []; let prev = null;
-  for (const m of v.messages) {
-    if (!prev || kkDay(prev.at) !== kkDay(m.at)) nodes.push(el("div", { class: "kk-date", text: kkDate(m.at) }));
-    nodes.push(dmMsgNode(m, v.peer));
-    prev = m;
-  }
+  const nodes = [], msgs = v.messages.map(m => dmAsKk(m, v.peer));
+  msgs.forEach((m, i) => {
+    const prev = msgs[i - 1], next = msgs[i + 1], newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt);
+    if (newDay) nodes.push(kkDateNode(m.sentAt));
+    nodes.push(kkMsgNode(m, newDay || kkWho(prev) !== kkWho(m), !(next && kkDay(next.sentAt) === kkDay(m.sentAt) && kkSame(m, next))));
+  });
   if (!nodes.length) nodes.push(el("div", { class: "kk-note", text: "메시지가 없어요" }));
   const keep = cmTl.scrollTop;
   clear(cmIn).append(...nodes);
@@ -15934,12 +16738,13 @@ function cmSourceNode(s) {
   const node = el("div", { class: "kk-pick-src", "data-src": s.key },
     el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: s.label }), s.error ? el("span", { class: "cv-p", role: "status", text: `읽지 못했어요 · ${s.error}` }) : null),
       kkSwitch(all, `${s.label} 전부 지켜보기`, "all", v => cmUpdate(s, { watch: v ? ["*"] : [] }))),
+    el("div", { class: "sec", text: "설정" }),
     el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" })),
       kkSwitch(!!s.autoDraft, `${s.label} 자동 초안`, "auto", v => cmUpdate(s, { autoDraft: v }), true)),
     // Config-only: the mail app (`mailApp`) is set in the source config (docs/comments-api.md); without it the card says no mail was made.
     el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "파일 요청 메일 초안" })),
       kkSwitch(!!s.autoMail, `${s.label} 파일 요청 메일 초안`, "mail", v => cmUpdate(s, { autoMail: v }), true)),
-    el("button", { class: "btn text", type: "button", "data-k": "posts", text: "지켜볼 글 고르기", onclick: () => cmPosts(s) }));
+    el("button", { class: "li tap", type: "button", "data-k": "posts", onclick: () => cmPosts(s) }, el("span", { class: "tx" }, el("div", { class: "hd", text: "지켜볼 글 고르기" })), el("span", { class: "li-end" }, icon("chev", "chev"))));
   if (p) {
     if (p.loading) node.append(el("div", { class: "kk-note", text: "불러오는 중…" }));
     else if (p.error && !p.list.length) node.append(el("div", { class: "kk-note", role: "status", text: p.error }));
@@ -15953,32 +16758,33 @@ function cmPickPaint() {
   const d = CM.pickD;
   if (!d) return;
   const srcs = cmSrcOf(d.dataset.app);
-  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: "자동 초안은 새 댓글마다 답글 초안을 만들어서 토큰이 들어요." }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: "켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요" })]));
+  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: "새 댓글마다 답글 초안을 만들어서 토큰이 들어요." }), el("div", { class: "sec", text: "지켜볼 채널" }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: "켜 둔 곳이 없어요. 채팅에서 켜 달라고 해 주세요." })]));
 }
 function cmPickOpen(app) {
   if (CM.pickD) return;
   const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": "지켜볼 글" },
     el("div", { class: "kk-pd-in" },
-      el("div", { class: "kk-pd-h" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "지켜볼 글" })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      fsHead([el("h2", { class: "fs-t", text: "지켜볼 글" })], { close: () => d.close() }),
       el("div", { class: "kk-pd-b" })));
   cmPickPaint();
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => { if (CM.pickD === d) CM.pickD = null; d.remove(); });
 }
-// What the post's comments set going in mail, at a glance on its row: how many failed, wait as drafts, went out (threads rows, hub/comments/engine.ts).
-function cmMailSum(t) {
-  const m = t.mails;
-  if (!m) return null;
-  const st = [[m.failed, "실패", "err"], [m.drafted, "초안", "ask"], [m.sent, "보냄", "done"]].filter(x => x[0]).map(([n, word, s]) => ({ text: `${word} ${n}`, s }));
-  return el("span", { class: "cm-tr sum", "data-track": "mail", role: "group", "aria-label": `메일: ${st.map(x => x.text).join(", ")}` }, el("span", { class: "cm-tn", text: "메일" }), ...st.map(x => el("span", { class: "cm-st", "data-s": x.s, text: x.text })));
+// A post's row carries one marker, the most urgent: a failed mail > comments nobody answered > drafts waiting. The rest is in the opened post, on each comment (cmProgress).
+function cmMark(t) {
+  const failed = t.mails ? t.mails.failed : 0;
+  if (failed) return el("span", { class: "tag err", "data-mark": "failed", "aria-label": `메일 실패 ${failed}건`, text: `실패 ${failed}` });
+  if (t.unreplied) { const m = unrepCount(t.unreplied); m.dataset.mark = "unreplied"; return m; }
+  if (t.drafts) return el("span", { class: "nb drafted", "data-mark": "draft", "aria-label": `답장 확인 ${t.drafts}건`, text: `초안 ${t.drafts}` });
+  return null;
 }
 function cmRow(t) {
-  const on = CM.open && CM.open.source === t.source && CM.open.thread === t.thread, n = t.unread + t.drafts;
+  const on = CM.open && CM.open.source === t.source && CM.open.thread === t.thread, n = t.unread + t.drafts, mark = cmMark(t);
   return el("button", { class: `cv-row pv kk-row${n ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-thread": t.thread, "aria-current": on ? "true" : null, onclick: () => cmOpen(t) },
     cmThumb(t.title, t.thumb),
-    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` }), cmMailSum(t)),
-    el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n || t.unreplied ? el("span", { class: "kk-rmeta" }, n ? el("span", { class: t.drafts ? "nb drafted" : "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null) : null));
+    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` })),
+    el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), mark ? el("span", { class: "kk-rmeta" }, mark) : null));
 }
 // The picture of a post: its thumbnail when the source gave one (it falls back to the title's initial when the picture does not load).
 function cmThumb(title, thumb) {
@@ -16004,7 +16810,7 @@ function cmTabs() {
 function cmTab(id) {
   if (CM.tab === id) return;
   CM.tab = id; CM.open = null; DM.open = null; CM.seq++; DM.seq++;
-  cmPaintAll();
+  cmPaintAll(); bkCmSync();
   if (id === "dm") dmRefresh(); else cmLoad();
 }
 function cmPaintRooms() {
@@ -16020,11 +16826,11 @@ function cmPaintRooms() {
   const list = el("section", { class: "kk-watch", "aria-label": "댓글이 있는 글" });
   if (CM.loaded) {
     list.append(el("div", { class: "cv-gh", role: "presentation", text: "글" }));
-    if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }));
+    if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }), el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: "다시 시도", onclick: () => cmLoad() }));
     else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
-    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: "켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요" }));
+    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: "켜 둔 곳이 없어요. 채팅에서 켜 달라고 해 주세요." }));
     else list.append(el("div", { class: "kk-note", id: "cm-empty", text: "아직 받은 댓글이 없어요" }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: "지켜볼 글 고르기", onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
-  }
+  } else list.append(el("div", { class: "kk-note", role: "status", text: "불러오는 중…" }));
   const tabs = cmTabs();
   clear(cmRooms).append(...(tabs ? [tabs] : []), list);
   cmRooms.scrollTop = top;
@@ -16035,7 +16841,7 @@ const cmUrl = t => `/api/comments/thread/${enc(t.source)}/${enc(t.thread)}`;
 async function cmOpen(t) {
   const seq = ++CM.seq;
   CM.open = { source: t.source, thread: t.thread, title: t.title }; CM.view = null; CM.loading = true; CM.viewErr = ""; CM.revising = ""; CM.note = {};
-  cmPaintAll();
+  cmPaintAll(); bkCmSync();
   await cmReload(seq, true);
 }
 async function cmReload(seq = CM.seq, scroll = false) {
@@ -16052,9 +16858,9 @@ async function cmReload(seq = CM.seq, scroll = false) {
   cmPaintChat(scroll);
   cmMarkRead();
 }
-function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; CM.revising = ""; CM.note = {}; cmPaintAll(); convTitle(); }
+function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; CM.revising = ""; CM.note = {}; cmPaintAll(); convTitle(); bkCmSync(); }
 function cmBack() {
-  if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && (narrowChat() || paneMonIn()) && current === "monitoring" && !MON.list)) return false;
+  if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list)) return false;
   if (CM.tab === "dm") { dmClose(); return true; }
   cmClose();
   return true;
@@ -16134,7 +16940,7 @@ function cmSendNode(s) {
 function cmPaintChat(stick) {
   if (CM.tab === "dm") { dmPaintChat(); return; }
   const open = CM.open, v = CM.view;
-  cmFoot.hidden = true;   // drafts sit under the comment they answer (cmThreadNodes), not pinned here
+  cmFoot.hidden = true; dmRo.hidden = true;   // drafts sit under the comment they answer (cmThreadNodes), not pinned here
   const sig = open ? `${open.source}/${open.thread}/${open.title}/${v && v.thread.title}/${v && v.thread.thumb}` : "";
   if (sig !== CM.headSig) {
     CM.headSig = sig; clear(cmHead);
@@ -16263,6 +17069,7 @@ function cmMode(app, shown, pc) {
   } else if (!shown && CM.vis) {
     CM.vis = false; CM.open = null; DM.open = null; CM.seq++; DM.seq++; clearInterval(CM.timer);
   }
+  bkCmSync();
 }
 cmLoadSources();
 
@@ -16339,6 +17146,9 @@ const mailChipCount = (k, loaded) => {
   const all = CVP.more && CVP.counts && (typeof MX === "undefined" || MX.acct === "all") ? CVP.counts.mail.filters[k] : undefined;
   return typeof all === "number" ? Math.max(all, loaded) : loaded;
 };
+// What an empty list of the mail app says, in the words of the tab it is under.
+const MAIL_EMPTY = { pending: "확인할 초안이 없어요", unread: "안 읽은 메일이 없어요", owed: "답장할 메일이 없어요", replied: "답장한 메일이 없어요", archived: "보관한 메일이 없어요", sent: "보낸 메일이 없어요" };
+const mailEmptyText = () => MAIL_EMPTY[mailFilterOf()[0]] || "받은 메일이 없어요";
 const mailFilterOf = () => MAIL_FILTERS.find(f => f[0] === MON.mailFilter) || MAIL_FILTERS[0];
 // A reply draft still in the owner's hands: waiting for 보내기 / 고치기 / 보내지 않기, or being rewritten after 고치기 (a peer's too, as its plain report).
 const mailDraftOpen = n => !!(n.decision && n.decision.draft) && drState(n.decision) === "open";
@@ -16368,12 +17178,20 @@ function mailLand(sel) {
   const waiting = [...mailDraftLive(sel.notices).values()].some(mailDraftOpen);
   if (waiting) MON.mailFilter = "pending"; else if (MON.mailFilter === "pending") MON.mailFilter = "all";
 }
+// The head of the mail list is two rows (owner 2026-11-11): where the mail sits (받은 메일 / 보낸 메일 / 보관함, screen tabs) and, only in 받은 메일,
+// the five ways to sift it. MON.mailFilter keeps its seven values; the place is read from it, and MON.mailIn is the sift 받은 메일 comes back to.
+const MAIL_PLACES = [["in", "받은 메일"], ["sent", "보낸 메일"], ["archived", "보관함"]];
 function mailFilterBar(mails, notices) {
-  const cur = mailFilterOf()[0];
-  return segKeep(el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
-    const n = k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mailChipCount(k, mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length);
-    return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, cntSpan(`mail-filter:${k}`, "mr-fn", n));
-  })));
+  const cur = mailFilterOf()[0], place = cur === "sent" || cur === "archived" ? cur : "in";
+  if (place === "in") MON.mailIn = cur;
+  const count = (k, ok) => k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mailChipCount(k, mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length);
+  const pick = k => () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); };
+  const tabs = segKeep(el("div", { class: "mx-tabs mr-place", role: "tablist", "aria-label": "메일 위치" }, ...MAIL_PLACES.map(([k, label]) =>
+    el("button", { class: `mx-tab${k === place ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === place), "data-filter": k, onclick: pick(k === "in" ? MON.mailIn || "all" : k) },
+      label, k === "in" ? null : cntSpan(`mail-filter:${k}`, "mr-fn", count(k, MAIL_FILTERS.find(f => f[0] === k)[2]))))));
+  if (place !== "in") return [tabs];
+  return [tabs, segKeep(el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.filter(f => f[0] !== "archived" && f[0] !== "sent").map(([k, label, ok]) =>
+    el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: pick(k) }, label, cntSpan(`mail-filter:${k}`, "mr-fn", count(k, ok))))))];
 }
 // A mail or chat of an integration is its own conversation in 채팅. A mail is a Gmail-like flat row: sender and time on one line (with
 // a paperclip and the file count when it has files), the subject with the reply-draft state beside it, and a one-line summary. The
@@ -16398,8 +17216,7 @@ function monConvNode(t, label) {
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null,
-    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), ...mxSender(t), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, mxMoveBtn(t), m ? mailMenuBtn(t, () => orgMailItem(t)) : null),
+    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src" }, m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null, m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label), ...mxSender(t), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, mxMoveBtn(t), m ? mailMenuBtn(t, () => orgMailItem(t)) : null),
     el("div", { class: "rc-title", text: title }), chip,
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
     ...mailSumNodes(m, t, brief), ...(m ? orgMailRow(t) : []));
@@ -16420,19 +17237,15 @@ const mailDraftAsk = async (t, btn, instruction = "") => {
   if (btn) { btn.disabled = true; if (!btn.classList.contains("ib")) btn.textContent = "만드는 중…"; }
 };
 // The sample in the 초안 작성 box, made from the summary the mail already has (hub/mail.ts MailRecord.summary: 요약, 할 일), no model call:
-// the first 할 일, else the first point of 요약, quoted in one example instruction that fits it. "" without a summary (the fixed hint then).
-const mailDraftCut = s => { const one = s.split(/(?<=[.!?])\s+/)[0].replace(/[.!?。]+$/, "").trim(); return one.length > 28 ? `${one.slice(0, 27).trim()}…` : one; };
+// the first 할 일, else the first point of 요약, decides which short example fits - one line of the box, with no clipped quote of the mail. "" without a summary (the fixed hint then).
 function mailDraftSample(m) {
   if (!m || !m.summary) return "";
   const skip = mailSkip(m), p = mailParts(m.summary, skip), lead = p.todo || p.points[0] || mailLines(m.summary, skip)[0] || "";
   if (!lead) return "";
-  const cut = mailDraftCut(lead), x = `‘${cut}’`;
-  if (p.todo) return `예: ${x} 건은 이번 주 안에 처리하겠다고 써 줘`;
-  // a point is a sentence: quoted with 라는 / 이라는 by the last syllable (a final consonant takes 이라는)
-  const h = [...cut].reverse().find(c => c >= "가" && c <= "힣"), said = `${x}${h && (h.charCodeAt(0) - 0xac00) % 28 ? "이라는" : "라는"}`;
-  if (/일정|회의|미팅|약속|방문|참석/.test(lead)) return `예: ${said} 제안에 그 시간 괜찮다고, 장소만 다시 알려 달라고 써 줘`;
-  if (/요청|문의|부탁|검토|확인|회신|답변|제안/.test(lead)) return `예: ${said} 내용은 확인하고 금요일까지 답드린다고 써 줘`;
-  return `예: ${said} 내용 잘 받았다고, 감사 인사와 함께 짧게 써 줘`;
+  if (p.todo) return "예: 이번 주 안에 처리하겠다고 써 줘";
+  if (/일정|회의|미팅|약속|방문|참석/.test(lead)) return "예: 그 시간 괜찮다고 써 줘";
+  if (/요청|문의|부탁|검토|확인|회신|답변|제안/.test(lead)) return "예: 확인하고 금요일까지 답한다고 써 줘";
+  return "예: 잘 받았다고 짧게 써 줘";
 }
 // 초안 작성 asks first what the reply should say (owner 2026-10-28); an empty box makes the draft on its own, as before. Above the box: the mail
 // it answers (sender, subject, the row's summary lines), so the owner writes the instruction without going back to the mail.
@@ -16444,10 +17257,12 @@ function mailDraftDialog(t, btn) {
     el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || "보낸 사람 없음" })),
     el("div", { class: "md-subj", text: m.subject || "(제목 없음)" }),
     ...mailSumNodes(m, t, mailBrief(m, t))) : null;
-  const go = (close, b) => busy(b, async () => { close(); await mailDraftAsk(t, btn, ta.value.trim()).catch(e => toast(e.message || "초안을 요청하지 못했어요", true)); });
+  const err = usErr();   // a failure keeps the window and the typed instruction, and says so right above the button (20-models.js usRun)
+  const go = (close, b) => usRun(b, err, async () => { await mailDraftAsk(t, btn, ta.value.trim()); close(); });
   const d = dialog({ title: "답장 초안", body: el("div", { class: "col md-dlg" }, ctx,
-      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: "비워 두면 알아서 써요" }))),
+      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: "비워 두면 알아서 써요" }), err)),
     actions: [{ label: "초안 만들기", kind: "pri", onclick: (close, b) => go(close, b) }] });
+  d.node.classList.add("md-d");
   ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   ta.focus();
 }
@@ -16477,7 +17292,8 @@ const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "dele
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it, unless the app's 삭제하면 원본도 삭제 is on (mbTrash). A newer message of the thread brings it back.
 async function mailDelete(t) {
   if (mailOriginal(t)) return mbTrash([t]);
-  if (!await ask("메일 삭제", "목록에서 지울까요? 메일함엔 남아 있어요", "삭제", true)) return;
+  if (!await ask("메일 삭제", `이 메일을 목록에서 지워요. ${mailStays(1)}`, "삭제", true)) return;
+  mbDeleting();
   const pc = pqPc(t);
   await api(`/api/mail/${t.slice(5)}`, "DELETE");
   MAILS.delete(t); CONV.delete(t);
@@ -16495,7 +17311,7 @@ function mailMenuBtn(t, extra = () => []) {
     ev.stopPropagation();
     const b = ev.currentTarget, m = MAILS.get(t) || {};
     const more = extra();
-    showMenu(b, [...mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a] })), ...more.map(x => ({ value: x.value, label: x.label }))], { onPick: v => { const x = more.find(i => i.value === v); if (x) x.run(); else busy(null, () => mailActRun(t, v, null)); } });
+    showMenu(b, [...mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a], danger: a === "delete" })), ...more.map(x => ({ value: x.value, label: x.label }))], { onPick: v => { const x = more.find(i => i.value === v); if (x) x.run(); else busy(null, () => mailActRun(t, v, null)); } });
   }, onkeydown: ev => ev.stopPropagation() }, icon("more"));
 }
 
@@ -16515,7 +17331,7 @@ const monitorsFresh = () => NM.loaded && Date.now() - NM.at < NM_FRESH_MS;
 const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
 // sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width. An app's item has the whole column; a monitor opens beside the list of monitors (monListRows).
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
-const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0 };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
+const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", mailIn: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0, ovOpen: undefined };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
 const monConv = () => current === "monitoring" && !MON.list;
 const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}${mxHash(MON.sel)}` : "monitoring");
 // A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
@@ -16608,7 +17424,7 @@ function monProgNode(m, opts = {}) {
   const [text, tone] = monPTagOf(st.tag);
   const width = st.kind === "run" ? 35 : st.pct;
   const barTone = st.kind === "" || st.kind === "none" ? MON_BAR_TONE[st.tag] || "" : st.kind === "warn" && st.tag === "fail" ? "err" : "";
-  const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}${barTone ? ` ${barTone}` : ""}`, "data-tone": barTone || null, role: "progressbar", "aria-label": `${monTitle(m)} 진행`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
+  const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}${barTone ? ` ${barTone}` : ""}`, "data-tone": barTone || null, role: "progressbar", "aria-label": `${monTitle(m)} 다음 확인까지`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
   if (live && from > 0 && to > 0) { bar.dataset.from = String(from); bar.dataset.to = String(to); bar.dataset.short = opts.short ? "1" : ""; }
   // data-tag keeps the result the node was built with: the ticker only flips a live tag between it and 늦어짐, never to another result.
   const tag = text && opts.tag !== false ? el("span", { class: `mon-ptag${tone ? ` ${tone}` : ""}`, "data-tag": st.tag, "data-fixed": st.tag === "fail" || st.tag === "disconnected" || st.tag === "off" || st.tag === "run" ? "1" : null, text }) : null;
@@ -16655,7 +17471,9 @@ const monRowOf = id => [...$("#mon-tl").querySelectorAll("[data-nid], [data-nids
 // The words of a report without the monitor's name in front ("node security updates: 결과가 바뀌었어요" -> "결과가 바뀌었어요").
 function monStrip(s, names) {
   for (const x of names) if (s.startsWith(x)) { const r = s.slice(x.length).replace(/^\s*[:：]\s*/, ""); if (r !== s.slice(x.length)) return r; }
-  return s;
+  // A first line that is only the title (bold or not) says it a second time under the title: the row's line and the opened card start after it.
+  const nl = s.indexOf("\n"), first = nl < 0 ? "" : s.slice(0, nl).replace(/^[\s#*_]+|[\s*_]+$/g, "");
+  return first && names.includes(first) ? s.slice(nl + 1).replace(/^\s*\n/, "") : s;
 }
 // 마지막 정상 only says something after a failure, when it is not the last run: a monitor that is fine already reads 정상 with its last run's time.
 const monLastOk = m => (m.fails || m.last_result === "fail") && m.last_ok && m.last_ok !== m.last_run ? `마지막 정상 ${monTime(m.last_ok)}` : "";
@@ -16671,14 +17489,13 @@ const monUnread = list => list.reduce((c, n) => c + (n.read ? 0 : 1), 0);
 // its row and its conversation show.
 const MON_FEED = "감시 소식";
 // An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday, unreplied} from GET /api/integrations (hub/integrations.ts):
-// at most two parts, the most important first (drafts, sent today); 미답장 and 안 읽음 are the row's own counts (31-conversations.js), so the line does not say them again (owner 2026-11-10).
-// The badge is the count that waits on him (drafts first, else unread). A row with only unread says when the last item came (`when`, ntTime of the newest), else 새 소식이 있어요.
+// the line says what was sent today; the counts that wait on him (drafts, 미답장, 안 읽음) are the row's own, at its right (31-conversations.js), so the line never says them again (owner 2026-11-10).
+// The badge is the count that waits on him (drafts first, else unread). A row with such a count says when the last item came (`when`, ntTime of the newest), else nothing.
 // "확인할 것 없어요" only for a connected app with every count 0; `down` (the app is disconnected) says 연결 끊김 instead.
 function monNeedLine(n, down, when) {
   const parts = [];
-  if (n.drafts) parts.push(`답장 대기 ${n.drafts}건`);
   if (n.sentToday) parts.push(`오늘 자동 답장 ${n.sentToday}건 보냄`);
-  return parts.join(" · ") || (n.unreplied ? "답장을 기다리는 것이 있어요" : n.unread ? (when ? `마지막 소식 ${when}` : "새 소식이 있어요") : down ? "연결 끊김" : "확인할 것 없어요");
+  return parts.join(" · ") || (n.drafts || n.unreplied || n.unread ? (when ? `마지막 소식 ${when}` : "") : down ? "연결 끊김" : "확인할 것 없어요");
 }
 // A watch an app owns (it.watches / it.watchesNot of GET /api/integrations, hub/integrations.ts) belongs to that app: no row of its own in 일반 모니터링,
 // its status is in the app's panel and a failing one marks the app's row.
@@ -16715,7 +17532,7 @@ function monItems() {
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
     const need = notices.filter(monNeed).length, conn = m.connection === "disconnected", running = !!m.watch && MON.running.has(m.watch);
     (monProject(m) ? proj : plain).push({ key: `m:${m.name}`, group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
-      hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
+      hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : m.last_result === "fail" && m.last_summary ? monClean(m.last_summary, monRunLine(m)) : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
       badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
@@ -16740,7 +17557,7 @@ const monFeedDay = t => kstDay(t) === kstDay(Date.now()) ? `오늘 ${kstHM(t)}` 
 function monFeedHead(list) {
   const live = list.filter(n => !monGone(n)), fresh = monNewest(live.filter(n => !n.read)), last = monNewest(live);
   if (fresh) return { hint: `${fresh.pc ? `${fresh.pc.name} · ` : ""}${monLine(fresh)}`, at: monNoticeAt(fresh) };
-  return last ? { hint: `마지막 소식 ${monFeedDay(ntAt(last))}`, at: monNoticeAt(last) } : { hint: "새 감시 소식이 없어요", at: "" };
+  return last ? { hint: `마지막 소식 ${monFeedDay(ntAt(last))}`, at: monNoticeAt(last) } : { hint: NM.loaded && NT.loaded ? "새 감시 소식이 없어요" : "", at: "" };   // not loaded, or failed: no "none" claim (the state card under the list says which)
 }
 // 답 필요: waits on the owner and is answered from here (an open decision, an [ask] report), never read by looking; 실패: a report that could not check.
 // A peer's open decision is answered here too (ntPost through the peer); a peer's loose [ask] waits in that computer's conversation.
@@ -16749,7 +17566,7 @@ const monFailed = n => n.tone === "fail";
 const monNeedChips = need => (need ? [[`답 필요 ${need}`, "warn"]] : undefined);
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
 const monSel = items => items.find(i => i.key === MON.sel) || null;
-const monName = () => { const it = monItems().find(i => i.key === MON.sel); return kkItem(it) && KK.open && KK.room ? KK.room.name : it ? mxsName() || it.name : titles.monitoring; };
+const monName = () => { const it = monItems().find(i => i.key === MON.sel); return kkItem(it) && KK.open && KK.room ? KK.room.name : CM.vis && CM.tab === "dm" && DM.open ? DM.open.peer : it ? mxsName() || it.name : titles.monitoring; };
 function monState(it) {
   if (it.off) return "연결 안 됨";
   // The progress block under the name already carries the two runs in words, so the state line says only where it stands.
@@ -16773,7 +17590,7 @@ function monRows(items, sel) {
     rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, unreplied: it.unreplied | 0, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", monRowGo(it)) });
   }
   if (!added) { if (group !== MON_GROUP.app) rows.push({ header: MON_GROUP.app }); addRow(); }
-  if (!NM.loaded) rows.push({ header: NM.failed ? "모니터링을 불러오지 못했어요" : "모니터링 불러오는 중…" });
+  if (!NM.loaded) rows.push({ k: "state", state: NM.failed ? "failed" : "loading", hint: NM.failed ? "모니터링을 불러오지 못했어요" : "불러오는 중…" });
   return rows;
 }
 
@@ -16785,7 +17602,7 @@ const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class
 // the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 asks "어떻게 고칠까요?" (the bot rewrites it),
 // 보내지 않기 is the quiet way out. The whole answer path is the notice's (answerInline / ntPost), so the chat card and this one stay in step.
 const DR = { edit: new Set(), manual: new Set(), note: {} };
-const DR_STATE = { open: ["승인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], own: ["보낼 방법 전함", "pri"], expired: ["만료", ""], ignored: ["무시함", ""] };
+const DR_STATE = { open: ["확인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], own: ["보낼 방법 전함", "pri"], expired: ["만료", ""], ignored: ["무시함", ""] };
 function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
   if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
@@ -16812,7 +17629,7 @@ function draftCardNode(n, o = {}) {
   const when = ntTime(d.answered_at || n.updated || n.ts), mail = d.to.startsWith("mail:"), seen = mailLinesOpen(d.to);
   const q = ntPlain(n.title).replace(/\s*\([^()]*\)\s*$/, "");
   const editing = open && DR.edit.has(n.id), man = editing && DR.manual.has(n.id);
-  let go2 = null;
+  let go2 = null; const gone = open && dcGone(d.to);
   const ta = editing ? el("textarea", { class: man ? "dr-edit" : "dr-edit ask", rows: man ? "8" : "2", maxlength: man ? "6000" : "500", placeholder: man ? "" : DRAFT_HINT, "aria-label": man ? "직접 수정" : "고칠 내용", disabled: busy, oninput: () => { DR.note[n.id] = ta.value; if (go2) go2.disabled = !ta.value.trim(); } }) : null;
   if (ta) ta.value = DR.note[n.id] ?? (man ? drParas(dr.body).join("\n\n") : "");
   const leave = () => { DR.edit.delete(n.id); DR.manual.delete(n.id); delete DR.note[n.id]; };
@@ -16828,8 +17645,8 @@ function draftCardNode(n, o = {}) {
   const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: null,   // the state tag carries the time once
     ...(who ? { who, src: monInstLabel(d.to) || "메일" } : {}),
     tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, sent ? null : el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
-      // 지우기 on a waiting draft is 보내지 않기: the same answer path, so the owning computer drops it once and nothing is sent
-      open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null] };
+      // x in the head is 보내지 않기 only for a card whose button row has none (its conversation is gone): otherwise it is a second way to the same thing and reads as close
+      open && !editing && oDrop && gone ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => monDraftRun(n, oDrop) }, icon("close")) : null] };
   if (editing) {
     go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? "이 내용으로 고치기" : "고쳐 달라고 하기", onclick: async () => {
       const text = ta.value.trim();
@@ -16839,22 +17656,25 @@ function draftCardNode(n, o = {}) {
       dcSending.delete(n.id); syncInlineChoices();
     } });
   }
-  const gone = open && dcGone(d.to), acts = editing || gone ? null : open ? {
-    send: () => { if (!oSend || busy) return; if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && answerInline(n, oSend)); else answerInline(n, oSend); },
+  const acts = editing || gone ? null : open ? {
+    send: () => { if (!oSend || busy) return; if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && monDraftRun(n, oSend)); else monDraftRun(n, oSend); },
     edit: oEdit ? () => { DR.edit.add(n.id); redraw(); } : null,
-    drop: oDrop ? () => { if (!busy) answerInline(n, oDrop); } : null,
-    busy,
+    drop: oDrop ? () => { if (!busy) monDraftRun(n, oDrop); } : null,
+    busy, press: rqPress.get(rqNtKey(n)),
   } : null;
   // 직접 수정 (man) types the mail itself: the field stands where the body was, with only the two buttons below it.
   const revise = editing ? el("div", { class: "rq-edit" }, man ? null : el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), man ? null : ta,
     el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
       man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" })))) : null;
-  const card = rqCard({ key: `dr:${n.id}`, cls: `bm alert rc dr ${st}`, attrs: { "data-nid": n.id }, head,
-    label: q || null, labelCls: "rc-title dr-q",
-    recv, subject: dr.subject, ...(who && orig ? { original: { text: orig, ...(dr.ref ? { ref: dr.ref, t: d.to } : {}) } } : {}), brief: who ? (seen ? null : mailLinesNode(b.todo, b.questions)) : draftBriefNode(dr.brief, seen), sent, sentAt: when,
+  // A mail draft reads as the 답장 확인 sheet does (10-reply-card.js rqMailParts): the same head line, quote, subject, folded 받는이 and 첨부 줄, here in place.
+  const mp = mail && dr.toLabel === "받는이" ? rqMailParts(dr, { t: d.to, pc: head.pc, edit: open, hold: busy, tail: head.tail, seen, src: "" }) : null;
+  const card = rqCard({ key: `dr:${n.id}`, attrs: { "data-nid": n.id }, fail: rqFail.get(rqNtKey(n)),
+    ...(mp ? { ...mp, cls: `bm alert rc dr ${st} ${mp.cls}` } : { cls: `bm alert rc dr ${st}`, head, label: open ? null : q || null, labelCls: "rc-title dr-q",   // a waiting draft's title asks to confirm it: the state tag says so already
+      recv, subject: dr.subject, ...(who && orig ? { original: { text: orig, ...(dr.ref ? { ref: dr.ref, t: d.to } : {}) } } : {}), brief: who ? (seen ? null : mailLinesNode(b.todo, b.questions)) : draftBriefNode(dr.brief, seen),
+      // A draft always shows its 첨부 줄 right before 보내기; the files are editable while the draft waits.
+      attach: draftFilesNode(dr, { t: d.to, edit: open }) }),
+    sent, sentAt: when,
     body: { text: dr.body, node: man ? ta : draftBodyNode(dr.body, "dr-body"), cls: "dr-body" },
-    // A mail draft always shows its 첨부 줄 (files, or 첨부: 없음) right before 보내기; the files are editable while the draft waits.
-    attach: draftFilesNode(dr, { t: d.to, edit: open }),
     extra: [mail && !who ? drOriginal(d.to) : null,   // the head already says who wrote and what
       gone ? el("div", { class: "dc-gone", role: "status", text: DC_GONE }) : null, draftOriginNode(dr), draftMailNode(dr.mail)],
     ...(revise ? { revise } : acts ? { acts } : {}) });
@@ -16947,12 +17767,18 @@ const MON_PAGE = 30;       // rows per page (더 보기 / 이전 소식 보기 b
 const monPageTo = (key, i) => { if (i >= 0) MON.more.set(key, Math.max(MON.more.get(key) || MON_PAGE, (Math.floor(i / MON_PAGE) + 1) * MON_PAGE)); };
 const MON_FOLD_MIN = 3;    // a run of this many same results in a row folds into its last one
 // A row's summary: the report's first two lines (the monitor's name and the original dropped), 140 characters at most.
-const monLines = (n, names) => monStrip(choiceFree(String(n.text || "").split(/\n(?:```원문|원문[ \t]*\n)/)[0]), [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
+const MON_RAW = /\n(?:```원문|원문[ \t]*\n)/;   // where a report's folded original starts
+const monLines = (n, names) => monStrip(choiceFree(String(n.text || "").split(MON_RAW)[0]), [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
 function monSummary(n, names) {
   const lines = monLines(n, names).filter(l => !/^(?:새로 생겼어요|사라졌어요)$/.test(l));   // a section heading of the card, not news
   const s = lines.slice(0, 2).join(" · ");
   return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || "알림";
 }
+// The row's second line, only when it says something its first line (the source) does not: a report that is one sentence is said once.
+const monSumNode = (n, names, src) => { const s = monSummary(n, names); return s === src ? null : el("div", { class: "fr-sum", text: s }); };
+// A row unfolds only when the whole card says more than the row does: more lines than the two it shows, a summary cut short, or the folded original.
+// A report said whole on its row is not a button and shows every word (owner 2026-11-11: a card that grew on a tap and showed nothing new).
+const monHasMore = (n, names) => { const l = monLines(n, names); return l.length > 2 || l.slice(0, 2).join(" · ").length > 140 || MON_RAW.test(String(n.text || "")); };
 const monFoldKey = (n, names) => `${n.tone}|${monSummary(n, names)}`;
 // One source of the feed: the watch's name on one computer (a peer's report of the same name is its own row).
 const monSrcKey = n => `${n.pc ? n.pc.name : ""}|${ntPlain(n.title)}`;
@@ -16994,9 +17820,9 @@ const monReadAll = (btn, list) => busy(btn, async () => {
 // A report that waits on the owner carries 답하러 가기 on the row itself. A decision is always the whole card: it is answered in place.
 function monRowNode(n, names) {
   if (ntIsDec(n) || n.item) return monNoticeNode(n, names);   // a report about an app item shows the item (a mail row) as the app draws it
-  const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || "알림";
+  const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || "알림", more = monHasMore(n, names);
   if (n.id === MON.want) MON.open.add(key);
-  if (MON.open.has(key)) {
+  if (more && MON.open.has(key)) {
     const full = monNoticeNode(n, names);
     if (!full) return null;
     full.classList.add("fr-open");
@@ -17004,9 +17830,9 @@ function monRowNode(n, names) {
     return full;
   }
   const need = monNeed(n);
-  return el("div", { class: `bm alert rc fr${n.read ? "" : " un"}`, "data-nid": n.id, role: "button", tabindex: "0", "aria-expanded": "false", "aria-label": `${src} 소식 펼치기`, onclick: () => monToggle(key), onkeydown: ev => monKey(ev, () => monToggle(key)) },
+  return el("div", { class: `bm alert rc fr${n.read ? "" : " un"}${more ? "" : " fr-all"}`, "data-nid": n.id, role: more ? "button" : null, tabindex: more ? "0" : null, "aria-expanded": more ? "false" : null, "aria-label": more ? `${src} 소식 펼치기` : null, onclick: more ? () => monToggle(key) : null, onkeydown: more ? ev => monKey(ev, () => monToggle(key)) : null },
     el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n.pc ? el("span", { class: "tag", text: n.pc.name }) : null, need ? monTag("ask") : monTag(n.tone), el("span", { class: "rc-time", text: monWhen(n) })),
-    el("div", { class: "fr-sum", text: monSummary(n, names) }),
+    monSumNode(n, names, src),
     need ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, text: "답하러 가기" })) : null);
 }
 // A monitor's 확인 기록 is the prototype's detail list (#watch/price): ONE card of compact rows - a dot for the result, the report's first line (a price
@@ -17027,20 +17853,22 @@ function monLogLine({ tone, main, sub, at, unread, nid, onclick, label }) {
 function monLogRow(n, names) {
   const key = `n:${n.id}`;
   if (n.id === MON.want) MON.open.add(key);
-  if (ntIsDec(n) || n.item || monNeed(n) || MON.open.has(key)) return monRowNode(n, names);
+  const more = monHasMore(n, names);
+  if (ntIsDec(n) || n.item || monNeed(n) || (more && MON.open.has(key))) return monRowNode(n, names);
   const lines = monLines(n, names);
   const chg = nwChangeNode(nwChangeLine(n.text)), plain = lines.filter(l => !l.includes("→")).map(l => l.replace(/^\[[^\]]*\]\s*/, ""));
   const main = chg || plain[0] || ntPlain(n.title) || "알림", sub = chg ? plain[0] || "" : plain[1] || "";
   const src = ntPlain(names[0] || n.title) || "알림";
-  return monLogLine({ tone: chg ? "changed" : n.tone, main, sub, at: n.updated || n.ts, unread: !n.read, nid: n.id, onclick: () => monToggle(key), label: `${src} 소식 펼치기` });
+  return monLogLine({ tone: chg ? "changed" : n.tone, main, sub, at: n.updated || n.ts, unread: !n.read, nid: n.id, onclick: more ? () => monToggle(key) : null, label: more ? `${src} 소식 펼치기` : null });
 }
 // The monitor's own latest run as the newest row: how it last ended and when it checks next (hub/monitors.ts watchFacts).
 function monRunRow(it) {
   const m = it.mon;
   if (!m.last_run) return null;
-  const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), monLastOut(m)].filter(Boolean);
-  return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: monRunLine(m), sub: [...facts, next].join(" · "), at: m.last_run });
+  // The head's bar already says the state (정상) and the wait to the next check (다음 12분 후): the record keeps the result, the facts and the time.
+  const same = m.kind === "watch" && m.last_result === "ok" && monStatus(m).key === "ok";
+  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), monLastOut(m), m.every || ""].filter(Boolean);
+  return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: same ? "확인했어요" : monRunLine(m), sub: facts.join(" · "), at: m.last_run });
 }
 // The question chips of a watch (asChipTexts): one row of small buttons under its log.
 function monRunChips(it) {
@@ -17056,7 +17884,7 @@ function monGroupNode(g, names) {
   const open = MON.open.has(key), unread = g.filter(n => !n.read).length, src = ntPlain(names[0] || n0.title) || "알림";
   const head = el("div", { class: `bm alert rc fr grp${unread ? " un" : ""}${open ? " open" : ""}`, "data-nid": open ? null : n0.id, "data-group": key, role: "button", tabindex: "0", "aria-expanded": String(open), "aria-label": `${src} 소식 ${g.length}건 ${open ? "접기" : "펼치기"}`, onclick: () => monToggle(key), onkeydown: ev => monKey(ev, () => monToggle(key)) },
     el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n0.pc ? el("span", { class: "tag", text: n0.pc.name }) : null, need ? monTag("ask") : monTag(n0.tone), el("span", { class: "tag fr-n", text: need ? `같은 질문 ${g.length}번` : `${g.length}건` }), unread ? el("span", { class: "nb", "aria-label": `안 읽음 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "rc-time", text: monWhen(n0) }), el("span", { class: "fr-chev", "aria-hidden": "true" }, icon("drop"))),
-    open ? null : el("div", { class: "fr-sum", text: monSummary(n0, names) }),
+    open ? null : monSumNode(n0, names, src),
     // the same question asked again: answered once from its newest one, the earlier ones listed when unfolded
     need && !open ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n0); }, text: "답하러 가기" })) : null);
   if (!open) return [head];
@@ -17084,7 +17912,9 @@ function monFeedNodes(it, names) {
       // the plain sources under a day line (오늘 / 10월 25일 (토)), by their newest report; what waits stays one block on top
       const d = label === "답 필요" ? "" : dayLabel(ntAt(g[0]));
       if (d && d !== day) { day = d; out.push(el("div", { class: "mon-day", text: d })); }
-      out.push(...monGroupNode(g, names));
+      const nodes = monGroupNode(g, names), time = d && nodes[0] && nodes[0].querySelector(":scope > .rc-hd > .rc-time");
+      if (time) time.textContent = kstHM(g[0].updated || g[0].ts);   // the day line above says the date: the row says the time only
+      out.push(...nodes);
     }
   }
   if (left) out.push(monMoreBtn("feed", left));
@@ -17145,7 +17975,7 @@ function monChronoNodes(it, names) {
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   if (hidden && (hidden.size || CVP.more)) nodes.push(...mbMoreNodes(hidden.size));
   if (withMails) mbRowsPrune();
-  if (withMails) return MX.scr ? mxScreen() : [...mxTop(it), mailFilterBar(it.mails, it.notices.filter(ok)), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
+  if (withMails) return MX.scr ? mxScreen() : [...mxTop(it), ...mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)))].filter(Boolean), ...(nodes.length ? nodes : [el("div", { class: "empty", text: mailEmptyText() })]), ...(held ? [] : [el("div", { class: "mbox-fab-gap", "aria-hidden": "true" }), mbFab()])];   // the gap keeps the last card, its 첨부 줄 included, clear of 메일 쓰기; the waiting drafts view has no round button over a card corner
   return nodes;
 }
 // A short feed (a handful of reports) reads best as the whole cards, newest first, with the machine of a peer's report; past MON_COMPACT
@@ -17160,7 +17990,7 @@ const monFeedCards = (it, names) => it.notices.filter(monFilterOf()[2]).sort((a,
 function monTopNodes(it) {
   if (!narrowChat()) return [];
   const out = [], banner = monBannerOf(it);
-  if (it.mon) out.push(el("div", { class: "cv-p mon-desc", text: monDesc(it.mon) }), monProgNode(it.mon, { tag: !banner }));
+  if (it.mon) out.push(el("div", { class: "cv-p mon-desc" }, monDesc(it.mon), ...(pqLabel(it) ? [" ", pqLabel(it)] : [])), monProgNode(it.mon, { tag: !banner }));   // the machine's name sits here, not in the one-line title
   if (banner) out.push(banner);
   const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), monConvBtn(it)].filter(Boolean);
   if (acts.length) out.push(el("div", { class: "mon-actions" }, ...acts));
@@ -17178,19 +18008,32 @@ function monConvBtn(it) {
 // rows come first, so what needs the owner is at the top; a tap opens that monitor.
 // Every plain monitor of the list, this computer's and the others' (monItems already drops an app's own watches and merges the peers): a peer row
 // keeps its machine chip, and one whose hub sent no next run says '다른 컴퓨터' instead of drawing a bar from made-up times.
+// The line under a row's bar: why it is down, else the last report; the tag and the bar already say the result, so no report means no line.
+const monOvLine = m => { const t = m.connection === "disconnected" ? monConnLine(m) : monClean(m.last_summary || ""); return t ? el("span", { class: "mon-ov-s", text: t }) : null; };
 function monOverview(it) {
   if (it.key !== "notice") return null;
   const now = Date.now(), list = monItems().filter(i => i.mon);
   const rank = i => { const m = i.mon; return m.connection === "disconnected" ? 0 : m.last_result === "fail" ? 1 : m.paused ? 4 : (Date.parse(m.next_run) || Infinity) < now ? 2 : m.last_run ? 3 : 2; };
   const sorted = list.slice().sort((a, b) => rank(a) - rank(b) || (Date.parse(a.mon.next_run) || Infinity) - (Date.parse(b.mon.next_run) || Infinity));
-  return el("div", { class: "mon-ov" }, el("div", { class: "mon-ov-h", text: "모니터링 상태" }),
-    ...(sorted.length ? sorted.map(i => {
-      const m = i.mon, peerBar = i.pc && !m.paused && !(Date.parse(m.next_run) > 0);   // a paused peer monitor draws the grey 꺼짐 bar like a local one
-      return el("button", { class: "mon-ov-row", type: "button", "data-ov": i.key, onclick: () => go("monitoring", i.key) },
-        el("span", { class: "mon-ov-hd" }, el("span", { class: "mon-ov-n", text: monTitle(m) }), i.pc ? el("span", { class: "tag", text: i.pc.name }) : null),
-        peerBar ? el("span", { class: "mon-ov-peer", text: "다른 컴퓨터" }) : monProgNode(m, { compact: true }),
-        el("span", { class: "mon-ov-s", text: m.connection === "disconnected" ? monConnLine(m) : monClean(m.last_summary || "", monRunLine(m)) }));
-    }) : [el("div", { class: "mon-ov-empty", text: "아직 일반 모니터링이 없어요" })]));
+  // A monitor that is fine (정상, 꺼짐) folds under ONE summary row: how many, all normal, the latest check. One that is down, failed, late, changed or not run yet
+  // always stands in its own row above it, so a card of fine monitors is one row (the same fold row as the project list's computer heads, 18-lanes.js pcHead).
+  const fine = i => { const k = monStatus(i.mon, now).key; return k === "ok" || k === "off"; };
+  const loud = sorted.filter(i => !fine(i)), calm = sorted.filter(fine), open = !!MON.ovOpen;
+  const row = i => {
+    const m = i.mon, peerBar = i.pc && !m.paused && !(Date.parse(m.next_run) > 0);   // a paused peer monitor draws the grey 꺼짐 bar like a local one
+    return el("button", { class: "mon-ov-row", type: "button", "data-ov": i.key, onclick: () => go("monitoring", i.key) },
+      el("span", { class: "mon-ov-hd" }, el("span", { class: "mon-ov-n", text: monTitle(m) }), i.pc ? el("span", { class: "tag", text: i.pc.name }) : null),
+      peerBar ? el("span", { class: "mon-ov-peer", text: "다른 컴퓨터" }) : monProgNode(m, { compact: true }),
+      monOvLine(m));
+  };
+  let head = null;
+  if (calm.length) {
+    const off = calm.filter(i => i.mon.paused).length, latest = Math.max(0, ...calm.map(i => Date.parse(i.mon.last_run) || 0));
+    const sum = [off ? `정상 ${calm.length - off} · 꺼짐 ${off}` : "모두 정상", latest ? `마지막 확인 ${monRel(now - latest, true)}` : ""].filter(Boolean).join(" · "), ht = loud.length ? `나머지 ${calm.length}개` : `모니터 ${calm.length}개`;
+    head = el("button", { class: "mon-ov-h", type: "button", "aria-expanded": String(open), "aria-label": `${ht} · ${sum} · ${open ? "접기" : "펼치기"}`, onclick: () => { MON.ovOpen = !open; MON.sig = ""; monSchedule(); } },
+      el("span", { class: "mon-ov-ht", text: ht }), el("span", { class: "mon-ov-sum", text: sum }), icon("chev", "chev"));
+  }
+  return el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : []), sorted.length ? null : el("div", { class: "mon-ov-empty", text: "아직 일반 모니터링이 없어요" }));
 }
 function monTimeline(it) {
   if (it.off) return [el("div", { class: "empty", text: "연결 안 됨" })];
@@ -17200,9 +18043,8 @@ function monTimeline(it) {
   // A monitor's reports read as its 확인 기록, under a section label like the prototype's detail (its 지금 확인 stays in the head's actions).
   const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? "실행 기록" : "확인 기록" })] : [];
   if (nodes.length) return [...head, ...sec, ...nodes];
-  if (head.length) return [...head, el("div", { class: "empty", text: "이 보기에 해당하는 소식이 없어요" })];
-  const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
-  return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
+  if (head.length) return [...head, el("div", { class: "empty", text: it.notices.length || (it.mails || []).length || it.mon ? "이 보기에 해당하는 소식이 없어요" : "아직 소식이 없어요" })];   // an app with nothing at all says so, never a bare head
+  return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? monRunLine(it.mon) : "아직 소식이 없어요" })];
 }
 // The settings an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct), a local schedule's (s:<id>, the screen only, no
 // conversation: 32-app-settings.js asEntry); none for a peer's app or schedule or an unreachable computer.
@@ -17210,7 +18052,7 @@ function monTimeline(it) {
 function monSettingsName(t) {
   const a = settingsApp(t);
   if (a.startsWith("s:")) { const m = NM.items.find(x => x.schedule === a.slice(2)); return m ? monTitle(m) : "예약"; }
-  if (!a.startsWith("w:")) { const pe = PQ.of.get(t), it = pe && pe.app ? { label: pe.label } : INTG.items.find(x => x.key === a); return it ? it.label : "설정"; }
+  if (!a.startsWith("w:")) { const pe = PQ.of.get(t), it = pe && pe.app ? { label: pe.label } : INTG.items.find(x => x.key === a) || INTG.available.find(x => x.key === a); return it ? it.label : "설정"; }
   const pe = PQ.of.get(t), m = pe ? pe.mon : NM.items.find(x => x.watch === a.slice(2));
   return m ? monTitle(m) : "설정";
 }
@@ -17267,7 +18109,7 @@ const monHead = it => {
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or Messenger item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
-  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepCount(it.unreplied) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
@@ -17324,12 +18166,11 @@ function renderMonitoring() {
   if (!sel && !MON.list) { MON.miss = true; MON.list = true; convChrome(); }
   else if (sel && MON.miss) { MON.miss = false; MON.list = false; convChrome(); }
   $("#v-monitoring").classList.toggle("mon-two", !!sel && !!sel.mon && !MON.list);
-  const rows = monListRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.unreplied, r.badge, r.header, r.sel, r.chips, r.msig])]);
+  const rows = monListRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.state, r.unread, r.unreplied, r.badge, r.header, r.sel, r.chips, r.msig])]);
   if (sideSig !== MON.side) {
     MON.side = sideSig;
     const top = side.scrollTop;
     clear(side).append(...monSideNodes(rows));
-    monDecorateRows(side, items);
     side.scrollTop = top;
   }
   monTickStart();
@@ -17392,30 +18233,16 @@ function monSideNodes(rows) {
   let list = null;
   for (const r of rows) {
     if (r.header) { out.push(el("div", { class: "mon-sec", role: "presentation", text: r.header })); list = null; continue; }
+    if (r.state) { out.push(emptyNode(r.hint, r.state === "failed" ? () => loadMonitors() : null)); list = null; continue; }
     if (!list) { list = el("div", { class: "mon-grp" }); out.push(list); }
     list.append(convRow(r));
   }
   return out;
 }
-// A monitor row in the list carries the same bar under its status line; the row itself is the shared convRow, so the block is appended here.
-// A monitor row carries its bar as the last child of the whole row (not of the text column), so the bar and its meta line take the full left-column
-// width even when a peer row's machine chip and result badge leave the text column narrow.
-// A row with no wait to show (paused, no next run, or on a computer that does not answer) has no bar: its subtitle says what there is instead.
-// A peer row keeps its subtitle under the name, since that line names the computer it runs on.
-function monDecorateRows(side, items) {
-  for (const row of side.querySelectorAll(".cv-row[data-k]")) {
-    const it = items.find(i => i.key === row.dataset.k);
-    if (!it || !it.mon) continue;
-    const kind = monProgState(it.mon, Date.now()).kind, bar = !it.hostOff && kind !== "none" && kind !== "off";
-    row.classList.toggle("has-mon-prog", bar);
-    const status = row.querySelector(".cv-b .cv-p"), old = row.querySelector(".mon-prog-wrap");
-    if (old) old.remove();
-    if (!bar) continue;
-    // The bar's colour says the result; only a disconnected monitor keeps its words (연결 끊김 and since when).
-    if (status && !it.pc && it.mon.connection === "disconnected") { status.classList.add("mon-row-status"); row.append(status); }
-    else if (status && !it.pc) status.remove();
-    row.append(monProgNode(it.mon, { compact: true, tag: false, short: true }));
-  }
+// A monitor row is the shared convRow: a title and ONE sub line (monItems' hint: the last result, or what failed). Its bar and wait times stay in the item's own
+// screen (monHead, monTopNodes). The chat's list (31-conversations.js) still calls this after drawing its rows: a row left over from an older draw loses its bar.
+function monDecorateRows(side) {
+  for (const row of side.querySelectorAll(".cv-row.has-mon-prog")) { row.classList.remove("has-mon-prog"); const bar = row.querySelector(".mon-prog-wrap"); if (bar) bar.remove(); }
 }
 function monTick() {
   const now = Date.now();
@@ -17625,7 +18452,8 @@ function ntFind(at) {
   }
   return best;
 }
-// Older messages, 300 at a time (up to four rounds), until the loaded history reaches back to `at`.
+// Older messages, 300 at a time (up to four rounds), until the loaded history reaches back to `at`; a message further back comes in with the page around it
+// (GET /api/history?around=, joined by chatMerge as a quote's original is, rpJump). Only a message the gateway no longer holds is left to the caller's toast.
 async function ntReach(t, at) {
   const s = ts(t);
   for (let i = 0; i < 4 && s.msgs.length && s.msgs[0].ts > at; i++) {
@@ -17638,6 +18466,13 @@ async function ntReach(t, at) {
     if (isFixedT(t)) dedupKeyed(s);
     if (t === target) renderAll(true);
   }
+  if (!s.msgs.length || s.msgs.some(e => e.ts === at)) return;
+  try {
+    const r = await api(`/api/history?target=${enc(t)}&limit=150&around=${enc(at)}`);
+    if (!r.at || t !== target) return;
+    chatMerge(s, r);
+    renderAll(true);
+  } catch (e) { console.warn("history around", e); }
 }
 // The element that carries the highlight: the card or bubble inside the message when there is one, else the message itself. Anything that paints
 // its own fill keeps the glow on its own rounded shape; plain text gets the tint alone ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
@@ -17663,8 +18498,8 @@ async function ntJump(n, quiet = false) {
   // A session this page has not read yet (it began and ended while the page slept) is not gone: ask the gateway before ntGo sends the tap to the main chat.
   if (isLaneT(want) && S && !S.lanes.some(l => `lane:${l.name}` === want)) { await refreshState(); if (seq !== ntJumpSeq) return; }
   const t = ntGo(want);
-  if (!t) return;
-  if (isLaneT(want) && t === MAIN) { toast("이 세션은 이미 지워졌어요"); return; }   // the main chat has no message of it: say so instead of landing on the nearest one
+  if (!t) return "no-conversation";
+  if (isLaneT(want) && t === MAIN) { toast("이 세션은 이미 지워졌어요"); return "session-gone"; }   // the main chat has no message of it: say so instead of landing on the nearest one
   chatUnpin();
   ntKeep = isLaneT(t) ? t : "";
   CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
@@ -17674,12 +18509,15 @@ async function ntJump(n, quiet = false) {
     await ensureMsg(t, at);   // a stale stream may not have the message yet: fetch it before jumping
     await ntReach(t, at);
     for (let i = 0; i < 300 && seq === ntJumpSeq && !CV.placed; i++) await ntRaf();   // the opening's first draw waits for the read position (chatReady)
-    if (seq !== ntJumpSeq || target !== t || current !== "chat") return;
+    if (seq !== ntJumpSeq || target !== t || current !== "chat") return "moved-on";
     chatShow(at);
     const m = ntFind(at), exact = !!m && m.dataset.ts === at;
     if (m) chatJump(m);
     if (exact) ntFlash(m);
-    else if (n.at && !quiet) toast(m ? "그 메시지가 없어서 가까운 곳을 열었어요" : "그 메시지를 찾을 수 없어요");
+    else {
+      if (n.at && !quiet) toast(m ? "그 메시지가 없어서 가까운 곳을 열었어요" : "그 메시지를 찾을 수 없어요");
+      return m ? "near-message" : "no-message";   // what a tap on a push reports to the gateway (23-installable-app-web.js pushTapReport)
+    }
   } catch {}
 }
 // The conversation behind a sheet (a decision, an [ask], a failure): the same jump, without one for a question that has no conversation (a login request) or lives on another computer.
@@ -17688,12 +18526,12 @@ const ntUnder = n => { if (!n.pc && validTarget(n.src || n.open || "")) ntJump(n
 // A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
 async function pushOpen(hash, at, nid) {
   const p = parseHash(hash), t = p.t || MAIN;
-  if (!at || p.view !== "chat") { go(p.view, p.t); return; }
+  if (!at || p.view !== "chat") { go(p.view, p.t); return ""; }
   const find = () => (NT.loaded && ntById(nid)) || ntMsgFor(t, at);
   if (!find()) await loadNotices();   // a cold start, or a page that slept through it: the notice decides where this lands (a monitor's row, a failure's sheet)
   const n = find();
-  if (!n && t === "alert") { go("notices"); return; }   // no notice behind it: the 알림 screen, not the record conversation
-  noticeOpen(n || { kind: "message", tone: "", src: t, open: t, at });
+  if (!n && t === "alert") { go("notices"); return "no-notice"; }   // no notice behind it: the 알림 screen, not the record conversation
+  return noticeOpen(n || { kind: "message", tone: "", src: t, open: t, at });
 }
 
 /* ---- one handler for every notice entry point ---- */
@@ -17748,7 +18586,7 @@ async function noticeOpenId(id, quiet, hash, at) {
   let n = ntById(id);
   if (!n) { await loadNotices(); n = ntById(id); }
   if (!n && at) return pushOpen(hash, at, "");
-  if (!n) { if (!quiet) toast("이 알림은 이미 처리됐어요"); return; }
+  if (!n) { if (!quiet) toast("이 알림은 이미 처리됐어요"); return "notice-gone"; }
   return noticeOpen(n);
 }
 function ntRead(n) {
@@ -17794,7 +18632,7 @@ async function monOpen(n) {
 timeline.addEventListener("click", ev => {
   if (current !== "chat" || !isFixedT(target) || !(ev.target instanceof Element)) return;
   const m = ev.target.closest(".bm[data-ts]");
-  if (!m || !tl.contains(m) || ev.target.closest("a, summary, details[open] pre, input, textarea, button:not(.dcm-row), .fatt") || getSelection().toString()) return;
+  if (!m || !tl.contains(m) || m.matches(".wl-row[role=button]") || ev.target.closest("a, summary, details[open] pre, input, textarea, button:not(.dcm-row), .fatt") || getSelection().toString()) return;
   const e = ts(target).msgs.find(x => x.ts === m.dataset.ts);
   if (!e) return;
   ev.stopPropagation(); ev.preventDefault();
@@ -17835,7 +18673,7 @@ function dkPaint() {
       if (nx && ntOpenDec(nx)) { ntDraftSheet(nx); return; }
       if (nx) { dkClose(false); return; }
       if (!DC.picks[dc.key]) { DC.picks[dc.key] = [rv]; DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; }
-    } else if (!n || !ntOpenDec(n)) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) dkNext(n); return; }
+    } else if (DC.st[dc.key] !== "undo" && DC.st[dc.key] !== "sending" && (!n || !ntOpenDec(n))) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) dkNext(n); return; }
   } else {
     dc = decisionOf(DK.dc.t);
     if (!dc || dc.sig !== DK.dc.sig) { dkClose(false); return; }   // answered, here or elsewhere
@@ -17871,7 +18709,7 @@ function dkOpen(dc, draft, nid, ign) {
   const waits = !!ign && !!ign.id && ntNeeds(ign);
   DK.ign = waits ? String(ign.id) : "";
   DK.dc = { ...dc, close: dkClose, draft: draft || null, ignore: waits ? () => ntIgnore(ign) : null };
-  const h = fsOpen({ label: draft ? "보낼 내용 확인" : "결정이 필요해요", cls: draft ? "tall" : "", onClose: () => { if (DK.h === h) { DK.h = DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = ""; } } });
+  const h = fsOpen({ label: draft ? "보낼 내용 확인" : "결정이 필요해요", cls: draft ? (draft.toLabel === "받는이" ? "mid rq-sheet" : "tall") : "", onClose: () => { if (DK.h === h) { DK.h = DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = ""; } } });
   DK.h = h; DK.node = h.node; DK.box = h.box;
   dkPaint();   // the card itself holds the focus, not a row: a focus ring on the first option would read as a pick
 }
@@ -17962,6 +18800,7 @@ async function ntPost(n, num, note, files, label) {
     if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
     const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}) });
     ntApply(r.item, r.unread);
+    return r.send;   // set while the gateway holds the send for its cancel window (hub/approval-send.ts)
   } catch (e) {
     if (e && e.message === NT_STALE) await loadNotices();
     throw e;
@@ -18038,14 +18877,17 @@ function ntHomeRow(n, label = "답변 필요") {
 }
 
 /* ---- detail sheet ---- */
-const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null, pn: null };   // pn: a peer's notice (it is not in NT; drawn from the snapshot, 34-peer-monitoring.js)   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
+const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null, pn: null, stash: new Map() };   // pn: a peer's notice (it is not in NT; drawn from the snapshot, 34-peer-monitoring.js)   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
 function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
-// "직접 답하기": to the asking message in its chat (a login request: its own form).
-function ntDirect(n) {
+// "직접 답하기": to the asking message in its chat (a login request: its own form), where the composer quotes that message as the answer to this question:
+// what the owner writes next carries the question's id and settles it (hub/notices-store.ts ownerReplied). A send approval stays a plain jump.
+async function ntDirect(n) {
   ntSheetClose(false);
   if (n.pc) { const t = n.decision.to; if (pqPc(t)) go("monitoring", `c:${t}`); else toast(`${n.pc.name}에서 답해 주세요`); return; }   // a peer's question: its conversation as this page shows it
-  if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast("입력 창이 이미 닫혔어요"); return; }
-  ntJump(n);
+  if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(true); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast("입력 창이 이미 닫혔어요"); return; }
+  if (await ntJump(n) !== undefined || n.decision.draft || n.decision.state !== "open") return;
+  const m = ntFind(n.at);
+  if (m && m.dataset.ts === n.at && RP.src.has(m)) rpStart(m, String(n.id));
 }
 // Same rule as the hub (hub/notices.ts answerDecision): an option that needs detail is answered only with the owner's text.
 const ntNeedsNote = (n, o) => !o.say && !o.action && (n.decision.draft ? draftAsksText(o) : detailOf(o));
@@ -18053,9 +18895,41 @@ async function ntAnswer(n, opt, note) {
   if (opt.action === "form") { ntDirect(n); return; }
   if (!note && ntNeedsNote(n, opt)) { NS.edit = { id: String(n.id), opt, text: "", fresh: true }; ntSheetPaint(); return; }
   NS.busy = true; ntSheetPaint();
-  try { await ntPost(n, opt.n, note, undefined, opt.label); NS.edit = null; }
+  let sent = false;
+  try { await ntPost(n, opt.n, note, undefined, opt.label); NS.edit = null; sent = true; }
   catch (err) { toast(err.message, true); }
-  NS.busy = false; ntSheetPaint();
+  NS.busy = false;
+  if (sent && NS.id === String(n.id) && ntAfterAnswer(n)) return;
+  ntSheetPaint();
+}
+// The questions one message asked (same conversation, same asking message), in the order they were made; a lone question has none to move between.
+function ntSibs(n) {
+  const d = n.decision;
+  if (n.pc || d.draft || !(d.group > 1) || !d.reply_to) return [];
+  const all = NT.items.filter(x => ntIsDec(x) && !x.decision.draft && x.decision.to === d.to && x.decision.reply_to === d.reply_to && x.decision.group === d.group);
+  return all.length > 1 ? all : [];
+}
+// The question that waits next after `n` (then the ones before it), or null.
+function ntNextOpen(n) {
+  const all = ntSibs(n), at = all.findIndex(x => x.id === n.id);
+  return [...all.slice(at + 1), ...all.slice(0, Math.max(at, 0))].find(x => x.id !== n.id && ntOpenDec(x)) || null;
+}
+// Shows another question of the same message in the open sheet; what was typed or picked in the one left stays for when it is back.
+function ntSheetGo(id) {
+  if (NS.edit) NS.stash.set(NS.edit.id, NS.edit);
+  NS.id = String(id); NS.edit = NS.stash.get(NS.id) || null; NS.stash.delete(NS.id); NS.pn = null;
+  NS.h.box.dataset.sig = "";
+  ntSheetPaint();
+  const b = $(".fs-body", NS.h.box); if (b) b.scrollTop = 0;
+  NS.h.box.focus({ preventScroll: true });   // the sheet holds the focus, not an option: a ring on the first one would read as a pick
+}
+// After an answer: a question of a several-question message moves the sheet to the next one that waits, the last one closes it. False for a lone question (its sheet shows the answer).
+function ntAfterAnswer(n) {
+  if (!ntSibs(n).length) return false;
+  const nx = ntNextOpen(n);
+  if (nx) { toast("답을 보냈어요 · 다음 질문이에요"); ntSheetGo(nx.id); }
+  else { ntSheetClose(); toast("답을 보냈어요"); }
+  return true;
 }
 function ntEditNode(n, ed) {
   const drf = !!n.decision.draft, dt = draftNoteText(ed.opt);
@@ -18113,9 +18987,9 @@ function ntSheetPaint() {
   if (NS.det) { ntDetailPaint(NS.det); return; }
   const n = NS.pn ? pqNoticeNow(NS.pn) : ntById(NS.id);
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
-  const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
+  const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), sibs = ntSibs(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
   const kids = [
-    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? "답변 필요" : ignd ? "무시함" : d.expired ? "기한 지남" : d.resolved ? "해결됨" : "답변함"}` })],
+    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? "답변 필요" : ignd ? "무시함" : d.expired ? "기한 지남" : d.resolved ? "해결됨" : "답변함"}` }, sibs.length ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${sibs.findIndex(x => x.id === n.id) + 1}/${d.group}` }) : null)],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),
@@ -18125,7 +18999,7 @@ function ntSheetPaint() {
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
-  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? ed.opt.n : 0]);
+  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? ed.opt.n : 0, sibs.map(x => [x.id, x.decision.state])]);
   if (NS.h.box.dataset.sig === sig) return;
   NS.h.box.dataset.sig = sig;
   const hadNote = !!NS.node.querySelector(".dc-note:focus");
@@ -18135,6 +19009,8 @@ function ntSheetPaint() {
       el("span", { class: "ds-lb" }, o.label),
       o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
     foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? "입력 창으로 가기" : "직접 답하기" }));
+    const nx = ntNextOpen(n);
+    if (nx) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "next", disabled: NS.busy, onclick: () => ntSheetGo(nx.id), text: "다음 질문 보기" }));
     if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: "보내는 중…" }));
   } else if (ignd) {
     foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl ign", text: "무시했어요" }), el("span", { class: "ds-ra", text: "답하지 않고 넘겼어요" })));
@@ -18168,22 +19044,20 @@ async function noticeSheetOpen(id) {
 }
 function ntSheetShow(id, det, pn = null) {
   NS.id = id; NS.det = det; NS.pn = pn; NS.busy = false;
-  const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; NS.edit = null; NS.pn = null; } } });
+  const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; NS.edit = null; NS.pn = null; NS.stash.clear(); } } });
   NS.h = h; NS.node = h.node;
-  ntSheetPaint();
-  const first = NS.edit ? null : NS.node.querySelector(".ds-opt, .ds-direct");
-  if (first) first.focus({ preventScroll: true });
+  ntSheetPaint();   // fsOpen already put the focus on the sheet itself: no option shows a ring until the keyboard moves to it
 }
 
 // A tapped notification (or an option button on it) asks an open window to show the decision; a cold start carries it as ?n=<id>.
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) { ovCloseAll(); noticeOpenId(d.notice, false, new URL(d.open, location.href).hash, d.ts); } });
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) { pushTapGot(ev); ovCloseAll(); noticeOpenId(d.notice, false, new URL(d.open, location.href).hash, d.ts).then(r => pushTapReport(d.tap, r), () => pushTapReport(d.tap, "error")); } });
 {
   const want = PUSH_FOLLOW ? "" : new URLSearchParams(location.search).get("n") || "";   // a relayed notice's ?n names an item on the other computer (prFollow)
   if (want) {
     const u = new URL(location.href);
     u.searchParams.delete("n");
     history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-    setTimeout(() => noticeOpenId(want, true, PUSH_HASH, pushDecisionAt), 500);
+    setTimeout(() => pushTapCold(noticeOpenId(want, true, PUSH_HASH, pushDecisionAt)), 500);
   }
 }
 
@@ -18299,20 +19173,26 @@ const rqAskCount = () => rqRows().filter(r => r.state === "ask").length;
 function rqMonItem() {
   const rows = rqRows().filter(r => r.state !== "sent"), n = rows.length;
   if (!n && MON.sel !== RQ_KEY) return null;
-  const names = [...new Set(rows.map(r => rqAppName(r.inst) || r.app).filter(Boolean))], at = Math.max(0, ...rows.map(r => r.at || 0));
+  // the line under the name is the home row's (08-home.js homeRepliesRow): the count per source, the total at the row's right
+  const by = new Map(), at = Math.max(0, ...rows.map(r => r.at || 0));
+  for (const r of rows) { const k = r.app || "기타"; by.set(k, (by.get(k) || 0) + 1); }
   return { key: RQ_KEY, group: "", name: "답장 대기", ic: "send", notices: [], mails: [], unread: n, rq: true,
-    hint: n ? `${names.slice(0, 3).join(" · ")} 답장 ${n}건` : "기다리는 답장이 없어요", at: at ? new Date(at).toISOString() : "" };
+    hint: n ? countsLine(by) : "기다리는 답장이 없어요", at: at ? new Date(at).toISOString() : "" };
 }
 // Opens the queue, filtered to one app of one computer when given (an app's own 답장 대기 button).
 function rqOpen(inst, pc) { RQ.just.clear(); RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; MON.sig = ""; go("monitoring", RQ_KEY); }
 
 /* ---- one card ---- */
 const rqIsBusy = x => RQ.busy.has(x.key) || (x.kind === "notice" && dcSending.has(x.n.id));
-async function rqRun(x, job) {
+// The key a press and its failure are kept under (10-reply-card.js rqPress / rqFail): a notice's by its id, as answerInline keeps them, any other draft's by its key.
+const rqFk = x => (x.kind === "notice" ? rqNtKey(x.n) : x.key);
+// act = "send" | "edit" | "drop": the pressed button says it is going on, a failure stays in the card above the buttons (not a toast over its rows).
+async function rqRun(x, job, act) {
   if (rqIsBusy(x)) return;
-  RQ.busy.add(x.key); MON.sig = ""; monSchedule();
-  try { await job(); } catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 처리하지 못했어요" : e.message, true); }
-  RQ.busy.delete(x.key); MON.sig = ""; monSchedule();
+  const fk = rqFk(x);
+  RQ.busy.add(x.key); rqFail.delete(fk); rqPress.set(fk, act || ""); MON.sig = ""; monSchedule(); rqSheetPaint();
+  try { await job(); } catch (e) { rqFail.set(fk, rqFailOf(e, act)); }
+  RQ.busy.delete(x.key); rqPress.delete(fk); MON.sig = ""; monSchedule(); rqSheetPaint();
 }
 // A store draft's action on the computer that holds it: this gateway's own route, or that computer's act (hub/peer-monitor.ts "kakao" / "comments").
 function rqStoreCall(x, op, extra = {}) {
@@ -18341,17 +19221,18 @@ function rqStoreActs(x) {
       const foot = [...document.querySelectorAll(".rq[data-rq] .rq-acts")].find(f => f.closest(".rq").dataset.rq === x.key), node = rqSentNode();
       if (foot) motionSwap(node, () => foot.replaceWith(node));
       rqAfter(x, false);
-    }),
+    }, "send"),
     edit: () => { RQ.edit = x.key; MON.sig = ""; monSchedule(); },
-    drop: () => rqRun(x, async () => { await rqStoreCall(x, "drop"); rqAfter(x, true); rqDroppedToast(x.kind === "comment" && x.d.mail ? null : () => rqRestore(x)); }),
+    drop: () => rqRun(x, async () => { await rqStoreCall(x, "drop"); rqAfter(x, true); rqDroppedToast(x.kind === "comment" && x.d.mail ? null : () => rqRestore(x)); }, "drop"),
   };
 }
 function rqNoticeActs(x) {
   const n = x.n, d = n.decision, dr = d.draft, opt = k => d.options.find(o => o.label === k) || null, oSend = opt("보내기"), oDrop = opt("보내지 않기");
+  const answer = async o => { const p = answerInline(n, o); rqSheetPaint(); await p; rqSheetPaint(); };   // the sheet shows the press at once and the failure when it comes
   return {
-    send: oSend ? () => { if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && answerInline(n, oSend)); else answerInline(n, oSend); } : null,
+    send: oSend ? () => { if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && answer(oSend)); else answer(oSend); } : null,
     edit: opt("고치기") ? () => { RQ.edit = x.key; MON.sig = ""; monSchedule(); } : null,
-    drop: oDrop ? () => answerInline(n, oDrop) : null,
+    drop: oDrop ? () => answer(oDrop) : null,
   };
 }
 function rqRevise(x) {
@@ -18363,21 +19244,23 @@ function rqRevise(x) {
       else await rqStoreCall(x, "revise", { change });
       cancel(); rqAfter(x, false);
       toast("고쳐 달라고 했어요. 새 초안이 오면 여기 다시 떠요");
-    }) });
+    }, "edit") });
 }
 function rqOriginalOf(x) {
   if (x.kind === "held") return null;
   if (x.kind !== "notice") return x.d.original ? { who: x.d.original.who, text: x.d.original.text, ref: x.d.ref } : null;
-  const d = x.n.decision, m = String(d.to || "").startsWith("mail:") ? MAILS.get(d.to) : null, src = { ref: d.draft.ref, t: d.to };   // ref: 원문 보기 loads the full original
-  if (m) return { who: mailSender(m.from), text: m.subject || mailBrief(m, d.to), ...src };
-  if (d.draft.origin && d.draft.origin.text) return { who: "", text: d.draft.origin.text, ...src };
-  return d.draft.ref ? { who: "", text: d.draft.subject || "", ...src } : null;
+  return rqMailOriginal(x.n.decision.draft, x.n.decision.to);
 }
 function rqCardOf(x) {
   if (x.kind === "held") return rqHeldCard(x);
   const dr = x.kind === "notice" ? x.n.decision.draft : null;
-  const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), model: (dr && dr.model) || (x.d && x.d.model) || "", at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: "열기", onclick: () => rqGoTo(x) })] };
-  const editing = RQ.edit === x.key, busy = rqIsBusy(x), base = { key: x.key, cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": x.kind }, head, original: rqOriginalOf(x) };
+  const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), model: (dr && dr.model) || (x.d && x.d.model) || "", at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: "열기", onclick: () => { if (RQ.sheet) RQ.sheet.close(); rqGoTo(x); } })] };   // the sheet folds away so the screen it opens is seen; the draft stays in this list
+  const editing = RQ.edit === x.key, busy = rqIsBusy(x), fk = rqFk(x), press = rqPress.get(fk), base = { key: x.key, cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": x.kind }, head, original: rqOriginalOf(x), fail: rqFail.get(fk) };
+  if (x.kind === "notice" && dr.toLabel === "받는이") {   // a mail draft: the parts every screen shows it with (10-reply-card.js rqMailParts)
+    const p = rqMailParts(dr, { t: x.n.decision.to, at: x.at, pc: head.pc, edit: false, tail: head.tail });
+    return rqCard({ ...base, ...p, cls: [base.cls, p.cls].filter(Boolean).join(" "), body: { text: dr.body },
+      ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqNoticeActs(x), busy, press } }) });
+  }
   if (x.kind === "notice") {
     // The mail draft's own 첨부 줄 (files, or 첨부: 없음) is editable in its conversation and read-only here; anything else says it cannot attach.
     const attach = dr.toLabel === "받는이" ? draftFilesNode(dr, { t: x.n.decision.to, edit: false }) : { attachments: dr.attachments, cannotAttach: [] };
@@ -18386,7 +19269,7 @@ function rqCardOf(x) {
     const b = dr.brief || {};
     return rqCard({ ...base, brief: mailLinesNode(b.todo, b.questions), ...(recv ? { recv } : { to: [dr.toLabel || "받는이", dr.to] }), subject: dr.subject, body: { text: dr.body }, attach,
       extra: [draftMailNode(dr.mail)],
-      ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqNoticeActs(x), busy } }) });
+      ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqNoticeActs(x), busy, press } }) });
   }
   const d = x.d, kakao = x.kind === "kakao";
   if (!kakao) { const an = rqAppName(x.inst); head.who = (d.original && d.original.who) || d.to || ""; head.src = an.endsWith("댓글") ? an : `${an || "답장"} 댓글`; }   // a comment draft: the landing card's head
@@ -18394,7 +19277,7 @@ function rqCardOf(x) {
     body: { text: d.text, parts: kakao ? d.parts : null, sentParts: d.sentParts },
     attach: d,
     extra: kakao ? [] : [draftMailNode(d.mail), (d.notes || []).length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
-    ...(RQ.just.has(x.key) ? { sent: true } : editing ? { revise: rqRevise(x) } : { acts: { ...rqStoreActs(x), busy } }) });
+    ...(RQ.just.has(x.key) ? { sent: true } : editing ? { revise: rqRevise(x) } : { acts: { ...rqStoreActs(x), busy, press } }) });
 }
 // 열기: where the draft lives, on its own screen (the mail's conversation, the app's pane).
 function rqGoTo(x) {
@@ -18410,9 +19293,9 @@ function rqHeldCard(x) {
     if (n !== 2) RQ.gone.add(x.key);
     trSoon(); rqSoon();
     if (n === 1) rqSentToast(); else if (n === 3) rqDroppedToast();
-  });
-  const acts = { send: () => { if (dr.warning || (dr.attachments || []).length) drfSure(dr, c.to).then(ok => ok && go(1)); else go(1); }, edit: () => { RQ.edit = x.key; MON.sig = ""; monSchedule(); }, drop: () => go(3), busy };
-  return rqCard({ key: x.key, cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": "held" }, head: { app: x.inst, label: x.label, pc: rqPcName(null), model: dr.model || "", at: 0 }, to: [dr.toLabel || "받는이", dr.to], subject: dr.subject,
+  }, n === 1 ? "send" : n === 3 ? "drop" : "edit");
+  const acts = { send: () => { if (dr.warning || (dr.attachments || []).length) drfSure(dr, c.to).then(ok => ok && go(1)); else go(1); }, edit: () => { RQ.edit = x.key; MON.sig = ""; monSchedule(); }, drop: () => go(3), busy, press: rqPress.get(x.key) };
+  return rqCard({ key: x.key, fail: rqFail.get(x.key), cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": "held" }, head: { app: x.inst, label: x.label, pc: rqPcName(null), model: dr.model || "", at: 0 }, to: [dr.toLabel || "받는이", dr.to], subject: dr.subject,
     body: { text: dr.body }, attach: { attachments: dr.attachments, cannotAttach: [] }, extra: [draftMailNode(dr.mail)], ...(RQ.edit === x.key ? { revise: rqRevise(x) } : { acts }) });
 }
 // The record of a failed or a sent reply (hub/reply-outcomes.ts) in the one reply card; foot = its own { revise } (the failed actions) or { sent, sentAt }.
@@ -18510,14 +19393,17 @@ function rqFold(key) {
   RQ.now = true; MON.sig = ""; renderMonitoring();
   if (open) for (const k of rqUi().ls.querySelectorAll("[data-kid]")) if (k.dataset.kid === key) motionIn(k, "top");
 }
-// The app chips with each app's count: shown while two or more apps wait and the waiting count reaches the triage minimum, or while one app is picked (an app row's 답장 대기 button).
+// The app filter with each app's count in its menu items: shown while two or more apps wait and the waiting count reaches the triage minimum, or while one app is picked (an app row's 답장 대기 button).
+// The state tabs are the one segment of this screen; the app is the 앱 select at the right end of their row (a short row under them on a phone).
 function rqFilterBar(rows) {
   const by = new Map();
   for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst) || "기타"}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
   if (RQ.app && !by.has(RQ.app)) RQ.app = "";
-  const chip = (k, text, n) => el("button", { class: `cchip mr-f${RQ.app === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(RQ.app === k), "data-filter": k || "all", onclick: () => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } }, text, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
   const total = [...by.values()].reduce((c, v) => c + v.n, 0);
-  return RQ.app || (by.size >= 2 && total >= TR.min) ? segKeep(el("div", { class: "mr-filter rq-filter", role: "tablist", "aria-label": "앱별 답장" }, chip("", "전체", total), ...[...by].map(([k, v]) => chip(k, v.text, v.n)))) : null;
+  if (!(RQ.app || (by.size >= 2 && total >= TR.min))) return null;
+  return selectButton({ label: "앱", frame: t => `앱 ${t}`, value: RQ.app, text: k => (k ? by.get(k).text : "전체"),
+    items: [{ value: "", label: `전체 · ${total}` }, ...[...by].map(([k, v]) => ({ value: k, label: `${v.text} · ${v.n}` }))],
+    onPick: k => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } });
 }
 // 방금 / N분 전 within the hour, as the prototype's rows, then the plain time.
 const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? "방금" : m < 60 ? `${m}분 전` : rcWhen(new Date(at).toISOString()); };
@@ -18575,9 +19461,10 @@ function rqPaintHead(rows) {
     b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on));
     rollCount(b.querySelector(".n"), k === "all" || !n[k] ? "" : String(n[k]));
   }
-  const fast = (RQ.tab === "all" || RQ.tab === "ask") && n.ask >= TR.min, apps = new Set(rows.filter(r => r.state === "ask").map(r => rqFilterKey(r.pc, r.inst))).size;
-  const sending = rqSending(), text = [fast ? `앱 ${apps}곳에서 ${n.ask}건 기다려요` : RQ.tab === "sent" && n.sent ? `오늘 보낸 답장 ${n.sent}건` : "", sending ? `보내는 중 ${sending}건` : ""].filter(Boolean).join(" · ");
-  u.mt.textContent = text; u.fast.hidden = !fast; u.meta.hidden = !text;
+  // the count is said once, on the filter chips; the line under them keeps only what the chips do not say
+  const fast = (RQ.tab === "all" || RQ.tab === "ask") && n.ask >= TR.min;
+  const sending = rqSending(), text = [RQ.tab === "sent" && n.sent ? `오늘 보낸 답장 ${n.sent}건` : "", sending ? `보내는 중 ${sending}건` : ""].filter(Boolean).join(" · ");
+  u.mt.textContent = text; u.fast.hidden = !fast; u.meta.hidden = !text && !fast;
 }
 const RQ_PAGE = 200;   // rows drawn per section; 더 보기 adds a page (the failed section always draws all)
 // Keyed update of one box: a child stays when its key and signature are the same, the rest is removed, replaced or inserted in order.
@@ -18615,7 +19502,7 @@ function rqDescs(shown) {
   for (const [s, label] of RQ_SECS) {
     const part = shown.filter(r => r.state === s);
     if (!part.length) continue;
-    if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: `${label}|${part.length}`, make: () => el("div", { class: "sec" }, label, " ", el("span", { class: "meta", text: `${part.length}건` })) });
+    if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: label, make: () => el("div", { class: "sec", text: label }) });
     const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = s === "fail" ? rqFailDescs(part) : part.slice(0, lim).map(r => rqRowDesc(r));
     if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(`${part.length - lim}개 더 보기`, () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
     out.push({ key: `list:${s}`, sig: "", make: () => el("div", { class: "list rq-list" }), rows });
@@ -18675,13 +19562,21 @@ function rqSheetPaint(found) {
   if (old) { const top = old.scrollTop; old.replaceWith(body); body.scrollTop = top; } else h.box.append(body);   // a redraw keeps the place in a long draft
 }
 // What a row shows beyond its text: a draft's own state (redrawn when it changes; typing in 고치기 changes none of it).
-const rqXSig = r => (r.x ? (r.x.kind === "notice" ? [r.x.n.decision.state, r.x.n.decision.draft, dcSending.has(r.x.n.id)] : r.x.kind === "held" ? [r.x.tr.draft, r.x.tr.sendable] : r.x.d) : r.f || r.s);
+const rqXSig = r => [r.x ? [rqFail.get(rqFk(r.x)), rqPress.get(rqFk(r.x))] : null, r.x ? (r.x.kind === "notice" ? [r.x.n.decision.state, r.x.n.decision.draft, dcSending.has(r.x.n.id)] : r.x.kind === "held" ? [r.x.tr.draft, r.x.tr.sendable] : r.x.d) : r.f || r.s];
 // What the screen shows; it is redrawn only when this changes.
 function rqSig() {
   const rows = (RQ.rows = rqRows());
   return JSON.stringify([RQ.app, RQ.tab, RQ.edit, RQ.lim, rqSending(), [...RQ.busy], [...RQ.just.keys()], [...RQ.fold], TR.min, RQ.loaded, rows.map(r => [r.key, r.state, r.at, r.who, r.what, r.app, r.why, rqXSig(r)])]);
 }
 rqLoad();
+// A press on a waiting draft's button: the card is drawn again at once with the buttons off in place (the pressed one says what is going on), and again
+// if the request failed, now with the reason above the buttons (10-decision-card.js answerInline keeps it in rqFail). A second press is ignored there.
+const monDraftPaint = n => { const c = [...document.querySelectorAll(".rq[data-nid]")].find(x => x.dataset.nid === String(n.id)); if (c) c.replaceWith(draftCardNode(n)); };
+async function monDraftRun(n, opt) {
+  const p = answerInline(n, opt);
+  if (dcSending.has(n.id)) monDraftPaint(n);
+  if ((await p) === false) monDraftPaint(n);
+}
 
 /* ---------- 빠른 처리: many waiting send approvals of one app instance, answered fast (hub/approval-wire.ts, docs/layers.md section 5) ---------- */
 // The UI adapts to the workload: with `triageMin` (web.triage_min, default 3) or more waiting cards in one group (an app instance: a mail
@@ -18690,7 +19585,7 @@ rqLoad();
 // place, and 보내기 / 고치기 / 건너뛰기 answer it and move on at once: the answer goes out in the background (POST /api/approvals) and the
 // gateway sends it itself; each card's progress comes back as approval_send events. 목록 shows every card of the group with its whole draft
 // and a pick per card; 확인한 것 보내기 answers the picked ones together. Nothing is sent that was not picked one by one.
-const TR = { groups: [], min: 3, results: {}, t: 0, h: null, key: "", label: "", items: [], i: 0, list: false, picks: {}, edits: {}, notes: {}, done: {}, org: {}, open: {}, noting: false };
+const TR = { groups: [], min: 3, results: {}, t: 0, h: null, key: "", label: "", items: [], i: 0, list: false, picks: {}, edits: {}, notes: {}, done: {}, org: {}, open: {}, busy: {}, noting: false };
 const trK = c => `${c.to}|${c.ref}`;
 const trQ = c => draftQ(c.question);
 
@@ -18722,7 +19617,7 @@ function trOpen(key, ref) {
   const g = TR.groups.find(x => x.key === key), cards = trCards(key);
   if (!cards.length) { toast("처리할 카드가 없어요"); return; }
   if (TR.h) TR.h.close(false);
-  Object.assign(TR, { key, label: g ? g.label : "전체", items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, noting: false });
+  Object.assign(TR, { key, label: g ? g.label : "전체", items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, busy: {}, noting: false });
   TR.i = Math.max(0, ref ? TR.items.findIndex(c => c.ref === ref) : 0);
   const h = fsOpen({ label: `${TR.label} 빠른 처리`, cls: "tall tr", onClose: () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); } });
   TR.h = h;
@@ -18757,11 +19652,18 @@ function trState(c) {
   }
   return d;
 }
-const TR_ST = { drop: "보내지 않았어요", queued: "보낼 차례를 기다려요", sending: "보내는 중…", sent: "보냈어요", failed: "보내지 못했어요", unsure: "확인이 필요해요", bot: "봇이 보내요", edit: "봇이 고치는 중이에요", gone: "다른 곳에서 처리됐어요", err: "답을 보내지 못했어요" };
+const TR_ST = { drop: "보내지 않았어요", undo: "곧 보내요", back: "보내지 않았어요", queued: "보낼 차례를 기다려요", sending: "보내는 중…", sent: "보냈어요", failed: "보내지 못했어요", unsure: "확인이 필요해요", bot: "봇이 보내요", edit: "봇이 고치는 중이에요", gone: "다른 곳에서 처리됐어요", err: "답을 보내지 못했어요" };
 const trChip = c => {
   const s = trState(c);
+  if (s && s.state === "undo") return el("span", { class: "tr-st undo", "data-trst": trK(c) }, TR_ST.undo, el("button", { class: "btn text sm", type: "button", onclick: () => trUndo(c) }, "보내기 취소"));
   return s ? el("span", { class: `tr-st ${s.state}`, "data-trst": trK(c), title: s.text || null, text: TR_ST[s.state] || s.state }) : el("span", { class: "tr-st", "data-trst": trK(c), hidden: true });
 };
+// 보내기 취소 inside the gateway's cancel window: nothing is sent and the card waits again.
+async function trUndo(c) {
+  if (!(await dcUndoPost(c.ref))) return;
+  delete TR.done[trK(c)];
+  await trLoad(); trPaint();
+}
 function trLive(e) {
   if (!e || !e.ref) return;
   TR.results[e.ref] = e;
@@ -18798,26 +19700,26 @@ async function trSaveEdits(c) {
   if (e.reply != null && e.reply.trim() && e.reply.trim() !== String(d.body || "").trim()) await api(`/api/drafts/${enc(c.ref)}/body`, "POST", { text: e.reply });
   if (d.mail && e.mail != null && e.mail.trim() && e.mail.trim() !== String(d.mail.body || "").trim()) await api(`/api/drafts/${enc(c.ref)}/body`, "POST", { text: e.mail, part: "mail" });
 }
-// Answers one card and moves on at once; the request runs behind (a failure is marked on that card, with a retry).
-function trAnswer(c, n, note) {
+// Answers one card and moves on once the gateway took the answer. While it waits, the card's buttons stay in place, disabled, and the pressed one says what is
+// happening (the 답장 확인 sheet's way); a second press is ignored. A failure keeps the owner on that card, with the reason where the buttons are and nothing counted.
+const TR_BUSY = { 1: "보내는 중…", 2: "고치는 중…", 3: "처리하는 중…" };
+async function trAnswer(c, n, note) {
   const k = trK(c);
-  if (TR.done[k] && TR.done[k].state !== "err") return;
-  TR.done[k] = { state: n === 1 ? "send" : n === 3 ? "drop" : "edit", at: Date.now() };
-  trNext();
-  (async () => {
-    try {
-      if (n === 1) await trSaveEdits(c);
-      await trPost([{ ref: c.ref, to: c.to, n, ...(note ? { note } : {}) }]);
-    } catch (err) {
-      TR.done[k] = { state: "err", text: err.message };
-      if (TR.h) trPaint();
-      toast(`${trQ(c) || "카드"}: ${err.message}`, true);
-    }
-  })();
+  if (TR.busy[k] || (TR.done[k] && TR.done[k].state !== "err")) return;
+  TR.busy[k] = n;
+  trPaint();
+  let fail = null;
+  try {
+    if (n === 1) await trSaveEdits(c);
+    await trPost([{ ref: c.ref, to: c.to, n, ...(note ? { note } : {}) }]);
+  } catch (err) { fail = err; }
+  delete TR.busy[k];
+  TR.done[k] = fail ? { state: "err", text: fail.message } : { state: n === 1 ? "send" : n === 3 ? "drop" : "edit", at: Date.now() };
+  if (fail || !TR.items[TR.i] || trK(TR.items[TR.i]) !== k) trPaint(); else trNext();
 }
 // ← / →: look at the previous / next card without answering (the last step past the end shows the summary).
 const trStep = d => { const j = TR.i + d; if (j < 0 || j > TR.items.length) return; TR.i = j; TR.noting = false; trPaint(); };
-const trLocked = c => { const s = TR.done[trK(c)]; return !!s && s.state !== "err"; };
+const trLocked = c => { const s = TR.done[trK(c)]; return !!TR.busy[trK(c)] || (!!s && s.state !== "err"); };
 
 function trKey(ev) {
   if (!TR.h || FS[FS.length - 1] !== TR.h || document.querySelector("dialog[open]:not([data-leaving])")) return;
@@ -18851,7 +19753,7 @@ function trEditSubmit(c) {
 /* ---- drawing ---- */
 function trPaint() {
   if (!TR.h) return;
-  const box = TR.h.box, n = TR.items.length, handled = TR.items.filter(c => TR.done[trK(c)]).length;
+  const box = TR.h.box, n = TR.items.length, handled = TR.items.filter(c => TR.done[trK(c)] && TR.done[trK(c)].state !== "err").length;   // a failed answer is not counted
   const bar = el("div", { class: "tr-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(n), "aria-valuenow": String(handled), "aria-label": "처리한 카드" }, el("span", { style: `width:${n ? (handled / n) * 100 : 0}%` }));
   const pos = TR.i < n ? `${TR.i + 1}/${n}` : `${n}/${n}`;
   const head = fsHead([el("span", { class: "fs-ey" }, `${TR.label} · 빠른 처리`), el("h2", { class: "fs-t tr-pos" }, TR.list ? `목록 ${n}건` : pos, el("span", { class: "tr-sum", text: ` · 처리 ${handled}건` })), bar], { close: () => TR.h && TR.h.close() });
@@ -18872,7 +19774,9 @@ function trOriginal(c) {
   }
   if (!o) return null;
   const who = o.kind === "mail" ? [o.from, o.subject].filter(Boolean).join(" · ") : [o.author, o.post && o.post.title].filter(Boolean).join(" · ");
-  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, el("div", { class: "tr-otx", text: String((o.kind === "mail" ? mailOwnBody(o.text, o.subject) : o.text) || "").slice(0, o.kind === "mail" ? 600 : 2000) }));
+  const text = String((o.kind === "mail" ? mailOwnBody(o.text, o.subject) : o.text) || "").slice(0, o.kind === "mail" ? 600 : 2000);
+  if (!who && !text.trim()) return null;   // an original with nothing in it draws no box
+  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, text.trim() ? el("div", { class: "tr-otx", text }) : null);
 }
 // A comment draft: the comment it answers, with the post, who and when (KST) and the linked-mail mark, right above the draft.
 function trCommentCtx(c) {
@@ -18886,32 +19790,33 @@ function trCommentCtx(c) {
 const trFiles = files => (files && files.length ? el("div", { class: "tr-files" }, ...files.map(f => el("span", { class: "tr-file", text: f.size ? `${f.name} (${f.size})` : f.name }))) : null);
 
 function trOneView(c) {
-  const k = trK(c), d = c.draft || {}, st = trState(c), gone = dcGone(c.to), locked = gone || (!!st && st.state !== "err");
+  const k = trK(c), d = c.draft || {}, st = trState(c), gone = dcGone(c.to), busy = TR.busy[k] || 0, locked = gone || !!busy || (!!st && st.state !== "err");
   const e = (TR.edits[k] ||= {});
   // A draft the gateway cannot change in place (a block a session wrote) is read here and goes back to the session with 고치기.
   const area = (part, value) => c.editable === false ? draftBodyNode(value, "dc-dr-b") : el("textarea", { class: "tr-ta", rows: "6", "aria-label": part === "mail" ? "함께 보낼 메일 본문" : "보낼 글", disabled: locked, oninput: ev => { e[part] = ev.target.value; trSendLabel(c); } }, value);
   const body = el("div", { class: "fs-body tr-body", tabindex: "-1" },
     el("div", { class: "tr-q" }, el("span", { text: trQ(c) || "이대로 보낼까요?" }), trChip(c)),
     decideNode(d),
-    el("div", { class: "tr-meta" }, d.toLabel ? el("span", { class: "tr-to" }, el("b", { text: d.toLabel }), ` ${d.to || ""}`) : null, d.subject ? el("span", { class: "tr-to" }, el("b", { text: "제목" }), ` ${d.subject}`) : null, d.rule ? el("span", { class: "tr-rule", text: `규칙: ${d.rule}` }) : null, !c.sendable ? el("span", { class: "tr-rule", text: "봇이 보내요" }) : null),
+    el("div", { class: "tr-meta" }, d.toLabel ? el("span", { class: "tr-to" }, el("b", { text: d.toLabel }), ` ${d.to || ""}`) : null, d.subject ? el("span", { class: "tr-to" }, el("b", { text: "제목" }), ` ${d.subject}`) : null, d.rule ? el("span", { class: "tr-rule", text: `규칙: ${d.rule}` }) : null, !c.sendable ? el("span", { class: "tr-rule", text: "보내기를 누르면 봇이 보내요" }) : null),
     c.comment ? trCommentCtx(c) : trOriginal(c),
     c.info && c.info.length ? el("ul", { class: "tr-info" }, ...c.info.map(l => el("li", { text: l }))) : null,
     d.warning ? el("div", { class: "tr-warn", text: d.warning }) : null,
     el("label", { class: "tr-k", text: d.mail ? "답글" : "보낼 글" }), area("reply", e.reply ?? d.body ?? ""), trFiles(d.attachments),
-    d.mail ? el("div", { class: "tr-mail" }, el("div", { class: "tr-k", text: "함께 보낼 메일" }), el("div", { class: "tr-meta" }, el("span", { class: "tr-to" }, el("b", { text: "받는이" }), ` ${d.mail.to || ""}`), d.mail.subject ? el("span", { class: "tr-to" }, el("b", { text: "제목" }), ` ${d.mail.subject}`) : null), area("mail", e.mail ?? d.mail.body ?? ""), trFiles(d.mail.attachments)) : null,
-    st && st.state === "err" ? el("div", { class: "tr-warn", text: `${TR_ST.err}: ${st.text || ""}` }) : null);
+    d.mail ? el("div", { class: "tr-mail" }, el("div", { class: "tr-k", text: "함께 보낼 메일" }), el("div", { class: "tr-meta" }, el("span", { class: "tr-to" }, el("b", { text: "받는이" }), ` ${d.mail.to || ""}`), d.mail.subject ? el("span", { class: "tr-to" }, el("b", { text: "제목" }), ` ${d.mail.subject}`) : null), area("mail", e.mail ?? d.mail.body ?? ""), trFiles(d.mail.attachments)) : null);
   const foot = el("div", { class: "fs-ft tr-ft" });
-  if (TR.noting && !locked) {
+  // a failed answer: the reason stands where the buttons are (the card stays, its head says which answer failed)
+  if (st && st.state === "err") foot.append(el("div", { class: "tr-hint tr-fail", role: "alert", text: st.text ? `${st.text} · 다시 눌러 주세요` : "다시 눌러 주세요" }));
+  if (TR.noting && !locked || busy === 2) {
     foot.append(el("textarea", { class: "dc-note tr-note", rows: "3", placeholder: "어떻게 고칠까요? 봇이 고쳐서 다시 물어봐요", "aria-label": "어떻게 고칠지", oninput: ev => { TR.notes[k] = ev.target.value; } }, TR.notes[k] || ""),
-      el("div", { class: "tr-acts" }, el("button", { class: "btn tr-b tr-go", type: "button", onclick: () => trEditSubmit(c) }, "고쳐 달라고 하기"), el("button", { class: "btn text tr-b", type: "button", onclick: () => { TR.noting = false; trPaint(); } }, "취소")));
+      el("div", { class: "tr-acts" }, el("button", { class: "btn tr-b tr-go", type: "button", disabled: !!busy, onclick: () => trEditSubmit(c) }, busy ? TR_BUSY[2] : "고쳐 달라고 하기"), el("button", { class: "btn text tr-b", type: "button", disabled: !!busy, onclick: () => { TR.noting = false; trPaint(); } }, "취소")));
   } else {
     // The reply card's three actions in its order (the prototype's #triage): 보내기, 고치기, then the quiet 보내지 않기.
     foot.append(el("div", { class: "tr-acts" },
-      el("button", { class: "btn tr-b tr-go", type: "button", disabled: locked, onclick: () => trAnswer(c, 1) }, trSendText(c)),
-      el("button", { class: "btn tonal tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, "고치기 …"),
-      el("button", { class: "btn text tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, "보내지 않기")),
-      el("div", { class: "tr-hint", text: gone ? DC_GONE : "보내거나 보내지 않으면 다음 초안으로 넘어가요." }),
-      el("div", { class: "tr-nav" }, el("button", { class: "btn text sm", type: "button", "aria-label": "이전 카드", disabled: TR.i === 0, onclick: () => trStep(-1) }, "‹ 이전"), el("button", { class: "btn text sm", type: "button", "aria-label": "다음 카드", onclick: () => trStep(1) }, "다음 ›")),
+      el("button", { class: "btn tr-b tr-go", type: "button", disabled: locked, onclick: () => trAnswer(c, 1) }, busy === 1 ? TR_BUSY[1] : trSendText(c)),
+      el("button", { class: "btn tonal tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, "고치기"),
+      el("button", { class: "btn text tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, busy === 3 ? TR_BUSY[3] : "보내지 않기")),
+      ...(gone ? [el("div", { class: "tr-hint", text: DC_GONE })] : []),   // foot.append turns a null into the word "null"
+      el("div", { class: "tr-nav" }, el("button", { class: "btn text tr-b", type: "button", "aria-label": "이전 카드", disabled: TR.i === 0, onclick: () => trStep(-1) }, "이전"), el("button", { class: "btn text tr-b", type: "button", "aria-label": "다음 카드", onclick: () => trStep(1) }, "다음")),
       el("div", { class: "tr-keys", text: "Enter·1 보내기 · 2·E 고치기 · 3·X 보내지 않기 · ← → 이전·다음 · L 목록" }));
   }
   return [body, foot];
@@ -19312,7 +20217,7 @@ function convRows() {
   const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need: convNeeds(t) }; };
   const all = (S && S.lanes) || [];
   const { wait, run } = sessionsNow(), now = [...wait, ...run];
-  const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionState(l), hint: convPreview(l.lastText) || m.hint || homeRunLine(t) }; };
+  const sess = l => { const t = `lane:${l.name}`; const m = mk(t); const badge = sessionState(l); return { ...m, badge, dotOnly: badge === SESSION_WORD.run, hint: convPreview(l.lastText) || m.hint || homeRunLine(t) }; };
   // A card per group, and last the 메일 card of what waits there.
   const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
   const out = [MAIN, "worklog"].map(mk);
@@ -19333,9 +20238,9 @@ function convWaiting() {
   const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
   const mails = [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).map(([t, m]) => {
     const who = mailSender(m.from), owed = !!m.unreplied;
-    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || "(제목 없음)", hint: m.reply === "draft" ? `${who} · 답장 초안이 기다려요` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [["미답장", "unreplied"]] : undefined, open: () => go("monitoring", `c:${t}`) };
+    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || "(제목 없음)", hint: m.reply === "draft" ? `${who} · 답장 초안이 기다려요` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [["미답장", "unreplied"]] : undefined, open: () => paneRowOpen("chat", t) || go("monitoring", `c:${t}`) };
   });
-  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [["미답장", "unreplied"]], open: () => { go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
+  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [["미답장", "unreplied"]], open: () => { if (paneRowOpen("app", paneKkT(r.chatId))) return; go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
   return [...mails, ...rooms].sort((a, b) => b.at - a.at).slice(0, 5);
 }
 // Rows in their cards: a section label stands on the page, every run of rows between them is one card.
@@ -19352,6 +20257,8 @@ function convCards(rows) {
   }
   return nodes;
 }
+// The two fixed rows alone cannot tell a list still loading, or one that failed, from a settled one: the line under them says which (never both, never before the first load).
+const cvState = () => CV.loaded ? null : CV.failed ? emptyNode("대화 목록을 불러오지 못했어요", () => convLoad()) : emptyNode("불러오는 중…");
 const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
 
 /* ---- a long list: a page of projects, 읽음 처리 ---- */
@@ -19402,7 +20309,7 @@ function convRow(r) {
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread || r.bold ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k ? el("span", { class: "dot warn", role: "img", "aria-label": "답변 필요" }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
+    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k ? el("span", { class: "dot warn", role: "img", "aria-label": "답변 필요" }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? (r.dotOnly ? el("span", { class: `dot ${r.badge[1]}`, role: "img", "aria-label": r.badge[0] }) : el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] })) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -19415,17 +20322,14 @@ convHead.after(monChatTop);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : targetState(target)[0], k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
-  // A conversation opened from a 모니터링 list (a mail of the 메일 list): ← goes back to that list inside the page, like the app bar's back on a phone.
-  const up = monCtx && MON.sel && !isSettingsT(target) ? el("button", { class: "ib cv-up", type: "button", "aria-label": "목록으로", title: "목록으로", "data-k": "cv-up", onclick: () => go("monitoring", MON.sel) }, icon("back")) : null;
   // 시제품의 대화 머리 (proto .cv-hd): 제목 16/22 600 한 줄, 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작.
   const acts = [isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, ...asEntry(app)].filter(Boolean);
   // 모니터링에서 연 대화(메일·설정)는 그 목록의 머리 그대로 아바타와 이름·상태 줄을 둬요.
-  if (monCtx) clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), pqLabel({ pc: pqPc(target) })), el("span", { class: "cv-p", text: state })), ...acts].filter(Boolean));
-  else clear(convHead).append(...[up,
-    el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: targetName(target) }, targetName(target)), el("span", { class: "cv-hd-s", text: state })),
+  if (monCtx) clear(convHead).append(...[convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), pqLabel({ pc: pqPc(target) })), el("span", { class: "cv-p", text: state })), ...acts].filter(Boolean));
+  else clear(convHead).append(...[el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: targetName(target) }, targetName(target)), el("span", { class: "cv-hd-s", text: state })),
     acts.length ? el("span", { class: "cv-hd-a" }, ...acts) : null].filter(Boolean));
 }
 // A project's conversation gets the project page's ⋯ menu (수정 / 삭제, built by pmMenuButton in 19-project-main.js) once the project is known.
@@ -19445,7 +20349,7 @@ function convPaint() {
   mailSentPaint();
   mbReplyPaint();
   if (monCtx && isSettingsT(target)) MON.sel = monItemOf(target) || MON.sel;   // the monitor list may have loaded after this conversation opened
-  const items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx]);
+  const items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, CV.loaded, CV.failed]);
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
@@ -19455,7 +20359,7 @@ function convPaint() {
     const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === "진행 중") || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.getBoundingClientRect().bottom + convSide.scrollTop : 0; };
     const top = convSide.scrollTop, was = end();
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
-    clear(convSide).append(...(monCtx ? monSideNodes(rows) : convCards(rows)));
+    clear(convSide).append(...(monCtx ? monSideNodes(rows) : [...convCards(rows), cvState()].filter(Boolean)));
     if (monCtx) monDecorateRows(convSide, items);
     convSide.scrollTop = top && Math.round(top + end() - was);
   }
@@ -19479,7 +20383,7 @@ function convTitle() {
   else if (current === "monitoring") $("#title").textContent = monConv() && narrowChat() ? monName() : titles.monitoring;
   if (current === "monitoring") $("#back .bk-l").textContent = monConv() && (MON.sel === RQ_KEY || MX.it) ? monName() : titles.monitoring;   // 답장 대기 has no item head: the bar names it (the prototype's ‹ 대기함)
   const tag = (current === "chat" && monCtx && convOnPhone()) || (monConv() && narrowChat()) ? pqLabel(monItems().find(i => i.key === MON.sel)) : null;
-  if (tag) $("#title").append(tag);
+  if (tag) $("#title").replaceChildren(el("span", { class: "ttx", text: $("#title").textContent }), tag);
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
   pjAppMenu.hidden = !(convOnPhone() && pjMenuOn());
   if (asBar) asBarSync(narrowChat() ? monDetailApp() : "");
@@ -19493,6 +20397,7 @@ function convChrome() {
   $("#back").setAttribute("aria-label", up ? (MX.it && MX.scr ? "메일 목록으로" : "모니터링 목록으로") : "뒤로");
   bar.classList.toggle("back", back);
   bar.classList.toggle("cvconv", conv);
+  bar.classList.toggle("mon-in", narrowChat() && (monConv() || (!!monCtx && current === "chat")));   // an app, a mail or a room of 모니터링 on a phone: no usage ring, the title gets the room (20-monitoring.css)
   $("#v-chat").classList.toggle("cv-listing", convListing());
   const listing = current === "monitoring" && MON.list, was = $("#v-monitoring").classList.contains("cv-listing");
   $("#v-monitoring").classList.toggle("cv-listing", listing);
@@ -19554,11 +20459,21 @@ function nscTag(n) {
   if (n.cls === "alert") return "경고";
   return ntPlain(n.app || "") || "새 소식";
 }
+// A decision's second line follows its state: waiting says so, an answer says what was chosen, the rest say how it ended (the words of monDecisionNode).
+function nscDecLine(n) {
+  const d = n.decision, ctx = ntDecCtx(n);
+  if (d.state === "open") return `${ctx} · 답을 기다리고 있어요`;
+  if (d.state === "ignored") return `${ctx} · 무시했어요`;
+  if (d.expired) return `${ctx} · 기한 지남`;
+  if (d.resolved) return `${ctx} · 답 없이 끝났어요`;
+  const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && (d.options || []).find(x => x.n === Number(m[1]));
+  return `${ctx} · 답했어요${o ? ` · ${o.label}` : ""}`;
+}
 // The second line: a price change as the old value struck and the new one bold, else the first line of the text that is not the title, else the place.
 function nscSummary(n, text = n.text) {
   const chg = NW_CHANGE.exec(nwChangeLine(text));
   if (chg) return el("span", {}, el("s", { text: chg[2] }), " → ", chg[3]);
-  if (n.decision) return n.decision.draft ? ntPlain(n.decision.draft.body.split("\n").find(l => l.trim()) || "") : `${ntDecCtx(n)} · 답을 기다리고 있어요`;
+  if (n.decision) return n.decision.draft ? ntPlain(n.decision.draft.body.split("\n").find(l => l.trim()) || "") : nscDecLine(n);
   if (n.kind === "watch" && n.item) return (n.item.card && n.item.card.subject) || ntPlain(hcLine(n));   // a mail report says the mail
   const title = ntPlain(hcLine(n)), src = n.src || n.open;
   // the feed's own summary: the name is not said twice, nor the title when the summary opens with it
@@ -19573,7 +20488,7 @@ function nscWhen(t) {
 }
 function nscLines(n, group, summary, when, tag, prefix = "") {
   return [el("span", { class: "ln" }, el("span", { class: "hd", title: ntPlain(hcLine(n)), text: ntPlain(hcLine(n)) }), el("span", { class: "t", text: when })),
-    el("span", { class: "ln" }, el("span", { class: "nsc-s" }, prefix, summary), el("span", { class: tag === "실패" ? "tag err" : "tag", text: tag }))];
+    el("span", { class: "ln" }, el("span", { class: "nsc-s" }, prefix, summary), el("span", { class: "tag", text: tag }))];
 }
 function nscRow(n, group) {
   const tone = group === "past" ? "" : nscTone(n), rep = n.repeats && n.repeats.length ? n.repeats : null, open = rep && NSC.open.has(n.id);
@@ -19615,26 +20530,22 @@ function nscInit() {
   nscBox = {
     tabs: segKeep(el("div", { class: "nsc-f", role: "tablist", "aria-label": "알림 종류" }, ...NSC_FILTERS.map(([k, l]) =>
       el("button", { class: "nsc-fb", type: "button", role: "tab", "data-f": k, onclick: () => nscFilter(k) }, l, el("span", { class: "n", "data-n": k }))))),
-    num: el("span", { "data-nu": "1", text: "0" }),
     all: el("button", { class: "btn text sm", type: "button", "data-k": "read-all", hidden: true, text: "모두 읽음", onclick: ev => nscReadAll(ev.currentTarget) }),
     list: el("div", { class: "nsc-l" }),
   };
-  nscBox.meta = el("div", { class: "nsc-m" }, el("span", { class: "meta" }, "안 읽은 알림 ", nscBox.num, "개"), el("span", { class: "sp" }), nscBox.all);
-  v.append(nscBox.tabs, nscBox.meta, nscBox.list);
+  v.append(el("div", { class: "nsc-bar" }, nscBox.tabs, nscBox.all), nscBox.list);   // 모두 읽음 at the right end of the tabs' row
 }
 // One paint per frame at most, and only when what it shows changed (ntPaint calls nscSchedule on every notice change).
 function nscPaint(force) {
   if (current !== "notices") return;
   nscInit();
-  const rows = nscIn(NSC.f).sort((a, b) => ntAt(b) - ntAt(a)), readable = nscReadable().length, unread = rows.reduce((c, n) => c + (n.read ? 0 : 1), 0);
+  const rows = nscIn(NSC.f).sort((a, b) => ntAt(b) - ntAt(a)), readable = nscReadable().length;
   for (const b of nscBox.tabs.children) {
     const on = b.dataset.f === NSC.f, c = NT.loaded ? nscUnreadIn(b.dataset.f) : 0, el0 = b.lastChild;
     b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on));
     if (el0.dataset.c !== String(c)) { el0.dataset.c = String(c); rollCount(el0, c ? String(c) : ""); }
   }
-  nscBox.meta.hidden = !(NT.loaded && nscIn("all").length);
-  if (nscBox.num.textContent !== String(unread)) rollCount(nscBox.num, String(unread));
-  nscBox.all.hidden = !readable;
+  nscBox.all.hidden = !(NT.loaded && readable);   // the unread count is the tabs' own
   const sig = JSON.stringify([NSC.f, NT.loaded, NT.failed, NSC.lim, [...NSC.open], rows.map(n => [n.id, n.read ? 1 : 0, n.tone, n.updated || n.ts, n.waits || "", n.decision ? n.decision.state : "", (n.repeats || []).length])]);
   if (!force && sig === NSC.sig) return;
   NSC.sig = sig;
@@ -19715,7 +20626,7 @@ async function nscLeave(n, change) {
 function nscX(n, group) {
   if (group === "news") return nscLeave(n, () => ntRead(n));
   if (group === "need") return nscLeave(n, () => nscHandled(n));
-  return nscLeave(n, () => nscDismiss(n));
+  return nscLeave(n, () => { nscDismiss(n); });   // the row is already gone when the answer comes: the request is not waited for
 }
 // ✕ on a failure: "확인했어요". It leaves 처리할 것 and stays as a past notice.
 async function nscHandled(n) {
@@ -19736,10 +20647,11 @@ async function nscDismiss(n) {
     const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
     if (!r || !r.ok) throw new Error("지우지 못했어요");
     if (typeof r.unread === "number") { NT.unread = r.unread; ntPaint(); }
-    toast("알림을 지웠어요", false, { label: "실행 취소", onclick: () => nscUndo(n) }, 6000);
+    toast("알림을 지웠어요", false, { label: "되돌리기", onclick: () => nscUndo(n) }, 6000);
   } catch (err) {
     NT.items.splice(Math.max(0, at), 0, n); NT.mut++; if (n.at) NT.gone.delete(n.at);
-    ntPaint(); homeSoon(); toast(err.message, true);
+    ntPaint(); homeSoon(); toast("알림을 지우지 못했어요", true);
+    if (current === "notices") requestAnimationFrame(() => requestAnimationFrame(() => { const row = nscRowOf(n.id); if (row) motionIn(row, "top"); }));
   }
 }
 async function nscUndo(n) {
@@ -19770,8 +20682,9 @@ async function nscReadAll(btn) {
 // conversation the common settings are switches that PATCH /api/integrations/<app>/settings straight away (no model call). The owner's words
 // go to the orchestrator, which answers with a ```dotz-settings block; it is drawn as a change card (before -> after) and only 적용 sends the same PATCH.
 const AS_KEY = "dotz.settings.cards";
-const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, feat: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })() };
-const asSave = () => { try { localStorage.setItem(AS_KEY, JSON.stringify(AS.done)); } catch { /* storage full or blocked: the card state lasts until reload */ } };
+const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, feat: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })(),
+  lines: (() => { try { return JSON.parse(localStorage.getItem(`${AS_KEY}.lines`)) || {}; } catch { return {}; } })() };   // lines[card id][key] = {label, text, old}: an applied card keeps the words it showed and the values to put back
+const asSave = () => { try { localStorage.setItem(AS_KEY, JSON.stringify(AS.done)); localStorage.setItem(`${AS_KEY}.lines`, JSON.stringify(AS.lines)); } catch { /* storage full or blocked: the card state lasts until reload */ } };
 
 // An app is "mail", "kakao"...; a monitor is "w:<watch name>" (hub/watch-settings.ts), a schedule "s:<id>" (hub/schedule-settings.ts): same schema,
 // same screen, a different URL. asOwn: the settings of one monitor or schedule (its own status row and 삭제, no app features).
@@ -19809,27 +20722,11 @@ async function asRetry(app, watch, down) {
   try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast(down ? MON_RECONNECT : "다시 확인했어요"); } catch (e) { toast(e.message || "다시 시도하지 못했어요", true); }
   AS.busy[app] = false; MON.sig = ""; monSchedule(); asPaint();
 }
-// An answer from the row: the notice's own answer route on this computer, or - for a peer's app - the same answer sent to that computer (/api/peer/act, 34-peer-monitoring.js).
-async function asApprove(app, a, o) {
-  if (AS.busy[app]) return;
-  AS.busy[app] = true; asPaint();
-  try {
-    const n = !app.includes("~") && typeof ntById === "function" ? ntById(a.id) : null;
-    if (n) await ntPost(n, o.n, undefined, undefined, o.label);
-    else await api(app.includes("~") ? `/api/integrations/${enc(app)}/approve` : `/api/notices/${enc(a.id)}/answer`, "POST", app.includes("~") ? { id: a.id, n: o.n } : { n: o.n, label: o.label });
-    toast(`${o.label}(으)로 답했어요`);
-    await asFeatLoad(app);
-  } catch (e) { toast(e.message || "답하지 못했어요", true); }
-  AS.busy[app] = false; asPaint();
-}
-// The list item an app's answers open (자세히): this computer's app, or a peer app's own item key on that computer.
-const asAppItemKey = app => { const pe = typeof PQ !== "undefined" ? PQ.of.get(`settings:${app}`) : null; return pe && pe.key ? pe.key : `i:${app.split("~")[0]}`; };
-function asApprovalNode(app, a) {
-  const opts = a.options || [], when = a.at ? `승인 대기 · ${monTime(a.at)}` : "승인 대기";
-  return el("div", { class: "as-row as-appr", "data-approval": a.id },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.kind ? `${a.kind} · ${when}` : when }), ...(a.note ? [el("span", { class: "as-h as-warn", "data-note": "blocked", text: a.note })] : [])),
-    el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal inrow", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
-      el("button", { class: "btn text inrow", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", asAppItemKey(app)); } }, "자세히")));
+// 승인 대기 is one row: the count and a chevron that opens 답장 대기 (30-replies.js rqOpen) on this app's own drafts. The answers live there, not in a settings screen.
+function asWaitRow(app, n) {
+  const pe = PQ.of.get(`settings:${app}`);
+  return el("button", { class: "li tap as-row", type: "button", "data-k": "approvals", onclick: () => { if (ASC.h) ASC.h.close(false); rqOpen(app.split("~")[0], pe ? pe.pc : null); } },
+    el("span", { class: "tx" }, el("div", { class: "hd", text: "승인 대기" })), el("span", { class: "li-end" }, el("span", { class: "as-v", text: `${n}건` }), icon("chev", "chev")));
 }
 // One watch the app owns (로그인 유지 / 동기화 / 파일 점검): its status, when it last ran, and its period. The period is editable when the watch lives on this
 // computer; a peer's period is read only (its settings are written through that computer's own act routes). 다시 시도 only on a row that is not ok.
@@ -19864,9 +20761,7 @@ function asStatRow(app, m, i) {
       ...(i && i.reason ? [el("span", { class: "as-h as-why", text: `이유: ${i.reason}` })] : [])),
     i && i.every_minutes ? (app.includes("~")
       ? el("span", { class: "as-v", text: `${i.every_minutes}분마다` })
-      : el("span", { class: "as-every-wrap" },
-        el("input", { class: "as-in as-every", type: "number", min: 1, max: 10080, inputmode: "numeric", "aria-label": `${i.name} 감시 주기(분)`, title: "감시 주기(분)", "data-k": `every:${i.id}`, value: String(i.every_minutes), onchange: ev => asEvery(app, i, ev.target.value) }),
-        el("span", { class: "as-unit", text: "분" }))) : null,
+      : asStepper(`${i.name} 감시 주기(분)`, i.every_minutes, 1, 10080, v => asEvery(app, i, v), "분", `every:${i.id}`)) : null,
     i && i.dot !== "ok" ? el("button", { class: "btn tonal inrow", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
     !i && st && st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
@@ -19876,14 +20771,18 @@ function asPickRow(app) {
   return srcs.length ? el("div", { class: "as-row", "data-setting": "watch-posts" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "지켜볼 글" })),
     el("span", { class: "as-v", text: cmWatchWord(srcs) }), el("button", { class: "btn tonal inrow", type: "button", "data-k": "pick-open", onclick: () => cmPickOpen(app) }, "고르기")) : null;
 }
+// A description that only says the switch's own name or its state (켜져 있어요 / 꺼져 있어요) adds nothing next to the switch: it is left out.
+const asEcho = (name, t) => { const a = String(name || "").replace(/\s/g, ""), b = String(t || "").replace(/\s/g, ""); return !b || /^(켜|꺼)져있어요$/.test(b) || a.includes(b); };
 function asFeatRow(app, f) {
   return el("div", { class: "as-row as-feat", "data-feature": f.id },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.name }), el("span", { class: "as-h", text: f.status })),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.name }), asEcho(f.name, f.status) ? null : el("span", { class: "as-h", text: f.status })),
     kkSwitch(f.on, f.name, `feat:${f.id}`, on => asFeatSet(app, f.id, on)));
 }
 async function asPatch(app, values) {
   const r = await api(asUrl(app), "PATCH", { values });
-  AS.by[app] = r.fields || [];
+  // The answer changes the rows it names; a row it does not name stays (a switch must not make sections vanish).
+  const got = new Map((r.fields || []).map(f => [f.key, f])), prev = AS.by[app] || [];
+  AS.by[app] = [...prev.map(f => got.get(f.key) || f), ...[...got.values()].filter(f => !prev.some(p => p.key === f.key))];
   asPaint();
   MON.sig = ""; monSchedule();
   if (app.includes("~") || pqPc(`settings:${app}`)) pqSoon(); else if (asOwn(app)) loadMonitors(); else loadIntegrations();   // a peer's app or monitor is read back from that computer
@@ -19914,12 +20813,12 @@ async function asWatchRmGo(app) {
 }
 function asWatchRmNode(app) {
   const what = asSched(app) ? "예약" : "감시";
-  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: `${what} 삭제` }), el("span", { class: "as-h", text: `이 ${what}을 완전히 지워요` })), el("button", { class: "btn tonal inrow", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
+  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: `${what} 삭제` }), el("span", { class: "as-h", text: `이 ${what}을 완전히 지워요` })), el("button", { class: "btn danger inrow", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
   const pc = pqPc(`settings:${app}`), name = monSettingsName(`settings:${app}`);
   const lines = asSched(app) ? ["다시 실행하지 않고 목록에서 빼요. 되돌릴 수 없어요", "잠깐 멈추려면 삭제 대신 예약 켜기를 끄세요"]
     : [`${pc ? `${pc.name}에서 ` : ""}확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요`, "지금까지 온 감시 소식은 그대로 남아요", "잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요"];
   return el("div", { class: "as-rm" },
-    el("div", { class: "as-n", text: `${name}을(를) 삭제할까요?` }),
+    el("div", { class: "as-n", text: koPick(`${name}을(를) 삭제할까요?`) }),
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
     el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-as-rm": "go", disabled: !!AS.busy[app], onclick: () => asWatchRmGo(app) }, "삭제 확인"), el("button", { class: "btn tonal sm", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
@@ -19930,25 +20829,28 @@ async function asRemoveAsk(app) {
   try { AS.rm[app] = { plan: app.includes("~") ? null : await api(`/api/integrations/${enc(app)}/remove`), del: false }; } catch (e) { return toast(e.message || "제거할 내용을 읽지 못했어요", true); }
   asPaint();
 }
-async function asRemoveGo(app) {
+async function asRemoveGo(app, btn) {
   const rm = AS.rm[app];
   if (!rm || AS.busy[app]) return;
   AS.busy[app] = true;
-  try { await api(`/api/integrations/${enc(app)}/remove`, "POST", { deleteData: rm.del }); toast(`${rm.plan ? rm.plan.label : monSettingsName(`settings:${app}`)}을(를) ${rm.plan ? "이 기기에서" : "그 컴퓨터에서"} 제거했어요`); AS.rm[app] = null; AS.load[app] = null; if (app.includes("~")) await pqLoad(); else await loadIntegrations(); if (ASC.h) ASC.h.close(false); go("monitoring"); }
+  if (btn) btn.disabled = true;
+  // 제거 can be taken back: the toast's 되돌리기 switches the app on again (asAdd), on the computer it was removed from.
+  const pc = app.includes("~") ? pqPc(`settings:${app}`) : null, back = app.includes("~") && !pc ? null : { label: "되돌리기", onclick: () => asAdd(app.split("~")[0], pc) };
+  try { await api(`/api/integrations/${enc(app)}/remove`, "POST", { deleteData: rm.del }); toast(`${rm.plan ? rm.plan.label : monSettingsName(`settings:${app}`)}을(를) ${rm.plan ? "이 기기에서" : "그 컴퓨터에서"} 제거했어요`, false, back, back ? 6000 : undefined); AS.rm[app] = null; AS.load[app] = null; if (app.includes("~")) await pqLoad(); else await loadIntegrations(); if (ASC.h) ASC.h.close(false); go("monitoring"); }
   catch (e) { toast(e.message || "제거하지 못했어요", true); }
   AS.busy[app] = false; asPaint();
 }
 function asRemoveNode(app) {
   const rm = AS.rm[app];
-  if (!rm) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 제거" }), el("span", { class: "as-h", text: "이 기기에서만 지워요. 다른 컴퓨터는 그대로예요" })), el("button", { class: "btn tonal inrow", type: "button", "data-as-rm": "ask", onclick: () => asRemoveAsk(app) }, "제거"));
+  if (!rm) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 제거" }), el("span", { class: "as-h", text: "이 기기에서만 지워요. 다른 컴퓨터는 그대로예요" })), el("button", { class: "btn danger inrow", type: "button", "data-as-rm": "ask", onclick: () => asRemoveAsk(app) }, "제거"));
   const p = rm.plan, cb = el("input", { type: "checkbox", "data-k": "delete-data", onchange: () => { rm.del = cb.checked; } });
   const lines = p ? ["이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요", p.features.length ? `기능을 이 기기에서 꺼요: ${p.features.join(", ")}` : "끌 기능은 없어요", "다른 컴퓨터의 같은 앱은 그대로예요"]
     : ["그 컴퓨터의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", "이 앱의 감시도 함께 꺼요", "이 컴퓨터와 다른 컴퓨터의 같은 앱은 그대로예요"];
   return el("div", { class: "as-rm" },
-    el("div", { class: "as-n", text: p ? `${p.label}을(를) 이 기기에서 제거할까요?` : "이 앱을 그 컴퓨터에서 제거할까요?" }),
+    el("div", { class: "as-n", text: p ? koPick(`${p.label}을(를) 이 기기에서 제거할까요?`) : "이 앱을 그 컴퓨터에서 제거할까요?" }),
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
     !p || p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: p ? `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` : "저장된 데이터도 지우기. 체크하지 않으면 남겨요" })) : null,
-    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal sm", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
+    el("div", { class: "as-act" }, el("button", { class: "btn danger fill", type: "button", "data-as-rm": "go", disabled: !!AS.busy[app], onclick: ev => asRemoveGo(app, ev.currentTarget) }, "제거 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 // 앱 추가: the last row of the 앱 group opens a sheet. It lists only the apps this computer (and each other computer, labeled with its name) had and
 // the owner switched off or removed, each with 다시 켜기, under one box on top: what he types there is sent to the main orchestrator at once and
@@ -19985,11 +20887,11 @@ async function asDelGo(a) {
 function asDelNode(a) {
   const d = AD.del, p = d.plan, cb = el("input", { type: "checkbox", "data-k": "delete-data", onchange: () => { d.data = cb.checked; } });
   cb.checked = d.data;
-  const lines = [`${d.machine ? `${d.machine}에서 ` : ""}${a.label}을(를) 완전히 지워요. 되돌릴 수 없어요`, "이름과 설정을 지우고, 앱 목록에서 빠져요", p ? (p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요") : "이 앱의 감시도 함께 지워요"];
+  const lines = [`${d.machine ? `${d.machine}에서 ` : ""}${a.label} 앱을 완전히 지워요. 되돌릴 수 없어요`, "이름과 설정을 지우고, 앱 목록에서 빠져요", p ? (p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요") : "이 앱의 감시도 함께 지워요"];
   return el("div", { class: "as-rm", "data-k": "del-confirm" },
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
     !p || p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: p ? `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` : "저장된 데이터도 지우기. 체크하지 않으면 남겨요" })) : null,
-    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-k": "del-go", disabled: d.busy, onclick: () => asDelGo(a) }, "삭제 확인"), el("button", { class: "btn tonal", type: "button", "data-k": "del-cancel", onclick: () => { AD.del = null; asAddPaint(); } }, "취소")));
+    el("div", { class: "as-act" }, el("button", { class: "btn danger fill", type: "button", "data-k": "del-go", disabled: d.busy, onclick: () => asDelGo(a) }, "삭제 확인"), el("button", { class: "btn tonal", type: "button", "data-k": "del-cancel", onclick: () => { AD.del = null; asAddPaint(); } }, "취소")));
 }
 // The 앱 관리 row's second line: what it holds (the apps switched off, then adding a new one), not a bare list of names that reads like apps in use.
 const asAddHint = () => { const off = asOffApps().map(a => a.label); return off.length ? `꺼 둔 앱 ${off.join(", ")} · 새로 추가` : "새로 추가하기"; };
@@ -20009,21 +20911,23 @@ function asAddPaint() {
   if (!h) return;
   const off = asOffApps();
   for (const a of off) if (a.iconPath && !ICONS[a.icon]) ICONS[a.icon] = a.iconPath;
+  // 맡기기 stays off while the box is empty (an empty request would do nothing).
+  const send = el("button", { class: "btn", type: "button", "data-k": "new-app", disabled: (AT.draft || "").trim() ? null : true, onclick: asNewSend }, "맡기기");
   const box = el("textarea", { class: "as-new-in", rows: "3", "data-k": "new-app-text", placeholder: "어떤 앱을 연결하거나 만들까요?", "aria-label": "연결하거나 만들 앱",
-    oninput: ev => { AT.draft = ev.currentTarget.value; },
+    oninput: ev => { AT.draft = ev.currentTarget.value; send.disabled = !AT.draft.trim(); },
     onkeydown: ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); asNewSend(); } } });
   box.value = AT.draft || "";
   clear(h.box).append(
     fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: "앱 관리" })], { close: () => h.close() }),
-    el("div", { class: "fs-body" }, box,
+    el("div", { class: "fs-body" }, el("div", { class: "as-sec", text: "새 앱 추가" }), box,
       ...(off.length ? [el("div", { class: "as-sec", text: "꺼 둔 앱" }), ...off.flatMap(a => [el("div", { class: "as-row", "data-app": a.key },
         el("span", { class: "as-ic", "aria-hidden": "true" }, icon(a.icon)),
-        el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.label }), el("span", { class: "as-h", text: a.machine ? `${a.machine} · 꺼져 있어요` : "꺼져 있어요" })),
+        el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.label }), a.machine ? el("span", { class: "as-h", text: a.machine }) : null),
         el("span", { class: "as-btns" },
           el("button", { class: "btn tonal inrow", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
-          el("button", { class: "btn text inrow", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
+          el("button", { class: "btn danger inrow", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
         ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : [])),
-    el("div", { class: "fs-ft row" }, el("button", { class: "btn text", type: "button", "data-k": "new-app-cancel", onclick: () => h.close() }, "취소"), el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewSend }, "보내기")));
+    el("div", { class: "fs-ft row" }, el("button", { class: "btn text", type: "button", "data-k": "new-app-cancel", onclick: () => h.close() }, "취소"), send));
 }
 // 보내기: the request goes to the main orchestrator as the owner's message ("연결할 앱: <what he typed>", docs/app-templates) through the chat's
 // own send, and the main chat opens on it, so the work that starts is right there.
@@ -20119,12 +21023,17 @@ function asControl(f, set) {
     b.classList.add("as-in"); b.dataset.k = f.key;
     return b;
   }
-  const num = f.type === "number";
-  const c = el("input", { class: "fi as-in", type: num ? "number" : "text", ...(num ? { min: f.min, max: f.max, inputmode: "numeric" } : {}), "aria-label": f.label, "data-k": f.key, onchange: () => set(num ? Number(c.value) : c.value.trim()) });
+  if (f.type === "number") return asStepper(f.label, f.value, f.min, f.max, set, f.unit || (/\(([^)]+)\)\s*$/.exec(f.label) || [])[1] || "", f.key);
+  const c = el("input", { class: "fi as-in", type: "text", "aria-label": f.label, "data-k": f.key, onchange: () => set(c.value.trim()) });
   c.value = String(f.value);
-  if (!num) return c;
-  const step = d => { const v = Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, Number(c.value) + d)); if (v !== Number(c.value)) { c.value = String(v); set(v); } };
-  return el("span", { class: "as-step" }, el("button", { class: "ib", type: "button", "aria-label": `${f.label} 줄이기`, text: "−", onclick: () => step(-1) }), c, el("button", { class: "ib", type: "button", "aria-label": `${f.label} 늘리기`, text: "+", onclick: () => step(1) }));
+  return c;
+}
+// The one control for a number (a period in minutes, a count): − and + around the field, with its unit after it. The check interval of an app, a watch's period and the login keeper's all use it.
+function asStepper(label, value, min, max, set, unit, k) {
+  const c = el("input", { class: "fi as-in", type: "number", min, max, inputmode: "numeric", "aria-label": label, "data-k": k, onchange: () => set(Number(c.value)) });
+  c.value = String(value);
+  const step = d => { const v = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, Number(c.value) + d)); if (v !== Number(c.value)) { c.value = String(v); set(v); } };
+  return el("span", { class: "as-step" }, el("button", { class: "ib", type: "button", "aria-label": `${label} 줄이기`, text: "−", onclick: () => step(-1) }), c, el("button", { class: "ib", type: "button", "aria-label": `${label} 늘리기`, text: "+", onclick: () => step(1) }), unit ? el("span", { class: "as-unit", text: unit }) : null);
 }
 /* ---- 자동 초안 규칙 (hub/app-settings.ts draft_rules, draft_default): the rules of a mail app, edited here or by the bot (bin/rules.ts) ---- */
 // A rule = 이름 (the badge), 언제 (a plain condition one short model call checks), 어떻게 (the draft's instruction) and 붙일 파일; the 기본 규칙 goes into every
@@ -20182,6 +21091,7 @@ function arNodes(app, fRules, fDef) {
   ];
 }
 // The sections of the settings screen in the order the owner reads them (hub/app-settings.ts SettingSection); a row is drawn once, under one heading.
+const asSecName = (k, title) => { const s = stSec(title); s.dataset.sec = k; return s; };
 const AS_SECTIONS = [["notify", "알림"], ["draft", "자동 초안과 승인"], ["watch", "감시"], ["more", "기타 기능"], ["advanced", "고급"]];
 // 연결 상태 at the top of an app: whether it is connected to its site (and since when it is not). A monitor's own top row is its status card (asStatRow).
 // The integration item behind an app's settings: this computer's, or the peer's when the app is `<key>~<computer>`.
@@ -20204,7 +21114,7 @@ function asConnNode(app) {
 function asSettingRow(app, f, feat, box) {
   const bound = feat && feat.features.find(x => x.setting === f.key), wait = bound && /승인 대기/.test(bound.status) ? bound.status : "";
   return el("div", { class: "as-row", "data-setting": f.key },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), f.blocked || f.help ? el("span", { class: "as-h", text: f.blocked || f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.type === "number" && !f.blocked ? f.label.replace(/\s*\([^)]+\)\s*$/, "") : f.label }), f.blocked || (f.help && !asEcho(f.label, f.help)) ? el("span", { class: "as-h", text: f.blocked || f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
     // A list is edited in the conversation (a change card); here it only says how many.
     f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : f.blocked ? Object.assign(kkSwitch(false, f.label, f.key, () => {}), { disabled: true }) : asControl(f, async v => {
       if (AS.busy[app]) return;
@@ -20221,7 +21131,7 @@ function asPaint() {
   const fields = AS.by[app];
   if (!fields) {
     const sig = AS.none[app] ? "none" : "load";
-    if (box.dataset.sig !== sig) { box.dataset.sig = sig; clear(box).append(el("div", { class: "as-row" }, el("span", { class: "as-h", text: AS.none[app] ? "설정을 불러오지 못했어요" : "불러오는 중…" }))); }
+    if (box.dataset.sig !== sig) { box.dataset.sig = sig; clear(box).append(AS.none[app] ? emptyNode("설정을 불러오지 못했어요", () => asLoad(app, true)) : el("div", { class: "as-row" }, el("span", { class: "as-h", text: "불러오는 중…" }))); }
     return;
   }
   const feat = asOwn(app) ? null : AS.feat[app] || null;
@@ -20240,7 +21150,7 @@ function asPaint() {
   for (const f of fields.filter(f => !f.memory && f !== fRules && f !== fDef)) put(f.section || "advanced", f.type === "list" ? 4 : f.switch ? 1 : 3, asSettingRow(app, f, feat, box));
   if (feat) {
     for (const f of feat.features) if (!(f.setting && keys.has(f.setting))) put(f.section || "more", 2, asFeatRow(app, f));
-    if (feat.approvals.length) { put("draft", 5, el("div", { class: "as-sub", "data-sub": "approvals", text: "승인 대기" })); for (const a of feat.approvals) put("draft", 5, asApprovalNode(app, a)); }
+    if (feat.approvals.length) put("draft", 5, asWaitRow(app, feat.approvals.length));
   }
   // Every watch the app owns gets one status row, whether or not the features route answers (an older hub has none); its kind, reason and period
   // ride on that row when it does.
@@ -20258,12 +21168,19 @@ function asPaint() {
   put("advanced", 7, asOwn(app) ? asWatchRmNode(app) : asRemoveNode(app));
   const wmon = asOwn(app) ? asMon(app) : null;
   const conn = asOwn(app) ? (wmon ? asStatRow(app, wmon, null) : null) : asConnNode(app);
-  clear(box).append(
-    ...(conn ? [conn] : []),
+  // The shape every 설정 page has (22-settings-pages.js): the status card first, then each section as its name (.sec) outside and its own card (.list) of rows.
+  const kids = [
+    ...(conn ? [stList(conn)] : []),
     ...AS_SECTIONS.flatMap(([k, title]) => {
       const rows = secs.get(k).map((r, i) => ({ ...r, i })).sort((a, b) => a.rank - b.rank || a.i - b.i).map(r => r.node);
-      return rows.length ? [el("div", { class: "as-sec", "data-sec": k, text: title }), ...rows] : [];
-    }));
+      return rows.length ? [asSecName(k, title), stList(...rows)] : [];
+    })];
+  // A repaint after a switch keeps the place: the scroll position and the focused control (found again by its data-k) stay.
+  const sc = box.closest(".fs-body"), top = sc ? sc.scrollTop : 0, fk = box.contains(document.activeElement) ? document.activeElement.dataset.k : "";
+  paintKeep(box, kids, asPaint, app);
+  if (sc) sc.scrollTop = top;
+  const again = fk && [...box.querySelectorAll("[data-k]")].find(x => x.dataset.k === fk);
+  if (again && document.activeElement !== again) again.focus({ preventScroll: true });
 }
 // The settings screen: a view pushed over the conversation (back button on a phone and on a wide screen) with the status card and every option row.
 // The conversation keeps only the chat; its header's ⋯ button opens this.
@@ -20274,9 +21191,15 @@ function asScreen(app) {
   const h = ASC.h = fsOpen({ labelledby: "as-scr-t", cls: "tall as-screen", onClose: () => { if (ASC.h === h) { ASC.h = null; ASC.app = ""; } } });
   ASC.app = app;
   if (!asOwn(app)) asFeatLoad(app);
+  // The window of a wide screen closes with the ✕ at the right, the one way its sibling sheets have (fsHead); a phone's full screen keeps the back arrow.
+  // (the ✕ keeps the back arrow's data-k: one hook for the one button that leaves this screen)
+  const tt = [monSettingsName(`settings:${app}`) === "설정" ? null : el("span", { class: "fs-ey", text: "설정" }), el("h2", { class: "fs-t", id: "as-scr-t", text: monSettingsName(`settings:${app}`) })].filter(Boolean);
+  const head = phoneWide()
+    ? el("div", { class: "fs-hd" }, el("button", { class: "ib fs-x as-back", type: "button", "aria-label": "뒤로", "data-k": "as-back", onclick: () => h.close() }, icon("back")), el("div", { class: "fs-tt" }, ...tt))
+    : fsHead(tt, { close: () => h.close() });
+  if (!phoneWide()) head.querySelector(".fs-x").dataset.k = "as-back";
   clear(h.box).append(
-    el("div", { class: "fs-hd" }, el("button", { class: "ib fs-x as-back", type: "button", "aria-label": "뒤로", "data-k": "as-back", onclick: () => h.close() }, icon("back")),
-      el("div", { class: "fs-tt" }, el("span", { class: "fs-ey", text: "설정" }), el("h2", { class: "fs-t", id: "as-scr-t", text: monSettingsName(`settings:${app}`) }))),
+    head,
     el("div", { class: "fs-body" }, el("div", { class: "app-sw", id: "app-sw" })));
   asPaint();
 }
@@ -20348,6 +21271,16 @@ function asBarSync(app) {
 
 /* ---- the change card: a ```dotz-settings fence in an answer (mdHtml in 02-basic-markdown.js) ---- */
 const asId = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+// A change proposal in an answer that is not applied or cancelled yet: the answer has not done anything, so its head must not say 완료 (11-todo-strip.js).
+function asProposalPending(text) {
+  return [...String(text).matchAll(/```dotz-settings\n([\s\S]*?)```/g)].some(m => {
+    const src = m[1].trim();
+    let b = null;
+    try { b = JSON.parse(src); } catch { return false; }
+    const ch = b && b.changes && typeof b.changes === "object" ? Object.keys(b.changes) : [], fields = AS.by[String(b.app || "")] || [];
+    return ch.length > 0 && !AS.done[asId(src)] && !(fields.length && ch.every(k => (fields.find(x => x.key === k) || {}).memory));
+  });
+}
 function settingsCardHtml(src) {
   let b = null;
   try { b = JSON.parse(src); } catch { /* shown as unreadable below */ }
@@ -20356,16 +21289,18 @@ function settingsCardHtml(src) {
   if (!AS.load[app]) asLoad(app).then(() => typeof renderAll === "function" && renderAll());
   const fields = AS.by[app] || [], id = asId(String(src).trim()), state = AS.done[id];
   const rows = Object.entries(ch).map(([k, v]) => {
-    const f = fields.find(x => x.key === k);
+    const f = fields.find(x => x.key === k), kept = state === "applied" && (AS.lines[id] || {})[k];
+    if (kept) return `<div class="as-cr" data-k="${esc(k)}"><span class="as-cn">${esc(kept.label)}</span><span class="as-cv">${esc(kept.text)}</span></div>`;
     const text = !f ? JSON.stringify(v) : state === "applied" ? asFmt(f, v) : asChange(f, f.value, v);
     // a value that changes (not a list): the old one grey and struck through, the new one the only bold thing (docs/ui-principles.md 2)
     const shown = f && state !== "applied" && f.type !== "list" ? `<s class="as-old">${esc(asFmt(f, f.value))}</s> → <span class="as-now">${esc(asFmt(f, v))}</span>` : esc(text);
-    return `<div class="as-cr"><span class="as-cn">${esc(f ? f.label : k)}</span><span class="as-cv">${shown}</span></div>`;
+    return `<div class="as-cr" data-k="${esc(k)}"><span class="as-cn">${esc(f ? f.label : k)}</span><span class="as-cv">${shown}</span></div>`;
   }).join("");
   // only memory keys: the gateway kept them already (hub/app-settings.ts applyMemory), so there is nothing to apply
   const memOnly = fields.length && Object.keys(ch).every(k => (fields.find(x => x.key === k) || {}).memory);
   if (memOnly) return `<div class="as-card applied"><div class="as-ct">기억해 뒀어요</div>${Object.entries(ch).map(([k, v]) => { const f = fields.find(x => x.key === k); return `<div class="as-cr"><span class="as-cn">${esc(f.label)}</span><span class="as-cv">${esc(asFmt(f, v))}</span></div>`; }).join("")}</div>`;
-  const foot = state ? `<div class="as-done ${state}">${state === "applied" ? "적용했어요" : "취소했어요"}</div>`
+  const undo = state === "applied" && Object.keys(ch).every(k => (AS.lines[id] || {})[k] && "old" in AS.lines[id][k]) ? `<div class="as-act"><button class="btn text sm" type="button" data-as="undo">되돌리기</button></div>` : "";
+  const foot = state ? `<div class="as-done ${state}">${state === "applied" ? "적용했어요" : "취소했어요"}</div>${undo}`
     : `<div class="as-act"><button class="btn sm" type="button" data-as="apply">적용</button><button class="btn text sm" type="button" data-as="cancel">취소</button></div>`;
   return `<div class="as-card${state ? ` ${state}` : ""}" data-as-id="${id}" data-as-app="${esc(app)}" data-as-src="${esc(String(src).trim())}"><div class="as-ct">설정 바꾸기 제안</div>${rows}${foot}</div>`;
 }
@@ -20378,20 +21313,36 @@ document.addEventListener("click", async ev => {
   const redraw = () => { card.insertAdjacentHTML("afterend", settingsCardHtml(src)); const next = card.nextElementSibling; card.remove(); motionSwap(next, () => {}); };
   if (btn.dataset.as === "cancel") { AS.done[id] = "cancelled"; asSave(); redraw(); return; }
   btn.disabled = true;
-  try { await asPatch(app, JSON.parse(src).changes); AS.done[id] = "applied"; asSave(); redraw(); }
+  const undo = btn.dataset.as === "undo";   // 되돌리기: the old values go back and the card is the proposal again
+  // the words the card shows now (label, new value) and the values to put back are kept before the PATCH redraws the settings behind it
+  const lines = {}, fields = AS.by[app] || [];
+  for (const row of card.querySelectorAll(".as-cr[data-k]")) {
+    const k = row.dataset.k, f = fields.find(x => x.key === k), now = row.querySelector(".as-now") || row.querySelector(".as-cv");
+    lines[k] = { label: row.querySelector(".as-cn").textContent, text: now.textContent, ...(f && "value" in f ? { old: f.value } : {}) };
+  }
+  try {
+    if (undo) { await asPatch(app, Object.fromEntries(Object.entries(AS.lines[id] || {}).map(([k, l]) => [k, l.old]))); delete AS.done[id]; delete AS.lines[id]; }
+    else { await asPatch(app, JSON.parse(src).changes); AS.done[id] = "applied"; AS.lines[id] = lines; }
+    asSave(); redraw();
+  }
   catch (e) { btn.disabled = false; toast(e.message || "설정을 바꾸지 못했어요"); }
 });
 
 /* ---------- back navigation: the browser history is the app's layer stack (Android back gesture, desktop back/forward) ---------- */
 // Every history entry the app owns carries {dz:1, c, ov, g?}:
-//   c   the chain of routes from 홈 down to the entry's own view, e.g. ["home","chat/list","chat/main"]: back from the last one lands on the one before it
+//   c   the routes in the order they were stacked, up to and including the entry's own view; entry i of the stack has c.length === i + 1
+//   w   the chain of routes from 홈 down to the entry's own view, e.g. ["home","chat/list","chat/main"]; it equals c until a tab or an item is pressed beside the view the entry sat on
 //   ov  how many overlays (sheet, menu, dialog) are open on top of that view; each one is an entry of its own
 //   g   the exit guard under 홈 (installed app only): back from 홈 lands on it, shows the toast, and a second back leaves
 // go() computes the chain it wants (H.want) and histSync() makes the real stack match: push to go deeper, replace to move sideways
-// (tab to tab), history.go(-n) to go up. A tab switch therefore never piles up entries, and back always ends at 홈 and then leaves.
+// (tab to tab, item to item) and history.go(-n) to go up. A press beside the current view stacks a new entry on top of it, so back returns to the
+// view that was showing (same tab, same item); back ends at 홈 and then leaves.
+// An entry's popstate restores its w, not its c.
+// The 홈 tab is a tab like the others (H.tab): pressing it stacks 홈 on the view that was showing, where the app bar's back goes up to the entry below.
+// A row of the chat or mail list stacks too (setTarget(t, true) leaves the entry to go()); the switcher menu and a pane coming forward replace in place.
 const OV = [];   // open overlays, bottom first: {close} (close runs the overlay's own close path, which calls ovDone)
-const H = { want: ["home"], hash: "home", hold: 0, moving: 0, tries: 0, timer: 0, guardTimer: 0, fromHist: null };
-const hstate = (c, ov = 0) => ({ dz: 1, c, ov });
+const H = { want: ["home"], hash: "home", hold: 0, moving: 0, tries: 0, timer: 0, guardTimer: 0, fromHist: null, auto: false, tab: false };   // tab: the 홈 tab was pressed (33-peers.js), which is a move beside the view, not a move up
+const hstate = (c, ov = 0, w = c) => ({ dz: 1, c, ov, w });
 const hurl = c => `#${c[c.length - 1]}`;
 
 // The chain of routes for a view, computed when the app navigates by itself (a back/forward uses the entry's stored chain).
@@ -20403,7 +21354,7 @@ function routeChain(name, hash) {
   if (monCtx && (name === "chat" || name === "activity")) return MON.sel && !monChatIt() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
   if (name === "chat" || name === "activity") return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
   if (name === "harness") return ["home", "settings", hash];
-  if (name === "project") return ["home", "projects", hash];
+  if (name === "project") return ppWide() ? ["home", hash] : ["home", "projects", hash];   // wide: the list sits beside the pane, it is not a screen of its own
   if (name === "monitoring") return !MON.list ? ["home", "monitoring", ...mxChain(hash)] : ["home", hash];
   if (SUB.has(name)) {
     const bt = backTarget();
@@ -20419,16 +21370,29 @@ function navSync(name, hash) {
   H.want = H.fromHist ? [...H.fromHist.slice(0, -1), hash] : routeChain(name, hash);
   H.fromHist = null;
   histSync();
+  H.auto = H.tab = false;
 }
 // A route changed its own hash without changing level (a conversation picked from the switcher, a project map opened).
 function routeReplace(hash) {
   const S = history.state;
   if (!S || !S.dz || S.g) { history.replaceState(S, "", `#${hash}`); return; }
-  history.replaceState({ ...S, c: [...S.c.slice(0, -1), hash] }, "", `#${hash}`);
+  history.replaceState({ ...S, c: [...S.c.slice(0, -1), hash], w: [...(S.w || S.c).slice(0, -1), hash] }, "", `#${hash}`);
   H.hash = hash; H.want = [...H.want.slice(0, -1), hash];
 }
 
-const pushChain = (W, from) => { for (let i = from; i < W.length; i++) history.pushState(hstate(W.slice(0, i + 1)), "", `#${W[i]}`); };
+// An entry remembers where its screen was scrolled when something is stacked on top of it, and gets it back when the browser's back returns to it.
+const scrollKeep = S => history.replaceState({ ...S, sy: { v: $("#views").scrollTop, m: ($("#mon-timeline") || {}).scrollTop | 0 } }, "", hurl(S.c));
+function scrollBack(S) { if (!S || !S.sy || (S.w || S.c).length < 2) return;   // 홈 always opens at its top (08-home.js homeTop)
+  $("#views").scrollTop = S.sy.v; const m = $("#mon-timeline"); if (m) m.scrollTop = S.sy.m; }
+// Stacks W[from..] one entry each on top of the stack C (stacked order c, logical chain w).
+// H.auto: the last view was opened by the app (a list's own first pane), not pressed by the user: the entry is marked a.
+const pushChain = (W, from, C) => {
+  for (let i = from; i < W.length; i++) {
+    const s = hstate([...C, ...W.slice(from, i + 1)], 0, W.slice(0, i + 1));
+    if (H.auto && i === W.length - 1) s.a = 1;
+    history.pushState(s, "", `#${W[i]}`);
+  }
+};
 function histMove(n) {
   if (++H.tries > 6) { H.tries = 0; history.replaceState(hstate(H.want), "", hurl(H.want)); return; }   // never loop: settle on the wanted route
   H.moving = n;
@@ -20443,9 +21407,10 @@ function histSeed() {
   history.replaceState(list[0], "", `#${urls[0]}`);
   for (let i = 1; i < list.length; i++) history.pushState(list[i], "", `#${urls[i]}`);
 }
-// A wide screen has no back gesture to serve, and a history traversal (history.go) there is a real browser navigation: the address bar
-// blinks and the page looks reloaded (owner 2026-11-04): so on a wide screen overlays take no entry and moving up or sideways only replaces
-// the current entry. A few back presses may then land on the same view; the phone keeps the exact layer stack.
+// A wide screen has no back gesture to serve, and a history traversal (history.go) the app starts there is a real browser navigation: the
+// address bar blinks and the page looks reloaded (owner 2026-11-04): so on a wide screen overlays take no entry and moving up only replaces
+// the current entry; going deeper or sideways (another tab, another item of a list) stacks an entry, and only the browser's own back and
+// forward move through them (owner 2026-11-10). A few back presses may land on the same view; the phone keeps the exact layer stack.
 const histFlat = () => !narrowChat();
 // Makes the history stack match the open overlays (OV) and the wanted chain (H.want).
 function histSync() {
@@ -20453,22 +21418,31 @@ function histSync() {
   const flat = histFlat(), k = flat ? 0 : OV.length, S = history.state;
   if (!S || !S.dz) { histSeed(); return; }
   if (S.g) {   // on the exit guard: a view other than 홈 (or an overlay) needs the 홈 entry above it first
-    if (H.want.length > 1 || k) { pushChain(H.want, 0); histSync(); }
+    if (H.want.length > 1 || k) { pushChain(H.want, 0, []); histSync(); }
     return;
   }
   if (S.ov > k) { histMove(S.ov - k); return; }
-  if (S.ov < k) { for (let j = S.ov + 1; j <= k; j++) history.pushState(hstate(S.c, j), "", hurl(S.c)); return; }
+  if (S.ov < k) { for (let j = S.ov + 1; j <= k; j++) history.pushState(hstate(S.c, j, S.w), "", hurl(S.c)); return; }
   if (k) return;   // an overlay is open: the view follows once it closes
-  const C = S.c, W = H.want, m = C.length - 1;
+  const C = S.c, w = S.w || C, W = H.want;
   let p = 0;
-  while (p < C.length && p < W.length && C[p] === W[p]) p++;
-  if (p === C.length && p === W.length) { H.tries = 0; return; }
-  if (p === W.length) { if (flat) history.replaceState(hstate(W), "", hurl(W)); else histMove(C.length - W.length); return; }   // going up: the wanted view is an entry below
+  while (p < w.length && p < W.length && w[p] === W[p]) p++;
+  if (p === w.length && p === W.length) { H.tries = 0; return; }
+  if (p === W.length) {   // going up: the wanted view is the entry n below, when the n entries under this one are its own chain
+    const n = w.length - W.length;
+    if (!H.tab && flat) { history.replaceState(hstate(W), "", hurl(W)); return; }
+    if (!H.tab && C.slice(-n - 1).join("\n") === w.slice(-n - 1).join("\n")) { histMove(n); return; }
+    H.tries = 0;   // the 홈 tab was pressed, or the parent is not directly below (the view was reached from another tab): stack it on top instead
+    scrollKeep(S);
+    history.pushState(hstate([...C, W[p - 1]], 0, W), "", hurl(W));
+    return;
+  }
   H.tries = 0;
-  if (p === C.length) { pushChain(W, p); return; }                  // going deeper
-  if (m > p && !flat) { histMove(m - p); return; }                           // sideways from a deeper level: land on the sibling, then replace it
-  history.replaceState(hstate(W.slice(0, p + 1)), "", `#${W[p]}`);  // sideways at the same level
-  pushChain(W, p + 1);
+  // the pane a list opened by itself was never chosen: pressing another item of that list takes its place, so back from the first item pressed lands before the list
+  if (S.a && W[p].startsWith("project/") && p === w.length - 1 && p === W.length - 1) { const s = hstate([...C.slice(0, -1), W[p]], 0, W); if (H.auto) s.a = 1;   // the app itself moved its first pane (the list came late): still not chosen
+    history.replaceState(s, "", hurl(W)); return; }
+  scrollKeep(S);
+  pushChain(W, p, C);   // going deeper, or sideways (another tab, another item): stack on top of the view that was showing
 }
 
 function ovOpen(close) { const o = { close }; OV.push(o); histSync(); return o; }
@@ -20476,6 +21450,15 @@ function ovDone(o) { const i = o ? OV.indexOf(o) : -1; if (i < 0) return; OV.spl
 const ovCloseAll = () => { for (const o of [...OV].reverse()) o.close(); };
 // A modal <dialog> is an overlay for as long as it is open (Esc, ✕ and back all end in its close event).
 function dialogHist(d) { const o = ovOpen(() => d.close()); d.addEventListener("close", () => ovDone(o)); }
+// On a phone, a screen's inner state that the app bar arrow closes (a Messenger room, a comment post or DM) is one history step, like a sheet: the browser's back
+// closes what the arrow closes. bkStep makes the step (S.bk) match the state. It runs wherever the room, post, screen or list changes (kkOpen, kkClose, kkMode,
+// cmOpen, cmClose, dmOpen, dmClose, cmTab, cmMode, go); switching rooms keeps the one step, and a wide screen has none.
+function bkStep(S, on, close) {
+  if (on && !S.bk) S.bk = ovOpen(close);
+  else if (!on && S.bk) { const o = S.bk; S.bk = null; ovDone(o); }
+}
+function bkKkSync() { bkStep(KK, !!(KK.vis && KK.open && narrowChat() && current === "monitoring" && !MON.list), () => kkClose()); }
+function bkCmSync() { bkStep(CM, !!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list), () => (CM.tab === "dm" ? dmClose() : cmClose())); }
 
 function guardHit() {
   if (H.hash !== "home") { H.fromHist = ["home"]; go("home"); }
@@ -20487,19 +21470,20 @@ function guardHit() {
 
 window.addEventListener("popstate", ev => {
   const S = ev.state;
-  if (H.moving) { H.moving = 0; clearTimeout(H.timer); histSync(); return; }   // our own traversal: the view is already right
+  if (H.moving) { H.moving = 0; clearTimeout(H.timer); histSync(); scrollBack(S); return; }   // our own traversal: the view is already right
   if (!S || !S.dz) return;   // an entry the app did not make: hashchange handles it
   if (S.g) { guardHit(); return; }
   H.hold++;
   try {
     while (OV.length > S.ov) { const n = OV.length; OV[n - 1].close(); if (OV.length === n) OV.pop(); }
   } finally { H.hold--; }
-  const hash = S.c[S.c.length - 1];
-  H.fromHist = S.c;
+  const W = S.w || S.c, hash = W[W.length - 1];
+  H.fromHist = W;
   if (hash !== H.hash) { const p = parseHash(`#${hash}`); go(p.view, p.t); }
-  else H.want = S.c;
+  else H.want = W;
   H.fromHist = null;
   histSync();
+  scrollBack(S);
 });
 
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
@@ -20551,7 +21535,7 @@ function prTryFollow() {
   prGo(`${p.url}/${q.size ? `?${q}` : ""}${u.hash}`, true);
 }
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (typeof d.follow === "string") { prFollowHref = d.follow; prTryFollow(); } });
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (typeof d.follow === "string") { pushTapGot(ev); prFollowHref = d.follow; prTryFollow(); pushTapReport(d.tap, "follow"); } });
 
 // Frames this gateway forwards from the other computers' event streams (hub/peer-stream.ts), so the page hears them without leaving its own origin:
 // peer_counts updates that computer's numbers (and the bot name's dot) at once; peer_notice is a new notice there. It toasts (tap = that computer, at the item, like a
@@ -20676,9 +21660,9 @@ function prPick(p, o = {}) {
 // 지우기: an offline computer that paired with this one can be forgotten (DELETE /api/peers); an online, relay or public row never gets the button.
 function prForgetBtn(p, off) {
   if (!off || p.via || p.public) return null;
-  return el("button", { type: "button", class: "btn tonal inrow pr-forget", text: "지우기", "aria-label": `${p.name} 목록에서 지우기`, onclick: async () => {
-    if (!await ask(`${p.name} 지우기`, "내 컴퓨터 목록에서 지울까요? 다시 켜면 목록에 돌아와요.", "지우기", true)) return;
-    try { await api(`/api/peers?url=${enc(p.url)}`, "DELETE"); toast(`${p.name}을(를) 지웠어요`); } catch (e) { toast(`${p.name}을(를) 지우지 못했어요`, true); }
+  return el("button", { type: "button", class: "btn tonal inrow pr-forget", text: "제거", "aria-label": `내 컴퓨터에서 ${p.name} 제거`, onclick: async () => {
+    if (!await ask(`내 컴퓨터에서 ${p.name} 제거`, "내 컴퓨터 목록에서만 제거해요. 그 컴퓨터는 그대로이고, 다시 켜면 목록에 돌아와요.", "제거", true)) return;
+    try { await api(`/api/peers?url=${enc(p.url)}`, "DELETE"); toast(`${p.name}을(를) 제거했어요`); } catch (e) { toast(`${p.name}을(를) 제거하지 못했어요`, true); }
     prLoad();
   } });
 }
@@ -20690,12 +21674,14 @@ function prSheet() {
     const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
     const st = p.self ? (selfDown ? "연결 안 됨" : "") : selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨";
     // the prototype's switcher row: a status dot, the name over one quiet line, and at the right the check (this one) or the count of what waits there
-    const sub = p.self ? (st || "이 컴퓨터") : isRelayRow(p) ? [p.note, p.online ? "" : st].filter(Boolean).join(" · ") : alert ? prText(p) : st;
+    // a computer that cannot be reached says so at the right as a dot and one word (row anatomy: the status is last), not as the quiet line
+    const bad = !alert && !isRelayRow(p) && (st === "연결 안 됨" || st === "확인 못 함");
+    const sub = p.self ? (bad ? "이 컴퓨터" : st || "이 컴퓨터") : isRelayRow(p) ? [p.note, p.online ? "" : st].filter(Boolean).join(" · ") : alert ? prText(p) : bad ? "" : st;
     const row = el("button", { type: "button", class: `pr-row${here ? " on" : ""}${off ? " off" : ""}`, "aria-current": here ? "true" : null, "aria-disabled": off ? "true" : null,
       "aria-label": [p.name, here ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
       el("span", { class: `dot${(p.self ? !selfDown : p.online && !selfDown) ? " ok" : ""}` }),
       el("span", { class: "pr-tx" }, el("span", { class: "pr-t", text: p.name }), sub ? el("span", { class: "pr-sub", text: sub }) : null),
-      alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : here ? icon("check", "pr-ck") : null);
+      bad ? el("span", { class: "tag off", text: st }) : alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : here ? icon("check", "pr-ck") : null);
     const screen = dskRowBtn(p) || prForgetBtn(p, off);
     return screen ? el("div", { class: "pr-line" }, row, screen) : row;
   });
@@ -20760,7 +21746,7 @@ function mnDialog() {
   const i = MN.info;
   const inp = el("input", { class: "fi", type: "text", value: i.custom || "", maxlength: "24", autocomplete: "off", placeholder: i.default, "aria-label": "컴퓨터 이름" });
   const save = (v, msg) => (btn, close) => busy(btn, async () => { MN.info = await api("/api/machine", "PUT", { name: v }); close(); toast(msg); prLoad(); renderSettings(); });
-  const d = dialog({ title: "이 컴퓨터 이름", body: el("div", { class: "col" }, el("div", { class: "sup", text: "다른 컴퓨터의 컴퓨터 목록에도 이 이름으로 보여요. 비우면 기본 이름(" + i.default + ")을 써요." }), inp), actions: [
+  const d = dialog({ title: "이 컴퓨터 이름", mid: true, body: el("div", { class: "col" }, inp), actions: [
     i.custom ? { label: "기본 이름으로", kind: "text", onclick: (c, b) => save("", "기본 이름으로 돌렸어요")(b, c) } : null,
     { label: "저장", kind: "pri", onclick: (c, b) => save(inp.value.trim(), "이름을 저장했어요")(b, c) }].filter(Boolean) });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
@@ -20768,12 +21754,12 @@ function mnDialog() {
 }
 const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", onclick: mnDialog },
   el("span", { class: "lead" }, icon("term")),
-  el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" }), el("div", { class: "sup", text: "다른 컴퓨터의 목록에 이 이름으로 보여요" })),
-  el("span", { class: "li-end" }, MN.info.name ? el("span", { class: "tag", text: MN.info.name }) : null, icon("chev", "chev")));
+  el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" }), MN.info.name ? el("div", { class: "sup", text: MN.info.name }) : null),
+  el("span", { class: "li-end" }, icon("chev", "chev")));
 mnLoad();
 
 $("#brand").append(el("span", { class: "brand-c", id: "brand-c", hidden: true }, icon("drop")));
-$("#brand").onclick = () => (prTrig() ? prOpen() : go("home"));
+$("#brand").onclick = () => (prTrig() ? prOpen() : (H.tab = true, go("home")));
 // The phone's page title, on a page without a back arrow (there the title names the conversation or sub-page and the arrow leads back).
 const prTitleTap = () => { if (prTrig() && !$("#appbar").classList.contains("back")) prOpen(); };
 $("#title").addEventListener("click", prTitleTap);
@@ -20794,7 +21780,7 @@ document.addEventListener("keydown", ev => {
   if (prNext(ev.shiftKey ? -1 : 1)) ev.preventDefault();
 });
 // Tapping 홈 again while on 홈 opens the computer sheet (like the 채팅 tab's re-tap, 04-state.js chatTabTap) and the next tap closes it; with one gateway the tab behaves as before.
-const homeTabTap = () => { if (PR.node) prClose(); else if (current === "home" && PR.list.length >= 2) prOpen(); else go("home"); };
+const homeTabTap = () => { if (PR.node) prClose(); else if (current === "home" && PR.list.length >= 2) prOpen(); else { H.tab = true; go("home"); } };
 if (PR.list.length) prPaint();
 prLoad();
 setInterval(() => { if (!document.hidden) prLoad(); }, 60_000);
@@ -20832,6 +21818,123 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) prLo
   vv.addEventListener("scroll", queue);
   apply();
 })();
+
+/* ---------- 입력 진단 (설정 > 표시, 또는 주소 끝 ?kbdiag=1) ---------- */
+// For the phone keyboard that jumps or closes while typing (an unproven cause). Off by default. When on, every blur of a text field leaves one entry in a ring
+// buffer in localStorage (KBD_CAP entries): when, which field (tag, id, name, data-* and a selector path, never its value or any typed text), whether the
+// node left the page or was replaced, where the focus went, the last few events before (type and target only, no keys), visibility and a short call
+// stack (a blur fires inside the call that moved or removed the field, so the stack names it). Nothing is sent anywhere: the owner copies the buffer
+// as JSON from the settings row and sends it by hand.
+const KBD_FLAG = "dotz-kbdiag", KBD_LOG = "dotz-kbdiag-log", KBD_CAP = 200, KBD_RECENT = 6;
+const KBD_TEXT = "textarea, input:not([type=button], [type=checkbox], [type=radio], [type=range], [type=file], [type=submit], [type=reset], [type=color])";
+const KBD_EVENTS = ["pointerdown", "pointerup", "click", "touchstart", "touchend", "focusin", "input", "change", "submit", "compositionstart", "compositionend", "visibilitychange", "pagehide", "pageshow", "resize", "orientationchange"];
+let kbdActive = false, kbdBuf = null, kbdCur = null, kbdSeq = 0, kbdMo = null;
+const kbdRecent = [];
+const kbdIsText = n => n instanceof Element && (n.isContentEditable || n.matches(KBD_TEXT));
+function kbdSel(n) {
+  if (!(n instanceof Element)) return n === document ? "document" : n === window ? "window" : "";
+  const path = [];
+  for (let e = n; e && e !== document.body && path.length < 4; e = e.parentElement) {
+    let s = e.tagName.toLowerCase();
+    if (e.id) s += `#${e.id.slice(0, 40)}`;
+    else if (typeof e.className === "string" && e.className.trim()) s += `.${e.className.trim().split(/\s+/).slice(0, 2).join(".")}`;
+    if (e.dataset && e.dataset.k) s += `[data-k=${e.dataset.k.slice(0, 40)}]`;
+    path.unshift(s);
+  }
+  return path.join(" > ");
+}
+function kbdField(f) {
+  const data = {};
+  for (const [k, v] of Object.entries(f.dataset || {})) data[k] = String(v).slice(0, 40);
+  return { sel: kbdSel(f), tag: f.tagName.toLowerCase(), type: f.getAttribute("type") || "", id: f.id.slice(0, 40), name: (f.getAttribute("name") || "").slice(0, 40), data, ce: !!f.isContentEditable };
+}
+const kbdIdent = f => `${f.tag}|${f.type}|${f.id}|${f.name}|${f.data && f.data.k || ""}|${f.sel.split(" > ").pop()}`;
+function kbdStack() {
+  return String(new Error().stack || "").split("\n").map(l => l.trim().replace(/https?:\/\/[^\s)]*\//g, "")).filter(l => l && !/\bkbd[A-Z]/.test(l)).slice(0, 8).map(l => l.slice(0, 120));
+}
+function kbdLoad() {
+  if (kbdBuf) return kbdBuf;
+  try { const a = JSON.parse(localStorage.getItem(KBD_LOG) || "[]"); kbdBuf = Array.isArray(a) ? a : []; } catch { kbdBuf = []; }
+  return kbdBuf;
+}
+function kbdSave() { try { if (kbdBuf && kbdBuf.length) localStorage.setItem(KBD_LOG, JSON.stringify(kbdBuf)); else localStorage.removeItem(KBD_LOG); } catch (e) { console.warn("kbdiag", e); } }
+function kbdPush(entry) { const b = kbdLoad(); b.push(entry); if (b.length > KBD_CAP) b.splice(0, b.length - KBD_CAP); kbdSave(); }
+const kbdCount = () => kbdLoad().length;
+function kbdEntry(kind, field, extra) {
+  return { n: ++kbdSeq, at: new Date().toISOString(), kind, field: { ...field }, vis: document.visibilityState, hasFocus: document.hasFocus(), active: kbdSel(document.activeElement), recent: kbdRecent.slice(-KBD_RECENT), stack: kbdStack(), ...extra };
+}
+// Filled once the code that moved the field has finished (a microtask): is the node still in the page, did a same-looking field take its place, who has the focus.
+function kbdSettle(entry, field, node) {
+  queueMicrotask(() => {
+    const act = document.activeElement, live = node.isConnected;
+    const twin = !live && [...document.querySelectorAll(`${KBD_TEXT}, [contenteditable]`)].some(n => kbdIdent(kbdField(n)) === kbdIdent(field));
+    entry.after = { active: kbdSel(act), activeIsField: kbdIsText(act), connected: live, replaced: twin, sameNodeFocused: act === node };
+    kbdSave();
+  });
+}
+function kbdOnEvent(e) {
+  if (e.type === "focusin" && kbdIsText(e.target)) kbdCur = { node: e.target, field: kbdField(e.target) };
+  if (e.type !== "focusout") {
+    kbdRecent.push({ type: e.type, on: kbdSel(e.target) });
+    if (kbdRecent.length > 12) kbdRecent.shift();
+  }
+}
+function kbdOnBlur(e) {
+  const n = e.target;
+  if (!kbdActive || !kbdIsText(n)) return;
+  const field = kbdCur && kbdCur.node === n && !n.isConnected ? kbdCur.field : kbdField(n);
+  if (kbdCur && kbdCur.node === n) kbdCur = null;
+  const entry = kbdEntry("blur", field, { connected: n.isConnected, to: kbdSel(e.relatedTarget) });
+  kbdPush(entry);
+  kbdSettle(entry, field, n);
+}
+// A focused field taken out of the page may not blur at all (browsers differ): the observer notes that too, once.
+function kbdOnMutation() {
+  if (!kbdCur || kbdCur.node.isConnected) return;
+  const { node, field } = kbdCur;
+  kbdCur = null;
+  const entry = kbdEntry("removed", field, { connected: false });
+  kbdPush(entry);
+  kbdSettle(entry, field, node);
+}
+function kbdWatch() {
+  for (const t of KBD_EVENTS) { removeEventListener(t, kbdOnEvent, true); if (kbdActive) addEventListener(t, kbdOnEvent, true); }
+  removeEventListener("focusout", kbdOnBlur, true);
+  if (window.visualViewport) { visualViewport.removeEventListener("resize", kbdOnEvent); if (kbdActive) visualViewport.addEventListener("resize", kbdOnEvent); }
+  if (kbdMo) { kbdMo.disconnect(); kbdMo = null; }
+  kbdCur = null;
+  if (!kbdActive) return;
+  addEventListener("focusout", kbdOnBlur, true);
+  const f = document.activeElement;
+  if (kbdIsText(f)) kbdCur = { node: f, field: kbdField(f) };
+  kbdMo = new MutationObserver(kbdOnMutation);
+  kbdMo.observe(document.documentElement, { childList: true, subtree: true });
+}
+function kbdSet(on) {
+  kbdActive = !!on;
+  try { if (on) localStorage.setItem(KBD_FLAG, "1"); else localStorage.removeItem(KBD_FLAG); } catch (e) { console.warn("kbdiag", e); }
+  kbdWatch();
+}
+async function kbdCopy() {
+  const out = { app: typeof WEB_BUILD === "string" ? WEB_BUILD : "", agent: navigator.userAgent, coarse: matchMedia("(pointer: coarse)").matches, entries: kbdLoad() };
+  if (await copyText(JSON.stringify(out, null, 1))) toast("복사했어요"); else toast("복사하지 못했어요", true);
+}
+function kbdClear() { kbdBuf = []; kbdSave(); }
+// The settings rows (22-settings-pages.js displayPage): the switch, and while it is on the buffer's size with 복사 and 지우기.
+function kbdRows() {
+  const row = (title, sub, end) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("list")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: sub })), liEnd(...end));
+  const rows = [row("입력 진단", kbdActive ? "입력칸에서 나올 때마다 기록해요. 쓴 글은 남기지 않아요" : "키보드가 내려갈 때를 기록해요. 쓴 글은 남기지 않아요",
+    [el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(kbdActive), "aria-label": "입력 진단", "data-k": "kbdiag", onclick: () => { kbdSet(!kbdActive); renderSettings(); } })])];
+  // one control per row (docs/ui-spec.md 설정 행): 복사 and 지우기 are two rows
+  if (kbdActive) rows.push(row("진단 기록", `${kbdCount()}건 · 이 기기에만 있어요`, [
+    el("button", { type: "button", class: "btn tonal inrow", "data-k": "kbdiag-copy", onclick: () => kbdCopy(), text: "복사" })]),
+    row("진단 기록 지우기", "", [el("button", { type: "button", class: "btn text inrow", "data-k": "kbdiag-clear", onclick: () => { kbdClear(); renderSettings(); }, text: "지우기" })]));
+  return rows;
+}
+try {
+  const q = new URLSearchParams(location.search).get("kbdiag");
+  kbdSet(q === "1" ? true : q === "0" ? false : localStorage.getItem(KBD_FLAG) === "1");
+} catch { kbdSet(false); }
 
 /* ---------- 모니터링 across computers: the other gateways' items beside the local ones (docs/peer-monitoring.md) ---------- */
 // Data: GET /api/monitoring/peers (hub/peer-monitor.ts) -> [{name, url, online, stale, items: {monitors, notices, integrations, conversations} | null}].
@@ -21070,7 +22173,7 @@ function pqMerge(items) {
       if (m.kind === "watch" && m.watch && !NM.items.some(x => x.watch === m.watch)) PQ.of.set(`settings:w:${m.watch}`, { pc, key: key(`m:${m.name}`), mon: m });
       const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
       (monProject(m) ? proj : plain).push({ key: key(`m:${m.name}`), group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection].join("|"), unread: 0,
-        hint: pqWhere(p, m.connection === "disconnected" ? monConnShort(m) : fresh ? monClean(monStrip(monLine(last), monNames(m)), monRunLine(m)) : monRunLine(m)), at: m.last_run || (last ? monNoticeAt(last) : ""),
+        hint: pqWhere(p, m.connection === "disconnected" ? monConnShort(m) : m.last_result === "fail" && m.last_summary ? monClean(m.last_summary, monRunLine(m)) : fresh ? monClean(monStrip(monLine(last), monNames(m)), monRunLine(m)) : monRunLine(m)), at: m.last_run || (last ? monNoticeAt(last) : ""),
         badge: pqStatus(p, (st => [st.text, st.tone])(monStatus(m)), m.paused), pc, hostOff: !p.online });
     }
     news.push(...ntWithRepeats(sn).filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)));
@@ -21312,7 +22415,9 @@ async function openShell({ command } = {}) {
       // pointerdown keeps the terminal focused, so the soft keyboard stays up while a key is pressed
       onpointerdown: ev => ev.preventDefault(),
       onclick: () => { if (seq === "ctrl") { SH.ctrl = !SH.ctrl; shCtrlPaint(); } else { shInput(seq); } if (SH.term) SH.term.focus(); } }, label))) : null;
-  const body = el("div", { class: "sh-wrap" }, host, pw, keys);
+  // a failed load answers in the body, where it has room, with the way to try again (the header holds only short states)
+  const fail = el("div", { class: "sh-fail", role: "alert", hidden: true }, el("p", { class: "sup" }), el("button", { type: "button", class: "btn tonal", onclick: () => boot() }, "다시 시도"));
+  const body = el("div", { class: "sh-wrap" }, host, fail, pw, keys);
   const name = (typeof prSelf === "function" && prSelf() && prSelf().name) || "이 컴퓨터";
   const h = dialog({ title: `터미널 · ${name}`, body, wide: true, onclose: () => {
     shDisconnect(); if (SH.ro) SH.ro.disconnect();
@@ -21328,9 +22433,11 @@ async function openShell({ command } = {}) {
   if (hb) hb.prepend(st, pwBtn, more);
   SH.dlg = h; SH.ui = { host, st, pw, pwIn, pwBtn, keys };
   pwIn.addEventListener("keydown", ev => { if (ev.isComposing || ev.keyCode === 229) return; if (ev.key === "Enter") { ev.preventDefault(); shSendPw(); } });
-  shStatus("불러오는 중…");
-  try { await shLib(); } catch (e) { shStatus(e.message, "err"); return; }
+  async function boot() {
+  fail.hidden = true; shStatus("불러오는 중…");
+  try { await shLib(); } catch (e) { shStatus(""); fail.firstChild.textContent = e.message; fail.hidden = false; host.hidden = true; return; }
   if (SH.dlg !== h) return;
+  host.hidden = false;
   const touch = shTouch();
   const t = new Terminal({ cursorBlink: true, scrollback: 5000, fontFamily: shCss("--mono") || "monospace", fontSize: touch ? 14 : 13, lineHeight: 1.2, theme: shTheme(), allowProposedApi: false, macOptionIsMeta: true });
   const fit = new FitAddon.FitAddon();
@@ -21346,6 +22453,8 @@ async function openShell({ command } = {}) {
   if (command) SH.pend = command;
   t.focus();
   shConnect();
+  }
+  boot();
 }
 
 /* ---------- API 월 한도: usage card and settings dialog (/api/quota budget, /api/api-budget) ---------- */
@@ -21356,11 +22465,11 @@ function budgetCard(B) {
     el("button", { class: "btn text inrow", type: "button", onclick: () => budgetDialog() }, "설정")));
   const src = B.source === "admin" ? "콘솔 기준 (관리자 키)" : "이 앱 사용분 추정";
   if (B.limit_usd) {
-    const pct = B.pct || 0, tone = pct >= 80 ? "warn" : "";
+    const pct = B.pct || 0, tone = pct >= 80 ? "warn" : "", left = Math.max(0, Math.min(100, 100 - pct));   // the bar says what is left, as the subscription cards do
     card.append(el("div", { class: "lim" },
-      el("div", { class: "kv" }, el("span", { class: "k", text: `${abUsd(B.spent_usd)} / ${abUsd(B.limit_usd)}` }), el("span", { style: "font-weight:500", text: `${Math.round(pct)}% 사용` })),
-      el("div", { class: `bar ${tone}`, role: "progressbar", "aria-valuenow": Math.round(Math.min(100, pct)), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct).toFixed(1)}%` })),
-      el("div", { class: "kv", style: "margin-top:var(--sp-1)" }, el("span", { class: "v", text: `${kstStamp(B.resets_at)} 초기화 (KST)` }), el("span", { class: "v", text: rel(B.resets_at) }))));
+      el("div", { class: "kv" }, el("span", { class: "k", text: `${abUsd(B.spent_usd)} / ${abUsd(B.limit_usd)}` }), el("span", { style: "font-weight:500", text: `${Math.round(left)}% 남음` })),
+      el("div", { class: `bar ${tone}`, role: "progressbar", "aria-valuenow": Math.round(left), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${left.toFixed(1)}%` })),
+      el("div", { class: "sup", text: rel(B.resets_at) })));
   } else {
     card.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: `이번 달 ${abUsd(B.spent_usd)}` }), el("span", { class: "v", text: "월 한도 없음" })),
       el("div", { class: "sup", text: "콘솔에서 정한 월 한도를 설정에 입력하면 사용 비율을 보여줘요." })));
@@ -21390,8 +22499,9 @@ async function budgetDialog() {
   const key = input({ type: "password", autocomplete: "new-password", name: "admin-key", placeholder: "관리자 키 붙여 넣기" });
   const has = AB.admin_key && AB.admin_key.present;
   const done = (c, msg) => { c(); toast(msg); renderSettings(); if (current === "usage") loadQuota(); };
-  const send = (c, btn, body, msg) => busy(btn, async () => {
-    try { AB = await api("/api/api-budget", "PUT", body); } finally { key.value = ""; }
+  const err = usErr();
+  const send = (c, btn, body, msg) => usRun(btn, err, async () => {
+    AB = await api("/api/api-budget", "PUT", body); key.value = "";
     done(c, msg);
   });
   const actions = [{ label: "취소", onclick: c => c() }];
@@ -21401,17 +22511,19 @@ async function budgetDialog() {
     if (key.value.trim()) body.admin_key = key.value;
     return send(c, btn, body, "저장했어요");
   } });
-  dialog({
+  const d = dialog({
     classic: true,
     title: "API 월 한도",
     body: el("div", { class: "col" },
-      el("p", { class: "sup", text: "Anthropic 콘솔에서 정한 월 한도(달러)예요. API로는 읽을 수 없어서 직접 입력해요. 비우면 한도 없이 사용액만 보여줘요." }),
+      el("p", { class: "sup", text: "Anthropic 콘솔에서 정한 월 한도(달러)예요. 비우면 사용액만 보여줘요." }),
       textField("월 한도 (달러)", limit),
-      el("p", { class: "sup", text: has ? `관리자 키: ${AB.admin_key.masked}. 새 키를 붙여 넣으면 바꿔요.` : "관리자 키가 없어요. 콘솔 설정의 관리자 키 메뉴에서 만들어 붙여 넣으면 콘솔 기준 사용액을 보여줘요. 없으면 이 앱 사용분 추정만 보여줘요." }),
+      el("p", { class: "sup", text: has ? `관리자 키: ${AB.admin_key.masked}` : "관리자 키가 없어요. 콘솔 설정의 관리자 키 메뉴에서 만들어 붙여 넣어요." }),
       textField("관리자 키", key),
-      el("p", { class: "sup", text: "키는 저장하기 전에 한 번 확인하고, 다시 보여주거나 기록에 남기지 않아요." })),
+      el("p", { class: "sup", text: "저장한 키는 다시 보여 주지 않아요." }), err),
     actions,
   });
+  usDirty(d, [limit, key]);
+  limit.focus();
 }
 
 /* ---------- 화면 공유: this computer's screen in a browser tab (hub/remote-desktop.ts; features/remote-desktop/DESIGN.md) ---------- */
@@ -21548,6 +22660,12 @@ dskPillNode();
 // viewport so the footer stays above the keyboard. The caller paints fsHead / .fs-body / .fs-ft into h.box. Built on it: decision, notice and computer sheets
 // (30-notices.js, 33-peers.js) and login requests (16-target-switcher-conversation.js); dialog() (02-basic-markdown.js) wears the same classes on a native <dialog>.
 const FS = [];   // open overlays, top last
+// The one place that sets a window's first focus: opened by a mouse or a touch (no key pressed since, 02-basic-markdown.js data-pointer) the window itself
+// holds it, so no button shows a ring; opened by the keyboard the first control does.
+function ovFocus(host, first) {
+  if (document.documentElement.dataset.pointer || !first) { host.tabIndex = -1; host.focus({ preventScroll: true }); }
+  else first.focus({ preventScroll: true });
+}
 function fsOpen({ label, labelledby, cls = "", onClose }) {
   const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null, vv = window.visualViewport;
   const box = el("section", { class: `fs-card ${cls}`.trim(), role: "dialog", "aria-modal": "true", "aria-label": label || null, "aria-labelledby": labelledby || null, tabindex: "-1" });
@@ -21599,7 +22717,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
 function fsHead(tt, { ignore, ignoreOff, close } = {}) {
   return el("div", { class: "fs-hd" }, el("div", { class: "fs-tt" }, ...tt),
     el("div", { class: "fs-hb" },
-      ignore ? el("button", { class: "fs-ign", type: "button", "data-k": "ignore", disabled: !!ignoreOff, onclick: ignore }, icon("close"), el("span", { text: "무시" })) : null,
+      ignore ? el("button", { class: "fs-ign", type: "button", "data-k": "ignore", disabled: !!ignoreOff, onclick: ignore }, el("span", { text: "무시" })) : null,
       close ? el("button", { class: "ib fs-x", type: "button", "aria-label": "닫기", onclick: close }, icon("close")) : null));
 }
 
@@ -21626,16 +22744,18 @@ function rpMark(n, e) {
   const mt = n.querySelector(":scope > .mt");
   if (mt) mt.append(btn); else { btn.classList.add("out"); n.append(btn); }
 }
-function rpStart(n) {
+// `decision`: the id of the question this reply answers in the owner's own words (30-notices.js ntDirect); it rides with the quote until it is sent or dropped.
+function rpStart(n, decision = "") {
   const e = RP.src.get(n);
   if (!e) return;
   // tone: the status tag of the quoted bot message, shown in the bar like in the message (not sent; the server only gets id, author, content)
-  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) || parkedTone(parseTone(noHandoff(String(e.text ?? ""))).tone) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone };
+  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) || parkedTone(parseTone(noHandoff(String(e.text ?? ""))).tone) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone, ...(decision ? { decision } : {}) };
   rpPaint();
   const ta = $("#text");
   if (!ta.disabled) ta.focus({ preventScroll: true });
 }
 function rpPaint() {
+  if (RP.cur && RP.cur.decision && RP.cur.t !== target) delete RP.cur.decision;   // moving to another conversation: the question is no longer being answered
   const r = RP.cur && RP.cur.t === target ? RP.cur : null;
   if (!RP.bar) {
     if (!r) return;
@@ -21652,7 +22772,7 @@ function rpTake() {
   const r = RP.cur && RP.cur.t === target ? RP.cur : null;
   if (!r) return null;
   RP.cur = null; RP.tone = r.tone || ""; rpPaint();
-  return { id: r.id, author: r.author, content: r.content };
+  return { id: r.id, author: r.author, content: r.content, ...(r.decision ? { decision: r.decision } : {}) };
 }
 function rpRestore(reply) { if (reply) { RP.cur = { t: target, ...reply, tone: RP.tone }; rpPaint(); } }
 const rpNode = id => $("#tl [data-rid=\"" + CSS.escape(id) + "\"]");
@@ -21663,7 +22783,7 @@ let rpJumpSeq = 0;
 async function rpJump(id, from) {
   if (!id) return;
   const seq = ++rpJumpSeq, t = target, s = ts(t), drawn = rpNode(id);
-  if (drawn) { drawn.scrollIntoView({ block: "center", behavior: "smooth" }); ntFlash(drawn); return; }
+  if (drawn) { drawn.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" }); ntFlash(drawn); return; }   // an explicit "smooth" would win over the CSS scroll-behavior that reduced motion sets
   let at = s.msgs.find(e => rpRid(e) === id)?.ts;
   if (!at) {
     if (from) { from.classList.add("busy"); from.dataset.wait = "찾는 중…"; }
@@ -22190,40 +23310,28 @@ function msRelaySection(p, s) {
 }
 
 /* ---------- 분할 창: dragging (docs/split-panes.md 배치) ----------
-   A row of any list (conversations, sessions, projects, mail, 모니터링) or a pane's head is pulled over a pane: after 6px a ghost of the title follows
+   A row of the chat list (conversations, sessions, mail, Messenger) or a pane's head is pulled over a pane: after 6px a ghost of the title follows
    the pointer and the hovered zone (the outer quarter at an edge, or the middle) is drawn over that pane. A row with nothing a pane can show says so in its ghost
-   and draws no zone. Pointer events on the document, so nothing is added to the rows; Escape cancels. The motion is 43-panes-motion.js. */
+   and draws no zone; so does any row off the chat tab (owner 8f7c8c3d: a split is the chat tab's). Pointer events on the document, so nothing is added to the rows; Escape cancels. The motion is 43-panes-motion.js. */
 const PD_MOVE = 6;
 let PD = null;   // {src, x, y, on, dead, ghost, zone, hit, from}
 
-// The room, thread or DM row of an in-app app (30-kakao.js kkRow, 30-monitoring-comments.js cmRow, 30-monitoring-comments-dm.js dmRow): its app pane.
-function paneInAppItem(row) {
-  const { chat, thread, conv } = row.dataset;
-  if (chat) return { kind: "app", t: `${MON.sel}#kk:${enc(chat)}` };
-  const th = thread && CM.threads.find(x => x.thread === thread), c = conv && DM.convs.find(x => x.id === conv);
-  if (th) return { kind: "app", t: `${MON.sel}#cm:${enc(th.source)}:${enc(th.thread)}:${enc(th.title || "")}` };
-  return c ? { kind: "app", t: `${MON.sel}#dm:${enc(c.id)}:${enc(c.peer || "")}` } : null;
-}
-// What a list row opens: its conversation (data-t, a mail of the chat list w:<target>, a 모니터링 item that has one), a 모니터링 item's own screen,
-// or an in-app room, thread or DM. null for a row a pane cannot hold: 앱 관리 (a sheet).
+// What a row of the chat list opens: its conversation (data-t, a mail w:<target>) or a Messenger room (w:kk:<room>, an app pane). null for a row a pane cannot hold.
 function paneRowItem(row) {
   const { t, k = "" } = row.dataset;
   if (t) return validTarget(t) ? { kind: "chat", t } : null;
-  if (k.startsWith("w:kk:")) return { kind: "app", t: `${KK_KEY}#kk:${enc(k.slice(5))}` };
+  if (k.startsWith("w:kk:")) return { kind: "app", t: paneKkT(k.slice(5)) };
   if (k.startsWith("w:")) return validTarget(k.slice(2)) ? { kind: "chat", t: k.slice(2) } : null;
-  if (!k && current === "monitoring" && MON.sel) return paneInAppItem(row);
-  const it = k && k !== "add-app" && monItems().find(i => i.key === k), c = it ? monChatOf(it) : "";
-  return c && validTarget(c) ? { kind: "chat", t: c } : it ? { kind: "app", t: k } : null;
+  return null;
 }
 const paneRowLabel = row => (row.querySelector(".cv-n, .pl-n") || {}).textContent || (row.getAttribute("aria-label") || row.textContent).split(" · ")[0].trim();
-// What a pressed row would put in a pane: {kind, t, label}, {no: true, label} when a pane cannot hold it, null when it is not a row.
+// What a pressed row would put in a pane: {kind, t, label}, {no: true, label} when a pane cannot hold it (off: true when the tab is not 채팅), null when it is not a row.
 // The menu's tabs are not rows: they are only pressed (owner 78c482b1).
 function paneDragItem(t) {
-  const pj = t.closest(".pl-row[data-key]");
-  if (pj) return PRJ && PRJ.projects.some(p => p.key === pj.dataset.key) ? { kind: "project", t: pj.dataset.key, label: paneRowLabel(pj) } : null;
-  const row = t.closest(".cv-row, .hr[data-t], .mr[data-t]");
+  const row = t.closest(".pl-row[data-key], .cv-row, .hr[data-t], .mr[data-t]");
   if (!row || row.closest("#tl, .pane-tl")) return null;
-  const it = paneRowItem(row);
+  if (!paneTabOk()) return { no: true, off: true, label: paneRowLabel(row) };
+  const it = row.matches(".pl-row") ? null : paneRowItem(row);
   return it ? { ...it, label: it.kind === "chat" ? targetName(it.t) : paneRowLabel(row) } : { no: true, label: paneRowLabel(row) };
 }
 function paneDragSource(ev) {
@@ -22241,11 +23349,9 @@ document.addEventListener("pointerdown", ev => {
   for (const [type, fn] of PD_EVENTS) document.addEventListener(type, fn, true);
 }, true);
 
-// Where the pointer can drop: every pane when split, else the open conversation (head to composer) or the project page.
+// Where the pointer can drop: every pane when split, else the open conversation (head to composer) on the chat tab.
 function paneDragBoxes() {
   if (paneCount() > 1 && PNV.el && !PNV.el.hidden) return [...PNV.el.querySelectorAll(".pane")].map(n => ({ id: n.dataset.id, r: n.getBoundingClientRect() }));
-  if (current === "project") return [{ id: "", r: $("#v-project").getBoundingClientRect() }];
-  if (current === "monitoring") return [{ id: "", r: $("#v-monitoring").getBoundingClientRect() }];
   if (current !== "chat") return [];
   const a = $("#cv-head").getBoundingClientRect(), b = $("#composer").getBoundingClientRect();
   return [{ id: "", r: new DOMRect(a.left, a.top, a.width, b.bottom - a.top) }];
@@ -22270,6 +23376,7 @@ const PD_SIDE = { left: "왼쪽", right: "오른쪽" };
 // The ghost's second line says what letting go does.
 function paneDragHint() {
   const { src, hit } = PD;
+  if (src.off) return "분할은 채팅 탭에서만 할 수 있어요";
   if (src.no) return "칸에 넣을 수 없어요";
   if (!hit) return "";
   if (src.pane) return hit.side === "center" ? "자리 바꾸기" : `${PD_SIDE[hit.side]}으로 옮기기`;
@@ -22347,6 +23454,7 @@ const PD_EVENTS = [["pointermove", paneDragMove], ["pointerup", paneDragUp], ["p
 function paneDrop(src, { id, side }) {
   if (src.pane) { paneMove(src.pane, id, side); return; }
   const { kind, t } = src;
+  paneListShut();
   if (paneCount() > 1) {
     const dup = paneOpenIn(kind, t);
     if (dup) paneFocus(dup.id);
@@ -22356,12 +23464,14 @@ function paneDrop(src, { id, side }) {
   }
   const here = paneHere();
   if (here.kind === kind && here.t === t) return;
-  if (side === "center") paneGo(kind, t); else paneSplit(t, kind, side);
+  if (side !== "center") paneSplit(t, kind, side);
+  else if (kind === "app") { go("monitoring", KK_KEY); kkOpen(paneKkId(t)); }   // one pane: the row opens as a click on it does
+  else go("chat", t);
 }
 
 /* ---------- 분할 창: keys (docs/split-panes.md 단축키) ----------
    ⌥⌘ on a Mac, Ctrl+Alt elsewhere (ev.code, because Option changes ev.key): \ splits right, 1 and 2 go to a pane, W closes the active one (two panes, side by side: owner 950d715f).
-   ⌘\ (sidebar), ⌘1..6 (tabs) and ⌘K never get here: they have no Alt.
+   Only on the chat tab (owner 8f7c8c3d). ⌘\ (sidebar), ⌘1..6 (tabs) and ⌘K never get here: they have no Alt.
    Ctrl+Shift+\ also splits right on every system: AltGr arrives as Ctrl+Alt on Windows, so Ctrl+Alt+\ can collide with typing \ there. */
 const PANE_KEY_SIDE = { Backslash: "right" };
 // The rows the screen tour lists (42-intro.js introKeys); none below 1100px, where nothing splits.
@@ -22388,7 +23498,7 @@ document.addEventListener("keydown", ev => {
   const shiftSplit = ev.ctrlKey && ev.shiftKey && !ev.altKey && !ev.metaKey && ev.code === "Backslash";
   if (ev.isComposing || (!shiftSplit && (!ev.altKey || ev.shiftKey || !mod)) || narrowChat() || document.querySelector("dialog[open]:not([data-leaving])")) return;
   const side = shiftSplit ? "right" : PANE_KEY_SIDE[ev.code], n = /^Digit([12])$/.exec(ev.code || "")?.[1];
-  if ((!side && !n && ev.code !== "KeyW") || (current !== "chat" && current !== "project")) return;
+  if ((!side && !n && ev.code !== "KeyW") || !paneTabOk()) return;
   ev.preventDefault();
   if (side) paneKeySplit(side);
   else if (n) { const p = paneList()[n - 1]; if (p) paneFocus(p.id); }
@@ -22429,14 +23539,16 @@ function paneLayoutApply(name) {
 }
 function paneLayoutAsk() {
   const inp = input({ type: "text", maxlength: "24", placeholder: "예: 메일 보면서 작업", "aria-label": "배치 이름" });
+  const err = usErr();
   const save = close => {
     const name = inp.value.trim();
-    if (!name) { inp.focus(); return; }
     paneLayoutSave(name);
     close();
     toast(`'${name}' 배치를 저장했어요`);
   };
-  const d = dialog({ classic: true, title: "배치 저장", body: el("div", { class: "col" }, el("div", { class: "sup", text: "지금 열린 창들을 이름을 붙여 저장해요. 같은 이름이 있으면 덮어써요." }), inp), actions: [{ label: "저장", kind: "pri", onclick: c => save(c) }] });
+  const d = dialog({ classic: true, title: "배치 저장", body: el("div", { class: "col" }, el("div", { class: "sup", text: "같은 이름이 있으면 덮어써요." }), inp, err), actions: [{ label: "저장", kind: "pri", onclick: c => save(c) }] });
+  usDirty(d, [inp]);
+  inp.addEventListener("input", () => { err.textContent = inp.value.trim() ? "" : "이름을 적어 주세요."; });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   inp.focus();
 }
@@ -22452,9 +23564,10 @@ function paneLayoutItems(v) {
 }
 
 /* ---------- 분할 창: an inactive pane is a mirror (docs/split-panes.md) ----------
-   Head (same markup as the chat head), a copy of the timeline taken when the pane went inactive, the messages that came since (the one event stream,
-   99-boot.js calls paneEvent), and a composer stub that shows the draft. Nothing here exists with one pane. */
-const PNM = new Map();   // pane id -> its mirror {p, node, list, wrap, keys, q, dot, state}
+   A chat pane's mirror is the open chat's frame under .pane-chat (the same rules as #v-chat): the head, the conversation's own todo and subagent strips,
+   a copy of the timeline taken when the pane went inactive plus the messages that came since (the one event stream, 99-boot.js calls paneEvent),
+   and the composer's markup with the pane's draft, queue, run line and the model / effort / context line. Nothing here exists with one pane. */
+const PNM = new Map();   // pane id -> its mirror {p, node, list, wrap, keys, q, dot, state, todo, subs, k (the composer's parts)}
 const PNS = new Map();   // pane id -> what it showed when it went inactive {n, keys}
 const paneDirty = new Set();
 let paneRaf = 0;
@@ -22466,29 +23579,14 @@ function paneLeave(p) {
   if (p.kind === "chat" && current === "chat" && target === p.t) {
     p.at = chatAnchor(); p.stick = chatStick;
     PNS.set(p.id, { n: tl.cloneNode(true), keys: new Set(ts(p.t).mk) });
-  } else if (p.kind === "project" && current === "project" && ppCur === p.t) PNS.set(p.id, { n: $("#v-project").cloneNode(true) });
-  else if (p.kind === "app" && current === "monitoring") {
-    // It keeps the room, thread or DM it ended on, unless another pane holds that one: then only its item (no app shown twice).
-    const k = paneAppKey(), dup = paneLeaves().some(x => x !== p && x.kind === "app" && x.t === k);
-    p.t = dup ? paneAppParts(k).key : k;
-    PNS.set(p.id, { n: $("#v-monitoring").cloneNode(true) });
-  }
+  } else if (p.kind === "app" && current === "monitoring") PNS.set(p.id, { n: $("#v-monitoring").cloneNode(true) });
   else PNS.delete(p.id);
 }
 
-// An app pane is named by its room, thread or DM, else its 모니터링 item, else 모니터링 (the list); the state line names what holds it.
-const paneAppItem = t => { const { key } = paneAppParts(t); return (key !== "list" && monItems().find(i => i.key === key)) || null; };
-function paneAppSubName(t) {
-  const { kind, a, b, c } = paneAppParts(t);
-  if (kind === "kk") return (KK.rooms.find(r => r.chatId === a) || {}).name || "대화방";
-  if (kind === "cm") return c || "댓글";
-  return kind === "dm" ? b || "DM" : "";
-}
-const paneAppLabel = t => paneAppSubName(t) || (paneAppItem(t) || {}).name || "모니터링";
-const paneName = p => (p.kind === "app" ? paneAppLabel(p.t) : p.t === "builtin:custom" ? "커스텀" : targetName(p.t));
+// An app pane is a Messenger room: named by it, the state line says where it is from.
+const paneName = p => (p.kind === "app" ? (KK.rooms.find(r => r.chatId === paneKkId(p.t)) || {}).name || "대화방" : targetName(p.t));
 function paneState(p) {
-  if (p.kind === "project") return "프로젝트";
-  if (p.kind === "app") return p.t === "list" ? "" : paneAppSubName(p.t) ? (paneAppItem(p.t) || {}).name || "모니터링" : "모니터링";
+  if (p.kind === "app") return "메신저";
   const i = targetInfo(p.t);
   return isRelayT(p.t) ? RELAY.note[p.t] || "" : isFixedT(p.t) ? FIXED_DESC[p.t] : i.alive ? statusKo(i.status) : "종료됨";
 }
@@ -22511,22 +23609,65 @@ function paneMirror(p) {
     m.wrap = el("div", { class: "timeline pane-tl" }, m.list);
     m.wrap.addEventListener("scroll", () => edgeFade(m.wrap), { passive: true });
     if (snap) m.keys = snap.keys; else paneFill(m);
-    const draft = String(ts(p.t).draft || "");
-    const stub = el("button", { class: "pane-cmp", type: "button", "aria-label": "이 창에서 메시지 쓰기", onclick: () => { paneFocus(p.id); $("#text").focus(); } },
-      el("span", { class: "pane-cmp-plus" }, icon("add")), el("span", { class: draft ? "pane-cmp-t" : "pane-cmp-t pane-cmp-ph" }, draft || "메시지 또는 /명령"));
-    m.node = el("div", { class: "pane-mir" }, head, m.wrap, stub);
+    m.todo = el("div", { class: "todo", hidden: true });
+    m.node = el("div", { class: `pane-mir pane-chat${p.t === "alert" ? " no-composer" : ""}` }, head, m.todo, el("div", { class: "chatbox" }, m.wrap), paneComposerEl(m));
+    if (!TD.by[p.t]) loadTodo(p.t);
   } else {
-    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : el("div", { class: "empty", text: p.kind === "app" ? "이 창을 누르면 모니터링이 열려요" : "이 창을 누르면 프로젝트가 열려요" })));
+    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : el("div", { class: "empty", text: "이 창을 누르면 대화방이 열려요" })));
   }
   PNM.set(p.id, m);
+  if (m.k) paneStrip(m);
   return m.node;
 }
+// The composer of an inactive pane is the open composer's own markup (no id twice, nothing live in it), so the box, the line under it and the send button
+// sit where they sit in the open pane. A click on it activates the pane and puts the caret in the box (43-panes-view.js).
+function paneComposerEl(m) {
+  const c = PNV.cmp.cloneNode(true), id = x => c.querySelector(`#${x}`);
+  m.k = { own: id("c-own"), model: id("c-model"), effort: id("c-effort"), worker: id("c-worker"), ring: id("ctx-ring"), api: id("c-api"), fb: id("c-fb"), bar: id("cbar"),
+    run: id("runline"), runTx: id("runline-tx"), subs: id("runline-subs"), send: id("send-btn"), ta: id("text") };
+  id("c-attach").dataset.c = "c-attach"; m.k.send.dataset.c = "send-btn";
+  for (const x of c.querySelectorAll("#qline, #dcard, #hints, #runstate, #pausenote, #relaynote, #atray, input[type=file], .ta-hl, .ta-tok")) x.remove();
+  id("send").className = "sendrow"; id("send").removeAttribute("style");
+  c.classList.remove("rs-on", "dropping");
+  m.k.ta.removeAttribute("style"); m.k.ta.value = String(ts(m.p.t).draft || ""); m.k.ta.readOnly = true;
+  // Inert but not `disabled` (that dims it): it looks as this conversation's button does in the open pane; the pane's pointerdown activates the pane.
+  m.k.send.removeAttribute("disabled"); m.k.send.type = "button"; m.k.send.setAttribute("aria-disabled", "true");
+  for (const b of c.querySelectorAll("button, textarea")) b.tabIndex = -1;
+  return paneBare(c);
+}
+// Everything the open pane draws from its own conversation, drawn from this pane's: strips, queue, run line, chips. Never from the open target.
+function paneStrip(m) {
+  const t = m.p.t, k = m.k, r = runLineOf(t), working = r.on && r.st !== "rate-limited";
+  paintTodo(m.todo, t);
+  if (paintQueue(m.list, t) && m.p.stick) m.wrap.scrollTop = m.wrap.scrollHeight;
+  k.run.hidden = !r.show; k.run.classList.toggle("warn", r.st === "rate-limited"); k.run.classList.toggle("only-subs", !r.has); k.runTx.textContent = r.text;
+  paintSubsBtn(k.subs, subsSourceOf(t), r.subs, r.has);
+  const stop = (working || r.bg.length > 0) && !k.ta.value.trim();
+  k.send.classList.toggle("stop", stop); k.send.setAttribute("aria-label", stop ? "중단" : "보내기"); k.send.title = stop ? "지금 하는 일 중단" : "";
+  k.ta.placeholder = composerHint(t, false);
+  paintChips(t, k);
+  k.model.classList.toggle("run", working);
+}
+// All mirrors, or the ones of conversation t.
+function paneStrips(t) {
+  for (const m of PNM.values()) if (m.k && (t === undefined || m.p.t === t)) paneStrip(m);
+}
+// A todo tool call of conversation own finished: its mirror reloads the plan (debounced like the open one's, 11-todo-strip.js todoActivity).
+function paneTodoTouch(own) {
+  for (const m of PNM.values()) {
+    if (!m.k || !(own === m.p.t || (own === MAIN && isProjT(m.p.t)))) continue;
+    clearTimeout(m.todoTimer);
+    m.todoTimer = setTimeout(() => loadTodo(m.p.t), 250);
+  }
+}
 // The head of a mirror, and of the active pane when it holds a screen (which has no head of its own): name, state line, close.
+// A chat pane's head is the chat head (.cv-head) with its ⋯ in the same place; its close button sits on the pane itself, like the open pane's.
 function paneHeadEl(p) {
-  const name = paneName(p), s = paneState(p), dot = el("span", { class: `dot ${p.dot}` }), state = el("span", { class: "cv-hd-s", text: s });
+  const name = paneName(p), s = paneState(p), dot = el("span", { class: `dot ${p.dot}` }), state = el("span", { class: "cv-hd-s", text: s }), chat = p.kind === "chat";
   dot.hidden = !p.dot;
-  const x = el("button", { class: "ib pane-x", type: "button", "aria-label": "창 닫기", title: "창 닫기", onclick: () => paneClose(p.id) }, icon("close"));
-  return { head: el("div", { class: "pane-hd" }, el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: name }, dot, name), s || p.kind !== "app" ? state : null), x), dot, state };
+  const x = chat ? null : el("button", { class: "ib pane-x", type: "button", "aria-label": "창 닫기", title: "창 닫기", onclick: () => paneClose(p.id) }, icon("close"));
+  const acts = chat && (isLaneT(p.t) || (isProjT(p.t) && pmOfTarget(p.t))) ? el("span", { class: "cv-hd-a" }, el("button", { class: "ib cvmenu", type: "button", tabindex: "-1", "aria-label": "세션 메뉴" }, icon("more"))) : null;
+  return { head: el("div", { class: chat ? "cv-head pane-hd" : "pane-hd" }, el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: name }, dot, name), state), acts, x), dot, state };
 }
 // A mirror without a copy (the page was reloaded, or the pane lost its screen to another pane): drawn from the messages the page holds.
 function paneFill(m) {
@@ -22550,10 +23691,13 @@ function paneAppend(m, e) {
     n.dataset.pk = key;
   }
   m.list.append(n);
+  paintQueue(m.list, m.p.t);
 }
 function paneMirrorsPlace() {
   for (const m of PNM.values()) {
     if (!m.wrap) continue;
+    const box = m.k && m.k.ta;
+    if (box) { box.style.height = "auto"; box.style.height = `${Math.max(taFloor(), Math.min(box.scrollHeight, 140))}px`; }   // autosize(), for the draft
     const at = m.p.stick ? null : m.p.at, n = at && [...m.list.querySelectorAll("[data-ts]")].find(x => x.dataset.ts === at.ts);
     m.wrap.scrollTop = n ? n.getBoundingClientRect().top - m.wrap.getBoundingClientRect().top + m.wrap.scrollTop - at.off : m.wrap.scrollHeight;
     edgeFade(m.wrap);
@@ -22656,9 +23800,11 @@ function paneDropMoving(src, hit) {
 }
 
 /* ---------- 분할 창: the screen (docs/split-panes.md) ----------
-   #split sits in #views from the second pane on, on a wide screen only: [list column][tree of panes]. The active pane holds the real #v-chat / #v-project
-   (go() finds the sections by id), the list column holds convSide / #v-projects. Back to one pane or a narrow window: every node goes where it was and #split goes. */
-let PNV = { el: null, side: null, tree: null, sig: "", order: null, list: "chat" };
+   #split sits in #views from the second pane on, on a wide screen and the chat tab only: the tree of panes takes the whole width (the list column is folded,
+   owner 8f7c8c3d), and the chat list (convSide) lies over the panes from the left when the active pane's 목록 button asks for it. The active pane holds the
+   real #v-chat (go() finds the sections by id). Another tab, back to one pane or a narrow window: every node goes where it was (the tab, #split hidden
+   with the panes kept) or #split goes (one pane, narrow). */
+let PNV = { el: null, side: null, tree: null, sig: "", order: null, cmp: null, open: false };
 
 function paneRoot() {
   if (PNV.el) return PNV.el;
@@ -22669,38 +23815,97 @@ function paneRoot() {
   $("#views").append(PNV.el);
   return PNV.el;
 }
+
+// The chat list over the panes (the 목록 button of the active pane): it lies from the left edge at its own width, so neither pane moves. It closes on a pick,
+// a press outside it and Esc. It comes in the way a sheet does (280ms, the motion curve) and instantly under reduced motion.
+// The same fold holds for the conversation with a 캔버스 open (cnvFoldSync below): there #v-chat is the host, and its own 목록 button is this one.
+const paneHost = () => (PNV.el && !PNV.el.hidden ? PNV.el : $("#v-chat").classList.contains("cnv-fold") ? $("#v-chat") : null);
+const paneListOutside = ev => { if (!ev.target.closest("#chat-convo, .pane-ls")) paneListShut(); };
+const paneListKey = ev => { if (ev.key === "Escape") paneListShut(); };
+// a row of the list that lies over the panes (or the 캔버스 chat) is a pick: the list closes (the row itself opens in the active pane, 31-conversations.js)
+convSide.addEventListener("click", ev => { if (PNV.open && ev.target.closest(".cv-row")) paneListShut(); });
+function paneListMark() {
+  const b = document.querySelector(".pane-ls");
+  if (b) b.setAttribute("aria-expanded", String(PNV.open));
+}
+function paneListOpen() {
+  const host = paneHost();
+  if (!host || PNV.open) return;
+  PNV.open = true;
+  convSide.getAnimations().forEach(a => a.cancel());
+  host.classList.add("ls-open");
+  paneListMark();
+  if (!reducedMotion()) convSide.animate([{ opacity: 0, transform: "translateX(-16px)" }, { opacity: 1, transform: "none" }], { duration: 280, easing: M_EASE });
+  document.addEventListener("pointerdown", paneListOutside, true);
+  document.addEventListener("keydown", paneListKey, true);
+}
+const paneListGone = () => { for (const n of [PNV.el, $("#v-chat")]) if (n) n.classList.remove("ls-open"); convSide.getAnimations().forEach(a => a.cancel()); };
+function paneListShut(now) {
+  if (!PNV.open) return;
+  PNV.open = false;
+  document.removeEventListener("pointerdown", paneListOutside, true);
+  document.removeEventListener("keydown", paneListKey, true);
+  paneListMark();
+  if (now) paneListGone();
+  else motionOut(convSide, "fade", M_MS.fast).then(() => { if (!PNV.open) paneListGone(); });
+}
+// The 목록 button of the pane that is open (also the one the conversation shows beside a 캔버스 that has no room for the list column).
+const paneLsBtn = () => el("button", { class: "ib pane-ls", type: "button", "aria-label": "대화 목록", "aria-expanded": String(PNV.open), title: "대화 목록", onclick: () => (PNV.open ? paneListShut() : paneListOpen()) }, icon("list"));
+// With a 캔버스 open in the conversation, the list column folds exactly as in split panes when the window cannot give the canvas cnv-min wide next to the
+// conversation's own minimum (the width a split pane keeps, 20-canvas.css): the list lies over the conversation from the 목록 button, and comes back as a column when the canvas closes.
+function cnvNeed(c) {
+  const cs = getComputedStyle(c), n = p => parseFloat(cs.getPropertyValue(p)) || 0;
+  return n("--cv-w") + n("--cnv-conv") + n("--cnv-min") + 2 * n("column-gap") + n("padding-left") + n("padding-right");
+}
+function cnvFoldSync() {
+  const c = $("#v-chat");
+  if (current !== "chat") return;
+  const want = c.classList.contains("canvas-open") && !narrowChat() && !(PNV.el && !PNV.el.hidden) && !c.matches(".mon-ctx:not(.mon-two)") && c.clientWidth < cnvNeed(c);
+  if (want === c.classList.contains("cnv-fold")) return;
+  if (!want) { paneListShut(true); $(":scope > .pane-ls", c)?.remove(); }
+  c.classList.toggle("cnv-fold", want);
+  if (want) c.append(paneLsBtn());
+}
+new MutationObserver(cnvFoldSync).observe($("#v-chat"), { attributes: true, attributeFilter: ["class"] });
+new ResizeObserver(cnvFoldSync).observe($("#v-chat"));
 // Called at the end of go()'s view switch, on a resize across 1100px, and by the model after every change.
-function paneSync() {
+function paneSync() { paneSyncRun(); cnvFoldSync(); }
+function paneSyncRun() {
   if (!PNV.el && paneCount() < 2) return;
   if (paneCount() < 2 || narrowChat()) { paneTeardown(); return; }
-  const show = current === "chat" || current === "project" || paneAppIn();
+  const show = paneTabOk();
   if (show) paneAdopt();
   paneRoot().hidden = !show;
-  if (!show) return;
+  if (!show) { paneAway(); return; }
   $("#views").classList.remove("pp");
   const sig = paneSig();
   if (sig !== PNV.sig) { PNV.sig = sig; paneDraw(); }
   paneHeadSync();
 }
-// The active screen's head follows the screen without a redraw (a 모니터링 item opened inside it).
+// Not on the chat tab: the panes wait (targets, places, the active one and the mirrors are kept) and every section is where it belongs on its own screen.
+function paneAway() {
+  if (!PNV.sig) return;
+  paneRelease();
+  PNV.sig = "";
+  paneListShut();
+}
+// The active screen's head follows the screen without a redraw (the Messenger room open inside it).
 function paneHeadSync() {
-  const a = paneFind(PN.active), n = a.kind === "app" && PNV.el.querySelector(".pane.on > .pane-hd .cv-hd-t"), name = n && paneName(a);
+  const a = paneFind(PN.active), n = PNV.el && a.kind === "app" && PNV.el.querySelector(".pane.on > .pane-hd .cv-hd-t"), name = n && paneName(a);
   if (n && n.lastChild.textContent !== name) { n.lastChild.textContent = name; n.title = name; }
 }
 matchMedia("(max-width: 1099px)").addEventListener("change", paneSync);
 
-// 모니터링 is in the split only while a pane holds it (the active one or another); otherwise it takes the whole page as before and the panes wait.
-const paneAppOf = () => paneLeaves().find(p => p.kind === "app") || null;
-const paneAppIn = () => current === "monitoring" && (paneFind(PN.active).kind === "app" || !!paneAppOf());
+// The tab that is lit while 모니터링's screen sits in an app pane: 채팅 (go() in 05-command-palette.js).
+const paneLit = name => name === "monitoring" && !!PNV.el && !PNV.el.hidden && paneTabOk();
 // The real 모니터링 screen sits in a pane: as narrow as a phone's column, so its back arrow closes an open room first (30-kakao.js kkBack).
 const paneMonIn = () => $("#v-monitoring").classList.contains("in-pane");
 
 // What the active pane shows is whatever the page shows: go() and openTarget() change its content (a target open in another pane activates that pane instead).
 function paneAdopt() {
   const a = paneFind(PN.active), h = paneHere();
-  if (!a || PN.going || (a.kind === h.kind && a.t === h.t)) return;
-  // Moving inside 모니터링 stays in the active app pane; coming to it from a conversation goes to an app pane.
-  const dup = paneOpenIn(h.kind, h.t) || (h.kind === "app" && a.kind !== "app" && paneAppOf());
+  if (!a || PN.going || current !== "chat" || (a.kind === h.kind && a.t === h.t)) return;
+  const dup = paneOpenIn(h.kind, h.t);
   if (dup) { PN.active = dup.id; dup.t = h.t; dup.dot = ""; paneForget(dup.id); }
   else Object.assign(a, { kind: h.kind, t: h.t, at: null, stick: true, dot: "" });
   paneForget(a.id);
@@ -22716,7 +23921,7 @@ function paneHome(n) {
   views.insertBefore(n, next || null);
 }
 function paneRelease() {
-  for (const n of [$("#v-chat"), $("#v-project"), $("#v-projects"), $("#v-monitoring")]) {
+  for (const n of [$("#v-chat"), $("#v-monitoring")]) {
     n.classList.remove("in-pane");
     if (n.parentNode !== $("#views")) paneHome(n);
   }
@@ -22726,21 +23931,18 @@ function paneTeardown() {
   if (!PNV.el) return;
   const chat = current === "chat", at = chat ? chatAnchor() : null, stick = chatStick;
   paneRelease();
+  paneListShut();
   PNV.el.remove(); PNV.el = PNV.side = PNV.tree = null; PNV.sig = "";
   paneMirrorsClear();
-  const pp = current === "project" && ppWide();
-  $("#views").classList.toggle("pp", pp);
-  $("#v-projects").hidden = !(pp || current === "projects");
   if (chat) paneLand(at, stick);
 }
 function paneDraw() {
   const chat = current === "chat", at = chat ? chatAnchor() : null, stick = chatStick;
   paneRelease();
-  const kind = paneFind(PN.active).kind, sec = $(kind === "project" ? "#v-project" : kind === "app" ? "#v-monitoring" : "#v-chat");
+  PNV.cmp = $("#composer");   // the open pane's section leaves the document while its pane is built, so the mirrors take the composer from here
+  const kind = paneFind(PN.active).kind, sec = $(kind === "app" ? "#v-monitoring" : "#v-chat");
   sec.classList.add("in-pane");
-  // 모니터링 keeps the list that was there, so focusing it does not move every pane sideways.
-  if (kind !== "app") PNV.list = kind;
-  PNV.side.replaceChildren(PNV.list === "project" ? $("#v-projects") : convSide);
+  PNV.side.replaceChildren(convSide);
   PNV.tree.replaceChildren(paneNode(PN.root, sec));
   paneMirrorsPlace();
   if (chat) paneLand(at, stick);
@@ -22763,11 +23965,13 @@ function paneShare(n, box) {
 function paneLeafEl(p, sec) {
   const on = p.id === PN.active;
   const x = el("button", { class: "ib pane-x", type: "button", "aria-label": "창 닫기", title: "창 닫기", onclick: () => paneClose(p.id) }, icon("close"));
-  const kids = !on ? [paneMirror(p)] : p.kind === "app" ? [paneHeadEl(p).head, sec] : [sec, x];
+  // the active pane's 목록 button sits at its head's left, over the head (the head leaves room for it, 26-panes.css)
+  const ls = on && paneLsBtn();
+  const kids = !on ? (p.kind === "chat" ? [paneMirror(p), x] : [paneMirror(p)]) : p.kind === "app" ? [paneHeadEl(p).head, sec, ls] : [sec, x, ls];
   const box = el("div", { class: `pane${on ? " on" : ""}`, "data-id": p.id, "data-kind": p.kind }, ...kids);
   box.addEventListener("pointerdown", ev => {
     if (ev.button !== 0 || p.id === PN.active || ev.target.closest(".pane-x")) return;
-    const stub = !!ev.target.closest(".pane-cmp");
+    const stub = !!ev.target.closest(".pane-chat .composer");
     paneFocus(p.id);
     if (stub) requestAnimationFrame(() => $("#text").focus());
   }, true);
@@ -22811,8 +24015,9 @@ function paneLand(at, stick) {
 }
 
 /* ---------- 분할 창 (docs/split-panes.md): the model ----------
-   Panes are leaves {id, kind: "chat"|"project"|"app", t, at, stick, dot} (an app pane is 모니터링: t is "list", an item key, or an item key and
-   "#kk:<room>" / "#cm:<source>:<thread>:<title>" / "#dm:<id>:<peer>" for a room, thread or DM of an in-app app, owner 78c482b1) of a tree: one pane, or two side by side as {dir: "row", a, b, r} (r = a's share, 0.2..0.8;
+   A split exists only on the chat tab, and a pane holds only what a row of the chat list opens (owner 8f7c8c3d): a conversation, or a Messenger room of the
+   chat list's 메일 card. Panes are leaves {id, kind: "chat"|"app", t, at, stick, dot} (an app pane is that Messenger room in 모니터링's own screen:
+   t is "i:kakao#kk:<room>") of a tree: one pane, or two side by side as {dir: "row", a, b, r} (r = a's share, 0.2..0.8;
    at most two, left and right only, owner 950d715f);
    one is active and holds the real section. The screen is 43-panes-view.js, the inactive panes are 43-panes-mirror.js. With one pane (or none) nothing here touches the page. */
 const PANE_KEY = "dotz-panes", PANE_MAX = 2;
@@ -22824,37 +24029,42 @@ function paneList() { return paneLeaves().map(p => ({ id: p.id, kind: p.kind, t:
 const paneFind = id => paneLeaves().find(p => p.id === id) || null;
 const paneOpenIn = (kind, t) => paneLeaves().find(p => p.kind === kind && p.t === t) || null;
 const paneNew = (kind, t) => ({ id: `p${++PN.seq}`, kind, t, at: null, stick: true, dot: "" });
-// The room, thread or DM open in an in-app app (30-kakao.js, 30-monitoring-comments*.js), as the part of an app pane's t after "#".
-function paneAppSub() {
-  const sel = monItems().find(i => i.key === MON.sel);
-  if (kkItem(sel) && KK.open) return `kk:${enc(KK.open)}`;
-  if (!sel || !cmAppOf(sel.key) || CM.app !== cmAppOf(sel.key)) return "";   // CM still holds the last app's thread until this item paints
-  return DM.open ? `dm:${enc(DM.open.id)}:${enc(DM.open.peer || "")}` : CM.open ? `cm:${enc(CM.open.source)}:${enc(CM.open.thread)}:${enc(CM.open.title || "")}` : "";
-}
-// The 모니터링 screen as a pane's content: its list, or the item open in it with its room, thread or DM.
-function paneAppKey() {
-  if (MON.list || !MON.sel) return "list";
-  const sub = paneAppSub();
-  return sub ? `${MON.sel}#${sub}` : MON.sel;
-}
-const paneAppParts = t => { const [key, sub = ""] = String(t).split("#"), [kind = "", a = "", b = "", c = ""] = sub.split(":").map(decodeURIComponent); return { key, kind, a, b, c }; };
-// Opens an app pane's item, then its room, thread or DM the way its row would.
-// Midway (the item open, its room not yet) the page is neither: the active pane does not follow it (paneAdopt) and takes t once it is there.
+// The Messenger room of an app pane: t is "i:kakao#kk:<room>". Nothing else of 모니터링 is a pane.
+const paneKkT = id => `${KK_KEY}#kk:${enc(id)}`;
+const paneKkId = t => (String(t).startsWith(`${KK_KEY}#kk:`) ? decodeURIComponent(String(t).slice(KK_KEY.length + 4)) : "");
+// What a pane can hold: a conversation, or a Messenger room.
+const paneCanHold = (kind, t) => (kind === "chat" ? validTarget(t) : kind === "app" && !!paneKkId(t));
+// The chat tab is lit: the conversation view (not a mail opened from 모니터링), or 모니터링's screen lent to an app pane (PN.app, set by paneGoApp,
+// cleared by the next go() that does not come from a pane).
+const paneTabOk = () => (current === "chat" && !monCtx) || (current === "monitoring" && !!PN.app && paneCount() > 1 && paneFind(PN.active).kind === "app");
+// Opens a Messenger room's app pane: 모니터링 on 메신저 with that room, and the tab stays 채팅 (43-panes-view.js paneLit).
 function paneGoApp(t) {
-  const { key, kind, a, b, c } = paneAppParts(t);
-  PN.going = true;
+  const id = paneKkId(t);
+  PN.going = true; PN.app = true;
   try {
-    go("monitoring", key);
-    if (kind === "kk") kkOpen(a);
-    else if (kind === "cm") { cmTab("comments"); cmOpen(CM.threads.find(x => x.source === a && x.thread === b) || { source: a, thread: b, title: c }); }
-    else if (kind === "dm") { cmTab("dm"); dmOpen(DM.convs.find(c => c.id === a) || { id: a, peer: b }); }
+    go("monitoring", KK_KEY);
+    if (id) kkOpen(id);
   } finally { PN.going = false; }
   const p = paneFind(PN.active);
-  if (p && p.kind === "app") { p.t = t; paneHeadSync(); panePersist(); }
+  if (p && p.kind === "app") { p.t = paneKkT(id); paneHeadSync(); panePersist(); }
 }
-// What the page shows now, as a pane's content (the terminal view and the other screens count as the chat).
-const paneHere = () => (current === "project" ? { kind: "project", t: ppCur } : current === "monitoring" ? { kind: "app", t: paneAppKey() } : { kind: "chat", t: target });
-const paneGo = (kind, t) => (kind === "app" ? paneGoApp(t) : go(kind, t));
+// What the page shows now, as a pane's content.
+const paneHere = () => (current === "monitoring" ? { kind: "app", t: KK.open ? paneKkT(KK.open) : (paneFind(PN.active) || {}).t || "" } : { kind: "chat", t: target });
+// A row of the chat list pressed while the panes are shown opens in the active pane (a pane that already shows it only takes the focus), and the tab stays 채팅.
+function paneRowOpen(kind, t) {
+  if (paneCount() < 2 || !paneTabOk() || !PNV.el || PNV.el.hidden) return false;
+  const dup = paneOpenIn(kind, t);
+  if (dup) paneFocus(dup.id); else paneReplace(PN.active, t, kind);
+  return true;
+}
+// go() keeps a mail a pane shows in the chat view (the chat tab lit, the chat list), where a mail opened by itself belongs to 모니터링.
+const paneKeeps = t => !!PN.going || (paneCount() > 1 && !narrowChat() && !!paneOpenIn("chat", t));
+// A conversation is opened by the pane machinery, so go() keeps the chat tab and the chat list even for a mail (05-command-palette.js).
+function paneGo(kind, t) {
+  if (kind === "app") { paneGoApp(t); return; }
+  PN.going = true;
+  try { go("chat", t); } finally { PN.going = false; }
+}
 function paneParent(n, p) {
   if (paneLeaf(n)) return null;
   return n.a === p || n.b === p ? n : paneParent(n.a, p) || paneParent(n.b, p);
@@ -22871,7 +24081,9 @@ function panePersist() {
 }
 
 // Opens t next to the active pane, or next to pane atId (side: right | left). A target already open in a pane is not opened twice: that pane becomes active.
+// The one place that refuses what a pane cannot hold and a split outside the chat tab.
 function paneSplit(t, kind, side, atId = "") {
+  if (!paneCanHold(kind, t) || !paneTabOk()) return "";
   if (paneCount() < 2) {
     const h = paneHere();
     PN.root = paneNew(h.kind, h.t); PN.active = PN.root.id;
@@ -22886,7 +24098,7 @@ function paneSplit(t, kind, side, atId = "") {
 }
 function paneReplace(id, t, kind) {
   const p = paneFind(id);
-  if (!p) return false;
+  if (!p || !paneCanHold(kind, t) || !paneTabOk()) return false;
   const dup = paneOpenIn(kind, t);
   if (dup && dup !== p) { paneFocus(dup.id); return false; }
   if (p.kind === kind && p.t === t) return true;
@@ -22943,7 +24155,7 @@ function paneClose(id) {
 // (a layout saved with three or four panes, or one above another, before 950d715f). null when nothing is left.
 function panePrune(d) {
   if (!d || !d.root) return null;
-  const ok = p => p && (p.kind === "chat" ? validTarget(p.t) : p.kind === "app" ? typeof p.t === "string" && !!p.t : p.kind === "project" && typeof p.t === "string" && (p.t.startsWith("builtin:") || !PRJ || PRJ.projects.some(x => x.key === p.t)));
+  const ok = p => p && typeof p.t === "string" && paneCanHold(p.kind, p.t);   // what the chat list can open; a project or 모니터링 screen of an older layout is dropped
   const seen = new Set();
   let left = PANE_MAX;
   const prune = n => {
@@ -22971,6 +24183,17 @@ function paneRestore() {
   PN = r;
   paneSync();
   panePersist();
+}
+// The chat tab pressed again after another tab: the panes come back as they were, the active one's content opened again.
+function paneReturn() {
+  if (paneCount() < 2 || narrowChat()) return false;
+  if (!paneTabOk()) paneEnter(paneFind(PN.active));
+  return true;
+}
+// go() asks before it leaves the chat tab: the reader's place in the active conversation is kept for the way back.
+function paneStash() {
+  const p = PNV.el && !PNV.el.hidden && current === "chat" && paneFind(PN.active);
+  if (p && p.kind === "chat") { p.at = chatAnchor(); p.stick = chatStick; }
 }
 
 // Boot runs after every module file (files join in name order): go() on the first frame already reaches the chat list
@@ -23003,7 +24226,8 @@ function paneRestore() {
   if (h.view !== "notices") setTimeout(() => { for (const t of ["worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
   paneRestore();
-  if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(PUSH_HASH, at, pushOpenNid); }   // the app was started by a tap on a push
+  if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushTapCold(pushOpen(PUSH_HASH, at, pushOpenNid)); }   // the app was started by a tap on a push
+  else if (!pushQ.has("n")) pushTapCold();   // a decision (?n=) reports when its sheet is open (30-notices.js)
   introStart();   // the screen tour (42-intro.js) asks the gateway after a pause; nothing here waits for it
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
@@ -23031,7 +24255,7 @@ function paneRestore() {
     else if (e.kind === "waitlist") { if (S) S.waitlist = e.items || []; scheduleState(); }   // 할일 changed (hub/waitlist.ts)
     else if (e.kind === "work") { workRowsLive(e); scheduleState(); }   // a background job changed (hub/workrows.ts): its rows, then the lists
     else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") { noticeLive(e); if (e.kind === "notice") trSoon(); }
-    else if (e.kind === "approval_send") { trLive(e); rqSoon(); }
+    else if (e.kind === "approval_send") { trLive(e); dcUndoLive(e); rqSoon(); }
     else if (e.kind === "approvals") trSoon();
     else if (e.kind === "quota") quotaLive(e.quota);   // the gateway's background usage read changed (09-needs-you.js)
     else if (e.kind === "peer_notice" || e.kind === "peer_counts" || e.kind === "peer_notice_done") prLive(e);
