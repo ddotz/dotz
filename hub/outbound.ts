@@ -35,6 +35,7 @@ import { createPrompts, type Pending, type Reply, type WorkLink } from "./prompt
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
+import { answerReview } from "./answer-words.ts";
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
@@ -105,6 +106,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		working: () => o.orch.status === "working",
 		keepalive: o.inKeepalive,
 		note: (target, replyTo, text) => msg().newMessage(target, replyTo, text),
+		review: answerReview(() => o.orch.status === "idle" || o.orch.status === "working"),
 		isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
 		regenerated: isOpenNudge,
 		post: (target, text, replyTo) => out(target, text, replyTo, { auto: true, session: key }),

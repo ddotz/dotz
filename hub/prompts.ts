@@ -42,7 +42,26 @@ import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_M
 export type { Prompt, OwnerMessage, Pending, WorkLink, OpenRequest, WorkRow, Reply, PromptDeps } from "./prompts-model.ts";
 
 /** The hand-over labels a prompt carries through pending.json. */
-const labels = (p: { from?: string; handback?: true; quiet?: true }) => ({ ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.quiet ? { quiet: true as const } : {}) });
+const labels = (p: { from?: string; handback?: true; quiet?: true; fallback?: string }) => ({ ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.quiet ? { quiet: true as const } : {}), ...(p.fallback ? { fallback: p.fallback } : {}) });
+
+/**
+ * A final answer with a word of the user's 금지 낱말 목록 is held back and its request gets one more prompt: the note, through the queue
+ * every prompt takes (a steer would reach the runtime after the run decided to end, in a run of its own or in the next unrelated turn).
+ * The note's prompt keeps the target and reply id and carries the held text as `fallback`, so the turn it starts either posts the
+ * rewrite or, if it writes nothing, the held text once. A rewrite turn is not checked again. True when the answer was held.
+ */
+function holdForRewrite(deps: PromptDeps, prompts: Prompt[], deliver: (text: string, reply: Reply) => boolean, p: Prompt, text: string, replyTo: string | undefined, refs: string[] | undefined): boolean {
+	const note = p.target && !p.fallback && !p.from && !p.handback && !p.quiet && !p.cancelled && !deps.keepalive?.() && !isSilent(text) ? deps.review?.(text) : undefined;
+	if (!note) return false;
+	deps.log(`the answer to ${p.target} holds a word of the user's list; its session is asked to reword it`);
+	deliver(note, { target: p.target!, replyTo, refs, fallback: text });
+	Object.assign(prompts.at(-1)!, { sent: p.sent, held: p.held });
+	p.held = undefined;
+	return true;
+}
+
+/** A rewrite turn that wrote nothing (or only the no-op word) leaves the held answer as its answer. */
+const rewriteText = (p: Prompt, said: string, later: boolean): string => (p.fallback && !later && (!said.trim() || isSilent(said)) ? p.fallback : said);
 /** An answer the owner must see even from a quiet check. */
 const LOUD = /^\s*\[(?:ask|fail)\]/i;
 
@@ -327,7 +346,7 @@ export function createPrompts(deps: PromptDeps) {
 		// the owner's message was closed as a turn that wrote no text while the account was rate-limited, and never answered).
 		// The silent-wait nudge is no request: the requests it names stay open on their own (2026-11-11: each nudge a usage limit stopped
 		// became one more id-less request, with a new time, so the bounded nudge started over for it).
-		if (failed && !p.done && p.target && !p.deferred && !p.last && !p.cancelled && !deps.regenerated?.(p.text)) {
+		if (failed && !p.done && p.target && !p.deferred && !p.last && !p.fallback && !p.cancelled && !deps.regenerated?.(p.text)) {
 			p.deferred = true;
 			p.retry = true;
 			deferred.push(p);
@@ -345,7 +364,7 @@ export function createPrompts(deps: PromptDeps) {
 			deps.log(`turn ended without an answer to ${p.target}; ${p.last ? "sending its last text" : "it wrote no text"}`);
 			// No text and nothing sent for a message of ours (a nudge for a request already waiting is not one): the owner is told, not left with a closed request and no answer.
 			const unanswered = p.replyTo !== undefined && !isAnswered(p.replyTo) && !p.sent.some(s => sameConv(s.target, p.target!)) && !openDeferred().some(d => d.replyTo === p.replyTo);
-			if (p.last || p.held?.length) onAnswer(p.last ?? "");
+			if (p.last || p.held?.length || p.fallback) onAnswer(p.last ?? "");
 			else if (unanswered && deps.noAnswerNote) onAnswer(deps.noAnswerNote());
 			else p.done = true;
 		}
@@ -576,12 +595,15 @@ export function createPrompts(deps: PromptDeps) {
 			.catch(e => deps.log(`reply to ${to.target} failed: ${e}`));
 	}
 
+	const rewrite = (p: Prompt, text: string, replyTo: string | undefined, refs: string[] | undefined) => holdForRewrite(deps, prompts, deliver, p, text, replyTo, refs);
+
 	/** A later stop of a run whose prompt was answered: it answers what landed in the run since, and is posted with them. */
-	function onContinued(p: Pick<Prompt, "target" | "cancelled" | "sent">, text: string): void {
+	function onContinued(p: Prompt, text: string): void {
 		const { later, text: t } = laterParts(text);
 		const target = p.target;
 		const replyTo = target ? burst.seen(target).findLast(q => q.replyTo)?.replyTo : undefined;
 		if (!target || p.cancelled || later || isSilent(t) || !burst.seen(target).length) return;
+		if (rewrite(p, t, replyTo, undefined)) return;
 		const ids = burst.cover(target);
 		save();
 		if (p.sent.some(s => sameConv(s.target, target) && s.text.includes(t))) return burst.close(target, ids);
@@ -611,7 +633,8 @@ export function createPrompts(deps: PromptDeps) {
 		if (!p) return void (answerSeen(text) || onOrphanAnswer(text));
 		if (!p.target && answerSeen(text)) return;
 		if (p.done) return onContinued(p, text);
-		const { later, text: t } = laterParts(text);
+		const { later, text: said } = laterParts(text);
+		const t = rewriteText(p, said, later);
 		if (later && p.target && !p.deferred) {
 			flushHeld(p, t);
 			// The answer itself waits for the worker, but the conversation must not look silent (owner 2026-10-27: "메일 내 대화에서
@@ -652,6 +675,7 @@ export function createPrompts(deps: PromptDeps) {
 		}
 		if (later) return flushHeld(p, t);
 		p.done = true;
+		if (rewrite(p, t, p.replyTo, p.refs)) return;
 		const silent = isSilent(t);
 		// A quiet check that found nothing to decide or report: one worklog line, no post, no push. Text it sent early with dotz_send stays a normal answer.
 		const quiet = Boolean(p.quiet && !silent && t && !LOUD.test(t) && !p.held?.length && deps.quietNote);
