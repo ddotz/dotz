@@ -11,7 +11,7 @@ import { msg } from "./i18n.ts";
 import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
 import { createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
 import { createSessionMark } from "./jandi-session.ts";
-import { createSnapshotSender, currentSnapshot, snapshotFileStore } from "./relay-snapshot-send.ts";
+import { createSnapshotSender, snapshotFileStore } from "./relay-snapshot-send.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import type { MessageSpec } from "./message-spec.ts";
 import { specOf } from "./message-spec-of.ts";
@@ -196,8 +196,9 @@ function relaySettings(sc: SelfChatConfig | undefined): Pick<Settings, "relays">
 		},
 	};
 }
-/** The self chat with the status sharing switched `on` or off; it needs the login-based connection. */
-function withShare(sc: SelfChatConfig | undefined, on: unknown): SelfChatConfig {
+/** The self chat with the status sharing switched `on` or off (unchanged when `on` is not given); it needs the login-based connection. */
+function withShare(sc: SelfChatConfig | undefined, on: unknown): SelfChatConfig | undefined {
+	if (on === undefined) return sc;
 	if (typeof on !== "boolean") throw new SettingsError("share_status must be true or false");
 	if (!selfChatReady(sc)) throw new SettingsError("share_status needs the JANDI login connection");
 	return normalizeSelfChat({ ...sc, share_status: on })!;
@@ -302,12 +303,31 @@ async function sendFiles(selfChat: SelfChat | undefined, cfg: JandiConfig, msg: 
 			.catch(e => log(`jandi: note for unsent files failed (${(e as Error)?.message || errText(e)})`));
 }
 
+type StatusShare = ReturnType<typeof createSnapshotSender>;
+/** Starts polling the self chat and, beside it, this computer's status sharing (hub/relay-snapshot-send.ts), which posts through the same session as a reply. */
+function runSelfChat(dataDir: string, sc: SelfChatConfig, chat: SelfChat, log: (m: string) => void): StatusShare {
+	void chat.run();
+	const sharer = createSnapshotSender({
+		config: () => loadJandiConfig(dataDir).self_chat,
+		// Loaded when it runs: the gateway's state modules (sessions, monitors, projects) are not this adapter's imports.
+		build: async () => (await import("./relay-snapshot-source.ts")).currentSnapshot(Date.now()),
+		post: async text => {
+			await chat.post(`message-api/v3/teams/${sc.team_id}/rooms/${sc.room_id}/messages`, 3, messageBody(text));
+			mark("self_chat", { last_out: Date.now() });
+		},
+		now: Date.now,
+		store: snapshotFileStore(join(dataDir, "messengers", "jandi-snapshot.json")),
+		log,
+	});
+	sharer.start();
+	return sharer;
+}
+
 export type JandiAdapter = Adapter & { port(): number | undefined; selfChat(): SelfChat | undefined };
 
 export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: string) => MessageSpec | null): JandiAdapter {
 	let server: ReturnType<typeof Bun.serve> | undefined;
-	let selfChat: SelfChat | undefined;
-	let sharer: ReturnType<typeof createSnapshotSender> | undefined;
+	let selfChat: SelfChat | undefined, sharer: StatusShare | undefined;
 	let ctx: MessengerCtx | undefined;
 	const peerChats = createPeerChats({ config: () => loadJandiConfig(dataDir).self_chat, client: () => selfChat, log, dataDir });
 	const a: JandiAdapter = {
@@ -360,26 +380,11 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 					},
 					onSessionLost: loss.lost,
 				});
-				void selfChat.run();
-				const chat = selfChat;
-				sharer = createSnapshotSender({
-					config: () => loadJandiConfig(dataDir).self_chat,
-					build: () => currentSnapshot(Date.now()),
-					post: async text => {
-						await chat.post(`message-api/v3/teams/${sc.team_id}/rooms/${sc.room_id}/messages`, 3, messageBody(text));
-						mark("self_chat", { last_out: Date.now() });
-					},
-					now: Date.now,
-					store: snapshotFileStore(join(dataDir, "messengers", "jandi-snapshot.json")),
-					log: c.log,
-				});
-				sharer.start();
+				sharer = runSelfChat(dataDir, sc, selfChat, c.log);
 			}
 		},
 		stop() {
-			sharer?.stop();
-			sharer = undefined;
-			selfChat?.stop();
+			for (const x of [sharer, selfChat]) x?.stop();
 			selfChat = undefined;
 			server?.stop(true);
 			server = undefined;
@@ -521,8 +526,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 			}
 			next.rooms = rooms;
 		}
-		if (body.relays !== undefined) next.self_chat = withRelays(cfg.self_chat, body.relays);
-		if (body.share_status !== undefined) next.self_chat = withShare(next.self_chat, body.share_status);
+		next.self_chat = withShare(body.relays === undefined ? next.self_chat : withRelays(cfg.self_chat, body.relays), body.share_status);
 		saveJandiConfig(next, dataDir);
 	}
 
