@@ -322,18 +322,7 @@ describe("lifecycle", () => {
 		const dir = mkdtempSync(join(scratch, "data-"));
 		mkdirSync(join(dir, "remote-desktop", "bin"), { recursive: true });
 		writeFileSync(binOf(dir), "");
-		const script = join(scratch, "child-gateway.ts");
-		writeFileSync(
-			script,
-			`import { createDesk, defaultDeps } from ${JSON.stringify(join(import.meta.dir, "remote-desktop.ts"))};
-const [dir, notify] = process.argv.slice(2);
-let voxl = 0;
-const desk = createDesk({ ...defaultDeps(), dataDir: dir, platform: "darwin", featureOn: () => true,
-	spawn: (argv, env) => { const c = Bun.spawn([process.execPath, ${JSON.stringify(fakePath)}, ...argv.slice(1)], { env: { ...env, FAKE_NOTIFY: notify }, stdin: "ignore", stdout: "ignore", stderr: "pipe" }); voxl = c.pid; return c; } });
-console.log((await desk.host.ensure()) === "ok" ? "READY " + voxl : "FAILED");
-setInterval(() => {}, 1 << 30);
-`,
-		);
+		const script = join(import.meta.dir, "test", "fake-desk-gateway.ts");
 		const gateway = Bun.spawn([process.execPath, script, dir, String(listener.port)], { env: process.env, stdin: "ignore", stdout: "pipe", stderr: "inherit" });
 		try {
 			const ready = (async () => {
