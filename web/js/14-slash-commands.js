@@ -387,8 +387,8 @@ function qdBubble(i) {
   const sep = () => el("span", { class: "qd-sep", "aria-hidden": "true", text: "·" });
   return el("div", { class: "um qd" }, el("div", { class: "ub", text: i.text }),
     el("div", { class: "qd-ln" }, el("span", { text: "작업이 끝나면 전달" }), sep(),
-      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"), sep(),
-      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")));
+      el("button", { class: "btn text inrow", type: "button", onclick: ev => { const b = ev.currentTarget; busy(b, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); await motionGone(b.closest(".qd")); renderQueue(); scheduleState(); }); } }, "지금 끼워넣기"), sep(),
+      el("button", { class: "btn text inrow", type: "button", onclick: ev => { const b = ev.currentTarget; busy(b, () => takeBack(i, b.closest(".qd"))); } }, "취소")));
 }
 // The queued messages of conversation t at the end of list: the open timeline, or an inactive pane's. A message drawn after them moves them to the end again.
 // True when there are more of them than were there.
@@ -403,10 +403,10 @@ function paintQueue(list, t) {
   return nodes.length > found.length;
 }
 // Taking a queued message back puts its text into the box; a box with a draft keeps it and the message stays queued.
-async function takeBack(i) {
+async function takeBack(i, node) {
   if (ta.value.trim()) { toast("입력창을 비운 뒤 취소해 주세요", true); return; }
   const r = await api(`/api/queue/${enc(i.id)}`, "DELETE");
-  QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue();
+  QUEUE = QUEUE.filter(x => x.id !== i.id); await motionGone(node); renderQueue();
   ta.value = r.text; autosize(); renderWorking(); ta.focus();
 }
 const kfmt = n => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);

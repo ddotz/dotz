@@ -186,6 +186,8 @@ async function mGone(el, o) {
     glides.push(s.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: M_MS.base, easing: M_EASE, composite: "add" }));   // added to a glide already running (several rows leaving at once) and to its own transform
   }
   const fade = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: M_MS.fast, easing: M_EASE, fill: "forwards" });
+  // It folds from the bottom on the rows' curve: the row rising into its place never draws over what is still fading (a bubble with no fill).
+  glides.push(el.animate([{ clipPath: "inset(0px 0px 0px 0px)" }, { clipPath: `inset(0px 0px ${box.height}px 0px)` }], { duration: M_MS.base, easing: M_EASE, fill: "forwards" }));
   let stayed = false;
   if (o.keep) M_STAY.set(el, () => { stayed = true; for (const a of [fade, ...glides]) a.cancel(); mUnstyle(el); });
   await Promise.all([fade, ...glides].map(a => a.finished.catch(() => { /* cancelled (motionStay, a redraw that dropped the node): it ends the same way */ })));
