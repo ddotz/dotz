@@ -120,3 +120,31 @@ test("changing the model without an effort sets the new model's sweet spot; an e
 	await setModel(P, undefined, "high");
 	expect(await view()).toMatchObject({ model: OPUS, thinking: "high" });
 });
+
+test("a target with no stored effort follows the install's benchmark value; a stored effort stays", () => {
+	const ACME = "anthropic/acme-9";
+	const value = (effort: "low" | "high") => useLearned(() => new Map([["acme-9", { effort, status: "benchmark" as const }]]));
+	try {
+		cfg.models = { orchestrator: { model: ACME }, lanes: { model: ACME, thinking: "xhigh" }, workers: { model: ACME } };
+		expect(orchestratorModel().thinking).toBe("medium");
+		value("high");
+		expect([orchestratorModel().thinking, lanesModel().thinking, parseSelector(workerModel()).thinking]).toEqual(["high", "xhigh", "high"]);
+		value("low");
+		expect([orchestratorModel().thinking, lanesModel().thinking, parseSelector(workerModel()).thinking]).toEqual(["low", "xhigh", "low"]);
+	} finally {
+		useLearned(() => undefined);
+	}
+});
+
+test("picking a model for a config target stores no effort unless the owner gave one", async () => {
+	cfg.models = { lanes: { model: OPUS, thinking: "low" } };
+	await setModel("lanes", FABLE);
+	expect(cfg.models?.lanes).toEqual({ model: FABLE, thinking: undefined });
+	await setModel("lanes", OPUS, "xhigh");
+	expect(cfg.models?.lanes).toEqual({ model: OPUS, thinking: "xhigh" });
+	await setModel("lanes", FABLE, "high");
+	await setModel("lanes", FABLE, "medium");
+	expect(cfg.models?.lanes?.thinking).toBe("medium");
+	await setModel("lanes", undefined, "low");
+	expect(cfg.models?.lanes).toEqual({ model: FABLE, thinking: "low" });
+});

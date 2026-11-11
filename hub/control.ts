@@ -336,6 +336,8 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	// A different model with no effort in the same request takes that model's sweet spot (hub/model-effort.ts), clamped to the levels it lists; an effort sent with the request wins.
 	const sweet = picked !== current.model ? sweetSpot(picked, available.find(m => m.selector === picked)?.thinking).effort : current.thinking;
 	const next = { model: picked, thinking: thinking ?? sweet };
+	// config.json keeps only an effort the owner gave (or already had stored for this model); without one the target follows the model's sweet spot, which can change as benchmarks come in (hub/effort-wire.ts).
+	const stored = { model: picked, thinking: thinking ?? (picked === current.model ? cfg.models?.[target as FallbackTarget]?.thinking : undefined) };
 	const done = (applied: ModelChange["applied"], note: string): ModelChange => {
 		noteModelChange(target, selectorOf(current), selectorOf(next), by);
 		return { ok: true, target, ...next, applied, note };
@@ -344,17 +346,17 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	if (next.model === current.model && next.thinking === current.thinking && target !== "workers" && (!projectOf(target) || ownModelOf(target))) return { ok: true, target, ...next, applied: "live", note: "unchanged" };
 	if (projectOf(target)) return done(projectApplied(convs.setOwnModel(target, selectorOf(next))), PROJECT_NOTE);
 	if (target === "orchestrator") {
-		updateModels("orchestrator", next);
+		updateModels("orchestrator", stored);
 		const applied = applyModelChange();
 		convs.followMain();
 		return done(applied, applied === "live" ? `Orchestrator switched to ${selectorOf(next)} on its session. ${ORCHESTRATOR_NOTE}` : applied === "restarted" ? `Orchestrator restarting on ${selectorOf(next)}. ${ORCHESTRATOR_NOTE}` : `Saved. The orchestrator switches to ${selectorOf(next)} when its current turn ends (or on its next start). ${ORCHESTRATOR_NOTE}`);
 	}
 	if (target === "lanes") {
-		updateModels("lanes", next);
+		updateModels("lanes", stored);
 		return done("next-start", "Saved. Lanes launched from now on use it; running lanes keep their model (change one with a lane target).");
 	}
 	if (target === "workers") {
-		updateModels("workers", next);
+		updateModels("workers", stored);
 		// The owner's latest word wins: running lanes drop their launch-time worker value and follow the new default.
 		const running = [...lanes.values()].filter(l => l.proc).map(l => l.name);
 		for (const name of running) setLaneWorkerModel(name, undefined);

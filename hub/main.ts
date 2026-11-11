@@ -25,6 +25,7 @@ import { startWebI18n } from "./web-i18n-boot.ts";
 import { broadcast, emit, emitDelivery, noteLive, onEmit, recentEvents, sentFiles, subscriberCount } from "./events.ts";
 import { WORK_SWEEP_MS } from "./workrows.ts";
 import { startAgentTrees } from "./agent-tree.ts";
+import { startEffortLearning } from "./effort-wire.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startRecallIndexing } from "./recall-idle.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
@@ -544,6 +545,7 @@ setInterval(() => void (subscriberCount() > 0 && refreshQuota().catch(e => log(`
 startLaneHygiene();
 startWorktreeCleanup();
 startDataCleanup();
+startEffortLearning({ enabled: () => cfg.orchestrator?.effort_learn !== false, say: (model, effort, evidence) => void out(discord.status.enabled ? "worklog" : "web", msg().effortLearned(model, effort, evidence), undefined, { source: "gateway", wk: "system" }).catch(e => log(`effort notice failed: ${e}`)) });
 startRecallIndexing({ busy: busyNow });
 startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
