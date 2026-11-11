@@ -21,7 +21,9 @@ export type AxStep = { step: string; ms: number; ok: boolean; why?: string };
 // Focus: set only when the list window had to be opened. `from`: bundle id of the app in front before; `took`: KakaoTalk came to the front
 // when its list window showed; `restored`: the app in front before was put back at once.
 export type Focus = { from?: string; took: boolean; restored: boolean };
-export type Opened = { ok: true; steps: AxStep[]; focus?: Focus; row?: number } | { ok: false; reason: string; steps: AxStep[]; focus?: Focus };
+// `found`: only on a failure of the menu step. The row was found and checked, nothing was opened; the next try may open it again without a new list read.
+export type FoundRow = { row: number; texts: string[] };
+export type Opened = { ok: true; steps: AxStep[]; focus?: Focus; row?: number } | { ok: false; reason: string; steps: AxStep[]; focus?: Focus; found?: FoundRow };
 
 const READ_ROWS = 60;
 // The measured native scan is ~13-30 ms a row (299 rows ≈ 4-9 s). Every rung relies on the hint and stops at the first name hit, but
@@ -209,7 +211,7 @@ const DEEP_ROWS = 120;
 // read instead of hundreds. `deep`: scan without the hint and with the whole budget (the order assumption was wrong). The open phase (rows
 // read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open. `stayBehind`: a closed list window is
 // reported instead of opened, because KakaoTalk comes to the front when it shows.
-export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number; memo?: number; stayBehind?: boolean } = {}): Promise<Opened> {
+export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number; memo?: number; stayBehind?: boolean; reuse?: FoundRow } = {}): Promise<Opened> {
 	const steps: AxStep[] = [];
 	const t0 = performance.now();
 	const left = () => cap - (performance.now() - t0);
@@ -231,7 +233,9 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	const rowsCallMs = Math.max(budget, COVER_MS) + 1_200;
 
 	let openedRow: number | undefined;
-	let listed = await call(runner, rowsReq, Math.min(left(), rowsCallMs));
+	// `reuse`: the row an earlier try of this send already chose and whose menu did not open. It goes through the same choice and the same
+	// recheck at open time, but the list is not read again (a shared name would cost a whole-list read each time).
+	let listed = opts.reuse ? { out: { ok: true, scanned: 1, stopped: "found", hits: [{ index: opts.reuse.row, texts: opts.reuse.texts }] } as Out, ms: 0, timedOut: false } : await call(runner, rowsReq, Math.min(left(), rowsCallMs));
 	// No list window (KakaoTalk runs from the menu bar): open it once through its menu 창 > 채팅. KakaoTalk then comes to the front for
 	// a moment; the app in front before is put back inside that call, and the change is kept on the send record.
 	if (listed.out.ok !== true && listed.out.why === "no_list" && opts.stayBehind !== true) {
@@ -264,17 +268,24 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 			if (choice.why !== "none") return stop(REFUSE.mismatch);
 			return stop(stopped === "budget" ? `카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundTime}(${seen(scanned, total)})` : `카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundEnd}(${seen(scanned, total)}). 카카오톡에서 방 이름이 바뀌었거나 나간 방인지 확인해 주세요`);
 		}
-		if (shared && stopped !== "end" && !(stopped === "found" && hits.length >= need)) return stop(`${named} 이름의 방이 ${need}개라 ${REFUSE.partial}(${seen(scanned, total)})`);
+		if (shared && !opts.reuse && stopped !== "end" && !(stopped === "found" && hits.length >= need)) return stop(`${named} 이름의 방이 ${need}개라 ${REFUSE.partial}(${seen(scanned, total)})`);
 		if (left() < 1_000) return stop(timedOut());
 		// What told the row apart is checked again on the row at open time (a twin that moved into this index is refused, never opened).
 		const expect = shared ? { ...(choice.members !== undefined ? { members: choice.members } : { noCount: true }), ...(choice.preview !== undefined ? { preview: choice.preview } : {}) } : undefined;
 		openedRow = choice.index;
+		const chosen = { row: choice.index, texts: rows[choice.index]! };
 		const row = await call(runner, { action: "open", name: room.name, row: choice.index, ...(expect ? { expect } : {}) }, Math.max(1_500, left()));
 		const phases = Object.entries(row.out.ms ?? {}).map(([k, v]) => `${k}=${v}`).join(",");
 		steps.push({ step: row.out.step ?? "open", ms: row.ms, ok: row.out.ok === true, why: row.out.ok === true ? phases : `${row.timedOut ? "timeout" : failWhy(row.out)}${phases ? `:${phases}` : ""}` });
 		if (row.out.ok !== true) {
+			// The reused row is gone or moved: the list is read again, as if it was the first try.
+			if (opts.reuse && (row.out.step === "list" || row.out.step === "recheck")) {
+				const again = await openRoom(room, all, runner, { ...opts, reuse: undefined });
+				return { ...again, steps: [...steps, ...again.steps] };
+			}
 			if (row.out.step === "window") await closeWindow(runner, room.name);
-			return stop(row.timedOut ? timedOut() : openFailed(row.out.step ?? "open"));
+			const failed = stop(row.timedOut ? timedOut() : openFailed(row.out.step ?? "open"));
+			return row.out.step === "menu" && !row.timedOut ? { ...failed, found: chosen } : failed;
 		}
 	}
 	const tv = performance.now();

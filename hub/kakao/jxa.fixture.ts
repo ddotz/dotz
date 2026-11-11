@@ -11,6 +11,10 @@ export type Jxa = {
 	attachFile: (name: string, path: string) => { ok: boolean; why?: string; pressed?: boolean; clipboard?: boolean };
 	setWindowNamed: (fn: (name: string) => unknown) => void;
 	norm: (s: string) => string;
+	axListNative: () => { table: unknown; rows: unknown[] } | null;
+	axVisibleRows: (table: unknown) => number[];
+	axReveal: (list: unknown, index: number) => { moved: boolean; first?: number };
+	axRestore: (list: unknown, rev: { moved: boolean; first?: number }) => void;
 	axScan: (name: string, first: boolean, budgetMs: number, hint?: number, need?: number, memo?: number) => { ok: true; rows: number; scanned: number; hits: { index: number; texts: string[] }[]; stopped: "found" | "budget" | "end"; pages: number } | null;
 };
 
@@ -18,11 +22,17 @@ export type Jxa = {
 // rows > one cell > [profile button (no value), title, member count (groups), time, preview]. Every AX read advances the script's clock by
 // `msPerRead`, so a scan budget is spent the way a slow real list spends it.
 export type AxRow = { title: string; count?: number; preview?: string };
-export function axList(rows: AxRow[]) {
+// `visible`: the window shows only this many rows (AXVisibleRows); a row cell scrolls itself into view when AXScrollToVisible is set to a number.
+export function axList(rows: AxRow[], opts: { visible?: number } = {}) {
 	const text = (v: string) => ({ AXRole: "AXStaticText", AXValue: v });
+	let top = 0;
+	const axRows = rows.map((r, i) => ({ AXIndex: i, AXChildren: [{ onScroll: () => (top = Math.min(i, Math.max(0, rows.length - (opts.visible ?? rows.length)))), AXChildren: [{ AXRole: "AXButton", AXValue: "" }, text(r.title), ...(r.count === undefined ? [] : [text(String(r.count))]), text("오후 3:03"), ...(r.preview === undefined ? [] : [text(r.preview)])] }] }));
 	const table = {
 		AXRole: "AXTable",
-		AXRows: rows.map(r => ({ AXChildren: [{ AXChildren: [{ AXRole: "AXButton", AXValue: "" }, text(r.title), ...(r.count === undefined ? [] : [text(String(r.count))]), text("오후 3:03"), ...(r.preview === undefined ? [] : [text(r.preview)])] }] })),
+		AXRows: axRows,
+		get AXVisibleRows() {
+			return axRows.slice(top, top + (opts.visible ?? rows.length));
+		},
 	};
 	const listWin = { AXTitle: "카카오톡", AXChildren: [{ AXRole: "AXScrollArea", AXChildren: [table] }] };
 	return { AXWindows: [listWin] };
@@ -35,18 +45,26 @@ export function loadJxa(opts: { app?: ReturnType<typeof axList>; msPerRead?: num
 		t += s * 1000;
 	};
 	const objc = { import() {}, bindFunction() {}, deepUnwrap: (x: unknown) => x, unwrap: (x: unknown) => x };
+	const nsNumber = { numberWithInt: (n: number) => n };
 	const noApp = () => {
 		throw new Error("no System Events in tests");
 	};
 	// The ObjC bridge of the AX API: one attribute read per call, -25205 (no value) for an attribute the element does not have.
 	const $ = opts.app
 		? {
+				NSNumber: nsNumber,
 				NSRunningApplication: { runningApplicationsWithBundleIdentifier: () => ({ js: [{ processIdentifier: 1 }] }) },
 				AXUIElementCreateApplication: () => opts.app,
 				AXUIElementCopyAttributeValue: (el: Record<string, unknown>, name: string, ref: unknown[]) => {
 					t += opts.msPerRead ?? 0;
 					if (!el || !(name in el)) return -25205;
 					ref[0] = el[name];
+					return 0;
+				},
+				// AXScrollToVisible is taken as a number only (a boolean fails like the real app).
+				AXUIElementSetAttributeValue: (el: { onScroll?: () => void }, name: string, value: unknown) => {
+					if (name !== "AXScrollToVisible" || !el.onScroll || typeof value !== "number") return -25200;
+					el.onScroll();
 					return 0;
 				},
 				// Only an element with an `onPress` hook (a tab button) reacts to AXPress.
@@ -57,7 +75,7 @@ export function loadJxa(opts: { app?: ReturnType<typeof axList>; msPerRead?: num
 				},
 			}
 		: (opts.objc ?? {});
-	const body = `${src}\n${attachSrc}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, attachFile: attachFile, norm: norm, axScan: axScan, setWindowNamed: function (fn) { windowNamed = fn; } };`;
+	const body = `${src}\n${attachSrc}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, attachFile: attachFile, norm: norm, axListNative: axList, axVisibleRows: axVisibleRows, axReveal: axReveal, axRestore: axRestore, axScan: axScan, setWindowNamed: function (fn) { windowNamed = fn; } };`;
 	const application = opts.systemEvents ? () => opts.systemEvents : noApp;
 	return new Function("ObjC", "$", "Application", "delay", "Ref", "Date", body)(objc, $, application, delay, () => [], fakeDate) as Jxa;
 }

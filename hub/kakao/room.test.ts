@@ -2,10 +2,10 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chooseRow, inputFree, normalizeInput, normalizeTitle, REFUSE, rowPreview, sameText, type RoomFact } from "./room.ts";
+import { chooseRow, inputFree, normalizeInput, normalizeTitle, openRoom, REFUSE, rowPreview, sameText, type RoomFact } from "./room.ts";
 import { sendText } from "./send.ts";
 import { kakaoPaths, type Runner } from "./types.ts";
-import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
+import { type FakeRow, fakeScreen, rowTexts } from "./ui.fixture.ts";
 
 let dir: string;
 let paths: ReturnType<typeof kakaoPaths>;
@@ -250,6 +250,39 @@ test("a failing open is retried through the ladder, one context menu per attempt
 	}
 	const ok = await send([familyRow], family, [family]);
 	expect(ok.screen.menus()).toBe(1);
+});
+
+test("a menu that does not open does not make the next rungs read the list again: the chosen row is opened again, also for a shared name", async () => {
+	const rows: FakeRow[] = [
+		{ id: "chat_g1", title: "민수", count: 5 },
+		{ id: "chat_dm", title: "민수", window: { title: "민수" } },
+		{ id: "chat_g2", title: "민수", count: 7, window: { title: "민수", members: 7 } },
+	];
+	const { r, screen } = await send(rows, groupB, [direct, groupA, groupB], { openFail: { step: "menu", why: "no_menu" } });
+	expect(r.ok).toBe(false);
+	expect(r.attempts!.length).toBeGreaterThan(1);
+	expect(screen.rowCalls).toHaveLength(1);
+	expect(screen.menus()).toBe(r.attempts!.length);
+	// A menu that opens on a later rung opens the same row and the send goes through with one list read.
+	const later = await send(rows, groupB, [direct, groupA, groupB], { openFail: n => (n < 3 ? { step: "menu", why: "no_menu" } : undefined) });
+	expect(later.r).toMatchObject({ ok: true });
+	expect(later.screen.opened).toEqual(["ax:chat_g2"]);
+	expect(later.screen.rowCalls).toHaveLength(1);
+});
+
+test("a reused row that moved since is refused at open time and the list is read again, never opened blind", async () => {
+	const rows: FakeRow[] = [
+		{ id: "chat_g1", title: "민수", count: 5 },
+		{ id: "chat_dm", title: "민수", window: { title: "민수" } },
+		{ id: "chat_g2", title: "민수", count: 7, window: { title: "민수", members: 7 } },
+	];
+	const screen = fakeScreen(rows);
+	const stale = { row: 0, texts: rowTexts({ id: "x", title: "민수", count: 7 }) };
+	const r = await openRoom(groupB, [direct, groupA, groupB], screen.runner, { reuse: stale });
+	expect(r).toMatchObject({ ok: true, row: 2 });
+	expect(screen.opened).toEqual(["ax:chat_g2"]);
+	expect(screen.rowCalls).toHaveLength(1);
+	expect(r.steps.map(s => s.step)).toEqual(["rows", "recheck", "rows", "open", "verify"]);
 });
 
 test("there is no other path: no kmsg, no open or activate of KakaoTalk, also when the list window is not shown", async () => {

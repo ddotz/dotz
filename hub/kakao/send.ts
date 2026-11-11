@@ -13,7 +13,7 @@ import { type DraftAction, draftApprovalBlock, draftVerdict } from "../draft-app
 import { type Confirmer, dbConfirmer, dbPreview } from "./confirm.ts";
 import { writePrivate } from "./creds.ts";
 import { draftParts } from "./draft.ts";
-import { type AxStep, axSend, closeWindow, type Focus, normalizeTitle, openRoom, REFUSE, type RoomFact, sameText, type SendOut } from "./room.ts";
+import { type AxStep, axSend, closeWindow, type Focus, type FoundRow, normalizeTitle, openRoom, REFUSE, type RoomFact, sameText, type SendOut } from "./room.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
@@ -424,6 +424,8 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	// The owner's own draft is never touched; the window holding it is left open (closing it could lose what he typed).
 	let keepForOwner = false;
 	let leftPressed = left?.pressed ? left : undefined;
+	// The row a rung chose when its menu did not open: the next rung opens that row again instead of reading the list again.
+	let reuse: FoundRow | undefined;
 	for (const [i, rung] of RUNGS.entries()) {
 		// No new rung starts once the ladder has used its time: the web watchdog (web.ts STUCK_MS) must not outlive a send that can still press.
 		if (i > 0 && performance.now() - t0 > LADDER_MS) break;
@@ -436,7 +438,8 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 		};
 		if (rung.reopen) await closeWindow(deps.runner, input.roomName);
 		const p = performance.now();
-		const opened = await openRoom(room, all, deps.runner, { deep: rung.deep, ...(hint >= 0 ? { hint } : {}), ...(memo === undefined ? {} : { memo }) });
+		const opened = await openRoom(room, all, deps.runner, { deep: rung.deep, ...(hint >= 0 ? { hint } : {}), ...(memo === undefined ? {} : { memo }), ...(reuse ? { reuse } : {}) });
+		reuse = opened.ok ? undefined : opened.found;
 		ms.pick = Math.round(performance.now() - p);
 		if (opened.ok && opened.row !== undefined && opened.row !== memo) writeRowMemo(deps.paths, input.chatId, (memo = opened.row));
 		else if (!opened.ok && opened.reason === REFUSE.mismatch && memo !== undefined) {

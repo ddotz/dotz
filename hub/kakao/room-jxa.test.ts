@@ -91,6 +91,21 @@ test("an emoji room is found in the list whether or not its title carries the va
 	expect(reverse).toMatchObject({ stopped: "found", hits: [{ index: 1 }] });
 });
 
+// Measured 2026-11-11: AXShowMenu opens no menu for a row outside the window's visible rows (rows 0-7 of 299), and every row past them failed
+// with no_menu. The row cell scrolls itself into view when AXScrollToVisible is set to the number 1 (a boolean is refused).
+test("a row below the visible rows is scrolled into view before its menu is asked for, and the list is scrolled back after", () => {
+	const rows: AxRow[] = Array.from({ length: 299 }, (_, i) => ({ title: `방 ${i}` }));
+	const jxa = loadJxa({ app: axList(rows, { visible: 8 }) });
+	const list = jxa.axListNative()!;
+	expect(jxa.axVisibleRows(list.table)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+	expect(jxa.axReveal(list, 3)).toEqual({ moved: false });
+	const rev = jxa.axReveal(list, 287);
+	expect(rev).toEqual({ moved: true, first: 0 });
+	expect(jxa.axVisibleRows(list.table)).toContain(287);
+	jxa.axRestore(list, rev);
+	expect(jxa.axVisibleRows(list.table)[0]).toBe(0);
+});
+
 // The database lists more rooms than KakaoTalk's list shows, so the hint (the room's database index) overshoots and the row sits above it,
 // usually at the very top (the room being answered got the newest message). Reading outward from the hint read the top rows last, after
 // ~250 of 290, and a budget that covers ~175 rows ran out first: "시간 안에 방을 찾지 못했어요" on every rung.

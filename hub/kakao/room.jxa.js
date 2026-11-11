@@ -45,6 +45,7 @@ var COVER_MAX_MS = 11000;
 try {
 	ObjC.bindFunction("AXUIElementCreateApplication", ["id", ["int"]]);
 	ObjC.bindFunction("AXUIElementCopyAttributeValue", ["int", ["id", "id", "id*"]]);
+	ObjC.bindFunction("AXUIElementSetAttributeValue", ["int", ["id", "id", "id"]]);
 	ObjC.bindFunction("AXUIElementPerformAction", ["int", ["id", "id"]]);
 } catch (e) {}
 
@@ -554,7 +555,50 @@ function nativeRowTexts(index) {
 	return axRowTexts(list.rows[index]);
 }
 
+// A row outside the window's visible rows gets no context menu (measured 2026-11-11: AXShowMenu leaves the menu empty for every row past the
+// last visible one, the same row works once it is visible). AXScrollToVisible on the row cell scrolls it into view by Accessibility only (no key,
+// no mouse, no activation); the value must be the number 1 (true is refused). Returns {moved, first} where first is the row that was at the top.
+function axVisibleRows(table) {
+	var out = [];
+	var vis = axGet(table, "AXVisibleRows") || [];
+	for (var i = 0; i < vis.length; i++) out.push(axGet(vis[i], "AXIndex"));
+	return out;
+}
+
+function axScrollTo(list, index) {
+	try {
+		var cells = axGet(list.rows[index], "AXChildren") || [];
+		return cells.length && $.AXUIElementSetAttributeValue(cells[0], "AXScrollToVisible", $.NSNumber.numberWithInt(1)) === 0;
+	} catch (e) {
+		return false;
+	}
+}
+
+function axReveal(list, index) {
+	var vis = axVisibleRows(list.table);
+	if (!vis.length || vis.indexOf(index) >= 0) return { moved: false };
+	var first = Math.min.apply(null, vis);
+	if (!axScrollTo(list, index)) return { moved: false };
+	until(function () { return axVisibleRows(list.table).indexOf(index) >= 0; }, 0.6);
+	return { moved: true, first: first };
+}
+
+// The list goes back to where it was, so the owner's list window looks the same after the open.
+function axRestore(list, rev) {
+	if (list && rev && rev.moved) axScrollTo(list, rev.first);
+}
+
 function openRowAt(index, name, expect) {
+	var list = axList();
+	var rev = {};
+	try {
+		return openRowIn(index, name, expect, list, rev);
+	} finally {
+		axRestore(list, rev);
+	}
+}
+
+function openRowIn(index, name, expect, axl, rev) {
 	var t0 = Date.now();
 	var ms = {};
 	var lap = function (key) {
@@ -580,6 +624,13 @@ function openRowAt(index, name, expect) {
 		return fail("recheck", "gone", e);
 	}
 	lap("recheck");
+	if (axl && index < axl.rows.length) {
+		var moved = axReveal(axl, index);
+		rev.moved = moved.moved;
+		rev.first = moved.first;
+		if (moved.moved) lap("scroll");
+		if (axVisibleRows(axl.table).indexOf(index) < 0 && axVisibleRows(axl.table).length) return fail("menu", "not_visible");
+	}
 	try {
 		cell.actions.byName("AXShowMenu").perform();
 	} catch (e) {
