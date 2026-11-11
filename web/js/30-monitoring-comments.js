@@ -4,8 +4,8 @@
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
 // A request that did not get through reads as a sentence about what did not load, never the bare transport word ('offline'); 다시 시도 stands under it, the same in every empty or failed place of the kakao and comment panes.
-const appFail = (e, what) => { const m = String((e && e.message) || ""); return !m || /^(offline|failed to fetch|load failed|networkerror.*)$/i.test(m) ? `${what}. 연결을 확인해 주세요` : m; };
-const appRetry = fn => el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: "다시 시도", onclick: fn });
+const appFail = (e, what) => { const m = String((e && e.message) || ""); return !m || /^(offline|failed to fetch|load failed|networkerror.*)$/i.test(m) ? TX("mon.cm.fail_net", { what }) : m; };
+const appRetry = fn => el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: fn });
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
   drafting: new Set(), revising: "", note: {}, pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
@@ -28,7 +28,7 @@ function cmApi(path, method = "GET", body) {
   return api(method === "GET" ? pqProxy(CM.pc, pqBare(path)) : path, method, body);
 }
 
-const cmRooms = el("div", { class: "kk-rooms", id: "cm-rooms", "aria-label": "댓글을 지켜보는 글" });
+const cmRooms = el("div", { class: "kk-rooms", id: "cm-rooms", "aria-label": TX("mon.cm.rooms_aria") });
 const cmHead = el("div", { class: "kk-head", id: "cm-head" });
 const cmIn = el("div", { class: "kk-in", id: "cm-in" });
 const cmTl = el("div", { class: "kk-tl", id: "cm-tl" }, cmIn);
@@ -42,7 +42,7 @@ const cmIntgSoon = () => { clearTimeout(CM.intgT); CM.intgT = setTimeout(loadInt
 const cmSources = () => CM.sources.filter(s => cmOwner(s) === CM.app);
 // The sources of a settings app: this computer's ("youtube"), or a peer's ("youtube~<computer>") while the pane shows that computer (CM.pc).
 const cmSrcOf = app => (app.includes("~") === !!CM.pc ? CM.sources.filter(s => cmOwner(s) === app.split("~")[0]) : []);
-const cmWatchWord = srcs => { const w = srcs.flatMap(s => s.watch || []); return w.includes("*") ? "전부" : w.length ? `${w.length}개` : "없음"; };
+const cmWatchWord = srcs => { const w = srcs.flatMap(s => s.watch || []); return w.includes("*") ? TX("mon.cm.all") : w.length ? TX("mon.cm.watch_n", { n: w.length }) : TX("settings.none"); };
 
 async function cmLoadSources() {
   try {
@@ -70,7 +70,7 @@ async function cmLoad() {
     CM.threads = Array.isArray(r.threads) ? r.threads : []; CM.error = ""; CM.loaded = true;
   } catch (e) {
     if (seq !== CM.rseq) return;
-    CM.threads = []; CM.loaded = true; CM.error = "댓글 목록을 불러오지 못했어요";
+    CM.threads = []; CM.loaded = true; CM.error = TX("mon.cm.list_fail");
   }
   cmPaintRooms();
 }
@@ -98,17 +98,17 @@ async function cmPosts(s) {
 function cmSourceNode(s) {
   const watch = s.watch || [], all = watch.includes("*"), p = CM.posts.get(s.key);
   const node = el("div", { class: "kk-pick-src", "data-src": s.key },
-    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: s.label }), s.error ? el("span", { class: "cv-p", role: "status", text: `읽지 못했어요 · ${s.error}` }) : null),
-      kkSwitch(all, `${s.label} 전부 지켜보기`, "all", v => cmUpdate(s, { watch: v ? ["*"] : [] }))),
-    el("div", { class: "sec", text: "설정" }),
-    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" })),
-      kkSwitch(!!s.autoDraft, `${s.label} 자동 초안`, "auto", v => cmUpdate(s, { autoDraft: v }), true)),
+    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: s.label }), s.error ? el("span", { class: "cv-p", role: "status", text: TX("mon.cm.read_fail", { error: s.error }) }) : null),
+      kkSwitch(all, TX("mon.cm.watch_all", { label: s.label }), "all", v => cmUpdate(s, { watch: v ? ["*"] : [] }))),
+    el("div", { class: "sec", text: TX("common.settings") }),
+    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("mon.cm.auto") })),
+      kkSwitch(!!s.autoDraft, TX("mon.cm.auto_aria", { label: s.label }), "auto", v => cmUpdate(s, { autoDraft: v }), true)),
     // Config-only: the mail app (`mailApp`) is set in the source config (docs/comments-api.md); without it the card says no mail was made.
-    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "파일 요청 메일 초안" })),
-      kkSwitch(!!s.autoMail, `${s.label} 파일 요청 메일 초안`, "mail", v => cmUpdate(s, { autoMail: v }), true)),
-    el("button", { class: "li tap", type: "button", "data-k": "posts", onclick: () => cmPosts(s) }, el("span", { class: "tx" }, el("div", { class: "hd", text: "지켜볼 글 고르기" })), el("span", { class: "li-end" }, icon("chev", "chev"))));
+    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("mon.cm.filemail") })),
+      kkSwitch(!!s.autoMail, TX("mon.cm.filemail_aria", { label: s.label }), "mail", v => cmUpdate(s, { autoMail: v }), true)),
+    el("button", { class: "li tap", type: "button", "data-k": "posts", onclick: () => cmPosts(s) }, el("span", { class: "tx" }, el("div", { class: "hd", text: TX("mon.cm.pick") })), el("span", { class: "li-end" }, icon("chev", "chev"))));
   if (p) {
-    if (p.loading) node.append(el("div", { class: "kk-note", text: "불러오는 중…" }));
+    if (p.loading) node.append(el("div", { class: "kk-note", text: TX("common.loading") }));
     else if (p.error && !p.list.length) node.append(el("div", { class: "kk-note", role: "status", text: p.error }));
     else for (const post of p.list) node.append(el("div", { class: "kk-pr", "data-post": post.id }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: post.title, text: post.title })),
       kkSwitch(all || !!post.watched, post.title, "post", v => cmUpdate(s, { watch: v ? [...watch.filter(x => x !== "*"), post.id] : watch.filter(x => x !== post.id && x !== "*").concat(all ? p.list.filter(x => x.id !== post.id).map(x => x.id) : []) }), true)));
@@ -120,13 +120,13 @@ function cmPickPaint() {
   const d = CM.pickD;
   if (!d) return;
   const srcs = cmSrcOf(d.dataset.app);
-  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: "새 댓글마다 답글 초안을 만들어서 토큰이 들어요." }), el("div", { class: "sec", text: "지켜볼 채널" }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: "켜 둔 곳이 없어요. 채팅에서 켜 달라고 해 주세요." })]));
+  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: TX("mon.cm.tokens") }), el("div", { class: "sec", text: TX("mon.cm.channels") }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: TX("mon.cm.none_on") })]));
 }
 function cmPickOpen(app) {
   if (CM.pickD) return;
-  const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": "지켜볼 글" },
+  const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": TX("mon.cm.posts_watch") },
     el("div", { class: "kk-pd-in" },
-      fsHead([el("h2", { class: "fs-t", text: "지켜볼 글" })], { close: () => d.close() }),
+      fsHead([el("h2", { class: "fs-t", text: TX("mon.cm.posts_watch") })], { close: () => d.close() }),
       el("div", { class: "kk-pd-b" })));
   cmPickPaint();
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
@@ -136,9 +136,9 @@ function cmPickOpen(app) {
 // A post's row carries one marker, the most urgent: a failed mail > comments nobody answered > drafts waiting. The rest is in the opened post, on each comment (cmProgress).
 function cmMark(t) {
   const failed = t.mails ? t.mails.failed : 0;
-  if (failed) return el("span", { class: "tag err", "data-mark": "failed", "aria-label": `메일 실패 ${failed}건`, text: `실패 ${failed}` });
+  if (failed) return el("span", { class: "tag err", "data-mark": "failed", "aria-label": TX("mon.cm.mail_fail_aria", { n: failed }), text: TX("mon.cm.failed_n", { n: failed }) });
   if (t.unreplied) { const m = unrepCount(t.unreplied); m.dataset.mark = "unreplied"; return m; }
-  if (t.drafts) return el("span", { class: "nb drafted", "data-mark": "draft", "aria-label": `답장 확인 ${t.drafts}건`, text: `초안 ${t.drafts}` });
+  if (t.drafts) return el("span", { class: "nb drafted", "data-mark": "draft", "aria-label": TX("mon.cm.drafts_aria", { n: t.drafts }), text: TX("mon.cm.drafts_n", { n: t.drafts }) });
   return null;
 }
 function cmRow(t) {
@@ -162,13 +162,13 @@ function cmPostCard(thread, kind) {
     el("span", { class: "cv-b" }, el("span", { class: "cm-pt", text: thread.title }),
       thread.link ? el("a", { class: "cm-pl", href: thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(kind) }) : null));
 }
-const cmOpenWord = kind => (kind === "youtube" ? "영상 열기" : "원본 글 열기");
+const cmOpenWord = kind => (kind === "youtube" ? TX("mon.cm.open_video") : TX("mon.cm.open_post"));
 // DM is this computer's own (one DM state, /api/ig-dm here): another computer's Instagram shows no DM tab, never this computer's DMs under its name.
 const cmHasTabs = () => !CM.pc && DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length);
 function cmTabs() {
   if (!cmHasTabs()) return null;
   const b = (id, text) => el("button", { type: "button", class: `cchip mr-f${CM.tab === id ? " on" : ""}`, role: "tab", "data-tab": id, "aria-selected": String(CM.tab === id), text, onclick: () => cmTab(id) });
-  return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": "보기" }, b("comments", "댓글"), b("dm", "DM"));
+  return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": TX("mon.cm.view_aria") }, b("comments", TX("mon.cm.comments")), b("dm", "DM"));
 }
 function cmTab(id) {
   if (CM.tab === id) return;
@@ -186,14 +186,14 @@ function cmPaintRooms() {
     return;
   }
   CM.roomsSig = sig;
-  const list = el("section", { class: "kk-watch", "aria-label": "댓글이 있는 글" });
+  const list = el("section", { class: "kk-watch", "aria-label": TX("mon.cm.posts_aria") });
   if (CM.loaded) {
-    list.append(el("div", { class: "cv-gh", role: "presentation", text: "글" }));
-    if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }), el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: "다시 시도", onclick: () => cmLoad() }));
+    list.append(el("div", { class: "cv-gh", role: "presentation", text: TX("mon.cm.posts") }));
+    if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }), el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: () => cmLoad() }));
     else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
-    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: "켜 둔 곳이 없어요. 채팅에서 켜 달라고 해 주세요." }));
-    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: "아직 받은 댓글이 없어요" }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: "지켜볼 글 고르기", onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
-  } else list.append(el("div", { class: "kk-note", role: "status", text: "불러오는 중…" }));
+    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: TX("mon.cm.none_on") }));
+    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: TX("mon.cm.empty") }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: TX("mon.cm.pick"), onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
+  } else list.append(el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
   const tabs = cmTabs();
   clear(cmRooms).append(...(tabs ? [tabs] : []), list);
   cmRooms.scrollTop = top;
@@ -216,7 +216,7 @@ async function cmReload(seq = CM.seq, scroll = false) {
     CM.view = v; CM.loading = false; CM.viewErr = "";
   } catch (e) {
     if (seq !== CM.seq) return;
-    CM.loading = false; CM.viewErr = appFail(e, "댓글을 불러오지 못했어요");
+    CM.loading = false; CM.viewErr = appFail(e, TX("mon.cm.fail"));
   }
   cmPaintChat(scroll);
   cmMarkRead();
@@ -247,17 +247,17 @@ function cmFlow(c, v) {
   const step = (text, st) => ({ text, st }), out = [];
   const d = v.drafts.find(x => x.commentId === c.id), s = v.sends.filter(x => x.commentId === c.id).sort((p, q) => p.at - q.at).at(-1);
   let reply = null;
-  if (s && s.state === "sending") reply = [step("초안", "done"), step("확인", "done"), step("보내는 중", "busy")];
-  else if (s && s.state === "unsure") reply = [step("초안", "done"), step("확인", "done"), step("확인 필요", "ask")];
-  else if (d) reply = [step("초안", "done"), step("확인 대기", "ask"), step("보냄", "todo")];
-  else if (s && s.state === "sent") reply = [step("초안", "done"), step("확인", "done"), step(s.via === "rule" ? "보냄 · 자동" : "보냄", "done")];
-  else if (s && s.state === "failed") reply = [step("초안", "done"), step("확인", "done"), step(`실패${s.reason ? ` · ${s.reason}` : ""}`, "err")];
-  else if (v.comments.some(x => x.mine && x.parent && x.parent === cmNative(c))) reply = [step("답글 보냄", "done")];
-  else if (CM.drafting.has(c.id)) reply = [step("초안 만드는 중", "busy"), step("확인", "todo"), step("보냄", "todo")];
-  else if (c.needsReply) reply = [step("초안 필요", "ask"), step("확인", "todo"), step("보냄", "todo")];
-  if (reply) out.push({ key: "reply", name: "답글", steps: reply });
-  const m = c.mail || (d && d.mail ? { state: "drafted", label: "메일 초안 작성됨" } : null);
-  if (m) out.push({ key: "mail", name: "메일", steps: m.state === "failed" ? [step("초안", "done"), step(m.label, "err")] : m.state === "sent" ? [step("초안", "done"), step("보냄", "done")] : [step("초안", "done"), step("답글과 함께 보내요", "todo")] });
+  if (s && s.state === "sending") reply = [step(TX("common.draft"), "done"), step(TX("mon.cm.st.check"), "done"), step(TX("mon.cm.st.sending"), "busy")];
+  else if (s && s.state === "unsure") reply = [step(TX("common.draft"), "done"), step(TX("mon.cm.st.check"), "done"), step(TX("mon.tag.need"), "ask")];
+  else if (d) reply = [step(TX("common.draft"), "done"), step(TX("mon.mail.pending"), "ask"), step(TX("mon.dr.st.send"), "todo")];
+  else if (s && s.state === "sent") reply = [step(TX("common.draft"), "done"), step(TX("mon.cm.st.check"), "done"), step(s.via === "rule" ? TX("mon.cm.st.auto") : TX("mon.dr.st.send"), "done")];
+  else if (s && s.state === "failed") reply = [step(TX("common.draft"), "done"), step(TX("mon.cm.st.check"), "done"), step(`${TX("mon.tag.fail")}${s.reason ? ` · ${s.reason}` : ""}`, "err")];
+  else if (v.comments.some(x => x.mine && x.parent && x.parent === cmNative(c))) reply = [step(TX("mon.cm.st.reply_sent"), "done")];
+  else if (CM.drafting.has(c.id)) reply = [step(TX("mon.cm.st.drafting"), "busy"), step(TX("mon.cm.st.check"), "todo"), step(TX("mon.dr.st.send"), "todo")];
+  else if (c.needsReply) reply = [step(TX("mon.cm.st.need_draft"), "ask"), step(TX("mon.cm.st.check"), "todo"), step(TX("mon.dr.st.send"), "todo")];
+  if (reply) out.push({ key: "reply", name: TX("mon.cm.reply"), steps: reply });
+  const m = c.mail || (d && d.mail ? { state: "drafted", label: TX("mon.cm.mail_drafted") } : null);
+  if (m) out.push({ key: "mail", name: TX("common.mail"), steps: m.state === "failed" ? [step(TX("common.draft"), "done"), step(m.label, "err")] : m.state === "sent" ? [step(TX("common.draft"), "done"), step(TX("mon.dr.st.send"), "done")] : [step(TX("common.draft"), "done"), step(TX("mon.cm.st.with_reply"), "todo")] });
   return out;
 }
 function cmProgress(c, v) {
@@ -270,17 +270,17 @@ function cmNoReply(ev, c) {
   const btn = ev.currentTarget, row = btn.closest(".cm-c"), pill = row && row.querySelector(".tag.unreplied");
   const hidden = [btn, pill].filter(Boolean);
   hidden.forEach(n => { n.hidden = true; });
-  cmApi(`/api/comments/comment/${enc(c.id)}/no-reply`, "POST", {}).then(() => { toast("답장 안 함으로 표시했어요"); cmReload(); cmLoad(); cmIntgSoon(); },
+  cmApi(`/api/comments/comment/${enc(c.id)}/no-reply`, "POST", {}).then(() => { toast(TX("mail.fyi.done")); cmReload(); cmLoad(); cmIntgSoon(); },
     e => { hidden.forEach(n => { n.hidden = false; }); toast(e.message, true); });
 }
 function cmCommentNode(c, v, by, nested) {
   const parent = c.parent ? by.get(c.parent) : null, draft = v.drafts.some(d => d.commentId === c.id);
   const pill = !c.mine && c.unreplied ? unrepPill() : null;
-  const hd = el("div", { class: "cm-hd" }, c.mine ? el("span", { class: "cm-mine", text: c.parent ? "나 · 내 답글" : "나" }) : el("span", { class: "kk-name", text: c.author }), el("span", { class: "kk-time", text: kkTime(c.at) }), pill);
+  const hd = el("div", { class: "cm-hd" }, c.mine ? el("span", { class: "cm-mine", text: c.parent ? TX("mon.cm.my_reply") : TX("mon.cm.me") }) : el("span", { class: "kk-name", text: c.author }), el("span", { class: "kk-time", text: kkTime(c.at) }), pill);
   const make = !c.mine && c.needsReply && !draft ? el("button", { class: "btn tonal sm", type: "button", "data-k": "draft", disabled: CM.drafting.has(c.id), onclick: () => cmMakeDraft(c),
-    text: CM.drafting.has(c.id) ? "초안 만드는 중…" : "답글 초안" }) : null;
-  const no = pill ? el("button", { class: "btn text sm cm-no", type: "button", text: "답장 안 함", onclick: ev => cmNoReply(ev, c) }) : null;
-  return el("div", { class: `kk-m cm-c${c.mine ? " mine" : ""}`, "data-id": c.id }, c.mine ? el("span", { class: "kk-av cm-me", "aria-hidden": "true", text: "나" }) : kkAvatar(c.author),
+    text: CM.drafting.has(c.id) ? TX("mon.cm.drafting_dots") : TX("mon.cm.reply_draft") }) : null;
+  const no = pill ? el("button", { class: "btn text sm cm-no", type: "button", text: TX("mail.fyi.title"), onclick: ev => cmNoReply(ev, c) }) : null;
+  return el("div", { class: `kk-m cm-c${c.mine ? " mine" : ""}`, "data-id": c.id }, c.mine ? el("span", { class: "kk-av cm-me", "aria-hidden": "true", text: TX("mon.cm.me") }) : kkAvatar(c.author),
     el("div", { class: "kk-mb" }, hd, parent && !nested ? el("div", { class: "kk-reply", text: `↳ ${parent.author}` }) : null, el("div", { class: "kk-bub", text: c.text }), cmProgress(c, v),
       make || no ? el("div", { class: "cm-acts" }, make, no) : null));
 }
@@ -293,12 +293,12 @@ async function cmSendFix(btn, s, op) {
   catch (e) { toast(e.message, true); btn.disabled = false; }
 }
 function cmSendNode(s) {
-  const failed = s.state === "failed", unsure = s.state === "unsure", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : unsure ? `확인 필요${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
+  const failed = s.state === "failed", unsure = s.state === "unsure", st = failed ? `${TX("mon.tag.fail")}${s.reason ? ` · ${s.reason}` : ""}` : unsure ? `${TX("mon.tag.need")}${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? TX("mon.dr.st.send") : TX("mon.cm.st.sending");
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id }, el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
     el("div", { class: "kk-st", role: failed || unsure ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
-      failed || unsure ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null,
-      unsure ? el("button", { class: "btn text", type: "button", "data-k": "done", text: "완료", onclick: ev => cmSendFix(ev.currentTarget, s, "done") }) : null));
+      failed || unsure ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: TX("mon.cm.send_again"), onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: TX("mail.remove"), onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null,
+      unsure ? el("button", { class: "btn text", type: "button", "data-k": "done", text: TX("settings.done"), onclick: ev => cmSendFix(ev.currentTarget, s, "done") }) : null));
 }
 function cmPaintChat(stick) {
   if (CM.tab === "dm") { dmPaintChat(); return; }
@@ -308,13 +308,13 @@ function cmPaintChat(stick) {
   if (sig !== CM.headSig) {
     CM.headSig = sig; clear(cmHead);
     if (open) cmHead.append(cmThumb(open.title, v && v.thread.thumb), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.title }),
-      v && v.thread.link ? el("a", { class: "cv-p", href: v.thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(v.source.kind) }) : el("span", { class: "cv-p", text: "댓글" })));
+      v && v.thread.link ? el("a", { class: "cv-p", href: v.thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(v.source.kind) }) : el("span", { class: "cv-p", text: TX("mon.cm.comments") })));
   }
   const csig = JSON.stringify([open, CM.loading, CM.viewErr, v && { ...v, read: null }, [...CM.drafting], CM.revising, v && v.sends.some(x => x.state === "sent" && Date.now() - x.at < 120000) ? Math.floor(Date.now() / 20000) : 0]);
   if (!stick && csig === CM.chatSig) return;
   CM.chatSig = csig;
-  if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "글을 골라 주세요" })); return; }
-  if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
+  if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("mon.cm.pick_post") })); return; }
+  if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("common.loading") })); return; }
   if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr }), appRetry(() => { CM.loading = true; CM.viewErr = ""; cmPaintChat(false); cmReload(); })); return; }
   // A repaint while he types what to change draws a new field (its text is CM.note): give it the focus and the caret the old one had.
   const a = document.activeElement, typing = a && a.matches(".rq-edit input") && cmIn.contains(a) ? [a.selectionStart, a.selectionEnd, a.selectionDirection] : null;
@@ -362,28 +362,28 @@ function cmPaintAll() {
 async function cmMakeDraft(c) {
   if (CM.drafting.has(c.id)) return;
   CM.drafting.add(c.id); cmPaintChat(false);
-  setTimeout(() => { if (CM.drafting.delete(c.id)) { cmPaintChat(false); toast("초안이 아직 오지 않았어요", true); } }, 120000);
+  setTimeout(() => { if (CM.drafting.delete(c.id)) { cmPaintChat(false); toast(TX("mon.cm.draft_late"), true); } }, 120000);
   try { await cmApi(`/api/comments/comment/${enc(c.id)}/draft`, "POST", {}); }
   catch (e) { CM.drafting.delete(c.id); cmPaintChat(false); toast(e.message, true); }
 }
 // The thread's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue;
 // The card sits right under the comment it answers, so it has no 원문 보기 bar of its own (the send sheet keeps one: 10-draft-original.js).
 async function cmRestore(code) {
-  try { await cmApi(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast("초안을 되돌렸어요"); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
+  try { await cmApi(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast(TX("mon.cm.restored")); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
 }
 function cmDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); cmReload(); } finally { btn.disabled = false; } };
   const sending = CM.view.sends.some(s => s.commentId === d.commentId && (s.state === "sending" || s.state === "unsure"));
   const edit = CM.revising === d.code, src = CM.view.source || {};
   // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
-  const part = d.mail ? selectButton({ label: "고칠 곳", items: [{ value: "reply", label: "답글" }, { value: "mail", label: "메일" }], value: "reply" }) : null;
+  const part = d.mail ? selectButton({ label: TX("mon.cm.part"), items: [{ value: "reply", label: TX("mon.cm.reply") }, { value: "mail", label: TX("common.mail") }], value: "reply" }) : null;
   const wrap = el("div", { class: "od-cwrap" });
   const who = ((CM.view.comments || []).find(c => c.id === d.commentId) || {}).author;
-  const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: CM.pc ? CM.pc.name : pqSelf(), at: d.created }, label: "답글 초안", labelCls: "kk-dh",
-    to: ["댓글", who || ""], body: { text: d.text, cls: "kk-dt" },
+  const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: CM.pc ? CM.pc.name : pqSelf(), at: d.created }, label: TX("mon.cm.reply_draft"), labelCls: "kk-dh",
+    to: [TX("mon.cm.comments"), who || ""], body: { text: d.text, cls: "kk-dt" },
     // A comment reply is text only (a file goes with the mail that rides along, shown below): say so before 보내기.
     attach: { attachmentsNone: true, cannotAttach: [] },
-    extra: [draftMailNode(d.mail), d.mail ? el("div", { class: "kk-note", role: "status", text: (d.mail.notes || []).join(" / ") || "보내기를 누르면 답글을 올린 뒤 메일을 보내요" }) : null, d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
+    extra: [draftMailNode(d.mail), d.mail ? el("div", { class: "kk-note", role: "status", text: (d.mail.notes || []).join(" / ") || TX("mon.cm.then_mail") }) : null, d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
     // What he types is kept per draft (CM.note): the thread repaints on its own while he types (the timer, a live event), and a new field must not start empty.
     ...(edit ? { revise: rqReviseNode({ pick: part, value: CM.note[d.code] || "", onInput: t => { CM.note[d.code] = t; }, cancel: () => { CM.revising = ""; delete CM.note[d.code]; cmPaintChat(false); },
       go: change => run($(".rq-edit [data-k=revise-go]", wrap) || el("button"), async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change, ...(part ? { part: part.value } : {}) }); CM.revising = ""; delete CM.note[d.code]; await cmReload(); }) }) }
@@ -403,7 +403,7 @@ function cmLive(e) {
   if (CM.pc) return;   // the stream is this computer's; the peer's comments are read again by the timer
   if (e.kind === "comment_sources") { cmLoadSources(); return; }
   if (e.kind === "comment_draft" && e.error) toast(e.error, true);
-  if (e.kind === "comment_send" && e.mail === "failed") toast(`답글은 올렸지만 메일은 보내지 못했어요: ${e.mailReason || "알 수 없는 이유"}`, true);
+  if (e.kind === "comment_send" && e.mail === "failed") toast(TX("mon.cm.mail_not_sent", { reason: e.mailReason || TX("mon.cm.unknown_reason") }), true);
   if (e.kind === "comment_draft") for (const id of [...CM.drafting]) CM.drafting.delete(id);
   if (!CM.vis) return;
   cmLoad();

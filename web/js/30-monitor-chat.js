@@ -24,7 +24,7 @@ function monListRows(items, sel) {
 }
 // Over a monitor's conversation: how far its wait has come, a down banner, 지금 확인 and the way to its reports (소식, with the unread count).
 function monChatTopNodes(it) {
-  const banner = monBannerOf(it), log = el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "mon-log", title: "이 모니터링의 소식을 봐요", text: it.unread ? `소식 ${it.unread}` : "소식", onclick: () => go("monitoring", it.key) });
+  const banner = monBannerOf(it), log = el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "mon-log", title: TX("mon.chat.log_title"), text: it.unread ? TX("mon.chat.log_n", { n: it.unread }) : TX("mon.sec.news"), onclick: () => go("monitoring", it.key) });
   return [monProgNode(it.mon, { compact: true, tag: !banner }), banner, el("div", { class: "mon-actions" }, it.mon.watch && !banner ? monRunBtn(it.mon) : null, log)];
 }
 // The wait bar keeps moving over a monitor's conversation too.

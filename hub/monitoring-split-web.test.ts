@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // 모니터링 (web/js/30-monitoring.js) run as shipped over a fixed store: which notices it lists, and what a watch row opens.
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "30-monitoring.js"), "utf8");
@@ -50,7 +51,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		api: async () => ({}), homeSoon: () => {}, titles: { monitoring: "모니터링" }, ntIsDec: (n: N) => n.kind === "decision" && !!n.decision, ntNeeds: () => false,
 		ntWithRepeats: (l: unknown[]) => l, noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, nwChangeNode: () => null, nwChangeLine: () => "", asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
 	};
-	const body = `${chatSrc}\n${mailSrc}\n${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
+	const body = `${i18nPrelude()}${chatSrc}\n${mailSrc}\n${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
 NM.items = MONS; NM.loaded = true;
 return { MON, monRoute, monItems, monSel, monRows, monTimeline, monHead, monKeyOf };`;
 	const api = new Function(...Object.keys(env), "MONS", body)(...Object.values(env), monitors);

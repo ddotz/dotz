@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // One status per monitor everywhere (web/js/30-monitoring.js monStatus), the app row's need line (monNeedLine), the 모니터링 nav badge
 // (09-needs-you.js paintMonAttn), the monitors failing again and again in 홈 답변 필요 (nyList, this computer's only), a peer item's bot name, and the
@@ -15,8 +16,8 @@ const between = (src: string, from: string, to: string) => {
 	return src.slice(a, b);
 };
 type Status = { key: string; text: string; tone: string };
-const monStatus = new Function(`${between(monitoring, "const MON_PTAG =", "// Wording (one pair)")}; return monStatus;`)() as (m: object, now?: number) => Status;
-const monNeedLine = new Function(`${between(monitoring, "function monNeedLine", "// A watch an app owns")}; return monNeedLine;`)() as (n: object, down?: boolean, when?: string) => string;
+const monStatus = new Function(`${i18nPrelude()}${between(monitoring, "const MON_PTAG =", "// Wording (one pair)")}; return monStatus;`)() as (m: object, now?: number) => Status;
+const monNeedLine = new Function(`${i18nPrelude()}${between(monitoring, "function monNeedLine", "// A watch an app owns")}; return monNeedLine;`)() as (n: object, down?: boolean, when?: string) => string;
 
 const NOW = Date.parse("2026-10-27T12:00:00Z"), past = new Date(NOW - 3600_000).toISOString(), soon = new Date(NOW + 600_000).toISOString();
 describe("monStatus: connection > paused > fail > late > changed > ok > not run", () => {

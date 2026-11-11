@@ -11,7 +11,7 @@ const NM = { items: [], loaded: false, failed: false, at: 0 };
 const NM_FRESH_MS = 60000;
 const monitorsFresh = () => NM.loaded && Date.now() - NM.at < NM_FRESH_MS;
 // The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
-const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
+const MON_GROUP = { app: TX("common.apps"), plain: TX("mon.group.plain") };
 // sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width. An app's item has the whole column; a monitor opens beside the list of monitors (monListRows).
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
 const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", mailIn: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0, ovOpen: undefined };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
@@ -56,19 +56,21 @@ async function monFetch() {
 // Failed ones first, then the soonest next run.
 const ntMons = () => NM.items.slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
 const monTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
-const ntMonRun = m => m.last_run ? `마지막 ${monTime(m.last_run)}` : "아직 실행 전이에요";
-const ntMonNext = m => m.next_run ? `다음 ${monTime(m.next_run)}` : "";
+const ntMonRun = m => m.last_run ? TX("mon.last_at", { t: monTime(m.last_run) }) : TX("mon.not_run");
+const ntMonNext = m => m.next_run ? TX("mon.next_at", { t: monTime(m.next_run) }) : "";
 
 /* ---- a monitor's own timeline: how far the wait between two runs has come ---- */
 // '방금 전' / '3분 전' / '2시간 전' and '곧' / '12분 후'. The bar's two ends are the last run and the next one; the fill is the share of that
 // wait already gone. One ticker (monTickStart at the bottom) moves every bar of the page, so a row never owns a timer of its own.
 const monRel = (ms, past) => {
   const a = Math.max(0, ms), min = Math.floor(a / 60000);
-  if (min < 1) return past ? "방금 전" : "곧";
-  const t = min < 60 ? `${min}분` : min < 1440 ? `${Math.floor(min / 60)}시간` : `${Math.floor(min / 1440)}일`;
-  return past ? `${t} 전` : `${t} 후`;
+  if (min < 1) return past ? TX("mon.rel.now_past") : TX("mon.rel.now_future");
+  if (min < 60) return past ? TX("mon.rel.min_past", { n: min }) : TX("mon.rel.min_future", { n: min });
+  if (min < 1440) { const n = Math.floor(min / 60); return past ? TX("mon.rel.hour_past", { n }) : TX("mon.rel.hour_future", { n }); }
+  const n = Math.floor(min / 1440);
+  return past ? TX("mon.rel.day_past", { n }) : TX("mon.rel.day_future", { n });
 };
-const MON_PTAG = { ok: ["정상", "ok"], changed: ["바뀜", "warn"], fail: ["실패", "err"], disconnected: ["연결 끊김", "err"], need: ["확인 필요", "warn"], off: ["꺼짐", "off"], late: ["늦어짐", "warn"], run: ["확인 중", "pri"] };
+const MON_PTAG = { ok: [TX("mon.tag.ok"), "ok"], changed: [TX("mon.tag.changed"), "warn"], fail: [TX("mon.tag.fail"), "err"], disconnected: [TX("mon.tag.disconnected"), "err"], need: [TX("mon.tag.need"), "warn"], off: [TX("mon.tag.off"), "off"], late: [TX("mon.tag.late"), "warn"], run: [TX("mon.tag.run"), "pri"] };
 // A monitor's one status, read the same on every screen (the list row's badge, the detail's state line and tag, the home card, the app settings):
 // connection > paused > fail > late > changed > ok > not run yet. key is a MON_PTAG key; text and tone are its words and colour.
 function monStatus(m, now = Date.now()) {
@@ -77,16 +79,16 @@ function monStatus(m, now = Date.now()) {
   return { key, text, tone };
 }
 // Wording (one pair): a row, a tag or a badge says "연결 끊김"; the banner at the top of the conversation says "연결이 끊겼어요" plus why.
-const monConnWhy = m => [m.since ? `${monTime(m.since)}부터` : "", m.conn_reason === "login" ? "다시 로그인 필요" : m.conn_reason ? "확인이 계속 실패해요" : ""].filter(Boolean).join(" · ");
-const monConnLine = m => ["연결 끊김", monConnWhy(m)].filter(Boolean).join(" · ");
+const monConnWhy = m => [m.since ? TX("mon.conn.since", { t: monTime(m.since) }) : "", m.conn_reason === "login" ? TX("mon.conn.login") : m.conn_reason ? TX("mon.conn.failing") : ""].filter(Boolean).join(" · ");
+const monConnLine = m => [TX("mon.tag.disconnected"), monConnWhy(m)].filter(Boolean).join(" · ");
 // The list row's status line has room for the start of the outage only; the banner and the overview add why.
-const monConnShort = m => ["연결 끊김", m.since ? `${kstHM(m.since).replace(/^오[전후]\s*/, "")}부터` : ""].filter(Boolean).join(" · ");
+const monConnShort = m => [TX("mon.tag.disconnected"), m.since ? TX("mon.conn.since", { t: kstHM(m.since).replace(/^오[전후]\s*/, "") }) : ""].filter(Boolean).join(" · ");
 // Empty for a paused or disconnected monitor: its one tag (꺼짐 / 연결 끊김) and, when down, the banner's single line already say it.
 const monProgLine = (from, to, now, m, short) => {
   if (m && (m.paused || m.connection === "disconnected")) return "";
-  if (m && m.watch && MON.running.has(m.watch)) return short ? "확인 중" : "지금 확인하고 있어요";
-  if (short) return [from > 0 ? monRel(now - from, true) : "실행 전", to > 0 ? now >= to ? "늦어짐" : monRel(to - now, false) : "예정 없음"].join(" · ");
-  return [from > 0 ? `지난 실행 ${monRel(now - from, true)}` : "아직 실행 전", to > 0 ? now >= to ? "다음 확인이 늦어졌어요" : `다음 ${monRel(to - now, false)}` : "예정 없음"].join(" · ");
+  if (m && m.watch && MON.running.has(m.watch)) return short ? TX("mon.tag.run") : TX("mon.checking_now");
+  if (short) return [from > 0 ? monRel(now - from, true) : TX("mon.prog.before"), to > 0 ? now >= to ? TX("mon.tag.late") : monRel(to - now, false) : TX("mon.prog.none")].join(" · ");
+  return [from > 0 ? TX("mon.prog.last", { t: monRel(now - from, true) }) : TX("mon.prog.not_yet"), to > 0 ? now >= to ? TX("mon.prog.next_late") : TX("mon.next_at", { t: monRel(to - now, false) }) : TX("mon.prog.none")].join(" · ");
 };
 // kind drives the fill: "" (accent, moving), warn (overdue, full), err (disconnected), off (paused, grey), run (indeterminate shimmer).
 function monProgState(m, now) {
@@ -110,7 +112,7 @@ function monProgNode(m, opts = {}) {
   const [text, tone] = monPTagOf(st.tag);
   const width = st.kind === "run" ? 35 : st.pct;
   const barTone = st.kind === "" || st.kind === "none" ? MON_BAR_TONE[st.tag] || "" : st.kind === "warn" && st.tag === "fail" ? "err" : "";
-  const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}${barTone ? ` ${barTone}` : ""}`, "data-tone": barTone || null, role: "progressbar", "aria-label": `${monTitle(m)} 다음 확인까지`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
+  const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}${barTone ? ` ${barTone}` : ""}`, "data-tone": barTone || null, role: "progressbar", "aria-label": TX("mon.prog.aria", { name: monTitle(m) }), "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
   if (live && from > 0 && to > 0) { bar.dataset.from = String(from); bar.dataset.to = String(to); bar.dataset.short = opts.short ? "1" : ""; }
   // data-tag keeps the result the node was built with: the ticker only flips a live tag between it and 늦어짐, never to another result.
   const tag = text && opts.tag !== false ? el("span", { class: `mon-ptag${tone ? ` ${tone}` : ""}`, "data-tag": st.tag, "data-fixed": st.tag === "fail" || st.tag === "disconnected" || st.tag === "off" || st.tag === "run" ? "1" : null, text }) : null;
@@ -135,12 +137,12 @@ function monHuman(raw) {
   return keep.join(" ").replace(/[.。]$/, "").trim();
 }
 const monClean = (s, fb = "") => monHuman(ntPlain(s)) || fb;
-const MON_GENTLE = { watch: "지켜보는 일", schedule: "예약한 일" };
+const MON_GENTLE = { watch: TX("mon.kind.watch"), schedule: TX("mon.kind.schedule") };
 // A title stays one short phrase: a long prompt in plain words gives its first sentence.
 const MON_TITLE_MAX = 40;
-const monTitle = m => { const t = monWords(monHuman(ntPlain(m.name))); return (t.length > MON_TITLE_MAX ? monSentences(t)[0] : t) || MON_GENTLE[m.kind] || "모니터링"; };
+const monTitle = m => { const t = monWords(monHuman(ntPlain(m.name))); return (t.length > MON_TITLE_MAX ? monSentences(t)[0] : t) || MON_GENTLE[m.kind] || TX("common.monitoring"); };
 // One or two plain sentences under the name, from what the monitor really is (its cadence), never from the command it runs.
-const monDesc = m => m.kind === "schedule" ? (m.every ? `${m.every} 알아서 실행해요.` : "정해 둔 때에 한 번 실행해요.") : `바뀐 곳이 있는지 ${m.every ? `${m.every} ` : "알아서 "}확인해요.`;
+const monDesc = m => m.kind === "schedule" ? (m.every ? TX("mon.desc.sched_every", { every: m.every }) : TX("mon.desc.sched_once")) : m.every ? TX("mon.desc.watch_every", { every: m.every }) : TX("mon.desc.watch_auto");
 const monNames = m => [...new Set([monTitle(m), String(m.name || ""), monRaw(m), monWords(monRaw(m))].filter(Boolean))];
 const monHas = (m, n) => n.kind === "watch" && monNames(m).includes(String(n.title || ""));
 // 모니터링's own notices: a watch's or a schedule's report (kind "watch"), or a notice living in an integration's own conversation (a mail).
@@ -162,9 +164,9 @@ function monStrip(s, names) {
   return first && names.includes(first) ? s.slice(nl + 1).replace(/^\s*\n/, "") : s;
 }
 // 마지막 정상 only says something after a failure, when it is not the last run: a monitor that is fine already reads 정상 with its last run's time.
-const monLastOk = m => (m.fails || m.last_result === "fail") && m.last_ok && m.last_ok !== m.last_run ? `마지막 정상 ${monTime(m.last_ok)}` : "";
-const MON_RUN = { ok: "마지막 확인 결과 정상이에요", changed: "마지막 확인에서 바뀐 점이 있어요", fail: "마지막 확인이 실패했어요" };
-const monRunLine = m => !m.last_run ? "아직 확인 전이에요" : m.kind === "schedule" ? "예약한 일을 실행했어요" : MON_RUN[m.last_result] || "확인했어요";
+const monLastOk = m => (m.fails || m.last_result === "fail") && m.last_ok && m.last_ok !== m.last_run ? TX("mon.last_ok", { t: monTime(m.last_ok) }) : "";
+const MON_RUN = { ok: TX("mon.run.ok"), changed: TX("mon.run.changed"), fail: TX("mon.run.fail") };
+const monRunLine = m => !m.last_run ? TX("mon.run.unchecked") : m.kind === "schedule" ? TX("mon.run.sched_ran") : MON_RUN[m.last_result] || TX("mon.run.checked");
 const monNewest = list => list.slice().sort((a, b) => ntAt(b) - ntAt(a))[0] || null;
 const monNoticeAt = n => new Date(ntAt(n)).toISOString();
 const monLine = n => convPreview(n.text) || ntPlain(n.title);
@@ -173,15 +175,15 @@ const monUnread = list => list.reduce((c, n) => c + (n.read ? 0 : 1), 0);
 
 // What is watched, in list order: 감시 소식 (reports no row below owns), then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors). Each item carries what
 // its row and its conversation show.
-const MON_FEED = "감시 소식";
+const MON_FEED = TX("mon.feed");
 // An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday, unreplied} from GET /api/integrations (hub/integrations.ts):
 // the line says what was sent today; the counts that wait on him (drafts, 미답장, 안 읽음) are the row's own, at its right (31-conversations.js), so the line never says them again (owner 2026-11-10).
 // The badge is the count that waits on him (drafts first, else unread). A row with such a count says when the last item came (`when`, ntTime of the newest), else nothing.
 // "확인할 것 없어요" only for a connected app with every count 0; `down` (the app is disconnected) says 연결 끊김 instead.
 function monNeedLine(n, down, when) {
   const parts = [];
-  if (n.sentToday) parts.push(`오늘 자동 답장 ${n.sentToday}건 보냄`);
-  return parts.join(" · ") || (n.drafts || n.unreplied || n.unread ? (when ? `마지막 소식 ${when}` : "") : down ? "연결 끊김" : "확인할 것 없어요");
+  if (n.sentToday) parts.push(TX("mon.need.sent_today", { n: n.sentToday }));
+  return parts.join(" · ") || (n.drafts || n.unreplied || n.unread ? (when ? TX("mon.last_news", { t: when }) : "") : down ? TX("mon.tag.disconnected") : TX("mon.need.none"));
 }
 // A watch an app owns (it.watches / it.watchesNot of GET /api/integrations, hub/integrations.ts) belongs to that app: no row of its own in 일반 모니터링,
 // its status is in the app's panel and a failing one marks the app's row.
@@ -191,12 +193,12 @@ const monOwner = (apps, m) => m.kind === "watch" && m.watch ? apps.find(a => Arr
 // The rest of the monitors by the hub's `scope` (hub/watch-scope.ts): a project's own go in a 프로젝트 · <이름> group between 앱 and 일반 모니터링, the gateway's own
 // housekeeping stays out of sight while it is fine (a failing or disconnected one is listed in 일반 모니터링). A hub that sends no `scope` lists every monitor as plain.
 const monProject = m => m.scope === "project" && m.project;
-const monGroupOf = m => (monProject(m) ? `프로젝트 · ${m.project_title || "프로젝트"}` : MON_GROUP.plain);
+const monGroupOf = m => (monProject(m) ? TX("mon.group.project", { name: m.project_title || TX("common.project") }) : MON_GROUP.plain);
 const monHidden = m => m.scope === "internal" && m.last_result !== "fail" && m.connection !== "disconnected";
 // Project items first (grouped by project, first seen first), then the plain ones.
 const monGrouped = (proj, plain) => { const order = [...new Set(proj.map(i => i.group))]; return [...order.flatMap(g => proj.filter(i => i.group === g)), ...plain]; };
 const monOwnedBy = (apps, mons) => { const by = new Map(); for (const m of mons) { const o = monOwner(apps, m); if (o) by.set(o.key, [...(by.get(o.key) || []), m]); } return by; };
-const monFail = owned => owned.some(m => m.last_result === "fail") ? ["실패", "err"] : null;
+const monFail = owned => owned.some(m => m.last_result === "fail") ? [TX("mon.tag.fail"), "err"] : null;
 function monItems() {
   intgWatch();
   const mons = ntMons(), shown = new Set(), items = [], proj = [], plain = [], owned = monOwnedBy(INTG.items, mons);
@@ -205,8 +207,8 @@ function monItems() {
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
     const needs = it.needs || { drafts: 0, unread: monUnread(notices.filter(n => !mails.includes(n.open) && !mails.includes(n.src))) + mails.filter(t => (ts(t).unread | 0) > 0).length, sentToday: 0 }, conn = it.state === "disconnected", own = owned.get(it.key) || [], bad = own.some(m => m.last_result === "fail");
-    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, conn, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: conn && it.hint ? it.hint : bad ? "확인이 실패했어요" : monNeedLine(needs, conn, cands[0] ? ntTime(cands[0].at) : ""), at: cands[0] ? cands[0].at : "", owned: own, msig: conn ? "conn" : bad ? "fail" : "",
-      badge: conn ? ["연결 끊김", "err"] : monFail(owned.get(it.key) || []) });
+    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, conn, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: conn && it.hint ? it.hint : bad ? TX("mon.check_failed") : monNeedLine(needs, conn, cands[0] ? ntTime(cands[0].at) : ""), at: cands[0] ? cands[0].at : "", owned: own, msig: conn ? "conn" : bad ? "fail" : "",
+      badge: conn ? [TX("mon.tag.disconnected"), "err"] : monFail(owned.get(it.key) || []) });
   }
   const ownedNames = new Set([...owned.values()].flat());
   for (const m of mons) {
@@ -218,7 +220,7 @@ function monItems() {
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
     const need = notices.filter(monNeed).length, conn = m.connection === "disconnected", running = !!m.watch && MON.running.has(m.watch);
     (monProject(m) ? proj : plain).push({ key: `m:${m.name}`, group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
-      hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : m.last_result === "fail" && m.last_summary ? monClean(m.last_summary, monRunLine(m)) : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
+      hint: conn ? monConnShort(m) : running ? TX("mon.checking_now") : m.last_result === "fail" && m.last_summary ? monClean(m.last_summary, monRunLine(m)) : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
       badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
@@ -239,27 +241,27 @@ const monGone = n => {
   const mons = n.pc ? ((((PQ.list.find(p => p && p.url === n.pc.url) || {}).items) || {}).monitors || null) : NM.loaded ? NM.items : null;
   return !!mons && !mons.some(m => m.watch === n.watch);
 };
-const monFeedDay = t => kstDay(t) === kstDay(Date.now()) ? `오늘 ${kstHM(t)}` : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
+const monFeedDay = t => kstDay(t) === kstDay(Date.now()) ? TX("mon.today_at", { t: kstHM(t) }) : new Date(t).toLocaleDateString(TX_LOCALE, { ...KST, month: "long", day: "numeric" });
 function monFeedHead(list) {
   const live = list.filter(n => !monGone(n)), fresh = monNewest(live.filter(n => !n.read)), last = monNewest(live);
   if (fresh) return { hint: `${fresh.pc ? `${fresh.pc.name} · ` : ""}${monLine(fresh)}`, at: monNoticeAt(fresh) };
-  return last ? { hint: `마지막 소식 ${monFeedDay(ntAt(last))}`, at: monNoticeAt(last) } : { hint: NM.loaded && NT.loaded ? "새 감시 소식이 없어요" : "", at: "" };   // not loaded, or failed: no "none" claim (the state card under the list says which)
+  return last ? { hint: TX("mon.last_news", { t: monFeedDay(ntAt(last)) }), at: monNoticeAt(last) } : { hint: NM.loaded && NT.loaded ? TX("mon.feed.none") : "", at: "" };   // not loaded, or failed: no "none" claim (the state card under the list says which)
 }
 // 답 필요: waits on the owner and is answered from here (an open decision, an [ask] report), never read by looking; 실패: a report that could not check.
 // A peer's open decision is answered here too (ntPost through the peer); a peer's loose [ask] waits in that computer's conversation.
 const monNeed = n => ntNeeds(n) && (!n.pc || ntIsDec(n));
 const monFailed = n => n.tone === "fail";
-const monNeedChips = need => (need ? [[`답 필요 ${need}`, "warn"]] : undefined);
+const monNeedChips = need => (need ? [[TX("mon.need_chip", { n: need }), "warn"]] : undefined);
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
 const monSel = items => items.find(i => i.key === MON.sel) || null;
 const monName = () => { const it = monItems().find(i => i.key === MON.sel); return kkItem(it) && KK.open && KK.room ? KK.room.name : CM.vis && CM.tab === "dm" && DM.open ? DM.open.peer : it ? mxsName() || it.name : titles.monitoring; };
 function monState(it) {
-  if (it.off) return "연결 안 됨";
+  if (it.off) return TX("mon.state.off");
   // The progress block under the name already carries the two runs in words, so the state line says only where it stands.
   if (it.mon) { const st = monStatus(it.mon); return st.key === "disconnected" ? "" : st.text; }
-  if (it.rq) return it.unread ? `답장 ${it.unread}건 기다려요` : it.hint;
-  if (it.key === "notice") return [it.need ? `답 필요 ${it.need}건` : "", it.unread ? `안 읽음 ${it.unread}개` : ""].filter(Boolean).join(" · ") || "감시와 예약 결과";
-  return it.app ? it.mxLine || it.hint : it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
+  if (it.rq) return it.unread ? TX("mon.state.rq", { n: it.unread }) : it.hint;
+  if (it.key === "notice") return [it.need ? TX("mon.state.need", { n: it.need }) : "", it.unread ? TX("mon.state.unread", { n: it.unread }) : ""].filter(Boolean).join(" · ") || TX("mon.state.results");
+  return it.app ? it.mxLine || it.hint : it.unread ? TX("mon.state.unread", { n: it.unread }) : TX("mon.state.connected");
 }
 
 /* ---- the list ---- */
@@ -267,7 +269,7 @@ function monRows(items, sel) {
   const rows = [];
   let group = null, added = false;
   // 앱 추가 is the last row of the 앱 group, right under the apps; with no app yet it is the group's only row.
-  const addRow = () => { added = true; rows.push({ k: "add-app", name: "앱 관리", av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
+  const addRow = () => { added = true; rows.push({ k: "add-app", name: TX("mon.manage_apps"), av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
   for (const it of items) {
     if (group === MON_GROUP.app && it.group !== group && !added) addRow();
     if ((it.group === MON_GROUP.plain || it.proj) && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
@@ -276,19 +278,19 @@ function monRows(items, sel) {
     rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, unreplied: it.unreplied | 0, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", monRowGo(it)) });
   }
   if (!added) { if (group !== MON_GROUP.app) rows.push({ header: MON_GROUP.app }); addRow(); }
-  if (!NM.loaded) rows.push({ k: "state", state: NM.failed ? "failed" : "loading", hint: NM.failed ? "모니터링을 불러오지 못했어요" : "불러오는 중…" });
+  if (!NM.loaded) rows.push({ k: "state", state: NM.failed ? "failed" : "loading", hint: NM.failed ? TX("mon.load_failed") : TX("common.loading") });
   return rows;
 }
 
 /* ---- the conversation ---- */
-const MON_TONE = { fail: ["실패", "err"], warn: ["주의", "warn"], ask: ["답변 필요", "warn"], ok: ["정상", "ok"], changed: ["바뀜", "warn"] };
+const MON_TONE = { fail: [TX("mon.tag.fail"), "err"], warn: [TX("mon.tag.warn"), "warn"], ask: [TX("common.needs_reply"), "warn"], ok: [TX("mon.tag.ok"), "ok"], changed: [TX("mon.tag.changed"), "warn"] };
 const monWhen = n => ntTime(n.updated || n.ts);
 const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class: `tag ${t[1]}`, text: t[0] }) : null; };
 // A send approval (hub/draft-approval.ts): drawn as the mail it would send - the one question, the mail being answered when known, the recipient chip,
 // the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 asks "어떻게 고칠까요?" (the bot rewrites it),
 // 보내지 않기 is the quiet way out. The whole answer path is the notice's (answerInline / ntPost), so the chat card and this one stay in step.
 const DR = { edit: new Set(), manual: new Set(), note: {} };
-const DR_STATE = { open: ["확인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], own: ["보낼 방법 전함", "pri"], expired: ["만료", ""], ignored: ["무시함", ""] };
+const DR_STATE = { open: [TX("mon.dr.st.open"), "warn"], send: [TX("mon.dr.st.send"), "ok"], edit: [TX("mon.dr.st.edit"), "pri"], revising: [TX("mon.dr.st.revising"), "pri"], drop: [TX("mon.dr.st.drop"), ""], own: [TX("mon.dr.st.own"), "pri"], expired: [TX("mon.dr.st.expired"), ""], ignored: [TX("mon.dr.st.ignored"), ""] };
 function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
   if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
@@ -300,7 +302,7 @@ function drOriginal(t) {
   const m = MAILS.get(t);
   if (!m) return null;
   const brief = mailBrief(m, t);
-  return el("div", { class: "dr-orig" }, el("div", { class: "dr-ok", text: "답장할 메일" }), el("div", { class: "dr-os" }, el("b", { text: mailSender(m.from) }), m.subject ? ` · ${m.subject}` : ""), brief ? el("div", { class: "dr-ob", text: brief }) : null);
+  return el("div", { class: "dr-orig" }, el("div", { class: "dr-ok", text: TX("mon.dr.reply_to") }), el("div", { class: "dr-os" }, el("b", { text: mailSender(m.from) }), m.subject ? ` · ${m.subject}` : ""), brief ? el("div", { class: "dr-ob", text: brief }) : null);
 }
 // The app instance that holds a conversation target, for the card's head (a peer's row first: PQ.of).
 const monInstLabel = t => { const pe = PQ.of.get(t); if (pe) return pe.label || ""; const it = INTG.items.find(x => intgHas(x, t)); return it ? it.label : ""; };
@@ -316,11 +318,11 @@ function draftCardNode(n, o = {}) {
   const q = ntPlain(n.title).replace(/\s*\([^()]*\)\s*$/, "");
   const editing = open && DR.edit.has(n.id), man = editing && DR.manual.has(n.id);
   let go2 = null; const gone = open && dcGone(d.to);
-  const ta = editing ? el("textarea", { class: man ? "dr-edit" : "dr-edit ask", rows: man ? "8" : "2", maxlength: man ? "6000" : "500", placeholder: man ? "" : DRAFT_HINT, "aria-label": man ? "직접 수정" : "고칠 내용", disabled: busy, oninput: () => { DR.note[n.id] = ta.value; if (go2) go2.disabled = !ta.value.trim(); } }) : null;
+  const ta = editing ? el("textarea", { class: man ? "dr-edit" : "dr-edit ask", rows: man ? "8" : "2", maxlength: man ? "6000" : "500", placeholder: man ? "" : DRAFT_HINT, "aria-label": man ? TX("mon.dr.edit_manual") : TX("mon.dr.edit_ask"), disabled: busy, oninput: () => { DR.note[n.id] = ta.value; if (go2) go2.disabled = !ta.value.trim(); } }) : null;
   if (ta) ta.value = DR.note[n.id] ?? (man ? drParas(dr.body).join("\n\n") : "");
   const leave = () => { DR.edit.delete(n.id); DR.manual.delete(n.id); delete DR.note[n.id]; };
   // The 받는이·참조 rows of a mail draft are its own (10-decision-card.js draftToNode): 답장 | 전체 답장, the chips, editable while it waits.
-  const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: d.to, edit: open }) : el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" }));
+  const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: d.to, edit: open }) : el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || TX("mon.dr.to") }), el("span", { class: "dr-chip", text: dr.to || "-" }));
   if (o.bare) return el("div", { class: "dr-mail" }, draftBriefNode(dr.brief, seen), recv,
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
     draftOriginNode(dr),
@@ -329,12 +331,12 @@ function draftCardNode(n, o = {}) {
   // A mail answered by this draft reads like the landing page's comment card: who wrote, where it came from, what they wrote, then the draft in a grey box.
   const om = mail ? MAILS.get(d.to) || {} : {}, who = mail ? mailSender(om.from) : "", sent = st === "send", b = dr.brief || {}, orig = b.summary || String(om.summary || om.preview || "").split("\n")[0];
   const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: null,   // the state tag carries the time once
-    ...(who ? { who, src: monInstLabel(d.to) || "메일" } : {}),
+    ...(who ? { who, src: monInstLabel(d.to) || TX("common.mail") } : {}),
     tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, sent ? null : el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // x in the head is 보내지 않기 only for a card whose button row has none (its conversation is gone): otherwise it is a second way to the same thing and reads as close
-      open && !editing && oDrop && gone ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => monDraftRun(n, oDrop) }, icon("close")) : null] };
+      open && !editing && oDrop && gone ? el("button", { class: "ib dr-rm", type: "button", title: TX("mon.dr.rm_title"), "aria-label": TX("mon.dr.rm_aria"), disabled: busy, onclick: () => monDraftRun(n, oDrop) }, icon("close")) : null] };
   if (editing) {
-    go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? "이 내용으로 고치기" : "고쳐 달라고 하기", onclick: async () => {
+    go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? TX("mon.dr.apply_manual") : TX("mon.dr.apply_ask"), onclick: async () => {
       const text = ta.value.trim();
       if (!text || !oEdit) return;
       dcSending.add(n.id); syncInlineChoices(); redraw();
@@ -349,9 +351,9 @@ function draftCardNode(n, o = {}) {
     busy, press: rqPress.get(rqNtKey(n)),
   } : null;
   // 직접 수정 (man) types the mail itself: the field stands where the body was, with only the two buttons below it.
-  const revise = editing ? el("div", { class: "rq-edit" }, man ? null : el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), man ? null : ta,
-    el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
-      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" })))) : null;
+  const revise = editing ? el("div", { class: "rq-edit" }, man ? null : el("div", { class: "dr-q2", text: TX("mon.dr.how") }), man ? null : ta,
+    el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: TX("common.cancel"), onclick: () => { leave(); redraw(); } }),
+      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: TX("mon.dr.edit_manual") })))) : null;
   // A mail draft reads as the 답장 확인 sheet does (10-reply-card.js rqMailParts): the same head line, quote, subject, folded 받는이 and 첨부 줄, here in place.
   const mp = mail && dr.toLabel === "받는이" ? rqMailParts(dr, { t: d.to, pc: head.pc, edit: open, hold: busy, tail: head.tail, seen, src: "" }) : null;
   const card = rqCard({ key: `dr:${n.id}`, attrs: { "data-nid": n.id }, fail: rqFail.get(rqNtKey(n)),
@@ -376,8 +378,8 @@ function monDecisionNode(n) {
     onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.pc ? n : n.id) : answerInline(n, o)) },
     el("span", { class: "dc-key", text: String(o.n) }),
     el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
-  const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? "무시했어요" : d.expired ? "기한 지남" : d.resolved ? "답 없이 끝났어요" : `답했어요${said ? ` · ${ntPlain(said)}` : ""}` });
-  return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || "답변이 필요해요" }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
+  const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? TX("mon.dec.ignored") : d.expired ? TX("mon.dec.expired") : d.resolved ? TX("mon.dec.closed") : `${TX("mon.dec.answered")}${said ? ` · ${ntPlain(said)}` : ""}` });
+  return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || TX("mon.dec.needs") }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
     answerParts(fl, { lead: false }), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
 }
 // Any other notice is a result card (11-resultcard.js): the monitor's name, the time, the result in words, the original folded.
@@ -390,19 +392,19 @@ function monNoticeNode(n, names = []) {
 function monItemNode(n) {
   const it = n.item, t = it && it.app === "mail" && it.key ? `mail:${it.key}` : "", c = it && it.card;
   if (t && !MAILS.has(t) && c && c.source) MAILS.set(t, c);
-  const node = t && MAILS.has(t) ? monConvNode(t, "메일") : c && (c.subject || c.from) ? resultCard({ src: mailSender(c.from), at: n.updated || n.ts, title: c.subject }) : null;
+  const node = t && MAILS.has(t) ? monConvNode(t, TX("common.mail")) : c && (c.subject || c.from) ? resultCard({ src: mailSender(c.from), at: n.updated || n.ts, title: c.subject }) : null;
   const raw = node ? rcSplit(n.text).raw : "";
   if (raw) { const d = rcRawFold(raw); d.addEventListener("click", e => e.stopPropagation()); node.append(d); }
   return node;
 }
   if (ntIsDec(n)) return monDecisionNode(n);   // a peer's question too: the same card, its answer sent to that computer (ntPost)
-  const node = monCard(monClean(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
+  const node = monCard(monClean(names[0] || n.title) || TX("common.alerts"), n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
   const card = n.item ? monItemNode(n) : null;
   if (card) { card.dataset.nid = n.id; return card; }
   if (!node) return null;
   for (const li of node.querySelectorAll(".rc-sec li")) { const c = nwChangeNode(li.textContent); if (c) li.replaceChildren(c); }   // 89,000원 → 72,000원: the old value struck, the new one bold
   node.dataset.nid = n.id;
-  if (monNeed(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
+  if (monNeed(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: TX("mon.reply_go") })));
   return node;
 }
 // Runs the monitor once now, on the computer that owns it (a peer's through /api/peer/act). The route answers after the check with the new
@@ -411,7 +413,7 @@ const monRunNow = (btn, m) => busy(btn, async () => {
   if (!m || !m.watch) return;
   MON.running.add(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
   const was = btn && btn.textContent;
-  if (btn) btn.textContent = "확인하는 중…";
+  if (btn) btn.textContent = TX("mon.running");
   try {
     const r = await api(`/api/watches/${enc(m.watch)}/run`, "POST", {});
     if (r && r.item && r.item.watch) {
@@ -420,14 +422,14 @@ const monRunNow = (btn, m) => busy(btn, async () => {
     }
     await loadMonitors();
     if (m.pc) pqSoon();
-    toast(r && r.approved ? MON_RECONNECT : r && r.item && r.item.connection === "disconnected" ? "확인했지만 아직 연결이 끊겨 있어요" : "확인했어요");
+    toast(r && r.approved ? MON_RECONNECT : r && r.item && r.item.connection === "disconnected" ? TX("mon.run.still_down") : TX("mon.run.checked"));
   } finally {
     MON.running.delete(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
     if (btn) btn.textContent = was;
   }
 });
 // A down watch behind an approval gate is approved by the tap (hub/routes-lanes.ts run): its login may now ask the owner on his phone.
-const MON_RECONNECT = "다시 연결을 요청했어요. 승인 요청이 오면 눌러 주세요";
+const MON_RECONNECT = TX("mon.reconnect_asked");
 // 다시 연결 on a disconnected app: every watch the app owns runs on this computer, then the app and the list are read again.
 const monRecheckApp = (btn, it, names) => busy(btn, async () => {
   for (const n of names) MON.running.add(n);
@@ -440,13 +442,13 @@ const monRecheckApp = (btn, it, names) => busy(btn, async () => {
   await Promise.allSettled([loadMonitors(), it.pc ? pqLoad() : loadIntegrations()]);
   MON.sig = ""; MON.side = ""; monSchedule();
   const bad = res.filter(r => r.status === "rejected").length, asked = res.some(r => r.status === "fulfilled" && r.value && r.value.approved);
-  toast(bad ? `${names.length}개 중 ${bad}개는 확인하지 못했어요` : asked ? MON_RECONNECT : "지금 다시 확인했어요", !!bad);
+  toast(bad ? TX("mon.recheck.partial", { total: names.length, n: bad }) : asked ? MON_RECONNECT : TX("mon.recheck.done"), !!bad);
 });
 // An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
 const monFeed = it => it.key === "notice";
 
 /* ---- a lot piled up: what waits first, one row per source, filters, 읽음 처리, pages ---- */
-const MON_FILTERS = [["all", "전체", () => true], ["need", "답 필요", monNeed], ["fail", "실패", monFailed]];
+const MON_FILTERS = [["all", TX("mon.filter.all"), () => true], ["need", TX("mon.filter.need"), monNeed], ["fail", TX("mon.tag.fail"), monFailed]];
 const monFilterOf = () => MON_FILTERS.find(f => f[0] === MON.filter) || MON_FILTERS[0];
 const MON_PAGE = 30;       // rows per page (더 보기 / 이전 소식 보기 bring the next)
 // Enough pages of list `key` to show its entry number `i` (-1: nothing to reach).
@@ -456,9 +458,9 @@ const MON_FOLD_MIN = 3;    // a run of this many same results in a row folds int
 const MON_RAW = /\n(?:```원문|원문[ \t]*\n)/;   // where a report's folded original starts
 const monLines = (n, names) => monStrip(choiceFree(String(n.text || "").split(MON_RAW)[0]), [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
 function monSummary(n, names) {
-  const lines = monLines(n, names).filter(l => !/^(?:새로 생겼어요|사라졌어요)$/.test(l));   // a section heading of the card, not news
+  const lines = monLines(n, names).filter(l => l !== TX("home.watch.fresh") && l !== TX("home.watch.gone"));   // a section heading of the card, not news
   const s = lines.slice(0, 2).join(" · ");
-  return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || "알림";
+  return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || TX("common.alerts");
 }
 // The row's second line, only when it says something its first line (the source) does not: a report that is one sentence is said once.
 const monSumNode = (n, names, src) => { const s = monSummary(n, names); return s === src ? null : el("div", { class: "fr-sum", text: s }); };
@@ -469,7 +471,7 @@ const monFoldKey = (n, names) => `${n.tone}|${monSummary(n, names)}`;
 // One source of the feed: the watch's name on one computer (a peer's report of the same name is its own row).
 const monSrcKey = n => `${n.pc ? n.pc.name : ""}|${ntPlain(n.title)}`;
 function monToggle(key) { if (MON.open.has(key)) MON.open.delete(key); else MON.open.add(key); MON.sig = ""; monSchedule(); }
-const monMoreBtn = (key, left, text) => el("button", { class: "btn text mon-more", type: "button", "data-more": key, onclick: () => { MON.more.set(key, (MON.more.get(key) || MON_PAGE) + MON_PAGE); MON.grew = key !== "feed" && !key.startsWith("g:"); MON.sig = ""; monSchedule(); }, text: text || `${left}개 더 보기` });
+const monMoreBtn = (key, left, text) => el("button", { class: "btn text mon-more", type: "button", "data-more": key, onclick: () => { MON.more.set(key, (MON.more.get(key) || MON_PAGE) + MON_PAGE); MON.grew = key !== "feed" && !key.startsWith("g:"); MON.sig = ""; monSchedule(); }, text: text || TX("mon.more_n", { n: left }) });
 // The top of an older page watches for the owner reaching it (monObserveOlder at the bottom): the reports above load themselves, and the button stays
 // for a keyboard or a browser without the observer.
 const monOlderSentinel = (key, left, end) => el("div", { class: "mon-sentinel", "data-older": key, "data-left": String(left), "data-end": end || null, "aria-hidden": "true" });
@@ -480,11 +482,11 @@ const monBarWanted = it => !it.mails.some(t => MAILS.has(t)) && (it.notices.leng
 function monBar(it) {
   const cur = monFilterOf(), fyi = it.notices.filter(n => cur[2](n) && !n.read && !monNeed(n) && n.id);
   return segKeep(el("div", { class: "mr-filter mon-bar" },
-    el("div", { class: "mon-tabs", role: "tablist", "aria-label": "소식 보기" }, ...MON_FILTERS.map(([k, label, ok]) => {
+    el("div", { class: "mon-tabs", role: "tablist", "aria-label": TX("mon.bar.aria") }, ...MON_FILTERS.map(([k, label, ok]) => {
       const n = k === "all" ? it.notices.length : it.notices.filter(ok).length;
       return el("button", { class: `cchip mr-f${k === cur[0] ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur[0]), "data-filter": k, onclick: () => { MON.filter = k; MON.more.clear(); MON.sig = ""; monSchedule(); } }, label, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
     })),
-    el("button", { class: "btn text mon-read", type: "button", "data-k": "read", disabled: !fyi.length, title: "답이 필요한 것은 그대로 둬요", onclick: ev => monReadAll(ev.currentTarget, fyi), text: fyi.length ? `${fyi.length}개 읽음 처리` : "읽음 처리" })));
+    el("button", { class: "btn text mon-read", type: "button", "data-k": "read", disabled: !fyi.length, title: TX("mon.bar.read_title"), onclick: ev => monReadAll(ev.currentTarget, fyi), text: fyi.length ? TX("mon.bar.read_n", { n: fyi.length }) : TX("mon.bar.read") })));
 }
 // 읽음 처리: the listed plain reports are read here at once and on the hub; a failure puts them back and says why (busy toasts it).
 // A peer's reports are read on the computer that holds them (pqNoticesRead).
@@ -500,26 +502,26 @@ const monReadAll = (btn, list) => busy(btn, async () => {
     if (r && typeof r.unread === "number") NT.unread = r.unread;
     ntPaint();
   }
-  toast(`${list.length}개를 읽음으로 표시했어요`);
+  toast(TX("mon.read_done", { n: list.length }));
 });
 // One report as a row: source, state, time and a two-line summary; a tap unfolds the whole card in place (sections, the original, 답하러 가기).
 // A report that waits on the owner carries 답하러 가기 on the row itself. A decision is always the whole card: it is answered in place.
 function monRowNode(n, names) {
   if (ntIsDec(n) || n.item) return monNoticeNode(n, names);   // a report about an app item shows the item (a mail row) as the app draws it
-  const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || "알림", more = monHasMore(n, names);
+  const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || TX("common.alerts"), more = monHasMore(n, names);
   if (n.id === MON.want) MON.open.add(key);
   if (more && MON.open.has(key)) {
     const full = monNoticeNode(n, names);
     if (!full) return null;
     full.classList.add("fr-open");
-    full.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn text", type: "button", "aria-label": `${src} 소식 접기`, onclick: () => monToggle(key), text: "접기" })));
+    full.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn text", type: "button", "aria-label": TX("mon.row.fold_aria", { src }), onclick: () => monToggle(key), text: TX("mon.fold") })));
     return full;
   }
   const need = monNeed(n);
-  return el("div", { class: `bm alert rc fr${n.read ? "" : " un"}${more ? "" : " fr-all"}`, "data-nid": n.id, role: more ? "button" : null, tabindex: more ? "0" : null, "aria-expanded": more ? "false" : null, "aria-label": more ? `${src} 소식 펼치기` : null, onclick: more ? () => monToggle(key) : null, onkeydown: more ? ev => monKey(ev, () => monToggle(key)) : null },
+  return el("div", { class: `bm alert rc fr${n.read ? "" : " un"}${more ? "" : " fr-all"}`, "data-nid": n.id, role: more ? "button" : null, tabindex: more ? "0" : null, "aria-expanded": more ? "false" : null, "aria-label": more ? TX("mon.row.unfold_aria", { src }) : null, onclick: more ? () => monToggle(key) : null, onkeydown: more ? ev => monKey(ev, () => monToggle(key)) : null },
     el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n.pc ? el("span", { class: "tag", text: n.pc.name }) : null, need ? monTag("ask") : monTag(n.tone), el("span", { class: "rc-time", text: monWhen(n) })),
     monSumNode(n, names, src),
-    need ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, text: "답하러 가기" })) : null);
+    need ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, text: TX("mon.reply_go") })) : null);
 }
 // A monitor's 확인 기록 is the prototype's detail list (#watch/price): ONE card of compact rows - a dot for the result, the report's first line (a price
 // change as the old value struck, then the new one), a small second line, the time at the right. A tap unfolds the whole report in place (monRowNode's card).
@@ -543,9 +545,9 @@ function monLogRow(n, names) {
   if (ntIsDec(n) || n.item || monNeed(n) || (more && MON.open.has(key))) return monRowNode(n, names);
   const lines = monLines(n, names);
   const chg = nwChangeNode(nwChangeLine(n.text)), plain = lines.filter(l => !l.includes("→")).map(l => l.replace(/^\[[^\]]*\]\s*/, ""));
-  const main = chg || plain[0] || ntPlain(n.title) || "알림", sub = chg ? plain[0] || "" : plain[1] || "";
-  const src = ntPlain(names[0] || n.title) || "알림";
-  return monLogLine({ tone: chg ? "changed" : n.tone, main, sub, at: n.updated || n.ts, unread: !n.read, nid: n.id, onclick: more ? () => monToggle(key) : null, label: more ? `${src} 소식 펼치기` : null });
+  const main = chg || plain[0] || ntPlain(n.title) || TX("common.alerts"), sub = chg ? plain[0] || "" : plain[1] || "";
+  const src = ntPlain(names[0] || n.title) || TX("common.alerts");
+  return monLogLine({ tone: chg ? "changed" : n.tone, main, sub, at: n.updated || n.ts, unread: !n.read, nid: n.id, onclick: more ? () => monToggle(key) : null, label: more ? TX("mon.row.unfold_aria", { src }) : null });
 }
 // The monitor's own latest run as the newest row: how it last ended and when it checks next (hub/monitors.ts watchFacts).
 function monRunRow(it) {
@@ -553,8 +555,8 @@ function monRunRow(it) {
   if (!m.last_run) return null;
   // The head's bar already says the state (정상) and the wait to the next check (다음 12분 후): the record keeps the result, the facts and the time.
   const same = m.kind === "watch" && m.last_result === "ok" && monStatus(m).key === "ok";
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), monLastOut(m), m.every || ""].filter(Boolean);
-  return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: same ? "확인했어요" : monRunLine(m), sub: facts.join(" · "), at: m.last_run });
+  const facts = [m.fails ? TX("mon.fails", { n: m.fails }) : "", monLastOk(m), monLastOut(m), m.every || ""].filter(Boolean);
+  return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: same ? TX("mon.run.checked") : monRunLine(m), sub: facts.join(" · "), at: m.last_run });
 }
 // The question chips of a watch (asChipTexts): one row of small buttons under its log.
 function monRunChips(it) {
@@ -567,12 +569,12 @@ function monGroupNode(g, names) {
   if (g.length === 1) return [monRowNode(g[0], names)];
   const n0 = g[0], need = monNeed(n0), key = `g:${need ? `need|${monSummary(n0, names)}|` : ""}${monSrcKey(n0)}`, want = g.findIndex(n => n.id === MON.want);
   if (want >= 0) { MON.open.add(key); monPageTo(key, want); }
-  const open = MON.open.has(key), unread = g.filter(n => !n.read).length, src = ntPlain(names[0] || n0.title) || "알림";
-  const head = el("div", { class: `bm alert rc fr grp${unread ? " un" : ""}${open ? " open" : ""}`, "data-nid": open ? null : n0.id, "data-group": key, role: "button", tabindex: "0", "aria-expanded": String(open), "aria-label": `${src} 소식 ${g.length}건 ${open ? "접기" : "펼치기"}`, onclick: () => monToggle(key), onkeydown: ev => monKey(ev, () => monToggle(key)) },
-    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n0.pc ? el("span", { class: "tag", text: n0.pc.name }) : null, need ? monTag("ask") : monTag(n0.tone), el("span", { class: "tag fr-n", text: need ? `같은 질문 ${g.length}번` : `${g.length}건` }), unread ? el("span", { class: "nb", "aria-label": `안 읽음 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "rc-time", text: monWhen(n0) }), el("span", { class: "fr-chev", "aria-hidden": "true" }, icon("drop"))),
+  const open = MON.open.has(key), unread = g.filter(n => !n.read).length, src = ntPlain(names[0] || n0.title) || TX("common.alerts");
+  const head = el("div", { class: `bm alert rc fr grp${unread ? " un" : ""}${open ? " open" : ""}`, "data-nid": open ? null : n0.id, "data-group": key, role: "button", tabindex: "0", "aria-expanded": String(open), "aria-label": TX(open ? "mon.grp.fold_aria" : "mon.grp.unfold_aria", { src, n: g.length }), onclick: () => monToggle(key), onkeydown: ev => monKey(ev, () => monToggle(key)) },
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n0.pc ? el("span", { class: "tag", text: n0.pc.name }) : null, need ? monTag("ask") : monTag(n0.tone), el("span", { class: "tag fr-n", text: need ? TX("mon.grp.same_q", { n: g.length }) : TX("mon.grp.n", { n: g.length }) }), unread ? el("span", { class: "nb", "aria-label": TX("mon.state.unread", { n: unread }), text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "rc-time", text: monWhen(n0) }), el("span", { class: "fr-chev", "aria-hidden": "true" }, icon("drop"))),
     open ? null : monSumNode(n0, names, src),
     // the same question asked again: answered once from its newest one, the earlier ones listed when unfolded
-    need && !open ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n0); }, text: "답하러 가기" })) : null);
+    need && !open ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n0); }, text: TX("mon.reply_go") })) : null);
   if (!open) return [head];
   const page = MON.more.get(key) || MON_PAGE;
   return [head, el("div", { class: "fr-list" }, ...g.slice(0, page).map(n => monRowNode(n, names)).filter(Boolean), g.length > page ? monMoreBtn(key, g.length - page) : null)];
@@ -584,7 +586,7 @@ function monFeedNodes(it, names) {
   for (const n of list) if (monNeed(n)) { const k = `${monSrcKey(n)}|${monSummary(n, names)}`; asked.set(k, [...(asked.get(k) || []), n]); }
   for (const n of list) if (!monNeed(n)) { const k = n.item ? `item|${n.id}` : monSrcKey(n); by.set(k, [...(by.get(k) || []), n]); }
   const groups = [...by.values()], bad = groups.filter(g => g.some(n => monFailed(n) && !n.read));
-  const secs = [["답 필요", [...asked.values()]], ["실패", bad], ["소식", groups.filter(g => !bad.includes(g))]].filter(s => s[1].length);
+  const secs = [[TX("mon.filter.need"), [...asked.values()]], [TX("mon.tag.fail"), bad], [TX("mon.sec.news"), groups.filter(g => !bad.includes(g))]].filter(s => s[1].length);
   monPageTo("feed", secs.flatMap(s => s[1]).findIndex(g => g.some(n => n.id === MON.want)));
   const page = MON.more.get("feed") || MON_PAGE, out = [];
   let shown = 0, left = 0;
@@ -596,7 +598,7 @@ function monFeedNodes(it, names) {
       if (shown >= page) { left++; continue; }
       shown++;
       // the plain sources under a day line (오늘 / 10월 25일 (토)), by their newest report; what waits stays one block on top
-      const d = label === "답 필요" ? "" : dayLabel(ntAt(g[0]));
+      const d = label === TX("mon.filter.need") ? "" : dayLabel(ntAt(g[0]));
       if (d && d !== day) { day = d; out.push(el("div", { class: "mon-day", text: d })); }
       const nodes = monGroupNode(g, names), time = d && nodes[0] && nodes[0].querySelector(":scope > .rc-hd > .rc-time");
       if (time) time.textContent = kstHM(g[0].updated || g[0].ts);   // the day line above says the date: the row says the time only
@@ -634,7 +636,7 @@ function monChronoNodes(it, names) {
       const x = draw(r.n, names);
       if (!x) return null;
       x.dataset.nids = r.all.map(n => n.id).join(",");
-      const rep = `같은 결과 ${r.all.length}번 · 처음 ${monWhen(r.all[0])}`;
+      const rep = TX("mon.rep", { n: r.all.length, t: monWhen(r.all[0]) });
       if (MON_ROWS.has(x)) MON_ROWS.get(x).textContent = rep;
       else x.querySelector(".rc-hd").after(el("div", { class: "mon-rep", text: rep }));
       return x;
@@ -657,8 +659,8 @@ function monChronoNodes(it, names) {
     const chips = monRunChips(it);
     nodes = chips ? [...out, chips] : out;
   }
-  if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
-  else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
+  if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, TX("mon.older_n", { n: cut })));
+  else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, TX("mon.older_n", { n: cut })));
   if (hidden && (hidden.size || CVP.more)) nodes.push(...mbMoreNodes(hidden.size));
   if (withMails) mbRowsPrune();
   if (withMails) return MX.scr ? mxScreen() : [...mxTop(it), ...mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)))].filter(Boolean), ...(nodes.length ? nodes : [el("div", { class: "empty", text: mailEmptyText() })]), ...(held ? [] : [el("div", { class: "mbox-fab-gap", "aria-hidden": "true" }), mbFab()])];   // the gap keeps the last card, its 첨부 줄 included, clear of 메일 쓰기; the waiting drafts view has no round button over a card corner
@@ -688,7 +690,7 @@ function monTopNodes(it) {
 function monConvBtn(it) {
   const app = monSettingsApp(it);
   if (!app || monMailList(it) || kkItem(it)) return null;
-  return el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "continue", title: "이 항목으로 대화를 이어가요", text: "대화로 이어가기", onclick: () => go("monitoring", `c:${asConv(app)}`) });
+  return el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "continue", title: TX("mon.conv.title"), text: TX("mon.conv.btn"), onclick: () => go("monitoring", `c:${asConv(app)}`) });
 }
 // 감시 소식 opens with every plain monitor at a glance: how far its wait has come, how it last ended, and the last line it said. Down and failed
 // rows come first, so what needs the owner is at the top; a tap opens that monitor.
@@ -709,44 +711,44 @@ function monOverview(it) {
     const m = i.mon, peerBar = i.pc && !m.paused && !(Date.parse(m.next_run) > 0);   // a paused peer monitor draws the grey 꺼짐 bar like a local one
     return el("button", { class: "mon-ov-row", type: "button", "data-ov": i.key, onclick: () => go("monitoring", i.key) },
       el("span", { class: "mon-ov-hd" }, el("span", { class: "mon-ov-n", text: monTitle(m) }), i.pc ? el("span", { class: "tag", text: i.pc.name }) : null),
-      peerBar ? el("span", { class: "mon-ov-peer", text: "다른 컴퓨터" }) : monProgNode(m, { compact: true }),
+      peerBar ? el("span", { class: "mon-ov-peer", text: TX("mon.ov.peer") }) : monProgNode(m, { compact: true }),
       monOvLine(m));
   };
   let head = null;
   if (calm.length) {
     const off = calm.filter(i => i.mon.paused).length, latest = Math.max(0, ...calm.map(i => Date.parse(i.mon.last_run) || 0));
-    const sum = [off ? `정상 ${calm.length - off} · 꺼짐 ${off}` : "모두 정상", latest ? `마지막 확인 ${monRel(now - latest, true)}` : ""].filter(Boolean).join(" · "), ht = loud.length ? `나머지 ${calm.length}개` : `모니터 ${calm.length}개`;
-    head = el("button", { class: "mon-ov-h", type: "button", "aria-expanded": String(open), "aria-label": `${ht} · ${sum} · ${open ? "접기" : "펼치기"}`, onclick: () => { MON.ovOpen = !open; MON.sig = ""; monSchedule(); } },
+    const sum = [off ? TX("mon.ov.sum_off", { n: calm.length - off, off }) : TX("mon.ov.all_ok"), latest ? TX("mon.ov.last", { t: monRel(now - latest, true) }) : ""].filter(Boolean).join(" · "), ht = loud.length ? TX("mon.ov.rest", { n: calm.length }) : TX("mon.ov.count", { n: calm.length });
+    head = el("button", { class: "mon-ov-h", type: "button", "aria-expanded": String(open), "aria-label": `${ht} · ${sum} · ${open ? TX("mon.fold") : TX("mon.unfold")}`, onclick: () => { MON.ovOpen = !open; MON.sig = ""; monSchedule(); } },
       el("span", { class: "mon-ov-ht", text: ht }), el("span", { class: "mon-ov-sum", text: sum }), icon("chev", "chev"));
   }
-  return el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : []), sorted.length ? null : el("div", { class: "mon-ov-empty", text: "아직 일반 모니터링이 없어요" }));
+  return el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : []), sorted.length ? null : el("div", { class: "mon-ov-empty", text: TX("mon.ov.empty") }));
 }
 function monTimeline(it) {
-  if (it.off) return [el("div", { class: "empty", text: "연결 안 됨" })];
+  if (it.off) return [el("div", { class: "empty", text: TX("mon.state.off") })];
   const names = it.mon ? monNames(it.mon) : [];
   const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = !monFeed(it) ? monChronoNodes(it, names) : it.notices.length > MON_COMPACT ? monFeedNodes(it, names) : monFeedCards(it, names);
   const ov = monOverview(it), head = [...monTopNodes(it), ...bar, ...(ov ? [ov] : [])];
   // A monitor's reports read as its 확인 기록, under a section label like the prototype's detail (its 지금 확인 stays in the head's actions).
-  const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? "실행 기록" : "확인 기록" })] : [];
+  const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? TX("mon.log.sched") : TX("mon.log.watch") })] : [];
   if (nodes.length) return [...head, ...sec, ...nodes];
-  if (head.length) return [...head, el("div", { class: "empty", text: it.notices.length || (it.mails || []).length || it.mon ? "이 보기에 해당하는 소식이 없어요" : "아직 소식이 없어요" })];   // an app with nothing at all says so, never a bare head
-  return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? monRunLine(it.mon) : "아직 소식이 없어요" })];
+  if (head.length) return [...head, el("div", { class: "empty", text: it.notices.length || (it.mails || []).length || it.mon ? TX("mon.empty.view") : TX("mon.empty.none") })];   // an app with nothing at all says so, never a bare head
+  return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? TX("common.loading") : it.mon ? monRunLine(it.mon) : TX("mon.empty.none") })];
 }
 // The settings an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct), a local schedule's (s:<id>, the screen only, no
 // conversation: 32-app-settings.js asEntry); none for a peer's app or schedule or an unreachable computer.
 // The title of a settings conversation: the monitor's or the app's own name (a peer's monitor too), not "설정".
 function monSettingsName(t) {
   const a = settingsApp(t);
-  if (a.startsWith("s:")) { const m = NM.items.find(x => x.schedule === a.slice(2)); return m ? monTitle(m) : "예약"; }
-  if (!a.startsWith("w:")) { const pe = PQ.of.get(t), it = pe && pe.app ? { label: pe.label } : INTG.items.find(x => x.key === a) || INTG.available.find(x => x.key === a); return it ? it.label : "설정"; }
+  if (a.startsWith("s:")) { const m = NM.items.find(x => x.schedule === a.slice(2)); return m ? monTitle(m) : TX("common.schedule"); }
+  if (!a.startsWith("w:")) { const pe = PQ.of.get(t), it = pe && pe.app ? { label: pe.label } : INTG.items.find(x => x.key === a) || INTG.available.find(x => x.key === a); return it ? it.label : TX("common.settings"); }
   const pe = PQ.of.get(t), m = pe ? pe.mon : NM.items.find(x => x.watch === a.slice(2));
-  return m ? monTitle(m) : "설정";
+  return m ? monTitle(m) : TX("common.settings");
 }
 // The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the latest-run row of the monitor's detail (monRunRow).
 const monStatMons = app => (asOwn(app) ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
 function monStatNode(m) {
   const st = monStatus(m);
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), monLastOut(m)].filter(Boolean);
+  const facts = [m.fails ? TX("mon.fails", { n: m.fails }) : "", monLastOk(m), monLastOut(m)].filter(Boolean);
   return el("div", { class: "as-row as-stat", "data-watch": m.watch || m.name },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [st.text, ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
     st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
@@ -757,25 +759,25 @@ const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? (it.account
 // Two states, two banners: kind "down" (the connection is gone: err tone, 연결이 끊겼어요) and "fail" (connected, the last check failed: err tone too,
 // 확인 실패). The head is passed in, never guessed from the detail text.
 function monBannerNode(kind, detail, btn) {
-  const head = kind === "down" ? "연결이 끊겼어요" : "확인 실패", t = String(detail || "").trim();
+  const head = kind === "down" ? TX("mon.banner.down") : TX("mon.banner.fail"), t = String(detail || "").trim();
   return el("div", { class: `mon-banner ${kind}`, role: kind === "down" ? "alert" : "status", "data-kind": kind }, icon("refresh"), el("span", { class: "mon-banner-tx" }, el("b", { text: head }), t ? ` · ${t}` : ""), btn);
 }
 // The app hint the hub writes for a down app starts with the row word ("연결 끊김 · ..."); the banner has its own head, so only the why is kept.
 const monHintWhy = h => String(h || "").replace(/^\s*연결\s*(끊김|이 끊겼어요)\s*(·\s*)?/, "");
-const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || "지금 확인", onclick: ev => monRunNow(ev.currentTarget, m) });
-const monRecheckBtn = (watch, onclick, text = "지금 다시 확인") => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
+const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || TX("mon.run_btn"), onclick: ev => monRunNow(ev.currentTarget, m) });
+const monRecheckBtn = (watch, onclick, text = TX("mon.recheck_btn")) => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
 function monBannerOf(it) {
   if (it.mon) {
     const m = it.mon, down = m.connection === "disconnected";
     if (!down && m.last_result !== "fail") return null;
-    const detail = down ? monConnWhy(m) : [m.fails > 1 ? `${m.fails}번 연속 실패했어요` : "마지막 확인이 실패했어요", monClean(m.last_summary || "")].filter(Boolean).join(" · ");
-    return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? "다시 연결" : undefined) : null);
+    const detail = down ? monConnWhy(m) : [m.fails > 1 ? TX("mon.fail_streak", { n: m.fails }) : TX("mon.run.fail"), monClean(m.last_summary || "")].filter(Boolean).join(" · ");
+    return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? TX("mon.reconnect") : undefined) : null);
   }
   if (!it.conn) return null;
   const names = (it.owned || []).map(m => m.watch).filter(Boolean);
-  return monBannerNode("down", monHintWhy(it.hint), names.length ? monRecheckBtn(it.key, ev => monRecheckApp(ev.currentTarget, it, names), "다시 연결") : null);
+  return monBannerNode("down", monHintWhy(it.hint), names.length ? monRecheckBtn(it.key, ev => monRecheckApp(ev.currentTarget, it, names), TX("mon.reconnect")) : null);
 }
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 // A monitor adds its own progress block and 지금 확인 under the name, so the conversation always says how far the wait has come.
@@ -791,7 +793,7 @@ function monHeadTime(it) {
 const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 대기 screen on its own drafts (30-replies.js).
-  const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 대기 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
+  const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: TX("mon.rq_btn", { n: it.drafts }), onclick: () => rqOpen(it.inst, it.pc) }) : null;
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);

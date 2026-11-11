@@ -40,15 +40,15 @@ const mailRealFiles = files => (files || []).map((f, i) => ({ f, i })).filter(x 
 function mailFilesNode(key, files) {
   const real = mailRealFiles(files);
   if (!real.length) return null;
-  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부 ${real.length}개` }), ...real.map(({ f, i }) =>
-    el("a", { class: "mr-file", href: mailFileUrl(key, i, true), download: f.name, title: `${f.name} 내려받기`, "aria-label": `${f.name} 내려받기${f.size ? ` (${mailSize(f.size)})` : ""}` },
+  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: TX("mon.mail.files", { n: real.length }) }), ...real.map(({ f, i }) =>
+    el("a", { class: "mr-file", href: mailFileUrl(key, i, true), download: f.name, title: TX("mon.mail.download", { name: f.name }), "aria-label": `${TX("mon.mail.download", { name: f.name })}${f.size ? ` (${mailSize(f.size)})` : ""}` },
       icon("file"), el("span", { class: "mr-fname", text: f.name }), f.size ? el("span", { class: "mr-fsize", text: mailSize(f.size) }) : null, icon("download"))));
 }
 // The reply state of a mail's row. `m.suggest` is written by the reply-draft lane (hub/mail.ts setMailSuggest; stays absent while the install's
 // reply-draft option is off or nothing was offered): { kind: "reply-draft", label, ref, state? }, `ref` = the draft id and `state` =
 // "draft" (default: a draft waits for approval) | "sent" (the reply went out by itself) | "waiting" (a reply is expected, no draft yet).
 // Without suggest nothing is drawn.
-const MAIL_REPLY = { draft: ["답장 초안 있음", "warn"], sent: ["자동 답장 보냄", "ok"], waiting: ["답장 대기", ""] };
+const MAIL_REPLY = { draft: [TX("mon.mail.reply.draft"), "warn"], sent: [TX("mon.mail.reply.sent"), "ok"], waiting: [TX("mon.mail.reply.waiting"), ""] };
 const mailReplyChip = sg => {
   if (!sg || typeof sg !== "object" || (sg.kind && sg.kind !== "reply-draft")) return null;
   const [text, tone] = MAIL_REPLY[sg.state || "draft"] || [];
@@ -57,14 +57,14 @@ const mailReplyChip = sg => {
 // The reply-state tag of a mail (hub/mail-state.ts mailLabel): an incoming mail's reply state (m.reply: needs | draft | replied | skipped | fyi),
 // else none. Read / unread is never a state (a row has its own 안 읽음 N pill), and skipped / fyi are the same mark to the owner: 답장 안 함.
 // An outgoing mail is 내가 보냄 in the thread list of a mail (30-mail-thread.js), where both directions sit together; a list row has no tag for it.
-const MAIL_STATE = { needs: ["답장 필요", "warn"], draft: ["초안 있음", "warn"], replied: ["답장함", "ok"], skipped: ["답장 안 함", ""], fyi: ["답장 안 함", ""] };
-const mailStateOf = m => m.dir === "out" ? ["내가 보냄", ""] : MAIL_STATE[m.reply] || ["", ""];
+const MAIL_STATE = { needs: [TX("mail.needs_reply"), "warn"], draft: [TX("mon.mail.state.draft"), "warn"], replied: [TX("mon.mail.state.replied"), "ok"], skipped: [TX("mail.fyi.title"), ""], fyi: [TX("mail.fyi.title"), ""] };
+const mailStateOf = m => m.dir === "out" ? [TX("mon.mail.state.out"), ""] : MAIL_STATE[m.reply] || ["", ""];
 // An app whose conversation is a list of mails (메일 and its instances): newest on top, opened at the top.
 const monMailList = it => !!(it && it.app && !it.mon && (it.listed || it.mails.some(t => MAILS.has(t))));
 // The filter of the mail list: 전체 / 안 읽음 / 답장 필요 / 확인 대기 / 답장함 / 보낸 메일. A filter gets the mail and its conversation target.
 // 확인 대기 holds no mail rows: it is the reply drafts waiting on the owner (owner 2026-10-27), and those approval cards show only there.
 // 전체 is the received mail; what was sent is only under 보낸 메일 (owner 2026-10-28).
-const MAIL_FILTERS = [["all", "전체", m => m.dir !== "out" && !m.archived], ["unread", "안 읽음", (m, t) => !m.archived && mailUnread(t, m)], ["owed", "답장 필요", m => m.dir !== "out" && !m.archived && (m.reply === "needs" || m.reply === "draft")], ["pending", "확인 대기", () => false], ["replied", "답장함", m => m.dir !== "out" && !m.archived && m.reply === "replied"], ["archived", "보관함", m => m.dir !== "out" && !!m.archived], ["sent", "보낸 메일", m => m.dir === "out"]];
+const MAIL_FILTERS = [["all", TX("mail.all"), m => m.dir !== "out" && !m.archived], ["unread", TX("common.unread"), (m, t) => !m.archived && mailUnread(t, m)], ["owed", TX("mail.needs_reply"), m => m.dir !== "out" && !m.archived && (m.reply === "needs" || m.reply === "draft")], ["pending", TX("mon.mail.pending"), () => false], ["replied", TX("mon.mail.state.replied"), m => m.dir !== "out" && !m.archived && m.reply === "replied"], ["archived", TX("mon.mail.archive"), m => m.dir !== "out" && !!m.archived], ["sent", TX("mon.mail.sent"), m => m.dir === "out"]];
 // While the hub still holds older mails the loaded rows undercount; the whole mail app (all accounts) then shows the hub's count over every mail
 // (GET /api/conversations counts.mail.filters). One account's list counts what is loaded until its pages are in.
 const mailChipCount = (k, loaded) => {
@@ -72,8 +72,8 @@ const mailChipCount = (k, loaded) => {
   return typeof all === "number" ? Math.max(all, loaded) : loaded;
 };
 // What an empty list of the mail app says, in the words of the tab it is under.
-const MAIL_EMPTY = { pending: "확인할 초안이 없어요", unread: "안 읽은 메일이 없어요", owed: "답장할 메일이 없어요", replied: "답장한 메일이 없어요", archived: "보관한 메일이 없어요", sent: "보낸 메일이 없어요" };
-const mailEmptyText = () => MAIL_EMPTY[mailFilterOf()[0]] || "받은 메일이 없어요";
+const MAIL_EMPTY = { pending: TX("mon.mail.empty.pending"), unread: TX("mon.mail.empty.unread"), owed: TX("mon.mail.empty.owed"), replied: TX("mon.mail.empty.replied"), archived: TX("mon.mail.empty.archived"), sent: TX("mon.mail.empty.sent") };
+const mailEmptyText = () => MAIL_EMPTY[mailFilterOf()[0]] || TX("mon.mail.empty.all");
 const mailFilterOf = () => MAIL_FILTERS.find(f => f[0] === MON.mailFilter) || MAIL_FILTERS[0];
 // A reply draft still in the owner's hands: waiting for 보내기 / 고치기 / 보내지 않기, or being rewritten after 고치기 (a peer's too, as its plain report).
 const mailDraftOpen = n => !!(n.decision && n.decision.draft) && drState(n.decision) === "open";
@@ -105,17 +105,17 @@ function mailLand(sel) {
 }
 // The head of the mail list is two rows (owner 2026-11-11): where the mail sits (받은 메일 / 보낸 메일 / 보관함, screen tabs) and, only in 받은 메일,
 // the five ways to sift it. MON.mailFilter keeps its seven values; the place is read from it, and MON.mailIn is the sift 받은 메일 comes back to.
-const MAIL_PLACES = [["in", "받은 메일"], ["sent", "보낸 메일"], ["archived", "보관함"]];
+const MAIL_PLACES = [["in", TX("mon.mail.inbox")], ["sent", TX("mon.mail.sent")], ["archived", TX("mon.mail.archive")]];
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0], place = cur === "sent" || cur === "archived" ? cur : "in";
   if (place === "in") MON.mailIn = cur;
   const count = (k, ok) => k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mailChipCount(k, mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length);
   const pick = k => () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); };
-  const tabs = segKeep(el("div", { class: "mx-tabs mr-place", role: "tablist", "aria-label": "메일 위치" }, ...MAIL_PLACES.map(([k, label]) =>
+  const tabs = segKeep(el("div", { class: "mx-tabs mr-place", role: "tablist", "aria-label": TX("mon.mail.place_aria") }, ...MAIL_PLACES.map(([k, label]) =>
     el("button", { class: `mx-tab${k === place ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === place), "data-filter": k, onclick: pick(k === "in" ? MON.mailIn || "all" : k) },
       label, k === "in" ? null : cntSpan(`mail-filter:${k}`, "mr-fn", count(k, MAIL_FILTERS.find(f => f[0] === k)[2]))))));
   if (place !== "in") return [tabs];
-  return [tabs, segKeep(el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.filter(f => f[0] !== "archived" && f[0] !== "sent").map(([k, label, ok]) =>
+  return [tabs, segKeep(el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": TX("mon.mail.view_aria") }, ...MAIL_FILTERS.filter(f => f[0] !== "archived" && f[0] !== "sent").map(([k, label, ok]) =>
     el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: pick(k) }, label, cntSpan(`mail-filter:${k}`, "mr-fn", count(k, ok))))))];
 }
 // A mail or chat of an integration is its own conversation in 채팅. A mail is a Gmail-like flat row: sender and time on one line (with
@@ -124,24 +124,24 @@ function mailFilterBar(mails, notices) {
 // Every mail row has one layout: sender · reply-state tag (only when there is a reply state; the orange 미답장 pill while one is owed) · 안 읽음 N ·
 // paperclip · time · ⋯. A mail conversation whose mail is gone (deleted) is no row at all.
 // A mail row's time: today's clock, else the day alone ("1월 15일"); the open mail keeps the full date and time.
-const mailRowWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
+const mailRowWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : new Date(t).toLocaleDateString(TX_LOCALE, { ...KST, month: "long", day: "numeric" });
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = m ? mailUnread(t, m) : ts(t).unread, open = () => go("monitoring", `c:${t}`);
   if (!m && isMailT(t)) return null;
   const [stateText, stateTone] = m && m.dir !== "out" ? mailStateOf(m) : ["", ""];
   // A mail is one item: unread is one mark, however many messages (the mail, the bot's note on it) its conversation holds unread.
-  const tag = m ? (n ? el("span", { class: "tag warn mr-unread", text: "안 읽음" }) : null) : n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : ntHasDecision(t) ? el("span", { class: "tag warn", text: "답변 필요" }) : null;
+  const tag = m ? (n ? el("span", { class: "tag warn mr-unread", text: TX("common.unread") }) : null) : n ? el("span", { class: "tag warn", text: TX("mail.unread_n", { n }) }) : ntHasDecision(t) ? el("span", { class: "tag warn", text: TX("common.needs_reply") }) : null;
   const stateTag = stateText ? (m.unreplied ? unrepPill(stateText) : el("span", { class: `tag mr-state${stateTone ? ` ${stateTone}` : ""}`, "data-state": stateText, text: stateText })) : null;
   // The 자동 초안 규칙 that drafted this mail (hub/mail.ts MailRecord.rule): its name, as a plain tag beside the reply state.
   const ruleTag = m && m.rule && m.dir !== "out" ? draftRuleTag(m.rule, "mr-rule") : null;
   // Why a mail is not 답장 필요: he is not its main recipient (hub/mail-state.ts replyExclusion: 참조로 받음, 단체 메일, 자동 발송, 다른 사람 앞).
   const whyTag = m && m.why && m.dir !== "out" && m.reply !== "replied" ? el("span", { class: "tag mr-why", "data-why": m.why, text: m.why }) : null;
   const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = (m ? mailRowWhen : rcWhen)(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
-  const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
-  const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
-  return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
+  const title = m ? m.subject || TX("mail.no_subject") : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
+  const clip = files.length ? el("span", { class: "mr-clip", title: TX("mon.mail.clip", { n: files.length }), "aria-label": TX("mon.mail.clip", { n: files.length }) }, icon("clip"), String(files.length)) : null;
+  return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? `${TX("common.unread")}, ` : ""}${title} ${m ? TX("mon.mail.open_orig") : TX("project.open_chat")}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src" }, m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null, m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label), ...mxSender(t), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, mxMoveBtn(t), m ? mailMenuBtn(t, () => orgMailItem(t)) : null),
+    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src" }, m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null, m ? m.dir === "out" ? TX("mon.mail.me_to", { to: mailSender(m.to) || TX("mon.mail.someone") }) : mailSender(m.from) || label : label), ...mxSender(t), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, mxMoveBtn(t), m ? mailMenuBtn(t, () => orgMailItem(t)) : null),
     el("div", { class: "rc-title", text: title }), chip,
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
     ...mailSumNodes(m, t, brief), ...(m ? orgMailRow(t) : []));
@@ -151,15 +151,15 @@ function mailSumNodes(m, t, brief) {
   if (!m) return brief ? [el("div", { class: "mr-sum", text: brief })] : [];
   const p = mailParts(m.summary || "", mailSkip(m));
   const sum = p.points.length ? el("ul", { class: "mr-sum mr-pts" }, ...p.points.map(x => el("li", { text: x }))) : brief ? el("div", { class: "mr-sum", text: brief }) : null;
-  const todo = p.todo ? el("div", { class: "mr-todo" }, el("b", { text: "할 일" }), el("span", { text: p.more ? `${p.todo} 외 ${p.more}건` : p.todo })) : null;
+  const todo = p.todo ? el("div", { class: "mr-todo" }, el("b", { text: TX("home.mailtext.todo") }), el("span", { text: p.more ? TX("mon.mail.todo_more", { todo: p.todo, n: p.more }) : p.todo })) : null;
   return [sum, todo].filter(Boolean);
 }
 // 초안 작성: the owner asks for a reply draft of this mail (POST /api/mail/<key>/draft, made behind the request); the draft arrives as the send-approval
 // card in the mail's conversation. In a row and in the open mail's head.
 const mailDraftAsk = async (t, btn, instruction = "") => {
   await api(`/api/mail/${t.slice(5)}/draft`, "POST", instruction ? { instruction } : {});
-  toast("답장 초안을 만드는 중이에요");
-  if (btn) { btn.disabled = true; if (!btn.classList.contains("ib")) btn.textContent = "만드는 중…"; }
+  toast(TX("mon.mail.drafting"));
+  if (btn) { btn.disabled = true; if (!btn.classList.contains("ib")) btn.textContent = TX("mon.mail.making"); }
 };
 // The sample in the 초안 작성 box, made from the summary the mail already has (hub/mail.ts MailRecord.summary: 요약, 할 일), no model call:
 // the first 할 일, else the first point of 요약, decides which short example fits - one line of the box, with no clipped quote of the mail. "" without a summary (the fixed hint then).
@@ -167,33 +167,33 @@ function mailDraftSample(m) {
   if (!m || !m.summary) return "";
   const skip = mailSkip(m), p = mailParts(m.summary, skip), lead = p.todo || p.points[0] || mailLines(m.summary, skip)[0] || "";
   if (!lead) return "";
-  if (p.todo) return "예: 이번 주 안에 처리하겠다고 써 줘";
-  if (/일정|회의|미팅|약속|방문|참석/.test(lead)) return "예: 그 시간 괜찮다고 써 줘";
-  if (/요청|문의|부탁|검토|확인|회신|답변|제안/.test(lead)) return "예: 확인하고 금요일까지 답한다고 써 줘";
-  return "예: 잘 받았다고 짧게 써 줘";
+  if (p.todo) return TX("mon.mail.ex.todo");
+  if (/일정|회의|미팅|약속|방문|참석/.test(lead)) return TX("mon.mail.ex.time");
+  if (/요청|문의|부탁|검토|확인|회신|답변|제안/.test(lead)) return TX("mon.mail.ex.ask");
+  return TX("mon.mail.ex.thanks");
 }
 // 초안 작성 asks first what the reply should say (owner 2026-10-28); an empty box makes the draft on its own, as before. Above the box: the mail
 // it answers (sender, subject, the row's summary lines), so the owner writes the instruction without going back to the mail.
 function mailDraftDialog(t, btn) {
   const m = MAILS.get(t), sample = mailDraftSample(m);
-  const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": "초안에 넣을 내용",
-    placeholder: sample || "예: 금요일까지 보내 드린다고 써 줘" });
+  const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": TX("mon.mail.instr_aria"),
+    placeholder: sample || TX("mon.mail.ex.default") });
   const ctx = m ? el("div", { class: "md-ctx", "data-k": "draft-mail" },
-    el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || "보낸 사람 없음" })),
-    el("div", { class: "md-subj", text: m.subject || "(제목 없음)" }),
+    el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || TX("mon.mail.no_sender") })),
+    el("div", { class: "md-subj", text: m.subject || TX("mail.no_subject") }),
     ...mailSumNodes(m, t, mailBrief(m, t))) : null;
   const err = usErr();   // a failure keeps the window and the typed instruction, and says so right above the button (20-models.js usRun)
   const go = (close, b) => usRun(b, err, async () => { await mailDraftAsk(t, btn, ta.value.trim()); close(); });
-  const d = dialog({ title: "답장 초안", body: el("div", { class: "col md-dlg" }, ctx,
-      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: "비워 두면 알아서 써요" }), err)),
-    actions: [{ label: "초안 만들기", kind: "pri", onclick: (close, b) => go(close, b) }] });
+  const d = dialog({ title: TX("mon.mail.dlg_title"), body: el("div", { class: "col md-dlg" }, ctx,
+      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: TX("mon.mail.ask") }), ta, el("div", { class: "sup", text: TX("mon.mail.ask_hint") }), err)),
+    actions: [{ label: TX("mail.draft_create"), kind: "pri", onclick: (close, b) => go(close, b) }] });
   d.node.classList.add("md-d");
   ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   ta.focus();
 }
 const mailDraftRun = (t, b) => mailDraftDialog(t, b);
 // A row has the icon alone (cls "ib mr-draft", its name in aria-label and title); the open mail's head keeps the word.
-const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => { const bare = /\bib\b/.test(cls); return el("button", { class: cls, type: "button", "data-k": "mail-draft", "aria-label": "초안 작성", title: "초안 작성", onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); }, onkeydown: ev => ev.stopPropagation() }, icon("pencil"), bare ? null : "초안 작성"); };
+const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => { const bare = /\bib\b/.test(cls); return el("button", { class: cls, type: "button", "data-k": "mail-draft", "aria-label": TX("mon.mail.act.draft"), title: TX("mon.mail.act.draft"), onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); }, onkeydown: ev => ev.stopPropagation() }, icon("pencil"), bare ? null : TX("mon.mail.act.draft")); };
 // 답장 안 함 / 답장 필요로 표시: the owner's own mark (POST / DELETE /api/mail/<key>/fyi, recorded as his with the time; a peer's mail on the computer
 // that holds it: 34-peer-monitoring.js pqRoute). The row, its tag, the filter counts and the app badges change at once; 답장 안 함 drops the mail's
 // waiting reply draft (확인 대기). 답장 필요로 표시 works from no state, from 답장 안 함 and from 답장함 (it needs another answer).
@@ -204,20 +204,20 @@ async function mailSetFyi(t, on) {
   if (m) { m.reply = on ? "fyi" : m.reply === "draft" ? "draft" : "needs"; m.unreplied = !on; }
   document.querySelectorAll(".mtop-fyi").forEach(mailFyiPaint);
   MON.sig = ""; MON.side = ""; monSchedule();
-  toast(on ? "답장 안 함으로 표시했어요" : "답장 필요로 표시했어요", false, on ? { label: "되돌리기", onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
+  toast(on ? TX("mail.fyi.done") : TX("mail.fyi.undone"), false, on ? { label: TX("common.undo"), onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
 // The actions of a mail, one list for the ⋯ of every mail card and for the buttons of every row. Incoming: 초안 작성, then 답장 안 함 while a reply
 // is owed (답장 필요 / 초안 있음) or 답장 필요로 표시 in any other state, then 삭제. Outgoing: 삭제. The one rule for a row's buttons: every incoming row
 // has the 초안 작성 pencil beside its ⋯, without a tap on the ⋯ (owner 2026-10-29); the row stays one Gmail-like row (owner 2026-11-03), so the rest is in the ⋯.
-const MAIL_ACT = { draft: "초안 작성", no: "답장 안 함", need: "답장 필요로 표시", delete: "삭제" };
+const MAIL_ACT = { draft: TX("mon.mail.act.draft"), no: TX("mail.fyi.title"), need: TX("mon.mail.act.need"), delete: TX("common.delete") };
 const mailOwed = m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft");
 const mailActs = m => m.dir === "out" ? ["delete"] : ["draft", mailOwed(m) ? "no" : "need", "delete"];
 const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t) : mailSetFyi(t, a === "no");
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it, unless the app's 삭제하면 원본도 삭제 is on (mbTrash). A newer message of the thread brings it back.
 async function mailDelete(t) {
   if (mailOriginal(t)) return mbTrash([t]);
-  if (!await ask("메일 삭제", `이 메일을 목록에서 지워요. ${mailStays(1)}`, "삭제", true)) return;
+  if (!await ask(TX("mail.trash.title"), `${TX("mail.trash.list_one")} ${mailStays(1)}`, TX("common.delete"), true)) return;
   mbDeleting();
   const pc = pqPc(t), rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => r.dataset.t === t);
   for (const r of rows) r.setAttribute("aria-busy", "true");   // the row stays until the hub has deleted the mail, then folds away
@@ -230,13 +230,13 @@ async function mailDelete(t) {
   const leaving = mbRowsOut([t]);
   PQ.of.delete(t); MON.sig = ""; MON.side = "";
   if (leaving) leaving.then(monSchedule); else monSchedule();
-  toast("메일을 목록에서 지웠어요");
+  toast(TX("mon.mail.deleted"));
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
 // The ⋯ at the top right of a mail row: mailActs, built from the mail's state at the tap. `extra()`: more items ({ value, label, run }) after them,
 // as the row's 원문 보기.
 function mailMenuBtn(t, extra = () => []) {
-  return el("button", { class: "ib mr-more", type: "button", "aria-label": "메일 메뉴", title: "메일 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", "data-k": "mail-menu", onclick: ev => {
+  return el("button", { class: "ib mr-more", type: "button", "aria-label": TX("mon.mail.menu"), title: TX("mon.mail.menu"), "aria-haspopup": "listbox", "aria-expanded": "false", "data-k": "mail-menu", onclick: ev => {
     ev.stopPropagation();
     const b = ev.currentTarget, m = MAILS.get(t) || {};
     const more = extra();

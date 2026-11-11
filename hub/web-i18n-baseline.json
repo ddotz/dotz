@@ -140,25 +140,13 @@
       "count": 14,
       "why": "Korean text handling: subject stop words and sentence endings"
     },
-    "web/js/30-monitor-chat.js": {
-      "count": 6,
-      "why": "pending"
-    },
-    "web/js/30-monitoring-comments-dm.js": {
-      "count": 43,
-      "why": "pending"
-    },
-    "web/js/30-monitoring-comments.js": {
-      "count": 206,
-      "why": "pending"
-    },
     "web/js/30-monitoring-mail.js": {
-      "count": 207,
-      "why": "pending"
+      "count": 23,
+      "why": "Parses Korean section headings and summary words in agent-written mail text; the mail text itself is server data"
     },
     "web/js/30-monitoring.js": {
-      "count": 410,
-      "why": "pending"
+      "count": 24,
+      "why": "Matches server-sent Korean values (draft option labels, recipient label, hub status words) and parses Korean clock/report text"
     },
     "web/js/30-notices.js": {
       "count": 171,
