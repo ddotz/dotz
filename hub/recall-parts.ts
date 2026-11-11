@@ -38,7 +38,7 @@ const clock = (at: number, tz: string, withDate: boolean): string => {
  */
 export function renderOpenRequests(entries: LedgerEntry[], file: string, tz: string, now = Date.now(), max = LEDGER_CAP): string {
 	if (!entries.length) return "";
-	const head = `Open owner requests (kept by the gateway, newest first, times in ${tz}; the owner's words are cut at ${LEDGER_WORDS} characters, the whole message is in inbox.jsonl under its id). Answer or close each one:`;
+	const head = `Open owner requests (kept by the gateway, newest first, times in ${tz}; the owner's words are cut at ${LEDGER_WORDS} characters, the whole message is in inbox.jsonl under its id). A request stays listed until its answer goes out with its id as reply_to:`;
 	const line = (e: LedgerEntry) => {
 		const words = e.text.replace(/\s+/g, " ").trim();
 		const how = e.state === "queued" ? "queued or being answered" : e.lost ? "deferred; the queue no longer tracks it (over 3 h), still unanswered" : `deferred${e.workers?.length ? `, waiting on ${e.workers.join(", ")}` : ", no worker listed"}`;

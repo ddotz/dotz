@@ -14,6 +14,7 @@ export function compactInstructions(): string {
 	return [
 		`SIZE: the whole <summary> is at most ${SUMMARY_MAX_CHARS} characters, whatever size the previous summary has. These instructions override rule R3 and every "preserve byte-for-byte", "never rewrite" and "append" line above: rewrite the previous summary shorter, do not append to it.`,
 		"DO NOT list or quote owner messages, open or answered: the gateway keeps the open requests and re-sends them after this summary. KEEP only the live goal chain and its order, the agreements and \"do not act until\" gates, the in-flight code state (worktree, branch, commits, failing checks), the exact next steps with their commands, and file pointers (paths, session ids).",
+		"EXCEPT an owner instruction that still binds future work and is not an open request (a standing rule given in passing): one line each, its message id and the owner's words.",
 		`DROP finished work: nothing, or one pointer line to the file that already holds it (${ARCHIVE_FILES.join(", ")} in the data folder).`,
 		"DO NOT repeat the contract, owner rules, lessons or features: the gateway re-sends them after every compaction.",
 	].join("\n\n");
