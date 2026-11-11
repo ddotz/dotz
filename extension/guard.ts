@@ -29,6 +29,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { broadSearchProblem, expandShellVars, shellText } from "./guard-shell.ts";
+import { pipedStatusBlock } from "./guard-pipe.ts";
 import { grantedHere, ownerPickedHere, swapExpensiveModels, workerPin } from "./guard-expensive.ts";
 export { shellText };
 import { limitStopProblem } from "./guard-limit.ts";
@@ -593,8 +594,8 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				return { block: true, reason: `orchestrator-guard: workers do not run external-impact commands (${kind}). Finish the rest of the task, and list the exact command under "External actions needed" in your final answer; the orchestrator decides whether to run it.` };
 			}
 		}
-		const laneMerge = tool === "bash" ? laneMergeBlock(expandShellVars(String(event?.input?.command ?? ""))) : undefined;
-		if (laneMerge) return { block: true, reason: laneMerge };
+		const shellBlock = (tool === "bash" ? laneMergeBlock(expandShellVars(String(event?.input?.command ?? ""))) : undefined) ?? (tool === "bash" || tool === "eval" ? pipedStatusBlock(shellText(event?.input)) : undefined);
+		if (shellBlock) return { block: true, reason: shellBlock };
 		const shared = sharedWriteBlock(tool, event?.input, dataDir(), process.env.DOTZ_CONV, process.env.DOTZ_LANE, ctx?.cwd);
 		if (shared) {
 			debug({ phase: "shared-write-block", tool });
