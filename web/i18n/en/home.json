@@ -180,6 +180,7 @@
   "home.deliv.received": "Received · sent now",
   "home.deliv.queued": "Received · queued",
   "home.deliv.held": "Received · sent after the limit resets",
+  "home.deliv.compacting": "Received · sent after the compaction",
   "home.deliv.update": "Received · sent after the update",
   "home.deliv.resumed": "Restarted and sent",
   "home.deliv.answered": "Answered",

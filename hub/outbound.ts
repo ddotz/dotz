@@ -98,6 +98,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		deliver: o.deliver,
 		steer: o.steer,
 		working: () => o.orch.status === "working",
+		keepalive: o.inKeepalive,
 		note: (target, replyTo, text) => msg().newMessage(target, replyTo, text),
 		isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
 		regenerated: isOpenNudge,

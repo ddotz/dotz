@@ -25,6 +25,8 @@ export type PromptDeps = {
 	steer: (text: string) => boolean | void;
 	/** Is the orchestrator mid-turn (so a new message is steered)? */
 	working: () => boolean;
+	/** The running turn is the idle ping that keeps the prompt cache warm: a message is not steered into it. */
+	keepalive?: () => boolean;
 	/** The steered note for a new message. */
 	note: (target: string, replyTo: string | undefined, text: string) => string;
 	/** Is this prompt text a gateway note steered into a turn (not a new request)? */

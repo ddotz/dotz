@@ -123,6 +123,7 @@
   "home.deliv.received": "받음 · 바로 전달",
   "home.deliv.queued": "받음 · 기다렸다 전달",
   "home.deliv.held": "받음 · 한도가 풀리면 전달",
+  "home.deliv.compacting": "받음 · 대화 정리가 끝나면 전달",
   "home.deliv.update": "받음 · 업데이트 뒤 전달",
   "home.deliv.resumed": "다시 시작해서 전달",
   "home.deliv.answered": "답함",

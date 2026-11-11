@@ -111,6 +111,8 @@ export function createOrchestrator(opts: OrchOpts) {
 	let keepalives = 0;
 	let inKeepalive = false;
 	const held: { text: string; header: boolean }[] = [];
+	// Held prompts go out with the owner's messages first (`header` marks them), each group in arrival order (Array.sort is stable).
+	const releaseHeld = (): void => void held.splice(0).sort((a, b) => Number(b.header) - Number(a.header)).forEach(h => sendOwner(h.text, h.header));
 	// Owner prompts sent to the process while no turn has started since (cleared at turn_start). A process that exits or is
 	// killed by the watchdog first would lose them (2026-10-21 01:02 KST: a web message sent during a compaction was never
 	// answered), so they are held again and go to the next process.
@@ -402,7 +404,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					else if (orch.status === "idle") keepalives = 0;
 					if (orch.status === "idle" && pauseAlerted) {
 						pauseAlerted = false;
-						for (const h of held.splice(0)) sendOwner(h.text, h.header);
+						releaseHeld();
 					} else if (orch.status === "idle") {
 						if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > compactAt() && !compacting())) limitContext();
 						else if (pendingRestart) {
@@ -513,7 +515,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					// compaction runs).
 					if (!compacting() && !rotating && !restarting && orch.status === "idle" && held.length) {
 						log(`${who} compaction over; delivering ${held.length} prompt(s) that arrived during it`);
-						for (const h of held.splice(0)) sendOwner(h.text, h.header);
+						releaseHeld();
 						armWatchdog();
 					}
 					break;
@@ -826,7 +828,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			probeAfterStart = false;
 			if (!replayed && !held.length) proc.send(PROBE_TEXT, "followUp");
 		}
-		if (orch.status !== "rate-limited") for (const h of held.splice(0)) sendOwner(h.text, h.header);
+		if (orch.status !== "rate-limited") releaseHeld();
 		setTimeout(() => proc?.refreshSession(), 4000);
 		log(`${who} ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
 		statusActivity(opts.source, `orchestrator ${resume ? "resumed its session" : rotate ? "started a fresh session with a handover" : "started"} (${model})`);
@@ -867,7 +869,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// Injects a note into the running turn (no effect when idle: the next prompt starts a turn anyway).
 	// True when the text went into the running turn.
 	function steer(text: string): boolean {
-		if (orch.status !== "working" || !proc) return false;
+		if (orch.status !== "working" || !proc || compacting() || rotating || restarting) return false;
 		proc.send(text, "steer");
 		return true;
 	}
@@ -1052,7 +1054,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		return true;
 	}
 
-	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setWorkerHandlers, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, setStuckHandler: stuck.setHandler, setStuckGuard: stuck.setGuard, resumeAfterError, canResume, resumeNow, liftLimit, limitPaused, limitModel, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
+	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setWorkerHandlers, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, setStuckHandler: stuck.setHandler, setStuckGuard: stuck.setGuard, resumeAfterError, canResume, resumeNow, liftLimit, limitPaused, limitModel, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, inKeepalive: () => inKeepalive, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
 }
 export type Orchestrator = ReturnType<typeof createOrchestrator>;
 

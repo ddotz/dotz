@@ -125,7 +125,11 @@ export function createPrompts(deps: PromptDeps) {
 	 */
 	function deliver(text: string, reply?: Reply): boolean {
 		const running = Boolean(!reply?.from && !reply?.handback && !reply?.quiet && current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
-		const steered = deps.working() && running;
+		// A turn that answers no request of ours (a worker's result woke the session, a session report) takes the owner's message too: as a
+		// followUp it waited behind the engine's own chain of runs (2026-11-11 11:31 UTC, about four minutes). Such a run answers at home, so
+		// only home's messages go in; another conversation's waits for its own turn. A keepalive turn keeps the old way.
+		const unrequested = Boolean(reply?.owner && !reply.from && !reply.handback && !reply.quiet && !current?.target && !deps.keepalive?.() && sameConv(reply.target, home().target));
+		const steered = deps.working() && (running || unrequested);
 		const gather = !steered && reply?.owner === true && burst.gathers(reply.target);
 		// A new owner turn for a conversation whose background worker is still running starts with a note naming that worker, so the
 		// orchestrator passes a follow-up to it (task_send) instead of spawning a second worker for the same job (owner 2026-10-30:
@@ -156,6 +160,7 @@ export function createPrompts(deps: PromptDeps) {
 		const note = deps.note(reply!.target, reply!.replyTo, text);
 		prompt.noted = note.trim();
 		if (deps.steer(note) !== false) {
+			if (unrequested) deps.log(`owner message for ${reply!.target} steered into a turn that answers no request of ours`);
 			// The owner's message is answered in this turn's final answer, so that answer must be posted, not kept as a quiet line.
 			if (current?.quiet) {
 				delete current.quiet;
@@ -572,7 +577,7 @@ export function createPrompts(deps: PromptDeps) {
 	}
 
 	/** A later stop of a run whose prompt was answered: it answers what landed in the run since, and is posted with them. */
-	function onContinued(p: Prompt, text: string): void {
+	function onContinued(p: Pick<Prompt, "target" | "cancelled" | "sent">, text: string): void {
 		const { later, text: t } = laterParts(text);
 		const target = p.target;
 		const replyTo = target ? burst.seen(target).findLast(q => q.replyTo)?.replyTo : undefined;
@@ -591,11 +596,20 @@ export function createPrompts(deps: PromptDeps) {
 			.catch(e => deps.log(`reply to ${target} failed: ${e}`));
 	}
 
+	/** A run with no request of ours took an owner message mid-turn and has read it: its stop answers that message (true when it did). */
+	function answerSeen(text: string): boolean {
+		const q = prompts.findLast(x => x.steered && x.seen && x.target);
+		const { later, text: t } = laterParts(text);
+		if (!q?.target || later || isSilent(t) || t.length <= 3 || !burst.seen(q.target).length) return false;
+		return (onContinued(q, text), true);
+	}
+
 	/** An assistant stop: the turn's final answer goes to the channel that asked, once. */
 	function onAnswer(text: string): void {
 		const p = current;
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
-		if (!p) return onOrphanAnswer(text);
+		if (!p) return void (answerSeen(text) || onOrphanAnswer(text));
+		if (!p.target && answerSeen(text)) return;
 		if (p.done) return onContinued(p, text);
 		const { later, text: t } = laterParts(text);
 		if (later && p.target && !p.deferred) {

@@ -104,8 +104,8 @@ function streamIn(root, key, ts) {
 // Delivery state of an owner message (hub/events.ts emitDelivery), shown in its meta line: received (steered into the running step /
 // received by an idle session / waited in the queue / resumed a stopped session / held on a limit), answered, or not delivered.
 const DELIV = { nodes: new Map(), state: new Map() };
-const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, update: 1, resumed: 1, answered: 2, failed: 2 };
-const DELIV_LABEL = { steered: TX("home.deliv.steered"), received: TX("home.deliv.received"), queued: TX("home.deliv.queued"), held: TX("home.deliv.held"), update: TX("home.deliv.update"), resumed: TX("home.deliv.resumed"), answered: TX("home.deliv.answered") };
+const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, compacting: 1, update: 1, resumed: 1, answered: 2, failed: 2 };
+const DELIV_LABEL = { steered: TX("home.deliv.steered"), received: TX("home.deliv.received"), queued: TX("home.deliv.queued"), held: TX("home.deliv.held"), compacting: TX("home.deliv.compacting"), update: TX("home.deliv.update"), resumed: TX("home.deliv.resumed"), answered: TX("home.deliv.answered") };
 const delivLabel = d => d.state === "failed" ? `${TX("home.deliv.failed")}${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
 function paintDelivery(mid) {
   const n = DELIV.nodes.get(mid), d = DELIV.state.get(mid);

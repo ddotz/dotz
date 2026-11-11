@@ -213,7 +213,7 @@ export function flush(target: string): void {
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.
 	const status = convs.forTarget(target)?.o.orch.status;
-	const how = steered ? "steered" : status === "rate-limited" ? "held" : status === "working" ? "queued" : was === "parked" ? "resumed" : "received";
+	const how = steered ? "steered" : status === "rate-limited" ? "held" : convs.forTarget(target)?.o.orch.ctx.compaction.state === "compacting" ? "compacting" : status === "working" ? "queued" : was === "parked" ? "resumed" : "received";
 	expectReply(target);
 	const refs = b.events.flatMap(e => refOf(e) ?? []);
 	for (const ref of refs) emitDelivery(target, ref, how);
