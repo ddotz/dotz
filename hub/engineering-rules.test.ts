@@ -300,9 +300,11 @@ test("no term from the owner's local privacy list is in the tree", () => {
 	const terms = readFileSync(list, "utf8").toLowerCase().split("\n").map((t, i) => ({ line: i + 1, term: t.trim() })).filter(t => t.term);
 	const allow = listLines(join(dirname(list), PRIVACY_ALLOW)).map(w => w.toLowerCase());
 	const root = join(import.meta.dir, "..");
-	const found = [...loadTree(root), ...treeDocs(root)].flatMap(src => {
+	// One pass over a file answers for every term at once; only a file that holds one is then searched term by term, to name the lines.
+	const any = new RegExp(terms.map(t => t.term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+	const found = [...TREE, ...treeDocs(root)].flatMap(src => {   // TREE is this same root, read once at the top of the file
 		const text = allow.reduce((t, word) => t.replaceAll(word, " "), src.text.toLowerCase());
-		return terms.filter(t => text.includes(t.term)).map(t => `${src.path}: term ${t.line}`);
+		return any.test(text) ? terms.filter(t => text.includes(t.term)).map(t => `${src.path}: term ${t.line}`) : [];
 	});
 	expect(found).toEqual([]);
 });
