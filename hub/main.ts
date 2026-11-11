@@ -102,6 +102,7 @@ import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { mailAction } from "./mail-sync.ts";
 import { recoverOriginalDeletes } from "./mail-delete.ts";
 import { applyMailStates, deliverAnswer, mailOriginal, mailSyncDeps, makeRoute, startStallSweep, stateWaitlist, webAccess } from "./routes.ts";
+import { onHangUp } from "./routes-util.ts";
 import { waitlistSweep } from "./waitlist.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { desk, type DeskWsData } from "./remote-desktop.ts";
@@ -444,6 +445,7 @@ const server = Bun.serve({
 		close: (ws: ServerWebSocket<any>) => (isDeskSocket(ws) ? desk.socket.close(ws) : appProxySocket.close(ws)),
 	},
 	async fetch(req, srv) {
+		if (req.url.includes("/api/events") || req.url.includes("/api/pty/stream")) onHangUp(req.signal, () => srv.timeout(req, 1));
 		const res = await route(req, srv);
 		if (!res) return undefined as unknown as Response;
 		return new URL(req.url).pathname === "/api/file" ? res : compressResponse(req, res);

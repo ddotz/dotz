@@ -1,6 +1,12 @@
 // Small helpers shared by the HTTP route modules. Split out of main.ts.
 
 
+// Ends the TCP connection of a stream request. Bun has no close call per request, and the socket of a client that stopped reading stays open
+// after its stream errors or ends (measured); server.timeout(req, 1) is the one call that closes it. hub/main.ts registers it per stream request.
+const hangUps = new WeakMap<AbortSignal, () => void>();
+export const onHangUp = (signal: AbortSignal, end: () => void): void => void hangUps.set(signal, end);
+export const hangUp = (signal: AbortSignal | undefined): void => signal && hangUps.get(signal)?.();
+
 export const json = (data: unknown, status = 200) => Response.json(data, { status });
 // A browser request from another site (Origin host differs from Host); no Origin header means a non-browser client.
 export const sameOrigin = (req: Request): boolean => {

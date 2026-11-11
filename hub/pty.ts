@@ -6,7 +6,7 @@
 // in-memory ring (the replay for a page that reconnects). A password sent as a secret is held in one local string for a
 // few seconds, only to drop it from the output if the terminal echoes it, and is then cleared.
 import { homedir } from "node:os";
-import { json, sameOrigin } from "./routes-util.ts";
+import { hangUp, json, sameOrigin } from "./routes-util.ts";
 
 const RING_CHARS = 64_000;
 const INPUT_MAX = 64_000;
@@ -140,7 +140,7 @@ export async function ptyRoute(req: Request, url: URL, host: PtyHost = sharedHos
 			}
 			if ((ctl.desiredSize ?? 0) < -BACKLOG_MAX) {
 				stop();
-				ctl.error(new Error("terminal stream dropped"));
+				hangUp(req.signal);
 			}
 		};
 		const stream = new ReadableStream<string>({

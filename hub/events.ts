@@ -7,6 +7,7 @@ import { stripSteerMark } from "./steer-mark.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 import { deriveSpec } from "./message-spec-derive.ts";
 import { noteBroken, ownerKind, ownerText, shownEvent } from "./owner-text.ts";
+import { hangUp } from "./routes-util.ts";
 import { withWorklogKind } from "./worklog-kind.ts";
 import { maskSecrets } from "./public-scrub.ts";
 import { dropClaim, statedTone, stripHandoff } from "./tone.ts";
@@ -36,7 +37,7 @@ export function maskedForDisk(event: HubEvent): HubEvent {
 }
 
 const recent: HubEvent[] = [];
-const subscribers = new Set<ReadableStreamDefaultController<string>>();
+const subscribers = new Map<ReadableStreamDefaultController<string>, AbortSignal | undefined>();
 
 for (const file of [paths.inbox, paths.outbox]) {
 	if (!existsSync(file)) continue;
@@ -149,7 +150,7 @@ export function broadcast(event: unknown): void {
 	const frame = `id: ${BOOT}-${seq}\ndata: ${JSON.stringify(event)}\n\n`;
 	frames.push({ seq, frame });
 	if (frames.length > REPLAY_MAX) frames.shift();
-	for (const sub of subscribers) push(sub, frame);
+	for (const sub of subscribers.keys()) push(sub, frame);
 }
 
 // A client that has not read BACKLOG_MAX frames (a quarter of REPLAY_MAX) is dead or stuck: drop it. A live one comes back with
@@ -157,11 +158,10 @@ export function broadcast(event: unknown): void {
 const BACKLOG_MAX = 500;
 let pingTimer: ReturnType<typeof setInterval> | undefined;
 
-function drop(sub: ReadableStreamDefaultController<string>): void {
+// `hang`: the client may be alive but not reading, so its socket is closed too (hangUp); the stream is not errored, which Bun would print as an error.
+function drop(sub: ReadableStreamDefaultController<string>, hang = false): void {
+	if (hang) hangUp(subscribers.get(sub));
 	subscribers.delete(sub);
-	try {
-		sub.error(new Error("event stream dropped"));
-	} catch {}
 	if (!subscribers.size) {
 		clearInterval(pingTimer);
 		pingTimer = undefined;
@@ -175,7 +175,7 @@ function push(sub: ReadableStreamDefaultController<string>, chunk: string): void
 		drop(sub);
 		return;
 	}
-	if ((sub.desiredSize ?? 0) < -BACKLOG_MAX) drop(sub);
+	if ((sub.desiredSize ?? 0) < -BACKLOG_MAX) drop(sub, true);
 }
 
 export function emitActivity(event: Activity): void {
@@ -384,9 +384,9 @@ export function sseResponse(lastId?: string | null, signal?: AbortSignal): Respo
 			// One chunk, so a long replay does not count as an unread backlog.
 			if (missed) c.enqueue(missed.join(""));
 			else c.enqueue(`id: ${lastEventId()}\nevent: reset\ndata: {}\n\n`);
-			subscribers.add(c);
+			subscribers.set(c, signal);
 			// One shared ping for all clients, alive only while there is one.
-			pingTimer ??= setInterval(() => { for (const sub of subscribers) push(sub, ": ping\n\n"); }, 25_000);
+			pingTimer ??= setInterval(() => { for (const sub of subscribers.keys()) push(sub, ": ping\n\n"); }, 25_000);
 		},
 		cancel() {
 			drop(controller);
