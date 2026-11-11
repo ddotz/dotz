@@ -100,25 +100,9 @@
       "count": 23,
       "why": "server value comparison: feature form names"
     },
-    "web/js/30-apps.js": {
-      "count": 138,
-      "why": "pending"
-    },
-    "web/js/30-canvas.js": {
-      "count": 30,
-      "why": "pending"
-    },
-    "web/js/30-integrations.js": {
-      "count": 4,
-      "why": "pending"
-    },
-    "web/js/30-kakao-views.js": {
-      "count": 14,
-      "why": "pending"
-    },
     "web/js/30-kakao.js": {
-      "count": 376,
-      "why": "pending"
+      "count": 5,
+      "why": "Korean month-day date shape, used only when the language is Korean"
     },
     "web/js/30-mailboxes.js": {
       "count": 14,

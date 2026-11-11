@@ -10,8 +10,8 @@ const intgHidden = t => INTG.available.some(a => a.off && intgHas(a, t));
 
 // 미답장 (hub/unreplied.ts), reading never clears it. One item that is owed is a state: a dot and a word (unrepPill). "미답장 N" is a count: the
 // orange count badge (unrepCount), beside the unread count badge. Both look the same on every row that shows them.
-const unrepPill = (text = "미답장") => el("span", { class: "tag unreplied", text });
-const unrepCount = n => el("span", { class: "nb unreplied", "aria-label": `미답장 ${n}개`, text: `미답장 ${n > 99 ? "99+" : n}` });
+const unrepPill = (text = TX("apps.unreplied")) => el("span", { class: "tag unreplied", text });
+const unrepCount = n => el("span", { class: "nb unreplied", "aria-label": TX("apps.unreplied.aria", { n }), text: TX("apps.unreplied.badge", { c: n > 99 ? "99+" : n }) });
 
 // Callers that ask while a request is out share it (opening a mail thread asks from the thread, the unread sync and the list at once).
 let intgFlight = null;

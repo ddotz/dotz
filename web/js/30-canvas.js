@@ -9,7 +9,7 @@
 // file mark, name, path, the pick hint, 새 탭, close. From 1100px it sits beside the conversation, so a pick's chip shows in the composer
 // next to it; below that it is a full-screen sheet with a back button. Picks stay with the conversation when the canvas closes.
 const CVS = { path: "", name: "", narrow: null, scripted: false };
-const canvasPane = el("section", { id: "canvas", class: "cvs-pane apps-pane", "aria-label": "캔버스", hidden: true });
+const canvasPane = el("section", { id: "canvas", class: "cvs-pane apps-pane", "aria-label": TX("apps.canvas"), hidden: true });
 $("#v-chat").append(canvasPane);
 const canvasUrl = p => `/api/canvas?path=${enc(p)}`;
 const canvasIsHtml = name => /\.html?$/i.test(String(name || ""));
@@ -31,11 +31,11 @@ function canvasDoc(html) {
 function canvasHeader() {
   const narrow = narrowChat();
   return el("header", { class: "apps-hd" },
-    narrow ? el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("back")) : null,
+    narrow ? el("button", { class: "ib", type: "button", "aria-label": TX("apps.canvas.close"), title: TX("common.close"), onclick: canvasClose }, icon("back")) : null,
     el("span", { class: "cv-av app-av", "aria-hidden": "true" }, icon("file")),
-    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: "화면 파일" }), pkHint()),   // the hint under the name (a beside-the-title hint left the name 1px wide in the side pane)
-    el("a", { class: "ib", href: canvasUrl(CVS.path), target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")),
-    narrow ? null : el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("close")));
+    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: TX("apps.canvas.file") }), pkHint()),   // the hint under the name (a beside-the-title hint left the name 1px wide in the side pane)
+    el("a", { class: "ib", href: canvasUrl(CVS.path), target: "_blank", rel: "noopener", "aria-label": TX("apps.open_tab"), title: TX("apps.open_tab") }, icon("open")),
+    narrow ? null : el("button", { class: "ib", type: "button", "aria-label": TX("apps.canvas.close"), title: TX("common.close"), onclick: canvasClose }, icon("close")));
 }
 // The header follows the width (back on a phone, close on a wide screen); the frame is kept, so the page and its markers stay.
 function canvasHead() {
@@ -56,7 +56,7 @@ function canvasOpen(path, name) {
   const frame = el("iframe", { class: "apps-frame cvs-frame", title: CVS.name, referrerpolicy: "same-origin" });
   canvasPane.append(frame);
   fetch(canvasUrl(path)).then(async r => {
-    if (!r.ok) throw new Error(fileNote(r, "열 수 없는 파일이에요"));
+    if (!r.ok) throw new Error(fileNote(r, TX("apps.canvas.cant_open")));
     const html = await r.text();
     if (CVS.path !== path || !frame.isConnected) return;
     if (/<script\b/i.test(html)) {
@@ -65,7 +65,7 @@ function canvasOpen(path, name) {
       frame.setAttribute("sandbox", "allow-scripts");
       frame.src = canvasUrl(path) + "&pick=1";
     } else frame.srcdoc = canvasDoc(html);
-  }).catch(e => { if (CVS.path === path && frame.isConnected) frame.replaceWith(el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: e instanceof TypeError ? "연결이 끊겨 열지 못했어요" : e.message }))); });
+  }).catch(e => { if (CVS.path === path && frame.isConnected) frame.replaceWith(el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: e instanceof TypeError ? TX("apps.canvas.offline") : e.message }))); });
 }
 function canvasClose() {
   CVS.path = ""; CVS.name = "";
@@ -77,7 +77,7 @@ function canvasClose() {
 // node/doc/frame are null and remote marks it: 15-picker.js leaves the overlay to the page's own badges.
 function canvasPick(d) {
   if (!d || typeof d.id !== "string" || !d.id) return;
-  if (PICK.length >= 10) { toast("요소는 한 번에 10개까지 보낼 수 있어요", true); return; }
+  if (PICK.length >= 10) { toast(TX("apps.canvas.pick_max"), true); return; }
   if (PICK.some(p => p.remote && p.id === d.id)) return;
   const frame = $(".cvs-frame", canvasPane);
   PICK.push({ id: d.id, n: PICK.length + 1, tag: String(d.tag || "div").toLowerCase(), sel: String(d.sel || ""), text: String(d.text || "").slice(0, 200), html: String(d.html || "").slice(0, 600),

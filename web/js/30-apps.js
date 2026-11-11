@@ -5,7 +5,7 @@
 // the frame under the standard header: back, name, status, 새 탭, ⋯ (설정 / 끄기 / 제거). The rows are the 모니터링 list's rows.
 // window.appsMonItems() lets 30-monitoring.js (not ours) add the tool apps to its 앱 group; nothing here edits that file.
 const APPS = { items: [], errors: [], loaded: false, failed: false, sel: "", list: true, sig: "", timer: 0 };
-const APP_STATUS = { running: ["실행 중", "ok"], unreachable: ["응답 없음", "err"], unknown: ["상태 모름", ""], off: ["꺼짐", ""] };
+const APP_STATUS = { running: [TX("apps.status.running"), "ok"], unreachable: [TX("apps.status.unreachable"), "err"], unknown: [TX("apps.status.unknown"), ""], off: [TX("apps.status.off"), ""] };
 const appsNarrow = () => narrowChat();
 const appsTool = a => a && a.source === "manifest" && a.kind === "tool" && a.web;
 
@@ -29,28 +29,28 @@ const appsBadge = a => { const s = a.off ? APP_STATUS.off : APP_STATUS[a.status]
 const appsStatusLine = a => {
   if (a.source === "registry") return a.status === "unreachable" ? a.hint || "" : "";
   if (a.off) return "";
-  return a.status === "unreachable" ? a.reason || "" : a.kind === "monitor" ? "상태만 확인하는 앱이에요" : "";
+  return a.status === "unreachable" ? a.reason || "" : a.kind === "monitor" ? TX("apps.row.monitor_hint") : "";
 };
 
 // The list: 사용자 앱 (the manifests), then 모니터링 앱 (the shipped contact-first apps), then the manifests that did not load.
 function appsRows() {
   const rows = [], tools = APPS.items.filter(a => a.source === "manifest");
-  rows.push({ header: "사용자 앱" });
-  if (!tools.length) rows.push({ k: "empty-apps", name: "아직 내 앱이 없어요", av: appsAv("add"), hint: "채팅에서 앱을 추가해 달라고 하면 돼요", open: () => go("chat") });
+  rows.push({ header: TX("apps.group.own") });
+  if (!tools.length) rows.push({ k: "empty-apps", name: TX("apps.empty.name"), av: appsAv("add"), hint: TX("apps.empty.hint"), open: () => go("chat") });
   for (const a of tools) {
     rows.push({ k: a.id, name: a.label, av: appsAv(a.icon), hint: appsStatusLine(a), badge: appsBadge(a), sel: APP_STATE_ON() && a.id === (appsPicked() || {}).id, open: () => appsPick(a.id) });
   }
   const reg = APPS.items.filter(a => a.source === "registry");
   if (reg.length) {
-    rows.push({ header: "모니터링 앱" });
+    rows.push({ header: TX("apps.group.monitor") });
     for (const a of reg) rows.push({ k: `r:${a.id}`, name: a.label, av: appsAv(a.icon), hint: appsStatusLine(a), badge: appsBadge(a), open: () => go("monitoring", `i:${a.id}`) });
   }
   if (APPS.errors.length) {
-    rows.push({ header: "불러오지 못한 앱" });
-    for (const e of APPS.errors) rows.push({ k: `e:${e.id}`, name: e.id, av: appsAv("file"), hint: e.reason, badge: ["오류", "err"], open: () => dialog({ title: "앱을 불러오지 못했어요", body: el("div", { class: "apps-err" }, el("p", {}, el("b", { text: e.id })), el("p", { text: e.reason }), el("p", { class: "sup", text: e.dir })), mid: true,
-      actions: [{ label: "다시 확인", kind: "pri", onclick: close => { close(); loadApps().then(() => { APPS.sig = ""; appsSchedule(); }); } }] }) });
+    rows.push({ header: TX("apps.group.failed") });
+    for (const e of APPS.errors) rows.push({ k: `e:${e.id}`, name: e.id, av: appsAv("file"), hint: e.reason, badge: [TX("apps.status.error"), "err"], open: () => dialog({ title: TX("apps.err.title"), body: el("div", { class: "apps-err" }, el("p", {}, el("b", { text: e.id })), el("p", { text: e.reason }), el("p", { class: "sup", text: e.dir })), mid: true,
+      actions: [{ label: TX("apps.recheck"), kind: "pri", onclick: close => { close(); loadApps().then(() => { APPS.sig = ""; appsSchedule(); }); } }] }) });
   }
-  if (!APPS.loaded) rows.push({ header: APPS.failed ? "앱을 불러오지 못했어요" : "앱 불러오는 중…" });
+  if (!APPS.loaded) rows.push({ header: APPS.failed ? TX("apps.load_failed") : TX("apps.loading") });
   return rows;
 }
 const APP_STATE_ON = () => current === "apps" && !APPS.list;
@@ -83,42 +83,42 @@ function appsHeader(a) {
   const st = a.off ? APP_STATUS.off : APP_STATUS[a.status] || APP_STATUS.unknown;
   const hint = appsTool(a) && !a.off && a.status !== "unreachable" ? pkHint() : null;   // a phone: a line under the status, the title keeps its width
   return el("header", { class: "apps-hd" },
-    appsNarrow() ? el("button", { class: "ib", type: "button", "aria-label": "앱 목록", title: "앱 목록", onclick: () => go("apps") }, icon("back")) : null,
+    appsNarrow() ? el("button", { class: "ib", type: "button", "aria-label": TX("apps.list"), title: TX("apps.list"), onclick: () => go("apps") }, icon("back")) : null,
     appsAv(a.icon),
     el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: a.label }), el("p", { class: "apps-p" }, st[0], a.reason && !a.off ? ` · ${a.reason}` : ""), appsNarrow() ? hint : null),
     appsNarrow() ? null : hint,
-    appsTool(a) && !a.off ? el("a", { class: "ib", href: a.web.href, target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")) : null,
-    el("button", { class: "ib", type: "button", "aria-label": "앱 메뉴", title: "앱 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => appsMenu(ev.currentTarget, a) }, icon("more")));
+    appsTool(a) && !a.off ? el("a", { class: "ib", href: a.web.href, target: "_blank", rel: "noopener", "aria-label": TX("apps.open_tab"), title: TX("apps.open_tab") }, icon("open")) : null,
+    el("button", { class: "ib", type: "button", "aria-label": TX("apps.menu"), title: TX("apps.menu"), "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => appsMenu(ev.currentTarget, a) }, icon("more")));
 }
 
 const kvRows = (obj) => el("div", { class: "apps-kv" }, ...Object.entries(obj).map(([k, v]) => el("div", { class: "apps-kr" }, el("span", { class: "apps-kk", text: k }), el("span", { class: "apps-kv2", text: String(v) }))));
 function appsSettings(a) {
   const body = el("div", { class: "apps-set" },
-    kvRows({ 주소: a.web ? a.web.href : a.kind === "monitor" ? "모니터링에서 확인해요" : "", 상태: (APP_STATUS[a.off ? "off" : a.status] || APP_STATUS.unknown)[0] }),
-    a.start ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "앱 실행" }), el("p", { class: "apps-note", text: "이 앱은 스스로 실행되지 않아요. 아래 명령으로 띄워 주세요." }), el("pre", { class: "apps-pre", text: [a.start.cwd ? `cd ${a.start.cwd}` : "", `${a.start.env ? Object.entries(a.start.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : ""}${a.start.command}`].filter(Boolean).join("\n") })) : null,
-    a.watches && a.watches.length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "감시" }), el("p", { class: "apps-note", text: a.watches.join(", ") })) : null,
-    a.settings && Object.keys(a.settings).length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "설정" }), kvRows(a.settings)) : null);
-  dialog({ title: `${a.label} 설정`, body, mid: true });
+    kvRows({ [TX("apps.set.address")]: a.web ? a.web.href : a.kind === "monitor" ? TX("apps.set.in_monitoring") : "", [TX("apps.set.status")]: (APP_STATUS[a.off ? "off" : a.status] || APP_STATUS.unknown)[0] }),
+    a.start ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: TX("apps.set.run") }), el("p", { class: "apps-note", text: TX("apps.set.run_note") }), el("pre", { class: "apps-pre", text: [a.start.cwd ? `cd ${a.start.cwd}` : "", `${a.start.env ? Object.entries(a.start.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : ""}${a.start.command}`].filter(Boolean).join("\n") })) : null,
+    a.watches && a.watches.length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: TX("apps.set.watches") }), el("p", { class: "apps-note", text: a.watches.join(", ") })) : null,
+    a.settings && Object.keys(a.settings).length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: TX("common.settings") }), kvRows(a.settings)) : null);
+  dialog({ title: TX("apps.set.title", { label: a.label }), body, mid: true });
 }
 function appsMenu(anchor, a) {
   const own = a.source === "manifest";
-  const items = [{ value: "settings", label: "설정" }, ...(own ? [{ value: "off", label: a.off ? "켜기" : "끄기" }] : []), ...(own ? [{ value: "remove", label: "제거", danger: true }] : [])];
+  const items = [{ value: "settings", label: TX("common.settings") }, ...(own ? [{ value: "off", label: a.off ? TX("apps.on") : TX("apps.off") }] : []), ...(own ? [{ value: "remove", label: TX("apps.remove"), danger: true }] : [])];
   showMenu(anchor, items, { onPick: v => { if (v === "settings") appsSettings(a); else if (v === "off") appsToggle(a); else if (v === "remove") appsRemove(a); } });
 }
 async function appsToggle(a) {
   try {
     await api(`/api/apps/${enc(a.id)}`, "PATCH", { off: !a.off });
-    toast(a.off ? `${a.label}을(를) 켰어요` : `${a.label}을(를) 껐어요`);
+    toast(a.off ? TX("apps.toast.on", { label: a.label }) : TX("apps.toast.off", { label: a.label }));
     await loadApps();
   } catch (e) { toast(e.message, true); }
 }
 async function appsRemove(a) {
-  const sure = await ask(`${a.label} 제거`, "목록에서 빼요. 파일은 남아서 되돌릴 수 있어요.", "제거", true);
+  const sure = await ask(TX("apps.remove.title", { label: a.label }), TX("apps.remove.body"), TX("apps.remove"), true);
   if (!sure) return;
   try {
     await api(`/api/apps/${enc(a.id)}`, "DELETE");
     APPS.sel = ""; APPS.list = true;
-    toast(`${a.label}을(를) 제거했어요`);
+    toast(TX("apps.toast.removed", { label: a.label }));
     navSync("apps", "apps");
     await loadApps();
   } catch (e) { toast(e.message, true); }
@@ -127,15 +127,15 @@ async function appsRemove(a) {
 function appsBody(a) {
   if (!appsTool(a)) {
     return el("div", { class: "apps-card" },
-      el("p", { class: "apps-note", text: a.kind === "monitor" ? "이 앱은 모니터링에서 소식을 모아 보여 줘요." : "이 앱은 자체 화면이 없어요." }),
-      a.source === "registry" ? el("button", { class: "btn tonal sm", type: "button", text: "모니터링에서 열기", onclick: () => go("monitoring", `i:${a.id}`) }) : null);
+      el("p", { class: "apps-note", text: a.kind === "monitor" ? TX("apps.body.monitor") : TX("apps.body.no_screen") }),
+      a.source === "registry" ? el("button", { class: "btn tonal sm", type: "button", text: TX("apps.open_monitoring"), onclick: () => go("monitoring", `i:${a.id}`) }) : null);
   }
-  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "꺼짐" }), el("button", { class: "btn tonal sm", type: "button", text: "켜기", onclick: () => appsToggle(a) }));
+  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: TX("apps.status.off") }), el("button", { class: "btn tonal sm", type: "button", text: TX("apps.on"), onclick: () => appsToggle(a) }));
   if (a.status === "unreachable") {
     return el("div", { class: "apps-card" },
-      el("p", { class: "apps-note", text: `${a.label} 앱이 응답하지 않아요${a.reason ? ` (${a.reason})` : ""}.` }),
-      a.start ? el("p", { class: "apps-note", text: "앱이 떠 있는지 확인해 주세요." }) : null,
-      el("button", { class: "btn tonal sm", type: "button", text: "다시 확인", onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
+      el("p", { class: "apps-note", text: a.reason ? TX("apps.body.no_response_why", { label: a.label, reason: a.reason }) : TX("apps.body.no_response", { label: a.label }) }),
+      a.start ? el("p", { class: "apps-note", text: TX("apps.body.check_running") }) : null,
+      el("button", { class: "btn tonal sm", type: "button", text: TX("apps.recheck"), onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
   }
   const frame = el("iframe", { class: "apps-frame", src: a.web.href, title: a.label, referrerpolicy: "same-origin", onload: () => appsFrameCheck(frame, a) });
   return frame;
@@ -146,7 +146,7 @@ function appsFrameCheck(frame, a) {
   let plain = false;
   try { plain = frame.contentDocument.contentType === "text/plain"; } catch { return; }
   if (!plain) return;
-  frame.replaceWith(emptyNode(`${a.label} 앱이 열리지 않아요. 앱이 켜져 있는지 확인하고 다시 열어 보세요`, async () => { await loadApps(); APPS.sig = ""; $("#apps-pane").dataset.key = ""; appsRender(); }));
+  frame.replaceWith(emptyNode(TX("apps.body.wont_open", { label: a.label }), async () => { await loadApps(); APPS.sig = ""; $("#apps-pane").dataset.key = ""; appsRender(); }));
 }
 
 let appsRaf = 0;
@@ -165,12 +165,12 @@ function appsRender() {
     side.scrollTop = top;
   }
   const a = appsPicked();
-  const head = a ? appsHeader(a) : el("header", { class: "apps-hd" }, el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: "앱" }), el("p", { class: "apps-p", text: "내 앱을 한곳에서 열어요" })));
+  const head = a ? appsHeader(a) : el("header", { class: "apps-hd" }, el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: TX("apps.title") }), el("p", { class: "apps-p", text: TX("apps.subtitle") })));
   const bodyKey = a ? `${a.id}:${a.off}:${a.status}:${a.reason || ""}:${appsNarrow()}` : "none";
   if (pane.dataset.key === bodyKey && pane.firstChild) { /* same app, same state: keep the frame (a reload would lose the app's own state) */ }
   else {
     pane.dataset.key = bodyKey;
-    clear(pane).append(head, a ? appsBody(a) : el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "앱을 골라 주세요." })));
+    clear(pane).append(head, a ? appsBody(a) : el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: TX("apps.pick") })));
   }
 }
 
@@ -178,7 +178,7 @@ function appsRender() {
 //   in monItems(), after the INTG.items loop:  for (const a of (window.appsMonItems ? appsMonItems() : [])) items.push(a);
 //   in monRows(), the row's opener:            open: () => it.tool ? go("apps", it.id) : go("monitoring", it.key)
 window.appsMonItems = () => APPS.items.filter(a => a.source === "manifest" && a.kind === "tool").map(a => ({
-  key: `x:${a.id}`, id: a.id, tool: true, group: "앱", name: a.label, ic: a.icon, notices: [], mails: [], app: true, unread: 0, unreplied: 0,
+  key: `x:${a.id}`, id: a.id, tool: true, group: MON_GROUP.app, name: a.label, ic: a.icon, notices: [], mails: [], app: true, unread: 0, unreplied: 0,
   hint: appsStatusLine(a), badge: appsBadge(a), at: "",
 }));
 
