@@ -7,7 +7,8 @@ import { inboxText } from "./intake.ts";
 import { reflectPrompt } from "./reflect.ts";
 
 // The 알림 / 작업 기록 conversations: the page's real routing (09-needs-you.js eventTarget), intake (13-data.js ingestMsg), message rule
-// (31-conversations.js convReal) and choice parser (10-decision-card.js), run on the real source text.
+// (31-conversations.js convReal, with the gatewayWake it calls from 11-todo-strip.js) and choice parser (10-decision-card.js), run on the
+// real source text.
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
 const cut = (src: string, from: string, to: string) => src.slice(src.indexOf(from), src.indexOf(to));
 
@@ -28,6 +29,7 @@ function page() {
 		cut(web("08-home.js"), "const isFixedT", "const FIXED_NAME"),
 		cut(web("09-needs-you.js"), "function eventTarget", "/* ---------- conversation view"),
 		cut(web("13-data.js"), "// 알림 / 작업 기록: a post edited", "async function loadTarget"),
+		cut(web("11-todo-strip.js"), "const gatewayWake", "const BAN_KEY"),
 		cut(web("31-conversations.js"), "const CONV_KINDS", "const convIncoming"),
 		cut(web("10-decision-card.js"), "const CH_OPT", "const DC = "),
 	].join("\n");
