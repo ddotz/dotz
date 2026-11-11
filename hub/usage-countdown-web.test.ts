@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // The time left until a usage window or the API budget resets, and the clock time it falls on (web/js/01-core.js leftText and rel, on the
 // 사용량 and 계정 screens), run on the real source text: rounded down to the two largest units, so 6 days 23 hours 59 minutes reads
@@ -12,7 +13,7 @@ const line = (src: string, name: string) => new RegExp(`^const ${name} = .*$`, "
 const block = (src: string, name: string) => new RegExp(`^const ${name} = [\\s\\S]*?\\n};\\n`, "m").exec(src)![0];
 const NOW = Date.parse("2026-11-09T03:00:00Z"); // 12:00 on 11/9 in KST
 const FakeDate = class extends Date { static now = () => NOW; };
-const { leftText, rel } = new Function("Date", `${line(core, "KST")}${line(core, "KST_YMD")}${line(core, "ymdOf")}${block(core, "kstShort")}${line(core, "REL_HM")}${line(needsYou, "KST_DAY")}${line(needsYou, "kstDay")}${fn("leftText")}${fn("rel")}return { leftText, rel };`)(FakeDate) as { leftText: (ms: number) => string; rel: (at: number) => string };
+const { leftText, rel } = new Function("Date", `${i18nPrelude()}${line(core, "KST")}${line(core, "KST_YMD")}${line(core, "ymdOf")}${line(core, "KST_LOCAL")}${block(core, "kstShort")}${line(core, "REL_HM")}${line(needsYou, "KST_DAY")}${line(needsYou, "kstDay")}${fn("leftText")}${fn("rel")}return { leftText, rel };`)(FakeDate) as { leftText: (ms: number) => string; rel: (at: number) => string };
 const M = 60_000, H = 60 * M, D = 24 * H;
 
 test("the time left is rounded down to days and hours, hours and minutes, or minutes", () => {

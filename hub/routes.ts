@@ -10,7 +10,7 @@ import { createLocalLogin } from "./local-login.ts";
 import { createWebAccess, localBrowser, WebAccessError, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, PORT, setMachineName } from "./config.ts";
-import { msg } from "./i18n.ts";
+import { lang, msg } from "./i18n.ts";
 import { limitWaits } from "./limitwait.ts";
 import { buildWaitlist } from "./waitlist.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
@@ -66,7 +66,7 @@ import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
-import { appAsset, committedText, indexPage, setAppName, webBuild } from "./webapp.ts";
+import { appAsset, committedText, indexPage, manifestI18n, setAppLang, setAppName, swScript, webBuild } from "./webapp.ts";
 import { forgetRoute, listPeers, ownLogin } from "./peers.ts";
 import { AGENT_AUTHOR, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
 import { peerProjects } from "./peer-projects.ts";
@@ -101,7 +101,7 @@ import { createSetupGate } from "../firstrun/setup-gate.ts";
 import { chartRoute } from "./chart.ts";
 
 const BOOT_ID = Date.now().toString(36);
-setAppName(NAME);
+setAppName(NAME); setAppLang(lang());
 // Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
 const APP_FILES: Record<string, [string, string]> = {
 	"/manifest.webmanifest": ["manifest.webmanifest", "application/manifest+json"],
@@ -425,10 +425,10 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		// The install name is the owner's assistant name, not the project's; `gateway` is what another computer recognises a gateway by (hub/peers.ts).
 		if (appFile && url.pathname === "/manifest.webmanifest") {
 			const m = JSON.parse(committedText(appFile[0]) ?? readFileSync(join(import.meta.dir, "..", "web", appFile[0]), "utf8"));
-			const body = JSON.stringify({ ...m, name: NAME, short_name: NAME, description: `${NAME} · 항상 켜져 있는 개인 비서`, gateway: "dotz" });
+			const body = JSON.stringify({ ...m, name: NAME, short_name: NAME, ...manifestI18n(NAME), gateway: "dotz" });
 			return new Response(req.method === "HEAD" ? null : body, { headers: { "Content-Type": appFile[1], "Cache-Control": "no-cache" } });
 		}
-		if (appFile) return new Response(req.method === "HEAD" ? null : committedText(appFile[0]) ?? Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
+		if (appFile) return new Response(req.method === "HEAD" ? null : url.pathname === "/sw.js" ? swScript(committedText(appFile[0]) ?? readFileSync(join(import.meta.dir, "..", "web", appFile[0]), "utf8")) : committedText(appFile[0]) ?? Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
 		// The other gateways read this computer's chosen name here (hub/peers.ts); it is a display name, no secret, so it is public like the manifest.
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, machineHost()) });
 		// Pairing gates itself (only this node's own tailscale login gets a token, hub/peer-pair.ts) but still passes the write check first (another site's page, a non-JSON body).

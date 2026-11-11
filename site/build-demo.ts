@@ -9,6 +9,7 @@ import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { assertNoBannedWords, scrubBundle } from "./banned-words";
 import { assertDemoViews } from "./demo-views";
+import { injectedConsts, resolveView } from "../hub/web-i18n.ts";
 
 const ROOT = join(import.meta.dir, "..");
 const WEB = join(ROOT, "web");
@@ -22,6 +23,11 @@ const source = (rel: string) => {
 };
 const files = (kind: "js" | "css") => readdirSync(join(WEB, kind)).filter(f => f.endsWith(`.${kind}`)).sort();
 const joined = (kind: "js" | "css") => files(kind).map(f => source(`${kind}/${f}`)).join("\n");
+// The demo is Korean: the ko catalog is carried the way the gateway carries it, read from the same committed tree.
+const koCatalog = injectedConsts(resolveView("ko", {
+  areas: lang => { try { return readdirSync(join(WEB, "i18n", lang)).filter(f => f.endsWith(".json")).map(f => f.slice(0, -5)).sort(); } catch { return []; } },
+  read: (lang, area) => source(`i18n/${lang}/${area}.json`),
+}));
 
 // The page names no server asset: /custom.js (appended by 99-boot.js) becomes the demo's own empty layer beside app.js.
 // Absolute /app.css and /app.js never appear in the sources; /demo/app.* are what demo/index.html loads.
@@ -31,9 +37,9 @@ const css = rewrite(joined("css"));
 // The joined text is served by the gateway verbatim, so the demo needs no other surgery on it than rewrite: the same bundles run here.
 let js = rewrite(joined("js"));
 assertDemoViews(js, readFileSync(join(OUT, "index.html"), "utf8"));   // before anything is written: a failed build leaves the demo as it was
-const build = createHash("sha1").update(js).update(css).digest("hex").slice(0, 12);
+const build = createHash("sha1").update(js).update(css).update(koCatalog).digest("hex").slice(0, 12);
 // WEB_BUILD goes after the "use strict" directive, which must stay the first statement (hub/webapp.ts does the same).
-js = js.replace('"use strict";', m => `${m}\nconst WEB_BUILD = "${build}";`);
+js = js.replace('"use strict";', m => `${m}\nconst WEB_BUILD = "${build}";\n${koCatalog}`);
 
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, "app.css"), css);

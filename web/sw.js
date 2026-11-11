@@ -159,13 +159,13 @@ self.addEventListener("push", ev => {
     ev.waitUntil((async () => {
       await closeGone();
       if ((await self.registration.getNotifications()).length) return;
-      await self.registration.showNotification("알림 정리", { tag: "withdrawn", body: "처리한 알림을 정리했어요", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
+      await self.registration.showNotification("{{shell.sw.cleanup_title}}", { tag: "withdrawn", body: "{{shell.sw.cleanup_body}}", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
       for (const n of await self.registration.getNotifications({ tag: "withdrawn" })) n.close();
     })());
     return;
   }
   if (gone.length) ev.waitUntil(closeGone());
-  const show = () => self.registration.showNotification(m.title || "알림", {
+  const show = () => self.registration.showNotification(m.title || "{{common.alerts}}", {
     body: m.body || "",
     tag: m.tag || undefined,
     renotify: Boolean(m.tag),
@@ -183,7 +183,7 @@ self.addEventListener("push", ev => {
     // endpoint still gets a silent notification that is closed at once; other browsers show nothing while a focused window of the app is open.
     const sub = await self.registration.pushManager.getSubscription().catch(() => null);
     if (!sub || !/(^|\.)push\.apple\.com$/.test(new URL(sub.endpoint).host)) return;
-    await self.registration.showNotification(m.title || "알림", { tag: "on-screen", body: m.body || "", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
+    await self.registration.showNotification(m.title || "{{common.alerts}}", { tag: "on-screen", body: m.body || "", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
     for (const n of await self.registration.getNotifications({ tag: "on-screen" })) n.close();
   })());
 });
@@ -242,7 +242,7 @@ self.addEventListener("notificationclick", ev => {
         ok = r.ok;
       } catch {}
       if (!ok) return openApp();
-      await self.registration.showNotification("답변을 보냈어요", { tag: `decision:${id}`, silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png", data: { url, ts: "", id: "" } });
+      await self.registration.showNotification("{{shell.sw.reply_sent}}", { tag: `decision:${id}`, silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png", data: { url, ts: "", id: "" } });
       await new Promise(res => setTimeout(res, 3500));
       for (const n of await self.registration.getNotifications({ tag: `decision:${id}` })) n.close();
     })());

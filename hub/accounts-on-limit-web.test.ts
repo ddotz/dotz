@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // The 계정 card's 물어보기 row (under the small section name 한도에 걸리면) (web/js/25-settings-accounts.js accountSection): the stored on_limit is marked, the unset
 // state says the alert asks once, and a tap writes PUT /api/accounts/on-limit and re-renders like the other rows.
@@ -56,7 +57,7 @@ function card(acc: object) {
 		bar: () => null,
 		pctText: () => "",
 	};
-	const mod = new Function(...Object.keys(env), `${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
+	const mod = new Function(...Object.keys(env), `${i18nPrelude()}${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
 	const section = mod(...Object.values(env), acc) as () => Node[];
 	return { nodes: section(), calls, renders: () => renders };
 }

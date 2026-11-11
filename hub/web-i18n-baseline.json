@@ -1,0 +1,368 @@
+{
+  "files": {
+    "web/js/01-message-spec.js": {
+      "count": 28,
+      "why": "pending"
+    },
+    "web/js/01-notice-ko.js": {
+      "count": 346,
+      "why": "pending"
+    },
+    "web/js/01-peer-msg.js": {
+      "count": 28,
+      "why": "pending"
+    },
+    "web/js/01-phrase-wrap.js": {
+      "count": 37,
+      "why": "pending"
+    },
+    "web/js/02-answer-shapes.js": {
+      "count": 3,
+      "why": "pending"
+    },
+    "web/js/02-basic-markdown.js": {
+      "count": 97,
+      "why": "pending"
+    },
+    "web/js/02-chart.js": {
+      "count": 7,
+      "why": "pending"
+    },
+    "web/js/04-state.js": {
+      "count": 152,
+      "why": "pending"
+    },
+    "web/js/05-command-palette.js": {
+      "count": 61,
+      "why": "pending"
+    },
+    "web/js/06-subagents.js": {
+      "count": 64,
+      "why": "pending"
+    },
+    "web/js/07-board.js": {
+      "count": 18,
+      "why": "pending"
+    },
+    "web/js/08-home.js": {
+      "count": 275,
+      "why": "pending"
+    },
+    "web/js/09-needs-you.js": {
+      "count": 101,
+      "why": "pending"
+    },
+    "web/js/10-decision-card.js": {
+      "count": 376,
+      "why": "pending"
+    },
+    "web/js/10-decision-undo.js": {
+      "count": 5,
+      "why": "pending"
+    },
+    "web/js/10-draft-original.js": {
+      "count": 57,
+      "why": "pending"
+    },
+    "web/js/10-reply-card.js": {
+      "count": 93,
+      "why": "pending"
+    },
+    "web/js/11-mailbody.js": {
+      "count": 24,
+      "why": "pending"
+    },
+    "web/js/11-mailtext.js": {
+      "count": 68,
+      "why": "pending"
+    },
+    "web/js/11-resultcard.js": {
+      "count": 48,
+      "why": "pending"
+    },
+    "web/js/11-todo-strip.js": {
+      "count": 139,
+      "why": "pending"
+    },
+    "web/js/11-watchtext.js": {
+      "count": 197,
+      "why": "pending"
+    },
+    "web/js/11-worklog.js": {
+      "count": 14,
+      "why": "pending"
+    },
+    "web/js/12-terminal-view.js": {
+      "count": 159,
+      "why": "pending"
+    },
+    "web/js/13-data.js": {
+      "count": 39,
+      "why": "pending"
+    },
+    "web/js/14-slash-commands.js": {
+      "count": 330,
+      "why": "pending"
+    },
+    "web/js/15-attachments.js": {
+      "count": 79,
+      "why": "pending"
+    },
+    "web/js/15-picker.js": {
+      "count": 20,
+      "why": "pending"
+    },
+    "web/js/15-upload.js": {
+      "count": 14,
+      "why": "pending"
+    },
+    "web/js/16-target-switcher-conversation.js": {
+      "count": 93,
+      "why": "pending"
+    },
+    "web/js/17-state-refresh.js": {
+      "count": 13,
+      "why": "pending"
+    },
+    "web/js/18-lanes.js": {
+      "count": 140,
+      "why": "pending"
+    },
+    "web/js/19-project-main.js": {
+      "count": 505,
+      "why": "pending"
+    },
+    "web/js/20-models.js": {
+      "count": 118,
+      "why": "pending"
+    },
+    "web/js/21-providers.js": {
+      "count": 269,
+      "why": "pending"
+    },
+    "web/js/22-settings-pages.js": {
+      "count": 108,
+      "why": "pending"
+    },
+    "web/js/22-settings.js": {
+      "count": 235,
+      "why": "pending"
+    },
+    "web/js/23-installable-app-web.js": {
+      "count": 154,
+      "why": "pending"
+    },
+    "web/js/24-settings-update.js": {
+      "count": 282,
+      "why": "pending"
+    },
+    "web/js/25-settings-accounts.js": {
+      "count": 310,
+      "why": "pending"
+    },
+    "web/js/25-settings-devices.js": {
+      "count": 162,
+      "why": "pending"
+    },
+    "web/js/25-settings-discord.js": {
+      "count": 204,
+      "why": "pending"
+    },
+    "web/js/25-settings-messengers.js": {
+      "count": 98,
+      "why": "pending"
+    },
+    "web/js/25-settings-onboarding.js": {
+      "count": 34,
+      "why": "pending"
+    },
+    "web/js/25-settings-web-access.js": {
+      "count": 147,
+      "why": "pending"
+    },
+    "web/js/26-settings-runtime.js": {
+      "count": 136,
+      "why": "pending"
+    },
+    "web/js/27-harness.js": {
+      "count": 132,
+      "why": "pending"
+    },
+    "web/js/28-harness-project.js": {
+      "count": 343,
+      "why": "pending"
+    },
+    "web/js/29-harness-features.js": {
+      "count": 305,
+      "why": "pending"
+    },
+    "web/js/30-apps.js": {
+      "count": 138,
+      "why": "pending"
+    },
+    "web/js/30-canvas.js": {
+      "count": 30,
+      "why": "pending"
+    },
+    "web/js/30-integrations.js": {
+      "count": 4,
+      "why": "pending"
+    },
+    "web/js/30-kakao-views.js": {
+      "count": 14,
+      "why": "pending"
+    },
+    "web/js/30-kakao.js": {
+      "count": 376,
+      "why": "pending"
+    },
+    "web/js/30-mail-box.js": {
+      "count": 293,
+      "why": "pending"
+    },
+    "web/js/30-mail-sent.js": {
+      "count": 37,
+      "why": "pending"
+    },
+    "web/js/30-mail-thread.js": {
+      "count": 50,
+      "why": "pending"
+    },
+    "web/js/30-mailboxes-set.js": {
+      "count": 466,
+      "why": "pending"
+    },
+    "web/js/30-mailboxes.js": {
+      "count": 159,
+      "why": "pending"
+    },
+    "web/js/30-monitor-chat.js": {
+      "count": 6,
+      "why": "pending"
+    },
+    "web/js/30-monitoring-comments-dm.js": {
+      "count": 43,
+      "why": "pending"
+    },
+    "web/js/30-monitoring-comments.js": {
+      "count": 206,
+      "why": "pending"
+    },
+    "web/js/30-monitoring-mail.js": {
+      "count": 207,
+      "why": "pending"
+    },
+    "web/js/30-monitoring.js": {
+      "count": 410,
+      "why": "pending"
+    },
+    "web/js/30-notices.js": {
+      "count": 171,
+      "why": "pending"
+    },
+    "web/js/30-replies.js": {
+      "count": 139,
+      "why": "pending"
+    },
+    "web/js/30-triage.js": {
+      "count": 189,
+      "why": "pending"
+    },
+    "web/js/31-conversations.js": {
+      "count": 84,
+      "why": "pending"
+    },
+    "web/js/31-notices-screen.js": {
+      "count": 91,
+      "why": "pending"
+    },
+    "web/js/32-app-settings.js": {
+      "count": 497,
+      "why": "pending"
+    },
+    "web/js/32-history-nav.js": {
+      "count": 5,
+      "why": "pending"
+    },
+    "web/js/33-peers.js": {
+      "count": 115,
+      "why": "pending"
+    },
+    "web/js/34-input-diag.js": {
+      "count": 34,
+      "why": "pending"
+    },
+    "web/js/34-peer-monitoring.js": {
+      "count": 51,
+      "why": "pending"
+    },
+    "web/js/35-code-blocks.js": {
+      "count": 10,
+      "why": "pending"
+    },
+    "web/js/36-shell.js": {
+      "count": 82,
+      "why": "pending"
+    },
+    "web/js/37-api-budget.js": {
+      "count": 83,
+      "why": "pending"
+    },
+    "web/js/37-remote-desktop.js": {
+      "count": 92,
+      "why": "pending"
+    },
+    "web/js/38-overlay.js": {
+      "count": 2,
+      "why": "pending"
+    },
+    "web/js/39-reply.js": {
+      "count": 21,
+      "why": "pending"
+    },
+    "web/js/40-orch-error.js": {
+      "count": 20,
+      "why": "pending"
+    },
+    "web/js/41-runstate.js": {
+      "count": 84,
+      "why": "pending"
+    },
+    "web/js/42-intro.js": {
+      "count": 107,
+      "why": "pending"
+    },
+    "web/js/42-relay-chat.js": {
+      "count": 14,
+      "why": "pending"
+    },
+    "web/js/43-panes-drag.js": {
+      "count": 37,
+      "why": "pending"
+    },
+    "web/js/43-panes-keys.js": {
+      "count": 23,
+      "why": "pending"
+    },
+    "web/js/43-panes-layouts.js": {
+      "count": 38,
+      "why": "pending"
+    },
+    "web/js/43-panes-mirror.js": {
+      "count": 20,
+      "why": "pending"
+    },
+    "web/js/43-panes-view.js": {
+      "count": 15,
+      "why": "pending"
+    },
+    "web/custom.js": {
+      "count": 468,
+      "why": "pending"
+    }
+  },
+  "enHangulKeys": [],
+  "unusedKeyPrefixes": {
+    "common.": "shared words and the design glossary, seeded before the screens that use them are migrated"
+  }
+}

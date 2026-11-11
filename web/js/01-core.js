@@ -72,10 +72,10 @@ const liEnd = (...kids) => el("span", { class: "li-end" }, ...kids);
 // A setting with exactly two values (docs/ui-spec.md 두 값 설정): one small pill showing the current value; a tap, Enter or Space moves to the
 // other one. Unset shows `unset` and the first tap picks the first value. An on/off setting uses the switch (.hs-sw); three or more values a menu.
 // aria-pressed is true on the second value, so the state reads like a switch; the label always names the value now in force.
-function rowToggle({ label, opts, value, unset = "정하기", onPick }) {
+function rowToggle({ label, opts, value, unset = TX("shell.toggle.unset"), onPick }) {
   const i = opts.findIndex(([v]) => v === value), next = opts[i < 0 ? 0 : (i + 1) % opts.length];
   return el("button", { type: "button", class: `chip tgl${i < 0 ? " unset" : ""}`, "data-v": i < 0 ? "" : value, "aria-pressed": String(i === 1),
-    "aria-label": `${label}: ${i < 0 ? unset : opts[i][1]} · 누르면 ${next[1]}`, text: i < 0 ? unset : opts[i][1], onclick: ev => onPick(next[0], ev.currentTarget) });
+    "aria-label": TX("shell.toggle.label", { label, value: i < 0 ? unset : opts[i][1], next: next[1] }), text: i < 0 ? unset : opts[i][1], onclick: ev => onPick(next[0], ev.currentTarget) });
 }
 
 /* ---------- icons (24px stroke set) ---------- */
@@ -131,35 +131,38 @@ const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w
 
 /* ---------- formatting ---------- */
 const KST = { timeZone: "Asia/Seoul" };
-const kstTime = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleTimeString("ko-KR", KST); };
-const kstStamp = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleString("ko-KR", { ...KST, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }); };
+const kstTime = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleTimeString(TX_LOCALE, KST); };
+const kstStamp = ts => { const d = new Date(ts); return isNaN(d) ? "" : d.toLocaleString(TX_LOCALE, { ...KST, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }); };
 // A time left, rounded down to its two largest units (6일 23시간 59분 reads 6일 23시간, never 7일): 6일 23시간, 3시간 12분, 12분.
 function leftText(ms) {
   const m = Math.floor(ms / 60000), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60), mm = m % 60;
-  return d ? `${d}일${h ? ` ${h}시간` : ""}` : h ? `${h}시간${mm ? ` ${mm}분` : ""}` : `${mm}분`;
+  return d ? (h ? TX("shell.left.dh", { d, h }) : TX("shell.left.d", { d })) : h ? (mm ? TX("shell.left.hm", { h, m: mm }) : TX("shell.left.h", { h })) : TX("shell.left.m", { m: mm });
 }
 // The short date of a row or a reset, KST, every part two digits: "11.10" this year, "25.12.31" another year ("" for a value that is not a date).
 const KST_YMD = new Intl.DateTimeFormat("en-GB", { ...KST, year: "2-digit", month: "2-digit", day: "2-digit" });
 const ymdOf = t => Object.fromEntries(KST_YMD.formatToParts(t).map(x => [x.type, x.value]));
+// Other languages write the date their own way ("Nov 10", "Dec 31, 2025") through Intl.
+const KST_LOCAL = I18N_LANG === "ko" ? null : [{ month: "short", day: "numeric" }, { year: "numeric", month: "short", day: "numeric" }].map(o => new Intl.DateTimeFormat(TX_LOCALE, { ...KST, ...o }));
 const kstShort = t => {
   const d = new Date(t);
   if (isNaN(d)) return "";
-  const p = ymdOf(d);
-  return `${p.year === ymdOf(Date.now()).year ? "" : `${p.year}.`}${p.month}.${p.day}`;
+  const p = ymdOf(d), thisYear = p.year === ymdOf(Date.now()).year;
+  if (KST_LOCAL) return KST_LOCAL[thisYear ? 0 : 1].format(d);
+  return `${thisYear ? "" : `${p.year}.`}${p.month}.${p.day}`;
 };
 // The clock time of a reset in KST, 24-hour: "09:05".
-const REL_HM = new Intl.DateTimeFormat("en-GB", { ...KST, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const REL_HM = I18N_LANG === "ko" ? new Intl.DateTimeFormat("en-GB", { ...KST, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : new Intl.DateTimeFormat(TX_LOCALE, { ...KST, hour: "numeric", minute: "2-digit" });
 // When a usage window or budget resets (epoch ms): the time left until then with the clock time it falls on
 // ("3시간 38분 후 초기화 (14:18)", "12시간 후 초기화 (11.12 09:05)"), or that it is resetting now.
 function rel(ms) {
   const now = Date.now(), d = ms - now;
-  if (d <= 0) return "초기화 중";
-  if (d < 60000) return "1분 안에 초기화";
-  return `${leftText(d)} 후 초기화 (${kstDay(ms) === kstDay(now) ? "" : `${kstShort(ms)} `}${REL_HM.format(ms)})`;
+  if (d <= 0) return TX("shell.rel.now");
+  if (d < 60000) return TX("shell.rel.soon");
+  return TX("shell.rel.at", { left: leftText(d), when: `${kstDay(ms) === kstDay(now) ? "" : `${kstShort(ms)} `}${REL_HM.format(ms)}` });
 }
 const oneLine = s => String(s).replace(/\s+/g, " ").trim().slice(0, 160);
 // The one line a 생각 row shows: the model's thinking when it is Korean, else a Korean label (the raw English stays in the row's fold).
-const thinkLine = (s, max = 80) => { const t = oneLine(s ?? ""); return /[가-힣]/.test(t) ? t.slice(0, max) : "생각을 정리하는 중"; };
-const num = n => Number(n || 0).toLocaleString("ko-KR");
+const thinkLine = (s, max = 80) => { const t = oneLine(s ?? ""); return txInLang(t) ? t.slice(0, max) : TX("shell.think.working"); };
+const num = n => Number(n || 0).toLocaleString(TX_LOCALE);
 // JSON kept in localStorage, or `fallback` when the key is missing, unparsable or storage is blocked.
 const lsJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } };

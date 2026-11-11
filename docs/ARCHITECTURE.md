@@ -67,5 +67,6 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 
 - `web/index.html`, `web/sw.js`, `web/custom.js`, `web/manifest.webmanifest`
 - `web/js/NN-*.js` and `web/css/*.css`: classic scripts concatenated in filename order into one app.js by `hub/webapp.ts` (shared globals; `01-core.js` holds the common helpers)
+- screen text in several languages: `web/i18n/<lang>/<area>.json` (ko and en), read by `hub/web-i18n.ts` (injected into app.js as `I18N`, `web/js/00-i18n.js` is `TX`), guarded by `hub/web-i18n-check.ts` (Hangul per file may only go down, `hub/web-i18n-baseline.json`)
 - every screen and in-app surface (dialog, sheet, menu, toast, palette): `hub/ui-surfaces.ts` (finds each opener call in `web/`), `hub/ui-surfaces.json` (the list, with how to open each), `hub/ui-surfaces.test.ts` (fails when a new opener is not in the list)
 - split panes (two to four conversations or projects side by side on a wide window): `web/js/43-panes.js` (layout tree, persistence), `web/js/43-panes-view.js` (the screen, dividers), `web/js/43-panes-mirror.js` (inactive panes), `web/css/26-panes.css`; `hub/split-shots.ts` (screenshot scenarios)
