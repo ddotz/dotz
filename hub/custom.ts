@@ -500,13 +500,15 @@ export function projectsView(input: { lanes: Array<Record<string, unknown>>; cha
 	const isTmp = (p: string) => tmp.some(t => p === t || p.startsWith(`${t.replace(/\/+$/, "")}/`));
 	// A worktree lane belongs to the checkout it works for, not to its own ~/.dotz/lanes/<name>/worktree folder; a temp folder is no project.
 	const folderOf = (l: Record<string, unknown>, cwd = String(typeof l.repo === "string" && l.repo ? l.repo : l.cwd)) => (isTmp(cwd.replace(/^~(?=\/|$)/, home)) ? undefined : norm(cwd));
+	// A folder that sessions without a home use stays a folder project: a home channel must not rename it and pull those sessions under it.
+	const looseFolders = new Set(lanes.filter(({ l }) => !homeChannel(String(l.name), l.home, homes)).map(({ l }) => folderOf(l)));
 	// The one rule for a session's project, every surface reads it from here (docs/layers.md §1): its home channel, the folder only without one.
 	for (const { l, at } of lanes) {
 		const name = String(l.name), id = homeChannel(name, l.home, homes), path = folderOf(l);
 		let p = id ? byChannel(id) : path ? folder(path) : undefined;
 		if (id && !p) {
-			// A new home channel takes its session's folder as its own; a second channel in the same folder stands alone.
-			p = path && !folder(path).channel ? folder(path) : make(`ch:${id}`, work[id] ?? id);
+			// A new home channel takes its session's folder as its own unless sessions without a home use that folder; a second channel in the same folder stands alone.
+			p = path && !looseFolders.has(path) && !folder(path).channel ? folder(path) : make(`ch:${id}`, work[id] ?? id);
 			p.channel = chan(id);
 		}
 		if (!p) continue;

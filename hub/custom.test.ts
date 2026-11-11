@@ -339,6 +339,17 @@ test("projectsView puts a worktree lane under the checkout it works for", () => 
 	expect(out.map(p => [p.key, p.name, p.lanes.map(l => l.name)])).toEqual([["dir:~/Code/dotz", "dotz", ["w"]]]);
 });
 
+test("projectsView: a home channel never takes a folder that sessions without a home use, whichever session is newer", () => {
+	const channels = { work: { "100": "audit-ch" }, homes: { owned: "100" } };
+	for (const [ownedAt, plainAt] of [["2026-10-01T00:00:00Z", "2026-10-05T00:00:00Z"], ["2026-10-05T00:00:00Z", "2026-10-01T00:00:00Z"]] as const) {
+		const out = view({ lanes: [lane("owned", `${HOME}/Code/app`, ownedAt), lane("plain", `${HOME}/Code/app`, plainAt)], channels, pins: noPins });
+		const of = (name: string) => out.find(p => p.lanes.some(l => l.name === name))!;
+		expect(of("owned")).toMatchObject({ key: "ch:100", name: "audit-ch", channel: { id: "100" } });
+		expect(of("plain")).toMatchObject({ key: "dir:~/Code/app", name: "app" });
+		expect(of("plain").channel).toBeUndefined();
+	}
+});
+
 test("projectsView merges a pin by channel id, folds an orphan channel into a path pin, never hides pinned", () => {
 	const lanes = [lane("d", `${HOME}/Code/solo`, "2026-10-04T00:00:00Z")];
 	const channels = { work: { "100": "solo-ch", "200": "orphan" }, homes: { d: "100" } };
@@ -532,7 +543,7 @@ test("project detail: ended lanes' report.md fill results newest first, with rec
 		{ name: "b", cwd: "/h/.dotz/lanes/b/worktree", repo: "/h/Code/proj", status: "working", live: true, startedAt: "2026-10-02T00:00:00Z", reports: 0, lastText: "하는 중", pendingAsk: { text: "?", at: "x" } },
 		{ name: "z", cwd: "/h/Code/other", status: "exited", live: false, startedAt: "2026-10-01T00:00:00Z", reports: 1, lastText: "" },
 	];
-	const all = projectsView({ lanes, channels: { work: { "9": "작업" }, homes: { a: "9" }, threads: { t1: { parent: "9", name: "스레드" }, t2: { parent: "8", name: "남의 것" } } }, pins: { projects: [], hide_projects: [], routines: [], links: [] }, home: "/h", tmpDirs: [] });
+	const all = projectsView({ lanes, channels: { work: { "9": "작업" }, homes: { a: "9", b: "9" }, threads: { t1: { parent: "9", name: "스레드" }, t2: { parent: "8", name: "남의 것" } } }, pins: { projects: [], hide_projects: [], routines: [], links: [] }, home: "/h", tmpDirs: [] });
 	const project = all.find(p => p.key === "dir:~/Code/proj")!;
 	const input: DetailInput = {
 		project, others: all, lanes, home: "/h",
@@ -565,9 +576,9 @@ test("project titles: record, pin, work channel name, first session's title, fol
 	const only = (input: Partial<Parameters<typeof projectsView>[0]> = {}) => view({ lanes, channels: {}, pins: noPins, ...input })[0]!;
 	expect(only().name).toBe("디스코드 설정");
 	expect(only({ lanes: [lane("x", `${HOME}/Code/dotz`, "2026-10-01T00:00:00Z")] }).name).toBe("dotz");
-	expect(only({ channels: { work: { "100": "채널 이름" }, homes: { first: "100" } } }).name).toBe("채널 이름");
+	expect(only({ channels: { work: { "100": "채널 이름" }, homes: { first: "100", late: "100" } } }).name).toBe("채널 이름");
 	const pins = { ...noPins, projects: [{ name: "고정 이름", path: "~/Code/dotz" }] };
-	expect(only({ pins, channels: { work: { "100": "채널 이름" }, homes: { first: "100" } } }).name).toBe("고정 이름");
+	expect(only({ pins, channels: { work: { "100": "채널 이름" }, homes: { first: "100", late: "100" } } }).name).toBe("고정 이름");
 	const record = { title: "기록 제목", purpose: "목적", updated: "2026-10-21T00:00:00Z" };
 	const withRecord = only({ pins, records: { "dir:~/Code/dotz": record, "ch:1": { title: "다른 것", updated: "x" } } });
 	expect(withRecord).toMatchObject({ name: "기록 제목", record });
@@ -674,11 +685,13 @@ describe("a session's project", () => {
 		expect(holder(ps, "b")).toEqual(["지원팀"]);
 		expect(ps.filter(p => p.name === "기획팀" || p.name === "지원팀")).toHaveLength(2);
 	});
-	test("an ended lane keeps its project from the lane record alone, and the channel takes its folder", () => {
+	test("an ended lane keeps its project from the lane record alone, and the channel takes its folder unless a lane with no home uses it", () => {
 		const ps = all([at("old", 1, { title: "오래된 일" }), at("done", 2, { home: "ch:1" })]);
 		expect(holder(ps, "done")).toEqual(["기획팀"]);
 		expect(ps.filter(p => p.channel?.id === "1")).toHaveLength(1);
-		expect(holder(ps, "old")).toEqual(["기획팀"]);
+		expect(holder(ps, "old")).toEqual(["오래된 일"]);
+		const own = all([at("mate", 1, { home: "ch:1" }), at("done", 2, { home: "ch:1" })]);
+		expect(own.find(p => p.key === "dir:~/shared")?.channel?.id).toBe("1");
 	});
 	test("a lane with no home falls back to its folder, and a homed lane in a temp folder still has its project", () => {
 		const ps = all([at("plain", 1, { title: "폴더 일" }), at("t", 2, { home: "ch:2", cwd: "/tmp/x" }), at("gone", 3, { cwd: "/tmp/y" })]);
