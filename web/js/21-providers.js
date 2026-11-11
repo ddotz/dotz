@@ -290,6 +290,32 @@ function useCard(u) {
   if (u.models.length) card.append(el("div", { class: "sup", text: TX("settings.usage.use.models", { list: u.models.map(m => `${modelShort(m.model)} ${pct(m.pct)}`).join(" · ") }) }));
   return card;
 }
+// What the same audit offers to fix (hub/usage-fix.ts). Only a row with one known remedy gets a button, and it asks first; nothing is
+// applied without that press. A row whose cause is unknown (cache busts) only says to check the cause.
+const FIX_TX = {
+  watch: ["settings.usage.fix.watch", "settings.usage.fix.watch_btn", "settings.usage.fix.watch_body"],
+  compact: ["settings.usage.fix.compact", "settings.usage.fix.compact_btn", "settings.usage.fix.compact_body"],
+  worker: ["settings.usage.fix.worker", "settings.usage.fix.worker_btn", "settings.usage.fix.worker_body"],
+  check: ["settings.usage.fix.check"],
+};
+function fixCard(u) {
+  const card = el("div", { class: "card" }, el("div", { class: "ch lo" }, el("h3", { text: TX("settings.usage.fix.title") })));
+  for (const f of u.fixes) {
+    const [rowKey, btnKey, bodyKey] = FIX_TX[f.fix] || FIX_TX.check, who = f.fix === "watch" ? f.watch : useWho(f.who), vars = { who, model: modelShort(f.model || "") };
+    const apply = () => dialog({ confirm: true, title: TX(btnKey), body: el("div", { class: "sup", text: TX(bodyKey, vars) }),
+      actions: [{ label: TX("common.cancel"), onclick: c => c() }, { label: TX("settings.usage.fix.apply"), kind: "pri", onclick: (c, b) => busy(b, async () => {
+        try { await api("/api/usage/fix", "POST", { id: f.id }); c(); toast(TX("settings.usage.fix.done")); }
+        catch (e) { c(); toast(e.message || TX("settings.usage.fix.failed"), true); }
+        finally { loadQuota(true); }
+      }) }] });
+    const end = f.fix === "check" ? el("span", { class: "sup", text: TX("settings.usage.fix.check_cause") })
+      : f.applied_at ? el("span", { class: "sup", text: TX("settings.usage.fix.applied") })
+      : el("button", { class: "btn tonal inrow", type: "button", onclick: apply }, TX(btnKey));
+    card.append(el("div", { class: "lim rc" }, el("div", { class: "kv" }, el("span", { class: "k", text: TX(rowKey, vars) }), el("span", { class: "rc-end" }, end)),
+      el("div", { class: "sup", text: f.n ? TX("settings.usage.fix.cost", { cost: `${f.cost.toFixed(2)}`, n: f.n }) : TX("settings.usage.fix.cost_only", { cost: `${f.cost.toFixed(2)}` }) })));
+  }
+  return card;
+}
 let quotaDrawn = 0;
 async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
@@ -334,6 +360,7 @@ function paintQuota(q) {
     grid.append(card);
   }
   if (q.use) grid.append(useCard(q.use));
+  if (q.use && (q.use.fixes || []).length) grid.append(fixCard(q.use));
   // The monthly API spend limit the owner set on the platform console, and how much of it is used (hub/api-budget.ts).
   if (q.budget) grid.prepend(budgetCard(q.budget));
   else box.append(el("div", { class: "list" }, budgetRow()));

@@ -12,7 +12,7 @@ import { cfg, DATA_DIR, DEFAULTS, HOME, paths, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import { bareModel, type Covered, ownerCovered, readOwnerBasis } from "./owner-asked.ts";
-import { type SessionUse, sharesOf, type UseShare } from "./usage-share.ts";
+import { type FixRow, type SessionUse, sharesOf, type UseShare } from "./usage-share.ts";
 import { expensiveMatch, loadGuardConfig } from "./lanegates.ts";
 import { addBigContext, addToolCalls, addTurn, addWake, collectSessions, newStreaks, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
 
@@ -81,7 +81,7 @@ export type Decisions = Map<string, Decision[]>;
 type Stats = {
 	src: Src; start?: number; turns: number; tokens: number; cost: number; cw: number; cr: number; out: number; maxCtx: number; compactions: number;
 	busts: Bust[]; rebuilds: Rebuild[]; explained: Record<string, number>; bigNew: number;
-	wakes: Record<string, { n: number; tokens: number; cost: number }>; warmings: number;
+	wakes: Record<string, { n: number; tokens: number; cost: number }>; warmings: number; watchWakes: Record<string, { n: number; cost: number }>;
 	errTurns: number; maxErrStreak: number; errCodes: Record<string, number>; compactErr: number;
 	maxBigStreak: number; bigTokens: number; bigCost: number;
 	fbTurns: number; fbModels: Set<string>; fbIntended: Set<string>; intended?: string; fbSegs: number[][]; shrinks: number;
@@ -116,7 +116,7 @@ export function readDecisions(files = CONTINUITY_LOGS): Decisions {
 
 export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisions: Decisions = new Map()): Stats {
 	const s: Stats = {
-		src, intended: src.requested, fbSegs: [], shrinks: 0, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], rebuilds: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0,
+		src, intended: src.requested, fbSegs: [], shrinks: 0, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], rebuilds: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0, watchWakes: {},
 		errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0, fbTurns: 0, fbModels: new Set(), fbIntended: new Set(),
 		fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, expensiveCost: 0, efforts: new Set(), dearModels: new Set(), dearLevels: new Set(), dearFirst: 0, dearLast: 0, modelCost: {}, maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
 	};
@@ -125,6 +125,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 	let events: string[] = [];
 	let injected: string[] = []; // what can reach the model: a plain `custom` entry is local state unless it marks a prompt reassembly (BUST_FIX)
 	let compacted = false, modelChanged = false, thinkChanged = false, user = false;
+	let byWatch = ""; // the watch whose match ("[dotz inbox] watch <name> matched") started the turns since the last user message
 	let prev: { ts: number; ctx: number; ttlMin: number; out: number; before?: number } | undefined;
 	let prevStop = "stop";
 	let lastCompactTs = 0, fbOpen = false, unproven = false;
@@ -142,6 +143,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 			if (head.includes('"role":"toolResult"')) continue;
 			if (head.includes('"role":"user"')) {
 				user = true;
+				byWatch = head.match(/\[dotz inbox\] watch (\S+) matched /)?.[1] ?? "";
 				continue;
 			}
 			if (head.includes('"role":"custom"')) {
@@ -233,6 +235,11 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 		if (inWindow) {
 			addTurn(s, ts, { tokens, cost, cw, cr, out: u.output ?? 0, ctx });
 			s.modelCost[bareModel(model)] = (s.modelCost[bareModel(model)] ?? 0) + cost;
+			if (byWatch) {
+				const w = (s.watchWakes[byWatch] ??= { n: 0, cost: 0 });
+				if (newTurn) w.n++;
+				w.cost += cost;
+			}
 			if (cr) {
 				readTok += cr;
 				readCost += u.cost?.cacheRead ?? 0;
@@ -475,12 +482,15 @@ function askedBy(results: Stats[], basis = readOwnerBasis(join(DATA_DIR, "state"
 	return s => ownerCovered({ models: [...s.dearModels], levels: [...s.dearLevels], first: s.dearFirst, last: s.dearLast }, s.src.parent ? targetOf.get(s.src.parent) : s.src.target, s.src.child, basis);
 }
 // The audited sessions as the usage screen names them (hub/usage-share.ts): main's sessions as one row, a lane's as one, a task's as one.
+const whoOf = (s: Stats): [SessionUse["kind"], string] => {
+	const task = s.src.label.match(/^task:(.+?) \(st_/)?.[1];
+	const t = s.src.target;
+	return task ? ["worker", task] : t === "orchestrator" ? ["orchestrator", ""] : t?.startsWith("lane:") ? ["lane", t.slice(5)] : ["other", s.src.label.replace(/ \[(?:OmO|omp)\]$/, "")];
+};
 export function useOf(results: Stats[]): SessionUse[] {
 	const out = new Map<string, SessionUse>();
 	for (const s of results) {
-		const task = s.src.label.match(/^task:(.+?) \(st_/)?.[1];
-		const t = s.src.target;
-		const [kind, name]: [SessionUse["kind"], string] = task ? ["worker", task] : t === "orchestrator" ? ["orchestrator", ""] : t?.startsWith("lane:") ? ["lane", t.slice(5)] : ["other", s.src.label.replace(/ \[(?:OmO|omp)\]$/, "")];
+		const [kind, name] = whoOf(s);
 		const row = out.get(`${kind}\0${name}`) ?? { kind, name, models: {}, cost: 0, tokens: 0 };
 		row.cost += s.cost;
 		row.tokens += s.tokens;
@@ -488,6 +498,39 @@ export function useOf(results: Stats[]): SessionUse[] {
 		out.set(`${kind}\0${name}`, row);
 	}
 	return [...out.values()];
+}
+
+// What the usage screen offers to fix (hub/usage-fix.ts applies it, only on the owner's press). A fix exists only where the remedy is one
+// known step: a watch whose matches keep waking a session (its interval doubles), a context left big without compaction (compact it
+// now), task workers on an expensive model nobody asked for (their target's worker model goes back to the default). An unexplained
+// cache bust has no such step: its row says to check the cause. Biggest cost first, at most FIX_MAX rows.
+const FIX_MAX = 6, WATCH_FIX_WAKES = 10, WATCH_FIX_COST = 2;
+export function fixesOf(results: Stats[], asked: (s: Stats) => Covered = () => NOT_ASKED): FixRow[] {
+	const rows = new Map<string, FixRow>();
+	const add = (row: FixRow) => {
+		const had = rows.get(row.id);
+		rows.set(row.id, had ? { ...had, cost: had.cost + row.cost, n: (had.n ?? 0) + (row.n ?? 0) } : row);
+	};
+	const watches: Record<string, { n: number; cost: number }> = {};
+	for (const s of results) {
+		const [kind, name] = whoOf(s);
+		for (const [w, v] of Object.entries(s.watchWakes)) {
+			const t = (watches[w] ??= { n: 0, cost: 0 });
+			t.n += v.n;
+			t.cost += v.cost;
+		}
+		if (s.src.target && s.maxBigStreak >= 10 && !s.compactErr) add({ id: `compact:${s.src.target}`, fix: "compact", target: s.src.target, who: { kind, name }, cost: s.bigCost });
+		const parent = s.src.parent ? results.find(r => r.src.file.includes(s.src.parent!))?.src.target : undefined;
+		const model = [...s.dearModels][0];
+		if (parent && model && s.fable && !asked(s).model) {
+			const target = parent === "orchestrator" ? "workers" : parent;
+			const [pk, pn] = parent === "orchestrator" ? ["orchestrator", ""] as const : ["lane", parent.slice(5)] as const;
+			add({ id: `worker:${target}:${model}`, fix: "worker", target, model, who: { kind: pk, name: pn }, cost: s.fableCost, n: 1 });
+		}
+		if (s.busts.length >= 3 || s.busts.reduce((a, b) => a + b.uncached, 0) > 1e6) add({ id: `check:bust:${s.src.file}`, fix: "check", who: { kind, name }, cost: s.busts.reduce((a, b) => a + b.cost, 0), n: s.busts.length });
+	}
+	for (const [w, v] of Object.entries(watches)) if (v.n >= WATCH_FIX_WAKES || v.cost >= WATCH_FIX_COST) add({ id: `watch:${w}`, fix: "watch", watch: w, who: { kind: "other", name: w }, cost: v.cost, n: v.n });
+	return [...rows.values()].map(r => ({ ...r, cost: Number(r.cost.toFixed(2)) })).sort((a, b) => b.cost - a.cost).slice(0, FIX_MAX);
 }
 
 // Sessions whose expensive use the owner asked for (all or part of it), and what that part cost.
@@ -564,7 +607,7 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 	const recurring = [...new Set(flags.filter(f => f.recur).map(f => f.kind))];
 	const reportPath = join(LOG_DIR, `token-audit-${today.replace(/-/g, "")}.md`);
 	if (!opts.dry) {
-		history = [...history.filter(d => d.date !== today), { date: today, tokens: total, cost: totalCost, cacheWrite: totalCw, sessions: results.length, flags: flags.length, kinds, report: reportPath, use: sharesOf(useOf(results), now, hours) }].slice(-14);
+		history = [...history.filter(d => d.date !== today), { date: today, tokens: total, cost: totalCost, cacheWrite: totalCw, sessions: results.length, flags: flags.length, kinds, report: reportPath, use: { ...sharesOf(useOf(results), now, hours), fixes: fixesOf(results, asked) } }].slice(-14);
 		writeAtomic(HISTORY, `${JSON.stringify({ updated: new Date(now).toISOString(), days: history }, null, 1)}\n`);
 	}
 	const ordered = [...findings].sort((a, b) => Number(b.flag) - Number(a.flag) || b.save - a.save);

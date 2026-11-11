@@ -26,6 +26,7 @@ import { messengersRoute } from "./messengers-api.ts";
 import { onboardingRoute } from "./onboarding.ts";
 import { introOf, setIntro } from "../firstrun/first-run.ts";
 import { convOfTarget, grantExpensive, isGrantKey, ownerGate } from "./model-guard.ts";
+import { applyFix } from "./usage-fix.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 	if (url.pathname.startsWith("/api/mailbox/")) return mailboxRoute(req, url);
@@ -170,6 +171,12 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		return json({ source, history: page.items.length > 0, items: [...page.items, ...live], more: page.more });
 	}
 	if (req.method === "GET" && url.pathname === "/api/quota") return json(await (url.searchParams.has("fresh") ? refreshQuota() : quota()));
+	// One fix the usage screen listed, applied on the owner's press (hub/usage-fix.ts); the screen reads the usage again after it.
+	if (req.method === "POST" && url.pathname === "/api/usage/fix") {
+		const r = await applyFix(req, await body(req));
+		if (r.status === 200) void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
+		return json(r.body, r.status);
+	}
 	// Spends one 리셋권, only with confirm: true from the usage screen's confirm step: Codex (hub/codex-usage.ts), or with provider
 	// "anthropic" a Claude account's (hub/claude-reset.ts); then the usage is read again.
 	if (req.method === "POST" && url.pathname === "/api/quota/reset-credit") {

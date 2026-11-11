@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
-import { analyze, auditAlert, type Decisions, fallbackAfterCapacity, findingsOf, material, projectLabel, readDecisions } from "./token-audit.ts";
+import { analyze, auditAlert, type Decisions, fallbackAfterCapacity, findingsOf, fixesOf, material, projectLabel, readDecisions } from "./token-audit.ts";
 
 const T0 = Date.UTC(2026, 9, 19, 12);
 const at = (min: number) => new Date(T0 + min * 60e3).toISOString();
@@ -170,4 +170,19 @@ test("the message carries only what matters and says how many minor ones stayed 
 	expect(text).toContain("사소한 경고 2건은 보고서에만");
 	expect(material(f("캐시 깨짐", 0.99))).toBe(false);
 	expect(material(f("캐시 깨짐", 1))).toBe(true);
+});
+
+test("the usage screen's fixes: a watch that keeps waking a session, a big context left uncompacted, workers on an unasked expensive model", () => {
+	const inbox = (min: number) => JSON.stringify({ type: "message", timestamp: at(min), message: { role: "user", content: [{ type: "text", text: "[dotz inbox] watch site-up matched /./ (no one is waiting)" }] } });
+	const woke = Array.from({ length: 12 }, (_, i) => [inbox(i * 5), turn(i * 5, 10_000, 1_000)]).flat();
+	const big = Array.from({ length: 12 }, (_, i) => turn(100 + i, 320_000 + i * 1_000, 1_000));
+	const main = analyze({ ...session("fix-main", [user(0), ...woke]), target: "orchestrator" }, T0 - 1);
+	const lane = analyze({ ...session("fix-lane-01a1a03d", [user(99), ...big]), target: "lane:site-fix" }, T0 - 1);
+	const worker = analyze({ ...session("fix-worker", [user(0), turn(1, 0, 5_000, { model: "claude-fable-5-2" })]), label: "task:w1 (st_1) [OmO]", child: true, parent: "fix-lane-01a1a03d" }, T0 - 1);
+	Object.assign(worker, { fable: 1, fableCost: 0.1, dearModels: new Set(["claude-fable-5-2"]) }); // what analyze records when the guard lists fable (hub/expensive-models.test.ts)
+	const fixes = fixesOf([main, lane, worker]);
+	expect(fixes.find(f => f.fix === "watch")).toMatchObject({ id: "watch:site-up", watch: "site-up", n: 12 });
+	expect(fixes.find(f => f.fix === "compact")).toMatchObject({ id: "compact:lane:site-fix", target: "lane:site-fix" });
+	expect(fixes.find(f => f.fix === "worker")).toMatchObject({ target: "lane:site-fix", model: "claude-fable-5-2", who: { kind: "lane", name: "site-fix" } });
+	expect(fixesOf([main, lane, worker], () => ({ model: true, effort: true })).some(f => f.fix === "worker")).toBe(false);
 });
