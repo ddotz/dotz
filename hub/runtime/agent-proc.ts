@@ -6,6 +6,9 @@
 //    (OmO's host, hub/runtime/omo-hosts.ts) is not in the group and is closed the way it is today.
 //  - what the agent's shell tool started sits in other sessions: hub/agent-tree.ts records those while the agent lives and ends them
 //    when it exits, by whatever path (a kill, a crash, its own exit).
+//  - an idle park (markPark) ends the agent and its group exactly as any other exit does; only what the owner's shell tool started
+//    (never in the group: omp starts each command in a group of its own, OmO and claude under a shell in the task host's or its own)
+//    and is useful stays (hub/kept-procs.ts). The runtime's own helpers do not.
 //  - a write to a stdin whose process is gone never takes the gateway down (writeQuietly, also exported by omp.ts).
 import type { Subprocess } from "bun";
 import { agentEnded, trackAgent } from "../agent-tree.ts";
@@ -36,13 +39,16 @@ process.on("exit", () => {
 	for (const pid of live) signalGroup(pid, "SIGKILL");
 });
 
+// The session an agent works for, from the environment the gateway gives it (lanerun.ts, convsessions.ts).
+const ownerOf = (env?: Record<string, string | undefined>): string | undefined => (env?.DOTZ_LANE ? `lane:${env.DOTZ_LANE}` : env?.DOTZ_CONV || undefined);
+
 /** Bun.spawn for an agent: nice 10, its own process group, and the group ended when the agent is. */
 export function spawnAgent<const T extends "pipe" | "ignore" = "pipe">(argv: string[], o: { cwd?: string; env?: Record<string, string | undefined>; stderr?: T }): Subprocess<"pipe", "pipe", T> {
 	const proc = Bun.spawn([...NICE, ...argv], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: o.stderr ?? "pipe", detached: true });
 	// A stand-in process of a test has no exit state and no group of its own: its made-up pid must never be signalled.
 	if ("exitCode" in proc) {
 		live.add(proc.pid);
-		trackAgent(proc.pid);
+		trackAgent(proc.pid, ownerOf(o.env));
 		void proc.exited.then(() => {
 			endGroup(proc.pid);
 			void agentEnded(proc.pid);

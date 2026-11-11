@@ -19,6 +19,7 @@ import type { createPrompts, Pending, Reply } from "./prompts.ts";
 import { CONV_KINDS, MAIN, primaryTarget, safeDir, sessionKeyOf } from "./session-key.ts";
 import type { ResumeSession } from "./sessionresume.ts";
 import { trackTimer } from "./shutdown.ts";
+import { markPark } from "./agent-tree.ts";
 
 export type Prompts = ReturnType<typeof createPrompts>;
 export type BgWork = ReturnType<typeof createBgWork>;
@@ -174,7 +175,9 @@ export function createConvSessions(d: ConvDeps) {
 		return running.length < d.maxLive() || running.some(x => parkable(x, 0)) ? undefined : `${running.length} of ${d.maxLive()} sessions running`;
 	}
 	function park(c: Conv, why: string): void {
-		if (!c.o.park()) return;
+		const pid = c.o.orchestratorPid();
+		markPark(pid); // a routine stop: what the session left running for the owner stays (hub/agent-tree.ts)
+		if (!c.o.park()) return void markPark(pid, false);
 		c.meta.parked = true;
 		saveMeta(c);
 		d.log(`conversation session ${c.key} parked (${why})`);

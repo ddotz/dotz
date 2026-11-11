@@ -15,6 +15,7 @@ import { parkedTone, parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, onConvIdle, out } from "./outbound.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
 import { dropForLine, forLines } from "./forline.ts";
+import { useKeptHooks } from "./agent-tree.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 
 // A lane started from a conversation session reports to that session (its key is the lane's `from`); the rest report to main.
@@ -120,8 +121,7 @@ export function installLaneHandlers(): void {
 
 	// A model fallback of a lane (and its task workers) is one plain line in the lane's channel, the orchestrator's task workers' one in worklog (the orchestrator's own goes to the alert channel). None wakes the orchestrator.
 	convs.everyInstance(c => c.o.setNoticeHandler(text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`model fallback notice failed: ${e}`))));
-	setLaneNoticeHandler((lane, text) => {
-		const channel = `lane:${lane.name}`;
+	const laneLine = (channel: string, text: string): void => {
 		void inOrder(channel, async () => {
 			const shown = await localize(text, channel, "lane");
 			emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown });
@@ -129,5 +129,22 @@ export function installLaneHandlers(): void {
 		})
 			.then(shown => send(channel, shown))
 			.catch(e => log(`lane model fallback notice failed: ${e}`));
+	};
+	setLaneNoticeHandler((lane, text) => laneLine(`lane:${lane.name}`, text));
+	// A kept process (hub/agent-tree.ts) that ends is one plain line in its session's channel; a stopped or deleted session ends them.
+	useKeptHooks({
+		say: (owner, text) => {
+			if (owner.startsWith("lane:")) return laneLine(owner, text);
+			const target = convs.get(owner)?.primary ?? (discord.status.enabled ? "worklog" : "web");
+			void out(target, text, undefined, { source: "gateway" }).catch(e => log(`kept process notice failed: ${e}`));
+		},
+		ended: owner => {
+			if (owner.startsWith("lane:")) {
+				const lane = lanes.get(owner.slice(5));
+				return !lane || (lane.ownerStopped === true && !lane.proc);
+			}
+			const c = convs.get(owner);
+			return !c || (c.o.orch.stoppedBy === "owner" && c.o.orchestratorPid() === undefined);
+		},
 	});
 }
