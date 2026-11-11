@@ -46,7 +46,6 @@
 .pl-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 15px/22px var(--font); }
 .pl-row.unread .pl-n { font-weight: 600; }
 .pl-nb { flex: none; height: 18px; min-width: 18px; padding: 0 var(--sp-15); border-radius: 9px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
-.pl-at { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .pl-s { display: flex; align-items: center; min-width: 0; color: var(--fg-2); font: 400 12px/16px var(--font); }
 .pl-sw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-row > .li-end { flex: none; display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }

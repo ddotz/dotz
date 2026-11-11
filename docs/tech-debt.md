@@ -3,7 +3,7 @@
 What is still open after the 2026-11-11 cleanup. Items that were cleaned are in git history, not here. Numbers come from
 `bun hub/engineering-rules.ts`; the ceilings they are held to are in hub/engineering-ceilings.json.
 
-Measured now: swallowed errors hub 192, web 70, features 27, extension 11. Non-atomic writes hub 43, features 8.
+Measured now: swallowed errors hub 192, web 69, features 27, extension 11. Non-atomic writes hub 43, features 8.
 Same-name helpers `readJson` 13, `json` 5, `git` 6, `shq` 5, `sleep` 3, `sameOrigin` 3. Import cycles 5. Hub modules
 docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock budget files 0.
 
@@ -36,7 +36,9 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
   hub/api-budget.ts and hub/fallback.ts).
 - Factories that hold state throughout: `createPrompts` 706, `createKakaoWeb` 649, `createEngine` 624,
   `installGuard` 375, `createBgWork` 373.
-- web/js/30-kakao.js 1200 of 1200 and web/js/30-monitoring.js 988 of 1000.
+- web/js/30-kakao.js 1200 of 1200 and web/js/30-monitoring.js 993 of 1000. A split waits for their screen text to
+  move to web/i18n: hub/web-i18n-check.ts allows a new web/js file no Hangul literal at all, and these two hold 376
+  and 410.
 
 ## Dead surface
 
@@ -47,8 +49,8 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 - hub/selfupdate.ts `onLocalSaved`: only hub/selfupdate-local.test.ts sets it.
 - Test fixtures in the hub/ root beside shipped code: hub/test-web.ts, hub/test-signing.ts, hub/test-pane-cards.ts,
   hub/selfupdate-fixture.ts, hub/ask-normalize.fixture.ts.
-- Dead CSS in the files another session holds (web/css/20-*.css) was not surveyed for removal. localStorage readers
-  still hand-rolled: web/js/15-attachments.js and web/js/13-snapshot.js (their catch does more than fall back),
+- hub/mail-card-menu-web.test.ts and hub/mail-list-web.test.ts still query `.mr-slot`, a class no code makes.
+- localStorage readers still hand-rolled: web/js/15-attachments.js and web/js/13-snapshot.js (their catch does more than fall back),
   web/js/33-peers.js, web/js/09-needs-you.js and web/js/23-installable-app-web.js (tests such as
   hub/peers-web.test.ts, hub/web-attn.test.ts and hub/notice-open.test.ts run those files without web/js/01-core.js,
   where `lsJson` and `lsSet` live).
@@ -63,6 +65,9 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
   hub/runtime/claude-cli-shim.ts, hub/kakao/onboard.ts, features/webmail-no-api/bin/setup.ts,
   features/comments/bin/onboard.ts); a shared one crosses the features -> hub boundary.
 - `json` 5 and `git` 6 that stay: each answers or returns differently.
+- web/js/30-notices.js `ntTime` and web/js/30-monitoring.js `monTime` are the same line (web/js/11-resultcard.js
+  `rcWhen` adds an empty-value guard). One copy needs a home every test that loads one of those files alone also
+  loads.
 - Tests: `class FakeAgent` in 26 files, `waitFor` in 48 web test files, 11 other wait helpers, 11 pairs of tests with
   the same title.
 

@@ -102,7 +102,6 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .mr-todo { display: flex; gap: var(--sp-15); min-width: 0; color: var(--fg-2); font-size: 12.5px; line-height: 18px; }
 .mr-todo b { flex: none; color: var(--warn); font-weight: 600; }
 .mr-todo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mr-slot { margin-top: var(--sp-15); display: flex; gap: var(--sp-15); }
 /* the 초안 작성 dialog (30-monitoring.js mailDraftDialog): the mail it answers as a tonal block (sender, subject, summary), then the box.
    The block is a --bg well in the floating dialog (its --pop equals --layer in dark), and --card on the phone's full-screen --bg (14-overlay.css) */
 .md-dlg { gap: var(--sp-4); }

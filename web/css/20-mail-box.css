@@ -160,7 +160,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mr-star { width: 28px; height: 28px; }
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
-  .mr-slot button.cchip.mr-act { height: 44px; border-radius: 22px; }
   .mbox-bar { gap: var(--sp-05); height: 44px; padding: 0 var(--sp-1) 0 var(--sp-15); }
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }

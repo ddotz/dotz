@@ -140,7 +140,7 @@ function mailThreadMobile(t) {
 // The panel's open state: the chips of the open mail follow it, the panel is shown or folded in place (no redraw).
 function mailThreadToggle(open = !mthOpen) {
   mthOpen = !!open;
-  try { localStorage.setItem("dz-mth-open", mthOpen ? "1" : "0"); } catch {}
+  lsSet("dz-mth-open", mthOpen ? "1" : "0");
   mailThreadSync();
 }
 
