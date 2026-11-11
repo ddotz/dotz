@@ -12,7 +12,7 @@ import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_T
 import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
-import { limitPauseState } from "./limit-watch.ts";
+import { limitPauseState, limitWatchNow } from "./limit-watch.ts";
 import { stalePauseEnded } from "./pause-ended.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { pinnedLimitNotice } from "./accounts-api.ts";
@@ -765,6 +765,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			clearTimeout(resumeTimer);
 			armResume(pausedUntil - Date.now(), ownerPause, saved().pausedAuth ?? 0);
 			log(`${who} still paused on ${ownerPause ? "a billing/auth block" : "a usage limit"} until ${orch.rateLimitedUntil}; messages are held`);
+			if (!ownerPause) limitWatchNow(); // the limit may be over since the gateway last ran: one check now, not after LIMIT_WATCH_MS
 		}
 		void readEvents(proc);
 		const self = proc;

@@ -17,6 +17,8 @@ export function setLimitWatch(h: Hooks | undefined): void {
 	hooks = h;
 	stop();
 }
+// A pause restored at gateway start: the first check runs now instead of one LIMIT_WATCH_MS later (nothing happens while nothing is paused).
+export const limitWatchNow = (): void => void run();
 export const limitWatchArmed = (): boolean => timer !== undefined;
 export function armLimitWatch(): void {
 	if (timer || !hooks) return;

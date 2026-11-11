@@ -6,7 +6,8 @@ import { join } from "node:path";
 import type * as Orchestrator from "./orchestrator.ts";
 import { cfg } from "./config.ts";
 import { limitAlertsFile } from "./limit-alert.ts";
-import { liftEnv, resetLiftMemory, restartChecked } from "./limit-lift.ts";
+import { checkUsageLimit, liftEnv, resetLiftMemory, restartChecked } from "./limit-lift.ts";
+import { setLimitWatch } from "./limit-watch.ts";
 import { adapters } from "./runtime/index.ts";
 import { omo } from "./runtime/omo.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
@@ -162,6 +163,49 @@ test("a turn that answers on a limit pause (the runtime retried by itself) ends 
 	expect(o.orch.status).not.toBe("rate-limited");
 	o.deliver("after the restart");
 	expect(sends().some(c => c.includes("after the restart"))).toBe(true);
+	o.stop();
+	await advance(300);
+}, 30_000);
+
+// A gateway start with a saved usage-limit pause asks the usage report once at once (not after LIMIT_WATCH_MS); the report decides.
+const restored = async (tag: string, report: Awaited<ReturnType<typeof liftEnv.usage>>) => {
+	rmSync(limitAlertsFile(), { force: true });
+	writeFileSync(join(DATA, "orchestrator.json"), JSON.stringify({ pausedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
+	const o: typeof Orchestrator = await import(`./orchestrator.ts?lift-${tag}`);
+	o.setAlertHandler(() => {});
+	o.setAnswerHandlers(() => {}, () => {});
+	const real = { ...liftEnv };
+	let asked = 0;
+	resetLiftMemory();
+	Object.assign(liftEnv, { usage: async () => (asked++, report), unblock: async () => "unblocked", sessions: () => [o.main], lanes: { paused: () => 0, models: () => [], lift: () => 0 }, refresh: () => {} });
+	// the same hooks limit-lift.ts sets at its import; another test file in the run may have cleared them
+	setLimitWatch({ paused: () => liftEnv.sessions().filter(x => x.limitPaused()).length, tick: async () => void (await checkUsageLimit()) });
+	o.start();
+	o.deliver("held across the restart");
+	await advance(10);
+	return { o, asked: () => asked, done: () => (Object.assign(liftEnv, real), setLimitWatch(undefined)) };
+};
+
+test("a start with a saved usage-limit pause and a usable usage report asks at once, goes on, and the held prompt goes in", async () => {
+	const { o, asked, done } = await restored("restore-usable", { account: "acct-a", omo: true, usable: true, spentScopes: [] });
+	expect(asked()).toBe(1);
+	expect(o.orch.status).not.toBe("rate-limited");
+	expect(o.main.limitPaused()).toBe(false);
+	await started.at(-1)!.push({ type: "session", ref: join(DATA, "limit-session.jsonl") }, ...okTurn);
+	await advance(10);
+	expect(sends().some(c => c.includes("held across the restart"))).toBe(true);
+	done();
+	o.stop();
+	await advance(300);
+}, 30_000);
+
+test("a start with a saved usage-limit pause and an unreadable usage report asks once and stays paused", async () => {
+	const { o, asked, done } = await restored("restore-unreadable", undefined);
+	expect(asked()).toBe(1);
+	expect(o.orch.status).toBe("rate-limited");
+	expect(o.main.limitPaused()).toBe(true);
+	expect(sends().some(c => c.includes("held across the restart"))).toBe(false);
+	done();
 	o.stop();
 	await advance(300);
 }, 30_000);
