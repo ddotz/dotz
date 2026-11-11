@@ -112,7 +112,8 @@ export type Rewrite = { text: string; inputTokens: number; outputTokens: number;
 export const modelDeps = { spawn: (argv: string[], options: Parameters<typeof Bun.spawn>[1]) => Bun.spawn(argv, options) };
 
 // The small model of an OmO call: OmO has no model roles, and its `anthropic` provider bills the API key while dotz's
-// `anthropic` selectors mean the subscription (as in hub/runtime/omo.ts omoSelector). Never Haiku (owner rule).
+// `anthropic` selectors mean the subscription (as in hub/runtime/omo.ts omoSelector). Never Haiku (owner rule), with one exception: the day note
+// (hub/day-note.ts) follows OmO's own quick chain, which is Haiku when no GPT login comes first; that call passes its model as `opts.model`.
 const OMO_SMALL = "anthropic-subscription/claude-sonnet-5-5";
 // The model of a rewrite or a card summary as its selector (dotz names; the effort, if any, after a colon): the setting, else OMO_SMALL thinking off.
 export const outlangModel = (): string => setting().model ?? OMO_SMALL.replace(/^anthropic-subscription\//, "anthropic/");

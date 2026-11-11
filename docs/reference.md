@@ -321,6 +321,19 @@ paths under `~/.omp/wt/` are touched; they are made writable first (retained wor
 
 **Temp folder sweep.** In the same hourly data cleanup the gateway removes stale folders from the OS temp dir with asynchronous calls and a budget per pass (2,000 entries or 20 seconds; the rest waits for the next hour): its own test and probe folders (`dotz-test-*` and the temp prefixes dotz creates) older than 3 days, files older than 3 days in `dotz-output-cap` and `dotz-handoff`, and `/tmp/dotz-*` folders older than 7 days. Only folders of the current user that are not symlinks, and never the data dir or the install dir; one hub log line says how many went.
 
+**Day note.** `day_note.enabled` (boolean, default `false`, read at each run) makes the gateway write one short memory file of the
+day at `day_note.at` (default `"04:36"`, `"off"` disables): `<data dir>/memory/days/YYYY-MM-DD.md`, the day being the Seoul date the covered
+window starts (it starts where the previous note ended, else 24 hours back, at most 72 hours). The input is the day's exchanges
+of the main session's files (30,000 characters), its newest compaction summary in the window (40,000), the open tasks of state.json
+and the open items of the previous note; secrets are masked in and out. The file has up to five sections (open, done, decided and
+corrected, to know, lesson candidates), every line one sentence of at most 200 characters ending in `(src: ...)`; a line whose source is
+not in the input is dropped, and the whole note stays under 6,000 characters. No prompt loads it: each section is one document of the
+recall index, so `dotz_recall` finds it, and the nightly review prompt and a new session's first prompt name yesterday's note by one line
+when it exists. An existing file for the day is never rewritten; a failed call writes nothing and is retried (30 s, 60 s, ...) until 04:40.
+`day_note.model` empty (the default) follows OmO's own `quick` chain: the first built-in rung of `omo doctor --models --json` with a login,
+with the effort OmO's chain gives it; when that cannot be read the worker model is used and the hub-log line says so. A selector there
+pins the model. Each run leaves one hub-log line: written (characters, tokens, milliseconds, model) or skipped with the reason.
+
 **Nightly token audit.** At `token_audit_at` (default `"04:30"`, `"off"` disables) the gateway scans every OmO and omp conversation
 active in the last 24h (orchestrator, sessions, task subagents) without any model call and writes
 `~/.dotz/logs/token-audit-YYYYMMDD.md`: cache busts, idle wakes, error streaks, repeated tool calls, big contexts, big
