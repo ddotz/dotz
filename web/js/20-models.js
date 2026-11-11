@@ -102,7 +102,14 @@ function targetEdit(key, title, cur, confirmText, extra = {}) {
   const p = pending[key] || {};
   const model = p.model ?? cur.model, thinking = p.thinking ?? cur.thinking;
   const dirty = (p.model != null && p.model !== cur.model) || (p.thinking != null && p.thinking !== cur.thinking);
-  const modelField = selectField(TX("common.model"), modelName(model), () => modelItems(key, cur.model), model, v => { (pending[key] ||= {}).model = v; renderModels(); });
+  const modelField = selectField(TX("common.model"), modelName(model), () => modelItems(key, cur.model), model, v => {
+    const pe = pending[key] ||= {}, hit = [...(M.pickable || []), ...(M.available || [])].find(x => x.selector === v);
+    pe.model = v;
+    // Another model shows (and sends) its own sweet spot, the one the hub applies when no effort is sent; the current model keeps its effort.
+    const effort = v === cur.model ? cur.thinking : hit && hit.effort;
+    if (effort) pe.thinking = effort;
+    renderModels();
+  });
   // Effort is a dropdown next to the model, not a row of eight buttons (owner 2026-10-20: "드랍다운으로 모델이랑 추론정도 각각"), and it
   // lists what this model accepts, so picking another model rebuilds it with that model's levels.
   // A model with no level to choose (only 'off') gets no effort cell at all, not an empty "–" one.

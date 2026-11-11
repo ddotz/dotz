@@ -5,6 +5,7 @@ import { THINKING_LEVELS } from "./config.ts";
 import { sseResponse } from "./events.ts";
 import { modelsInUse } from "./models-in-use.ts";
 import { EFFORT_KO, replyModelChoices } from "./reply-model-choices.ts";
+import { sweetSpot } from "./model-effort.ts";
 import { REPLY_DEFAULT } from "./reply-model.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 import { i18nPrelude } from "./web-i18n.ts";
@@ -19,8 +20,8 @@ const SONNET = "anthropic/claude-sonnet-5-5";
 const DEEP = "deepseek/deepseek-v4.1-flash-ultrafast";
 const UNTIL = new Date(Date.UTC(2026, 10, 2, 18, 21)).toISOString();
 const THINK = ["low", "medium", "high", "xhigh", "max"];
-const m = (id: string, name: string, thinking?: string[]) => ({ provider: "anthropic", selector: `anthropic/${id}`, name, reasoning: true, family: "Claude", ...(thinking ? { thinking } : {}) });
-const LIST = [m("claude-opus-5-5", "Claude Opus 5.5", THINK), m("claude-sonnet-5-5", "Claude Sonnet 5.5", THINK), { provider: "deepseek", selector: DEEP, name: DEEP, reasoning: true }];
+const m = (id: string, name: string, thinking?: string[]) => ({ provider: "anthropic", selector: `anthropic/${id}`, name, reasoning: true, family: "Claude", effort: sweetSpot(id, thinking).effort, ...(thinking ? { thinking } : {}) });
+const LIST = [m("claude-opus-5-5", "Claude Opus 5.5", THINK), m("claude-sonnet-5-5", "Claude Sonnet 5.5", THINK), { provider: "deepseek", selector: DEEP, name: DEEP, reasoning: true, effort: sweetSpot(DEEP).effort }];
 const c = replyModelChoices(LIST);
 const TARGET = { target: "main", key: "orchestrator", model: OPUS, thinking: "high", active_model: `${DEEP}:medium`, running: true, busy: false, context: { tokens: 12000, window: 200000, percent: 6, compaction: null }, models: LIST, thinking_levels: [...THINKING_LEVELS] };
 const MODELS = {
@@ -56,6 +57,7 @@ const STATE = { name: "dotz", orchestrator: { status: "idle", activeModel: `${DE
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 let targetModel = OPUS;
+let orchestratorThinking = "high";
 const server = Bun.serve({
 	port: 0,
 	hostname: "127.0.0.1",
@@ -67,7 +69,7 @@ const server = Bun.serve({
 		if (asset) return asset;
 		if (p === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (p === "/api/state") return json(STATE);
-		if (p === "/api/models") return json(MODELS);
+		if (p === "/api/models") return json({ ...MODELS, orchestrator: { model: OPUS, thinking: orchestratorThinking } });
 		if (p === "/api/target") return json({ ...TARGET, model: targetModel });
 		if (p === "/api/peers") return json([]);
 		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
@@ -167,6 +169,22 @@ describe("effort levels follow the model", () => {
 		expect(new Set(deep).size).toBe(deep.length);
 		await shot(v, "effort-deepseek.png");
 		await run(v, `closeMenu(false)`);
+	}, 30_000);
+	test("picking another model in the 모델 view shows the effort the hub will apply, picking the current model puts the old effort back", async () => {
+		const v = await boot();
+		orchestratorThinking = "low";
+		await openModels(v);
+		const pick = async (part: string) => {
+			await run(v, `document.querySelector('[data-target="orchestrator"] .mt-model .sel').click()`);
+			await waitFor(v, `document.querySelector(".menu:not([data-leaving]) .mi .ml")`);
+			await clickMenuLabel(v, part);
+		};
+		const state = () => q<{ model: string; thinking: string; shown: string }>(v, `const p = pending.orchestrator || {}; return { model: p.model, thinking: p.thinking, shown: document.querySelector('[data-target="orchestrator"] .mt-eff .sel').textContent }`);
+		await pick("Sonnet 5.5");
+		expect(await state()).toMatchObject({ model: SONNET, thinking: sweetSpot(SONNET).effort, shown: "높음" });
+		await pick("Opus 5.5");
+		expect(await state()).toMatchObject({ model: OPUS, thinking: "low", shown: "낮음" });
+		orchestratorThinking = "high";
 	}, 30_000);
 	test("the composer and home effort menus use the same per-model list", async () => {
 		const v = await boot();

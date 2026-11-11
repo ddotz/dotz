@@ -83,7 +83,10 @@ const convModel = (key: string) => {
 // What the composer chips of every device read: project conversations that chose a model or run now. Absent means it inherits main's.
 const projectModels = () => Object.fromEntries(convs.conversations().filter(c => modelConv(c.key) && (c.meta.ownModel || convs.kindModel(c.key) || convs.live(c))).map(c => [c.key, { own: c.meta.ownModel ?? "", active: convs.live(c) ? c.o.orch.activeModel : "", ...(convs.kindModel(c.key) ? { kind: convs.kindModel(c.key) } : {}) }]));
 
+// Each listed model carries its sweet spot (hub/model-effort.ts, clamped to its levels): picking it in the 모델 view shows that effort.
+const withEffort = <T extends { selector: string; thinking?: string[] }>(list: T[]) => list.map(m => ({ ...m, effort: sweetSpot(m.selector, m.thinking).effort }));
 export async function modelsView() {
+	const available = await availableModels();
 	return {
 		orchestrator: orchestratorModel(),
 		lanes_default: lanesModel(),
@@ -91,8 +94,8 @@ export async function modelsView() {
 		lanes: laneModels(),
 		conversations: projectModels(),
 		thinking_levels: [...THINKING_LEVELS],
-		available: await availableModels(),
-		pickable: modelChoices(await availableModels()),
+		available: withEffort(available),
+		pickable: withEffort(modelChoices(available)),
 		notes: { orchestrator: ORCHESTRATOR_NOTE, workers: WORKERS_NOTE, fallback: FALLBACK_NOTE },
 		fallbacks: fallbacksView(),
 		in_use: liveModelsInUse(),
