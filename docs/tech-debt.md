@@ -3,7 +3,7 @@
 What is still open after the 2026-11-11 cleanup. Items that were cleaned are in git history, not here. Numbers come from
 `bun hub/engineering-rules.ts`; the ceilings they are held to are in hub/engineering-ceilings.json.
 
-Measured now: swallowed errors hub 192, web 69, features 27, extension 11. Non-atomic writes hub 43, features 8.
+Measured now: swallowed errors hub 190, web 69, features 27, extension 11. Non-atomic writes hub 43, features 8.
 Same-name helpers `readJson` 13, `json` 5, `git` 6, `shq` 5, `sleep` 3, `sameOrigin` 3. Import cycles 5. Hub modules
 docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock budget files 0.
 
@@ -31,7 +31,7 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 
 - hub/orchestrator.ts 1060, `createOrchestrator` 972: resume state, the model chain, `readEvents` and `start` share
   one closure, so a split needs a deps object first.
-- hub/discord.ts 948 (`connect` 152), hub/custom.ts 900 (its routes and file shapes are a public surface:
+- hub/discord.ts 948 (`connect` 152), hub/custom.ts 851 (its routes and file shapes are a public surface:
   docs/customization.md, docs/custom-plugins.md), hub/messenger-agent.ts 870, hub/providers.ts 825 (in a cycle with
   hub/api-budget.ts and hub/fallback.ts).
 - Factories that hold state throughout: `createPrompts` 706, `createKakaoWeb` 649, `createEngine` 624,
@@ -76,8 +76,9 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 - Scripts started from os.tmpdir(): `bun` reads the folders above a script, and in a temp folder with hundreds of
   thousands of entries a start took 1.5 to 3.1 s against 0.1 s in /tmp. The preload lists its `dotz-test-*`
   folders (`<tmp>/dotz-test-runs/<pid>-<start>`) and the next test process removes those of processes that ended,
-  so the folders of the last run stay until another run starts; the stand-ins of hub/remote-desktop.test.ts are files of the repo; other tests still write a script to
-  the temp folder and start it (hub/account-rules.test.ts, the setup and onboard tests).
+  so the folders of the last run stay until another run starts; the stand-ins of hub/remote-desktop.test.ts are
+  files of the repo; other tests still write a script to the temp folder and start it (hub/account-rules.test.ts,
+  the setup and onboard tests).
 - `bun test` never fires the process `exit` event, and a `--parallel` worker kills the children it still has when it
   ends, detached or not. A cleanup that must outlive the run is started by a shell that exits at once, and that exit
   is awaited (hub/runtime/test-setup.ts, hub/install-e2e.test.ts).
@@ -85,9 +86,17 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
   `performance.timeOrigin` and the file system last. Anything the preload starts is started 805 times in a full run:
   a shell per file that polled for the worker's end (1,600 processes, 805 forks a second) took the machine down
   three times. No check counts the processes a test run leaves running.
-- Tests leave their own temp folders behind (`dotz-done-*`, `limitwait-*` and others: 14 after a 20-file run).
-- hub/load-qa.test.ts starts its gateway detached and stops it only in `afterAll` (hub/test/load-qa/harness.ts): a
-  run killed before that hook leaves the gateway and its agent shim running under launchd.
+- Tests leave their own temp folders behind (`dotz-done-*`, `limitwait-*` and others: 14 after a 20-file run); the
+  preload's list covers only the folder it made itself.
+- Proposed, not started: give every test process a TMPDIR under one root folder per run, and let the next run
+  remove the roots of runs that are gone. One removal then covers the preload's folder, the folders tests make
+  themselves and the scripts they write, and the shared temp folder stops growing; the list files of
+  hub/runtime/test-setup.ts would go. The temp folders already piled up are the gateway cleanup's job
+  (hub/hygiene.ts, hub/cleanup.ts), not the tests'.
+- hub/load-qa.test.ts starts its gateway `detached` and `unref`s it (hub/test/load-qa/harness.ts:117-118) and stops
+  it only in `afterAll` (hub/load-qa.test.ts:62): a run killed before that hook leaves the gateway and its agent
+  shim running under launchd, in `/tmp/load-qa/test-<test pid>`. Two were found hours old on 2026-11-11. Not fixed:
+  the gateway needs to end with the test process (not detached, or a start-of-run sweep of roots whose pid is gone).
 - 45 `afterAll` hooks remove a folder synchronously; only hub/install-e2e.test.ts had one big enough to pass the hook
   limit.
 - hub/kakao-chat-web.test.ts "a request with no draft waiting makes a new draft": failed once in a 20-file run (the
