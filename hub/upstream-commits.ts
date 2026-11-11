@@ -13,7 +13,10 @@ const PUSH_VALUE_FLAGS = new Set(["-o", "--push-option", "--repo", "--receive-pa
 const NO_BRANCH_RULE = `no remote of this clone is ${PUBLIC_REPO}, so what is new to it cannot be told. Run \`${FIX_COMMAND}\` in the clone: it adds ${PUBLIC_URL} as a remote and fetches its main`;
 
 // Not leaks: the allowed-signers line is a public key, and a test fixture shows an address, a host or an id of the shapes scrub() knows (a value that is this install's own still hits as its own label).
+// Nor is the counting run 1234567890… that an id field shows as its example, in any file or message: it is nobody's id.
 const PUBLIC_KEY_LINE = /namespaces="git"/;
+const EXAMPLE_ID = /(?<![\w.-])1234567890\d{7,10}(?![\w.-])/g;
+const noExampleId = (text: string) => text.replace(EXAMPLE_ID, id => ([...id].every((d, i) => Number(d) === (i + 1) % 10) ? "example-id" : id));
 const FIXTURE = /\.test\.[jt]sx?$|(?:^|\/)(?:fixtures?|__tests__)\//;
 const FIXTURE_LABELS = new Set(["email", "phone", "tailnet host", "private address", "messenger id"]);
 
@@ -33,7 +36,7 @@ export function addedByFile(diff: string): Map<string, string[]> {
 export function addedLabels(added: ReadonlyMap<string, string[]>, terms: readonly Term[]): { labels: string[]; files: string[] } {
 	const labels: string[] = [];
 	const files: string[] = [];
-	const kept = [...added].map(([name, lines]) => [name, lines.filter(l => !PUBLIC_KEY_LINE.test(l)).join("\n")] as const);
+	const kept = [...added].map(([name, lines]) => [name, noExampleId(lines.filter(l => !PUBLIC_KEY_LINE.test(l)).join("\n"))] as const);
 	if (scrub(kept.map(([, text]) => text).join("\n"), terms).hits.length) {
 		for (const [name, text] of kept) {
 			const hits = scrub(text, terms).hits.filter(h => !(FIXTURE.test(name) && FIXTURE_LABELS.has(h)));
@@ -53,7 +56,7 @@ export function contentFindings(dir: string, revs: readonly string[], refs: read
 		const first = chunk.indexOf("\x1f");
 		const second = chunk.indexOf("\x1f", first + 1);
 		const sha = chunk.slice(0, first);
-		const labels = scrub(chunk.slice(first + 1, second), terms).hits.map(h => `message: ${h}`);
+		const labels = scrub(noExampleId(chunk.slice(first + 1, second)), terms).hits.map(h => `message: ${h}`);
 		const { labels: lineLabels, files } = addedLabels(addedByFile(chunk.slice(second + 1)), terms);
 		labels.push(...lineLabels);
 		if (labels.length) found.push({ sha, labels, files });

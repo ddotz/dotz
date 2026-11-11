@@ -221,6 +221,13 @@ test("a test fixture may show an address on a push, any other file may not", () 
 	expect(deny("git push origin HEAD:main")).toBeDefined();
 });
 
+test("the counting-run id an input shows as its example passes in any file and message, another id of that shape does not", () => {
+	commit("form.json", `{ "id_ph": "e.g. 123456789012345678" }`, "example 123456789012345678", CLEAN);
+	expect(deny("git push origin HEAD:main")).toBeUndefined();
+	commit("config.json", `{ "guild": "223456789012345678" }`, "id", CLEAN);
+	expect(deny("git push origin HEAD:main")).toBeDefined();
+});
+
 test("commits already on the public main are not looked at, and a clean push after them passes", () => {
 	git(work, "checkout", "-q", "main");
 	commit("old", `legacy ${HOME_PATH}`, `legacy ${EMAIL}`, CLEAN);
