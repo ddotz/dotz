@@ -12,11 +12,11 @@
   .kk.chat-open .kk-rooms { display: none; }
   .kk-chat { margin-bottom: 0; }
 }
+/* a wide screen puts them in the app frame (20-monitoring.css .app-two): the rooms are the left panel at the list column, the chat the main slot. Without the frame (a split pane) the chat replaces the rooms, as on a phone. */
+#v-monitoring:not(.app-two) .kk.chat-open .kk-rooms { display: none; }
 @media (min-width: 1100px) {
-  #v-monitoring > .kk { grid-row: 4; margin-bottom: var(--sp-1); }
-  .kk-rooms { margin-bottom: 0; }
-  .kk.chat-open .kk-rooms { flex: none; width: 300px; }
-  .kk-chat { margin-bottom: 0; }
+  #v-monitoring:not(.app-two) > .kk { grid-row: 4; margin-bottom: var(--sp-1); }
+  .kk-rooms, .kk-chat { margin-bottom: 0; }
 }
 
 /* the watched rooms: a head with the count and 추가, one row per room */
@@ -34,12 +34,15 @@
 #kk-add .kk-pd-in { background: var(--bg); outline: 0; }
 #kk-add .kk-pd-b { padding: var(--sp-1) var(--sp-6) var(--sp-6); }
 .kk-search + .kk-pl { margin-top: var(--sp-3); }
+/* in the sheet the check says "watched"; the grey fill is the selected row of a list, so the sheet's rows keep none */
+#kk-add .kk-pr.on, #kk-add .kk-pr.on:hover { background: none; }
 .kk-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .kk-ck { flex: none; width: 18px; height: 18px; color: var(--accent); }
 @media (pointer: coarse), (max-width: 639px) { #kk-add .kk-search { height: 40px; font-size: 16px; } }
 @media (max-width: 639px) { #kk-add .kk-pd-in { padding-top: env(safe-area-inset-top); } #kk-add .kk-pd-b { padding-inline: var(--sp-4); } }
 .kk-add .kk-pd-b { padding: var(--sp-2) 0 0; }
 .kk-hint { padding: 0 var(--sp-4) var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
+.kk-note + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }   /* a failed or empty place: the line, then its one action, centred */
 .kk-note { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font: 400 12px/16px var(--font); text-align: center; text-wrap: balance; }
 .kk-pr { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--row-py) var(--sp-4); }
 .kk-pr + .kk-pr { border-top: 1px solid var(--line); }
@@ -86,7 +89,7 @@
 @media (prefers-reduced-motion: reduce) { .kk-sw, .kk-knob { transition: none; } }
 
 /* chat */
-.kk-head { display: none; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.kk-head { display: none; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }   /* the general chat's head insets */
 .kk-head:not(:empty) { display: flex; }
 @media (max-width: 1099px) { .kk-head, .kk-head:not(:empty) { display: none; } }
 .kk-owed { display: none; }
@@ -96,9 +99,9 @@
 .kk-chat > .kk-box { flex: 1 0 min(400px, 52dvh); }
 #kk-chat > .kk-box { flex: 1 1 0; min-height: 0; }
 /* Messages leaving the list fade out at both edges instead of being cut; the padding keeps the first and last one clear of the fade at rest. */
-.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-4); -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
-/* the chat window's column is centered with a width cap: on a wide pane both sides keep the same distance to the edge, like a KakaoTalk window */
-.kk-in { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; max-width: 880px; min-width: 0; margin: 0 auto; }
+.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-1) var(--sp-6) var(--sp-3); -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
+/* the chat window's column fills the main slot, with the insets of the general chat's timeline (.kk-tl) */
+.kk-in { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; min-width: 0; }
 .kk-in > .kk-note { margin: auto; color: var(--kk-time); }
 .kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 var(--sp-3); transform: translateX(-50%); border-radius: var(--r-ctl); box-shadow: var(--float); }
 .kk-top { display: flex; justify-content: center; padding: var(--sp-05) 0 var(--sp-15); }
@@ -226,6 +229,8 @@
 
 /* composer: the chat composer's look (.composer, .sendrow), a draft card above it */
 .kk-chat > .kk-composer { max-width: none; margin: 0; padding: 0; }
+/* the general chat's composer insets; the room's cards stand on the page, so the margin takes the padding back and they keep the window's edges */
+#kk-chat > .kk-composer { width: auto; padding: var(--sp-3) var(--sp-3) var(--sp-2); margin: calc(var(--sp-3) * -1) calc(var(--sp-3) * -1) calc(var(--sp-2) * -1); }
 .kk-drafts { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0 0; }
 .kk-drafts[hidden] { display: none; }
 .kk-draft { flex: none; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
@@ -235,6 +240,7 @@
 .kk-draft .btns { gap: var(--sp-15); }
 .kk-choices { flex-wrap: wrap; }
 .kk-draft .btn { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
+@media (pointer: coarse), (max-width: 639px) { .kk-draft .btn { height: var(--btn-hit); } }   /* a thumb: not smaller than the buttons around the card */
 /* the room's reply card sits under the chat: at most 40% of the screen, only the bubbles scroll, the buttons stay */
 #kk-chat .kk-drafts { margin: 0 0 var(--sp-2); min-height: 0; max-height: 40dvh; overflow-y: auto; }
 #kk-chat .kk-draft { display: flex; flex-direction: column; min-height: 0; max-height: 40dvh; }

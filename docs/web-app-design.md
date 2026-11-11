@@ -194,7 +194,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 목적: 앱의 화면은 왼쪽 가장자리에 앱 자신의 칸, 그 옆에 본 화면 하나예요. 채팅, 프로젝트, 모니터링이 서는 방식 그대로이고, 앱 안에서 항목을 열어도 칸은 그대로예요(전체 화면으로 갈아타지 않아요).
 - 마크업: 뷰(`#v-monitoring` 또는 `#v-chat`)에 `app-two`, 왼쪽 칸이 되는 자식 하나에 `app-side`. 그 밖의 자식은 모두 오른쪽 본 화면 칸(2열)에 쌓여요. 칸 너비 `--app-side`는 공용 `--frame-list-w`(340px), 칸 사이는 공용 `--frame-gap`이에요(둘 다 `web/css/01-tokens.css`, 채팅·프로젝트와 같은 값이라 메일 칸과 본 화면 칸은 채팅 목록 단, 대화 단과 같은 상자예요), 뷰는 `--edge`까지 붙어요(`web/css/20-monitoring.css`). 1100px 아래에서는 틀이 꺼지고 한 칸 화면이에요.
 - 지금 쓰는 곳: 메일 앱. 목록 때는 `#v-monitoring.app-two` + `#mx-pane.app-side`, 메일이 열리면 `#v-chat.app-two` + `#chat-convo.app-side`(같은 메일함 칸을 `mxPaneNodes`로 채움). 켜고 끄는 곳은 `mxTwo`(30-mailboxes.js)와 `mxPaint`, `convPaint`예요. 분할 칸(`in-pane`)과 폰은 틀이 없어요.
-- 카카오톡은 아직 틀 밖이에요: 모니터링 목록 → `.kk-rooms`(방 칸, 17-kakao.css, 30-kakao.js `#v-monitoring.kk-on`) → `.kk-chat`(방) 세 겹이에요.
+- 카카오톡과 댓글 앱(유튜브·인스타그램·웹사이트)도 이 틀이에요: `#v-monitoring.app-two.kk-on`에서 `.kk`는 껍데기(`display: contents`)일 뿐이고, 방(`.kk-rooms`) · 글(`#cm-rooms`) · 인스타그램 DM 목록(댓글/DM 탭이 그 칸 맨 위에 있어요)이 왼쪽 칸, `.kk-chat`이 본 화면 칸이에요(17-kakao.css, 20-monitoring.css). 아무것도 안 열었으면 오른쪽에 앱 머리 카드(`#mon-head`)와 `대화방을 골라 주세요` 한 줄이에요(방을 열면 읽음 표시가 나가서 첫 방을 저절로 열지 않아요). 방을 열면 오른쪽은 그 방이에요. `.kk-head`·`.kk-tl`·`.kk-composer`의 안쪽 여백은 채팅 탭과 같아요. 뒤로 가기(`kkBack`, `cmBack`)는 폭과 관계없이 열린 방을 먼저 닫고, 그다음 모니터링으로 가요. 켜고 끄는 곳은 `renderMonitoring`(30-monitoring.js)의 `mxPaint` 바로 뒤예요. 폰과 분할 칸(`in-pane`)은 틀이 없어요.
 
 ### 주소 별칭과 보조 주소
 | 입력 | 실제로 여는 곳 | 근거 |

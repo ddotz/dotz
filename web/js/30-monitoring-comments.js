@@ -3,6 +3,9 @@
 // app (CM.apps). It reuses the KakaoTalk pane's layout and classes (30-kakao.js, 17-kakao.css). Live updates: comment / comment_draft /
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
+// A request that did not get through reads as a sentence about what did not load, never the bare transport word ('offline'); 다시 시도 stands under it, the same in every empty or failed place of the kakao and comment panes.
+const appFail = (e, what) => { const m = String((e && e.message) || ""); return !m || /^(offline|failed to fetch|load failed|networkerror.*)$/i.test(m) ? `${what}. 연결을 확인해 주세요` : m; };
+const appRetry = fn => el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: "다시 시도", onclick: fn });
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
   drafting: new Set(), revising: "", note: {}, pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
@@ -212,14 +215,14 @@ async function cmReload(seq = CM.seq, scroll = false) {
     CM.view = v; CM.loading = false; CM.viewErr = "";
   } catch (e) {
     if (seq !== CM.seq) return;
-    CM.loading = false; CM.viewErr = e.message || "댓글을 불러오지 못했어요";
+    CM.loading = false; CM.viewErr = appFail(e, "댓글을 불러오지 못했어요");
   }
   cmPaintChat(scroll);
   cmMarkRead();
 }
 function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; CM.revising = ""; CM.note = {}; cmPaintAll(); convTitle(); bkCmSync(); }
 function cmBack() {
-  if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list)) return false;
+  if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && current === "monitoring" && !MON.list)) return false;
   if (CM.tab === "dm") { dmClose(); return true; }
   cmClose();
   return true;
@@ -311,7 +314,7 @@ function cmPaintChat(stick) {
   CM.chatSig = csig;
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "글을 골라 주세요" })); return; }
   if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
-  if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr })); return; }
+  if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr }), appRetry(() => { CM.loading = true; CM.viewErr = ""; cmPaintChat(false); cmReload(); })); return; }
   // A repaint while he types what to change draws a new field (its text is CM.note): give it the focus and the caret the old one had.
   const a = document.activeElement, typing = a && a.matches(".rq-edit input") && cmIn.contains(a) ? [a.selectionStart, a.selectionEnd, a.selectionDirection] : null;
   const nodes = [cmPostCard(v.thread, v.source.kind), ...cmThreadNodes(v)];

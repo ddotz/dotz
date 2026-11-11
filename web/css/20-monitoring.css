@@ -110,6 +110,18 @@
   #v-monitoring.app-two:not(.cv-listing) > * { grid-column: 2; }
   :is(#v-monitoring, #v-chat).app-two > .app-side { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; margin-bottom: var(--sp-4); padding: 0; border-radius: 0; background: none; overflow: hidden auto; scrollbar-width: none; }
   body:has(:is(#v-monitoring, #v-chat).app-two:not([hidden])) { --mbox-r: var(--edge); }   /* the page runs to the right edge beside the panel: 20-mail-box.css --mbox-r */
+  /* KakaoTalk and the comment apps (30-kakao.js, 30-monitoring-comments.js) use the same frame: .kk is only their wrapper, so its rooms (or posts, or Instagram's DMs) are the
+     panel and its chat is the main slot. Nothing open: the head card (#mon-head) over one quiet line to pick one; a room open: the chat takes the whole slot, with its own head. */
+  #v-monitoring.app-two.kk-on:not(.cv-listing):has(> .kk:not([hidden])) { max-width: none; margin: 0; column-gap: var(--frame-gap); grid-template-columns: var(--app-side) minmax(0, 1fr); }
+  #v-monitoring.app-two.kk-on > .kk:not([hidden]) { display: contents; }
+  #v-monitoring.app-two.kk-on > .kk > .kk-rooms { grid-column: 1; grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); }
+  #v-monitoring.app-two.kk-on > .kk > .kk-chat { grid-column: 2; grid-row: 4; margin-bottom: var(--sp-4); }
+  #v-monitoring.app-two.kk-on > .kk.chat-open > .kk-chat { grid-row: 1 / -1; }
+  #v-monitoring.app-two.kk-on:has(> .kk.chat-open) > #mon-head { display: none; }
+  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat { display: flex; align-self: start; background: none; }
+  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat > :not(.kk-box) { display: none; }
+  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-box { flex: none; min-height: 0; background: none; }
+  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-in > .kk-note { color: var(--fg-3); }
 }
 /* over a monitor's conversation: the wait, a down banner, 지금 확인 and 소식 */
 #v-chat > .mon-chat-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-width: 0; padding: var(--sp-1) var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--line); }

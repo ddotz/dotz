@@ -18,7 +18,7 @@ async function dmRefresh() {
   if (DM.busy) return;
   DM.busy = true; if (CM.vis && CM.tab === "dm") dmPaintRooms();
   try { await api("/api/ig-dm/refresh", "POST", {}); DM.error = ""; }
-  catch (e) { DM.error = e.message || "DM을 불러오지 못했어요"; }
+  catch (e) { DM.error = appFail(e, "DM을 불러오지 못했어요"); }
   await dmLoadList();
   DM.busy = false;
   if (CM.vis && CM.tab === "dm") { dmPaintRooms(); if (DM.open) dmReload(DM.seq); }
@@ -62,7 +62,7 @@ async function dmReload(seq = DM.seq, scroll = false) {
     DM.view = v; DM.loading = false; DM.viewErr = "";
   } catch (e) {
     if (seq !== DM.seq) return;
-    DM.loading = false; DM.viewErr = e.message || "DM을 불러오지 못했어요";
+    DM.loading = false; DM.viewErr = appFail(e, "DM을 불러오지 못했어요");
   }
   dmPaintChat(scroll);
 }
@@ -86,7 +86,7 @@ function dmPaintChat(stick) {
   CM.chatSig = csig;
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "대화를 골라 주세요" })); return; }
   if (DM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
-  if (DM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: DM.viewErr })); return; }
+  if (DM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: DM.viewErr }), appRetry(() => { DM.loading = true; DM.viewErr = ""; cmPaintChat(false); dmReload(); })); return; }
   const nodes = [], msgs = v.messages.map(m => dmAsKk(m, v.peer));
   msgs.forEach((m, i) => {
     const prev = msgs[i - 1], next = msgs[i + 1], newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt);

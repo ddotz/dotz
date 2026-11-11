@@ -594,7 +594,7 @@ function kkPaintRooms() {
   const head = el("div", { class: "kk-lh" }, ...(ready && watched.length ? [kkViewBar(watched)] : [el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? "0개" : "" })]),
     ready && KK.rooms.length ? el("button", { class: "btn tonal sm kk-add-btn", id: "kk-add-btn", type: "button", onclick: () => kkAddOpen() }, icon("add"), el("span", { text: "추가" })) : null);
   const list = el("section", { class: "pl-list kk-watch", "aria-label": "지켜보는 대화방" });
-  if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }));
+  if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }), ...(KK.failed ? [appRetry(() => kkLoadRooms())] : []));
   else if (shown.length) list.append(...shown.map(kkRow));
   else list.append(el("div", { class: "kk-note", id: "kk-empty", text: watched.length ? kkViewOf()[3] : KK.rooms.length ? "지켜볼 대화방을 추가해 주세요" : "고를 수 있는 대화방이 없어요" }));
   // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
@@ -634,7 +634,7 @@ function kkPaintChat() {
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
   if (KK.loading) { clear(kkIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
-  if (KK.roomErr) { clear(kkIn).append(el("div", { class: "kk-note", role: "status", text: KK.roomErr })); return; }
+  if (KK.roomErr) { clear(kkIn).append(el("div", { class: "kk-note", role: "status", text: KK.roomErr }), appRetry(() => kkOpen(KK.open))); return; }
   kkPaintTl(KK.stick);
   kkPaintFoot();
 }
@@ -762,7 +762,7 @@ async function kkOpen(id) {
     kkPlace();
   } catch (e) {
     if (seq !== KK.seq) return;
-    KK.loading = false; KK.roomErr = e.message || "대화를 불러오지 못했어요";
+    KK.loading = false; KK.roomErr = appFail(e, "대화를 불러오지 못했어요");
     kkPaintAll();
   }
 }
@@ -771,9 +771,9 @@ function kkClose() {
   KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = ""; KK.edit = null;
   kkPaintAll(); convTitle(); bkKkSync();
 }
-// Phone, or a KakaoTalk room in a split pane (43-panes-view.js paneMonIn): the app bar's back arrow leaves the chat for the room list first (04-state.js #back).
+// The app bar's back arrow leaves an open room for the room column first, at every width (04-state.js #back); a wide screen gives the room no history step (histFlat).
 function kkBack() {
-  if (!(KK.vis && KK.open && (narrowChat() || paneMonIn()) && current === "monitoring" && !MON.list)) return false;
+  if (!(KK.vis && KK.open && current === "monitoring" && !MON.list)) return false;
   kkClose();
   return true;
 }

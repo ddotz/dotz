@@ -264,7 +264,7 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 			const r = s => document.querySelector(s).getBoundingClientRect(), t = r("#kk-tl");
 			return { inL: r('[data-log="3001"] .kk-bub').left, inR: r('[data-log="3001"] .kk-bub').right, meL: r('[data-log="3003"] .kk-bub').left, meR: r('[data-log="3003"] .kk-bub').right, tl: t.left, tr: t.left + document.querySelector("#kk-tl").clientLeft + document.querySelector("#kk-tl").clientWidth, longR: r('[data-log="3007"] .kk-bub').right, hScroll: document.querySelector("#kk-tl").scrollWidth - document.querySelector("#kk-tl").clientWidth }`);
 		expect(lay.inL).toBeLessThan(lay.tl + 80);
-		expect(lay.meR).toBeGreaterThan(lay.tr - 24);
+		expect(lay.meR).toBeGreaterThanOrEqual(lay.tr - 24);
 		expect(lay.meL).toBeGreaterThan(lay.inL + 100);
 		expect(lay.longR).toBeLessThanOrEqual(lay.tr);
 		expect(lay.hScroll).toBeLessThanOrEqual(0);
@@ -440,7 +440,7 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		expect(await q(v, `return !!document.querySelector(".kk-m.pend .kk-rd")`)).toBe(false);
 		const pend = await q<{ state: string; right: number; tr: number }>(v, `const b = document.querySelector(".kk-m.me.pend .kk-bub").getBoundingClientRect(); return { state: document.querySelector(".kk-m.me.pend .kk-state").textContent, right: b.right, tr: (tl => tl.getBoundingClientRect().left + tl.clientLeft + tl.clientWidth)(document.querySelector("#kk-tl")) }`);
 		expect(pend.state).toBe("보내는 중");
-		expect(pend.right).toBeGreaterThan(pend.tr - 24);
+		expect(pend.right).toBeGreaterThanOrEqual(pend.tr - 24);
 		msgs.push({ ...mk("4033", "me", "초안", Date.now()) });
 		emit({ kind: "kakao_send", chatId: "100", id: "s1", state: "sent" });
 		await waitFor(v, `document.querySelector('[data-log="4033"]') && !document.querySelector(".kk-m.me.pend")`);

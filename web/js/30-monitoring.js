@@ -866,6 +866,7 @@ function renderMonitoring() {
   mailLand(sel); mxPaint(sel);
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
+    $("#v-monitoring").classList.toggle("app-two", !MON.list && !narrowChat() && !paneMonIn());   // wide: the app frame (20-monitoring.css), the rooms or posts are its panel; after mxPaint, which clears it for any item but a mailbox
     const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, sel.drafts | 0, !!AS.by[monSettingsApp(sel)], !!KK.open, pqSig(sel)]);
     if (head !== MON.kkHead) { MON.kkHead = head; clear($("#mon-head")).append(...monHead(sel)); }
     MON.sig = ""; MON.shown = sel.key;
