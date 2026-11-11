@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { fakeHub, idleState, json, on, type View } from "./test-web.ts";
 
 // A tap on a push that had to start the app paints the message from this device's store (web/js/13-snapshot.js) before any answer of the network, and the
@@ -9,7 +9,10 @@ const MAIN = Array.from({ length: 200 }, (_, i) => says(i));
 const AT = ts(190);
 const notice = { id: "n1", kind: "message", tone: "", cls: "conv", read: false, title: "땃쥐", text: "내용", open: "main", src: "main", ts: AT, updated: AT, at: AT };
 let gate: Promise<void> | null = null, stateGate: Promise<void> | null = null, extra: unknown[] = [], histories = 0;
+// slowTimers: the page's own 1.5 s read-ahead of 작업내역 (web/js/99-boot.js) must not fire by the wall clock: on a busy machine it landed after the count of
+// histories was reset and was counted as the new page's read. No test here advances the timers, so it never runs.
 const hub = fakeHub({
+	slowTimers: true,
 	state: () => idleState(),
 	api: async (_req, url) => {
 		if (url.pathname === "/api/state" && stateGate) await stateGate;
@@ -25,6 +28,8 @@ const hub = fakeHub({
 	},
 });
 afterAll(() => hub.stop());
+// A test that throws before it releases its held answers must not leave them closed for the next one.
+afterEach(() => { hub.release(); gate = stateGate = null; extra = []; });
 
 const storeSnapshot = (view: View, msgs: unknown[]) => view.evaluate(`new Promise((res, rej) => {
 	const q = indexedDB.open("dotz-snap", 1);
