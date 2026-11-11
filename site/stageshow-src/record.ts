@@ -3,17 +3,21 @@
 // The page runs on the kit's virtual clock (kit/clock.ts), installed before any page code, so time only
 // moves when this script steps it by exactly one frame. Each frame is a screenshot of the stage; the page
 // is sized to the stage, so the screenshot is the stage and nothing around it. Runs of identical frames
-// become one frame with their summed duration, then img2webp writes the animated WebP.
+// become one frame with their summed duration, then img2webp writes the animated WebP. Frames are lossless:
+// img2webp stores each frame as the changed rectangle blended over the last one, and lossy rectangles never
+// fully cover what was there, so earlier titles and cards stayed behind as faint ghosts. After writing, every
+// frame is decoded and compared with its screenshot (verify-video.ts); a frame that differs fails the build.
 //
 //   --lang ko,en     languages to record (default: all five)
 //   --out dir        where the .webp files go (default: docs/assets)
-//   --quality n      lossy quality 0-100 (default 80); --lossless writes lossless frames instead
+//   --lossy          lossy frames instead, at --quality n (0-100, default 80); the comparison still has to pass
 //   --frames dir     also keep every merged frame as a PNG, for looking at
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { installVirtualClock } from './kit/clock'
 import { inlineCss } from './inline-css'
+import { BAD_DIFF, verifyVideo } from './verify-video'
 
 const FPS = 25
 const STAGE = { width: 960, height: 700 }
@@ -31,7 +35,7 @@ const opt = (name: string, fallback: string) => {
 const langs = opt('--lang', Object.keys(FILES).join(',')).split(',')
 const outDir = resolve(opt('--out', join(repo, 'docs/assets')))
 const quality = Number(opt('--quality', '80'))
-const lossless = flag('--lossless')
+const lossless = !flag('--lossy')
 const framesDir = args.includes('--frames') ? resolve(opt('--frames', '')) : null
 for (const l of langs) if (!FILES[l]) throw new Error(`unknown language ${l}; use ${Object.keys(FILES).join(', ')}`)
 
@@ -137,7 +141,11 @@ async function record(lang: string) {
     const p = Bun.spawn(argv, { stdout: 'inherit', stderr: 'inherit' })
     if ((await p.exited) !== 0) throw new Error('img2webp failed')
     const size = Bun.file(out).size
+    const diff = await verifyVideo(out, runs)
+    const { worst } = diff
     console.log(`${lang.padEnd(6)} ${raw} captured -> ${runs.length} frames, ${(raw * 1000) / FPS} ms, ${size} B, ${((performance.now() - started) / 1000).toFixed(1)} s -> ${out}`)
+    console.log(`${lang.padEnd(6)} decoded vs screenshots: worst frame ${worst.frame}, ${worst.badPixels} pixels off by more than ${BAD_DIFF}, largest difference ${worst.maxDiff}, mean ${diff.meanDiff.toFixed(3)}`)
+    if (worst.badPixels > 0) throw new Error(`${out}: frame ${worst.frame} does not match its screenshot (${worst.badPixels} pixels off)`)
   } finally {
     view.close()
   }
