@@ -173,8 +173,8 @@
       "why": "terminal prompt matching"
     },
     "web/custom.js": {
-      "count": 468,
-      "why": "pending"
+      "count": 4,
+      "why": "Korean date form in the ko branch, and the project message prefix the assistant instructions name"
     }
   },
   "enHangulKeys": [],
