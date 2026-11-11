@@ -74,12 +74,20 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 ## Tests
 
 - Scripts started from os.tmpdir(): `bun` reads the folders above a script, and in a temp folder with hundreds of
-  thousands of entries a start took 1.5 to 3.1 s against 0.1 s in /tmp. The preload now removes its own `dotz-test-*`
-  folder, and the stand-ins of hub/remote-desktop.test.ts are files of the repo; other tests still write a script to
+  thousands of entries a start took 1.5 to 3.1 s against 0.1 s in /tmp. The preload lists its `dotz-test-*`
+  folders (`<tmp>/dotz-test-runs/<pid>-<start>`) and the next test process removes those of processes that ended,
+  so the folders of the last run stay until another run starts; the stand-ins of hub/remote-desktop.test.ts are files of the repo; other tests still write a script to
   the temp folder and start it (hub/account-rules.test.ts, the setup and onboard tests).
 - `bun test` never fires the process `exit` event, and a `--parallel` worker kills the children it still has when it
   ends, detached or not. A cleanup that must outlive the run is started by a shell that exits at once, and that exit
   is awaited (hub/runtime/test-setup.ts, hub/install-e2e.test.ts).
+- A `--parallel` worker runs the preload once per FILE with a fresh `process.env` and `globalThis`; only the pid,
+  `performance.timeOrigin` and the file system last. Anything the preload starts is started 805 times in a full run:
+  a shell per file that polled for the worker's end (1,600 processes, 805 forks a second) took the machine down
+  three times. No check counts the processes a test run leaves running.
+- Tests leave their own temp folders behind (`dotz-done-*`, `limitwait-*` and others: 14 after a 20-file run).
+- hub/load-qa.test.ts starts its gateway detached and stops it only in `afterAll` (hub/test/load-qa/harness.ts): a
+  run killed before that hook leaves the gateway and its agent shim running under launchd.
 - 45 `afterAll` hooks remove a folder synchronously; only hub/install-e2e.test.ts had one big enough to pass the hook
   limit.
 - hub/kakao-chat-web.test.ts "a request with no draft waiting makes a new draft": failed once in a 20-file run (the

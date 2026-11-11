@@ -2,7 +2,7 @@
 // test can ever start a real omo or omp), and the fake clock. Runs before any hub module reads config.ts.
 import { beforeEach } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installGitHooks } from "../git-hooks.ts";
@@ -44,10 +44,26 @@ process.env.DOTZ_WEB_LIVE = "1";   // tests read the working-tree web files; hub
 if (!process.env.DOTZ_TEST_DIR) {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-test-"));
 	process.env.DOTZ_TEST_DIR = dir;
-	// bun test never fires the process "exit" event, so a handler here removed nothing and every test process left its folder behind. A shell
-	// that outlives this process (a killed one too) removes the folder once the pid is gone. It is started by a shell that exits at once, and
-	// that exit is awaited (milliseconds): a --parallel worker kills the children it still has when it ends, detached or not.
-	await Bun.spawn(["/bin/sh", "-c", '(while kill -0 "$1" 2>/dev/null; do sleep 1; done; rm -rf "$2") &', "sh", String(process.pid), dir], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }).exited;
+	// bun test never fires the process "exit" event, so a handler here removed nothing and every test process left its folder behind.
+	// Nothing waits for this process to end: a --parallel worker runs this preload again for every file (with a fresh process.env and
+	// globalThis), and a shell per file that polled for the end was 805 shells each forking `sleep` every second in a full run; the machine
+	// went down with it. Each process lists its folders in a file instead, and the first file of a later process removes the folders of
+	// processes that are gone: one short `rm` per list, started by a shell that exits at once, nothing left running.
+	const runs = join(tmpdir(), "dotz-test-runs"), mine = join(runs, `${process.pid}-${Math.round(performance.timeOrigin)}`);
+	if (!existsSync(mine)) {
+		mkdirSync(runs, { recursive: true });
+		const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; } };
+		for (const name of readdirSync(runs)) {
+			const pid = Number(name.split("-")[0]);
+			if (!pid || alive(pid)) continue;
+			const taken = join(runs, `${name}.gone-${process.pid}`);
+			// Another process starting now may take the same list first: the rename is the claim.
+			try { renameSync(join(runs, name), taken); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") continue; throw e; }
+			// Only a folder this preload made is removed (<tmp>/dotz-test-XXXXXX, no deeper path), whatever the list says.
+			await Bun.spawn(["/bin/sh", "-c", '(while IFS= read -r d; do b=${d#"$2"/dotz-test-}; case "$b" in "$d"|*/*|"") ;; *) rm -rf "$d" ;; esac; done < "$1"; rm -f "$1") &', "sh", taken, tmpdir()], { stdin: "ignore", stdout: "ignore", stderr: "ignore", detached: true }).exited;
+		}
+	}
+	appendFileSync(mine, `${dir}\n`);
 }
 const dir = process.env.DOTZ_TEST_DIR;
 if (liveDataDir(dir)) throw new Error(`refused: DOTZ_TEST_DIR ${dir} is not a temp dir`);
