@@ -24,7 +24,8 @@ import { claimHolder } from "./draft-claim.ts";
 import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, sendActionOf, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { answerBatch, batchCard, STALE_OPTIONS, type BatchCard, type BatchPick } from "./approval-batch.ts";
 import { DRAFT_BODY_MAX, DRAFT_UNDO, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
-import { askText, pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
+import { askText, mailOriginalOf, pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
+import { mailByKey, mailRecords } from "./mail.ts";
 import { json } from "./routes-util.ts";
 
 // How many waiting cards of one conversation make the web open its triage view instead of one card at a time (settings: web.triage_min).
@@ -231,6 +232,25 @@ export function cardGroups(cards = waitingCards()): CardGroup[] {
 
 const FAILED_BATCH_MAX = 100;
 
+// The list carries only the start of the mail (two lines in a row); the screen reads the whole text from GET /api/drafts/<ref>/original when a card opens.
+const ORIGINAL_MAX = 60;
+/**
+ * What the 빠른 처리 card of a mail draft shows besides the draft, so one list call is enough (no request per card for the rest): the mail it answers (text cut at
+ * ORIGINAL_MAX, `cut` says so), the sending account (`many`: this install has more than one mail app), and the thread (`earlier` messages kept, `newer`: a newer message
+ * arrived after the draft was made, hub/mail.ts reopenedAt). A comment card has its own `comment` context; a new mail answers nothing.
+ */
+function mailCardExtras(ref: string, group: string | undefined, entries: ReturnType<typeof appEntries>, threads: ReadonlyMap<string, number>) {
+	const rec = getDraft(ref);
+	if (!rec || rec.kind !== "mail") return {};
+	const o = mailOriginalOf(rec), m = mailByKey(rec.ref);
+	const label = [group, rec.account].filter(Boolean).join(" · ");
+	return {
+		...(o ? { original: { from: o.from, at: o.date, ...(o.subject ? { subject: o.subject } : {}), text: o.text.slice(0, ORIGINAL_MAX), ...(o.text.length > ORIGINAL_MAX ? { cut: true } : {}), files: o.attachments.length } } : {}),
+		account: { label, many: entries.filter(e => e.app === "mail" && !e.gone).length > 1 },
+		...(m?.thread || m?.reopenedAt ? { thread: { earlier: m.thread ? Math.max(0, (threads.get(m.thread) ?? 1) - 1) : 0, newer: !!m.reopenedAt && m.reopenedAt > rec.created } } : {}),
+	};
+}
+
 /** The 보내지 않기 of a comment draft or a mail draft of the store, the same steps as the card's. */
 async function dropDraftRef(ref: string): Promise<{ ok: boolean; reason?: string }> {
 	if (commentDraftOf(ref)) {
@@ -249,8 +269,9 @@ async function dropDraftRef(ref: string): Promise<{ ok: boolean; reason?: string
  */
 export async function approvalRoute(req: Request, url: URL, deps: { login: string; triageMin: number; deliver: (to: string, text: string, picks: BatchPick[], decision?: string) => Promise<void> }): Promise<Response | undefined> {
 	if (url.pathname === "/api/approvals" && req.method === "GET") {
-		const comments = commentDraftsByCode(), pending = commentPending();
-		const groups = cardGroups().map(g => ({ ...g, cards: g.cards.map(({ text: _text, ...c }) => ({ ...c, kind: comments.has(c.ref) ? "comment" : "mail", ...(comments.has(c.ref) ? { comment: commentContextOf(c.ref, pending) } : {}) })) }));
+		const comments = commentDraftsByCode(), pending = commentPending(), entries = appEntries(DATA_DIR), threads = new Map<string, number>();
+		for (const r of mailRecords()) if (r.thread) threads.set(r.thread, (threads.get(r.thread) ?? 0) + 1);
+		const groups = cardGroups().map(g => ({ ...g, cards: g.cards.map(({ text: _text, ...c }) => ({ ...c, kind: comments.has(c.ref) ? "comment" : "mail", ...(comments.has(c.ref) ? { comment: commentContextOf(c.ref, pending) } : mailCardExtras(c.ref, g.label, entries, threads)) })) }));
 		return json({ groups, results: sender.results(), triageMin: deps.triageMin });
 	}
 	if (url.pathname === "/api/approvals" && req.method === "POST") {

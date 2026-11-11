@@ -113,10 +113,16 @@ function original(rec: DraftRec | undefined, ref: string): Response {
 		return c ? json(c) : GONE();
 	}
 	if (rec.kind === "comment") return rec.item.text.trim() ? json(commentOfRec(rec)) : GONE();
-	if (rec.kind !== "mail" || rec.compose) return GONE();
+	const mail = mailOriginalOf(rec);
+	return mail ? json(mail) : GONE();
+}
+
+// The mail a mail reply draft answers (the sheet's 原文 and the 빠른 처리 list, hub/approval-wire.ts); undefined for a new mail or a mail that fell out of the record.
+export function mailOriginalOf(rec: DraftRec) {
+	if (rec.kind !== "mail" || rec.compose) return undefined;
 	const mail = mailByKey(rec.ref);
-	if (!mail && !rec.item.text.trim()) return GONE();
-	return json({ kind: "mail", key: rec.ref, from: mail?.from ?? rec.item.from, ...(mail?.to ? { to: mail.to } : {}), ...(mail?.cc ? { cc: mail.cc } : {}), date: mail?.at ?? rec.created, ...(mail?.subject || rec.item.subject ? { subject: mail?.subject ?? rec.item.subject } : {}), text: rec.item.text, html: !!mail?.html, attachments: mail ? attachmentList(mail) : [] });
+	if (!mail && !rec.item.text.trim()) return undefined;
+	return { kind: "mail" as const, key: rec.ref, from: mail?.from ?? rec.item.from, ...(mail?.to ? { to: mail.to } : {}), ...(mail?.cc ? { cc: mail.cc } : {}), date: mail?.at ?? rec.created, ...(mail?.subject || rec.item.subject ? { subject: mail?.subject ?? rec.item.subject } : {}), text: rec.item.text, html: !!mail?.html, attachments: mail ? attachmentList(mail) : [] };
 }
 
 export async function draftAttachRoute(req: Request, url: URL, ref: string, tail: string): Promise<Response> {

@@ -7,7 +7,7 @@
 //   - the sends the gateway runs itself (hub/approval-send.ts): recorded only, no model turn, then queued in the order of the list;
 //   - the rest (고치기, and 보내기 on a card the gateway cannot send): one message to the bot, so it revises or sends them in one turn.
 import { parseDecisions } from "./choices.ts";
-import { DRAFT_DROP, DRAFT_EDIT, DRAFT_SEND, parseDraftApproval, type DraftApproval } from "./draft-approval.ts";
+import { DRAFT_AS_IS, DRAFT_DROP, DRAFT_EDIT, DRAFT_SEND, parseDraftApproval, type DraftApproval } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { SendJob } from "./approval-send.ts";
 
@@ -51,17 +51,20 @@ export async function answerBatch(conv: string, items: BatchItem[], deps: BatchD
 		const card = cards.find(c => c.ref === it.ref);
 		if (!card) return { status: 409, body: { error: "이미 처리됐거나 없는 카드가 있어요. 목록을 다시 열어 주세요", ref: it.ref } };
 		if (chosen.some(c => c.card.ref === it.ref)) return { status: 400, body: { error: "같은 카드가 두 번 있어요" } };
-		if (it.label !== undefined && it.label !== (it.n === 1 ? DRAFT_SEND : it.n === 2 ? DRAFT_EDIT : it.n === 3 ? DRAFT_DROP : it.label)) return { status: 409, body: { error: STALE_OPTIONS, ref: it.ref } };
+		if (it.label !== undefined && it.label !== (it.n === 1 ? DRAFT_SEND : it.n === 2 ? DRAFT_EDIT : it.n === 3 ? DRAFT_DROP : it.n === 4 ? DRAFT_AS_IS : it.label)) return { status: 409, body: { error: STALE_OPTIONS, ref: it.ref } };
 		const note = String(it.note ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_NOTE);
 		if (it.n === 1) chosen.push({ card, pick: { q: card.question, n: 1, label: DRAFT_SEND } });
 		else if (it.n === 2) {
 			if (!note) return { status: 400, body: { error: "고칠 카드마다 무엇을 고칠지 적어 주세요", ref: it.ref } };
 			chosen.push({ card, pick: { q: card.question, n: 2, label: DRAFT_EDIT, note } });
 		} else if (it.n === 3) chosen.push({ card, pick: { q: card.question, n: 3, label: DRAFT_DROP } });
+		// 이대로 보내기 (the card's 4th option) exists only while the card has an 첨부 확인 line: without one the card has no such option.
+		else if (it.n === 4 && ((card.draft?.attachIssues ?? []).length || (card.draft?.mail?.attachIssues ?? []).length)) chosen.push({ card, pick: { q: card.question, n: 4, label: DRAFT_AS_IS } });
+		else if (it.n === 4) return { status: 409, body: { error: STALE_OPTIONS, ref: it.ref } };
 		else return { status: 400, body: { error: "unknown option" } };
 	}
 	if (!chosen.length) return { status: 400, body: { error: "고른 카드가 없어요" } };
-	const gw = chosen.filter(c => (c.pick.n === 1 && deps.canSend(c.card.ref)) || (c.pick.n === 3 && deps.canDrop?.(c.card.ref)));
+	const gw = chosen.filter(c => ((c.pick.n === 1 || c.pick.n === 4) && deps.canSend(c.card.ref)) || (c.pick.n === 3 && deps.canDrop?.(c.card.ref)));
 	const bot = chosen.filter(c => !gw.includes(c));
 	const open = chosen.find(c => c.card.notice);
 	const line = (c: (typeof chosen)[number]) => `${c.card.question}: ${c.pick.n}) ${c.pick.label}${c.pick.note ? ` - ${c.pick.note}` : ""}`;
@@ -76,7 +79,7 @@ export async function answerBatch(conv: string, items: BatchItem[], deps: BatchD
 	for (const c of new Set([gwOpen, open])) if (c) deps.settle(c.card.notice!, `${c.pick.n}) ${c.pick.label}`);
 	for (const c of gw) {
 		if (c.pick.n === 3) await deps.dropDraft?.(c.card.ref);
-		else deps.enqueue({ ref: c.card.ref, conv, action: "send", title: c.card.question });
+		else deps.enqueue({ ref: c.card.ref, conv, action: c.pick.n === 4 ? "send-as-is" : "send", title: c.card.question });
 	}
 	return { status: 200, body: { ok: true, sending: gw.length, toBot: bot.length } };
 }

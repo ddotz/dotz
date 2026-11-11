@@ -79,3 +79,18 @@ test("held cards leave the queue once the answer is recorded, before the open ca
 	await answerBatch("main", [{ ref: "D1", n: 1 }, { ref: "D2", n: 1 }], deps);
 	expect(steps).toEqual(["record", "take:D2", "settle:n1"]);
 });
+
+test("이대로 보내기 (n 4) on a card with an 첨부 확인 line is recorded with its own label and sent as-is; on a card without one the answer is refused as stale", async () => {
+	const held = { ref: "R5", question: "이 메일 답장을 보낼까요? (R5)", text: "", draft: { attachIssues: ["첨부파일이 없어요"] } } as unknown as BatchCard;
+	const { log, deps } = setup(() => true);
+	const jobs: string[] = [];
+	deps.cards = () => [held, cards[0]!];
+	deps.enqueue = j => void jobs.push(`${j.ref}:${j.action}`);
+	const refused = await answerBatch("main", [{ ref: "D1", n: 4, label: "이대로 보내기" }], deps);
+	expect(refused.status).toBe(409);
+	expect(log.recorded).toEqual([]);
+	const r = await answerBatch("main", [{ ref: "R5", n: 4, label: "이대로 보내기" }], deps);
+	expect(r.body).toMatchObject({ ok: true, sending: 1, toBot: 0 });
+	expect(log.recorded[0]!.picks.map(p => [p.n, p.label])).toEqual([[4, "이대로 보내기"]]);
+	expect(jobs).toEqual(["R5:send-as-is"]);
+});
