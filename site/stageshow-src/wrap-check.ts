@@ -1,15 +1,19 @@
 // Line-break check for the README video, run in the page before recording. Every text box of the four scenes
 // (captions on the left, the chat on the phone) is laid out at start, closed ones included, so each one's lines
 // can be read from character boxes. A box fails when its last line is shorter than LAST_LINE_MIN of its longest
-// line: one word ("week", "reply?") left on a line of its own.
+// line: one word ("week", "reply?") left on a line of its own. It also fails when a line after the first starts with a
+// separator dot or punctuation that belongs to the end of the line before ("· 1 reply waiting", "、", "。", "」").
 
 export const LAST_LINE_MIN = 0.4
 
+export const BAD_LINE_START = /^[·・,.;:!?)\]}、。，．；：！？）」』】〉》]/u
+
 export const TEXT_BOXES = ['.vd-tag', '.vd-cap__t', '.vd-cap__s', '.vd .hz-text', '.vd .hz-q__body', '.vd .hz-dock__t', '.vd .hz-bub', '.vd-task__hd b', '.vd .cz-nt__b > *']
 
-export type BoxLines = { box: string; lines: string[]; widths: number[]; ratio: number }
+export type BoxLines = { box: string; lines: string[]; widths: number[]; ratio: number; badStart: boolean }
 
-export function measureLines(selectors: string[]): BoxLines[] {
+export function measureLines(selectors: string[], badStart: string): BoxLines[] {
+  const bad = new RegExp(badStart, 'u')
   const out: BoxLines[] = []
   for (const sel of selectors) {
     document.querySelectorAll(sel).forEach((el, n) => {
@@ -36,7 +40,7 @@ export function measureLines(selectors: string[]): BoxLines[] {
       if (!lines.length) return
       lines.sort((a, b) => a.top - b.top)
       const widths = lines.map((l) => Math.round(l.right - l.left))
-      out.push({ box: `${sel}#${n}`, lines: lines.map((l) => l.text.trim()), widths, ratio: widths.length > 1 ? widths[widths.length - 1] / Math.max(...widths) : 1 })
+      out.push({ box: `${sel}#${n}`, lines: lines.map((l) => l.text.trim()), widths, ratio: widths.length > 1 ? widths[widths.length - 1] / Math.max(...widths) : 1, badStart: lines.slice(1).some((l) => bad.test(l.text.replace(/^[\s\u200b-\u200d\u2060\ufeff]+/u, ''))) })
     })
   }
   return out

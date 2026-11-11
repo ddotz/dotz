@@ -19,7 +19,7 @@ import { join, resolve } from 'node:path'
 import { installVirtualClock } from './kit/clock'
 import { inlineCss } from './inline-css'
 import { BAD_DIFF, verifyVideo } from './verify-video'
-import { LAST_LINE_MIN, TEXT_BOXES, measureLines, type BoxLines } from './wrap-check'
+import { BAD_LINE_START, LAST_LINE_MIN, TEXT_BOXES, measureLines, type BoxLines } from './wrap-check'
 
 const FPS = 25
 const STAGE = { width: 960, height: 700 }
@@ -107,10 +107,12 @@ async function record(lang: string) {
       throw new Error(`the stage is ${rect.width}x${rect.height} at ${rect.x},${rect.y}, not the page: ${JSON.stringify(rect)}`)
     }
 
-    const boxes = JSON.parse(await view.evaluate(`JSON.stringify((${measureLines.toString()})(${JSON.stringify(TEXT_BOXES)}))`)) as BoxLines[]
+    const boxes = JSON.parse(await view.evaluate(`JSON.stringify((${measureLines.toString()})(${JSON.stringify(TEXT_BOXES)}, ${JSON.stringify(BAD_LINE_START.source)}))`)) as BoxLines[]
     const short = boxes.filter((b) => b.ratio < LAST_LINE_MIN)
+    const badStart = boxes.filter((b) => b.badStart)
     if (checkOnly) for (const b of boxes) console.log(`${lang.padEnd(6)} ${b.ratio.toFixed(2)} ${b.box.padEnd(22)} ${b.lines.join(' | ')}`)
     else console.log(`${lang.padEnd(6)} line breaks: ${boxes.length} text boxes, shortest last line ${Math.min(...boxes.map((b) => b.ratio)).toFixed(2)} of its longest (needs ${LAST_LINE_MIN})`)
+    if (badStart.length) throw new Error(`${lang}: a line starts with a separator or punctuation: ${badStart.map((b) => `${b.box} "${b.lines.join(' | ')}"`).join('; ')}`)
     if (short.length) throw new Error(`${lang}: a last line shorter than ${LAST_LINE_MIN} of the longest: ${short.map((b) => `${b.box} "${b.lines.join(' | ')}" ${b.ratio.toFixed(2)}`).join('; ')}`)
     if (checkOnly) return
 

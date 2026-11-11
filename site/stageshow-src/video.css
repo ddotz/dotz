@@ -96,5 +96,8 @@ html:is(:lang(en), :lang(es)) .vd-ln { display: inline-block; }
 html:is(:lang(en), :lang(es)) :is(.vd-tag, .vd-cap__t, .vd-cap__s, .hz-text, .hz-q__body, .hz-dock__t, .hz-bub, .vd-task__hd b) { text-wrap: balance; }
 .vd .cz-nt__b > * { text-wrap: balance; }
 html:is(:lang(ja), :lang(zh-CN)) .vd .cz-nt__b > * { word-break: normal; }
+/* keepSep (video.tsx): the dot and the character before it */
+.vd-nb { white-space: nowrap; }
+html:is(:lang(ja), :lang(zh-CN)) .vd-seg { white-space: nowrap; }
 /* The question goes under the tag when the two do not fit on one line */
 .vd .hz-dock__q { flex-wrap: wrap; row-gap: 6px; }

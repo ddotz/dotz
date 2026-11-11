@@ -126,13 +126,33 @@ function Lines({ children, className }: { children: string[]; className?: string
   )
 }
 
+// A separator dot stays at the end of the line before it: the character in front of it and the dot are one unbreakable
+// piece (a no-break space alone still lets a line break after a Chinese character). Each piece between dots is a
+// vd-seg, which Japanese and Chinese keep whole (video.css), so their lines break after a dot, not inside a word.
+function keepSep(s: string): ReactNode {
+  const parts = s.split(/\s+·\s*/)
+  if (parts.length === 1) return s
+  return parts.map((p, i) =>
+    i === parts.length - 1 ? (
+      <span key={i} className="vd-seg">{p}</span>
+    ) : (
+      <Fragment key={i}>
+        <span className="vd-seg">
+          {p.slice(0, -1)}
+          <span className="vd-nb">{p.slice(-1)} ·</span>
+        </span>{' '}
+      </Fragment>
+    ),
+  )
+}
+
 function Row({ title, note, time, unread, last, children }: { title: string; note?: string; time: string; unread?: boolean; last?: boolean; children?: ReactNode }) {
   return (
     <div className="cz-nt" data-unread={unread || undefined} data-last={last || undefined}>
       <span className="cz-nt__dot" />
       <span className="cz-nt__b">
-        <b>{title}</b>
-        {note && <span>{note}</span>}
+        <b>{keepSep(title)}</b>
+        {note && <span>{keepSep(note)}</span>}
         {children}
       </span>
       <span className="cz-nt__time">{time}</span>
