@@ -38,8 +38,11 @@ afterAll(() => hub.stop());
 
 const WANT = [["기획팀 · 손익 검토", "답을 기다림"], ["기획팀 · 분기 안건 검토", "진행 중"], ["회의록 정리", "진행 중"]];
 const homeRows = `(() => { renderHomeNow(); return [...document.querySelectorAll('#v-home .hn[data-k="running"] .srow')].map(r => [r.querySelector(".nm").textContent, r.getAttribute("aria-label").split(" · ")[2]]); })()`;
-// Under the 진행 중 header a running row says its state with the blue dot alone (the word is its aria-label); a waiting row keeps its 답을 기다림 tag.
-const chatRows = `(() => { const sec = [...document.querySelectorAll("#chat-convo .cv-sec")].find(n => n.textContent === "진행 중"); const above = sec && sec.previousElementSibling; return above === document.querySelector("#chat-convo > *") && [...above.querySelectorAll(".cv-row")].map(r => r.dataset.t).join() === "main,worklog" ? [...sec.nextElementSibling.querySelectorAll(".cv-row")].map(r => { const tag = r.querySelector(".cv-m2 .tag"), dot = r.querySelector(".cv-m2 .dot.pri"); return [r.querySelector(".cv-n").textContent, tag ? tag.textContent : dot.getAttribute("aria-label")]; }) : null; })()`;
+// Under the 진행 중 header a running row ends in nothing (the header says it runs; the blue mark in a list means unread only); a waiting row keeps its 답을 기다림 tag.
+const CHAT_WANT = [WANT[0], [WANT[1][0], ""], [WANT[2][0], ""]];
+const chatRows = `(() => { const sec = [...document.querySelectorAll("#chat-convo .cv-sec")].find(n => n.textContent === "진행 중"); const above = sec && sec.previousElementSibling; return above === document.querySelector("#chat-convo > *") && [...above.querySelectorAll(".cv-row")].map(r => r.dataset.t).join() === "main,worklog" ? [...sec.nextElementSibling.querySelectorAll(".cv-row")].map(r => { const tag = r.querySelector(".cv-m2 .tag"); return [r.querySelector(".cv-n").textContent, tag ? tag.textContent : ""]; }) : null; })()`;
+// What a session row of 진행 중 carries at its right end, by its target.
+const endOf = (t: string) => `[...document.querySelector('#chat-convo .cv-row[data-t="${t}"] .cv-m2').children].map(c => c.className + ":" + c.textContent)`;
 const listed = async (expr: string, want: unknown) => { await waitFor(v, `JSON.stringify(${expr}) === ${JSON.stringify(JSON.stringify(want))}`); };
 
 test("홈 and 채팅, under 땅콩 and 작업내역, list the same sessions: waiting first, named project · title, finished and held ones left out", async () => {
@@ -50,9 +53,20 @@ test("홈 and 채팅, under 땅콩 and 작업내역, list the same sessions: wai
 	expect(await ev<number>(v, `document.querySelectorAll('#v-home .hn[data-k="waiting"] [data-t="lane:ask"]').length`)).toBe(0);
 	expect(await ev<number>(v, `document.querySelectorAll('#v-home .hn[data-k="waiting"] [data-t="lane:held"]').length`)).toBe(1);
 	await run(v, `go("chat", "list")`);
-	await listed(chatRows, WANT);
+	await listed(chatRows, CHAT_WANT);
 	await run(v, `document.querySelector('#chat-convo .cv-card .cv-row[data-t="lane:audit"]').click()`);
 	await waitFor(v, `target === "lane:audit" && current === "chat"`);
+});
+
+test("in the chat list a running session ends in no dot or word when read, in its unread count when not, and a waiting one keeps its word", async () => {
+	await run(v, `go("chat", "list")`);
+	await listed(chatRows, CHAT_WANT);
+	expect(await ev<string[]>(v, endOf("lane:audit"))).toEqual([]);
+	expect(await ev<string[]>(v, endOf("lane:ask"))).toEqual(["dot warn:", "tag warn:답을 기다림"]);
+	await run(v, `ts("lane:audit").unread = 3; convSig = ""; convSchedule()`);
+	await waitFor(v, `JSON.stringify(${endOf("lane:audit")}) === ${JSON.stringify(JSON.stringify(["nb:3"]))}`);
+	await run(v, `ts("lane:audit").unread = 0; convSig = ""; convSchedule()`);
+	await waitFor(v, `${endOf("lane:audit")}.length === 0`);
 });
 
 test("the project's 세션 section holds them all under the one status: waiting, running, what stopped short, finished last", async () => {
@@ -67,10 +81,10 @@ test("a session leaves and joins 진행 중 by itself; with nothing running the 
 	await waitFor(v, `document.querySelector("#chat-convo").scrollTop === 120`);
 	const before = await ev<number>(v, below);
 	await run(v, `S.lanes.find(l => l.name === "audit").status = "idle"; S.runs["lane:audit"] = { kind: "done" }; renderBars()`);
-	await listed(chatRows, [WANT[0], WANT[2]]);
+	await listed(chatRows, [CHAT_WANT[0], CHAT_WANT[2]]);
 	expect(Math.abs(await ev<number>(v, below) - before)).toBeLessThan(1);
 	await run(v, `S.lanes.find(l => l.name === "audit").status = "working"; S.runs["lane:audit"] = { kind: "working" }; renderBars()`);
-	await listed(chatRows, WANT);
+	await listed(chatRows, CHAT_WANT);
 	expect(Math.abs(await ev<number>(v, below) - before)).toBeLessThan(1);
 	await run(v, `document.querySelector("#chat-convo").scrollTop = 0`);
 	const resting = await ev<number>(v, mainTop);
