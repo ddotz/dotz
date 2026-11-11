@@ -4,11 +4,13 @@ import { upstreamCommitsDeny } from "./upstream-commits.ts";
 
 // Always refused, whatever RULES.md says: pattern kills reach the live gateway (a test hub shares its command line),
 // and kickstarting it cuts the orchestrator and every lane mid-turn. Test hubs are stopped by their own PID;
-// gateway restarts go through /api/gateway/restart, which waits for idle. Shared by every runtime's guard (the omp
+// gateway restarts go through /api/gateway/restart, which waits for idle (plain `dotz restart` does exactly that and stays allowed; `dotz restart --force` kills a
+// process that does not answer, an owner-at-a-terminal act that onboard/dotz-ctl.ts also refuses without a TTY). Shared by every runtime's guard (the omp
 // extension, the Claude Code deny hook); hub/features.ts lists these lines on the 구성 tab.
 export const SYSTEM_DENY: [RegExp, string][] = [
 	[/\b(pkill|killall)\b[^;&|\n]*(hub\/main|dotz)/i, "a pattern kill also hits the live dotz gateway; stop a test hub by the PID you started"],
 	[/\blaunchctl\s+(kickstart|stop|kill|bootout|unload|remove)\b[^;&|\n]*dev\.dotz\.gateway/i, "restarting the gateway cuts every session short; use /restart gateway (POST /api/gateway/restart)"],
+	[/(?:\bdotz|dotz-ctl-cli\.ts)\s+restart\b[^;&|\n]*--force\b/i, "dotz restart --force kills the gateway process and the work it runs; only the owner types it at a terminal. Plain `dotz restart` waits for running work and is allowed"],
 ];
 
 // A turn an outside mail woke (hub/intake.ts puts this token on its first line): the text came from a stranger, so the shell

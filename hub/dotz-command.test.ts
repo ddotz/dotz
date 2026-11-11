@@ -109,6 +109,24 @@ describe("launcher", () => {
 		expect((await run(["--help"], dir, pkg)).code).toBe(2);
 	});
 
+	test("status and restart go to the onboard command with their arguments, with or without a token file; the usage names both", async () => {
+		const pkg = installed();
+		mkdirSync(join(pkg, "onboard"), { recursive: true });
+		writeFileSync(join(pkg, "onboard", "dotz-ctl-cli.ts"), "");
+		expect(await run(["status"], dir, pkg)).toEqual({ code: 0, out: "onboard/dotz-ctl-cli.ts status", err: "" });
+		expect(await run(["restart", "--force"], dir, pkg)).toEqual({ code: 0, out: "onboard/dotz-ctl-cli.ts restart --force", err: "" });
+		const usage = await run(["--help"], dir, pkg);
+		expect(usage.code).toBe(2);
+		expect(usage.err).toContain("status");
+		expect(usage.err).toContain("restart");
+	});
+
+	test("an install without the onboard command is one line and exit 1, not a shell error", async () => {
+		const r = await run(["status"], dir, join(home, "missing"));
+		expect(r.code).toBe(1);
+		expect(r.err.trim().split("\n")).toHaveLength(1);
+	});
+
 	test("the caller's directory, DOTZ_PORT and proxy settings cannot send the token elsewhere", async () => {
 		const pkg = installed();
 		const bun = join(home, "fake-bun");

@@ -1,5 +1,6 @@
 // The `dotz` terminal command: opens this computer's gateway web app through 127.0.0.1, already logged in (hub/web-login-cli.ts mints the one-time link), whatever
-// web.access is. `dotz --print` only prints the link. setup and every gateway start (so an update needs no step) call installDotzCommand. No import of config.ts: setup
+// web.access is. `dotz --print` only prints the link. `dotz status` and `dotz restart` need no model and no login and also work when the gateway is down
+// (onboard/dotz-ctl.ts), so they run before the token check below. setup and every gateway start (so an update needs no step) call installDotzCommand. No import of config.ts: setup
 // runs before there is a config. Windows is reached through WSL (docs/windows.md), which is Linux here.
 import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -21,6 +22,15 @@ NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
 export NO_PROXY no_proxy
 bun=${sq(o.bun)}
 [ -x "$bun" ] || bun=bun
+case "$1" in
+status | restart)
+	cd ${sq(o.pkg)} 2>/dev/null && [ -f onboard/dotz-ctl-cli.ts ] || {
+		echo "dotz 설치를 찾지 못했어요" >&2
+		exit 1
+	}
+	exec "$bun" onboard/dotz-ctl-cli.ts "$@"
+	;;
+esac
 if [ ! -f ${sq(join(o.pkg, "hub", "web-login-cli.ts"))} ] || [ ! -f "$DOTZ_DIR/secrets/hub-token" ]; then
 	echo "게이트웨이가 실행 중이 아니에요" >&2
 	exit 1
@@ -31,7 +41,12 @@ case "$*" in
 --print) exec "$bun" hub/web-login-cli.ts ;;
 last) exec "$bun" hub/dotz-last-cli.ts ;;
 *)
-	echo "사용법: dotz [--print|last]" >&2
+	cat >&2 <<'USAGE'
+사용법: dotz [--print|last|status|restart]
+  status             게이트웨이 상태 보기 (모델·로그인 필요 없음)
+  restart [--force]  게이트웨이 재시작 (돌던 일은 끊지 않고 끝나길 기다려요)
+  종료 코드: 0 정상 · 3 실행 중이 아님 · 4 떠 있지만 응답 없음 · 5 재시작 기다리다 시간 초과 · 6 --force 거절
+USAGE
 	exit 2
 	;;
 esac
