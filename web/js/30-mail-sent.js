@@ -28,23 +28,27 @@ async function mailSentRemove(n, btn, quiet = false) {
   const k = msKey(n), id = String(n.id);
   if (btn) btn.disabled = true;
   const card = tl.querySelector(`.ms-card[data-nid="${CSS.escape(id)}"]`);
-  MS.gone.add(k);
-  if (card) motionOut(card).then(mailSentPaint); else mailSentPaint();   // the draft fades out (150ms), then the folded list redraws without it
+  let out = null;
+  // The draft folds away once the hub said yes, then the folded list redraws without it.
+  const leave = () => { MS.gone.add(k); out = card ? motionGone(card) : null; };
   try {
     if (n.pc) {
       await pqNotice(n, "notice", { op: "dismiss", id });
+      leave();
       const raw = pqNoticeOf(n);
       if (raw) raw.dismissed = true;
     } else {
       const r = await api(`/api/notices/${enc(id)}/dismiss`, "POST", {});
       if (!r || !r.ok) throw new Error("지우지 못했어요");
+      leave();
       NT.items = NT.items.filter(x => String(x.id) !== id);
       if (typeof r.unread === "number") NT.unread = r.unread;
       ntPaint();
     }
+    if (out) out.then(mailSentPaint); else mailSentPaint();
     if (!quiet) toast("초안을 지웠어요");
     return true;
-  } catch (e) { MS.gone.delete(k); if (card) card.getAnimations().forEach(a => a.cancel()); mailSentPaint(); if (!quiet) toast(e.message || "지우지 못했어요", true); return false; }
+  } catch (e) { if (btn) btn.disabled = false; mailSentPaint(); if (!quiet) toast(e.message || "지우지 못했어요", true); return false; }
 }
 // 모두 지우기 at the head of a mail's folded drafts: every one of them is hidden the same way (one dismiss each on the computer that holds it).
 async function mailSentClear(list, btn) {

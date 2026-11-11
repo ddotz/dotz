@@ -459,11 +459,11 @@ function rqPaintList(rows) {
     if (fk) { const n = [...u.ls.querySelectorAll(".rq-r")].find(e => e.dataset.rk === fk), b = n && n.querySelector(".tx"); if (b && document.activeElement !== b) b.focus({ preventScroll: true }); }
     rowHold(anchor);
   };
-  // Rows that left (answered, sent again, dropped) fade out first; a tab change or a fold redraws at once.
+  // Rows that left (answered, sent again, dropped: the hub already said yes) fold away first and the rows below glide up; a tab change or a fold redraws at once.
   const keys = new Set(shown.map(r => r.key)), gone = RQ.now || !u.ls.dataset.on ? [] : [...u.ls.querySelectorAll("[data-qr]")].filter(n => !keys.has(n.dataset.qr));
   RQ.now = false;
   const seq = ++u.seq;
-  if (gone.length) Promise.all(gone.map(n => motionOut(n))).then(() => { if (u.seq === seq) apply(); });
+  if (gone.length) Promise.all(gone.map(n => motionGone(n))).then(() => { if (u.seq === seq) apply(); });
   else apply();
 }
 function rqPaint(rows) {
