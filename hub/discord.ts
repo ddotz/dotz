@@ -45,8 +45,6 @@ channels.threads ??= {};
 // Done threads stay open (and visible in the sidebar) for ARCHIVE_DELAY_MS so the owner can still track them, then archive.
 channels.archiveAt ??= {};
 const ARCHIVE_DELAY_MS = 3600_000;
-delete (channels as any).rails;
-delete (channels as any).railCategory;
 let onGone: (id: string) => void = () => {};
 export function setChannelGoneHandler(fn: (id: string) => void): void {
 	onGone = fn;

@@ -836,7 +836,6 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			const res = serveFile(f.path, req, url.searchParams.get("download") === "1");
 			return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 		}
-		if (req.method === "GET" && url.pathname === "/api/lanes/live") return json(liveLanes());
 		if (url.pathname === "/api/target") {
 			const fail = (error: unknown) => json({ error: (error as Error).message, ...(error instanceof ForceRequired ? { requires_force: true, context_tokens: error.contextTokens } : {}) }, error instanceof ControlError ? error.status : 400);
 			try {
