@@ -4,7 +4,7 @@ What is still open after the 2026-11-11 cleanup. Items that were cleaned are in 
 `bun hub/engineering-rules.ts`; the ceilings they are held to are in hub/engineering-ceilings.json.
 
 Measured now: swallowed errors hub 192, web 78, features 27, extension 11. Non-atomic writes hub 43, features 8.
-Same-name helpers `readJson` 13, `json` 6, `git` 6, `shq` 5, `sleep` 3, `sameOrigin` 3. Import cycles 5. Hub modules
+Same-name helpers `readJson` 13, `json` 5, `git` 6, `shq` 5, `sleep` 3, `sameOrigin` 3. Import cycles 5. Hub modules
 docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock budget files 0.
 
 ## Defects (fixing them changes behaviour, so they are not refactors)
@@ -31,7 +31,6 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 
 - hub/orchestrator.ts 1060, `createOrchestrator` 972: resume state, the model chain, `readEvents` and `start` share
   one closure, so a split needs a deps object first.
-- hub/selfupdate.ts 994: the tarball install and the HTTP routes are the two cuts.
 - hub/discord.ts 948 (`connect` 152), hub/custom.ts 900 (its routes and file shapes are a public surface:
   docs/customization.md, docs/custom-plugins.md), hub/messenger-agent.ts 870, hub/providers.ts 825 (in a cycle with
   hub/api-budget.ts and hub/fallback.ts).
@@ -59,8 +58,7 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 - `shq`: six copies with the same result (hub/runtime/claude.ts, hub/runtime/senpi-bin.ts,
   hub/runtime/claude-cli-shim.ts, hub/kakao/onboard.ts, features/webmail-no-api/bin/setup.ts,
   features/comments/bin/onboard.ts); a shared one crosses the features -> hub boundary.
-- `json` 6 and `git` 6 that stay: each answers or returns differently. hub/selfupdate.ts:941 is the one `json` equal
-  to hub/routes-util.ts.
+- `json` 5 and `git` 6 that stay: each answers or returns differently.
 - Tests: `class FakeAgent` in 26 files, `waitFor` in 48 web test files, 11 other wait helpers, 11 pairs of tests with
   the same title.
 
