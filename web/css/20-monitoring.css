@@ -90,17 +90,26 @@
 /* one panel width in every 모니터링 state (list, app, mail, watch): the open mail conversation draws the same column (owner 2026-11-04) */
 /* an app's conversation stands alone, as wide as a conversation of 채팅; a monitor's (.mon-two) keeps 채팅's own two columns with the list of monitors (owner 2026-11-06) */
 @media (min-width: 1100px) {
-  #v-chat.mon-ctx:not(.mon-two) { grid-template-columns: minmax(0, 1fr); }
-  #v-chat.mon-ctx:not(.mon-two):not(.canvas-open) { width: 100%; max-width: calc(100% - var(--cv-w) - var(--sp-4)); margin-inline: auto; }
-  #v-chat.mon-ctx:not(.mon-two)::before, #v-chat.mon-ctx:not(.mon-two) > * { grid-column: 1; }
-  #v-chat.mon-ctx:not(.mon-two) > .cv-side { display: none; }
-  #v-chat.mon-ctx:not(.mon-two).canvas-open { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.25fr); }
-  #v-chat.mon-ctx:not(.mon-two).canvas-open > #canvas { grid-column: 2; }
+  #v-chat.mon-ctx:not(.mon-two):not(.app-two) { grid-template-columns: minmax(0, 1fr); }
+  #v-chat.mon-ctx:not(.mon-two):not(.app-two):not(.canvas-open) { width: 100%; max-width: calc(100% - var(--cv-w) - var(--sp-4)); margin-inline: auto; }
+  #v-chat.mon-ctx:not(.mon-two):not(.app-two)::before, #v-chat.mon-ctx:not(.mon-two):not(.app-two) > * { grid-column: 1; }
+  #v-chat.mon-ctx:not(.mon-two):not(.app-two) > .cv-side { display: none; }
+  #v-chat.mon-ctx:not(.mon-two):not(.app-two).canvas-open { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.25fr); }
+  #v-chat.mon-ctx:not(.mon-two):not(.app-two).canvas-open > #canvas { grid-column: 2; }
   /* a monitor's reports stand in the same place: 채팅's column widths on the same grid, so going between 대화 and 소식 moves nothing */
   #v-monitoring.mon-two:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { --cv-w: 340px; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); }
   #v-monitoring.mon-two:not(.cv-listing) > * { grid-column: 2; }
   #v-monitoring.mon-two:not(.cv-listing) > .cv-side { grid-column: 1; display: block; padding: 0; }
   #v-chat > .mon-chat-top { grid-row: 3; }
+  /* The app frame (owner 2026-11-11): an app's own panel at the left edge, its content beside it - the way 채팅 stands. The view takes .app-two, its panel is the child with
+     .app-side (column 1, the whole height), and every other child is the main slot (column 2), so what opens in the main slot (a list, then one mail) changes nothing else.
+     The mail app uses it on #v-monitoring (the list) and on #v-chat (the open mail, whose side column is the same panel: mxTwo in 30-mailboxes.js). */
+  #v-monitoring.app-two, #v-chat.app-two { --app-side: 256px; }
+  #v-chat.app-two { --cv-w: var(--app-side); }
+  #v-monitoring.app-two:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: none; margin: 0; column-gap: var(--sp-4); grid-template-columns: var(--app-side) minmax(0, 1fr); }
+  #v-monitoring.app-two:not(.cv-listing) > * { grid-column: 2; }
+  :is(#v-monitoring, #v-chat).app-two > .app-side { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; margin-bottom: var(--sp-4); padding: 0; border-radius: 0; background: none; overflow: hidden auto; scrollbar-width: none; }
+  body:has(:is(#v-monitoring, #v-chat).app-two:not([hidden])) { --mbox-r: var(--edge); }   /* the page runs to the right edge beside the panel: 20-mail-box.css --mbox-r */
 }
 /* over a monitor's conversation: the wait, a down banner, 지금 확인 and 소식 */
 #v-chat > .mon-chat-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-width: 0; padding: var(--sp-1) var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--line); }

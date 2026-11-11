@@ -78,12 +78,7 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .mx-tf .btn { height: var(--btn-h-sm); }
 
 @media (min-width: 1100px) {
-  /* the pane stands beside the scrolling list, the head over both; the page is wider than a plain item's 920px to leave the list its width */
-  #v-monitoring.mx-on:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: 1180px; grid-template-columns: 256px minmax(0, 1fr); column-gap: var(--sp-5); }
-  #v-monitoring.mx-on:not(.cv-listing) > * { grid-column: 2; }
-  body:has(#v-monitoring.mx-on:not(.mx-scr)) { --mbox-r: calc(max(0px, (100vw - var(--side-w) - 1180px) / 2) + var(--edge)); }   /* the page is 1180 wide beside the mailbox pane: 20-mail-box.css --mbox-r */
-  #v-monitoring.mx-on:not(.cv-listing) > .cv-head { grid-column: 1 / -1; }
-  #v-monitoring.mx-on:not(.cv-listing) > #mx-pane { grid-column: 1; grid-row: 4; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; overflow-y: auto; scrollbar-width: none; }
+  /* the pane stands beside the scrolling list at the left edge: the app frame (.app-two, 20-monitoring.css) that the open mail keeps */
   #mon-tl > .mx-tabs:not(.mr-place) { display: none; }
   #v-monitoring.mx-on #mon-tl { padding-top: 0; }
   /* 메일함 설정 and 메일함 추가 take the whole view */

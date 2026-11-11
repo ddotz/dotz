@@ -31,7 +31,8 @@ function mxRoute(tgt) {
   return key;
 }
 const mxSync = () => { MON.sig = ""; const box = $("#mon-timeline"); if (box) box.scrollTop = 0; routeReplace(monHash()); monSchedule(); };
-const mxBox = id => { MX.box = id; MX.scr = ""; mxSync(); };
+// A box picked in the panel beside an open mail (30-mailboxes.js mxTwo) goes back to that box's list; on the list it filters it in place.
+const mxBox = id => { MX.box = id; MX.scr = ""; if (current === "chat") { MON.sig = ""; MON.tlTop = 0; go("monitoring", MON.sel); } else mxSync(); };
 const mxPick = a => { MX.acct = a; MX.box = "all"; MX.scr = ""; mxSync(); };
 const mxNew = () => { if (typeof mxOpenNew === "function") mxOpenNew(); };
 const mxSet = id => { if (typeof mxOpenSet === "function") mxOpenSet(id); };
@@ -174,9 +175,16 @@ function mxAcctPop(btn) {
     ...it.accounts.map(a => ({ value: a.key, label: el("span", { class: "mx-al" }, mxMark(a), a.label), sub: a.conn ? "로그인이 풀렸어요" : a.account, tone: mxTone(a) })), { value: "+", label: "계정 추가" }],
   { value: MX.acct, sheet: matchMedia("(max-width: 639px)").matches, onPick: v => (v === "+" ? asAddSheet() : mxPick(v)) });
 }
+// The panel of the mail app beside an open mail on a wide window: the chat view that draws the mail takes the panel as its side column (the app frame, 20-monitoring.css .app-two).
+function mxTwo() {
+  if (!monCtx || !isMailT(target) || narrowChat() || $("#v-chat").classList.contains("in-pane")) return null;
+  const sel = monItems().find(i => i.key === MON.sel);
+  return sel && sel.accounts ? mxScope(sel) : null;
+}
 function mxPaint(sel) {
   const on = !!(sel && sel.accounts) && !MON.list;
   $("#v-monitoring").classList.toggle("mx-on", on);
+  $("#v-monitoring").classList.toggle("app-two", on && !MX.scr);
   $("#v-monitoring").classList.toggle("mx-scr", on && !!MX.scr);
   MX.it = on ? sel : null;
   if (on) mxPane(sel); else mxTeachClose();

@@ -839,6 +839,8 @@ function monSeen() {
 }
 // The list's place, kept while it is off screen (a hidden box forgets its scroll).
 $("#mon-side").addEventListener("scroll", ev => { MON.top = ev.currentTarget.scrollTop; }, { passive: true });
+// The open item's list place (a hidden box forgets its scroll): a mail opened over the list and closed again finds the list where it was left.
+$("#mon-timeline").addEventListener("scroll", ev => { if (current === "monitoring") { MON.tlTop = ev.currentTarget.scrollTop; MON.tlFor = MON.sel; } }, { passive: true });
 let monRaf = 0;
 const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };   // the nav badge reads the same data (09-needs-you.js)
 function renderMonitoring() {
@@ -903,6 +905,7 @@ function renderMonitoring() {
     edgeFade(box);
     if (MON.hl && Date.now() < MON.hlUntil) { const r = monRowOf(MON.hl); if (r) ntFlash(r); }
   }
+  if (monMailList(sel) && MON.tlFor === sel.key && MON.tlTop > 0 && !box.scrollTop) box.scrollTop = MON.tlTop;
   MON.olderBusy = false;
   monObserveOlder();
   mbObserve();

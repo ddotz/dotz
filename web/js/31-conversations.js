@@ -469,21 +469,23 @@ function convPaint() {
   mailSentPaint();
   mbReplyPaint();
   if (monCtx && isSettingsT(target)) MON.sel = monItemOf(target) || MON.sel;   // the monitor list may have loaded after this conversation opened
-  const items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, CV.loaded, CV.failed]);
+  const two = mxTwo(), items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, CV.loaded, CV.failed, two ? [two.esig, MX.box] : 0]);
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
-    convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
+    convSide.setAttribute("aria-label", two ? "메일함" : monCtx ? "모니터링 목록" : "채팅 목록");
     // 진행 중 grows and shrinks under 작업내역: a list read further down stays where it is when a session starts or ends, held by where 진행 중 (or, without it, 작업내역) ends.
     // Measured in fractions and rounded once at the end: offsetTop rounds each place and scrollTop truncates, which moved the list by a pixel or more.
     const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === "진행 중") || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.getBoundingClientRect().bottom + convSide.scrollTop : 0; };
     const top = convSide.scrollTop, was = end();
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
-    clear(convSide).append(...(monCtx ? monSideNodes(rows) : [...convCards(rows), cvState()].filter(Boolean)));
+    clear(convSide).append(...(two ? mxPaneNodes(two) : monCtx ? monSideNodes(rows) : [...convCards(rows), cvState()].filter(Boolean)));
     if (monCtx) monDecorateRows(convSide, items);
     convSide.scrollTop = top && Math.round(top + end() - was);
   }
-  convSide.classList.toggle("mon-side", !!monCtx);
+  convSide.classList.toggle("mon-side", !!monCtx && !two);
+  convSide.classList.toggle("app-side", !!two);   // the mail app's panel stands beside the open mail (the app frame, 20-monitoring.css)
+  $("#v-chat").classList.toggle("app-two", !!two);
   $("#v-chat").classList.toggle("mon-ctx", !!monCtx);
   const mit = items ? monChatIt(items) : null, topSig = mit ? JSON.stringify([mit.key, mit.msig, mit.unread]) : "";
   $("#v-chat").classList.toggle("mon-two", !!mit);
