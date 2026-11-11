@@ -264,6 +264,20 @@ restart; the file is re-read when it changes):
   wakes the bot once at start with the list (`texts-reported.json` in the data folder remembers what was reported). The bot compares the
   new shipped text with its override and rewrites or removes it.
 
+### Word list: `~/.dotz/custom/words.json`
+
+Words the owner does not want to read, each with the wording to use instead. Re-read when the file changes (no restart):
+
+```json
+{ "words": [ { "word": "빨간 시험", "use": "red test" }, { "word": "게이트 머리", "use": "gate HEAD 또는 최신 커밋" } ] }
+```
+
+- Matching ignores case, and a space in `word` matches any run of whitespace (or none). `use` is optional.
+- Checked: every text the bot sends with `dotz_send` (any target but `lane:<name>`, where a brief may quote a listed word to forbid it) and the reports of sessions. A text with a listed word is refused and
+  the bot gets the words and their replacements to rewrite it. A session's report goes back once; if it still has the word, it passes
+  unchanged, so no report is lost.
+- Off when the file is absent, empty or does not parse: nothing is checked.
+
 ### Carry-over of local changes
 
 If the updater had to back up local commits or uncommitted changes (branch `dotz-local/<YYYYMMDD-HHMM>`, or a patch and copy folder

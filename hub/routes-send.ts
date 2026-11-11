@@ -24,6 +24,7 @@ import { repostRefusal } from "./lanewire.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
 import { authHeld, parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body } from "./routes-util.ts";
+import { bannedHits, bannedNote } from "./word-ban.ts";
 
 // Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
 export const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
@@ -164,6 +165,9 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 	if (req.method === "POST" && url.pathname === "/api/send") {
 		const b = await body(req);
 		const target = String(b.target ?? "chat");
+		// Text for the owner only: a brief to a session (lane:<name>) may quote the listed words to forbid them.
+		const banned = target.startsWith("lane:") ? [] : bannedHits(String(b.text ?? ""));
+		if (banned.length) return json({ error: bannedNote(banned) }, 422);
 		// A conversation's own session answers only there (hub/convsessions.ts): a post of it anywhere else, an early text, a progress note or a send with no reply_to alike, is refused, so another window's answer never lands in this one.
 		const session = typeof b.session === "string" && b.session ? b.session : MAIN;
 		if (session !== MAIN && convs.keyOf(target) !== session) return json({ delivered: false, reason: `this session answers only ${primaryTarget(session)}; hand other work to main with dotz_conv send main` }, 403);
