@@ -830,6 +830,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 프로젝트 개요 (`#v-project`, 뷰 `project`, 2단계)
 - 목적: 프로젝트 하나의 이름, 설명, 진행, 확인 필요, 단계, 세션, 작업, 결과, 감시를 한 화면에 요약해요.
 - 구성: 위에서 아래로 `pmHead`(`.pmv-head`: 이름 `.pmv-title`, 상태 태그, 마지막 활동 `.pmv-upd`, 설명 `.pmv-purpose`, 버튼줄 `프로젝트 채팅` + ⋯ `.pmv-more`, 진행 막대 `.pmv-hprog`)와 `.pm-o`. `.pm-o` 안은 `pmPrimary`(`.pm-need` 카드, 있을 때만), 이어서 `.pm-block` 5개: `단계 n/m`, `세션 n`, `작업 n`, `결과 n`, `감시 n`. 각 블록은 머리글 `.sec.pm-sec`(오른쪽 버튼) + `.pm-sec-list` 행들.
+- 폰(639px 이하): 앱바가 이미 프로젝트 이름을 보여 주므로 머리 카드는 이름 줄(`.pmv-title`)을 그리지 않아요(상태 태그·마지막 대화 줄은 남아요). 이름 고치기는 ⋯ 메뉴의 `프로젝트 수정`이 같은 자리에 입력칸을 열어요. 작업 채널이 없어 ⋯ 메뉴가 없는 머리는 이름을 그대로 둬요(`hub/project-head-phone-web.test.ts`).
 - 기능:
   - 이름과 설명 인라인 편집: `pmEditable`(눌러서 입력칸, `저장`/`취소`, Enter 저장, Esc 취소, 여러 줄은 Cmd/Ctrl+Enter). 이름은 필수. `PUT /api/projects {key: recordKey||key, title|purpose}`.
   - 단계 줄 `pmStepRow`: 눌러서 완료 토글(role=checkbox, 낙관적 표시 후 `PUT milestones`, 실패하면 되돌리고 토스트).
