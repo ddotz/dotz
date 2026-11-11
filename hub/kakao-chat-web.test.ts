@@ -1001,10 +1001,13 @@ describe("카카오톡 link previews", async () => {
 	});
 });
 
+// Each test has its own view: a test that times out leaves its waitFor running in its page, and a shared view would hand that to the next test.
+// Both are opened here, so starting a view is not on a test's clock.
 describe("카카오톡 reply quotes", async () => {
-	const v = await open(1280, 800);
+	const views = [await open(1280, 800), await open(1280, 800)];
 
 	test("the quote names the original's author; a tap jumps to the original (loading the page around it when not shown); a source the room lacks says so", async () => {
+		const v = views[0]!;
 		useMedia();
 		msgs = [
 			...OLD,
@@ -1023,7 +1026,7 @@ describe("카카오톡 reply quotes", async () => {
 		expect(quote.w).toBeGreaterThanOrEqual(150);
 		await run(v, `document.querySelector('[data-log="7100"] .kk-quote').click()`);
 		await expectReq(r => r.method === "GET" && r.path.includes("around=2003"));
-		await waitFor(v, `document.querySelector('[data-log="2003"]')?.classList.contains("kk-hl")`);
+		await waitFor(v, `document.querySelector('[data-log="2003"]')?.dataset.hl === "원래 메시지"`);   // kkFlash's label stays; the kk-hl class itself is gone after 3.2 s, which a starved frame loop can miss
 		const pos = await q<{ top: number; h: number }>(v, `const t = document.querySelector("#kk-tl").getBoundingClientRect(), m = document.querySelector('[data-log="2003"]').getBoundingClientRect(); return { top: m.top - t.top, h: t.height }`);
 		expect(pos.top).toBeGreaterThanOrEqual(0);
 		expect(pos.top).toBeLessThan(pos.h);
@@ -1035,6 +1038,7 @@ describe("카카오톡 reply quotes", async () => {
 	});
 
 	test("a jump to a far older page marks the messages between as a gap (never drawn adjacent) and the gap fills page by page", async () => {
+		const v = views[1]!;
 		useMedia();
 		msgs = [
 			...Array.from({ length: 200 }, (_, i) => mk(String(9001 + i), "가나", `긴 대화 ${i}`, at(22, 1, 0, i))),
@@ -1044,7 +1048,7 @@ describe("카카오톡 reply quotes", async () => {
 		await boot(v);
 		await openRoom(v);
 		await run(v, `document.querySelector('[data-log="9300"] .kk-quote').click()`);
-		await waitFor(v, `document.querySelector('[data-log="9010"]')?.classList.contains("kk-hl")`);
+		await waitFor(v, `document.querySelector('[data-log="9010"]')?.dataset.hl === "원래 메시지"`);
 		// The around page ends at 9060 and the view starts at 9152: one gap, right after 9060, before 9152.
 		const gap = () => q<string[]>(v, `return [...document.querySelectorAll(".kk-gap")].map(g => g.previousElementSibling?.dataset.log + ">" + (() => { let n = g.nextElementSibling; while (n && !n.dataset.log) n = n.nextElementSibling; return n?.dataset.log; })())`);
 		expect(await gap()).toEqual(["9060>9152"]);

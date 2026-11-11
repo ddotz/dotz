@@ -254,6 +254,7 @@ describe("review queue", async () => {
 
 	test("a press waits for the answer: buttons stay in place disabled, one request on a double press, the next card only after it", async () => {
 		await boot(v);
+		await waitFor(v, `document.querySelector(".fs-bd").getAnimations({ subtree: true }).every(a => a.playState !== "running")`);   // the phone sheet slides up for 220 ms: a button read mid-slide sits lower than it does at rest
 		let release = () => {};
 		hold = new Promise<void>(res => { release = res; });
 		const before = await q<number[]>(v, `return [...document.querySelectorAll(".tr-acts .tr-b")].map(b => Math.round(b.getBoundingClientRect().top))`);

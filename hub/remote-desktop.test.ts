@@ -218,10 +218,19 @@ describe("voxl spawn", () => {
 		const pw = first.env.VOXL_PASSWORD!;
 		expect(pw).toMatch(/^[0-9a-f]{64}$/);
 		expect(first.argv.join(" ")).not.toContain(pw);
+	});
+
+	// A second real voxl start doubled the test's wait on a loaded machine (a process boot plus the gateway's own /healthz poll each); the password is
+	// made before the spawn, so a child that exits at once shows every start's env without waiting for a server.
+	test("every start gets its own random password", async () => {
+		const envs: Record<string, string>[] = [];
+		const m = make({ spawn: (_argv, e) => (envs.push(e), Bun.spawn(["true"], { stdin: "ignore", stdout: "ignore", stderr: "pipe" })) });
+		await m.d.host.ensure();
 		await m.d.stop();
 		await m.d.host.ensure();
-		expect(m.spawned[1]!.env.VOXL_PASSWORD).toMatch(/^[0-9a-f]{64}$/);
-		expect(m.spawned[1]!.env.VOXL_PASSWORD).not.toBe(pw);
+		expect(envs).toHaveLength(2);
+		for (const e of envs) expect(e.VOXL_PASSWORD).toMatch(/^[0-9a-f]{64}$/);
+		expect(envs[1]!.VOXL_PASSWORD).not.toBe(envs[0]!.VOXL_PASSWORD);
 	});
 
 	test("a stored control:false from an older install is ignored", async () => {
