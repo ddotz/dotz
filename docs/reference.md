@@ -723,7 +723,6 @@ short "received, answering when the current step ends" notice from the gateway.
   default `omo`, an unknown name is logged and falls back to OmO). The orchestrator and sessions hold the policy and only
   see events. `verify.ts` detects the installed harnesses and runs the compatibility check before a switch (see API additions). `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
   adapter existed (`hub/runtime/fixtures`).
-- Audit against earlier setups: `docs/audit-2026-10-16.md`.
 - `VERSION` the version of this commit (`YYMMDD.N`, `docs/releases.md`); installs see only the tag `v<version>`.
 - `extension/index.ts` dotz extension (loaded by OmO and omp processes): orchestrator tools, terminal thin client (omp), the subagent guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
 - `web/index.html` web app shell; its script and styles are modules in `web/js/*.js` and `web/css/*.css` (one topic per file, served joined in file-name order as `/app.js` and `/app.css` by `hub/webapp.ts`). Screen text lives in `web/i18n/<lang>/<area>.json` and is read with `TX("key")` (`web/js/00-i18n.js`, `hub/web-i18n.ts`; generated lists `hub/web-i18n-gen.ts`, the check `hub/web-i18n-check.ts`). `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.

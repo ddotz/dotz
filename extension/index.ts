@@ -10,7 +10,7 @@
 //   later requests (compact-kept.ts).
 // - orchestrator, lanes and their workers also get the deferred dotz_recall tool (recall-tool.ts), a search of the owner's past conversations.
 // - every session above also gets the worker guard (guard.ts) and the /doctor, /handover, /token-audit commands (harness-tools.ts);
-//   config key `guard`, see README. Each skips itself when the owner's original ~/.omp extension of that name is installed.
+//   config key `guard`, see docs/reference.md. Each skips itself when the owner's original ~/.omp extension of that name is installed.
 
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
