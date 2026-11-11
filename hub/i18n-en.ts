@@ -373,6 +373,14 @@ Do this, briefly:
 	promptRemoveResult: "The line goes; the code keeps enforcing the rule.",
 	promptCapOver: (file: string) => `${file} is over its size limit, so the end of it may be cut or left out.`,
 	promptCapEvidence: (size: number, cap: number, unit: string) => `${size} ${unit} > limit ${cap} ${unit}`,
+	// The weekly model review of the re-read text (hub/prompt-review.ts).
+	promptReviewWhat: { conflict: "Two lines in the re-read text contradict each other.", outdated: "A line in the re-read text looks outdated.", "contradicts-code": "A line in the re-read text says something the code does differently." } as Record<string, string>,
+	promptReviewEvidence: (line: string, why: string, input: number, output: number) => `"${line}" - ${why} (this review used ${input} input and ${output} output tokens)`,
+	promptReviewAsk: "Apply the proposed change to the text or leave it?",
+	promptReviewApply: "Apply",
+	promptReviewApplyResult: (proposal: string) => `The text is changed as proposed: ${proposal}`,
+	promptReviewLeave: "Leave",
+	promptReviewLeaveResult: "The text stays as it is.",
 	// Appended to `reflect` with tonight's one recipe candidate, and the card and answers around it (hub/recipes.ts).
 	recipeCandidate: (id: string, titles: string[], briefs: string[], script: string) => `\n\nOne recipe candidate (sessions that passed the gateway's check): ${titles.join(" / ")}. Briefs: ${briefs.join(", ")}. Propose it only if the same work will come again and steps can shorten it. Write the body (the steps, the commands they need) to a temp file, a script too if it helps, run \`${script} propose ${id} --slug <lowercase-ascii> --name "<short name>" --when "<when to use it, one line>" --body-file <file> [--script-file <file>]\` once and send its whole output to alert unchanged (this overrides step 5's no-alert line). Otherwise do nothing. The gateway saves on the owner's answer: do not write to custom/recipes, run it or create a watch. No secret values or other people's personal data.`,
 	recipeCard: (d: { name: string; when: string; script?: { file: string } }, preview: string, titles: string[]) => [`Keep work that went well as a recipe: ${d.name}`, `Use when: ${d.when}`, `From: ${titles.join(" / ")}`, preview, ...(d.script ? [`Script: ${d.script.file}`] : [])].join("\n"),

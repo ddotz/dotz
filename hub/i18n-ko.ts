@@ -365,6 +365,13 @@ export const ko: Catalog = {
 	promptRemoveResult: "줄이 빠지고, 규칙은 코드가 계속 지켜요.",
 	promptCapOver: file => `${file} 크기가 한도를 넘었어요. 끝부분이 잘리거나 빠질 수 있어요.`,
 	promptCapEvidence: (size, cap, unit) => `${size}${unit} > 한도 ${cap}${unit}`,
+	promptReviewWhat: { conflict: "다시 읽는 글의 두 줄이 서로 맞지 않아요.", outdated: "다시 읽는 글의 한 줄이 낡은 것 같아요.", "contradicts-code": "다시 읽는 글의 한 줄이 코드가 하는 일과 달라요." },
+	promptReviewEvidence: (line, why, input, output) => `"${line}" - ${why} (이번 검토에 입력 ${input}, 출력 ${output} 토큰을 썼어요)`,
+	promptReviewAsk: "제안한 대로 글을 고칠까요, 그대로 둘까요?",
+	promptReviewApply: "고쳐요",
+	promptReviewApplyResult: proposal => `제안한 대로 글을 고쳐요: ${proposal}`,
+	promptReviewLeave: "그대로 둬요",
+	promptReviewLeaveResult: "글은 지금 그대로 남아요.",
 	repeatAlertOptions: [{ name: "구조 수정 열기", result: "되풀이를 막는 가드·검사·테스트를 만들어요. 이 답을 받은 뒤에만 시작해요." }, { name: "이번 주는 두기", result: "7일 동안 이 주제로 카드를 올리지 않아요." }],
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 

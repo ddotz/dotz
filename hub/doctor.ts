@@ -13,11 +13,13 @@ import { THRESHOLDS as T } from "./doctor-limits.ts";
 import type { DoctorCheck, Finding } from "./doctor-types.ts";
 import { msg } from "./i18n.ts";
 import { promptHealth } from "./prompt-health.ts";
+import { promptReviewCheck } from "./prompt-review.ts";
 import { trackTimer } from "./shutdown.ts";
 
 const DAY = 86400e3;
 const FRESH_MS = 20 * 3600e3;
-const CHECKS: DoctorCheck[] = [...HEALTH, promptHealth];
+// Prompt health first: the review reads the growth it just measured to decide whether to run early.
+const CHECKS: DoctorCheck[] = [...HEALTH, promptHealth, promptReviewCheck];
 
 export type Told = { at: number; level: number };
 export type DoctorStore = { version: 1; lastRun: number; memo: Record<string, unknown>; findings: Record<string, Finding>; told: Record<string, Told> };
