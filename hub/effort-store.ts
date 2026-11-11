@@ -29,11 +29,12 @@ export const storeFile = (dir: string): string => join(dir, "model-efforts.json"
 export const emptyState = (): EffortState => ({ attempts: [], entries: {} });
 
 const ID = /^[a-z0-9][a-z0-9._-]{0,80}$/;
+export const validId = (id: string): boolean => ID.test(id);
 const MAX_IDS = 2000;
 const ids = (v: unknown): string[] | undefined => (Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === "string" && ID.test(x)))].slice(0, MAX_IDS) : undefined);
 const time = (v: unknown): string | undefined => (typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v)) ? v : undefined);
 const effortOf = (v: unknown): Effort | undefined => EFFORT_ORDER.find(e => e === v);
-const httpsUrl = (v: unknown): string | undefined => {
+export const httpsUrl = (v: unknown): string | undefined => {
 	if (typeof v !== "string" || v.length > 300) return undefined;
 	try {
 		return new URL(v).protocol === "https:" ? v : undefined;
