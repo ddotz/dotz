@@ -1,5 +1,5 @@
 // Generated from hub/message-spec.ts and hub/message-spec-derive.ts by hub/gen-message-spec-web.ts; do not edit.
-const { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec } = (() => {
+const { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec, CHART_NOTE } = (() => {
 const SPEC_LIMITS = { bytes: 64 * 1024, elements: 200, depth: 2, string: 20000, rows: 200, cells: 12 };
 const str = (v) => typeof v === "string" && v.length <= SPEC_LIMITS.string;
 const nonEmpty = (v) => str(v) && !!v.trim();
@@ -556,5 +556,5 @@ function resolveSpecFence(text) {
     return text;
   }
 }
-return { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec };
+return { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec, CHART_NOTE };
 })();

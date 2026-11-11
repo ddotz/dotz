@@ -1,7 +1,7 @@
 /* ---------- command palette: jump to a view or run a /command ---------- */
 // A command's answer (the card /api/command returns) in the app's own components: a status line, the facts as list rows,
 // a note, and buttons that run the next command in the palette. Never a text dump.
-const PAL_TONE = { ok: "완료", busy: "진행 중", warn: "주의", err: "실패" };
+const PAL_TONE = { ok: TX("base.mark.done"), busy: TX("base.mark.run"), warn: TX("base.pal.warn"), err: TX("base.mark.fail") };
 const PAL_LINE = /^(\/\S+)\s{2,}(.+)$/;
 function palFact(f) {
   const lines = String(f.value ?? "").split("\n").filter(l => l !== "");
@@ -19,18 +19,18 @@ function palResult(c, run) {
     acts.length ? el("div", { class: "btns cc-act" }, ...acts.map(a => el("button", { type: "button", class: "btn tonal sm", title: a.send, text: a.label, onclick: () => run(a.send) }))) : null);
 }
 // Words a 도구 row is also found by: the names a screen used to have and the commands it replaced in this list.
-const PAL_WORDS = { accounts: "공급자 provider 로그인", usage: "한도 quota" };
+const PAL_WORDS = { accounts: TX("base.pal.words.accounts"), usage: TX("base.pal.words.usage") };
 // A command row: one that cannot run without its first argument opens that argument's choices instead of failing.
 // A row that opens a second step says what is picked there (the argument's name, as on the chips of the composer's list) where other rows say what the command does.
-const palCmd = x => { const fill = !!(x.args && x.args[0] && !x.args[0].opt); return { kind: "cmd", ic: "chev", label: x.c, desc: fill ? `${x.args[0].n} 고르기` : x.d, run: x.c, fill }; };
+const palCmd = x => { const fill = !!(x.args && x.args[0] && !x.args[0].opt); return { kind: "cmd", ic: "chev", label: x.c, desc: fill ? TX("base.pal.pick", { name: x.args[0].n }) : x.d, run: x.c, fill }; };
 function openPalette() {
   if (document.querySelector("dialog.pal")) return;
   closeMenu(false);
-  const inp = el("input", { class: "pal-in", type: "text", placeholder: "도구 또는 명령", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "명령" });
+  const inp = el("input", { class: "pal-in", type: "text", placeholder: TX("base.pal.placeholder"), autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": TX("base.command") });
   const list = el("div", { class: "pal-list", role: "listbox" });
   const out = el("div", { class: "pal-out", hidden: true });
-  const d = el("dialog", { class: "pal", "aria-label": "명령" }, el("div", { class: "pal-head" }, inp), list, out,
-    el("div", { class: "pal-ft", "aria-hidden": "true" }, el("span", { text: "↑↓ 이동" }), el("span", { text: "↵ 열기" }), el("span", { text: "esc 닫기" })));
+  const d = el("dialog", { class: "pal", "aria-label": TX("base.command") }, el("div", { class: "pal-head" }, inp), list, out,
+    el("div", { class: "pal-ft", "aria-hidden": "true" }, el("span", { text: TX("base.pal.hint.move") }), el("span", { text: TX("base.pal.hint.open") }), el("span", { text: TX("base.pal.hint.close") })));
   let items = [], idx = 0;
   const mark = () => {
     [...list.querySelectorAll(".pal-i")].forEach((n, i) => { n.classList.toggle("on", i === idx); n.setAttribute("aria-selected", i === idx ? "true" : "false"); if (i === idx) n.scrollIntoView({ block: "nearest" }); });
@@ -41,12 +41,12 @@ function openPalette() {
     if (sh) { d.close(); openShell(sh[1] && sh[1].trim() ? { command: sh[1].trim() } : undefined); return; }
     if (SCR_CMD.test(text) && S && S.desk) { d.close(); openScreen(); return; }
     list.hidden = true; out.hidden = false;
-    clear(out).append(el("div", { class: "pal-res", role: "status" }, el("div", { class: "pal-rh" }, el("span", { class: "dot pri" }), el("span", { class: "pal-rt", text: "실행 중" }))));
+    clear(out).append(el("div", { class: "pal-res", role: "status" }, el("div", { class: "pal-rh" }, el("span", { class: "dot pri" }), el("span", { class: "pal-rt", text: TX("base.pal.running") }))));
     try {
       const r = await api("/api/command", "POST", { text });
-      clear(out).append(palResult(r.card || { title: firstLine(String(r.output ?? "")) || "완료", tone: "ok", facts: [], note: String(r.output ?? "").split("\n").slice(1).join("\n").trim() }, runCmd));
+      clear(out).append(palResult(r.card || { title: firstLine(String(r.output ?? "")) || TX("base.mark.done"), tone: "ok", facts: [], note: String(r.output ?? "").split("\n").slice(1).join("\n").trim() }, runCmd));
       if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
-    } catch (e) { clear(out).append(palResult(e.data && e.data.card ? e.data.card : { title: "실패", tone: "err", facts: [], note: e.message }, runCmd)); }
+    } catch (e) { clear(out).append(palResult(e.data && e.data.card ? e.data.card : { title: TX("base.mark.fail"), tone: "err", facts: [], note: e.message }, runCmd)); }
   };
   const exec = it => { if (it.kind === "nav") { d.close(); go(it.go); } else if (it.kind === "act") { d.close(); it.act(); } else if (it.fill) { inp.value = `${it.run} `; build(); inp.focus(); } else runCmd(it.run); };
   // The choices of the argument being typed, each a row with the whole command; /logout's come from the providers, which no screen may have asked for yet.
@@ -73,11 +73,11 @@ function openPalette() {
       for (const id of views) if (id !== "activity" && id !== "project" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
-      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `끝난 세션 ${ended.length}`, act: () => { endedOpen = true; go("chat", "list"); } });
-      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "끝난 세션 종료된 세션".includes(v))) items.push({ kind: "act", ic: "lanes", label: `끝난 세션 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
-      if (!v || "셸 터미널 명령줄 shell terminal".includes(v)) items.push({ kind: "act", ic: "shell", label: "터미널 열기", act: () => openShell() });
-      if (S && S.desk && (!v || "화면 공유 원격 데스크톱 screen desktop remote".includes(v))) items.push({ kind: "act", ic: "desktop", label: "화면 공유 열기", act: () => openScreen() });
-      if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
+      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: TX("base.ended.label", { n: ended.length }), act: () => { endedOpen = true; go("chat", "list"); } });
+      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || TX("base.pal.words.ended").includes(v))) items.push({ kind: "act", ic: "lanes", label: `${TX("common.ended_sessions")} · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
+      if (!v || TX("base.pal.words.terminal").includes(v)) items.push({ kind: "act", ic: "shell", label: TX("base.pal.open_terminal"), act: () => openShell() });
+      if (S && S.desk && (!v || TX("base.pal.words.screen").includes(v))) items.push({ kind: "act", ic: "desktop", label: TX("base.pal.open_screen"), act: () => openScreen() });
+      if (!v || TX("base.pal.words.theme").includes(v)) items.push({ kind: "act", ic: themeIc(), label: TX("base.pal.theme_switch", { mode: themeNext() }), act: toggleTheme });
       items.push(...paneLayoutItems(v));
     }
     const rank = { nav: 0, act: 1, cmd: 2 };   // 도구 first, 명령 last; the arrow keys walk the list in this order
@@ -86,12 +86,12 @@ function openPalette() {
     clear(list);
     let last = "";
     items.forEach((it, i) => {
-      const g = it.kind === "nav" ? "도구" : it.kind === "act" ? "화면" : "명령";
+      const g = it.kind === "nav" ? TX("base.pal.group.tools") : it.kind === "act" ? TX("base.pal.group.screen") : TX("base.pal.group.commands");
       if (g !== last) { list.append(el("div", { class: "ph", role: "presentation", text: g })); last = g; }
       list.append(el("button", { type: "button", role: "option", tabindex: "-1", class: `pal-i${it.kind === "cmd" ? " cmd" : ""}`, onmouseenter: () => { idx = i; mark(); }, onclick: () => exec(it) },
         icon(it.ic), el("span", { class: "nm", text: it.label }), it.desc ? el("span", { class: it.kind === "nav" ? "pd key" : "pd", text: it.desc }) : null));
     });
-    if (!items.length) list.append(el("div", { class: "a-div", text: "결과가 없어요" }));
+    if (!items.length) list.append(el("div", { class: "a-div", text: TX("base.pal.empty") }));
     mark();
   };
   inp.addEventListener("input", () => { out.hidden = true; list.hidden = false; build(); });
@@ -203,7 +203,7 @@ function go(name, tgt) {
   if (name === "webaccess") loadOnboarding("web-access");
   // No screen is empty on its first frame: one whose loader has not drawn yet (사용량, 컨텍스트, 구성 ...) says so, and the loader replaces this line.
   const body = $(`#v-${name} > #${name}`);
-  if (body && !body.firstChild) body.append(emptyNode("불러오는 중…"));
+  if (body && !body.firstChild) body.append(emptyNode(TX("common.loading")));
   // A different view rises in; the same view drawn again, and the first paint, do not move. Moving inside 모니터링 (a list to its item) is one screen,
   // and a mail opening is plain content: neither replays the rise (owner 2026-11-04).
   motionView(mc ? "monitoring" : tv ? "chat" : name, tv && isMailT(target) ? [] : [...$("#views").children].filter(v => !v.hidden), !tv);
@@ -221,14 +221,14 @@ function limitTone(l) {
   return limitHit(l) || /warn|low|near|high/.test(String(l.status || "").toLowerCase()) || (f != null && f <= .3) ? "warn" : "";
 }
 const bar = l => { const f = limitFrac(l); return f == null ? null : el("div", { class: `bar ${limitTone(l)}`, role: "progressbar", "aria-valuenow": Math.round(f * 100), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${(f * 100).toFixed(1)}%` })); };
-const pctText = l => { const f = limitFrac(l); return f == null ? "–" : `${Math.round(f * 100)}% 남음`; };
+const pctText = l => { const f = limitFrac(l); return f == null ? "–" : TX("base.pct_left", { n: Math.round(f * 100) }); };
 // "Claude 5 Hour" -> "5시간", "Claude 7 Day" -> "7일", "Claude 7 Day (Opus)" -> "주간 Opus" (the label comes from the provider in English; ids stay as they are).
-const limitKo = s => String(s).replace(/^Claude\s+/i, "").replace(/^7\s*Day\s*\((.+)\)$/i, "주간 $1").replace(/(\d+)\s*Hours?\b/i, "$1시간").replace(/(\d+)\s*Days?\b/i, "$1일");
+const limitKo = s => String(s).replace(/^Claude\s+/i, "").replace(/^7\s*Day\s*\((.+)\)$/i, (_, model) => TX("base.limit.weekly", { model })).replace(/(\d+)\s*Hours?\b/i, (_, n) => TX("base.limit.hours", { n })).replace(/(\d+)\s*Days?\b/i, (_, n) => TX("base.limit.days", { n }));
 const limitLabel = (p, l, multi) => `${multi ? `${p.name || providerName(p.provider)} · ` : ""}${limitKo(l.label || l.id)}`;
 const isConnected = p => p.auth && p.auth !== "none";
 const needsAttention = p => p.in_use && !isConnected(p);
 // A card that failed to load passes `retry`: its 다시 시도 button asks again (a load that gave no data is never a dead end).
-const emptyNode = (t, retry) => (retry ? el("div", { class: "card empty" }, el("div", { text: t }), el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: "다시 시도", onclick: ev => busy(ev.currentTarget, async () => retry()) })) : el("div", { class: "card empty", text: t }));
+const emptyNode = (t, retry) => (retry ? el("div", { class: "card empty" }, el("div", { text: t }), el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: TX("base.retry"), onclick: ev => busy(ev.currentTarget, async () => retry()) })) : el("div", { class: "card empty", text: t }));
 // The one 더 보기 of a list: the card's own last line, inside the card, never a control floating under it (.cv-more, 19-volume.css).
 const moreRow = (text, onclick) => el("button", { class: "cv-more", type: "button", "data-k": "more", onclick, text });
 

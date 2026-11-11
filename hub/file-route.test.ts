@@ -11,6 +11,7 @@ import { allowedRoots, fileLinePaths, fileRoute } from "./files.ts";
 import { noticeKo, plainTable } from "./notice-ko.ts";
 import { makeRoute } from "./routes.ts";
 import { bundle } from "./webapp.ts";
+import { i18nPrelude } from "./web-i18n.ts";
 
 const DATA = process.env.DOTZ_DIR!;
 const QA = join(DATA, "qa", "notice-arch");
@@ -147,7 +148,7 @@ test("a notice sheet keeps the files of its [file] lines as chips next to the te
 test("the web turns [file] lines into chips, keeps them out of notice text and has the reader", () => {
 	const js = bundle("js").text;
 	const grab = (re: RegExp) => re.exec(js)?.[0] ?? "";
-	const fn = new Function("noticeKo", "plainTable", "NK", `${grab(/const PEER_HANDOFF[\s\S]*?(?=function peerMsgCard)/)}\n${grab(/const MK_BODY[\s\S]*?\nfunction stripMarkers[\s\S]*?\n\}\n/)}\n${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/const ntPlain = [\s\S]*?\.trim\(\);/)}\nreturn { fileLines, ntPlain };`)(noticeKo, plainTable, {});
+	const fn = new Function("noticeKo", "plainTable", "NK", `${i18nPrelude()}${grab(/const PEER_HANDOFF[\s\S]*?(?=function peerMsgCard)/)}\n${grab(/const MK_BODY[\s\S]*?\nfunction stripMarkers[\s\S]*?\n\}\n/)}\n${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/const ntPlain = [\s\S]*?\.trim\(\);/)}\nreturn { fileLines, ntPlain };`)(noticeKo, plainTable, {});
 	const r = fn.fileLines("결과\n[file] /a/b/notice-arch.png\n[file] qa/findings.md\n```\n[file] /in/fence\n```");
 	expect(r.files.map((x: { name: string }) => x.name)).toEqual(["notice-arch.png", "findings.md"]);
 	expect(r.text).toContain("[file] /in/fence");

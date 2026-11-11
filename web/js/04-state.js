@@ -3,7 +3,7 @@ let S = null;          // /api/state (no events)
 let M = null;          // /api/models
 let P = null;          // /api/providers
 // The assistant's own name (config identity.name): the page arrives with it in its title (hub/webapp.ts indexPage), /api/state keeps it current.
-let botName = document.title || "비서";
+let botName = document.title || TX("base.bot_default");
 // The name with 이/가 by its last syllable (땃쥐가, 단비가 / 하늘이), for a sentence the name starts.
 const iGa = s => { const c = String(s).slice(-1).charCodeAt(0) - 0xac00; return `${s}${c >= 0 && c <= 11171 && c % 28 ? "이" : "가"}`; };
 let current = "home", prevView = null;
@@ -18,7 +18,7 @@ const convListing = () => current === "chat" && chatList && narrowChat();
 // its list is 모니터링's list and its address is #monitoring/c:<target> (go() in 05-command-palette.js sets it; 30-monitoring.js monOwned).
 let monCtx = "";
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
-const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["apps", "앱"], ["settings", "설정"]];
+const NAV = [["home", TX("common.home")], ["chat", TX("common.chat")], ["projects", TX("common.projects")], ["monitoring", TX("common.monitoring")], ["apps", TX("common.apps")], ["settings", TX("common.settings")]];
 // 앱 (user apps, 30-apps.js): the tab is hidden until user apps ship (owner 2026-10-27; the code stays); every way into it (shortcut, palette,
 // address) goes home instead. true shows the tab and opens it (the 앱 tests switch it on).
 let APPS_ON = false;
@@ -33,7 +33,7 @@ const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return
 const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "accounts", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "messengers", "devices", "webaccess"]);
 const views = ["home", "chat", "activity", "harness", "settings", "models", "accounts", "usage", "context", "discord", "jandi", "slack", "telegram", "messengers", "devices", "webaccess", "project", "projects", "monitoring", "apps", "notices", "cardform"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델", accounts: "계정", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: "메신저", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱", notices: "알림", cardform: "카드 추가" };
+const titles = { home: TX("common.home"), chat: TX("common.chat"), activity: TX("common.chat"), harness: TX("common.system"), settings: TX("common.settings"), models: TX("common.model"), accounts: TX("common.accounts"), usage: TX("common.usage"), context: TX("common.context"), discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: TX("base.title.messengers"), devices: TX("base.title.devices"), webaccess: TX("base.title.webaccess"), project: TX("common.project"), projects: TX("common.projects"), monitoring: TX("common.monitoring"), apps: TX("common.apps"), notices: TX("common.alerts"), cardform: TX("base.title.cardform") };
 // 카드 추가·수정 (web/custom.js cardForm) has its section made here: go() needs one for every view, and the demo's own index.html has no custom layer.
 $("#views").append(el("section", { class: "view cu-page", id: "v-cardform", hidden: true }));
 // 알림 화면 (31-notices-screen.js): f filter, lim rows drawn per group, open unfolded repeats, keep/scroll = come back from a row to the same place,
@@ -62,12 +62,12 @@ function endedGroup() {
   const stop = fn => ev => { ev.preventDefault(); ev.stopPropagation(); fn(ev); };
   const tools = sel
     ? el("span", { class: "etools" },
-        el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = null; refreshEnded(); }) }, "취소"),
-        el("button", { type: "button", class: "btn danger fill", disabled: !sel.size, onclick: stop(() => deleteEnded([...sel])) }, `삭제 ${sel.size}개`))
-    : el("span", { class: "etools" }, el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = new Set(); endedOpen = true; refreshEnded(); }) }, "선택"));
+        el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = null; refreshEnded(); }) }, TX("common.cancel")),
+        el("button", { type: "button", class: "btn danger fill", disabled: !sel.size, onclick: stop(() => deleteEnded([...sel])) }, TX("base.ended.delete_n", { n: sel.size })))
+    : el("span", { class: "etools" }, el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = new Set(); endedOpen = true; refreshEnded(); }) }, TX("base.select")));
   const all = sel && el("label", { class: "er ck-all" },
     el("input", { type: "checkbox", class: "ck", checked: sel.size === list.length, onchange: ev => { endedSel = new Set(ev.currentTarget.checked ? list.map(l => l.name) : []); refreshEnded(); } }),
-    el("span", { text: "전체 선택" }), el("span", { class: "sup", text: `${sel.size}/${list.length}` }));
+    el("span", { text: TX("base.select_all") }), el("span", { class: "sup", text: `${sel.size}/${list.length}` }));
   // The start date is its own element (short, never cut; the full date and time are its title), apart from the project name that may shrink.
   const when = l => l.startedAt ? el("span", { class: "sup edate", title: `${kstDay(l.startedAt)} ${kstHM(l.startedAt)}`, text: kstShort(l.startedAt) }) : null;
   const row = l => sel
@@ -77,12 +77,12 @@ function endedGroup() {
     : el("div", { class: "erow", "data-lane": l.name },
         el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
           el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), laneProject(l) ? el("span", { class: "sup eproj", text: laneProject(l) }) : null, when(l),
-          marks.get(l.name).need ? el("span", { class: "tag warn", text: "답변 필요" }) : null,
-          marks.get(l.name).unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${marks.get(l.name).unread}개`, text: marks.get(l.name).unread > 99 ? "99+" : String(marks.get(l.name).unread) }) : null),
-        el("button", { class: "ib edel", type: "button", "aria-label": `${l.name} 삭제`, title: "삭제", onclick: () => deleteEnded([l.name]) }, icon("trash")));
-  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { class: "elabel", text: `끝난 세션 ${list.length}` }),
-    nNeed || nUnread ? el("span", { class: "ecounts" }, nNeed ? el("span", { class: "ecount need", "data-k": "need", text: `답변 필요 ${nNeed}` }) : null,
-      nUnread ? el("span", { class: "ecount", "data-k": "unread", text: `안 읽음 ${nUnread}` }) : null) : null, tools),
+          marks.get(l.name).need ? el("span", { class: "tag warn", text: TX("common.needs_reply") }) : null,
+          marks.get(l.name).unread ? el("span", { class: "nb", "aria-label": TX("base.ended.unread_aria", { n: marks.get(l.name).unread }), text: marks.get(l.name).unread > 99 ? "99+" : String(marks.get(l.name).unread) }) : null),
+        el("button", { class: "ib edel", type: "button", "aria-label": TX("base.ended.delete_one", { name: l.name }), title: TX("common.delete"), onclick: () => deleteEnded([l.name]) }, icon("trash")));
+  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { class: "elabel", text: TX("base.ended.label", { n: list.length }) }),
+    nNeed || nUnread ? el("span", { class: "ecounts" }, nNeed ? el("span", { class: "ecount need", "data-k": "need", text: TX("base.ended.need", { n: nNeed }) }) : null,
+      nUnread ? el("span", { class: "ecount", "data-k": "unread", text: TX("base.ended.unread", { n: nUnread }) }) : null) : null, tools),
     ...(all ? [all] : []), ...list.map(row));
   d.open = endedOpen;
   d.addEventListener("toggle", () => { endedOpen = d.open; if (!d.open && endedSel) { endedSel = null; refreshEnded(); } });
@@ -93,10 +93,10 @@ async function deleteEnded(names) {
   const one = names.length === 1;
   const sure = await new Promise(res => {
     let v = false;
-    dialog({ confirm: true, title: one ? `${names[0]} 삭제` : `세션 ${names.length}개 삭제`, onclose: () => res(v),
-      body: el("div", { class: "dl-body" }, el("p", { text: "휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요." }),
+    dialog({ confirm: true, title: one ? TX("base.ended.delete_one", { name: names[0] }) : TX("base.ended.delete_many", { n: names.length }), onclose: () => res(v),
+      body: el("div", { class: "dl-body" }, el("p", { text: TX("base.ended.trash_note") }),
         el("ul", { class: "dl-list" }, ...names.map(n => el("li", { text: n })))),
-      actions: [{ label: "취소", onclick: c => c() }, { label: one ? "삭제" : `${names.length}개 삭제`, kind: "danger fill", onclick: c => { v = true; c(); } }] });
+      actions: [{ label: TX("common.cancel"), onclick: c => c() }, { label: one ? TX("common.delete") : TX("base.ended.delete_n_btn", { n: names.length }), kind: "danger fill", onclick: c => { v = true; c(); } }] });
   });
   if (!sure) return;
   try {
@@ -108,35 +108,35 @@ async function deleteEnded(names) {
     if (S && S.lanes) S.lanes = S.lanes.filter(l => !ok.some(x => x.name === l.name));
     refreshEnded();
     refreshState();
-    if (ok.length) toast(`${ok.length === 1 ? ok[0].name : `${ok.length}개`} 삭제했어요`, false, { label: "되돌리기", onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);
+    if (ok.length) toast(ok.length === 1 ? TX("base.ended.deleted_one", { name: ok[0].name }) : TX("base.ended.deleted_many", { n: ok.length }), false, { label: TX("common.undo"), onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);
     if (bad.length) keptLanes(bad);
   } catch (e) { toast(e.message, true); }
 }
 // Lanes the gateway refused to delete: a calm note with the reason in plain words, not an error (lanetrash.ts reasons).
-const keptWhy = err => /uncommitted/i.test(err) ? "아직 커밋하지 않은 변경이 있어요. 커밋하거나 정리하면 지울 수 있어요."
-  : /live|running|working|busy|실행 중|작업 중/i.test(err) ? "아직 실행 중이에요. 멈춘 뒤에 지울 수 있어요."
-  : "작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.";
+const keptWhy = err => /uncommitted/i.test(err) ? TX("base.ended.kept.dirty")
+  : /live|running|working|busy|실행 중|작업 중/i.test(err) ? TX("base.ended.kept.running")
+  : TX("base.ended.kept.other");
 function keptLanes(bad) {
-  dialog({ title: bad.length === 1 ? `${bad[0].name} 세션은 그대로 뒀어요` : `세션 ${bad.length}개는 그대로 뒀어요`,
+  dialog({ title: bad.length === 1 ? TX("base.ended.kept_one", { name: bad[0].name }) : TX("base.ended.kept_many", { n: bad.length }),
     body: el("div", { class: "dl-body" },
       bad.length === 1 ? el("p", { text: keptWhy(String(bad[0].error || "")) })
         : el("ul", { class: "dl-list" }, ...bad.map(x => el("li", { text: `${x.name} · ${keptWhy(String(x.error || ""))}` })))),
-    actions: [{ label: "확인", kind: "fill", onclick: c => c() }], mid: true });
+    actions: [{ label: TX("common.ok"), kind: "fill", onclick: c => c() }], mid: true });
 }
 async function restoreEnded(ids) {
   try {
     const r = await api("/api/lanes/restore", "POST", { ids }).catch(e => { if (e.data && e.data.results) return e.data; throw e; });
     const bad = r.results.filter(x => !x.ok);
-    toast(bad.length ? `${bad.length}개는 되돌리지 못했어요. 휴지통에 그대로 있어요` : "되돌렸어요", bad.length > 0);
+    toast(bad.length ? TX("base.ended.restore_failed", { n: bad.length }) : TX("base.ended.restored"), bad.length > 0);
     refreshState();
   } catch (e) { toast(e.message, true); }
 }
 // An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
 const statusTone = s => ({ working: "pri", starting: "pri", idle: "", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
-const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 걸림", exited: "종료됨" })[s] || s || "알 수 없음";
+const statusKo = s => ({ working: TX("common.status.working"), idle: TX("common.status.idle"), starting: TX("common.status.starting"), stopped: TX("common.status.stopped"), "rate-limited": TX("common.status.rate_limited"), exited: TX("common.status.ended") })[s] || s || TX("base.status.unknown");
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
 // Thinking levels said in Korean (the stored value stays the API id); every level has its own word (xhigh and max used to both say 최고).
-const THINK_KO = { off: "끔", minimal: "최소", low: "낮음", medium: "보통", high: "높음", xhigh: "매우 높음", max: "최고", auto: "자동" };
+const THINK_KO = { off: TX("common.effort.off"), minimal: TX("common.effort.minimal"), low: TX("common.effort.low"), medium: TX("common.effort.medium"), high: TX("common.effort.high"), xhigh: TX("common.effort.very_high"), max: TX("common.effort.max"), auto: TX("common.effort.auto") };
 const thinkKo = v => THINK_KO[String(v || "").toLowerCase()] || String(v || "");
 // The levels one model accepts, from the hub's model list (`omp models --json` per-model `thinking`); a model the runtime did not describe
 // gets the runtime's whole set. off is dotz's own switch, and a level already saved stays visible until the owner picks another.
@@ -190,7 +190,7 @@ function navShortcut(id) {
 // The wide sidebar folds to an icon rail (22-shell.css :root.side-min); the saved choice is applied before first paint in index.html.
 const SIDE_KEY = "dotz-side", SIDE_KEYS = isMac ? "⌘\\" : "Ctrl+\\";
 function sideSync() {
-  const min = document.documentElement.classList.contains("side-min"), b = $("#side-tog"), word = min ? "사이드바 펼치기" : "사이드바 접기";
+  const min = document.documentElement.classList.contains("side-min"), b = $("#side-tog"), word = min ? TX("base.sidebar.expand") : TX("base.sidebar.collapse");
   b.setAttribute("aria-label", word); b.setAttribute("aria-expanded", String(!min)); b.title = `${word} (${SIDE_KEYS})`;
 }
 function sideToggle() {
@@ -200,9 +200,9 @@ function sideToggle() {
 }
 // The ⌘/Ctrl keys besides 1..6 and K (05-command-palette.js): one list drives the handler below and the keys the screen tour shows (42-intro.js).
 const MOD_KEYS = [
-  { code: "Slash", key: "/", label: "알림", run: () => { if (PR.node) prClose(false); $("#bell").click(); } },
-  { code: "Period", key: ".", label: "메인 대화", run: () => { if (PR.node) prClose(false); openTarget("main", "chat"); } },
-  { code: "Backslash", key: "\\", label: "사이드바 접기", wide: true, run: sideToggle },
+  { code: "Slash", key: "/", label: TX("common.alerts"), run: () => { if (PR.node) prClose(false); $("#bell").click(); } },
+  { code: "Period", key: ".", label: TX("common.main_chat"), run: () => { if (PR.node) prClose(false); openTarget("main", "chat"); } },
+  { code: "Backslash", key: "\\", label: TX("base.sidebar.collapse"), wide: true, run: sideToggle },
 ];
 const modKeyWide = k => !k.wide || matchMedia("(min-width: 1024px)").matches;
 document.addEventListener("keydown", ev => {
@@ -218,17 +218,17 @@ document.addEventListener("keydown", ev => {
   navShortcut(tab[0]);
 });
 // 모니터링's badge (#nav-mon) counts what waits there (09-needs-you.js paintMonAttn).
-for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: TX("base.update.badge"), title: TX("base.update.title") }) : null));
 $("#side-tog").append(icon("side"));
 $("#side-tog").onclick = sideToggle;
 sideSync();
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
-const themeNext = () => themeIs() === "dark" ? "라이트" : "다크";
+const themeNext = () => themeIs() === "dark" ? TX("base.theme.light") : TX("base.theme.dark");
 function toggleTheme() { dotzTheme.toggle(); if (current === "settings") renderSettings(); }
 window.addEventListener("dotz-theme", () => { if (current === "settings") renderSettings(); });
-$("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
+$("#cmdk").append(icon("search"), el("span", { class: "tx", text: TX("base.command") }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
 const setBrand = () => { $("#brand-name").textContent = relayBrand(); paintAttn(); };
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"), el("span", { class: "bk-l", text: titles.monitoring }));

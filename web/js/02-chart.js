@@ -10,7 +10,7 @@ function chartDraw(spec, width) {
     p = fetch("/api/chart", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spec, width: width || undefined }) })
       .then(r => r.json())
       // a failed request is not kept: the next time the message is drawn it asks again
-      .catch(() => (chartDrawn.delete(k), { ok: false, note: "차트를 불러오지 못했어요" }));
+      .catch(() => (chartDrawn.delete(k), { ok: false, note: TX("base.chart.load_failed") }));
     chartDrawn.set(k, p);
   }
   return p;
@@ -18,13 +18,13 @@ function chartDraw(spec, width) {
 const chartImg = (svg, theme, label) => `<img class="ans-chart-${theme}" alt="${esc(label)}" src="${URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }))}">`;
 async function chartFill(fig) {
   fig.dataset.drawing = "1";
-  const spec = fig.dataset.chart, label = fig.getAttribute("aria-label") || "차트", r = await chartDraw(spec, fig.clientWidth);
+  const spec = fig.dataset.chart, label = fig.getAttribute("aria-label") || TX("base.chart.label"), r = await chartDraw(spec, fig.clientWidth);
   if (!fig.isConnected) return;
   if (r && r.ok) {
     fig.innerHTML = chartImg(r.light, "light", label) + chartImg(r.dark, "dark", label);
     // the image keeps its decoded picture, so the blob is freed once it has loaded
     for (const img of fig.querySelectorAll("img")) img.addEventListener("load", () => URL.revokeObjectURL(img.src), { once: true });
-  } else fig.outerHTML = `${codeBlockHtml("json", spec)}<p class="meta">${esc((r && r.note) || "차트를 그리지 못했어요")}</p>`;
+  } else fig.outerHTML = `${codeBlockHtml("json", spec)}<p class="meta">${esc((r && r.note) || TX("base.chart.draw_failed"))}</p>`;
 }
 function chartsIn(node) {
   if (node.nodeType !== 1) return;

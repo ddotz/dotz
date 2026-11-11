@@ -5,6 +5,7 @@ import { buildPayloads, buildSingle } from "./discord-format.ts";
 import { dropForLine } from "./forline.ts";
 import { classify } from "./push.ts";
 import { parseTone, previewSource, stripMarkers } from "./tone.ts";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // Machine markers ([run] [done] [lane recovery] [dotz inbox] ...) are data for parsers, never text for the owner (owner 2026-10-23).
 // One table drives the hub formatter (tone.ts) and the web copy (web/js/02-basic-markdown.js) so the two cannot drift.
@@ -76,7 +77,7 @@ function webFns(): { stripMarkers: (s: string) => string; parseTone: (s: string)
 	const src = readFileSync(join(import.meta.dir, "..", "web", "js", "02-basic-markdown.js"), "utf8");
 	const from = src.indexOf("const TONE_TAGS");
 	const to = src.indexOf("/* ---------- api ----------");
-	return new Function(`const botName = "dotz", escRe = s => s; ${src.slice(from, to)}; return { stripMarkers, parseTone };`)();
+	return new Function(`${i18nPrelude()}const botName = "dotz", escRe = s => s; ${src.slice(from, to)}; return { stripMarkers, parseTone };`)();
 }
 
 describe("owner-facing text has no [tag]", () => {

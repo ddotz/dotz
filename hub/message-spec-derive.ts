@@ -260,7 +260,7 @@ function rowsOf(code: string): SpecElement {
 }
 
 // A fence tagged chart holds a ztd-charts JSON spec, drawn by the gateway (hub/chart.ts). Text that is not a JSON object stays a json code block with a short note.
-const CHART_NOTE = "차트 형식이 맞지 않아 JSON으로 보여 드려요";
+export const CHART_NOTE = "차트 형식이 맞지 않아 JSON으로 보여 드려요";
 function chartOf(code: string): SpecElement[] {
 	const spec = code.trim();
 	let json: unknown;

@@ -62,8 +62,8 @@ const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .l
 // The press of 배치 초기화 says what it did: the cards are in their first order again (with 되돌리기), or the stored order could not be cleared.
 function hmResetSaid(reset) {
   const undo = reset();
-  if (undo) toast("카드를 처음 순서로 돌려놨어요", false, { label: "되돌리기", onclick: undo });
-  else toast("카드 순서를 처음으로 돌리지 못했어요", true);
+  if (undo) toast(TX("base.board.reset_done"), false, { label: TX("common.undo"), onclick: undo });
+  else toast(TX("base.board.reset_failed"), true);
 }
 function makeBoard(container, key, opts = {}) {
   const store = `dotz-board-${key}`, px = !!opts.px, U = px ? 1 : BSTEP;
@@ -85,7 +85,7 @@ function makeBoard(container, key, opts = {}) {
     try { opts.onEdit(on); } finally { editing = false; }
   }
   const ph = el("div", { class: "bph", hidden: true });
-  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => hmResetSaid(reset) }, "배치 초기화"));
+  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => hmResetSaid(reset) }, TX("base.board.reset")));
   container.classList.add("board");
   if (opts.rows) container.classList.add("rows");
   container.before(bar);
@@ -208,7 +208,7 @@ function makeBoard(container, key, opts = {}) {
       if (!w) { w = el("div", { class: "bi", "data-id": it.id }, ...["e", "s", "se"].map(d => el("div", { class: `brz ${d}`, "data-dir": d }))); wraps.set(it.id, w); container.append(w); }
       w.classList.toggle("fit", !!it.fit);
       const h0 = it.node.querySelector(it.head);
-      if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = "끌거나 방향키로 옮기고, Shift+방향키로 크기를 바꿔요"; }
+      if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = TX("base.board.head_hint"); }
       const first = w.firstElementChild, old = first && !first.classList.contains("brz") ? first : null;
       // A card whose markup did not change keeps its node, so scroll positions and hover survive a re-render.
       if (old !== it.node && !(old && old.outerHTML === it.node.outerHTML)) {

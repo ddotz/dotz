@@ -1,6 +1,6 @@
 /* ---------- subagents: live progress per source ---------- */
 let SUBS = {};
-const subKo = { running: "진행 중", done: "완료", failed: "실패", aborted: "중단됨" };
+const subKo = { running: TX("base.mark.run"), done: TX("base.mark.done"), failed: TX("base.mark.fail"), aborted: TX("base.sub.aborted") };
 const subTone = s => ({ running: "pri", done: "ok", failed: "err", aborted: "" })[s] || "";
 // Subagents are listed per agent session (hub/convsessions.ts): a conversation of its own has `conv:<its target>`, the main chat `orchestrator`. A conversation never shows another's.
 const subsSourceOf = t => (isConvT(t) ? `conv:${t}` : sourceOf(t));
@@ -17,21 +17,21 @@ const workRecovering = w => w.status === "failed" && !w.cancelled && !w.handled;
 // One background task's colour on every list; the table is in docs/ui-spec.md. A failure the agent took up, or work the owner stopped, is over: gray.
 const workTone = w => w.queued ? "" : w.status === "running" || workRecovering(w) ? "pri" : w.status === "stalled" ? "warn" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err";
 // 실패 · <이유> (중단됨 for one the owner stopped): the reason is the gateway's own Korean line (hub/runstate.ts failureText).
-const workFailText = w => (w.cancelled ? "중단됨" : `실패 · ${w.reason || "이유가 기록되지 않았어요"}`);
+const workFailText = w => (w.cancelled ? TX("base.sub.aborted") : `${TX("base.mark.fail")} · ${w.reason || TX("base.work.no_reason")}`);
 // 중단: the worker's process ends (POST /api/workers/:id/cancel); 다시 맡기기: its request goes to the orchestrator again in its own conversation.
 const workCancel = (id, btn) => busy(btn, async () => {
   const job = ((S && S.work) || []).find(w => w.id === id);
-  if (!await ask("백그라운드 작업 중단", `${job ? `'${job.description}' 작업을 멈춰요.` : "하던 작업을 멈춰요."} 필요하면 다시 맡길 수 있어요.`, "중단", true)) return;
+  if (!await ask(TX("base.work.stop_title"), job ? TX("base.work.stop_text_job", { description: job.description }) : TX("base.work.stop_text"), TX("common.stop"), true)) return;
   await api(`/api/workers/${enc(id)}/cancel`, "POST", {});
   // The work card in the chat shows the stop itself (중단됨, gray dot); a toast is only for a job with no card on screen.
   workRowNote({ id, status: "failed", cancelled: true }, workNow());
   paintSysLines();
-  if (![...(SYS_NODES.get(id) || [])].some(r => r.st.isConnected)) toast("작업을 중단했어요");
+  if (![...(SYS_NODES.get(id) || [])].some(r => r.st.isConnected)) toast(TX("base.work.stopped"));
   refreshState();
 });
 const workRetry = (id, btn) => busy(btn, async () => {
   await api(`/api/workers/${enc(id)}/retry`, "POST", {});
-  toast("다시 맡겼어요");
+  toast(TX("base.work.retried"));
   refreshState();
 });
 // A chat's own work: what was started for its open message; work no message claimed belongs to the main chat.
@@ -39,13 +39,13 @@ const workOfTarget = t => workRunning().filter(w => (w.target ? (t === MAIN ? w.
 // The gateway's clock, not this device's, measures how long work has run (S.work_skew is set on every state refresh).
 const workNow = () => Date.now() + ((S && S.work_skew) || 0);
 const workMin = ms => Math.max(0, Math.floor(ms / 60000));
-const workElapsed = w => (workNow() - w.started_at < 60000 ? "방금 시작" : `${workMin(workNow() - w.started_at)}분째`);
+const workElapsed = w => (workNow() - w.started_at < 60000 ? TX("base.work.just_started") : TX("base.work.minutes", { n: workMin(workNow() - w.started_at) }));
 function workAgo(w) {
   const m = workMin(workNow() - (w.ended_at || w.started_at));
-  return m < 1 ? "방금" : m < 60 ? `${m}분 전` : `${Math.floor(m / 60)}시간 전`;
+  return m < 1 ? TX("base.just_now") : m < 60 ? TX("base.min_ago", { n: m }) : TX("base.hours_ago", { n: Math.floor(m / 60) });
 }
 // The left of the status line above the composer: what the background work is and how long it has run. The model is in the chip under the box, so the line does not say it.
-const workLine = ws => `${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · 외 ${ws.length - 1}개` : ""}`;
+const workLine = ws => `${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · ${TX("base.work.more", { n: ws.length - 1 })}` : ""}`;
 // Re-read the state while work runs, so a finished or failed one leaves the line without waiting for another event.
 setInterval(() => { if (!document.hidden && (workRunning().length || Object.values((S && S.runs) || {}).some(runMoving))) refreshState(); }, 15000);
 function setSubs(source, items) {
@@ -65,7 +65,7 @@ function subsChanged(source) {
 function subLine(src) {
   const n = runningSubs(src).length;
   if (!n) return null;
-  return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
+  return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), TX("base.sub.running", { n }));
 }
 function openTarget(t, view) { setTarget(t, true); go(isLaneT(t) && (view === "chat" || view === "activity") ? viewFor(t) : view); }
 // A switcher pick: the chat/log view follows the picked target's own choice.
@@ -90,7 +90,7 @@ function paintSubs(box, src) {
   if (!run) return;
   box.append(el("button", { class: "subsum", type: "button", onclick: () => openSubs([src]) },
     el("span", { class: "dot pri" }),
-    el("span", { class: "nm", text: `서브에이전트 ${run}개 진행 중` }),
+    el("span", { class: "nm", text: TX("base.sub.running", { n: run }) }),
     icon("chev", "chev")));
 }
 let SUBD = null;
@@ -135,23 +135,23 @@ function renderSubSheet() {
   $("#sh-back").hidden = !d.from;
   if (!d.id) {
     const rows = d.sources.flatMap(s => spawnOrder(runningSubs(s)).map(x => [s, x]));
-    $("#sh-name").textContent = `서브에이전트 ${rows.length}개 진행 중`;
+    $("#sh-name").textContent = TX("base.sub.running", { n: rows.length });
     $("#sh-sub").textContent = d.sources.map(s => targetName(targetOfSource(s))).join(", ");
     $("#sh-tag").hidden = true;
     shBody.className = "sh-body";
     clear(shBody);
-    if (!rows.length) shBody.append(el("div", { class: "a-div", text: "진행 중인 서브에이전트가 없어요" }));
+    if (!rows.length) shBody.append(el("div", { class: "a-div", text: TX("base.sub.none") }));
     for (const [s, x] of rows) shBody.append(el("button", { class: "subrow", type: "button", onclick: () => openSub(s, x.id, d.sources) },
       el("span", { class: "dot pri" }),
-      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || "서브에이전트" }), x.intent || x.tool ? el("span", { class: "muted", text: firstLine(x.intent || x.tool) }) : null),
+      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || TX("common.subagent") }), x.intent || x.tool ? el("span", { class: "muted", text: firstLine(x.intent || x.tool) }) : null),
       d.sources.length > 1 ? el("span", { class: "tag", text: targetName(targetOfSource(s)) }) : null,
       x.started_at ? el("span", { class: "cc2-tm", text: workElapsed(x) }) : null));
     return;
   }
   const l = subNow(d), data = d.data || {};
   const st = data.status || l.status || "";
-  $("#sh-name").textContent = data.description || l.description || d.title || data.agent || l.agent || "서브에이전트";
-  $("#sh-sub").textContent = `${targetName(targetOfSource(d.source))} · 서브에이전트`;
+  $("#sh-name").textContent = data.description || l.description || d.title || data.agent || l.agent || TX("common.subagent");
+  $("#sh-sub").textContent = `${targetName(targetOfSource(d.source))} · ${TX("common.subagent")}`;
   const tag = $("#sh-tag");
   tag.hidden = !st; tag.className = `tag ${subTone(st)}`; tag.textContent = subKo[st] || st;
   const m = modeOf(), items = data.items || [];
@@ -161,8 +161,8 @@ function renderSubSheet() {
   [...shBody.children].forEach((c, i) => { if (c.open || c.classList.contains("open")) opened.add(i); });
   shBody.className = `sh-body${m === "term" ? " term" : ""}`;
   clear(shBody);
-  if (!d.data && !d.err) shBody.append(el("div", { class: "a-div", text: "불러오는 중…" }));
-  else if (!items.length) shBody.append(el("div", { class: d.err ? "a-error" : "a-div", text: d.err ? "기록을 불러오지 못했어요" : "기록이 없어요" }));
+  if (!d.data && !d.err) shBody.append(el("div", { class: "a-div", text: TX("common.loading") }));
+  else if (!items.length) shBody.append(el("div", { class: d.err ? "a-error" : "a-div", text: d.err ? TX("base.sub.log_failed") : TX("base.sub.log_empty") }));
   else {
     const ctx = { calls: new Map() };
     for (const a of items) { const n = m === "term" ? termNode(a, ctx) : actNode(a, ctx); if (n) shBody.append(n); }

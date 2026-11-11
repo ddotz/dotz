@@ -5,6 +5,7 @@ import { issueBlock } from "./choices.ts";
 import { DONE_REPLY } from "./decision-any-marker.fixture.ts";
 import { inboxText } from "./intake.ts";
 import { reflectPrompt } from "./reflect.ts";
+import { i18nPrelude } from "./web-i18n.ts";
 
 // The 알림 / 작업 기록 conversations: the page's real routing (09-needs-you.js eventTarget), intake (13-data.js ingestMsg), message rule
 // (31-conversations.js convReal, with the gatewayWake it calls from 11-todo-strip.js) and choice parser (10-decision-card.js), run on the
@@ -33,7 +34,7 @@ function page() {
 		cut(web("31-conversations.js"), "const CONV_KINDS", "const convIncoming"),
 		cut(web("10-decision-card.js"), "const CH_OPT", "const DC = "),
 	].join("\n");
-	return new Function(...Object.keys(env), `${src}\nreturn { eventTarget, ingestMsg, convReal, parseChoices, isChoiceMsg, choiceAsks, parseTone, isFixedT, TS };`)(...Object.values(env)) as {
+	return new Function(...Object.keys(env), `${i18nPrelude()}${src}\nreturn { eventTarget, ingestMsg, convReal, parseChoices, isChoiceMsg, choiceAsks, parseTone, isFixedT, TS };`)(...Object.values(env)) as {
 		eventTarget: (e: any) => string | null; ingestMsg: (e: any) => void; convReal: (e: any) => boolean;
 		parseChoices: (t: string) => { question: string; blocks: { title: string; options: { n: number; label: string; desc: string }[] }[] };
 		isChoiceMsg: (pc: any) => boolean; isFixedT: (t: string) => boolean;

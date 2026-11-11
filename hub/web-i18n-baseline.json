@@ -2,47 +2,31 @@
   "files": {
     "web/js/01-message-spec.js": {
       "count": 28,
-      "why": "pending"
+      "why": "agent-text parsing"
     },
     "web/js/01-notice-ko.js": {
       "count": 346,
       "why": "pending"
     },
     "web/js/01-peer-msg.js": {
-      "count": 28,
-      "why": "pending"
+      "count": 6,
+      "why": "server value comparison"
     },
     "web/js/01-phrase-wrap.js": {
       "count": 37,
-      "why": "pending"
+      "why": "Korean text handling"
     },
     "web/js/02-answer-shapes.js": {
-      "count": 3,
-      "why": "pending"
+      "count": 1,
+      "why": "agent-text parsing"
     },
     "web/js/02-basic-markdown.js": {
-      "count": 97,
-      "why": "pending"
-    },
-    "web/js/02-chart.js": {
-      "count": 7,
-      "why": "pending"
+      "count": 55,
+      "why": "agent-text parsing, Korean text handling"
     },
     "web/js/04-state.js": {
-      "count": 152,
-      "why": "pending"
-    },
-    "web/js/05-command-palette.js": {
-      "count": 61,
-      "why": "pending"
-    },
-    "web/js/06-subagents.js": {
-      "count": 64,
-      "why": "pending"
-    },
-    "web/js/07-board.js": {
-      "count": 18,
-      "why": "pending"
+      "count": 6,
+      "why": "Korean particle helper, server value comparison"
     },
     "web/js/08-home.js": {
       "count": 19,

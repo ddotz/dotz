@@ -11,7 +11,7 @@ const tabSrc = state.slice(state.indexOf("const isMac ="), state.indexOf("for (c
 const prOrderSrc = peers.slice(peers.indexOf("function prOrder"), peers.indexOf("const prCached"));
 const gwSrc = prOrderSrc + peers.slice(peers.indexOf("const prKeyHint"), peers.indexOf("// Tapping 홈 again"));
 const navStart = state.indexOf("const NAV =");
-const NAV = new Function(`${state.slice(navStart, state.indexOf(";\n", navStart) + 1)} return NAV;`)() as [string, string][];
+const NAV = new Function(`${i18nPrelude()}${state.slice(navStart, state.indexOf(";\n", navStart) + 1)} return NAV;`)() as [string, string][];
 
 type Handler = (ev: unknown) => void;
 type Key = Partial<{ key: string; code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
@@ -31,7 +31,7 @@ function tabs(platform: string, o: { current?: string; dialog?: boolean; sheet?:
 		document: { addEventListener: (_: string, h: Handler) => handlers.push(h), querySelector: () => (o.dialog ? {} : null) },
 		go: (v: string) => log.push(`go:${v}`), prClose: () => log.push("prClose"), lastChatView: () => "chat", chatTabEnter: () => log.push("chatEnter"),
 	};
-	const api = new Function(...Object.keys(env), `${tabSrc}\nreturn { navKeyHint };`)(...Object.values(env)) as { navKeyHint: (id: string) => string };
+	const api = new Function(...Object.keys(env), `${i18nPrelude()}${tabSrc}\nreturn { navKeyHint };`)(...Object.values(env)) as { navKeyHint: (id: string) => string };
 	return { ...api, handlers, log };
 }
 

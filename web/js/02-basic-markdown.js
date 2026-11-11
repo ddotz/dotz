@@ -72,12 +72,12 @@ const mdNode = (src, cls = "md", relayed = false, answer = false) => el("div", {
 /* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
 const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", wait: "wait", "대기": "wait", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
 // The marker word is drawn as one status tag at the start of the message's first line (prototype .bub .st), never as the raw marker or an emoji.
-const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], wait: ["warn", "답을 기다려요"], ask: ["warn", "확인 필요"], fail: ["err", "실패"] };
+const LANE_TONE = { done: ["ok", TX("base.mark.done")], run: ["pri", TX("base.mark.run")], wait: ["warn", TX("base.tone.wait")], ask: ["warn", TX("base.mark.ask")], fail: ["err", TX("base.mark.fail")] };
 // [run] and [wait] are true only of the moment they were written: 41-runstate.js syncLiveTags draws them from the current state.
 const parkedTone = tone => tone === "run" || tone === "wait";
 const toneTag = tone => LANE_TONE[tone] ? el("span", { class: `tag ${LANE_TONE[tone][0]} st-tag`, text: LANE_TONE[tone][1] }) : null;
 // A lane's worklog entry says whether its report was checked in words (hub/laneops.ts claimPrefix, which Discord shows as subtext); here it is the tag of a project's result row (19-project-main.js pmResultRow).
-const CLAIM_LEAD = /^(?:(?:확인됨|보고됨|verified|reported) · )+/, CLAIM_TAG = { verified: ["ok", "확인됨"], reported: ["", "보고만 함"] };
+const CLAIM_LEAD = /^(?:(?:확인됨|보고됨|verified|reported) · )+/, CLAIM_TAG = { verified: ["ok", TX("base.claim.verified")], reported: ["", TX("base.claim.reported")] };
 const claimTag = claim => CLAIM_TAG[claim] ? el("span", { class: `tag ${CLAIM_TAG[claim][0]} st-tag claim-tag`, text: CLAIM_TAG[claim][1] }) : null;
 // The tag goes in front of the first paragraph's text; a body that opens with a list or a card gets a line of its own.
 function toneLead(root, tone, claim = "") {
@@ -100,8 +100,8 @@ const MK_ALONE = new RegExp("^[ \\t]*(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i"
 const MK_CLOSE = new RegExp("(?<=[.!?\u2026\uc694\ub2e4])[ \\t]+(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i");
 // A dropped fail word leaves the failure (the page has no emoji: the word, where the hub leaves its emoji), and a status word in prose reads as its plain word (hub/tone.ts FAIL_WORD, MENTION, keep in step).
 const MK_FAIL = /\[(?:fail|실패|warn|경고)\]/i;
-const mkFail = gone => MK_FAIL.test(gone) ? "실패: " : "";
-const MK_WORDS = { done: "완료", "완료": "완료", run: "진행 중", "진행": "진행 중", wait: "대기", "대기": "대기", ask: "확인 필요", "결정": "확인 필요", fail: "실패", "실패": "실패", warn: "실패", "경고": "실패" };
+const mkFail = gone => MK_FAIL.test(gone) ? `${TX("base.mark.fail")}: ` : "";
+const MK_WORDS = { done: TX("base.mark.done"), "완료": TX("base.mark.done"), run: TX("base.mark.run"), "진행": TX("base.mark.run"), wait: TX("base.mark.wait"), "대기": TX("base.mark.wait"), ask: TX("base.mark.ask"), "결정": TX("base.mark.ask"), fail: TX("base.mark.fail"), "실패": TX("base.mark.fail"), warn: TX("base.mark.fail"), "경고": TX("base.mark.fail") };
 const MK_STATUS = Object.keys(MK_WORDS).join("|");
 const MK_TOKEN = `(?:\`\\[(?:${MK_STATUS})\\]\`|\\*\\*\\[(?:${MK_STATUS})\\]\\*\\*|\\[(?:${MK_STATUS})\\])`;
 const MK_JOIN = "[ \\t]*[,/·][ \\t]*";
@@ -159,7 +159,7 @@ function stripMarkers(text, keepFiles = false, own = true) {
   if (!out.some(l => l.trim())) return [...out, ...fors].join("\n");
   if (tail >= 0) {
     if (out[tail].trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
-    else out[tail] = out[tail].replace(MK_CLOSE, m => MK_FAIL.test(m) ? " 실패" : "");
+    else out[tail] = out[tail].replace(MK_CLOSE, m => MK_FAIL.test(m) ? ` ${TX("base.mark.fail")}` : "");
   }
   for (const i of prose) out[i] = mkPlainWords(out[i]);
   return out.join("\n");
@@ -169,9 +169,11 @@ function parseTone(text, keepFiles = false) {
   text = String(text ?? "");
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
   const body = tag ? text.slice(m[0].length) : text, c = CLAIM_LEAD.exec(body);
-  const shown = stripMarkers(c ? body.slice(c[0].length) : body, keepFiles, !tag), led = (!tag ? MK_FAIL_LEAD.test(body) : tag === "fail") && /^\s*실패(?:: |$)/.exec(shown);
+  const shown = stripMarkers(c ? body.slice(c[0].length) : body, keepFiles, !tag), said = shown.trimStart();
+  const word = (!tag ? MK_FAIL_LEAD.test(body) : tag === "fail") && ["실패", TX("base.mark.fail")].find(w => said.startsWith(w) && (said.length === w.length || said.startsWith(": ", w.length)));
+  const led = word ? shown.length - said.length + word.length + (said.length === word.length ? 0 : 2) : 0;
   // A failure marker the tone did not read (bold, indented) still draws the failure tag; under the tag the word is said already.
-  return { tone: tag || (led ? "fail" : ""), claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: led ? shown.slice(led[0].length) : shown };
+  return { tone: tag || (led ? "fail" : ""), claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: led ? shown.slice(led) : shown };
 }
 // An answer's status mark in its emoji form (hub/tone.ts TONE_EMOJI) is read as the marker is, the rule of hub/tone.ts statedTone: the marker wins and an emoji after it goes too.
 // emoji: the text had one, so a spec stored before the hub read it (its first line still starts with the mark) is not drawn.
@@ -207,7 +209,7 @@ async function api(path, method = "GET", body) {
   } else res = await read(await go());
   let data = null;
   try { data = JSON.parse(res.text); } catch {}
-  if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || "이 컴퓨터에서는 읽기만 돼요" : (data && data.error) || `HTTP ${res.status}`), { data, status: res.status });
+  if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || TX("base.peer.read_only") : (data && data.error) || `HTTP ${res.status}`), { data, status: res.status });
   return data;
 }
 async function busy(btn, fn) {
@@ -262,9 +264,9 @@ function notify(e) {
   const alertish = e.kind === "out" && e.target === "alert";
   const box = document.querySelector(".ntf-box") || document.body.appendChild(el("div", { class: "ntf-box", "aria-live": "polite" }));
   const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
-  const title = noticeKo(e.title || (lane ? NK.lane(lane) || "세션" : alertish ? "알림" : `${botName} 작업 기록`), NK);
+  const title = noticeKo(e.title || (lane ? NK.lane(lane) || TX("common.session") : alertish ? TX("common.alerts") : TX("base.notice.worklog", { name: botName })), NK);
   const at = e.ts ? new Date(e.ts) : null;
-  const tm = at && !isNaN(at) ? at.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }) : "";
+  const tm = at && !isNaN(at) ? at.toLocaleTimeString(TX_LOCALE, { hour: "numeric", minute: "2-digit" }) : "";
   const first = noticeKo(text, NK).split("\n").find(l => l.trim()) || "";
   const n = el("div", { class: "ntf in", role: alertish ? "alert" : "status" },
     el("span", { class: `dot ${e.tone || (alertish ? "err" : lane ? "ok" : "")}` }),
@@ -287,7 +289,7 @@ function notify(e) {
     n.classList.add("out");
     setTimeout(() => n.remove(), M_MS.fast);
   }
-  n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
+  n.append(el("button", { type: "button", class: "x", "aria-label": TX("common.close"), text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
   // A tap opens the item by its kind, like every other notice entry point (30-notices.js noticeOpen).
   n.addEventListener("click", () => { close(); noticeOpen(ntOfEvent(e)); });
   n.addEventListener("pointerenter", () => { hover = true; t.sync(); });
@@ -329,7 +331,7 @@ function confirmInSheet({ host, onEnd }, { title, body, actions, onclose }) {
   let over = false;
   const back = () => h.close();
   const name = el("h2", { class: "dtitle", text: title });
-  const head = sheet ? fsHead([name], { close: back }) : el("div", { class: "dhd" }, name, el("button", { type: "button", class: "ib dx", "aria-label": "닫기", onclick: back }, icon("close")));
+  const head = sheet ? fsHead([name], { close: back }) : el("div", { class: "dhd" }, name, el("button", { type: "button", class: "ib dx", "aria-label": TX("common.close"), onclick: back }, icon("close")));
   const bodyBox = el("div", { class: sheet ? "dbody fs-body" : "dbody" }, body), actBox = el("div", { class: sheet ? "dact fs-ft row" : "dact" });
   const noCancel = ev => ev.preventDefault();
   const esc = ev => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); h.close(); } };
@@ -364,7 +366,7 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm, mi
   // The ✕ and a tap outside the box both close it and drop the edit, like Esc and the Android back gesture (dialogHist) already do.
   const head = confirm ? el("h2", { class: "dtitle", text: title })
     : classic
-    ? el("div", { class: "dhd" }, el("h2", { class: "dtitle", text: title }), el("button", { type: "button", class: "ib dx", "aria-label": "닫기", onclick: () => d.close() }, icon("close")))
+    ? el("div", { class: "dhd" }, el("h2", { class: "dtitle", text: title }), el("button", { type: "button", class: "ib dx", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close")))
     : fsHead([el("h2", { class: "dtitle", text: title })], { close: () => d.close() });
   d.append(head, bodyBox, actBox);
   let downOutside = false;
@@ -385,11 +387,11 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm, mi
   motionDialog(d);
   return h;
 }
-function ask(title, text, ok = "확인", danger = false) {
+function ask(title, text, ok = TX("common.ok"), danger = false) {
   return new Promise(res => {
     let v = false;
     dialog({ confirm: true, title, body: text ? el("p", { text }) : null, onclose: () => res(v), actions: [
-      { label: "취소", onclick: c => c() },
+      { label: TX("common.cancel"), onclick: c => c() },
       { label: ok, kind: danger ? "danger fill" : "pri", onclick: c => { v = true; c(); } }] });
   });
 }

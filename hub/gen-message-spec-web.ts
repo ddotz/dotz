@@ -3,7 +3,7 @@ import { renameSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dir, "..");
-const NAMES = ["validateSpec", "specChildren", "elementPlain", "deriveSpec", "deriveBasicSpec"];
+const NAMES = ["validateSpec", "specChildren", "elementPlain", "deriveSpec", "deriveBasicSpec", "CHART_NOTE"];
 export async function buildMessageSpecWeb(): Promise<string> {
 	const tr = new Bun.Transpiler({ loader: "ts" });
 	const part = async (file: string) => tr.transformSync(await Bun.file(join(root, file)).text()).replace(/^import .*$/gm, "").replace(/^export /gm, "").replace(/^\s*\n/gm, "");
