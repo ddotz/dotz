@@ -1,6 +1,6 @@
 "use strict";
-const WEB_BUILD = "002ec28ebb32";
-const I18N_LANG = "ko", I18N = {"appset.exit.again":"한 번 더 누르면 닫혀요","appset.feat.fail":"기능을 바꾸지 못했어요","appset.retry.done":"다시 확인했어요","appset.retry.fail":"다시 시도하지 못했어요","appset.pending.title":"승인 대기","appset.pending.n":"{n}건","appset.every.range":"1분에서 7일 사이로 정해 주세요","appset.every.done":"감시 주기를 바꿨어요","appset.every.fail":"감시 주기를 바꾸지 못했어요","appset.last.out":"마지막 결과: {text}","appset.last.check":"마지막 확인 {at}","appset.fails":"연속 실패 {n}번","appset.repeat":"반복 {every}","appset.send_to":"보낼 곳: {name}","appset.reason":"이유: {text}","appset.every_min":"{n}분마다","appset.every_aria":"{name} 감시 주기(분)","appset.min":"분","appset.reconnect":"다시 연결","appset.retry":"다시 시도","appset.watch_posts":"지켜볼 글","appset.pick":"고르기","appset.deleted":"{name}을(를) 삭제했어요","appset.delete.fail":"삭제하지 못했어요","appset.rm.bound":"이 감시는 프로젝트의 작업 채널 설정에 묶여 있어요. 그 프로젝트에서 빼 주세요","appset.rm.title_sched":"예약 삭제","appset.rm.title_watch":"감시 삭제","appset.rm.hint_sched":"이 예약을 완전히 지워요","appset.rm.hint_watch":"이 감시를 완전히 지워요","appset.rm.sched1":"다시 실행하지 않고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.sched2":"잠깐 멈추려면 삭제 대신 예약 켜기를 끄세요","appset.rm.watch1":"확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.watch1_at":"{pc}에서 확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.watch2":"지금까지 온 감시 소식은 그대로 남아요","appset.rm.watch3":"잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요","appset.rm.ask":"{name}을(를) 삭제할까요?","appset.rm.confirm":"삭제 확인","appset.remove.read_fail":"제거할 내용을 읽지 못했어요","appset.removed_here":"{label}을(를) 이 기기에서 제거했어요","appset.removed_there":"{label}을(를) 그 컴퓨터에서 제거했어요","appset.remove.fail":"제거하지 못했어요","appset.remove.title":"앱 제거","appset.remove.hint":"이 기기에서만 지워요. 다른 컴퓨터는 그대로예요","appset.remove.btn":"제거","appset.remove.here1":"이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요","appset.remove.watches":"감시 {n}개를 지워요: {names}","appset.remove.no_watch":"지울 감시는 없어요","appset.remove.feats":"기능을 이 기기에서 꺼요: {names}","appset.remove.no_feat":"끌 기능은 없어요","appset.remove.others":"다른 컴퓨터의 같은 앱은 그대로예요","appset.remove.there1":"그 컴퓨터의 앱 목록에서 빼고, 알림과 푸시를 멈춰요","appset.remove.there2":"이 앱의 감시도 함께 꺼요","appset.remove.there3":"이 컴퓨터와 다른 컴퓨터의 같은 앱은 그대로예요","appset.remove.ask_here":"{label}을(를) 이 기기에서 제거할까요?","appset.remove.ask_there":"이 앱을 그 컴퓨터에서 제거할까요?","appset.remove.data":"저장된 데이터({data})도 지우기. 체크하지 않으면 남겨요","appset.remove.data_any":"저장된 데이터도 지우기. 체크하지 않으면 남겨요","appset.remove.confirm":"제거 확인","appset.del.line1":"{label} 앱을 완전히 지워요. 되돌릴 수 없어요","appset.del.line1_at":"{machine}에서 {label} 앱을 완전히 지워요. 되돌릴 수 없어요","appset.del.line2":"이름과 설정을 지우고, 앱 목록에서 빠져요","appset.del.line3":"이 앱의 감시도 함께 지워요","appset.add.hint_off":"꺼 둔 앱 {names} · 새로 추가","appset.add.hint_new":"새로 추가하기","appset.add.send":"맡기기","appset.add.ph":"어떤 앱을 연결하거나 만들까요?","appset.add.aria":"연결하거나 만들 앱","appset.add.title":"앱 관리","appset.add.new":"새 앱 추가","appset.add.off":"꺼 둔 앱","appset.add.on":"다시 켜기","appset.tpl.fail":"템플릿을 불러오지 못했어요","appset.tpl.close_aria":"앱 추가 닫기","appset.tpl.note":"{ph} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요","appset.on_at":"{pc}에서 {label}을(를) 다시 켰어요","appset.on_again":"{label}을(를) 다시 켰어요","appset.on_refill":"{label}을(를) 켰어요. 다시 연결할 내용을 채워 두었어요","appset.add.fail":"앱을 추가하지 못했어요","appset.fmt.items":"{n}개","appset.chg.add":"추가 {names}","appset.chg.del":"뺌 {names}","appset.chg.none":"달라지는 것 없음","appset.step.dec":"{label} 줄이기","appset.step.inc":"{label} 늘리기","appset.rule.ph_name":"이름: 메일 옆 뱃지에 보일 짧은 이름 (예: 자료 요청)","appset.rule.ph_when":"언제: 이 규칙을 쓸 메일 (예: 자료나 양식을 보내 달라는 메일)","appset.rule.ph_how":"어떻게: 초안에 바라는 것 (예: 요청한 자료를 첨부하고 짧게 인사)","appset.rule.ph_files":"붙일 파일: 첨부 파일 폴더 안의 파일 이름이나 전체 경로를 쉼표로 구분. 비우면 메일에 맞는 파일을 폴더에서 찾아요","appset.rule.save_fail":"규칙을 저장하지 못했어요","appset.rule.need":"이름과 언제를 적어 주세요","appset.rule.files":"붙일 파일: {files}","appset.rule.when":"언제: {text}","appset.rule.how":"어떻게: {text}","appset.rule.edit":"고치기","appset.rule.del":"지우기","appset.rule.deleted":"규칙 {name}을(를) 지웠어요","appset.rule.default_saved":"기본 규칙을 저장했어요","appset.rule.default_fail":"기본 규칙을 저장하지 못했어요","appset.rule.add":"규칙 추가","appset.sec.draft":"자동 초안과 승인","appset.sec.watch":"감시","appset.sec.more":"기타 기능","appset.sec.advanced":"고급","appset.conn.since":"{at}부터 연결이 끊겼어요","appset.conn.relogin":"다시 로그인해 주세요","appset.conn.at_pc":"{pc}에서 쓰는 앱이에요","appset.conn.off":"연결 끊김","appset.conn.on":"연결됨","appset.conn.checking":"연결 상태를 확인 중이에요","appset.set.fail":"설정을 바꾸지 못했어요","appset.set.load_fail":"설정을 불러오지 못했어요","appset.mem.title":"기억해 둔 것","appset.mem.hint":"대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요","appset.mem.none":"아직 없어요","appset.chip.relogin":"다시 로그인해 줘","appset.chip.cause":"원인 찾아 줘","appset.chip.resume":"다시 켜 줘","appset.chip.pause":"일시정지","appset.chips_aria":"빠른 지시","appset.card.bad":"변경 제안을 읽지 못했어요","appset.card.mem":"기억해 뒀어요","appset.card.title":"설정 바꾸기 제안","appset.card.applied":"적용했어요","appset.card.cancelled":"취소했어요","appset.apply":"적용","chat.kind.command":"명령","chat.kind.read":"읽기","chat.kind.edit":"수정","chat.kind.search":"검색","chat.kind.web":"웹","chat.kind.notes":"기록","chat.kind.tool":"도구","chat.kind.thinking":"생각","chat.status.resumed":"{name} 대화 기록 이어서 시작 · {model}","chat.status.started":"{name} 대화 기록 새로 시작 · {model}","chat.status.compacting":"컨텍스트 압축 중","chat.status.compacted":"컨텍스트 압축 완료","chat.status.retrying":"다시 시도 중","chat.status.retrying_n":"다시 시도 중 ({attempt})","chat.status.fallback":"모델 전환 · {model}","chat.log.work":"작업","chat.log.work_for":"{dur} 작업","chat.log.errors":"오류 {n}","chat.log.no_output":"(출력 없음)","chat.log.details":"자세히","chat.log.open_sub":"서브에이전트 기록 열기","chat.gw.work_msg":"작업 중에 온 메시지","chat.gw.work_lane":"작업 중에 온 세션 보고","chat.gw.restart":"재시작 뒤 다시 처리","chat.gw.waiting":"답을 기다리는 중","chat.gw.limit_over":"사용량 한도 풀림","chat.gw.provider_ok":"모델 제공자 복구","chat.gw.provider_retry":"일시 오류 뒤 다시 시도","chat.gw.reread":"대화 정리 뒤 지침 다시 읽기","chat.gw.first":"첫 시작","chat.inbox.lane_from":"세션 보고 · {name}","chat.inbox.lane":"세션 보고","chat.inbox.watch":"모니터링 · {name}","chat.inbox.mail":"새 메일","chat.inbox.schedule":"예약 작업","chat.prompt.keepalive":"캐시 유지 신호","chat.prompt.reflect":"야간 자기 점검","chat.prompt.handover":"이전 대화 이어받기","chat.prompt.message":"메시지","chat.prompt.attached":"첨부: {files}","chat.load.older_failed":"이전 기록을 불러오지 못했어요","chat.load.conv_failed":"이전 대화를 불러오지 못했어요","chat.gap.aria":"불러오지 않은 메시지가 있어요","chat.gap.load":"사이 메시지 불러오기","chat.older.more":"이전 기록 더 보기","chat.history.divider":"지난 기록","chat.empty.none":"아직 대화가 없어요","chat.empty.load_failed":"대화를 불러오지 못했어요","chat.empty.no_activity":"활동이 없어요","chat.upload.too_big":"파일이 너무 커요 ({size}MB, 최대 {max}MB)","chat.upload.failed":"올리지 못했어요 (HTTP {status})","chat.upload.lost":"연결이 끊겼어요","chat.upload.retry":"다시 올리기","chat.upload.retry_aria":"{name} 다시 올리기","chat.upload.progress":"{name} 올리는 중","chat.picker.drop":"{n}번 요소 빼기","chat.picker.limit":"요소는 한 번에 10개까지 보낼 수 있어요","chat.picker.hint_touch":"길게 눌러 요소 고르기","chat.picker.hint_mac":"⌘+클릭으로 요소 고르기","chat.picker.hint_ctrl":"Ctrl+클릭으로 요소 고르기","chat.conn.switching":"연결 끊김 · {name}(으)로 전환","chat.conn.short":"끊김","chat.sl.lane_sub":"세션 · {status}","chat.sl.session_default":"세션 기본값","chat.sl.auto":"자동으로 고르기","chat.sl.gateway_all":"게이트웨이 전체 (한가할 때)","chat.sl.bg_task":"백그라운드 작업","chat.sl.bg_task_model":"백그라운드 작업 · {model}","chat.sl.conv_running":"대화 · 진행 중","chat.sl.now_running":"지금 진행 중 · 골라서 지칭하기","chat.sl.optional":"{name} · 비워도 돼요","chat.arg.target":"대상","chat.arg.level":"강도","chat.arg.text":"글","chat.arg.account":"계정","chat.arg.provider":"공급자","chat.cmd.status":"봇·세션·Discord 상태와 컨텍스트","chat.cmd.context":"프로세스별 컨텍스트 사용량과 압축 상태","chat.cmd.compact":"컨텍스트 압축 (작업 중이면 끝난 뒤)","chat.cmd.lanes":"세션마다 상태와 모델","chat.cmd.model":"모델 보기, 또는 대상의 모델 바꾸기","chat.cmd.effort":"추론 강도 바꾸기","chat.cmd.fable_ok":"이 대화에서 비싼 모델(페이블)을 한동안 허용","chat.cmd.restart":"에이전트 재시작 · 게이트웨이는 전체 재시작","chat.cmd.stop":"세션 멈추기 (나중에 다시 시작할 수 있어요)","chat.cmd.resume":"멈춘 세션 이어가기, 실행 중이면 메시지 보내기","chat.cmd.abort":"지금 하는 일 취소 (비우면 봇)","chat.cmd.providers":"연결된 공급자와 모델 수","chat.cmd.account":"지금 Claude 계정 보기, 또는 바꾸기","chat.cmd.login":"공급자 로그인 (링크가 열려요)","chat.cmd.logout":"공급자 로그아웃","chat.cmd.quota":"공급자·계정별 사용 한도","chat.cmd.terminal":"이 컴퓨터 터미널에서 명령 실행","chat.cmd.screen":"이 컴퓨터 화면 열기","chat.cmd.help":"명령 전체 설명","chat.send.stopped":"작업을 중단했어요","chat.send.fix_uploads":"못 올린 파일을 다시 올리거나 빼 주세요","chat.send.uploading":"파일을 올리는 중이에요","chat.send.cmd_no_files":"명령에는 파일을 붙일 수 없어요","chat.send.cmd_no_picks":"명령에는 요소를 붙일 수 없어요","chat.send.no_screen":"이 컴퓨터에서는 화면 공유를 쓸 수 없어요","chat.send.need_cmd":"터미널에서 실행할 명령을 /terminal 뒤에 적어 주세요","chat.send.queued":"작업이 끝나면 전달할게요","chat.send.interrupted":"중단하고 보냈어요","chat.send.kept":"{message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요","chat.ph.ended":"종료된 세션이에요","chat.ph.pick_number":"번호를 누르거나 직접 입력해 주세요","chat.ph.resume":"재개하면서 보내기","chat.ph.project":"{name} 프로젝트의 {bot}에게 메시지 · /명령","chat.ph.mail":"이 메일 답장·전달은 {bot}에게 · /명령","chat.ph.settings":"{name} 설정은 {bot}에게 말해요 · /명령","chat.ph.target":"{name}에게 메시지 · /명령","chat.run.limit":"사용량 한도로 대기 중","chat.run.working":"작업 중…","chat.run.stop_title":"지금 하는 일 중단","chat.sub.count_lead":"서브에이전트 {n} ›","chat.sub.count_running":"서브에이전트 {n}개 진행 중 ›","chat.queue.label":"작업이 끝나면 전달","chat.queue.now":"지금 끼워넣기","chat.queue.clear_first":"입력창을 비운 뒤 취소해 주세요","chat.chip.session":"세션 {name}","chat.chip.this_project":"이 프로젝트","chat.chip.this_mail":"이 메일","chat.chip.this_conv":"이 대화","chat.chip.sub":"서브에이전트 {model}","chat.chip.sub_level":"서브에이전트 {model} · {level}","chat.chip.sub_title":"이 세션의 서브에이전트 모델","chat.chip.model_title":"{owner} 모델 · {name}","chat.chip.effort_title":"{owner} 추론 강도 · {level}","chat.chip.fallback_title":"{owner} 기본 모델 {model} 대신 쓰는 중","chat.chip.sub_change":"서브에이전트 {from} → {to}","chat.chip.effort_change":"{model} · 추론 강도 {from} → {to}","chat.ctx.label_pct":"{who} 컨텍스트 {pct}% · {used}/{win}","chat.ctx.label_tok":"{who} 컨텍스트 {tokens} 토큰","chat.ctx.idle_note":"쉬는 중이라 마지막 값이에요","chat.ctx.chip_pct":"컨텍스트 {pct}%","chat.ctx.chip_tok":"컨텍스트 {tokens}","chat.ctx.head_pct":"컨텍스트 {pct}% · {used}/{win}","chat.ctx.head_tok":"컨텍스트 {tokens} 토큰","chat.ctx.recache":"작업 중인 세션이라 컨텍스트 {tokens} 토큰이 캐시에 다시 쓰여요\n{label}","chat.ctx.apply":"적용","chat.ctx.compact_later":"작업이 끝나면 압축해요","chat.ctx.compact_started":"압축을 시작했어요","chat.ctx.applied":"적용했어요","chat.ctx.compact_now":"지금 압축","chat.ctx.recache_once":"캐시가 한 번 다시 쓰여요","chat.ctx.compacting":"압축 진행 중","chat.ctx.resting":"쉬는 중이에요","chat.ctx.resting_sub":"다음 메시지가 오면 다시 시작해요","chat.ctx.open":"컨텍스트 화면 열기","chat.models.link":"모델 설정","chat.models.link_sub":"대체 모델 순서까지","chat.inherit.mail":"이 메일 기본값과 같게","chat.inherit.main":"메인 대화와 같게","chat.att.photo":"사진","chat.att.file":"파일","chat.att.relay_no":"이 대화에는 파일을 붙일 수 없어요","chat.att.max":"한 번에 10개까지 보낼 수 있어요","chat.att.pasted":"붙여넣은 이미지.png","chat.att.enlarge":"{name} 크게 보기","chat.att.enlarge_named":"{no} {name} 크게 보기","chat.att.enlarge_no":"{no} 크게 보기","chat.att.open":"{name} · 열기","chat.att.cancel_upload":"{name} 올리기 취소","chat.att.remove":"{name} 빼기","chat.att.deleted":"원본이 지워졌어요","chat.att.cant_open":"열 수 없는 파일이에요","chat.att.cant_check":"확인하지 못했어요","chat.att.image_n":"이미지 {n}","chat.att.download_name":"{name} 다운로드","chat.att.download":"다운로드","chat.att.copy_path":"경로 복사: {path}","chat.att.path_copied":"경로를 복사했어요","chat.att.copy_failed":"복사하지 못했어요","chat.att.cut":"앞부분만 보여요. 전체는 다운로드해 주세요","chat.att.cant_open_short":"열 수 없어요","chat.att.new_tab":"새 탭","chat.att.prev":"이전 이미지","chat.att.next":"다음 이미지","chat.att.preview":"미리보기","chat.tsw.subs":"서브 {n}","chat.tsw.group":"대화 대상","chat.tsw.drop_aria":"대화 대상: {name}","chat.tsw.others_attn":"다른 대상 확인 필요 {n}개","chat.tsw.others_new":"다른 대상의 새 메시지","chat.tsw.no_project":"프로젝트 없음","chat.tsw.ended":"끝난 세션 {n}","chat.tsw.ended_sub":"기록 보기 · 재개","chat.tsw.show_chat":"대화 보기","chat.tsw.show_log":"로그 보기","chat.tsw.more":"더 보기 {n}","chat.tsw.attn":"확인 필요 {n}개","chat.auth.show_aria":"{label} 보기","chat.auth.show":"보기","chat.auth.hide":"숨기기","chat.auth.optional_label":"{label}(선택)","chat.auth.remember":"다음에도 쓰게 저장해 두기","chat.auth.remember_sub":"끄면 한 번 쓰고 지워요","chat.auth.required":"비워 둘 수 없어요","chat.auth.format":"형식을 확인해 주세요","chat.auth.store_failed":"게이트웨이가 값을 저장하지 못했어요(봇에게도 알렸어요): {error}","chat.auth.send_failed":"전달하지 못했어요. 다시 시도해 주세요","chat.auth.cancelled":"요청을 취소했어요","chat.auth.sent":"전달했어요","chat.auth.approve":"승인","chat.auth.approve_req":"승인 요청","chat.auth.input_req":"입력 요청","chat.auth.note":"입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요.","common.home":"홈","common.chat":"채팅","common.main_chat":"메인 대화","common.conversation":"대화","common.alerts":"알림","common.worklog":"작업내역","common.project":"프로젝트","common.projects":"프로젝트","common.monitoring":"모니터링","common.apps":"앱","common.settings":"설정","common.system":"구성","common.features":"기능","common.session":"세션","common.ended_sessions":"끝난 세션","common.subagent":"서브에이전트","common.assistant":"어시스턴트","common.model":"모델","common.reasoning":"추론 강도","common.accounts":"계정","common.usage":"사용량","common.limit":"한도","common.resets":"초기화","common.context":"컨텍스트","common.compact":"압축","common.mail":"메일","common.mailbox":"메일함","common.draft":"초안","common.schedule":"예약","common.routine":"루틴","common.devices":"기기","common.computer":"컴퓨터","common.trash":"휴지통","common.needs_reply":"답변 필요","common.unread":"안 읽음","common.decision":"결정","common.evidence":"근거","common.status.working":"작업 중","common.status.idle":"대기","common.status.starting":"시작 중","common.status.stopped":"멈춤","common.status.rate_limited":"한도 걸림","common.status.ended":"종료됨","common.effort.off":"끔","common.effort.minimal":"최소","common.effort.low":"낮음","common.effort.medium":"보통","common.effort.high":"높음","common.effort.very_high":"매우 높음","common.effort.max":"최고","common.effort.auto":"자동","common.cancel":"취소","common.delete":"삭제","common.save":"저장","common.close":"닫기","common.ok":"확인","common.undo":"되돌리기","common.restart":"재시작","common.stop":"중단","common.send":"보내기","common.back":"뒤로","common.loading":"불러오는 중…","common.load_failed":"불러오지 못했어요","connect.cond.none":"없음","connect.cond.five_hour":"5시간 남은 % 밑","connect.cond.week":"주간 남은 % 밑","connect.cond.auth":"로그인 풀림","connect.cond.unavailable":"특정 계정 못 씀","connect.do.pin":"계정 고정","connect.do.prefer":"순서대로 우선","connect.do.auto":"자동","connect.acc.default":"기본","connect.copied":"복사했어요","connect.acc.in_use_pinned":"사용 중 · 고정","connect.acc.left_5h":"5시간 {pct} 남음","connect.acc.left_week":"주간 {pct} 남음","connect.acc.pin_changed":"고정 계정을 바꿨어요","connect.acc.reorder":"{name} 순서 바꾸기. 끌거나 위아래 화살표를 눌러요","connect.acc.rename":"{name} 이름 바꾸기","connect.acc.pinned_note":"{name}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 대체 모델 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.","connect.acc.chosen":"고른 계정","connect.acc.auto":"자동 전환","connect.acc.auto_done":"자동 전환으로 바꿨어요","connect.acc.pin_done":"고정했어요","connect.limit.switch_sub":"한도에 걸리면 자동 전환으로 넘어가요","connect.limit.wait_sub":"한도에 걸린 동안 기다려요","connect.limit.unset_sub":"아직 정하지 않았어요","connect.limit.wait_done":"한도에 걸렸을 때 기다리기로 정했어요","connect.limit.switch_done":"한도에 걸렸을 때 자동 전환으로 넘어가기로 정했어요","connect.limit.ask":"물어보기","connect.limit.wait":"기다리기","connect.rules.title":"전환 규칙","connect.rules.none":"계정이 막힐 때만 자동으로 바꿔요.","connect.edit":"편집","connect.script.timeout":"{n}초 안에 끝나요","connect.script.every":"{n}분마다","connect.script.failed":"마지막 실행이 실패했어요","connect.script.last":"마지막 결과 · {result}","connect.script.none":"고르지 않음","connect.acc.name_prefix":"계정 ","connect.limit.title":"한도에 걸리면","connect.acc.no_usage":"사용량 아직 확인 안 됨","connect.acc.left":"{label} {pct}% 남음","connect.acc.none":"{name} 계정이 없어요","connect.acc.none_add":"계정을 하나 넣으면 여기 보여요.","connect.acc.none_login":"로그인이나 API 키를 넣어 주세요.","connect.alias.ph":"별칭 (예: 회사, 개인)","connect.alias":"별칭","connect.acc.delete":"계정 삭제","connect.delete_named":"{name} 삭제","connect.acc.delete_body":"OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.","connect.acc.deleted":"{name}을(를) 삭제했어요","connect.acc.unpin":"고정 풀기","connect.acc.unpinned":"고정을 풀었어요","connect.acc.pin_this":"이 계정으로 고정","connect.acc.pinned_to":"{name}로 고정했어요","connect.alias.saved":"별칭을 저장했어요","connect.alias.removed":"별칭을 지웠어요","connect.rules.days":"요일 (선택)","connect.rules.json":"규칙 JSON","connect.rules.name_ph":"규칙 {n} 이름 (선택)","connect.rules.name":"규칙 이름","connect.rules.cond":"조건","connect.rules.left":"남은 %","connect.rules.below":"% 밑","connect.rules.action":"동작","connect.rules.hours":"시간 (선택)","connect.rules.from":"시작","connect.rules.to":"끝","connect.rules.cond_n":"조건 {n}개","connect.rules.add":"규칙 추가","connect.rules.bad_json":"JSON 모양이 맞지 않아요","connect.rules.as_fields":"항목으로 보기","connect.rules.as_json":"직접 편집","connect.rules.saved":"규칙을 저장했어요","connect.dev.last_used":"마지막 사용 {ago}","connect.dev.never":"아직 쓰지 않음","connect.dev.title":"연결된 기기","connect.dev.count":"{n}대","connect.dev.load_failed":"연결된 기기를 불러오지 못했어요","connect.loading":"불러오는 중","connect.dev.connected_on":"{date} 연결","connect.dev.add_passkey":"이 기기에 패스키 추가","connect.dev.no_passkey":"이 브라우저는 패스키 없이 들어왔어요","connect.dev.sec":"이 웹앱을 쓸 수 있는 기기","connect.dev.none":"연결된 기기가 없어요","connect.dev.add":"새 기기 연결","connect.dev.name":"기기 이름","connect.dev.current":"지금 쓰고 있는 기기","connect.dev.remove":"해제","connect.dev.remove_self":"이 기기는 바로 로그아웃돼요. 다시 쓰려면 메신저로 받은 코드로 새로 연결해야 해요.","connect.dev.remove_other":"{name}의 로그인이 바로 끊겨요. 다시 쓰려면 코드로 새로 연결해야 해요.","connect.dev.remove_title":"기기 해제","connect.dev.removed":"기기를 해제했어요","connect.dev.need_name":"이름을 적어 주세요","connect.dev.qr":"새 기기 연결 QR 코드","connect.dev.step_self":"'연결 화면 열기'를 눌러 코드와 이 기기 이름을 넣어요.","connect.dev.step_passkey":"패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요.","connect.dev.step_open":"새 기기의 브라우저에서 이 웹앱 주소를 열어요. '기기 연결' 화면이 나와요.","connect.dev.step_qr":"QR을 찍거나 위의 코드를 넣어요.","connect.dev.step_code":"위의 코드를 넣어요.","connect.dev.step_name":"기기 이름을 넣고 패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요.","connect.dev.addr":"연결 화면 주소","connect.dev.open_page":"연결 화면 열기","connect.copy":"복사","connect.dev.code_note":"코드는 10분 동안 한 번만 쓸 수 있고, 메신저와 이 화면을 합쳐 한 시간에 3번까지 만들 수 있어요.","connect.dev.make_code":"여기서 코드 만들기","connect.dc.kind_chat":"대화 답장","connect.dc.kind_chat_sub":"내가 Discord에서 묻지 않은 대화의 답","connect.dc.kind_lanes_sub":"세션이 올리는 진행·완료 보고","connect.dc.kind_worklog_sub":"작업 기록 메시지","connect.dc.kind_web":"웹에서 시작한 세션","connect.dc.kind_web_sub":"웹이나 터미널에서 시작한 세션도 Discord에 채널을 만들어요","connect.dc.id_ph":"예: 123456789012345678","connect.dc.token":"봇 토큰","connect.nothing_changed":"바꾼 값이 없어요","connect.dc.token_delete_title":"봇 토큰 삭제","connect.dc.token_delete_body":"저장된 봇 토큰을 삭제해요. dotz를 다시 시작하면 Discord 연결이 끊겨요.","connect.dc.token_deleted":"봇 토큰을 삭제했어요","connect.restart_later":"작업이 끝나면 다시 켜져요. 이 화면은 자동으로 다시 연결돼요","connect.state.unset":"설정 안 됨","connect.dc.half":"토큰은 저장돼 있어요. 서버 ID와 내 사용자 ID까지 저장하고 게이트웨이를 다시 시작하면 연결돼요.","connect.dc.not_yet":"아직 Discord 봇이 연결되지 않았어요.","connect.state.on":"연결됨","connect.state.connecting":"연결 중","connect.dc.connecting":"연결하는 중이에요.","connect.dc.also_send":"{name} Discord로도 보내기","connect.dc.after_connect":"연결하면 고를 수 있어요","connect.dc.direct_note":"Discord에서 직접 물은 것의 답은 Discord에도 가요.","connect.dc.per_chat":"대화별로 Discord에도 보내기","connect.check_failed":"확인하지 못했어요","connect.dc.bot_named":"봇 {name}","connect.dc.unnamed":"이름 없음","connect.dc.admin_ok":"관리자 권한 확인됨","connect.dc.admin_no":"관리자 권한이 없어요.","connect.dc.reauth":"봇 권한 다시 승인","connect.dc.guild":"서버 ID","connect.dc.owner":"내 사용자 ID","connect.dc.token_saved":"봇 토큰 (저장됨 · 바꾸려면 새로 붙여 넣기)","connect.saved_tag":"저장됨","connect.check_conn":"연결 확인","connect.dc.token_delete":"토큰 삭제","connect.dc.restart_applies":"게이트웨이를 다시 시작하면 적용돼요","connect.restart":"다시 시작","connect.dc.load_failed":"Discord 설정을 불러오지 못했어요","connect.dc.how":"연결하는 방법","connect.dc.how1":"Discord 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요","connect.dc.how2":"초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)","connect.dc.how3":"봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요","connect.sec":"연결","connect.dc.bot":"Discord 봇","connect.connecting":"연결하는 중","connect.ms.as_user":"내 계정으로 보냅니다","connect.connect":"연결","connect.turn_on":"켜기","connect.ms.sum_more":"{name} 외 {n}개 연결됨","connect.ms.sum_one":"{name} 연결됨","connect.ms.title":"메신저","connect.ms.connected_ago":"{ago} 연결했어요","connect.ms.tap_connect":"연결을 누르면 자동으로 설정해요.","connect.ms.tap_on":"설정은 돼 있어요. 켜기를 누르면 알림을 보내요.","connect.ms.rooms_n":"방 {n}개","connect.ms.test_failed":"확인하지 못했어요 · {error}. 잠시 뒤에 다시 눌러 주세요","connect.ms.checked_ago":"{ago} 확인했어요","connect.ms.no_rooms":"방이 없어요","connect.ms.some_failed":"보내지 못한 방이 있어요","connect.ms.all_ok":"정상이에요","connect.ms.sent_to":"{name}: 보냈어요","connect.ms.send_failed":"보내지 못했어요","connect.paste_new":"바꾸려면 새로 붙여 넣기","connect.ms.on":"켜져 있어요","connect.ms.off":"꺼져 있어요","connect.ms.load_failed":"메신저 설정을 불러오지 못했어요","connect.ms.received":"받음 {ago}","connect.ms.sent":"보냄 {ago}","connect.check":"확인","connect.onb.waiting":"내가 할 일이 하나 남았어요.","connect.onb.running":"자동으로 연결하는 중이에요.","connect.onb.done":"연결했어요.","connect.onb.failed":"연결하지 못했어요.","connect.onb.idle":"아직 시작하지 않았어요.","connect.onb.start_failed":"연결을 시작하지 못했어요 · {error}. 잠시 뒤에 다시 눌러 주세요","connect.onb.title":"자동 연결","connect.onb.continue":"계속","connect.onb.restart":"다시 시작","connect.onb.pick":"고르기","connect.manual":"직접 입력","connect.wa.local":"이 컴퓨터만","connect.wa.tailscale_sub":"Tailscale로 연결한 내 기기에서 열어요. 기본값이에요.","connect.wa.cloudflare_sub":"Cloudflare 터널로 고정 주소를 열어요. 연결은 자동으로 진행하고, 필요한 한 가지 동작만 알려드려요.","connect.wa.local_sub":"이 컴퓨터에서만 열어요.","connect.wa.title":"웹 접속","connect.wa.no_tunnel_hint":"터널 프로그램이 없어요. 채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요.","connect.wa.tunnel_open":"터널이 열려 있어요","connect.wa.tunnel":"터널","connect.wa.host":"주소","connect.wa.host_help":"터널에 연결해 둔 주소예요. 주소를 바꾸면 기기를 다시 연결해야 해요.","connect.wa.team":"팀 이름 (선택)","connect.wa.team_help":"Cloudflare Access로 한 번 더 확인할 때만 적어요. 확인 번호와 함께 적어요.","connect.wa.aud":"확인 번호 (선택)","connect.wa.aud_help":"Access 앱 화면의 Audience Tag 값이에요.","connect.wa.token":"터널 토큰","connect.wa.token_help":"저장하면 이 컴퓨터에만 보관하고, 화면에는 다시 보여 주지 않아요.","connect.revert":"되돌리기","connect.wa.load_failed":"웹 접속 설정을 불러오지 못했어요","connect.wa.mode":"접속 방식","connect.wa.status":"상태","connect.wa.devices":"연결된 기기 (패스키)","connect.wa.devices_sub":"이 웹앱에 들어올 수 있는 브라우저","connect.wa.plain_note":"Cloudflare를 거치는 내용은 Cloudflare가 평문으로 볼 수 있어요. 암호화(TLS)가 거기서 끝나기 때문이에요.","connect.wa.no_tunnel":"터널 프로그램이 없어요","connect.wa.install_hint":"채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요.","connect.wa.need_host":"주소를 적어 주세요","connect.rt.adapted":"대체","connect.rt.disabled":"끔","connect.rt.unsupported":"미지원","connect.rt.current":"현재 쓰는 중","connect.rt.row_aria":"작업 프로그램: {name}. 눌러서 바꾸기","connect.rt.no_adapter":"dotz가 아직 지원하지 않아서 바꿀 수 없어요.","connect.rt.blocked":"핵심 항목이 통과하지 못해서 바꿀 수 없어요: {list}","connect.rt.stale":"검사한 뒤 버전이 바뀌었어요 (v{from} → v{to}). 다시 검사해 주세요.","connect.rt.adjusted":"핵심 항목은 모두 통과했어요. {n}개 기능은 게이트웨이가 대신 처리하거나 꺼요.","connect.rt.all_ok":"모든 항목이 통과했어요.","connect.rt.checked":"검사 {meta}","connect.rt.core":"핵심","connect.rt.switch_to":"{name}로 바꾸기","connect.rt.applies":"적용 대상","connect.rt.need_one":"하나는 켜 두어야 해요.","connect.rt.checking":"작동을 검사하는 중이에요","connect.rt.progress":"{done}/{total} 항목","connect.rt.starting":"시작하는 중…","connect.rt.omo_note":"OmO는 기본 작업 프로그램이라서 검사 없이 쓸 수 있어요.","connect.rt.check_note":"바꾸기 전에 잘 작동하는지 검사해요. 짧은 작업을 실제로 돌려 보기 때문에 1~2분쯤 걸릴 수 있어요.","connect.rt.no_adapter_check":"dotz가 아직 지원하지 않아서 바꿀 수 없어요. 작동 검사를 하면 어떤 항목이 막히는지 볼 수 있어요.","connect.rt.omp_note":"omp는 선택해서 쓰는 작업 프로그램이에요. 처음에 쓰던 것이라 검사 없이 바꿀 수 있어요.","connect.rt.recheck":"다시 검사","connect.rt.run_check":"작동 검사","connect.rt.switch":"바꾸기","decision.undo.left":"{n}초 뒤에 보내요","decision.undo.cancel":"보내기 취소","decision.gone":"이 세션이 끝나서 답을 보낼 수 없어요","decision.org.post_video":"영상","decision.org.post_post":"게시물","decision.org.post_other":"글","decision.org.author":"작성자","decision.org.time":"시간","decision.org.date":"날짜","decision.org.parent":"↳ {author}의 댓글","decision.org.open_source":"원본 열기","decision.org.missing":"원문을 찾을 수 없어요","decision.org.load_failed":"원문을 불러오지 못했어요","decision.org.retry":"다시 시도","decision.org.loading":"원문을 불러와요…","decision.org.none":"원문이 없어요","decision.org.comment":"댓글 원문","decision.org.mail":"메일 원문","decision.org.show":"원문 보기","decision.org.hide":"원문 접기","decision.org.original":"원문","decision.org.pick":"초안과 원문 고르기","decision.org.close":"원문 닫기","decision.subject":"제목","decision.from":"보낸이","decision.to":"받는이","decision.cc":"참조","decision.summary":"요약","decision.reply":"답장","decision.reply_all":"전체 답장","decision.reply_scope":"답장 범위","decision.edit":"고치기","decision.drop":"보내지 않기","decision.manual":"직접 수정","decision.edit_named":"{name} 고치기","decision.remove":"빼기","decision.remove_named":"{name} 빼기","decision.add":"추가","decision.add_named":"{name} 추가","decision.open":"열기","decision.back":"돌아가기","decision.more":"펼치기","decision.less":"접기","decision.app.kakao":"메신저","decision.app.instagram":"인스타그램","decision.app.youtube":"유튜브","decision.app.site":"웹사이트 댓글","decision.pending.send":"보내는 중…","decision.pending.edit":"고치는 중…","decision.pending.drop":"처리하는 중…","decision.st.sent_processing":"보냈어요 · 처리하는 중","decision.fail.send_offline":"연결이 끊겨 보내지 못했어요 · 다시 보내기","decision.fail.send":"보내지 못했어요 · 다시 보내기","decision.fail.act_offline":"연결이 끊겨 처리하지 못했어요 · 다시 눌러 주세요","decision.fail.act":"처리하지 못했어요 · 다시 눌러 주세요","decision.err.offline_act":"연결이 끊겨 처리하지 못했어요","decision.err.offline_change":"연결이 끊겨 바꾸지 못했어요","decision.err.offline_upload":"연결이 끊겨 올리지 못했어요","decision.rq.reply_to":"{who}님께 답장","decision.hint.revise":"더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘","decision.hint.own":"메일 먼저 보내고 답글은 내일 올려 줘","decision.revise.what":"고칠 내용","decision.revise.ask":"어떻게 고칠까요?","decision.revise.go":"고쳐 달라고 하기","decision.own.aria":"보내는 방법","decision.own.ask":"어떻게 보낼까요?","decision.note.go_manual":"이 내용으로 고치기","decision.note.go_own":"이렇게 보내 달라고 하기","decision.note.go_answer":"{label}(으)로 답하기","decision.note.manual_ph":"보낼 내용을 직접 고쳐 주세요","decision.note.reason_ph":"이유나 내용을 적어 주세요","decision.note.details":"자세한 내용","decision.note.detail_ph":"내용을 적어 주세요","decision.decide":"정할 것","decision.attach.count":"첨부 {n}개","decision.attach.attached":"✓ 첨부 {n}개 붙어 있어요","decision.attach.none_here":"첨부: 없음 · 파일을 붙일 수 없는 곳이에요","decision.attach.none":"첨부: 없음","decision.attach.left":"남는 파일: {files}","decision.attach.check":"첨부 확인","decision.attach.no_send":"이 계정은 파일을 못 보내요 · 본문만 가요","decision.attach.check_title":"첨부를 확인해 주세요","decision.attach.asis_to":"{to}에게 보낼 메일이에요. {issues}. 이대로 보내면 지금 상태 그대로 나가요. 보낼까요?","decision.attach.asis":"{issues}. 이대로 보내면 지금 상태 그대로 나가요. 보낼까요?","decision.attach.send_asis":"이대로 보내기","decision.attach.unknown_title":"첨부를 확인하지 못했어요","decision.attach.unknown_body":"{name+이/가} 붙인 파일이 아니라서 실제로 가는지 몰라요. 보낼까요?","decision.attach.without_title":"첨부 없이 보낼까요?","decision.attach.without_body":"이 계정은 파일을 못 보내요. 본문만 가요.","decision.send_anyway":"그래도 보내기","decision.n":"결정 {n}","decision.send_progress":"보내기 ({got}/{total} 선택)","decision.file.peer_max":"다른 컴퓨터의 초안에는 10MB 이하 파일만 붙일 수 있어요","decision.file.cross_peer":"다른 컴퓨터의 이 초안에는 파일을 붙일 수 없어요","decision.file.pick":"파일 고르기","decision.file.open":"{name} 열기","decision.file.open_size":"{name} 열기 ({size})","decision.file.detach":"첨부에서 빼기","decision.file.match":"맞음","decision.file.folder_empty":"폴더가 비어 있어요","decision.file.from_device":"이 기기에서 고르기","decision.file.from_folder":"첨부 파일 폴더에서 고르기","decision.file.attaching":"붙이는 중…","decision.file.add":"파일 추가","decision.file.locked":"열람 불가","decision.file.uploading":"올리는 중…","decision.file.attach":"파일 첨부","decision.rc.edit":"고치기","decision.rc.to_addr":"받는 사람 주소","decision.rc.cc_addr":"참조 주소","decision.rc.add_to":"메일 주소 추가","decision.rc.add_cc":"참조 주소 추가","decision.rule.title":"자동 초안 규칙: {name}","decision.mail.along":"함께 보낼 메일","decision.mail.along_body":"함께 보낼 메일 내용","decision.mail.open":"메일 열기","decision.my_reply":"내 답글","decision.body_label":"보낼 내용","decision.sent":"보냈어요","decision.not_sent":"보내지 않았어요","decision.just_now":"방금","decision.rcpt.check":"받는이 확인: {warning}","decision.rcpt.none":"없음","decision.rcpt.to":"받는이 {first}","decision.rcpt.to_more":"받는이 {first} 외 {n}명","decision.rcpt.cc":"참조 {n}","decision.check_reply":"답장 확인","decision.check_before":"보내기 전에 확인해요","decision.needs_decision":"결정이 필요해요","decision.needs_reply":"답변이 필요해요","decision.waiting_tag":"답 기다림","decision.toast.sending_soon":"곧 보내요","decision.toast.restored":"초안을 되돌렸어요","decision.past":"지난 결정이에요","decision.qline":"답장 초안 {n}건 기다려요","decision.review":"확인하기","decision.wait.tag":"답 대기","decision.wait.confirm":"보내기 확인","decision.record.aria":"결정 기록","decision.record.q":"질문","decision.record.a":"· 답:","home.worklog.check":"예약 점검","home.worklog.night":"야간 정리","home.worklog.update":"업데이트","home.worklog.account":"계정","home.worklog.system":"시스템","home.worklog.note":"기록","home.fold.open_label":"{label} 펼치기","home.fold.close_label":"{label} 접기","home.fold.close":"접기","home.mailbody.title":"메일 원문","home.mailbody.blocked":"바깥 이미지 {n}개를 막았어요","home.mailbody.broken":"바깥 이미지 {n}개는 이 기기에서 열리지 않아요","home.mailbody.showing":"바깥 이미지를 보고 있어요","home.mailbody.hide":"이미지 숨기기","home.mailbody.show":"이미지 보기","home.mailbody.failed":"원문을 불러오지 못했어요","home.mailtext.fold":"이전 메일 {n}줄 보기","home.mailtext.quote":"인용 {n}줄 보기","home.mailtext.summary_k":"요약 · ","home.mailtext.todo":"할 일","home.mailtext.ask":"직접 답할 것","home.result.raw_close":"원문 접기","home.result.raw_open":"원문 보기","home.result.changed_from":"{from}에서 바뀜","home.result.morning":"아침 점검","home.watch.changed":"결과가 바뀌었어요","home.watch.matched":"조건에 맞는 결과가 나왔어요","home.watch.check_failed":"점검에 실패했어요","home.watch.recovered":"다시 정상이에요","home.watch.slot_skipped":"이 시간대의 릴리스를 건너뛰었어요","home.watch.no_password":"저장된 비밀번호가 없어 다시 로그인하지 못했어요. 맥 암호에 저장하고 다시 연결을 눌러 주세요","home.watch.stopped":"실패가 이어져 멈췄어요. 승인하면 다시 확인해요","home.watch.second_factor":"2차 인증이 필요해요. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요","home.watch.needs_approval":"승인이 필요해요","home.watch.passes_again":"점검이 다시 통과했어요","home.watch.unchanged":"내용은 그대로이고 시각 같은 값만 바뀌었어요","home.watch.fresh":"새로 생겼어요","home.watch.gone":"사라졌어요","home.watch.schedule_started":"예약한 일이 시작됐어요","home.watch.value":"값","home.watch.fail_login":"로그인이 풀렸어요","home.watch.fail_fetch":"내용을 가져오지 못했어요","home.watch.fail_network":"네트워크에 연결하지 못했어요","home.watch.fail_timeout":"시간이 너무 오래 걸렸어요","home.watch.fail_captcha":"보안 확인(캡차)이 필요해요","home.watch.fail_off":"연동이 꺼져 있어요","home.watch.fail_app":"앱이 꺼져 있어요","home.watch.fail_browser":"브라우저를 열지 못했어요","home.watch.fail_parse":"화면 구조가 바뀌어 읽지 못했어요","home.watch.fail_rate":"요청이 너무 잦아 잠시 막혔어요","home.watch.json_status":"상태","home.watch.json_count":"개수","home.watch.json_total":"전체","home.watch.json_title":"제목","home.watch.json_name":"이름","home.watch.json_time":"시각","home.watch.json_date":"날짜","home.watch.json_updated":"갱신 시각","home.watch.json_created":"만든 시각","home.watch.json_checked":"확인 시각","home.watch.json_latest":"최근","home.watch.json_last":"마지막","home.watch.json_price":"가격","home.watch.json_message":"메시지","home.watch.json_error":"오류","home.watch.json_version":"버전","home.watch.json_items":"항목","home.watch.json_url":"주소","home.watch.json_ok":"정상","home.watch.json_yes":"예","home.watch.json_no":"아니요","home.watch.json_failed":"실패","home.watch.kind_count":"{kind} {n}건","home.watch.more":"외 {n}건","home.watch.fails":"{n}번 연속 실패했어요","home.watch.new_items":"새 항목 {n}건","home.watch.removed_items":"사라진 항목 {n}건","home.watch.matching_items":"조건에 맞는 항목 {n}건","home.watch.news":"새 소식 {n}건","home.watch.log_lines":"기록 {n}줄","home.watch.last":"마지막 {time}","home.attn.check":"확인 필요","home.attn.unread_chats":"읽지 않은 대화 {n}개","home.attn.chat_aria":"채팅, {say}","home.attn.to_check":"확인할 것 {n}개","home.attn.news":"새 소식","home.attn.mon_aria":"모니터링, {say}","home.attn.needs_n":"답변 필요 {n}개","home.attn.waiting":"{names}가 답을 기다려요","home.attn.waiting_more":"{names} 외 {n}개가 답을 기다려요","home.attn.limit_wait":"사용량 한도로 대기 중이에요","home.attn.done_check":"답을 마쳤어요. 확인해 주세요","home.attn.alerts_aria":"알림, 안 읽은 알림 {n}개","home.ny.login":"로그인","home.ny.choose":"선택","home.ny.reply":"답변","home.ny.relogin":"다시 로그인","home.ny.relogin_hint":"다시 로그인해야 이어서 볼 수 있어요","home.ny.login_lost":"{app} 로그인이 풀렸어요","home.ny.app":"앱","home.ny.none":"답변할 항목이 없어요","home.dur.d":"{n}일","home.dur.w":"{n}주","home.dur.h":"{n}시간","home.dur.s":"{n}초","home.dur.m":"{n}분","home.dur.ms":"{m}분 {s}초","home.dur.hm":"{h}시간 {m}분","home.usage.title":"사용량 · {word} {pct}% 남음","home.usage.left":"{word} {pct}% 남음","home.today":"오늘","home.ny.critical":"중요 · {act}","home.gban.times":"{n}회","home.gban.tx":"오늘 재시작 {restarts} · 끊긴 작업 {cut}","home.gban.title":"오늘 게이트웨이 재시작 {n}회, 끊긴 작업 {cut}, 마지막 {time}","home.alert.model_timeout":"{name+이/가} 모델 응답이 너무 오래 없어서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_network":"{name+이/가} 모델 서버에 연결되지 않아서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_limit":"{name+이/가} 사용 한도에 걸려서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_busy":"{name+이/가} 모델 서버가 바빠서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_error":"{name+이/가} 모델 오류가 계속돼서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.deliv.steered":"받음 · 지금 작업에 전달","home.deliv.received":"받음 · 바로 전달","home.deliv.queued":"받음 · 기다렸다 전달","home.deliv.held":"받음 · 한도가 풀리면 전달","home.deliv.compacting":"받음 · 대화 정리가 끝나면 전달","home.deliv.update":"받음 · 업데이트 뒤 전달","home.deliv.resumed":"다시 시작해서 전달","home.deliv.answered":"답함","home.deliv.failed":"전달하지 못했어요","home.sys.running":"진행 중","home.sys.done":"완료","home.sys.failed":"실패","home.sys.stopped":"중단됨","home.sys.view_result":"결과 보기","home.sys.open_task":"작업 열기","home.sys.open_file":"{name} · 열기","home.sys.bg":"백그라운드 작업","home.msg.cmd":"명령","home.msg.terminal":"터미널","home.msg.more":"더 보기","home.lane.open":"세션 열기","home.lane.result":"세션 결과","home.lane.finished":"{title} 끝났어요","home.lane.verified":"확인됨","home.lane.started":"세션 시작 · {hm}","home.msg.details":"자세히","home.gateway":"게이트웨이","home.work.dur":"{dur} 작업","home.work.work":"작업","home.work.think":"생각","home.work.errs":"오류 {n}","home.kind.cmd":"명령","home.kind.read":"읽기","home.kind.edit":"수정","home.kind.search":"검색","home.kind.subagent":"서브에이전트","home.kind.web":"웹","home.kind.notes":"기록","home.kind.tool":"도구","home.menu.split":"카드로 나누기","home.menu.open":"{label} 열기","home.menu.assistant_restarts":"어시스턴트가 다시 시작돼요.","home.menu.change_model":"모델 변경…","home.menu.reasoning":"추론 강도…","home.menu.model_settings":"모델 설정","home.menu.stopped":"작업을 중단했어요","home.menu.restart_title":"{name} 재시작","home.menu.restart_body":"작업 중인 내용이 있으면 멈추고 세션을 다시 시작해요.","home.menu.restarted":"재시작했어요","home.menu.delete_key":"키 삭제","home.menu.logout":"로그아웃","home.menu.compact_queued":"{name}: 작업 중이라 끝나면 압축해요","home.menu.compact_started":"{name}: 압축을 시작했어요","home.menu.group":"{label} 한 카드로 묶기","home.menu.move_up":"앞으로 옮기기","home.menu.move_down":"뒤로 옮기기","home.tool.run":"명령 실행","home.tool.edit":"파일 수정","home.status.compacting":"컨텍스트 압축 중","home.status.compacted":"컨텍스트 압축 완료","home.status.retrying":"다시 시도 중","home.status.fallback":"다른 모델로 전환","home.card.no_alerts":"새 알림이 없어요","home.card.no_worklog":"아직 작업내역이 없어요","home.card.failed_n":"실패 {n}","home.card.no_monitors":"모니터링 중인 항목이 없어요","home.card.more_n":"더 보기 · {n}개","home.later":"백그라운드 작업 중","home.subs.title":"서브에이전트 끝난 수 / 전체","home.subs.count":"서브에이전트 {done}/{total}","home.conv.open_aria":"{name} · {state} · 대화 열기","home.count.aria":"{title} · {n}건","home.owed.title":"답 안 한 댓글","home.replies.other":"기타","home.replies.title":"답장 초안 확인","home.limit.resume":"한도 리셋되면 재개","home.limit.resume_at":"한도 리셋되면 재개 ({time})","home.todo.queued":"순서 대기","home.since.now":"방금 시작","home.since.for":"{time}째","home.ago.now":"방금","home.ago.m":"{n}분 전","home.ago.h":"{n}시간 전","home.chip.commit":"커밋","home.chip.link":"링크","home.result.aria":"결과 {n}개 보기","home.result.count":"결과 {n}","home.greet.night":"편안한 밤이에요","home.greet.morning":"좋은 아침이에요","home.greet.afternoon":"좋은 오후예요","home.greet.evening":"좋은 저녁이에요","home.word.connecting":"연결 중","home.word.working":"일하는 중","home.word.resting":"쉬는 중","home.greet.line":"{bot+이/가} {word}","home.greet.sessions":"세션 {n}개","home.greet.menu":"어시스턴트 메뉴","home.connect.hint":"계정을 연결해야 답할 수 있어요","home.connect.btn":"계정 연결","home.card.nothing_running":"진행 중인 작업이 없어요","home.card.critical_n":"중요 {n}","home.card.todo":"할일","home.card.items_n":"{n}개","home.card.nothing_waiting":"아직 시작 전인 일이 없어요","home.card.running":"지금 진행 중","home.card.held":"대기 중","home.card.ended":"최근 끝난 작업","home.ctx.tokens":"{n} 토큰","home.ctx.title":"컨텍스트 · {who}","home.prov.login_needed":"로그인 필요","home.prov.api_key":"API 키","home.prov.signed_in":"로그인됨","home.group.usage_failed":"사용량을 불러오지 못했어요","home.group.none":"없어요","home.card.add":"카드 추가","home.orch.restart_title":"어시스턴트 재시작","home.orch.restart_body":"어시스턴트가 하던 일이 있으면 멈추고 다시 시작해요.","home.orch.restart_asked":"재시작을 요청했어요","home.wk.resumed":"이어서 처리 중","home.wk.no_activity":"활동이 없어요","home.wk.retry":"다시 맡기기","home.wk.go_chat":"대화로 가기","home.wk.aria":"{desc} · {state} · {act}","mail.mode.auto":"자동 초안","mail.mode.ask":"확인 먼저","mail.mode.notify":"알림만","mail.mode.quiet":"조용히 모으기","mail.mode.default":"기본 방식","mail.box.general":"일반","mail.disconnected":"연결 끊김","mail.peer_why":"{name}의 메일함은 그 컴퓨터에서 바꿔 주세요","mail.accounts_n":"계정 {n}개","mail.unread_n":"안 읽음 {n}","mail.boxes_n":"메일함 {n}개","mail.account_named":"{name} 계정","mail.needs_reply":"답장 필요","mail.all":"전체","mail.default_tag":"기본","mail.box.add":"메일함 추가","mail.box.settings":"메일함 설정","mail.merged_n":"계정 {n}개를 합쳐서 보여요","mail.base_note_multi":"계정마다 어느 메일함에도 맞지 않는 메일이 여기로 와요.","mail.base_note":"어느 메일함에도 맞지 않는 메일은 여기로 와요.","mail.down.title":"{name} 계정 로그인이 풀렸어요","mail.down.body":"받은 메일은 그대로 있어요. 다시 연결하면 새 메일도 들어와요.","mail.reconnect":"다시 연결","mail.load_failed":"메일을 불러오지 못했어요","mail.acct.switch":"메일 계정 바꾸기","mail.acct.all":"모든 계정","mail.needs_reply_n":"답장 필요 {n}","mail.signed_out":"로그인이 풀렸어요","mail.acct.add":"계정 추가","mail.move":"메일함 옮기기","mail.move.mixed":"여러 계정의 메일이 섞여 있어요","mail.move.mixed_hint":"계정마다 따로 골라서 옮겨 주세요","mail.move.ask":"어느 메일함으로 옮길까요?","mail.move.within":"{name} 계정 안에서만 옮길 수 있어요","mail.move.failed":"옮기지 못했어요","mail.teach.failed":"기억해 두지 못했어요","mail.teach.only_one":"이 메일만","mail.teach.only_many":"이 메일들만","mail.teach.exclude":"{who} 메일은 {box}에 넣지 않기","mail.teach.from":"{who} 메일은 앞으로 여기로","mail.teach.subject":"제목에 ‘{word}’ 들어가면 앞으로 여기로","mail.teach.moved":"{box}에 넣었어요","mail.teach.with_thread":"같은 대화 {n}통이 함께 옮겨졌어요","mail.teach.saved":"기억해 뒀어요 · {rule}","mail.teach.ask":"앞으로는 어떻게 할까요?","mail.sent.send":"보낸 답장","mail.sent.expired":"만료된 초안","mail.sent.ignored":"무시한 초안","mail.sent.edit":"고친 초안","mail.sent.remove_failed":"지우지 못했어요","mail.sent.removed":"초안을 지웠어요","mail.sent.clear_failed":"{total}개 중 {n}개를 지우지 못했어요","mail.sent.cleared":"초안 {n}개를 지웠어요","mail.sent.handled":"처리된 초안","mail.sent.remove_this":"이 초안 지우기","mail.remove":"지우기","mail.sent.group":"처리된 답장 초안","mail.sent.count":"처리된 초안 {n}개","mail.sent.clear":"모두 지우기","mail.people.more":"외 {n}명","mail.people.aria":"보낸 사람과 받는 사람","mail.from":"보낸 사람","mail.to":"받는 사람","mail.people.and_more":"{names} 외 {n}명","mail.to_line":"받는 사람 {names}","mail.cc_line":"참조 {names}","mail.no_subject":"(제목 없음)","mail.thread.count":"이 사람과 주고받은 메일 {n}","mail.people.details":"보낸 사람·받는 사람 자세히","mail.thread.aria":"같은 사람과 주고받은 메일","mail.thread.title":"이 사람과 주고받은 메일","mail.thread.fold":"접기","mail.thread.fold_aria":"같은 사람 메일 접기","mail.mode.auto_desc":"메일이 오면 초안을 써 둬요. 보내기 전에 확인해요.","mail.mode.ask_desc":"답장할지 먼저 물어요. 쓰라고 하면 그때 초안을 써요.","mail.mode.notify_desc":"새 메일을 알려 줘요. 초안은 쓰지 않아요.","mail.mode.quiet_desc":"알리지 않고 여기 모아 둬요.","mail.cond.from":"보낸 사람","mail.cond.addr_ph":"주소나 @도메인","mail.cond.subj_ph":"제목에 든 말","mail.cond.body":"내용","mail.cond.body_ph":"내용에 든 말","mail.icon.mail":"편지","mail.icon.folder":"폴더","mail.icon.file":"문서","mail.icon.tag":"태그","mail.icon.users":"사람","mail.icon.bell":"종","mail.set.save_failed":"저장하지 못했어요","mail.set.merged_note":"계정마다 있는 메일함이라 {name} 계정의 설정을 열었어요.","mail.set.view_mail":"메일 보기","mail.set.mode":"처리 방식","mail.remove_named":"{name} 지우기","mail.more_n":"더 보기 · {n}개","mail.add":"추가","mail.cond.not_from":"넣지 않을 보낸 사람","mail.judge.switch":"내용을 보고 판단","mail.judge.ph":"예: 강의 자료를 달라는 메일","mail.judge.aria":"판단 설명","mail.icon.label":"아이콘","mail.name":"이름","mail.greet.addr":"주소","mail.greet.hello":"첫 인사","mail.greet.add":"받는 사람 추가","mail.voice.own":"보낸 글 {n}개로 따로 배웠어요","mail.voice.kept":"이 메일함에 따로 적어 둔 말투를 써요","mail.voice.ready":"보낸 글 {n}개가 모였어요. 곧 따로 배워요","mail.voice.few":"이 메일함에서 보낸 글이 {n}개라 계정 말투를 써요. {need}개부터 따로 배워요","mail.voice.learned":"말투를 다시 배웠어요","mail.voice.learn_few":"보낸 메일을 더 읽어 볼게요. 모이면 알아서 배워요","mail.voice.learn_busy":"이미 배우고 있어요","mail.voice.learn_empty":"말투를 찾지 못해 그대로 뒀어요","mail.voice.examples":"예시 보기","mail.voice.ex_received":"받은 메일","mail.voice.ex_reply":"내가 쓴 답장","mail.voice.learning":"지난 메일을 다시 읽고 있어요","mail.voice.relearn":"다시 배우기","mail.voice.how_first":"기본 지시가 배운 말투보다 먼저예요","mail.set.loading":"불러오는 중이에요","mail.voice.failed":"말투를 읽지 못했어요","mail.voice.none":"아직 정리된 말투가 없어요. 보낸 메일이 모이면 알아서 배워요.","mail.voice.no_own":"이 메일함만의 말투는 아직 없어요.","mail.voice.fixes":"고친 점","mail.cond.excluded":"제외 {n}","mail.cond.none":"기준 없음","mail.none":"없음","mail.first_more":"{first} 외 {n}개","mail.set.gone":"지운 메일함이에요","mail.box.name":"메일함 이름","mail.set.name_empty":"이름을 비워 둘 수 없어요","mail.set.has":"있음","mail.set.view":"보기","mail.voice.title":"말투","mail.how.title":"기본 지시","mail.how.ph":"이 메일함의 초안을 쓸 때마다 지킬 말","mail.greet.title":"받는 사람별 인사","mail.people_n":"{n}명","mail.folders.title":"첨부 폴더","mail.folders.add":"폴더 추가","mail.folders.ph":"~/폴더","mail.bans.title":"금지 문구","mail.items_n":"{n}개","mail.bans.add":"문구 추가","mail.bans.ph":"쓰지 않을 말","mail.cond.title":"분류 기준","mail.cond.base_note_acct":"기준이 없어요. {name} 계정의 다른 메일함에 맞지 않는 메일이 모두 여기로 와요.","mail.cond.base_note":"기준이 없어요. 다른 메일함에 맞지 않는 메일이 모두 여기로 와요.","mail.cond.builtin":"처음부터 정해진 분류 기준 {n}개도 함께 쓰여요. 여기서는 바꾸지 않아요.","mail.emails_n":"메일 {n}통","mail.set.inherit":"앱 설정대로 되돌리기","mail.set.this":"이 메일함","mail.account":"계정","mail.set.reply_from":"답장은 메일을 받은 주소 {addr}에서 나가요","mail.judge.title":"판단 조건","mail.on":"켜짐","mail.off":"꺼짐","mail.set.replying":"답장 쓸 때","mail.set.tone_how":"말투와 기본 지시","mail.set.folded":"{mode} 메일함은 초안을 쓰지 않아서 접어 뒀어요","mail.set.notify":"알림 켜기","mail.set.quiet_note":"조용히 모으는 메일함은 알리지 않아요","mail.box.delete":"메일함 삭제","mail.box.delete_named":"{name} 삭제","mail.box.delete_body_n":"메일 {n}통은 일반으로 옮겨요. 메일은 지워지지 않아요.","mail.box.delete_body":"이 메일함의 메일은 일반으로 옮겨요. 메일은 지워지지 않아요.","mail.box.deleted":"{name} 메일함을 삭제했어요","mail.change":"바꾸기","mail.new.which_acct":"어느 계정에 만들까요?","mail.new.groups":"메일을 보니 이런 묶음이 있어요","mail.new.groups_loading":"묶음을 찾는 중이에요","mail.new.groups_none":"지금은 눈에 띄는 묶음이 없어요","mail.new.own":"직접 만들기","mail.new.blank":"빈 메일함으로 시작","mail.new.blank_sub":"이름과 조건을 직접 정해요","mail.new.copy":"다른 메일함 설정 복사","mail.new.copy_sub":"같은 처리 방식과 기본 지시를 다시 적지 않아도 돼요","mail.new.copy_which":"어느 메일함 설정을 가져올까요?","mail.new.copy_note":"원래 메일함은 바뀌지 않아요.","mail.new.name_ph":"예: 강의 자료","mail.new.existing":"지금 있는 메일","mail.new.bring_n":"메일 {n}통도 옮기기","mail.new.bring_recent":"보낸 사람이 같은 메일 {total}통 중 최근 {n}통만 옮겨요","mail.new.bring_off":"옮기지 않으면 지금 있는 메일은 그대로 있어요","mail.new.bring_aria":"지금 있는 메일도 옮기기","mail.new.note_copied":"{from} 설정을 가져왔어요. 분류 기준이 이 계정에 맞는지만 봐 주세요. 맞지 않는 메일은 계속 {base}으로 가요.","mail.new.note":"말투와 기본 지시는 만든 뒤 설정에서 정해요. 맞지 않는 메일은 계속 {base}으로 가요.","mail.new.create":"메일함 만들기","mail.new.made_not_moved":"{name} 메일함은 만들었지만 메일은 옮기지 못했어요","mail.new.made":"{name} 메일함을 만들었어요","mail.done.read":"읽음으로 표시했어요","mail.done_n.read":"{n}개를 읽음으로 표시했어요","mail.done.unread":"안 읽음으로 표시했어요","mail.done_n.unread":"{n}개를 안 읽음으로 표시했어요","mail.done.archive":"보관했어요","mail.done_n.archive":"{n}개를 보관했어요","mail.done.unarchive":"받은편지함으로 옮겼어요","mail.done_n.unarchive":"{n}개를 받은편지함으로 옮겼어요","mail.done.trash":"삭제했어요","mail.done_n.trash":"{n}개를 삭제했어요","mail.done.star":"별표를 달았어요","mail.done_n.star":"{n}개를 별표를 달았어요","mail.done.unstar":"별표를 뺐어요","mail.done_n.unstar":"{n}개를 별표를 뺐어요","mail.err.unsupported":"서버가 아직 이 작업을 지원하지 않아요","mail.err.failed":"처리하지 못했어요","mail.trash.ask_n":"메일 {n}개를 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.ask_some":"메일 {n}개를 삭제할까요? 그중 {m}개는 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.ask_one":"이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.title":"메일 삭제","mail.trash.go_n":"{n}개 삭제","mail.trash.orig_failed":"원본을 지우지 못했어요","mail.trash.some_failed":"{total}개 중 {n}개는 지우지 못했어요 · {note}","mail.retry":"다시 시도","mail.trash.deleting":"삭제하는 중이에요","mail.trash.stay_some":"메일함에는 남아 있을 수 있어요.","mail.trash.stay_one":"메일함에는 그대로 남아 있어요.","mail.trash.list_n":"메일 {n}개를 목록에서 지워요.","mail.trash.list_one":"이 메일을 목록에서 지워요.","mail.fyi.title":"답장 안 함","mail.fyi.ask_n":"메일 {n}개를 답장 안 함으로 표시할까요? 메일을 보내지는 않아요","mail.fyi.go_n":"{n}개 표시","mail.fyi.some_failed":"{total}개 중 {n}개는 표시하지 못했어요","mail.fyi.failed":"표시하지 못했어요","mail.fyi.done_n":"{n}개를 답장 안 함으로 표시했어요","mail.fyi.undone_n":"{n}개를 답장 필요로 표시했어요","mail.fyi.done":"답장 안 함으로 표시했어요","mail.fyi.undone":"답장 필요로 표시했어요","mail.read":"읽음","mail.archive":"보관","mail.inbox":"받은편지함","mail.star.remove":"별표 빼기","mail.star.add":"별표 달기","mail.select_named":"{name} 선택","mail.select_all":"모두 선택","mail.count_n":"메일 {n}개","mail.fyi.all":"이 목록 전부 답장 안 함","mail.act.read":"읽음으로 표시","mail.act.unarchive":"받은편지함으로","mail.act.done":"완료(보관)","mail.act.unread":"안 읽음으로 표시","mail.fyi.label_n":"답장 안 함 {n}개","mail.more":"더 보기","mail.selected_n":"{n}개 선택","mail.deselect":"선택 해제","mail.more_left":"{n}개 더 보기","mail.more_mail":"메일 더 보기","mail.open.toolbar":"메일 처리","mail.compose":"메일 쓰기","mail.attachments":"첨부파일","mail.upload_failed":"올리지 못했어요","mail.body":"내용","mail.many_ph":"쉼표로 여러 명","mail.cc_add":"참조 추가","mail.need_to":"받는 사람을 적어 주세요","mail.uploading_wait":"파일을 올리는 중이에요","mail.err.compose_unsupported":"서버가 아직 새 메일 초안을 지원하지 않아요","mail.draft_failed":"초안을 만들지 못했어요","mail.draft_made":"초안을 만들었어요 · 승인 카드에서 보내요","mail.sheet.expand":"펼치기","mail.sheet.min":"최소화","mail.new_mail":"새 메일","mail.discard.title":"작성 중인 메일","mail.discard.body":"쓰던 내용을 버릴까요?","mail.discard.go":"버리기","mail.draft_create":"초안 만들기","mail.attach":"파일 붙이기","mail.reply_all":"전체답장","mail.forward":"전달","mail.fwd.head":"---------- 전달한 메일 ----------\n보낸 사람: {from}\n제목: {subject}","mail.reply.aria":"답장 쓰기","mail.reply.quote":"이전 메일","mail.reply.ph":"답장 내용","mail.reply.fold":"접기","misc.nsc.all":"전체","misc.nsc.g_need":"처리할 것","misc.nsc.g_past":"지난 알림","misc.nsc.x_done":"처리했어요","misc.nsc.x_read":"읽음으로 표시","misc.clear":"지우기","misc.nsc.comments":"댓글","misc.nsc.tag_reply":"답장 대기","misc.nsc.tag_login":"로그인","misc.nsc.tag_ask":"질문","misc.nsc.tag_done":"작업 완료","misc.nsc.tag_price":"가격 변경","misc.nsc.tag_sched":"일정","misc.nsc.tag_morning":"아침 점검","misc.nsc.tag_watch":"감시","misc.nsc.tag_back":"복구","misc.nsc.d_open":"답을 기다리고 있어요","misc.nsc.d_ignored":"무시했어요","misc.nsc.d_expired":"기한 지남","misc.nsc.d_closed":"답 없이 끝났어요","misc.nsc.d_answered":"답했어요","misc.nsc.one":"알림","misc.nsc.unfold":"반복 알림 펼치기","misc.nsc.times":"{n}번","misc.nsc.load_failed":"알림을 불러오지 못했어요","misc.nsc.loading":"불러오는 중이에요","misc.nsc.empty":"새 알림이 없어요","misc.more_n":"{n}개 더 보기","misc.nsc.kinds":"알림 종류","misc.nsc.read_all":"모두 읽음","misc.nsc.clear_failed":"지우지 못했어요","misc.nsc.cleared":"알림을 지웠어요","misc.nsc.clear_one_failed":"알림을 지우지 못했어요","misc.nsc.kept":"답이 필요한 알림은 그대로 뒀어요","misc.pr.need":"답변 필요 {n}","misc.pr.unread":"새 알림 {n}","misc.pr.cant_reach":"{name}에 연결할 수 없어요","misc.pr.not_found":"그 컴퓨터를 찾지 못했어요","misc.pr.ask_title":"답변이 필요해요 · {title}","misc.pr.ask":"답변이 필요해요","misc.pr.new_alert":"새 알림","misc.open":"열기","misc.pr.switch":"컴퓨터 바꾸기, 지금은 {name}","misc.pr.switch_more":"컴퓨터 바꾸기, 지금은 {name}, 다른 컴퓨터에 새 알림","misc.pr.switch_tip":"컴퓨터 바꾸기 ({key}, 다음 컴퓨터로)","misc.pr.other":"다른 컴퓨터","misc.pr.going":"{name}(으)로 넘어가요","misc.pr.remove":"제거","misc.pr.remove_title":"내 컴퓨터에서 {name} 제거","misc.pr.remove_body":"내 컴퓨터 목록에서만 제거해요. 그 컴퓨터는 그대로이고, 다시 켜면 목록에 돌아와요.","misc.pr.removed":"{name}을(를) 제거했어요","misc.pr.remove_failed":"{name}을(를) 제거하지 못했어요","misc.pr.unchecked":"확인 못 함","misc.pr.here":"지금 보고 있어요","misc.pr.manage":"컴퓨터 관리","misc.pr.mine":"내 컴퓨터","misc.pr.name_aria":"컴퓨터 이름","misc.pr.this_name":"이 컴퓨터 이름","misc.pr.name_default":"기본 이름으로","misc.pr.name_reset":"기본 이름으로 돌렸어요","misc.pr.name_saved":"이름을 저장했어요","misc.pr.none_reachable":"다른 컴퓨터에 연결할 수 없어요","misc.kbd.title":"입력 진단","misc.kbd.on_note":"입력칸에서 나올 때마다 기록해요. 쓴 글은 남기지 않아요","misc.kbd.off_note":"키보드가 내려갈 때를 기록해요. 쓴 글은 남기지 않아요","misc.kbd.log":"진단 기록","misc.kbd.count":"{n}건 · 이 기기에만 있어요","misc.kbd.clear":"진단 기록 지우기","misc.pq.change_there":"{name}에서 바꿔 주세요","misc.pq.reattach":"{name}: 파일을 다시 붙여 주세요","misc.pq.too_big":"{name}: 다른 컴퓨터의 대화에는 50MB 이하 파일만 보낼 수 있어요","misc.pq.upload_failed_why":"{pc}에 {name}을(를) 올리지 못해서 보내지 않았어요 ({why})","misc.pq.upload_failed":"{pc}에 {name}을(를) 올리지 못해서 보내지 않았어요","misc.pq.off":"꺼짐","misc.pq.runs_on":"{name}에서 돌아요","misc.pq.pc_offline":"{name} 연결 안 됨","misc.pq.pc_monitoring":"{name} 모니터링","misc.pq.pc_offline_empty":"{name} 연결 안 됨 · 아직 받은 목록이 없어요","misc.cb.run":"터미널에서 실행","misc.cb.copy_code":"코드 복사","misc.sh.load_failed":"터미널 구성요소를 불러오지 못했어요","misc.sh.off":"셸이 꺼져 있어요","misc.sh.off_note":"셸이 꺼져 있어요. Enter를 누르면 다시 시작해요.","misc.sh.ended":"셸이 끝났어요","misc.sh.ended_note":"셸이 끝났어요. Enter를 누르면 다시 시작해요.","misc.sh.connecting":"연결 중…","misc.sh.lost":"연결이 끊겼어요","misc.sh.lost_note":"연결이 끊겼어요. Enter를 누르면 다시 연결해요.","misc.sh.failed":"연결하지 못했어요","misc.sh.failed_note":"연결하지 못했어요. Enter를 누르면 다시 연결해요.","misc.sh.typed":"명령을 입력해 뒀어요. Enter를 누르면 실행돼요","misc.sh.terminal":"터미널","misc.sh.pw":"암호","misc.sh.pw_note":"암호를 입력해요. 화면에 보이지도, 저장되지도 않아요.","misc.sh.keys":"특수 키","misc.retry":"다시 시도","misc.sh.title":"터미널 · {name}","misc.sh.pw_enter":"암호 입력","misc.more":"더 보기","misc.sh.restart":"셸 다시 시작","misc.ab.title":"API 월 한도","misc.ab.src_admin":"콘솔 기준 (관리자 키)","misc.ab.src_est":"이 앱 사용분 추정","misc.ab.left":"{pct}% 남음","misc.ab.this_month":"이번 달 {usd}","misc.ab.no_limit":"월 한도 없음","misc.ab.hint":"콘솔에서 정한 월 한도를 설정에 입력하면 사용 비율을 보여줘요.","misc.ab.unset":"정하지 않았어요","misc.ab.change":"월 한도 바꾸기","misc.ab.monthly":"월 {usd}","misc.ab.ph_limit":"예: 100","misc.ab.ph_key":"관리자 키 붙여 넣기","misc.ab.key_delete":"관리자 키 삭제","misc.ab.key_deleted":"관리자 키를 지웠어요","misc.ab.body":"Anthropic 콘솔에서 정한 월 한도(달러)예요. 비우면 사용액만 보여줘요.","misc.ab.field_limit":"월 한도 (달러)","misc.ab.key_masked":"관리자 키: {key}","misc.ab.no_key":"관리자 키가 없어요. 콘솔 설정의 관리자 키 메뉴에서 만들어 붙여 넣어요.","misc.ab.field_key":"관리자 키","misc.ab.key_note":"저장한 키는 다시 보여 주지 않아요.","misc.dsk.blocked":"새 탭이 막혔어요. 팝업을 허용해 주세요","misc.dsk.opened_in":"{name}의 크롬에서 열었어요","misc.dsk.that_pc":"그 컴퓨터","misc.dsk.cant_now":"지금은 화면을 열 수 없어요","misc.dsk.open_peer":"{name} 열기","misc.dsk.open_failed":"화면을 열지 못했어요","misc.dsk.aria_on_view":"{name} 화면 공유 켜고 보기","misc.dsk.aria_view":"{name} 화면 보기","misc.dsk.on_view":"켜고 보기","misc.dsk.view":"화면 보기","misc.dsk.device":"기기","misc.dsk.viewing_from":"{who}에서 보는 중","misc.dsk.viewing_n":"{n}곳에서 보는 중","misc.dsk.pill_aria":"{text}. 설정에서 보기","misc.dsk.this_screen":"이 컴퓨터 화면","misc.dsk.on_note":"다른 기기에서 보고 조작해요","misc.dsk.off_note":"꺼져 있어요. 누르면 켜고 열어요","misc.dsk.share":"화면 공유","misc.dsk.share_note":"이 컴퓨터 화면을 내 다른 기기에서 보고 조작해요","misc.dsk.share_off":"화면 공유를 껐어요","misc.dsk.share_on":"화면 공유를 켰어요","misc.dsk.public":"공개 주소","misc.dsk.public_note":"Cloudflare 주소로 들어온 기기도 화면을 볼 수 있어요","misc.dsk.public_off":"공개 주소로는 막았어요","misc.dsk.public_on":"공개 주소로도 열었어요","misc.ignore":"무시","misc.rp.quote":"인용","misc.rp.jump":"인용한 메시지로 이동","misc.rp.bar":"인용할 메시지","misc.rp.cancel":"인용 취소","misc.rp.finding":"찾는 중…","misc.rp.not_found":"원래 메시지를 찾지 못했어요 · 지워졌거나 너무 오래됐어요","misc.rp.me":"나","misc.oe.paused_named":"{name} 봇이 멈춰 있어요: {why}","misc.oe.paused":"봇이 멈춰 있어요: {why}","misc.oe.why_login":"로그인 필요","misc.oe.why_limit":"사용량 한도","misc.retry_now":"지금 다시 시도","misc.oe.resuming":"다시 시도해요. 멈춘 동안 온 메시지도 이어서 처리해요","misc.oe.stopped":"{bot+이/가} 멈췄어요","misc.oe.since":"{at}부터","misc.run.waiting":"답을 기다려요","misc.run.limited":"한도에 걸렸어요","misc.run.error_stop":"오류로 멈췄어요","misc.run.done":"끝났어요","misc.run.until":"{at}까지","misc.run.queued":"순서를 기다려요","misc.run.resuming":"이어서 처리 중","misc.run.work":"맡긴 작업 진행 중","misc.run.error":"오류","misc.run.todos_left":"할 일 {n}개 남음","misc.run.what_failed":"{what} 실패","misc.run.unfinished":"이번 턴이 끝났는데 할 일이 남아 있어요","misc.run.interrupted":"마지막 턴이 끝나기 전에 멈췄어요","misc.run.resting":"잠시 쉬어요","misc.run.by_owner":"직접 멈췄어요","misc.run.go_ask":"질문으로 가기","misc.run.restart":"다시 시작","misc.run.ask_missing":"질문을 찾지 못했어요. 알림에서 확인해 주세요","misc.run.restarting":"다시 시작할게요","misc.intro.home_t":"홈에서 오늘 볼 것을 봐요","misc.intro.home_b":"새 메일, 답을 기다리는 일, 돌고 있는 작업이 카드로 모여요. 위의 종을 누르면 알림만 따로 볼 수 있어요.","misc.intro.chat_t":"채팅으로 일을 시켜요","misc.intro.chat_b":"말하듯 쓰면 돼요. 일하는 중에 보내면 바로 끼어들어요. 메일처럼 밖으로 나가는 것은 보내기 전에 꼭 물어봐요.","misc.intro.proj_t":"프로젝트마다 대화가 따로예요","misc.intro.proj_b":"폴더 하나가 프로젝트 하나예요. 세션과 결과가 프로젝트별로 남아서 섞이지 않아요.","misc.intro.mon_t":"모니터링은 대신 지켜봐요","misc.intro.mon_b":"메일, 댓글, 사이트 변화를 보고 있다가 알려 줘요. 답장 초안도 여기서 고치고 보내요.","misc.intro.set_t":"앱과 설정은 필요할 때 열어요","misc.intro.set_b":"계정, 메신저, 웹 접속은 설정에서 바꿔요. 이 안내도 설정에서 다시 볼 수 있어요.","misc.intro.set_b_apps":"내가 붙인 앱은 앱 탭에서 열어요. 계정, 메신저, 웹 접속은 설정에서 바꿔요. 이 안내도 설정에서 다시 볼 수 있어요.","misc.intro.keys_t":"단축키를 쓰면 더 빨라요","misc.intro.key_cmdk":"검색과 명령","misc.intro.key_tabs":"탭 이동","misc.intro.skip":"건너뛰기","misc.intro.prev":"이전","misc.intro.start":"시작하기","misc.intro.next":"다음","misc.rl.note":"{line}. 파일 첨부와 진행 표시는 쓸 수 없어요.","misc.rl.ph":"{name}에게 보내요","misc.rl.sending":"보내는 중…","misc.rl.failed":"보내지 못했어요: {why}","misc.rl.drop":"{name} 빼기","misc.pd.move_left":"왼쪽으로 옮기기","misc.pd.move_right":"오른쪽으로 옮기기","misc.pd.new_left":"왼쪽에 새 칸","misc.pd.new_right":"오른쪽에 새 칸","misc.pd.chat_only":"분할은 채팅 탭에서만 할 수 있어요","misc.pd.no":"칸에 넣을 수 없어요","misc.pd.swap":"자리 바꾸기","misc.pd.goes_open":"열려 있는 칸으로 가요","misc.pd.full":"칸은 2개까지라 이 칸을 바꿔요","misc.pd.replace":"이 칸을 바꿔요","misc.pd.narrow":"창이 좁아 여기서 열어요","misc.pd.here":"여기서 열기","misc.pk.split":"칸 나누기","misc.pk.move":"칸 이동","misc.pk.close":"칸 닫기","misc.pk.max":"창은 두 개까지 열 수 있어요","misc.pk.narrow":"창이 좁아 칸을 나눌 수 없어요","misc.pk.none":"나란히 열 대화가 더 없어요","misc.pl.save_failed":"배치를 저장하지 못했어요","misc.pl.cant_open":"이 배치는 열 수 없어요","misc.pl.ph":"예: 메일 보면서 작업","misc.pl.name":"배치 이름","misc.pl.saved":"'{name}' 배치를 저장했어요","misc.pl.save":"배치 저장","misc.pl.overwrite":"같은 이름이 있으면 덮어써요.","misc.pl.need_name":"이름을 적어 주세요.","misc.pl.open":"배치: {name}","misc.pl.drop":"배치 지우기: {name}","misc.pl.dropped":"'{name}' 배치를 지웠어요","misc.pane.room":"대화방","misc.pane.tap_room":"이 창을 누르면 대화방이 열려요","misc.pane.stop_tip":"지금 하는 일 중단","misc.pane.close":"창 닫기","misc.pane.menu":"세션 메뉴","misc.pane.list":"대화 목록","misc.pane.bar_tip":"끌어서 크기를 바꿔요, 두 번 누르면 반반이에요","project.act.ran":"명령을 실행했어요","project.act.edited":"파일을 고쳤어요","project.act.read":"파일을 읽어봤어요","project.act.searched":"코드를 찾아봤어요","project.act.error":"오류가 있었어요","project.act.done":"이번 작업을 마쳤어요","project.word.ended":"끝남","project.word.wait":"답을 기다림","project.row.in_project":"프로젝트 {name}","project.open_chat":"대화 열기","project.subs_count":"서브에이전트 {done}/{total}","project.view.all":"전체","project.paused":"일시 정지","project.word.asks":"답을 기다려요","project.word.no_sessions":"세션 없음","project.ago.none":"기록 없음","project.yesterday":"어제","project.ago.d":"{n}일 전","project.open":"열기","project.unread_n":"읽지 않은 메시지 {n}개","project.group.pinned":"고정","project.pc.this":"이 컴퓨터","project.pc.offline":"연결 안 됨","project.count_n":"프로젝트 {n}개","project.fold":"접기","project.unfold":"펼치기","project.pc.cant":"{name}에 연결할 수 없어요","project.pc.switch":"{name}(으)로 넘어가요","project.search":"프로젝트 검색","project.view.aria":"프로젝트 보기","project.custom":"커스텀","project.more_n":"프로젝트 {n}개 더 보기","project.empty.search":"찾는 프로젝트가 없어요","project.empty.need":"확인할 프로젝트가 없어요","project.empty.run":"지금 진행 중인 프로젝트가 없어요","project.empty.done":"끝낸 프로젝트가 없어요","project.empty.none":"아직 프로젝트가 없어요","project.my_settings":"내 설정","project.custom_sub":"내가 바꾼 것을 봐요","project.load_failed":"프로젝트를 불러오지 못했어요","project.empty.first":"아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요","project.chat_open":"채팅 열기","project.save_failed":"저장하지 못했어요 · {error}","project.one.load_failed":"프로젝트를 불러오지 못했어요","project.rest_failed":"나머지를 불러오지 못했어요","project.need.more":"외 {n}개도 답을 기다려요","project.need.answer":"대화에서 답하기","project.rt.last":"마지막 {at}","project.sec.info":"지금 상황","project.sec.all":"전체","project.sec.sessions":"세션","project.sec.results":"결과","project.result":"결과","project.sec.files":"파일","project.sec.watch":"감시","project.empty.overview":"아직 쌓인 내용이 없어요. 채팅에서 이 프로젝트의 일을 맡기면 세션과 결과가 여기에 모여요","project.info.blocked_tag":"막힘","project.info.next":"다음","project.info.decided_tag":"정함","project.info.blocked":"막힌 것","project.info.decided":"정한 것","project.info.prefs":"기억해 둔 말","project.info.empty":"대화하면서 정한 내용이 여기에 모여요","project.page.info_sub":"대화에서 정리된 내용이에요","project.page.rules":"내 규칙","project.page.rules_sub":"최근에 정한 순서예요","project.page.sessions":"세션 기록","project.page.sessions_sub":"이 프로젝트의 세션과 백그라운드 작업","project.page.results":"결과 전체","project.page.results_sub":"보고, 확인, 커밋","project.page.routines":"루틴과 모니터링","project.page.routines_sub":"주기적으로 도는 일","project.back_to":"프로젝트로","project.edit.empty":"비어 있어요","project.edit.hint":"눌러서 고쳐요","project.edit.aria":"{label} 고치기","project.edit.required":"비워 둘 수 없어요","project.name":"프로젝트 이름","project.last_chat":"마지막 대화 {ago}","project.desc":"프로젝트 설명","project.desc_ph":"무엇을 하는 프로젝트인지 적어 주세요","project.chat_title":"이 프로젝트 전용 채팅을 열어요","project.chat":"프로젝트 채팅","project.menu":"프로젝트 메뉴","project.not_found":"이 프로젝트를 찾을 수 없어요","project.edit.title":"프로젝트 수정","project.del.title":"프로젝트 삭제","project.del.channel":"#{name} 채널을 Discord에서 지워요","project.del.monitors":"모니터링 {n}개는 따로 남겨요: {list}","project.del.logins":"로그인 유지 {n}개도 남겨요: {list}","project.del.standing":"자동 처리 설정을 지워요: {what}","project.del.notices":"알림 {n}개를 치워요","project.del.messages":"대화 {n}개는 보관 파일로 남겨요","project.del.plan_failed":"지울 내용을 읽지 못했어요","project.del.drop_aria":"보관 파일도 같이 지우기","project.del.drop":"보관 파일도 같이 지워요","project.del.partial":"프로젝트는 지웠지만 Discord 채널은 남아 있어요 · {error}","project.del.done":"{name} 프로젝트를 지웠어요","project.del.failed":"지우지 못했어요","project.del.ask":"{name} 프로젝트를 삭제할까요?","project.del.running":"실행 중인 세션이 있어서 지울 수 없어요: {list}","project.recent":"최근 세션","project.rt.every_h":"매 {n}시간","project.rt.every_m":"매 {n}분","project.rt.failing":"계속 실패 {n}번","project.rt.last_failed":"마지막 실행 실패","project.rt.failed_n":"실패 {n}번","project.rt.empty":"아직 루틴이나 모니터링이 없어요","project.rt.once":"한 번","project.rt.on_match":"패턴이 나오면 알려요","project.rt.on_check":"확인해서 알려요","project.rt.never":"아직 안 돌았어요","project.rt.next":"다음 {at}","project.rt.resume":"다시 시작","project.rt.pause":"일시정지","project.edit.go":"수정","project.rt.script":"스크립트","project.rt.run_now":"지금 실행","project.rt.ok":"정상","project.rt.no_state":"상태 없음","project.rt.script_title":"게이트웨이가 직접 실행 · 토큰 없음","project.rt.model_title":"실행할 때마다 모델을 호출해요","project.rt.pattern_line":"패턴 · {pattern}","project.rt.script_named":"{name} 스크립트","project.rt.script_failed":"스크립트를 읽지 못했어요 · {error}","project.rt.gap_h":"간격(시간)","project.rt.gap_m":"간격(분)","project.rt.pattern":"패턴","project.rt.gap_bad_h":"간격은 1시간 이상의 정수로 적어 주세요","project.rt.gap_bad_m":"간격은 1분 이상의 정수로 적어 주세요","project.rt.gap":"간격","project.rt.per_h":"시간마다","project.rt.per_m":"분마다","project.work.resuming":"이어서","project.work.queued_sub":"순서를 기다려요","project.recent_empty":"아직 끝난 세션이 없어요","project.res.report":"보고","project.res.verify":"확인","project.res.failed":"안 됨","project.res.unverified":"보고만 함","project.res.passed":"통과","project.res.empty":"아직 결과가 없어요","project.edit.named":"{name} 수정","project.rules.more_n":"규칙 {n}개 더 보기","project.rules.none":"찾는 규칙이 없어요","project.rules.search":"규칙 검색","project.ctx.queued":"압축 대기","project.ctx.compacting":"압축 중 · {at}","project.ctx.done_from":"압축 완료 {at} · {tokens} 토큰 전","project.ctx.done":"압축 완료 {at}","project.ctx.failed_why":"압축 실패 {at} · {error}","project.ctx.failed":"압축 실패 {at}","project.ctx.of":"{name} 컨텍스트","project.ctx.tokens_of":"{used} / {win} 토큰","project.ctx.tokens":"{tokens} 토큰","project.ctx.load_failed":"컨텍스트를 불러오지 못했어요","project.ctx.later":"{name}: 작업 중이라 끝나면 압축해요","project.ctx.started":"{name}: 압축을 시작했어요","project.ctx.off":"꺼짐","project.ctx.off_note":"꺼져 있어요. 다음 메시지가 오면 다시 시작해요","project.ctx.not_running":"실행 중이 아니에요","project.ctx.new_default":"새 세션 기본","project.ctx.per_model":"모델별 컨텍스트 설정","project.ctx.size":"컨텍스트 크기","project.ctx.custom":"직접 설정","project.ctx.default":"기본","project.ctx.unknown":"아직 모름 (처음 응답 뒤 표시)","project.ctx.auto":"자동 압축","project.ctx.used_by":"사용: {list}","project.ctx.default_n":"기본 {n}","project.ctx.default_ph":"기본값","project.ctx.auto_ph":"비우면 자동으로 정해요","project.ctx.reset":"기본값으로","project.ctx.reset_done":"기본값으로 되돌렸어요","project.ctx.bad_size":"컨텍스트 크기는 토큰 수로 적어 주세요 (예: 1000000, 200k)","project.ctx.bad_at":"자동 압축 시점은 토큰 수나 %로 적어 주세요 (예: 300k, 80%). %는 컨텍스트 크기를 알 때만 써요","project.ctx.saved":"저장했어요. 다음 턴부터 적용돼요","project.ctx.applies":"이 모델을 쓰는 모든 세션({list})에 적용돼요.","project.ctx.size_label":"컨텍스트 크기 (토큰)","project.ctx.range":"{min}~{max} 토큰","project.ctx.at_label":"자동 압축 시작 (토큰 또는 %)","project.ctx.at_hint_min":"{min} 토큰부터 컨텍스트 크기 미만까지 적을 수 있고, 낮을수록 매 턴 다시 읽는 토큰과 비용이 줄어요.","project.ctx.at_hint":"컨텍스트 크기보다 작게 적고, 낮을수록 매 턴 다시 읽는 토큰과 비용이 줄어요.","settings.apply":"적용","settings.apply.done":"적용했어요","settings.apply.restarted":"적용했어요 · 재시작됨","settings.apply.next_start":"다음 시작부터 적용돼요","settings.apply.next_turn":"다음 턴부터 적용돼요","settings.save_failed":"저장하지 못했어요","settings.all":"전체","settings.provider":"공급자","settings.provider.all":"공급자 전체","settings.models.load_failed":"모델 정보를 불러오지 못했어요","settings.model.source_sub":"구독 {account}","settings.model.account":"계정","settings.model.older":"이전 모델","settings.model.older_n":"이전 모델 {n}개","settings.model.current":"현재","settings.model.apply_ask":"모델 설정을 적용할까요?","settings.model.cache_rewrite":"캐시가 다시 쓰여요 · 컨텍스트 {tokens} 토큰\n{label}","settings.model.apply_failed":"적용하지 못했어요. {error}","settings.logout.key_text":"저장된 API 키를 삭제할까요?","settings.logout.info_acc":"{account} 계정의 저장된 로그인 정보가 삭제돼요.","settings.logout.info":"저장된 로그인 정보가 삭제돼요.","settings.logout.all":"{name}의 계정 {n}개가 모두 로그아웃돼요.","settings.logout.key_title":"{name} 키 삭제","settings.logout.title":"{name} 로그아웃","settings.logout.btn":"로그아웃","settings.logout.key_failed":"키를 삭제하지 못했어요. {error}","settings.logout.failed":"로그아웃하지 못했어요. {error}","settings.logout.key_done":"키를 삭제했어요","settings.logout.done":"로그아웃했어요","settings.models.no_effort":"이 모델은 추론 강도를 쓰지 않아요","settings.models.intro":"막히면 번호 순서대로 넘어가요.","settings.fb.down.quota":"한도 소진","settings.fb.down.cap":"상한 도달","settings.fb.down.error":"오류","settings.fb.using":"대체 모델 사용 중","settings.fb.return_at":"{at}에 복귀","settings.fb.instead":"기본 모델 {model} 대신 쓰는 중","settings.models.group_replies":"답장과 요약","settings.models.replies_default":"답장 기본값","settings.models.lane_label":"세션 · {name}","settings.models.fixed":"고정","settings.models.fallbacks_n":"대체 {n}","settings.models.reply_model":"답장 모델","settings.models.reply_note":"답장 초안은 API 키로 넘어가지 않아요.","settings.api_key":"API 키","settings.login":"로그인","settings.saved":"저장했어요","settings.done":"완료","settings.use":"사용","settings.refresh":"새로고침","settings.limit.hours":"{n}시간 한도","settings.limit.hours_of":"{n}시간 한도 {rest}","settings.limit.days":"{n}일 한도","settings.limit.days_of":"{n}일 한도 {rest}","settings.limit.hours_short":"{n}시간","settings.limit.hours_short_of":"{n}시간 {rest}","settings.limit.days_short":"{n}일","settings.limit.days_short_of":"{n}일 {rest}","settings.prov.key_delete":"키 삭제","settings.prov.relogin":"다시 로그인","settings.prov.in_use":"지금 사용 중","settings.prov.accounts_n":"계정 {n}개","settings.prov.signed_in":"로그인됨","settings.prov.not_connected":"연결 안 됨","settings.prov.load_failed":"계정을 불러오지 못했어요","settings.prov.connected_n":"{n}개 연결","settings.prov.add":"공급자 추가","settings.prov.none":"공급자가 없어요","settings.prov.other":"다른 공급자","settings.prov.key_of":"{name} API 키","settings.prov.need_key":"공급자와 API 키를 입력해 주세요","settings.prov.add_account":"계정 추가","settings.prov.nothing_to_add":"추가할 공급자가 없어요","settings.login.pending_title":"끝나지 않은 로그인이 있어요","settings.login.pending_other":"지금 {name} 로그인이 열려 있어요.","settings.login.restart":"새로 시작","settings.login.resume":"이어서 하기","settings.login.open_page":"로그인 페이지 열기","settings.login.how_none":"브라우저에서 로그인한 뒤 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.how_opened":"열린 페이지에서 로그인한 뒤 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.how_open":"‘로그인 페이지 열기’를 눌러 로그인한 뒤, 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.code_label":"코드 또는 주소","settings.login.refreshed":"이미 등록된 계정이에요 ({account}). 로그인을 새로 고쳤어요","settings.login.added":"계정을 추가했어요 ({account})","settings.login.done":"{name} 로그인했어요","settings.login.failed":"로그인에 실패했어요","settings.login.need_code":"코드나 주소를 붙여 넣어 주세요","settings.login.title_add":"{name} 계정 추가","settings.login.title":"{name} 로그인","settings.reset.pair":"{a}와 {b}","settings.reset.kind_label":"{kind} 리셋권","settings.reset.label":"리셋권","settings.reset.when_limited":"한도에 걸리면 쓸 수 있어요","settings.reset.expires":"{day} 만료","settings.reset.say.reset":"한도를 다시 채웠어요","settings.reset.say.nothing":"다시 채울 한도가 없어서 쓰지 않았어요","settings.reset.say.no_credit":"남은 리셋권이 없어요","settings.reset.say.used":"이미 쓴 리셋권이에요","settings.reset.say.cooldown":"조금 뒤에 다시 쓸 수 있어요","settings.reset.body_kind":"{name} {account}의 {kind} 리셋권으로 한도를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.body_claude":"{name} {account}의 리셋권으로 한도를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.body_codex":"{name} {account}의 {wins}를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.ask_title":"리셋권을 쓸까요?","settings.reset.use":"리셋권 쓰기","settings.reset.used":"리셋권을 썼어요","settings.reset.use_failed":"리셋권을 쓰지 못했어요. 잠시 뒤 다시 눌러 주세요","settings.reset.held":"{n}개","settings.reset.use_aria":"{name} {label} 사용","settings.usage.load_failed":"사용량을 불러오지 못했어요","settings.usage.no_limits":"없어요","settings.usage.kind.start":"처음 선택","settings.usage.kind.owner":"직접 변경","settings.usage.kind.gone":"계정 사라짐","settings.usage.account":"사용 계정","settings.usage.clear_failed":"지우지 못했어요","settings.usage.clear_one":"이 기록 지우기","settings.usage.cleared_one":"기록을 지웠어요","settings.usage.more_n":"이전 기록 {n}개 더 보기","settings.usage.less":"이전 기록 접기","settings.usage.since":"{at}부터","settings.usage.pinned":"고정한 계정이에요","settings.usage.clear_all":"기록 모두 지우기","settings.usage.clear_all_ask":"기록을 모두 지울까요?","settings.usage.clear_all_body":"계정 전환 기록 {n}개를 지워요. 되돌릴 수 없어요.","settings.usage.clear_all_btn":"모두 지우기","settings.usage.cleared_all":"기록을 모두 지웠어요","settings.usage.unavailable":"정보가 없어요","settings.usage.empty":"사용량 정보가 없어요","settings.unknown":"알 수 없음","settings.page.notifications":"앱과 알림","settings.page.display":"표시","settings.page.update":"업데이트","settings.page.runtime":"작업 프로그램","settings.runtime.check_failed":"작업 프로그램을 확인하지 못했어요","settings.runtime.checking":"작업 프로그램을 확인하는 중이에요","settings.row.account_in_use":"{name} 사용 중","settings.row.update_restart":"새 버전 {version} 받음 · 재시작하면 적용돼요","settings.row.update_now":"지금 {version}","settings.row.update_latest":"지금 {version} · 최신","settings.row.context_used":"{pct}% 사용 중","settings.row.push_on":"푸시 알림 켬","settings.row.push_off":"푸시 알림 꺼짐","settings.row.push_unsupported":"이 브라우저는 알림을 지원하지 않아요","settings.sec.system":"시스템","settings.sec.accounts_models":"계정과 모델","settings.sec.connect":"연결","settings.sec.diagnostics":"진단","settings.row.usage":"사용량과 월 한도","settings.row.apps":"앱 관리","settings.row.intro":"화면 안내 다시 보기","settings.row.chat_tab_main":"대화 탭 메인","settings.row.chat_tab_last":"대화 탭 마지막","settings.theme.light":"라이트","settings.theme.dark":"다크","settings.tag.restart_needed":"재시작 필요","settings.tag.new_version":"새 버전","settings.display.mode":"화면 모드","settings.display.chat_tab":"대화 탭","settings.display.chat_main":"채팅을 열면 메인 대화부터 시작해요","settings.display.chat_last":"채팅을 열면 마지막 대화부터 시작해요","settings.display.opt_main":"메인","settings.display.opt_last":"마지막","settings.none":"없음","settings.fb.main_sub":"메인 어시스턴트","settings.fb.confirm_restart":"어시스턴트가 다시 시작돼요.","settings.fb.lanes_title":"세션 기본값","settings.fb.lanes_sub":"새로 시작하는 세션","settings.fb.workers_sub":"세션이 맡기는 구현·테스트","settings.fb.when.quota":"구독 소진 시","settings.fb.when.error":"오류 시","settings.fb.cap.day_usd":"일 {amount}까지","settings.fb.cap.month_usd":"월 {amount}까지","settings.fb.cap.day_tokens":"일 {tokens} 토큰까지","settings.fb.cap.month_tokens":"월 {tokens} 토큰까지","settings.fb.no_revert":"복귀 안 함","settings.fb.until":"풀리는 때: {at}","settings.fb.down.shared":"공유 계정 사용 중이라 꺼짐","settings.fb.down.key_off":"API 키 사용 안 함(설정)","settings.fb.down.unavailable":"쓸 수 없음","settings.fb.today":"오늘","settings.fb.month":"이번 달","settings.fb.bar_usd":"{when} {used} / {cap}","settings.fb.bar_tokens":"{when} {used} / {cap} 토큰","settings.fb.saved_now":"바로 적용돼요","settings.fb.saved_after":"지금 하던 일이 끝나면 적용돼요","settings.fb.saved_next":"다음에 시작될 때부터 적용돼요","settings.fb.saved_key":"저장된 키 {masked}","settings.fb.no_saved_key":"저장된 키가 없어요","settings.fb.key_file":"키 파일 {file}","settings.fb.edit_aria":"{name} 편집","settings.fb.same_as_base":"기본 모델과 같게","settings.fb.enabled":"사용","settings.fb.opt_on":"켜기","settings.fb.opt_off":"끄기","settings.fb.workers_label":"서브에이전트·세션","settings.fb.workers_no_key":"API 키 사용 안 함","settings.fb.workers_same_key":"같은 키 사용","settings.fb.mode":"사용 방식","settings.fb.mode_login":"구독 (로그인)","settings.fb.change_key":"키 바꾸기","settings.fb.when_label":"넘어가는 때","settings.fb.when_prev":"앞 모델이 안 될 때","settings.fb.when_quota":"한도 소진 시 (429)","settings.fb.when_error":"제공자 오류 시","settings.fb.revert_label":"기본 모델 복귀","settings.fb.revert_when":"한도가 풀리면 복귀","settings.fb.revert_keep":"계속 이 모델","settings.fb.cap_label":"사용 상한 (KST)","settings.fb.period_month":"월","settings.fb.period_day":"일","settings.fb.amount":"금액 (USD)","settings.fb.tokens":"토큰","settings.fb.up":"위로","settings.fb.up_aria":"{name} 위로","settings.fb.down":"아래로","settings.fb.down_aria":"{name} 아래로","settings.fb.no_key_provider":"{provider} 모델은 API 키를 쓸 수 없어요","settings.fb.key_status_use":"저장된 키: {masked} (사용 중)","settings.fb.key_status":"저장된 키: {masked}","settings.fb.key_paste_note":"키를 붙여 넣으면 이 칸은 쓰지 않아요.","settings.fb.file_name":"파일 이름","settings.fb.advanced":"고급: 키 파일 이름으로 지정","settings.fb.key_saved":"키를 확인하고 저장했어요 ({masked})","settings.fb.use_omo":"OmO 키 쓰기","settings.fb.key_off":"키 끄기","settings.fb.key_hidden":"저장한 키는 다시 보여 주지 않아요.","settings.fb.workers_too":"서브에이전트·세션도 사용","settings.fb.drag":"끌어서 순서 바꾸기","settings.fb.reorder_aria":"{name} 순서 바꾸기, 위아래 화살표 키","settings.fb.in_use":"사용 중","settings.fb.cant_use":"여기서 못 써요","settings.fb.sw_on_title":"켜짐 · 눌러서 끄기","settings.fb.sw_off_title":"꺼짐 · 눌러서 켜기","settings.fb.switch_off":"{name} 끄기","settings.fb.switch_on":"{name} 켜기","settings.fb.sw_on":"켜짐","settings.fb.sw_off":"꺼짐","settings.fb.continue_key":"{model} API 키로 계속","settings.fb.exists":"이미 있는 모델이에요","settings.fb.full":"더 넣을 수 없어요","settings.fb.add":"대체 모델 추가","settings.fb.how_workers":"실행 중인 서브에이전트는 다음 시작부터 반영돼요.","settings.fb.how_claude":"Claude Code는 Anthropic 모델만, 조건 없이 넘어가요.","settings.fb.list_aria":"{name} 대체 모델 순서","settings.app.shared_photos":"사진 {n}장을 붙였어요","settings.app.shared_files":"파일 {n}개를 붙였어요","settings.app.shell_chip":"새 버전 · 눌러서 적용","settings.app.perm_off":"알림 권한이 꺼져 있어요. 기기 설정에서 {bot} 알림을 허용해 주세요","settings.app.alerts_on":"알림을 켰어요","settings.app.alerts_off":"알림을 껐어요","settings.app.test_sent":"테스트 알림을 보냈어요","settings.app.installed":"앱을 설치했어요. 홈 화면의 {bot} 아이콘으로 열어 주세요","settings.app.ios_share_bar":"주소창의 공유 버튼을 눌러요","settings.app.ios_share_safari":"Safari 아래쪽(또는 주소창)의 공유 버튼을 눌러요","settings.app.ios_add":"'홈 화면에 추가'를 골라요","settings.app.ios_web_app":"'웹 앱으로 열기'가 켜져 있는지 보고 '추가'를 눌러요","settings.app.and_menu":"브라우저 메뉴(⋮)를 열어요","settings.app.and_install":"'앱 설치'를 골라요. '홈 화면에 추가'라면 다음 창에서 '설치'를 골라요","settings.app.and_shortcut":"'바로가기 만들기'는 브라우저로 열려요. 고르지 마세요","settings.app.desk_icon":"주소창 오른쪽의 설치 아이콘을 눌러요","settings.app.desk_menu":"없으면 브라우저 메뉴에서 '앱 설치'를 골라요","settings.app.install":"앱 설치","settings.app.reinstall_note":"전에 추가한 {bot} 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.","settings.app.add_home":"홈 화면에 추가","settings.app.gw_alerts":"{name} 알림","settings.app.this_computer":"이 컴퓨터","settings.app.iphone_note":"iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요","settings.app.no_support":"이 브라우저는 알림을 지원하지 않아요. Chrome이나 설치한 앱에서 켤 수 있어요","settings.app.perm_blocked":"알림 권한이 막혀 있어요","settings.app.turn_on":"알림 켜기","settings.app.check":"알림 확인","settings.app.test":"테스트 알림","settings.app.turn_off":"끄기","settings.app.this_device":"이 기기","settings.app.kinds":"알림 종류","settings.upd.v_installed":"v{release} · 설치본","settings.upd.installed_commit":"설치본 {commit} · {when}","settings.upd.installed_when":"설치본 · {when}","settings.upd.installed":"설치본","settings.upd.checked_ago":"{ago} 확인","settings.upd.bar_new":"{names} 새 버전","settings.upd.restart_applies":"재시작하면 새 버전이 적용돼요","settings.upd.names_new":"{names} 새 버전이 있어요","settings.upd.restarting":"다시 켜는 중이에요","settings.upd.bar_offer":"새 버전이 있어요 · 눌러서 업데이트","settings.upd.failed":"업데이트하지 못했어요","settings.upd.failed_why":"업데이트하지 못했어요: {reason}","settings.upd.tap_retry":"눌러서 다시 시도","settings.upd.done_now":"{text} · 지금 버전 {version}","settings.upd.rt_new_n":"작업 프로그램 새 버전 {n}개가 있어요","settings.upd.rt_latest":"작업 프로그램은 최신이에요","settings.upd.rewrite":"저장소 기록이 바뀌어서 새 기록으로 옮겨요","settings.upd.new_version":"새 버전 {version}이 있어요","settings.upd.new_commits":"새 커밋 {n}개가 있어요","settings.upd.latest":"최신 버전이에요","settings.upd.kept":"보관: {where}","settings.upd.working":"작업 중: {names}","settings.upd.resend":"끊긴 요청은 다시 켜질 때 이어서 보내요.","settings.upd.when_idle":"작업이 끝나면","settings.upd.restart_now":"지금 재시작","settings.upd.restarted_now":"다시 시작했어요 · 지금 버전 {version}","settings.upd.roles_in_use":"{roles} 사용 중","settings.upd.checking_short":"확인 중…","settings.upd.rt_now":"지금 {version}","settings.upd.managed_by":"{ver} · {by}이 관리해요","settings.upd.another_program":"다른 프로그램","settings.upd.as_app":"{ver} · 앱으로 설치됨","settings.upd.ver_latest":"{ver} · 최신","settings.upd.change":"{name} 바꾸기","settings.upd.change_rt":"작업 프로그램 바꾸기","settings.upd.deferred":"작업이 끝나면 업데이트해요","settings.upd.updating_phase":"업데이트 중 · {phase}","settings.upd.waiting":"대기 중","settings.upd.in_progress":"진행 중","settings.upd.btn":"업데이트","settings.upd.rt_note":"바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요.","settings.upd.rt_versions":"작업 프로그램 버전","settings.upd.checking":"확인하는 중…","settings.upd.check":"새 버전 확인","settings.upd.app_version":"앱 버전","settings.upd.running":"실행 중 {version}","settings.upd.ahead_n":"로컬 커밋 {n}개 (아직 올리지 않음)","settings.upd.dirty_n":"커밋 안 한 변경 {n}개","settings.upd.hd_new":"새 버전 {from} → {to}","settings.upd.hd_commits":"새 커밋 {n}개 · {upstream}","settings.upd.more_n":"외 {n}개","settings.upd.release_notes":"릴리스 노트 보기","settings.upd.ahead_note":"로컬 커밋 {n}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.","settings.upd.now":"지금 업데이트","settings.upd.fail_stays":"테스트가 실패하면 그대로 있어요.","settings.upd.wait_title":"재시작 대기 중","settings.upd.wait_now":"곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요.","settings.upd.wait_idle":"작업이 끝나면 다시 켜져요. 이 화면은 자동으로 다시 연결돼요.","settings.upd.wait_idle_busy":"작업이 끝나면 다시 켜져요 ({busy}). 이 화면은 자동으로 다시 연결돼요.","settings.upd.got":"새 버전 {version} 받음","settings.upd.restart_to_apply":"재시작하면 적용돼요","settings.upd.auto_check":"자동 확인","settings.upd.auto_check_apply":"새 버전이 있으면 알려요.","settings.upd.auto_check_note":"알림만 보내요. 적용은 직접 해요.","settings.upd.auto_apply":"새 버전 자동 적용","settings.upd.auto_apply_note":"새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요.","settings.notify.ask":"질문 · 승인 · 로그인","settings.notify.alert_label":"경고","settings.notify.alert":"dotz 오류 · 로그인 끊김 · 감시 반복 실패","settings.notify.result_label":"결과","settings.notify.result":"세션 · 작업 완료 · 실패","settings.notify.news_label":"새 소식","settings.notify.news":"메일 · 댓글 · 감시 · 예약","settings.notify.conv":"보고 있지 않은 대화의 새 답","settings.notify.log_label":"진행","settings.notify.log":"진행 중 보고 · 작업 기록","settings.notify.stays":"꺼도 목록에는 남아요.","shell.aria.home":"홈으로","shell.aria.menu":"메뉴","shell.aria.command":"명령","shell.aria.monitoring_list":"모니터링 목록","shell.aria.apps_list":"앱 목록","shell.conn.lost":"연결 끊김 · 다시 연결 중","shell.gban.close":"재시작 알림 닫기","shell.oerr.restart":"오케스트레이터 다시 시작","shell.chat.older":"이전 메시지 더 보기","shell.chat.to_bottom":"맨 아래로","shell.composer.placeholder":"메시지 또는 /명령","shell.composer.label":"메시지","shell.composer.attach":"파일 첨부","shell.composer.attach_hint":"파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요","shell.composer.api":"api사용중","shell.sheet.to_list":"목록으로","shell.sheet.detail":"구성 상세","shell.toggle.unset":"정하기","shell.toggle.label":"{label}: {value} · 누르면 {next}","shell.left.d":"{d}일","shell.left.dh":"{d}일 {h}시간","shell.left.h":"{h}시간","shell.left.hm":"{h}시간 {m}분","shell.left.m":"{m}분","shell.rel.now":"초기화 중","shell.rel.soon":"1분 안에 초기화","shell.rel.at":"{left} 후 초기화 ({when})","shell.think.working":"생각을 정리하는 중","shell.sw.cleanup_title":"알림 정리","shell.sw.cleanup_body":"처리한 알림을 정리했어요","shell.sw.reply_sent":"답변을 보냈어요","shell.manifest.description":"{name} · 항상 켜져 있는 개인 비서","system.scope.project":"범위: 프로젝트 ({where})","system.scope.shipped":"범위: 배포 ({where})","system.scope.personal":"범위: 개인 ({where})","system.scope.project_short":"프로젝트","system.scope.shipped_short":"배포","system.scope.personal_short":"개인","system.origin.shipped":"배포용","system.origin.personal":"개인용","system.fmt.on":"켜짐","system.fmt.off":"꺼짐","system.fmt.blank":"비움","system.mark.custom":"바꾼 값 {n}","system.mark.feats":"내 기능 {n}","system.mark.files":"내 파일 {n}","system.mark.title":"내가 바꾼 것: {parts}","system.mark.ext":"내 확장","system.mark.badge":"내 설정","system.col.inputs":"들어오는 곳","system.col.gateway":"게이트웨이","system.state.ok":"정상","system.state.warn":"주의","system.state.off":"꺼짐","system.apply.live":"바로 적용","system.apply.next":"다음 메시지부터","system.apply.restart":"재시작 후 적용","system.load_failed":"구성을 불러오지 못했어요","system.view.scope":"보기 범위","system.view.all":"전체","system.view.all_tip":"기본과 내가 바꾼 것을 모두 보여줘요","system.view.custom":"커스텀 {n}","system.view.custom_tip":"같은 단계 그대로, 내가 바꾼 것만 걸러 보여줘요","system.note.project":"이 프로젝트만의 지도예요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.","system.note.dotted":"점선 카드는 곁에서 돕는 시스템이에요.","system.note.flow":"큰 카드가 메시지가 흐르는 길이에요. 작은 칩은 함께 실행되는 시스템·파일이에요.","system.detail.btn":"자세히","system.detail.tip":"모든 시스템과 연결선을 한 화면에 그려요","system.feat.btn":"기능 보기","system.feat.tip":"각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요","system.refresh":"새로고침","system.legend":"내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 기본값이에요 ({path}).","system.fcnote.instr":"모델에게 주는 지침 글이에요. 모델이 따르도록 부탁하는 것이라 어길 수도 있어요 (권고).","system.fcnote.deny":"RULES의 deny 줄이에요. 실행 직전에 코드가 막아요 (강제).","system.fcnote.folder":"features 폴더 안의 폴더 하나가 기능 하나예요. 글은 권고, deny 줄·모니터링 파일이 있으면 코드가 강제해요. 스위치로 켜고 꺼요.","system.fcnote.skill":"SKILL.md 절차서예요. 모델이 필요할 때 읽고 따라요 (권고).","system.fcnote.ext":"하네스가 불러오는 코드예요. 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).","system.fcnote.schedule":"정해진 시각에 문장을 어시스턴트에게 보내는 타이머예요.","system.fcnote.monitor":"모델을 호출하지 않고 주기적으로 명령을 실행해 변화만 알리는 점검이에요.","system.fcnote.channel":"작업 채널마다 묶어 둔 로그인 유지와 모니터링이에요.","system.fcnote.gateway":"게이트웨이 코드에 들어 있는 기능이에요.","system.fcnote.external":"Discord·메일(zele)·브라우저(Aside) 같은 바깥 서비스와의 연결이에요.","system.fcnote.web":"~/.dotz/custom의 홈 카드·사이드바 고정·루틴이에요. 봇이 파일로 만들고 재시작 없이 바로 보여요.","system.str.enforced":"강제","system.str.advisory":"권고","system.harness":"하네스","system.ext.label":"{name} 확장","system.ext.default":"기본 확장","system.ext.note":"{name}가 실제로 불러오는 코드예요 ({dirs}). 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).","system.dup.code":"같은 일을 코드(강제)로도 적어 뒀어요: {names}","system.dup.text":"같은 일을 글(권고)로도 적어 뒀어요: {names}","system.fbadge.title":"여기서 작동하는 기능: 강제 {e}개 · 권고 {a}개","system.fbadge.enforced":"강제 {n}","system.fbadge.advisory":"권고 {n}","system.sw.aria_off":"{name} 끄기 요청","system.sw.aria_on":"{name} 켜기 요청","system.sw.title_off":"{bot}에게 끄기 요청","system.sw.title_on":"{bot}에게 켜기 요청","system.sw.sent":"요청 보냄 · {at}","system.sw.scope_tip":"{scope} · 스위치를 누르면 배포 파일 변경 요청도 고를 수 있어요","system.sw.req_off":"{name} 끄기 ({src})","system.sw.req_on":"{name} 켜기 ({src})","system.sw.shipped_feat":"배포 기능 {repo}","system.sw.req_shipped":"배포 저장소의 {repo} 를 직접 고쳐 주세요 (enabled: {on}). 모든 사용자에게 바뀌는 변경이에요.","system.sw.req_override":"{where} 에 같은 id 로 덮어쓰기: {repo} 를 그 폴더에 복사해 enabled: {on} 로 두세요. 배포 저장소 파일은 건드리지 마세요.","system.sw.pick_personal":"개인 설정으로 덮어쓰기 (기본)","system.sw.pick_shipped":"배포 파일 변경 요청","system.sw.pick_shipped_sub":"{path} · 모든 사용자에게 바뀌어요","system.ext.not_loaded_tip":"{name}는 이 확장을 불러오지 않아요","system.ext.not_loaded":"안 불러옴","system.str.enforced_tip":"코드·훅·차단 줄이 막거나 실행해요","system.str.advisory_tip":"모델에게 따르라고 부탁한 글이에요","system.origin.personal_tip":"내 파일·설정에만 있는 기능이에요 (~/.dotz, 하네스 확장 폴더)","system.origin.shipped_tip":"기본으로 함께 오는 기능이에요","system.dup.tag":"중복","system.src.added":"{added} 추가","system.src.last":"마지막 {at}","system.fcount.all":"{n}개 · 강제 {e} · 권고 {a}","system.fcount.hit":"{hit} / {n}개 · 강제 {e} · 권고 {a}","system.fnone":"조건에 맞는 기능이 없어요","system.n_items":"{n}개","system.fsum":"강제 {e} · 권고 {a}","system.off_group":"이 하네스에선 꺼짐","system.fsearch.ph":"기능 검색 (이름·내용·파일)","system.fsearch.aria":"기능 검색","system.fstrength.aria":"강제/권고","system.flist":"기능 목록","system.flist.sup":"회색으로 채운 카드(강제)는 코드가 막거나 실행하는 것, 테두리만 있는 카드(권고)는 모델에게 따르라고 부탁한 글이에요.","system.pick.form":"형식","system.pick.trigger":"트리거","system.pick.origin":"출처","system.mark.mine_feat":"내 기능","system.here.sec":"여기서 작동하는 기능 · 강제 {e} · 권고 {a}","system.pj.keyed":"{name} (API 키)","system.pj.revert":"리셋되면 복귀","system.pj.none":"없음","system.pj.model":"모델","system.pj.effort":"강도","system.pj.worker_model":"서브에이전트 모델","system.pj.worker_effort":"서브에이전트 강도","system.pj.runtime":"런타임","system.pj.fallback":"폴백","system.pj.worker_fallback":"서브에이전트 폴백","system.pj.changed":"바뀜","system.pj.global":"전역 기본","system.pj.feat":"기능 {n}: {names}","system.pj.deny":"차단 규칙 {n}줄","system.pj.open_map":"{name} 프로젝트 지도 열기","system.pj.diff_tip":"전역 기본과 다른 값의 수","system.pj.diff_n":"전역과 다름 {n}","system.pj.all_global":"전부 전역 기본","system.pj.files":"지침 파일","system.pj.file_tip":"{name} · {bytes}바이트 · {at} 수정","system.pj.channel":"채널 설정","system.pj.logins":"로그인 {n}","system.pj.logins_named":"로그인 {n} ({names})","system.pj.monitors":"모니터링 {n}","system.pj.standing":"상시 처리: {text}","system.pj.no_settings":"설정 없음","system.pj.only_here":"이 프로젝트에만 적용","system.pj.head":"프로젝트 · {n}","system.pj.sup_some":"작업 채널·홈 채널에 묶인 세션이에요.","system.pj.sup_none":"작업 채널이나 홈 채널에 묶인 세션이 아직 없어요.","system.pj.lg_diff":"전역과 다른 값","system.pj.lg_same":"전역 그대로","system.pj.back":"전체 구성","system.pj.dirty.title":"저장하지 않은 변경","system.pj.dirty.body":"열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?","system.pj.dirty.ok":"버리기","system.pj.ask.ph":"이 프로젝트에 바라는 변경을 적어 주세요","system.pj.ask.aria":"프로젝트 수정 요청","system.pj.ask.send":"{bot}에게 수정 요청","system.pj.ask.done":"요청했어요","system.many_in":"들어온 글","system.from.start":"여기서 시작해요","system.from.stage":"{from}에서","system.count.items":"항목 {n}","system.count.items_tip":"이 단계의 항목 수","system.count.warn":"주의 {n}","system.with.head":"함께 실행되는 항목 · {n}","system.cv.changed_tip":"이 단계에서 바꾼 것","system.cv.default_only":"기본 그대로","system.cv.mine_head":"내 파일·확장 · {n}","system.cv.chars":"{n}자 · {at} 수정","system.fe.missing":"아직 없는 파일","system.cv.rules":"글 {n}줄","system.cv.deny":"차단 {n}줄","system.cv.sets_head":"바꾼 설정 · {n}","system.cv.default_val":"기본 {v}","system.cv.feats_head":"내 기능 · {n}","system.cv.fold":"접기","system.cv.more":"{n}개 더 보기","system.sheet.facts":"지금 상태","system.sheet.req_note":"수정 요청은 {bot}에게 가요.","system.sheet.file":"파일","system.sheet.file_named":"파일 · {name}","system.sheet.near":"이어진 곳","system.sheet.ask":"이 카드에 대한 요청","system.sheet.current":"현재","system.req.tag":"[구성 탭 수정 요청]","system.own.file":"내 파일이에요","system.own.file_at":"내 파일이에요 ({where})","system.own.ext":"내 확장이에요","system.own.ext_at":"내 확장이에요 ({where})","system.own.ship":"기본으로 함께 오는 거예요","system.own.ship_file":"기본으로 함께 오는 거예요 (저장소 파일 · 읽기 전용)","system.own.changed_vals":"설정값 {n}개는 내가 바꿨어요 ({path})","system.own.saved_in":"설정값은 {path}에 저장돼요","system.set.pending":"재시작 대기 중","system.set.models":"모델 · 폴백에서 바꾸기","system.set.ro":"읽기 전용","system.set.ro_note":"보안·연결 정보라 화면에서 바꿀 수 없어요.","system.set.reset":"기본값","system.set.req":"{label} ({source}): {from} -> {to}. 적용 시점: {when}.","system.set.diff_global_tip":"전역 기본과 다른 값이에요","system.set.diff_global":"바꿈 · 전역 {v}","system.set.diff_def_tip":"기본값과 다른 값이에요","system.set.diff_def":"바꿈 · 기본 {v}","system.span.line":"{a}줄","system.span.lines":"{a}-{b}줄","system.span.replace":"{x} ({n}줄로 교체)","system.span.delete":"{x} 삭제","system.span.add":"{s}줄 뒤에 {n}줄 추가","system.fe.req_head":"{label} ({path}) 수정","system.fe.req_memo":"메모: {note}","system.fe.req_unchanged":"파일 내용은 바꾸지 않았어요. 메모대로 파일을 직접 고쳐 주세요. 적용 시점: {when}","system.fe.req_diff":"아래 diff 대로 파일을 고쳐 주세요 (줄 단위, 앞뒤 3줄 맥락 포함).\n```diff\n--- {name}\n+++ {name} (수정안)\n{diff}\n```","system.fe.req_big":"변경이 커서 diff 는 생략했어요 (+{add}줄 -{del}줄). 바뀐 곳(원본 줄 기준): {spans}. 파일을 직접 열어 확인하고 메모대로 고쳐 주세요.","system.fe.req_big_more":"변경이 커서 diff 는 생략했어요 (+{add}줄 -{del}줄). 바뀐 곳(원본 줄 기준): {spans} 외 {n}곳. 파일을 직접 열어 확인하고 메모대로 고쳐 주세요.","system.fe.req_applies":"적용 시점: {when}","system.fe.memo_ph":"무엇을 왜 바꾸는지 (선택)","system.fe.memo_aria":"수정 요청 메모","system.fe.stat":"변경 +{add}줄 -{del}줄","system.fe.stat_big":"많이 바뀌어서 diff 대신 바뀐 줄 범위만 보내요. 메모에 무엇을 바꾸는지 적어 주세요","system.fe.len":"{n}자","system.fe.len_cap":"{n}자 (시작 지침에는 앞 {cap}자까지)","system.fe.modified":"{at} 수정","system.fe.load_failed":"파일을 불러오지 못했어요","triage.sec.to":"받는 사람","triage.sec.org":"원본","triage.sec.reply":"답장","triage.sec.att":"첨부","triage.post":"게시글","triage.account":"보내는 계정","triage.no_org":"답하는 원본이 없어요","triage.org_loading":"원문을 불러오는 중…","triage.org_cut":"원문이 길어서 앞부분만 보여요","triage.thread_newer":"초안을 만든 뒤에 이 스레드에 새 메시지가 왔어요. 확인하고 보내세요","triage.thread_earlier":"이 스레드에 앞선 메시지가 {n}개 있어요","triage.row.no_files":"첨부 없음","triage.kept":"첨부를 확인하지 않은 {n}건은 보내지 않고 남겨 뒀어요"};
+const WEB_BUILD = "d56a850a311d";
+const I18N_LANG = "ko", I18N = {"apps.status.running":"실행 중","apps.status.unreachable":"응답 없음","apps.status.unknown":"상태 모름","apps.status.off":"꺼짐","apps.status.error":"오류","apps.row.monitor_hint":"상태만 확인하는 앱이에요","apps.group.own":"사용자 앱","apps.group.monitor":"모니터링 앱","apps.group.failed":"불러오지 못한 앱","apps.empty.name":"아직 내 앱이 없어요","apps.empty.hint":"채팅에서 앱을 추가해 달라고 하면 돼요","apps.err.title":"앱을 불러오지 못했어요","apps.load_failed":"앱을 불러오지 못했어요","apps.loading":"앱 불러오는 중…","apps.recheck":"다시 확인","apps.list":"앱 목록","apps.open_tab":"새 탭에서 열기","apps.menu":"앱 메뉴","apps.title":"앱","apps.subtitle":"내 앱을 한곳에서 열어요","apps.pick":"앱을 골라 주세요.","apps.set.address":"주소","apps.set.status":"상태","apps.set.in_monitoring":"모니터링에서 확인해요","apps.set.run":"앱 실행","apps.set.run_note":"이 앱은 스스로 실행되지 않아요. 아래 명령으로 띄워 주세요.","apps.set.watches":"감시","apps.set.title":"{label} 설정","apps.on":"켜기","apps.off":"끄기","apps.remove":"제거","apps.toast.on":"{label}을(를) 켰어요","apps.toast.off":"{label}을(를) 껐어요","apps.toast.removed":"{label}을(를) 제거했어요","apps.remove.title":"{label} 제거","apps.remove.body":"목록에서 빼요. 파일은 남아서 되돌릴 수 있어요.","apps.body.monitor":"이 앱은 모니터링에서 소식을 모아 보여 줘요.","apps.body.no_screen":"이 앱은 자체 화면이 없어요.","apps.open_monitoring":"모니터링에서 열기","apps.body.no_response":"{label} 앱이 응답하지 않아요.","apps.body.no_response_why":"{label} 앱이 응답하지 않아요 ({reason}).","apps.body.check_running":"앱이 떠 있는지 확인해 주세요.","apps.body.wont_open":"{label} 앱이 열리지 않아요. 앱이 켜져 있는지 확인하고 다시 열어 보세요","apps.unreplied":"미답장","apps.unreplied.aria":"미답장 {n}개","apps.unreplied.badge":"미답장 {c}","apps.canvas":"캔버스","apps.canvas.close":"캔버스 닫기","apps.canvas.file":"화면 파일","apps.canvas.cant_open":"열 수 없는 파일이에요","apps.canvas.offline":"연결이 끊겨 열지 못했어요","apps.canvas.pick_max":"요소는 한 번에 10개까지 보낼 수 있어요","apps.kk.view.all":"전체","apps.kk.view.no_unread":"안 읽은 대화방이 없어요","apps.kk.view.no_unreplied":"미답장 대화방이 없어요","apps.kk.view_aria":"지켜보는 대화방 보기","apps.kk.today":"오늘","apps.kk.yesterday":"어제","apps.kk.type.photo":"(사진)","apps.kk.type.video":"(동영상)","apps.kk.type.voice":"(음성 메시지)","apps.kk.type.sticker":"(이모티콘)","apps.kk.type.file":"(파일)","apps.kk.type.location":"(위치)","apps.kk.type.other":"(지원하지 않는 메시지)","apps.kk.sys.hidden":"가려진 메시지예요","apps.kk.sys.joined":"{names}님이 들어왔어요","apps.kk.sys.left":"{names}님이 나갔어요","apps.kk.sys.removed":"{names}님을 내보냈어요","apps.kk.link_preview":"링크 미리보기","apps.kk.gone":"기간이 지나 볼 수 없어요","apps.kk.photo":"사진","apps.kk.photo_n":"사진 {n}","apps.kk.video":"동영상","apps.kk.enlarge":"{alt} 크게 보기","apps.kk.play":"동영상 재생","apps.kk.view_photo":"사진 보기","apps.kk.view_video":"동영상 보기","apps.kk.photo_of":"사진 {i} / {count}","apps.kk.prev":"이전 사진","apps.kk.next":"다음 사진","apps.kk.open":"열기","apps.kk.not_on_pc":"PC에 없음","apps.kk.go_original":"원래 메시지로 이동","apps.kk.reply_to":"{name}에게 답장","apps.kk.reply":"답장","apps.kk.see_original":"원문 보기","apps.kk.original":"원래 메시지","apps.kk.back_to_reply":"답장으로 돌아가기","apps.kk.finding":"찾는 중…","apps.kk.orig_missing":"원래 메시지를 찾지 못했어요 · 대화에서 지워졌거나 아주 오래된 메시지예요","apps.kk.gap_aria":"불러오지 않은 메시지가 있어요","apps.kk.gap":"사이 메시지 불러오기","apps.kk.sticker":"이모티콘","apps.kk.loc":"위치: {label}","apps.kk.map":"지도에서 보기","apps.kk.sec":"{n}초","apps.kk.min":"{n}분","apps.kk.hour":"{n}시간","apps.kk.hist_hour":"{h}시 {v}개","apps.kk.hist_day":"{d}시 {v}개","apps.kk.other":"상대","apps.kk.person_aria":"{name} 사용자별 분석","apps.kk.person":"사용자별 분석","apps.kk.reply_to_me":"상대 → 나 {t}","apps.kk.me_to_other":"나 → 상대 {t}","apps.kk.not_yet":"아직 잴 수 없어요","apps.kk.summary":"요약","apps.kk.summary_at":"{at}에 만든 요약","apps.kk.reanalyze":"다시 분석","apps.kk.analyze":"요약 분석","apps.kk.analyzing":"분석 중…","apps.kk.stat.messages":"메시지","apps.kk.stat.messages_v":"이 방 {room}개 · 지켜보는 방 {watched}개 ({n}곳)","apps.kk.stat.span":"기간","apps.kk.stat.reply":"답장 ({n}일)","apps.kk.stat.mentions":"나를 부른 메시지","apps.kk.stat.mentions_v":"{pct}% ({n}개)","apps.kk.active_hours":"활동 시간","apps.kk.hour_mark":"{h}시","apps.kk.weekday":"요일","apps.kk.wd.sun":"일","apps.kk.wd.mon":"월","apps.kk.wd.tue":"화","apps.kk.wd.wed":"수","apps.kk.wd.thu":"목","apps.kk.wd.fri":"금","apps.kk.wd.sat":"토","apps.kk.waiting":"답장을 기다리는 메시지","apps.kk.none":"없어요","apps.kk.kind.group":"단체 대화방","apps.kk.kind.direct":"1:1 대화","apps.kk.kind.open":"오픈채팅","apps.kk.tag.group":"단체","apps.kk.rooms_aria":"메신저 대화방","apps.kk.new_msg":"새 메시지","apps.kk.editing":"답장 초안을 고치는 중이에요","apps.kk.ask_ph":"요청을 입력하세요 · 예: 좀 더 짧게","apps.kk.revise_ph":"초안을 어떻게 고칠까요? · 예: 좀 더 짧게","apps.kk.ask_aria":"답장 요청","apps.kk.send_req":"요청 보내기","apps.kk.draft_reply":"답장 초안","apps.kk.send_direct":"직접 보내기","apps.kk.auto":"자동 초안","apps.kk.err_rooms":"대화방 목록을 불러오지 못했어요","apps.kk.search":"대화방 검색","apps.kk.no_match":"찾는 대화방이 없어요","apps.kk.add_title":"지켜볼 대화방","apps.kk.unread_aria":"읽지 않은 메시지 {n}개","apps.kk.off":"메신저 연동이 꺼져 있어요","apps.kk.watched":"지켜보는 대화방","apps.kk.zero":"0개","apps.kk.add":"추가","apps.kk.add_prompt":"지켜볼 대화방을 추가해 주세요","apps.kk.no_rooms":"고를 수 있는 대화방이 없어요","apps.kk.status_aria":"감시 상태","apps.kk.readonly":"감시하지 않는 방이에요. 읽기만 할 수 있어요","apps.kk.watch_start":"감시 시작","apps.kk.pick_room":"대화방을 골라 주세요","apps.kk.no_reply":"답장 안 함","apps.kk.no_reply_done":"답장 안 함으로 표시했어요","apps.kk.unread_from":"여기부터 읽지 않은 메시지","apps.kk.read_upto":"여기까지 읽었어요","apps.kk.unread_people":"아직 안 읽은 사람 {n}명","apps.kk.unknown":"알 수 없음","apps.kk.send.failed":"실패","apps.kk.send.failed_why":"실패 · {reason}","apps.kk.send.sent":"보냄","apps.kk.send.sending":"보내는 중","apps.kk.send.retry":"다시 보내기","apps.kk.send.dismiss":"지우기","apps.kk.older":"이전 메시지 더 보기","apps.kk.no_msgs":"아직 받은 메시지가 없어요","apps.kk.err_chat":"대화를 불러오지 못했어요","apps.kk.drafting_wait":"초안을 만드는 중이에요 · 끝나면 다시 요청해 주세요","apps.kk.peer_revise":"다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요","apps.kk.choose_first":"답장 전에 골라 주세요","apps.kk.write_own":"직접 쓸게","apps.kk.draft.new":"새 메시지 초안","apps.kk.draft.reply":"답장 초안","apps.kk.draft.new_n":"새 메시지 초안 · 메시지 {n}개","apps.kk.draft.reply_n":"답장 초안 · 메시지 {n}개","apps.kk.draft_restored":"초안을 되돌렸어요","apps.kk.revising":"고치는 중…","apps.kk.making_reply":"답장 초안을 만드는 중이에요…","apps.kk.making":"초안 만드는 중…","apps.kk.edited_ph":"고친 메시지","apps.kk.draft_late":"초안이 아직 오지 않았어요","appset.exit.again":"한 번 더 누르면 닫혀요","appset.feat.fail":"기능을 바꾸지 못했어요","appset.retry.done":"다시 확인했어요","appset.retry.fail":"다시 시도하지 못했어요","appset.pending.title":"승인 대기","appset.pending.n":"{n}건","appset.every.range":"1분에서 7일 사이로 정해 주세요","appset.every.done":"감시 주기를 바꿨어요","appset.every.fail":"감시 주기를 바꾸지 못했어요","appset.last.out":"마지막 결과: {text}","appset.last.check":"마지막 확인 {at}","appset.fails":"연속 실패 {n}번","appset.repeat":"반복 {every}","appset.send_to":"보낼 곳: {name}","appset.reason":"이유: {text}","appset.every_min":"{n}분마다","appset.every_aria":"{name} 감시 주기(분)","appset.min":"분","appset.reconnect":"다시 연결","appset.retry":"다시 시도","appset.watch_posts":"지켜볼 글","appset.pick":"고르기","appset.deleted":"{name}을(를) 삭제했어요","appset.delete.fail":"삭제하지 못했어요","appset.rm.bound":"이 감시는 프로젝트의 작업 채널 설정에 묶여 있어요. 그 프로젝트에서 빼 주세요","appset.rm.title_sched":"예약 삭제","appset.rm.title_watch":"감시 삭제","appset.rm.hint_sched":"이 예약을 완전히 지워요","appset.rm.hint_watch":"이 감시를 완전히 지워요","appset.rm.sched1":"다시 실행하지 않고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.sched2":"잠깐 멈추려면 삭제 대신 예약 켜기를 끄세요","appset.rm.watch1":"확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.watch1_at":"{pc}에서 확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.watch2":"지금까지 온 감시 소식은 그대로 남아요","appset.rm.watch3":"잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요","appset.rm.ask":"{name}을(를) 삭제할까요?","appset.rm.confirm":"삭제 확인","appset.remove.read_fail":"제거할 내용을 읽지 못했어요","appset.removed_here":"{label}을(를) 이 기기에서 제거했어요","appset.removed_there":"{label}을(를) 그 컴퓨터에서 제거했어요","appset.remove.fail":"제거하지 못했어요","appset.remove.title":"앱 제거","appset.remove.hint":"이 기기에서만 지워요. 다른 컴퓨터는 그대로예요","appset.remove.btn":"제거","appset.remove.here1":"이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요","appset.remove.watches":"감시 {n}개를 지워요: {names}","appset.remove.no_watch":"지울 감시는 없어요","appset.remove.feats":"기능을 이 기기에서 꺼요: {names}","appset.remove.no_feat":"끌 기능은 없어요","appset.remove.others":"다른 컴퓨터의 같은 앱은 그대로예요","appset.remove.there1":"그 컴퓨터의 앱 목록에서 빼고, 알림과 푸시를 멈춰요","appset.remove.there2":"이 앱의 감시도 함께 꺼요","appset.remove.there3":"이 컴퓨터와 다른 컴퓨터의 같은 앱은 그대로예요","appset.remove.ask_here":"{label}을(를) 이 기기에서 제거할까요?","appset.remove.ask_there":"이 앱을 그 컴퓨터에서 제거할까요?","appset.remove.data":"저장된 데이터({data})도 지우기. 체크하지 않으면 남겨요","appset.remove.data_any":"저장된 데이터도 지우기. 체크하지 않으면 남겨요","appset.remove.confirm":"제거 확인","appset.del.line1":"{label} 앱을 완전히 지워요. 되돌릴 수 없어요","appset.del.line1_at":"{machine}에서 {label} 앱을 완전히 지워요. 되돌릴 수 없어요","appset.del.line2":"이름과 설정을 지우고, 앱 목록에서 빠져요","appset.del.line3":"이 앱의 감시도 함께 지워요","appset.add.hint_off":"꺼 둔 앱 {names} · 새로 추가","appset.add.hint_new":"새로 추가하기","appset.add.send":"맡기기","appset.add.ph":"어떤 앱을 연결하거나 만들까요?","appset.add.aria":"연결하거나 만들 앱","appset.add.title":"앱 관리","appset.add.new":"새 앱 추가","appset.add.off":"꺼 둔 앱","appset.add.on":"다시 켜기","appset.tpl.fail":"템플릿을 불러오지 못했어요","appset.tpl.close_aria":"앱 추가 닫기","appset.tpl.note":"{ph} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요","appset.on_at":"{pc}에서 {label}을(를) 다시 켰어요","appset.on_again":"{label}을(를) 다시 켰어요","appset.on_refill":"{label}을(를) 켰어요. 다시 연결할 내용을 채워 두었어요","appset.add.fail":"앱을 추가하지 못했어요","appset.fmt.items":"{n}개","appset.chg.add":"추가 {names}","appset.chg.del":"뺌 {names}","appset.chg.none":"달라지는 것 없음","appset.step.dec":"{label} 줄이기","appset.step.inc":"{label} 늘리기","appset.rule.ph_name":"이름: 메일 옆 뱃지에 보일 짧은 이름 (예: 자료 요청)","appset.rule.ph_when":"언제: 이 규칙을 쓸 메일 (예: 자료나 양식을 보내 달라는 메일)","appset.rule.ph_how":"어떻게: 초안에 바라는 것 (예: 요청한 자료를 첨부하고 짧게 인사)","appset.rule.ph_files":"붙일 파일: 첨부 파일 폴더 안의 파일 이름이나 전체 경로를 쉼표로 구분. 비우면 메일에 맞는 파일을 폴더에서 찾아요","appset.rule.save_fail":"규칙을 저장하지 못했어요","appset.rule.need":"이름과 언제를 적어 주세요","appset.rule.files":"붙일 파일: {files}","appset.rule.when":"언제: {text}","appset.rule.how":"어떻게: {text}","appset.rule.edit":"고치기","appset.rule.del":"지우기","appset.rule.deleted":"규칙 {name}을(를) 지웠어요","appset.rule.default_saved":"기본 규칙을 저장했어요","appset.rule.default_fail":"기본 규칙을 저장하지 못했어요","appset.rule.add":"규칙 추가","appset.sec.draft":"자동 초안과 승인","appset.sec.watch":"감시","appset.sec.more":"기타 기능","appset.sec.advanced":"고급","appset.conn.since":"{at}부터 연결이 끊겼어요","appset.conn.relogin":"다시 로그인해 주세요","appset.conn.at_pc":"{pc}에서 쓰는 앱이에요","appset.conn.off":"연결 끊김","appset.conn.on":"연결됨","appset.conn.checking":"연결 상태를 확인 중이에요","appset.set.fail":"설정을 바꾸지 못했어요","appset.set.load_fail":"설정을 불러오지 못했어요","appset.mem.title":"기억해 둔 것","appset.mem.hint":"대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요","appset.mem.none":"아직 없어요","appset.chip.relogin":"다시 로그인해 줘","appset.chip.cause":"원인 찾아 줘","appset.chip.resume":"다시 켜 줘","appset.chip.pause":"일시정지","appset.chips_aria":"빠른 지시","appset.card.bad":"변경 제안을 읽지 못했어요","appset.card.mem":"기억해 뒀어요","appset.card.title":"설정 바꾸기 제안","appset.card.applied":"적용했어요","appset.card.cancelled":"취소했어요","appset.apply":"적용","base.peer.kind.handoff":"작업 넘김","base.peer.kind.message":"메시지","base.peer.kind.ack":"작업 받음","base.peer.handed_off":"{from}에서 작업을 넘겼어요","base.peer.took_over":"{from}에서 작업을 이어받았어요","base.peer.ack_words":"넘긴 작업을 이어서 해요","base.more":"더 보기","base.less":"접기","base.peer.note":"인계 메모","base.chart.label":"차트","base.chart.bad_spec":"차트 형식이 맞지 않아 JSON으로 보여 드려요","base.chart.load_failed":"차트를 불러오지 못했어요","base.chart.draw_failed":"차트를 그리지 못했어요","base.raw":"원문","base.mark.done":"완료","base.mark.run":"진행 중","base.mark.wait":"대기","base.mark.ask":"확인 필요","base.mark.fail":"실패","base.tone.wait":"답을 기다려요","base.claim.verified":"확인됨","base.claim.reported":"보고만 함","base.peer.read_only":"이 컴퓨터에서는 읽기만 돼요","base.notice.worklog":"{name} 작업 기록","base.bot_default":"비서","base.select":"선택","base.select_all":"전체 선택","base.ended.delete_n":"삭제 {n}개","base.ended.delete_n_btn":"{n}개 삭제","base.ended.unread_aria":"읽지 않은 메시지 {n}개","base.ended.delete_one":"{name} 삭제","base.ended.label":"끝난 세션 {n}","base.ended.need":"답변 필요 {n}","base.ended.unread":"안 읽음 {n}","base.ended.delete_many":"세션 {n}개 삭제","base.ended.trash_note":"휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요.","base.ended.deleted_one":"{name} 삭제했어요","base.ended.deleted_many":"{n}개 삭제했어요","base.ended.kept.dirty":"아직 커밋하지 않은 변경이 있어요. 커밋하거나 정리하면 지울 수 있어요.","base.ended.kept.running":"아직 실행 중이에요. 멈춘 뒤에 지울 수 있어요.","base.ended.kept.other":"작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.","base.ended.kept_one":"{name} 세션은 그대로 뒀어요","base.ended.kept_many":"세션 {n}개는 그대로 뒀어요","base.ended.restore_failed":"{n}개는 되돌리지 못했어요. 휴지통에 그대로 있어요","base.ended.restored":"되돌렸어요","base.status.unknown":"알 수 없음","base.title.messengers":"메신저","base.title.devices":"연결된 기기","base.title.webaccess":"웹 접속","base.title.cardform":"카드 추가","base.sidebar.expand":"사이드바 펼치기","base.sidebar.collapse":"사이드바 접기","base.update.badge":"새 버전","base.update.title":"새 버전이 있어요","base.theme.light":"라이트","base.theme.dark":"다크","base.command":"명령","base.pal.warn":"주의","base.pal.words.accounts":"공급자 provider 로그인","base.pal.words.usage":"한도 quota","base.pal.pick":"{name} 고르기","base.pal.placeholder":"도구 또는 명령","base.pal.hint.move":"↑↓ 이동","base.pal.hint.open":"↵ 열기","base.pal.hint.close":"esc 닫기","base.pal.running":"실행 중","base.pal.words.ended":"끝난 세션 종료된 세션","base.pal.words.terminal":"셸 터미널 명령줄 shell terminal","base.pal.words.screen":"화면 공유 원격 데스크톱 screen desktop remote","base.pal.words.theme":"화면 모드 전환 라이트 다크 theme dark light","base.pal.open_terminal":"터미널 열기","base.pal.open_screen":"화면 공유 열기","base.pal.theme_switch":"{mode} 모드로 전환","base.pal.group.tools":"도구","base.pal.group.screen":"화면","base.pal.group.commands":"명령","base.pal.empty":"결과가 없어요","base.pct_left":"{n}% 남음","base.limit.weekly":"주간 {model}","base.limit.hours":"{n}시간","base.limit.days":"{n}일","base.retry":"다시 시도","base.sub.aborted":"중단됨","base.work.no_reason":"이유가 기록되지 않았어요","base.work.stop_title":"백그라운드 작업 중단","base.work.stop_text_job":"'{description}' 작업을 멈춰요. 필요하면 다시 맡길 수 있어요.","base.work.stop_text":"하던 작업을 멈춰요. 필요하면 다시 맡길 수 있어요.","base.work.stopped":"작업을 중단했어요","base.work.retried":"다시 맡겼어요","base.work.just_started":"방금 시작","base.work.minutes":"{n}분째","base.just_now":"방금","base.min_ago":"{n}분 전","base.hours_ago":"{n}시간 전","base.work.more":"외 {n}개","base.sub.running":"서브에이전트 {n}개 진행 중","base.sub.none":"진행 중인 서브에이전트가 없어요","base.sub.log_failed":"기록을 불러오지 못했어요","base.sub.log_empty":"기록이 없어요","base.board.reset_done":"카드를 처음 순서로 돌려놨어요","base.board.reset_failed":"카드 순서를 처음으로 돌리지 못했어요","base.board.reset":"배치 초기화","base.board.head_hint":"끌거나 방향키로 옮기고, Shift+방향키로 크기를 바꿔요","chat.kind.command":"명령","chat.kind.read":"읽기","chat.kind.edit":"수정","chat.kind.search":"검색","chat.kind.web":"웹","chat.kind.notes":"기록","chat.kind.tool":"도구","chat.kind.thinking":"생각","chat.status.resumed":"{name} 대화 기록 이어서 시작 · {model}","chat.status.started":"{name} 대화 기록 새로 시작 · {model}","chat.status.compacting":"컨텍스트 압축 중","chat.status.compacted":"컨텍스트 압축 완료","chat.status.retrying":"다시 시도 중","chat.status.retrying_n":"다시 시도 중 ({attempt})","chat.status.fallback":"모델 전환 · {model}","chat.log.work":"작업","chat.log.work_for":"{dur} 작업","chat.log.errors":"오류 {n}","chat.log.no_output":"(출력 없음)","chat.log.details":"자세히","chat.log.open_sub":"서브에이전트 기록 열기","chat.gw.work_msg":"작업 중에 온 메시지","chat.gw.work_lane":"작업 중에 온 세션 보고","chat.gw.restart":"재시작 뒤 다시 처리","chat.gw.waiting":"답을 기다리는 중","chat.gw.limit_over":"사용량 한도 풀림","chat.gw.provider_ok":"모델 제공자 복구","chat.gw.provider_retry":"일시 오류 뒤 다시 시도","chat.gw.reread":"대화 정리 뒤 지침 다시 읽기","chat.gw.first":"첫 시작","chat.inbox.lane_from":"세션 보고 · {name}","chat.inbox.lane":"세션 보고","chat.inbox.watch":"모니터링 · {name}","chat.inbox.mail":"새 메일","chat.inbox.schedule":"예약 작업","chat.prompt.keepalive":"캐시 유지 신호","chat.prompt.reflect":"야간 자기 점검","chat.prompt.handover":"이전 대화 이어받기","chat.prompt.message":"메시지","chat.prompt.attached":"첨부: {files}","chat.load.older_failed":"이전 기록을 불러오지 못했어요","chat.load.conv_failed":"이전 대화를 불러오지 못했어요","chat.gap.aria":"불러오지 않은 메시지가 있어요","chat.gap.load":"사이 메시지 불러오기","chat.older.more":"이전 기록 더 보기","chat.history.divider":"지난 기록","chat.empty.none":"아직 대화가 없어요","chat.empty.load_failed":"대화를 불러오지 못했어요","chat.empty.no_activity":"활동이 없어요","chat.upload.too_big":"파일이 너무 커요 ({size}MB, 최대 {max}MB)","chat.upload.failed":"올리지 못했어요 (HTTP {status})","chat.upload.lost":"연결이 끊겼어요","chat.upload.retry":"다시 올리기","chat.upload.retry_aria":"{name} 다시 올리기","chat.upload.progress":"{name} 올리는 중","chat.picker.drop":"{n}번 요소 빼기","chat.picker.limit":"요소는 한 번에 10개까지 보낼 수 있어요","chat.picker.hint_touch":"길게 눌러 요소 고르기","chat.picker.hint_mac":"⌘+클릭으로 요소 고르기","chat.picker.hint_ctrl":"Ctrl+클릭으로 요소 고르기","chat.conn.switching":"연결 끊김 · {name}(으)로 전환","chat.conn.short":"끊김","chat.sl.lane_sub":"세션 · {status}","chat.sl.session_default":"세션 기본값","chat.sl.auto":"자동으로 고르기","chat.sl.gateway_all":"게이트웨이 전체 (한가할 때)","chat.sl.bg_task":"백그라운드 작업","chat.sl.bg_task_model":"백그라운드 작업 · {model}","chat.sl.conv_running":"대화 · 진행 중","chat.sl.now_running":"지금 진행 중 · 골라서 지칭하기","chat.sl.optional":"{name} · 비워도 돼요","chat.arg.target":"대상","chat.arg.level":"강도","chat.arg.text":"글","chat.arg.account":"계정","chat.arg.provider":"공급자","chat.cmd.status":"봇·세션·Discord 상태와 컨텍스트","chat.cmd.context":"프로세스별 컨텍스트 사용량과 압축 상태","chat.cmd.compact":"컨텍스트 압축 (작업 중이면 끝난 뒤)","chat.cmd.lanes":"세션마다 상태와 모델","chat.cmd.model":"모델 보기, 또는 대상의 모델 바꾸기","chat.cmd.effort":"추론 강도 바꾸기","chat.cmd.fable_ok":"이 대화에서 비싼 모델(페이블)을 한동안 허용","chat.cmd.restart":"에이전트 재시작 · 게이트웨이는 전체 재시작","chat.cmd.stop":"세션 멈추기 (나중에 다시 시작할 수 있어요)","chat.cmd.resume":"멈춘 세션 이어가기, 실행 중이면 메시지 보내기","chat.cmd.abort":"지금 하는 일 취소 (비우면 봇)","chat.cmd.providers":"연결된 공급자와 모델 수","chat.cmd.account":"지금 Claude 계정 보기, 또는 바꾸기","chat.cmd.login":"공급자 로그인 (링크가 열려요)","chat.cmd.logout":"공급자 로그아웃","chat.cmd.quota":"공급자·계정별 사용 한도","chat.cmd.terminal":"이 컴퓨터 터미널에서 명령 실행","chat.cmd.screen":"이 컴퓨터 화면 열기","chat.cmd.help":"명령 전체 설명","chat.send.stopped":"작업을 중단했어요","chat.send.fix_uploads":"못 올린 파일을 다시 올리거나 빼 주세요","chat.send.uploading":"파일을 올리는 중이에요","chat.send.cmd_no_files":"명령에는 파일을 붙일 수 없어요","chat.send.cmd_no_picks":"명령에는 요소를 붙일 수 없어요","chat.send.no_screen":"이 컴퓨터에서는 화면 공유를 쓸 수 없어요","chat.send.need_cmd":"터미널에서 실행할 명령을 /terminal 뒤에 적어 주세요","chat.send.queued":"작업이 끝나면 전달할게요","chat.send.interrupted":"중단하고 보냈어요","chat.send.kept":"{message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요","chat.ph.ended":"종료된 세션이에요","chat.ph.pick_number":"번호를 누르거나 직접 입력해 주세요","chat.ph.resume":"재개하면서 보내기","chat.ph.project":"{name} 프로젝트의 {bot}에게 메시지 · /명령","chat.ph.mail":"이 메일 답장·전달은 {bot}에게 · /명령","chat.ph.settings":"{name} 설정은 {bot}에게 말해요 · /명령","chat.ph.target":"{name}에게 메시지 · /명령","chat.run.limit":"사용량 한도로 대기 중","chat.run.working":"작업 중…","chat.run.stop_title":"지금 하는 일 중단","chat.sub.count_lead":"서브에이전트 {n} ›","chat.sub.count_running":"서브에이전트 {n}개 진행 중 ›","chat.queue.label":"작업이 끝나면 전달","chat.queue.now":"지금 끼워넣기","chat.queue.clear_first":"입력창을 비운 뒤 취소해 주세요","chat.chip.session":"세션 {name}","chat.chip.this_project":"이 프로젝트","chat.chip.this_mail":"이 메일","chat.chip.this_conv":"이 대화","chat.chip.sub":"서브에이전트 {model}","chat.chip.sub_level":"서브에이전트 {model} · {level}","chat.chip.sub_title":"이 세션의 서브에이전트 모델","chat.chip.model_title":"{owner} 모델 · {name}","chat.chip.effort_title":"{owner} 추론 강도 · {level}","chat.chip.fallback_title":"{owner} 기본 모델 {model} 대신 쓰는 중","chat.chip.sub_change":"서브에이전트 {from} → {to}","chat.chip.effort_change":"{model} · 추론 강도 {from} → {to}","chat.ctx.label_pct":"{who} 컨텍스트 {pct}% · {used}/{win}","chat.ctx.label_tok":"{who} 컨텍스트 {tokens} 토큰","chat.ctx.idle_note":"쉬는 중이라 마지막 값이에요","chat.ctx.chip_pct":"컨텍스트 {pct}%","chat.ctx.chip_tok":"컨텍스트 {tokens}","chat.ctx.head_pct":"컨텍스트 {pct}% · {used}/{win}","chat.ctx.head_tok":"컨텍스트 {tokens} 토큰","chat.ctx.recache":"작업 중인 세션이라 컨텍스트 {tokens} 토큰이 캐시에 다시 쓰여요\n{label}","chat.ctx.apply":"적용","chat.ctx.compact_later":"작업이 끝나면 압축해요","chat.ctx.compact_started":"압축을 시작했어요","chat.ctx.applied":"적용했어요","chat.ctx.compact_now":"지금 압축","chat.ctx.recache_once":"캐시가 한 번 다시 쓰여요","chat.ctx.compacting":"압축 진행 중","chat.ctx.resting":"쉬는 중이에요","chat.ctx.resting_sub":"다음 메시지가 오면 다시 시작해요","chat.ctx.open":"컨텍스트 화면 열기","chat.models.link":"모델 설정","chat.models.link_sub":"대체 모델 순서까지","chat.inherit.mail":"이 메일 기본값과 같게","chat.inherit.main":"메인 대화와 같게","chat.att.photo":"사진","chat.att.file":"파일","chat.att.relay_no":"이 대화에는 파일을 붙일 수 없어요","chat.att.max":"한 번에 10개까지 보낼 수 있어요","chat.att.pasted":"붙여넣은 이미지.png","chat.att.enlarge":"{name} 크게 보기","chat.att.enlarge_named":"{no} {name} 크게 보기","chat.att.enlarge_no":"{no} 크게 보기","chat.att.open":"{name} · 열기","chat.att.cancel_upload":"{name} 올리기 취소","chat.att.remove":"{name} 빼기","chat.att.deleted":"원본이 지워졌어요","chat.att.cant_open":"열 수 없는 파일이에요","chat.att.cant_check":"확인하지 못했어요","chat.att.image_n":"이미지 {n}","chat.att.download_name":"{name} 다운로드","chat.att.download":"다운로드","chat.att.copy_path":"경로 복사: {path}","chat.att.path_copied":"경로를 복사했어요","chat.att.copy_failed":"복사하지 못했어요","chat.att.cut":"앞부분만 보여요. 전체는 다운로드해 주세요","chat.att.cant_open_short":"열 수 없어요","chat.att.new_tab":"새 탭","chat.att.prev":"이전 이미지","chat.att.next":"다음 이미지","chat.att.preview":"미리보기","chat.tsw.subs":"서브 {n}","chat.tsw.group":"대화 대상","chat.tsw.drop_aria":"대화 대상: {name}","chat.tsw.others_attn":"다른 대상 확인 필요 {n}개","chat.tsw.others_new":"다른 대상의 새 메시지","chat.tsw.no_project":"프로젝트 없음","chat.tsw.ended":"끝난 세션 {n}","chat.tsw.ended_sub":"기록 보기 · 재개","chat.tsw.show_chat":"대화 보기","chat.tsw.show_log":"로그 보기","chat.tsw.more":"더 보기 {n}","chat.tsw.attn":"확인 필요 {n}개","chat.auth.show_aria":"{label} 보기","chat.auth.show":"보기","chat.auth.hide":"숨기기","chat.auth.optional_label":"{label}(선택)","chat.auth.remember":"다음에도 쓰게 저장해 두기","chat.auth.remember_sub":"끄면 한 번 쓰고 지워요","chat.auth.required":"비워 둘 수 없어요","chat.auth.format":"형식을 확인해 주세요","chat.auth.store_failed":"게이트웨이가 값을 저장하지 못했어요(봇에게도 알렸어요): {error}","chat.auth.send_failed":"전달하지 못했어요. 다시 시도해 주세요","chat.auth.cancelled":"요청을 취소했어요","chat.auth.sent":"전달했어요","chat.auth.approve":"승인","chat.auth.approve_req":"승인 요청","chat.auth.input_req":"입력 요청","chat.auth.note":"입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요.","common.home":"홈","common.chat":"채팅","common.main_chat":"메인 대화","common.conversation":"대화","common.alerts":"알림","common.worklog":"작업내역","common.project":"프로젝트","common.projects":"프로젝트","common.monitoring":"모니터링","common.apps":"앱","common.settings":"설정","common.system":"구성","common.features":"기능","common.session":"세션","common.ended_sessions":"끝난 세션","common.subagent":"서브에이전트","common.assistant":"어시스턴트","common.model":"모델","common.reasoning":"추론 강도","common.accounts":"계정","common.usage":"사용량","common.limit":"한도","common.resets":"초기화","common.context":"컨텍스트","common.compact":"압축","common.mail":"메일","common.mailbox":"메일함","common.draft":"초안","common.schedule":"예약","common.routine":"루틴","common.devices":"기기","common.computer":"컴퓨터","common.trash":"휴지통","common.needs_reply":"답변 필요","common.unread":"안 읽음","common.decision":"결정","common.evidence":"근거","common.status.working":"작업 중","common.status.idle":"대기","common.status.starting":"시작 중","common.status.stopped":"멈춤","common.status.rate_limited":"한도 걸림","common.status.ended":"종료됨","common.effort.off":"끔","common.effort.minimal":"최소","common.effort.low":"낮음","common.effort.medium":"보통","common.effort.high":"높음","common.effort.very_high":"매우 높음","common.effort.max":"최고","common.effort.auto":"자동","common.cancel":"취소","common.delete":"삭제","common.save":"저장","common.close":"닫기","common.ok":"확인","common.undo":"되돌리기","common.restart":"재시작","common.stop":"중단","common.send":"보내기","common.back":"뒤로","common.loading":"불러오는 중…","common.load_failed":"불러오지 못했어요","connect.cond.none":"없음","connect.cond.five_hour":"5시간 남은 % 밑","connect.cond.week":"주간 남은 % 밑","connect.cond.auth":"로그인 풀림","connect.cond.unavailable":"특정 계정 못 씀","connect.do.pin":"계정 고정","connect.do.prefer":"순서대로 우선","connect.do.auto":"자동","connect.acc.default":"기본","connect.copied":"복사했어요","connect.acc.in_use_pinned":"사용 중 · 고정","connect.acc.left_5h":"5시간 {pct} 남음","connect.acc.left_week":"주간 {pct} 남음","connect.acc.pin_changed":"고정 계정을 바꿨어요","connect.acc.reorder":"{name} 순서 바꾸기. 끌거나 위아래 화살표를 눌러요","connect.acc.rename":"{name} 이름 바꾸기","connect.acc.pinned_note":"{name}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 대체 모델 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.","connect.acc.chosen":"고른 계정","connect.acc.auto":"자동 전환","connect.acc.auto_done":"자동 전환으로 바꿨어요","connect.acc.pin_done":"고정했어요","connect.limit.switch_sub":"한도에 걸리면 자동 전환으로 넘어가요","connect.limit.wait_sub":"한도에 걸린 동안 기다려요","connect.limit.unset_sub":"아직 정하지 않았어요","connect.limit.wait_done":"한도에 걸렸을 때 기다리기로 정했어요","connect.limit.switch_done":"한도에 걸렸을 때 자동 전환으로 넘어가기로 정했어요","connect.limit.ask":"물어보기","connect.limit.wait":"기다리기","connect.rules.title":"전환 규칙","connect.rules.none":"계정이 막힐 때만 자동으로 바꿔요.","connect.edit":"편집","connect.script.timeout":"{n}초 안에 끝나요","connect.script.every":"{n}분마다","connect.script.failed":"마지막 실행이 실패했어요","connect.script.last":"마지막 결과 · {result}","connect.script.none":"고르지 않음","connect.acc.name_prefix":"계정 ","connect.limit.title":"한도에 걸리면","connect.acc.no_usage":"사용량 아직 확인 안 됨","connect.acc.left":"{label} {pct}% 남음","connect.acc.none":"{name} 계정이 없어요","connect.acc.none_add":"계정을 하나 넣으면 여기 보여요.","connect.acc.none_login":"로그인이나 API 키를 넣어 주세요.","connect.alias.ph":"별칭 (예: 회사, 개인)","connect.alias":"별칭","connect.acc.delete":"계정 삭제","connect.delete_named":"{name} 삭제","connect.acc.delete_body":"OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.","connect.acc.deleted":"{name}을(를) 삭제했어요","connect.acc.unpin":"고정 풀기","connect.acc.unpinned":"고정을 풀었어요","connect.acc.pin_this":"이 계정으로 고정","connect.acc.pinned_to":"{name}로 고정했어요","connect.alias.saved":"별칭을 저장했어요","connect.alias.removed":"별칭을 지웠어요","connect.rules.days":"요일 (선택)","connect.rules.json":"규칙 JSON","connect.rules.name_ph":"규칙 {n} 이름 (선택)","connect.rules.name":"규칙 이름","connect.rules.cond":"조건","connect.rules.left":"남은 %","connect.rules.below":"% 밑","connect.rules.action":"동작","connect.rules.hours":"시간 (선택)","connect.rules.from":"시작","connect.rules.to":"끝","connect.rules.cond_n":"조건 {n}개","connect.rules.add":"규칙 추가","connect.rules.bad_json":"JSON 모양이 맞지 않아요","connect.rules.as_fields":"항목으로 보기","connect.rules.as_json":"직접 편집","connect.rules.saved":"규칙을 저장했어요","connect.dev.last_used":"마지막 사용 {ago}","connect.dev.never":"아직 쓰지 않음","connect.dev.title":"연결된 기기","connect.dev.count":"{n}대","connect.dev.load_failed":"연결된 기기를 불러오지 못했어요","connect.loading":"불러오는 중","connect.dev.connected_on":"{date} 연결","connect.dev.add_passkey":"이 기기에 패스키 추가","connect.dev.no_passkey":"이 브라우저는 패스키 없이 들어왔어요","connect.dev.sec":"이 웹앱을 쓸 수 있는 기기","connect.dev.none":"연결된 기기가 없어요","connect.dev.add":"새 기기 연결","connect.dev.name":"기기 이름","connect.dev.current":"지금 쓰고 있는 기기","connect.dev.remove":"해제","connect.dev.remove_self":"이 기기는 바로 로그아웃돼요. 다시 쓰려면 메신저로 받은 코드로 새로 연결해야 해요.","connect.dev.remove_other":"{name}의 로그인이 바로 끊겨요. 다시 쓰려면 코드로 새로 연결해야 해요.","connect.dev.remove_title":"기기 해제","connect.dev.removed":"기기를 해제했어요","connect.dev.need_name":"이름을 적어 주세요","connect.dev.qr":"새 기기 연결 QR 코드","connect.dev.step_self":"'연결 화면 열기'를 눌러 코드와 이 기기 이름을 넣어요.","connect.dev.step_passkey":"패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요.","connect.dev.step_open":"새 기기의 브라우저에서 이 웹앱 주소를 열어요. '기기 연결' 화면이 나와요.","connect.dev.step_qr":"QR을 찍거나 위의 코드를 넣어요.","connect.dev.step_code":"위의 코드를 넣어요.","connect.dev.step_name":"기기 이름을 넣고 패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요.","connect.dev.addr":"연결 화면 주소","connect.dev.open_page":"연결 화면 열기","connect.copy":"복사","connect.dev.code_note":"코드는 10분 동안 한 번만 쓸 수 있고, 메신저와 이 화면을 합쳐 한 시간에 3번까지 만들 수 있어요.","connect.dev.make_code":"여기서 코드 만들기","connect.dc.kind_chat":"대화 답장","connect.dc.kind_chat_sub":"내가 Discord에서 묻지 않은 대화의 답","connect.dc.kind_lanes_sub":"세션이 올리는 진행·완료 보고","connect.dc.kind_worklog_sub":"작업 기록 메시지","connect.dc.kind_web":"웹에서 시작한 세션","connect.dc.kind_web_sub":"웹이나 터미널에서 시작한 세션도 Discord에 채널을 만들어요","connect.dc.id_ph":"예: 123456789012345678","connect.dc.token":"봇 토큰","connect.nothing_changed":"바꾼 값이 없어요","connect.dc.token_delete_title":"봇 토큰 삭제","connect.dc.token_delete_body":"저장된 봇 토큰을 삭제해요. dotz를 다시 시작하면 Discord 연결이 끊겨요.","connect.dc.token_deleted":"봇 토큰을 삭제했어요","connect.restart_later":"작업이 끝나면 다시 켜져요. 이 화면은 자동으로 다시 연결돼요","connect.state.unset":"설정 안 됨","connect.dc.half":"토큰은 저장돼 있어요. 서버 ID와 내 사용자 ID까지 저장하고 게이트웨이를 다시 시작하면 연결돼요.","connect.dc.not_yet":"아직 Discord 봇이 연결되지 않았어요.","connect.state.on":"연결됨","connect.state.connecting":"연결 중","connect.dc.connecting":"연결하는 중이에요.","connect.dc.also_send":"{name} Discord로도 보내기","connect.dc.after_connect":"연결하면 고를 수 있어요","connect.dc.direct_note":"Discord에서 직접 물은 것의 답은 Discord에도 가요.","connect.dc.per_chat":"대화별로 Discord에도 보내기","connect.check_failed":"확인하지 못했어요","connect.dc.bot_named":"봇 {name}","connect.dc.unnamed":"이름 없음","connect.dc.admin_ok":"관리자 권한 확인됨","connect.dc.admin_no":"관리자 권한이 없어요.","connect.dc.reauth":"봇 권한 다시 승인","connect.dc.guild":"서버 ID","connect.dc.owner":"내 사용자 ID","connect.dc.token_saved":"봇 토큰 (저장됨 · 바꾸려면 새로 붙여 넣기)","connect.saved_tag":"저장됨","connect.check_conn":"연결 확인","connect.dc.token_delete":"토큰 삭제","connect.dc.restart_applies":"게이트웨이를 다시 시작하면 적용돼요","connect.restart":"다시 시작","connect.dc.load_failed":"Discord 설정을 불러오지 못했어요","connect.dc.how":"연결하는 방법","connect.dc.how1":"Discord 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요","connect.dc.how2":"초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)","connect.dc.how3":"봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요","connect.sec":"연결","connect.dc.bot":"Discord 봇","connect.connecting":"연결하는 중","connect.ms.as_user":"내 계정으로 보냅니다","connect.connect":"연결","connect.turn_on":"켜기","connect.ms.sum_more":"{name} 외 {n}개 연결됨","connect.ms.sum_one":"{name} 연결됨","connect.ms.title":"메신저","connect.ms.connected_ago":"{ago} 연결했어요","connect.ms.tap_connect":"연결을 누르면 자동으로 설정해요.","connect.ms.tap_on":"설정은 돼 있어요. 켜기를 누르면 알림을 보내요.","connect.ms.rooms_n":"방 {n}개","connect.ms.test_failed":"확인하지 못했어요 · {error}. 잠시 뒤에 다시 눌러 주세요","connect.ms.checked_ago":"{ago} 확인했어요","connect.ms.no_rooms":"방이 없어요","connect.ms.some_failed":"보내지 못한 방이 있어요","connect.ms.all_ok":"정상이에요","connect.ms.sent_to":"{name}: 보냈어요","connect.ms.send_failed":"보내지 못했어요","connect.paste_new":"바꾸려면 새로 붙여 넣기","connect.ms.on":"켜져 있어요","connect.ms.off":"꺼져 있어요","connect.ms.load_failed":"메신저 설정을 불러오지 못했어요","connect.ms.received":"받음 {ago}","connect.ms.sent":"보냄 {ago}","connect.check":"확인","connect.onb.waiting":"내가 할 일이 하나 남았어요.","connect.onb.running":"자동으로 연결하는 중이에요.","connect.onb.done":"연결했어요.","connect.onb.failed":"연결하지 못했어요.","connect.onb.idle":"아직 시작하지 않았어요.","connect.onb.start_failed":"연결을 시작하지 못했어요 · {error}. 잠시 뒤에 다시 눌러 주세요","connect.onb.title":"자동 연결","connect.onb.continue":"계속","connect.onb.restart":"다시 시작","connect.onb.pick":"고르기","connect.manual":"직접 입력","connect.wa.local":"이 컴퓨터만","connect.wa.tailscale_sub":"Tailscale로 연결한 내 기기에서 열어요. 기본값이에요.","connect.wa.cloudflare_sub":"Cloudflare 터널로 고정 주소를 열어요. 연결은 자동으로 진행하고, 필요한 한 가지 동작만 알려드려요.","connect.wa.local_sub":"이 컴퓨터에서만 열어요.","connect.wa.title":"웹 접속","connect.wa.no_tunnel_hint":"터널 프로그램이 없어요. 채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요.","connect.wa.tunnel_open":"터널이 열려 있어요","connect.wa.tunnel":"터널","connect.wa.host":"주소","connect.wa.host_help":"터널에 연결해 둔 주소예요. 주소를 바꾸면 기기를 다시 연결해야 해요.","connect.wa.team":"팀 이름 (선택)","connect.wa.team_help":"Cloudflare Access로 한 번 더 확인할 때만 적어요. 확인 번호와 함께 적어요.","connect.wa.aud":"확인 번호 (선택)","connect.wa.aud_help":"Access 앱 화면의 Audience Tag 값이에요.","connect.wa.token":"터널 토큰","connect.wa.token_help":"저장하면 이 컴퓨터에만 보관하고, 화면에는 다시 보여 주지 않아요.","connect.revert":"되돌리기","connect.wa.load_failed":"웹 접속 설정을 불러오지 못했어요","connect.wa.mode":"접속 방식","connect.wa.status":"상태","connect.wa.devices":"연결된 기기 (패스키)","connect.wa.devices_sub":"이 웹앱에 들어올 수 있는 브라우저","connect.wa.plain_note":"Cloudflare를 거치는 내용은 Cloudflare가 평문으로 볼 수 있어요. 암호화(TLS)가 거기서 끝나기 때문이에요.","connect.wa.no_tunnel":"터널 프로그램이 없어요","connect.wa.install_hint":"채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요.","connect.wa.need_host":"주소를 적어 주세요","connect.rt.adapted":"대체","connect.rt.disabled":"끔","connect.rt.unsupported":"미지원","connect.rt.current":"현재 쓰는 중","connect.rt.row_aria":"작업 프로그램: {name}. 눌러서 바꾸기","connect.rt.no_adapter":"dotz가 아직 지원하지 않아서 바꿀 수 없어요.","connect.rt.blocked":"핵심 항목이 통과하지 못해서 바꿀 수 없어요: {list}","connect.rt.stale":"검사한 뒤 버전이 바뀌었어요 (v{from} → v{to}). 다시 검사해 주세요.","connect.rt.adjusted":"핵심 항목은 모두 통과했어요. {n}개 기능은 게이트웨이가 대신 처리하거나 꺼요.","connect.rt.all_ok":"모든 항목이 통과했어요.","connect.rt.checked":"검사 {meta}","connect.rt.core":"핵심","connect.rt.switch_to":"{name}로 바꾸기","connect.rt.applies":"적용 대상","connect.rt.need_one":"하나는 켜 두어야 해요.","connect.rt.checking":"작동을 검사하는 중이에요","connect.rt.progress":"{done}/{total} 항목","connect.rt.starting":"시작하는 중…","connect.rt.omo_note":"OmO는 기본 작업 프로그램이라서 검사 없이 쓸 수 있어요.","connect.rt.check_note":"바꾸기 전에 잘 작동하는지 검사해요. 짧은 작업을 실제로 돌려 보기 때문에 1~2분쯤 걸릴 수 있어요.","connect.rt.no_adapter_check":"dotz가 아직 지원하지 않아서 바꿀 수 없어요. 작동 검사를 하면 어떤 항목이 막히는지 볼 수 있어요.","connect.rt.omp_note":"omp는 선택해서 쓰는 작업 프로그램이에요. 처음에 쓰던 것이라 검사 없이 바꿀 수 있어요.","connect.rt.recheck":"다시 검사","connect.rt.run_check":"작동 검사","connect.rt.switch":"바꾸기","conv.unread_from":"여기부터 읽지 않은 메시지","conv.read_to":"여기까지 읽음","conv.draft_waits":"답장 초안이 기다려요","conv.unreplied":"미답장","conv.load_failed":"대화 목록을 불러오지 못했어요","conv.fixed.alert":"경고와 결정 요청","conv.fixed.worklog":"야간 정리와 세션 진행 기록","conv.read_title":"답이 필요한 대화는 그대로 둬요","conv.read_n":"{n}개 읽음 처리","conv.read_failed":"{n}개를 읽음으로 표시하지 못했어요: {why}","conv.read_done":"대화 {n}개를 읽음으로 표시했어요","conv.more_projects":"프로젝트 {n}개 더 보기","conv.unread_n":"읽지 않은 메시지 {n}개","conv.list_aria":"채팅 목록","conv.settings_hint":"말로 설정을 바꾸고 적용을 눌러요","conv.back_mail":"메일 목록으로","conv.back_mon":"모니터링 목록으로","conv.bell_title":"알림 ({key})","conv.nt.no_screen":"이 화면을 찾을 수 없어요","conv.nt.session_gone":"이 세션은 이미 지워졌어요","conv.nt.nearby":"그 메시지가 없어서 바로 옆 메시지를 열었어요","conv.nt.unshown":"이 알림은 대화에 따로 표시하지 않아요","conv.nt.no_msg":"그 메시지를 찾을 수 없어요","conv.nt.handled":"이 알림은 이미 처리됐어요","conv.nt.ignore_aria":"{title} 무시","conv.worklog":"작업 기록","conv.session_named":"세션 {name}","conv.nt.no_news":"그 소식을 찾을 수 없어요","conv.nt.sent":"답을 보냈어요","conv.nt.sent_next_card":"답을 보냈어요 · 다음 카드예요","conv.nt.sent_last_card":"답을 보냈어요 · 마지막 카드였어요","conv.nt.check_send":"보낼 내용 확인","conv.nt.login_req":"로그인 요청","conv.nt.unignored":"다시 답변 필요로 돌렸어요","conv.nt.answer_on":"{name}에서 답해 주세요","conv.nt.input_closed":"입력 창이 이미 닫혔어요","conv.nt.sent_next_q":"답을 보냈어요 · 다음 질문이에요","conv.nt.problem":"문제가 생겼어요","conv.nt.see_in_chat":"대화에서 보기","conv.nt.resolved":"해결됨","conv.nt.answered":"답변함","conv.nt.go_input":"입력 창으로 가기","conv.nt.direct":"직접 답하기","conv.nt.next_q":"다음 질문 보기","conv.nt.skipped":"답하지 않고 넘겼어요","conv.nt.you_answered":"이렇게 답했어요","conv.nt.closed_late":"답할 시간이 지나 닫혔어요","conv.nt.closed_done":"일이 끝나서 닫혔어요","custom.yesterday_at":"어제 {hm}","custom.none":"없음","custom.more_n":"더 보기 · {n}개","custom.card":"카드","custom.tag_error":"오류","custom.draw_failed":"카드를 그리지 못했어요","custom.no_data":"값을 받지 못했어요","custom.no_value":"값 없음","custom.empty":"비어 있어요","custom.run_ask":"실행할까요?","custom.run":"실행","custom.sent_to":"{name}에게 보냈어요","custom.done":"끝냈어요","custom.failed":"실패했어요","custom.stale":"오래된 값","custom.render_error":"render.js 오류","custom.daily_at":"매일 {at}","custom.every_min":"{n}분마다","custom.refresh":"새로고침","custom.open":"열기","custom.edit":"수정…","custom.size_s":"작게","custom.size_m":"보통","custom.size_l":"크게","custom.hide":"숨기기","custom.delete":"삭제…","custom.view.text":"글","custom.view.stat":"숫자","custom.view.list":"목록","custom.view.kv":"항목별 값","custom.field.title":"제목","custom.field.note":"설명","custom.field.view":"보기","custom.field.text":"내용","custom.field.command":"명령","custom.field.cwd":"폴더","custom.field.every":"갱신 주기","custom.field.timeout":"제한 시간","custom.field.link":"링크","custom.field.actions":"동작","custom.field.id":"아이디","custom.ph.text":"카드에 보일 글","custom.ph.stat":"예: 128GB","custom.ph.list":"우유 사기\n치과 예약","custom.ph.kv":"남은 공간: 128GB\n마지막 확인: 어제","custom.hint.stat":"숫자나 짧은 값 하나를 적어요.","custom.hint.list":"한 줄에 하나씩 적어요.","custom.hint.kv":"한 줄에 이름: 값으로 적어요.","custom.ghost.first":"첫 번째 항목","custom.ghost.second":"두 번째 항목","custom.ghost.name":"이름","custom.ghost.value":"값","custom.ph.cmd":"예: df -h ~ | tail -1   (출력이 JSON이면 그대로 읽어요)","custom.ph.title":"예: 디스크 남은 공간","custom.ph.note":"제목 아래 한 줄","custom.ph.id":"비우면 제목으로 만들어요","custom.ph.cwd":"~/Code/… (선택)","custom.ph.link":"https://… 또는 #화면","custom.src.text":"직접 입력","custom.src.command":"명령 실행","custom.src.aria":"내용 출처","custom.cmd_hint":"갱신 주기는 분, 제한 시간은 초(1~60). 출력은 {view} 보기로 그려요.","custom.act.add":"동작 추가","custom.act.ph_label":"버튼 이름","custom.act.label_aria":"동작 이름","custom.act.text_aria":"동작 내용","custom.act.ph_prompt":"{name}에게 보낼 요청","custom.act.ph_command":"실행할 명령","custom.request":"요청","custom.act.kind_aria":"동작 종류","custom.act.confirm":"누르기 전에 확인","custom.act.remove":"빼기","custom.more":"더 보기","custom.act.hint":"최대 {max}개, 앞의 2개는 카드에 버튼으로 보여요.","custom.file":"파일 · {file}","custom.file_broken":"지금 파일에 문제가 있어요: {error}. 저장하면 이 내용으로 바꿔 써요.","custom.card_saved":"{name} 카드를 저장했어요","custom.card_added":"{name} 카드를 추가했어요","custom.preview_title":"카드 제목","custom.preview_cmd":"저장하면 명령을 실행해 결과를 그려요","custom.more_sub":"설명 · 링크 · 동작","custom.filled":"{n}개 채움","custom.need_title":"제목을 적어 주세요","custom.bad_id":"영어 소문자, 숫자, 빼기(-)만 쓸 수 있어요","custom.save_failed":"저장하지 못했어요","custom.preview":"미리보기","custom.preview_note":"홈에서 이렇게 보여요","custom.edit_title":"카드 수정","custom.delete_title":"카드 삭제","custom.delete_body":"{name} 카드와 그 파일({file})을 지워요. 되돌릴 수 없어요.","custom.card_deleted":"{name} 카드를 지웠어요","custom.today_at":"오늘 {hm}","custom.pv.sent_lane":"{name} 레인에 보냈어요","custom.pv.req_new":"새 레인을 열어서 맡겨 주세요: {text}","custom.pv.branch":"{name} 브랜치","custom.pv.dirty":"커밋 안 한 파일 {n}개","custom.pv.clean":"커밋 안 한 파일 없음","custom.pv.loose":"{base}에 안 들어간 브랜치 {n}개","custom.pv.loose_one":"{branch} (커밋 {n}개)","custom.pv.last_report":"{name} 마지막 보고","custom.pv.last_verify":"마지막 확인","custom.pv.last_commit":"마지막 커밋","custom.pv.last":"마지막 ","custom.pv.tile_running":"작업 중인 레인","custom.pv.tile_waiting":"답을 기다리는 레인","custom.pv.tile_tasks":"열린 할 일","custom.pv.tile_last":"마지막 활동","custom.pv.waiting":"답을 기다려요","custom.pv.resume":"이어서 진행","custom.pv.resumed":"{name} 레인을 이어서 진행해요","custom.pv.clean_up":"정리","custom.pv.clean_title":"{name} 정리","custom.pv.clean_body":"휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요.","custom.pv.cleaned":"{name} 레인을 정리했어요","custom.pv.clean_failed":"지금은 정리하지 못했어요","custom.pv.tap_chat":"누르면 {name} 채팅이 열려요","custom.pv.open_chat":"{name} 채팅 열기","custom.pv.unmerged":"안 합침 {n}","custom.pv.unmerged_tip":"lane/{name} 브랜치에 main에 없는 커밋이 {n}개 있어요","custom.pv.no_report":"아직 보고가 없어요","custom.pv.lane_named":"{name} 레인","custom.pv.next":"다음: {text}","custom.pv.tap_send":"누르면 {name}에게 요청으로 보내요","custom.pv.task_title":"할 일 보내기","custom.pv.task_ask":"{name}에게 이어서 진행하도록 요청해요: {what}","custom.pv.task_req":"할 일 {id}: {what} - 이어서 해 주세요.","custom.pv.channel_threads":"작업 채널 · 스레드 {n}개: {names}","custom.pv.channel":"작업 채널","custom.pv.lane_channel":"{name} 레인 채널","custom.pv.run_now_named":"{name} 지금 실행","custom.pv.run_now":"지금 실행","custom.pv.routine_sent":"루틴을 보냈어요","custom.pv.schedule":"일정","custom.pv.paused":"쉬는 중","custom.pv.tasks_head":"열린 할 일 {n} · 누르면 요청으로 보내요","custom.pv.no_tasks":"열린 할 일 없음","custom.pv.links":"연결된 채널 · 루틴 · 일정","custom.pv.no_links":"연결된 채널 · 루틴 · 일정 없음","custom.pv.ph":"이 프로젝트에 맡길 일을 적어 주세요","custom.pv.to_main":"알맞은 곳을 골라 맡겨요","custom.pv.to_lane":"{name} 레인이 하던 일에 이어서 넣어요","custom.pv.new_lane":"새 레인으로","custom.pv.to_new":"새 레인을 열어 따로 진행해요","custom.pv.target":"맡길 곳","custom.pv.quick_status":"지금 상태 알려줘","custom.pv.quick_tasks":"남은 할 일 정리해줘","custom.pv.quick_check":"잘 되는지 확인해줘","custom.pv.quick_merge":"끝난 작업 합쳐줘","custom.pv.not_found":"프로젝트를 찾지 못했어요","custom.pv.lanes_head":"레인 {n}","custom.pv.no_lanes":"아직 레인이 없어요","custom.pv.sec_more":"할 일과 연결","custom.pv.sec_results":"최근 결과","custom.pv.results_sub":"보고 · 확인 · 커밋","custom.pv.no_results":"아직 결과가 없어요","decision.undo.left":"{n}초 뒤에 보내요","decision.undo.cancel":"보내기 취소","decision.gone":"이 세션이 끝나서 답을 보낼 수 없어요","decision.org.post_video":"영상","decision.org.post_post":"게시물","decision.org.post_other":"글","decision.org.author":"작성자","decision.org.time":"시간","decision.org.date":"날짜","decision.org.parent":"↳ {author}의 댓글","decision.org.open_source":"원본 열기","decision.org.missing":"원문을 찾을 수 없어요","decision.org.load_failed":"원문을 불러오지 못했어요","decision.org.retry":"다시 시도","decision.org.loading":"원문을 불러와요…","decision.org.none":"원문이 없어요","decision.org.comment":"댓글 원문","decision.org.mail":"메일 원문","decision.org.show":"원문 보기","decision.org.hide":"원문 접기","decision.org.original":"원문","decision.org.pick":"초안과 원문 고르기","decision.org.close":"원문 닫기","decision.subject":"제목","decision.from":"보낸이","decision.to":"받는이","decision.cc":"참조","decision.summary":"요약","decision.reply":"답장","decision.reply_all":"전체 답장","decision.reply_scope":"답장 범위","decision.edit":"고치기","decision.drop":"보내지 않기","decision.manual":"직접 수정","decision.edit_named":"{name} 고치기","decision.remove":"빼기","decision.remove_named":"{name} 빼기","decision.add":"추가","decision.add_named":"{name} 추가","decision.open":"열기","decision.back":"돌아가기","decision.more":"펼치기","decision.less":"접기","decision.app.kakao":"메신저","decision.app.instagram":"인스타그램","decision.app.youtube":"유튜브","decision.app.site":"웹사이트 댓글","decision.pending.send":"보내는 중…","decision.pending.edit":"고치는 중…","decision.pending.drop":"처리하는 중…","decision.st.sent_processing":"보냈어요 · 처리하는 중","decision.fail.send_offline":"연결이 끊겨 보내지 못했어요 · 다시 보내기","decision.fail.send":"보내지 못했어요 · 다시 보내기","decision.fail.act_offline":"연결이 끊겨 처리하지 못했어요 · 다시 눌러 주세요","decision.fail.act":"처리하지 못했어요 · 다시 눌러 주세요","decision.err.offline_act":"연결이 끊겨 처리하지 못했어요","decision.err.offline_change":"연결이 끊겨 바꾸지 못했어요","decision.err.offline_upload":"연결이 끊겨 올리지 못했어요","decision.rq.reply_to":"{who}님께 답장","decision.hint.revise":"더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘","decision.hint.own":"메일 먼저 보내고 답글은 내일 올려 줘","decision.revise.what":"고칠 내용","decision.revise.ask":"어떻게 고칠까요?","decision.revise.go":"고쳐 달라고 하기","decision.own.aria":"보내는 방법","decision.own.ask":"어떻게 보낼까요?","decision.note.go_manual":"이 내용으로 고치기","decision.note.go_own":"이렇게 보내 달라고 하기","decision.note.go_answer":"{label}(으)로 답하기","decision.note.manual_ph":"보낼 내용을 직접 고쳐 주세요","decision.note.reason_ph":"이유나 내용을 적어 주세요","decision.note.details":"자세한 내용","decision.note.detail_ph":"내용을 적어 주세요","decision.decide":"정할 것","decision.attach.count":"첨부 {n}개","decision.attach.attached":"✓ 첨부 {n}개 붙어 있어요","decision.attach.none_here":"첨부: 없음 · 파일을 붙일 수 없는 곳이에요","decision.attach.none":"첨부: 없음","decision.attach.left":"남는 파일: {files}","decision.attach.check":"첨부 확인","decision.attach.no_send":"이 계정은 파일을 못 보내요 · 본문만 가요","decision.attach.check_title":"첨부를 확인해 주세요","decision.attach.asis_to":"{to}에게 보낼 메일이에요. {issues}. 이대로 보내면 지금 상태 그대로 나가요. 보낼까요?","decision.attach.asis":"{issues}. 이대로 보내면 지금 상태 그대로 나가요. 보낼까요?","decision.attach.send_asis":"이대로 보내기","decision.attach.unknown_title":"첨부를 확인하지 못했어요","decision.attach.unknown_body":"{name+이/가} 붙인 파일이 아니라서 실제로 가는지 몰라요. 보낼까요?","decision.attach.without_title":"첨부 없이 보낼까요?","decision.attach.without_body":"이 계정은 파일을 못 보내요. 본문만 가요.","decision.send_anyway":"그래도 보내기","decision.n":"결정 {n}","decision.send_progress":"보내기 ({got}/{total} 선택)","decision.file.peer_max":"다른 컴퓨터의 초안에는 10MB 이하 파일만 붙일 수 있어요","decision.file.cross_peer":"다른 컴퓨터의 이 초안에는 파일을 붙일 수 없어요","decision.file.pick":"파일 고르기","decision.file.open":"{name} 열기","decision.file.open_size":"{name} 열기 ({size})","decision.file.detach":"첨부에서 빼기","decision.file.match":"맞음","decision.file.folder_empty":"폴더가 비어 있어요","decision.file.from_device":"이 기기에서 고르기","decision.file.from_folder":"첨부 파일 폴더에서 고르기","decision.file.attaching":"붙이는 중…","decision.file.add":"파일 추가","decision.file.locked":"열람 불가","decision.file.uploading":"올리는 중…","decision.file.attach":"파일 첨부","decision.rc.edit":"고치기","decision.rc.to_addr":"받는 사람 주소","decision.rc.cc_addr":"참조 주소","decision.rc.add_to":"메일 주소 추가","decision.rc.add_cc":"참조 주소 추가","decision.rule.title":"자동 초안 규칙: {name}","decision.mail.along":"함께 보낼 메일","decision.mail.along_body":"함께 보낼 메일 내용","decision.mail.open":"메일 열기","decision.my_reply":"내 답글","decision.body_label":"보낼 내용","decision.sent":"보냈어요","decision.not_sent":"보내지 않았어요","decision.just_now":"방금","decision.rcpt.check":"받는이 확인: {warning}","decision.rcpt.none":"없음","decision.rcpt.to":"받는이 {first}","decision.rcpt.to_more":"받는이 {first} 외 {n}명","decision.rcpt.cc":"참조 {n}","decision.check_reply":"답장 확인","decision.check_before":"보내기 전에 확인해요","decision.needs_decision":"결정이 필요해요","decision.needs_reply":"답변이 필요해요","decision.waiting_tag":"답 기다림","decision.toast.sending_soon":"곧 보내요","decision.toast.restored":"초안을 되돌렸어요","decision.past":"지난 결정이에요","decision.qline":"답장 초안 {n}건 기다려요","decision.review":"확인하기","decision.wait.tag":"답 대기","decision.wait.confirm":"보내기 확인","decision.record.aria":"결정 기록","decision.record.q":"질문","decision.record.a":"· 답:","decision.deliv.queued":"받았어요 · 작업 중이라 끝나면 읽어요","decision.deliv.compacting":"받았어요 · 대화 정리가 끝나면 읽어요","decision.deliv.held":"받았어요 · 한도가 풀리면 읽어요","decision.deliv.update":"받았어요 · 업데이트 뒤에 읽어요","home.worklog.check":"예약 점검","home.worklog.night":"야간 정리","home.worklog.update":"업데이트","home.worklog.account":"계정","home.worklog.system":"시스템","home.worklog.note":"기록","home.fold.open_label":"{label} 펼치기","home.fold.close_label":"{label} 접기","home.fold.close":"접기","home.mailbody.title":"메일 원문","home.mailbody.blocked":"바깥 이미지 {n}개를 막았어요","home.mailbody.broken":"바깥 이미지 {n}개는 이 기기에서 열리지 않아요","home.mailbody.showing":"바깥 이미지를 보고 있어요","home.mailbody.hide":"이미지 숨기기","home.mailbody.show":"이미지 보기","home.mailbody.failed":"원문을 불러오지 못했어요","home.mailtext.fold":"이전 메일 {n}줄 보기","home.mailtext.quote":"인용 {n}줄 보기","home.mailtext.summary_k":"요약 · ","home.mailtext.todo":"할 일","home.mailtext.ask":"직접 답할 것","home.result.raw_close":"원문 접기","home.result.raw_open":"원문 보기","home.result.changed_from":"{from}에서 바뀜","home.result.morning":"아침 점검","home.watch.changed":"결과가 바뀌었어요","home.watch.matched":"조건에 맞는 결과가 나왔어요","home.watch.check_failed":"점검에 실패했어요","home.watch.recovered":"다시 정상이에요","home.watch.slot_skipped":"이 시간대의 릴리스를 건너뛰었어요","home.watch.no_password":"저장된 비밀번호가 없어 다시 로그인하지 못했어요. 맥 암호에 저장하고 다시 연결을 눌러 주세요","home.watch.stopped":"실패가 이어져 멈췄어요. 승인하면 다시 확인해요","home.watch.second_factor":"2차 인증이 필요해요. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요","home.watch.needs_approval":"승인이 필요해요","home.watch.passes_again":"점검이 다시 통과했어요","home.watch.unchanged":"내용은 그대로이고 시각 같은 값만 바뀌었어요","home.watch.fresh":"새로 생겼어요","home.watch.gone":"사라졌어요","home.watch.schedule_started":"예약한 일이 시작됐어요","home.watch.value":"값","home.watch.fail_login":"로그인이 풀렸어요","home.watch.fail_fetch":"내용을 가져오지 못했어요","home.watch.fail_network":"네트워크에 연결하지 못했어요","home.watch.fail_timeout":"시간이 너무 오래 걸렸어요","home.watch.fail_captcha":"보안 확인(캡차)이 필요해요","home.watch.fail_off":"연동이 꺼져 있어요","home.watch.fail_app":"앱이 꺼져 있어요","home.watch.fail_browser":"브라우저를 열지 못했어요","home.watch.fail_parse":"화면 구조가 바뀌어 읽지 못했어요","home.watch.fail_rate":"요청이 너무 잦아 잠시 막혔어요","home.watch.json_status":"상태","home.watch.json_count":"개수","home.watch.json_total":"전체","home.watch.json_title":"제목","home.watch.json_name":"이름","home.watch.json_time":"시각","home.watch.json_date":"날짜","home.watch.json_updated":"갱신 시각","home.watch.json_created":"만든 시각","home.watch.json_checked":"확인 시각","home.watch.json_latest":"최근","home.watch.json_last":"마지막","home.watch.json_price":"가격","home.watch.json_message":"메시지","home.watch.json_error":"오류","home.watch.json_version":"버전","home.watch.json_items":"항목","home.watch.json_url":"주소","home.watch.json_ok":"정상","home.watch.json_yes":"예","home.watch.json_no":"아니요","home.watch.json_failed":"실패","home.watch.kind_count":"{kind} {n}건","home.watch.more":"외 {n}건","home.watch.fails":"{n}번 연속 실패했어요","home.watch.new_items":"새 항목 {n}건","home.watch.removed_items":"사라진 항목 {n}건","home.watch.matching_items":"조건에 맞는 항목 {n}건","home.watch.news":"새 소식 {n}건","home.watch.log_lines":"기록 {n}줄","home.watch.last":"마지막 {time}","home.attn.check":"확인 필요","home.attn.unread_chats":"읽지 않은 대화 {n}개","home.attn.chat_aria":"채팅, {say}","home.attn.to_check":"확인할 것 {n}개","home.attn.news":"새 소식","home.attn.mon_aria":"모니터링, {say}","home.attn.needs_n":"답변 필요 {n}개","home.attn.waiting":"{names}가 답을 기다려요","home.attn.waiting_more":"{names} 외 {n}개가 답을 기다려요","home.attn.limit_wait":"사용량 한도로 대기 중이에요","home.attn.done_check":"답을 마쳤어요. 확인해 주세요","home.attn.alerts_aria":"알림, 안 읽은 알림 {n}개","home.ny.login":"로그인","home.ny.choose":"선택","home.ny.reply":"답변","home.ny.relogin":"다시 로그인","home.ny.relogin_hint":"다시 로그인해야 이어서 볼 수 있어요","home.ny.login_lost":"{app} 로그인이 풀렸어요","home.ny.app":"앱","home.ny.none":"답변할 항목이 없어요","home.dur.d":"{n}일","home.dur.w":"{n}주","home.dur.h":"{n}시간","home.dur.s":"{n}초","home.dur.m":"{n}분","home.dur.ms":"{m}분 {s}초","home.dur.hm":"{h}시간 {m}분","home.usage.title":"사용량 · {word} {pct}% 남음","home.usage.left":"{word} {pct}% 남음","home.today":"오늘","home.ny.critical":"중요 · {act}","home.gban.times":"{n}회","home.gban.tx":"오늘 재시작 {restarts} · 끊긴 작업 {cut}","home.gban.title":"오늘 게이트웨이 재시작 {n}회, 끊긴 작업 {cut}, 마지막 {time}","home.alert.model_timeout":"{name+이/가} 모델 응답이 너무 오래 없어서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_network":"{name+이/가} 모델 서버에 연결되지 않아서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_limit":"{name+이/가} 사용 한도에 걸려서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_busy":"{name+이/가} 모델 서버가 바빠서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_error":"{name+이/가} 모델 오류가 계속돼서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.deliv.steered":"받음 · 지금 작업에 전달","home.deliv.received":"받음 · 바로 전달","home.deliv.queued":"받음 · 기다렸다 전달","home.deliv.held":"받음 · 한도가 풀리면 전달","home.deliv.compacting":"받음 · 대화 정리가 끝나면 전달","home.deliv.update":"받음 · 업데이트 뒤 전달","home.deliv.resumed":"다시 시작해서 전달","home.deliv.answered":"답함","home.deliv.failed":"전달하지 못했어요","home.sys.running":"진행 중","home.sys.done":"완료","home.sys.failed":"실패","home.sys.stopped":"중단됨","home.sys.view_result":"결과 보기","home.sys.open_task":"작업 열기","home.sys.open_file":"{name} · 열기","home.sys.bg":"백그라운드 작업","home.msg.cmd":"명령","home.msg.terminal":"터미널","home.msg.more":"더 보기","home.lane.open":"세션 열기","home.lane.result":"세션 결과","home.lane.finished":"{title} 끝났어요","home.lane.verified":"확인됨","home.lane.started":"세션 시작 · {hm}","home.msg.details":"자세히","home.gateway":"게이트웨이","home.work.dur":"{dur} 작업","home.work.work":"작업","home.work.think":"생각","home.work.errs":"오류 {n}","home.kind.cmd":"명령","home.kind.read":"읽기","home.kind.edit":"수정","home.kind.search":"검색","home.kind.subagent":"서브에이전트","home.kind.web":"웹","home.kind.notes":"기록","home.kind.tool":"도구","home.menu.split":"카드로 나누기","home.menu.open":"{label} 열기","home.menu.assistant_restarts":"어시스턴트가 다시 시작돼요.","home.menu.change_model":"모델 변경…","home.menu.reasoning":"추론 강도…","home.menu.model_settings":"모델 설정","home.menu.stopped":"작업을 중단했어요","home.menu.restart_title":"{name} 재시작","home.menu.restart_body":"작업 중인 내용이 있으면 멈추고 세션을 다시 시작해요.","home.menu.restarted":"재시작했어요","home.menu.delete_key":"키 삭제","home.menu.logout":"로그아웃","home.menu.compact_queued":"{name}: 작업 중이라 끝나면 압축해요","home.menu.compact_started":"{name}: 압축을 시작했어요","home.menu.group":"{label} 한 카드로 묶기","home.menu.move_up":"앞으로 옮기기","home.menu.move_down":"뒤로 옮기기","home.tool.run":"명령 실행","home.tool.edit":"파일 수정","home.status.compacting":"컨텍스트 압축 중","home.status.compacted":"컨텍스트 압축 완료","home.status.retrying":"다시 시도 중","home.status.fallback":"다른 모델로 전환","home.card.no_alerts":"새 알림이 없어요","home.card.no_worklog":"아직 작업내역이 없어요","home.card.failed_n":"실패 {n}","home.card.no_monitors":"모니터링 중인 항목이 없어요","home.card.more_n":"더 보기 · {n}개","home.later":"백그라운드 작업 중","home.subs.title":"서브에이전트 끝난 수 / 전체","home.subs.count":"서브에이전트 {done}/{total}","home.conv.open_aria":"{name} · {state} · 대화 열기","home.count.aria":"{title} · {n}건","home.owed.title":"답 안 한 댓글","home.replies.other":"기타","home.replies.title":"답장 초안 확인","home.limit.resume":"한도 리셋되면 재개","home.limit.resume_at":"한도 리셋되면 재개 ({time})","home.todo.queued":"순서 대기","home.since.now":"방금 시작","home.since.for":"{time}째","home.ago.now":"방금","home.ago.m":"{n}분 전","home.ago.h":"{n}시간 전","home.chip.commit":"커밋","home.chip.link":"링크","home.result.aria":"결과 {n}개 보기","home.result.count":"결과 {n}","home.greet.night":"편안한 밤이에요","home.greet.morning":"좋은 아침이에요","home.greet.afternoon":"좋은 오후예요","home.greet.evening":"좋은 저녁이에요","home.word.connecting":"연결 중","home.word.working":"일하는 중","home.word.resting":"쉬는 중","home.greet.line":"{bot+이/가} {word}","home.greet.sessions":"세션 {n}개","home.greet.menu":"어시스턴트 메뉴","home.connect.hint":"계정을 연결해야 답할 수 있어요","home.connect.btn":"계정 연결","home.card.nothing_running":"진행 중인 작업이 없어요","home.card.critical_n":"중요 {n}","home.card.todo":"할일","home.card.items_n":"{n}개","home.card.nothing_waiting":"아직 시작 전인 일이 없어요","home.card.running":"지금 진행 중","home.card.held":"대기 중","home.card.ended":"최근 끝난 작업","home.ctx.tokens":"{n} 토큰","home.ctx.title":"컨텍스트 · {who}","home.prov.login_needed":"로그인 필요","home.prov.api_key":"API 키","home.prov.signed_in":"로그인됨","home.group.usage_failed":"사용량을 불러오지 못했어요","home.group.none":"없어요","home.card.add":"카드 추가","home.orch.restart_title":"어시스턴트 재시작","home.orch.restart_body":"어시스턴트가 하던 일이 있으면 멈추고 다시 시작해요.","home.orch.restart_asked":"재시작을 요청했어요","home.wk.resumed":"이어서 처리 중","home.wk.no_activity":"활동이 없어요","home.wk.retry":"다시 맡기기","home.wk.go_chat":"대화로 가기","home.wk.aria":"{desc} · {state} · {act}","mail.mode.auto":"자동 초안","mail.mode.ask":"확인 먼저","mail.mode.notify":"알림만","mail.mode.quiet":"조용히 모으기","mail.mode.default":"기본 방식","mail.box.general":"일반","mail.disconnected":"연결 끊김","mail.peer_why":"{name}의 메일함은 그 컴퓨터에서 바꿔 주세요","mail.accounts_n":"계정 {n}개","mail.unread_n":"안 읽음 {n}","mail.boxes_n":"메일함 {n}개","mail.account_named":"{name} 계정","mail.needs_reply":"답장 필요","mail.all":"전체","mail.default_tag":"기본","mail.box.add":"메일함 추가","mail.box.settings":"메일함 설정","mail.merged_n":"계정 {n}개를 합쳐서 보여요","mail.base_note_multi":"계정마다 어느 메일함에도 맞지 않는 메일이 여기로 와요.","mail.base_note":"어느 메일함에도 맞지 않는 메일은 여기로 와요.","mail.down.title":"{name} 계정 로그인이 풀렸어요","mail.down.body":"받은 메일은 그대로 있어요. 다시 연결하면 새 메일도 들어와요.","mail.reconnect":"다시 연결","mail.load_failed":"메일을 불러오지 못했어요","mail.acct.switch":"메일 계정 바꾸기","mail.acct.all":"모든 계정","mail.needs_reply_n":"답장 필요 {n}","mail.signed_out":"로그인이 풀렸어요","mail.acct.add":"계정 추가","mail.move":"메일함 옮기기","mail.move.mixed":"여러 계정의 메일이 섞여 있어요","mail.move.mixed_hint":"계정마다 따로 골라서 옮겨 주세요","mail.move.ask":"어느 메일함으로 옮길까요?","mail.move.within":"{name} 계정 안에서만 옮길 수 있어요","mail.move.failed":"옮기지 못했어요","mail.teach.failed":"기억해 두지 못했어요","mail.teach.only_one":"이 메일만","mail.teach.only_many":"이 메일들만","mail.teach.exclude":"{who} 메일은 {box}에 넣지 않기","mail.teach.from":"{who} 메일은 앞으로 여기로","mail.teach.subject":"제목에 ‘{word}’ 들어가면 앞으로 여기로","mail.teach.moved":"{box}에 넣었어요","mail.teach.with_thread":"같은 대화 {n}통이 함께 옮겨졌어요","mail.teach.saved":"기억해 뒀어요 · {rule}","mail.teach.ask":"앞으로는 어떻게 할까요?","mail.sent.send":"보낸 답장","mail.sent.expired":"만료된 초안","mail.sent.ignored":"무시한 초안","mail.sent.edit":"고친 초안","mail.sent.remove_failed":"지우지 못했어요","mail.sent.removed":"초안을 지웠어요","mail.sent.clear_failed":"{total}개 중 {n}개를 지우지 못했어요","mail.sent.cleared":"초안 {n}개를 지웠어요","mail.sent.handled":"처리된 초안","mail.sent.remove_this":"이 초안 지우기","mail.remove":"지우기","mail.sent.group":"처리된 답장 초안","mail.sent.count":"처리된 초안 {n}개","mail.sent.clear":"모두 지우기","mail.people.more":"외 {n}명","mail.people.aria":"보낸 사람과 받는 사람","mail.from":"보낸 사람","mail.to":"받는 사람","mail.people.and_more":"{names} 외 {n}명","mail.to_line":"받는 사람 {names}","mail.cc_line":"참조 {names}","mail.no_subject":"(제목 없음)","mail.thread.count":"이 사람과 주고받은 메일 {n}","mail.people.details":"보낸 사람·받는 사람 자세히","mail.thread.aria":"같은 사람과 주고받은 메일","mail.thread.title":"이 사람과 주고받은 메일","mail.thread.fold":"접기","mail.thread.fold_aria":"같은 사람 메일 접기","mail.mode.auto_desc":"메일이 오면 초안을 써 둬요. 보내기 전에 확인해요.","mail.mode.ask_desc":"답장할지 먼저 물어요. 쓰라고 하면 그때 초안을 써요.","mail.mode.notify_desc":"새 메일을 알려 줘요. 초안은 쓰지 않아요.","mail.mode.quiet_desc":"알리지 않고 여기 모아 둬요.","mail.cond.from":"보낸 사람","mail.cond.addr_ph":"주소나 @도메인","mail.cond.subj_ph":"제목에 든 말","mail.cond.body":"내용","mail.cond.body_ph":"내용에 든 말","mail.icon.mail":"편지","mail.icon.folder":"폴더","mail.icon.file":"문서","mail.icon.tag":"태그","mail.icon.users":"사람","mail.icon.bell":"종","mail.set.save_failed":"저장하지 못했어요","mail.set.merged_note":"계정마다 있는 메일함이라 {name} 계정의 설정을 열었어요.","mail.set.view_mail":"메일 보기","mail.set.mode":"처리 방식","mail.remove_named":"{name} 지우기","mail.more_n":"더 보기 · {n}개","mail.add":"추가","mail.cond.not_from":"넣지 않을 보낸 사람","mail.judge.switch":"내용을 보고 판단","mail.judge.ph":"예: 강의 자료를 달라는 메일","mail.judge.aria":"판단 설명","mail.icon.label":"아이콘","mail.name":"이름","mail.greet.addr":"주소","mail.greet.hello":"첫 인사","mail.greet.add":"받는 사람 추가","mail.voice.own":"보낸 글 {n}개로 따로 배웠어요","mail.voice.kept":"이 메일함에 따로 적어 둔 말투를 써요","mail.voice.ready":"보낸 글 {n}개가 모였어요. 곧 따로 배워요","mail.voice.few":"이 메일함에서 보낸 글이 {n}개라 계정 말투를 써요. {need}개부터 따로 배워요","mail.voice.learned":"말투를 다시 배웠어요","mail.voice.learn_few":"보낸 메일을 더 읽어 볼게요. 모이면 알아서 배워요","mail.voice.learn_busy":"이미 배우고 있어요","mail.voice.learn_empty":"말투를 찾지 못해 그대로 뒀어요","mail.voice.examples":"예시 보기","mail.voice.ex_received":"받은 메일","mail.voice.ex_reply":"내가 쓴 답장","mail.voice.learning":"지난 메일을 다시 읽고 있어요","mail.voice.relearn":"다시 배우기","mail.voice.how_first":"기본 지시가 배운 말투보다 먼저예요","mail.set.loading":"불러오는 중이에요","mail.voice.failed":"말투를 읽지 못했어요","mail.voice.none":"아직 정리된 말투가 없어요. 보낸 메일이 모이면 알아서 배워요.","mail.voice.no_own":"이 메일함만의 말투는 아직 없어요.","mail.voice.fixes":"고친 점","mail.cond.excluded":"제외 {n}","mail.cond.none":"기준 없음","mail.none":"없음","mail.first_more":"{first} 외 {n}개","mail.set.gone":"지운 메일함이에요","mail.box.name":"메일함 이름","mail.set.name_empty":"이름을 비워 둘 수 없어요","mail.set.has":"있음","mail.set.view":"보기","mail.voice.title":"말투","mail.how.title":"기본 지시","mail.how.ph":"이 메일함의 초안을 쓸 때마다 지킬 말","mail.greet.title":"받는 사람별 인사","mail.people_n":"{n}명","mail.folders.title":"첨부 폴더","mail.folders.add":"폴더 추가","mail.folders.ph":"~/폴더","mail.bans.title":"금지 문구","mail.items_n":"{n}개","mail.bans.add":"문구 추가","mail.bans.ph":"쓰지 않을 말","mail.cond.title":"분류 기준","mail.cond.base_note_acct":"기준이 없어요. {name} 계정의 다른 메일함에 맞지 않는 메일이 모두 여기로 와요.","mail.cond.base_note":"기준이 없어요. 다른 메일함에 맞지 않는 메일이 모두 여기로 와요.","mail.cond.builtin":"처음부터 정해진 분류 기준 {n}개도 함께 쓰여요. 여기서는 바꾸지 않아요.","mail.emails_n":"메일 {n}통","mail.set.inherit":"앱 설정대로 되돌리기","mail.set.this":"이 메일함","mail.account":"계정","mail.set.reply_from":"답장은 메일을 받은 주소 {addr}에서 나가요","mail.judge.title":"판단 조건","mail.on":"켜짐","mail.off":"꺼짐","mail.set.replying":"답장 쓸 때","mail.set.tone_how":"말투와 기본 지시","mail.set.folded":"{mode} 메일함은 초안을 쓰지 않아서 접어 뒀어요","mail.set.notify":"알림 켜기","mail.set.quiet_note":"조용히 모으는 메일함은 알리지 않아요","mail.box.delete":"메일함 삭제","mail.box.delete_named":"{name} 삭제","mail.box.delete_body_n":"메일 {n}통은 일반으로 옮겨요. 메일은 지워지지 않아요.","mail.box.delete_body":"이 메일함의 메일은 일반으로 옮겨요. 메일은 지워지지 않아요.","mail.box.deleted":"{name} 메일함을 삭제했어요","mail.change":"바꾸기","mail.new.which_acct":"어느 계정에 만들까요?","mail.new.groups":"메일을 보니 이런 묶음이 있어요","mail.new.groups_loading":"묶음을 찾는 중이에요","mail.new.groups_none":"지금은 눈에 띄는 묶음이 없어요","mail.new.own":"직접 만들기","mail.new.blank":"빈 메일함으로 시작","mail.new.blank_sub":"이름과 조건을 직접 정해요","mail.new.copy":"다른 메일함 설정 복사","mail.new.copy_sub":"같은 처리 방식과 기본 지시를 다시 적지 않아도 돼요","mail.new.copy_which":"어느 메일함 설정을 가져올까요?","mail.new.copy_note":"원래 메일함은 바뀌지 않아요.","mail.new.name_ph":"예: 강의 자료","mail.new.existing":"지금 있는 메일","mail.new.bring_n":"메일 {n}통도 옮기기","mail.new.bring_recent":"보낸 사람이 같은 메일 {total}통 중 최근 {n}통만 옮겨요","mail.new.bring_off":"옮기지 않으면 지금 있는 메일은 그대로 있어요","mail.new.bring_aria":"지금 있는 메일도 옮기기","mail.new.note_copied":"{from} 설정을 가져왔어요. 분류 기준이 이 계정에 맞는지만 봐 주세요. 맞지 않는 메일은 계속 {base}으로 가요.","mail.new.note":"말투와 기본 지시는 만든 뒤 설정에서 정해요. 맞지 않는 메일은 계속 {base}으로 가요.","mail.new.create":"메일함 만들기","mail.new.made_not_moved":"{name} 메일함은 만들었지만 메일은 옮기지 못했어요","mail.new.made":"{name} 메일함을 만들었어요","mail.done.read":"읽음으로 표시했어요","mail.done_n.read":"{n}개를 읽음으로 표시했어요","mail.done.unread":"안 읽음으로 표시했어요","mail.done_n.unread":"{n}개를 안 읽음으로 표시했어요","mail.done.archive":"보관했어요","mail.done_n.archive":"{n}개를 보관했어요","mail.done.unarchive":"받은편지함으로 옮겼어요","mail.done_n.unarchive":"{n}개를 받은편지함으로 옮겼어요","mail.done.trash":"삭제했어요","mail.done_n.trash":"{n}개를 삭제했어요","mail.done.star":"별표를 달았어요","mail.done_n.star":"{n}개를 별표를 달았어요","mail.done.unstar":"별표를 뺐어요","mail.done_n.unstar":"{n}개를 별표를 뺐어요","mail.err.unsupported":"서버가 아직 이 작업을 지원하지 않아요","mail.err.failed":"처리하지 못했어요","mail.trash.ask_n":"메일 {n}개를 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.ask_some":"메일 {n}개를 삭제할까요? 그중 {m}개는 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.ask_one":"이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.title":"메일 삭제","mail.trash.go_n":"{n}개 삭제","mail.trash.orig_failed":"원본을 지우지 못했어요","mail.trash.some_failed":"{total}개 중 {n}개는 지우지 못했어요 · {note}","mail.retry":"다시 시도","mail.trash.deleting":"삭제하는 중이에요","mail.trash.stay_some":"메일함에는 남아 있을 수 있어요.","mail.trash.stay_one":"메일함에는 그대로 남아 있어요.","mail.trash.list_n":"메일 {n}개를 목록에서 지워요.","mail.trash.list_one":"이 메일을 목록에서 지워요.","mail.fyi.title":"답장 안 함","mail.fyi.ask_n":"메일 {n}개를 답장 안 함으로 표시할까요? 메일을 보내지는 않아요","mail.fyi.go_n":"{n}개 표시","mail.fyi.some_failed":"{total}개 중 {n}개는 표시하지 못했어요","mail.fyi.failed":"표시하지 못했어요","mail.fyi.done_n":"{n}개를 답장 안 함으로 표시했어요","mail.fyi.undone_n":"{n}개를 답장 필요로 표시했어요","mail.fyi.done":"답장 안 함으로 표시했어요","mail.fyi.undone":"답장 필요로 표시했어요","mail.read":"읽음","mail.archive":"보관","mail.inbox":"받은편지함","mail.star.remove":"별표 빼기","mail.star.add":"별표 달기","mail.select_named":"{name} 선택","mail.select_all":"모두 선택","mail.count_n":"메일 {n}개","mail.fyi.all":"이 목록 전부 답장 안 함","mail.act.read":"읽음으로 표시","mail.act.unarchive":"받은편지함으로","mail.act.done":"완료(보관)","mail.act.unread":"안 읽음으로 표시","mail.fyi.label_n":"답장 안 함 {n}개","mail.more":"더 보기","mail.selected_n":"{n}개 선택","mail.deselect":"선택 해제","mail.more_left":"{n}개 더 보기","mail.more_mail":"메일 더 보기","mail.open.toolbar":"메일 처리","mail.compose":"메일 쓰기","mail.attachments":"첨부파일","mail.upload_failed":"올리지 못했어요","mail.body":"내용","mail.many_ph":"쉼표로 여러 명","mail.cc_add":"참조 추가","mail.need_to":"받는 사람을 적어 주세요","mail.uploading_wait":"파일을 올리는 중이에요","mail.err.compose_unsupported":"서버가 아직 새 메일 초안을 지원하지 않아요","mail.draft_failed":"초안을 만들지 못했어요","mail.draft_made":"초안을 만들었어요 · 승인 카드에서 보내요","mail.sheet.expand":"펼치기","mail.sheet.min":"최소화","mail.new_mail":"새 메일","mail.discard.title":"작성 중인 메일","mail.discard.body":"쓰던 내용을 버릴까요?","mail.discard.go":"버리기","mail.draft_create":"초안 만들기","mail.attach":"파일 붙이기","mail.reply_all":"전체답장","mail.forward":"전달","mail.fwd.head":"---------- 전달한 메일 ----------\n보낸 사람: {from}\n제목: {subject}","mail.reply.aria":"답장 쓰기","mail.reply.quote":"이전 메일","mail.reply.ph":"답장 내용","mail.reply.fold":"접기","misc.nsc.all":"전체","misc.nsc.g_need":"처리할 것","misc.nsc.g_past":"지난 알림","misc.nsc.x_done":"처리했어요","misc.nsc.x_read":"읽음으로 표시","misc.clear":"지우기","misc.nsc.comments":"댓글","misc.nsc.tag_reply":"답장 대기","misc.nsc.tag_login":"로그인","misc.nsc.tag_ask":"질문","misc.nsc.tag_done":"작업 완료","misc.nsc.tag_price":"가격 변경","misc.nsc.tag_sched":"일정","misc.nsc.tag_morning":"아침 점검","misc.nsc.tag_watch":"감시","misc.nsc.tag_back":"복구","misc.nsc.d_open":"답을 기다리고 있어요","misc.nsc.d_ignored":"무시했어요","misc.nsc.d_expired":"기한 지남","misc.nsc.d_closed":"답 없이 끝났어요","misc.nsc.d_answered":"답했어요","misc.nsc.one":"알림","misc.nsc.unfold":"반복 알림 펼치기","misc.nsc.times":"{n}번","misc.nsc.load_failed":"알림을 불러오지 못했어요","misc.nsc.loading":"불러오는 중이에요","misc.nsc.empty":"새 알림이 없어요","misc.more_n":"{n}개 더 보기","misc.nsc.kinds":"알림 종류","misc.nsc.read_all":"모두 읽음","misc.nsc.clear_failed":"지우지 못했어요","misc.nsc.cleared":"알림을 지웠어요","misc.nsc.clear_one_failed":"알림을 지우지 못했어요","misc.nsc.kept":"답이 필요한 알림은 그대로 뒀어요","misc.pr.need":"답변 필요 {n}","misc.pr.unread":"새 알림 {n}","misc.pr.cant_reach":"{name}에 연결할 수 없어요","misc.pr.not_found":"그 컴퓨터를 찾지 못했어요","misc.pr.ask_title":"답변이 필요해요 · {title}","misc.pr.ask":"답변이 필요해요","misc.pr.new_alert":"새 알림","misc.open":"열기","misc.pr.switch":"컴퓨터 바꾸기, 지금은 {name}","misc.pr.switch_more":"컴퓨터 바꾸기, 지금은 {name}, 다른 컴퓨터에 새 알림","misc.pr.home_more":"홈, 다른 컴퓨터에 새 알림","misc.pr.switch_tip":"컴퓨터 바꾸기 ({key}, 다음 컴퓨터로)","misc.pr.other":"다른 컴퓨터","misc.pr.going":"{name}(으)로 넘어가요","misc.pr.remove":"제거","misc.pr.remove_title":"내 컴퓨터에서 {name} 제거","misc.pr.remove_body":"내 컴퓨터 목록에서만 제거해요. 그 컴퓨터는 그대로이고, 다시 켜면 목록에 돌아와요.","misc.pr.removed":"{name}을(를) 제거했어요","misc.pr.remove_failed":"{name}을(를) 제거하지 못했어요","misc.pr.unchecked":"확인 못 함","misc.pr.here":"지금 보고 있어요","misc.pr.manage":"컴퓨터 관리","misc.pr.mine":"내 컴퓨터","misc.pr.name_aria":"컴퓨터 이름","misc.pr.this_name":"이 컴퓨터 이름","misc.pr.name_default":"기본 이름으로","misc.pr.name_reset":"기본 이름으로 돌렸어요","misc.pr.name_saved":"이름을 저장했어요","misc.pr.none_reachable":"다른 컴퓨터에 연결할 수 없어요","misc.kbd.title":"입력 진단","misc.kbd.on_note":"입력칸에서 나올 때마다 기록해요. 쓴 글은 남기지 않아요","misc.kbd.off_note":"키보드가 내려갈 때를 기록해요. 쓴 글은 남기지 않아요","misc.kbd.log":"진단 기록","misc.kbd.count":"{n}건 · 이 기기에만 있어요","misc.kbd.clear":"진단 기록 지우기","misc.pq.change_there":"{name}에서 바꿔 주세요","misc.pq.reattach":"{name}: 파일을 다시 붙여 주세요","misc.pq.too_big":"{name}: 다른 컴퓨터의 대화에는 50MB 이하 파일만 보낼 수 있어요","misc.pq.upload_failed_why":"{pc}에 {name}을(를) 올리지 못해서 보내지 않았어요 ({why})","misc.pq.upload_failed":"{pc}에 {name}을(를) 올리지 못해서 보내지 않았어요","misc.pq.off":"꺼짐","misc.pq.runs_on":"{name}에서 돌아요","misc.pq.pc_offline":"{name} 연결 안 됨","misc.pq.pc_monitoring":"{name} 모니터링","misc.pq.pc_offline_empty":"{name} 연결 안 됨 · 아직 받은 목록이 없어요","misc.cb.run":"터미널에서 실행","misc.cb.copy_code":"코드 복사","misc.sh.load_failed":"터미널 구성요소를 불러오지 못했어요","misc.sh.off":"셸이 꺼져 있어요","misc.sh.off_note":"셸이 꺼져 있어요. Enter를 누르면 다시 시작해요.","misc.sh.ended":"셸이 끝났어요","misc.sh.ended_note":"셸이 끝났어요. Enter를 누르면 다시 시작해요.","misc.sh.connecting":"연결 중…","misc.sh.lost":"연결이 끊겼어요","misc.sh.lost_note":"연결이 끊겼어요. Enter를 누르면 다시 연결해요.","misc.sh.failed":"연결하지 못했어요","misc.sh.failed_note":"연결하지 못했어요. Enter를 누르면 다시 연결해요.","misc.sh.typed":"명령을 입력해 뒀어요. Enter를 누르면 실행돼요","misc.sh.terminal":"터미널","misc.sh.pw":"암호","misc.sh.pw_note":"암호를 입력해요. 화면에 보이지도, 저장되지도 않아요.","misc.sh.keys":"특수 키","misc.retry":"다시 시도","misc.sh.title":"터미널 · {name}","misc.sh.pw_enter":"암호 입력","misc.more":"더 보기","misc.sh.restart":"셸 다시 시작","misc.ab.title":"API 월 한도","misc.ab.src_admin":"콘솔 기준 (관리자 키)","misc.ab.src_est":"이 앱 사용분 추정","misc.ab.left":"{pct}% 남음","misc.ab.this_month":"이번 달 {usd}","misc.ab.no_limit":"월 한도 없음","misc.ab.hint":"콘솔에서 정한 월 한도를 설정에 입력하면 사용 비율을 보여줘요.","misc.ab.unset":"정하지 않았어요","misc.ab.change":"월 한도 바꾸기","misc.ab.monthly":"월 {usd}","misc.ab.ph_limit":"예: 100","misc.ab.ph_key":"관리자 키 붙여 넣기","misc.ab.key_delete":"관리자 키 삭제","misc.ab.key_deleted":"관리자 키를 지웠어요","misc.ab.body":"Anthropic 콘솔에서 정한 월 한도(달러)예요. 비우면 사용액만 보여줘요.","misc.ab.field_limit":"월 한도 (달러)","misc.ab.key_masked":"관리자 키: {key}","misc.ab.no_key":"관리자 키가 없어요. 콘솔 설정의 관리자 키 메뉴에서 만들어 붙여 넣어요.","misc.ab.field_key":"관리자 키","misc.ab.key_note":"저장한 키는 다시 보여 주지 않아요.","misc.dsk.blocked":"새 탭이 막혔어요. 팝업을 허용해 주세요","misc.dsk.opened_in":"{name}의 크롬에서 열었어요","misc.dsk.that_pc":"그 컴퓨터","misc.dsk.cant_now":"지금은 화면을 열 수 없어요","misc.dsk.open_peer":"{name} 열기","misc.dsk.open_failed":"화면을 열지 못했어요","misc.dsk.aria_on_view":"{name} 화면 공유 켜고 보기","misc.dsk.aria_view":"{name} 화면 보기","misc.dsk.on_view":"켜고 보기","misc.dsk.view":"화면 보기","misc.dsk.device":"기기","misc.dsk.viewing_from":"{who}에서 보는 중","misc.dsk.viewing_n":"{n}곳에서 보는 중","misc.dsk.pill_aria":"{text}. 설정에서 보기","misc.dsk.this_screen":"이 컴퓨터 화면","misc.dsk.on_note":"다른 기기에서 보고 조작해요","misc.dsk.off_note":"꺼져 있어요. 누르면 켜고 열어요","misc.dsk.share":"화면 공유","misc.dsk.share_note":"이 컴퓨터 화면을 내 다른 기기에서 보고 조작해요","misc.dsk.share_off":"화면 공유를 껐어요","misc.dsk.share_on":"화면 공유를 켰어요","misc.dsk.public":"공개 주소","misc.dsk.public_note":"Cloudflare 주소로 들어온 기기도 화면을 볼 수 있어요","misc.dsk.public_off":"공개 주소로는 막았어요","misc.dsk.public_on":"공개 주소로도 열었어요","misc.ignore":"무시","misc.rp.quote":"인용","misc.rp.jump":"인용한 메시지로 이동","misc.rp.bar":"인용할 메시지","misc.rp.cancel":"인용 취소","misc.rp.finding":"찾는 중…","misc.rp.not_found":"원래 메시지를 찾지 못했어요 · 지워졌거나 너무 오래됐어요","misc.rp.me":"나","misc.oe.paused_named":"{name} 봇이 멈춰 있어요: {why}","misc.oe.paused":"봇이 멈춰 있어요: {why}","misc.oe.why_login":"로그인 필요","misc.oe.why_limit":"사용량 한도","misc.retry_now":"지금 다시 시도","misc.oe.resuming":"다시 시도해요. 멈춘 동안 온 메시지도 이어서 처리해요","misc.oe.stopped":"{bot+이/가} 멈췄어요","misc.oe.since":"{at}부터","misc.run.waiting":"답을 기다려요","misc.run.limited":"한도에 걸렸어요","misc.run.error_stop":"오류로 멈췄어요","misc.run.done":"끝났어요","misc.run.until":"{at}까지","misc.run.queued":"순서를 기다려요","misc.run.resuming":"이어서 처리 중","misc.run.work":"맡긴 작업 진행 중","misc.run.error":"오류","misc.run.todos_left":"할 일 {n}개 남음","misc.run.what_failed":"{what} 실패","misc.run.unfinished":"이번 턴이 끝났는데 할 일이 남아 있어요","misc.run.interrupted":"마지막 턴이 끝나기 전에 멈췄어요","misc.run.resting":"잠시 쉬어요","misc.run.by_owner":"직접 멈췄어요","misc.run.go_ask":"질문으로 가기","misc.run.restart":"다시 시작","misc.run.ask_missing":"질문을 찾지 못했어요. 알림에서 확인해 주세요","misc.run.restarting":"다시 시작할게요","misc.intro.home_t":"홈에서 오늘 볼 것을 봐요","misc.intro.home_b":"새 메일, 답을 기다리는 일, 돌고 있는 작업이 카드로 모여요. 위의 종을 누르면 알림만 따로 볼 수 있어요.","misc.intro.chat_t":"채팅으로 일을 시켜요","misc.intro.chat_b":"말하듯 쓰면 돼요. 일하는 중에 보내면 바로 끼어들어요. 메일처럼 밖으로 나가는 것은 보내기 전에 꼭 물어봐요.","misc.intro.proj_t":"프로젝트마다 대화가 따로예요","misc.intro.proj_b":"폴더 하나가 프로젝트 하나예요. 세션과 결과가 프로젝트별로 남아서 섞이지 않아요.","misc.intro.mon_t":"모니터링은 대신 지켜봐요","misc.intro.mon_b":"메일, 댓글, 사이트 변화를 보고 있다가 알려 줘요. 답장 초안도 여기서 고치고 보내요.","misc.intro.set_t":"앱과 설정은 필요할 때 열어요","misc.intro.set_b":"계정, 메신저, 웹 접속은 설정에서 바꿔요. 이 안내도 설정에서 다시 볼 수 있어요.","misc.intro.set_b_apps":"내가 붙인 앱은 앱 탭에서 열어요. 계정, 메신저, 웹 접속은 설정에서 바꿔요. 이 안내도 설정에서 다시 볼 수 있어요.","misc.intro.keys_t":"단축키를 쓰면 더 빨라요","misc.intro.key_cmdk":"검색과 명령","misc.intro.key_tabs":"탭 이동","misc.intro.skip":"건너뛰기","misc.intro.prev":"이전","misc.intro.start":"시작하기","misc.intro.next":"다음","misc.rl.note":"{line}. 파일 첨부와 진행 표시는 쓸 수 없어요.","misc.rl.ph":"{name}에게 보내요","misc.rl.sending":"보내는 중…","misc.rl.failed":"보내지 못했어요: {why}","misc.rl.drop":"{name} 빼기","misc.pd.move_left":"왼쪽으로 옮기기","misc.pd.move_right":"오른쪽으로 옮기기","misc.pd.new_left":"왼쪽에 새 칸","misc.pd.new_right":"오른쪽에 새 칸","misc.pd.chat_only":"분할은 채팅 탭에서만 할 수 있어요","misc.pd.no":"칸에 넣을 수 없어요","misc.pd.swap":"자리 바꾸기","misc.pd.goes_open":"열려 있는 칸으로 가요","misc.pd.full":"칸은 2개까지라 이 칸을 바꿔요","misc.pd.replace":"이 칸을 바꿔요","misc.pd.narrow":"창이 좁아 여기서 열어요","misc.pd.here":"여기서 열기","misc.pk.split":"칸 나누기","misc.pk.move":"칸 이동","misc.pk.close":"칸 닫기","misc.pk.max":"창은 두 개까지 열 수 있어요","misc.pk.narrow":"창이 좁아 칸을 나눌 수 없어요","misc.pk.none":"나란히 열 대화가 더 없어요","misc.pl.save_failed":"배치를 저장하지 못했어요","misc.pl.cant_open":"이 배치는 열 수 없어요","misc.pl.ph":"예: 메일 보면서 작업","misc.pl.name":"배치 이름","misc.pl.saved":"'{name}' 배치를 저장했어요","misc.pl.save":"배치 저장","misc.pl.overwrite":"같은 이름이 있으면 덮어써요.","misc.pl.need_name":"이름을 적어 주세요.","misc.pl.open":"배치: {name}","misc.pl.drop":"배치 지우기: {name}","misc.pl.dropped":"'{name}' 배치를 지웠어요","misc.pane.room":"대화방","misc.pane.tap_room":"이 창을 누르면 대화방이 열려요","misc.pane.stop_tip":"지금 하는 일 중단","misc.pane.close":"창 닫기","misc.pane.menu":"세션 메뉴","misc.pane.list":"대화 목록","misc.pane.bar_tip":"끌어서 크기를 바꿔요, 두 번 누르면 반반이에요","mon.group.plain":"일반 모니터링","mon.last_at":"마지막 {t}","mon.not_run":"아직 실행 전이에요","mon.next_at":"다음 {t}","mon.rel.now_past":"방금 전","mon.rel.now_future":"곧","mon.rel.min_past":"{n}분 전","mon.rel.min_future":"{n}분 후","mon.rel.hour_past":"{n}시간 전","mon.rel.hour_future":"{n}시간 후","mon.rel.day_past":"{n}일 전","mon.rel.day_future":"{n}일 후","mon.tag.ok":"정상","mon.tag.changed":"바뀜","mon.tag.fail":"실패","mon.tag.disconnected":"연결 끊김","mon.tag.need":"확인 필요","mon.tag.off":"꺼짐","mon.tag.late":"늦어짐","mon.tag.run":"확인 중","mon.conn.since":"{t}부터","mon.conn.login":"다시 로그인 필요","mon.conn.failing":"확인이 계속 실패해요","mon.checking_now":"지금 확인하고 있어요","mon.prog.before":"실행 전","mon.prog.none":"예정 없음","mon.prog.last":"지난 실행 {t}","mon.prog.not_yet":"아직 실행 전","mon.prog.next_late":"다음 확인이 늦어졌어요","mon.prog.aria":"{name} 다음 확인까지","mon.kind.watch":"지켜보는 일","mon.kind.schedule":"예약한 일","mon.desc.sched_every":"{every} 알아서 실행해요.","mon.desc.sched_once":"정해 둔 때에 한 번 실행해요.","mon.desc.watch_every":"바뀐 곳이 있는지 {every} 확인해요.","mon.desc.watch_auto":"바뀐 곳이 있는지 알아서 확인해요.","mon.last_ok":"마지막 정상 {t}","mon.run.ok":"마지막 확인 결과 정상이에요","mon.run.changed":"마지막 확인에서 바뀐 점이 있어요","mon.run.fail":"마지막 확인이 실패했어요","mon.run.unchecked":"아직 확인 전이에요","mon.run.sched_ran":"예약한 일을 실행했어요","mon.run.checked":"확인했어요","mon.feed":"감시 소식","mon.group.project":"프로젝트 · {name}","mon.need.sent_today":"오늘 자동 답장 {n}건 보냄","mon.last_news":"마지막 소식 {t}","mon.need.none":"확인할 것 없어요","mon.check_failed":"확인이 실패했어요","mon.today_at":"오늘 {t}","mon.feed.none":"새 감시 소식이 없어요","mon.need_chip":"답 필요 {n}","mon.state.off":"연결 안 됨","mon.state.rq":"답장 {n}건 기다려요","mon.state.need":"답 필요 {n}건","mon.state.unread":"안 읽음 {n}개","mon.state.results":"감시와 예약 결과","mon.state.connected":"연결돼 있어요","mon.manage_apps":"앱 관리","mon.load_failed":"모니터링을 불러오지 못했어요","mon.tag.warn":"주의","mon.dr.st.open":"확인 대기","mon.dr.st.send":"보냄","mon.dr.st.edit":"고침","mon.dr.st.revising":"고치는 중…","mon.dr.st.drop":"보내지 않음","mon.dr.st.own":"보낼 방법 전함","mon.dr.st.expired":"만료","mon.dr.st.ignored":"무시함","mon.dr.reply_to":"답장할 메일","mon.dr.edit_manual":"직접 수정","mon.dr.edit_ask":"고칠 내용","mon.dr.rm_title":"지우기 (보내지 않아요)","mon.dr.rm_aria":"초안 지우기","mon.dr.to":"받는이","mon.dr.apply_manual":"이 내용으로 고치기","mon.dr.apply_ask":"고쳐 달라고 하기","mon.dec.ignored":"무시했어요","mon.dec.expired":"기한 지남","mon.dec.closed":"답 없이 끝났어요","mon.dec.answered":"답했어요","mon.dec.needs":"답변이 필요해요","mon.reply_go":"답하러 가기","mon.running":"확인하는 중…","mon.run.still_down":"확인했지만 아직 연결이 끊겨 있어요","mon.reconnect_asked":"다시 연결을 요청했어요. 승인 요청이 오면 눌러 주세요","mon.recheck.partial":"{total}개 중 {n}개는 확인하지 못했어요","mon.recheck.done":"지금 다시 확인했어요","mon.filter.all":"전체","mon.filter.need":"답 필요","mon.more_n":"{n}개 더 보기","mon.bar.aria":"소식 보기","mon.bar.read_title":"답이 필요한 것은 그대로 둬요","mon.bar.read_n":"{n}개 읽음 처리","mon.bar.read":"읽음 처리","mon.read_done":"{n}개를 읽음으로 표시했어요","mon.row.fold_aria":"{src} 소식 접기","mon.row.unfold_aria":"{src} 소식 펼치기","mon.fold":"접기","mon.fails":"연속 실패 {n}번","mon.grp.fold_aria":"{src} 소식 {n}건 접기","mon.grp.unfold_aria":"{src} 소식 {n}건 펼치기","mon.grp.same_q":"같은 질문 {n}번","mon.grp.n":"{n}건","mon.sec.news":"소식","mon.rep":"같은 결과 {n}번 · 처음 {t}","mon.older_n":"이전 소식 {n}개 보기","mon.dr.how":"어떻게 고칠까요?","mon.conv.title":"이 항목으로 대화를 이어가요","mon.conv.btn":"대화로 이어가기","mon.ov.peer":"다른 컴퓨터","mon.ov.sum_off":"정상 {n} · 꺼짐 {off}","mon.ov.all_ok":"모두 정상","mon.ov.last":"마지막 확인 {t}","mon.ov.rest":"나머지 {n}개","mon.ov.count":"모니터 {n}개","mon.unfold":"펼치기","mon.ov.empty":"아직 일반 모니터링이 없어요","mon.log.sched":"실행 기록","mon.log.watch":"확인 기록","mon.empty.view":"이 보기에 해당하는 소식이 없어요","mon.empty.none":"아직 소식이 없어요","mon.banner.down":"연결이 끊겼어요","mon.banner.fail":"확인 실패","mon.run_btn":"지금 확인","mon.recheck_btn":"지금 다시 확인","mon.reconnect":"다시 연결","mon.fail_streak":"{n}번 연속 실패했어요","mon.rq_btn":"답장 대기 {n}","mon.mail.files":"첨부 {n}개","mon.mail.clip":"첨부파일 {n}개","mon.mail.download":"{name} 내려받기","mon.mail.reply.draft":"답장 초안 있음","mon.mail.reply.sent":"자동 답장 보냄","mon.mail.reply.waiting":"답장 대기","mon.mail.state.draft":"초안 있음","mon.mail.state.replied":"답장함","mon.mail.state.out":"내가 보냄","mon.mail.pending":"확인 대기","mon.mail.archive":"보관함","mon.mail.sent":"보낸 메일","mon.mail.inbox":"받은 메일","mon.mail.empty.pending":"확인할 초안이 없어요","mon.mail.empty.unread":"안 읽은 메일이 없어요","mon.mail.empty.owed":"답장할 메일이 없어요","mon.mail.empty.replied":"답장한 메일이 없어요","mon.mail.empty.archived":"보관한 메일이 없어요","mon.mail.empty.sent":"보낸 메일이 없어요","mon.mail.empty.all":"받은 메일이 없어요","mon.mail.place_aria":"메일 위치","mon.mail.view_aria":"메일 보기","mon.mail.open_orig":"원문 열기","mon.mail.me_to":"나 → {to}","mon.mail.someone":"받는 사람","mon.mail.todo_more":"{todo} 외 {n}건","mon.mail.drafting":"답장 초안을 만드는 중이에요","mon.mail.making":"만드는 중…","mon.mail.ex.todo":"예: 이번 주 안에 처리하겠다고 써 줘","mon.mail.ex.time":"예: 그 시간 괜찮다고 써 줘","mon.mail.ex.ask":"예: 확인하고 금요일까지 답한다고 써 줘","mon.mail.ex.thanks":"예: 잘 받았다고 짧게 써 줘","mon.mail.ex.default":"예: 금요일까지 보내 드린다고 써 줘","mon.mail.instr_aria":"초안에 넣을 내용","mon.mail.no_sender":"보낸 사람 없음","mon.mail.dlg_title":"답장 초안","mon.mail.ask":"어떻게 답할까요?","mon.mail.ask_hint":"비워 두면 알아서 써요","mon.mail.act.draft":"초안 작성","mon.mail.act.need":"답장 필요로 표시","mon.mail.deleted":"메일을 목록에서 지웠어요","mon.mail.menu":"메일 메뉴","mon.chat.log_title":"이 모니터링의 소식을 봐요","mon.chat.log_n":"소식 {n}","mon.dm.ro":"여기서는 DM에 답장할 수 없어요","mon.dm.list_fail":"DM 목록을 불러오지 못했어요","mon.dm.fail":"DM을 불러오지 못했어요","mon.dm.aria":"DM 대화","mon.dm.empty":"아직 받은 DM이 없어요","mon.dm.image":"(사진)","mon.dm.video":"(동영상)","mon.dm.audio":"(음성 메시지)","mon.dm.file":"(파일)","mon.dm.blank":"(내용 없음)","mon.dm.pick":"대화를 골라 주세요","mon.dm.no_msgs":"메시지가 없어요","mon.cm.fail_net":"{what}. 연결을 확인해 주세요","mon.cm.rooms_aria":"댓글을 지켜보는 글","mon.cm.all":"전부","mon.cm.watch_n":"{n}개","mon.cm.list_fail":"댓글 목록을 불러오지 못했어요","mon.cm.read_fail":"읽지 못했어요 · {error}","mon.cm.watch_all":"{label} 전부 지켜보기","mon.cm.auto":"자동 초안","mon.cm.auto_aria":"{label} 자동 초안","mon.cm.filemail":"파일 요청 메일 초안","mon.cm.filemail_aria":"{label} 파일 요청 메일 초안","mon.cm.pick":"지켜볼 글 고르기","mon.cm.tokens":"새 댓글마다 답글 초안을 만들어서 토큰이 들어요.","mon.cm.channels":"지켜볼 채널","mon.cm.none_on":"켜 둔 곳이 없어요. 채팅에서 켜 달라고 해 주세요.","mon.cm.posts_watch":"지켜볼 글","mon.cm.mail_fail_aria":"메일 실패 {n}건","mon.cm.failed_n":"실패 {n}","mon.cm.drafts_aria":"답장 확인 {n}건","mon.cm.drafts_n":"초안 {n}","mon.cm.open_video":"영상 열기","mon.cm.open_post":"원본 글 열기","mon.cm.view_aria":"보기","mon.cm.comments":"댓글","mon.cm.posts_aria":"댓글이 있는 글","mon.cm.posts":"글","mon.cm.empty":"아직 받은 댓글이 없어요","mon.cm.fail":"댓글을 불러오지 못했어요","mon.cm.st.check":"확인","mon.cm.st.sending":"보내는 중","mon.cm.st.auto":"보냄 · 자동","mon.cm.st.reply_sent":"답글 보냄","mon.cm.st.drafting":"초안 만드는 중","mon.cm.st.need_draft":"초안 필요","mon.cm.st.with_reply":"답글과 함께 보내요","mon.cm.reply":"답글","mon.cm.mail_drafted":"메일 초안 작성됨","mon.cm.me":"나","mon.cm.my_reply":"나 · 내 답글","mon.cm.drafting_dots":"초안 만드는 중…","mon.cm.reply_draft":"답글 초안","mon.cm.send_again":"다시 보내기","mon.cm.pick_post":"글을 골라 주세요","mon.cm.draft_late":"초안이 아직 오지 않았어요","mon.cm.restored":"초안을 되돌렸어요","mon.cm.part":"고칠 곳","mon.cm.then_mail":"보내기를 누르면 답글을 올린 뒤 메일을 보내요","mon.cm.mail_not_sent":"답글은 올렸지만 메일은 보내지 못했어요: {reason}","mon.cm.unknown_reason":"알 수 없는 이유","notice.err.signin":"다시 로그인해 주세요","notice.err.denied":"권한이 없어요","notice.err.notfound":"찾지 못했어요","notice.err.slow":"시간이 너무 오래 걸렸어요","notice.err.toomany":"요청이 너무 잦아요. 잠시 뒤에 다시 해 주세요","notice.err.server":"서버에 문제가 있어요. 잠시 뒤에 다시 해 주세요","notice.err.request":"요청을 처리하지 못했어요","notice.err.network":"연결이 끊겨 처리하지 못했어요","notice.cron.minutes":"{n}분마다","notice.cron.hours":"{n}시간마다","notice.cron.hourly":"매시 {m}분","notice.cron.daily":"매일 {time}","notice.cron.weekly":"매주 {day} {time}","notice.cron.weekdays":"평일 {time}","notice.cron.other":"정해진 시각마다","notice.worker.one":"워커","notice.worker.many":"워커 {n}개","project.act.ran":"명령을 실행했어요","project.act.edited":"파일을 고쳤어요","project.act.read":"파일을 읽어봤어요","project.act.searched":"코드를 찾아봤어요","project.act.error":"오류가 있었어요","project.act.done":"이번 작업을 마쳤어요","project.word.ended":"끝남","project.word.wait":"답을 기다림","project.row.in_project":"프로젝트 {name}","project.open_chat":"대화 열기","project.subs_count":"서브에이전트 {done}/{total}","project.view.all":"전체","project.paused":"일시 정지","project.word.asks":"답을 기다려요","project.word.no_sessions":"세션 없음","project.ago.none":"기록 없음","project.yesterday":"어제","project.ago.d":"{n}일 전","project.open":"열기","project.unread_n":"읽지 않은 메시지 {n}개","project.group.pinned":"고정","project.pc.this":"이 컴퓨터","project.pc.offline":"연결 안 됨","project.count_n":"프로젝트 {n}개","project.fold":"접기","project.unfold":"펼치기","project.pc.cant":"{name}에 연결할 수 없어요","project.pc.switch":"{name}(으)로 넘어가요","project.search":"프로젝트 검색","project.view.aria":"프로젝트 보기","project.custom":"커스텀","project.more_n":"프로젝트 {n}개 더 보기","project.empty.search":"찾는 프로젝트가 없어요","project.empty.need":"확인할 프로젝트가 없어요","project.empty.run":"지금 진행 중인 프로젝트가 없어요","project.empty.done":"끝낸 프로젝트가 없어요","project.empty.none":"아직 프로젝트가 없어요","project.my_settings":"내 설정","project.custom_sub":"내가 바꾼 것을 봐요","project.load_failed":"프로젝트를 불러오지 못했어요","project.empty.first":"아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요","project.chat_open":"채팅 열기","project.save_failed":"저장하지 못했어요 · {error}","project.one.load_failed":"프로젝트를 불러오지 못했어요","project.rest_failed":"나머지를 불러오지 못했어요","project.need.more":"외 {n}개도 답을 기다려요","project.need.answer":"대화에서 답하기","project.rt.last":"마지막 {at}","project.sec.info":"지금 상황","project.sec.all":"전체","project.sec.sessions":"세션","project.sec.results":"결과","project.result":"결과","project.sec.files":"파일","project.sec.watch":"감시","project.empty.overview":"아직 쌓인 내용이 없어요. 채팅에서 이 프로젝트의 일을 맡기면 세션과 결과가 여기에 모여요","project.info.blocked_tag":"막힘","project.info.next":"다음","project.info.decided_tag":"정함","project.info.blocked":"막힌 것","project.info.decided":"정한 것","project.info.prefs":"기억해 둔 말","project.info.empty":"대화하면서 정한 내용이 여기에 모여요","project.page.info_sub":"대화에서 정리된 내용이에요","project.page.rules":"내 규칙","project.page.rules_sub":"최근에 정한 순서예요","project.page.sessions":"세션 기록","project.page.sessions_sub":"이 프로젝트의 세션과 백그라운드 작업","project.page.results":"결과 전체","project.page.results_sub":"보고, 확인, 커밋","project.page.routines":"루틴과 모니터링","project.page.routines_sub":"주기적으로 도는 일","project.back_to":"프로젝트로","project.edit.empty":"비어 있어요","project.edit.hint":"눌러서 고쳐요","project.edit.aria":"{label} 고치기","project.edit.required":"비워 둘 수 없어요","project.name":"프로젝트 이름","project.last_chat":"마지막 대화 {ago}","project.desc":"프로젝트 설명","project.desc_ph":"무엇을 하는 프로젝트인지 적어 주세요","project.chat_title":"이 프로젝트 전용 채팅을 열어요","project.chat":"프로젝트 채팅","project.menu":"프로젝트 메뉴","project.not_found":"이 프로젝트를 찾을 수 없어요","project.edit.title":"프로젝트 수정","project.del.title":"프로젝트 삭제","project.del.channel":"#{name} 채널을 Discord에서 지워요","project.del.monitors":"모니터링 {n}개는 따로 남겨요: {list}","project.del.logins":"로그인 유지 {n}개도 남겨요: {list}","project.del.standing":"자동 처리 설정을 지워요: {what}","project.del.notices":"알림 {n}개를 치워요","project.del.messages":"대화 {n}개는 보관 파일로 남겨요","project.del.plan_failed":"지울 내용을 읽지 못했어요","project.del.drop_aria":"보관 파일도 같이 지우기","project.del.drop":"보관 파일도 같이 지워요","project.del.partial":"프로젝트는 지웠지만 Discord 채널은 남아 있어요 · {error}","project.del.done":"{name} 프로젝트를 지웠어요","project.del.failed":"지우지 못했어요","project.del.ask":"{name} 프로젝트를 삭제할까요?","project.del.running":"실행 중인 세션이 있어서 지울 수 없어요: {list}","project.recent":"최근 세션","project.rt.every_h":"매 {n}시간","project.rt.every_m":"매 {n}분","project.rt.failing":"계속 실패 {n}번","project.rt.last_failed":"마지막 실행 실패","project.rt.failed_n":"실패 {n}번","project.rt.empty":"아직 루틴이나 모니터링이 없어요","project.rt.once":"한 번","project.rt.on_match":"패턴이 나오면 알려요","project.rt.on_check":"확인해서 알려요","project.rt.never":"아직 안 돌았어요","project.rt.next":"다음 {at}","project.rt.resume":"다시 시작","project.rt.pause":"일시정지","project.edit.go":"수정","project.rt.script":"스크립트","project.rt.run_now":"지금 실행","project.rt.ok":"정상","project.rt.no_state":"상태 없음","project.rt.script_title":"게이트웨이가 직접 실행 · 토큰 없음","project.rt.model_title":"실행할 때마다 모델을 호출해요","project.rt.pattern_line":"패턴 · {pattern}","project.rt.script_named":"{name} 스크립트","project.rt.script_failed":"스크립트를 읽지 못했어요 · {error}","project.rt.gap_h":"간격(시간)","project.rt.gap_m":"간격(분)","project.rt.pattern":"패턴","project.rt.gap_bad_h":"간격은 1시간 이상의 정수로 적어 주세요","project.rt.gap_bad_m":"간격은 1분 이상의 정수로 적어 주세요","project.rt.gap":"간격","project.rt.per_h":"시간마다","project.rt.per_m":"분마다","project.work.resuming":"이어서","project.work.queued_sub":"순서를 기다려요","project.recent_empty":"아직 끝난 세션이 없어요","project.res.report":"보고","project.res.verify":"확인","project.res.failed":"안 됨","project.res.unverified":"보고만 함","project.res.passed":"통과","project.res.empty":"아직 결과가 없어요","project.edit.named":"{name} 수정","project.rules.more_n":"규칙 {n}개 더 보기","project.rules.none":"찾는 규칙이 없어요","project.rules.search":"규칙 검색","project.ctx.queued":"압축 대기","project.ctx.compacting":"압축 중 · {at}","project.ctx.done_from":"압축 완료 {at} · {tokens} 토큰 전","project.ctx.done":"압축 완료 {at}","project.ctx.failed_why":"압축 실패 {at} · {error}","project.ctx.failed":"압축 실패 {at}","project.ctx.of":"{name} 컨텍스트","project.ctx.tokens_of":"{used} / {win} 토큰","project.ctx.tokens":"{tokens} 토큰","project.ctx.load_failed":"컨텍스트를 불러오지 못했어요","project.ctx.later":"{name}: 작업 중이라 끝나면 압축해요","project.ctx.started":"{name}: 압축을 시작했어요","project.ctx.off":"꺼짐","project.ctx.off_note":"꺼져 있어요. 다음 메시지가 오면 다시 시작해요","project.ctx.not_running":"실행 중이 아니에요","project.ctx.new_default":"새 세션 기본","project.ctx.per_model":"모델별 컨텍스트 설정","project.ctx.size":"컨텍스트 크기","project.ctx.custom":"직접 설정","project.ctx.default":"기본","project.ctx.unknown":"아직 모름 (처음 응답 뒤 표시)","project.ctx.auto":"자동 압축","project.ctx.used_by":"사용: {list}","project.ctx.default_n":"기본 {n}","project.ctx.default_ph":"기본값","project.ctx.auto_ph":"비우면 자동으로 정해요","project.ctx.reset":"기본값으로","project.ctx.reset_done":"기본값으로 되돌렸어요","project.ctx.bad_size":"컨텍스트 크기는 토큰 수로 적어 주세요 (예: 1000000, 200k)","project.ctx.bad_at":"자동 압축 시점은 토큰 수나 %로 적어 주세요 (예: 300k, 80%). %는 컨텍스트 크기를 알 때만 써요","project.ctx.saved":"저장했어요. 다음 턴부터 적용돼요","project.ctx.applies":"이 모델을 쓰는 모든 세션({list})에 적용돼요.","project.ctx.size_label":"컨텍스트 크기 (토큰)","project.ctx.range":"{min}~{max} 토큰","project.ctx.at_label":"자동 압축 시작 (토큰 또는 %)","project.ctx.at_hint_min":"{min} 토큰부터 컨텍스트 크기 미만까지 적을 수 있고, 낮을수록 매 턴 다시 읽는 토큰과 비용이 줄어요.","project.ctx.at_hint":"컨텍스트 크기보다 작게 적고, 낮을수록 매 턴 다시 읽는 토큰과 비용이 줄어요.","settings.apply":"적용","settings.apply.done":"적용했어요","settings.apply.restarted":"적용했어요 · 재시작됨","settings.apply.next_start":"다음 시작부터 적용돼요","settings.apply.next_turn":"다음 턴부터 적용돼요","settings.save_failed":"저장하지 못했어요","settings.all":"전체","settings.provider":"공급자","settings.provider.all":"공급자 전체","settings.models.load_failed":"모델 정보를 불러오지 못했어요","settings.model.source_sub":"구독 {account}","settings.model.account":"계정","settings.model.older":"이전 모델","settings.model.older_n":"이전 모델 {n}개","settings.model.current":"현재","settings.model.apply_ask":"모델 설정을 적용할까요?","settings.model.cache_rewrite":"캐시가 다시 쓰여요 · 컨텍스트 {tokens} 토큰\n{label}","settings.model.apply_failed":"적용하지 못했어요. {error}","settings.logout.key_text":"저장된 API 키를 삭제할까요?","settings.logout.info_acc":"{account} 계정의 저장된 로그인 정보가 삭제돼요.","settings.logout.info":"저장된 로그인 정보가 삭제돼요.","settings.logout.all":"{name}의 계정 {n}개가 모두 로그아웃돼요.","settings.logout.key_title":"{name} 키 삭제","settings.logout.title":"{name} 로그아웃","settings.logout.btn":"로그아웃","settings.logout.key_failed":"키를 삭제하지 못했어요. {error}","settings.logout.failed":"로그아웃하지 못했어요. {error}","settings.logout.key_done":"키를 삭제했어요","settings.logout.done":"로그아웃했어요","settings.models.no_effort":"이 모델은 추론 강도를 쓰지 않아요","settings.models.intro":"막히면 번호 순서대로 넘어가요.","settings.fb.down.quota":"한도 소진","settings.fb.down.cap":"상한 도달","settings.fb.down.error":"오류","settings.fb.using":"대체 모델 사용 중","settings.fb.return_at":"{at}에 복귀","settings.fb.instead":"기본 모델 {model} 대신 쓰는 중","settings.models.group_replies":"답장과 요약","settings.models.replies_default":"답장 기본값","settings.models.lane_label":"세션 · {name}","settings.models.fixed":"고정","settings.models.fallbacks_n":"대체 {n}","settings.models.reply_model":"답장 모델","settings.models.reply_note":"답장 초안은 API 키로 넘어가지 않아요.","settings.api_key":"API 키","settings.login":"로그인","settings.saved":"저장했어요","settings.done":"완료","settings.use":"사용","settings.refresh":"새로고침","settings.limit.hours":"{n}시간 한도","settings.limit.hours_of":"{n}시간 한도 {rest}","settings.limit.days":"{n}일 한도","settings.limit.days_of":"{n}일 한도 {rest}","settings.limit.hours_short":"{n}시간","settings.limit.hours_short_of":"{n}시간 {rest}","settings.limit.days_short":"{n}일","settings.limit.days_short_of":"{n}일 {rest}","settings.prov.key_delete":"키 삭제","settings.prov.relogin":"다시 로그인","settings.prov.in_use":"지금 사용 중","settings.prov.accounts_n":"계정 {n}개","settings.prov.signed_in":"로그인됨","settings.prov.not_connected":"연결 안 됨","settings.prov.load_failed":"계정을 불러오지 못했어요","settings.prov.connected_n":"{n}개 연결","settings.prov.add":"공급자 추가","settings.prov.none":"공급자가 없어요","settings.prov.other":"다른 공급자","settings.prov.key_of":"{name} API 키","settings.prov.need_key":"공급자와 API 키를 입력해 주세요","settings.prov.add_account":"계정 추가","settings.prov.nothing_to_add":"추가할 공급자가 없어요","settings.login.pending_title":"끝나지 않은 로그인이 있어요","settings.login.pending_other":"지금 {name} 로그인이 열려 있어요.","settings.login.restart":"새로 시작","settings.login.resume":"이어서 하기","settings.login.open_page":"로그인 페이지 열기","settings.login.how_none":"브라우저에서 로그인한 뒤 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.how_opened":"열린 페이지에서 로그인한 뒤 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.how_open":"‘로그인 페이지 열기’를 눌러 로그인한 뒤, 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.code_label":"코드 또는 주소","settings.login.refreshed":"이미 등록된 계정이에요 ({account}). 로그인을 새로 고쳤어요","settings.login.added":"계정을 추가했어요 ({account})","settings.login.done":"{name} 로그인했어요","settings.login.failed":"로그인에 실패했어요","settings.login.need_code":"코드나 주소를 붙여 넣어 주세요","settings.login.title_add":"{name} 계정 추가","settings.login.title":"{name} 로그인","settings.reset.pair":"{a}와 {b}","settings.reset.kind_label":"{kind} 리셋권","settings.reset.label":"리셋권","settings.reset.when_limited":"한도에 걸리면 쓸 수 있어요","settings.reset.expires":"{day} 만료","settings.reset.say.reset":"한도를 다시 채웠어요","settings.reset.say.nothing":"다시 채울 한도가 없어서 쓰지 않았어요","settings.reset.say.no_credit":"남은 리셋권이 없어요","settings.reset.say.used":"이미 쓴 리셋권이에요","settings.reset.say.cooldown":"조금 뒤에 다시 쓸 수 있어요","settings.reset.body_kind":"{name} {account}의 {kind} 리셋권으로 한도를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.body_claude":"{name} {account}의 리셋권으로 한도를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.body_codex":"{name} {account}의 {wins}를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.ask_title":"리셋권을 쓸까요?","settings.reset.use":"리셋권 쓰기","settings.reset.used":"리셋권을 썼어요","settings.reset.use_failed":"리셋권을 쓰지 못했어요. 잠시 뒤 다시 눌러 주세요","settings.reset.held":"{n}개","settings.reset.use_aria":"{name} {label} 사용","settings.usage.load_failed":"사용량을 불러오지 못했어요","settings.usage.no_limits":"없어요","settings.usage.kind.start":"처음 선택","settings.usage.kind.owner":"직접 변경","settings.usage.kind.gone":"계정 사라짐","settings.usage.account":"사용 계정","settings.usage.clear_failed":"지우지 못했어요","settings.usage.clear_one":"이 기록 지우기","settings.usage.cleared_one":"기록을 지웠어요","settings.usage.more_n":"이전 기록 {n}개 더 보기","settings.usage.less":"이전 기록 접기","settings.usage.since":"{at}부터","settings.usage.pinned":"고정한 계정이에요","settings.usage.clear_all":"기록 모두 지우기","settings.usage.clear_all_ask":"기록을 모두 지울까요?","settings.usage.clear_all_body":"계정 전환 기록 {n}개를 지워요. 되돌릴 수 없어요.","settings.usage.clear_all_btn":"모두 지우기","settings.usage.cleared_all":"기록을 모두 지웠어요","settings.usage.unavailable":"정보가 없어요","settings.usage.empty":"사용량 정보가 없어요","settings.unknown":"알 수 없음","settings.page.notifications":"앱과 알림","settings.page.display":"표시","settings.page.update":"업데이트","settings.page.runtime":"작업 프로그램","settings.runtime.check_failed":"작업 프로그램을 확인하지 못했어요","settings.runtime.checking":"작업 프로그램을 확인하는 중이에요","settings.row.account_in_use":"{name} 사용 중","settings.row.update_restart":"새 버전 {version} 받음 · 재시작하면 적용돼요","settings.row.update_now":"지금 {version}","settings.row.update_latest":"지금 {version} · 최신","settings.row.context_used":"{pct}% 사용 중","settings.row.push_on":"푸시 알림 켬","settings.row.push_off":"푸시 알림 꺼짐","settings.row.push_unsupported":"이 브라우저는 알림을 지원하지 않아요","settings.sec.system":"시스템","settings.sec.accounts_models":"계정과 모델","settings.sec.connect":"연결","settings.sec.diagnostics":"진단","settings.row.usage":"사용량과 월 한도","settings.row.apps":"앱 관리","settings.row.intro":"화면 안내 다시 보기","settings.row.chat_tab_main":"대화 탭 메인","settings.row.chat_tab_last":"대화 탭 마지막","settings.theme.light":"라이트","settings.theme.dark":"다크","settings.tag.restart_needed":"재시작 필요","settings.tag.new_version":"새 버전","settings.display.mode":"화면 모드","settings.display.chat_tab":"대화 탭","settings.display.chat_main":"채팅을 열면 메인 대화부터 시작해요","settings.display.chat_last":"채팅을 열면 마지막 대화부터 시작해요","settings.display.opt_main":"메인","settings.display.opt_last":"마지막","settings.none":"없음","settings.fb.main_sub":"메인 어시스턴트","settings.fb.confirm_restart":"어시스턴트가 다시 시작돼요.","settings.fb.lanes_title":"세션 기본값","settings.fb.lanes_sub":"새로 시작하는 세션","settings.fb.workers_sub":"세션이 맡기는 구현·테스트","settings.fb.when.quota":"구독 소진 시","settings.fb.when.error":"오류 시","settings.fb.cap.day_usd":"일 {amount}까지","settings.fb.cap.month_usd":"월 {amount}까지","settings.fb.cap.day_tokens":"일 {tokens} 토큰까지","settings.fb.cap.month_tokens":"월 {tokens} 토큰까지","settings.fb.no_revert":"복귀 안 함","settings.fb.until":"풀리는 때: {at}","settings.fb.down.shared":"공유 계정 사용 중이라 꺼짐","settings.fb.down.key_off":"API 키 사용 안 함(설정)","settings.fb.down.unavailable":"쓸 수 없음","settings.fb.today":"오늘","settings.fb.month":"이번 달","settings.fb.bar_usd":"{when} {used} / {cap}","settings.fb.bar_tokens":"{when} {used} / {cap} 토큰","settings.fb.saved_now":"바로 적용돼요","settings.fb.saved_after":"지금 하던 일이 끝나면 적용돼요","settings.fb.saved_next":"다음에 시작될 때부터 적용돼요","settings.fb.saved_key":"저장된 키 {masked}","settings.fb.no_saved_key":"저장된 키가 없어요","settings.fb.key_file":"키 파일 {file}","settings.fb.edit_aria":"{name} 편집","settings.fb.same_as_base":"기본 모델과 같게","settings.fb.enabled":"사용","settings.fb.opt_on":"켜기","settings.fb.opt_off":"끄기","settings.fb.workers_label":"서브에이전트·세션","settings.fb.workers_no_key":"API 키 사용 안 함","settings.fb.workers_same_key":"같은 키 사용","settings.fb.mode":"사용 방식","settings.fb.mode_login":"구독 (로그인)","settings.fb.change_key":"키 바꾸기","settings.fb.when_label":"넘어가는 때","settings.fb.when_prev":"앞 모델이 안 될 때","settings.fb.when_quota":"한도 소진 시 (429)","settings.fb.when_error":"제공자 오류 시","settings.fb.revert_label":"기본 모델 복귀","settings.fb.revert_when":"한도가 풀리면 복귀","settings.fb.revert_keep":"계속 이 모델","settings.fb.cap_label":"사용 상한 (KST)","settings.fb.period_month":"월","settings.fb.period_day":"일","settings.fb.amount":"금액 (USD)","settings.fb.tokens":"토큰","settings.fb.up":"위로","settings.fb.up_aria":"{name} 위로","settings.fb.down":"아래로","settings.fb.down_aria":"{name} 아래로","settings.fb.no_key_provider":"{provider} 모델은 API 키를 쓸 수 없어요","settings.fb.key_status_use":"저장된 키: {masked} (사용 중)","settings.fb.key_status":"저장된 키: {masked}","settings.fb.key_paste_note":"키를 붙여 넣으면 이 칸은 쓰지 않아요.","settings.fb.file_name":"파일 이름","settings.fb.advanced":"고급: 키 파일 이름으로 지정","settings.fb.key_saved":"키를 확인하고 저장했어요 ({masked})","settings.fb.use_omo":"OmO 키 쓰기","settings.fb.key_off":"키 끄기","settings.fb.key_hidden":"저장한 키는 다시 보여 주지 않아요.","settings.fb.workers_too":"서브에이전트·세션도 사용","settings.fb.drag":"끌어서 순서 바꾸기","settings.fb.reorder_aria":"{name} 순서 바꾸기, 위아래 화살표 키","settings.fb.in_use":"사용 중","settings.fb.cant_use":"여기서 못 써요","settings.fb.sw_on_title":"켜짐 · 눌러서 끄기","settings.fb.sw_off_title":"꺼짐 · 눌러서 켜기","settings.fb.switch_off":"{name} 끄기","settings.fb.switch_on":"{name} 켜기","settings.fb.sw_on":"켜짐","settings.fb.sw_off":"꺼짐","settings.fb.continue_key":"{model} API 키로 계속","settings.fb.exists":"이미 있는 모델이에요","settings.fb.full":"더 넣을 수 없어요","settings.fb.add":"대체 모델 추가","settings.fb.how_workers":"실행 중인 서브에이전트는 다음 시작부터 반영돼요.","settings.fb.how_claude":"Claude Code는 Anthropic 모델만, 조건 없이 넘어가요.","settings.fb.list_aria":"{name} 대체 모델 순서","settings.app.shared_photos":"사진 {n}장을 붙였어요","settings.app.shared_files":"파일 {n}개를 붙였어요","settings.app.shell_chip":"새 버전 · 눌러서 적용","settings.app.perm_off":"알림 권한이 꺼져 있어요. 기기 설정에서 {bot} 알림을 허용해 주세요","settings.app.alerts_on":"알림을 켰어요","settings.app.alerts_off":"알림을 껐어요","settings.app.test_sent":"테스트 알림을 보냈어요","settings.app.installed":"앱을 설치했어요. 홈 화면의 {bot} 아이콘으로 열어 주세요","settings.app.ios_share_bar":"주소창의 공유 버튼을 눌러요","settings.app.ios_share_safari":"Safari 아래쪽(또는 주소창)의 공유 버튼을 눌러요","settings.app.ios_add":"'홈 화면에 추가'를 골라요","settings.app.ios_web_app":"'웹 앱으로 열기'가 켜져 있는지 보고 '추가'를 눌러요","settings.app.and_menu":"브라우저 메뉴(⋮)를 열어요","settings.app.and_install":"'앱 설치'를 골라요. '홈 화면에 추가'라면 다음 창에서 '설치'를 골라요","settings.app.and_shortcut":"'바로가기 만들기'는 브라우저로 열려요. 고르지 마세요","settings.app.desk_icon":"주소창 오른쪽의 설치 아이콘을 눌러요","settings.app.desk_menu":"없으면 브라우저 메뉴에서 '앱 설치'를 골라요","settings.app.install":"앱 설치","settings.app.reinstall_note":"전에 추가한 {bot} 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.","settings.app.add_home":"홈 화면에 추가","settings.app.gw_alerts":"{name} 알림","settings.app.this_computer":"이 컴퓨터","settings.app.iphone_note":"iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요","settings.app.no_support":"이 브라우저는 알림을 지원하지 않아요. Chrome이나 설치한 앱에서 켤 수 있어요","settings.app.perm_blocked":"알림 권한이 막혀 있어요","settings.app.turn_on":"알림 켜기","settings.app.check":"알림 확인","settings.app.test":"테스트 알림","settings.app.turn_off":"끄기","settings.app.this_device":"이 기기","settings.app.kinds":"알림 종류","settings.upd.v_installed":"v{release} · 설치본","settings.upd.installed_commit":"설치본 {commit} · {when}","settings.upd.installed_when":"설치본 · {when}","settings.upd.installed":"설치본","settings.upd.checked_ago":"{ago} 확인","settings.upd.bar_new":"{names} 새 버전","settings.upd.restart_applies":"재시작하면 새 버전이 적용돼요","settings.upd.names_new":"{names} 새 버전이 있어요","settings.upd.restarting":"다시 켜는 중이에요","settings.upd.bar_offer":"새 버전이 있어요 · 눌러서 업데이트","settings.upd.failed":"업데이트하지 못했어요","settings.upd.failed_why":"업데이트하지 못했어요: {reason}","settings.upd.tap_retry":"눌러서 다시 시도","settings.upd.done_now":"{text} · 지금 버전 {version}","settings.upd.rt_new_n":"작업 프로그램 새 버전 {n}개가 있어요","settings.upd.rt_latest":"작업 프로그램은 최신이에요","settings.upd.rewrite":"저장소 기록이 바뀌어서 새 기록으로 옮겨요","settings.upd.new_version":"새 버전 {version}이 있어요","settings.upd.new_commits":"새 커밋 {n}개가 있어요","settings.upd.latest":"최신 버전이에요","settings.upd.kept":"보관: {where}","settings.upd.working":"작업 중: {names}","settings.upd.resend":"끊긴 요청은 다시 켜질 때 이어서 보내요.","settings.upd.when_idle":"작업이 끝나면","settings.upd.restart_now":"지금 재시작","settings.upd.restarted_now":"다시 시작했어요 · 지금 버전 {version}","settings.upd.roles_in_use":"{roles} 사용 중","settings.upd.checking_short":"확인 중…","settings.upd.rt_now":"지금 {version}","settings.upd.managed_by":"{ver} · {by}이 관리해요","settings.upd.another_program":"다른 프로그램","settings.upd.as_app":"{ver} · 앱으로 설치됨","settings.upd.ver_latest":"{ver} · 최신","settings.upd.change":"{name} 바꾸기","settings.upd.change_rt":"작업 프로그램 바꾸기","settings.upd.deferred":"작업이 끝나면 업데이트해요","settings.upd.updating_phase":"업데이트 중 · {phase}","settings.upd.waiting":"대기 중","settings.upd.in_progress":"진행 중","settings.upd.btn":"업데이트","settings.upd.rt_note":"바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요.","settings.upd.rt_versions":"작업 프로그램 버전","settings.upd.checking":"확인하는 중…","settings.upd.check":"새 버전 확인","settings.upd.app_version":"앱 버전","settings.upd.running":"실행 중 {version}","settings.upd.ahead_n":"로컬 커밋 {n}개 (아직 올리지 않음)","settings.upd.dirty_n":"커밋 안 한 변경 {n}개","settings.upd.hd_new":"새 버전 {from} → {to}","settings.upd.hd_commits":"새 커밋 {n}개 · {upstream}","settings.upd.more_n":"외 {n}개","settings.upd.release_notes":"릴리스 노트 보기","settings.upd.ahead_note":"로컬 커밋 {n}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.","settings.upd.now":"지금 업데이트","settings.upd.fail_stays":"테스트가 실패하면 그대로 있어요.","settings.upd.wait_title":"재시작 대기 중","settings.upd.wait_now":"곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요.","settings.upd.wait_idle":"작업이 끝나면 다시 켜져요. 이 화면은 자동으로 다시 연결돼요.","settings.upd.wait_idle_busy":"작업이 끝나면 다시 켜져요 ({busy}). 이 화면은 자동으로 다시 연결돼요.","settings.upd.got":"새 버전 {version} 받음","settings.upd.restart_to_apply":"재시작하면 적용돼요","settings.upd.auto_check":"자동 확인","settings.upd.auto_check_apply":"새 버전이 있으면 알려요.","settings.upd.auto_check_note":"알림만 보내요. 적용은 직접 해요.","settings.upd.auto_apply":"새 버전 자동 적용","settings.upd.auto_apply_note":"새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요.","settings.notify.ask":"질문 · 승인 · 로그인","settings.notify.alert_label":"경고","settings.notify.alert":"dotz 오류 · 로그인 끊김 · 감시 반복 실패","settings.notify.result_label":"결과","settings.notify.result":"세션 · 작업 완료 · 실패","settings.notify.news_label":"새 소식","settings.notify.news":"메일 · 댓글 · 감시 · 예약","settings.notify.conv":"보고 있지 않은 대화의 새 답","settings.notify.log_label":"진행","settings.notify.log":"진행 중 보고 · 작업 기록","settings.notify.stays":"꺼도 목록에는 남아요.","shell.aria.home":"홈으로","shell.aria.menu":"메뉴","shell.aria.command":"명령","shell.aria.monitoring_list":"모니터링 목록","shell.aria.apps_list":"앱 목록","shell.conn.lost":"연결 끊김 · 다시 연결 중","shell.gban.close":"재시작 알림 닫기","shell.oerr.restart":"오케스트레이터 다시 시작","shell.chat.older":"이전 메시지 더 보기","shell.chat.to_bottom":"맨 아래로","shell.composer.placeholder":"메시지 또는 /명령","shell.composer.label":"메시지","shell.composer.attach":"파일 첨부","shell.composer.attach_hint":"파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요","shell.composer.api":"api사용중","shell.sheet.to_list":"목록으로","shell.sheet.detail":"구성 상세","shell.toggle.unset":"정하기","shell.toggle.label":"{label}: {value} · 누르면 {next}","shell.left.d":"{d}일","shell.left.dh":"{d}일 {h}시간","shell.left.h":"{h}시간","shell.left.hm":"{h}시간 {m}분","shell.left.m":"{m}분","shell.rel.now":"초기화 중","shell.rel.soon":"1분 안에 초기화","shell.rel.at":"{left} 후 초기화 ({when})","shell.think.working":"생각을 정리하는 중","shell.sw.cleanup_title":"알림 정리","shell.sw.cleanup_body":"처리한 알림을 정리했어요","shell.sw.reply_sent":"답변을 보냈어요","shell.manifest.description":"{name} · 항상 켜져 있는 개인 비서","system.scope.project":"범위: 프로젝트 ({where})","system.scope.shipped":"범위: 배포 ({where})","system.scope.personal":"범위: 개인 ({where})","system.scope.project_short":"프로젝트","system.scope.shipped_short":"배포","system.scope.personal_short":"개인","system.origin.shipped":"배포용","system.origin.personal":"개인용","system.fmt.on":"켜짐","system.fmt.off":"꺼짐","system.fmt.blank":"비움","system.mark.custom":"바꾼 값 {n}","system.mark.feats":"내 기능 {n}","system.mark.files":"내 파일 {n}","system.mark.title":"내가 바꾼 것: {parts}","system.mark.ext":"내 확장","system.mark.badge":"내 설정","system.col.inputs":"들어오는 곳","system.col.gateway":"게이트웨이","system.state.ok":"정상","system.state.warn":"주의","system.state.off":"꺼짐","system.apply.live":"바로 적용","system.apply.next":"다음 메시지부터","system.apply.restart":"재시작 후 적용","system.load_failed":"구성을 불러오지 못했어요","system.view.scope":"보기 범위","system.view.all":"전체","system.view.all_tip":"기본과 내가 바꾼 것을 모두 보여줘요","system.view.custom":"커스텀 {n}","system.view.custom_tip":"같은 단계 그대로, 내가 바꾼 것만 걸러 보여줘요","system.note.project":"이 프로젝트만의 지도예요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.","system.note.dotted":"점선 카드는 곁에서 돕는 시스템이에요.","system.note.flow":"큰 카드가 메시지가 흐르는 길이에요. 작은 칩은 함께 실행되는 시스템·파일이에요.","system.detail.btn":"자세히","system.detail.tip":"모든 시스템과 연결선을 한 화면에 그려요","system.feat.btn":"기능 보기","system.feat.tip":"각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요","system.refresh":"새로고침","system.legend":"내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 기본값이에요 ({path}).","system.fcnote.instr":"모델에게 주는 지침 글이에요. 모델이 따르도록 부탁하는 것이라 어길 수도 있어요 (권고).","system.fcnote.deny":"RULES의 deny 줄이에요. 실행 직전에 코드가 막아요 (강제).","system.fcnote.folder":"features 폴더 안의 폴더 하나가 기능 하나예요. 글은 권고, deny 줄·모니터링 파일이 있으면 코드가 강제해요. 스위치로 켜고 꺼요.","system.fcnote.skill":"SKILL.md 절차서예요. 모델이 필요할 때 읽고 따라요 (권고).","system.fcnote.ext":"하네스가 불러오는 코드예요. 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).","system.fcnote.schedule":"정해진 시각에 문장을 어시스턴트에게 보내는 타이머예요.","system.fcnote.monitor":"모델을 호출하지 않고 주기적으로 명령을 실행해 변화만 알리는 점검이에요.","system.fcnote.channel":"작업 채널마다 묶어 둔 로그인 유지와 모니터링이에요.","system.fcnote.gateway":"게이트웨이 코드에 들어 있는 기능이에요.","system.fcnote.external":"Discord·메일(zele)·브라우저(Aside) 같은 바깥 서비스와의 연결이에요.","system.fcnote.web":"~/.dotz/custom의 홈 카드·사이드바 고정·루틴이에요. 봇이 파일로 만들고 재시작 없이 바로 보여요.","system.str.enforced":"강제","system.str.advisory":"권고","system.harness":"하네스","system.ext.label":"{name} 확장","system.ext.default":"기본 확장","system.ext.note":"{name}가 실제로 불러오는 코드예요 ({dirs}). 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).","system.dup.code":"같은 일을 코드(강제)로도 적어 뒀어요: {names}","system.dup.text":"같은 일을 글(권고)로도 적어 뒀어요: {names}","system.fbadge.title":"여기서 작동하는 기능: 강제 {e}개 · 권고 {a}개","system.fbadge.enforced":"강제 {n}","system.fbadge.advisory":"권고 {n}","system.sw.aria_off":"{name} 끄기 요청","system.sw.aria_on":"{name} 켜기 요청","system.sw.title_off":"{bot}에게 끄기 요청","system.sw.title_on":"{bot}에게 켜기 요청","system.sw.sent":"요청 보냄 · {at}","system.sw.scope_tip":"{scope} · 스위치를 누르면 배포 파일 변경 요청도 고를 수 있어요","system.sw.req_off":"{name} 끄기 ({src})","system.sw.req_on":"{name} 켜기 ({src})","system.sw.shipped_feat":"배포 기능 {repo}","system.sw.req_shipped":"배포 저장소의 {repo} 를 직접 고쳐 주세요 (enabled: {on}). 모든 사용자에게 바뀌는 변경이에요.","system.sw.req_override":"{where} 에 같은 id 로 덮어쓰기: {repo} 를 그 폴더에 복사해 enabled: {on} 로 두세요. 배포 저장소 파일은 건드리지 마세요.","system.sw.pick_personal":"개인 설정으로 덮어쓰기 (기본)","system.sw.pick_shipped":"배포 파일 변경 요청","system.sw.pick_shipped_sub":"{path} · 모든 사용자에게 바뀌어요","system.ext.not_loaded_tip":"{name}는 이 확장을 불러오지 않아요","system.ext.not_loaded":"안 불러옴","system.str.enforced_tip":"코드·훅·차단 줄이 막거나 실행해요","system.str.advisory_tip":"모델에게 따르라고 부탁한 글이에요","system.origin.personal_tip":"내 파일·설정에만 있는 기능이에요 (~/.dotz, 하네스 확장 폴더)","system.origin.shipped_tip":"기본으로 함께 오는 기능이에요","system.dup.tag":"중복","system.src.added":"{added} 추가","system.src.last":"마지막 {at}","system.fcount.all":"{n}개 · 강제 {e} · 권고 {a}","system.fcount.hit":"{hit} / {n}개 · 강제 {e} · 권고 {a}","system.fnone":"조건에 맞는 기능이 없어요","system.n_items":"{n}개","system.fsum":"강제 {e} · 권고 {a}","system.off_group":"이 하네스에선 꺼짐","system.fsearch.ph":"기능 검색 (이름·내용·파일)","system.fsearch.aria":"기능 검색","system.fstrength.aria":"강제/권고","system.flist":"기능 목록","system.flist.sup":"회색으로 채운 카드(강제)는 코드가 막거나 실행하는 것, 테두리만 있는 카드(권고)는 모델에게 따르라고 부탁한 글이에요.","system.pick.form":"형식","system.pick.trigger":"트리거","system.pick.origin":"출처","system.mark.mine_feat":"내 기능","system.here.sec":"여기서 작동하는 기능 · 강제 {e} · 권고 {a}","system.pj.keyed":"{name} (API 키)","system.pj.revert":"리셋되면 복귀","system.pj.none":"없음","system.pj.model":"모델","system.pj.effort":"강도","system.pj.worker_model":"서브에이전트 모델","system.pj.worker_effort":"서브에이전트 강도","system.pj.runtime":"런타임","system.pj.fallback":"폴백","system.pj.worker_fallback":"서브에이전트 폴백","system.pj.changed":"바뀜","system.pj.global":"전역 기본","system.pj.feat":"기능 {n}: {names}","system.pj.deny":"차단 규칙 {n}줄","system.pj.open_map":"{name} 프로젝트 지도 열기","system.pj.diff_tip":"전역 기본과 다른 값의 수","system.pj.diff_n":"전역과 다름 {n}","system.pj.all_global":"전부 전역 기본","system.pj.files":"지침 파일","system.pj.file_tip":"{name} · {bytes}바이트 · {at} 수정","system.pj.channel":"채널 설정","system.pj.logins":"로그인 {n}","system.pj.logins_named":"로그인 {n} ({names})","system.pj.monitors":"모니터링 {n}","system.pj.standing":"상시 처리: {text}","system.pj.no_settings":"설정 없음","system.pj.only_here":"이 프로젝트에만 적용","system.pj.head":"프로젝트 · {n}","system.pj.sup_some":"작업 채널·홈 채널에 묶인 세션이에요.","system.pj.sup_none":"작업 채널이나 홈 채널에 묶인 세션이 아직 없어요.","system.pj.lg_diff":"전역과 다른 값","system.pj.lg_same":"전역 그대로","system.pj.back":"전체 구성","system.pj.dirty.title":"저장하지 않은 변경","system.pj.dirty.body":"열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?","system.pj.dirty.ok":"버리기","system.pj.ask.ph":"이 프로젝트에 바라는 변경을 적어 주세요","system.pj.ask.aria":"프로젝트 수정 요청","system.pj.ask.send":"{bot}에게 수정 요청","system.pj.ask.done":"요청했어요","system.many_in":"들어온 글","system.from.start":"여기서 시작해요","system.from.stage":"{from}에서","system.count.items":"항목 {n}","system.count.items_tip":"이 단계의 항목 수","system.count.warn":"주의 {n}","system.with.head":"함께 실행되는 항목 · {n}","system.cv.changed_tip":"이 단계에서 바꾼 것","system.cv.default_only":"기본 그대로","system.cv.mine_head":"내 파일·확장 · {n}","system.cv.chars":"{n}자 · {at} 수정","system.fe.missing":"아직 없는 파일","system.cv.rules":"글 {n}줄","system.cv.deny":"차단 {n}줄","system.cv.sets_head":"바꾼 설정 · {n}","system.cv.default_val":"기본 {v}","system.cv.feats_head":"내 기능 · {n}","system.cv.fold":"접기","system.cv.more":"{n}개 더 보기","system.sheet.facts":"지금 상태","system.sheet.req_note":"수정 요청은 {bot}에게 가요.","system.sheet.file":"파일","system.sheet.file_named":"파일 · {name}","system.sheet.near":"이어진 곳","system.sheet.ask":"이 카드에 대한 요청","system.sheet.current":"현재","system.req.tag":"[구성 탭 수정 요청]","system.own.file":"내 파일이에요","system.own.file_at":"내 파일이에요 ({where})","system.own.ext":"내 확장이에요","system.own.ext_at":"내 확장이에요 ({where})","system.own.ship":"기본으로 함께 오는 거예요","system.own.ship_file":"기본으로 함께 오는 거예요 (저장소 파일 · 읽기 전용)","system.own.changed_vals":"설정값 {n}개는 내가 바꿨어요 ({path})","system.own.saved_in":"설정값은 {path}에 저장돼요","system.set.pending":"재시작 대기 중","system.set.models":"모델 · 폴백에서 바꾸기","system.set.ro":"읽기 전용","system.set.ro_note":"보안·연결 정보라 화면에서 바꿀 수 없어요.","system.set.reset":"기본값","system.set.req":"{label} ({source}): {from} -> {to}. 적용 시점: {when}.","system.set.diff_global_tip":"전역 기본과 다른 값이에요","system.set.diff_global":"바꿈 · 전역 {v}","system.set.diff_def_tip":"기본값과 다른 값이에요","system.set.diff_def":"바꿈 · 기본 {v}","system.span.line":"{a}줄","system.span.lines":"{a}-{b}줄","system.span.replace":"{x} ({n}줄로 교체)","system.span.delete":"{x} 삭제","system.span.add":"{s}줄 뒤에 {n}줄 추가","system.fe.req_head":"{label} ({path}) 수정","system.fe.req_memo":"메모: {note}","system.fe.req_unchanged":"파일 내용은 바꾸지 않았어요. 메모대로 파일을 직접 고쳐 주세요. 적용 시점: {when}","system.fe.req_diff":"아래 diff 대로 파일을 고쳐 주세요 (줄 단위, 앞뒤 3줄 맥락 포함).\n```diff\n--- {name}\n+++ {name} (수정안)\n{diff}\n```","system.fe.req_big":"변경이 커서 diff 는 생략했어요 (+{add}줄 -{del}줄). 바뀐 곳(원본 줄 기준): {spans}. 파일을 직접 열어 확인하고 메모대로 고쳐 주세요.","system.fe.req_big_more":"변경이 커서 diff 는 생략했어요 (+{add}줄 -{del}줄). 바뀐 곳(원본 줄 기준): {spans} 외 {n}곳. 파일을 직접 열어 확인하고 메모대로 고쳐 주세요.","system.fe.req_applies":"적용 시점: {when}","system.fe.memo_ph":"무엇을 왜 바꾸는지 (선택)","system.fe.memo_aria":"수정 요청 메모","system.fe.stat":"변경 +{add}줄 -{del}줄","system.fe.stat_big":"많이 바뀌어서 diff 대신 바뀐 줄 범위만 보내요. 메모에 무엇을 바꾸는지 적어 주세요","system.fe.len":"{n}자","system.fe.len_cap":"{n}자 (시작 지침에는 앞 {cap}자까지)","system.fe.modified":"{at} 수정","system.fe.load_failed":"파일을 불러오지 못했어요","triage.sec.to":"받는 사람","triage.sec.org":"원본","triage.sec.reply":"답장","triage.sec.att":"첨부","triage.post":"게시글","triage.account":"보내는 계정","triage.no_org":"답하는 원본이 없어요","triage.org_loading":"원문을 불러오는 중…","triage.org_cut":"원문이 길어서 앞부분만 보여요","triage.thread_newer":"초안을 만든 뒤에 이 스레드에 새 메시지가 왔어요. 확인하고 보내세요","triage.thread_earlier":"이 스레드에 앞선 메시지가 {n}개 있어요","triage.row.no_files":"첨부 없음","triage.kept":"첨부를 확인하지 않은 {n}건은 보내지 않고 남겨 뒀어요","triage.none":"처리할 카드가 없어요","triage.fs.label":"{label} 빠른 처리","triage.st.queued":"보낼 차례를 기다려요","triage.st.failed":"보내지 못했어요","triage.st.unsure":"확인이 필요해요","triage.st.bot":"봇이 보내요","triage.st.edit":"봇이 고치는 중이에요","triage.st.gone":"다른 곳에서 처리됐어요","triage.st.err":"답을 보내지 못했어요","triage.note.need":"무엇을 고칠지 적어 주세요","triage.bar":"처리한 카드","triage.head.ey":"{label} · 빠른 처리","triage.head.list":"목록 {n}건","triage.head.done":"처리 {n}건","triage.tog.one":"한 장씩","triage.tog.list":"목록","triage.q.default":"이대로 보낼까요?","triage.bot_sends":"보내기를 누르면 봇이 보내요","triage.fail.with":"{text} · 다시 눌러 주세요","triage.fail.plain":"다시 눌러 주세요","triage.note.ph":"어떻게 고칠까요? 봇이 고쳐서 다시 물어봐요","triage.note.aria":"어떻게 고칠지","triage.nav.prev_aria":"이전 카드","triage.nav.prev":"이전","triage.nav.next_aria":"다음 카드","triage.nav.next":"다음","triage.keys.one":"Enter·1 보내기 · 2·E 고치기 · 3·X 보내지 않기 · ← → 이전·다음 · L 목록","triage.send_edited":"고쳐서 보내기","triage.done.bot":"봇이 고치거나 보내요","triage.done.skipped":"건너뛰었어요","triage.done.seen":"끝까지 봤어요","triage.done.all":"모두 답했어요","triage.done.n":"{n}건","triage.done.back":"건너뛴 것 다시 보기","triage.skip":"건너뛰기","triage.row.open":"눌러서 전체 보기","triage.row.mail":"함께 보낼 메일 → {to}","triage.row.mail_subj":"함께 보낼 메일 → {to} · {subject}","triage.row.card":"{n}번 카드","triage.row.note_aria":"{n}번 고칠 내용","triage.batch":"확인한 것 보내기","triage.batch_n":"확인한 것 보내기 ({n})","triage.keys.list":"카드마다 보내기·고치기·건너뛰기를 골라요. 고르지 않은 카드는 그대로 남아요","triage.answered":"{n}건 답했어요","triage.answered_sending":"{n}건 답했어요 · {sending}건 보내는 중","triage.send_fail":"보내지 못했어요: {msg}","triage.rq.load_fail":"답장 대기를 불러오지 못했어요","triage.sent.owner":"확인 후 발송","triage.sent.rule":"자동 발송","triage.sent.retry":"다시 보냄","triage.rq.kakao_reply":"메신저 답장","triage.rq.unsure":"확인 필요: {why}","triage.rq.name":"답장 대기","triage.empty.all":"기다리는 답장이 없어요","triage.empty.ask":"답을 기다리는 초안이 없어요","triage.empty.fail":"못 보낸 답장이 없어요","triage.empty.sent":"오늘 보낸 답장이 없어요","triage.tab.sent":"보낸 것","triage.rq.revise_sent":"고쳐 달라고 했어요. 새 초안이 오면 여기 다시 떠요","triage.rq.comment_src":"{app} 댓글","triage.rq.comment_src_plain":"답장 댓글","triage.rq.new_msg":"새 메시지 초안","triage.rq.room":"대화방","triage.rq.comment":"댓글","triage.rq.retry_fail":"다시 보내지 못했어요","triage.rq.retry_bad":"{n}건은 다시 보내지 못했어요 · {first}","triage.rq.retrying":"{app} {n}건을 다시 보내고 있어요","triage.rq.marked":"완료로 표시했어요","triage.rq.drop_fail":"지우지 못했어요","triage.rq.state_aria":"답장 상태","triage.fast":"빠른 처리","triage.rq.app_frame":"앱 {t}","triage.rq.all_n":"전체 · {n}","triage.rq.group_fail":"{app} {n}건을 못 보냈어요","triage.rq.resending":"다시 보내는 중","triage.rq.retry_all":"모두 다시 보내기","triage.rq.sent_today":"오늘 보낸 답장 {n}건","triage.rq.sending_n":"보내는 중 {n}건"};
 // Screen text and number/date locale. The server puts `const I18N_LANG = "ko", I18N = {...};` right after the WEB_BUILD line (hub/webapp.ts);
 // this file reads those two constants and nothing else, and touches no DOM, so hub/web-i18n.ts runs the same source on the server.
 // A catalog value is a string with {name} placeholders, {name+이/가} Korean particles (picked from the word's last letter), or an
@@ -209,7 +209,7 @@ const pairGate = (status, pair) => {
 }
 
 // Generated from hub/message-spec.ts and hub/message-spec-derive.ts by hub/gen-message-spec-web.ts; do not edit.
-const { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec } = (() => {
+const { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec, CHART_NOTE } = (() => {
 const SPEC_LIMITS = { bytes: 64 * 1024, elements: 200, depth: 2, string: 20000, rows: 200, cells: 12 };
 const str = (v) => typeof v === "string" && v.length <= SPEC_LIMITS.string;
 const nonEmpty = (v) => str(v) && !!v.trim();
@@ -766,8 +766,75 @@ function resolveSpecFence(text) {
     return text;
   }
 }
-return { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec };
+return { validateSpec, specChildren, elementPlain, deriveSpec, deriveBasicSpec, CHART_NOTE };
 })();
+
+/* ---------- usage gauges: when what is left goes up, the bar fills and the number counts up (web/DESIGN.md Motion) ---------- */
+// The top strip, the sidebar row and the 사용량 cards are drawn again from nothing on every usage read, so a motion cannot live on
+// their elements. It lives here, keyed by gauge: gaugeSet(key, pct, paint) remembers what the gauge shows and hands `paint` (which closes
+// over the elements drawn this time) the value to show, once now and then on each frame until it reaches pct.
+//   up by GAUGE_STEP or more  -> the bar and the number run together, GAUGE_MS.min..max, the --m-ease curve (a recovery)
+//   any other change          -> the bar glides GAUGE_MS.calm and the number is simply the new one (work eating the limit stays calm)
+//   first paint / reduced motion / hidden page -> the value at once
+// A redraw or a new value in the middle of a motion carries on from what is shown and ends on the latest pct.
+// paint({ w, n, moving, gd }): w the bar width in percent (a fraction while moving), n the whole number to write, moving while the
+// number counts, gd the digits of the final number (gaugeNum keeps that width while counting so nothing beside it moves).
+const GAUGE_MS = { min: 600, max: 900, calm: 300 };   // a recovery grows with its size; --m-slow for the calm glide
+const GAUGE_STEP = 3;                                  // points; a smaller rise is the window sliding, not a recovery
+const GAUGE_MARK = "\u2063";                        // stands for the number inside a sentence from TX, see gaugeSplit
+const GAUGE_CLOCK = { now: () => performance.now(), raf: cb => requestAnimationFrame(cb) };   // tests drive these two
+const GAUGE = new Map();
+
+// cubic-bezier(.2, .7, .2, 1) is --m-ease; the curve is solved for x by bisection (x1 = x2 = .2, so x(s) rises steadily)
+function gaugeEase(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const at = (s, a, b) => 3 * a * s * (1 - s) * (1 - s) + 3 * b * s * s * (1 - s) + s * s * s;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; if (at(m, .2, .2) < t) lo = m; else hi = m; }
+  return at((lo + hi) / 2, .7, 1);
+}
+function gaugePaint(g, moving) {
+  const count = moving && g.count;
+  g.paint({ w: g.cur, n: Math.round(count ? g.cur : g.target), moving: count, gd: String(Math.round(g.target)).length });
+}
+function gaugeFrame(g) {
+  g.raf = 0;
+  if (g.dead) return;
+  const p = reducedMotion() ? 1 : Math.min(1, (GAUGE_CLOCK.now() - g.t0) / g.dur);
+  g.cur = p >= 1 ? g.target : g.from + (g.target - g.from) * gaugeEase(p);
+  gaugePaint(g, p < 1);
+  if (p < 1) g.raf = GAUGE_CLOCK.raf(() => gaugeFrame(g));
+}
+function gaugeSet(key, pct, paint) {
+  const target = Math.max(0, Math.min(100, Number(pct) || 0));
+  let g = GAUGE.get(key);
+  if (!g) { g = { target, cur: target, count: false, paint, raf: 0, dead: false }; GAUGE.set(key, g); gaugePaint(g, false); return; }
+  g.paint = paint;
+  if (target === g.target) { gaugePaint(g, !!g.raf); return; }   // a redraw: show what is shown now, the running motion goes on
+  g.from = g.cur; g.target = target;
+  if (reducedMotion() || document.hidden) { g.cur = target; g.count = false; gaugePaint(g, false); return; }
+  g.count = Math.round(target) - Math.round(g.cur) >= GAUGE_STEP;
+  g.dur = g.count ? Math.min(GAUGE_MS.max, GAUGE_MS.min + Math.abs(target - g.cur) * 3) : GAUGE_MS.calm;
+  g.t0 = GAUGE_CLOCK.now();
+  gaugePaint(g, true);
+  if (!g.raf) g.raf = GAUGE_CLOCK.raf(() => gaugeFrame(g));
+}
+// Forget the gauges whose key starts with `prefix`: the next gaugeSet draws their value at once (opening a screen, a gauge that went away).
+function gaugeForget(prefix) {
+  for (const [k, g] of GAUGE) if (k.startsWith(prefix)) { g.dead = true; GAUGE.delete(k); }
+}
+// A sentence with its number in a span of its own: gaugeSplit(TX("k", { n: GAUGE_MARK })) -> { nodes, sp }; put `nodes` in the line and
+// give `sp` to gaugeNum on each paint.
+function gaugeSplit(text) {
+  const [a, b = ""] = String(text).split(GAUGE_MARK), sp = el("span", { class: "gn" });
+  return { nodes: [a, sp, b], sp };
+}
+function gaugeNum(sp, s) {
+  sp.textContent = String(s.n);
+  sp.classList.toggle("gn-live", s.moving);
+  if (s.moving) sp.style.setProperty("--gd", String(s.gd));
+}
 
 // Motion with a cause (web/DESIGN.md Motion, site/prototype/MOTION.md). Web Animations on transform/opacity only, so nothing is laid out
 // again and nothing is left behind when an animation ends; durations and the curve are the CSS tokens (--m-fast/--m-base/--m-slow,
@@ -1002,8 +1069,8 @@ function freshKeys(store, keys) {
   return out;
 }
 
-// Generated from hub/notice-ko.ts by hub/gen-notice-ko-web.ts; do not edit. stripMarkers (02-basic-markdown.js) and clockKo (11-watchtext.js) are the page's own.
-const { noticeKo, errorKo, cronKo, plainTable, dropIdNote } = (() => {
+// Generated from hub/notice-ko.ts by hub/gen-notice-ko-web.ts; do not edit; web/js/01-notice.js picks it when the language is ko. stripMarkers (02-basic-markdown.js) and clockKo (11-watchtext.js) are the page's own.
+const NOTICE_KO = (() => {
 const NAMES = {
   watch: "모니터링",
   watches: "모니터링",
@@ -1381,6 +1448,89 @@ ${files.join(`
 return { noticeKo, errorKo, cronKo, plainTable, dropIdNote };
 })();
 
+// The wording of anything that reaches the owner as a notice. Korean: the Korean engine (01-notice-ko.js, generated from hub/notice-ko.ts) unchanged.
+// Any other language: no word substitution. Marks are stripped, the text stays as written, and an error or a cron schedule is worded from the notice.* catalog.
+// hub/notice.ts runs this file for a non-Korean install, so a push and the page word things the same way (stripMarkers and clockKo are given to it).
+const NOTICE_MARK = /[ \t]*\[(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류)\](?!\()/gi;
+const NOTICE_HANGUL = /[가-힣]/;
+
+function noticeErrorText(msg) {
+  const m = String(msg).trim();
+  if (NOTICE_HANGUL.test(m)) return m;
+  const http = /^HTTP (\d{3})/.exec(m)?.[1];
+  if (http) {
+    const c = Number(http);
+    if (c === 401) return TX("notice.err.signin");
+    if (c === 403) return TX("notice.err.denied");
+    if (c === 404) return TX("notice.err.notfound");
+    if (c === 408 || c === 504) return TX("notice.err.slow");
+    if (c === 429) return TX("notice.err.toomany");
+    return c >= 500 ? TX("notice.err.server") : TX("notice.err.request");
+  }
+  if (/failed to fetch|network ?error|load failed|econn|enotfound|network/i.test(m)) return TX("notice.err.network");
+  if (/time(?:d)? ?out|etimedout/i.test(m)) return TX("notice.err.slow");
+  if (/unauthori[sz]ed|forbidden/i.test(m)) return TX("notice.err.denied");
+  if (/not found|enoent/i.test(m)) return TX("notice.err.notfound");
+  return m;
+}
+
+function noticeCron(expr) {
+  const [m = "", h = "", dom = "", mon = "", dow = ""] = expr.trim().split(/\s+/);
+  const every = /^\*\/(\d+)$/, num = /^\d+$/, plain = dom === "*" && mon === "*";
+  // Sunday 2024-01-07 + dow, read in UTC so the clock the schedule names is the clock shown.
+  const at = (day, hour, min) => new Date(Date.UTC(2024, 0, 7 + day, hour, min));
+  const time = (hour, min) => new Intl.DateTimeFormat(TX_LOCALE, { timeZone: "UTC", hour: "numeric", minute: min ? "2-digit" : undefined }).format(at(0, hour, min));
+  const clock = num.test(m) && num.test(h) && Number(h) < 24 && Number(m) < 60;
+  if (plain && dow === "*") {
+    if (m === "*" && h === "*") return TX("notice.cron.minutes", { n: 1 });
+    if (every.test(m) && h === "*") return TX("notice.cron.minutes", { n: Number(m.slice(2)) });
+    if (num.test(m) && every.test(h)) return TX("notice.cron.hours", { n: Number(h.slice(2)) });
+    if (num.test(m) && h === "*") return TX("notice.cron.hourly", { m: m.padStart(2, "0") });
+    if (clock) return TX("notice.cron.daily", { time: time(Number(h), Number(m)) });
+  }
+  if (plain && clock && /^[0-7]$/.test(dow)) {
+    const day = new Intl.DateTimeFormat(TX_LOCALE, { timeZone: "UTC", weekday: "long" }).format(at(Number(dow) % 7, 0, 0));
+    return TX("notice.cron.weekly", { day, time: time(Number(h), Number(m)) });
+  }
+  if (plain && clock && dow === "1-5") return TX("notice.cron.weekdays", { time: time(Number(h), Number(m)) });
+  return TX("notice.cron.other");
+}
+
+function noticeDropId(s) {
+  return String(s).replace(/`[^`\n]+`|[ \t]*\((?:st_[0-9a-f]{8}|(?:ch|th):\d{10,})\)|(?<![\w/.:=-])st_[0-9a-f]{8}(?:,[ \t]*st_[0-9a-f]{8})*(?![\w-]|\.\w)/g, m => {
+    if (m[0] === "`") return m;
+    if (m.trimStart()[0] === "(") return "";
+    const n = m.split(",").length;
+    return n > 1 ? TX("notice.worker.many", { n }) : TX("notice.worker.one");
+  });
+}
+
+function noticePlain(raw, o = {}) {
+  let src = String(raw ?? ""), files = [];
+  if (o.keepFiles) {
+    const lines = src.split("\n");
+    files = lines.filter(l => /^[ \t]*\[file\][ \t].*$/i.test(l));
+    if (files.length) src = lines.filter(l => !/^[ \t]*\[file\][ \t].*$/i.test(l)).join("\n");
+  }
+  let text = stripMarkers(src);
+  if (o.error) {
+    const m = /^(.{1,60}?):\s+([^\n]+)$/.exec(text);
+    if (m && !NOTICE_HANGUL.test(m[2])) text = NOTICE_HANGUL.test(m[1]) ? m[1] : /\s/.test(m[1]) ? noticeErrorText(text) : `${m[1]}: ${noticeErrorText(m[2])}`;
+    else text = noticeErrorText(text);
+  }
+  let fence = false;
+  const body = text.split("\n").map(line => {
+    if (/^\s*```/.test(line)) { fence = !fence; return line; }
+    if (fence) return line;
+    return line.split(/(`[^`\n]*`)/).map((part, i) => (i % 2 ? part : part.replace(NOTICE_MARK, ""))).join("").replace(/[ \t]+$/, "");
+  }).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return files.length ? `${body}\n${files.join("\n")}`.trim() : body;
+}
+
+const { noticeKo, errorKo, cronKo, plainTable, dropIdNote } = I18N_LANG === "ko"
+  ? NOTICE_KO
+  : { noticeKo: noticePlain, errorKo: noticeErrorText, cronKo: noticeCron, plainTable: NOTICE_KO.plainTable, dropIdNote: noticeDropId };
+
 /* ---------- messages from another computer's gateway: a small card and one Korean line instead of the raw text ---------- */
 // The three kinds hub/peer-monitor.ts leaves in a conversation: a handoff (the English instruction for the agent around the owner's words and the
 // note; its event carries `via`), a dotz_peer send (plain text with `via`) and the handoff ack (a bot line with no `via`). Display only: the stored
@@ -1389,7 +1539,7 @@ return { noticeKo, errorKo, cronKo, plainTable, dropIdNote };
 const PEER_HANDOFF = /^(?:\[peer handoff from (.{1,40}?) id=([\w-]{1,40})\]|peer handoff from (.{1,40}?) :) The owner explicitly handed /;
 const PEER_ACK = /^\u2705 (.{1,40}?)에서 넘긴 작업을 받아 이어서 해요 \(id ([\w-]{1,40})\)\s*$/;
 const PEER_WORDS = "\n\nOwner's words (verbatim):\n", PEER_NOTE = "\n\nHandoff note:\n";
-const PEER_KIND = { handoff: "작업 넘김", message: "메시지", ack: "작업 받음" };
+const PEER_KIND = { handoff: TX("base.peer.kind.handoff"), message: TX("base.peer.kind.message"), ack: TX("base.peer.kind.ack") };
 function peerMsgHead(text) {
   if (text.startsWith("[peer handoff from ") || text.startsWith("peer handoff from ")) { const m = PEER_HANDOFF.exec(text.slice(0, 140)); return m && { kind: "handoff", from: m[1] || m[3], id: m[2] }; }
   if (text.charCodeAt(0) === 0x2705) { const m = PEER_ACK.exec(text.slice(0, 140)); return m && { kind: "ack", from: m[1], id: m[2] }; }
@@ -1409,19 +1559,19 @@ function peerMsgOf(e) {
 // One line for a preview, a notice row or a quote; any other text comes back unchanged. A send is already plain text.
 function peerMsgLine(raw) {
   const s = String(raw ?? ""), h = peerMsgHead(s);
-  return !h ? s : h.kind === "handoff" ? `${h.from}에서 작업을 넘겼어요` : `${h.from}에서 작업을 이어받았어요`;
+  return !h ? s : h.kind === "handoff" ? TX("base.peer.handed_off", { from: h.from }) : TX("base.peer.took_over", { from: h.from });
 }
 function peerMsgCard(e, p, hm) {
-  const words = p.kind === "ack" ? "넘긴 작업을 이어서 해요" : p.words;
+  const words = p.kind === "ack" ? TX("base.peer.ack_words") : p.words;
   const body = words ? el("div", { class: "pmc-b" }, answerNode(choiceFree(words))) : null, long = !!body && (words.length > 420 || words.split("\n").length > 6);
   if (long) body.classList.add("clamp");
-  const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = body.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
+  const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = body.classList.toggle("clamp"); more.textContent = c ? TX("base.more") : TX("base.less"); } }, TX("base.more")) : null;
   const mt = el("div", { class: "mt", text: hm }), mid = e.mid || e.message_id || "";
   if (p.kind !== "ack" && mid) { DELIV.nodes.set(mid, { mt, base: hm }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
   return el("div", { class: "bm pmc" }, filesNode(e.files, true), rpQuote(e),
     el("div", { class: "ccard" },
       el("div", { class: "pmc-hd" }, icon("desktop"), el("span", { class: "mn", text: p.from }), el("span", { class: "tag", text: PEER_KIND[p.kind], ...(p.id ? { title: `id ${p.id}` } : {}) }), mt),
-      body, more, p.note ? el("details", { class: "more" }, el("summary", { text: "인계 메모" }), el("div", { class: "pmc-n" }, answerNode(choiceFree(p.note)))) : null));
+      body, more, p.note ? el("details", { class: "more" }, el("summary", { text: TX("base.peer.note") }), el("div", { class: "pmc-n" }, answerNode(choiceFree(p.note)))) : null));
 }
 
 // Korean line breaks by meaning, like Netflix subtitles (web/DESIGN.md Type). keep-all already keeps words whole; this keeps
@@ -1599,7 +1749,7 @@ function specCodeHtml({ code, lang }, c) {
   const l = (lang || "").trim();
   if (c.relayed) return `<pre><code>${esc(code)}</code></pre>`;
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
-  return l === "dotz-settings" ? settingsCardHtml(code) : l === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(code)}</pre></details>` : codeBlockHtml(lang || "", code);
+  return l === "dotz-settings" ? settingsCardHtml(code) : l === "원문" ? `<details class="more raw"><summary>${esc(TX("base.raw"))}</summary><pre>${esc(code)}</pre></details>` : codeBlockHtml(lang || "", code);
 }
 // component -> html; the catalog is hub/message-spec.ts CATALOG. Every string goes through inline or esc. A Files element draws nothing: the files of an answer are rows drawn from its [file] lines (ansFiles).
 const SPEC_HTML = {
@@ -1613,10 +1763,10 @@ const SPEC_HTML = {
   Section: p => `<div class="rc-sh"><span>${inline(p.title)}</span></div>${p.rows.map(r => `<div class="rc-row ans-li"><span class="rc-k">${inline(r.key)}</span>${r.count ? `<span class="ans-n">${esc(r.count)}</span>` : ""}<span class="rc-w">${specValue(r)}</span></div>`).join("")}`,
   Table: specTableHtml,
   Rows: specRowsHtml,
-  Chart: (p, c) => c.relayed ? `<pre><code>${esc(p.spec)}</code></pre>` : `<figure class="ans-chart" data-chart="${esc(p.spec)}" aria-label="${esc(p.title || "차트")}"></figure>`,
+  Chart: (p, c) => c.relayed ? `<pre><code>${esc(p.spec)}</code></pre>` : `<figure class="ans-chart" data-chart="${esc(p.spec)}" aria-label="${esc(p.title || TX("base.chart.label"))}"></figure>`,
   Sources: p => sourceListHtml({ head: p.head, items: p.items }),
   Quote: p => `<blockquote>${p.lines.map(inline).join("<br>")}</blockquote>`,
-  Meta: p => `<p class="meta">${inline(p.text)}</p>`,
+  Meta: p => `<p class="meta">${inline(p.text === CHART_NOTE ? TX("base.chart.bad_spec") : p.text)}</p>`,
   Evidence: p => `<div class="ans-ev">${p.items.map(x => `<span>${inline(x)}</span>`).join("")}</div>`,
   Code: specCodeHtml,
   Rule: () => "<hr>",
@@ -1722,12 +1872,12 @@ const mdNode = (src, cls = "md", relayed = false, answer = false) => el("div", {
 /* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
 const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", wait: "wait", "대기": "wait", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
 // The marker word is drawn as one status tag at the start of the message's first line (prototype .bub .st), never as the raw marker or an emoji.
-const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], wait: ["warn", "답을 기다려요"], ask: ["warn", "확인 필요"], fail: ["err", "실패"] };
+const LANE_TONE = { done: ["ok", TX("base.mark.done")], run: ["pri", TX("base.mark.run")], wait: ["warn", TX("base.tone.wait")], ask: ["warn", TX("base.mark.ask")], fail: ["err", TX("base.mark.fail")] };
 // [run] and [wait] are true only of the moment they were written: 41-runstate.js syncLiveTags draws them from the current state.
 const parkedTone = tone => tone === "run" || tone === "wait";
 const toneTag = tone => LANE_TONE[tone] ? el("span", { class: `tag ${LANE_TONE[tone][0]} st-tag`, text: LANE_TONE[tone][1] }) : null;
 // A lane's worklog entry says whether its report was checked in words (hub/laneops.ts claimPrefix, which Discord shows as subtext); here it is the tag of a project's result row (19-project-main.js pmResultRow).
-const CLAIM_LEAD = /^(?:(?:확인됨|보고됨|verified|reported) · )+/, CLAIM_TAG = { verified: ["ok", "확인됨"], reported: ["", "보고만 함"] };
+const CLAIM_LEAD = /^(?:(?:확인됨|보고됨|verified|reported) · )+/, CLAIM_TAG = { verified: ["ok", TX("base.claim.verified")], reported: ["", TX("base.claim.reported")] };
 const claimTag = claim => CLAIM_TAG[claim] ? el("span", { class: `tag ${CLAIM_TAG[claim][0]} st-tag claim-tag`, text: CLAIM_TAG[claim][1] }) : null;
 // The tag goes in front of the first paragraph's text; a body that opens with a list or a card gets a line of its own.
 function toneLead(root, tone, claim = "") {
@@ -1750,8 +1900,8 @@ const MK_ALONE = new RegExp("^[ \\t]*(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i"
 const MK_CLOSE = new RegExp("(?<=[.!?\u2026\uc694\ub2e4])[ \\t]+(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i");
 // A dropped fail word leaves the failure (the page has no emoji: the word, where the hub leaves its emoji), and a status word in prose reads as its plain word (hub/tone.ts FAIL_WORD, MENTION, keep in step).
 const MK_FAIL = /\[(?:fail|실패|warn|경고)\]/i;
-const mkFail = gone => MK_FAIL.test(gone) ? "실패: " : "";
-const MK_WORDS = { done: "완료", "완료": "완료", run: "진행 중", "진행": "진행 중", wait: "대기", "대기": "대기", ask: "확인 필요", "결정": "확인 필요", fail: "실패", "실패": "실패", warn: "실패", "경고": "실패" };
+const mkFail = gone => MK_FAIL.test(gone) ? `${TX("base.mark.fail")}: ` : "";
+const MK_WORDS = { done: TX("base.mark.done"), "완료": TX("base.mark.done"), run: TX("base.mark.run"), "진행": TX("base.mark.run"), wait: TX("base.mark.wait"), "대기": TX("base.mark.wait"), ask: TX("base.mark.ask"), "결정": TX("base.mark.ask"), fail: TX("base.mark.fail"), "실패": TX("base.mark.fail"), warn: TX("base.mark.fail"), "경고": TX("base.mark.fail") };
 const MK_STATUS = Object.keys(MK_WORDS).join("|");
 const MK_TOKEN = `(?:\`\\[(?:${MK_STATUS})\\]\`|\\*\\*\\[(?:${MK_STATUS})\\]\\*\\*|\\[(?:${MK_STATUS})\\])`;
 const MK_JOIN = "[ \\t]*[,/·][ \\t]*";
@@ -1809,7 +1959,7 @@ function stripMarkers(text, keepFiles = false, own = true) {
   if (!out.some(l => l.trim())) return [...out, ...fors].join("\n");
   if (tail >= 0) {
     if (out[tail].trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
-    else out[tail] = out[tail].replace(MK_CLOSE, m => MK_FAIL.test(m) ? " 실패" : "");
+    else out[tail] = out[tail].replace(MK_CLOSE, m => MK_FAIL.test(m) ? ` ${TX("base.mark.fail")}` : "");
   }
   for (const i of prose) out[i] = mkPlainWords(out[i]);
   return out.join("\n");
@@ -1819,9 +1969,11 @@ function parseTone(text, keepFiles = false) {
   text = String(text ?? "");
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
   const body = tag ? text.slice(m[0].length) : text, c = CLAIM_LEAD.exec(body);
-  const shown = stripMarkers(c ? body.slice(c[0].length) : body, keepFiles, !tag), led = (!tag ? MK_FAIL_LEAD.test(body) : tag === "fail") && /^\s*실패(?:: |$)/.exec(shown);
+  const shown = stripMarkers(c ? body.slice(c[0].length) : body, keepFiles, !tag), said = shown.trimStart();
+  const word = (!tag ? MK_FAIL_LEAD.test(body) : tag === "fail") && ["실패", TX("base.mark.fail")].find(w => said.startsWith(w) && (said.length === w.length || said.startsWith(": ", w.length)));
+  const led = word ? shown.length - said.length + word.length + (said.length === word.length ? 0 : 2) : 0;
   // A failure marker the tone did not read (bold, indented) still draws the failure tag; under the tag the word is said already.
-  return { tone: tag || (led ? "fail" : ""), claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: led ? shown.slice(led[0].length) : shown };
+  return { tone: tag || (led ? "fail" : ""), claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: led ? shown.slice(led) : shown };
 }
 // An answer's status mark in its emoji form (hub/tone.ts TONE_EMOJI) is read as the marker is, the rule of hub/tone.ts statedTone: the marker wins and an emoji after it goes too.
 // emoji: the text had one, so a spec stored before the hub read it (its first line still starts with the mark) is not drawn.
@@ -1836,9 +1988,11 @@ function statedTone(text, keepFiles = false) {
 // index.html starts the first answers (state, history, plan, read positions, activity) in <head>, before this 480KB script is downloaded and parsed; the first api() of that path takes it over.
 // A GET that is already in flight is shared (the same path asked twice at boot is one request); each caller parses its own copy of the text.
 const apiGets = new Map();
+// Names this page's event stream to the gateway: every request carries it, so a stream whose page stopped asking (a phone asleep, the network gone) is closed by the gateway (hub/events.ts noteLive).
+const LIVE_TOK = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("");
 async function api(path, method = "GET", body) {
   [path, method, body] = pqRoute(path, method, body);   // a peer's item is read and acted on through /api/peer/proxy (34-peer-monitoring.js)
-  const go = () => fetch(path, { method, cache: "no-store", headers: body !== undefined ? { "Content-Type": "application/json" } : undefined, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const go = () => fetch(path, { method, cache: "no-store", headers: { "x-dotz-live": LIVE_TOK, ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined });
   const read = async r => ({ ok: r.ok, status: r.status, text: await r.text() });
   let res;
   if (method === "GET") {
@@ -1855,7 +2009,7 @@ async function api(path, method = "GET", body) {
   } else res = await read(await go());
   let data = null;
   try { data = JSON.parse(res.text); } catch {}
-  if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || "이 컴퓨터에서는 읽기만 돼요" : (data && data.error) || `HTTP ${res.status}`), { data });
+  if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || TX("base.peer.read_only") : (data && data.error) || `HTTP ${res.status}`), { data, status: res.status });
   return data;
 }
 async function busy(btn, fn) {
@@ -1910,9 +2064,9 @@ function notify(e) {
   const alertish = e.kind === "out" && e.target === "alert";
   const box = document.querySelector(".ntf-box") || document.body.appendChild(el("div", { class: "ntf-box", "aria-live": "polite" }));
   const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
-  const title = noticeKo(e.title || (lane ? NK.lane(lane) || "세션" : alertish ? "알림" : `${botName} 작업 기록`), NK);
+  const title = noticeKo(e.title || (lane ? NK.lane(lane) || TX("common.session") : alertish ? TX("common.alerts") : TX("base.notice.worklog", { name: botName })), NK);
   const at = e.ts ? new Date(e.ts) : null;
-  const tm = at && !isNaN(at) ? at.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }) : "";
+  const tm = at && !isNaN(at) ? at.toLocaleTimeString(TX_LOCALE, { hour: "numeric", minute: "2-digit" }) : "";
   const first = noticeKo(text, NK).split("\n").find(l => l.trim()) || "";
   const n = el("div", { class: "ntf in", role: alertish ? "alert" : "status" },
     el("span", { class: `dot ${e.tone || (alertish ? "err" : lane ? "ok" : "")}` }),
@@ -1935,7 +2089,7 @@ function notify(e) {
     n.classList.add("out");
     setTimeout(() => n.remove(), M_MS.fast);
   }
-  n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
+  n.append(el("button", { type: "button", class: "x", "aria-label": TX("common.close"), text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
   // A tap opens the item by its kind, like every other notice entry point (30-notices.js noticeOpen).
   n.addEventListener("click", () => { close(); noticeOpen(ntOfEvent(e)); });
   n.addEventListener("pointerenter", () => { hover = true; t.sync(); });
@@ -1977,7 +2131,7 @@ function confirmInSheet({ host, onEnd }, { title, body, actions, onclose }) {
   let over = false;
   const back = () => h.close();
   const name = el("h2", { class: "dtitle", text: title });
-  const head = sheet ? fsHead([name], { close: back }) : el("div", { class: "dhd" }, name, el("button", { type: "button", class: "ib dx", "aria-label": "닫기", onclick: back }, icon("close")));
+  const head = sheet ? fsHead([name], { close: back }) : el("div", { class: "dhd" }, name, el("button", { type: "button", class: "ib dx", "aria-label": TX("common.close"), onclick: back }, icon("close")));
   const bodyBox = el("div", { class: sheet ? "dbody fs-body" : "dbody" }, body), actBox = el("div", { class: sheet ? "dact fs-ft row" : "dact" });
   const noCancel = ev => ev.preventDefault();
   const esc = ev => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); h.close(); } };
@@ -2012,7 +2166,7 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm, mi
   // The ✕ and a tap outside the box both close it and drop the edit, like Esc and the Android back gesture (dialogHist) already do.
   const head = confirm ? el("h2", { class: "dtitle", text: title })
     : classic
-    ? el("div", { class: "dhd" }, el("h2", { class: "dtitle", text: title }), el("button", { type: "button", class: "ib dx", "aria-label": "닫기", onclick: () => d.close() }, icon("close")))
+    ? el("div", { class: "dhd" }, el("h2", { class: "dtitle", text: title }), el("button", { type: "button", class: "ib dx", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close")))
     : fsHead([el("h2", { class: "dtitle", text: title })], { close: () => d.close() });
   d.append(head, bodyBox, actBox);
   let downOutside = false;
@@ -2033,11 +2187,11 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm, mi
   motionDialog(d);
   return h;
 }
-function ask(title, text, ok = "확인", danger = false) {
+function ask(title, text, ok = TX("common.ok"), danger = false) {
   return new Promise(res => {
     let v = false;
     dialog({ confirm: true, title, body: text ? el("p", { text }) : null, onclose: () => res(v), actions: [
-      { label: "취소", onclick: c => c() },
+      { label: TX("common.cancel"), onclick: c => c() },
       { label: ok, kind: danger ? "danger fill" : "pri", onclick: c => { v = true; c(); } }] });
   });
 }
@@ -2054,7 +2208,7 @@ function chartDraw(spec, width) {
     p = fetch("/api/chart", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spec, width: width || undefined }) })
       .then(r => r.json())
       // a failed request is not kept: the next time the message is drawn it asks again
-      .catch(() => (chartDrawn.delete(k), { ok: false, note: "차트를 불러오지 못했어요" }));
+      .catch(() => (chartDrawn.delete(k), { ok: false, note: TX("base.chart.load_failed") }));
     chartDrawn.set(k, p);
   }
   return p;
@@ -2062,13 +2216,13 @@ function chartDraw(spec, width) {
 const chartImg = (svg, theme, label) => `<img class="ans-chart-${theme}" alt="${esc(label)}" src="${URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }))}">`;
 async function chartFill(fig) {
   fig.dataset.drawing = "1";
-  const spec = fig.dataset.chart, label = fig.getAttribute("aria-label") || "차트", r = await chartDraw(spec, fig.clientWidth);
+  const spec = fig.dataset.chart, label = fig.getAttribute("aria-label") || TX("base.chart.label"), r = await chartDraw(spec, fig.clientWidth);
   if (!fig.isConnected) return;
   if (r && r.ok) {
     fig.innerHTML = chartImg(r.light, "light", label) + chartImg(r.dark, "dark", label);
     // the image keeps its decoded picture, so the blob is freed once it has loaded
     for (const img of fig.querySelectorAll("img")) img.addEventListener("load", () => URL.revokeObjectURL(img.src), { once: true });
-  } else fig.outerHTML = `${codeBlockHtml("json", spec)}<p class="meta">${esc((r && r.note) || "차트를 그리지 못했어요")}</p>`;
+  } else fig.outerHTML = `${codeBlockHtml("json", spec)}<p class="meta">${esc((r && r.note) || TX("base.chart.draw_failed"))}</p>`;
 }
 function chartsIn(node) {
   if (node.nodeType !== 1) return;
@@ -2211,7 +2365,7 @@ let S = null;          // /api/state (no events)
 let M = null;          // /api/models
 let P = null;          // /api/providers
 // The assistant's own name (config identity.name): the page arrives with it in its title (hub/webapp.ts indexPage), /api/state keeps it current.
-let botName = document.title || "비서";
+let botName = document.title || TX("base.bot_default");
 // The name with 이/가 by its last syllable (땃쥐가, 단비가 / 하늘이), for a sentence the name starts.
 const iGa = s => { const c = String(s).slice(-1).charCodeAt(0) - 0xac00; return `${s}${c >= 0 && c <= 11171 && c % 28 ? "이" : "가"}`; };
 let current = "home", prevView = null;
@@ -2226,7 +2380,7 @@ const convListing = () => current === "chat" && chatList && narrowChat();
 // its list is 모니터링's list and its address is #monitoring/c:<target> (go() in 05-command-palette.js sets it; 30-monitoring.js monOwned).
 let monCtx = "";
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
-const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["apps", "앱"], ["settings", "설정"]];
+const NAV = [["home", TX("common.home")], ["chat", TX("common.chat")], ["projects", TX("common.projects")], ["monitoring", TX("common.monitoring")], ["apps", TX("common.apps")], ["settings", TX("common.settings")]];
 // 앱 (user apps, 30-apps.js): the tab is hidden until user apps ship (owner 2026-10-27; the code stays); every way into it (shortcut, palette,
 // address) goes home instead. true shows the tab and opens it (the 앱 tests switch it on).
 let APPS_ON = false;
@@ -2241,7 +2395,7 @@ const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return
 const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "accounts", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "messengers", "devices", "webaccess"]);
 const views = ["home", "chat", "activity", "harness", "settings", "models", "accounts", "usage", "context", "discord", "jandi", "slack", "telegram", "messengers", "devices", "webaccess", "project", "projects", "monitoring", "apps", "notices", "cardform"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델", accounts: "계정", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: "메신저", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱", notices: "알림", cardform: "카드 추가" };
+const titles = { home: TX("common.home"), chat: TX("common.chat"), activity: TX("common.chat"), harness: TX("common.system"), settings: TX("common.settings"), models: TX("common.model"), accounts: TX("common.accounts"), usage: TX("common.usage"), context: TX("common.context"), discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: TX("base.title.messengers"), devices: TX("base.title.devices"), webaccess: TX("base.title.webaccess"), project: TX("common.project"), projects: TX("common.projects"), monitoring: TX("common.monitoring"), apps: TX("common.apps"), notices: TX("common.alerts"), cardform: TX("base.title.cardform") };
 // 카드 추가·수정 (web/custom.js cardForm) has its section made here: go() needs one for every view, and the demo's own index.html has no custom layer.
 $("#views").append(el("section", { class: "view cu-page", id: "v-cardform", hidden: true }));
 // 알림 화면 (31-notices-screen.js): f filter, lim rows drawn per group, open unfolded repeats, keep/scroll = come back from a row to the same place,
@@ -2270,12 +2424,12 @@ function endedGroup() {
   const stop = fn => ev => { ev.preventDefault(); ev.stopPropagation(); fn(ev); };
   const tools = sel
     ? el("span", { class: "etools" },
-        el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = null; refreshEnded(); }) }, "취소"),
-        el("button", { type: "button", class: "btn danger fill", disabled: !sel.size, onclick: stop(() => deleteEnded([...sel])) }, `삭제 ${sel.size}개`))
-    : el("span", { class: "etools" }, el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = new Set(); endedOpen = true; refreshEnded(); }) }, "선택"));
+        el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = null; refreshEnded(); }) }, TX("common.cancel")),
+        el("button", { type: "button", class: "btn danger fill", disabled: !sel.size, onclick: stop(() => deleteEnded([...sel])) }, TX("base.ended.delete_n", { n: sel.size })))
+    : el("span", { class: "etools" }, el("button", { type: "button", class: "btn text", onclick: stop(() => { endedSel = new Set(); endedOpen = true; refreshEnded(); }) }, TX("base.select")));
   const all = sel && el("label", { class: "er ck-all" },
     el("input", { type: "checkbox", class: "ck", checked: sel.size === list.length, onchange: ev => { endedSel = new Set(ev.currentTarget.checked ? list.map(l => l.name) : []); refreshEnded(); } }),
-    el("span", { text: "전체 선택" }), el("span", { class: "sup", text: `${sel.size}/${list.length}` }));
+    el("span", { text: TX("base.select_all") }), el("span", { class: "sup", text: `${sel.size}/${list.length}` }));
   // The start date is its own element (short, never cut; the full date and time are its title), apart from the project name that may shrink.
   const when = l => l.startedAt ? el("span", { class: "sup edate", title: `${kstDay(l.startedAt)} ${kstHM(l.startedAt)}`, text: kstShort(l.startedAt) }) : null;
   const row = l => sel
@@ -2285,12 +2439,12 @@ function endedGroup() {
     : el("div", { class: "erow", "data-lane": l.name },
         el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
           el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), laneProject(l) ? el("span", { class: "sup eproj", text: laneProject(l) }) : null, when(l),
-          marks.get(l.name).need ? el("span", { class: "tag warn", text: "답변 필요" }) : null,
-          marks.get(l.name).unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${marks.get(l.name).unread}개`, text: marks.get(l.name).unread > 99 ? "99+" : String(marks.get(l.name).unread) }) : null),
-        el("button", { class: "ib edel", type: "button", "aria-label": `${l.name} 삭제`, title: "삭제", onclick: () => deleteEnded([l.name]) }, icon("trash")));
-  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { class: "elabel", text: `끝난 세션 ${list.length}` }),
-    nNeed || nUnread ? el("span", { class: "ecounts" }, nNeed ? el("span", { class: "ecount need", "data-k": "need", text: `답변 필요 ${nNeed}` }) : null,
-      nUnread ? el("span", { class: "ecount", "data-k": "unread", text: `안 읽음 ${nUnread}` }) : null) : null, tools),
+          marks.get(l.name).need ? el("span", { class: "tag warn", text: TX("common.needs_reply") }) : null,
+          marks.get(l.name).unread ? el("span", { class: "nb", "aria-label": TX("base.ended.unread_aria", { n: marks.get(l.name).unread }), text: marks.get(l.name).unread > 99 ? "99+" : String(marks.get(l.name).unread) }) : null),
+        el("button", { class: "ib edel", type: "button", "aria-label": TX("base.ended.delete_one", { name: l.name }), title: TX("common.delete"), onclick: () => deleteEnded([l.name]) }, icon("trash")));
+  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { class: "elabel", text: TX("base.ended.label", { n: list.length }) }),
+    nNeed || nUnread ? el("span", { class: "ecounts" }, nNeed ? el("span", { class: "ecount need", "data-k": "need", text: TX("base.ended.need", { n: nNeed }) }) : null,
+      nUnread ? el("span", { class: "ecount", "data-k": "unread", text: TX("base.ended.unread", { n: nUnread }) }) : null) : null, tools),
     ...(all ? [all] : []), ...list.map(row));
   d.open = endedOpen;
   d.addEventListener("toggle", () => { endedOpen = d.open; if (!d.open && endedSel) { endedSel = null; refreshEnded(); } });
@@ -2301,10 +2455,10 @@ async function deleteEnded(names) {
   const one = names.length === 1;
   const sure = await new Promise(res => {
     let v = false;
-    dialog({ confirm: true, title: one ? `${names[0]} 삭제` : `세션 ${names.length}개 삭제`, onclose: () => res(v),
-      body: el("div", { class: "dl-body" }, el("p", { text: "휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요." }),
+    dialog({ confirm: true, title: one ? TX("base.ended.delete_one", { name: names[0] }) : TX("base.ended.delete_many", { n: names.length }), onclose: () => res(v),
+      body: el("div", { class: "dl-body" }, el("p", { text: TX("base.ended.trash_note") }),
         el("ul", { class: "dl-list" }, ...names.map(n => el("li", { text: n })))),
-      actions: [{ label: "취소", onclick: c => c() }, { label: one ? "삭제" : `${names.length}개 삭제`, kind: "danger fill", onclick: c => { v = true; c(); } }] });
+      actions: [{ label: TX("common.cancel"), onclick: c => c() }, { label: one ? TX("common.delete") : TX("base.ended.delete_n_btn", { n: names.length }), kind: "danger fill", onclick: c => { v = true; c(); } }] });
   });
   if (!sure) return;
   try {
@@ -2316,35 +2470,35 @@ async function deleteEnded(names) {
     if (S && S.lanes) S.lanes = S.lanes.filter(l => !ok.some(x => x.name === l.name));
     refreshEnded();
     refreshState();
-    if (ok.length) toast(`${ok.length === 1 ? ok[0].name : `${ok.length}개`} 삭제했어요`, false, { label: "되돌리기", onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);
+    if (ok.length) toast(ok.length === 1 ? TX("base.ended.deleted_one", { name: ok[0].name }) : TX("base.ended.deleted_many", { n: ok.length }), false, { label: TX("common.undo"), onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);
     if (bad.length) keptLanes(bad);
   } catch (e) { toast(e.message, true); }
 }
 // Lanes the gateway refused to delete: a calm note with the reason in plain words, not an error (lanetrash.ts reasons).
-const keptWhy = err => /uncommitted/i.test(err) ? "아직 커밋하지 않은 변경이 있어요. 커밋하거나 정리하면 지울 수 있어요."
-  : /live|running|working|busy|실행 중|작업 중/i.test(err) ? "아직 실행 중이에요. 멈춘 뒤에 지울 수 있어요."
-  : "작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.";
+const keptWhy = err => /uncommitted/i.test(err) ? TX("base.ended.kept.dirty")
+  : /live|running|working|busy|실행 중|작업 중/i.test(err) ? TX("base.ended.kept.running")
+  : TX("base.ended.kept.other");
 function keptLanes(bad) {
-  dialog({ title: bad.length === 1 ? `${bad[0].name} 세션은 그대로 뒀어요` : `세션 ${bad.length}개는 그대로 뒀어요`,
+  dialog({ title: bad.length === 1 ? TX("base.ended.kept_one", { name: bad[0].name }) : TX("base.ended.kept_many", { n: bad.length }),
     body: el("div", { class: "dl-body" },
       bad.length === 1 ? el("p", { text: keptWhy(String(bad[0].error || "")) })
         : el("ul", { class: "dl-list" }, ...bad.map(x => el("li", { text: `${x.name} · ${keptWhy(String(x.error || ""))}` })))),
-    actions: [{ label: "확인", kind: "fill", onclick: c => c() }], mid: true });
+    actions: [{ label: TX("common.ok"), kind: "fill", onclick: c => c() }], mid: true });
 }
 async function restoreEnded(ids) {
   try {
     const r = await api("/api/lanes/restore", "POST", { ids }).catch(e => { if (e.data && e.data.results) return e.data; throw e; });
     const bad = r.results.filter(x => !x.ok);
-    toast(bad.length ? `${bad.length}개는 되돌리지 못했어요. 휴지통에 그대로 있어요` : "되돌렸어요", bad.length > 0);
+    toast(bad.length ? TX("base.ended.restore_failed", { n: bad.length }) : TX("base.ended.restored"), bad.length > 0);
     refreshState();
   } catch (e) { toast(e.message, true); }
 }
 // An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
 const statusTone = s => ({ working: "pri", starting: "pri", idle: "", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
-const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 걸림", exited: "종료됨" })[s] || s || "알 수 없음";
+const statusKo = s => ({ working: TX("common.status.working"), idle: TX("common.status.idle"), starting: TX("common.status.starting"), stopped: TX("common.status.stopped"), "rate-limited": TX("common.status.rate_limited"), exited: TX("common.status.ended") })[s] || s || TX("base.status.unknown");
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
 // Thinking levels said in Korean (the stored value stays the API id); every level has its own word (xhigh and max used to both say 최고).
-const THINK_KO = { off: "끔", minimal: "최소", low: "낮음", medium: "보통", high: "높음", xhigh: "매우 높음", max: "최고", auto: "자동" };
+const THINK_KO = { off: TX("common.effort.off"), minimal: TX("common.effort.minimal"), low: TX("common.effort.low"), medium: TX("common.effort.medium"), high: TX("common.effort.high"), xhigh: TX("common.effort.very_high"), max: TX("common.effort.max"), auto: TX("common.effort.auto") };
 const thinkKo = v => THINK_KO[String(v || "").toLowerCase()] || String(v || "");
 // The levels one model accepts, from the hub's model list (`omp models --json` per-model `thinking`); a model the runtime did not describe
 // gets the runtime's whole set. off is dotz's own switch, and a level already saved stays visible until the owner picks another.
@@ -2398,7 +2552,7 @@ function navShortcut(id) {
 // The wide sidebar folds to an icon rail (22-shell.css :root.side-min); the saved choice is applied before first paint in index.html.
 const SIDE_KEY = "dotz-side", SIDE_KEYS = isMac ? "⌘\\" : "Ctrl+\\";
 function sideSync() {
-  const min = document.documentElement.classList.contains("side-min"), b = $("#side-tog"), word = min ? "사이드바 펼치기" : "사이드바 접기";
+  const min = document.documentElement.classList.contains("side-min"), b = $("#side-tog"), word = min ? TX("base.sidebar.expand") : TX("base.sidebar.collapse");
   b.setAttribute("aria-label", word); b.setAttribute("aria-expanded", String(!min)); b.title = `${word} (${SIDE_KEYS})`;
 }
 function sideToggle() {
@@ -2408,9 +2562,9 @@ function sideToggle() {
 }
 // The ⌘/Ctrl keys besides 1..6 and K (05-command-palette.js): one list drives the handler below and the keys the screen tour shows (42-intro.js).
 const MOD_KEYS = [
-  { code: "Slash", key: "/", label: "알림", run: () => { if (PR.node) prClose(false); $("#bell").click(); } },
-  { code: "Period", key: ".", label: "메인 대화", run: () => { if (PR.node) prClose(false); openTarget("main", "chat"); } },
-  { code: "Backslash", key: "\\", label: "사이드바 접기", wide: true, run: sideToggle },
+  { code: "Slash", key: "/", label: TX("common.alerts"), run: () => { if (PR.node) prClose(false); $("#bell").click(); } },
+  { code: "Period", key: ".", label: TX("common.main_chat"), run: () => { if (PR.node) prClose(false); openTarget("main", "chat"); } },
+  { code: "Backslash", key: "\\", label: TX("base.sidebar.collapse"), wide: true, run: sideToggle },
 ];
 const modKeyWide = k => !k.wide || matchMedia("(min-width: 1024px)").matches;
 document.addEventListener("keydown", ev => {
@@ -2426,17 +2580,17 @@ document.addEventListener("keydown", ev => {
   navShortcut(tab[0]);
 });
 // 모니터링's badge (#nav-mon) counts what waits there (09-needs-you.js paintMonAttn).
-for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "home" ? el("span", { class: "nb nub pc", id: "nav-pc", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: TX("base.update.badge"), title: TX("base.update.title") }) : null));
 $("#side-tog").append(icon("side"));
 $("#side-tog").onclick = sideToggle;
 sideSync();
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
-const themeNext = () => themeIs() === "dark" ? "라이트" : "다크";
+const themeNext = () => themeIs() === "dark" ? TX("base.theme.light") : TX("base.theme.dark");
 function toggleTheme() { dotzTheme.toggle(); if (current === "settings") renderSettings(); }
 window.addEventListener("dotz-theme", () => { if (current === "settings") renderSettings(); });
-$("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
+$("#cmdk").append(icon("search"), el("span", { class: "tx", text: TX("base.command") }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
 const setBrand = () => { $("#brand-name").textContent = relayBrand(); paintAttn(); };
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"), el("span", { class: "bk-l", text: titles.monitoring }));
@@ -2446,7 +2600,7 @@ $("#back").onclick = () => (nscBack() || asBack() || rqBack() || kkBack() || cmB
 /* ---------- command palette: jump to a view or run a /command ---------- */
 // A command's answer (the card /api/command returns) in the app's own components: a status line, the facts as list rows,
 // a note, and buttons that run the next command in the palette. Never a text dump.
-const PAL_TONE = { ok: "완료", busy: "진행 중", warn: "주의", err: "실패" };
+const PAL_TONE = { ok: TX("base.mark.done"), busy: TX("base.mark.run"), warn: TX("base.pal.warn"), err: TX("base.mark.fail") };
 const PAL_LINE = /^(\/\S+)\s{2,}(.+)$/;
 function palFact(f) {
   const lines = String(f.value ?? "").split("\n").filter(l => l !== "");
@@ -2464,18 +2618,18 @@ function palResult(c, run) {
     acts.length ? el("div", { class: "btns cc-act" }, ...acts.map(a => el("button", { type: "button", class: "btn tonal sm", title: a.send, text: a.label, onclick: () => run(a.send) }))) : null);
 }
 // Words a 도구 row is also found by: the names a screen used to have and the commands it replaced in this list.
-const PAL_WORDS = { accounts: "공급자 provider 로그인", usage: "한도 quota" };
+const PAL_WORDS = { accounts: TX("base.pal.words.accounts"), usage: TX("base.pal.words.usage") };
 // A command row: one that cannot run without its first argument opens that argument's choices instead of failing.
 // A row that opens a second step says what is picked there (the argument's name, as on the chips of the composer's list) where other rows say what the command does.
-const palCmd = x => { const fill = !!(x.args && x.args[0] && !x.args[0].opt); return { kind: "cmd", ic: "chev", label: x.c, desc: fill ? `${x.args[0].n} 고르기` : x.d, run: x.c, fill }; };
+const palCmd = x => { const fill = !!(x.args && x.args[0] && !x.args[0].opt); return { kind: "cmd", ic: "chev", label: x.c, desc: fill ? TX("base.pal.pick", { name: x.args[0].n }) : x.d, run: x.c, fill }; };
 function openPalette() {
   if (document.querySelector("dialog.pal")) return;
   closeMenu(false);
-  const inp = el("input", { class: "pal-in", type: "text", placeholder: "도구 또는 명령", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "명령" });
+  const inp = el("input", { class: "pal-in", type: "text", placeholder: TX("base.pal.placeholder"), autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": TX("base.command") });
   const list = el("div", { class: "pal-list", role: "listbox" });
   const out = el("div", { class: "pal-out", hidden: true });
-  const d = el("dialog", { class: "pal", "aria-label": "명령" }, el("div", { class: "pal-head" }, inp), list, out,
-    el("div", { class: "pal-ft", "aria-hidden": "true" }, el("span", { text: "↑↓ 이동" }), el("span", { text: "↵ 열기" }), el("span", { text: "esc 닫기" })));
+  const d = el("dialog", { class: "pal", "aria-label": TX("base.command") }, el("div", { class: "pal-head" }, inp), list, out,
+    el("div", { class: "pal-ft", "aria-hidden": "true" }, el("span", { text: TX("base.pal.hint.move") }), el("span", { text: TX("base.pal.hint.open") }), el("span", { text: TX("base.pal.hint.close") })));
   let items = [], idx = 0;
   const mark = () => {
     [...list.querySelectorAll(".pal-i")].forEach((n, i) => { n.classList.toggle("on", i === idx); n.setAttribute("aria-selected", i === idx ? "true" : "false"); if (i === idx) n.scrollIntoView({ block: "nearest" }); });
@@ -2486,12 +2640,12 @@ function openPalette() {
     if (sh) { d.close(); openShell(sh[1] && sh[1].trim() ? { command: sh[1].trim() } : undefined); return; }
     if (SCR_CMD.test(text) && S && S.desk) { d.close(); openScreen(); return; }
     list.hidden = true; out.hidden = false;
-    clear(out).append(el("div", { class: "pal-res", role: "status" }, el("div", { class: "pal-rh" }, el("span", { class: "dot pri" }), el("span", { class: "pal-rt", text: "실행 중" }))));
+    clear(out).append(el("div", { class: "pal-res", role: "status" }, el("div", { class: "pal-rh" }, el("span", { class: "dot pri" }), el("span", { class: "pal-rt", text: TX("base.pal.running") }))));
     try {
       const r = await api("/api/command", "POST", { text });
-      clear(out).append(palResult(r.card || { title: firstLine(String(r.output ?? "")) || "완료", tone: "ok", facts: [], note: String(r.output ?? "").split("\n").slice(1).join("\n").trim() }, runCmd));
+      clear(out).append(palResult(r.card || { title: firstLine(String(r.output ?? "")) || TX("base.mark.done"), tone: "ok", facts: [], note: String(r.output ?? "").split("\n").slice(1).join("\n").trim() }, runCmd));
       if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
-    } catch (e) { clear(out).append(palResult(e.data && e.data.card ? e.data.card : { title: "실패", tone: "err", facts: [], note: e.message }, runCmd)); }
+    } catch (e) { clear(out).append(palResult(e.data && e.data.card ? e.data.card : { title: TX("base.mark.fail"), tone: "err", facts: [], note: e.message }, runCmd)); }
   };
   const exec = it => { if (it.kind === "nav") { d.close(); go(it.go); } else if (it.kind === "act") { d.close(); it.act(); } else if (it.fill) { inp.value = `${it.run} `; build(); inp.focus(); } else runCmd(it.run); };
   // The choices of the argument being typed, each a row with the whole command; /logout's come from the providers, which no screen may have asked for yet.
@@ -2518,11 +2672,11 @@ function openPalette() {
       for (const id of views) if (id !== "activity" && id !== "project" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
-      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `끝난 세션 ${ended.length}`, act: () => { endedOpen = true; go("chat", "list"); } });
-      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "끝난 세션 종료된 세션".includes(v))) items.push({ kind: "act", ic: "lanes", label: `끝난 세션 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
-      if (!v || "셸 터미널 명령줄 shell terminal".includes(v)) items.push({ kind: "act", ic: "shell", label: "터미널 열기", act: () => openShell() });
-      if (S && S.desk && (!v || "화면 공유 원격 데스크톱 screen desktop remote".includes(v))) items.push({ kind: "act", ic: "desktop", label: "화면 공유 열기", act: () => openScreen() });
-      if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
+      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: TX("base.ended.label", { n: ended.length }), act: () => { endedOpen = true; go("chat", "list"); } });
+      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || TX("base.pal.words.ended").includes(v))) items.push({ kind: "act", ic: "lanes", label: `${TX("common.ended_sessions")} · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
+      if (!v || TX("base.pal.words.terminal").includes(v)) items.push({ kind: "act", ic: "shell", label: TX("base.pal.open_terminal"), act: () => openShell() });
+      if (S && S.desk && (!v || TX("base.pal.words.screen").includes(v))) items.push({ kind: "act", ic: "desktop", label: TX("base.pal.open_screen"), act: () => openScreen() });
+      if (!v || TX("base.pal.words.theme").includes(v)) items.push({ kind: "act", ic: themeIc(), label: TX("base.pal.theme_switch", { mode: themeNext() }), act: toggleTheme });
       items.push(...paneLayoutItems(v));
     }
     const rank = { nav: 0, act: 1, cmd: 2 };   // 도구 first, 명령 last; the arrow keys walk the list in this order
@@ -2531,12 +2685,12 @@ function openPalette() {
     clear(list);
     let last = "";
     items.forEach((it, i) => {
-      const g = it.kind === "nav" ? "도구" : it.kind === "act" ? "화면" : "명령";
+      const g = it.kind === "nav" ? TX("base.pal.group.tools") : it.kind === "act" ? TX("base.pal.group.screen") : TX("base.pal.group.commands");
       if (g !== last) { list.append(el("div", { class: "ph", role: "presentation", text: g })); last = g; }
       list.append(el("button", { type: "button", role: "option", tabindex: "-1", class: `pal-i${it.kind === "cmd" ? " cmd" : ""}`, onmouseenter: () => { idx = i; mark(); }, onclick: () => exec(it) },
         icon(it.ic), el("span", { class: "nm", text: it.label }), it.desc ? el("span", { class: it.kind === "nav" ? "pd key" : "pd", text: it.desc }) : null));
     });
-    if (!items.length) list.append(el("div", { class: "a-div", text: "결과가 없어요" }));
+    if (!items.length) list.append(el("div", { class: "a-div", text: TX("base.pal.empty") }));
     mark();
   };
   inp.addEventListener("input", () => { out.hidden = true; list.hidden = false; build(); });
@@ -2639,7 +2793,7 @@ function go(name, tgt) {
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
   if (name === "accounts") { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
   if (name === "messengers") { renderMessengers(); loadMessengerIndex(); }
-  if (name === "usage") loadQuota();
+  if (name === "usage") { gaugeForget("usage:"); quotaDrawn = 0; loadQuota(); }   // opening the screen shows the values as they are, no motion
   if (name === "context") loadContext();
   if (name === "discord") { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
   if (name === "jandi" || name === "slack" || name === "telegram") { loadMessengerIndex(); loadMessengerSettings(name); loadOnboarding(name); }
@@ -2648,7 +2802,7 @@ function go(name, tgt) {
   if (name === "webaccess") loadOnboarding("web-access");
   // No screen is empty on its first frame: one whose loader has not drawn yet (사용량, 컨텍스트, 구성 ...) says so, and the loader replaces this line.
   const body = $(`#v-${name} > #${name}`);
-  if (body && !body.firstChild) body.append(emptyNode("불러오는 중…"));
+  if (body && !body.firstChild) body.append(emptyNode(TX("common.loading")));
   // A different view rises in; the same view drawn again, and the first paint, do not move. Moving inside 모니터링 (a list to its item) is one screen,
   // and a mail opening is plain content: neither replays the rise (owner 2026-11-04).
   motionView(mc ? "monitoring" : tv ? "chat" : name, tv && isMailT(target) ? [] : [...$("#views").children].filter(v => !v.hidden), !tv);
@@ -2666,21 +2820,21 @@ function limitTone(l) {
   return limitHit(l) || /warn|low|near|high/.test(String(l.status || "").toLowerCase()) || (f != null && f <= .3) ? "warn" : "";
 }
 const bar = l => { const f = limitFrac(l); return f == null ? null : el("div", { class: `bar ${limitTone(l)}`, role: "progressbar", "aria-valuenow": Math.round(f * 100), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${(f * 100).toFixed(1)}%` })); };
-const pctText = l => { const f = limitFrac(l); return f == null ? "–" : `${Math.round(f * 100)}% 남음`; };
+const pctText = l => { const f = limitFrac(l); return f == null ? "–" : TX("base.pct_left", { n: Math.round(f * 100) }); };
 // "Claude 5 Hour" -> "5시간", "Claude 7 Day" -> "7일", "Claude 7 Day (Opus)" -> "주간 Opus" (the label comes from the provider in English; ids stay as they are).
-const limitKo = s => String(s).replace(/^Claude\s+/i, "").replace(/^7\s*Day\s*\((.+)\)$/i, "주간 $1").replace(/(\d+)\s*Hours?\b/i, "$1시간").replace(/(\d+)\s*Days?\b/i, "$1일");
+const limitKo = s => String(s).replace(/^Claude\s+/i, "").replace(/^7\s*Day\s*\((.+)\)$/i, (_, model) => TX("base.limit.weekly", { model })).replace(/(\d+)\s*Hours?\b/i, (_, n) => TX("base.limit.hours", { n })).replace(/(\d+)\s*Days?\b/i, (_, n) => TX("base.limit.days", { n }));
 const limitLabel = (p, l, multi) => `${multi ? `${p.name || providerName(p.provider)} · ` : ""}${limitKo(l.label || l.id)}`;
 const isConnected = p => p.auth && p.auth !== "none";
 const needsAttention = p => p.in_use && !isConnected(p);
 // A card that failed to load passes `retry`: its 다시 시도 button asks again (a load that gave no data is never a dead end).
-const emptyNode = (t, retry) => (retry ? el("div", { class: "card empty" }, el("div", { text: t }), el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: "다시 시도", onclick: ev => busy(ev.currentTarget, async () => retry()) })) : el("div", { class: "card empty", text: t }));
+const emptyNode = (t, retry) => (retry ? el("div", { class: "card empty" }, el("div", { text: t }), el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: TX("base.retry"), onclick: ev => busy(ev.currentTarget, async () => retry()) })) : el("div", { class: "card empty", text: t }));
 // The one 더 보기 of a list: the card's own last line, inside the card, never a control floating under it (.cv-more, 19-volume.css).
 const moreRow = (text, onclick) => el("button", { class: "cv-more", type: "button", "data-k": "more", onclick, text });
 
 
 /* ---------- subagents: live progress per source ---------- */
 let SUBS = {};
-const subKo = { running: "진행 중", done: "완료", failed: "실패", aborted: "중단됨" };
+const subKo = { running: TX("base.mark.run"), done: TX("base.mark.done"), failed: TX("base.mark.fail"), aborted: TX("base.sub.aborted") };
 const subTone = s => ({ running: "pri", done: "ok", failed: "err", aborted: "" })[s] || "";
 // Subagents are listed per agent session (hub/convsessions.ts): a conversation of its own has `conv:<its target>`, the main chat `orchestrator`. A conversation never shows another's.
 const subsSourceOf = t => (isConvT(t) ? `conv:${t}` : sourceOf(t));
@@ -2697,21 +2851,21 @@ const workRecovering = w => w.status === "failed" && !w.cancelled && !w.handled;
 // One background task's colour on every list; the table is in docs/ui-spec.md. A failure the agent took up, or work the owner stopped, is over: gray.
 const workTone = w => w.queued ? "" : w.status === "running" || workRecovering(w) ? "pri" : w.status === "stalled" ? "warn" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err";
 // 실패 · <이유> (중단됨 for one the owner stopped): the reason is the gateway's own Korean line (hub/runstate.ts failureText).
-const workFailText = w => (w.cancelled ? "중단됨" : `실패 · ${w.reason || "이유가 기록되지 않았어요"}`);
+const workFailText = w => (w.cancelled ? TX("base.sub.aborted") : `${TX("base.mark.fail")} · ${w.reason || TX("base.work.no_reason")}`);
 // 중단: the worker's process ends (POST /api/workers/:id/cancel); 다시 맡기기: its request goes to the orchestrator again in its own conversation.
 const workCancel = (id, btn) => busy(btn, async () => {
   const job = ((S && S.work) || []).find(w => w.id === id);
-  if (!await ask("백그라운드 작업 중단", `${job ? `'${job.description}' 작업을 멈춰요.` : "하던 작업을 멈춰요."} 필요하면 다시 맡길 수 있어요.`, "중단", true)) return;
+  if (!await ask(TX("base.work.stop_title"), job ? TX("base.work.stop_text_job", { description: job.description }) : TX("base.work.stop_text"), TX("common.stop"), true)) return;
   await api(`/api/workers/${enc(id)}/cancel`, "POST", {});
   // The work card in the chat shows the stop itself (중단됨, gray dot); a toast is only for a job with no card on screen.
   workRowNote({ id, status: "failed", cancelled: true }, workNow());
   paintSysLines();
-  if (![...(SYS_NODES.get(id) || [])].some(r => r.st.isConnected)) toast("작업을 중단했어요");
+  if (![...(SYS_NODES.get(id) || [])].some(r => r.st.isConnected)) toast(TX("base.work.stopped"));
   refreshState();
 });
 const workRetry = (id, btn) => busy(btn, async () => {
   await api(`/api/workers/${enc(id)}/retry`, "POST", {});
-  toast("다시 맡겼어요");
+  toast(TX("base.work.retried"));
   refreshState();
 });
 // A chat's own work: what was started for its open message; work no message claimed belongs to the main chat.
@@ -2719,13 +2873,13 @@ const workOfTarget = t => workRunning().filter(w => (w.target ? (t === MAIN ? w.
 // The gateway's clock, not this device's, measures how long work has run (S.work_skew is set on every state refresh).
 const workNow = () => Date.now() + ((S && S.work_skew) || 0);
 const workMin = ms => Math.max(0, Math.floor(ms / 60000));
-const workElapsed = w => (workNow() - w.started_at < 60000 ? "방금 시작" : `${workMin(workNow() - w.started_at)}분째`);
+const workElapsed = w => (workNow() - w.started_at < 60000 ? TX("base.work.just_started") : TX("base.work.minutes", { n: workMin(workNow() - w.started_at) }));
 function workAgo(w) {
   const m = workMin(workNow() - (w.ended_at || w.started_at));
-  return m < 1 ? "방금" : m < 60 ? `${m}분 전` : `${Math.floor(m / 60)}시간 전`;
+  return m < 1 ? TX("base.just_now") : m < 60 ? TX("base.min_ago", { n: m }) : TX("base.hours_ago", { n: Math.floor(m / 60) });
 }
 // The left of the status line above the composer: what the background work is and how long it has run. The model is in the chip under the box, so the line does not say it.
-const workLine = ws => `${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · 외 ${ws.length - 1}개` : ""}`;
+const workLine = ws => `${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · ${TX("base.work.more", { n: ws.length - 1 })}` : ""}`;
 // Re-read the state while work runs, so a finished or failed one leaves the line without waiting for another event.
 setInterval(() => { if (!document.hidden && (workRunning().length || Object.values((S && S.runs) || {}).some(runMoving))) refreshState(); }, 15000);
 function setSubs(source, items) {
@@ -2745,7 +2899,7 @@ function subsChanged(source) {
 function subLine(src) {
   const n = runningSubs(src).length;
   if (!n) return null;
-  return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
+  return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), TX("base.sub.running", { n }));
 }
 function openTarget(t, view) { setTarget(t, true); go(isLaneT(t) && (view === "chat" || view === "activity") ? viewFor(t) : view); }
 // A switcher pick: the chat/log view follows the picked target's own choice.
@@ -2770,7 +2924,7 @@ function paintSubs(box, src) {
   if (!run) return;
   box.append(el("button", { class: "subsum", type: "button", onclick: () => openSubs([src]) },
     el("span", { class: "dot pri" }),
-    el("span", { class: "nm", text: `서브에이전트 ${run}개 진행 중` }),
+    el("span", { class: "nm", text: TX("base.sub.running", { n: run }) }),
     icon("chev", "chev")));
 }
 let SUBD = null;
@@ -2815,23 +2969,23 @@ function renderSubSheet() {
   $("#sh-back").hidden = !d.from;
   if (!d.id) {
     const rows = d.sources.flatMap(s => spawnOrder(runningSubs(s)).map(x => [s, x]));
-    $("#sh-name").textContent = `서브에이전트 ${rows.length}개 진행 중`;
+    $("#sh-name").textContent = TX("base.sub.running", { n: rows.length });
     $("#sh-sub").textContent = d.sources.map(s => targetName(targetOfSource(s))).join(", ");
     $("#sh-tag").hidden = true;
     shBody.className = "sh-body";
     clear(shBody);
-    if (!rows.length) shBody.append(el("div", { class: "a-div", text: "진행 중인 서브에이전트가 없어요" }));
+    if (!rows.length) shBody.append(el("div", { class: "a-div", text: TX("base.sub.none") }));
     for (const [s, x] of rows) shBody.append(el("button", { class: "subrow", type: "button", onclick: () => openSub(s, x.id, d.sources) },
       el("span", { class: "dot pri" }),
-      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || "서브에이전트" }), x.intent || x.tool ? el("span", { class: "muted", text: firstLine(x.intent || x.tool) }) : null),
+      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || TX("common.subagent") }), x.intent || x.tool ? el("span", { class: "muted", text: firstLine(x.intent || x.tool) }) : null),
       d.sources.length > 1 ? el("span", { class: "tag", text: targetName(targetOfSource(s)) }) : null,
       x.started_at ? el("span", { class: "cc2-tm", text: workElapsed(x) }) : null));
     return;
   }
   const l = subNow(d), data = d.data || {};
   const st = data.status || l.status || "";
-  $("#sh-name").textContent = data.description || l.description || d.title || data.agent || l.agent || "서브에이전트";
-  $("#sh-sub").textContent = `${targetName(targetOfSource(d.source))} · 서브에이전트`;
+  $("#sh-name").textContent = data.description || l.description || d.title || data.agent || l.agent || TX("common.subagent");
+  $("#sh-sub").textContent = `${targetName(targetOfSource(d.source))} · ${TX("common.subagent")}`;
   const tag = $("#sh-tag");
   tag.hidden = !st; tag.className = `tag ${subTone(st)}`; tag.textContent = subKo[st] || st;
   const m = modeOf(), items = data.items || [];
@@ -2841,8 +2995,8 @@ function renderSubSheet() {
   [...shBody.children].forEach((c, i) => { if (c.open || c.classList.contains("open")) opened.add(i); });
   shBody.className = `sh-body${m === "term" ? " term" : ""}`;
   clear(shBody);
-  if (!d.data && !d.err) shBody.append(el("div", { class: "a-div", text: "불러오는 중…" }));
-  else if (!items.length) shBody.append(el("div", { class: d.err ? "a-error" : "a-div", text: d.err ? "기록을 불러오지 못했어요" : "기록이 없어요" }));
+  if (!d.data && !d.err) shBody.append(el("div", { class: "a-div", text: TX("common.loading") }));
+  else if (!items.length) shBody.append(el("div", { class: d.err ? "a-error" : "a-div", text: d.err ? TX("base.sub.log_failed") : TX("base.sub.log_empty") }));
   else {
     const ctx = { calls: new Map() };
     for (const a of items) { const n = m === "term" ? termNode(a, ctx) : actNode(a, ctx); if (n) shBody.append(n); }
@@ -2921,8 +3075,8 @@ const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .l
 // The press of 배치 초기화 says what it did: the cards are in their first order again (with 되돌리기), or the stored order could not be cleared.
 function hmResetSaid(reset) {
   const undo = reset();
-  if (undo) toast("카드를 처음 순서로 돌려놨어요", false, { label: "되돌리기", onclick: undo });
-  else toast("카드 순서를 처음으로 돌리지 못했어요", true);
+  if (undo) toast(TX("base.board.reset_done"), false, { label: TX("common.undo"), onclick: undo });
+  else toast(TX("base.board.reset_failed"), true);
 }
 function makeBoard(container, key, opts = {}) {
   const store = `dotz-board-${key}`, px = !!opts.px, U = px ? 1 : BSTEP;
@@ -2944,7 +3098,7 @@ function makeBoard(container, key, opts = {}) {
     try { opts.onEdit(on); } finally { editing = false; }
   }
   const ph = el("div", { class: "bph", hidden: true });
-  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => hmResetSaid(reset) }, "배치 초기화"));
+  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => hmResetSaid(reset) }, TX("base.board.reset")));
   container.classList.add("board");
   if (opts.rows) container.classList.add("rows");
   container.before(bar);
@@ -3067,7 +3221,7 @@ function makeBoard(container, key, opts = {}) {
       if (!w) { w = el("div", { class: "bi", "data-id": it.id }, ...["e", "s", "se"].map(d => el("div", { class: `brz ${d}`, "data-dir": d }))); wraps.set(it.id, w); container.append(w); }
       w.classList.toggle("fit", !!it.fit);
       const h0 = it.node.querySelector(it.head);
-      if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = "끌거나 방향키로 옮기고, Shift+방향키로 크기를 바꿔요"; }
+      if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = TX("base.board.head_hint"); }
       const first = w.firstElementChild, old = first && !first.classList.contains("brz") ? first : null;
       // A card whose markup did not change keeps its node, so scroll positions and hover survive a re-render.
       if (old !== it.node && !(old && old.outerHTML === it.node.outerHTML)) {
@@ -4236,18 +4390,26 @@ function paintStrip() {
   const b = $("#ustrip"), t = SQ && tightLimit(SQ), side = $("#sf-usage");
   b.hidden = !t;
   if (side) side.hidden = !t;
-  if (!t) return;
+  if (!t) { gaugeForget("strip"); return; }
   const pct = Math.round(t.f * 100), word = limitWord(t.l);
   b.className = `ustrip${pct <= 40 ? " warn" : ""}`;
-  b.style.setProperty("--p", pct);
   b.title = TX("home.usage.title", { word, pct }); b.setAttribute("aria-label", b.title);
-  clear(b).append(el("span", { class: "ulab", text: TX("home.usage.left", { word, pct }) }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
+  // the strip is drawn again on every read; the gauge keeps what is shown, so a recovery fills and counts from there (01-motion-gauge.js)
+  const lab = gaugeSplit(TX("home.usage.left", { word, pct: GAUGE_MARK })), upct = gaugeSplit(`${word} ${GAUGE_MARK}%`), fill = el("i");
+  clear(b).append(el("span", { class: "ulab" }, ...lab.nodes), el("span", { class: "ubar" }, fill), el("span", { class: "uring" }), el("span", { class: "upct" }, ...upct.nodes));
+  let sideBit = () => {};
   // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left; the folded rail shows only the ring
   if (side) {
     side.classList.toggle("warn", pct <= 40);
-    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: TX("common.usage") }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring pring", style: `--p:${pct}`, text: String(pct) }));
+    const sv = gaugeSplit(`${word} ${GAUGE_MARK}%`), sfill = el("i"), ring = el("span", { class: "sf-ring pring" });
+    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: TX("common.usage") }), el("span", { class: "sf-bar" }, sfill), el("span", { class: "sf-v" }, ...sv.nodes), ring);
     side.title = TX("home.usage.title", { word, pct }); side.setAttribute("aria-label", side.title);
+    sideBit = s => { sfill.style.width = `${s.w.toFixed(2)}%`; ring.style.setProperty("--p", String(+s.w.toFixed(2))); ring.textContent = String(s.n); gaugeNum(sv.sp, s); };
   }
+  gaugeSet("strip", pct, s => {
+    fill.style.width = `${s.w.toFixed(2)}%`; b.style.setProperty("--p", String(+s.w.toFixed(2)));
+    gaugeNum(lab.sp, s); gaugeNum(upct.sp, s); sideBit(s);
+  });
 }
 // 헤더의 종: the unread notice count, kept current by every notice change (30-notices.js ntPaint -> paintAttn).
 function paintBell() {
@@ -4264,13 +4426,16 @@ function paintBell() {
   if (b) b.setAttribute("aria-label", n ? TX("home.attn.alerts_aria", { n }) : TX("common.alerts"));
 }
 $("#sf-usage").onclick = () => go("usage");
-function noteQuota(q) { SQ = q; stripAt = Date.now(); paintStrip(); }
+function noteQuota(q) {
+  if (SQ && q && q.fetched_at < SQ.fetched_at) return;   // a read that was out while a newer one was drawn must not put the older numbers back
+  SQ = q; stripAt = Date.now(); paintStrip();
+}
 // A pushed usage read: the strip, and the 사용량 / 홈 view on screen, show it without asking again.
 function quotaLive(q) {
   if (!q) return;
   noteQuota(q);
   HQ = q;
-  if (current === "usage") loadQuota();
+  if (current === "usage") { if (P) paintQuota(q); else loadQuota(); }   // the pushed read is drawn as it is: a recovery shows now, not after a second fetch
   else if (current === "home") renderHome();
 }
 // At most one fetch per 3 minutes, and only while the page is visible (the home and usage views feed it through noteQuota too).
@@ -4519,7 +4684,7 @@ async function answerDecision(dc, text, opt, note) {
     const held = nd ? await ntPost(nd, opt.n, note, files, opt.label) : null;
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
-    const r = nd ? null : await api("/api/message", "POST", { text, ...(files.length ? { files } : {}), ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
+    const r = nd ? null : await sendMsgOut(t, text, { text, ...(files.length ? { files } : {}), ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
     DC.st[dc.key] = held && held.state === "undo" && dc.draft ? dcUndoStart(dc, held) : "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
     if (t === target) { chatStick = true; scrollChat(true); }
@@ -6218,12 +6383,14 @@ function streamIn(root, key, ts) {
 const DELIV = { nodes: new Map(), state: new Map() };
 const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, compacting: 1, update: 1, resumed: 1, answered: 2, failed: 2 };
 const DELIV_LABEL = { steered: TX("home.deliv.steered"), received: TX("home.deliv.received"), queued: TX("home.deliv.queued"), held: TX("home.deliv.held"), compacting: TX("home.deliv.compacting"), update: TX("home.deliv.update"), resumed: TX("home.deliv.resumed"), answered: TX("home.deliv.answered") };
-const delivLabel = d => d.state === "failed" ? `${TX("home.deliv.failed")}${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
+// The record of an answered decision (dcRecordNode) says the answer arrived and why it waits; every other state reads as on any message.
+const DELIV_REC = { queued: TX("decision.deliv.queued"), compacting: TX("decision.deliv.compacting"), held: TX("decision.deliv.held"), update: TX("decision.deliv.update") };
+const delivLabel = (d, rec) => d.state === "failed" ? `${TX("home.deliv.failed")}${d.text ? ` · ${d.text}` : ""}` : (rec && DELIV_REC[d.state]) || DELIV_LABEL[d.state] || "";
 function paintDelivery(mid) {
   const n = DELIV.nodes.get(mid), d = DELIV.state.get(mid);
   if (!n || !d) return;
   const rq = n.mt.querySelector(".rp-btn");   // the hover quote button (39-reply.js) lives in the meta line
-  n.mt.textContent = [n.base, delivLabel(d)].filter(Boolean).join(" · ");
+  n.mt.textContent = [n.base, delivLabel(d, n.rec)].filter(Boolean).join(" · ");
   if (rq) n.mt.append(rq);
   n.mt.classList.add("dv"); n.mt.classList.toggle("dv-fail", d.state === "failed");
 }
@@ -6365,7 +6532,7 @@ function msgNode(e) {
       if (long) ub.classList.add("clamp");
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? TX("home.msg.more") : TX("home.fold.close"); } }, TX("home.msg.more")) : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
-      if (mid) { DELIV.nodes.set(mid, { mt, base }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
+      if (mid) { DELIV.nodes.set(mid, { mt, base, rec: e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length > 0 }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
       // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
       const pc = Array.isArray(e.files) && e.files.length ? pqPc(eventTarget(e) || "") : null;
       // An answered decision is a quiet record of what was decided, not a "1) …" bubble (10-decision-card.js dcRecordNode); the options
@@ -7478,6 +7645,56 @@ async function snapHomeSeed() {
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { snapSave(target); snapHomeSave(); } });
 
+/* ---------- a message sent while the gateway cannot be reached ---------- */
+// The owner's text is never lost and no error shows for an unreachable gateway (a reverse proxy's 502/503/504, or no answer at all): the message waits here as a dimmed bubble
+// of the owner's, like a queued one (14-slash-commands.js qdBubble), and goes out by itself when the gateway answers. A real refusal (4xx, a validation error) is an error as before.
+// Never twice: the send keeps its `cid` (the gateway answers a repeated cid as the first, hub/routes.ts), and because that memory is lost with a gateway restart, the
+// gateway's history is read first (GET /api/history?after=): a message of the same text stored since the first try was delivered, and is not sent again.
+// The list is kept in this browser (localStorage), so a reload keeps the waiting messages and sends them at the next attach of the stream. Files are already uploaded when
+// a message is sent and travel in its body. A message with none of this (a conversation of another computer) fails as before.
+const OUTBOX_KEY = "dotz.outbox";
+let OUTBOX = (() => { try { return JSON.parse(localStorage.getItem(OUTBOX_KEY)) || []; } catch { return []; } })();
+let obT = 0, obN = 0, obBusy = false;
+const newCid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+const outboxSave = () => { try { localStorage.setItem(OUTBOX_KEY, JSON.stringify(OUTBOX)); } catch { return; } };
+const outboxDown = e => !e.data && ((e instanceof TypeError && /fetch|network|load failed/i.test(e.message)) || [502, 503, 504].includes(e.status));
+const outboxItems = () => OUTBOX.map(o => ({ id: o.body.cid, text: o.text, target: o.t, local: true }));
+const outboxBubble = i => el("div", { class: "um qd" }, el("div", { class: "ub", text: i.text }), el("div", { class: "qd-ln" }, el("span", { text: TX("decision.pending.send") })));
+// POST /api/message; null when the gateway could not be reached and the message waits in the outbox.
+async function sendMsgOut(t, text, body, peer) {
+  const b = body.cid ? body : { ...body, cid: newCid() };
+  try { return await api("/api/message", "POST", b); } catch (e) {
+    if (peer || !outboxDown(e)) throw e;
+    OUTBOX.push({ t, text, body: b, at: Date.now() }); outboxSave(); renderQueue(); outboxLater();
+    return null;
+  }
+}
+const outboxLater = () => { if (!obT) obT = setTimeout(outboxFlush, Math.min(1000 * 2 ** obN++, 15000)); };
+const outboxGo = () => { if (OUTBOX.length) outboxFlush(); };
+// Was this message stored by the gateway after the first try? The clocks differ by S.work_skew; 5 s of margin.
+async function outboxHas(o) {
+  const after = new Date(o.at + ((S && S.work_skew) || 0) - 5000).toISOString();
+  const r = await api(`/api/history?target=${enc(o.t)}&limit=100&after=${enc(after)}`);
+  return (r.events || []).some(e => (e.kind === "message" || e.kind === "lane_message") && e.source === "web" && String(e.text ?? "").trim() === o.text.trim());
+}
+async function outboxFlush() {
+  clearTimeout(obT); obT = 0;
+  if (obBusy) return;
+  obBusy = true;
+  try {
+    while (OUTBOX.length) {
+      const o = OUTBOX[0];
+      try {
+        if (await outboxHas(o)) loadTarget(o.t, true); else await api("/api/message", "POST", o.body);
+      } catch (e) {
+        if (outboxDown(e)) { outboxLater(); return; }
+        toast(e.message, true);
+      }
+      OUTBOX.shift(); obN = 0; outboxSave(); renderQueue();
+    }
+  } finally { obBusy = false; }
+}
+
 /* ---------- slash commands: Discord-style menu above the composer (hub/control.ts COMMANDS) ---------- */
 // Each arg: n = placeholder, opts() = [value, label?] choices from live state, opt = may be left out, free = any text.
 const SL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"];
@@ -7764,14 +7981,14 @@ async function sendChat(how) {
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
     if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
-    const r = await api("/api/message", "POST", body);
+    const r = await sendMsgOut(t, text, body, owner && owner.pc);   // null: the gateway is unreachable, the message waits in the outbox (14-outbox.js)
     sendCid = null;
     // A peer's conversation is not on this computer's event stream: its history is read again now, so the sent bubble shows at once.
     if (owner && owner.pc) loadTarget(t, true);
     scrollChat(true); scrollTerm(true);
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast(TX("chat.send.queued")); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
-  else if (mode === "interrupt") toast(TX("chat.send.interrupted"));
+  else if (mode === "interrupt" && r !== null) toast(TX("chat.send.interrupted"));
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
@@ -7864,6 +8081,7 @@ function renderQueue() { if (paintQueue(tl, target)) scrollChat(false); paneStri
 const QD = new WeakMap();
 const tlTail = () => { let n = tl.lastElementChild; while (n && n.classList.contains("qd")) n = n.previousElementSibling; return n; };
 function qdBubble(i) {
+  if (i.local) return outboxBubble(i);
   const sep = () => el("span", { class: "qd-sep", "aria-hidden": "true", text: "·" });
   return el("div", { class: "um qd" }, el("div", { class: "ub", text: i.text }),
     el("div", { class: "qd-ln" }, el("span", { text: TX("chat.queue.label") }), sep(),
@@ -7873,7 +8091,7 @@ function qdBubble(i) {
 // The queued messages of conversation t at the end of list: the open timeline, or an inactive pane's. A message drawn after them moves them to the end again.
 // True when there are more of them than were there.
 function paintQueue(list, t) {
-  const mine = QUEUE.filter(i => i.target === t), sig = JSON.stringify(mine.map(i => [i.id, i.text]));
+  const mine = QUEUE.concat(outboxItems()).filter(i => i.target === t), sig = JSON.stringify(mine.map(i => [i.id, i.text]));
   const rec = QD.get(list) || { sig: "", nodes: [] }, found = [...list.querySelectorAll(":scope > .qd")];
   if (rec.sig === sig && found.length === rec.nodes.length && found.every((n, k) => n === rec.nodes[k]) && (!found.length || list.lastElementChild === found[found.length - 1])) return false;
   for (const n of found) n.remove();
@@ -10267,7 +10485,14 @@ function targetEdit(key, title, cur, confirmText, extra = {}) {
   const p = pending[key] || {};
   const model = p.model ?? cur.model, thinking = p.thinking ?? cur.thinking;
   const dirty = (p.model != null && p.model !== cur.model) || (p.thinking != null && p.thinking !== cur.thinking);
-  const modelField = selectField(TX("common.model"), modelName(model), () => modelItems(key, cur.model), model, v => { (pending[key] ||= {}).model = v; renderModels(); });
+  const modelField = selectField(TX("common.model"), modelName(model), () => modelItems(key, cur.model), model, v => {
+    const pe = pending[key] ||= {}, hit = [...(M.pickable || []), ...(M.available || [])].find(x => x.selector === v);
+    pe.model = v;
+    // Another model shows (and sends) its own sweet spot, the one the hub applies when no effort is sent; the current model keeps its effort.
+    const effort = v === cur.model ? cur.thinking : hit && hit.effort;
+    if (effort) pe.thinking = effort;
+    renderModels();
+  });
   // Effort is a dropdown next to the model, not a row of eight buttons (owner 2026-10-20: "드랍다운으로 모델이랑 추론정도 각각"), and it
   // lists what this model accepts, so picking another model rebuilds it with that model's levels.
   // A model with no level to choose (only 'off') gets no effort cell at all, not an empty "–" one.
@@ -10673,6 +10898,17 @@ const quotaBar = at => el("div", { class: "tools-bar" }, el("span", { class: "su
 // The same 새로고침 at the right end of the first card's head (the screen has no bar of its own above the cards), with when it was read.
 const usRefresh = at => [at ? el("span", { class: "sup", text: monTime(at) }) : null,
   el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), TX("settings.refresh"))].filter(Boolean);
+// One limit's bar and share left for the cards: a gauge (01-motion-gauge.js) keyed by the account's own window, so a read that raises
+// what is left fills the bar and counts the number from what the card showed, and a card drawn on opening shows the value as it is.
+function limitGauge(key, l) {
+  const f = limitFrac(l), track = bar(l);
+  if (f == null) return { num: el("b", { text: pctText(l) }), track };
+  const t = gaugeSplit(TX("base.pct_left", { n: GAUGE_MARK })), fill = track.firstChild;
+  fill.classList.add("gfill");
+  gaugeSet(key, f * 100, s => { fill.style.width = `${s.w.toFixed(2)}%`; gaugeNum(t.sp, s); });
+  return { num: el("b", {}, ...t.nodes), track };
+}
+let quotaDrawn = 0;
 async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
   const box = $("#usage");
@@ -10683,6 +10919,14 @@ async function loadQuota(fresh) {
   catch (e) { clear(box).append(quotaBar(""), emptyNode(TX("settings.usage.load_failed"))); return; }
   noteQuota(q);
   if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
+  paintQuota(q);
+}
+// Draws the usage screen from one read, a fetched one or the one the gateway pushed. A read older than the one on screen is dropped,
+// so a slow answer cannot put smaller numbers back after a recovery has shown.
+function paintQuota(q) {
+  if (q.fetched_at < quotaDrawn) return;
+  quotaDrawn = q.fetched_at || 0;
+  const box = $("#usage");
   clear(box);
   const grid = el("div", { class: "grid" });
   for (const p of q.providers || []) {
@@ -10690,9 +10934,10 @@ async function loadQuota(fresh) {
     const name = p.name || providerName(p.provider);
     const card = el("div", { class: "card" }, el("div", { class: "ch lo" }, el("h3", { text: p.plan ? `${name} · ${p.plan}` : name })));
     for (const l of p.limits || []) {
+      const g = limitGauge(`usage:${p.provider}|${p.account || ""}|${l.id}`, l);
       card.append(el("div", { class: "lim" },
-        el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) }), el("b", { text: pctText(l) })),
-        bar(l),
+        el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) }), g.num),
+        g.track,
         l.resets_at ? el("div", { class: "sup", text: rel(l.resets_at) }) : null));
     }
     if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: TX("settings.usage.no_limits") }));
@@ -13856,7 +14101,7 @@ setInterval(() => { if (current === "harness" && !document.hidden && !hLoading) 
 // the frame under the standard header: back, name, status, 새 탭, ⋯ (설정 / 끄기 / 제거). The rows are the 모니터링 list's rows.
 // window.appsMonItems() lets 30-monitoring.js (not ours) add the tool apps to its 앱 group; nothing here edits that file.
 const APPS = { items: [], errors: [], loaded: false, failed: false, sel: "", list: true, sig: "", timer: 0 };
-const APP_STATUS = { running: ["실행 중", "ok"], unreachable: ["응답 없음", "err"], unknown: ["상태 모름", ""], off: ["꺼짐", ""] };
+const APP_STATUS = { running: [TX("apps.status.running"), "ok"], unreachable: [TX("apps.status.unreachable"), "err"], unknown: [TX("apps.status.unknown"), ""], off: [TX("apps.status.off"), ""] };
 const appsNarrow = () => narrowChat();
 const appsTool = a => a && a.source === "manifest" && a.kind === "tool" && a.web;
 
@@ -13880,28 +14125,28 @@ const appsBadge = a => { const s = a.off ? APP_STATUS.off : APP_STATUS[a.status]
 const appsStatusLine = a => {
   if (a.source === "registry") return a.status === "unreachable" ? a.hint || "" : "";
   if (a.off) return "";
-  return a.status === "unreachable" ? a.reason || "" : a.kind === "monitor" ? "상태만 확인하는 앱이에요" : "";
+  return a.status === "unreachable" ? a.reason || "" : a.kind === "monitor" ? TX("apps.row.monitor_hint") : "";
 };
 
 // The list: 사용자 앱 (the manifests), then 모니터링 앱 (the shipped contact-first apps), then the manifests that did not load.
 function appsRows() {
   const rows = [], tools = APPS.items.filter(a => a.source === "manifest");
-  rows.push({ header: "사용자 앱" });
-  if (!tools.length) rows.push({ k: "empty-apps", name: "아직 내 앱이 없어요", av: appsAv("add"), hint: "채팅에서 앱을 추가해 달라고 하면 돼요", open: () => go("chat") });
+  rows.push({ header: TX("apps.group.own") });
+  if (!tools.length) rows.push({ k: "empty-apps", name: TX("apps.empty.name"), av: appsAv("add"), hint: TX("apps.empty.hint"), open: () => go("chat") });
   for (const a of tools) {
     rows.push({ k: a.id, name: a.label, av: appsAv(a.icon), hint: appsStatusLine(a), badge: appsBadge(a), sel: APP_STATE_ON() && a.id === (appsPicked() || {}).id, open: () => appsPick(a.id) });
   }
   const reg = APPS.items.filter(a => a.source === "registry");
   if (reg.length) {
-    rows.push({ header: "모니터링 앱" });
+    rows.push({ header: TX("apps.group.monitor") });
     for (const a of reg) rows.push({ k: `r:${a.id}`, name: a.label, av: appsAv(a.icon), hint: appsStatusLine(a), badge: appsBadge(a), open: () => go("monitoring", `i:${a.id}`) });
   }
   if (APPS.errors.length) {
-    rows.push({ header: "불러오지 못한 앱" });
-    for (const e of APPS.errors) rows.push({ k: `e:${e.id}`, name: e.id, av: appsAv("file"), hint: e.reason, badge: ["오류", "err"], open: () => dialog({ title: "앱을 불러오지 못했어요", body: el("div", { class: "apps-err" }, el("p", {}, el("b", { text: e.id })), el("p", { text: e.reason }), el("p", { class: "sup", text: e.dir })), mid: true,
-      actions: [{ label: "다시 확인", kind: "pri", onclick: close => { close(); loadApps().then(() => { APPS.sig = ""; appsSchedule(); }); } }] }) });
+    rows.push({ header: TX("apps.group.failed") });
+    for (const e of APPS.errors) rows.push({ k: `e:${e.id}`, name: e.id, av: appsAv("file"), hint: e.reason, badge: [TX("apps.status.error"), "err"], open: () => dialog({ title: TX("apps.err.title"), body: el("div", { class: "apps-err" }, el("p", {}, el("b", { text: e.id })), el("p", { text: e.reason }), el("p", { class: "sup", text: e.dir })), mid: true,
+      actions: [{ label: TX("apps.recheck"), kind: "pri", onclick: close => { close(); loadApps().then(() => { APPS.sig = ""; appsSchedule(); }); } }] }) });
   }
-  if (!APPS.loaded) rows.push({ header: APPS.failed ? "앱을 불러오지 못했어요" : "앱 불러오는 중…" });
+  if (!APPS.loaded) rows.push({ header: APPS.failed ? TX("apps.load_failed") : TX("apps.loading") });
   return rows;
 }
 const APP_STATE_ON = () => current === "apps" && !APPS.list;
@@ -13934,42 +14179,42 @@ function appsHeader(a) {
   const st = a.off ? APP_STATUS.off : APP_STATUS[a.status] || APP_STATUS.unknown;
   const hint = appsTool(a) && !a.off && a.status !== "unreachable" ? pkHint() : null;   // a phone: a line under the status, the title keeps its width
   return el("header", { class: "apps-hd" },
-    appsNarrow() ? el("button", { class: "ib", type: "button", "aria-label": "앱 목록", title: "앱 목록", onclick: () => go("apps") }, icon("back")) : null,
+    appsNarrow() ? el("button", { class: "ib", type: "button", "aria-label": TX("apps.list"), title: TX("apps.list"), onclick: () => go("apps") }, icon("back")) : null,
     appsAv(a.icon),
     el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: a.label }), el("p", { class: "apps-p" }, st[0], a.reason && !a.off ? ` · ${a.reason}` : ""), appsNarrow() ? hint : null),
     appsNarrow() ? null : hint,
-    appsTool(a) && !a.off ? el("a", { class: "ib", href: a.web.href, target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")) : null,
-    el("button", { class: "ib", type: "button", "aria-label": "앱 메뉴", title: "앱 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => appsMenu(ev.currentTarget, a) }, icon("more")));
+    appsTool(a) && !a.off ? el("a", { class: "ib", href: a.web.href, target: "_blank", rel: "noopener", "aria-label": TX("apps.open_tab"), title: TX("apps.open_tab") }, icon("open")) : null,
+    el("button", { class: "ib", type: "button", "aria-label": TX("apps.menu"), title: TX("apps.menu"), "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => appsMenu(ev.currentTarget, a) }, icon("more")));
 }
 
 const kvRows = (obj) => el("div", { class: "apps-kv" }, ...Object.entries(obj).map(([k, v]) => el("div", { class: "apps-kr" }, el("span", { class: "apps-kk", text: k }), el("span", { class: "apps-kv2", text: String(v) }))));
 function appsSettings(a) {
   const body = el("div", { class: "apps-set" },
-    kvRows({ 주소: a.web ? a.web.href : a.kind === "monitor" ? "모니터링에서 확인해요" : "", 상태: (APP_STATUS[a.off ? "off" : a.status] || APP_STATUS.unknown)[0] }),
-    a.start ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "앱 실행" }), el("p", { class: "apps-note", text: "이 앱은 스스로 실행되지 않아요. 아래 명령으로 띄워 주세요." }), el("pre", { class: "apps-pre", text: [a.start.cwd ? `cd ${a.start.cwd}` : "", `${a.start.env ? Object.entries(a.start.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : ""}${a.start.command}`].filter(Boolean).join("\n") })) : null,
-    a.watches && a.watches.length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "감시" }), el("p", { class: "apps-note", text: a.watches.join(", ") })) : null,
-    a.settings && Object.keys(a.settings).length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: "설정" }), kvRows(a.settings)) : null);
-  dialog({ title: `${a.label} 설정`, body, mid: true });
+    kvRows({ [TX("apps.set.address")]: a.web ? a.web.href : a.kind === "monitor" ? TX("apps.set.in_monitoring") : "", [TX("apps.set.status")]: (APP_STATUS[a.off ? "off" : a.status] || APP_STATUS.unknown)[0] }),
+    a.start ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: TX("apps.set.run") }), el("p", { class: "apps-note", text: TX("apps.set.run_note") }), el("pre", { class: "apps-pre", text: [a.start.cwd ? `cd ${a.start.cwd}` : "", `${a.start.env ? Object.entries(a.start.env).map(([k, v]) => `${k}=${v}`).join(" ") + " " : ""}${a.start.command}`].filter(Boolean).join("\n") })) : null,
+    a.watches && a.watches.length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: TX("apps.set.watches") }), el("p", { class: "apps-note", text: a.watches.join(", ") })) : null,
+    a.settings && Object.keys(a.settings).length ? el("div", { class: "apps-block" }, el("div", { class: "apps-kk", text: TX("common.settings") }), kvRows(a.settings)) : null);
+  dialog({ title: TX("apps.set.title", { label: a.label }), body, mid: true });
 }
 function appsMenu(anchor, a) {
   const own = a.source === "manifest";
-  const items = [{ value: "settings", label: "설정" }, ...(own ? [{ value: "off", label: a.off ? "켜기" : "끄기" }] : []), ...(own ? [{ value: "remove", label: "제거", danger: true }] : [])];
+  const items = [{ value: "settings", label: TX("common.settings") }, ...(own ? [{ value: "off", label: a.off ? TX("apps.on") : TX("apps.off") }] : []), ...(own ? [{ value: "remove", label: TX("apps.remove"), danger: true }] : [])];
   showMenu(anchor, items, { onPick: v => { if (v === "settings") appsSettings(a); else if (v === "off") appsToggle(a); else if (v === "remove") appsRemove(a); } });
 }
 async function appsToggle(a) {
   try {
     await api(`/api/apps/${enc(a.id)}`, "PATCH", { off: !a.off });
-    toast(a.off ? `${a.label}을(를) 켰어요` : `${a.label}을(를) 껐어요`);
+    toast(a.off ? TX("apps.toast.on", { label: a.label }) : TX("apps.toast.off", { label: a.label }));
     await loadApps();
   } catch (e) { toast(e.message, true); }
 }
 async function appsRemove(a) {
-  const sure = await ask(`${a.label} 제거`, "목록에서 빼요. 파일은 남아서 되돌릴 수 있어요.", "제거", true);
+  const sure = await ask(TX("apps.remove.title", { label: a.label }), TX("apps.remove.body"), TX("apps.remove"), true);
   if (!sure) return;
   try {
     await api(`/api/apps/${enc(a.id)}`, "DELETE");
     APPS.sel = ""; APPS.list = true;
-    toast(`${a.label}을(를) 제거했어요`);
+    toast(TX("apps.toast.removed", { label: a.label }));
     navSync("apps", "apps");
     await loadApps();
   } catch (e) { toast(e.message, true); }
@@ -13978,15 +14223,15 @@ async function appsRemove(a) {
 function appsBody(a) {
   if (!appsTool(a)) {
     return el("div", { class: "apps-card" },
-      el("p", { class: "apps-note", text: a.kind === "monitor" ? "이 앱은 모니터링에서 소식을 모아 보여 줘요." : "이 앱은 자체 화면이 없어요." }),
-      a.source === "registry" ? el("button", { class: "btn tonal sm", type: "button", text: "모니터링에서 열기", onclick: () => go("monitoring", `i:${a.id}`) }) : null);
+      el("p", { class: "apps-note", text: a.kind === "monitor" ? TX("apps.body.monitor") : TX("apps.body.no_screen") }),
+      a.source === "registry" ? el("button", { class: "btn tonal sm", type: "button", text: TX("apps.open_monitoring"), onclick: () => go("monitoring", `i:${a.id}`) }) : null);
   }
-  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "꺼짐" }), el("button", { class: "btn tonal sm", type: "button", text: "켜기", onclick: () => appsToggle(a) }));
+  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: TX("apps.status.off") }), el("button", { class: "btn tonal sm", type: "button", text: TX("apps.on"), onclick: () => appsToggle(a) }));
   if (a.status === "unreachable") {
     return el("div", { class: "apps-card" },
-      el("p", { class: "apps-note", text: `${a.label} 앱이 응답하지 않아요${a.reason ? ` (${a.reason})` : ""}.` }),
-      a.start ? el("p", { class: "apps-note", text: "앱이 떠 있는지 확인해 주세요." }) : null,
-      el("button", { class: "btn tonal sm", type: "button", text: "다시 확인", onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
+      el("p", { class: "apps-note", text: a.reason ? TX("apps.body.no_response_why", { label: a.label, reason: a.reason }) : TX("apps.body.no_response", { label: a.label }) }),
+      a.start ? el("p", { class: "apps-note", text: TX("apps.body.check_running") }) : null,
+      el("button", { class: "btn tonal sm", type: "button", text: TX("apps.recheck"), onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
   }
   const frame = el("iframe", { class: "apps-frame", src: a.web.href, title: a.label, referrerpolicy: "same-origin", onload: () => appsFrameCheck(frame, a) });
   return frame;
@@ -13997,7 +14242,7 @@ function appsFrameCheck(frame, a) {
   let plain = false;
   try { plain = frame.contentDocument.contentType === "text/plain"; } catch { return; }
   if (!plain) return;
-  frame.replaceWith(emptyNode(`${a.label} 앱이 열리지 않아요. 앱이 켜져 있는지 확인하고 다시 열어 보세요`, async () => { await loadApps(); APPS.sig = ""; $("#apps-pane").dataset.key = ""; appsRender(); }));
+  frame.replaceWith(emptyNode(TX("apps.body.wont_open", { label: a.label }), async () => { await loadApps(); APPS.sig = ""; $("#apps-pane").dataset.key = ""; appsRender(); }));
 }
 
 let appsRaf = 0;
@@ -14016,12 +14261,12 @@ function appsRender() {
     side.scrollTop = top;
   }
   const a = appsPicked();
-  const head = a ? appsHeader(a) : el("header", { class: "apps-hd" }, el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: "앱" }), el("p", { class: "apps-p", text: "내 앱을 한곳에서 열어요" })));
+  const head = a ? appsHeader(a) : el("header", { class: "apps-hd" }, el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: TX("apps.title") }), el("p", { class: "apps-p", text: TX("apps.subtitle") })));
   const bodyKey = a ? `${a.id}:${a.off}:${a.status}:${a.reason || ""}:${appsNarrow()}` : "none";
   if (pane.dataset.key === bodyKey && pane.firstChild) { /* same app, same state: keep the frame (a reload would lose the app's own state) */ }
   else {
     pane.dataset.key = bodyKey;
-    clear(pane).append(head, a ? appsBody(a) : el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "앱을 골라 주세요." })));
+    clear(pane).append(head, a ? appsBody(a) : el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: TX("apps.pick") })));
   }
 }
 
@@ -14029,7 +14274,7 @@ function appsRender() {
 //   in monItems(), after the INTG.items loop:  for (const a of (window.appsMonItems ? appsMonItems() : [])) items.push(a);
 //   in monRows(), the row's opener:            open: () => it.tool ? go("apps", it.id) : go("monitoring", it.key)
 window.appsMonItems = () => APPS.items.filter(a => a.source === "manifest" && a.kind === "tool").map(a => ({
-  key: `x:${a.id}`, id: a.id, tool: true, group: "앱", name: a.label, ic: a.icon, notices: [], mails: [], app: true, unread: 0, unreplied: 0,
+  key: `x:${a.id}`, id: a.id, tool: true, group: MON_GROUP.app, name: a.label, ic: a.icon, notices: [], mails: [], app: true, unread: 0, unreplied: 0,
   hint: appsStatusLine(a), badge: appsBadge(a), at: "",
 }));
 
@@ -14047,7 +14292,7 @@ setInterval(() => { if (current === "apps" && !document.hidden) loadApps(); }, 3
 // file mark, name, path, the pick hint, 새 탭, close. From 1100px it sits beside the conversation, so a pick's chip shows in the composer
 // next to it; below that it is a full-screen sheet with a back button. Picks stay with the conversation when the canvas closes.
 const CVS = { path: "", name: "", narrow: null, scripted: false };
-const canvasPane = el("section", { id: "canvas", class: "cvs-pane apps-pane", "aria-label": "캔버스", hidden: true });
+const canvasPane = el("section", { id: "canvas", class: "cvs-pane apps-pane", "aria-label": TX("apps.canvas"), hidden: true });
 $("#v-chat").append(canvasPane);
 const canvasUrl = p => `/api/canvas?path=${enc(p)}`;
 const canvasIsHtml = name => /\.html?$/i.test(String(name || ""));
@@ -14069,11 +14314,11 @@ function canvasDoc(html) {
 function canvasHeader() {
   const narrow = narrowChat();
   return el("header", { class: "apps-hd" },
-    narrow ? el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("back")) : null,
+    narrow ? el("button", { class: "ib", type: "button", "aria-label": TX("apps.canvas.close"), title: TX("common.close"), onclick: canvasClose }, icon("back")) : null,
     el("span", { class: "cv-av app-av", "aria-hidden": "true" }, icon("file")),
-    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: "화면 파일" }), pkHint()),   // the hint under the name (a beside-the-title hint left the name 1px wide in the side pane)
-    el("a", { class: "ib", href: canvasUrl(CVS.path), target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")),
-    narrow ? null : el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("close")));
+    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: TX("apps.canvas.file") }), pkHint()),   // the hint under the name (a beside-the-title hint left the name 1px wide in the side pane)
+    el("a", { class: "ib", href: canvasUrl(CVS.path), target: "_blank", rel: "noopener", "aria-label": TX("apps.open_tab"), title: TX("apps.open_tab") }, icon("open")),
+    narrow ? null : el("button", { class: "ib", type: "button", "aria-label": TX("apps.canvas.close"), title: TX("common.close"), onclick: canvasClose }, icon("close")));
 }
 // The header follows the width (back on a phone, close on a wide screen); the frame is kept, so the page and its markers stay.
 function canvasHead() {
@@ -14094,7 +14339,7 @@ function canvasOpen(path, name) {
   const frame = el("iframe", { class: "apps-frame cvs-frame", title: CVS.name, referrerpolicy: "same-origin" });
   canvasPane.append(frame);
   fetch(canvasUrl(path)).then(async r => {
-    if (!r.ok) throw new Error(fileNote(r, "열 수 없는 파일이에요"));
+    if (!r.ok) throw new Error(fileNote(r, TX("apps.canvas.cant_open")));
     const html = await r.text();
     if (CVS.path !== path || !frame.isConnected) return;
     if (/<script\b/i.test(html)) {
@@ -14103,7 +14348,7 @@ function canvasOpen(path, name) {
       frame.setAttribute("sandbox", "allow-scripts");
       frame.src = canvasUrl(path) + "&pick=1";
     } else frame.srcdoc = canvasDoc(html);
-  }).catch(e => { if (CVS.path === path && frame.isConnected) frame.replaceWith(el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: e instanceof TypeError ? "연결이 끊겨 열지 못했어요" : e.message }))); });
+  }).catch(e => { if (CVS.path === path && frame.isConnected) frame.replaceWith(el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: e instanceof TypeError ? TX("apps.canvas.offline") : e.message }))); });
 }
 function canvasClose() {
   CVS.path = ""; CVS.name = "";
@@ -14115,7 +14360,7 @@ function canvasClose() {
 // node/doc/frame are null and remote marks it: 15-picker.js leaves the overlay to the page's own badges.
 function canvasPick(d) {
   if (!d || typeof d.id !== "string" || !d.id) return;
-  if (PICK.length >= 10) { toast("요소는 한 번에 10개까지 보낼 수 있어요", true); return; }
+  if (PICK.length >= 10) { toast(TX("apps.canvas.pick_max"), true); return; }
   if (PICK.some(p => p.remote && p.id === d.id)) return;
   const frame = $(".cvs-frame", canvasPane);
   PICK.push({ id: d.id, n: PICK.length + 1, tag: String(d.tag || "div").toLowerCase(), sel: String(d.sel || ""), text: String(d.text || "").slice(0, 200), html: String(d.html || "").slice(0, 600),
@@ -14148,8 +14393,8 @@ const intgHidden = t => INTG.available.some(a => a.off && intgHas(a, t));
 
 // 미답장 (hub/unreplied.ts), reading never clears it. One item that is owed is a state: a dot and a word (unrepPill). "미답장 N" is a count: the
 // orange count badge (unrepCount), beside the unread count badge. Both look the same on every row that shows them.
-const unrepPill = (text = "미답장") => el("span", { class: "tag unreplied", text });
-const unrepCount = n => el("span", { class: "nb unreplied", "aria-label": `미답장 ${n}개`, text: `미답장 ${n > 99 ? "99+" : n}` });
+const unrepPill = (text = TX("apps.unreplied")) => el("span", { class: "tag unreplied", text });
+const unrepCount = n => el("span", { class: "nb unreplied", "aria-label": TX("apps.unreplied.aria", { n }), text: TX("apps.unreplied.badge", { c: n > 99 ? "99+" : n }) });
 
 // Callers that ask while a request is out share it (opening a mail thread asks from the thread, the unread sync and the list at once).
 let intgFlight = null;
@@ -14177,10 +14422,10 @@ function intgWatch() {
 loadIntegrations();
 
 // The pills of the watched rooms, the same format as the mail, project and 댓글 ones: which rooms the list shows. [key, label, keep, the empty list's line].
-const KK_VIEWS = [["all", "전체", () => true, ""], ["unread", "안 읽음", r => r.unread, "안 읽은 대화방이 없어요"], ["unreplied", "미답장", r => r.unreplied, "미답장 대화방이 없어요"]];
+const KK_VIEWS = [["all", TX("apps.kk.view.all"), () => true, ""], ["unread", TX("common.unread"), r => r.unread, TX("apps.kk.view.no_unread")], ["unreplied", TX("apps.unreplied"), r => r.unreplied, TX("apps.kk.view.no_unreplied")]];
 const kkViewOf = () => KK_VIEWS.find(v => v[0] === KK.view) || KK_VIEWS[0];
 function kkViewBar(watched) {
-  return segKeep(el("div", { class: "mr-filter kk-views", role: "tablist", "aria-label": "지켜보는 대화방 보기" }, ...KK_VIEWS.map(([k, label, ok]) => {
+  return segKeep(el("div", { class: "mr-filter kk-views", role: "tablist", "aria-label": TX("apps.kk.view_aria") }, ...KK_VIEWS.map(([k, label, ok]) => {
     const on = k === kkViewOf()[0];
     return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => { KK.view = k; kkPaintRooms(); } }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
   })));
@@ -14210,14 +14455,14 @@ const KK = {
 const kkBig = s => { try { return BigInt(s); } catch { return 0n; } };
 const kkGt = (a, b) => kkBig(a) > kkBig(b);
 const kkDay = t => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
-const kkTime = t => new Date(t).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
-const kkDate = t => { const now = new Date(), y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1); return kkDay(t) === kkDay(now) ? "오늘" : kkDay(t) === kkDay(y) ? "어제" : new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" }); };
+const kkTime = t => new Date(t).toLocaleTimeString(TX_LOCALE, { hour: "numeric", minute: "2-digit" });
+const kkDate = t => { const now = new Date(), y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1); return kkDay(t) === kkDay(now) ? TX("apps.kk.today") : kkDay(t) === kkDay(y) ? TX("apps.kk.yesterday") : new Date(t).toLocaleDateString(TX_LOCALE, { year: "numeric", month: "long", day: "numeric", weekday: "long" }); };
 function kkListTime(t) {
   if (!t) return "";
-  const d = new Date(t), now = new Date(), y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const d = new Date(t), now = new Date(), y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1), thisYear = d.getFullYear() === now.getFullYear();
   if (kkDay(t) === kkDay(now)) return kkTime(t);
-  if (kkDay(t) === kkDay(y)) return "어제";
-  return d.getFullYear() === now.getFullYear() ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  if (kkDay(t) === kkDay(y)) return TX("apps.kk.yesterday");
+  return I18N_LANG !== "ko" ? d.toLocaleDateString(TX_LOCALE, thisYear ? { month: "short", day: "numeric" } : { year: "numeric", month: "short", day: "numeric" }) : thisYear ? `${d.getMonth() + 1}월 ${d.getDate()}일` : `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
 }
 const kkHue = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.codePointAt(0)) % 360; return h; };
 const kkInitial = s => [...String(s ?? "").trim()][0] || "?";
@@ -14227,8 +14472,8 @@ function kkAvatar(name, cls = "") {
   return n;
 }
 // What a message that is not plain text says (Messenger's type codes). A reply (26) carries its own text.
-const KK_TYPE = { 2: "(사진)", 27: "(사진)", 3: "(동영상)", 4: "(음성 메시지)", 5: "(음성 메시지)", 12: "(이모티콘)", 20: "(이모티콘)", 25: "(이모티콘)", 18: "(파일)", 16: "(위치)" };
-const KK_OTHER = "(지원하지 않는 메시지)";
+const KK_TYPE = { 2: TX("apps.kk.type.photo"), 27: TX("apps.kk.type.photo"), 3: TX("apps.kk.type.video"), 4: TX("apps.kk.type.voice"), 5: TX("apps.kk.type.voice"), 12: TX("apps.kk.type.sticker"), 20: TX("apps.kk.type.sticker"), 25: TX("apps.kk.type.sticker"), 18: TX("apps.kk.type.file"), 16: TX("apps.kk.type.location") };
+const KK_OTHER = TX("apps.kk.type.other");
 // A JSON record in the message column (an attachment of a type this build does not draw) is not words: never show it.
 const kkRecord = s => {
   if (!/^\s*[\[{]/.test(String(s))) return false;
@@ -14252,11 +14497,11 @@ function kkSysText(text) {
   let v;
   try { v = JSON.parse(s); } catch { return ""; }
   if (!v || typeof v !== "object" || v.feedType === undefined) return "";
-  if (v.hidden) return "가려진 메시지예요";
+  if (v.hidden) return TX("apps.kk.sys.hidden");
   const names = (Array.isArray(v.members) ? v.members : []).map(x => x && (x.nickName || x.nickname)).filter(Boolean).join(", ");
   if (!names) return "";
   const ft = Number(v.feedType);
-  return ft === 1 || ft === 4 ? `${names}님이 들어왔어요` : ft === 2 ? `${names}님이 나갔어요` : ft === 6 ? `${names}님을 내보냈어요` : "";
+  return ft === 1 || ft === 4 ? TX("apps.kk.sys.joined", { names }) : ft === 2 ? TX("apps.kk.sys.left", { names }) : ft === 6 ? TX("apps.kk.sys.removed", { names }) : "";
 }
 
 /* ---- links in a message: the address itself is a link, and a lazy preview card under the bubble (GET /api/link-preview) ---- */
@@ -14278,7 +14523,7 @@ function kkLinkText(text) {
   if (at < String(text).length) out.append(document.createTextNode(String(text).slice(at)));
   return out;
 }
-const kkLpCard = url => el("a", { class: "kk-lp", href: url, target: "_blank", rel: "noopener noreferrer", "data-url": url }, el("span", { class: "kk-lp-ph", text: "링크 미리보기" }));
+const kkLpCard = url => el("a", { class: "kk-lp", href: url, target: "_blank", rel: "noopener noreferrer", "data-url": url }, el("span", { class: "kk-lp-ph", text: TX("apps.kk.link_preview") }));
 // One request per address for the whole pane (the hub caches 24 h as well); a failed preview disappears, the plain link stays.
 // The map holds the pending request too, so cards of the same address share one answer.
 async function kkLpLoad(card) {
@@ -14312,7 +14557,7 @@ function kkLpWatch() {
 }
 
 /* ---- photos, videos, voice, files, replies, locations: built from m.media (the server sends no URL; bytes come from /api/kakao/media/...) ---- */
-const KK_GONE = "기간이 지나 볼 수 없어요";
+const KK_GONE = TX("apps.kk.gone");
 // A peer's room (KK.pc) is read through /api/peer/proxy like every other Kakao GET (34-peer-monitoring.js pqLink).
 const kkMediaUrl = (m, i, v) => pqLink(`/api/kakao/media/${enc(KK.open)}/${enc(m.logId)}?i=${i | 0}&v=${v}`);
 const kkFileUrl = m => pqLink(`/api/kakao/media/${enc(KK.open)}/${enc(m.logId)}/file`);
@@ -14342,7 +14587,7 @@ function kkRatio(box, w, h, max) {
   box.style.setProperty("--pw", `${Math.min(kkNum(w) > 20 ? w : max, max)}px`);
 }
 function kkPhotoBtn(m, md, i, alt) {
-  const b = el("button", { class: "kk-photo", type: "button", "data-k": "photo", "aria-label": `${alt} 크게 보기`, onclick: () => kkViewer(m, md, i) });
+  const b = el("button", { class: "kk-photo", type: "button", "data-k": "photo", "aria-label": TX("apps.kk.enlarge", { alt }), onclick: () => kkViewer(m, md, i) });
   b.append(kkImg(m, i, "thumb", alt, b));
   return b;
 }
@@ -14350,13 +14595,13 @@ function kkPhotoNode(m, md) {
   if (md.expired) return kkGoneCard();
   const count = Math.max(1, md.count | 0);
   if (count === 1) {
-    const b = kkPhotoBtn(m, md, 0, "사진");
+    const b = kkPhotoBtn(m, md, 0, TX("apps.kk.photo"));
     kkRatio(b, md.w, md.h, 240);
     return el("div", { class: "kk-media" }, b);
   }
   const cols = count >= 5 ? 3 : 2, shown = Math.min(count, 6), grid = el("div", { class: `kk-media kk-album c${cols}`, "data-count": String(count) });
   for (let i = 0; i < shown; i++) {
-    const b = kkPhotoBtn(m, md, i, `사진 ${i + 1}`);
+    const b = kkPhotoBtn(m, md, i, TX("apps.kk.photo_n", { n: i + 1 }));
     if (i === shown - 1 && count > shown) b.append(el("span", { class: "kk-more-n", text: `+${count - shown + 1}` }));
     grid.append(b);
   }
@@ -14364,9 +14609,9 @@ function kkPhotoNode(m, md) {
 }
 function kkVideoNode(m, md) {
   if (md.expired) return kkGoneCard();
-  const b = el("button", { class: "kk-photo kk-video", type: "button", "data-k": "video", "aria-label": "동영상 재생", onclick: () => kkViewer(m, md, 0) });
+  const b = el("button", { class: "kk-photo kk-video", type: "button", "data-k": "video", "aria-label": TX("apps.kk.play"), onclick: () => kkViewer(m, md, 0) });
   kkRatio(b, md.w, md.h, 240);
-  b.append(kkImg(m, 0, "thumb", "동영상", b), el("span", { class: "kk-play", "aria-hidden": "true" }));
+  b.append(kkImg(m, 0, "thumb", TX("apps.kk.video"), b), el("span", { class: "kk-play", "aria-hidden": "true" }));
   if (kkDur(md.d)) b.append(el("span", { class: "kk-dur", text: kkDur(md.d) }));
   return el("div", { class: "kk-media" }, b);
 }
@@ -14381,21 +14626,21 @@ function kkFileNode(m, md) {
   return el("div", { class: `kk-bub card file${md.local ? "" : " off"}` },
     icon("file", "kk-fi"),
     el("span", { class: "kk-fb" }, el("span", { class: "kk-fn", title: md.name, text: md.name }), sub ? el("span", { class: "kk-sub", text: sub }) : null),
-    md.local ? el("a", { class: "btn tonal inrow kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
+    md.local ? el("a", { class: "btn tonal inrow kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: TX("apps.kk.open") }) : el("span", { class: "kk-sub kk-nopc", text: TX("apps.kk.not_on_pc") }));
 }
 // Like Messenger: "<author of the original>에게 답장" over the quoted original, then the reply's own text. The quote is a button that jumps to
 // the original (kkJump), when the attachment names its logId.
 function kkReplyNode(m, md) {
   const { text } = kkBody(m);
   return el("div", { class: "kk-bub reply" },
-    el("button", { class: `kk-quote${md.srcLogId ? " kk-qjump" : ""}`, type: "button", disabled: !md.srcLogId, "data-src": md.srcLogId || null, "aria-label": md.srcLogId ? "원래 메시지로 이동" : null, onclick: ev => { ev.stopPropagation(); kkJump(md.srcLogId, ev.currentTarget); } },
-      el("span", { class: "kk-qn" }, el("span", { text: md.quoteSender ? `${md.quoteSender}에게 답장` : "답장" }), md.srcLogId ? el("span", { class: "kk-qgo", text: "원문 보기" }) : null), el("span", { class: "kk-qt", text: md.quote })),
+    el("button", { class: `kk-quote${md.srcLogId ? " kk-qjump" : ""}`, type: "button", disabled: !md.srcLogId, "data-src": md.srcLogId || null, "aria-label": md.srcLogId ? TX("apps.kk.go_original") : null, onclick: ev => { ev.stopPropagation(); kkJump(md.srcLogId, ev.currentTarget); } },
+      el("span", { class: "kk-qn" }, el("span", { text: md.quoteSender ? TX("apps.kk.reply_to", { name: md.quoteSender }) : TX("apps.kk.reply") }), md.srcLogId ? el("span", { class: "kk-qgo", text: TX("apps.kk.see_original") }) : null), el("span", { class: "kk-qt", text: md.quote })),
     el("div", { class: "kk-rt", text }));
 }
 // The original message of a quote: scroll it into view and flash it briefly. When the page does not hold it, the server sends the page
 // around that logId (?around=); a logId the room does not have says so with a toast.
 // The original stays marked a few seconds with an "원래 메시지" label over it, and a pill takes the owner back to the reply he came from.
-const kkFlash = (node, label = "원래 메시지") => {
+const kkFlash = (node, label = TX("apps.kk.original")) => {
   node.classList.remove("kk-hl");
   void node.offsetWidth;
   node.classList.add("kk-hl");
@@ -14411,8 +14656,8 @@ function kkReturnPill(from) {
   const pill = kkBackPill = el("button", { class: "kk-backpill", type: "button", "data-k": "kk-back-reply", onclick: () => {
     pill.remove(); kkBackPill = null;
     const n = [...kkTl.querySelectorAll("[data-log]")].find(x => x.dataset.log === log);
-    if (n) { n.scrollIntoView({ block: "center" }); kkFlash(n, "답장"); }
-  } }, icon("back"), "답장으로 돌아가기");
+    if (n) { n.scrollIntoView({ block: "center" }); kkFlash(n, TX("apps.kk.reply")); }
+  } }, icon("back"), TX("apps.kk.back_to_reply"));
   kkTl.parentElement.append(pill);
   setTimeout(() => { if (kkBackPill === pill) { pill.remove(); kkBackPill = null; } }, 12000);
 }
@@ -14424,7 +14669,7 @@ function kkJump(src, from) {
   if (!node) {
     const id = KK.open;
     // The original is on an older page: the quote says it is looking until the page around it arrives.
-    if (from) { from.classList.add("busy"); from.dataset.wait = "찾는 중…"; }
+    if (from) { from.classList.add("busy"); from.dataset.wait = TX("apps.kk.finding"); }
     api(`/api/kakao/chat/${enc(id)}?limit=${KK_PAGE}&around=${enc(src)}`).then(d => {
       if (KK.open !== id) return;
       // The page around the original is merged into what the room already shows (a jump never drops the current view). Messages between
@@ -14438,7 +14683,7 @@ function kkJump(src, from) {
       kkPaintTl(false);
       const hit = find();
       if (from) from.classList.remove("busy");
-      if (!hit) { toast("원래 메시지를 찾지 못했어요 · 대화에서 지워졌거나 아주 오래된 메시지예요", true); return; }
+      if (!hit) { toast(TX("apps.kk.orig_missing"), true); return; }
       hit.scrollIntoView({ block: "center" });
       kkFlash(hit);
       kkReturnPill(from);
@@ -14480,21 +14725,21 @@ async function kkFillGap(after) {
   } catch (e) { toast(e.message, true); }
   finally { KK.gapBusy = false; }
 }
-const kkGapNode = after => el("div", { class: "kk-gap", role: "separator", "aria-label": "불러오지 않은 메시지가 있어요" },
-  el("button", { class: "btn text", type: "button", "data-k": "gap", text: "사이 메시지 불러오기", onclick: () => kkFillGap(after) }));
+const kkGapNode = after => el("div", { class: "kk-gap", role: "separator", "aria-label": TX("apps.kk.gap_aria") },
+  el("button", { class: "btn text", type: "button", "data-k": "gap", text: TX("apps.kk.gap"), onclick: () => kkFillGap(after) }));
 // A sticker: its image from the media route when the server has one (md.image), else (or when it cannot be fetched) one chip with its name.
 // The text written with it sits in a bubble under it.
-const kkEmoChip = md => el("div", { class: "kk-bub ph kk-emo-chip", text: md.alt || "이모티콘" });
+const kkEmoChip = md => el("div", { class: "kk-bub ph kk-emo-chip", text: md.alt || TX("apps.kk.sticker") });
 function kkEmoticonNode(m, md) {
   const sticker = md.image
-    ? el("div", { class: "kk-sticker" }, el("img", { src: kkMediaUrl(m, 0, "full"), alt: md.alt || "이모티콘", loading: "lazy", decoding: "async", draggable: "false", onerror: ev => ev.currentTarget.parentNode.replaceWith(kkEmoChip(md)) }))
+    ? el("div", { class: "kk-sticker" }, el("img", { src: kkMediaUrl(m, 0, "full"), alt: md.alt || TX("apps.kk.sticker"), loading: "lazy", decoding: "async", draggable: "false", onerror: ev => ev.currentTarget.parentNode.replaceWith(kkEmoChip(md)) }))
     : kkEmoChip(md);
   const words = String(md.text ?? "").trim();
   return words ? el("div", { class: "kk-emo" }, sticker, el("div", { class: "kk-bub kk-emo-t", text: words })) : sticker;
 }
 function kkLocationNode(md) {
   const href = `https://map.kakao.com/link/map/${enc(md.label)},${Number(md.lat)},${Number(md.lng)}`;
-  return el("a", { class: "kk-bub card loc", href, target: "_blank", rel: "noopener" }, el("span", { class: "kk-fn", text: `위치: ${md.label}` }), el("span", { class: "kk-sub", text: "지도에서 보기" }));
+  return el("a", { class: "kk-bub card loc", href, target: "_blank", rel: "noopener" }, el("span", { class: "kk-fn", text: TX("apps.kk.loc", { label: md.label }) }), el("span", { class: "kk-sub", text: TX("apps.kk.map") }));
 }
 function kkMediaNode(m, md) {
   switch (md.kind) {
@@ -14513,13 +14758,13 @@ function kkViewer(m, md, start) {
   const count = md.kind === "photo" ? Math.max(1, md.count | 0) : 1;
   let i = Math.min(Math.max(start | 0, 0), count - 1);
   const title = el("span", { class: "lb-n" }), body = el("div", { class: "lb-img kk-vw", tabindex: "-1", autofocus: true, onclick: ev => { if (ev.target === ev.currentTarget) d.close(); } });
-  const prev = el("button", { class: "x", type: "button", "data-k": "prev", "aria-label": "이전 사진", onclick: () => go(i - 1) }, icon("back"));
-  const next = el("button", { class: "x", type: "button", "data-k": "next", "aria-label": "다음 사진", onclick: () => go(i + 1) }, icon("chev"));
-  const d = el("dialog", { class: "lbox kk-vwd", "aria-label": md.kind === "video" ? "동영상 보기" : "사진 보기" },
-    el("div", { class: "lb-in" }, el("div", { class: "lb-bar" }, title, prev, next, el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))), body));
+  const prev = el("button", { class: "x", type: "button", "data-k": "prev", "aria-label": TX("apps.kk.prev"), onclick: () => go(i - 1) }, icon("back"));
+  const next = el("button", { class: "x", type: "button", "data-k": "next", "aria-label": TX("apps.kk.next"), onclick: () => go(i + 1) }, icon("chev"));
+  const d = el("dialog", { class: "lbox kk-vwd", "aria-label": md.kind === "video" ? TX("apps.kk.view_video") : TX("apps.kk.view_photo") },
+    el("div", { class: "lb-in" }, el("div", { class: "lb-bar" }, title, prev, next, el("button", { class: "x", type: "button", "data-k": "close", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))), body));
   const gone = ev => ev.currentTarget.replaceWith(el("p", { class: "tv-st", role: "status", text: KK_GONE }));
   const paint = () => {
-    title.textContent = md.kind === "video" ? "동영상" : count > 1 ? `사진 ${i + 1} / ${count}` : "사진";
+    title.textContent = md.kind === "video" ? TX("apps.kk.video") : count > 1 ? TX("apps.kk.photo_of", { i: i + 1, count }) : TX("apps.kk.photo");
     prev.hidden = i <= 0; next.hidden = i >= count - 1;
     const src = kkMediaUrl(m, i, "full");
     clear(body).append(md.kind === "video" ? el("video", { src, controls: true, autoplay: true, playsinline: true, onerror: gone }) : el("img", { src, alt: title.textContent, onerror: gone }));
@@ -14534,21 +14779,21 @@ function kkViewer(m, md, start) {
 const kkWho = m => (m.fromMe ? "me" : String(m.authorId ?? m.sender ?? ""));
 
 /* ---- 사용자별 분석: a sender's avatar or name opens the panel (GET/POST /api/kakao/person/...) ---- */
-const kkMin = ms => (ms === undefined || ms === null ? "" : ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}초` : ms < 3600000 ? `${Math.round(ms / 60000)}분` : `${(ms / 3600000).toFixed(1)}시간`);
-function kkBars(values, labels) {
+const kkMin = ms => (ms === undefined || ms === null ? "" : ms < 60000 ? TX("apps.kk.sec", { n: Math.max(1, Math.round(ms / 1000)) }) : ms < 3600000 ? TX("apps.kk.min", { n: Math.round(ms / 60000) }) : TX("apps.kk.hour", { n: (ms / 3600000).toFixed(1) }));
+function kkBars(values, labels, title) {
   const max = Math.max(1, ...values);
-  return el("div", { class: "kk-hist" }, ...values.map((v, i) => el("span", { class: "kk-hb", title: `${labels ? labels[i] : i}시 ${v}개`, style: `height:${Math.max(2, Math.round((v / max) * 100))}%` })));
+  return el("div", { class: "kk-hist" }, ...values.map((v, i) => el("span", { class: "kk-hb", title: title(labels ? labels[i] : i, v), style: `height:${Math.max(2, Math.round((v / max) * 100))}%` })));
 }
 function kkPerson(uid) {
   uid = String(uid || "");
   const id = KK.open;
   if (!uid || !id) return;
   const who = KK.msgs.find(m => !m.fromMe && String(m.authorId) === uid);
-  const name = who ? who.sender || "상대" : "상대";
-  const body = el("div", { class: "kk-pd-b" }, el("div", { class: "kk-note", role: "status", text: "불러오는 중…" }));
-  const d = el("dialog", { class: "kk-pd", "data-uid": uid, "aria-label": `${name} 사용자별 분석` },
+  const name = who ? who.sender || TX("apps.kk.other") : TX("apps.kk.other");
+  const body = el("div", { class: "kk-pd-b" }, el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
+  const d = el("dialog", { class: "kk-pd", "data-uid": uid, "aria-label": TX("apps.kk.person_aria", { name }) },
     el("div", { class: "kk-pd-in" },
-      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: "사용자별 분석" })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: TX("apps.kk.person") })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))),
       body));
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
   document.body.append(d); d.showModal(); dialogHist(d);
@@ -14558,54 +14803,54 @@ function kkPerson(uid) {
 function kkPersonPaint(d, body, r) {
   const s = (r && r.stats) || {}, row = (k, v) => el("div", { class: "kk-prow" }, el("span", { class: "kk-pk", text: k }), el("span", { class: "kk-pv", text: v }));
   const span = [s.firstAt ? kstStamp(s.firstAt) : "", s.lastAt ? kstStamp(s.lastAt) : ""].filter(Boolean).join(" ~ ");
-  const reply = [s.replyToOwnerMs !== undefined ? `상대 → 나 ${kkMin(s.replyToOwnerMs)}` : "", s.ownerReplyMs !== undefined ? `나 → 상대 ${kkMin(s.ownerReplyMs)}` : ""].filter(Boolean).join(" · ") || "아직 잴 수 없어요";
+  const reply = [s.replyToOwnerMs !== undefined ? TX("apps.kk.reply_to_me", { t: kkMin(s.replyToOwnerMs) }) : "", s.ownerReplyMs !== undefined ? TX("apps.kk.me_to_other", { t: kkMin(s.ownerReplyMs) }) : ""].filter(Boolean).join(" · ") || TX("apps.kk.not_yet");
   const unanswered = Array.isArray(s.recentUnanswered) ? s.recentUnanswered : [];
   const sum = el("div", { class: "kk-sum" });
   const paintSum = a => clear(sum).append(...[
-    a && a.text ? el("div", { class: "kk-dh", text: "요약" }) : null,
+    a && a.text ? el("div", { class: "kk-dh", text: TX("apps.kk.summary") }) : null,
     a && a.text ? el("div", { class: "kk-dt", text: a.text }) : null,
-    a && a.at ? el("div", { class: "kk-sub", text: `${kstStamp(a.at)}에 만든 요약` }) : null,
-    el("button", { class: "btn tonal", type: "button", "data-k": "analyze", text: a ? "다시 분석" : "요약 분석", onclick: ev => kkAnalyze(d, ev.currentTarget, paintSum) }),
+    a && a.at ? el("div", { class: "kk-sub", text: TX("apps.kk.summary_at", { at: kstStamp(a.at) }) }) : null,
+    el("button", { class: "btn tonal", type: "button", "data-k": "analyze", text: a ? TX("apps.kk.reanalyze") : TX("apps.kk.analyze"), onclick: ev => kkAnalyze(d, ev.currentTarget, paintSum) }),
   ].filter(Boolean));
   paintSum(r && r.analysis);
   // A section whose numbers are all 0 is not drawn: no empty charts, no "0개 · 0개 (0곳)".
-  const some = a => Array.isArray(a) && a.some(v => v > 0);
+  const some = a => Array.isArray(a) && a.some(v => v > 0), wd = [TX("apps.kk.wd.sun"), TX("apps.kk.wd.mon"), TX("apps.kk.wd.tue"), TX("apps.kk.wd.wed"), TX("apps.kk.wd.thu"), TX("apps.kk.wd.fri"), TX("apps.kk.wd.sat")];
   const rows = [
-    (s.roomMessages | 0) || (s.watchedMessages | 0) ? row("메시지", `이 방 ${s.roomMessages | 0}개 · 지켜보는 방 ${s.watchedMessages | 0}개 (${s.watchedRooms | 0}곳)`) : null,
-    span ? row("기간", span) : null,
-    s.replyToOwnerMs !== undefined || s.ownerReplyMs !== undefined ? row(`답장 (${s.windowDays || 30}일)`, reply) : null,
-    s.mentions | 0 ? row("나를 부른 메시지", `${Math.round((s.mentionShare || 0) * 100)}% (${s.mentions | 0}개)`) : null,
+    (s.roomMessages | 0) || (s.watchedMessages | 0) ? row(TX("apps.kk.stat.messages"), TX("apps.kk.stat.messages_v", { room: s.roomMessages | 0, watched: s.watchedMessages | 0, n: s.watchedRooms | 0 })) : null,
+    span ? row(TX("apps.kk.stat.span"), span) : null,
+    s.replyToOwnerMs !== undefined || s.ownerReplyMs !== undefined ? row(TX("apps.kk.stat.reply", { n: s.windowDays || 30 }), reply) : null,
+    s.mentions | 0 ? row(TX("apps.kk.stat.mentions"), TX("apps.kk.stat.mentions_v", { pct: Math.round((s.mentionShare || 0) * 100), n: s.mentions | 0 })) : null,
   ].filter(Boolean);
   clear(body).append(...[
     rows.length ? el("div", { class: "kk-psec" }, ...rows) : null,
-    some(s.hours) ? el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "활동 시간" }), kkBars(s.hours, Array.from({ length: 24 }, (_, i) => String(i))),
-      el("div", { class: "kk-hax" }, el("span", { text: "0시" }), el("span", { text: "6시" }), el("span", { text: "12시" }), el("span", { text: "18시" }), el("span", { text: "24시" }))) : null,
-    some(s.weekdays) ? el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "요일" }), kkBars(s.weekdays, ["일", "월", "화", "수", "목", "금", "토"]),
-      el("div", { class: "kk-hax kk-hax7" }, ...["일", "월", "화", "수", "목", "금", "토"].map(t => el("span", { text: t })))) : null,
-    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: "답장을 기다리는 메시지" }),
-      ...(unanswered.length ? unanswered.map(m => el("div", { class: "kk-pun" }, el("span", { class: "kk-sub", text: kstStamp(m.at) }), el("span", { class: "kk-put", text: m.text }))) : [el("div", { class: "kk-sub", text: "없어요" })])),
+    some(s.hours) ? el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: TX("apps.kk.active_hours") }), kkBars(s.hours, Array.from({ length: 24 }, (_, i) => String(i)), (h, v) => TX("apps.kk.hist_hour", { h, v })),
+      el("div", { class: "kk-hax" }, ...[0, 6, 12, 18, 24].map(h => el("span", { text: TX("apps.kk.hour_mark", { h }) })))) : null,
+    some(s.weekdays) ? el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: TX("apps.kk.weekday") }), kkBars(s.weekdays, wd, (d, v) => TX("apps.kk.hist_day", { d, v })),
+      el("div", { class: "kk-hax kk-hax7" }, ...wd.map(t => el("span", { text: t })))) : null,
+    el("div", { class: "kk-psec" }, el("div", { class: "kk-dh", text: TX("apps.kk.waiting") }),
+      ...(unanswered.length ? unanswered.map(m => el("div", { class: "kk-pun" }, el("span", { class: "kk-sub", text: kstStamp(m.at) }), el("span", { class: "kk-put", text: m.text }))) : [el("div", { class: "kk-sub", text: TX("apps.kk.none") })])),
     sum].filter(Boolean));
 }
 async function kkAnalyze(d, btn, paint) {
   const id = KK.open, uid = d.getAttribute("data-uid");
   if (!id || !uid) return;
-  btn.disabled = true; btn.textContent = "분석 중…";
+  btn.disabled = true; btn.textContent = TX("apps.kk.analyzing");
   try {
     const r = await api(`/api/kakao/person/${enc(uid)}/analyze`, "POST", { room: id });
     if (!d.isConnected) return;
     if (r && r.error) throw new Error(r.error);
     paint(r.analysis);
   } catch (e) {
-    if (d.isConnected) { btn.disabled = false; btn.textContent = "요약 분석"; }
+    if (d.isConnected) { btn.disabled = false; btn.textContent = TX("apps.kk.analyze"); }
     toast(e.message, true);
   }
 }
 
 const kkSame = (a, b) => !kkSys(a) && !kkSys(b) && kkWho(a) === kkWho(b) && Math.floor(a.sentAt / 60000) === Math.floor(b.sentAt / 60000);
-const kkKindLine = r => (r.kind === "group" || r.kind === "multi" ? "단체 대화방" : r.kind === "direct" || r.kind === "dm" ? "1:1 대화" : r.kind === "open" ? "오픈채팅" : "");
+const kkKindLine = r => (r.kind === "group" || r.kind === "multi" ? TX("apps.kk.kind.group") : r.kind === "direct" || r.kind === "dm" ? TX("apps.kk.kind.direct") : r.kind === "open" ? TX("apps.kk.kind.open") : "");
 // Under a room's name: the hub's hint (the newest message, else the member count); a room without one says its kind.
 // The group mark sits after the name (the prototype's "단체"); a room without a last line says what kind it is.
-const kkTag = r => (r.kind === "group" || r.kind === "multi" ? "단체" : r.kind === "open" ? "오픈채팅" : "");
+const kkTag = r => (r.kind === "group" || r.kind === "multi" ? TX("apps.kk.tag.group") : r.kind === "open" ? TX("apps.kk.kind.open") : "");
 const kkSubLine = r => r.hint || (kkTag(r) ? "" : kkKindLine(r));
 const kkRoom = id => KK.rooms.find(r => r.chatId === id) || null;
 // Room search: a case-insensitive substring of the name; a query made only of consonants (ㄱㄴㄷ…) also matches the name's initial consonants.
@@ -14622,28 +14867,28 @@ const kkWide = () => !narrowChat();
 const kkCoarse = () => matchMedia("(pointer: coarse), (max-width: 639px)").matches;
 
 /* ---- the pane ---- */
-const kkRooms = el("div", { class: "kk-rooms", id: "kk-rooms", "aria-label": "메신저 대화방" });
+const kkRooms = el("div", { class: "kk-rooms", id: "kk-rooms", "aria-label": TX("apps.kk.rooms_aria") });
 const kkHead = el("div", { class: "kk-head", id: "kk-head" });
 const kkIn = el("div", { class: "kk-in", id: "kk-in" });
 const kkTl = el("div", { class: "kk-tl", id: "kk-tl" }, kkIn);
-const kkPill = el("button", { class: "btn kk-pill", id: "kk-pill", type: "button", hidden: true, onclick: () => kkToBottom() }, icon("down"), el("span", { text: "새 메시지" }));
+const kkPill = el("button", { class: "btn kk-pill", id: "kk-pill", type: "button", hidden: true, onclick: () => kkToBottom() }, icon("down"), el("span", { text: TX("apps.kk.new_msg") }));
 const kkDrafts = el("div", { class: "kk-drafts", id: "kk-drafts" });
-const kkEditBar = el("div", { class: "kk-edit", id: "kk-edit", hidden: true }, el("span", { text: "답장 초안을 고치는 중이에요" }), el("button", { class: "btn text", type: "button", "data-k": "cancel", text: "취소", onclick: () => kkEditCancel() }));
+const kkEditBar = el("div", { class: "kk-edit", id: "kk-edit", hidden: true }, el("span", { text: TX("apps.kk.editing") }), el("button", { class: "btn text", type: "button", "data-k": "cancel", text: TX("common.cancel"), onclick: () => kkEditCancel() }));
 // The bar under the chat window is a request to the assistant (kkAskBot): it revises the open draft or writes a new one, and the reply card below asks for 보내기.
-const KK_ASK = "요청을 입력하세요 · 예: 좀 더 짧게", KK_REVISE = "초안을 어떻게 고칠까요? · 예: 좀 더 짧게";
-const kkTa = el("textarea", { id: "kk-text", rows: "1", autocomplete: "off", maxlength: "500", placeholder: KK_ASK, "aria-label": "답장 요청" });
-const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "submit", "aria-label": "요청 보내기", title: "요청 보내기" }, icon("send"));
-const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: "답장 초안" }));
+const KK_ASK = TX("apps.kk.ask_ph"), KK_REVISE = TX("apps.kk.revise_ph");
+const kkTa = el("textarea", { id: "kk-text", rows: "1", autocomplete: "off", maxlength: "500", placeholder: KK_ASK, "aria-label": TX("apps.kk.ask_aria") });
+const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "submit", "aria-label": TX("apps.kk.send_req"), title: TX("apps.kk.send_req") }, icon("send"));
+const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: TX("apps.kk.draft_reply") }));
 // 직접 보내기 (owner 2026-11-04): what is typed goes to the room as it is, past the assistant. It shows only with text, and never on another computer's room or while a draft is edited.
-const kkDirectBtn = el("button", { class: "cchip kk-dbtn", id: "kk-direct-btn", type: "button", hidden: true, onclick: () => kkSendDirect() }, icon("send"), el("span", { text: "직접 보내기" }));
+const kkDirectBtn = el("button", { class: "cchip kk-dbtn", id: "kk-direct-btn", type: "button", hidden: true, onclick: () => kkSendDirect() }, icon("send"), el("span", { text: TX("apps.kk.send_direct") }));
 const kkDirectSync = () => { kkDirectBtn.hidden = !kkTa.value.trim() || !!KK.edit || !!KK.pc; };
 kkTa.addEventListener("input", kkDirectSync);
 const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn, kkDirectBtn), kkSendBtn);
 // The room's reply card sits right under the chat it answers, above the request bar.
 const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkForm);
 // 자동 초안 of the open room: the one two-value switch of this screen (the watch toggles are eyes). Built once; kkPaintAuto only flips it.
-const kkAutoSw = el("button", { class: "kk-sw", type: "button", role: "switch", "aria-checked": "false", "aria-label": "자동 초안", "data-k": "auto", onclick: () => { const r = kkRoom(KK.open); if (r) kkSetRoom(r, { autoDraft: !r.autoDraft }); } }, el("span", { class: "kk-knob" }));
-const kkAuto = el("span", { class: "kk-auto", id: "kk-auto", hidden: true }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" })), kkAutoSw);
+const kkAutoSw = el("button", { class: "kk-sw", type: "button", role: "switch", "aria-checked": "false", "aria-label": TX("apps.kk.auto"), "data-k": "auto", onclick: () => { const r = kkRoom(KK.open); if (r) kkSetRoom(r, { autoDraft: !r.autoDraft }); } }, el("span", { class: "kk-knob" }));
+const kkAuto = el("span", { class: "kk-auto", id: "kk-auto", hidden: true }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("apps.kk.auto") })), kkAutoSw);
 // The one line under the room head: 미답장 (with 답장 안 함 while no draft card carries it) on the left, 자동 초안 on the right. Its left part is rebuilt only when what it shows changes.
 const kkOwedL = el("span", { class: "kk-owed-l" });
 const kkOwed = el("div", { class: "kk-owed", id: "kk-owed", hidden: true }, kkOwedL, kkAuto);
@@ -14708,7 +14953,7 @@ async function kkLoadRooms() {
     KK.loaded = true; KK.failed = false;
   } catch (e) {
     if (seq !== KK.rseq) return;
-    KK.failed = true; KK.loaded = true; KK.rooms = []; KK.error = "대화방 목록을 불러오지 못했어요";
+    KK.failed = true; KK.loaded = true; KK.rooms = []; KK.error = TX("apps.kk.err_rooms");
   }
   // A room that is not watched stays open (read-only); only a room gone from the list closes.
   if (KK.open && !kkRoom(KK.open) && !KK.failed) kkClose();
@@ -14739,7 +14984,7 @@ async function kkSetRoom(r, patch) {
     toast(e.message, true);
   }
 }
-const kkSearch = el("input", { id: "kk-q", type: "search", placeholder: "대화방 검색", "aria-label": "대화방 검색", autocomplete: "off", enterkeyhint: "search" });
+const kkSearch = el("input", { id: "kk-q", type: "search", placeholder: TX("apps.kk.search"), "aria-label": TX("apps.kk.search"), autocomplete: "off", enterkeyhint: "search" });
 // Typing refilters only the list: the input itself stays in place (it keeps focus and the IME composition).
 kkSearch.addEventListener("input", () => { KK.q = kkSearch.value; const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); });
 const kkLine1 = (r, name) => el("span", { class: "kk-l1" }, name, kkTag(r) ? el("span", { class: "kk-grp", text: kkTag(r) }) : null);
@@ -14750,14 +14995,14 @@ const kkPickRow = r => el("button", { class: `pl-row kk-pr${r.watched ? " on" : 
   r.watched ? icon("check", "kk-ck") : null);
 function kkPickRows() {
   const list = KK.rooms.filter(r => kkMatch(r.name, KK.q));
-  return list.length ? list.map(kkPickRow) : [el("div", { class: "kk-note", id: "kk-nomatch", role: "status", text: "찾는 대화방이 없어요" })];
+  return list.length ? list.map(kkPickRow) : [el("div", { class: "kk-note", id: "kk-nomatch", role: "status", text: TX("apps.kk.no_match") })];
 }
 function kkAddOpen() {
   if (KK.adding) return;
   KK.q = ""; kkSearch.value = "";
-  const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": "지켜볼 대화방" },
+  const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": TX("apps.kk.add_title") },
     el("div", { class: "kk-pd-in", tabindex: "-1", autofocus: true },
-      fsHead([el("h2", { class: "fs-t", text: "지켜볼 대화방" })], { close: () => d.close() }),
+      fsHead([el("h2", { class: "fs-t", text: TX("apps.kk.add_title") })], { close: () => d.close() }),
       el("div", { class: "kk-pd-b" }, el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows()))));
   KK.adding = d;
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
@@ -14773,21 +15018,21 @@ function kkRow(r) {
       // The row end like every list: the time on top, 미답장 and the unread count under it.
       time || r.unread || owed ? el("span", { class: "cv-m" }, time, r.unread || owed ? el("span", { class: "kk-rmeta" },
         owed ? unrepPill() : null,
-        r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
+        r.unread ? el("span", { class: "nb", "aria-label": TX("apps.kk.unread_aria", { n: r.unread }), text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
 }
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
-  const note = !KK.loaded ? "불러오는 중…" : !KK.on ? "메신저 연동이 꺼져 있어요" : KK.error, ready = KK.loaded && !note;
+  const note = !KK.loaded ? TX("common.loading") : !KK.on ? TX("apps.kk.off") : KK.error, ready = KK.loaded && !note;
   const shown = watched.filter(kkViewOf()[2]);
-  const head = el("div", { class: "kk-lh" }, ...(ready && watched.length ? [kkViewBar(watched)] : [el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? "0개" : "" })]),
-    ready && KK.rooms.length ? el("button", { class: "btn tonal sm kk-add-btn", id: "kk-add-btn", type: "button", onclick: () => kkAddOpen() }, icon("add"), el("span", { text: "추가" })) : null);
-  const list = el("section", { class: "pl-list kk-watch", "aria-label": "지켜보는 대화방" });
+  const head = el("div", { class: "kk-lh" }, ...(ready && watched.length ? [kkViewBar(watched)] : [el("span", { class: "kk-pt", text: TX("apps.kk.watched") }), el("span", { class: "kk-cnt", text: ready ? TX("apps.kk.zero") : "" })]),
+    ready && KK.rooms.length ? el("button", { class: "btn tonal sm kk-add-btn", id: "kk-add-btn", type: "button", onclick: () => kkAddOpen() }, icon("add"), el("span", { text: TX("apps.kk.add") })) : null);
+  const list = el("section", { class: "pl-list kk-watch", "aria-label": TX("apps.kk.watched") });
   if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }), ...(KK.failed ? [appRetry(() => kkLoadRooms())] : []));
   else if (shown.length) list.append(...shown.map(kkRow));
-  else list.append(el("div", { class: "kk-note", id: "kk-empty", text: watched.length ? kkViewOf()[3] : KK.rooms.length ? "지켜볼 대화방을 추가해 주세요" : "고를 수 있는 대화방이 없어요" }));
+  else list.append(el("div", { class: "kk-note", id: "kk-empty", text: watched.length ? kkViewOf()[3] : KK.rooms.length ? TX("apps.kk.add_prompt") : TX("apps.kk.no_rooms") }));
   // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
   const own = (kkItemNow() || {}).owned || [];
-  clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));
+  clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": TX("apps.kk.status_aria") }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));
   kkRooms.scrollTop = top;
   // The choice list repaints in place: a row with the keyboard focus keeps it.
   const pl = KK.adding && $("#kk-pl");
@@ -14813,15 +15058,15 @@ function kkPaintChat() {
   kkFoot.hidden = kkFoot.hidden || !watching;
   kkRo.hidden = !readOnly;
   kkPaintAuto();
-  if (readOnly) clear(kkRo).append(el("span", { class: "kk-ro-t", text: "감시하지 않는 방이에요. 읽기만 할 수 있어요" }), room ? el("button", { class: "btn tonal sm", type: "button", "data-k": "watch", text: "감시 시작", onclick: () => kkSetRoom(room, { watched: true }) }) : null);
+  if (readOnly) clear(kkRo).append(el("span", { class: "kk-ro-t", text: TX("apps.kk.readonly") }), room ? el("button", { class: "btn tonal sm", type: "button", "data-k": "watch", text: TX("apps.kk.watch_start"), onclick: () => kkSetRoom(room, { watched: true }) }) : null);
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
-    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...asEntry(app));
+    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? TX("apps.kk.kind.group") : TX("apps.kk.kind.direct")) })), ...asEntry(app));
     monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
-  if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
-  if (KK.loading) { clear(kkIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
+  if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: TX("apps.kk.pick_room") })); return; }
+  if (KK.loading) { clear(kkIn).append(el("div", { class: "kk-note", text: TX("common.loading") })); return; }
   if (KK.roomErr) { clear(kkIn).append(el("div", { class: "kk-note", role: "status", text: KK.roomErr }), appRetry(() => kkOpen(KK.open))); return; }
   kkPaintTl(KK.stick);
   kkPaintFoot();
@@ -14833,11 +15078,11 @@ function kkWatching() {
 }
 // 답장 안 함 of the open room: the pill leaves the header and the room row at the tap; a failed request puts it back.
 function kkNoReply(r) {
-  return el("button", { class: "cchip unrep-no", type: "button", "data-k": "no-reply", text: "답장 안 함", onclick: ev => {
+  return el("button", { class: "cchip unrep-no", type: "button", "data-k": "no-reply", text: TX("apps.kk.no_reply"), onclick: ev => {
     ev.stopPropagation();
     r.unreplied = false;
     kkPaintRooms(); kkPaintChat();
-    api(`/api/kakao/chat/${enc(r.chatId)}/no-reply`, "POST", {}).then(() => { toast("답장 안 함으로 표시했어요"); loadIntegrations(); }, e => {
+    api(`/api/kakao/chat/${enc(r.chatId)}/no-reply`, "POST", {}).then(() => { toast(TX("apps.kk.no_reply_done")); loadIntegrations(); }, e => {
       r.unreplied = true;
       kkPaintRooms(); kkPaintChat();
       toast(e.message, true);
@@ -14845,7 +15090,7 @@ function kkNoReply(r) {
   } });
 }
 const kkDateNode = t => el("div", { class: "kk-date", text: kkDate(t) });
-const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽었어요" }));
+const kkMarkNode = () => el("div", { class: "kk-new", role: "separator", "aria-label": TX("apps.kk.unread_from") }, el("span", { text: TX("apps.kk.read_upto") }));
 function kkMsgNode(m, first, last) {
   if (kkSys(m)) { const line = kkSysText(m.text); return line ? el("div", { class: "kk-sys", role: "note", "data-log": m.logId, text: line }) : null; }
   const group = m.group ?? !!(KK.room && KK.room.group), { text, ph } = kkBody(m);
@@ -14854,11 +15099,11 @@ function kkMsgNode(m, first, last) {
   const bub = (m.media && kkMediaNode(m, m.media)) || el("div", { class: `kk-bub${ph ? " ph" : ""}${urls.length ? " kk-lb" : ""}` }, urls.length ? kkLinkText(text) : text);
   const previews = urls.length ? el("div", { class: "kk-lps" }, ...urls.map(kkLpCard)) : null;
   // On the time side of the bubble: Messenger's yellow number (members who have not read it yet) above the time; nothing when 0.
-  const n = m.unread | 0, meta = n > 0 || last ? el("span", { class: "kk-meta" }, n > 0 ? el("span", { class: "kk-rd", "aria-label": `아직 안 읽은 사람 ${n}명`, text: String(n) }) : null, last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null) : null;
+  const n = m.unread | 0, meta = n > 0 || last ? el("span", { class: "kk-meta" }, n > 0 ? el("span", { class: "kk-rd", "aria-label": TX("apps.kk.unread_people", { n }), text: String(n) }) : null, last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null) : null;
   if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub), previews);
   return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId, "data-author": m.authorId || null },
     group ? (first ? kkAvatar(m.sender) : el("span", { class: "kk-av sp", "aria-hidden": "true" })) : null,
-    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta), previews));
+    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: m.sender || TX("apps.kk.unknown") }) : null, el("div", { class: "kk-line" }, bub, meta), previews));
 }
 // Sends of this room that are not (yet) a message of the room: sending, failed, or just sent and not read back from the database yet.
 function kkPending() {
@@ -14872,16 +15117,16 @@ function kkPending() {
   });
 }
 function kkSendNode(s) {
-  const failed = s.state === "failed", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
+  const failed = s.state === "failed", st = failed ? (s.reason ? TX("apps.kk.send.failed_why", { reason: s.reason }) : TX("apps.kk.send.failed")) : s.state === "sent" ? TX("apps.kk.send.sent") : TX("apps.kk.send.sending");
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id },
     el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
     el("div", { class: "kk-st", role: failed ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: () => kkRetry(s) }) : null,
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: () => kkDeleteSend(s) }) : null));
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: TX("apps.kk.send.retry"), onclick: () => kkRetry(s) }) : null,
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: TX("apps.kk.send.dismiss"), onclick: () => kkDeleteSend(s) }) : null));
 }
 function kkTimeline() {
   const out = [], msgs = KK.msgs;
-  if (KK.more) out.push(el("div", { class: "kk-top", id: "kk-top" }, el("button", { class: "btn text kk-more", type: "button", text: "이전 메시지 더 보기", onclick: () => kkOlder() })));
+  if (KK.more) out.push(el("div", { class: "kk-top", id: "kk-top" }, el("button", { class: "btn text kk-more", type: "button", text: TX("apps.kk.older"), onclick: () => kkOlder() })));
   let prev = null;
   msgs.forEach((m, i) => {
     const newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt), mark = !!KK.div && m.logId === KK.div, next = msgs[i + 1], gapBefore = !!prev && KK.gaps.has(prev.logId);
@@ -14897,7 +15142,7 @@ function kkTimeline() {
     prev = m;
   });
   out.push(...kkPending().map(kkSendNode));
-  if (!out.length) out.push(el("div", { class: "kk-note", text: "아직 받은 메시지가 없어요" }));
+  if (!out.length) out.push(el("div", { class: "kk-note", text: TX("apps.kk.no_msgs") }));
   return out;
 }
 function kkPaintTl(stick) {
@@ -14950,7 +15195,7 @@ async function kkOpen(id) {
     kkPlace();
   } catch (e) {
     if (seq !== KK.seq) return;
-    KK.loading = false; KK.roomErr = appFail(e, "대화를 불러오지 못했어요");
+    KK.loading = false; KK.roomErr = appFail(e, TX("apps.kk.err_chat"));
     kkPaintAll();
   }
 }
@@ -15109,9 +15354,9 @@ async function kkSendText(text, edit) {
 // draft is split into the natural messages the existing flow already makes (d.parts).
 function kkAskBot(text) {
   const id = KK.open;
-  if (KK.drafting === id) { toast("초안을 만드는 중이에요 · 끝나면 다시 요청해 주세요", true); return; }
+  if (KK.drafting === id) { toast(TX("apps.kk.drafting_wait"), true); return; }
   // The other computer's gateway takes a revise ({revise}) but not a new message's intent (34-peer-monitoring.js kakao draft): say so instead of making an unrelated draft there.
-  if (KK.pc && !KK.drafts.length) { toast("다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요", true); return; }
+  if (KK.pc && !KK.drafts.length) { toast(TX("apps.kk.peer_revise"), true); return; }
   const ts = x => (typeof x === "number" ? x : Date.parse(x) || 0), d = KK.drafts.slice().sort((a, b) => ts(b.created) - ts(a.created))[0];
   kkTa.value = ""; KK.typed.delete(id); kkAutosize(); kkDirectSync();
   KK.revise = null;
@@ -15189,11 +15434,11 @@ function kkAskCard() {
     KK.ask = null; kkPaintFoot(); kkTa.focus();
   };
   return el("div", { class: "kk-draft kk-ask" },
-    el("div", { class: "kk-dh", text: "답장 전에 골라 주세요" }),
+    el("div", { class: "kk-dh", text: TX("apps.kk.choose_first") }),
     el("div", { class: "kk-dt", text: a.question }),
     el("div", { class: "btns kk-choices" },
       ...a.choices.map((c, i) => el("button", { class: "btn tonal", type: "button", "data-k": "pick", "data-i": String(i), text: c, onclick: () => kkMakeDraft(c) })),
-      el("button", { class: "btn text", type: "button", "data-k": "own", text: "직접 쓸게", onclick: own })));
+      el("button", { class: "btn text", type: "button", "data-k": "own", text: TX("apps.kk.write_own"), onclick: own })));
 }
 // 고치기 asks what to change; the bot rewrites the draft (one model call, POST .../draft { revise }) and the old draft stays until the new one lands.
 // 고치기 on a draft: what to change, typed once (the model rewrites it), or 직접 수정 in the composer. The one reply card's field (10-reply-card.js).
@@ -15203,10 +15448,10 @@ function kkReviseBox(d, rv) {
 }
 // A draft of several Messenger messages (d.parts) shows one bubble per message, in the order they go out; one 보내기 sends them all.
 const kkDraftParts = d => (Array.isArray(d.parts) && d.parts.length ? d.parts : [d.text]);
-const kkDraftLabel = d => `${d.intent ? "새 메시지 초안" : "답장 초안"}${kkDraftParts(d).length > 1 ? ` · 메시지 ${kkDraftParts(d).length}개` : ""}`;
+const kkDraftLabel = d => { const n = kkDraftParts(d).length; return d.intent ? (n > 1 ? TX("apps.kk.draft.new_n", { n }) : TX("apps.kk.draft.new")) : n > 1 ? TX("apps.kk.draft.reply_n", { n }) : TX("apps.kk.draft.reply"); };
 // 되돌리기 on the 보내지 않았어요 toast: the dropped draft waits again (POST .../restore; a peer's room on its own computer, 34-peer-monitoring.js).
 async function kkRestore(code) {
-  try { await api(`/api/kakao/drafts/${enc(code)}/restore`, "POST", {}); toast("초안을 되돌렸어요"); kkTail(); kkIntgSoon(); } catch (e) { toast(e.message, true); }
+  try { await api(`/api/kakao/drafts/${enc(code)}/restore`, "POST", {}); toast(TX("apps.kk.draft_restored")); kkTail(); kkIntgSoon(); } catch (e) { toast(e.message, true); }
 }
 // The room's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue.
 function kkDraftCard(d) {
@@ -15215,10 +15460,10 @@ function kkDraftCard(d) {
   // The card sits right under the chat it answers: no head, quoted original or 첨부 line (10-reply-card.js bare); the draft's messages are yellow bubbles that scroll inside the card, the buttons stay.
   const card = { key: `kk:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, bare: true, label: kkDraftLabel(d), labelCls: "kk-dh",
     body: { text: d.text, parts: kkDraftParts(d), one: true, full: true, sentParts: d.sentParts, cls: "kk-dt kk-dps", partCls: "kk-dp" } };
-  if (making) return rqCard({ ...card, status: "고치는 중…" });
+  if (making) return rqCard({ ...card, status: TX("apps.kk.revising") });
   if (rv) return rqCard({ ...card, revise: kkReviseBox(d, rv) });
   return rqCard({ ...card, acts: {
-    dropText: d.intent ? "" : "답장 안 함",   // a new message answers nothing: its draft keeps 보내지 않기
+    dropText: d.intent ? "" : TX("apps.kk.no_reply"),   // a new message answers nothing: its draft keeps 보내지 않기
     send: ev => run(ev.currentTarget, async () => {
       const id = KK.open, r = await api(`/api/kakao/drafts/${enc(d.code)}/send`, "POST", {});
       if (KK.open !== id) return;
@@ -15229,7 +15474,7 @@ function kkDraftCard(d) {
     drop: ev => run(ev.currentTarget, async () => {
       const id = KK.open, r = kkRoom(id), wave = !d.intent && !!r && !!r.unreplied, nr = `/api/kakao/chat/${enc(id)}/no-reply`;   // on a reply's draft 답장 안 함 also ends the room's 미답장 (되돌리기 brings both back)
       await api(`/api/kakao/drafts/${enc(d.code)}/drop`, "POST", {});
-      if (wave) { await api(nr, "POST", {}); r.unreplied = false; kkPaintRooms(); loadIntegrations(); toast("답장 안 함으로 표시했어요", false, { label: "되돌리기", onclick: () => api(nr, "DELETE").then(() => { r.unreplied = true; kkPaintRooms(); kkPaintAuto(); return kkRestore(d.code); }, e => toast(e.message, true)) }, 6000); } else rqDroppedToast(() => kkRestore(d.code));
+      if (wave) { await api(nr, "POST", {}); r.unreplied = false; kkPaintRooms(); loadIntegrations(); toast(TX("apps.kk.no_reply_done"), false, { label: TX("common.undo"), onclick: () => api(nr, "DELETE").then(() => { r.unreplied = true; kkPaintRooms(); kkPaintAuto(); return kkRestore(d.code); }, e => toast(e.message, true)) }, 6000); } else rqDroppedToast(() => kkRestore(d.code));
       if (KK.open !== id) return;
       KK.drafts = KK.drafts.filter(x => x.code !== d.code);
       if (KK.edit && KK.edit.code === d.code) kkEditCancel(); else kkPaintFoot();
@@ -15253,7 +15498,7 @@ function kkPaintFoot() {
   if (KK.revise && !KK.drafts.some(d => d.code === KK.revise.code)) KK.revise = null;
   const making = !!KK.open && KK.drafting === KK.open;
   // A new draft on its way (no card to say "고치는 중…" yet): the place where its card will be says so.
-  const wait = making && !KK.reviseCode ? [el("div", { class: "kk-mk", role: "status", text: "답장 초안을 만드는 중이에요…" })] : [];
+  const wait = making && !KK.reviseCode ? [el("div", { class: "kk-mk", role: "status", text: TX("apps.kk.making_reply") })] : [];
   const drawn = paintKeep(kkDrafts, [...(ask ? [ask] : []), ...wait, ...KK.drafts.filter(d => !edit || d.code !== edit.code).map(kkDraftCard)], kkPaintFoot);
   kkDrafts.hidden = !kkDrafts.firstChild;
   // A draft that lands while the room is open (the owner's request came back) is brought into view: the card sits under the request bar, below the chat window.
@@ -15264,10 +15509,10 @@ function kkPaintFoot() {
   kkEditBar.hidden = !edit;
   kkDraftBtn.disabled = making;
   kkPaintAuto();
-  kkDraftBtn.lastChild.textContent = making ? "초안 만드는 중…" : "답장 초안";
+  kkDraftBtn.lastChild.textContent = making ? TX("apps.kk.making") : TX("apps.kk.draft_reply");
   // 직접 수정 puts a draft's text in the bar: then the bar sends it (the draft's own route); otherwise it is the request to the assistant.
-  kkTa.placeholder = edit ? "고친 메시지" : KK.drafts.length ? KK_REVISE : KK_ASK;
-  const label = edit ? "보내기" : "요청 보내기";
+  kkTa.placeholder = edit ? TX("apps.kk.edited_ph") : KK.drafts.length ? KK_REVISE : KK_ASK;
+  const label = edit ? TX("common.send") : TX("apps.kk.send_req");
   kkSendBtn.setAttribute("aria-label", label); kkSendBtn.title = label;
 }
 // A new message the owner asked for in his own words (kkAskBot with no draft waiting); the same draft call (POST .../draft { intent }) writes it in his voice.
@@ -15277,7 +15522,7 @@ async function kkComposeMake(intent) {
   KK.drafting = id; KK.reviseCode = "";
   kkPaintFoot();
   clearTimeout(KK.draftT);
-  KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast("초안이 아직 오지 않았어요", true); } }, 120000);
+  KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast(TX("apps.kk.draft_late"), true); } }, 120000);
   try {
     const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", { intent: text });
     if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
@@ -15295,7 +15540,7 @@ async function kkMakeDraft(choice, revise) {
   if (!id || KK.drafting === id) return;
   KK.drafting = id; KK.reviseCode = revise ? revise.code : ""; kkPaintFoot();
   clearTimeout(KK.draftT);
-  KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast("초안이 아직 오지 않았어요", true); } }, 120000);
+  KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast(TX("apps.kk.draft_late"), true); } }, 120000);
   try {
     const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", revise ? { revise } : choice ? { choice } : {});
     if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
@@ -16771,7 +17016,7 @@ function monListRows(items, sel) {
 }
 // Over a monitor's conversation: how far its wait has come, a down banner, 지금 확인 and the way to its reports (소식, with the unread count).
 function monChatTopNodes(it) {
-  const banner = monBannerOf(it), log = el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "mon-log", title: "이 모니터링의 소식을 봐요", text: it.unread ? `소식 ${it.unread}` : "소식", onclick: () => go("monitoring", it.key) });
+  const banner = monBannerOf(it), log = el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "mon-log", title: TX("mon.chat.log_title"), text: it.unread ? TX("mon.chat.log_n", { n: it.unread }) : TX("mon.sec.news"), onclick: () => go("monitoring", it.key) });
   return [monProgNode(it.mon, { compact: true, tag: !banner }), banner, el("div", { class: "mon-actions" }, it.mon.watch && !banner ? monRunBtn(it.mon) : null, log)];
 }
 // The wait bar keeps moving over a monitor's conversation too.
@@ -16783,21 +17028,21 @@ const monTicks = () => current === "monitoring" || (current === "chat" && !!monC
 // There is no composer and no send: a DM is never answered from here (one read-only line at the bottom, the Messenger room's .kk-ro). Text only goes through el({text}), never innerHTML.
 const DM_APP = "instagram";
 // The one line at the bottom of an open DM, where the Messenger room has its composer; it is put in place on the first paint (the comment pane is built after this file).
-const dmRo = el("div", { class: "kk-ro", id: "dm-ro", role: "status", hidden: true }, el("span", { class: "kk-ro-t", text: "여기서는 DM에 답장할 수 없어요" }));
+const dmRo = el("div", { class: "kk-ro", id: "dm-ro", role: "status", hidden: true }, el("span", { class: "kk-ro-t", text: TX("mon.dm.ro") }));
 const DM = { on: false, connected: false, perm: "unknown", line: "", convs: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, busy: false };
 
 async function dmLoadList() {
   try {
     const r = await api("/api/ig-dm");
     Object.assign(DM, { on: r.on === true, connected: r.connected === true, perm: r.perm || "unknown", line: r.line || "", convs: Array.isArray(r.convs) ? r.convs : [], loaded: true, error: "" });
-  } catch { DM.error = "DM 목록을 불러오지 못했어요"; }
+  } catch { DM.error = TX("mon.dm.list_fail"); }
 }
 // Asks the gateway to read the Instagram API once (only the conversations that moved are fetched), then shows the stored list.
 async function dmRefresh() {
   if (DM.busy) return;
   DM.busy = true; if (CM.vis && CM.tab === "dm") dmPaintRooms();
   try { await api("/api/ig-dm/refresh", "POST", {}); DM.error = ""; }
-  catch (e) { DM.error = appFail(e, "DM을 불러오지 못했어요"); }
+  catch (e) { DM.error = appFail(e, TX("mon.dm.fail")); }
   await dmLoadList();
   DM.busy = false;
   if (CM.vis && CM.tab === "dm") { dmPaintRooms(); if (DM.open) dmReload(DM.seq); }
@@ -16815,14 +17060,14 @@ function dmPaintRooms() {
   const sig = JSON.stringify(["dm", DM.perm, DM.line, DM.error, DM.convs, DM.loaded, DM.busy, DM.open && DM.open.id, !!tabs]);
   if (sig === CM.roomsSig) return;
   CM.roomsSig = sig;
-  const bar = el("div", { class: "dm-bar" }, el("span", { class: "dm-note", text: "여기서는 DM에 답장할 수 없어요" }),
-    el("button", { class: "btn text", type: "button", id: "dm-refresh", disabled: DM.busy, text: DM.busy ? "불러오는 중…" : "새로고침", onclick: dmRefresh }));
-  const list = el("section", { class: "kk-watch", "aria-label": "DM 대화" });
-  list.append(el("div", { class: "cv-gh", role: "presentation", text: "대화" }));
+  const bar = el("div", { class: "dm-bar" }, el("span", { class: "dm-note", text: TX("mon.dm.ro") }),
+    el("button", { class: "btn text", type: "button", id: "dm-refresh", disabled: DM.busy, text: DM.busy ? TX("common.loading") : TX("settings.refresh"), onclick: dmRefresh }));
+  const list = el("section", { class: "kk-watch", "aria-label": TX("mon.dm.aria") });
+  list.append(el("div", { class: "cv-gh", role: "presentation", text: TX("common.conversation") }));
   if (DM.perm === "missing") list.append(el("div", { class: "kk-note", id: "dm-perm", role: "status", text: DM.line }));
   else if (DM.error) list.append(el("div", { class: "kk-note", role: "status", text: DM.error }));
   if (DM.convs.length) list.append(...DM.convs.map(dmRow));
-  else if (DM.loaded && DM.perm !== "missing") list.append(el("div", { class: "kk-note", id: "dm-empty", text: "아직 받은 DM이 없어요" }));
+  else if (DM.loaded && DM.perm !== "missing") list.append(el("div", { class: "kk-note", id: "dm-empty", text: TX("mon.dm.empty") }));
   clear(cmRooms).append(...(tabs ? [tabs] : []), bar, list);
   cmRooms.scrollTop = top;
 }
@@ -16841,13 +17086,13 @@ async function dmReload(seq = DM.seq, scroll = false) {
     DM.view = v; DM.loading = false; DM.viewErr = "";
   } catch (e) {
     if (seq !== DM.seq) return;
-    DM.loading = false; DM.viewErr = appFail(e, "DM을 불러오지 못했어요");
+    DM.loading = false; DM.viewErr = appFail(e, TX("mon.dm.fail"));
   }
   dmPaintChat(scroll);
 }
 function dmClose() { DM.open = null; DM.view = null; DM.seq++; DM.loading = false; cmPaintAll(); convTitle(); bkCmSync(); }
-const DM_ATTACH = { image: "(사진)", video: "(동영상)", audio: "(음성 메시지)", file: "(파일)" };
-const dmText = m => m.text || (m.attach && m.attach.length ? DM_ATTACH[m.attach[0]] || "(파일)" : "(내용 없음)");
+const DM_ATTACH = { image: TX("mon.dm.image"), video: TX("mon.dm.video"), audio: TX("mon.dm.audio"), file: TX("mon.dm.file") };
+const dmText = m => m.text || (m.attach && m.attach.length ? DM_ATTACH[m.attach[0]] || TX("mon.dm.file") : TX("mon.dm.blank"));
 // A DM message in the shape of a Messenger one, so the room's own renderer draws it (30-kakao.js kkMsgNode: bubbles, the time under a run, the date line).
 const dmAsKk = (m, peer) => ({ logId: m.id, fromMe: !!m.mine, sender: peer, type: 1, text: dmText(m), sentAt: new Date(m.at).getTime(), group: false });
 function dmPaintChat(stick) {
@@ -16863,8 +17108,8 @@ function dmPaintChat(stick) {
   const csig = JSON.stringify(["dm", open, DM.loading, DM.viewErr, v]);
   if (!stick && csig === CM.chatSig) return;
   CM.chatSig = csig;
-  if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "대화를 골라 주세요" })); return; }
-  if (DM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
+  if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("mon.dm.pick") })); return; }
+  if (DM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("common.loading") })); return; }
   if (DM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: DM.viewErr }), appRetry(() => { DM.loading = true; DM.viewErr = ""; cmPaintChat(false); dmReload(); })); return; }
   const nodes = [], msgs = v.messages.map(m => dmAsKk(m, v.peer));
   msgs.forEach((m, i) => {
@@ -16872,7 +17117,7 @@ function dmPaintChat(stick) {
     if (newDay) nodes.push(kkDateNode(m.sentAt));
     nodes.push(kkMsgNode(m, newDay || kkWho(prev) !== kkWho(m), !(next && kkDay(next.sentAt) === kkDay(m.sentAt) && kkSame(m, next))));
   });
-  if (!nodes.length) nodes.push(el("div", { class: "kk-note", text: "메시지가 없어요" }));
+  if (!nodes.length) nodes.push(el("div", { class: "kk-note", text: TX("mon.dm.no_msgs") }));
   const keep = cmTl.scrollTop;
   clear(cmIn).append(...nodes);
   cmTl.scrollTop = stick ? cmTl.scrollHeight : keep;
@@ -16884,8 +17129,8 @@ function dmPaintChat(stick) {
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
 // A request that did not get through reads as a sentence about what did not load, never the bare transport word ('offline'); 다시 시도 stands under it, the same in every empty or failed place of the kakao and comment panes.
-const appFail = (e, what) => { const m = String((e && e.message) || ""); return !m || /^(offline|failed to fetch|load failed|networkerror.*)$/i.test(m) ? `${what}. 연결을 확인해 주세요` : m; };
-const appRetry = fn => el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: "다시 시도", onclick: fn });
+const appFail = (e, what) => { const m = String((e && e.message) || ""); return !m || /^(offline|failed to fetch|load failed|networkerror.*)$/i.test(m) ? TX("mon.cm.fail_net", { what }) : m; };
+const appRetry = fn => el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: fn });
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
   drafting: new Set(), revising: "", note: {}, pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
@@ -16908,7 +17153,7 @@ function cmApi(path, method = "GET", body) {
   return api(method === "GET" ? pqProxy(CM.pc, pqBare(path)) : path, method, body);
 }
 
-const cmRooms = el("div", { class: "kk-rooms", id: "cm-rooms", "aria-label": "댓글을 지켜보는 글" });
+const cmRooms = el("div", { class: "kk-rooms", id: "cm-rooms", "aria-label": TX("mon.cm.rooms_aria") });
 const cmHead = el("div", { class: "kk-head", id: "cm-head" });
 const cmIn = el("div", { class: "kk-in", id: "cm-in" });
 const cmTl = el("div", { class: "kk-tl", id: "cm-tl" }, cmIn);
@@ -16922,7 +17167,7 @@ const cmIntgSoon = () => { clearTimeout(CM.intgT); CM.intgT = setTimeout(loadInt
 const cmSources = () => CM.sources.filter(s => cmOwner(s) === CM.app);
 // The sources of a settings app: this computer's ("youtube"), or a peer's ("youtube~<computer>") while the pane shows that computer (CM.pc).
 const cmSrcOf = app => (app.includes("~") === !!CM.pc ? CM.sources.filter(s => cmOwner(s) === app.split("~")[0]) : []);
-const cmWatchWord = srcs => { const w = srcs.flatMap(s => s.watch || []); return w.includes("*") ? "전부" : w.length ? `${w.length}개` : "없음"; };
+const cmWatchWord = srcs => { const w = srcs.flatMap(s => s.watch || []); return w.includes("*") ? TX("mon.cm.all") : w.length ? TX("mon.cm.watch_n", { n: w.length }) : TX("settings.none"); };
 
 async function cmLoadSources() {
   try {
@@ -16950,7 +17195,7 @@ async function cmLoad() {
     CM.threads = Array.isArray(r.threads) ? r.threads : []; CM.error = ""; CM.loaded = true;
   } catch (e) {
     if (seq !== CM.rseq) return;
-    CM.threads = []; CM.loaded = true; CM.error = "댓글 목록을 불러오지 못했어요";
+    CM.threads = []; CM.loaded = true; CM.error = TX("mon.cm.list_fail");
   }
   cmPaintRooms();
 }
@@ -16978,17 +17223,17 @@ async function cmPosts(s) {
 function cmSourceNode(s) {
   const watch = s.watch || [], all = watch.includes("*"), p = CM.posts.get(s.key);
   const node = el("div", { class: "kk-pick-src", "data-src": s.key },
-    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: s.label }), s.error ? el("span", { class: "cv-p", role: "status", text: `읽지 못했어요 · ${s.error}` }) : null),
-      kkSwitch(all, `${s.label} 전부 지켜보기`, "all", v => cmUpdate(s, { watch: v ? ["*"] : [] }))),
-    el("div", { class: "sec", text: "설정" }),
-    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" })),
-      kkSwitch(!!s.autoDraft, `${s.label} 자동 초안`, "auto", v => cmUpdate(s, { autoDraft: v }), true)),
+    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: s.label }), s.error ? el("span", { class: "cv-p", role: "status", text: TX("mon.cm.read_fail", { error: s.error }) }) : null),
+      kkSwitch(all, TX("mon.cm.watch_all", { label: s.label }), "all", v => cmUpdate(s, { watch: v ? ["*"] : [] }))),
+    el("div", { class: "sec", text: TX("common.settings") }),
+    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("mon.cm.auto") })),
+      kkSwitch(!!s.autoDraft, TX("mon.cm.auto_aria", { label: s.label }), "auto", v => cmUpdate(s, { autoDraft: v }), true)),
     // Config-only: the mail app (`mailApp`) is set in the source config (docs/comments-api.md); without it the card says no mail was made.
-    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "파일 요청 메일 초안" })),
-      kkSwitch(!!s.autoMail, `${s.label} 파일 요청 메일 초안`, "mail", v => cmUpdate(s, { autoMail: v }), true)),
-    el("button", { class: "li tap", type: "button", "data-k": "posts", onclick: () => cmPosts(s) }, el("span", { class: "tx" }, el("div", { class: "hd", text: "지켜볼 글 고르기" })), el("span", { class: "li-end" }, icon("chev", "chev"))));
+    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("mon.cm.filemail") })),
+      kkSwitch(!!s.autoMail, TX("mon.cm.filemail_aria", { label: s.label }), "mail", v => cmUpdate(s, { autoMail: v }), true)),
+    el("button", { class: "li tap", type: "button", "data-k": "posts", onclick: () => cmPosts(s) }, el("span", { class: "tx" }, el("div", { class: "hd", text: TX("mon.cm.pick") })), el("span", { class: "li-end" }, icon("chev", "chev"))));
   if (p) {
-    if (p.loading) node.append(el("div", { class: "kk-note", text: "불러오는 중…" }));
+    if (p.loading) node.append(el("div", { class: "kk-note", text: TX("common.loading") }));
     else if (p.error && !p.list.length) node.append(el("div", { class: "kk-note", role: "status", text: p.error }));
     else for (const post of p.list) node.append(el("div", { class: "kk-pr", "data-post": post.id }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: post.title, text: post.title })),
       kkSwitch(all || !!post.watched, post.title, "post", v => cmUpdate(s, { watch: v ? [...watch.filter(x => x !== "*"), post.id] : watch.filter(x => x !== post.id && x !== "*").concat(all ? p.list.filter(x => x.id !== post.id).map(x => x.id) : []) }), true)));
@@ -17000,13 +17245,13 @@ function cmPickPaint() {
   const d = CM.pickD;
   if (!d) return;
   const srcs = cmSrcOf(d.dataset.app);
-  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: "새 댓글마다 답글 초안을 만들어서 토큰이 들어요." }), el("div", { class: "sec", text: "지켜볼 채널" }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: "켜 둔 곳이 없어요. 채팅에서 켜 달라고 해 주세요." })]));
+  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: TX("mon.cm.tokens") }), el("div", { class: "sec", text: TX("mon.cm.channels") }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: TX("mon.cm.none_on") })]));
 }
 function cmPickOpen(app) {
   if (CM.pickD) return;
-  const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": "지켜볼 글" },
+  const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": TX("mon.cm.posts_watch") },
     el("div", { class: "kk-pd-in" },
-      fsHead([el("h2", { class: "fs-t", text: "지켜볼 글" })], { close: () => d.close() }),
+      fsHead([el("h2", { class: "fs-t", text: TX("mon.cm.posts_watch") })], { close: () => d.close() }),
       el("div", { class: "kk-pd-b" })));
   cmPickPaint();
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
@@ -17016,9 +17261,9 @@ function cmPickOpen(app) {
 // A post's row carries one marker, the most urgent: a failed mail > comments nobody answered > drafts waiting. The rest is in the opened post, on each comment (cmProgress).
 function cmMark(t) {
   const failed = t.mails ? t.mails.failed : 0;
-  if (failed) return el("span", { class: "tag err", "data-mark": "failed", "aria-label": `메일 실패 ${failed}건`, text: `실패 ${failed}` });
+  if (failed) return el("span", { class: "tag err", "data-mark": "failed", "aria-label": TX("mon.cm.mail_fail_aria", { n: failed }), text: TX("mon.cm.failed_n", { n: failed }) });
   if (t.unreplied) { const m = unrepCount(t.unreplied); m.dataset.mark = "unreplied"; return m; }
-  if (t.drafts) return el("span", { class: "nb drafted", "data-mark": "draft", "aria-label": `답장 확인 ${t.drafts}건`, text: `초안 ${t.drafts}` });
+  if (t.drafts) return el("span", { class: "nb drafted", "data-mark": "draft", "aria-label": TX("mon.cm.drafts_aria", { n: t.drafts }), text: TX("mon.cm.drafts_n", { n: t.drafts }) });
   return null;
 }
 function cmRow(t) {
@@ -17042,13 +17287,13 @@ function cmPostCard(thread, kind) {
     el("span", { class: "cv-b" }, el("span", { class: "cm-pt", text: thread.title }),
       thread.link ? el("a", { class: "cm-pl", href: thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(kind) }) : null));
 }
-const cmOpenWord = kind => (kind === "youtube" ? "영상 열기" : "원본 글 열기");
+const cmOpenWord = kind => (kind === "youtube" ? TX("mon.cm.open_video") : TX("mon.cm.open_post"));
 // DM is this computer's own (one DM state, /api/ig-dm here): another computer's Instagram shows no DM tab, never this computer's DMs under its name.
 const cmHasTabs = () => !CM.pc && DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length);
 function cmTabs() {
   if (!cmHasTabs()) return null;
   const b = (id, text) => el("button", { type: "button", class: `cchip mr-f${CM.tab === id ? " on" : ""}`, role: "tab", "data-tab": id, "aria-selected": String(CM.tab === id), text, onclick: () => cmTab(id) });
-  return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": "보기" }, b("comments", "댓글"), b("dm", "DM"));
+  return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": TX("mon.cm.view_aria") }, b("comments", TX("mon.cm.comments")), b("dm", "DM"));
 }
 function cmTab(id) {
   if (CM.tab === id) return;
@@ -17066,14 +17311,14 @@ function cmPaintRooms() {
     return;
   }
   CM.roomsSig = sig;
-  const list = el("section", { class: "kk-watch", "aria-label": "댓글이 있는 글" });
+  const list = el("section", { class: "kk-watch", "aria-label": TX("mon.cm.posts_aria") });
   if (CM.loaded) {
-    list.append(el("div", { class: "cv-gh", role: "presentation", text: "글" }));
-    if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }), el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: "다시 시도", onclick: () => cmLoad() }));
+    list.append(el("div", { class: "cv-gh", role: "presentation", text: TX("mon.cm.posts") }));
+    if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }), el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: () => cmLoad() }));
     else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
-    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: "켜 둔 곳이 없어요. 채팅에서 켜 달라고 해 주세요." }));
-    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: "아직 받은 댓글이 없어요" }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: "지켜볼 글 고르기", onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
-  } else list.append(el("div", { class: "kk-note", role: "status", text: "불러오는 중…" }));
+    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: TX("mon.cm.none_on") }));
+    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: TX("mon.cm.empty") }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: TX("mon.cm.pick"), onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
+  } else list.append(el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
   const tabs = cmTabs();
   clear(cmRooms).append(...(tabs ? [tabs] : []), list);
   cmRooms.scrollTop = top;
@@ -17096,7 +17341,7 @@ async function cmReload(seq = CM.seq, scroll = false) {
     CM.view = v; CM.loading = false; CM.viewErr = "";
   } catch (e) {
     if (seq !== CM.seq) return;
-    CM.loading = false; CM.viewErr = appFail(e, "댓글을 불러오지 못했어요");
+    CM.loading = false; CM.viewErr = appFail(e, TX("mon.cm.fail"));
   }
   cmPaintChat(scroll);
   cmMarkRead();
@@ -17127,17 +17372,17 @@ function cmFlow(c, v) {
   const step = (text, st) => ({ text, st }), out = [];
   const d = v.drafts.find(x => x.commentId === c.id), s = v.sends.filter(x => x.commentId === c.id).sort((p, q) => p.at - q.at).at(-1);
   let reply = null;
-  if (s && s.state === "sending") reply = [step("초안", "done"), step("확인", "done"), step("보내는 중", "busy")];
-  else if (s && s.state === "unsure") reply = [step("초안", "done"), step("확인", "done"), step("확인 필요", "ask")];
-  else if (d) reply = [step("초안", "done"), step("확인 대기", "ask"), step("보냄", "todo")];
-  else if (s && s.state === "sent") reply = [step("초안", "done"), step("확인", "done"), step(s.via === "rule" ? "보냄 · 자동" : "보냄", "done")];
-  else if (s && s.state === "failed") reply = [step("초안", "done"), step("확인", "done"), step(`실패${s.reason ? ` · ${s.reason}` : ""}`, "err")];
-  else if (v.comments.some(x => x.mine && x.parent && x.parent === cmNative(c))) reply = [step("답글 보냄", "done")];
-  else if (CM.drafting.has(c.id)) reply = [step("초안 만드는 중", "busy"), step("확인", "todo"), step("보냄", "todo")];
-  else if (c.needsReply) reply = [step("초안 필요", "ask"), step("확인", "todo"), step("보냄", "todo")];
-  if (reply) out.push({ key: "reply", name: "답글", steps: reply });
-  const m = c.mail || (d && d.mail ? { state: "drafted", label: "메일 초안 작성됨" } : null);
-  if (m) out.push({ key: "mail", name: "메일", steps: m.state === "failed" ? [step("초안", "done"), step(m.label, "err")] : m.state === "sent" ? [step("초안", "done"), step("보냄", "done")] : [step("초안", "done"), step("답글과 함께 보내요", "todo")] });
+  if (s && s.state === "sending") reply = [step(TX("common.draft"), "done"), step(TX("mon.cm.st.check"), "done"), step(TX("mon.cm.st.sending"), "busy")];
+  else if (s && s.state === "unsure") reply = [step(TX("common.draft"), "done"), step(TX("mon.cm.st.check"), "done"), step(TX("mon.tag.need"), "ask")];
+  else if (d) reply = [step(TX("common.draft"), "done"), step(TX("mon.mail.pending"), "ask"), step(TX("mon.dr.st.send"), "todo")];
+  else if (s && s.state === "sent") reply = [step(TX("common.draft"), "done"), step(TX("mon.cm.st.check"), "done"), step(s.via === "rule" ? TX("mon.cm.st.auto") : TX("mon.dr.st.send"), "done")];
+  else if (s && s.state === "failed") reply = [step(TX("common.draft"), "done"), step(TX("mon.cm.st.check"), "done"), step(`${TX("mon.tag.fail")}${s.reason ? ` · ${s.reason}` : ""}`, "err")];
+  else if (v.comments.some(x => x.mine && x.parent && x.parent === cmNative(c))) reply = [step(TX("mon.cm.st.reply_sent"), "done")];
+  else if (CM.drafting.has(c.id)) reply = [step(TX("mon.cm.st.drafting"), "busy"), step(TX("mon.cm.st.check"), "todo"), step(TX("mon.dr.st.send"), "todo")];
+  else if (c.needsReply) reply = [step(TX("mon.cm.st.need_draft"), "ask"), step(TX("mon.cm.st.check"), "todo"), step(TX("mon.dr.st.send"), "todo")];
+  if (reply) out.push({ key: "reply", name: TX("mon.cm.reply"), steps: reply });
+  const m = c.mail || (d && d.mail ? { state: "drafted", label: TX("mon.cm.mail_drafted") } : null);
+  if (m) out.push({ key: "mail", name: TX("common.mail"), steps: m.state === "failed" ? [step(TX("common.draft"), "done"), step(m.label, "err")] : m.state === "sent" ? [step(TX("common.draft"), "done"), step(TX("mon.dr.st.send"), "done")] : [step(TX("common.draft"), "done"), step(TX("mon.cm.st.with_reply"), "todo")] });
   return out;
 }
 function cmProgress(c, v) {
@@ -17150,17 +17395,17 @@ function cmNoReply(ev, c) {
   const btn = ev.currentTarget, row = btn.closest(".cm-c"), pill = row && row.querySelector(".tag.unreplied");
   const hidden = [btn, pill].filter(Boolean);
   hidden.forEach(n => { n.hidden = true; });
-  cmApi(`/api/comments/comment/${enc(c.id)}/no-reply`, "POST", {}).then(() => { toast("답장 안 함으로 표시했어요"); cmReload(); cmLoad(); cmIntgSoon(); },
+  cmApi(`/api/comments/comment/${enc(c.id)}/no-reply`, "POST", {}).then(() => { toast(TX("mail.fyi.done")); cmReload(); cmLoad(); cmIntgSoon(); },
     e => { hidden.forEach(n => { n.hidden = false; }); toast(e.message, true); });
 }
 function cmCommentNode(c, v, by, nested) {
   const parent = c.parent ? by.get(c.parent) : null, draft = v.drafts.some(d => d.commentId === c.id);
   const pill = !c.mine && c.unreplied ? unrepPill() : null;
-  const hd = el("div", { class: "cm-hd" }, c.mine ? el("span", { class: "cm-mine", text: c.parent ? "나 · 내 답글" : "나" }) : el("span", { class: "kk-name", text: c.author }), el("span", { class: "kk-time", text: kkTime(c.at) }), pill);
+  const hd = el("div", { class: "cm-hd" }, c.mine ? el("span", { class: "cm-mine", text: c.parent ? TX("mon.cm.my_reply") : TX("mon.cm.me") }) : el("span", { class: "kk-name", text: c.author }), el("span", { class: "kk-time", text: kkTime(c.at) }), pill);
   const make = !c.mine && c.needsReply && !draft ? el("button", { class: "btn tonal sm", type: "button", "data-k": "draft", disabled: CM.drafting.has(c.id), onclick: () => cmMakeDraft(c),
-    text: CM.drafting.has(c.id) ? "초안 만드는 중…" : "답글 초안" }) : null;
-  const no = pill ? el("button", { class: "btn text sm cm-no", type: "button", text: "답장 안 함", onclick: ev => cmNoReply(ev, c) }) : null;
-  return el("div", { class: `kk-m cm-c${c.mine ? " mine" : ""}`, "data-id": c.id }, c.mine ? el("span", { class: "kk-av cm-me", "aria-hidden": "true", text: "나" }) : kkAvatar(c.author),
+    text: CM.drafting.has(c.id) ? TX("mon.cm.drafting_dots") : TX("mon.cm.reply_draft") }) : null;
+  const no = pill ? el("button", { class: "btn text sm cm-no", type: "button", text: TX("mail.fyi.title"), onclick: ev => cmNoReply(ev, c) }) : null;
+  return el("div", { class: `kk-m cm-c${c.mine ? " mine" : ""}`, "data-id": c.id }, c.mine ? el("span", { class: "kk-av cm-me", "aria-hidden": "true", text: TX("mon.cm.me") }) : kkAvatar(c.author),
     el("div", { class: "kk-mb" }, hd, parent && !nested ? el("div", { class: "kk-reply", text: `↳ ${parent.author}` }) : null, el("div", { class: "kk-bub", text: c.text }), cmProgress(c, v),
       make || no ? el("div", { class: "cm-acts" }, make, no) : null));
 }
@@ -17173,12 +17418,12 @@ async function cmSendFix(btn, s, op) {
   catch (e) { toast(e.message, true); btn.disabled = false; }
 }
 function cmSendNode(s) {
-  const failed = s.state === "failed", unsure = s.state === "unsure", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : unsure ? `확인 필요${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
+  const failed = s.state === "failed", unsure = s.state === "unsure", st = failed ? `${TX("mon.tag.fail")}${s.reason ? ` · ${s.reason}` : ""}` : unsure ? `${TX("mon.tag.need")}${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? TX("mon.dr.st.send") : TX("mon.cm.st.sending");
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id }, el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
     el("div", { class: "kk-st", role: failed || unsure ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
-      failed || unsure ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null,
-      unsure ? el("button", { class: "btn text", type: "button", "data-k": "done", text: "완료", onclick: ev => cmSendFix(ev.currentTarget, s, "done") }) : null));
+      failed || unsure ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: TX("mon.cm.send_again"), onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: TX("mail.remove"), onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null,
+      unsure ? el("button", { class: "btn text", type: "button", "data-k": "done", text: TX("settings.done"), onclick: ev => cmSendFix(ev.currentTarget, s, "done") }) : null));
 }
 function cmPaintChat(stick) {
   if (CM.tab === "dm") { dmPaintChat(); return; }
@@ -17188,13 +17433,13 @@ function cmPaintChat(stick) {
   if (sig !== CM.headSig) {
     CM.headSig = sig; clear(cmHead);
     if (open) cmHead.append(cmThumb(open.title, v && v.thread.thumb), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.title }),
-      v && v.thread.link ? el("a", { class: "cv-p", href: v.thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(v.source.kind) }) : el("span", { class: "cv-p", text: "댓글" })));
+      v && v.thread.link ? el("a", { class: "cv-p", href: v.thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(v.source.kind) }) : el("span", { class: "cv-p", text: TX("mon.cm.comments") })));
   }
   const csig = JSON.stringify([open, CM.loading, CM.viewErr, v && { ...v, read: null }, [...CM.drafting], CM.revising, v && v.sends.some(x => x.state === "sent" && Date.now() - x.at < 120000) ? Math.floor(Date.now() / 20000) : 0]);
   if (!stick && csig === CM.chatSig) return;
   CM.chatSig = csig;
-  if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "글을 골라 주세요" })); return; }
-  if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
+  if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("mon.cm.pick_post") })); return; }
+  if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("common.loading") })); return; }
   if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr }), appRetry(() => { CM.loading = true; CM.viewErr = ""; cmPaintChat(false); cmReload(); })); return; }
   // A repaint while he types what to change draws a new field (its text is CM.note): give it the focus and the caret the old one had.
   const a = document.activeElement, typing = a && a.matches(".rq-edit input") && cmIn.contains(a) ? [a.selectionStart, a.selectionEnd, a.selectionDirection] : null;
@@ -17242,28 +17487,28 @@ function cmPaintAll() {
 async function cmMakeDraft(c) {
   if (CM.drafting.has(c.id)) return;
   CM.drafting.add(c.id); cmPaintChat(false);
-  setTimeout(() => { if (CM.drafting.delete(c.id)) { cmPaintChat(false); toast("초안이 아직 오지 않았어요", true); } }, 120000);
+  setTimeout(() => { if (CM.drafting.delete(c.id)) { cmPaintChat(false); toast(TX("mon.cm.draft_late"), true); } }, 120000);
   try { await cmApi(`/api/comments/comment/${enc(c.id)}/draft`, "POST", {}); }
   catch (e) { CM.drafting.delete(c.id); cmPaintChat(false); toast(e.message, true); }
 }
 // The thread's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue;
 // The card sits right under the comment it answers, so it has no 원문 보기 bar of its own (the send sheet keeps one: 10-draft-original.js).
 async function cmRestore(code) {
-  try { await cmApi(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast("초안을 되돌렸어요"); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
+  try { await cmApi(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast(TX("mon.cm.restored")); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
 }
 function cmDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); cmReload(); } finally { btn.disabled = false; } };
   const sending = CM.view.sends.some(s => s.commentId === d.commentId && (s.state === "sending" || s.state === "unsure"));
   const edit = CM.revising === d.code, src = CM.view.source || {};
   // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
-  const part = d.mail ? selectButton({ label: "고칠 곳", items: [{ value: "reply", label: "답글" }, { value: "mail", label: "메일" }], value: "reply" }) : null;
+  const part = d.mail ? selectButton({ label: TX("mon.cm.part"), items: [{ value: "reply", label: TX("mon.cm.reply") }, { value: "mail", label: TX("common.mail") }], value: "reply" }) : null;
   const wrap = el("div", { class: "od-cwrap" });
   const who = ((CM.view.comments || []).find(c => c.id === d.commentId) || {}).author;
-  const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: CM.pc ? CM.pc.name : pqSelf(), at: d.created }, label: "답글 초안", labelCls: "kk-dh",
-    to: ["댓글", who || ""], body: { text: d.text, cls: "kk-dt" },
+  const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: CM.pc ? CM.pc.name : pqSelf(), at: d.created }, label: TX("mon.cm.reply_draft"), labelCls: "kk-dh",
+    to: [TX("mon.cm.comments"), who || ""], body: { text: d.text, cls: "kk-dt" },
     // A comment reply is text only (a file goes with the mail that rides along, shown below): say so before 보내기.
     attach: { attachmentsNone: true, cannotAttach: [] },
-    extra: [draftMailNode(d.mail), d.mail ? el("div", { class: "kk-note", role: "status", text: (d.mail.notes || []).join(" / ") || "보내기를 누르면 답글을 올린 뒤 메일을 보내요" }) : null, d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
+    extra: [draftMailNode(d.mail), d.mail ? el("div", { class: "kk-note", role: "status", text: (d.mail.notes || []).join(" / ") || TX("mon.cm.then_mail") }) : null, d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
     // What he types is kept per draft (CM.note): the thread repaints on its own while he types (the timer, a live event), and a new field must not start empty.
     ...(edit ? { revise: rqReviseNode({ pick: part, value: CM.note[d.code] || "", onInput: t => { CM.note[d.code] = t; }, cancel: () => { CM.revising = ""; delete CM.note[d.code]; cmPaintChat(false); },
       go: change => run($(".rq-edit [data-k=revise-go]", wrap) || el("button"), async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change, ...(part ? { part: part.value } : {}) }); CM.revising = ""; delete CM.note[d.code]; await cmReload(); }) }) }
@@ -17283,7 +17528,7 @@ function cmLive(e) {
   if (CM.pc) return;   // the stream is this computer's; the peer's comments are read again by the timer
   if (e.kind === "comment_sources") { cmLoadSources(); return; }
   if (e.kind === "comment_draft" && e.error) toast(e.error, true);
-  if (e.kind === "comment_send" && e.mail === "failed") toast(`답글은 올렸지만 메일은 보내지 못했어요: ${e.mailReason || "알 수 없는 이유"}`, true);
+  if (e.kind === "comment_send" && e.mail === "failed") toast(TX("mon.cm.mail_not_sent", { reason: e.mailReason || TX("mon.cm.unknown_reason") }), true);
   if (e.kind === "comment_draft") for (const id of [...CM.drafting]) CM.drafting.delete(id);
   if (!CM.vis) return;
   cmLoad();
@@ -17358,15 +17603,15 @@ const mailRealFiles = files => (files || []).map((f, i) => ({ f, i })).filter(x 
 function mailFilesNode(key, files) {
   const real = mailRealFiles(files);
   if (!real.length) return null;
-  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부 ${real.length}개` }), ...real.map(({ f, i }) =>
-    el("a", { class: "mr-file", href: mailFileUrl(key, i, true), download: f.name, title: `${f.name} 내려받기`, "aria-label": `${f.name} 내려받기${f.size ? ` (${mailSize(f.size)})` : ""}` },
+  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: TX("mon.mail.files", { n: real.length }) }), ...real.map(({ f, i }) =>
+    el("a", { class: "mr-file", href: mailFileUrl(key, i, true), download: f.name, title: TX("mon.mail.download", { name: f.name }), "aria-label": `${TX("mon.mail.download", { name: f.name })}${f.size ? ` (${mailSize(f.size)})` : ""}` },
       icon("file"), el("span", { class: "mr-fname", text: f.name }), f.size ? el("span", { class: "mr-fsize", text: mailSize(f.size) }) : null, icon("download"))));
 }
 // The reply state of a mail's row. `m.suggest` is written by the reply-draft lane (hub/mail.ts setMailSuggest; stays absent while the install's
 // reply-draft option is off or nothing was offered): { kind: "reply-draft", label, ref, state? }, `ref` = the draft id and `state` =
 // "draft" (default: a draft waits for approval) | "sent" (the reply went out by itself) | "waiting" (a reply is expected, no draft yet).
 // Without suggest nothing is drawn.
-const MAIL_REPLY = { draft: ["답장 초안 있음", "warn"], sent: ["자동 답장 보냄", "ok"], waiting: ["답장 대기", ""] };
+const MAIL_REPLY = { draft: [TX("mon.mail.reply.draft"), "warn"], sent: [TX("mon.mail.reply.sent"), "ok"], waiting: [TX("mon.mail.reply.waiting"), ""] };
 const mailReplyChip = sg => {
   if (!sg || typeof sg !== "object" || (sg.kind && sg.kind !== "reply-draft")) return null;
   const [text, tone] = MAIL_REPLY[sg.state || "draft"] || [];
@@ -17375,14 +17620,14 @@ const mailReplyChip = sg => {
 // The reply-state tag of a mail (hub/mail-state.ts mailLabel): an incoming mail's reply state (m.reply: needs | draft | replied | skipped | fyi),
 // else none. Read / unread is never a state (a row has its own 안 읽음 N pill), and skipped / fyi are the same mark to the owner: 답장 안 함.
 // An outgoing mail is 내가 보냄 in the thread list of a mail (30-mail-thread.js), where both directions sit together; a list row has no tag for it.
-const MAIL_STATE = { needs: ["답장 필요", "warn"], draft: ["초안 있음", "warn"], replied: ["답장함", "ok"], skipped: ["답장 안 함", ""], fyi: ["답장 안 함", ""] };
-const mailStateOf = m => m.dir === "out" ? ["내가 보냄", ""] : MAIL_STATE[m.reply] || ["", ""];
+const MAIL_STATE = { needs: [TX("mail.needs_reply"), "warn"], draft: [TX("mon.mail.state.draft"), "warn"], replied: [TX("mon.mail.state.replied"), "ok"], skipped: [TX("mail.fyi.title"), ""], fyi: [TX("mail.fyi.title"), ""] };
+const mailStateOf = m => m.dir === "out" ? [TX("mon.mail.state.out"), ""] : MAIL_STATE[m.reply] || ["", ""];
 // An app whose conversation is a list of mails (메일 and its instances): newest on top, opened at the top.
 const monMailList = it => !!(it && it.app && !it.mon && (it.listed || it.mails.some(t => MAILS.has(t))));
 // The filter of the mail list: 전체 / 안 읽음 / 답장 필요 / 확인 대기 / 답장함 / 보낸 메일. A filter gets the mail and its conversation target.
 // 확인 대기 holds no mail rows: it is the reply drafts waiting on the owner (owner 2026-10-27), and those approval cards show only there.
 // 전체 is the received mail; what was sent is only under 보낸 메일 (owner 2026-10-28).
-const MAIL_FILTERS = [["all", "전체", m => m.dir !== "out" && !m.archived], ["unread", "안 읽음", (m, t) => !m.archived && mailUnread(t, m)], ["owed", "답장 필요", m => m.dir !== "out" && !m.archived && (m.reply === "needs" || m.reply === "draft")], ["pending", "확인 대기", () => false], ["replied", "답장함", m => m.dir !== "out" && !m.archived && m.reply === "replied"], ["archived", "보관함", m => m.dir !== "out" && !!m.archived], ["sent", "보낸 메일", m => m.dir === "out"]];
+const MAIL_FILTERS = [["all", TX("mail.all"), m => m.dir !== "out" && !m.archived], ["unread", TX("common.unread"), (m, t) => !m.archived && mailUnread(t, m)], ["owed", TX("mail.needs_reply"), m => m.dir !== "out" && !m.archived && (m.reply === "needs" || m.reply === "draft")], ["pending", TX("mon.mail.pending"), () => false], ["replied", TX("mon.mail.state.replied"), m => m.dir !== "out" && !m.archived && m.reply === "replied"], ["archived", TX("mon.mail.archive"), m => m.dir !== "out" && !!m.archived], ["sent", TX("mon.mail.sent"), m => m.dir === "out"]];
 // While the hub still holds older mails the loaded rows undercount; the whole mail app (all accounts) then shows the hub's count over every mail
 // (GET /api/conversations counts.mail.filters). One account's list counts what is loaded until its pages are in.
 const mailChipCount = (k, loaded) => {
@@ -17390,8 +17635,8 @@ const mailChipCount = (k, loaded) => {
   return typeof all === "number" ? Math.max(all, loaded) : loaded;
 };
 // What an empty list of the mail app says, in the words of the tab it is under.
-const MAIL_EMPTY = { pending: "확인할 초안이 없어요", unread: "안 읽은 메일이 없어요", owed: "답장할 메일이 없어요", replied: "답장한 메일이 없어요", archived: "보관한 메일이 없어요", sent: "보낸 메일이 없어요" };
-const mailEmptyText = () => MAIL_EMPTY[mailFilterOf()[0]] || "받은 메일이 없어요";
+const MAIL_EMPTY = { pending: TX("mon.mail.empty.pending"), unread: TX("mon.mail.empty.unread"), owed: TX("mon.mail.empty.owed"), replied: TX("mon.mail.empty.replied"), archived: TX("mon.mail.empty.archived"), sent: TX("mon.mail.empty.sent") };
+const mailEmptyText = () => MAIL_EMPTY[mailFilterOf()[0]] || TX("mon.mail.empty.all");
 const mailFilterOf = () => MAIL_FILTERS.find(f => f[0] === MON.mailFilter) || MAIL_FILTERS[0];
 // A reply draft still in the owner's hands: waiting for 보내기 / 고치기 / 보내지 않기, or being rewritten after 고치기 (a peer's too, as its plain report).
 const mailDraftOpen = n => !!(n.decision && n.decision.draft) && drState(n.decision) === "open";
@@ -17423,17 +17668,17 @@ function mailLand(sel) {
 }
 // The head of the mail list is two rows (owner 2026-11-11): where the mail sits (받은 메일 / 보낸 메일 / 보관함, screen tabs) and, only in 받은 메일,
 // the five ways to sift it. MON.mailFilter keeps its seven values; the place is read from it, and MON.mailIn is the sift 받은 메일 comes back to.
-const MAIL_PLACES = [["in", "받은 메일"], ["sent", "보낸 메일"], ["archived", "보관함"]];
+const MAIL_PLACES = [["in", TX("mon.mail.inbox")], ["sent", TX("mon.mail.sent")], ["archived", TX("mon.mail.archive")]];
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0], place = cur === "sent" || cur === "archived" ? cur : "in";
   if (place === "in") MON.mailIn = cur;
   const count = (k, ok) => k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mailChipCount(k, mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length);
   const pick = k => () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); };
-  const tabs = segKeep(el("div", { class: "mx-tabs mr-place", role: "tablist", "aria-label": "메일 위치" }, ...MAIL_PLACES.map(([k, label]) =>
+  const tabs = segKeep(el("div", { class: "mx-tabs mr-place", role: "tablist", "aria-label": TX("mon.mail.place_aria") }, ...MAIL_PLACES.map(([k, label]) =>
     el("button", { class: `mx-tab${k === place ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === place), "data-filter": k, onclick: pick(k === "in" ? MON.mailIn || "all" : k) },
       label, k === "in" ? null : cntSpan(`mail-filter:${k}`, "mr-fn", count(k, MAIL_FILTERS.find(f => f[0] === k)[2]))))));
   if (place !== "in") return [tabs];
-  return [tabs, segKeep(el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.filter(f => f[0] !== "archived" && f[0] !== "sent").map(([k, label, ok]) =>
+  return [tabs, segKeep(el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": TX("mon.mail.view_aria") }, ...MAIL_FILTERS.filter(f => f[0] !== "archived" && f[0] !== "sent").map(([k, label, ok]) =>
     el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: pick(k) }, label, cntSpan(`mail-filter:${k}`, "mr-fn", count(k, ok))))))];
 }
 // A mail or chat of an integration is its own conversation in 채팅. A mail is a Gmail-like flat row: sender and time on one line (with
@@ -17442,24 +17687,24 @@ function mailFilterBar(mails, notices) {
 // Every mail row has one layout: sender · reply-state tag (only when there is a reply state; the orange 미답장 pill while one is owed) · 안 읽음 N ·
 // paperclip · time · ⋯. A mail conversation whose mail is gone (deleted) is no row at all.
 // A mail row's time: today's clock, else the day alone ("1월 15일"); the open mail keeps the full date and time.
-const mailRowWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
+const mailRowWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : new Date(t).toLocaleDateString(TX_LOCALE, { ...KST, month: "long", day: "numeric" });
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = m ? mailUnread(t, m) : ts(t).unread, open = () => go("monitoring", `c:${t}`);
   if (!m && isMailT(t)) return null;
   const [stateText, stateTone] = m && m.dir !== "out" ? mailStateOf(m) : ["", ""];
   // A mail is one item: unread is one mark, however many messages (the mail, the bot's note on it) its conversation holds unread.
-  const tag = m ? (n ? el("span", { class: "tag warn mr-unread", text: "안 읽음" }) : null) : n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : ntHasDecision(t) ? el("span", { class: "tag warn", text: "답변 필요" }) : null;
+  const tag = m ? (n ? el("span", { class: "tag warn mr-unread", text: TX("common.unread") }) : null) : n ? el("span", { class: "tag warn", text: TX("mail.unread_n", { n }) }) : ntHasDecision(t) ? el("span", { class: "tag warn", text: TX("common.needs_reply") }) : null;
   const stateTag = stateText ? (m.unreplied ? unrepPill(stateText) : el("span", { class: `tag mr-state${stateTone ? ` ${stateTone}` : ""}`, "data-state": stateText, text: stateText })) : null;
   // The 자동 초안 규칙 that drafted this mail (hub/mail.ts MailRecord.rule): its name, as a plain tag beside the reply state.
   const ruleTag = m && m.rule && m.dir !== "out" ? draftRuleTag(m.rule, "mr-rule") : null;
   // Why a mail is not 답장 필요: he is not its main recipient (hub/mail-state.ts replyExclusion: 참조로 받음, 단체 메일, 자동 발송, 다른 사람 앞).
   const whyTag = m && m.why && m.dir !== "out" && m.reply !== "replied" ? el("span", { class: "tag mr-why", "data-why": m.why, text: m.why }) : null;
   const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = (m ? mailRowWhen : rcWhen)(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
-  const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
-  const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
-  return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
+  const title = m ? m.subject || TX("mail.no_subject") : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
+  const clip = files.length ? el("span", { class: "mr-clip", title: TX("mon.mail.clip", { n: files.length }), "aria-label": TX("mon.mail.clip", { n: files.length }) }, icon("clip"), String(files.length)) : null;
+  return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? `${TX("common.unread")}, ` : ""}${title} ${m ? TX("mon.mail.open_orig") : TX("project.open_chat")}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src" }, m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null, m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label), ...mxSender(t), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, mxMoveBtn(t), m ? mailMenuBtn(t, () => orgMailItem(t)) : null),
+    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src" }, m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null, m ? m.dir === "out" ? TX("mon.mail.me_to", { to: mailSender(m.to) || TX("mon.mail.someone") }) : mailSender(m.from) || label : label), ...mxSender(t), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, mxMoveBtn(t), m ? mailMenuBtn(t, () => orgMailItem(t)) : null),
     el("div", { class: "rc-title", text: title }), chip,
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
     ...mailSumNodes(m, t, brief), ...(m ? orgMailRow(t) : []));
@@ -17469,15 +17714,15 @@ function mailSumNodes(m, t, brief) {
   if (!m) return brief ? [el("div", { class: "mr-sum", text: brief })] : [];
   const p = mailParts(m.summary || "", mailSkip(m));
   const sum = p.points.length ? el("ul", { class: "mr-sum mr-pts" }, ...p.points.map(x => el("li", { text: x }))) : brief ? el("div", { class: "mr-sum", text: brief }) : null;
-  const todo = p.todo ? el("div", { class: "mr-todo" }, el("b", { text: "할 일" }), el("span", { text: p.more ? `${p.todo} 외 ${p.more}건` : p.todo })) : null;
+  const todo = p.todo ? el("div", { class: "mr-todo" }, el("b", { text: TX("home.mailtext.todo") }), el("span", { text: p.more ? TX("mon.mail.todo_more", { todo: p.todo, n: p.more }) : p.todo })) : null;
   return [sum, todo].filter(Boolean);
 }
 // 초안 작성: the owner asks for a reply draft of this mail (POST /api/mail/<key>/draft, made behind the request); the draft arrives as the send-approval
 // card in the mail's conversation. In a row and in the open mail's head.
 const mailDraftAsk = async (t, btn, instruction = "") => {
   await api(`/api/mail/${t.slice(5)}/draft`, "POST", instruction ? { instruction } : {});
-  toast("답장 초안을 만드는 중이에요");
-  if (btn) { btn.disabled = true; if (!btn.classList.contains("ib")) btn.textContent = "만드는 중…"; }
+  toast(TX("mon.mail.drafting"));
+  if (btn) { btn.disabled = true; if (!btn.classList.contains("ib")) btn.textContent = TX("mon.mail.making"); }
 };
 // The sample in the 초안 작성 box, made from the summary the mail already has (hub/mail.ts MailRecord.summary: 요약, 할 일), no model call:
 // the first 할 일, else the first point of 요약, decides which short example fits - one line of the box, with no clipped quote of the mail. "" without a summary (the fixed hint then).
@@ -17485,33 +17730,33 @@ function mailDraftSample(m) {
   if (!m || !m.summary) return "";
   const skip = mailSkip(m), p = mailParts(m.summary, skip), lead = p.todo || p.points[0] || mailLines(m.summary, skip)[0] || "";
   if (!lead) return "";
-  if (p.todo) return "예: 이번 주 안에 처리하겠다고 써 줘";
-  if (/일정|회의|미팅|약속|방문|참석/.test(lead)) return "예: 그 시간 괜찮다고 써 줘";
-  if (/요청|문의|부탁|검토|확인|회신|답변|제안/.test(lead)) return "예: 확인하고 금요일까지 답한다고 써 줘";
-  return "예: 잘 받았다고 짧게 써 줘";
+  if (p.todo) return TX("mon.mail.ex.todo");
+  if (/일정|회의|미팅|약속|방문|참석/.test(lead)) return TX("mon.mail.ex.time");
+  if (/요청|문의|부탁|검토|확인|회신|답변|제안/.test(lead)) return TX("mon.mail.ex.ask");
+  return TX("mon.mail.ex.thanks");
 }
 // 초안 작성 asks first what the reply should say (owner 2026-10-28); an empty box makes the draft on its own, as before. Above the box: the mail
 // it answers (sender, subject, the row's summary lines), so the owner writes the instruction without going back to the mail.
 function mailDraftDialog(t, btn) {
   const m = MAILS.get(t), sample = mailDraftSample(m);
-  const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": "초안에 넣을 내용",
-    placeholder: sample || "예: 금요일까지 보내 드린다고 써 줘" });
+  const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": TX("mon.mail.instr_aria"),
+    placeholder: sample || TX("mon.mail.ex.default") });
   const ctx = m ? el("div", { class: "md-ctx", "data-k": "draft-mail" },
-    el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || "보낸 사람 없음" })),
-    el("div", { class: "md-subj", text: m.subject || "(제목 없음)" }),
+    el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || TX("mon.mail.no_sender") })),
+    el("div", { class: "md-subj", text: m.subject || TX("mail.no_subject") }),
     ...mailSumNodes(m, t, mailBrief(m, t))) : null;
   const err = usErr();   // a failure keeps the window and the typed instruction, and says so right above the button (20-models.js usRun)
   const go = (close, b) => usRun(b, err, async () => { await mailDraftAsk(t, btn, ta.value.trim()); close(); });
-  const d = dialog({ title: "답장 초안", body: el("div", { class: "col md-dlg" }, ctx,
-      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: "비워 두면 알아서 써요" }), err)),
-    actions: [{ label: "초안 만들기", kind: "pri", onclick: (close, b) => go(close, b) }] });
+  const d = dialog({ title: TX("mon.mail.dlg_title"), body: el("div", { class: "col md-dlg" }, ctx,
+      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: TX("mon.mail.ask") }), ta, el("div", { class: "sup", text: TX("mon.mail.ask_hint") }), err)),
+    actions: [{ label: TX("mail.draft_create"), kind: "pri", onclick: (close, b) => go(close, b) }] });
   d.node.classList.add("md-d");
   ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   ta.focus();
 }
 const mailDraftRun = (t, b) => mailDraftDialog(t, b);
 // A row has the icon alone (cls "ib mr-draft", its name in aria-label and title); the open mail's head keeps the word.
-const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => { const bare = /\bib\b/.test(cls); return el("button", { class: cls, type: "button", "data-k": "mail-draft", "aria-label": "초안 작성", title: "초안 작성", onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); }, onkeydown: ev => ev.stopPropagation() }, icon("pencil"), bare ? null : "초안 작성"); };
+const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => { const bare = /\bib\b/.test(cls); return el("button", { class: cls, type: "button", "data-k": "mail-draft", "aria-label": TX("mon.mail.act.draft"), title: TX("mon.mail.act.draft"), onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); }, onkeydown: ev => ev.stopPropagation() }, icon("pencil"), bare ? null : TX("mon.mail.act.draft")); };
 // 답장 안 함 / 답장 필요로 표시: the owner's own mark (POST / DELETE /api/mail/<key>/fyi, recorded as his with the time; a peer's mail on the computer
 // that holds it: 34-peer-monitoring.js pqRoute). The row, its tag, the filter counts and the app badges change at once; 답장 안 함 drops the mail's
 // waiting reply draft (확인 대기). 답장 필요로 표시 works from no state, from 답장 안 함 and from 답장함 (it needs another answer).
@@ -17522,20 +17767,20 @@ async function mailSetFyi(t, on) {
   if (m) { m.reply = on ? "fyi" : m.reply === "draft" ? "draft" : "needs"; m.unreplied = !on; }
   document.querySelectorAll(".mtop-fyi").forEach(mailFyiPaint);
   MON.sig = ""; MON.side = ""; monSchedule();
-  toast(on ? "답장 안 함으로 표시했어요" : "답장 필요로 표시했어요", false, on ? { label: "되돌리기", onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
+  toast(on ? TX("mail.fyi.done") : TX("mail.fyi.undone"), false, on ? { label: TX("common.undo"), onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
 // The actions of a mail, one list for the ⋯ of every mail card and for the buttons of every row. Incoming: 초안 작성, then 답장 안 함 while a reply
 // is owed (답장 필요 / 초안 있음) or 답장 필요로 표시 in any other state, then 삭제. Outgoing: 삭제. The one rule for a row's buttons: every incoming row
 // has the 초안 작성 pencil beside its ⋯, without a tap on the ⋯ (owner 2026-10-29); the row stays one Gmail-like row (owner 2026-11-03), so the rest is in the ⋯.
-const MAIL_ACT = { draft: "초안 작성", no: "답장 안 함", need: "답장 필요로 표시", delete: "삭제" };
+const MAIL_ACT = { draft: TX("mon.mail.act.draft"), no: TX("mail.fyi.title"), need: TX("mon.mail.act.need"), delete: TX("common.delete") };
 const mailOwed = m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft");
 const mailActs = m => m.dir === "out" ? ["delete"] : ["draft", mailOwed(m) ? "no" : "need", "delete"];
 const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t) : mailSetFyi(t, a === "no");
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it, unless the app's 삭제하면 원본도 삭제 is on (mbTrash). A newer message of the thread brings it back.
 async function mailDelete(t) {
   if (mailOriginal(t)) return mbTrash([t]);
-  if (!await ask("메일 삭제", `이 메일을 목록에서 지워요. ${mailStays(1)}`, "삭제", true)) return;
+  if (!await ask(TX("mail.trash.title"), `${TX("mail.trash.list_one")} ${mailStays(1)}`, TX("common.delete"), true)) return;
   mbDeleting();
   const pc = pqPc(t), rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => r.dataset.t === t);
   for (const r of rows) r.setAttribute("aria-busy", "true");   // the row stays until the hub has deleted the mail, then folds away
@@ -17548,13 +17793,13 @@ async function mailDelete(t) {
   const leaving = mbRowsOut([t]);
   PQ.of.delete(t); MON.sig = ""; MON.side = "";
   if (leaving) leaving.then(monSchedule); else monSchedule();
-  toast("메일을 목록에서 지웠어요");
+  toast(TX("mon.mail.deleted"));
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
 // The ⋯ at the top right of a mail row: mailActs, built from the mail's state at the tap. `extra()`: more items ({ value, label, run }) after them,
 // as the row's 원문 보기.
 function mailMenuBtn(t, extra = () => []) {
-  return el("button", { class: "ib mr-more", type: "button", "aria-label": "메일 메뉴", title: "메일 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", "data-k": "mail-menu", onclick: ev => {
+  return el("button", { class: "ib mr-more", type: "button", "aria-label": TX("mon.mail.menu"), title: TX("mon.mail.menu"), "aria-haspopup": "listbox", "aria-expanded": "false", "data-k": "mail-menu", onclick: ev => {
     ev.stopPropagation();
     const b = ev.currentTarget, m = MAILS.get(t) || {};
     const more = extra();
@@ -17575,7 +17820,7 @@ const NM = { items: [], loaded: false, failed: false, at: 0 };
 const NM_FRESH_MS = 60000;
 const monitorsFresh = () => NM.loaded && Date.now() - NM.at < NM_FRESH_MS;
 // The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
-const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
+const MON_GROUP = { app: TX("common.apps"), plain: TX("mon.group.plain") };
 // sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width. An app's item has the whole column; a monitor opens beside the list of monitors (monListRows).
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
 const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", mailIn: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0, ovOpen: undefined };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
@@ -17620,19 +17865,21 @@ async function monFetch() {
 // Failed ones first, then the soonest next run.
 const ntMons = () => NM.items.slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
 const monTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
-const ntMonRun = m => m.last_run ? `마지막 ${monTime(m.last_run)}` : "아직 실행 전이에요";
-const ntMonNext = m => m.next_run ? `다음 ${monTime(m.next_run)}` : "";
+const ntMonRun = m => m.last_run ? TX("mon.last_at", { t: monTime(m.last_run) }) : TX("mon.not_run");
+const ntMonNext = m => m.next_run ? TX("mon.next_at", { t: monTime(m.next_run) }) : "";
 
 /* ---- a monitor's own timeline: how far the wait between two runs has come ---- */
 // '방금 전' / '3분 전' / '2시간 전' and '곧' / '12분 후'. The bar's two ends are the last run and the next one; the fill is the share of that
 // wait already gone. One ticker (monTickStart at the bottom) moves every bar of the page, so a row never owns a timer of its own.
 const monRel = (ms, past) => {
   const a = Math.max(0, ms), min = Math.floor(a / 60000);
-  if (min < 1) return past ? "방금 전" : "곧";
-  const t = min < 60 ? `${min}분` : min < 1440 ? `${Math.floor(min / 60)}시간` : `${Math.floor(min / 1440)}일`;
-  return past ? `${t} 전` : `${t} 후`;
+  if (min < 1) return past ? TX("mon.rel.now_past") : TX("mon.rel.now_future");
+  if (min < 60) return past ? TX("mon.rel.min_past", { n: min }) : TX("mon.rel.min_future", { n: min });
+  if (min < 1440) { const n = Math.floor(min / 60); return past ? TX("mon.rel.hour_past", { n }) : TX("mon.rel.hour_future", { n }); }
+  const n = Math.floor(min / 1440);
+  return past ? TX("mon.rel.day_past", { n }) : TX("mon.rel.day_future", { n });
 };
-const MON_PTAG = { ok: ["정상", "ok"], changed: ["바뀜", "warn"], fail: ["실패", "err"], disconnected: ["연결 끊김", "err"], need: ["확인 필요", "warn"], off: ["꺼짐", "off"], late: ["늦어짐", "warn"], run: ["확인 중", "pri"] };
+const MON_PTAG = { ok: [TX("mon.tag.ok"), "ok"], changed: [TX("mon.tag.changed"), "warn"], fail: [TX("mon.tag.fail"), "err"], disconnected: [TX("mon.tag.disconnected"), "err"], need: [TX("mon.tag.need"), "warn"], off: [TX("mon.tag.off"), "off"], late: [TX("mon.tag.late"), "warn"], run: [TX("mon.tag.run"), "pri"] };
 // A monitor's one status, read the same on every screen (the list row's badge, the detail's state line and tag, the home card, the app settings):
 // connection > paused > fail > late > changed > ok > not run yet. key is a MON_PTAG key; text and tone are its words and colour.
 function monStatus(m, now = Date.now()) {
@@ -17641,16 +17888,16 @@ function monStatus(m, now = Date.now()) {
   return { key, text, tone };
 }
 // Wording (one pair): a row, a tag or a badge says "연결 끊김"; the banner at the top of the conversation says "연결이 끊겼어요" plus why.
-const monConnWhy = m => [m.since ? `${monTime(m.since)}부터` : "", m.conn_reason === "login" ? "다시 로그인 필요" : m.conn_reason ? "확인이 계속 실패해요" : ""].filter(Boolean).join(" · ");
-const monConnLine = m => ["연결 끊김", monConnWhy(m)].filter(Boolean).join(" · ");
+const monConnWhy = m => [m.since ? TX("mon.conn.since", { t: monTime(m.since) }) : "", m.conn_reason === "login" ? TX("mon.conn.login") : m.conn_reason ? TX("mon.conn.failing") : ""].filter(Boolean).join(" · ");
+const monConnLine = m => [TX("mon.tag.disconnected"), monConnWhy(m)].filter(Boolean).join(" · ");
 // The list row's status line has room for the start of the outage only; the banner and the overview add why.
-const monConnShort = m => ["연결 끊김", m.since ? `${kstHM(m.since).replace(/^오[전후]\s*/, "")}부터` : ""].filter(Boolean).join(" · ");
+const monConnShort = m => [TX("mon.tag.disconnected"), m.since ? TX("mon.conn.since", { t: kstHM(m.since).replace(/^오[전후]\s*/, "") }) : ""].filter(Boolean).join(" · ");
 // Empty for a paused or disconnected monitor: its one tag (꺼짐 / 연결 끊김) and, when down, the banner's single line already say it.
 const monProgLine = (from, to, now, m, short) => {
   if (m && (m.paused || m.connection === "disconnected")) return "";
-  if (m && m.watch && MON.running.has(m.watch)) return short ? "확인 중" : "지금 확인하고 있어요";
-  if (short) return [from > 0 ? monRel(now - from, true) : "실행 전", to > 0 ? now >= to ? "늦어짐" : monRel(to - now, false) : "예정 없음"].join(" · ");
-  return [from > 0 ? `지난 실행 ${monRel(now - from, true)}` : "아직 실행 전", to > 0 ? now >= to ? "다음 확인이 늦어졌어요" : `다음 ${monRel(to - now, false)}` : "예정 없음"].join(" · ");
+  if (m && m.watch && MON.running.has(m.watch)) return short ? TX("mon.tag.run") : TX("mon.checking_now");
+  if (short) return [from > 0 ? monRel(now - from, true) : TX("mon.prog.before"), to > 0 ? now >= to ? TX("mon.tag.late") : monRel(to - now, false) : TX("mon.prog.none")].join(" · ");
+  return [from > 0 ? TX("mon.prog.last", { t: monRel(now - from, true) }) : TX("mon.prog.not_yet"), to > 0 ? now >= to ? TX("mon.prog.next_late") : TX("mon.next_at", { t: monRel(to - now, false) }) : TX("mon.prog.none")].join(" · ");
 };
 // kind drives the fill: "" (accent, moving), warn (overdue, full), err (disconnected), off (paused, grey), run (indeterminate shimmer).
 function monProgState(m, now) {
@@ -17674,7 +17921,7 @@ function monProgNode(m, opts = {}) {
   const [text, tone] = monPTagOf(st.tag);
   const width = st.kind === "run" ? 35 : st.pct;
   const barTone = st.kind === "" || st.kind === "none" ? MON_BAR_TONE[st.tag] || "" : st.kind === "warn" && st.tag === "fail" ? "err" : "";
-  const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}${barTone ? ` ${barTone}` : ""}`, "data-tone": barTone || null, role: "progressbar", "aria-label": `${monTitle(m)} 다음 확인까지`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
+  const bar = el("span", { class: `mon-prog${st.kind ? ` ${st.kind}` : ""}${barTone ? ` ${barTone}` : ""}`, "data-tone": barTone || null, role: "progressbar", "aria-label": TX("mon.prog.aria", { name: monTitle(m) }), "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round(st.pct)), "aria-valuetext": line }, el("i", { style: `width:${width}%` }));
   if (live && from > 0 && to > 0) { bar.dataset.from = String(from); bar.dataset.to = String(to); bar.dataset.short = opts.short ? "1" : ""; }
   // data-tag keeps the result the node was built with: the ticker only flips a live tag between it and 늦어짐, never to another result.
   const tag = text && opts.tag !== false ? el("span", { class: `mon-ptag${tone ? ` ${tone}` : ""}`, "data-tag": st.tag, "data-fixed": st.tag === "fail" || st.tag === "disconnected" || st.tag === "off" || st.tag === "run" ? "1" : null, text }) : null;
@@ -17699,12 +17946,12 @@ function monHuman(raw) {
   return keep.join(" ").replace(/[.。]$/, "").trim();
 }
 const monClean = (s, fb = "") => monHuman(ntPlain(s)) || fb;
-const MON_GENTLE = { watch: "지켜보는 일", schedule: "예약한 일" };
+const MON_GENTLE = { watch: TX("mon.kind.watch"), schedule: TX("mon.kind.schedule") };
 // A title stays one short phrase: a long prompt in plain words gives its first sentence.
 const MON_TITLE_MAX = 40;
-const monTitle = m => { const t = monWords(monHuman(ntPlain(m.name))); return (t.length > MON_TITLE_MAX ? monSentences(t)[0] : t) || MON_GENTLE[m.kind] || "모니터링"; };
+const monTitle = m => { const t = monWords(monHuman(ntPlain(m.name))); return (t.length > MON_TITLE_MAX ? monSentences(t)[0] : t) || MON_GENTLE[m.kind] || TX("common.monitoring"); };
 // One or two plain sentences under the name, from what the monitor really is (its cadence), never from the command it runs.
-const monDesc = m => m.kind === "schedule" ? (m.every ? `${m.every} 알아서 실행해요.` : "정해 둔 때에 한 번 실행해요.") : `바뀐 곳이 있는지 ${m.every ? `${m.every} ` : "알아서 "}확인해요.`;
+const monDesc = m => m.kind === "schedule" ? (m.every ? TX("mon.desc.sched_every", { every: m.every }) : TX("mon.desc.sched_once")) : m.every ? TX("mon.desc.watch_every", { every: m.every }) : TX("mon.desc.watch_auto");
 const monNames = m => [...new Set([monTitle(m), String(m.name || ""), monRaw(m), monWords(monRaw(m))].filter(Boolean))];
 const monHas = (m, n) => n.kind === "watch" && monNames(m).includes(String(n.title || ""));
 // 모니터링's own notices: a watch's or a schedule's report (kind "watch"), or a notice living in an integration's own conversation (a mail).
@@ -17726,9 +17973,9 @@ function monStrip(s, names) {
   return first && names.includes(first) ? s.slice(nl + 1).replace(/^\s*\n/, "") : s;
 }
 // 마지막 정상 only says something after a failure, when it is not the last run: a monitor that is fine already reads 정상 with its last run's time.
-const monLastOk = m => (m.fails || m.last_result === "fail") && m.last_ok && m.last_ok !== m.last_run ? `마지막 정상 ${monTime(m.last_ok)}` : "";
-const MON_RUN = { ok: "마지막 확인 결과 정상이에요", changed: "마지막 확인에서 바뀐 점이 있어요", fail: "마지막 확인이 실패했어요" };
-const monRunLine = m => !m.last_run ? "아직 확인 전이에요" : m.kind === "schedule" ? "예약한 일을 실행했어요" : MON_RUN[m.last_result] || "확인했어요";
+const monLastOk = m => (m.fails || m.last_result === "fail") && m.last_ok && m.last_ok !== m.last_run ? TX("mon.last_ok", { t: monTime(m.last_ok) }) : "";
+const MON_RUN = { ok: TX("mon.run.ok"), changed: TX("mon.run.changed"), fail: TX("mon.run.fail") };
+const monRunLine = m => !m.last_run ? TX("mon.run.unchecked") : m.kind === "schedule" ? TX("mon.run.sched_ran") : MON_RUN[m.last_result] || TX("mon.run.checked");
 const monNewest = list => list.slice().sort((a, b) => ntAt(b) - ntAt(a))[0] || null;
 const monNoticeAt = n => new Date(ntAt(n)).toISOString();
 const monLine = n => convPreview(n.text) || ntPlain(n.title);
@@ -17737,15 +17984,15 @@ const monUnread = list => list.reduce((c, n) => c + (n.read ? 0 : 1), 0);
 
 // What is watched, in list order: 감시 소식 (reports no row below owns), then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors). Each item carries what
 // its row and its conversation show.
-const MON_FEED = "감시 소식";
+const MON_FEED = TX("mon.feed");
 // An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday, unreplied} from GET /api/integrations (hub/integrations.ts):
 // the line says what was sent today; the counts that wait on him (drafts, 미답장, 안 읽음) are the row's own, at its right (31-conversations.js), so the line never says them again (owner 2026-11-10).
 // The badge is the count that waits on him (drafts first, else unread). A row with such a count says when the last item came (`when`, ntTime of the newest), else nothing.
 // "확인할 것 없어요" only for a connected app with every count 0; `down` (the app is disconnected) says 연결 끊김 instead.
 function monNeedLine(n, down, when) {
   const parts = [];
-  if (n.sentToday) parts.push(`오늘 자동 답장 ${n.sentToday}건 보냄`);
-  return parts.join(" · ") || (n.drafts || n.unreplied || n.unread ? (when ? `마지막 소식 ${when}` : "") : down ? "연결 끊김" : "확인할 것 없어요");
+  if (n.sentToday) parts.push(TX("mon.need.sent_today", { n: n.sentToday }));
+  return parts.join(" · ") || (n.drafts || n.unreplied || n.unread ? (when ? TX("mon.last_news", { t: when }) : "") : down ? TX("mon.tag.disconnected") : TX("mon.need.none"));
 }
 // A watch an app owns (it.watches / it.watchesNot of GET /api/integrations, hub/integrations.ts) belongs to that app: no row of its own in 일반 모니터링,
 // its status is in the app's panel and a failing one marks the app's row.
@@ -17755,12 +18002,12 @@ const monOwner = (apps, m) => m.kind === "watch" && m.watch ? apps.find(a => Arr
 // The rest of the monitors by the hub's `scope` (hub/watch-scope.ts): a project's own go in a 프로젝트 · <이름> group between 앱 and 일반 모니터링, the gateway's own
 // housekeeping stays out of sight while it is fine (a failing or disconnected one is listed in 일반 모니터링). A hub that sends no `scope` lists every monitor as plain.
 const monProject = m => m.scope === "project" && m.project;
-const monGroupOf = m => (monProject(m) ? `프로젝트 · ${m.project_title || "프로젝트"}` : MON_GROUP.plain);
+const monGroupOf = m => (monProject(m) ? TX("mon.group.project", { name: m.project_title || TX("common.project") }) : MON_GROUP.plain);
 const monHidden = m => m.scope === "internal" && m.last_result !== "fail" && m.connection !== "disconnected";
 // Project items first (grouped by project, first seen first), then the plain ones.
 const monGrouped = (proj, plain) => { const order = [...new Set(proj.map(i => i.group))]; return [...order.flatMap(g => proj.filter(i => i.group === g)), ...plain]; };
 const monOwnedBy = (apps, mons) => { const by = new Map(); for (const m of mons) { const o = monOwner(apps, m); if (o) by.set(o.key, [...(by.get(o.key) || []), m]); } return by; };
-const monFail = owned => owned.some(m => m.last_result === "fail") ? ["실패", "err"] : null;
+const monFail = owned => owned.some(m => m.last_result === "fail") ? [TX("mon.tag.fail"), "err"] : null;
 function monItems() {
   intgWatch();
   const mons = ntMons(), shown = new Set(), items = [], proj = [], plain = [], owned = monOwnedBy(INTG.items, mons);
@@ -17769,8 +18016,8 @@ function monItems() {
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
     const needs = it.needs || { drafts: 0, unread: monUnread(notices.filter(n => !mails.includes(n.open) && !mails.includes(n.src))) + mails.filter(t => (ts(t).unread | 0) > 0).length, sentToday: 0 }, conn = it.state === "disconnected", own = owned.get(it.key) || [], bad = own.some(m => m.last_result === "fail");
-    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, conn, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: conn && it.hint ? it.hint : bad ? "확인이 실패했어요" : monNeedLine(needs, conn, cands[0] ? ntTime(cands[0].at) : ""), at: cands[0] ? cands[0].at : "", owned: own, msig: conn ? "conn" : bad ? "fail" : "",
-      badge: conn ? ["연결 끊김", "err"] : monFail(owned.get(it.key) || []) });
+    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, conn, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: conn && it.hint ? it.hint : bad ? TX("mon.check_failed") : monNeedLine(needs, conn, cands[0] ? ntTime(cands[0].at) : ""), at: cands[0] ? cands[0].at : "", owned: own, msig: conn ? "conn" : bad ? "fail" : "",
+      badge: conn ? [TX("mon.tag.disconnected"), "err"] : monFail(owned.get(it.key) || []) });
   }
   const ownedNames = new Set([...owned.values()].flat());
   for (const m of mons) {
@@ -17782,7 +18029,7 @@ function monItems() {
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
     const need = notices.filter(monNeed).length, conn = m.connection === "disconnected", running = !!m.watch && MON.running.has(m.watch);
     (monProject(m) ? proj : plain).push({ key: `m:${m.name}`, group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
-      hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : m.last_result === "fail" && m.last_summary ? monClean(m.last_summary, monRunLine(m)) : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
+      hint: conn ? monConnShort(m) : running ? TX("mon.checking_now") : m.last_result === "fail" && m.last_summary ? monClean(m.last_summary, monRunLine(m)) : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
       badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
@@ -17803,27 +18050,27 @@ const monGone = n => {
   const mons = n.pc ? ((((PQ.list.find(p => p && p.url === n.pc.url) || {}).items) || {}).monitors || null) : NM.loaded ? NM.items : null;
   return !!mons && !mons.some(m => m.watch === n.watch);
 };
-const monFeedDay = t => kstDay(t) === kstDay(Date.now()) ? `오늘 ${kstHM(t)}` : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
+const monFeedDay = t => kstDay(t) === kstDay(Date.now()) ? TX("mon.today_at", { t: kstHM(t) }) : new Date(t).toLocaleDateString(TX_LOCALE, { ...KST, month: "long", day: "numeric" });
 function monFeedHead(list) {
   const live = list.filter(n => !monGone(n)), fresh = monNewest(live.filter(n => !n.read)), last = monNewest(live);
   if (fresh) return { hint: `${fresh.pc ? `${fresh.pc.name} · ` : ""}${monLine(fresh)}`, at: monNoticeAt(fresh) };
-  return last ? { hint: `마지막 소식 ${monFeedDay(ntAt(last))}`, at: monNoticeAt(last) } : { hint: NM.loaded && NT.loaded ? "새 감시 소식이 없어요" : "", at: "" };   // not loaded, or failed: no "none" claim (the state card under the list says which)
+  return last ? { hint: TX("mon.last_news", { t: monFeedDay(ntAt(last)) }), at: monNoticeAt(last) } : { hint: NM.loaded && NT.loaded ? TX("mon.feed.none") : "", at: "" };   // not loaded, or failed: no "none" claim (the state card under the list says which)
 }
 // 답 필요: waits on the owner and is answered from here (an open decision, an [ask] report), never read by looking; 실패: a report that could not check.
 // A peer's open decision is answered here too (ntPost through the peer); a peer's loose [ask] waits in that computer's conversation.
 const monNeed = n => ntNeeds(n) && (!n.pc || ntIsDec(n));
 const monFailed = n => n.tone === "fail";
-const monNeedChips = need => (need ? [[`답 필요 ${need}`, "warn"]] : undefined);
+const monNeedChips = need => (need ? [[TX("mon.need_chip", { n: need }), "warn"]] : undefined);
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
 const monSel = items => items.find(i => i.key === MON.sel) || null;
 const monName = () => { const it = monItems().find(i => i.key === MON.sel); return kkItem(it) && KK.open && KK.room ? KK.room.name : CM.vis && CM.tab === "dm" && DM.open ? DM.open.peer : it ? mxsName() || it.name : titles.monitoring; };
 function monState(it) {
-  if (it.off) return "연결 안 됨";
+  if (it.off) return TX("mon.state.off");
   // The progress block under the name already carries the two runs in words, so the state line says only where it stands.
   if (it.mon) { const st = monStatus(it.mon); return st.key === "disconnected" ? "" : st.text; }
-  if (it.rq) return it.unread ? `답장 ${it.unread}건 기다려요` : it.hint;
-  if (it.key === "notice") return [it.need ? `답 필요 ${it.need}건` : "", it.unread ? `안 읽음 ${it.unread}개` : ""].filter(Boolean).join(" · ") || "감시와 예약 결과";
-  return it.app ? it.mxLine || it.hint : it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
+  if (it.rq) return it.unread ? TX("mon.state.rq", { n: it.unread }) : it.hint;
+  if (it.key === "notice") return [it.need ? TX("mon.state.need", { n: it.need }) : "", it.unread ? TX("mon.state.unread", { n: it.unread }) : ""].filter(Boolean).join(" · ") || TX("mon.state.results");
+  return it.app ? it.mxLine || it.hint : it.unread ? TX("mon.state.unread", { n: it.unread }) : TX("mon.state.connected");
 }
 
 /* ---- the list ---- */
@@ -17831,7 +18078,7 @@ function monRows(items, sel) {
   const rows = [];
   let group = null, added = false;
   // 앱 추가 is the last row of the 앱 group, right under the apps; with no app yet it is the group's only row.
-  const addRow = () => { added = true; rows.push({ k: "add-app", name: "앱 관리", av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
+  const addRow = () => { added = true; rows.push({ k: "add-app", name: TX("mon.manage_apps"), av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
   for (const it of items) {
     if (group === MON_GROUP.app && it.group !== group && !added) addRow();
     if ((it.group === MON_GROUP.plain || it.proj) && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
@@ -17840,19 +18087,19 @@ function monRows(items, sel) {
     rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, unreplied: it.unreplied | 0, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", monRowGo(it)) });
   }
   if (!added) { if (group !== MON_GROUP.app) rows.push({ header: MON_GROUP.app }); addRow(); }
-  if (!NM.loaded) rows.push({ k: "state", state: NM.failed ? "failed" : "loading", hint: NM.failed ? "모니터링을 불러오지 못했어요" : "불러오는 중…" });
+  if (!NM.loaded) rows.push({ k: "state", state: NM.failed ? "failed" : "loading", hint: NM.failed ? TX("mon.load_failed") : TX("common.loading") });
   return rows;
 }
 
 /* ---- the conversation ---- */
-const MON_TONE = { fail: ["실패", "err"], warn: ["주의", "warn"], ask: ["답변 필요", "warn"], ok: ["정상", "ok"], changed: ["바뀜", "warn"] };
+const MON_TONE = { fail: [TX("mon.tag.fail"), "err"], warn: [TX("mon.tag.warn"), "warn"], ask: [TX("common.needs_reply"), "warn"], ok: [TX("mon.tag.ok"), "ok"], changed: [TX("mon.tag.changed"), "warn"] };
 const monWhen = n => ntTime(n.updated || n.ts);
 const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class: `tag ${t[1]}`, text: t[0] }) : null; };
 // A send approval (hub/draft-approval.ts): drawn as the mail it would send - the one question, the mail being answered when known, the recipient chip,
 // the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 asks "어떻게 고칠까요?" (the bot rewrites it),
 // 보내지 않기 is the quiet way out. The whole answer path is the notice's (answerInline / ntPost), so the chat card and this one stay in step.
 const DR = { edit: new Set(), manual: new Set(), note: {} };
-const DR_STATE = { open: ["확인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], own: ["보낼 방법 전함", "pri"], expired: ["만료", ""], ignored: ["무시함", ""] };
+const DR_STATE = { open: [TX("mon.dr.st.open"), "warn"], send: [TX("mon.dr.st.send"), "ok"], edit: [TX("mon.dr.st.edit"), "pri"], revising: [TX("mon.dr.st.revising"), "pri"], drop: [TX("mon.dr.st.drop"), ""], own: [TX("mon.dr.st.own"), "pri"], expired: [TX("mon.dr.st.expired"), ""], ignored: [TX("mon.dr.st.ignored"), ""] };
 function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
   if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
@@ -17864,7 +18111,7 @@ function drOriginal(t) {
   const m = MAILS.get(t);
   if (!m) return null;
   const brief = mailBrief(m, t);
-  return el("div", { class: "dr-orig" }, el("div", { class: "dr-ok", text: "답장할 메일" }), el("div", { class: "dr-os" }, el("b", { text: mailSender(m.from) }), m.subject ? ` · ${m.subject}` : ""), brief ? el("div", { class: "dr-ob", text: brief }) : null);
+  return el("div", { class: "dr-orig" }, el("div", { class: "dr-ok", text: TX("mon.dr.reply_to") }), el("div", { class: "dr-os" }, el("b", { text: mailSender(m.from) }), m.subject ? ` · ${m.subject}` : ""), brief ? el("div", { class: "dr-ob", text: brief }) : null);
 }
 // The app instance that holds a conversation target, for the card's head (a peer's row first: PQ.of).
 const monInstLabel = t => { const pe = PQ.of.get(t); if (pe) return pe.label || ""; const it = INTG.items.find(x => intgHas(x, t)); return it ? it.label : ""; };
@@ -17880,11 +18127,11 @@ function draftCardNode(n, o = {}) {
   const q = ntPlain(n.title).replace(/\s*\([^()]*\)\s*$/, "");
   const editing = open && DR.edit.has(n.id), man = editing && DR.manual.has(n.id);
   let go2 = null; const gone = open && dcGone(d.to);
-  const ta = editing ? el("textarea", { class: man ? "dr-edit" : "dr-edit ask", rows: man ? "8" : "2", maxlength: man ? "6000" : "500", placeholder: man ? "" : DRAFT_HINT, "aria-label": man ? "직접 수정" : "고칠 내용", disabled: busy, oninput: () => { DR.note[n.id] = ta.value; if (go2) go2.disabled = !ta.value.trim(); } }) : null;
+  const ta = editing ? el("textarea", { class: man ? "dr-edit" : "dr-edit ask", rows: man ? "8" : "2", maxlength: man ? "6000" : "500", placeholder: man ? "" : DRAFT_HINT, "aria-label": man ? TX("mon.dr.edit_manual") : TX("mon.dr.edit_ask"), disabled: busy, oninput: () => { DR.note[n.id] = ta.value; if (go2) go2.disabled = !ta.value.trim(); } }) : null;
   if (ta) ta.value = DR.note[n.id] ?? (man ? drParas(dr.body).join("\n\n") : "");
   const leave = () => { DR.edit.delete(n.id); DR.manual.delete(n.id); delete DR.note[n.id]; };
   // The 받는이·참조 rows of a mail draft are its own (10-decision-card.js draftToNode): 답장 | 전체 답장, the chips, editable while it waits.
-  const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: d.to, edit: open }) : el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" }));
+  const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: d.to, edit: open }) : el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || TX("mon.dr.to") }), el("span", { class: "dr-chip", text: dr.to || "-" }));
   if (o.bare) return el("div", { class: "dr-mail" }, draftBriefNode(dr.brief, seen), recv,
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
     draftOriginNode(dr),
@@ -17893,12 +18140,12 @@ function draftCardNode(n, o = {}) {
   // A mail answered by this draft reads like the landing page's comment card: who wrote, where it came from, what they wrote, then the draft in a grey box.
   const om = mail ? MAILS.get(d.to) || {} : {}, who = mail ? mailSender(om.from) : "", sent = st === "send", b = dr.brief || {}, orig = b.summary || String(om.summary || om.preview || "").split("\n")[0];
   const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: null,   // the state tag carries the time once
-    ...(who ? { who, src: monInstLabel(d.to) || "메일" } : {}),
+    ...(who ? { who, src: monInstLabel(d.to) || TX("common.mail") } : {}),
     tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, sent ? null : el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // x in the head is 보내지 않기 only for a card whose button row has none (its conversation is gone): otherwise it is a second way to the same thing and reads as close
-      open && !editing && oDrop && gone ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => monDraftRun(n, oDrop) }, icon("close")) : null] };
+      open && !editing && oDrop && gone ? el("button", { class: "ib dr-rm", type: "button", title: TX("mon.dr.rm_title"), "aria-label": TX("mon.dr.rm_aria"), disabled: busy, onclick: () => monDraftRun(n, oDrop) }, icon("close")) : null] };
   if (editing) {
-    go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? "이 내용으로 고치기" : "고쳐 달라고 하기", onclick: async () => {
+    go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? TX("mon.dr.apply_manual") : TX("mon.dr.apply_ask"), onclick: async () => {
       const text = ta.value.trim();
       if (!text || !oEdit) return;
       dcSending.add(n.id); syncInlineChoices(); redraw();
@@ -17913,9 +18160,9 @@ function draftCardNode(n, o = {}) {
     busy, press: rqPress.get(rqNtKey(n)),
   } : null;
   // 직접 수정 (man) types the mail itself: the field stands where the body was, with only the two buttons below it.
-  const revise = editing ? el("div", { class: "rq-edit" }, man ? null : el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), man ? null : ta,
-    el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
-      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" })))) : null;
+  const revise = editing ? el("div", { class: "rq-edit" }, man ? null : el("div", { class: "dr-q2", text: TX("mon.dr.how") }), man ? null : ta,
+    el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: TX("common.cancel"), onclick: () => { leave(); redraw(); } }),
+      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: TX("mon.dr.edit_manual") })))) : null;
   // A mail draft reads as the 답장 확인 sheet does (10-reply-card.js rqMailParts): the same head line, quote, subject, folded 받는이 and 첨부 줄, here in place.
   const mp = mail && dr.toLabel === "받는이" ? rqMailParts(dr, { t: d.to, pc: head.pc, edit: open, hold: busy, tail: head.tail, seen, src: "" }) : null;
   const card = rqCard({ key: `dr:${n.id}`, attrs: { "data-nid": n.id }, fail: rqFail.get(rqNtKey(n)),
@@ -17940,8 +18187,8 @@ function monDecisionNode(n) {
     onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.pc ? n : n.id) : answerInline(n, o)) },
     el("span", { class: "dc-key", text: String(o.n) }),
     el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
-  const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? "무시했어요" : d.expired ? "기한 지남" : d.resolved ? "답 없이 끝났어요" : `답했어요${said ? ` · ${ntPlain(said)}` : ""}` });
-  return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || "답변이 필요해요" }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
+  const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? TX("mon.dec.ignored") : d.expired ? TX("mon.dec.expired") : d.resolved ? TX("mon.dec.closed") : `${TX("mon.dec.answered")}${said ? ` · ${ntPlain(said)}` : ""}` });
+  return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || TX("mon.dec.needs") }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
     answerParts(fl, { lead: false }), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
 }
 // Any other notice is a result card (11-resultcard.js): the monitor's name, the time, the result in words, the original folded.
@@ -17954,19 +18201,19 @@ function monNoticeNode(n, names = []) {
 function monItemNode(n) {
   const it = n.item, t = it && it.app === "mail" && it.key ? `mail:${it.key}` : "", c = it && it.card;
   if (t && !MAILS.has(t) && c && c.source) MAILS.set(t, c);
-  const node = t && MAILS.has(t) ? monConvNode(t, "메일") : c && (c.subject || c.from) ? resultCard({ src: mailSender(c.from), at: n.updated || n.ts, title: c.subject }) : null;
+  const node = t && MAILS.has(t) ? monConvNode(t, TX("common.mail")) : c && (c.subject || c.from) ? resultCard({ src: mailSender(c.from), at: n.updated || n.ts, title: c.subject }) : null;
   const raw = node ? rcSplit(n.text).raw : "";
   if (raw) { const d = rcRawFold(raw); d.addEventListener("click", e => e.stopPropagation()); node.append(d); }
   return node;
 }
   if (ntIsDec(n)) return monDecisionNode(n);   // a peer's question too: the same card, its answer sent to that computer (ntPost)
-  const node = monCard(monClean(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
+  const node = monCard(monClean(names[0] || n.title) || TX("common.alerts"), n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
   const card = n.item ? monItemNode(n) : null;
   if (card) { card.dataset.nid = n.id; return card; }
   if (!node) return null;
   for (const li of node.querySelectorAll(".rc-sec li")) { const c = nwChangeNode(li.textContent); if (c) li.replaceChildren(c); }   // 89,000원 → 72,000원: the old value struck, the new one bold
   node.dataset.nid = n.id;
-  if (monNeed(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
+  if (monNeed(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: TX("mon.reply_go") })));
   return node;
 }
 // Runs the monitor once now, on the computer that owns it (a peer's through /api/peer/act). The route answers after the check with the new
@@ -17975,7 +18222,7 @@ const monRunNow = (btn, m) => busy(btn, async () => {
   if (!m || !m.watch) return;
   MON.running.add(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
   const was = btn && btn.textContent;
-  if (btn) btn.textContent = "확인하는 중…";
+  if (btn) btn.textContent = TX("mon.running");
   try {
     const r = await api(`/api/watches/${enc(m.watch)}/run`, "POST", {});
     if (r && r.item && r.item.watch) {
@@ -17984,14 +18231,14 @@ const monRunNow = (btn, m) => busy(btn, async () => {
     }
     await loadMonitors();
     if (m.pc) pqSoon();
-    toast(r && r.approved ? MON_RECONNECT : r && r.item && r.item.connection === "disconnected" ? "확인했지만 아직 연결이 끊겨 있어요" : "확인했어요");
+    toast(r && r.approved ? MON_RECONNECT : r && r.item && r.item.connection === "disconnected" ? TX("mon.run.still_down") : TX("mon.run.checked"));
   } finally {
     MON.running.delete(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
     if (btn) btn.textContent = was;
   }
 });
 // A down watch behind an approval gate is approved by the tap (hub/routes-lanes.ts run): its login may now ask the owner on his phone.
-const MON_RECONNECT = "다시 연결을 요청했어요. 승인 요청이 오면 눌러 주세요";
+const MON_RECONNECT = TX("mon.reconnect_asked");
 // 다시 연결 on a disconnected app: every watch the app owns runs on this computer, then the app and the list are read again.
 const monRecheckApp = (btn, it, names) => busy(btn, async () => {
   for (const n of names) MON.running.add(n);
@@ -18004,13 +18251,13 @@ const monRecheckApp = (btn, it, names) => busy(btn, async () => {
   await Promise.allSettled([loadMonitors(), it.pc ? pqLoad() : loadIntegrations()]);
   MON.sig = ""; MON.side = ""; monSchedule();
   const bad = res.filter(r => r.status === "rejected").length, asked = res.some(r => r.status === "fulfilled" && r.value && r.value.approved);
-  toast(bad ? `${names.length}개 중 ${bad}개는 확인하지 못했어요` : asked ? MON_RECONNECT : "지금 다시 확인했어요", !!bad);
+  toast(bad ? TX("mon.recheck.partial", { total: names.length, n: bad }) : asked ? MON_RECONNECT : TX("mon.recheck.done"), !!bad);
 });
 // An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
 const monFeed = it => it.key === "notice";
 
 /* ---- a lot piled up: what waits first, one row per source, filters, 읽음 처리, pages ---- */
-const MON_FILTERS = [["all", "전체", () => true], ["need", "답 필요", monNeed], ["fail", "실패", monFailed]];
+const MON_FILTERS = [["all", TX("mon.filter.all"), () => true], ["need", TX("mon.filter.need"), monNeed], ["fail", TX("mon.tag.fail"), monFailed]];
 const monFilterOf = () => MON_FILTERS.find(f => f[0] === MON.filter) || MON_FILTERS[0];
 const MON_PAGE = 30;       // rows per page (더 보기 / 이전 소식 보기 bring the next)
 // Enough pages of list `key` to show its entry number `i` (-1: nothing to reach).
@@ -18020,9 +18267,9 @@ const MON_FOLD_MIN = 3;    // a run of this many same results in a row folds int
 const MON_RAW = /\n(?:```원문|원문[ \t]*\n)/;   // where a report's folded original starts
 const monLines = (n, names) => monStrip(choiceFree(String(n.text || "").split(MON_RAW)[0]), [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
 function monSummary(n, names) {
-  const lines = monLines(n, names).filter(l => !/^(?:새로 생겼어요|사라졌어요)$/.test(l));   // a section heading of the card, not news
+  const lines = monLines(n, names).filter(l => l !== TX("home.watch.fresh") && l !== TX("home.watch.gone"));   // a section heading of the card, not news
   const s = lines.slice(0, 2).join(" · ");
-  return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || "알림";
+  return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || TX("common.alerts");
 }
 // The row's second line, only when it says something its first line (the source) does not: a report that is one sentence is said once.
 const monSumNode = (n, names, src) => { const s = monSummary(n, names); return s === src ? null : el("div", { class: "fr-sum", text: s }); };
@@ -18033,7 +18280,7 @@ const monFoldKey = (n, names) => `${n.tone}|${monSummary(n, names)}`;
 // One source of the feed: the watch's name on one computer (a peer's report of the same name is its own row).
 const monSrcKey = n => `${n.pc ? n.pc.name : ""}|${ntPlain(n.title)}`;
 function monToggle(key) { if (MON.open.has(key)) MON.open.delete(key); else MON.open.add(key); MON.sig = ""; monSchedule(); }
-const monMoreBtn = (key, left, text) => el("button", { class: "btn text mon-more", type: "button", "data-more": key, onclick: () => { MON.more.set(key, (MON.more.get(key) || MON_PAGE) + MON_PAGE); MON.grew = key !== "feed" && !key.startsWith("g:"); MON.sig = ""; monSchedule(); }, text: text || `${left}개 더 보기` });
+const monMoreBtn = (key, left, text) => el("button", { class: "btn text mon-more", type: "button", "data-more": key, onclick: () => { MON.more.set(key, (MON.more.get(key) || MON_PAGE) + MON_PAGE); MON.grew = key !== "feed" && !key.startsWith("g:"); MON.sig = ""; monSchedule(); }, text: text || TX("mon.more_n", { n: left }) });
 // The top of an older page watches for the owner reaching it (monObserveOlder at the bottom): the reports above load themselves, and the button stays
 // for a keyboard or a browser without the observer.
 const monOlderSentinel = (key, left, end) => el("div", { class: "mon-sentinel", "data-older": key, "data-left": String(left), "data-end": end || null, "aria-hidden": "true" });
@@ -18044,11 +18291,11 @@ const monBarWanted = it => !it.mails.some(t => MAILS.has(t)) && (it.notices.leng
 function monBar(it) {
   const cur = monFilterOf(), fyi = it.notices.filter(n => cur[2](n) && !n.read && !monNeed(n) && n.id);
   return segKeep(el("div", { class: "mr-filter mon-bar" },
-    el("div", { class: "mon-tabs", role: "tablist", "aria-label": "소식 보기" }, ...MON_FILTERS.map(([k, label, ok]) => {
+    el("div", { class: "mon-tabs", role: "tablist", "aria-label": TX("mon.bar.aria") }, ...MON_FILTERS.map(([k, label, ok]) => {
       const n = k === "all" ? it.notices.length : it.notices.filter(ok).length;
       return el("button", { class: `cchip mr-f${k === cur[0] ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur[0]), "data-filter": k, onclick: () => { MON.filter = k; MON.more.clear(); MON.sig = ""; monSchedule(); } }, label, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
     })),
-    el("button", { class: "btn text mon-read", type: "button", "data-k": "read", disabled: !fyi.length, title: "답이 필요한 것은 그대로 둬요", onclick: ev => monReadAll(ev.currentTarget, fyi), text: fyi.length ? `${fyi.length}개 읽음 처리` : "읽음 처리" })));
+    el("button", { class: "btn text mon-read", type: "button", "data-k": "read", disabled: !fyi.length, title: TX("mon.bar.read_title"), onclick: ev => monReadAll(ev.currentTarget, fyi), text: fyi.length ? TX("mon.bar.read_n", { n: fyi.length }) : TX("mon.bar.read") })));
 }
 // 읽음 처리: the listed plain reports are read here at once and on the hub; a failure puts them back and says why (busy toasts it).
 // A peer's reports are read on the computer that holds them (pqNoticesRead).
@@ -18064,26 +18311,26 @@ const monReadAll = (btn, list) => busy(btn, async () => {
     if (r && typeof r.unread === "number") NT.unread = r.unread;
     ntPaint();
   }
-  toast(`${list.length}개를 읽음으로 표시했어요`);
+  toast(TX("mon.read_done", { n: list.length }));
 });
 // One report as a row: source, state, time and a two-line summary; a tap unfolds the whole card in place (sections, the original, 답하러 가기).
 // A report that waits on the owner carries 답하러 가기 on the row itself. A decision is always the whole card: it is answered in place.
 function monRowNode(n, names) {
   if (ntIsDec(n) || n.item) return monNoticeNode(n, names);   // a report about an app item shows the item (a mail row) as the app draws it
-  const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || "알림", more = monHasMore(n, names);
+  const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || TX("common.alerts"), more = monHasMore(n, names);
   if (n.id === MON.want) MON.open.add(key);
   if (more && MON.open.has(key)) {
     const full = monNoticeNode(n, names);
     if (!full) return null;
     full.classList.add("fr-open");
-    full.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn text", type: "button", "aria-label": `${src} 소식 접기`, onclick: () => monToggle(key), text: "접기" })));
+    full.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn text", type: "button", "aria-label": TX("mon.row.fold_aria", { src }), onclick: () => monToggle(key), text: TX("mon.fold") })));
     return full;
   }
   const need = monNeed(n);
-  return el("div", { class: `bm alert rc fr${n.read ? "" : " un"}${more ? "" : " fr-all"}`, "data-nid": n.id, role: more ? "button" : null, tabindex: more ? "0" : null, "aria-expanded": more ? "false" : null, "aria-label": more ? `${src} 소식 펼치기` : null, onclick: more ? () => monToggle(key) : null, onkeydown: more ? ev => monKey(ev, () => monToggle(key)) : null },
+  return el("div", { class: `bm alert rc fr${n.read ? "" : " un"}${more ? "" : " fr-all"}`, "data-nid": n.id, role: more ? "button" : null, tabindex: more ? "0" : null, "aria-expanded": more ? "false" : null, "aria-label": more ? TX("mon.row.unfold_aria", { src }) : null, onclick: more ? () => monToggle(key) : null, onkeydown: more ? ev => monKey(ev, () => monToggle(key)) : null },
     el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n.pc ? el("span", { class: "tag", text: n.pc.name }) : null, need ? monTag("ask") : monTag(n.tone), el("span", { class: "rc-time", text: monWhen(n) })),
     monSumNode(n, names, src),
-    need ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, text: "답하러 가기" })) : null);
+    need ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, text: TX("mon.reply_go") })) : null);
 }
 // A monitor's 확인 기록 is the prototype's detail list (#watch/price): ONE card of compact rows - a dot for the result, the report's first line (a price
 // change as the old value struck, then the new one), a small second line, the time at the right. A tap unfolds the whole report in place (monRowNode's card).
@@ -18107,9 +18354,9 @@ function monLogRow(n, names) {
   if (ntIsDec(n) || n.item || monNeed(n) || (more && MON.open.has(key))) return monRowNode(n, names);
   const lines = monLines(n, names);
   const chg = nwChangeNode(nwChangeLine(n.text)), plain = lines.filter(l => !l.includes("→")).map(l => l.replace(/^\[[^\]]*\]\s*/, ""));
-  const main = chg || plain[0] || ntPlain(n.title) || "알림", sub = chg ? plain[0] || "" : plain[1] || "";
-  const src = ntPlain(names[0] || n.title) || "알림";
-  return monLogLine({ tone: chg ? "changed" : n.tone, main, sub, at: n.updated || n.ts, unread: !n.read, nid: n.id, onclick: more ? () => monToggle(key) : null, label: more ? `${src} 소식 펼치기` : null });
+  const main = chg || plain[0] || ntPlain(n.title) || TX("common.alerts"), sub = chg ? plain[0] || "" : plain[1] || "";
+  const src = ntPlain(names[0] || n.title) || TX("common.alerts");
+  return monLogLine({ tone: chg ? "changed" : n.tone, main, sub, at: n.updated || n.ts, unread: !n.read, nid: n.id, onclick: more ? () => monToggle(key) : null, label: more ? TX("mon.row.unfold_aria", { src }) : null });
 }
 // The monitor's own latest run as the newest row: how it last ended and when it checks next (hub/monitors.ts watchFacts).
 function monRunRow(it) {
@@ -18117,8 +18364,8 @@ function monRunRow(it) {
   if (!m.last_run) return null;
   // The head's bar already says the state (정상) and the wait to the next check (다음 12분 후): the record keeps the result, the facts and the time.
   const same = m.kind === "watch" && m.last_result === "ok" && monStatus(m).key === "ok";
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), monLastOut(m), m.every || ""].filter(Boolean);
-  return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: same ? "확인했어요" : monRunLine(m), sub: facts.join(" · "), at: m.last_run });
+  const facts = [m.fails ? TX("mon.fails", { n: m.fails }) : "", monLastOk(m), monLastOut(m), m.every || ""].filter(Boolean);
+  return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: same ? TX("mon.run.checked") : monRunLine(m), sub: facts.join(" · "), at: m.last_run });
 }
 // The question chips of a watch (asChipTexts): one row of small buttons under its log.
 function monRunChips(it) {
@@ -18131,12 +18378,12 @@ function monGroupNode(g, names) {
   if (g.length === 1) return [monRowNode(g[0], names)];
   const n0 = g[0], need = monNeed(n0), key = `g:${need ? `need|${monSummary(n0, names)}|` : ""}${monSrcKey(n0)}`, want = g.findIndex(n => n.id === MON.want);
   if (want >= 0) { MON.open.add(key); monPageTo(key, want); }
-  const open = MON.open.has(key), unread = g.filter(n => !n.read).length, src = ntPlain(names[0] || n0.title) || "알림";
-  const head = el("div", { class: `bm alert rc fr grp${unread ? " un" : ""}${open ? " open" : ""}`, "data-nid": open ? null : n0.id, "data-group": key, role: "button", tabindex: "0", "aria-expanded": String(open), "aria-label": `${src} 소식 ${g.length}건 ${open ? "접기" : "펼치기"}`, onclick: () => monToggle(key), onkeydown: ev => monKey(ev, () => monToggle(key)) },
-    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n0.pc ? el("span", { class: "tag", text: n0.pc.name }) : null, need ? monTag("ask") : monTag(n0.tone), el("span", { class: "tag fr-n", text: need ? `같은 질문 ${g.length}번` : `${g.length}건` }), unread ? el("span", { class: "nb", "aria-label": `안 읽음 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "rc-time", text: monWhen(n0) }), el("span", { class: "fr-chev", "aria-hidden": "true" }, icon("drop"))),
+  const open = MON.open.has(key), unread = g.filter(n => !n.read).length, src = ntPlain(names[0] || n0.title) || TX("common.alerts");
+  const head = el("div", { class: `bm alert rc fr grp${unread ? " un" : ""}${open ? " open" : ""}`, "data-nid": open ? null : n0.id, "data-group": key, role: "button", tabindex: "0", "aria-expanded": String(open), "aria-label": TX(open ? "mon.grp.fold_aria" : "mon.grp.unfold_aria", { src, n: g.length }), onclick: () => monToggle(key), onkeydown: ev => monKey(ev, () => monToggle(key)) },
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n0.pc ? el("span", { class: "tag", text: n0.pc.name }) : null, need ? monTag("ask") : monTag(n0.tone), el("span", { class: "tag fr-n", text: need ? TX("mon.grp.same_q", { n: g.length }) : TX("mon.grp.n", { n: g.length }) }), unread ? el("span", { class: "nb", "aria-label": TX("mon.state.unread", { n: unread }), text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "rc-time", text: monWhen(n0) }), el("span", { class: "fr-chev", "aria-hidden": "true" }, icon("drop"))),
     open ? null : monSumNode(n0, names, src),
     // the same question asked again: answered once from its newest one, the earlier ones listed when unfolded
-    need && !open ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n0); }, text: "답하러 가기" })) : null);
+    need && !open ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n0); }, text: TX("mon.reply_go") })) : null);
   if (!open) return [head];
   const page = MON.more.get(key) || MON_PAGE;
   return [head, el("div", { class: "fr-list" }, ...g.slice(0, page).map(n => monRowNode(n, names)).filter(Boolean), g.length > page ? monMoreBtn(key, g.length - page) : null)];
@@ -18148,7 +18395,7 @@ function monFeedNodes(it, names) {
   for (const n of list) if (monNeed(n)) { const k = `${monSrcKey(n)}|${monSummary(n, names)}`; asked.set(k, [...(asked.get(k) || []), n]); }
   for (const n of list) if (!monNeed(n)) { const k = n.item ? `item|${n.id}` : monSrcKey(n); by.set(k, [...(by.get(k) || []), n]); }
   const groups = [...by.values()], bad = groups.filter(g => g.some(n => monFailed(n) && !n.read));
-  const secs = [["답 필요", [...asked.values()]], ["실패", bad], ["소식", groups.filter(g => !bad.includes(g))]].filter(s => s[1].length);
+  const secs = [[TX("mon.filter.need"), [...asked.values()]], [TX("mon.tag.fail"), bad], [TX("mon.sec.news"), groups.filter(g => !bad.includes(g))]].filter(s => s[1].length);
   monPageTo("feed", secs.flatMap(s => s[1]).findIndex(g => g.some(n => n.id === MON.want)));
   const page = MON.more.get("feed") || MON_PAGE, out = [];
   let shown = 0, left = 0;
@@ -18160,7 +18407,7 @@ function monFeedNodes(it, names) {
       if (shown >= page) { left++; continue; }
       shown++;
       // the plain sources under a day line (오늘 / 10월 25일 (토)), by their newest report; what waits stays one block on top
-      const d = label === "답 필요" ? "" : dayLabel(ntAt(g[0]));
+      const d = label === TX("mon.filter.need") ? "" : dayLabel(ntAt(g[0]));
       if (d && d !== day) { day = d; out.push(el("div", { class: "mon-day", text: d })); }
       const nodes = monGroupNode(g, names), time = d && nodes[0] && nodes[0].querySelector(":scope > .rc-hd > .rc-time");
       if (time) time.textContent = kstHM(g[0].updated || g[0].ts);   // the day line above says the date: the row says the time only
@@ -18198,7 +18445,7 @@ function monChronoNodes(it, names) {
       const x = draw(r.n, names);
       if (!x) return null;
       x.dataset.nids = r.all.map(n => n.id).join(",");
-      const rep = `같은 결과 ${r.all.length}번 · 처음 ${monWhen(r.all[0])}`;
+      const rep = TX("mon.rep", { n: r.all.length, t: monWhen(r.all[0]) });
       if (MON_ROWS.has(x)) MON_ROWS.get(x).textContent = rep;
       else x.querySelector(".rc-hd").after(el("div", { class: "mon-rep", text: rep }));
       return x;
@@ -18221,8 +18468,8 @@ function monChronoNodes(it, names) {
     const chips = monRunChips(it);
     nodes = chips ? [...out, chips] : out;
   }
-  if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
-  else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
+  if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, TX("mon.older_n", { n: cut })));
+  else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, TX("mon.older_n", { n: cut })));
   if (hidden && (hidden.size || CVP.more)) nodes.push(...mbMoreNodes(hidden.size));
   if (withMails) mbRowsPrune();
   if (withMails) return MX.scr ? mxScreen() : [...mxTop(it), ...mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)))].filter(Boolean), ...(nodes.length ? nodes : [el("div", { class: "empty", text: mailEmptyText() })]), ...(held ? [] : [el("div", { class: "mbox-fab-gap", "aria-hidden": "true" }), mbFab()])];   // the gap keeps the last card, its 첨부 줄 included, clear of 메일 쓰기; the waiting drafts view has no round button over a card corner
@@ -18242,7 +18489,7 @@ function monTopNodes(it) {
   const out = [], banner = monBannerOf(it);
   if (it.mon) out.push(el("div", { class: "cv-p mon-desc" }, monDesc(it.mon), ...(pqLabel(it) ? [" ", pqLabel(it)] : [])), monProgNode(it.mon, { tag: !banner }));   // the machine's name sits here, not in the one-line title
   if (banner) out.push(banner);
-  const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), monConvBtn(it)].filter(Boolean);
+  const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), asChatOn(monSettingsApp(it)) ? null : monConvBtn(it)].filter(Boolean);   // the app bar's 대화 icon is the one control for it on a phone
   if (acts.length) out.push(el("div", { class: "mon-actions" }, ...acts));
   // The prototype's detail card opens the conversation on a phone too: the wait, a down banner and the actions in one card (never loose).
   return out.length ? [el("div", { class: "mon-topcard" }, ...out)] : [];
@@ -18252,7 +18499,7 @@ function monTopNodes(it) {
 function monConvBtn(it) {
   const app = monSettingsApp(it);
   if (!app || monMailList(it) || kkItem(it)) return null;
-  return el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "continue", title: "이 항목으로 대화를 이어가요", text: "대화로 이어가기", onclick: () => go("monitoring", `c:${asConv(app)}`) });
+  return el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "continue", title: TX("mon.conv.title"), text: TX("mon.conv.btn"), onclick: () => go("monitoring", `c:${asConv(app)}`) });
 }
 // 감시 소식 opens with every plain monitor at a glance: how far its wait has come, how it last ended, and the last line it said. Down and failed
 // rows come first, so what needs the owner is at the top; a tap opens that monitor.
@@ -18273,44 +18520,44 @@ function monOverview(it) {
     const m = i.mon, peerBar = i.pc && !m.paused && !(Date.parse(m.next_run) > 0);   // a paused peer monitor draws the grey 꺼짐 bar like a local one
     return el("button", { class: "mon-ov-row", type: "button", "data-ov": i.key, onclick: () => go("monitoring", i.key) },
       el("span", { class: "mon-ov-hd" }, el("span", { class: "mon-ov-n", text: monTitle(m) }), i.pc ? el("span", { class: "tag", text: i.pc.name }) : null),
-      peerBar ? el("span", { class: "mon-ov-peer", text: "다른 컴퓨터" }) : monProgNode(m, { compact: true }),
+      peerBar ? el("span", { class: "mon-ov-peer", text: TX("mon.ov.peer") }) : monProgNode(m, { compact: true }),
       monOvLine(m));
   };
   let head = null;
   if (calm.length) {
     const off = calm.filter(i => i.mon.paused).length, latest = Math.max(0, ...calm.map(i => Date.parse(i.mon.last_run) || 0));
-    const sum = [off ? `정상 ${calm.length - off} · 꺼짐 ${off}` : "모두 정상", latest ? `마지막 확인 ${monRel(now - latest, true)}` : ""].filter(Boolean).join(" · "), ht = loud.length ? `나머지 ${calm.length}개` : `모니터 ${calm.length}개`;
-    head = el("button", { class: "mon-ov-h", type: "button", "aria-expanded": String(open), "aria-label": `${ht} · ${sum} · ${open ? "접기" : "펼치기"}`, onclick: () => { MON.ovOpen = !open; MON.sig = ""; monSchedule(); } },
+    const sum = [off ? TX("mon.ov.sum_off", { n: calm.length - off, off }) : TX("mon.ov.all_ok"), latest ? TX("mon.ov.last", { t: monRel(now - latest, true) }) : ""].filter(Boolean).join(" · "), ht = loud.length ? TX("mon.ov.rest", { n: calm.length }) : TX("mon.ov.count", { n: calm.length });
+    head = el("button", { class: "mon-ov-h", type: "button", "aria-expanded": String(open), "aria-label": `${ht} · ${sum} · ${open ? TX("mon.fold") : TX("mon.unfold")}`, onclick: () => { MON.ovOpen = !open; MON.sig = ""; monSchedule(); } },
       el("span", { class: "mon-ov-ht", text: ht }), el("span", { class: "mon-ov-sum", text: sum }), icon("chev", "chev"));
   }
-  return el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : []), sorted.length ? null : el("div", { class: "mon-ov-empty", text: "아직 일반 모니터링이 없어요" }));
+  return el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : []), sorted.length ? null : el("div", { class: "mon-ov-empty", text: TX("mon.ov.empty") }));
 }
 function monTimeline(it) {
-  if (it.off) return [el("div", { class: "empty", text: "연결 안 됨" })];
+  if (it.off) return [el("div", { class: "empty", text: TX("mon.state.off") })];
   const names = it.mon ? monNames(it.mon) : [];
   const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = !monFeed(it) ? monChronoNodes(it, names) : it.notices.length > MON_COMPACT ? monFeedNodes(it, names) : monFeedCards(it, names);
   const ov = monOverview(it), head = [...monTopNodes(it), ...bar, ...(ov ? [ov] : [])];
   // A monitor's reports read as its 확인 기록, under a section label like the prototype's detail (its 지금 확인 stays in the head's actions).
-  const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? "실행 기록" : "확인 기록" })] : [];
+  const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? TX("mon.log.sched") : TX("mon.log.watch") })] : [];
   if (nodes.length) return [...head, ...sec, ...nodes];
-  if (head.length) return [...head, el("div", { class: "empty", text: it.notices.length || (it.mails || []).length || it.mon ? "이 보기에 해당하는 소식이 없어요" : "아직 소식이 없어요" })];   // an app with nothing at all says so, never a bare head
-  return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? monRunLine(it.mon) : "아직 소식이 없어요" })];
+  if (head.length) return [...head, el("div", { class: "empty", text: it.notices.length || (it.mails || []).length || it.mon ? TX("mon.empty.view") : TX("mon.empty.none") })];   // an app with nothing at all says so, never a bare head
+  return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? TX("common.loading") : it.mon ? monRunLine(it.mon) : TX("mon.empty.none") })];
 }
 // The settings an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct), a local schedule's (s:<id>, the screen only, no
 // conversation: 32-app-settings.js asEntry); none for a peer's app or schedule or an unreachable computer.
 // The title of a settings conversation: the monitor's or the app's own name (a peer's monitor too), not "설정".
 function monSettingsName(t) {
   const a = settingsApp(t);
-  if (a.startsWith("s:")) { const m = NM.items.find(x => x.schedule === a.slice(2)); return m ? monTitle(m) : "예약"; }
-  if (!a.startsWith("w:")) { const pe = PQ.of.get(t), it = pe && pe.app ? { label: pe.label } : INTG.items.find(x => x.key === a) || INTG.available.find(x => x.key === a); return it ? it.label : "설정"; }
+  if (a.startsWith("s:")) { const m = NM.items.find(x => x.schedule === a.slice(2)); return m ? monTitle(m) : TX("common.schedule"); }
+  if (!a.startsWith("w:")) { const pe = PQ.of.get(t), it = pe && pe.app ? { label: pe.label } : INTG.items.find(x => x.key === a) || INTG.available.find(x => x.key === a); return it ? it.label : TX("common.settings"); }
   const pe = PQ.of.get(t), m = pe ? pe.mon : NM.items.find(x => x.watch === a.slice(2));
-  return m ? monTitle(m) : "설정";
+  return m ? monTitle(m) : TX("common.settings");
 }
 // The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the latest-run row of the monitor's detail (monRunRow).
 const monStatMons = app => (asOwn(app) ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
 function monStatNode(m) {
   const st = monStatus(m);
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), monLastOut(m)].filter(Boolean);
+  const facts = [m.fails ? TX("mon.fails", { n: m.fails }) : "", monLastOk(m), monLastOut(m)].filter(Boolean);
   return el("div", { class: "as-row as-stat", "data-watch": m.watch || m.name },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [st.text, ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
     st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
@@ -18321,25 +18568,25 @@ const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? (it.account
 // Two states, two banners: kind "down" (the connection is gone: err tone, 연결이 끊겼어요) and "fail" (connected, the last check failed: err tone too,
 // 확인 실패). The head is passed in, never guessed from the detail text.
 function monBannerNode(kind, detail, btn) {
-  const head = kind === "down" ? "연결이 끊겼어요" : "확인 실패", t = String(detail || "").trim();
+  const head = kind === "down" ? TX("mon.banner.down") : TX("mon.banner.fail"), t = String(detail || "").trim();
   return el("div", { class: `mon-banner ${kind}`, role: kind === "down" ? "alert" : "status", "data-kind": kind }, icon("refresh"), el("span", { class: "mon-banner-tx" }, el("b", { text: head }), t ? ` · ${t}` : ""), btn);
 }
 // The app hint the hub writes for a down app starts with the row word ("연결 끊김 · ..."); the banner has its own head, so only the why is kept.
 const monHintWhy = h => String(h || "").replace(/^\s*연결\s*(끊김|이 끊겼어요)\s*(·\s*)?/, "");
-const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || "지금 확인", onclick: ev => monRunNow(ev.currentTarget, m) });
-const monRecheckBtn = (watch, onclick, text = "지금 다시 확인") => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
+const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || TX("mon.run_btn"), onclick: ev => monRunNow(ev.currentTarget, m) });
+const monRecheckBtn = (watch, onclick, text = TX("mon.recheck_btn")) => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
 function monBannerOf(it) {
   if (it.mon) {
     const m = it.mon, down = m.connection === "disconnected";
     if (!down && m.last_result !== "fail") return null;
-    const detail = down ? monConnWhy(m) : [m.fails > 1 ? `${m.fails}번 연속 실패했어요` : "마지막 확인이 실패했어요", monClean(m.last_summary || "")].filter(Boolean).join(" · ");
-    return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? "다시 연결" : undefined) : null);
+    const detail = down ? monConnWhy(m) : [m.fails > 1 ? TX("mon.fail_streak", { n: m.fails }) : TX("mon.run.fail"), monClean(m.last_summary || "")].filter(Boolean).join(" · ");
+    return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? TX("mon.reconnect") : undefined) : null);
   }
   if (!it.conn) return null;
   const names = (it.owned || []).map(m => m.watch).filter(Boolean);
-  return monBannerNode("down", monHintWhy(it.hint), names.length ? monRecheckBtn(it.key, ev => monRecheckApp(ev.currentTarget, it, names), "다시 연결") : null);
+  return monBannerNode("down", monHintWhy(it.hint), names.length ? monRecheckBtn(it.key, ev => monRecheckApp(ev.currentTarget, it, names), TX("mon.reconnect")) : null);
 }
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 // A monitor adds its own progress block and 지금 확인 under the name, so the conversation always says how far the wait has come.
@@ -18355,11 +18602,11 @@ function monHeadTime(it) {
 const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 대기 screen on its own drafts (30-replies.js).
-  const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 대기 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
+  const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: TX("mon.rq_btn", { n: it.drafts }), onclick: () => rqOpen(it.inst, it.pc) }) : null;
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or Messenger item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
-  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepCount(it.unreplied) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepCount(it.unreplied) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it), !convBtn))].filter(Boolean);   // the labeled button is the one control for 대화 on the wide head
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
@@ -18591,7 +18838,7 @@ function ntPaint() {
 function ntClean(n) {
   if (n && n.kind === "watch" && typeof n.title === "string" && MON_CMD.test(n.title)) {
     const m = NM.items.find(x => monNames(x).includes(n.title));
-    n.title = m ? monTitle(m) : monClean(n.title) || "예약한 일";
+    n.title = m ? monTitle(m) : monClean(n.title) || TX("mon.kind.schedule");
   }
   return n;
 }
@@ -18646,7 +18893,7 @@ function noticeLive(e) {
     else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
     if (i < 0 && ntOpenDec(e.item) && NT.loaded && dkFollowOn(e.item)) { /* opened as the next card */ }
     else if (i < 0 && ntOpenDec(e.item) && NT.loaded) {
-      toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeOpenId(e.item.id) }, 8000);
+      toast(TX("decision.needs_reply"), false, { label: TX("decision.open"), onclick: () => noticeOpenId(e.item.id) }, 8000);
       const s = document.querySelector(".snack:last-of-type");
       if (s) s.dataset.nid = String(e.item.id);
     }
@@ -18693,8 +18940,8 @@ const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
 function ntGo(t, kept = false) {
   if (t === "settings") { go("settings"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
   if (!kept && isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // `kept`: the gateway holds the message in that session's history   // the session is gone: its result card is in the main chat
-  if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast("이 프로젝트를 찾을 수 없어요"); go("projects"); return ""; }
-  if (!validTarget(t)) { toast("이 화면을 찾을 수 없어요"); go("home"); return ""; }
+  if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast(TX("project.not_found")); go("projects"); return ""; }
+  if (!validTarget(t)) { toast(TX("conv.nt.no_screen")); go("home"); return ""; }
   if (t === "alert") NSC.pass = Date.now() + 1000;   // the one way into the record conversation: a row's source message (#chat/alert alone is the 알림 screen)
   if (current !== "chat" || target !== t || convListing()) go("chat", t);   // already open (a cold start draws the address first): no second draw
   return t;
@@ -18765,7 +19012,7 @@ async function ntJump(n, quiet = false, via = "") {
   if (!via && ended()) { const c = await ntLocate(at); if (seq !== ntJumpSeq) return; if (c) { open = c; located = true; } }
   const t = ntGo(open, located);
   if (!t) return "no-conversation";
-  if (isLaneT(open) && t === MAIN) { toast("이 세션은 이미 지워졌어요"); return "session-gone"; }   // the main chat has no message of it: say so instead of landing on the nearest one
+  if (isLaneT(open) && t === MAIN) { toast(TX("conv.nt.session_gone")); return "session-gone"; }   // the main chat has no message of it: say so instead of landing on the nearest one
   chatUnpin();
   ntKeep = isLaneT(t) ? t : "";
   CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
@@ -18787,7 +19034,7 @@ async function ntJump(n, quiet = false, via = "") {
     if (exact) ntFlash(m);
     else {
       const unshown = !m && ts(t).msgs.some(e => e.ts === at && cleanRestart(e));   // stored but never drawn (a restart with nothing cut off): not a missing message
-      if (n.at && !quiet) toast(m ? "그 메시지가 없어서 바로 옆 메시지를 열었어요" : unshown ? "이 알림은 대화에 따로 표시하지 않아요" : "그 메시지를 찾을 수 없어요");
+      if (n.at && !quiet) toast(m ? TX("conv.nt.nearby") : unshown ? TX("conv.nt.unshown") : TX("conv.nt.no_msg"));
       return m ? "near-message" : "no-message";   // what a tap on a push reports to the gateway (23-installable-app-web.js pushTapReport)
     }
   } catch {}
@@ -18858,7 +19105,7 @@ async function noticeOpenId(id, quiet, hash, at) {
   let n = ntById(id);
   if (!n) { await loadNotices(); n = ntById(id); }
   if (!n && at) return pushOpen(hash, at, "");
-  if (!n) { if (!quiet) toast("이 알림은 이미 처리됐어요"); return "notice-gone"; }
+  if (!n) { if (!quiet) toast(TX("conv.nt.handled")); return "notice-gone"; }
   return noticeOpen(n);
 }
 function ntRead(n) {
@@ -18878,7 +19125,7 @@ function ntOfEvent(e) {
   if (real) return real;
   const p = parseTone(noHandoff(peerMsgLine(e.text)), true);
   return { id: "", kind: own === "alert" ? "alert" : own === "worklog" ? "worklog" : lane ? "result" : "message", tone: e.ask ? "ask" : own || lane ? p.tone : "",
-    title: e.title || (own === "alert" ? "알림" : own === "worklog" ? "작업 기록" : lane ? `세션 ${lane}` : botName), text: p.text, src, open: src, at: e.ts, ts: e.ts };
+    title: e.title || (own === "alert" ? TX("common.alerts") : own === "worklog" ? TX("conv.worklog") : lane ? TX("conv.session_named", { name: lane }) : botName), text: p.text, src, open: src, at: e.ts, ts: e.ts };
 }
 // A 모니터링 report: its screen, on its own row. MON.want makes the draw reach that row (unfolded, whatever page and group it is in); the draw is synchronous inside
 // go(). Messenger and comments draw their own rooms, not report rows, so those land on the app's pane (a report naming a Kakao room opens that room).
@@ -18894,7 +19141,7 @@ async function monOpen(n) {
   if (it && kkItem(it)) { if (n.item && n.item.app === "kakao") kkOpen(n.item.id); return; }
   if (it && cmAppOf(key)) return;
   const row = n.id ? monRowOf(n.id) : null;
-  if (!row) { toast("그 소식을 찾을 수 없어요"); return; }
+  if (!row) { toast(TX("conv.nt.no_news")); return; }
   row.scrollIntoView({ block: "center" });
   ntFlash(row);
   MON.hl = String(n.id); MON.hlUntil = Date.now() + 2300;
@@ -18954,7 +19201,7 @@ function dkPaint() {
   const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
   const sig = dcSig(dc, picks, step);
   if (DK.box.dataset.sig !== sig) { DK.box.dataset.key = dc.key; renderDecision(DK.box, DK.dc, picks, step); DK.box.dataset.sig = sig; }
-  if (DC.st[dc.key] === "sent" && !DK.timer && !(dc.draft && dcStText(dc, "sent") === "고치는 중…")) DK.timer = setTimeout(() => { dkClose(false); toast("답을 보냈어요"); }, 900);
+  if (DC.st[dc.key] === "sent" && !DK.timer && !(dc.draft && dcStText(dc, "sent") === TX("decision.pending.edit"))) DK.timer = setTimeout(() => { dkClose(false); toast(TX("conv.nt.sent")); }, 900);
 }
 // Several cards in one conversation are answered one after another (2026-10-31: "차례로 보여줘야지", "마지막 카드 어디?"): once a draft card
 // is answered, the next open draft card of the same conversation opens in its place, at once when it is already there, else when it
@@ -18963,9 +19210,9 @@ const DK_FOLLOW_MS = 3 * 60000;
 let dkFollow = null;   // { to, until }
 function dkNext(n) {
   const nx = ntDecisions().filter(x => x.id !== n.id && x.decision.draft && x.decision.to === n.decision.to).sort((a, b) => ntAt(a) - ntAt(b))[0];
-  if (nx) { toast("답을 보냈어요 · 다음 카드예요"); ntDraftSheet(nx); return; }
+  if (nx) { toast(TX("conv.nt.sent_next_card")); ntDraftSheet(nx); return; }
   dkFollow = { to: n.decision.to, until: Date.now() + DK_FOLLOW_MS };
-  toast(draftIsLast(n.text) ? "답을 보냈어요 · 마지막 카드였어요" : "답을 보냈어요");
+  toast(draftIsLast(n.text) ? TX("conv.nt.sent_last_card") : TX("conv.nt.sent"));
 }
 // A new open draft card in the conversation whose card was just answered: it opens unless another sheet is up. True when it opened.
 function dkFollowOn(item) {
@@ -18981,7 +19228,7 @@ function dkOpen(dc, draft, nid, ign) {
   const waits = !!ign && !!ign.id && ntNeeds(ign);
   DK.ign = waits ? String(ign.id) : "";
   DK.dc = { ...dc, close: dkClose, draft: draft || null, ignore: waits ? () => ntIgnore(ign) : null };
-  const h = fsOpen({ label: draft ? "보낼 내용 확인" : "결정이 필요해요", cls: draft ? (draft.toLabel === "받는이" ? "mid rq-sheet" : "tall") : "", onClose: () => { if (DK.h === h) { DK.h = DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = ""; } } });
+  const h = fsOpen({ label: draft ? TX("conv.nt.check_send") : TX("decision.needs_decision"), cls: draft ? (draft.toLabel === "받는이" ? "mid rq-sheet" : "tall") : "", onClose: () => { if (DK.h === h) { DK.h = DK.node = DK.box = DK.dc = null; DK.nid = DK.ign = ""; } } });
   DK.h = h; DK.node = h.node; DK.box = h.box;
   dkPaint();   // the card itself holds the focus, not a row: a focus ring on the first option would read as a pick
 }
@@ -19010,7 +19257,7 @@ function ntDraftSheet(n) {
 // An entry that comes from a session names its parent project and status, in the words of sessionRow.
 function ntLaneNote(n) {
   const name = typeof n.key === "string" && n.key.startsWith("lane:") ? n.key.slice(5) : "", l = name && S && S.lanes.find(x => x.name === name);
-  return l ? `${laneProject(l) || "프로젝트 없음"} · ${sessionStatus(l)[0]}` : "";
+  return l ? `${laneProject(l) || TX("chat.tsw.no_project")} · ${sessionStatus(l)[0]}` : "";
 }
 
 /* ---------- decisions: a question that waits on the owner ---------- */
@@ -19046,7 +19293,7 @@ const ntDecisions = () => NT.items.filter(ntOpenDec).sort((a, b) => ntAt(b) - nt
 const ntLooseAsks = () => NT.items.filter(n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n)).sort((a, b) => ntAt(b) - ntAt(a));
 const ntHasDecision = t => NT.items.some(n => ntOpenDec(n) && n.decision.to === t);
 // pc: the computer a peer's notice came from (n.pc), so its main chat reads that gateway's bot name (08-home.js pcTargetName).
-const ntDecWhere = (d, pc) => d.to.startsWith("auth:") ? "로그인 요청" : pcTargetName(d.to, pc);
+const ntDecWhere = (d, pc) => d.to.startsWith("auth:") ? TX("conv.nt.login_req") : pcTargetName(d.to, pc);
 // What a question is about: the project of the session that asks, then the session (or the place it was asked).
 function ntDecCtx(n) {
   const d = n.decision, l = !n.pc && d.to.startsWith("lane:") && S && S.lanes.find(x => `lane:${x.name}` === d.to), proj = l ? laneProject(l) : "";
@@ -19098,7 +19345,7 @@ async function ntIgnore(n, btn) {
   } catch (err) { undo(); toast(err.message, true); return; }
   if (NS.node && NS.id === id) ntSheetClose(false);
   if (DK.node && DK.ign === id) dkClose(false);
-  toast("무시했어요", false, { label: "되돌리기", onclick: () => ntUnignore(id, n) }, 6000);
+  toast(TX("misc.nsc.d_ignored"), false, { label: TX("common.undo"), onclick: () => ntUnignore(id, n) }, 6000);
 }
 async function ntUnignore(id, n) {
   try {
@@ -19108,12 +19355,12 @@ async function ntUnignore(id, n) {
       ntApply(r.item, r.unread);
       if (r.ids && r.ids.length > 1) loadNotices();
     }
-    toast("다시 답변 필요로 돌렸어요");
+    toast(TX("conv.nt.unignored"));
   } catch (err) { toast(err.message, true); }
 }
 // The 44px x of a row. It stops the click and key events so the row behind it does not open.
 function ntIgnoreBtn(n) {
-  return el("button", { type: "button", class: "ib nt-x", title: "무시", "aria-label": `${ntPlain(n.title) || "알림"} 무시`,
+  return el("button", { type: "button", class: "ib nt-x", title: TX("misc.ignore"), "aria-label": TX("conv.nt.ignore_aria", { title: ntPlain(n.title) || TX("misc.nsc.one") }),
     onclick: ev => { ev.stopPropagation(); ntIgnore(n, ev.currentTarget); }, onkeydown: ev => ev.stopPropagation() }, icon("close"));
 }
 
@@ -19129,19 +19376,19 @@ function nwChangeNode(line) {
 // `label` "" is a row that no longer waits (the 알림 tabs, 31-conversations.js bellPaint): no 답변 필요, no x.
 // An 알림 tab row (`label` "") ends with a tag when the notice has a state worth a tag (a failure, a warning) and its time, as the prototype's notice
 // row does; the tab already names the kind, so a plain notice shows only the time. Its second line is the place only.
-const NT_TONE_TAG = { fail: ["실패", "err"], warn: ["주의", "warn"] };
+const NT_TONE_TAG = { fail: [TX("home.sys.failed"), "err"], warn: [TX("mon.tag.warn"), "warn"] };
 function ntEndNode(n) {
   const k = NT_TONE_TAG[n.tone];
   return el("span", { class: "nt-end" }, k ? el("span", { class: `tag ${k[1]}`, text: k[0] }) : null, el("span", { class: "nt-time", text: ntWhen(n) }));
 }
-function ntHomeRow(n, label = "답변 필요") {
+function ntHomeRow(n, label = TX("common.needs_reply")) {
   const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open, chg = n.kind === "watch" ? nwChangeNode(nwChangeLine(n.text)) : null;   // a loose [ask] notice has no decision: its conversation names where it waits
   // A watch change is the landing page's 가격 알림 row: a 32px round icon tile, the title, the change line under it, the time at the right.
   const lead = chg ? el("span", { class: `nt-wi${n.read ? "" : " new"}`, "aria-hidden": "true" }, icon("bell")) : el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` });
   return el("div", { class: `hr hrx${chg ? " nt-w" : ""}${n.read ? "" : " un"}`, "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       lead,
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg] : [[n.decision ? ntDecCtx(n) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), label === "" && !chg ? "" : ntWhen(n)].filter(Boolean).join(" · ")]))),
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg] : [[n.decision ? ntDecCtx(n) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : TX("misc.nsc.one")), label === "" && !chg ? "" : ntWhen(n)].filter(Boolean).join(" · ")]))),
       chg ? el("span", { class: "nt-wt", text: ntWhen(n) }) : null,
       label === "" && !chg ? ntEndNode(n) : null,
       label ? el("span", { class: "hs warn", text: label }) : null),
@@ -19155,8 +19402,8 @@ function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
 // what the owner writes next carries the question's id and settles it (hub/notices-store.ts ownerReplied). A send approval stays a plain jump.
 async function ntDirect(n) {
   ntSheetClose(false);
-  if (n.pc) { const t = n.decision.to; if (pqPc(t)) go("monitoring", `c:${t}`); else toast(`${n.pc.name}에서 답해 주세요`); return; }   // a peer's question: its conversation as this page shows it
-  if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(true); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast("입력 창이 이미 닫혔어요"); return; }
+  if (n.pc) { const t = n.decision.to; if (pqPc(t)) go("monitoring", `c:${t}`); else toast(TX("conv.nt.answer_on", { name: n.pc.name })); return; }   // a peer's question: its conversation as this page shows it
+  if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(true); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast(TX("conv.nt.input_closed")); return; }
   if (await ntJump(n) !== undefined || n.decision.draft || n.decision.state !== "open") return;
   const m = ntFind(n.at);
   if (m && m.dataset.ts === n.at && RP.src.has(m)) rpStart(m, String(n.id));
@@ -19199,16 +19446,16 @@ function ntSheetGo(id) {
 function ntAfterAnswer(n) {
   if (!ntSibs(n).length) return false;
   const nx = ntNextOpen(n);
-  if (nx) { toast("답을 보냈어요 · 다음 질문이에요"); ntSheetGo(nx.id); }
-  else { ntSheetClose(); toast("답을 보냈어요"); }
+  if (nx) { toast(TX("conv.nt.sent_next_q")); ntSheetGo(nx.id); }
+  else { ntSheetClose(); toast(TX("conv.nt.sent")); }
   return true;
 }
 function ntEditNode(n, ed) {
   const drf = !!n.decision.draft, dt = draftNoteText(ed.opt);
-  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: drf ? dt.hint : "이유나 내용을 적어 주세요", "aria-label": drf ? dt.aria : "자세한 내용", disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": drf ? dt.aria : TX("decision.note.details"), disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = ed.text;
   const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, noteGoLabel(ed.opt, drf, false));
-  const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, "돌아가기");
+  const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, TX("decision.back"));
   return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
@@ -19245,14 +19492,14 @@ function ntDetailOpen(n) {
 }
 function ntDetailPaint(n) {
   clear(NS.h.box).append(
-    fsHead([el("span", { class: "fs-ey err", text: "문제가 생겼어요" })], { close: () => ntSheetClose() }),
+    fsHead([el("span", { class: "fs-ey err", text: TX("conv.nt.problem") })], { close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
-      el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "알림" }),
+      el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || TX("misc.nsc.one") }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
       ...ntBody(n)),
     el("div", { class: "fs-ft" },
-      el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }),
-      el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" })));
+      el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }),
+      el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") })));
 }
 function ntSheetPaint() {
   if (!NS.node) return;
@@ -19261,10 +19508,10 @@ function ntSheetPaint() {
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), sibs = ntSibs(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
   const kids = [
-    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? "답변 필요" : ignd ? "무시함" : d.expired ? "기한 지남" : d.resolved ? "해결됨" : "답변함"}` }, sibs.length ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${sibs.findIndex(x => x.id === n.id) + 1}/${d.group}` }) : null)],
+    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? TX("common.needs_reply") : ignd ? TX("mon.dr.st.ignored") : d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("conv.nt.resolved") : TX("conv.nt.answered")}` }, sibs.length ? el("span", { class: "fs-left", "data-k": "count", text: ` · ${sibs.findIndex(x => x.id === n.id) + 1}/${d.group}` }) : null)],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
-      el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),
+      el("h2", { class: "ds-t", id: "ds-t", text: parts.title || TX("decision.needs_reply") }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
       // The buttons show the options; a "결정:" line that only repeats the title goes too.
       ...ntBody(n, d.options.length && !d.draft ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest))];
@@ -19280,19 +19527,19 @@ function ntSheetPaint() {
     for (const o of d.options) foot.append(el("button", { type: "button", class: "ds-opt", "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
       el("span", { class: "ds-lb" }, o.label),
       o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
-    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? "입력 창으로 가기" : "직접 답하기" }));
+    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? TX("conv.nt.go_input") : TX("conv.nt.direct") }));
     const nx = ntNextOpen(n);
-    if (nx) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "next", disabled: NS.busy, onclick: () => ntSheetGo(nx.id), text: "다음 질문 보기" }));
-    if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: "보내는 중…" }));
+    if (nx) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "next", disabled: NS.busy, onclick: () => ntSheetGo(nx.id), text: TX("conv.nt.next_q") }));
+    if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: TX("decision.pending.send") }));
   } else if (ignd) {
-    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl ign", text: "무시했어요" }), el("span", { class: "ds-ra", text: "답하지 않고 넘겼어요" })));
-    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "undo", onclick: () => ntUnignore(n.id, n), text: "되돌리기" }));
-    if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
-    foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl ign", text: TX("misc.nsc.d_ignored") }), el("span", { class: "ds-ra", text: TX("conv.nt.skipped") })));
+    foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "undo", onclick: () => ntUnignore(n.id, n), text: TX("common.undo") }));
+    if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }));
+    foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") }));
   } else {
-    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: d.expired ? "기한 지남" : d.resolved ? "답 없이 끝났어요" : "이렇게 답했어요" }), el("span", { class: "ds-ra", text: d.expired ? "답할 시간이 지나 닫혔어요" : d.resolved ? "일이 끝나서 닫혔어요" : ntPlain(d.answer || "") || "답했어요" })));
-    if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
-    foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: d.expired ? TX("misc.nsc.d_expired") : d.resolved ? TX("misc.nsc.d_closed") : TX("conv.nt.you_answered") }), el("span", { class: "ds-ra", text: d.expired ? TX("conv.nt.closed_late") : d.resolved ? TX("conv.nt.closed_done") : ntPlain(d.answer || "") || TX("misc.nsc.d_answered") })));
+    if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: TX("conv.nt.see_in_chat") }));
+    foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: TX("common.close") }));
   }
   kids.push(foot);
   const box = NS.h.box, top = $(".fs-body", box) ? $(".fs-body", box).scrollTop : 0;
@@ -19308,7 +19555,7 @@ async function noticeSheetOpen(id) {
   const pn = id && typeof id === "object" && id.pc ? id : null;
   let n = pn ? pqNoticeNow(pn) : ntById(id);
   if (!n && !pn) { await loadNotices(); n = ntById(id); }
-  if (!n || !ntIsDec(n)) { toast("이 알림은 이미 처리됐어요"); return; }
+  if (!n || !ntIsDec(n)) { toast(TX("conv.nt.handled")); return; }
   if (NS.node && NS.id === String(n.id) && !NS.pn === !pn) return;
   ntSheetClose(false);
   if (!pn && n.decision.draft && n.decision.state === "open") { ntDraftSheet(n); return; }
@@ -19358,7 +19605,7 @@ async function rqLoad() {
     RQ.done = Array.isArray(r.sent) ? r.sent : [];
     RQ.stops = r.stops && typeof r.stops === "object" ? r.stops : {};
     RQ.err = "";
-  } catch (e) { RQ.local = RQ.local || []; RQ.err = appFail(e, "답장 대기를 불러오지 못했어요"); }
+  } catch (e) { RQ.local = RQ.local || []; RQ.err = appFail(e, TX("triage.rq.load_fail")); }
   RQ.loaded = true;
   monSchedule(); homeSoon(); rqSheetPaint(); paintDecision();
 }
@@ -19405,7 +19652,7 @@ function rqAll() {
 }
 
 /* ---- the rows ---- */
-const RQ_SENT = { owner: "확인 후 발송", rule: "자동 발송", retry: "다시 보냄" };   // the prototype's words by `how`
+const RQ_SENT = { owner: TX("triage.sent.owner"), rule: TX("triage.sent.rule"), retry: TX("triage.sent.retry") };   // the prototype's words by `how`
 const RQ_TONE = { ask: "warn", fail: "err", sent: "ok" };
 const rqNorm = v => String(v || "").replace(/^확인:\s*/, "").trim();
 // The computer's own failed / sent / stops, or a peer's snapshot copy (an older peer leaves them out).
@@ -19421,7 +19668,7 @@ function rqAskRow(x) {
   const o = rqOriginalOf(x), dr = x.kind === "notice" ? x.n.decision.draft : x.kind === "held" ? x.tr.draft : null;
   const who = x.kind === "notice" ? (o && o.who) || (dr && dr.to) || "" : x.kind === "held" ? (dr && dr.to) || "" : x.kind === "kakao" ? x.d.room || "" : (x.d.original && x.d.original.who) || x.d.to || "";
   // What the row is about: the mail's subject, the held draft's subject, a comment's post title or its text; the card's question only when none is known.
-  const what = x.kind === "notice" ? (MAILS.get(x.n.decision.to) || {}).subject || dr.subject || ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? (dr && dr.subject) || draftQ(x.tr.question) : x.kind === "kakao" ? "메신저 답장" : x.d.title || (x.d.original && x.d.original.text) || "";
+  const what = x.kind === "notice" ? (MAILS.get(x.n.decision.to) || {}).subject || dr.subject || ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? (dr && dr.subject) || draftQ(x.tr.question) : x.kind === "kakao" ? TX("triage.rq.kakao_reply") : x.d.title || (x.d.original && x.d.original.text) || "";
   return { key: x.key, state: "ask", who, what, inst: x.inst, app: x.label || rqAppName(x.inst), pc: x.pc, at: x.at, why: rqAskWhy(x), x };
 }
 // Every row of the screen: ask (rqAll), fail and sent (this computer's and the peers'), failures first. A failed send whose draft still waits shows once, as the failure,
@@ -19431,7 +19678,7 @@ function rqRows() {
   const from = [[null, RQ.failed, RQ.done], ...PQ.list.filter(p => p && p.items).map(p => [pqPcOf(p), p.items.failed || [], p.items.sent || []])];
   const fail = [], sent = [];
   for (const [pc, failed, done] of from) {
-    for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.unsure ? `확인 필요: ${f.why}` : f.why), f }); }
+    for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.unsure ? TX("triage.rq.unsure", { why: f.why }) : f.why), f }); }
     for (const s of done) sent.push({ key: `s:${rqPcKey(pc)}|${s.key}`, state: "sent", who: s.who || "", what: s.what || "", inst: s.app, app: labelOf(pc, s.app), pc, at: s.at, why: RQ_SENT[s.how] || "", s });
   }
   const failedAt = new Map(fail.filter(r => r.f.ref).map(r => [r.f.ref, r.at || 0]));
@@ -19448,9 +19695,9 @@ function rqMonItem(home) {   // home: the wide home shows the queue also while n
   if (!n && MON.sel !== RQ_KEY && !home) return null;
   // the line under the name is the home row's (08-home.js homeRepliesRow): the count per source, the total at the row's right
   const by = new Map(), at = Math.max(0, ...rows.map(r => r.at || 0));
-  for (const r of rows) { const k = r.app || "기타"; by.set(k, (by.get(k) || 0) + 1); }
-  return { key: RQ_KEY, group: "", name: "답장 대기", ic: "send", notices: [], mails: [], unread: n, rq: true,
-    hint: n ? countsLine(by) : "기다리는 답장이 없어요", at: at ? new Date(at).toISOString() : "" };
+  for (const r of rows) { const k = r.app || TX("home.replies.other"); by.set(k, (by.get(k) || 0) + 1); }
+  return { key: RQ_KEY, group: "", name: TX("triage.rq.name"), ic: "send", notices: [], mails: [], unread: n, rq: true,
+    hint: n ? countsLine(by) : TX("triage.empty.all"), at: at ? new Date(at).toISOString() : "" };
 }
 // Opens the queue, filtered to one app of one computer when given (an app's own 답장 대기 button).
 function rqOpen(inst, pc) { RQ.just.clear(); RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; MON.sig = ""; go("monitoring", RQ_KEY); }
@@ -19484,7 +19731,7 @@ function rqAfter(x, gone) {
   loadIntegrations();
 }
 async function rqRestore(x) {
-  try { await rqStoreCall(x, "restore"); RQ.gone.delete(x.key); rqAfter(x, false); toast("초안을 되돌렸어요"); } catch (e) { toast(e.message, true); }
+  try { await rqStoreCall(x, "restore"); RQ.gone.delete(x.key); rqAfter(x, false); toast(TX("decision.toast.restored")); } catch (e) { toast(e.message, true); }
 }
 function rqStoreActs(x) {
   return {
@@ -19516,7 +19763,7 @@ function rqRevise(x) {
       else if (x.kind === "held") await trPost([{ ref: x.tr.ref, to: x.tr.to, n: 2, note: change }]);
       else await rqStoreCall(x, "revise", { change });
       cancel(); rqAfter(x, false);
-      toast("고쳐 달라고 했어요. 새 초안이 오면 여기 다시 떠요");
+      toast(TX("triage.rq.revise_sent"));
     }, "edit") });
 }
 function rqOriginalOf(x) {
@@ -19527,7 +19774,7 @@ function rqOriginalOf(x) {
 function rqCardOf(x) {
   if (x.kind === "held") return rqHeldCard(x);
   const dr = x.kind === "notice" ? x.n.decision.draft : null;
-  const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), model: (dr && dr.model) || (x.d && x.d.model) || "", at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: "열기", onclick: () => { if (RQ.sheet) RQ.sheet.close(); rqGoTo(x); } })] };   // the sheet folds away so the screen it opens is seen; the draft stays in this list
+  const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), model: (dr && dr.model) || (x.d && x.d.model) || "", at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: TX("decision.open"), onclick: () => { if (RQ.sheet) RQ.sheet.close(); rqGoTo(x); } })] };   // the sheet folds away so the screen it opens is seen; the draft stays in this list
   const editing = RQ.edit === x.key, busy = rqIsBusy(x), fk = rqFk(x), press = rqPress.get(fk), base = { key: x.key, cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": x.kind }, head, original: rqOriginalOf(x), fail: rqFail.get(fk) };
   if (x.kind === "notice" && dr.toLabel === "받는이") {   // a mail draft: the parts every screen shows it with (10-reply-card.js rqMailParts)
     const p = rqMailParts(dr, { t: x.n.decision.to, at: x.at, pc: head.pc, edit: false, tail: head.tail });
@@ -19540,13 +19787,13 @@ function rqCardOf(x) {
     // The 받는이·참조 of a mail draft are read here as they are on its card; the queue does not edit them (its mail's own card does).
     const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: x.n.decision.to, edit: false }) : null;
     const b = dr.brief || {};
-    return rqCard({ ...base, brief: mailLinesNode(b.todo, b.questions), ...(recv ? { recv } : { to: [dr.toLabel || "받는이", dr.to] }), subject: dr.subject, body: { text: dr.body }, attach,
+    return rqCard({ ...base, brief: mailLinesNode(b.todo, b.questions), ...(recv ? { recv } : { to: [dr.toLabel || TX("decision.to"), dr.to] }), subject: dr.subject, body: { text: dr.body }, attach,
       extra: [draftMailNode(dr.mail)],
       ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqNoticeActs(x), busy, press } }) });
   }
   const d = x.d, kakao = x.kind === "kakao";
-  if (!kakao) { const an = rqAppName(x.inst); head.who = (d.original && d.original.who) || d.to || ""; head.src = an.endsWith("댓글") ? an : `${an || "답장"} 댓글`; }   // a comment draft: the landing card's head
-  return rqCard({ ...base, label: kakao && d.intent ? "새 메시지 초안" : "", to: kakao ? ["대화방", d.room] : ["댓글", d.to], subject: kakao ? "" : d.title,
+  if (!kakao) { const an = rqAppName(x.inst); head.who = (d.original && d.original.who) || d.to || ""; head.src = an.endsWith("댓글") ? an : an ? TX("triage.rq.comment_src", { app: an }) : TX("triage.rq.comment_src_plain"); }   // a comment draft: the landing card's head
+  return rqCard({ ...base, label: kakao && d.intent ? TX("triage.rq.new_msg") : "", to: kakao ? [TX("triage.rq.room"), d.room] : [TX("triage.rq.comment"), d.to], subject: kakao ? "" : d.title,
     body: { text: d.text, parts: kakao ? d.parts : null, sentParts: d.sentParts },
     attach: d,
     extra: kakao ? [] : [draftMailNode(d.mail), (d.notes || []).length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
@@ -19568,21 +19815,21 @@ function rqHeldCard(x) {
     if (n === 1) rqSentToast(); else if (n === 3) rqDroppedToast();
   }, n === 1 ? "send" : n === 3 ? "drop" : "edit");
   const acts = { send: () => { if (dr.warning || (dr.attachments || []).length) drfSure(dr, c.to).then(ok => ok && go(1)); else go(1); }, edit: () => { RQ.edit = x.key; MON.sig = ""; monSchedule(); }, drop: () => go(3), busy, press: rqPress.get(x.key) };
-  return rqCard({ key: x.key, fail: rqFail.get(x.key), cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": "held" }, head: { app: x.inst, label: x.label, pc: rqPcName(null), model: dr.model || "", at: 0 }, to: [dr.toLabel || "받는이", dr.to], subject: dr.subject,
+  return rqCard({ key: x.key, fail: rqFail.get(x.key), cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": "held" }, head: { app: x.inst, label: x.label, pc: rqPcName(null), model: dr.model || "", at: 0 }, to: [dr.toLabel || TX("decision.to"), dr.to], subject: dr.subject,
     body: { text: dr.body }, attach: { attachments: dr.attachments, cannotAttach: [] }, extra: [draftMailNode(dr.mail)], ...(RQ.edit === x.key ? { revise: rqRevise(x) } : { acts }) });
 }
 // The record of a failed or a sent reply (hub/reply-outcomes.ts) in the one reply card; foot = its own { revise } (the failed actions) or { sent, sentAt }.
 function rqRecordCard(r, rec, foot) {
   const kind = rec.kind, o = rec.original;
   return rqCard({ key: r.key, cls: RQ.busy.has(r.key) ? "busy" : "", attrs: { "data-rq": r.key, "data-kind": kind }, head: { app: r.inst, label: r.app, pc: rqPcName(r.pc), at: rec.at },
-    original: o ? { who: o.who, text: o.text } : null, to: rec.who ? [kind === "kakao" ? "대화방" : kind === "comment" ? "댓글" : "받는이", rec.who] : null, subject: kind === "comment" ? rec.what : "",
+    original: o ? { who: o.who, text: o.text } : null, to: rec.who ? [kind === "kakao" ? TX("triage.rq.room") : kind === "comment" ? TX("triage.rq.comment") : TX("decision.to"), rec.who] : null, subject: kind === "comment" ? rec.what : "",
     body: { text: rec.text }, attach: el("div", { hidden: true }), ...foot });
 }
 // A comment nobody can say went up (hub/comments/recover.ts): 다시 보내기 or 완료, each by the owner's own click on that one card.
 const rqFailActs = r => el("div", { class: "dr-act dr-row rq-acts" },
-  el("button", { class: "btn sm dr-send", type: "button", "data-k": "retry", disabled: RQ.busy.has(r.key), text: "다시 보내기", onclick: () => rqRetryAll([r]) }),
-  r.f.unsure ? el("button", { class: "btn text sm", type: "button", "data-k": "done", disabled: RQ.busy.has(r.key), text: "완료", onclick: () => rqMarkPosted(r) })
-    : el("button", { class: "btn text sm dr-drop", type: "button", "data-k": "drop", disabled: RQ.busy.has(r.key), text: "보내지 않기", onclick: () => rqDropFailed(r) }));
+  el("button", { class: "btn sm dr-send", type: "button", "data-k": "retry", disabled: RQ.busy.has(r.key), text: TX("mon.cm.send_again"), onclick: () => rqRetryAll([r]) }),
+  r.f.unsure ? el("button", { class: "btn text sm", type: "button", "data-k": "done", disabled: RQ.busy.has(r.key), text: TX("home.sys.done"), onclick: () => rqMarkPosted(r) })
+    : el("button", { class: "btn text sm dr-drop", type: "button", "data-k": "drop", disabled: RQ.busy.has(r.key), text: TX("decision.drop"), onclick: () => rqDropFailed(r) }));
 
 /* ---- failed sends: only what the owner already approved, each by its own route ---- */
 // This computer's route, or the other computer's act (hub/peer-monitor.ts "comments" / "kakao" / "approvals").
@@ -19590,7 +19837,7 @@ const rqSendIt = (pc, path, body, act, args) => (pc ? api(pqProxy(pc, "/api/peer
 async function rqRunKey(key, job) {
   if (RQ.busy.has(key)) return;
   RQ.busy.add(key); MON.sig = ""; monSchedule(); rqSheetPaint();
-  try { await job(); } catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 처리하지 못했어요" : e.message, true); }
+  try { await job(); } catch (e) { toast(e instanceof TypeError ? TX("decision.err.offline_act") : e.message, true); }
   RQ.busy.delete(key); MON.sig = ""; monSchedule(); rqSheetPaint();
 }
 // 다시 보내기 / 모두 다시 보내기: a comment reply and a Messenger send by their own retry, a mail or gateway send through POST /api/approvals/failed (the owner's pick is
@@ -19608,10 +19855,10 @@ function rqRetryAll(rows, key) {
     }
     for (const { pc, items } of batch.values()) {
       const body = { op: "retry", items };
-      try { const res = await rqSendIt(pc, "/api/approvals/failed", body, "approvals", body); for (const x of (res && res.results) || []) if (!x.ok) bad.push(x.reason || "다시 보내지 못했어요"); }
+      try { const res = await rqSendIt(pc, "/api/approvals/failed", body, "approvals", body); for (const x of (res && res.results) || []) if (!x.ok) bad.push(x.reason || TX("triage.rq.retry_fail")); }
       catch (e) { bad.push(...items.map(() => e.message)); }
     }
-    toast(bad.length ? `${bad.length}건은 다시 보내지 못했어요 · ${bad[0]}` : `${app} ${rows.length}건을 다시 보내고 있어요`, bad.length > 0);
+    toast(bad.length ? TX("triage.rq.retry_bad", { n: bad.length, first: bad[0] }) : TX("triage.rq.retrying", { app, n: rows.length }), bad.length > 0);
     if (rows.some(r => r.pc)) pqLoad();
     rqLoad();
   });
@@ -19620,7 +19867,7 @@ function rqRetryAll(rows, key) {
 function rqMarkPosted(r) {
   return rqRunKey(r.key, async () => {
     await rqSendIt(r.pc, `/api/comments/sends/${enc(r.f.sendId)}/done`, {}, "comments", { op: "send-done", id: r.f.sendId });
-    RQ.gone.add(r.key); toast("완료로 표시했어요");
+    RQ.gone.add(r.key); toast(TX("triage.rq.marked"));
     if (r.pc) pqLoad();
     rqLoad(); loadIntegrations();
   });
@@ -19632,7 +19879,7 @@ function rqDropFailed(r) {
     if (f.kind === "kakao") await rqSendIt(r.pc, `/api/kakao/drafts/${enc(f.ref)}/drop`, {}, "kakao", { op: "draft-drop", code: f.ref });
     else {
       const body = { op: "drop", items: [{ ref: f.ref, to: f.conv || "" }] }, res = await rqSendIt(r.pc, "/api/approvals/failed", body, "approvals", body), x = ((res && res.results) || [])[0];
-      if (x && !x.ok) throw new Error(x.reason || "지우지 못했어요");
+      if (x && !x.ok) throw new Error(x.reason || TX("triage.rq.drop_fail"));
     }
     RQ.gone.add(r.key); rqDroppedToast();
     if (r.pc) pqLoad();
@@ -19641,16 +19888,16 @@ function rqDropFailed(r) {
 }
 
 /* ---- the screen ---- */
-const RQ_TABS = [["all", "전체"], ["ask", "답 필요"], ["fail", "실패"], ["sent", "보낸 것"]];
-const RQ_SECS = [["fail", "실패"], ["ask", "답 필요"], ["sent", "보낸 것"]];
-const RQ_EMPTY = { all: "기다리는 답장이 없어요", ask: "답을 기다리는 초안이 없어요", fail: "못 보낸 답장이 없어요", sent: "오늘 보낸 답장이 없어요" };
+const RQ_TABS = [["all", TX("mon.filter.all")], ["ask", TX("mon.filter.need")], ["fail", TX("mon.tag.fail")], ["sent", TX("triage.tab.sent")]];
+const RQ_SECS = [["fail", TX("mon.tag.fail")], ["ask", TX("mon.filter.need")], ["sent", TX("triage.tab.sent")]];
+const RQ_EMPTY = { all: TX("triage.empty.all"), ask: TX("triage.empty.ask"), fail: TX("triage.empty.fail"), sent: TX("triage.empty.sent") };
 const RQ_UI = {};
 // The sticky head (tabs, meta row with 빠른 처리, the app chips) and the list box are built once and repainted in place, so scroll, focus and the counts' roll survive.
 function rqUi() {
   if (RQ_UI.hd) return RQ_UI;
-  const tabs = el("div", { class: "nsc-f rq-tabs", role: "tablist", "aria-label": "답장 상태" }, ...RQ_TABS.map(([k, l]) =>
+  const tabs = el("div", { class: "nsc-f rq-tabs", role: "tablist", "aria-label": TX("triage.rq.state_aria") }, ...RQ_TABS.map(([k, l]) =>
     el("button", { class: "nsc-fb", type: "button", role: "tab", "data-f": k, onclick: () => rqTab(k) }, l, el("span", { class: `n${k === "fail" ? " err" : ""}`, "data-n": k }))));
-  const mt = el("span", { class: "meta" }), fast = el("button", { class: "btn tonal sm rq-fast", type: "button", "data-k": "triage", onclick: () => trOpen("*") }, icon("spark"), el("span", { text: "빠른 처리" }));
+  const mt = el("span", { class: "meta" }), fast = el("button", { class: "btn tonal sm rq-fast", type: "button", "data-k": "triage", onclick: () => trOpen("*") }, icon("spark"), el("span", { text: TX("triage.fast") }));
   const meta = el("div", { class: "nsc-m rq-qm" }, mt, el("span", { class: "sp" }), fast), chips = el("div", { class: "rq-chips" });
   return Object.assign(RQ_UI, { hd: el("div", { class: "rq-hd2" }, tabs, meta, chips), tabs, mt, fast, meta, chips, ls: el("div", { class: "rq-ls" }), seq: 0 });
 }
@@ -19670,16 +19917,16 @@ function rqFold(key) {
 // The state tabs are the one segment of this screen; the app is the 앱 select at the right end of their row (a short row under them on a phone).
 function rqFilterBar(rows) {
   const by = new Map();
-  for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst) || "기타"}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
+  for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst) || TX("home.replies.other")}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
   if (RQ.app && !by.has(RQ.app)) RQ.app = "";
   const total = [...by.values()].reduce((c, v) => c + v.n, 0);
   if (!(RQ.app || (by.size >= 2 && total >= TR.min))) return null;
-  return selectButton({ label: "앱", frame: t => `앱 ${t}`, value: RQ.app, text: k => (k ? by.get(k).text : "전체"),
-    items: [{ value: "", label: `전체 · ${total}` }, ...[...by].map(([k, v]) => ({ value: k, label: `${v.text} · ${v.n}` }))],
+  return selectButton({ label: TX("home.ny.app"), frame: t => TX("triage.rq.app_frame", { t }), value: RQ.app, text: k => (k ? by.get(k).text : TX("mon.filter.all")),
+    items: [{ value: "", label: TX("triage.rq.all_n", { n: total }) }, ...[...by].map(([k, v]) => ({ value: k, label: `${v.text} · ${v.n}` }))],
     onPick: k => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } });
 }
 // 방금 / N분 전 within the hour, as the prototype's rows, then the plain time.
-const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? "방금" : m < 60 ? `${m}분 전` : rcWhen(new Date(at).toISOString()); };
+const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? TX("home.ago.now") : m < 60 ? TX("home.ago.m", { n: m }) : rcWhen(new Date(at).toISOString()); };
 // One row, the notice row's own classes: the state dot, who and the time, then "앱 · 무엇" with the tag (the stop reason, or how a sent one went).
 function rqRowNode(r, kid) {
   const at = rqWhen(r.at), head = r.who || r.what || r.app, sub = [r.app, r.who ? r.what : ""].filter(Boolean).join(" · ");
@@ -19708,9 +19955,9 @@ function rqFailDescs(rows) {
     out.push({ key: `g:${k}`, sig: JSON.stringify([busy, open, r.why, rqAppName(r.inst) || r.app, g.map(x => x.key)]), make: () => el("div", { class: "li nsc-r rq-r rq-g fail", "data-qg": k },
       el("span", { class: "lead" }, el("span", { class: `dot ${busy ? "pri" : "err"}` })),
       el("button", { class: "tx nsc-tx", type: "button", "aria-expanded": String(open), onclick: () => rqFold(k) },
-        el("span", { class: "ln" }, el("span", { class: "hd", text: `${rqAppName(r.inst) || r.app} ${g.length}건을 못 보냈어요` })),
-        el("span", { class: "ln" }, el("span", { class: "nsc-s", text: busy ? "다시 보내는 중" : r.why }))),
-      el("button", { class: "btn tonal sm rq-retry", type: "button", "data-k": "retry-all", disabled: busy, text: "모두 다시 보내기", onclick: () => rqRetryAll(g, k) }),
+        el("span", { class: "ln" }, el("span", { class: "hd", text: TX("triage.rq.group_fail", { app: rqAppName(r.inst) || r.app, n: g.length }) })),
+        el("span", { class: "ln" }, el("span", { class: "nsc-s", text: busy ? TX("triage.rq.resending") : r.why }))),
+      el("button", { class: "btn tonal sm rq-retry", type: "button", "data-k": "retry-all", disabled: busy, text: TX("triage.rq.retry_all"), onclick: () => rqRetryAll(g, k) }),
       el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("drop"))) }, ...(open ? g.map(x => rqRowDesc(x, k)) : []));
   }
   return out;
@@ -19737,7 +19984,7 @@ function rqPaintHead(rows) {
   }
   // the count is said once, on the filter chips; the line under them keeps only what the chips do not say
   const fast = (RQ.tab === "all" || RQ.tab === "ask") && n.ask >= TR.min;
-  const sending = rqSending(), text = [RQ.tab === "sent" && n.sent ? `오늘 보낸 답장 ${n.sent}건` : "", sending ? `보내는 중 ${sending}건` : ""].filter(Boolean).join(" · ");
+  const sending = rqSending(), text = [RQ.tab === "sent" && n.sent ? TX("triage.rq.sent_today", { n: n.sent }) : "", sending ? TX("triage.rq.sending_n", { n: sending }) : ""].filter(Boolean).join(" · ");
   u.mt.textContent = text; u.fast.hidden = !fast; u.meta.hidden = !text && !fast;
 }
 const RQ_PAGE = 200;   // rows drawn per section; 더 보기 adds a page (the failed section always draws all)
@@ -19772,14 +20019,14 @@ const rqAnchor = () => rowAnchor(rqUi().ls, ".rq-r", "rk");
 // What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).
 function rqDescs(shown) {
   if (!shown.length && RQ.err && !(RQ.rows || []).length) return [{ key: "empty", sig: RQ.err, make: () => el("div", { class: "rq-empty", role: "status" }, el("div", { text: RQ.err }), appRetry(() => rqLoad())) }];   // the load failed: a sentence and 다시 시도
-  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…"; return [{ key: "empty", sig: text, make: () => el("div", { class: "rq-empty", role: "status", text }) }]; }
+  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : TX("common.loading"); return [{ key: "empty", sig: text, make: () => el("div", { class: "rq-empty", role: "status", text }) }]; }
   const out = [];
   for (const [s, label] of RQ_SECS) {
     const part = shown.filter(r => r.state === s);
     if (!part.length) continue;
     if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: label, make: () => el("div", { class: "sec", text: label }) });
     const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = s === "fail" ? rqFailDescs(part) : part.slice(0, lim).map(r => rqRowDesc(r));
-    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(`${part.length - lim}개 더 보기`, () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
+    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(TX("mon.more_n", { n: part.length - lim }), () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
     out.push({ key: `list:${s}`, sig: "", make: () => el("div", { class: "list rq-list" }), rows });
   }
   return out;
@@ -19842,7 +20089,7 @@ function rqSheetOpen(r) {
   RQ.cur = r.key; RQ.shSig = "";
   if (current === "monitoring" && !narrowChat()) { RQ.mark = r.key; rqPaneOpen(); rqSheetPaint(r); return; }
   RQ.mark = "";
-  const h = fsOpen({ label: "답장 확인", cls: "mid rq-sheet", onClose: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; } } });
+  const h = fsOpen({ label: TX("decision.check_reply"), cls: "mid rq-sheet", onClose: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; } } });
   RQ.sheet = h;
   rqSheetPaint(r);
 }
@@ -19854,11 +20101,11 @@ function rqSheetPaint(found) {
   const sig = JSON.stringify([r.state, r.why, rqXSig(r), RQ.edit === r.key, RQ.busy.has(r.key), RQ.just.has(r.key)]);
   if (sig === RQ.shSig) return;
   RQ.shSig = sig;
-  const card = r.state === "ask" ? rqCardOf(r.x) : r.state === "fail" ? rqRecordCard(r, r.f, { revise: rqFailActs(r) }) : rqRecordCard(r, r.s, { sent: true, sentAt: rqWhen(r.at) || "방금" });
+  const card = r.state === "ask" ? rqCardOf(r.x) : r.state === "fail" ? rqRecordCard(r, r.f, { revise: rqFailActs(r) }) : rqRecordCard(r, r.s, { sent: true, sentAt: rqWhen(r.at) || TX("home.ago.now") });
   // A comment's note already stands in its card: the why line does not say it twice.
   const said = r.x && r.x.d && (r.x.d.notes || []).some(n => rqNorm(n) === r.why);
   const body = el("div", { class: "rq-sb" }, r.why && r.state !== "sent" && !said ? el("div", { class: "note rq-why", role: "note", text: r.why }) : null, card), old = h.box.querySelector(".rq-sb");
-  if (!h.box.querySelector(".fs-hd")) h.box.append(fsHead([el("div", { class: "fs-t", text: "답장 확인" })], { close: () => h.close() }));
+  if (!h.box.querySelector(".fs-hd")) h.box.append(fsHead([el("div", { class: "fs-t", text: TX("decision.check_reply") })], { close: () => h.close() }));
   if (old) { const top = old.scrollTop; old.replaceWith(body); body.scrollTop = top; } else h.box.append(body);   // a redraw keeps the place in a long draft
 }
 // What a row shows beyond its text: a draft's own state (redrawn when it changes; typing in 고치기 changes none of it).
@@ -19908,7 +20155,7 @@ const trSoon = () => { clearTimeout(TR.t); TR.t = setTimeout(trLoad, 300); };
 const trBig = () => TR.groups.filter(g => g.count >= TR.min);
 // Key "*" = the review queue: every waiting draft of every comment app and mail app in one walk.
 const trCards = key => (key === "*" ? TR.groups.flatMap(g => g.cards) : (TR.groups.find(x => x.key === key) || { cards: [] }).cards);
-const trKst = at => new Date(at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
+const trKst = at => new Date(at).toLocaleString(TX_LOCALE, { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
 /** The group a waiting card is in, when it is one the triage view takes (big enough). */
 const trGroupFor = ref => trBig().find(g => g.cards.some(c => c.ref === ref));
 
@@ -19936,12 +20183,12 @@ const trMarkRow = c => { const r = c && (RQ.rows || rqRows()).find(x => x.x && r
 const trAway = ev => current !== "monitoring" || RQ.sheet !== TR.h || (ev.target instanceof Element && ev.target !== document.body && !TR.h.box.contains(ev.target));
 function trOpen(key, ref) {
   const g = TR.groups.find(x => x.key === key), cards = trCards(key);
-  if (!cards.length) { toast("처리할 카드가 없어요"); return; }
+  if (!cards.length) { toast(TX("triage.none")); return; }
   if (TR.h) TR.h.close(false);
-  Object.assign(TR, { key, label: g ? g.label : "전체", items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, busy: {}, noting: false });
+  Object.assign(TR, { key, label: g ? g.label : TX("mon.filter.all"), items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, busy: {}, noting: false });
   TR.i = Math.max(0, ref ? TR.items.findIndex(c => c.ref === ref) : 0);
   const onClose = () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); };
-  const h = trPaneNow() ? trPaneOpen(onClose) : fsOpen({ label: `${TR.label} 빠른 처리`, cls: "tall tr", onClose });
+  const h = trPaneNow() ? trPaneOpen(onClose) : fsOpen({ label: TX("triage.fs.label", { label: TR.label }), cls: "tall tr", onClose });
   TR.h = h;
   document.addEventListener("keydown", trKey);
   trPaint();
@@ -19974,10 +20221,10 @@ function trState(c) {
   }
   return d;
 }
-const TR_ST = { drop: "보내지 않았어요", undo: "곧 보내요", back: "보내지 않았어요", queued: "보낼 차례를 기다려요", sending: "보내는 중…", sent: "보냈어요", failed: "보내지 못했어요", unsure: "확인이 필요해요", bot: "봇이 보내요", edit: "봇이 고치는 중이에요", gone: "다른 곳에서 처리됐어요", err: "답을 보내지 못했어요" };
+const TR_ST = { drop: TX("decision.not_sent"), undo: TX("decision.toast.sending_soon"), back: TX("decision.not_sent"), queued: TX("triage.st.queued"), sending: TX("decision.pending.send"), sent: TX("decision.sent"), failed: TX("triage.st.failed"), unsure: TX("triage.st.unsure"), bot: TX("triage.st.bot"), edit: TX("triage.st.edit"), gone: TX("triage.st.gone"), err: TX("triage.st.err") };
 const trChip = c => {
   const s = trState(c);
-  if (s && s.state === "undo") return el("span", { class: "tr-st undo", "data-trst": trK(c) }, TR_ST.undo, el("button", { class: "btn text sm", type: "button", onclick: () => trUndo(c) }, "보내기 취소"));
+  if (s && s.state === "undo") return el("span", { class: "tr-st undo", "data-trst": trK(c) }, TR_ST.undo, el("button", { class: "btn text sm", type: "button", onclick: () => trUndo(c) }, TX("decision.undo.cancel")));
   return s ? el("span", { class: `tr-st ${s.state}`, "data-trst": trK(c), title: s.text || null, text: TR_ST[s.state] || s.state }) : el("span", { class: "tr-st", "data-trst": trK(c), hidden: true });
 };
 // The reason behind 확인이 필요해요 / 보내지 못했어요 as visible text under the card's header (the chip's title is not seen on a phone).
@@ -20031,7 +20278,7 @@ async function trSaveEdits(c) {
 }
 // Answers one card and moves on once the gateway took the answer. While it waits, the card's buttons stay in place, disabled, and the pressed one says what is
 // happening (the 답장 확인 sheet's way); a second press is ignored. A failure keeps the owner on that card, with the reason where the buttons are and nothing counted.
-const TR_BUSY = { 1: "보내는 중…", 2: "고치는 중…", 3: "처리하는 중…" };
+const TR_BUSY = { 1: TX("decision.pending.send"), 2: TX("decision.pending.edit"), 3: TX("decision.pending.drop") };
 // 보내기 goes through the reply card's own refusals: a mail whose files disagree with its words is sent only by 이대로 보내기 (pick 4, after the same
 // question), and a draft with files or a warning on an account that cannot send files asks once more (drfSure). Answering no leaves the card as it was.
 const TR_SURE = new Set(), TR_SEEN = new Set();
@@ -20095,7 +20342,7 @@ function trKey(ev) {
 
 function trEditSubmit(c) {
   const note = (TR.notes[trK(c)] || "").trim();
-  if (!note) { toast("무엇을 고칠지 적어 주세요", true); return; }
+  if (!note) { toast(TX("triage.note.need"), true); return; }
   trAnswer(c, 2, note);
 }
 
@@ -20104,10 +20351,10 @@ function trPaint() {
   if (!TR.h) return;
   if (TR.h.pane) trMarkRow(TR.items[TR.i]);
   const box = TR.h.box, n = TR.items.length, handled = TR.items.filter(c => TR.done[trK(c)] && TR.done[trK(c)].state !== "err").length;   // a failed answer is not counted
-  const bar = el("div", { class: "tr-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(n), "aria-valuenow": String(handled), "aria-label": "처리한 카드" }, el("span", { style: `width:${n ? (handled / n) * 100 : 0}%` }));
+  const bar = el("div", { class: "tr-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(n), "aria-valuenow": String(handled), "aria-label": TX("triage.bar") }, el("span", { style: `width:${n ? (handled / n) * 100 : 0}%` }));
   const pos = TR.i < n ? `${TR.i + 1}/${n}` : `${n}/${n}`;
-  const head = fsHead([el("span", { class: "fs-ey" }, `${TR.label} · 빠른 처리`), el("h2", { class: "fs-t tr-pos" }, TR.list ? `목록 ${n}건` : pos, el("span", { class: "tr-sum", text: ` · 처리 ${handled}건` })), bar], { close: () => TR.h && TR.h.close() });
-  const tog = el("button", { class: "btn text sm tr-tog", type: "button", "aria-pressed": String(TR.list), onclick: () => { TR.list = !TR.list; trPaint(); } }, icon("list"), el("span", { text: TR.list ? "한 장씩" : "목록" }));
+  const head = fsHead([el("span", { class: "fs-ey" }, TX("triage.head.ey", { label: TR.label })), el("h2", { class: "fs-t tr-pos" }, TR.list ? TX("triage.head.list", { n }) : pos, el("span", { class: "tr-sum", text: ` · ${TX("triage.head.done", { n: handled })}` })), bar], { close: () => TR.h && TR.h.close() });
+  const tog = el("button", { class: "btn text sm tr-tog", type: "button", "aria-pressed": String(TR.list), onclick: () => { TR.list = !TR.list; trPaint(); } }, icon("list"), el("span", { text: TR.list ? TX("triage.tog.one") : TX("triage.tog.list") }));
   $(".fs-hb", head).prepend(tog);
   // a paint that shows other cards (moved on, or the list changed) goes through even while a card's text is being typed in
   if (!paintKeep(box, [head, ...(TR.list ? trListView() : TR.i >= n ? trDoneView() : trOneView(TR.items[TR.i]))], trPaint, TR.list ? TR.items.map(trK).join() : TR.i < n ? trK(TR.items[TR.i]) : "")) return;
@@ -20195,30 +20442,30 @@ function trOneView(c) {
   // A draft the gateway cannot change in place (a block a session wrote) is read here and goes back to the session with 고치기.
   const area = (part, value) => c.editable === false ? draftBodyNode(value, "dc-dr-b") : el("textarea", { class: "tr-ta", rows: "6", "aria-label": part === "mail" ? TX("decision.mail.along_body") : TX("decision.body_label"), disabled: locked, oninput: ev => { e[part] = ev.target.value; trSendLabel(c); } }, value);
   const body = el("div", { class: "fs-body tr-body", tabindex: "-1" },
-    el("div", { class: "tr-q" }, el("span", { text: trQ(c) || "이대로 보낼까요?" }), trChip(c)),
+    el("div", { class: "tr-q" }, el("span", { text: trQ(c) || TX("triage.q.default") }), trChip(c)),
     trWhy(c),
     decideNode(d),
     trSec("to", TX("triage.sec.to"), ...trToNodes(c)),
     trSec("org", TX("triage.sec.org"), ...trOrigNodes(c)),
     c.info && c.info.length ? el("ul", { class: "tr-info" }, ...c.info.map(l => el("li", { text: l }))) : null,
-    trSec("reply", TX("triage.sec.reply"), draftRuleNode(d), area("reply", e.reply ?? d.body ?? ""), !c.sendable ? el("span", { class: "tr-rule", text: "보내기를 누르면 봇이 보내요" }) : null,
+    trSec("reply", TX("triage.sec.reply"), draftRuleNode(d), area("reply", e.reply ?? d.body ?? ""), !c.sendable ? el("span", { class: "tr-rule", text: TX("triage.bot_sends") }) : null,
       d.mail ? el("div", { class: "tr-mail" }, el("div", { class: "tr-k", text: TX("decision.mail.along") }), area("mail", e.mail ?? d.mail.body ?? "")) : null),
     trSec("att", TX("triage.sec.att"), ...trAttNodes(c)));
   const foot = el("div", { class: "fs-ft tr-ft" });
   // a failed answer: the reason stands where the buttons are (the card stays, its head says which answer failed)
-  if (st && st.state === "err") foot.append(el("div", { class: "tr-hint tr-fail", role: "alert", text: st.text ? `${st.text} · 다시 눌러 주세요` : "다시 눌러 주세요" }));
+  if (st && st.state === "err") foot.append(el("div", { class: "tr-hint tr-fail", role: "alert", text: st.text ? TX("triage.fail.with", { text: st.text }) : TX("triage.fail.plain") }));
   if (TR.noting && !locked || busy === 2) {
-    foot.append(el("textarea", { class: "dc-note tr-note", rows: "3", placeholder: "어떻게 고칠까요? 봇이 고쳐서 다시 물어봐요", "aria-label": "어떻게 고칠지", oninput: ev => { TR.notes[k] = ev.target.value; } }, TR.notes[k] || ""),
-      el("div", { class: "tr-acts" }, el("button", { class: "btn tr-b tr-go", type: "button", disabled: !!busy, onclick: () => trEditSubmit(c) }, busy ? TR_BUSY[2] : "고쳐 달라고 하기"), el("button", { class: "btn text tr-b", type: "button", disabled: !!busy, onclick: () => { TR.noting = false; trPaint(); } }, "취소")));
+    foot.append(el("textarea", { class: "dc-note tr-note", rows: "3", placeholder: TX("triage.note.ph"), "aria-label": TX("triage.note.aria"), oninput: ev => { TR.notes[k] = ev.target.value; } }, TR.notes[k] || ""),
+      el("div", { class: "tr-acts" }, el("button", { class: "btn tr-b tr-go", type: "button", disabled: !!busy, onclick: () => trEditSubmit(c) }, busy ? TR_BUSY[2] : TX("decision.revise.go")), el("button", { class: "btn text tr-b", type: "button", disabled: !!busy, onclick: () => { TR.noting = false; trPaint(); } }, TX("common.cancel"))));
   } else {
     // The reply card's three actions in its order (the prototype's #triage): 보내기, 고치기, then the quiet 보내지 않기.
     foot.append(el("div", { class: "tr-acts" },
       el("button", { class: "btn tr-b tr-go", type: "button", disabled: locked, onclick: () => trAnswer(c, 1) }, busy === 1 ? TR_BUSY[1] : trSendText(c)),
-      el("button", { class: "btn tonal tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, "고치기"),
-      el("button", { class: "btn text tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, busy === 3 ? TR_BUSY[3] : "보내지 않기")),
+      el("button", { class: "btn tonal tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, TX("decision.edit")),
+      el("button", { class: "btn text tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, busy === 3 ? TR_BUSY[3] : TX("decision.drop"))),
       ...(gone ? [el("div", { class: "tr-hint", text: DC_GONE })] : []),   // foot.append turns a null into the word "null"
-      el("div", { class: "tr-nav" }, el("button", { class: "btn text tr-b", type: "button", "aria-label": "이전 카드", disabled: TR.i === 0, onclick: () => trStep(-1) }, "이전"), el("button", { class: "btn text tr-b", type: "button", "aria-label": "다음 카드", onclick: () => trStep(1) }, "다음")),
-      el("div", { class: "tr-keys", text: "Enter·1 보내기 · 2·E 고치기 · 3·X 보내지 않기 · ← → 이전·다음 · L 목록" }));
+      el("div", { class: "tr-nav" }, el("button", { class: "btn text tr-b", type: "button", "aria-label": TX("triage.nav.prev_aria"), disabled: TR.i === 0, onclick: () => trStep(-1) }, TX("triage.nav.prev")), el("button", { class: "btn text tr-b", type: "button", "aria-label": TX("triage.nav.next_aria"), onclick: () => trStep(1) }, TX("triage.nav.next"))),
+      el("div", { class: "tr-keys", text: TX("triage.keys.one") }));
   }
   return [body, foot];
 }
@@ -20226,22 +20473,22 @@ const trEdited = c => {
   const e = TR.edits[trK(c)] || {}, d = c.draft || {};
   return (e.reply != null && e.reply.trim() !== String(d.body || "").trim()) || (!!d.mail && e.mail != null && e.mail.trim() !== String(d.mail.body || "").trim());
 };
-const trSendText = c => (trEdited(c) ? "고쳐서 보내기" : "보내기");
+const trSendText = c => (trEdited(c) ? TX("triage.send_edited") : TX("common.send"));
 function trSendLabel(c) { const b = TR.h && $(".tr-go", TR.h.box); if (b) b.textContent = trSendText(c); }
 
 function trDoneView() {
   const by = s => TR.items.filter(c => { const x = trState(c); return x && x.state === s; }).length;
   const skipped = TR.items.filter(c => !TR.done[trK(c)]).length;
-  const rows = [["보냈어요", by("sent")], ["보내지 않았어요", by("drop")], ["보내는 중", by("queued") + by("sending")], ["보내지 못했어요", by("failed") + by("err")], ["확인이 필요해요", by("unsure")], ["봇이 고치거나 보내요", by("edit") + by("bot")], ["건너뛰었어요", skipped]].filter(([, v]) => v);
-  const body = el("div", { class: "fs-body tr-body tr-empty" }, el("div", { class: "tr-done-t", text: skipped ? "끝까지 봤어요" : "모두 답했어요" }), el("ul", { class: "tr-sumlist" }, ...rows.map(([t, v]) => el("li", {}, el("span", { text: t }), el("b", { text: `${v}건` })))));
+  const rows = [[TX("decision.sent"), by("sent")], [TX("decision.not_sent"), by("drop")], [TX("mon.cm.st.sending"), by("queued") + by("sending")], [TX("triage.st.failed"), by("failed") + by("err")], [TX("triage.st.unsure"), by("unsure")], [TX("triage.done.bot"), by("edit") + by("bot")], [TX("triage.done.skipped"), skipped]].filter(([, v]) => v);
+  const body = el("div", { class: "fs-body tr-body tr-empty" }, el("div", { class: "tr-done-t", text: skipped ? TX("triage.done.seen") : TX("triage.done.all") }), el("ul", { class: "tr-sumlist" }, ...rows.map(([t, v]) => el("li", {}, el("span", { text: t }), el("b", { text: TX("triage.done.n", { n: v }) })))));
   const foot = el("div", { class: "fs-ft tr-ft" }, el("div", { class: "tr-acts" },
-    skipped ? el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.i = TR.items.findIndex(c => !TR.done[trK(c)]); trPaint(); } }, "건너뛴 것 다시 보기") : null,
-    el("button", { class: "dc-act main tr-b", type: "button", onclick: () => TR.h && TR.h.close() }, "닫기")));
+    skipped ? el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.i = TR.items.findIndex(c => !TR.done[trK(c)]); trPaint(); } }, TX("triage.done.back")) : null,
+    el("button", { class: "dc-act main tr-b", type: "button", onclick: () => TR.h && TR.h.close() }, TX("common.close"))));
   return [body, foot];
 }
 
 // The third choice of the list only leaves the card waiting (trSendPicked posts the first two): it says 건너뛰기, never the 보내지 않기 of the one-card view, which drops the draft.
-const TR_PICK = [[1, "보내기"], [2, "고치기"], [3, "건너뛰기"]];
+const TR_PICK = [[1, TX("common.send")], [2, TX("decision.edit")], [3, TX("triage.skip")]];
 function trListView() {
   const picked = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim()))).length;
   const body = el("div", { class: "fs-body tr-body tr-list" }, ...TR.items.map((c, i) => {
@@ -20250,13 +20497,13 @@ function trListView() {
       el("button", { class: "tr-rh", type: "button", onclick: () => { TR.i = i; TR.list = false; trPaint(); } }, el("span", { class: "tr-n", text: String(i + 1) }), el("span", { class: "tr-rq", text: [d.to, trQ(c)].filter(Boolean).join(" · ") }), trChip(c)),
       trWhy(c),
       trRowOrig(c, k),
-      draftBodyNode((TR.edits[k] && TR.edits[k].reply) ?? d.body ?? "", `tr-rb${p === 1 || TR.open[k] ? " open" : ""}`, { title: "눌러서 전체 보기", onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); } }),
-      d.mail ? el("div", { class: `tr-rb mail${p === 1 || TR.open[k] ? " open" : ""}`, onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); }, text: `함께 보낼 메일 → ${d.mail.to || ""}${d.mail.subject ? ` · ${d.mail.subject}` : ""}\n${(TR.edits[k] && TR.edits[k].mail) ?? d.mail.body ?? ""}` }) : null,
+      draftBodyNode((TR.edits[k] && TR.edits[k].reply) ?? d.body ?? "", `tr-rb${p === 1 || TR.open[k] ? " open" : ""}`, { title: TX("triage.row.open"), onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); } }),
+      d.mail ? el("div", { class: `tr-rb mail${p === 1 || TR.open[k] ? " open" : ""}`, onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); }, text: `${d.mail.subject ? TX("triage.row.mail_subj", { to: d.mail.to || "", subject: d.mail.subject }) : TX("triage.row.mail", { to: d.mail.to || "" })}\n${(TR.edits[k] && TR.edits[k].mail) ?? d.mail.body ?? ""}` }) : null,
       trRowFiles(c),
-      locked ? null : el("div", { class: "tr-seg", role: "radiogroup", "aria-label": `${i + 1}번 카드` }, ...TR_PICK.map(([n, t]) => el("button", { class: `tr-sg${p === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(p === n), onclick: () => { TR.picks[k] = n; trPaint(); } }, t))),
-      !locked && p === 2 ? el("input", { class: "tr-rn", type: "text", placeholder: "어떻게 고칠까요?", value: TR.notes[k] || "", "aria-label": `${i + 1}번 고칠 내용`, oninput: ev => { TR.notes[k] = ev.target.value; trListCount(); } }) : null);
+      locked ? null : el("div", { class: "tr-seg", role: "radiogroup", "aria-label": TX("triage.row.card", { n: i + 1 }) }, ...TR_PICK.map(([n, t]) => el("button", { class: `tr-sg${p === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(p === n), onclick: () => { TR.picks[k] = n; trPaint(); } }, t))),
+      !locked && p === 2 ? el("input", { class: "tr-rn", type: "text", placeholder: TX("decision.revise.ask"), value: TR.notes[k] || "", "aria-label": TX("triage.row.note_aria", { n: i + 1 }), oninput: ev => { TR.notes[k] = ev.target.value; trListCount(); } }) : null);
   }));
-  const foot = el("div", { class: "fs-ft tr-ft" }, el("div", { class: "tr-acts" }, el("button", { class: "dc-act main tr-b tr-batch", type: "button", disabled: !picked, onclick: trSendPicked }, `확인한 것 보내기${picked ? ` (${picked})` : ""}`)), el("div", { class: "tr-keys", text: "카드마다 보내기·고치기·건너뛰기를 골라요. 고르지 않은 카드는 그대로 남아요" }));
+  const foot = el("div", { class: "fs-ft tr-ft" }, el("div", { class: "tr-acts" }, el("button", { class: "dc-act main tr-b tr-batch", type: "button", disabled: !picked, onclick: trSendPicked }, picked ? TX("triage.batch_n", { n: picked }) : TX("triage.batch"))), el("div", { class: "tr-keys", text: TX("triage.keys.list") }));
   return [body, foot];
 }
 function trListCount() {
@@ -20264,7 +20511,7 @@ function trListCount() {
   if (!b) return;
   const n = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim()))).length;
   b.disabled = !n;
-  b.textContent = `확인한 것 보내기${n ? ` (${n})` : ""}`;
+  b.textContent = n ? TX("triage.batch_n", { n }) : TX("triage.batch");
 }
 
 async function trSendPicked() {
@@ -20291,11 +20538,11 @@ async function trSendPicked() {
   try {
     for (const c of go) if (TR.picks[trK(c)] === 1) await trSaveEdits(c);
     const r = await trPost(go.map(c => ({ ref: c.ref, to: c.to, n: ns[trK(c)] ?? TR.picks[trK(c)], ...(TR.picks[trK(c)] === 2 ? { note: TR.notes[trK(c)].trim() } : {}) })));
-    toast(`${go.length}건 답했어요${r.sending ? ` · ${r.sending}건 보내는 중` : ""}`);
+    toast(r.sending ? TX("triage.answered_sending", { n: go.length, sending: r.sending }) : TX("triage.answered", { n: go.length }));
   } catch (err) {
     for (const c of go) TR.done[trK(c)] = { state: "err", text: err.message };
     trPaint();
-    toast(`보내지 못했어요: ${err.message}`, true);
+    toast(TX("triage.send_fail", { msg: err.message }), true);
   }
 }
 
@@ -20332,7 +20579,7 @@ function convPreview(raw) {
 function convLastOf(e) {
   if (!convReal(e) || typeof e.ts !== "string") return null;
   const title = e.card && typeof e.card.title === "string" ? e.card.title : "";
-  const text = convPreview(e.text) || convPreview(title) || (Array.isArray(e.files) && e.files.length ? "파일" : "");
+  const text = convPreview(e.text) || convPreview(title) || (Array.isArray(e.files) && e.files.length ? TX("chat.att.file") : "");
   if (!text) return null;
   const from = e.kind === "message" || e.kind === "lane_message" ? "owner" : e.kind === "lane_report" || (typeof e.source === "string" && e.source.startsWith("lane:")) ? "session" : "bot";
   return { ts: e.ts, text, from };
@@ -20486,7 +20733,7 @@ function convCapture() {
   if (CV.seeded) CV.placed = false;
   return true;
 }
-const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽음" }));
+const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": TX("conv.unread_from") }, el("span", { text: TX("conv.read_to") }));
 /* ---- where the timeline sits while an opening settles ---- */
 // The first paint of an opening needs three answers: the history, the read position (/api/conversations, which decides the divider)
 // and the todo plan (its strip pushes the timeline down). Until then "불러오는 중…" stays, so nothing is drawn at the wrong place
@@ -20643,15 +20890,15 @@ function convRows() {
   // A card per group, and last the 메일 card of what waits there.
   const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
   const out = [MAIN, "worklog"].map(mk);
-  if (now.length) out.push({ header: "진행 중", sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true });
-  if (page.length) out.push({ header: "프로젝트", sec: true }, ...page);
+  if (now.length) out.push({ header: TX("home.sys.running"), sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true });
+  if (page.length) out.push({ header: TX("common.projects"), sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
   const listed = new Set(now);
   out.push(...all.filter(l => { const t = `lane:${l.name}`; return !listed.has(l) && (t === target || (laneAlive(l) && (ts(t).unread || convNeeds(t)))); }).map(sess));
   const ended = endedLanes();
   if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
   const waits = convWaiting();
-  if (waits.length) out.push({ header: "메일", sec: true }, ...waits);
+  if (waits.length) out.push({ header: [TX("common.mail"), TX("decision.app.kakao")].join(" · "), sec: true }, ...waits);
   out.push({ read: true });
   return out;
 }
@@ -20660,9 +20907,9 @@ function convWaiting() {
   const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
   const mails = [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).map(([t, m]) => {
     const who = mailSender(m.from), owed = !!m.unreplied;
-    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || "(제목 없음)", hint: m.reply === "draft" ? `${who} · 답장 초안이 기다려요` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [["미답장", "unreplied"]] : undefined, open: () => paneRowOpen("chat", t) || go("monitoring", `c:${t}`) };
+    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || TX("mail.no_subject"), hint: m.reply === "draft" ? `${who} · ${TX("conv.draft_waits")}` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [[TX("conv.unreplied"), "unreplied"]] : undefined, open: () => paneRowOpen("chat", t) || go("monitoring", `c:${t}`) };
   });
-  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [["미답장", "unreplied"]], open: () => { if (paneRowOpen("app", paneKkT(r.chatId))) return; go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
+  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [[TX("conv.unreplied"), "unreplied"]], open: () => { if (paneRowOpen("app", paneKkT(r.chatId))) return; go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
   return [...mails, ...rooms].sort((a, b) => b.at - a.at).slice(0, 5);
 }
 // Rows in their cards: a section label stands on the page, every run of rows between them is one card.
@@ -20680,8 +20927,8 @@ function convCards(rows) {
   return nodes;
 }
 // The two fixed rows alone cannot tell a list still loading, or one that failed, from a settled one: the line under them says which (never both, never before the first load).
-const cvState = () => CV.loaded ? null : CV.failed ? emptyNode("대화 목록을 불러오지 못했어요", () => convLoad()) : emptyNode("불러오는 중…");
-const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
+const cvState = () => CV.loaded ? null : CV.failed ? emptyNode(TX("conv.load_failed"), () => convLoad()) : emptyNode(TX("common.loading"));
+const FIXED_DESC = { alert: TX("conv.fixed.alert"), worklog: TX("conv.fixed.worklog") };
 
 /* ---- a long list: a page of projects, 읽음 처리 ---- */
 // more: projects drawn (CVF_PAGE more per 더 보기). What waits on an answer is on the 알림 screen's 처리할 것.
@@ -20694,7 +20941,7 @@ const convListed = () => [MAIN, "worklog", ...((S && S.lanes) || []).filter(lane
 // 읽음 처리, under the list: it takes only what needs no answer, so a conversation waiting on the owner keeps its unread.
 function convReadBtn() {
   const fyi = convListed().filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
-  return fyi.length ? el("div", { class: "cv-foot" }, el("button", { class: "btn text cv-read", type: "button", "data-k": "read", title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: `${fyi.length}개 읽음 처리` })) : null;
+  return fyi.length ? el("div", { class: "cv-foot" }, el("button", { class: "btn text cv-read", type: "button", "data-k": "read", title: TX("conv.read_title"), onclick: ev => convReadAll(ev.currentTarget, fyi), text: TX("conv.read_n", { n: fyi.length }) })) : null;
 }
 // The listed conversations are read up to their newest message here at once and on the hub (POST /api/read, one per conversation); a failure
 // re-reads the counts from the hub and says why (busy toasts it).
@@ -20707,9 +20954,9 @@ const convReadAll = (btn, list) => busy(btn, async () => {
   if (bad.length) {
     for (const [t, r, u] of was) if (res[list.indexOf(t)].status === "rejected") { READ[t] = r; ts(t).unread = u; }
     renderBars(); convSig = ""; convSchedule(); convLoad();
-    throw new Error(`${bad.length}개를 읽음으로 표시하지 못했어요: ${bad[0].reason.message}`);
+    throw new Error(TX("conv.read_failed", { n: bad.length, why: bad[0].reason.message }));
   }
-  toast(`대화 ${list.length}개를 읽음으로 표시했어요`);
+  toast(TX("conv.read_done", { n: list.length }));
 });
 // Every row has an icon, never a letter (so any name reads the same): the app's own mark for the main assistant, a bell / list for the fixed
 // feeds, the folder the 프로젝트 tab uses for a project, the session icon for a session.
@@ -20723,7 +20970,7 @@ function convAvatar(t) {
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
   if (r.empty) return el("div", { class: "cv-empty", text: r.empty });
-  if (r.more) return moreRow(`프로젝트 ${r.more}개 더 보기`, () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); });
+  if (r.more) return moreRow(TX("conv.more_projects", { n: r.more }), () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); });
   if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
   // 채팅 목록은 시제품의 채팅 행 (proto .li): 아이콘, 제목·미리보기, 오른쪽에 시각과 대기 표시. 모니터링 목록은 시각 없이 그대로예요.
@@ -20731,9 +20978,9 @@ function convRow(r) {
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread || r.bold ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k && !r.badge ? el("span", { class: "dot warn", role: "img", "aria-label": "답변 필요" }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
+    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k && !r.badge ? el("span", { class: "dot warn", role: "img", "aria-label": TX("common.needs_reply") }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": TX("conv.unread_n", { n: r.unread }) }), r.unreplied ? unrepCount(r.unreplied) : null, r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null)));
 }
-const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
+const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": TX("conv.list_aria") });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
 const convHead = el("div", { id: "cv-head", class: "cv-head" });
 $("#v-chat").prepend(convSide, convHead);
@@ -20744,7 +20991,7 @@ convHead.after(monChatTop);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : targetState(target)[0], k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || TX("common.mail") : isSettingsT(target) ? TX("conv.settings_hint") : targetState(target)[0], k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   // 시제품의 대화 머리 (proto .cv-hd): 제목 16/22 600 한 줄, 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작.
@@ -20757,7 +21004,7 @@ function convPaintHead() {
 // A project's conversation gets the project page's ⋯ menu (수정 / 삭제, built by pmMenuButton in 19-project-main.js) once the project is known.
 const pjMenuOn = () => isProjT(target) && !!pmOfTarget(target);
 // A session's actions (stop, restart, model) are the home card's ⋯ menu (08-home.js homeMenu), here in the conversation's header: in the head on wide screens, in the app bar on a phone.
-const cvMenuBtn = () => el("button", { class: "ib cvmenu", type: "button", "aria-label": "세션 메뉴", title: "세션 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, target, true) }, icon("more"));
+const cvMenuBtn = () => el("button", { class: "ib cvmenu", type: "button", "aria-label": TX("misc.pane.menu"), title: TX("misc.pane.menu"), "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, target, true) }, icon("more"));
 const cvAppMenu = cvMenuBtn();
 cvAppMenu.id = "cvmenu"; cvAppMenu.hidden = true;
 $("#vtog").before(cvAppMenu);
@@ -20775,10 +21022,10 @@ function convPaint() {
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
-    convSide.setAttribute("aria-label", two ? "메일함" : monCtx ? "모니터링 목록" : "채팅 목록");
+    convSide.setAttribute("aria-label", two ? TX("common.mailbox") : monCtx ? TX("shell.aria.monitoring_list") : TX("conv.list_aria"));
     // 진행 중 grows and shrinks under 작업내역: a list read further down stays where it is when a session starts or ends, held by where 진행 중 (or, without it, 작업내역) ends.
     // Measured in fractions and rounded once at the end: offsetTop rounds each place and scrollTop truncates, which moved the list by a pixel or more.
-    const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === "진행 중") || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.getBoundingClientRect().bottom + convSide.scrollTop : 0; };
+    const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === TX("home.sys.running")) || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.getBoundingClientRect().bottom + convSide.scrollTop : 0; };
     const top = convSide.scrollTop, was = end();
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
     clear(convSide).append(...(two ? mxPaneNodes(two) : monCtx ? monSideNodes(rows) : [...convCards(rows), cvState()].filter(Boolean)));
@@ -20819,7 +21066,7 @@ function convChrome() {
   $("#back").hidden = !back;
   // Inside an app on a wide screen the bar's back button reads ‹ 모니터링 in the title's place; the app's own name stands in its head.
   $("#back").classList.toggle("mon-up", up);
-  $("#back").setAttribute("aria-label", up ? (MX.it && MX.scr ? "메일 목록으로" : "모니터링 목록으로") : "뒤로");
+  $("#back").setAttribute("aria-label", up ? (MX.it && MX.scr ? TX("conv.back_mail") : TX("conv.back_mon")) : TX("common.back"));
   bar.classList.toggle("back", back);
   bar.classList.toggle("cvconv", conv);
   bar.classList.toggle("mon-in", narrowChat() && (monConv() || (!!monCtx && current === "chat")));   // an app, a mail or a room of 모니터링 on a phone: no usage ring, the title gets the room (20-monitoring.css)
@@ -20846,7 +21093,7 @@ convLoad();
 /* ---- shell: the notice bell and the sidebar's computer row (22-shell.css) ---- */
 // The bell opens the 알림 screen (31-notices-screen.js); its count comes from paintBell (09-needs-you.js), fed by every notice change.
 $("#bell").prepend(icon("bell"));
-$("#bell").title = `알림 (${isMac ? "⌘/" : "Ctrl+/"})`;
+$("#bell").title = TX("conv.bell_title", { key: isMac ? "⌘/" : "Ctrl+/" });
 $("#bell").onclick = nscGo;
 
 /* ---------- 알림 화면 (#notices): the bell opens it, it is its own screen (prototype site/prototype/s-notices.js) ---------- */
@@ -20863,10 +21110,11 @@ const NSC_X = { need: TX("misc.nsc.x_done"), news: TX("misc.nsc.x_read"), past: 
 const NSC_FIRST = 24, NSC_STEP = 48;
 let nscTodo = [], nscFillRaf = 0;   // lists whose last rows are still to come: { list, tail, g, more }
 
-// The list: a notice with an id that is neither a quiet watch check (log) nor a chat message (conv). Every count is this list's unread.
-const nscListed = n => !!n.id && n.cls !== "log" && n.cls !== "conv" && !n.dismissed;
-const nscIn = k => NT.items.filter(n => nscListed(n) && (k === "all" || n.cls === k));
-const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read && (k === "all" || n.cls === k) ? 1 : 0), 0);
+// The list: a notice with an id that is not a quiet watch check (log). A conversation's unread answer (conv) is listed too, under 새 소식. Every count is this list's unread.
+const nscListed = n => !!n.id && n.cls !== "log" && !n.dismissed;
+const nscFits = (n, k) => k === "all" || n.cls === k || (k === "news" && n.cls === "conv");
+const nscIn = k => NT.items.filter(n => nscListed(n) && nscFits(n, k));
+const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read && nscFits(n, k) ? 1 : 0), 0);
 const nscGroup = n => (ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
 const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n));
 const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
@@ -20888,6 +21136,7 @@ function nscTag(n) {
   if (n.kind === "watch") return TX("misc.nsc.tag_watch");
   if (n.cls === "alert" && /^[^\n]*: 다시 정상이에요/.test(n.text || "")) return TX("misc.nsc.tag_back");
   if (n.cls === "alert") return TX("settings.notify.alert_label");
+  if (n.cls === "conv") return TX("common.conversation");
   return ntPlain(n.app || "") || TX("settings.notify.news_label");
 }
 // A decision's second line follows its state: waiting says so, an answer says what was chosen, the rest say how it ended (the words of monDecisionNode).
@@ -21734,16 +21983,18 @@ function asChipPaint() {
 
 /* ---- the entries of a detail's title bar (the head on a wide screen, the app bar on a phone): 대화 opens its settings conversation, ⋯ the settings screen ---- */
 function asOpen(ev) { go("monitoring", `c:${asConv(ev.currentTarget.dataset.asOpen)}`); }
-const asBtn = app => el("button", { class: "ib as-hd", type: "button", "aria-label": TX("common.conversation"), title: TX("common.conversation"), "data-as-open": app, onclick: asOpen }, icon("chat"));
+const asBtn = (app, label = TX("common.conversation")) => el("button", { class: "ib as-hd", type: "button", "aria-label": label, title: label, "data-as-open": app, onclick: asOpen }, icon("chat"));
 // The two buttons of `app` ("mail", "w:<watch>"): 대화 and ⋯; none while its settings are not loaded (an app without any shows no button).
-// A schedule ("s:<id>") has no settings conversation: only ⋯.
-function asEntry(app) {
+// A schedule ("s:<id>") has no settings conversation: only ⋯. chat=false leaves 대화 out where the row already has the labeled 대화로 이어가기 button.
+function asEntry(app, chat = true) {
   if (!app) return [];
   if (!AS.load[app]) asLoad(app);
-  return !AS.by[app] ? [] : asSched(app) ? [asMoreBtn(app)] : [asBtn(app), asMoreBtn(app)];
+  return !AS.by[app] ? [] : asSched(app) || !chat ? [asMoreBtn(app)] : [asBtn(app), asMoreBtn(app)];
 }
-// The phone has no head: the same button sits in the app bar beside the title and follows the open detail.
-var asBar = asBtn("");   // var: the app bar is drawn (31-conversations.js convTitle) before this file runs
+// Whether `app` has the 대화 icon: the phone's app bar shows it, so a detail's own 대화로 이어가기 button stays out of the way there.
+const asChatOn = app => !!app && !asSched(app) && !!asEntry(app).length;
+// The phone has no head: the same button sits in the app bar beside the title and follows the open detail; its name is the action the wide head's labeled button says.
+var asBar = asBtn("", TX("mon.conv.btn"));   // var: the app bar is drawn (31-conversations.js convTitle) before this file runs
 asBar.id = "as-bar"; asBar.hidden = true;
 $("#vtog").before(asBar);
 // ⋯ opens the settings screen (in a detail's title bar and in the settings conversation's head).
@@ -21756,7 +22007,7 @@ function asMoreSync(app) {
   if (app) asMoreBar.dataset.asMore = app;
 }
 function asBarSync(app) {
-  const on = !!app && !asSched(app) && !!asEntry(app).length;
+  const on = asChatOn(app);
   asBar.hidden = !on;
   if (on) asBar.dataset.asOpen = app;
 }
@@ -22071,6 +22322,14 @@ function prOpenItem(p, id) {
 }
 
 const prTrig = () => !!prSelf() && PR.list.length >= 2;
+// The phone's bottom tab bar carries the same dot on its Home icon, from the same "more" / "need" as the bot name's (the page title's dot is gone on a conversation and on
+// every other tab it is only at the top); a wide screen hides it (the brand row has the dot there).
+function prHomeDot(more, need) {
+  const d = $("#nav-pc");
+  if (!d) return;
+  d.hidden = !more; d.classList.toggle("p-need", need);
+  d.parentElement.setAttribute("aria-label", more ? TX("misc.pr.home_more") : TX("common.home"));
+}
 function prPaint() {
   prTryFollow();
   relayNames();
@@ -22080,6 +22339,7 @@ function prPaint() {
   chev.hidden = !on;
   if (!on) {
     for (const n of names) n.classList.remove("pdot", "p-need");
+    prHomeDot(false, false);
     brand.setAttribute("aria-label", TX("shell.aria.home")); brand.title = TX("shell.aria.home"); brand.removeAttribute("aria-haspopup");
     title.removeAttribute("tabindex"); title.removeAttribute("aria-haspopup");
     prClose(false); return;
@@ -22088,6 +22348,7 @@ function prPaint() {
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("p-need", need); }
+  prHomeDot(more, need);
   const label = TX(more ? "misc.pr.switch_more" : "misc.pr.switch", { name: relayOn() ? targetName(target) : me.name });
   brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
   brand.title = TX("misc.pr.switch_tip", { key: prKeyHint });
@@ -24727,21 +24988,32 @@ function paneStash() {
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
-  let opened = false, es;
+  let opened = false, es, lastId = "", fast = true, retryT = 0, tries = 0, parkedAt = 0;
   // The stream is a function so a page that comes back from the back/forward cache (the browser closes the stream when it freezes the page) can open a new one.
+  // `live` names the stream to the gateway (it closes a stream nobody vouches for, hub/events.ts); `last` replays what a new stream missed, as the browser does on its own reconnect.
   const openStream = () => {
   if (es) es.close();
-  es = new EventSource("/api/events");
+  clearTimeout(retryT); retryT = 0;
+  es = new EventSource(`/api/events?live=${LIVE_TOK}${lastId ? `&last=${lastId}` : ""}`);
   // The browser resends the last frame id on reconnect and the gateway replays only what was missed. "reset" comes on
   // the first connect and when the gap cannot be replayed (gateway restarted, or too long away): only then refetch.
-  es.onopen = () => setConn(true);
-  es.addEventListener("reset", () => {
+  es.onopen = () => { fast = true; tries = 0; setConn(true); outboxGo(); };
+  es.addEventListener("reset", m => {
+    lastId = m.lastEventId;
     trLoad();   // the waiting approvals by app instance: the 빠른 처리 banner (30-triage.js)
-    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); kkResync(); }
+    // The drawn conversation stays as it is: loadTarget redraws it only when the read brought something new.
+    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); kkResync(); }
     opened = true;
   });
-  es.onerror = () => setConn(false);
+  // A stream the gateway closed (a cleanup, a slow reader) is attached again at once, not after the browser's wait, so the 2 s of setConn pass unseen. Behind a proxy that
+  // answers 502/503 while the gateway is down the browser gives up (CLOSED) and never retries: one timer opens it again, after 0.25 s, 0.5 s, 1 s ... up to 5 s (a hidden page: 15 s).
+  es.onerror = () => {
+    if (fast) { fast = false; openStream(); }
+    else if (es.readyState === 2 && !retryT) retryT = setTimeout(openStream, Math.max(Math.min(250 * 2 ** tries++, 5000), document.hidden ? 15000 : 0));
+    setConn(false);
+  };
   es.onmessage = m => {
+    lastId = m.lastEventId;
     let e;
     try { e = JSON.parse(m.data); } catch { return; }
     if (e.kind === "activity") { onActivity(e); laneActivity(e); }
@@ -24767,7 +25039,7 @@ function paneStash() {
       ingestMsg(e); scheduleState();
       // Live notices only (not the replay after a reconnect): alert / worklog posts, the gateway's own notes (sent to the web
       // when Discord is off) and lane reports float in the corner.
-      const fresh = !e.ts || Date.now() - Date.parse(e.ts) < 60_000;
+      const fresh = !e.ts || Date.now() - Date.parse(e.ts) < 60_000 || (parkedAt && Date.parse(e.ts) > parkedAt);   // parkedAt: what came while the page was hidden is new to its owner, also when a frozen page gets it as a replay
       const notice = e.kind === "out" && (e.target === "alert" || e.target === "worklog" || (e.target === "web" && e.source === "gateway"));
       if (fresh && (notice || e.kind === "lane_report")) notify(e);
     }
@@ -24785,7 +25057,7 @@ function paneStash() {
   const unlessHidden = (key, fn) => () => { if (document.hidden) missed[key] = true; else fn(); };
   setInterval(unlessHidden("state", refreshState), 15000);
   // The 새 버전 badge comes from /api/update: read it on open and again every few minutes.
-  loadUpdate(); setInterval(loadUpdate, 5 * 60000);
+  loadUpdate(); setInterval(() => { if (!document.hidden) loadUpdate(); }, 5 * 60000);
   // The plan normally refetches when a todo tool call ends; this is the fallback while the open target works.
   setInterval(() => { if (current === "chat" && !document.hidden && isWorking(target)) loadTodo(target); }, 20000);
   $("#ustrip").onclick = () => go("usage");
@@ -24794,12 +25066,18 @@ function paneStash() {
   let hiddenAt = 0;
   const wake = () => {
     pushTapCheck();
-    const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream();
+    const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream(); setTimeout(() => { parkedAt = 0; }, 10_000);
     if (away > 5000) resync(); else if (missed.state) refreshState();
     if (missed.models) loadModels(true);
     missed.state = missed.models = false;
   };
-  document.addEventListener("visibilitychange", () => { markSeen(); attnChanged(); loadStrip(); if (document.hidden) hiddenAt = Date.now(); else wake(); });
+  // A hidden page keeps its stream (the tab title count and the unread marks follow it) and vouches for it with the smallest answer the gateway has, once a minute
+  // (a visible page vouches with every request). A frozen page cannot: the gateway drops its stream after LIVE_MAX_MS and wake() attaches again with the frames it missed.
+  setInterval(() => { if (document.hidden) api("/api/health").catch(() => { /* a down gateway is the stream's retry to handle */ }); }, 60000);
+  document.addEventListener("visibilitychange", () => {
+    markSeen(); attnChanged(); loadStrip();
+    if (document.hidden) { hiddenAt = parkedAt = Date.now(); } else wake();
+  });
   addEventListener("focus", wake);
   setInterval(unlessHidden("models", () => loadModels(true)), 60000);
 })();
