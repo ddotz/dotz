@@ -237,22 +237,23 @@ function mxMoveOpen(anchor, keys) {
 function mxRowsOut(keys) {
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => keys.includes(r.dataset.t) && !mxIn(r.dataset.t));
   for (const r of rows) MBOX.rows.delete(r.dataset.t);
-  return rows.length ? Promise.all(rows.map(r => motionOut(r))) : null;
+  return rows.length ? Promise.all(rows.map(r => motionGone(r))) : null;
 }
-// POST /api/mailbox/move: the card changes at once (box, why) and goes back when the hub refuses. Resolves the hub's answer ({moved, was}), null on failure.
+// POST /api/mailbox/move: the rows say they are busy until the hub answers; then the card changes (box, why) and the rows that leave this box fold away.
+// Resolves the hub's answer ({moved, was}), null on failure.
 async function mxMove(keys, to) {
-  const was = new Map();
-  for (const t of keys) { const m = MAILS.get(t); if (m) { was.set(t, [m.box, m.boxWhy]); m.box = to; m.boxWhy = { kind: "moved" }; } }
-  const out = mxRowsOut(keys);
-  if (out) out.then(mbRefresh); else mbRefresh();
+  const busyRows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => keys.includes(r.dataset.t));
+  for (const r of busyRows) r.setAttribute("aria-busy", "true");
   try {
     const r = await api("/api/mailbox/move", "POST", { keys: keys.map(mbKey), box: to });
+    for (const t of keys) { const m = MAILS.get(t); if (m) { m.box = to; m.boxWhy = { kind: "moved" }; } }
     for (const k of r.moved || []) { const m = MAILS.get(`mail:${k}`); if (m) { m.box = to; m.boxWhy = { kind: "moved" }; } }   // the rest of the conversation went with it
+    const out = mxRowsOut(keys);
+    if (out) out.then(mbRefresh); else mbRefresh();
     Promise.allSettled([convLoad(), loadIntegrations()]);
     return r;
   } catch (e) {
-    for (const [t, [b, w]] of was) { const m = MAILS.get(t); if (m) { m.box = b; m.boxWhy = w; } }
-    mbRefresh();
+    for (const r of busyRows) r.removeAttribute("aria-busy");
     toast((e && e.data && e.data.error) || (e && e.message) || "옮기지 못했어요", true);
     return null;
   }

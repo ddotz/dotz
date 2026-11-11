@@ -71,10 +71,10 @@ function endedGroup() {
   // The start date is its own element (short, never cut; the full date and time are its title), apart from the project name that may shrink.
   const when = l => l.startedAt ? el("span", { class: "sup edate", title: `${kstDay(l.startedAt)} ${kstHM(l.startedAt)}`, text: kstShort(l.startedAt) }) : null;
   const row = l => sel
-    ? el("label", { class: "er" },
+    ? el("label", { class: "er", "data-lane": l.name },
         el("input", { type: "checkbox", class: "ck", checked: sel.has(l.name), onchange: ev => { if (ev.currentTarget.checked) sel.add(l.name); else sel.delete(l.name); refreshEnded(); } }),
         el("span", { class: "en", text: l.name }), when(l))
-    : el("div", { class: "erow" },
+    : el("div", { class: "erow", "data-lane": l.name },
         el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
           el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), laneProject(l) ? el("span", { class: "sup eproj", text: laneProject(l) }) : null, when(l),
           marks.get(l.name).need ? el("span", { class: "tag warn", text: "답변 필요" }) : null,
@@ -103,6 +103,7 @@ async function deleteEnded(names) {
     // 409 = nothing could be deleted; its body carries the same per-lane results, shown as the calm note below.
     const r = await api("/api/lanes/delete", "POST", { names }).catch(e => { if (e.data && e.data.results) return e.data; throw e; });
     const ok = r.results.filter(x => x.ok), bad = r.results.filter(x => !x.ok);
+    await Promise.all([...document.querySelectorAll(".ended [data-lane]")].filter(n => ok.some(x => x.name === n.dataset.lane)).map(n => motionGone(n)));   // the deleted rows fold away once the hub said yes
     endedSel = null;
     if (S && S.lanes) S.lanes = S.lanes.filter(l => !ok.some(x => x.name === l.name));
     refreshEnded();
