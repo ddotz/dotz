@@ -256,6 +256,10 @@ restart; the file is re-read when it changes):
   its hash, `set <key> <text>|--file <path>` writes the override with the right hash, `list` shows each override and whether it still
   fits, `remove <key>` deletes it. A plain string value works too, without the check.
 - The leads the gateway matches later (`youAre`, `replayLead`, ... in `enLeads`) cannot be overridden.
+- A key that starts with `web:` changes a word of the web app's screens instead: `"web:<key>": { "text": "..." }`, where `<key>` is a key of
+  the screen-text lists (`web/i18n/en/*.json`). It applies over the Korean, the English and a generated list alike, keeps the list's
+  `{placeholders}`, and is never overwritten when a generated list is built again. One whose key is gone or whose placeholders differ from
+  the list's is not used and is reported the same way.
 - If a key no longer exists, or its shipped text changed since the override was written, the override still applies and the gateway
   wakes the bot once at start with the list (`texts-reported.json` in the data folder remembers what was reported). The bot compares the
   new shipped text with its override and rewrites or removes it.

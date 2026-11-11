@@ -111,6 +111,28 @@ literal in every language. The contract file for a language other than English i
 `~/.dotz/MODE.<lang>.md`, then `MODE.<lang>.md` in the repo, then the English `~/.dotz/MODE.md` and the repo's
 `MODE.md`, so a translation for another language is a drop-in file.
 
+**Web app language.** The web app's screens follow the same `identity.language`: tabs, buttons, status words, empty
+states, dialogs and toasts. The repo ships two hand-written lists, Korean and English (`web/i18n/ko/*.json` and
+`web/i18n/en/*.json`, one file per area, the same keys in both), and the page gets its list inside `/app.js`, so
+opening a page never waits for it. For any other language the gateway builds the list once on the install
+(`hub/web-i18n-gen.ts`) with the model the install already uses for one-shot calls. Nobody is asked: it starts when a
+model connection is confirmed (the model sign-in step of onboarding, a later sign-in or saved API key, the gateway
+start, a language change), runs in the background, sends each text with both its Korean and its English, and keeps the
+result in `<DATA_DIR>/cache/web-i18n/<lang>.json`. Before a model is connected, while the list is being built and after
+a failure the screens are in English (Korean for `ko`); the first page draw after the list is complete is in that
+language. Opening a page makes no model call, and after an update only the texts whose Korean or English changed are
+sent again. Each generated text is checked by machine (the same `{placeholders}` as the English, the plural forms the
+language has, no markup the English lacks, the same line breaks, a plausible length); a text that fails twice stays
+English until its source changes. A failed run is retried with a backoff (30 s to 30 min) and at the next connection
+signal; onboarding shows one status line for it and never waits. Dates, times and numbers are written the way the
+language writes them (`Intl` with the language code); Korean keeps its compact forms (`11.10`, `25.12.31`). To change
+a word on your own install, add `"web:<key>": { "text": "<your text>" }` to `~/.dotz/custom/texts.json` (keys are in the
+`web/i18n/en` files): it wins over the shipped and the generated list, and building the list again never overwrites it;
+an entry whose key no longer exists or whose placeholders differ from the list's is not used. The English channel
+names of the messengers (`channelNames` in `hub/i18n.ts`) and the web app's words for the same things (`common.*`) are
+held to the same word by a test. Right-to-left languages get their text, but the layout is not mirrored. Adding screen text:
+`web/AGENTS.md`; `bun hub/web-i18n-check.ts` fails when the two lists disagree or new Korean text enters a migrated file.
+
 Onboarding also asks for the macOS permissions (`onboard/permissions.ts`). The gateway is a launchd job whose program is `bun`, so
 macOS attributes every protected access by the gateway and everything it spawns (agent processes, osascript, aside,
 git) to `bun`:
@@ -702,7 +724,7 @@ short "received, answering when the current step ends" notice from the gateway.
 - Audit against earlier setups: `docs/audit-2026-10-16.md`.
 - `VERSION` the version of this commit (`YYMMDD.N`, `docs/releases.md`); installs see only the tag `v<version>`.
 - `extension/index.ts` dotz extension (loaded by OmO and omp processes): orchestrator tools, terminal thin client (omp), the subagent guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
-- `web/index.html` web app shell; its script and styles are modules in `web/js/*.js` and `web/css/*.css` (one topic per file, served joined in file-name order as `/app.js` and `/app.css` by `hub/webapp.ts`). `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.
+- `web/index.html` web app shell; its script and styles are modules in `web/js/*.js` and `web/css/*.css` (one topic per file, served joined in file-name order as `/app.js` and `/app.css` by `hub/webapp.ts`). Screen text lives in `web/i18n/<lang>/<area>.json` and is read with `TX("key")` (`web/js/00-i18n.js`, `hub/web-i18n.ts`; generated lists `hub/web-i18n-gen.ts`, the check `hub/web-i18n-check.ts`). `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.
 - Runtime data: `~/.dotz` (config, secrets, state, inbox/outbox, sessions, logs).
 
 ### Generic vs. per-install settings
