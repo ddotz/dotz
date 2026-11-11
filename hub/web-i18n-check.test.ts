@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { check, firstBaseline, lowered, stripJs, type Baseline } from "./web-i18n-check.ts";
@@ -95,4 +95,11 @@ test("a {{key}} token in index.html counts as use, and a missing one fails", () 
 	const html = `<html lang="ko"><body><b aria-label="{{a.go}}">{{a.n}}</b></body></html>`;
 	expect(problems({ ...GOOD, "web/js/x.js": "", "web/index.html": html })).toBe("");
 	expect(problems({ ...GOOD, "web/js/x.js": "", "web/index.html": `${html}{{a.nope}}` })).toContain("key a.nope is not in web/i18n/ko");
+});
+
+test("this repo's screens pass the check and no file still waits for its move", () => {
+	const baseline = JSON.parse(readFileSync(join(import.meta.dir, "web-i18n-baseline.json"), "utf8")) as Baseline;
+	const r = check(join(import.meta.dir, ".."), baseline);
+	expect(r.problems).toEqual([]);
+	expect(r.pending).toBe(0);
 });
