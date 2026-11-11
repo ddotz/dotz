@@ -159,3 +159,27 @@ test("a full-suite run behind a live holder starts when the holder dies", async 
 		s.holder.kill();
 	}
 });
+
+// A lane's run behind the real preload that sleeps for `seconds` in a process of its own (a real sleep: the test process runs on the fake clock).
+function sleeper(seconds: number, maxMs: number) {
+	const p = project();
+	writeFileSync(join(p.cwd, "sleeper.test.ts"), `import { expect, test } from "bun:test"; test("sleeper", async () => { await Bun.spawn(["sleep", "${seconds}"]).exited; expect(1).toBe(1); });`);
+	const run = () => p.run(["-t", "sleeper"], { DOTZ_LANE: "limit-test", DOTZ_TEST_MAX_MS: String(maxMs) });
+	return { run, slotFile: join(p.data, "heavy-suite", "slot.1") };
+}
+
+test("a lane's run that holds the slot past the limit stops itself with a line and frees the slot", async () => {
+	const { run, slotFile } = sleeper(3, 1000);
+	const r = await run();
+	expect(r.code).not.toBe(0);
+	expect(r.text).toContain("test run stopped");
+	expect(r.text).toContain("Run only the files that failed");
+	expect(existsSync(slotFile)).toBe(false);
+}, 60_000);
+
+test("a lane's run under the limit is untouched", async () => {
+	const { run } = sleeper(0.2, 60_000);
+	const r = await run();
+	expect(r.code).toBe(0);
+	expect(r.text).not.toContain("test run stopped");
+}, 60_000);
