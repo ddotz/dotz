@@ -150,14 +150,29 @@ test("idle waiting on background work or a deferred answer names it", async () =
 
 test("a usage limit says until when and offers 지금 다시 시도", async () => {
 	const v = await boot();
-	const until = new Date(Date.now() + 40 * 60_000).toISOString();
+	const until = new Date((await v.evaluate("Date.now()") as number) + 40 * 60_000).toISOString();
 	const r = await show(v, { kind: "limited", reason: "rate", since: ts(1), detail: until }, { status: "rate-limited", pauseKind: "rate", rateLimitedUntil: until });
-	expect(r.text).toMatch(/^한도에 걸렸어요 · .+까지$/);
+	expect(r.text).toMatch(/^한도에 걸렸어요 · (\d\d\.\d\d )?\d\d:\d\d까지$/);
 	expect(r.act).toBe("지금 다시 시도");
 	const hitOnce = hit("resume");
 	await v.evaluate(`document.querySelector("#runstate-act").click()`);
 	await hitOnce;
 	expect(resumed).toBe(1);
+}, 20_000);
+
+test("the pause time is HH:MM with no seconds: the time alone today (KST), mm.dd before it on another day, yy.mm.dd in another year", async () => {
+	const v = await boot();
+	// now = 2026-11-11 14:00 KST
+	const got = await v.evaluate(`(() => {
+		const real = Date.now;
+		Date.now = () => Date.parse("2026-11-11T05:00:00Z");
+		try { return ["2026-11-11T09:30:00.500Z", "2026-11-13T03:39:00.924Z", "2027-01-02T03:39:00Z", "2026-11-10T14:30:00Z", "nope"].map(pauseUntilText); } finally { Date.now = real; }
+	})()`);
+	expect(got).toEqual(["18:30까지", "11.13 12:39까지", "27.01.02 12:39까지", "11.10 23:30까지", ""]);
+	const until = new Date((await v.evaluate("Date.now()") as number) + 2 * 86_400_000).toISOString();
+	const r = await show(v, { kind: "limited", reason: "rate", since: ts(1), detail: until }, { status: "rate-limited", pauseKind: "rate", rateLimitedUntil: until });
+	expect(r.text).toMatch(/^한도에 걸렸어요 · (\d\d\.){1,2}\d\d \d\d:\d\d까지$/);
+	await shot(v, "pause-two-days-390.png");
 }, 20_000);
 
 test("a pause whose time has passed moves on to work resuming by itself, with no event from the gateway", async () => {

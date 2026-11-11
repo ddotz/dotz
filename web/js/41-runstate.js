@@ -4,6 +4,8 @@
 // 멈춤 / 끝났어요. An idle conversation with plan tasks left names the reason (no button): the owner's complaint was
 // "todo는 남아있는데 아무것도 안하고 있을때 왜 안하는지 모르는 경우가 많음", so "쉬는 중" alone is never the answer.
 const RUN_LABEL = { working: "작업 중", waiting: "답을 기다려요", idle: "쉬는 중", limited: "한도에 걸렸어요", error: "오류로 멈췄어요", stopped: "멈춤", done: "끝났어요" };
+// When a pause ends, in KST, 24-hour, no seconds: "12:39까지" today, "11.13 12:39까지" on another day (kstShort: mm.dd, yy.mm.dd for another year).
+const pauseUntilText = t => { const ms = Date.parse(t); return isNaN(ms) ? "" : `${kstDay(ms) === kstDay(Date.now()) ? "" : `${kstShort(ms)} `}${REL_HM.format(ms)}까지`; };
 const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", error: "err", stopped: "", done: "ok" };
 // "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
@@ -62,7 +64,7 @@ function runText(r) {
       const why = r.reason === "unfinished" ? "이번 턴이 끝났는데 할 일이 남아 있어요" : r.reason === "interrupted" || r.reason === "unknown" ? "마지막 턴이 끝나기 전에 멈췄어요" : "";
       return [label, left, why].filter(Boolean).join(" · ");
     }
-    case "limited": return [label, r.detail ? `${kstTime(r.detail)}까지` : "잠시 쉬어요"].join(" · ");
+    case "limited": return [label, pauseUntilText(r.detail) || "잠시 쉬어요"].join(" · ");
     case "error": return [r.reason === "work" ? (r.cancelled ? "중단됨" : "실패") : label, r.detail].filter(Boolean).join(" · ");
     case "stopped": return [label, r.reason === "owner" ? "직접 멈췄어요" : "", left].filter(Boolean).join(" · ");
     case "done": return [label, r.detail, r.since ? kstHM(r.since) : ""].filter(Boolean).join(" · ");
