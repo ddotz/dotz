@@ -52,10 +52,10 @@ function autoSwitch() {
 }
 function paintConn() {
   const c = $("#conn"), other = typeof prFailover === "function" ? prFailover() : null;
-  const full = other ? koPick(`연결 끊김 · ${other.name}(으)로 전환`) : "연결 끊김 · 다시 연결 중";
+  const full = other ? koPick(TX("chat.conn.switching", { name: other.name })) : TX("shell.conn.lost");
   c.hidden = !selfDown;
   // A phone's bar has no room for the sentence: the dot and the word 끊김 stay, the sentence is the label.
-  c.textContent = matchMedia("(max-width: 639px)").matches ? "끊김" : full;
+  c.textContent = matchMedia("(max-width: 639px)").matches ? TX("chat.conn.short") : full;
   c.title = full; c.setAttribute("aria-label", full);
   c.disabled = !other;
   c.onclick = other ? () => prPick(other) : null;
@@ -108,8 +108,8 @@ function actNode(a, ctx) {
     case "turn_start": case "turn_end": return null;
     case "status": return el("div", { class: "a-div", text: `${oneLine(a.text ?? "")} · ${time}` });
     case "text": return el("div", { class: "a-text" }, el("span", { class: "a-time", text: time }), ...mdFiles(a.text));
-    case "thinking": return el("details", { class: "box think" }, el("summary", {}, el("span", { class: "tname", text: "생각" }), el("span", { class: "tsum", text: `· ${thinkLine(a.text)}` }), el("span", { class: "sp" }), el("span", { class: "ttime", text: time })), mdNode(a.text));
-    case "error": { const raw = String(a.text ?? ""), line = humanAlert(raw); return el("div", { class: "lg-e" }, line, line.trim() === raw.trim() ? null : el("details", {}, el("summary", { text: "자세히" }), el("pre", { text: raw }))); }
+    case "thinking": return el("details", { class: "box think" }, el("summary", {}, el("span", { class: "tname", text: TX("chat.kind.thinking") }), el("span", { class: "tsum", text: `· ${thinkLine(a.text)}` }), el("span", { class: "sp" }), el("span", { class: "ttime", text: time })), mdNode(a.text));
+    case "error": { const raw = String(a.text ?? ""), line = humanAlert(raw); return el("div", { class: "lg-e" }, line, line.trim() === raw.trim() ? null : el("details", {}, el("summary", { text: TX("chat.log.details") }), el("pre", { text: raw }))); }
     case "tool_call": {
       const rec = logRow(a, kindOf(a.tool), toolLabel(a) || capName(a.tool));
       if (a.call_id) ctx.calls.set(a.call_id, rec);

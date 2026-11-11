@@ -135,7 +135,7 @@ function pkChip(p) {
     el("span", { class: "fi-t" },
       el("span", { class: "fi-n", text: p.text || p.tag }),
       el("span", { class: "fi-m", text: [p.view, p.title].filter(Boolean).join(" · ") })),
-    el("button", { class: "ax", type: "button", "aria-label": `${p.n}번 요소 빼기`, onclick: () => pkDrop(p.id) }, icon("close")));
+    el("button", { class: "ax", type: "button", "aria-label": TX("chat.picker.drop", { n: p.n }), onclick: () => pkDrop(p.id) }, icon("close")));
 }
 function renderPicks() {
   const tray = $("#atray");
@@ -163,7 +163,7 @@ function pkAssign(list) { PICK = list || []; renderPicks(); }
 /* ---------- picking itself ---------- */
 function pkDo(n, doc, frame) {
   if (!n) return;
-  if (PICK.length >= 10) { toast("요소는 한 번에 10개까지 보낼 수 있어요", true); return; }
+  if (PICK.length >= 10) { toast(TX("chat.picker.limit"), true); return; }
   PICK.push({ id: Math.random().toString(36).slice(2), n: PICK.length + 1, tag: n.tagName.toLowerCase(), sel: pkSel(n, doc), text: pkText(n), html: pkHtml(n), view: pkView(doc, frame), title: String(doc.title || ""), node: n, doc, frame: frame || null });
   pkHover(null);
   renderPicks();
@@ -269,7 +269,7 @@ function pkFrame(f) {
 // The app header's hint (30-apps.js appsHeader): a phone has no keys, so it says the long press.
 const pkTouch = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
 function pkHint() {
-  return el("span", { class: "pk-hint", text: pkTouch() ? "길게 눌러 요소 고르기" : isMac ? "⌘+클릭으로 요소 고르기" : "Ctrl+클릭으로 요소 고르기" });
+  return el("span", { class: "pk-hint", text: pkTouch() ? TX("chat.picker.hint_touch") : isMac ? TX("chat.picker.hint_mac") : TX("chat.picker.hint_ctrl") });
 }
 pkKeys(window);
 addEventListener("resize", pkKick);

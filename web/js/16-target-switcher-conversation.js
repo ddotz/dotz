@@ -47,39 +47,39 @@ function renderBars() {
   const chip = v => { const b = el("button", { class: `tchip${v.t === target ? " on" : ""}`, type: "button", "data-t": v.t, "aria-pressed": v.t === target ? "true" : "false", title: v.attn ? `${attnLabel(v.attn)} · ${v.status}` : v.status, onclick: () => pickTarget(v.t) },
     el("span", { class: `dot ${v.tone}` }), el("span", { class: "tx", text: v.name }),
     v.attn ? el("span", { class: "sb warn", text: attnLabel(v.attn) }) : null,
-    v.subs ? el("span", { class: "sb", title: "서브에이전트", text: `서브 ${v.subs}` }) : null,
+    v.subs ? el("span", { class: "sb", title: TX("common.subagent"), text: TX("chat.tsw.subs", { n: v.subs }) }) : null,
     v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
     if (v.t !== MAIN && !isFixedT(v.t)) dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : isProjT(v.t) ? PA : LA).map(x => x.t), true);
     return b; };
   const sep = () => el("span", { class: "tsep", "aria-hidden": "true" });
-  const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
+  const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? TX("chat.tsw.subs", { n: v.subs }) : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
   const homeOfT = t => { const l = lanes.find(x => `lane:${x.name}` === t); return l ? laneChat(l) : ""; };
-  const sesItem = v => { const l = lanes.find(x => `lane:${x.name}` === v.t); return { ...menuItem(v), indent: true, sub: [l ? sessionStatus(l)[0] : v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · ") }; };
+  const sesItem = v => { const l = lanes.find(x => `lane:${x.name}` === v.t); return { ...menuItem(v), indent: true, sub: [l ? sessionStatus(l)[0] : v.status, v.subs ? TX("chat.tsw.subs", { n: v.subs }) : ""].filter(Boolean).join(" · ") }; };
   for (const bar of document.querySelectorAll(".thead")) {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
     if (bar.dataset.sig === msig || (openMenu && bar.contains(openMenu.anchor))) continue;
     bar.dataset.sig = msig; bar.classList.toggle("lanev", isLaneT(target));
     // Exited lanes are not shown; one opened from the palette shows as a chip only while it is the selected target.
     const shownV = [...A, ...D.filter(v => v.t === target)], laneV = shownV.filter(v => isLaneT(v.t));
-    const sw = el("div", { class: "tsw", role: "group", "aria-label": "대화 대상" }, chip(A[0]), ...FA.map(chip),
+    const sw = el("div", { class: "tsw", role: "group", "aria-label": TX("chat.tsw.group") }, chip(A[0]), ...FA.map(chip),
       ...(PA.length ? [sep(), ...PA.map(chip)] : []), ...(laneV.length ? [sep(), ...laneV.map(chip)] : []),
       el("button", { type: "button", class: "tchip tmore", hidden: true, "aria-haspopup": "listbox", "aria-expanded": "false" }));
     sw._views = shownV;
-    const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `대화 대상: ${cur.name}` },
+    const drop = el("button", { type: "button", class: "sel tdrop", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": TX("chat.tsw.drop_aria", { name: cur.name }) },
       el("span", { class: `dot ${cur.tone}` }), el("span", { class: "val", text: cur.name }),
       cur.attn ? el("span", { class: "sb warn", text: attnLabel(cur.attn) }) : null,
-      cur.subs ? el("span", { class: "sb", text: `서브 ${cur.subs}` }) : null,
-      othersAttn ? el("span", { class: "nb warn", title: `다른 대상 확인 필요 ${othersAttn}개`, text: String(othersAttn) })
-        : others ? el("span", { class: "nb", title: "다른 대상의 새 메시지", text: others > 99 ? "99+" : String(others) }) : null,
+      cur.subs ? el("span", { class: "sb", text: TX("chat.tsw.subs", { n: cur.subs }) }) : null,
+      othersAttn ? el("span", { class: "nb warn", title: TX("chat.tsw.others_attn", { n: othersAttn }), text: String(othersAttn) })
+        : others ? el("span", { class: "nb", title: TX("chat.tsw.others_new"), text: others > 99 ? "99+" : String(others) }) : null,
       icon("drop"));
     drop._items = () => [
       menuItem(A[0]), ...FA.map(menuItem),
       // each project followed by its sessions (indented, with the session's status); sessions started from chat close the list
-      ...(PA.length ? [{ header: "프로젝트" }] : []),
+      ...(PA.length ? [{ header: TX("common.projects") }] : []),
       ...PA.flatMap(p => [menuItem(p), ...LA.filter(v => homeOfT(v.t) === p.t).map(sesItem)]),
-      ...(LA.some(v => !PA.some(p => p.t === homeOfT(v.t))) ? [{ header: "프로젝트 없음" }, ...LA.filter(v => !PA.some(p => p.t === homeOfT(v.t))).map(sesItem)] : []),
+      ...(LA.some(v => !PA.some(p => p.t === homeOfT(v.t))) ? [{ header: TX("chat.tsw.no_project") }, ...LA.filter(v => !PA.some(p => p.t === homeOfT(v.t))).map(sesItem)] : []),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
-      ...(D.length ? [{ value: "__ended", label: `끝난 세션 ${D.length}`, sub: "기록 보기 · 재개" }] : [])];
+      ...(D.length ? [{ value: "__ended", label: TX("chat.tsw.ended", { n: D.length }), sub: TX("chat.tsw.ended_sub") }] : [])];
     drop._pick = v => { if (v === "__ended") { endedOpen = true; go("chat", "list"); } else pickTarget(v); };
     drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
     const ud = mode === "term" && ts(target).unread > 0;
@@ -88,7 +88,7 @@ function renderBars() {
     // 대화/로그: one icon button for the main chat, a project and a session (phone and desktop); the icon is the view a tap switches to
     const vt = $("#vtog"), to = mode === "chat" ? "term" : "chat";
     clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
-    vt.title = vt.ariaLabel = to === "chat" ? "대화 보기" : "로그 보기";
+    vt.title = vt.ariaLabel = to === "chat" ? TX("chat.tsw.show_chat") : TX("chat.tsw.show_log");
     vt.onclick = () => go(to === "chat" ? "chat" : "activity");
     vt.hidden = !LOG_VIEW || !$("#appbar").classList.contains("tv") || convListing() || isFixedT(target);
   }
@@ -103,7 +103,7 @@ function fitChips(sw) {
   const seps = () => { for (const s of sw.querySelectorAll(".tsep")) { let n = s.nextElementSibling, vis = false; for (; n && !n.matches(".tsep, .tmore"); n = n.nextElementSibling) if (!n.hidden) { vis = true; break; } s.hidden = !vis; } };
   seps();
   if (!sw.clientWidth || sw.scrollWidth <= sw.clientWidth) return;
-  const label = vs => { const n = vs.filter(v => v.attn).length; clear(more).append(...[el("span", { class: "tx", text: `더 보기 ${vs.length}` }), n ? el("span", { class: "nb warn", title: `확인 필요 ${n}개`, text: String(n) }) : null, icon("drop")].filter(Boolean)); };
+  const label = vs => { const n = vs.filter(v => v.attn).length; clear(more).append(...[el("span", { class: "tx", text: TX("chat.tsw.more", { n: vs.length }) }), n ? el("span", { class: "nb warn", title: TX("chat.tsw.attn", { n }), text: String(n) }) : null, icon("drop")].filter(Boolean)); };
   more.hidden = false;
   label(sw._views.filter(v => v.attn));   // widest likely label first, so the fold leaves it room
   const hid = [];
@@ -111,7 +111,7 @@ function fitChips(sw) {
   seps();
   const vs = sw._views.filter(v => hid.includes(v.t));
   label(vs);
-  more.onclick = () => showMenu(more, vs.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })), { value: target, onPick: pickTarget });
+  more.onclick = () => showMenu(more, vs.map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? TX("chat.tsw.subs", { n: v.subs }) : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" })), { value: target, onPick: pickTarget });
 }
 new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); }).observe($("#thead"));
 
@@ -147,32 +147,32 @@ function authCard(a) {
   const inputs = (a.fields || []).map(mkInput);
   const wrap = (f, inp) => {
     const err = el("div", { class: "ferr", role: "alert" });
-    const eye = f.mask ? el("button", { class: "eye", type: "button", "aria-label": `${f.label} 보기`, text: "보기", onclick: () => { const hidden = inp.type === "password"; inp.type = hidden ? "text" : "password"; eye.textContent = hidden ? "숨기기" : "보기"; } }) : null;
+    const eye = f.mask ? el("button", { class: "eye", type: "button", "aria-label": TX("chat.auth.show_aria", { label: f.label }), text: TX("chat.auth.show"), onclick: () => { const hidden = inp.type === "password"; inp.type = hidden ? "text" : "password"; eye.textContent = hidden ? TX("chat.auth.hide") : TX("chat.auth.show"); } }) : null;
     inp.addEventListener("input", () => { inp.classList.remove("bad"); err.textContent = ""; });
-    return el("div", { class: "fld" }, el("label", { for: inp.id, text: f.label + (f.optional ? "(선택)" : "") }), el("div", { class: "ctl" }, inp, eye), err);
+    return el("div", { class: "fld" }, el("label", { for: inp.id, text: f.optional ? TX("chat.auth.optional_label", { label: f.label }) : f.label }), el("div", { class: "ctl" }, inp, eye), err);
   };
   // The app's own switch row (as 설정), not a browser checkbox: the whole row is the tap target.
-  const rem = isForm ? el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!a.remember), "aria-label": "다음에도 쓰게 저장해 두기", id: `au-${a.id}-remember` }) : null;
-  const remRow = rem ? el("div", { class: "list" }, el("div", { class: "li tap", onclick: () => rem.setAttribute("aria-checked", String(rem.getAttribute("aria-checked") !== "true")) }, el("span", { class: "tx" }, el("div", { class: "hd", text: "다음에도 쓰게 저장해 두기" }), el("div", { class: "sup", text: "끄면 한 번 쓰고 지워요" })), liEnd(rem))) : null;
+  const rem = isForm ? el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!a.remember), "aria-label": TX("chat.auth.remember"), id: `au-${a.id}-remember` }) : null;
+  const remRow = rem ? el("div", { class: "list" }, el("div", { class: "li tap", onclick: () => rem.setAttribute("aria-checked", String(rem.getAttribute("aria-checked") !== "true")) }, el("span", { class: "tx" }, el("div", { class: "hd", text: TX("chat.auth.remember") }), el("div", { class: "sup", text: TX("chat.auth.remember_sub") })), liEnd(rem))) : null;
   const done = async (action, values) => {
     try { await api(`/api/auth/${encodeURIComponent(a.id)}`, "POST", { action, ...(values ? { values } : {}), ...(rem && action === "submit" ? { remember: rem.getAttribute("aria-checked") === "true" } : {}) }); }
     catch (e) {
       const bad = e && e.data && inputs.find(i => i.name === e.data.field);
-      if (bad) { bad.classList.add("bad"); bad.closest(".fld").querySelector(".ferr").textContent = e.data.error === "required" ? "비워 둘 수 없어요" : "형식을 확인해 주세요"; bad.focus(); return; }
+      if (bad) { bad.classList.add("bad"); bad.closest(".fld").querySelector(".ferr").textContent = e.data.error === "required" ? TX("chat.auth.required") : TX("chat.auth.format"); bad.focus(); return; }
       // A store failure finishes the request on the gateway (the bot is told); say so instead of offering a retry that cannot work.
-      if (e && e.data && typeof e.data.error === "string" && e.data.error.startsWith("store failed")) { AUTH_DONE.add(a.id); paintAuth(); toast(`게이트웨이가 값을 저장하지 못했어요(봇에게도 알렸어요): ${e.data.error.replace(/^store failed: /, "")}`, true); return; }
-      toast("전달하지 못했어요. 다시 시도해 주세요"); return;
+      if (e && e.data && typeof e.data.error === "string" && e.data.error.startsWith("store failed")) { AUTH_DONE.add(a.id); paintAuth(); toast(TX("chat.auth.store_failed", { error: e.data.error.replace(/^store failed: /, "") }), true); return; }
+      toast(TX("chat.auth.send_failed")); return;
     }
     AUTH_DONE.add(a.id); paintAuth();
-    toast(action === "cancel" ? "요청을 취소했어요" : "전달했어요");
+    toast(TX(action === "cancel" ? "chat.auth.cancelled" : "chat.auth.sent"));
   };
-  const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? "승인" : "보내기" });
-  const no = el("button", { class: "btn tonal", type: "button", text: "취소", onclick: () => done("cancel") });
+  const ok = el("button", { class: "btn", type: "submit", text: a.kind === "approve" ? TX("chat.auth.approve") : TX("common.send") });
+  const no = el("button", { class: "btn tonal", type: "button", text: TX("common.cancel"), onclick: () => done("cancel") });
   const card = el("form", { class: "au", "data-id": a.id },
-    fsHead([el("span", { class: "fs-ey", text: `${a.site ? `${a.site} · ` : ""}${a.kind === "approve" ? "승인 요청" : "입력 요청"}` }), el("h3", { class: "fs-t", id: `au-t-${a.id}`, text: a.title })], { close: () => { AUTH_HID.add(a.id); paintAuth(); } }),
+    fsHead([el("span", { class: "fs-ey", text: `${a.site ? `${a.site} · ` : ""}${TX(a.kind === "approve" ? "chat.auth.approve_req" : "chat.auth.input_req")}` }), el("h3", { class: "fs-t", id: `au-t-${a.id}`, text: a.title })], { close: () => { AUTH_HID.add(a.id); paintAuth(); } }),
     el("div", { class: "fs-body abd" }, el("p", { text: a.purpose }), ...(isForm ? a.fields.map((f, k) => wrap(f, inputs[k])) : inputs),
     remRow,
-    a.kind === "approve" ? null : el("div", { class: "note", text: "입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요." })),
+    a.kind === "approve" ? null : el("div", { class: "note", text: TX("chat.auth.note") })),
     el("div", { class: "fs-ft row" }, no, ok));
   card.addEventListener("submit", ev => {
     ev.preventDefault();

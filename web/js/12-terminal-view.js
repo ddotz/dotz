@@ -14,21 +14,21 @@ function clickable(n) {
 }
 const capName = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : "tool";
 // Tool name -> the kind word used in summaries ("12초 작업 · 명령 3 · 읽기 2") and row labels.
-const KINDS = [[/^(bash|eval|shell|exec|run|python|js)/i, "명령"], [/^(read|view|cat|ls|open)/i, "읽기"], [/^(edit|write|multiedit|patch|apply|notebook)/i, "수정"], [/^(grep|glob|find|search|ast|lsp|symbols)/i, "검색"], [/^(task|agent|spawn|subagent)/i, "서브에이전트"], [/^(web|fetch|browser|http)/i, "웹"], [/^(todo|memory|goal)/i, "기록"]];
-const kindOf = tool => (KINDS.find(([r]) => r.test(String(tool || ""))) || [0, "도구"])[1];
+const KINDS = [[/^(bash|eval|shell|exec|run|python|js)/i, TX("chat.kind.command")], [/^(read|view|cat|ls|open)/i, TX("chat.kind.read")], [/^(edit|write|multiedit|patch|apply|notebook)/i, TX("chat.kind.edit")], [/^(grep|glob|find|search|ast|lsp|symbols)/i, TX("chat.kind.search")], [/^(task|agent|spawn|subagent)/i, TX("common.subagent")], [/^(web|fetch|browser|http)/i, TX("chat.kind.web")], [/^(todo|memory|goal)/i, TX("chat.kind.notes")]];
+const kindOf = tool => (KINDS.find(([r]) => r.test(String(tool || ""))) || [0, TX("chat.kind.tool")])[1];
 // Status lines from the runtime, said in Korean.
 function statusKoLine(text) {
   const t = oneLine(text), m = t.match(/^(\S+) (?:resumed its session|started a new session) \(([^)]+)\)/);
-  if (m) return `${m[1] === "orchestrator" ? botName : m[1]} 대화 기록 ${/resumed/.test(t) ? "이어서" : "새로"} 시작 · ${modelChipText(m[2])}`;
-  if (/^compacting context/.test(t)) return "컨텍스트 압축 중";
-  if (/^context compacted/.test(t)) return "컨텍스트 압축 완료";
-  if (/^retrying/.test(t)) return `다시 시도 중${(t.match(/attempt (\d+\/?\d*)/) || [])[1] ? ` (${t.match(/attempt (\d+\/?\d*)/)[1]})` : ""}`;
-  if (/^model fallback: /.test(t)) return `모델 전환 · ${t.replace(/^model fallback: /, "").replace(/\s*\(.*$/, "")}`;
+  if (m) return TX(/resumed/.test(t) ? "chat.status.resumed" : "chat.status.started", { name: m[1] === "orchestrator" ? botName : m[1], model: modelChipText(m[2]) });
+  if (/^compacting context/.test(t)) return TX("chat.status.compacting");
+  if (/^context compacted/.test(t)) return TX("chat.status.compacted");
+  if (/^retrying/.test(t)) { const at = (t.match(/attempt (\d+\/?\d*)/) || [])[1]; return at ? TX("chat.status.retrying_n", { attempt: at }) : TX("chat.status.retrying"); };
+  if (/^model fallback: /.test(t)) return TX("chat.status.fallback", { model: t.replace(/^model fallback: /, "").replace(/\s*\(.*$/, "") });
   return t;
 }
 function logGroup(a, title) {
   const dot = el("span", { class: "dot" }), meta = el("span", { class: "lg-m" }), body = el("div", { class: "lg-b" });
-  const node = el("section", { class: "lg" }, el("header", { class: "lg-h" }, dot, el("span", { class: "lg-t", text: title || "작업" }), meta), body);
+  const node = el("section", { class: "lg" }, el("header", { class: "lg-h" }, dot, el("span", { class: "lg-t", text: title || TX("chat.log.work") }), meta), body);
   const g = { node, body, t0: Date.parse(a.ts) || 0, t1: Date.parse(a.ts) || 0, errs: 0, ended: false, used: false };
   g.paint = () => {
     const live = !g.ended && LG.cur === g && isWorking(target);
@@ -43,9 +43,9 @@ function logSteps(g, a) {
   const node = el("details", { class: "ls" }, el("summary", {}, sum), rows);
   const st = { node, rows, n: new Map(), errs: 0, t0: Date.parse(a.ts) || 0, t1: Date.parse(a.ts) || 0 };
   st.paint = () => {
-    const parts = [st.t1 - st.t0 >= 1000 ? `${fmtDur(st.t1 - st.t0)} 작업` : "작업"];
+    const parts = [st.t1 - st.t0 >= 1000 ? TX("chat.log.work_for", { dur: fmtDur(st.t1 - st.t0) }) : TX("chat.log.work")];
     for (const [k, v] of st.n) parts.push(`${k} ${v}`);
-    if (st.errs) parts.push(`오류 ${st.errs}`);
+    if (st.errs) parts.push(TX("chat.log.errors", { n: st.errs }));
     sum.textContent = parts.join(" · ");
   };
   g.body.append(node); LG.steps = st;
@@ -61,7 +61,7 @@ function fillLogRow(rec, a) {
   const t = Date.parse(a.ts) || 0, text = String(a.text ?? "").replace(/\s+$/, "");
   rec.dot.className = `dot ${a.is_error ? "err" : "ok"}`;
   if (t - rec.t >= 1000) rec.dur.textContent = fmtDur(t - rec.t);
-  rec.out.append(el("pre", { class: a.is_error ? "err" : "", text: text || "(출력 없음)" }));
+  rec.out.append(el("pre", { class: a.is_error ? "err" : "", text: text || TX("chat.log.no_output") }));
 }
 // One activity item into the log: owner messages and turn starts open a turn card, turn ends close it; tool calls and
 // thinking fold into the turn's summary row; answers and errors stay visible in the card.
@@ -69,32 +69,32 @@ function fillLogRow(rec, a) {
 // The gateway's own wording around a message (instructions to the model, channel lists, language reminders, the
 // recall block after a compaction) is for the model, not the owner: the log shows a short label and the message itself.
 const GW_LEADS = [
-  [/^(작업 중에 새 메시지가 도착했어요|A new message arrived while you are working)/, "작업 중에 온 메시지"],
-  [/^(작업 중에 레인 보고가 도착했어요|A lane report arrived while you are working)/, "작업 중에 온 세션 보고"],
-  [/^(게이트웨이가 다시 시작돼서 이 요청에|The gateway restarted before you answered)/, "재시작 뒤 다시 처리"],
-  [/^(오너가 기다리는 중이에요|The owner has waited)/, "답을 기다리는 중"],
-  [/^(사용량 한도가 풀렸어요|The rate limit has passed)/, "사용량 한도 풀림"],
-  [/^(모델 제공자 문제|The provider problem)/, "모델 제공자 복구"],
-  [/^(모델 제공자에 일시적인 오류|The provider had a temporary error)/, "일시 오류 뒤 다시 시도"],
-  [/^(당신은 게이트웨이가 헤드리스로|You are \S+, the dotz orchestrator)/, "대화 정리 뒤 지침 다시 읽기"],
-  [/^(이 설치의 첫 시작|First start of this install)/, "첫 시작"],
+  [/^(작업 중에 새 메시지가 도착했어요|A new message arrived while you are working)/, TX("chat.gw.work_msg")],
+  [/^(작업 중에 레인 보고가 도착했어요|A lane report arrived while you are working)/, TX("chat.gw.work_lane")],
+  [/^(게이트웨이가 다시 시작돼서 이 요청에|The gateway restarted before you answered)/, TX("chat.gw.restart")],
+  [/^(오너가 기다리는 중이에요|The owner has waited)/, TX("chat.gw.waiting")],
+  [/^(사용량 한도가 풀렸어요|The rate limit has passed)/, TX("chat.gw.limit_over")],
+  [/^(모델 제공자 문제|The provider problem)/, TX("chat.gw.provider_ok")],
+  [/^(모델 제공자에 일시적인 오류|The provider had a temporary error)/, TX("chat.gw.provider_retry")],
+  [/^(당신은 게이트웨이가 헤드리스로|You are \S+, the dotz orchestrator)/, TX("chat.gw.reread")],
+  [/^(이 설치의 첫 시작|First start of this install)/, TX("chat.gw.first")],
 ];
 // (no closing parenthesis needed: the saved prompt is cut at 2000 characters, often inside these lines)
 const GW_NOISE = /^\s*\((작업 채널 목록|직전에 오너에게|오너에게는 .*로 답하세요|work channels|reply to the owner in|your last message to the owner)/i;
 function inboxTitle(head) {
   let m;
-  if ((m = head.match(/^(?:레인 (\S+)의 보고|lane report from (\S+))/))) return `세션 보고 · ${m[1] || m[2]}`.replace(/:$/, "");
-  if (/^(레인 보고 \d+건|\d+ lane reports|lane report \()/.test(head)) return "세션 보고";
-  if ((m = head.match(/^watch (\S+)/))) return `모니터링 · ${m[1]}`;
-  if (/새 메일|new mail/.test(head)) return "새 메일";
-  if (/^(예약 항목|scheduled)/.test(head)) return "예약 작업";
+  if ((m = head.match(/^(?:레인 (\S+)의 보고|lane report from (\S+))/))) return TX("chat.inbox.lane_from", { name: m[1] || m[2] }).replace(/:$/, "");
+  if (/^(레인 보고 \d+건|\d+ lane reports|lane report \()/.test(head)) return TX("chat.inbox.lane");
+  if ((m = head.match(/^watch (\S+)/))) return TX("chat.inbox.watch", { name: m[1] });
+  if (/새 메일|new mail/.test(head)) return TX("chat.inbox.mail");
+  if (/^(예약 항목|scheduled)/.test(head)) return TX("chat.inbox.schedule");
   return "";
 }
 function promptOf(text) {
   let s = String(text).replace(/^>\s*/, "");
-  if (/^\[keepalive\]/i.test(s)) return { title: "캐시 유지 신호", body: "", dim: true };
-  if (/^\[dotz reflect\]/i.test(s)) return { title: "야간 자기 점검", body: "", dim: true };
-  if (/^\[handover\]/i.test(s)) return { title: "이전 대화 이어받기", body: "", dim: true };
+  if (/^\[keepalive\]/i.test(s)) return { title: TX("chat.prompt.keepalive"), body: "", dim: true };
+  if (/^\[dotz reflect\]/i.test(s)) return { title: TX("chat.prompt.reflect"), body: "", dim: true };
+  if (/^\[handover\]/i.test(s)) return { title: TX("chat.prompt.handover"), body: "", dim: true };
   // the recall block a compaction appends and the memory nudge before it are never the message
   s = s.replace(/\n*(이어가기 전에, 지금까지의 대화에서|Before continuing, save any durable)[\s\S]*$/, "").replace(/\n*\[dotz\] [^\n]*(계약을 다시 읽어요|re-read)[\s\S]*$/i, "");
   let label = "";
@@ -104,7 +104,7 @@ function promptOf(text) {
     // the recall prompt quotes "[dotz inbox]" inside its contract text; only a line that starts with it is the message
     const inbox = after.search(/(^|\n)\[dotz inbox\]/);
     label = lead ? lead[1] : firstLine(after).replace(/^(.{0,60}?[.。])\s.*$/, "$1");
-    s = inbox >= 0 && !(lead && lead[1].startsWith("대화 정리")) ? after.slice(inbox).trim() : "";
+    s = inbox >= 0 && !(lead && lead[1] === TX("chat.gw.reread")) ? after.slice(inbox).trim() : "";
   }
   // attachments: their file names, not the local paths, and never as the title
   const files = [];
@@ -120,8 +120,8 @@ function promptOf(text) {
   // "web from X" / "chat from X": the owner's own words follow on the next lines (or after the header on the same line)
   if (head && !kind) { const rest = head.replace(/^[\w#:-]+ from \S+\s*/, ""); if (rest) msg = [rest, ...msg]; }
   const body = msg.join("\n").trim();
-  const first = firstLine(body), title = [label, kind, first && !kind ? first : ""].filter(Boolean).join(" · ") || first || "메시지";
-  const rest = [kind ? body : body.split("\n").slice(1).join("\n").trim(), files.length ? `첨부: ${files.join(", ")}` : ""].filter(Boolean).join("\n");
+  const first = firstLine(body), title = [label, kind, first && !kind ? first : ""].filter(Boolean).join(" · ") || first || TX("chat.prompt.message");
+  const rest = [kind ? body : body.split("\n").slice(1).join("\n").trim(), files.length ? TX("chat.prompt.attached", { files: files.join(", ") }) : ""].filter(Boolean).join("\n");
   return { title, body: rest, dim: !body && !!label };
 }
 function termNode(a) {
@@ -139,10 +139,10 @@ function termNode(a) {
   const g = LG.cur && !LG.cur.ended ? LG.cur : logGroup(a, "");
   g.used = true; if (t > g.t1) g.t1 = t;
   switch (a.type) {
-    case "tool_call": if (kindOf(a.tool) === "서브에이전트") {
+    case "tool_call": if (kindOf(a.tool) === TX("common.subagent")) {
       // a worker run is its own row in the turn (not folded), with the subagents it started nested under it
       LG.steps = null;
-      const rec = logRow(a, "서브에이전트", toolLabel(a) || capName(a.tool));
+      const rec = logRow(a, TX("common.subagent"), toolLabel(a) || capName(a.tool));
       rec.node.classList.add("lw"); rec.subs = el("div", { class: "lw-s" }); rec.node.append(rec.subs);
       LG.workers.push(rec);
       if (a.call_id) LG.calls.set(a.call_id, { rec, st: { errs: 0, t1: 0, paint() {} } });
@@ -151,7 +151,7 @@ function termNode(a) {
     }
     // falls through
     case "thinking": {
-      const st = LG.steps || logSteps(g, a), kind = a.type === "thinking" ? "생각" : kindOf(a.tool);
+      const st = LG.steps || logSteps(g, a), kind = a.type === "thinking" ? TX("chat.kind.thinking") : kindOf(a.tool);
       if (t > st.t1) st.t1 = t;
       st.n.set(kind, (st.n.get(kind) || 0) + 1);
       const rec = logRow(a, kind, a.type === "thinking" ? thinkLine(a.text, 120) : toolLabel(a) || capName(a.tool));
@@ -170,7 +170,7 @@ function termNode(a) {
     case "error": {
       LG.steps = null; g.errs++;
       const raw = String(a.text ?? ""), line = humanAlert(raw);
-      g.body.append(el("div", { class: "lg-e" }, line, line.trim() === raw.trim() ? null : el("details", {}, el("summary", { text: "자세히" }), el("pre", { text: raw }))));
+      g.body.append(el("div", { class: "lg-e" }, line, line.trim() === raw.trim() ? null : el("details", {}, el("summary", { text: TX("chat.log.details") }), el("pre", { text: raw }))));
       break;
     }
     case "cmdout": LG.steps = null; g.body.append(el("div", { class: "lg-x" }, el("div", { class: "md" }, el("pre", { text: String(a.text ?? "") })))); break;
@@ -187,7 +187,7 @@ function paintWorkers() {
   for (const w of LG.workers) {
     const end = w.tEnd || Infinity;
     const mine = subs.filter(x => x.started_at >= w.t - 2000 && x.started_at <= end + 1000);
-    clear(w.subs).append(...mine.map(x => el("div", { class: "lw-r", role: "button", tabindex: "0", title: "서브에이전트 기록 열기", onclick: ev => { ev.stopPropagation(); openSub(src, x.id, ev.currentTarget); } },
+    clear(w.subs).append(...mine.map(x => el("div", { class: "lw-r", role: "button", tabindex: "0", title: TX("chat.log.open_sub"), onclick: ev => { ev.stopPropagation(); openSub(src, x.id, ev.currentTarget); } },
       el("span", { class: `dot ${subTone(x.status)}` }), el("span", { class: "lw-n", text: x.description || x.agent || x.id }), el("span", { class: "lw-st", text: subKo[x.status] || x.status }))));
   }
 }

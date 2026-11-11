@@ -77,36 +77,16 @@
       "why": "Korean text handling"
     },
     "web/js/12-terminal-view.js": {
-      "count": 159,
-      "why": "pending"
-    },
-    "web/js/13-data.js": {
-      "count": 39,
-      "why": "pending"
+      "count": 65,
+      "why": "agent-text parsing and gateway message matching"
     },
     "web/js/14-slash-commands.js": {
-      "count": 330,
-      "why": "pending"
+      "count": 2,
+      "why": "slash command aliases typed by the user (protocol)"
     },
     "web/js/15-attachments.js": {
-      "count": 79,
-      "why": "pending"
-    },
-    "web/js/15-picker.js": {
-      "count": 20,
-      "why": "pending"
-    },
-    "web/js/15-upload.js": {
-      "count": 14,
-      "why": "pending"
-    },
-    "web/js/16-target-switcher-conversation.js": {
-      "count": 93,
-      "why": "pending"
-    },
-    "web/js/17-state-refresh.js": {
-      "count": 13,
-      "why": "pending"
+      "count": 5,
+      "why": "attachment token names the server matches"
     },
     "web/js/18-lanes.js": {
       "count": 140,

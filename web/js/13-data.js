@@ -108,7 +108,7 @@ async function loadOlder() {
       renderAll(true);
       term.scrollTop = term.scrollHeight - th; timeline.scrollTop = timeline.scrollHeight - ch;
     }
-  } catch { toast("이전 기록을 불러오지 못했어요", true); }
+  } catch { toast(TX("chat.load.older_failed"), true); }
   finally { s.older = false; }
 }
 // Older chat messages, 150 at a time, when the conversation is scrolled to its top (history keeps more than the first read).
@@ -134,7 +134,7 @@ async function loadOlderMsgs() {
       chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
       $("#chat-jump").hidden = chatStick;
     }
-  } catch { toast("이전 대화를 불러오지 못했어요", true); }
+  } catch { toast(TX("chat.load.conv_failed"), true); }
   finally { s.olderMsgs = false; if (t === target) paintOlderTop(); }
 }
 function renderAll(keepScroll) { renderAll0(keepScroll); mailSentPaint(); mbReplyPaint(); paintDecision(); paintTodo(); paintWorkers(); paintRunState(); edgeFade(timeline); edgeFade(term); }
@@ -188,11 +188,11 @@ async function chatFillGap(after) {
     const r = await api(`/api/history?target=${enc(t)}&limit=150&after=${enc(after)}`);
     chatMerge(s, r, after);
     if (t === target) chatWiden();
-  } catch { toast("이전 대화를 불러오지 못했어요", true); }
+  } catch { toast(TX("chat.load.conv_failed"), true); }
   finally { s.gapBusy = false; }
 }
-const chatGapNode = after => el("div", { class: "a-div msg-gap", role: "separator", "aria-label": "불러오지 않은 메시지가 있어요" },
-  el("button", { class: "btn text", type: "button", text: "사이 메시지 불러오기", onclick: () => chatFillGap(after) }));
+const chatGapNode = after => el("div", { class: "a-div msg-gap", role: "separator", "aria-label": TX("chat.gap.aria") },
+  el("button", { class: "btn text", type: "button", text: TX("chat.gap.load"), onclick: () => chatFillGap(after) }));
 // A jump to a stored message older than the drawn stretch.
 function chatShow(at) {
   if (!CV.from || at >= CV.from) return;
@@ -207,14 +207,14 @@ function renderAll0(keepScroll) {
   const lit = tl.querySelector(".nt-hl")?.closest("[data-ts]")?.dataset.ts;   // the glow of a jump (ntFlash) sits on a row this draw replaces: it moves to the new row
   resetChat(); resetTerm();
   if (!((s.hLoaded && s.aLoaded) || hasCached(s)) || !chatReady()) {
-    CS.empty = tl.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
-    termEmpty = term.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
+    CS.empty = tl.appendChild(el("div", { class: "a-div", text: TX("common.loading") }));
+    termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("common.loading") }));
     return;
   }
   const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null, from = chatFrom(s);
   CV.from = from; CV.low = from || (M[0] ? M[0].ts : "");
-  if (s.amore && A.length) term.append(el("button", { class: "btn text tmore", type: "button", onclick: () => loadOlder() }, "이전 기록 더 보기"));
-  if (s.ahist && A.length && !from) { tl.append(el("div", { class: "a-div", text: "지난 기록" })); term.append(el("div", { class: "tdv", text: "지난 기록" })); }
+  if (s.amore && A.length) term.append(el("button", { class: "btn text tmore", type: "button", onclick: () => loadOlder() }, TX("chat.older.more")));
+  if (s.ahist && A.length && !from) { tl.append(el("div", { class: "a-div", text: TX("chat.history.divider") })); term.append(el("div", { class: "tdv", text: TX("chat.history.divider") })); }
   let i = from ? A.findIndex(a => a.ts >= from) : 0, j = from ? M.findIndex(m => m.ts >= from) : 0;
   if (i < 0) i = A.length;
   while (i < A.length || j < M.length) {
@@ -227,11 +227,11 @@ function renderAll0(keepScroll) {
   }
   if (isRelayT(target)) relayTail(s);   // a send still waiting for its line and the last error, before the "no conversation yet" line is considered
   if (tl.children.length <= 1) {
-    const none = el("div", { class: "empty", text: "아직 대화가 없어요" });
-    CS.empty = tl.appendChild(s.herr ? emptyNode("대화를 불러오지 못했어요", () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, none, acctConnectRow()));
+    const none = el("div", { class: "empty", text: TX("chat.empty.none") });
+    CS.empty = tl.appendChild(s.herr ? emptyNode(TX("chat.empty.load_failed"), () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, none, acctConnectRow()));
     if (!P && !s.herr) loadProviderData().then(() => current === "chat" && CS.empty && renderAll(true), () => {});   // the account line needs the list: draw again once it has come
   }   // only the top sentinel is there
-  if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
+  if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("chat.empty.no_activity") }));
   if (lit) { const n = [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === lit); if (n) ntFlash(n); }
   if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else { CV.snap = null; CV.full = true; }
   markLive();

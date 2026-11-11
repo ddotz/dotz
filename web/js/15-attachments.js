@@ -13,17 +13,17 @@ $("#c-attach").append(icon("add"));
 // A tap on 첨부 while its menu is open closes it (showMenu toggles on the same anchor).
 $("#c-attach").onclick = () => {
   if (!matchMedia("(pointer: coarse)").matches) { $("#c-file").click(); return; }
-  showMenu($("#c-attach"), [{ value: "photo", label: "사진" }, { value: "file", label: "파일" }], { sheet: matchMedia("(max-width: 639px)").matches, onPick: v => $(v === "photo" ? "#c-photo" : "#c-file").click() });
+  showMenu($("#c-attach"), [{ value: "photo", label: TX("chat.att.photo") }, { value: "file", label: TX("chat.att.file") }], { sheet: matchMedia("(max-width: 639px)").matches, onPick: v => $(v === "photo" ? "#c-photo" : "#c-file").click() });
 };
 for (const id of ["#c-file", "#c-photo"]) $(id).onchange = ev => { addFiles([...ev.target.files]); ev.target.value = ""; };
 async function addFiles(list) {
   if (!list.length) return;
-  if (isRelayT(target)) { toast("이 대화에는 파일을 붙일 수 없어요", true); return; }
+  if (isRelayT(target)) { toast(TX("chat.att.relay_no"), true); return; }
   for (const f of list) if (upTooBig(f.size)) toast(`${f.name}: ${upTooBig(f.size)}`, true);
   list = list.filter(f => !upTooBig(f.size));
   if (!list.length) return;
-  if (ATT.length + list.length > 10) { toast("한 번에 10개까지 보낼 수 있어요", true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
-  const items = list.map(f => ({ id: Math.random().toString(36).slice(2), name: f.name || "붙여넣은 이미지.png", type: f.type, size: f.size, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : "", raw: f }));
+  if (ATT.length + list.length > 10) { toast(TX("chat.att.max"), true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
+  const items = list.map(f => ({ id: Math.random().toString(36).slice(2), name: f.name || TX("chat.att.pasted"), type: f.type, size: f.size, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : "", raw: f }));
   for (const a of items) { a.no = atkLabel(a, items); if (a.url) atkThumb(a); }
   ATT = ATT.concat(items); renderAtt(); ta.focus();
   atkInsert(items.map(a => `[${a.no}]`).join(" "));
@@ -188,7 +188,7 @@ function atkParts(text, files, e) {
     const f = labelled.find(x => x.label === m[1]);
     if (!f) continue;
     const img = IMG_RE.test(f.name || f.path);
-    parts.push(text.slice(at, m.index), atkInner(m[1], img ? thumbUrl(f.path, pc) : "", { type: "button", title: f.name, "aria-label": `${m[1]} ${f.name} 크게 보기`, onclick: () => (img ? lightbox(f.path, f.name, pc, imgs) : openPath(f.path, pc)) }, "button"));
+    parts.push(text.slice(at, m.index), atkInner(m[1], img ? thumbUrl(f.path, pc) : "", { type: "button", title: f.name, "aria-label": TX("chat.att.enlarge_named", { no: m[1], name: f.name }), onclick: () => (img ? lightbox(f.path, f.name, pc, imgs) : openPath(f.path, pc)) }, "button"));
     at = m.index + m[0].length;
   }
   parts.push(text.slice(at));
@@ -200,7 +200,7 @@ const atkOnly = (text, files) => Array.isArray(files) && files.some(f => f.label
 // unless the click ends a selection inside it.
 function fileChipRow(name, meta, extra) {
   const open = extra.onclick || (() => window.open(extra.href, "_blank", "noopener"));
-  const row = el("div", { class: "fatt", role: extra.href ? "link" : "button", tabindex: "0", title: `${name} · 열기`,
+  const row = el("div", { class: "fatt", role: extra.href ? "link" : "button", tabindex: "0", title: TX("chat.att.open", { name }),
     onclick: () => { const sel = getSelection(); if (sel.isCollapsed || !sel.containsNode(row, true)) open(); },
     onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } }, ...fileChipKids(name, meta));
   return row;
@@ -208,7 +208,7 @@ function fileChipRow(name, meta, extra) {
 const fileChipKids = (name, meta, ic = "file") => [el("span", { class: "fi-ic" }, icon(ic)), el("span", { class: "fi-t" }, el("span", { class: "fi-n", text: name }), el("span", { class: "fi-m", text: meta }))];
 function fileChip(name, meta, extra = {}) {
   if (extra.row) return fileChipRow(name, meta, extra);
-  return el(extra.href ? "a" : extra.onclick ? "button" : "div", { class: `fatt${extra.cls ? ` ${extra.cls}` : ""}`, ...(extra.href ? { href: extra.href, target: "_blank", rel: "noopener", title: `${name} · 열기` } : extra.onclick ? { type: "button", onclick: extra.onclick, title: `${name} · 열기` } : { title: name }) },
+  return el(extra.href ? "a" : extra.onclick ? "button" : "div", { class: `fatt${extra.cls ? ` ${extra.cls}` : ""}`, ...(extra.href ? { href: extra.href, target: "_blank", rel: "noopener", title: TX("chat.att.open", { name }) } : extra.onclick ? { type: "button", onclick: extra.onclick, title: TX("chat.att.open", { name }) } : { title: name }) },
     ...fileChipKids(name, meta, extra.icon), extra.x || null);
 }
 function renderAtt() {
@@ -218,9 +218,9 @@ function renderAtt() {
   // Each file carries the name its token has in the text, so the tray and the words read the same.
   clear(box).append(...ATT.map(a => {
     const job = upJob(target, a.id);
-    const x = el("button", { class: "ax", type: "button", "aria-label": `${a.name} ${job ? "올리기 취소" : "빼기"}`, onpointerdown: ev => ev.preventDefault(), onclick: () => dropAtt(a.id) }, icon("close"));
+    const x = el("button", { class: "ax", type: "button", "aria-label": TX(job ? "chat.att.cancel_upload" : "chat.att.remove", { name: a.name }), onpointerdown: ev => ev.preventDefault(), onclick: () => dropAtt(a.id) }, icon("close"));
     const th = job && job.ring ? upChip(a, job, x) : a.url
-      ? el("div", { class: "fatt img", title: a.name }, el("button", { class: "fatt-v", type: "button", "aria-label": `${a.no} 크게 보기`, onclick: () => atkOpen(a) }, el("img", { src: a.url, alt: a.name })), x)
+      ? el("div", { class: "fatt img", title: a.name }, el("button", { class: "fatt-v", type: "button", "aria-label": TX("chat.att.enlarge_no", { no: a.no }), onclick: () => atkOpen(a) }, el("img", { src: a.url, alt: a.name })), x)
       : fileChip(a.name, [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · "), { x });
     return el("div", { class: "fatt-n" }, th, imgNo(a.no));
   }));
@@ -248,30 +248,30 @@ ta.addEventListener("paste", ev => {
 // are asked with HEAD first: the size fills in, and one /api/file refuses (outside the roots, secret, missing) turns into a
 // disabled chip.
 const fileNote = (r, fallback) => { try { return decodeURIComponent(r.headers.get("x-file-note") || "") || fallback; } catch { return fallback; } };
-const refusedNote = r => fileNote(r, r.status === 404 ? "원본이 지워졌어요" : "열 수 없는 파일이에요");
+const refusedNote = r => fileNote(r, r.status === 404 ? TX("chat.att.deleted") : TX("chat.att.cant_open"));
 const fileMeta = (name, size) => [extOf(name), size ? fsize(size) : ""].filter(Boolean).join(" · ");
 const VIEW_RE = /\.(md|markdown|txt|log|json|ya?ml|csv|tsv)$/i;   // opens in the reader below, the rest in a tab (pdf) or as a download
 const offChip = (f, why) => fileChip(f.name, why, { cls: "off" });
-const imgNo = n => el("span", { class: "tag img-no", text: typeof n === "number" ? `이미지 ${n}` : n });
+const imgNo = n => el("span", { class: "tag img-no", text: typeof n === "number" ? TX("chat.att.image_n", { n }) : n });
 // sibs: the images of the same message, the lightbox pages through them.
 // What a press on a file's chip opens, one rule for every chip of a made or attached file: the reader for a text file, the canvas for this computer's HTML page, else the file in a tab.
 const fileOpen = (f, name = f.name) => VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : !f.pc && canvasIsHtml(name) ? { onclick: () => canvasOpen(f.path, name) } : { href: fileUrl(f.path, false, f.pc) };
 function fileItem(f, n = 0, sibs = null) {
   const img = IMG_RE.test(f.name || f.path);
   const main = img
-    ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name, f.pc, sibs) }, el("img", { src: thumbUrl(f.path, f.pc), alt: f.name, loading: "lazy", decoding: "async" }))
+    ? el("button", { class: "thumb", type: "button", "aria-label": TX("chat.att.enlarge", { name: f.name }), onclick: () => lightbox(f.path, f.name, f.pc, sibs) }, el("img", { src: thumbUrl(f.path, f.pc), alt: f.name, loading: "lazy", decoding: "async" }))
     : fileChip(f.name, fileMeta(f.name, f.size), { row: f.row, ...fileOpen(f) });
-  const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), n ? imgNo(n) : null, img && f.label ? null : pathCopy(f.path));   // an image with its token is named by the chip; the viewer keeps the path
+  const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: TX("chat.att.download_name", { name: f.name }), "aria-label": TX("chat.att.download_name", { name: f.name }) }, icon("download"))), n ? imgNo(n) : null, img && f.label ? null : pathCopy(f.path));   // an image with its token is named by the chip; the viewer keeps the path
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
   // A broken thumbnail waits for the HEAD answer, so the chip says why (원본이 지워졌어요) rather than a generic refusal.
   const head = fetch(fileUrl(f.path, false, f.pc), { method: "HEAD" });
-  if (img) main.querySelector("img").onerror = () => head.then(r => off(r.ok ? "열 수 없는 파일이에요" : refusedNote(r)), () => off("확인하지 못했어요"));
+  if (img) main.querySelector("img").onerror = () => head.then(r => off(r.ok ? TX("chat.att.cant_open") : refusedNote(r)), () => off(TX("chat.att.cant_check")));
   head.then(r => {
     if (!r.ok) return off(refusedNote(r));
     const n = Number(r.headers.get("content-length") || 0), m = !img && main.querySelector(".fi-m");
     if (m && n) m.textContent = fileMeta(f.name, n);
-  }, () => off("확인하지 못했어요"));
+  }, () => off(TX("chat.att.cant_check")));
   return item;
 }
 // A path as one readable line (owner 2026-10-26: the full absolute path under a file wrapped over three lines): the home folder as ~,
@@ -297,8 +297,8 @@ function shortPath(p) {
 }
 // The short path under a file, as written by the agent: the title holds the full path and a tap copies it (Finder, terminal, another app).
 function pathCopy(p, cls = "fpath") {
-  return el("button", { class: cls, type: "button", title: p, "aria-label": `경로 복사: ${p}`, text: shortPath(p),
-    onclick: async ev => { ev.stopPropagation(); const ok = await copyText(p); toast(ok ? "경로를 복사했어요" : "복사하지 못했어요", !ok); } });
+  return el("button", { class: cls, type: "button", title: p, "aria-label": TX("chat.att.copy_path", { path: p }), text: shortPath(p),
+    onclick: async ev => { ev.stopPropagation(); const ok = await copyText(p); toast(ok ? TX("chat.att.path_copied") : TX("chat.att.copy_failed"), !ok); } });
 }
 // `numbered` (the owner's own message): a file carries its token's name; an older message with two or more images gets "이미지 N" in send order.
 function filesNode(files, numbered = false) {
@@ -326,12 +326,12 @@ function mdFiles(src) {
 }
 // Markdown renders, other text shows as it is; a big file shows its first 200KB and offers the download.
 async function viewer(path, name, pc) {
-  const body = el("div", { class: "tv-body md", tabindex: "-1", autofocus: true }, el("p", { class: "tv-st", text: "불러오는 중…" }));
+  const body = el("div", { class: "tv-body md", tabindex: "-1", autofocus: true }, el("p", { class: "tv-st", text: TX("common.loading") }));
   const d = el("dialog", { class: "tbox", "aria-label": name },
     el("div", { class: "tv-in" },
       el("div", { class: "tv-bar" }, el("span", { class: "tv-n", text: name }),
-        el("a", { href: fileUrl(path, true, pc), download: name }, "다운로드"),
-        el("button", { class: "x", type: "button", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+        el("a", { href: fileUrl(path, true, pc), download: name }, TX("chat.att.download")),
+        el("button", { class: "x", type: "button", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))),
       body));
   d.addEventListener("close", () => d.remove());
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
@@ -343,8 +343,8 @@ async function viewer(path, name, pc) {
     const cut = t.length > 200000;
     if (cut) t = t.slice(0, 200000);
     clear(body).append(/\.(md|markdown)$/i.test(name) ? mdNode(t, "md") : el("pre", { text: t }));
-    if (cut) body.append(el("p", { class: "tv-st", text: "앞부분만 보여요. 전체는 다운로드해 주세요" }));
-  } catch (e) { clear(body).append(el("p", { class: "tv-st", text: typeof e === "string" ? e : "열 수 없어요" })); }
+    if (cut) body.append(el("p", { class: "tv-st", text: TX("chat.att.cut") }));
+  } catch (e) { clear(body).append(el("p", { class: "tv-st", text: typeof e === "string" ? e : TX("chat.att.cant_open_short") })); }
 }
 function lightbox(path, name, pc, list) {
   const items = list || [{ path, name, pc }];
@@ -353,7 +353,7 @@ function lightbox(path, name, pc, list) {
 // items: {path, name, pc} or, for a file not uploaded yet, {raw, name}. Only the image on screen is loaded; the original of a raw File is mapped
 // only while it shows. Esc is the dialog's own, the back gesture is dialogHist's.
 function lightboxAt(items, start) {
-  const many = items.length > 1, title = el("span", { class: "lb-n" }), tab = el("a", { target: "_blank", rel: "noopener" }, "새 탭"), dl = el("a", {}, "다운로드"), where = el("div");
+  const many = items.length > 1, title = el("span", { class: "lb-n" }), tab = el("a", { target: "_blank", rel: "noopener" }, TX("chat.att.new_tab")), dl = el("a", {}, TX("chat.att.download")), where = el("div");
   const img = el("img", { draggable: "false" }), pts = new Map(), navs = [];
   let i = 0, blob = "", z = 1, x = 0, y = 0, pinch = null, drag = null, tapAt = 0;
   const box = el("div", { class: "lb-img", tabindex: "-1", autofocus: true, onclick: ev => { if (ev.target === ev.currentTarget) d.close(); } }, img);
@@ -369,7 +369,7 @@ function lightboxAt(items, start) {
     where.replaceChildren(...(f.path ? [pathCopy(f.path, "lb-p")] : []));
     zoom(1);
   };
-  if (many) for (const [k, label, ic, step] of [["prev", "이전 이미지", "back", -1], ["next", "다음 이미지", "chev", 1]]) navs.push(el("button", { class: `lb-nav ${k}`, type: "button", "data-k": k, "aria-label": label, onclick: () => show(i + step) }, icon(ic)));
+  if (many) for (const [k, label, ic, step] of [["prev", TX("chat.att.prev"), "back", -1], ["next", TX("chat.att.next"), "chev", 1]]) navs.push(el("button", { class: `lb-nav ${k}`, type: "button", "data-k": k, "aria-label": label, onclick: () => show(i + step) }, icon(ic)));
   box.append(...navs);
   const gap = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
   img.addEventListener("pointerdown", ev => {
@@ -398,7 +398,7 @@ function lightboxAt(items, start) {
   img.addEventListener("dblclick", () => zoom(z > 1 ? 1 : 2.5));
   const d = el("dialog", { class: "lbox", "aria-label": items[start].name },
     el("div", { class: "lb-in" },
-      el("div", { class: "lb-bar" }, title, tab, dl, el("button", { class: "x", type: "button", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      el("div", { class: "lb-bar" }, title, tab, dl, el("button", { class: "x", type: "button", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))),
       where, box));
   d.addEventListener("keydown", ev => { if (many && (ev.key === "ArrowLeft" || ev.key === "ArrowRight")) { ev.preventDefault(); show(i + (ev.key === "ArrowLeft" ? -1 : 1)); } });
   d.addEventListener("close", () => { if (blob) URL.revokeObjectURL(blob); img.removeAttribute("src"); d.remove(); });
@@ -409,7 +409,7 @@ function lightboxAt(items, start) {
 // pc: the conversation belongs to the other computer, so the path is a file there (read through the peer proxy).
 async function openPath(p, pc) {
   const r = await fetch(fileUrl(p, false, pc), { method: "HEAD" }).catch(() => null);
-  if (!r || !r.ok) { toast(r ? refusedNote(r) : "확인하지 못했어요", true); return; }
+  if (!r || !r.ok) { toast(r ? refusedNote(r) : TX("chat.att.cant_check"), true); return; }
   if (IMG_RE.test(p)) lightbox(p, p.split("/").pop(), pc); else window.open(fileUrl(p, false, pc), "_blank", "noopener");
 }
 function pathFiles(md, pc) {
@@ -417,7 +417,7 @@ function pathFiles(md, pc) {
   for (const c of md.querySelectorAll("code.path")) {
     const p = c.textContent.replace(/:\d+(-\d+)?$/, "");
     if (!/^(~\/|\/)[^\s]+\.[A-Za-z0-9]{1,6}$/.test(p)) continue;
-    c.classList.add("fp"); c.title = "미리보기"; c.onclick = () => openPath(p, pc);
+    c.classList.add("fp"); c.title = TX("chat.att.preview"); c.onclick = () => openPath(p, pc);
     if (IMG_RE.test(p) && imgs.length < 4 && !imgs.some(f => f.path === p)) imgs.push({ path: p, name: p.split("/").pop(), pc });
   }
   const n = imgs.length ? filesNode(imgs) : null;

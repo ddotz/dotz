@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { i18nPrelude } from "./web-i18n.ts";
 
 const web = (name: string): string => readFileSync(join(import.meta.dir, "..", "web", "js", name), "utf8");
 const peers = web("33-peers.js");
@@ -40,7 +41,7 @@ describe("a public computer on the web side", () => {
 			const picked: string[] = [];
 			const conn = { hidden: true, textContent: "", title: "", setAttribute: () => {}, disabled: false, onclick: null as (() => void) | null };
 			const env: Record<string, unknown> = { PR: { list }, cameByAuto: false, everConnected: false, selfDown: true, prPick: (p: { name: string }) => picked.push(p.name), $: () => conn, matchMedia: () => ({ matches: false }) };
-			new Function(...Object.keys(env), `let autoTried = false;\n${between(web("02-basic-markdown.js"), "const koPick", "function toast(")}\n${others}\n${refresh}\nautoSwitch();\npaintConn();`)(...Object.values(env));
+			new Function(...Object.keys(env), `${i18nPrelude()}let autoTried = false;\n${between(web("02-basic-markdown.js"), "const koPick", "function toast(")}\n${others}\n${refresh}\nautoSwitch();\npaintConn();`)(...Object.values(env));
 			conn.onclick?.();
 			return { picked, text: conn.textContent, disabled: conn.disabled };
 		};

@@ -4,7 +4,7 @@ let upLive = 0;   // requests under way, of every caller; a page closed now woul
 const upGuard = ev => { ev.preventDefault(); ev.returnValue = ""; };
 const upBytes = n => n >= 10485760 ? `${Math.round(n / 1048576)}MB` : fsize(n);
 // The hub's own words (hub/files.ts), said before a byte goes. Empty until the first /api/state: the hub still refuses then.
-const upTooBig = n => S && S.upload_max && n > S.upload_max ? `파일이 너무 커요 (${Math.ceil(n / 1048576)}MB, 최대 ${Math.round(S.upload_max / 1048576)}MB)` : "";
+const upTooBig = n => S && S.upload_max && n > S.upload_max ? TX("chat.upload.too_big", { size: Math.ceil(n / 1048576), max: Math.round(S.upload_max / 1048576) }) : "";
 // One request: done gives the hub's record, or null when abort() ended it. The form holds the File as a handle: the browser reads the disk as it sends.
 function uploadXhr(f, name, onProgress) {
   const x = new XMLHttpRequest(), form = new FormData();
@@ -18,9 +18,9 @@ function uploadXhr(f, name, onProgress) {
       let d = {};
       try { d = JSON.parse(x.responseText); } catch { /* a proxy's error page: the status says it below */ }
       if (x.status >= 200 && x.status < 300 && d.files) fine(d.files[0]);
-      else bad(new Error(d.error || `올리지 못했어요 (HTTP ${x.status})`));
+      else bad(new Error(d.error || TX("chat.upload.failed", { status: x.status })));
     };
-    x.onerror = () => bad(new Error("연결이 끊겼어요"));
+    x.onerror = () => bad(new Error(TX("chat.upload.lost")));
     x.onabort = () => fine(null);
     if (!upLive++) addEventListener("beforeunload", upGuard);
     x.open("POST", "/api/upload");
@@ -73,7 +73,7 @@ function upChip(a, job, x) {
   const c = fileChip(a.name, job.error || upMeta(job), { cls: job.error ? "fail" : "", x }), pct = upPct(job);
   c.dataset.up = job.id;
   c.querySelector(".fi-ic").replaceWith(job.error
-    ? el("button", { class: "fi-ic up-retry", type: "button", title: "다시 올리기", "aria-label": `${a.name} 다시 올리기`, onpointerdown: ev => ev.preventDefault(), onclick: () => { upStart(target, a, true); renderAtt(); } }, icon("refresh"))
-    : el("span", { class: "pring", role: "progressbar", "aria-label": `${a.name} 올리는 중`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), style: `--p:${pct}`, text: `${pct}%` }));
+    ? el("button", { class: "fi-ic up-retry", type: "button", title: TX("chat.upload.retry"), "aria-label": TX("chat.upload.retry_aria", { name: a.name }), onpointerdown: ev => ev.preventDefault(), onclick: () => { upStart(target, a, true); renderAtt(); } }, icon("refresh"))
+    : el("span", { class: "pring", role: "progressbar", "aria-label": TX("chat.upload.progress", { name: a.name }), "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), style: `--p:${pct}`, text: `${pct}%` }));
   return c;
 }
