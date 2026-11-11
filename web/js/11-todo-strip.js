@@ -142,7 +142,7 @@ function cardNode(c) {
 const SYS_NODES = new Map();   // worker id -> every line drawn for it: { st, at, w } (a follow-up joined to a job writes a second line)
 const WORK_ROWS = new Map();   // worker id -> the gateway's newest word on its job
 const WORK_ROWS_MAX = 600, SYS_SLACK_MS = 5000, SYS_FRESH_MS = 60_000;
-const SYS_ST = { running: ["pri", TX("home.sys.running")], stalled: ["warn", TX("common.status.stopped")], done: ["ok", TX("home.sys.done")], failed: ["err", TX("home.sys.failed")], gone: ["off", TX("common.status.ended")] };
+const SYS_ST = { running: ["pri", TX("home.sys.running")], stalled: ["warn", TX("common.status.stopped")], done: ["ok", TX("home.sys.done")], failed: ["err", TX("home.sys.failed")], gone: ["off", TX("project.word.ended")] };
 const SYS_STOPPED = ["off", TX("home.sys.stopped")];
 function workRowNote(w, at) {
   const o = WORK_ROWS.get(w.id);
