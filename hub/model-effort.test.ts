@@ -1,6 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test";
 import { cfg, DEFAULT_MODEL, DEFAULT_WORKER_MODEL, lanesModel, orchestratorModel, parseSelector, splitThinking, workerModel } from "./config.ts";
+import { targetView, setModel } from "./control.ts";
 import { clampEffort, sweetSpot } from "./model-effort.ts";
+import "./outbound.ts";
 
 test("every table row gives its effort, with or without a provider prefix and an effort suffix", () => {
 	const rows: [string, string][] = [
@@ -71,4 +73,23 @@ test("DEFAULT_MODEL and DEFAULT_WORKER_MODEL carry the effort the table gives th
 	expect(DEFAULT_MODEL.thinking).toBe(sweetSpot(DEFAULT_MODEL.model).effort);
 	const w = splitThinking(DEFAULT_WORKER_MODEL);
 	expect(w.thinking).toBe(sweetSpot(w.model).effort);
+});
+
+const spy = spyOn(Bun, "spawn").mockImplementation((() => ({ stdout: new Response("").body, exited: Promise.resolve(0), kill() {} })) as unknown as typeof Bun.spawn);
+afterAll(() => spy.mockRestore());
+
+test("changing the model without an effort sets the new model's sweet spot; an effort in the request, or the same model, keeps its own", async () => {
+	const P = "ch:7301", view = async () => (await targetView(P)) as { model: string; thinking: string };
+	await setModel(P, FABLE);
+	expect(await view()).toMatchObject({ model: FABLE, thinking: "high" });
+	await setModel(P, OPUS);
+	expect(await view()).toMatchObject({ model: OPUS, thinking: "medium" });
+	await setModel(P, FABLE, "low");
+	expect(await view()).toMatchObject({ model: FABLE, thinking: "low" });
+	await setModel(P, `${OPUS}:xhigh`);
+	expect(await view()).toMatchObject({ model: OPUS, thinking: "xhigh" });
+	await setModel(P, OPUS);
+	expect(await view()).toMatchObject({ model: OPUS, thinking: "xhigh" });
+	await setModel(P, undefined, "high");
+	expect(await view()).toMatchObject({ model: OPUS, thinking: "high" });
 });
