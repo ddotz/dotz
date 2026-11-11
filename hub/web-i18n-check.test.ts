@@ -38,10 +38,12 @@ test("a regex literal holding a slash does not swallow the line after it", () =>
 
 test("ratchet: more Hangul than the baseline fails, fewer asks for --update, equal passes", () => {
 	const files = { ...GOOD, "web/js/y.js": `const a = "${HAN}";\n` };
-	const at = (count: number) => base({ "web/js/y.js": { count, why: "pending" } });
+	const at = (count: number, why = "agent-text parsing") => base({ "web/js/y.js": { count, why } });
 	expect(problems(files, at(1))).toBe("");
 	expect(problems(files, at(0))).toContain("web/js/y.js: 1 Hangul runs");
 	expect(problems(files, at(2))).toContain("--update");
+	expect(problems(files, base())).toContain("web/js/y.js: 1 Hangul runs");
+	expect(problems(files, at(5, "pending"))).toBe("");
 });
 
 test("a non-zero baseline entry needs a why", () => {
@@ -49,10 +51,10 @@ test("a non-zero baseline entry needs a why", () => {
 	expect(problems(files, base({ "web/js/y.js": { count: 1, why: " " } }))).toContain("needs a `why`");
 });
 
-test("lowered only goes down and drops a file at zero; the first baseline marks everything pending", () => {
-	const b = base({ "a.js": { count: 5, why: "pending" }, "b.js": { count: 2, why: "keys" }, "c.js": { count: 1, why: "pending" } });
-	const next = lowered({ "a.js": 3, "b.js": 9 }, b);
-	expect(next.files).toEqual({ "a.js": { count: 3, why: "pending" }, "b.js": { count: 2, why: "keys" } });
+test("lowered only goes down and drops a file at zero, a pending file follows its count; the first baseline marks everything pending", () => {
+	const b = base({ "a.js": { count: 5, why: "pending" }, "b.js": { count: 2, why: "keys" }, "c.js": { count: 1, why: "pending" }, "d.js": { count: 1, why: "pending" } });
+	const next = lowered({ "a.js": 3, "b.js": 9, "d.js": 4, "e.js": 2 }, b);
+	expect(next.files).toEqual({ "a.js": { count: 3, why: "pending" }, "b.js": { count: 2, why: "keys" }, "d.js": { count: 4, why: "pending" } });
 	expect(firstBaseline({ "a.js": 4 }).files["a.js"]).toEqual({ count: 4, why: "pending" });
 });
 

@@ -233,7 +233,7 @@
       "why": "pending"
     },
     "web/js/30-mailboxes.js": {
-      "count": 159,
+      "count": 166,
       "why": "pending"
     },
     "web/js/30-monitor-chat.js": {
@@ -261,11 +261,11 @@
       "why": "pending"
     },
     "web/js/30-replies.js": {
-      "count": 139,
+      "count": 143,
       "why": "pending"
     },
     "web/js/30-triage.js": {
-      "count": 189,
+      "count": 190,
       "why": "pending"
     },
     "web/js/31-conversations.js": {

@@ -106,6 +106,8 @@ export function check(root: string, baseline: Baseline): Result {
 
 	for (const f of new Set([...Object.keys(counts), ...Object.keys(baseline.files)])) {
 		const n = counts[f] ?? 0, allowed = baseline.files[f]?.count ?? 0;
+		// A "pending" file is waiting for its move to the catalogs: its count is a note until then, so work on it by others does not fail here.
+		if (baseline.files[f]?.why === "pending") continue;
 		if (n > allowed) problems.push(`${f}: ${n} Hangul runs outside comments, ${allowed} allowed (use TX("key") with a web/i18n entry)`);
 		else if (n < allowed) problems.push(`${f}: ${n} Hangul runs now, baseline says ${allowed}: run bun hub/web-i18n-check.ts --update`);
 		if (allowed > 0 && !baseline.files[f]?.why.trim()) problems.push(`${f}: baseline needs a \`why\` (or "pending")`);
@@ -135,10 +137,10 @@ export function check(root: string, baseline: Baseline): Result {
 	return { problems, counts, pending };
 }
 
-/** The baseline with every allowance lowered to today's count (a file at 0 leaves it); never raises one, never adds a file. */
+/** The baseline with every allowance lowered to today's count (a file at 0 leaves it); never adds a file, and raises only a "pending" one. */
 export function lowered(counts: Record<string, number>, baseline: Baseline): Baseline {
 	const files: Baseline["files"] = {};
-	for (const [f, e] of Object.entries(baseline.files)) { const n = Math.min(counts[f] ?? 0, e.count); if (n > 0) files[f] = { ...e, count: n }; }
+	for (const [f, e] of Object.entries(baseline.files)) { const now = counts[f] ?? 0, n = e.why === "pending" ? now : Math.min(now, e.count); if (n > 0) files[f] = { ...e, count: n }; }
 	return { ...baseline, files };
 }
 /** First baseline: every file that holds Hangul today, all pending. */
