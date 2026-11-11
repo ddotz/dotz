@@ -1,7 +1,7 @@
 // The hourly temp sweep (hub/temp-sweep.ts): roots, clock and budget are injected, every fixture lives in this test's own temp dir.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, lutimesSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
-import { lstat } from "node:fs/promises";
+import { existsSync, lutimesSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { lstat, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { sweepTemp, sweepTempRepeating, type SweepDeps } from "./temp-sweep.ts";
@@ -92,14 +92,57 @@ test("scratch: dotz-* dirs older than 7 days go; younger ones, other names and f
 	expect(r.removed).toBe(1);
 });
 
+// A /tmp/dotz-* folder is as old as the newest thing in it: a file rewritten in place does not move the folder's own mtime.
+test("scratch: an old folder with a fresh file inside stays; an all-old one goes", async () => {
+	const fresh = made(dir("scratch", "dotz-rewritten"), 9);
+	made(join(fresh, "deep", "big.bin"), 1, "file");
+	old(join(fresh, "deep"), 9);
+	old(fresh, 9);
+	const stale = made(dir("scratch", "dotz-stale"), 9);
+	made(join(stale, "deep", "a.png"), 8, "file");
+	old(join(stale, "deep"), 9);
+	old(stale, 9);
+	const r = await sweep();
+	expect([existsSync(fresh), existsSync(stale)]).toEqual([true, false]);
+	expect(r.removed).toBe(1);
+});
+
+test("scratch: the walk stops at the first newer entry and never visits more than its bound; a bound hit falls back to twice the age", async () => {
+	const calls: string[] = [];
+	const recorded = { lstat: async (p: string) => (calls.push(p), lstat(p)) };
+	const big = made(dir("scratch", "dotz-huge"), 9);
+	for (let i = 0; i < 2_100; i++) writeFileSync(join(big, `f${i}`), "x");
+	for (let i = 0; i < 2_100; i++) old(join(big, `f${i}`), 9);
+	old(big, 9);
+	let r = await sweep(recorded);
+	expect(existsSync(big)).toBe(true); // 9 days: bound hit, own mtime younger than twice the age
+	expect(r.removed).toBe(0);
+	expect(calls.filter(p => p.startsWith(`${realpathSync(big)}/`)).length).toBe(2_000);
+	old(big, 15);
+	calls.length = 0;
+	r = await sweep(recorded);
+	expect(existsSync(big)).toBe(false); // never immortal
+	expect(r.removed).toBe(1);
+
+	const early = made(dir("scratch", "dotz-early"), 9);
+	for (let i = 0; i < 50; i++) made(join(early, `o${i}`), 9, "file");
+	made(join(early, "new"), 1, "file");
+	old(early, 9);
+	calls.length = 0;
+	await sweep({ ...recorded, readdir: async p => (p === realpathSync(early) ? ["new", ...(await readdir(p)).filter(n => n !== "new")] : readdir(p)) });
+	expect(existsSync(early)).toBe(true);
+	expect(calls.filter(p => p.startsWith(`${realpathSync(early)}/`))).toEqual([join(realpathSync(early), "new")]);
+});
+
 test("old files in dotz-output-cap and dotz-handoff go, the folders and young files stay", async () => {
 	const oldCap = made(dir("tmp", "dotz-output-cap", "a.txt"), 4, "file");
 	const youngCap = made(dir("tmp", "dotz-output-cap", "b.txt"), 1, "file");
 	const oldHand = made(dir("tmp", "dotz-handoff", "s.md"), 10, "file");
+	const midHand = made(dir("tmp", "dotz-handoff", "m.md"), 5, "file"); // handoff files live 7 days, spill files 3
 	old(dir("tmp", "dotz-output-cap"), 30);
 	old(dir("tmp", "dotz-handoff"), 30);
 	await sweep({ scratch: dir("tmp") });
-	expect([existsSync(oldCap), existsSync(youngCap), existsSync(oldHand)]).toEqual([false, true, false]);
+	expect([existsSync(oldCap), existsSync(youngCap), existsSync(oldHand), existsSync(midHand)]).toEqual([false, true, false, true]);
 	expect(existsSync(dir("tmp", "dotz-output-cap"))).toBe(true);
 	expect(existsSync(dir("tmp", "dotz-handoff"))).toBe(true);
 });

@@ -3,8 +3,13 @@
 // calls this sweep. It deletes, by exact path, direct children of two roots only and never matches recursively:
 // - <os tmpdir>: a directory of the current user, not a symlink, older than 3 days, named `dotz-test-` + the 6-character
 //   mkdtemp suffix, a frozen legacy test prefix + suffix (temp-sweep-prefixes.txt), or a prefix dotz's own code creates and
-//   never needs after 3 days (OWNED); files older than 3 days in <tmpdir>/dotz-output-cap and <tmpdir>/dotz-handoff.
-// - /tmp: directories named dotz-* older than 7 days (agent scratch: screenshots, probes).
+//   never needs after 3 days (OWNED); files older than 3 days in <tmpdir>/dotz-output-cap and older than 7 days in <tmpdir>/dotz-handoff
+//   (a worker's handoff file is read again when a long-idle session resumes; one number, no new state).
+// - /tmp: directories named dotz-* (agent scratch: screenshots, probes) whose newest mtime is older than 7 days: the folder's own mtime does
+//   not move when a file inside is rewritten in place, so the folder is walked (see `newest`). The walk is bounded; when the bound is
+//   hit with nothing newer found, the folder goes only when its own mtime is older than twice the age (14 days): a tree of more than
+//   WALK_ENTRIES entries or WALK_DEPTH levels is a cache or build tree, not a deliverable, and its top levels were all old.
+//   Never immortal, and a folder with something recent in its top levels is never removed.
 // Left out on purpose: rd- (too generic a name to claim) and dz-sns- (only a test helper makes it), dotz-verify-<id>- (the
 // runtime check removes it itself). The data dir, the install dir and the live data dir are never targets and never inside
 // a swept root. A pass has a budget (time first, entries as a ceiling), so a backlog of 500,000 folders is worked off in about a day.
@@ -23,10 +28,13 @@ const SCRATCH_AGE_MS = 7 * DAY;
 const MAX_ENTRIES = 50_000;
 const MAX_MS = 20_000;
 const RETRY_MS = 5 * 60_000;
+// The walk of one /tmp/dotz-* folder: breadth first (top levels first), at most this many entries and levels.
+const WALK_ENTRIES = 2_000;
+const WALK_DEPTH = 6;
 const SUFFIX = /^[A-Za-z0-9]{6}$/;
 // Each is created and removed inside one call of non-test code (a failed or killed run leaves it); nothing reads it later.
 const OWNED = new Set(["dotz-permprobe-", "dotz-rebase-", "dotz-release-note-", "dotz-sigcheck-", "dotz-smoke-", "dotz-verify-", "dotz-video-", "kakao-dry-"]);
-const CAP_DIRS = ["dotz-output-cap", "dotz-handoff"];
+const CAP_DIRS: Record<string, number> = { "dotz-output-cap": TEST_AGE_MS, "dotz-handoff": SCRATCH_AGE_MS };
 
 type Stat = { isDirectory(): boolean; isFile(): boolean; isSymbolicLink(): boolean; uid: number; mtimeMs: number };
 export type SweepDeps = {
@@ -85,7 +93,7 @@ function maxAge(name: string, legacy: Set<string>, scratch: boolean): number | u
 		const head = name.slice(0, -6);
 		if (head === "dotz-test-" || legacy.has(head) || OWNED.has(head)) return TEST_AGE_MS;
 	}
-	return scratch && name.startsWith("dotz-") && !CAP_DIRS.includes(name) ? SCRATCH_AGE_MS : undefined;
+	return scratch && name.startsWith("dotz-") && !(name in CAP_DIRS) ? SCRATCH_AGE_MS : undefined;
 }
 
 export async function sweepTemp(o: Partial<SweepDeps> = {}): Promise<SweepResult> {
@@ -94,7 +102,8 @@ export async function sweepTemp(o: Partial<SweepDeps> = {}): Promise<SweepResult
 	const protect = await Promise.all([d.dataDir, d.installDir, liveDataDir(d.dataDir) ?? d.dataDir].map(real));
 	const res: SweepResult = { removed: 0, left: 0, failed: 0 };
 	const start = d.now();
-	const spent = () => res.removed + res.failed >= d.maxEntries || d.now() - start >= d.maxMs;
+	let visited = 0; // entries looked at by the folder walks; they count against the pass like removals
+	const spent = () => res.removed + res.failed + visited >= d.maxEntries || d.now() - start >= d.maxMs;
 	const mine = (st: Stat, ageMs: number) => st.uid === d.uid && !st.isSymbolicLink() && d.now() - st.mtimeMs > ageMs;
 	const stat = async (path: string): Promise<Stat | undefined> => {
 		try {
@@ -103,6 +112,42 @@ export async function sweepTemp(o: Partial<SweepDeps> = {}): Promise<SweepResult
 			if ((e as NodeJS.ErrnoException).code !== "ENOENT") res.failed++;
 			return undefined;
 		}
+	};
+	// Is anything in `root` newer than `cutoff`? "fresh" at the first such entry, "stale" when everything was seen and is older,
+	// "bound" when the walk limit left entries unseen, "budget" when the pass ran out of time or entries.
+	const newest = async (root: string, cutoff: number): Promise<"fresh" | "stale" | "bound" | "budget"> => {
+		let seen = 0;
+		let cut = false;
+		let level = [root];
+		for (let depth = 0; level.length; depth++) {
+			const next: string[] = [];
+			for (const dir of level) {
+				let names: string[];
+				try {
+					names = await d.readdir(dir);
+				} catch {
+					cut = true;
+					continue;
+				}
+				for (const name of names) {
+					if (seen >= WALK_ENTRIES) return "bound";
+					if (spent()) return "budget";
+					seen++;
+					visited++;
+					let st: Stat;
+					try {
+						st = await d.lstat(join(dir, name));
+					} catch (e) {
+						cut ||= (e as NodeJS.ErrnoException).code !== "ENOENT";
+						continue;
+					}
+					if (st.mtimeMs > cutoff) return "fresh";
+					if (st.isDirectory() && !st.isSymbolicLink()) depth < WALK_DEPTH ? next.push(join(dir, name)) : (cut = true);
+				}
+			}
+			level = next;
+		}
+		return cut ? "bound" : "stale";
 	};
 	// Works through `todo` (path, kind of entry, age) until the budget is spent; what is not reached counts as left.
 	const work = async (todo: [string, boolean, number][]) => {
@@ -115,6 +160,14 @@ export async function sweepTemp(o: Partial<SweepDeps> = {}): Promise<SweepResult
 			if (protect.some(p => overlaps(resolve(path), p))) continue;
 			const st = await stat(path);
 			if (!st || !mine(st, ageMs) || !(dir ? st.isDirectory() : st.isFile())) continue;
+			if (dir && ageMs === SCRATCH_AGE_MS) {
+				const seen = await newest(path, d.now() - ageMs);
+				if (seen === "budget") {
+					res.left += todo.length - i;
+					return;
+				}
+				if (seen === "fresh" || (seen === "bound" && !mine(st, 2 * ageMs))) continue;
+			}
 			try {
 				await d.rm(path, dir);
 				res.removed++;
@@ -131,11 +184,11 @@ export async function sweepTemp(o: Partial<SweepDeps> = {}): Promise<SweepResult
 		if (protect.some(p => overlaps(root.path, p))) continue;
 		try {
 			if (root.caps)
-				for (const name of CAP_DIRS) {
+				for (const [name, capAge] of Object.entries(CAP_DIRS)) {
 					const dir = join(root.path, name);
 					const st = await stat(dir);
 					if (!st || !st.isDirectory() || st.isSymbolicLink() || st.uid !== d.uid) continue;
-					await work((await d.readdir(dir)).filter(n => n !== "." && n !== ".." && !n.includes("/")).map(n => [join(dir, n), false, TEST_AGE_MS]));
+					await work((await d.readdir(dir)).filter(n => n !== "." && n !== ".." && !n.includes("/")).map(n => [join(dir, n), false, capAge]));
 				}
 			// One listing per root and pass; only the names that can match are kept.
 			const todo: [string, boolean, number][] = [];

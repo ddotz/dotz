@@ -12,7 +12,7 @@
 // function of the notice, so every request carries the same text and the prompt cache holds. A cut says where the whole
 // text is: OmO's own [Full output: ...] line when the result has one, else a file saved under a name made from its hash.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -34,7 +34,11 @@ function spill(t: string): string | undefined {
 	try {
 		const dir = join(tmpdir(), "dotz-output-cap");
 		const file = join(dir, `${createHash("sha1").update(t).digest("hex").slice(0, 16)}.txt`);
-		if (!existsSync(file)) {
+		if (existsSync(file)) {
+			// Reused: a fresh transcript points to it, so its age starts again (the temp sweep removes files by mtime).
+			const now = new Date();
+			utimesSync(file, now, now);
+		} else {
 			mkdirSync(dir, { recursive: true, mode: 0o700 });
 			const tmp = `${file}.${process.pid}.tmp`;
 			writeFileSync(tmp, t, { mode: 0o600 });

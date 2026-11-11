@@ -1,7 +1,7 @@
 // Tool-result caps in lanes and their workers: an unranged read is cut at a line boundary with the offset to go on from,
 // shell output keeps its head and tail with a note in the middle, small or ranged results and images stay as they are.
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync, utimesSync } from "node:fs";
 import { CAP_CHARS, capNotices, capToolResult, installOutputCap, NOTICE_TYPE } from "./output-cap.ts";
 
 const lines = (n: number, width = 99) => Array.from({ length: n }, (_, i) => `${String(i + 1).padStart(5, "0")} ${"x".repeat(width - 6)}`).join("\n");
@@ -103,6 +103,17 @@ test("a cut shell result names the file with the full output, which is not writt
 	// A result that already carries OmO's [Full output: ...] line is not spilled a second time.
 	const own = capToolResult("eval", { code: "x" }, text(`${body}\n[Full output: /tmp/e.log]`))![0].text as string;
 	expect(own).not.toContain("full output: /");
+});
+
+test("a spill file that is reused gets a fresh mtime, so the temp sweep does not remove it under a fresh transcript", () => {
+	const body = lines(601);
+	const pathOf = () => /full output: (\S+)/.exec(capToolResult("eval", { code: "bun test" }, text(body))![0].text as string)?.[1]?.replace(/[;,)]+$/, "")!;
+	const file = pathOf();
+	const first = statSync(file).mtimeMs;
+	const DAY = 86_400_000;
+	utimesSync(file, new Date(first - 5 * DAY), new Date(first - 5 * DAY));
+	expect(pathOf()).toBe(file);
+	expect(statSync(file).mtimeMs).toBeGreaterThan(first - DAY);
 });
 
 test("the hook is installed for lane processes only and returns the capped content", () => {
