@@ -1,5 +1,5 @@
 #!/bin/sh
-# Refuses a push to public ddotz/dotz whose new commits carry a personal address or land a PR by hand with no universal review (hub/push-identity.ts), and a push whose branch tips break the
+# Refuses a push to public ddotz/dotz whose new commits carry a personal address, a personal value in a message or an added line, or land a PR by hand with no universal review (hub/push-identity.ts), and a push whose branch tips break the
 # repo-wide limits (hub/engineering-rules.test.ts), and one that raises a ceiling or adds a ceiling key compared with the remote main (hub/engineering-ceilings.json). The limits check the pushed commit, not the working tree, so
 # an uncommitted change neither hides nor causes a failure. core.hooksPath points here: set by hub/git-hooks.ts, never by hand.
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"

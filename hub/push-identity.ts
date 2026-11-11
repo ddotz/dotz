@@ -6,6 +6,8 @@
 // To the public remote only what the remote does not hold yet counts, so commits already public never block a push. "Holds" means the remote's branches and tags right now, read live: tracking refs
 // go stale, and a pull request ref is a contributor's commit that still has to pass when it lands on a branch. A refusal names commits by sha and labels
 // only and never repeats git's output, which can hold an address.
+// The same new commits also get the content check of a PR (hub/upstream-commits.ts contentFindings): their messages and added lines hold no personal value, and a check
+// that cannot run refuses.
 // The same list closes the hand landing: a commit new to public main with a `(#N)` subject is a PR rebased in, which never met dotz_merge, so it needs PR N's
 // universal review from this install (hub/mergegate.ts).
 import { type Login, knownLogin, setCloneIdentity } from "./clone-identity.ts";
@@ -14,8 +16,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { run } from "./history-rewrite.ts";
 import { reviewedUniversal } from "./mergegate.ts";
-import { PUBLIC_REPO } from "./public-scrub.ts";
+import { PUBLIC_REPO, installTerms } from "./public-scrub.ts";
 import type { Exec } from "./selfupdate.ts";
+import { contentFindings, contentRefusal } from "./upstream-commits.ts";
 
 const SHA = /^[0-9a-f]{40,64}$/;
 
@@ -37,7 +40,9 @@ export async function refusal(exec: Exec, dir: string, url: string, rev: string,
 	if (log.code !== 0) return `could not read the commits being pushed (git log exit ${log.code}).`;
 	const commits = parseRows(log.out);
 	const bad = badRows(commits);
-	if (bad.length) return identityRefusal(bad);
+	const found = contentFindings(dir, [rev], tips, installTerms(dataDir ?? process.env.DOTZ_DIR ?? join(homedir(), ".dotz")));
+	if (!found) return `could not read the text of the commits being pushed to ${PUBLIC_REPO}, so they cannot be checked; retry the push.`;
+	if (bad.length || found.length) return [...(bad.length ? [identityRefusal(bad)] : []), ...(found.length ? [contentRefusal(found, "push")] : [])].join(" ");
 	if (ref !== "refs/heads/main") return undefined;
 	for (const { sha, subject } of commits) {
 		const pr = /\(#(\d+)\)\s*$/.exec(subject)?.[1];

@@ -164,3 +164,44 @@ test("only the public repo counts as public, in every URL form", () => {
 	for (const url of ["https://github.com/ddotz/dotz", "https://github.com/ddotz/dotz.git", "https://token@github.com/DDOTZ/dotz.git/", "git@github.com:ddotz/dotz.git", "ssh://git@github.com/ddotz/dotz.git"]) expect(isPublicRemote(url)).toBe(true);
 	for (const url of ["https://github.com/alice/dotz.git", "git@github.com:alice/dotz.git", "https://github.com/ddotz/dotz-site.git", "https://github.com/xddotz/dotz.git"]) expect(isPublicRemote(url)).toBe(false);
 });
+
+// The hook gives the same decisions as the agent's shell deny for what a push to the public repo publishes. Fixtures are built so this file holds no real-looking path.
+const HOME_PATH = ["", "Users", "zed", "notes"].join("/");
+const EMAIL = ["pat", "mailbox-placeholder.org"].join("@");
+const put = (file: string, text: string, message: string) => {
+	writeFileSync(join(work, file), text);
+	git(work, "add", file);
+	git(work, "commit", "-q", "-m", message);
+};
+const hooked = (...args: string[]) => raw(work, ["push", "-q", ...args], { DOTZ_DIR: join(root, "data") });
+
+test("the hook refuses a push whose added line or message holds a personal value, and the value is not repeated", async () => {
+	const before = remoteMain(publicRemote);
+	put("notes", `see ${HOME_PATH}`, "change");
+	const path = hooked("origin", "HEAD:main");
+	expect(path.code).not.toBe(0);
+	expect(path.err).not.toContain(HOME_PATH);
+	expect(remoteMain(publicRemote)).toBe(before);
+	git(work, "reset", "-q", "--hard", "HEAD~1");
+	put("plain", "clean", `write to ${EMAIL}`);
+	const mail = hooked("origin", "main");
+	expect(mail.code).not.toBe(0);
+	expect(mail.err).not.toContain(EMAIL);
+	expect(remoteMain(publicRemote)).toBe(before);
+	expect(await refusal(run, work, publicRemote, "HEAD", "refs/heads/main", join(root, "data"))).toBeDefined(); // the function the hook calls, same decision
+}, SLOW);
+
+test("the hook lets a test fixture show an address, and does not look at commits the public repo already holds", () => {
+	put("legacy", `old ${HOME_PATH}`, `old ${EMAIL}`);
+	expect(raw(work, ["-c", "core.hooksPath=/dev/null", "push", "-q", "origin", "main"]).code).toBe(0); // already public from here on
+	put("addr.test.ts", `const mail = "${EMAIL}";`, "fixture");
+	const ok = hooked("origin", "HEAD:main");
+	expect(ok.code).toBe(0);
+	expect(remoteMain(publicRemote)).toBe(git(work, "rev-parse", "HEAD"));
+}, SLOW);
+
+test("the hook does not check the content of a push to a remote that is not the public repo", async () => {
+	put("notes", `see ${HOME_PATH}`, `mail ${EMAIL}`);
+	expect(hooked("fork", "main").code).toBe(0);
+	expect(await refusal(run, work, fork, "HEAD", "refs/heads/main", join(root, "data"))).toBeUndefined();
+}, SLOW);

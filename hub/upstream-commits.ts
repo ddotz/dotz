@@ -1,9 +1,10 @@
 // What a command publishes through commits, checked before it runs (publicPostDeny in hub/public-scrub.ts reads only the TEXT of a post). A `gh pr create`
 // to ddotz/dotz publishes the commits of its head branch that public main lacks: their author and committer, their messages and their added lines must hold
 // nothing personal. A `git push` from a dotz clone to any GitHub remote, a contributor's fork included, gets the identity check, whether or not the
-// pre-push hook is installed. "Public main" is the clone's own tracking ref, so nothing here touches the network; a stale ref can list commits that are
+// pre-push hook is installed; a push to the public repo itself (`origin HEAD:main`, `origin <branch>:main`, a plain `git push`, `--all`) gets the same message and added-line
+// check as a PR, and fails closed when git cannot be read. "Public main" is the clone's own tracking ref, so nothing here touches the network; a stale ref can list commits that are
 // already public, which refuses more, never less. A refusal names commits by short sha and labels and never a name, an address or a matched value.
-import { FIX_COMMAND, PUBLIC_URL, badRows, gitText, identityRefusal, isDotzClone, isGithubRemote, newCommits, publicRefs, remoteUrls } from "./commit-identity.ts";
+import { FIX_COMMAND, PUBLIC_URL, badRows, gitText, identityRefusal, isDotzClone, isGithubRemote, isPublicRemote, newCommits, publicRefs, remoteUrls } from "./commit-identity.ts";
 import { MAYBE_POST, PUBLIC_REPO, installTerms, postDir, postKind, postStart, postsToDotz, scrub, shellPath, type Term } from "./public-scrub.ts";
 
 const MAYBE_PUSH = /\bgit\b[^\n]*\bpush\b/;
@@ -60,6 +61,10 @@ export function contentFindings(dir: string, revs: readonly string[], refs: read
 	return found;
 }
 
+// The refusal for what contentFindings found; `again` is the verb that retries the command.
+export const contentRefusal = (found: readonly Finding[], again: "post" | "push"): string =>
+	`refused, ${found.length} commit(s) new to ${PUBLIC_REPO} carry personal or sensitive content: ${found.slice(0, 8).map(f => `${f.sha.slice(0, 8)} (${f.labels.join(", ")})`).join("; ")}. Remove the value from those commits (amend or rebase), keep the detail, and ${again} again${again === "push" ? ". A ref that is behind the public main can list commits that are already public: git fetch first" : ""}`;
+
 function headOf(post: string): string | undefined {
 	const m = /\bgh\s+pr\b/.test(post) ? /(?:--head[ =]|\s-H[ =]?)["']?([^\s"']+)/.exec(post) : /\bhead["']?\s*[=:]\s*\\?["']?([^\s"',\\&]+)/.exec(post);
 	return m?.[1]?.replace(/^[^:]*:/, "");
@@ -81,7 +86,7 @@ function prDeny(flat: string, dataDir: string, cwd: string): string | undefined 
 	const found = contentFindings(dir, [head], refs, installTerms(dataDir));
 	if (!found) return cannot("git could not read their text");
 	const bad = badRows(rows);
-	const parts = [...(bad.length ? [identityRefusal(bad)] : []), ...(found.length ? [`refused, ${found.length} commit(s) new to ${PUBLIC_REPO} carry personal or sensitive content: ${found.slice(0, 8).map(f => `${f.sha.slice(0, 8)} (${f.labels.join(", ")})`).join("; ")}. Remove the value from those commits (amend or rebase), keep the detail, and post again`] : [])];
+	const parts = [...(bad.length ? [identityRefusal(bad)] : []), ...(found.length ? [contentRefusal(found, "post")] : [])];
 	return parts.length ? parts.join(" ") : undefined;
 }
 
@@ -91,7 +96,7 @@ function pushTarget(dir: string, remote: string | undefined): string | undefined
 	return remoteUrls(dir).filter(([n]) => n === name).at(-1)?.[1];
 }
 
-function pushRefusal(dir: string, args: readonly string[]): string | undefined {
+function pushRefusal(dir: string, args: readonly string[], dataDir: string): string | undefined {
 	const positional: string[] = [];
 	let all = false;
 	for (let i = 0; i < args.length; i++) {
@@ -102,20 +107,27 @@ function pushRefusal(dir: string, args: readonly string[]): string | undefined {
 		else if (!a.startsWith("-")) positional.push(a);
 	}
 	const url = pushTarget(dir, positional[0]);
-	if (!url || !isGithubRemote(url) || !isDotzClone(dir)) return undefined;
+	const toPublic = url !== undefined && isPublicRemote(url); // only a push to the public repo gets the content check, and only it fails closed
+	if (!url || !(toPublic || (isGithubRemote(url) && isDotzClone(dir)))) return undefined;
 	const sources = positional.slice(1).map(spec => spec.replace(/^\+/, "").split(":")[0] ?? "").filter(Boolean);
+	if (positional.length > 1 && !sources.length) return undefined; // only deletions (`:branch`)
 	const revs = (all ? ["--branches"] : sources.length ? sources : ["HEAD"]).filter(rev => rev === "--branches" || (!rev.startsWith("-") && gitText(dir, ["rev-parse", "--verify", "-q", `${rev}^{commit}`]) !== undefined));
 	if (!revs.length) return undefined;
 	const refs = publicRefs(dir);
 	if (!refs.length) return `refused, ${NO_BRANCH_RULE}.`;
-	const bad = badRows(newCommits(dir, revs, refs) ?? []);
-	return bad.length ? identityRefusal(bad) : undefined;
+	const rows = newCommits(dir, revs, refs);
+	if (!rows && toPublic) return `refused, git could not list the commits this push to ${PUBLIC_REPO} would publish, so they cannot be checked. Retry the push`;
+	const bad = badRows(rows ?? []);
+	const found = toPublic ? contentFindings(dir, revs, refs, installTerms(dataDir)) : [];
+	if (!found) return `refused, git could not read the text of the commits this push to ${PUBLIC_REPO} would publish, so it cannot be checked. Retry the push`;
+	const parts = [...(bad.length ? [identityRefusal(bad)] : []), ...(found.length ? [contentRefusal(found, "push")] : [])];
+	return parts.length ? parts.join(" ") : undefined;
 }
 
-function pushDeny(flat: string, cwd: string): string | undefined {
+function pushDeny(flat: string, dataDir: string, cwd: string): string | undefined {
 	for (const m of flat.matchAll(PUSH)) {
 		const dir = /-C\s+(\S+)/.exec(m[1] ?? "");
-		const refused = pushRefusal(dir ? shellPath(dir[1] as string, postDir(flat, m.index, cwd)) : postDir(flat, m.index, cwd), (m[2] ?? "").match(/\S+/g) ?? []);
+		const refused = pushRefusal(dir ? shellPath(dir[1] as string, postDir(flat, m.index, cwd)) : postDir(flat, m.index, cwd), (m[2] ?? "").match(/\S+/g) ?? [], dataDir);
 		if (refused) return refused;
 	}
 	return undefined;
@@ -127,6 +139,6 @@ export function upstreamCommitsDeny(command: string, dataDir: string, cwd: strin
 	const post = MAYBE_POST.test(command) || /api\.github\.com/.test(command);
 	if (!push && !post) return undefined;
 	const flat = command.replace(/\\\r?\n\s*/g, " ");
-	const refused = (push ? pushDeny(flat, cwd) : undefined) ?? (post ? prDeny(flat, dataDir, cwd) : undefined);
+	const refused = (push ? pushDeny(flat, dataDir, cwd) : undefined) ?? (post ? prDeny(flat, dataDir, cwd) : undefined);
 	return refused && `this command would publish commits that are not de-identified: ${refused}`;
 }

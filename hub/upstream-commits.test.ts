@@ -7,6 +7,7 @@ import { run } from "./history-rewrite.ts";
 import { fixIdentity, refusal } from "./push-identity.ts";
 import { RELEASE_EMAIL, RELEASE_NAME } from "./release-sign.ts";
 import { publicPostDeny } from "./systemdeny.ts";
+import { contentFindings } from "./upstream-commits.ts";
 
 const NAME = "Pat Placeholder";
 const MAIL = "pat@example.com";
@@ -186,4 +187,63 @@ test("the fix on a branch behind public main, which changed the same line, keeps
 	expect(git(work, "show", "HEAD:base")).toBe("branch-version");
 	expect(git(work, "log", "-1", "--format=%an|%ae|%cn|%ce")).toBe(`${LOGIN}|${noreplyMail(LOGIN, ID)}|${LOGIN}|${noreplyMail(LOGIN, ID)}`);
 	expect(git(work, "rev-list", "--count", "origin/main..HEAD")).toBe("1");
+});
+
+// A push to the public repo gets the PR's content check. The fixtures are built so this file holds no real-looking path.
+const HOME_PATH = ["", "Users", "zed", "notes"].join("/");
+const EMAIL = ["pat", "mailbox-placeholder.org"].join("@");
+const CLEAN: [string, string] = [LOGIN, noreplyMail(LOGIN, ID)];
+const PUSH_FORMS = ["git push origin HEAD:main", "git push origin feature:main", "git push origin feature", "git push origin +feature:refs/heads/topic", "git push --all origin", "git push origin", "git push"];
+
+test("a push to the public repo with a personal path in an added line is refused in every form, naming no value", () => {
+	commit("notes", `see ${HOME_PATH}`, "change", CLEAN);
+	for (const form of PUSH_FORMS) {
+		const refused = deny(form);
+		expect(refused, form).toBeDefined();
+		expect(refused).not.toContain(HOME_PATH);
+		expect(refused).not.toContain("zed");
+	}
+	expect(deny(`cd ${work} && git push origin HEAD:main`)).toBeDefined();
+});
+
+test("a push to the public repo whose commit message carries an address is refused, and the address is not repeated", () => {
+	commit("plain", "clean", `reach me at ${EMAIL}`, CLEAN);
+	const refused = deny("git push origin HEAD:main");
+	expect(refused).toBeDefined();
+	expect(refused).not.toContain(EMAIL);
+	expect(refused).not.toContain("pat@");
+});
+
+test("a test fixture may show an address on a push, any other file may not", () => {
+	commit("addr.test.ts", `const mail = "${EMAIL}";`, "fixture", CLEAN);
+	expect(deny("git push origin HEAD:main")).toBeUndefined();
+	commit("addr.ts", `const mail = "${EMAIL}";`, "code", CLEAN);
+	expect(deny("git push origin HEAD:main")).toBeDefined();
+});
+
+test("commits already on the public main are not looked at, and a clean push after them passes", () => {
+	git(work, "checkout", "-q", "main");
+	commit("old", `legacy ${HOME_PATH}`, `legacy ${EMAIL}`, CLEAN);
+	git(work, "push", "-q", "origin", "main");
+	expect(deny("git push origin HEAD:main")).toBeUndefined();
+	commit("fresh", "clean", "fresh", CLEAN);
+	expect(deny("git push origin HEAD:main")).toBeUndefined();
+	commit("worse", `new ${HOME_PATH}`, "worse", CLEAN);
+	expect(deny("git push origin HEAD:main")).toBeDefined();
+});
+
+test("a push to a remote that is not the public repo gets no content check", () => {
+	commit("notes", `see ${HOME_PATH}`, `mail ${EMAIL}`, CLEAN);
+	expect(deny("git push fork feature")).toBeUndefined();
+	expect(deny("git push -u fork HEAD")).toBeUndefined();
+	expect(deny("git push origin :feature")).toBeUndefined(); // a deletion publishes no commit
+	expect(deny("git push origin --delete feature")).toBeUndefined();
+});
+
+test("a push to the public repo that cannot be checked is refused rather than passed", () => {
+	commit("plain", "clean", "clean", CLEAN);
+	expect(deny("git push origin HEAD:main")).toBeUndefined();
+	git(work, "update-ref", "-d", "refs/remotes/origin/main"); // what public main holds is no longer known
+	expect(deny("git push origin HEAD:main")).toBeDefined();
+	expect(contentFindings(join(root, "no-such-folder"), ["HEAD"], [], [])).toBeUndefined();
 });
