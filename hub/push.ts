@@ -674,13 +674,6 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 		}
 		return json({ classes: pushClasses() });
 	}
-	if (req.method === "PUT" && p === "/api/push/prefs") {
-		const s = findSub(b.endpoint);
-		if (!s) return json({ error: "not subscribed" }, 404);
-		for (const k of PUSH_KINDS) if (typeof b.prefs?.[k] === "boolean") s.prefs[k] = b.prefs[k];
-		save();
-		return json({ ok: true, prefs: s.prefs });
-	}
 	// A page that is open and visible quiets its device's subscriptions here. The same device (`did`) is quieted on the other computers too: the page shows
 	// their notices as toasts (hub/peer-stream.ts), so a push there would be a second alert. The forward carries `relayed` and is never sent on.
 	if (req.method === "POST" && p === "/api/push/presence") {
