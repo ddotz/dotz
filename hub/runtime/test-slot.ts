@@ -1,17 +1,21 @@
-// A whole-suite `bun test` takes the machine-wide heavy slot (hub/heavyslot.ts) before it starts, from the test preload, so a plain
-// `bun test`, `bun test --parallel=4` or `bun run test` from any session waits its turn instead of fighting the other sessions' runs for
-// CPU and the macOS daemons every WebView wakes. It waits, it does not refuse: the caller just sees the run start later. A run of a few
-// named files stays free. Only node builtins and heavyslot.ts, and it must run before the preload installs the fake clock.
+// A whole-suite `bun test`, or a run with a WebView test file, takes the machine-wide heavy test slot (hub/heavyslot.ts) before it starts,
+// from the test preload, so a plain `bun test`, `bun test --parallel=4` or `bun run test` from any session waits its turn instead of
+// fighting the other sessions' runs for CPU and the macOS daemons every WebView wakes. It waits, it does not refuse, and it waits for as
+// long as a live run holds the slot: the only ways past a holder are the reclaim rules of heavyslot.ts (the holder died, or it is older
+// than the max hold). While it waits it prints what holds the slot and the latest time it frees, once a minute. The slot is its own
+// directory (heavy-suite, one slot): dotz_verify (hub/receipts.ts) takes up to cpus/4 slots of `heavy`, and one of those could not keep a
+// suite under dotz_verify and a direct suite apart. A run of a few plain files stays free. Only node builtins and heavyslot.ts, and it
+// must run before the preload installs the fake clock.
 // The preload does not run in the process that got the command line: a plain run loads it in that one process, a --parallel run loads
 // it in each worker (BUN_TEST_WORKER_ID) and not in the coordinator, whose command line is read from the process table.
 // A lane's repeat full runs are refused here too: the third in 6 hours in one worktree does not start and prints the files that failed and
 // the one last pre-merge run (DOTZ_TEST_FINAL=1). Only a lane (DOTZ_LANE) is limited, so the gates (self-update, release, CI) never are, and
 // a limit that breaks runs the tests.
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { acquireHeavySlot } from "../heavyslot.ts";
+import { acquireHeavySlot, holderInfo, MAX_HOLD_MS } from "../heavyslot.ts";
 
 // Flags whose value is the next argument (the others take --flag=value or none).
 const VALUE_FLAGS = new Set(["-t", "--test-name-pattern", "--timeout", "--rerun-each", "--retry", "--seed", "--reporter", "--reporter-outfile", "--max-concurrency", "--path-ignore-patterns", "--shard", "--timings", "--changed", "--coverage-reporter", "--coverage-dir", "--bail", "--parallel-delay", "--preload", "-r", "--config", "-c"]);
@@ -25,13 +29,19 @@ const PRINT_MS = 300;
 // One worktree's log of full runs: <DOTZ_DIR>/test-runs/<hash of its path>.log. Append-only lines, so parallel workers need no lock:
 // "<ms> run <pid> [final]", "<ms> failed <file>", "<ms> refused <pid>".
 export const runLogPath = (dotzDir: string, cwd: string): string => join(dotzDir, "test-runs", `${createHash("sha256").update(cwd).digest("hex").slice(0, 16)}.log`);
-// A wait stays shorter than a caller's own timeout: a run killed while waiting would only be started again. Past it the run goes ahead.
-const WAIT_MS = 5 * 60_000;
+// A wait has no end of its own (the longest timer there is, 24 days): the holder's death or its max hold ends it. A caller whose own
+// timeout is shorter kills the waiting run, which holds nothing; the progress line is what it saw.
+const FOREVER_MS = 2 ** 31 - 1;
+const NOTE_MS = 60_000;
+// A WebView test file: its name, or (the ones outside the name) the Bun.WebView or fakeHub (hub/test-web.ts) call in its text.
+const WEB_NAME = /-web\.test\.[cm]?[jt]sx?$/;
+const WEB_USE = /Bun\.WebView|\bfakeHub\(/;
+const usesWebView = (file: string): boolean => WEB_NAME.test(file) || (existsSync(file) && WEB_USE.test(readFileSync(file, "utf8")));
 
-// True when the command line (["bun", "test", ...args]) starts a run of many files: no file argument at all, a directory or name filter, or many files.
-export function isFullSuite(words: string[]): boolean {
+// The file arguments of a `bun test` command line (["bun", "test", ...args]), or undefined for any other command and for a --test-worker.
+function namedFiles(words: string[]): string[] | undefined {
 	const args = words.slice(1);
-	if (args[0] !== "test" || args.includes("--test-worker")) return false;
+	if (args[0] !== "test" || args.includes("--test-worker")) return undefined;
 	const named: string[] = [];
 	for (let i = 1; i < args.length; i++) {
 		const a = args[i]!;
@@ -42,7 +52,23 @@ export function isFullSuite(words: string[]): boolean {
 		}
 		named.push(a);
 	}
-	return named.length === 0 || named.length > FEW_FILES || named.some(n => !/\.[cm]?[jt]sx?$/.test(n));
+	return named;
+}
+
+// True when the command line starts a run of many files: no file argument at all, a directory or name filter, or many files.
+export function isFullSuite(words: string[]): boolean {
+	const named = namedFiles(words);
+	return !!named && (named.length === 0 || named.length > FEW_FILES || named.some(n => !/\.[cm]?[jt]sx?$/.test(n)));
+}
+
+// "full" (the whole suite), "web" (a few files, one a WebView test: the WebView tests starve each other) or "free".
+export const runKind = (words: string[]): "full" | "web" | "free" => (isFullSuite(words) ? "full" : namedFiles(words)?.some(usesWebView) ? "web" : "free");
+
+// What the waiting run prints: the holder, how long it has held the slot, and the latest time the slot frees without a release.
+function waitLine(dir: string, heldBy: string): string {
+	const info = holderInfo(dir);
+	const held = info ? `, ${Math.floor((Date.now() - info.at) / 60_000)} min so far; the slot frees by itself in ${Math.max(0, Math.ceil((info.at + MAX_HOLD_MS - Date.now()) / 60_000))} min at most` : "";
+	return `[dotz] this test run has not started: a heavy test run holds the slot (${(info?.label ?? heldBy).slice(0, 80)}${held}); waiting for it`;
 }
 
 const commandLine = (pid: number): string[] => Bun.spawnSync(["/bin/ps", "-o", "command=", "-p", String(pid)]).stdout.toString().trim().split(/\s+/);
@@ -129,9 +155,9 @@ function failOpen<T>(fallback: T, step: () => T): T {
 	}
 }
 
-// Takes the slot for a whole-suite run. The run is one holder, named by the pid of the process that was started (the coordinator for the
-// workers of a --parallel run), so every worker of that run counts as the holder and a killed run leaves a slot the next waiter reclaims.
-// A run started under a holder of the slot (dotz_verify, hub/receipts.ts) goes on at once: waiting for it would wait for itself.
+// Takes the slot for a whole-suite run or a run with a WebView test file. The run is one holder, named by the pid of the process that was
+// started (the coordinator for the workers of a --parallel run), so every worker of that run counts as the holder and a killed run leaves a
+// slot the next waiter reclaims. A test run that a holder's test starts goes on at once: waiting for it would wait for itself.
 export async function takeSuiteSlot(env: Record<string, string | undefined>): Promise<void> {
 	const worker = env.BUN_TEST_WORKER_ID !== undefined;
 	const run = worker ? process.ppid : process.pid;
@@ -141,20 +167,26 @@ export async function takeSuiteSlot(env: Record<string, string | undefined>): Pr
 	const dotzDir = env.DOTZ_DIR ?? join(homedir(), ".dotz");
 	const log = env.DOTZ_LANE ? runLogPath(dotzDir, process.cwd()) : undefined;
 	if (decided?.[0] !== String(run)) {
-		env.TEST_SLOT_DECISION = `${run}:${isFullSuite(commandLine(run)) ? "full" : "free"}`;
+		env.TEST_SLOT_DECISION = `${run}:${runKind(commandLine(run))}`;
 		if (log) failOpen(undefined, () => noteFailures(log));
 	}
-	if (env.TEST_SLOT_DECISION!.split(":")[1] !== "full") return;
-	const entry = log ? failOpen(undefined, () => checkRepeatRun(env, log, run, worker)) : undefined;
+	const kind = env.TEST_SLOT_DECISION!.split(":")[1];
+	if (kind === "free") return;
+	const entry = log && kind === "full" ? failOpen(undefined, () => checkRepeatRun(env, log, run, worker)) : undefined; // a WebView file is no full run
+	const dir = join(dotzDir, "heavy-suite");
+	let ticker: ReturnType<typeof setInterval> | undefined;
 	const slot = await acquireHeavySlot({
-		dir: join(dotzDir, "heavy"),
+		dir,
 		label: `${process.cwd()}: ${commandLine(run).join(" ")}`.slice(0, 120),
 		slots: 1,
-		timeoutMs: WAIT_MS,
+		timeoutMs: FOREVER_MS,
 		pid: run,
 		family: ancestors(run),
-		onWait: heldBy => console.error(`[dotz] another full test run holds the heavy slot (${heldBy.slice(0, 80)}); waiting for it before starting`),
-	});
+		onWait: heldBy => {
+			console.error(waitLine(dir, heldBy));
+			ticker = setInterval(() => console.error(waitLine(dir, heldBy)), NOTE_MS);
+		},
+	}).finally(() => clearInterval(ticker));
 	// A --isolate worker comes back here for every file: it asks once.
 	env.TEST_SLOT_DECISION = `${run}:free`;
 	if (log && entry) failOpen(undefined, () => append(log, [entry]));

@@ -1,9 +1,11 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import gate from "../update-gate.json";
-import { isFullSuite, runLogPath } from "./test-slot.ts";
+import { acquireHeavySlot } from "../heavyslot.ts";
+import { advance } from "./test-clock.ts";
+import { isFullSuite, runKind, runLogPath, takeSuiteSlot } from "./test-slot.ts";
 
 const words = (line: string) => line.split(" ");
 
@@ -95,3 +97,65 @@ test("a broken counter runs the tests", async () => {
 	mkdirSync(runLogPath(data, cwd), { recursive: true }); // the log path is a folder: every read and write of it fails
 	for (let i = 0; i < 3; i++) expect((await run([])).ran).toBe(true);
 }, 60_000);
+
+test("a run of one -web.test.ts file takes the slot, a run of one plain file does not, a WebView file outside the name does", () => {
+	expect(runKind(words("bun test hub/x-web.test.ts"))).toBe("web");
+	expect(runKind(words("bun test --parallel=2 hub/a.test.ts hub/x-web.test.ts"))).toBe("web");
+	expect(runKind(words("bun test hub/x.test.ts"))).toBe("free");
+	expect(runKind(words("bun test hub/x.test.ts hub/y.test.ts"))).toBe("free");
+	expect(runKind(words("bun test"))).toBe("full");
+	expect(runKind(words("bun test --test-worker hub/x-web.test.ts"))).toBe("free");
+	const dir = mkdtempSync(join(tmpdir(), "dotz-web-kind-"));
+	dirs.push(dir);
+	writeFileSync(join(dir, "measure.test.ts"), "const view = new Bun.WebView({ width: 390 });");
+	writeFileSync(join(dir, "plain.test.ts"), "import { expect, test } from 'bun:test'; test('x', () => expect(1).toBe(1));");
+	expect(runKind(["bun", "test", join(dir, "measure.test.ts")])).toBe("web");
+	expect(runKind(["bun", "test", join(dir, "plain.test.ts")])).toBe("free");
+});
+
+// A suite run that is told it is a full run (the decision a preload would make), with a live process as the holder of the suite slot.
+async function suiteBehindHolder() {
+	const data = mkdtempSync(join(tmpdir(), "dotz-suite-wait-"));
+	dirs.push(data);
+	const holder = Bun.spawn(["sleep", "600"]);
+	const held = await acquireHeavySlot({ dir: join(data, "heavy-suite"), label: "other full run", slots: 1, pid: holder.pid });
+	const lines: string[] = [];
+	const spy = spyOn(console, "error").mockImplementation((...a) => void lines.push(a.join(" ")));
+	let started = false;
+	const waiting = takeSuiteSlot({ DOTZ_DIR: data, TEST_SLOT_DECISION: `${process.pid}:full` }).then(() => void (started = true));
+	return { holder, held, lines, spy, waiting, started: () => started };
+}
+
+test("a full-suite run waits behind a live holder past the old five minutes, says so, and starts when the holder releases", async () => {
+	const s = await suiteBehindHolder();
+	try {
+		await advance(6 * 60_000);
+		expect(s.started()).toBe(false);
+		const said = s.lines.filter(l => l.includes("has not started"));
+		expect(said.length).toBeGreaterThan(1); // the first line and one more every minute
+		expect(said[0]).toContain("other full run");
+		expect(said[0]).toContain("20 min at most");
+		s.held.release();
+		await s.waiting;
+		expect(s.started()).toBe(true);
+	} finally {
+		s.spy.mockRestore();
+		s.holder.kill();
+	}
+});
+
+test("a full-suite run behind a live holder starts when the holder dies", async () => {
+	const s = await suiteBehindHolder();
+	try {
+		await advance(6 * 60_000);
+		expect(s.started()).toBe(false);
+		s.holder.kill();
+		await s.holder.exited;
+		await advance(2_000);
+		await s.waiting;
+		expect(s.started()).toBe(true);
+	} finally {
+		s.spy.mockRestore();
+		s.holder.kill();
+	}
+});

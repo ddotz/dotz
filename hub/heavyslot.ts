@@ -12,7 +12,7 @@ const RECHECK_MS = 2000;
 const localWaiters = new Set<() => void>();
 const WAIT_MS = 20 * 60_000;
 // Longer than the 15 min run limit in hub/receipts.ts: a slot this old belongs to no live run, even if its pid was reused.
-const MAX_HOLD_MS = 20 * 60_000;
+export const MAX_HOLD_MS = 20 * 60_000;
 
 export type HeavySlot = { release: () => void; waitedMs: number; note?: string };
 type SlotOptions = { dir: string; label: string; slots?: number; timeoutMs?: number; maxHoldMs?: number; onWait?: (heldBy: string) => void; pid?: number; family?: number[] };
@@ -35,6 +35,12 @@ const read = (file: string): string | undefined => {
 	} catch {
 		return undefined;
 	}
+};
+
+// When the holder of the first slot took it and what it runs, for the progress line of a waiter.
+export const holderInfo = (dir: string): { at: number; label: string } | undefined => {
+	const [, at, , ...label] = (read(join(dir, "slot.1")) ?? "").split(" ");
+	return at ? { at: Number(at), label: label.join(" ") } : undefined;
 };
 
 // Holder line: "<pid> <takenAt ms> <uuid> <label>".
