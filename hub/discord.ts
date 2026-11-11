@@ -16,6 +16,7 @@ import { type Body, buildPayloads, buildSingle, mentionsOff, noEmoji, reference 
 
 export { buildPayloads, buildSingle, chunks, noEmoji, readable } from "./discord-format.ts";
 import { attach, type Attach, chartFiles, fileLines, linkLine, planFiles, withNotes } from "./discord-files.ts";
+import { limited, reconnector, restLimitMs, restPayload } from "./discord-net.ts";
 export { attach, fileLines, setFileLink, setFileResolver } from "./discord-files.ts";
 
 // An answer longer than this goes out as a few messages cut at paragraph breaks: a wall of text reads badly on a phone.
@@ -124,25 +125,16 @@ const isWorkParent = (parent?: string) => !!parent && (parent === channels.categ
 // With `files` the body goes as multipart (payload_json + files[i]), the way Discord takes message attachments.
 async function rest(method: string, path: string, body?: unknown, files?: Attach[]): Promise<any> {
 	for (let attempt = 0; ; attempt++) {
-		let payload: string | FormData | undefined = body === undefined ? undefined : JSON.stringify(body);
-		if (files?.length) {
-			const form = new FormData();
-			form.append("payload_json", JSON.stringify({ ...(body as object), attachments: files.map((f, i) => ({ id: i, filename: f.name })) }));
-			files.forEach((f, i) => form.append(`files[${i}]`, Bun.file(f.path), f.name));
-			payload = form;
-		}
-		const r = await fetch(`${process.env.DOTZ_DISCORD_API || "https://discord.com/api/v10"}${path}`, {
-			method,
-			headers: { Authorization: `Bot ${TOKEN}`, ...(files?.length ? {} : { "Content-Type": "application/json" }) },
-			body: payload,
+		const route = `discord ${method} ${path}`;
+		const out = await limited({ what: route, ms: restLimitMs(files?.map(f => Bun.file(f.path).size)), log }, async signal => {
+			const headers = { Authorization: `Bot ${TOKEN}`, ...(files?.length ? {} : { "Content-Type": "application/json" }) };
+			const r = await fetch(`${process.env.DOTZ_DISCORD_API || "https://discord.com/api/v10"}${path}`, { method, headers, body: restPayload(body, files), signal });
+			if (r.status === 429 && attempt < 3) return { wait: Number(((await r.json().catch(() => ({}))) as { retry_after?: number }).retry_after ?? 1) };
+			if (!r.ok) throw new Error(`${route}: ${r.status} ${(await r.text()).slice(0, 200)}`);
+			return { value: r.status === 204 ? null : await r.json() };
 		});
-		if (r.status === 429 && attempt < 3) {
-			const wait = Number(((await r.json().catch(() => ({}))) as { retry_after?: number }).retry_after ?? 1);
-			await Bun.sleep(Math.min(wait, 30) * 1000 + 250);
-			continue;
-		}
-		if (!r.ok) throw new Error(`discord ${method} ${path}: ${r.status} ${(await r.text()).slice(0, 200)}`);
-		return r.status === 204 ? null : r.json();
+		if (out.wait === undefined) return out.value;
+		await Bun.sleep(Math.min(out.wait, 30) * 1000 + 250);
 	}
 }
 
@@ -824,6 +816,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 	let sessionId = "";
 	let resumeUrl = "";
 	let heartbeat: ReturnType<typeof setInterval> | undefined;
+	const retry = reconnector(() => open());
 	const open = () => {
 		if (closing) return;
 		const ws = new WebSocket(resumeUrl || process.env.DOTZ_DISCORD_GATEWAY || "wss://gateway.discord.gg/?v=10&encoding=json");
@@ -852,11 +845,12 @@ export function connect(onMessage: (m: Incoming) => void): void {
 				sessionId = p.d.session_id;
 				resumeUrl = `${p.d.resume_gateway_url}/?v=10&encoding=json`;
 				status.connected = true;
+				retry.reset();
 				status.error = "";
 				status.user = p.d.user?.username ?? "";
 				log(`discord connected as ${status.user}`);
 				void catchUp().catch(e => log(`discord catch-up failed: ${e}`));
-			} else if (p.op === 0 && p.t === "RESUMED") status.connected = true;
+			} else if (p.op === 0 && p.t === "RESUMED") (status.connected = true), retry.reset();
 			else if (p.op === 0 && p.t === "MESSAGE_CREATE") handle(p.d);
 			else if (p.op === 0 && p.t === "INTERACTION_CREATE") onInteraction(p.d);
 			else if (p.op === 0 && p.t === "MESSAGE_UPDATE") {
@@ -888,11 +882,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 			clearInterval(heartbeat);
 			status.connected = false;
 			status.error = `closed ${ev.code}`;
-			if ([4004, 4010, 4011, 4012, 4013, 4014].includes(ev.code)) {
-				log(`discord fatal close ${ev.code}; not reconnecting`);
-				return;
-			}
-			if (!closing) setTimeout(open, 5000);
+			if (!closing && !retry.schedule(ev.code)) log(`discord fatal close ${ev.code}; not reconnecting`);
 		};
 	};
 	const catchUp = async () => {
