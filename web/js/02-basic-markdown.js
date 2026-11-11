@@ -1,5 +1,6 @@
 /* ---------- basic markdown (input is escaped before any markup is produced) ---------- */
 // Links only for http(s) targets; the text and URL are already escaped when the anchor is built.
+// A strike is a deliberate ~~pair~~ only (same rule as STRIKE in hub/spec-inline.ts, on escaped html): 10~~20 and A ~~ B keep their tildes.
 // A `code` span stands in as one \0n\0 token, so bold, italics and links can run across it ("**`a.ts` 고침:**").
 function inline(s) {
   const codes = [];
@@ -10,7 +11,7 @@ function inline(s) {
   });
   return dropIdNote(esc(held)).replace(/&lt;#(\d{10,})&gt;|(?<![\w/:=-])ch:(\d{10,})\b/g, (_, a, b) => `<a href="#chat/ch:${a || b}">${esc(targetName(`ch:${a || b}`))}</a>`).replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)\0]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/(^|[^"'>=\w])(https?:\/\/[^\s<\0]*[^\s<.,;:!?)\]'"\0])/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>')
-    .replace(/~~([^~\n]+)~~/g, "<s>$1</s>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "$1<i>$2</i>")
+    .replace(/(^|[\s(\[{>*\u201c\u2018\u300c\u300e\uff08\u3010]|&quot;|&#39;|&lt;)~~(?=\S)((?:(?!~~)[^\n])+?)(?<=\S)~~(?=$|[\s.,;:!?)\]}<*\u201d\u2019\u300d\u300f\uff09\u3011\u2026]|&quot;|&#39;|&gt;)/g, "$1<s>$2</s>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?![*\w])/g, "$1<i>$2</i>")
     .replace(/\0(\d+)\0/g, (_, n) => codes[n]);
 }
 // A "|---|" separator row of a table.

@@ -50,3 +50,10 @@ describe("telegramParts", () => {
 		expect(parts.map(p => p.plain).join("\n")).toBe(lines.join("\n"));
 	});
 });
+
+test("a range is not struck through, a deliberate pair is", () => {
+	expect(html("10~~20명, 30~~40명")).toBe("10~~20명, 30~~40명");
+	expect(html("A ~~ B, C ~~ D")).toBe("A ~~ B, C ~~ D");
+	expect(html("약 3~~5일, ~~지운 글~~ 끝")).toBe("약 3~~5일, <s>지운 글</s> 끝");
+	expect(telegramParts(spec(text("10~~20명, 30~~40명")))[0]!.html).not.toContain("<s>");
+});

@@ -1,7 +1,7 @@
 // A spec as Discord content (hub/discord-format.ts plainParts): markdown lines, no embeds. A type without an entry in DISCORD goes through the same text treatment as a message body.
 // Text is `text` (readable, subtext, no model emoji), so a spec answer reads like today's. Choice stays what plainChoice makes of its plain form: hub/askbuttons.ts reads the buttons back from content.
 import { elementPlain, specChildren, type MessageSpec } from "./message-spec.ts";
-import { inlineTokens } from "./spec-inline.ts";
+import { inlineTokens, STRIKE } from "./spec-inline.ts";
 import { plainChoice } from "./tone.ts";
 
 type Render = (p: any) => string | undefined;
@@ -11,6 +11,14 @@ export const defang = (s: string): string => s.replace(/<(?=[@:/!]|a:|t:)/g, "<\
 
 const mark = (s: string): string => s.replace(/[\\*_~`|\[\]]/g, "\\$&");
 const safe = (s: string): string => mark(defang(s));
+// Discord draws ~~text~~ itself, so in plain text (outside `code` and ```fences```) every ~~ that is not a deliberate pair (see STRIKE) is escaped and shows as two tildes.
+const STRAY_TILDES = new RegExp(`${STRIKE}|~{2,}`, "g");
+export const escapeStrayTildes = (s: string): string =>
+	s
+		.split(/(```[\s\S]*?(?:```|$)|`[^`\n]+`)/)
+		.map((part, i) => (i % 2 ? part : part.replace(STRAY_TILDES, m => (/^~+$/.test(m) ? m.replace(/~/g, "\\~") : m))))
+		.join("");
+
 const strong = (s: string): string => `**${safe(inlineTokens(s).map(k => k.text).join(""))}**`;
 
 /** A spec string as Discord markdown: marks kept, text escaped, a link as `[label](<url>)` (no preview), a bare url as `<url>`. */

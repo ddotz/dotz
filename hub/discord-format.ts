@@ -6,7 +6,7 @@ import { dropForLine } from "./forline.ts";
 import { dropIdNote } from "./notice.ts";
 import type { MessageSpec } from "./message-spec.ts";
 import { specOf } from "./message-spec-of.ts";
-import { renderDiscord } from "./spec-discord.ts";
+import { escapeStrayTildes, renderDiscord } from "./spec-discord.ts";
 import { claimWord, dropClaim, metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
@@ -83,7 +83,7 @@ export const reference = (replyTo?: string) => (replyTo && isSnowflake(replyTo) 
 function plainParts(text: string, spec: (body: string) => MessageSpec | null = specOf): { emoji: string; body: string } {
 	const { tone, text: parsed } = parseTone(dropForLine(text));
 	const bare = tone ? parsed.trimStart() : parsed, claim = claimWord(bare);
-	const plain = (s: string) => noModelEmoji(metaToSubtext(plainChoice(readable(s))));
+	const plain = (s: string) => noModelEmoji(metaToSubtext(plainChoice(escapeStrayTildes(readable(s)))));
 	const shaped = spec(dropClaim(bare));
 	const body = shaped ? noModelEmoji(rowRefs(renderDiscord(shaped, plain))) : plain(dropClaim(bare));
 	return { emoji: tone ? TONE_EMOJI[tone] : "", body: body.trimStart() + (claim ? `\n-# ${claim}` : "") };

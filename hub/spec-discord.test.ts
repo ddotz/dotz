@@ -68,3 +68,21 @@ test("a row keeps the channel link a text line gets, and a mention stays inert",
 	expect(out).toContain("<#123456789012345678> <#123456789012345678>");
 	expect(out).not.toContain("<@123>");
 });
+
+describe("tildes", () => {
+	const sent = (text: string) => buildPayloads(text)[0]!.content;
+	test("a range or an approximation is escaped, a deliberate pair is left to Discord", () => {
+		expect(sent("10~~20명, 30~~40명")).toBe("10\\~\\~20명, 30\\~\\~40명");
+		expect(sent("A ~~ B, C ~~ D")).toBe("A \\~\\~ B, C \\~\\~ D");
+		expect(sent("약 3~~5일")).toBe("약 3\\~\\~5일");
+		expect(sent("약 3~~5일, ~~지운 글~~ 끝")).toBe("약 3\\~\\~5일, ~~지운 글~~ 끝");
+		expect(sent("(~~지운 글~~)")).toBe("(~~지운 글~~)");
+	});
+	test("code keeps its tildes", () => {
+		expect(sent("`10~~20` 과 10~~20")).toBe("`10~~20` 과 10\\~\\~20");
+		expect(sent("```\na ~~ b\n```")).toBe("```\na ~~ b\n```");
+	});
+	test("a spec string draws only the deliberate pair as a strike", () => {
+		expect(render({ type: "Facts", props: { rows: [{ key: "인원", value: "10~~20명, 30~~40명 ~~지운 글~~" }] } })).toBe("**인원** 10\\~\\~20명, 30\\~\\~40명 ~~지운 글~~");
+	});
+});

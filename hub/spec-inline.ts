@@ -2,12 +2,18 @@
 // Only http(s) becomes a link; any other scheme stays literal text, which every renderer escapes. No imports: the tokens carry no surface syntax.
 export type Inline = { t: "text" | "b" | "i" | "s" | "code" | "link"; text: string; href?: string };
 
+// A strike is a deliberate pair: the opening ~~ starts the line or follows whitespace or an opening bracket, quote or mark and is followed by a non-space;
+// the closing ~~ follows a non-space and ends the line or is followed by whitespace, punctuation or a closing mark. Any other ~~ (10~~20, A ~~ B) is text.
+// web/js/02-basic-markdown.js inline() keeps the same rule on escaped html; change both together (hub/basic-markdown-strike.test.ts).
+export const STRIKE =
+	"(?<![^\\s(\\[{<\"'*\u201c\u2018\u300c\u300e\uff08\u3010])~~(?=\\S)(?<s>(?:(?!~~).)+?)(?<=\\S)~~(?![^\\s.,;:!?)\\]}>\"'*\u201d\u2019\u300d\u300f\uff09\u3011\u2026])";
+
 const INLINE = new RegExp(
 	[
 		"`(?<code>[^`\\n]+)`",
 		"\\[(?<label>[^\\]\\n]+)\\]\\((?<href>https?://[^\\s)<>]+)\\)",
 		"\\*\\*(?=\\S)(?<b>.+?)(?<=\\S)\\*\\*",
-		"~~(?=\\S)(?<s>.+?)(?<=\\S)~~",
+		STRIKE,
 		"\\*(?=[^\\s*])(?<i>.+?)(?<=[^\\s*])\\*",
 		"(?<url>https?://[^\\s<>]+)",
 	].join("|"),
