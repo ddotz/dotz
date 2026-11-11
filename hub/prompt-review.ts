@@ -186,7 +186,8 @@ export const promptReviewCheck: DoctorCheck = async ctx =>
 if (import.meta.main && process.argv.includes("--dry")) {
 	const dataDir = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 	const prompt = buildReviewPrompt(recallContract(dataDir, join(import.meta.dir, "..")).text);
-	const estInputTokens = Math.round(prompt.length / 3.5);
-	console.log(`prompt ${prompt.length} chars, about ${estInputTokens} input tokens (chars/3.5), up to ${MAX_OUTPUT_TOKENS} output tokens; no model called`);
+	// Measured on a real run: a mostly Korean prompt of 26,074 chars cost 22,961 input tokens, so about 1.1 chars a token.
+	const estInputTokens = Math.round(prompt.length / 1.1);
+	console.log(`prompt ${prompt.length} chars, about ${estInputTokens} input tokens (chars/1.1), up to ${MAX_OUTPUT_TOKENS} output tokens; no model called`);
 	console.log(`RESULT ${JSON.stringify({ ms: Math.round(performance.now()), peakRssMb: Math.round(process.resourceUsage().maxRSS / 1024), promptChars: prompt.length, estInputTokens })}`);
 }

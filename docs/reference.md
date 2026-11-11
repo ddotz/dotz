@@ -362,7 +362,7 @@ and at which level, and the baselines the checks compare with).
   when dotz fixed everything itself it is a worklog entry only. The night pass runs in its own process (`bun hub/doctor.ts --night`): reading a week of session logs
   peaks at several hundred MB on a busy install, and the gateway's heap never holds it. Prompt health (`hub/prompt-health.ts`) is one of the checks, and so is the one check that calls a model, the prompt review
   (`hub/prompt-review.ts`): weekly, or after 3 days when prompt health saw real growth; the install's ordinary model, never Fable or max/xhigh effort, skipped while the
-  usage window is tight; about 7-12K input and at most 2K output tokens a run, the cost written into each of its findings. It proposes only: a line changes after the owner picks it.
+  usage window is tight; about 23K input tokens for a 26K-character contract (Korean text is about 1.1 characters a token; at the 40K-character cap about 36K) and at most 2K output tokens a run, the cost written into each of its findings. It proposes only: a line changes after the owner picks it.
 - *Now vs. morning.* The immediate alerts stay as they were: gateway down, a login lost, a watch failing twice, an update failure, usage limits. The doctor only adds the morning "still" and trend items.
 - *Try it.* `bun hub/doctor.ts --dry` runs every check on the real data dir, writes nothing, prints the findings and the notice it would post, and ends with `RESULT {ms, peakRssMb, findings}`.
   `bun hub/token-audit.ts --dry [--hours N]` and `bun hub/failure-report.ts [--days 7] [--json | --md <path> | --check --state <file>]` stay as command-line tools (the latter prints one line per class whose
