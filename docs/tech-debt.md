@@ -94,6 +94,9 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 - hub/relay-chat-web.test.ts clears `seen` (every /api request of one shared page) in `beforeEach` and compares the
   POST list exactly: safe in file order, order-dependent under `--randomize`. Its last test clears `seen` and never
   reads it, so the title's "read again each time" is not checked.
+- hub/draft-fullscreen-web.test.ts takes the first open draft decision in the notice store: run in one process after
+  hub/draft-labelled-web.test.ts it finds that file's draft and fails. The suite passes because `bun run test`
+  isolates each file.
 - Sentence assertions (hub/accounts-api.test.ts, hub/livestatus.test.ts, hub/notices.test.ts) and order dependence
   under `bun test --randomize` inside single files: not measured this round.
 
