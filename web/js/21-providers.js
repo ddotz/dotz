@@ -302,7 +302,14 @@ function paintQuota(q) {
     // a subscription names its plan as Anthropic does (Pro, Max 5x, Max 20x, Ultra, ...; hub/usage-account.ts planName)
     const name = p.name || providerName(p.provider);
     const card = el("div", { class: "card" }, el("div", { class: "ch lo" }, el("h3", { text: p.plan ? `${name} · ${p.plan}` : name })));
+    // a value kept from an earlier read (the last read failed): says how old it is
+    if (p.stale && p.read_at) card.append(el("div", { class: "sup", text: TX("settings.usage.stale", { ago: leftText(Math.max(60000, Date.now() - p.read_at)) }) }));
     for (const l of p.limits || []) {
+      // a held limit whose window has reset since the read has no number; it says so until a new read comes
+      if (l.status === "reset" && l.used == null) {
+        card.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) })), el("div", { class: "sup", text: TX("settings.usage.reset_reading") })));
+        continue;
+      }
       const g = limitGauge(`usage:${p.provider}|${p.account || ""}|${l.id}`, l);
       card.append(el("div", { class: "lim" },
         el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) }), g.num),

@@ -16,6 +16,7 @@ import { labeledAccountView } from "./accounts-api.ts";
 import { apiBudget } from "./api-budget.ts";
 import { runLimited } from "./run-limited.ts";
 import { codexUsage, withCodex } from "./codex-usage.ts";
+import { heldLimits, readReports, readUsageJson } from "./usage-last.ts";
 import { type AccountReport, AccountUsage, type ClaudeResets, type QuotaLimit, cliTokensSettled, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
@@ -82,7 +83,7 @@ export function secretValues(): string[] {
 type OmpModel = { kind?: string; selector: string; id?: string; name?: string; provider: string; reasoning?: boolean; thinking?: unknown };
 type OmpCredential = { provider: string; credential?: Record<string, unknown> };
 type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string; scope?: string; active?: boolean };
-type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string; plan?: string; resets?: ClaudeResets };
+type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string; plan?: string; resets?: ClaudeResets; problem?: "failed"; fetchedAt?: number };
 
 // A local credential store write or read: seconds.
 const OMP_AUTH_MS = 30_000;
@@ -231,8 +232,8 @@ const authInfos = async (): Promise<AuthInfo[]> =>
 		})];
 	})) ?? [];
 
-const usageReports = async (): Promise<OmpUsageReport[]> =>
-	(await cached("usage", async () => (await ompJson<{ reports?: OmpUsageReport[] }>(["usage", "--json"], 45_000))?.reports)) ?? [];
+// A failed read shows the last good reports, marked stale (hub/usage-last.ts), and logs why once per failure streak.
+const usageReports = async (): Promise<OmpUsageReport[]> => (await cached("usage", () => readReports(() => readUsageJson<OmpUsageReport>(OMP)))) ?? [];
 
 // The Anthropic limits of the account the role really runs on (hub/usage-account.ts): OmO's own subscription account
 // under OmO, else omp's login. `force` asks again sooner (a 429 just happened). Undefined: nothing to read.
@@ -691,19 +692,25 @@ const ompHasCredential = async (provider: string): Promise<boolean> => ((await o
 
 // Pure: maps the usage reports to the API shape; providers holding credentials but absent from the reports
 // (or reporting no limits) are listed as unavailable with a plain reason.
-export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): { providers: { provider: string; account?: string; account_label?: string; plan?: string; resets?: ClaudeResets; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
+export function buildQuota(reports: OmpUsageReport[], credentialed: string[], now = Date.now()): { providers: { provider: string; account?: string; account_label?: string; plan?: string; resets?: ClaudeResets; read_at?: number; stale?: boolean; limits: QuotaLimit[] }[]; unavailable: { provider: string; reason: string }[] } {
 	const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 	const providers = reports
 		.filter((r): r is OmpUsageReport & { limits: OmpLimit[] } => Array.isArray(r.limits) && r.limits.length > 0)
-		.map(r => ({
-			provider: r.provider,
-			...(r.account ?? r.metadata?.email ? { account: r.account ?? r.metadata?.email, account_label: label((r.account ?? r.metadata?.email)!) } : {}), ...(r.plan ? { plan: r.plan } : {}), ...(r.resets ? { resets: r.resets } : {}),
-			limits: r.limits.map((l): QuotaLimit => ({
+		.map(r => {
+			// a failed read that shows its last good value: marked with the read time, and a window that has reset since is no number
+			const stale = !!r.problem && typeof r.fetchedAt === "number";
+			const limits = r.limits.map((l): QuotaLimit => ({
 				id: String(l.id), label: String(l.label ?? l.id), window: String(l.window?.id ?? l.window?.label ?? ""),
 				used: num(l.amount?.used), limit: num(l.amount?.limit), remaining: num(l.amount?.remaining), unit: String(l.amount?.unit ?? ""),
 				resets_at: num(l.window?.resetsAt), status: String(l.status ?? "unknown"), ...(typeof l.scope === "string" ? { scope: l.scope } : {}), ...(typeof l.active === "boolean" ? { active: l.active } : {}),
-			})),
-		}));
+			}));
+			return {
+				provider: r.provider,
+				...(r.account ?? r.metadata?.email ? { account: r.account ?? r.metadata?.email, account_label: label((r.account ?? r.metadata?.email)!) } : {}), ...(r.plan ? { plan: r.plan } : {}), ...(r.resets ? { resets: r.resets } : {}),
+				...(stale ? { read_at: r.fetchedAt, stale: true } : {}),
+				limits: stale ? heldLimits(limits, now) : limits,
+			};
+		});
 	const reported = new Set(providers.map(p => p.provider));
 	// A report with no numbers but a problem says why (an OmO login whose token no longer works read as "does not report usage", Mac mini 2026-10-26).
 	const why = (provider: string): string => {

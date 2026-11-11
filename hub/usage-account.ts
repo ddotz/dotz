@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { authFile } from "./apikey-policy.ts";
 import { cfg } from "./config.ts";
+import { type UsageLast, usageLast } from "./usage-last.ts";
 
 const FRESH_MS = 2 * 60_000;
 export const MIN_REFRESH_MS = 30_000;
@@ -282,7 +283,7 @@ export function claudeOrg(name: string, file = authFile()): string | undefined {
 }
 
 // Pure: omp's Anthropic report (runtimes other than OmO run on omp's login) in the same shape, named by its email.
-export function fromOmp(r: { limits?: Json[]; metadata?: { email?: string } }): AccountReport {
+export function fromOmp(r: { limits?: Json[]; metadata?: { email?: string }; problem?: "failed"; fetchedAt?: number }): AccountReport {
 	const limits = (r.limits ?? []).flatMap((l): Limit[] => {
 		const used = l?.amount?.used;
 		if (typeof used !== "number") return [];
@@ -290,7 +291,7 @@ export function fromOmp(r: { limits?: Json[]; metadata?: { email?: string } }): 
 		const w = l.window ?? {};
 		return [{ id: String(l.id), label: String(l.label ?? l.id), window: { id: String(w.id ?? ""), label: String(w.label ?? ""), durationMs: Number(w.durationMs ?? 0), ...(typeof w.resetsAt === "number" ? { resetsAt: w.resetsAt } : {}) }, amount: { used, limit: typeof l.amount.limit === "number" ? l.amount.limit : 100, remaining, usedFraction: used / 100, remainingFraction: remaining / 100, unit: "percent" }, status: String(l.status ?? "unknown") }];
 	});
-	return { provider: "anthropic", account: r.metadata?.email ?? "omp login", via: "omp", limits };
+	return { provider: "anthropic", account: r.metadata?.email ?? "omp login", via: "omp", limits, ...(r.problem ? { problem: r.problem } : {}), ...(typeof r.fetchedAt === "number" ? { fetchedAt: r.fetchedAt } : {}) };
 }
 
 const retryAfterMs = (header: string | null, now: number): number | undefined => {
@@ -305,7 +306,7 @@ export class AccountUsage {
 	private last = new Map<string, { report: AccountReport; at: number; next: number }>();
 	// per account: when it may be asked again after a 429
 	private backoff = new Map<string, number>();
-	constructor(private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response> = (u, i) => fetch(u, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...i }), private readonly now: () => number = Date.now) {}
+	constructor(private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response> = (u, i) => fetch(u, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...i }), private readonly now: () => number = Date.now, private readonly store: UsageLast = usageLast) {}
 
 	// A switch to this account: its next read goes to the usage endpoint at once, not after the 2-minute hold.
 	forget(name: string): void {
@@ -318,26 +319,34 @@ export class AccountUsage {
 		if (held && t < held.next && !(force && t - held.at >= MIN_REFRESH_MS && held.report.problem !== "rate_limited")) return held.report;
 		const via = acct.pinned ? "omo-pinned" : acct.sticky ? "omo-sticky" : "omo-pool";
 		const plan = acct.plan ? { plan: acct.plan } : {};
-		// the last numbers stay, marked with what went wrong since
-		const keep = (problem: AccountProblem, wait: number, retryAt?: number): AccountReport => this.settle(acct.name, { provider: "anthropic", account: acct.name, via, ...plan, limits: held?.report.limits ?? [], ...(held?.report.fetchedAt ? { fetchedAt: held.report.fetchedAt } : {}), problem, ...(retryAt ? { retryAt } : {}) }, t, wait);
-		if (acct.expiresAt !== null && acct.expiresAt <= t) return keep("expired", RETRY_MS);
+		const key = `account:${acct.name}`;
+		// the last numbers stay, marked with what went wrong since: the ones held in memory, else the last good read saved before a restart
+		const keep = (problem: AccountProblem, wait: number, reason: string, retryAt?: number): AccountReport => {
+			const saved = this.store.failed(key, reason);
+			const prior = held?.report.limits.length ? held.report : (saved?.report as AccountReport | undefined);
+			const fetchedAt = prior?.fetchedAt ?? saved?.readAt;
+			return this.settle(acct.name, { provider: "anthropic", account: acct.name, via, ...plan, limits: prior?.limits ?? [], ...(fetchedAt ? { fetchedAt } : {}), problem, ...(retryAt ? { retryAt } : {}) }, t, wait);
+		};
+		if (acct.expiresAt !== null && acct.expiresAt <= t) return keep("expired", RETRY_MS, "token expired");
 		const until = this.backoff.get(acct.name);
-		if (until !== undefined && t < until) return keep("rate_limited", until - t, until);
+		if (until !== undefined && t < until) return keep("rate_limited", until - t, "rate limited (429), waiting for the retry time", until);
 		this.backoff.delete(acct.name);
 		try {
 			const res = await claudeUsageGet(this.fetchFn, acct.token);
-			if (res.status === 401 || res.status === 403) return keep("expired", RETRY_MS);
+			if (res.status === 401 || res.status === 403) return keep("expired", RETRY_MS, `HTTP ${res.status} (token rejected)`);
 			if (res.status === 429) {
 				const wait = Math.max(RETRY_MS, retryAfterMs(res.headers.get("retry-after"), t) ?? FRESH_MS);
 				this.backoff.set(acct.name, t + wait);
-				return keep("rate_limited", wait, t + wait);
+				return keep("rate_limited", wait, "HTTP 429", t + wait);
 			}
-			if (!res.ok) return keep("failed", RETRY_MS);
+			if (!res.ok) return keep("failed", RETRY_MS, `HTTP ${res.status}`);
 			const body = await res.json();
 			const resets = claudeResets(body, () => !!claudeOrg(acct.name));
-			return this.settle(acct.name, { provider: "anthropic", account: acct.name, via, ...plan, limits: limitsOf(body), fetchedAt: t, ...(resets ? { resets } : {}) }, t, FRESH_MS);
-		} catch {
-			return keep("failed", RETRY_MS);
+			const report: AccountReport = { provider: "anthropic", account: acct.name, via, ...plan, limits: limitsOf(body), fetchedAt: t, ...(resets ? { resets } : {}) };
+			if (report.limits.length) this.store.good(key, report, t);
+			return this.settle(acct.name, report, t, FRESH_MS);
+		} catch (e) {
+			return keep("failed", RETRY_MS, (e as Error).message || "read failed");
 		}
 	}
 
@@ -365,6 +374,7 @@ export function limitsText(r: AccountReport, now: number, labelOf: (name: string
 	const name = labelOf(r.account);
 	const head = [`계정: ${name} (${VIA[r.via]})`, ...(name !== r.account ? [`-# 계정 id: ${r.account}`] : [])].join("\n");
 	const note = r.problem ? `${PROBLEM[r.problem]}${r.retryAt ? ` · ${span(r.retryAt - now)} 뒤 다시 조회` : ""}${r.limits.length && r.fetchedAt ? ` · 아래는 ${now - r.fetchedAt < 60_000 ? "방금" : `${span(now - r.fetchedAt)} 전`} 값` : ""}` : undefined;
-	const lines = r.limits.map(l => `${l.label.padEnd(22)}${l.amount.used.toFixed(1)}% used${l.window.resetsAt ? ` · ${resetIn(l.window.resetsAt - now)}` : ""}`);
+	// a held value (a failed read) of a window that has reset since is not shown with its old percent
+	const lines = r.limits.map(l => (r.problem && l.window.resetsAt && l.window.resetsAt <= now ? `${l.label.padEnd(22)}초기화됐어요 · 새 값을 읽는 중` : `${l.label.padEnd(22)}${l.amount.used.toFixed(1)}% used${l.window.resetsAt ? ` · ${resetIn(l.window.resetsAt - now)}` : ""}`));
 	return [head, ...(note ? [note] : []), ...(lines.length ? ["```", ...lines, "```"] : r.problem ? [] : ["(한도 정보 없음)"])].join("\n");
 }

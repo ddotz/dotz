@@ -123,6 +123,8 @@
   "settings.reset.use_aria": "Use {name} {label}",
   "settings.usage.load_failed": "Couldn't load usage",
   "settings.usage.no_limits": "None",
+  "settings.usage.stale": "Value from {ago} ago · reading again",
+  "settings.usage.reset_reading": "Reset · reading the new value",
   "settings.usage.kind.start": "First pick",
   "settings.usage.kind.owner": "Changed by you",
   "settings.usage.kind.gone": "Account gone",
