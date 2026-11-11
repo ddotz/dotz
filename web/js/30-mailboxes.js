@@ -9,7 +9,7 @@ ICONS.folder ??= ICONS.projects;
 ICONS.sliders ??= "M4 7h9M17 7h3M4 17h3M11 17h9M13 5v4M9 15v4";
 ICONS.users ??= "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3.5 19a5.5 5.5 0 0 1 11 0M16 5.4a3 3 0 0 1 0 5.2M17.5 14a5.5 5.5 0 0 1 3 5";
 ICONS.tag ??= "M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0zM8 8h.01";
-const MX = { key: "", acct: "all", box: "all", scr: "", show: 0, mark: false, it: null, of: new Map(), nof: new Map(), accts: new Map(), pane: "", chip: "", slot: new Map(), teach: null };
+const MX = { key: "", acct: "all", box: "all", scr: "", show: 0, mark: false, it: null, of: new Map(), nof: new Map(), accts: new Map(), pa: new Map(), pane: "", chip: "", slot: new Map(), teach: null };
 const MX_MODE = { auto: "자동 초안", ask: "확인 먼저", notify: "알림만", quiet: "조용히 모으기" };
 const MX_ZERO = { live: 0, unread: 0, needs: 0 };
 const MX_STOP = new Set(["re", "fw", "fwd", "회신", "답장", "전달", "안내", "확인", "문의", "요청", "관련", "공지", "the", "and", "for", "with", "your", "from", "this", "that", "mail"]);
@@ -40,7 +40,7 @@ const mxSet = id => { if (typeof mxOpenSet === "function") mxOpenSet(id); };
 /* ---- the one app ---- */
 // Every `app === "mail"` instance of monItems becomes one: mails and notices together, the counts added, `inst` the first one's. A peer's mail is not here (pqMerge adds it later).
 function mxMerge(items) {
-  MX.of = new Map(); MX.nof = new Map(); MX.accts = new Map(); MX.key = "";
+  MX.of = new Map(); MX.nof = new Map(); MX.accts = new Map(); MX.pa = new Map(); MX.key = "";
   const mine = items.filter(i => i.app && mxMail().some(x => x.key === i.inst));
   if (!mine.length) return;
   const top = mine.find(i => i.inst === "mail") || mine[0], first = s => [...String(s || "")][0] || "";
@@ -60,9 +60,21 @@ function mxMerge(items) {
     hint: down.length ? down[0].hint : monNeedLine({ drafts: top.drafts, unreplied: top.unreplied, unread: top.unread }, false), badge: down.length ? ["연결 끊김", "err"] : mine.map(i => i.badge).find(Boolean) || null });
   for (const i of mine) if (i !== top) items.splice(items.indexOf(i), 1);
 }
-const mxBoxOf = t => { const a = MX.accts.get(MX.of.get(t)), m = MAILS.get(t); return a ? a.byId.get(m && m.box) || a.base : null; };
+// The account a mail target belongs to: one of this computer's (MX.accts) or of another computer's mail app (MX.pa, mxPeerMerge).
+const mxAcct = t => MX.accts.get(MX.of.get(t)) || MX.pa.get(MX.of.get(t));
+const mxBoxOf = t => { const a = mxAcct(t), m = MAILS.get(t); return a ? a.byId.get(m && m.box) || a.base : null; };
+const mxWhy = pc => `${pc.name}의 메일함은 그 컴퓨터에서 바꿔 주세요`;
+// A mail app of another computer is drawn as the same one app: its account and boxes make the same panel, chips and box filter (pqMerge, 34-peer-monitoring.js). Its boxes are read here
+// and changed there, so the buttons that change them stay in place, disabled, with the reason (mxWhy).
+function mxPeerMerge(row, it, pc) {
+  const boxes = Array.isArray(it.boxes) && it.boxes.length ? it.boxes : [{ id: "base", name: "일반", icon: "mail", base: true }], key = pqApp(it.key, pc);
+  const a = { key, n: 0, label: row.name, account: it.account || "", boxes, byId: new Map(boxes.map(b => [b.id, b])), base: boxes.find(b => b.base) || boxes[0], conn: !!row.conn, hint: row.hint, needs: { drafts: row.drafts | 0, unread: row.unread | 0, unreplied: row.unreplied | 0 }, owned: row.owned || [], mk: [...String(row.name || "")][0] || "1" };
+  MX.pa.set(key, a);
+  for (const t of row.mails) MX.of.set(t, key);
+  row.accounts = [a];
+}
 const mxIn = t => { if (MX.box === "all") return true; const b = mxBoxOf(t); return !!b && (mxGroup(MX.box) ? b.name === MX.box.slice(2) : b.id === MX.box); };
-const mxCanMove = t => { const a = MX.accts.get(MX.of.get(t)); return !!a && a.boxes.length > 1; };
+const mxCanMove = t => { const a = mxAcct(t); return !!a && a.boxes.length > 1; };
 // The entries of the pane and the chips: the boxes of the open account; in 모든 계정 the boxes of one name are one entry (`n:<name>`), the base box last.
 function mxEntries(it) {
   const a = it.accounts.find(x => x.key === MX.acct) || (it.accounts.length === 1 ? it.accounts[0] : null), out = [];
@@ -120,7 +132,7 @@ function mxPaneRow(id, name, sub, icn, c, extra) {
 }
 const mxPaneNodes = it => [el("div", { class: "list" }, mxPaneRow("all", "전체", `안 읽음 ${it.all.unread}`, "mail", it.all, [])),
   el("div", { class: "list" }, ...it.rows.map(e => mxPaneRow(e.id, e.b.name, mxSub(e), e.b.icon, e.c, [e.b.base ? el("span", { class: "tag mx-base", text: "기본" }) : null, mxAcctMark(it, e)]))),
-  el("button", { class: "btn text sm mx-add", type: "button", onclick: mxNew }, icon("add"), "메일함 추가")];
+  el("button", { class: "btn text sm mx-add", type: "button", disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: mxNew }, icon("add"), "메일함 추가")];
 function mxPane(it) {
   const pane = $("#mx-pane");
   if (!pane || it.esig === MX.pane) return;
@@ -135,13 +147,13 @@ function mxTabs(it) {
   if (s && s.sig === it.esig) return s.node;
   const tab = (id, name, c, extra) => el("button", { class: `mx-tab${MX.box === id ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(MX.box === id), onclick: () => mxBox(id) }, name, extra, mxDot(c), el("span", { text: String(c.live) }));
   const node = segKeep(el("div", { class: "mx-tabs", role: "tablist", "aria-label": "메일함" }, tab("all", "전체", it.all, null), ...it.rows.map(e => tab(e.id, e.b.name, e.c, mxAcctMark(it, e))),
-    el("button", { class: "mx-tab", type: "button", "aria-label": "메일함 추가", onclick: mxNew }, icon("add"))));
+    el("button", { class: "mx-tab", type: "button", "aria-label": "메일함 추가", disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: mxNew }, icon("add"))));
   MX.slot.set("tabs", { sig: it.esig, node });
   return node;
 }
 // A named box has a title for what only it has (its way of answering, 메일함 설정). 전체 has none: the pane row (wide) and the chip (phone) already say it is chosen.
 const mxTitle = it => {
-  const set = id => el("button", { class: "btn tonal sm mx-setb", type: "button", onclick: () => mxSet(id) }, icon("sliders"), el("span", { text: "메일함 설정" }));
+  const set = id => el("button", { class: "btn tonal sm mx-setb", type: "button", disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: () => mxSet(id) }, icon("sliders"), el("span", { text: "메일함 설정" }));
   if (MX.box === "all") return null;
   const e = it.rows.find(x => x.id === MX.box);
   if (mxGroup(MX.box)) return el("div", { class: "mx-bh" }, el("h2", { text: e.b.name }), el("span", { class: "meta", text: `계정 ${e.n}개를 합쳐서 보여요` }), set(e.b.id));
@@ -198,12 +210,12 @@ function mxPaint(sel) {
 // After the sender: the account's mark and the box's name, where the list mixes boxes (전체) or accounts; before ⋯: the folder button.
 const mxSender = t => {
   const b = MX.show && MX.of.has(t) ? mxBoxOf(t) : null;
-  return b ? [MX.mark ? mxMark(MX.accts.get(MX.of.get(t))) : null, MX.show === 2 ? el("span", { class: "mx-bt", text: b.name }) : null].filter(Boolean) : [];
+  return b ? [MX.mark ? mxMark(mxAcct(t)) : null, MX.show === 2 ? el("span", { class: "mx-bt", text: b.name }) : null].filter(Boolean) : [];
 };
-const mxMoveBtn = t => (MX.of.has(t) && mxCanMove(t) ? el("button", { class: "ib mr-mv", type: "button", "data-k": "mail-move", title: "메일함 옮기기", "aria-label": "메일함 옮기기",
+const mxMoveBtn = t => (MX.of.has(t) && mxCanMove(t) ? el("button", { class: "ib mr-mv", type: "button", "data-k": "mail-move", disabled: !!pqPc(t), title: pqPc(t) ? mxWhy(pqPc(t)) : "메일함 옮기기", "aria-label": "메일함 옮기기",
   onclick: ev => { ev.stopPropagation(); mxMoveOpen(ev.currentTarget, [t]); }, onkeydown: ev => ev.stopPropagation() }, icon("folder")) : null);
 // What mbRow's signature adds: what the row draws of its box and account.
-const mxSig = t => { const b = MX.of.has(t) ? mxBoxOf(t) : null; return b ? [MX.show, MX.mark, b.name, MX.accts.get(MX.of.get(t)).mk, mxCanMove(t)] : 0; };
+const mxSig = t => { const b = MX.of.has(t) ? mxBoxOf(t) : null; return b ? [MX.show, MX.mark, b.name, mxAcct(t).mk, mxCanMove(t)] : 0; };
 
 /* ---- moving ---- */
 const mxAddr = keys => {

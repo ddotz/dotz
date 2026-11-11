@@ -163,7 +163,8 @@ function cmPostCard(thread, kind) {
       thread.link ? el("a", { class: "cm-pl", href: thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(kind) }) : null));
 }
 const cmOpenWord = kind => (kind === "youtube" ? "영상 열기" : "원본 글 열기");
-const cmHasTabs = () => DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length);
+// DM is this computer's own (one DM state, /api/ig-dm here): another computer's Instagram shows no DM tab, never this computer's DMs under its name.
+const cmHasTabs = () => !CM.pc && DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length);
 function cmTabs() {
   if (!cmHasTabs()) return null;
   const b = (id, text) => el("button", { type: "button", class: `cchip mr-f${CM.tab === id ? " on" : ""}`, role: "tab", "data-tab": id, "aria-selected": String(CM.tab === id), text, onclick: () => cmTab(id) });

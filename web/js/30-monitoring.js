@@ -399,7 +399,7 @@ function monItemNode(n) {
   if (!node) return null;
   for (const li of node.querySelectorAll(".rc-sec li")) { const c = nwChangeNode(li.textContent); if (c) li.replaceChildren(c); }   // 89,000원 → 72,000원: the old value struck, the new one bold
   node.dataset.nid = n.id;
-  if (ntNeeds(n) && !n.pc) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
+  if (monNeed(n)) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
   return node;
 }
 // Runs the monitor once now, on the computer that owns it (a peer's through /api/peer/act). The route answers after the check with the new

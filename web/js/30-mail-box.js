@@ -241,9 +241,9 @@ function mbPaintBar() {
   // The two used most stand as words (읽음, 보관); the rest is in the ⋯, so 삭제 is never the button beside the × that clears the choice.
   const owed = mbOwed(keys).length, run = a => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar());
   const btns = [["read", "읽음으로 표시", "check"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"]].map(([a, label, ic]) => mbBtn(label, ic, () => run(a), { k: `mail-${a}`, short: MB_SHORT[a], cls: "mbox-w" }));
-  const items = [{ value: "unread", label: "안 읽음으로 표시" }, ...(keys.some(mxCanMove) ? [{ value: "move", label: "메일함 옮기기" }] : []), ...(owed ? [{ value: "fyi", label: `답장 안 함${owed < keys.length ? ` ${owed}개` : ""}` }] : []), { value: "trash", label: "삭제", danger: true }];
+  const items = [{ value: "unread", label: "안 읽음으로 표시" }, ...(keys.some(mxCanMove) ? [{ value: "move", label: "메일함 옮기기", ...(keys.some(pqPc) ? { sub: mxWhy(pqPc(keys.find(pqPc))) } : {}) }] : []), ...(owed ? [{ value: "fyi", label: `답장 안 함${owed < keys.length ? ` ${owed}개` : ""}` }] : []), { value: "trash", label: "삭제", danger: true }];
   btns.push(el("button", { class: "mbox-b mbox-ic", type: "button", "data-k": "mail-more", title: "더 보기", "aria-label": "더 보기", "aria-haspopup": "listbox",
-    onclick: ev => { const b = ev.currentTarget; showMenu(b, items, { onPick: v => (v === "move" ? mxMoveOpen(b, keys) : v === "fyi" ? mbFyi(keys).then(() => mbPaintBar()) : run(v)) }); } }, icon("more")));
+    onclick: ev => { const b = ev.currentTarget; showMenu(b, items, { onPick: v => (v === "move" ? (keys.some(pqPc) ? toast(mxWhy(pqPc(keys.find(pqPc))), true) : mxMoveOpen(b, keys)) : v === "fyi" ? mbFyi(keys).then(() => mbPaintBar()) : run(v)) }); } }, icon("more")));
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));

@@ -224,6 +224,7 @@ function pqMerge(items) {
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
       PQ.of.set(`settings:${pqApp(it.key, pc)}`, { pc, key: key(`i:${it.key}`), app: true, label: it.label });   // the app's settings conversation lives on that computer
       apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, conn, hint: pqWhere(p, conn && it.hint ? it.hint : monNeedLine(needs, conn)), at, pc, hostOff: !p.online, owned: owned.get(it.key) || [], badge: pqStatus(p, conn ? ["연결 끊김", "err"] : monFail(owned.get(it.key) || []), false) });
+      if (it.app === "mail") mxPeerMerge(apps[apps.length - 1], it, pc);
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {
