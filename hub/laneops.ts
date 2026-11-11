@@ -501,7 +501,7 @@ export function applyChainChange(): void {
 	restartStaleLanes();
 }
 // The lanes waiting out the subscription's usage limit, whose pause the usage check (hub/limit-lift.ts) may end early.
-export const limitPausedLanes = (): Lane[] => [...lanes.values()].filter(l => l.proc && l.status === "rate-limited" && l.limitPause && !l.pausing);
+export const limitPausedLanes = (): Lane[] => [...lanes.values()].filter(l => l.proc && l.status === "rate-limited" && l.limitPause);
 export const limitPausedModels = (): string[] => limitPausedLanes().map(l => l.activeModel || l.model);
 export function liftLanePauses(): number {
 	const paused = limitPausedLanes();

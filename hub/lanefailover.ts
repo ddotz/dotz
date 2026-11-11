@@ -2,7 +2,7 @@ import { type Lane, setStatus, hooks, pendingFile, persist } from "./lanestate.t
 import { type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { TZ, log, parseSelector } from "./config.ts";
 import { pinnedLimitNotice } from "./accounts-api.ts";
-import { authStamp, blockText, limitAccount, limitKind, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
+import { authStamp, blockText, limitAccount, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { report, withHeld, scheduleReport } from "./lanereport.ts";
 import { prompt } from "./laneprompt.ts";
 import { msg } from "./i18n.ts";
@@ -21,6 +21,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	lane.resuming = false;
 	setStatus(lane, "rate-limited");
 	const owner = kind === "owner";
+	lane.limitPause = !owner;   // set at once: a lift that comes while the hold is entered (laneops liftLanePauses) clears it, and nothing is armed after
 	const agent = `lane:${lane.name}`;
 	const lk = limitKind(err, kind);
 	const account = limitAccount(err, lane.model);
@@ -28,17 +29,20 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	let note = owner ? noteBlock(agent, account, lk) : undefined;
 	const { ms: wait, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, lane.model, "lane");
 	lane.pausing = false;
-	if (lane.status !== "rate-limited") return;
-	note ??= noteBlock(agent, account, lk);
+	const lifted = (): boolean => lane.status !== "rate-limited" || (!owner && !lane.limitPause);
+	if (lifted()) return;
+	note ??= noteBlock(agent, account, lk, Date.now(), true);
 	const at = new Date(Date.now() + wait).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 	if (note.alert) {
-		report(lane, owner
+		const text = owner
 			? blockText(lk as "auth" | "billing", account, providerOf(lane.model), wait)
-			: (await pinnedLimitNotice(Date.now() + wait)) ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, owner ? true : "pause");
+			: (await pinnedLimitNotice(Date.now() + wait)) ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`;
+		if (lifted()) return;
+		report(lane, text, owner ? true : "pause");
 	}
+	markTold(agent);
 	lane.pauseReported = true;
 	lane.pauseKind = kind;
-	lane.limitPause = !owner;
 	if (!owner) armLimitWatch();
 	const authSince = authStamp();
 	const fire = () => {

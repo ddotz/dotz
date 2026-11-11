@@ -559,11 +559,11 @@ export function createOrchestrator(opts: OrchOpts) {
 	// While paused by a rate limit (5h or a spent week), prompts are held instead of each starting a turn that fails at once;
 	// right after the spent window resets (from the provider's usage report; retry-after otherwise) they all go in, oldest
 	// first, after the resume note. A retry that hits the limit again re-arms quietly. A billing/auth error ("owner") pauses
-	// the same way, but nothing says when the owner fixes it, so it is probed on a slow backoff (ownerRetryMs) or when the login changes; the owner is told once per episode (limit-alert.ts).
+	// the same way, but nothing says when the owner fixes it, so it is probed on a slow backoff (ownerRetryMs) or when the login changes; the owner is told once per episode (limit-alert.ts). A lift that comes while a hold is being entered (usage read, alert text) ends it there: holdId moves on, so nothing is saved, told or armed after it.
 	const isResumeNote = (t: string) => isNote(t, "rateLead") || isNote(t, "providerLead") || isNote(t, "transientLead");
 	let resumeTimer: Timer | undefined;
 	const clearResume = (): void => void (clearTimeout(resumeTimer), (resumeTimer = undefined));
-	let pausing = false;
+	let pausing = false, holdId = 0;
 	let pauseAlerted = false;
 	const lp = limitPauseState();
 	// The pause is over: every window hears it now (statusActivity makes them read /api/state again), not when the first turn starts.
@@ -573,53 +573,57 @@ export function createOrchestrator(opts: OrchOpts) {
 		statusActivity(opts.source, "한도가 풀려서 작업을 이어가요");
 	}
 	async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<void> {
-		if (resumeTimer || pausing) return;
+		if (resumeTimer || (pausing && orch.status === "rate-limited")) return;
+		const id = ++holdId;
 		pausing = true;
-		orch.resuming = false;
-		orch.status = "rate-limited";
-		orch.rateLimitedUntil = "";
-		const owner = kind === "owner";
-		const lk = limitKind(err, kind);
-		const account = limitAccount(err, currentModel);
-		log(`${who} blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
-		let note = owner ? noteBlock("orchestrator", account, lk) : undefined;
-		const { ms: retry, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, currentModel);
-		pausing = false;
-		if (orch.status !== "rate-limited") return;
-		note ??= noteBlock("orchestrator", account, lk);
-		const until = new Date(Date.now() + retry);
-		orch.rateLimitedUntil = until.toISOString();
-		const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-		orch.pauseKind = owner ? "owner" : "rate";
-		const authSince = authStamp();
-		save({ pausedUntil: orch.rateLimitedUntil, pausedKind: owner ? "owner" : undefined, pausedAuth: owner ? authSince : undefined });
-		if (note.alert) {
-			if (owner) onAlert(`${NAME}: ${blockText(lk as "auth" | "billing", account, providerOf(currentModel), retry)}`);
-			else {
-				const pinned = await pinnedLimitNotice(until.getTime());
-				onAlert(`${NAME}: ${pinned ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`}`);
+		try {
+			orch.resuming = false;
+			orch.status = "rate-limited";
+			orch.rateLimitedUntil = "";
+			const owner = kind === "owner";
+			const lk = limitKind(err, kind);
+			const account = limitAccount(err, currentModel);
+			log(`${who} blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
+			let note = owner ? noteBlock("orchestrator", account, lk) : undefined;
+			const { ms: retry, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, currentModel);
+			if (holdId !== id || orch.status !== "rate-limited") return;
+			note ??= noteBlock("orchestrator", account, lk, Date.now(), true);
+			const until = new Date(Date.now() + retry);
+			orch.rateLimitedUntil = until.toISOString();
+			const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+			orch.pauseKind = owner ? "owner" : "rate";
+			const authSince = authStamp();
+			save({ pausedUntil: orch.rateLimitedUntil, pausedKind: owner ? "owner" : undefined, pausedAuth: owner ? authSince : undefined });
+			if (note.alert) {
+				if (owner) onAlert(`${NAME}: ${blockText(lk as "auth" | "billing", account, providerOf(currentModel), retry)}`);
+				else {
+					const pinned = await pinnedLimitNotice(until.getTime());
+					if (holdId !== id || orch.status !== "rate-limited") return;
+					onAlert(`${NAME}: ${pinned ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`}`);
+				}
 			}
-		}
-		pauseAlerted = true;
-		armResume(retry, owner, authSince);
+			markTold("orchestrator");
+			pauseAlerted = true;
+			armResume(retry, owner, authSince);
+		} finally { if (holdId === id) pausing = false; }
 	}
-	const limitPaused = (): boolean => lp.armed() && orch.status === "rate-limited" && Boolean(resumeTimer);
+	const limitPaused = (): boolean => orch.status === "rate-limited" && (pausing || (lp.armed() && Boolean(resumeTimer)));
 	const limitModel = (): string => orch.activeModel || currentModel;
-	const liftLimit = (): boolean => limitPaused() && lp.lift(() => log(`${who} usage limit is over; resuming now`));
+	const over = (): void => log(`${who} usage limit is over; resuming now`);
+	const liftLimit = (): boolean => limitPaused() && (pausing ? (holdId++, (pausing = false), over(), resumeHold(false), true) : lp.lift(over));
+	function resumeHold(owner: boolean, restartWhy?: string): void {
+		clearResume();
+		save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
+		noteResuming();
+		if (restartWhy && proc) return restart(restartWhy);
+		settleRevert(false); // the held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds
+		const m = msg(), stalled = owner ? "" : resumeExtra();
+		proc?.send(owner ? m.orchProvider(held.length) : `${m.orchRate(held.length)}${stalled ? `\n\n${stalled}` : ""}`, "followUp");
+		armWatchdog();
+	}
 	// A billing/auth pause also ends the moment the login store changes (the owner logged in again), still without a word.
 	function armResume(retry: number, owner: boolean, authSince: number): void {
-		const fire = () => {
-			clearResume();
-			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
-			noteResuming();
-			// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
-			// retry that hits the limit again loses nothing.
-			const m = msg();
-			settleRevert(false);
-			const stalled = owner ? "" : resumeExtra();
-			proc?.send(owner ? m.orchProvider(held.length) : `${m.orchRate(held.length)}${stalled ? `\n\n${stalled}` : ""}`, "followUp");
-			armWatchdog();
-		};
+		const fire = () => resumeHold(owner);
 		const mine = (resumeTimer = setTimeout(fire, retry));
 		lp.set(!owner, fire);
 		if (owner) {
@@ -628,11 +632,7 @@ export function createOrchestrator(opts: OrchOpts) {
 				// on the new account, the retry still went out on the dead one). A fresh process reads the store again; the held prompts
 				// are replayed into it, and a login that is still broken pauses again without a new alert.
 				log(`${who} login store changed; restarting it on the new login and retrying the held prompts`);
-				clearResume();
-				save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
-				noteResuming();
-				if (proc) restart("login store changed");
-				else fire();
+				resumeHold(true, "login store changed");
 			});
 		}
 	}
