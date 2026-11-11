@@ -277,6 +277,19 @@ function limitGauge(key, l) {
   gaugeSet(key, f * 100, s => { fill.style.width = `${s.w.toFixed(2)}%`; gaugeNum(t.sp, s); });
   return { num: el("b", {}, ...t.nodes), track };
 }
+// What used the plan over the last audited day (hub/usage-share.ts): the sessions at 10% or more of it, each with the model that cost
+// it most, then the rest and the share by model. The numbers come from the nightly token audit, not from this read.
+const useWho = r => r.kind === "orchestrator" ? TX("settings.usage.use.main") : r.kind === "lane" ? TX("settings.usage.use.lane", { name: r.name }) : r.kind === "worker" ? TX("settings.usage.use.worker", { name: r.name }) : r.name;
+function useCard(u) {
+  const pct = n => `${Math.round(n)}%`;
+  const card = el("div", { class: "card" }, el("div", { class: "ch lo" }, el("h3", { text: TX("settings.usage.use.title") })),
+    el("div", { class: "sup", text: TX("settings.usage.use.when", { at: monTime(u.at), hours: u.hours }) }));
+  for (const r of u.rows) card.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: useWho(r) }), el("b", { text: pct(r.pct) })), el("div", { class: "sup", text: modelShort(r.model) })));
+  if (!u.rows.length) card.append(el("div", { class: "sup", text: TX("settings.usage.use.none") }));
+  if (u.rest.sessions) card.append(el("div", { class: "sup", text: TX("settings.usage.use.rest", { n: u.rest.sessions, pct: pct(u.rest.pct) }) }));
+  if (u.models.length) card.append(el("div", { class: "sup", text: TX("settings.usage.use.models", { list: u.models.map(m => `${modelShort(m.model)} ${pct(m.pct)}`).join(" · ") }) }));
+  return card;
+}
 let quotaDrawn = 0;
 async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
@@ -320,6 +333,7 @@ function paintQuota(q) {
     if (p.resets) card.append(...resetRow(p, name));
     grid.append(card);
   }
+  if (q.use) grid.append(useCard(q.use));
   // The monthly API spend limit the owner set on the platform console, and how much of it is used (hub/api-budget.ts).
   if (q.budget) grid.prepend(budgetCard(q.budget));
   else box.append(el("div", { class: "list" }, budgetRow()));

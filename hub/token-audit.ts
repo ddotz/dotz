@@ -12,6 +12,7 @@ import { cfg, DATA_DIR, DEFAULTS, HOME, paths, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
 import { msg } from "./i18n.ts";
 import { bareModel, type Covered, ownerCovered, readOwnerBasis } from "./owner-asked.ts";
+import { type SessionUse, sharesOf, type UseShare } from "./usage-share.ts";
 import { expensiveMatch, loadGuardConfig } from "./lanegates.ts";
 import { addBigContext, addToolCalls, addTurn, addWake, collectSessions, newStreaks, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
 
@@ -68,7 +69,7 @@ type Json = Record<string, any>; // omp session lines are external jsonl; fields
 
 // An Anthropic 429 blocks until its retry-after (5h when unknown, capped at 7 days): a fallback inside one is expected.
 type Exhaust = { from: number; to: number };
-type Day = { date: string; tokens: number; cost: number; cacheWrite: number; sessions: number; flags: number; kinds?: string[]; report?: string };
+type Day = { date: string; tokens: number; cost: number; cacheWrite: number; sessions: number; flags: number; kinds?: string[]; report?: string; use?: UseShare };
 
 export const projectLabel = (dir: string) => labelOf(dir, HOME, DATA_DIR);
 const collect = (since: number) => collectSessions(since, { home: HOME, dataDir: DATA_DIR });
@@ -85,7 +86,7 @@ type Stats = {
 	maxBigStreak: number; bigTokens: number; bigCost: number;
 	fbTurns: number; fbModels: Set<string>; fbIntended: Set<string>; intended?: string; fbSegs: number[][]; shrinks: number;
 	fable: number; fableCost: number; effortTurns: number; effortCost: number; expensiveCost: number; efforts: Set<string>;
-	dearModels: Set<string>; dearLevels: Set<string>; dearFirst: number; dearLast: number;
+	dearModels: Set<string>; dearLevels: Set<string>; dearFirst: number; dearLast: number; modelCost: Record<string, number>;
 	maxToolStreak: number; maxToolDesc: string; loopTokens: number; loopCost: number; readRate: number;
 };
 
@@ -117,7 +118,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 	const s: Stats = {
 		src, intended: src.requested, fbSegs: [], shrinks: 0, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], rebuilds: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0,
 		errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0, fbTurns: 0, fbModels: new Set(), fbIntended: new Set(),
-		fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, expensiveCost: 0, efforts: new Set(), dearModels: new Set(), dearLevels: new Set(), dearFirst: 0, dearLast: 0, maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
+		fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, expensiveCost: 0, efforts: new Set(), dearModels: new Set(), dearLevels: new Set(), dearFirst: 0, dearLast: 0, modelCost: {}, maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
 	};
 	const sessionDecisions = decisions.get(src.file.match(/([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/)?.[1] ?? "") ?? [];
 	const decisionIn = (from: number, to: number) => sessionDecisions.findLast(d => d.ts > from && d.ts <= to);
@@ -231,6 +232,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 		}
 		if (inWindow) {
 			addTurn(s, ts, { tokens, cost, cw, cr, out: u.output ?? 0, ctx });
+			s.modelCost[bareModel(model)] = (s.modelCost[bareModel(model)] ?? 0) + cost;
 			if (cr) {
 				readTok += cr;
 				readCost += u.cost?.cacheRead ?? 0;
@@ -472,6 +474,22 @@ function askedBy(results: Stats[], basis = readOwnerBasis(join(DATA_DIR, "state"
 	}));
 	return s => ownerCovered({ models: [...s.dearModels], levels: [...s.dearLevels], first: s.dearFirst, last: s.dearLast }, s.src.parent ? targetOf.get(s.src.parent) : s.src.target, s.src.child, basis);
 }
+// The audited sessions as the usage screen names them (hub/usage-share.ts): main's sessions as one row, a lane's as one, a task's as one.
+export function useOf(results: Stats[]): SessionUse[] {
+	const out = new Map<string, SessionUse>();
+	for (const s of results) {
+		const task = s.src.label.match(/^task:(.+?) \(st_/)?.[1];
+		const t = s.src.target;
+		const [kind, name]: [SessionUse["kind"], string] = task ? ["worker", task] : t === "orchestrator" ? ["orchestrator", ""] : t?.startsWith("lane:") ? ["lane", t.slice(5)] : ["other", s.src.label.replace(/ \[(?:OmO|omp)\]$/, "")];
+		const row = out.get(`${kind}\0${name}`) ?? { kind, name, models: {}, cost: 0, tokens: 0 };
+		row.cost += s.cost;
+		row.tokens += s.tokens;
+		for (const [m, c] of Object.entries(s.modelCost)) row.models[m] = (row.models[m] ?? 0) + c;
+		out.set(`${kind}\0${name}`, row);
+	}
+	return [...out.values()];
+}
+
 // Sessions whose expensive use the owner asked for (all or part of it), and what that part cost.
 export function ownerUseOf(results: Stats[], asked: (s: Stats) => Covered): { sessions: number; cost: number } {
 	let sessions = 0, cost = 0;
@@ -546,7 +564,7 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 	const recurring = [...new Set(flags.filter(f => f.recur).map(f => f.kind))];
 	const reportPath = join(LOG_DIR, `token-audit-${today.replace(/-/g, "")}.md`);
 	if (!opts.dry) {
-		history = [...history.filter(d => d.date !== today), { date: today, tokens: total, cost: totalCost, cacheWrite: totalCw, sessions: results.length, flags: flags.length, kinds, report: reportPath }].slice(-14);
+		history = [...history.filter(d => d.date !== today), { date: today, tokens: total, cost: totalCost, cacheWrite: totalCw, sessions: results.length, flags: flags.length, kinds, report: reportPath, use: sharesOf(useOf(results), now, hours) }].slice(-14);
 		writeAtomic(HISTORY, `${JSON.stringify({ updated: new Date(now).toISOString(), days: history }, null, 1)}\n`);
 	}
 	const ordered = [...findings].sort((a, b) => Number(b.flag) - Number(a.flag) || b.save - a.save);

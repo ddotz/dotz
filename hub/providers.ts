@@ -17,6 +17,7 @@ import { apiBudget } from "./api-budget.ts";
 import { runLimited } from "./run-limited.ts";
 import { codexUsage, withCodex } from "./codex-usage.ts";
 import { heldLimits, readReports, readUsageJson } from "./usage-last.ts";
+import { useField } from "./usage-share.ts";
 import { type AccountReport, AccountUsage, type ClaudeResets, type QuotaLimit, cliTokensSettled, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
@@ -729,7 +730,7 @@ async function readQuota() {
 	const anthropic = await anthropicUsage();
 	const reports = [...(anthropic ? [anthropic] : []), ...(await usageReports()).filter(r => r.provider !== "anthropic")];
 	const [budget, codex] = await Promise.all([apiBudget().catch(() => undefined), codexUsage()]);
-	return { fetched_at: Date.now(), ...withCodex(buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), codex), ...(budget ? { budget } : {}), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
+	return { fetched_at: Date.now(), ...withCodex(buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), codex), ...(budget ? { budget } : {}), ...useField(), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
 }
 
 // GET /api/quota answers from the last read, never waiting on a CLI, the keychain or the usage endpoint (only the very first
