@@ -3,6 +3,7 @@
 import { log } from "./config.ts";
 import { type ChoiceOption, hasDecisionHead, parseChoices, parseDecisions } from "./choices.ts";
 import type { Interaction } from "./discord.ts";
+import { escalations } from "./escalate.ts";
 import type { Pick } from "./intake.ts";
 import { msg } from "./i18n.ts";
 import { parseTone, TONE_EMOJI } from "./tone.ts";
@@ -88,6 +89,8 @@ export async function askInteraction(d: Interaction, deps: AskDeps): Promise<voi
 		text += ` - ${note}`;
 	} else if (d.type === 5) return deps.reply(d, 4, ephemeral(m.finished));
 	try {
+		// A stronger-model card is acted on before the answer reaches the asker, as on the web (hub/routes.ts deliverAnswer).
+		await escalations()?.answer({ to: parsed.target, label: picked.label }).catch(e => log(`stronger-model answer failed: ${(e as Error).message}`));
 		(deps.answer ?? answer)(parsed.target, text, question ? [{ q: question, n: picked.n, label: picked.label, ...(note ? { note } : {}) }] : []);
 	} catch (e) {
 		log(`ask ${parsed.target} answer failed: ${e}`);

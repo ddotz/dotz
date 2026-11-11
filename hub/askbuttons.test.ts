@@ -1,4 +1,8 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createEscalations, escalations, setEscalationsForTest } from "./escalate.ts";
 import { ASK_PREFIX, askComponents, askComponentsFor, askInteraction, parseAskId } from "./askbuttons.ts";
 import type { Interaction } from "./discord.ts";
 import { buildPayloads } from "./discord-format.ts";
@@ -86,6 +90,36 @@ test("an unknown option or a message without choices is answered ephemerally", a
 	await h.run(click("owner-1", `${ASK_PREFIX}:lane:fix:1`, "no choices here"));
 	expect(h.answers).toEqual([]);
 	expect(h.replies.map(r => [r.type, r.data.flags])).toEqual([[4, 64], [4, 64]]);
+});
+
+test("a click on a stronger-model card acts on the proposal, in a session channel and in the main chat", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "askbuttons-escalate-"));
+	const cards: string[] = [];
+	const launched: string[] = [];
+	setEscalationsForTest(
+		createEscalations({
+			file: join(dir, "escalations.json"),
+			now: Date.now,
+			post: (_target, text) => void cards.push(text),
+			launch: async req => (launched.push(req.session), { lane: `${req.name}` }),
+			tell: () => {},
+			stop: () => {},
+		}),
+	);
+	try {
+		const e = escalations()!;
+		const ask = { cwd: "/home/user/repo", current: "acme/mid-model:medium", offer: "acme/mid-model:high", step: "rewrite the parser", reason: "three tries failed", est: 5 };
+		await e.propose({ ...ask, asker: "lane:parser" });
+		await e.propose({ ...ask, asker: "main" });
+		const h = harness();
+		await h.run(click("owner-1", `${ASK_PREFIX}:lane:parser:1`, cards[0]));
+		await h.run(click("owner-1", `${ASK_PREFIX}:chat:1`, cards[1]));
+		expect(launched).toEqual(["lane:parser", "main"]);
+		expect(h.answers.map(a => a[0])).toEqual(["lane:parser", "chat"]);
+	} finally {
+		setEscalationsForTest(undefined);
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("a failed delivery leaves the buttons enabled and tells the owner", async () => {

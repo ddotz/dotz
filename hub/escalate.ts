@@ -62,8 +62,8 @@ export function pickCandidate(i: { current: string; configured: Configured[]; av
 	return pick && `${pick.model}:${pick.thinking}`;
 }
 
-// The main chat's card is posted to "web" and answered as "main".
-const chat = (target: string) => (target === "main" ? "web" : target);
+// The main chat's card is posted to "web" and answered as "main" (web) or "chat" (a Discord button).
+const chat = (target: string) => (target === "main" || target === "chat" ? "web" : target);
 const laneName = (asker: string) => `${asker.replace(/^lane:/, "").toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+/, "").slice(0, 28) || "step"}-up`;
 
 export function createEscalations(deps: Deps) {
@@ -124,3 +124,6 @@ export const ESCALATIONS_FILE = join(DATA_DIR, "state", "escalations.json");
 let live: Escalations | undefined;
 export const wireEscalations = (deps: Omit<Deps, "file" | "now">): Escalations => (live = createEscalations({ file: ESCALATIONS_FILE, now: Date.now, ...deps }));
 export const escalations = (): Escalations | undefined => live;
+export const setEscalationsForTest = (e: Escalations | undefined): void => {
+	live = e;
+};
