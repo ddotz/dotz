@@ -115,6 +115,32 @@ function motionStay(el) {
   return !!stop;
 }
 const M_GONE_STYLE = ["position", "left", "top", "width", "height", "margin", "boxSizing", "zIndex", "pointerEvents", "translate"];
+// The list box the row leaves (a white card with rounded, clipping corners) would shrink at once and cut the rows still gliding up at its bottom.
+// It keeps its height while what follows it takes its place at once (a negative bottom margin, so the next boxes glide like the rows), and
+// its bottom edge is wiped up with a clip-path on the same curve, so the card closes as the last row arrives. Several rows leaving the same
+// box add up. When the last one is gone the box gets its own styles back and lays out at exactly the size the clip showed.
+const M_FOLD = new WeakMap();
+function mFold(p, before) {
+  const shrink = before.height - p.getBoundingClientRect().height;
+  if (shrink < 0.5) return null;
+  const cs = getComputedStyle(p);
+  let f = M_FOLD.get(p);
+  if (!f) { f = { total: 0, n: 0, h: before.height, base: parseFloat(cs.marginBottom) || 0, keep: [p.style.minHeight, p.style.marginBottom], anim: null }; M_FOLD.set(p, f); }
+  const at = f.anim ? Number((/inset\(\S+ \S+ ([\d.]+)px/.exec(getComputedStyle(p).clipPath) || [])[1] || 0) : 0;
+  if (f.anim) f.anim.cancel();
+  f.total += shrink; f.n++;
+  p.style.minHeight = `${f.h}px`; p.style.marginBottom = `${f.base - f.total}px`;
+  const r = cs.borderBottomLeftRadius;
+  f.anim = p.animate([{ clipPath: `inset(0px 0px ${at}px 0px round ${r})` }, { clipPath: `inset(0px 0px ${f.total}px 0px round ${r})` }], { duration: M_MS.base, easing: M_EASE, fill: "forwards" });
+  return f;
+}
+function mUnfold(p) {
+  const f = p && M_FOLD.get(p);
+  if (!f || --f.n > 0) return;
+  M_FOLD.delete(p);
+  f.anim.cancel();
+  [p.style.minHeight, p.style.marginBottom] = f.keep;
+}
 const mUnstyle = el => { delete el.dataset.gone; el.removeAttribute("aria-hidden"); for (const k of M_GONE_STYLE) el.style[k] = ""; };
 async function mGone(el, o) {
   const parent = el.parentElement, after = el.nextElementSibling, before = el.previousElementSibling, hadFocus = el.contains(document.activeElement);
@@ -126,12 +152,14 @@ async function mGone(el, o) {
       const r = s.getBoundingClientRect();
       if (r.height || r.width) { if (r.top > innerHeight) break; movers.push([s, r]); }
     }
-  const box = el.getBoundingClientRect(), quiet = reducedMotion() || !el.animate;
+  const box = el.getBoundingClientRect(), quiet = reducedMotion() || !el.animate, pbox = parent && parent.getBoundingClientRect();
+  let fold = null;
   const done = () => {
     if (o.keep) {
       for (const a of el.getAnimations()) a.cancel();
       el.hidden = true; mUnstyle(el);
     } else el.remove();
+    if (fold) mUnfold(parent);
     if (hadFocus) {
       const to = [after, before].find(n => n && n.isConnected && !n.dataset.gone), f = to && (to.matches(mFocusable) ? to : to.querySelector(mFocusable));
       if (f) f.focus({ preventScroll: true });
@@ -150,6 +178,7 @@ async function mGone(el, o) {
   // A container held at its bottom (the composer) moves its top when the element leaves its flow: the lifted element is put back on its spot.
   const lifted = el.getBoundingClientRect();
   if (Math.abs(lifted.top - box.top) > 0.5 || Math.abs(lifted.left - box.left) > 0.5) el.style.translate = `${box.left - lifted.left}px ${box.top - lifted.top}px`;
+  if (!o.keep && parent) fold = mFold(parent, pbox);
   const glides = [];
   for (const [s, r] of movers) {
     const now = s.getBoundingClientRect(), dx = r.left - now.left, dy = r.top - now.top;
