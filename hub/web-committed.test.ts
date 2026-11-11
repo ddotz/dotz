@@ -104,4 +104,17 @@ describe("committed web build", () => {
 		process.env.DOTZ_WEB_LIVE = "1";
 		try { expect(publishedWeb(repo)).toBeUndefined(); } finally { process.env.DOTZ_WEB_LIVE = "0"; }
 	});
+
+	test("a commit that moves VERSION is not served: the process keeps the snapshot it started on", () => {
+		const before = publishedWeb(repo)!;
+		write("js/01-app.js", '"use strict";\nNEEDS-NEW-SERVER\n');
+		writeFileSync(join(repo, "VERSION"), "261111.2\n");
+		sh(repo, "add", "-A");
+		sh(repo, "commit", "-qm", "release");
+		tick(120_000);
+		const after = publishedWeb(repo)!;
+		expect(after.tree).toBe(before.tree);
+		expect(after.files.get("js/01-app.js")).not.toContain("NEEDS-NEW-SERVER");
+	});
+
 });

@@ -13,6 +13,7 @@ const WEB_DIR = process.env.DOTZ_WEB_DIR ?? join(import.meta.dir, "..", "web");
 const committed = () => publishedWeb(join(WEB_DIR, ".."));
 /** Text of one web/ file from the committed tree, undefined when the disk is the source. */
 export const committedText = (rel: string): string | undefined => committed()?.files.get(rel);
+committed();   // read at start: the web app this process serves is the one it started with (hub/web-committed.ts)
 type Kind = "js" | "css";
 const cache: Partial<Record<Kind, { key: string; text: string; etag: string }>> = {};
 
