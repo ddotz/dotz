@@ -34,21 +34,30 @@
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
-  let opened = false, es;
+  let opened = false, es, lastId = "", fast = true, parkT = 0, parkedAt = 0;
   // The stream is a function so a page that comes back from the back/forward cache (the browser closes the stream when it freezes the page) can open a new one.
+  // `live` names the stream to the gateway (it closes a stream nobody vouches for, hub/events.ts); `last` replays what a new stream missed, as the browser does on its own reconnect.
   const openStream = () => {
   if (es) es.close();
-  es = new EventSource("/api/events");
+  es = new EventSource(`/api/events?live=${LIVE_TOK}${lastId ? `&last=${lastId}` : ""}`);
   // The browser resends the last frame id on reconnect and the gateway replays only what was missed. "reset" comes on
   // the first connect and when the gap cannot be replayed (gateway restarted, or too long away): only then refetch.
-  es.onopen = () => setConn(true);
-  es.addEventListener("reset", () => {
+  es.onopen = () => { fast = true; setConn(true); };
+  es.addEventListener("reset", m => {
+    lastId = m.lastEventId;
     trLoad();   // the waiting approvals by app instance: the 빠른 처리 banner (30-triage.js)
-    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); kkResync(); }
+    // The drawn conversation stays as it is: loadTarget redraws it only when the read brought something new.
+    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); kkResync(); }
     opened = true;
   });
-  es.onerror = () => setConn(false);
+  // A stream the gateway closed (a cleanup, a slow reader) is attached again at once, not after the browser's wait, so the 2 s of setConn pass unseen; a hidden page stays closed (wake() opens it).
+  es.onerror = () => {
+    if (document.hidden) { es.close(); return; }
+    if (fast) { fast = false; openStream(); }
+    setConn(false);
+  };
   es.onmessage = m => {
+    lastId = m.lastEventId;
     let e;
     try { e = JSON.parse(m.data); } catch { return; }
     if (e.kind === "activity") { onActivity(e); laneActivity(e); }
@@ -74,7 +83,7 @@
       ingestMsg(e); scheduleState();
       // Live notices only (not the replay after a reconnect): alert / worklog posts, the gateway's own notes (sent to the web
       // when Discord is off) and lane reports float in the corner.
-      const fresh = !e.ts || Date.now() - Date.parse(e.ts) < 60_000;
+      const fresh = !e.ts || Date.now() - Date.parse(e.ts) < 60_000 || Date.parse(e.ts) > parkedAt;   // parkedAt: what came while the page was hidden is new to its owner
       const notice = e.kind === "out" && (e.target === "alert" || e.target === "worklog" || (e.target === "web" && e.source === "gateway"));
       if (fresh && (notice || e.kind === "lane_report")) notify(e);
     }
@@ -101,12 +110,16 @@
   let hiddenAt = 0;
   const wake = () => {
     pushTapCheck();
-    const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream();
+    const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) { openStream(); setTimeout(() => { parkedAt = 0; }, 3000); }
     if (away > 5000) resync(); else if (missed.state) refreshState();
     if (missed.models) loadModels(true);
     missed.state = missed.models = false;
   };
-  document.addEventListener("visibilitychange", () => { markSeen(); attnChanged(); loadStrip(); if (document.hidden) hiddenAt = Date.now(); else wake(); });
+  // A hidden page makes no request, so it cannot vouch for its stream: after a while it closes the stream itself and wake() opens it again with the frames it missed.
+  document.addEventListener("visibilitychange", () => {
+    markSeen(); attnChanged(); loadStrip(); clearTimeout(parkT);
+    if (document.hidden) { hiddenAt = Date.now(); parkT = setTimeout(() => { if (document.hidden) { parkedAt = Date.now(); es.close(); } }, 45_000); } else wake();
+  });
   addEventListener("focus", wake);
   setInterval(unlessHidden("models", () => loadModels(true)), 60000);
 })();

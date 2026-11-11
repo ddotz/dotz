@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
 import net from "node:net";
-import { broadcast, sseResponse, subscriberCount } from "./events.ts";
+import { broadcast, LIVE_MAX_MS, noteLive, sseResponse, subscriberCount } from "./events.ts";
 import { PtyHost, ptyRoute } from "./pty.ts";
 import { onHangUp } from "./routes-util.ts";
+import { advance } from "./runtime/test-clock.ts";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const c of cleanups.splice(0)) c(); });
@@ -132,4 +133,39 @@ test("the terminal stream of a client that never reads is dropped, its timer sto
 	expect(host.subs.size).toBe(0);
 	expect(live.size).toBe(0);
 	expect(hung).toBe(1);
+});
+
+const PING_MS = 25_000;
+function attach(token?: string) {
+	const ac = new AbortController();
+	const hung = { n: 0 };
+	onHangUp(ac.signal, () => hung.n++);
+	noteLive(new Request(`http://x/api/events${token ? `?live=${token}` : ""}`, { signal: ac.signal }));
+	const reader = sseResponse(null, ac.signal).body!.getReader();
+	cleanups.push(() => { ac.abort(); void reader.cancel(); });
+	return { hung, vouch: () => noteLive(new Request("http://x/api/state", { headers: { "x-dotz-live": token! } })) };
+}
+
+test("a stream whose page stopped vouching for it is removed and its request cut, with no event on the wire", async () => {
+	const a = attach("gone");
+	await advance(LIVE_MAX_MS - PING_MS);
+	expect(subscriberCount()).toBe(1);
+	await advance(2 * PING_MS);
+	expect(subscriberCount()).toBe(0);
+	expect(a.hung.n).toBe(1);
+});
+
+test("a stream whose page keeps asking stays, and one page's request does not keep another page's stream", async () => {
+	const live = attach("here"), gone = attach("away");
+	for (let i = 0; i < 12; i++) { await advance(PING_MS); live.vouch(); }
+	expect(subscriberCount()).toBe(1);
+	expect(live.hung.n).toBe(0);
+	expect(gone.hung.n).toBe(1);
+});
+
+test("a stream with no token (a peer gateway, the extension) is never cut for silence", async () => {
+	const peer = attach();
+	await advance(10 * 60_000);
+	expect(subscriberCount()).toBe(1);
+	expect(peer.hung.n).toBe(0);
 });

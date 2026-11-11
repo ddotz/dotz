@@ -37,7 +37,8 @@ export function maskedForDisk(event: HubEvent): HubEvent {
 }
 
 const recent: HubEvent[] = [];
-const subscribers = new Map<ReadableStreamDefaultController<string>, AbortSignal | undefined>();
+type Sub = { signal?: AbortSignal; live?: string; seen: number };
+const subscribers = new Map<ReadableStreamDefaultController<string>, Sub>();
 
 for (const file of [paths.inbox, paths.outbox]) {
 	if (!existsSync(file)) continue;
@@ -160,12 +161,31 @@ let pingTimer: ReturnType<typeof setInterval> | undefined;
 
 // `hang`: the client may be alive but not reading, so its socket is closed too (hangUp); the stream is not errored, which Bun would print as an error.
 function drop(sub: ReadableStreamDefaultController<string>, hang = false): void {
-	if (hang) hangUp(subscribers.get(sub));
+	if (hang) hangUp(subscribers.get(sub)?.signal);
 	subscribers.delete(sub);
 	if (!subscribers.size) {
 		clearInterval(pingTimer);
 		pingTimer = undefined;
 	}
+}
+
+// A client that vanished without a FIN (phone asleep, network gone) never errors its socket while only small pings go out, and its backlog stays small. So a page
+// vouches for its stream: the stream URL carries `live=<token>` and every request the page makes carries the header x-dotz-live (web/js/02-basic-markdown.js api()),
+// which hub/main.ts passes to noteLive. The shared ping closes a stream whose token nobody vouched for within LIVE_MAX_MS, so within LIVE_MAX_MS + 25 s. A hidden page
+// closes its own stream first (web/js/99-boot.js). A stream without a token (a peer gateway, the extension, an older page) is not checked.
+export const LIVE_MAX_MS = 90_000;
+const liveOf = new WeakMap<AbortSignal, string>();
+export function noteLive(req: Request): void {
+	const stream = req.url.includes("/api/events");
+	const token = req.headers.get("x-dotz-live") ?? (stream ? new URL(req.url).searchParams.get("live") : null);
+	if (!token || token.length > 64) return;
+	if (stream) liveOf.set(req.signal, token);
+	const now = Date.now();
+	for (const s of subscribers.values()) if (s.live === token) s.seen = now;
+}
+function sweepStale(): void {
+	const limit = Date.now() - LIVE_MAX_MS;
+	for (const [sub, s] of subscribers) if (s.live && s.seen < limit) drop(sub, true);
 }
 
 function push(sub: ReadableStreamDefaultController<string>, chunk: string): void {
@@ -381,12 +401,12 @@ export function sseResponse(lastId?: string | null, signal?: AbortSignal): Respo
 		start(c) {
 			controller = c;
 			const missed = lastId ? replayAfter(lastId) : null;
-			// One chunk, so a long replay does not count as an unread backlog.
-			if (missed) c.enqueue(missed.join(""));
+			// One chunk, so a long replay does not count as an unread backlog. With nothing missed a comment still goes out: the browser reports the stream open only once a byte arrives.
+			if (missed) c.enqueue(missed.join("") || ": open\n\n");
 			else c.enqueue(`id: ${lastEventId()}\nevent: reset\ndata: {}\n\n`);
-			subscribers.set(c, signal);
-			// One shared ping for all clients, alive only while there is one.
-			pingTimer ??= setInterval(() => { for (const sub of subscribers.keys()) push(sub, ": ping\n\n"); }, 25_000);
+			subscribers.set(c, { signal, live: signal && liveOf.get(signal), seen: Date.now() });
+			// One shared ping for all clients, alive only while there is one; it also closes the streams nobody vouches for.
+			pingTimer ??= setInterval(() => { sweepStale(); for (const sub of subscribers.keys()) push(sub, ": ping\n\n"); }, 25_000);
 		},
 		cancel() {
 			drop(controller);

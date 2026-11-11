@@ -22,7 +22,7 @@ import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, setWatchPushOff, startPush } from "./push.ts";
 import { msg, textsToReport } from "./i18n.ts";
 import { startWebI18n } from "./web-i18n-boot.ts";
-import { broadcast, emit, emitDelivery, onEmit, recentEvents, sentFiles, subscriberCount } from "./events.ts";
+import { broadcast, emit, emitDelivery, noteLive, onEmit, recentEvents, sentFiles, subscriberCount } from "./events.ts";
 import { WORK_SWEEP_MS } from "./workrows.ts";
 import { startAgentTrees } from "./agent-tree.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
@@ -446,6 +446,7 @@ const server = Bun.serve({
 	},
 	async fetch(req, srv) {
 		if (req.url.includes("/api/events") || req.url.includes("/api/pty/stream")) onHangUp(req.signal, () => srv.timeout(req, 1));
+		noteLive(req);
 		const res = await route(req, srv);
 		if (!res) return undefined as unknown as Response;
 		return new URL(req.url).pathname === "/api/file" ? res : compressResponse(req, res);
