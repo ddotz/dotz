@@ -305,7 +305,7 @@ export class AccountUsage {
 	private last = new Map<string, { report: AccountReport; at: number; next: number }>();
 	// per account: when it may be asked again after a 429
 	private backoff = new Map<string, number>();
-	constructor(private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response> = (u, i) => fetch(u, i), private readonly now: () => number = Date.now) {}
+	constructor(private readonly fetchFn: (url: string, init: RequestInit) => Promise<Response> = (u, i) => fetch(u, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...i }), private readonly now: () => number = Date.now) {}
 
 	// A switch to this account: its next read goes to the usage endpoint at once, not after the 2-minute hold.
 	forget(name: string): void {

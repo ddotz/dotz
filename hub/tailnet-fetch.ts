@@ -20,7 +20,12 @@ async function tailnetIp(host: string): Promise<string | undefined> {
 	return ip;
 }
 
-export async function peerFetch(url: string | URL, init: RequestInit = {}, resolve: (host: string) => Promise<string | undefined> = tailnetIp): Promise<Response> {
+// A call whose caller passes no signal still ends: PEER_FETCH_MS covers both tries and the body. A caller that keeps a response open (an event
+// stream) passes its own signal and keeps it.
+export const PEER_FETCH_MS = 30_000;
+
+export async function peerFetch(url: string | URL, init: RequestInit = {}, resolve: (host: string) => Promise<string | undefined> = tailnetIp, limitMs = PEER_FETCH_MS): Promise<Response> {
+	init = init.signal ? init : { ...init, signal: AbortSignal.timeout(limitMs) };
 	try {
 		return await fetch(url, init);
 	} catch (error) {

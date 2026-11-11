@@ -17,7 +17,7 @@ if (cmd !== "worker" || !model || !lane) {
 }
 const url = `http://127.0.0.1:${PORT}/api/target`;
 const token = readFileSync(join(DATA_DIR, "secrets", "hub-token"), "utf8").trim();
-const r = await fetch(url, { method: "PUT", headers: { "x-dotz-token": token, "Content-Type": "application/json" }, body: JSON.stringify({ target: `lane:${lane}`, worker_model: model, by: "lane", owner_message: ownerMessage }) });
+const r = await fetch(url, { method: "PUT", headers: { "x-dotz-token": token, "Content-Type": "application/json" }, body: JSON.stringify({ target: `lane:${lane}`, worker_model: model, by: "lane", owner_message: ownerMessage }), signal: AbortSignal.timeout(10_000) });
 const data = (await r.json().catch(() => ({}))) as { worker_model?: string; error?: string };
 if (!r.ok) {
 	console.error(`not recorded: ${data.error ?? r.status}`);

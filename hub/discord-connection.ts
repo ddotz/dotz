@@ -11,7 +11,7 @@ import { status } from "./discord.ts";
 import { body, json } from "./routes-util.ts";
 
 export type DiscordFetch = (url: string, init: { headers: Record<string, string> }) => Promise<Response>;
-const realFetch: DiscordFetch = (url, init) => fetch(url, init);
+const realFetch: DiscordFetch = (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
 
 const API = "https://discord.com/api/v10";
 const SNOWFLAKE = /^\d{17,20}$/;

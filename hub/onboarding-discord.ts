@@ -17,7 +17,7 @@ type GuildInfo = { id: string; permissions?: string };
 type Me = { id: string };
 
 async function get(ctx: OnboardFlowContext, token: string, path: string): Promise<unknown> {
-	const res = await ctx.deps.fetch(`${API}${path}`, { headers: { Authorization: `Bot ${token}` } });
+	const res = await ctx.deps.fetch(`${API}${path}`, { headers: { Authorization: `Bot ${token}` }, signal: AbortSignal.timeout(15_000) });
 	if (res.status === 401) throw new Error("봇 토큰이 거절됐어요");
 	if (!res.ok) return undefined;
 	return res.json().catch(() => undefined);

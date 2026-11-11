@@ -3,7 +3,7 @@
 import { HUB_TOKEN, PORT } from "./config.ts";
 import { openerCommand } from "./opener.ts";
 
-const r = await fetch(`http://127.0.0.1:${PORT}/api/web-access/login-link`, { method: "POST", headers: { "x-dotz-token": HUB_TOKEN } }).catch(() => undefined);
+const r = await fetch(`http://127.0.0.1:${PORT}/api/web-access/login-link`, { method: "POST", headers: { "x-dotz-token": HUB_TOKEN }, signal: AbortSignal.timeout(10_000) }).catch(() => undefined);
 if (!r) {
 	console.error("게이트웨이가 실행 중이 아니에요");
 	process.exit(1);
