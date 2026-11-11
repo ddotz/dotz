@@ -684,6 +684,9 @@
     fallbacks: {},
   };
   const BUDGET = { limit_usd: 50, spent_usd: 12.4, pct: 24.8, month: new Date().toISOString().slice(0, 7), resets_at: Date.now() + 26 * 864e5, source: "estimate" };
+  // 업데이트 화면: the version the demo says it runs, and what a check or a settings change leaves behind (hub/selfupdate.ts).
+  const updVersion = { kind: "git", branch: "main", commit: { sha: "3f9c2e1".padEnd(40, "0"), short: "3f9c2e1", date: new Date(Date.now() - 3 * 864e5).toISOString() } };
+  const upd = { lastCheck: null, settings: { auto_check: true, auto_apply: false, at: "09:00" } };
   const lists = {
     "/api/workers": { items: [] },
     "/api/apps": { items: [] },
@@ -746,7 +749,6 @@
     "/api/web-access": { mode: "tailscale", hostname: "", team: "", aud: "", token_set: false, tunnel: { state: "off" }, devices: 2, cloudflared_found: true },
     "/api/push/gateways": { items: [] },
     "/api/push": { subscribed: false },
-    "/api/update": { running: { kind: "git", branch: "main", commit: { sha: "3f9c2e1".padEnd(40, "0"), short: "3f9c2e1", date: new Date(Date.now() - 3 * 864e5).toISOString() } }, disk: { kind: "git", branch: "main", commit: { sha: "3f9c2e1".padEnd(40, "0"), short: "3f9c2e1", date: new Date(Date.now() - 3 * 864e5).toISOString() } }, settings: { auto_check: true, auto_apply: false, at: "09:00" }, busy: [] },
     "/api/harness/update": { checking: false, harnesses: [
       { id: "omo", name: "OmO", current: "0.14.2", latest: "0.14.2", available: false, installMethod: "bun-global", checkedAt: new Date(Date.now() - 36e5).toISOString() },
     ] },
@@ -787,6 +789,7 @@
   function get(u) {
     const p = u.pathname;
     if (p === "/api/state") return json({ ...F.state, work_now: Date.now(), notices_unread: unread() });
+    if (p === "/api/update") return json({ boot: "demo", running: updVersion, disk: updVersion, lastCheck: upd.lastCheck, job: null, flow: null, busy: [], settings: upd.settings });
     if (p === "/api/history") return json({ target: u.searchParams.get("target") || "main", events: F.histories[u.searchParams.get("target")] || [] });
     if (p === "/api/todo") return json(F.todo);
     if (p === "/api/queue") return json(F.queue);
@@ -834,6 +837,11 @@
     if (/^\/api\/comments\/thread\/[^/]+\/[^/]+\/read$/.test(p) || p === "/api/ig-dm/refresh") return json({ ok: true });
     if (/^\/api\/comments\/comment\/[^/]+\/draft$/.test(p)) return json({ state: "drafting" }, 202);
     if (p === "/api/message") return json(answer(body));
+    // 업데이트 설정 화면 (hub/selfupdate.ts updateRoute, hub/harness-update.ts, hub/push.ts): the web reads these answers back, so they carry the real hub's whole shape.
+    if (p === "/api/update/check") { upd.lastCheck = { at: new Date().toISOString(), version: updVersion, ok: true, upstream: "origin/main", remoteHead: updVersion.commit.sha, summary: "업데이트 없음", incoming: [], incomingTotal: 0, ahead: [], dropped: [], dirty: [], blocked: [] }; return json(upd.lastCheck); }
+    if (p === "/api/update/settings") { for (const k of ["auto_check", "auto_apply"]) if (typeof body[k] === "boolean") upd.settings[k] = body[k]; return json({ ok: true, settings: upd.settings }); }
+    if (p === "/api/harness/update/check") { const h = lists["/api/harness/update"]; for (const x of h.harnesses) x.checkedAt = new Date().toISOString(); return json({ ...h, busy: [], checking: false }); }
+    if (p === "/api/push/classes") { Object.assign(lists[p].classes, body.classes); return json({ classes: lists[p].classes }); }
     if (p === "/api/command") return json({ output: "데모에서는 명령을 실행하지 않아요." });
     if (p === "/api/read") { const c = conv(body.target); if (c) c.unread = 0; return json({}); }
     if (p === "/api/notices/read") { for (const n of F.notices.items) if (!body.ids || body.ids.includes(String(n.id))) n.read = true; F.state.notices_unread = unread(); return json({ unread: unread() }); }
