@@ -10,53 +10,34 @@ import { createLocalLogin } from "./local-login.ts";
 import { createWebAccess, localBrowser, WebAccessError, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, PORT, setMachineName } from "./config.ts";
-import { lang, msg } from "./i18n.ts";
+import { lang } from "./i18n.ts";
 import { limitWaits } from "./limitwait.ts";
 import { buildWaitlist } from "./waitlist.ts";
-import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
-import { changeTarget, ControlError, targetView, ForceRequired, parseCommand } from "./control.ts";
+import { keyedSelector } from "./fallback.ts";
+import { changeTarget, ControlError, targetView, ForceRequired } from "./control.ts";
 import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
-import { conversationList } from "./conversations.ts";
-import { INTEGRATIONS, readAppOff } from "./integrations.ts";
+import { INTEGRATIONS } from "./integrations.ts";
 import { allWatches, approveWatch, runWatch } from "./watch.ts";
 import { watchConnection } from "./watch-status.ts";
-import { fieldsOf, isSettingsTarget } from "./app-settings.ts";
-import { watchOfSubject } from "./watch-settings.ts";
-import { conversationPage } from "./conversations-page.ts";
-import { lazyMailCard } from "./conversations-mail-card.ts";
-import { markRead, markUnread } from "./reads.ts";
+import { isSettingsTarget } from "./app-settings.ts";
+import { markRead } from "./reads.ts";
 import { shownEvent } from "./owner-text.ts";
-import { activityItems, broadcast, historyEvents, historyPage, locateMessage, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { activityItems, historyEvents, historyPage, locateMessage, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
 import { lastTurnActed, lastTurnEnd, lastTurnFailed, mailConversation, openTodos, runIntent, runState, stallStep, workConversationRuns, type RunState, type StallMemo } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { isMailTarget } from "./conv-model.ts";
-import { askedFile, draftAttachRoute, syncCardFiles } from "./draft-attach.ts";
-import { parseFollowup, triggerFollowup } from "./followup.ts";
-import { draftFileRoute } from "./draft-files.ts";
-import { draftRecipientsRoute } from "./draft-recipients.ts";
-import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
-import { composeMail, deleteMail, mailTargets, sentReplyRefs, unrepliedMails, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailStateOf, mailByKey, mailByThread, mailFileRoute, mailTarget, postMail, setMailFyi, setMailNoReply, setMailsFyi, mailKeep, setMailSuggest, sentMailEvent, setMailReply, type MailDeps } from "./mail.ts";
-import { moveMailRoute } from "./mail-move.ts";
-import { applyMailboxFlags, isMailAction, mailAction, mailActions, spawnExec, type SyncDeps } from "./mail-sync.ts";
-import { originalDeletable, originalDeleteRoute, originalDeps } from "./mail-delete.ts";
-import { manualDraft } from "./mail-manual.ts";
-import { askText } from "../features/reply-drafts/lib/flow.ts";
-import { pluginMailAction, pluginMailActions } from "./plugins.ts";
-import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
-import { getDraft, holdDrafts, holdDraftsOf, listDrafts, restoreDrafts, restoreDraftsOf } from "../features/reply-drafts/lib/store.ts";
-import { attachmentLines, canvasRoute, FileError, messageFiles, ownerFiles, serveFile, UPLOAD_MAX_BYTES, uploadsFrom } from "./files.ts";
-import { ownerElements, pickedLines } from "./picked.ts";
-import { ownerRefs, refLines } from "./mentions.ts";
-import { laneCapacity, laneClosed, lanes, liveLanes, laneSummary } from "./lanes.ts";
+import { syncCardFiles } from "./draft-attach.ts";
+import { mailOpened, mailByKey, mailByThread, sentMailEvent, type MailDeps } from "./mail.ts";
+import { canvasRoute, FileError, messageFiles, ownerFiles, serveFile, UPLOAD_MAX_BYTES, uploadsFrom } from "./files.ts";
+import { laneCapacity, laneClosed, lanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
-import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { type DecisionSend, type Notice, allNotices, settleHandledDrafts, listNotices, dismissedAlertAts, readConversationNotices, reopenDraftNotices, resolveNotices, unreadCount } from "./notices.ts";
+import { type DecisionSend, type Notice, allNotices, listNotices, dismissedAlertAts, readConversationNotices, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
@@ -68,7 +49,7 @@ import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, manifestI18n, setAppLang, setAppName, swScript, webBuild } from "./webapp.ts";
 import { forgetRoute, listPeers, ownLogin } from "./peers.ts";
-import { AGENT_AUTHOR, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
+import { ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
 import { peerProjects } from "./peer-projects.ts";
 import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
@@ -77,11 +58,9 @@ import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
-import { queue, bgWork, workRows, out, progress, fileRoots } from "./outbound.ts";
-import { convs, maxLiveView } from "./convsessions.ts";
-import { repostRefusal } from "./lanewire.ts";
-import { MAIN, primaryTarget } from "./session-key.ts";
-import { authHeld, parseReply, replyLine, sendWeb } from "./intake.ts";
+import { queue, bgWork, workRows, out, fileRoots } from "./outbound.ts";
+import { convs } from "./convsessions.ts";
+import { sendWeb } from "./intake.ts";
 import { json, body, terminals, BodyError } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
 import { desk } from "./remote-desktop.ts";
@@ -90,6 +69,8 @@ import { routeApps } from "./routes-apps.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeNotices } from "./routes-notices.ts";
 import { routeSettings } from "./routes-settings.ts";
+import { routeMail, unrepliedMailList } from "./routes-mail.ts";
+import { routeSend, viaOf } from "./routes-send.ts";
 import { commentsRoute } from "./comments/gateway.ts";
 import { userApp } from "./user-apps.ts";
 import { proxyMatch, proxyRequest } from "./app-proxy.ts";
@@ -287,8 +268,6 @@ const runningChildren = (source: string) =>
 	(subagentLists()[source] || []).filter(s => s.status === "running").map(s => ({ name: s.id, description: s.description || s.agent }));
 
 type RestartHooks = { /** This node's tailnet name (tests); default `tailscale status`. */ tailnetName?: () => Promise<string | undefined>; busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps; /** One mail reconcile round of at most `limit` mails (hub/mail-reconcile.ts); absent = not wired in this process. */ mailReconcile?: (limit: number) => Promise<{ checked: number; replied: number; notChecked: number; skipped: number }> };
-// Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
-const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
 // A card's answer to where its question came from (chat, session, project chat, mail or login request): the bot's turn.
 export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
 	if (a.to.startsWith("auth:")) {
@@ -305,104 +284,7 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 	await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login: a.login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via: a.via });
 }
 
-// The pending reply drafts of one mail are dropped (the same store step as 보내지 않기) and their approval cards settled at once.
-const dropMailDrafts = async (key: string) => {
-	const pending = listDrafts().filter(d => d.ref === key && (d.status === "pending" || d.status === "held"));
-	if (pending.length) {
-		const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
-		for (const d of pending) { const r = dropDraft(d.id); if (!r.ok) log(`draft ${d.id}: not dropped with its mail: ${r.text}`); }
-	}
-	await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
-};
-/** 삭제 / 휴지통 on a mail: it leaves dotz (record, list entry, counts, its notices and pending drafts); the real mailbox is not touched here. */
-const removeMailLocal = async (key: string): Promise<boolean> => {
-	if (!deleteMail(key)) return false;
-	await dropMailDrafts(key);
-	readConversationNotices(mailTarget(key), new Date().toISOString());
-	broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
-	return true;
-};
-/** hub/mail-sync.ts wired to the real parts: zele and plugins for the mailbox, the read position, deleting. */
-export const mailSyncDeps: SyncDeps = {
-	exec: spawnExec,
-	plugin: pluginMailAction,
-	pluginCan: pluginMailActions,
-	webmail: s => !!webmailSite(s),
-	setRead: (target, ts, direction) => {
-		if (direction === "read") {
-			const x = markRead({ target, ts });
-			if (x.ok) readConversationNotices(x.target, x.ts);
-		} else markUnread({ target, ts });
-		broadcast({ kind: "mail_unreplied", target });
-	},
-	remove: removeMailLocal,
-	changed: key => broadcast({ kind: "mail_unreplied", target: mailTarget(key) }),
-	log,
-};
-export const mailOriginal = originalDeps(DATA_DIR, mailSyncDeps);
-const keyOfSource = (source: string, id: string): string | undefined => {
-	try {
-		return mailKey(source, id);
-	} catch {
-		return undefined;
-	}
-};
-
-// POST /api/mail/compose without a ref: the draft he wrote in the mail app (web/js/30-mail-box.js), its uploads staged for it, and the
-// send-approval card posted to the conversation of the mail it answers (or the new mail's own row gains one). Nothing is sent here.
-async function draftFromApp(b: Record<string, unknown>, deps: MailDeps): Promise<Response> {
-	let files: { path: string; name: string }[];
-	try {
-		files = ownerFiles(b.attachments).map(f => ({ path: f.path, name: f.original ?? f.name }));
-	} catch (error) {
-		return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
-	}
-	const made = manualDraft({
-		body: b.body as string | undefined,
-		to: b.to as string | undefined,
-		cc: b.cc as string | undefined,
-		subject: b.subject as string | undefined,
-		replyTo: b.reply_to as string | undefined,
-		app: b.app as string | undefined,
-		files,
-	});
-	if (!made.ok) return json({ error: made.error }, made.code);
-	const { rec } = made;
-	// A new mail is listed like any other draft of the app (hub/mail.ts composeMail); a reply rides on the mail it answers.
-	const key = rec.compose ? composeMail({ ref: rec.id, source: rec.source, app: made.app, to: rec.to, subject: rec.subject ?? "" }, deps).key : rec.ref;
-	if (!rec.compose) setMailSuggest(rec.ref, { kind: "reply-draft", label: "메일 초안", ref: rec.id });
-	await out(mailTarget(key), askText(rec, []));
-	return json({ ok: true, key, ref: rec.id, files: made.attachments.map(f => ({ name: f.name, size: f.size })) });
-}
-
-/** A mailbox's read / replied state of its mails (POST /api/mail/state, the zele poll in hub/main.ts): read in dotz once read there (its bell items
- *  too, as when he opens it here), 답장함 once answered there; every device redraws the mails that changed. Returns how many changed. */
-export async function applyMailStates(source: string, items: readonly MailSourceState[]): Promise<number> {
-	const changed = syncMailStates(source, items, (target, ts) => {
-		const r = markRead({ target, ts });
-		if (r.ok) readConversationNotices(r.target, r.ts);
-		return r.ok && r.moved;
-	});
-	// Then what changed in the mailbox since its last report: unread / starred / archived / trashed (hub/mail-sync.ts applyMailboxFlags).
-	const flags = await applyMailboxFlags(source, items, { ...mailSyncDeps, keyOf: keyOfSource });
-	for (const target of new Set([...changed, ...flags])) broadcast({ kind: "mail_unreplied", target });
-	return new Set([...changed, ...flags]).size;
-}
-// The last web sends by client id, with the answer each got (POST /api/message `cid`). Set before the send so a double tap in flight is a retry too.
-const sentCids = new Map<string, unknown>();
-const rememberCid = (cid: string, answer: unknown): void => {
-	sentCids.set(cid, answer);
-	if (sentCids.size > 500) sentCids.delete(sentCids.keys().next().value as string);
-};
-const parseMailStates = (raw: unknown): { source: string; items: MailSourceState[] } | undefined => {
-	const b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-	if (typeof b.source !== "string" || !b.source.trim() || !Array.isArray(b.items)) return undefined;
-	const items = b.items.slice(0, 2000).flatMap(x => {
-		const i = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
-		return typeof i.id === "string" && i.id ? [{ id: i.id.slice(0, 200), ...(typeof i.read === "boolean" ? { read: i.read } : {}), ...(typeof i.unread === "boolean" ? { unread: i.unread } : {}), ...(i.replied === true ? { replied: true } : {}), ...(typeof i.archived === "boolean" ? { archived: i.archived } : {}), ...(i.trashed === true ? { trashed: true } : {}), ...(typeof i.starred === "boolean" ? { starred: i.starred } : {}) }] : [];
-	});
-	return { source: b.source.trim().slice(0, 60), items };
-};
+export { applyMailStates, mailOriginal, mailSyncDeps } from "./routes-mail.ts";
 
 export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const setupGate = createSetupGate({ dir: DATA_DIR, localHeaders: () => localLogin.sessionHeaders(), restart: () => void restartGatewayNow(), providers: routeSettings, log });
@@ -610,8 +492,6 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			const item = listMonitors().find(m => m.kind === "watch" && m.watch === name);
 			return json({ ok: true, ...(item ? { item } : {}) });
 		}
-		const sentMailRefs = () => sentReplyRefs(listDrafts());
-		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
 		const appsResponse = await routeApps(req, url, unrepliedMailList);
 		if (appsResponse) return appsResponse;
 		const noticesResponse = await routeNotices(req, url);
@@ -650,149 +530,8 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			if (r.ok && r.moved) mailOpened(r.target);
 			return json(r, r.ok ? 200 : 400);
 		}
-		if (req.method === "GET" && url.pathname === "/api/conversations") {
-			settleMailDrafts(listDrafts());   // a dropped draft takes its 초안 있음 off before the rows are drawn
-			const owed = new Set(unrepliedMailList().map(m => m.key)), sent = sentMailRefs();
-			// Ended sessions are listed too: 답변 필요 stays on their row (their unread is 0, conversations.ts unreadOf) in the folded 끝난 세션 group (web/js/04-state.js endedGroup).
-			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its log but leaves every list and count here and on the other computer (hub/peer-monitor.ts).
-			const lv = liveLanes();   // the page is decided from the cheap fields of a mail; its full card is built only for the rows that go out (conversationPage `build`)
-			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
-				if (!c.target.startsWith("mail:")) return [c];
-				const m = mailByKey(c.target.slice(5));
-				return m ? [{ ...c, mail: { ...mailStateOf(m, sent.has(m.key)), read: c.unread === 0, ...(m.archived ? { archived: true as const } : {}), source: m.source, ...(owed.has(m.key) ? { unreplied: true as const } : {}) } }] : [];
-			});
-			const page = conversationPage(items, url.searchParams, lazyMailCard({ owed, sent, dataDir: DATA_DIR, syncDeps: mailSyncDeps })); return json(page.body, page.status);
-		}
-		// One attached file of a mail: only files the mail's own record names, only inside the mail files folder (hub/mail.ts).
-		const mailFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/mail\/([a-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
-		if (mailFile) return mailFileRoute(req, url, mailFile[1]!, mailFile[2]!);
-		// One file a draft sends along (the `> 첨부:` lines of a send approval): only files staged for that draft (hub/draft-files.ts).
-		const draftFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
-		if (draftFile) return draftFileRoute(req, url, draftFile[1]!, draftFile[2]!, undefined, askedFile);
-		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
-		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
-		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
-		// 답장 | 전체 답장 and the 받는 사람·참조 of a waiting mail draft (hub/draft-recipients.ts).
-		const draftRecipients = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/recipients$/.exec(url.pathname);
-		if (draftRecipients) return draftRecipientsRoute(req, draftRecipients[1]!);
-		// 답장 안 함 (no-reply = skipped, fyi; one label to the owner) on a mail (POST) or 답장 필요로 표시 (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
-		// Its reply draft waiting for approval is held in the drafts store (not dropped) and its card leaves 확인 대기 before the answer; taking the
-		// mark back restores the newest held draft and reopens its card. A peer's 되돌리기 arrives here too (hub/peer-monitor.ts act fyi / no-reply).
-		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/(no-reply|fyi)$/.exec(url.pathname);
-		if (mailNoReply) {
-			const key = mailNoReply[1]!;
-			if (!(mailNoReply[2] === "fyi" ? setMailFyi : setMailNoReply)(key, req.method === "POST")) return json({ error: "이 메일을 찾지 못했어요" }, 404);
-			if (req.method === "POST") {
-				holdDrafts(key);
-				await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
-			} else {
-				const back = restoreDrafts(key);
-				if (back) reopenDraftNotices([back]);
-			}
-			broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
-			return json({ ok: true });
-		}
-		// The same marks on many mails, {keys, on}: one write of each store and one broadcast (open pages only reload on it, the target is not read), however many mails.
-		if (req.method === "POST" && url.pathname === "/api/mail/fyi") {
-			const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { keys?: unknown; on?: unknown };
-			if (typeof b.on !== "boolean") return json({ error: "on must be true or false" }, 400);
-			if (!Array.isArray(b.keys) || !b.keys.length || b.keys.length > mailKeep() || b.keys.some(k => typeof k !== "string" || !/^[a-z0-9._-]+$/.test(k))) return json({ error: "keys must be an array of mail keys" }, 400);
-			const keys = [...new Set(b.keys as string[])], found = new Set(setMailsFyi(keys, b.on));
-			if (b.on) {
-				holdDraftsOf(found);
-				await settleHandledDrafts().catch(e => log(`mail batch: handled-draft settle failed: ${(e as Error).message}`));
-			} else reopenDraftNotices(restoreDraftsOf(found));
-			if (found.size) broadcast({ kind: "mail_unreplied", target: mailTarget(found.values().next().value!) });
-			return json({ ok: true, results: keys.map(key => ({ key, ok: found.has(key) })) });
-		}
-		if (req.method === "POST" && url.pathname === "/api/mail/delete-original") return originalDeleteRoute(req, peer, await body(req), mailOriginal);   // the owner's 삭제 with the switch on
-		// 읽음 / 안 읽음 / 보관 / 별표 on a mail: dotz changes at once and the real mailbox follows; 휴지통 stays in dotz (hub/mail-sync.ts has the contract).
-		if (req.method === "POST" && url.pathname === "/api/mail/actions") {
-			const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { keys?: unknown; action?: unknown };
-			if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
-			if (!Array.isArray(b.keys) || b.keys.some(k => typeof k !== "string")) return json({ error: "keys must be an array of mail keys" }, 400);
-			return json({ ok: true, results: await mailActions((b.keys as string[]).slice(0, 200), b.action, mailSyncDeps) });
-		}
-		const mailActOne = req.method === "POST" && /^\/api\/mail\/([a-z0-9._-]+)\/action$/.exec(url.pathname);
-		if (mailActOne) {
-			const b = await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { action?: unknown };
-			if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
-			const res = await mailAction(mailActOne[1]!, b.action, mailSyncDeps);
-			return res.ok ? json(res) : json({ error: res.note }, 404);
-		}
-		// 삭제 on a mail card: the mail leaves dotz (record, list entry, counts, its notices and pending drafts); the real mailbox is not touched.
-		const mailDelete = req.method === "DELETE" && /^\/api\/mail\/([a-z0-9._-]+)$/.exec(url.pathname);
-		if (mailDelete) {
-			if (!(await removeMailLocal(mailDelete[1]!))) return json({ error: "이 메일을 찾지 못했어요" }, 404);
-			return json({ ok: true });
-		}
-		// 초안 작성 on a mail: the owner asks for a reply draft himself. It is made behind the request (a model call takes a while, and a peer's
-		// forwarded act has a short timeout); the draft lands as the send-approval card in the mail's conversation, a failure as a line there.
-		const mailDraft = req.method === "POST" && /^\/api\/mail\/([a-z0-9._-]+)\/draft$/.exec(url.pathname);
-		if (mailDraft) {
-			const key = mailDraft[1]!, r = mailByKey(key), deps = mailDeps?.();
-			if (!r || r.dir === "out") return json({ error: "이 메일을 찾지 못했어요" }, 404);
-			if (!deps?.requestDraft) return json({ error: "이 설치에는 답장 초안 기능이 없어요" }, 503);
-			const target = mailTarget(key);
-			// What the owner typed in the 초안 작성 box (empty: the draft is made on its own).
-			const instruction = String((await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; }) as { instruction?: unknown }).instruction ?? "").trim().slice(0, 500);
-			void deps.requestDraft({ ...(r.account ? { account: r.account } : {}), key, ...(instruction ? { instruction } : {}), target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}), ...(r.replyFiles ? { replyFiles: r.replyFiles } : {}) })
-				.then(res => { if (res !== "offered") return deps.send(target, "답장 초안을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요"); })
-				.catch(e => log(`mail ${key}: requested draft failed: ${(e as Error).message}`));
-			return json({ ok: true, started: true }, 202);
-		}
-		const mailBody = req.method === "GET" && /^\/api\/mail\/([a-z0-9._-]+)\/body$/.exec(url.pathname);
-		if (mailBody) return mailBodyRoute(mailBody[1]!);
-		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).
-		// The reply and KakaoTalk CLIs report an approved send here; the gateway wakes the bot once when that app has a 이어서 할 일 rule (hub/followup.ts).
-		if (req.method === "POST" && url.pathname === "/api/followup") {
-			const input = parseFollowup(await body(req));
-			// The approved reply went out: the mail is 답장함 (hub/mail-state.ts), whether or not the app has a 이어서 할 일 rule.
-			if (input?.kind === "mail" && input.ids.mail && setMailReply(input.ids.mail, "sent")) {
-				// What he sent is listed as a sent mail now, with its text and files, in the thread of the mail it answered.
-				const d = input.ids.draft ? getDraft(input.ids.draft) : undefined;
-				if (d) await recordSentByDotz({ id: d.id, source: d.source, to: d.to, cc: d.cc, subject: d.subject, body: d.body, files: stagedFiles(d.id) }, { answers: input.ids.mail }).catch(e => log(`mail ${input.ids.mail}: sent reply not listed: ${(e as Error).message}`));
-				broadcast({ kind: "mail_unreplied", target: mailTarget(input.ids.mail) });
-			}
-			return input ? json({ ok: true, result: triggerFollowup(input) }) : json({ error: "app, kind (comment|mail|kakao), key required" }, 400);
-		}
-		if (req.method === "POST" && url.pathname === "/api/mail/compose") {
-			if (!mailDeps) return json({ error: msg().refuse.mailNotReady }, 503);
-			try {
-				const b = await body(req) as Record<string, unknown>;
-				// The owner wrote this himself in the mail app (메일 쓰기 / the reply box): a draft with his text and files, then its send-approval card.
-				if (b.ref === undefined) return await draftFromApp(b, mailDeps());
-				const made = composeMail(b, mailDeps());
-				// The new mail went out: its row becomes the sent mail, with the text and the files it carried.
-				const d = (b as { state?: unknown }).state === "sent" ? getDraft(String((b as { ref?: unknown }).ref)) : undefined;
-				if (d) await recordSentByDotz({ id: d.id, source: d.source, to: d.to, cc: d.cc, subject: d.subject, body: d.body, files: stagedFiles(d.id) }, { compose: made.key });
-				return json(made);
-			} catch (error) {
-				if (error instanceof BodyError) throw error;
-				return json({ error: (error as Error).message }, error instanceof MailError ? error.status : 500);
-			}
-		}
-		// Mails that still wait are checked against their real thread; the ones the owner answered elsewhere become 답장함 (idempotent, read-only in the mailbox). `skipped` counts mails of a source no plugin can read.
-		if (req.method === "POST" && url.pathname === "/api/mail/reconcile") {
-			if (!mailReconcile) return json({ error: msg().refuse.mailNotReady }, 503);
-			const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 200));
-			return json(await mailReconcile(limit).catch(error => ({ error: (error as Error).message })));
-		}
-		if (req.method === "POST" && url.pathname === "/api/mail/state") {
-			const input = parseMailStates(await body(req));
-			return input ? json({ ok: true, changed: await applyMailStates(input.source, input.items) }) : json({ error: "source and items [{id, read?, replied?}] required" }, 400);
-		}
-		if (req.method === "POST" && url.pathname === "/api/mail") {
-			if (!mailDeps) return json({ error: msg().refuse.mailNotReady }, 503);
-			if (readAppOff(DATA_DIR).has("mail")) return json({ error: msg().refuse.mailOff }, 409);
-			try {
-				return json(await postMail(await body(req), mailDeps()));
-			} catch (error) {
-				if (error instanceof BodyError) throw error;
-				return json({ error: (error as Error).message }, error instanceof MailError ? error.status : 500);
-			}
-		}
-		if (req.method === "POST" && url.pathname === "/api/mail/move" && mailDeps) return moveMailRoute(await body(req), mailDeps());
+		const mailResponse = await routeMail(req, url, { peer, mailDeps, mailReconcile });
+		if (mailResponse) return mailResponse;
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"), req.signal);
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main", locate = url.searchParams.get("locate"); if (locate) return json({ convs: locateMessage(locate) });
@@ -848,162 +587,8 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 				return fail(error);
 			}
 		}
-		if (req.method === "POST" && url.pathname === "/api/message") {
-			const b = await body(req);
-			// The web's id for one send (`cid`): the same id again is a retry, answered as the first was, stored once.
-			const cid = typeof b.cid === "string" && b.cid ? b.cid.slice(0, 80) : "";
-			if (cid && sentCids.has(cid)) return json(sentCids.get(cid));
-			let files: ReturnType<typeof ownerFiles>;
-			try {
-				files = ownerFiles(b.files);
-			} catch (error) {
-				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
-			}
-			const elements = ownerElements(b.elements);
-			// What the owner named with @ (hub/mentions.ts), resolved against what runs now: one [지칭] line each in the turn.
-			const refs = refLines(ownerRefs(b.refs), {
-				task: id => [...bgWork.list(), ...convs.conversations().flatMap(c => c.bg.list())].find(w => w.id === id),
-				lane: name => lanes.get(name),
-				conv: key => { const c = convs.conversations().find(x => x.primary === key); return c && { name: c.meta.name, live: convs.live(c) }; },
-			});
-			if (!String(b.text ?? "").trim() && !files.length && !elements.length) return json({ error: "text required" }, 400);
-			const text = String(b.text ?? "");
-			const login = peer === "none" && tokenOk(req) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own post is never the owner's word (hub/model-guard.ts)
-			// mode: none (main takes it as the next message, a working lane is steered), "steer" (into the running turn
-			// now), "interrupt" (abort the running turn, then send as a new prompt), "queue" (a working target gets it
-			// when its turn ends, see queue.ts; an idle target gets it now).
-			const mode = b.mode === "steer" || b.mode === "interrupt" || b.mode === "queue" ? b.mode : "default";
-			const lane = b.lane ? String(b.lane) : undefined;
-			const conv = b.conv === "alert" || b.conv === "worklog" ? b.conv : undefined;
-			const channel = b.channel === "terminal" ? "terminal" : "web";
-			// A reply to a message (swipe / reply button in the web): the quoted message reaches the model like a Discord reply (intake.ts parseReply).
-			const reply = parseReply(b.reply, login);
-			let project: { target: string; name: string } | undefined;
-			const settings = typeof b.settings === "string" && (fieldsOf(b.settings).length || watchOfSubject(b.settings)) ? b.settings : undefined;
-			if ([lane, b.project, b.mail, settings].filter(Boolean).length > 1) return json({ error: "lane, project and mail are exclusive" }, 400);
-			const mail = b.mail ? mailByKey(String(b.mail)) : undefined;
-			if (b.mail && !mail) return json({ error: `no mail conversation ${String(b.mail)}` }, 404);
-			if (b.project) {
-				try {
-					project = projectTarget(String(b.project), discord.channels.work);
-				} catch (error) {
-					return json({ error: (error as Error).message }, 404);
-				}
-			}
-			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
-			if (mode === "queue" && !project && !mail && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !authHeld("web")) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
-				const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : "", elements.length ? pickedLines(elements) : "", ...refs].filter(Boolean).join("\n"), login);
-				if (cid) rememberCid(cid, { ok: true, queued: item });
-				return json({ ok: true, queued: item });
-			}
-			if (cid) rememberCid(cid, { ok: true });
-			try {
-				// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
-				const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-				await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(refs.length ? { refs } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(typeof b.decision === "string" && b.decision ? { decision: b.decision.slice(0, 80) } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
-			} catch (error) {
-				sentCids.delete(cid);
-				return json({ error: (error as Error).message }, 409);
-			}
-			return json({ ok: true });
-		}
-		if (url.pathname === "/api/queue" && req.method === "GET") return json({ items: queueItems() });
-		if (parts[0] === "api" && parts[1] === "queue" && parts.length >= 3) {
-			const id = decodeURIComponent(parts[2]);
-			if (req.method === "DELETE" && parts.length === 3) {
-				const item = take(id);
-				return item ? json({ text: item.text }) : json({ error: msg().refuse.queueGone }, 404);
-			}
-			if (req.method === "POST" && parts[3] === "send" && parts.length === 4) {
-				const item = take(id);
-				if (!item) return json({ error: msg().refuse.queueGone }, 404);
-				try {
-					await sendWeb({ lane: item.target.startsWith("lane:") ? item.target.slice(5) : undefined, channel: "web", text: item.text, mode: "steer", sendNow: true, login: item.author ?? "local" });
-				} catch (error) {
-					restore([item]);
-					return json({ error: (error as Error).message }, 409);
-				}
-				return json({ ok: true });
-			}
-		}
-		// A task worker on an API key reports what a request cost, so its entry's cap counts the workers too (extension keyProvider).
-		if (req.method === "POST" && url.pathname === "/api/fallback-spend") {
-			const b = await body(req);
-			const tokens = Number(b.tokens);
-			if (!keyFileOk(String(b.key_file ?? "")) || !(tokens > 0)) return json({ error: "key_file (an existing key file) and tokens are required" }, 400);
-			spendOnKey(String(b.key_file), tokens, Number(b.usd) > 0 ? Number(b.usd) : undefined);
-			return json({ ok: true });
-		}
-		// The conversations main oversees (hub/convsessions.ts) for the dotz_conv tool: which have a session of their own, what it is doing,
-		// and the exchange a read asks for. A conversation session may write only into main; main may send into any conversation.
-		if (req.method === "GET" && url.pathname === "/api/conv-sessions") {
-			return json({
-				capacity: maxLiveView(),
-				items: convs.conversations().map(c => ({ key: c.key, name: c.meta.name || c.primary, primary: c.primary, live: convs.live(c), state: convs.stateOf(c.primary), status: c.o.orch.status, model: c.o.orch.activeModel, ctx: { tokens: c.o.orch.ctx.tokens }, lastOwnerAt: c.meta.lastOwnerAt })),
-			});
-		}
-		{
-			const m = /^\/api\/conv-sessions\/([^/]+)\/(history|send)$/.exec(url.pathname);
-			const key = m ? decodeURIComponent(m[1]!) : "";
-			if (m && m[2] === "history" && req.method === "GET") {
-				const c = convs.get(key);
-				if (!c) return json({ error: `no conversation session ${key}` }, 404);
-				const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20) || 20, 1), 40);
-				return json({ key, primary: c.primary, events: historyEvents(c.primary, limit) });
-			}
-			if (m && m[2] === "send" && req.method === "POST") {
-				const b = await body(req);
-				const text = String(b.text ?? "").trim();
-				const from = String(b.from ?? "").trim() || MAIN;
-				if (!text) return json({ error: "text required" }, 400);
-				const sender = convs.get(from);
-				if (!sender) return json({ error: `unknown session ${from}` }, 400);
-				// One round only: a turn a session was handed another session's work for must not hand it back or onward.
-				const cur = sender.queue.current();
-				if (cur && !cur.done && (cur.from || cur.handback)) return json({ error: "handed work: answer it here, do not pass it on" }, 409);
-				const toMain = from !== MAIN;
-				if (!toMain && !convs.get(key)) return json({ error: `no conversation session ${key}` }, 404);
-				// Into main: its answer goes to the conversation that asked, where its own window shows it.
-				if (toMain) {
-					queue.deliver(`[conversation ${from}] ${text}`, { target: sender.primary, replyTo: cur?.replyTo, from });
-					return json({ ok: true, to: MAIN, answers_in: sender.primary });
-				}
-				const c = convs.get(key)!;
-				// Main's request is that conversation's next turn with no reply_to: its answer is posted there; only back:true marks it handed work, answered to main (handBack).
-				convs.deliverTo(key, `[main session] ${text}`, { target: c.primary, ...(b.back === true ? { from: MAIN } : {}) });
-				return json({ ok: true, to: key, answers_in: b.back === true ? MAIN : c.primary });
-			}
-		}
-		if (req.method === "POST" && url.pathname === "/api/send") {
-			const b = await body(req);
-			const target = String(b.target ?? "chat");
-			// A conversation's own session answers only there (hub/convsessions.ts): a post of it anywhere else, an early text, a progress note or a send with no reply_to alike, is refused, so another window's answer never lands in this one.
-			const session = typeof b.session === "string" && b.session ? b.session : MAIN;
-			if (session !== MAIN && convs.keyOf(target) !== session) return json({ delivered: false, reason: `this session answers only ${primaryTarget(session)}; hand other work to main with dotz_conv send main` }, 403);
-			const sender = convs.get(session)?.queue ?? queue;
-			const refused = session === MAIN && !b.update_key && repostRefusal(target, String(b.text ?? ""));
-			if (refused) return json({ delivered: false, reason: refused });
-			// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
-			if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves }, conv => convs.keyOf(conv ?? "") === session);
-			if (b.update_key) {
-				try {
-					return json(await progress(target, String(b.update_key), String(b.text ?? ""), b.reply_to, session, "dotz_send"));
-				} catch (error) {
-					return json({ delivered: false, reason: (error as Error).message }, 502);
-				}
-			}
-			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer. Meanwhile the owner sees it at once on that conversation's progress line (owner 2026-10-28: 중간 말을 바로 보여 주기), which the answer replaces.
-			if (sender.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined)) {
-				void progress(target, "progress", String(b.text ?? ""), b.reply_to, session, "dotz_send").catch(e => log(`early text not shown on the progress line: ${(e as Error).message}`));
-				return json({ delivered: true, held: true, note: "held: it is shown on the progress line now and goes out together with your final answer for this request; do not send it again" });
-			}
-			const answers = sender.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
-			try {
-				return json(await out(target, String(b.text ?? ""), b.reply_to ?? answers, { session, cross: "dotz_send" }));
-			} catch (error) {
-				return json({ delivered: false, reason: (error as Error).message }, 502);
-			}
-		}
+		const sendResponse = await routeSend(req, url, parts, { peer });
+		if (sendResponse) return sendResponse;
 		const commentsResponse = await commentsRoute(req, url, parts);
 		if (commentsResponse) return commentsResponse;
 		const igDmResponse = await igDmRoute(req, url, parts);
