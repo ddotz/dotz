@@ -22,6 +22,8 @@
 .nsc-l .sec:first-child { margin-top: var(--sp-2); }
 .nsc-r { position: relative; align-items: flex-start; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--row-px); }
 .nsc-r + .nsc-r { border-top: 1px solid var(--line); }
+/* 처리할 것 draws every open question (hundreds on a busy day): rows below the fold skip layout and paint until they scroll near. The size is the row's content box (the title line, the gap, the summary line at the tag's 20px: --lh-row + --sp-05 + --lh-meta + --sp-1; padding and the top line come on top), so the list's height and the scroll place hold; `auto` remembers a row's measured height once seen. Only this list: 답장 대기 (30-replies.js) reuses .nsc-r and holds the reader's place by measuring rows above it. */
+.nsc-l .nsc-r { content-visibility: auto; contain-intrinsic-block-size: auto calc(var(--lh-row) + var(--sp-05) + var(--lh-meta) + var(--sp-1)); }
 @media (hover: hover) { .nsc-r:hover { background: var(--card-hover); } }
 .nsc-r:has(> .nsc-tx:active) { background: var(--row-sel); }
 .nsc-r .lead { align-items: center; width: 8px; height: var(--lh-row); }

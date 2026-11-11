@@ -6,6 +6,11 @@ const NSC_FILTERS = [["all", "전체"], ["ask", "답변 필요"], ["result", "�
 const NSC_GROUPS = [["need", "처리할 것"], ["news", "새 소식"], ["past", "지난 알림"]];
 const NSC_PAGE = 50;   // 새 소식 / 지난 알림 rows drawn at a time (NSC.lim starts at the same 50, 04-state.js)
 const NSC_X = { need: "처리했어요", news: "읽음으로 표시", past: "지우기" };
+// 처리할 것 lists every open question, so a busy day is hundreds of rows. A list opened from the top builds the first NSC_FIRST rows (a screenful and more) and the
+// rest follow NSC_STEP per frame (nscFill), so the screen shows at once and no single task runs long. A paint that must find a row at once (the way back to a place, a live update
+// that holds the reader's place) builds them all.
+const NSC_FIRST = 24, NSC_STEP = 48;
+let nscTodo = [], nscFillRaf = 0;   // lists whose last rows are still to come: { list, tail, g, more }
 
 // The list: a notice with an id that is neither a quiet watch check (log) nor a chat message (conv). Every count is this list's unread.
 const nscListed = n => !!n.id && n.cls !== "log" && n.cls !== "conv" && !n.dismissed;
@@ -84,18 +89,36 @@ const nscChild = (n, r) => el("div", { class: "li nsc-r", "data-nid": n.id, "dat
   el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("chev")));
 const nscRows = (n, group) => [nscRow(n, group), ...(n.repeats && n.repeats.length && NSC.open.has(n.id) ? n.repeats.map(r => nscChild(n, r)) : [])];
 
-function nscList(rows) {
+function nscList(rows, defer = false) {
+  nscTodo = [];
   if (!NT.loaded) return [el("div", { class: "list" }, el("div", { class: "empty", text: NT.failed ? "알림을 불러오지 못했어요" : "불러오는 중이에요" }))];
   if (!rows.length) return [el("div", { class: "list" }, el("div", { class: "empty", text: "새 알림이 없어요" }))];
   const out = [];
+  let room = defer ? NSC_FIRST : Infinity;   // rows to build now, over all groups
   for (const [g, label] of NSC_GROUPS) {
     const all = rows.filter(n => nscGroup(n) === g);
     if (!all.length) continue;
     const shown = g === "need" ? all : all.slice(0, NSC.lim[g]);   // 새 소식 and 지난 알림 draw 50 at a time: 300 rows are never all in the page
     const more = all.length > shown.length ? moreRow(`${all.length - shown.length}개 더 보기`, () => { NSC.lim[g] += NSC_PAGE; nscPaint(true); }) : null;
-    out.push(el("div", { class: "sec", text: label }), el("div", { class: "list", "data-g": g }, ...shown.flatMap(n => nscRows(n, g)), more));
+    const head = shown.slice(0, room), tail = shown.slice(room);
+    room -= head.length;
+    const list = el("div", { class: "list", "data-g": g }, ...head.flatMap(n => nscRows(n, g)), tail.length ? null : more);
+    if (tail.length) nscTodo.push({ list, tail, g, more });
+    out.push(el("div", { class: "sec", text: label }), list);
   }
   return out;
+}
+// The rows a list was left without, NSC_STEP a frame; the 더 보기 row goes last, as it does in a list built whole.
+function nscFill() {
+  nscFillRaf = 0;
+  let room = NSC_STEP;
+  while (room > 0 && nscTodo.length) {
+    const j = nscTodo[0], part = j.tail.splice(0, room);
+    room -= part.length;
+    j.list.append(...part.flatMap(n => nscRows(n, j.g)));
+    if (!j.tail.length) { if (j.more) j.list.append(j.more); nscTodo.shift(); }
+  }
+  if (nscTodo.length) nscFillRaf = requestAnimationFrame(nscFill);
 }
 
 let nscBox = null;
@@ -111,7 +134,7 @@ function nscInit() {
   v.append(el("div", { class: "nsc-bar" }, nscBox.tabs, nscBox.all), nscBox.list);   // 모두 읽음 at the right end of the tabs' row
 }
 // One paint per frame at most, and only when what it shows changed (ntPaint calls nscSchedule on every notice change).
-function nscPaint(force) {
+function nscPaint(force, fresh = false) {
   if (current !== "notices") return;
   nscInit();
   if (motionAfter(nscBox.list, () => nscPaint(force))) return;   // a row is folding away: the redraw waits, so it neither cuts the motion nor draws the row back
@@ -125,11 +148,13 @@ function nscPaint(force) {
   const sig = JSON.stringify([NSC.f, NT.loaded, NT.failed, NSC.lim, [...NSC.open], rows.map(n => [n.id, n.read ? 1 : 0, n.tone, n.updated || n.ts, n.waits || "", n.decision ? n.decision.state : "", (n.repeats || []).length])]);
   if (!force && sig === NSC.sig) return;
   NSC.sig = sig;
-  const first = !nscBox.list.firstChild, fresh = NT.loaded ? freshKeys(NSC.seen, rows.map(n => n.id)) : new Set();
+  const first = !nscBox.list.firstChild, arrived = NT.loaded ? freshKeys(NSC.seen, rows.map(n => n.id)) : new Set();
   const anchor = force || first ? null : rowAnchor(nscBox.list, ".nsc-r:not([data-child])", "nid", $("#views"));   // a live update leaves the reader's place alone
-  nscBox.list.replaceChildren(...nscList(rows));
+  cancelAnimationFrame(nscFillRaf); nscFillRaf = 0;
+  nscBox.list.replaceChildren(...nscList(rows, !anchor && fresh));
+  if (nscTodo.length) nscFillRaf = requestAnimationFrame(nscFill);
   rowHold(anchor);
-  if (!first) for (const id of fresh) { const r = nscRowOf(id); if (r) motionIn(r, "top"); }   // a notification that arrives slides in at the top of its group
+  if (!first) for (const id of arrived) { const r = nscRowOf(id); if (r) motionIn(r, "top"); }   // a notification that arrives slides in at the top of its group
 }
 const nscRowOf = id => nscBox && nscBox.list.querySelector(`.nsc-r[data-nid="${CSS.escape(String(id))}"]:not([data-child])`);
 function nscSchedule() { if (!NSC.raf) NSC.raf = requestAnimationFrame(() => { NSC.raf = 0; nscPaint(false); }); }
@@ -140,7 +165,7 @@ function nscOpen() {
   if (!keep) {   // opened from the bell, the palette or the address: every filter shows, nothing is unfolded
     NSC.f = "all"; NSC.open.clear(); NSC.lim = { news: NSC_PAGE, past: NSC_PAGE }; NSC.seen.clear(); NSC.seen.seeded = false;
   }
-  nscPaint(true);
+  nscPaint(true, !keep);
   if (keep) $("#views").scrollTop = NSC.scroll;   // back from a row: the filter and the place in the list stay
   if (!noticesFresh()) loadNotices();
 }
@@ -154,7 +179,7 @@ function nscBack() {
 
 function nscFilter(k) {
   if (k === NSC.f) return;
-  motionSwap(nscBox.list, () => { NSC.f = k; NSC.lim = { news: NSC_PAGE, past: NSC_PAGE }; NSC.seen.clear(); NSC.seen.seeded = false; NSC.sig = ""; nscPaint(true); });
+  motionSwap(nscBox.list, () => { NSC.f = k; NSC.lim = { news: NSC_PAGE, past: NSC_PAGE }; NSC.seen.clear(); NSC.seen.seeded = false; NSC.sig = ""; nscPaint(true, true); });
 }
 function nscFold(n) {
   const open = NSC.open.has(n.id), row = nscRowOf(n.id);
