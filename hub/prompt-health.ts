@@ -86,20 +86,24 @@ export function sizeFindings(state: PromptState, now: number): Finding[] {
 	}));
 }
 
-/** One finding per enforced rule that a contract line still writes out (the first such line is the evidence). */
+// A blocked-command entry ("- deny: <regex> | <reason>", the RULES.md format hub/harnessprojects.ts denyLines reads) is the guard's own
+// configuration, not a rule written out beside it: removing it would remove the guard, so it is never proposed.
+const DENY_ENTRY = /^\s*- deny:\s/;
+
+/** One finding per enforced rule that a contract line still writes out (the first such line is the evidence, shown whole: the owner decides on removing all of it). */
 export function enforcedFindings(text: string, now: number): Finding[] {
 	const m = msg();
 	const lines = text.split("\n");
 	const out: Finding[] = [];
 	for (const rule of ENFORCED_RULES) {
-		const line = lines.find(l => rule.match.test(l));
+		const line = lines.find(l => !DENY_ENTRY.test(l) && rule.match.test(l));
 		if (line === undefined) continue;
 		const shown = line.trim().replace(/\s+/g, " ");
 		out.push({
 			key: `prompt:enforced:${rule.id}`,
 			area: "prompt",
 			what: m.promptEnforced(rule.guard),
-			evidence: m.promptEnforcedEvidence(rule.guard, shown.length > 100 ? `${shown.slice(0, 100)}...` : shown),
+			evidence: m.promptEnforcedEvidence(rule.guard, shown),
 			since: now,
 			level: line.length,
 			decide: { question: m.promptEnforcedAsk, options: [{ name: m.promptKeep, result: m.promptKeepResult }, { name: m.promptRemove, result: m.promptRemoveResult }] },

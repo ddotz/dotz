@@ -80,6 +80,16 @@ test("a rule that code enforces is reported while a line writes it out, and not 
 	expect(keys(run(2)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
 });
 
+test("a blocked-command entry is the guard itself and is never proposed for removal; the evidence shows the whole line", () => {
+	const entry = "## Blocked commands\n- deny: some-cli --big | fable only when the owner asked\n";
+	setRules(`## Rules\n- fable only when the owner asked; ${"x".repeat(120)} tail-marker\n\n${entry}`);
+	run(0);
+	const hit = run(1).find(f => f.key === "prompt:enforced:expensive-model");
+	expect(hit?.evidence).toContain("tail-marker");
+	setRules(entry);
+	expect(keys(run(2)).filter(k => k.startsWith("prompt:enforced:"))).toEqual([]);
+});
+
 test("a prompt file over its cap is reported once per file", () => {
 	writeFileSync(join(dir, "LESSONS.md"), "l".repeat(LESSONS_MAX_BYTES + 1));
 	setRules("r".repeat(RULES_MAX_CHARS + 5));
