@@ -1,19 +1,24 @@
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { scrub } from "./activity.ts";
+import { writeAtomic } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { commandOf, SelfChatError, startsWord, type SelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
-import { type AdapterPush, RelayError, type RelayLine, type RelayRow } from "./messenger.ts";
+import { type AdapterPush, RelayError, type RelayLine, type RelayRow, type RelayStatus } from "./messenger.ts";
 import { noticeClass } from "./notice-class.ts";
+import { decodeSnapshot, isSnapshotText, type Snapshot } from "./relay-snapshot.ts";
 import { parseTone, TONE_EMOJI } from "./tone.ts";
 
 // Computers reached only through the owner's JANDI "나와의 대화" (config `self_chat.peers`): this is the JANDI adapter's `relay` (hub/messenger-jandi.ts), served to the
 // web app's chat view by hub/relay-route.ts. They have no URL of their own: this gateway reads the one configured room with the owner's session (hub/jandi-selfchat.ts),
 // keeps the owner's `<keyword> …` lines and the `<reply_prefix> …` replies of that computer, and posts `<keyword> <text>` as the owner. Online = a reply was seen in the
-// last 24 hours (among the room's last 100 messages). JANDI's web client API is not documented: a JANDI change shows as an error here, never as an empty list.
+// last 24 hours (among the room's last 100 messages). A reply that is a status snapshot (hub/relay-snapshot.ts) is not a chat line: the newest one of each peer is kept
+// in `<data dir>/messengers/jandi-peer-status.json` (so it outlives the room's last 100 messages and a restart) and served at GET /api/relay/jandi/<key>/status. JANDI's web client API is not documented: a JANDI change shows as an error here, never as an empty list.
 
 export type Line = RelayLine;
 type Rec = { id: number; time?: unknown; createdAt?: unknown; fromEntity: number; message?: { content?: { body?: unknown } } };
 type Client = Pick<SelfChat, "get" | "post" | "checkRoom">;
-export type PeerChatDeps = { config: () => SelfChatConfig | undefined; client: () => Client | undefined; now?: () => number; log?: (msg: string) => void; listWaitMs?: number };
+export type PeerChatDeps = { config: () => SelfChatConfig | undefined; client: () => Client | undefined; now?: () => number; log?: (msg: string) => void; listWaitMs?: number; /** Where the last status snapshot of each peer is kept; without it they are only remembered while this runs. */ dataDir?: string };
 
 const PAGE = 100;
 const CACHE_MS = 2000;
@@ -37,10 +42,26 @@ export function linesOf(records: Rec[], member: number, peer: SelfChatPeer): Lin
 		if (mine) out.push({ id: r.id, at: stamp(r), me: true, text: mine });
 		else if (startsWord(body, peer.reply_prefix)) {
 			const text = body.slice(peer.reply_prefix.length).trim();
-			if (text) out.push({ id: r.id, at: stamp(r), me: false, text });
+			if (text && !isSnapshotText(text)) out.push({ id: r.id, at: stamp(r), me: false, text });
 		}
 	}
 	return out;
+}
+
+type Kept = { id: number; reply_prefix: string; received_at: number; snapshot: Snapshot };
+export const STATUS_FILE = "jandi-peer-status.json";
+
+/** The newest snapshot line of one peer among the room's messages (a line that does not parse is passed over), or undefined. */
+export function snapshotOf(records: Rec[], peer: SelfChatPeer): Kept | undefined {
+	let best: Kept | undefined;
+	for (const r of records) {
+		const body = bodyOf(r);
+		if (!startsWord(body, peer.reply_prefix) || (best && r.id < best.id)) continue;
+		const text = body.slice(peer.reply_prefix.length).trim();
+		const snapshot = isSnapshotText(text) ? decodeSnapshot(text) : undefined;
+		if (snapshot) best = { id: r.id, reply_prefix: peer.reply_prefix, received_at: stamp(r), snapshot };
+	}
+	return best;
 }
 
 /** Online: a reply of the peer is dated within the last 24 hours. */
@@ -72,6 +93,37 @@ export function createPeerChats(deps: PeerChatDeps) {
 	let checked = "";
 	let listed: Rec[] | undefined;   // the last messages the computer list read, for when JANDI is slow
 	let reading: Promise<Rec[]> | undefined;
+	let kept: Record<string, Kept> | undefined;   // the last snapshot per peer keyword, as saved
+
+	const keptFile = deps.dataDir ? join(deps.dataDir, "messengers", STATUS_FILE) : undefined;
+	const loadKept = (): Record<string, Kept> => {
+		if (kept) return kept;
+		kept = {};
+		try {
+			if (keptFile && existsSync(keptFile)) kept = JSON.parse(readFileSync(keptFile, "utf8")) as Record<string, Kept>;
+		} catch (e) {
+			say(`jandi peer status: could not read the saved snapshots (${e instanceof Error ? e.message : e})`);
+		}
+		return kept;
+	};
+	/** The peer's snapshot: the newest one in `recs` (saved when it is a new one), else the saved one. A saved one of another reply prefix is another computer's. */
+	function statusOf(peer: SelfChatPeer, peers: readonly SelfChatPeer[], recs: Rec[] | undefined): Kept | undefined {
+		const all = loadKept();
+		const old = all[peer.keyword]?.reply_prefix === peer.reply_prefix ? all[peer.keyword] : undefined;
+		const found = recs && snapshotOf(recs, peer);
+		if (!found || found.id === old?.id) return old;
+		for (const k of Object.keys(all)) if (!peers.some(p => p.keyword === k)) delete all[k];   // a peer removed from the config is forgotten
+		all[peer.keyword] = found;
+		try {
+			if (keptFile) {
+				mkdirSync(join(deps.dataDir!, "messengers"), { recursive: true });
+				writeAtomic(keptFile, `${JSON.stringify(all)}\n`, 0o600);
+			}
+		} catch (e) {
+			say(`jandi peer ${peer.keyword}: could not save the snapshot (${e instanceof Error ? e.message : e})`);
+		}
+		return found;
+	}
 
 	/** The configured peers, only while the room is fully configured and polling is on. */
 	const active = () => {
@@ -124,7 +176,10 @@ export function createPeerChats(deps: PeerChatDeps) {
 			});
 			const recs = await Promise.race([fresh.catch(() => undefined), late]);
 			clearTimeout(timer);
-			return a.peers.map(p => ({ name: p.name, url: chatAddr(p), self: false, online: !!recs && isOnline(linesOf(recs, a.c.member_id, p), now()), via: "jandi" as const, key: p.keyword, note: msg().relay.note }));
+			return a.peers.map(p => {
+				const at = statusOf(p, a.peers, recs)?.received_at;
+				return { name: p.name, url: chatAddr(p), self: false, online: !!recs && isOnline(linesOf(recs, a.c.member_id, p), now()), via: "jandi" as const, key: p.keyword, note: msg().relay.note, ...(at ? { status_at: at } : {}) };
+			});
 		},
 
 		/** One peer's conversation, oldest first. */
@@ -135,6 +190,20 @@ export function createPeerChats(deps: PeerChatDeps) {
 			} catch (e) {
 				return fail(peer, e);
 			}
+		},
+
+		/** The peer's last status snapshot (null before the first): the newest one among the room's messages, else the saved one. JANDI out of reach is
+		 *  an error only when nothing is saved. */
+		async status(key: string): Promise<RelayStatus> {
+			const { c, peer } = await lookup(key);
+			let recs: Rec[] | undefined;
+			try {
+				recs = await records(c);
+			} catch (e) {
+				if (!statusOf(peer, c.peers!, undefined)) return fail(peer, e);
+			}
+			const k = statusOf(peer, c.peers!, recs);
+			return k ? { snapshot: k.snapshot, ...(k.received_at ? { received_at: k.received_at } : {}) } : { snapshot: null };
 		},
 
 		/** Posts `<keyword> <text>` to the room as the owner. */

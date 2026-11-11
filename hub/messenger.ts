@@ -6,6 +6,7 @@ import type { Upload } from "./files.ts";
 import { postClass, route } from "./notify-route.ts";
 import { allNotices } from "./notices.ts";
 import type { Peer } from "./peers.ts";
+import type { Snapshot } from "./relay-snapshot.ts";
 import { convPath, webLink } from "./weblink.ts";
 
 // A generic messenger layer: any chat service (Telegram, JANDI, ...) is an Adapter. Outgoing posts reach the non-native adapters whose
@@ -24,7 +25,9 @@ export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void; n
 /** One line of a conversation with a computer reached through a messenger: `me` is the owner's own line, `at` its time in ms (0 = unknown). */
 export type RelayLine = { id: number; at: number; me: boolean; text: string };
 /** A row of the computer list (hub/peers.ts) reached through a messenger: `key` names it to the adapter, `note` is the adapter's one line about the transport. */
-export type RelayRow = Peer & { key: string; note: string };
+export type RelayRow = Peer & { key: string; note: string; /** When the computer's last status snapshot reached the room (ms), when one is known. */ status_at?: number };
+/** The last status snapshot a relay computer posted into the room (hub/relay-snapshot.ts); `snapshot` is null while none has been seen. `received_at` is its line's time (ms). */
+export type RelayStatus = { snapshot: Snapshot | null; received_at?: number };
 /** What a relay refuses or cannot reach; the route answers with `status` and the message. */
 export class RelayError extends Error {
 	status: 404 | 502;
@@ -94,11 +97,12 @@ export type Adapter = {
 	syncRooms?(desired: DesiredRoom[]): Promise<void>;
 	/** Left out of the settings list (an adapter another module owns while it is unfinished). */
 	hidden?(): boolean;
-	/** Computers with no address of their own that this messenger carries a conversation to (the web app's chat view, /api/relay/<id>/<key>/messages|send). */
+	/** Computers with no address of their own that this messenger carries a conversation to (the web app's chat view, /api/relay/<id>/<key>/messages|send|status). */
 	relay?: {
 		rows(): Promise<RelayRow[]>;
 		lines(key: string): Promise<RelayLine[]>;
 		send(key: string, text: string): Promise<void>;
+		status?(key: string): Promise<RelayStatus>;
 	};
 	/** deliver() places msg.link itself (JANDI's connect info, Telegram's URL button, Slack's link). Absent: the fan-out appends it to the text as a last line. */
 	ownsLink?: true;

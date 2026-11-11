@@ -300,7 +300,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 	let server: ReturnType<typeof Bun.serve> | undefined;
 	let selfChat: SelfChat | undefined;
 	let ctx: MessengerCtx | undefined;
-	const peerChats = createPeerChats({ config: () => loadJandiConfig(dataDir).self_chat, client: () => selfChat, log });
+	const peerChats = createPeerChats({ config: () => loadJandiConfig(dataDir).self_chat, client: () => selfChat, log, dataDir });
 	const a: JandiAdapter = {
 		id: "jandi",
 		ownsLink: true,

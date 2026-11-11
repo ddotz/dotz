@@ -3,11 +3,12 @@ import type { Project } from "./custom.ts";
 
 export type RemoteProject = { key: string; name: string; note?: string };
 // One other computer as GET /api/custom/computers sees it: offline, online with its projects, or online without them (an older gateway, no token).
-export type PeerProjects = { name: string; url: string; online: boolean; projects?: RemoteProject[] };
+// A computer reached through a messenger carries `relay` (the web target `relay:<via>:<key>`) and, when its last status snapshot is known, `status_at` (ms).
+export type PeerProjects = { name: string; url: string; online: boolean; projects?: RemoteProject[]; relay?: string; status_at?: number };
 
 // The sidebar's computer groups (GET /api/custom/computers): this computer first, then the others by name. A pin that names another
 // computer joins that computer's group; a peer adds its own projects (`remote`). One group means no headers in the sidebar.
-export type ComputerGroup = { name: string; self: boolean; url?: string; online?: boolean; keys: string[]; remote: RemoteProject[] };
+export type ComputerGroup = { name: string; self: boolean; url?: string; online?: boolean; keys: string[]; remote: RemoteProject[]; relay?: string; status_at?: number };
 export function computerGroups(self: string, projects: Project[], peers: PeerProjects[]): ComputerGroup[] {
 	const me: ComputerGroup = { name: self, self: true, online: true, keys: [], remote: [] };
 	const others = new Map<string, ComputerGroup>();
@@ -18,7 +19,9 @@ export function computerGroups(self: string, projects: Project[], peers: PeerPro
 		const g = other(peer.name);
 		g.url = peer.url;
 		g.online = peer.online;
-		g.remote = peer.online ? (peer.projects ?? []) : [];
+		g.remote = peer.online || peer.relay ? (peer.projects ?? []) : [];
+		if (peer.relay) g.relay = peer.relay;
+		if (peer.status_at) g.status_at = peer.status_at;
 	}
 	return [me, ...[...others.values()].sort((a, b) => a.name.localeCompare(b.name, "ko", { numeric: true }))];
 }

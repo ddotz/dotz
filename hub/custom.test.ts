@@ -450,6 +450,33 @@ test("peer projects: an online peer is read with its token and checked at the bo
 	expect(asked.sort()).toEqual(["https://a.example/api/peer/projects token", "https://old.example/api/peer/projects token"]);
 });
 
+test("a computer reached through a messenger is listed with its snapshot's projects, its chat target and snapshot time; without a snapshot it has no projects", async () => {
+	const row = (name: string, key: string, online = true) => ({ name, url: `/#chat/relay:jandi:${key}`, self: false, online, via: "jandi" as const, key, note: "n" });
+	const snapshot = { v: 1 as const, at: 5, projects: [{ key: "dir:~/r", name: "report", note: "메모", live: 2 }], sessions: [], monitors: [], todos: { open: 0, items: [] }, notices: [] };
+	const load = createPeerProjects({
+		peers: async () => [{ name: "me", url: "https://me.example", self: true, online: true }],
+		relays: async () => [row("work", "work"), row("empty", "empty", false), row("down", "down")],
+		relayStatus: async (via, key) => {
+			if (key === "work") return { snapshot, received_at: 99 };
+			if (key === "down") throw new Error("jandi");
+			return { snapshot: null };
+		},
+	});
+	const got = await load();
+	expect(got).toEqual([
+		{ name: "work", url: "/#chat/relay:jandi:work", online: true, relay: "relay:jandi:work", projects: [{ key: "dir:~/r", name: "report", note: "메모" }], status_at: 99 },
+		{ name: "empty", url: "/#chat/relay:jandi:empty", online: false, relay: "relay:jandi:empty" },
+		{ name: "down", url: "/#chat/relay:jandi:down", online: true, relay: "relay:jandi:down" },
+	]);
+	const groups = computerGroups("home-pc", [], got);
+	expect(groups.map(g => [g.name, g.relay, g.status_at, g.remote.map(r => r.name)])).toEqual([
+		["home-pc", undefined, undefined, []],
+		["down", "relay:jandi:down", undefined, []],
+		["empty", "relay:jandi:empty", undefined, []],
+		["work", "relay:jandi:work", 99, ["report"]],
+	]);
+});
+
 test("routine sync adds one entry per scheduled routine with the contract tag, text and times", () => {
 	const at = { id: "morning", name: "아침 점검", prompt: "훑어줘", target: "main", schedule: { at: "09:00" } };
 	pins({ routines: [{ ...at }, { id: "poll", name: "폴링", prompt: "봐줘", schedule: { every_minutes: 30 } }, { id: "manual", name: "수동", prompt: "p" }] });
