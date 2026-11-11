@@ -44,20 +44,20 @@ async function workGo(row) {
 // One short Korean sentence out of a free-form message: code, links, hashes and markup dropped; English-only lines are not shown.
 function plainKo(text) {
   const s = String(text ?? "").replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ").replace(/https?:\/\/\S+/g, " ").replace(/\b[0-9a-f]{7,40}\b/gi, " ").replace(/[*_#>\[\]|]/g, " ");
-  const line = s.split("\n").map(oneLine).find(x => /[가-힣]/.test(x));
+  const line = s.split("\n").map(oneLine).find(x => txInLang(x));
   if (!line) return "";
   const cut = line.match(/^.*?(?:[요다죠음함]\.|[.!?])(?=\s|$)/);
   const t = (cut ? cut[0] : line).replace(/[.!]$/, "");
   return t.length > 50 ? `${t.slice(0, 48)}…` : t;
 }
-const LANE_TOOL_KO = { 명령: "명령을 실행했어요", 수정: "파일을 고쳤어요", 읽기: "파일을 읽어봤어요", 검색: "코드를 찾아봤어요" };
+const LANE_TOOL_KO = { [TX("chat.kind.command")]: TX("project.act.ran"), [TX("chat.kind.edit")]: TX("project.act.edited"), [TX("chat.kind.read")]: TX("project.act.read"), [TX("chat.kind.search")]: TX("project.act.searched") };
 function laneActKo(a) {
   switch (a.type) {
     case "tool_call": return LANE_TOOL_KO[kindOf(a.tool)] || "";
     case "text": return plainKo(parseTone(String(a.text ?? "")).text);
     case "status": return plainKo(statusLineKo(a.text));
-    case "error": return "오류가 있었어요";
-    case "turn_end": return "이번 작업을 마쳤어요";
+    case "error": return TX("project.act.error");
+    case "turn_end": return TX("project.act.done");
     default: return "";
   }
 }
@@ -93,7 +93,7 @@ const PRJ_TECH = /https?:\/\/|(?:^|[\s(])~?\/[\w.-]+|\b[a-z][\w.-]*\/[a-z][\w.-]
 function prjBlurb(text) {
   const out = [];
   for (const s of String(text || "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/)) {
-    if (!/[가-힣]/.test(s) || PRJ_TECH.test(s)) continue;
+    if (!txInLang(s) || PRJ_TECH.test(s)) continue;
     out.push(s.replace(/[.]$/, ""));
     if (out.length === 2) break;
   }
@@ -142,11 +142,11 @@ function laneProject(l) {
 }
 // The one session row (home, project screen): title, parent project, status word; one tap opens the session's chat.
 function sessionStatus(l) {
-  if (!laneAlive(l)) return ["끝남", ""];
+  if (!laneAlive(l)) return [TX("project.word.ended"), ""];
   return runStatus(`lane:${l.name}`, l.status, l.pendingAsk);
 }
 // The owner's words for a session, on every list of sessions: sessionStatus still decides, this only says it. What stopped short of finishing keeps its own word.
-const SESSION_WORD = { run: ["진행 중", "pri"], wait: ["답을 기다림", "warn"], done: ["완료", ""] };
+const SESSION_WORD = { run: [TX("home.sys.running"), "pri"], wait: [TX("project.word.wait"), "warn"], done: [TX("home.sys.done"), ""] };
 function sessionState(l) {
   const st = sessionStatus(l), t = `lane:${l.name}`;
   if (st[1] === "pri") return SESSION_WORD.run;
@@ -166,11 +166,11 @@ const sessionHead = l => { const p = laneProject(l), n = l.title || l.name; retu
 function sessionRow(l, o = {}) {
   const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionState(l), name = l.title || l.name, t = `lane:${l.name}`;
   const subs = SUBS[t] || [], done = subs.filter(s => s.status !== "running").length;
-  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: o.open || (() => openTarget(t, lastChatView())), "aria-label": `${name} · ${proj ? `프로젝트 ${proj}` : "프로젝트 없음"} · ${word} · 대화 열기` },
+  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: o.open || (() => openTarget(t, lastChatView())), "aria-label": [name, proj ? TX("project.row.in_project", { name: proj }) : TX("chat.tsw.no_project"), word, TX("project.open_chat")].join(" · ") },
     el("span", { class: `dot ${tone}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: o.head ? sessionHead(l) : name })),
-      el("span", { class: "ha" }, o.head ? null : el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || "프로젝트 없음" }), o.line ? el("span", { class: "sline", text: o.line }) : null, o.extra || null)),
-    subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
+      el("span", { class: "ha" }, o.head ? null : el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || TX("chat.tsw.no_project") }), o.line ? el("span", { class: "sline", text: o.line }) : null, o.extra || null)),
+    subs.length ? el("span", { class: "hp", title: TX("home.subs.title"), text: TX("project.subs_count", { done, total: subs.length }) }) : null,
     el("span", { class: `hs ${tone}`, text: word }));
 }
 
@@ -179,22 +179,22 @@ const prjFirst = () => { const r = projRows((PRJ && PRJ.projects) || []); return
 /* ---------- 프로젝트 level 1: a compact list (name, one status line, last activity), filtered and paged ----------
    Rows sort by what needs the owner, then what runs, then the most recent. A row opens the project's overview (level 2); the overview's
    sections open one drill-in page each (level 3). The built-in 커스텀 project is a settings page, so it sits at the end, outside the filters. */
-const PJ_PAGE = 12, PJ_VIEWS = [["all", "전체"], ["run", "진행 중"], ["need", "확인 필요"]];
+const PJ_PAGE = 12, PJ_VIEWS = [["all", TX("project.view.all")], ["run", TX("home.sys.running")], ["need", TX("home.attn.check")]];
 const PJ = { view: "all", q: "", more: PJ_PAGE };
 // What the owner should do with a project now: a waiting session first, then work running, then a resting one.
 function prjState(p) {
   const ls = p.lanes || [];
-  if (prjPaused(p)) return { k: "paused", tone: "", word: "일시 정지" };
+  if (prjPaused(p)) return { k: "paused", tone: "", word: TX("project.paused") };
   // The same verdict as the session's own row, so a session on handed-off work runs here too.
   const open = ls.filter(l => l.live).map(l => ({ l, st: sessionStatus({ ...l, pendingAsk: l.waiting }) })), at = t => open.find(x => x.st[1] === t), work = at("pri");
   const ask = ls.find(l => l.waiting);
-  if (ask) return { k: "need", tone: "att", word: "답을 기다려요", lane: ask, run: !!work };   // run: it also counts under the 진행 중 filter
+  if (ask) return { k: "need", tone: "att", word: TX("project.word.asks"), lane: ask, run: !!work };   // run: it also counts under the 진행 중 filter
   if (work) return { k: "run", tone: "pri", word: SESSION_WORD.run[0], lane: work.l };
   const stuck = at("err") || at("warn");
   if (stuck) return { k: "need", tone: stuck.st[1], word: stuck.st[0], lane: stuck.l };
-  const queued = open.find(x => x.st[0] === "순서 대기");
+  const queued = open.find(x => x.st[0] === TX("home.todo.queued"));
   if (queued) return { k: "run", tone: "", word: queued.st[0], lane: queued.l };
-  return { k: "idle", tone: "", word: ls.length ? "쉬는 중" : "세션 없음" };
+  return { k: "idle", tone: "", word: ls.length ? TX("home.word.resting") : TX("project.word.no_sessions") };
 }
 // The newest thing that happened in the project: a session's report or start, or the record's last save.
 function prjLastAt(p) {
@@ -203,14 +203,14 @@ function prjLastAt(p) {
 }
 // A short, calm time: 방금 · 12분 전 · 3시간 전 · 어제 · 4일 전 · 9/30.
 function prjAgo(at) {
-  if (!at) return "기록 없음";
+  if (!at) return TX("project.ago.none");
   const m = Math.max(0, Math.floor((Date.now() - at) / 60000));
-  if (m < 1) return "방금";
-  if (m < 60) return `${m}분 전`;
+  if (m < 1) return TX("home.ago.now");
+  if (m < 60) return TX("home.ago.m", { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}시간 전`;
+  if (h < 24) return TX("home.ago.h", { n: h });
   const d = Math.floor(h / 24);
-  return d === 1 ? "어제" : d < 7 ? `${d}일 전` : kstDay(at);
+  return d === 1 ? TX("project.yesterday") : d < 7 ? TX("project.ago.d", { n: d }) : kstDay(at);
 }
 const prjRank = s => (s.k === "need" ? 0 : s.k === "run" ? 1 : 2);
 // The projects as data rows, in reading order: need -> running -> recent.
@@ -232,16 +232,16 @@ function prjRow(r) {
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
   const line = prjBlurb(prjPurpose(p)) || (st.lane ? (st.lane.title || st.lane.name) : ""), full = [line, prjAgo(at)].filter(Boolean).join(" · ");
   const tone = st.tone === "att" ? "warn" : st.tone;
-  return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${full} · 열기`, onclick: () => go("project", p.key) },
+  return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": [prjTitle(p), full, TX("project.open")].join(" · "), onclick: () => go("project", p.key) },
     el("span", { class: "ico" }, icon("projects")),
     el("span", { class: "pl-b" },
       el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) })),
       el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line }))),
-    el("span", { class: "li-end" }, unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null,
+    el("span", { class: "li-end" }, unread ? el("span", { class: "pl-nb", "aria-label": TX("project.unread_n", { n: unread }), text: unread > 99 ? "99+" : String(unread) }) : null,
       el("span", { class: `tag ${tone}`, text: st.word })));
 }
 // The prototype's section headers: 고정 first, then 프로젝트 (not 전체: that is the filter chip's word), the same rows sorted by what needs the owner (projRows).
-const prjGroups = rows => [["고정", rows.filter(r => r.p.pinned)], ["프로젝트", rows.filter(r => !r.p.pinned)]].filter(g => g[1].length);
+const prjGroups = rows => [[TX("project.group.pinned"), rows.filter(r => r.p.pinned)], [TX("common.projects"), rows.filter(r => !r.p.pinned)]].filter(g => g[1].length);
 // With two or more computers: one folding header per computer (이 컴퓨터 first), its rows pinned first. Another computer's project opens
 // that computer's own web app at the project page; an offline computer keeps its header, marked 연결 안 됨, like the computer switcher.
 const PJ_FOLD = new Set((() => { try { const l = JSON.parse(localStorage.getItem("dotz-pj-fold") || "[]"); return Array.isArray(l) ? l : []; } catch { return []; } })());
@@ -251,18 +251,18 @@ function pcFold(name) {
   pjPaintRows();
 }
 function pcHead(g, n) {
-  const open = !PJ_FOLD.has(g.name), mark = g.self ? "이 컴퓨터" : g.online === false ? "연결 안 됨" : "";
-  return el("button", { class: `sec pl-sec pl-pc${g.online === false ? " off" : ""}`, type: "button", "aria-expanded": String(open), "aria-label": `${g.name}${mark ? ` · ${mark}` : ""} · 프로젝트 ${n}개 · ${open ? "접기" : "펼치기"}`, onclick: () => pcFold(g.name) },
+  const open = !PJ_FOLD.has(g.name), mark = g.self ? TX("project.pc.this") : g.online === false ? TX("project.pc.offline") : "";
+  return el("button", { class: `sec pl-sec pl-pc${g.online === false ? " off" : ""}`, type: "button", "aria-expanded": String(open), "aria-label": [`${g.name}${mark ? ` · ${mark}` : ""}`, TX("project.count_n", { n }), open ? TX("project.fold") : TX("project.unfold")].join(" · "), onclick: () => pcFold(g.name) },
     el("span", { class: "pl-pcn", text: g.name }), mark ? el("span", { class: "tag", text: mark }) : null, n ? el("span", { class: "pl-pcc", text: String(n) }) : null, icon("chev", "chev"));
 }
 function pcOpen(g, x) {
-  if (!g.online || !g.url) { toast(`${g.name}에 연결할 수 없어요`, true); return; }
-  toast(`${g.name}(으)로 넘어가요`);
+  if (!g.online || !g.url) { toast(TX("project.pc.cant", { name: g.name }), true); return; }
+  toast(TX("project.pc.switch", { name: g.name }));
   prGo(`${g.url}/?did=${enc(DEVICE_ID)}#project/${enc(x.key)}`);
 }
 function pcRow(g, x) {
   const line = prjBlurb(x.note || "");
-  return el("button", { class: "pl-row", type: "button", "data-key": x.key, "aria-label": `${g.name} · ${x.name} · 열기`, onclick: () => pcOpen(g, x) },
+  return el("button", { class: "pl-row", type: "button", "data-key": x.key, "aria-label": [g.name, x.name, TX("project.open")].join(" · "), onclick: () => pcOpen(g, x) },
     el("span", { class: "ico" }, icon("projects")),
     el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: x.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line }))),
     el("span", { class: "li-end" }, icon("chev", "chev")));
@@ -280,10 +280,10 @@ function pcSplit(pcs, page) {
 }
 function pjSearch() {
   return el("label", { class: "pl-search" }, icon("search"),
-    el("input", { id: "pl-q", type: "search", placeholder: "프로젝트 검색", "aria-label": "프로젝트 검색", autocomplete: "off", value: PJ.q, oninput: ev => { PJ.q = ev.target.value; pjPaintRows(); } }));
+    el("input", { id: "pl-q", type: "search", placeholder: TX("project.search"), "aria-label": TX("project.search"), autocomplete: "off", value: PJ.q, oninput: ev => { PJ.q = ev.target.value; pjPaintRows(); } }));
 }
 function pjChips(counts) {
-  return segKeep(el("div", { class: "pl-chips", role: "tablist", "aria-label": "프로젝트 보기" }, ...PJ_VIEWS.map(([k, label]) =>
+  return segKeep(el("div", { class: "pl-chips", role: "tablist", "aria-label": TX("project.view.aria") }, ...PJ_VIEWS.map(([k, label]) =>
     el("button", { class: `cchip mr-f${PJ.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(PJ.view === k), "data-view": k, onclick: () => { PJ.view = k; PJ.more = PJ_PAGE; pjPaintChips(); pjPaintRows(); } },
       label, counts[k] ? el("span", { class: "mr-fn", text: String(counts[k]) }) : el("span", { class: "mr-fn", hidden: true })))));
 }
@@ -307,7 +307,7 @@ function pjPaintRows() {
   if (!box) return;
   const rows = pjFiltered(), page = rows.slice(0, PJ.more), rest = rows.length - page.length;
   const builtin = ((PRJ && PRJ.projects) || []).find(p => p.builtin), searching = !!PJ.q.trim();
-  const showBuiltin = !!builtin && PJ.view === "all" && (!searching || "커스텀".includes(PJ.q.trim().toLowerCase()));
+  const showBuiltin = !!builtin && PJ.view === "all" && (!searching || TX("project.custom").toLowerCase().includes(PJ.q.trim().toLowerCase()));
   const pcs = PRJ_PC && PRJ_PC.length > 1 ? PRJ_PC : null;
   const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin, pcs, pcs ? [...PJ_FOLD] : 0]);
   if (box.dataset.sig === sig) return;
@@ -329,27 +329,27 @@ function pjPaintRows() {
       nodes.push(card = el("div", { class: "pl-list" }, ...group.map(prjRow)));
     }
   }
-  if (rest > 0 && card) card.append(moreRow(`프로젝트 ${rest}개 더 보기`, () => { PJ.more += PJ_PAGE; pjPaintRows(); }));
-  if (!rows.length && !(pcs && nodes.length)) nodes.push(el("div", { class: "empty pl-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
+  if (rest > 0 && card) card.append(moreRow(TX("project.more_n", { n: rest }), () => { PJ.more += PJ_PAGE; pjPaintRows(); }));
+  if (!rows.length && !(pcs && nodes.length)) nodes.push(el("div", { class: "empty pl-empty", text: searching ? TX("project.empty.search") : PJ.view === "need" ? TX("project.empty.need") : PJ.view === "run" ? TX("project.empty.run") : PJ.view === "done" ? TX("project.empty.done") : TX("project.empty.none") }));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
-    nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: "내 설정" }));
+    nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: TX("project.my_settings") }));
     nodes.push(el("div", { class: "pl-list" },
       el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
         el("span", { class: "ico" }, icon("projects")),
-        el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" }))),
+        el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: TX("project.custom_sub") }))),
         el("span", { class: "li-end" }, icon("chev", "chev")))));
   }
   clear(box).append(...nodes);
 }
 function renderProjects() {
   const box = $("#v-projects");
-  if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…", PRJ_FAIL ? () => prjLoad() : null)); return; }
+  if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? TX("project.load_failed") : TX("common.loading"), PRJ_FAIL ? () => prjLoad() : null)); return; }
   const list = PRJ.projects || [];
   if (!list.length) {
     delete box.dataset.sig;
-    const none = emptyNode("아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요");
-    none.append(el("div", { class: "pl-empty-a" }, el("button", { class: "btn tonal sm", type: "button", "data-k": "chat", onclick: () => openTarget(MAIN, lastChatView()) }, "채팅 열기")));
+    const none = emptyNode(TX("project.empty.first"));
+    none.append(el("div", { class: "pl-empty-a" }, el("button", { class: "btn tonal sm", type: "button", "data-k": "chat", onclick: () => openTarget(MAIN, lastChatView()) }, TX("project.chat_open"))));
     clear(box).append(none);
     return;
   }

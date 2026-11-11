@@ -89,12 +89,12 @@
       "why": "attachment token names the server matches"
     },
     "web/js/18-lanes.js": {
-      "count": 140,
-      "why": "pending"
+      "count": 1,
+      "why": "Korean text handling: sentence endings when one line is cut from a report"
     },
     "web/js/19-project-main.js": {
-      "count": 505,
-      "why": "pending"
+      "count": 4,
+      "why": "draft tag the assistant instructions name (protocol)"
     },
     "web/js/20-models.js": {
       "count": 118,
