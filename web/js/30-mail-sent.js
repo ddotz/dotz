@@ -7,7 +7,7 @@
 // A peer's mail reads its drafts from that computer's snapshot (PQ.list), so both views are the same; only the machine chip in the head differs.
 const MS = { open: new Set(), gone: new Set() };
 const msKey = n => `${n.pc ? n.pc.url : ""}|${n.id}`;
-const MS_LABEL = { send: "보낸 답장", expired: "만료된 초안", ignored: "무시한 초안", edit: "고친 초안" };
+const MS_LABEL = { send: TX("mail.sent.send"), expired: TX("mail.sent.expired"), ignored: TX("mail.sent.ignored"), edit: TX("mail.sent.edit") };
 function mailDraftsOf(t) {
   const pc = pqPc(t), mine = n => !n.dismissed && !!(n.decision && n.decision.draft) && n.decision.to === t;
   if (!pc) return NT.items.filter(mine);
@@ -39,33 +39,33 @@ async function mailSentRemove(n, btn, quiet = false) {
       if (raw) raw.dismissed = true;
     } else {
       const r = await api(`/api/notices/${enc(id)}/dismiss`, "POST", {});
-      if (!r || !r.ok) throw new Error("지우지 못했어요");
+      if (!r || !r.ok) throw new Error(TX("mail.sent.remove_failed"));
       leave();
       NT.items = NT.items.filter(x => String(x.id) !== id);
       if (typeof r.unread === "number") NT.unread = r.unread;
       ntPaint();
     }
     if (out) out.then(mailSentPaint); else mailSentPaint();
-    if (!quiet) toast("초안을 지웠어요");
+    if (!quiet) toast(TX("mail.sent.removed"));
     return true;
-  } catch (e) { if (btn) btn.disabled = false; mailSentPaint(); if (!quiet) toast(e.message || "지우지 못했어요", true); return false; }
+  } catch (e) { if (btn) btn.disabled = false; mailSentPaint(); if (!quiet) toast(e.message || TX("mail.sent.remove_failed"), true); return false; }
 }
 // 모두 지우기 at the head of a mail's folded drafts: every one of them is hidden the same way (one dismiss each on the computer that holds it).
 async function mailSentClear(list, btn) {
   if (btn) btn.disabled = true;
   const ok = await Promise.all(list.map(n => mailSentRemove(n, null, true)));
   const bad = ok.filter(x => !x).length;
-  toast(bad ? `${list.length}개 중 ${bad}개를 지우지 못했어요` : `초안 ${list.length}개를 지웠어요`, !!bad);
+  toast(bad ? TX("mail.sent.clear_failed", { total: list.length, n: bad }) : TX("mail.sent.cleared", { n: list.length }), !!bad);
   if (btn && btn.isConnected) btn.disabled = false;
 }
 function mailSentNode(n) {
   const d = n.decision, dr = d.draft, k = msKey(n), open = MS.open.has(k), st = drState(d);
   const toggle = () => { if (open) MS.open.delete(k); else MS.open.add(k); mailSentPaint(); };
   const line = el("button", { class: "ms-line", type: "button", "aria-expanded": String(open), "data-nid": n.id, onclick: toggle },
-    icon(st === "send" ? "send" : "mail"), el("span", { class: "ms-k", text: `${MS_LABEL[st] || "처리된 초안"} · ${ntTime(d.answered_at || n.updated || n.ts)}` }),
-    el("span", { class: "ms-m", text: `${dr.toLabel || "받는이"} ${dr.to || "-"}` }), icon("drop", "ms-ch"));
+    icon(st === "send" ? "send" : "mail"), el("span", { class: "ms-k", text: `${MS_LABEL[st] || TX("mail.sent.handled")} · ${ntTime(d.answered_at || n.updated || n.ts)}` }),
+    el("span", { class: "ms-m", text: `${dr.toLabel || TX("decision.to")} ${dr.to || "-"}` }), icon("drop", "ms-ch"));
   const body = open ? el("div", { class: "ms-body" }, draftCardNode(n, { bare: true }),
-    el("div", { class: "ms-ft" }, el("button", { class: "btn text sm ms-rm", type: "button", "aria-label": "이 초안 지우기", onclick: ev => mailSentRemove(n, ev.currentTarget) }, icon("trash"), el("span", { text: "지우기" })))) : null;
+    el("div", { class: "ms-ft" }, el("button", { class: "btn text sm ms-rm", type: "button", "aria-label": TX("mail.sent.remove_this"), onclick: ev => mailSentRemove(n, ev.currentTarget) }, icon("trash"), el("span", { text: TX("mail.remove") })))) : null;
   return el("div", { class: `ms-card${open ? " open" : ""}`, "data-nid": n.id }, line, body);
 }
 // Drawn after the chat's own paint (renderAll) and on every notice or snapshot change (convPaint): the slot sits right under the mail's card.
@@ -77,13 +77,13 @@ function mailSentPaint() {
   if (slot && slot.dataset.sig === sig) return;
   if (!list.length) { if (slot) slot.remove(); return; }
   if (!slot) {
-    slot = el("div", { class: "ms-slot", role: "group", "aria-label": "처리된 답장 초안" });
+    slot = el("div", { class: "ms-slot", role: "group", "aria-label": TX("mail.sent.group") });
     let card = tl.querySelector(".mhd-wrap");
     while (card && card.parentElement !== tl) card = card.parentElement;
     if (card) card.after(slot); else tl.append(slot);
   }
   slot.dataset.sig = sig;
-  const head = list.length > 1 ? el("div", { class: "ms-hd" }, el("span", { class: "ms-n", text: `처리된 초안 ${list.length}개` }),
-    el("button", { class: "btn text sm ms-clear", type: "button", "data-k": "ms-clear", onclick: ev => mailSentClear(list, ev.currentTarget) }, icon("trash"), el("span", { text: "모두 지우기" }))) : null;
+  const head = list.length > 1 ? el("div", { class: "ms-hd" }, el("span", { class: "ms-n", text: TX("mail.sent.count", { n: list.length }) }),
+    el("button", { class: "btn text sm ms-clear", type: "button", "data-k": "ms-clear", onclick: ev => mailSentClear(list, ev.currentTarget) }, icon("trash"), el("span", { text: TX("mail.sent.clear") }))) : null;
   clear(slot).append(...(head ? [head] : []), ...list.map(mailSentNode));
 }

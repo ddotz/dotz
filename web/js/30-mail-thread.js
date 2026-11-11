@@ -47,9 +47,9 @@ function mailAddrNode(list, max = 2) {
       if (a.name && a.addr) box.append(el("span", { class: "mhd-a", text: ` <${a.addr}>` }));
     });
     if (list.length > shown.length) {
-      box.append(" ", el("button", { class: "mhd-more", type: "button", onclick: () => paint(true), text: `외 ${list.length - shown.length}명` }));
+      box.append(" ", el("button", { class: "mhd-more", type: "button", onclick: () => paint(true), text: TX("mail.people.more", { n: list.length - shown.length }) }));
     } else if (open && list.length > max) {
-      box.append(" ", el("button", { class: "mhd-more", type: "button", onclick: () => paint(false), text: "접기" }));
+      box.append(" ", el("button", { class: "mhd-more", type: "button", onclick: () => paint(false), text: TX("decision.less") }));
     }
   };
   paint(false);
@@ -70,17 +70,17 @@ function mailHeadNode(m) {
   const src = m || {};
   const from = mailAddrList(src.from), to = mailAddrList(src.to), cc = mailAddrList(src.cc);
   const row = (k, list) => (list.length ? el("div", { class: "mhd-r" }, el("span", { class: "mhd-k", text: k }), mailAddrNode(list)) : null);   // a row with nobody in it is left out, not shown as "-"
-  return el("div", { class: "mhd", role: "group", "aria-label": "보낸 사람과 받는 사람" }, row("보낸 사람", from), row("받는 사람", to), row("참조", cc));
+  return el("div", { class: "mhd", role: "group", "aria-label": TX("mail.people.aria") }, row(TX("mail.from"), from), row(TX("mail.to"), to), row(TX("decision.cc"), cc));
 }
 
 // A mail list row's one-line version: two names then 외 N명, no buttons inside the row (the whole row opens the mail).
 function mailToText(m) {
   const fmt = list => {
     const shown = list.slice(0, 2).map(a => (a.name && a.addr ? `${a.name} <${a.addr}>` : a.name || a.addr)).join(", ");
-    return list.length > 2 ? `${shown} 외 ${list.length - 2}명` : shown;
+    return list.length > 2 ? TX("mail.people.and_more", { names: shown, n: list.length - 2 }) : shown;
   };
   const to = mailAddrList(m && m.to), cc = mailAddrList(m && m.cc);
-  return [to.length ? `받는 사람 ${fmt(to)}` : "", cc.length ? `참조 ${fmt(cc)}` : ""].filter(Boolean).join(" · ");
+  return [to.length ? TX("mail.to_line", { names: fmt(to) }) : "", cc.length ? TX("mail.cc_line", { names: fmt(cc) }) : ""].filter(Boolean).join(" · ");
 }
 
 // The other side of a mail: its sender, or for a mail the owner sent (dir "out") its recipients. Addresses, lowered.
@@ -115,7 +115,7 @@ function mailThreadRows(t, rel) {
     return el("li", {},
       el("button", { class: `mth-row${cur ? " on" : ""}`, type: "button", "aria-current": cur ? "true" : null, "data-t": k, onclick: cur ? null : () => mailThreadOpen(k) },
         el("span", { class: "mth-top" }, tag, el("span", { class: "mth-when", text: rcWhen(m.at) || "" })),
-        el("span", { class: "mth-subj", text: m.subject || "(제목 없음)" }),
+        el("span", { class: "mth-subj", text: m.subject || TX("mail.no_subject") }),
         brief ? el("span", { class: "mth-sum", text: brief }) : null));
   });
 }
@@ -126,7 +126,7 @@ function mailThreadMobile(t) {
   if (rel.length < 2) return null;
   const list = el("ol", { class: "mth-list", hidden: true }, ...mailThreadRows(t, rel));
   // a small chip (mail icon and the count) at the end of the header's 받는 사람 line; its full name is the aria-label and the title
-  const name = `이 사람과 주고받은 메일 ${rel.length}`;
+  const name = TX("mail.thread.count", { n: rel.length });
   const b = el("button", { class: "mth-mb", type: "button", "aria-expanded": "false", "aria-label": name, title: name, onclick: () => {
     // wide: the chip opens the panel beside the mail; narrow: the list under the header
     if (MTH_WIDE.matches) return mailThreadToggle();
@@ -152,15 +152,15 @@ function mailMetaNode(t, e) {
   const m = { from: base.from || (e && e.from), ...mailPeople(known, e && mailOrigOf(e.text), (e && e.subject) || base.subject), dir: base.dir || (e && e.dir) };
   const head = mailHeadNode(m), to = mailAddrList(m.to), cc = mailAddrList(m.cc);
   head.hidden = true;
-  const names = list => { const n = list.slice(0, 2).map(a => a.name || a.addr).join(", "); return list.length > 2 ? `${n} 외 ${list.length - 2}명` : n; };
-  const line = [to.length ? `받는 사람 ${names(to)}` : "", cc.length ? `참조 ${names(cc)}` : ""].filter(Boolean).join(" · ") || "보낸 사람과 받는 사람";
-  const tog = el("button", { class: "mhd-tog", type: "button", "aria-expanded": "false", title: "보낸 사람·받는 사람 자세히", onclick: () => { const open = head.hidden; head.hidden = !open; tog.setAttribute("aria-expanded", String(open)); tog.classList.toggle("open", open); } },
+  const names = list => { const n = list.slice(0, 2).map(a => a.name || a.addr).join(", "); return list.length > 2 ? TX("mail.people.and_more", { names: n, n: list.length - 2 }) : n; };
+  const line = [to.length ? TX("mail.to_line", { names: names(to) }) : "", cc.length ? TX("mail.cc_line", { names: names(cc) }) : ""].filter(Boolean).join(" · ") || TX("mail.people.aria");
+  const tog = el("button", { class: "mhd-tog", type: "button", "aria-expanded": "false", title: TX("mail.people.details"), onclick: () => { const open = head.hidden; head.hidden = !open; tog.setAttribute("aria-expanded", String(open)); tog.classList.toggle("open", open); } },
     el("span", { class: "mhd-tl", text: line }), icon("drop", "mhd-ch"));
   return el("div", { class: "mhd-wrap" }, el("div", { class: "mhd-line" }, tog, mailThreadMobile(t)), head);
 }
 
 // The wide panel, beside the conversation (see the CSS): it sits in the chat box and only shows for a mail with related mail.
-const mailThrEl = $("#v-chat .chatbox") ? el("aside", { id: "mail-thread", class: "mth", hidden: true, "aria-label": "같은 사람과 주고받은 메일" }) : null;
+const mailThrEl = $("#v-chat .chatbox") ? el("aside", { id: "mail-thread", class: "mth", hidden: true, "aria-label": TX("mail.thread.aria") }) : null;
 if (mailThrEl) $("#v-chat .chatbox").append(mailThrEl);
 let mthKey = "", mthSig = "";
 function mailThreadSync() {
@@ -178,8 +178,8 @@ function mailThreadSync() {
   if (sig === mthSig && mthKey === target) return;
   mthKey = target; mthSig = sig;
   clear(mailThrEl).append(
-    el("div", { class: "mth-h" }, el("span", { class: "mth-ht", text: "이 사람과 주고받은 메일" }), el("span", { class: "mth-n", text: String(rel.length) }),
-      el("button", { class: "ib mth-x", type: "button", "data-k": "mail-thread-fold", title: "접기", "aria-label": "같은 사람 메일 접기", onclick: () => mailThreadToggle(false) }, icon("close"))),
+    el("div", { class: "mth-h" }, el("span", { class: "mth-ht", text: TX("mail.thread.title") }), el("span", { class: "mth-n", text: String(rel.length) }),
+      el("button", { class: "ib mth-x", type: "button", "data-k": "mail-thread-fold", title: TX("mail.thread.fold"), "aria-label": TX("mail.thread.fold_aria"), onclick: () => mailThreadToggle(false) }, icon("close"))),
     el("ol", { class: "mth-list" }, ...mailThreadRows(target, rel)));
 }
 MT_READY = true;

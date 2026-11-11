@@ -180,25 +180,9 @@
       "count": 376,
       "why": "pending"
     },
-    "web/js/30-mail-box.js": {
-      "count": 293,
-      "why": "pending"
-    },
-    "web/js/30-mail-sent.js": {
-      "count": 37,
-      "why": "pending"
-    },
-    "web/js/30-mail-thread.js": {
-      "count": 50,
-      "why": "pending"
-    },
-    "web/js/30-mailboxes-set.js": {
-      "count": 466,
-      "why": "pending"
-    },
     "web/js/30-mailboxes.js": {
-      "count": 166,
-      "why": "pending"
+      "count": 14,
+      "why": "Korean text handling: subject stop words and sentence endings"
     },
     "web/js/30-monitor-chat.js": {
       "count": 6,
@@ -229,7 +213,7 @@
       "why": "pending"
     },
     "web/js/30-triage.js": {
-      "count": 190,
+      "count": 189,
       "why": "pending"
     },
     "web/js/31-conversations.js": {

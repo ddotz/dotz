@@ -67,7 +67,7 @@ function mbApply(t, a) {
   else if (a === "trash") { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); }
   return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { MAILS.set(t, m); if (conv) CONV.set(t, conv); } };
 }
-const MB_DONE = { read: "읽음으로 표시했어요", unread: "안 읽음으로 표시했어요", archive: "보관했어요", unarchive: "받은편지함으로 옮겼어요", trash: "삭제했어요", star: "별표를 달았어요", unstar: "별표를 뺐어요" };
+const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.done_n.trash", { n }) : TX("mail.done.trash")), star: n => (n > 1 ? TX("mail.done_n.star", { n }) : TX("mail.done.star")), unstar: n => (n > 1 ? TX("mail.done_n.unstar", { n }) : TX("mail.done.unstar")) };
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };
 // Runs one action on `keys` (mail targets). Resolves the keys that went through.
 async function mbRun(keys, action, quiet = false) {
@@ -89,14 +89,14 @@ async function mbRun(keys, action, quiet = false) {
       const by = new Map((r && r.results || []).map(x => [String(x.key).startsWith("mail:") ? x.key : `mail:${x.key}`, x]));
       res = todo.map(t => by.get(t) || { key: t, ok: !!(r && r.ok !== false) });
     }
-  } catch (e) { res = todo.map(t => ({ key: t, ok: false, note: (e && e.data && e.data.error) || (e && /^HTTP 404/.test(e.message) ? "서버가 아직 이 작업을 지원하지 않아요" : (e && e.message) || "처리하지 못했어요") })); }
+  } catch (e) { res = todo.map(t => ({ key: t, ok: false, note: (e && e.data && e.data.error) || (e && /^HTTP 404/.test(e.message) ? TX("mail.err.unsupported") : (e && e.message) || TX("mail.err.failed")) })); }
   const done = res.filter(x => x.ok !== false).map(x => x.key);
   for (const x of res) if (x.ok === false && undo.has(x.key)) undo.get(x.key)();
   mbRefresh();
   const said = (res.find(x => x.ok === false && x.note) || res.find(x => x.note) || {}).note;
   if (!quiet && said) toast(said, res.some(x => x.ok === false));
-  else if (!quiet && res.some(x => x.ok === false)) toast("처리하지 못했어요", true);
-  else if (!quiet && done.length && MB_DONE[action]) toast(`${done.length > 1 ? `${done.length}개를 ${MB_DONE[action]}` : MB_DONE[action]}`, false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: "되돌리기", onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
+  else if (!quiet && res.some(x => x.ok === false)) toast(TX("mail.err.failed"), true);
+  else if (!quiet && done.length && MB_DONE[action]) toast(MB_DONE[action](done.length), false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: TX("common.undo"), onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
   if (legacy) for (const t of done) PQ.of.delete(t);
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
@@ -106,12 +106,12 @@ async function mbRun(keys, action, quiet = false) {
 const mailOriginal = t => { const m = MAILS.get(t); return !!m && m.trashOriginal === true && !pqPc(t); };
 async function mbTrashOriginal(keys, orig) {
   const n = keys.length, rest = keys.filter(t => !orig.includes(t));
-  const what = n > 1 ? `메일 ${n}개를 삭제할까요? ${orig.length === n ? "원본" : `그중 ${orig.length}개는 원본`}도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요` : "이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요";
-  if (!await ask("메일 삭제", what, n > 1 ? `${n}개 삭제` : "삭제", true)) return [];
+  const what = n > 1 ? (orig.length === n ? TX("mail.trash.ask_n", { n }) : TX("mail.trash.ask_some", { n, m: orig.length })) : TX("mail.trash.ask_one");
+  if (!await ask(TX("mail.trash.title"), what, n > 1 ? TX("mail.trash.go_n", { n }) : TX("common.delete"), true)) return [];
   mbDeleting();
   let res;
   try { res = (await api("/api/mail/delete-original", "POST", { keys: orig.map(mbKey) })).results.map(x => ({ ...x, key: `mail:${x.key}` })); }
-  catch (e) { const note = (e && e.data && e.data.error) || (e && e.message) || "원본을 지우지 못했어요"; res = orig.map(key => ({ key, ok: false, note })); }
+  catch (e) { const note = (e && e.data && e.data.error) || (e && e.message) || TX("mail.trash.orig_failed"); res = orig.map(key => ({ key, ok: false, note })); }
   const done = res.filter(x => x.ok).map(x => x.key), bad = res.filter(x => !x.ok);
   for (const t of done) mbApply(t, "trash");
   const leaving = mbRowsOut(done);
@@ -120,8 +120,8 @@ async function mbTrashOriginal(keys, orig) {
   mbLeave(done);
   const local = rest.length ? await mbRun(rest, "trash", true) : [];
   const gone = done.length + local.length;
-  if (bad.length) toast(orig.length > 1 ? `${orig.length}개 중 ${bad.length}개는 지우지 못했어요 · ${bad[0].note}` : bad[0].note, true, { label: "다시 시도", onclick: () => mbTrash(bad.map(x => x.key)) });
-  else toast(gone > 1 ? `${gone}개를 삭제했어요` : "삭제했어요");
+  if (bad.length) toast(orig.length > 1 ? TX("mail.trash.some_failed", { total: orig.length, n: bad.length, note: bad[0].note }) : bad[0].note, true, { label: TX("mail.retry"), onclick: () => mbTrash(bad.map(x => x.key)) });
+  else toast(MB_DONE.trash(gone));
   Promise.allSettled([convLoad(), loadIntegrations(), loadNotices()]);
   return [...done, ...local];
 }
@@ -132,15 +132,15 @@ const MB_UNDO_MS = 6000;
 // The one sentence under both 삭제 confirms (a row's ⋯ and an open mail): dotz drops the mail from its list. One mail that its mailbox will not trash stays there, so the box says so plainly;
 // of several, the ones a mailbox can trash go and the rest stay.
 // The answer to a 삭제 confirm can take a moment (the mailbox is asked): say at once that it is going on; the toast of the result replaces this one.
-const mbDeleting = () => toast("삭제하는 중이에요");
-const mailStays = n => n > 1 ? "메일함에는 남아 있을 수 있어요." : "메일함에는 그대로 남아 있어요.";
+const mbDeleting = () => toast(TX("mail.trash.deleting"));
+const mailStays = n => n > 1 ? TX("mail.trash.stay_some") : TX("mail.trash.stay_one");
 async function mbTrash(keys) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
   const orig = keys.filter(mailOriginal);
   if (orig.length) return mbTrashOriginal(keys, orig);
   if (!keys.every(t => mailCan(t, "trash"))) {
-    if (!await ask("메일 삭제", `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지워요. ${mailStays(keys.length)}`, "삭제", true)) return [];
+    if (!await ask(TX("mail.trash.title"), `${keys.length > 1 ? TX("mail.trash.list_n", { n: keys.length }) : TX("mail.trash.list_one")} ${mailStays(keys.length)}`, TX("common.delete"), true)) return [];
     mbDeleting();
     const done = await mbRun(keys, "trash");
     mbLeave(keys);
@@ -155,12 +155,12 @@ async function mbTrash(keys) {
     const end = v => { clearTimeout(timer); removeEventListener("pagehide", send); res(v); };
     const send = () => end(false), timer = setTimeout(send, MB_UNDO_MS);
     addEventListener("pagehide", send);
-    toast(keys.length > 1 ? `${keys.length}개를 삭제했어요` : "삭제했어요", false, { label: "되돌리기", onclick: () => end(true) }, MB_UNDO_MS);
+    toast(MB_DONE.trash(keys.length), false, { label: TX("common.undo"), onclick: () => end(true) }, MB_UNDO_MS);
   });
   for (const f of back) f();
   if (undone) { mbRefresh(); mbPaintBar(); return []; }
   const done = await mbRun(keys, "trash", true);
-  if (done.length < keys.length) toast("처리하지 못했어요", true);
+  if (done.length < keys.length) toast(TX("mail.err.failed"), true);
   return done;
 }
 // 답장 안 함 on a selection or on the whole 답장 필요 list: mailSetFyi for many mails, one POST /api/mail/fyi {keys, on} per computer (a peer's mails go to
@@ -171,7 +171,7 @@ const mbOwed = keys => keys.filter(t => MAILS.has(t) && mailOwed(MAILS.get(t)));
 async function mbFyi(keys, on = true) {
   keys = on ? mbOwed(keys) : keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
-  if (on && keys.length > MB_FYI_ASK && !await ask("답장 안 함", `메일 ${keys.length}개를 답장 안 함으로 표시할까요? 메일을 보내지는 않아요`, `${keys.length}개 표시`)) return [];
+  if (on && keys.length > MB_FYI_ASK && !await ask(TX("mail.fyi.title"), TX("mail.fyi.ask_n", { n: keys.length }), TX("mail.fyi.go_n", { n: keys.length }))) return [];
   const was = new Map(keys.map(t => { const m = MAILS.get(t); return [t, { reply: m.reply, unreplied: m.unreplied }]; })), byPc = new Map();
   for (const t of keys) {
     Object.assign(MAILS.get(t), { reply: on ? "fyi" : "needs", unreplied: !on });
@@ -192,8 +192,8 @@ async function mbFyi(keys, on = true) {
   for (const t of bad) if (MAILS.has(t)) Object.assign(MAILS.get(t), was.get(t));
   const done = keys.filter(t => !bad.has(t));
   if (bad.size) mbRefresh();
-  if (bad.size) toast(done.length ? `${keys.length}개 중 ${bad.size}개는 표시하지 못했어요` : notes.find(Boolean) || "표시하지 못했어요", true);
-  else toast(`${done.length > 1 ? `${done.length}개를 ` : ""}${on ? "답장 안 함으로" : "답장 필요로"} 표시했어요`, false, on ? { label: "되돌리기", onclick: () => mbFyi(done, false) } : undefined);
+  if (bad.size) toast(done.length ? TX("mail.fyi.some_failed", { total: keys.length, n: bad.size }) : notes.find(Boolean) || TX("mail.fyi.failed"), true);
+  else toast(done.length > 1 ? (on ? TX("mail.fyi.done_n", { n: done.length }) : TX("mail.fyi.undone_n", { n: done.length })) : on ? TX("mail.fyi.done") : TX("mail.fyi.undone"), false, on ? { label: TX("common.undo"), onclick: () => mbFyi(done, false) } : undefined);
   await Promise.allSettled([byPc.has("") ? convLoad() : null, byPc.size > (byPc.has("") ? 1 : 0) ? pqLoad() : null, loadIntegrations(), byPc.has("") ? loadNotices() : null]);
   return done;
 }
@@ -204,17 +204,17 @@ const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "ch
 // `o.short`: the visible word when the full label (kept as aria-label and title) is longer than the button needs.
 // `count` stays beside the icon on the phone, where the label is hidden.
 const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: o.short || label }), o.count ? el("span", { text: ` ${o.count}` }) : null);
-const MB_SHORT = { read: "읽음", unread: "안 읽음", archive: "보관", unarchive: "받은편지함" };
+const MB_SHORT = { read: TX("mail.read"), unread: TX("common.unread"), archive: TX("mail.archive"), unarchive: TX("mail.inbox") };
 // Star: always a button (a star works in dotz whatever the mailbox does); the mailbox's refusal comes back as the hub's one line.
 function mbStar(t) {
   const m = MAILS.get(t) || {}, on = !!m.starred;
   const mark = icon("star", on ? "on" : "");
-  return el("button", { class: `mr-star${on ? " on" : ""}`, type: "button", "data-k": "mail-star", "aria-pressed": String(on), "aria-label": on ? "별표 빼기" : "별표 달기", title: on ? "별표 빼기" : "별표 달기",
+  return el("button", { class: `mr-star${on ? " on" : ""}`, type: "button", "data-k": "mail-star", "aria-pressed": String(on), "aria-label": on ? TX("mail.star.remove") : TX("mail.star.add"), title: on ? TX("mail.star.remove") : TX("mail.star.add"),
     onclick: ev => { ev.stopPropagation(); mbRun([t], on ? "unstar" : "star", true).then(() => {}); }, onkeydown: ev => ev.stopPropagation() }, mark);
 }
 // The leading cells of a mail row's header: ☐ and ☆. Ticking a row repaints the bar only, never the list.
 function mbLead(t, title) {
-  const chk = el("input", { class: "mr-chk", type: "checkbox", "data-k": "mail-select", "aria-label": `${title} 선택`, checked: MBOX.sel.has(t),
+  const chk = el("input", { class: "mr-chk", type: "checkbox", "data-k": "mail-select", "aria-label": TX("mail.select_named", { name: title }), checked: MBOX.sel.has(t),
     onclick: ev => ev.stopPropagation(), onkeydown: ev => ev.stopPropagation(), onchange: ev => { if (ev.target.checked) MBOX.sel.add(t); else MBOX.sel.delete(t); const row = ev.target.closest(".mr"); if (row) row.classList.toggle("mr-sel", ev.target.checked); mbPaintBar(); } });
   return el("span", { class: "mr-lead" }, chk, mbStar(t));
 }
@@ -225,28 +225,28 @@ function mbPaintBar() {
   const bar = document.getElementById("mbox-bar");
   if (!bar) return;
   const keys = [...MBOX.sel].filter(t => MAILS.has(t)), all = MBOX.vis.length > 0 && MBOX.vis.every(t => MBOX.sel.has(t));
-  const chk = el("input", { class: "mbox-all", type: "checkbox", "aria-label": "모두 선택", "data-k": "mail-select-all", checked: all, disabled: !MBOX.vis.length, onchange: ev => {
+  const chk = el("input", { class: "mbox-all", type: "checkbox", "aria-label": TX("mail.select_all"), "data-k": "mail-select-all", checked: all, disabled: !MBOX.vis.length, onchange: ev => {
     if (ev.target.checked) MBOX.vis.forEach(t => MBOX.sel.add(t)); else MBOX.sel.clear();
     document.querySelectorAll("#mon-tl .mr .mr-chk").forEach(c => { c.checked = ev.target.checked; c.closest(".mr").classList.toggle("mr-sel", ev.target.checked); });
     mbPaintBar();
   } });
   chk.indeterminate = !all && keys.length > 0;
   if (!keys.length) {
-    clear(bar).append(chk, el("span", { class: "mbox-n", text: MBOX.vis.length ? `메일 ${MBOX.vis.length}개` : "" }));
+    clear(bar).append(chk, el("span", { class: "mbox-n", text: MBOX.vis.length ? TX("mail.count_n", { n: MBOX.vis.length }) : "" }));
     bar.classList.remove("on");
-    if (mailFilterOf()[0] === "owed" && MBOX.vis.length) bar.append(mbBtn("이 목록 전부 답장 안 함", "replyoff", () => mbFyi(MBOX.vis), { k: "mail-fyi-all" }));
+    if (mailFilterOf()[0] === "owed" && MBOX.vis.length) bar.append(mbBtn(TX("mail.fyi.all"), "replyoff", () => mbFyi(MBOX.vis), { k: "mail-fyi-all" }));
     return;
   }
   const arch = mailFilterOf()[0] === "archived";
   // The two used most stand as words (읽음, 보관); the rest is in the ⋯, so 삭제 is never the button beside the × that clears the choice.
   const owed = mbOwed(keys).length, run = a => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar());
-  const btns = [["read", "읽음으로 표시", "check"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"]].map(([a, label, ic]) => mbBtn(label, ic, () => run(a), { k: `mail-${a}`, short: MB_SHORT[a], cls: "mbox-w" }));
-  const items = [{ value: "unread", label: "안 읽음으로 표시" }, ...(keys.some(mxCanMove) ? [{ value: "move", label: "메일함 옮기기", ...(keys.some(pqPc) ? { sub: mxWhy(pqPc(keys.find(pqPc))) } : {}) }] : []), ...(owed ? [{ value: "fyi", label: `답장 안 함${owed < keys.length ? ` ${owed}개` : ""}` }] : []), { value: "trash", label: "삭제", danger: true }];
-  btns.push(el("button", { class: "mbox-b mbox-ic", type: "button", "data-k": "mail-more", title: "더 보기", "aria-label": "더 보기", "aria-haspopup": "listbox",
+  const btns = [["read", TX("mail.act.read"), "check"], arch ? ["unarchive", TX("mail.act.unarchive"), "inbox"] : ["archive", TX("mail.act.done"), "archive"]].map(([a, label, ic]) => mbBtn(label, ic, () => run(a), { k: `mail-${a}`, short: MB_SHORT[a], cls: "mbox-w" }));
+  const items = [{ value: "unread", label: TX("mail.act.unread") }, ...(keys.some(mxCanMove) ? [{ value: "move", label: TX("mail.move"), ...(keys.some(pqPc) ? { sub: mxWhy(pqPc(keys.find(pqPc))) } : {}) }] : []), ...(owed ? [{ value: "fyi", label: owed < keys.length ? TX("mail.fyi.label_n", { n: owed }) : TX("mail.fyi.title") }] : []), { value: "trash", label: TX("common.delete"), danger: true }];
+  btns.push(el("button", { class: "mbox-b mbox-ic", type: "button", "data-k": "mail-more", title: TX("mail.more"), "aria-label": TX("mail.more"), "aria-haspopup": "listbox",
     onclick: ev => { const b = ev.currentTarget; showMenu(b, items, { onPick: v => (v === "move" ? (keys.some(pqPc) ? toast(mxWhy(pqPc(keys.find(pqPc))), true) : mxMoveOpen(b, keys)) : v === "fyi" ? mbFyi(keys).then(() => mbPaintBar()) : run(v)) }); } }, icon("more")));
   bar.classList.add("on");
-  clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
-    el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
+  clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: TX("mail.selected_n", { n: keys.length }) }), ...btns,
+    el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": TX("mail.deselect"), title: TX("mail.deselect"), onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
 const MB_PAGE = 100;   // mail rows drawn at first and added per step
@@ -279,7 +279,7 @@ function mbMore() {
 }
 // After the drawn rows: a sentinel that adds a page when it reaches the viewport, and the plain button for a browser without IntersectionObserver.
 function mbMoreNodes(left) {
-  const btn = moreRow(left ? `${left}개 더 보기` : "메일 더 보기", mbMore);
+  const btn = moreRow(left ? TX("mail.more_left", { n: left }) : TX("mail.more_mail"), mbMore);
   btn.dataset.mbMore = "1";
   return [el("div", { class: "mon-sentinel", "data-mb": "1", "aria-hidden": "true" }), btn];
 }
@@ -319,7 +319,7 @@ function mailFyiBtn(t) {
 }
 // 원문 보기 / 접기 of the mail's own .rc-raw: the name follows the fold.
 function mailRawBtn(d) {
-  const b = mbIco("", "file", () => { d.open = !d.open; }, "mail-open-raw"), paint = () => { const label = d.open ? "원문 접기" : "원문 보기"; b.title = label; b.setAttribute("aria-label", label); b.setAttribute("aria-expanded", String(d.open)); };
+  const b = mbIco("", "file", () => { d.open = !d.open; }, "mail-open-raw"), paint = () => { const label = d.open ? TX("decision.org.hide") : TX("decision.org.show"); b.title = label; b.setAttribute("aria-label", label); b.setAttribute("aria-expanded", String(d.open)); };
   d.addEventListener("toggle", paint);
   paint();
   return b;
@@ -327,64 +327,64 @@ function mailRawBtn(d) {
 function mailOpenBar(t, card) {
   const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived, out = m.dir === "out";
   // 삭제 is the last button of the bar, away from the ones used most.
-  const acts = [arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "보관", "archive"], out ? null : unread ? ["read", "읽음으로 표시", "mailopen"] : ["unread", "안 읽음으로 표시", "mail"]].filter(Boolean);
+  const acts = [arch ? ["unarchive", TX("mail.act.unarchive"), "inbox"] : ["archive", TX("mail.archive"), "archive"], out ? null : unread ? ["read", TX("mail.act.read"), "mailopen"] : ["unread", TX("mail.act.unread"), "mail"]].filter(Boolean);
   const act = ([a, label, ic]) => mbIco(label, ic, ev => busy(ev.currentTarget, async () => {
     const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
     if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
   }), `mail-open-${a}`);
   const raw = card && card.querySelector(":scope > .rc-raw");
   if (card) mailOpenSummary(t, card);
-  return el("div", { class: "mtop", role: "toolbar", "aria-label": "메일 처리" },
+  return el("div", { class: "mtop", role: "toolbar", "aria-label": TX("mail.open.toolbar") },
     ...acts.map(act),
     ...MB_MODES.map(([k, label, ic]) => el("button", { class: "ib mtop-b mbox-mode", type: "button", "data-mode": k, title: label, "aria-label": label, onclick: () => { mbOpenReply(t, k); const s = tl.querySelector(":scope > .mbox-reply"); if (s) s.scrollIntoView({ block: "nearest" }); } }, icon(ic))),
     out ? null : mailDraftButton(t, "ib mtop-b mr-draft"),
     out ? null : mailFyiBtn(t),
     raw ? mailRawBtn(raw) : null,
-    act(["trash", "삭제", "trash"]));
+    act(["trash", TX("common.delete"), "trash"]));
 }
 
 /* ---------- 메일 쓰기: the floating button and its sheet ---------- */
-const mbFab = () => el("button", { class: "mbox-fab", type: "button", "data-k": "mail-compose", "aria-label": "메일 쓰기", title: "메일 쓰기", onclick: () => mbCompose() }, icon("pencil"), el("span", { class: "mbox-fab-t", text: "메일 쓰기" }));
+const mbFab = () => el("button", { class: "mbox-fab", type: "button", "data-k": "mail-compose", "aria-label": TX("mail.compose"), title: TX("mail.compose"), onclick: () => mbCompose() }, icon("pencil"), el("span", { class: "mbox-fab-t", text: TX("mail.compose") }));
 const mbSize = f => mailSize(f.size) || "";
 // The attachments as chips: name and size, a × to take one off. `files` is the draft's own list, so the chips survive a failed save and a reopen.
 function mbChips(files, onRemove, busyNames = []) {
-  return el("div", { class: "mbox-files", "aria-label": "첨부파일" }, ...files.map((f, i) => el("span", { class: "mbox-chip", "data-name": f.name, title: f.name },
+  return el("div", { class: "mbox-files", "aria-label": TX("mail.attachments") }, ...files.map((f, i) => el("span", { class: "mbox-chip", "data-name": f.name, title: f.name },
     icon("clip"), el("span", { class: "mbox-cn", text: f.name }), mbSize(f) ? el("span", { class: "mbox-cs", text: mbSize(f) }) : null,
-    el("button", { class: "mbox-cx", type: "button", "aria-label": `${f.name} 빼기`, onclick: () => onRemove(i) }, icon("close")))),
-    ...busyNames.map(n => el("span", { class: "mbox-chip wait", title: n }, icon("clip"), el("span", { class: "mbox-cn", text: n }), el("span", { class: "mbox-cs", text: "올리는 중…" }))));
+    el("button", { class: "mbox-cx", type: "button", "aria-label": TX("decision.remove_named", { name: f.name }), onclick: () => onRemove(i) }, icon("close")))),
+    ...busyNames.map(n => el("span", { class: "mbox-chip wait", title: n }, icon("clip"), el("span", { class: "mbox-cn", text: n }), el("span", { class: "mbox-cs", text: TX("decision.file.uploading") }))));
 }
 // A form state {to, cc, subject, body, files, up:[names being uploaded]} painted into `host`; the fields write straight into the state, so a repaint keeps them.
 function mbForm(st, host, o) {
   const field = (k, label, ph, extra = {}) => el("label", { class: `mbox-f mbox-f-${k}` }, el("span", { class: "mbox-fk", text: label }),
     el("input", { class: "mbox-in", type: "text", value: st[k], placeholder: ph, "data-k": `mail-${k}`, "aria-label": label, autocomplete: "off", spellcheck: "false", oninput: ev => { st[k] = ev.target.value; }, ...extra }));
-  const picker = el("input", { type: "file", multiple: true, hidden: true, "aria-label": "파일 고르기" });
+  const picker = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
   const files = el("div", { class: "mbox-fw" });
   const paintFiles = () => clear(files).append(mbChips(st.files, i => { st.files.splice(i, 1); paintFiles(); }, st.up));
   const add = async list => {
     for (const f of list) {
       st.up.push(f.name); paintFiles();
       try { const u = await uploadFile(f); st.files.push({ name: u.name, ...(u.original ? { original: u.original } : {}), path: u.path, size: u.size, type: u.type }); }
-      catch (e) { toast(e.message || "올리지 못했어요", true); }
+      catch (e) { toast(e.message || TX("mail.upload_failed"), true); }
       st.up.splice(st.up.indexOf(f.name), 1); paintFiles();
     }
   };
   picker.onchange = () => { const list = [...picker.files]; picker.value = ""; add(list); };
-  const body = el("textarea", { class: "mbox-ta fi", rows: o.rows || "7", placeholder: o.placeholder || "내용", "data-k": "mail-body", "aria-label": "내용", oninput: ev => { st.body = ev.target.value; } });
+  const body = el("textarea", { class: "mbox-ta fi", rows: o.rows || "7", placeholder: o.placeholder || TX("mail.body"), "data-k": "mail-body", "aria-label": TX("mail.body"), oninput: ev => { st.body = ev.target.value; } });
   body.value = st.body;
-  const ccRow = field("cc", "참조", "쉼표로 여러 명");
+  const ccRow = field("cc", TX("decision.cc"), TX("mail.many_ph"));
   ccRow.hidden = !st.cc && !st.showCc;
-  const ccBtn = el("button", { class: "mbox-cc", type: "button", "aria-label": "참조 추가", onclick: () => { st.showCc = true; ccRow.hidden = false; ccBtn.hidden = true; ccRow.querySelector("input").focus(); } }, "참조");
+  const ccBtn = el("button", { class: "mbox-cc", type: "button", "aria-label": TX("mail.cc_add"), onclick: () => { st.showCc = true; ccRow.hidden = false; ccBtn.hidden = true; ccRow.querySelector("input").focus(); } }, TX("decision.cc"));
   ccBtn.hidden = !ccRow.hidden;
-  const to = field("to", "받는 사람", "쉼표로 여러 명");
+  const to = field("to", TX("mail.to"), TX("mail.many_ph"));
   to.append(ccBtn);
   // a missing 받는 사람 is said under its row and stays until something is typed there
-  const err = el("div", { class: "mbox-err", role: "alert", text: "받는 사람을 적어 주세요", hidden: true });
+  const err = el("div", { class: "mbox-err", role: "alert", text: TX("mail.need_to"), hidden: true });
   const toIn = to.querySelector("input");
   toIn.addEventListener("input", () => { err.hidden = true; });
   st.needTo = () => { err.hidden = false; toIn.focus(); };
   paintFiles();
   // append(null) would print the word "null": the quote block is added only when there is an original
-  clear(host).append(to, err, ccRow, field("subject", "제목", "제목"), body, files, picker);
+  clear(host).append(to, err, ccRow, field("subject", TX("decision.subject"), TX("decision.subject")), body, files, picker);
   if (o.quote) host.insertBefore(o.quote, files);
   return { pick: () => picker.click(), body, files: paintFiles };
 }
@@ -392,24 +392,24 @@ const mbPayload = (st, extra = {}) => ({ to: st.to.trim(), cc: st.cc.trim(), sub
 const mbEmpty = st => !st.to.trim() && !st.cc.trim() && !st.subject.trim() && !st.body.trim() && !st.files.length;
 async function mbSave(st, extra, btn) {
   if (!st.to.trim()) { st.needTo(); return null; }
-  if (st.up.length) { toast("파일을 올리는 중이에요", true); return null; }
+  if (st.up.length) { toast(TX("mail.uploading_wait"), true); return null; }
   let r = null;
   await busy(btn, async () => {
     try { r = await api("/api/mail/compose", "POST", mbPayload(st, extra)); }
-    catch (e) { toast(e && /^HTTP 404/.test(e.message) ? "서버가 아직 새 메일 초안을 지원하지 않아요" : (e && e.message) || "초안을 만들지 못했어요", true); }
+    catch (e) { toast(e && /^HTTP 404/.test(e.message) ? TX("mail.err.compose_unsupported") : (e && e.message) || TX("mail.draft_failed"), true); }
   });
-  if (r) { toast("초안을 만들었어요 · 승인 카드에서 보내요"); loadNotices(); }
+  if (r) { toast(TX("mail.draft_made")); loadNotices(); }
   return r;
 }
 // The floating sheet: docked at the bottom right of a wide screen (minimize / close), the whole screen on a phone. Closing a sheet with text asks first.
 // Folded or open. A folded bar on a phone sits right above the tab bar (--mbox-lift = the room under it), and its button says which way it goes.
 function mbFold(node, min) {
   node.classList.toggle("min", min);
-  const b = node.querySelector(".mbox-min"), word = min ? "펼치기" : "최소화";
+  const b = node.querySelector(".mbox-min"), word = min ? TX("mail.sheet.expand") : TX("mail.sheet.min");
   b.setAttribute("aria-label", word); b.title = word; b.replaceChildren(icon(min ? "drop" : "minus"));
   // folded, the bar names the mail (its subject, else who it goes to) instead of "새 메일"
   const st = MBOX.cs && MBOX.cs.node === node ? MBOX.cs.st : null;
-  node.querySelector(".mbox-st").textContent = min && st ? st.subject.trim() || st.to.trim() || "새 메일" : "새 메일";
+  node.querySelector(".mbox-st").textContent = min && st ? st.subject.trim() || st.to.trim() || TX("mail.new_mail") : TX("mail.new_mail");
   const nr = $("#nav").getBoundingClientRect();
   node.style.setProperty("--mbox-lift", min && nr.height > 0 && nr.top > innerHeight / 2 ? `${Math.ceil(innerHeight - nr.top)}px` : "0px");
 }
@@ -418,18 +418,18 @@ function mbCompose(init = {}) {
   const st = { to: "", cc: "", subject: "", body: "", files: [], up: [], showCc: false, ...init };
   const host = el("div", { class: "mbox-sb" });
   const form = mbForm(st, host, { rows: "10" });
-  const node = el("div", { class: "mbox-sheet", role: "dialog", "aria-label": "새 메일" });
+  const node = el("div", { class: "mbox-sheet", role: "dialog", "aria-label": TX("mail.new_mail") });
   // The sheet fades down and away before it is removed; it is no longer the open one from the first moment.
   const leave = async () => { MBOX.cs = null; refit.disconnect(); node.inert = true; await motionOut(node, "rise"); node.remove(); };
-  const close = async () => { if (!mbEmpty(st) && !await ask("작성 중인 메일", "쓰던 내용을 버릴까요?", "버리기", true)) return; leave(); };
+  const close = async () => { if (!mbEmpty(st) && !await ask(TX("mail.discard.title"), TX("mail.discard.body"), TX("mail.discard.go"), true)) return; leave(); };
   const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) leave(); });
   node.append(
-    el("div", { class: "mbox-sh", onclick: ev => { if (node.classList.contains("min") && !ev.target.closest("button")) mbFold(node, false); } }, el("span", { class: "mbox-st", text: "새 메일" }),
-      el("button", { class: "ib mbox-min", type: "button", "aria-label": "최소화", title: "최소화", onclick: () => mbFold(node, !node.classList.contains("min")) }, icon("minus")),
-      el("button", { class: "ib mbox-close", type: "button", "aria-label": "닫기", title: "닫기", onclick: close }, icon("close"))),
+    el("div", { class: "mbox-sh", onclick: ev => { if (node.classList.contains("min") && !ev.target.closest("button")) mbFold(node, false); } }, el("span", { class: "mbox-st", text: TX("mail.new_mail") }),
+      el("button", { class: "ib mbox-min", type: "button", "aria-label": TX("mail.sheet.min"), title: TX("mail.sheet.min"), onclick: () => mbFold(node, !node.classList.contains("min")) }, icon("minus")),
+      el("button", { class: "ib mbox-close", type: "button", "aria-label": TX("common.close"), title: TX("common.close"), onclick: close }, icon("close"))),
     host,
-    el("div", { class: "mbox-sf" }, el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-compose-save", onclick: save }, "초안 만들기"),
-      el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip"))));
+    el("div", { class: "mbox-sf" }, el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-compose-save", onclick: save }, TX("mail.draft_create")),
+      el("button", { class: "ib mbox-attach", type: "button", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip"))));
   document.body.append(node);
   // the tab bar comes and goes with the screen and the window: a folded bar follows it
   const refit = new ResizeObserver(() => { if (node.classList.contains("min")) mbFold(node, true); });
@@ -440,7 +440,7 @@ function mbCompose(init = {}) {
 }
 
 /* ---------- the inline reply at the bottom of the open mail ---------- */
-const MB_MODES = [["reply", "답장", "reply"], ["all", "전체답장", "replyall"], ["forward", "전달", "forward"]];
+const MB_MODES = [["reply", TX("decision.reply"), "reply"], ["all", TX("mail.reply_all"), "replyall"], ["forward", TX("mail.forward"), "forward"]];
 const mbRe = (p, s) => (new RegExp(`^\\s*${p}\\s*:`, "i").test(s) ? s : `${p}: ${s}`);
 const mbAddrs = v => mailAddrList(v).map(a => a.addr || a.name);
 // To / Cc / subject of a mode, from the mail's card.
@@ -466,7 +466,7 @@ function mbOpenReply(t, mode) {
   const keep = b.st ? { body: b.st.body, files: b.st.files } : { body: "", files: [] }, opening = !b.open;
   b.open = true; b.mode = mode;
   b.st = { ...mbDefaults(t, mode), showCc: mode === "all", up: [], ...keep };
-  if (mode === "forward" && !b.st.body) b.st.body = `\n\n---------- 전달한 메일 ----------\n보낸 사람: ${m.from || ""}\n제목: ${m.subject || ""}\n\n${mbQuoteText(t)}`;
+  if (mode === "forward" && !b.st.body) b.st.body = `\n\n${TX("mail.fwd.head", { from: m.from || "", subject: m.subject || "" })}\n\n${mbQuoteText(t)}`;
   mbReplyPaint(true);
   if (opening && typeof tl !== "undefined" && tl) motionIn(tl.querySelector(":scope > .mbox-reply"));   // the reply box opens; a change of mode inside it moves nothing
 }
@@ -478,19 +478,19 @@ function mbReplyPaint(force) {
   const b = mbBox(t), sig = JSON.stringify([t, b.open, b.mode]);
   if (slot && slot.dataset.sig === sig && !force && slot.isConnected && slot === tlTail()) return;
   if (slot) slot.remove();
-  slot = el("section", { class: `mbox-reply${b.open ? " open" : ""}`, "aria-label": "답장 쓰기", "data-sig": sig });
+  slot = el("section", { class: `mbox-reply${b.open ? " open" : ""}`, "aria-label": TX("mail.reply.aria"), "data-sig": sig });
   // closed, the slot stays empty (and hidden): 답장 / 전체답장 / 전달 are icons in the mail's top bar
   if (b.open) {
     const host = el("div", { class: "mbox-rb" }), quote = mbQuoteText(t);
-    const q = quote ? el("details", { class: "mbox-quote" }, el("summary", { text: "이전 메일" }), el("pre", { class: "mbox-qt", text: quote })) : null;
-    const form = mbForm(b.st, host, { rows: "6", placeholder: "답장 내용", quote: q });
+    const q = quote ? el("details", { class: "mbox-quote" }, el("summary", { text: TX("mail.reply.quote") }), el("pre", { class: "mbox-qt", text: quote })) : null;
+    const form = mbForm(b.st, host, { rows: "6", placeholder: TX("mail.reply.ph"), quote: q });
     slot.append(
       el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: `cchip mbox-mode${k === b.mode ? " on" : ""}`, type: "button", "data-mode": k, "aria-pressed": String(k === b.mode), onclick: () => mbOpenReply(t, k) }, icon(ic), label))),
       host,
       el("div", { class: "mbox-sf" },
-        el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, "초안 만들기"),
-        el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip")),
-        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기")));
+        el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, TX("mail.draft_create")),
+        el("button", { class: "ib mbox-attach", type: "button", "aria-label": TX("mail.attach"), title: TX("mail.attach"), onclick: () => form.pick() }, icon("clip")),
+        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, TX("mail.reply.fold"))));
   }
   tl.append(slot);
 }

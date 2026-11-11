@@ -10,10 +10,10 @@ ICONS.sliders ??= "M4 7h9M17 7h3M4 17h3M11 17h9M13 5v4M9 15v4";
 ICONS.users ??= "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3.5 19a5.5 5.5 0 0 1 11 0M16 5.4a3 3 0 0 1 0 5.2M17.5 14a5.5 5.5 0 0 1 3 5";
 ICONS.tag ??= "M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0zM8 8h.01";
 const MX = { key: "", acct: "all", box: "all", scr: "", show: 0, mark: false, it: null, of: new Map(), nof: new Map(), accts: new Map(), pa: new Map(), pane: "", chip: "", slot: new Map(), teach: null };
-const MX_MODE = { auto: "자동 초안", ask: "확인 먼저", notify: "알림만", quiet: "조용히 모으기" };
+const MX_MODE = { auto: TX("mail.mode.auto"), ask: TX("mail.mode.ask"), notify: TX("mail.mode.notify"), quiet: TX("mail.mode.quiet") };
 const MX_ZERO = { live: 0, unread: 0, needs: 0 };
 const MX_STOP = new Set(["re", "fw", "fwd", "회신", "답장", "전달", "안내", "확인", "문의", "요청", "관련", "공지", "the", "and", "for", "with", "your", "from", "this", "that", "mail"]);
-const mxModeOf = b => MX_MODE[b.mode] || "기본 방식";
+const mxModeOf = b => MX_MODE[b.mode] || TX("mail.mode.default");
 const mxIc = n => icon(ICONS[n] ? n : "mail");
 const mxDec = s => { try { return decodeURIComponent(s); } catch { return s; } };
 const mxGroup = id => id.startsWith("n:");
@@ -46,7 +46,7 @@ function mxMerge(items) {
   const top = mine.find(i => i.inst === "mail") || mine[0], first = s => [...String(s || "")][0] || "";
   const same = new Set(mine.map(i => first(i.name))).size < mine.length;
   const accts = mine.map((i, n) => {
-    const g = INTG.items.find(x => x.key === i.inst), boxes = Array.isArray(g.boxes) && g.boxes.length ? g.boxes : [{ id: "base", name: "일반", icon: "mail", base: true }];
+    const g = INTG.items.find(x => x.key === i.inst), boxes = Array.isArray(g.boxes) && g.boxes.length ? g.boxes : [{ id: "base", name: TX("mail.box.general"), icon: "mail", base: true }];
     const a = { key: i.inst, n, label: i.name, account: g.account || "", boxes, byId: new Map(boxes.map(b => [b.id, b])), base: boxes.find(b => b.base) || boxes[0], conn: !!i.conn, hint: i.hint, needs: { drafts: i.drafts | 0, unread: i.unread | 0, unreplied: i.unreplied | 0 }, owned: i.owned || [], mk: same ? first(g.account).toUpperCase() || String(n + 1) : first(i.name) };
     MX.accts.set(a.key, a);
     for (const t of i.mails) MX.of.set(t, a.key);
@@ -56,18 +56,18 @@ function mxMerge(items) {
   const sum = f => mine.reduce((c, i) => c + (i[f] | 0), 0), down = accts.filter(a => a.conn);
   MX.key = top.key;
   Object.assign(top, { accounts: accts, mails: mine.flatMap(i => i.mails), notices: mine.flatMap(i => i.notices), drafts: sum("drafts"), unread: sum("unread"), unreplied: sum("unreplied") });
-  if (accts.length > 1) Object.assign(top, { name: "메일", conn: false, owned: mine.flatMap(i => i.owned || []), msig: mine.map(i => i.msig).join("|"), at: mine.map(i => i.at).sort().pop(),
-    hint: down.length ? down[0].hint : monNeedLine({ drafts: top.drafts, unreplied: top.unreplied, unread: top.unread }, false), badge: down.length ? ["연결 끊김", "err"] : mine.map(i => i.badge).find(Boolean) || null });
+  if (accts.length > 1) Object.assign(top, { name: TX("common.mail"), conn: false, owned: mine.flatMap(i => i.owned || []), msig: mine.map(i => i.msig).join("|"), at: mine.map(i => i.at).sort().pop(),
+    hint: down.length ? down[0].hint : monNeedLine({ drafts: top.drafts, unreplied: top.unreplied, unread: top.unread }, false), badge: down.length ? [TX("mail.disconnected"), "err"] : mine.map(i => i.badge).find(Boolean) || null });
   for (const i of mine) if (i !== top) items.splice(items.indexOf(i), 1);
 }
 // The account a mail target belongs to: one of this computer's (MX.accts) or of another computer's mail app (MX.pa, mxPeerMerge).
 const mxAcct = t => MX.accts.get(MX.of.get(t)) || MX.pa.get(MX.of.get(t));
 const mxBoxOf = t => { const a = mxAcct(t), m = MAILS.get(t); return a ? a.byId.get(m && m.box) || a.base : null; };
-const mxWhy = pc => `${pc.name}의 메일함은 그 컴퓨터에서 바꿔 주세요`;
+const mxWhy = pc => TX("mail.peer_why", { name: pc.name });
 // A mail app of another computer is drawn as the same one app: its account and boxes make the same panel, chips and box filter (pqMerge, 34-peer-monitoring.js). Its boxes are read here
 // and changed there, so the buttons that change them stay in place, disabled, with the reason (mxWhy).
 function mxPeerMerge(row, it, pc) {
-  const boxes = Array.isArray(it.boxes) && it.boxes.length ? it.boxes : [{ id: "base", name: "일반", icon: "mail", base: true }], key = pqApp(it.key, pc);
+  const boxes = Array.isArray(it.boxes) && it.boxes.length ? it.boxes : [{ id: "base", name: TX("mail.box.general"), icon: "mail", base: true }], key = pqApp(it.key, pc);
   const a = { key, n: 0, label: row.name, account: it.account || "", boxes, byId: new Map(boxes.map(b => [b.id, b])), base: boxes.find(b => b.base) || boxes[0], conn: !!row.conn, hint: row.hint, needs: { drafts: row.drafts | 0, unread: row.unread | 0, unreplied: row.unreplied | 0 }, owned: row.owned || [], mk: [...String(row.name || "")][0] || "1" };
   MX.pa.set(key, a);
   for (const t of row.mails) MX.of.set(t, key);
@@ -111,7 +111,7 @@ function mxScope(it) {
   MX.show = MX.box === "all" ? 2 : mxGroup(MX.box) ? 1 : 0;
   MX.mark = it.accounts.length > 1 && MX.acct === "all";
   const sc = MX.acct === "all" ? it.accounts : it.accounts.filter(a => a.key === MX.acct), all = cnt.get("all") || MX_ZERO;
-  const line = [it.accounts.length > 1 ? (MX.acct === "all" ? `계정 ${it.accounts.length}개` : sc[0].account || sc[0].label) : "", `안 읽음 ${all.unread}`, `메일함 ${sc.reduce((c, a) => c + a.boxes.length, 0)}개`].filter(Boolean).join(" · ");
+  const line = [it.accounts.length > 1 ? (MX.acct === "all" ? TX("mail.accounts_n", { n: it.accounts.length }) : sc[0].account || sc[0].label) : "", TX("mail.unread_n", { n: all.unread }), TX("mail.boxes_n", { n: sc.reduce((c, a) => c + a.boxes.length, 0) })].filter(Boolean).join(" · ");
   const rows = ents.map(e => ({ ...e, c: cnt.get(mxGroup(e.id) ? e.id : e.k) || MX_ZERO }));
   // listed: the app has stored mail, so a box with none of it still draws as a mail list. A list that never loaded draws too, to say so (mxFail).
   const failed = CV.failed && !CV.loaded && !it.mails.some(t => MAILS.has(t));
@@ -120,9 +120,9 @@ function mxScope(it) {
 }
 
 /* ---- the pane and the chips ---- */
-const mxMark = a => el("span", { class: `mx-am t-${a.n % 4}`, title: `${a.label} 계정`, text: a.mk });
-const mxDot = c => (c.needs ? el("span", { class: "dot warn", title: "답장 필요" }) : c.unread ? el("span", { class: "dot pri", title: "안 읽음" }) : null);
-const mxSub = e => (e.n ? `계정 ${e.n}개` : mxModeOf(e.b));
+const mxMark = a => el("span", { class: `mx-am t-${a.n % 4}`, title: TX("mail.account_named", { name: a.label }), text: a.mk });
+const mxDot = c => (c.needs ? el("span", { class: "dot warn", title: TX("mail.needs_reply") }) : c.unread ? el("span", { class: "dot pri", title: TX("common.unread") }) : null);
+const mxSub = e => (e.n ? TX("mail.accounts_n", { n: e.n }) : mxModeOf(e.b));
 const mxAcctMark = (it, e) => (MX.mark && !e.n ? mxMark(it.accounts.find(a => e.k.startsWith(`${a.key}|`))) : null);
 function mxPaneRow(id, name, sub, icn, c, extra) {
   const on = MX.box === id;
@@ -130,9 +130,9 @@ function mxPaneRow(id, name, sub, icn, c, extra) {
     el("span", { class: "av" }, mxIc(icn)), el("span", { class: "tx" }, el("span", { class: "hd" }, name, ...extra), el("span", { class: "sup", text: sub })),
     el("span", { class: "mx-pn" }, mxDot(c), el("span", { text: String(c.live) })));
 }
-const mxPaneNodes = it => [el("div", { class: "list" }, mxPaneRow("all", "전체", `안 읽음 ${it.all.unread}`, "mail", it.all, [])),
-  el("div", { class: "list" }, ...it.rows.map(e => mxPaneRow(e.id, e.b.name, mxSub(e), e.b.icon, e.c, [e.b.base ? el("span", { class: "tag mx-base", text: "기본" }) : null, mxAcctMark(it, e)]))),
-  el("button", { class: "btn text sm mx-add", type: "button", disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: mxNew }, icon("add"), "메일함 추가")];
+const mxPaneNodes = it => [el("div", { class: "list" }, mxPaneRow("all", TX("mail.all"), TX("mail.unread_n", { n: it.all.unread }), "mail", it.all, [])),
+  el("div", { class: "list" }, ...it.rows.map(e => mxPaneRow(e.id, e.b.name, mxSub(e), e.b.icon, e.c, [e.b.base ? el("span", { class: "tag mx-base", text: TX("mail.default_tag") }) : null, mxAcctMark(it, e)]))),
+  el("button", { class: "btn text sm mx-add", type: "button", disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: mxNew }, icon("add"), TX("mail.box.add"))];
 function mxPane(it) {
   const pane = $("#mx-pane");
   if (!pane || it.esig === MX.pane) return;
@@ -146,28 +146,28 @@ function mxTabs(it) {
   const s = MX.slot.get("tabs");
   if (s && s.sig === it.esig) return s.node;
   const tab = (id, name, c, extra) => el("button", { class: `mx-tab${MX.box === id ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(MX.box === id), onclick: () => mxBox(id) }, name, extra, mxDot(c), el("span", { text: String(c.live) }));
-  const node = segKeep(el("div", { class: "mx-tabs", role: "tablist", "aria-label": "메일함" }, tab("all", "전체", it.all, null), ...it.rows.map(e => tab(e.id, e.b.name, e.c, mxAcctMark(it, e))),
-    el("button", { class: "mx-tab", type: "button", "aria-label": "메일함 추가", disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: mxNew }, icon("add"))));
+  const node = segKeep(el("div", { class: "mx-tabs", role: "tablist", "aria-label": TX("common.mailbox") }, tab("all", TX("mail.all"), it.all, null), ...it.rows.map(e => tab(e.id, e.b.name, e.c, mxAcctMark(it, e))),
+    el("button", { class: "mx-tab", type: "button", "aria-label": TX("mail.box.add"), disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: mxNew }, icon("add"))));
   MX.slot.set("tabs", { sig: it.esig, node });
   return node;
 }
 // A named box has a title for what only it has (its way of answering, 메일함 설정). 전체 has none: the pane row (wide) and the chip (phone) already say it is chosen.
 const mxTitle = it => {
-  const set = id => el("button", { class: "btn tonal sm mx-setb", type: "button", disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: () => mxSet(id) }, icon("sliders"), el("span", { text: "메일함 설정" }));
+  const set = id => el("button", { class: "btn tonal sm mx-setb", type: "button", disabled: !!it.pc, title: it.pc ? mxWhy(it.pc) : null, onclick: () => mxSet(id) }, icon("sliders"), el("span", { text: TX("mail.box.settings") }));
   if (MX.box === "all") return null;
   const e = it.rows.find(x => x.id === MX.box);
-  if (mxGroup(MX.box)) return el("div", { class: "mx-bh" }, el("h2", { text: e.b.name }), el("span", { class: "meta", text: `계정 ${e.n}개를 합쳐서 보여요` }), set(e.b.id));
+  if (mxGroup(MX.box)) return el("div", { class: "mx-bh" }, el("h2", { text: e.b.name }), el("span", { class: "meta", text: TX("mail.merged_n", { n: e.n }) }), set(e.b.id));
   return el("div", { class: "mx-bh" }, el("h2", { text: e.b.name }), mxAcctMark(it, e), el("span", { class: "tag", text: mxModeOf(e.b) }), set(e.b.id));
 };
-const mxNote = it => { const e = it.rows.find(x => x.id === MX.box); return e && e.b.base ? el("div", { class: "mx-note" }, el("div", { text: e.n ? "계정마다 어느 메일함에도 맞지 않는 메일이 여기로 와요." : "어느 메일함에도 맞지 않는 메일은 여기로 와요." })) : null; };
+const mxNote = it => { const e = it.rows.find(x => x.id === MX.box); return e && e.b.base ? el("div", { class: "mx-note" }, el("div", { text: e.n ? TX("mail.base_note_multi") : TX("mail.base_note") })) : null; };
 // An account whose login is gone says so above the list, with the app's own way to connect again (monRecheckApp). With one account the head's banner does it.
 const mxDown = it => it.accounts.length < 2 ? [] : it.accounts.filter(a => a.conn && (MX.acct === "all" || MX.acct === a.key)).map(a => {
   const names = a.owned.map(m => m.watch).filter(Boolean);
-  return el("div", { class: "mx-exp down", "data-acct": a.key }, el("span", { class: "dot warn" }), el("span", { class: "tx" }, el("b", { text: `${a.label} 계정 로그인이 풀렸어요` }), el("span", { text: "받은 메일은 그대로 있어요. 다시 연결하면 새 메일도 들어와요." })),
-    names.length ? el("button", { class: "btn tonal sm", type: "button", text: "다시 연결", onclick: ev => monRecheckApp(ev.currentTarget, { key: `i:${a.key}` }, names) }) : null);
+  return el("div", { class: "mx-exp down", "data-acct": a.key }, el("span", { class: "dot warn" }), el("span", { class: "tx" }, el("b", { text: TX("mail.down.title", { name: a.label }) }), el("span", { text: TX("mail.down.body") })),
+    names.length ? el("button", { class: "btn tonal sm", type: "button", text: TX("mail.reconnect"), onclick: ev => monRecheckApp(ev.currentTarget, { key: `i:${a.key}` }, names) }) : null);
 });
 // A list that failed to load says so in the app's one failure shape (emptyNode: a sentence and 다시 시도) and the rows' filters under it give way (20-mailboxes.css .mx-fail).
-const mxFail = it => { const n = it.failed ? emptyNode("메일을 불러오지 못했어요", () => convLoad()) : null; if (n) n.classList.add("mx-fail"); return n; };
+const mxFail = it => { const n = it.failed ? emptyNode(TX("mail.load_failed"), () => convLoad()) : null; if (n) n.classList.add("mx-fail"); return n; };
 const mxTop = it => (it.accounts ? [mxTabs(it), mxTitle(it), ...mxDown(it), mxNote(it), mxFail(it)].filter(Boolean) : []);
 
 /* ---- the account chip of the app bar ---- */
@@ -179,15 +179,15 @@ function mxChip(it) {
   if (old) old.remove();
   if (!multi) return;
   const a = it.accounts.find(x => x.key === MX.acct), hid = it.accounts.filter(x => x.conn || (a && x !== a)), tone = hid.some(x => x.conn) ? "warn" : hid.map(mxTone).includes("warn") ? "warn" : hid.map(mxTone).includes("pri") ? "pri" : "";
-  $("#appbar").insertBefore(el("button", { class: "mx-acc", type: "button", "aria-haspopup": "menu", "aria-label": "메일 계정 바꾸기", onclick: ev => mxAcctPop(ev.currentTarget) },
-    a ? mxMark(a) : null, el("span", { class: "mx-ac-t", text: a ? a.label : "모든 계정" }), tone ? el("span", { class: `dot ${tone}` }) : null, icon("drop")), $("#cmdk"));
+  $("#appbar").insertBefore(el("button", { class: "mx-acc", type: "button", "aria-haspopup": "menu", "aria-label": TX("mail.acct.switch"), onclick: ev => mxAcctPop(ev.currentTarget) },
+    a ? mxMark(a) : null, el("span", { class: "mx-ac-t", text: a ? a.label : TX("mail.acct.all") }), tone ? el("span", { class: `dot ${tone}` }) : null, icon("drop")), $("#cmdk"));
 }
 function mxAcctPop(btn) {
   const it = MX.it;
   if (!it) return;
   const n = f => it.accounts.reduce((c, a) => c + a.needs[f], 0);
-  showMenu(btn, [{ value: "all", label: "모든 계정", sub: `안 읽음 ${n("unread")} · 답장 필요 ${n("drafts") + n("unreplied")}` },
-    ...it.accounts.map(a => ({ value: a.key, label: el("span", { class: "mx-al" }, mxMark(a), a.label), sub: a.conn ? "로그인이 풀렸어요" : a.account, tone: mxTone(a) })), { value: "+", label: "계정 추가" }],
+  showMenu(btn, [{ value: "all", label: TX("mail.acct.all"), sub: [TX("mail.unread_n", { n: n("unread") }), TX("mail.needs_reply_n", { n: n("drafts") + n("unreplied") })].join(" · ") },
+    ...it.accounts.map(a => ({ value: a.key, label: el("span", { class: "mx-al" }, mxMark(a), a.label), sub: a.conn ? TX("mail.signed_out") : a.account, tone: mxTone(a) })), { value: "+", label: TX("mail.acct.add") }],
   { value: MX.acct, sheet: matchMedia("(max-width: 639px)").matches, onPick: v => (v === "+" ? asAddSheet() : mxPick(v)) });
 }
 // The panel of the mail app beside an open mail on a wide window: the chat view that draws the mail takes the panel as its side column (the app frame, 20-monitoring.css .app-two).
@@ -212,7 +212,7 @@ const mxSender = t => {
   const b = MX.show && MX.of.has(t) ? mxBoxOf(t) : null;
   return b ? [MX.mark ? mxMark(mxAcct(t)) : null, MX.show === 2 ? el("span", { class: "mx-bt", text: b.name }) : null].filter(Boolean) : [];
 };
-const mxMoveBtn = t => (MX.of.has(t) && mxCanMove(t) ? el("button", { class: "ib mr-mv", type: "button", "data-k": "mail-move", disabled: !!pqPc(t), title: pqPc(t) ? mxWhy(pqPc(t)) : "메일함 옮기기", "aria-label": "메일함 옮기기",
+const mxMoveBtn = t => (MX.of.has(t) && mxCanMove(t) ? el("button", { class: "ib mr-mv", type: "button", "data-k": "mail-move", disabled: !!pqPc(t), title: pqPc(t) ? mxWhy(pqPc(t)) : TX("mail.move"), "aria-label": TX("mail.move"),
   onclick: ev => { ev.stopPropagation(); mxMoveOpen(ev.currentTarget, [t]); }, onkeydown: ev => ev.stopPropagation() }, icon("folder")) : null);
 // What mbRow's signature adds: what the row draws of its box and account.
 const mxSig = t => { const b = MX.of.has(t) ? mxBoxOf(t) : null; return b ? [MX.show, MX.mark, b.name, mxAcct(t).mk, mxCanMove(t)] : 0; };
@@ -228,9 +228,9 @@ function mxMoveOpen(anchor, keys) {
   keys = keys.filter(t => MAILS.has(t) && MX.of.has(t));
   if (!keys.length) return;
   const accts = [...new Set(keys.map(t => MX.of.get(t)))], sheet = matchMedia("(max-width: 639px)").matches;
-  if (accts.length > 1) { showMenu(anchor, [{ header: "여러 계정의 메일이 섞여 있어요" }, { header: "계정마다 따로 골라서 옮겨 주세요" }], { onPick: () => {}, sheet }); return; }
+  if (accts.length > 1) { showMenu(anchor, [{ header: TX("mail.move.mixed") }, { header: TX("mail.move.mixed_hint") }], { onPick: () => {}, sheet }); return; }
   const a = MX.accts.get(accts[0]), froms = new Set(keys.map(t => mxBoxOf(t).id));
-  showMenu(anchor, [{ header: "어느 메일함으로 옮길까요?" }, ...(MX.accts.size > 1 ? [{ header: `${a.label} 계정 안에서만 옮길 수 있어요` }] : []),
+  showMenu(anchor, [{ header: TX("mail.move.ask") }, ...(MX.accts.size > 1 ? [{ header: TX("mail.move.within", { name: a.label }) }] : []),
     ...a.boxes.filter(b => froms.size > 1 || !froms.has(b.id)).map(b => ({ value: b.id, label: b.name, sub: mxModeOf(b) }))], { onPick: id => mxPut(keys, id), sheet });
 }
 // Rows the move takes out of the list leave first; the rest of the list is drawn again without them.
@@ -254,7 +254,7 @@ async function mxMove(keys, to) {
     return r;
   } catch (e) {
     for (const r of busyRows) r.removeAttribute("aria-busy");
-    toast((e && e.data && e.data.error) || (e && e.message) || "옮기지 못했어요", true);
+    toast((e && e.data && e.data.error) || (e && e.message) || TX("mail.move.failed"), true);
     return null;
   }
 }
@@ -280,20 +280,20 @@ const mxTeachClose = () => { const el0 = $(".mx-teach"); MX.teach = null; if (el
 // Picking one teaches it (POST /api/mailbox/learn); 이 메일만, 닫기 and picking nothing teach nothing.
 function mxLearn(k, label) {
   const t = MX.teach, body = k === "ex" ? { box: t.from.id, kind: "not", value: t.who.addr } : k === "from" ? { box: t.to.id, kind: "from", value: t.who.addr } : { box: t.to.id, kind: "subj", value: t.kw };
-  api("/api/mailbox/learn", "POST", body).then(() => { if (MX.teach === t) { t.done = label; mxTeachShow(); } }, e => toast((e && e.data && e.data.error) || (e && e.message) || "기억해 두지 못했어요", true));
+  api("/api/mailbox/learn", "POST", body).then(() => { if (MX.teach === t) { t.done = label; mxTeachShow(); } }, e => toast((e && e.data && e.data.error) || (e && e.message) || TX("mail.teach.failed"), true));
 }
 function mxTeachShow() {
   const t = MX.teach;
   if (!t) return;
-  const one = t.keys.length === 1, base = !!t.to.base, opts = [["only", one ? "이 메일만" : "이 메일들만"]];
-  if (base) { if (t.who && t.from && !t.from.base) opts.push(["ex", `${t.who.who} 메일은 ${t.from.name}에 넣지 않기`]); }
-  else { if (t.who) opts.push(["from", `${t.who.who} 메일은 앞으로 여기로`]); if (t.kw) opts.push(["subj", `제목에 ‘${t.kw}’ 들어가면 앞으로 여기로`]); }
+  const one = t.keys.length === 1, base = !!t.to.base, opts = [["only", one ? TX("mail.teach.only_one") : TX("mail.teach.only_many")]];
+  if (base) { if (t.who && t.from && !t.from.base) opts.push(["ex", TX("mail.teach.exclude", { who: t.who.who, box: t.from.name })]); }
+  else { if (t.who) opts.push(["from", TX("mail.teach.from", { who: t.who.who })]); if (t.kw) opts.push(["subj", TX("mail.teach.subject", { word: t.kw })]); }
   const n = Object.keys(t.was).length;
   let box = $(".mx-teach");
   if (!box) { box = el("div", { class: "mx-teach", role: "status" }); document.body.append(box); motionIn(box, "rise", 220); }
-  clear(box).append(el("div", { class: "mx-tt" }, el("b", { text: `${t.to.name}에 넣었어요` }), n > t.keys.length ? el("span", { class: "meta", text: `같은 대화 ${n}통이 함께 옮겨졌어요` }) : null,
-    el("button", { class: "ib", type: "button", "aria-label": "닫기", onclick: mxTeachClose }, icon("close"))),
-  t.done ? el("div", { class: "mx-tq", text: `기억해 뒀어요 · ${t.done}` }) : el("div", { class: "mx-tq", text: "앞으로는 어떻게 할까요?" }),
+  clear(box).append(el("div", { class: "mx-tt" }, el("b", { text: TX("mail.teach.moved", { box: t.to.name }) }), n > t.keys.length ? el("span", { class: "meta", text: TX("mail.teach.with_thread", { n }) }) : null,
+    el("button", { class: "ib", type: "button", "aria-label": TX("common.close"), onclick: mxTeachClose }, icon("close"))),
+  t.done ? el("div", { class: "mx-tq", text: TX("mail.teach.saved", { rule: t.done }) }) : el("div", { class: "mx-tq", text: TX("mail.teach.ask") }),
   ...(t.done ? [] : [el("div", { class: "mx-to", role: "radiogroup" }, ...opts.map(([k, label]) => el("button", { type: "button", role: "radio", "aria-checked": "false", "data-k": k, onclick: () => (k === "only" ? mxTeachClose() : mxLearn(k, label)) }, el("span", { class: "mx-rd" }), label))),
-    el("div", { class: "mx-tf" }, el("button", { class: "btn text sm", type: "button", "data-k": "undo", text: "되돌리기", onclick: mxUndo }))]));
+    el("div", { class: "mx-tf" }, el("button", { class: "btn text sm", type: "button", "data-k": "undo", text: TX("common.undo"), onclick: mxUndo }))]));
 }
