@@ -88,6 +88,93 @@ function rollCount(el, next) {
   }
 }
 
+// A result the hub confirmed (approved, sent, dropped, answered, dismissed, moved): the card or row folds away and what was under it rises into
+// its place, so the owner sees it really went. Call it only after the hub said yes; on a failure the card stays and the button comes back.
+// How (compositor only, one layout at the start): the leaving element is lifted out of the flow at its own spot (position absolute, same
+// box) and fades (--m-fast); its neighbours take their final places at once and are moved back by transform, then glide there (--m-base).
+// While they glide they are inert, so a second tap on the same spot does not press the next card's button. Focus that was inside the
+// leaving element goes to the row that took its place. Resolves (and fires "motion-gone" on document, detail.el) once it is out of the DOM;
+// with prefers-reduced-motion it is removed at once and only the short tap guard remains.
+// o.keep: a box that is used again (the decision dock) is hidden and given its own styles back instead of removed. o.with: more elements
+// that move when it goes but are not after it (the conversation above the dock, which grows into the freed room).
+const M_GONE = new WeakMap(), M_LATER = new WeakMap();
+const mFocusable = "button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
+function motionGone(el, o = {}) {
+  if (!el || !el.isConnected) return Promise.resolve();
+  if (M_GONE.has(el)) return M_GONE.get(el);
+  const p = mGone(el, o);
+  M_GONE.set(el, p);
+  if (o.keep) p.then(() => M_GONE.delete(el));
+  return p;
+}
+const M_GONE_STYLE = ["position", "left", "top", "width", "height", "margin", "boxSizing", "zIndex", "pointerEvents"];
+async function mGone(el, o) {
+  const parent = el.parentElement, after = el.nextElementSibling, before = el.previousElementSibling, hadFocus = el.contains(document.activeElement);
+  el.dataset.gone = "1"; el.setAttribute("aria-hidden", "true"); el.style.pointerEvents = "none";
+  // Movers: what follows the element in its list and in the two lists around it, on screen (what is off screen just takes its place).
+  const movers = (o.with || []).filter(Boolean).map(s => [s, s.getBoundingClientRect()]);
+  for (let n = el, lv = 0; n && n.parentElement && lv < 3; n = n.parentElement, lv++)
+    for (let s = n.nextElementSibling; s && movers.length < 30; s = s.nextElementSibling) {
+      const r = s.getBoundingClientRect();
+      if (r.height || r.width) { if (r.top > innerHeight) break; movers.push([s, r]); }
+    }
+  const box = el.getBoundingClientRect(), quiet = reducedMotion() || !el.animate;
+  const done = () => {
+    if (o.keep) {
+      for (const a of el.getAnimations()) a.cancel();
+      el.hidden = true; delete el.dataset.gone; el.removeAttribute("aria-hidden");
+      for (const k of M_GONE_STYLE) el.style[k] = "";
+    } else el.remove();
+    if (hadFocus) {
+      const to = [after, before].find(n => n && n.isConnected && !n.dataset.gone), f = to && (to.matches(mFocusable) ? to : to.querySelector(mFocusable));
+      if (f) f.focus({ preventScroll: true });
+      else if (parent && parent.isConnected) { if (!parent.hasAttribute("tabindex")) parent.tabIndex = -1; parent.focus({ preventScroll: true }); }
+    }
+    document.dispatchEvent(new CustomEvent("motion-gone", { detail: { el } }));
+    mLater(parent);
+  };
+  const guard = movers.map(([s]) => s).filter(s => !s.inert && !s.contains(document.activeElement));
+  for (const s of guard) s.inert = true;
+  const unguard = () => { for (const s of guard) s.inert = false; };
+  if (quiet) { done(); setTimeout(unguard, M_MS.base); return; }
+  // Lift it out at its own box: offsets from its offsetParent, so it stays on the same spot inside the same styles.
+  const left = el.offsetLeft, top = el.offsetTop;
+  Object.assign(el.style, { position: "absolute", left: `${left}px`, top: `${top}px`, width: `${box.width}px`, height: `${box.height}px`, margin: "0", boxSizing: "border-box", zIndex: "0" });
+  const glides = [];
+  for (const [s, r] of movers) {
+    const now = s.getBoundingClientRect(), dx = r.left - now.left, dy = r.top - now.top;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+    glides.push(s.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: M_MS.base, easing: M_EASE }));
+  }
+  const fade = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: M_MS.fast, easing: M_EASE, fill: "forwards" });
+  await Promise.all([fade, ...glides].map(a => a.finished.catch(() => {})));
+  unguard();
+  done();
+}
+// A list that is drawn again as a whole (innerHTML, a render function) while one of its rows folds away: the redraw waits until the row
+// is gone, so it neither cuts the motion nor draws the row back; only the last redraw asked for runs. Returns true when it waited.
+function motionAfter(box, fn) {
+  if (!box || !box.querySelector("[data-gone]")) return false;
+  M_LATER.set(box, fn);
+  return true;
+}
+function mLater(parent) {
+  for (let n = parent; n; n = n.parentElement) {
+    const fn = M_LATER.get(n);
+    if (fn && !n.querySelector("[data-gone]")) { M_LATER.delete(n); fn(); }
+  }
+}
+// The press of a button whose result comes from the hub: it says what it is doing (보내는 중…) at its own width and takes no second press.
+// Returns the undo for a failure (the button comes back as it was); on success the card leaves through motionGone and takes it along.
+function pressWait(btn, label) {
+  if (!btn) return () => {};
+  const was = btn.textContent, dis = btn.disabled;
+  btn.style.minWidth = `${btn.offsetWidth}px`;
+  if (label) btn.textContent = label;
+  btn.disabled = true; btn.setAttribute("aria-busy", "true");
+  return () => { if (label) btn.textContent = was; btn.disabled = dis; btn.removeAttribute("aria-busy"); btn.style.minWidth = ""; };
+}
+
 // Which of these keys were not there on the last paint of the same list. The first paint returns none, so opening a screen
 // never animates what was already there; only items that really arrive do.
 function freshKeys(store, keys) {
