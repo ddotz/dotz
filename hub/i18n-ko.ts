@@ -201,7 +201,7 @@ export const ko: Catalog = {
 
 	recall: a => `[dotz gateway] 당신은 게이트웨이가 헤드리스로 띄운 dotz 오케스트레이터(${NAME})예요.\n\n정체성 (당신이 누구이고 어떻게 말하는지):\n${a.identity}\n\n계약:\n\n${a.mode}\n\n오너 규칙 (${paths.rules}; 계약보다 우선해요):\n${a.rules}\n\n교훈 (${paths.lessons}):\n${a.lessons}\n\n오너 메모리 (${paths.memory}; 오너에게 묻기 전에 여기를 보고 ${paths.observations}도 grep하세요):\n${a.memory}\n\n작업 채널 설정 (로그인 상태는 dotz_channel list):\n${a.setups}\n\n현재 state.json:\n${a.state}`,
 	identityFallback: (character, tone) => `이름: ${NAME}\n성격: ${character}\n말투: ${tone}\n모든 답을 이 성격과 말투로 하세요.`,
-	handover: (previous, tail) => `\n\n[handover] 이전 대화 기록(${previous})은 컨텍스트를 작게 유지하려고 교체했어요. 가장 최근 대화를 오래된 순으로 붙여요. 열려 있는 일이 있으면 여기서 이어가세요:\n${tail}\n\n${koRetainNudge}`,
+	handover: (previous, tail, summary = "") => `\n\n[handover] 이전 대화 기록(${previous})은 컨텍스트를 작게 유지하려고 교체했어요.${summary ? ` 그 대화가 마지막으로 압축하며 남긴 요약이에요:\n${summary}\n\n` : " "}가장 최근 대화를 오래된 순으로 붙여요. 열려 있는 일이 있으면 여기서 이어가세요:\n${tail}\n\n${koRetainNudge}`,
 	laneHandover: (previous, tail) => `[handover] 이전 대화 기록(${previous})을 교체했어요.${tail ? ` 가장 최근 대화를 오래된 순으로 붙여요:\n${tail}\n\n${koRetainNudge}` : ""}`,
 	pendingAsksHead: `${ADDRESS || "오너"} 답을 기다리는 세션 질문`,
 	pendingAskEntry: (lane, at, text, cutFile) => `- 세션 ${lane} (${at}에 물음):\n${text}${cutFile ? `\n... (잘림; 질문 전문은 ${cutFile})` : ""}`,
@@ -389,6 +389,7 @@ export const ko: Catalog = {
 			"orchestrator.model": { label: "모델" },
 			"orchestrator.thinking": { label: "추론 강도" },
 			"orchestrator.rotate_tokens": { label: "새 대화 기록으로 넘어가는 기준", unit: "토큰", hint: "대화가 이만큼 길어지면 한가한 때 새 대화 기록으로 넘어가요" },
+			"orchestrator.nightly_fresh": { label: "매일 밤 새 대화로 시작", hint: "켜면 어시스턴트가 크기와 상관없이 매일 밤 한가한 때 새 대화로 넘어가요. 지난 압축 요약과 열려 있는 요청은 그대로 넘어가요. 끄면 파일이 커졌을 때만 넘어가요" },
 			"lanes.model": { label: "새 세션 기본 모델" },
 			"lanes.thinking": { label: "새 세션 추론 강도" },
 			"lanes.max_active": { label: "동시 실행 세션 수", unit: "개", hint: "비워 두면 이 컴퓨터의 여유 메모리·CPU로 계산해요. 숫자를 적으면 그 값이 상한이에요" },

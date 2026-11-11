@@ -208,7 +208,7 @@ export const en = {
 
 	recall: (a: RecallArgs) => `[dotz gateway] You are ${NAME}, the dotz orchestrator hosted headless by the gateway.\n\nIdentity (who you are and how you talk):\n${a.identity}\n\nContract:\n\n${a.mode}\n\nOwner rules (${paths.rules}; they override the contract):\n${a.rules}\n\nLessons (${paths.lessons}):\n${a.lessons}\n\nOwner memory (${paths.memory}; before asking the owner anything, check here and grep ${paths.observations}):\n${a.memory}\n\nWork channel setups (dotz_channel list for login health):\n${a.setups}\n\nCurrent state.json:\n${a.state}`,
 	identityFallback: (character: string, tone: string) => `Name: ${NAME}\nCharacter: ${character}\nTone: ${tone}\nSpeak in this character and tone in every reply.`,
-	handover: (previous: string, tail: string) => `\n\n[handover] The previous conversation (${previous}) was rotated to keep the context small. Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}\n\n${enRetainNudge}`,
+	handover: (previous: string, tail: string, summary = "") => `\n\n[handover] The previous conversation (${previous}) was rotated to keep the context small.${summary ? ` The summary it wrote at its last compaction:\n${summary}\n\n` : " "}Its most recent exchanges, oldest first; continue any open thread from here:\n${tail}\n\n${enRetainNudge}`,
 	laneHandover: (previous: string, tail: string | undefined) => `[handover] The previous conversation (${previous}) was rotated.${tail ? ` Its most recent exchanges, oldest first:\n${tail}\n\n${enRetainNudge}` : ""}`,
 	retainNudge: enRetainNudge,
 	workerSwitched: (model: string) => `[dotz] The owner set your subagent model to ${model}: start new task subagents on it (running ones keep theirs).`,
@@ -411,6 +411,7 @@ Do this, briefly:
 			"orchestrator.model": { label: "Model" },
 			"orchestrator.thinking": { label: "Thinking effort" },
 			"orchestrator.rotate_tokens": { label: "Switch-to-new-conversation threshold", unit: "tokens", hint: "When the conversation gets this long, it moves to a new conversation with a handover while idle" },
+			"orchestrator.nightly_fresh": { label: "Start a new conversation every night", hint: "On: the assistant moves to a new conversation every night while idle, whatever its size; the last compaction summary and the open requests go along. Off: only when the file grows big" },
 			"lanes.model": { label: "Default model for new sessions" },
 			"lanes.thinking": { label: "Thinking effort for new sessions" },
 			"lanes.max_active": { label: "Sessions working at once", unit: "sessions", hint: "Unset, it is computed from this computer's free memory and cores. A number here is a hard cap" },

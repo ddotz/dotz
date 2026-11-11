@@ -3,6 +3,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, IDENTITY_FILE, log, paths } from "./config.ts";
+import { SUMMARY_MAX_CHARS } from "./compact-instructions.ts";
 import { newCtx } from "./context.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { modeFile, msg, withReplyLine } from "./i18n.ts";
@@ -58,10 +59,19 @@ export function recallText(scope: string, ledger = ""): string {
 	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
 }
 
+// The whole handover (framing, the previous session's last compaction summary, recent exchanges) is cut at this many characters, about 6K tokens:
+// the summary (at most SUMMARY_MAX_CHARS, the size the compaction asks for) goes in first, the recent exchanges fill what is left, newest kept.
+export const HANDOVER_MAX_CHARS = 16_000;
+
 export function handover(runtime: RuntimeAdapter, previous: string): string {
-	const tail = runtime.recentExchanges(previous);
-	if (tail === undefined) return "";
-	return msg().handover(previous, tail);
+	const exchanges = runtime.recentExchanges(previous);
+	if (exchanges === undefined) return "";
+	const summary = runtime.lastCompactionSummary?.(previous)?.slice(0, SUMMARY_MAX_CHARS) ?? "";
+	const room = HANDOVER_MAX_CHARS - msg().handover(previous, "", summary).length;
+	if (exchanges.length <= room) return msg().handover(previous, exchanges, summary);
+	const newest = exchanges.slice(exchanges.length - Math.max(0, room));
+	const turn = newest.indexOf("\n\n");
+	return msg().handover(previous, turn >= 0 ? newest.slice(turn + 2) : newest, summary);
 }
 
 export const newOrchState = () => ({

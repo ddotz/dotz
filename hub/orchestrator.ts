@@ -5,7 +5,8 @@
 // an AgentProcess and its events.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ledgerIn, openRequestsBlock } from "./recall-parts.ts";
+import { ledgerIn, loadLedger, openRequestsBlock } from "./recall-parts.ts";
+import { createNightly } from "./nightly-fresh.ts";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
 import { workersOf } from "./lanegates.ts";
@@ -13,7 +14,7 @@ import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_T
 import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { compactInstructions } from "./compact-instructions.ts";
-import { abandonCompact, abortAhead, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact, restAhead } from "./context.ts";
+import { abandonCompact, abortAhead, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact, type RestFacts, restAhead } from "./context.ts";
 import { limitPauseState, limitWatchNow } from "./limit-watch.ts";
 import { stalePauseEnded } from "./pause-ended.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -676,15 +677,11 @@ export function createOrchestrator(opts: OrchOpts) {
 		} else rotate();
 	}
 
-	// The nightly handover (hygiene.ts): an idle orchestrator whose session file grew past `limitBytes` starts a fresh
-	// session with a handover. Returns what it did, or undefined when nothing was needed.
-	function nightlyHandover(limitBytes: number): string | undefined {
-		if (!proc || orch.status !== "idle" || !orch.sessionFile || !existsSync(orch.sessionFile)) return undefined;
-		const bytes = statSync(orch.sessionFile).size;
-		if (bytes <= limitBytes) return undefined;
-		rotate();
-		return `orchestrator session file ${+(bytes / 1e6).toFixed(2)} MB > ${+(limitBytes / 1e6).toFixed(0)} MB: rotated to a fresh session with a handover`;
-	}
+	// What the session is doing as far as being at rest goes: the compaction ahead of time and the nightly fresh start read the same facts.
+	const restFacts = (): RestFacts => ({ alive: Boolean(proc), canAbort: Boolean(adapter?.caps.abortCompact), idle: orch.status === "idle", switching: rotating || restarting || rotateWhenIdle || pendingRestart || pendingModel, failing: Boolean(orch.error) || errorStreak.stopped, held: held.length + unstarted.length, workers: runningSubagents(opts.source), limitHold: Boolean(resumeTimer), quietMs: Date.now() - lastTurnEnd });
+	// The nightly handover (hygiene.ts, hub/nightly-fresh.ts): the main session every night (orchestrator.nightly_fresh), any session past `limitBytes`.
+	const nightly = createNightly({ who, every: () => opts.key === "main" && cfg.orchestrator?.nightly_fresh !== false, bytes: () => (proc && orch.sessionFile && existsSync(orch.sessionFile) ? statSync(orch.sessionFile).size : undefined), facts: restFacts, ctx: () => orch.ctx, rotate: () => rotate(), open: () => loadLedger(ledgerIn(dirname(opts.stateFile))).length });
+	const nightlyHandover = nightly.ask;
 
 	function rotate(): void {
 		if (!proc || rotating) return;
@@ -808,8 +805,10 @@ export function createOrchestrator(opts: OrchOpts) {
 			// and a queued steer is not dropped when it arrives before the turn has begun.
 			proc.send(recallText(opts.scope?.() ?? "", openRequestsBlock(ledgerIn(dirname(opts.stateFile)), TZ)) + switchNote, "prompt");
 			const seed = rotate ? "" : (opts.seed?.() ?? "");
-		const later = (rotate ? handover(runtime, prior!) : seed) + (asks ? `${rotate || seed ? "\n\n" : ""}${asks}` : "");
+			const lead = rotate ? handover(runtime, prior!) : seed;
+			const later = lead + (asks ? `${rotate || seed ? "\n\n" : ""}${asks}` : "");
 			if (later) proc.send(later, "steer");
+			if (rotate) nightly.started(lead.length);
 		} else asksNext = true;
 		proc.watchSubagents();
 		if (continueAfterSwitch && resume) {
@@ -839,7 +838,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// Whether this runtime's prompt cache pays for an idle ping (the 구성 view shows the keep-alive only then).
 	const keepaliveSupported = (): boolean => Boolean(adapter?.caps.promptCacheKeepalive);
 	if (opts.keepalive) setInterval(() => {
-		restAhead(orch.ctx, port, who, { ready: Boolean(proc && adapter?.caps.abortCompact) && orch.status === "idle" && !(rotating || restarting || rotateWhenIdle || pendingRestart || pendingModel || orch.error || errorStreak.stopped), busy: held.length + unstarted.length > 0 || runningSubagents(opts.source) > 0, quietMs: Date.now() - lastTurnEnd }, compactAt());
+		restAhead(orch.ctx, port, who, restFacts(), compactAt());
 		const idle = Date.now() - lastTurnEnd;
 		if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX || errorStreak.stopped) return;
 		if (idle < KEEPALIVE_FROM_MS || idle > KEEPALIVE_TO_MS) return;

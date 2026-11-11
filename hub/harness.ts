@@ -88,6 +88,8 @@ const DEFS = new Map<string, Def>([
 	["orchestrator.thinking", { type: "effort", applies: "live", mirror: true, source: "config.json:models.orchestrator.thinking" }],
 	// orchestrator.ts ROTATE_TOKENS
 	["orchestrator.rotate_tokens", { type: "number", applies: "restart", default: DEFAULTS.rotate_tokens, min: 20_000, max: 1_000_000 }],
+	// nightly-fresh.ts: the main session's fresh start at the nightly hygiene time (read at each nightly run)
+	["orchestrator.nightly_fresh", { type: "bool", applies: "live", mirror: true, default: DEFAULTS.nightly_fresh }],
 	["lanes.model", { type: "model", applies: "next-turn", mirror: true, source: "config.json:models.lanes.model" }],
 	["lanes.thinking", { type: "effort", applies: "next-turn", mirror: true, source: "config.json:models.lanes.thinking" }],
 	// lanes.ts launchWait: a hard cap on top of hub/limits.ts; unset = computed from the machine
@@ -358,7 +360,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 				{ label: N.orchestrator.cache, value: keepaliveSupported() ? N.orchestrator.cacheValue(Math.round(KEEPALIVE_FROM_MS / 60_000), Math.round(KEEPALIVE_TO_MS / 60_000), KEEPALIVE_MAX) : N.orchestrator.cacheNa },
 				{ label: N.orchestrator.startPrompt, value: N.orchestrator.startPromptValue },
 			],
-			settings: [S("orchestrator.model"), S("orchestrator.thinking"), S("orchestrator.rotate_tokens")],
+			settings: [S("orchestrator.model"), S("orchestrator.thinking"), S("orchestrator.rotate_tokens"), S("orchestrator.nightly_fresh")],
 		},
 		// ---- prompt files
 		{ id: "mode", kind: "file", group: "files", anchor: "orchestrator", order: 1, label: N.mode.label, status: existsSync(modeFile()) ? "ok" : "err", summary: N.mode.summary(modeFile().split("/").pop() ?? ""), desc: N.mode.desc, facts: [{ label: N.mode.file, value: modeFile().split("/").pop() ?? "" }, { label: N.mode.language, value: lang() }], settings: [], file: "MODE.md", fileEditable: false },

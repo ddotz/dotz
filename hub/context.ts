@@ -65,10 +65,31 @@ export const restDue = (c: Ctx, at: number, r: { busy: boolean; quietMs: number 
 // Set by the hub: the main conversation is not at rest while a prompt for it is queued, open or deferred (the orchestrator cannot see the queue).
 export const restGuard = { blocked: (): boolean => false };
 
-// The minute tick of a conversation (`s.ready`: a live idle process that can abort and is not rotating, restarting, paused or failing;
-// `s.busy`: a held or unstarted prompt, a worker): starts the compaction ahead of time when it is due at rest.
-export function restAhead(c: Ctx, port: CompactPort, who: string, s: { ready: boolean; busy: boolean; quietMs: number }, at: number): void {
-	if (s.ready && restDue(c, at, { busy: s.busy || restGuard.blocked(), quietMs: s.quietMs })) requestAhead(c, port, who, `at rest for ${Math.round(s.quietMs / 60_000)} min`);
+// What a conversation is doing, as far as being at rest goes: read by the compaction ahead of time (restAhead) and by the nightly fresh
+// start (hub/nightly-fresh.ts), so both stop for the same reasons. `switching`: a rotation, restart or model switch is asked for or under way;
+// `failing`: an error banner or an error streak; `held`: held plus unstarted prompts; `limitHold`: a usage-limit resume timer is armed.
+export type RestFacts = { alive: boolean; canAbort: boolean; idle: boolean; switching: boolean; failing: boolean; held: number; workers: number; limitHold: boolean; quietMs: number };
+
+// Why a conversation is not at rest; empty when it is.
+export function restBlockers(f: RestFacts, c: Ctx): string[] {
+	const why: [boolean, string][] = [
+		[!f.alive, "no live process"],
+		[!f.idle, "a turn is running or the session is paused"],
+		[f.switching, "a restart, rotation or model switch is pending"],
+		[f.failing, "an error or an error streak"],
+		[c.compaction.state === "queued" || c.compaction.state === "compacting", "a compaction is queued or running"],
+		[f.limitHold, "a usage-limit resume timer is armed"],
+		[f.held > 0, `${f.held} held or unstarted prompt(s)`],
+		[f.workers > 0, `${f.workers} running worker(s)`],
+		[restGuard.blocked(), "a request is queued, open or deferred"],
+		[f.quietMs < REST_QUIET_MS, "not quiet long enough"],
+	];
+	return why.filter(([on]) => on).map(([, text]) => text);
+}
+
+// The minute tick of a conversation: starts the compaction ahead of time when it is due at rest.
+export function restAhead(c: Ctx, port: CompactPort, who: string, f: RestFacts, at: number): void {
+	if (f.canAbort && !restBlockers(f, c).length && restDue(c, at, { busy: false, quietMs: f.quietMs })) requestAhead(c, port, who, `at rest for ${Math.round(f.quietMs / 60_000)} min`);
 }
 
 // Starts a compaction at rest; false when the process cannot take it now or cannot abort it later (the owner would wait behind it).

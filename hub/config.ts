@@ -22,7 +22,7 @@ export type Config = {
 	key_hosts?: string[];
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string; category?: string; work_category?: string; /** Largest file (MB) the bot attaches to a Discord message; default 10 (hub/discord-files.ts). */ attach_max_mb?: number };
 	web: { port: number; tailscale_https_port: number; allow_logins: string[]; /** How the web app is reached: "tailscale" (default), "cloudflare" (tunnel + Cloudflare Access, hub/cf-access.ts) or "local". */ access?: "tailscale" | "cloudflare" | "local"; /** false turns the entry check off (hub/entry-check.ts: own Host names, tailnet identity only through tailscale serve, no cross-site writes); default on. */ entry_check?: boolean; cloudflare?: { /** The tunnel's Public Hostname, or without a domain the <name>.<account>.workers.dev of extras/cf-worker (Workers VPC). */ hostname: string; team: string; aud: string; /** In DATA_DIR/secrets unless absolute (default cloudflared-tunnel-token). */ tunnel_token_file?: string }; machine_name?: string; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[]; /** Waiting approval cards in one conversation that open the web's triage view (hub/approval-wire.ts; default 3). */ triage_min?: number; /** Seconds an approved send waits so the owner can cancel it (hub/approval-send.ts); default 10, 0 = off. */ send_undo_sec?: number; /** Largest saved file snapshot (MB, default 200), days a snapshot is kept (default 90) and total snapshot size (MB, default 1024), hub/filesnap.ts. */ snapshot_max_mb?: number; snapshot_keep_days?: number; snapshot_max_total_mb?: number; /** Largest upload (MB, default 50) and extra folders the file screens may open (hub/files.ts). */ upload_max_mb?: number; file_roots?: string[] };
-	orchestrator?: { rotate_tokens?: number; runtime?: string };
+	orchestrator?: { rotate_tokens?: number; runtime?: string; /** The main session starts a fresh conversation with a handover every night (default true); false: only past lanes.rotate_mb. */ nightly_fresh?: boolean };
 	// `restart_cap_min`: a gateway restart that waited this long for running work alerts the owner once (hub/restart.ts); nothing is killed.
 	// `stuck_turn_min`: an open turn with no event, no session-file growth and no process-tree CPU for this long is aborted, then restarted (hub/stuck.ts).
 	gateway?: { coalesce_ms?: number; restart_cap_min?: number; stuck_turn_min?: number };
@@ -205,7 +205,7 @@ export const LANES_COMPACT_AT = 300_000;
 // coalesce_ms 2 s (was 4 s): over 14 days (2026-11-06, 900 owner messages) 0.1% were followed within 2 s, 1.4% within 5 s, 4.3%
 // within 10 s, so a longer first wait would delay nearly every lone message for nothing.
 export const DEFAULTS = {
-	rotate_tokens: 300_000, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
+	rotate_tokens: 300_000, nightly_fresh: true, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
 	conv_idle_stop_min: 20,
 	coalesce_ms: 2000, restart_cap_min: 90, stuck_turn_min: 15, reflect_at: "04:40", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
 } as const;

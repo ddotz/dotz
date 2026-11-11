@@ -283,7 +283,15 @@ tokens; the hub compacts an idle OmO session at that value, on omp it goes into 
 `nightly_at` every idle session is checked: a conversation file over `rotate_mb` MB starts a fresh conversation with a handover
 (recent exchanges plus a note to re-read its brief and last report; same model, folder and goal; the reload turn posts
 no report), otherwise a context of `nightly_compact_at` tokens or more is compacted. Working, rate-limited and stopped
-sessions are skipped. Each action goes to the hub log and the activity feed, nothing to Discord. The last run date is kept
+sessions are skipped. Each action goes to the hub log and the activity feed, nothing to Discord.
+
+`orchestrator.nightly_fresh` (boolean, default `true`, applies at the next nightly run) makes the main session start a fresh
+conversation every night whatever its size, with the open-request list, a handover of its last compaction summary (at most
+10,000 characters) and its recent exchanges (the whole handover is cut at 16,000 characters). `false` keeps the size rule
+only; a session file over `rotate_mb` starts fresh in both cases, and conversation sessions always follow the size rule.
+The start waits until the session is at rest (no turn, held or unstarted prompt, running worker, open or deferred request,
+queued or running compaction, armed usage-limit resume timer, pending restart or model switch, error or error streak, and quiet for
+10 minutes), asking again every minute for two hours after `nightly_at`; then the night is skipped with one hub-log line. The last run date is kept
 in `~/.dotz/lane-hygiene.json`; a run missed while the gateway was down is made up a minute after the next start.
 Settings apply when a session starts or resumes.
 
