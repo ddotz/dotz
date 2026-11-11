@@ -35,6 +35,8 @@ export type Deps = {
 	sleep: (ms: number) => Promise<void>;
 	out: (line: string) => void;
 	tail: (file: string, lines: number) => string[];
+	/** The text of a file, undefined when it is not there (the doctor's result file). */
+	read?: (file: string) => string | undefined;
 	tty: () => { in: boolean; out: boolean };
 	ask: (prompt: string) => Promise<string>;
 };
@@ -114,7 +116,22 @@ export function healthyLines(d: Deps, state: StateBody | undefined, update: Upda
 		if (state.auth?.length) lines.push(`로그인 확인을 기다리는 것: ${state.auth.length}건`);
 	} else lines.push("대화·세션 상태를 읽지 못했어요 (/api/state 응답 없음)");
 	if (update) lines.push(...updateLines(update));
+	lines.push(...doctorLines(d));
 	return lines;
+}
+
+// One line from the doctor's result file (hub/doctor.ts writes it at night): when it last ran and how many findings it holds. No scan.
+function doctorLines(d: Deps): string[] {
+	const raw = d.read?.(`${d.dir}/doctor.json`);
+	if (!raw) return [];
+	try {
+		const j = JSON.parse(raw) as { lastRun?: number; findings?: Record<string, unknown> };
+		const n = Object.keys(j.findings ?? {}).length;
+		if (!j.lastRun) return [];
+		return [`닥터 점검: ${clock(j.lastRun)}에 마지막으로 돌았고 ${n ? `살펴볼 것 ${n}건` : "이상 없음"}`];
+	} catch {
+		return []; // a half-written result file shows no line
+	}
 }
 
 function serviceLines(s: ServiceState): string[] {

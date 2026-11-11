@@ -334,14 +334,25 @@ when it exists. An existing file for the day is never rewritten; a failed call w
 with the effort OmO's chain gives it; when that cannot be read the worker model is used and the hub-log line says so. A selector there
 pins the model. Each run leaves one hub-log line: written (characters, tokens, milliseconds, model) or skipped with the reason.
 
-**Nightly token audit.** At `token_audit_at` (default `"04:30"`, `"off"` disables) the gateway scans every OmO and omp conversation
-active in the last 24h (orchestrator, sessions, task subagents) without any model call and writes
-`~/.dotz/logs/token-audit-YYYYMMDD.md`: cache busts, idle wakes, error streaks, repeated tool calls, big contexts, big
-subagents and Fable or max/xhigh use. A class flagged on consecutive days is marked as recurring. A short alert goes out
-only when something is flagged, and the reflection digest cites the result. Nothing is changed automatically. 14 days of
-totals stay in `~/.dotz/token-audit.json`. Try it with `bun hub/token-audit.ts --dry [--hours N]`.
-
-**Failure report.** `bun hub/failure-report.ts [--days 7] [--json | --md <path> | --check --state <file>]` measures repeated work and failed attempts (workers cut or capped, tool errors by cause, repeated calls, model error turns, wakes, hub.log retries/replays/restarts) from the session logs, task workers included, without a model call or a gateway timer; `--check` prints one line per class whose share grew since the baseline in the state file (tokens over all tokens of the window; count over assistant turns for classes with no tokens) and nothing otherwise, for a watch to run.
+**Doctor** (`hub/doctor.ts`, `hub/doctor-checks.ts`; numbers in `THRESHOLDS`, `hub/doctor-limits.ts`). One gateway-run pass, no model call, that reads the install's own
+files once a night and says something in the morning only when there is something to say. The run happens at `token_audit_at` (default `"04:30"`; `"off"` there only drops the separate
+night run, the morning pass then runs the checks itself); the notice goes out at `doctor_at`: `"auto"` (default; the zele brief hour when zele is on, else 08:00), `"HH:MM"` or
+`"off"` (the whole doctor is off: no run, no notice). Everything it finds sits in one file, `~/.dotz/doctor.json` (last run, each finding with the time it was first seen, what was told when
+and at which level, and the baselines the checks compare with).
+- *Checks.* gateway: `gateway restart (` in the hub log at least 3 times in 24 h, or at least 1 uncaught stack trace added to `gateway.err.log` since the last run; sessions: a running session with no
+  progress for over 6 h, or one in error and not closed for over 24 h; logins: a login still lost over 12 h after it was lost; watches: failing for over 24 h or 3 runs in a row (a self-heal that worked since
+  the last run is one *fixed* line); disk: the data volume under 10 % or 10 GB free is a finding, under 3 GB free it carries a decision (clean up session records older than the keep days, or leave it for a
+  week; nothing is deleted unless the owner picks the first); update: the last harness or self update failed and none worked since; failures: the failure report's growth thresholds (share up 25 %,
+  at least 1M tokens or 10 more occurrences) against a baseline kept in the doctor's file; tokens: one finding per token-audit warning class (the audit still writes its report `~/.dotz/logs/token-audit-YYYYMMDD.md` and
+  14 days of totals in `~/.dotz/token-audit.json`; the reflection digest cites them).
+- *Telling.* A finding is told when it is new, when its level reached 1.5x the level last told, or 7 days after it was last told while still present; a resolved one is dropped (back again = new). Nothing
+  notable: one log line, nothing posted anywhere. Self-fixed things are one line together. A choice block appears only for a finding with a decision. The item is an alert when anything in it is not fixed;
+  when dotz fixed everything itself it is a worklog entry only. The night pass runs in its own process (`bun hub/doctor.ts --night`): reading a week of session logs
+  peaks at several hundred MB on a busy install, and the gateway's heap never holds it. Prompt health (`hub/prompt-health.ts`) is one of the checks.
+- *Now vs. morning.* The immediate alerts stay as they were: gateway down, a login lost, a watch failing twice, an update failure, usage limits. The doctor only adds the morning "still" and trend items.
+- *Try it.* `bun hub/doctor.ts --dry` runs every check on the real data dir, writes nothing, prints the findings and the notice it would post, and ends with `RESULT {ms, peakRssMb, findings}`.
+  `bun hub/token-audit.ts --dry [--hours N]` and `bun hub/failure-report.ts [--days 7] [--json | --md <path> | --check --state <file>]` stay as command-line tools (the latter prints one line per class whose
+  share grew since the baseline in the state file); neither has a timer of its own any more.
 
 **Subagent guard and harness commands** (`extension/guard.ts`, `extension/harness-tools.ts`, `extension/token-audit.ts`) load with
 the dotz extension into every agent it runs in: the orchestrator, sessions and their subagents (and omp terminals). `guard.enabled: false` turns the guard off.
@@ -383,7 +394,7 @@ there is no gate. `budget_gate: false` turns it off.
   `switch_compact_min_tokens`, 50000) before switching. `/doctor [fix]` (and the `harness_doctor` tool) checks context,
   conversation file size, model vs default role, last rate limit, quota, open subagents/patches, guard health and orphaned omp RPC
   hosts; `/handover [note]` starts a fresh conversation with recent reports, git status and open subagents;
-  `/token-audit [hours]` (and `harness_token_audit`) is the on-demand form of the nightly audit and writes
+  `/token-audit [hours]` (and `harness_token_audit`) is the on-demand form of the token audit and writes
   `~/.dotz/logs/token-audit-session-YYYYMMDD.md`. `guard.harness_tools: false` leaves these out.
 - *Owner rule, off by default*: `ask_before_expensive: true` with `expensive_models: ["fable", ":max", ":xhigh"]` (substring
   of a model selector; `:level` for a thinking level) blocks `task` subagents on those models and flags a main agent on one

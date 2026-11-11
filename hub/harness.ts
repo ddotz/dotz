@@ -117,6 +117,7 @@ const DEFS = new Map<string, Def>([
 	["day_note.enabled", { type: "bool", applies: "live", mirror: true, default: false }],
 	["day_note.at", { type: "text", applies: "restart", default: DEFAULTS.day_note_at }],
 	["day_note.model", { type: "text", applies: "live", mirror: true, default: "" }],
+	["doctor_at", { type: "text", applies: "restart", default: DEFAULTS.doctor_at }],
 	["omp_update.mode", { type: "select", applies: "restart", default: "install", options: ["check", "install", "off"] }],
 	["omp_update.at", { type: "text", applies: "restart", default: DEFAULTS.update_at }],
 	// reflect.ts reads backup.remote on every snapshot
@@ -152,6 +153,7 @@ type Disk = {
 	day_note?: { enabled?: boolean; at?: string; model?: string };
 	reflect_at?: string;
 	token_audit_at?: string;
+	doctor_at?: string;
 };
 type Tree = Record<string, unknown>;
 const readDisk = (): Disk => JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as Disk;
@@ -391,7 +393,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		// ---- support: around the gateway
 		{ id: "outlang", kind: "system", group: "support", anchor: "gateway", order: 1, label: N.outlang.label, status: modeOf(disk) === "off" ? "off" : "ok", summary: modeOf(disk) === "off" ? c.disabled : N.outlang.summary(lang()), desc: N.outlang.desc, facts: [{ label: N.outlang.reference, value: lang() }], settings: [S("output_language.mode"), S("output_language.model"), S("output_language.timeout_s")] },
 		{ id: "update", kind: "system", group: "support", anchor: "gateway", order: 2, label: N.update.label, status: !updatable || disk.omp_update?.mode === "off" || disk.omp_update?.at === "off" ? "off" : "ok", summary: !updatable ? N.update.na(hx.name) : disk.omp_update?.mode === "off" ? c.disabled : `${timeOr(disk.omp_update?.at, DEFAULTS.update_at)} · ${N.update[disk.omp_update?.mode === "check" ? "check" : "install"]}`, desc: N.update.desc, facts: [], settings: [S("omp_update.mode"), S("omp_update.at")] },
-		{ id: "audit", kind: "system", group: "support", anchor: "gateway", order: 3, label: N.audit.label, status: String(disk.token_audit_at ?? DEFAULTS.token_audit_at) === "off" ? "off" : "ok", summary: timeOr(disk.token_audit_at, DEFAULTS.token_audit_at), desc: N.audit.desc, facts: [], settings: [S("token_audit_at")] },
+		{ id: "doctor", kind: "system", group: "support", anchor: "gateway", order: 3, label: N.doctor.label, status: String(disk.doctor_at ?? DEFAULTS.doctor_at) === "off" ? "off" : "ok", summary: String(disk.doctor_at ?? DEFAULTS.doctor_at) === "auto" ? N.doctor.auto : timeOr(disk.doctor_at, DEFAULTS.doctor_at), desc: N.doctor.desc, facts: [], settings: [S("doctor_at"), S("token_audit_at")] },
 		{ id: "reflect", kind: "system", group: "support", anchor: "gateway", order: 4, label: N.reflect.label, status: String(disk.reflect_at ?? DEFAULTS.reflect_at) === "off" ? "off" : "ok", summary: N.reflect.summary(timeOr(disk.reflect_at, DEFAULTS.reflect_at)), desc: N.reflect.desc, facts: [], settings: [S("reflect_at"), S("day_note.enabled"), S("day_note.at"), S("day_note.model")] },
 		{ id: "backup", kind: "system", group: "support", anchor: "reflect", order: 1, label: N.backup.label, status: disk.backup?.remote ? "ok" : "off", summary: disk.backup?.remote ? N.backup.remote : N.backup.local, desc: N.backup.desc, facts: [{ label: N.backup.external, value: disk.backup?.remote ? c.set : c.none }], settings: [S("backup.remote", disk.backup?.remote && /\/\/[^/@\s]+@/.test(String(disk.backup.remote)) ? { value: N.backup.credentialed, editable: false, hint: N.backup.credentialedHint } : {})] },
 		// ---- support: orchestrator column
@@ -435,7 +437,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{ from: "reflect", to: "orchestrator", label: E.review },
 		{ from: "outlang", to: "gateway", label: E.outlang },
 		{ from: "update", to: "gateway", label: E.update },
-		{ from: "audit", to: "gateway", label: E.audit },
+		{ from: "doctor", to: "gateway", label: E.doctor },
 		{ from: "providers", to: "orchestrator", label: E.providers },
 		{ from: "providers", to: "lanes", label: E.budget },
 		{ from: "hygiene", to: "lanes", label: E.hygiene },

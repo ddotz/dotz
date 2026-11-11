@@ -216,7 +216,7 @@ export const DEFAULTS = {
 	rotate_tokens: 300_000, nightly_fresh: true, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
 	conv_idle_stop_min: 20,
 	orch_keep_recent: 10_000, // orchestrator.keep_recent, in the runtime's own estimate (4 characters per token): 10000 keeps about 40,000 characters of recent conversation at a compaction
-	coalesce_ms: 2000, restart_cap_min: 90, stuck_turn_min: 15, reflect_at: "04:40", day_note_at: "04:36", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
+	coalesce_ms: 2000, restart_cap_min: 90, stuck_turn_min: 15, reflect_at: "04:40", day_note_at: "04:36", token_audit_at: "04:30", doctor_at: "auto", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
 } as const;
 // The web server listens only here; the tailnet reaches it through `tailscale serve` (web.tailscale_https_port).
 export const HOST = "127.0.0.1";

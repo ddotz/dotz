@@ -2,7 +2,7 @@
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { cfg, DATA_DIR, HOME, HOST, log, NAME, now, paths, PORT, restartCapMs, takeRecoveries, TZ, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, HOME, HOST, log, NAME, now, paths, PORT, restartCapMs, takeRecoveries, TZ, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import "../firstrun/first-run-boot.ts"; // a seed install still in its web onboarding serves only that and never gets past this line (firstrun/first-run-boot.ts)
 import { parseCommand, setGatewayRestart } from "./control.ts";
@@ -75,8 +75,8 @@ import { addWatch, allWatches, approveWatch, isWatchIssue, setHealedHandler, set
 import { watchOwner } from "./app-features.ts";
 import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginMailThread, pluginThread, startPlugins } from "./plugins.ts";
-import { startTokenAudit } from "./token-audit.ts";
-import { startZele, zeleAccounts, zeleRead } from "./zele.ts";
+import { startDoctor } from "./doctor.ts";
+import { startZele, zeleAccounts, zeleRead, zeleState } from "./zele.ts";
 import { createReconciler } from "./mail-reconcile.ts";
 import { createUnansweredWatch } from "./mail-unanswered.ts";
 import { backfillMailSummaries, mailSummarizer } from "./mail-summary-live.ts";
@@ -585,7 +585,9 @@ startDayNote();
 for (const l of telemetryOff()) log(l);
 for (const l of installDotzCommand({ dir: DATA_DIR, pkg: join(import.meta.dir, ".."), bun: Bun.which("bun") ?? process.execPath, home: HOME, expose: DATA_DIR === join(HOME, ".dotz"), shell: process.env.SHELL })) log(l);
 startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
-startTokenAudit(alert);
+// The hidden doctor (hub/doctor.ts): one night run, at most one morning item: an alert when something is not fixed (a choice block when he must decide),
+// a work log entry when dotz fixed everything itself.
+startDoctor((text, _decision, open) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway" }), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined));
 // Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply
 // on it applies it instead (worklog on success, alert with a choice block otherwise) and restarts through the idle restart gate.
 onUpdateResolved(updateResolved);

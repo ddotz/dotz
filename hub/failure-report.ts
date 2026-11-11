@@ -1,6 +1,6 @@
 // Repeated work and failed attempts over the last N days, measured from the session logs and hub.log with no model call. Ported from the
 // one-off analysis scripts (sessions.py, wakes.py, ended.py) so a recurring dotz project can run it, wake a model only when a class grew,
-// and then work on the biggest one. The gateway never runs this itself (no timer): a watch does.
+// and then work on the biggest one. The gateway's only scheduled user is the nightly doctor (hub/doctor.ts), which keeps the baseline in its own store.
 // usage: bun hub/failure-report.ts [--days 7] [--json] [--md <path>] [--check --state <file> [--grow-pct 25] [--min-tokens 1000000] [--min-count 10]]
 //   no flag      prints the Korean table
 //   --json       prints the full result
@@ -299,10 +299,10 @@ export function failureReport(opts: { home?: string; dataDir?: string; days?: nu
 }
 
 // version 2 adds the totals the share is taken against; a version 1 file (volume only) is replaced silently like a missing one.
-type Baseline = { version: 2; at: string; tokens: number; turns: number; classes: Record<string, { count: number; tokens: number }> };
+export type Baseline = { version: 2; at: string; tokens: number; turns: number; classes: Record<string, { count: number; tokens: number }> };
 const M = (n: number) => `${(n / 1e6).toFixed(1)}M`;
 const P = (s: number) => `${(s * 100).toFixed(2)}%`;
-const isBaseline = (b: unknown): b is Baseline => {
+export const isBaseline = (b: unknown): b is Baseline => {
 	const o = b as Json | null, c = o?.classes;
 	return o?.version === 2 && Number.isFinite(o.tokens) && Number.isFinite(o.turns) && !!c && typeof c === "object" && Object.values(c).every((v: any) => Number.isFinite(v?.count) && Number.isFinite(v?.tokens));
 };
@@ -337,9 +337,11 @@ export function grownClasses(r: Report, base: Baseline | undefined, th: Threshol
 	}
 	return out.sort((a, b) => b.weight - a.weight);
 }
+// What the next comparison starts from; the doctor (hub/doctor.ts) keeps it in its own store instead of a state file.
+export const baselineOf = (r: Report): Baseline => ({ version: 2, at: r.generatedAt, tokens: r.tokens, turns: r.turns, classes: Object.fromEntries(r.lost.map(c => [c.name, { count: c.count, tokens: c.tokens }])) });
 export function check(r: Report, stateFile: string, th: Thresholds): string[] {
 	const lines = grownClasses(r, loadBaseline(stateFile), th).map(g => g.line);
-	const next: Baseline = { version: 2, at: r.generatedAt, tokens: r.tokens, turns: r.turns, classes: Object.fromEntries(r.lost.map(c => [c.name, { count: c.count, tokens: c.tokens }])) };
+	const next = baselineOf(r);
 	mkdirSync(dirname(stateFile), { recursive: true });
 	writeAtomic(stateFile, `${JSON.stringify(next)}\n`);
 	return lines;

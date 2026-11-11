@@ -137,7 +137,7 @@ export function runPromptHealth(ctx: { now: number; dataDir: string }, write: bo
 	return { findings: [...sizeFindings(state, ctx.now), ...enforcedFindings(text, ctx.now), ...capFindings(ctx.dataDir, ctx.now)], contractChars: text.length };
 }
 
-export const promptHealth: DoctorCheck = ctx => runPromptHealth(ctx, true).findings;
+export const promptHealth: DoctorCheck = ctx => runPromptHealth(ctx, !ctx.dry).findings;
 
 if (import.meta.main) {
 	const dataDir = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");

@@ -24,4 +24,10 @@ export type Finding = {
 };
 
 /** A check: reads files only, gets its clock and paths injected, returns findings. Throwing is caught by the doctor (one log line). */
-export type DoctorCheck = (ctx: { now: number; dataDir: string; home: string }) => Finding[] | Promise<Finding[]>;
+export type DoctorCheck = (ctx: DoctorCtx) => Finding[] | Promise<Finding[]>;
+
+/**
+ * `last`: when the doctor last ran (none on the first run). `memo`: a scratch object the doctor keeps in its store between runs, for a check that
+ * compares with its own last look (a log offset, a baseline); a dry run gets a copy that is never saved. `dry`: nothing may be written.
+ */
+export type DoctorCtx = { now: number; dataDir: string; home: string; last?: number; memo?: Record<string, unknown>; dry?: boolean };

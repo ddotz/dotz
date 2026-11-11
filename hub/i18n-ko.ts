@@ -389,6 +389,27 @@ export const ko: Catalog = {
 		noteMissing: "내용이 비어 있어요. 다시 눌러 적어 주세요.",
 	},
 
+	doctor: {
+		head: (n: number) => `닥터 점검: 살펴볼 것이 ${n}가지 있어요`,
+		fixedLine: (items: string) => `스스로 고친 것: ${items}.`,
+		restarts: (n: number) => `게이트웨이가 하루 새 ${n}번 다시 시작했어요.`,
+		crashes: (n: number) => `지난 점검 뒤로 게이트웨이가 ${n}번 비정상 종료했어요 (오류 로그에 스택 기록이 있어요).`,
+		sessionsStuck: (names: string, n: number, hours: number) => `일하는 세션 ${n}개가 ${hours}시간 넘게 진전이 없어요: ${names}.`,
+		sessionsError: (names: string, n: number, hours: number) => `오류로 멈춘 뒤 ${hours}시간 넘게 닫히지 않은 세션이 ${n}개 있어요: ${names}.`,
+		loginLost: (name: string, hours: number) => `${name} 로그인이 아직 풀린 채예요 (${hours}시간째).`,
+		watchFailing: (name: string, hours: number, fails: number) => `모니터링 '${name}'가 계속 실패하고 있어요 (연속 ${fails}번, ${hours}시간째).`,
+		watchFixed: (name: string) => `모니터링 ${name}`,
+		disk: (freeGb: number, pct: number) => `디스크가 차고 있어요. 남은 공간 ${freeGb}GB (${pct}%).`,
+		diskQuestion: "디스크가 거의 찼어요. 오래된 세션 기록을 정리할까요?",
+		diskCleanName: "오래된 세션 기록 정리",
+		diskCleanResult: "보관 기간(기본 90일)이 지난 세션 기록을 야간 정리와 같은 방식으로 지워요. 고르기 전에는 아무것도 지우지 않아요.",
+		diskKeepName: "이번엔 둬요",
+		diskKeepResult: "일주일 뒤에 다시 볼게요.",
+		updateFailed: (what: string) => `${what} 업데이트가 마지막에 실패했고 그 뒤로 성공한 적이 없어요.`,
+		failuresGrew: (line: string) => `반복·실패 작업이 늘었어요: ${line}`,
+		tokens: (kind: string, n: number) => `토큰 낭비(${kind}): 지난 하루 ${n}개 세션이 걸렸어요.`,
+		selfUpdate: "게이트웨이",
+	},
 	harness: {
 		locale: "ko-KR",
 		common: { state: "상태", disabled: "꺼져 있어요", off: "꺼짐", set: "설정됨", none: "없음", count: n => `${n}개`, daily: time => `매일 ${time}`, na: "해당 없음", unit: { s: n => `${n}초`, min: n => `${n}분`, h: n => `${n}시간` } },
@@ -425,7 +446,8 @@ export const ko: Catalog = {
 			"day_note.enabled": { label: "하루 기억 남기기", hint: "켜면 매일 새벽 그날 있었던 일을 짧은 기억 파일로 남겨요. 프롬프트에는 싣지 않고 필요할 때 찾아 읽어요" },
 			"day_note.at": { label: "하루 기억 시각", hint: "HH:MM 또는 off. 야간 회고 직전이 좋아요" },
 			"day_note.model": { label: "하루 기억 모델", hint: "비워 두면 OmO의 quick 모델을 따라가요. 정하려면 제공자/모델:강도로 적어요" },
-			"token_audit_at": { label: "토큰 감사 시각", hint: "HH:MM 또는 off" },
+			"token_audit_at": { label: "닥터 점검 실행 시각", hint: "HH:MM (밤에 점검을 돌리는 시각)" },
+			"doctor_at": { label: "닥터 알림 시각", hint: "auto(아침 브리핑 시각) · HH:MM · off(점검 전체 끔)" },
 			"omp_update.mode": { label: "업데이트 방식", options: { check: "새 버전만 알림", install: "자동 설치 후 재시작", off: "끄기" } },
 			"omp_update.at": { label: "업데이트 확인 시각", hint: "HH:MM 또는 off" },
 			"watch.self_heal": { label: "모니터링 스크립트 스스로 고치기", hint: "확인 스크립트가 스크립트 오류로 실패하면 어시스턴트가 그 파일 하나를 고쳐 보고, 게이트웨이가 다시 확인해요. 끄면 알림만 보내요" },
@@ -526,9 +548,10 @@ export const ko: Catalog = {
 				label: "실행 하네스 업데이트", install: "자동 설치", check: "새 버전만 알림", na: h => `해당 없음 · 지금 런타임은 ${h}`,
 				desc: "매일 새벽 실행 하네스(OmO 또는 omp)에 새 버전이 있는지 확인해요. '자동 설치'(기본)면 설치하고 모두 한가해질 때 게이트웨이를 재시작하고, '새 버전만 알림'이면 작업 기록 채널에 알리기만 해요.",
 			},
-			audit: {
-				label: "토큰 사용 감사",
-				desc: "매일 OmO·omp 대화 기록을 훑어서 이유 없이 캐시가 깨졌거나 컨텍스트가 비정상적으로 큰 대화 기록 같은 낭비를 찾아내요. 이상이 있으면 알림 채널로 알려요.",
+			doctor: {
+				label: "닥터 점검",
+				auto: "아침 브리핑 시각",
+				desc: "밤마다 게이트웨이·세션·로그인·모니터링·디스크·업데이트·낭비를 파일만 훑어서 점검해요(모델 호출 없음). 이상이 없으면 아무것도 보내지 않고, 새로 생겼거나 커진 것만 아침에 한 번 알려요. 결정이 필요한 것만 선택지를 달아요.",
 			},
 			reflect: {
 				label: "야간 회고", summary: when => `${when} · 교훈 정리 + 백업`,
@@ -569,7 +592,7 @@ export const ko: Catalog = {
 		edges: {
 			discord: "메시지", web: "채팅", terminal: "터미널 입력", schedule: "정해진 시각", watch: "변화 감지", mail: "새 메일·일정",
 			batch: "묶어서 전달", delegate: "작업 위임", parallel: "병렬 실행", mode: "행동 규칙", identity: "이름·말투", rules: "내 규칙", rulesLanes: "세션도 읽음",
-			lessons: "교훈", lessonsWrite: "교훈 기록", snapshot: "스냅샷", review: "회고 요청", outlang: "답장 언어 점검", update: "새 버전 알림", audit: "낭비 알림",
+			lessons: "교훈", lessonsWrite: "교훈 기록", snapshot: "스냅샷", review: "회고 요청", outlang: "답장 언어 점검", update: "새 버전 알림", doctor: "아침 점검",
 			providers: "모델·한도", budget: "예산 게이트", hygiene: "야간 정리", memguard: "메모리 모니터링", guard: "규칙 강제",
 		},
 		// 프로젝트별 지도 (hub/harnessprojects.ts): 작업 채널이나 홈 채널에 묶인 세션 하나예요.

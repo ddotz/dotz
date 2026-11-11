@@ -8,11 +8,10 @@
 // Last stdout line: RESULT {...}
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, DEFAULTS, HOME, log, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, HOME, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
 import { expensiveMatch, loadGuardConfig } from "./lanegates.ts";
 import { addBigContext, addToolCalls, addTurn, addWake, collectSessions, newStreaks, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
-import { trackTimer } from "./shutdown.ts";
 
 // OmO (senpi) trims the context of every request once the last usage reaches 50% of the window; the trim is not saved, so
 // requests alternate full/trimmed and the trimmed prefix misses the cache (measured on the earlier secretary, 2026-10-08).
@@ -449,10 +448,11 @@ export function auditAlert(a: { since: number; now: number; total: number; total
 	].join("\n") + `\n${issueBlock("이 경고를 어떻게 할까요?", [{ name: "원인 확인", result: "세션별 원인을 살펴보고 고칠 방법을 제안해요." }, { name: "이번엔 넘어가요", result: "보고서만 남기고 다음 점검 때 다시 봐요." }])}`;
 }
 
-export type AuditResult = { flags: number; notes: number; sessions: number; tokens: number; cost: number; report: string; alert?: string; summary: string };
+// `told`: the warnings that matter (material); the doctor makes one finding of each class.
+export type AuditResult = { told: Finding[]; flags: number; notes: number; sessions: number; tokens: number; cost: number; report: string; alert?: string; summary: string };
 
 function auditEnabled(): boolean {
-	return String((cfg as { token_audit_at?: string }).token_audit_at ?? DEFAULTS.token_audit_at) !== "off";
+	return String((cfg as { doctor_at?: string }).doctor_at ?? DEFAULTS.doctor_at) !== "off";
 }
 
 // One-line audit summary for the nightly reflection digest: the latest recorded audit (today or yesterday, KST).
@@ -463,7 +463,8 @@ export function auditSummaryLine(now = Date.now()): string | undefined {
 	return `token audit ${last.date}: ${last.flags} warning(s)${last.kinds?.length ? ` (${last.kinds.join(", ")})` : ""}, ${last.sessions} sessions, ${M(last.tokens)} tokens ${usd(last.cost)}, report ${tilde(last.report)}`;
 }
 
-function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditResult {
+// `dry`: history is not recorded; `readOnly`: the report file is not written either (the doctor's --dry).
+export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boolean } = {}): AuditResult {
 	const t0 = Date.now();
 	const now = Date.now();
 	const hours = opts.hours && opts.hours > 0 ? opts.hours : 24;
@@ -545,47 +546,20 @@ function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditResult {
 		"",
 		`기준: 캐시 깨짐 = 미캐시 입력(캐시 쓰기+input) >${K(BUST_UNCACHED)}이면서 캐시 읽기가 직전 컨텍스트의 80% 미만이고, 직전에 압축/모델·thinking 변경/TTL(1h, 5m) 초과 공백이 없음. 헛깨움 = 사용자 입력 없이 알림만으로 시작된 턴이 도구 호출 없이 출력 ${IDLE_OUT} tok 이하로 끝남. 하위에이전트 >${M(SUB_NOTE)} 참고, >${M(SUB_FLAG)} 경고. 비싼 모델 = Fable 응답 또는 max/xhigh 생각 수준 ${EFFORT_FLAG_TURNS}턴 이상. 깨짐 원인(OmO): 직전 요청이 ${K(REDUCE_GATE)} 이상이고 압축 없이 10% 넘게 줄면 맥락 축소, 압축 20분 안의 projection-pin이면 재핀, environment-context와 UTC 날짜 변경이면 날짜, 5분 넘게 쉰 뒤 둘째 호출이면 유휴 패턴(기전 미증명). 세션 재구성 = OmO 연속성 로그에서 그 호출이 flatten/fork/bootstrap이면 재구성, 바로 앞 호출이 그랬으면 재구성 직후로 따로 세고 깨짐에 넣지 않음(맥락 축소가 우선). 폴백 = 의도한 모델(폴백 전환 전 모델, 워커는 요청 모델)과 다른 모델 턴; Anthropic 429 retry-after 안이면 참고, 풀린 뒤 60분 넘게 폴백이면 경고. 🔁 = 같은 클래스가 어제까지 연속으로 경고였음(기존 규칙은 MODE.md 섹션명으로 표기).`,
 	].join("\n");
-	mkdirSync(LOG_DIR, { recursive: true });
-	writeFileSync(reportPath, `${report}\n`);
+	if (!opts.readOnly) {
+		mkdirSync(LOG_DIR, { recursive: true });
+		writeFileSync(reportPath, `${report}\n`);
+	}
 	const alert = auditAlert({ since, now, total, totalCost, flags, recurring, reportPath });
 	const summary = `토큰 점검: 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건, 보고서 ${tilde(reportPath)}`;
-	return { flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), report: reportPath, alert, summary };
-}
-
-// Same local-time setTimeout scheduling as the nightly reflection; the audit runs before it so the digest can cite it.
-export function startTokenAudit(alert: (text: string) => void): void {
-	const at = String((cfg as { token_audit_at?: string }).token_audit_at ?? DEFAULTS.token_audit_at);
-	if (at === "off") return;
-	const [h, m] = at.split(":").map(Number);
-	const next = () => {
-		const d = new Date();
-		d.setHours(h, m, 0, 0);
-		if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
-		return d.getTime() - Date.now();
-	};
-	// One run per night: a timer that fires a moment early is re-armed for the same minute and must not run twice (the Mac mini posted
-	// the same audit at 04:29:59.9 and 04:30:00.1 on 2026-10-29).
-	let lastRun = 0;
-	const run = () => {
-		if (Date.now() - lastRun < 3600e3) return void trackTimer("token audit", setTimeout(run, next() + 60_000));
-		lastRun = Date.now();
-		try {
-			const r = runAudit();
-			log(`token audit: ${r.sessions} sessions, ${r.flags} warning(s), report ${tilde(r.report)}`);
-			if (r.alert) alert(r.alert);
-		} catch (error) {
-			log(`token audit failed: ${error}`);
-		}
-		trackTimer("token audit", setTimeout(run, next()));
-	};
-	trackTimer("token audit", setTimeout(run, next()));
+	return { told: flags.filter(material), flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), report: reportPath, alert, summary };
 }
 
 if (import.meta.main) {
 	const argv = process.argv.slice(2);
 	const dry = argv.includes("--dry");
 	if (!dry) {
-		console.error("usage: bun hub/token-audit.ts --dry [--hours N]  (a real run is scheduled by the gateway)");
+		console.error("usage: bun hub/token-audit.ts --dry [--hours N]  (the nightly run belongs to the doctor, hub/doctor.ts)");
 		process.exit(1);
 	}
 	const r = runAudit({ hours: Number(argv[argv.indexOf("--hours") + 1]) || 24, dry });

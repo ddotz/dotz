@@ -26,6 +26,7 @@ export function writeInstall(dataDir: string, o: InstallOpts): void {
 		self_update: { auto_check: false, auto_apply: false },
 		omp_update: { mode: "off" },
 		token_audit_at: "off",
+		doctor_at: "off",
 		reflect_at: "off",
 		load_qa: { scale: o.scale },
 	};

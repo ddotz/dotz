@@ -412,6 +412,27 @@ Do this, briefly:
 	},
 
 	// Owner-facing strings of the 구성 map (hub/harness.ts); `locale` formats its dates and numbers.
+	doctor: {
+		head: (n: number) => `Doctor check: ${n} thing${n === 1 ? "" : "s"} to look at`,
+		fixedLine: (items: string) => `Fixed by itself: ${items}.`,
+		restarts: (n: number) => `The gateway restarted ${n} times in the last day.`,
+		crashes: (n: number) => `The gateway crashed ${n} time${n === 1 ? "" : "s"} since the last check (a stack trace is in its error log).`,
+		sessionsStuck: (names: string, n: number, hours: number) => `${n} running session${n === 1 ? " has" : "s have"} made no progress for over ${hours} hours: ${names}.`,
+		sessionsError: (names: string, n: number, hours: number) => `${n} session${n === 1 ? " is" : "s are"} in error for over ${hours} hours and not closed: ${names}.`,
+		loginLost: (name: string, hours: number) => `${name} is still logged out, ${hours} hours now.`,
+		watchFailing: (name: string, hours: number, fails: number) => `The monitor ${name} keeps failing (${fails} runs in a row, ${hours} hours).`,
+		watchFixed: (name: string) => `the monitor ${name}`,
+		disk: (freeGb: number, pct: number) => `The disk is getting full: ${freeGb} GB free (${pct}%).`,
+		diskQuestion: "The disk is almost full. Clean up old session records?",
+		diskCleanName: "Clean up old session records",
+		diskCleanResult: "Deletes session records past their keeping time (90 days by default) the same way the nightly cleanup does. Nothing is deleted before you pick this.",
+		diskKeepName: "Leave it this time",
+		diskKeepResult: "Looks again in a week.",
+		updateFailed: (what: string) => `The last update of ${what} failed and no update has worked since.`,
+		failuresGrew: (line: string) => `Repeated or failed work grew: ${line}`,
+		tokens: (kind: string, n: number) => `Token waste (${kind}): ${n} session${n === 1 ? "" : "s"} flagged in the last day.`,
+		selfUpdate: "the gateway",
+	},
 	harness: {
 		locale: "en-US",
 		common: { state: "State", disabled: "Turned off", off: "Off", set: "Set", none: "None", count: (n: number) => `${n}`, daily: (time: string) => `daily ${time}`, na: "Not applicable", unit: { s: (n: number) => `${n} s`, min: (n: number) => `${n} min`, h: (n: number) => `${n} h` } },
@@ -448,7 +469,8 @@ Do this, briefly:
 			"day_note.enabled": { label: "Keep a note of the day", hint: "On: every night a small model writes a short memory file of the day. No prompt loads it; it is found by search when needed" },
 			"day_note.at": { label: "Day note time", hint: "HH:MM or off. Just before the nightly review is best" },
 			"day_note.model": { label: "Day note model", hint: "Empty follows the OmO quick model. To pin one, write provider/model:effort" },
-			"token_audit_at": { label: "Token audit time", hint: "HH:MM or off" },
+			"token_audit_at": { label: "Doctor night run time", hint: "HH:MM (when the nightly check runs)" },
+			"doctor_at": { label: "Doctor notice time", hint: "auto (morning brief time) · HH:MM · off (whole doctor off)" },
 			"omp_update.mode": { label: "Update mode", options: { check: "Notify of new versions only", install: "Install automatically and restart", off: "Off" } },
 			"omp_update.at": { label: "Update check time", hint: "HH:MM or off" },
 			"watch.self_heal": { label: "Fix monitoring scripts by itself", hint: "When a check script fails with a script error, the assistant gets one try to fix that one file and the gateway checks again. Off: you are only notified" },
@@ -549,9 +571,10 @@ Do this, briefly:
 				label: "Harness update", install: "automatic install", check: "new versions only", na: (h: string) => `Not applicable · the runtime is ${h}`,
 				desc: "Checks nightly whether the harness (OmO or omp) has a new version. With 'automatic install' (the default) it installs and restarts the gateway when everything is idle; 'new versions only' just tells the work-log channel.",
 			},
-			audit: {
-				label: "Token usage audit",
-				desc: "Scans OmO and omp conversation records daily for waste, such as a cache that broke for no reason or a conversation with an abnormally large context. If something is off, it tells the alert channel.",
+			doctor: {
+				label: "Doctor",
+				auto: "Morning brief time",
+				desc: "Checks the gateway, sessions, logins, monitors, disk, updates and token waste from files only every night (no model call). Nothing is sent when all is well; only what is new or grew is told once in the morning, with choices only for what needs a decision.",
 			},
 			reflect: {
 				label: "Nightly review", summary: (when: string) => `${when} · lessons tidy-up + backup`,
@@ -592,7 +615,7 @@ Do this, briefly:
 		edges: {
 			discord: "Message", web: "Chat", terminal: "Terminal input", schedule: "Scheduled time", watch: "Change detected", mail: "New mail and events",
 			batch: "Passed on merged", delegate: "Delegate work", parallel: "Parallel run", mode: "Behaviour rules", identity: "Name and tone", rules: "My rules", rulesLanes: "Sessions read it too",
-			lessons: "Lessons", lessonsWrite: "Write lessons", snapshot: "Snapshot", review: "Review request", outlang: "Reply language check", update: "New version notice", audit: "Waste alert",
+			lessons: "Lessons", lessonsWrite: "Write lessons", snapshot: "Snapshot", review: "Review request", outlang: "Reply language check", update: "New version notice", doctor: "Morning check",
 			providers: "Model and limits", budget: "Budget gate", hygiene: "Nightly cleanup", memguard: "Memory monitoring", guard: "Enforce rules",
 		},
 		// The per-project maps (hub/harnessprojects.ts): one lane tied to a work or home channel.

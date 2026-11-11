@@ -68,6 +68,7 @@ export const clean = (raw: unknown) => {
 export function systemTitle(text: string, fallback: string): string {
 	if (/^토큰 (누수 )?점검/.test(text)) return "토큰 점검";
 	if (text.includes("야간 정리")) return "야간 정리";
+	if (/^(닥터 점검|Doctor check)/.test(text)) return "닥터 점검";
 	return fallback;
 }
 

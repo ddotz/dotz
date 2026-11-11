@@ -37,6 +37,7 @@ const deps: Deps = {
 	now: () => Date.now(),
 	sleep: ms => new Promise(done => setTimeout(done, ms)),
 	out: line => console.log(line),
+	read: text,
 	tail: (file, lines) => {
 		try {
 			const size = statSync(file).size;

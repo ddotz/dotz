@@ -381,7 +381,7 @@ const NODE_SPECS: Record<string, NodeSpec> = {
 	gateway: { form: "게이트웨이 기능", trigger: "메시지 도착", file: "hub/main.ts" },
 	outlang: { form: "게이트웨이 기능", trigger: "답장 전송 전", file: "hub/outlang.ts", toggle: { path: "output_language.mode" } },
 	update: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/update.ts", toggle: { path: "omp_update.mode" } },
-	audit: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/token-audit.ts", toggle: { path: "token_audit_at" } },
+	doctor: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/doctor.ts", toggle: { path: "doctor_at" } },
 	reflect: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/reflect.ts", toggle: { path: "reflect_at" } },
 	backup: { form: "게이트웨이 기능", trigger: "정해진 시각", file: "hub/backup.ts" },
 	providers: { form: "게이트웨이 기능", trigger: "워커 생성 시", file: "hub/providers.ts" },
