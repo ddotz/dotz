@@ -267,6 +267,17 @@ const quotaBar = at => el("div", { class: "tools-bar" }, el("span", { class: "su
 // The same 새로고침 at the right end of the first card's head (the screen has no bar of its own above the cards), with when it was read.
 const usRefresh = at => [at ? el("span", { class: "sup", text: monTime(at) }) : null,
   el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), TX("settings.refresh"))].filter(Boolean);
+// One limit's bar and share left for the cards: a gauge (01-motion-gauge.js) keyed by the account's own window, so a read that raises
+// what is left fills the bar and counts the number from what the card showed, and a card drawn on opening shows the value as it is.
+function limitGauge(key, l) {
+  const f = limitFrac(l), track = bar(l);
+  if (f == null) return { num: el("b", { text: pctText(l) }), track };
+  const t = gaugeSplit(TX("base.pct_left", { n: GAUGE_MARK })), fill = track.firstChild;
+  fill.classList.add("gfill");
+  gaugeSet(key, f * 100, s => { fill.style.width = `${s.w.toFixed(2)}%`; gaugeNum(t.sp, s); });
+  return { num: el("b", {}, ...t.nodes), track };
+}
+let quotaDrawn = 0;
 async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
   const box = $("#usage");
@@ -277,6 +288,14 @@ async function loadQuota(fresh) {
   catch (e) { clear(box).append(quotaBar(""), emptyNode(TX("settings.usage.load_failed"))); return; }
   noteQuota(q);
   if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
+  paintQuota(q);
+}
+// Draws the usage screen from one read, a fetched one or the one the gateway pushed. A read older than the one on screen is dropped,
+// so a slow answer cannot put smaller numbers back after a recovery has shown.
+function paintQuota(q) {
+  if (q.fetched_at < quotaDrawn) return;
+  quotaDrawn = q.fetched_at || 0;
+  const box = $("#usage");
   clear(box);
   const grid = el("div", { class: "grid" });
   for (const p of q.providers || []) {
@@ -284,9 +303,10 @@ async function loadQuota(fresh) {
     const name = p.name || providerName(p.provider);
     const card = el("div", { class: "card" }, el("div", { class: "ch lo" }, el("h3", { text: p.plan ? `${name} · ${p.plan}` : name })));
     for (const l of p.limits || []) {
+      const g = limitGauge(`usage:${p.provider}|${p.account || ""}|${l.id}`, l);
       card.append(el("div", { class: "lim" },
-        el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) }), el("b", { text: pctText(l) })),
-        bar(l),
+        el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) }), g.num),
+        g.track,
         l.resets_at ? el("div", { class: "sup", text: rel(l.resets_at) }) : null));
     }
     if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: TX("settings.usage.no_limits") }));

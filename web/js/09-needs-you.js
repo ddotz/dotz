@@ -259,18 +259,26 @@ function paintStrip() {
   const b = $("#ustrip"), t = SQ && tightLimit(SQ), side = $("#sf-usage");
   b.hidden = !t;
   if (side) side.hidden = !t;
-  if (!t) return;
+  if (!t) { gaugeForget("strip"); return; }
   const pct = Math.round(t.f * 100), word = limitWord(t.l);
   b.className = `ustrip${pct <= 40 ? " warn" : ""}`;
-  b.style.setProperty("--p", pct);
   b.title = TX("home.usage.title", { word, pct }); b.setAttribute("aria-label", b.title);
-  clear(b).append(el("span", { class: "ulab", text: TX("home.usage.left", { word, pct }) }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
+  // the strip is drawn again on every read; the gauge keeps what is shown, so a recovery fills and counts from there (01-motion-gauge.js)
+  const lab = gaugeSplit(TX("home.usage.left", { word, pct: GAUGE_MARK })), upct = gaugeSplit(`${word} ${GAUGE_MARK}%`), fill = el("i");
+  clear(b).append(el("span", { class: "ulab" }, ...lab.nodes), el("span", { class: "ubar" }, fill), el("span", { class: "uring" }), el("span", { class: "upct" }, ...upct.nodes));
+  let sideBit = () => {};
   // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left; the folded rail shows only the ring
   if (side) {
     side.classList.toggle("warn", pct <= 40);
-    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: TX("common.usage") }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring pring", style: `--p:${pct}`, text: String(pct) }));
+    const sv = gaugeSplit(`${word} ${GAUGE_MARK}%`), sfill = el("i"), ring = el("span", { class: "sf-ring pring" });
+    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: TX("common.usage") }), el("span", { class: "sf-bar" }, sfill), el("span", { class: "sf-v" }, ...sv.nodes), ring);
     side.title = TX("home.usage.title", { word, pct }); side.setAttribute("aria-label", side.title);
+    sideBit = s => { sfill.style.width = `${s.w.toFixed(2)}%`; ring.style.setProperty("--p", String(+s.w.toFixed(2))); ring.textContent = String(s.n); gaugeNum(sv.sp, s); };
   }
+  gaugeSet("strip", pct, s => {
+    fill.style.width = `${s.w.toFixed(2)}%`; b.style.setProperty("--p", String(+s.w.toFixed(2)));
+    gaugeNum(lab.sp, s); gaugeNum(upct.sp, s); sideBit(s);
+  });
 }
 // 헤더의 종: the unread notice count, kept current by every notice change (30-notices.js ntPaint -> paintAttn).
 function paintBell() {
@@ -287,13 +295,16 @@ function paintBell() {
   if (b) b.setAttribute("aria-label", n ? TX("home.attn.alerts_aria", { n }) : TX("common.alerts"));
 }
 $("#sf-usage").onclick = () => go("usage");
-function noteQuota(q) { SQ = q; stripAt = Date.now(); paintStrip(); }
+function noteQuota(q) {
+  if (SQ && q && q.fetched_at < SQ.fetched_at) return;   // a read that was out while a newer one was drawn must not put the older numbers back
+  SQ = q; stripAt = Date.now(); paintStrip();
+}
 // A pushed usage read: the strip, and the 사용량 / 홈 view on screen, show it without asking again.
 function quotaLive(q) {
   if (!q) return;
   noteQuota(q);
   HQ = q;
-  if (current === "usage") loadQuota();
+  if (current === "usage") { if (P) paintQuota(q); else loadQuota(); }   // the pushed read is drawn as it is: a recovery shows now, not after a second fetch
   else if (current === "home") renderHome();
 }
 // At most one fetch per 3 minutes, and only while the page is visible (the home and usage views feed it through noteQuota too).

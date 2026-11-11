@@ -57,6 +57,9 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
 .bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; margin-top: var(--sp-2); }
 .bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--accent)); transition: width var(--m-slow) var(--m-ease); }
 .bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--err); }
+.bar i.gfill { transition: none; }   /* a gauge's script moves the fill each frame (01-motion-gauge.js) */
+.gn { font-variant-numeric: tabular-nums; }
+.gn.gn-live { display: inline-block; min-width: calc(var(--gd, 2) * 1ch); text-align: right; }   /* while counting, the box has the final number's width: nothing beside it moves */
 .lim + .lim { margin-top: var(--sp-3); }
 .more { margin-top: var(--sp-3); color: var(--fg-3); font-size: 12px; }
 .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); color: var(--fg-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }

@@ -1,5 +1,5 @@
 // The gateway pushes its background usage read as a "quota" event (hub/main.ts onQuota); the page hands it to quotaLive
-// (web/js/09-needs-you.js), which repaints the top bar and the 사용량 / 홈 view without fetching /api/quota again.
+// (web/js/09-needs-you.js), which repaints the top bar and the 사용량 / 홈 view from that read without fetching /api/quota again.
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,26 +32,31 @@ test("a pushed quota event reaches quotaLive with its numbers", async () => {
 	expect(got).toEqual([q]);
 });
 
+const pushed = { providers: [{ provider: "anthropic", limits: [{ id: "anthropic:5h", label: "Claude 5 Hour", remaining: 42 }] }] };
 test("quotaLive repaints the strip and the open usage view from the pushed read", () => {
 	const calls: string[] = [];
 	const node: any = new Proxy(function () {}, { get: (_t, k) => (k === "then" ? undefined : node), apply: () => node, set: () => true });
-	const scope = { current: "usage", HQ: null as unknown };
+	const scope = { current: "usage", HQ: null as unknown, P: {} as unknown, GAUGE_MARK: "\u2063", gaugeSplit: () => ({ nodes: [], sp: {} }) };
 	const live = page(js("09-needs-you.js"), Object.assign(scope, {
 		$: () => node,
 		clear: () => node,
 		el: () => node,
 		document: node,
 		loadQuota: () => calls.push("loadQuota"),
+		paintQuota: (q: unknown) => calls.push(q === pushed ? "paintQuota" : "other"),
 		renderHome: () => calls.push("renderHome"),
 		limitFrac: (l: { remaining: number }) => l.remaining / 100,
 		Date, Object, JSON, Promise, Math, String, Number,
 	}), "return { quotaLive, strip: () => SQ };");
-	const q = { providers: [{ provider: "anthropic", limits: [{ id: "anthropic:5h", label: "Claude 5 Hour", remaining: 42 }] }] };
+	const q = pushed;
 	live.quotaLive(q);
 	expect(live.strip()).toBe(q);
 	expect(scope.HQ).toBe(q);
-	expect(calls).toEqual(["loadQuota"]);
+	expect(calls).toEqual(["paintQuota"]);
+	scope.P = null;
+	live.quotaLive(q);
+	expect(calls).toEqual(["paintQuota", "loadQuota"]);
 	scope.current = "home";
 	live.quotaLive(q);
-	expect(calls).toEqual(["loadQuota", "renderHome"]);
+	expect(calls).toEqual(["paintQuota", "loadQuota", "renderHome"]);
 });

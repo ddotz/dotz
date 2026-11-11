@@ -110,6 +110,8 @@ test("the folded usage row is a ring with the expanded row's value and warning c
 	const warn = await row();
 	expect(warn).toMatchObject({ shown: "grid", n: "24", p: "24", color: wide.barColor, title: "사용량 · 7일 24% 남음", label: "사용량 · 7일 24% 남음", h: 36 });
 	await run(v, quota(80));
+	// a rise counts up over a short motion; the ring ends on the pushed value
+	await waitFor(`document.querySelector("#sf-usage .sf-ring").textContent === "80"`);
 	const calm = await row();
 	expect(calm.n).toBe("80");
 	expect(calm.color).not.toBe(warn.color);
