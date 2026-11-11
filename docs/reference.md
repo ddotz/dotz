@@ -130,7 +130,9 @@ a word on your own install, add `"web:<key>": { "text": "<your text>" }` to `~/.
 `web/i18n/en` files): it wins over the shipped and the generated list, and building the list again never overwrites it;
 an entry whose key no longer exists or whose placeholders differ from the list's is not used. The English channel
 names of the messengers (`channelNames` in `hub/i18n.ts`) and the web app's words for the same things (`common.*`) are
-held to the same word by a test. Right-to-left languages get their text, but the layout is not mirrored. Adding screen text:
+held to the same word by a test. In a language other than Korean a notice (in the app, as a push, in a messenger) skips
+the Korean rewording: it keeps the original text and only its error, schedule and worker words come from the list
+(`notice.*`). Right-to-left languages get their text, but the layout is not mirrored. Adding screen text:
 `web/AGENTS.md`; `bun hub/web-i18n-check.ts` fails when the two lists disagree or new Korean text enters a migrated file.
 
 Onboarding also asks for the macOS permissions (`onboard/permissions.ts`). The gateway is a launchd job whose program is `bun`, so
