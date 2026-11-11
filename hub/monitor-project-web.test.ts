@@ -81,8 +81,8 @@ describe("a monitor of a project", () => {
 	test("the settings button opens the monitor's own settings conversation inside 모니터링 and a chip sends the message to it as the monitor's settings target, without the project", async () => {
 		sent.length = 0;
 		const v = await boot(LOCAL_KEY);
-		await waitFor(v, `document.querySelector("#mon-head .as-hd") && document.querySelector("#mon-tl [data-chip]")`);
-		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+		await waitFor(v, `document.querySelector("#mon-head .as-more") && document.querySelector("#mon-tl [data-chip]")`);
+		await run(v, `document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await waitFor(v, `target === "settings:w:login-local" && monCtx === target && document.querySelector("#tl").textContent.includes("지난번 질문")`);
 		expect(decodeURIComponent(await q(v, `return location.hash`))).toBe("#monitoring/c:settings:w:login-local");
 		await waitFor(v, `document.querySelector("#mon-chips [data-chip]")`);
@@ -111,8 +111,8 @@ describe("a monitor of a project", () => {
 	test("the change card inside the settings conversation applies to that watch", async () => {
 		patches.length = 0;
 		const v = await boot(LOCAL_KEY);
-		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
-		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+		await waitFor(v, `document.querySelector("#mon-head .as-more")`);
+		await run(v, `document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await waitFor(v, `target === "settings:w:login-local" && document.querySelector('#tl .as-card [data-as="apply"]')`);
 		await run(v, `document.querySelector('#tl .as-card [data-as="apply"]').click()`);
 		await patches.until(() => patches.length > 0);
@@ -133,8 +133,8 @@ describe("a peer's monitor of a project", () => {
 	test("its conversation is the monitor's own settings conversation on that computer: read through the proxy, the message forwarded to it, 지금 확인 forwarded as the watch run", async () => {
 		sent.length = 0; acts.length = 0;
 		const v = await boot(PEER_KEY);
-		await waitFor(v, `document.querySelector("#mon-head .as-hd") && document.querySelector("#mon-tl [data-chip]")`);
-		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+		await waitFor(v, `document.querySelector("#mon-head .as-more") && document.querySelector("#mon-tl [data-chip]")`);
+		await run(v, `document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await waitFor(v, `target === "settings:w:login-boutique-com" && monCtx === target && document.querySelector("#tl").textContent.includes("맥미니 감시 대화에서 보낸 답이에요")`);
 		await waitFor(v, `document.querySelector("#mon-chips [data-chip]")`);
 		await run(v, `document.querySelector('#mon-chips [data-chip="일시정지"]').click()`);

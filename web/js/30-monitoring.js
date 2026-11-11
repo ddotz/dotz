@@ -680,7 +680,7 @@ function monTopNodes(it) {
   const out = [], banner = monBannerOf(it);
   if (it.mon) out.push(el("div", { class: "cv-p mon-desc" }, monDesc(it.mon), ...(pqLabel(it) ? [" ", pqLabel(it)] : [])), monProgNode(it.mon, { tag: !banner }));   // the machine's name sits here, not in the one-line title
   if (banner) out.push(banner);
-  const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), monConvBtn(it)].filter(Boolean);
+  const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), asChatOn(monSettingsApp(it)) ? null : monConvBtn(it)].filter(Boolean);   // the app bar's 대화 icon is the one control for it on a phone
   if (acts.length) out.push(el("div", { class: "mon-actions" }, ...acts));
   // The prototype's detail card opens the conversation on a phone too: the wait, a down banner and the actions in one card (never loose).
   return out.length ? [el("div", { class: "mon-topcard" }, ...out)] : [];
@@ -797,7 +797,7 @@ const monHead = it => {
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
-  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepCount(it.unreplied) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepCount(it.unreplied) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it), !convBtn))].filter(Boolean);   // the labeled button is the one control for 대화 on the wide head
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);

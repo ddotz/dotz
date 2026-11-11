@@ -101,10 +101,10 @@ describe("설정 대화 at desktop width (1280x800)", async () => {
 
 	test("the mail detail header has a 대화 button (no row on top of the list) that opens the settings conversation", async () => {
 		await boot(v, "i:mail");
-		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
-		expect(await q(v, `return [document.querySelector("#mon-head .as-hd").getAttribute("aria-label"), document.querySelector("#mon-head .as-more").getAttribute("aria-label"), document.querySelectorAll(".as-pin").length]`)).toEqual(["대화", "설정", 0]);
+		await waitFor(v, `document.querySelector("#mon-head .as-more")`);
+		expect(await q(v, `return [(b => b.getAttribute("aria-label") || b.textContent.trim())(document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue")), document.querySelector("#mon-head .as-more").getAttribute("aria-label"), document.querySelectorAll(".as-pin").length]`)).toEqual(["대화로 이어가기", "설정", 0]);
 		await shot(v, "01-desktop-pinned-row.png");
-		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+		await run(v, `document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await waitFor(v, `target === "settings:mail" && [...document.querySelectorAll("[data-as-more]")].some(b => b.offsetParent && !b.hidden)`);
 		expect(await q(v, `return document.querySelector("#cv-body #app-sw, #tl #app-sw")`)).toBe(null);
 		expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
@@ -161,9 +161,9 @@ describe("설정 대화 at desktop width (1280x800)", async () => {
 
 	test("kakao: the 설정 button is in the app head, none on top of the room list, and its conversation has the 감시 switch", async () => {
 		await run(v, `go("monitoring", "i:kakao")`);
-		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
+		await waitFor(v, `document.querySelector("#mon-head .as-more")`);
 		expect(await q(v, `return document.querySelectorAll(".as-pin").length`)).toBe(0);
-		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+		await run(v, `document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await waitFor(v, `target === "settings:kakao"`);
 		await openScreen(v, "kakao");
 		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);

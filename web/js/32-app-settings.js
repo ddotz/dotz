@@ -597,16 +597,18 @@ function asChipPaint() {
 
 /* ---- the entries of a detail's title bar (the head on a wide screen, the app bar on a phone): 대화 opens its settings conversation, ⋯ the settings screen ---- */
 function asOpen(ev) { go("monitoring", `c:${asConv(ev.currentTarget.dataset.asOpen)}`); }
-const asBtn = app => el("button", { class: "ib as-hd", type: "button", "aria-label": TX("common.conversation"), title: TX("common.conversation"), "data-as-open": app, onclick: asOpen }, icon("chat"));
+const asBtn = (app, label = TX("common.conversation")) => el("button", { class: "ib as-hd", type: "button", "aria-label": label, title: label, "data-as-open": app, onclick: asOpen }, icon("chat"));
 // The two buttons of `app` ("mail", "w:<watch>"): 대화 and ⋯; none while its settings are not loaded (an app without any shows no button).
-// A schedule ("s:<id>") has no settings conversation: only ⋯.
-function asEntry(app) {
+// A schedule ("s:<id>") has no settings conversation: only ⋯. chat=false leaves 대화 out where the row already has the labeled 대화로 이어가기 button.
+function asEntry(app, chat = true) {
   if (!app) return [];
   if (!AS.load[app]) asLoad(app);
-  return !AS.by[app] ? [] : asSched(app) ? [asMoreBtn(app)] : [asBtn(app), asMoreBtn(app)];
+  return !AS.by[app] ? [] : asSched(app) || !chat ? [asMoreBtn(app)] : [asBtn(app), asMoreBtn(app)];
 }
-// The phone has no head: the same button sits in the app bar beside the title and follows the open detail.
-var asBar = asBtn("");   // var: the app bar is drawn (31-conversations.js convTitle) before this file runs
+// Whether `app` has the 대화 icon: the phone's app bar shows it, so a detail's own 대화로 이어가기 button stays out of the way there.
+const asChatOn = app => !!app && !asSched(app) && !!asEntry(app).length;
+// The phone has no head: the same button sits in the app bar beside the title and follows the open detail; its name is the action the wide head's labeled button says.
+var asBar = asBtn("", TX("mon.conv.btn"));   // var: the app bar is drawn (31-conversations.js convTitle) before this file runs
 asBar.id = "as-bar"; asBar.hidden = true;
 $("#vtog").before(asBar);
 // ⋯ opens the settings screen (in a detail's title bar and in the settings conversation's head).
@@ -619,7 +621,7 @@ function asMoreSync(app) {
   if (app) asMoreBar.dataset.asMore = app;
 }
 function asBarSync(app) {
-  const on = !!app && !asSched(app) && !!asEntry(app).length;
+  const on = asChatOn(app);
   asBar.hidden = !on;
   if (on) asBar.dataset.asOpen = app;
 }

@@ -106,7 +106,7 @@ describe("a watch an app owns belongs to the app", () => {
 			await shot(v, `owned-watch-peer-${w}.png`);
 			await run(v, `go("monitoring", ${JSON.stringify(PEER_MAIL)})`);
 			// The app's status is in its settings screen, opened from the title-bar gear.
-			const gear = `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd[data-as-open]")`;
+			const gear = `document.querySelector("#as-bar:not([hidden]), #mon-head [data-as-open], #mon-head .mon-continue")`;
 			await waitFor(v, gear);
 			await run(v, `${gear}.click()`);
 			await waitFor(v, `/^settings:mail~/.test(target)`);

@@ -68,7 +68,7 @@ const boot = async (width: number, height: number, key: string) => {
 	await run(v, `go("monitoring")`);
 	await waitFor(v, `PQ.loaded && PQ.list.length && monItems().some(i => i.key === ${JSON.stringify(key)})`);
 	await run(v, `go("monitoring", ${JSON.stringify(key)})`);
-	await waitFor(v, `document.querySelector("#mon-tl .mon-lr") && document.querySelector("#mon-tl [data-chip]") && document.querySelector("#mon-head .as-hd")`);
+	await waitFor(v, `document.querySelector("#mon-tl .mon-lr") && document.querySelector("#mon-tl [data-chip]") && document.querySelector("#mon-head .as-more")`);
 	return v;
 };
 const NORMALIZE = `
@@ -118,7 +118,7 @@ describe.each([[390, 844], [1280, 800]])("a monitor on the Mac mini and the same
 		for (const side of ["local", "peer"] as const) {
 			const v = await boot(width, height, KEYS[side]);
 			const t = side === "local" ? LOCAL_T : PEER_T;
-			await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+			await run(v, `document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue").click()`);
 			await waitFor(v, `target === ${JSON.stringify(t)} && document.querySelector("#tl").textContent.includes("로그인이 풀렸어요.") && document.querySelector("#mon-chips [data-chip]")`);
 			expect(await q(v, `return document.querySelector("#app-sw")`)).toBeNull();
 			expect(await q(v, `return [...document.querySelectorAll("#mon-chips [data-chip]")].map(b => b.dataset.chip)`)).toEqual(["다시 로그인해 줘", "원인 찾아 줘", "일시정지"]);
@@ -138,9 +138,9 @@ describe("a peer's app", () => {
 	test("has the title-bar gear; its name is a field of the settings screen and is written through the peer", async () => {
 		const key = `p:${MINI}|i:mail`;
 		const v = await boot0(1280, 800, key);
-		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
+		await waitFor(v, `document.querySelector("#mon-head .as-more")`);
 		expect(await q(v, `return document.querySelector("#mon-tl .as-name")`)).toBeNull();
-		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+		await run(v, `document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await openScreen0(v);
 		expect(await q(v, `return document.querySelector('.as-screen #app-sw [data-k="label"]').value`)).toBe("메일");
 		await run(v, `const i = document.querySelector('.as-screen #app-sw [data-k="label"]'); i.value = "맥미니 메일"; i.dispatchEvent(new Event("change"))`);

@@ -131,10 +131,10 @@ describe("monitor settings at desktop width", async () => {
 	});
 	test("a monitor's header has a 설정 button that opens its settings conversation with the controls", async () => {
 		await boot(v, "m:웹 감시");
-		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
+		await waitFor(v, `document.querySelector("#mon-head .as-more")`);
 		expect(await q(v, `return document.querySelectorAll(".as-pin").length`)).toBe(0);
 		await shot(v, "monitor-pinned-row-desktop.png");
-		await run(v, `document.querySelector("#mon-head .as-hd").click()`);
+		await run(v, `document.querySelector("#mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await waitFor(v, `target === "settings:w:t-web"`);
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);

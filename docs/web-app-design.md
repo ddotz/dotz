@@ -1250,7 +1250,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 - 목적: 앱(통합)이 만든 소식과 상태를 대화처럼 보여주고, 끊김이면 다시 연결하게 해요.
 - 구성: 머리 `monHead`(아이콘, 이름과 컴퓨터 이름표 `.mon-pc`, 마지막 소식 시각 `.mon-hd-time`, 동작 버튼들 `.mon-hdacts`, 상태줄 `.cv-p`), 끊김이면 연결 배너, 필터 바(조건부), 소식 노드(`monChronoNodes`: 오래된 것 위, 새 것 아래, 처음 열면 맨 아래로 스크롤).
-- 기능: `대화로 이어가기`(`go("monitoring", "c:" + asConv(app))`, 앱 설정 대화), `답장 확인 <n>`(초안이 있을 때, `rqOpen`), `미답장 <n>` 알약, 앱 설정 진입(`asEntry`), 끊김일 때 `다시 연결`(`monRecheckApp`: 앱이 소유한 감시를 모두 실행). 같은 결과가 3번 이상 이어지면 한 줄로 접고 `같은 결과 <n>번 · 처음 <시각>`.
+- 기능: `대화로 이어가기`(`go("monitoring", "c:" + asConv(app))`, 앱 설정 대화), `답장 확인 <n>`(초안이 있을 때, `rqOpen`), `미답장 <n>` 알약, 앱 설정 ⋯(`asEntry(app, false)`: 대화 아이콘은 `대화로 이어가기` 버튼과 겹쳐서 그리지 않아요), 끊김일 때 `다시 연결`(`monRecheckApp`: 앱이 소유한 감시를 모두 실행). 같은 결과가 3번 이상 이어지면 한 줄로 접고 `같은 결과 <n>번 · 처음 <시각>`.
 - 상태: 끊김이면 목록 배지 `연결 끊김`, 배너 `연결이 끊겼어요 · <이유>`와 `다시 연결` 버튼(소유 감시가 없으면 버튼 없음). 상태줄(`monState`)은 `it.hint`(위 `monNeedLine` 문구). 다시 연결 결과 토스트: 일부 실패 `<전체>개 중 <실패>개는 확인하지 못했어요`, 승인 요청이 간 경우 `다시 연결을 요청했어요. 승인 요청이 오면 눌러 주세요`, 그 외 `지금 다시 확인했어요`. 소식이 없고 불러오는 중이면 `불러오는 중…`, 없으면 `아직 소식이 없어요`. 필터 결과 없음 `이 보기에 해당하는 소식이 없어요`.
 - 데이터: `GET /api/integrations`(`{items:[{key,label,icon,iconPath?,conv,convNot?,unread,notices,needs:{drafts,unread,sentToday,unreplied},state,hint,own,watches,watchesNot,kind}],available:[...]}`), 소유 감시 실행 `POST /api/watches/<이름>/run`(다른 컴퓨터 앱은 `/api/peer/act`로 `{action:"watch",args:{op:"run",name}}`).
 - css: web/css/20-monitoring.css, web/css/18-app-settings.css(`mon-chips`).
@@ -1271,7 +1271,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 - 목적: 주기적으로 바뀐 곳을 확인하는 감시 하나의 상태와 확인 기록을 보여줘요.
 - 구성: 머리 `monHead`(아이콘 `activity`, 이름, 컴퓨터 이름표, 마지막 실행 시각, 동작, 설명 한 줄 `monDesc`, 진행 블록, 배너). 폰이면 본문 맨 위에 `.mon-topcard`(설명, 진행 블록, 배너, 동작 `.mon-actions`)를 한 장 더 그려요. 섹션 제목 `확인 기록`(`.mon-sec`, heading level 3), 확인 기록 카드(`.mon-log` 한 장에 압축 행들), 질문 칩(`.mon-chips`).
-- 기능: `지금 확인`(`monRunNow`, `POST /api/watches/<watch>/run`; 다른 컴퓨터 감시는 그 컴퓨터에서 실행하고 `pqSoon()`), `대화로 이어가기`, 설정(`asEntry("w:<watch>")`), 압축 행 탭으로 펼치기/접기(`접기` 버튼), `답하러 가기`, 질문 칩 탭이면 `asAsk("w:<watch>", 칩)`. 맨 위 행은 감시의 마지막 실행(`monRunRow`).
+- 기능: `지금 확인`(`monRunNow`, `POST /api/watches/<watch>/run`; 다른 컴퓨터 감시는 그 컴퓨터에서 실행하고 `pqSoon()`), `대화로 이어가기`, 설정 ⋯(`asEntry("w:<watch>", false)`), 압축 행 탭으로 펼치기/접기(`접기` 버튼), `답하러 가기`, 질문 칩 탭이면 `asAsk("w:<watch>", 칩)`. 맨 위 행은 감시의 마지막 실행(`monRunRow`).
 - 상태: 설명 `바뀐 곳이 있는지 <every> 확인해요.`(every 없으면 `알아서`). 실행 중 버튼 `확인하는 중…`, 끝나면 토스트 `확인했어요`; 끊김이 계속이면 `확인했지만 아직 연결이 끊겨 있어요`; 승인 게이트이면 `다시 연결을 요청했어요. 승인 요청이 오면 눌러 주세요`. 마지막 실행 줄(`monRunLine`): 실행 전 `아직 확인 전이에요`, `마지막 확인 결과 정상이에요` / `마지막 확인에서 바뀐 점이 있어요` / `마지막 확인이 실패했어요`, 그 외 `확인했어요`. 부가 줄: `연속 실패 <n>번`, `마지막 정상 <시각>`, `마지막 결과: <출력>`(명령처럼 보이면 숨김), `다음 확인 <시각> · <every>`. 배너: 끊김이면 `연결이 끊겼어요 · <시각>부터 · 다시 로그인 필요 | 확인이 계속 실패해요`와 `다시 연결` 버튼, 마지막 확인 실패면 `확인 실패 · 마지막 확인이 실패했어요 | <n>번 연속 실패했어요 · <요약>`과 `지금 다시 확인` 버튼(이때 머리의 `지금 확인`은 안 나와요). 꺼짐(paused)이면 막대 회색과 태그 `꺼짐`. 소식이 없으면 `<monRunLine>[ · 다음 확인 <시각>]`, 필터 결과 없음 `이 보기에 해당하는 소식이 없어요`. 원시 명령은 화면에 안 나오고(`monHuman`), 영문 하이픈 이름은 공백으로 풀어 보여줘요(`monWords`), 이름이 없으면 `지켜보는 일`. 오래된 소식은 30개씩: 스크롤이 끝에 닿으면 자동으로 더 불러오고(`monOlderLoad`, IntersectionObserver) 버튼 `이전 소식 <n>개 보기`도 있어요.
 - 데이터: `GET /api/monitors`, `POST /api/watches/<watch>/run`(응답 `{item, approved}`), 알림(kind `watch`), SSE `notice`.
 - css: web/css/20-monitoring.css(`mon-prog*`, `mon-lr`, `mon-log`, `mon-banner`, `mon-topcard`, `mon-hdwrap`, `mon-hdrow`, `mon-hdacts`, `mon-sentinel`, `mon-continue`, `mon-chips`).
@@ -1319,7 +1319,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 - 목적: 열린 항목의 이름, 상태, 마지막 소식 시각, 동작을 한 줄(컴팩트)과 그 아래 상태줄로 보여줘요.
 - 구성: `.mon-hdwrap` 안 `.mon-hdrow`(아이콘 `.cv-av.nt`, 이름 `.cv-n` + 컴퓨터 이름표, 시각 `.mon-hd-time`, 동작 `.mon-hdacts`), 아래에 상태줄 `.cv-p`(감시/예약이면 대신 `.mon-desc` 설명), 감시/예약이면 진행 블록, 배너.
-- 기능: 동작 순서(있는 것만): `대화로 이어가기`, `답장 확인 <n>`(앱에 대기 초안이 있을 때, `rqOpen`), `빠른 처리`(답장 확인 항목에서 대기 초안이 `TR.min` 이상, `trOpen("*")`), `지금 확인`(감시이고 배너가 없을 때), `미답장 <n>`(알약), 앱 설정 진입(`asEntry`). 시각은 감시의 마지막 실행, 아니면 가장 최근 소식이나 메일(`monHeadTime`).
+- 기능: 동작 순서(있는 것만): `대화로 이어가기`, `답장 확인 <n>`(앱에 대기 초안이 있을 때, `rqOpen`), `빠른 처리`(답장 확인 항목에서 대기 초안이 `TR.min` 이상, `trOpen("*")`), `지금 확인`(감시이고 배너가 없을 때), `미답장 <n>`(알약), 앱 설정 ⋯(`asEntry(app, false)`). 대화로 들어가는 길은 한 곳뿐이에요: 넓은 화면은 `대화로 이어가기` 버튼(옆에 대화 아이콘을 두지 않아요), 폰은 앱바의 대화 아이콘(`#as-bar`, aria-label과 title이 `대화로 이어가기`)이고 카드(`monTopNodes`)에는 버튼을 두지 않아요(`asChatOn`). 메일·카카오톡처럼 버튼이 없는 항목은 아이콘(`대화`)이 그 길이에요. 시각은 감시의 마지막 실행, 아니면 가장 최근 소식이나 메일(`monHeadTime`).
 - 상태: 상태줄 `monState`: 앱 꺼짐(peer off) `연결 안 됨`; 감시/예약은 설명만; 답장 확인은 `기다리는 초안 <n>개` 또는 힌트; 감시 소식은 위 표; 앱은 힌트; 그 외 안 읽음이 있으면 `안 읽음 <n>개`, 없으면 `연결돼 있어요`. 폰에서는 이 머리가 보이지 않고(주석: `A phone has no .cv-head`) 같은 내용이 `monTopNodes`의 `.mon-topcard`로 본문 위에 나와요. 앱바 제목은 폰에서 항목 이름(`monName`), 아니면 `모니터링`.
 - 데이터: 위 항목들과 같음.
 - css: web/css/20-monitoring.css(`mon-hdwrap`, `mon-hdrow`, `mon-hdacts`, `mon-topcard`, `mon-continue`), web/css/17-kakao.css:90(좁은 폭에서 `.kk-head` 숨김).

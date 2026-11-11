@@ -6,7 +6,8 @@ import { WATCH_FIELDS } from "./watch-settings.ts";
 import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // Every monitoring detail has its 설정 entry as a 대화 button and a ⋯ button in the title bar (web/js/32-app-settings.js asEntry): the head on a wide screen,
-// the app bar on a phone. There is no 설정 row on top of the list any more. Headless Bun.WebView against a stub gateway; the peer is a fixture.
+// the app bar on a phone. The way into the conversation is ONE control at every width: a wide head shows the labeled 대화로 이어가기 button where the item has one
+// (no icon beside it), a phone shows the app bar icon named by the same label (no button in the card). There is no 설정 row on top of the list any more. Headless Bun.WebView against a stub gateway; the peer is a fixture.
 const SHOTS = process.env.SETTINGS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const MINI = "http://mini.test";
@@ -54,15 +55,15 @@ const boot = async (width: number, height: number) => {
 
 // One entry per kind of detail: how it is opened, which settings conversation its button leads to, and where its title bar is on a wide screen.
 const PEER_KEY = `p:${MINI}|m:부티크 로그인 유지`;
-const KINDS: { name: string; open: string; after?: [string, string]; ready?: string; app: string; head: string }[] = [
+const KINDS: { name: string; open: string; after?: [string, string]; ready?: string; app: string; head: string; labeled?: boolean }[] = [
 	{ name: "mail app", open: `go("monitoring", "i:mail")`, app: "mail", head: "#mon-head" },
 	{ name: "mail", open: `go("monitoring", "c:mail:fx-1")`, ready: `target === "mail:fx-1"`, app: "mail", head: "#cv-head" },
 	{ name: "kakao app", open: `go("monitoring", "i:kakao")`, app: "kakao", head: "#mon-head" },
 	{ name: "kakao room", open: `go("monitoring", "i:kakao")`, after: ["KK.loaded", `kkOpen("100")`], ready: `KK.open === "100" && !KK.loading`, app: "kakao", head: "#kk-head" },
-	{ name: "other app", open: `go("monitoring", "i:site")`, app: "site", head: "#mon-head" },
-	{ name: "general monitor", open: `go("monitoring", "m:일반 감시")`, app: "w:plain-watch", head: "#mon-head" },
-	{ name: "login keeper", open: `go("monitoring", "m:로컬 로그인 유지")`, app: "w:login-local", head: "#mon-head" },
-	{ name: "peer monitor", open: `go("monitoring", ${JSON.stringify(PEER_KEY)})`, app: "w:login-boutique-com", head: "#mon-head" },
+	{ name: "other app", open: `go("monitoring", "i:site")`, app: "site", head: "#mon-head", labeled: true },
+	{ name: "general monitor", open: `go("monitoring", "m:일반 감시")`, app: "w:plain-watch", head: "#mon-head", labeled: true },
+	{ name: "login keeper", open: `go("monitoring", "m:로컬 로그인 유지")`, app: "w:login-local", head: "#mon-head", labeled: true },
+	{ name: "peer monitor", open: `go("monitoring", ${JSON.stringify(PEER_KEY)})`, app: "w:login-boutique-com", head: "#mon-head", labeled: true },
 ];
 
 describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in its title bar", () => {
@@ -75,19 +76,26 @@ describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in 
 				if (k.after) { await waitFor(v, k.after[0]); await run(v, k.after[1]); }
 				if (k.ready) await waitFor(v, k.ready);
 				// A phone has no head: the buttons are in the app bar; a wide screen has them in the detail's head and none in the bar.
-				const btn = w < 1100 ? "#as-bar" : `${k.head} .as-hd[data-as-open]`;
+				const labeled = w >= 1100 && !!k.labeled;
+				const btn = w < 1100 ? "#as-bar" : labeled ? `${k.head} .mon-continue[data-k="continue"]` : `${k.head} .as-hd[data-as-open]`;
 				const moreBtn = w < 1100 ? "#as-more-bar" : `${k.head} .as-hd[data-as-more]`;
-				await waitFor(v, `(() => { const b = document.querySelector(${JSON.stringify(btn)}); return b && !b.hidden && b.dataset.asOpen === ${JSON.stringify(k.app)}; })()`);
-				const s = await q<{ label: string | null; pins: number; visible: number; bar: boolean }>(v, `const b = document.querySelector(${JSON.stringify(btn)}), r = b.getBoundingClientRect(); return { label: b.getAttribute("aria-label"), pins: document.querySelectorAll(".as-pin").length, visible: Math.round(r.width) * Math.round(r.height), bar: document.querySelector("#as-bar").hidden }`);
-				expect(s.label).toBe("대화");
+				await waitFor(v, `(() => { const b = document.querySelector(${JSON.stringify(btn)}); return b && !b.hidden && (${labeled} || b.dataset.asOpen === ${JSON.stringify(k.app)}); })()`);
+				await waitFor(v, `!!document.querySelector(${JSON.stringify(moreBtn)})`);   // the settings are loaded: the ⋯ is drawn with the 대화 entry
+				const s = await q<{ label: string | null; title: string; pins: number; visible: number; bar: boolean }>(v, `const b = document.querySelector(${JSON.stringify(btn)}), r = b.getBoundingClientRect(); return { label: b.getAttribute("aria-label") || b.textContent.trim(), title: b.title, pins: document.querySelectorAll(".as-pin").length, visible: Math.round(r.width) * Math.round(r.height), bar: document.querySelector("#as-bar").hidden }`);
+				expect(s.label).toBe(w < 1100 || labeled ? "대화로 이어가기" : "대화");
+				if (w < 1100) expect(s.title).toBe(s.label);
 				expect(s.pins).toBe(0);
+				// Exactly one visible control opens the conversation: the labeled button or the icon, never both.
+				expect(await q(v, `return [...document.querySelectorAll("[data-as-open], [data-k='continue']")].filter(b => b.offsetParent && !b.hidden).length`)).toBe(1);
 				// ⋯ sits right beside it and opens the settings screen without the conversation.
 				const m = await q<{ label: string | null; app: string | null; gap: number; icons: number; visible: number }>(v, `const b = document.querySelector(${JSON.stringify(btn)}), m = document.querySelector(${JSON.stringify(moreBtn)}), a = b.getBoundingClientRect(), c = m.getBoundingClientRect(); return { label: m.getAttribute("aria-label"), app: m.dataset.asMore, gap: Math.round(c.left - a.right), icons: document.querySelectorAll("[data-as-open] svg path[d^='M4 7h9']").length, visible: Math.round(c.width) * Math.round(c.height) }`);
 				expect(m.label).toBe("설정");
 				expect(m.app).toBe(k.app);
 				expect(m.visible).toBeGreaterThan(0);
-				expect(m.gap).toBeGreaterThanOrEqual(0);
-				expect(m.gap).toBeLessThan(16);
+				if (!labeled) {
+					expect(m.gap).toBeGreaterThanOrEqual(0);
+					expect(m.gap).toBeLessThan(16);
+				}
 				expect(m.icons).toBe(0);   // the sliders icon is gone
 				expect(s.visible).toBeGreaterThan(0);
 				if (w >= 1100) expect(s.bar).toBe(true);

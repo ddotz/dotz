@@ -127,8 +127,8 @@ describe("앱 인스턴스 at 390px", () => {
 	test("the settings panel has a name field; changing it PATCHes label and the row, the detail title and the sheet show the new name", async () => {
 		const v = await boot();
 		await run(v, `go("monitoring", "i:mail/mail-2/all")`);
-		await waitFor(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd")`);
-		await run(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd").click()`);
+		await waitFor(v, `document.querySelector("#as-bar:not([hidden]), #mon-head [data-as-open], #mon-head .mon-continue")`);
+		await run(v, `document.querySelector("#as-bar:not([hidden]), #mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await waitFor(v, `target === "settings:mail-2"`);
 		expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
 		await openScreen(v, "mail-2");
@@ -183,9 +183,9 @@ describe("앱 인스턴스 at 390px", () => {
 		expect(acts).toEqual([{ action: "app", args: { op: "delete", app: "mail-5", deleteData: true } }]);
 		acts.length = 0;
 		await run(v, `go("monitoring", ${JSON.stringify(`p:${MINI}|i:mail`)})`);
-		await waitFor(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd[data-as-open]")`);
+		await waitFor(v, `document.querySelector("#as-bar:not([hidden]), #mon-head [data-as-open], #mon-head .mon-continue")`);
 		expect(await q(v, `return document.querySelector("#mon-tl .as-name")`)).toBe(null);
-		await run(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd[data-as-open]").click()`);
+		await run(v, `document.querySelector("#as-bar:not([hidden]), #mon-head [data-as-open], #mon-head .mon-continue").click()`);
 		await waitFor(v, `/^settings:mail~[a-z0-9]+$/.test(target)`);
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="label"]')`);
