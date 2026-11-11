@@ -119,6 +119,7 @@ describe("opening from a push", () => {
 		})()`);
 		await waitFor(`window.__kept`);
 		expect(await ev<{ auth: unknown[]; asks: number }>(`window.__kept`)).toEqual({ auth: [], asks: 1 });
+		await waitFor(`ts("main").hLoaded`);   // this first page reads its own conversation once the state is in: it must be done before the count starts, or its request is counted for the page below
 		let release!: () => void;
 		gate = stateGate = new Promise(r => { release = r; });
 		histories = 0;
