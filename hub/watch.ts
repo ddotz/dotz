@@ -12,16 +12,18 @@
 // the next run, also after a gateway restart, misses nothing. A watch may name a `script` (an executable file in the
 // project's folder) instead of a shell `command`; the gateway runs it directly and the project page can read and edit it.
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, copyFileSync, existsSync, type FSWatcher, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, watch as fsWatch, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { blockedBy } from "../extension/index.ts";
 import { ensureAside, replInTab } from "./aside.ts";
 import { type Relogin, relogin } from "./autologin.ts";
 import { josa } from "./account-rules.ts";
 import { issueBlock } from "./choices.ts";
-import { DATA_DIR, log, now, paths, readJsonOrQuarantine, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, log, now, paths, readJsonOrQuarantine, TZ, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
+import { msg } from "./i18n.ts";
 import { convTargetOf } from "./session-key.ts";
+import { classifyFailure, type FailClass, healTarget, type NotifyInfo } from "./watch-heal.ts";
 import { deriveLabel, isKeyLabel, plainLabel, watchReasonKo } from "./watchtext.ts";
 
 export type WatchOwner = { app?: string; project?: string; internal?: true };
@@ -59,6 +61,8 @@ export type Watch = {
 		reloginAt?: number; lifeMs?: number; // the last sign-in the gateway did itself, and the shortest session it has seen live
 		rejected?: number; // sign-ins the site rejected since the login last held: after 2 the gateway never types it again (accounts lock)
 		twoFactor?: boolean; // the site asked for a second factor: its form is never submitted again without the owner's yes (a submit may send the push)
+		healing?: { at: number; tries: number }; // a heal turn is out for the check script (hub/watch-heal.ts): failing runs only count until it is checked again
+		healDay?: string; healN?: number; // heal turns started on that day (install time zone), at most HEAL_MAX_TRIES
 	};
 };
 
@@ -109,7 +113,127 @@ let stopped = false;
 let offGate: (name: string) => boolean = () => false;
 export const setWatchGate = (fn: (name: string) => boolean) => void (offGate = fn);
 const save = () => writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
-let notify: (w: Watch, reason: string, output: string, prev?: string) => void = () => {};
+let notify: (w: Watch, reason: string, output: string, prev?: string, info?: NotifyInfo) => void = () => {};
+
+// Self-healing (design: a failing check script gets one model turn to fix the file; the gateway runs the same check again and a pass is one worklog line).
+export const HEAL_WAIT_MS = 30 * 60_000;
+const HEAL_MAX_TRIES = 2;
+const HEAL_BACKUPS = 5;
+const NOTE_MAX = 300;
+const NOTE_POLL_MS = 20_000;
+const PKG_DIR = join(import.meta.dir, "..");
+let healHandler: (w: Watch, turn: string) => void = () => {};
+let healedHandler: (w: Watch, note: string) => void = () => {};
+export const setHealHandler = (fn: (w: Watch, turn: string) => void) => void (healHandler = fn);
+export const setHealedHandler = (fn: (w: Watch, note: string) => void) => void (healedHandler = fn);
+const healTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const healWatchers = new Map<string, FSWatcher>();
+const healNotes = new Map<string, string>();
+const healChecking = new Set<string>();
+const notePath = (w: Watch) => join(stateDir(w), "heal-note.txt");
+const failLog = (w: Watch) => join(stateDir(w), "last-fail.log");
+const today = () => new Date(Date.now()).toLocaleDateString("en-CA", { timeZone: TZ });
+const healTriesToday = (w: Watch) => (w.state.healDay === today() ? (w.state.healN ?? 0) : 0);
+// Read at use, so a changed setting applies to the next failure.
+const healEnabled = () => (Reflect.get(cfg, "watch") as { self_heal?: unknown } | undefined)?.self_heal !== false;
+function readNote(w: Watch): string {
+	try {
+		return readFileSync(notePath(w), "utf8").replace(/\s+/g, " ").trim().slice(0, NOTE_MAX);
+	} catch {
+		return "";
+	}
+}
+function stopHeal(id: string): void {
+	clearTimeout(healTimers.get(id));
+	healTimers.delete(id);
+	healWatchers.get(id)?.close();
+	healWatchers.delete(id);
+}
+function stopAllHeals(): void {
+	for (const id of [...healTimers.keys(), ...healWatchers.keys()]) stopHeal(id);
+}
+// The wait for the turn: the note appearing in the state folder, or the time running out. A note already there (a restart) is taken at once.
+function armHeal(w: Watch, wait: number): void {
+	stopHeal(w.id);
+	const at = w.state.healing?.at;
+	const go = () => {
+		if (healTimers.has(w.id) && w.state.healing?.at === at) void finishHeal(w);
+	};
+	// fs.watch can miss a write (seen on macOS when the note lands right after the watcher starts), so the note is also looked for every NOTE_POLL_MS.
+	const deadline = Date.now() + wait;
+	const tick = () => {
+		if (readNote(w) || Date.now() >= deadline) return go();
+		healTimers.set(w.id, setTimeout(tick, Math.min(NOTE_POLL_MS, deadline - Date.now())));
+	};
+	healTimers.set(w.id, setTimeout(tick, 0));
+	try {
+		healWatchers.set(w.id, fsWatch(stateDir(w), (_event, name) => {
+			if ((!name || name === "heal-note.txt") && readNote(w)) go();
+		}));
+	} catch (error) {
+		log(`watch ${w.name} self-heal: cannot watch the state folder, waiting for the time limit: ${error}`);
+	}
+}
+const resumeHeal = (w: Watch) => {
+	if (w.state.healing) armHeal(w, Math.max(0, w.state.healing.at + HEAL_WAIT_MS - Date.now()));
+};
+// The same check once more: the next run of the watch counts as the verdict (runOnce reads healChecking).
+async function finishHeal(w: Watch): Promise<void> {
+	stopHeal(w.id);
+	if (stopped || !items.includes(w) || !w.state.healing) return;
+	const note = readNote(w);
+	healNotes.set(w.id, note);
+	log(`watch ${w.name} self-heal: ${note ? "note written" : "no note after the wait"}, checking again`);
+	await running.get(w.id);
+	healChecking.add(w.id);
+	await run(w);
+	if (healChecking.delete(w.id)) {
+		w.state.healing = undefined;
+		healNotes.delete(w.id);
+		save();
+	}
+}
+// Backs the file up, asks for the turn and starts waiting. false = no heal (setting off, no file to fix, or today's tries are used); the caller then notifies.
+function startHeal(w: Watch, output: string, code: number, cls: FailClass, tried: string): boolean {
+	if (!healEnabled()) return false;
+	const target = healTarget(w, PKG_DIR, DATA_DIR);
+	if ("refuse" in target) {
+		log(`watch ${w.name} self-heal: not started (${target.refuse})`);
+		return false;
+	}
+	if (healTriesToday(w) >= HEAL_MAX_TRIES) {
+		log(`watch ${w.name} self-heal: not started (${HEAL_MAX_TRIES} tries today)`);
+		return false;
+	}
+	const dir = join(stateDir(w), "heal");
+	mkdirSync(dir, { recursive: true });
+	const stamp = new Date(Date.now()).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+	let backup = join(dir, `${stamp}-${basename(target.file)}`);
+	for (let i = 2; existsSync(backup); i++) backup = join(dir, `${stamp}.${i}-${basename(target.file)}`);
+	copyFileSync(target.file, backup);
+	for (const old of readdirSync(dir).sort().slice(0, -HEAL_BACKUPS)) rmSync(join(dir, old), { force: true });
+	rmSync(notePath(w), { force: true });
+	const n = healTriesToday(w) + 1;
+	w.state.healDay = today();
+	w.state.healN = n;
+	w.state.healing = { at: Date.now(), tries: n };
+	save();
+	log(`watch ${w.name} self-heal: turn ${n} of ${HEAL_MAX_TRIES} today for ${target.file}, backup ${backup}`);
+	armHeal(w, HEAL_WAIT_MS);
+	const lastOk = w.state.lastOk;
+	const turn = msg().selfHealTurn({
+		label: plainLabel(w.label ?? w.name), code, cls, file: target.file, backup, tail: output, lastOk,
+		scriptAfterOk: lastOk ? statSync(target.file).mtimeMs > Date.parse(lastOk) : undefined,
+		okLines: (w.state.last ?? "").split("\n").slice(0, 5).join("\n").slice(0, 400),
+		attempt: n, max: HEAL_MAX_TRIES, notePath: notePath(w), ...(tried ? { tried } : {}),
+	});
+	try {
+		healHandler(w, turn);
+	} catch (error) {
+		log(`watch ${w.name} self-heal: the turn could not be sent: ${error}`);
+	}
+	return true;
+}
 
 // The check gets its own process group and the deadline SIGKILLs the whole group: killing only the shell left a
 // grandchild holding the output pipe, so the read waited for it (measured: `sleep 3 &` held a 0.5 s kill for 3 s).
@@ -295,12 +419,15 @@ async function runOnce(w: Watch): Promise<void> {
 		mkdirSync(stateDir(w), { recursive: true });
 		const env = { DOTZ_WATCH_STATE_DIR: stateDir(w), ...(w.approval_minutes ? { DOTZ_APPROVED: ok ? "1" : "0", DOTZ_APPROVAL_FILE: approvalFile(w) } : {}) };
 		const argv = w.script ? [w.script] : [WATCH_SHELL, "-lc", w.command];
-		const { code, output } = w.session ? await serialSessionRun(w, ok) : await exec(argv, w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env, undefined, k => killers.set(w.id, k));
+		const res = w.session ? await serialSessionRun(w, ok) : await exec(argv, w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env, undefined, k => killers.set(w.id, k));
+		const { code, output } = res;
+		const timedOut = "timedOut" in res && res.timedOut === true;
 		killers.delete(w.id);
 		if (cancelled.delete(w.id)) {
 			log(`watch ${w.name}: the running check was cancelled for a fresh approved run`);
 			return;
 		}
+		const verifying = healChecking.delete(w.id);
 		w.state.lastRun = now();
 		w.state.nextAt = undefined;
 		if (/^DOTZ_APPROVAL_USED\b/m.test(output)) rmSync(approvalFile(w), { force: true });
@@ -310,23 +437,41 @@ async function runOnce(w: Watch): Promise<void> {
 			w.state.kind = kind;
 			if (!w.state.fails) w.state.failSince = Date.now();
 			w.state.fails++;
-			log(`watch ${w.name} failed (${code}, ${kind}, ${w.state.fails} in a row)`);
+			const cls = classifyFailure({ output, code, timedOut, kind });
+			log(`watch ${w.name} failed (${code}, ${kind}, ${w.state.fails} in a row) ${cls}`);
+			try {
+				writeFileSync(failLog(w), output);
+			} catch (error) {
+				log(`watch ${w.name} could not write last-fail.log: ${error}`);
+			}
+			const info: NotifyInfo = { cls, log: failLog(w) };
+			if (verifying) {
+				const note = healNotes.get(w.id) ?? "";
+				healNotes.delete(w.id);
+				w.state.healing = undefined;
+				if (cls === "script" && startHeal(w, output, code, cls, note)) return;
+				log(`watch ${w.name} self-heal: the check still fails, telling the owner`);
+				w.state.failAlertAt = Date.now();
+				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output, undefined, { ...info, ...(note ? { note } : {}) });
+				return;
+			}
+			if (w.state.healing) return;
 			if (kind === "approval" && w.approval_minutes) {
 				if (!w.state.approvalAskedAt) {
 					w.state.approvalAskedAt = Date.now();
-					notify(w, w.session ? `needs the owner's approval for a second factor (다시 연결 or dotz_watch approve ${w.name}, valid ${w.approval_minutes} min)` : `needs the owner's approval first (dotz_watch approve ${w.name}, valid ${w.approval_minutes} min)`, output);
+					notify(w, w.session ? `needs the owner's approval for a second factor (다시 연결 or dotz_watch approve ${w.name}, valid ${w.approval_minutes} min)` : `needs the owner's approval first (dotz_watch approve ${w.name}, valid ${w.approval_minutes} min)`, output, undefined, info);
 				}
 				return;
 			}
 			if (w.state.fails >= FAIL_PAUSE_RUNS && Date.now() - (w.state.failSince ?? Date.now()) >= FAIL_PAUSE_AFTER_MS) {
 				w.state.paused = kind;
-				notify(w, `stopped after ${w.state.fails} failures in a row over a day; it runs again once the owner approves (dotz_watch approve ${w.name}) or the watch is added again`, output);
+				notify(w, `stopped after ${w.state.fails} failures in a row over a day; it runs again once the owner approves (dotz_watch approve ${w.name}) or the watch is added again`, output, undefined, info);
 				return;
 			}
 			const wait = w.retry?.[kind];
 			if (wait && !wait.length) {
 				w.state.paused = kind;
-				notify(w, `stopped after a ${kind} failure; it runs again once the owner approves (dotz_watch approve ${w.name}) or the watch is added again`, output);
+				notify(w, `stopped after a ${kind} failure; it runs again once the owner approves (dotz_watch approve ${w.name}) or the watch is added again`, output, undefined, info);
 				return;
 			}
 			if (wait) w.state.nextAt = Date.now() + wait[Math.min(wait.length, w.state.kindFails) - 1] * 60_000;
@@ -334,17 +479,25 @@ async function runOnce(w: Watch): Promise<void> {
 			const flapping = w.state.recoveredAt !== undefined && since - w.state.recoveredAt < flapWindow(w);
 			const due = toldDown(w.state) ? Date.now() - w.state.failAlertAt! > FAIL_ALERT_EVERY_MS : !flapping || Date.now() - since >= flapWindow(w);
 			if (w.state.fails >= FAIL_ALERT_AFTER && due) {
+				if (cls === "script" && startHeal(w, output, code, cls, "")) return;
 				w.state.failAlertAt = Date.now();
-				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output);
+				notify(w, `failed ${w.state.fails} times in a row (exit ${code})`, output, undefined, info);
 			}
 			return;
 		}
-		if (toldDown(w.state)) notify(w, "recovered", output);
+		const healedBy = verifying && w.state.healing ? (healNotes.get(w.id) ?? "") : undefined;
+		healNotes.delete(w.id);
+		if (healedBy === undefined && toldDown(w.state)) notify(w, "recovered", output);
 		if (w.state.fails && w.state.failAlertAt !== undefined) w.state.recoveredAt = Date.now();
 		w.state.fails = 0;
 		w.state.failSince = undefined;
 		w.state.kind = w.state.kindFails = w.state.approvalAskedAt = undefined;
 		w.state.lastOk = now();
+		if (healedBy !== undefined) {
+			w.state.healing = undefined;
+			log(`watch ${w.name} self-heal: the check passes again`);
+			healedHandler(w, healedBy);
+		}
 		// a kept login with a learned life is checked again at half of it (sessionGapMs), not only every every_minutes
 		if (w.session && w.state.lifeMs) w.state.nextAt = Date.now() + sessionGapMs(w).check;
 		const hash = createHash("sha256").update(output).digest("hex").slice(0, 16);
@@ -392,6 +545,7 @@ export function stopWatches(): void {
 	stopped = true;
 	for (const t of timers.values()) clearTimeout(t);
 	timers.clear();
+	stopAllHeals();
 }
 
 export function runWatch(idOrName: string): Promise<void> {
@@ -426,15 +580,22 @@ export function approveWatch(idOrName: string): Watch {
 export function startWatches(handler: typeof notify): void {
 	notify = handler;
 	stopped = false;   // a start after stopWatches (tests share this module) re-arms edits and resumes too
-	for (const w of items) arm(w, true);
+	for (const w of items) {
+		arm(w, true);
+		resumeHeal(w);
+	}
 }
 
 // What a gateway restart does: the watches come back from watches.json (their state folders stay on disk) and are armed again.
 export function reloadWatches(): void {
 	for (const t of timers.values()) clearTimeout(t);
 	timers.clear();
+	stopAllHeals();
 	items.splice(0, items.length, ...loadItems());
-	for (const w of items) arm(w, true);
+	for (const w of items) {
+		arm(w, true);
+		resumeHeal(w);
+	}
 }
 
 // The first comment line of a script ("# 재고 확인"), which says what the check is for; "" when there is none.
@@ -545,6 +706,9 @@ export function removeWatch(idOrName: string): boolean {
 	if (i < 0) return false;
 	clearTimeout(timers.get(items[i].id));
 	timers.delete(items[i].id);
+	stopHeal(items[i].id);
+	healNotes.delete(items[i].id);
+	healChecking.delete(items[i].id);
 	rmSync(stateDir(items[i]), { recursive: true, force: true });
 	items.splice(i, 1);
 	save();

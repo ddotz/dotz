@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { IDENTITY_FILE, NAME, paths, tzLabel } from "./config.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import type { FileText, HelpText, LaneFooterArgs, RecallArgs, SettingText, WorktreeArgs } from "./i18n.ts";
+import type { FailClass, HealTurnArgs } from "./watch-heal.ts";
 
 const TOPIC_LABELS: Record<string, string> = { linebreak: "line breaks", copy: "copy and tone", "no-card": "questions without a card", duplicate: "duplicate features", stalled: "stalls and lost reports", misread: "misread instructions", "missing-output": "output not visible", ui: "screens and design", "ignored-setting": "ignored settings", "not-applied": "not applied or half verified", other: "other" };
 
@@ -307,6 +308,16 @@ export const en = {
 	textsReport: (lines: string) => `[dotz gateway] Some of this install's text overrides (<data dir>/custom/texts.json) no longer fit this version:\n${lines}\nRe-check each one against the new shipped text (bun hub/texts-cli.ts show <key>), then rewrite it with \`bun hub/texts-cli.ts set <key> --file <file>\` or delete the entry. This notice comes once per problem. Tell the owner in one line what you changed.`,
 	carryOver: (where: string, read: string, stat: string, files: string) => `[dotz update] Changes made directly in this install's dotz code were saved before the update (this notice comes once per backup). Saved: ${where}\nChanged: ${stat}\n${files}\nDo this: 1) Read the diff with \`${read}\`. 2) Move each change to the custom layer where it fits: texts to <data dir>/custom/texts.json (bun hub/texts-cli.ts), features to <data dir>/features, rules to RULES.md. 3) For a change that only makes sense in dotz core, write a Korean report for the dotz maintainer in the worklog, with all personal and sensitive content removed, de-identified and generalised but still detailed (symptom, steps, expected, actual, version), and offer to open a GitHub issue on ddotz/dotz. 4) Then tell the owner in one message what was carried over and what was not. Never edit the dotz code.`,
 	cardAudit: (closed: number, refreshed: number, open: number) => `[dotz update] This update audits this install's cards once. The gateway closed ${closed} card(s) the send records prove went out and refreshed ${refreshed}. ${open} card(s) are open.\nRead mail, reply drafts, comments, website direct messages, KakaoTalk, sns jobs, the approval queue and notices, and compare them with the send records. How to read each app is in features/<app>/feature.md; read cards with GET /api/notices and GET /api/approvals.\n- Send nothing outside. Do not resend, approve or discard. Run no send command.\n- Close only cards the send records prove went out (ids of POST /api/notices/resolve).\n- Keep every other card open. When one no longer matches its draft, refresh only the card so 보내기 works.\n- At the end give the owner a short summary in this conversation: cards closed, cards left, what they should look at. This audit does not come again.`,
+	watchIssue: {
+		cls: { script: "The check script has an error", outside: "An outside service (network or server) has a problem", owner: "A login or an approval is needed", unknown: "The cause is not known" } satisfies Record<FailClass, string>,
+		tried: (note: string) => `It tried to fix itself, but that did not work: ${note}`,
+		log: (path: string) => `Log: ${path}`,
+	},
+	selfHealTurn: (a: HealTurnArgs) => {
+		const fence = (text: string) => `\`\`\`\n${text.replace(/```/g, "'''")}\n\`\`\``;
+		const edited = a.scriptAfterOk === undefined ? "" : a.scriptAfterOk ? " The script was edited after that." : " The script has not been edited since.";
+		return `[dotz watch fix] The check script of watch "${a.label}" failed (exit code ${a.code}, class ${a.cls}). This is attempt ${a.attempt} of ${a.max} today.\nFile to fix: ${a.file}\nBackup: ${a.backup}\nEnd of the last output:\n${fence(a.tail)}\nLast success: ${a.lastOk ?? "none recorded"}.${edited}${a.okLines ? `\nFirst lines of its output then:\n${fence(a.okLines)}` : ""}${a.tried ? `\nWhat was tried last time: ${a.tried}` : ""}\n- Change only this file.\n- Do not read or write the secrets folder or any secret value.\n- Do nothing that goes out to others (mail, messages, posts) and make no login or second-factor attempt.\n- Do not run the script; the gateway runs it again. A syntax check (bash -n, bun build --no-bundle) is fine.\n- Finish in this turn, with no subtasks and no [later].\n- If the cause is not the script, change nothing and say why in the note.\nTo finish: write one line "what, why" to ${a.notePath}, then answer "-" alone.`;
+	},
 	inboxSchedule: (id: string, every: number | undefined, channel: string) => `[dotz inbox] scheduled (${id}${every ? `, every ${every} min` : ""}) - do it now; your final answer goes to ${channel}:`,
 	inboxCheck: (ids: string[], channel: string) => `[dotz inbox] quiet check (${ids.join(", ")}) - not something the owner asked for but a system check you set yourself${ids.length > 1 ? `. ${ids.length} fall at the same time, so they come as one turn: go through them in order and write one answer` : ""}. If everything is normal, answer one plain line (it is kept quietly in the worklog only). Start the answer with [ask] or [fail] only when the owner must decide or must know. If there is nothing to say, answer \"-\" alone. Your final answer goes to ${channel}:`,
 	scheduleCheckLine: (text: string) => `${SCHEDULE_CHECK_LEAD} ${text}`,
@@ -414,6 +425,7 @@ Do this, briefly:
 			"token_audit_at": { label: "Token audit time", hint: "HH:MM or off" },
 			"omp_update.mode": { label: "Update mode", options: { check: "Notify of new versions only", install: "Install automatically and restart", off: "Off" } },
 			"omp_update.at": { label: "Update check time", hint: "HH:MM or off" },
+			"watch.self_heal": { label: "Fix monitoring scripts by itself", hint: "When a check script fails with a script error, the assistant gets one try to fix that one file and the gateway checks again. Off: you are only notified" },
 			"backup.remote": { label: "Backup repository address", hint: "If empty, snapshots stay on this computer only. Files containing secrets are never uploaded" },
 			"output_language.mode": { label: "Output language check", options: { rewrite: "Rewrite if in another language", off: "Off" } },
 			"output_language.model": { label: "Model for rewriting", hint: "If empty, omp's default small model" },

@@ -114,6 +114,8 @@ const DEFS = new Map<string, Def>([
 	["omp_update.at", { type: "text", applies: "restart", default: DEFAULTS.update_at }],
 	// reflect.ts reads backup.remote on every snapshot
 	["backup.remote", { type: "text", applies: "live", mirror: true, default: "" }],
+	// watch.ts reads watch.self_heal at each failure
+	["watch.self_heal", { type: "bool", applies: "live", mirror: true, default: true }],
 	// outlang.ts
 	["output_language.mode", { type: "select", applies: "live", mirror: true, default: "rewrite", options: ["rewrite", "off"] }],
 	["output_language.model", { type: "text", applies: "live", mirror: true, default: "" }],
@@ -329,7 +331,7 @@ export async function harnessGraph(opts: { terminals?: number; light?: boolean }
 		{
 			id: "watch", kind: "channel", group: "flow", label: N.watch.label, status: failing ? "warn" : watches.length ? "ok" : "off", summary: watches.length ? N.watch.summary(watches.length, failing) : N.watch.none,
 			desc: N.watch.desc(FAIL_ALERT_AFTER, dur(FAIL_ALERT_EVERY_MS)),
-			facts: [{ label: N.watch.watches, value: c.count(watches.length) }, { label: N.watch.setups, value: c.count(setups.length) }, { label: N.watch.failing, value: c.count(failing) }], settings: [],
+			facts: [{ label: N.watch.watches, value: c.count(watches.length) }, { label: N.watch.setups, value: c.count(setups.length) }, { label: N.watch.failing, value: c.count(failing) }], settings: [S("watch.self_heal")],
 		},
 		{
 			id: "mail", kind: "channel", group: "flow", label: N.mail.label, status: mailState === "on" ? "ok" : "off", summary: mailState === "on" ? N.mail.summary(disk.zele?.poll_sec ?? DEFAULTS.zele_poll_sec, disk.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : mailState === "off" ? c.disabled : N.mail.missing,

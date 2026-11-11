@@ -3,7 +3,10 @@
 // JSON, a tool's English error): it never goes in the prose. A one-line summary is derived where that is generic (see watchSummary), and
 // the raw text folds under a "원문" fence that the web renders collapsed (web/js/11-watchtext.js mirrors this file, 02-basic-markdown.js
 // folds the fence) and Discord shows as a code block.
+import { homedir } from "node:os";
 import { TZ } from "./config.ts";
+import { msg } from "./i18n.ts";
+import type { NotifyInfo } from "./watch-heal.ts";
 import { SLOT_SKIPPED_EXIT } from "./release-exit.ts";
 
 // The words the gateway writes for a lost login, its recovery and a check that found nothing new. hub/notice-class.ts reads them back
@@ -295,6 +298,21 @@ export function watchLine(label: string, reason: string, output = "", opts: Line
 	if (shown) lines.push(shown);
 	if (opts.raw !== false) lines.push(rawFence(out));
 	return lines.join("\n");
+}
+
+// The owner's text for a failure, plain: the reason as today, one line of why (by class, or the output's own first line when it is short plain Korean),
+// what a heal tried, and where the output was kept. Never the output body, a fence or a stack.
+const STACKISH = /(?:^|\s)at\s|\b\w*(?:Error|Exception)\b|Traceback|:\d+:\d+|\.(?:ts|js|mjs|py|sh):\d+|node_modules|^\s*[{[]/;
+const homeShown = (path: string): string => {
+	const home = process.env.HOME ?? homedir();
+	return home && path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+};
+export function watchIssueLine(label: string, reason: string, info: NotifyInfo | undefined, output = ""): string {
+	const t = msg().watchIssue;
+	const first = output.replace(ANSI, "").split("\n").map(l => l.trim()).find(l => l && !l.startsWith("DOTZ_"));
+	const said = first && HANGUL.test(first) && first.length <= 100 && !STACKISH.test(first) ? first : undefined;
+	const why = said ?? (info ? t.cls[info.cls] : undefined);
+	return [`${humanLabel(label)}: ${watchReasonKo(reason)}`, ...(why ? [why] : []), ...(info?.note ? [t.tried(info.note)] : []), ...(info ? [t.log(homeShown(info.log))] : [])].join("\n");
 }
 
 // The key of a watch ("acme-login", "ch-1234-2") as words the owner reads: known English words become Korean, other words (a site, a product)

@@ -66,10 +66,10 @@ import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoo
 import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
 import { pendingBackups } from "./carryover.ts";
 import { clearChannel, endStanding, lapseStandings, nameWatches, setupChannel, wakeOnly, watchLabel, watchWakeEvent } from "./workchannels.ts";
-import { watchLine } from "./watchtext.ts";
+import { watchIssueLine, watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { addWatch, allWatches, approveWatch, isWatchIssue, setWatchGate, startWatches, stopWatches, type Watch, wakeTarget, watchChoice } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, isWatchIssue, setHealedHandler, setHealHandler, setWatchGate, startWatches, stopWatches, type Watch, wakeTarget, watchChoice } from "./watch.ts";
 import { watchOwner } from "./app-features.ts";
 import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginMailThread, pluginThread, startPlugins } from "./plugins.ts";
@@ -623,7 +623,7 @@ const watchRoute = (w: Watch) => {
 	const own = app ? (app.split("-")[0] === "mail" ? undefined : readAppsFile(DATA_DIR)[app]?.discord) : w.discord;
 	return typeof own === "boolean" ? { discord_route: own } : {};
 };
-startWatches((w, reason, output, prev) => {
+startWatches((w, reason, output, prev, info) => {
 	if (w.to === "orchestrator") {
 		const event = watchWakeEvent(w, reason, output, prev);
 		const quiet = wakeOnly(w, reason, orchestratorAvailable());
@@ -633,14 +633,20 @@ startWatches((w, reason, output, prev) => {
 		if (!w.channels?.length) return deliver(wake, target ? { target } : undefined);
 		const [first, ...others] = w.channels;
 		endStanding(first, "once");
-		if (!quiet) for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway", news: true, ...watchRoute(w) }).catch(() => undefined);
+		if (!quiet) for (const c of others) void out(`ch:${c}`, (isWatchIssue(reason) ? watchIssueLine(event.label, reason, info, output) : watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev })).slice(0, 1900), undefined, { source: "gateway", news: true, ...watchRoute(w) }).catch(() => undefined);
 		return deliver(wake, { target: target ?? `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, watchLine(label, reason, output, { prev }).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label, reason)}` : ""), undefined, { source: "gateway", news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, (issue ? watchIssueLine(label, reason, info, output) : watchLine(label, reason, output, { prev })).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label, reason)}` : ""), undefined, { source: "gateway", news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
+// A watch whose check script broke (hub/watch.ts): the fix turn goes quietly to the watch's conversation (or main), and a fix that held is one worklog line.
+setHealHandler((w, turn) => {
+	const target = wakeTarget(w);
+	deliver(turn, target ? { target } : undefined);
+});
+setHealedHandler((w, note) => void out(discord.status.enabled ? "worklog" : "web", `스스로 고쳤어요: ${watchLabel(w.name)}${note ? `: ${note}` : ""}`, undefined, { source: "gateway", wk: "system" }).catch(e => log(`watch ${w.name} heal notice failed: ${e}`)));
 setInterval(() => lapseStandings(s => void out(`ch:${s.channel}`, `이 채널의 자동 처리 기한이 끝났어요: ${s.standing}\n모니터링은 계속 돌아요. 앞으로 깨어나면 먼저 여쭤볼게요.`, undefined, { source: "gateway", news: true }).catch(e => log(`standing notice failed: ${e}`))), 60_000);
 syncFeatureWatches();
 startKakaoLive();
