@@ -481,7 +481,7 @@ function rqScreen(qSel, box, tl) {
     if (!pane) RQ.top = null;
     MON.sig = sig; MON.shown = qSel.key;
     clear($("#mon-head")).append(...monHead(qSel));
-    clear(tl).append(...(pane ? [RQ.sheet.box] : rqNodes()));
+    if (!(pane && tl.firstElementChild === RQ.sheet.box)) clear(tl).append(...(pane ? [RQ.sheet.box] : rqNodes()));   // an open pane already stands there: drawn again it would lose the focus
     box.scrollTop = keep;
     rowHold(anchor);
     edgeFade(box);
@@ -510,7 +510,7 @@ function rqSheetOpen(r) {
 }
 function rqSheetPaint(found) {
   const h = RQ.sheet;
-  if (!h) return;
+  if (!h || h.tr) return;   // 빠른 처리 (30-triage.js) draws its own pane
   const r = found || rqRows().find(x => x.key === RQ.cur) || (RQ.just.has(RQ.cur) ? rqAskRow(RQ.just.get(RQ.cur)) : null);
   if (!r) { h.close(false); return; }   // its item left: answered, sent, dropped
   const sig = JSON.stringify([r.state, r.why, rqXSig(r), RQ.edit === r.key, RQ.busy.has(r.key), RQ.just.has(r.key)]);

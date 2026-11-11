@@ -30,7 +30,7 @@ const hub = fakeHub({
 	stream: "fake",
 	api: async (req, url) => {
 		const p = url.pathname;
-		if (p === "/api/approvals" && req.method === "GET") return json({ groups: GROUPS, results: [], triageMin: 3 });
+		if (p === "/api/approvals" && req.method === "GET") return json({ groups: GROUPS, results: [], triageMin: 2 });
 		if (p === "/api/approvals" && req.method === "POST") {
 			reqs.push({ method: "POST", path: p, body: (await req.json()) as Record<string, unknown> });
 			waiters = waiters.filter(w => (reqs.length >= w.n ? (w.res(), false) : true));
@@ -42,6 +42,10 @@ const hub = fakeHub({
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
+		if (p === "/api/replies") return json({ items: [], failed: [], sent: [], stops: {} });
+		if (p === "/api/conversations") return json({ items: [] });
+		if (p === "/api/monitors") return json({ items: [] });
+		if (p === "/api/integrations") return json({ items: [] });
 	},
 });
 afterAll(() => { hub.stop(); });
@@ -60,6 +64,137 @@ const boot = async (v: View) => {
 	await run(v, `trOpen("*")`);
 	await waitFor(v, `TR.h && document.querySelector(".tr .tr-body")`);
 };
+
+const GROUPS_READY = `typeof TR !== "undefined" && S && RQ.loaded && TR.groups.length === 2`;
+const openQueue = async (v: View) => {
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
+	await opened;
+	await waitFor(v, `typeof TR !== "undefined" && S && RQ.loaded && NM.loaded`);
+	await run(v, `trLoad()`);
+	await waitFor(v, GROUPS_READY);
+	await run(v, `go("monitoring", RQ_KEY)`);
+	await waitFor(v, `current === "monitoring" && MON.sel === RQ_KEY && document.querySelectorAll(".rq-r").length === 3 && document.querySelector(".rq-fast:not([hidden])")`);
+};
+type Frame = { x: number; r: number; t: number; h: number; hdPl: number; hdPr: number; hdPt: number; hdPb: number; bodyPl: number; bodyPr: number; btnX: number };
+// the box of a screen in the right column and its insets, relative to its own left edge, so two screens compare without pinning a number
+const frame = (v: View, sel: string) => q<Frame>(v, `const root = document.querySelector(${JSON.stringify(sel)}), b = root.getBoundingClientRect(), cs = e => getComputedStyle(e), hd = cs(root.querySelector(".fs-hd")), body = cs(root.querySelector(".rq-sb, .fs-body")), btn = root.querySelector(".rq-acts button, .tr-acts button");
+	return { x: Math.round(b.left), r: Math.round(b.right), t: Math.round(b.top), h: Math.round(b.height), hdPl: parseFloat(hd.paddingLeft), hdPr: parseFloat(hd.paddingRight), hdPt: parseFloat(hd.paddingTop), hdPb: parseFloat(hd.paddingBottom), bodyPl: parseFloat(body.paddingLeft), bodyPr: parseFloat(body.paddingRight), btnX: Math.round(btn.getBoundingClientRect().left - b.left) }`);
+const TRBOX = ".tr-pane, .fs-card.tr";
+const still = (v: View) => waitFor(v, `document.getAnimations().length === 0`);
+
+describe("빠른 처리 in the 모니터링 frame at 1280", async () => {
+	const v = await hub.view({ width: 1280, height: 900 });
+
+	test("opens in the right column with the reply card's edges and insets, the list stays at the left, and there is no backdrop", async () => {
+		await openQueue(v);
+		await run(v, `document.querySelector(".rq-r .tx").click()`);
+		await waitFor(v, `RQ.sheet && RQ.sheet.pane && document.querySelector(".rq-pane .rq-acts")`);
+		await still(v);
+		const reply = await frame(v, ".rq-pane");
+		await run(v, `RQ.sheet.close()`);
+		await waitFor(v, `!RQ.sheet && !document.querySelector(".rq-pane") && document.querySelectorAll(".rq-r").length === 3`);
+		await run(v, `document.querySelector(".rq-fast").click()`);
+		await waitFor(v, `TR.h && document.querySelector(".tr-acts") && document.querySelector(".tr-ta")`);
+		await still(v);
+		const tr = await frame(v, TRBOX);
+		expect({ x: tr.x, r: tr.r, t: tr.t }).toEqual({ x: reply.x, r: reply.r, t: reply.t });
+		expect({ hdPl: tr.hdPl, hdPr: tr.hdPr, hdPt: tr.hdPt, hdPb: tr.hdPb, bodyPl: tr.bodyPl, bodyPr: tr.bodyPr, btnX: tr.btnX }).toEqual({ hdPl: reply.hdPl, hdPr: reply.hdPr, hdPt: reply.hdPt, hdPb: reply.hdPb, bodyPl: reply.bodyPl, bodyPr: reply.bodyPr, btnX: reply.btnX });
+		const side = await q<{ backdrops: number; on: string; w: number; inView: boolean }>(v, `const row = document.querySelector("#mon-side .cv-row.on"), b = row.getBoundingClientRect(); return { backdrops: document.querySelectorAll(".fs-bd, dialog[open]").length, on: row.textContent, w: b.width, inView: b.left >= 0 && b.right <= innerWidth }`);
+		expect(side.backdrops).toBe(0);
+		expect(side.on).toContain("답장 대기");
+		expect(side.w).toBeGreaterThan(0);
+		expect(side.inView).toBe(true);
+	});
+
+	test("the row of the card being answered is the marked one; Esc, the app's back and the browser's back each close it one step", async () => {
+		await openQueue(v);
+		await run(v, `document.querySelector(".rq-fast").click()`);
+		await waitFor(v, `TR.h && document.querySelector(".tr-acts")`);
+		await key(v, "ArrowRight");
+		const ref = await q<string>(v, `return TR.items[TR.i].ref`);
+		expect(await q<string>(v, `return RQ.mark`)).toBe(`t:main|${ref}`);
+		const close = {
+			esc: `document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`,
+			back: `document.querySelector("#back").click()`,
+			history: `history.back()`,
+		};
+		for (const how of ["esc", "back", "history"] as const) {
+			await run(v, close[how]);
+			await waitFor(v, `!TR.h && !RQ.sheet && document.querySelectorAll(".rq-r").length === 3`);
+			const st = await q<{ current: string; sel: string; marked: string[] }>(v, `return { current, sel: MON.sel, marked: [...document.querySelectorAll(".rq-r.on")].map(r => r.dataset.qr) }`);
+			expect(st).toEqual({ current: "monitoring", sel: "replies", marked: [`t:main|${ref}`] });
+			if (how !== "history") { await run(v, `document.querySelector(".rq-fast").click()`); await waitFor(v, `TR.h && document.querySelector(".tr-acts")`); await key(v, "ArrowRight"); }   // opened again at the first card: the same one as before is the second
+		}
+	});
+
+	test("the shortcuts answer from the screen but stay silent while a text field elsewhere holds the focus", async () => {
+		await openQueue(v);
+		await run(v, `document.querySelector(".rq-fast").click()`);
+		await waitFor(v, `TR.h && document.querySelector(".tr-acts")`);
+		await run(v, `const i = document.createElement("input"); i.id = "elsewhere"; document.body.append(i); i.focus();
+			for (const init of [{ key: "1" }, { key: "x" }, { key: "ArrowRight" }, { key: "Enter", metaKey: true }]) i.dispatchEvent(new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true }))`);
+		expect(await pos(v)).toBe("1/3");
+		expect(reqs).toHaveLength(0);
+		await run(v, `document.querySelector("#elsewhere").remove(); TR.h.box.focus()`);
+		await run(v, `TR.h.box.dispatchEvent(new KeyboardEvent("keydown", { key: "1", bubbles: true, cancelable: true }))`);
+		await arrived(1);
+		await waitFor(v, `document.querySelector(".tr-pos").firstChild.textContent === "2/3"`);
+		expect(reqs[0]!.body).toEqual({ items: [{ ref: "Dxyz789", to: "main", n: 1, label: "보내기" }] });
+		await run(v, `TR.h.close()`);
+	});
+});
+
+describe("빠른 처리 list choices", async () => {
+	const v = await hub.view({ width: 390, height: 844 });
+	const openList = async () => {
+		await openQueue(v);
+		await run(v, `document.querySelector(".rq-fast").click()`);
+		await waitFor(v, `TR.h && document.querySelector(".tr-acts")`);
+		await run(v, `document.querySelector(".tr-tog").click()`);
+		await waitFor(v, `document.querySelectorAll(".tr-row .tr-seg").length === 3`);
+	};
+
+	test("at 390 it is the whole screen, with no key hint and every action at least 44 tall", async () => {
+		await openQueue(v);
+		await run(v, `document.querySelector(".rq-fast").click()`);
+		await waitFor(v, `TR.h && document.querySelector(".tr-acts")`);
+		await still(v);
+		const one = await q<{ box: number[]; vw: number; vh: number; backdrop: number; hint: string; small: string[] }>(v, `const r = document.querySelector(".fs-card.tr").getBoundingClientRect(), k = document.querySelector(".tr-keys");
+			return { box: [r.left, r.top, r.width, r.height].map(Math.round), vw: innerWidth, vh: innerHeight, backdrop: document.querySelectorAll(".tr-pane").length, hint: k ? getComputedStyle(k).display : "none", small: [...document.querySelectorAll(".tr button, .tr textarea")].filter(b => b.offsetParent && b.getBoundingClientRect().height < 44).map(b => b.className + ":" + b.textContent.trim()) }`);
+		expect(one.box).toEqual([0, 0, one.vw, one.vh]);
+		expect(one.backdrop).toBe(0);
+		expect(one.hint).toBe("none");
+		expect(one.small.filter(s => !s.startsWith("tr-ta") && !s.includes("tr-tog") && !s.includes("fs-x") && !s.includes("tr-note"))).toEqual([]);
+		await run(v, `document.querySelector(".tr-tog").click()`);
+		await waitFor(v, `document.querySelectorAll(".tr-row .tr-seg").length === 3`);
+		const list = await q<{ hint: string; segs: { h: number; cls: string; bg: string; w: number }[] }>(v, `const k = document.querySelector(".tr-keys"); return { hint: k ? getComputedStyle(k).display : "none", segs: [...document.querySelectorAll(".tr-row")[0].querySelectorAll(".tr-sg")].map(b => ({ h: Math.round(b.getBoundingClientRect().height), cls: b.className, bg: getComputedStyle(b).backgroundColor, w: Math.round(b.getBoundingClientRect().width) })) }`);
+		expect(list.hint).toBe("none");
+		expect(list.segs).toHaveLength(3);
+		for (const sg of list.segs) expect(sg.h).toBeGreaterThanOrEqual(44);
+		expect(new Set(list.segs.map(sg => sg.cls)).size).toBe(1);   // one control for the three choices, none of them filled before a press
+		expect(new Set(list.segs.map(sg => sg.bg)).size).toBe(1);
+		expect(new Set(list.segs.map(sg => sg.w)).size).toBe(1);
+		await run(v, `TR.h.close()`);
+	});
+
+	test("no choice is marked before a press, and the third choice only leaves the card waiting: its word says so and it posts nothing", async () => {
+		await openList();
+		const before = await q<{ marked: number; words: string[]; checked: string[] }>(v, `return { marked: document.querySelectorAll(".tr-sg.on").length, words: [...document.querySelectorAll(".tr-row")[0].querySelectorAll(".tr-sg")].map(b => b.textContent), checked: [...document.querySelectorAll(".tr-sg")].map(b => b.getAttribute("aria-checked")).filter(c => c === "true") }`);
+		expect(before.marked).toBe(0);
+		expect(before.checked).toEqual([]);
+		expect(before.words).toEqual(["보내기", "고치기", "건너뛰기"]);
+		await run(v, `const rows = document.querySelectorAll(".tr-row"); rows[0].querySelectorAll(".tr-sg")[2].click()`);
+		await waitFor(v, `document.querySelectorAll(".tr-row")[0].querySelectorAll(".tr-sg")[2].getAttribute("aria-checked") === "true"`);
+		await run(v, `document.querySelectorAll(".tr-row")[1].querySelectorAll(".tr-sg")[0].click()`);
+		await waitFor(v, `!document.querySelector(".tr-batch").disabled`);
+		await run(v, `document.querySelector(".tr-batch").click()`);
+		await arrived(1);
+		expect(reqs).toHaveLength(1);
+		expect(reqs[0]!.body).toEqual({ items: [{ ref: "Dabc234", to: "main", n: 1, label: "보내기" }] });   // the skipped card (Dxyz789) and the unchosen one are not in it
+		await run(v, `TR.h.close()`);
+	});
+});
 
 describe("review queue", async () => {
 	const v = await hub.view({ width: 390, height: 844 });

@@ -4,8 +4,13 @@
 
 /* the prototype's #triage: a compact card that is as tall as its draft, not a screen-high dialog */
 .fs-card.tr { width: min(680px, calc(100% - 48px)); height: auto; max-height: min(92dvh, 820px); }
-.tr .tr-pos { display: flex; align-items: baseline; gap: var(--sp-05); font-variant-numeric: tabular-nums; }
-.tr .tr-sum { color: var(--fg-3); font: 500 14px/20px var(--font); }
+/* a wide 모니터링: the screen stands in the right column like the reply card (.rq-pane, 15-reply-card.css), with the same insets */
+.tr-pane { --fs-fill: var(--layer); color: var(--fg); }
+.tr-pane:focus { outline: 0; }
+.tr-pane .fs-body { padding: 0 var(--sp-4) var(--sp-4); }
+.tr-pane .fs-ft { padding: var(--sp-3) var(--sp-4) var(--sp-4); }
+.tr .tr-pos, .tr-pane .tr-pos { display: flex; align-items: baseline; gap: var(--sp-05); font-variant-numeric: tabular-nums; }
+.tr .tr-sum, .tr-pane .tr-sum { color: var(--fg-3); font: 500 14px/20px var(--font); }
 .tr-bar { height: 4px; margin-top: var(--sp-15); border-radius: 2px; background: var(--track); overflow: hidden; }
 .tr-bar > span { display: block; height: 100%; background: var(--accent); transition: width var(--m-slow) var(--m-ease); }
 .tr-tog { gap: var(--sp-1); }
@@ -53,9 +58,9 @@
 .tr-rb { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; color: var(--fg); cursor: pointer; }
 .tr-rb.open { display: block; -webkit-line-clamp: none; }
 .tr-rb.mail { padding-top: var(--sp-2); border-top: 1px solid var(--line); color: var(--fg-2); }
-.tr-seg { display: flex; gap: var(--sp-1); padding: 3px; /* nudge: 3px tray keeps the 12px corner concentric with the 9px cells */ border-radius: 12px; background: var(--card); align-self: flex-start; }
-.tr-sg { min-height: 36px; padding: 0 var(--sp-3); border: 0; border-radius: 9px; background: transparent; color: var(--fg-2); font: 600 13px/20px var(--font); cursor: pointer; }
-.tr-sg.on { background: var(--accent); color: var(--on-accent); }
+.tr-seg { display: flex; gap: var(--sp-2); align-self: flex-start; }
+.tr-sg { min-height: 40px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-ctl); background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--fg-2); font: 600 13px/20px var(--font); cursor: pointer; }   /* three equal outlined choices; only a pressed one is filled */
+.tr-sg.on { background: var(--accent); box-shadow: none; color: var(--on-accent); }
 .tr-sg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tr-rn { min-height: 40px; padding: 0 var(--sp-3); border: 0; border-radius: 10px; background: var(--ff-fill); color: var(--fg); font: 400 14px/20px var(--font); }
 .tr-rn:focus { outline: 0; box-shadow: var(--ff-ring); }
@@ -65,6 +70,7 @@
   .tr-b, .tr-go { height: 44px; padding: 0 var(--sp-4); }
   .tr-list .tr-seg { align-self: stretch; }
   .tr-sg { flex: 1; min-height: 44px; }
+  .tr-rh, .tr-rn { min-height: 44px; }
 }
 @media (pointer: coarse) { .tr-keys { display: none; } }
 .tr-post { color: var(--fg); font: 600 13px/20px var(--font); }

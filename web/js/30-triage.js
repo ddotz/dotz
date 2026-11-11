@@ -19,7 +19,7 @@ async function trLoad() {
   for (const x of Object.values(TR.results)) if ((x.state === "queued" || x.state === "sending") && !(r.results || []).some(y => y.ref === x.ref)) delete TR.results[x.ref];
   for (const x of r.results || []) TR.results[x.ref] = x;
   TR.loaded = true;
-  if (current === "monitoring" && MON.sel === "replies") { MON.sig = ""; monSchedule(); }   // the queue's head offers 빠른 처리 once enough wait
+  if (current === "monitoring" && MON.sel === "replies" && !(TR.h && TR.h.pane)) { MON.sig = ""; monSchedule(); }   // the queue's head offers 빠른 처리 once enough wait (an open pane stands where the queue is drawn: left alone, so a typed note keeps its focus)
   if (TR.h) trMerge();
   paintDecision();   // a conversation with 2 or more waiting cards shows the 답장 초안 line (10-decision-card.js)
   monAttnSoon(); homeSoon();
@@ -33,13 +33,35 @@ const trKst = at => new Date(at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul
 const trGroupFor = ref => trBig().find(g => g.cards.some(c => c.ref === ref));
 
 
+// 모니터링 on a wide screen: the screen stands in the right column of the frame, in place of the queue (the reply card's pane, 30-replies.js rqPaneOpen); the list stays at the left.
+// It is RQ.sheet, so the queue's own redraw, back and item changes treat it like that card. Back, the browser's back and Esc close it one step.
+const trPaneNow = () => current === "monitoring" && !narrowChat() && !!$("#v-monitoring.rq-on");
+function trPaneOpen(onClose) {
+  if (RQ.sheet) RQ.sheet.close(false);
+  RQ.top = $("#mon-timeline").scrollTop;
+  let ov = null, closed = false;
+  const box = el("div", { class: "rq-pane tr-pane", tabindex: "-1", onkeydown: ev => { if (ev.key === "Escape" && !document.querySelector("dialog[open]:not([data-leaving])")) { ev.preventDefault(); ev.stopPropagation(); h.close(); } } });
+  const h = { pane: true, tr: true, box, close() {
+    if (closed) return;
+    closed = true; ovDone(ov); onClose();
+    if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; MON.sig = ""; monSchedule(); }
+  } };
+  ov = ovOpen(() => h.close());
+  RQ.sheet = h; MON.sig = ""; renderMonitoring();   // drawn now, so the box is on the page when it takes the focus
+  return h;
+}
+// The queue row of the card on screen is the marked one (what the reply card does for its row), seen when the pane closes.
+const trMarkRow = c => { const r = c && (RQ.rows || rqRows()).find(x => x.x && rqRefOf(x.x) === c.ref); if (r) RQ.mark = r.key; };
+// A pane shares the page: its keys answer only while the focus is on it or on nothing, never in a field or control elsewhere.
+const trAway = ev => current !== "monitoring" || RQ.sheet !== TR.h || (ev.target instanceof Element && ev.target !== document.body && !TR.h.box.contains(ev.target));
 function trOpen(key, ref) {
   const g = TR.groups.find(x => x.key === key), cards = trCards(key);
   if (!cards.length) { toast("처리할 카드가 없어요"); return; }
   if (TR.h) TR.h.close(false);
   Object.assign(TR, { key, label: g ? g.label : "전체", items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, busy: {}, noting: false });
   TR.i = Math.max(0, ref ? TR.items.findIndex(c => c.ref === ref) : 0);
-  const h = fsOpen({ label: `${TR.label} 빠른 처리`, cls: "tall tr", onClose: () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); } });
+  const onClose = () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); };
+  const h = trPaneNow() ? trPaneOpen(onClose) : fsOpen({ label: `${TR.label} 빠른 처리`, cls: "tall tr", onClose });
   TR.h = h;
   document.addEventListener("keydown", trKey);
   trPaint();
@@ -142,7 +164,7 @@ const trStep = d => { const j = TR.i + d; if (j < 0 || j > TR.items.length) retu
 const trLocked = c => { const s = TR.done[trK(c)]; return !!TR.busy[trK(c)] || (!!s && s.state !== "err"); };
 
 function trKey(ev) {
-  if (!TR.h || FS[FS.length - 1] !== TR.h || document.querySelector("dialog[open]:not([data-leaving])")) return;
+  if (!TR.h || (TR.h.pane ? trAway(ev) : FS[FS.length - 1] !== TR.h) || document.querySelector("dialog[open]:not([data-leaving])")) return;
   const typing = ev.target instanceof HTMLTextAreaElement || ev.target instanceof HTMLInputElement;
   const c = TR.items[TR.i];
   if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
@@ -173,6 +195,7 @@ function trEditSubmit(c) {
 /* ---- drawing ---- */
 function trPaint() {
   if (!TR.h) return;
+  if (TR.h.pane) trMarkRow(TR.items[TR.i]);
   const box = TR.h.box, n = TR.items.length, handled = TR.items.filter(c => TR.done[trK(c)] && TR.done[trK(c)].state !== "err").length;   // a failed answer is not counted
   const bar = el("div", { class: "tr-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(n), "aria-valuenow": String(handled), "aria-label": "처리한 카드" }, el("span", { style: `width:${n ? (handled / n) * 100 : 0}%` }));
   const pos = TR.i < n ? `${TR.i + 1}/${n}` : `${n}/${n}`;
@@ -259,11 +282,12 @@ function trDoneView() {
   return [body, foot];
 }
 
-const TR_PICK = [[1, "보내기"], [2, "고치기"], [3, "보내지 않기"]];
+// The third choice of the list only leaves the card waiting (trSendPicked posts the first two): it says 건너뛰기, never the 보내지 않기 of the one-card view, which drops the draft.
+const TR_PICK = [[1, "보내기"], [2, "고치기"], [3, "건너뛰기"]];
 function trListView() {
   const picked = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim()))).length;
   const body = el("div", { class: "fs-body tr-body tr-list" }, ...TR.items.map((c, i) => {
-    const k = trK(c), d = c.draft || {}, st = trState(c), locked = dcGone(c.to) || (!!st && st.state !== "err"), p = TR.picks[k] || 3;
+    const k = trK(c), d = c.draft || {}, st = trState(c), locked = dcGone(c.to) || (!!st && st.state !== "err"), p = TR.picks[k] || 0;   // no choice stands marked before the owner presses one
     return el("div", { class: `tr-row${locked ? " locked" : ""}` },
       el("button", { class: "tr-rh", type: "button", onclick: () => { TR.i = i; TR.list = false; trPaint(); } }, el("span", { class: "tr-n", text: String(i + 1) }), el("span", { class: "tr-rq", text: [d.to, trQ(c)].filter(Boolean).join(" · ") }), trChip(c)),
       draftBodyNode((TR.edits[k] && TR.edits[k].reply) ?? d.body ?? "", `tr-rb${p === 1 || TR.open[k] ? " open" : ""}`, { title: "눌러서 전체 보기", onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); } }),
