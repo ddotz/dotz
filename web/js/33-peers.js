@@ -108,7 +108,7 @@ function prPaint() {
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("p-need", need); }
-  const label = TX(more ? "misc.pr.switch_more" : "misc.pr.switch", { name: relayOn() ? targetName(target) : me.name });
+  const label = TX(more ? "misc.pr.switch_more" : "misc.pr.switch", { name: relayCur() ? targetName(relayCur()) : me.name });
   brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
   brand.title = TX("misc.pr.switch_tip", { key: prKeyHint });
   title.tabIndex = 0; title.setAttribute("aria-haspopup", "dialog");
@@ -182,7 +182,7 @@ function prForgetBtn(p, off) {
 function prSheet() {
   const rows = PR.list.map(p => {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
-    const here = relayOn() ? isRelayRow(p) && target === relayTargetOf(p) : p.self;
+    const here = relayCur() ? isRelayRow(p) && relayCur() === relayTargetOf(p) : p.self;
     const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
     const st = p.self ? (selfDown ? TX("settings.prov.not_connected") : "") : selfDown ? TX("misc.pr.unchecked") : p.online ? TX("connect.state.on") : TX("settings.prov.not_connected");
     // the prototype's switcher row: a status dot, the name over one quiet line, and at the right the check (this one) or the count of what waits there

@@ -256,6 +256,7 @@ function pcHead(g, n) {
     el("span", { class: "pl-pcn", text: g.name }), mark ? el("span", { class: "tag", text: mark }) : null, n ? el("span", { class: "pl-pcc", text: String(n) }) : null, icon("chev", "chev"));
 }
 function pcOpen(g, x) {
+  if (g.relay) { relayShow(g.relay, g.name, "projects"); return; }   // reached only through a messenger: no address of its own, its projects open read-only here
   if (!g.online || !g.url) { toast(TX("project.pc.cant", { name: g.name }), true); return; }
   toast(TX("project.pc.switch", { name: g.name }));
   prGo(`${g.url}/?did=${enc(DEVICE_ID)}#project/${enc(x.key)}`);
@@ -343,6 +344,7 @@ function pjPaintRows() {
   clear(box).append(...nodes);
 }
 function renderProjects() {
+  if (rvPaint("projects")) return;   // a messenger-only computer is chosen: its projects, read-only (44-relay-views.js)
   const box = $("#v-projects");
   if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? TX("project.load_failed") : TX("common.loading"), PRJ_FAIL ? () => prjLoad() : null)); return; }
   const list = PRJ.projects || [];

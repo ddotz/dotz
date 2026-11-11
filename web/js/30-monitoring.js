@@ -849,6 +849,7 @@ const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimatio
 function renderMonitoring() {
   monRaf = 0;
   if (current !== "monitoring") { mbSeenReset(); if (monCtx && current === "chat") { convSchedule(); monTickStart(); } return; }
+  if (rvPaint("monitoring")) return;   // a messenger-only computer is chosen: its monitors, read-only (44-relay-views.js)
   const items = monItems();
   asPaneFollow(items);
   const sel = mxScope(monSel(items)), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");

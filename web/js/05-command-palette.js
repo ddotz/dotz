@@ -148,7 +148,7 @@ function go(name, tgt) {
   monCtx = mc ? tgt || target : "";
   if (mc) { const k = monItemOf(tgt || target); if (k) MON.sel = k; MON.list = false; }
   if (!views.includes(name) || navOff(name)) name = "home";
-  if (name === "projects" && ppWide()) { H.auto = true; name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { H.auto = true; go("project", prjFirst()); } }); }
+  if (name === "projects" && ppWide() && !relayCur()) { H.auto = true; name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { H.auto = true; go("project", prjFirst()); } }); }
   if (name === "project" && !tgt) name = "projects";
   if (name === "accounts") accFocus = tgt || "";
   if (name === "project") ppCur = tgt;
