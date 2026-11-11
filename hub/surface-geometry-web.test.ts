@@ -253,12 +253,14 @@ test("390px: the update bar's x reads at a listed size and line", async () => {
 	await typeOk(v, "#upd-bar .x");
 });
 for (const w of [390, 1280]) {
-	test(`${w}px: the triage sheet's question is a listed size`, async () => {
+	// 390px: a full-screen sheet; 1280px: the right column of the monitoring frame (rq-pane)
+	const holder = w === 390 ? ".fs-card" : ".tr-pane";
+	test(`${w}px: the triage ${w === 390 ? "sheet" : "pane"}'s question is a listed size`, async () => {
 		const v = await page(w, "light", `go("monitoring")`, `NM.loaded && TR.loaded`);
 		await v.evaluate(`void (TR.groups = [{ key: "g1", label: "뉴스레터", count: 3, cards: [1, 2, 3].map(i => ({ to: "mail:m" + i, ref: "r" + i, question: "답장할까요?", draft: { body: "네, 알겠습니다" } })) }], trOpen("g1"))`);
-		await waitFor(v, `!!document.querySelector(".fs-card .tr-q > span")`);
+		await waitFor(v, `!!document.querySelector("${holder} .tr-q > span")`);
 		await shot(v, `8-triage-question-${w}`);
-		await typeOk(v, ".fs-card .tr-q > span");
+		await typeOk(v, `${holder} .tr-q > span`);
 	});
 }
 
