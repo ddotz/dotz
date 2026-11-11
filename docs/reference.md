@@ -230,6 +230,18 @@ differences". The `dotz_lane` launch tool takes an optional `worker_model` that 
 The session brief contract tells the session to review a subagent's diff itself before applying it. A running session keeps its
 subagent model until it restarts.
 
+**Default effort of a model.** A target with no `thinking` in `config.json` (or a selector without `:level`) runs its model at the
+model's sweet spot (hub/model-effort.ts). Order: an effort the owner set (config or selector suffix, never replaced), a row of the shipped
+table, the install's own benchmark value, a stand-in taken from the nearest row of the same model family (provisional, replaced when
+numbers are found), then `medium`; the value is clamped to the levels the model lists. With `orchestrator.effort_learn` (boolean,
+default `true`, live) a model that appears after the first run, or that the config names with no row and no recorded value, is looked up
+in the background: one model at a time, at most 3 a day, never inside a turn. The per-effort score, cost and time are read from the
+Artificial Analysis leaderboard page (timeout and size cap on the call, only numbers, a listed effort and https URLs kept) and
+`model-efforts.json` in the data folder keeps the rows, the source and the time. The sweet spot is the knee of score against cost,
+computed by code and capped at `high`. No rows: tried again daily for two weeks, then stopped until the model list changes. A target
+that stores no effort follows a new value (a running orchestrator switches at once only where OmO keeps the prompt cache across an
+effort change, otherwise at its next fresh start) and the worklog gets one line. `false`: no fetch, no call, the table and the stand-in only.
+
 **Mail conversation model.** A mail's conversation can run on its own model instead of main's. Order: the model picked in that
 conversation's chip, then the mail app's 이 메일에서 쓸 모델 (`custom/apps.json` `<mail app>.conv_model`, `<model>:<thinking>`, per mail app), then main's.
 With none set nothing changes. A new default reaches a mail at its next turn, main's later changes do not move it, and its task subagents stay on main's subagent model.
