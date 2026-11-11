@@ -437,7 +437,7 @@ test("--uninstall removes the dotz command link and the shell file block, keeps 
 		const other = join(home, ".local", "bin");
 		mkdirSync(other, { recursive: true });
 		writeFileSync(join(other, "dotz"), "#!/bin/sh\necho not ours\n");
-		const r = run(["sh", join(REPO, "install.sh"), "--uninstall", ...(purge ? ["--purge"] : [])], { HOME: home, DOTZ_HOME: join(home, "app"), DOTZ_DIR: data });
+		const r = run(["sh", join(REPO, "install.sh"), "--uninstall", ...(purge ? ["--purge"] : [])], { HOME: home, BUN_INSTALL: join(home, ".bun"), DOTZ_HOME: join(home, "app"), DOTZ_DIR: data });
 		expect(r.code).toBe(0);
 		expect(lstatSync(join(bunDir, "dotz"), { throwIfNoEntry: false })).toBeUndefined();
 		expect(readFileSync(rc, "utf8")).toBe(mine);
