@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://ddotz.dev/demo/">
-    <img src="docs/assets/hero-es.webp" width="1200" alt="La pantalla de chat de dotz. Llega un correo, dotz publica un resumen y un borrador de respuesta, y el borrador pasa a Enviado al pulsar Enviar en la tarjeta de confirmación.">
+    <img src="docs/assets/hero-es.webp" width="1200" alt="dotz en el móvil, en cuatro escenas: una tarea encargada a una sesión vuelve con su resultado; el resumen de un correo y un borrador de respuesta que espera a que pulses Enviar; un cambio de precio que llega como un aviso discreto; y el historial con todo lo que hizo.">
   </a>
 </p>
 

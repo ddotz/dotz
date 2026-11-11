@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://ddotz.dev/demo/">
-    <img src="docs/assets/hero-ja.webp" width="1200" alt="dotz のチャット画面。新着メールが届くと dotz が要約と返信の下書きを出し、確認カードで送信を押すと「送信しました」に変わる様子。">
+    <img src="docs/assets/hero-ja.webp" width="1200" alt="スマホで見るdotzの4つの場面：セッションに任せた作業の結果が戻ってくる、メールの要約と返信の下書きが送信を押すまで待つ、価格の変化が静かな通知で届く、やったことが作業履歴に残る。">
   </a>
 </p>
 

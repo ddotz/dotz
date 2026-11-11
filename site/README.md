@@ -39,6 +39,14 @@ bun site/build-pages.ts
 
 히어로와 카드의 움직이는 장면(`js/stageshow.js`)은 `site/stageshow-src`를 고친 뒤 `bun site/stageshow-src/build.ts`로 다시 빌드합니다. 장면 안의 문구는 `stageshow-src/strings.ts`에 언어별(`ko`, `en`, `ja`, `zh-CN`, `es`)로 모여 있고, `<html lang>`에 따라 골라 씁니다. 스크립트·CSS를 고친 뒤에는 `build-pages.ts`가 자산 해시를 새로 찍으므로 스테이지쇼 빌드 다음에 돌립니다.
 
+README 맨 위의 소개 영상(`docs/assets/hero*.webp`, 다섯 언어)은 `site/stageshow-src/video.tsx`의 장면을 녹화기로 찍어 만듭니다. 장면이나 `strings.ts`의 `video` 문구를 고친 뒤 다시 만듭니다.
+
+```sh
+bun site/stageshow-src/record.ts
+```
+
+가상 시계(`kit/clock.ts`)를 한 프레임(40ms)씩 직접 넘기며 무대만 찍고, 같은 화면이 이어지면 한 프레임으로 합쳐 `img2webp`로 묶습니다. 약 1분 걸리고 `img2webp`가 있어야 합니다(`brew install webp`). `--lang ko,en`으로 일부 언어만, `--lossless`로 무손실로 만들 수 있습니다.
+
 ## 배포
 
 Cloudflare Pages에 `site` 폴더를 그대로 올립니다(프로젝트 이름 `dotz`, 사용자 도메인 `ddotz.dev`).

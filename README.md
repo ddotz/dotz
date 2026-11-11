@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://ddotz.dev/demo/">
-    <img src="docs/assets/hero-en.webp" width="1200" alt="The dotz chat screen. A new mail arrives, dotz posts a summary and a reply draft, and the draft changes to Sent after Send is pressed on the confirmation card.">
+    <img src="docs/assets/hero-en.webp" width="1200" alt="dotz on a phone, in four short scenes: a request handed to a session and its report coming back; a mail summary with a reply draft that waits until you press Send; a price watch landing as a quiet notice; and the worklog listing everything it did.">
   </a>
 </p>
 

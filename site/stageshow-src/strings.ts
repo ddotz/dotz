@@ -32,7 +32,18 @@ export type Strings = {
     keepNote: string
     keepAt: string
   }
+  // The README video (video.tsx): captions, one chat that hands a task off, one mail answered, the morning notice, the worklog.
+  video: {
+    tagline: string[]
+    scenes: [Cap, Cap, Cap, Cap]
+    hand: { ask: string[]; ackAt: string; ack: string[]; task: string; running: string; done: string; file: string; reportAt: string; report: string[] }
+    mail: { chip: string; summary: string[]; summaryAt: string; draftFor: string; draftBody: string[]; dock: string[]; sentAt: string }
+    brief: { title: string; note: string; at: string }
+    worklog: { title: string; rows: [string, string, string][] }
+  }
 }
+
+type Cap = { title: string[]; sub: string[] }
 
 const en: Strings = {
   sep: ' ',
@@ -69,6 +80,45 @@ const en: Strings = {
     keep: 'Stay signed in',
     keepNote: '3 sites · No changes',
     keepAt: '8:00 AM',
+  },
+  video: {
+    tagline: ['A personal assistant that stays on,', 'on your own computer.'],
+    scenes: [
+      { title: ['Hand it a task,', 'get the result back'], sub: ['Ask from your phone.', 'A session does the work and reports back.'] },
+      { title: ['Nothing goes out', 'without your OK'], sub: ['Replies wait in the chat', 'until you press Send.'] },
+      { title: ['It keeps watch', 'while you are away'], sub: ['Prices, logins and daily checks', 'reach you only as a quiet notice.'] },
+      { title: ['Everything it did,', 'in one list'], sub: ['The worklog keeps each result', 'one tap away.'] },
+    ],
+    hand: {
+      ask: ["Put this week's sales", 'into a report'],
+      ackAt: '9:18 AM',
+      ack: ['Handed to a session.', "I'll tell you when it's done."],
+      task: 'Weekly sales report',
+      running: 'Running',
+      done: 'Done',
+      file: 'weekly-sales.pdf',
+      reportAt: '9:20 AM',
+      report: ['Done.', 'Sales rose 12% over last week.', 'The report is attached.'],
+    },
+    mail: {
+      chip: "New mail · Next week's shoot",
+      summary: ['A client asks', 'whether Tuesday afternoon next week', 'works for the shoot.'],
+      summaryAt: '9:41 AM',
+      draftFor: 'Reply draft',
+      draftBody: ['Tuesday at 2 PM works.', 'See you at the studio.'],
+      dock: ['Send this reply?'],
+      sentAt: '9:42 AM',
+    },
+    brief: { title: 'Morning briefing', note: '2 events today · 1 reply waiting', at: '7:30 AM' },
+    worklog: {
+      title: 'Worklog',
+      rows: [
+        ['Price check · Camping chair', '9:44 AM', ''],
+        ['Replied to the shoot mail', '9:42 AM', ''],
+        ['Weekly sales report', '9:20 AM', '1 result'],
+        ['Morning briefing', '7:30 AM', ''],
+      ],
+    },
   },
 }
 
@@ -108,6 +158,45 @@ const ko: Strings = {
     keepNote: '사이트 세 곳 · 바뀐 것 없음',
     keepAt: '오전 8:00',
   },
+  video: {
+    tagline: ['내 컴퓨터에서 항상 켜져 있는', '개인 비서예요.'],
+    scenes: [
+      { title: ['맡기면', '결과가 돌아와요'], sub: ['폰으로 부탁하면', '세션이 일하고 결과를 가져와요.'] },
+      { title: ['내가 허락해야', '나가요'], sub: ['답장은 채팅에서', '보내기를 누를 때까지 기다려요.'] },
+      { title: ['자리를 비워도', '지켜봐요'], sub: ['가격, 로그인, 정해 둔 점검은', '바뀔 때만 조용히 알려 줘요.'] },
+      { title: ['한 일은', '작업내역에 남아요'], sub: ['결과 파일도', '거기서 바로 열어요.'] },
+    ],
+    hand: {
+      ask: ['이번 주 매출을', '보고서로 정리해 줘'],
+      ackAt: '오전 9:18',
+      ack: ['세션에 맡겼어요.', '끝나면 알려 드릴게요.'],
+      task: '주간 매출 보고서',
+      running: '진행 중',
+      done: '완료',
+      file: '주간-매출.pdf',
+      reportAt: '오전 9:20',
+      report: ['끝났어요.', '지난주보다 매출이 12% 늘었어요.', '보고서를 붙여 뒀어요.'],
+    },
+    mail: {
+      chip: '새 메일 · 다음 주 촬영 일정',
+      summary: ['고객이', '다음 주 화요일 오후에', '촬영이 되는지 물어봤어요.'],
+      summaryAt: '오전 9:41',
+      draftFor: '답장 초안',
+      draftBody: ['화요일 오후 2시 좋아요.', '스튜디오에서 뵐게요.'],
+      dock: ['이 답장을 보낼까요?'],
+      sentAt: '오전 9:42',
+    },
+    brief: { title: '아침 점검', note: '오늘 일정 2개 · 답장 1건 대기', at: '오전 7:30' },
+    worklog: {
+      title: '작업내역',
+      rows: [
+        ['캠핑 의자 가격 확인', '오전 9:44', ''],
+        ['촬영 메일에 답장을 보냈어요', '오전 9:42', ''],
+        ['주간 매출 보고서', '오전 9:20', '결과 1'],
+        ['아침 점검', '오전 7:30', ''],
+      ],
+    },
+  },
 }
 
 const ja: Strings = {
@@ -145,6 +234,45 @@ const ja: Strings = {
     keep: 'ログイン維持',
     keepNote: 'サイト3件 · 変更なし',
     keepAt: '午前8:00',
+  },
+  video: {
+    tagline: ['自分のパソコンで動き続ける、', 'パーソナルアシスタント。'],
+    scenes: [
+      { title: ['任せれば、', '結果が返ってきます'], sub: ['スマホから頼むと、', 'セッションが作業して報告します。'] },
+      { title: ['あなたがOKするまで、', '何も送りません'], sub: ['返信の下書きは', 'チャットで確認を待ちます。'] },
+      { title: ['席を外している間も', '見ていてくれます'], sub: ['価格やログイン、定期チェックは', '変化があったときだけ静かに通知。'] },
+      { title: ['やったことは', '作業履歴に残ります'], sub: ['結果のファイルも', 'そこからすぐ開けます。'] },
+    ],
+    hand: {
+      ask: ['今週の売上を', 'レポートにまとめて'],
+      ackAt: '午前9:18',
+      ack: ['セッションに任せました。', '終わったらお知らせします。'],
+      task: '週間売上レポート',
+      running: '実行中',
+      done: '完了',
+      file: '週間売上.pdf',
+      reportAt: '午前9:20',
+      report: ['終わりました。', '先週より売上が12%増えています。', 'レポートを添付しました。'],
+    },
+    mail: {
+      chip: '新着メール · 来週の撮影日程',
+      summary: ['お客様が、', '来週火曜の午後に', '撮影できるか聞いています。'],
+      summaryAt: '午前9:41',
+      draftFor: '返信の下書き',
+      draftBody: ['火曜の午後2時で大丈夫です。', 'スタジオでお会いしましょう。'],
+      dock: ['この返信を送りますか？'],
+      sentAt: '午前9:42',
+    },
+    brief: { title: '朝のブリーフィング', note: '今日の予定2件 · 返信待ち1件', at: '午前7:30' },
+    worklog: {
+      title: '作業履歴',
+      rows: [
+        ['キャンプチェアの価格確認', '午前9:44', ''],
+        ['撮影メールに返信しました', '午前9:42', ''],
+        ['週間売上レポート', '午前9:20', '結果 1'],
+        ['朝のブリーフィング', '午前7:30', ''],
+      ],
+    },
   },
 }
 
@@ -184,6 +312,45 @@ const zhCN: Strings = {
     keepNote: '3 个网站 · 没有变化',
     keepAt: '上午8:00',
   },
+  video: {
+    tagline: ['在你自己的电脑上', '一直开着的个人助理。'],
+    scenes: [
+      { title: ['交给它，', '结果自己回来'], sub: ['用手机吩咐一声，', '会话去干活，完成后向你汇报。'] },
+      { title: ['没有你点头，', '什么都不会发出去'], sub: ['回复草稿会留在聊天里，', '等你点发送。'] },
+      { title: ['你不在时，', '它替你盯着'], sub: ['价格、登录和定时检查，', '有变化才悄悄通知你。'] },
+      { title: ['做过的事，', '都留在工作记录里'], sub: ['结果文件', '也能直接从这里打开。'] },
+    ],
+    hand: {
+      ask: ['把本周的销售数据', '整理成报告'],
+      ackAt: '上午9:18',
+      ack: ['已交给会话处理。', '完成后我会告诉你。'],
+      task: '每周销售报告',
+      running: '进行中',
+      done: '已完成',
+      file: '每周销售.pdf',
+      reportAt: '上午9:20',
+      report: ['完成了。', '销售额比上周增长了 12%。', '报告已附上。'],
+    },
+    mail: {
+      chip: '新邮件 · 下周拍摄安排',
+      summary: ['客户问', '下周二下午', '能不能拍摄。'],
+      summaryAt: '上午9:41',
+      draftFor: '回复草稿',
+      draftBody: ['周二下午两点可以。', '我们在工作室见。'],
+      dock: ['要发送这封回复吗？'],
+      sentAt: '上午9:42',
+    },
+    brief: { title: '早间简报', note: '今天 2 个日程 · 1 封待回复', at: '上午7:30' },
+    worklog: {
+      title: '工作记录',
+      rows: [
+        ['露营椅价格检查', '上午9:44', ''],
+        ['已回复拍摄邮件', '上午9:42', ''],
+        ['每周销售报告', '上午9:20', '结果 1'],
+        ['早间简报', '上午7:30', ''],
+      ],
+    },
+  },
 }
 
 const es: Strings = {
@@ -221,6 +388,45 @@ const es: Strings = {
     keep: 'Mantener sesión',
     keepNote: '3 sitios · Sin cambios',
     keepAt: '8:00',
+  },
+  video: {
+    tagline: ['Un asistente personal siempre activo', 'en tu propio ordenador.'],
+    scenes: [
+      { title: ['Se lo encargas', 'y vuelve con el resultado'], sub: ['Pídeselo desde el móvil.', 'Una sesión trabaja y te lo entrega.'] },
+      { title: ['Nada sale', 'sin tu visto bueno'], sub: ['Las respuestas esperan en el chat', 'hasta que pulses Enviar.'] },
+      { title: ['Vigila por ti', 'cuando no estás'], sub: ['Precios, accesos y revisiones diarias', 'te llegan como un aviso discreto.'] },
+      { title: ['Todo lo que hizo,', 'en una sola lista'], sub: ['El historial guarda cada resultado', 'a un toque.'] },
+    ],
+    hand: {
+      ask: ['Prepara un informe', 'con las ventas de la semana'],
+      ackAt: '9:18',
+      ack: ['Se lo he pasado a una sesión.', 'Te aviso cuando termine.'],
+      task: 'Informe semanal de ventas',
+      running: 'En curso',
+      done: 'Listo',
+      file: 'ventas-semana.pdf',
+      reportAt: '9:20',
+      report: ['Listo.', 'Las ventas subieron un 12 % respecto a la semana pasada.', 'Te adjunto el informe.'],
+    },
+    mail: {
+      chip: 'Correo nuevo · Rodaje',
+      summary: ['Un cliente pregunta si', 'el martes que viene por la tarde', 'va bien para el rodaje.'],
+      summaryAt: '9:41',
+      draftFor: 'Borrador de respuesta',
+      draftBody: ['El martes a las 14:00 me va bien.', 'Nos vemos en el estudio.'],
+      dock: ['¿Enviar esta respuesta?'],
+      sentAt: '9:42',
+    },
+    brief: { title: 'Resumen de la mañana', note: '2 eventos hoy · 1 respuesta pendiente', at: '7:30' },
+    worklog: {
+      title: 'Historial',
+      rows: [
+        ['Precio de la silla de camping', '9:44', ''],
+        ['Respuesta enviada sobre el rodaje', '9:42', ''],
+        ['Informe semanal de ventas', '9:20', '1 resultado'],
+        ['Resumen de la mañana', '7:30', ''],
+      ],
+    },
   },
 }
 

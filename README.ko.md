@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://ddotz.dev/demo/">
-    <img src="docs/assets/hero.webp" width="1200" alt="dotz 채팅 화면. 새 메일이 오자 dotz가 요약과 답장 초안을 올리고, 입력창 위 확인 카드에서 보내기를 누르면 보냈어요로 바뀌는 장면.">
+    <img src="docs/assets/hero.webp" width="1200" alt="폰에서 보는 dotz의 네 장면: 세션에 맡긴 일의 결과가 돌아오는 모습, 메일 요약과 답장 초안이 보내기를 누를 때까지 기다리는 모습, 가격 변동이 조용한 알림으로 오는 모습, 한 일이 작업내역에 남는 모습.">
   </a>
 </p>
 

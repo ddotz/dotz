@@ -1,0 +1,88 @@
+/* The README video: a caption column on the left, the app on a phone on the right. Built on the hero's and the cards' classes. */
+.vd .ss-stage { overflow: hidden; }
+
+.vd-copy {
+  position: absolute;
+  top: 60px;
+  bottom: 60px;
+  left: 60px;
+  width: 520px;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink);
+}
+.vd-brand { display: flex; align-items: center; gap: 12px; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+.vd-tag { margin-top: 18px; color: var(--body); font-size: 22px; font-weight: 500; line-height: 1.45; }
+.vd-ln { display: block; }
+
+.vd-caps { display: grid; margin: auto 0; }
+.vd-cap {
+  grid-area: 1 / 1;
+  opacity: 0;
+  filter: blur(3px);
+  transform: translateY(8px);
+  transition: opacity var(--m-slow) var(--m-ease), filter var(--m-slow) var(--m-ease), transform var(--m-slow) var(--m-ease);
+}
+.vd-cap[data-on] { opacity: 1; filter: none; transform: none; transition-delay: 0.12s; }
+.vd-cap__t { color: var(--ink); font-size: 42px; font-weight: 700; line-height: 1.22; letter-spacing: -0.025em; }
+.vd-cap__s { margin-top: 16px; color: var(--body); font-size: 21px; line-height: 1.5; }
+
+.vd-steps { display: flex; gap: 8px; }
+.vd-steps i {
+  width: 24px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  transition: width var(--m-slow) var(--m-ease), background-color var(--m-slow) var(--m-ease);
+}
+.vd-steps i[data-on] { width: 48px; background: var(--accent); }
+
+.vd .hz-phone { top: 20px; left: 620px; }
+.vd .hz-app { zoom: 1.65; }
+
+
+.vd-views { flex: 1; min-height: 0; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+.vd-view {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  transition: opacity var(--m-base) var(--m-ease), filter var(--m-base) var(--m-ease);
+}
+.vd-view[data-off] { opacity: 0; filter: blur(2px); pointer-events: none; }
+
+.vd-home { padding: 8px 8px 0; }
+.vd-slot { padding-bottom: 10px; }
+.vd-card { border-radius: var(--r-card); background: var(--surface); overflow: hidden; }
+.vd-card__t { margin: 0; padding: 12px 14px 8px; color: var(--ink); font-size: 16px; font-weight: 600; line-height: 22px; }
+.vd-list .cz-nt { border-top: 1px solid var(--line); padding: 10px 14px; gap: 10px; }
+.vd .cz-nt__b > span { white-space: normal; }
+.vd-wl .cz-nt__dot { background: var(--ok); }
+
+.vd-task { display: grid; gap: 8px; padding: 10px 14px; border-radius: 14px; background: var(--surface-2); }
+.vd-task__hd { display: flex; align-items: center; gap: 8px; }
+.vd-task__hd b { flex: 1; min-width: 0; color: var(--ink); font-size: 14px; font-weight: 600; line-height: 20px; }
+.vd-st { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transition: background-color var(--m-base) var(--m-ease); }
+.vd-st[data-done] { background: var(--ok); }
+
+.vd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--body);
+  font-size: 12px;
+  line-height: 16px;
+}
+.vd-chip .ss-icon { color: var(--muted); }
+.vd-wl .vd-chip { background: var(--surface-2); margin-top: 2px; }
+.vd .cz-price s, .vd .cz-price em { white-space: nowrap; }
+.vd .hz-dock .dz-acts { gap: 6px; }
+.vd .hz-dock .dz-btn { padding: 0 9px; }
+.vd .hz-dock .dz-btn--text { padding: 0 4px; }
+.vd .cz-nt__b { min-width: 0; }
+.vd .cz-nt__b > b { overflow-wrap: anywhere; }

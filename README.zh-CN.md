@@ -25,7 +25,7 @@
 
 <p align="center">
   <a href="https://ddotz.dev/demo/">
-    <img src="docs/assets/hero-zh-cn.webp" width="1200" alt="dotz 聊天界面。收到新邮件后，dotz 发出摘要和回复草稿，在确认卡片上点发送后，草稿变为“已发送”。">
+    <img src="docs/assets/hero-zh-cn.webp" width="1200" alt="手机上的 dotz，四个场景：交给会话的任务完成后汇报结果；邮件摘要和回复草稿等你点发送；价格变动以安静的通知送达；做过的事都留在工作记录里。">
   </a>
 </p>
 
