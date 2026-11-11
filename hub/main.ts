@@ -588,8 +588,8 @@ for (const l of telemetryOff()) log(l);
 for (const l of installDotzCommand({ dir: DATA_DIR, pkg: join(import.meta.dir, ".."), bun: Bun.which("bun") ?? process.execPath, home: HOME, expose: DATA_DIR === join(HOME, ".dotz"), shell: process.env.SHELL })) log(l);
 startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway", wk: "update" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
 // The hidden doctor (hub/doctor.ts): one night run, at most one morning item: an alert when something is not fixed (a choice block when he must decide),
-// a work log entry when dotz fixed everything itself.
-startDoctor((text, _decision, open) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway" }), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined));
+// a work log entry when dotz fixed everything itself. The ledger's day-before notices (hub/ledger-tick.ts) start with it and go out as news.
+startDoctor((text, _decision, open) => out(open ? "alert" : "worklog", text, undefined, { source: "gateway" }), log, () => (zeleState() === "on" ? Number(cfg.zele?.brief_hour ?? DEFAULTS.zele_brief_hour) : undefined), { send: (text, project) => out(project ?? (discord.status.enabled ? "chat" : "web"), text, undefined, { source: "gateway", news: true }), waiting: () => draftCardCounts().open + approvals.held().length });
 // Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply
 // on it applies it instead (worklog on success, alert with a choice block otherwise) and restarts through the idle restart gate.
 onUpdateResolved(updateResolved);

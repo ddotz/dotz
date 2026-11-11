@@ -12,6 +12,8 @@ import { CHECKS as HEALTH } from "./doctor-checks.ts";
 import { THRESHOLDS as T } from "./doctor-limits.ts";
 import type { DoctorCheck, Finding } from "./doctor-types.ts";
 import { msg } from "./i18n.ts";
+import { ledger } from "./ledger.ts";
+import { type Send, morningExtra, startLedger } from "./ledger-tick.ts";
 import { promptHealth } from "./prompt-health.ts";
 import { promptReviewCheck } from "./prompt-review.ts";
 import { trackTimer } from "./shutdown.ts";
@@ -49,6 +51,8 @@ export type Deps = {
 	log: (line: string) => void;
 	/** Brings the result file up to date when it is stale at the morning pass; the gateway runs the night pass in a child process. Default: runNight here. */
 	refresh?: () => Promise<void>;
+	/** The ledger's share of the morning (hub/ledger-tick.ts): its part of the text with a commit to run once delivered, and how to send it alone as news. */
+	ledgerPart?: { morning: (now: number) => { text: string; commit: () => void } | undefined; news: Send };
 };
 
 // Runs the checks; a check that throws keeps its previous findings (named `<check name>:...`) so a broken check never reads as a fixed problem.
@@ -117,17 +121,23 @@ export async function runNight(d: Deps): Promise<void> {
 	d.log(`doctor: ${Object.keys(store.findings).length} finding(s) kept`);
 }
 
-/** The morning pass: runs the checks first when the last run is not fresh, then posts the one item (or only a log line). Does nothing when off. */
+/**
+ * The morning pass: runs the checks first when the last run is not fresh, then posts the one item (or only a log line). The ledger's part (ledgerPart) is
+ * appended to the doctor's text in the same send, or goes alone as news when the doctor has nothing. With the doctor off only the ledger's part is left.
+ */
 export async function runMorning(d: Deps): Promise<void> {
-	if (off(d)) return;
-	if (d.now() - loadStore(d.dataDir).lastRun > FRESH_MS) await (d.refresh ? d.refresh() : runNight(d));
-	const store = loadStore(d.dataDir), now = d.now(), notice = compose(store, now);
-	if (!notice) return d.log("doctor: nothing notable, nothing posted");
-	const sent = await d.send(notice.text, notice.decision, notice.open);
+	if (off(d) && !d.ledgerPart) return;
+	if (!off(d) && d.now() - loadStore(d.dataDir).lastRun > FRESH_MS) await (d.refresh ? d.refresh() : runNight(d));
+	const store = loadStore(d.dataDir), now = d.now(), notice = off(d) ? undefined : compose(store, now), extra = d.ledgerPart?.morning(now);
+	if (!notice && !extra) return off(d) ? undefined : d.log("doctor: nothing notable, nothing posted");
+	const text = [notice?.text, extra?.text].filter(Boolean).join("\n\n");
+	const sent = await (notice ? d.send(text, notice.decision, notice.open) : d.ledgerPart?.news(text));
 	if (sent && !sent.delivered) throw new Error(sent.reason ?? "not delivered");
+	extra?.commit();
+	if (!notice) return d.log("doctor: only the ledger had something, told as news");
 	for (const k of notice.keys) store.told[k] = { at: now, level: store.findings[k]!.level };
 	writeAtomic(storeFile(d.dataDir), `${JSON.stringify(store, null, 2)}\n`);
-	d.log(`doctor: told ${notice.keys.length} finding(s)${notice.decision ? " with a decision" : ""}`);
+	d.log(`doctor: told ${notice.keys.length} finding(s)${notice.decision ? " with a decision" : ""}${extra ? " and the ledger" : ""}`);
 }
 
 // Local-time scheduling like the other nightly jobs: one timer per job, re-armed after each run. "off" arms nothing.
@@ -138,7 +148,7 @@ function loop(name: string, time: () => string | undefined, act: () => Promise<v
 	trackTimer(`doctor ${name}`, setTimeout(() => void act().catch(e => log(`doctor ${name} failed: ${e}`)).finally(arm), nextAt(t, Date.now()) - Date.now()));
 }
 
-/** `send` posts the one morning item (decision: a choice block is in it). `briefHour`: the zele brief hour when zele is on, else undefined. */
+/** `send` posts the one morning item (decision: a choice block is in it). `briefHour`: the zele brief hour when zele is on, else undefined. `ledgerOut`: delivers the ledger's notices and counts the approvals still waiting (hub/ledger-tick.ts), which start here too and use the doctor's morning time ("off" still gives the "auto" time). */
 const conf = cfg as { doctor_at?: string; token_audit_at?: string };
 // The night pass reads a week of session logs (the failure report, the token audit): several hundred MB at its peak on a busy install, so it runs in
 // its own process and the gateway's heap never holds it. The child writes doctor.json; the gateway only reads it in the morning.
@@ -149,10 +159,14 @@ async function nightChild(log: Deps["log"]): Promise<void> {
 	if (code !== 0) throw new Error(`night pass exited ${code}`);
 }
 
-export function startDoctor(send: Deps["send"], log: Deps["log"], briefHour: () => number | undefined): void {
+export function startDoctor(send: Deps["send"], log: Deps["log"], briefHour: () => number | undefined, ledgerOut?: { send: Send; waiting: () => number }): void {
 	const d: Deps = { now: Date.now, dataDir: DATA_DIR, home: HOME, at: () => String(conf.doctor_at ?? DEFAULTS.doctor_at), send, log, refresh: () => nightChild(log) };
+	if (ledgerOut) d.ledgerPart = { morning: now => morningExtra(ledger, ledgerOut.waiting, now), news: ledgerOut.send };
 	loop("night", () => (off(d) ? undefined : nightTime(String(conf.token_audit_at ?? DEFAULTS.token_audit_at))), () => nightChild(log), log);
-	loop("morning", () => morningTime(d.at(), briefHour()), () => runMorning(d), log);
+	// With the doctor "off" the morning loop still runs for the ledger, at the "auto" time.
+	const morning = () => morningTime(off(d) && ledgerOut ? "auto" : d.at(), briefHour());
+	loop("morning", morning, () => runMorning(d), log);
+	if (ledgerOut) startLedger({ store: ledger, now: Date.now, morning: () => morning() ?? "08:00", send: ledgerOut.send, log });
 }
 
 if (import.meta.main && process.argv.includes("--night")) {

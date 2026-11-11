@@ -407,7 +407,6 @@ export const ko: Catalog = {
 		state: { open: "열림", done: "완료", cancelled: "취소" },
 		item: (what: string, next?: string) => `- ${what}${next ? ` (다음: ${next})` : ""}`,
 		tomorrow: (n: number) => `내일까지인 일이 ${n}건 있어요.`,
-		late: (n: number) => `마감이 지났는데 아직 열려 있는 일이 ${n}건 있어요.`,
 		morning: (today: string[], overdue: string[], waiting: number) =>
 			[today.length ? [`오늘까지인 일이 ${today.length}건 있어요.`, ...today].join("\n") : "", overdue.length ? [`마감이 지났는데 아직 열려 있는 일이 ${overdue.length}건 있어요.`, ...overdue].join("\n") : "", waiting ? `확인을 기다리는 승인이 ${waiting}건 있어요.` : ""].filter(Boolean).join("\n\n"),
 	},
