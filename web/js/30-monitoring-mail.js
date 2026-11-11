@@ -219,13 +219,17 @@ async function mailDelete(t) {
   if (mailOriginal(t)) return mbTrash([t]);
   if (!await ask("메일 삭제", `이 메일을 목록에서 지워요. ${mailStays(1)}`, "삭제", true)) return;
   mbDeleting();
-  const pc = pqPc(t);
-  await api(`/api/mail/${t.slice(5)}`, "DELETE");
+  const pc = pqPc(t), rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => r.dataset.t === t);
+  for (const r of rows) r.setAttribute("aria-busy", "true");   // the row stays until the hub has deleted the mail, then folds away
+  try { await api(`/api/mail/${t.slice(5)}`, "DELETE"); }
+  catch (e) { for (const r of rows) r.removeAttribute("aria-busy"); throw e; }
   MAILS.delete(t); CONV.delete(t);
   const p = pc && PQ.list.find(x => x && x.url === pc.url);
   if (p && p.items) p.items.conversations = (p.items.conversations || []).filter(c => String(c.target) !== t);
   if (monCtx === t && current === "chat") go("monitoring", MON.sel);   // deleted from its open conversation: back to the list
-  PQ.of.delete(t); MON.sig = ""; MON.side = ""; monSchedule();
+  const leaving = mbRowsOut([t]);
+  PQ.of.delete(t); MON.sig = ""; MON.side = "";
+  if (leaving) leaving.then(monSchedule); else monSchedule();
   toast("메일을 목록에서 지웠어요");
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }

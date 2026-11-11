@@ -38,11 +38,13 @@ const APPLY: Record<string, (m: Mail) => void> = {
 	star: m => { m.starred = true; }, unstar: m => { m.starred = false; }, trash: m => { mails = mails.filter(x => x !== m); },
 };
 let fyiFails = false;
+let gate: { p: Promise<void>; open: () => void } | null = null;   // while set, the hub reads a mail action and answers only when the test opens it
 const hub = fakeHub({
 	api: async (req, url) => {
 		const p = url.pathname;
 		if (p === "/api/mail/fyi" && req.method === "POST") {
 			const body = (await req.json()) as { keys: string[]; on: boolean }; posts.push({ path: p, body });
+			if (gate) await gate.p;
 			if (fyiFails) return json({ error: "표시하지 못했어요" }, 500);
 			for (const m of mails) if (body.keys.includes(m.key)) m.reply = body.on ? "fyi" : "needs";
 			return json({ ok: true, results: body.keys.map(key => ({ key, ok: true })) });
@@ -69,6 +71,7 @@ const hub = fakeHub({
 		const one = /^\/api\/mail\/([^/]+)\/action$/.exec(p);
 		if (one && req.method === "POST") {
 			const body = (await req.json()) as { action: string }; posts.push({ path: p, body });
+			if (gate) await gate.p;
 			if (one[1] === "fx-fail") return json({ ok: false, synced: false, note: "Gmail에 반영하지 못했어요" });
 			const m = mails.find(x => x.key === one[1]); if (m) APPLY[body.action](m);
 			if (m && Array.isArray(m.can) && !m.can.length) return json({ ok: true, synced: false });
@@ -76,19 +79,21 @@ const hub = fakeHub({
 		}
 		if (p === "/api/mail/actions" && req.method === "POST") {
 			const body = (await req.json()) as { keys: string[]; action: string }; posts.push({ path: p, body });
+			if (gate) await gate.p;
 			// The real hub: the action always lands in dotz; a mailbox with no capability list of its own answers synced:false and no note.
-			return json({ ok: true, results: body.keys.map(k => { const m = mails.find(x => x.key === k); if (m) APPLY[body.action](m); return { key: k, ok: true, synced: !!(m && m.can && m.can.length) }; }) });
+			return json({ ok: true, results: body.keys.map(k => { if (k === "fx-fail") return { key: k, ok: false, note: "Gmail에 반영하지 못했어요" }; const m = mails.find(x => x.key === k); if (m) APPLY[body.action](m); return { key: k, ok: true, synced: !!(m && m.can && m.can.length) }; }) });
 		}
 		if (p === "/api/mail/delete-original" && req.method === "POST") {
 			const body = (await req.json()) as { keys: string[] }; posts.push({ path: p, body });
+			if (gate) await gate.p;
 			return json({ ok: true, results: body.keys.map(key => { if (key === "fx-fail") return { key, ok: false, note: "원본을 지우지 못해서 메일을 그대로 뒀어요" }; mails = mails.filter(m => m.key !== key); return { key, ok: true }; }) });
 		}
 		const del = /^\/api\/mail\/([^/]+)$/.exec(p);
-		if (del && req.method === "DELETE") { posts.push({ path: p, body: null }); mails = mails.filter(x => x.key !== del[1]); return json({ ok: true }); }
+		if (del && req.method === "DELETE") { posts.push({ path: p, body: null }); if (gate) await gate.p; mails = mails.filter(x => x.key !== del[1]); return json({ ok: true }); }
 	},
 });
 afterAll(() => hub.stop());
-beforeEach(() => { mails = fresh(); posts = []; composeFails = false; fyiFails = false; });
+beforeEach(() => { gate?.open(); gate = null; mails = fresh(); posts = []; composeFails = false; fyiFails = false; });
 
 const rowJs = (title: string) => `[...document.querySelectorAll("#mon-tl > .mr")].find(r => r.querySelector(".rc-title").textContent === ${JSON.stringify(title)})`;
 const chips = (v: View) => ev<string[]>(v, `[...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`);
@@ -563,6 +568,141 @@ describe("답장 안 함 on many mails", () => {
 		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr").length === 0`);
 		expect(await chips(v)).toContain("답장 필요");
 	}, 30_000);
+});
+
+// A row an action takes out of the list stays until the hub has answered (the test holds the answer and lets it go), then folds away; a refusal leaves it where it was.
+describe("a row leaves only after the hub answered", () => {
+	const hold = () => { let open!: () => void; const p = new Promise<void>(r => { open = r; }); gate = { p, open }; return gate; };
+	// in the list, not fading or folding, and its mail card not changed yet
+	const still = (v: View, title: string) => ev<boolean>(v, `(() => { const r = ${rowJs(title)}; return !!r && !r.dataset.gone && r.getAnimations().length === 0; })()`);
+	const archivedOf = (v: View, key: string) => ev<boolean | null>(v, `MAILS.has("mail:${key}") ? !!MAILS.get("mail:${key}").archived : null`);
+	const confirmYes = async (v: View) => { await waitFor(v, `document.querySelector("dialog[open] .btn.danger")`); await run(v, `document.querySelector("dialog[open] .btn.danger").click()`); };
+
+	test("완료(보관): the row stays, the button waits, nothing is changed until the hub answers; then the row folds away", async () => {
+		const g = hold();
+		const v = await openList(1280, 800);
+		await tick(v, "회의 일정 변경");
+		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		await posted(1);
+		expect(await still(v, "회의 일정 변경")).toBe(true);
+		expect(await archivedOf(v, "fx-b")).toBe(false);
+		expect(await ev<unknown[]>(v, `[${bar(v, "완료(보관)")}.disabled, ${bar(v, "완료(보관)")}.getAttribute("aria-busy")]`)).toEqual([true, "true"]);
+		g.open();
+		await waitFor(v, `!${rowJs("회의 일정 변경")}`);
+		expect(await archivedOf(v, "fx-b")).toBe(true);
+	}, 30_000);
+
+	test("a refused 완료(보관) keeps the row and loses none, the button comes back, the note shows once", async () => {
+		const g = hold();
+		const v = await openList(1280, 800), before = await titles(v);
+		await tick(v, "처리가 안 되는 메일");
+		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		await posted(1);
+		expect(await still(v, "처리가 안 되는 메일")).toBe(true);
+		g.open();
+		await waitFor(v, `document.querySelector(".snack.bad")?.textContent.includes("Gmail에 반영하지 못했어요")`);
+		await waitFor(v, `!${bar(v, "완료(보관)")}.disabled`);
+		expect(await still(v, "처리가 안 되는 메일")).toBe(true);
+		expect(await titles(v)).toEqual(before);
+		expect(await archivedOf(v, "fx-fail")).toBe(false);
+	}, 30_000);
+
+	test("a selection of several: every row stays before the answer; after it the accepted rows fold away and the refused one stays", async () => {
+		const g = hold();
+		const v = await openList(1280, 800), before = await titles(v);
+		await tick(v, "회의 일정 변경"); await tick(v, "처리가 안 되는 메일");
+		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		await posted(1);
+		expect(posts[0]!.path).toBe("/api/mail/actions");
+		expect(await still(v, "회의 일정 변경")).toBe(true);
+		expect(await still(v, "처리가 안 되는 메일")).toBe(true);
+		expect(await titles(v)).toEqual(before);
+		g.open();
+		await waitFor(v, `!${rowJs("회의 일정 변경")}`);
+		await waitFor(v, `document.querySelector(".snack.bad")`);
+		expect(await titles(v)).toEqual(before.filter(t => t !== "회의 일정 변경"));
+		expect(await still(v, "처리가 안 되는 메일")).toBe(true);
+	}, 30_000);
+
+	test("삭제 with the original: the row stays while the hub works, then folds away", async () => {
+		for (const m of mails) if (m.key === "fx-b") m.trashOriginal = true;
+		const g = hold();
+		const v = await openList(1280, 800);
+		await tick(v, "회의 일정 변경");
+		await pickMore(v, "삭제");
+		await confirmYes(v);
+		await posted(1);
+		expect(posts[0]!.path).toBe("/api/mail/delete-original");
+		expect(await still(v, "회의 일정 변경")).toBe(true);
+		expect(await ev<unknown[]>(v, `[document.querySelector('#mbox-bar [data-k="mail-more"]').disabled, document.querySelector('#mbox-bar [data-k="mail-more"]').getAttribute("aria-busy")]`)).toEqual([true, "true"]);
+		g.open();
+		await waitFor(v, `!${rowJs("회의 일정 변경")}`);
+	}, 30_000);
+
+	test("삭제 in dotz only (a mailbox that cannot trash): the row stays until the hub answers, then folds away", async () => {
+		const g = hold();
+		const v = await openList(1280, 800);
+		await tick(v, "회사 메일");
+		await pickMore(v, "삭제");
+		await confirmYes(v);
+		await posted(1);
+		expect(posts[0]).toEqual({ path: "/api/mail/fx-acme/action", body: { action: "trash" } });
+		expect(await still(v, "회사 메일")).toBe(true);
+		expect(await ev<boolean>(v, `MAILS.has("mail:fx-acme")`)).toBe(true);
+		g.open();
+		await waitFor(v, `!${rowJs("회사 메일")}`);
+	}, 30_000);
+
+	test("the ⋯ 삭제 of one row: the row stays and says it is busy until the hub deleted the mail, then folds away", async () => {
+		const g = hold();
+		const v = await openList(1280, 800);
+		await run(v, `mailDelete("mail:fx-c")`);
+		await confirmYes(v);
+		await posted(1);
+		expect(posts[0]).toEqual({ path: "/api/mail/fx-c", body: null });
+		expect(await still(v, "견적서 보내드립니다")).toBe(true);
+		expect(await ev<boolean>(v, `${rowJs("견적서 보내드립니다")}.getAttribute("aria-busy") === "true" && MAILS.has("mail:fx-c")`)).toBe(true);
+		g.open();
+		await waitFor(v, `!${rowJs("견적서 보내드립니다")}`);
+	}, 30_000);
+
+	describe("답장 안 함 in 답장 필요", () => {
+		const owe = () => { for (const m of mails) if (["fx-a", "fx-b", "fx-fail"].includes(m.key)) { m.reply = "needs"; m.archived = false; } };
+		const replyOf = (v: View, key: string) => ev<string>(v, `MAILS.get("mail:${key}").reply`);
+
+		test("the row stays until the hub answers, then folds away", async () => {
+			owe();
+			const g = hold();
+			const v = await openList(1280, 800);
+			await folder(v, "owed");
+			await tick(v, "회의 일정 변경");
+			await pickMore(v, "답장 안 함");
+			await posted(1);
+			expect(posts[0]!.path).toBe("/api/mail/fyi");
+			expect(await still(v, "회의 일정 변경")).toBe(true);
+			expect(await replyOf(v, "fx-b")).toBe("needs");
+			g.open();
+			await waitFor(v, `!${rowJs("회의 일정 변경")}`);
+			expect(await replyOf(v, "fx-b")).toBe("fyi");
+		}, 30_000);
+
+		test("a refusal keeps the row and loses none", async () => {
+			owe(); fyiFails = true;
+			const g = hold();
+			const v = await openList(1280, 800);
+			await folder(v, "owed");
+			const before = await titles(v);
+			await tick(v, "회의 일정 변경");
+			await pickMore(v, "답장 안 함");
+			await posted(1);
+			expect(await still(v, "회의 일정 변경")).toBe(true);
+			g.open();
+			await waitFor(v, `document.querySelector(".snack.bad")`);
+			expect(await still(v, "회의 일정 변경")).toBe(true);
+			expect(await titles(v)).toEqual(before);
+			expect(await replyOf(v, "fx-b")).toBe("needs");
+		}, 30_000);
+	});
 });
 
 describe.if(!!SHOTS)("screenshots", () => {
