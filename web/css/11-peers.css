@@ -13,6 +13,9 @@
 .brand-c .ic { width: 14px; height: 14px; }
 .brand-c.pdot::after { content: ""; position: absolute; right: -2px; bottom: -1px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .brand-c.p-need::after { background: var(--warn); }
+/* the phone tab bar's Home icon: the same dot (size and place are the tab dot's, 01-tokens.css .ni .nub), the same colors; the wide sidebar hides it (22-shell.css) */
+.ni .nub.pc { background: var(--accent); }
+.ni .nub.pc.p-need { background: var(--warn); }
 .appbar.hasp:not(.back) h1 { position: relative; padding-right: var(--sp-4); }
 .appbar.hasp:not(.back) h1::before { position: absolute; right: 2px; top: 50%; margin-top: calc(var(--sp-15) * -1); }
 .appbar.hasp:not(.back) h1.pdot { min-width: var(--btn-hit); }

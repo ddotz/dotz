@@ -46,6 +46,7 @@
   "misc.open": "Open",
   "misc.pr.switch": "Switch computer, now on {name}",
   "misc.pr.switch_more": "Switch computer, now on {name}, new alerts on another computer",
+  "misc.pr.home_more": "Home, new alerts on another computer",
   "misc.pr.switch_tip": "Switch computer ({key} for the next one)",
   "misc.pr.other": "Another computer",
   "misc.pr.going": "Switching to {name}",

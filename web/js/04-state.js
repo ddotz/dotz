@@ -218,7 +218,7 @@ document.addEventListener("keydown", ev => {
   navShortcut(tab[0]);
 });
 // 모니터링's badge (#nav-mon) counts what waits there (09-needs-you.js paintMonAttn).
-for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: TX("base.update.badge"), title: TX("base.update.title") }) : null));
+for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "home" ? el("span", { class: "nb nub pc", id: "nav-pc", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: TX("base.update.badge"), title: TX("base.update.title") }) : null));
 $("#side-tog").append(icon("side"));
 $("#side-tog").onclick = sideToggle;
 sideSync();

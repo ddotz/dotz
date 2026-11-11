@@ -43,6 +43,7 @@
   "misc.open": "열기",
   "misc.pr.switch": "컴퓨터 바꾸기, 지금은 {name}",
   "misc.pr.switch_more": "컴퓨터 바꾸기, 지금은 {name}, 다른 컴퓨터에 새 알림",
+  "misc.pr.home_more": "홈, 다른 컴퓨터에 새 알림",
   "misc.pr.switch_tip": "컴퓨터 바꾸기 ({key}, 다음 컴퓨터로)",
   "misc.pr.other": "다른 컴퓨터",
   "misc.pr.going": "{name}(으)로 넘어가요",

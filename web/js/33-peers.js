@@ -91,6 +91,14 @@ function prOpenItem(p, id) {
 }
 
 const prTrig = () => !!prSelf() && PR.list.length >= 2;
+// The phone's bottom tab bar carries the same dot on its Home icon, from the same "more" / "need" as the bot name's (the page title's dot is gone on a conversation and on
+// every other tab it is only at the top); a wide screen hides it (the brand row has the dot there).
+function prHomeDot(more, need) {
+  const d = $("#nav-pc");
+  if (!d) return;
+  d.hidden = !more; d.classList.toggle("p-need", need);
+  d.parentElement.setAttribute("aria-label", more ? TX("misc.pr.home_more") : TX("common.home"));
+}
 function prPaint() {
   prTryFollow();
   relayNames();
@@ -100,6 +108,7 @@ function prPaint() {
   chev.hidden = !on;
   if (!on) {
     for (const n of names) n.classList.remove("pdot", "p-need");
+    prHomeDot(false, false);
     brand.setAttribute("aria-label", TX("shell.aria.home")); brand.title = TX("shell.aria.home"); brand.removeAttribute("aria-haspopup");
     title.removeAttribute("tabindex"); title.removeAttribute("aria-haspopup");
     prClose(false); return;
@@ -108,6 +117,7 @@ function prPaint() {
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("p-need", need); }
+  prHomeDot(more, need);
   const label = TX(more ? "misc.pr.switch_more" : "misc.pr.switch", { name: relayOn() ? targetName(target) : me.name });
   brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
   brand.title = TX("misc.pr.switch_tip", { key: prKeyHint });
