@@ -17,6 +17,7 @@ import { purgeTrash } from "./lanetrash.ts";
 import { nightlyHandover, orch, orchestratorPid } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { activeHarness } from "./runtime/index.ts";
+import { sweepTemp } from "./temp-sweep.ts";
 import { trackTimer } from "./shutdown.ts";
 
 const STATS_WAIT_MS = 3000;
@@ -358,6 +359,7 @@ export function startDataCleanup(): void {
 	const run = () => {
 		void runDataCleanup();
 		void sweepSnapshots(); // async single scan of files/, never blocks a send
+		sweepTemp().catch(e => log(`temp sweep failed: ${e instanceof Error ? e.message : e}`)); // async, budgeted: stale temp folders
 	};
 	trackTimer("data cleanup", setTimeout(() => {
 		run();

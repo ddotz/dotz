@@ -308,6 +308,8 @@ that `omp worktree list --json` marks with an `orphanReason` (no live job) and t
 paths under `~/.omp/wt/` are touched; they are made writable first (retained worktrees hold read-only files that make
 `omp worktree clear` fail). The count and freed space go to the hub log.
 
+**Temp folder sweep.** In the same hourly data cleanup the gateway removes stale folders from the OS temp dir with asynchronous calls and a budget per pass (2,000 entries or 20 seconds; the rest waits for the next hour): its own test and probe folders (`dotz-test-*` and the temp prefixes dotz creates) older than 3 days, files older than 3 days in `dotz-output-cap` and `dotz-handoff`, and `/tmp/dotz-*` folders older than 7 days. Only folders of the current user that are not symlinks, and never the data dir or the install dir; one hub log line says how many went.
+
 **Nightly token audit.** At `token_audit_at` (default `"04:30"`, `"off"` disables) the gateway scans every OmO and omp conversation
 active in the last 24h (orchestrator, sessions, task subagents) without any model call and writes
 `~/.dotz/logs/token-audit-YYYYMMDD.md`: cache busts, idle wakes, error streaks, repeated tool calls, big contexts, big
@@ -709,7 +711,7 @@ short "received, answering when the current step ends" notice from the gateway.
   conversation; 429 resume, crash restart, rotation past 50MB or 300K context), `lanes.ts` (brief contract, worktrees,
   persistence and resume across restarts, exit/429 handling, 15-minute progress posts), `context.ts`
   (context usage and compaction state shared by orchestrator and sessions), `hygiene.ts` (nightly session compaction and
-  rotation, orphaned worktree cleanup), `schedule.ts` (reminders), `discord.ts`
+  rotation, orphaned worktree cleanup, `temp-sweep.ts` stale temp folders), `schedule.ts` (reminders), `discord.ts`
   (eyes receipt, typing, 429 retry, heartbeat check, identity sync), `control.ts` (model/effort switching, context and
   compaction, slash commands), `providers.ts` (keys, login/logout, model catalog, quota), `activity.ts` (runtime activity
   rows and task-subagent lists to the terminal-view feed),
