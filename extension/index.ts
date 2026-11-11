@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { FIELD_TYPES } from "../hub/authfields.ts";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
-import { openRequestsBlock, renderState } from "../hub/recall-parts.ts";
+import { dropSection, openRequestsBlock, renderSetups, renderState } from "../hub/recall-parts.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { mergeGate, recordReview, Refusal, type Scope } from "../hub/mergegate.ts";
@@ -252,15 +252,24 @@ function ledger(): string {
 	return block ? `\n\n${block}` : "";
 }
 
-function recall(): string {
+export function recall(): string {
 	const file = (p: string, max: number) => (existsSync(p) ? readFileSync(p, "utf8").slice(0, max) : "");
 	const code = language();
 	const base = baseLanguage(code);
 	const chain = [...(base === "en" ? [] : [join(DATA, `MODE.${base}.md`), join(PKG, `MODE.${base}.md`)]), join(DATA, "MODE.md"), join(PKG, "MODE.md")];
-	const mode = file(chain.find(existsSync) ?? join(PKG, "MODE.md"), 30000);
+	// Same as the start prompt (hub/orchestrator-parts.ts recallText): no mail section while zele is off, state at STATE_CAP, setups one line each.
+	let zeleOn = true;
+	try {
+		zeleOn = JSON.parse(readFileSync(join(DATA, "config.json"), "utf8")).zele?.enabled !== false;
+	} catch {
+		// no readable config: zele's default (on)
+	}
+	const modeText = file(chain.find(existsSync) ?? join(PKG, "MODE.md"), 30000);
+	const mode = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
 	const features = featurePrompt(DATA, "orchestrator");
 	const stateFile = join(DATA, "state.json");
-	const parts = { identity: file(join(DATA, "identity", "IDENTITY.md"), 3000), rules: file(join(DATA, "RULES.md"), 12000) + (features ? `\n\n${features}` : ""), lessons: file(join(DATA, "LESSONS.md"), 3000), setups: file(join(DATA, "channel-setups.json"), 3000), state: (existsSync(stateFile) && renderState(readFileSync(stateFile, "utf8"), stateFile, 4000)) || "{}" };
+	const setupsFile = join(DATA, "channel-setups.json");
+	const parts = { identity: file(join(DATA, "identity", "IDENTITY.md"), 3000), rules: file(join(DATA, "RULES.md"), 12000) + (features ? `\n\n${features}` : ""), lessons: file(join(DATA, "LESSONS.md"), 3000), setups: existsSync(setupsFile) ? renderSetups(readFileSync(setupsFile, "utf8")) : "", state: (existsSync(stateFile) && renderState(readFileSync(stateFile, "utf8"), stateFile)) || "{}" };
 	if (base === "ko") return `[dotz] 컨텍스트 압축 뒤 계약을 다시 읽어요:\n\n정체성:\n${parts.identity}\n\n${mode}\n\n오너 규칙:\n${parts.rules}\n\n교훈:\n${parts.lessons}\n\n작업 채널 설정 (자세한 건 dotz_channel list):\n${parts.setups || "(없음)"}\n\n현재 state.json:\n${parts.state}`;
 	const reply = base === "en" ? "" : `\n\nReply to the owner in ${languageName(code)} (${code}).`;
 	return `[dotz] Contract re-read after compaction:\n\nIdentity:\n${parts.identity}\n\n${mode}\n\nOwner rules:\n${parts.rules}\n\nLessons:\n${parts.lessons}\n\nWork channel setups (dotz_channel list for details):\n${parts.setups || "(none)"}\n\nCurrent state.json:\n${parts.state}${reply}`;

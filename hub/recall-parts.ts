@@ -123,5 +123,22 @@ export function dropSection(mode: string, heading: string): string {
 	return [...lines.slice(0, from), ...lines.slice(to)].join("\n");
 }
 
+// channel-setups.json as one line per channel, the shape of workchannels.ts setupsSummary (that module needs the gateway's config):
+// the raw JSON with timestamps and ids took 2.8K of the re-read after a compaction. Not a list: the old raw slice.
+export function renderSetups(raw: string, max = 3000): string {
+	let list: unknown;
+	try {
+		list = JSON.parse(raw);
+	} catch {
+		return raw.slice(0, max);
+	}
+	if (!Array.isArray(list)) return raw.slice(0, max);
+	const text = list
+		.filter(s => s && typeof s === "object")
+		.map(s => `- #${s.name} (ch:${s.channel}): ${s.purpose ?? ""}${s.standing ? ` | standing: ${s.standing} (${s.scope ?? "no limit set"}${s.expires ? `, until ${s.expires}` : ""})` : ""} | logins: ${(s.logins ?? []).join(", ") || "none"} | monitors: ${(s.monitors ?? []).length}`)
+		.join("\n");
+	return text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; dotz_channel list]` : text;
+}
+
 /** The ledger block of a session's recall prompt: "" when the file holds nothing open. */
 export const openRequestsBlock = (file: string, tz: string, now = Date.now()): string => renderOpenRequests(loadLedger(file), file, tz, now);
