@@ -3,11 +3,12 @@
 import { expect, test } from "bun:test";
 import { guardConfigFrom } from "./guard-config.ts";
 import { installTaskCap } from "./task-cap.ts";
+import { growthFor } from "./task-cap-grow.ts";
 
 function worker(cap: number, compactAt = 0) {
 	const handlers: Record<string, ((event: any, ctx: any) => any)[]> = {};
 	const sent: { message: any; options: any }[] = [];
-	installTaskCap({ on: (name, fn) => (handlers[name] ??= []).push(fn), sendMessage: (message, options) => sent.push({ message, options }) }, cap, compactAt);
+	installTaskCap({ on: (name, fn) => (handlers[name] ??= []).push(fn), sendMessage: (message, options) => sent.push({ message, options }) }, cap, compactAt, growthFor(cap, guardConfigFrom({ task_cap_grow: false })));
 	let aborted = 0;
 	const compacts: { onComplete?: (r: unknown) => void; onError?: (e: Error) => void }[] = [];
 	const ctx = { abort: () => aborted++, compact: (o: any) => compacts.push(o), sessionManager: { getSessionId: () => "sess-1" } };

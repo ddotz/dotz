@@ -18,14 +18,21 @@
 // failed, unless the worker's last turn was already its final answer (a message then would start a turn that replaces the
 // report; OmO's post-compact-restoration message rides on the next turn start and starts none itself). The runtime ends an
 // aborted or superseded compaction with neither callback, so a tool turn that ends while one is pending re-arms it.
+// Growth (task-cap-grow.ts, guard.task_cap_grow): the cap is not a wall for a worker that is getting somewhere. At the 75% warning point
+// and again before each grown cap the worker's own signals since the last checkpoint (commits and changed paths from one git read, edited
+// files, finished todo items, against repeated calls and a long run without a write; no model call) are judged: progress raises the cap by
+// guard.task_cap_step up to guard.task_cap_ceiling and the handoff steer waits, no progress warns and blocks as before. The allowance
+// restarts when a follow-up reaches a worker that had given its final answer; an `Estimate: N%` line of the brief sets the starting cap
+// and little room in the subscription windows shrinks the step. Each growth and the stop are one line the worker is told to copy to the end
+// of its final answer: that answer is the only channel to the parent. Switched off (false), nothing of this runs.
 // The orchestrator and lanes have their own compaction path and never load this file.
 // OmO itself has no per-task token budget (its tokenBudget is the goal tool's only), so the cap lives here.
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadGuardConfig } from "./guard-config.ts";
+import { type CapEvent, type Growth, growLine, growthFor } from "./task-cap-grow.ts";
 
 const BLOCKS_BEFORE_ABORT = 3;
-const WARN_AT = 0.75;
 // After a compaction, failed or not, the next try waits until the context is this much above what it was then.
 const REARM_GROWTH = 50_000;
 const k = (n: number) => `${Math.round(n / 1000).toLocaleString("en-US")}K`;
@@ -44,11 +51,21 @@ const contextTokens = (message: any): number => {
 // One handoff file per worker session, outside the repo so it is never committed.
 export const handoffPath = (ctx: any) => join(tmpdir(), "dotz-handoff", `${ctx?.sessionManager?.getSessionId?.() ?? `pid-${process.pid}`}.md`);
 
-export const capReason = (spent: number, cap: number, turns: number, handoff: string) =>
-	`[fail] dotz task token cap: this worker has used ${k(spent)} tokens over ${turns} turns (cap ${k(cap)}, guard.task_token_cap) without finishing. Tools are disabled. Write your final answer now, starting with "[fail] token cap ${k(spent)}": what is done (changed paths), the last state you reached, what blocked progress, and what remains, then the line "handoff: ${handoff}" (the file you wrote at the 75% warning, or "handoff: none" if you did not).`;
+const copyLines = (lines: string[]) => (lines.length ? ` End the answer with these lines, verbatim:\n${lines.join("\n")}` : "");
 
-export const capWarning = (spent: number, cap: number, handoff: string) =>
-	`[dotz] task token budget: this worker has used ${k(spent)} of its ${k(cap)} token cap (guard.task_token_cap); at the cap its tools are disabled. Now write a handoff file at ${handoff} (create the folder if needed, at most 30 lines): done, remaining, the exact next step, changed paths. Then commit what you have, finish or report the remainder, and do not start new long runs.`;
+export const capReason = (spent: number, cap: number, turns: number, handoff: string, lines: string[] = []) =>
+	`[fail] dotz task token cap: this worker has used ${k(spent)} tokens over ${turns} turns (cap ${k(cap)}, guard.task_token_cap) without finishing. Tools are disabled. Write your final answer now, starting with "[fail] token cap ${k(spent)}": what is done (changed paths), the last state you reached, what blocked progress, and what remains, then the line "handoff: ${handoff}" (the file you wrote at the 75% warning, or "handoff: none" if you did not).${copyLines(lines)}`;
+
+export const capWarning = (spent: number, cap: number, handoff: string, lines: string[] = []) =>
+	`[dotz] task token budget: this worker has used ${k(spent)} of its ${k(cap)} token cap (guard.task_token_cap); at the cap its tools are disabled. Now write a handoff file at ${handoff} (create the folder if needed, at most 30 lines): done, remaining, the exact next step, changed paths. Then commit what you have, finish or report the remainder, and do not start new long runs.${copyLines(lines)}`;
+
+const capGrown = (line: string) => `[dotz] task token budget grown, keep working and write no handoff yet. End your final answer with this line, verbatim:\n${line}`;
+
+// The two events that reach the worker as a hidden steer; a stop is delivered by the blocked call itself.
+function announce(pi: Host, ctx: any, event: CapEvent | undefined, growth: Growth): void {
+	const content = event?.kind === "warn" ? capWarning(event.spent, event.cap, handoffPath(ctx), growth.lines()) : event?.kind === "grow" ? capGrown(growLine(event)) : undefined;
+	if (content) pi.sendMessage({ customType: "dotz-task-cap", content, display: false }, { deliverAs: "steer" });
+}
 
 const compactNote = (tokens: number, done: boolean) =>
 	`[dotz] your context (${k(tokens)}) ${done ? "was compacted" : "could not be compacted"} to keep turns cheap. Continue the task from ${done ? "the summary and " : ""}your last step; re-read a file only when you need its exact text.`;
@@ -59,12 +76,11 @@ const isFinalAnswer = (message: any): boolean =>
 
 type Host = { on: (name: string, fn: (event: any, ctx: any) => any) => void; sendMessage: (message: any, options?: any) => unknown };
 
-export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap, compactAt = loadGuardConfig().task_compact_tokens): void {
+export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap, compactAt = loadGuardConfig().task_compact_tokens, growth: Growth = growthFor(cap)): void {
 	if (!(cap > 0) && !(compactAt > 0)) return;
 	let spent = 0;
 	let turns = 0;
 	let blocked = 0;
-	let warned = false;
 	// A context size at or above which the next turn end compacts; Infinity while a compaction is pending.
 	let compactFrom = compactAt;
 	let compacted = false;
@@ -72,6 +88,7 @@ export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap,
 	let finalAnswer = false;
 	pi.on("turn_end", (event: any, ctx: any) => {
 		finalAnswer = isFinalAnswer(event?.message);
+		if (finalAnswer) growth.finished();
 		const t = turnTokens(event?.message);
 		if (t > 0) {
 			spent += t;
@@ -86,7 +103,7 @@ export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap,
 			} else if (compactFrom === Number.POSITIVE_INFINITY) {
 				// A tool turn ran while a compaction was pending: the runtime ended it with neither onComplete nor onError (aborted or superseded), so re-arm.
 				compactFrom = Math.max(compactAt, context + REARM_GROWTH);
-			} else if (context >= compactFrom && !(cap > 0 && spent >= cap)) {
+			} else if (context >= compactFrom && !(cap > 0 && spent >= growth.cap())) {
 				compactFrom = Number.POSITIVE_INFINITY;
 				spent += context;
 				const resume = (done: boolean) => finalAnswer || pi.sendMessage({ customType: "dotz-task-compact", content: compactNote(context, done), display: false }, { triggerTurn: true, deliverAs: "followUp" });
@@ -102,14 +119,18 @@ export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap,
 				});
 			}
 		}
-		if (!(cap > 0) || warned || spent < cap * WARN_AT || spent >= cap) return;
-		warned = true;
-		pi.sendMessage({ customType: "dotz-task-cap", content: capWarning(spent, cap, handoffPath(ctx)), display: false }, { deliverAs: "steer" });
+		if (cap > 0) announce(pi, ctx, growth.turn(spent), growth);
 	});
 	if (!(cap > 0)) return;
-	pi.on("tool_call", (_event: any, ctx: any) => {
-		if (spent < cap) return;
+	if (growth.enabled)
+		pi.on("before_agent_start", (event: any) => {
+			if (!event?.preview && growth.prompt(event?.prompt, spent) === "revived") blocked = 0;
+		});
+	pi.on("tool_call", (event: any, ctx: any) => {
+		growth.note(event?.toolName, event?.input);
+		announce(pi, ctx, growth.atCap(spent), growth);
+		if (spent < growth.cap()) return;
 		if (++blocked > BLOCKS_BEFORE_ABORT) ctx?.abort?.();
-		return { block: true, reason: capReason(spent, cap, turns, handoffPath(ctx)) };
+		return { block: true, reason: capReason(spent, growth.cap(), turns, handoffPath(ctx), growth.lines()) };
 	});
 }

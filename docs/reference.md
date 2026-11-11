@@ -311,6 +311,13 @@ the dotz extension into every agent it runs in: the orchestrator, sessions and t
   (`<tmp>/dotz-handoff/<session id>.md`: done, remaining, the exact next step, changed paths), commit what it has, finish or report the rest and start no new long
   runs; past the cap it has its tools blocked with a `[fail]` note naming what it spent and the handoff path, so its next answer goes back to the
   parent as a failure with its last state (a parent continues by spawning a worker with that file); it is aborted if it keeps calling tools.
+  The cap grows while the worker makes progress (`task_cap_grow`, default on; false = the fixed cap above, exactly): at the 75% point and again before each grown
+  cap, the worker's own signals since the last checkpoint are judged without a model call (one git read of its checkout for new commits and changed paths, files it edited,
+  finished todo items; against repeated calls and 40 calls without a write). Progress raises the cap by `task_cap_step` (3000000) up to `task_cap_ceiling` (24000000, never under
+  `task_token_cap`) and the handoff note waits; no progress is the warning and the block as before, and the ceiling still ends a worker that keeps progressing. A follow-up sent to a worker after
+  its final answer starts a fresh allowance. An `Estimate: N%` line in the brief sets the starting cap (N/15 of `task_token_cap`, in whole millions, from 4000000 up to the ceiling); when the
+  last read of the subscription usage windows (OmO's `subscription-usage.json`, no network call) leaves under 25% (10%) in the 5h or 7d window, the step is halved (quartered), never under 1000000.
+  Each growth and the stop is one line (`[dotz cap] ... spent, cap A -> B, signal`) the worker is told to copy to the end of its final answer: that answer is the only channel to the parent.
   An OmO task worker whose context passes `task_compact_tokens` (150000; 0 = off) at a turn end between tool steps compacts itself once per
   crossing (never on its final turn, never on the orchestrator or lanes) and carries on; the summary request counts toward the cap.
 - *Owner thresholds*: a tool call that changes `orchestrator.rotate_tokens` or `lanes.compact_at` in `config.json` is undone
@@ -340,7 +347,7 @@ there is no gate. `budget_gate: false` turns it off.
 - Config: the `guard` object in `config.json`, every key optional (`enabled`, `max_brief_chars`, `max_fence_lines`,
   `max_output_chars`, `worker_answer_chars` 800, `worker_context_tokens` 400000, `budget_gate`, `budget_margin_percent`,
   `budget_default_estimate_percent`, `override_minutes`, `repeat_block_threshold`, `switch_compact_min_tokens`,
-  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `defer_to_installed`, `harness_tools`, `task_token_cap`, `task_compact_tokens`).
+  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `defer_to_installed`, `harness_tools`, `task_token_cap`, `task_compact_tokens`, `task_cap_grow`, `task_cap_step`, `task_cap_ceiling`).
 - *Already installed copies*: the runtime lists no loaded extensions to an extension, so the guard looks for
   `<agent dir>/extensions/orchestrator-guard.ts` (and `harness-tools.ts` for the commands), unless discovery is
   switched off or the config disables it. When it exists, this copy leaves those hooks to it (the same hooks
