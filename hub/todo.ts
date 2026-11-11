@@ -55,6 +55,20 @@ export function readTodo(file: string | undefined): Todo {
 	}
 }
 
+// A lane that reported [done] and has not heard from the owner since owes nothing (hub/laneunfinished.ts laneClosed). Tasks its plan still shows
+// open from before that report are finished work nobody ticked off (2026-11-11, two lanes in one evening): they were closed only in the extra turn
+// OmO's turn-end reminder started after the report, and the web showed "할 일 N개 남음" for a lane that had landed its work. A plan the session
+// wrote after the report is its own word and stands. The open tasks read as dropped; nothing is written to the session file.
+type Closing = { sessionFile?: string; claim?: { at: string; reopened?: boolean } };
+export function laneTodo(lane: Closing): Todo {
+	const todo = readTodo(lane.sessionFile);
+	const closedAt = lane.claim && !lane.claim.reopened ? Date.parse(lane.claim.at) : NaN;
+	if (!(Date.parse(todo.at ?? "") < closedAt)) return todo;
+	const open = (x: TodoTask) => x.status !== "completed" && x.status !== "abandoned";
+	if (!todo.phases.some(p => p.tasks.some(open))) return todo;
+	return { ...todo, phases: todo.phases.map(p => ({ ...p, tasks: p.tasks.map(x => (open(x) ? { ...x, status: "abandoned" } : x)) })) };
+}
+
 function scanTodo(fd: number, size: number): Todo {
 	let end = size;
 	let chunk = FIRST_CHUNK;

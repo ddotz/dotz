@@ -41,7 +41,7 @@ import { type DecisionSend, type Notice, allNotices, listNotices, dismissedAlert
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
-import { openMonitor, readTodo } from "./todo.ts";
+import { laneTodo, openMonitor, readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
@@ -208,7 +208,7 @@ function stateRuns(): Record<string, RunState> {
 			lastAnswer: lane.lastText, acted: lastTurnActed(items),
 			compacting: compactingNow(lane.ctx),
 			watching: openMonitor(lane.sessionFile),
-			todos: openTodos(readTodo(lane.sessionFile)),
+			todos: openTodos(laneTodo(lane)),
 			now: nowMs,
 		});
 	}
@@ -418,7 +418,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);
 			const lane = target.startsWith("lane:") ? lanes.get(target.slice(5)) : undefined;
 			if (target.startsWith("lane:") && !lane) return json({ error: `no lane ${target.slice(5)}` }, 404);
-			return json(readTodo(lane ? lane.sessionFile : orch.sessionFile));
+			return json(lane ? laneTodo(lane) : readTodo(orch.sessionFile));
 		}
 		// API keys for fallback entries (hub/apikey-store.ts): GET shows masks only; PUT {provider, key} or {from: "omo"}; DELETE /api/apikeys/<provider>.
 		if (parts[0] === "api" && parts[1] === "apikeys") {

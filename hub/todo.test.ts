@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { openMonitor, readTodo } from "./todo.ts";
+import { laneTodo, openMonitor, readTodo } from "./todo.ts";
 
 const DIR = join(process.env.DOTZ_TEST_DIR!, "todo-sessions");
 mkdirSync(DIR, { recursive: true });
@@ -68,4 +68,17 @@ test("a session waits on what its harness's latest lifecycle record says: a moni
 	expect(openMonitor(f)).toBe("백그라운드 작업 2개");
 	write([life("idle", [])]);
 	expect(openMonitor(f)).toBeUndefined();
+});
+
+// A lane that reported [done] owes nothing: what its plan still shows open from before the report reads as dropped, never as work left.
+test("a lane's plan from before its [done] report shows nothing open; a later plan, an owner message or no report leaves it as written", () => {
+	const sessionFile = session("lane-done", [todoLine("2026-10-21T01:00:00.000Z", phases(false))]);
+	const status = (lane: Parameters<typeof laneTodo>[0]) => laneTodo(lane).phases[0]!.tasks.map(x => x.status);
+	expect(status({ sessionFile, claim: { at: "2026-10-21T02:00:00.000Z" } })).toEqual(["abandoned", "abandoned"]);
+	expect(status({ sessionFile, claim: { at: "2026-10-21T02:00:00.000Z", reopened: true } })).toEqual(["in_progress", "pending"]);
+	expect(status({ sessionFile, claim: { at: "2026-10-21T00:30:00.000Z" } })).toEqual(["in_progress", "pending"]);
+	expect(status({ sessionFile })).toEqual(["in_progress", "pending"]);
+	const mixed = session("lane-done-mixed", [todoLine("2026-10-21T01:00:00.000Z", [{ name: "구현", tasks: [{ content: "API 만들기", status: "completed" }, { content: "테스트", status: "pending" }] }])]);
+	expect(status({ sessionFile: mixed, claim: { at: "2026-10-21T02:00:00.000Z" } })).toEqual(["completed", "abandoned"]);
+	expect(readTodo(sessionFile).phases[0]!.tasks[0]!.status).toBe("in_progress");
 });
