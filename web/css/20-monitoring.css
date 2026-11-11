@@ -84,6 +84,8 @@
 :is(#mon-side, #chat-convo.mon-side) .cv-av .ic { width: 20px; height: 20px; }
 :is(#mon-side, #chat-convo.mon-side) .cv-row .cv-n { font: 500 15px/22px var(--font); }
 :is(#mon-side, #chat-convo.mon-side) .cv-row .cv-p { color: var(--fg-2); font: 400 12px/16px var(--font); }
+/* another computer's row starts its line with where it runs (pqWhere, "맥미니에서 돌아요 · …"): in the 340 panel that line takes a second line instead of losing its news */
+:is(#mon-side, #chat-convo.mon-side) .cv-row[data-k^="p:"] .cv-p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
 :is(#mon-side, #chat-convo.mon-side) .cv-row .cv-m { gap: var(--sp-15); }
 /* the row's way in: a small chevron at the right edge, after its tags (the prototype's .li .end chev) */
 :is(#mon-side, #chat-convo.mon-side) .cv-row::after { align-self: center; content: ""; flex: none; width: 6px; height: 6px; margin-left: var(--sp-05); border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); }

@@ -110,15 +110,18 @@ describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in 
 	}
 
 	// The closed sheet stays in the page while it fades out; a screen opened in that moment still gets the options.
-	test("⋯ pressed right after 뒤로 shows the options in the new screen", async () => {
-		const v = await boot(1280, 800);
-		await run(v, `go("monitoring", "i:mail")`);
-		const more = `#mon-head .as-hd[data-as-more]`;
-		await waitFor(v, `document.querySelector(${JSON.stringify(more)})`);
-		await run(v, `document.querySelector(${JSON.stringify(more)}).click()`);
-		await waitFor(v, `document.querySelector(".as-screen #app-sw .as-row")`);
-		const s = await q<{ sheets: number; rows: number }>(v, `document.querySelector('[data-k="as-back"]').click(); document.querySelector(${JSON.stringify(more)}).click(); return { sheets: document.querySelectorAll(".as-screen").length, rows: FS[FS.length - 1].box.querySelectorAll(".as-row").length }`);
-		expect(s.sheets).toBe(2);   // the old one is still fading out
-		expect(s.rows).toBeGreaterThan(0);
-	});
+	// A phone's settings are a full screen sheet (fsOpen) that fades out; a wide screen's stand in the app's right column (asPaneOpen) and leave at once, so the new one is the only one.
+	for (const [label, w, h, more] of [["phone", 390, 844, "#as-more-bar"], ["desktop", 1280, 800, "#mon-head .as-hd[data-as-more]"]] as const) {
+		test(`${label}: ⋯ pressed right after 뒤로 shows the options in the new screen`, async () => {
+			const v = await boot(w, h);
+			await run(v, `go("monitoring", "i:mail")`);
+			await waitFor(v, `(b => !!b && !b.hidden && !!b.offsetParent)(document.querySelector(${JSON.stringify(more)}))`);
+			await run(v, `document.querySelector(${JSON.stringify(more)}).click()`);
+			await waitFor(v, `document.querySelector(".as-screen #app-sw .as-row")`);
+			const s = await q<{ sheets: number; rows: number; pane: boolean }>(v, `document.querySelector('[data-k="as-back"]').click(); document.querySelector(${JSON.stringify(more)}).click(); return { sheets: document.querySelectorAll(".as-screen").length, rows: ASC.h.box.querySelectorAll(".as-row").length, pane: !!ASC.h.pane }`);
+			expect(s.pane).toBe(w >= 1100);
+			expect(s.sheets).toBe(w >= 1100 ? 1 : 2);   // a phone's old sheet is still fading out
+			expect(s.rows).toBeGreaterThan(0);
+		});
+	}
 });
