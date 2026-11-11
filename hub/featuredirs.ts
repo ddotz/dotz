@@ -189,16 +189,20 @@ function recipeIndex(dataDir: string): string {
 }
 
 const CAP = 12_000;
+// A longer body loads on demand, like an OmO skill: its one-line `what` and the path go into every prompt, the body is read when the
+// work matches. reply-drafts' 7.4K body rode along in every re-read after a compaction (2026-11-11: 12K of a 46K contract).
+export const INLINE_MAX = 400;
+const onDemand = (f: FeatureDir) => `${f.what.replace(/\.?\s*$/, ".")} Read that file before such work; only this line is loaded here.`;
 // Enabled bodies for one audience, one heading per feature, cut like the RULES.md block (marker names where to read the rest).
 export function featurePrompt(dataDir: string, role: "orchestrator" | "lanes", warn?: (msg: string) => void, max = CAP): string {
 	const all = loadFeatureDirs(dataDir, warn).features;
 	const mine = all.filter(f => f.enabled && f.body && (f.appliesTo === "all" || f.appliesTo === role || (role === "lanes" && f.appliesTo === "workers")));
 	// Off features cost one line each, so a request like "connect X" finds its setup without the full body in every prompt.
 	const off = role === "orchestrator" ? all.filter(f => !f.enabled && f.setup) : [];
-	const offText = off.length ? `\n\nOff until the owner asks (then run the setup; it is the whole onboarding):\n${off.map(f => `- ${f.name}: ${f.what} Setup: ${f.setup}`).join("\n")}` : "";
+	const offText = off.length ? `\n\nOff until the owner asks (then run the setup; it is the whole onboarding):\n${off.map(f => `- ${f.name}: ${f.what.replace(/\.?\s*$/, ".")} Setup: ${f.setup!.length <= INLINE_MAX ? f.setup : `the setup line of ${f.file}`}`).join("\n")}` : "";
 	const recipes = recipeIndex(dataDir);
 	if (!mine.length && !offText) return recipes;
-	const text = mine.map(f => `### ${f.name} (${f.file}${f.appliesTo === "workers" ? "; pass this to your task workers in their briefs" : ""})\n${f.body}`).join("\n\n");
+	const text = mine.map(f => `### ${f.name} (${f.file}${f.appliesTo === "workers" ? "; pass this to your task workers in their briefs" : ""})\n${f.body.length <= INLINE_MAX ? f.body : onDemand(f)}`).join("\n\n");
 	const body = (text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; read the feature.md named in each heading for the rest]` : text) + offText;
 	return `## Features (shipped ones from ${SHIPPED_ROOT}, the owner's own from ${featuresRoot(dataDir)}; same weight as the owner rules above)\n\n${body.trim()}${recipes ? `\n\n${recipes}` : ""}`;
 }

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { featurePrompt, loadFeatureDirs } from "./featuredirs.ts";
+import { featurePrompt, INLINE_MAX, loadFeatureDirs } from "./featuredirs.ts";
 
 // A personal folder with a shipped id switches the shipped feature on or off; it does not freeze the shipped text (onboarding and
 // app-off write such copies, and an update must still reach them). `custom: true` keeps an owner's own text.
@@ -40,4 +40,19 @@ test("custom: true keeps the owner's own text", () => {
 	const f = loadFeatureDirs(d).features.find(x => x.id === "kakao")!;
 	expect(f.body).toContain("이전 버전의 본문이에요");
 	expect(f.switchFile).toBeUndefined();
+});
+
+test("a long feature body costs one line and its path in the prompt; a short one goes in whole", () => {
+	const d = mkdtempSync(join(tmpdir(), "dotz-feat-"));
+	const write = (id: string, body: string) => {
+		mkdirSync(join(d, "features", id), { recursive: true });
+		writeFileSync(join(d, "features", id, "feature.md"), `---\nname: ${id}\nwhat: does ${id}\ntrigger: 메시지 도착\nstage: s\napplies_to: orchestrator\ncustom: true\n---\n${body}\n`);
+	};
+	write("zz-long", "L".repeat(INLINE_MAX + 1));
+	write("zz-short", "short body");
+	const prompt = featurePrompt(d, "orchestrator");
+	expect(prompt).not.toContain("L".repeat(INLINE_MAX + 1));
+	expect(prompt).toContain(join(d, "features", "zz-long", "feature.md"));
+	expect(prompt).toContain("does zz-long.");
+	expect(prompt).toContain("short body");
 });
