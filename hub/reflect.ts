@@ -7,6 +7,7 @@ import { issueBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, log, paths, writeAtomic } from "./config.ts";
 import { CORRECTION, type Correction, SCAN_CHARS, TOPIC_NAMES, type Topic, topicOf } from "./corrections.ts";
 import { isPeerMessage } from "./events.ts";
+import { yesterdayNote } from "./day-note-format.ts";
 import { msg, withReplyLine } from "./i18n.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { trackTimer } from "./shutdown.ts";
@@ -410,7 +411,12 @@ function lessonBlock(now: number): string {
 	return msg().lessonCandidates(stale, duplicates.map(d => `${d.a}\n  ~ ${d.b} (${d.score})`), over);
 }
 
-export const reflectPrompt = (d: string, now = Date.now(), corrections: readonly string[] = [], recipe = ""): string => withReplyLine(msg().reflect(d, paths.lessons) + candidateBlock(now, corrections) + recipe);
+const dayNoteLine = (now: number): string => {
+	const note = yesterdayNote(now);
+	return note ? `\n${msg().dayNote.line(note)}` : "";
+};
+
+export const reflectPrompt = (d: string, now = Date.now(), corrections: readonly string[] = [], recipe = ""): string => withReplyLine(msg().reflect(d, paths.lessons) + candidateBlock(now, corrections) + recipe) + dayNoteLine(now);
 
 if (import.meta.main && process.argv[2] === "--candidates" && process.argv[3]) {
 	console.log(JSON.stringify(lessonCandidates(readFileSync(process.argv[3], "utf8"), Date.now()), null, 2));

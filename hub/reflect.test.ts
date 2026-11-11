@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { paths } from "./config.ts";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cfg, paths } from "./config.ts";
+import { daysDir, kstDay, noteFile } from "./day-note-format.ts";
 import type { Correction } from "./corrections.ts";
 import type { Schedule } from "./schedule.ts";
 import { admitLessons, correctionBlock, CORRECTIONS_MAX_CHARS, digest, dueAlerts, gateLessons, lessonCandidates, lessonChecks, lessonScore, proseClosedTopics, scheduleBlock, reflectPrompt, repeatedLessons, sendRepeatAlerts } from "./reflect.ts";
@@ -276,4 +277,24 @@ test("the nightly data lists schedules only when two or more are live, each in o
 	expect(block[1]).toBe(`- a check next 2026-11-11 03:30Z once age 3d: ${"점검".repeat(40)}`);
 	expect(block[2]).toContain("- b owner next");
 	expect(block[2]).toContain("every 60m");
+});
+
+test("yesterday's day note is named by one more last line only when the feature is on and the file exists", () => {
+	const holder = cfg as { day_note?: { enabled?: boolean } };
+	const file = noteFile(kstDay(now - DAY), daysDir());
+	try {
+		const plain = reflectPrompt("digest", now);
+		mkdirSync(daysDir(), { recursive: true });
+		writeFileSync(file, "x");
+		expect(reflectPrompt("digest", now)).toBe(plain);
+		holder.day_note = { enabled: true };
+		const named = reflectPrompt("digest", now);
+		expect(named.startsWith(plain + "\n")).toBe(true);
+		expect(named.split("\n").at(-1)).toContain(file);
+		rmSync(file);
+		expect(reflectPrompt("digest", now)).toBe(plain);
+	} finally {
+		delete holder.day_note;
+		rmSync(file, { force: true });
+	}
 });
