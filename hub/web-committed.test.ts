@@ -118,3 +118,42 @@ describe("committed web build", () => {
 	});
 
 });
+
+describe("web commits and the server side of the process", () => {
+	let r2 = "";
+	const put2 = (rel: string, text: string) => { mkdirSync(join(r2, rel, ".."), { recursive: true }); writeFileSync(join(r2, rel), text); };
+	const commit2 = (msg: string) => { sh(r2, "add", "-A"); sh(r2, "commit", "-qm", msg); tick(); };
+	const served = () => publishedWeb(r2)!.files.get("js/01-app.js")!;
+	beforeAll(() => {
+		r2 = mkdtempSync(join(tmpdir(), "dotz-web-hub-"));
+		sh(r2, "init", "-q", "-b", "main");
+		sh(r2, "config", "user.email", "t@t");
+		sh(r2, "config", "user.name", "t");
+		put2("VERSION", "261111.1\n");
+		put2("hub/main.ts", "export const v = 1;\n");
+		put2("web/js/01-app.js", '"use strict";\nSTART\n');
+		commit2("start");
+		process.env.DOTZ_WEB_DIR = join(r2, "web");
+		resetPublishedWeb();
+	});
+	afterAll(() => { resetPublishedWeb(); rmSync(r2, { recursive: true, force: true }); });
+
+	test("a commit that changes only web/ is served as before", () => {
+		expect(served()).toContain("START");
+		put2("web/js/01-app.js", '"use strict";\nWEB-ONLY\n');
+		commit2("web only");
+		expect(served()).toContain("WEB-ONLY");
+	});
+
+	test("a commit that changes hub/ and web/ with the same VERSION keeps the web file the process started with, and so do later web commits", () => {
+		put2("hub/main.ts", "export const v = 2;\n");
+		put2("web/js/01-app.js", '"use strict";\nNEEDS-NEW-HUB\n');
+		commit2("hub and web");
+		expect(served()).toContain("WEB-ONLY");
+		expect(served()).not.toContain("NEEDS-NEW-HUB");
+		put2("web/js/01-app.js", '"use strict";\nLATER-WEB\n');
+		commit2("web again");
+		expect(served()).toContain("WEB-ONLY");
+		expect(served()).not.toContain("LATER-WEB");
+	});
+});

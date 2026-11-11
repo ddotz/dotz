@@ -4,8 +4,9 @@
 // version. Not a git repo, no git, or web/ not committed: undefined, and webapp.ts reads the disk as before.
 // The web app this process started with stays what it serves once the install's VERSION differs from the one it started on (an update
 // landed on disk and the restart waits for idle): the server's constants (WEB_BUILD, I18N) and the page must come from the same version.
-// A checkout whose VERSION did not change still follows its edits (commits here, the disk elsewhere). Not covered: an update that keeps
-// VERSION, hub modules that load lazily, vendor/ and icons (read from disk at request).
+// In a git checkout the same holds once HEAD's hub/ tree differs from the one at start (commits between releases keep VERSION; the page
+// depends on hub/ only, extension/ is the agents' side). A checkout whose VERSION and hub/ did not change still follows its web commits.
+// Not covered: a non-git folder whose VERSION stays, hub modules that load lazily, vendor/ and icons (read from disk at request).
 // Dev escape: DOTZ_WEB_LIVE=1 serves the working tree (hub/runtime/test-setup.ts sets it so tests see the files they edit).
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -19,7 +20,7 @@ const RETRY_NO_GIT_MS = 30_000;
 const git = (cwd: string, args: string[], input?: Buffer): Buffer => execFileSync("git", args, { cwd, input, maxBuffer: 64 << 20, timeout: 30_000 /* a local git read or write: seconds */, stdio: ["pipe", "pipe", "ignore"] });
 const mtime = (p: string): number => { try { return statSync(p).mtimeMs; } catch { return 0; } };
 
-type State = { gitDir?: string; headKey: string; published?: WebSnapshot; pinned: WebSnapshot; boot: string; version: string; vstamp: string; pending?: { snap: WebSnapshot; since: number }; checkedAt: number };
+type State = { gitDir?: string; headKey: string; published?: WebSnapshot; pinned: WebSnapshot; hub: string; moved?: boolean; boot: string; version: string; vstamp: string; pending?: { snap: WebSnapshot; since: number }; checkedAt: number };
 const states = new Map<string, State | { failedAt: number }>();
 
 // HEAD, the branch ref it names and packed-refs: when none of their mtimes moved, no commit happened and git is not asked.
@@ -70,6 +71,8 @@ function versionOf(repo: string, st: { vstamp: string; version: string }): strin
 	} catch { st.vstamp = ""; st.version = ""; /* no VERSION: the same as none at start */ }
 	return st.version;
 }
+// The id of HEAD's hub/ tree, what the running server side was built from ("" when there is none).
+const hubTree = (repo: string): string => { try { return git(repo, ["rev-parse", "--verify", "-q", "HEAD:hub"]).toString().trim(); } catch { return ""; /* no hub/ in this tree */ } };
 function open(repo: string, now: number): State | { failedAt: number } {
 	const probe = { vstamp: "", version: "" };
 	const boot = versionOf(repo, probe);
@@ -77,7 +80,7 @@ function open(repo: string, now: number): State | { failedAt: number } {
 	let published: WebSnapshot | undefined;
 	try { gitDir = git(repo, ["rev-parse", "--absolute-git-dir"]).toString().trim(); published = snapshot(repo); } catch { /* not a git checkout, or web/ not committed: the disk is read */ }
 	const pinned = published ?? diskSnapshot(repo, boot);
-	return pinned ? { gitDir: published ? gitDir : undefined, headKey: published && gitDir ? headKey(gitDir) : "", published, pinned, boot, ...probe, checkedAt: now } : { failedAt: now };
+	return pinned ? { gitDir: published ? gitDir : undefined, headKey: published && gitDir ? headKey(gitDir) : "", published, pinned, hub: published ? hubTree(repo) : "", boot, ...probe, checkedAt: now } : { failedAt: now };
 }
 const debounceMs = (): number => { const n = Number(process.env.DOTZ_WEB_DEBOUNCE_MS); return process.env.DOTZ_WEB_DEBOUNCE_MS && Number.isFinite(n) && n >= 0 ? n : 60_000; };
 
@@ -88,12 +91,13 @@ export function publishedWeb(repo: string): WebSnapshot | undefined {
 	let st = states.get(repo);
 	if (!st || ("failedAt" in st && now - st.failedAt >= RETRY_NO_GIT_MS)) states.set(repo, st = open(repo, now));
 	if ("failedAt" in st) return undefined;
-	if (versionOf(repo, st) !== st.boot) return st.pinned;
+	if (st.moved || versionOf(repo, st) !== st.boot) return st.pinned;
 	if (st.gitDir && now - st.checkedAt >= CHECK_EVERY_MS) {
 		st.checkedAt = now;
 		const key = headKey(st.gitDir);
 		if (key !== st.headKey) {
 			st.headKey = key;
+			if (hubTree(repo) !== st.hub) { st.moved = true; st.pending = undefined; return st.pinned; }
 			try {
 				const snap = snapshot(repo);
 				if (snap && snap.tree !== st.published?.tree) { if (st.pending?.snap.tree !== snap.tree) st.pending = { snap, since: now }; }
