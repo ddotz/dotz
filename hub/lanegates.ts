@@ -1,7 +1,7 @@
 import { DATA_DIR, workerModel } from "./config.ts";
-import { expensiveMatch, loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "../extension/guard-config.ts";
+import { blockedBy, expensiveMatch, loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "../extension/guard-config.ts";
 // The hub reads the guard config through here only (one hub->extension edge, hub/engineering-rules.test.ts).
-export { expensiveMatch, loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP };
+export { blockedBy, expensiveMatch, loadGuardConfig, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP };
 import { basename } from "node:path";
 
 const BRIEF_MAX = 8000;

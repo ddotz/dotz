@@ -435,6 +435,25 @@ Do this, briefly:
 			[today.length ? [`${today.length} thing${today.length === 1 ? " is" : "s are"} due today.`, ...today].join("\n") : "", overdue.length ? [`${overdue.length} thing${overdue.length === 1 ? " is" : "s are"} past due and still open.`, ...overdue].join("\n") : "", waiting ? `${waiting} approval${waiting === 1 ? " is" : "s are"} still waiting for you.` : ""].filter(Boolean).join("\n\n"),
 	},
 
+	// The stronger-model proposal (hub/escalate.ts): the owner's card, the asking session's notes and the new session's brief.
+	escalate: {
+		card: (a: { step: string; reason: string; from: string; offer: string; est: number; yes: string; no: string }) =>
+			[`A session asks to run one hard step on a stronger model.`, `Step: ${a.step}`, `Why: ${a.reason}`, `Now: ${a.from} · Offered: ${a.offer} · Expected cost: about ${a.est}% of the 5-hour window`, "", `Decision: Run only this step on ${a.offer}?`, `**1) ${a.yes}**`, `A new session does only this step on ${a.offer} and hands the result back to this session. This session keeps its model.`, `**2) ${a.no}**`, "No new session: this session goes on with its current model."].join("\n"),
+		yes: (offer: string) => `Run it on ${offer}`,
+		no: "Go on with the current model",
+		asked: (offer: string) => `The card went to the owner: ${offer} for this step. Nothing runs until he answers; keep working on what does not depend on it. On yes a new session does the step and its report comes to you; on no, go on with your own model.`,
+		noCandidate: "No stronger model this install can run is open to an agent's proposal (the guards keep the rest for the owner's own request). No card was posted: go on with your own model.",
+		used: (state: string) => `This session already used its one stronger-model proposal (${state}). No new card: go on with your own model.`,
+		waiting: "Your stronger-model card is still waiting for the owner. No second card.",
+		started: (lane: string, offer: string) => `[dotz gateway] The owner said yes: session ${lane} runs the step on ${offer}. Its report comes to you when it ends; your own model stays as it is.`,
+		refused: (why: string) => `[dotz gateway] The owner said yes, but the launch was refused: ${why}. No session started, so the proposal is not used up.`,
+		declined: "[dotz gateway] The owner said no to the stronger model. Go on with your own model; do not ask again.",
+		title: "Stronger model step",
+		why: (asker: string) => `The owner approved running one hard step of ${asker} on a stronger model.`,
+		brief: (a: { asker: string; offer: string; step: string; reason: string; brief?: string; report?: string; est: number }) =>
+			[`Goal: do one step handed over from session ${a.asker} on ${a.offer}, and only that step.`, `Step: ${a.step}`, `Why the asking session handed it over: ${a.reason}`, `Handover: read the asking session's brief (${a.brief ?? "none"}) and its latest report (${a.report ?? "none"}) first. This folder starts from its work.`, "End with one [done] or [fail] report: what changed, where, and how it was checked. The gateway hands that report to the asking session and closes this session.", `Done when: the step above is done, landed as the footer says, and reported.`, `Estimate: ${a.est}%`].join("\n"),
+	},
+
 	doctor: {
 		head: (n: number) => `Doctor check: ${n} thing${n === 1 ? "" : "s"} to look at`,
 		fixedLine: (items: string) => `Fixed by itself: ${items}.`,

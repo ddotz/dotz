@@ -80,6 +80,8 @@ const convModel = (key: string) => {
 	const picked = ownModelOf(key) ?? convs.kindModel(key);
 	return picked ? parseSelector(picked) : orchestratorModel();
 };
+// The model a session answers on now (hub/escalate.ts reads it for a proposal): a lane's own, else a conversation's (its pick, its kind's, main's).
+export const sessionModel = (key: string): string => (key.startsWith("lane:") ? lanes.get(key.slice(5))?.model : undefined) ?? selectorOf(key === MAIN ? orchestratorModel() : convModel(key));
 // What the composer chips of every device read: project conversations that chose a model or run now. Absent means it inherits main's.
 const projectModels = () => Object.fromEntries(convs.conversations().filter(c => modelConv(c.key) && (c.meta.ownModel || convs.kindModel(c.key) || convs.live(c))).map(c => [c.key, { own: c.meta.ownModel ?? "", active: convs.live(c) ? c.o.orch.activeModel : "", ...(convs.kindModel(c.key) ? { kind: convs.kindModel(c.key) } : {}) }]));
 

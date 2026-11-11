@@ -4,7 +4,7 @@
 // model-picks.json (who set each target's model) and expensive-grants.json (conversations the owner allowed an expensive model in).
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadGuardConfig } from "./lanegates.ts";
+import { blockedBy, isExpensive, loadGuardConfig } from "./lanegates.ts";
 import { DATA_DIR, log, parseSelector, paths, splitThinking, writeAtomic } from "./config.ts";
 import { AGENT_AUTHOR, tokenOk } from "./entry-check.ts";
 import { eventTarget, isPeerMessage, tailEvents } from "./events.ts";
@@ -46,11 +46,27 @@ const ALIASES: Record<string, string[]> = {
 const namesFamily = (text: string, family: string): boolean => text.includes(family) || (ALIASES[family] ?? []).some(a => text.includes(a));
 const namesLevel = (text: string, level: string): boolean => new RegExp(`(?:^|[^a-z])${level}(?:[^a-z]|$)`).test(text);
 
+// The family every install treats as expensive, whatever its guard config lists.
+const ALWAYS_EXPENSIVE = ["fable"];
 function expensiveFamilies(): string[] {
 	const listed = loadGuardConfig(DATA_DIR).expensive_models.filter(e => !e.startsWith(":")).flatMap(e => familyOf(e) ?? []);
-	return [...new Set(["fable", ...listed])];
+	return [...new Set([...ALWAYS_EXPENSIVE, ...listed])];
 }
 const expensiveLevels = (): string[] => loadGuardConfig(DATA_DIR).expensive_models.filter(e => e.startsWith(":")).map(e => e.slice(1).toLowerCase());
+
+// Why a model or thinking level is kept for the owner's own request, or undefined when an agent may propose it (hub/escalate.ts): the
+// install's expensive models (guard.expensive_models, matched as the guard matches them), the family this guard always treats as expensive,
+// or a launch on it that the owner's blocked-command rules refuse.
+export function ownerOnlyModel(selector: string, rulesText = existsSync(paths.rules) ? readFileSync(paths.rules, "utf8") : ""): string | undefined {
+	if (isExpensive(selector)) return "guard.expensive_models";
+	const family = familyOf(selector);
+	if (family && ALWAYS_EXPENSIVE.includes(family)) return `${family} needs the owner's own request`;
+	for (const runtime of ["omo", "omp", "claude"]) {
+		const why = blockedBy(`${runtime} --model ${selector}`, rulesText);
+		if (why) return why;
+	}
+	return undefined;
+}
 
 // What the message must say for this ask, as the reasons it fails to.
 function missing(text: string, ask: Ask): string[] {

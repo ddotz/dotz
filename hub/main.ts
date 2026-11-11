@@ -38,7 +38,7 @@ import { laneSpot, rememberSpot } from "./lanestate.ts";
 import { migratePostSettings, postSettings, setWebLane } from "./discord-post.ts";
 import { resolveAllowed, UPLOAD_MAX_BYTES } from "./files.ts";
 import { setDiskNotify } from "./diskguard.ts";
-import { budgetProblem } from "./routes-lanes.ts";
+import { budgetProblem, installEscalations } from "./routes-lanes.ts";
 import { approvesBudget, estimateOf, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
 import { refreshMachine } from "./limits.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
@@ -229,6 +229,7 @@ setInterval(() => void mailReconciler.tick().then(reconcileLog).catch(e => log(`
 // Start: once, after the sweep above settled what it can (the migration of replies sent from outside dotz).
 void startupSettled.then(() => reconcileMails(MAIL_RECONCILE_AT_START)).catch(e => log(`mail reconcile failed: ${(e as Error).message}`));
 installLaneHandlers();
+installEscalations();
 
 // Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them (inside the roots, or named in a [file] line of a sent message); a file too big to attach goes
 // out as that route's download link on the tailnet address (config web.public_url, else tailscale's name + HTTPS port).

@@ -4,7 +4,8 @@ import { log, now, paths } from "./config.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 import { emit, emitDelivery } from "./events.ts";
-import { lanes, setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
+import { escalations } from "./escalate.ts";
+import { lanes, sendToLane, setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
 import { decisionsOf, laneHasOpenCard, laneVerified } from "./notices.ts";
 import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
@@ -19,10 +20,22 @@ import { useKeptHooks } from "./agent-tree.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { withDoneLive } from "./done-live-wire.ts";
 
-// A lane started from a conversation session reports to that session (its key is the lane's `from`); the rest report to main.
+// A gateway note or a report for a session: main, a conversation session, or a lane (a stronger-model step reports to the lane that
+// asked for it, hub/escalate.ts; sendToLane steers it into a running turn). A lane that cannot take it any more passes it to main.
+export function deliverToSession(key: string, text: string): void {
+	if (!key.startsWith("lane:")) return void (key === MAIN ? deliver(text) : convs.deliverTo(key, text, { target: primaryTarget(key) }));
+	try {
+		sendToLane(key.slice(5), text, undefined, true);
+	} catch (e) {
+		log(`${key} could not take a report (${(e as Error).message}); it goes to main`);
+		deliver(text);
+	}
+}
+
+// A lane started from a conversation session (or from a lane) reports to that session (its key is the lane's `from`); the rest report to main.
 export const laneRelay = createLaneRelay({
-	busy: key => (key === MAIN ? orch : convs.get(key)?.o.orch)?.status === "working",
-	deliver: (text, key) => void (key === MAIN ? deliver(text) : convs.deliverTo(key, text, { target: primaryTarget(key) })),
+	busy: key => !key.startsWith("lane:") && (key === MAIN ? orch : convs.get(key)?.o.orch)?.status === "working",
+	deliver: (text, key) => deliverToSession(key, text),
 	lead: n => msg().inboxLaneReports(n),
 	steer: (text, key) => (key === MAIN ? steerOrchestrator(msg().laneReportSteer(text)) : (convs.get(key)?.o.steer(msg().laneReportSteer(text)) ?? false)),
 });
@@ -49,6 +62,7 @@ export function installLaneHandlers(): void {
 		const text = stripHandoff(raw);
 		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
+		if (escalations()?.reported(lane.name, parseTone(text).tone)) log(`lane ${lane.name} ended: its stronger-model step reported back`);
 		if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);
 		else if (how === "relayed") log(`lane ${lane.name} report relayed to the orchestrator`);
 		else if (how !== "held") log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "owner" ? "kept on disk (answer to the owner in the lane channel)" : "dropped (same as the last one)"}`);

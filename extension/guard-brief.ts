@@ -11,7 +11,7 @@ const DONE_MARKER = /acceptance|done when|done-condition|end state|success crite
 // Shared with the owner's original extension and the harness doctor, so a brief marked by either copy is never marked twice.
 export const BUDGET_MARKER = "[orchestrator-guard]";
 export const budgetLine = (g: GuardConfig) =>
-	`${BUDGET_MARKER} Final answer: at most ${g.worker_answer_chars} characters - outcome, changed paths, verification, blockers. Context budget ${Math.round(g.worker_context_tokens / 1000)}K tokens; if you near it, stop and hand back partial findings. Settle reversible choices yourself and note them in the report; stop to ask only for what cannot be undone. Never end a turn to wait for a background run (a text-only turn ends your run and the wake-up can fail to start): wait inside one blocking call, e.g. an eval cell that polls up to 280s, then report.`;
+	`${BUDGET_MARKER} Final answer: at most ${g.worker_answer_chars} characters - outcome, changed paths, verification, blockers. Context budget ${Math.round(g.worker_context_tokens / 1000)}K tokens; if you near it, stop and hand back partial findings. Settle reversible choices yourself and note them in the report; stop to ask only for what cannot be undone. Never end a turn to wait for a background run (a text-only turn ends your run and the wake-up can fail to start): wait inside one blocking call, e.g. an eval cell that polls up to 280s, then report. A step that needs a stronger model than yours: do the rest and add one line \`Stronger model: <step> - <why>\`.`;
 function longestFence(text: string): number {
 	let longest = 0;
 	for (const block of text.match(/```[\s\S]*?```/g) ?? []) longest = Math.max(longest, block.split("\n").length - 2);

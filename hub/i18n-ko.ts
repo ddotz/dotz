@@ -411,6 +411,25 @@ export const ko: Catalog = {
 			[today.length ? [`오늘까지인 일이 ${today.length}건 있어요.`, ...today].join("\n") : "", overdue.length ? [`마감이 지났는데 아직 열려 있는 일이 ${overdue.length}건 있어요.`, ...overdue].join("\n") : "", waiting ? `확인을 기다리는 승인이 ${waiting}건 있어요.` : ""].filter(Boolean).join("\n\n"),
 	},
 
+	// The stronger-model proposal (hub/escalate.ts): the owner's card, the asking session's notes and the new session's brief.
+	escalate: {
+		card: a =>
+			[`세션이 어려운 단계 하나를 더 센 모델로 돌리자고 해요.`, `단계: ${a.step}`, `이유: ${a.reason}`, `지금: ${a.from} · 제안: ${a.offer} · 예상 비용: 5시간 한도의 약 ${a.est}%`, "", `결정: 이 단계만 ${a.offer}로 돌릴까요?`, `**1) ${a.yes}**`, `새 세션이 이 단계만 ${a.offer}로 하고 결과를 이 세션에 돌려줘요. 이 세션의 모델은 그대로예요.`, `**2) ${a.no}**`, "새 세션 없이 이 세션이 지금 모델로 이어서 해요."].join("\n"),
+		yes: offer => `${offer}로 돌리기`,
+		no: "지금 모델로 계속",
+		asked: offer => `오너에게 카드를 올렸어요: 이 단계를 ${offer}로. 답이 올 때까지 아무것도 돌지 않으니, 이 답과 상관없는 일은 계속하세요. 예면 새 세션이 그 단계를 하고 보고가 당신에게 와요. 아니요면 지금 모델로 이어서 하세요.`,
+		noCandidate: "이 설치에서 에이전트가 제안할 수 있는 더 센 모델이 없어요(나머지는 오너가 직접 요청할 때만 쓰도록 guard가 막아 둬요). 카드는 올리지 않았어요. 지금 모델로 이어서 하세요.",
+		used: state => `이 세션은 센 모델 제안 한 번을 이미 썼어요(${state}). 새 카드는 없어요. 지금 모델로 이어서 하세요.`,
+		waiting: "센 모델 카드가 아직 오너 답을 기다려요. 두 번째 카드는 올리지 않아요.",
+		started: (lane, offer) => `[dotz gateway] 오너가 예라고 했어요: 세션 ${lane}이 그 단계를 ${offer}로 해요. 끝나면 보고가 당신에게 와요. 당신의 모델은 그대로예요.`,
+		refused: why => `[dotz gateway] 오너가 예라고 했지만 실행이 거절됐어요: ${why}. 세션이 시작되지 않았으니 제안은 아직 쓰지 않은 거예요.`,
+		declined: "[dotz gateway] 오너가 센 모델을 쓰지 않기로 했어요. 지금 모델로 이어서 하고, 다시 묻지 마세요.",
+		title: "센 모델 단계",
+		why: asker => `오너가 ${asker}의 어려운 단계 하나를 더 센 모델로 돌리는 것을 승인했어요.`,
+		brief: a =>
+			[`목표: 세션 ${a.asker}이 넘긴 단계 하나를 ${a.offer}로 하세요. 그 단계만 해요.`, `단계: ${a.step}`, `넘긴 이유: ${a.reason}`, `인계: 먼저 넘긴 세션의 브리프(${a.brief ?? "없음"})와 최근 보고(${a.report ?? "없음"})를 읽으세요. 이 폴더는 그 세션의 작업에서 시작해요.`, "[done]이나 [fail] 보고 하나로 끝내세요: 무엇을 어디서 바꿨고 어떻게 확인했는지. 게이트웨이가 그 보고를 넘긴 세션에 전하고 이 세션을 닫아요.", `Done when: 위 단계를 마치고, footer대로 반영하고, 보고했다.`, `Estimate: ${a.est}%`].join("\n"),
+	},
+
 	doctor: {
 		head: (n: number) => `닥터 점검: 살펴볼 것이 ${n}가지 있어요`,
 		fixedLine: (items: string) => `스스로 고친 것: ${items}.`,

@@ -1,13 +1,17 @@
 // HTTP routes of the work channels, watches, schedules and lanes (the last part of the route chain). Split out of main.ts.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR, log, NAME, now, paths } from "./config.ts";
+import { DATA_DIR, lanesModel, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, workerModel } from "./config.ts";
+import { escalations, pickCandidate, wireEscalations, type Configured } from "./escalate.ts";
+import { deliverToSession } from "./lanewire.ts";
+import { ownerOnlyModel } from "./model-guard.ts";
+import { sessionModel } from "./control.ts";
 import { deferForLimit, limitWaitStarted } from "./limitwait.ts";
 import * as discord from "./discord.ts";
 import { emit } from "./events.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, trashList } from "./lanetrash.ts";
 import { abortLane, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, estimateOf, handoverLane, isExpensive, laneJustification, lanes, laneList, launch, restartLane, resumeByName, sendToLane, stopLane, titleProblem, verifyLane } from "./lanes.ts";
-import { anthropicUsage } from "./providers.ts";
+import { anthropicUsage, availableModels } from "./providers.ts";
 import { keepHome, persist } from "./lanestate.ts";
 import { closeLaneCards, laneVerified } from "./notices.ts";
 import { convs } from "./convsessions.ts";
@@ -22,7 +26,7 @@ import { clearChannel, endStanding, listSetups, setupChannel, standingLabelKo } 
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { readScheduleSettings, writeScheduleSettings } from "./schedule-settings.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, runWatch, watchScript } from "./watch.ts";
-import { queue, out, progress } from "./outbound.ts";
+import { queue, out, progress, send } from "./outbound.ts";
 import { postSettings } from "./discord-post.ts";
 import { json, body } from "./routes-util.ts";
 
@@ -46,6 +50,43 @@ export async function budgetProblem(name: string, est: number, force: boolean): 
 	return { text: r ? `${verdict} (account ${r.account})` : verdict, resetAt: fiveLimit?.window.resetsAt };
 }
 const STATE_FILE = () => join(DATA_DIR, "state.json");
+
+// Stronger-model proposals (hub/escalate.ts): the card is the asking session's own message, an approved step goes through the lane launch
+// route below (title, Done-when, budget gate and model rules as any launch), and its report and the gateway's notes reach the asking session.
+export function installEscalations(): void {
+	wireEscalations({
+		post: (target, text, source) => {
+			emit("outbox", { ts: now(), kind: "out", source, target, text });
+			return send(target, text);
+		},
+		launch: async req => {
+			const url = new URL("http://local/api/lanes");
+			const res = await routeLanes(new Request(url, { method: "POST", body: JSON.stringify({ ...req, owner_asked_for_lane: true, escalation: true }) }), url, ["api", "lanes"]);
+			const answer = res ? await res.json() : { error: "no launch route" };
+			return res?.ok ? { lane: String(answer.lane) } : { error: String(answer.error) };
+		},
+		tell: deliverToSession,
+		stop: stopLane,
+	});
+}
+
+// dotz_escalate (hub/escalate.ts): the asking session's proposal, turned into one decision card or a refusal the model reads.
+async function escalateRoute(b: Record<string, unknown>): Promise<Response> {
+	const e = escalations();
+	if (!e) return json({ error: "stronger-model proposals are not wired in this gateway" }, 503);
+	const asker = typeof b.session === "string" && b.session ? b.session : MAIN;
+	const step = String(b.step ?? "").trim(), reason = String(b.reason ?? "").trim();
+	if (!step || !reason) return json({ error: "step and reason are required: the hard step in your words and why your model is not enough for it" }, 400);
+	const lane = asker.startsWith("lane:") ? lanes.get(asker.slice(5)) : undefined;
+	if (asker.startsWith("lane:") && !lane) return json({ error: `no session ${asker}` }, 404);
+	const current = selectorOf(parseSelector(sessionModel(asker)));
+	const configured: Configured[] = [{ role: "orchestrator", selector: selectorOf(orchestratorModel()) }, { role: "lanes", selector: selectorOf(lanesModel()) }, { role: "workers", selector: workerModel() }];
+	const offer = pickCandidate({ current, configured, available: await availableModels(), ownerOnly: s => ownerOnlyModel(s) });
+	const handover = lane ? { brief: join(paths.lanes, lane.name, "brief.md"), report: join(paths.lanes, lane.name, "report.md") } : {};
+	const r = await e.propose({ asker, cwd: lane?.cwd ?? String(b.cwd ?? ""), current, offer, step, reason, est: estimateOf(b.est), ...handover });
+	log(`escalate: ${asker} on ${current} -> ${offer ?? "no candidate"}: ${"refused" in r ? `refused (${r.refused})` : "card posted"}`);
+	return "refused" in r ? json({ error: r.refused }, 409) : json(r);
+}
 
 const readLastReport = (name: string): string => {
 	try {
@@ -150,6 +191,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			return json({ error: (error as Error).message }, 400);
 		}
 	}
+	if (parts[0] === "api" && parts[1] === "escalate" && parts.length === 2 && req.method === "POST") return escalateRoute(await body(req));
 	if (parts[0] === "api" && parts[1] === "ledger") {
 		try {
 			const answer = ledgerApi(ledger, req.method, parts.slice(2), url.searchParams, req.method === "GET" ? {} : await body(req));
@@ -206,7 +248,8 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				}
 				const home = b.home ? String(b.home) : undefined;
 				if (home && discord.status.enabled) discord.homeChannel(home);
-				const asking = queue.current();
+				// An approved stronger-model step (hub/escalate.ts) is launched from the owner's card answer, not from the turn running now.
+				const asking = b.escalation ? undefined : queue.current();
 				const origin = { home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: (id: string) => Boolean(discord.channels.work[id]), threadParent: (id: string) => discord.channels.threads[id]?.parent };
 				const place = lanePlace({ ...origin, discordForWeb: postSettings().web_lanes });
 				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim(), typeof b.session === "string" && b.session && b.session !== MAIN ? b.session : undefined);

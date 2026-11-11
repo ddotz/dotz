@@ -198,6 +198,19 @@ export function logOnce(pi: any, key: string, message: string): void {
 	} catch {}
 }
 
+// The reason of the first `- deny: <regex> | <reason>` line under "## Blocked commands" in the owner's RULES.md that matches `command`.
+export function blockedBy(command: string, rulesText: string): string | undefined {
+	const section = rulesText.split(/^## Blocked commands\s*$/m)[1]?.split(/^## /m)[0] ?? "";
+	for (const m of section.matchAll(/^- deny:\s*(.+)\s+\|\s+(.+?)\s*$/gm)) {
+		try {
+			if (new RegExp(m[1], "i").test(command)) return m[2].trim();
+		} catch {
+			continue;
+		}
+	}
+	return undefined;
+}
+
 // omp marks the session's own agent in ctx.agent (main / sub). OmO has no ctx.agent and runs task workers in its rpc host,
 // which does not load this extension, so there every session that loads it is the main one.
 export const isMain = (ctx: any) => (ctx?.agent ? ctx.agent.kind === "main" : process.env.DOTZ_RUNTIME === "omo");

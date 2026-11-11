@@ -62,17 +62,8 @@ const NAME = (() => {
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s*");
 const OFF = new RegExp(`^\\s*((${escape(NAME)}|dotz)\\s*모드\\s*(꺼|끄기|종료|off)|\\/dotz\\s+off)\\s*$`, "i");
 
-export function blockedBy(command: string, rulesText: string): string | undefined {
-	const section = rulesText.split(/^## Blocked commands\s*$/m)[1]?.split(/^## /m)[0] ?? "";
-	for (const m of section.matchAll(/^- deny:\s*(.+)\s+\|\s+(.+?)\s*$/gm)) {
-		try {
-			if (new RegExp(m[1], "i").test(command)) return m[2].trim();
-		} catch {
-			continue;
-		}
-	}
-	return undefined;
-}
+// The owner's blocked-command rules live in guard-config.ts, so the hub's model guard reads the same rules (hub/model-guard.ts ownerOnlyModel).
+export { blockedBy } from "./guard-config.ts";
 
 // The text a deny line is matched against: omp's `bash` command, or the code of OmO's `eval` cell (OmO has no bash
 // tool; shell commands run inside eval as Bun.$ / subprocess / tool.bash, so the whole cell is checked).
@@ -306,6 +297,7 @@ function orchestratorTools(pi: any): void {
 	mergeTool(pi);
 	authTool(pi);
 	connectTool(pi);
+	escalateTool(pi);
 	recallTool(pi, DATA);
 	pi.on("session_compact", (_e: any, ctx: any) => {
 		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall() + ledger() + (process.env.DOTZ_CONV ? `\n\n${convScope()}` : ""), display: false }, { deliverAs: "nextTurn" });
@@ -455,6 +447,23 @@ function orchestratorTools(pi: any): void {
 	});
 }
 
+// One hard step on a stronger model (hub/escalate.ts): sessions and conversations propose, the owner decides on a card.
+function escalateTool(pi: any): void {
+	const z = pi.zod;
+	pi.registerTool({
+		name: "dotz_escalate",
+		label: "Dotz stronger model",
+		description:
+			"Propose running ONE hard step on a stronger model {step (the hard step, in your words), reason (why your model is not enough for it), est (expected % of the 5-hour window)}. The gateway picks the model from this install's own models and posts a decision card to the owner; nothing runs until he answers. On yes a new session does only that step, with your brief and report as handover, and its report comes back to you; your own model never changes. On no, go on with your own model. One proposal per session. A subagent's answer line `Stronger model: <step> - <why>` is its ask: judge it, and propose only if you agree.",
+		parameters: z.object({ step: z.string(), reason: z.string(), est: z.number() }),
+		async execute(_id: string, p: any) {
+			const session = process.env.DOTZ_LANE ? `lane:${process.env.DOTZ_LANE}` : (process.env.DOTZ_CONV ?? "main");
+			const out = await call("/api/escalate", { method: "POST", body: JSON.stringify({ step: p.step, reason: p.reason, est: p.est, session, cwd: process.cwd() }) });
+			return { content: [{ type: "text", text: String(out.text ?? JSON.stringify(out)).slice(0, 1000) }] };
+		},
+	});
+}
+
 // Lanes and their workers write the 5-minute prompt cache (they inherit PI_CACHE_RETENTION=long from the gateway).
 function shortCache(pi: any): void {
 	pi.on("before_provider_request", (event: any, ctx: any) => {
@@ -468,6 +477,7 @@ function laneSession(pi: any): void {
 	verifyTool(pi);
 	mergeTool(pi);
 	authTool(pi, process.env.DOTZ_LANE);
+	escalateTool(pi);
 	recallTool(pi, DATA);
 	shortCache(pi);
 }
@@ -592,7 +602,7 @@ function reportKeySpend(pi: any, file: string): void {
 	});
 }
 
-import { isMain } from "./guard-config.ts";
+import { blockedBy, isMain } from "./guard-config.ts";
 import { holdWorkOnApiKey, laneHeld } from "./apikey-hold.ts";
 import { holdOnRestart, restartHeld } from "./restart-hold.ts";
 

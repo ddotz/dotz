@@ -68,6 +68,7 @@ import { desk } from "./remote-desktop.ts";
 import { listedFileRoute } from "./listed-files.ts";
 import { routeApps } from "./routes-apps.ts";
 import { routeLanes } from "./routes-lanes.ts";
+import { escalations } from "./escalate.ts";
 import { routeNotices } from "./routes-notices.ts";
 import { routeSettings } from "./routes-settings.ts";
 import { routeMail, unrepliedMailList } from "./routes-mail.ts";
@@ -282,6 +283,8 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 	const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
 	const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
 	if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
+	// The owner's answer to a stronger-model card (hub/escalate.ts) is acted on here, then reaches the asking session like any answer.
+	if (a.picks?.length === 1) await escalations()?.answer({ to: a.to, label: a.picks[0]!.label }).catch(e => log(`stronger-model answer failed: ${(e as Error).message}`));
 	await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login: a.login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via: a.via });
 }
 

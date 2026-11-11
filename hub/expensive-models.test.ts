@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, parseSelector, workerModel } from "./config.ts";
 import { isExpensive, workersOf } from "./lanegates.ts";
+import { ownerOnlyModel } from "./model-guard.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { LOOKUP_CATEGORIES, ORCHESTRATOR_WORKERS, omoSelector, parseJsonc, WORKER_CATEGORIES, writeOrchestratorProfile } from "./runtime/omo.ts";
 import { analyze } from "./token-audit.ts";
@@ -26,6 +27,16 @@ const ON = { ask_before_expensive: true, expensive_models: ["fable", ":max"] };
 
 const FABLE = "anthropic/claude-fable-5-2";
 const OPUS = "anthropic/claude-opus-5-5:high";
+
+test("a stronger-model proposal never offers what the guards keep for the owner: expensive models and levels, and a launch the blocked-command rules refuse", () => {
+	setGuard({ ask_before_expensive: true, expensive_models: ["vendor-pro", ":max"] });
+	expect(ownerOnlyModel("acme/vendor-pro-2:high", "")).toBeString();
+	expect(ownerOnlyModel("acme/vendor-mid-2:max", "")).toBeString();
+	expect(ownerOnlyModel("acme/vendor-mid-2:high", "")).toBeUndefined();
+	const rules = "## Blocked commands\n- deny: (omo|omp)\\s.*--model[= ]\\S*vendor-mid | only when the owner asks\n";
+	expect(ownerOnlyModel("acme/vendor-mid-2:high", rules)).toBe("only when the owner asks");
+	expect(ownerOnlyModel("acme/vendor-lite-2:high", rules)).toBeUndefined();
+});
 
 test("with the guard off nothing is expensive, and the lane launch route does not refuse a Fable model", async () => {
 	setGuard({ ask_before_expensive: false, expensive_models: ["fable"] });
