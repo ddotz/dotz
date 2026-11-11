@@ -82,6 +82,9 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 - onboard/selfserve.test.ts waits with `await f.h.sleep(0)` on a fake sleep; the last assertion depends on it.
 - Fixed sleeps 3: deadlines in a `Promise.race` on an event (hub/remote-desktop.test.ts twice,
   hub/messenger-e2e-discord.test.ts).
+- hub/relay-chat-web.test.ts clears `seen` (every /api request of one shared page) in `beforeEach` and compares the
+  POST list exactly: safe in file order, order-dependent under `--randomize`. Its last test clears `seen` and never
+  reads it, so the title's "read again each time" is not checked.
 - Sentence assertions (hub/accounts-api.test.ts, hub/livestatus.test.ts, hub/notices.test.ts) and order dependence
   under `bun test --randomize` inside single files: not measured this round.
 
