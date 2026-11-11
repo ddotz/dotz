@@ -85,7 +85,7 @@
   "project.page.routines_sub": "Things that run on a schedule",
   "project.back_to": "Back to project",
   "project.edit.empty": "Empty",
-  "project.edit.hint": "Click to edit",
+  "project.edit.hint": "Tap to edit",
   "project.edit.aria": "Edit {label}",
   "project.edit.required": "Can't be empty",
   "project.name": "Project name",

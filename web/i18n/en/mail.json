@@ -54,8 +54,8 @@
   "mail.teach.subject": "Always put subjects with “{word}” here",
   "mail.teach.moved": "Moved to {box}",
   "mail.teach.with_thread": {
-    "one": "{n} email of the same conversation moved along",
-    "other": "{n} emails of the same conversation moved along"
+    "one": "{n} email from the same thread moved with it",
+    "other": "{n} emails from the same thread moved with it"
   },
   "mail.teach.saved": "Saved · {rule}",
   "mail.teach.ask": "What about next time?",

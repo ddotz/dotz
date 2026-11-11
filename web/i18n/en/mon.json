@@ -45,8 +45,8 @@
   "mon.feed": "Watch updates",
   "mon.group.project": "Project · {name}",
   "mon.need.sent_today": {
-    "one": "{n} auto-reply sent today",
-    "other": "{n} auto-replies sent today"
+    "one": "{n} auto-reply today",
+    "other": "{n} auto-replies today"
   },
   "mon.last_news": "Last update {t}",
   "mon.need.none": "Nothing to check",
@@ -126,7 +126,7 @@
   "mon.older_n": "Show {n} older",
   "mon.dr.how": "What should change?",
   "mon.conv.title": "Continue this item in a chat",
-  "mon.conv.btn": "Continue in chat",
+  "mon.conv.btn": "Open in chat",
   "mon.ov.peer": "Another computer",
   "mon.ov.sum_off": "{n} OK · {off} off",
   "mon.ov.all_ok": "All OK",

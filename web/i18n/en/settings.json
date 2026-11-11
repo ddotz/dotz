@@ -291,7 +291,7 @@
   "settings.app.and_install": "Choose 'Install app'. If you see 'Add to Home screen', choose 'Install' in the next window",
   "settings.app.and_shortcut": "'Create shortcut' opens in the browser. Don't choose it",
   "settings.app.desk_icon": "Click the install icon at the right of the address bar",
-  "settings.app.desk_menu": "If it is missing, choose 'Install app' in the browser menu",
+  "settings.app.desk_menu": "If you don't see it, choose 'Install app' in the browser menu",
   "settings.app.install": "Install app",
   "settings.app.reinstall_note": "If the {bot} icon you added earlier opens in the browser, remove it and add it again.",
   "settings.app.add_home": "Add to Home Screen",

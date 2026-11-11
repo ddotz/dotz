@@ -35,8 +35,8 @@
   "misc.nsc.kept": "Alerts that need an answer were kept",
   "misc.pr.need": "Needs reply {n}",
   "misc.pr.unread": {
-    "one": "{n} new alert",
-    "other": "{n} new alerts"
+    "one": "{n} new",
+    "other": "{n} new"
   },
   "misc.pr.cant_reach": "Can't connect to {name}",
   "misc.pr.not_found": "Couldn't find that computer",
@@ -161,8 +161,8 @@
   "misc.rp.finding": "Finding…",
   "misc.rp.not_found": "Couldn't find the original message · it was deleted or is too old",
   "misc.rp.me": "Me",
-  "misc.oe.paused_named": "The {name} bot is paused: {why}",
-  "misc.oe.paused": "The bot is paused: {why}",
+  "misc.oe.paused_named": "The {name} assistant is paused: {why}",
+  "misc.oe.paused": "The assistant is paused: {why}",
   "misc.oe.why_login": "sign-in needed",
   "misc.oe.why_limit": "usage limit",
   "misc.retry_now": "Try again now",
