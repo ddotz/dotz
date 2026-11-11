@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 
 // The two-column frame (web/css/01-tokens.css --frame-*): 채팅 and 프로젝트 draw their left column and their content column with the same boxes,
@@ -50,8 +50,7 @@ const frame = async (v: View, left: string, content: string): Promise<Frame> => 
 	const { L, C, vw } = JSON.parse(raw) as { L: Box; C: Box; vw: number };
 	return { left: L, content: C, right: C ? vw - C.x - C.w : null, twoCols: !!L && !!C && C.x >= L.x + L.w };
 };
-const boot = async (width: number): Promise<View> => {
-	const v = await hub.view({ width, height: 900 });
+const boot = async (v: View): Promise<View> => {
 	const opened = hub.nextStream();
 	await v.navigate(`${hub.origin}/`);
 	await opened;
@@ -69,9 +68,17 @@ const projectFrame = async (v: View) => {
 	return frame(v, "#v-projects", "#v-project");
 };
 
+// The WebViews are started in the describe body (collection time, on no test's clock): the first start of a process is the slow one. One view per
+// window width, since the width is what differs; the tests of a width share it and each navigates it again (a navigation resets the page).
+describe("frame", async () => {
+const views: Record<number, View> = {};
+for (const width of [1099, 1100, 1280, 1920]) views[width] = await hub.view({ width, height: 900 });
+// new Bun.WebView() is lazy: the browser backend starts with the first navigation (~1 s under load), so that navigation is made here, not in a test.
+for (const v of Object.values(views)) await v.navigate("about:blank");
+
 for (const width of [1280, 1920]) {
 	test(`at ${width}px 프로젝트 uses the left column, content column and right edge of 채팅`, async () => {
-		const v = await boot(width);
+		const v = await boot(views[width]);
 		const chat = await chatFrame(v);
 		const project = await projectFrame(v);
 		expect(chat.twoCols).toBe(true);
@@ -82,7 +89,7 @@ for (const width of [1280, 1920]) {
 	});
 
 	test(`at ${width}px a project's drill-in page and the 커스텀 page sit in the same content box`, async () => {
-		const v = await boot(width);
+		const v = await boot(views[width]);
 		const chat = await chatFrame(v);
 		const project = await projectFrame(v);
 		await run(v, `document.querySelector('.pm-sec [data-k="sessions"]').click()`);
@@ -103,15 +110,15 @@ for (const width of [1280, 1920]) {
 test("채팅 and 프로젝트 fall back to one column at the same window width", async () => {
 	const cols: Record<number, [boolean, boolean]> = {};
 	for (const width of [1099, 1100]) {
-		const v = await boot(width);
+		const v = await boot(views[width]);
 		const chat = await chatFrame(v);
 		// below the breakpoint 프로젝트 is its own list screen, then the project; wide it is the list beside the open project
 		await run(v, `go("projects")`);
 		await waitFor(v, `document.querySelector(".pl-row")`);
 		const project = await frame(v, "#v-projects", "#v-project");
 		cols[width] = [chat.twoCols, project.twoCols];
-		hub.release();
 	}
 	expect(cols[1099]).toEqual([false, false]);
 	expect(cols[1100]).toEqual([true, true]);
+});
 });

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { alive, client, prepare, probe, records, start, stop, waitFor, type Gateway } from "./test/load-qa/harness.ts";
@@ -33,6 +33,14 @@ const fresh = (account: string): Json => {
 };
 let seeded: Json[] = [];
 
+/** True while the current gateway process runs and answers its API. */
+const answering = async (): Promise<boolean> => {
+	if (!alive(g.pid)) return false;
+	const r = await fetch(`${g.base}/api/state?limit=0`, { headers: { "x-dotz-token": g.token } }).catch(() => undefined);
+	await r?.arrayBuffer();
+	return !!r?.ok;
+};
+
 describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 	beforeAll(async () => {
 		g = await prepare({ out: OUT, scale: "small" });
@@ -40,6 +48,17 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		api = client(g);
 		seeded = await cards();
 	}, 90_000);
+	// Every test starts from a running gateway and no hang/fail flag: a restart that failed in one test (killed, or still booting when its limit hit)
+	// is finished here, so the next test does not fail with ECONNREFUSED or a send held by a flag the failed test never cleared.
+	beforeEach(async () => {
+		for (const f of ["fail-mail", "hang-mail", "hang-comment", `hang-mail-${A}`, `hang-mail-${B}`]) flag(f, false);
+		if (await answering()) return;
+		if (alive(g.pid)) {
+			process.kill(g.pid, "SIGKILL");
+			await waitFor("the half-started gateway to die", () => !alive(g.pid));
+		}
+		await start(g);
+	});
 	afterAll(async () => {
 		await stop(OUT);
 		rmSync(OUT, { recursive: true, force: true });

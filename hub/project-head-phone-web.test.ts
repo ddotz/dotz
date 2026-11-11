@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 
 // The project screen's head card (web/css/08-project-sessions.css, pmHead): on a phone the app bar already shows the project name, so the card
@@ -46,8 +46,7 @@ const boxes = async (v: View): Promise<Record<keyof typeof SELS, Box>> => JSON.p
 	}
 	return JSON.stringify(o);
 })()`) as string);
-const open = async (width: number): Promise<View> => {
-	const v = await hub.view({ width, height: 900 });
+const open = async (v: View): Promise<View> => {
 	const opened = hub.nextStream();
 	await v.navigate(`${hub.origin}/`);
 	await opened;
@@ -62,8 +61,16 @@ const open = async (width: number): Promise<View> => {
 const BEFORE_FIRST_Y_390 = 242, BEFORE_HTOP_H_390 = 32;
 const WIDE_1280 = {"head":{"x":616,"y":68,"w":636,"h":100},"hmain":{"x":636,"y":88,"w":422,"h":60},"htop":{"x":636,"y":88,"w":422,"h":32},"title":{"x":628,"y":88,"w":246,"h":32},"purpose":{"x":628,"y":124,"w":438,"h":24},"hact":{"x":1074,"y":88,"w":158,"h":40},"chat":{"x":1074,"y":90,"w":110,"h":36},"more":{"x":1192,"y":88,"w":40,"h":40},"tag":{"x":874,"y":94,"w":43.5,"h":20},"upd":{"x":925.5,"y":96,"w":132.5,"h":16},"first":{"x":616,"y":184,"w":636,"h":96}};
 
+// The WebViews are started in the describe body (collection time, on no test's clock): the first start of a process is the slow one. The two phone
+// tests share one view, each navigates it again (a navigation resets the page); 1280 is its own view because the viewport differs.
+describe("project head", async () => {
+const phone = await hub.view({ width: 390, height: 900 });
+const wide = await hub.view({ width: 1280, height: 900 });
+// new Bun.WebView() is lazy: the browser backend starts with the first navigation (~1 s under load), so that navigation is made here, not in a test.
+for (const v of [phone, wide]) await v.navigate("about:blank");
+
 test("at 390px the head does not repeat the name as a title block and the content starts higher", async () => {
-	const v = await open(390);
+	const v = await open(phone);
 	const b = await boxes(v);
 	expect(b.title).toBeNull();
 	expect(b.more).not.toBeNull();
@@ -72,7 +79,7 @@ test("at 390px the head does not repeat the name as a title block and the conten
 });
 
 test("at 390px the ⋯ menu still opens the name field, in the head and in reach", async () => {
-	const v = await open(390);
+	const v = await open(phone);
 	await run(v, `document.querySelector("#v-project .pmv-more").click()`);
 	await waitFor(v, `document.querySelector(".menu .mi")`);
 	await run(v, `document.querySelector(".menu .mi").click()`);
@@ -85,7 +92,8 @@ test("at 390px the ⋯ menu still opens the name field, in the head and in reach
 });
 
 test("at 1280px the head keeps the boxes it had", async () => {
-	const v = await open(1280);
+	const v = await open(wide);
 	const b = await boxes(v);
 	expect(b).toEqual(WIDE_1280);
+});
 });
