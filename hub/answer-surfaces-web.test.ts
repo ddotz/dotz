@@ -241,3 +241,81 @@ test("a worklog line edited in place is an answer, a gateway line there is not",
 	expect(await drawn(worklog("orchestrator"), ".ans-keys")).toBe(1);
 	expect(await drawn(worklog("gateway"), ".ans-card")).toBe(0);
 });
+
+// Owner 2026-11-11: "기다리게 하지 않기" broke into "기다리게 하지" and a lone "않기" while the value column had room, and its row grew taller than the rest.
+// Measured in the page, as a chat column draws it: line counts and edges from the text's own boxes, never from wording.
+type FactRow = { lines: number[]; kl: number; kr: number; kt: number; vl: number; vw: number; vt: number };
+type FactCard = { cl: number; cr: number; scroll: number; client: number; rows: FactRow[] };
+const factsText = (rows: [string, string][]) => `고쳤어요.\n\n${rows.map(([k, v]) => `- **${k}**: ${v}`).join("\n")}`;
+const factsMeasured = (text: string) => ev<FactCard>(view, `(() => {
+	const tl = document.createElement("div"); tl.className = "timeline"; tl.style.cssText = "height:auto;overflow:visible";
+	const col = document.createElement("div"); col.className = "tl-in"; tl.append(col); document.body.append(tl);
+	col.append(${SURFACES["main chat"]!(text)});
+	const card = tl.querySelector(".ans-keys").closest(".ans-card"), cr = card.getBoundingClientRect();
+	const rows = [...tl.querySelectorAll(".ans-keys .rc-row")].map(row => {
+		const k = row.querySelector(".rc-k"), v = row.querySelector(".rc-w"), kr = k.getBoundingClientRect(), vr = v.getBoundingClientRect();
+		const range = document.createRange(); range.selectNodeContents(k);
+		const byTop = new Map(); for (const r of range.getClientRects()) byTop.set(Math.round(r.top), (byTop.get(Math.round(r.top)) ?? 0) + r.width);
+		return { lines: [...byTop.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]), kl: kr.left, kr: kr.right, kt: kr.top, vl: vr.left, vw: vr.width, vt: vr.top };
+	});
+	const out = { cl: cr.left, cr: cr.right, scroll: card.scrollWidth, client: card.clientWidth, rows };
+	tl.remove(); return out;
+})()`);
+const FACT_FIXTURE: [string, string][] = [
+	["거짓말하지 않기", "서버가 보냈다고 답한 뒤에 사라져야 해요. 실패하면 카드가 그 자리에 남고 이유가 보여야 해요."],
+	["기다리게 하지 않기", "0.15~0.25초 안에 끝나고, 움직이는 중에도 다음 동작이 막히지 않아야 해요."],
+	["쓰는 곳 한정", "승인, 보내기, 닫기, 옮기기처럼 결과가 있는 동작에만 넣고, 등장 효과나 마우스 올림 장식에는 넣지 않아요."],
+	["끌 수 있게", "기기의 \"동작 줄이기\" 설정을 따르고, 느린 폰에서도 끊기지 않는 방식만 써요."],
+];
+// a name is at most 24 characters (ANS_LABEL), so a long one is 5 words and a long token is 24 letters without a space
+const LONG_NAME = "답을 받을 때까지 기다리게 하지 않기";
+const LONG_TOKEN = "ABCDEFGHIJKLMNOPQRSTUVWX";
+
+test("facts names stay on one line and share one column edge at 1280", async () => {
+	await view.resize(1280, 800);
+	try {
+		const card = await factsMeasured(factsText(FACT_FIXTURE));
+		expect(card.rows.length).toBe(FACT_FIXTURE.length);
+		for (const r of card.rows) expect(r.lines.length).toBe(1);
+		for (const r of card.rows) { expect(r.kl).toBeCloseTo(card.rows[0]!.kl, 1); expect(r.kr).toBeCloseTo(card.rows[0]!.kr, 1); }
+		for (const r of card.rows) expect(r.vl).toBeCloseTo(card.rows[0]!.vl, 1);
+	} finally { await view.resize(390, 844); }
+});
+
+test("a long facts name breaks between words into even lines and nothing leaves the card", async () => {
+	await view.resize(1280, 800);
+	try {
+		const card = await factsMeasured(factsText([[LONG_NAME, "끝나요."], [LONG_TOKEN, "끝나요."], ["짧은 이름", "끝나요."]]));
+		const [long, token, short] = card.rows as [FactRow, FactRow, FactRow];
+		expect(long.lines.length).toBeGreaterThan(1);
+		expect(long.lines[long.lines.length - 1]!).toBeGreaterThan(Math.max(...long.lines) * 0.4);   // the last line is not one short word
+		expect(token.lines.length).toBeGreaterThan(1);   // an unbroken token breaks instead of running out
+		for (const r of card.rows) expect(r.kr).toBeLessThanOrEqual(r.vl);
+		expect(card.scroll).toBeLessThanOrEqual(card.client);
+		expect(card.rows.every(r => r.kr <= card.cr)).toBe(true);
+		expect(short.lines.length).toBe(1);
+		expect(long.vl).toBeCloseTo(short.vl, 1);   // one edge even with a long name
+	} finally { await view.resize(390, 844); }
+});
+
+test("on a phone the value keeps room: short values stay beside the name, a wordy card stacks the value under it", async () => {
+	const beside = await factsMeasured(factsText([["기다리게 하지 않기", "0.2초 안에요."], [LONG_NAME, "끝나요."], ["끌 수 있게", "꺼요."]]));
+	for (const r of beside.rows) { expect(r.vw).toBeGreaterThanOrEqual(150); expect(r.vl).toBeGreaterThan(r.kr); }   // 40% of a 326px card is the name's most, 12px gap: 180px stay for the value
+	const stacked = await factsMeasured(factsText(FACT_FIXTURE));
+	for (const r of stacked.rows) { expect(r.vl).toBeCloseTo(r.kl, 1); expect(r.vt).toBeGreaterThan(r.kt); expect(r.vw).toBeGreaterThanOrEqual(stacked.client * 0.8); }
+	expect(stacked.scroll).toBeLessThanOrEqual(stacked.client);
+});
+
+test("a table's first column keeps each name on one line on a phone", async () => {
+	const table = `정리했어요.\n\n| 항목 | 기본 | 넉넉 | 비고 |\n|---|---|---|---|\n${FACT_FIXTURE.map(([k]) => `| ${k} | 0.15초 | 0.25초 | 꺼도 돼요 |`).join("\n")}`;
+	const cells = await ev<{ lines: number; scroll: number; client: number }[]>(view, `(() => {
+		const tl = document.createElement("div"); tl.className = "timeline"; tl.style.cssText = "height:auto;overflow:visible";
+		const col = document.createElement("div"); col.className = "tl-in"; tl.append(col); document.body.append(tl);
+		col.append(${SURFACES["main chat"]!(table)});
+		const card = tl.querySelector(".ans-tb");
+		const out = [...tl.querySelectorAll(".ans-tb tbody th")].map(th => { const r = document.createRange(); r.selectNodeContents(th); return { lines: new Set([...r.getClientRects()].map(q => Math.round(q.top))).size, scroll: card.scrollWidth, client: card.clientWidth }; });
+		tl.remove(); return out;
+	})()`);
+	expect(cells.length).toBe(FACT_FIXTURE.length);
+	for (const c of cells) { expect(c.lines).toBe(1); expect(c.scroll).toBeLessThanOrEqual(c.client); }
+});
