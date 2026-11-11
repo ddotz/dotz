@@ -20,7 +20,7 @@ async function rqLoad() {
     RQ.done = Array.isArray(r.sent) ? r.sent : [];
     RQ.stops = r.stops && typeof r.stops === "object" ? r.stops : {};
     RQ.err = "";
-  } catch (e) { RQ.local = RQ.local || []; RQ.err = appFail(e, "답장 대기를 불러오지 못했어요"); }
+  } catch (e) { RQ.local = RQ.local || []; RQ.err = appFail(e, TX("triage.rq.load_fail")); }
   RQ.loaded = true;
   monSchedule(); homeSoon(); rqSheetPaint(); paintDecision();
 }
@@ -67,7 +67,7 @@ function rqAll() {
 }
 
 /* ---- the rows ---- */
-const RQ_SENT = { owner: "확인 후 발송", rule: "자동 발송", retry: "다시 보냄" };   // the prototype's words by `how`
+const RQ_SENT = { owner: TX("triage.sent.owner"), rule: TX("triage.sent.rule"), retry: TX("triage.sent.retry") };   // the prototype's words by `how`
 const RQ_TONE = { ask: "warn", fail: "err", sent: "ok" };
 const rqNorm = v => String(v || "").replace(/^확인:\s*/, "").trim();
 // The computer's own failed / sent / stops, or a peer's snapshot copy (an older peer leaves them out).
@@ -83,7 +83,7 @@ function rqAskRow(x) {
   const o = rqOriginalOf(x), dr = x.kind === "notice" ? x.n.decision.draft : x.kind === "held" ? x.tr.draft : null;
   const who = x.kind === "notice" ? (o && o.who) || (dr && dr.to) || "" : x.kind === "held" ? (dr && dr.to) || "" : x.kind === "kakao" ? x.d.room || "" : (x.d.original && x.d.original.who) || x.d.to || "";
   // What the row is about: the mail's subject, the held draft's subject, a comment's post title or its text; the card's question only when none is known.
-  const what = x.kind === "notice" ? (MAILS.get(x.n.decision.to) || {}).subject || dr.subject || ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? (dr && dr.subject) || draftQ(x.tr.question) : x.kind === "kakao" ? "카카오톡 답장" : x.d.title || (x.d.original && x.d.original.text) || "";
+  const what = x.kind === "notice" ? (MAILS.get(x.n.decision.to) || {}).subject || dr.subject || ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? (dr && dr.subject) || draftQ(x.tr.question) : x.kind === "kakao" ? TX("triage.rq.kakao_reply") : x.d.title || (x.d.original && x.d.original.text) || "";
   return { key: x.key, state: "ask", who, what, inst: x.inst, app: x.label || rqAppName(x.inst), pc: x.pc, at: x.at, why: rqAskWhy(x), x };
 }
 // Every row of the screen: ask (rqAll), fail and sent (this computer's and the peers'), failures first. A failed send whose draft still waits shows once, as the failure,
@@ -93,7 +93,7 @@ function rqRows() {
   const from = [[null, RQ.failed, RQ.done], ...PQ.list.filter(p => p && p.items).map(p => [pqPcOf(p), p.items.failed || [], p.items.sent || []])];
   const fail = [], sent = [];
   for (const [pc, failed, done] of from) {
-    for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.unsure ? `확인 필요: ${f.why}` : f.why), f }); }
+    for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.unsure ? TX("triage.rq.unsure", { why: f.why }) : f.why), f }); }
     for (const s of done) sent.push({ key: `s:${rqPcKey(pc)}|${s.key}`, state: "sent", who: s.who || "", what: s.what || "", inst: s.app, app: labelOf(pc, s.app), pc, at: s.at, why: RQ_SENT[s.how] || "", s });
   }
   const failedAt = new Map(fail.filter(r => r.f.ref).map(r => [r.f.ref, r.at || 0]));
@@ -110,9 +110,9 @@ function rqMonItem(home) {   // home: the wide home shows the queue also while n
   if (!n && MON.sel !== RQ_KEY && !home) return null;
   // the line under the name is the home row's (08-home.js homeRepliesRow): the count per source, the total at the row's right
   const by = new Map(), at = Math.max(0, ...rows.map(r => r.at || 0));
-  for (const r of rows) { const k = r.app || "기타"; by.set(k, (by.get(k) || 0) + 1); }
-  return { key: RQ_KEY, group: "", name: "답장 대기", ic: "send", notices: [], mails: [], unread: n, rq: true,
-    hint: n ? countsLine(by) : "기다리는 답장이 없어요", at: at ? new Date(at).toISOString() : "" };
+  for (const r of rows) { const k = r.app || TX("home.replies.other"); by.set(k, (by.get(k) || 0) + 1); }
+  return { key: RQ_KEY, group: "", name: TX("triage.rq.name"), ic: "send", notices: [], mails: [], unread: n, rq: true,
+    hint: n ? countsLine(by) : TX("triage.empty.all"), at: at ? new Date(at).toISOString() : "" };
 }
 // Opens the queue, filtered to one app of one computer when given (an app's own 답장 대기 button).
 function rqOpen(inst, pc) { RQ.just.clear(); RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; MON.sig = ""; go("monitoring", RQ_KEY); }
@@ -146,7 +146,7 @@ function rqAfter(x, gone) {
   loadIntegrations();
 }
 async function rqRestore(x) {
-  try { await rqStoreCall(x, "restore"); RQ.gone.delete(x.key); rqAfter(x, false); toast("초안을 되돌렸어요"); } catch (e) { toast(e.message, true); }
+  try { await rqStoreCall(x, "restore"); RQ.gone.delete(x.key); rqAfter(x, false); toast(TX("decision.toast.restored")); } catch (e) { toast(e.message, true); }
 }
 function rqStoreActs(x) {
   return {
@@ -178,7 +178,7 @@ function rqRevise(x) {
       else if (x.kind === "held") await trPost([{ ref: x.tr.ref, to: x.tr.to, n: 2, note: change }]);
       else await rqStoreCall(x, "revise", { change });
       cancel(); rqAfter(x, false);
-      toast("고쳐 달라고 했어요. 새 초안이 오면 여기 다시 떠요");
+      toast(TX("triage.rq.revise_sent"));
     }, "edit") });
 }
 function rqOriginalOf(x) {
@@ -189,7 +189,7 @@ function rqOriginalOf(x) {
 function rqCardOf(x) {
   if (x.kind === "held") return rqHeldCard(x);
   const dr = x.kind === "notice" ? x.n.decision.draft : null;
-  const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), model: (dr && dr.model) || (x.d && x.d.model) || "", at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: "열기", onclick: () => { if (RQ.sheet) RQ.sheet.close(); rqGoTo(x); } })] };   // the sheet folds away so the screen it opens is seen; the draft stays in this list
+  const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), model: (dr && dr.model) || (x.d && x.d.model) || "", at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: TX("decision.open"), onclick: () => { if (RQ.sheet) RQ.sheet.close(); rqGoTo(x); } })] };   // the sheet folds away so the screen it opens is seen; the draft stays in this list
   const editing = RQ.edit === x.key, busy = rqIsBusy(x), fk = rqFk(x), press = rqPress.get(fk), base = { key: x.key, cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": x.kind }, head, original: rqOriginalOf(x), fail: rqFail.get(fk) };
   if (x.kind === "notice" && dr.toLabel === "받는이") {   // a mail draft: the parts every screen shows it with (10-reply-card.js rqMailParts)
     const p = rqMailParts(dr, { t: x.n.decision.to, at: x.at, pc: head.pc, edit: false, tail: head.tail });
@@ -202,13 +202,13 @@ function rqCardOf(x) {
     // The 받는이·참조 of a mail draft are read here as they are on its card; the queue does not edit them (its mail's own card does).
     const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: x.n.decision.to, edit: false }) : null;
     const b = dr.brief || {};
-    return rqCard({ ...base, brief: mailLinesNode(b.todo, b.questions), ...(recv ? { recv } : { to: [dr.toLabel || "받는이", dr.to] }), subject: dr.subject, body: { text: dr.body }, attach,
+    return rqCard({ ...base, brief: mailLinesNode(b.todo, b.questions), ...(recv ? { recv } : { to: [dr.toLabel || TX("decision.to"), dr.to] }), subject: dr.subject, body: { text: dr.body }, attach,
       extra: [draftMailNode(dr.mail)],
       ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqNoticeActs(x), busy, press } }) });
   }
   const d = x.d, kakao = x.kind === "kakao";
-  if (!kakao) { const an = rqAppName(x.inst); head.who = (d.original && d.original.who) || d.to || ""; head.src = an.endsWith("댓글") ? an : `${an || "답장"} 댓글`; }   // a comment draft: the landing card's head
-  return rqCard({ ...base, label: kakao && d.intent ? "새 메시지 초안" : "", to: kakao ? ["대화방", d.room] : ["댓글", d.to], subject: kakao ? "" : d.title,
+  if (!kakao) { const an = rqAppName(x.inst); head.who = (d.original && d.original.who) || d.to || ""; head.src = an.endsWith("댓글") ? an : an ? TX("triage.rq.comment_src", { app: an }) : TX("triage.rq.comment_src_plain"); }   // a comment draft: the landing card's head
+  return rqCard({ ...base, label: kakao && d.intent ? TX("triage.rq.new_msg") : "", to: kakao ? [TX("triage.rq.room"), d.room] : [TX("triage.rq.comment"), d.to], subject: kakao ? "" : d.title,
     body: { text: d.text, parts: kakao ? d.parts : null, sentParts: d.sentParts },
     attach: d,
     extra: kakao ? [] : [draftMailNode(d.mail), (d.notes || []).length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
@@ -230,21 +230,21 @@ function rqHeldCard(x) {
     if (n === 1) rqSentToast(); else if (n === 3) rqDroppedToast();
   }, n === 1 ? "send" : n === 3 ? "drop" : "edit");
   const acts = { send: () => { if (dr.warning || (dr.attachments || []).length) drfSure(dr, c.to).then(ok => ok && go(1)); else go(1); }, edit: () => { RQ.edit = x.key; MON.sig = ""; monSchedule(); }, drop: () => go(3), busy, press: rqPress.get(x.key) };
-  return rqCard({ key: x.key, fail: rqFail.get(x.key), cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": "held" }, head: { app: x.inst, label: x.label, pc: rqPcName(null), model: dr.model || "", at: 0 }, to: [dr.toLabel || "받는이", dr.to], subject: dr.subject,
+  return rqCard({ key: x.key, fail: rqFail.get(x.key), cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": "held" }, head: { app: x.inst, label: x.label, pc: rqPcName(null), model: dr.model || "", at: 0 }, to: [dr.toLabel || TX("decision.to"), dr.to], subject: dr.subject,
     body: { text: dr.body }, attach: { attachments: dr.attachments, cannotAttach: [] }, extra: [draftMailNode(dr.mail)], ...(RQ.edit === x.key ? { revise: rqRevise(x) } : { acts }) });
 }
 // The record of a failed or a sent reply (hub/reply-outcomes.ts) in the one reply card; foot = its own { revise } (the failed actions) or { sent, sentAt }.
 function rqRecordCard(r, rec, foot) {
   const kind = rec.kind, o = rec.original;
   return rqCard({ key: r.key, cls: RQ.busy.has(r.key) ? "busy" : "", attrs: { "data-rq": r.key, "data-kind": kind }, head: { app: r.inst, label: r.app, pc: rqPcName(r.pc), at: rec.at },
-    original: o ? { who: o.who, text: o.text } : null, to: rec.who ? [kind === "kakao" ? "대화방" : kind === "comment" ? "댓글" : "받는이", rec.who] : null, subject: kind === "comment" ? rec.what : "",
+    original: o ? { who: o.who, text: o.text } : null, to: rec.who ? [kind === "kakao" ? TX("triage.rq.room") : kind === "comment" ? TX("triage.rq.comment") : TX("decision.to"), rec.who] : null, subject: kind === "comment" ? rec.what : "",
     body: { text: rec.text }, attach: el("div", { hidden: true }), ...foot });
 }
 // A comment nobody can say went up (hub/comments/recover.ts): 다시 보내기 or 완료, each by the owner's own click on that one card.
 const rqFailActs = r => el("div", { class: "dr-act dr-row rq-acts" },
-  el("button", { class: "btn sm dr-send", type: "button", "data-k": "retry", disabled: RQ.busy.has(r.key), text: "다시 보내기", onclick: () => rqRetryAll([r]) }),
-  r.f.unsure ? el("button", { class: "btn text sm", type: "button", "data-k": "done", disabled: RQ.busy.has(r.key), text: "완료", onclick: () => rqMarkPosted(r) })
-    : el("button", { class: "btn text sm dr-drop", type: "button", "data-k": "drop", disabled: RQ.busy.has(r.key), text: "보내지 않기", onclick: () => rqDropFailed(r) }));
+  el("button", { class: "btn sm dr-send", type: "button", "data-k": "retry", disabled: RQ.busy.has(r.key), text: TX("mon.cm.send_again"), onclick: () => rqRetryAll([r]) }),
+  r.f.unsure ? el("button", { class: "btn text sm", type: "button", "data-k": "done", disabled: RQ.busy.has(r.key), text: TX("home.sys.done"), onclick: () => rqMarkPosted(r) })
+    : el("button", { class: "btn text sm dr-drop", type: "button", "data-k": "drop", disabled: RQ.busy.has(r.key), text: TX("decision.drop"), onclick: () => rqDropFailed(r) }));
 
 /* ---- failed sends: only what the owner already approved, each by its own route ---- */
 // This computer's route, or the other computer's act (hub/peer-monitor.ts "comments" / "kakao" / "approvals").
@@ -252,7 +252,7 @@ const rqSendIt = (pc, path, body, act, args) => (pc ? api(pqProxy(pc, "/api/peer
 async function rqRunKey(key, job) {
   if (RQ.busy.has(key)) return;
   RQ.busy.add(key); MON.sig = ""; monSchedule(); rqSheetPaint();
-  try { await job(); } catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 처리하지 못했어요" : e.message, true); }
+  try { await job(); } catch (e) { toast(e instanceof TypeError ? TX("decision.err.offline_act") : e.message, true); }
   RQ.busy.delete(key); MON.sig = ""; monSchedule(); rqSheetPaint();
 }
 // 다시 보내기 / 모두 다시 보내기: a comment reply and a KakaoTalk send by their own retry, a mail or gateway send through POST /api/approvals/failed (the owner's pick is
@@ -270,10 +270,10 @@ function rqRetryAll(rows, key) {
     }
     for (const { pc, items } of batch.values()) {
       const body = { op: "retry", items };
-      try { const res = await rqSendIt(pc, "/api/approvals/failed", body, "approvals", body); for (const x of (res && res.results) || []) if (!x.ok) bad.push(x.reason || "다시 보내지 못했어요"); }
+      try { const res = await rqSendIt(pc, "/api/approvals/failed", body, "approvals", body); for (const x of (res && res.results) || []) if (!x.ok) bad.push(x.reason || TX("triage.rq.retry_fail")); }
       catch (e) { bad.push(...items.map(() => e.message)); }
     }
-    toast(bad.length ? `${bad.length}건은 다시 보내지 못했어요 · ${bad[0]}` : `${app} ${rows.length}건을 다시 보내고 있어요`, bad.length > 0);
+    toast(bad.length ? TX("triage.rq.retry_bad", { n: bad.length, first: bad[0] }) : TX("triage.rq.retrying", { app, n: rows.length }), bad.length > 0);
     if (rows.some(r => r.pc)) pqLoad();
     rqLoad();
   });
@@ -282,7 +282,7 @@ function rqRetryAll(rows, key) {
 function rqMarkPosted(r) {
   return rqRunKey(r.key, async () => {
     await rqSendIt(r.pc, `/api/comments/sends/${enc(r.f.sendId)}/done`, {}, "comments", { op: "send-done", id: r.f.sendId });
-    RQ.gone.add(r.key); toast("완료로 표시했어요");
+    RQ.gone.add(r.key); toast(TX("triage.rq.marked"));
     if (r.pc) pqLoad();
     rqLoad(); loadIntegrations();
   });
@@ -294,7 +294,7 @@ function rqDropFailed(r) {
     if (f.kind === "kakao") await rqSendIt(r.pc, `/api/kakao/drafts/${enc(f.ref)}/drop`, {}, "kakao", { op: "draft-drop", code: f.ref });
     else {
       const body = { op: "drop", items: [{ ref: f.ref, to: f.conv || "" }] }, res = await rqSendIt(r.pc, "/api/approvals/failed", body, "approvals", body), x = ((res && res.results) || [])[0];
-      if (x && !x.ok) throw new Error(x.reason || "지우지 못했어요");
+      if (x && !x.ok) throw new Error(x.reason || TX("triage.rq.drop_fail"));
     }
     RQ.gone.add(r.key); rqDroppedToast();
     if (r.pc) pqLoad();
@@ -303,16 +303,16 @@ function rqDropFailed(r) {
 }
 
 /* ---- the screen ---- */
-const RQ_TABS = [["all", "전체"], ["ask", "답 필요"], ["fail", "실패"], ["sent", "보낸 것"]];
-const RQ_SECS = [["fail", "실패"], ["ask", "답 필요"], ["sent", "보낸 것"]];
-const RQ_EMPTY = { all: "기다리는 답장이 없어요", ask: "답을 기다리는 초안이 없어요", fail: "못 보낸 답장이 없어요", sent: "오늘 보낸 답장이 없어요" };
+const RQ_TABS = [["all", TX("mon.filter.all")], ["ask", TX("mon.filter.need")], ["fail", TX("mon.tag.fail")], ["sent", TX("triage.tab.sent")]];
+const RQ_SECS = [["fail", TX("mon.tag.fail")], ["ask", TX("mon.filter.need")], ["sent", TX("triage.tab.sent")]];
+const RQ_EMPTY = { all: TX("triage.empty.all"), ask: TX("triage.empty.ask"), fail: TX("triage.empty.fail"), sent: TX("triage.empty.sent") };
 const RQ_UI = {};
 // The sticky head (tabs, meta row with 빠른 처리, the app chips) and the list box are built once and repainted in place, so scroll, focus and the counts' roll survive.
 function rqUi() {
   if (RQ_UI.hd) return RQ_UI;
-  const tabs = el("div", { class: "nsc-f rq-tabs", role: "tablist", "aria-label": "답장 상태" }, ...RQ_TABS.map(([k, l]) =>
+  const tabs = el("div", { class: "nsc-f rq-tabs", role: "tablist", "aria-label": TX("triage.rq.state_aria") }, ...RQ_TABS.map(([k, l]) =>
     el("button", { class: "nsc-fb", type: "button", role: "tab", "data-f": k, onclick: () => rqTab(k) }, l, el("span", { class: `n${k === "fail" ? " err" : ""}`, "data-n": k }))));
-  const mt = el("span", { class: "meta" }), fast = el("button", { class: "btn tonal sm rq-fast", type: "button", "data-k": "triage", onclick: () => trOpen("*") }, icon("spark"), el("span", { text: "빠른 처리" }));
+  const mt = el("span", { class: "meta" }), fast = el("button", { class: "btn tonal sm rq-fast", type: "button", "data-k": "triage", onclick: () => trOpen("*") }, icon("spark"), el("span", { text: TX("triage.fast") }));
   const meta = el("div", { class: "nsc-m rq-qm" }, mt, el("span", { class: "sp" }), fast), chips = el("div", { class: "rq-chips" });
   return Object.assign(RQ_UI, { hd: el("div", { class: "rq-hd2" }, tabs, meta, chips), tabs, mt, fast, meta, chips, ls: el("div", { class: "rq-ls" }), seq: 0 });
 }
@@ -332,16 +332,16 @@ function rqFold(key) {
 // The state tabs are the one segment of this screen; the app is the 앱 select at the right end of their row (a short row under them on a phone).
 function rqFilterBar(rows) {
   const by = new Map();
-  for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst) || "기타"}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
+  for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst) || TX("home.replies.other")}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
   if (RQ.app && !by.has(RQ.app)) RQ.app = "";
   const total = [...by.values()].reduce((c, v) => c + v.n, 0);
   if (!(RQ.app || (by.size >= 2 && total >= TR.min))) return null;
-  return selectButton({ label: "앱", frame: t => `앱 ${t}`, value: RQ.app, text: k => (k ? by.get(k).text : "전체"),
-    items: [{ value: "", label: `전체 · ${total}` }, ...[...by].map(([k, v]) => ({ value: k, label: `${v.text} · ${v.n}` }))],
+  return selectButton({ label: TX("home.ny.app"), frame: t => TX("triage.rq.app_frame", { t }), value: RQ.app, text: k => (k ? by.get(k).text : TX("mon.filter.all")),
+    items: [{ value: "", label: TX("triage.rq.all_n", { n: total }) }, ...[...by].map(([k, v]) => ({ value: k, label: `${v.text} · ${v.n}` }))],
     onPick: k => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } });
 }
 // 방금 / N분 전 within the hour, as the prototype's rows, then the plain time.
-const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? "방금" : m < 60 ? `${m}분 전` : rcWhen(new Date(at).toISOString()); };
+const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? TX("home.ago.now") : m < 60 ? TX("home.ago.m", { n: m }) : rcWhen(new Date(at).toISOString()); };
 // One row, the notice row's own classes: the state dot, who and the time, then "앱 · 무엇" with the tag (the stop reason, or how a sent one went).
 function rqRowNode(r, kid) {
   const at = rqWhen(r.at), head = r.who || r.what || r.app, sub = [r.app, r.who ? r.what : ""].filter(Boolean).join(" · ");
@@ -370,9 +370,9 @@ function rqFailDescs(rows) {
     out.push({ key: `g:${k}`, sig: JSON.stringify([busy, open, r.why, rqAppName(r.inst) || r.app, g.map(x => x.key)]), make: () => el("div", { class: "li nsc-r rq-r rq-g fail", "data-qg": k },
       el("span", { class: "lead" }, el("span", { class: `dot ${busy ? "pri" : "err"}` })),
       el("button", { class: "tx nsc-tx", type: "button", "aria-expanded": String(open), onclick: () => rqFold(k) },
-        el("span", { class: "ln" }, el("span", { class: "hd", text: `${rqAppName(r.inst) || r.app} ${g.length}건을 못 보냈어요` })),
-        el("span", { class: "ln" }, el("span", { class: "nsc-s", text: busy ? "다시 보내는 중" : r.why }))),
-      el("button", { class: "btn tonal sm rq-retry", type: "button", "data-k": "retry-all", disabled: busy, text: "모두 다시 보내기", onclick: () => rqRetryAll(g, k) }),
+        el("span", { class: "ln" }, el("span", { class: "hd", text: TX("triage.rq.group_fail", { app: rqAppName(r.inst) || r.app, n: g.length }) })),
+        el("span", { class: "ln" }, el("span", { class: "nsc-s", text: busy ? TX("triage.rq.resending") : r.why }))),
+      el("button", { class: "btn tonal sm rq-retry", type: "button", "data-k": "retry-all", disabled: busy, text: TX("triage.rq.retry_all"), onclick: () => rqRetryAll(g, k) }),
       el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("drop"))) }, ...(open ? g.map(x => rqRowDesc(x, k)) : []));
   }
   return out;
@@ -399,7 +399,7 @@ function rqPaintHead(rows) {
   }
   // the count is said once, on the filter chips; the line under them keeps only what the chips do not say
   const fast = (RQ.tab === "all" || RQ.tab === "ask") && n.ask >= TR.min;
-  const sending = rqSending(), text = [RQ.tab === "sent" && n.sent ? `오늘 보낸 답장 ${n.sent}건` : "", sending ? `보내는 중 ${sending}건` : ""].filter(Boolean).join(" · ");
+  const sending = rqSending(), text = [RQ.tab === "sent" && n.sent ? TX("triage.rq.sent_today", { n: n.sent }) : "", sending ? TX("triage.rq.sending_n", { n: sending }) : ""].filter(Boolean).join(" · ");
   u.mt.textContent = text; u.fast.hidden = !fast; u.meta.hidden = !text && !fast;
 }
 const RQ_PAGE = 200;   // rows drawn per section; 더 보기 adds a page (the failed section always draws all)
@@ -434,14 +434,14 @@ const rqAnchor = () => rowAnchor(rqUi().ls, ".rq-r", "rk");
 // What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).
 function rqDescs(shown) {
   if (!shown.length && RQ.err && !(RQ.rows || []).length) return [{ key: "empty", sig: RQ.err, make: () => el("div", { class: "rq-empty", role: "status" }, el("div", { text: RQ.err }), appRetry(() => rqLoad())) }];   // the load failed: a sentence and 다시 시도
-  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…"; return [{ key: "empty", sig: text, make: () => el("div", { class: "rq-empty", role: "status", text }) }]; }
+  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : TX("common.loading"); return [{ key: "empty", sig: text, make: () => el("div", { class: "rq-empty", role: "status", text }) }]; }
   const out = [];
   for (const [s, label] of RQ_SECS) {
     const part = shown.filter(r => r.state === s);
     if (!part.length) continue;
     if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: label, make: () => el("div", { class: "sec", text: label }) });
     const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = s === "fail" ? rqFailDescs(part) : part.slice(0, lim).map(r => rqRowDesc(r));
-    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(`${part.length - lim}개 더 보기`, () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
+    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(TX("mon.more_n", { n: part.length - lim }), () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
     out.push({ key: `list:${s}`, sig: "", make: () => el("div", { class: "list rq-list" }), rows });
   }
   return out;
@@ -504,7 +504,7 @@ function rqSheetOpen(r) {
   RQ.cur = r.key; RQ.shSig = "";
   if (current === "monitoring" && !narrowChat()) { RQ.mark = r.key; rqPaneOpen(); rqSheetPaint(r); return; }
   RQ.mark = "";
-  const h = fsOpen({ label: "답장 확인", cls: "mid rq-sheet", onClose: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; } } });
+  const h = fsOpen({ label: TX("decision.check_reply"), cls: "mid rq-sheet", onClose: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; } } });
   RQ.sheet = h;
   rqSheetPaint(r);
 }
@@ -516,11 +516,11 @@ function rqSheetPaint(found) {
   const sig = JSON.stringify([r.state, r.why, rqXSig(r), RQ.edit === r.key, RQ.busy.has(r.key), RQ.just.has(r.key)]);
   if (sig === RQ.shSig) return;
   RQ.shSig = sig;
-  const card = r.state === "ask" ? rqCardOf(r.x) : r.state === "fail" ? rqRecordCard(r, r.f, { revise: rqFailActs(r) }) : rqRecordCard(r, r.s, { sent: true, sentAt: rqWhen(r.at) || "방금" });
+  const card = r.state === "ask" ? rqCardOf(r.x) : r.state === "fail" ? rqRecordCard(r, r.f, { revise: rqFailActs(r) }) : rqRecordCard(r, r.s, { sent: true, sentAt: rqWhen(r.at) || TX("home.ago.now") });
   // A comment's note already stands in its card: the why line does not say it twice.
   const said = r.x && r.x.d && (r.x.d.notes || []).some(n => rqNorm(n) === r.why);
   const body = el("div", { class: "rq-sb" }, r.why && r.state !== "sent" && !said ? el("div", { class: "note rq-why", role: "note", text: r.why }) : null, card), old = h.box.querySelector(".rq-sb");
-  if (!h.box.querySelector(".fs-hd")) h.box.append(fsHead([el("div", { class: "fs-t", text: "답장 확인" })], { close: () => h.close() }));
+  if (!h.box.querySelector(".fs-hd")) h.box.append(fsHead([el("div", { class: "fs-t", text: TX("decision.check_reply") })], { close: () => h.close() }));
   if (old) { const top = old.scrollTop; old.replaceWith(body); body.scrollTop = top; } else h.box.append(body);   // a redraw keeps the place in a long draft
 }
 // What a row shows beyond its text: a draft's own state (redrawn when it changes; typing in 고치기 changes none of it).

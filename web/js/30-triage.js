@@ -28,7 +28,7 @@ const trSoon = () => { clearTimeout(TR.t); TR.t = setTimeout(trLoad, 300); };
 const trBig = () => TR.groups.filter(g => g.count >= TR.min);
 // Key "*" = the review queue: every waiting draft of every comment app and mail app in one walk.
 const trCards = key => (key === "*" ? TR.groups.flatMap(g => g.cards) : (TR.groups.find(x => x.key === key) || { cards: [] }).cards);
-const trKst = at => new Date(at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
+const trKst = at => new Date(at).toLocaleString(TX_LOCALE, { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
 /** The group a waiting card is in, when it is one the triage view takes (big enough). */
 const trGroupFor = ref => trBig().find(g => g.cards.some(c => c.ref === ref));
 
@@ -56,12 +56,12 @@ const trMarkRow = c => { const r = c && (RQ.rows || rqRows()).find(x => x.x && r
 const trAway = ev => current !== "monitoring" || RQ.sheet !== TR.h || (ev.target instanceof Element && ev.target !== document.body && !TR.h.box.contains(ev.target));
 function trOpen(key, ref) {
   const g = TR.groups.find(x => x.key === key), cards = trCards(key);
-  if (!cards.length) { toast("처리할 카드가 없어요"); return; }
+  if (!cards.length) { toast(TX("triage.none")); return; }
   if (TR.h) TR.h.close(false);
-  Object.assign(TR, { key, label: g ? g.label : "전체", items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, busy: {}, noting: false });
+  Object.assign(TR, { key, label: g ? g.label : TX("mon.filter.all"), items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, busy: {}, noting: false });
   TR.i = Math.max(0, ref ? TR.items.findIndex(c => c.ref === ref) : 0);
   const onClose = () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); };
-  const h = trPaneNow() ? trPaneOpen(onClose) : fsOpen({ label: `${TR.label} 빠른 처리`, cls: "tall tr", onClose });
+  const h = trPaneNow() ? trPaneOpen(onClose) : fsOpen({ label: TX("triage.fs.label", { label: TR.label }), cls: "tall tr", onClose });
   TR.h = h;
   document.addEventListener("keydown", trKey);
   trPaint();
@@ -94,10 +94,10 @@ function trState(c) {
   }
   return d;
 }
-const TR_ST = { drop: "보내지 않았어요", undo: "곧 보내요", back: "보내지 않았어요", queued: "보낼 차례를 기다려요", sending: "보내는 중…", sent: "보냈어요", failed: "보내지 못했어요", unsure: "확인이 필요해요", bot: "봇이 보내요", edit: "봇이 고치는 중이에요", gone: "다른 곳에서 처리됐어요", err: "답을 보내지 못했어요" };
+const TR_ST = { drop: TX("decision.not_sent"), undo: TX("decision.toast.sending_soon"), back: TX("decision.not_sent"), queued: TX("triage.st.queued"), sending: TX("decision.pending.send"), sent: TX("decision.sent"), failed: TX("triage.st.failed"), unsure: TX("triage.st.unsure"), bot: TX("triage.st.bot"), edit: TX("triage.st.edit"), gone: TX("triage.st.gone"), err: TX("triage.st.err") };
 const trChip = c => {
   const s = trState(c);
-  if (s && s.state === "undo") return el("span", { class: "tr-st undo", "data-trst": trK(c) }, TR_ST.undo, el("button", { class: "btn text sm", type: "button", onclick: () => trUndo(c) }, "보내기 취소"));
+  if (s && s.state === "undo") return el("span", { class: "tr-st undo", "data-trst": trK(c) }, TR_ST.undo, el("button", { class: "btn text sm", type: "button", onclick: () => trUndo(c) }, TX("decision.undo.cancel")));
   return s ? el("span", { class: `tr-st ${s.state}`, "data-trst": trK(c), title: s.text || null, text: TR_ST[s.state] || s.state }) : el("span", { class: "tr-st", "data-trst": trK(c), hidden: true });
 };
 // The reason behind 확인이 필요해요 / 보내지 못했어요 as visible text under the card's header (the chip's title is not seen on a phone).
@@ -151,7 +151,7 @@ async function trSaveEdits(c) {
 }
 // Answers one card and moves on once the gateway took the answer. While it waits, the card's buttons stay in place, disabled, and the pressed one says what is
 // happening (the 답장 확인 sheet's way); a second press is ignored. A failure keeps the owner on that card, with the reason where the buttons are and nothing counted.
-const TR_BUSY = { 1: "보내는 중…", 2: "고치는 중…", 3: "처리하는 중…" };
+const TR_BUSY = { 1: TX("decision.pending.send"), 2: TX("decision.pending.edit"), 3: TX("decision.pending.drop") };
 // 보내기 goes through the reply card's own refusals: a mail whose files disagree with its words is sent only by 이대로 보내기 (pick 4, after the same
 // question), and a draft with files or a warning on an account that cannot send files asks once more (drfSure). Answering no leaves the card as it was.
 const TR_SURE = new Set(), TR_SEEN = new Set();
@@ -215,7 +215,7 @@ function trKey(ev) {
 
 function trEditSubmit(c) {
   const note = (TR.notes[trK(c)] || "").trim();
-  if (!note) { toast("무엇을 고칠지 적어 주세요", true); return; }
+  if (!note) { toast(TX("triage.note.need"), true); return; }
   trAnswer(c, 2, note);
 }
 
@@ -224,10 +224,10 @@ function trPaint() {
   if (!TR.h) return;
   if (TR.h.pane) trMarkRow(TR.items[TR.i]);
   const box = TR.h.box, n = TR.items.length, handled = TR.items.filter(c => TR.done[trK(c)] && TR.done[trK(c)].state !== "err").length;   // a failed answer is not counted
-  const bar = el("div", { class: "tr-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(n), "aria-valuenow": String(handled), "aria-label": "처리한 카드" }, el("span", { style: `width:${n ? (handled / n) * 100 : 0}%` }));
+  const bar = el("div", { class: "tr-bar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(n), "aria-valuenow": String(handled), "aria-label": TX("triage.bar") }, el("span", { style: `width:${n ? (handled / n) * 100 : 0}%` }));
   const pos = TR.i < n ? `${TR.i + 1}/${n}` : `${n}/${n}`;
-  const head = fsHead([el("span", { class: "fs-ey" }, `${TR.label} · 빠른 처리`), el("h2", { class: "fs-t tr-pos" }, TR.list ? `목록 ${n}건` : pos, el("span", { class: "tr-sum", text: ` · 처리 ${handled}건` })), bar], { close: () => TR.h && TR.h.close() });
-  const tog = el("button", { class: "btn text sm tr-tog", type: "button", "aria-pressed": String(TR.list), onclick: () => { TR.list = !TR.list; trPaint(); } }, icon("list"), el("span", { text: TR.list ? "한 장씩" : "목록" }));
+  const head = fsHead([el("span", { class: "fs-ey" }, TX("triage.head.ey", { label: TR.label })), el("h2", { class: "fs-t tr-pos" }, TR.list ? TX("triage.head.list", { n }) : pos, el("span", { class: "tr-sum", text: ` · ${TX("triage.head.done", { n: handled })}` })), bar], { close: () => TR.h && TR.h.close() });
+  const tog = el("button", { class: "btn text sm tr-tog", type: "button", "aria-pressed": String(TR.list), onclick: () => { TR.list = !TR.list; trPaint(); } }, icon("list"), el("span", { text: TR.list ? TX("triage.tog.one") : TX("triage.tog.list") }));
   $(".fs-hb", head).prepend(tog);
   // a paint that shows other cards (moved on, or the list changed) goes through even while a card's text is being typed in
   if (!paintKeep(box, [head, ...(TR.list ? trListView() : TR.i >= n ? trDoneView() : trOneView(TR.items[TR.i]))], trPaint, TR.list ? TR.items.map(trK).join() : TR.i < n ? trK(TR.items[TR.i]) : "")) return;
@@ -315,30 +315,30 @@ function trOneView(c) {
   // A draft the gateway cannot change in place (a block a session wrote) is read here and goes back to the session with 고치기.
   const area = (part, value) => c.editable === false ? draftBodyNode(value, "dc-dr-b") : el("textarea", { class: "tr-ta", rows: "6", "aria-label": part === "mail" ? TX("decision.mail.along_body") : TX("decision.body_label"), disabled: locked, oninput: ev => { e[part] = ev.target.value; trSendLabel(c); } }, value);
   const body = el("div", { class: "fs-body tr-body", tabindex: "-1" },
-    el("div", { class: "tr-q" }, el("span", { text: trQ(c) || "이대로 보낼까요?" }), trChip(c)),
+    el("div", { class: "tr-q" }, el("span", { text: trQ(c) || TX("triage.q.default") }), trChip(c)),
     trWhy(c),
     decideNode(d),
     trSec("to", TX("triage.sec.to"), ...trToNodes(c)),
     trSec("org", TX("triage.sec.org"), ...trOrigNodes(c)),
     c.info && c.info.length ? el("ul", { class: "tr-info" }, ...c.info.map(l => el("li", { text: l }))) : null,
-    trSec("reply", TX("triage.sec.reply"), draftRuleNode(d), area("reply", e.reply ?? d.body ?? ""), !c.sendable ? el("span", { class: "tr-rule", text: "보내기를 누르면 봇이 보내요" }) : null,
+    trSec("reply", TX("triage.sec.reply"), draftRuleNode(d), area("reply", e.reply ?? d.body ?? ""), !c.sendable ? el("span", { class: "tr-rule", text: TX("triage.bot_sends") }) : null,
       d.mail ? el("div", { class: "tr-mail" }, el("div", { class: "tr-k", text: TX("decision.mail.along") }), area("mail", e.mail ?? d.mail.body ?? "")) : null),
     trSec("att", TX("triage.sec.att"), ...trAttNodes(c)));
   const foot = el("div", { class: "fs-ft tr-ft" });
   // a failed answer: the reason stands where the buttons are (the card stays, its head says which answer failed)
-  if (st && st.state === "err") foot.append(el("div", { class: "tr-hint tr-fail", role: "alert", text: st.text ? `${st.text} · 다시 눌러 주세요` : "다시 눌러 주세요" }));
+  if (st && st.state === "err") foot.append(el("div", { class: "tr-hint tr-fail", role: "alert", text: st.text ? TX("triage.fail.with", { text: st.text }) : TX("triage.fail.plain") }));
   if (TR.noting && !locked || busy === 2) {
-    foot.append(el("textarea", { class: "dc-note tr-note", rows: "3", placeholder: "어떻게 고칠까요? 봇이 고쳐서 다시 물어봐요", "aria-label": "어떻게 고칠지", oninput: ev => { TR.notes[k] = ev.target.value; } }, TR.notes[k] || ""),
-      el("div", { class: "tr-acts" }, el("button", { class: "btn tr-b tr-go", type: "button", disabled: !!busy, onclick: () => trEditSubmit(c) }, busy ? TR_BUSY[2] : "고쳐 달라고 하기"), el("button", { class: "btn text tr-b", type: "button", disabled: !!busy, onclick: () => { TR.noting = false; trPaint(); } }, "취소")));
+    foot.append(el("textarea", { class: "dc-note tr-note", rows: "3", placeholder: TX("triage.note.ph"), "aria-label": TX("triage.note.aria"), oninput: ev => { TR.notes[k] = ev.target.value; } }, TR.notes[k] || ""),
+      el("div", { class: "tr-acts" }, el("button", { class: "btn tr-b tr-go", type: "button", disabled: !!busy, onclick: () => trEditSubmit(c) }, busy ? TR_BUSY[2] : TX("decision.revise.go")), el("button", { class: "btn text tr-b", type: "button", disabled: !!busy, onclick: () => { TR.noting = false; trPaint(); } }, TX("common.cancel"))));
   } else {
     // The reply card's three actions in its order (the prototype's #triage): 보내기, 고치기, then the quiet 보내지 않기.
     foot.append(el("div", { class: "tr-acts" },
       el("button", { class: "btn tr-b tr-go", type: "button", disabled: locked, onclick: () => trAnswer(c, 1) }, busy === 1 ? TR_BUSY[1] : trSendText(c)),
-      el("button", { class: "btn tonal tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, "고치기"),
-      el("button", { class: "btn text tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, busy === 3 ? TR_BUSY[3] : "보내지 않기")),
+      el("button", { class: "btn tonal tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, TX("decision.edit")),
+      el("button", { class: "btn text tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, busy === 3 ? TR_BUSY[3] : TX("decision.drop"))),
       ...(gone ? [el("div", { class: "tr-hint", text: DC_GONE })] : []),   // foot.append turns a null into the word "null"
-      el("div", { class: "tr-nav" }, el("button", { class: "btn text tr-b", type: "button", "aria-label": "이전 카드", disabled: TR.i === 0, onclick: () => trStep(-1) }, "이전"), el("button", { class: "btn text tr-b", type: "button", "aria-label": "다음 카드", onclick: () => trStep(1) }, "다음")),
-      el("div", { class: "tr-keys", text: "Enter·1 보내기 · 2·E 고치기 · 3·X 보내지 않기 · ← → 이전·다음 · L 목록" }));
+      el("div", { class: "tr-nav" }, el("button", { class: "btn text tr-b", type: "button", "aria-label": TX("triage.nav.prev_aria"), disabled: TR.i === 0, onclick: () => trStep(-1) }, TX("triage.nav.prev")), el("button", { class: "btn text tr-b", type: "button", "aria-label": TX("triage.nav.next_aria"), onclick: () => trStep(1) }, TX("triage.nav.next"))),
+      el("div", { class: "tr-keys", text: TX("triage.keys.one") }));
   }
   return [body, foot];
 }
@@ -346,22 +346,22 @@ const trEdited = c => {
   const e = TR.edits[trK(c)] || {}, d = c.draft || {};
   return (e.reply != null && e.reply.trim() !== String(d.body || "").trim()) || (!!d.mail && e.mail != null && e.mail.trim() !== String(d.mail.body || "").trim());
 };
-const trSendText = c => (trEdited(c) ? "고쳐서 보내기" : "보내기");
+const trSendText = c => (trEdited(c) ? TX("triage.send_edited") : TX("common.send"));
 function trSendLabel(c) { const b = TR.h && $(".tr-go", TR.h.box); if (b) b.textContent = trSendText(c); }
 
 function trDoneView() {
   const by = s => TR.items.filter(c => { const x = trState(c); return x && x.state === s; }).length;
   const skipped = TR.items.filter(c => !TR.done[trK(c)]).length;
-  const rows = [["보냈어요", by("sent")], ["보내지 않았어요", by("drop")], ["보내는 중", by("queued") + by("sending")], ["보내지 못했어요", by("failed") + by("err")], ["확인이 필요해요", by("unsure")], ["봇이 고치거나 보내요", by("edit") + by("bot")], ["건너뛰었어요", skipped]].filter(([, v]) => v);
-  const body = el("div", { class: "fs-body tr-body tr-empty" }, el("div", { class: "tr-done-t", text: skipped ? "끝까지 봤어요" : "모두 답했어요" }), el("ul", { class: "tr-sumlist" }, ...rows.map(([t, v]) => el("li", {}, el("span", { text: t }), el("b", { text: `${v}건` })))));
+  const rows = [[TX("decision.sent"), by("sent")], [TX("decision.not_sent"), by("drop")], [TX("mon.cm.st.sending"), by("queued") + by("sending")], [TX("triage.st.failed"), by("failed") + by("err")], [TX("triage.st.unsure"), by("unsure")], [TX("triage.done.bot"), by("edit") + by("bot")], [TX("triage.done.skipped"), skipped]].filter(([, v]) => v);
+  const body = el("div", { class: "fs-body tr-body tr-empty" }, el("div", { class: "tr-done-t", text: skipped ? TX("triage.done.seen") : TX("triage.done.all") }), el("ul", { class: "tr-sumlist" }, ...rows.map(([t, v]) => el("li", {}, el("span", { text: t }), el("b", { text: TX("triage.done.n", { n: v }) })))));
   const foot = el("div", { class: "fs-ft tr-ft" }, el("div", { class: "tr-acts" },
-    skipped ? el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.i = TR.items.findIndex(c => !TR.done[trK(c)]); trPaint(); } }, "건너뛴 것 다시 보기") : null,
-    el("button", { class: "dc-act main tr-b", type: "button", onclick: () => TR.h && TR.h.close() }, "닫기")));
+    skipped ? el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.i = TR.items.findIndex(c => !TR.done[trK(c)]); trPaint(); } }, TX("triage.done.back")) : null,
+    el("button", { class: "dc-act main tr-b", type: "button", onclick: () => TR.h && TR.h.close() }, TX("common.close"))));
   return [body, foot];
 }
 
 // The third choice of the list only leaves the card waiting (trSendPicked posts the first two): it says 건너뛰기, never the 보내지 않기 of the one-card view, which drops the draft.
-const TR_PICK = [[1, "보내기"], [2, "고치기"], [3, "건너뛰기"]];
+const TR_PICK = [[1, TX("common.send")], [2, TX("decision.edit")], [3, TX("triage.skip")]];
 function trListView() {
   const picked = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim()))).length;
   const body = el("div", { class: "fs-body tr-body tr-list" }, ...TR.items.map((c, i) => {
@@ -370,13 +370,13 @@ function trListView() {
       el("button", { class: "tr-rh", type: "button", onclick: () => { TR.i = i; TR.list = false; trPaint(); } }, el("span", { class: "tr-n", text: String(i + 1) }), el("span", { class: "tr-rq", text: [d.to, trQ(c)].filter(Boolean).join(" · ") }), trChip(c)),
       trWhy(c),
       trRowOrig(c, k),
-      draftBodyNode((TR.edits[k] && TR.edits[k].reply) ?? d.body ?? "", `tr-rb${p === 1 || TR.open[k] ? " open" : ""}`, { title: "눌러서 전체 보기", onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); } }),
-      d.mail ? el("div", { class: `tr-rb mail${p === 1 || TR.open[k] ? " open" : ""}`, onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); }, text: `함께 보낼 메일 → ${d.mail.to || ""}${d.mail.subject ? ` · ${d.mail.subject}` : ""}\n${(TR.edits[k] && TR.edits[k].mail) ?? d.mail.body ?? ""}` }) : null,
+      draftBodyNode((TR.edits[k] && TR.edits[k].reply) ?? d.body ?? "", `tr-rb${p === 1 || TR.open[k] ? " open" : ""}`, { title: TX("triage.row.open"), onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); } }),
+      d.mail ? el("div", { class: `tr-rb mail${p === 1 || TR.open[k] ? " open" : ""}`, onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); }, text: `${d.mail.subject ? TX("triage.row.mail_subj", { to: d.mail.to || "", subject: d.mail.subject }) : TX("triage.row.mail", { to: d.mail.to || "" })}\n${(TR.edits[k] && TR.edits[k].mail) ?? d.mail.body ?? ""}` }) : null,
       trRowFiles(c),
-      locked ? null : el("div", { class: "tr-seg", role: "radiogroup", "aria-label": `${i + 1}번 카드` }, ...TR_PICK.map(([n, t]) => el("button", { class: `tr-sg${p === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(p === n), onclick: () => { TR.picks[k] = n; trPaint(); } }, t))),
-      !locked && p === 2 ? el("input", { class: "tr-rn", type: "text", placeholder: "어떻게 고칠까요?", value: TR.notes[k] || "", "aria-label": `${i + 1}번 고칠 내용`, oninput: ev => { TR.notes[k] = ev.target.value; trListCount(); } }) : null);
+      locked ? null : el("div", { class: "tr-seg", role: "radiogroup", "aria-label": TX("triage.row.card", { n: i + 1 }) }, ...TR_PICK.map(([n, t]) => el("button", { class: `tr-sg${p === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(p === n), onclick: () => { TR.picks[k] = n; trPaint(); } }, t))),
+      !locked && p === 2 ? el("input", { class: "tr-rn", type: "text", placeholder: TX("decision.revise.ask"), value: TR.notes[k] || "", "aria-label": TX("triage.row.note_aria", { n: i + 1 }), oninput: ev => { TR.notes[k] = ev.target.value; trListCount(); } }) : null);
   }));
-  const foot = el("div", { class: "fs-ft tr-ft" }, el("div", { class: "tr-acts" }, el("button", { class: "dc-act main tr-b tr-batch", type: "button", disabled: !picked, onclick: trSendPicked }, `확인한 것 보내기${picked ? ` (${picked})` : ""}`)), el("div", { class: "tr-keys", text: "카드마다 보내기·고치기·건너뛰기를 골라요. 고르지 않은 카드는 그대로 남아요" }));
+  const foot = el("div", { class: "fs-ft tr-ft" }, el("div", { class: "tr-acts" }, el("button", { class: "dc-act main tr-b tr-batch", type: "button", disabled: !picked, onclick: trSendPicked }, picked ? TX("triage.batch_n", { n: picked }) : TX("triage.batch"))), el("div", { class: "tr-keys", text: TX("triage.keys.list") }));
   return [body, foot];
 }
 function trListCount() {
@@ -384,7 +384,7 @@ function trListCount() {
   if (!b) return;
   const n = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim()))).length;
   b.disabled = !n;
-  b.textContent = `확인한 것 보내기${n ? ` (${n})` : ""}`;
+  b.textContent = n ? TX("triage.batch_n", { n }) : TX("triage.batch");
 }
 
 async function trSendPicked() {
@@ -411,10 +411,10 @@ async function trSendPicked() {
   try {
     for (const c of go) if (TR.picks[trK(c)] === 1) await trSaveEdits(c);
     const r = await trPost(go.map(c => ({ ref: c.ref, to: c.to, n: ns[trK(c)] ?? TR.picks[trK(c)], ...(TR.picks[trK(c)] === 2 ? { note: TR.notes[trK(c)].trim() } : {}) })));
-    toast(`${go.length}건 답했어요${r.sending ? ` · ${r.sending}건 보내는 중` : ""}`);
+    toast(r.sending ? TX("triage.answered_sending", { n: go.length, sending: r.sending }) : TX("triage.answered", { n: go.length }));
   } catch (err) {
     for (const c of go) TR.done[trK(c)] = { state: "err", text: err.message };
     trPaint();
-    toast(`보내지 못했어요: ${err.message}`, true);
+    toast(TX("triage.send_fail", { msg: err.message }), true);
   }
 }

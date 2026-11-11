@@ -125,12 +125,12 @@
       "why": "server value comparison (recipient label, the stale-card error text) and the agent-written decision prefix"
     },
     "web/js/30-replies.js": {
-      "count": 143,
-      "why": "pending"
+      "count": 10,
+      "why": "Korean compared with server values: decision option labels (보내기/고치기/보내지 않기), dr.toLabel === \"받는이\", app name endsWith(\"댓글\"), and the rqNorm regex that strips the agent-written \"확인:\" prefix"
     },
     "web/js/30-triage.js": {
-      "count": 189,
-      "why": "pending"
+      "count": 8,
+      "why": "TR_LABEL is posted to /api/approvals as the item label and compared by the hub with the card's option labels; d.toLabel === \"받는이\" compares a server value"
     },
     "web/js/31-notices-screen.js": {
       "count": 4,
