@@ -1,5 +1,6 @@
 // bun test preload (bunfig.toml): an isolated DOTZ_DIR with a throwaway config, a binary path that cannot exist (so no
 // test can ever start a real omo or omp), and the fake clock. Runs before any hub module reads config.ts.
+import { beforeEach } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -87,3 +88,7 @@ setMachineProbe(() => ({ totalGb: 64, availableGb: 56, cpus: 16 }));
 // Imported late: diskguard.ts reads config.ts, which must see the DOTZ_DIR set above.
 const { setDiskReader } = await import("../diskguard.ts");
 setDiskReader(() => ({ freeBytes: 500 * 2 ** 30, totalBytes: 1000 * 2 ** 30 }));
+// The page tests describe the Korean screen, but hub/routes.ts sets the web app's language from the config above (en) the moment any test
+// file imports it, and that state is shared by every file of the run. Each test starts from Korean; a test about another language sets it itself.
+const { setAppLang } = await import("../webapp.ts");
+beforeEach(() => setAppLang("ko"));
