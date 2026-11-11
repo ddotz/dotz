@@ -174,7 +174,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 	if (req.method === "POST" && url.pathname === "/api/quota/reset-credit") {
 		const b = await body(req);
 		const claude = b?.provider === "anthropic";
-		const r = await (claude ? useClaudeReset(b, undefined, account => liftUsageLimit(account, "limit reset spent here")) : useResetCredit(b));
+		const r = await (claude ? useClaudeReset(b, undefined, account => liftUsageLimit(account, "limit reset spent here", true, true)) : useResetCredit(b));
 		if (claude && typeof b.account === "string") forgetAccountUsage(b.account);
 		if (r.status === 200) void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
 		return json(r.body, r.status);

@@ -87,6 +87,22 @@ export function noteRecovered(agent: string): Episode | undefined {
 	return told ? prev : undefined;
 }
 
+// A usage limit is over and the sessions go on (hub/limit-lift.ts): every limit episode ends here, like noteRecovered (one cause shared by every
+// agent), so the recovery line of the first turn that works does not say the same again, and a second lift of the same episode finds nothing.
+// Returns the agent whose alert the owner saw, undefined when no limit episode was told: nothing to correct.
+export function endLimitEpisodes(): string | undefined {
+	const all = read();
+	let told: string | undefined;
+	let ended = false;
+	for (const [a, e] of Object.entries(all)) if (e.kind === "limit") {
+		if (!told && e.told !== false) told = a;
+		delete all[a];
+		ended = true;
+	}
+	if (ended) write(all);
+	return told;
+}
+
 // A billing/auth block waits for the owner, so its probe backs off: 30 min, 1 h, 2 h ... up to 6 h (a held prompt retried
 // every 30 minutes forever would keep failing for nothing). A changed login retries at once (watchAuth).
 export const ownerRetryMs = (failures: number): number => Math.min(OWNER_RETRY_MS * 2 ** Math.max(0, failures - 1), Math.max(OWNER_RETRY_MS, OWNER_RETRY_MAX_MS));

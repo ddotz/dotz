@@ -1,10 +1,12 @@
 // A usage limit that is over is noticed without a restart or a new login: after a 리셋권 spent here, and while a session is paused (a reset made
 // elsewhere), by the usage read dotz already has. A fake `omo --mode rpc`, injected usage and sessions, throwaway state files; no sleeps.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Chain, clock, resetFallbackState } from "./fallback.ts";
+import { msg } from "./i18n.ts";
+import { limitAlertsFile, noteBlock } from "./limit-alert.ts";
 import { liftEnv, resetLiftMemory, checkUsageLimit, liftUsageLimit, scopeBlocksModels } from "./limit-lift.ts";
 import { armLimitWatch, limitWatchArmed, LIMIT_WATCH_MS } from "./limit-watch.ts";
 import { omoRpcCommand, omoUnblockAccount } from "./runtime/omo-login.ts";
@@ -28,6 +30,8 @@ const realArgv = omoRpcCommand.argv;
 const real = { ...liftEnv };
 const T0 = Date.parse("2026-11-11T03:00:00Z");
 let calls: string[] = [];
+let told: { agent: string; text: string }[] = [];
+let stateFiles: string[] = [];
 let paused = true;
 let usable = true;
 let spentScopes: string[] = [];
@@ -36,6 +40,9 @@ const session = { liftLimit: () => (calls.push("session lifted"), paused && ((pa
 const realNow = clock.now;
 beforeEach(() => {
 	calls = [];
+	told = [];
+	stateFiles = [];
+	rmSync(limitAlertsFile(), { force: true });
 	paused = true;
 	usable = true;
 	spentScopes = [];
@@ -52,6 +59,8 @@ beforeEach(() => {
 		sessions: () => [session],
 		lanes: { paused: () => 0, models: () => [], lift: () => 0 },
 		refresh: (a?: string) => void calls.push(`refresh ${a}`),
+		stateFiles: () => stateFiles,
+		tell: (agent: string, text: string) => void told.push({ agent, text }),
 	});
 });
 afterEach(() => {
@@ -59,6 +68,7 @@ afterEach(() => {
 	omoRpcCommand.argv = realArgv;
 	clock.now = realNow;
 	resetFallbackState();
+	rmSync(limitAlertsFile(), { force: true });
 });
 
 const subscription = () => new Chain("anthropic-subscription/claude-opus-5-5", [{ model: "anthropic/claude-sonnet-5-5", when: "quota" as const }], "medium");
@@ -172,4 +182,64 @@ test("a spent scope with the paused session's model unreadable is never called o
 	expect(scopeBlocksModels(["claude sonnet 5.5"], ["anthropic-subscription/claude-sonnet-5-5"])).toBe(true);
 	expect(scopeBlocksModels(["fable 5"], ["anthropic-subscription/claude-sonnet-5-5"])).toBe(false);
 	expect(scopeBlocksModels(["claude code"], ["anthropic-subscription/claude-sonnet-5-5"])).toBe(false);
+});
+
+// The pause alert of an episode (hub/limit-alert.ts) is what makes the lift worth telling; the counts of sessions and lanes it resumed are not.
+const pauseAlert = (agent = "orchestrator") => noteBlock(agent, "acct-a", "limit", T0);
+
+test("a paused session going on after a spent reset tells the owner once, where the pause alert went, saying the reset was spent", async () => {
+	expect(pauseAlert().alert).toBe(true);
+	await liftUsageLimit("acct-a", "limit reset spent here", true, true);
+	expect(told).toEqual([{ agent: "orchestrator", text: msg().limitLiftedReset }]);
+	expect(msg().limitLiftedReset).not.toBe(msg().limitLifted);
+});
+
+test("a lift that counts nothing still tells when the pause alert is the latest word; with no pause alert it tells nothing", async () => {
+	paused = false;
+	await liftUsageLimit("acct-a", "limit reset spent here", true, true);
+	expect(told).toEqual([]);
+	pauseAlert();
+	await liftUsageLimit("acct-a", "limit reset spent here", true, true);
+	expect(told.map(t => t.text)).toEqual([msg().limitLiftedReset]);
+});
+
+test("the reset path and the usage-report path of one episode tell once; a later pause is a new episode and is told again", async () => {
+	pauseAlert();
+	await liftUsageLimit("acct-a", "limit reset spent here", true, true);
+	paused = true;   // the report is read while the session is paused: the episode is already over, so it adds nothing
+	expect(await checkUsageLimit()).toBe(true);
+	expect(told).toHaveLength(1);
+	// the lifted session paused again at once (the try failed anyway, and is not tried twice); then the pause ends and a turn works.
+	// The next limit is a new episode with a new pause alert, and a new notice
+	paused = true;
+	expect(await checkUsageLimit()).toBe(false);
+	paused = false;
+	expect(await checkUsageLimit()).toBe(false);
+	paused = true;
+	expect(pauseAlert().alert).toBe(true);
+	expect(await checkUsageLimit()).toBe(true);
+	expect(told).toHaveLength(2);
+	expect(told[1].text).toBe(msg().limitLifted);
+});
+
+test("the usage-report path tells too, and a lane's pause alert is answered in that lane", async () => {
+	pauseAlert("lane:web-i18n");
+	expect(await checkUsageLimit()).toBe(true);
+	expect(told).toEqual([{ agent: "lane:web-i18n", text: msg().limitLifted }]);
+});
+
+test("a restart after an announced lift tells nothing again, and the saved usage-limit pause is gone from the state file (a billing/auth pause stays)", async () => {
+	const limitFile = join(dir, "orchestrator.json");
+	const ownerFile = join(dir, "conv-state.json");
+	writeFileSync(limitFile, JSON.stringify({ pausedUntil: "2026-11-16T01:00:59.769Z", apiSince: "x" }));
+	writeFileSync(ownerFile, JSON.stringify({ pausedUntil: "2026-11-16T01:00:59.769Z", pausedKind: "owner", pausedAuth: 5 }));
+	stateFiles = [limitFile, ownerFile, join(dir, "missing.json")];
+	pauseAlert();
+	await liftUsageLimit("acct-a", "limit reset spent here", true, true);
+	expect(JSON.parse(readFileSync(limitFile, "utf8"))).toEqual({ apiSince: "x" });
+	expect(JSON.parse(readFileSync(ownerFile, "utf8")).pausedKind).toBe("owner");
+	// the gateway restarts: the start check finds a paused session and lifts again, with no pause alert left
+	paused = true;
+	expect(await checkUsageLimit()).toBe(true);
+	expect(told).toHaveLength(1);
 });
