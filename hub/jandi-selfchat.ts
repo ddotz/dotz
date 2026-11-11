@@ -14,7 +14,8 @@ import { readSecretFile, writeSecretFile } from "./secretbox.ts";
 /** Another computer reached only through this room: it listens for `keyword` and answers with lines that start with `reply_prefix` (shown by hub/jandi-peers.ts).
  *  `notify: false`: its new replies raise no phone notification (the default notifies, hub/jandi-peers.ts peerReplyPush). */
 export type SelfChatPeer = { name: string; keyword: string; reply_prefix: string; notify?: false };
-export type SelfChatConfig = { enabled: boolean; team_id: number; room_id: number; member_id: number; bot_id: number; keyword: string; reply_prefix: string; session_secret: string; interval_ms: number; peers?: SelfChatPeer[] };
+/** `share_status: true`: this computer posts a short summary of itself into the room behind its reply prefix (hub/relay-snapshot-send.ts); off when absent. */
+export type SelfChatConfig = { enabled: boolean; team_id: number; room_id: number; member_id: number; bot_id: number; keyword: string; reply_prefix: string; session_secret: string; interval_ms: number; peers?: SelfChatPeer[]; share_status?: true };
 export type SelfChatDeps = {
 	dataDir: string;
 	fetch?: typeof fetch;
@@ -87,6 +88,7 @@ export function normalizeSelfChat(raw: unknown): SelfChatConfig | undefined {
 		session_secret: secret,
 		interval_ms: Number.isInteger(ms) && ms >= 1000 ? ms : 3000,
 		...(peers.length ? { peers } : {}),
+		...(o.share_status === true ? { share_status: true as const } : {}),
 	};
 }
 

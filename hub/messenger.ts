@@ -60,7 +60,7 @@ export type Settings = {
 	rooms?: { label: string; fields: SettingsField[]; items: SettingsRoom[]; editable: boolean; hint?: string };
 	projects: { target: string; name: string }[];
 	/** The computers this messenger carries a conversation to (the adapter's `relay`), where it can carry them; set with PUT { relays }, drawn by web/js/42-relay-chat.js. */
-	relays?: { label: string; hint: string; notify: string; add: string; fields: SettingsField[]; items: SettingsRelay[] };
+	relays?: { label: string; hint: string; notify: string; add: string; fields: SettingsField[]; items: SettingsRelay[]; /** This computer's own switch: post a status summary into the room; set with PUT { share_status }. */ share: { label: string; hint: string; on: boolean } };
 	/** Another settings screen that owns the real controls (Discord). */
 	link?: { label: string; view: string };
 	/** Which notice classes this messenger receives (hub/notify-route.ts); filled in by hub/messengers-api.ts, set with PUT { notify }. */
@@ -70,7 +70,7 @@ export type Settings = {
 };
 /** A room the web app's conversation structure calls for (hub/messenger-rooms.ts desiredRooms): main, alert, worklog and one per project. */
 export type DesiredRoom = { kind: "main" | "project" | "alert" | "worklog"; name: string; project?: string };
-export type SettingsPut = { relays?: Partial<SettingsRelay>[]; enabled?: boolean; values?: Record<string, unknown>; allow?: string[]; rooms?: { id?: string; name?: string; kind?: string; project?: string; values?: Record<string, unknown> }[] };
+export type SettingsPut = { relays?: Partial<SettingsRelay>[]; share_status?: boolean; enabled?: boolean; values?: Record<string, unknown>; allow?: string[]; rooms?: { id?: string; name?: string; kind?: string; project?: string; values?: Record<string, unknown> }[] };
 export type TestResult = { results: { id: string; name: string; ok: boolean; status?: number; error?: string }[] };
 /** A settings body the adapter refuses; the route answers 400 with the message. */
 export class SettingsError extends Error {}

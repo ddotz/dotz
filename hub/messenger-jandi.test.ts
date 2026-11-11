@@ -313,6 +313,29 @@ describe("rooms from the web structure", () => {
 			}
 		});
 
+		test("the status sharing switch is saved apart from the list, survives a list change, and is refused without the self chat or with a non-boolean", () => {
+			const t = fresh({ ...base, self_chat });
+			try {
+				expect(t.a.settings!().relays!.share).toMatchObject({ on: false, label: msg().relay.share, hint: msg().relay.shareHint });
+				t.a.saveSettings!({ relays: [A] });
+				expect(t.a.saveSettings!({ share_status: true }).relays!.share.on).toBe(true);
+				expect(loadJandiConfig(t.d).self_chat).toMatchObject({ share_status: true, peers: [{ keyword: "alpha" }] });
+				expect(t.a.saveSettings!({ relays: [] }).relays!.share.on).toBe(true);
+				expect(() => t.a.saveSettings!({ share_status: "yes" as unknown as boolean })).toThrow();
+				expect(t.a.saveSettings!({ share_status: false }).relays!.share.on).toBe(false);
+				expect(loadJandiConfig(t.d).self_chat).not.toHaveProperty("share_status");
+			} finally {
+				t.cleanup();
+			}
+			const none = fresh(base);
+			try {
+				expect(() => none.a.saveSettings!({ share_status: true })).toThrow();
+				expect(loadJandiConfig(none.d).self_chat).toBeUndefined();
+			} finally {
+				none.cleanup();
+			}
+		});
+
 		test("a list with a bad entry is refused whole and changes nothing", () => {
 			const t = fresh({ ...base, self_chat });
 			try {
