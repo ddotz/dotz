@@ -24,6 +24,7 @@ import { msg, textsToReport } from "./i18n.ts";
 import { startWebI18n } from "./web-i18n-boot.ts";
 import { broadcast, emit, emitDelivery, onEmit, recentEvents, sentFiles, subscriberCount } from "./events.ts";
 import { WORK_SWEEP_MS } from "./workrows.ts";
+import { startAgentTrees } from "./agent-tree.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startRecallIndexing } from "./recall-idle.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
@@ -554,6 +555,7 @@ startStallSweep((conversation, r) => {
 	else convs.deliverTo(convs.keyOf(conversation), text, { target: conversation });
 });
 startOrphanReaper();
+startAgentTrees();
 startHostSweep();
 startSchedules((s, group) => {
 	const channel = scheduleTarget(s, discord.status.enabled ? "chat" : "web");

@@ -4,6 +4,7 @@
 // (capacityFrom) is what the tests pin. `conversations.max_live` in config still fixes the number when the owner sets it.
 import { cpus, freemem, loadavg, platform, totalmem } from "node:os";
 import { readFileSync } from "node:fs";
+import { processTable } from "./agent-tree.ts";
 import { overloaded, reserveGb } from "./limits.ts";
 
 export type Sample = { availBytes: number; totalBytes: number; cpus: number; load1: number; live: number; perSessionBytes: number };
@@ -46,7 +47,7 @@ export function availableBytes(vmStat?: string, meminfo?: string): number {
 	return freemem();
 }
 
-/** RSS (bytes) of each pid together with its whole process tree, from one `ps -axo pid=,ppid=,rss=` listing. */
+/** RSS (bytes) of each pid together with its whole process tree, from the shared `pid ppid rss ...` listing (hub/agent-tree.ts). */
 export function treeRss(ps: string, roots: readonly number[]): number[] {
 	const kids = new Map<number, number[]>();
 	const rss = new Map<number, number>();
@@ -108,7 +109,7 @@ export function createCapacity(livePids: () => number[], log: (line: string) => 
 			} catch {}
 		}
 		const pids = livePids();
-		const sizes = pids.length ? treeRss(await run(["ps", "-axo", "pid=,ppid=,rss="]), pids).filter(n => n > 0) : [];
+		const sizes = pids.length ? treeRss(await processTable(), pids).filter(n => n > 0) : [];
 		const per = sizes.length ? sizes.reduce((a, b) => a + b, 0) / sizes.length : DEFAULT_SESSION_BYTES;
 		const raw = capacityFrom({ availBytes: availableBytes(vm || undefined, meminfo), totalBytes: totalmem(), cpus: cpus().length, load1: loadavg()[0] ?? 0, live: pids.length, perSessionBytes: per });
 		const s = settleMax(last?.max, pending, raw.max);

@@ -4,8 +4,11 @@
 //  - own process group: the agent is a session leader, so its pid is the id of a group that holds all it started. When the agent
 //    ends (its own exit, a crash, a kill) the rest of that group is ended too; a daemon that put itself in another session
 //    (OmO's host, hub/runtime/omo-hosts.ts) is not in the group and is closed the way it is today.
+//  - what the agent's shell tool started sits in other sessions: hub/agent-tree.ts records those while the agent lives and ends them
+//    when it exits, by whatever path (a kill, a crash, its own exit).
 //  - a write to a stdin whose process is gone never takes the gateway down (writeQuietly, also exported by omp.ts).
 import type { Subprocess } from "bun";
+import { agentEnded, trackAgent } from "../agent-tree.ts";
 
 const NICE = ["/usr/bin/nice", "-n", "10"];
 const GROUP_KILL_GRACE_MS = 2000;
@@ -39,7 +42,11 @@ export function spawnAgent<const T extends "pipe" | "ignore" = "pipe">(argv: str
 	// A stand-in process of a test has no exit state and no group of its own: its made-up pid must never be signalled.
 	if ("exitCode" in proc) {
 		live.add(proc.pid);
-		void proc.exited.then(() => endGroup(proc.pid));
+		trackAgent(proc.pid);
+		void proc.exited.then(() => {
+			endGroup(proc.pid);
+			void agentEnded(proc.pid);
+		});
 	}
 	return proc as Subprocess<"pipe", "pipe", T>;
 }

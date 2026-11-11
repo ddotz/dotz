@@ -6,6 +6,7 @@ import { existsSync, readFileSync, realpathSync, rmSync, statSync } from "node:f
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { statusActivity } from "./activity.ts";
+import { descendantsOf, endProcesses, parseRows, processTable } from "./agent-tree.ts";
 import { closeDeadLaneTasks, pruneArchives, pruneTempSessions, pruneUploads, rotateFile, sessionDirs } from "./cleanup.ts";
 import { DATA_DIR, lanesNightlyAt, lanesNightlyCompactAt, lanesRotateMb, log, OMP, paths, sessionsKeepDays, writeAtomic } from "./config.ts";
 import { describeCtx } from "./context.ts";
@@ -218,10 +219,10 @@ export function startWorktreeCleanup(): void {
 // An omp rpc host whose gateway died (or that a crash detached) keeps running with nobody reading its stdout, holding a
 // session and memory. Every ORPHAN_EVERY_MS the process table is searched for `omp ... --mode rpc` processes of this user
 // that were reparented to launchd/init (ppid 1), have run at least ORPHAN_MIN_AGE_MIN minutes, and are neither a pid the
-// gateway tracks nor in its own process tree; those are killed together with their children. A host with a live parent (a lane, the orchestrator, or an omp the owner runs in a terminal) is never touched.
+// gateway tracks nor in its own process tree; those are ended together with everything below them (their shell tools' processes
+// too, hub/agent-tree.ts). A host with a live parent (a lane, the orchestrator, or an omp the owner runs in a terminal) is never touched.
 const ORPHAN_EVERY_MS = 10 * 60_000;
 const ORPHAN_FIRST_MS = 90_000;
-const ORPHAN_KILL_GRACE_MS = 5000;
 const ORPHAN_MIN_AGE_MIN = 10;
 
 type PsRow = { pid: number; ppid: number; minutes: number; command: string };
@@ -248,15 +249,6 @@ function psRows(): PsRow[] {
 const isOmpRpcHost = (command: string): boolean =>
 	/(^|\s)--mode[ =]rpc(\s|$)/.test(command) && command.split(/\s+/).slice(0, 3).some(t => t === OMP || basename(t) === basename(OMP));
 
-const alive = (pid: number): boolean => {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (e) {
-		return (e as NodeJS.ErrnoException).code === "EPERM";
-	}
-};
-
 // Kills provable orphaned omp rpc hosts; `only` narrows the candidates to command lines it matches and `minAgeMin` is the
 // least age, both for smoke tests.
 async function reapOrphanHosts(only?: RegExp, minAgeMin = ORPHAN_MIN_AGE_MIN): Promise<number[]> {
@@ -268,19 +260,9 @@ async function reapOrphanHosts(only?: RegExp, minAgeMin = ORPHAN_MIN_AGE_MIN): P
 		return false;
 	};
 	const orphans = rows.filter(r => r.ppid === 1 && r.minutes >= minAgeMin && isOmpRpcHost(r.command) && (!only || only.test(r.command)) && !tracked.has(r.pid) && !inOwnTree(r.pid));
-	const victims = orphans.flatMap(o => [o.pid, ...rows.filter(r => r.ppid === o.pid).map(r => r.pid)]);
-	for (const pid of victims) {
-		try {
-			process.kill(pid, "SIGTERM");
-		} catch {}
-	}
 	if (orphans.length) {
-		await Bun.sleep(ORPHAN_KILL_GRACE_MS);
-		for (const pid of victims)
-			if (alive(pid))
-				try {
-					process.kill(pid, "SIGKILL");
-				} catch {}
+		const victims = new Set([...orphans.map(o => o.pid), ...descendantsOf(rows, orphans.map(o => o.pid)).map(r => r.pid)]);
+		await endProcesses(parseRows(await processTable(0)).filter(r => victims.has(r.pid)));
 		log(`orphan reaper: killed ${orphans.length} orphaned omp rpc host(s): ${orphans.map(o => o.pid).join(", ")}`);
 	}
 	return orphans.map(o => o.pid);

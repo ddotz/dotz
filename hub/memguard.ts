@@ -5,6 +5,7 @@
 // told why and continues). More than MAX_RESTARTS restarts of the same agent within WINDOW_MS stop the guard for it
 // and alert the owner instead, so a lane that keeps re-running the same scan does not loop.
 import { statusActivity } from "./activity.ts";
+import { parseRows, processTable } from "./agent-tree.ts";
 import { lanesMaxRssGb, log } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { lanes, restartLane } from "./lanes.ts";
@@ -26,17 +27,12 @@ function guardVerdict(rssKb: number, limitKb: number, restarts: number[], gaveUp
 	return restarts.filter(t => now - t < WINDOW_MS).length >= MAX_RESTARTS ? "give-up" : "restart";
 }
 
-// RSS in KB of each pid that is still alive, from one `ps` call.
+// RSS in KB of each pid that is still alive, from the shared process listing (hub/agent-tree.ts).
 async function rssOf(pids: number[]): Promise<Map<number, number>> {
 	const out = new Map<number, number>();
 	if (!pids.length) return out;
-	const proc = Bun.spawn(["ps", "-o", "pid=,rss=", "-p", pids.join(",")], { stdout: "pipe", stderr: "ignore" });
-	const text = await new Response(proc.stdout).text();
-	await proc.exited;
-	for (const line of text.trim().split("\n")) {
-		const [pid, rss] = line.trim().split(/\s+/).map(Number);
-		if (pid && Number.isFinite(rss)) out.set(pid, rss!);
-	}
+	const want = new Set(pids);
+	for (const r of parseRows(await processTable())) if (want.has(r.pid)) out.set(r.pid, r.rss);
 	return out;
 }
 

@@ -389,6 +389,7 @@ export const paths = {
 	boundaries: join(DATA_DIR, "memory", "boundaries.md"),
 	observations: join(DATA_DIR, "memory", "observations.md"),
 	laneHygiene: join(DATA_DIR, "lane-hygiene.json"),
+	agentTrees: join(DATA_DIR, "agent-trees.json"),
 };
 
 export const TEMPLATES: Record<string, string> = {
