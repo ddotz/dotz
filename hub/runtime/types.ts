@@ -74,8 +74,9 @@ export interface AgentProcess {
 	// prompt: a new turn; followUp: queued behind a running turn; steer: injected into the running turn.
 	send(text: string, mode: SendMode): void;
 	abort(): void;
-	// The hub calls this only when the process is idle (a runtime may cut a running turn short to compact).
-	compact(): void;
+	// The hub calls this only when the process is idle (a runtime may cut a running turn short to compact). `instructions`: how the
+	// summary is to be written (OmO: RPC customInstructions); a runtime without such a channel ignores it.
+	compact(instructions?: string): void;
 	// Ask for fresh context numbers / the session reference; answered by a usage / session event.
 	refreshUsage(): void;
 	refreshSession(): void;

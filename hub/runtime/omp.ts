@@ -270,8 +270,8 @@ export class OmpProcess implements AgentProcess {
 		this.write({ type: "abort" });
 	}
 	// omp aborts a running turn to compact, so the hub only calls this when idle.
-	compact(): void {
-		this.write({ type: "compact" });
+	compact(instructions?: string): void {
+		this.write({ type: "compact", ...(instructions ? { customInstructions: instructions } : {}) });
 	}
 	refreshUsage(): void {
 		this.write({ type: "get_session_stats" });

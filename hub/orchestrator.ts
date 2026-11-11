@@ -11,6 +11,7 @@ import { workersOf } from "./lanegates.ts";
 import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, HUB_TOKEN, log, NAME, now, orchestratorModel, parseSelector, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
 import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
+import { compactInstructions } from "./compact-instructions.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { limitPauseState, limitWatchNow } from "./limit-watch.ts";
 import { stalePauseEnded } from "./pause-ended.ts";
@@ -273,7 +274,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	let currentModel = "";
 	const save = (s: Saved) => writeAtomic(opts.stateFile, `${JSON.stringify({ ...saved(), ...s }, null, 2)}\n`);
 	// Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy orchestrator queues it until turn_end.
-	const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(), refreshUsage: () => proc?.refreshUsage() };
+	const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(compactInstructions()), refreshUsage: () => proc?.refreshUsage() };
 
 	// A failed request: a usage limit or a billing/auth problem pauses the orchestrator, a temporary provider error is retried with backoff.
 	// With a hub-driven chain the next entry takes over first (a temporary error is retried a few times before that).
