@@ -14,6 +14,11 @@ const OLD_AT = ts(5), ASK_AT = ts(410), LANE_AT = ts(500), MAIL_AT = ts(501), AL
 const LANE = [{ ts: ts(499), kind: "lane_report", lane: "a", source: "lane:a", text: "[run] 하는 중" }, { ts: LANE_AT, kind: "lane_report", lane: "a", source: "lane:a", text: "[done] 빌드 끝났어요" }];
 const MAIL = [{ ts: MAIL_AT, kind: "mail", incoming: true, source: "zele", channel: "mail:abc", conv: "mail:abc", mail: "abc", subject: "견적서", from: "김철수", text: "견적서 보내요" }];
 const ALERTS = [{ ts: ALERT_AT, kind: "out", source: "gateway", target: "alert", text: "[fail] 게이트웨이 오류" }];
+// A worklog post a notice stored before the producer named its conversation points at main, and a report of a session that has ended (it left the state's lanes).
+const WL_AT = ts(600), OLD_LANE_AT = ts(601), RESTART_AT = ts(780), FAR_AT = ts(900);
+const WORKLOG = [{ ts: WL_AT, kind: "out", source: "gateway", target: "worklog", text: "작업을 마쳤어요" }, { ts: RESTART_AT, kind: "out", source: "gateway", target: "worklog", text: "게이트웨이를 다시 시작했어요. 끊긴 작업은 없어요." }];
+const OLD_LANE = [{ ts: OLD_LANE_AT, kind: "lane_report", lane: "old", source: "lane:old", text: "[done] 옛 세션이 끝났어요" }];
+const CONVS: [string, { ts: string }[]][] = [["main", MAIN], ["worklog", WORKLOG], ["lane:old", OLD_LANE]];
 const base = { read: false, tone: "", text: "내용" };
 const decision = { options: [{ n: 1, label: "네" }, { n: 2, label: "아니요" }], to: "main", reply_to: ASK_AT, group: 1, state: "open" };
 const report = (i: number) => ({ ...base, id: `w${i}`, kind: "watch", cls: "news", title: "디스크 감시", text: `사용량 ${i}%`, open: "alert", src: "alert", watch: "disk", ts: ts(200 + i), updated: ts(200 + i), at: ts(200 + i) });
@@ -23,6 +28,10 @@ const notices = [
 	{ ...base, id: "ml", kind: "watch", cls: "news", title: "김철수", text: "견적서", open: "mail:abc", src: "mail:abc", key: "mail:abc", ts: MAIL_AT, updated: MAIL_AT, at: MAIL_AT },
 	{ ...base, id: "old", kind: "message", cls: "conv", title: "땃쥐", open: "main", src: "main", ts: OLD_AT, updated: OLD_AT, at: OLD_AT },
 	{ ...base, id: "gap", kind: "message", cls: "conv", title: "지워진 메시지", open: "main", src: "main", ts: GAP_AT, updated: GAP_AT, at: GAP_AT },
+	{ ...base, id: "wl", kind: "worklog", cls: "news", title: "작업 기록", open: "main", src: "main", ts: WL_AT, updated: WL_AT, at: WL_AT },
+	{ ...base, id: "oldlane", kind: "result", tone: "done", cls: "result", title: "옛 세션", open: "lane:old", src: "lane:old", key: "lane:old", ts: OLD_LANE_AT, updated: OLD_LANE_AT, at: OLD_LANE_AT },
+	{ ...base, id: "restart", kind: "worklog", cls: "news", title: "작업 기록", open: "worklog", src: "worklog", ts: RESTART_AT, updated: RESTART_AT, at: RESTART_AT },
+	{ ...base, id: "far", kind: "message", cls: "conv", title: "멀리 지워진 메시지", open: "main", src: "main", ts: FAR_AT, updated: FAR_AT, at: FAR_AT },
 	{ ...base, id: "lost", kind: "message", cls: "conv", title: "없는 메일", open: "mail:lost", src: "mail:lost", ts: MAIL_AT, updated: MAIL_AT, at: "2026-10-20T02:00:00.000Z" },
 	{ ...base, id: "al", kind: "alert", tone: "fail", cls: "alert", title: "게이트웨이 오류", open: "alert", src: "alert", ts: ALERT_AT, updated: ALERT_AT, at: ALERT_AT },
 	...Array.from({ length: 40 }, (_, i) => report(i)),
@@ -42,8 +51,10 @@ const hub = fakeHub({
 	state: () => ({ ...idleState(), lanes: lateKnown ? [lane, late] : [lane], notices_unread: notices.length }),
 	api: (_req, url) => {
 		if (url.pathname === "/api/history") {
+			const at = url.searchParams.get("locate");
+			if (at) return json({ convs: CONVS.filter(([, l]) => l.some(e => e.ts === at)).map(([t]) => t) });   // hub/events.ts locateMessage
 			const t = url.searchParams.get("target"), before = url.searchParams.get("before");
-			const all = t === "main" ? MAIN : t === "lane:a" ? LANE : t === "lane:late" ? LATE : t === "mail:abc" ? MAIL : t === "alert" ? ALERTS : [];
+			const all = t === "worklog" ? WORKLOG : t === "lane:old" ? OLD_LANE : t === "main" ? MAIN : t === "lane:a" ? LANE : t === "lane:late" ? LATE : t === "mail:abc" ? MAIL : t === "alert" ? ALERTS : [];
 			const list = before ? all.filter(e => e.ts < before) : all;
 			return json({ target: t, events: list.slice(-Number(url.searchParams.get("limit") ?? 60) || -60) });
 		}
@@ -290,12 +301,41 @@ describe.each([["phone", 390], ["desktop", 1280]] as const)("%s", (_name, width)
 		await on(view).waitFor(`NS.h`);
 	});
 
-	test("a message that is gone opens the nearest place and says so", async () => {
+	test("a message that is gone opens its direct neighbour and says so", async () => {
 		const view = await open(width);
 		const { run, waitFor, ev } = on(view);
 		await run(`noticeOpenId("gap");`);
 		await waitFor(`$(".snack")`);
-		expect(await ev(`[target, $(".snack").textContent, !!tl.querySelector(".nt-hl")]`)).toEqual(["main", "그 메시지가 없어서 가까운 곳을 열었어요", false]);
+		expect(await ev(`[target, $(".snack").textContent, !!tl.querySelector(".nt-hl")]`)).toEqual(["main", "그 메시지가 없어서 바로 옆 메시지를 열었어요", false]);
+	});
+
+	test("a message that is gone with no neighbour close by keeps the conversation at its end and says it is not found", async () => {
+		const view = await open(width);
+		const { run, waitFor, ev } = on(view);
+		await run(`noticeOpenId("far");`);
+		await waitFor(`$(".snack") && target === "main" && timeline.clientHeight && timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40`);
+		expect(await ev(`[target, $(".snack").textContent, !!tl.querySelector(".nt-hl")]`)).toEqual(["main", "그 메시지를 찾을 수 없어요", false]);
+	});
+
+	test("a restart line the conversation never draws is not reported as a missing message", async () => {
+		const view = await open(width);
+		const { run, waitFor, ev } = on(view);
+		await run(`noticeOpenId("restart");`);
+		await waitFor(`$(".snack") && target === "worklog"`);
+		expect(await ev(`[target, $(".snack").textContent, ts("worklog").msgs.some(e => e.ts === "${RESTART_AT}"), !!tl.querySelector(".nt-hl")]`)).toEqual(["worklog", "이 알림은 대화에 따로 표시하지 않아요", true, false]);
+	});
+
+	test("a notice that names the wrong conversation lands on the exact message where the gateway holds it", async () => {
+		const view = await open(width);
+		await on(view).run(`noticeOpenId("wl");`);
+		expect(await landed(view)).toEqual({ t: "worklog", at: WL_AT, seen: true });
+		expect(await on(view).ev(`$(".snack")?.textContent ?? ""`)).toBe("");
+	});
+
+	test("a report of a session that has ended and left the state lands on its report in that session's history", async () => {
+		const view = await open(width);
+		await on(view).run(`noticeOpenId("oldlane");`);
+		expect(await landed(view)).toEqual({ t: "lane:old", at: OLD_LANE_AT, seen: true });
 	});
 
 	test("a session that ends while its report is on screen stays on the report", async () => {

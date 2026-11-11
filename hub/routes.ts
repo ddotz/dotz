@@ -28,7 +28,7 @@ import { conversationPage } from "./conversations-page.ts";
 import { lazyMailCard } from "./conversations-mail-card.ts";
 import { markRead, markUnread } from "./reads.ts";
 import { shownEvent } from "./owner-text.ts";
-import { activityItems, broadcast, historyEvents, historyPage, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { activityItems, broadcast, historyEvents, historyPage, locateMessage, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
 import { lastTurnActed, lastTurnEnd, lastTurnFailed, mailConversation, openTodos, runIntent, runState, stallStep, workConversationRuns, type RunState, type StallMemo } from "./runstate.ts";
@@ -795,7 +795,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (req.method === "POST" && url.pathname === "/api/mail/move" && mailDeps) return moveMailRoute(await body(req), mailDeps());
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
-			const target = url.searchParams.get("target") ?? "main";
+			const target = url.searchParams.get("target") ?? "main", locate = url.searchParams.get("locate"); if (locate) return json({ convs: locateMessage(locate) });
 			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target) && !isSettingsTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name>, ch:<id>, mail:<key> or settings:<app>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
 			const around = url.searchParams.get("around"), after = url.searchParams.get("after");

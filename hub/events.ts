@@ -344,6 +344,17 @@ export function historyPage(target: string, limit: number, where: { around: stri
 	return { events: all.slice(lo, lo + limit).map(e => withWorklogKind(shownEvent(e))), at: all[hit]?.ts, prev: all[lo - 1]?.ts, next: all[lo + limit]?.ts };
 }
 
+// The conversations whose history holds a message stored at exactly `at`: where a notice or work row points when it names the wrong conversation
+// (a row stored before the producer named it, a session that has ended). Read from the parsed log tails, only when the page did not find the message where the row said.
+export function locateMessage(at: string): string[] {
+	const found = new Set<string>();
+	for (const e of [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)]) {
+		const t = e.ts === at && e.kind !== "delivery" ? eventTarget(e) : undefined;
+		if (t) found.add(t);
+	}
+	return [...found].filter(t => conversationEvents(t).some(e => e.ts === at));
+}
+
 export function sseResponse(lastId?: string | null): Response {
 	let controller: ReadableStreamDefaultController<string>;
 	const stream = new ReadableStream<string>({

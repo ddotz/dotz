@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { broadcast, emit, emitDelivery, historyEvents, historyPage, lastEventId, recentEvents, replayAfter, workAnswer } from "./events.ts";
+import { broadcast, emit, emitDelivery, historyEvents, historyPage, lastEventId, locateMessage, recentEvents, replayAfter, workAnswer } from "./events.ts";
 
 test("a reconnect replays exactly the frames after the last seen id", () => {
 	const seen = lastEventId();
@@ -51,6 +51,19 @@ test("a worker's result is the answer to its request, else the first real answer
 	out(6, "ch:9", { reply_to: "m-1" });
 	expect(workAnswer(w)).toEqual({ at: at(6), conv: "ch:9", exact: true });
 	expect(workAnswer({ target: "web", ended_at: base + 1000 })).toEqual({ at: at(4), conv: "main", exact: true });
+});
+
+test("the conversations holding a message stored at an exact time are found, a delivery state and a replaced version of a keyed post are not it", () => {
+	const at = (i: number) => new Date(Date.UTC(2051, 4, 1, 0, 0, i)).toISOString();
+	emit("outbox", { ts: at(0), kind: "out", source: "gateway", target: "worklog", text: "기록" });
+	emit("outbox", { ts: at(1), kind: "out", source: "orchestrator", target: "lane:locate-a", text: "보고" });
+	emit("outbox", { ts: at(2), kind: "out", source: "gateway", target: "alert", text: "올드", update_key: "k" });
+	emit("outbox", { ts: at(3), kind: "out", source: "gateway", target: "alert", text: "뉴", update_key: "k" });
+	expect(locateMessage(at(0))).toEqual(["worklog"]);
+	expect(locateMessage(at(1))).toEqual(["lane:locate-a"]);
+	expect(locateMessage(at(3))).toEqual(["alert"]);
+	expect(locateMessage(at(2))).toEqual([]);
+	expect(locateMessage(at(9))).toEqual([]);
 });
 
 test("a page around a message is centred on it, tells its neighbours, and a message the history lacks finds nothing", () => {

@@ -68,11 +68,11 @@ describe.each([["phone", 390], ["desktop", 1280]] as const)("%s", (_name, width)
 		expect(await landed(view)).toEqual({ t: "main", at: RESULT_AT, seen: true });
 	});
 
-	test("a finished work with no result message opens the closest place with the jump's toast", async () => {
+	test("a finished work with no result message opens its direct neighbour with the jump's toast", async () => {
 		const view = await home(width);
 		await tapWork(view, "st_lost");
 		await on(view).waitFor(`current === "chat" && tl.querySelector("[data-ts]")`);
-		await toast(view, "그 메시지가 없어서 가까운 곳을 열었어요");
+		await toast(view, "그 메시지가 없어서 바로 옆 메시지를 열었어요");
 		expect(await on(view).ev(`!!tl.querySelector(".nt-hl")`)).toBe(false);
 	});
 
