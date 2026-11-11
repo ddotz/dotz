@@ -1,7 +1,7 @@
 // The orchestrator's pause on a usage limit ends the moment the check lifts it (a 리셋권 spent elsewhere), the held prompt goes out,
 // and a billing/auth pause is never ended by it.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type * as Orchestrator from "./orchestrator.ts";
 import { cfg } from "./config.ts";
@@ -137,6 +137,31 @@ test("the restart button on a usage-limit pause that the check lifts comes back 
 	expect(o.orch.status).not.toBe("rate-limited");
 	expect(sends().some(c => c.includes("sent while paused"))).toBe(true);
 	Object.assign(liftEnv, real);
+	o.stop();
+	await advance(300);
+}, 30_000);
+
+const okTurn: AgentEvent[] = [{ type: "turn_start" }, { type: "assistant", text: "done", stop: "stop" }, { type: "turn_end" }];
+const savedPause = () => (JSON.parse(readFileSync(join(DATA, "orchestrator.json"), "utf8")) as { pausedUntil?: string }).pausedUntil;
+
+test("a turn that answers on a limit pause (the runtime retried by itself) ends the pause everywhere: no saved record, not limit-paused, and a restart does not hold messages again", async () => {
+	const o = await pause(RATE_ERR, "stale");
+	expect(o.orch.status).toBe("rate-limited");
+	expect(savedPause()).toBeDefined();
+	await started.at(-1)!.push(...okTurn);
+	await advance(10);
+	expect(o.orch.status).toBe("idle");
+	expect(o.orch.rateLimitedUntil).toBe("");
+	expect(o.main.limitPaused()).toBe(false);
+	expect(o.main.liftLimit()).toBe(false);
+	expect(savedPause()).toBeUndefined();
+	const before = started.length;
+	o.restart("test restart");
+	await advance(4000);
+	expect(started.length).toBe(before + 1);
+	expect(o.orch.status).not.toBe("rate-limited");
+	o.deliver("after the restart");
+	expect(sends().some(c => c.includes("after the restart"))).toBe(true);
 	o.stop();
 	await advance(300);
 }, 30_000);

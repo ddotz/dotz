@@ -13,6 +13,7 @@ import { isNote, msg } from "./i18n.ts";
 import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { limitPauseState } from "./limit-watch.ts";
+import { stalePauseEnded } from "./pause-ended.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { pinnedLimitNotice } from "./accounts-api.ts";
 import { authStamp, blockText, limitAccount, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
@@ -226,8 +227,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// process starts again, and the held or open requests go in; with none, one tiny probe turn tests the model. A success clears the
 	// error and sends the one recovery line; a failure pauses again quietly (the stoppage was already announced).
 	function resumeNow(why = "owner resume"): "resumed" {
-		clearTimeout(resumeTimer);
-		resumeTimer = undefined;
+		clearResume();
 		if (orch.status === "rate-limited") {
 			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
 			orch.status = "idle";
@@ -449,6 +449,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					}
 					if (ev.stop === "error" && !inKeepalive) turnFailed = true;
 					if (ev.stop !== "error") {
+						if (resumeTimer || orch.status === "rate-limited") (clearResume(), stalePauseEnded({ who, orch, lp, save }));
 						transientTries = 0;
 						errorStreak.ok();
 						streakAlerted = false;
@@ -557,6 +558,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// the same way, but nothing says when the owner fixes it, so it is probed on a slow backoff (ownerRetryMs) or when the login changes; the owner is told once per episode (limit-alert.ts).
 	const isResumeNote = (t: string) => isNote(t, "rateLead") || isNote(t, "providerLead") || isNote(t, "transientLead");
 	let resumeTimer: Timer | undefined;
+	const clearResume = (): void => void (clearTimeout(resumeTimer), (resumeTimer = undefined));
 	let pausing = false;
 	let pauseAlerted = false;
 	const lp = limitPauseState();
@@ -603,8 +605,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// A billing/auth pause also ends the moment the login store changes (the owner logged in again), still without a word.
 	function armResume(retry: number, owner: boolean, authSince: number): void {
 		const fire = () => {
-			clearTimeout(resumeTimer);
-			resumeTimer = undefined;
+			clearResume();
 			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
 			noteResuming();
 			// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
@@ -623,8 +624,7 @@ export function createOrchestrator(opts: OrchOpts) {
 				// on the new account, the retry still went out on the dead one). A fresh process reads the store again; the held prompts
 				// are replayed into it, and a login that is still broken pauses again without a new alert.
 				log(`${who} login store changed; restarting it on the new login and retrying the held prompts`);
-				clearTimeout(resumeTimer);
-				resumeTimer = undefined;
+				clearResume();
 				save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
 				noteResuming();
 				if (proc) restart("login store changed");
@@ -878,8 +878,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			orch.stoppedAt = now();
 		}
 		// A pause timer (usage limit, spent chain) must not start a stopped orchestrator again.
-		clearTimeout(resumeTimer);
-		resumeTimer = undefined;
+		clearResume();
 		clearTimeout(askTimer);
 		askTimer = undefined;
 		proc?.kill();
@@ -959,8 +958,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			const until = Date.parse(orch.rateLimitedUntil ?? "");
 			const next = fresh();
 			if (next && orch.pauseKind === "rate" && until > Date.now() && !next.down(0)) next.fail("quota", until);
-			clearTimeout(resumeTimer);
-			resumeTimer = undefined;
+			clearResume();
 			pauseAlerted = false;
 			save({ pausedUntil: undefined });
 			continueAfterSwitch = Boolean(proc);
@@ -994,8 +992,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			return "after-turn";
 		}
 		if (orch.status === "rate-limited") {
-			clearTimeout(resumeTimer);
-			resumeTimer = undefined;
+			clearResume();
 			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
 			orch.status = "idle";
 		}

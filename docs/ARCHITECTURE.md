@@ -52,7 +52,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 
 ## Accounts, providers, runtimes
 
-- accounts: `hub/account-sticky.ts`, `hub/account-rules.ts`, `hub/account-alias.ts`, `hub/accounts-api.ts`, `hub/usage-account.ts`, `hub/codex-usage.ts`, `hub/claude-reset.ts`, `hub/limit-lift.ts` (ends a usage-limit pause early when the usage report or a spent 리셋권 says the limit is over), `hub/limit-watch.ts` (the slow timer that asks it while something is paused)
+- accounts: `hub/account-sticky.ts`, `hub/account-rules.ts`, `hub/account-alias.ts`, `hub/accounts-api.ts`, `hub/usage-account.ts`, `hub/codex-usage.ts`, `hub/claude-reset.ts`, `hub/limit-lift.ts` (ends a usage-limit pause early when the usage report or a spent 리셋권 says the limit is over), `hub/limit-watch.ts` (the slow timer that asks it while something is paused), `hub/pause-ended.ts` (what a pause leaves behind when its session ran a turn anyway)
 - keys and providers: `hub/providers.ts`, `hub/apikey-store.ts`, `hub/apikey-policy.ts`, `hub/auth.ts`, `hub/auth-wait.ts` (the gateway's own replies while a session waits on dotz_auth, "취소" closes it), `hub/control.ts`, `hub/model-guard.ts` (an agent's model change needs an owner message; model-picks.json and expensive-grants.json), `hub/mid-effort.ts` (which models keep the cache on an effort change, from OmO's model info)
 - runtimes: `hub/runtime/index.ts`, `hub/runtime/types.ts`, adapters `hub/runtime/omo.ts`, `hub/runtime/omp.ts`, `hub/runtime/claude.ts`, support `hub/runtime/detect.ts`, `hub/runtime/verify.ts`, `hub/runtime/omo-hosts.ts`, `hub/runtime/senpi-bin.ts`, `hub/runtime/claude-deny-hook.ts`, probes and test fixtures `hub/runtime/*-probes.ts`, `hub/runtime/scenario.ts`
 

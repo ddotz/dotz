@@ -56,6 +56,16 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 		});
 	}
 }
+// A lane that answered while its pause timer is still armed (the runtime retried by itself): the pause is over, so the timer must not fire
+// a resume note into the running turn later. The messages held meanwhile join the running turn.
+export function laneRanOn(lane: Lane): void {
+	if (!lane.resumeTimer) return;
+	clearTimeout(lane.resumeTimer);
+	lane.resumeTimer = undefined;
+	lane.limitPause = false;
+	if (lane.status === "rate-limited") setStatus(lane, "working");
+	for (const t of lane.held ?? []) prompt(lane, t);
+}
 // A turn that works again ends the lane's blocked episode: the owner hears it once.
 export function laneRecovered(lane: Lane): void {
 	if (noteRecovered(`lane:${lane.name}`)) report(lane, recoveryText(), "pause");

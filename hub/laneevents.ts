@@ -3,7 +3,7 @@ import { type AgentProcess } from "./runtime/types.ts";
 import { emitEventActivity } from "./activity.ts";
 import { noteEvent, compactDue, requestCompact, flushCompact } from "./context.ts";
 import { rmSync } from "node:fs";
-import { handleError, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
+import { handleError, laneRanOn, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
 import { nextLastText, scheduleReport, REPORT_DEBOUNCE_MS, report } from "./lanereport.ts";
 import { compactAtFor, lanesCompactAt, log } from "./config.ts";
 import { laneStuck, recover } from "./lanerun.ts";
@@ -103,6 +103,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 						lane.interrupted = undefined;
 						persist(lane);
 					}
+					laneRanOn(lane);
 					laneRecovered(lane);
 				}
 				if (ev.text) {
