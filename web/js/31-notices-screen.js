@@ -71,7 +71,7 @@ function nscRow(n, group) {
   const fold = rep ? el("button", { class: "ib nsc-fold", type: "button", "aria-expanded": String(!!open), "aria-label": "반복 알림 펼치기", onclick: ev => { ev.stopPropagation(); nscFold(n); } }, icon("chev")) : null;
   const end = group === "need" && n.waits !== "fail" ? (fold || el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("chev")))
     : fold && group === "news" ? fold
-    : el("button", { class: "ib nsc-x", type: "button", "aria-label": NSC_X[group], title: NSC_X[group], onclick: ev => { ev.stopPropagation(); nscX(n, group); } }, icon("close"));
+    : el("button", { class: "ib nsc-x", type: "button", "aria-label": NSC_X[group], title: NSC_X[group], onclick: ev => { ev.stopPropagation(); nscX(n, group, ev.currentTarget); } }, icon("close"));
   return el("div", { class: `li nsc-r${n.read ? "" : " unread"}`, "data-nid": n.id },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
     el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, group, nscSummary(n), nscWhen(n.updated || n.ts), nscTag(n), rep ? `${rep.length + 1}번 · ` : "")),
@@ -114,6 +114,7 @@ function nscInit() {
 function nscPaint(force) {
   if (current !== "notices") return;
   nscInit();
+  if (motionAfter(nscBox.list, () => nscPaint(force))) return;   // a row is folding away: the redraw waits, so it neither cuts the motion nor draws the row back
   const rows = nscIn(NSC.f).sort((a, b) => ntAt(b) - ntAt(a)), readable = nscReadable().length;
   for (const b of nscBox.tabs.children) {
     const on = b.dataset.f === NSC.f, c = NT.loaded ? nscUnreadIn(b.dataset.f) : 0, el0 = b.lastChild;
@@ -187,47 +188,50 @@ function nscNav(n) {
   noticeOpen(n);
 }
 
-// Rows leave (motionOut) and then change group; the one that stays comes in at the top of its new group.
-async function nscLeave(n, change) {
+// The x: the hub answers first (`post` sends and returns what to change here once it said yes, or shows the failure and returns null). Only then the
+// local data changes and the row folds away (motionGone); the one that stays comes in at the top of its new group. On a failure the row stays and the button comes back.
+async function nscLeave(n, btn, post) {
   if (NSC.busy.has(n.id)) return;
   NSC.busy.add(n.id);
-  const rows = [...nscBox.list.querySelectorAll(`.nsc-r[data-nid="${CSS.escape(String(n.id))}"]`)];
-  await Promise.all(rows.map(r => motionOut(r)));
-  try { await change(); } finally { NSC.busy.delete(n.id); }
-  nscPaint(true);
+  const undo = pressWait(btn), apply = await post();
+  if (!apply) { undo(); NSC.busy.delete(n.id); return; }
   const row = nscRowOf(n.id);
-  if (row) motionIn(row, "top");
+  apply();
+  const gone = motionGone(row);   // started before the redraw is asked for, so the redraw waits for it
+  ntPaint(); homeSoon();
+  await gone;
+  NSC.busy.delete(n.id);
+  const next = nscRowOf(n.id);
+  if (next) motionIn(next, "top");
 }
-function nscX(n, group) {
-  if (group === "news") return nscLeave(n, () => ntRead(n));
-  if (group === "need") return nscLeave(n, () => nscHandled(n));
-  return nscLeave(n, () => { nscDismiss(n); });   // the row is already gone when the answer comes: the request is not waited for
+function nscX(n, group, btn) {
+  // ✕ on news: read.
+  if (group === "news") return nscLeave(n, btn, async () => {
+    const r = await ntMarkRead({ ids: [n.id] });   // it shows its own failure
+    return r && (() => { n.read = true; NT.unread = typeof r.unread === "number" ? r.unread : Math.max(0, NT.unread - 1); });
+  });
+  if (group === "need") return nscLeave(n, btn, () => nscHandled(n));
+  return nscLeave(n, btn, () => nscDismiss(n));
 }
 // ✕ on a failure: "확인했어요". It leaves 처리할 것 and stays as a past notice.
 async function nscHandled(n) {
-  const was = { read: n.read, waits: n.waits, handled: n.handled, unread: NT.unread };
-  n.read = true; n.waits = undefined; n.handled = new Date().toISOString();
-  if (!was.read) NT.unread = Math.max(0, NT.unread - 1);
-  ntPaint(); homeSoon();
-  try { const r = await api(`/api/notices/${enc(n.id)}/handled`, "POST", {}); ntApply(r.item, r.unread); }
-  catch (err) { Object.assign(n, { read: was.read, waits: was.waits, handled: was.handled }); NT.unread = was.unread; ntPaint(); homeSoon(); toast(err.message, true); }
+  try {
+    const r = await api(`/api/notices/${enc(n.id)}/handled`, "POST", {});
+    return () => ntApply(r.item, r.unread);
+  } catch (err) { toast(err.message, true); return null; }
 }
 // ✕ on a past notice: gone from every list and count, and the toast takes it back.
 async function nscDismiss(n) {
-  const at = NT.items.indexOf(n);
-  NT.items = NT.items.filter(x => x.id !== n.id); NT.mut++;
-  if (n.at) NT.gone.add(n.at);
-  ntPaint(); homeSoon();
   try {
     const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
     if (!r || !r.ok) throw new Error("지우지 못했어요");
-    if (typeof r.unread === "number") { NT.unread = r.unread; ntPaint(); }
-    toast("알림을 지웠어요", false, { label: "되돌리기", onclick: () => nscUndo(n) }, 6000);
-  } catch (err) {
-    NT.items.splice(Math.max(0, at), 0, n); NT.mut++; if (n.at) NT.gone.delete(n.at);
-    ntPaint(); homeSoon(); toast("알림을 지우지 못했어요", true);
-    if (current === "notices") requestAnimationFrame(() => requestAnimationFrame(() => { const row = nscRowOf(n.id); if (row) motionIn(row, "top"); }));
-  }
+    return () => {
+      NT.items = NT.items.filter(x => x.id !== n.id); NT.mut++;
+      if (n.at) NT.gone.add(n.at);
+      if (typeof r.unread === "number") NT.unread = r.unread;
+      toast("알림을 지웠어요", false, { label: "되돌리기", onclick: () => nscUndo(n) }, 6000);
+    };
+  } catch (err) { toast("알림을 지우지 못했어요", true); return null; }
 }
 async function nscUndo(n) {
   try {
@@ -241,13 +245,16 @@ async function nscUndo(n) {
 async function nscReadAll(btn) {
   const rows = nscReadable(), kept = nscIn(NSC.f).some(ntNeeds), ids = rows.map(n => n.id);
   if (!ids.length) return;
-  btn.disabled = true;
-  const gone = new Set(ids);
-  await Promise.all([...nscBox.list.querySelectorAll(".nsc-r[data-nid]")].filter(r => gone.has(Number(r.dataset.nid)) || gone.has(r.dataset.nid)).map(r => motionOut(r)));
+  const undo = pressWait(btn);   // stays off until the hub answered
+  const r = await ntMarkRead({ ids });   // it shows its own failure
+  if (!r) { undo(); return; }
   for (const n of rows) n.read = true;
-  NT.unread = Math.max(0, NT.unread - ids.length);
-  ntPaint(); homeSoon(); nscPaint(true);
-  btn.disabled = false;
-  await ntMarkRead({ ids });
+  NT.unread = typeof r.unread === "number" ? r.unread : Math.max(0, NT.unread - ids.length);
+  const gone = new Set(ids);
+  // From the last row up: a row lifted out of the flow does not move the ones above it, so each one folds at its own place.
+  const leaving = [...nscBox.list.querySelectorAll(".nsc-r[data-nid]")].filter(x => gone.has(Number(x.dataset.nid)) || gone.has(x.dataset.nid)).reverse().map(x => motionGone(x));
+  ntPaint(); homeSoon();
+  await Promise.all(leaving);
+  undo();
   if (kept) toast("답이 필요한 알림은 그대로 뒀어요");
 }

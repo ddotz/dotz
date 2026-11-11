@@ -624,9 +624,10 @@ async function dcReopen(nd) {
   } catch (e) { toast(e.message, true); }
 }
 // Decision cards already docked: only one that really arrives rises in (not on the first paint, nor when another conversation opens).
-const DC_SEEN = new Set(); let dcShownT = "", dcLast = null, dcOut = null;
+const DC_SEEN = new Set(); let dcShownT = "", dcLast = null;
 // An answered card folds away at once: its record is already in the conversation (dcRecordNode), so nothing has to wait for the card to
-// say 보냈어요 (owner 2026-11-03: no fixed 1.2s beat). motionOut ends it, and a question that arrives meanwhile cancels the leave.
+// say 보냈어요 (owner 2026-11-03: no fixed 1.2s beat). It goes only once the hub took the answer (DC.st "sent"): motionGone folds it while the
+// conversation above glides down into the room it leaves, and a question that arrives meanwhile stops the leave (motionStay in paintDecision).
 function dcLeave(box, dc) {
   const picks = DC.picks[dc.key] || [], st = DC.st[dc.key];
   if (box.dataset.st !== st) { motionSwap(box, () => renderDecision(box, dc, picks, DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i])))); box.dataset.st = st; }
@@ -634,10 +635,11 @@ function dcLeave(box, dc) {
   box.dataset.out = "1";
   void (async () => {
     if (DC.cur) { delete box.dataset.out; return; }
-    dcOut = await motionOut(box);
-    if (DC.cur) { if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; delete box.dataset.out; return; }
-    if (dcOut && dcOut.cancel) dcOut.cancel();
-    dcOut = null; dcLast = null; box.hidden = true; dcHold(box, false); if (dc.each) { delete DC.st[dc.key]; delete DC.picks[dc.key]; } delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; delete box.dataset.out; clear(box);
+    delete box.dataset.hold;   // the hold stops following the dock; motionGone keeps the same box from here
+    const tl = $("#tl"), tr = $("#timeline") && $("#timeline").getBoundingClientRect();
+    const shown = tl && tr ? [...tl.children].filter(n => { const r = n.getBoundingClientRect(); return r.height && r.bottom > tr.top && r.top < tr.bottom; }).slice(-12) : [];
+    if (!(await motionGone(box, { keep: true, with: shown }))) { delete box.dataset.out; return; }
+    dcLast = null; dcHold(box, false); if (dc.each) { delete DC.st[dc.key]; delete DC.picks[dc.key]; } delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; delete box.dataset.out; clear(box);
     paintDecision();
   })();
 }
@@ -705,7 +707,7 @@ function paintDecision() {
   // A message that carries several of those drafts folds to its first paragraph while they wait: the drafts live in 답장 대기, not in the conversation.
   for (const m of document.querySelectorAll("#timeline .bm[data-dat]")) m.classList.toggle("q-fold", line && ntDecisions().filter(n => n.decision.draft && n.decision.to === target && n.decision.reply_to === m.dataset.dat).length > 1);
   DC.cur = dc;
-  if (dc) { dcLast = dc; delete box.dataset.out; if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; }
+  if (dc) { dcLast = dc; delete box.dataset.out; motionStay(box); }
   const arrived = S && freshKeys(DC_SEEN, dc ? [...DC_SEEN, dc.key] : [...DC_SEEN]).has(dc && dc.key) && dcShownT === target;
   if (S) dcShownT = target;
   const waiting = dc || line || isFixedT(target) ? null : dcWaitingCard(target);

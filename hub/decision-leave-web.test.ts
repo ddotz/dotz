@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { fakeHub, json, on } from "./test-web.ts";
 
-// An answered decision card leaves the way docs/ui-spec.md says (움직임): it stays where it is while it fades and is removed only after motionOut ends,
+// An answered decision card leaves the way docs/ui-spec.md says (움직임): it stays where it is on screen while it fades and is hidden only after motionGone ends,
 // whether it is a question of its own notice or a mail draft whose answer is echoed back before the request is done. Headless browser, nothing leaves the process.
 const AT = "2026-11-03T09:19:00.000Z";
 const opt = (n: number, label: string) => ({ n, label, desc: "", rec: false });
@@ -31,9 +31,9 @@ const view = await hub.view({ width: 390, height: 844 });
 const { waitFor } = on(view);
 
 // Taps the card's first option and samples every animation frame until the card has been gone for three frames in a row (at most 400 frames, so a card that never leaves ends the run):
-// the card's opacity and its offset from the top of the page. Time is counted in frames, not milliseconds.
+// the card's opacity and where it is drawn (its box on screen: motionGone lifts it out of the flow and holds it on its spot). Time is counted in frames, not milliseconds.
 const TAP = `(async () => {
-	const card = document.querySelector("#dcard"), lp = e => { let t = 0; for (let o = e; o; o = o.offsetParent) t += o.offsetTop; return t; };
+	const card = document.querySelector("#dcard"), lp = e => e.getBoundingClientRect().top;
 	const top0 = lp(card), fr = [];
 	let gone = 0;
 	card.querySelector(".dc-row").click();

@@ -111,11 +111,13 @@ function noticeLive(e) {
   syncInlineChoices();
 }
 
+// Returns the hub's answer (an object), or null after showing the failure.
 async function ntMarkRead(body) {
   try {
     const r = await api("/api/notices/read", "POST", body);
     if (r && typeof r.unread === "number") { NT.unread = r.unread; ntPaint(); }
-  } catch (err) { toast(err.message, true); loadNotices(); }
+    return r || {};
+  } catch (err) { toast(err.message, true); loadNotices(); return null; }
 }
 
 /* ---- tap: go to the source message ---- */
@@ -519,18 +521,18 @@ function ntFor(t, at, opt) {
 }
 
 // The x (무시) on a question that waits: off the badge and 답변 필요, kept in the history as 무시함, nothing is sent to the bot. The toast undoes it.
-async function ntIgnore(n) {
+async function ntIgnore(n, btn) {
   if (!n || !n.id || !ntNeeds(n)) return;
-  const id = String(n.id);
+  const id = String(n.id), undo = pressWait(btn);
   try {
     if (n.pc) await pqNotice(n, "notice", { op: "ignore", id });
     else {
       const r = await api(`/api/notices/${enc(id)}/ignore`, "POST", {});
-      await Promise.all([...document.querySelectorAll(`.hr[data-nid="${CSS.escape(id)}"]`)].map(row => motionOut(row)));   // the ignored row leaves (150ms) before the lists redraw
+      await Promise.all([...document.querySelectorAll(`.hr[data-nid="${CSS.escape(id)}"]`)].map(row => motionGone(row)));   // the ignored row folds away once the hub said yes; the lists redraw after it
       ntApply(r.item, r.unread);
       if (r.ids && r.ids.length > 1) loadNotices();   // its alert / message twins changed too; their live frames follow, the refetch makes sure
     }
-  } catch (err) { toast(err.message, true); return; }
+  } catch (err) { undo(); toast(err.message, true); return; }
   if (NS.node && NS.id === id) ntSheetClose(false);
   if (DK.node && DK.ign === id) dkClose(false);
   toast("무시했어요", false, { label: "되돌리기", onclick: () => ntUnignore(id, n) }, 6000);
@@ -549,7 +551,7 @@ async function ntUnignore(id, n) {
 // The 44px x of a row. It stops the click and key events so the row behind it does not open.
 function ntIgnoreBtn(n) {
   return el("button", { type: "button", class: "ib nt-x", title: "무시", "aria-label": `${ntPlain(n.title) || "알림"} 무시`,
-    onclick: ev => { ev.stopPropagation(); ntIgnore(n); }, onkeydown: ev => ev.stopPropagation() }, icon("close"));
+    onclick: ev => { ev.stopPropagation(); ntIgnore(n, ev.currentTarget); }, onkeydown: ev => ev.stopPropagation() }, icon("close"));
 }
 
 // A watch alert's "<what> 89,000원 → 72,000원" line drawn like the 가격 알림 card of the landing page: the old value grey and struck, the new one bold.

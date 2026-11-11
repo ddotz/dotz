@@ -97,7 +97,7 @@ function rollCount(el, next) {
 // with prefers-reduced-motion it is removed at once and only the short tap guard remains.
 // o.keep: a box that is used again (the decision dock) is hidden and given its own styles back instead of removed. o.with: more elements
 // that move when it goes but are not after it (the conversation above the dock, which grows into the freed room).
-const M_GONE = new WeakMap(), M_LATER = new WeakMap();
+const M_GONE = new WeakMap(), M_LATER = new WeakMap(), M_STAY = new WeakMap();
 const mFocusable = "button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])";
 function motionGone(el, o = {}) {
   if (!el || !el.isConnected) return Promise.resolve();
@@ -107,7 +107,15 @@ function motionGone(el, o = {}) {
   if (o.keep) p.then(() => M_GONE.delete(el));
   return p;
 }
-const M_GONE_STYLE = ["position", "left", "top", "width", "height", "margin", "boxSizing", "zIndex", "pointerEvents"];
+// A kept box (o.keep) that is needed again before it is gone (a new question for the dock): it stops leaving and stands as it was.
+// Its motionGone resolves false. True when there was a leave to stop.
+function motionStay(el) {
+  const stop = el && M_STAY.get(el);
+  if (stop) stop();
+  return !!stop;
+}
+const M_GONE_STYLE = ["position", "left", "top", "width", "height", "margin", "boxSizing", "zIndex", "pointerEvents", "translate"];
+const mUnstyle = el => { delete el.dataset.gone; el.removeAttribute("aria-hidden"); for (const k of M_GONE_STYLE) el.style[k] = ""; };
 async function mGone(el, o) {
   const parent = el.parentElement, after = el.nextElementSibling, before = el.previousElementSibling, hadFocus = el.contains(document.activeElement);
   el.dataset.gone = "1"; el.setAttribute("aria-hidden", "true"); el.style.pointerEvents = "none";
@@ -122,8 +130,7 @@ async function mGone(el, o) {
   const done = () => {
     if (o.keep) {
       for (const a of el.getAnimations()) a.cancel();
-      el.hidden = true; delete el.dataset.gone; el.removeAttribute("aria-hidden");
-      for (const k of M_GONE_STYLE) el.style[k] = "";
+      el.hidden = true; mUnstyle(el);
     } else el.remove();
     if (hadFocus) {
       const to = [after, before].find(n => n && n.isConnected && !n.dataset.gone), f = to && (to.matches(mFocusable) ? to : to.querySelector(mFocusable));
@@ -136,20 +143,28 @@ async function mGone(el, o) {
   const guard = movers.map(([s]) => s).filter(s => !s.inert && !s.contains(document.activeElement));
   for (const s of guard) s.inert = true;
   const unguard = () => { for (const s of guard) s.inert = false; };
-  if (quiet) { done(); setTimeout(unguard, M_MS.base); return; }
+  if (quiet) { done(); setTimeout(unguard, M_MS.base); return true; }
   // Lift it out at its own box: offsets from its offsetParent, so it stays on the same spot inside the same styles.
   const left = el.offsetLeft, top = el.offsetTop;
   Object.assign(el.style, { position: "absolute", left: `${left}px`, top: `${top}px`, width: `${box.width}px`, height: `${box.height}px`, margin: "0", boxSizing: "border-box", zIndex: "0" });
+  // A container held at its bottom (the composer) moves its top when the element leaves its flow: the lifted element is put back on its spot.
+  const lifted = el.getBoundingClientRect();
+  if (Math.abs(lifted.top - box.top) > 0.5 || Math.abs(lifted.left - box.left) > 0.5) el.style.translate = `${box.left - lifted.left}px ${box.top - lifted.top}px`;
   const glides = [];
   for (const [s, r] of movers) {
     const now = s.getBoundingClientRect(), dx = r.left - now.left, dy = r.top - now.top;
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
-    glides.push(s.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: M_MS.base, easing: M_EASE }));
+    glides.push(s.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: M_MS.base, easing: M_EASE, composite: "add" }));   // added to a glide already running (several rows leaving at once) and to its own transform
   }
   const fade = el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: M_MS.fast, easing: M_EASE, fill: "forwards" });
+  let stayed = false;
+  if (o.keep) M_STAY.set(el, () => { stayed = true; for (const a of [fade, ...glides]) a.cancel(); mUnstyle(el); });
   await Promise.all([fade, ...glides].map(a => a.finished.catch(() => {})));
+  M_STAY.delete(el);
   unguard();
+  if (stayed) { mLater(parent); return false; }
   done();
+  return true;
 }
 // A list that is drawn again as a whole (innerHTML, a render function) while one of its rows folds away: the redraw waits until the row
 // is gone, so it neither cuts the motion nor draws the row back; only the last redraw asked for runs. Returns true when it waited.
@@ -168,11 +183,11 @@ function mLater(parent) {
 // Returns the undo for a failure (the button comes back as it was); on success the card leaves through motionGone and takes it along.
 function pressWait(btn, label) {
   if (!btn) return () => {};
-  const was = btn.textContent, dis = btn.disabled;
+  const was = [...btn.childNodes], dis = btn.disabled;
   btn.style.minWidth = `${btn.offsetWidth}px`;
   if (label) btn.textContent = label;
   btn.disabled = true; btn.setAttribute("aria-busy", "true");
-  return () => { if (label) btn.textContent = was; btn.disabled = dis; btn.removeAttribute("aria-busy"); btn.style.minWidth = ""; };
+  return () => { if (label) btn.replaceChildren(...was); btn.disabled = dis; btn.removeAttribute("aria-busy"); btn.style.minWidth = ""; };
 }
 
 // Which of these keys were not there on the last paint of the same list. The first paint returns none, so opening a screen
