@@ -214,7 +214,7 @@ describe("day notes", () => {
 		expect(hits[0]!.kind).toBe("note");
 		expect(hits[0]!.answer).not.toContain("SECRETVALUE-123");
 		expect(openDoc(db, hits[0]!.id)?.answer).toContain("zebra");
-		syncNotes(["SECRETVALUE-123"]);
+		expect(syncNotes(["SECRETVALUE-123"]).docs).toBe(0);
 		expect(db.query<{ id: string }, []>("SELECT id FROM docs ORDER BY id").all()).toEqual(first);
 		expect(db.query<{ c: number }, []>("SELECT count(*) AS c FROM fts").get()?.c).toBe(2);
 	});
