@@ -10,7 +10,7 @@
 import type { Subprocess } from "bun";
 import { agentEnded, trackAgent } from "../agent-tree.ts";
 
-const NICE = ["/usr/bin/nice", "-n", "10"];
+export const NICE = ["/usr/bin/nice", "-n", "10"];
 const GROUP_KILL_GRACE_MS = 2000;
 // Agents whose group may still hold processes; an exit of the gateway takes those with it (launchd did this for the whole job).
 const live = new Set<number>();

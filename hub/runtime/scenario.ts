@@ -8,6 +8,7 @@ import { featurePrompt } from "../featuredirs.ts";
 import { activityItems } from "../events.ts";
 import { modeFile } from "../i18n.ts";
 import { limitAlertsFile } from "../limit-alert.ts";
+import { NICE } from "./agent-proc.ts";
 import { advance, flush } from "./test-clock.ts";
 
 const DATA = process.env.DOTZ_DIR!;
@@ -49,7 +50,7 @@ class FakeProc {
 	constructor(args: string[], opts: { cwd?: string; env?: Record<string, string | undefined> }) {
 		FakeProc.all.push(this);
 		const dotz = Object.fromEntries(Object.entries(opts.env ?? {}).filter(([k]) => k.startsWith("DOTZ_") && !["DOTZ_DIR", "DOTZ_OMP", "DOTZ_OMO", "DOTZ_TEST_DIR", "DOTZ_WEB_LIVE"].includes(k)));
-		T("spawn", this.n, args.slice(1).map(a => norm(a)), norm(opts.cwd ?? ""), dotz);
+		T("spawn", this.n, args.slice(NICE.length + 1).map(a => norm(a)), norm(opts.cwd ?? ""), dotz);
 	}
 	kill(sig?: number) {
 		T("kill", this.n, sig ?? "TERM");
