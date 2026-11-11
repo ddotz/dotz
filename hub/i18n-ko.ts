@@ -326,6 +326,11 @@ export const ko: Catalog = {
 	replyIn: (_language, drifted) => (drifted ? "(직전에 오너에게 보낸 글이 한국어가 아니었어요. 오너에게 가는 글은 한국어로만 쓰세요.)" : "(오너에게는 한국어로 답하세요.)"),
 	handoffNote: "(직전 답에 For you / Now / Next 블록이 들어갔어요. 답은 오너에게 가는 채팅 글이에요. 라우팅 줄과 Ask / For you / Now / Next 블록은 쓰지 마세요.)",
 
+	dayNote: {
+		headings: { open: "열린 것", done: "한 일", decided: "정한 것과 고친 것", know: "알아둘 것", lessons: "배운 것 후보" },
+		description: (day, first) => `${day} 하루 기억: ${first}`,
+		line: file => `어제의 하루 기억은 ${file}에 있어요. dotz_recall로 줄을 찾을 수 있어요.`,
+	},
 	reflect: (digest, lessons) => `[dotz reflect] 지난 24시간의 야간 자기 점검이에요. 게이트웨이가 모은 데이터:\n${digest}\n
 짧게 이렇게 하세요:
 1. 잘못됐거나 비용이 너무 든 것을 찾으세요: 오너의 정정이나 반복된 요청, 실패했거나 멈춘 세션, 알림, 캐시 재작성.
@@ -405,6 +410,9 @@ export const ko: Catalog = {
 			"gateway.coalesce_ms": { label: "연달아 온 메시지 묶는 시간", unit: "ms", hint: "메시지가 하나만 오면 이만큼 기다렸다 보내요. 앞 메시지의 답을 기다리는 중에 이어 보내면 더 오래 기다려 함께 처리해요. 그래도 턴이 도는 동안 온 메시지는 그 턴에 모여 들어가요" },
 			"gateway.restart_cap_min": { label: "재시작 대기 알림", unit: "분", hint: "업데이트 뒤 재시작이 돌고 있는 작업을 이만큼 넘게 기다리면 한 번 알려요. 기다리는 동안 새 워커는 띄우지 않고, 돌던 작업은 끊지 않아요" },
 			"reflect_at": { label: "야간 회고 시각", hint: "HH:MM 또는 off" },
+			"day_note.enabled": { label: "하루 기억 남기기", hint: "켜면 매일 새벽 그날 있었던 일을 짧은 기억 파일로 남겨요. 프롬프트에는 싣지 않고 필요할 때 찾아 읽어요" },
+			"day_note.at": { label: "하루 기억 시각", hint: "HH:MM 또는 off. 야간 회고 직전이 좋아요" },
+			"day_note.model": { label: "하루 기억 모델", hint: "비워 두면 OmO의 quick 모델을 따라가요. 정하려면 제공자/모델:강도로 적어요" },
 			"token_audit_at": { label: "토큰 감사 시각", hint: "HH:MM 또는 off" },
 			"omp_update.mode": { label: "업데이트 방식", options: { check: "새 버전만 알림", install: "자동 설치 후 재시작", off: "끄기" } },
 			"omp_update.at": { label: "업데이트 확인 시각", hint: "HH:MM 또는 off" },

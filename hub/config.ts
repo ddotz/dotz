@@ -23,6 +23,8 @@ export type Config = {
 	key_hosts?: string[];
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string; category?: string; work_category?: string; /** Largest file (MB) the bot attaches to a Discord message; default 10 (hub/discord-files.ts). */ attach_max_mb?: number };
 	web: { port: number; tailscale_https_port: number; allow_logins: string[]; /** How the web app is reached: "tailscale" (default), "cloudflare" (tunnel + Cloudflare Access, hub/cf-access.ts) or "local". */ access?: "tailscale" | "cloudflare" | "local"; /** false turns the entry check off (hub/entry-check.ts: own Host names, tailnet identity only through tailscale serve, no cross-site writes); default on. */ entry_check?: boolean; cloudflare?: { /** The tunnel's Public Hostname, or without a domain the <name>.<account>.workers.dev of extras/cf-worker (Workers VPC). */ hostname: string; team: string; aud: string; /** In DATA_DIR/secrets unless absolute (default cloudflared-tunnel-token). */ tunnel_token_file?: string }; machine_name?: string; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[]; /** Waiting approval cards in one conversation that open the web's triage view (hub/approval-wire.ts; default 3). */ triage_min?: number; /** Seconds an approved send waits so the owner can cancel it (hub/approval-send.ts); default 10, 0 = off. */ send_undo_sec?: number; /** Largest saved file snapshot (MB, default 200), days a snapshot is kept (default 90) and total snapshot size (MB, default 1024), hub/filesnap.ts. */ snapshot_max_mb?: number; snapshot_keep_days?: number; snapshot_max_total_mb?: number; /** Largest upload (MB, default 50) and extra folders the file screens may open (hub/files.ts). */ upload_max_mb?: number; file_roots?: string[] };
+	// The day note (hub/day-note.ts): a short memory file of the day written every night; off by default. `model` empty = follow OmO's quick chain.
+	day_note?: { enabled?: boolean; at?: string; model?: string };
 	orchestrator?: { rotate_tokens?: number; keep_recent?: number; runtime?: string; /** The main session starts a fresh conversation with a handover every night (default true); false: only past lanes.rotate_mb. */ nightly_fresh?: boolean };
 	// `restart_cap_min`: a gateway restart that waited this long for running work alerts the owner once (hub/restart.ts); nothing is killed.
 	// `stuck_turn_min`: an open turn with no event, no session-file growth and no process-tree CPU for this long is aborted, then restarted (hub/stuck.ts).
@@ -214,7 +216,7 @@ export const DEFAULTS = {
 	rotate_tokens: 300_000, nightly_fresh: true, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
 	conv_idle_stop_min: 20,
 	orch_keep_recent: 10_000, // orchestrator.keep_recent, in the runtime's own estimate (4 characters per token): 10000 keeps about 40,000 characters of recent conversation at a compaction
-	coalesce_ms: 2000, restart_cap_min: 90, stuck_turn_min: 15, reflect_at: "04:40", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
+	coalesce_ms: 2000, restart_cap_min: 90, stuck_turn_min: 15, reflect_at: "04:40", day_note_at: "04:36", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
 } as const;
 // The web server listens only here; the tailnet reaches it through `tailscale serve` (web.tailscale_https_port).
 export const HOST = "127.0.0.1";

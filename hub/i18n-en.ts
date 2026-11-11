@@ -341,6 +341,11 @@ export const en = {
 	replyIn: (language: string, drifted: boolean) => drifted ? `(Your last text for the owner was not in ${language}. Write everything for the owner in ${language} only.)` : `(Answer the owner in ${language}.)`,
 	handoffNote: "(Your last reply carried the For you / Now / Next handoff labels. Replies go to the owner as chat messages: no routing line and no Ask / For you / Now / Next block.)",
 
+	dayNote: {
+		headings: { open: "Open", done: "Done", decided: "Decided and corrected", know: "To know", lessons: "Lesson candidates" },
+		description: (day: string, first: string) => `Day note ${day}: ${first}`,
+		line: (file: string) => `Yesterday's day note is ${file}; dotz_recall finds its lines.`,
+	},
 	reflect: (digest: string, lessons: string) => `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${digest}\n
 Do this, briefly:
 1. Find what went wrong or cost too much: owner corrections or repeated asks, failed or stuck lanes, alerts, cache rewrites.
@@ -427,6 +432,9 @@ Do this, briefly:
 			"gateway.coalesce_ms": { label: "Time to merge consecutive messages", unit: "ms", hint: "A lone message waits this long before it goes in. A message sent while the previous one is still unanswered waits longer, so they are handled together. Messages arriving during a turn are gathered into that turn either way" },
 			"gateway.restart_cap_min": { label: "Restart wait alert", unit: "min", hint: "When a restart after an update has waited this long for running work, you get one alert. While it waits no new worker starts, and running work is never cut off" },
 			"reflect_at": { label: "Nightly review time", hint: "HH:MM or off" },
+			"day_note.enabled": { label: "Keep a note of the day", hint: "On: every night a small model writes a short memory file of the day. No prompt loads it; it is found by search when needed" },
+			"day_note.at": { label: "Day note time", hint: "HH:MM or off. Just before the nightly review is best" },
+			"day_note.model": { label: "Day note model", hint: "Empty follows the OmO quick model. To pin one, write provider/model:effort" },
 			"token_audit_at": { label: "Token audit time", hint: "HH:MM or off" },
 			"omp_update.mode": { label: "Update mode", options: { check: "Notify of new versions only", install: "Install automatically and restart", off: "Off" } },
 			"omp_update.at": { label: "Update check time", hint: "HH:MM or off" },
