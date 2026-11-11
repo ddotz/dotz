@@ -59,7 +59,7 @@ Run it in a terminal on macOS or Linux. On Windows, run it inside WSL 2 ([guide,
 
 A browser opens for setup, where you pick the assistant's name, its tone and what to connect. dotz runs its agents on [OmO](https://www.npmjs.com/package/omo-ai), so you sign in to a model provider there. After setup, type `dotz` in a terminal to open the web app. Updates come from this repo on their own.
 
-The setup screens are in English and Korean, and the assistant replies in the language you set. The web app screens are in Korean for now.
+The setup screens are in English and Korean, and the assistant replies in the language you set. The web app follows that language too: Korean and English ship with it, and for any other language it writes its own screen text once, with the model you connected.
 
 ## Docs
 
