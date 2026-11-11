@@ -609,7 +609,7 @@ function createAsideBrowser(): BrowserLike {
 }
 
 const EXEC_MS = 60_000; // `which` and the cloudflared tunnel list, create, route and token calls answer in seconds
-const BREW_MS = 15 * 60_000; // `brew install` downloads and may build
+const BREW_MS = 30 * 60_000; // `brew install` downloads and may build from source (a slow machine can take over 15 min)
 const LOGIN_MS = 15 * 60_000; // `cloudflared tunnel login` waits for the owner to sign in in a browser
 
 function defaultExec(argv: string[]): Promise<{ code: number; out: string }> {
