@@ -4,6 +4,7 @@ import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameS
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { testDataRefusal } from "./live-guard.ts";
+import { sweetSpot } from "./model-effort.ts";
 
 export const HOME = homedir();
 export const DATA_DIR = process.env.DOTZ_DIR ?? join(HOME, ".dotz");
@@ -104,14 +105,19 @@ export const cfg: Config = loadConfig();
 // Model + thinking level a section of config.json selects; omp takes them as one `--model <model>:<thinking>` selector.
 export const DEFAULT_MODEL = { model: "anthropic/claude-opus-5-5", thinking: "medium" };
 const targetOf = (t: FallbackTarget): TargetModels => cfg.models?.[t] ?? {};
-export const orchestratorModel = () => ({ model: targetOf("orchestrator").model ?? DEFAULT_MODEL.model, thinking: targetOf("orchestrator").thinking ?? DEFAULT_MODEL.thinking });
-export const lanesModel = () => ({ model: targetOf("lanes").model ?? DEFAULT_MODEL.model, thinking: targetOf("lanes").thinking ?? DEFAULT_MODEL.thinking });
+// A target that names a model but no thinking level runs that model at its sweet spot (hub/model-effort.ts); a level in config.json wins.
+const modelOf = (t: FallbackTarget) => {
+	const c = targetOf(t), model = c.model ?? DEFAULT_MODEL.model;
+	return { model, thinking: c.thinking ?? sweetSpot(model).effort };
+};
+export const orchestratorModel = () => modelOf("orchestrator");
+export const lanesModel = () => modelOf("lanes");
 export const selectorOf = (m: { model: string; thinking: string }) => `${m.model}:${m.thinking}`;
 // Model the lanes' task workers (implementation, tests, renders, grind) run on: a "<model>:<thinking>" selector, set per run through an omp overlay.
 export const DEFAULT_WORKER_MODEL = "anthropic/claude-sonnet-5-5:high";
 export function workerModel(): string {
 	const w = targetOf("workers"), d = splitThinking(DEFAULT_WORKER_MODEL);
-	const model = w.model ?? d.model, thinking = w.thinking ?? (w.model ? undefined : d.thinking);
+	const model = w.model ?? d.model, thinking = w.thinking ?? (w.model ? (splitThinking(w.model).thinking ? undefined : sweetSpot(w.model).effort) : d.thinking);
 	return thinking ? `${model}:${thinking}` : model;
 }
 // Model fallback chains: entries tried in order after the primary fails at request time. One chain per layer: the
@@ -311,7 +317,7 @@ export const uiOriginView = () => cfg.ui?.origin_view === true;
 export function parseSelector(selector: string): { model: string; thinking: string } {
 	const i = selector.lastIndexOf(":");
 	const tail = selector.slice(i + 1);
-	return i > 0 && (THINKING_LEVELS as readonly string[]).includes(tail) ? { model: selector.slice(0, i), thinking: tail } : { model: selector, thinking: DEFAULT_MODEL.thinking };
+	return i > 0 && (THINKING_LEVELS as readonly string[]).includes(tail) ? { model: selector.slice(0, i), thinking: tail } : { model: selector, thinking: sweetSpot(selector).effort };
 }
 /** A kind of conversation's own model, in the shape of models.* (model + thinking). Read from the setting's "<model>:<thinking>"; unset or empty = follows main. */
 export type KindModel = { model: string; thinking: string };

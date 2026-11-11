@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
+import { cfg, DEFAULT_MODEL, DEFAULT_WORKER_MODEL, lanesModel, orchestratorModel, parseSelector, splitThinking, workerModel } from "./config.ts";
 import { clampEffort, sweetSpot } from "./model-effort.ts";
 
 test("every table row gives its effort, with or without a provider prefix and an effort suffix", () => {
@@ -40,4 +41,34 @@ test("a level the model does not list is clamped the way OmO does: nearest above
 	expect(clampEffort("medium", ["low", "medium", "high"])).toBe("medium");
 	expect(sweetSpot("anthropic/claude-opus-5-5", ["low", "high", "xhigh"])).toEqual({ effort: "high", source: "table" });
 	expect(sweetSpot("anthropic/claude-sonnet-5-5", ["off", "low", "medium"])).toEqual({ effort: "medium", source: "table" });
+});
+
+const SONNET = "anthropic/claude-sonnet-5-5", FABLE = "anthropic/claude-fable-5-2", OPUS = "anthropic/claude-opus-5-5";
+const savedModels = cfg.models;
+afterEach(() => {
+	cfg.models = savedModels;
+});
+
+test("a target that names only a model runs it at that model's sweet spot", () => {
+	cfg.models = { orchestrator: { model: SONNET }, lanes: { model: FABLE }, workers: { model: OPUS } };
+	expect(orchestratorModel()).toEqual({ model: SONNET, thinking: "high" });
+	expect(lanesModel()).toEqual({ model: FABLE, thinking: "high" });
+	expect(parseSelector(workerModel())).toEqual({ model: OPUS, thinking: "medium" });
+	expect(parseSelector(SONNET).thinking).toBe("high");
+});
+
+test("an effort the owner set is used as given, in config.json and in a selector suffix", () => {
+	cfg.models = { orchestrator: { model: SONNET, thinking: "low" }, lanes: { model: FABLE, thinking: "xhigh" }, workers: { model: SONNET, thinking: "medium" } };
+	expect(orchestratorModel().thinking).toBe("low");
+	expect(lanesModel().thinking).toBe("xhigh");
+	expect(workerModel()).toBe(`${SONNET}:medium`);
+	expect(parseSelector(`${SONNET}:low`)).toEqual({ model: SONNET, thinking: "low" });
+	cfg.models = { workers: { model: `${SONNET}:low` } };
+	expect(workerModel()).toBe(`${SONNET}:low`);
+});
+
+test("DEFAULT_MODEL and DEFAULT_WORKER_MODEL carry the effort the table gives their model", () => {
+	expect(DEFAULT_MODEL.thinking).toBe(sweetSpot(DEFAULT_MODEL.model).effort);
+	const w = splitThinking(DEFAULT_WORKER_MODEL);
+	expect(w.thinking).toBe(sweetSpot(w.model).effort);
 });
