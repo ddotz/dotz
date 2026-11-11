@@ -2,8 +2,8 @@
 const hPj = () => (HGB && hProjId && (HGB.projects || []).find(p => p.id === hProjId)) || null;
 const hProjWhere = (p, full) => `${(p.channels[0] || {}).name || p.name} · ${full ? p.cwd : shortPath(p.cwd)}`;
 const pjSize = b => (b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`);
-const pjChain = c => (c.length ? c.map(e => [modelName(fbBase(e.model)) + (e.key_file ? " (API 키)" : ""), e.when ? FB_WHEN[e.when] : "", e.cap ? fbCapText(e.cap) : "", e.revert ? "리셋되면 복귀" : ""].filter(Boolean).join(" · ")).join(" → ") : "없음");
-const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", thinkKo], ["서브에이전트 모델", "worker_model", modelName], ["서브에이전트 강도", "worker_effort", thinkKo], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["서브에이전트 폴백", "worker_fallback", pjChain]];
+const pjChain = c => (c.length ? c.map(e => [e.key_file ? TX("system.pj.keyed", { name: modelName(fbBase(e.model)) }) : modelName(fbBase(e.model)), e.when ? FB_WHEN[e.when] : "", e.cap ? fbCapText(e.cap) : "", e.revert ? TX("system.pj.revert") : ""].filter(Boolean).join(" · ")).join(" → ") : TX("system.pj.none"));
+const PJ_ROWS = [[TX("system.pj.model"), "model", modelName], [TX("system.pj.effort"), "effort", thinkKo], [TX("system.pj.worker_model"), "worker_model", modelName], [TX("system.pj.worker_effort"), "worker_effort", thinkKo], [TX("system.pj.runtime"), "runtime", v => v || "–"], [TX("system.pj.fallback"), "fallback", pjChain], [TX("system.pj.worker_fallback"), "worker_fallback", pjChain]];
 
 // One field: the project's value against the global one. A differing value is emphasised like the 내 설정 marker (바뀜 badge,
 // --mine) and shows global → project; an equal one is muted with "전역 기본".
@@ -11,24 +11,24 @@ function pjField(label, f, fmt) {
   const diff = f.source === "project";
   return el("div", { class: `pj-f${diff ? " diff" : ""}` }, el("span", { class: "k", text: label }),
     el("span", { class: "v" }, ...(diff
-      ? [el("span", { class: "bd m", text: "바뀜" }), el("s", { class: "was", title: "전역 기본", text: fmt(f.global) }), el("span", { class: "ar", text: "→" }), el("b", { text: fmt(f.value) })]
-      : [el("span", { class: "dim", text: fmt(f.value) }), el("span", { class: "pj-g", text: "전역 기본" })])));
+      ? [el("span", { class: "bd m", text: TX("system.pj.changed") }), el("s", { class: "was", title: TX("system.pj.global"), text: fmt(f.global) }), el("span", { class: "ar", text: "→" }), el("b", { text: fmt(f.value) })]
+      : [el("span", { class: "dim", text: fmt(f.value) }), el("span", { class: "pj-g", text: TX("system.pj.global") })])));
 }
 
 function hProjCard(p) {
   const tone = statusTone(p.status), s = p.setup;
-  const feat = [p.features.length ? `기능 ${p.features.length}: ${p.features.slice(0, 3).map(f => f.name).join(", ")}${p.features.length > 3 ? " …" : ""}` : "", p.deny.length ? `차단 규칙 ${p.deny.length}줄` : ""].filter(Boolean).join(" · ");
-  const b = el("div", { class: `pj-card${p.overrides ? " diff" : ""}`, role: "button", tabindex: "0", "aria-label": `${p.name} 프로젝트 지도 열기` },
+  const feat = [p.features.length ? TX("system.pj.feat", { n: p.features.length, names: `${p.features.slice(0, 3).map(f => f.name).join(", ")}${p.features.length > 3 ? " …" : ""}` }) : "", p.deny.length ? TX("system.pj.deny", { n: p.deny.length }) : ""].filter(Boolean).join(" · ");
+  const b = el("div", { class: `pj-card${p.overrides ? " diff" : ""}`, role: "button", tabindex: "0", "aria-label": TX("system.pj.open_map", { name: p.name }) },
     el("div", { class: "pj-top" }, el("span", { class: `dot ${tone}` }), el("span", { class: "pj-nm", text: p.name }), el("span", { class: `tag ${tone}`, text: p.status_text }),
-      p.overrides ? el("span", { class: "bd m", title: "전역 기본과 다른 값의 수", text: `전역과 다름 ${p.overrides}` }) : el("span", { class: "pj-g", text: "전부 전역 기본" })),
+      p.overrides ? el("span", { class: "bd m", title: TX("system.pj.diff_tip"), text: TX("system.pj.diff_n", { n: p.overrides }) }) : el("span", { class: "pj-g", text: TX("system.pj.all_global") })),
     el("div", { class: "pj-chs" }, ...p.channels.map(c => el("span", { class: "pj-tg", title: `${c.kind_text}: ${c.name}` }, `#${c.name}`, el("span", { class: "kd", text: c.kind_text })))),
     pathCopy(p.cwd, "pj-cwd"),
     el("div", { class: "pj-fs" }, ...PJ_ROWS.map(([label, key, fmt]) => pjField(label, p.fields[key], fmt))),
-    el("div", { class: "pj-sc" }, el("div", { class: "cl", text: "지침 파일" }),
-      p.files.length ? el("div", { class: "pj-chs" }, ...p.files.map(f => el("span", { class: "pj-tg", title: f.dir ? f.name : `${f.name} · ${num(f.bytes)}바이트 · ${kstStamp(f.modified)} 수정${f.heading ? ` · ${f.heading}` : ""}` }, f.name, f.dir ? null : el("span", { class: "kd", text: pjSize(f.bytes) })))) : el("div", { class: "tx dim", text: "없음" })),
-    el("div", { class: "pj-sc" }, el("div", { class: "cl", text: "채널 설정" }),
-      s ? [el("div", { class: "tx", text: s.purpose }), el("div", { class: "tx dim", text: `로그인 ${s.logins.length}${s.logins.length ? ` (${s.logins.map(l => l.name).join(", ")})` : ""} · 모니터링 ${s.monitors.length}${s.standing ? ` · 상시 처리: ${s.standing}` : ""}` })] : el("div", { class: "tx dim", text: "설정 없음" })),
-    el("div", { class: "pj-sc" }, el("div", { class: "cl", text: "이 프로젝트에만 적용" }), el("div", { class: `tx${feat ? "" : " dim"}`, text: feat || "없음" })));
+    el("div", { class: "pj-sc" }, el("div", { class: "cl", text: TX("system.pj.files") }),
+      p.files.length ? el("div", { class: "pj-chs" }, ...p.files.map(f => el("span", { class: "pj-tg", title: f.dir ? f.name : `${TX("system.pj.file_tip", { name: f.name, bytes: num(f.bytes), at: kstStamp(f.modified) })}${f.heading ? ` · ${f.heading}` : ""}` }, f.name, f.dir ? null : el("span", { class: "kd", text: pjSize(f.bytes) })))) : el("div", { class: "tx dim", text: TX("system.pj.none") })),
+    el("div", { class: "pj-sc" }, el("div", { class: "cl", text: TX("system.pj.channel") }),
+      s ? [el("div", { class: "tx", text: s.purpose }), el("div", { class: "tx dim", text: [s.logins.length ? TX("system.pj.logins_named", { n: s.logins.length, names: s.logins.map(l => l.name).join(", ") }) : TX("system.pj.logins", { n: 0 }), TX("system.pj.monitors", { n: s.monitors.length }), s.standing ? TX("system.pj.standing", { text: s.standing }) : ""].filter(Boolean).join(" · ") })] : el("div", { class: "tx dim", text: TX("system.pj.no_settings") })),
+    el("div", { class: "pj-sc" }, el("div", { class: "cl", text: TX("system.pj.only_here") }), el("div", { class: `tx${feat ? "" : " dim"}`, text: feat || TX("system.pj.none") })));
   b.addEventListener("click", () => hOpenProject(p.id));
   b.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); hOpenProject(p.id); } });
   return b;
@@ -36,14 +36,14 @@ function hProjCard(p) {
 
 function hProjBand() {
   const list = HGB.projects || [];
-  const head = el("div", { class: "pj-hd" }, el("span", { class: "t", text: `프로젝트 · ${list.length}` }),
-    el("span", { class: "sup", text: list.length ? "작업 채널·홈 채널에 묶인 세션이에요." : "작업 채널이나 홈 채널에 묶인 세션이 아직 없어요." }),
-    list.length ? el("span", { class: "pj-lg" }, el("span", { class: "bd m", text: "바뀜" }), "전역과 다른 값", el("span", { class: "pj-g", text: "전역 기본" }), "전역 그대로") : null);
+  const head = el("div", { class: "pj-hd" }, el("span", { class: "t", text: TX("system.pj.head", { n: list.length }) }),
+    el("span", { class: "sup", text: list.length ? TX("system.pj.sup_some") : TX("system.pj.sup_none") }),
+    list.length ? el("span", { class: "pj-lg" }, el("span", { class: "bd m", text: TX("system.pj.changed") }), TX("system.pj.lg_diff"), el("span", { class: "pj-g", text: TX("system.pj.global") }), TX("system.pj.lg_same")) : null);
   return list.length ? [head, el("div", { class: "pj-row" }, ...list.map(hProjCard))] : [head];
 }
 
 function hProjHead(p) {
-  const back = el("button", { class: "btn tonal sm", type: "button", onclick: () => hOpenProject("") }, icon("back"), "전체 구성");
+  const back = el("button", { class: "btn tonal sm", type: "button", onclick: () => hOpenProject("") }, icon("back"), TX("system.pj.back"));
   return el("div", { class: "pj-bk" }, back,
     el("span", { class: "pj-title" }, el("span", { class: `dot ${statusTone(p.status)}` }), p.name, ...p.channels.filter(c => c.kind !== "thread").map(c => el("span", { class: "pj-tg" }, `#${c.name}`, el("span", { class: "kd", text: c.kind_text })))),
     hScopeTag("project", hProjWhere(p), false, hProjWhere(p, true)));
@@ -51,7 +51,7 @@ function hProjHead(p) {
 
 // Opens a project's own map (or the main map with ""); the hash `#harness/project/<id>` restores it on reload.
 async function hOpenProject(id) {
-  if (hDirty && hDirty() && !await ask("저장하지 않은 변경", "열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?", "버리기", true)) return;
+  if (hDirty && hDirty() && !await ask(TX("system.pj.dirty.title"), TX("system.pj.dirty.body"), TX("system.pj.dirty.ok"), true)) return;
   closeHSheet(); hSel = "";
   hProjId = id;
   routeReplace(id ? `harness/project/${enc(id)}` : "harness");
@@ -62,13 +62,13 @@ async function hOpenProject(id) {
 // Free-text request about one card of the project map; always carries the 범위: 프로젝트 line.
 function hProjAsk(p, n, drafts) {
   const where = hProjWhere(p, true);
-  const ta = el("textarea", { class: "fi hs-ta", rows: 3, spellcheck: "false", placeholder: "이 프로젝트에 바라는 변경을 적어 주세요", "aria-label": "프로젝트 수정 요청" });
-  const send = el("button", { class: "btn tonal sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
+  const ta = el("textarea", { class: "fi hs-ta", rows: 3, spellcheck: "false", placeholder: TX("system.pj.ask.ph"), "aria-label": TX("system.pj.ask.aria") });
+  const send = el("button", { class: "btn tonal sm", type: "button", disabled: true }, TX("system.pj.ask.send", { bot: botName }));
   const note = el("div", { class: "note" });
   ta.addEventListener("input", () => { send.disabled = !ta.value.trim(); });
   send.onclick = async () => {
     send.disabled = true;
-    try { const at = await hRequest(`${n.label}: ${ta.value.trim()}`, hScope("project", where)); note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`; ta.value = ""; hFlash(send, "요청했어요"); }
+    try { const at = await hRequest(`${n.label}: ${ta.value.trim()}`, hScope("project", where)); note.className = "note ok"; note.textContent = TX("system.sw.sent", { at }); ta.value = ""; hFlash(send, TX("system.pj.ask.done")); }
     catch (e) { note.className = "note err"; note.textContent = e.message; toast(e.message, true); send.disabled = false; }
   };
   drafts.push(() => ta.value.trim() !== "");
@@ -125,7 +125,7 @@ function hFlowList() {
 
 // Simple map: the main line only. One card per stage (the inputs share one card of rows); the prompt files and support
 // systems of a stage are chips on its card. A support node's edges are not drawn until a chip or card is hovered/focused.
-const H_MANY = "들어온 글";
+const H_MANY = TX("system.many_in");
 const hShort = n => n.label.replace(/\s*\(.*\)$/, "");
 const hSick = n => n.status === "warn" || n.status === "err";
 
@@ -154,12 +154,12 @@ function hChip(n) {
 // Stage card frame shared by 전체 and 커스텀: the connector from the previous stage (a chevron in the gap, drawn by CSS for the
 // breakpoint) and a "<previous stage>에서 · <edge label>" line, then a header with the step number, title and a count chip.
 function hFrom(stages, i) {
-  if (!i) return [el("div", { class: "hm-from", text: "여기서 시작해요" })];
+  if (!i) return [el("div", { class: "hm-from", text: TX("system.from.start") })];
   const p = stages[i - 1], lb = hStageLabel(p, stages[i]), from = p.main.length === 1 ? hShort(p.main[0]) : p.label;
-  return [el("span", { class: "hm-ar", "aria-hidden": "true" }, icon("chev")), el("div", { class: "hm-from", title: `${from}에서${lb ? ` · ${lb}` : ""}` }, `${from}에서`, lb ? el("b", { text: lb }) : null)];
+  return [el("span", { class: "hm-ar", "aria-hidden": "true" }, icon("chev")), el("div", { class: "hm-from", title: `${TX("system.from.stage", { from })}${lb ? ` · ${lb}` : ""}` }, TX("system.from.stage", { from }), lb ? el("b", { text: lb }) : null)];
 }
 const hNo = i => el("span", { class: "hm-no", "aria-hidden": "true", text: String(i + 1) });
-const hCount = (n, title) => (n ? el("span", { class: "tag hm-ct", title, text: `항목 ${n}` }) : null);
+const hCount = (n, title) => (n ? el("span", { class: "tag hm-ct", title, text: TX("system.count.items", { n }) }) : null);
 // A source path as people read it (like custom.js shortPath): the last two names, the full path in the title.
 const hPath = p => { const parts = String(p).split("/").filter(Boolean); return parts.length > 2 ? `…/${parts.slice(-2).join("/")}` : String(p); };
 
@@ -172,9 +172,9 @@ function hStageCard(s, i, stages) {
       hNo(i),
       one ? el("span", { class: `dot ${H_TONE[one.status] || ""}` }) : null,
       el("span", { class: "l", text: one ? one.label : s.label }),
-      one ? null : hCount(s.main.length + s.chips.length, "이 단계의 항목 수"),   // a one-item stage says its extras below (함께 실행되는 항목 · N)
+      one ? null : hCount(s.main.length + s.chips.length, TX("system.count.items_tip")),   // a one-item stage says its extras below (함께 실행되는 항목 · N)
       one && one.status !== "ok" ? el("span", { class: `tag ${H_TONE[one.status] || ""}`, text: H_STATE[one.status] || "" }) : null,
-      bad.length ? el("span", { class: `tag ${bad.some(n => n.status === "err") ? "err" : "warn"}`, title: bad.map(n => n.label).join(", "), text: `주의 ${bad.length}` }) : null),
+      bad.length ? el("span", { class: `tag ${bad.some(n => n.status === "err") ? "err" : "warn"}`, title: bad.map(n => n.label).join(", "), text: TX("system.count.warn", { n: bad.length }) }) : null),
     one ? el("span", { class: "s", text: one.summary }) : null,
     fcBadges(ids), hMark(ids, true)];
   const head = one ? el("button", { type: "button", class: "hm-sh", "aria-label": `${one.label}: ${one.summary}` }, ...kids) : el("div", { class: "hm-sh" }, ...kids);
@@ -187,7 +187,7 @@ function hStageCard(s, i, stages) {
     hNodeEls.set(n.id, r); hGeo.set(n.id, r);
     return r;
   })));
-  if (s.chips.length) list.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: `함께 실행되는 항목 · ${s.chips.length}` }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
+  if (s.chips.length) list.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: TX("system.with.head", { n: s.chips.length }) }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
   if (list.firstChild) card.append(list);
   return card;
 }
@@ -227,8 +227,8 @@ const hCustomCount = () => { if (!HG || !hOrigin()) return 0; return hCustomPart
 function hCustomCard(s, i, cv, stages) {
   const { mine, sets, fl, n } = cv.at[i], one = s.main.length === 1 ? s.main[0] : null;
   const card = el("div", { class: `hm-st${n ? " mine" : " none"}` }, ...hFrom(stages, i),
-    el("div", { class: "hm-sh" }, el("span", { class: "t" }, hNo(i), el("span", { class: "l", text: one ? one.label : s.label }), n ? el("span", { class: "bd m hm-ct", title: "이 단계에서 바꾼 것", text: String(n) }) : null)));
-  if (!n) { card.append(el("div", { class: "hm-none", text: "기본 그대로" })); return card; }
+    el("div", { class: "hm-sh" }, el("span", { class: "t" }, hNo(i), el("span", { class: "l", text: one ? one.label : s.label }), n ? el("span", { class: "bd m hm-ct", title: TX("system.cv.changed_tip"), text: String(n) }) : null)));
+  if (!n) { card.append(el("div", { class: "hm-none", text: TX("system.cv.default_only") })); return card; }
   const row = (onclick, top, sub, mono) => {
     const b = el("button", { type: "button", class: "hm-cr" }, el("span", { class: "m1" }, ...top), sub ? el("span", { class: `m2${mono ? " mono" : ""}`, text: mono ? hPath(sub) : sub, title: sub }) : null);
     b.addEventListener("click", onclick);
@@ -237,23 +237,23 @@ function hCustomCard(s, i, cv, stages) {
   // A list long enough for 더 보기 keeps one fixed height, so opening or folding it scrolls inside the card instead of resizing it.
   const sec = el("div", { class: `hm-cs hm-list${fl.length > H_CV_CAP ? " fix" : ""}` });
   if (mine.length) {
-    sec.append(el("div", { class: "cl", text: `내 파일·확장 · ${mine.length}` }));
+    sec.append(el("div", { class: "cl", text: TX("system.cv.mine_head", { n: mine.length }) }));
     for (const m of mine) {
       const own = cv.lines.filter(f => f.stage === m.id), rules = own.filter(f => f.form === "글 지시").length, deny = own.filter(f => f.form === "차단 명령").length;
-      const meta = m.file ? [m.fileMeta ? `${num(m.fileMeta.bytes)}자 · ${kstStamp(m.fileMeta.modified)} 수정` : "아직 없는 파일", rules ? `글 ${rules}줄` : "", deny ? `차단 ${deny}줄` : ""].filter(Boolean).join(" · ") : m.summary;
+      const meta = m.file ? [m.fileMeta ? TX("system.cv.chars", { n: num(m.fileMeta.bytes), at: kstStamp(m.fileMeta.modified) }) : TX("system.fe.missing"), rules ? TX("system.cv.rules", { n: rules }) : "", deny ? TX("system.cv.deny", { n: deny }) : ""].filter(Boolean).join(" · ") : m.summary;
       sec.append(row(() => openHSheet(m.id), [hShort(m)], meta));
     }
   }
   if (sets.length) {
-    sec.append(el("div", { class: "cl", text: `바꾼 설정 · ${sets.length}` }));
-    for (const { n: m, c } of sets) sec.append(row(() => openHSheet(m.id), [`${c.label}: ${hFmt(c.value, c.unit)}`], `기본 ${hFmt(c.default, c.unit)} · ${hShort(m)}`));
+    sec.append(el("div", { class: "cl", text: TX("system.cv.sets_head", { n: sets.length }) }));
+    for (const { n: m, c } of sets) sec.append(row(() => openHSheet(m.id), [`${c.label}: ${hFmt(c.value, c.unit)}`], `${TX("system.cv.default_val", { v: hFmt(c.default, c.unit) })} · ${hShort(m)}`));
   }
   if (fl.length) {
     const all = hCvOpen.has(i), shown = all ? fl : fl.slice(0, H_CV_CAP);
-    sec.append(el("div", { class: "cl", text: `내 기능 · ${fl.length}` }));
-    for (const f of shown) sec.append(row(() => fcOpenFeature(f), [monClean(f.name, f.form), el("span", { class: "tag", text: f.form }), f.enabled ? null : el("span", { class: "tag", text: "꺼짐" })], f.source.label, true));
+    sec.append(el("div", { class: "cl", text: TX("system.cv.feats_head", { n: fl.length }) }));
+    for (const f of shown) sec.append(row(() => fcOpenFeature(f), [monClean(f.name, f.form), el("span", { class: "tag", text: f.form }), f.enabled ? null : el("span", { class: "tag", text: TX("system.state.off") })], f.source.label, true));
     if (fl.length > H_CV_CAP) {
-      const more = el("button", { type: "button", class: "btn text hm-more", text: all ? "접기" : `${fl.length - H_CV_CAP}개 더 보기` });
+      const more = el("button", { type: "button", class: "btn text hm-more", text: all ? TX("system.cv.fold") : TX("system.cv.more", { n: fl.length - H_CV_CAP }) });
       more.addEventListener("click", () => {
         if (all) hCvOpen.delete(i); else hCvOpen.add(i);
         const top = sec.scrollTop;
@@ -339,7 +339,7 @@ function hHead() {
 
 async function openHSheet(id, focus = {}) {
   if (id === hSel && focus.line && hGoto) { hGoto(focus.line); return; }
-  if (id !== hSel && hDirty && hDirty() && !await ask("저장하지 않은 변경", "열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?", "버리기", true)) return;
+  if (id !== hSel && hDirty && hDirty() && !await ask(TX("system.pj.dirty.title"), TX("system.pj.dirty.body"), TX("system.pj.dirty.ok"), true)) return;
   const n = hNode(id);
   if (!n) return;
   hSel = id; hGoto = null; paintHSel();
@@ -356,21 +356,21 @@ async function openHSheet(id, focus = {}) {
   if (more) body.append(el("p", { class: "hs-desc", text: more }));
   if (hOrigin()) body.append(hOriginLine(n));
   const facts = n.facts.filter(f => !(n.summary.includes(f.label) && n.summary.includes(f.value)));   // what the head already says is not said again below
-  if (facts.length) body.append(el("div", { class: "sec", text: "지금 상태" }), el("div", { class: "hs-facts" }, ...facts.map(f => el("div", { class: "hs-fact" }, el("span", { class: "k", text: f.label }), el("span", { class: "v", text: f.value })))));
+  if (facts.length) body.append(el("div", { class: "sec", text: TX("system.sheet.facts") }), el("div", { class: "hs-facts" }, ...facts.map(f => el("div", { class: "hs-fact" }, el("span", { class: "k", text: f.label }), el("span", { class: "v", text: f.value })))));
   body.append(...(hPj() ? [] : fcSheetSection(n, focus.feature)));
-  if (n.settings.some(s => s.editable) || n.fileEditable) body.append(el("div", { class: "note", text: `수정 요청은 ${botName}에게 가요.` }));
-  if (n.settings.length) body.append(el("div", { class: "sec", text: "설정" }), ...n.settings.map(s => hSetting(s, drafts)));
-  if (n.file) { const fname = n.file.split("/").pop(); body.append(el("div", { class: "sec", text: n.label.includes(fname) ? "파일" : `파일 · ${fname}` }), hFileEditor(n, drafts, focus.line)); }   // the name is said once
+  if (n.settings.some(s => s.editable) || n.fileEditable) body.append(el("div", { class: "note", text: TX("system.sheet.req_note", { bot: botName }) }));
+  if (n.settings.length) body.append(el("div", { class: "sec", text: TX("common.settings") }), ...n.settings.map(s => hSetting(s, drafts)));
+  if (n.file) { const fname = n.file.split("/").pop(); body.append(el("div", { class: "sec", text: n.label.includes(fname) ? TX("system.sheet.file") : TX("system.sheet.file_named", { name: fname }) }), hFileEditor(n, drafts, focus.line)); }   // the name is said once
   const near = [...HG.edges.filter(e => e.to === id).map(e => ({ id: e.from, t: `← ${hNode(e.from).label}`, l: e.label })), ...HG.edges.filter(e => e.from === id).map(e => ({ id: e.to, t: `${hNode(e.to).label} →`, l: e.label }))];
-  if (near.length) body.append(el("div", { class: "sec", text: "이어진 곳" }), el("div", { class: "hs-chips" }, ...near.map(x => el("button", { class: "chip", type: "button", title: x.l, onclick: () => openHSheet(x.id) }, el("span", { class: "tx", text: `${x.t} · ${x.l}` })))));
-  if (hPj()) body.append(el("div", { class: "sec", text: "이 카드에 대한 요청" }), hProjAsk(hPj(), n, drafts));
+  if (near.length) body.append(el("div", { class: "sec", text: TX("system.sheet.near") }), el("div", { class: "hs-chips" }, ...near.map(x => el("button", { class: "chip", type: "button", title: x.l, onclick: () => openHSheet(x.id) }, el("span", { class: "tx", text: `${x.t} · ${x.l}` })))));
+  if (hPj()) body.append(el("div", { class: "sec", text: TX("system.sheet.ask") }), hProjAsk(hPj(), n, drafts));
   if (focus.feature && !focus.line) { const row = body.querySelector(`[data-fid="${CSS.escape(focus.feature)}"]`); if (row) row.scrollIntoView({ block: "center" }); }
 }
 
 function hModelItems(cur) {
   const avail = (M && (M.pickable || M.available)) || [];
   const items = [];
-  if (cur && !avail.some(a => a.selector === cur)) items.push({ header: "현재" }, { value: cur, label: modelName(cur) });
+  if (cur && !avail.some(a => a.selector === cur)) items.push({ header: TX("system.sheet.current") }, { value: cur, label: modelName(cur) });
   items.push(...modelPickItems(avail, cur));
   return items;
 }
@@ -379,16 +379,16 @@ function hModelItems(cur) {
 // sends to MAIN, default mode), which applies it.
 const hNow = () => new Date().toLocaleTimeString("ko-KR", { ...KST, hour: "2-digit", minute: "2-digit" });
 async function hRequest(text, scope) {
-  await api("/api/message", "POST", { text: `[구성 탭 수정 요청] ${scope ? `${scope}\n` : ""}${text}` });
+  await api("/api/message", "POST", { text: `${TX("system.req.tag")} ${scope ? `${scope}\n` : ""}${text}` });
   return hNow();
 }
 // Which side a node is on, shown at the top of its sheet (only with ui.origin_view).
 function hOriginLine(n) {
   const mine = n.origin === "personal";
   const where = n.file ? `${hData()}/${n.file}` : mine && FC && FC.harness ? FC.harness.dirs.join(", ") : "";
-  const tags = [el("span", { class: `tag${mine ? " m" : ""}`, text: mine ? "개인" : "배포" })];
-  const text = mine ? `내 ${n.file ? "파일" : "확장"}이에요${where ? ` (${shortPath(where)})` : ""}` : `기본으로 함께 오는 거예요${n.file ? " (저장소 파일 · 읽기 전용)" : ""}`;
-  const extra = !mine && n.custom && n.custom.length ? ` · 설정값 ${n.custom.length}개는 내가 바꿨어요 (${shortPath(`${hData()}/config.json`)})` : !mine && n.settings.some(s => s.editable) ? ` · 설정값은 ${shortPath(`${hData()}/config.json`)}에 저장돼요` : "";
+  const tags = [el("span", { class: `tag${mine ? " m" : ""}`, text: mine ? TX("system.scope.personal_short") : TX("system.scope.shipped_short") })];
+  const text = mine ? TX(n.file ? (where ? "system.own.file_at" : "system.own.file") : where ? "system.own.ext_at" : "system.own.ext", { where: where ? shortPath(where) : "" }) : TX(n.file ? "system.own.ship_file" : "system.own.ship");
+  const extra = !mine && n.custom && n.custom.length ? ` · ${TX("system.own.changed_vals", { n: n.custom.length, path: shortPath(`${hData()}/config.json`) })}` : !mine && n.settings.some(s => s.editable) ? ` · ${TX("system.own.saved_in", { path: shortPath(`${hData()}/config.json`) })}` : "";
   return el("div", { class: "hs-or" }, ...tags, el("span", { text: text + extra }));
 }
 // 구성's model and effort settings (config.json models.<target>) open the 모델 · 폴백 screen instead of a change request.
@@ -400,23 +400,23 @@ function hSetting(s, drafts) {
   const box = el("div", { class: "hs-set", title: s.source });
   const pj = hPj(), sk = pj ? "project" : "personal", sw = pj ? hProjWhere(pj) : s.source;
   const [applyText, applyTone] = H_APPLY[s.applies] || ["", ""];
-  const tag = el("span", { class: `tag ${s.pending ? "warn" : applyTone}`, text: s.pending ? "재시작 대기 중" : applyText });
+  const tag = el("span", { class: `tag ${s.pending ? "warn" : applyTone}`, text: s.pending ? TX("system.set.pending") : applyText });
   const note = el("div", { class: "note", text: s.hint || "" });
   const mkey = !pj && (s.type === "model" || s.type === "effort") && H_MODEL_TARGET[s.key];
   if (mkey) {
     box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: `tag ${applyTone}`, text: applyText })),
-      el("div", { class: "ctl" }, el("span", { class: "hs-ro", text: s.type === "model" ? modelName(s.value) : String(s.value) }), el("button", { class: "btn tonal sm", type: "button", onclick: () => openModels(mkey) }, "모델 · 폴백에서 바꾸기")));
+      el("div", { class: "ctl" }, el("span", { class: "hs-ro", text: s.type === "model" ? modelName(s.value) : String(s.value) }), el("button", { class: "btn tonal sm", type: "button", onclick: () => openModels(mkey) }, TX("system.set.models"))));
     return box;
   }
   if (!s.editable) {
-    box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: "tag", text: "읽기 전용" })), el("div", { class: "hs-ro", text: String(s.value) }), s.hint ? note : el("div", { class: "note", text: "보안·연결 정보라 화면에서 바꿀 수 없어요." }));
+    box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: "tag", text: TX("system.set.ro") })), el("div", { class: "hs-ro", text: String(s.value) }), s.hint ? note : el("div", { class: "note", text: TX("system.set.ro_note") }));
     return box;
   }
   const cur = s.value;
   let draft = s.value, sent;
   const ctl = el("div", { class: "ctl" });
-  const send = el("button", { class: "btn tonal sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
-  const reset = el("button", { class: "btn text sm", type: "button", hidden: true }, "기본값");
+  const send = el("button", { class: "btn tonal sm", type: "button", disabled: true }, TX("system.pj.ask.send", { bot: botName }));
+  const reset = el("button", { class: "btn text sm", type: "button", hidden: true }, TX("system.set.reset"));
   const dirty = () => draft !== cur && !(typeof draft === "number" && Number.isNaN(draft));
   const asked = () => sent !== undefined && Object.is(sent, draft);
   const mark = () => {
@@ -429,7 +429,7 @@ function hSetting(s, drafts) {
     if (s.type === "bool") {
       const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!draft), "aria-label": s.label });
       sw.onclick = () => { draft = !draft; paint(); motionSwap(ctl.lastElementChild, () => {}); };
-      ctl.append(sw, el("span", { class: "sup", text: draft ? "켜짐" : "꺼짐" }));
+      ctl.append(sw, el("span", { class: "sup", text: draft ? TX("system.fmt.on") : TX("system.fmt.off") }));
     } else if (s.type === "select" || s.type === "effort" || s.type === "model") {
       const opts = s.type === "model" ? null : s.options || [];
       const text = s.type === "model" ? modelName(draft) : ((opts.find(o => o.value === draft) || {}).label ?? String(draft));
@@ -453,14 +453,14 @@ function hSetting(s, drafts) {
   send.onclick = async () => {
     send.disabled = true;
     try {
-      const at = await hRequest(`${s.label} (${s.source}): ${hVal(cur)} -> ${hVal(draft)}. 적용 시점: ${applyText}.${s.hint ? ` ${s.hint}` : ""}`, hScope(sk, sw));
-      sent = draft; note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`; hFlash(send, "요청했어요");
+      const at = await hRequest(`${TX("system.set.req", { label: s.label, source: s.source, from: hVal(cur), to: hVal(draft), when: applyText })}${s.hint ? ` ${s.hint}` : ""}`, hScope(sk, sw));
+      sent = draft; note.className = "note ok"; note.textContent = TX("system.sw.sent", { at }); hFlash(send, TX("system.pj.ask.done"));
     } catch (e) { note.className = "note err"; note.textContent = e.message; toast(e.message, true); }
     finally { mark(); }
   };
   drafts.push(() => dirty() && !asked());
   const shown = v => (s.type === "model" ? modelName(v) : hFmt(v, s.unit));
-  const chg = pj ? (s.default !== undefined && !Object.is(s.default, s.value) ? el("span", { class: "tag m", title: "전역 기본과 다른 값이에요", text: `바꿈 · 전역 ${shown(s.default)}` }) : null) : hChanged(s.key) ? el("span", { class: "tag m", title: "기본값과 다른 값이에요", text: `바꿈 · 기본 ${hFmt(s.default, s.unit)}` }) : null;
+  const chg = pj ? (s.default !== undefined && !Object.is(s.default, s.value) ? el("span", { class: "tag m", title: TX("system.set.diff_global_tip"), text: TX("system.set.diff_global", { v: shown(s.default) }) }) : null) : hChanged(s.key) ? el("span", { class: "tag m", title: TX("system.set.diff_def_tip"), text: TX("system.set.diff_def", { v: hFmt(s.default, s.unit) }) }) : null;
   box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), chg, tag), ctl, el("div", { class: "btns hs-act" }, reset, hScopeTag(sk, sw), send), note);
   paint();
   return box;
@@ -508,7 +508,8 @@ function lineDiff(oldText, newText, ctx = 3) {
     let e = k;
     while (e + 1 < ch.length && ch[e + 1] === ch[e] + 1) e++;
     const seg = ops.slice(ch[k], ch[e] + 1), d = seg.filter(x => x[0] === "-").length, ad = seg.length - d, s0 = ob[ch[k]];
-    spans.push(d ? `${d === 1 ? `${s0 + 1}줄` : `${s0 + 1}-${s0 + d}줄`}${ad ? ` (${ad}줄로 교체)` : " 삭제"}` : `${s0}줄 뒤에 ${ad}줄 추가`);
+    const rg = d === 1 ? TX("system.span.line", { a: s0 + 1 }) : TX("system.span.lines", { a: s0 + 1, b: s0 + d });
+    spans.push(d ? (ad ? TX("system.span.replace", { x: rg, n: ad }) : TX("system.span.delete", { x: rg })) : TX("system.span.add", { s: s0, n: ad }));
     k = e + 1;
   }
   return { add, del, text, spans };
@@ -518,13 +519,13 @@ function lineDiff(oldText, newText, ctx = 3) {
 // the optional note, and a note-only form when the draft is unchanged.
 const H_DIFF_CAP = 6000;
 function hFileRequest(r, orig, draft, note) {
-  const head = `${r.label} (${r.path || r.name}) 수정${note ? `\n메모: ${note}` : ""}`;
-  if (orig.replace(/\r\n/g, "\n") === draft.replace(/\r\n/g, "\n")) return `${head}\n파일 내용은 바꾸지 않았어요. 메모대로 파일을 직접 고쳐 주세요. 적용 시점: ${r.note}`;
+  const head = `${TX("system.fe.req_head", { label: r.label, path: r.path || r.name })}${note ? `\n${TX("system.fe.req_memo", { note })}` : ""}`;
+  if (orig.replace(/\r\n/g, "\n") === draft.replace(/\r\n/g, "\n")) return `${head}\n${TX("system.fe.req_unchanged", { when: r.note })}`;
   const d = lineDiff(orig, draft);
   const body = d.text.length <= H_DIFF_CAP
-    ? `아래 diff 대로 파일을 고쳐 주세요 (줄 단위, 앞뒤 3줄 맥락 포함).\n\`\`\`diff\n--- ${r.name}\n+++ ${r.name} (수정안)\n${d.text}\n\`\`\``
-    : `변경이 커서 diff 는 생략했어요 (+${d.add}줄 -${d.del}줄). 바뀐 곳(원본 줄 기준): ${d.spans.slice(0, 20).join(", ")}${d.spans.length > 20 ? ` 외 ${d.spans.length - 20}곳` : ""}. 파일을 직접 열어 확인하고 메모대로 고쳐 주세요.`;
-  return `${head}\n${body}\n적용 시점: ${r.note}`;
+    ? TX("system.fe.req_diff", { name: r.name, diff: d.text })
+    : TX(d.spans.length > 20 ? "system.fe.req_big_more" : "system.fe.req_big", { add: d.add, del: d.del, spans: d.spans.slice(0, 20).join(", "), n: d.spans.length - 20 });
+  return `${head}\n${body}\n${TX("system.fe.req_applies", { when: r.note })}`;
 }
 
 // Prompt-file editor: the owner edits a draft and asks the orchestrator to apply it (diff + optional note), or sends only
@@ -532,10 +533,10 @@ function hFileRequest(r, orig, draft, note) {
 function hFileEditor(n, drafts, line) {
   const ta = el("textarea", { class: "fi hs-ta hs-mono", rows: 18, spellcheck: "false", "aria-label": n.file });
   ta.readOnly = !n.fileEditable;
-  const note = n.fileEditable ? el("input", { class: "fi", type: "text", autocomplete: "off", maxlength: 500, placeholder: "무엇을 왜 바꾸는지 (선택)", "aria-label": "수정 요청 메모" }) : null;
+  const note = n.fileEditable ? el("input", { class: "fi", type: "text", autocomplete: "off", maxlength: 500, placeholder: TX("system.fe.memo_ph"), "aria-label": TX("system.fe.memo_aria") }) : null;
   const info = el("div", { class: "note" }), stat = el("div", { class: "note" }), err = usErr();
-  const send = el("button", { class: "btn sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
-  const undo = el("button", { class: "btn text sm", type: "button", disabled: true }, "되돌리기");
+  const send = el("button", { class: "btn sm", type: "button", disabled: true }, TX("system.pj.ask.send", { bot: botName }));
+  const undo = el("button", { class: "btn text sm", type: "button", disabled: true }, TX("common.undo"));
   let file = null, orig = "", sentKey = "", dt = 0;
   const key = () => `${ta.value}\u0000${note ? note.value.trim() : ""}`;
   const dirty = () => ta.value !== orig;
@@ -546,7 +547,7 @@ function hFileEditor(n, drafts, line) {
     stat.className = "note";
     if (!dirty()) { stat.textContent = ""; return; }
     const d = lineDiff(orig, ta.value);
-    stat.textContent = `변경 +${d.add}줄 -${d.del}줄${d.text.length > H_DIFF_CAP ? " · 많이 바뀌어서 diff 대신 바뀐 줄 범위만 보내요. 메모에 무엇을 바꾸는지 적어 주세요" : ""}`;
+    stat.textContent = `${TX("system.fe.stat", { add: d.add, del: d.del })}${d.text.length > H_DIFF_CAP ? ` · ${TX("system.fe.stat_big")}` : ""}`;
   };
   const edited = () => { mark(); clearTimeout(dt); dt = setTimeout(paintStat, 250); };
   const url = `/api/harness/file/${n.file.split("/").map(enc).join("/")}`;
@@ -555,7 +556,7 @@ function hFileEditor(n, drafts, line) {
   undo.onclick = () => { ta.value = orig; edited(); };
   send.onclick = () => usRun(send, err, async () => {
     const at = await hRequest(hFileRequest(file, orig, ta.value, note.value.trim()), hScope("personal", `${hData()}/${file.name}`));
-    sentKey = key(); stat.className = "note ok"; stat.textContent = `요청 보냄 · ${at}`; hFlash(send, "요청했어요");
+    sentKey = key(); stat.className = "note ok"; stat.textContent = TX("system.sw.sent", { at }); hFlash(send, TX("system.pj.ask.done"));
     delete send.dataset.usBusy; mark();
   });
   const clearErr = () => { err.textContent = ""; };
@@ -576,14 +577,14 @@ function hFileEditor(n, drafts, line) {
   };
   hGoto = gotoLine;
   // the text is shown only once it is read: until then the box says so, and a read that fails (or has no text) is the usual retry card
-  ta.readOnly = true; ta.placeholder = "불러오는 중…";
+  ta.readOnly = true; ta.placeholder = TX("common.loading");
   const box = el("div", { class: "hs-fw" }, ta, note, err, el("div", { class: "btns hs-act" }, n.fileEditable ? undo : null, n.fileEditable ? hScopeTag("personal", shortPath(`${hData()}/${n.file}`)) : null, n.fileEditable ? send : null), info, stat);
   api(url).then(r => {
     if (typeof r.text !== "string") throw new Error("no text");
     file = r; orig = r.text; ta.value = r.text; ta.readOnly = !n.fileEditable; ta.placeholder = "";
-    info.textContent = [`${num(r.text.length)}자${r.cap ? ` (시작 지침에는 앞 ${num(r.cap)}자까지)` : ""}`, r.modified ? `${kstStamp(r.modified)} 수정` : "아직 없는 파일", r.note].filter(Boolean).join(" · ");
+    info.textContent = [r.cap ? TX("system.fe.len_cap", { n: num(r.text.length), cap: num(r.cap) }) : TX("system.fe.len", { n: num(r.text.length) }), r.modified ? TX("system.fe.modified", { at: kstStamp(r.modified) }) : TX("system.fe.missing"), r.note].filter(Boolean).join(" · ");
     mark();
     if (line) gotoLine(line);
-  }).catch(() => { hGoto = null; clear(box).append(emptyNode("파일을 불러오지 못했어요", () => { box.replaceWith(hFileEditor(n, drafts, line)); })); });
+  }).catch(() => { hGoto = null; clear(box).append(emptyNode(TX("system.fe.load_failed"), () => { box.replaceWith(hFileEditor(n, drafts, line)); })); });
   return box;
 }

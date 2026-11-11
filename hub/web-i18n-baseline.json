@@ -105,16 +105,16 @@
       "why": "server value comparison"
     },
     "web/js/27-harness.js": {
-      "count": 132,
-      "why": "pending"
+      "count": 5,
+      "why": "server value comparison: feature form names"
     },
     "web/js/28-harness-project.js": {
-      "count": 343,
-      "why": "pending"
+      "count": 4,
+      "why": "server value comparison: feature form names"
     },
     "web/js/29-harness-features.js": {
-      "count": 305,
-      "why": "pending"
+      "count": 23,
+      "why": "server value comparison: feature form names"
     },
     "web/js/30-apps.js": {
       "count": 138,
@@ -181,12 +181,8 @@
       "why": "pending"
     },
     "web/js/32-app-settings.js": {
-      "count": 497,
-      "why": "pending"
-    },
-    "web/js/32-history-nav.js": {
-      "count": 5,
-      "why": "pending"
+      "count": 7,
+      "why": "server value comparison, and the app request prefix the assistant instructions name"
     },
     "web/js/33-peers.js": {
       "count": 115,

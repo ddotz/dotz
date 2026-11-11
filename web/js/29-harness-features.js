@@ -1,33 +1,33 @@
 /* ---------- 구성: 기능 보기 (what the owner added, by implementation form; data from /api/features) ---------- */
 const FC_NOTE = {
-  "글 지시": "모델에게 주는 지침 글이에요. 모델이 따르도록 부탁하는 것이라 어길 수도 있어요 (권고).",
-  "차단 명령": "RULES의 deny 줄이에요. 실행 직전에 코드가 막아요 (강제).",
-  "기능 폴더": "features 폴더 안의 폴더 하나가 기능 하나예요. 글은 권고, deny 줄·모니터링 파일이 있으면 코드가 강제해요. 스위치로 켜고 꺼요.",
-  "스킬": "SKILL.md 절차서예요. 모델이 필요할 때 읽고 따라요 (권고).",
-  "확장": "하네스가 불러오는 코드예요. 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).",
-  "예약": "정해진 시각에 문장을 어시스턴트에게 보내는 타이머예요.",
-  "모니터링": "모델을 호출하지 않고 주기적으로 명령을 실행해 변화만 알리는 점검이에요.",
-  "작업 채널 설정": "작업 채널마다 묶어 둔 로그인 유지와 모니터링이에요.",
-  "게이트웨이 기능": "게이트웨이 코드에 들어 있는 기능이에요.",
-  "외부 연동": "Discord·메일(zele)·브라우저(Aside) 같은 바깥 서비스와의 연결이에요.",
-  "웹 맞춤": "~/.dotz/custom의 홈 카드·사이드바 고정·루틴이에요. 봇이 파일로 만들고 재시작 없이 바로 보여요.",
+  "글 지시": TX("system.fcnote.instr"),
+  "차단 명령": TX("system.fcnote.deny"),
+  "기능 폴더": TX("system.fcnote.folder"),
+  "스킬": TX("system.fcnote.skill"),
+  "확장": TX("system.fcnote.ext"),
+  "예약": TX("system.fcnote.schedule"),
+  "모니터링": TX("system.fcnote.monitor"),
+  "작업 채널 설정": TX("system.fcnote.channel"),
+  "게이트웨이 기능": TX("system.fcnote.gateway"),
+  "외부 연동": TX("system.fcnote.external"),
+  "웹 맞춤": TX("system.fcnote.web"),
 };
-const FC_STR = { enforced: "강제", advisory: "권고" };
+const FC_STR = { enforced: TX("system.str.enforced"), advisory: TX("system.str.advisory") };
 // Extensions installed for another harness are not loaded by the one running dotz: they leave every count and stage card
 // and sit in one folded "이 하네스에선 꺼짐" group at the end of the list.
 function fcSplit(c) { if (c && !c.off) { c.off = c.features.filter(f => f.inactive); c.features = c.features.filter(f => !f.inactive); } return c; }
-const fcHarness = () => (FC && FC.harness ? FC.harness.name : "하네스");
-const fcFormLabel = form => (form === "확장" ? `${fcHarness()} 확장` : form);
-const fcNote = form => (form === "확장" && FC && FC.harness ? `${fcHarness()}가 실제로 불러오는 코드예요 (${["기본 확장", ...FC.harness.dirs].join(", ")}). 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).` : FC_NOTE[form] || "");
+const fcHarness = () => (FC && FC.harness ? FC.harness.name : TX("system.harness"));
+const fcFormLabel = form => (form === "확장" ? TX("system.ext.label", { name: fcHarness() }) : form);
+const fcNote = form => (form === "확장" && FC && FC.harness ? TX("system.ext.note", { name: fcHarness(), dirs: [TX("system.ext.default"), ...FC.harness.dirs].join(", ") }) : FC_NOTE[form] || "");
 const FC_FILE_NODE = { "RULES.md": "rules", "LESSONS.md": "lessons", "identity/IDENTITY.md": "identity" };
 const fcOf = id => (FC ? FC.features.filter(f => f.stage === id) : []);
-const fcDupText = f => (f.dup && f.dup.length ? `같은 일을 ${f.strength === "advisory" ? "코드(강제)" : "글(권고)"}로도 적어 뒀어요: ${f.dup.map(d => d.name).join(", ")}` : "");
+const fcDupText = f => (f.dup && f.dup.length ? TX(f.strength === "advisory" ? "system.dup.code" : "system.dup.text", { names: f.dup.map(d => d.name).join(", ") }) : "");
 
 function fcBadges(ids, compact) {
   if (!hFeat || !FC || hPj()) return null;
   const set = new Set([].concat(ids)), list = FC.features.filter(f => set.has(f.stage)), e = list.filter(f => f.strength === "enforced").length, a = list.length - e;
   if (!list.length) return null;
-  return el("span", { class: "hm-bd", title: `여기서 작동하는 기능: 강제 ${e}개 · 권고 ${a}개` }, e ? el("span", { class: "bd f", text: compact ? String(e) : `강제 ${e}` }) : null, a ? el("span", { class: "bd a", text: compact ? String(a) : `권고 ${a}` }) : null);
+  return el("span", { class: "hm-bd", title: TX("system.fbadge.title", { e, a }) }, e ? el("span", { class: "bd f", text: compact ? String(e) : TX("system.fbadge.enforced", { n: e }) }) : null, a ? el("span", { class: "bd a", text: compact ? String(a) : TX("system.fbadge.advisory", { n: a }) }) : null);
 }
 
 // A switch only asks: it sends "<name> 끄기/켜기 (<source>)" to the orchestrator and keeps showing the real state until
@@ -47,27 +47,27 @@ const fcAsked = new Map();
 function fcSwitch(f) {
   const ask = fcAsked.get(f.id);
   if (ask && ask.to === f.enabled) fcAsked.delete(f.id);
-  const pend = fcAsked.get(f.id), word = f.enabled ? "끄기" : "켜기", def = fcScopeOf(f);
-  const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(f.enabled), "aria-label": `${f.name} ${word} 요청`, title: `${botName}에게 ${word} 요청` });
-  const sent = el("span", { class: "tag pri", text: pend ? `요청 보냄 · ${pend.at}` : "", hidden: !pend });
+  const pend = fcAsked.get(f.id), def = fcScopeOf(f);
+  const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(f.enabled), "aria-label": TX(f.enabled ? "system.sw.aria_off" : "system.sw.aria_on", { name: f.name }), title: TX(f.enabled ? "system.sw.title_off" : "system.sw.title_on", { bot: botName }) });
+  const sent = el("span", { class: "tag pri", text: pend ? TX("system.sw.sent", { at: pend.at }) : "", hidden: !pend });
   // the tag shows the short folder (shortPath), its title and the request keep the full path
   const tag = hScopeTag(def.kind, def.override ? shortPath(def.where) : def.where, true, def.where);
-  if (tag && def.override) tag.title = `${hScope(def.kind, def.where)} · 스위치를 누르면 배포 파일 변경 요청도 고를 수 있어요`;
+  if (tag && def.override) tag.title = TX("system.sw.scope_tip", { scope: hScope(def.kind, def.where) });
   const post = async choice => {
     const repo = def.override ? `features/${def.override}/feature.md` : f.source.label;
-    let { kind, where } = def, text = `${f.name} ${word} (${hOrigin() && def.override ? `배포 기능 ${repo}` : f.source.label})`;
+    let { kind, where } = def, text = TX(f.enabled ? "system.sw.req_off" : "system.sw.req_on", { name: f.name, src: hOrigin() && def.override ? TX("system.sw.shipped_feat", { repo }) : f.source.label });
     if (hOrigin() && def.override) {
-      if (choice === "shipped") { kind = "shipped"; where = repo; text += `\n배포 저장소의 ${repo} 를 직접 고쳐 주세요 (enabled: ${!f.enabled}). 모든 사용자에게 바뀌는 변경이에요.`; }
-      else text += `\n${where} 에 같은 id 로 덮어쓰기: ${repo} 를 그 폴더에 복사해 enabled: ${!f.enabled} 로 두세요. 배포 저장소 파일은 건드리지 마세요.`;
+      if (choice === "shipped") { kind = "shipped"; where = repo; text += `\n${TX("system.sw.req_shipped", { repo, on: !f.enabled })}`; }
+      else text += `\n${TX("system.sw.req_override", { where, repo, on: !f.enabled })}`;
     }
     const at = await hRequest(text, hScope(kind, where));
     fcAsked.set(f.id, { to: !f.enabled, at });
-    motionSwap(sent, () => { sent.textContent = `요청 보냄 · ${at}`; sent.hidden = false; });
+    motionSwap(sent, () => { sent.textContent = TX("system.sw.sent", { at }); sent.hidden = false; });
   };
   sw.addEventListener("click", ev => {
     ev.stopPropagation();
     if (hOrigin() && def.override) {
-      showMenu(sw, [{ value: "personal", label: "개인 설정으로 덮어쓰기 (기본)", sub: def.where }, { value: "shipped", label: "배포 파일 변경 요청", sub: `features/${def.override}/feature.md · 모든 사용자에게 바뀌어요` }], { value: "personal", onPick: v => busy(sw, () => post(v)) });
+      showMenu(sw, [{ value: "personal", label: TX("system.sw.pick_personal"), sub: def.where }, { value: "shipped", label: TX("system.sw.pick_shipped"), sub: TX("system.sw.pick_shipped_sub", { path: `features/${def.override}/feature.md` }) }], { value: "personal", onPick: v => busy(sw, () => post(v)) });
       return;
     }
     busy(sw, () => post("personal"));
@@ -96,14 +96,14 @@ function fcCard(f) {
     el("div", { class: "top" }, el("span", { class: "nm", text: sh.name }), fcCanToggle(f) ? fcSwitch(f) : null),
     sh.what ? el("div", { class: "wh", text: sh.what }) : null,
     el("div", { class: "fc-tags" },
-      f.inactive ? el("span", { class: "tag", title: `${fcHarness()}는 이 확장을 불러오지 않아요`, text: "안 불러옴" }) : el("span", { class: `tag st ${f.strength}`, title: f.strength === "enforced" ? "코드·훅·차단 줄이 막거나 실행해요" : "모델에게 따르라고 부탁한 글이에요", text: FC_STR[f.strength] }),
+      f.inactive ? el("span", { class: "tag", title: TX("system.ext.not_loaded_tip", { name: fcHarness() }), text: TX("system.ext.not_loaded") }) : el("span", { class: `tag st ${f.strength}`, title: f.strength === "enforced" ? TX("system.str.enforced_tip") : TX("system.str.advisory_tip"), text: FC_STR[f.strength] }),
       el("span", { class: "tag", text: f.trigger }),
-      hOrigin() && f.origin ? el("span", { class: `tag${f.origin === "personal" ? " pri" : ""}`, title: f.origin === "personal" ? "내 파일·설정에만 있는 기능이에요 (~/.dotz, 하네스 확장 폴더)" : "기본으로 함께 오는 기능이에요", text: FC_ORIGIN[f.origin] }) : null,
+      hOrigin() && f.origin ? el("span", { class: `tag${f.origin === "personal" ? " pri" : ""}`, title: f.origin === "personal" ? TX("system.origin.personal_tip") : TX("system.origin.shipped_tip"), text: FC_ORIGIN[f.origin] }) : null,
       node ? el("span", { class: "tag", text: node.label.replace(/\s*\(.*\)$/, "") }) : null,
-      !f.enabled && !f.inactive ? el("span", { class: "tag", text: "꺼짐" }) : null,
-      dup ? el("span", { class: "tag warn", title: dup, text: "중복" }) : null),
+      !f.enabled && !f.inactive ? el("span", { class: "tag", text: TX("system.state.off") }) : null,
+      dup ? el("span", { class: "tag warn", title: dup, text: TX("system.dup.tag") }) : null),
     dup ? el("div", { class: "dup", text: dup }) : null,
-    el("div", { class: "src", text: [f.source.label, f.added ? `${f.added} 추가` : "", f.lastRun ? `마지막 ${kstStamp(f.lastRun)}` : ""].filter(Boolean).join(" · ") }));
+    el("div", { class: "src", text: [f.source.label, f.added ? TX("system.src.added", { added: f.added }) : "", f.lastRun ? TX("system.src.last", { at: kstStamp(f.lastRun) }) : ""].filter(Boolean).join(" · ") }));
   c.addEventListener("click", () => fcOpenFeature(f));
   c.addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === c) { ev.preventDefault(); fcOpenFeature(f); } });
   return c;
@@ -118,15 +118,15 @@ const fcMatch = f => {
 function fcPaintList() {
   const all = FC.features, hit = all.filter(fcMatch), filtering = !!(fcFilter.q.trim() || fcFilter.form || fcFilter.strength || fcFilter.trigger || fcFilter.origin);
   const e = hit.filter(f => f.strength === "enforced").length;
-  fcCount.textContent = `${filtering ? `${hit.length} / ${all.length}개` : `${all.length}개`} · 강제 ${e} · 권고 ${hit.length - e}`;
+  fcCount.textContent = TX(filtering ? "system.fcount.hit" : "system.fcount.all", { hit: hit.length, n: all.length, e, a: hit.length - e });
   clear(fcList);
-  if (!hit.length) { fcList.append(emptyNode("조건에 맞는 기능이 없어요")); return; }
+  if (!hit.length) { fcList.append(emptyNode(TX("system.fnone"))); return; }
   for (const form of FC.forms) {
     const items = hit.filter(f => f.form === form);
     if (!items.length) continue;
     const fe = items.filter(f => f.strength === "enforced").length, shut = !filtering && fcCollapsed.has(form);
-    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: fcFormLabel(form) }), el("span", { class: "tag", text: `${items.length}개` }),
-      el("span", { class: "sup", text: `강제 ${fe} · 권고 ${items.length - fe}` }), el("div", { class: "note", text: fcNote(form) }));
+    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: fcFormLabel(form) }), el("span", { class: "tag", text: TX("system.n_items", { n: items.length }) }),
+      el("span", { class: "sup", text: TX("system.fsum", { e: fe, a: items.length - fe }) }), el("div", { class: "note", text: fcNote(form) }));
     head.addEventListener("click", () => { if (filtering) return; if (fcCollapsed.has(form)) fcCollapsed.delete(form); else fcCollapsed.add(form); fcPaintList(); });
     fcList.append(head);
     if (!shut) fcList.append(el("div", { class: "fc-grid" }, ...items.map(fcCard)));
@@ -134,7 +134,7 @@ function fcPaintList() {
   const off = (FC.off || []).filter(fcMatch);
   if (off.length) {
     const shut = fcCollapsed.has("__off");
-    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: "이 하네스에선 꺼짐" }), el("span", { class: "tag", text: `${off.length}개` }));
+    const head = el("button", { type: "button", class: "fc-gh", "aria-expanded": String(!shut) }, icon("drop"), el("span", { text: TX("system.off_group") }), el("span", { class: "tag", text: TX("system.n_items", { n: off.length }) }));
     head.addEventListener("click", () => { if (fcCollapsed.has("__off")) fcCollapsed.delete("__off"); else fcCollapsed.add("__off"); fcPaintList(); });
     fcList.append(head);
     if (!shut) fcList.append(el("div", { class: "fc-grid" }, ...off.map(fcCard)));
@@ -143,21 +143,21 @@ function fcPaintList() {
 
 // The 기능 목록 shell (search + filters) is built once so typing is not interrupted by the 15 s refresh; only the list repaints.
 function fcBuild(box) {
-  const q = el("input", { class: "fi", type: "text", autocomplete: "off", spellcheck: "false", placeholder: "기능 검색 (이름·내용·파일)", "aria-label": "기능 검색", value: fcFilter.q });
+  const q = el("input", { class: "fi", type: "text", autocomplete: "off", spellcheck: "false", placeholder: TX("system.fsearch.ph"), "aria-label": TX("system.fsearch.aria"), value: fcFilter.q });
   q.addEventListener("input", () => { fcFilter.q = q.value; fcPaintList(); });
-  const pick = (key, label, options) => selectButton({ label, items: () => [{ value: "", label: "전체" }, ...options().map(v => ({ value: v, label: v }))], value: fcFilter[key],
-    text: v => v || "전체", frame: t => `${label}: ${t}`, onPick: v => { fcFilter[key] = v; fcPaintList(); } });
-  const seg = el("div", { class: "seg", role: "group", "aria-label": "강제/권고" });
-  for (const [v, t] of [["", "전체"], ["enforced", "강제"], ["advisory", "권고"]]) {
+  const pick = (key, label, options) => selectButton({ label, items: () => [{ value: "", label: TX("system.view.all") }, ...options().map(v => ({ value: v, label: v }))], value: fcFilter[key],
+    text: v => v || TX("system.view.all"), frame: t => `${label}: ${t}`, onPick: v => { fcFilter[key] = v; fcPaintList(); } });
+  const seg = el("div", { class: "seg", role: "group", "aria-label": TX("system.fstrength.aria") });
+  for (const [v, t] of [["", TX("system.view.all")], ["enforced", TX("system.str.enforced")], ["advisory", TX("system.str.advisory")]]) {
     const b = el("button", { type: "button", class: fcFilter.strength === v ? "on" : "", text: t });
     b.addEventListener("click", () => { fcFilter.strength = v; for (const x of seg.children) x.classList.toggle("on", x === b); fcPaintList(); });
     seg.append(b);
   }
   fcCount = el("div", { class: "sup fc-count" });
   fcList = el("div");
-  box.append(el("div", { class: "sec", text: "기능 목록" }),
-    el("div", { class: "sup", text: "회색으로 채운 카드(강제)는 코드가 막거나 실행하는 것, 테두리만 있는 카드(권고)는 모델에게 따르라고 부탁한 글이에요." }),
-    el("div", { class: "fc-bar" }, q, pick("form", "형식", () => FC.forms), pick("trigger", "트리거", () => FC.triggers), hOrigin() ? pick("origin", "출처", () => Object.values(FC_ORIGIN)) : null, seg), fcCount, fcList);
+  box.append(el("div", { class: "sec", text: TX("system.flist") }),
+    el("div", { class: "sup", text: TX("system.flist.sup") }),
+    el("div", { class: "fc-bar" }, q, pick("form", TX("system.pick.form"), () => FC.forms), pick("trigger", TX("system.pick.trigger"), () => FC.triggers), hOrigin() ? pick("origin", TX("system.pick.origin"), () => Object.values(FC_ORIGIN)) : null, seg), fcCount, fcList);
 }
 
 function renderFeatures() {
@@ -181,14 +181,14 @@ function fcSheetSection(n, focusId) {
   const rows = list.map(f => {
     const dup = fcDupText(f), jump = !!(n.file && f.source.file && f.source.line), sh = fcShown(f);
     const r = el("div", { class: `hs-ft ${f.strength}${jump ? " go" : ""}${f.id === focusId ? " on" : ""}`, "data-fid": f.id, ...(sh.tip ? { title: sh.tip } : {}) },
-      el("div", { class: "top" }, el("span", { class: `tag st ${f.strength}`, text: FC_STR[f.strength] }), hOrigin() && hOwn(f) ? el("span", { class: "tag m", text: "내 기능" }) : null, el("span", { class: "nm", text: sh.name }), fcCanToggle(f) ? fcSwitch(f) : null),
+      el("div", { class: "top" }, el("span", { class: `tag st ${f.strength}`, text: FC_STR[f.strength] }), hOrigin() && hOwn(f) ? el("span", { class: "tag m", text: TX("system.mark.mine_feat") }) : null, el("span", { class: "nm", text: sh.name }), fcCanToggle(f) ? fcSwitch(f) : null),
       sh.what ? el("div", { class: "wh", text: sh.what }) : null,
       el("div", { class: "src", text: `${f.trigger} · ${f.source.label}` }),
       dup ? el("div", { class: "dup", text: dup }) : null);
     if (jump) r.addEventListener("click", () => hGoto && hGoto(f.source.line));
     return r;
   });
-  return [el("div", { class: "sec", text: `여기서 작동하는 기능 · 강제 ${e} · 권고 ${list.length - e}` }), el("div", { class: "hs-fts" }, ...rows)];
+  return [el("div", { class: "sec", text: TX("system.here.sec", { e, a: list.length - e }) }), el("div", { class: "hs-fts" }, ...rows)];
 }
 
 $("#hs-close").append(icon("close"));

@@ -6,7 +6,7 @@ let hFeat = (() => { try { return localStorage.getItem("dotz-hfeat") === "1"; } 
 let hDetail = (() => { try { return localStorage.getItem("dotz-hdetail") === "1"; } catch { return false; } })();
 let hOv = null, hGeo = new Map();
 const fcFilter = { q: "", form: "", trigger: "", strength: "", origin: "" }, fcCollapsed = new Set(["스킬", "__off"]);
-const FC_ORIGIN = { shipped: "배포용", personal: "개인용" };
+const FC_ORIGIN = { shipped: TX("system.origin.shipped"), personal: TX("system.origin.personal") };
 // 구성 커스텀 표시: HG.origin_view (config.json ui.origin_view) 가 켜졌을 때만 쓰여요. 꺼져 있으면 아래 함수는 모두 null/빈 문자열을 돌려줘요.
 let hOnly = (() => { try { return localStorage.getItem("dotz-honly") === "1"; } catch { return false; } })();
 const hCvOpen = new Set();
@@ -16,10 +16,10 @@ const hOrigin = () => !!(HG && HG.origin_view);
 const hOnlyOn = () => hOrigin() && hOnly;
 const hData = () => (HG && HG.data_dir) || "~/.dotz";
 const hOwn = f => f.origin === "personal" && !FC_LINES[f.form];
-const hScope = (kind, where) => (kind === "project" ? `범위: 프로젝트 (${where})` : hOrigin() ? `범위: ${kind === "shipped" ? "배포" : "개인"} (${where})` : "");
+const hScope = (kind, where) => (kind === "project" ? TX("system.scope.project", { where }) : hOrigin() ? TX(kind === "shipped" ? "system.scope.shipped" : "system.scope.personal", { where }) : "");
 // `where` is the short form on screen; `full` (the absolute path) stays in the title.
-const hScopeTag = (kind, where, short, full = where) => (kind === "project" ? el("span", { class: "tag scope project", title: hScope(kind, full), text: short ? "프로젝트" : hScope(kind, where) }) : hOrigin() ? el("span", { class: `tag scope ${kind}`, title: hScope(kind, full), text: short ? (kind === "shipped" ? "배포" : "개인") : hScope(kind, where) }) : null);
-const hFmt = (v, unit) => (typeof v === "boolean" ? (v ? "켜짐" : "꺼짐") : v === "" ? "비움" : `${typeof v === "number" ? num(v) : v}${unit ? (unit.length === 1 ? unit : ` ${unit}`) : ""}`);
+const hScopeTag = (kind, where, short, full = where) => (kind === "project" ? el("span", { class: "tag scope project", title: hScope(kind, full), text: short ? TX("system.scope.project_short") : hScope(kind, where) }) : hOrigin() ? el("span", { class: `tag scope ${kind}`, title: hScope(kind, full), text: short ? (kind === "shipped" ? TX("system.scope.shipped_short") : TX("system.scope.personal_short")) : hScope(kind, where) }) : null);
+const hFmt = (v, unit) => (typeof v === "boolean" ? (v ? TX("system.fmt.on") : TX("system.fmt.off")) : v === "" ? TX("system.fmt.blank") : `${typeof v === "number" ? num(v) : v}${unit ? (unit.length === 1 ? unit : ` ${unit}`) : ""}`);
 const hChanged = key => !!(hOrigin() && HG.nodes.some(n => (n.custom || []).some(c => c.key === key)));
 function hMine(ids) {
   const set = new Set([].concat(ids)), nodes = HG.nodes.filter(n => set.has(n.id));
@@ -33,10 +33,10 @@ function hMark(ids, full) {
   if (!hOrigin()) return null;
   const m = hMine(ids);
   if (!m.any) return null;
-  const parts = [m.custom ? `바꾼 값 ${m.custom}` : "", m.feats ? `내 기능 ${m.feats}` : "", m.files ? `내 파일 ${m.files}` : ""].filter(Boolean);
-  const title = `내가 바꾼 것: ${parts.join(" · ") || "내 확장"}`;
-  if (!full) return el("span", { class: "bd m", title, text: "내 설정" });
-  return el("span", { class: "hm-mine", title }, el("span", { class: "bd m", text: "내 설정" }), parts.length ? el("span", { class: "mt", text: parts.join(" · ") }) : null);
+  const parts = [m.custom ? TX("system.mark.custom", { n: m.custom }) : "", m.feats ? TX("system.mark.feats", { n: m.feats }) : "", m.files ? TX("system.mark.files", { n: m.files }) : ""].filter(Boolean);
+  const title = TX("system.mark.title", { parts: parts.join(" · ") || TX("system.mark.ext") });
+  if (!full) return el("span", { class: "bd m", title, text: TX("system.mark.badge") });
+  return el("span", { class: "hm-mine", title }, el("span", { class: "bd m", text: TX("system.mark.badge") }), parts.length ? el("span", { class: "mt", text: parts.join(" · ") }) : null);
 }
 // A result lands on the button that was pressed: its label swaps for a moment and swaps back (width kept), no toast.
 function hFlash(b, label) {
@@ -47,10 +47,10 @@ function hFlash(b, label) {
   setTimeout(() => { if (b.isConnected && b.textContent === label) motionSwap(b, () => { b.textContent = was; b.style.minWidth = ""; }); }, 1800);
 }
 const H_MQ = matchMedia("(max-width: 639px)");
-const H_COLS = ["들어오는 곳", "게이트웨이", "어시스턴트", "세션", "서브에이전트"];
+const H_COLS = [TX("system.col.inputs"), TX("system.col.gateway"), TX("common.assistant"), TX("common.session"), TX("common.subagent")];
 const H_TONE = { ok: "ok", busy: "pri", warn: "warn", err: "err", off: "" };
-const H_STATE = { ok: "정상", busy: "작업 중", warn: "주의", err: "멈춤", off: "꺼짐" };
-const H_APPLY = { live: ["바로 적용", ""], "next-turn": ["다음 메시지부터", ""], restart: ["재시작 후 적용", "warn"] };
+const H_STATE = { ok: TX("system.state.ok"), busy: TX("common.status.working"), warn: TX("system.state.warn"), err: TX("common.status.stopped"), off: TX("system.state.off") };
+const H_APPLY = { live: [TX("system.apply.live"), ""], "next-turn": [TX("system.apply.next"), ""], restart: [TX("system.apply.restart"), "warn"] };
 const hNode = id => HG && HG.nodes.find(n => n.id === id);
 const hSvg = (tag, attrs) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
 
@@ -58,7 +58,7 @@ async function loadHarness(quiet) {
   if (hLoading) return;
   hLoading = true;
   try { if (!M) await loadModels(true); [HGB, FC] = await Promise.all([api("/api/harness"), api("/api/features").then(fcSplit).catch(() => FC)]); }
-  catch (e) { hLoading = false; if (!quiet && current === "harness") clear($("#harness")).append(emptyNode("구성을 불러오지 못했어요")); return; }
+  catch (e) { hLoading = false; if (!quiet && current === "harness") clear($("#harness")).append(emptyNode(TX("system.load_failed"))); return; }
   hLoading = false;
   if (current === "harness") { renderHarness(); hHead(); }
 }
@@ -173,21 +173,21 @@ function renderHarness() {
   const box = $("#harness");
   hUse();
   hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOv = null;
-  if (!HG) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  if (!HG) { clear(box).append(emptyNode(TX("common.loading"))); return; }
   const mobile = H_MQ.matches, pj = hPj();
-  const onlySeg = hOrigin() ? el("div", { class: "seg", role: "group", "aria-label": "보기 범위" }, ...[[false, "전체", "기본과 내가 바꾼 것을 모두 보여줘요"], [true, `커스텀 ${hCustomCount()}`, "같은 단계 그대로, 내가 바꾼 것만 걸러 보여줘요"]].map(([v, t, tip]) => {
+  const onlySeg = hOrigin() ? el("div", { class: "seg", role: "group", "aria-label": TX("system.view.scope") }, ...[[false, TX("system.view.all"), TX("system.view.all_tip")], [true, TX("system.view.custom", { n: hCustomCount() }), TX("system.view.custom_tip")]].map(([v, t, tip]) => {
     const b = el("button", { type: "button", class: hOnly === v ? "on" : "", "aria-pressed": String(hOnly === v), title: tip, text: t });
     b.addEventListener("click", () => { hOnly = v; try { localStorage.setItem("dotz-honly", v ? "1" : "0"); } catch {} renderHarness(); });
     return b;
   })) : null;
   const bar = el("div", { class: "hm-bar" },
     pj ? hProjHead(pj) : null,
-    el("div", { class: "sup", text: pj ? `이 프로젝트만의 지도예요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.` : hDetail ? "점선 카드는 곁에서 돕는 시스템이에요." : `큰 카드가 메시지가 흐르는 길이에요. 작은 칩은 함께 실행되는 시스템·파일이에요.` }),
+    el("div", { class: "sup", text: pj ? TX("system.note.project") : hDetail ? TX("system.note.dotted") : TX("system.note.flow") }),
     onlySeg,
-    el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
-    FC && !pj ? el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
-    el("button", { class: "btn tonal sm", type: "button", "data-hm-refresh": "", title: "새로고침", "aria-label": "새로고침", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); }) }, icon("refresh")),
-    hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 기본값이에요 (${shortPath(hData())}).`) : null);
+    el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hDetail), title: TX("system.detail.tip"), onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, TX("system.detail.btn")),
+    FC && !pj ? el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hFeat), title: TX("system.feat.tip"), onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, TX("system.feat.btn")) : null,
+    el("button", { class: "btn tonal sm", type: "button", "data-hm-refresh": "", title: TX("system.refresh"), "aria-label": TX("system.refresh"), onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); }) }, icon("refresh")),
+    hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: TX("system.mark.badge") }), TX("system.legend", { path: shortPath(hData()) })) : null);
   const parts = [bar];
   const keep = box.querySelector(".hm-scroll");
   const left = keep ? keep.scrollLeft : 0;

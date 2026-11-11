@@ -132,7 +132,7 @@ function bkCmSync() { bkStep(CM, !!(CM.vis && (CM.tab === "dm" ? DM.open : CM.op
 
 function guardHit() {
   if (H.hash !== "home") { H.fromHist = ["home"]; go("home"); }
-  toast("한 번 더 누르면 닫혀요", false, undefined, 2000);
+  toast(TX("appset.exit.again"), false, undefined, 2000);
   clearTimeout(H.guardTimer);
   // a second back inside the window finds nothing below and leaves the app; after it, 홈 gets its entry back
   H.guardTimer = setTimeout(() => { const S = history.state; if (S && S.g && !H.moving) history.pushState(hstate(["home"]), "", "#home"); }, 2000);
