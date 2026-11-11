@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
 import { isOwnAddress, ownAddresses, setOwnAddresses } from "./mail-state.ts";
+import { runLimited } from "./run-limited.ts";
 
 type Item = Record<string, string | number | undefined>;
 type Seen = { summary: string; start: string; end: string };
@@ -71,20 +72,21 @@ const sameEvent = (a: Seen, b: Seen) => {
 	const y = norm(b.summary);
 	return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
 };
+const CAL_GET_MS = 30_000; // one event read over the network: seconds
+const MAIL_READ_MS = 60_000; // one thread read over the network: seconds, a minute at most
+const WHOAMI_MS = 30_000; // a local token check: seconds
+const LIST_MS = 90_000; // a poll listing over the network: seconds, a minute and a half at most
 async function stillThere(id: string): Promise<boolean> {
-	const r = await Bun.$`zele cal get ${id}`.nothrow().quiet();
-	return r.exitCode === 0 && !/status:\s*cancelled/i.test(r.stdout.toString());
+	const r = await runLimited(["zele", "cal", "get", id], CAL_GET_MS);
+	return r.code === 0 && !/status:\s*cancelled/i.test(r.stdout);
 }
 const save = (s: State) => writeAtomic(STATE, `${JSON.stringify(s)}\n`);
 const cap = (xs: string[]) => xs.slice(-2000);
 
 async function zele(args: string[]): Promise<Item[]> {
-	const proc = Bun.spawn(["zele", ...args], { stdout: "pipe", stderr: "pipe" });
-	const kill = setTimeout(() => proc.kill("SIGKILL"), 90_000);
-	const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
-	clearTimeout(kill);
-	if ((await proc.exited) !== 0) throw new Error(`zele ${args.join(" ")}: ${(err || out).trim().slice(0, 200)}`);
-	return ((Bun.YAML.parse(out) as { items?: Item[] } | null)?.items ?? []) as Item[];
+	const r = await runLimited(["zele", ...args], LIST_MS);
+	if (r.code !== 0) throw new Error(`zele ${args.join(" ")}: ${r.timedOut ? "timed out" : (r.stderr || r.stdout).trim().slice(0, 200)}`);
+	return ((Bun.YAML.parse(r.stdout) as { items?: Item[] } | null)?.items ?? []) as Item[];
 }
 
 // An IMAP/SMTP-only account has no calendar and zele refuses every `cal` command for it; that is an empty calendar, not a failed tick,
@@ -98,9 +100,9 @@ const calendar = (list: (args: string[]) => Promise<Item[]>, args: string[]): Pr
 
 export async function zeleAccounts(): Promise<string[]> {
 	if (!Bun.which("zele")) return [];
-	const r = await Bun.$`zele whoami`.nothrow().quiet();
-	const text = r.stdout.toString();
-	if (r.exitCode !== 0 || /not authenticated/i.test(text)) return [];
+	const r = await runLimited(["zele", "whoami"], WHOAMI_MS);
+	const text = r.stdout;
+	if (r.code !== 0 || /not authenticated/i.test(text)) return [];
 	return [...new Set(text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) ?? [])];
 }
 
@@ -179,9 +181,9 @@ export function onlyAcksAfterOwner(messages: ThreadMessage[], own: ReadonlySet<s
 }
 
 export const zeleRead = async (id: string, account: string): Promise<string> => {
-	const r = await Bun.$`zele mail read ${id} ${account ? ["--account", account] : []}`.nothrow().quiet();
-	if (r.exitCode !== 0) throw new Error(r.stderr.toString().trim().slice(0, 200));
-	return r.stdout.toString();
+	const r = await runLimited(["zele", "mail", "read", id, ...(account ? ["--account", account] : [])], MAIL_READ_MS);
+	if (r.code !== 0) throw new Error(r.timedOut ? "timed out" : r.stderr.trim().slice(0, 200));
+	return r.stdout;
 };
 
 // zele lists a thread with the count and the date of its newest message; together they name that message (a new answer raises the count).

@@ -19,7 +19,7 @@ export function worktreeNote(w: Worktree | undefined): string {
 }
 
 export const git = (cwd: string, ...args: string[]) => {
-	const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
+	const r = Bun.spawnSync(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe", timeout: 60_000 /* a local worktree add, remove or read: seconds */ });
 	return { ok: r.exitCode === 0, out: r.stdout.toString().trim(), err: r.stderr.toString().trim() };
 };
 
