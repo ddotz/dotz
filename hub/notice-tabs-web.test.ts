@@ -96,18 +96,22 @@ const pick = (v: View, k: string) => run(v, `document.querySelector('#v-notices 
 const rows = (v: View) => q<string[]>(v, `return [...document.querySelectorAll("#v-notices .nsc-r .hd")].map(x => x.textContent)`);
 
 describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => {
-	test("the filters carry the unread count of their class (log and conv are not on the screen); 전체 is every group", async () => {
+	test("the filters carry the unread count of their class (log is not on the screen, conv is under 새 소식); 전체 is every group", async () => {
 		const v = await boot(width, height);
 		await openBell(v);
 		const t = await tabs(v);
-		expect(t.map(x => [x.k, x.label, x.n, x.on])).toEqual([["all", "전체", "7", true], ["ask", "답변 필요", "1", false], ["result", "결과", "2", false], ["news", "새 소식", "3", false], ["alert", "경고", "1", false]]);
+		expect(t.map(x => [x.k, x.label, x.n, x.on])).toEqual([["all", "전체", "8", true], ["ask", "답변 필요", "1", false], ["result", "결과", "2", false], ["news", "새 소식", "4", false], ["alert", "경고", "1", false]]);
 		expect(await q<string[]>(v, `return [...document.querySelectorAll("#v-notices .sec")].map(x => x.textContent)`)).toEqual(["처리할 것", "새 소식", "지난 알림"]);
-		expect(await q<number>(v, `return document.querySelectorAll("#v-notices .nsc-r").length`)).toBe(9);   // 12 notices less the two log and the one conv
+		expect(await q<number>(v, `return document.querySelectorAll("#v-notices .nsc-r").length`)).toBe(10);   // 12 notices less the two log
+		// the conversation's unread answer is a row of its own under 새 소식, tagged 대화; the log ones are no row
+		expect(await q<string[][]>(v, `return [...document.querySelectorAll("#v-notices .list[data-g]")].map(g => [g.dataset.g, ...[...g.querySelectorAll(".nsc-r")].map(r => r.dataset.nid)])`)).toEqual([["need", "q-open"], ["news", "m1", "a1", "n3", "n2", "n1", "r2", "r1"], ["past", "n4", "q-old"]]);
+		expect(await q<string>(v, `return document.querySelector('#v-notices .nsc-r[data-nid="m1"] .tag').textContent`)).toBe("대화");
+		expect(await q<number>(v, `return document.querySelectorAll('#v-notices .nsc-r[data-nid="l1"], #v-notices .nsc-r[data-nid="l2"]').length`)).toBe(0);
 		expect(await q<boolean>(v, `const c = document.querySelector("#v-notices .nsc-f"); return c.scrollWidth <= c.clientWidth || getComputedStyle(c).overflowX === "auto"`)).toBe(true);
 		await shot(v, `notices-all-${width}.png`);
 	}, 30_000);
 
-	test("답변 필요 lists what waits on top; 결과 and 경고 list their own class; log is in no filter", async () => {
+	test("답변 필요 lists what waits on top; 결과 and 경고 list their own class; log is in no filter; conv is only in 새 소식 and 전체", async () => {
 		const v = await boot(width, height);
 		await openBell(v);
 		await pick(v, "ask");
@@ -124,18 +128,18 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		expect(await rows(v)).toEqual(["게이트웨이가 멈췄어요"]);
 		expect((await tabs(v)).filter(x => x.on).map(x => x.k)).toEqual(["alert"]);
 		await pick(v, "all");
-		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 9`);
+		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 10`);
 	}, 30_000);
 
 	test("새 소식 filter: unread first and newest first, the read one under 지난 알림, the tag from the app, no app headers", async () => {
 		const v = await boot(width, height);
 		await openBell(v);
 		await pick(v, "news");
-		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 4`);
+		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 5`);
 		const got = await q<{ sec: string[]; groups: string[][]; tags: string[] }>(v, `return { sec: [...document.querySelectorAll("#v-notices .sec")].map(x => x.textContent), groups: [...document.querySelectorAll("#v-notices .list[data-g]")].map(g => [...g.querySelectorAll(".hd")].map(x => x.textContent)), tags: [...document.querySelectorAll("#v-notices .nsc-r .tag")].map(x => x.textContent) }`);
 		expect(got.sec).toEqual(["새 소식", "지난 알림"]);
-		expect(got.groups).toEqual([["새 카톡이 왔어요", "메일 답장이 왔어요", "새 메일 도착"], ["읽은 메일 소식"]]);
-		expect(got.tags).toEqual(["카카오톡", "메일", "메일", "메일"]);
+		expect(got.groups).toEqual([["프로젝트 대화에 새 답이 있어요", "새 카톡이 왔어요", "메일 답장이 왔어요", "새 메일 도착"], ["읽은 메일 소식"]]);
+		expect(got.tags).toEqual(["대화", "카카오톡", "메일", "메일", "메일"]);
 		expect(await q<boolean>(v, `const l = document.querySelector("#v-notices"); return l.scrollWidth <= l.clientWidth`)).toBe(true);
 		await shot(v, `notices-news-${width}.png`);
 	}, 30_000);
