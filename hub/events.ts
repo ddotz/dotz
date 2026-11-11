@@ -149,13 +149,33 @@ export function broadcast(event: unknown): void {
 	const frame = `id: ${BOOT}-${seq}\ndata: ${JSON.stringify(event)}\n\n`;
 	frames.push({ seq, frame });
 	if (frames.length > REPLAY_MAX) frames.shift();
-	for (const sub of subscribers) {
-		try {
-			sub.enqueue(frame);
-		} catch {
-			subscribers.delete(sub);
-		}
+	for (const sub of subscribers) push(sub, frame);
+}
+
+// A client that has not read BACKLOG_MAX frames (a quarter of REPLAY_MAX) is dead or stuck: drop it. A live one comes back with
+// Last-Event-ID (web/js/99-boot.js EventSource) and the ring replays the gap, or says "reset" if more than REPLAY_MAX frames passed.
+const BACKLOG_MAX = 500;
+let pingTimer: ReturnType<typeof setInterval> | undefined;
+
+function drop(sub: ReadableStreamDefaultController<string>): void {
+	subscribers.delete(sub);
+	try {
+		sub.error(new Error("event stream dropped"));
+	} catch {}
+	if (!subscribers.size) {
+		clearInterval(pingTimer);
+		pingTimer = undefined;
 	}
+}
+
+function push(sub: ReadableStreamDefaultController<string>, chunk: string): void {
+	try {
+		sub.enqueue(chunk);
+	} catch {
+		drop(sub);
+		return;
+	}
+	if ((sub.desiredSize ?? 0) < -BACKLOG_MAX) drop(sub);
 }
 
 export function emitActivity(event: Activity): void {
@@ -355,29 +375,24 @@ export function locateMessage(at: string): string[] {
 	return [...found].filter(t => conversationEvents(t).some(e => e.ts === at));
 }
 
-export function sseResponse(lastId?: string | null): Response {
+export function sseResponse(lastId?: string | null, signal?: AbortSignal): Response {
 	let controller: ReadableStreamDefaultController<string>;
 	const stream = new ReadableStream<string>({
 		start(c) {
 			controller = c;
 			const missed = lastId ? replayAfter(lastId) : null;
-			if (missed) for (const f of missed) c.enqueue(f);
+			// One chunk, so a long replay does not count as an unread backlog.
+			if (missed) c.enqueue(missed.join(""));
 			else c.enqueue(`id: ${lastEventId()}\nevent: reset\ndata: {}\n\n`);
 			subscribers.add(c);
+			// One shared ping for all clients, alive only while there is one.
+			pingTimer ??= setInterval(() => { for (const sub of subscribers) push(sub, ": ping\n\n"); }, 25_000);
 		},
 		cancel() {
-			subscribers.delete(controller);
+			drop(controller);
 		},
 	});
+	if (signal?.aborted) drop(controller!);
+	else signal?.addEventListener("abort", () => drop(controller), { once: true });
 	return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
 }
-
-setInterval(() => {
-	for (const sub of subscribers) {
-		try {
-			sub.enqueue(": ping\n\n");
-		} catch {
-			subscribers.delete(sub);
-		}
-	}
-}, 25_000);

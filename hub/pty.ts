@@ -12,6 +12,8 @@ const RING_CHARS = 64_000;
 const INPUT_MAX = 64_000;
 const SECRET_MS = 3_000;
 const PING_MS = 15_000;
+// A page this many frames behind is stuck. The page does not reconnect by itself (web/js/36-shell.js: Enter does), so the bound is wide; a new stream replays the ring.
+const BACKLOG_MAX = 2000;
 
 export type PtyEvent = { type: "out"; data: string } | { type: "exit"; code: number | null };
 
@@ -123,22 +125,36 @@ export async function ptyRoute(req: Request, url: URL, host: PtyHost = sharedHos
 		host.start(clamp(url.searchParams.get("cols"), 20, 300, 80), clamp(url.searchParams.get("rows"), 5, 120, 24));
 		let off = () => {};
 		let ping: ReturnType<typeof setInterval> | undefined;
+		const stop = () => {
+			off();
+			clearInterval(ping);
+		};
+		let ctl: ReadableStreamDefaultController<string>;
+		// The one exit for every way a client goes: a failed write or a backlog past BACKLOG_MAX stops the subscription and the ping.
+		const send = (text: string): void => {
+			try {
+				ctl.enqueue(text);
+			} catch {
+				stop();
+				return;
+			}
+			if ((ctl.desiredSize ?? 0) < -BACKLOG_MAX) {
+				stop();
+				ctl.error(new Error("terminal stream dropped"));
+			}
+		};
 		const stream = new ReadableStream<string>({
 			start(c) {
-				const sub = host.subscribe(e => {
-					try {
-						c.enqueue(e.type === "out" ? frame("out", { data: e.data }) : frame("exit", { code: e.code }));
-					} catch {}
-				});
+				ctl = c;
+				const sub = host.subscribe(e => send(e.type === "out" ? frame("out", { data: e.data }) : frame("exit", { code: e.code })));
 				off = sub.off;
 				c.enqueue(frame("reset", { data: sub.backlog, alive: host.alive }));
-				ping = setInterval(() => { try { c.enqueue(": ping\n\n"); } catch {} }, PING_MS);
+				ping = setInterval(() => send(": ping\n\n"), PING_MS);
 			},
-			cancel() {
-				off();
-				clearInterval(ping);
-			},
+			cancel: stop,
 		});
+		if (req.signal.aborted) stop();
+		else req.signal.addEventListener("abort", stop, { once: true });
 		return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
 	}
 	if (req.method !== "POST") return json({ error: "not found" }, 404);
