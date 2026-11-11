@@ -5,7 +5,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 export type Runtime = "omp" | "omo";
-export type Src = { file: string; label: string; child: boolean; runtime: Runtime; requested?: string };
+// target: the model target the session runs on (orchestrator | lane:<name>), for a worker its parent's; parent: an OmO task worker's parent session id.
+export type Src = { file: string; label: string; child: boolean; runtime: Runtime; requested?: string; target?: string; parent?: string };
 export type Words = { orchestrator: string; lane: string; worker: string };
 type SourceOptions = { home: string; dataDir: string; roots?: { dir: string; runtime: Runtime }[]; omoStores?: string | false; words?: Words };
 
@@ -33,6 +34,11 @@ export function projectLabel(dir: string, home: string, dataDir: string, words: 
 	if (dir.startsWith("--")) return `/${dir.replace(/^--|--$/g, "").replace(/-/g, "/")}`;
 	return `~/${dir.replace(/^-/, "")}`;
 }
+// The same folder as a model target (hub/model-guard.ts model-picks.json keys), undefined outside dotz's own folders.
+const targetOf = (dir: string, home: string, dataDir: string): string | undefined => {
+	const label = projectLabel(dir, home, dataDir, { orchestrator: "\0o", lane: "\0l", worker: "" });
+	return label === "\0o" ? "orchestrator" : label.startsWith("\0l ") ? `lane:${label.slice(3)}` : undefined;
+};
 
 export function collectSessions(since: number, opts: SourceOptions): Src[] {
 	const words = opts.words ?? KO;
@@ -63,7 +69,8 @@ export function collectSessions(since: number, opts: SourceOptions): Src[] {
 			const project = projectLabel(parts[0], opts.home, opts.dataDir, words);
 			const child = parts.length >= 3;
 			const id = e.name.match(/_([0-9a-f]{8})/)?.[1] ?? e.name.replace(/\.jsonl$/, "");
-			out.push({ file: p, child, runtime, label: `${child ? `${project} ${words.worker} ${e.name.replace(/\.jsonl$/, "")}` : `${project} ${id}`} [${tag(runtime)}]` });
+			const target = targetOf(parts[0], opts.home, opts.dataDir);
+			out.push({ file: p, child, runtime, label: `${child ? `${project} ${words.worker} ${e.name.replace(/\.jsonl$/, "")}` : `${project} ${id}`} [${tag(runtime)}]`, ...(target ? { target } : {}) });
 		}
 	};
 	for (const r of opts.roots ?? defaultRoots(opts.home)) walk(r.dir, r.runtime, r.dir, 3);
@@ -88,7 +95,8 @@ export function collectSessions(since: number, opts: SourceOptions): Src[] {
 			} catch {}
 			const name = t.name && t.name !== tid ? String(t.name) : String(t.task_summary ?? tid).slice(0, 40);
 			const rq = t.requested_model;
-			for (const f of files) out.push({ file: join(dir, f), child: true, runtime: "omo", label: `task:${name} (${tid}) [OmO]`, ...(rq?.model_id ? { requested: `${rq.provider}/${rq.model_id}` } : {}) });
+			const parent = typeof t.parent_session_id === "string" ? { parent: t.parent_session_id } : {};
+			for (const f of files) out.push({ file: join(dir, f), child: true, runtime: "omo", label: `task:${name} (${tid}) [OmO]`, ...(rq?.model_id ? { requested: `${rq.provider}/${rq.model_id}` } : {}), ...parent });
 		}
 	}
 	return out;

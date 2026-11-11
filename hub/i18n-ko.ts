@@ -419,6 +419,7 @@ export const ko: Catalog = {
 		updateFailed: (what: string) => `${what} 업데이트가 마지막에 실패했고 그 뒤로 성공한 적이 없어요.`,
 		failuresGrew: (line: string) => `반복·실패 작업이 늘었어요: ${line}`,
 		tokens: (kind: string, n: number) => `토큰 낭비(${kind}): 지난 하루 ${n}개 세션이 걸렸어요.`,
+		ownerExpensive: (n: number, cost: string) => `직접 고른 비싼 모델: 세션 ${n}개, ${cost}. 요청하신 것이라 경고에서 뺐어요.`,
 		selfUpdate: "게이트웨이",
 	},
 	harness: {

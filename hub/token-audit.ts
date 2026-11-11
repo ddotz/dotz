@@ -8,8 +8,10 @@
 // Last stdout line: RESULT {...}
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, DEFAULTS, HOME, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, DEFAULTS, HOME, paths, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
+import { msg } from "./i18n.ts";
+import { bareModel, type Covered, ownerCovered, readOwnerBasis } from "./owner-asked.ts";
 import { expensiveMatch, loadGuardConfig } from "./lanegates.ts";
 import { addBigContext, addToolCalls, addTurn, addWake, collectSessions, newStreaks, OMO_WAKE, projectLabel as labelOf, type Src } from "./session-sources.ts";
 
@@ -83,6 +85,7 @@ type Stats = {
 	maxBigStreak: number; bigTokens: number; bigCost: number;
 	fbTurns: number; fbModels: Set<string>; fbIntended: Set<string>; intended?: string; fbSegs: number[][]; shrinks: number;
 	fable: number; fableCost: number; effortTurns: number; effortCost: number; expensiveCost: number; efforts: Set<string>;
+	dearModels: Set<string>; dearLevels: Set<string>; dearFirst: number; dearLast: number;
 	maxToolStreak: number; maxToolDesc: string; loopTokens: number; loopCost: number; readRate: number;
 };
 
@@ -114,7 +117,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 	const s: Stats = {
 		src, intended: src.requested, fbSegs: [], shrinks: 0, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], rebuilds: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0,
 		errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0, fbTurns: 0, fbModels: new Set(), fbIntended: new Set(),
-		fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, expensiveCost: 0, efforts: new Set(), maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
+		fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, expensiveCost: 0, efforts: new Set(), dearModels: new Set(), dearLevels: new Set(), dearFirst: 0, dearLast: 0, maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
 	};
 	const sessionDecisions = decisions.get(src.file.match(/([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/)?.[1] ?? "") ?? [];
 	const decisionIn = (from: number, to: number) => sessionDecisions.findLast(d => d.ts > from && d.ts <= to);
@@ -235,13 +238,19 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisi
 			if (dear(model)) {
 				s.fable++;
 				s.fableCost += cost;
+				s.dearModels.add(bareModel(model));
 			}
 			if (level && dear(`:${level}`)) {
 				s.effortTurns++;
 				s.effortCost += cost;
 				s.efforts.add(`${m.model ?? "?"}:${level}`);
+				s.dearLevels.add(level);
 			}
-			if (dear(model) || (level && dear(`:${level}`))) s.expensiveCost += cost; // once per turn even when both apply
+			if (dear(model) || (level && dear(`:${level}`))) {
+				s.expensiveCost += cost; // once per turn even when both apply
+				s.dearFirst ||= ts;
+				s.dearLast = ts;
+			}
 			// context shrink (OmO only): the request after one at the 50% gate came back >10% smaller without a compaction
 			const shrunk = src.runtime === "omo" && !!prev && !compacted && prev.ctx + prev.out >= REDUCE_GATE * 0.98 && ctx < prev.ctx * 0.9;
 			if (shrunk) s.shrinks++;
@@ -313,7 +322,9 @@ export function fallbackAfterCapacity(seg: number[], exhaust: Exhaust[]): number
 	return (free.at(-1)! - back) / 60e3;
 }
 
-export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[] {
+// `asked`: which parts of a session's expensive use the owner asked for (hub/owner-asked.ts); those parts are no warning.
+const NOT_ASKED: Covered = { model: false, effort: false };
+export function findingsOf(results: Stats[], exhaust: Exhaust[] = [], asked: (s: Stats) => Covered = () => NOT_ASKED): Finding[] {
 	const F: Finding[] = [];
 	for (const s of results) {
 		const who = s.src.label;
@@ -364,11 +375,13 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 				hold: s.compactErr ? undefined : "보류(트레이드오프 있음): 압축 기준을 낮추면 토큰은 줄지만 작업 맥락이 줄어듦",
 			});
 		}
-		if (s.fable || s.effortTurns) {
-			const parts = [s.fable ? `비싼 모델 응답 ${s.fable}회 (${usd(s.fableCost)})` : "", s.effortTurns ? `비싼 생각 수준 ${s.effortTurns}턴 (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})` : ""].filter(Boolean);
-			const cost = s.expensiveCost;
+		const ok = s.fable || s.effortTurns ? asked(s) : NOT_ASKED;
+		const fable = ok.model ? 0 : s.fable, effortTurns = ok.effort ? 0 : s.effortTurns;
+		if (fable || effortTurns) {
+			const parts = [fable ? `비싼 모델 응답 ${s.fable}회 (${usd(s.fableCost)})` : "", effortTurns ? `비싼 생각 수준 ${s.effortTurns}턴 (${usd(s.effortCost)}; ${[...s.efforts].join(", ")})` : ""].filter(Boolean);
+			const cost = fable && effortTurns ? s.expensiveCost : fable ? s.fableCost : s.effortCost;
 			F.push({
-				flag: s.fable > 0 || s.effortTurns >= EFFORT_FLAG_TURNS, kind: "비싼 모델", who, tip: "오너가 요청한 것인지 확인",
+				flag: fable > 0 || effortTurns >= EFFORT_FLAG_TURNS, kind: "비싼 모델", who, tip: "오너가 요청한 것인지 확인",
 				what: parts.join(" + "), amount: usd(cost), save: 0, cost,
 				evidence: "규칙: 설정(guard.expensive_models)에 적은 모델·생각 수준은 오너가 요청할 때만 (오너가 요청한 세션이면 무시)",
 				fix: "제안: 이 세션/워커의 모델 경로(역할·폴백 체인·레인 모델 선택)에서 비싼 모델이 기본으로 새어 들어오는지 확인",
@@ -449,7 +462,28 @@ export function auditAlert(a: { since: number; now: number; total: number; total
 }
 
 // `told`: the warnings that matter (material); the doctor makes one finding of each class.
-export type AuditResult = { told: Finding[]; flags: number; notes: number; sessions: number; tokens: number; cost: number; report: string; alert?: string; summary: string };
+export type AuditResult = { ownerUse: { sessions: number; cost: number }; told: Finding[]; flags: number; notes: number; sessions: number; tokens: number; cost: number; report: string; alert?: string; summary: string };
+
+// The owner's basis for expensive use, read once per run; a worker is judged on its parent session's target.
+function askedBy(results: Stats[], basis = readOwnerBasis(join(DATA_DIR, "state", "model-picks.json"), paths.log, join(DATA_DIR, "lanes"))): (s: Stats) => Covered {
+	const targetOf = new Map(results.flatMap(s => {
+		const id = s.src.file.match(/([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/)?.[1];
+		return id && s.src.target ? [[id, s.src.target] as const] : [];
+	}));
+	return s => ownerCovered({ models: [...s.dearModels], levels: [...s.dearLevels], first: s.dearFirst, last: s.dearLast }, s.src.parent ? targetOf.get(s.src.parent) : s.src.target, s.src.child, basis);
+}
+// Sessions whose expensive use the owner asked for (all or part of it), and what that part cost.
+export function ownerUseOf(results: Stats[], asked: (s: Stats) => Covered): { sessions: number; cost: number } {
+	let sessions = 0, cost = 0;
+	for (const s of results) {
+		if (!s.fable && !s.effortTurns) continue;
+		const ok = asked(s), model = ok.model && s.fable > 0, effort = ok.effort && s.effortTurns > 0;
+		if (!model && !effort) continue;
+		sessions++;
+		cost += model && (effort || !s.effortTurns) ? s.expensiveCost : model ? s.fableCost : s.effortCost;
+	}
+	return { sessions, cost: Number(cost.toFixed(2)) };
+}
 
 function auditEnabled(): boolean {
 	return String((cfg as { doctor_at?: string }).doctor_at ?? DEFAULTS.doctor_at) !== "off";
@@ -480,7 +514,9 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 			return [];
 		}
 	});
-	const findings = findingsOf(results, exhaust);
+	const asked = askedBy(results);
+	const findings = findingsOf(results, exhaust, asked);
+	const ownerUse = ownerUseOf(results, asked);
 	const omo = results.filter(s => s.src.runtime === "omo").length;
 	const total = results.reduce((a, s) => a + s.tokens, 0);
 	const totalCost = results.reduce((a, s) => a + s.cost, 0);
@@ -521,6 +557,7 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 		`기간: ${kst(since)} ~ ${kst(now)} KST (${hours}h) · 세션 ${results.length}개 (OmO ${omo}, omp ${results.length - omo}) · 합계 ${M(total)} tok · ${usd(totalCost)} · 캐시 쓰기 ${M(totalCw)} · 분석 ${((Date.now() - t0) / 1000).toFixed(1)}s${opts.dry ? " · dry(기록 안 함)" : ""}`,
 		`7일 중앙값: ${prior.length ? `${M(medTok)} tok / ${usd(medCost)} (${prior.length}일)` : "기록 없음"}`,
 		"",
+		...(ownerUse.sessions ? [msg().doctor.ownerExpensive(ownerUse.sessions, usd(ownerUse.cost)), ""] : []),
 		"모든 항목은 보고만 해요. 자동 적용은 없어요. \"제안\"은 성능 트레이드오프가 없는 것만, 트레이드오프가 있는 후보는 \"보류\"로 따로 표시해요.",
 		"",
 		`## 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건`,
@@ -551,8 +588,8 @@ export function runAudit(opts: { hours?: number; dry?: boolean; readOnly?: boole
 		writeFileSync(reportPath, `${report}\n`);
 	}
 	const alert = auditAlert({ since, now, total, totalCost, flags, recurring, reportPath });
-	const summary = `토큰 점검: 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건, 보고서 ${tilde(reportPath)}`;
-	return { told: flags.filter(material), flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), report: reportPath, alert, summary };
+	const summary = `토큰 점검: 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건, 보고서 ${tilde(reportPath)}${ownerUse.sessions ? ` · ${msg().doctor.ownerExpensive(ownerUse.sessions, usd(ownerUse.cost))}` : ""}`;
+	return { ownerUse, told: flags.filter(material), flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), report: reportPath, alert, summary };
 }
 
 if (import.meta.main) {
