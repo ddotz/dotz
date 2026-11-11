@@ -566,6 +566,7 @@ const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("
 function renderHome() {
   const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
   if (!box || current !== "home") return;
+  if (rvPaint("home")) return;   // a messenger-only computer is chosen: its snapshot, read-only (44-relay-views.js)
   $("#title").textContent = titles.home;
   if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, rows: true, onEdit: on => { homeEdit = on; renderHomeNow(); }, actions: [{ label: TX("home.card.add"), run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
   renderHomeNow();
@@ -609,9 +610,10 @@ const isSettingsT = t => t.startsWith("settings:");
 const settingsApp = t => t.slice(9);
 // A computer reached only through a messenger (hub/messenger.ts relay): target relay:<adapter>:<key>, the normal chat view over another transport (42-relay-chat.js).
 // RELAY.name / RELAY.note: target -> the row's name and the adapter's one line, kept from the computer list (33-peers.js) so the title names it before that list is drawn;
-// RELAY.back: the target to return to.
+// RELAY.back: the target to return to; RELAY.cur: the relay target chosen as THE computer (set while its chat is on screen, kept across 홈 / 프로젝트 / 모니터링 / 설정,
+// which then draw its snapshot read-only: 44-relay-views.js), cleared when this computer or another conversation is picked; RELAY.drawn: the cur the computer list was last painted for.
 const isRelayT = t => /^relay:[a-z0-9-]+:./.test(t);
-const RELAY = { name: {}, note: {}, back: MAIN, on: false };
+const RELAY = { name: {}, note: {}, back: MAIN, on: false, cur: "", drawn: "" };
 const mailSender = f => String(f || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || String(f || "");
 const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9) || isRelayT(t);
 // A conversation that can have an agent session of its own (hub/session-key.ts CONV_KINDS): its target is its session key.

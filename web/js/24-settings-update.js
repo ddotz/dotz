@@ -329,6 +329,7 @@ function appNotifyRows() {
 }
 
 function renderSettings() {
+  if (rvPaint("settings")) return;   // a messenger-only computer is chosen: this computer's settings give way to a note (44-relay-views.js)
   const page = Object.hasOwn(SET_PAGE, current) ? SET_PAGE[current] : null;
   const box = $(page ? `#${current}` : "#settings");
   if (box.contains(document.activeElement) && openMenu) return;

@@ -12,18 +12,20 @@ const relayApi = t => { const [, adapter, ...key] = t.split(":"); return `/api/r
 const relayNorm = x => String(x).replace(/\s+/g, " ").trim();
 function relayOn() { return isRelayT(target) && current === "chat" && !chatList; }
 const relayOwned = (list, text) => list.filter(e => e.kind === "message" && relayNorm(e.text) === relayNorm(text)).length;
-function relayBrand() { return relayOn() ? targetName(target) : botName; }
+function relayBrand() { return relayCur() ? targetName(relayCur()) : botName; }
 
 // The rows' names and notes (the title and the header line name the computer before the list is drawn again), and this view's state on the screen.
 function relayNames() { for (const p of PR.list) if (isRelayRow(p)) { RELAY.name[relayTargetOf(p)] = p.name; RELAY.note[relayTargetOf(p)] = p.note || ""; } }
 function relayPaint() {
-  const on = relayOn(), note = $("#relaynote"), line = on ? RELAY.note[target] || "" : "";
+  const on = relayOn();
+  if (on) RELAY.cur = target; else if (RELAY.cur && target !== RELAY.cur) RELAY.cur = "";   // another conversation took the target: the computer is no longer the chosen one
+  const note = $("#relaynote"), line = on ? RELAY.note[target] || "" : "";
   document.body.classList.toggle("rl", on);
   if (note) { note.hidden = !line; note.textContent = line ? TX("misc.rl.note", { line }) : ""; }
   const name = relayBrand();
   if ($("#brand-name").textContent !== name) $("#brand-name").textContent = name;
   if (on) { ta.placeholder = TX("misc.rl.ph", { name: targetName(target) }); ta.disabled = false; $("#send-btn").disabled = false; }
-  if (on !== RELAY.on) { RELAY.on = on; prPaint(); }
+  if (on !== RELAY.on || RELAY.cur !== RELAY.drawn) { RELAY.on = on; RELAY.drawn = RELAY.cur; prPaint(); }
 }
 function relayEnter(p) {
   const t = relayTargetOf(p);
@@ -35,7 +37,8 @@ function relayEnter(p) {
 // Picking this computer again: back to the conversation the owner came from (the main chat when that is not known).
 function relayLeave() {
   const back = validTarget(RELAY.back) && !isRelayT(RELAY.back) ? RELAY.back : MAIN;
-  if (current === "chat") go("chat", back); else setTarget(back);
+  RELAY.cur = "";
+  if (current === "chat") go("chat", back); else { setTarget(back); go(current); }   // 홈 / 프로젝트 / 모니터링 / 설정 draw this computer's own data again
 }
 
 // The lines as events. A line with no known time follows the one before it.
