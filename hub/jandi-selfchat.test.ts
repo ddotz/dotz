@@ -169,6 +169,20 @@ test("a peer's reply fires peerReply once, from another member or from the owner
 	expect(replies).toHaveLength(2);
 });
 
+test("a peer's status snapshot line raises no peerReply, while a plain reply right after it does", async () => {
+	const peers: SelfChatPeer[] = [{ name: "work", keyword: "work", reply_prefix: "[work]" }];
+	const replies: string[] = [];
+	const sc = createSelfChat(cfg, { peers: () => peers, dataDir: dir, api: `http://127.0.0.1:${jandi.port}/`, receive: () => {}, log: () => {}, onError: () => {}, peerReply: (_p, text) => replies.push(text) });
+	await sc.tick();   // starts after the history
+	messages.push(
+		{ id: 2, fromEntity: WEBHOOK_BOT, body: `[work] #dotz-status.v1 ${JSON.stringify({ v: 1, at: 1, projects: [] })}` },
+		{ id: 3, fromEntity: WEBHOOK_BOT, body: "[work] #dotz-status.v1 {broken" },
+		{ id: 4, fromEntity: WEBHOOK_BOT, body: "[work] 빌드 끝났어요" },
+	);
+	await sc.tick();
+	expect(replies).toEqual(["빌드 끝났어요"]);
+});
+
 // A real-shaped JANDI file message (hub/fixtures/jandi-file-message.json): `attachments[]` on a text record, with or without a caption.
 function fileMsg(id: number, from: number, caption?: string, file: Record<string, unknown> = {}): Msg {
 	const m = structuredClone(fileRecord.message) as any;

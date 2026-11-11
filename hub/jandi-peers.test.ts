@@ -1,12 +1,13 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HUB_TOKEN } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { setViewing } from "./notices-bell.ts";
 import { shouldNotify } from "./push.ts";
-import { createPeerChats, isOnline, linesOf, messageBody, ONLINE_MS, peerReplyPush } from "./jandi-peers.ts";
+import { createPeerChats, isOnline, linesOf, messageBody, ONLINE_MS, peerReplyPush, STATUS_FILE } from "./jandi-peers.ts";
+import { SNAPSHOT_MARK, type Snapshot } from "./relay-snapshot.ts";
 import { createSelfChat, normalizeSelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { get, register, RelayError, unregister } from "./messenger.ts";
 import { loadJandiConfig, saveJandiConfig } from "./messenger-jandi.ts";
@@ -67,7 +68,7 @@ let dir: string;
 function chats(config: SelfChatConfig | null = cfg, withClient = true) {
 	const client = createSelfChat(cfg, { dataDir: dir, api: `http://127.0.0.1:${jandi.port}/`, receive: () => {}, log: () => {}, onError: () => {} });
 	const logs: string[] = [];
-	return { logs, chat: createPeerChats({ config: () => config ?? undefined, client: () => (withClient ? client : undefined), now: () => NOW, log: m => logs.push(m) }) };
+	return { logs, chat: createPeerChats({ config: () => config ?? undefined, client: () => (withClient ? client : undefined), now: () => NOW, log: m => logs.push(m), dataDir: dir }) };
 }
 const ROW = { name: "work", url: "/#chat/relay:jandi:work", self: false, online: true, via: "jandi", key: "work", note: msg().relay.note };
 // The relay endpoints as the web app calls them, through the messenger registry like hub/routes.ts does.
@@ -360,12 +361,84 @@ describe("a peer's new reply as a notification", () => {
 	});
 });
 
+describe("status snapshots", () => {
+	const snap = (at: number, name: string): Snapshot => ({ v: 1, at, projects: [{ key: `dir:~/${name}`, name, note: "메모" }], sessions: [], monitors: [], todos: { open: 0, items: [] }, notices: [] });
+	const line = (id: number, prefix: string, s: Snapshot | string, time = NOW - HOUR): Msg => ({ id, fromEntity: OTHER, body: `${prefix} ${SNAPSHOT_MARK} ${typeof s === "string" ? s : JSON.stringify(s)}`, time });
+	const STATUS = "/api/relay/jandi/work/status";
+	const file = () => join(dir, "messengers", STATUS_FILE);
+
+	test("snapshot lines never show as chat lines, malformed ones included", async () => {
+		messages.push(line(6, "[work]", snap(1, "a")), line(7, "[work]", "{broken"));
+		expect((await chats().chat.lines("work")).map(l => l.id)).toEqual([2, 3]);
+		expect(linesOf(messages.map(m => ({ id: m.id, fromEntity: m.fromEntity, time: m.time, message: { content: { body: m.body } } })), ME, cfg.peers![0]!).map(l => l.id)).toEqual([2, 3]);
+	});
+
+	test("status is the newest decodable snapshot of that peer with its line's time; a newer malformed line and another peer's prefix do not count", async () => {
+		messages.push(
+			line(6, "[work]", snap(100, "old"), NOW - 3 * HOUR),
+			line(7, "[work]", snap(200, "new"), NOW - 2 * HOUR),
+			line(8, "[work]", "{broken", NOW - HOUR),
+			line(9, "[other]", snap(300, "alien"), NOW - HOUR),
+		);
+		const { chat } = chats();
+		expect(await chat.status("work")).toEqual({ snapshot: snap(200, "new"), received_at: NOW - 2 * HOUR });
+		expect((await chat.rows())[0]!.status_at).toBe(NOW - 2 * HOUR);
+	});
+
+	test("no snapshot yet: null, and the row has no status_at", async () => {
+		const { chat } = chats();
+		expect(await chat.status("work")).toEqual({ snapshot: null });
+		expect(await chat.rows()).toEqual([ROW]);
+	});
+
+	test("the last snapshot outlives the room's messages and a restart; a newer line replaces it; JANDI out of reach still serves it", async () => {
+		messages.push(line(6, "[work]", snap(1, "first"), NOW - 2 * HOUR));
+		expect((await chats().chat.status("work")).snapshot).toEqual(snap(1, "first"));
+		messages = messages.filter(m => !m.body.includes(SNAPSHOT_MARK));   // scrolled out of the last 100
+		expect(await chats().chat.status("work")).toEqual({ snapshot: snap(1, "first"), received_at: NOW - 2 * HOUR });
+		expect((await chats().chat.rows())[0]!.status_at).toBe(NOW - 2 * HOUR);
+		messages.push(line(10, "[work]", snap(2, "second"), NOW - HOUR));
+		expect((await chats().chat.status("work")).snapshot).toEqual(snap(2, "second"));
+		failMessages = 500;
+		expect((await chats().chat.status("work")).snapshot).toEqual(snap(2, "second"));
+	});
+
+	test("JANDI out of reach with nothing saved is an error, not an empty status", async () => {
+		failMessages = 500;
+		await expect(chats().chat.status("work")).rejects.toBeInstanceOf(RelayError);
+	});
+
+	test("a saved snapshot of a peer that is removed from the config is not served, and one under another reply prefix is not the new computer's", async () => {
+		messages.push(line(6, "[work]", snap(1, "a")));
+		await chats().chat.status("work");
+		expect(Object.keys(JSON.parse(readFileSync(file(), "utf8")))).toEqual(["work"]);
+		messages = [];
+		await expect(chats({ ...cfg, peers: [{ name: "x", keyword: "x", reply_prefix: "[x]" }] }).chat.status("work")).rejects.toBeInstanceOf(RelayError);
+		const renamed = { ...cfg, peers: [{ name: "work", keyword: "work", reply_prefix: "[pc2]" }] };
+		expect(await chats(renamed).chat.status("work")).toEqual({ snapshot: null });
+	});
+
+	test("GET /status answers the snapshot JSON; other methods 405, an unknown peer or an adapter without status 404", async () => {
+		messages.push(line(6, "[work]", snap(5, "a"), NOW - HOUR));
+		const { chat } = chats();
+		const ok = await call(chat, STATUS);
+		expect(ok!.status).toBe(200);
+		expect(await ok!.json()).toEqual({ snapshot: snap(5, "a"), received_at: NOW - HOUR });
+		expect((await call(chat, STATUS, { method: "POST" }))!.status).toBe(405);
+		expect((await call(chat, "/api/relay/jandi/nobody/status"))!.status).toBe(404);
+		expect((await call(chat, "/api/relay/nope/work/status"))!.status).toBe(404);
+		const { status: _s, ...noStatus } = chat;
+		expect((await call(noStatus as never, STATUS))!.status).toBe(404);
+	});
+});
+
 describe("the owner gate", () => {
 	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 	const call = (path: string, init: RequestInit = {}) => route(new Request(`http://mini.tailnet.ts.net${path}`, init));
 	const paths: Array<[string, RequestInit, number]> = [
 		["/jandi-peer/work", {}, 302],
 		[MSGS, {}, 404],
+		["/api/relay/jandi/work/status", {}, 404],
 		["/api/relay/jandi/work/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "안녕" }) }, 404],
 	];
 	test("an unauthenticated request is refused on the old page and both endpoints", async () => {

@@ -3,12 +3,13 @@ import { adapters, get, RelayError, type RelayRow } from "./messenger.ts";
 // The web app's chat with a computer that has no address of its own and is reached through a messenger (the adapter's `relay`, hub/messenger.ts):
 //   GET  /api/relay/<adapter>/<key>/messages -> [{ id, at, me, text }]
 //   POST /api/relay/<adapter>/<key>/send     { text } -> { ok: true }
+//   GET  /api/relay/<adapter>/<key>/status   -> { snapshot: Snapshot | null, received_at? } (the computer's last status snapshot, hub/relay-snapshot.ts)
 // and the old chat page's address, which now only leads to the app's chat view. hub/routes.ts calls this after the owner / device gate and only for a
 // request that is not a peer's; these paths are not in the peer path lists of hub/peer-auth.ts.
 
 const MAX_TEXT = 4000;
 const MAX_BODY = 64 * 1024;
-const API_RE = /^\/api\/relay\/([a-z0-9-]+)\/([^/]+)\/(messages|send)$/;
+const API_RE = /^\/api\/relay\/([a-z0-9-]+)\/([^/]+)\/(messages|send|status)$/;
 const OLD_PAGE_RE = /^\/jandi-peer\/([^/]+)\/?$/;
 
 const json = (v: unknown, status = 200) => Response.json(v, { status, headers: { "Cache-Control": "no-store" } });
@@ -41,8 +42,10 @@ export async function relayRoute(req: Request, url: URL): Promise<Response | und
 	const key = decode(m[2]!);
 	if (!relay || !key) return json({ error: "not found" }, 404);
 	const isSend = m[3] === "send";
+	if (m[3] === "status" && !relay.status) return json({ error: "not found" }, 404);
 	if (req.method !== (isSend ? "POST" : "GET")) return json({ error: "method not allowed" }, 405);
 	try {
+		if (m[3] === "status") return json(await relay.status!(key));
 		if (!isSend) return json(await relay.lines(key));
 		if (!(req.headers.get("content-type") ?? "").includes("application/json")) return json({ error: "JSON으로 보내 주세요" }, 415);
 		const raw = await req.text();

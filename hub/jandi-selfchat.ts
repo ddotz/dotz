@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { writeAtomic } from "./config.ts";
 import { attachmentLine, safeName, UPLOAD_MAX_BYTES, type Upload, uploadRecord, writeAll } from "./files.ts";
+import { isSnapshotText } from "./relay-snapshot.ts";
 import { readSecretFile, writeSecretFile } from "./secretbox.ts";
 
 // JANDI "나와의 대화" (the member's private chat with the JANDI bot) as an inbound path for members who cannot add a Team Outgoing Webhook.
@@ -28,7 +29,7 @@ export type SelfChatDeps = {
 	filesTimeoutMs?: number;
 	/** The peers as configured now (the web app's JANDI settings change them while this polls). */
 	peers?: () => readonly SelfChatPeer[] | undefined;
-	/** A new reply of a peer (a post by anyone but the owner that starts with its reply prefix), the prefix taken off; never for a peer with `notify: false`. */
+	/** A new reply of a peer (a post by anyone but the owner that starts with its reply prefix), the prefix taken off; never for a peer with `notify: false` nor for a status snapshot line (hub/relay-snapshot.ts). */
 	peerReply?: (peer: SelfChatPeer, text: string, id: number) => void;
 	log: (msg: string) => void;
 	onError: (err: string | undefined) => void;
@@ -370,7 +371,7 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 			// A peer's reply may come from another member or, when that peer answers through its owner's session, from this owner: checked before the command.
 			const reply = typeof body === "string" ? peerReplyOf(body, deps.peers?.()) : undefined;
 			if (reply) {
-				if (reply.peer.notify !== false) deps.peerReply?.(reply.peer, reply.text, r.id);
+				if (reply.peer.notify !== false && !isSnapshotText(reply.text)) deps.peerReply?.(reply.peer, reply.text, r.id);
 				continue;
 			}
 			if (r.fromEntity !== cfg.member_id) continue;
