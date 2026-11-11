@@ -238,6 +238,31 @@ export const HANDOVER_AFTER_MS = 3 * 60_000;
 // 중단 waits this long for a worker to end on SIGTERM before it is killed outright.
 const STOP_GRACE_MS = 3_000;
 
+type Scan = Map<string, { file: string; store: string }[]>;
+// One scan of a projects folder, grouped by root session, shared by every records() call of the same synchronous run (a loop over
+// lanes): dropped on the next microtask, so the next request or sweep scans again. It holds file names: records() reads each again (a stat
+// and the cache), so a record rewritten in the same run is seen as it is now.
+function scanOf(scans: Map<string, Scan>, projects: string, recordAt: (file: string) => Rec | undefined): Scan {
+	let scan = scans.get(projects);
+	if (scan) return scan;
+	scan = new Map();
+	for (const project of readdirSync(projects)) {
+		const store = join(projects, project, "senpi-task");
+		const tasks = join(store, "tasks");
+		if (!existsSync(tasks)) continue;
+		for (const name of readdirSync(tasks).filter(n => n.endsWith(".json"))) {
+			const file = join(tasks, name), rec = recordAt(file);
+			if (!rec?.root_session_id || !rec.task_id) continue;
+			const list = scan.get(rec.root_session_id);
+			if (list) list.push({ file, store });
+			else scan.set(rec.root_session_id, [{ file, store }]);
+		}
+	}
+	if (scans.size === 0) queueMicrotask(() => scans.clear());
+	scans.set(projects, scan);
+	return scan;
+}
+
 export function createBgWork(deps: BgWorkDeps) {
 	const now = deps.now ?? Date.now;
 	const alive = deps.alive ?? pidAlive;
@@ -266,21 +291,17 @@ export function createBgWork(deps: BgWorkDeps) {
 	const stallMs = deps.stallMs ?? STALL_IDLE_MS;
 	const kill = deps.kill ?? ((pid: number, signal: NodeJS.Signals) => process.kill(pid, signal));
 
+	const scans = new Map<string, Scan>();
 	function records(sessionFile: string): Rec[] {
 		const root = /_([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(sessionFile)?.[1];
 		const projects = sessionProjects(sessionFile);
 		if (!root || !existsSync(projects)) return [];
 		const out: Rec[] = [];
-		for (const project of readdirSync(projects)) {
-			const tasks = join(projects, project, "senpi-task", "tasks");
-			if (!existsSync(tasks)) continue;
-			for (const name of readdirSync(tasks).filter(n => n.endsWith(".json"))) {
-				const rec = recordAt(join(tasks, name));
-				if (rec?.root_session_id === root && rec.task_id) {
-					out.push(rec);
-					storeOf.set(rec.task_id, join(projects, project, "senpi-task"));
-				}
-			}
+		for (const { file, store } of scanOf(scans, projects, recordAt).get(root) ?? []) {
+			const rec = recordAt(file);
+			if (rec?.root_session_id !== root || !rec.task_id) continue;
+			out.push(rec);
+			storeOf.set(rec.task_id, store);
 		}
 		return out;
 	}

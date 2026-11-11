@@ -25,13 +25,14 @@ const record = (id: string, over: Record<string, unknown> = {}) =>
 
 const make = (now: () => number, deferred: OpenDeferred[] = [], alive: (pid: number) => boolean = () => true) => createBgWork({ sessionFile: () => session, deferred: () => deferred, now, alive });
 
-test("a spawned worker is running with its Korean description and start time, then completed with its end time", () => {
+test("a spawned worker is running with its Korean description and start time, then completed with its end time", async () => {
 	record("st_1");
 	let t = T0 + 60_000;
 	const work = make(() => t);
 	expect(work.list()).toEqual([{ id: "st_1", description: "삼성 인터넷 사진첩 업로드 고치기", status: "running", started_at: T0 + 400 }]);
 
 	record("st_1", { status: "completed", terminal_at: iso(T0 + 180_000) });
+	await Promise.resolve();
 	t = T0 + 200_000;
 	expect(work.list()).toEqual([{ id: "st_1", description: "삼성 인터넷 사진첩 업로드 고치기", status: "done", started_at: T0 + 400, ended_at: T0 + 180_000 }]);
 });
@@ -137,7 +138,7 @@ test("no session yet, an unreadable record and a missing store give an empty lis
 	expect(make(() => T0).list()).toEqual([]);
 });
 
-test("a worker is tied to the folder its brief names (not its isolated copy) and keeps its conversation after it ends", () => {
+test("a worker is tied to the folder its brief names (not its isolated copy) and keeps its conversation after it ends", async () => {
 	record("st_1", { started_at: iso(T0 + 100_000), spawn_spec: { cwd: "/h/.omo/wt/x/m", isolation: { backend: "rcopy" }, prompt: "Repo: /h/Code/proj (main; work in this checkout)\nDo it." } });
 	record("st_2", { started_at: iso(T0 + 101_000), spawn_spec: { cwd: "/h/Code/other", prompt: "no repo line" } });
 	record("st_3", { started_at: iso(T0 + 102_000), spawn_spec: { cwd: "/h/.omo/wt/y/m", isolation: {}, prompt: "no repo line" } });
@@ -146,6 +147,7 @@ test("a worker is tied to the folder its brief names (not its isolated copy) and
 	expect(work.list().map(w => [w.id, w.folder])).toEqual([["st_1", "/h/Code/proj"], ["st_2", "/h/Code/other"], ["st_3", undefined]]);
 	open.length = 0;
 	record("st_1", { status: "completed", terminal_at: iso(T0 + 150_000), started_at: iso(T0 + 100_000), spawn_spec: { cwd: "/h/Code/other", prompt: "x" } });
+	await Promise.resolve();
 	const ended = work.list();
 	expect(ended.find(w => w.id === "st_1")).toMatchObject({ status: "done", target: "ch:9" });
 });
@@ -214,6 +216,19 @@ test("a lane's running workers are real records: description, start and model", 
 	record("st_lane_done", { status: "completed", terminal_at: iso(T0 + 2_000) });
 	expect(runningOmoWork(session)).toEqual([{ id: "st_lane", description: "삼성 인터넷 사진첩 업로드 고치기", status: "running", started_at: T0 + 1_000, model: "Sonnet 5.5" }]);
 	expect(runningOmoWork(undefined)).toEqual([]);
+});
+
+test("lanes read in one synchronous run share one scan, each sees only its own root, and the next tick scans again", async () => {
+	const other = "01a159d6-0000-0000-0000-000000000000";
+	const otherSession = join(dir, "sessions", "p1", `2026-10-21T05-00-00-000Z_${other}.jsonl`);
+	record("st_a", { pid: process.pid });
+	record("st_b", { pid: process.pid, root_session_id: other });
+	expect([runningOmoWork(session), runningOmoWork(otherSession)].map(w => w.map(x => x.id))).toEqual([["st_a"], ["st_b"]]);
+
+	record("st_c", { pid: process.pid, root_session_id: other });
+	await Promise.resolve();
+	expect(runningOmoWork(otherSession).map(x => x.id).sort()).toEqual(["st_b", "st_c"]);
+	expect(runningOmoWork(session).map(x => x.id)).toEqual(["st_a"]);
 });
 
 test("a worker names the model it runs on, as OmO's record says (Mac mini st_01a17c04, 2026-10-27)", () => {
@@ -366,13 +381,14 @@ test("a worker tied to a request by its turn is recorded as a link, so the tie o
 	expect(seen).toEqual([["st_1", { target: "web", replyTo: "m1" }]]);
 });
 
-test("a worker OmO holds is queued, never stalled however long it waits, and stops being queued when it runs", () => {
+test("a worker OmO holds is queued, never stalled however long it waits, and stops being queued when it runs", async () => {
 	record("st_q", { status: "queued", started_at: undefined, updated_at: iso(T0) });
 	const t = T0 + 60 * 60_000;
 	const work = make(() => t);
 	expect(work.list()).toMatchObject([{ id: "st_q", status: "running", queued: true }]);
 	expect(work.queuedWork(session).map(w => w.id)).toEqual(["st_q"]);
 	record("st_q", { status: "running", pid: 1, updated_at: iso(t) });
+	await Promise.resolve();
 	expect(work.queuedWork(session)).toEqual([]);
 	expect(work.list()[0]!.queued).toBeUndefined();
 });
