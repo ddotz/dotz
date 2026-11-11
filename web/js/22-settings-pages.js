@@ -3,10 +3,10 @@
 // 05-command-palette.js know the older views by name, so the pages join them here (the view list, the sub-screen set that keeps
 // the 설정 tab lit and sends 뒤로 to 설정, the title and icon, the empty section) and go() loads their data on entry.
 const SET_PAGE = {
-  notifications: { title: "앱과 알림", ic: "bell", build: () => pushSection() },
-  display: { title: "표시", ic: "settings", build: () => displayPage() },
-  update: { title: "업데이트", ic: "download", build: () => updateSection() },
-  runtime: { title: "작업 프로그램", ic: "term", build: () => { const s = hvSection(); return s.length ? s : [emptyNode(UPD.info && UPD.info.error ? "작업 프로그램을 확인하지 못했어요" : "작업 프로그램을 확인하는 중이에요")]; } },
+  notifications: { title: TX("settings.page.notifications"), ic: "bell", build: () => pushSection() },
+  display: { title: TX("settings.page.display"), ic: "settings", build: () => displayPage() },
+  update: { title: TX("settings.page.update"), ic: "download", build: () => updateSection() },
+  runtime: { title: TX("settings.page.runtime"), ic: "term", build: () => { const s = hvSection(); return s.length ? s : [emptyNode(UPD.info && UPD.info.error ? TX("settings.runtime.check_failed") : TX("settings.runtime.checking"))]; } },
 };
 for (const [id, p] of Object.entries(SET_PAGE)) {
   views.push(id); SUB.add(id); titles[id] = p.title; VIEW_ICON[id] = p.ic;
@@ -47,30 +47,30 @@ function stUsageSub() {
 }
 function stAccountSub() {
   const a = ACC && ACC.accounts ? ACC.accounts.find(x => x.current) : null;
-  return a ? `${a.label || a.alias || a.name} 사용 중` : "";
+  return a ? TX("settings.row.account_in_use", { name: a.label || a.alias || a.name }) : "";
 }
 const stUpdShort = v => (v && v.commit ? (v.release ? `v${v.release}` : v.commit.short) : "");
 function stUpdateSub() {
   const i = UPD.info;
   if (!i) return "";
   if (i.error) return i.error;
-  if (updRestartPending()) return `새 버전 ${stUpdShort(i.disk)} 받음 · 재시작하면 적용돼요`;
+  if (updRestartPending()) return TX("settings.row.update_restart", { version: stUpdShort(i.disk) });
   const c = updState(i).c;
-  return `지금 ${stUpdShort(i.running) || "알 수 없음"}${c && c.ok && !updAvailable() ? " · 최신" : ""}`;
+  return TX(c && c.ok && !updAvailable() ? "settings.row.update_latest" : "settings.row.update_now", { version: stUpdShort(i.running) || TX("settings.unknown") });
 }
 // The main conversation's context share, from the figure the page already holds (no request); empty until it is loaded.
 function stContextSub() {
   const p = typeof C !== "undefined" && C ? ctxSession(MAIN) : null;
-  return p && p.running && p.percent != null ? `${Math.round(p.percent)}% 사용 중` : "";
+  return p && p.running && p.percent != null ? TX("settings.row.context_used", { pct: Math.round(p.percent) }) : "";
 }
 function stRuntimeSub() {
   const names = [...new Set(hvRt().filter(r => (r.roles || []).length).map(r => r.label))];
   return names.join(" · ");
 }
 function stPushSub() {
-  if (PWA.gw && PWA.gw.app) { const on = PWA.gw.gateways.filter(g => g.on).length; return on ? "푸시 알림 켬" : "푸시 알림 꺼짐"; }
-  if (PWA.sub && PWA.info && PWA.info.subscribed) return "푸시 알림 켬";
-  return pushCapable() ? "푸시 알림 꺼짐" : "이 브라우저는 알림을 지원하지 않아요";
+  if (PWA.gw && PWA.gw.app) { const on = PWA.gw.gateways.filter(g => g.on).length; return on ? TX("settings.row.push_on") : TX("settings.row.push_off"); }
+  if (PWA.sub && PWA.info && PWA.info.subscribed) return TX("settings.row.push_on");
+  return pushCapable() ? TX("settings.row.push_off") : TX("settings.row.push_unsupported");
 }
 
 /* ---------- 설정 (the list) ---------- */
@@ -79,7 +79,7 @@ function settingsCols(nodes) {
   const left = el("div", { class: "set-col" }), right = el("div", { class: "set-col" });
   let col = left;
   for (const n of nodes) {
-    if (n.classList.contains("sec")) col = n.textContent === "앱" || n.textContent === "시스템" ? right : left;
+    if (n.classList.contains("sec")) col = n.textContent === TX("common.apps") || n.textContent === TX("settings.sec.system") ? right : left;
     col.append(n);
   }
   return [left, right];
@@ -88,26 +88,26 @@ function settingsList(go) {
   const om = M && M.orchestrator;
   const connected = P ? P.providers.filter(isConnected).length : null;
   const nodes = [
-    stSec("계정과 모델"), stList(
-      stRow("key", "계정", [stAccountSub(), connected != null ? `${connected}개 연결` : ""].filter(Boolean).join(" · "), () => go("accounts")),
-      stRow("model", "모델", om ? [modelName(om.model), thinkKo(om.thinking)].filter(Boolean).join(" · ") : "", () => openModels("orchestrator")),
-      stRow("usage", "사용량과 월 한도", stUsageSub(), () => go("usage")),
-      stRow("context", "컨텍스트", stContextSub(), () => go("context"))),
-    stSec("연결"), stList(
+    stSec(TX("settings.sec.accounts_models")), stList(
+      stRow("key", TX("common.accounts"), [stAccountSub(), connected != null ? TX("settings.prov.connected_n", { n: connected }) : ""].filter(Boolean).join(" · "), () => go("accounts")),
+      stRow("model", TX("common.model"), om ? [modelName(om.model), thinkKo(om.thinking)].filter(Boolean).join(" · ") : "", () => openModels("orchestrator")),
+      stRow("usage", TX("settings.row.usage"), stUsageSub(), () => go("usage")),
+      stRow("context", TX("common.context"), stContextSub(), () => go("context"))),
+    stSec(TX("settings.sec.connect")), stList(
       msHubRow(),
       webAccessRow(stRow),
       devicesRow(stRow),
       mnRow()),
     ...dskSettings(),
-    stSec("앱"), stList(
-      stRow("bell", "앱과 알림", stPushSub(), () => go("notifications")),
-      navOff("apps") ? null : stRow("apps", "앱 관리", "", () => go("apps")),
-      stRow("spark", "화면 안내 다시 보기", "", () => introOpen()),
-      stRow(themeIc(), "표시", `${themeIs() === "dark" ? "다크" : "라이트"} · 대화 탭 ${chatTabMode() === "main" ? "메인" : "마지막"}`, () => go("display"))),
-    stSec("시스템"), stList(
-      stRow("download", "업데이트", stUpdateSub(), () => go("update"), updRestartPending() ? stTag("재시작 필요") : updAvailable() ? stTag("새 버전") : undefined),
-      stRow("term", "작업 프로그램", stRuntimeSub(), () => go("runtime"), hvNew() ? stTag("새 버전") : undefined),
-      stRow("harness", "구성", "", () => go("harness"))),
+    stSec(TX("common.apps")), stList(
+      stRow("bell", TX("settings.page.notifications"), stPushSub(), () => go("notifications")),
+      navOff("apps") ? null : stRow("apps", TX("settings.row.apps"), "", () => go("apps")),
+      stRow("spark", TX("settings.row.intro"), "", () => introOpen()),
+      stRow(themeIc(), TX("settings.page.display"), [themeIs() === "dark" ? TX("settings.theme.dark") : TX("settings.theme.light"), chatTabMode() === "main" ? TX("settings.row.chat_tab_main") : TX("settings.row.chat_tab_last")].join(" · "), () => go("display"))),
+    stSec(TX("settings.sec.system")), stList(
+      stRow("download", TX("settings.page.update"), stUpdateSub(), () => go("update"), updRestartPending() ? stTag(TX("settings.tag.restart_needed")) : updAvailable() ? stTag(TX("settings.tag.new_version")) : undefined),
+      stRow("term", TX("settings.page.runtime"), stRuntimeSub(), () => go("runtime"), hvNew() ? stTag(TX("settings.tag.new_version")) : undefined),
+      stRow("harness", TX("common.system"), "", () => go("harness"))),
   ];
   return nodes;
 }
@@ -115,7 +115,7 @@ function settingsList(go) {
 /* ---------- 표시 ---------- */
 function displayPage() {
   return [stList(
-    stToggle(themeIc(), "화면 모드", "", "화면 모드", [["light", "라이트"], ["dark", "다크"]], themeIs(), v => { if (v !== themeIs()) toggleTheme(); renderSettings(); }),
-    stToggle("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막 대화부터 시작해요", "대화 탭", [["main", "메인"], ["last", "마지막"]], chatTabMode(), v => { chatTabModeSet(v); renderSettings(); })),
-    stSec("진단"), stList(...kbdRows())];
+    stToggle(themeIc(), TX("settings.display.mode"), "", TX("settings.display.mode"), [["light", TX("settings.theme.light")], ["dark", TX("settings.theme.dark")]], themeIs(), v => { if (v !== themeIs()) toggleTheme(); renderSettings(); }),
+    stToggle("chat", TX("settings.display.chat_tab"), chatTabMode() === "main" ? TX("settings.display.chat_main") : TX("settings.display.chat_last"), TX("settings.display.chat_tab"), [["main", TX("settings.display.opt_main")], ["last", TX("settings.display.opt_last")]], chatTabMode(), v => { chatTabModeSet(v); renderSettings(); })),
+    stSec(TX("settings.sec.diagnostics")), stList(...kbdRows())];
 }

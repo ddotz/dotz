@@ -1,10 +1,10 @@
 /* ---------- models ---------- */
 const pending = {};
 let providerFilter = "";
-const applyKo = { live: "적용했어요", restarted: "적용했어요 · 재시작됨", "next-start": "다음 시작부터 적용돼요", "next-turn": "다음 턴부터 적용돼요" };
+const applyKo = { live: TX("settings.apply.done"), restarted: TX("settings.apply.restarted"), "next-start": TX("settings.apply.next_start"), "next-turn": TX("settings.apply.next_turn") };
 // A load that failed stays said until one succeeds: a later redraw (the providers arriving) must not turn it back into 불러오는 중.
 let modelsFail = false;
-const modelsFailNode = () => emptyNode("모델 정보를 불러오지 못했어요", () => loadModels());
+const modelsFailNode = () => emptyNode(TX("settings.models.load_failed"), () => loadModels());
 async function loadModels(quiet) {
   try { M = await api("/api/models"); modelsFail = false; }
   catch (e) { modelsFail = true; if (!quiet && current === "models") clear($("#models")).append(modelsFailNode()); return; }
@@ -18,7 +18,7 @@ async function loadModels(quiet) {
 function modelSource(provider) {
   const p = ((P && P.providers) || []).find(x => x.id === provider);
   if (!p) return "";
-  if (p.auth === "oauth") return `구독 ${p.account || "계정"}`;
+  if (p.auth === "oauth") return TX("settings.model.source_sub", { account: p.account || TX("settings.model.account") });
   if (p.auth === "api_key") return `API ${p.name || p.id}`;
   return "";
 }
@@ -36,7 +36,7 @@ function modelPickItems(avail, val) {
     if (now.length) items.push({ header: src ? (g === list[0].provider || g === providerName(list[0].provider) ? src : `${g} · ${src}`) : g }, ...now.map(a => row(a, !src)));
     older.push(...list.filter(a => a.older && a.selector !== val));
   }
-  if (older.length) items.push({ fold: [{ header: "이전 모델" }, ...older.map(a => row(a))], label: `이전 모델 ${older.length}개` });
+  if (older.length) items.push({ fold: [{ header: TX("settings.model.older") }, ...older.map(a => row(a))], label: TX("settings.model.older_n", { n: older.length }) });
   return items;
 }
 function modelItems(key, curModel, filter = providerFilter) {
@@ -45,36 +45,36 @@ function modelItems(key, curModel, filter = providerFilter) {
   const avail = M.pickable || M.available || [];
   const shown = avail.filter(a => !filter || a.provider === filter);
   const items = [];
-  if (val && !shown.some(a => a.selector === val)) items.push({ header: "현재" }, { value: val, label: modelName(val) });
+  if (val && !shown.some(a => a.selector === val)) items.push({ header: TX("settings.model.current") }, { value: val, label: modelName(val) });
   items.push(...modelPickItems(shown, val));
   return items;
 }
 // PUT /api/models for one target (the 모델 view and the 홈 card menus share it); confirms first when `confirmText` is set and again when the cache would be rewritten.
 async function putModel(key, change, confirmText, label) {
   const body = { target: key, ...change };
-  if (confirmText && !await ask("모델 설정을 적용할까요?", `${confirmText}\n${label}`, "적용")) return false;
+  if (confirmText && !await ask(TX("settings.model.apply_ask"), `${confirmText}\n${label}`, TX("settings.apply"))) return false;
   let r;
   try {
     try { r = await api("/api/models", "PUT", body); }
     catch (e) {
       if (!(e.data && e.data.requires_force)) throw e;
-      if (!await ask("모델 설정을 적용할까요?", `캐시가 다시 쓰여요 · 컨텍스트 ${num(e.data.context_tokens)} 토큰\n${label}`, "적용")) return false;
+      if (!await ask(TX("settings.model.apply_ask"), TX("settings.model.cache_rewrite", { n: e.data.context_tokens, tokens: num(e.data.context_tokens), label }), TX("settings.apply"))) return false;
       r = await api("/api/models", "PUT", { ...body, force: true });
     }
-  } catch (e) { toast(`적용하지 못했어요. ${e.message}`, true); return false; }   // the choice stays on the screen, still unapplied
+  } catch (e) { toast(TX("settings.model.apply_failed", { error: e.message }), true); return false; }   // the choice stays on the screen, still unapplied
   delete pending[key];
-  toast(applyKo[r.applied] || "적용했어요");
+  toast(applyKo[r.applied] || TX("settings.apply.done"));
   await loadModels(true); refreshState();
   return true;
 }
 async function logoutProvider(p) {
   const name = p.name || p.id, key = p.auth === "api_key";
   // the server signs out every login of the provider, so a provider with several accounts says so
-  const text = key ? "저장된 API 키를 삭제할까요?" : `${p.account ? `${accName(p.account)} 계정의 ` : ""}저장된 로그인 정보가 삭제돼요.${p.accounts > 1 ? ` ${name}의 계정 ${p.accounts}개가 모두 로그아웃돼요.` : ""}`;
-  if (!await ask(key ? `${name} 키 삭제` : `${name} 로그아웃`, text, key ? "삭제" : "로그아웃", true)) return;
+  const text = key ? TX("settings.logout.key_text") : [p.account ? TX("settings.logout.info_acc", { account: accName(p.account) }) : TX("settings.logout.info"), p.accounts > 1 ? TX("settings.logout.all", { name, n: p.accounts }) : ""].filter(Boolean).join(" ");
+  if (!await ask(key ? TX("settings.logout.key_title", { name }) : TX("settings.logout.title", { name }), text, key ? TX("common.delete") : TX("settings.logout.btn"), true)) return;
   try { await api(`/api/providers/${enc(p.id)}/logout`, "POST", {}); }
-  catch (e) { toast(`${key ? "키를 삭제하지" : "로그아웃하지"} 못했어요. ${e.message}`, true); return; }
-  toast(key ? "키를 삭제했어요" : "로그아웃했어요");
+  catch (e) { toast(TX(key ? "settings.logout.key_failed" : "settings.logout.failed", { error: e.message }), true); return; }
+  toast(key ? TX("settings.logout.key_done") : TX("settings.logout.done"));
   await loadProviders(); loadModels(true);
   if (current === "home") renderHome();
 }
@@ -102,23 +102,23 @@ function targetEdit(key, title, cur, confirmText, extra = {}) {
   const p = pending[key] || {};
   const model = p.model ?? cur.model, thinking = p.thinking ?? cur.thinking;
   const dirty = (p.model != null && p.model !== cur.model) || (p.thinking != null && p.thinking !== cur.thinking);
-  const modelField = selectField("모델", modelName(model), () => modelItems(key, cur.model), model, v => { (pending[key] ||= {}).model = v; renderModels(); });
+  const modelField = selectField(TX("common.model"), modelName(model), () => modelItems(key, cur.model), model, v => { (pending[key] ||= {}).model = v; renderModels(); });
   // Effort is a dropdown next to the model, not a row of eight buttons (owner 2026-10-20: "드랍다운으로 모델이랑 추론정도 각각"), and it
   // lists what this model accepts, so picking another model rebuilds it with that model's levels.
   // A model with no level to choose (only 'off') gets no effort cell at all, not an empty "–" one.
   const effItems = effortItems(model, thinking);
-  const effField = effItems.length > 1 ? selectField("추론 강도", thinking ? thinkKo(thinking) : "–", effItems, thinking, v => { (pending[key] ||= {}).thinking = v; renderModels(); }) : null;
+  const effField = effItems.length > 1 ? selectField(TX("common.reasoning"), thinking ? thinkKo(thinking) : "–", effItems, thinking, v => { (pending[key] ||= {}).thinking = v; renderModels(); }) : null;
   const info = (M.available || []).find(a => a.selector === model);
   const apply = el("button", { class: "btn", type: "button", disabled: !dirty, onclick: ev => busy(ev.currentTarget, async () => {
     const change = {};
     if (p.model != null && p.model !== cur.model) change.model = p.model;
     if (p.thinking != null && p.thinking !== cur.thinking) change.thinking = p.thinking;
     await putModel(key, change, confirmText, `${modelName(model)} · ${thinkKo(thinking)}`);
-  }) }, "적용");
+  }) }, TX("settings.apply"));
   const pick = el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, modelField), effField ? el("div", { class: "mt-eff" }, effField) : null);
   const notes = [
-    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt-note", text: "이 모델은 추론 강도를 쓰지 않아요" }) : null,
-    dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기"), apply) : null,
+    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt-note", text: TX("settings.models.no_effort") }) : null,
+    dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, TX("common.undo")), apply) : null,
   ].filter(Boolean);
   return el("div", { class: "mt-list mt-edit", role: "group", "data-target": key, "aria-label": title }, ...(extra.chain ? [extra.chain(pick, notes)] : [pick, ...notes]));
 }
@@ -126,12 +126,12 @@ function renderModels() {
   const box = $("#models");
   if (fbDragging) return;
   closeMenu(false);
-  if (!M) { clear(box).append(modelsFail ? modelsFailNode() : emptyNode("불러오는 중…")); return; }
+  if (!M) { clear(box).append(modelsFail ? modelsFailNode() : emptyNode(TX("common.loading"))); return; }
   const provs = [...new Set((M.available || []).map(a => a.provider))].sort((a, b) => providerName(a).localeCompare(providerName(b)));
-  const filter = selectField("공급자", providerFilter ? providerName(providerFilter) : "공급자 전체", [{ value: "", label: "전체" }, ...provs.map(p => ({ value: p, label: providerName(p) }))], providerFilter, v => { providerFilter = v; renderModels(); });
+  const filter = selectField(TX("settings.provider"), providerFilter ? providerName(providerFilter) : TX("settings.provider.all"), [{ value: "", label: TX("settings.all") }, ...provs.map(p => ({ value: p, label: providerName(p) }))], providerFilter, v => { providerFilter = v; renderModels(); });
   clear(box).append(
     el("div", { class: "col mt" },
-      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "막히면 번호 순서대로 넘어가요." }), el("div", { class: "mt-filter" }, filter)),
+      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: TX("settings.models.intro") }), el("div", { class: "mt-filter" }, filter)),
       ...modelGroups()));
   if (modelsRefocus) {
     const r = box.querySelector(`[data-use="${CSS.escape(modelsRefocus)}"]`);
@@ -147,7 +147,7 @@ function renderModels() {
 
 // The model a chat target (MAIN or "lane:<name>") answers on now: its running process's own (a fallback it moved to included), else the
 // configured one. `fallback` is set when that is not the configured model, with why the configured one is out and until when (hub/control.ts primary_down).
-const FB_DOWN_KO = { quota: "한도 소진", cap: "상한 도달", error: "오류" };
+const FB_DOWN_KO = { quota: TX("settings.fb.down.quota"), cap: TX("settings.fb.down.cap"), error: TX("settings.fb.down.error") };
 const runBaseOf = s => fbBase(s).replace(/^([^/]+)-apikey\//, "$1/");
 const withLevel = (model, thinking) => model ? (thinking ? `${model}:${thinking}` : model) : "";
 function fbWhy(layer) {
@@ -170,12 +170,12 @@ function liveModel(t) {
   const sel = act || conf;
   return { sel, conf, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy(main ? "orchestrator" : "lanes") : null };
 }
-const fbTagText = f => ["대체 모델 사용 중", f.reason, f.until ? `${kstStamp(Date.parse(f.until))}에 복귀` : ""].filter(Boolean).join(" · ");
+const fbTagText = f => [TX("settings.fb.using"), f.reason, f.until ? TX("settings.fb.return_at", { at: kstStamp(Date.parse(f.until)) }) : ""].filter(Boolean).join(" · ");
 const selText = sel => { const [b, lv] = String(sel || "").split(":"); return b ? `${modelChipText(b)}${lv ? ` · ${thinkKo(lv)}` : ""}` : "–"; };
-const fbTag = (f, conf) => el("span", { class: "tag warn", title: [fbTagText(f), conf ? `기본 모델 ${selText(conf)} 대신 쓰는 중` : ""].filter(Boolean).join(" · "), text: fbTagText(f) });
+const fbTag = (f, conf) => el("span", { class: "tag warn", title: [fbTagText(f), conf ? TX("settings.fb.instead", { model: selText(conf) }) : ""].filter(Boolean).join(" · "), text: fbTagText(f) });
 // 실제로 쓰는 모델 (owner 2026-10-27): every place a model runs and the model it runs on now (hub/models-in-use.ts), in three groups. A row
 // that is changed on this screen opens its editor in place, one at a time; one that is changed in an app's settings opens that screen.
-const MT_GROUPS = ["어시스턴트", "세션", "답장과 요약"];
+const MT_GROUPS = [TX("common.assistant"), TX("common.session"), TX("settings.models.group_replies")];
 const mtGroupOf = key => key === "main" || key === "background" || key === "lookups" ? 0 : key === "lanes" || key.startsWith("lane:") || key === "workers" || key.startsWith("workers:") ? 1 : 2;
 // A hub that names no place to change a row (an older one, the demo's) still gets every row this screen edits, and a session that is alive
 // but has no row from the hub its own.
@@ -183,11 +183,11 @@ const MT_OWN = { main: "orchestrator", lanes: "lanes", workers: "workers", repli
 function mtRows() {
   const rows = (M.in_use || []).map(r => r.change || !MT_OWN[r.key] ? r : { ...r, change: { models: MT_OWN[r.key] } }), own = new Set(rows.map(r => (r.change || {}).models));
   for (const L of FB_LAYERS) if (!own.has(L.id) && L.cur()) rows.push({ key: L.id === "orchestrator" ? "main" : L.id, label: L.title(), sub: L.sub, model: withLevel(L.cur().model, L.cur().thinking), change: { models: L.id } });
-  if (M.replies && !own.has("replies")) rows.push({ key: "replies", label: "답장 기본값", model: M.replies.value || "", change: { models: "replies" } });
+  if (M.replies && !own.has("replies")) rows.push({ key: "replies", label: TX("settings.models.replies_default"), model: M.replies.value || "", change: { models: "replies" } });
   const have = new Set(rows.map(r => r.key));
   const extra = (M.lanes || []).filter(l => laneAlive(l) && !have.has(`lane:${l.name}`)).map(l => {
     const conf = withLevel(l.model, l.thinking), act = l.active_model;
-    return { key: `lane:${l.name}`, label: `세션 · ${l.title || l.name}`, model: act || conf, ...(act && runBaseOf(act) !== runBaseOf(conf) ? { configured: conf, fallback: true } : {}), change: { models: `lane:${l.name}` } };
+    return { key: `lane:${l.name}`, label: TX("settings.models.lane_label", { name: l.title || l.name }), model: act || conf, ...(act && runBaseOf(act) !== runBaseOf(conf) ? { configured: conf, fallback: true } : {}), change: { models: `lane:${l.name}` } };
   });
   rows.splice(rows.findLastIndex(r => r.key === "lanes" || r.key.startsWith("lane:")) + 1, 0, ...extra);
   return rows;
@@ -208,10 +208,10 @@ function mtRow(r, primary) {
   const attrs = { class: "mt-use-row", "data-use": r.key };
   if (act) Object.assign(attrs, { role: "button", tabindex: "0", onclick: act, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); act(); } } });
   if (target) attrs["aria-expanded"] = String(isOpen);
-  const end = ch.none ? el("span", { class: "mt-use-end sup", title: ch.none, text: "고정" }) : el("span", { class: "mt-use-end" }, target ? icon("drop") : ch.app ? icon("chev") : null);
+  const end = ch.none ? el("span", { class: "mt-use-end sup", title: ch.none, text: TX("settings.models.fixed") }) : el("span", { class: "mt-use-end" }, target ? icon("drop") : ch.app ? icon("chev") : null);
   const row = el("div", attrs,
     el("div", { class: "mt-use-tx" }, el("span", { class: "nm", title: r.label }, run ? el("span", { class: `dot ${run[1]}` }) : null, r.label), sub ? el("span", { class: "sup", text: sub }) : null),
-    el("div", { class: "mt-use-rest" }, el("span", { class: "mt-use-m", title: model, text: model }), chain.length ? el("span", { class: "sup mt-use-fb", text: `대체 ${chain.length}` }) : null, why ? fbTag(why, r.configured) : null),
+    el("div", { class: "mt-use-rest" }, el("span", { class: "mt-use-m", title: model, text: model }), chain.length ? el("span", { class: "sup mt-use-fb", text: TX("settings.models.fallbacks_n", { n: chain.length }) }) : null, why ? fbTag(why, r.configured) : null),
     end);
   const editor = isOpen ? mtEditor(target, r.label) : null;
   return editor ? [row, editor] : [row];
@@ -230,11 +230,11 @@ function repliesEdit(title) {
   const R = M.replies;
   if (!R) return null;
   const items = R.options.map(v => ({ value: v, label: v ? R.labels[v] || v : R.default_label }));
-  const pick = selectField("답장 모델", R.value ? R.labels[R.value] || R.value : R.default_label, items, R.value, v => busy(null, async () => {
-    try { await api("/api/models", "PUT", { target: "replies", model: v }); toast("적용했어요"); await loadModels(true); }
-    catch (e) { toast(e.message || "저장하지 못했어요", true); }
+  const pick = selectField(TX("settings.models.reply_model"), R.value ? R.labels[R.value] || R.value : R.default_label, items, R.value, v => busy(null, async () => {
+    try { await api("/api/models", "PUT", { target: "replies", model: v }); toast(TX("settings.apply.done")); await loadModels(true); }
+    catch (e) { toast(e.message || TX("settings.save_failed"), true); }
   }));
   return el("div", { class: "mt-list mt-edit", role: "group", "data-target": "replies", "aria-label": title },
     el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, pick)),
-    el("div", { class: "sup mt-note", text: "답장 초안은 API 키로 넘어가지 않아요." }));
+    el("div", { class: "sup mt-note", text: TX("settings.models.reply_note") }));
 }

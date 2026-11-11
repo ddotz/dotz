@@ -30,7 +30,7 @@ async function sharedIntake() {
     if (meta.text) { ta.value = ta.value.trim() ? `${ta.value.replace(/\s+$/, "")}\n${meta.text}` : meta.text; ta.dispatchEvent(new Event("input")); ta.focus(); }
     if (!files.length) return;
     const n = Math.min(files.length, Math.max(0, 10 - ATT.length));
-    toast(files.every(f => /^image\//.test(f.type)) ? `사진 ${n}장을 붙였어요` : `파일 ${n}개를 붙였어요`);
+    toast(files.every(f => /^image\//.test(f.type)) ? TX("settings.app.shared_photos", { n }) : TX("settings.app.shared_files", { n }));
     addFiles(files);
   } catch (e) { console.warn("shared files", e); }
 }
@@ -74,7 +74,7 @@ let shellPending = false;
 function shellUpdated() {
   if (shellIdle()) return shellApply();
   shellPending = true;
-  if (!document.querySelector(".shell-chip")) document.body.append(el("button", { class: "shell-chip", type: "button", text: "새 버전 · 눌러서 적용", onclick: shellApply }));
+  if (!document.querySelector(".shell-chip")) document.body.append(el("button", { class: "shell-chip", type: "button", text: TX("settings.app.shell_chip"), onclick: shellApply }));
 }
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { if (ev.data && ev.data.type === "shell-updated") shellUpdated(); });
 // Back after a while away: ask the worker to look for a new shell now (a notification tap or a long sleep leaves the open page behind).
@@ -205,13 +205,13 @@ async function pushGw(g, on) {
 async function pushEnable(btn) {
   await busy(btn, async () => {
     localStorage.removeItem(PUSH_OFF);
-    if ((await Notification.requestPermission()) !== "granted") throw new Error(`알림 권한이 꺼져 있어요. 기기 설정에서 ${botName} 알림을 허용해 주세요`);
+    if ((await Notification.requestPermission()) !== "granted") throw new Error(TX("settings.app.perm_off", { bot: botName }));
     const reg = PWA.reg || await navigator.serviceWorker.ready;
     const info = PWA.info || await api("/api/push");
     PWA.sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(info.publicKey) });
     await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), app: isStandalone(), did: DEVICE_ID });
     localStorage.setItem(PUSH_ON, "1");
-    toast("알림을 켰어요");
+    toast(TX("settings.app.alerts_on"));
   });
   await pushLoad();
   presence();
@@ -223,11 +223,11 @@ async function pushDisable(btn) {
     localStorage.removeItem(PUSH_ON);
     localStorage.setItem(PUSH_OFF, "1");
     if (sub) { await api("/api/push/unsubscribe", "POST", { endpoint: sub.endpoint }); await sub.unsubscribe().catch(() => {}); }
-    toast("알림을 껐어요");
+    toast(TX("settings.app.alerts_off"));
   });
   await pushLoad();
 }
-const pushTest = btn => busy(btn, async () => { await api("/api/push/test", "POST", { endpoint: PWA.sub.endpoint }); toast("테스트 알림을 보냈어요"); });
+const pushTest = btn => busy(btn, async () => { await api("/api/push/test", "POST", { endpoint: PWA.sub.endpoint }); toast(TX("settings.app.test_sent")); });
 // The gateway skips a push to this device while its page is visible and focused on the same conversation (heartbeat every 25s, stale after 60s);
 // a push about another conversation still shows.
 let presTimer = 0;
@@ -252,7 +252,7 @@ window.addEventListener("load", pwaInit);
 // iOS has no prompt, so the button opens the Share -> 홈 화면에 추가 steps.
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", ev => { ev.preventDefault(); installEvt = ev; if (inSettings()) renderSettings(); });
-window.addEventListener("appinstalled", () => { installEvt = null; toast(`앱을 설치했어요. 홈 화면의 ${botName} 아이콘으로 열어 주세요`); if (inSettings()) renderSettings(); });
+window.addEventListener("appinstalled", () => { installEvt = null; toast(TX("settings.app.installed", { bot: botName })); if (inSettings()) renderSettings(); });
 async function installApp() {
   if (installEvt) {
     const e = installEvt;
@@ -264,30 +264,30 @@ async function installApp() {
   }
   const ua = navigator.userAgent;
   const steps = isIOS()
-    ? [/CriOS|FxiOS|EdgiOS/.test(ua) ? "주소창의 공유 버튼을 눌러요" : "Safari 아래쪽(또는 주소창)의 공유 버튼을 눌러요", "'홈 화면에 추가'를 골라요", "'웹 앱으로 열기'가 켜져 있는지 보고 '추가'를 눌러요"]
+    ? [/CriOS|FxiOS|EdgiOS/.test(ua) ? TX("settings.app.ios_share_bar") : TX("settings.app.ios_share_safari"), TX("settings.app.ios_add"), TX("settings.app.ios_web_app")]
     : /Android/.test(ua)
-      ? ["브라우저 메뉴(⋮)를 열어요", "'앱 설치'를 골라요. '홈 화면에 추가'라면 다음 창에서 '설치'를 골라요", "'바로가기 만들기'는 브라우저로 열려요. 고르지 마세요"]
-      : ["주소창 오른쪽의 설치 아이콘을 눌러요", "없으면 브라우저 메뉴에서 '앱 설치'를 골라요"];
-  dialog({ classic: true, title: "앱 설치", body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: `전에 추가한 ${botName} 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.` })), actions: [{ label: "확인", kind: "pri", onclick: c => c() }] });
+      ? [TX("settings.app.and_menu"), TX("settings.app.and_install"), TX("settings.app.and_shortcut")]
+      : [TX("settings.app.desk_icon"), TX("settings.app.desk_menu")];
+  dialog({ classic: true, title: TX("settings.app.install"), body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: TX("settings.app.reinstall_note", { bot: botName }) })), actions: [{ label: TX("common.ok"), kind: "pri", onclick: c => c() }] });
 }
 function pushSection() {
   const li = (ic, title, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), trail.length ? liEnd(...trail) : null);
   const ios = isIOS(), standalone = isStandalone();
   const rows = [];
-  if (!standalone) rows.push(li("home", "홈 화면에 추가", el("button", { class: "btn tonal inrow", type: "button", onclick: () => installApp() }, "앱 설치")));
+  if (!standalone) rows.push(li("home", TX("settings.app.add_home"), el("button", { class: "btn tonal inrow", type: "button", onclick: () => installApp() }, TX("settings.app.install"))));
   const subscribed = PWA.sub && PWA.info && PWA.info.subscribed;
   if (PWA.gw && PWA.gw.app) {
     // The device has the app: one row per gateway, whichever gateway's page this is. A gateway that does not answer cannot be switched.
     for (const g of PWA.gw.gateways) {
-      const label = `${g.name || "이 컴퓨터"} 알림`;
-      rows.push(li("bell", label, g.online ? el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(g.on), "aria-label": label, onclick: () => pushGw(g, !g.on) }) : el("span", { class: "sup", text: "연결 안 됨" })));
+      const label = TX("settings.app.gw_alerts", { name: g.name || TX("settings.app.this_computer") });
+      rows.push(li("bell", label, g.online ? el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(g.on), "aria-label": label, onclick: () => pushGw(g, !g.on) }) : el("span", { class: "sup", text: TX("settings.prov.not_connected") })));
     }
-  } else if (!pushCapable()) rows.push(li("bell", ios && !standalone ? "iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요" : "이 브라우저는 알림을 지원하지 않아요. Chrome이나 설치한 앱에서 켤 수 있어요"));
-  else if (Notification.permission === "denied") rows.push(li("bell", "알림 권한이 막혀 있어요"));
-  else if (!subscribed) rows.push(li("bell", "알림", el("button", { class: "btn inrow", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
+  } else if (!pushCapable()) rows.push(li("bell", ios && !standalone ? TX("settings.app.iphone_note") : TX("settings.app.no_support")));
+  else if (Notification.permission === "denied") rows.push(li("bell", TX("settings.app.perm_blocked")));
+  else if (!subscribed) rows.push(li("bell", TX("common.alerts"), el("button", { class: "btn inrow", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, TX("settings.app.turn_on"))));
   const kinds = appNotifyRows();
   if (subscribed) {
-    rows.push(li("bell", "알림 확인", el("button", { class: "btn tonal inrow", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림"), el("button", { class: "btn text inrow", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
+    rows.push(li("bell", TX("settings.app.check"), el("button", { class: "btn tonal inrow", type: "button", onclick: ev => pushTest(ev.currentTarget) }, TX("settings.app.test")), el("button", { class: "btn text inrow", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, TX("settings.app.turn_off"))));
   }
-  return [...(rows.length ? [el("div", { class: "sec", text: "이 기기" }), el("div", { class: "list" }, ...rows)] : []), ...(kinds.length ? [el("div", { class: "sec", text: "알림 종류" }), el("div", { class: "list" }, ...kinds)] : [])];
+  return [...(rows.length ? [el("div", { class: "sec", text: TX("settings.app.this_device") }), el("div", { class: "list" }, ...rows)] : []), ...(kinds.length ? [el("div", { class: "sec", text: TX("settings.app.kinds") }), el("div", { class: "list" }, ...kinds)] : [])];
 }

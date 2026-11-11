@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { compressResponse } from "./compress.ts";
+import { i18nPrelude } from "./web-i18n.ts";
 import { appAsset, bundle, indexPage, moduleFiles, named } from "./webapp.ts";
 
 // An in-memory stand-in for Cache Storage, shared by the service worker and the page like the real one.
@@ -64,7 +65,7 @@ describe("web share target", () => {
 		const ta = { value: "", dispatchEvent: () => true, focus: () => {} };
 		const win = { caches };
 		const page = { search: "?shared=1", pathname: "/", hash: "#chat" };
-		const run = new Function("caches", "location", "history", "window", "File", "URLSearchParams", "ta", "go", "toast", "addFiles", "ATT", "Event", `${fn}; return sharedIntake;`)(caches, page, { replaceState: (_a: unknown, _b: string, u: string) => { page.search = u.includes("?") ? page.search : ""; } }, win, File, URLSearchParams, ta, (v: string) => views.push(v), (m: string) => toasts.push(m), (f: File[]) => added.push(f), [], Event);
+		const run = new Function("caches", "location", "history", "window", "File", "URLSearchParams", "ta", "go", "toast", "addFiles", "ATT", "Event", `${i18nPrelude()}${fn}; return sharedIntake;`)(caches, page, { replaceState: (_a: unknown, _b: string, u: string) => { page.search = u.includes("?") ? page.search : ""; } }, win, File, URLSearchParams, ta, (v: string) => views.push(v), (m: string) => toasts.push(m), (f: File[]) => added.push(f), [], Event);
 		await run();
 		expect(views).toEqual(["chat"]);
 		expect(toasts).toEqual(["사진 2장을 붙였어요"]);
@@ -145,7 +146,7 @@ describe("shell update", () => {
 		const ui = { ta: { value: "" }, ATT: [] as unknown[], OV: [] as unknown[], NT: { open: false }, SUBD: null as unknown };
 		const nav = { serviceWorker: { addEventListener: (_t: string, h: (ev: unknown) => void) => { swMsg = h; }, controller: { postMessage: (m: unknown) => posted.push(m) } } };
 		const loc = { hash: "#chat/main", reload: () => { reloads++; } };
-		new Function("sessionStorage", "location", "Date", "ta", "ATT", "OV", "NT", "SUBD", "document", "el", "$", "current", "target", "chatStick", "chatAnchor", "convListing", "navigator", "PWA", "homeTop", block)(
+		new Function("sessionStorage", "location", "Date", "ta", "ATT", "OV", "NT", "SUBD", "document", "el", "$", "current", "target", "chatStick", "chatAnchor", "convListing", "navigator", "PWA", "homeTop", `${i18nPrelude()}${block}`)(
 			{ getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => mem.set(k, v) }, loc, { now: () => now },
 			ui.ta, ui.ATT, ui.OV, ui.NT, ui.SUBD, doc, (_t: string, p: { onclick: () => void }) => p, () => ({ scrollTop: 42 }), "chat", "main", false, () => ({ ts: "2026-10-21T06:00:00Z", off: 7 }), () => false, nav, { reg: null }, () => {});
 		const post = () => swMsg!({ data: { type: "shell-updated" } });

@@ -96,29 +96,13 @@
       "count": 4,
       "why": "draft tag the assistant instructions name (protocol)"
     },
-    "web/js/20-models.js": {
-      "count": 118,
-      "why": "pending"
-    },
     "web/js/21-providers.js": {
-      "count": 269,
-      "why": "pending"
-    },
-    "web/js/22-settings-pages.js": {
-      "count": 108,
-      "why": "pending"
-    },
-    "web/js/22-settings.js": {
-      "count": 235,
-      "why": "pending"
-    },
-    "web/js/23-installable-app-web.js": {
-      "count": 154,
-      "why": "pending"
+      "count": 1,
+      "why": "server value comparison"
     },
     "web/js/24-settings-update.js": {
-      "count": 282,
-      "why": "pending"
+      "count": 2,
+      "why": "server value comparison"
     },
     "web/js/25-settings-accounts.js": {
       "count": 310,
