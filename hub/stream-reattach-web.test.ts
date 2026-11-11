@@ -2,9 +2,9 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { advanceTimers, ev, fakeHub, inbox, json, on, run } from "./test-web.ts";
-import { sseResponse } from "./events.ts";
+import { broadcast, sseResponse } from "./events.ts";
 
-// A stream the gateway drops and the page attaches again changes nothing the owner sees, and a hidden page asks the gateway for nothing.
+// A stream the gateway drops and the page attaches again changes nothing the owner sees, and a hidden page keeps its stream with one tiny request a minute.
 const at = (n: number) => `2026-11-10T01:${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}.000Z`;
 const history = Array.from({ length: 60 }, (_, i) => (i % 3 === 0
 	? { ts: at(i), kind: "message", source: "web", target: "web", mid: `m${i}`, text: `질문 ${i}: 어제 정리한 일을 다시 알려 주세요` }
@@ -13,6 +13,7 @@ const history = Array.from({ length: 60 }, (_, i) => (i % 3 === 0
 const opens = inbox<{ last: string | null; live: string | null }>();
 const closes = inbox<number>();
 const reqs: string[] = [];
+const vouched = inbox<string | null>();
 const ends = new Set<() => void>();
 let forceReset = false;
 const enc = new TextEncoder();
@@ -34,6 +35,7 @@ const hub = fakeHub({
 	slowTimers: true,
 	api: (req, url) => {
 		reqs.push(url.pathname);
+		if (url.pathname === "/api/health") vouched.push(req.headers.get("x-dotz-live"));
 		if (url.pathname === "/api/events") return events(req, url);
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: history });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
@@ -104,20 +106,24 @@ for (const [name, reset] of [["the gateway ends the stream and the page attaches
 	}, 40_000);
 }
 
-test("a hidden page closes its stream, opens none and polls no state while hidden, and attaches again with what it missed once shown", async () => {
+test("a hidden page keeps its stream and its tab title count rises, vouching once a minute and polling nothing else", async () => {
 	await ready();
-	const n = opens.length;
+	const n = opens.length, live = opens[0]!.live;
 	await setVisible(false);
-	await advanceTimers(view, 46_000);
-	await closes.until(a => a.length >= 1, 5000, "stream closed by the hidden page");
-	const mark = reqs.length;
-	await advanceTimers(view, 600_000);
+	await advanceTimers(view, 120_000);
+	await vouched.until(v => v.length >= 1, 5000, "the first vouching request");
+	await waitFor(`!apiGets.has("/api/health")`);
+	const first = vouched.length, mark = reqs.length;
+	for (let minute = 1; minute <= 5; minute++) {
+		await advanceTimers(view, 60_000);
+		await vouched.until(v => v.length >= first + minute, 5000, "one vouching request for the minute");
+		await waitFor(`!apiGets.has("/api/health")`);
+	}
 	await view.evaluate(`fetch("/api/probe").then(() => 1)`);
-	expect(reqs.slice(mark).filter(p => p === "/api/events" || p === "/api/state")).toEqual([]);
-	expect(opens.length).toBe(n);
+	expect(reqs.slice(mark).filter(p => p !== "/api/probe")).toEqual(Array(5).fill("/api/health"));
+	expect(vouched.slice(first).every(v => v === live)).toBe(true);
+	broadcast({ ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web", text: "숨은 탭에서 받은 답이에요" });
+	await waitFor(`document.title.startsWith("(1)")`);
 	await setVisible(true);
-	await opens.until(a => a.length >= n + 1, 5000, "stream attached again when shown");
-	const again = opens[n]!;
-	expect(again.last).toMatch(/-\d+$/);
-	expect(again.live).toBe(opens[0]!.live);
+	expect(opens.length).toBe(n);
 }, 40_000);

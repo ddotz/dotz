@@ -171,9 +171,10 @@ function drop(sub: ReadableStreamDefaultController<string>, hang = false): void 
 
 // A client that vanished without a FIN (phone asleep, network gone) never errors its socket while only small pings go out, and its backlog stays small. So a page
 // vouches for its stream: the stream URL carries `live=<token>` and every request the page makes carries the header x-dotz-live (web/js/02-basic-markdown.js api()),
-// which hub/main.ts passes to noteLive. The shared ping closes a stream whose token nobody vouched for within LIVE_MAX_MS, so within LIVE_MAX_MS + 25 s. A hidden page
-// closes its own stream first (web/js/99-boot.js). A stream without a token (a peer gateway, the extension, an older page) is not checked.
-export const LIVE_MAX_MS = 90_000;
+// which hub/main.ts passes to noteLive. The shared ping closes a stream whose token nobody vouched for within LIVE_MAX_MS, so within LIVE_MAX_MS + 25 s (205 s, under 5 min).
+// A visible page vouches with every request (state poll every 15 s); a hidden page keeps its stream and vouches once a minute (web/js/99-boot.js), but browsers run the timers
+// of a hidden page about once a minute, so a vouch can be a minute late: 180 s is three of those minutes. A stream without a token (a peer gateway, the extension, an older page) is not checked.
+export const LIVE_MAX_MS = 180_000;
 const liveOf = new WeakMap<AbortSignal, string>();
 export function noteLive(req: Request): void {
 	const stream = req.url.includes("/api/events");

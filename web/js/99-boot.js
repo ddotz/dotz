@@ -34,15 +34,16 @@
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
-  let opened = false, es, lastId = "", fast = true, parkT = 0, parkedAt = 0;
+  let opened = false, es, lastId = "", fast = true, retryT = 0, tries = 0, parkedAt = 0;
   // The stream is a function so a page that comes back from the back/forward cache (the browser closes the stream when it freezes the page) can open a new one.
   // `live` names the stream to the gateway (it closes a stream nobody vouches for, hub/events.ts); `last` replays what a new stream missed, as the browser does on its own reconnect.
   const openStream = () => {
   if (es) es.close();
+  clearTimeout(retryT); retryT = 0;
   es = new EventSource(`/api/events?live=${LIVE_TOK}${lastId ? `&last=${lastId}` : ""}`);
   // The browser resends the last frame id on reconnect and the gateway replays only what was missed. "reset" comes on
   // the first connect and when the gap cannot be replayed (gateway restarted, or too long away): only then refetch.
-  es.onopen = () => { fast = true; setConn(true); };
+  es.onopen = () => { fast = true; tries = 0; setConn(true); outboxGo(); };
   es.addEventListener("reset", m => {
     lastId = m.lastEventId;
     trLoad();   // the waiting approvals by app instance: the 빠른 처리 banner (30-triage.js)
@@ -50,10 +51,11 @@
     if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); kkResync(); }
     opened = true;
   });
-  // A stream the gateway closed (a cleanup, a slow reader) is attached again at once, not after the browser's wait, so the 2 s of setConn pass unseen; a hidden page stays closed (wake() opens it).
+  // A stream the gateway closed (a cleanup, a slow reader) is attached again at once, not after the browser's wait, so the 2 s of setConn pass unseen. Behind a proxy that
+  // answers 502/503 while the gateway is down the browser gives up (CLOSED) and never retries: one timer opens it again, after 0.25 s, 0.5 s, 1 s ... up to 5 s (a hidden page: 15 s).
   es.onerror = () => {
-    if (document.hidden) { es.close(); return; }
     if (fast) { fast = false; openStream(); }
+    else if (es.readyState === 2 && !retryT) retryT = setTimeout(openStream, Math.max(Math.min(250 * 2 ** tries++, 5000), document.hidden ? 15000 : 0));
     setConn(false);
   };
   es.onmessage = m => {
@@ -83,7 +85,7 @@
       ingestMsg(e); scheduleState();
       // Live notices only (not the replay after a reconnect): alert / worklog posts, the gateway's own notes (sent to the web
       // when Discord is off) and lane reports float in the corner.
-      const fresh = !e.ts || Date.now() - Date.parse(e.ts) < 60_000 || Date.parse(e.ts) > parkedAt;   // parkedAt: what came while the page was hidden is new to its owner
+      const fresh = !e.ts || Date.now() - Date.parse(e.ts) < 60_000 || (parkedAt && Date.parse(e.ts) > parkedAt);   // parkedAt: what came while the page was hidden is new to its owner, also when a frozen page gets it as a replay
       const notice = e.kind === "out" && (e.target === "alert" || e.target === "worklog" || (e.target === "web" && e.source === "gateway"));
       if (fresh && (notice || e.kind === "lane_report")) notify(e);
     }
@@ -101,7 +103,7 @@
   const unlessHidden = (key, fn) => () => { if (document.hidden) missed[key] = true; else fn(); };
   setInterval(unlessHidden("state", refreshState), 15000);
   // The 새 버전 badge comes from /api/update: read it on open and again every few minutes.
-  loadUpdate(); setInterval(loadUpdate, 5 * 60000);
+  loadUpdate(); setInterval(() => { if (!document.hidden) loadUpdate(); }, 5 * 60000);
   // The plan normally refetches when a todo tool call ends; this is the fallback while the open target works.
   setInterval(() => { if (current === "chat" && !document.hidden && isWorking(target)) loadTodo(target); }, 20000);
   $("#ustrip").onclick = () => go("usage");
@@ -110,15 +112,17 @@
   let hiddenAt = 0;
   const wake = () => {
     pushTapCheck();
-    const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) { openStream(); setTimeout(() => { parkedAt = 0; }, 3000); }
+    const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream(); setTimeout(() => { parkedAt = 0; }, 10_000);
     if (away > 5000) resync(); else if (missed.state) refreshState();
     if (missed.models) loadModels(true);
     missed.state = missed.models = false;
   };
-  // A hidden page makes no request, so it cannot vouch for its stream: after a while it closes the stream itself and wake() opens it again with the frames it missed.
+  // A hidden page keeps its stream (the tab title count and the unread marks follow it) and vouches for it with the smallest answer the gateway has, once a minute
+  // (a visible page vouches with every request). A frozen page cannot: the gateway drops its stream after LIVE_MAX_MS and wake() attaches again with the frames it missed.
+  setInterval(() => { if (document.hidden) api("/api/health").catch(() => { /* a down gateway is the stream's retry to handle */ }); }, 60000);
   document.addEventListener("visibilitychange", () => {
-    markSeen(); attnChanged(); loadStrip(); clearTimeout(parkT);
-    if (document.hidden) { hiddenAt = Date.now(); parkT = setTimeout(() => { if (document.hidden) { parkedAt = Date.now(); es.close(); } }, 45_000); } else wake();
+    markSeen(); attnChanged(); loadStrip();
+    if (document.hidden) { hiddenAt = parkedAt = Date.now(); } else wake();
   });
   addEventListener("focus", wake);
   setInterval(unlessHidden("models", () => loadModels(true)), 60000);

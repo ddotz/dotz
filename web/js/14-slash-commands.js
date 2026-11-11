@@ -284,14 +284,14 @@ async function sendChat(how) {
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
     if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
-    const r = await api("/api/message", "POST", body);
+    const r = await sendMsgOut(t, text, body, owner && owner.pc);   // null: the gateway is unreachable, the message waits in the outbox (14-outbox.js)
     sendCid = null;
     // A peer's conversation is not on this computer's event stream: its history is read again now, so the sent bubble shows at once.
     if (owner && owner.pc) loadTarget(t, true);
     scrollChat(true); scrollTerm(true);
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast(TX("chat.send.queued")); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
-  else if (mode === "interrupt") toast(TX("chat.send.interrupted"));
+  else if (mode === "interrupt" && r !== null) toast(TX("chat.send.interrupted"));
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
@@ -384,6 +384,7 @@ function renderQueue() { if (paintQueue(tl, target)) scrollChat(false); paneStri
 const QD = new WeakMap();
 const tlTail = () => { let n = tl.lastElementChild; while (n && n.classList.contains("qd")) n = n.previousElementSibling; return n; };
 function qdBubble(i) {
+  if (i.local) return outboxBubble(i);
   const sep = () => el("span", { class: "qd-sep", "aria-hidden": "true", text: "·" });
   return el("div", { class: "um qd" }, el("div", { class: "ub", text: i.text }),
     el("div", { class: "qd-ln" }, el("span", { text: TX("chat.queue.label") }), sep(),
@@ -393,7 +394,7 @@ function qdBubble(i) {
 // The queued messages of conversation t at the end of list: the open timeline, or an inactive pane's. A message drawn after them moves them to the end again.
 // True when there are more of them than were there.
 function paintQueue(list, t) {
-  const mine = QUEUE.filter(i => i.target === t), sig = JSON.stringify(mine.map(i => [i.id, i.text]));
+  const mine = QUEUE.concat(outboxItems()).filter(i => i.target === t), sig = JSON.stringify(mine.map(i => [i.id, i.text]));
   const rec = QD.get(list) || { sig: "", nodes: [] }, found = [...list.querySelectorAll(":scope > .qd")];
   if (rec.sig === sig && found.length === rec.nodes.length && found.every((n, k) => n === rec.nodes[k]) && (!found.length || list.lastElementChild === found[found.length - 1])) return false;
   for (const n of found) n.remove();

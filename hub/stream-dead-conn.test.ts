@@ -163,6 +163,15 @@ test("a stream whose page keeps asking stays, and one page's request does not ke
 	expect(gone.hung.n).toBe(1);
 });
 
+test("a hidden page vouches once a minute, its timer a minute late, and keeps its stream; a vanished one is gone within 5 minutes", async () => {
+	const hidden = attach("hidden"), vanished = attach("vanished");
+	for (let i = 0; i < 6; i++) { await advance(2 * 60_000); hidden.vouch(); }
+	expect(subscriberCount()).toBe(1);
+	expect(hidden.hung.n).toBe(0);
+	expect(vanished.hung.n).toBe(1);
+	expect(LIVE_MAX_MS + PING_MS).toBeLessThan(5 * 60_000);
+});
+
 test("a stream with no token (a peer gateway, the extension) is never cut for silence", async () => {
 	const peer = attach();
 	await advance(10 * 60_000);

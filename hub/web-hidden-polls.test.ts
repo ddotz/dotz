@@ -21,7 +21,7 @@ function boot() {
 		refreshState: () => (calls.refreshState++, Promise.resolve()),
 		loadModels: () => (calls.loadModels++, Promise.resolve()),
 		EventSource: class { readyState = 1; addEventListener() {} close() {} },
-		Date, Object, JSON, Promise, location: { hash: "" }, pushOpenTs: "",
+		Date, Object, JSON, Promise, location: { hash: "" }, pushOpenTs: "", LIVE_TOK: "tok",
 	};
 	const scope = new Proxy(known, { has: () => true, get: (t, k) => (typeof k === "string" && k in t ? t[k] : k === Symbol.unscopables ? undefined : any), set: (t, k, v) => ((t[k as string] = v), true) });
 	new Function("scope", `with (scope) { ${src} }`)(scope);
