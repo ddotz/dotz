@@ -9,8 +9,8 @@ test("the summary instruction states a size target that is a small part of the c
 	expect(text).toContain(String(SUMMARY_MAX_CHARS));
 	// Measured 2026-11-11: Korean-heavy summaries run about 2.9 characters per token; the target stays under a tenth of the default point.
 	expect(SUMMARY_MAX_CHARS / 2.5).toBeLessThan(DEFAULTS.rotate_tokens / 10);
-	// It rides along with every compaction request.
-	expect(text.length).toBeLessThan(2000);
+	// It rides along with every compaction request: about 1,100 characters plus at most 600 for the dead-end, fact, output and done-when lines.
+	expect(text.length).toBeLessThan(1700);
 });
 
 test("the instruction points at the record files the gateway writes", () => {

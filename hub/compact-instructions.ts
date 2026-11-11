@@ -17,5 +17,10 @@ export function compactInstructions(): string {
 		"EXCEPT an owner instruction that still binds future work and is not an open request (a standing rule given in passing): one line each, its message id and the owner's words.",
 		`DROP finished work: nothing, or one pointer line to the file that already holds it (${ARCHIVE_FILES.join(", ")} in the data folder).`,
 		"DO NOT repeat the contract, owner rules, lessons or features: the gateway re-sends them after every compaction.",
+		"DEAD ENDS: one line per attempt that already failed, with why, so it is not tried again.",
+		"Mark each fact checked or assumed; write \"unverified\" for anything not checked, never invent an observation.",
+		"Truncated or large output: keep the narrow command or file path that fetches it again, not its content.",
+		"DONE WHEN: list the completion conditions of the current work.",
+		"Over the limit, cut in this order: finished work, content of large results, old dead ends; keep to the end the next steps, code state, done-when list and binding owner instructions.",
 	].join("\n\n");
 }
