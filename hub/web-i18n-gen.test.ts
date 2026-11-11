@@ -127,6 +127,12 @@ test("markup the English does not have is not taken", () => {
 	expect(valueProblem("Save", "Speichern", ["one", "other"])).toBeUndefined();
 });
 
+test("a joiner keeps the space at its start and end", () => {
+	expect(valueProblem(" and ", "und", ["one", "other"])).toBeDefined();
+	expect(valueProblem(" and ", " und ", ["one", "other"])).toBeUndefined();
+	expect(valueProblem("Save", " Speichern", ["one", "other"])).toBeDefined();
+});
+
 test("an owner's web: entry survives a full regeneration and wins; one with broken placeholders is not used", async () => {
 	const withPlaceholder = Object.entries(webSources().en).find(([, v]) => typeof v === "string" && placeholders(v).length > 0)![0];
 	mkdirSync(join(dir, "custom"), { recursive: true });
