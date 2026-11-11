@@ -64,6 +64,7 @@ export type HealRefusal = "none" | "shipped" | "secret" | "session" | "text" | "
 export type HealTarget = { file: string } | { refuse: HealRefusal };
 type Runs = { script?: string; command: string; cwd?: string; session?: unknown };
 
+const SCRIPT_EXT = /\.(?:sh|bash|zsh|ts|js|mjs|py|rb)$/i;
 const inside = (path: string, dir: string) => path === dir || path.startsWith(dir.endsWith(sep) ? dir : dir + sep);
 const real = (p: string) => {
 	try {
@@ -96,6 +97,8 @@ export function healTarget(w: Runs, pkgDir: string, dataDir: string): HealTarget
 			continue;
 		}
 		if (!st.isFile()) continue;
+		// a command also names data it reads (`cat state.json | ...`): only a script is fixed, never a data file
+		if (!w.script && !(st.mode & 0o111) && !SCRIPT_EXT.test(file)) continue;
 		const at = real(file);
 		if (inside(at, pkg)) return { refuse: "shipped" };
 		if (inside(at, secrets)) return { refuse: "secret" };

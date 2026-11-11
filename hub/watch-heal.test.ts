@@ -56,6 +56,13 @@ test("healTarget names the file a watch runs and refuses what must not be touche
 	expect(t({ command: "bash -lc './check.sh --flag' && echo", cwd: work })).toEqual({ file: join(work, "check.sh") });
 	expect(t({ command: `/usr/bin/env bash ${own}` })).toEqual({ file: own });
 	expect(t({ command: "echo hi" })).toEqual({ refuse: "none" });
+	const stateFile = join(work, "state.json");
+	writeFileSync(stateFile, "{}");
+	expect(t({ command: `cat ${stateFile} | jq .x` })).toEqual({ refuse: "none" });
+	const plainTs = join(work, "read.ts");
+	writeFileSync(plainTs, "console.log(1)");
+	expect(t({ command: `cat ${stateFile} | bun ${plainTs}` })).toEqual({ file: plainTs });
+	expect(t({ command: `${own} < ${stateFile}` })).toEqual({ file: own });
 	expect(t({ command: shipped, script: shipped })).toEqual({ refuse: "shipped" });
 	expect(t({ command: link, script: link })).toEqual({ refuse: "shipped" });
 	expect(t({ command: `sh ${secret}` })).toEqual({ refuse: "secret" });
