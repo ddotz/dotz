@@ -47,7 +47,7 @@
 
   /* shape: soft boxes, one small control radius; only a status tag and the two-value toggle are fully rounded (알약 규칙) */
   --r-card: 18px; --r-sheet: 20px; --r-menu: 14px; --r-ctl: 10px; --r-seg: 8px; --r-seg-in: 6px; --r-pill: 999px;
-  --edge: 28px; --view-w: 920px; --sheet-w: 480px; --lead-ind: calc(var(--row-px) + var(--sp-6) + var(--sp-3)); --back-x: calc(var(--sp-6) - var(--sp-15)); --back-w: calc(var(--sp-8) + var(--sp-05));
+  --edge: 28px; --frame-list-w: 340px; --frame-gap: var(--sp-4); --view-w: 920px; --sheet-w: 480px; --lead-ind: calc(var(--row-px) + var(--sp-6) + var(--sp-3)); --back-x: calc(var(--sp-6) - var(--sp-15)); --back-w: calc(var(--sp-8) + var(--sp-05));
 
   /* heights: rows, menu items, controls and every button tier take their height here (docs/ui-spec.md) */
   --row-h: 44px; --row-py: 8px; --row-px: 16px;
@@ -103,13 +103,12 @@ html, body { height: 100%; margin: 0; }
 *, *::before, *::after { touch-action: manipulation; }
 body { font: 400 var(--fs-body)/var(--lh-body) var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; word-break: keep-all; overflow-wrap: break-word; line-break: strict; }
 /* Korean line breaks like Netflix subtitles (web/DESIGN.md Type): whole words, balanced titles, no one-word last line in body text;
-   only code and paths may break inside a token. .phr keeps a fixed phrase ("무엇이 어디에") on one line when it fits. */
+   only code and paths may break inside a token. */
 h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
 /* short fixed copy (empty states, notes, card questions, meta lines): balanced, so a phrase never leaves one word on the last line */
 .empty, .hc-none, .cv-empty, .bell-none, .note, .cc-note, .dr-none, .od-note, .mb-note, .sup, .dc-q, .dc-ds, .cc-hd { text-wrap: balance; }
 p, li, blockquote, dd { text-wrap: pretty; }
 code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
-.phr { display: inline-block; max-width: 100%; }
 /* a sentence / clause / phrase chunk of copy text (01-phrase-wrap.js): the line breaks between chunks, inside one only when it is
    wider than the line; a box that clamps its lines keeps plain inline text so its ellipsis still trims the last line */
 .wph { display: inline-block; max-width: 100%; }
@@ -120,7 +119,7 @@ button { cursor: pointer; }
 code, pre { font-family: var(--mono); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* The field fill by surface: --card on the grey page (the default), --layer on a white one, one step lighter on a dark dialog (--pop equals --layer there). */
-.card, .list, .fs-card, .ccard, .cv-card, .ms-card, .pj-card, .fc-card, .hcb-card, .apps-card, .kk-draft, .kk-lp, .kk-chat, .kk-rooms, .mbox-reply, .tr-n, .rq, .sheet, .bm.rep, .bm.alert, .cv-side, .cv-list { --ff-fill: var(--layer); }
+.card, .list, .fs-card, .ccard, .cv-card, .ms-card, .pj-card, .fc-card, .hcb-card, .apps-card, .kk-draft, .kk-lp, .kk-chat, .kk-rooms, .mbox-reply, .tr-n, .rq, .sheet, .bm.rep, .bm.alert, .cv-side { --ff-fill: var(--layer); }
 dialog.dlg { --ff-fill: var(--ff-pop); }
 .fs-body.panel { --ff-fill: var(--card); }
 @media (max-width: 639px) { .fs-card, dialog.dlg.fs-card[open] { --ff-fill: var(--card); } .fs-body.panel { --ff-fill: var(--layer); } #v-chat { --ff-fill: var(--layer); } } /* a phone sheet is grey with white panels; the phone chat is white */
@@ -192,8 +191,8 @@ button.conn:disabled { cursor: default; }
 .views { min-height: 0; overflow-y: auto; overflow-x: hidden; }
 .view { max-width: var(--view-w); margin: 0 auto; padding: var(--sp-6); }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
-/* wide: only the two-pane 채팅 screens start at the left like the top bar (--edge = where the logo starts); 프로젝트 does it in .views.pp; every other page stays centered */
-@media (min-width: 1100px) { #v-chat, #v-activity, #v-monitoring { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } }
+/* wide: the two-column frame of 채팅 and 프로젝트 starts at the left like the top bar (--edge = where the logo starts): list column --frame-list-w, gap --frame-gap, the content column takes the rest up to --edge from the window's right (#v-chat and .views.pp in 10-conversations.css; the open project's drill-in page in 20-projects.css sits in the same box, --frame-x). 모니터링 and every other page stay centered */
+@media (min-width: 1100px) { #v-chat, #v-activity, #v-monitoring { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } :root { --frame-top: calc(var(--bar-h) + var(--sp-2)); --frame-x: calc(var(--side-w) + var(--edge) + var(--frame-list-w) + var(--frame-gap)); } }
 /* wide: the top row holds only logo, computer, tabs and the right-side controls. A page with a back arrow (a settings sub-page, 모니터링) gets the arrow and its title as a page header in row 3, just above the page: both sit in the full-width cell and are offset to the left edge of the centered 920px column (.view max-width) */
 @media (min-width: 1100px) {
   .appbar #back, .appbar h1 { grid-row: 3; grid-column: 1 / -1; align-self: start; justify-self: start; }
@@ -377,9 +376,6 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
 @media (hover: hover) { .acc-mv:hover:not(:disabled) { background: var(--card-hover); color: var(--fg); } }
 .acc-dragging .li.acc { transition: transform var(--m-fast) var(--m-ease); }
 .acc-dragging .li.acc.drag { position: relative; z-index: 2; transition: none; background: var(--card); box-shadow: 0 6px 20px rgb(0 0 0 / .18); cursor: grabbing; }
-.rt-roles { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.rt-roles .seg { flex: none; flex-wrap: nowrap; }
-.rt-roles .seg button { flex: none; padding: 0 var(--sp-3); }
 .rt-rows { max-height: min(48dvh, 400px); overflow-y: auto; }
 .rt-row { padding: var(--sp-2) var(--sp-3); min-width: 0; }
 .rt-row .top { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
@@ -946,8 +942,6 @@ dialog.lbox::backdrop { background: transparent; }
 .au .ferr { color: var(--err); font-size: 12px; min-height: 0; }
 .au .rem { display: flex; gap: var(--sp-2); align-items: center; color: var(--fg-2); font-size: 13px; }
 .au .note { color: var(--fg-3); font-size: 12px; }
-.sn .ml-from { font-weight: 600; color: var(--fg); }
-.sn .ml-subj { color: var(--fg); }
 .sn .ml-snip { color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .md p { margin: 0 0 var(--sp-15); } .md p:last-child { margin-bottom: 0; }
 .md ul, .md ol { margin: 0 0 var(--sp-15); padding-left: var(--sp-5); }
@@ -1145,36 +1139,18 @@ dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
 .lr .dot { width: 7px; height: 7px; }
 .lr-o { display: none; padding: 0 var(--sp-2) var(--sp-2) calc(var(--sp-2) + var(--lr-k-w) + var(--sp-2)); }
 .lr.open .lr-o { display: block; }
-.lr-sub { margin-top: var(--sp-15); color: var(--fg-2); font-size: 12.5px; }
 @media (max-width: 639px) { .lg { padding: var(--sp-3); } .lg-b { padding-left: 0; } .lr-o { padding-left: var(--sp-2); } .lr-k { min-width: 28px; } }
-.tu, .th, .tt, .tk, .tr, .te { display: flex; gap: var(--sp-2); min-width: 0; }
-.tu { margin: var(--sp-3) calc(var(--sp-2) * -1) var(--sp-15); padding: var(--sp-1) var(--sp-2); border-radius: 4px; background: rgb(255 255 255 / .07); }
-.tu .tg { color: var(--tac); }
-.tu .tx { min-width: 0; white-space: pre-wrap; }
-.tl { --tl-ind: 22px; margin: var(--sp-15) 0; border-radius: 4px; cursor: pointer; }
-.tl:focus-visible, .tk:focus-visible { outline-offset: 3px; }
-.tl.ok > .th > .tg { color: var(--tok); }
-.tl.bad > .th > .tg { color: var(--terr); }
+.th, .tt, .tr { display: flex; gap: var(--sp-2); min-width: 0; }
 .th b { flex: none; font-weight: 600; }
 .th .ti { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--td); }
-.tl.open .th .ti { white-space: normal; overflow-wrap: anywhere; }
 .tr { margin-left: var(--tl-ind); color: var(--td); }
 .tr .rt { min-width: 0; flex: 1; }
 .tr .ln { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tr .more { opacity: .7; }
-.tl.bad > .tr { color: var(--terr); }
 .full { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; font: inherit; }
-.targs { margin: var(--sp-1) 0 0 var(--tl-ind); padding: var(--sp-15) var(--sp-2); border-radius: 6px; background: rgb(255 255 255 / .06); color: var(--td); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font: inherit; }
-.tl:not(.open) .full, .tl:not(.open) .targs { display: none; }
-.tl.open .short { display: none; }
 .tt { margin: var(--sp-2) 0; }
 .tt .md { flex: 1; min-width: 0; }
-.tk { margin: var(--sp-1) 0; color: var(--td); font-style: italic; cursor: pointer; }
-.tk .tkt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk .tkf { display: none; min-width: 0; flex: 1; }
-.tk.open .tkt { display: none; } .tk.open .tkf { display: block; }
 .tdv { margin: var(--sp-3) 0; font-size: 11.5px; line-height: 16px; text-align: center; overflow-wrap: anywhere; }
-.te { margin: var(--sp-15) 0; color: var(--terr); overflow-wrap: anywhere; }
 .tc { margin: var(--sp-15) 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--td); font: inherit; }
 .tc.err { color: var(--terr); }
 .jump { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); }
@@ -1193,8 +1169,6 @@ details.box[open] > summary::before { transform: rotate(45deg); }
 .tsum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 .tsum:empty { display: none; }
 .ttime { flex: none; font-size: 11px; color: var(--fg-3); }
-.tstate { flex: none; min-width: 10px; font-weight: 600; font-size: 12px; }
-.tstate.ok { color: var(--ok); } .tstate.bad { color: var(--err); }
 details.box .body { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind); }
 details.box .cl { margin: var(--sp-2) 0 0; font: 500 11px/16px var(--font); color: var(--fg-3); }
 details.box .cl:first-child { margin-top: 0; }
@@ -1208,7 +1182,6 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .subsum .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subsum .chev { width: 14px; height: 14px; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
 .subsum[aria-expanded="true"] .chev { transform: rotate(180deg); }
-.sublist { max-height: 196px; overflow-y: auto; padding: var(--sp-1); }
 .subrow { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: var(--row-h); padding: var(--sp-15) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: transparent; font-size: 13px; line-height: 20px; text-align: left; }
 .subrow .nm { display: flex; flex-direction: column; }
 .subrow .nm b { font-size: 14px; line-height: 22px; }
@@ -1323,7 +1296,7 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .brz.e { top: 14px; bottom: 16px; right: -3px; width: 8px; cursor: ew-resize; }
 .brz.s { left: 14px; right: 16px; bottom: -3px; height: 8px; cursor: ns-resize; }
 .board.narrow .brz { display: none; }
-/* 세션 and 프로젝트 tabs: a column of chat-list rows (.cv-list, 10-conversations.css) */
+/* 세션 and 프로젝트 tabs: a column of chat-list rows (10-conversations.css) */
 #v-projects { max-width: 640px; }
 
 .board.narrow { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -1336,7 +1309,6 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .card.att.err { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); background: color-mix(in srgb, var(--err) 8%, var(--card)); }
 @media (hover: hover) { .card.tap.att:hover { border-color: color-mix(in srgb, var(--warn) 75%, var(--line)); background: color-mix(in srgb, var(--warn) 14%, var(--card)); } }
 @media (hover: hover) { .card.tap.att.err:hover { border-color: color-mix(in srgb, var(--err) 75%, var(--line)); background: color-mix(in srgb, var(--err) 14%, var(--card)); } }
-.card.tap .lstat { color: var(--fg-2); }
 .card .subline { margin-top: var(--sp-15); }
 .card .clamp { margin-top: var(--sp-15); }
 /* bundle card: one row per item, each row opens the item and has its own ⋯ */
@@ -1354,7 +1326,6 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 @media (hover: none) { .grow > .ib { opacity: 1; } }
 @media (pointer: coarse) { .brz.e, .brz.s { display: none; } .brz.se { width: 24px; height: 24px; } .brz.se::after { right: 6px; bottom: 6px; } }
 /* markdown has block children (lists, code), so a line clamp would cut through a line: cap the height and fade a long report */
-.lstat { flex: none; padding: var(--sp-15) var(--sp-3); border-top: 1px solid var(--line); color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lr { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 26px; padding: 0 var(--sp-3); }
 @media (hover: hover) { .lr:hover { background: var(--hover); } }
 .lr .lt { flex: none; color: var(--fg-3); font-size: 11px; }
@@ -1565,7 +1536,6 @@ textarea.hs-ta { resize: none; }
 .hs-sw[aria-checked="true"] { background: var(--accent); }
 .hs-sw[aria-checked="true"]::after { transform: translateX(16px); }
 .dcs-form { flex-direction: column; align-items: stretch; gap: var(--sp-3); }
-.dcs-trail { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .dcs-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .dcs-err { color: var(--err); font-size: 13px; line-height: 20px; }
 .dcs-saved { align-self: flex-start; }
@@ -1712,16 +1682,16 @@ textarea.hs-ta { resize: none; }
 :is(#v-chat, .pane-chat) .chatbox.fade-b > .timeline { --edge-b: var(--sp-3); }
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
-   .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 메신저 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
+   .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 메신저 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [#c-attach(첨부, 선택) · textarea · .ib(보내기)]와
    (선택) .cbar 칩 줄을 두면 같은 모양이에요. 채팅 컴포저의 힌트 줄(#cbar: 모델·컨텍스트 칩)은 상자 밖 아래에 서요. */
 .sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" "bar bar bar" !important; align-items: flex-end; gap: 0 var(--sp-1); }   /* no row gap: the empty tray row above would add 4px of padding to the top only */
 .sendrow:not(.ulw) { padding: var(--sp-15) !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
 .sendrow:not(.ulw):focus-within { border-color: transparent !important; }
 .sendrow textarea { grid-area: ta; padding: 7px var(--sp-1); /* nudge: 22px line + 2 x 7px = 36px, the height of the send button beside it */ font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
 .sendrow textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }   /* 폰에서 긴 안내 글이 두 줄로 접혀 상자를 키우지 않게 한 줄로 (시제품 .cmp는 한 줄) */
-:is(#c-attach, .pane-chat [data-c="c-attach"]), .sendrow > .cmp-plus { grid-area: plus; display: inline-flex; align-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
-:is(#c-attach, .pane-chat [data-c="c-attach"]) .ic, .sendrow > .cmp-plus .ic { width: 20px; height: 20px; }
-@media (hover: hover) { :is(#c-attach, .pane-chat [data-c="c-attach"]):hover, .sendrow > .cmp-plus:hover { background: var(--hover); color: var(--fg); } }
+:is(#c-attach, .pane-chat [data-c="c-attach"]) { grid-area: plus; display: inline-flex; align-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
+:is(#c-attach, .pane-chat [data-c="c-attach"]) .ic { width: 20px; height: 20px; }
+@media (hover: hover) { :is(#c-attach, .pane-chat [data-c="c-attach"]):hover { background: var(--hover); color: var(--fg); } }
 .sendrow > .ib { grid-area: send; width: 36px; height: 36px; border-radius: 50%; }
 .sendrow > .cbar { grid-area: bar; margin: 0; padding: var(--sp-1) var(--sp-1) var(--sp-05); min-height: 0; }
 :is(#cbar, .pane-chat .cbar) { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-15); min-height: 20px; margin: var(--sp-1) 0 0; padding: 0 var(--sp-05); overflow-x: auto; scrollbar-width: none; }
@@ -1732,7 +1702,7 @@ textarea.hs-ta { resize: none; }
 :is(#cbar, .pane-chat .cbar) .cchip.cown { opacity: 1; color: var(--fg-3); }
 @media (pointer: coarse) { :is(#cbar, .pane-chat .cbar) { min-height: var(--btn-h-sm); margin-top: 0; } :is(#cbar, .pane-chat .cbar) button.cchip { min-height: var(--btn-h-sm); padding: 0 var(--sp-15); } }
 :is(#cbar, .pane-chat .cbar) .working { display: none !important; }
-@media (pointer: coarse) { :is(#c-attach, .pane-chat [data-c="c-attach"]), .sendrow > .cmp-plus { width: 36px; height: 36px; } }
+@media (pointer: coarse) { :is(#c-attach, .pane-chat [data-c="c-attach"]) { width: 36px; height: 36px; } }
 
 /* 실행 상태 줄 (41-runstate.js, 시제품 .run): 입력 상자 위 한 줄, 12/16 회색 글이에요. 경고·오류는 색만 바뀝니다 */
 .runstate { min-height: 20px; margin: 0 0 var(--sp-15) var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
@@ -1783,12 +1753,7 @@ textarea.hs-ta { resize: none; }
 .dc-fold .ic { width: 16px; height: 16px; transition: transform var(--m-fast) var(--m-ease); }
 .dcard.fold .dc-fold .ic { transform: rotate(180deg); }
 .dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-05); padding: 0 var(--sp-15) var(--sp-15); overflow-y: auto; overscroll-behavior: contain; }
-.dc-steps { flex: none; display: flex; gap: var(--sp-15); padding-bottom: var(--sp-05); overflow-x: auto; scrollbar-width: none; }
-.dc-steps::-webkit-scrollbar { display: none; }
-.dc-chip { flex: none; max-width: 70%; height: var(--btn-h-sm); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: var(--btn-h-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dc-chip.got { color: var(--fg); }
-.dc-chip.on { background: var(--fg); color: var(--bg); }
-.dc-sub, .dcm-sub { padding: var(--sp-05) var(--sp-1) 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dc-sub { padding: var(--sp-05) var(--sp-1) 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
 .dc-inl { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-card); background: var(--card); }
 .dc-inl .dc-q { margin: 0 0 var(--sp-05); padding: 0 var(--sp-1); }
 .dc-inl > .dc-ds { padding: 0 var(--sp-1); }
@@ -1873,8 +1838,16 @@ textarea.hs-ta { resize: none; }
 
 /* ---- 프로젝트 · 세션 (docs/layers.md §5) ---- */
 #v-project { max-width: 1180px; }
-#v-project .pmv-head { max-width: 760px; padding: var(--sp-5); border-radius: var(--r-card); background: var(--card); }
+#v-project .pmv-head { padding: var(--sp-5); border-radius: var(--r-card); background: var(--card); }
+@media (max-width: 1099px) { #v-project .pmv-head { max-width: 760px; } }
 @media (max-width: 639px) { #v-project .pmv-head { padding: var(--sp-4); } }
+/* phone: the app bar already says the name, so the card does not write it again. The ⋯ menu's 프로젝트 수정 opens the same edit field in this row (pmMenuButton);
+   a head without that menu (no work channel) keeps the name as it is. A row left with nothing in it goes too, so no gap stays where the title was. */
+@media (max-width: 639px) {
+  #v-project .pmv-head:has(.pmv-more) .pmv-htop > .pmv-ed:has(> .pmv-title) { display: none; }
+  #v-project .pmv-head:has(.pmv-more) .pmv-htop:not(:has(> .tag, > .pmv-upd, > .pmv-ed > .pmv-form)) { display: none; }
+  #v-project .pmv-head:has(.pmv-more) .pmv-htop > .pmv-upd { margin-left: 0; }
+}
 .pmv-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--sp-3) var(--sp-4); }
 .pmv-hmain { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 /* the title row of the header card: name, state tag, last activity (site/prototype/s-work.js project head) */
@@ -1929,7 +1902,6 @@ textarea.hs-ta { resize: none; }
 .pmv-day { margin: var(--sp-3) var(--sp-1) var(--sp-15); color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .pmv-day:first-child { margin-top: 0; }
 .pmv-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.lproj { padding-left: var(--sp-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 
 /* 알림 화면 (31-notices-screen.js, the prototype's #notices): a filter row, one meta line, then up to three lists of one row shape: the dot, the title with its
    time, a one-line summary with the kind tag, and one cell at the end. Emphasis is the title weight only; the dot is the only colour, the tag stays grey. */
@@ -1955,6 +1927,8 @@ textarea.hs-ta { resize: none; }
 .nsc-l .sec:first-child { margin-top: var(--sp-2); }
 .nsc-r { position: relative; align-items: flex-start; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--row-px); }
 .nsc-r + .nsc-r { border-top: 1px solid var(--line); }
+/* 처리할 것 draws every open question (hundreds on a busy day): rows below the fold skip layout and paint until they scroll near. The size is the row's content box (the title line, the gap, the summary line at the tag's 20px: --lh-row + --sp-05 + --lh-meta + --sp-1; padding and the top line come on top), so the list's height and the scroll place hold; `auto` remembers a row's measured height once seen. Only this list: 답장 대기 (30-replies.js) reuses .nsc-r and holds the reader's place by measuring rows above it. */
+.nsc-l .nsc-r { content-visibility: auto; contain-intrinsic-block-size: auto calc(var(--lh-row) + var(--sp-05) + var(--lh-meta) + var(--sp-1)); }
 @media (hover: hover) { .nsc-r:hover { background: var(--card-hover); } }
 .nsc-r:has(> .nsc-tx:active) { background: var(--row-sel); }
 .nsc-r .lead { align-items: center; width: 8px; height: var(--lh-row); }
@@ -1974,18 +1948,11 @@ textarea.hs-ta { resize: none; }
 .nsc-fold[aria-expanded="true"] .ic { transform: rotate(-90deg); }
 
 /* Rows of the 모니터링 screen (30-monitoring.js), the jump highlight (30-notices.js), the 홈 cards (08-home.js) and the decision sheet (30-notices.js). */
-.nt-row { display: flex; align-items: flex-start; gap: var(--sp-3); width: 100%; min-height: var(--row-h); padding: var(--row-py) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; }
-@media (hover: hover) { .nt-row:hover { background: var(--card-hover); } }
-.nt-row:active { background: var(--active); }
 .nt-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; /* nudge: 8px dot centred on the first 22px text line */ border-radius: 50%; background: var(--fg-3); }
 .nt-dot.tone-done { background: var(--ok); }
 .nt-dot.tone-run { background: var(--accent); }
 .nt-dot.tone-ask { background: var(--warn); }
 .nt-dot.tone-fail { background: var(--err); }
-.nt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
-.nt-t { font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
-.nt-row.un .nt-t { font-weight: 600; }
-.nt-m { color: var(--fg-3); font: 400 12px/16px var(--font); }
 /* The one highlight rule, for ntFlash (30-notices.js, .nt-hl) and a Messenger quote (17-kakao.css): an overlay painted over the host, so a highlight never changes the host's size, radius, padding or margin.
    - anything with its own fill (a card, a bubble, a work card) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
    - plain text (.nt-hl.nt-bar) gets only a faint tint around the message (no left bar: owner 2026-10-22).
@@ -2007,14 +1974,7 @@ textarea.hs-ta { resize: none; }
 @keyframes nt-hl-still { 0% { opacity: 1; } 100% { opacity: 0; } }
 
 
-.mon-sum { padding: var(--sp-1) var(--sp-1) var(--sp-3); color: var(--fg-2); font: 500 14px/20px var(--font); }
 .mon-list { padding: var(--sp-1); }
-.mon-kind { margin-left: var(--sp-2); vertical-align: 1px; }
-.nt-mon { cursor: default; }
-button.nt-mon { cursor: pointer; }
-button.nt-mon .chev { flex: none; align-self: center; color: var(--fg-3); }
-div.nt-mon:active { background: transparent; } @media (hover: hover) { div.nt-mon:hover { background: transparent; } }
-div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitoring row */ }
 
 /* Home cards: 알림 / 작업내역 / 모니터링 (as tall as their content on the board, 07-board.js fit). */
 .card.hc { display: flex; flex-direction: column; }
@@ -2042,21 +2002,13 @@ div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitor
 /* the head's gap belongs to a body: with nothing under it, or a one-line state (.hc-none brings its own 8px), the card stays balanced */
 .ch:last-child, .ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { margin-bottom: 0; }
 .ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { min-height: 24px; }   /* the height of a head with a ⋯, so side-by-side state lines share a baseline */
-/* the summary strip (the assistant card): label over number, wrapping as columns */
-.hsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: var(--sp-3) var(--sp-4); }
-.hsum-s { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
-.hsum-s .k { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.hsum-s .v { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 20px/28px var(--font); letter-spacing: -.01em; }
-.hsum-fb { margin-top: var(--sp-2); }
 .bi[data-id="main"] .subline { margin-top: var(--sp-3); padding: 0; background: none; color: var(--fg-2); }
 
 /* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option. */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
 .ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); }
 .ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); }
-.ds-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) 0 var(--sp-5); }
 .ds-ey { flex: 1; color: var(--warn); font: 600 13px/20px var(--font); }
-.ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--sp-1) var(--sp-5) var(--sp-3); }
 @media (min-width: 700px) {
   .ds-bd { align-items: center; }
   .ds-sheet { border-radius: var(--r-sheet); max-height: min(80vh, 760px); padding-bottom: 0; }
@@ -2117,7 +2069,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 
 /* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, one-line preview, status; never a time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
-.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
+.cv-side { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
 .cv-side { display: none; }
 .cv-head { display: none; }
 #v-chat.cv-listing > .cv-side, #v-monitoring.cv-listing > .cv-side { display: block; }
@@ -2141,7 +2093,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .cv-n { font: 500 15px/22px var(--font); }
 .cv-p { color: var(--fg-2); font: 400 13px/18px var(--font); }
 .mon-pc { margin-left: var(--sp-2); white-space: nowrap; color: var(--fg-3); font: 400 11px/16px var(--font); }
-.cv-id { margin-left: var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cv-row.unread .cv-n { font-weight: 600; }
 /* the unread count and the 미답장 count: 11px, one step up from the tab bar's 10.5 (docs/ui-spec.md 배지·점); the same size on a list row, a home row and the head of a card or app */
 .cv-row .nb, .hr .nb, .hn-h .nb, #mon-head .nb { min-width: 18px; height: 18px; border-radius: 9px; font-size: 11px; line-height: 18px; }
@@ -2259,15 +2210,16 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 
 @media (min-width: 1100px) {
   :root { --cv-w: 240px; }
-  /* 모니터링: 폰과 같은 흐름으로 한 번에 한 층만 서요(목록, 또는 앱). 페이지 폭(.view)을 쓰고, 앱에서 항목을 고르면 그때만 전체 폭의 두 단(.kk.chat-open)이 돼요 */
-  #v-monitoring { display: grid; max-width: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
-  #v-monitoring:not(:has(> .kk.chat-open:not([hidden]))) { width: 100%; max-width: 920px; margin: 0 auto; }
-  #v-monitoring > * { grid-column: 1; }
-  #v-monitoring > .cv-side { grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); padding: var(--sp-2); }
+  /* 모니터링: 채팅과 같은 두 단 (docs/web-app-design.md 앱 틀). 왼쪽은 --frame-list-w의 목록(또는 앱의 패널), 오른쪽은 채팅 내용 상자까지 이어지는 내용이에요 */
+  #v-monitoring { display: grid; width: 100%; max-width: none; column-gap: var(--frame-gap); grid-template-columns: var(--frame-list-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #v-monitoring > * { grid-column: 2; }
+  #v-monitoring > .cv-side { grid-column: 1; grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); padding: var(--sp-2); }
+  #v-monitoring:not(.app-two):not(.kk-on):not(.mx-on) > .cv-side { display: block; }
+  :root:has(#v-monitoring:not([hidden])) { --mbox-r: var(--edge); }   /* the mail column now ends at the frame's right margin, not at a centred page */
   #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 var(--sp-3); }
   #v-monitoring > .chatbox { grid-row: 4; }
   /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
-  :is(#v-chat, .pane-chat) { --cv-w: 340px; position: relative; display: grid; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
+  :is(#v-chat, .pane-chat) { --cv-w: var(--frame-list-w); position: relative; display: grid; max-width: none; column-gap: var(--frame-gap); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
   #v-chat::before { content: ""; grid-column: 2; grid-row: 1 / -1; border-radius: var(--r-card); background: var(--card); }
   #v-chat.mail-open { --cv-w: 240px; }   /* 메일 스레드 패널이 대화 옆에 서면 목록 단을 좁혀 메일 원문 폭을 지켜요 */
   :is(#v-chat, .pane-chat) > * { grid-column: 2; position: relative; z-index: 1; }
@@ -2282,11 +2234,10 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
   .cv-row .cv-n, .cv-row.sub .cv-n { font-size: 14px; line-height: 20px; }
   .cv-row + .cv-row { margin-top: var(--sp-05); border-top: 0; }
   .cv-row.on { background: var(--row-sel); }
-  :is(.cv-side, .cv-list) .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
-  :is(.cv-side, .cv-list) .cv-av .ic { width: 14px; height: 14px; }
-  .cv-list { padding: var(--sp-2); }
-  /* 프로젝트: the list beside the open project's page, like 채팅 (go() in 05-command-palette.js sets .pp) */
-  .views.pp { display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: var(--sp-4); overflow: hidden; width: 100%; padding: var(--sp-6) var(--edge) 0; }
+  .cv-side .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
+  .cv-side .cv-av .ic { width: 14px; height: 14px; }
+  /* 프로젝트: the list beside the open project's page, in 채팅's frame (the same --frame-* tokens; go() in 05-command-palette.js sets .pp) */
+  .views.pp { --cv-w: var(--frame-list-w); display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: var(--frame-gap); overflow: hidden; width: 100%; padding: var(--sp-6) var(--edge) 0; }
   .views.pp > .view { min-height: 0; max-width: none; margin: 0; padding: 0 0 var(--sp-6); overflow-y: auto; }
   .views.pp > #v-projects { grid-column: 1; grid-row: 1; margin-bottom: var(--sp-4); padding: 0; background: transparent; }
   .views.pp > #v-project { grid-column: 2; grid-row: 1; max-width: none; }
@@ -2526,7 +2477,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 @media (min-width: 640px) { .fs-body.panel ~ .fs-ft { padding-inline: var(--sp-4); } }   /* a panel body stands 16px from the sheet edge: the footer lines up with the panel */
 .fs-ft.row { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; max-height: none; }
 .fs-ft:empty { display: none; }
-.fs-ft .dc-row, .fs-ft .dc-note, .fs-ft .dc-back, .fs-ft .dc-chip:not(.on) { background: var(--fs-fill); }
+.fs-ft .dc-row, .fs-ft .dc-note, .fs-ft .dc-back { background: var(--fs-fill); }
 .fs-ft .dc-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--fs-fill)); }
 .fs-ft .dc-st { padding: 0 var(--sp-1); }
 .fs-ft .dc-note { min-height: 88px; }
@@ -2707,15 +2658,11 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-acts .rq-manual .ic { width: 14px; height: 14px; }
 
 /* the queue: one list, newest first, an app filter on top */
-.rq-q { display: flex; flex-direction: column; gap: var(--sp-3); }
-.rq-q > .rq { padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
-.rq-q > .rq.busy { opacity: .6; }
 .rq-chips .sel { width: 160px; }
 @media (max-width: 639px) { .rq-chips .sel { width: 100%; } .rq-chips:not(:empty) { padding-top: var(--sp-1); } }
 .rq-open { margin-left: auto; height: 28px; padding: 0 var(--sp-2); font-size: 12px; }
 .rq-sheet .rq-hd .rc-time { display: none; }   /* the sheet's head line has room for who and where only; the time stands in the list row */
 .rq-fail { margin-top: var(--sp-2); color: var(--err); font-size: var(--fs-meta); line-height: var(--lh-meta); }   /* a failed press: above the buttons, in the card's flow */
-@media (pointer: coarse), (max-width: 639px) { .rq-q > .rq { padding: var(--sp-3); } }
 
 /* 댓글 답글 카드: 작은 아바타 + 이름과 출처가 한 줄, 댓글은 조용한 인용, 초안이 본문, 버튼은 작은 단계 하나 줄 (원칙 1·5·9) */
 .rq-who { gap: var(--sp-2); }
@@ -2728,8 +2675,9 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-acts { flex-wrap: wrap; gap: var(--sp-2); }
 /* one row, one height: primary (accent) / secondary (tonal) / text, the same 32px box and --r-ctl corner on every card, never a pill (the prototype's .cf row) */
 .rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 var(--sp-3); border-radius: var(--r-ctl); font: 600 13px/20px var(--font); }
-/* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼) */
-@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } }
+/* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼).
+   The keyboard hint of the quick triage has no keys to name on a touch screen. */
+@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } .tr-keys { display: none; } }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
 
@@ -2739,6 +2687,12 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* a wide screen: 빠른 처리 sits at the tabs' right end, not on a row of its own; a phone keeps the rows stacked so the button never moves with the tab counts */
 @media (min-width: 640px) { .rq-hd2 { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); } .rq-hd2 > .nsc-f { flex: none; max-width: 100%; margin-bottom: 0; } .rq-hd2 > .rq-qm { flex: 1; min-width: 0; margin-block: 0; } .rq-hd2 > .rq-chips { flex: none; } }
 #v-monitoring.rq-on > .cv-head { display: none; }
+/* a queue row's card: in the right column in place of the queue on a wide screen (30-replies.js rqPaneOpen), the row it came from marked as chat marks its open row */
+.rq-r.on { background: var(--row-sel); }
+/* the card fits the column the way the sheet fits the window: its head stays and a long draft scrolls in its body */
+#mon-tl:has(> .rq-pane) { display: flex; flex-direction: column; height: 100%; }
+.rq-pane { --ff-fill: var(--layer); display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: var(--card); }
+.rq-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-align: center; text-wrap: balance; }
 #v-monitoring.rq-on .tl-in { max-width: none; }
 .bm.q-fold .md > :not(:first-child) { display: none; }
 .rq-qm .sp { flex: 1; }
@@ -2928,8 +2882,13 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 
 /* the prototype's #triage: a compact card that is as tall as its draft, not a screen-high dialog */
 .fs-card.tr { width: min(680px, calc(100% - 48px)); height: auto; max-height: min(92dvh, 820px); }
-.tr .tr-pos { display: flex; align-items: baseline; gap: var(--sp-05); font-variant-numeric: tabular-nums; }
-.tr .tr-sum { color: var(--fg-3); font: 500 14px/20px var(--font); }
+/* a wide 모니터링: the screen stands in the right column like the reply card (.rq-pane, 15-reply-card.css), with the same insets */
+.tr-pane { --fs-fill: var(--layer); color: var(--fg); }
+.tr-pane:focus { outline: 0; }
+.tr-pane .fs-body { padding: 0 var(--sp-4) var(--sp-4); }
+.tr-pane .fs-ft { padding: var(--sp-3) var(--sp-4) var(--sp-4); }
+.tr .tr-pos, .tr-pane .tr-pos { display: flex; align-items: baseline; gap: var(--sp-05); font-variant-numeric: tabular-nums; }
+.tr .tr-sum, .tr-pane .tr-sum { color: var(--fg-3); font: 500 14px/20px var(--font); }
 .tr-bar { height: 4px; margin-top: var(--sp-15); border-radius: 2px; background: var(--track); overflow: hidden; }
 .tr-bar > span { display: block; height: 100%; background: var(--accent); transition: width var(--m-slow) var(--m-ease); }
 .tr-tog { gap: var(--sp-1); }
@@ -2944,7 +2903,7 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 .tr-org { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3) var(--sp-4); border-radius: 12px; background: var(--fs-fill); }
 .tr-org.muted { color: var(--fg-3); font-size: 13px; }
 .tr-who { color: var(--fg-2); font-size: 13px; line-height: 20px; }
-.tr-otx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; max-height: 9.5em; overflow-y: auto; }
+.tr-otx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; max-height: 6lh; overflow-y: auto; }
 .tr-info { margin: 0; padding: 0 0 0 var(--sp-5); color: var(--fg-2); font-size: 13px; line-height: 20px; }
 .tr-warn { padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--warn); font-size: 13px; line-height: 20px; }
 .tr-ta { width: 100%; min-height: 88px; max-height: 52vh; field-sizing: content; padding: var(--sp-3); border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/24px var(--font); resize: none; box-sizing: border-box; }
@@ -2962,6 +2921,8 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 .tr-b { height: 40px; min-width: 0; padding: 0 var(--sp-4); font-size: 15px; }
 .tr-hint, .tr-keys { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .tr-fail { color: var(--err); }
+.tr-why { color: var(--fg-2); font: 400 13px/20px var(--font); overflow-wrap: anywhere; }
+.tr-why[hidden] { display: none; }
 .tr-note { min-height: 84px; }
 .tr-empty { align-items: center; justify-content: center; text-align: center; }
 .tr-done-t { font: 700 20px/28px var(--font); }
@@ -2973,13 +2934,13 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 .tr-rh { display: flex; align-items: center; gap: var(--sp-2); width: 100%; padding: 0; border: 0; background: transparent; color: var(--fg); font: 600 14px/20px var(--font); text-align: left; cursor: pointer; }
 .tr-rh:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .tr-n { flex: none; min-width: 24px; height: 24px; border-radius: 12px; background: var(--card); color: var(--fg-2); font: 600 12px/24px var(--font); text-align: center; }
-.tr-rq { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-rq { flex: 1; min-width: 0; overflow-wrap: anywhere; }   /* the recipients are what the row is for: a long list wraps, it is not cut */
 .tr-rb { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; color: var(--fg); cursor: pointer; }
 .tr-rb.open { display: block; -webkit-line-clamp: none; }
 .tr-rb.mail { padding-top: var(--sp-2); border-top: 1px solid var(--line); color: var(--fg-2); }
-.tr-seg { display: flex; gap: var(--sp-1); padding: 3px; /* nudge: 3px tray keeps the 12px corner concentric with the 9px cells */ border-radius: 12px; background: var(--card); align-self: flex-start; }
-.tr-sg { min-height: 36px; padding: 0 var(--sp-3); border: 0; border-radius: 9px; background: transparent; color: var(--fg-2); font: 600 13px/20px var(--font); cursor: pointer; }
-.tr-sg.on { background: var(--accent); color: var(--on-accent); }
+.tr-seg { display: flex; gap: var(--sp-2); align-self: flex-start; }
+.tr-sg { min-height: 40px; padding: 0 var(--sp-4); border: 0; border-radius: var(--r-ctl); background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--fg-2); font: 600 13px/20px var(--font); cursor: pointer; }   /* three equal outlined choices; only a pressed one is filled */
+.tr-sg.on { background: var(--accent); box-shadow: none; color: var(--on-accent); }
 .tr-sg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .tr-rn { min-height: 40px; padding: 0 var(--sp-3); border: 0; border-radius: 10px; background: var(--ff-fill); color: var(--fg); font: 400 14px/20px var(--font); }
 .tr-rn:focus { outline: 0; box-shadow: var(--ff-ring); }
@@ -2989,12 +2950,25 @@ dialog.dlg .dbody .err-t:empty { display: none; }
   .tr-b, .tr-go { height: 44px; padding: 0 var(--sp-4); }
   .tr-list .tr-seg { align-self: stretch; }
   .tr-sg { flex: 1; min-height: 44px; }
+  .tr-rh, .tr-rn { min-height: 44px; }
 }
 @media (pointer: coarse) { .tr-keys { display: none; } }
 .tr-post { color: var(--fg); font: 600 13px/20px var(--font); }
 .tr-cmt .tr-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-05) var(--sp-15); }
 .tr-cmt .tr-who b { color: var(--fg); font-weight: 600; }
 .tr-nav { display: flex; justify-content: space-between; gap: var(--sp-2); }
+/* the four labelled parts of a card (30-triage.js trSec): the reply card's own rows and quote under a label, whatever the kind */
+.tr-sec { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.tr-sec .rq-og-wrap { margin-top: 0; }
+.tr-sec .rq-orig .rq-ot, .tr-row .rq-orig .rq-ot { white-space: pre-wrap; text-wrap: pretty; }   /* pretty keeps a last line from being one word */
+.tr-sec .rq-orig .rq-ot { max-height: 6lh; overflow-y: auto; }
+.tr-sec .rq-to { margin-top: 0; }
+.tr-sec .dr-files { margin-top: 0; }
+.tr-sec .rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: 0; }
+.tr-none { color: var(--fg-3); font: 400 13px/20px var(--font); }
+.tr-row .rq-og-wrap { margin-top: 0; }
+.tr-row .rq-orig { cursor: pointer; }
+.tr-file { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Assistant answers drawn by their shape (02-answer-shapes.js, prototype answers.css). Rows are the result card's .rc-row; this file only adds the card
    around them, a wider key and the phone stack. Every word is plain selectable text: a selection copies what it covers. */
@@ -3004,17 +2978,22 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 .ans-lead { font-weight: 600; }
 .ans-card .rc-rows { gap: var(--sp-3); }
 .ans-card .rc-row { padding: 0; }
-.ans-keys { --rc-k-w: 88px; }
-.ans-keys .rc-k { overflow-wrap: anywhere; }
+/* The name column is as wide as the longest name of this card, up to --ans-k-max or 40% of the card (the grid's own width), so the short everyday names sit on one
+   line and every row shares one edge; a longer name breaks between words into balanced lines, a path or an id breaks inside the token. */
+.rc-rows.ans-keys { --ans-k-max: 176px; display: grid; grid-template-columns: fit-content(min(40%, var(--ans-k-max))) minmax(0, 1fr); }
+.ans-keys .rc-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; }
+.ans-keys .rc-k { width: auto; text-wrap: balance; overflow-wrap: anywhere; }
+.ans-keys .rc-w { text-wrap: pretty; }
 .ans-keys .rc-w b { font-weight: 400; }
 .ans-steps { --ans-step: 24px; --rc-k-w: var(--ans-step); }
 .ans-steps .rc-row { align-items: flex-start; }
 .ans-steps .rc-k { display: grid; place-items: center; height: var(--ans-step); border-radius: 50%; background: var(--card); color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; }
 .ans-steps .rc-w { line-height: var(--lh-chat); }
 .ans-tb { padding: var(--sp-2) var(--sp-4); }
-.ans-tb table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* auto layout: a column is as wide as its words need (a name never leaves one short word on a second line), the cells still break a long token so nothing leaves the card */
+.ans-tb table { width: 100%; border-collapse: collapse; }
 .ans-tb th, .ans-tb td { padding: var(--sp-2) var(--sp-3) var(--sp-2) 0; background: none; text-align: left; vertical-align: baseline; font-size: var(--fs-body); line-height: var(--lh-body); overflow-wrap: anywhere; white-space: normal; }
-.ans-tb th { color: var(--fg-3); font-weight: 400; }
+.ans-tb th { color: var(--fg-3); font-weight: 400; text-wrap: balance; }
 .ans-tb thead th { color: var(--fg-2); font-weight: 500; }
 .ans-tb tbody tr > * { border-top: 1px solid var(--line); }
 .ans-card .ans-secs { gap: 0; }
@@ -3041,6 +3020,7 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 .ans-ev { display: flex; flex-wrap: wrap; column-gap: var(--sp-3); margin-top: var(--sp-3); padding: 0 var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .ans-ev code { padding: 0; background: none; font-size: var(--fs-meta); }
 @container tlcol (max-width: 559.98px) {
+  .ans-wordy.ans-keys { display: flex; }
   .ans-wordy .rc-row { display: block; }
   .ans-wordy .rc-k { display: block; width: auto; line-height: var(--lh-sec); }
 }
@@ -3149,7 +3129,6 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .mr-todo { display: flex; gap: var(--sp-15); min-width: 0; color: var(--fg-2); font-size: 12.5px; line-height: 18px; }
 .mr-todo b { flex: none; color: var(--warn); font-weight: 600; }
 .mr-todo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mr-slot { margin-top: var(--sp-15); display: flex; gap: var(--sp-15); }
 /* the 초안 작성 dialog (30-monitoring.js mailDraftDialog): the mail it answers as a tonal block (sender, subject, summary), then the box.
    The block is a --bg well in the floating dialog (its --pop equals --layer in dark), and --card on the phone's full-screen --bg (14-overlay.css) */
 .md-dlg { gap: var(--sp-4); }
@@ -3349,11 +3328,11 @@ a.dr-att:active { background: var(--active); }
   .kk.chat-open .kk-rooms { display: none; }
   .kk-chat { margin-bottom: 0; }
 }
+/* a wide screen puts them in the app frame (20-monitoring.css .app-two): the rooms are the left panel at the list column, the chat the main slot. Without the frame (a split pane) the chat replaces the rooms, as on a phone. */
+#v-monitoring:not(.app-two) .kk.chat-open .kk-rooms { display: none; }
 @media (min-width: 1100px) {
-  #v-monitoring > .kk { grid-row: 4; margin-bottom: var(--sp-1); }
-  .kk-rooms { margin-bottom: 0; }
-  .kk.chat-open .kk-rooms { flex: none; width: 300px; }
-  .kk-chat { margin-bottom: 0; }
+  #v-monitoring:not(.app-two) > .kk { grid-row: 4; margin-bottom: var(--sp-1); }
+  .kk-rooms, .kk-chat { margin-bottom: 0; }
 }
 
 /* the watched rooms: a head with the count and 추가, one row per room */
@@ -3371,12 +3350,16 @@ a.dr-att:active { background: var(--active); }
 #kk-add .kk-pd-in { background: var(--bg); outline: 0; }
 #kk-add .kk-pd-b { padding: var(--sp-1) var(--sp-6) var(--sp-6); }
 .kk-search + .kk-pl { margin-top: var(--sp-3); }
+/* in the sheet the check says "watched"; the grey fill is the selected row of a list, so the sheet's rows keep none */
+#kk-add .kk-pr.on { background: none; }
+@media (hover: hover) { #kk-add .kk-pr.on:hover { background: none; } }
 .kk-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .kk-ck { flex: none; width: 18px; height: 18px; color: var(--accent); }
 @media (pointer: coarse), (max-width: 639px) { #kk-add .kk-search { height: 40px; font-size: 16px; } }
 @media (max-width: 639px) { #kk-add .kk-pd-in { padding-top: env(safe-area-inset-top); } #kk-add .kk-pd-b { padding-inline: var(--sp-4); } }
 .kk-add .kk-pd-b { padding: var(--sp-2) 0 0; }
 .kk-hint { padding: 0 var(--sp-4) var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
+.kk-note + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }   /* a failed or empty place: the line, then its one action, centred */
 .kk-note { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font: 400 12px/16px var(--font); text-align: center; text-wrap: balance; }
 .kk-pr { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--row-py) var(--sp-4); }
 .kk-pr + .kk-pr { border-top: 1px solid var(--line); }
@@ -3423,7 +3406,7 @@ a.dr-att:active { background: var(--active); }
 @media (prefers-reduced-motion: reduce) { .kk-sw, .kk-knob { transition: none; } }
 
 /* chat */
-.kk-head { display: none; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.kk-head { display: none; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }   /* the general chat's head insets */
 .kk-head:not(:empty) { display: flex; }
 @media (max-width: 1099px) { .kk-head, .kk-head:not(:empty) { display: none; } }
 .kk-owed { display: none; }
@@ -3433,9 +3416,9 @@ a.dr-att:active { background: var(--active); }
 .kk-chat > .kk-box { flex: 1 0 min(400px, 52dvh); }
 #kk-chat > .kk-box { flex: 1 1 0; min-height: 0; }
 /* Messages leaving the list fade out at both edges instead of being cut; the padding keeps the first and last one clear of the fade at rest. */
-.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-4); -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
-/* the chat window's column is centered with a width cap: on a wide pane both sides keep the same distance to the edge, like a Messenger window */
-.kk-in { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; max-width: 880px; min-width: 0; margin: 0 auto; }
+.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-1) var(--sp-6) var(--sp-3); -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
+/* the chat window's column fills the main slot, with the insets of the general chat's timeline (.kk-tl) */
+.kk-in { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; min-width: 0; }
 .kk-in > .kk-note { margin: auto; color: var(--kk-time); }
 .kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 var(--sp-3); transform: translateX(-50%); border-radius: var(--r-ctl); box-shadow: var(--float); }
 .kk-top { display: flex; justify-content: center; padding: var(--sp-05) 0 var(--sp-15); }
@@ -3563,6 +3546,8 @@ a.dr-att:active { background: var(--active); }
 
 /* composer: the chat composer's look (.composer, .sendrow), a draft card above it */
 .kk-chat > .kk-composer { max-width: none; margin: 0; padding: 0; }
+/* the general chat's composer insets; the room's cards stand on the page, so the margin takes the padding back and they keep the window's edges */
+#kk-chat > .kk-composer { width: auto; padding: var(--sp-3) var(--sp-3) var(--sp-2); margin: calc(var(--sp-3) * -1) calc(var(--sp-3) * -1) calc(var(--sp-2) * -1); }
 .kk-drafts { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0 0; }
 .kk-drafts[hidden] { display: none; }
 .kk-draft { flex: none; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
@@ -3572,6 +3557,7 @@ a.dr-att:active { background: var(--active); }
 .kk-draft .btns { gap: var(--sp-15); }
 .kk-choices { flex-wrap: wrap; }
 .kk-draft .btn { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
+@media (pointer: coarse), (max-width: 639px) { .kk-draft .btn { height: var(--btn-hit); } }   /* a thumb: not smaller than the buttons around the card */
 /* the room's reply card sits under the chat: at most 40% of the screen, only the bubbles scroll, the buttons stay */
 #kk-chat .kk-drafts { margin: 0 0 var(--sp-2); min-height: 0; max-height: 40dvh; overflow-y: auto; }
 #kk-chat .kk-draft { display: flex; flex-direction: column; min-height: 0; max-height: 40dvh; }
@@ -3701,9 +3687,7 @@ a.dr-att:active { background: var(--active); }
 .fs-body .as-row { padding: var(--sp-2) 0; }
 .as-ic { flex: none; display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 50%; background: var(--layer); color: var(--fg-2); }
 .as-ic svg { width: 16px; height: 16px; }
-.as-lead { margin-bottom: var(--sp-2); }
-.as-tpls, .tplrow { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
-.as-tpls { margin-bottom: var(--sp-4); }
+.tplrow { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
 .tplrow { position: relative; flex-wrap: nowrap; align-items: center; padding: var(--sp-15) var(--sp-3) var(--sp-05); }
 .tplrow .tplnote { flex: 1; min-width: 0; padding: 0 var(--sp-1); font-size: 13px; color: var(--fg-2); }
 .tplrow[hidden] { display: none; }
@@ -3750,9 +3734,6 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 #cm-pick .sec { margin-inline: var(--sp-4); }   /* section names start on the rows' left line */
 #cm-pick .sec + .kk-pick-src { border-top: 0; }
 #cm-pick .fs-hd { padding-left: max(var(--sp-4), env(safe-area-inset-left)); }   /* the head starts on the rows' left line (this sheet's rows sit at --sp-4 at every width) */
-#cm-empty + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }
-.cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: var(--sp-2) var(--sp-3); border-radius: 12px; border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
-.cm .kk-draft input.kk-ta:focus { outline: 0; box-shadow: var(--ff-ring); }
 /* 댓글 / DM swap the whole list under them, so they are screen tabs like the mailbox tabs (web/DESIGN.md 화면 탭), not a filter track */
 #cm-rooms .cm-tabs { position: static; flex-wrap: nowrap; margin: 0 var(--sp-4) var(--sp-1); padding: 0; background: none; box-shadow: inset 0 -1px 0 var(--line); }
 #cm-rooms .cm-tabs .mr-f { height: var(--btn-hit); border-radius: 0; background: none; color: var(--fg-2); }
@@ -3760,6 +3741,8 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 @media (hover: hover) { #cm-rooms .cm-tabs .mr-f:hover { color: var(--fg); } }
 #cm-rooms .cm-tabs .mr-f.on { color: var(--fg); box-shadow: inset 0 -2px 0 var(--fg); }
 .dm-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-4) var(--sp-2); }
+/* the note under the tabs says it once for the whole list; an open DM on a phone has no list beside it, so its own line stays there */
+#v-monitoring.app-two #dm-ro { display: none; }
 .dm-note { color: var(--fg-3); font: 400 12px/16px var(--font); }
 
 /* post list rows: avatar or thumbnail, title, one-line preview, time over the two counts */
@@ -3769,10 +3752,9 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 /* the conversation: the card surface, a hairline under the head */
 .cm .kk-chat { background: var(--card); }
 .cm .kk-head { border-bottom: 1px solid var(--line); }
-.cm .kk-tl { padding: var(--sp-05) var(--sp-4) var(--sp-3); }
+.cm .kk-tl { padding: var(--sp-1) var(--sp-6) var(--sp-3); }
 .cm .kk-in { gap: 0; }
 .cm .kk-in > .kk-note { color: var(--fg-3); }
-@media (max-width: 639px) { .cm .kk-tl { padding: var(--sp-05) var(--sp-3) var(--sp-3); } }
 /* a day is a quiet label with a hairline, not a dark pill */
 .cm .kk-date { align-self: stretch; display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-3) 0 var(--sp-05); padding: 0; border-radius: 0; background: none; color: var(--fg-3); font: 500 12px/16px var(--font); }
 .cm .kk-date::after { content: ""; flex: 1; height: 1px; background: var(--line); }
@@ -3923,8 +3905,10 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .apps-err .sup { color: var(--fg-3); font-size: 12px; overflow-wrap: anywhere; }
 
 @media (min-width: 1100px) {
-  #v-apps { display: grid; max-width: none; margin: 0; padding-left: var(--edge); padding-right: var(--edge); column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-  #v-apps > .cv-side { grid-column: 1; grid-row: 1; align-self: start; display: block; min-height: 0; max-height: calc(100% - var(--sp-4)); margin-bottom: var(--sp-4); padding: var(--sp-2); }
+  /* the app frame (docs/web-app-design.md): chat's two columns, the list at chat's x and width, the app at chat's content box */
+  #v-apps { --cv-w: var(--frame-list-w); display: grid; max-width: none; margin: 0; padding-left: var(--edge); padding-right: var(--edge); column-gap: var(--frame-gap); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  #v-apps > .cv-side { grid-column: 1; grid-row: 1; align-self: start; display: block; min-height: 0; max-height: calc(100% - var(--sp-4)); margin-bottom: var(--sp-4); padding: 0; }
+  .apps-hd { padding: var(--sp-3) var(--sp-4); }
   #v-apps.cv-listing > .cv-side, #v-apps > .apps-pane, #v-apps:not(.cv-listing) > .apps-pane { display: flex; }
   #v-apps > .apps-pane { grid-column: 2; grid-row: 1; min-height: 0; margin-bottom: var(--sp-4); }
   #v-apps > .apps-pane:not(:has(.apps-frame)) { display: block; }
@@ -3999,11 +3983,7 @@ span.mr-star:not(.on) { opacity: .45; }
 @media (max-width: 639px) { .mtop { padding: 0 var(--sp-05); } }
 /* the day / 지난 기록 lines above an open mail only push it down: the mail's own time is in its header */
 #tl > .a-div:has(~ .bm.mopen) { display: none; }
-/* an open mail stands in the list's column (the page's width and the list's own 8px gutter), so opening one keeps the text's left line */
-@media (min-width: 1100px) {
-  #v-chat.mon-ctx:not(.mon-two):not(.canvas-open):has(#tl > .bm.mopen) { max-width: var(--view-w); }
-  #v-chat.mon-ctx:not(.mon-two):not(.canvas-open):has(#tl > .bm.mopen) .timeline { padding-inline: var(--sp-2); }
-}
+/* an open mail stands in the list's column, 채팅's content box (the app frame, 20-monitoring.css); its insets are the chat window's (05-log.css), not its own */
 .mopen > .rc-title { margin-top: var(--sp-1); font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .mopen > .rc-hd { margin-top: 0; font-size: 13px; }
 /* the summary (11-mailtext.js mailSumBlock): a grey block, the lightning mark in grey (blue is only for what you press), 요약 ·, two short sentences with the to-do in bold */
@@ -4021,6 +4001,9 @@ span.mr-star:not(.on) { opacity: .45; }
 /* the original: a quiet grey well, no border (principles 5, 9); the HTML frame stays a white page */
 .mopen .mb-txt { padding: 0; border: 0; background: none; }
 .mopen .mb-frame { border: 0; }
+/* one lead (principle 1): the open mail leads; the answer card under it asks in a regular line and its answers are one line each (the three stay as they are) */
+#v-chat:has(#tl > .bm.mopen) .dcard .dc-q { font-size: var(--fs-body); line-height: var(--lh-sec); font-weight: 500; }
+#v-chat:has(#tl > .bm.mopen) .dcard .dc-ds { display: none; }
 /* the files: chips with the name and the size, one download each (principle 3); the head is a grey word, not a bold line */
 .mopen > .mr-files { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-15) 0 var(--sp-1); padding-top: 0; border-top: 0; }
 .mopen > .mr-files > .mr-fh { flex: 1 0 100%; font-weight: 500; }
@@ -4115,7 +4098,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mr-star { width: 28px; height: 28px; }
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
-  .mr-slot button.cchip.mr-act { height: 44px; border-radius: 22px; }
   .mbox-bar { gap: var(--sp-05); height: 44px; padding: 0 var(--sp-1) 0 var(--sp-15); }
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
@@ -4223,7 +4205,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 @media (max-width: 1023px) {
   .mth-m { display: block; }
   .mhd-line > .mth-m { display: contents; }
-  .mhd-line .mth-list { flex: 1 0 100%; order: 2; margin-top: var(--sp-05); padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
+  .mhd-line .mth-list { flex: 1 0 100%; min-width: 0; order: 2; margin-top: var(--sp-05); padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
 }
 
 @media (min-width: 1024px) {
@@ -4409,12 +4391,7 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .mx-tf .btn { height: var(--btn-h-sm); }
 
 @media (min-width: 1100px) {
-  /* the pane stands beside the scrolling list, the head over both; the page is wider than a plain item's 920px to leave the list its width */
-  #v-monitoring.mx-on:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: 1180px; grid-template-columns: 256px minmax(0, 1fr); column-gap: var(--sp-5); }
-  #v-monitoring.mx-on:not(.cv-listing) > * { grid-column: 2; }
-  body:has(#v-monitoring.mx-on:not(.mx-scr)) { --mbox-r: calc(max(0px, (100vw - var(--side-w) - 1180px) / 2) + var(--edge)); }   /* the page is 1180 wide beside the mailbox pane: 20-mail-box.css --mbox-r */
-  #v-monitoring.mx-on:not(.cv-listing) > .cv-head { grid-column: 1 / -1; }
-  #v-monitoring.mx-on:not(.cv-listing) > #mx-pane { grid-column: 1; grid-row: 4; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; overflow-y: auto; scrollbar-width: none; }
+  /* the pane stands beside the scrolling list at the left edge: the app frame (.app-two, 20-monitoring.css) that the open mail keeps */
   #mon-tl > .mx-tabs:not(.mr-place) { display: none; }
   #v-monitoring.mx-on #mon-tl { padding-top: 0; }
   /* 메일함 설정 and 메일함 추가 take the whole view */
@@ -4426,6 +4403,20 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
   #mon-tl > .mr .rc-hd > .rc-src:has(+ .mx-am, + .mx-bt) { flex-basis: 104px; }
   #mon-tl > .mr .rc-hd > .mx-bt { flex: none; max-width: 96px; }
 }
+/* beside the 340px app panel the list is 456px at 1100 and under 640px until 1280: the subject keeps its words. The box name (the pane already marks the box) and the preview go,
+   the sender is narrower, and where a pointer hovers the row's icons wait for it and take the time's place; touch keeps them. */
+@media (min-width: 1100px) and (max-width: 1279px) {
+  #mon-tl > .mr .rc-hd > .rc-src, #mon-tl > .mr .rc-hd > .rc-src:has(+ .mx-am, + .mx-bt) { flex-basis: 72px; }
+  #mon-tl > .mr .rc-hd > .mx-bt, #mon-tl > .mr > .mr-sum { display: none; }
+  #mon-tl > .mr > .rc-title { max-width: none; }
+}
+@media (min-width: 1100px) and (max-width: 1279px) and (hover: hover) {
+  #mon-tl > .mr .rc-hd > .ib { position: absolute; opacity: 0; pointer-events: none; }
+  #mon-tl > .mr:is(:hover, :focus-within) .rc-hd > .ib { position: static; opacity: 1; pointer-events: auto; }
+  #mon-tl > .mr:is(:hover, :focus-within) .rc-hd > .rc-time { display: none; }
+}
+/* the list that failed to load: the sentence and its retry stand alone, nothing to filter yet */
+#mon-tl > .mx-fail ~ :is(.mx-tabs, .mr-filter, .mbox-bar, .empty) { display: none; }
 @media (max-width: 639px) {
   .mx-bh .meta, .mx-setb span { display: none; }
   .mx-setb { width: var(--field-h); padding: 0; }
@@ -4520,23 +4511,53 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 :is(#mon-side, #chat-convo.mon-side) .cv-av .ic { width: 20px; height: 20px; }
 :is(#mon-side, #chat-convo.mon-side) .cv-row .cv-n { font: 500 15px/22px var(--font); }
 :is(#mon-side, #chat-convo.mon-side) .cv-row .cv-p { color: var(--fg-2); font: 400 12px/16px var(--font); }
+/* another computer's row starts its line with where it runs (pqWhere, "맥미니에서 돌아요 · …"): in the 340 panel that line takes a second line instead of losing its news */
+:is(#mon-side, #chat-convo.mon-side) .cv-row[data-k^="p:"] .cv-p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
 :is(#mon-side, #chat-convo.mon-side) .cv-row .cv-m { gap: var(--sp-15); }
 /* the row's way in: a small chevron at the right edge, after its tags (the prototype's .li .end chev) */
 :is(#mon-side, #chat-convo.mon-side) .cv-row::after { align-self: center; content: ""; flex: none; width: 6px; height: 6px; margin-left: var(--sp-05); border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); }
 /* one panel width in every 모니터링 state (list, app, mail, watch): the open mail conversation draws the same column (owner 2026-11-04) */
-/* an app's conversation stands alone, as wide as a conversation of 채팅; a monitor's (.mon-two) keeps 채팅's own two columns with the list of monitors (owner 2026-11-06) */
+/* a conversation opened from 모니터링 keeps 채팅's own two columns: the 모니터링 list (#chat-convo.mon-side) or the app's panel (.app-two) at the left, the conversation at
+   채팅's content box, the column the item's own screen used (the app frame, owner 2026-11-11; it replaces the lone centred conversation of 2026-11-06) */
 @media (min-width: 1100px) {
-  #v-chat.mon-ctx:not(.mon-two) { grid-template-columns: minmax(0, 1fr); }
-  #v-chat.mon-ctx:not(.mon-two):not(.canvas-open) { width: 100%; max-width: calc(100% - var(--cv-w) - var(--sp-4)); margin-inline: auto; }
-  #v-chat.mon-ctx:not(.mon-two)::before, #v-chat.mon-ctx:not(.mon-two) > * { grid-column: 1; }
-  #v-chat.mon-ctx:not(.mon-two) > .cv-side { display: none; }
-  #v-chat.mon-ctx:not(.mon-two).canvas-open { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.25fr); }
-  #v-chat.mon-ctx:not(.mon-two).canvas-open > #canvas { grid-column: 2; }
-  /* a monitor's reports stand in the same place: 채팅's column widths on the same grid, so going between 대화 and 소식 moves nothing */
-  #v-monitoring.mon-two:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { --cv-w: 340px; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); }
-  #v-monitoring.mon-two:not(.cv-listing) > * { grid-column: 2; }
-  #v-monitoring.mon-two:not(.cv-listing) > .cv-side { grid-column: 1; display: block; padding: 0; }
+  /* every 모니터링 screen stands on 채팅's two columns (10-conversations.css #v-monitoring): the item list at the left, the screen at the right, so going between the feed, a watch log and
+     the queue moves nothing. The home (the list, nothing opened) shows the 답장 대기 queue in the right column (mon-home, 30-monitoring.js renderMonitoring); a queue row's card and an app's
+     settings (as-pane, 32-app-settings.js) take the same column. */
+  #v-monitoring.cv-listing.mon-home > .chatbox { display: block; }
+  #v-monitoring.rq-on > .chatbox { grid-row: 1 / -1; }
+  #v-monitoring.as-on > :is(.cv-head, .chatbox), #v-monitoring.as-on > .kk > .kk-chat { display: none; }
+  #v-monitoring > .as-pane { grid-column: 2; grid-row: 1 / -1; display: none; flex-direction: column; min-height: 0; margin-bottom: var(--sp-4); }
+  #v-monitoring.as-on > .as-pane { display: flex; }
+  #v-monitoring > .as-pane > .as-card { --ff-fill: var(--layer); display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; border-radius: var(--r-card); background: var(--card); }
+  #v-monitoring > .as-pane > .as-card:focus { outline: 0; }
+  #v-monitoring > .as-pane .app-sw { max-width: none; }
+  /* the mail app's 메일함 설정 and 메일함 추가 keep the panel at the left and open in the right column (30-mailboxes.js keeps .mx-scr, not .app-two, there) */
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: none; grid-template-columns: var(--frame-list-w) minmax(0, 1fr); }
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing) > * { grid-column: 2; }
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing) > #mx-pane { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; margin-bottom: var(--sp-4); padding: 0; overflow: hidden auto; scrollbar-width: none; }
+  #v-monitoring.mx-on.mx-scr .mxs { max-width: none; margin: 0; }
   #v-chat > .mon-chat-top { grid-row: 3; }
+  /* The app frame (owner 2026-11-11): an app's own panel at the left edge, its content beside it - the way 채팅 stands. The view takes .app-two, its panel is the child with
+     .app-side (column 1, the whole height), and every other child is the main slot (column 2), so what opens in the main slot (a list, then one mail) changes nothing else.
+     The mail app uses it on #v-monitoring (the list) and on #v-chat (the open mail, whose side column is the same panel: mxTwo in 30-mailboxes.js). */
+  #v-monitoring.app-two, #v-chat.app-two { --app-side: var(--frame-list-w); }   /* the sizes of 채팅 and 프로젝트: 01-tokens.css --frame-list-w, --frame-gap */
+  #v-chat.app-two { --cv-w: var(--app-side); }
+  #v-monitoring.app-two:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: none; margin: 0; column-gap: var(--frame-gap); grid-template-columns: var(--app-side) minmax(0, 1fr); }
+  #v-monitoring.app-two:not(.cv-listing) > * { grid-column: 2; }
+  :is(#v-monitoring, #v-chat).app-two > .app-side { grid-column: 1; grid-row: 1 / -1; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; margin-bottom: var(--sp-4); padding: 0; border-radius: 0; background: none; overflow: hidden auto; scrollbar-width: none; }
+  body:has(:is(#v-monitoring, #v-chat).app-two:not([hidden])) { --mbox-r: var(--edge); }   /* the page runs to the right edge beside the panel: 20-mail-box.css --mbox-r */
+  /* Messenger and the comment apps (30-kakao.js, 30-monitoring-comments.js) use the same frame: .kk is only their wrapper, so its rooms (or posts, or Instagram's DMs) are the
+     panel and its chat is the main slot. Nothing open: the head card (#mon-head) over one quiet line to pick one; a room open: the chat takes the whole slot, with its own head. */
+  #v-monitoring.app-two.kk-on:not(.cv-listing):has(> .kk:not([hidden])) { max-width: none; margin: 0; column-gap: var(--frame-gap); grid-template-columns: var(--app-side) minmax(0, 1fr); }
+  #v-monitoring.app-two.kk-on > .kk:not([hidden]) { display: contents; }
+  #v-monitoring.app-two.kk-on > .kk > .kk-rooms { grid-column: 1; grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); }
+  #v-monitoring.app-two.kk-on > .kk > .kk-chat { grid-column: 2; grid-row: 4; margin-bottom: var(--sp-4); }
+  #v-monitoring.app-two.kk-on > .kk.chat-open > .kk-chat { grid-row: 1 / -1; }
+  #v-monitoring.app-two.kk-on:has(> .kk.chat-open) > #mon-head { display: none; }
+  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat { display: flex; align-self: start; background: none; }
+  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat > :not(.kk-box) { display: none; }
+  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-box { flex: none; min-height: 0; background: none; }
+  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-in > .kk-note { color: var(--fg-3); }
 }
 /* over a monitor's conversation: the wait, a down banner, 지금 확인 and 소식 */
 #v-chat > .mon-chat-top { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); min-width: 0; padding: var(--sp-1) var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--line); }
@@ -4644,7 +4665,6 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .pl-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 15px/22px var(--font); }
 .pl-row.unread .pl-n { font-weight: 600; }
 .pl-nb { flex: none; height: 18px; min-width: 18px; padding: 0 var(--sp-15); border-radius: 9px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
-.pl-at { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .pl-s { display: flex; align-items: center; min-width: 0; color: var(--fg-2); font: 400 12px/16px var(--font); }
 .pl-sw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-row > .li-end { flex: none; display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
@@ -4652,7 +4672,8 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .pl-row > .li-end > .chev { width: 14px; height: 14px; color: var(--fg-3); }
 
 /* ---- level 2: the overview ---- */
-.pm-o { display: flex; flex-direction: column; gap: var(--sp-3); max-width: 760px; margin-top: var(--sp-4); }
+.pm-o { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
+@media (max-width: 1099px) { .pm-o { max-width: 760px; } }
 .pm-need { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
 /* 확인 필요: the prototype's card header (title + state tag) over the question, then the one filled action */
 .pm-need .ch { width: 100%; margin-bottom: var(--sp-05); }
@@ -4683,7 +4704,7 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .pdv-stack { display: flex; flex-direction: column; min-width: 0; }
 .pdv-stack .sec:first-child { margin-top: var(--sp-1); }
 /* a page, not a dialog: wide screens get the same tall surface as .fs-card.tall */
-@media (min-width: 640px) { .fs-card.pdv { width: min(760px, calc(100% - 48px)); height: min(86dvh, 860px); max-height: none; } }
+@media (min-width: 640px) and (max-width: 1099px) { .fs-card.pdv { width: min(760px, calc(100% - 48px)); height: min(86dvh, 860px); max-height: none; } }
 @media (max-width: 639px) {
   .pdv-hd { padding-left: max(var(--sp-2), env(safe-area-inset-left)); padding-right: max(var(--sp-3), env(safe-area-inset-right)); }
   .pdv-body { padding-left: max(var(--sp-4), env(safe-area-inset-left)); padding-right: max(var(--sp-4), env(safe-area-inset-right)); }
@@ -4691,12 +4712,12 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 
 /* ---- wide: the list beside the overview, like 채팅's conversation list ---- */
 @media (min-width: 1100px) {
-  .views.pp { grid-template-columns: 304px minmax(0, 1fr); }
-  .views.pp > #v-projects { padding: 0 var(--sp-2) 0 var(--sp-1); }
   /* the chip row is wider than the column most of the time: the fade shows there is more to scroll */
   .pl-chips { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); }
   .pl-groups > .sec { margin: var(--sp-4) var(--sp-1) var(--sp-2); }
-  .pm-o { max-width: 760px; }
+  /* the open page of a project (세션 기록, 결과 전체 ...) takes the content column's box of the frame, not a centered dialog */
+  .fs-bd:has(> .fs-card.pdv) { align-items: stretch; justify-content: flex-start; padding: var(--frame-top) var(--edge) var(--sp-4) var(--frame-x); }
+  .fs-card.pdv { width: 100%; height: auto; max-height: none; }
 }
 
 /* ---------- element picker (web/js/15-picker.js): the app header's hint, hover box, numbered markers, composer chips ---------- */
@@ -4730,13 +4751,13 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 body { display: flow-root; }
 .side-tog { display: none; }
 @media (min-width: 1024px) {
-  :root { --side-w: 232px; }
+  :root { --side-w: 232px; --bar-h: 60px; }
   .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: 0; }
   .side { order: 0; display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; min-height: 0; padding: var(--sp-3); overflow-y: auto; border-top: 0; background: var(--bg); }
   .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .gban, .oerr { flex: none; grid-row: auto; grid-column: auto; }
   .views { flex: 1; min-height: 0; grid-row: auto; grid-column: auto; }
-  .appbar { display: flex; flex: none; align-items: center; gap: var(--sp-1); height: 60px; padding: 0 var(--sp-5) 0 var(--sp-6); background: transparent; }
+  .appbar { display: flex; flex: none; align-items: center; gap: var(--sp-1); height: var(--bar-h); padding: 0 var(--sp-5) 0 var(--sp-6); background: transparent; }
   .appbar .ib { width: 32px; height: 32px; }
   /* usage lives in the sidebar's lower row here (#sf-usage); the top bar copy is for the phone only */
   .appbar .ustrip { display: none; }
