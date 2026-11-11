@@ -72,7 +72,7 @@ function rvWhen(c) {
 function rvTime(v) {
   const ms = Date.parse(v);
   if (!v || Number.isNaN(ms)) return v || "";
-  return ms > Date.now() ? new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : prjAgo(ms);
+  return ms > Date.now() ? new Date(ms).toLocaleTimeString(document.documentElement.lang || undefined, { hour: "2-digit", minute: "2-digit" }) : prjAgo(ms);
 }
 const rvDotTone = tone => (/^(ask|warn|need)/.test(tone) ? "warn" : /^(err|fail)/.test(tone) ? "err" : /^(ok|done)/.test(tone) ? "ok" : "");
 
