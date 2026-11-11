@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CONFIRM_WORD, EXIT, parseArgs, restartCommand, statusCommand, type Deps } from "./dotz-ctl.ts";
+import { SSH_KEYCHAIN_LINE, sshKeychainFinding, type KeychainProbe } from "./ssh-keychain.ts";
 import { forceCall, startCall, type ServiceEnv } from "./service-ctl.ts";
 import { LABEL } from "./service.ts";
 
@@ -327,5 +328,78 @@ describe("arguments", () => {
 		expect(parseArgs(["restart"])).toEqual({ cmd: "restart", force: false, waitMin: undefined });
 		expect(parseArgs(["restart", "--force", "--wait", "5"])).toEqual({ cmd: "restart", force: true, waitMin: 5 });
 		for (const bad of [[], ["status", "--force"], ["restart", "--wait"], ["restart", "--wait", "0"], ["restart", "-f"], ["stop"]]) expect(parseArgs(bad)).toEqual({ cmd: "usage" });
+	});
+});
+
+describe("dotz status: an SSH shell that cannot read the keychain login", () => {
+	const DIR_ID = "a".repeat(32);
+	const AGENT = "/Users/you/.omo/agent";
+	const CRED = `${AGENT}/anthropic-subscription-claude/${DIR_ID}/.credentials.json`;
+	const auth = JSON.stringify({ "anthropic-subscription": { accounts: [{ name: "default", store: "claude-cli", dirId: DIR_ID }] } });
+	const BLOCKED = { code: 36, out: "User interaction is not allowed." };
+	type Over = { platform?: string; env?: Record<string, string>; files?: string[]; authText?: string | undefined; reply?: { code: number; out: string } | undefined };
+	const probe = (o: Over = {}) => {
+		const calls: { argv: string[]; ms: number }[] = [];
+		const p: KeychainProbe = {
+			platform: o.platform ?? "darwin",
+			env: o.env ?? { SSH_CONNECTION: "192.0.2.1 50000 192.0.2.2 22" },
+			home: "/Users/you",
+			read: file => (file === `${AGENT}/auth.json` && "authText" in o ? o.authText : file === `${AGENT}/auth.json` ? auth : undefined),
+			exists: file => (o.files ?? []).includes(file),
+			security: async (argv, ms) => {
+				calls.push({ argv, ms });
+				return "reply" in o ? o.reply : BLOCKED;
+			},
+		};
+		return { p, calls };
+	};
+
+	test("SSH, the login only in the keychain, the read refused: the finding, from one bounded call that never asks for the secret", async () => {
+		const { p, calls } = probe();
+		expect(await sshKeychainFinding(p)).toBe("ssh-keychain-unreadable");
+		expect(calls).toHaveLength(1);
+		expect(calls[0].argv[0]).toBe("security");
+		expect(calls[0].argv).not.toContain("-w");
+		expect(calls[0].ms).toBeLessThanOrEqual(2_000);
+	});
+
+	test("SSH_TTY alone also counts as an SSH shell", async () => {
+		expect(await sshKeychainFinding(probe({ env: { SSH_TTY: "/dev/ttys001" } }).p)).toBe("ssh-keychain-unreadable");
+	});
+
+	test("not an SSH shell, not macOS, or a login file the agent can read: nothing, and no security process", async () => {
+		for (const o of [{ env: {} }, { platform: "linux" }, { files: [CRED] }]) {
+			const { p, calls } = probe(o);
+			expect(await sshKeychainFinding(p)).toBeUndefined();
+			expect(calls).toEqual([]);
+		}
+	});
+
+	test("no Claude login in auth.json, or one that needs a new sign-in: nothing", async () => {
+		for (const authText of [undefined, "not json", "{}", JSON.stringify({ "anthropic-subscription": { accounts: [{ name: "x", store: "claude-cli", dirId: DIR_ID, signInRequired: true }] } })]) {
+			const { p, calls } = probe({ authText });
+			expect(await sshKeychainFinding(p)).toBeUndefined();
+			expect(calls).toEqual([]);
+		}
+	});
+
+	test("a readable keychain, an unrelated failure, a missing answer (timeout): nothing", async () => {
+		for (const reply of [{ code: 0, out: "Keychain is fine" }, { code: 44, out: "The specified item could not be found." }, undefined]) {
+			expect(await sshKeychainFinding(probe({ reply }).p)).toBeUndefined();
+		}
+	});
+
+	test("dotz status shows the line once for the finding, and never when there is none; the exit code stays the gateway's", async () => {
+		const shown = async (o: Over) => {
+			const w = world();
+			const d = { ...deps(w), keychain: probe(o).p };
+			const code = await statusCommand(d);
+			return { code, count: w.lines.filter(l => l === SSH_KEYCHAIN_LINE).length };
+		};
+		expect(await shown({})).toEqual({ code: EXIT.ok, count: 1 });
+		expect(await shown({ env: {} })).toEqual({ code: EXIT.ok, count: 0 });
+		const w = world({ mode: "down" });
+		expect(await statusCommand({ ...deps(w), keychain: probe().p })).toBe(EXIT.notRunning);
+		expect(w.lines.filter(l => l === SSH_KEYCHAIN_LINE)).toHaveLength(1);
 	});
 });

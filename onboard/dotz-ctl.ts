@@ -4,6 +4,7 @@
 // A restart never kills an answering gateway: it asks for the idle restart (hub/restart.ts), which waits for running work however long that takes.
 // Exit codes (also in the help text): 0 done or healthy; 1 unexpected failure; 2 usage; 3 gateway not running (status), or it could not be started (restart);
 // 4 a process is alive but does not answer (status), restart did nothing without --force; 5 the restart is requested but the wait ran out; 6 --force refused.
+import { SSH_KEYCHAIN_LINE, sshKeychainFinding, type KeychainProbe } from "./ssh-keychain.ts";
 import { callEnv, forceCall, serviceState, startCall, type Exec, type ServiceEnv, type ServiceState } from "./service-ctl.ts";
 
 export const EXIT = { ok: 0, failed: 1, usage: 2, notRunning: 3, notAnswering: 4, waitedOut: 5, forceRefused: 6 } as const;
@@ -35,6 +36,8 @@ export type Deps = {
 	sleep: (ms: number) => Promise<void>;
 	out: (line: string) => void;
 	tail: (file: string, lines: number) => string[];
+	/** What the SSH keychain check looks at (onboard/ssh-keychain.ts); without it the check is skipped. */
+	keychain?: KeychainProbe;
 	/** The text of a file, undefined when it is not there (the doctor's result file). */
 	read?: (file: string) => string | undefined;
 	tty: () => { in: boolean; out: boolean };
@@ -150,10 +153,16 @@ function logTails(d: Deps): string[] {
 const show = (d: Deps, lines: string[]) => lines.forEach(l => d.out(l));
 const stateOf = (d: Deps) => serviceState(d.exec, d.service, d.env);
 
+// One line when this SSH shell cannot read the keychain login (onboard/ssh-keychain.ts); nothing otherwise.
+async function keychainLine(d: Deps): Promise<void> {
+	if (d.keychain && (await sshKeychainFinding(d.keychain))) d.out(SSH_KEYCHAIN_LINE);
+}
+
 export async function statusCommand(d: Deps): Promise<number> {
 	if (await healthy(d)) {
 		const [state, update] = await Promise.all([api<StateBody>(d, "/api/state?limit=1"), api<UpdateBody>(d, "/api/update")]);
 		show(d, healthyLines(d, state?.body, update?.body));
+		await keychainLine(d);
 		return EXIT.ok;
 	}
 	const svc = await stateOf(d);
@@ -161,6 +170,7 @@ export async function statusCommand(d: Deps): Promise<number> {
 	d.out(alive ? `게이트웨이 프로세스는 떠 있는데 응답하지 않아요 (127.0.0.1:${d.port})` : `게이트웨이가 실행 중이 아니에요 (127.0.0.1:${d.port} 응답 없음)`);
 	show(d, [...serviceLines(svc), ...logTails(d)]);
 	if (alive) d.out("응답이 없어도 일하는 중일 수 있어서 자동으로 끊지 않아요. 정말 필요하면: dotz restart --force (터미널에서 직접)");
+	await keychainLine(d);
 	return alive ? EXIT.notAnswering : EXIT.notRunning;
 }
 

@@ -6,7 +6,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 
 - `hub/main.ts` gateway process (startup, timers, shutdown, restart gate)
 - `hub/dotz-command.ts` the `dotz` terminal command (loopback entry, any web.access mode); `hub/web-login-cli.ts` is what it runs; `dotz status` and `dotz restart` (no model, no login, also when the gateway is down) run `onboard/dotz-ctl-cli.ts` instead, which reads the gateway's own routes and asks the service manager only when nothing answers (`onboard/dotz-ctl.ts` the two commands, `onboard/service-ctl.ts` the launchd/systemd calls)
-- `setup.ts` + `onboard/` install wizard (`harness.ts`, `service.ts`, `service-ctl.ts`, `dotz-ctl.ts`, `dotz-ctl-cli.ts`, `tailscale.ts`, `aside.ts`, `discord.ts`, `permissions.ts`)
+- `setup.ts` + `onboard/` install wizard (`harness.ts`, `service.ts`, `service-ctl.ts`, `dotz-ctl.ts`, `dotz-ctl-cli.ts`, `ssh-keychain.ts` (the one-line `dotz status` note for an SSH shell that cannot read the macOS keychain login), `tailscale.ts`, `aside.ts`, `discord.ts`, `permissions.ts`)
 - `firstrun/` first-run web onboarding between hub and onboard: the marker (`first-run.ts`, `first-run-boot.ts`), the gate and its jobs (`setup-gate.ts`, `setup-jobs.ts`, `setup-state.ts`, `setup-term.ts`, `setup-apply.ts`) and the shared answers/apply/scan/exec code; it may import hub and onboard, and only `hub/main.ts`, `hub/routes.ts`, `hub/routes-settings.ts` and `setup.ts` import it
 - `extension/index.ts` agent-side extension (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `output-cap.ts`, `owner-values.ts`, `task-cap.ts`, `task-cap-grow.ts`, `compact-kept.ts`, `schema.ts`, `token-audit.ts`, `connect-view.ts` (the `dotz_connect` tool's plain-text view of a messenger connection))
 

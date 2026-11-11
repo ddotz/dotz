@@ -38,6 +38,22 @@ const deps: Deps = {
 	sleep: ms => new Promise(done => setTimeout(done, ms)),
 	out: line => console.log(line),
 	read: text,
+	keychain: {
+		platform: process.platform,
+		env: process.env,
+		home: homedir(),
+		read: text,
+		exists: file => statSync(file, { throwIfNoEntry: false }) !== undefined,
+		security: async (argv, timeoutMs) => {
+			try {
+				const p = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "pipe", timeout: timeoutMs, killSignal: "SIGKILL" });
+				const [err, code] = await Promise.all([new Response(p.stderr).text(), p.exited]);
+				return p.signalCode ? undefined : { code, out: err };
+			} catch {
+				return undefined; // no security binary, or it could not start: the check says nothing
+			}
+		},
+	},
 	tail: (file, lines) => {
 		try {
 			const size = statSync(file).size;
