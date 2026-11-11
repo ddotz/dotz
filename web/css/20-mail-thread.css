@@ -49,7 +49,7 @@
 @media (max-width: 1023px) {
   .mth-m { display: block; }
   .mhd-line > .mth-m { display: contents; }
-  .mhd-line .mth-list { flex: 1 0 100%; order: 2; margin-top: var(--sp-05); padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
+  .mhd-line .mth-list { flex: 1 0 100%; min-width: 0; order: 2; margin-top: var(--sp-05); padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
 }
 
 @media (min-width: 1024px) {

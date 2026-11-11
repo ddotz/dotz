@@ -90,12 +90,20 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
   #mon-tl > .mr .rc-hd > .rc-src:has(+ .mx-am, + .mx-bt) { flex-basis: 104px; }
   #mon-tl > .mr .rc-hd > .mx-bt { flex: none; max-width: 96px; }
 }
-/* beside the 340px app panel the list is under 640px until 1280: the sender and the box name give up width so the subject keeps its words */
+/* beside the 340px app panel the list is 456px at 1100 and under 640px until 1280: the subject keeps its words. The box name (the pane already marks the box) and the preview go,
+   the sender is narrower, and where a pointer hovers the row's icons wait for it and take the time's place; touch keeps them. */
 @media (min-width: 1100px) and (max-width: 1279px) {
   #mon-tl > .mr .rc-hd > .rc-src, #mon-tl > .mr .rc-hd > .rc-src:has(+ .mx-am, + .mx-bt) { flex-basis: 72px; }
-  #mon-tl > .mr .rc-hd > .mx-bt { max-width: 64px; }
+  #mon-tl > .mr .rc-hd > .mx-bt, #mon-tl > .mr > .mr-sum { display: none; }
   #mon-tl > .mr > .rc-title { max-width: none; }
 }
+@media (min-width: 1100px) and (max-width: 1279px) and (hover: hover) {
+  #mon-tl > .mr .rc-hd > .ib { position: absolute; opacity: 0; pointer-events: none; }
+  #mon-tl > .mr:is(:hover, :focus-within) .rc-hd > .ib { position: static; opacity: 1; pointer-events: auto; }
+  #mon-tl > .mr:is(:hover, :focus-within) .rc-hd > .rc-time { display: none; }
+}
+/* the list that failed to load: the sentence and its retry stand alone, nothing to filter yet */
+#mon-tl > .mx-fail ~ :is(.mx-tabs, .mr-filter, .mbox-bar, .empty) { display: none; }
 @media (max-width: 639px) {
   .mx-bh .meta, .mx-setb span { display: none; }
   .mx-setb { width: var(--field-h); padding: 0; }

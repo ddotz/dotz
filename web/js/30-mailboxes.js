@@ -101,8 +101,9 @@ function mxScope(it) {
   const sc = MX.acct === "all" ? it.accounts : it.accounts.filter(a => a.key === MX.acct), all = cnt.get("all") || MX_ZERO;
   const line = [it.accounts.length > 1 ? (MX.acct === "all" ? `계정 ${it.accounts.length}개` : sc[0].account || sc[0].label) : "", `안 읽음 ${all.unread}`, `메일함 ${sc.reduce((c, a) => c + a.boxes.length, 0)}개`].filter(Boolean).join(" · ");
   const rows = ents.map(e => ({ ...e, c: cnt.get(mxGroup(e.id) ? e.id : e.k) || MX_ZERO }));
-  // listed: the app has stored mail, so a box with none of it still draws as a mail list.
-  return { ...it, listed: !!MX.scr || it.mails.some(t => MAILS.has(t)), mails: MX.scr ? [] : mails, notices: MX.scr ? [] : cut ? it.notices.filter(n => (MX.box === "all" ? MX.nof.get(n.id) === MX.acct : ok.has(mxNoticeMail(n)))) : it.notices, mxk: `|${MX.acct}|${MX.box}|${MX.scr}`, mxLine: it.conn ? "" : line, all, rows,
+  // listed: the app has stored mail, so a box with none of it still draws as a mail list. A list that never loaded draws too, to say so (mxFail).
+  const failed = CV.failed && !CV.loaded && !it.mails.some(t => MAILS.has(t));
+  return { ...it, failed, listed: !!MX.scr || failed || it.mails.some(t => MAILS.has(t)), mails: MX.scr ? [] : mails, notices: MX.scr ? [] : cut ? it.notices.filter(n => (MX.box === "all" ? MX.nof.get(n.id) === MX.acct : ok.has(mxNoticeMail(n)))) : it.notices, mxk: `|${MX.acct}|${MX.box}|${MX.scr}|${failed ? "fail" : ""}`, mxLine: it.conn ? "" : line, all, rows,
     esig: JSON.stringify([MX.acct, MX.box, all, rows.map(e => [e.id, e.b.name, e.b.icon, !!e.b.base, e.b.mode, e.n, e.c]), it.accounts.map(a => [a.key, a.label, a.mk])]) };
 }
 
@@ -138,10 +139,10 @@ function mxTabs(it) {
   MX.slot.set("tabs", { sig: it.esig, node });
   return node;
 }
+// A named box has a title for what only it has (its way of answering, 메일함 설정). 전체 has none: the pane row (wide) and the chip (phone) already say it is chosen.
 const mxTitle = it => {
-  const multi = it.accounts.length > 1, a = it.accounts.find(x => x.key === MX.acct);
   const set = id => el("button", { class: "btn tonal sm mx-setb", type: "button", onclick: () => mxSet(id) }, icon("sliders"), el("span", { text: "메일함 설정" }));
-  if (MX.box === "all") return el("div", { class: "mx-bh" }, el("h2", { text: "전체" }), el("span", { class: "meta", text: !multi ? "메일함을 나눠도 모든 메일이 여기 보여요" : a ? a.account || a.label : "모든 계정의 메일을 모아서 보여요" }));
+  if (MX.box === "all") return null;
   const e = it.rows.find(x => x.id === MX.box);
   if (mxGroup(MX.box)) return el("div", { class: "mx-bh" }, el("h2", { text: e.b.name }), el("span", { class: "meta", text: `계정 ${e.n}개를 합쳐서 보여요` }), set(e.b.id));
   return el("div", { class: "mx-bh" }, el("h2", { text: e.b.name }), mxAcctMark(it, e), el("span", { class: "tag", text: mxModeOf(e.b) }), set(e.b.id));
@@ -153,7 +154,9 @@ const mxDown = it => it.accounts.length < 2 ? [] : it.accounts.filter(a => a.con
   return el("div", { class: "mx-exp down", "data-acct": a.key }, el("span", { class: "dot warn" }), el("span", { class: "tx" }, el("b", { text: `${a.label} 계정 로그인이 풀렸어요` }), el("span", { text: "받은 메일은 그대로 있어요. 다시 연결하면 새 메일도 들어와요." })),
     names.length ? el("button", { class: "btn tonal sm", type: "button", text: "다시 연결", onclick: ev => monRecheckApp(ev.currentTarget, { key: `i:${a.key}` }, names) }) : null);
 });
-const mxTop = it => (it.accounts ? [mxTabs(it), mxTitle(it), ...mxDown(it), mxNote(it)].filter(Boolean) : []);
+// A list that failed to load says so in the app's one failure shape (emptyNode: a sentence and 다시 시도) and the rows' filters under it give way (20-mailboxes.css .mx-fail).
+const mxFail = it => { const n = it.failed ? emptyNode("메일을 불러오지 못했어요", () => convLoad()) : null; if (n) n.classList.add("mx-fail"); return n; };
+const mxTop = it => (it.accounts ? [mxTabs(it), mxTitle(it), ...mxDown(it), mxNote(it), mxFail(it)].filter(Boolean) : []);
 
 /* ---- the account chip of the app bar ---- */
 const mxTone = a => (a.conn || a.needs.drafts || a.needs.unreplied ? "warn" : a.needs.unread ? "pri" : undefined);

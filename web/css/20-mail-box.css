@@ -66,6 +66,9 @@ span.mr-star:not(.on) { opacity: .45; }
 /* the original: a quiet grey well, no border (principles 5, 9); the HTML frame stays a white page */
 .mopen .mb-txt { padding: 0; border: 0; background: none; }
 .mopen .mb-frame { border: 0; }
+/* one lead (principle 1): the open mail leads; the answer card under it asks in a regular line and its answers are one line each (the three stay as they are) */
+#v-chat:has(#tl > .bm.mopen) .dcard .dc-q { font-size: var(--fs-body); line-height: var(--lh-sec); font-weight: 500; }
+#v-chat:has(#tl > .bm.mopen) .dcard .dc-ds { display: none; }
 /* the files: chips with the name and the size, one download each (principle 3); the head is a grey word, not a bold line */
 .mopen > .mr-files { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-15) 0 var(--sp-1); padding-top: 0; border-top: 0; }
 .mopen > .mr-files > .mr-fh { flex: 1 0 100%; font-weight: 500; }
