@@ -41,6 +41,7 @@ class FakeProc {
 			for (const line of s.split("\n").filter(Boolean)) {
 				const { id: _id, ...f } = JSON.parse(line);
 				if (typeof f.message === "string") f.message = short(f.message);
+				if (typeof f.customInstructions === "string") f.customInstructions = "<compact-instructions>";
 				T("stdin", this.n, f);
 			}
 			return s.length;

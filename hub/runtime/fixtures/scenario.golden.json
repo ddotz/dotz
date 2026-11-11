@@ -185,6 +185,7 @@
    "stdin",
    0,
    {
+    "customInstructions": "<compact-instructions>",
     "type": "compact"
    }
   ],
@@ -240,6 +241,7 @@
    "stdin",
    0,
    {
+    "customInstructions": "<compact-instructions>",
     "type": "compact"
    }
   ],
