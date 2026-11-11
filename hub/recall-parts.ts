@@ -124,7 +124,10 @@ export function dropSection(mode: string, heading: string): string {
 }
 
 // channel-setups.json as one line per channel, the shape of workchannels.ts setupsSummary (that module needs the gateway's config):
-// the raw JSON with timestamps and ids took 2.8K of the re-read after a compaction. Not a list: the old raw slice.
+// the raw JSON with timestamps and ids took 2.8K of the re-read after a compaction; a purpose is cut at PURPOSE_MAX (dotz_channel list has it whole).
+// Not a list: the old raw slice.
+const PURPOSE_MAX = 120;
+const cut = (s: unknown): string => { const t = String(s ?? "").replace(/\s+/g, " ").trim(); return t.length > PURPOSE_MAX ? `${t.slice(0, PURPOSE_MAX)}…` : t; };
 export function renderSetups(raw: string, max = 3000): string {
 	let list: unknown;
 	try {
@@ -135,7 +138,7 @@ export function renderSetups(raw: string, max = 3000): string {
 	if (!Array.isArray(list)) return raw.slice(0, max);
 	const text = list
 		.filter(s => s && typeof s === "object")
-		.map(s => `- #${s.name} (ch:${s.channel}): ${s.purpose ?? ""}${s.standing ? ` | standing: ${s.standing} (${s.scope ?? "no limit set"}${s.expires ? `, until ${s.expires}` : ""})` : ""} | logins: ${(s.logins ?? []).join(", ") || "none"} | monitors: ${(s.monitors ?? []).length}`)
+		.map(s => `- #${s.name} (ch:${s.channel}): ${cut(s.purpose)}${s.standing ? ` | standing: ${s.standing} (${s.scope ?? "no limit set"}${s.expires ? `, until ${s.expires}` : ""})` : ""} | logins: ${(s.logins ?? []).join(", ") || "none"} | monitors: ${(s.monitors ?? []).length}`)
 		.join("\n");
 	return text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; dotz_channel list]` : text;
 }
