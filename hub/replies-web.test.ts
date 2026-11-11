@@ -62,6 +62,10 @@ const snapshot = () => ({ name: "맥미니", rev: `r${peerReplies.length}${peerN
 
 const acts: { action: string; args: Record<string, unknown> }[] = [];
 const localPosts: { path: string; body: unknown }[] = [];
+// Resolves when this server has the page's POST to `path`. With the wide pane open the list rows are not drawn, so "the row is gone"
+// is true before the request has left: a test that reads localPosts after a press waits for the request itself.
+const postWaits: { path: string; seen: () => void }[] = [];
+const posted = (path: string) => new Promise<void>(seen => { postWaits.push({ path, seen }); });
 let peerReads = 0, repliesReads = 0;
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const server = Bun.serve({
@@ -99,6 +103,7 @@ const server = Bun.serve({
 		if (req.method === "POST") {
 			const b = await req.json().catch(() => null);
 			localPosts.push({ path: p, body: b });
+			for (const w of postWaits) if (w.path === p) w.seen();
 			// a retry hands the send back: the failed row leaves (what the hub does once the send is queued)
 			const cs = /^\/api\/comments\/sends\/(\w+)\/(?:retry|done)$/.exec(p), ks = /^\/api\/kakao\/chat\/\w+\/send\/(\w+)\/retry$/.exec(p);
 			if (cs || ks) failedList = failedList.filter(x => (x as { sendId?: string }).sendId !== (cs || ks)![1]);
@@ -237,7 +242,9 @@ describe.each([[390, 844], [1280, 900]])("답장 대기 at %ipx", (width, height
 		await run(v, `${rowOf("f:|U1")}.querySelector(".tx").click()`);
 		await waitFor(v, `document.querySelector('.rq-sheet [data-k="done"]')`);
 		expect(await q<string[]>(v, `return [...document.querySelectorAll(".rq-sheet .rq-acts button")].map(b => b.textContent.trim())`)).toEqual(["다시 보내기", "완료"]);
+		const done = posted("/api/comments/sends/U1/done");
 		await run(v, `document.querySelector('.rq-sheet [data-k="done"]').click()`);
+		await done;
 		await waitFor(v, `!${rowOf("f:|U1")}`);
 		expect(localPosts.map(x => x.path)).toEqual(["/api/comments/sends/U1/done"]);
 	});
