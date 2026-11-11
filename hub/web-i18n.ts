@@ -95,6 +95,8 @@ let appView: (() => View) | undefined;
 let fallback: View | undefined;
 /** The view `webText` uses when none is passed; hub/webapp.ts points it at the language the page is served in. */
 export const setWebView = (fn: (() => View) | undefined): void => { appView = fn; };
+/** The view the page is served in right now; undefined before hub/webapp.ts has pointed it (callers then treat the install as ko). */
+export const webView = (): View | undefined => appView?.();
 export const webText = (key: string, vars?: Record<string, unknown>, view?: View): string =>
 	formatter(view ?? appView?.() ?? (fallback ??= resolveView("ko", diskReader()))).TX(key, vars);
 

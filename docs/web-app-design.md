@@ -779,7 +779,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 토스트 (하단 스낵바)
 - 목적: 짧은 결과/오류를 하단에 띄우고 필요하면 되돌리기 같은 동작 버튼을 줘요.
 - 구성: `div.snack[role=status]`(`.bad` 오류, `.act` 동작 있음): 텍스트 `span` + `button.sa`.
-- 기능: 새 토스트가 이전 것을 바로 대체. 열린 `dialog`가 있으면 그 안에 붙여요. 문구는 `noticeKo`로 한국어화. 동작 버튼은 누르면 토스트를 지우고 `action.onclick`.
+- 기능: 새 토스트가 이전 것을 바로 대체. 열린 `dialog`가 있으면 그 안에 붙여요. 문구는 `noticeKo`를 거쳐요(한국어 화면은 쉬운 한국어로, 다른 언어는 표식만 걷어 낸 원문). 동작 버튼은 누르면 토스트를 지우고 `action.onclick`.
 - 상태: 기본 3.5초, 오류 또는 동작 있음 6초, `ms` 지정 가능. 사라질 때 150ms 페이드. 폰(`max-width:639px`)은 탭바 위로 올림.
 - 데이터: 없음.
 - 근거: web/js/02-basic-markdown.js:160-178(toast, toastGone).
@@ -1156,12 +1156,13 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 근거: `web/js/30-notices.js:524`(ntHomeRow), `:547`(ntGroupRow), `:556`(ntHomeRows), `:502`(ntIgnoreBtn), `:511`(nwChangeNode), `:519`(NT_TONE_TAG).
 - css: `web/css/09-notices.css`(`.nt-*`, `.ntg*`), `10-conversations.css`, `11-peers.css`.
 
-### 알림 문구 한글화 (`01-notice-ko.js`, 화면 없음)
-- 목적: 알림과 오류 문장 속 영어 도구 이름, 명령, 경로, cron 식을 한국어로 바꿔 보여 줘요(`hub/notice-ko.ts`에서 생성된 파일이라 직접 고치지 않음).
-- 구성/기능: `noticeKo`, `errorKo`, `cronKo`를 내보내요. 표 `NAMES`(예: `watch`→`모니터링`, `lane`→`세션`, `kakao`→`카카오톡`), `TOOLS`(예: `bash`→`명령 실행`), `SLASH`(예: `/compact`→`대화 정리`), `CMD_FIRST`, `SUB`, 조사 처리 `josa`, `cronKo`, `commandKo`, `pathKo`.
+### 알림 문구 다듬기 (`01-notice-ko.js`, `01-notice.js`, 화면 없음)
+- 목적: 한국어 화면에서는 알림과 오류 문장 속 영어 도구 이름, 명령, 경로, cron 식을 한국어로 바꿔 보여 줘요(`01-notice-ko.js`는 `hub/notice-ko.ts`에서 생성된 파일이라 직접 고치지 않음). 다른 언어에서는 낱말을 바꾸지 않고 표식만 걷어 내요. 오류, 예약 주기, 워커 낱말은 언어 목록(`notice.*`)에서 읽어요.
+- 언어 고르기: `01-notice.js`가 `noticeKo`, `errorKo`, `cronKo`, `plainTable`, `dropIdNote`를 정해요. `I18N_LANG`이 `ko`면 한국어 엔진(`NOTICE_KO`)의 것 그대로고, 아니면 이 파일의 것이에요. 게이트웨이의 푸시, 대화 미리보기, 메신저 글도 `hub/notice.ts`로 같은 규칙을 따라요.
+- 구성/기능(한국어 엔진): `noticeKo`, `errorKo`, `cronKo`를 내보내요. 표 `NAMES`(예: `watch`→`모니터링`, `lane`→`세션`, `kakao`→`카카오톡`), `TOOLS`(예: `bash`→`명령 실행`), `SLASH`(예: `/compact`→`대화 정리`), `CMD_FIRST`, `SUB`, 조사 처리 `josa`, `cronKo`, `commandKo`, `pathKo`.
 - 상태: 화면 상태는 없음. 변환 규칙 전체(`noticeKo`/`errorKo` 본문)는 줄 120 이후를 부분만 읽어서 코드에서 확인 못 함.
 - 데이터: 없음. 사용처: `ntPlain`, `ntBody`(`30-notices.js:15,597`).
-- 근거: `web/js/01-notice-ko.js:3`(NAMES), `:137`(cronKo), `:166`(commandKo), 끝 `return { noticeKo, errorKo, cronKo }`.
+- 근거: `web/js/01-notice-ko.js:3`(NAMES), `:137`(cronKo), `:166`(commandKo), 끝 `return { noticeKo, errorKo, cronKo, plainTable, dropIdNote }`(`NOTICE_KO`로 묶임). `web/js/01-notice.js` 끝의 `I18N_LANG === "ko"` 갈래.
 - css: 없음.
 
 ### 화면 공유 (원격 데스크톱 진입, 앱바 알약, 설정 행)

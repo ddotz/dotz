@@ -1,0 +1,19 @@
+{
+  "notice.err.signin": "다시 로그인해 주세요",
+  "notice.err.denied": "권한이 없어요",
+  "notice.err.notfound": "찾지 못했어요",
+  "notice.err.slow": "시간이 너무 오래 걸렸어요",
+  "notice.err.toomany": "요청이 너무 잦아요. 잠시 뒤에 다시 해 주세요",
+  "notice.err.server": "서버에 문제가 있어요. 잠시 뒤에 다시 해 주세요",
+  "notice.err.request": "요청을 처리하지 못했어요",
+  "notice.err.network": "연결이 끊겨 처리하지 못했어요",
+  "notice.cron.minutes": "{n}분마다",
+  "notice.cron.hours": "{n}시간마다",
+  "notice.cron.hourly": "매시 {m}분",
+  "notice.cron.daily": "매일 {time}",
+  "notice.cron.weekly": "매주 {day} {time}",
+  "notice.cron.weekdays": "평일 {time}",
+  "notice.cron.other": "정해진 시각마다",
+  "notice.worker.one": "워커",
+  "notice.worker.many": "워커 {n}개"
+}

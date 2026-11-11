@@ -3,7 +3,7 @@
 import { isSnowflake } from "./threads.ts";
 import { DECISION_HEAD } from "./choices.ts";
 import { dropForLine } from "./forline.ts";
-import { dropIdNote } from "./notice-ko.ts";
+import { dropIdNote } from "./notice.ts";
 import type { MessageSpec } from "./message-spec.ts";
 import { specOf } from "./message-spec-of.ts";
 import { renderDiscord } from "./spec-discord.ts";

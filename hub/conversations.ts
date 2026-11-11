@@ -3,7 +3,7 @@ import { paths } from "./config.ts";
 import { briefMail, mailByKey } from "./mail.ts";
 import { laneLive, lanes } from "./lanestate.ts";
 import { readOf, unreadFrom } from "./reads.ts";
-import { dropIdNote, noticeKo, plainTable } from "./notice-ko.ts";
+import { dropIdNote, noticeKo, plainTable } from "./notice.ts";
 import { dropClaim, parseTone, previewSource } from "./tone.ts";
 
 // The messenger overview: one row per conversation (the main chat, each project channel, each session) with its newest real

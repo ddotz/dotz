@@ -1,5 +1,5 @@
-// Generated from hub/notice-ko.ts by hub/gen-notice-ko-web.ts; do not edit. stripMarkers (02-basic-markdown.js) and clockKo (11-watchtext.js) are the page's own.
-const { noticeKo, errorKo, cronKo, plainTable, dropIdNote } = (() => {
+// Generated from hub/notice-ko.ts by hub/gen-notice-ko-web.ts; do not edit; web/js/01-notice.js picks it when the language is ko. stripMarkers (02-basic-markdown.js) and clockKo (11-watchtext.js) are the page's own.
+const NOTICE_KO = (() => {
 const NAMES = {
   watch: "모니터링",
   watches: "모니터링",

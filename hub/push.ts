@@ -13,7 +13,7 @@ import { dropForLine, orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
 import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onNoticeUnread, setViewing } from "./notices.ts";
 import { DECISION_HEAD, decisionText } from "./choices.ts";
-import { dropIdNote, noticeKo, plainTable } from "./notice-ko.ts";
+import { dropIdNote, noticeKo, plainTable } from "./notice.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";

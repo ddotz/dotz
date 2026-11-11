@@ -1,7 +1,7 @@
 // A notice as the owner reads it, and the frame the pages are sent. A part of the notice store split out of hub/notices.ts, code unchanged.
 import { broadcast as broadcastRaw } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
-import { noticeKo } from "./notice-ko.ts";
+import { noticeKo } from "./notice.ts";
 import { watchLine, watchReasonKo } from "./watchtext.ts";
 import type { Notice } from "./notices-types.ts";
 import { laneTitleOf, watchLabelOf } from "./notices-wiring.ts";

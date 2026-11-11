@@ -6,7 +6,11 @@
     },
     "web/js/01-notice-ko.js": {
       "count": 346,
-      "why": "pending"
+      "why": "Korean-only wording engine, used when the language is ko"
+    },
+    "web/js/01-notice.js": {
+      "count": 11,
+      "why": "agent-text parsing"
     },
     "web/js/01-peer-msg.js": {
       "count": 6,

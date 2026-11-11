@@ -1,0 +1,28 @@
+{
+  "notice.err.signin": "Sign in again",
+  "notice.err.denied": "You don't have access",
+  "notice.err.notfound": "Not found",
+  "notice.err.slow": "Took too long",
+  "notice.err.toomany": "Too many requests. Try again in a moment.",
+  "notice.err.server": "Server problem. Try again in a moment.",
+  "notice.err.request": "Couldn't complete that",
+  "notice.err.network": "Connection lost",
+  "notice.cron.minutes": {
+    "one": "Every minute",
+    "other": "Every {n} minutes"
+  },
+  "notice.cron.hours": {
+    "one": "Every hour",
+    "other": "Every {n} hours"
+  },
+  "notice.cron.hourly": "Hourly at :{m}",
+  "notice.cron.daily": "Daily at {time}",
+  "notice.cron.weekly": "Every {day} at {time}",
+  "notice.cron.weekdays": "Weekdays at {time}",
+  "notice.cron.other": "On a schedule",
+  "notice.worker.one": "worker",
+  "notice.worker.many": {
+    "one": "{n} worker",
+    "other": "{n} workers"
+  }
+}
