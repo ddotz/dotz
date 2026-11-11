@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cfg } from "../config.ts";
-import { omo } from "./omo.ts";
+import { omo, omoArgs } from "./omo.ts";
 import { syncKeepRecent } from "./omo-settings.ts";
 
 let dir: string;
@@ -59,6 +59,12 @@ test("a file that is not a JSON object is left as it is", () => {
 	writeFileSync(file(), "{ not json");
 	expect(syncKeepRecent(dir, 10_000)).toBe(false);
 	expect(readFileSync(file(), "utf8")).toBe("{ not json");
+});
+
+test("the orchestrator starts with --approve, without which OmO ignores the project settings file; a lane does not", () => {
+	const args = (role: "orchestrator" | "lane") => omoArgs({ role, cwd: dir, model: "anthropic/claude-opus-5-5:medium", env: {} });
+	expect(args("orchestrator")).toContain("--approve");
+	expect(args("lane")).not.toContain("--approve");
 });
 
 test("a lane spawn writes no project settings file", async () => {
