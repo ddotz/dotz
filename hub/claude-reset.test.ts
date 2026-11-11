@@ -3,6 +3,7 @@
 // "anthropic" spends one only with confirm: true, after a fresh read. This file's own OmO agent dir holds fake accounts, so no test
 // reads the machine's auth.json, keychain or Claude CLI dir; every request goes to the fake, which throws on any other URL.
 import { afterAll, beforeEach, expect, test } from "bun:test";
+import { peerEnv } from "./limit-peer.ts";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,7 +76,10 @@ const post = async (b: unknown) => {
 	return { status: res.status, body: (await res.json()) as Json };
 };
 
+const realPeers = peerEnv.peers;
+afterAll(() => void (peerEnv.peers = realPeers));
 beforeEach(() => {
+	peerEnv.peers = async () => [];
 	resetQuotaForTest();
 	for (const n of ["main", "no-org", "old"]) forgetAccountUsage(n);
 });
@@ -145,7 +149,7 @@ test("the route refuses without confirm: true or a grant, and asks the upstream 
 
 test("with confirm: true it reads afresh and sends one reset for that grant to the account's organization", async () => {
 	const calls = upstream(usage());
-	expect(await post({ provider: "anthropic", account: "main", grant_id: "launch-fable", confirm: true })).toEqual({ status: 200, body: { ok: true, outcome: "reset", left: 3 } });
+	expect(await post({ provider: "anthropic", account: "main", grant_id: "launch-fable", confirm: true })).toEqual({ status: 200, body: { ok: true, outcome: "reset", left: 3, resumed: { sessions: 0, lanes: 0 }, peers: { told: 0, failed: 0 } } });
 	const used = resetsCalls(calls);
 	expect(used.length).toBe(1);
 	expect(used[0]?.url).toBe(RESET_URL);
@@ -266,4 +270,14 @@ test("a reset that took lifts the limit for that account; every other answer lif
 	upstream(usage(), 200, { result: "reset" });
 	const failing = await useClaudeReset({ provider: "anthropic", account: "main", grant_id: "free_reset_weekly", confirm: true }, undefined, async () => { throw new Error("boom"); });
 	expect(failing.status).toBe(200);
+});
+
+test("what the lift answers (resumed counts, peers told) joins the response of a reset that took, and only then", async () => {
+	const extra = { resumed: { sessions: 1, lanes: 2 }, peers: { told: 1, failed: 0 } };
+	const press = async (result: string) => {
+		upstream(usage(), 200, { result });
+		return useClaudeReset({ provider: "anthropic", account: "main", grant_id: "free_reset_weekly", confirm: true }, undefined, async () => extra);
+	};
+	expect((await press("reset")).body).toMatchObject({ ok: true, outcome: "reset", ...extra });
+	expect((await press("not_limited")).body).not.toHaveProperty("resumed");
 });

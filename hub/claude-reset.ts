@@ -16,8 +16,9 @@ const REASONS: Record<string, string> = { surface: "이 접속 방식으로는 �
 const plainReason = (v: unknown): string => (typeof v === "string" && /^[\w .:-]{1,40}$/.test(v) ? v : "");
 
 let using = false;
-// `lift`: what to do once the server says the limit is reset (hub/limit-lift.ts liftUsageLimit), as Claude Code treats the limit as gone at once.
-export async function useClaudeReset(b: Json, fetchFn: (url: string, init: RequestInit) => Promise<Response> = fetch, lift?: (account: string) => Promise<void>): Promise<{ status: number; body: Json }> {
+// `lift`: what to do once the server says the limit is reset (hub/limit-peer.ts liftAfterReset), as Claude Code treats the limit as gone at once;
+// the fields it answers (what went on here, how many other gateways were told) join the response.
+export async function useClaudeReset(b: Json, fetchFn: (url: string, init: RequestInit) => Promise<Response> = fetch, lift?: (account: string) => Promise<Json | void>): Promise<{ status: number; body: Json }> {
 	if (b.confirm !== true) return { status: 400, body: { error: "리셋권은 확인을 거친 뒤에만 써요" } };
 	if (typeof b.account !== "string" || typeof b.grant_id !== "string") return { status: 400, body: { error: "어느 리셋권인지 알 수 없어요" } };
 	if (using) return { status: 409, body: { error: "리셋권을 쓰는 중이에요" } };
@@ -55,8 +56,8 @@ export async function useClaudeReset(b: Json, fetchFn: (url: string, init: Reque
 		}
 		if (!OUTCOMES.has(outcome)) return { status: 502, body: { error: "리셋권이 쓰였는지 확인할 수 없어요. 사용량 화면의 리셋권 개수를 봐 주세요" } };
 		// The reset is done: a failure to lift must not turn it into an error answer (the 리셋권 is spent either way).
-		if (outcome === "reset") await lift?.(acct.name).catch(e => log(`claude: lifting the limit after the reset failed: ${(e as Error).message}`));
-		return { status: 200, body: { ok: true, outcome, left: outcome === "reset" ? held - 1 : held } };
+		const lifted = outcome === "reset" ? await lift?.(acct.name).catch(e => log(`claude: lifting the limit after the reset failed: ${(e as Error).message}`)) : undefined;
+		return { status: 200, body: { ok: true, outcome, left: outcome === "reset" ? held - 1 : held, ...(lifted ?? {}) } };
 	} catch (e) {
 		log(`claude: limit reset failed: ${(e as Error).message}`);
 		return { status: 502, body: { error: "리셋권을 쓰지 못했어요" } };

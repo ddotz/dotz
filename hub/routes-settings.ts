@@ -16,7 +16,8 @@ import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
 import { json, body, terminals, BodyError } from "./routes-util.ts";
 import { useClaudeReset } from "./claude-reset.ts";
-import { checkUsageLimit, liftUsageLimit, restartChecked } from "./limit-lift.ts";
+import { checkUsageLimit, restartChecked } from "./limit-lift.ts";
+import { liftAfterReset } from "./limit-peer.ts";
 import { useResetCredit } from "./codex-usage.ts";
 import { budgetSettings, deleteAdminKey, monthlyLimitOf, saveAdminKey, saveMonthlyLimit } from "./api-budget.ts";
 import { postSettings, savePostSettings } from "./discord-post.ts";
@@ -174,7 +175,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 	if (req.method === "POST" && url.pathname === "/api/quota/reset-credit") {
 		const b = await body(req);
 		const claude = b?.provider === "anthropic";
-		const r = await (claude ? useClaudeReset(b, undefined, account => liftUsageLimit(account, "limit reset spent here", true, true)) : useResetCredit(b));
+		const r = await (claude ? useClaudeReset(b, undefined, account => liftAfterReset(account)) : useResetCredit(b));
 		if (claude && typeof b.account === "string") forgetAccountUsage(b.account);
 		if (r.status === 200) void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
 		return json(r.body, r.status);

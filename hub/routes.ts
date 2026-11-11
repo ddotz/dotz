@@ -55,6 +55,7 @@ import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
 import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
+import { peerLimitNotice } from "./limit-peer.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
@@ -438,6 +439,8 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (url.pathname === "/api/peers" && (req.method === "GET" || req.method === "DELETE")) return req.method === "GET" ? json([...(await listPeers()), ...(await relayRows())]) : forgetRoute(url);
 		// Send lease of another gateway (hub/send-lease.ts): claim, release or record a sent id before an app message goes out.
 		if (req.method === "POST" && url.pathname === "/api/peer/lease") return json(handleLease((await body(req)) as LeaseReq, Date.now()));
+		// Another gateway spent a 리셋권 (hub/limit-peer.ts): this one checks its own usage now and lifts only when that read agrees.
+		if (req.method === "POST" && url.pathname === "/api/peer/limit-lift") return json(await peerLimitNotice());
 		// This computer's name for the settings screen: the one in use, the one the owner set (empty = none), and the hostname default.
 		if (url.pathname === "/api/machine" && req.method === "GET") return json({ name: resolveName(cfg.web?.machine_name, machineHost()), custom: cleanName(cfg.web?.machine_name), default: friendlyName(machineHost()) });
 		if (url.pathname === "/api/machine" && req.method === "PUT") {

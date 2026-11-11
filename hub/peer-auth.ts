@@ -54,7 +54,7 @@ export const same = (a: string, b: string): boolean => {
 
 // Read-only paths a peer may GET, and the peer POSTs (forwarded actions, send lease).
 export const PEER_GET = [/^\/api\/peer\/monitoring$/, /^\/api\/peer\/desk$/, /^\/api\/monitors$/, /^\/api\/notices$/, /^\/api\/integrations$/, /^\/api\/watches\/[a-z0-9-]+\/settings$/, /^\/api\/integrations\/[a-z0-9-]+\/(?:settings|features)$/, /^\/api\/conversations$/, /^\/api\/history$/, /^\/api\/mail\/[a-z0-9._-]+\/body$/, /^\/api\/mail\/[a-z0-9._-]+\/files\/\d+$/, /^\/api\/drafts\/[A-Za-z0-9._-]+\/files\/\d+$/, /^\/api\/drafts\/[A-Za-z0-9._-]+\/(?:files|library|original)$/, /^\/api\/kakao\/[^?]*$/, /^\/api\/comments\/(?:sources|threads|drafts)$/, /^\/api\/comments\/sources\/[^/?]+\/posts$/, /^\/api\/comments\/thread\/[^/?]+\/[^/?]+$/, /^\/api\/replies$/, /^\/api\/peer-info$/, /^\/api\/peer\/projects$/, /^\/api\/peer\/file$/];
-export const PEER_POST = [/^\/api\/peer\/act$/, /^\/api\/peer\/lease$/, /^\/api\/peer\/desk-open$/];
+export const PEER_POST = [/^\/api\/peer\/act$/, /^\/api\/peer\/lease$/, /^\/api\/peer\/desk-open$/, /^\/api\/peer\/limit-lift$/];
 
 export type PeerCheck = "none" | "ok" | "denied";
 // "none": not a peer request (the normal owner checks apply). "ok": a peer may have this path. "denied": refuse with 403.

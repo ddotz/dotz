@@ -6,6 +6,7 @@
 //   2. OmO's usage block on that account, with OmO's own command (omoUnblockAccount);
 //   3. the paused orchestrator sessions and lanes go on, so held messages go out;
 //   4. the usage is read again;
+//   3b. what is still paused on a usage limit after that (a pause the lift could not count) or still holds messages goes on through the same call as the owner's 재개 (resumeNow, a lane's resume);
 //   5. the owner is told once that the limit is over, when a pause alert of this episode (hub/limit-alert.ts) is still the latest word, and the saved pauses go.
 //      The episode, not the counts of 1-3, decides: a session that ran on by itself leaves nothing to count, yet its alert still reads "paused until <date>".
 // A try that fails anyway is not repeated for the same episode: the session pauses again for the time the server names.
@@ -15,7 +16,7 @@ import { DATA_DIR, log, NAME, writeAtomic } from "./config.ts";
 import { convs } from "./convsessions.ts";
 import { liftQuotaBlocks } from "./fallback.ts";
 import { msg } from "./i18n.ts";
-import { liftLanePauses, limitPausedLanes, limitPausedModels } from "./laneops.ts";
+import { liftLanePauses, limitPausedLanes, limitPausedModels, resumeByName } from "./laneops.ts";
 import { lanes } from "./lanestate.ts";
 import { report } from "./lanereport.ts";
 import { endLimitEpisodes } from "./limit-alert.ts";
@@ -27,6 +28,9 @@ import { omoUnblockAccount } from "./runtime/omo-login.ts";
 
 type Role = "orchestrator" | "lane";
 type Session = { liftLimit: () => boolean; limitPaused: () => boolean; limitModel: () => string };
+// What the check after a lift reads of a session (the Orchestrator has all of it).
+export type Rest = { orch: { status: string; pauseKind: string; resuming: boolean; error?: unknown; ctx: { compaction: { state: string } } }; heldCount: () => number; resumeNow: (why: string) => unknown };
+export type Resumed = { sessions: number; lanes: number };
 // Swapped by the tests; nothing else reads it.
 export const liftEnv = {
 	usage: async (role: Role): Promise<{ account: string; omo: boolean; usable: boolean; spentScopes: string[] } | undefined> => {
@@ -40,6 +44,13 @@ export const liftEnv = {
 	unblock: (account: string): Promise<string> => omoUnblockAccount(account),
 	sessions: (): Session[] => [main, ...convs.conversations().map(c => c.o)],
 	lanes: { paused: (): number => limitPausedLanes().length, models: limitPausedModels, lift: liftLanePauses },
+	// What the check after a lift reads and takes the owner's 재개 path for: every session, and the lanes marked as paused on a usage limit whose
+	// process is gone (liftLanePauses only sees lanes that still have one).
+	left: {
+		sessions: (): Rest[] => [main, ...convs.conversations().map(c => c.o)],
+		lanes: (): string[] => [...lanes.values()].filter(l => !l.proc && !l.pausing && l.status === "rate-limited" && l.limitPause).map(l => l.name),
+		resumeLane: (name: string): void => resumeByName(name, msg().laneRate), // told what restartPaused tells: the limit is over, not that the owner resumed it
+	},
 	// Where each session keeps its saved pause (orchestrator.ts: main's file is DATA_DIR/orchestrator.json, convsessions.ts: <dir>/state.json).
 	stateFiles: (): string[] => [join(DATA_DIR, "orchestrator.json"), ...convs.conversations().flatMap(c => (c.dir ? [join(c.dir, "state.json")] : []))],
 	// The line goes where the pause alert went: the lane's channel for a lane, the alert conversation otherwise.
@@ -72,19 +83,52 @@ function clearSavedPauses(): number {
 	return cleared;
 }
 
+const pausedOnLimit = (o: Rest): boolean => o.orch.status === "rate-limited" && o.orch.pauseKind === "rate";
+// A session the lift left behind: still paused on a usage limit, or (when it was paused before the lift) idle with held messages and nothing
+// under way that would send them (no retry in flight, no error, no compaction).
+export const stuckAfterLift = (o: Rest, wasPaused: boolean): boolean =>
+	pausedOnLimit(o) || (wasPaused && o.orch.status === "idle" && !o.orch.resuming && !o.orch.error && o.orch.ctx.compaction.state !== "compacting" && o.heldCount() > 0);
+
+// The same path as the owner's 재개: POST /api/orchestrator/resume (resumeNow) and POST /api/lanes/:name/resume (resumeByName).
+function resumeLeft(was: Rest[]): Resumed {
+	const out = { sessions: 0, lanes: 0 };
+	for (const o of liftEnv.left.sessions()) {
+		if (!stuckAfterLift(o, was.includes(o))) continue;
+		try {
+			o.resumeNow("usage limit lifted");
+			out.sessions++;
+		} catch (e) {
+			log(`session still held after the usage limit lifted, resume failed: ${(e as Error).message}`);
+		}
+	}
+	for (const name of liftEnv.left.lanes()) {
+		try {
+			liftEnv.left.resumeLane(name);
+			out.lanes++;
+		} catch (e) {
+			log(`lane ${name} still paused after the usage limit lifted, resume failed: ${(e as Error).message}`);
+		}
+	}
+	return out;
+}
+
 // `resume` false: the caller restarts the session itself (the owner's 재개), so only the recorded limits are forgotten.
 // `spentReset`: the lift is the owner's 리셋권 spent here, which the notice says.
-export async function liftUsageLimit(account: string | undefined, why: string, resume = true, spentReset = false): Promise<void> {
+// Returns what went on (counted by the lift and found left behind after it).
+export async function liftUsageLimit(account: string | undefined, why: string, resume = true, spentReset = false): Promise<Resumed> {
+	const was = resume ? liftEnv.left.sessions().filter(pausedOnLimit) : [];
 	const chain = liftQuotaBlocks();
 	const omo = account ? await liftEnv.unblock(account).catch(() => "failed") : "-";
 	const sessions = resume ? liftEnv.sessions().filter(s => s.liftLimit()).length : 0;
 	const lanes = resume ? liftEnv.lanes.lift() : 0;
+	const left = resume ? resumeLeft(was) : { sessions: 0, lanes: 0 };
 	liftEnv.refresh(account);
 	const saved = clearSavedPauses();
 	// Ending the episode and telling happen in one synchronous step, so the reset path and the usage-report path never both tell it.
 	const told = endLimitEpisodes();
 	if (told) liftEnv.tell(told, spentReset ? msg().limitLiftedReset : msg().limitLifted);
-	log(`usage limit lifted (${why}): chain blocks ${chain}, omo ${omo}, orchestrator sessions ${sessions}, lanes ${lanes}, saved pauses cleared ${saved}, owner ${told ? `told (${told})` : "not told"}`);
+	log(`usage limit lifted (${why}): chain blocks ${chain}, omo ${omo}, orchestrator sessions ${sessions}, lanes ${lanes}, found left behind: sessions ${left.sessions}, lanes ${left.lanes}, saved pauses cleared ${saved}, owner ${told ? `told (${told})` : "not told"}`);
+	return { sessions: sessions + left.sessions, lanes: lanes + left.lanes };
 }
 
 // Per role: when a lift went out and whether a later tick has seen the session paused again (the try failed). One lift per episode.
