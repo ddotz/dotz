@@ -17,8 +17,8 @@ test("loads that boot and refreshState both start are one request each", async (
 	await waitFor(v, `typeof NM !== "undefined" && NM.loaded && NT.loaded && S && P && C && MN.info && INTG.loaded`);
 	await run(v, count);
 	await waitFor(v, `__out === 0`);
-	await run(v, `stripAt = 0; loadHomeData(); loadStrip(); loadMonitors(); loadProviderData(); loadContext(true); loadContext(true); mnLoad(); mnLoad(); ntSync({ notices_unread: 5 }); ntSync({ notices_unread: 6 })`);
-	const n = await ev<Record<string, number>>(v, `__n`);
+	// Counted in the same page turn as the calls: an answer that comes later (ntSync reads again when the answer disagrees with the state's count) is a separate, legitimate request.
+	const n = await ev<Record<string, number>>(v, `(() => { stripAt = 0; loadHomeData(); loadStrip(); loadMonitors(); loadProviderData(); loadContext(true); loadContext(true); mnLoad(); mnLoad(); ntSync({ notices_unread: 5 }); ntSync({ notices_unread: 6 }); return { ...__n }; })()`);
 	expect({ quota: n["/api/quota"], monitors: n["/api/monitors"], providers: n["/api/providers"], context: n["/api/context"], machine: n["/api/machine"], notices: n["/api/notices"] })
 		.toEqual({ quota: 1, monitors: 1, providers: 1, context: 1, machine: 1, notices: 1 });
 }, 30_000);

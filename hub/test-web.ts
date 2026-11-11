@@ -35,7 +35,17 @@ const SLOW_TIMERS = `(() => { const q = []; let now = 0, seq = 1e9; const rs = s
 	setInterval = (f, ms = 0, ...a) => { if (ms < 1000) return ri(f, ms, ...a); q.push({ id: ++seq, at: now + ms, every: ms, f: () => f(...a) }); return seq; };
 	const clear = real => id => { const i = q.findIndex(t => t.id === id); if (i >= 0) q.splice(i, 1); else real(id); };
 	clearTimeout = clear(rc); clearInterval = clear(rci);
-	window.__advance = ms => { const end = now + ms; for (;;) { const due = q.filter(t => t.at <= end).sort((x, y) => x.at - y.at)[0]; if (!due) break; now = due.at; if (due.every) due.at += due.every; else q.splice(q.indexOf(due), 1); due.f(); } now = end; };
+	// Real requests the page has open (fetch, until the body is read): virtual time must not pass them, or a 2 s page wait (setConn after a state read, the STATE_WAIT_MS guard) fires
+	// while the answer is milliseconds away, and a test that ran fast on an idle machine fails on a busy one.
+	let open = 0, idleWaiters = [];
+	const done = () => { if (--open === 0) for (const w of idleWaiters.splice(0)) w(); };
+	const rf = fetch;
+	fetch = (...a) => { open++; let p; try { p = rf(...a); } catch (e) { done(); throw e; } p.then(r => { r.clone().arrayBuffer().then(done, done); }, done); return p; };
+	const idle = () => open === 0 ? Promise.resolve() : new Promise((res, rej) => { const t = rs(() => rej(new Error("page still has " + open + " request(s) open after 5 s")), 5000); idleWaiters.push(() => { rc(t); res(); }); });
+	const hop = () => new Promise(r => rs(r, 0));
+	const settle = async () => { do { await idle(); await hop(); } while (open > 0); };
+	window.__rt = rs;
+	window.__advance = async (ms, quiet) => { const end = now + ms; if (quiet) await settle(); for (;;) { const due = q.filter(t => t.at <= end).sort((x, y) => x.at - y.at)[0]; if (!due) break; now = due.at; if (due.every) due.at += due.every; else q.splice(q.indexOf(due), 1); due.f(); } if (quiet) await settle(); now = end; };
 })();`;
 async function slowIndex(req: Request, head = ""): Promise<Response> {
 	const plain = await indexPage(new Request(req.url));
@@ -151,9 +161,13 @@ export function fakeHub(opts: HubOptions = {}) {
 
 // Resolves when the page-side expression is truthy, re-checked every animation frame.
 export const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+	v.evaluate(`new Promise((res, rej) => { const t = (window.__rt || setTimeout)(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 // Runs the page's virtual slow timers (fakeHub({ slowTimers: true })) that fall due within `ms`.
-export const advanceTimers = (v: View, ms: number) => run(v, `__advance(${ms})`);
+export const advanceTimers = (v: View, ms: number) => v.evaluate(`__advance(${ms}).then(() => 0)`);
+// The same, but time starts only once the requests the page has open are answered, and the call returns once those its timers started are: a state read that is
+// 30 ms away is not overtaken by a 2 s page wait, as it would not be in real time. Inside one call timers still run back to back, so keep the window short enough that a
+// refresh and the wait it arms do not both fall in it. Rejects when a request stays open for 5 s.
+export const advanceSettled = (v: View, ms: number) => v.evaluate(`__advance(${ms}, true).then(() => 0)`);
 // Evaluates a page-side expression and returns it as JSON.
 export const ev = async <T = unknown>(v: View, expr: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify(${expr})`)) as string) as T;
 // Runs page-side statements and returns nothing.

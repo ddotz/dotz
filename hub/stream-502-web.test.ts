@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { advanceTimers, fakeHub, inbox, on, run } from "./test-web.ts";
+import { advanceSettled, fakeHub, inbox, on, run } from "./test-web.ts";
 import { sseResponse } from "./events.ts";
 
 // Behind a reverse proxy that answers 502 while the gateway restarts, the browser ends the stream in CLOSED and never tries again: the page opens it again itself.
@@ -27,7 +27,8 @@ async function events(req: Request, url: URL): Promise<Response> {
 
 const hub = fakeHub({
 	slowTimers: true,
-	api: (req, url) => (url.pathname === "/api/events" ? events(req, url) : undefined),
+	// A gateway that is down answers 502 to every request, not only the stream: the page's state poll (15 s) must not read it as up again and hide the header line.
+	api: (req, url) => (url.pathname === "/api/events" ? events(req, url) : down ? new Response("bad gateway", { status: 502 }) : undefined),
 });
 afterAll(() => hub.stop());
 const view = await hub.view({ width: 390, height: 844 });
@@ -62,16 +63,16 @@ test("a gateway that stays down is tried again with growing waits, the header li
 	for (let step = 0; step < 8; step++) {
 		const n = attempts.length;
 		for (let i = 0; i < 20 && attempts.length === n; i++) {
-			await advanceTimers(view, 5_000);
+			await advanceSettled(view, 5_000);
 			await attempts.until(a => a.length > n, 250).catch(() => undefined);
 		}
 		expect(attempts.length).toBe(n + 1);
 	}
-	await waitFor(`window.__f === ${attempts.filter(a => a === 502).length + 1}`);
-	await advanceTimers(view, 2_500);
+	await waitFor(`window.__f >= ${attempts.filter(a => a === 502).length + 1}`);
+	await advanceSettled(view, 2_500);
 	await waitFor(`!$("#conn").hidden`);
 	down = false;
-	await advanceTimers(view, 6_000);
+	await advanceSettled(view, 6_000);
 	await attempts.until(a => a[a.length - 1] === 200, 8000, "attached again");
 	await waitFor(`$("#conn").hidden`);
 }, 40_000);

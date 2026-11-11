@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { advanceTimers, ev, fakeHub, inbox, json, on, run } from "./test-web.ts";
+import { advanceSettled, advanceTimers, ev, fakeHub, inbox, json, on, run } from "./test-web.ts";
 import { broadcast, sseResponse } from "./events.ts";
 
 // A stream the gateway drops and the page attaches again changes nothing the owner sees, and a hidden page keeps its stream with one tiny request a minute.
@@ -12,7 +12,7 @@ const history = Array.from({ length: 60 }, (_, i) => (i % 3 === 0
 
 const opens = inbox<{ last: string | null; live: string | null }>();
 const closes = inbox<number>();
-const reqs: string[] = [];
+const reqs = inbox<string>();
 const vouched = inbox<string | null>();
 const ends = new Set<() => void>();
 let forceReset = false;
@@ -77,6 +77,8 @@ async function ready() {
 		window.__vis = "visible";
 		openTarget("main", "chat");`);
 	await waitFor(`tl.querySelectorAll("[data-ts]").length >= 60`);
+	// The other reads the open started (state, activity, notices) draw and may stick the view to the bottom when they land: scroll only after they have.
+	await advanceSettled(view, 0);
 	await run(view, `
 		ta.value = "보내지 않은 초안 글"; ta.dispatchEvent(new Event("input", { bubbles: true }));
 		timeline.scrollTop = 300;
@@ -92,12 +94,15 @@ for (const [name, reset] of [["the gateway ends the stream and the page attaches
 	test(`${name}: nothing on screen changes`, async () => {
 		await ready();
 		const before = await look(), pngBefore = await shot(`before-${reset ? "reset" : "drop"}.png`);
-		const n = opens.length;
+		const n = opens.length, mark = reqs.length, seen = await ev<number>(view, `window.__conn.length`);
 		forceReset = reset;
 		for (const end of [...ends]) end();
 		await opens.until(a => a.length >= n + 1, 2000, "stream attached again before the browser's own wait");
-		await waitFor(`window.__conn.includes("T")`);
-		await advanceTimers(view, 10_000);
+		// The drop (F) and the open that follows it (T), not a T from an earlier state read. A reset makes the page read its state again: that request is what
+		// virtual time must not overtake (its 2 s wait would show the banner), so it is awaited before time moves.
+		await waitFor(`window.__conn.slice(${seen}).join("").includes("FT")`);
+		if (reset) await reqs.until(r => r.slice(mark).includes("/api/state"), 2000, "the state read after the reset");
+		await advanceSettled(view, 10_000);
 		const after = await look(), pngAfter = await shot(`after-${reset ? "reset" : "drop"}.png`);
 		expect(after).toEqual(before);
 		expect(after.conn).toBe(false);
