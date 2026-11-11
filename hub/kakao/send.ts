@@ -13,7 +13,7 @@ import { type DraftAction, draftApprovalBlock, draftVerdict } from "../draft-app
 import { type Confirmer, dbConfirmer, dbPreview } from "./confirm.ts";
 import { writePrivate } from "./creds.ts";
 import { draftParts } from "./draft.ts";
-import { type AxStep, axSend, closeWindow, type Focus, type FoundRow, normalizeTitle, openRoom, REFUSE, type RoomFact, sameText, type SendOut } from "./room.ts";
+import { type AxStep, axSend, closeWindow, type Focus, type FoundRow, normalizeTitle, openRoom, previewSame, REFUSE, type RoomFact, sameText, type SendOut, twinsOf } from "./room.ts";
 import { KAKAO_BUNDLE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
@@ -404,13 +404,17 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	const known = all.find(r => r.chatId === input.chatId);
 	const axKey = `ax:${input.chatId}`;
 	// Same-name rooms can only be told apart by the newest message the list shows under the name: the caller's facts may omit it, then the
-	// install's database answers (one small read, only when a name is shared).
+	// install's database answers (one small read, only when a name is shared). Twins (same name and size) are read too, one by one, until
+	// one of them cannot be told from the asked room: openRoom refuses then, so the rest is not needed.
 	let room: RoomFact = { ...known, chatId: input.chatId, name: input.roomName };
-	if (all.some(r => r.chatId !== input.chatId && normalizeTitle(r.name) === normalizeTitle(input.roomName)) && !room.preview) {
-		try {
-			const preview = await dbPreview(deps.paths, deps.runner)(input.chatId);
-			if (preview) room = { ...room, preview };
-		} catch {}
+	if (all.some(r => r.chatId !== input.chatId && normalizeTitle(r.name) === normalizeTitle(input.roomName))) {
+		const preview = dbPreview(deps.paths, deps.runner);
+		if (!room.preview) room = { ...room, preview: await preview(input.chatId) };
+		for (const t of room.preview ? twinsOf(room, all) : []) {
+			const p = t.preview ?? (await preview(t.chatId));
+			all = all.map(r => (r.chatId === t.chatId ? { ...r, preview: p } : r));
+			if (p === undefined || previewSame(p, room.preview!)) break;
+		}
 	}
 	// The database lists rooms newest first, the same order as KakaoTalk's chat list: the row index is a hint that saves reading ~100 rows.
 	const hint = all.findIndex(r => r.chatId === input.chatId);

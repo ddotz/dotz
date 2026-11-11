@@ -46,6 +46,7 @@ export const REFUSE = {
 	openFailed: "방을 열지 못했어요",
 	noInput: "이 방의 대화창에는 글을 쓰는 칸이 없어서 보낼 수 없어요",
 	partial: "같은 이름의 방을 목록 끝까지 확인하지 못해서 고르지 않았어요",
+	twins: "목록에서 서로 구분하지 못해서 보내지 않았어요",
 	timeout: "방을 여는 데 너무 오래 걸려서 멈췄어요",
 } as const;
 
@@ -91,7 +92,7 @@ const BADGE = /^\d+\+?$/;
 export const rowPreview = (texts: string[]) => texts.slice(1).find(t => normalizeInput(t) !== "" && !BADGE.test(normalizeInput(t)) && !CLOCK.test(normalizeInput(t)));
 
 // KakaoTalk cuts a long preview with "…"; a short one must match exactly (a two-letter word is not evidence).
-const previewSame = (shown: string, want: string) => {
+export const previewSame = (shown: string, want: string) => {
 	const a = normalizeInput(shown).replace(/[…\.]{1,3}$/, "").trim();
 	const b = normalizeInput(want).replace(/[…\.]{1,3}$/, "").trim();
 	if (!a || !b) return false;
@@ -100,12 +101,21 @@ const previewSame = (shown: string, want: string) => {
 };
 
 // members/preview: what the chosen row showed (re-verified at open time when the choice rested on them).
-export type RowChoice = { ok: true; index: number; via: "name" | "members" | "preview"; members?: number; preview?: string } | { ok: false; why: "none" | "mismatch" };
+export type RowChoice = { ok: true; index: number; via: "name" | "members" | "preview"; members?: number; preview?: string } | { ok: false; why: "none" | "mismatch" | "twins" };
+
+// Twins: other database rooms a list row cannot tell from this one by what chooseRow uses. A row shows the name and, for a group or an open
+// chat, the member count (measured: the same number as the database); a 1:1 and the memo chat show none, and the window tells the memo chat apart.
+const counted = (r: RoomFact) => r.kind !== "direct" && r.kind !== "self";
+export const twinsOf = (room: RoomFact, all: RoomFact[]) =>
+	all.filter(o => o.chatId !== room.chatId && normalizeTitle(o.name) === normalizeTitle(room.name) && counted(o) === counted(room) && (o.kind === "self") === (room.kind === "self") && (!counted(o) || o.members === room.members));
+
+// With twins only a newest message the asked room has and no twin has can tell its row apart; a twin without a comparable one cannot be ruled out.
+export const twinsApart = (room: RoomFact, twins: RoomFact[]) => room.preview !== undefined && twins.every(t => t.preview !== undefined && !previewSame(t.preview, room.preview!));
 
 // Which list row is the room. A name no other database room has needs one row of that title (the window is checked after, and a window
 // is the only place the count is proven); a shared name is told apart by the row's own member count, and when that is not enough (two
 // rooms of one name and one size), by the newest message the list shows under the name (database preview).
-export function chooseRow(rows: string[][], room: RoomFact, shared: boolean): RowChoice {
+export function chooseRow(rows: string[][], room: RoomFact, shared: boolean, twins: RoomFact[] = []): RowChoice {
 	const want = normalizeTitle(room.name);
 	const hits = rows.flatMap((t, index) => (normalizeTitle(t[0] ?? "") === want ? [{ index, members: rowMembers(t), preview: rowPreview(t) }] : []));
 	if (!hits.length) return { ok: false, why: "none" };
@@ -114,9 +124,10 @@ export function chooseRow(rows: string[][], room: RoomFact, shared: boolean): Ro
 	if (room.kind === "group") left = left.filter(h => h.members !== undefined && h.members === room.members);
 	else if (room.kind === "direct" || room.kind === "self") left = left.filter(h => h.members === undefined);
 	const pickHit = (h: (typeof hits)[number], via: "members" | "preview"): RowChoice => ({ ok: true, index: h.index, via, ...(h.members !== undefined ? { members: h.members } : {}), ...(via === "preview" && h.preview !== undefined ? { preview: h.preview } : {}) });
-	if (left.length === 1) return pickHit(left[0]!, "members");
+	if (twins.length && !twinsApart(room, twins)) return { ok: false, why: "twins" };
+	if (left.length === 1 && !twins.length) return pickHit(left[0]!, "members");
 	// Same name and size: the newest message of the database room is the only fact left that the screen itself shows.
-	if (room.preview && left.length > 1) {
+	if (room.preview && (left.length > 1 || twins.length)) {
 		const byPreview = left.filter(h => h.preview !== undefined && previewSame(h.preview, room.preview!));
 		if (byPreview.length === 1) return pickHit(byPreview[0]!, "preview");
 	}
@@ -220,6 +231,7 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	const want = normalizeTitle(room.name);
 	const namesakes = all.filter(r => r.chatId !== room.chatId && normalizeTitle(r.name) === want).length;
 	const shared = namesakes > 0;
+	const twins = twinsOf(room, all);
 	let focus: Focus | undefined;
 	const stop = (reason: string): Opened => ({ ok: false, reason, steps, ...(focus ? { focus } : {}) });
 	const named = `'${room.name}'`;
@@ -233,6 +245,9 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	const rowsReq = { action: "rows", name: room.name, max: deep ? DEEP_ROWS : READ_ROWS, budgetMs: budget, first: !shared, ...(shared ? { need } : {}), ...(deep || opts.hint === undefined ? {} : { hint: opts.hint }), ...(opts.memo === undefined ? {} : { memo: opts.memo }) };
 	const cap = shared ? OPEN_CAP_MS + 2_000 : OPEN_CAP_MS;
 	const rowsCallMs = Math.max(budget, COVER_MS) + 1_200;
+	// Rooms the list cannot tell apart are refused before the list is read: no later try can change that.
+	const twinsRefusal = (): Opened => ({ ...stop(`${named} 이름과 인원이 같은 방이 ${twins.length + 1}개라 ${REFUSE.twins}`), final: true });
+	if (twins.length && !twinsApart(room, twins)) return twinsRefusal();
 
 	let openedRow: number | undefined;
 	// `reuse`: the row an earlier try of this send already chose and whose menu did not open. It goes through the same choice and the same
@@ -261,12 +276,13 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		// A sparse array keeps every hit at its list row index; chooseRow reads only the rows that were read.
 		const rows: string[][] = [];
 		for (const h of hits) rows[h.index] = h.texts;
-		const choice = chooseRow(rows, room, shared);
+		const choice = chooseRow(rows, room, shared, twins);
 		const scanned = typeof listed.out.scanned === "number" ? listed.out.scanned : rows.length;
 		const total = typeof listed.out.rows === "number" ? listed.out.rows : undefined;
 		const stopped = listed.out.stopped ?? "?";
 		steps.push({ step: deep ? "rows:deep" : "rows", ms: listed.ms, ok: choice.ok, why: `${scanned}:${stopped}${listed.out.pages ? `:p${listed.out.pages}` : ""}${choice.ok ? `:row${choice.index}:${choice.via}` : `:${choice.why}`}` });
 		if (!choice.ok) {
+			if (choice.why === "twins") return twinsRefusal();
 			if (choice.why !== "none") return stop(REFUSE.mismatch);
 			if (stopped === "budget") return stop(`카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundTime}(${seen(scanned, total)})`);
 			return { ...stop(`카카오톡 대화 목록에서 ${named} 방을 ${REFUSE.notFoundEnd}(${seen(scanned, total)}). 카카오톡에서 방 이름이 바뀌었거나 나간 방인지 확인해 주세요`), final: true };

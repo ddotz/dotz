@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chooseRow, inputFree, normalizeInput, normalizeTitle, openRoom, REFUSE, rowPreview, sameText, type RoomFact } from "./room.ts";
+import { chooseRow, inputFree, normalizeInput, normalizeTitle, openRoom, REFUSE, rowPreview, sameText, twinsOf, type RoomFact } from "./room.ts";
 import { sendText } from "./send.ts";
 import { kakaoPaths, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen, rowTexts } from "./ui.fixture.ts";
@@ -69,17 +69,78 @@ test("same name and same member count, or a count no row shows: refused before a
 	];
 	const same = await send(twins, a, [a, b]);
 	expect(same.r.ok).toBe(false);
-	expect(same.r.reason).toContain(REFUSE.mismatch);
+	expect(same.r.reason).toContain(REFUSE.twins);
 	expect(same.screen.menus()).toBe(0);
 	expect(same.screen.sends).toHaveLength(0);
 	const odd = await send([{ id: "chat_a", title: "스터디", count: 9 }], a, [a, b]);
 	expect(odd.r.ok).toBe(false);
-	expect(odd.r.reason).toContain(REFUSE.mismatch);
+	expect(odd.r.reason).toContain(REFUSE.twins);
 	expect(odd.screen.menus()).toBe(0);
-	const missing = await send([], a, [a, b]);
-	expect(missing.r.ok).toBe(false);
-	expect(missing.r.reason).toContain(REFUSE.notFoundEnd);
-	expect(missing.screen.menus()).toBe(0);
+});
+
+const twinA: RoomFact = { chatId: "20", name: "스터디", kind: "group", members: 4 };
+const twinB: RoomFact = { chatId: "21", name: "스터디", kind: "group", members: 4 };
+const oneRow: FakeRow[] = [{ id: "chat_a", title: "스터디", count: 4, preview: "내일 봉요", window: { title: "스터디", members: 4 } }];
+
+test("two database rooms of one name and size, one list row, no preview that separates them: either one is refused at once, one try, list not read", async () => {
+	for (const [asked, other] of [[twinA, twinB], [twinB, twinA]] as const) {
+		const none = await send(oneRow, asked, [asked, other]);
+		expect(none.r.ok).toBe(false);
+		expect(none.r.reason).toContain(`2개라 ${REFUSE.twins}`);
+		expect(none.r.attempts).toHaveLength(1);
+		expect(none.screen.rowCalls).toHaveLength(0);
+		expect(none.screen.menus()).toBe(0);
+		expect(none.screen.sends).toHaveLength(0);
+	}
+	// A twin whose newest message is the same, or unknown, does not separate either.
+	const same = await send(oneRow, { ...twinA, preview: "내일 봉요" }, [twinA, { ...twinB, preview: "내일 봉요" }]);
+	expect(same.r.reason).toContain(REFUSE.twins);
+	const unknown = await send(oneRow, { ...twinA, preview: "내일 봉요" }, [twinA, twinB]);
+	expect(unknown.r.reason).toContain(REFUSE.twins);
+	expect(unknown.screen.menus()).toBe(0);
+});
+
+test("twins told apart by a preview only the asked room has: chosen via preview, and the open request rechecks that preview", async () => {
+	const a = { ...twinA, preview: "내일 봉요" };
+	const b = { ...twinB, preview: "어제 봉요" };
+	const screen = fakeScreen(oneRow);
+	const opens: Record<string, unknown>[] = [];
+	const runner: Runner = async (argv, o) => {
+		const req = argv[1] === "-l" && o?.stdin ? JSON.parse(o.stdin.trim()) : undefined;
+		if (req?.action === "open") opens.push(req);
+		return screen.runner(argv, o);
+	};
+	const r = await sendText({ chatId: "20", roomName: "스터디", text: "안녕" }, { paths, runner, roomNames: async () => [a, b] });
+	expect(r).toMatchObject({ ok: true });
+	expect(r.ax![0]!.why).toBe("1:end:row0:preview");
+	expect(opens[0]).toMatchObject({ expect: { members: 4, preview: "내일 봉요" } });
+	// The row in the list is the other twin's: asking for the room whose newest message is not on the row is refused, nothing opened.
+	const wrong = await send([{ ...oneRow[0]!, preview: "어제 봉요" }], a, [a, b]);
+	expect(wrong.r.ok).toBe(false);
+	expect(wrong.screen.opened).toEqual([]);
+	expect(wrong.screen.menus()).toBe(0);
+});
+
+test("open chats of one name and size are twins too: refused without a preview that separates them", async () => {
+	const a: RoomFact = { chatId: "50", name: "한더", kind: "open", members: 1 };
+	const b: RoomFact = { chatId: "51", name: "한더", kind: "open", members: 1 };
+	const rows: FakeRow[] = [{ id: "chat_a", title: "한더", count: 1, window: { title: "한더", members: 1 } }];
+	const r = await send(rows, a, [a, b]);
+	expect(r.r.reason).toContain(REFUSE.twins);
+	expect(r.screen.menus()).toBe(0);
+	const row = ["한더", "1", "오후 1:00", "여기 있어요"];
+	expect(chooseRow([row], a, true, [b])).toEqual({ ok: false, why: "twins" });
+	expect(chooseRow([row], { ...a, preview: "여기 있어요" }, true, [{ ...b, preview: "저기 있어요" }])).toMatchObject({ ok: true, index: 0, via: "preview" });
+	// A group of the same size is a twin of an open chat (the row shows the same number); a 1:1 or a different size is not.
+	expect(twinsOf(a, [a, b, { ...b, chatId: "52", kind: "group" }, { ...b, chatId: "53", members: 2 }, { ...b, chatId: "54", kind: "direct" }]).map(t => t.chatId)).toEqual(["51", "52"]);
+});
+
+test("a room without twins behaves as before: one row of the name is enough, a namesake of another size is no twin", async () => {
+	const other: RoomFact = { ...twinB, members: 9 };
+	const { r, screen } = await send(oneRow, twinA, [twinA, other]);
+	expect(r).toMatchObject({ ok: true });
+	expect(r.ax![0]!.why).toBe("1:end:row0:members");
+	expect(screen.opened).toEqual(["ax:chat_a"]);
 });
 
 test("chooseRow: shared names need exactly one row of the database member count; a 1:1 or the memo chat shows no count", () => {
