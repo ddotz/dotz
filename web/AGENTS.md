@@ -9,4 +9,5 @@ Read before changing a screen: `docs/ui-principles.md` (principles), `web/DESIGN
 - Spacing comes from tokens only (`web/DESIGN.md`); `hub/design-rules-web.test.ts` fails on literals.
 - Copy is natural Korean, written the way a person would say it, with no AI-sounding phrases.
 - Screen text is not written in the code: add the key to `web/i18n/ko/<area>.json` and `web/i18n/en/<area>.json` together and read it with `TX("key", vars)` (`web/js/00-i18n.js`; index.html uses `{{key}}`). English is short app copy, not a translation of the Korean. `bun hub/web-i18n-check.ts` fails on a new Hangul literal in web/ and on a key missing from either list.
+- A screen change moves the tests that pin it: `grep -l '<selector, id or i18n key you touched>' hub/*-web.test.ts`, run every hit and update the ones your change moved. One red web test skips the whole release slot.
 - Before done: side-by-side before/after shots at 390px and 1280px, compared item by item with the request.
