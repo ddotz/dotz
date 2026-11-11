@@ -81,7 +81,7 @@ function paintRestartBanner() {
   $("#gban-dot").className = `dot ${cut ? "warn" : ""}`;
   $("#gban-tx").innerHTML = TX("home.gban.tx", { restarts: `<b>${TX("home.gban.times", { n: list.length })}</b>`, cut: `<b>${cut}</b>` });
   b.title = TX("home.gban.title", { n: list.length, cut, time: kstHM(last) });
-  $("#gban-x").onclick = () => { try { localStorage.setItem(BAN_KEY, JSON.stringify({ day: today, cut })); } catch {} b.hidden = true; };
+  $("#gban-x").onclick = () => { lsSet(BAN_KEY, JSON.stringify({ day: today, cut })); b.hidden = true; };
 }
 // Alerts: one plain Korean line; the raw text (provider error strings, report lines) folds under 자세히.
 function humanAlert(text) {

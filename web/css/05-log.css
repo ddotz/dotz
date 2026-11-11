@@ -36,36 +36,18 @@
 .lr .dot { width: 7px; height: 7px; }
 .lr-o { display: none; padding: 0 var(--sp-2) var(--sp-2) calc(var(--sp-2) + var(--lr-k-w) + var(--sp-2)); }
 .lr.open .lr-o { display: block; }
-.lr-sub { margin-top: var(--sp-15); color: var(--fg-2); font-size: 12.5px; }
 @media (max-width: 639px) { .lg { padding: var(--sp-3); } .lg-b { padding-left: 0; } .lr-o { padding-left: var(--sp-2); } .lr-k { min-width: 28px; } }
-.tu, .th, .tt, .tk, .tr, .te { display: flex; gap: var(--sp-2); min-width: 0; }
-.tu { margin: var(--sp-3) calc(var(--sp-2) * -1) var(--sp-15); padding: var(--sp-1) var(--sp-2); border-radius: 4px; background: rgb(255 255 255 / .07); }
-.tu .tg { color: var(--tac); }
-.tu .tx { min-width: 0; white-space: pre-wrap; }
-.tl { --tl-ind: 22px; margin: var(--sp-15) 0; border-radius: 4px; cursor: pointer; }
-.tl:focus-visible, .tk:focus-visible { outline-offset: 3px; }
-.tl.ok > .th > .tg { color: var(--tok); }
-.tl.bad > .th > .tg { color: var(--terr); }
+.th, .tt, .tr { display: flex; gap: var(--sp-2); min-width: 0; }
 .th b { flex: none; font-weight: 600; }
 .th .ti { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--td); }
-.tl.open .th .ti { white-space: normal; overflow-wrap: anywhere; }
 .tr { margin-left: var(--tl-ind); color: var(--td); }
 .tr .rt { min-width: 0; flex: 1; }
 .tr .ln { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tr .more { opacity: .7; }
-.tl.bad > .tr { color: var(--terr); }
 .full { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 400px; overflow: auto; font: inherit; }
-.targs { margin: var(--sp-1) 0 0 var(--tl-ind); padding: var(--sp-15) var(--sp-2); border-radius: 6px; background: rgb(255 255 255 / .06); color: var(--td); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font: inherit; }
-.tl:not(.open) .full, .tl:not(.open) .targs { display: none; }
-.tl.open .short { display: none; }
 .tt { margin: var(--sp-2) 0; }
 .tt .md { flex: 1; min-width: 0; }
-.tk { margin: var(--sp-1) 0; color: var(--td); font-style: italic; cursor: pointer; }
-.tk .tkt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk .tkf { display: none; min-width: 0; flex: 1; }
-.tk.open .tkt { display: none; } .tk.open .tkf { display: block; }
 .tdv { margin: var(--sp-3) 0; font-size: 11.5px; line-height: 16px; text-align: center; overflow-wrap: anywhere; }
-.te { margin: var(--sp-15) 0; color: var(--terr); overflow-wrap: anywhere; }
 .tc { margin: var(--sp-15) 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--td); font: inherit; }
 .tc.err { color: var(--terr); }
 .jump { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); }
@@ -84,8 +66,6 @@ details.box[open] > summary::before { transform: rotate(45deg); }
 .tsum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); }
 .tsum:empty { display: none; }
 .ttime { flex: none; font-size: 11px; color: var(--fg-3); }
-.tstate { flex: none; min-width: 10px; font-weight: 600; font-size: 12px; }
-.tstate.ok { color: var(--ok); } .tstate.bad { color: var(--err); }
 details.box .body { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind); }
 details.box .cl { margin: var(--sp-2) 0 0; font: 500 11px/16px var(--font); color: var(--fg-3); }
 details.box .cl:first-child { margin-top: 0; }
@@ -99,7 +79,6 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .subsum .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subsum .chev { width: 14px; height: 14px; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
 .subsum[aria-expanded="true"] .chev { transform: rotate(180deg); }
-.sublist { max-height: 196px; overflow-y: auto; padding: var(--sp-1); }
 .subrow { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: var(--row-h); padding: var(--sp-15) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: transparent; font-size: 13px; line-height: 20px; text-align: left; }
 .subrow .nm { display: flex; flex-direction: column; }
 .subrow .nm b { font-size: 14px; line-height: 22px; }
@@ -214,7 +193,7 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .brz.e { top: 14px; bottom: 16px; right: -3px; width: 8px; cursor: ew-resize; }
 .brz.s { left: 14px; right: 16px; bottom: -3px; height: 8px; cursor: ns-resize; }
 .board.narrow .brz { display: none; }
-/* 세션 and 프로젝트 tabs: a column of chat-list rows (.cv-list, 10-conversations.css) */
+/* 세션 and 프로젝트 tabs: a column of chat-list rows (10-conversations.css) */
 #v-projects { max-width: 640px; }
 
 .board.narrow { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -227,7 +206,6 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .card.att.err { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); background: color-mix(in srgb, var(--err) 8%, var(--card)); }
 @media (hover: hover) { .card.tap.att:hover { border-color: color-mix(in srgb, var(--warn) 75%, var(--line)); background: color-mix(in srgb, var(--warn) 14%, var(--card)); } }
 @media (hover: hover) { .card.tap.att.err:hover { border-color: color-mix(in srgb, var(--err) 75%, var(--line)); background: color-mix(in srgb, var(--err) 14%, var(--card)); } }
-.card.tap .lstat { color: var(--fg-2); }
 .card .subline { margin-top: var(--sp-15); }
 .card .clamp { margin-top: var(--sp-15); }
 /* bundle card: one row per item, each row opens the item and has its own ⋯ */
@@ -245,7 +223,6 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 @media (hover: none) { .grow > .ib { opacity: 1; } }
 @media (pointer: coarse) { .brz.e, .brz.s { display: none; } .brz.se { width: 24px; height: 24px; } .brz.se::after { right: 6px; bottom: 6px; } }
 /* markdown has block children (lists, code), so a line clamp would cut through a line: cap the height and fade a long report */
-.lstat { flex: none; padding: var(--sp-15) var(--sp-3); border-top: 1px solid var(--line); color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lr { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 26px; padding: 0 var(--sp-3); }
 @media (hover: hover) { .lr:hover { background: var(--hover); } }
 .lr .lt { flex: none; color: var(--fg-3); font-size: 11px; }

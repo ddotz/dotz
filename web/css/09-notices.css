@@ -1,16 +1,9 @@
 /* Rows of the 모니터링 screen (30-monitoring.js), the jump highlight (30-notices.js), the 홈 cards (08-home.js) and the decision sheet (30-notices.js). */
-.nt-row { display: flex; align-items: flex-start; gap: var(--sp-3); width: 100%; min-height: var(--row-h); padding: var(--row-py) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; }
-@media (hover: hover) { .nt-row:hover { background: var(--card-hover); } }
-.nt-row:active { background: var(--active); }
 .nt-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; /* nudge: 8px dot centred on the first 22px text line */ border-radius: 50%; background: var(--fg-3); }
 .nt-dot.tone-done { background: var(--ok); }
 .nt-dot.tone-run { background: var(--accent); }
 .nt-dot.tone-ask { background: var(--warn); }
 .nt-dot.tone-fail { background: var(--err); }
-.nt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
-.nt-t { font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
-.nt-row.un .nt-t { font-weight: 600; }
-.nt-m { color: var(--fg-3); font: 400 12px/16px var(--font); }
 /* The one highlight rule, for ntFlash (30-notices.js, .nt-hl) and a KakaoTalk quote (17-kakao.css): an overlay painted over the host, so a highlight never changes the host's size, radius, padding or margin.
    - anything with its own fill (a card, a bubble, a work card) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
    - plain text (.nt-hl.nt-bar) gets only a faint tint around the message (no left bar: owner 2026-10-22).
@@ -32,14 +25,7 @@
 @keyframes nt-hl-still { 0% { opacity: 1; } 100% { opacity: 0; } }
 
 
-.mon-sum { padding: var(--sp-1) var(--sp-1) var(--sp-3); color: var(--fg-2); font: 500 14px/20px var(--font); }
 .mon-list { padding: var(--sp-1); }
-.mon-kind { margin-left: var(--sp-2); vertical-align: 1px; }
-.nt-mon { cursor: default; }
-button.nt-mon { cursor: pointer; }
-button.nt-mon .chev { flex: none; align-self: center; color: var(--fg-3); }
-div.nt-mon:active { background: transparent; } @media (hover: hover) { div.nt-mon:hover { background: transparent; } }
-div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitoring row */ }
 
 /* Home cards: 알림 / 작업내역 / 모니터링 (as tall as their content on the board, 07-board.js fit). */
 .card.hc { display: flex; flex-direction: column; }
@@ -67,21 +53,13 @@ div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitor
 /* the head's gap belongs to a body: with nothing under it, or a one-line state (.hc-none brings its own 8px), the card stays balanced */
 .ch:last-child, .ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { margin-bottom: 0; }
 .ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { min-height: 24px; }   /* the height of a head with a ⋯, so side-by-side state lines share a baseline */
-/* the summary strip (the assistant card): label over number, wrapping as columns */
-.hsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: var(--sp-3) var(--sp-4); }
-.hsum-s { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
-.hsum-s .k { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.hsum-s .v { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 20px/28px var(--font); letter-spacing: -.01em; }
-.hsum-fb { margin-top: var(--sp-2); }
 .bi[data-id="main"] .subline { margin-top: var(--sp-3); padding: 0; background: none; color: var(--fg-2); }
 
 /* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option. */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
 .ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); }
 .ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); }
-.ds-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) 0 var(--sp-5); }
 .ds-ey { flex: 1; color: var(--warn); font: 600 13px/20px var(--font); }
-.ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--sp-1) var(--sp-5) var(--sp-3); }
 @media (min-width: 700px) {
   .ds-bd { align-items: center; }
   .ds-sheet { border-radius: var(--r-sheet); max-height: min(80vh, 760px); padding-bottom: 0; }

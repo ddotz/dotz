@@ -166,3 +166,5 @@ const thinkLine = (s, max = 80) => { const t = oneLine(s ?? ""); return txInLang
 const num = n => Number(n || 0).toLocaleString(TX_LOCALE);
 // JSON kept in localStorage, or `fallback` when the key is missing, unparsable or storage is blocked.
 const lsJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } };
+// localStorage.setItem that never throws (storage full or blocked): the value is lost, the page goes on.
+const lsSet = (key, value) => { try { localStorage.setItem(key, value); } catch {} };

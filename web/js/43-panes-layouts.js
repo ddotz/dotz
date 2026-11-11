@@ -3,10 +3,8 @@
 const PANE_LAYOUTS = "dotz-pane-layouts";
 
 function paneLayouts() {
-  try {
-    const d = JSON.parse(localStorage.getItem(PANE_LAYOUTS) || "{}");
-    return Object.assign(Object.create(null), d && typeof d === "object" && !Array.isArray(d) ? d : {});
-  } catch { return Object.create(null); }
+  const d = lsJson(PANE_LAYOUTS, {});
+  return Object.assign(Object.create(null), d && typeof d === "object" && !Array.isArray(d) ? d : {});
 }
 function paneLayoutPut(all) {
   try { localStorage.setItem(PANE_LAYOUTS, JSON.stringify(all)); } catch { toast(TX("misc.pl.save_failed"), true); }

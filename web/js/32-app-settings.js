@@ -3,8 +3,8 @@
 // conversation the common settings are switches that PATCH /api/integrations/<app>/settings straight away (no model call). The owner's words
 // go to the orchestrator, which answers with a ```dotz-settings block; it is drawn as a change card (before -> after) and only 적용 sends the same PATCH.
 const AS_KEY = "dotz.settings.cards";
-const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, feat: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })(),
-  lines: (() => { try { return JSON.parse(localStorage.getItem(`${AS_KEY}.lines`)) || {}; } catch { return {}; } })() };   // lines[card id][key] = {label, text, old}: an applied card keeps the words it showed and the values to put back
+const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, feat: {}, done: lsJson(AS_KEY, null) || {},
+  lines: lsJson(`${AS_KEY}.lines`, null) || {} };   // lines[card id][key] = {label, text, old}: an applied card keeps the words it showed and the values to put back
 const asSave = () => { try { localStorage.setItem(AS_KEY, JSON.stringify(AS.done)); localStorage.setItem(`${AS_KEY}.lines`, JSON.stringify(AS.lines)); } catch { /* storage full or blocked: the card state lasts until reload */ } };
 
 // An app is "mail", "kakao"...; a monitor is "w:<watch name>" (hub/watch-settings.ts), a schedule "s:<id>" (hub/schedule-settings.ts): same schema,

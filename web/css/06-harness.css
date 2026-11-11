@@ -101,7 +101,6 @@ textarea.hs-ta { resize: none; }
 .hs-sw[aria-checked="true"] { background: var(--accent); }
 .hs-sw[aria-checked="true"]::after { transform: translateX(16px); }
 .dcs-form { flex-direction: column; align-items: stretch; gap: var(--sp-3); }
-.dcs-trail { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .dcs-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .dcs-err { color: var(--err); font-size: 13px; line-height: 20px; }
 .dcs-saved { align-self: flex-start; }

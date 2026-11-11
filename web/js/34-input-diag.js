@@ -33,7 +33,8 @@ function kbdStack() {
 }
 function kbdLoad() {
   if (kbdBuf) return kbdBuf;
-  try { const a = JSON.parse(localStorage.getItem(KBD_LOG) || "[]"); kbdBuf = Array.isArray(a) ? a : []; } catch { kbdBuf = []; }
+  const a = lsJson(KBD_LOG, []);
+  kbdBuf = Array.isArray(a) ? a : [];
   return kbdBuf;
 }
 function kbdSave() { try { if (kbdBuf && kbdBuf.length) localStorage.setItem(KBD_LOG, JSON.stringify(kbdBuf)); else localStorage.removeItem(KBD_LOG); } catch (e) { console.warn("kbdiag", e); } }

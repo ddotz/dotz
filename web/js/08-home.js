@@ -211,7 +211,7 @@ const homeKind = id => { const k = id.split(":")[0]; return HOME_KINDS[k] ? k : 
 let homeGroups = (() => { const v = lsJson(HOME_GROUPS_KEY, null); return new Set(Array.isArray(v) ? v : ["ctx", "limit", "prov"]); })();
 function setHomeGroup(kind, on) {
   if (on) homeGroups.add(kind); else homeGroups.delete(kind);
-  try { localStorage.setItem(HOME_GROUPS_KEY, JSON.stringify([...homeGroups])); } catch {}
+  lsSet(HOME_GROUPS_KEY, JSON.stringify([...homeGroups]));
   setTimeout(renderHome, 0);
 }
 // The one accent of a home card is a status dot: orange when it needs the owner, red when it failed.

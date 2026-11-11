@@ -26,16 +26,16 @@
 :is(#v-chat, .pane-chat) .chatbox.fade-b > .timeline { --edge-b: var(--sp-3); }
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
-   .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 카카오톡 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
+   .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 카카오톡 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [#c-attach(첨부, 선택) · textarea · .ib(보내기)]와
    (선택) .cbar 칩 줄을 두면 같은 모양이에요. 채팅 컴포저의 힌트 줄(#cbar: 모델·컨텍스트 칩)은 상자 밖 아래에 서요. */
 .sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" "bar bar bar" !important; align-items: flex-end; gap: 0 var(--sp-1); }   /* no row gap: the empty tray row above would add 4px of padding to the top only */
 .sendrow:not(.ulw) { padding: var(--sp-15) !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
 .sendrow:not(.ulw):focus-within { border-color: transparent !important; }
 .sendrow textarea { grid-area: ta; padding: 7px var(--sp-1); /* nudge: 22px line + 2 x 7px = 36px, the height of the send button beside it */ font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
 .sendrow textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }   /* 폰에서 긴 안내 글이 두 줄로 접혀 상자를 키우지 않게 한 줄로 (시제품 .cmp는 한 줄) */
-:is(#c-attach, .pane-chat [data-c="c-attach"]), .sendrow > .cmp-plus { grid-area: plus; display: inline-flex; align-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
-:is(#c-attach, .pane-chat [data-c="c-attach"]) .ic, .sendrow > .cmp-plus .ic { width: 20px; height: 20px; }
-@media (hover: hover) { :is(#c-attach, .pane-chat [data-c="c-attach"]):hover, .sendrow > .cmp-plus:hover { background: var(--hover); color: var(--fg); } }
+:is(#c-attach, .pane-chat [data-c="c-attach"]) { grid-area: plus; display: inline-flex; align-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
+:is(#c-attach, .pane-chat [data-c="c-attach"]) .ic { width: 20px; height: 20px; }
+@media (hover: hover) { :is(#c-attach, .pane-chat [data-c="c-attach"]):hover { background: var(--hover); color: var(--fg); } }
 .sendrow > .ib { grid-area: send; width: 36px; height: 36px; border-radius: 50%; }
 .sendrow > .cbar { grid-area: bar; margin: 0; padding: var(--sp-1) var(--sp-1) var(--sp-05); min-height: 0; }
 :is(#cbar, .pane-chat .cbar) { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-15); min-height: 20px; margin: var(--sp-1) 0 0; padding: 0 var(--sp-05); overflow-x: auto; scrollbar-width: none; }
@@ -46,7 +46,7 @@
 :is(#cbar, .pane-chat .cbar) .cchip.cown { opacity: 1; color: var(--fg-3); }
 @media (pointer: coarse) { :is(#cbar, .pane-chat .cbar) { min-height: var(--btn-h-sm); margin-top: 0; } :is(#cbar, .pane-chat .cbar) button.cchip { min-height: var(--btn-h-sm); padding: 0 var(--sp-15); } }
 :is(#cbar, .pane-chat .cbar) .working { display: none !important; }
-@media (pointer: coarse) { :is(#c-attach, .pane-chat [data-c="c-attach"]), .sendrow > .cmp-plus { width: 36px; height: 36px; } }
+@media (pointer: coarse) { :is(#c-attach, .pane-chat [data-c="c-attach"]) { width: 36px; height: 36px; } }
 
 /* 실행 상태 줄 (41-runstate.js, 시제품 .run): 입력 상자 위 한 줄, 12/16 회색 글이에요. 경고·오류는 색만 바뀝니다 */
 .runstate { min-height: 20px; margin: 0 0 var(--sp-15) var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
@@ -97,12 +97,7 @@
 .dc-fold .ic { width: 16px; height: 16px; transition: transform var(--m-fast) var(--m-ease); }
 .dcard.fold .dc-fold .ic { transform: rotate(180deg); }
 .dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-05); padding: 0 var(--sp-15) var(--sp-15); overflow-y: auto; overscroll-behavior: contain; }
-.dc-steps { flex: none; display: flex; gap: var(--sp-15); padding-bottom: var(--sp-05); overflow-x: auto; scrollbar-width: none; }
-.dc-steps::-webkit-scrollbar { display: none; }
-.dc-chip { flex: none; max-width: 70%; height: var(--btn-h-sm); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: var(--btn-h-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dc-chip.got { color: var(--fg); }
-.dc-chip.on { background: var(--fg); color: var(--bg); }
-.dc-sub, .dcm-sub { padding: var(--sp-05) var(--sp-1) 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dc-sub { padding: var(--sp-05) var(--sp-1) 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
 .dc-inl { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-card); background: var(--card); }
 .dc-inl .dc-q { margin: 0 0 var(--sp-05); padding: 0 var(--sp-1); }
 .dc-inl > .dc-ds { padding: 0 var(--sp-1); }

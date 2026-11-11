@@ -9,7 +9,7 @@ function moveInOrder(shown, from, to, after) {
   const next = shown.filter(t => t !== from);
   next.splice(next.indexOf(to) + (after ? 1 : 0), 0, from);
   ORDER = [...next, ...ORDER.filter(t => !next.includes(t))];
-  try { localStorage.setItem(ORDER_KEY, JSON.stringify(ORDER)); } catch {}
+  lsSet(ORDER_KEY, JSON.stringify(ORDER));
   document.querySelectorAll(".thead").forEach(b => { b.dataset.sig = ""; });
   renderBars();
 }

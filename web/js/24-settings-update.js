@@ -58,7 +58,7 @@ function paintUpdBadge() {
 const UB = { tapped: false, down: false, busy: false, timer: 0, doneTimer: 0 };
 const UB_KEY = "dotz-upd-bar", UB_ACTIVE = ["download", "waiting", "restarting"], UB_RESULT_MS = 60 * 60_000;
 const ubSeen = () => { try { return localStorage.getItem(UB_KEY) || ""; } catch { return ""; } };
-const ubSee = k => { try { localStorage.setItem(UB_KEY, k); } catch {} paintUpdBar(); };
+const ubSee = k => { lsSet(UB_KEY, k); paintUpdBar(); };
 function updBarState() {
   const i = UPD.info, f = i && !i.error ? i.flow : null;
   if (UB.down && (UB.tapped || (f && UB_ACTIVE.includes(f.phase)))) return { phase: "restarting", text: TX("settings.upd.restarting") };

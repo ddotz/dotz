@@ -64,4 +64,3 @@
 .pmv-day { margin: var(--sp-3) var(--sp-1) var(--sp-15); color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .pmv-day:first-child { margin-top: 0; }
 .pmv-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.lproj { padding-left: var(--sp-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12px; line-height: 16px; }

@@ -76,9 +76,7 @@
 .fs-body .as-row { padding: var(--sp-2) 0; }
 .as-ic { flex: none; display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 50%; background: var(--layer); color: var(--fg-2); }
 .as-ic svg { width: 16px; height: 16px; }
-.as-lead { margin-bottom: var(--sp-2); }
-.as-tpls, .tplrow { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
-.as-tpls { margin-bottom: var(--sp-4); }
+.tplrow { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
 .tplrow { position: relative; flex-wrap: nowrap; align-items: center; padding: var(--sp-15) var(--sp-3) var(--sp-05); }
 .tplrow .tplnote { flex: 1; min-width: 0; padding: 0 var(--sp-1); font-size: 13px; color: var(--fg-2); }
 .tplrow[hidden] { display: none; }

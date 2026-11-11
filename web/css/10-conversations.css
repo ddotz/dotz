@@ -1,6 +1,6 @@
 /* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, one-line preview, status; never a time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
-.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
+.cv-side { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
 .cv-side { display: none; }
 .cv-head { display: none; }
 #v-chat.cv-listing > .cv-side, #v-monitoring.cv-listing > .cv-side { display: block; }
@@ -24,7 +24,6 @@
 .cv-n { font: 500 15px/22px var(--font); }
 .cv-p { color: var(--fg-2); font: 400 13px/18px var(--font); }
 .mon-pc { margin-left: var(--sp-2); white-space: nowrap; color: var(--fg-3); font: 400 11px/16px var(--font); }
-.cv-id { margin-left: var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cv-row.unread .cv-n { font-weight: 600; }
 /* the unread count and the 미답장 count: 11px, one step up from the tab bar's 10.5 (docs/ui-spec.md 배지·점); the same size on a list row, a home row and the head of a card or app */
 .cv-row .nb, .hr .nb, .hn-h .nb, #mon-head .nb { min-width: 18px; height: 18px; border-radius: 9px; font-size: 11px; line-height: 18px; }
@@ -166,9 +165,8 @@
   .cv-row .cv-n, .cv-row.sub .cv-n { font-size: 14px; line-height: 20px; }
   .cv-row + .cv-row { margin-top: var(--sp-05); border-top: 0; }
   .cv-row.on { background: var(--row-sel); }
-  :is(.cv-side, .cv-list) .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
-  :is(.cv-side, .cv-list) .cv-av .ic { width: 14px; height: 14px; }
-  .cv-list { padding: var(--sp-2); }
+  .cv-side .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
+  .cv-side .cv-av .ic { width: 14px; height: 14px; }
   /* 프로젝트: the list beside the open project's page, in 채팅's frame (the same --frame-* tokens; go() in 05-command-palette.js sets .pp) */
   .views.pp { --cv-w: var(--frame-list-w); display: grid; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); column-gap: var(--frame-gap); overflow: hidden; width: 100%; padding: var(--sp-6) var(--edge) 0; }
   .views.pp > .view { min-height: 0; max-width: none; margin: 0; padding: 0 0 var(--sp-6); overflow-y: auto; }

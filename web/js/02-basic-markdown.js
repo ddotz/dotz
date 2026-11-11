@@ -281,7 +281,7 @@ function notify(e) {
     gone = true; clearTimeout(timer); ntfLive.delete(t);
     if (NTF_BY.get(e.target) === close) NTF_BY.delete(e.target);
     ntfDone.add(key);
-    try { localStorage.setItem(NTF_KEY, JSON.stringify([...ntfDone].slice(-300))); } catch {}
+    lsSet(NTF_KEY, JSON.stringify([...ntfDone].slice(-300)));
     n.classList.add("out");
     setTimeout(() => n.remove(), M_MS.fast);
   }

@@ -3,7 +3,7 @@
 What is still open after the 2026-11-11 cleanup. Items that were cleaned are in git history, not here. Numbers come from
 `bun hub/engineering-rules.ts`; the ceilings they are held to are in hub/engineering-ceilings.json.
 
-Measured now: swallowed errors hub 192, web 78, features 27, extension 11. Non-atomic writes hub 43, features 8.
+Measured now: swallowed errors hub 192, web 70, features 27, extension 11. Non-atomic writes hub 43, features 8.
 Same-name helpers `readJson` 13, `json` 5, `git` 6, `shq` 5, `sleep` 3, `sameOrigin` 3. Import cycles 5. Hub modules
 docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock budget files 0.
 
@@ -47,7 +47,11 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
 - hub/selfupdate.ts `onLocalSaved`: only hub/selfupdate-local.test.ts sets it.
 - Test fixtures in the hub/ root beside shipped code: hub/test-web.ts, hub/test-signing.ts, hub/test-pane-cards.ts,
   hub/selfupdate-fixture.ts, hub/ask-normalize.fixture.ts.
-- Dead CSS classes and the localStorage readers not yet on `lsJson` in web/.
+- Dead CSS in the files another session holds (web/css/20-*.css) was not surveyed for removal. localStorage readers
+  still hand-rolled: web/js/15-attachments.js and web/js/13-snapshot.js (their catch does more than fall back),
+  web/js/33-peers.js, web/js/09-needs-you.js and web/js/23-installable-app-web.js (tests such as
+  hub/peers-web.test.ts, hub/web-attn.test.ts and hub/notice-open.test.ts run those files without web/js/01-core.js,
+  where `lsJson` and `lsSet` live).
 
 ## Duplication
 
@@ -94,6 +98,8 @@ docs/ARCHITECTURE.md does not name: 150. Fixed sleeps in tests 3, wall-clock bud
   `web.send_undo_sec`, `web.triage_min`, `web.snapshot_*`, `web.upload_max_mb`, `web.file_roots`,
   `discord.attach_max_mb`, `zele.*`, `api_budget`, `conversations.*`.
 - docs/customization.md lists the `/api/custom*` routes but not `POST/PUT/DELETE /api/custom/cards`.
+- docs/ui-spec.md (홈 상태 카드) describes the assistant card's summary cells as `.hsum`, and docs/web-app-design.md the
+  reply queue as `div.rq-q`; no code makes either class, and their CSS is gone. Which side is right is a design call.
 - 150 hub modules are not in docs/ARCHITECTURE.md.
 
 ## Speed (the speed pass owns these)

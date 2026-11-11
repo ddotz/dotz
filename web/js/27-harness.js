@@ -177,7 +177,7 @@ function renderHarness() {
   const mobile = H_MQ.matches, pj = hPj();
   const onlySeg = hOrigin() ? el("div", { class: "seg", role: "group", "aria-label": TX("system.view.scope") }, ...[[false, TX("system.view.all"), TX("system.view.all_tip")], [true, TX("system.view.custom", { n: hCustomCount() }), TX("system.view.custom_tip")]].map(([v, t, tip]) => {
     const b = el("button", { type: "button", class: hOnly === v ? "on" : "", "aria-pressed": String(hOnly === v), title: tip, text: t });
-    b.addEventListener("click", () => { hOnly = v; try { localStorage.setItem("dotz-honly", v ? "1" : "0"); } catch {} renderHarness(); });
+    b.addEventListener("click", () => { hOnly = v; lsSet("dotz-honly", v ? "1" : "0"); renderHarness(); });
     return b;
   })) : null;
   const bar = el("div", { class: "hm-bar" },

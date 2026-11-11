@@ -173,7 +173,7 @@ function closeChatList() {
 // Setting (settings screen): what the 대화 tab opens when coming back from another tab - "last" (default) the conversation that was open, "main" the main chat.
 const CHAT_TAB_KEY = "dotz-chat-tab";
 const chatTabMode = () => { try { return localStorage.getItem(CHAT_TAB_KEY) === "main" ? "main" : "last"; } catch { return "last"; } };
-const chatTabModeSet = v => { try { localStorage.setItem(CHAT_TAB_KEY, v); } catch {} };
+const chatTabModeSet = v => lsSet(CHAT_TAB_KEY, v);
 // A relayed computer (42-relay-chat.js) has one conversation and none of this computer's: while it is picked, 채팅 stays on it (no switch to the main chat, no phone list of this computer's chats).
 const chatTabEnter = () => { if (paneReturn()) return; if ((chatTabMode() === "main" && !isRelayT(target)) || monOwned(target)) setTarget(MAIN); go(lastChatView()); };
 const chatTabTap = () => (monCtx ? chatTabEnter() : convListing() ? closeChatList() : narrowChat() && !isRelayT(target) && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());

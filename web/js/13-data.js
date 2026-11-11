@@ -263,7 +263,7 @@ function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself 
   ts(target).pick = PICK;   // the picked elements stay with it too (15-picker.js)
   closeSheet();
   target = t;
-  if (!isRelayT(t)) try { localStorage.setItem(TARGET_KEY, t); } catch {}   // a relayed computer is entered by the address (#chat/relay:<adapter>:<key>), never restored from here
+  if (!isRelayT(t)) lsSet(TARGET_KEY, t);   // a relayed computer is entered by the address (#chat/relay:<adapter>:<key>), never restored from here
   if (!nav && (current === "chat" || current === "activity")) routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
   s.whole = false;

@@ -601,7 +601,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 상태: 항목 힌트 `${앱이름 최대3} 답장 ${n}건`, 없으면 `확인할 답장이 없어요`(열려 있을 때만 항목이 보임). 본문 비었을 때 `확인할 답장이 없어요`, 로딩 `불러오는 중…`. 앱 필터 칩에 개수. 처리 중이면 카드 `busy` 클래스+버튼 비활성. 고친 뒤 토스트 `고쳐 달라고 했어요. 새 초안이 오면 여기 다시 떠요`. 보내지 않기 후 토스트 `보내지 않았어요` + `되돌리기`(6초, 댓글+메일 동반은 되돌리기 없음). 되돌림 `초안을 되돌렸어요`. 연결 끊김 `연결이 끊겨 처리하지 못했어요`. 보내기 시 경고/첨부가 있으면 `drfSure` 확인. 같은 메일의 초안은 최신 것 하나만, 같은 키는 중복 제거, 알림이 이미 보여 주는 저장소 초안은 허브가 빼요.
 - 데이터: `GET /api/replies`(items), 카카오톡 `POST /api/kakao/chat/:chatId/draft`(revise)와 `/api/kakao/drafts/:code/{send|drop|restore}`, 댓글 `POST /api/comments/drafts/:code/{revise|send|drop|restore}`, 다른 컴퓨터 `POST /api/peer/act`(action `kakao` 또는 `comments`), 알림 경로(`ntPost`, `answerInline`). 갱신 `rqLoad`, `pqLoad`, `loadIntegrations`.
 - 근거: web/js/30-replies.js:10(rqLoad), :34(rqAll), :56(rqMonItem), :64(rqOpen), :68(rqRun), :75(rqStoreCall), :93(rqStoreActs), :106(rqNoticeActs), :114(rqRevise), :130(rqCardOf), :152(rqGoTo), :158(rqFilterBar), :165(rqNodes), :174(rqSig).
-- css: web/css/15-reply-card.css(`.rq-q`, `.rq-chips .sel`, :49 `pointer:coarse or max-width:639px`), 16-result-card.css/20-mail-box.css(`.mr-filter`).
+- css: web/css/15-reply-card.css(`.rq-chips .sel`, :49 `pointer:coarse or max-width:639px`), 16-result-card.css/20-mail-box.css(`.mr-filter`).
 
 ### 답장 초안 카드 (공통 컴포넌트)
 - 목적: 메일, 카카오톡, 댓글의 답장 초안을 같은 모양과 같은 세 동작으로 보여 줘요.
@@ -1566,7 +1566,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
   - 폰/터치(`pointer: coarse` 또는 639px 이하): 카드 패딩 축소, 작은 버튼 터치 영역 확대.
 - 데이터: `GET /api/replies`(응답 `items`, `rqLoad`), 다른 컴퓨터 스냅샷 `PQ.list[].items.replies/notices/integrations`, 알림 `NT`, `INTG.items`. 저장소 초안 동작: `POST /api/kakao/drafts/<code>/<op>`, `POST /api/kakao/chat/<chatId>/draft`(revise), `POST /api/comments/drafts/<code>/<op>`, `POST /api/comments/drafts/<code>/revise`, 다른 컴퓨터 `POST /api/peer/act`(action kakao 또는 comments). 알림 초안 응답 `answerInline`/`ntPost`(경로는 이 범위 밖). SSE 이벤트는 코드에서 확인 못 함. `rqSoon`이 400ms 지연 재조회.
 - 근거: web/js/30-replies.js:34 `rqAll`, :56 `rqMonItem`, :64 `rqOpen`, :130 `rqCardOf`, :158 `rqFilterBar`, :165 `rqNodes`, :174 `rqSig`, :10 `rqLoad`, :68 `rqRun`, :93 `rqStoreActs`, :106 `rqNoticeActs`, :114 `rqRevise`, :152 `rqGoTo`; 카드는 web/js/10-reply-card.js:90 `rqCard`, :103 `rqSentNode`, :106 `rqDroppedToast`.
-- css: web/css/15-reply-card.css (`.rq-q` :44, `.rq-chips .sel`, `.rq-sent` :38, 폰 :49, :63), 필터 칩 `.mr-filter`/`.cchip`는 20-monitoring.css 등 공용.
+- css: web/css/15-reply-card.css (`.rq-chips .sel`, `.rq-sent` :38, 폰 :49, :63), 필터 칩 `.mr-filter`/`.cchip`는 20-monitoring.css 등 공용.
 
 ### 빠른 처리 배너 (#trban)
 - 목적: 한 곳에 답장 승인 카드가 많이 쌓이면 빠른 처리로 들어가는 입구를 보여줘요.

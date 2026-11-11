@@ -163,8 +163,6 @@ dialog.lbox::backdrop { background: transparent; }
 .au .ferr { color: var(--err); font-size: 12px; min-height: 0; }
 .au .rem { display: flex; gap: var(--sp-2); align-items: center; color: var(--fg-2); font-size: 13px; }
 .au .note { color: var(--fg-3); font-size: 12px; }
-.sn .ml-from { font-weight: 600; color: var(--fg); }
-.sn .ml-subj { color: var(--fg); }
 .sn .ml-snip { color: var(--fg-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .md p { margin: 0 0 var(--sp-15); } .md p:last-child { margin-bottom: 0; }
 .md ul, .md ol { margin: 0 0 var(--sp-15); padding-left: var(--sp-5); }

@@ -67,7 +67,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 @media (min-width: 640px) { .fs-body.panel ~ .fs-ft { padding-inline: var(--sp-4); } }   /* a panel body stands 16px from the sheet edge: the footer lines up with the panel */
 .fs-ft.row { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; max-height: none; }
 .fs-ft:empty { display: none; }
-.fs-ft .dc-row, .fs-ft .dc-note, .fs-ft .dc-back, .fs-ft .dc-chip:not(.on) { background: var(--fs-fill); }
+.fs-ft .dc-row, .fs-ft .dc-note, .fs-ft .dc-back { background: var(--fs-fill); }
 .fs-ft .dc-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--fs-fill)); }
 .fs-ft .dc-st { padding: 0 var(--sp-1); }
 .fs-ft .dc-note { min-height: 88px; }

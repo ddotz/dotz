@@ -160,8 +160,7 @@ function panePrune(d) {
 }
 // The saved layout, after the first go(): the page keeps what it shows (the active pane takes it over, paneSync).
 function paneRestore() {
-  let d = null;
-  try { d = JSON.parse(localStorage.getItem(PANE_KEY) || "null"); } catch { /* a broken value is no layout */ }
+  const d = lsJson(PANE_KEY, null);   // a broken value is no layout
   const r = panePrune(d);
   if (!r) return;
   PN = r;

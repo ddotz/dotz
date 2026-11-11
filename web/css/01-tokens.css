@@ -103,13 +103,12 @@ html, body { height: 100%; margin: 0; }
 *, *::before, *::after { touch-action: manipulation; }
 body { font: 400 var(--fs-body)/var(--lh-body) var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; word-break: keep-all; overflow-wrap: break-word; line-break: strict; }
 /* Korean line breaks like Netflix subtitles (web/DESIGN.md Type): whole words, balanced titles, no one-word last line in body text;
-   only code and paths may break inside a token. .phr keeps a fixed phrase ("무엇이 어디에") on one line when it fits. */
+   only code and paths may break inside a token. */
 h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
 /* short fixed copy (empty states, notes, card questions, meta lines): balanced, so a phrase never leaves one word on the last line */
 .empty, .hc-none, .cv-empty, .bell-none, .note, .cc-note, .dr-none, .od-note, .mb-note, .sup, .dc-q, .dc-ds, .cc-hd { text-wrap: balance; }
 p, li, blockquote, dd { text-wrap: pretty; }
 code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
-.phr { display: inline-block; max-width: 100%; }
 /* a sentence / clause / phrase chunk of copy text (01-phrase-wrap.js): the line breaks between chunks, inside one only when it is
    wider than the line; a box that clamps its lines keeps plain inline text so its ellipsis still trims the last line */
 .wph { display: inline-block; max-width: 100%; }
@@ -120,7 +119,7 @@ button { cursor: pointer; }
 code, pre { font-family: var(--mono); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* The field fill by surface: --card on the grey page (the default), --layer on a white one, one step lighter on a dark dialog (--pop equals --layer there). */
-.card, .list, .fs-card, .ccard, .cv-card, .ms-card, .pj-card, .fc-card, .hcb-card, .apps-card, .kk-draft, .kk-lp, .kk-chat, .kk-rooms, .mbox-reply, .tr-n, .rq, .sheet, .bm.rep, .bm.alert, .cv-side, .cv-list { --ff-fill: var(--layer); }
+.card, .list, .fs-card, .ccard, .cv-card, .ms-card, .pj-card, .fc-card, .hcb-card, .apps-card, .kk-draft, .kk-lp, .kk-chat, .kk-rooms, .mbox-reply, .tr-n, .rq, .sheet, .bm.rep, .bm.alert, .cv-side { --ff-fill: var(--layer); }
 dialog.dlg { --ff-fill: var(--ff-pop); }
 .fs-body.panel { --ff-fill: var(--card); }
 @media (max-width: 639px) { .fs-card, dialog.dlg.fs-card[open] { --ff-fill: var(--card); } .fs-body.panel { --ff-fill: var(--layer); } #v-chat { --ff-fill: var(--layer); } } /* a phone sheet is grey with white panels; the phone chat is white */

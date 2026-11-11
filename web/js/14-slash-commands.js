@@ -295,7 +295,7 @@ async function sendChat(how) {
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
-    if (t !== target) { ts(t).draft = text; ts(t).att = sentAtt.concat(ts(t).att || []); ts(t).pick = sentPicks.concat(ts(t).pick || []); try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} atkStore(t, ts(t).att); toast(TX("chat.send.kept", { message: e.message }), true); return; }
+    if (t !== target) { ts(t).draft = text; ts(t).att = sentAtt.concat(ts(t).att || []); ts(t).pick = sentPicks.concat(ts(t).pick || []); lsSet(DRAFT_KEY(t), text); atkStore(t, ts(t).att); toast(TX("chat.send.kept", { message: e.message }), true); return; }
     toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }

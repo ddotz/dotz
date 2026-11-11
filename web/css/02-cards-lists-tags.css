@@ -92,9 +92,6 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
 @media (hover: hover) { .acc-mv:hover:not(:disabled) { background: var(--card-hover); color: var(--fg); } }
 .acc-dragging .li.acc { transition: transform var(--m-fast) var(--m-ease); }
 .acc-dragging .li.acc.drag { position: relative; z-index: 2; transition: none; background: var(--card); box-shadow: 0 6px 20px rgb(0 0 0 / .18); cursor: grabbing; }
-.rt-roles { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.rt-roles .seg { flex: none; flex-wrap: nowrap; }
-.rt-roles .seg button { flex: none; padding: 0 var(--sp-3); }
 .rt-rows { max-height: min(48dvh, 400px); overflow-y: auto; }
 .rt-row { padding: var(--sp-2) var(--sp-3); min-width: 0; }
 .rt-row .top { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
