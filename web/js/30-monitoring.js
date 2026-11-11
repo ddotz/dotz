@@ -846,7 +846,9 @@ const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimatio
 function renderMonitoring() {
   monRaf = 0;
   if (current !== "monitoring") { mbSeenReset(); if (monCtx && current === "chat") { convSchedule(); monTickStart(); } return; }
-  const items = monItems(), sel = mxScope(monSel(items)), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
+  const items = monItems();
+  asPaneFollow(items);
+  const sel = mxScope(monSel(items)), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
   // An address whose item is not here (gone, or not loaded yet) shows the list, never an empty pane; an item that arrives later still opens.
   if (!sel && !MON.list) { MON.miss = true; MON.list = true; convChrome(); }
   else if (sel && MON.miss) { MON.miss = false; MON.list = false; convChrome(); }

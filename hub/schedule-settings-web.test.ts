@@ -19,6 +19,8 @@ const sched = addSchedule({ text: "ch:123 아침 보고 써 줘", in_minutes: 90
 
 const patches = inbox<{ app: string; values: unknown }>();
 const deletes: string[] = [];
+// The monitor list that follows the 내용 PATCH (the schedule's name is its 내용) is held at the hub until a test releases it.
+let monHold: Promise<void> | null = null, releaseMon = () => {};
 const nth = (n: number) => patches.until(x => x.length >= n, 10_000, `PATCH ${n}`).then(x => x[n - 1]);
 const hub = fakeHub({
 	stream: "fake",
@@ -28,7 +30,7 @@ const hub = fakeHub({
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
-		if (p === "/api/monitors") return json({ items: listMonitors() });
+		if (p === "/api/monitors") { const items = listMonitors(); if (monHold) await monHold; return json({ items }); }
 		if (p === "/api/integrations") return json({ items: [] });
 		const m = /^\/api\/(watches|schedules)\/([a-z0-9-]+)\/settings$/.exec(p);
 		if (m) {
@@ -37,7 +39,9 @@ const hub = fakeHub({
 				if (req.method === "PATCH") {
 					const { values } = (await req.json()) as { values: unknown };
 					patches.push({ app: `${w ? "w" : "s"}:${id}`, values });
-					return json({ fields: w ? writeWatchSettings(id, values) : writeScheduleSettings(id, values) });
+					const fields = w ? writeWatchSettings(id, values) : writeScheduleSettings(id, values);
+					if (!w && (values as { text?: string }).text !== undefined) monHold = new Promise<void>(r => { releaseMon = () => { monHold = null; r(); }; });
+					return json({ fields });
 				}
 				return json({ fields: w ? readWatchSettings(id) : readScheduleSettings(id) });
 			} catch (e) {
@@ -126,10 +130,14 @@ describe("the screen edits the schedule through its one settings route", async (
 		expect(listSchedules()[0]).toMatchObject({ text: "ch:123 저녁 보고 써 줘", every_minutes: 60 });
 	});
 	test("예약 삭제 asks first with the watch's confirm, then DELETE /api/schedules/<id>", async () => {
-		await waitFor(v, `document.querySelector('#app-sw [data-as-rm="ask"]')`);
+		// The confirm opens while the monitor list of the 내용 rename is still on its way; the list lands with the confirm open and must not close the screen.
+		await waitFor(v, `!AS.busy[${JSON.stringify(S_APP)}] && document.querySelector('#app-sw [data-as-rm="ask"]')`);
 		await run(v, `document.querySelector('#app-sw [data-as-rm="ask"]').click()`);
-		await waitFor(v, `document.querySelector('#app-sw [data-as-rm="go"]')`);
+		await waitFor(v, `document.querySelector('#app-sw [data-as-rm="go"]:not([disabled])')`);
 		expect(deletes).toEqual([]);
+		releaseMon();
+		await waitFor(v, `monItems().some(i => i.key === "m:저녁 보고 써 줘") && !monRaf`);
+		expect(await q(v, `return !!document.querySelector('#app-sw [data-as-rm="go"]')`)).toBe(true);
 		await shot(v, "schedule-delete-confirm-desktop-1280.png");
 		await run(v, `document.querySelector('#app-sw [data-as-rm="go"]').click()`);
 		await waitFor(v, `!document.querySelector("#app-sw")`);

@@ -531,6 +531,13 @@ function asPaneSync() {
   if (MON.sel && MON.sel !== h.sel && !monItems().some(i => i.key === h.sel)) h.sel = MON.sel;
   if (current !== "monitoring" || narrowChat() || MON.list || MON.sel !== h.sel) h.close();
 }
+// Called by renderMonitoring before it looks for the open item: a schedule renamed by its own 내용 comes back under a new key, and the pane follows it.
+function asPaneFollow(items) {
+  const h = ASC.h;
+  if (!h || !h.pane || !asOwn(ASC.app) || items.some(i => i.key === MON.sel)) return;
+  const it = items.find(i => monSettingsApp(i) === ASC.app);
+  if (it) MON.sel = h.sel = it.key;
+}
 const asBack = () => !!(current === "monitoring" && ASC.h && ASC.h.pane && (ASC.h.close(), true));
 function asScreen(app) {
   if (ASC.h || !app) return;
