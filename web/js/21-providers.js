@@ -1,5 +1,8 @@
 /* ---------- providers ---------- */
-async function loadProviderData() {
+// Callers that ask while a read is out share it (the page's first read and the home's ask for it at the same time).
+let provFlight = null;
+function loadProviderData() { return provFlight || (provFlight = provFetch().finally(() => { provFlight = null; })); }
+async function provFetch() {
   const r = await api("/api/providers");
   P = { providers: r.providers || [], addable: Array.isArray(r.addable) ? r.addable : null, at: Date.now() };
   return P;

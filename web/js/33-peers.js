@@ -250,7 +250,9 @@ function prClose(restore = true) {
 // This computer's own name (settings -> 이 컴퓨터 이름): GET/PUT /api/machine -> {name, custom, default}; empty = the hostname-derived default.
 // The other computers read it from this gateway's public /api/peer-info, so a rename shows up on their switcher within a minute.
 const MN = { info: null };
-async function mnLoad() {
+let mnFlight = null;
+function mnLoad() { return mnFlight || (mnFlight = mnFetch().finally(() => { mnFlight = null; })); }
+async function mnFetch() {
   try { MN.info = await api("/api/machine"); } catch { return; }
   if (current === "settings") renderSettings();
 }

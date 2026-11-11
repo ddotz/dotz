@@ -37,7 +37,9 @@ function ntClean(n) {
   }
   return n;
 }
+let ntLoads = 0, ntWant = null;   // reads on their way; the unread count /api/state gave while one was out (ntSync)
 async function loadNotices() {
+  ntLoads++;
   try {
     // The hub keeps 300 (hub/notices.ts NOTICE_CAP) and lists open decisions, then unread, then newest: reading only 100 left a busy day's
     // reports out of 감시 소식 and the monitors' counts. The lists page what they draw, so the whole set is cheap to hold.
@@ -48,7 +50,9 @@ async function loadNotices() {
     NT.items = (Array.isArray(r.items) ? r.items : []).map(ntClean);
     NT.unread = r.unread | 0; NT.loaded = true; NT.failed = false; NT.at = Date.now();
     if (Array.isArray(r.gone)) NT.gone = new Set(r.gone);
-  } catch { NT.failed = !NT.loaded; }
+  } catch { NT.failed = !NT.loaded; } finally { ntLoads--; }
+  // A read already out may have left before the count moved: when its answer still disagrees with the state's count, read again.
+  if (!ntLoads && ntWant != null) { const want = ntWant; ntWant = null; if (want !== NT.unread) loadNotices(); }
   ntPaint();
   homeSoon();
   syncInlineChoices();
@@ -62,7 +66,8 @@ const noticesFresh = () => NT.loaded && Date.now() - NT.at < NOTICES_FRESH_MS;
 // /api/state carries notices_unread: a count that disagrees with ours means a frame was missed, so refetch.
 function ntSync(s) {
   if (!s || typeof s.notices_unread !== "number" || s.notices_unread === NT.unread) return;
-  NT.unread = s.notices_unread; ntPaint(); loadNotices();
+  NT.unread = s.notices_unread; ntPaint();
+  if (ntLoads) ntWant = s.notices_unread; else loadNotices();
 }
 
 // A decision answered or dismissed (here, on another device or by the bot): its "답변이 필요해요" toast and this device's notification go at once

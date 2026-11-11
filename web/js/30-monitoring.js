@@ -41,7 +41,10 @@ function monRoute(tgt) {
   } else MON.list = true;
 }
 
-async function loadMonitors() {
+// Callers that ask while a read is out share it (the page's first read and the home's ask for it at the same time).
+let monFlight = null;
+async function loadMonitors() { return monFlight || (monFlight = monFetch().finally(() => { monFlight = null; })); }
+async function monFetch() {
   try {
     const r = await api("/api/monitors");
     NM.items = Array.isArray(r.items) ? r.items : [];

@@ -160,7 +160,7 @@ async function pqLoad() {
   } catch {}
   PQ.busy = false;
   if (PQ.again) { PQ.again = false; pqSoon(); }
-  if (!pqSelf()) await mnLoad();
+  if (!pqSelf() && !MN.info) await mnLoad();
   paintPause();
   monSchedule();
 }

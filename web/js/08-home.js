@@ -5,8 +5,9 @@ async function loadHomeData() {
   clearTimeout(homeTimer);
   // the other computers' snapshot, read ahead for 모니터링 and a peer's item opened by link; 홈 draws none of it, so its first paint does not wait for a slow peer
   if (typeof pqLoad === "function") pqLoad().catch(() => {});
+  stripAt = Date.now();   // this read feeds the usage strip too (noteQuota): loadStrip does not ask again for it
   await Promise.all([
-    api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; }),
+    api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; stripAt = 0; }),
     loadProviderData().catch(() => {}),
     loadMonitors(),
   ]);

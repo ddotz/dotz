@@ -84,7 +84,7 @@ function laneTailsStale() {
   for (const p of Object.values(LP)) p.loaded = false;
 }
 /* ---------- 프로젝트 (docs/layers.md §5): the list (GET /api/custom) and the main view (GET /api/custom/project?key=) ---------- */
-let PRJ = null, PRJ_FAIL = false, prjFlight = null, prjRev = 0;
+let PRJ = null, PRJ_FAIL = false, prjFlight = null, prjRev = 0, PRJ_AT = 0;
 const prjTitle = p => (p.record && p.record.title) || p.title || p.name;
 const prjPurpose = p => (p.record && p.record.purpose) || p.purpose || p.note || "";
 // A purpose as the owner reads it: its first one or two plain sentences. A sentence that names a path, link, port, file or repo stays in the raw
@@ -104,7 +104,7 @@ const prjChat = p => p.key.startsWith("ch:") ? p.key : p.channel ? `ch:${p.chann
 const prjPaused = p => !!(p.paused || (p.record && p.record.paused));
 function prjLoad() {
   if (prjFlight) return prjFlight;
-  prjFlight = api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
+  prjFlight = api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; PRJ_AT = Date.now(); }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
     prjFlight = null; prjRev++;
     prjPcLoad();
     if (current === "project") { if (ppWide()) renderProjects(); pmPaint(); }

@@ -514,7 +514,14 @@ function ctxBar(p) {
     el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-label": `${p.name} 컨텍스트`, "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` })),
     el("div", { class: "kv", style: "margin-top:var(--sp-1)" }, el("span", { class: "v", text: p.window ? `${num(p.tokens)} / ${num(p.window)} 토큰` : `${num(p.tokens)} 토큰` }), el("span", { class: "v", text: pct != null ? `${pct}%` : "–" })));
 }
-async function loadContext(quiet) {
+// A quiet read asked while another is out shares it (the page's first read and refreshState ask at the same time).
+let ctxFlight = null;
+function loadContext(quiet) {
+  if (quiet && ctxFlight) return ctxFlight;
+  const p = ctxFlight = ctxFetch(quiet).finally(() => { if (ctxFlight === p) ctxFlight = null; });
+  return p;
+}
+async function ctxFetch(quiet) {
   clearTimeout(ctxTimer);
   try { C = await api("/api/context"); }
   catch (e) { if (!quiet && current === "context") clear($("#context")).append(emptyNode("컨텍스트를 불러오지 못했어요")); return; }

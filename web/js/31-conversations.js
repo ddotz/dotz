@@ -312,14 +312,15 @@ const convReadRO = new ResizeObserver(convReadSoon);
 convReadRO.observe(timeline); convReadRO.observe(tl);
 
 // Which conversation this page shows ("" = hidden or not a chat), so the hub keeps that conversation's answers out of the notices (POST /api/viewing).
-// Sent when it changes and every 20 s while it stays (the hub counts a report older than 60 s as gone).
-const VIEW = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), sent: "", at: 0 };
+// Sent when it changes and every 20 s while it stays (the hub counts a report older than 60 s as gone). A report that failed is tried again after 10 s, then 20, 40, 60 (a changed view goes at once).
+const VIEW = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), sent: "", at: 0, tried: "", fails: 0, retryAt: 0 };
 function viewReport(unload) {
   const conv = !unload && document.visibilityState === "visible" && current === "chat" ? target : "";
+  if (!unload && conv === VIEW.tried && Date.now() < VIEW.retryAt) return;
   if (conv === VIEW.sent && (!conv || Date.now() - VIEW.at < 20000)) return;
-  VIEW.sent = conv; VIEW.at = Date.now();
+  VIEW.sent = VIEW.tried = conv; VIEW.at = Date.now();
   if (unload) fetch("/api/viewing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: VIEW.id, conv }), keepalive: true }).catch(() => {});
-  else api("/api/viewing", "POST", { id: VIEW.id, conv }).catch(() => { VIEW.sent = "?"; });
+  else api("/api/viewing", "POST", { id: VIEW.id, conv }).then(() => { VIEW.fails = 0; VIEW.retryAt = 0; }, () => { VIEW.sent = "?"; VIEW.retryAt = Date.now() + Math.min(60000, 10000 * 2 ** VIEW.fails++); });
 }
 document.addEventListener("visibilitychange", () => viewReport());
 addEventListener("pagehide", () => viewReport(true));
