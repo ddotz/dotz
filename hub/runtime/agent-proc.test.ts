@@ -29,6 +29,9 @@ async function firstLine(proc: { stdout: ReadableStream<Uint8Array> }): Promise<
 }
 
 const niceOf = (pid: number) => Bun.spawnSync(["ps", "-o", "nice=", "-p", String(pid)]).stdout.toString().trim();
+// `nice -n 10` adds to the caller's own value (inside an agent that is already 10) and stops at the platform's maximum.
+const NICE_MAX = process.platform === "darwin" ? 20 : 19;
+const loweredBy10 = String(Math.min(Number(niceOf(process.pid)) + 10, NICE_MAX));
 const isGone = (pid: number) => {
 	try {
 		process.kill(pid, 0);
@@ -59,14 +62,14 @@ test("a write to an agent that no longer reads its stdin neither throws nor leav
 	}
 });
 
-test("a grandchild of an agent started through spawnAgent runs at nice 10", async () => {
+test("a grandchild of an agent started through spawnAgent runs 10 nice levels below the caller", async () => {
 	const agent = spawnAgent(["/bin/sh", "-c", "sleep 300 & echo $!; wait"], { env });
 	const { line } = await firstLine(agent);
 	const grandchild = Number(line);
 	try {
 		expect(Number.isInteger(grandchild) && grandchild > 1).toBe(true);
-		expect(niceOf(agent.pid)).toBe("10");
-		expect(niceOf(grandchild)).toBe("10");
+		expect(niceOf(agent.pid)).toBe(loweredBy10);
+		expect(niceOf(grandchild)).toBe(loweredBy10);
 	} finally {
 		killAgent(agent, true);
 		await agent.exited;

@@ -6,12 +6,12 @@
 //    (OmO's host, hub/runtime/omo-hosts.ts) is not in the group and is closed the way it is today.
 //  - what the agent's shell tool started sits in other sessions: hub/agent-tree.ts records those while the agent lives and ends them
 //    when it exits, by whatever path (a kill, a crash, its own exit).
-//  - an idle park (markPark) ends the agent but keeps its useful processes, group members included (hub/kept-procs.ts); then the
-//    group is not signalled: its members are judged one by one and the rest end the same way.
+//  - an idle park (markPark) ends the agent and its group exactly as any other exit does; only what the owner's shell tool started
+//    (never in the group: omp starts each command in a group of its own, OmO and claude under a shell in the task host's or its own)
+//    and is useful stays (hub/kept-procs.ts). The runtime's own helpers do not.
 //  - a write to a stdin whose process is gone never takes the gateway down (writeQuietly, also exported by omp.ts).
 import type { Subprocess } from "bun";
-import { agentEnded, isParked, trackAgent } from "../agent-tree.ts";
-import { groupMembers } from "../kept-procs.ts";
+import { agentEnded, trackAgent } from "../agent-tree.ts";
 
 export const NICE = ["/usr/bin/nice", "-n", "10"];
 const GROUP_KILL_GRACE_MS = 2000;
@@ -50,11 +50,8 @@ export function spawnAgent<const T extends "pipe" | "ignore" = "pipe">(argv: str
 		live.add(proc.pid);
 		trackAgent(proc.pid, ownerOf(o.env));
 		void proc.exited.then(() => {
-			const parked = isParked(proc.pid);
-			if (!parked) endGroup(proc.pid);
-			// A parked agent's group is listed first; if that fails the group ends as for any other exit.
-			const members = parked ? groupMembers(proc.pid).then(m => (m ? void live.delete(proc.pid) : endGroup(proc.pid), m)) : undefined;
-			void agentEnded(proc.pid, members);
+			endGroup(proc.pid);
+			void agentEnded(proc.pid);
 		});
 	}
 	return proc as Subprocess<"pipe", "pipe", T>;

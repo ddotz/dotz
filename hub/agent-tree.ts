@@ -10,9 +10,10 @@
 //
 // Kept processes: an agent that is parked (an idle stop of a lane or conversation session, markPark) leaves the useful ones of
 // them running (hub/kept-procs.ts). They stay in the record under the session that owns them (`kept`), and end when the owner
-// is stopped or deleted (`useKeptHooks`), when nothing used them for IDLE_BOUND_MS, or with the gateway: a restart ends them like
-// every other process of the gateway's job. Each end is one plain line in the owner's channel. Every other exit (a stop, a crash,
-// a memory restart) ends everything, the kept processes of that session too.
+// is stopped or deleted (`useKeptHooks`) or when nothing used them for IDLE_BOUND_MS. A gateway restart (planned, a self-update or a
+// crash) does not touch them: the next start adopts again the ones whose pid and start time still match and whose owner exists
+// (`reapLeftovers`), and ends the rest. Each end is one plain line in the owner's channel. Every other exit of the agent (a stop, a
+// crash, a memory restart) ends everything, the kept processes of that session too.
 import { readFileSync } from "node:fs";
 import { log, paths, writeAtomic } from "./config.ts";
 import { msg } from "./i18n.ts";
@@ -23,7 +24,7 @@ export type Row = { pid: number; ppid: number; rss: number; start: string; cpu?:
 type Ref = { pid: number; start: string };
 type Agent = { start?: string; kids: Kid[]; owner?: string; parked?: boolean };
 type Kept = { at: number; what: string; kids: Kid[] };
-export type KeptEnd = "ended" | "idle" | "restart";
+export type KeptEnd = "ended" | "idle";
 
 const TABLE_TTL_MS = 20_000;
 const WATCH_EVERY_MS = 30_000;
@@ -174,7 +175,7 @@ function tell(owner: string, text: string): void {
 	else if (pending.length < PENDING_LINES) pending.push([owner, text]);
 }
 
-/** A kept process of `owner` ended: stopped (the session or its process ended), idle (nothing used it for the bound), restart (gateway start). */
+/** A kept process of `owner` ended: stopped (the session or its process ended) or idle (nothing used it for the bound). */
 async function endKept(owner: string, why: KeptEnd): Promise<void> {
 	const k = kept.get(owner);
 	if (!k) return;
@@ -235,25 +236,21 @@ export function markPark(pid: number | undefined, on = true): void {
 	if (a?.owner) a.parked = on;
 }
 
-export const isParked = (pid: number): boolean => live.get(pid)?.parked === true;
-
 /**
- * The agent exited: end what it started (from the last record, checked against a new listing). A parked agent whose group
- * members arrive (`members`, undefined when they could not be listed) keeps its useful processes instead. Resolves when that is done.
+ * The agent exited: end what it started (from the last record, checked against a new listing). A parked agent keeps the useful
+ * processes its owner's shell tool started instead. Resolves when that is done.
  */
-export function agentEnded(pid: number, members?: Promise<number[] | undefined>): Promise<void> {
+export function agentEnded(pid: number): Promise<void> {
 	const a = live.get(pid);
 	if (!a) return Promise.resolve();
 	const owned = a.owner ? kept.get(a.owner) : undefined;
 	if (a.owner) kept.delete(a.owner);
 	const done = (async () => {
-		const group = await members;
-		if (!a.kids.length && !owned && !group?.length) return;
+		if (!a.kids.length && !owned) return;
 		const rows = parseRows(await processTable(0));
 		const recorded = [...a.kids, ...(owned?.kids ?? [])];
-		const inGroup = rows.filter(r => group?.includes(r.pid) && r.pid > 1 && r.pid !== process.pid && !live.has(r.pid));
-		const victims = [...new Map([...stillThere(rows, recorded), ...inGroup, ...descendantsOf(rows, inGroup.map(r => r.pid)).filter(r => !live.has(r.pid) && r.pid !== process.pid)].map(r => [r.pid, r])).values()];
-		const { keep, what } = a.owner && a.parked && group ? await pickKept(victims, recorded, Date.now()) : { keep: [], what: "" };
+		const victims = stillThere(rows, recorded);
+		const { keep, what } = a.owner && a.parked ? await pickKept(victims, recorded, Date.now()) : { keep: [], what: "" };
 		if (a.owner && keep.length) kept.set(a.owner, { at: Date.now(), what, kids: withCpu(recorded, keep, Date.now()) });
 		const staying = new Set(keep.map(r => r.pid));
 		const ended = victims.filter(v => !staying.has(v.pid));
@@ -277,7 +274,11 @@ export const treeEnded = (pid: number): Promise<void> => ending.get(pid) ?? Prom
 
 const refs = (v: unknown): Ref[] => (Array.isArray(v) ? v.filter((x): x is Ref => typeof x?.pid === "number" && typeof x?.start === "string") : []);
 
-/** After a gateway that died: ends what its agents left running. The previous gateway still running (same pid and start time) leaves everything alone. */
+/**
+ * After a gateway that stopped (planned restart, self-update or crash): ends what its agents left running. The kept processes of a
+ * session that still exists (same pid and start time, `ownerEnded` false) are adopted again with their record; those of an
+ * ended session are ended. The previous gateway still running (same pid and start time) leaves everything alone.
+ */
 export async function reapLeftovers(): Promise<number[]> {
 	let rec: { gateway?: unknown; agents?: unknown; kept?: unknown };
 	try {
@@ -289,13 +290,30 @@ export async function reapLeftovers(): Promise<number[]> {
 	if (!rows.length) return [];
 	const [old] = refs([rec.gateway]);
 	if (old && rows.some(r => r.pid === old.pid && r.start === old.start)) return [];
-	const heldBefore = (Array.isArray(rec.kept) ? rec.kept : []).filter((k): k is { owner: string; what?: string; kids?: unknown } => typeof k?.owner === "string");
-	const recorded = (Array.isArray(rec.agents) ? rec.agents : []).flatMap((a: { pid?: number; start?: string; kids?: unknown }) => refs([a]).concat(refs(a?.kids))).concat(heldBefore.flatMap(k => refs(k.kids)));
-	const victims = stillThere(rows, recorded);
+	const heldBefore = (Array.isArray(rec.kept) ? rec.kept : []).filter((k): k is { owner: string; at?: unknown; what?: unknown; kids?: unknown } => typeof k?.owner === "string");
+	const now = Date.now();
+	const adopted = new Set<number>();
+	const lines: [string, string][] = [];
+	const victims: Row[] = [];
+	for (const h of heldBefore) {
+		const there = stillThere(rows, refs(h.kids));
+		if (!there.length) continue;
+		const what = typeof h.what === "string" ? h.what : "";
+		if (ownerEnded(h.owner)) {
+			victims.push(...there);
+			lines.push([h.owner, msg().keptEnded(what, "ended")]);
+			continue;
+		}
+		const before = refs(h.kids).map(r => ({ pid: r.pid, start: r.start, busyAt: typeof (r as Kid).busyAt === "number" ? (r as Kid).busyAt : undefined }));
+		kept.set(h.owner, { at: typeof h.at === "number" ? h.at : now, what, kids: withCpu(before, there, now) });
+		for (const r of there) adopted.add(r.pid);
+	}
+	const recorded = (Array.isArray(rec.agents) ? rec.agents : []).flatMap((a: { pid?: number; start?: string; kids?: unknown }) => refs([a]).concat(refs(a?.kids)));
+	victims.push(...stillThere(rows, recorded).filter(r => !adopted.has(r.pid)));
+	if (adopted.size) log(`agent trees: adopted ${adopted.size} kept process(es) of the gateway before this one`);
 	if (victims.length) log(`agent trees: the gateway before this one left ${victims.length} process(es) running, ending them: ${victims.map(v => v.pid).join(", ")}`);
 	await endProcesses(victims);
-	const ended = new Set(victims.map(v => v.pid));
-	for (const k of heldBefore) if (refs(k.kids).some(r => ended.has(r.pid))) tell(k.owner, msg().keptEnded(String(k.what ?? ""), "restart"));
+	for (const [owner, text] of lines) tell(owner, text);
 	return victims.map(v => v.pid);
 }
 
