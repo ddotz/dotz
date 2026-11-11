@@ -11,7 +11,7 @@ export type Jxa = {
 	attachFile: (name: string, path: string) => { ok: boolean; why?: string; pressed?: boolean; clipboard?: boolean };
 	setWindowNamed: (fn: (name: string) => unknown) => void;
 	norm: (s: string) => string;
-	axScan: (name: string, first: boolean, budgetMs: number, hint?: number, need?: number) => { ok: true; rows: number; scanned: number; hits: { index: number; texts: string[] }[]; stopped: "found" | "budget" | "end"; pages: number } | null;
+	axScan: (name: string, first: boolean, budgetMs: number, hint?: number, need?: number, memo?: number) => { ok: true; rows: number; scanned: number; hits: { index: number; texts: string[] }[]; stopped: "found" | "budget" | "end"; pages: number } | null;
 };
 
 // The KakaoTalk chat list as the AX API in room.jxa.js reads it (axList/axRowTitle/axRowTexts): window "카카오톡" > scroll area > table >
@@ -49,7 +49,12 @@ export function loadJxa(opts: { app?: ReturnType<typeof axList>; msPerRead?: num
 					ref[0] = el[name];
 					return 0;
 				},
-				AXUIElementPerformAction: () => -25205,
+				// Only an element with an `onPress` hook (a tab button) reacts to AXPress.
+				AXUIElementPerformAction: (el: { onPress?: () => void }, action: string) => {
+					if (action !== "AXPress" || !el.onPress) return -25205;
+					el.onPress();
+					return 0;
+				},
 			}
 		: (opts.objc ?? {});
 	const body = `${src}\n${attachSrc}\nreturn { inputVerdict: inputVerdict, rowStillIs: rowStillIs, sendInto: sendInto, attachFile: attachFile, norm: norm, axScan: axScan, setWindowNamed: function (fn) { windowNamed = fn; } };`;

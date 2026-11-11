@@ -6,8 +6,10 @@
 // openlist opens the chat list window when it is closed (see openList): needed when KakaoTalk has no window at all.
 // close presses the close button of every non-main window. Nothing is typed and no key is sent.
 // rows finds the rows titled `name` among ALL rows of the chat list (measured 290/290, no scrolling needed) with the AX API in this process
-// (one call per attribute; ~20 ms a row, against ~100 ms through System Events). The row the database order predicts (`hint`) is read first,
-// then its neighbours, then outward; the read stops at the first name hit, at the budget, or at the end. A paged list is scrolled page by
+// (one call per attribute; ~20 ms a row, against ~100 ms through System Events). The row this room was opened from last time (`memo`) is read
+// first, then the row the database order predicts (`hint`), its neighbours, the top rows, the rows above the hint downward, the rest; the read
+// stops at the first name hit, at the budget, or at the end. The budget is at least the time to read the whole list (ROW_MS a row), so a room
+// that is in the list is never lost to the clock. If the main window shows another tab (friends, more), the chat tab is pressed first (axShowChats). A paged list is scrolled page by
 // page (AXScrollDownByPage) until the name is found or the list stops moving. Nothing is clicked or opened. Prints
 // {ok:true, rows:<count>, scanned, hits:[{index, texts}], stopped:"found"|"budget"|"end", pages, ms:{scan}}, or {ok:true, opened:true}
 // when a window of the name is open already, or {ok:false, step:"list", why:"no_list"}.
@@ -34,6 +36,10 @@ var BUNDLE = "com.kakao.KakaoTalkMac";
 var MAX_NODES = 300;
 var MAX_DEPTH = 7;
 var SCAN_RADIUS = 30;
+var TOP_ROWS = 10;
+// Worst measured read of one row (9.2 s for 299 rows, one 718 ms stall), and the most time a whole-list read may take.
+var ROW_MS = 35;
+var COVER_MAX_MS = 11000;
 
 // One Accessibility call of the AX API in this process, instead of an AppleEvent to System Events (~100 ms for one attribute there).
 try {
@@ -75,15 +81,43 @@ function axAction(el, action) {
 	}
 }
 
+// The main window of KakaoTalk (titled 카카오톡), null when KakaoTalk has none.
+function axMainWindow() {
+	var apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(BUNDLE).js;
+	if (!apps || !apps.length) return null;
+	var app = $.AXUIElementCreateApplication(apps[0].processIdentifier);
+	var wins = axGet(app, "AXWindows") || [];
+	var listWin = null;
+	for (var i = 0; i < wins.length; i++) if (axStr(wins[i], "AXTitle") === "카카오톡") listWin = wins[i];
+	return listWin;
+}
+
+// The main window has three tabs (buttons with the ids friends, chatrooms, more) and only the chat tab holds the list table. On another tab
+// the window exists but shows no list, which read as no_list although the window never closed. AXPress on the chat tab (no key, no
+// activation) brings the list back; true once the table is there.
+function axShowChats() {
+	try {
+		var win = axMainWindow();
+		if (!win) return false;
+		var kids = axGet(win, "AXChildren") || [];
+		var tab = null;
+		for (var i = 0; i < kids.length; i++) if (axStr(kids[i], "AXRole") === "AXButton" && axStr(kids[i], "AXIdentifier") === "chatrooms") tab = kids[i];
+		if (!tab || !axAction(tab, "AXPress")) return false;
+		var end = Date.now() + 1500;
+		for (;;) {
+			if (axList()) return true;
+			if (Date.now() > end) return false;
+			delay(0.05);
+		}
+	} catch (e) {
+		return false;
+	}
+}
+
 // The whole list is exposed as AXRows at once (measured 290/290, no scrolling needed), so one native read sees every room.
 function axList() {
 	try {
-		var apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(BUNDLE).js;
-		if (!apps || !apps.length) return null;
-		var app = $.AXUIElementCreateApplication(apps[0].processIdentifier);
-		var wins = axGet(app, "AXWindows") || [];
-		var listWin = null;
-		for (var i = 0; i < wins.length; i++) if (axStr(wins[i], "AXTitle") === "카카오톡") listWin = wins[i];
+		var listWin = axMainWindow();
 		if (!listWin) return null;
 		var best = null;
 		var bestRows = -1;
@@ -138,9 +172,10 @@ function axRowTitle(row) {
 // Title reads are the expensive part (~26 ms a row: row children, cell children, one value). The hint row (the database order in the list)
 // comes first, then its neighbours (a pinned room shifts the list by a few rows), then the whole list; the read stops at the first name hit,
 // at the end, or at the budget. Scrolling continues a list that exposes only its visible rows; with all rows exposed it finds the end at once.
-function axScan(name, first, budgetMs, hint, need) {
+function axScan(name, first, budgetMs, hint, need, memo) {
 	var t0 = Date.now();
 	var list = axList();
+	if (!list && axShowChats()) list = axList();
 	if (!list) return null;
 	var want = norm(name);
 	// `need`: how many rows of this name the database has; the scan stops once that many are seen (all of them are then known).
@@ -152,23 +187,30 @@ function axScan(name, first, budgetMs, hint, need) {
 	var pages = 0;
 	var total = list.rows.length;
 	var order = [];
-	if (typeof hint === "number" && hint >= 0 && hint < total) {
-		order.push(hint);
+	// `memo`: the row this room was opened from last time; one read tells whether it is still there.
+	if (typeof memo === "number" && memo >= 0 && memo < total) order.push(memo);
+	if (typeof hint === "number" && hint >= 0 && total > 0) {
+		// The list is a subset of the database rooms in the same order, so a row is (almost) never below its database index: a hint past
+		// the list end is clamped to the last row. Pinned rooms are the exception (measured: up to 9 rows above the database index), which
+		// the neighbour window covers.
+		var h = Math.min(hint, total - 1);
+		order.push(h);
 		for (var d = 1; d <= SCAN_RADIUS; d++) {
-			if (hint + d < total) order.push(hint + d);
-			if (hint - d >= 0) order.push(hint - d);
+			if (h + d < total) order.push(h + d);
+			if (h - d >= 0) order.push(h - d);
 		}
-		// A hint off by more than the window: the top of the list next, then the rest below. The database has rooms the list does not show,
-		// so the row is usually above its hint, and the room being answered is usually near the top (it got the newest message). Reading
-		// outward from the hint put the top rows last, after ~250 rows of a 290-row list, where the budget often ran out first.
-		for (var i = 0; i < hint - SCAN_RADIUS; i++) order.push(i);
-		for (var i = hint + SCAN_RADIUS + 1; i < total; i++) order.push(i);
+		// A hint off by more than the window: the first rows next (a room that just got a message is at the top), then downward from the
+		// hint (the rooms the list does not show push the database index above the row), the rows below the hint last. Measured: the old
+		// top-down read of 20 ms a row ran out of its 3.5 s budget near row 175, before rows 200-298.
+		for (var i = 0; i < TOP_ROWS && i < h - SCAN_RADIUS; i++) order.push(i);
+		for (var i = h - SCAN_RADIUS - 1; i >= 0; i--) order.push(i);
+		for (var i = h + SCAN_RADIUS + 1; i < total; i++) order.push(i);
 	} else {
 		for (var i = 0; i < total; i++) order.push(i);
 	}
 	for (;;) {
 		for (var q = 0; q < order.length; q++) {
-			if (Date.now() - t0 > budgetMs) {
+			if (Date.now() - t0 > Math.max(budgetMs, Math.min(total * ROW_MS, COVER_MAX_MS))) {
 				stopped = "budget";
 				break;
 			}
@@ -471,10 +513,10 @@ function openList() {
 	return { ok: true, ms: ms, focus: { from: from, took: took, restored: restored } };
 }
 
-function readRows(name, max, budgetMs, first, hint, need) {
+function readRows(name, max, budgetMs, first, hint, need, memo) {
 	var t0 = Date.now();
 	if (windowNamed(name)) return { ok: true, opened: true };
-	var native = axScan(name, first, budgetMs, hint, need);
+	var native = axScan(name, first, budgetMs, hint, need, memo);
 	if (native) return native;
 	// No AX API in this process: the older System Events wording of the same scan (one AppleEvent per attribute, ~100 ms a read).
 	var list = listTable();
@@ -696,7 +738,7 @@ function run() {
 			return JSON.stringify(sendInto(req.name, req.text, Array.isArray(req.ours) ? req.ours.filter(function (s) { return typeof s === "string"; }) : [], Array.isArray(req.priorPressed) ? req.priorPressed.filter(function (s) { return typeof s === "string"; }) : []));
 		if (req.action === "attach" && typeof req.name === "string" && req.name && typeof req.path === "string" && req.path.charAt(0) === "/") return JSON.stringify(attachFile(req.name, req.path));
 		if (req.action === "rows" && typeof req.name === "string" && req.name)
-			return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 6500), req.first === true, Number.isInteger(req.hint) ? req.hint : undefined, Number.isInteger(req.need) ? req.need : 0));
+			return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 6500), req.first === true, Number.isInteger(req.hint) ? req.hint : undefined, Number.isInteger(req.need) ? req.need : 0, Number.isInteger(req.memo) ? req.memo : undefined));
 		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name, req.expect && typeof req.expect === "object" ? req.expect : undefined));
 		return JSON.stringify({ ok: false });
 	} catch (e) {

@@ -160,6 +160,20 @@ test("the database order is the hint: the room's own row is the first one read",
 	expect(r.ax![0]!.why).toBe("1:found:row120:name");
 });
 
+// Every CLI send is its own process, so the row a room was opened from is kept in a file next to the other kakao state, not in memory.
+test("the row a room was last opened from is the first row the next send reads, also from another process", async () => {
+	const rows = farRows(290, 120);
+	const all: RoomFact[] = [...Array.from({ length: 5 }, (_, i) => ({ chatId: `c${i}`, name: `방${i}` })), farFacts[0]!];
+	const first = fakeScreen(rows);
+	expect(await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: first.runner, roomNames: async () => all })).toMatchObject({ ok: true });
+	expect((first.rowCalls[0] as { memo?: number }).memo).toBeUndefined();
+	const again = fakeScreen(rows);
+	const second = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: again.runner, roomNames: async () => all });
+	expect(second).toMatchObject({ ok: true });
+	expect(again.rowCalls[0]).toMatchObject({ hint: 5, memo: 120 });
+	expect(second.ax![0]!.why).toBe("1:found:row120:name");
+});
+
 test("a scan whose time runs out says so; a scan that reached the list end says that instead", async () => {
 	const slowed = fakeScreen(farRows(), { scanLimit: 50 });
 	const r = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: slowed.runner, roomNames: async () => farFacts });
@@ -292,7 +306,7 @@ test("every AX phase is on the result with its time: rows read, row open, verify
 	expect(r.ax!.map(s => s.step)).toEqual(["rows", "open", "verify", "input"]);
 	expect(r.ax!.every(s => s.ok && s.ms >= 0)).toBe(true);
 	expect(r.ax![0]!.why).toBe("1:found:row0:name");
-	expect(timeouts.slice(0, 2).every(t => t <= 8_000)).toBe(true);
+	expect(timeouts.slice(0, 2).every(t => t <= 14_000)).toBe(true);
 	expect(screen.rowCalls[0]).toMatchObject({ action: "rows", name: "가족방", first: true });
 });
 

@@ -12,7 +12,7 @@ const { norm, rowStillIs } = loadJxa();
 
 // What room.jxa.js (axScan) prints: the hint row first, then its neighbours, then the list; a paged list scrolls page by page; the budget
 // stops the read. `scanned` is how many rows were actually read, `hits` those whose title is the name (with all their texts).
-function scanRows(rows: FakeRow[], req: { name: string; first?: boolean; hint?: number; need?: number }, pageSize: number | undefined, scanLimit: number | undefined) {
+function scanRows(rows: FakeRow[], req: { name: string; first?: boolean; hint?: number; memo?: number; need?: number }, pageSize: number | undefined, scanLimit: number | undefined) {
 	const want = norm(req.name);
 	const enough = req.first ? 1 : (req.need ?? 0);
 	const perPage = pageSize && pageSize > 0 ? pageSize : rows.length;
@@ -26,14 +26,17 @@ function scanRows(rows: FakeRow[], req: { name: string; first?: boolean; hint?: 
 		const from = pages * perPage;
 		const to = Math.min(rows.length, from + perPage);
 		const order: number[] = [];
-		const hint = req.hint;
+		if (typeof req.memo === "number" && req.memo >= from && req.memo < to) order.push(req.memo);
+		// A hint past the list end is clamped to the last row (an unpaged list).
+		const hint = typeof req.hint === "number" && !pageSize ? Math.min(req.hint, to - 1) : req.hint;
 		if (typeof hint === "number" && hint >= from && hint < to) {
 			order.push(hint);
 			for (let d = 1; d <= 30; d++) {
 				if (hint + d < to) order.push(hint + d);
 				if (hint - d >= from) order.push(hint - d);
 			}
-			for (let i = from; i < hint - 30; i++) order.push(i);
+			for (let i = from; i < Math.min(10, hint - 30); i++) order.push(i);
+			for (let i = hint - 31; i >= from; i--) order.push(i);
 		}
 		for (let i = from; i < to; i++) order.push(i);
 		let over = false;

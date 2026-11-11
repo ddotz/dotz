@@ -105,3 +105,60 @@ test("a hint far below the row still finds a room at the top of a long list with
 	// A room that is not in the list is reported as the list end, every row read once.
 	expect(loadJxa({ app: axList(rows) }).axScan("없는 방", true, 3_500, 250)).toMatchObject({ stopped: "end", scanned: 290, hits: [] });
 });
+
+// Measured on the real list: 299 rows, 358 database rooms; rows 281-298 had database indexes 345-357. A hint past the list end means the oldest
+// rooms, which are the last rows: they are read from the bottom up, not after ~175 rows of a top-down read that the budget cuts off.
+test("a hint past the list end finds a room at the very bottom of a 299-row list within the budget", () => {
+	const rows: AxRow[] = Array.from({ length: 299 }, (_, i) => ({ title: i === 292 ? "도미솔❣️" : `방 ${i}` }));
+	const scan = loadJxa({ app: axList(rows), msPerRead: 4 }).axScan("도미솔❣️", true, 3_500, 357);
+	expect(scan).toMatchObject({ stopped: "found", hits: [{ index: 292 }] });
+	expect(scan!.scanned).toBe(7);
+	const last = loadJxa({ app: axList(rows), msPerRead: 4 }).axScan("방 298", true, 3_500, 357);
+	expect(last).toMatchObject({ stopped: "found", hits: [{ index: 298 }], scanned: 1 });
+});
+
+// The list is a subset of the database rooms in the same order, so a row is not below its database index (pinned rooms: up to 9 rows above).
+// A hint that overshoots by more than the scan radius is read downward from the hint, not from the top after 200 rows.
+test("a hint that overshoots a lower-middle row by more than the scan radius finds it within the budget", () => {
+	const rows: AxRow[] = Array.from({ length: 299 }, (_, i) => ({ title: i === 200 ? "도미솔❣️" : `방 ${i}` }));
+	const scan = loadJxa({ app: axList(rows), msPerRead: 4 }).axScan("도미솔❣️", true, 3_500, 240);
+	expect(scan).toMatchObject({ stopped: "found", hits: [{ index: 200 }] });
+	expect(scan!.scanned).toBeLessThan(100);
+	// A pinned room sits below its database index: still inside the neighbour window.
+	const pinned = loadJxa({ app: axList(rows), msPerRead: 4 }).axScan("도미솔❣️", true, 3_500, 191);
+	expect(pinned!.scanned).toBeLessThan(30);
+});
+
+test("the row opened last time is read first; a stale one costs one read and a room at the top is still found at once", () => {
+	const rows: AxRow[] = Array.from({ length: 299 }, (_, i) => ({ title: i === 0 ? "도미솔❣️" : `방 ${i}` }));
+	const scan = loadJxa({ app: axList(rows), msPerRead: 4 }).axScan("도미솔❣️", true, 3_500, 1, 0, 250);
+	expect(scan).toMatchObject({ stopped: "found", hits: [{ index: 0 }] });
+	expect(scan!.scanned).toBeLessThan(6);
+	expect(loadJxa({ app: axList(rows), msPerRead: 4 }).axScan("방 250", true, 3_500, 3, 0, 250)).toMatchObject({ stopped: "found", scanned: 1 });
+});
+
+// 299 rows at 20 ms a row take 6 s, more than the 3.5 s the caller asks for: a room in the list is read anyway (the budget grows to the
+// time the whole list needs), and a room that is not there ends at the list end instead of the clock.
+test("a wrong hint cannot make a room that is in the list run out of time", () => {
+	const rows: AxRow[] = Array.from({ length: 299 }, (_, i) => ({ title: i === 298 ? "도미솔❣️" : `방 ${i}` }));
+	const scan = loadJxa({ app: axList(rows), msPerRead: 5 }).axScan("도미솔❣️", true, 3_500, 0);
+	expect(scan).toMatchObject({ stopped: "found", hits: [{ index: 298 }], scanned: 299 });
+	expect(loadJxa({ app: axList(rows), msPerRead: 5 }).axScan("없는 방", true, 3_500, 0)).toMatchObject({ stopped: "end", scanned: 299 });
+});
+
+// The main window stays open on the friends or more tab and shows no list table: that read as no_list. The chat tab button is pressed once.
+test("a main window on another tab gets its chat tab pressed and the list is read", () => {
+	const app = axList([{ title: "방 0" }, { title: "도미솔❣️" }]);
+	const win = app.AXWindows[0] as { AXChildren: unknown[] };
+	const lists = win.AXChildren;
+	const tabs = { AXChildren: [] as unknown[] };
+	let pressed = 0;
+	win.AXChildren = tabs.AXChildren;
+	tabs.AXChildren.push({ AXRole: "AXButton", AXIdentifier: "friends" }, { AXRole: "AXButton", AXIdentifier: "chatrooms", onPress: () => (pressed++, tabs.AXChildren.push(...lists)) });
+	expect(loadJxa({ app }).axScan("도미솔❣️", true, 3_500, 1)).toMatchObject({ stopped: "found", hits: [{ index: 1 }] });
+	expect(pressed).toBe(1);
+	// No chat tab button and no list: still no_list.
+	const bare = axList([{ title: "방 0" }]);
+	(bare.AXWindows[0] as { AXChildren: unknown[] }).AXChildren = [];
+	expect(loadJxa({ app: bare }).axScan("방 0", true, 3_500, 0)).toBeNull();
+});

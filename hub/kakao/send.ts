@@ -253,6 +253,29 @@ const writeLeft = (paths: KakaoPaths, chatId: string, left: Left | undefined) =>
 		writePrivate(kakaoFile(paths, "input.json"), `${JSON.stringify(all, null, 1)}\n`);
 	} catch {}
 };
+// The list row each room was last opened from, per chat id (rows.json next to the other kakao state, so separate CLI sends share it). The
+// database order only guesses the list order; the row the room really sat in is the first row the next scan reads. A stale entry costs one
+// row read: the open step rechecks the row and the window is verified, so it can never open a wrong room.
+const MAX_ROW_MEMO = 500;
+const readRowMemo = (paths: KakaoPaths): Record<string, number> => {
+	try {
+		const raw = JSON.parse(readFileSync(kakaoFile(paths, "rows.json"), "utf8"));
+		return raw && typeof raw === "object" ? Object.fromEntries(Object.entries(raw).filter(([, v]) => Number.isInteger(v) && (v as number) >= 0)) as Record<string, number> : {};
+	} catch {
+		// No file yet, or one that does not parse: no memo, the scan starts from the database-order hint as before.
+		return {};
+	}
+};
+const writeRowMemo = (paths: KakaoPaths, chatId: string, row: number | undefined) => {
+	const all = readRowMemo(paths);
+	delete all[chatId];
+	if (row !== undefined) all[chatId] = row;
+	try {
+		writePrivate(kakaoFile(paths, "rows.json"), `${JSON.stringify(Object.fromEntries(Object.entries(all).slice(-MAX_ROW_MEMO)))}\n`);
+	} catch {
+		// The memo only speeds the next scan up; a failed write must not fail the send.
+	}
+};
 // Texts dotz typed into a room in this process (a kept window's input can still show the last one).
 const recentTyped = new Map<string, string[]>();
 const rememberTyped = (chatId: string, text: string) => {
@@ -392,6 +415,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	// The database lists rooms newest first, the same order as KakaoTalk's chat list: the row index is a hint that saves reading ~100 rows.
 	const hint = all.findIndex(r => r.chatId === input.chatId);
 	const left = readLeft(deps.paths)[input.chatId];
+	let memo = readRowMemo(deps.paths)[input.chatId];
 	const priorPressed = left?.pressed ? [left.text] : [];
 	// Text dotz may have left in this room's input (a failed attempt, a kept window) is dotz's, not the owner's: unwrap it. An owner text is
 	// any other value, and JXA then refuses to touch it.
@@ -412,8 +436,13 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 		};
 		if (rung.reopen) await closeWindow(deps.runner, input.roomName);
 		const p = performance.now();
-		const opened = await openRoom(room, all, deps.runner, { deep: rung.deep, ...(hint >= 0 ? { hint } : {}) });
+		const opened = await openRoom(room, all, deps.runner, { deep: rung.deep, ...(hint >= 0 ? { hint } : {}), ...(memo === undefined ? {} : { memo }) });
 		ms.pick = Math.round(performance.now() - p);
+		if (opened.ok && opened.row !== undefined && opened.row !== memo) writeRowMemo(deps.paths, input.chatId, (memo = opened.row));
+		else if (!opened.ok && opened.reason === REFUSE.mismatch && memo !== undefined) {
+			memo = undefined;
+			writeRowMemo(deps.paths, input.chatId, undefined);
+		}
 		focus = opened.focus ?? focus;
 		steps.push(...opened.steps);
 		if (!opened.ok) {

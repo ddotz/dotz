@@ -21,12 +21,13 @@ export type AxStep = { step: string; ms: number; ok: boolean; why?: string };
 // Focus: set only when the list window had to be opened. `from`: bundle id of the app in front before; `took`: KakaoTalk came to the front
 // when its list window showed; `restored`: the app in front before was put back at once.
 export type Focus = { from?: string; took: boolean; restored: boolean };
-export type Opened = { ok: true; steps: AxStep[]; focus?: Focus } | { ok: false; reason: string; steps: AxStep[]; focus?: Focus };
+export type Opened = { ok: true; steps: AxStep[]; focus?: Focus; row?: number } | { ok: false; reason: string; steps: AxStep[]; focus?: Focus };
 
 const READ_ROWS = 60;
-// The measured native scan is ~20 ms a row (290 rows ≈ 5.8 s), so only the last rung gets the whole list; every earlier rung relies on the
-// database-order hint and stops at the first name hit.
-const OPEN_CAP_MS = 8_000;
+// The measured native scan is ~13-30 ms a row (299 rows ≈ 4-9 s). Every rung relies on the hint and stops at the first name hit, but
+// room.jxa.js lets a scan run as long as the whole list needs (COVER_MS), so a room in the list is found on the first rung.
+const COVER_MS = 11_000;
+const OPEN_CAP_MS = COVER_MS + 3_000;
 const ROWS_BUDGET_MS = 3_500;
 const DEEP_BUDGET_MS = 6_000;
 
@@ -208,7 +209,7 @@ const DEEP_ROWS = 120;
 // read instead of hundreds. `deep`: scan without the hint and with the whole budget (the order assumption was wrong). The open phase (rows
 // read + row open) is capped at OPEN_CAP_MS; every outcome other than ok leaves no window of ours open. `stayBehind`: a closed list window is
 // reported instead of opened, because KakaoTalk comes to the front when it shows.
-export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number; stayBehind?: boolean } = {}): Promise<Opened> {
+export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, opts: { deep?: boolean; hint?: number; memo?: number; stayBehind?: boolean } = {}): Promise<Opened> {
 	const steps: AxStep[] = [];
 	const t0 = performance.now();
 	const left = () => cap - (performance.now() - t0);
@@ -225,10 +226,11 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 	// name), so it gets the whole budget at once instead of failing rung after rung on a partial read.
 	const budget = deep || shared ? DEEP_BUDGET_MS : ROWS_BUDGET_MS;
 	const need = shared ? namesakes + 1 : 1;
-	const rowsReq = { action: "rows", name: room.name, max: deep ? DEEP_ROWS : READ_ROWS, budgetMs: budget, first: !shared, ...(shared ? { need } : {}), ...(deep || opts.hint === undefined ? {} : { hint: opts.hint }) };
+	const rowsReq = { action: "rows", name: room.name, max: deep ? DEEP_ROWS : READ_ROWS, budgetMs: budget, first: !shared, ...(shared ? { need } : {}), ...(deep || opts.hint === undefined ? {} : { hint: opts.hint }), ...(opts.memo === undefined ? {} : { memo: opts.memo }) };
 	const cap = shared ? OPEN_CAP_MS + 2_000 : OPEN_CAP_MS;
-	const rowsCallMs = budget + 1_200;
+	const rowsCallMs = Math.max(budget, COVER_MS) + 1_200;
 
+	let openedRow: number | undefined;
 	let listed = await call(runner, rowsReq, Math.min(left(), rowsCallMs));
 	// No list window (KakaoTalk runs from the menu bar): open it once through its menu 창 > 채팅. KakaoTalk then comes to the front for
 	// a moment; the app in front before is put back inside that call, and the change is kept on the send record.
@@ -266,6 +268,7 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		if (left() < 1_000) return stop(timedOut());
 		// What told the row apart is checked again on the row at open time (a twin that moved into this index is refused, never opened).
 		const expect = shared ? { ...(choice.members !== undefined ? { members: choice.members } : { noCount: true }), ...(choice.preview !== undefined ? { preview: choice.preview } : {}) } : undefined;
+		openedRow = choice.index;
 		const row = await call(runner, { action: "open", name: room.name, row: choice.index, ...(expect ? { expect } : {}) }, Math.max(1_500, left()));
 		const phases = Object.entries(row.out.ms ?? {}).map(([k, v]) => `${k}=${v}`).join(",");
 		steps.push({ step: row.out.step ?? "open", ms: row.ms, ok: row.out.ok === true, why: row.out.ok === true ? phases : `${row.timedOut ? "timeout" : failWhy(row.out)}${phases ? `:${phases}` : ""}` });
@@ -282,5 +285,5 @@ export async function openRoom(room: RoomFact, all: RoomFact[], runner: Runner, 
 		await closeWindow(runner, room.name);
 		return stop(w ? REFUSE.mismatch : openFailed("verify"));
 	}
-	return { ok: true, steps, ...(focus ? { focus } : {}) };
+	return { ok: true, steps, ...(focus ? { focus } : {}), ...(openedRow === undefined ? {} : { row: openedRow }) };
 }
