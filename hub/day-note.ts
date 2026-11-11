@@ -26,7 +26,7 @@ const BACKOFF_FIRST_MS = 30_000;
 // The run is at 04:36 and the nightly review at 04:40: the retries of a failed call end before the review starts.
 export const RETRY_WINDOW_MS = 4 * 60_000;
 
-/** The window a note covers: from the end of the previous note (else 24 h back), at most 72 h; the day is the Seoul date of its start. */
+/** The window a note covers: from the end of the previous note (else 24 h back), at most 72 h; the day is the date of its start in the owner's time zone. */
 export function noteWindow(now: number, previousEnd?: number): { start: number; end: number; day: string } {
 	const from = previousEnd !== undefined && previousEnd < now ? previousEnd : now - 24 * 3_600_000;
 	const start = Math.max(from, now - WINDOW_MAX_MS);

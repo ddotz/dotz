@@ -3,7 +3,7 @@
 // bullet lines "- one sentence (src: ref)". A section that has no line is left out, so a section is found by its heading, not its place.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, paths } from "./config.ts";
+import { cfg, paths, TZ } from "./config.ts";
 import { en } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
 
@@ -21,8 +21,8 @@ export const daysDir = (): string => join(paths.memory, "days");
 export const noteFile = (day: string, dir = daysDir()): string => join(dir, `${day}.md`);
 export const dayNoteOn = (): boolean => (cfg as { day_note?: { enabled?: boolean } }).day_note?.enabled === true;
 
-/** The calendar date in Seoul (the owner's day) of an instant. */
-export const kstDay = (ms: number): string => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(ms);
+/** The calendar date of an instant in the owner's time zone (identity.timezone, else the machine's: TZ of config.ts), the day a note is named for. */
+export const kstDay = (ms: number, tz = TZ): string => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(ms);
 
 /** Every language's heading for a section, so a note written under one language is read under another. */
 const HEADINGS: Record<SectionKey, string[]> = Object.fromEntries(SECTION_KEYS.map(k => [k, [k, en.dayNote.headings[k], ko.dayNote.headings[k]]])) as Record<SectionKey, string[]>;
@@ -59,7 +59,7 @@ export function readNote(file: string): Note | undefined {
 	}
 }
 
-/** The note of the day before `now` (Seoul), when the feature is on and its file exists. */
+/** The note of the day before `now` (owner's time zone), when the feature is on and its file exists. */
 export function yesterdayNote(now = Date.now(), dir = daysDir()): string | undefined {
 	if (!dayNoteOn()) return undefined;
 	const file = noteFile(kstDay(now - 86_400_000), dir);

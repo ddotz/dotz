@@ -74,6 +74,13 @@ describe("collectInput", () => {
 	});
 });
 
+describe("kstDay", () => {
+	test("the day follows the given time zone, not a fixed one", () => {
+		expect(kstDay(NOW, "Asia/Seoul")).toBe("2026-11-11");
+		expect(kstDay(NOW, "America/Los_Angeles")).toBe("2026-11-10");
+	});
+});
+
 describe("validate", () => {
 	const known: Known = { msgs: new Set(["m1"]), sessions: new Set(["abcd1234#L4"]), tasks: new Set(["t1"]), stamps: new Set(), srcs: new Set(), text: "commit abc1234def" };
 
