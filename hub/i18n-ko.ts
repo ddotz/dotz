@@ -255,6 +255,7 @@ export const ko: Catalog = {
 	unverifiedRefused: lines => `[게이트웨이 확인] 방금 보고는 오너에게 가지 않았어요. 아래 줄은 확인하지 않은 것을 이유 없이 적었어요:\n- ${lines.join("\n- ")}\n먼저 이 컴퓨터에서 확인할 수 있는 건 전부 확인하세요(실행, 헤드리스 화면, 다시 읽기). 그래도 여기서 확인할 수 없는 것은 그 줄에 이유를 쓰고 \`대신 확인:\` 뒤에 대신 확인한 것을 적어 다시 보고하세요.`,
 	checkBounced: (n, failed) => `아직 통과 못 한 확인 항목이 있어서 세션에 다시 맡겼어요 (확인 ${n}개 중 ${failed}개)`,
 	turnNoAnswer: "이번에는 답을 쓰지 못했어요. 메시지를 한 번 더 보내 주세요.",
+	doneNotLive: "이 컴퓨터의 dotz에는 아직 들어오지 않았어요. 다음 업데이트 뒤에 보여요.",
 	checkFailed: (n, failed) => `확인 항목 ${failed}개가 통과하지 못했어요 (확인 ${n}개 중)`,
 	checkContradicted: n => `세션 기록과 맞지 않는 보고가 ${n}건 있어서 확인되지 않은 것으로 봤어요`,
 	gatewayRestart: (replayed, lanes) => `게이트웨이가 다시 시작돼서 이어서 처리하고 있어요${replayed ? ` · 멈췄던 메시지 ${replayed}개` : ""}${lanes.length ? ` · 세션 ${lanes.join(", ")}` : ""}`,

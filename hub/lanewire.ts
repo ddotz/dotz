@@ -17,6 +17,7 @@ import { MAIN, primaryTarget } from "./session-key.ts";
 import { dropForLine, forLines } from "./forline.ts";
 import { useKeptHooks } from "./agent-tree.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
+import { withDoneLive } from "./done-live-wire.ts";
 
 // A lane started from a conversation session reports to that session (its key is the lane's `from`); the rest report to main.
 export const laneRelay = createLaneRelay({
@@ -99,7 +100,7 @@ export function installLaneHandlers(): void {
 	// Mid-turn lane text: an [ask], [fail] or [done] line is something the owner must see and keep, so it is a real message;
 	// anything else edits the lane channel's one progress message.
 	setProgressHandler((lane, raw) => {
-		const text = plainBareAsk(normalizeAsk(stripHandoff(raw)));
+		const text = withDoneLive(plainBareAsk(normalizeAsk(stripHandoff(raw))));
 		const channel = `lane:${lane.name}`;
 		const tone = parseTone(text).tone;
 		const real = tone === "ask" || tone === "fail" || tone === "done";

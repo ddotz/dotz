@@ -14,6 +14,7 @@ import { checkDone, doneChecks, type Check } from "./donesignals.ts";
 import { unlanded } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
 import { bannedHits, bannedNote } from "./word-ban.ts";
+import { withDoneLive } from "./done-live-wire.ts";
 
 // A line that says something stays unchecked ("실기기 미확인") reads as if that closes the job (owner, 2026-11-09). It must say why it cannot be
 // checked here and what was checked instead, behind one of these markers; without one the report goes back to the lane once.
@@ -84,6 +85,7 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 			return prompt(lane, bannedNote(banned));
 		}
 		if (!banned.length) lane.bannedRefused = undefined;
+		text = withDoneLive(text);
 	}
 	// The turn's final text answers every owner message still open (a gateway notice does not).
 	const answering = !notice && ownerNotes.reported(lane.name, text);

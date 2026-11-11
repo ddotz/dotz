@@ -49,6 +49,7 @@ import { isWebLane } from "./discord-post.ts";
 import { repeatAlert } from "./alert-gate.ts";
 import { pendingWaits } from "./auth.ts";
 import { leadWith } from "./stuck.ts";
+import { withDoneLive } from "./done-live-wire.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
 const PENDING = join(DATA_DIR, "pending.json");
@@ -449,7 +450,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	let sent: string;
 	try {
 		sent = await inOrder(target, async () => {
-			let t = await localize(job.text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
+			let t = withDoneLive(await localize(job.text, target, typeof extra.source === "string" ? extra.source : "orchestrator"));
 			if (asksPersonalInChat(t)) {
 				log(`personal-data ask in chat to ${target}: the form (dotz_auth) is the only way to ask`);
 				steerOrchestrator(msg().personalAskNote);
@@ -541,7 +542,7 @@ export async function progress(target: string, key: string, text: string, replyT
 	const inHome = guarded(session, target, cross);
 	if (inHome !== target) [target, replyTo] = [inHome, undefined];
 	const sent = await inOrder(target, async () => {
-		let t = await localize(stripHandoff(text), target, "orchestrator");
+		let t = withDoneLive(await localize(stripHandoff(text), target, "orchestrator"));
 		// The label goes in after the status marker ([done] becomes the leading emoji) and after localize (a rewrite must not touch it).
 		if (target === "worklog" && key.startsWith("lane:")) {
 			const prefix = claimPrefix(key.slice(5));

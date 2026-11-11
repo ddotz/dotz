@@ -266,6 +266,7 @@ export const en = {
 	unverifiedRefused: (lines: string[]) => `[gateway check] Your report did not reach the owner: these lines say something is unchecked without saying why:\n- ${lines.join("\n- ")}\nFirst check everything this machine can check (run it, render it headless, read it back). For what still cannot be checked here, say why on that line and add \`instead checked:\` (or \`대신 확인:\`) with what you checked in its place. Then send the report again.`,
 	checkBounced: (n: number, failed: number) => `Some checks have not passed yet, so it went back to the session (${failed} of ${n} checks)`,
 	turnNoAnswer: "I could not write a reply this time. Please send your message again.",
+	doneNotLive: "This is not in the dotz on this computer yet. It will show after the next update.",
 	checkFailed: (n: number, failed: number) => `${failed} of ${n} checks did not pass, so this is not verified`,
 	checkContradicted: (n: number) => `The report contradicts the session record in ${n} place${n === 1 ? "" : "s"}, so it is not verified`,
 	gatewayRestart: (replayed: number, lanes: string[]) => `The gateway restarted and is picking the work back up${replayed ? ` · ${replayed} message(s) that had no answer` : ""}${lanes.length ? ` · sessions ${lanes.join(", ")}` : ""}`,

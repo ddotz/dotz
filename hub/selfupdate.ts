@@ -558,6 +558,8 @@ const saveState = (s: State) => writeAtomic(STATE_FILE, `${JSON.stringify(s)}\n`
 
 // The version this process runs (captured at start), so a pulled-but-not-restarted update shows as such.
 let running: Version | undefined;
+// The commit this gateway started from (read once at start, so an update applied since does not move it): hub/done-live.ts.
+export const bootCommit = (): string | undefined => (running && "commit" in running ? running.commit.sha : undefined);
 let notifyFn: ((text: string, count: number) => void) | undefined;
 let resolvedFn: (() => void) | undefined;
 // Called when a check finds the checkout current or an update was applied: the "new version" notice is no longer true.
