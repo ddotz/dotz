@@ -241,6 +241,7 @@ export const ko: Catalog = {
 	laneMemory: (used, limit) => `[dotz gateway] 프로세스가 메모리를 ${used}GB 써서(한도 ${limit}GB) 게이트웨이가 같은 대화 기록으로 다시 시작했어요. 실행 중이던 task 서브에이전트도 모두 멈췄어요. omp의 grep, cat, find는 당신 프로세스 안에서 돌아요. 아주 큰 폴더(~, ~/Library, /)나 수 GB짜리 파일에 쓰지 말고, 공백이 있는 경로는 따옴표로 감싸세요. 서브에이전트가 끝낸 것을 확인하고 나머지는 다시 띄운 뒤 하던 작업을 이어가세요.`,
 	laneGatewayRestarted: "[dotz gateway] 작업 중에 게이트웨이가 다시 시작돼서 실행 중이던 task 서브에이전트와 백그라운드 명령도 모두 멈췄어요. 서브에이전트가 끝낸 것(패치, 파일, 커밋)을 확인하고, 나머지는 다시 띄워서 이어가세요. 오너 메시지가 턴 도중에 끊겼다면 그것도 처리하세요.",
 	laneShellJob: "백그라운드 명령",
+	keptEnded: (what, why) => `쉬던 세션이 남겨 둔 프로세스${what ? `(${what})` : ""}를 끝냈어요: ${why === "idle" ? "하루 넘게 쓰이지 않았어요" : why === "restart" ? "게이트웨이가 다시 시작됐어요" : "세션이 끝났어요"}.`,
 	laneIdleHeld: (jobs, minutes) => `[lane stuck] 쉬는 레인이 ${jobs.join(", ")} 때문에 계속 떠 있어요. ${minutes}분 넘게 소식이 없고 메모리를 1GB쯤 쓰고 있어요. 아직 필요하면 그대로 두고, 필요 없으면 이 레인을 멈춰 주세요.`,
 	laneRestartStuck: n => `[lane stuck] 작업이 끊겨서 ${n}번 다시 이어가게 했는데 계획이 그대로라 멈춰 뒀어요. 이어 가려면 이 세션에 메시지를 보내고, 그만두려면 세션을 멈춰 주세요.`,
 	sessionRestartStuck: n => `작업이 끊겨서 ${n}번 다시 이어가게 했는데 끝나지 않아 멈춰 뒀어요. 이어 가려면 여기에 메시지를 보내 주세요.`,

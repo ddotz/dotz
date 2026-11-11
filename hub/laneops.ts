@@ -26,6 +26,7 @@ import { startMachineSampler } from "./limits.ts";
 import { trackTimer } from "./shutdown.ts";
 import { diskGuardTick } from "./diskguard.ts";
 import { ABORT_GRACE_MS, takeSnapshot } from "./stuck.ts";
+import { markPark } from "./agent-tree.ts";
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
@@ -464,6 +465,7 @@ export function parkLane(lane: Lane): boolean {
 	lane.parked = true;
 	lane.resumeDue = unfinishedWork(lane) ? { state: "due" } : undefined;
 	persist(lane);
+	markPark(lane.proc.pid); // a routine stop: what the lane left running for the owner stays (hub/agent-tree.ts)
 	lane.proc.kill();
 	return true;
 }

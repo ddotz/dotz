@@ -6,9 +6,12 @@
 //    (OmO's host, hub/runtime/omo-hosts.ts) is not in the group and is closed the way it is today.
 //  - what the agent's shell tool started sits in other sessions: hub/agent-tree.ts records those while the agent lives and ends them
 //    when it exits, by whatever path (a kill, a crash, its own exit).
+//  - an idle park (markPark) ends the agent but keeps its useful processes, group members included (hub/kept-procs.ts); then the
+//    group is not signalled: its members are judged one by one and the rest end the same way.
 //  - a write to a stdin whose process is gone never takes the gateway down (writeQuietly, also exported by omp.ts).
 import type { Subprocess } from "bun";
-import { agentEnded, trackAgent } from "../agent-tree.ts";
+import { agentEnded, isParked, trackAgent } from "../agent-tree.ts";
+import { groupMembers } from "../kept-procs.ts";
 
 export const NICE = ["/usr/bin/nice", "-n", "10"];
 const GROUP_KILL_GRACE_MS = 2000;
@@ -36,16 +39,22 @@ process.on("exit", () => {
 	for (const pid of live) signalGroup(pid, "SIGKILL");
 });
 
+// The session an agent works for, from the environment the gateway gives it (lanerun.ts, convsessions.ts).
+const ownerOf = (env?: Record<string, string | undefined>): string | undefined => (env?.DOTZ_LANE ? `lane:${env.DOTZ_LANE}` : env?.DOTZ_CONV || undefined);
+
 /** Bun.spawn for an agent: nice 10, its own process group, and the group ended when the agent is. */
 export function spawnAgent<const T extends "pipe" | "ignore" = "pipe">(argv: string[], o: { cwd?: string; env?: Record<string, string | undefined>; stderr?: T }): Subprocess<"pipe", "pipe", T> {
 	const proc = Bun.spawn([...NICE, ...argv], { cwd: o.cwd, env: o.env, stdin: "pipe", stdout: "pipe", stderr: o.stderr ?? "pipe", detached: true });
 	// A stand-in process of a test has no exit state and no group of its own: its made-up pid must never be signalled.
 	if ("exitCode" in proc) {
 		live.add(proc.pid);
-		trackAgent(proc.pid);
+		trackAgent(proc.pid, ownerOf(o.env));
 		void proc.exited.then(() => {
-			endGroup(proc.pid);
-			void agentEnded(proc.pid);
+			const parked = isParked(proc.pid);
+			if (!parked) endGroup(proc.pid);
+			// A parked agent's group is listed first; if that fails the group ends as for any other exit.
+			const members = parked ? groupMembers(proc.pid).then(m => (m ? void live.delete(proc.pid) : endGroup(proc.pid), m)) : undefined;
+			void agentEnded(proc.pid, members);
 		});
 	}
 	return proc as Subprocess<"pipe", "pipe", T>;
