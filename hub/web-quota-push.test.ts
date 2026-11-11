@@ -23,7 +23,7 @@ test("a pushed quota event reaches quotaLive with its numbers", async () => {
 		setTimeout: () => 0,
 		EventSource: class { readyState = 1; constructor() { streams.push(this); } addEventListener() {} close() {} },
 		quotaLive: (q: unknown) => got.push(q),
-		Date, Object, JSON, Promise, location: { hash: "" }, pushOpenTs: "",
+		Date, Object, JSON, Promise, location: { hash: "" }, pushOpenTs: "", LIVE_TOK: "t",
 	});
 	await new Promise(r => setImmediate(r));
 	const q = { fetched_at: 1, providers: [{ provider: "anthropic", limits: [{ id: "anthropic:5h", remaining: 42 }] }] };
