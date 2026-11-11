@@ -15,11 +15,13 @@ const [maj, min, patch] = Bun.version.split(".").map(n => Number.parseInt(n, 10)
 export const parallelOk = (v: [number, number, number]) => v[0] > 1 || (v[0] === 1 && (v[1] > 4 || (v[1] === 4 && v[2] >= 2)));
 // More failed files than this is a broken change, not a host that did not start: no second run.
 const RERUN_MAX = 40;
+const GATE_MS = 19 * 60_000;
 
 async function run(args: string[]): Promise<{ code: number; out: string }> {
 	// The suite's own preload makes its throwaway data dir; this file's one must not leak into it.
 	const env = { ...process.env };
 	delete env.DOTZ_TEST_DIR;
+	env.DOTZ_TEST_MAX_MS = String(GATE_MS); // the run stops itself no sooner than this gate's own limit
 	const p = Bun.spawn([process.execPath, "test", ...args], { cwd: root, env, stdout: "pipe", stderr: "pipe", stdin: "ignore" });
 	let out = "";
 	const pump = async (s: ReadableStream<Uint8Array>, to: NodeJS.WriteStream) => {
@@ -50,4 +52,4 @@ test(`the whole suite passes (bun ${Bun.version})`, async () => {
 		if (!ok) still.push(f);
 	}
 	expect(still).toEqual([]);
-}, 19 * 60_000);
+}, GATE_MS);

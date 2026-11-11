@@ -202,7 +202,7 @@ export async function runGate(o: RunGateOptions): Promise<void> {
 }
 
 async function spawn(cmd: readonly string[], cwd: string): Promise<Output> {
-	const proc = Bun.spawn([...cmd], { cwd, env: process.env, stdout: "pipe", stderr: "pipe", timeout: SUITE_TIMEOUT_MS });
+	const proc = Bun.spawn([...cmd], { cwd, env: { ...process.env, DOTZ_TEST_MAX_MS: String(SUITE_TIMEOUT_MS) }, stdout: "pipe", stderr: "pipe", timeout: SUITE_TIMEOUT_MS }); // the suite stops itself no sooner than this
 	const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
 	return { code: await proc.exited, out: `${out}${err}` };
 }

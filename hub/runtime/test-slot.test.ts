@@ -113,7 +113,7 @@ test("a run of one -web.test.ts file takes the slot, a run of one plain file doe
 	expect(runKind(["bun", "test", join(dir, "plain.test.ts")])).toBe("free");
 });
 
-// A suite run that is told it is a full run (the decision a preload would make), with a live process as the holder of the suite slot.
+// A suite run that is told it is a full run (the decision a preload would make), with a live process as the holder of the suite slot. CI: no deadline timer is left behind in this process.
 async function suiteBehindHolder() {
 	const data = mkdtempSync(join(tmpdir(), "dotz-suite-wait-"));
 	dirs.push(data);
@@ -122,7 +122,7 @@ async function suiteBehindHolder() {
 	const lines: string[] = [];
 	const spy = spyOn(console, "error").mockImplementation((...a) => void lines.push(a.join(" ")));
 	let started = false;
-	const waiting = takeSuiteSlot({ DOTZ_DIR: data, TEST_SLOT_DECISION: `${process.pid}:full` }).then(() => void (started = true));
+	const waiting = takeSuiteSlot({ DOTZ_DIR: data, CI: "true", TEST_SLOT_DECISION: `${process.pid}:full` }).then(() => void (started = true));
 	return { holder, held, lines, spy, waiting, started: () => started };
 }
 
@@ -164,22 +164,34 @@ test("a full-suite run behind a live holder starts when the holder dies", async 
 function sleeper(seconds: number, maxMs: number) {
 	const p = project();
 	writeFileSync(join(p.cwd, "sleeper.test.ts"), `import { expect, test } from "bun:test"; test("sleeper", async () => { await Bun.spawn(["sleep", "${seconds}"]).exited; expect(1).toBe(1); });`);
-	const run = () => p.run(["-t", "sleeper"], { DOTZ_LANE: "limit-test", DOTZ_TEST_MAX_MS: String(maxMs) });
+	const run = (extra: Record<string, string | undefined> = {}) => p.run(["-t", "sleeper"], { CI: undefined, DOTZ_TEST_MAX_MS: String(maxMs), ...extra });
 	return { run, slotFile: join(p.data, "heavy-suite", "slot.1") };
 }
 
-test("a lane's run that holds the slot past the limit stops itself with a line and frees the slot", async () => {
+test("a run that holds the slot past the limit stops itself with a line and frees the slot, lane or not", async () => {
 	const { run, slotFile } = sleeper(3, 1000);
-	const r = await run();
+	const r = await run({ DOTZ_LANE: "limit-test" });
 	expect(r.code).not.toBe(0);
 	expect(r.text).toContain("test run stopped");
 	expect(r.text).toContain("Run only the files that failed");
 	expect(existsSync(slotFile)).toBe(false);
 }, 60_000);
 
-test("a lane's run under the limit is untouched", async () => {
+test("a run with no lane (a shell tool's run that lost its starter) is stopped at the limit too", async () => {
+	const r = await sleeper(3, 1000).run();
+	expect(r.code).not.toBe(0);
+	expect(r.text).toContain("test run stopped");
+}, 60_000);
+
+test("CI has no deadline, even when a limit is set", async () => {
+	const r = await sleeper(3, 1000).run({ DOTZ_LANE: "limit-test", CI: "true" });
+	expect(r.code).toBe(0);
+	expect(r.text).not.toContain("test run stopped");
+}, 60_000);
+
+test("a run under the limit is untouched; a gate states its own limit in DOTZ_TEST_MAX_MS", async () => {
 	const { run } = sleeper(0.2, 60_000);
-	const r = await run();
+	const r = await run({ DOTZ_LANE: "limit-test" });
 	expect(r.code).toBe(0);
 	expect(r.text).not.toContain("test run stopped");
 }, 60_000);

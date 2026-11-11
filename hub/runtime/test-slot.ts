@@ -4,7 +4,7 @@
 // long as a live run holds the slot: the only ways past a holder are the reclaim rules of heavyslot.ts (the holder died, or it is older
 // than the max hold). While it waits it prints what holds the slot and the latest time it frees, once a minute. The slot is its own
 // directory (heavy-suite, one slot): dotz_verify (hub/receipts.ts) takes up to cpus/4 slots of `heavy`, and one of those could not keep a
-// suite under dotz_verify and a direct suite apart. A lane's run that holds the slot longer than the max hold stops itself (see
+// suite under dotz_verify and a direct suite apart. A run that holds the slot longer than the max hold stops itself (see
 // armDeadline), so a stuck or orphaned run does not sit on top of the next one. A run of a few plain files stays free. Only node builtins and heavyslot.ts, and it
 // must run before the preload installs the fake clock.
 // The preload does not run in the process that got the command line: a plain run loads it in that one process, a --parallel run loads
@@ -65,14 +65,16 @@ export function isFullSuite(words: string[]): boolean {
 // "full" (the whole suite), "web" (a few files, one a WebView test: the WebView tests starve each other) or "free".
 export const runKind = (words: string[]): "full" | "web" | "free" => (isFullSuite(words) ? "full" : namedFiles(words)?.some(usesWebView) ? "web" : "free");
 
-// A lane's run that holds the slot past the max hold (DOTZ_TEST_MAX_MS replaces it) stops itself: a worker also stops the coordinator, whose
-// death leaves a slot the next waiter reclaims at once. The deadline counts from when the run took the slot (the slot file), not from this
-// load of the preload, and the timer is a real one: this runs before the fake clock. Gates have no DOTZ_LANE, and the update gate's own
-// limit (19 min) is shorter, so none is cut short.
-function armDeadline(env: Record<string, string | undefined>, dir: string, run: number, worker: boolean): void {
-	if (!env.DOTZ_LANE || env.TEST_SLOT_ARMED === String(process.pid)) return;
+// Every run that holds the slot stops itself after the max hold, so a stuck or orphaned run (its starter died) does not sit on top of the
+// next one. A gate with a limit of its own states it in DOTZ_TEST_MAX_MS (the run then stops when the gate would kill it, never sooner:
+// hub/selfupdate.ts defaultExec, hub/release-gate.ts, hub/update-gate-run.ts); CI (CI=true) has no slot to share and no deadline. The limit is
+// decided once, when the run takes the slot, and kept in TEST_SLOT_HELD (the preload clears DOTZ_*, and a --isolate worker loads it again).
+// A worker also stops the coordinator, whose death leaves a slot the next waiter reclaims at once. The deadline counts from when the run
+// took the slot (the slot file), not from this load of the preload, and the timer is a real one: this runs before the fake clock.
+const limitOf = (env: Record<string, string | undefined>): number => (env.CI === "true" ? 0 : Number(env.DOTZ_TEST_MAX_MS) || MAX_HOLD_MS);
+function armDeadline(env: Record<string, string | undefined>, dir: string, run: number, worker: boolean, limit: number): void {
+	if (!limit || env.TEST_SLOT_ARMED === String(process.pid)) return;
 	env.TEST_SLOT_ARMED = String(process.pid);
-	const limit = Number(env.DOTZ_TEST_MAX_MS) || MAX_HOLD_MS;
 	const at = holderInfo(dir)?.at ?? Date.now();
 	setTimeout(() => {
 		console.error(`[dotz] test run stopped: it held the heavy test slot for ${+(limit / 60_000).toFixed(1)} min, the limit. Run only the files that failed: bun test <files>`);
@@ -189,7 +191,8 @@ export async function takeSuiteSlot(env: Record<string, string | undefined>): Pr
 	}
 	const kind = env.TEST_SLOT_DECISION!.split(":")[1];
 	const dir = join(dotzDir, "heavy-suite");
-	if (env.TEST_SLOT_HELD === String(run)) return armDeadline(env, dir, run, worker); // a --isolate worker loads the preload again for every file
+	const [heldRun, heldLimit] = (env.TEST_SLOT_HELD ?? "").split(":");
+	if (heldRun === String(run)) return armDeadline(env, dir, run, worker, Number(heldLimit)); // a --isolate worker loads the preload again for every file
 	if (kind === "free") return;
 	const entry = log && kind === "full" ? failOpen(undefined, () => checkRepeatRun(env, log, run, worker)) : undefined; // a WebView file is no full run
 	let ticker: ReturnType<typeof setInterval> | undefined;
@@ -207,8 +210,9 @@ export async function takeSuiteSlot(env: Record<string, string | undefined>): Pr
 	}).finally(() => clearInterval(ticker));
 	// A --isolate worker comes back here for every file: it asks once.
 	env.TEST_SLOT_DECISION = `${run}:free`;
-	env.TEST_SLOT_HELD = String(run);
-	armDeadline(env, dir, run, worker);
+	const limit = limitOf(env);
+	env.TEST_SLOT_HELD = `${run}:${limit}`;
+	armDeadline(env, dir, run, worker, limit);
 	if (log && entry) failOpen(undefined, () => append(log, [entry]));
 	if (slot.note) console.error(`[dotz] ${slot.note}`);
 	if (!worker) process.on("exit", slot.release);

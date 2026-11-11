@@ -115,7 +115,7 @@ let gatewayWatch: Watch | undefined;
 
 export const defaultExec: Exec = async (cmd, cwd, timeoutMs) => {
 	// No credential prompt can ever wait for a terminal: a missing login fails at once with a message we can explain.
-	const env = { ...process.env, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes" };
+	const env = { ...process.env, DOTZ_TEST_MAX_MS: String(timeoutMs) /* a test run it starts stops no sooner than this */, GIT_TERMINAL_PROMPT: "0", GCM_INTERACTIVE: "never", GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes" };
 	try {
 		const p = Bun.spawn(cmd, { cwd, env, stdout: "pipe", stderr: "pipe", stdin: "ignore", timeout: timeoutMs });
 		const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
