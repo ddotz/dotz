@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createApprovalSender, MAY_HAVE_GONE_OUT, runCli, type SendResult } from "./approval-send.ts";
+import { createApprovalSender, MAY_HAVE_GONE_OUT, runCli, SEND_CLI_MS, type SendResult } from "./approval-send.ts";
 import { spawnExec } from "./mail-sync.ts";
 import { advance } from "./runtime/test-clock.ts";
 
@@ -32,10 +32,11 @@ async function endOf(run: () => Promise<{ code: number; out: string; timedOut?: 
 	return reports.at(-1)!;
 }
 
-test("a send that timed out ends unsure with the may-have-gone-out text", async () => {
+test("a send that timed out ends unsure with a reason of its own (not the gateway-stopped one) that carries the limit from the constant", async () => {
 	const end = await endOf(async () => ({ code: 124, out: "\ntimed out", timedOut: true }));
 	expect(end.state).toBe("unsure");
-	expect(end.text).toBe(MAY_HAVE_GONE_OUT);
+	expect(end.text).not.toBe(MAY_HAVE_GONE_OUT);
+	expect(end.text).toContain(String(SEND_CLI_MS / 60_000));
 });
 
 test("a send that failed on its own still ends failed", async () => {

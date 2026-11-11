@@ -79,6 +79,11 @@ const timerAfter = (ms: number, fn: () => void): void => void (setTimeout(fn, ms
 
 export const MAY_HAVE_GONE_OUT = "게이트웨이가 멈추면서 보내던 중이었어요. 이미 나갔을 수 있으니 보낸 것을 확인한 뒤, 안 나갔을 때만 다시 보내기를 눌러 주세요";
 
+// Killing a send in the middle is worse than waiting (it may have gone out already): this only catches a sender that hangs for good.
+export const SEND_CLI_MS = 15 * 60_000;
+/** The reason of a send that was stopped at SEND_CLI_MS (the minutes come from the constant). */
+export const sendTimedOut = (): string => `보내는 데 ${SEND_CLI_MS / 60_000}분이 넘어 멈췄어요. 이미 나갔을 수 있으니 보낸 것을 확인한 뒤, 안 나갔을 때만 다시 보내기를 눌러 주세요`;
+
 const KEEP = 200;
 
 export function createApprovalSender(deps: SenderDeps) {
@@ -188,7 +193,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			}
 			const line = r.out.trim().split("\n").filter(Boolean).slice(-1)[0] ?? "";
 			deps.log(`approved send ${j.ref} in ${j.conv}: exit ${r.code}${line ? ` (${line.slice(0, 200)})` : ""}`);
-			if (r.timedOut) set(j, "unsure", MAY_HAVE_GONE_OUT);
+			if (r.timedOut) set(j, "unsure", sendTimedOut());
 			else set(j, r.code === 0 ? "sent" : "failed", line.slice(0, 500));
 		}
 	}
@@ -258,8 +263,6 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 }
 
-// Killing a send in the middle is worse than waiting (it may have gone out already): this only catches a sender that hangs for good.
-const SEND_CLI_MS = 15 * 60_000;
 /** Runs one CLI with the gateway's environment; stdout and stderr together, bounded. */
 export async function runCli(argv: string[]): Promise<{ code: number; out: string; timedOut?: boolean }> {
 	// `env` is passed on purpose: without it Bun hands the child the environment the process started with, not process.env as it is now
