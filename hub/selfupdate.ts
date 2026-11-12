@@ -19,6 +19,7 @@
 // the same gate. A failed step removes the staging dir and keeps the old code. GitHub auth order: GITHUB_TOKEN/GH_TOKEN,
 // <data dir>/secrets/github-token (0600, saved by install.sh), `gh api` when gh is signed in, then none (public repos).
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { installGitHooks } from "./git-hooks.ts";
 import { rewriteNote, rewriteState } from "./history-rewrite.ts";
@@ -366,8 +367,27 @@ let job: Job | undefined;
 
 // `how.keep`: skip the trial rebase of local commits and save them aside at once (an older client's '보관하고 새 버전 받기'). `how.auto`:
 // the daily auto-apply. Both, like a plain apply, never stop at local work: it is saved and the update goes on.
+// A step that throws (a sync fs call, an injected or spawned exec) ends the job as failed: a job left 'running' would make every later apply return it.
 export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } = {}): Promise<Job> {
 	if (job?.status === "running") return job;
+	try {
+		return await runApply(o, how);
+	} catch (e) {
+		const j = job;
+		if (j?.status !== "running") throw e;
+		const why = e instanceof Error ? ((e as { code?: unknown }).code ?? e.name) : typeof e;
+		const text = `예기치 않은 오류로 업데이트를 멈췄어요 (${String(why).slice(0, 40)}). 다시 시도하면 처음부터 해요.`;
+		Object.assign(j, { phase: "끝", message: text, status: "failed", endedAt: new Date().toISOString() });
+		j.steps.push({ at: j.endedAt as string, text });
+		record(resolve(o).logDir, `update #${j.id}: ${text} ${lastLine(String(e))}`);
+		log(`self-update #${j.id}: failed: ${text}`);
+		// the tarball staging dir, as the failure paths of applyTarball clean it; the job is settled already if this throws too
+		if (j.check?.version.kind === "tarball") await rm(`${o.dir}.update`, { recursive: true, force: true }).catch(err => record(resolve(o).logDir, `update #${j.id}: staging cleanup failed: ${lastLine(String(err))}`));
+		return j;
+	}
+}
+
+async function runApply(o: Options, how: { keep?: boolean; auto?: boolean }): Promise<Job> {
 	const { dir, remote, branch, exec, testCmd, logDir } = resolve(o);
 	const upstream = `${remote}/${branch}`;
 	const j: Job = { id: ++jobSeq, startedAt: new Date().toISOString(), status: "running", phase: "확인", message: "새 버전을 확인하고 있어요", steps: [] };

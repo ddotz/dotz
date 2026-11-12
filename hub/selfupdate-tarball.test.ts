@@ -292,6 +292,23 @@ slow("a failing bun install, a bad download and a non-dotz tarball keep the old 
 	expect(readdirSync(root).filter(f => f.startsWith("dotz.") || f === "dotz.update")).toEqual([]);
 });
 
+slow("a step that throws ends the job as failed, removes staging and does not block the next apply", async () => {
+	const tgz = tarball("ok", {});
+	const boom = exec(async cmd => {
+		if (cmd[0] === "tar") throw new Error("spawn failed: /private/place/tar");
+		return undefined;
+	});
+	const a = await run(opts({ http: github(tgz), exec: boom })).catch(e => e as Error);
+	expect(a).not.toBeInstanceOf(Error);
+	expect((a as Job).status).toBe("failed");
+	expect((a as Job).message).not.toContain("/private/place");
+	expect(readFileSync(join(app, "old-only.txt"), "utf8")).toBe("old\n");
+	expect(existsSync(`${app}.update`)).toBe(false);
+	const b = await run(opts({ http: github(tgz) }));
+	expect(b.id).not.toBe((a as Job).id);
+	expect(b.status).toBe("updated");
+});
+
 test("apply with nothing new is 'current' and touches nothing", async () => {
 	put(app, { ".dotz-install": stamp({ sha: NEW, version: NEW_VERSION }) });
 	const j = await run(opts({ http: github("") }));
