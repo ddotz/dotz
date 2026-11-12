@@ -1,6 +1,6 @@
 // The prompt queue's shapes and limits: types and constants that capture no state (the queue itself is prompts.ts).
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean; from?: string; handback?: true; quiet?: true; fallback?: string };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; deep?: true; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean; from?: string; handback?: true; quiet?: true; fallback?: string };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string; refs?: string[]; deferred?: boolean; from?: string; handback?: true; quiet?: true; fallback?: string };
@@ -10,7 +10,7 @@ export type WorkLink = { id: string; target: string; replyTo?: string; at: numbe
 export type OpenRequest = { target: string; replyTo?: string; at: number; workers: { id: string; description?: string }[] };
 /** One of this session's background workers, as hub/bgwork.ts lists it (running oldest first, then recently finished newest first). */
 export type WorkRow = { id: string; description?: string; status: "running" | "stalled" | "done" | "failed"; target?: string; replyTo?: string; startedAt: number; endedAt?: number };
-export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean; from?: string; handback?: true; quiet?: true; fallback?: string }; // fallback: the answer a rewrite turn replaces, posted as it was if that turn writes nothing; quiet: a system check, see deps.quietNote; refs: every message merged into this prompt
+export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean; deep?: true; from?: string; handback?: true; quiet?: true; fallback?: string }; // deep: the owner's own words ask for deeper reasoning on this turn (hub/ultrathink.ts); fallback: the answer a rewrite turn replaces, posted as it was if that turn writes nothing; quiet: a system check, see deps.quietNote; refs: every message merged into this prompt
 
 export type PromptDeps = {
 	/** Keeps the answer of a quiet check (a plain one that does not begin with [ask] or [fail]) as one worklog line; it is posted nowhere else and notifies no one. */
@@ -18,7 +18,7 @@ export type PromptDeps = {
 	/** The note that asks the session to reword a final answer holding a word of the user's 금지 낱말 목록; undefined when the answer needs none or the session cannot take it now. */
 	review?: (text: string) => string | undefined;
 	/** Starts a normal orchestrator turn with this prompt. */
-	deliver: (text: string, owner?: boolean) => void;
+	deliver: (text: string, owner?: boolean, deep?: boolean) => void;
 	/** The conversation an answer with no label goes to (the session's own primary target); "web" when unset. */
 	home?: string;
 	/** Gives the answer to work another session handed over (`from`) back to that session instead of posting it. */

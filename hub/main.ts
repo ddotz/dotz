@@ -100,7 +100,7 @@ import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { primaryTarget } from "./session-key.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
-import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue, sendWeb } from "./intake.ts";
+import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue, sendWeb, ownerWantsUltrathink } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { mailAction } from "./mail-sync.ts";
 import { recoverOriginalDeletes } from "./mail-delete.ts";
@@ -295,7 +295,7 @@ const onOwner = (m: discord.Incoming) => {
 		try {
 			if (approvesBudget(lane, m.content)) sendToLane(lane, "/budget-ok");
 			const busy = lanes.get(lane) ? laneBusy(lanes.get(lane)!) : false;
-			const how = sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"), ref);
+			const how = sendToLane(lane, [`[owner via Discord] ${m.content}`, extra].filter(Boolean).join("\n"), ref, false, ownerWantsUltrathink(m.content));
 			emitDelivery(target, ref, how);
 			livestatus.begin(target, `lane:${lane}`);
 			// A busy lane answers when its current step allows; until then the owner sees at once that the message reached it,

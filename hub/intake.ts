@@ -35,6 +35,9 @@ import { watchAsked } from "./watch-recheck.ts";
 import { pluginThread } from "./plugins.ts";
 import { cancelAuth, pendingWaits } from "./auth.ts";
 import { authHolds, bareText, cancelReply, waitNotice, type WaitDeps } from "./auth-wait.ts";
+import { ownerWantsUltrathink } from "./ultrathink.ts";
+
+export { ownerWantsUltrathink };
 
 // Chat is the hub over every work channel: each chat turn carries a short directory so the orchestrator can route the
 // work into the channel it belongs to (or split a growing thread of work into a new one).
@@ -179,6 +182,8 @@ const authWait: WaitDeps = {
 	post: (to, text, replyTo) => void out(to, text, replyTo, { source: "gateway" }).catch(e => log(`auth wait reply to ${to} failed: ${e}`)),
 };
 // Every surface hands intake the owner's messages only (discord.ts OWNER, each messenger's allow list), as deliver's owner: true below says.
+// The owner's own typed words ask for a deeper turn (hub/ultrathink.ts): judged on each message's raw text, never the wrapped prompt, a quote or an attachment.
+const deepOf = (events: Record<string, any>[]): { deep?: true } => (events.some(e => !e.picks?.length && !e.decision && ownerWantsUltrathink(String(e.text ?? ""))) ? { deep: true } : {});
 const inboundOf = (target: string, events: Record<string, any>[], replyTo?: string) => ({ target, text: bareText(events), owner: true, replyTo });
 /** The web's queue keeps a message from intake until the turn ends, which this wait holds off: it goes through intake instead. */
 export const authHeld = (target: string): boolean => authHolds(target, authWait);
@@ -209,7 +214,7 @@ export function flush(target: string): void {
 	const heldRefs = b.events.flatMap(e => refOf(e) ?? []);
 	if (updateNow()?.hold(inboxText(merged), { target, replyTo: b.replyTo, owner: true }, heldRefs)) return heldForUpdate(target, heldRefs, b.replyTo);
 	waitNotice(inbound, authWait);
-	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, refs: heldRefs, owner: true });
+	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, refs: heldRefs, owner: true, ...deepOf(b.events) });
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.
 	const status = convs.forTarget(target)?.o.orch.status;
@@ -280,7 +285,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		// gateway message in the session's chat, not only as the request's error.
 		try {
 			if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
-			const how = sendToLane(name, [`[owner via web] ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(channel), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid);
+			const how = sendToLane(name, [`[owner via web] ${s.text}`, ...(s.picks?.length || s.decision ? decisionLines({ picks: s.picks, reply_to: s.replyTo, decision: s.decision }) : []), ...openQuestionLines(channel), s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : "", ...(s.refs ?? [])].filter(Boolean).join("\n"), mid, false, ownerWantsUltrathink(s.text));
 			emitDelivery(channel, mid, how);
 			// The web shows the receipt as the message's delivery state only (no canned receipt message, owner 2026-10-17).
 			livestatus.begin(channel, channel, true);
@@ -313,7 +318,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		const inbound = inboundOf(to, [turn], mid);
 		if (cancelReply(inbound, authWait)) return;
 		waitNotice(inbound, authWait);
-		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
+		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true, ...deepOf([turn]) });
 		expectReply(to);
 		emitDelivery(to, mid, steered ? "steered" : "queued");
 		awaiting.set(to, [...(awaiting.get(to) ?? []), { ref: mid, by: mid }]);
@@ -342,7 +347,7 @@ export function flushQueue(target: string): void {
 	try {
 		if (lane) {
 			for (const i of items) if (approvesBudget(lane, i.text)) sendToLane(lane, "/budget-ok");
-			const how = sendToLane(lane, `[owner via web] ${items.map(i => i.text).join("\n\n")}`, items[0].id);
+			const how = sendToLane(lane, `[owner via web] ${items.map(i => i.text).join("\n\n")}`, items[0].id, false, items.some(i => ownerWantsUltrathink(i.text)));
 			for (const i of items.slice(1)) ownerNotes.asked(lane, i.id);
 			queueFailed.delete(target);
 			// The messages waited for the session's turn to end and went in as one: "queued" unless the stopped session had to be resumed.

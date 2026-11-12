@@ -31,7 +31,7 @@ export function createBurst(prompts: Prompt[], deps: BurstDeps) {
 		if (list.length === 1) return list[0]!;
 		for (const p of list) remove(p);
 		const text = list.map(p => p.text).join("\n\n");
-		const merged: Prompt = { key: text.slice(0, 300), text, at: list[0]!.at, target: list.at(-1)!.target, replyTo: list.findLast(p => p.replyTo)?.replyTo, refs: list.flatMap(idsOf), sent: [], owner: true };
+		const merged: Prompt = { key: text.slice(0, 300), text, at: list[0]!.at, target: list.at(-1)!.target, replyTo: list.findLast(p => p.replyTo)?.replyTo, refs: list.flatMap(idsOf), sent: [], owner: true, ...(list.some(p => p.deep) ? { deep: true } : {}) };
 		prompts.push(merged);
 		return merged;
 	}
@@ -47,7 +47,7 @@ export function createBurst(prompts: Prompt[], deps: BurstDeps) {
 		for (const group of convs.values()) {
 			const m = merge(group);
 			Object.assign(m, { steered: false, gathered: undefined, noted: undefined, seen: undefined });
-			deps.deliver(m.text, true);
+			deps.deliver(m.text, true, m.deep);
 		}
 		deps.save();
 	}
@@ -73,7 +73,7 @@ export function createBurst(prompts: Prompt[], deps: BurstDeps) {
 		deps.save();
 		if (deps.steer(note) !== false) return;
 		Object.assign(m, { steered: false, noted: undefined });
-		deps.deliver(m.text, true);
+		deps.deliver(m.text, true, m.deep);
 	}
 
 	/** A note's user frame: the model has those messages now. */

@@ -1,4 +1,5 @@
 import { DATA_DIR, log, paths, selectorOf, lanesModel, now, chainAfter, fallbackChain, parseSelector } from "./config.ts";
+import { markDeep } from "./deepmark.ts";
 import { type Lane, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
 import { broadcast } from "./events.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -116,7 +117,7 @@ export type LaneDelivery = "steered" | "received" | "held" | "resumed";
 
 /** `gateway`: the gateway's own prompt (a stall nudge), not the orchestrator asking: the lane's answer to it stays an untagged
  * report the orchestrator did not ask for. */
-export function sendToLane(name: string, text: string, ref?: string, gateway = false): LaneDelivery {
+export function sendToLane(name: string, text: string, ref?: string, gateway = false, deep = false): LaneDelivery {
 	checkAccountSoon();
 	const lane = lanes.get(name);
 	if (!lane) throw new Error(`lane ${name} does not exist`);
@@ -150,6 +151,9 @@ export function sendToLane(name: string, text: string, ref?: string, gateway = f
 	// report, so every one woke the orchestrator.
 	if (!gateway && !/^\[owner via /.test(text) && text !== "/budget-ok") lane.orchAsked = true;
 	const how: LaneDelivery = !lane.proc ? "resumed" : lane.status === "working" || lane.startingOn === lane.proc ? "steered" : lane.status === "rate-limited" ? "held" : "received";
+	// The owner's "ultrathink": the prompt carries a line whatever its delivery, so a held one or the one that resumes a stopped lane keeps it
+	// (hub/deepmark.ts). A steered message starts no new turn, so there the line reads as a hint.
+	if (deep && !gateway) text = markDeep(text, { name: `lane ${lane.name}`, runtime: runtimeFor("lane").id, model: parseSelector(lane.model).model, onFallback: Boolean(lane.chained) || (lane.chain?.active ?? 0) > 0 }, log);
 	if (!gateway && lane.proc && lane.status === "working") (lane.steered ??= []).push(text);
 	if (lane.proc) prompt(lane, text);
 	else resumeLane(lane, text);

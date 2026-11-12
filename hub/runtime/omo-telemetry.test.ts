@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseJsonc, telemetryOff } from "./omo.ts";
-import { TELEMETRY_OFF_ENV } from "./omo-hosts.ts";
+import { TELEMETRY_OFF_ENV, ULTRATHINK_OFF_ENV } from "./omo-hosts.ts";
 
 let dir: string;
 beforeEach(() => void (dir = mkdtempSync(join(tmpdir(), "dotz-telemetry-"))));
@@ -37,4 +37,8 @@ test("adds the telemetry block to a config without one and keeps existing settin
 
 test("the spawn env carries OmO's documented off switches", () => {
 	expect(TELEMETRY_OFF_ENV).toEqual({ DO_NOT_TRACK: "1", OMO_DISABLE_TELEMETRY: "1" });
+});
+
+test("the spawn env turns the bundled binary's own ultrathink notice off", () => {
+	expect(ULTRATHINK_OFF_ENV).toEqual({ CLAUDE_CODE_DISABLE_ULTRATHINK: "1" });
 });

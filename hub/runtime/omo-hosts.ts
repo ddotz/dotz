@@ -13,6 +13,9 @@ import { DATA_DIR, log, writeAtomic } from "../config.ts";
 export const OMO = process.env.DOTZ_OMO ?? "omo";
 // OmO's documented telemetry off switches, set on every OmO process dotz spawns (see telemetryOff in omo.ts).
 export const TELEMETRY_OFF_ENV = { DO_NOT_TRACK: "1", OMO_DISABLE_TELEMETRY: "1" } as const;
+// The bundled Claude binary attaches its own deeper-reasoning notice to any text holding the keyword, tool results and worker reports
+// included (CLAUDE_CODE_DISABLE_ULTRATHINK, binary 2.1.316+); dotz decides on the owner's own words (hub/ultrathink.ts) instead.
+export const ULTRATHINK_OFF_ENV = { CLAUDE_CODE_DISABLE_ULTRATHINK: "1" };
 // The real path of a bun global omo-ai install (`bun add -g` reaches only this copy), shared by both update paths.
 export const BUN_GLOBAL_OMO = /\/install\/global\/node_modules\/(omo-ai)\//;
 const agentDir = () => process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent");

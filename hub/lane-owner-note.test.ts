@@ -130,6 +130,17 @@ test("a steer through a real lane spawn ends with the mark its system prompt nam
 	await advance(300);
 });
 
+test("a deep owner message steered into a running step still carries its line, read there as a hint; a normal one carries none", async () => {
+	const { agent } = await working("note-deep");
+	l.sendToLane("note-deep", "[owner via web] 깊게 생각해 줘", "m-deep", false, true);
+	expect(agent.sent.at(-1)!.mode).toBe("steer");
+	expect(agent.sent.at(-1)!.text).toMatch(/^The owner asked for deeper reasoning on this turn\.|^\[dotz deep turn\] /m);
+	l.sendToLane("note-deep", "[owner via web] 고마워", "m-plain");
+	expect(agent.sent.at(-1)!.text).not.toContain("deeper reasoning");
+	l.stopLane("note-deep");
+	await advance(300);
+});
+
 test("the final report answers what the note did not, and a [run] final is flagged as an answer to the owner", async () => {
 	answered.length = 0;
 	shown.length = 0;

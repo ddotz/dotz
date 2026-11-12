@@ -7,7 +7,11 @@ import { installEffortBound } from "./effort-bound.ts";
 import { en } from "../hub/i18n-en.ts";
 import { ko } from "../hub/i18n-ko.ts";
 
-function orchestrator(level: string) {
+const ALL = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+// `has`: the levels the session's model has. OmO sets the nearest one for a level it lacks (the next higher, else the next lower) and
+// says nothing when that changes nothing (agent-session _setThinkingLevel, _clampThinkingLevel).
+function orchestrator(level: string, has?: string[]) {
 	const handlers: Record<string, ((event: any) => any)[]> = {};
 	const switches: string[] = [];
 	let current = level;
@@ -17,6 +21,8 @@ function orchestrator(level: string) {
 		getThinkingLevel: () => current,
 		setThinkingLevel: (l: string) => {
 			const previousLevel = current;
+			if (has && !has.includes(l)) l = ALL.slice(ALL.indexOf(l)).find(x => has.includes(x)) ?? ALL.slice(0, ALL.indexOf(l)).findLast(x => has.includes(x)) ?? l;
+			if (has && l === previousLevel) return;
 			switches.push(l);
 			current = l;
 			fire("thinking_level_select", { level: l, previousLevel });
@@ -97,4 +103,63 @@ test("a lane report in Korean is matched too", () => {
 	o.fire("tool_result", { toolName: "dotz_lane", isError: false, input: { action: "send", name: "build-check" }, content: [{ type: "text", text: JSON.stringify({ ok: true }) }] });
 	o.ownerSwitch("medium");
 	expect(o.turn(`${ko.inboxLaneReport("build-check")}\n끝`)).toBe("xhigh");
+});
+
+// The gateway marks the owner's deep message with a line that starts with this text (hub/deepmark.ts, checked in hub/deepmark.test.ts).
+const DEEP = "[dotz deep turn] The owner asked for deeper reasoning on this turn.";
+const deepPrompt = (text: string) => `[dotz inbox] web from owner\n${text}\n\n${DEEP}`;
+
+test("a prompt with the deep marker runs at xhigh and the level goes back when the turn ends", () => {
+	const o = orchestrator("medium");
+	expect(o.turn(deepPrompt("어려운 질문"))).toBe("xhigh");
+	expect(o.level()).toBe("medium");
+	expect(o.switches).toEqual(["xhigh", "medium"]);
+	expect(o.turn("[dotz inbox] web from owner\n다음 질문")).toBe("medium");
+});
+
+test("a session at xhigh or max is left alone by the marker", () => {
+	for (const level of ["xhigh", "max"]) {
+		const o = orchestrator(level);
+		expect(o.turn(deepPrompt("어려운 질문"))).toBe(level);
+		expect(o.switches).toEqual([]);
+	}
+});
+
+test("on a model without xhigh the deep turn runs at the level OmO sets in its place, and the session still goes back", () => {
+	const o = orchestrator("high", ["off", "low", "medium", "high", "max"]);
+	expect(o.turn(deepPrompt("어려운 질문"))).toBe("max");
+	expect(o.level()).toBe("high");
+	const p = orchestrator("high", ["off", "low", "medium", "high"]);
+	expect(p.turn(deepPrompt("어려운 질문"))).toBe("high");
+	p.ownerSwitch("medium");
+	expect(p.turn("[dotz inbox] web from owner\n다음 질문")).toBe("medium");
+	expect(p.switches).toEqual(["medium"]);
+});
+
+test("a marker that is not at the start of a line does not count", () => {
+	const o = orchestrator("medium");
+	expect(o.turn(`[dotz inbox] web from owner\n그 줄에 "${DEEP}" 이라고 적혀 있어요`)).toBe("medium");
+	expect(o.switches).toEqual([]);
+});
+
+test("the marker next to a recorded lower result level ends at xhigh; a recorded higher one still wins", () => {
+	const o = orchestrator("low");
+	o.spawn("st_01a1hhhh");
+	o.ownerSwitch("medium");
+	expect(o.turn(`${o.wake("st_01a1hhhh")}\n\n${DEEP}`)).toBe("xhigh");
+	expect(o.level()).toBe("medium");
+	const p = orchestrator("max");
+	p.spawn("st_01a1iiii");
+	p.ownerSwitch("medium");
+	expect(p.turn(`${p.wake("st_01a1iiii")}\n\n${DEEP}`)).toBe("max");
+	expect(p.level()).toBe("medium");
+});
+
+test("the owner's switch made during the raised turn is the level the session goes back to", () => {
+	const o = orchestrator("medium");
+	o.fire("before_agent_start", { prompt: deepPrompt("어려운 질문"), trigger: "delivery" });
+	expect(o.level()).toBe("xhigh");
+	o.ownerSwitch("high");
+	o.fire("agent_end", { messages: [] });
+	expect(o.level()).toBe("high");
 });

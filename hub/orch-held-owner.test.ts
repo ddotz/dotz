@@ -1,8 +1,10 @@
 // While a compaction runs nothing is steered into the process; the prompts held meanwhile go in with the owner's messages first,
 // in arrival order.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cfg } from "./config.ts";
+import { cfg, orchestratorModel } from "./config.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
@@ -103,4 +105,47 @@ test("after a compaction the held owner messages go in first, in arrival order, 
 	expect(agent.sent.slice(before).map(m => m.text.split("\n")[0])).toEqual(["owner message A", "owner message B", "[report] lane one is done", "[report] lane two is done"]);
 	o.stop();
 	await flush();
+});
+
+// A deep owner message (hub/ultrathink.ts) is marked where the session takes it, so a prompt held for a compaction keeps its line.
+async function releasedAfterCompaction(...asks: [text: string, deep: boolean][]): Promise<string[]> {
+	const { o, agent } = await session();
+	await agent.push({ type: "turn_end" });
+	o.orch.ctx.compaction.state = "compacting";
+	const before = agent.sent.length;
+	for (const [text, deep] of asks) o.deliver(text, true, deep);
+	expect(agent.sent.length).toBe(before);
+	o.orch.ctx.compaction.state = "idle";
+	await agent.push({ type: "compaction", state: "done" });
+	const out = agent.sent.slice(before).map(m => m.text);
+	o.stop();
+	await flush();
+	return out;
+}
+
+test("a deep message held for a compaction goes in with the plain hint line on a runtime that is not OmO; a normal one grows by nothing", async () => {
+	const [deep, plain] = await releasedAfterCompaction(["deep question", true], ["plain question", false]);
+	expect(deep).toContain("deep question\n\nThe owner asked for deeper reasoning on this turn.");
+	expect(deep).not.toContain("[dotz deep turn]");
+	expect(plain).not.toContain("deeper reasoning");
+});
+
+test("a deep message held for a compaction goes in with the raise line on OmO's configured model", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "held-deep-"));
+	const id = orchestratorModel().model.split("/").pop()!;
+	writeFileSync(join(dir, "models.json"), JSON.stringify({ providers: { p: { models: [{ id, compat: { supportsMidConvoEffort: true } }] } } }));
+	const savedDir = process.env.OMO_CODING_AGENT_DIR;
+	process.env.OMO_CODING_AGENT_DIR = dir;
+	adapters.fakeomo = { ...fake, id: "omo" };
+	cfg.orchestrator = { ...cfg.orchestrator, runtime: "fakeomo" };
+	try {
+		const [deep] = await releasedAfterCompaction(["deep question", true]);
+		expect(deep).toContain("deep question\n\n[dotz deep turn] ");
+		expect(deep!.match(/\[dotz deep turn\]/g)).toHaveLength(1);
+	} finally {
+		cfg.orchestrator = { ...cfg.orchestrator, runtime: "fake" };
+		delete adapters.fakeomo;
+		if (savedDir === undefined) delete process.env.OMO_CODING_AGENT_DIR;
+		else process.env.OMO_CODING_AGENT_DIR = savedDir;
+	}
 });

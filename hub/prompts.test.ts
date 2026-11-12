@@ -1569,3 +1569,15 @@ test("an owner message steered into a running quiet check makes that turn's answ
 	expect(state.posts.map(p => p.text)).toEqual(["둘 다 정상이에요"]);
 	expect(notes).toEqual([]);
 });
+
+test("an owner message flagged deep reaches the turn's delivery as deep; a steered one does not raise the running turn", () => {
+	const deep: (boolean | undefined)[] = [];
+	const { q, state } = setup([], [], { deliver: (text, _owner, d) => void (state.delivered.push(text), deep.push(d)) });
+	q.deliver("think", { target: "chat", replyTo: "m1", owner: true, deep: true });
+	expect(deep).toEqual([true]);
+	state.working = true;
+	q.onPrompt("think");
+	q.deliver("more ultrathink", { target: "chat", replyTo: "m3", owner: true, deep: true });
+	expect(state.steered).toEqual(["[note] more ultrathink"]);
+	expect(deep).toEqual([true]);
+});

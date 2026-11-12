@@ -20,6 +20,7 @@ import { stalePauseEnded } from "./pause-ended.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { pinnedLimitNotice } from "./accounts-api.ts";
 import { authStamp, blockText, limitAccount, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
+import { markDeep } from "./deepmark.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { writeOrchestratorProfile } from "./runtime/omo.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy } from "./fallback.ts";
@@ -850,7 +851,9 @@ export function createOrchestrator(opts: OrchOpts) {
 	}, Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)));
 
 	// `owner` marks a prompt that carries an owner message (it gets the what-runs-now line); lane reports and gateway notes do not.
-	function deliver(text: string, owner = false): void {
+	function deliver(text: string, owner = false, deep = false): void {
+		// The owner asked for a deeper turn: the prompt carries the line from here on, so a held, replayed or queued one keeps it (hub/deepmark.ts).
+		if (deep) text = markDeep(text, { name: who, runtime: (proc && adapter ? adapter : runtimeFor("orchestrator")).id, model: chosen().model, onFallback: chained || (chain?.active ?? 0) > 0 }, log);
 		// DOTZ_NO_ORCHESTRATOR=1 (the update smoke check, hub/update-smoke.ts): the gateway runs without an agent, so a prompt (the first-start
 		// greeting) is held instead of spawning one.
 		if (process.env.DOTZ_NO_ORCHESTRATOR === "1") {

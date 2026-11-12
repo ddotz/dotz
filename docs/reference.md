@@ -203,6 +203,8 @@ with a warning that names the session's current context tokens; repeat the comma
 it. The API (`PUT /api/models`) answers 409 `{requires_force: true, context_tokens}` until the body has
 `"force": true`; the web UI shows that warning as a confirm dialog and then sends with force.
 
+**One turn deeper.** The owner's own message with the word `ultrathink` (not in code, quotation marks, a URL or path, and not after a leading `/`) gets one line appended where the session takes it, so a prompt that is held or queued keeps it. On OmO, on the session's configured model (not a fallback entry), where the model keeps its prompt cache on an effort change, the line is `[dotz deep turn] ...`: the agent itself (extension/effort-bound.ts, `before_agent_start`) runs the turn that carries it at `xhigh` when the session is below that (a model without `xhigh` gets the nearest level it has), and puts the level back at the end of the turn (the owner's own switch meanwhile wins). Anywhere else the line is a plain hint. Nothing is written to config. A message that joins a turn already running (steered into it, or queued behind it and taken up by the same run) starts no turn, so it raises nothing and only reads as a hint. The gateway logs one `ultrathink:` line when it marks a prompt.
+
 **Results at their spawn effort.** The orchestrator (extension/effort-bound.ts) records its thinking level with each piece
 of background work it starts: a `task` worker (a `[later]` request's worker included) and a session given work with
 `dotz_lane` launch/send/handover (`<data>/effort-bound.json`). A turn that a result starts (OmO's task completion wake, a

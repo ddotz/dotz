@@ -14,7 +14,7 @@ import { DEFAULT_LOOKUP_MODEL, lookupModel, workersOf } from "../lanegates.ts";
 import { classifyProviderError } from "../providers.ts";
 import { spawnAgent } from "./agent-proc.ts";
 import { detectBinary } from "./detect.ts";
-import { closeHostsOf, OMO, recordStarted, TELEMETRY_OFF_ENV } from "./omo-hosts.ts";
+import { closeHostsOf, OMO, recordStarted, TELEMETRY_OFF_ENV, ULTRATHINK_OFF_ENV } from "./omo-hosts.ts";
 import { makeOmoProbes } from "./omo-probes.ts";
 import { lastCompactionSummary, summaryStale } from "./omo-summary.ts";
 import { syncKeepRecent } from "./omo-settings.ts";
@@ -330,7 +330,7 @@ export const omo: RuntimeAdapter = {
 		if (o.role === "orchestrator" && !o.lane) try { syncKeepRecent(o.cwd); } catch (e) { log(`omo keep_recent not written: ${(e as Error).message}`); }
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
-		const proc = spawnAgent(omoArgs(o), { cwd: o.cwd, env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...TELEMETRY_OFF_ENV, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
+		const proc = spawnAgent(omoArgs(o), { cwd: o.cwd, env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...TELEMETRY_OFF_ENV, ...ULTRATHINK_OFF_ENV, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);
