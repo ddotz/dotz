@@ -460,7 +460,29 @@ function acctConnectRow() {
     el("span", { class: "tx" }, el("span", { class: "hd", text: TX("home.connect.hint") })),
     liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => go("accounts") }, TX("home.connect.btn"))));
 }
+// 지금 진행 중 changes in place when the data does (motion 4, web/DESIGN.md Result motion): a worker that finished keeps its row and swaps its dot, time
+// and state; a row that left the group fades where it stood and the rows under it glide up; the count changes at that moment; a redraw asked for
+// meanwhile waits (motionAfter). The first paint and a refresh with nothing new move nothing.
+const HC_RUN = '#home-cards .hn[data-k="running"]', HC_COUNT = '#home-cards [data-id="now:running"] .hc-n';
+const hcRunRows = () => [...document.querySelectorAll(`${HC_RUN} > .hr`)], hcRunKey = r => r.dataset.t || r.dataset.work || r.dataset.id || (r.querySelector(".nm") || {}).textContent || "";
 function renderHomeNow() {
+  if (motionAfter($("#v-home"), renderHomeNow)) return;
+  const live = current === "home" && S && !S.seeded && HOME_READY, keep = live ? motionKeep(hcRunRows, hcRunKey, () => document.querySelector(HC_RUN)) : () => {};
+  const rows = new Map(hcRunRows().map(r => [hcRunKey(r), r])), countWas = live ? (document.querySelector(HC_COUNT) || {}).textContent : null;
+  renderHomeNowRaw();
+  if (!live) return;
+  keep();
+  for (const [id, s] of HC_SETTLE) {
+    const row = s.swapped ? null : document.querySelector(`${HC_RUN} > [data-work="${CSS.escape(id)}"]`);
+    if (!row) continue;
+    s.swapped = true;
+    const was = rows.get(id);   // the row that stood there: it stays, and takes the finished look in one fade
+    if (was && was.isConnected === false) { motionSwap(was, () => { was.className = row.className; was.replaceChildren(...row.childNodes); row.replaceWith(was); }); } else motionSwap(row, () => {});
+  }
+  const count = document.querySelector(HC_COUNT);
+  if (countWas && count && count.textContent !== countWas) motionSwap(count, () => {});
+}
+function renderHomeNowRaw() {
   const now = $("#home-now"), box = $("#home-cards");
   if (!now || !box) return;
   const kept = capPlaces(), needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
@@ -474,7 +496,7 @@ function renderHomeNow() {
   // background worker); 대기 중 started and stopped; 최근 끝난 작업 ended within the hour (실패 · 이유 · 다시 맡기기). A session resting with nothing left is in none.
   // A session the run line calls busy (41-runstate.js runBusy: waiting on its own worker) runs too, so its 진행 중 label sits in this section, and one waiting on the owner stays on top of it.
   const h = homeRunning(), { all, runT, waitT, convWork, runW, n: working } = h, restT = all.filter(t => !runT.includes(t) && !waitT.includes(t));
-  const settled = hcSettled(), bg = [...runW, ...settled], over = workEnded().filter(w => !settled.includes(w)), todo = (S && S.waitlist) || [];
+  const settled = hcSettled(), bg = ((S && S.work) || []).filter(w => runW.includes(w) || settled.includes(w)), over = workEnded().filter(w => !settled.includes(w)), todo = (S && S.waitlist) || [];
   const heldT = restT.filter(homeHeld), heldW = over.filter(homeWorkHeld), ended = over.filter(w => !homeWorkHeld(w)), doneT = restT.filter(t => !heldT.includes(t) && homeLaneDone(t));
   const restRow = t => homeNowRow(t, targetState(t)[0], ""), doneRow = t => withResults(homeNowRow(t, targetState(t)[0], "", undefined, homeDoneAgo(t)), resultChips(laneResult(t)), `t:${t}`);
   // Above the grid, the prototype's full-width column: the greeting and 답변 필요. The replies the owner owes are the last two rows of that
@@ -485,7 +507,6 @@ function renderHomeNow() {
     el("div", { class: "hneeds" },
       el("div", { class: "hn-h hneeds-h" }, el("h2", { text: TX("common.needs_reply") }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: TX("home.card.critical_n", { n: crit }) }) : null),
       list));
-  for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? now.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
   if (S && NT.loaded && HOME_READY) {
     const rows = [...now.querySelectorAll(".hr")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
     const fresh = freshKeys(HOME_ROWS, keys);
@@ -506,7 +527,7 @@ function renderHomeNow() {
   }
   const alertCard = homeAlertCard(taken);
   if (alertCard) add("notices:alert", alertCard);
-  add("now:running", el("div", { class: "card" }, hcHead(TX("home.card.running"), { n: working ? TX("home.card.items_n", { n: working }) : null }), running));
+  add("now:running", el("div", { class: "card" }, hcHead(TX("home.card.running"), { n: working + settled.length ? TX("home.card.items_n", { n: working + settled.length }) : null }), running));
   if (heldT.length || heldW.length) add("now:waiting", el("div", { class: "card" }, hcHead(TX("home.card.held")), el("div", { class: "hn", "data-k": "waiting", "data-cap": "waiting" }, ...heldT.map(restRow), ...heldW.map(workRow))));
   if (ended.length || doneT.length) add("now:ended", el("div", { class: "card" }, hcHead(TX("home.card.ended")), el("div", { class: "hn", "data-k": "ended-work", "data-cap": "ended-work" }, ...doneT.map(doneRow), ...ended.map(workRow))));
   add("notices:watch", homeMonitorCard());

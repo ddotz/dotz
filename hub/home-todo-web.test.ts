@@ -21,18 +21,20 @@ const NOW = Number(await view.evaluate(`Date.now()`));
 const stamp = (ms = NOW) => new Date(ms).toISOString();
 
 type Lane = { name: string; title?: string; status: string; live: boolean; waiting?: string; startedAt?: string };
-const paint = (s: { lanes?: Lane[]; work?: BgWork[]; runs?: object; deferred?: Parameters<typeof buildWaitlist>[0]["deferred"] }) => {
+// A row leaving 지금 진행 중 from the step before holds the redraw until it is gone (motionAfter): each step starts when the page is still.
+const paint = async (s: { lanes?: Lane[]; work?: BgWork[]; runs?: object; deferred?: Parameters<typeof buildWaitlist>[0]["deferred"] }) => {
+	await waitFor(`!document.querySelector("#v-home [data-gone]")`);
 	const lanes = s.lanes ?? [], work = s.work ?? [];
 	const state = { orchestrator: { status: "idle" }, convs: [], lanes, work, runs: s.runs ?? {}, work_skew: 0, waitlist: buildWaitlist({ deferred: s.deferred ?? [], lanes, work }) };
 	return view.evaluate(`(() => { Object.assign(S, ${JSON.stringify(state)}); renderHomeNow(); })()`);
 };
 // The groups naming this title, and the cards in reading order.
-const seen = async (title: string) => JSON.parse((await view.evaluate(`JSON.stringify({
+const seen = async (title: string) => await waitFor(`!document.querySelector("#v-home [data-gone]")`).then(async () => JSON.parse((await view.evaluate(`JSON.stringify({
 	groups: [...document.querySelectorAll("#v-home .hn")].filter(l => [...l.querySelectorAll(".nm")].some(n => n.textContent.includes(${JSON.stringify(title)}))).map(l => l.dataset.k),
 	first: [...document.querySelectorAll("#home-cards .bi")].sort((a, b) => a.style.order - b.style.order)[0].dataset.id,
 	cards: [...document.querySelectorAll("#home-cards .bi")].map(b => b.dataset.id),
 	todo: document.querySelector('#v-home [data-k="todo"]')?.textContent ?? null,
-})`)) as string) as { groups: string[]; first: string; cards: string[]; todo: string | null };
+})`)) as string) as { groups: string[]; first: string; cards: string[]; todo: string | null });
 
 const job = (more: Partial<BgWork>): BgWork => ({ id: "w1", description: "사진첩 고치기", status: "running", started_at: NOW - 1000, ...more });
 

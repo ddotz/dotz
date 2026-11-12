@@ -204,6 +204,28 @@ function motionAfter(box, fn) {
   M_LATER.set(box, fn);
   return true;
 }
+// A list drawn again as a whole (a render function, innerHTML) where a row is no longer in the new data (a session that finished, a task that
+// moved on): call it with the rows on screen before the redraw and call what it returns after. A row that is gone is put back in its old place
+// as a copy, inside the box the new draw made (so it keeps that box's padding and width), and leaves through motionGone: it fades where it
+// stood and what is below glides up. keyOf(row) names a row; slotOf(key) is the box the row stood in now (or { parent, unit }: the copy goes
+// into parent and unit, an element the caller has put in place, is what leaves), or null when that box is not drawn. A first paint or a
+// refresh with the same rows leaves nothing; with prefers-reduced-motion the old rows are not kept. The caller asks motionAfter first.
+function motionKeep(rowsOf, keyOf, slotOf) {
+  if (reducedMotion()) return () => {};
+  const was = rowsOf().map(r => { const sibs = r.parentElement ? [...r.parentElement.children] : []; return { key: keyOf(r), copy: r.cloneNode(true), later: sibs.slice(sibs.indexOf(r) + 1).map(keyOf) }; });
+  if (!was.length) return () => {};
+  return () => {
+    const live = new Map(rowsOf().map(r => [keyOf(r), r]));
+    for (const w of was) {
+      if (live.has(w.key)) continue;
+      const slot = slotOf(w.key);
+      if (!slot) continue;
+      const parent = slot.parent || slot;
+      parent.insertBefore(w.copy, w.later.map(k => live.get(k)).find(n => n && n.parentElement === parent) || null);
+      motionGone(slot.unit || w.copy);
+    }
+  };
+}
 function mLater(parent) {
   for (let n = parent; n; n = n.parentElement) {
     const fn = M_LATER.get(n);

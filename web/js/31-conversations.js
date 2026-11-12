@@ -463,6 +463,18 @@ $("#vtog").before(cvAppMenu);
 const pjAppMenu = pmMenuButton(() => pmOfTarget(target), "cvmenu");
 pjAppMenu.id = "pjmenu"; pjAppMenu.hidden = true;
 cvAppMenu.before(pjAppMenu);
+// The rows of 진행 중 and the card they stand in; a group that is gone with its last session leaves whole (header and card), so the rows below do not jump.
+const cvRunHead = () => [...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === TX("home.sys.running"));
+const cvRunRows = () => [...((cvRunHead() || {}).nextElementSibling || document.createElement("i")).querySelectorAll(":scope > .cv-row")];
+function cvRunSlot() {
+  const head = cvRunHead();
+  if (head) return head.nextElementSibling;
+  const top = convSide.querySelector('.cv-row[data-t="worklog"]'), card = top && top.closest(".cv-card");
+  if (!card) return null;
+  const unit = el("div", { class: "cv-grp" }, el("div", { class: "cv-sec", role: "presentation", text: TX("home.sys.running") }), el("div", { class: "cv-card" }));
+  card.after(unit);
+  return { parent: unit.lastElementChild, unit };
+}
 function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
@@ -472,8 +484,10 @@ function convPaint() {
   if (monCtx && isSettingsT(target)) MON.sel = monItemOf(target) || MON.sel;   // the monitor list may have loaded after this conversation opened
   const two = mxTwo(), items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, CV.loaded, CV.failed, two ? [two.esig, MX.box] : 0]);
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
+  if (sig !== convSig && motionAfter(convSide, convPaint)) return;   // a session leaves 진행 중 right now: the list is drawn once it is gone
   if (sig !== convSig) {
     convSig = sig;
+    const keep = !monCtx && !two && CV.loaded && convSide.offsetParent ? motionKeep(cvRunRows, r => r.dataset.t, cvRunSlot) : () => {};
     convSide.setAttribute("aria-label", two ? TX("common.mailbox") : monCtx ? TX("shell.aria.monitoring_list") : TX("conv.list_aria"));
     // 진행 중 grows and shrinks under 작업내역: a list read further down stays where it is when a session starts or ends, held by where 진행 중 (or, without it, 작업내역) ends.
     // Measured in fractions and rounded once at the end: offsetTop rounds each place and scrollTop truncates, which moved the list by a pixel or more.
@@ -483,6 +497,7 @@ function convPaint() {
     clear(convSide).append(...(two ? mxPaneNodes(two) : monCtx ? monSideNodes(rows) : [...convCards(rows), cvState()].filter(Boolean)));
     if (monCtx) monDecorateRows(convSide, items);
     convSide.scrollTop = top && Math.round(top + end() - was);
+    keep();
   }
   convSide.classList.toggle("mon-side", !!monCtx && !two);
   convSide.classList.toggle("app-side", !!two);   // the mail app's panel stands beside the open mail (the app frame, 20-monitoring.css)
