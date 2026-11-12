@@ -135,6 +135,7 @@ export function createConvSessions(d: ConvDeps) {
 			model: () => effective(c),
 			env: { DOTZ_CONV: key, DOTZ_LEDGER_FILE: ledgerIn(dir), DOTZ_WORKER_PIN_FILE: join(dir, "worker-pin"), ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}), ...(key === QUICK ? { DOTZ_CONV_SCOPE: scopeText(meta) } : {}) },
 			scope: () => scopeText(c.meta),
+			skipOpen: () => owedIds(c.queue),
 			seed: () => {
 				const owed = owedIds(c.queue);
 				return seedText(c.primary, d.history(key, SEED_EVENTS).filter(e => !owed.has(String(e.mid ?? e.message_id))));

@@ -84,7 +84,7 @@ export function orchBusy(o: Pick<typeof orch, "status" | "ctx"> = orch): string 
 // handed with its first prompt (the conversation's recent history), in the steer slot a handover uses; asks: whether the
 // lane questions still waiting for the owner ride along (main only: a conversation answers here and nothing else); model: the
 // conversation's own selector, when the owner picked one (else it inherits main's).
-export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: () => string; asks?: boolean; model?: () => string | undefined };
+export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: () => string; skipOpen?: () => Set<string>; asks?: boolean; model?: () => string | undefined };
 export function createOrchestrator(opts: OrchOpts) {
 	const who = opts.key === "main" ? "orchestrator" : `conversation session ${opts.key}`;
 	// A conversation's session is handed its own prompts only: another conversation's pending question in it is what made a
@@ -803,7 +803,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
 			// (a "followUp" would wait until the first answer is done and start an extra paid turn; a "prompt" would start one too),
 			// and a queued steer is not dropped when it arrives before the turn has begun.
-			proc.send(recallText(opts.scope?.() ?? "", openRequestsBlock(ledgerIn(dirname(opts.stateFile)), TZ)) + switchNote, "prompt");
+			proc.send(recallText(opts.scope?.() ?? "", openRequestsBlock(ledgerIn(dirname(opts.stateFile)), TZ, Date.now(), opts.skipOpen?.())) + switchNote, "prompt");
 			const seed = rotate ? "" : (opts.seed?.() ?? "");
 			const lead = rotate ? handover(runtime, prior!) : seed;
 			const later = lead + (asks ? `${rotate || seed ? "\n\n" : ""}${asks}` : "");

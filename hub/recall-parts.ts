@@ -143,5 +143,5 @@ export function renderSetups(raw: string, max = 3000): string {
 	return text.length > max ? `${text.slice(0, max)}\n[... cut at ${max} characters; dotz_channel list]` : text;
 }
 
-/** The ledger block of a session's recall prompt: "" when the file holds nothing open. */
-export const openRequestsBlock = (file: string, tz: string, now = Date.now()): string => renderOpenRequests(loadLedger(file), file, tz, now);
+/** The ledger block of a session's recall prompt: "" when the file holds nothing open. `skip`: ids left out (the ones the session still owes a turn). */
+export const openRequestsBlock = (file: string, tz: string, now = Date.now(), skip?: Set<string>): string => renderOpenRequests(loadLedger(file).filter(e => !skip?.has(e.id)), file, tz, now);
