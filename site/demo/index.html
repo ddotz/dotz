@@ -7,7 +7,7 @@
 <meta name="description" content="dotz 웹 앱을 직접 써 보는 데모예요.">
 <title>dotz — 데모</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/demo/app.css?v=3a7b96808558">
+<link rel="stylesheet" href="/demo/app.css?v=8f3c06ed08be">
 <style>
 :root { --demobar-h: 44px; }
 .demo-bar { position: fixed; inset: 0 0 auto 0; z-index: 3000; display: flex; align-items: center; gap: 10px; height: var(--demobar-h); padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); background: var(--card); color: var(--fg); font-family: var(--font); }
@@ -43,8 +43,8 @@ addEventListener("error", e => __demoLog.errors.push(`${e.message} @ ${String(e.
 addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reason && e.reason.message || e.reason)));
 { const e = console.error; console.error = (...a) => { __demoLog.errors.push(a.map(String).join(" ")); e(...a); }; const w = console.warn; console.warn = (...a) => { __demoLog.warnings.push(a.map(String).join(" ")); w(...a); }; }
 </script>
-<script src="/demo/fixtures.js?v=3a7b96808558"></script>
-<script src="/demo/demo-api.js?v=3a7b96808558"></script>
+<script src="/demo/fixtures.js?v=8f3c06ed08be"></script>
+<script src="/demo/demo-api.js?v=8f3c06ed08be"></script>
 </head>
 <body>
 <header class="demo-bar">
@@ -164,6 +164,6 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
   </div>
   <div class="sh-body" id="hs-body"></div>
 </aside>
-<script src="/demo/app.js?v=3a7b96808558"></script>
+<script src="/demo/app.js?v=8f3c06ed08be"></script>
 </body>
 </html>

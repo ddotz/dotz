@@ -2331,6 +2331,22 @@ body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-api
 .relaynote { margin: 0 0 var(--sp-15); padding: 0 var(--sp-1); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .rl-pend { opacity: 0.6; }
 
+/* A messenger-only computer's 홈 / 프로젝트 / 모니터링 / 설정, drawn read-only from its last snapshot (js/44-relay-views.js). Rows are the screens' own (.hr, .pl-row, .li). */
+/* !important: the screens' own id rules (#v-monitoring > .cv-side, #home-now) would otherwise draw this computer's data under the snapshot */
+.view.rv-on > :not(.rv) { display: none !important; }
+#v-monitoring.rv-on > .rv { display: block !important; grid-column: 1 / -1; grid-row: 1 / -1; }   /* its list mode (.cv-listing) hides every child but the list */
+.rv { min-width: 0; }
+.view.fill.rv-on > .rv { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: var(--sp-6); }
+.rv-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; margin: 0 var(--sp-1) var(--sp-2); }
+.rv-head .rv-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
+.rv > .list + .sec, .rv > .pl-list + .rv-foot, .rv > .list + .rv-foot, .rv > .card + .rv-foot { margin-top: var(--sp-6); }
+.rv-empty { padding: var(--sp-4); color: var(--fg-2); }
+.rv-row { cursor: default; }
+.rv .li > .dot { margin-top: 0; }
+.rv-foot { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-6); padding: 0 var(--sp-1); }
+.rv-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.rv-none .sup { margin-top: var(--sp-2); }
+
 /* ---------- composer above the phone keyboard ----------
    --kb / --vvh come from web/js/34-composer-viewport.js (visualViewport). With interactive-widget=resizes-content the page already shrinks
    above the keyboard and --kb stays 0; on a browser that ignores it, --kb shrinks the app so the whole composer still sits above the keyboard.
