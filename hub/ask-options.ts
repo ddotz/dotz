@@ -31,6 +31,24 @@ export function lastQuestion(text: string): string | undefined {
 	return sentences.reverse().find(s => /[?？]\s*$/.test(s) || /(?:까요|나요)\s*$/.test(s));
 }
 
+const NUMBERED = /^\s*(?:[-*•]\s+)?(?:\*\*)?\s*(\d{1,2})\)\s*(\S.*)$/;
+const ASKS = /[?？]|(?:까요|나요)[.\s]*$/;
+// The options the message wrote itself: list items numbered 1 and 2 under its last asking line, outside fences and quotes. A numbered report above
+// the question is not one (it keeps the defaults below), and a numbered "결정:" head is a question. Written options are never replaced by the defaults.
+function writtenOptions(text: string): boolean {
+	let fence = false;
+	const numbers = new Set<string>();
+	for (const line of text.split("\n")) {
+		if (FENCE.test(line)) fence = !fence;
+		else if (!fence && !/^\s*>/.test(line)) {
+			const m = NUMBERED.exec(line);
+			if (m && !/^(?:결정|decision)/i.test(m[2]!)) numbers.add(m[1]!);
+			else if (ASKS.test(line.replace(/[*_`#]/g, ""))) numbers.clear();
+		}
+	}
+	return numbers.has("1") && numbers.has("2");
+}
+
 // A question about sending something that quotes no draft (no line starting with ">"): the owner cannot decide on it alone.
 export function asksSendWithoutDraft(text: string): boolean {
 	const q = lastQuestion(text);
@@ -40,7 +58,7 @@ export function asksSendWithoutDraft(text: string): boolean {
 // mail: the ask is in a mail thread, where a send question always gets the send options, with or without an approval id.
 export function askDefaults(text: string, mail = false): DecisionOption[] {
 	const q = lastQuestion(text);
-	if (!q || OPEN.test(q)) return [];
+	if (!q || OPEN.test(q) || writtenOptions(text)) return [];
 	const ref = SEND.test(q) ? (REF_END.exec(q) ?? REF_ANY.exec(text))?.[1] : undefined;
 	if (ref || (mail && SEND.test(q)))
 		return [
@@ -60,7 +78,7 @@ import { type DraftApproval, parseQuotedDraft } from "./draft-approval.ts";
 // (DRAFT_OPTIONS), never the yes / no fallback, with or without an approval id.
 export function askedDraft(text: string): DraftApproval | undefined {
 	const q = lastQuestion(text);
-	return q && !OPEN.test(q) && SEND.test(q) ? parseQuotedDraft(text) : undefined;
+	return q && !OPEN.test(q) && SEND.test(q) && !writtenOptions(text) ? parseQuotedDraft(text) : undefined;
 }
 
 export const DRAFT_OPTIONS: DecisionOption[] = [

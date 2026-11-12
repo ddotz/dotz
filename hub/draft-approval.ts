@@ -453,8 +453,11 @@ function splitDraft(quoted: string[]): { head: string[]; body: string[]; moved: 
 // A message's hand-written blocks in the shape draftApprovalBlock writes, so the chat, Discord and every other reader of the text show the fields as
 // fields and no label in the body (hub/owner-text.ts). A built block, and a reply + mail card, stay as they are.
 const QUOTE_LINE = /^\s*>\s?(.*)$/;
+// A quote in a message whose decisions ask something else (none of them 보내기 / 고치기 / 보내지 않기) is a quote, not a draft: it stays as written.
 export function canonicalDraft(text: string): string {
 	if (!/본문|첨부/.test(text)) return text;
+	const blocks = parseDecisions(text).blocks;
+	if (blocks.length && !blocks.some(b => b.options.slice(0, 3).map(o => o.label).join("|") === [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|"))) return text;
 	const lines = text.split("\n"), out: string[] = [];
 	let fence = false;
 	for (let i = 0; i < lines.length; i++) {

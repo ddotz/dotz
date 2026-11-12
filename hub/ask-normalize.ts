@@ -186,35 +186,53 @@ function nestedHead(lines: string[], i: number): string[] | null {
 	return lines.slice(0, i).some(l => HEADING.exec(l)?.[1] === "") ? ["", "결정", "", q] : null;
 }
 type Headed = { option: Option; raw: string; sameLine: boolean };
+const MAX_LEAD = 3;
+const BOLD_OPTION = /^\*\*\s*(?:\d{1,2}[.)]\s*)?([^*]+?)\s*\*\*\s*(?:[:：]\s*|[-–—]\s+)?(.*)$/;
+// `**1) name**: what happens` or `**1) name** what happens`, with or without a list marker: the bold text is the name, the rest its description.
+function boldOption(line: string): Option | undefined {
+	const m = BOLD_OPTION.exec(line.trim().replace(/^[-*•]\s+/, ""));
+	if (!m || /^\d{1,2}[.)]?$/.test(m[1]!)) return undefined;
+	const o = optionOf(m[1]!, true);
+	const rest = m[2]!.replace(REC, "").trim();
+	return o && rest ? { ...o, desc: o.desc || rest, detail: o.detail || DETAIL_DESC.test(rest) } : o;
+}
 
 // The options under a "결정:" line in any list style: numbers in a row, or bullets at one indent; a line under an option, or a deeper bullet, is its description.
-function readHeaded(lines: string[], fenced: boolean[], from: number): { list: Headed[]; numbered: boolean; end: number } | undefined {
+// Up to MAX_LEAD context lines may stand between the head and the first option (no blank line after the first of them); they stay under the head as written.
+function readHeaded(lines: string[], fenced: boolean[], from: number): { list: Headed[]; lead: string[]; numbered: boolean; end: number } | undefined {
 	const list: Headed[] = [];
+	const lead: string[] = [];
 	let numbered = false, indent = -1, end = from;
 	for (let i = from; i < lines.length; i++) {
 		const line = lines[i]!;
-		if (!line.trim()) continue;
+		if (!line.trim()) {
+			if (lead.length && !list.length) break;
+			continue;
+		}
 		if (fenced[i] || QUOTED.test(line) || HEAD_DRESS.test(line) || D_CLOSE.test(line) || META.test(line) || RECOMMEND_LINE.test(line)) break;
 		const n = HEADED_OPTION.exec(line), b = n ? null : BULLET.exec(line);
 		const at = line.length - line.trimStart().length;
 		const num = n ? (n[1] ? Number(n[1]) : CIRCLED.indexOf(n[2]!) + 1) : 0;
 		const isNext = list.length ? (numbered ? num === list.length + 1 : !!b && at <= indent) : !!n ? num === 1 : !!b;
 		if (isNext) {
-			const body = n ? n[3]! : b![1]!.replace(LETTERED, "");
-			const option = optionOf(body, true);
-			if (!option) return undefined;
+			const option = boldOption(line) ?? optionOf(n ? n[3]! : b![1]!.replace(LETTERED, "").replace(/^\d{1,2}[.)]\s+/, ""), true);
+			if (!option || /^\d{1,2}[.)]?$/.test(option.label)) return undefined;
 			if (!list.length) [numbered, indent] = [!!n, at];
 			list.push({ option, raw: line, sameLine: !!option.desc });
 			end = i + 1;
 			continue;
 		}
 		const prev = list.at(-1);
+		if (!prev && !n && !b && lead.length < MAX_LEAD) {
+			lead.push(line.trim());
+			continue;
+		}
 		// A line right under an option describes it; after a blank line it is the message going on.
 		if (!prev || !lines[i - 1]!.trim() || prev.option.desc) break;
 		prev.option.desc = line.trim().replace(/^[-*•]\s+/, "");
 		end = i + 1;
 	}
-	return list.length >= 2 && list.length <= MAX_HEADED ? { list, numbered, end } : undefined;
+	return list.length >= 2 && list.length <= MAX_HEADED ? { list, lead, numbered, end } : undefined;
 }
 
 // Lines already in the contract's shape stay byte for byte: a card's identity and a draft's text must not move.
@@ -247,7 +265,7 @@ function canonHeaded(text: string, mark = true): string {
 		blocks++;
 		const label = `${m[1]!.replace(/^d/, "D")}${m[2] ?? ""}: ${m[3]}`;
 		const next = lines.slice(got.end).find(l => l.trim());
-		out.push(DECISION_HEAD.exec(lines[i]!)?.[1] === m[3] ? lines[i]! : label, ...headedLines(got.list));
+		out.push(DECISION_HEAD.exec(lines[i]!)?.[1] === m[3] ? lines[i]! : label, ...got.lead, ...headedLines(got.list));
 		if (next !== undefined && lines[got.end]!.trim()) out.push("");
 		i = got.end - 1;
 	}
