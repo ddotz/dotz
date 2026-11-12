@@ -38,7 +38,7 @@
 
 import { createBurst, sameConv } from "./promptburst.ts";
 import { isSilent, laterParts, stripLater } from "./tone.ts";
-import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_MS, ORPHAN_MAX_AGE_MS, MAX_RECENT, DEFER_MAX_AGE_MS, DEFER_BLOCKS_RESTART_MS, MAX_TURNS, TURN_SLACK_MS, CANCEL_NOTE_MS, LINK_MAX_AGE_MS, MAX_LINKS, REPORT_NOTE_CHARS, type Prompt, type OwnerMessage, type Pending, type WorkLink, type OpenRequest, type WorkRow, type Reply, type PromptDeps } from "./prompts-model.ts";
+import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_MS, ORPHAN_MAX_AGE_MS, MAX_RECENT, remember, DEFER_MAX_AGE_MS, DEFER_BLOCKS_RESTART_MS, MAX_TURNS, TURN_SLACK_MS, CANCEL_NOTE_MS, LINK_MAX_AGE_MS, MAX_LINKS, REPORT_NOTE_CHARS, type Prompt, type OwnerMessage, type Pending, type WorkLink, type OpenRequest, type WorkRow, type Reply, type PromptDeps } from "./prompts-model.ts";
 export type { Prompt, OwnerMessage, Pending, WorkLink, OpenRequest, WorkRow, Reply, PromptDeps } from "./prompts-model.ts";
 
 /** The hand-over labels a prompt carries through pending.json. */
@@ -197,8 +197,7 @@ export function createPrompts(deps: PromptDeps) {
 	/** Records a dotz_send: the turn's current prompt has now sent this part, and a steered prompt it answers is settled. Returns the request it answers, which the post must carry: the wake is spent here. */
 	function sent(target: string, text: string, replyTo?: string): string | undefined {
 		current?.sent.push({ target, text: text.trim() });
-		recentSent.push({ target, text: text.trim(), at: Date.now() });
-		if (recentSent.length > MAX_RECENT) recentSent.shift();
+		remember(recentSent, target, text.trim());
 		if (laterParts(text).later) return undefined;
 		// A run with no prompt of ours (a worker's result woke it) answering with dotz_send settles the deferred prompt it answers: the one with this reply_to or the waking worker's. A send that names neither closes nothing.
 		const ref = replyTo ?? (current ? undefined : resultFor(target));
@@ -227,6 +226,7 @@ export function createPrompts(deps: PromptDeps) {
 		if (burst.find(target, replyTo)) return false;
 		if (replyTo && openDeferred().some(d => d.target === target && d.replyTo === replyTo)) return false;   // that request's own answer: held, it would stay open (nagged, replayed after a restart)
 		(p.held ??= []).push(stripLater(text).trim());
+		remember(recentSent, target, stripLater(text).trim());   // like a dotz_send: a later run with no prompt must not restate it once released
 		deps.log(`held an early send to ${target} until the turn's answer (${text.trim().length} chars)`);
 		return true;
 	}

@@ -78,6 +78,33 @@ test("a held send is posted as the answer, closing the request, when the turn en
 	expect(q.isAnswered("a1")).toBe(true);
 });
 
+test("an answer to another request of the same turn is posted at once and the held text still goes out once, with the turn's own answer", async () => {
+	const { q, state, dotzSend, turn, idle, settled } = setup();
+	turn("request a1", "a1");
+	expect(dotzSend("PART-ONE")).toBe("held");
+	q.deliver("request b2", { target: "web", replyTo: "b2", owner: true });
+	q.onPrompt("[note] request b2");
+	expect(dotzSend("answer for b2", "b2")).toBe("sent");
+	q.onAnswer("PART-TWO");
+	idle();
+	await settled();
+	expect(state.posts.filter(p => p.text.includes("PART-ONE"))).toEqual([{ text: "PART-ONE\n\nPART-TWO", replyTo: "a1" }]);
+	expect(state.notes).toEqual([]);
+});
+
+test("a later run with no prompt that restates a released held text is not posted again", async () => {
+	const { q, state, dotzSend, turn, idle, settled } = setup();
+	turn("request a1", "a1");
+	dotzSend("PART-ONE");
+	q.onAnswer("PART-TWO");
+	idle();
+	await settled();
+	state.working = true;
+	q.onAnswer("PART-ONE");
+	await settled();
+	expect(state.posts.filter(p => p.text.includes("PART-ONE"))).toHaveLength(1);
+});
+
 test("a held send is not posted twice when the turn ends with a final answer", async () => {
 	const { q, state, dotzSend, turn, idle, settled } = setup();
 	turn("request a1", "a1");

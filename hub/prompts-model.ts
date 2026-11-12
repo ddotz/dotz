@@ -91,6 +91,11 @@ export const REPLAY_MAX_AGE_MS = 12 * 3600_000;
 // How old an owner message may be to receive an answer that has no prompt of its own.
 export const ORPHAN_MAX_AGE_MS = 30 * 60_000;
 export const MAX_RECENT = 20;
+/** Notes a text that already went to the owner (a dotz_send, a held early send): an answer with no prompt may not restate it. */
+export const remember = (list: { target: string; text: string; at: number }[], target: string, text: string): void => {
+	list.push({ target, text, at: Date.now() });
+	if (list.length > MAX_RECENT) list.shift();
+};
 export const DEFER_MAX_AGE_MS = 3 * 3600_000;
 // A restart waits for a deferred prompt this young (its worker dies with the orchestrator process); older ones do not block.
 export const DEFER_BLOCKS_RESTART_MS = 60 * 60_000;
