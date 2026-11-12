@@ -6,7 +6,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { cfg } from "./config.ts";
-import { apply, authOrder, check, defaultExec, type Exec, type Http, type Options, version } from "./selfupdate.ts";
+import { apply, authOrder, check, defaultExec, type Exec, type Http, type Job, type Options, version } from "./selfupdate.ts";
 
 const OLD = "a".repeat(40);
 const NEW = "b".repeat(40);
@@ -16,7 +16,20 @@ const tagJson = (sha: string, version: string) => ({ name: `v${version}`, commit
 // Newest first is not assumed: the check sorts by version, and a malformed tag is ignored.
 const defaultTags = () => [tagJson(OLD, "261020.4"), tagJson(NEW, NEW_VERSION), tagJson(OLD, OLD_VERSION), { name: "release-old", commit: { sha: OLD } }];
 
+// An apply does real tar and a real test command, and the full suite runs hundreds of files at once: 1-4 s alone, several times that under
+// load. Only the bound is wider; every test runs one apply (or one sequence that needs the earlier result), never a loop of them.
+const SLOW = 30_000;
+const slow = (name: string, fn: () => Promise<void>) => test(name, fn, SLOW);
+
 let root: string, app: string, data: string, logDir: string;
+// apply keeps its running state in the module, and a test that timed out leaves its apply going: afterEach waits for it before the dirs
+// go, so it cannot run on into the next test's dirs or leave the module's job 'running' for it.
+const inflight: Promise<Job>[] = [];
+const run = (o: Options): Promise<Job> => {
+	const p = apply(o);
+	inflight.push(p);
+	return p;
+};
 const put = (dir: string, files: Record<string, string>) => {
 	for (const [f, text] of Object.entries(files)) {
 		mkdirSync(dirname(join(dir, f)), { recursive: true });
@@ -55,10 +68,12 @@ beforeEach(() => {
 	logDir = join(root, "logs");
 	put(app, { "setup.ts": "// old setup\n", "hub/main.ts": "// old main\n", "old-only.txt": "old\n", ".dotz-install": stamp() });
 });
-afterEach(() => {
+afterEach(async () => {
+	// a loop: the body of a timed-out test goes on after each apply and may start the next one
+	while (inflight.length) await Promise.allSettled(inflight.splice(0));
 	(cfg as Record<string, unknown>).self_update = undefined;
 	rmSync(root, { recursive: true, force: true });
-});
+}, SLOW);
 
 test("version reads the stamp: repo, ref, sha, auth, release; older and foreign stamps degrade", async () => {
 	const v = await version(opts());
@@ -166,12 +181,12 @@ test("check failures name a distinct reason and what fixes it, without any token
 	expect(new Set([c, down, limited].map(x => x.error?.reason)).size).toBe(3);
 });
 
-test("apply downloads into staging, installs, tests, swaps the dirs and keeps one rollback copy", async () => {
+slow("apply downloads into staging, installs, tests, swaps the dirs and keeps one rollback copy", async () => {
 	const tgz = tarball("new", { "new-only.txt": "new\n" });
 	const seen: string[] = [];
 	const api: Seen[] = [];
 	const e = exec(async cmd => (seen.push(cmd.join(" ")), undefined));
-	const j = await apply(opts({ http: github(tgz, api), exec: e }));
+	const j = await run(opts({ http: github(tgz, api), exec: e }));
 	expect(j.status).toBe("updated");
 	expect(j.from).toBe(OLD);
 	expect(j.to).toBe(NEW);
@@ -190,66 +205,66 @@ test("apply downloads into staging, installs, tests, swaps the dirs and keeps on
 	expect(logs()).toContain("bun install");
 	// a second update replaces the rollback copy: still exactly one
 	put(app, { ".dotz-install": stamp({ sha: OLD }) });
-	const j2 = await apply(opts({ http: github(tarball("newer", { "newer-only.txt": "x\n" })) }));
+	const j2 = await run(opts({ http: github(tarball("newer", { "newer-only.txt": "x\n" })) }));
 	expect(j2.status).toBe("updated");
 	expect(existsSync(join(`${app}.prev`, "new-only.txt"))).toBe(true);
 	expect(existsSync(join(`${app}.prev`, "old-only.txt"))).toBe(false);
 	expect(readdirSync(root).filter(f => f.startsWith("dotz.")).sort()).toEqual(["dotz.prev"]);
 });
 
-test("without a test command the gate runs bun test --isolate in the staging dir", async () => {
+slow("without a test command the gate runs bun test --isolate in the staging dir", async () => {
 	const seen: { cmd: string; cwd: string }[] = [];
 	const e = exec(async (cmd, cwd) => (seen.push({ cmd: cmd.join(" "), cwd }), undefined));
-	const j = await apply(opts({ http: github(tarball("new", {})), exec: e, testCmd: undefined }));
+	const j = await run(opts({ http: github(tarball("new", {})), exec: e, testCmd: undefined }));
 	expect(j.status).toBe("updated");
 	const gate = seen.filter(s => s.cmd.startsWith("bun test"));
 	expect(gate.map(s => s.cmd)).toEqual(["bun test --isolate"]);
 	expect(gate[0]!.cwd.startsWith(`${app}.update`)).toBe(true);
 });
 
-test("the gate command and time limit come from the new version's hub/update-gate.json, not the running one", async () => {
+slow("the gate command and time limit come from the new version's hub/update-gate.json, not the running one", async () => {
 	put(app, { "hub/update-gate.json": JSON.stringify({ cmd: ["bun", "test", "--old"], timeoutMinutes: 1 }) });
 	const tgz = tarball("new", { "hub/update-gate.json": JSON.stringify({ cmd: ["bun", "test", "--new-gate"], timeoutMinutes: 45 }) });
 	const seen: { cmd: string; ms: number }[] = [];
 	const e = exec(async (cmd, _cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), undefined));
-	const j = await apply(opts({ http: github(tgz), exec: e, testCmd: undefined }));
+	const j = await run(opts({ http: github(tgz), exec: e, testCmd: undefined }));
 	expect(j.status).toBe("updated");
 	expect(seen.filter(s => s.cmd.startsWith("bun test"))).toEqual([{ cmd: "bun test --new-gate", ms: 45 * 60_000 }]);
 	expect(logs()).toContain("bun test --new-gate");
 });
 
-test("a broken, missing or non-bun-test gate file in the new version falls back to bun test --isolate and 20 minutes", async () => {
-	for (const [n, files] of [{ "hub/update-gate.json": "{ not json" }, { "hub/update-gate.json": JSON.stringify({ cmd: [], timeoutMinutes: -1 }) }, { "hub/update-gate.json": JSON.stringify({ cmd: ["sh", "-c", "exit 0"], timeoutMinutes: 9999 }) }, {}].entries()) {
-		put(app, { ".dotz-install": stamp() });
+// One test per case: one apply each, so a slow one times out alone and cannot keep applying into the next test.
+for (const [label, files] of Object.entries({ "broken json": { "hub/update-gate.json": "{ not json" }, "empty cmd and a negative limit": { "hub/update-gate.json": JSON.stringify({ cmd: [], timeoutMinutes: -1 }) }, "a cmd that is not bun test": { "hub/update-gate.json": JSON.stringify({ cmd: ["sh", "-c", "exit 0"], timeoutMinutes: 9999 }) }, "no gate file": {} })) {
+	slow(`a broken, missing or non-bun-test gate file in the new version falls back to bun test --isolate and 20 minutes (${label})`, async () => {
 		const seen: { cmd: string; ms: number }[] = [];
 		const e = exec(async (cmd, _cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), undefined));
-		const j = await apply(opts({ http: github(tarball(`gate-${n}`, files)), exec: e, testCmd: undefined }));
+		const j = await run(opts({ http: github(tarball("gate", files)), exec: e, testCmd: undefined }));
 		expect(j.status).toBe("updated");
 		expect(seen.filter(s => s.cmd.startsWith("bun test"))).toEqual([{ cmd: "bun test --isolate", ms: 20 * 60_000 }]);
-	}
-});
+	});
+}
 
-test("an explicit test command (--test-cmd) still wins over the new version's gate file", async () => {
+slow("an explicit test command (--test-cmd) still wins over the new version's gate file", async () => {
 	const tgz = tarball("new", { "hub/update-gate.json": JSON.stringify({ cmd: ["sh", "-c", "exit 1"] }) });
-	const j = await apply(opts({ http: github(tgz) }));
+	const j = await run(opts({ http: github(tgz) }));
 	expect(j.status).toBe("updated");
 });
 
-test("an applied tarball update leaves update-pending.json with the .prev dir and starts the watchdog; a failed one leaves nothing", async () => {
+slow("an applied tarball update leaves update-pending.json with the .prev dir and starts the watchdog; a failed one leaves nothing", async () => {
 	const spawned: string[][] = [];
 	const watch = { pid: 4242, port: 47111, spawn: (c: string[]) => void spawned.push(c) };
-	const bad = await apply(opts({ http: github(tarball("bad", { FAIL: "boom\n" })), watch }));
+	const bad = await run(opts({ http: github(tarball("bad", { FAIL: "boom\n" })), watch }));
 	expect(bad.status).toBe("failed");
 	expect(existsSync(join(data, "update-pending.json"))).toBe(false);
-	const j = await apply(opts({ http: github(tarball("new", {})), watch }));
+	const j = await run(opts({ http: github(tarball("new", {})), watch }));
 	expect(j.status).toBe("updated");
 	expect(JSON.parse(readFileSync(join(data, "update-pending.json"), "utf8"))).toMatchObject({ kind: "tarball", dir: app, prev: `${app}.prev`, from: OLD, to: NEW, status: "pending", gatewayPid: 4242, port: 47111 });
 	expect(spawned).toEqual([[process.execPath, join(data, "update-watchdog.ts"), join(data, "update-pending.json")]]);
 });
 
-test("a failing check keeps the old code, removes staging and says why", async () => {
+slow("a failing check keeps the old code, removes staging and says why", async () => {
 	const tgz = tarball("bad", { FAIL: "boom\n" });
-	const j = await apply(opts({ http: github(tgz) }));
+	const j = await run(opts({ http: github(tgz) }));
 	expect(j.status).toBe("failed");
 	expect(j.message).toContain("aaaaaaa");
 	expect(readFileSync(join(app, "old-only.txt"), "utf8")).toBe("old\n");
@@ -259,18 +274,18 @@ test("a failing check keeps the old code, removes staging and says why", async (
 	expect(existsSync(`${app}.prev`)).toBe(false);
 });
 
-test("a failing bun install, a bad download and a non-dotz tarball keep the old code too", async () => {
+slow("a failing bun install, a bad download and a non-dotz tarball keep the old code too", async () => {
 	const tgz = tarball("ok", {});
 	const e = exec(async cmd => (cmd[0] === "bun" ? { code: 1, out: "error: lockfile had changes" } : undefined));
-	const a = await apply(opts({ http: github(tgz), exec: e }));
+	const a = await run(opts({ http: github(tgz), exec: e }));
 	expect(a.status).toBe("failed");
 	expect(a.message).toContain("lockfile had changes");
-	const b = await apply(opts({ http: async () => new Response("nope", { status: 500 }) }));
+	const b = await run(opts({ http: async () => new Response("nope", { status: 500 }) }));
 	expect(b.status).toBe("failed");
 	const junk = join(root, "junk.tar.gz");
 	put(join(root, "junk-src", "x"), { "readme.txt": "not dotz\n" });
 	Bun.spawnSync(["tar", "-czf", junk, "-C", join(root, "junk-src"), "x"]);
-	const c = await apply(opts({ http: github(junk) }));
+	const c = await run(opts({ http: github(junk) }));
 	expect(c.status).toBe("failed");
 	expect(new Set([a, b, c].map(j => j.message)).size).toBe(3);
 	expect(readFileSync(join(app, "old-only.txt"), "utf8")).toBe("old\n");
@@ -279,12 +294,12 @@ test("a failing bun install, a bad download and a non-dotz tarball keep the old 
 
 test("apply with nothing new is 'current' and touches nothing", async () => {
 	put(app, { ".dotz-install": stamp({ sha: NEW, version: NEW_VERSION }) });
-	const j = await apply(opts({ http: github("") }));
+	const j = await run(opts({ http: github("") }));
 	expect(j.status).toBe("current");
 	expect(existsSync(`${app}.prev`)).toBe(false);
 });
 
-test("apply downloads through gh for a private repo, uses the tag's tarball and records the auth plus version", async () => {
+slow("apply downloads through gh for a private repo, uses the tag's tarball and records the auth plus version", async () => {
 	const tgz = tarball("ghnew", { "gh-only.txt": "gh\n" });
 	const e = exec(async cmd => {
 		if (cmd[0] === "gh") return { code: 0, out: JSON.stringify(defaultTags()) };
@@ -295,14 +310,14 @@ test("apply downloads through gh for a private repo, uses the tag's tarball and 
 		}
 		return undefined;
 	});
-	const j = await apply(opts({ exec: e, http: github("", [], () => false) }));
+	const j = await run(opts({ exec: e, http: github("", [], () => false) }));
 	expect(j.status).toBe("updated");
 	expect(readFileSync(join(app, "gh-only.txt"), "utf8")).toBe("gh\n");
 	expect(await version(opts())).toMatchObject({ auth: "gh", release: NEW_VERSION, commit: { sha: NEW } });
 	expect(readFileSync(join(app, ".dotz-install"), "utf8")).toContain(`version=${NEW_VERSION}\n`);
 });
 
-test("a DOTZ_TARBALL (file://) install updates when the tarball changes, and fails safe on a bad one", async () => {
+slow("a DOTZ_TARBALL (file://) install updates when the tarball changes, and fails safe on a bad one", async () => {
 	const first = tarball("u1", { "v.txt": "1\n" });
 	const url = `file://${first}`;
 	// what install.sh stores: the sha256 of the bytes
@@ -314,7 +329,7 @@ test("a DOTZ_TARBALL (file://) install updates when the tarball changes, and fai
 	copyFileSync(tarball("u2", { "v.txt": "2\n" }), first);
 	const c = await check(opts());
 	expect(c.incomingTotal).toBe(1);
-	const j = await apply(opts());
+	const j = await run(opts());
 	expect(j.status).toBe("updated");
 	expect(readFileSync(join(app, "v.txt"), "utf8")).toBe("2\n");
 	expect((await check(opts())).incomingTotal).toBe(0);
