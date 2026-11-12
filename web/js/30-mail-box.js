@@ -15,7 +15,7 @@ ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
 ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
 ICONS.flag = "M6 21V4h12l-2.5 4 2.5 4H6";
-const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set() };
+const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set(), held: new Map() };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
@@ -24,6 +24,18 @@ const mailOldHub = t => { const m = MAILS.get(t); return !!m && !Array.isArray(m
 // Unread: the hub's read flag when the card has one (the real mailbox's, two-way); else dotz's own read position (ts(t).unread). A sent mail is never unread.
 const mailUnread = (t, m = MAILS.get(t)) => !!m && m.dir !== "out" && (typeof m.read === "boolean" ? !m.read : (ts(t).unread | 0) > 0);
 const mbRefresh = () => { MON.sig = ""; MON.side = ""; monSchedule(); mbPaintBar(); };
+// What waits on the hub is kept here by id (the mail, `|`, the button's data-k), not only on its node: a repaint draws the button again and mbHeld puts it back busy;
+// the end clears the node that is on the page then. `keep`: the row is leaving, so the node stays as it is and only the id goes.
+const mbWid = b => { const r = b.closest(".mr[data-t]"); return `${r ? r.dataset.t : ""}|${b.dataset.k}`; };
+function mbHold(id, node, press = pressWait) {
+  MBOX.held.set(id, { press, undo: press(node) });
+  return keep => { const h = MBOX.held.get(id); MBOX.held.delete(id); if (h && !keep) h.undo(); };
+}
+const mbHeld = (id, node) => { const h = MBOX.held.get(id); if (h) h.undo = h.press(node); return node; };
+const mbWait = btn => (btn && btn.dataset.k ? mbHold(mbWid(btn), btn) : pressWait(btn));
+const mbRowPress = r => { r.setAttribute("aria-busy", "true"); return () => r.removeAttribute("aria-busy"); };
+const mbHeldRow = (t, row) => { if (MBOX.held.size) { for (const b of row.querySelectorAll("button[data-k]")) mbHeld(`${t}|${b.dataset.k}`, b); mbHeld(`${t}|row`, row); } return row; };
+const mbBarHeld = bar => { if (MBOX.held.size) for (const b of bar.querySelectorAll("button[data-k]")) mbHeld(`|${b.dataset.k}`, b); };
 
 /* ---------- what moves, and why (web/DESIGN.md Motion) ---------- */
 // A count badge that was drawn again (a list row, a tab) keeps what it last said, so only the digit that changed rolls (rollCount, 01-motion.js).
@@ -86,7 +98,7 @@ async function mbRun(keys, action, quiet = false, btn = null) {
   if (!todo.length) return [];
   const wait = new Set(todo.filter(t => mbWillLeave(t, action)));   // these rows change only after the hub said yes; the others change at once and go back on a refusal
   const undo = new Map(todo.filter(t => !wait.has(t)).map(t => [t, mbApply(t, action)]));
-  const unwait = wait.size ? pressWait(btn) : () => {};
+  const unwait = wait.size ? mbWait(btn) : () => {};
   if (!wait.size) mbRefresh();
   let res;
   try {
@@ -120,7 +132,7 @@ async function mbTrashOriginal(keys, orig, btn = null) {
   const what = n > 1 ? (orig.length === n ? TX("mail.trash.ask_n", { n }) : TX("mail.trash.ask_some", { n, m: orig.length })) : TX("mail.trash.ask_one");
   if (!await ask(TX("mail.trash.title"), what, n > 1 ? TX("mail.trash.go_n", { n }) : TX("common.delete"), true)) return [];
   mbDeleting();
-  const unwait = pressWait(btn);
+  const unwait = mbWait(btn);
   let res;
   try { res = (await api("/api/mail/delete-original", "POST", { keys: orig.map(mbKey) })).results.map(x => ({ ...x, key: `mail:${x.key}` })); }
   catch (e) { const note = (e && e.data && e.data.error) || (e && e.message) || TX("mail.trash.orig_failed"); res = orig.map(key => ({ key, ok: false, note })); }
@@ -194,7 +206,7 @@ async function mbFyi(keys, on = true, btn = null) {
     if (!byPc.has(k)) byPc.set(k, { pc, keys: [] });
     byPc.get(k).keys.push(t);
   }
-  const unwait = wait.size ? pressWait(btn) : () => {};
+  const unwait = wait.size ? mbWait(btn) : () => {};
   if (!wait.size) mbRefresh();
   const bad = new Set(), notes = await Promise.all([...byPc.values()].map(async g => {
     const body = { keys: g.keys.map(mbKey), on };
@@ -252,6 +264,7 @@ function mbPaintBar() {
     clear(bar).append(chk, el("span", { class: "mbox-n", text: MBOX.vis.length ? TX("mail.count_n", { n: MBOX.vis.length }) : "" }));
     bar.classList.remove("on");
     if (mailFilterOf()[0] === "owed" && MBOX.vis.length) bar.append(mbBtn(TX("mail.fyi.all"), "replyoff", ev => mbFyi(MBOX.vis, true, ev.currentTarget), { k: "mail-fyi-all" }));
+    mbBarHeld(bar);
     return;
   }
   const arch = mailFilterOf()[0] === "archived";
@@ -264,6 +277,7 @@ function mbPaintBar() {
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: TX("mail.selected_n", { n: keys.length }) }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": TX("mail.deselect"), title: TX("mail.deselect"), onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
+  mbBarHeld(bar);
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
 const MB_PAGE = 100;   // mail rows drawn at first and added per step
@@ -281,7 +295,7 @@ function mbRow(t, label) {
   MBOX.pass.add(t);
   if (hit && hit.sig === sig) return hit.node;
   const node = monConvNode(t, label);
-  if (node) MBOX.rows.set(t, { sig, node }); else MBOX.rows.delete(t);
+  if (node) MBOX.rows.set(t, { sig, node: mbHeldRow(t, node) }); else MBOX.rows.delete(t);
   return node;
 }
 function mbRowsPrune() {

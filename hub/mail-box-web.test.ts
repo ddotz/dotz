@@ -667,6 +667,87 @@ describe("a row leaves only after the hub answered", () => {
 		await waitFor(v, `!${rowJs("견적서 보내드립니다")}`);
 	}, 30_000);
 
+	describe("a button held busy stays busy when the list repaints before the hub answers", () => {
+		let arrived = 0;
+		// A real cause of a repaint: the next read of the hub brings another mail (and, with `change`, a new card for a mail already shown), so the signature of the list moves.
+		const repaint = async (v: View, change?: (m: Mail[]) => void) => {
+			const title = `새로 온 메일 ${++arrived}`;
+			change?.(mails);
+			mails.unshift({ key: `fx-new${arrived}`, subject: title, from: "New <new@example.com>", at: ago(0.1), summary: "방금 온 메일이에요.", read: false, can: CAN });
+			await run(v, `convLoad()`);
+			await waitFor(v, `!!${rowJs(title)}`);
+		};
+		// Counts the page's own writes to /api/mail/…, so a second press is seen at the moment it leaves the page, not when the hub gets to it.
+		const countWrites = (v: View) => run(v, `window.__writes = 0; const f = window.fetch; window.fetch = (u, o) => { if (o && o.method && o.method !== "GET" && String(u).startsWith("/api/mail/")) window.__writes++; return f(u, o); }`);
+		const writes = (v: View) => ev<number>(v, `window.__writes`);
+		const busyOf = (v: View, js: string) => ev<unknown[]>(v, `[${js}.disabled, ${js}.getAttribute("aria-busy")]`);
+
+		test("the bar's 완료(보관): the list draws again, the new button is busy too, a second press sends nothing", async () => {
+			const g = hold();
+			const v = await openList(1280, 800);
+			await tick(v, "회의 일정 변경");
+			await countWrites(v);
+			await run(v, `${bar(v, "완료(보관)")}.click()`);
+			await posted(1);
+			await run(v, `window.__was = ${bar(v, "완료(보관)")}`);
+			await repaint(v);
+			expect(await ev<boolean>(v, `${bar(v, "완료(보관)")} !== window.__was`)).toBe(true);
+			expect(await busyOf(v, bar(v, "완료(보관)"))).toEqual([true, "true"]);
+			await run(v, `${bar(v, "완료(보관)")}.click()`);
+			expect(await writes(v)).toBe(1);
+			g.open();
+			await waitFor(v, `!${rowJs("회의 일정 변경")}`);
+			expect(await archivedOf(v, "fx-b")).toBe(true);
+			expect(posts.length).toBe(1);
+			expect(await ev<number>(v, `document.querySelectorAll("#mbox-bar [aria-busy]").length`)).toBe(0);
+		}, 30_000);
+
+		test("the bar's ⋯ during a 삭제 with the original: the new button is busy, it opens no menu, and it comes back when the hub answered", async () => {
+			for (const m of mails) if (m.key === "fx-b" || m.key === "fx-c") m.trashOriginal = true;
+			const g = hold();
+			const v = await openList(1280, 800);
+			const more = `document.querySelector('#mbox-bar [data-k="mail-more"]')`;
+			await tick(v, "회의 일정 변경"); await tick(v, "견적서 보내드립니다");
+			await pickMore(v, "삭제");
+			await confirmYes(v);
+			await posted(1);
+			await run(v, `window.__was = ${more}`);
+			await repaint(v);
+			expect(await ev<boolean>(v, `${more} !== window.__was`)).toBe(true);
+			expect(await busyOf(v, more)).toEqual([true, "true"]);
+			await run(v, `${more}.click()`);
+			expect(await ev<boolean>(v, `!!document.querySelector(".menu .mi")`)).toBe(false);
+			g.open();
+			await waitFor(v, `!${rowJs("회의 일정 변경")} && !${rowJs("견적서 보내드립니다")}`);
+			expect(posts.map(p => p.path)).toEqual(["/api/mail/delete-original"]);
+			expect(await ev<number>(v, `document.querySelectorAll("#mbox-bar [aria-busy]").length`)).toBe(0);
+		}, 30_000);
+
+		test("a row's ⋯ 삭제: the row drawn again is busy, its ⋯ takes no second press, and both come back when the hub answered", async () => {
+			const g = hold();
+			const v = await openList(1280, 800);
+			const row = rowJs("견적서 보내드립니다"), more = `${row}.querySelector('[data-k="mail-menu"]')`;
+			await countWrites(v);
+			await run(v, `${more}.click()`);
+			await waitFor(v, `document.querySelector(".menu .mi")`);
+			await run(v, `${moreItem("삭제")}.click()`);
+			await confirmYes(v);
+			await posted(1);
+			expect(await busyOf(v, more)).toEqual([true, "true"]);
+			await run(v, `window.__was = ${row}`);
+			await repaint(v, all => { for (const m of all) if (m.key === "fx-c") m.summary = "견적서를 다시 보냈어요. 검토 후 말씀해 주세요."; });
+			expect(await ev<boolean>(v, `${row} !== window.__was`)).toBe(true);
+			expect(await ev<string | null>(v, `${row}.getAttribute("aria-busy")`)).toBe("true");
+			expect(await busyOf(v, more)).toEqual([true, "true"]);
+			await run(v, `${more}.click()`);
+			expect(await ev<boolean>(v, `!!document.querySelector(".menu .mi")`)).toBe(false);
+			expect(await writes(v)).toBe(1);
+			g.open();
+			await waitFor(v, `!${row}`);
+			expect(posts.length).toBe(1);
+		}, 30_000);
+	});
+
 	describe("답장 안 함 in 답장 필요", () => {
 		const owe = () => { for (const m of mails) if (["fx-a", "fx-b", "fx-fail"].includes(m.key)) { m.reply = "needs"; m.archived = false; } };
 		const replyOf = (v: View, key: string) => ev<string>(v, `MAILS.get("mail:${key}").reply`);

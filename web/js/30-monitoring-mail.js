@@ -197,9 +197,9 @@ const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => { const bare = /\b
 // 답장 안 함 / 답장 필요로 표시: the owner's own mark (POST / DELETE /api/mail/<key>/fyi, recorded as his with the time; a peer's mail on the computer
 // that holds it: 34-peer-monitoring.js pqRoute). The row, its tag, the filter counts and the app badges change at once; 답장 안 함 drops the mail's
 // waiting reply draft (확인 대기). 답장 필요로 표시 works from no state, from 답장 안 함 and from 답장함 (it needs another answer).
-async function mailSetFyi(t, on) {
-  const pc = pqPc(t);
-  await api(`/api/mail/${t.slice(5)}/fyi`, on ? "POST" : "DELETE", on ? {} : undefined);
+async function mailSetFyi(t, on, btn = null) {
+  const pc = pqPc(t), unwait = mbWait(btn);
+  try { await api(`/api/mail/${t.slice(5)}/fyi`, on ? "POST" : "DELETE", on ? {} : undefined); } finally { unwait(); }
   const m = MAILS.get(t);
   if (m) { m.reply = on ? "fyi" : m.reply === "draft" ? "draft" : "needs"; m.unreplied = !on; }
   document.querySelectorAll(".mtop-fyi").forEach(mailFyiPaint);
@@ -213,16 +213,18 @@ async function mailSetFyi(t, on) {
 const MAIL_ACT = { draft: TX("mon.mail.act.draft"), no: TX("mail.fyi.title"), need: TX("mon.mail.act.need"), delete: TX("common.delete") };
 const mailOwed = m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft");
 const mailActs = m => m.dir === "out" ? ["delete"] : ["draft", mailOwed(m) ? "no" : "need", "delete"];
-const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t) : mailSetFyi(t, a === "no");
+const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t, b) : mailSetFyi(t, a === "no", b);
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it, unless the app's 삭제하면 원본도 삭제 is on (mbTrash). A newer message of the thread brings it back.
-async function mailDelete(t) {
-  if (mailOriginal(t)) return mbTrash([t]);
+async function mailDelete(t, btn = null) {
+  if (mailOriginal(t)) return mbTrash([t], btn);
   if (!await ask(TX("mail.trash.title"), `${TX("mail.trash.list_one")} ${mailStays(1)}`, TX("common.delete"), true)) return;
   mbDeleting();
-  const pc = pqPc(t), rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => r.dataset.t === t);
-  for (const r of rows) r.setAttribute("aria-busy", "true");   // the row stays until the hub has deleted the mail, then folds away
+  const pc = pqPc(t), row = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].find(r => r.dataset.t === t);
+  // the row and its ⋯ stay busy until the hub has deleted the mail, then the row folds away; a repaint in between draws them busy again (mbHeld)
+  const unrow = row ? mbHold(`${t}|row`, row, mbRowPress) : () => {}, unwait = mbWait(btn);
   try { await api(`/api/mail/${t.slice(5)}`, "DELETE"); }
-  catch (e) { for (const r of rows) r.removeAttribute("aria-busy"); throw e; }
+  catch (e) { unrow(); unwait(); throw e; }
+  unrow(true); unwait(true);
   MAILS.delete(t); CONV.delete(t);
   const p = pc && PQ.list.find(x => x && x.url === pc.url);
   if (p && p.items) p.items.conversations = (p.items.conversations || []).filter(c => String(c.target) !== t);
@@ -240,6 +242,6 @@ function mailMenuBtn(t, extra = () => []) {
     ev.stopPropagation();
     const b = ev.currentTarget, m = MAILS.get(t) || {};
     const more = extra();
-    showMenu(b, [...mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a], danger: a === "delete" })), ...more.map(x => ({ value: x.value, label: x.label }))], { onPick: v => { const x = more.find(i => i.value === v); if (x) x.run(); else busy(null, () => mailActRun(t, v, null)); } });
+    showMenu(b, [...mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a], danger: a === "delete" })), ...more.map(x => ({ value: x.value, label: x.label }))], { onPick: v => { const x = more.find(i => i.value === v); if (x) x.run(); else busy(null, () => mailActRun(t, v, v === "draft" ? null : b)); } });
   }, onkeydown: ev => ev.stopPropagation() }, icon("more"));
 }
