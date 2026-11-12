@@ -74,6 +74,8 @@ export const syncCardFiles = (): number => {
 	resumeWantedFiles({ changed: syncCardFiles });
 	return syncDraftFiles(pendingDraftFiles, pendingDraftIssues);
 };
+// A ref dotz holds a draft record for (its files are staged, not named by [file] lines).
+export const isDotzDraft = (ref: string): boolean => !!getDraft(ref);
 export const askedFile = (ref: string, n: number): { path: string; name: string } | undefined => (getDraft(ref) ? undefined : askedFiles(ref)?.[n]);
 
 async function view(rec: DraftRec | undefined, ref: string) {

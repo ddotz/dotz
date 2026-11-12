@@ -237,7 +237,7 @@ async function drfSure(d, t) {
   if (!ref || d.toLabel !== "받는이") return true;
   if (!DRF.st[ref]) { DRF.pc[ref] = t ? pqPc(t) : null; await drfLoad(ref); }
   const st = DRF.st[ref];
-  if (st.tracked === false && (d.attachments || []).length) return ask(TX("decision.attach.unknown_title"), TX("decision.attach.unknown_body", { name: botName }), TX("decision.send_anyway"));
+  if (st.tracked === false && (d.attachments || []).length) return ask(TX("decision.attach.unknown_title"), TX("decision.attach.unknown_body"), TX("decision.send_anyway"));
   return !(st.editable && !st.canAttach && (st.files.length || d.warning)) || ask(TX("decision.attach.without_title"), TX("decision.attach.without_body"), TX("decision.send_anyway"));
 }
 function draftFilesNode(d, o = {}) {

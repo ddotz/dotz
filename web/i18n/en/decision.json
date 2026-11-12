@@ -88,7 +88,7 @@
   "decision.attach.asis": "{issues}. It goes out exactly as it is. Send it?",
   "decision.attach.send_asis": "Send as is",
   "decision.attach.unknown_title": "Couldn't verify attachments",
-  "decision.attach.unknown_body": "These files weren't attached by {name}, so there's no telling if they'll go out. Send anyway?",
+  "decision.attach.unknown_body": "Can't open these files here, so they can't be shown or confirmed. The tool that sends the mail attaches them. Send anyway?",
   "decision.attach.without_title": "Send without attachments?",
   "decision.attach.without_body": "This account can't send files. Only the text goes out.",
   "decision.send_anyway": "Send anyway",

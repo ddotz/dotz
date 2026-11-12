@@ -13,6 +13,7 @@ import { msg } from "./i18n.ts";
 import { checkDone, doneChecks, type Check } from "./donesignals.ts";
 import { unlanded } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
+import { attachNote } from "./attach-lines.ts";
 import { bannedHits, bannedNote } from "./word-ban.ts";
 import { withDoneLive } from "./done-live-wire.ts";
 
@@ -85,6 +86,11 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 			return prompt(lane, bannedNote(banned));
 		}
 		if (!banned.length) lane.bannedRefused = undefined;
+		const unattached = lane.proc ? attachNote(text) : undefined;
+		if (unattached) {
+			log(`lane ${lane.name} report refused (send approval names a file with no [file] line)`);
+			return prompt(lane, unattached);
+		}
 		text = withDoneLive(text);
 	}
 	// The turn's final text answers every owner message still open (a gateway notice does not).
