@@ -4,7 +4,7 @@ import { createPrompts } from "./prompts.ts";
 // A dotz_send to the channel the running turn answers is held for the turn's final answer (hub/routes.ts /api/send).
 // Whatever way the turn ends, the held text is posted once.
 function setup() {
-	const state = { working: false, posts: [] as { text: string; replyTo?: string }[], notes: [] as string[] };
+	const state = { working: false, posts: [] as { text: string; replyTo?: string }[], notes: [] as string[], cleared: [] as string[] };
 	const q = createPrompts({
 		deliver: () => {},
 		steer: () => true,
@@ -13,7 +13,7 @@ function setup() {
 		isNote: text => text.startsWith("[note]"),
 		post: async (_target, text, replyTo) => (state.posts.push({ text, replyTo }), { delivered: true }),
 		interim: (_target, text) => void state.notes.push(text),
-		clearProgress: () => {},
+		clearProgress: target => void state.cleared.push(target),
 		persist: () => {},
 		log: () => {},
 		answered: [],
@@ -41,6 +41,23 @@ test("a held send is posted once when the turn ends with [later]", async () => {
 	idle();
 	await settled();
 	expect([...state.notes, ...state.posts.map(p => p.text)].filter(t => t.includes("PART-ONE"))).toHaveLength(1);
+});
+
+// The held text is also on the conversation's progress line; the note that carries it replaces that line the way a final answer does.
+test("the note that carries a held send clears the progress line, a [later] with no early send leaves it", async () => {
+	const { q, state, dotzSend, turn, settled } = setup();
+	turn("request a1", "a1");
+	dotzSend("PART-ONE sent early");
+	q.onAnswer("[later]");
+	await settled();
+	expect(state.notes).toEqual(["PART-ONE sent early"]);
+	expect(state.cleared).toEqual(["web"]);
+	const other = setup();
+	other.turn("request b1", "b1");
+	other.q.onAnswer("started it\n\n[later]");
+	await other.settled();
+	expect(other.state.notes).toEqual(["started it"]);
+	expect(other.state.cleared).toEqual([]);
 });
 
 test("a held send goes out with the text written around [later], in order, in one note", () => {

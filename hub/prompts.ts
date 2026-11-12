@@ -231,7 +231,7 @@ export function createPrompts(deps: PromptDeps) {
 		return true;
 	}
 	/** A turn ended without a final answer to carry its held early sends: they go out now, once, as one note that settles nothing (with `extra`, what the turn wrote around [later]). */
-	const flushHeld = (p: Prompt, extra = "") => { const text = [...(p.held ?? []), extra].filter(Boolean).join("\n\n"); p.held = undefined; if (p.target && text && !p.from) deps.interim?.(p.target, text); };
+	const flushHeld = (p: Prompt, extra = "") => { const held = p.held ?? [], text = [...held, extra].filter(Boolean).join("\n\n"), target = p.target; p.held = undefined; if (target && text && !p.from && deps.interim) void Promise.resolve(deps.interim(target, text)).then(sent => { if (held.length && sent !== false) deps.clearProgress(target); }); };   // held text is also on the progress line: the posted note replaces it, as a final answer does
 
 	// What was steered into a cancelled request may still wait in the runtime's queue, and the runtime starts a turn with it after the
 	// abort (2026-10-28 live check: the turn came back 1 s after 중단 and answered). onPrompt tells the caller to abort that turn too.

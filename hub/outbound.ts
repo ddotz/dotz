@@ -119,7 +119,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		announce: (target, text, worker) => void systemNote(target, text, "deferred", worker).catch(e => log(`deferral note to ${target} failed: ${e}`)),
 		interim: (target, text) => {
 			ledger.interim(target);
-			void out(target, text, undefined, { auto: true, session: key, keepsOpen: true }).catch(e => log(`note to ${target} failed: ${e}`));
+			return out(target, text, undefined, { auto: true, session: key, keepsOpen: true }).then(r => r.delivered, e => (log(`note to ${target} failed: ${e}`), false));
 		},
 		// The worker the [later] turn just spawned, as OmO's task store lists it (bgWork is created below and read at call time).
 		workFor: target => {
