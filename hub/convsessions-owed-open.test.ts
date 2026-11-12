@@ -20,7 +20,8 @@ afterEach(() => {
 const NOW = 1_000_000;
 const entry = (id: string, target: string, text: string): LedgerEntry => ({ id, target, at: NOW - 60_000, text, state: "queued" });
 
-for (const [target, key] of [["web:quick", "quick"], ["ch:1", "ch:1"]] as const) {
+// quick chat, a project channel (ch:), a mail conversation and a thread: the same rule for every conversation session.
+for (const [target, key] of [["web:quick", "quick"], ["ch:1", "ch:1"], ["mail:m1", "mail:m1"], ["th:7", "th:7"]] as const) {
 	test(`${key}: the message that starts the session is not an open request in its start prompt; an older open one still is`, () => {
 		const dir = mkdtempSync(join(tmpdir(), "convs-owed-"));
 		dirs.push(dir);

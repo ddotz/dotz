@@ -9,6 +9,7 @@ async function loadModels(quiet) {
   try { M = await api("/api/models"); modelsFail = false; }
   catch (e) { modelsFail = true; if (!quiet && current === "models") clear($("#models")).append(modelsFailNode()); return; }
   if (current === "models") renderModels();
+  if (current === "chat") renderCtxRing();
   if (current === "home") renderHome();
   if (current === "settings") renderSettings();
   if (current === "context") renderContext();
@@ -166,7 +167,8 @@ function liveModel(t) {
   if (isModelT(t)) {
     const c = M && M.conversations && M.conversations[t], m = liveModel(MAIN), tv = TV.get(t);
     const kind = c ? c.kind : tv && tv.inherited_kind ? tv.inherited : "";
-    if (!c && !kind) { const p = (isMailT(t) || isQuickT(t)) && ctxSession(t); return p && p.model ? { sel: p.model, conf: "", fallback: null } : m; }
+    // The quick chat never runs on main's model: until its default is known (/api/models, /api/target) its chip stays empty.
+    if (!c && !kind) { const p = (isMailT(t) || isQuickT(t)) && ctxSession(t); return p && p.model ? { sel: p.model, conf: "", fallback: null } : isQuickT(t) ? { sel: "", conf: "", fallback: null } : m; }
     const conf = (c && c.own) || kind || m.conf, act = c && c.active;
     return { sel: act || conf, conf, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy("orchestrator") : null };
   }
