@@ -280,7 +280,7 @@ async function sendChat(how) {
     // One id per send, kept while it fails, so a retry of the same text is the same send to the hub (hub/routes.ts cid).
     if (!sendCid || sendCid.text !== text) sendCid = { text, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10) };
     const { decision, ...quote } = reply || {};   // decision: the question the quote answers (30-notices.js ntDirect)
-    const body = { text, cid: sendCid.id, ...(reply ? { reply: quote } : {}), ...(decision ? { decision } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}), ...(refs.length ? { refs } : {}) };
+    const body = { text, cid: sendCid.id, ...(reply ? { reply: quote } : {}), ...(decision ? { decision } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isRowT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}), ...(refs.length ? { refs } : {}) };
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
     if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
@@ -465,7 +465,7 @@ function paintChips(t, k) {
   const owner = orchT || convOnly ? botName : lane ? TX("chat.chip.session", { name: lane.title || lane.name }) : "";
   const ob = k.own, wb = k.worker, wsel = lane && lane.worker_model;
   // The row reads as in main; a project's own choice shows in the tooltips and in the menus' first row (inheritRow).
-  const chipOwner = isProjT(t) ? TX("chat.chip.this_project") : isModelT(t) ? TX("chat.chip.this_mail") : convOnly ? TX("chat.chip.this_conv") : owner;
+  const chipOwner = isProjT(t) ? TX("chat.chip.this_project") : isQuickT(t) ? TX("chat.chip.this_conv") : isModelT(t) ? TX("chat.chip.this_mail") : convOnly ? TX("chat.chip.this_conv") : owner;
   ob.hidden = !(sel && owner); ob.textContent = owner;
   wb.hidden = !wsel;
   if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = wlevel ? TX("chat.chip.sub_level", { model: modelChipText(wbase), level: thinkKo(wlevel) }) : TX("chat.chip.sub", { model: modelChipText(wbase) }); wb.title = TX("chat.chip.sub_title"); }
@@ -502,13 +502,13 @@ const targetParam = () => isLaneT(target) || isModelT(target) ? target : "main";
 const ctxParam = () => target;
 // A project or mail conversation's way back: the first row of its menus, checked while it made no choice (T.own is absent elsewhere).
 const INHERIT = "__inherit";
-const inheritRow = T => T.own === undefined ? [] : [{ value: INHERIT, label: T.inherited_kind ? TX("chat.inherit.mail") : TX("chat.inherit.main"), sub: selText(T.inherited) }];
+const inheritRow = T => T.own === undefined ? [] : [{ value: INHERIT, label: T.inherited_kind ? isQuickT(targetParam()) ? TX("chat.inherit.quick") : TX("chat.inherit.mail") : TX("chat.inherit.main"), sub: selText(T.inherited) }];
 const chipValue = (T, v) => T.own === false ? INHERIT : v;
 // GET /api/target per target, kept so a chip opens its menu at once; the server builds it from the CLI model list, which is slow while cold.
 // The first click used to wait for that response (owner 2026-10-22: first click on the model/effort chip felt slow).
 const TV = new Map(), TV_BUSY = new Set();
 // A mail with a default model has no entry in the model list until its session exists (20-models.js liveModel reads this view), so its chip is drawn again.
-async function fetchTV(k) { const T = await api(`/api/target?target=${enc(k)}`); TV.set(k, T); if (isMailT(k) && T.inherited_kind) renderCtxRing(); return T; }
+async function fetchTV(k) { const T = await api(`/api/target?target=${enc(k)}`); TV.set(k, T); if ((isMailT(k) || isQuickT(k)) && T.inherited_kind) renderCtxRing(); return T; }
 // Fills the cache at idle once the chips render, so even the first click finds it.
 function prefetchTV() {
   const k = targetParam();

@@ -27,7 +27,7 @@
   ask(`/api/history?target=${q}&limit=150`);
   ask(`/api/todo?target=${q}`);
   ask("/api/conversations");
-  if (t !== "alert" && t !== "worklog") ask(`/api/activity?source=${encodeURIComponent(t.startsWith("lane:") ? t : "orchestrator")}&limit=300`);
+  if (t !== "alert" && t !== "worklog" && t !== "quick") ask(`/api/activity?source=${encodeURIComponent(t.startsWith("lane:") ? t : "orchestrator")}&limit=300`);
   }
   // The conversation and 홈 as last drawn on this device (web/js/13-snapshot.js), for a paint that does not wait for any of the above.
   let homeRec = () => {};

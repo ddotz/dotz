@@ -37,10 +37,10 @@ function renderBars() {
   const view = t => {
     const i = targetInfo(t);
     const k = attnKind(t);
-    if (isFixedT(t)) return { t, name: targetName(t), tone: "", attn: "", status: "", unread: ts(t).unread, subs: 0 };
+    if (isRowT(t)) return { t, name: targetName(t), tone: "", attn: "", status: "", unread: ts(t).unread, subs: 0 };
     return { t, name: targetName(t), tone: k ? "warn" : targetState(t)[1], attn: k, status: targetState(t)[0], unread: ts(t).unread, subs: runningSubs(subsSourceOf(t)).length };
   };
-  const A = alive.map(view), D = dead.map(view), FA = A.filter(v => isFixedT(v.t)), PA = A.filter(v => isProjT(v.t)), LA = A.filter(v => isLaneT(v.t));
+  const A = alive.map(view), D = dead.map(view), FA = A.filter(v => isRowT(v.t)), PA = A.filter(v => isProjT(v.t)), LA = A.filter(v => isLaneT(v.t));
   const cur = view(target), others = [...A, ...D].reduce((n, v) => n + (v.t === target ? 0 : v.unread), 0);
   const othersAttn = [...A, ...D].filter(v => v.t !== target && v.attn).length;
   const sig = JSON.stringify([A, D, cur, others, target, ORDER]);
@@ -49,7 +49,7 @@ function renderBars() {
     v.attn ? el("span", { class: "sb warn", text: attnLabel(v.attn) }) : null,
     v.subs ? el("span", { class: "sb", title: TX("common.subagent"), text: TX("chat.tsw.subs", { n: v.subs }) }) : null,
     v.unread ? el("span", { class: "nb", text: v.unread > 99 ? "99+" : String(v.unread) }) : null);
-    if (v.t !== MAIN && !isFixedT(v.t)) dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : isProjT(v.t) ? PA : LA).map(x => x.t), true);
+    if (v.t !== MAIN && !isRowT(v.t)) dragItem(b, v.t, () => (D.some(d => d.t === v.t) ? D : isProjT(v.t) ? PA : LA).map(x => x.t), true);
     return b; };
   const sep = () => el("span", { class: "tsep", "aria-hidden": "true" });
   const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? TX("chat.tsw.subs", { n: v.subs }) : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
@@ -90,7 +90,7 @@ function renderBars() {
     clear(vt).append(...[icon(to), ud ? el("i", { class: "ud" }) : null].filter(Boolean));
     vt.title = vt.ariaLabel = to === "chat" ? TX("chat.tsw.show_chat") : TX("chat.tsw.show_log");
     vt.onclick = () => go(to === "chat" ? "chat" : "activity");
-    vt.hidden = !LOG_VIEW || !$("#appbar").classList.contains("tv") || convListing() || isFixedT(target);
+    vt.hidden = !LOG_VIEW || !$("#appbar").classList.contains("tv") || convListing() || isRowT(target);
   }
 }
 // Desktop: target chips that do not fit fold into one "더보기 n" chip at the end (the selected one always stays visible;

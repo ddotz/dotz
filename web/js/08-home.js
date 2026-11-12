@@ -590,8 +590,11 @@ const abortOrch = btn => busy(btn, async () => {
 const MAIN = "main", TARGET_KEY = "dotz-target";
 const isLaneT = t => t.startsWith("lane:");
 // The two fixed conversations next to the main chat (Discord's alert and worklog channels): the gateway's posts live there, not in the main chat.
-// 가벼운 대화 ("quick") joins them when the gateway offers it (GET /api/context conversation_kinds): its answers come as target web:quick.
-const isFixedT = t => t === "alert" || t === "worklog" || t === "quick";
+const isFixedT = t => t === "alert" || t === "worklog";
+// 가벼운 대화 ("quick") is a conversation with a session of its own, not a feed: it sits in the list's fixed rows and joins them where they are named,
+// but run state, decision cards and the model chip work in it as in a mail. The gateway offers it in GET /api/context conversation_kinds; its answers come as target web:quick.
+const isQuickT = t => t === "quick";
+const isRowT = t => isFixedT(t) || isQuickT(t);
 const quickOn = () => !!C && (C.conversation_kinds || []).includes("quick");
 const FIXED_NAME = { alert: TX("common.alerts"), worklog: TX("common.worklog"), quick: TX("common.quick_chat") };
 const laneOf = t => t.slice(5);
@@ -617,11 +620,11 @@ const settingsApp = t => t.slice(9);
 const isRelayT = t => /^relay:[a-z0-9-]+:./.test(t);
 const RELAY = { name: {}, note: {}, back: MAIN, on: false, cur: "", drawn: "" };
 const mailSender = f => String(f || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || String(f || "");
-const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9) || isRelayT(t);
+const validTarget = t => t === MAIN || isRowT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9) || isRelayT(t);
 // A conversation that can have an agent session of its own (hub/session-key.ts CONV_KINDS): its target is its session key.
 // A conversation whose chips pick its own model: a project, or a mail while mail has sessions of its own (else it runs on main).
-const isModelT = t => isProjT(t) || (isMailT(t) && !!C && (C.conversation_kinds || []).includes("mail"));
-const isConvT = t => isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t);
+const isModelT = t => isProjT(t) || (isMailT(t) && !!C && (C.conversation_kinds || []).includes("mail")) || (isQuickT(t) && quickOn());
+const isConvT = t => isProjT(t) || isRowT(t) || isMailT(t) || isSettingsT(t);
 const sourceOf = t => t === MAIN || isConvT(t) || isRelayT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s.startsWith("conv:") ? s.slice(5) : s;
 // Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
@@ -630,7 +633,7 @@ const targetOfSource = s => s === "orchestrator" ? MAIN : s.startsWith("conv:") 
 const pcTargetName = (t, pc) => !pc ? targetName(t) : t === MAIN || t === "chat" ? pc.bot || pc.name : isLaneT(t) ? t.slice(5) : isProjT(t) ? t : targetName(t);
 const targetName = t => {
   if (t === MAIN) return botName;
-  if (isFixedT(t)) return FIXED_NAME[t];
+  if (isRowT(t)) return FIXED_NAME[t];
   if (isMailT(t)) return (MAILS.get(t) || {}).subject || TX("common.mail");
   if (isSettingsT(t)) return monSettingsName(t);
   if (isRelayT(t)) return RELAY.name[t] || t.split(":").slice(2).join(":");
@@ -654,7 +657,7 @@ const TURN = new Map();
 function targetInfo(t) {
   if (isRelayT(t)) return { status: "", alive: true, known: true };
   if (isSettingsT(t)) { const o = (S && S.orchestrator) || {}, busy = o.status === "working" || o.status === "starting"; return { status: busy && (!TURN.has(t) || PQ.of.has(t)) ? "idle" : o.status || "", alive: true, known: true }; }
-  if (t === MAIN || isFixedT(t) || isMailT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
+  if (t === MAIN || isRowT(t) || isMailT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
   if (isProjT(t)) { const o = (S && S.orchestrator) || {}, known = projTargets().includes(t); return { status: o.status || "", alive: known || !S, known }; }
   const l = S && S.lanes.find(x => x.name === laneOf(t));
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };

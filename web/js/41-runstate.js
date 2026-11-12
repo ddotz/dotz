@@ -15,7 +15,8 @@ const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? TX("
 const waitsOnOwner = r => r.kind === "waiting" && (r.reason === "ask" || r.reason === "standby");
 // A conversation waiting on work it handed off is progressing: blue on every row that shows it, like this line. One whose turn or whose
 // only worker is still queued has not started, so it is gray and counts as running nowhere; a session held by the limits is the same (S.lanes waiting).
-const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : t]) || null;
+// A session is keyed by its primary target in /api/state runs (hub/convsessions.ts primaryTarget): the quick chat's is web:quick.
+const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : isQuickT(t) ? "web:quick" : t]) || null;
 const runQueued = r => !!r && r.kind === "waiting" && (!!r.queued || r.reason === "capacity");
 const laneQueued = t => ((S && S.lanes) || []).some(l => l.waiting && `lane:${l.name}` === t);
 const runBusy = t => { const r = runOf(t); return !!r && r.kind === "waiting" && !waitsOnOwner(r) && !runQueued(r); };
@@ -41,6 +42,7 @@ const RUN_MEMO = { sig: "" };
 const runStateOf = () => {
   if (isFixedT(target) || isSettingsT(target) || isRelayT(target)) return null;
   const runs = (S && S.runs) || {};
+  if (isQuickT(target)) return runOf(target);
   // A mail conversation's run state is the background worker its request was deferred to (hub/routes.ts stateRuns): this
   // computer's under /api/state `runs`, the other computer's in its monitoring snapshot (34-peer-monitoring.js pqRuns).
   if (isMailT(target)) return (typeof pqRuns === "function" && pqRuns(target)) || runs[target] || null;
@@ -84,7 +86,7 @@ function runAction(r, t = target) {
     if (r.kind === "working" || (r.kind === "waiting" && (r.reason === "work" || r.reason === "recover"))) return null;
     if (r.kind === "error" && r.reason === "work") return { label: TX("home.wk.retry"), run: ev => workRetry(r.work, ev.currentTarget) };
   }
-  if (isMailT(t)) return null;
+  if (isMailT(t) || isQuickT(t)) return null;
   // idle with tasks left only says why; no 계속하기 button (owner 2026-10-28: "계속하기 버튼 너무 거슬린다") - a message continues it.
   if (isLaneT(t)) return r.kind === "error" || r.kind === "stopped" ? { label: TX("misc.run.restart"), run: ev => runLaneRestart(laneOf(t), ev.currentTarget) } : null;
   if (r.kind === "limited" || r.kind === "error") return { label: r.kind === "limited" ? TX("misc.retry_now") : TX("misc.retry"), run: ev => orchResume(ev.currentTarget) };

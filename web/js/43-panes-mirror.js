@@ -23,7 +23,7 @@ const paneName = p => (p.kind === "app" ? (KK.rooms.find(r => r.chatId === paneK
 function paneState(p) {
   if (p.kind === "app") return TX("decision.app.kakao");
   const i = targetInfo(p.t);
-  return isRelayT(p.t) ? RELAY.note[p.t] || "" : isFixedT(p.t) ? FIXED_DESC[p.t] : i.alive ? statusKo(i.status) : TX("common.status.ended");
+  return isRelayT(p.t) ? RELAY.note[p.t] || "" : isRowT(p.t) ? FIXED_DESC[p.t] : i.alive ? statusKo(i.status) : TX("common.status.ended");
 }
 // A copy that lives on its own: no id twice on the page, no hidden or in-pane marks of the real section.
 function paneBare(n) {

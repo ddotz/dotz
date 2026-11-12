@@ -153,6 +153,7 @@
   "chat.models.link_sub": "대체 모델 순서까지",
   "chat.inherit.mail": "이 메일 기본값과 같게",
   "chat.inherit.main": "메인 대화와 같게",
+  "chat.inherit.quick": "가벼운 대화 기본값과 같게",
   "chat.att.photo": "사진",
   "chat.att.file": "파일",
   "chat.att.relay_no": "이 대화에는 파일을 붙일 수 없어요",

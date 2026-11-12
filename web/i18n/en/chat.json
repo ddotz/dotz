@@ -159,6 +159,7 @@
   "chat.models.link_sub": "Including fallback order",
   "chat.inherit.mail": "Same as this mail's default",
   "chat.inherit.main": "Same as Main chat",
+  "chat.inherit.quick": "Same as quick chat default",
   "chat.att.photo": "Photo",
   "chat.att.file": "File",
   "chat.att.relay_no": "This chat can't take files",

@@ -166,7 +166,7 @@ function liveModel(t) {
   if (isModelT(t)) {
     const c = M && M.conversations && M.conversations[t], m = liveModel(MAIN), tv = TV.get(t);
     const kind = c ? c.kind : tv && tv.inherited_kind ? tv.inherited : "";
-    if (!c && !kind) { const p = isMailT(t) && ctxSession(t); return p && p.model ? { sel: p.model, conf: "", fallback: null } : m; }
+    if (!c && !kind) { const p = (isMailT(t) || isQuickT(t)) && ctxSession(t); return p && p.model ? { sel: p.model, conf: "", fallback: null } : m; }
     const conf = (c && c.own) || kind || m.conf, act = c && c.active;
     return { sel: act || conf, conf, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy("orchestrator") : null };
   }

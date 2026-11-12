@@ -61,6 +61,7 @@ import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
 import { queue, bgWork, workRows, out, fileRoots } from "./outbound.ts";
 import { convs } from "./convsessions.ts";
+import { QUICK } from "./session-key.ts";
 import { sendWeb } from "./intake.ts";
 import { json, body, terminals, BodyError } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
@@ -418,10 +419,10 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		}
 		if (url.pathname === "/api/todo" && req.method === "GET") {
 			const target = url.searchParams.get("target") ?? "main";
-			if (target !== "main" && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, lane:<name> or ch:<id>" }, 400);
+			if (target !== "main" && target !== QUICK && !target.startsWith("lane:") && !isProjectTarget(target)) return json({ error: "target must be main, quick, lane:<name> or ch:<id>" }, 400);
 			const lane = target.startsWith("lane:") ? lanes.get(target.slice(5)) : undefined;
 			if (target.startsWith("lane:") && !lane) return json({ error: `no lane ${target.slice(5)}` }, 404);
-			return json(lane ? laneTodo(lane) : readTodo(orch.sessionFile));
+			return json(lane ? laneTodo(lane) : readTodo(target === QUICK ? convs.get(QUICK)?.o.orch.sessionFile : orch.sessionFile));
 		}
 		// API keys for fallback entries (hub/apikey-store.ts): GET shows masks only; PUT {provider, key} or {from: "omo"}; DELETE /api/apikeys/<provider>.
 		if (parts[0] === "api" && parts[1] === "apikeys") {
