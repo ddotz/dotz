@@ -1,16 +1,16 @@
 // The prompt queue's shapes and limits: types and constants that capture no state (the queue itself is prompts.ts).
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; deep?: true; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean; from?: string; handback?: true; quiet?: true; fallback?: string };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; deep?: true; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
-export type Pending = { text: string; at?: number; target?: string; replyTo?: string; refs?: string[]; deferred?: boolean; from?: string; handback?: true; quiet?: true; fallback?: string };
+export type Pending = { text: string; at?: number; target?: string; replyTo?: string; refs?: string[]; deferred?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string };
 /** A worker and the request it was spawned for. `also`: follow-ups deferred to it; `receipted`: its line was posted; `delivered`: an answer from its result went out; `read`: its result was read in a run that did not answer it. */
 export type WorkLink = { id: string; target: string; replyTo?: string; at: number; description?: string; also?: string[]; receipted?: boolean; delivered?: boolean; read?: boolean; cancelled?: boolean };
 /** A request waiting on background work, for the gateway's silent-wait check (hub/waitcheck.ts). */
 export type OpenRequest = { target: string; replyTo?: string; at: number; workers: { id: string; description?: string }[] };
 /** One of this session's background workers, as hub/bgwork.ts lists it (running oldest first, then recently finished newest first). */
 export type WorkRow = { id: string; description?: string; status: "running" | "stalled" | "done" | "failed"; target?: string; replyTo?: string; startedAt: number; endedAt?: number };
-export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean; deep?: true; from?: string; handback?: true; quiet?: true; fallback?: string }; // deep: the owner's own words ask for deeper reasoning on this turn (hub/ultrathink.ts); fallback: the answer a rewrite turn replaces, posted as it was if that turn writes nothing; quiet: a system check, see deps.quietNote; refs: every message merged into this prompt
+export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean; deep?: true; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string }; // deep: the owner's own words ask for deeper reasoning on this turn (hub/ultrathink.ts); fallback: the answer a rewrite turn replaces, posted as it was if that turn writes nothing; quiet: a system check, see deps.quietNote; refs: every message merged into this prompt
 
 export type PromptDeps = {
 	/** Keeps the answer of a quiet check (a plain one that does not begin with [ask] or [fail]) as one worklog line; it is posted nowhere else and notifies no one. */
@@ -35,7 +35,7 @@ export type PromptDeps = {
 	isNote: (text: string) => boolean;
 	regenerated?: (text: string) => boolean; // a gateway nudge the silent-wait check (hub/waitcheck.ts) sends again while due: never replayed
 	/** Posts a turn's final answer to the channel that asked. */
-	post: (target: string, text: string, replyTo?: string) => Promise<{ delivered: boolean }>;
+	post: (target: string, text: string, replyTo?: string, opts?: { hushed?: true }) => Promise<{ delivered: boolean }>;
 	/** A gateway note in a conversation that answers nothing (the deferral acknowledgement must not settle the open prompt). */
 	announce?: (target: string, text: string, worker?: string) => void;
 	interim?: (target: string, text: string) => void | Promise<boolean>;   // what a [later] turn wrote around the word: a message that answers nothing

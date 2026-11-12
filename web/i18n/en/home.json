@@ -313,5 +313,7 @@
   "home.wk.no_activity": "No activity",
   "home.wk.retry": "Run again",
   "home.wk.go_chat": "Open conversation",
+  "home.handed.sent": "Another conversation handed over a task",
+  "home.handed.back": "The result of the handed task came back",
   "home.wk.aria": "{desc} · {state} · {act}"
 }

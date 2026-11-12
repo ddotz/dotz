@@ -308,6 +308,9 @@ function msgNode(e) {
       if (subj) return resultCard({ src: from || acct || SYS_LABEL.mail, at: e.ts, title: subj, text: snip.trim() });
     }
     // falls through: a mail without a subject line shows as plain text
+    // Text one session handed to another (hub/handed.ts): the schedule start's card, the sender in the header, the text behind 원문 보기.
+    case "handed":
+      return resultCard({ src: targetName(e.from), at: e.ts, title: TX(e.handback ? "home.handed.back" : "home.handed.sent"), raw: text });
     case "schedule": case "watch": {
       // the gateway's own wake (hub/main.ts wakeOnce: update carry-over, text overrides) is an instruction to the assistant: no card
       if (gatewayWake(e)) return null;

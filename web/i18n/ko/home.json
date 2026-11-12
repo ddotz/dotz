@@ -241,5 +241,7 @@
   "home.wk.no_activity": "활동이 없어요",
   "home.wk.retry": "다시 맡기기",
   "home.wk.go_chat": "대화로 가기",
+  "home.handed.sent": "다른 대화에서 일을 넘겨 줬어요",
+  "home.handed.back": "넘긴 일의 결과가 돌아왔어요",
   "home.wk.aria": "{desc} · {state} · {act}"
 }

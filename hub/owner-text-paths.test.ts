@@ -14,8 +14,9 @@ import { parseDecisions } from "./choices.ts";
 const prod = prodOf(loadTree(join(import.meta.dir, "..")));
 const source = (path: string) => prod.find(f => f.path === path)!.text;
 
-// The event kinds in the store. Text the owner reads as the assistant's passes ownerText; the rest is owner input, outside mail or machine records. A new kind must be placed here.
-const NOT_ASSISTANT_TEXT = ["delivery", "lane_message", "lane_start", "mail", "message", "schedule", "watch"];
+// The event kinds in the store. Text the owner reads as the assistant's passes ownerText; the rest is owner input, outside mail or machine records (text one
+// session handed to another is kept as written, behind a fold). A new kind must be placed here.
+const NOT_ASSISTANT_TEXT = ["delivery", "handed", "lane_message", "lane_start", "mail", "message", "schedule", "watch"];
 // Discord writers that take no model text: the form message, a thread's or a parked lane's gateway line. send, edit and progress are what carries model text.
 const DISCORD_GATEWAY_WRITERS = ["createThread", "editRich", "postRich", "postTo", "releaseLane"];
 const DISCORD_OWNER_WRITERS = ["edit", "progress", "send"];

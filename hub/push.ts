@@ -110,7 +110,7 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	const { tone, text: rest } = parseTone(text);
 	const key = typeof e.update_key === "string" ? e.update_key : "";
 	// An edited line (a lane's worklog entry, progress): its [done]/[fail] arrives as a bell notice (noticePush), its [run] never notifies.
-	if (key) return undefined;
+	if (key || e.hushed === true) return undefined;
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
 	if (e.kind === "out" && e.target === "alert") {

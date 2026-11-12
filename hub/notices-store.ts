@@ -323,7 +323,7 @@ function fromAnswer(e: HubEvent): void {
 	if (replaying) return;
 	const src = String(e.source ?? "");
 	const lane = src.startsWith("lane:");
-	if (e.update_key || e.target === "worklog" || e.target === "alert" || (src !== "orchestrator" && !lane)) return;
+	if (e.update_key || e.hushed === true || e.target === "worklog" || e.target === "alert" || (src !== "orchestrator" && !lane)) return;
 	const { tone, text } = clean(e.text);
 	if (!text || /^(?:ok|-)$/i.test(text) || isSilent(String(e.text ?? "")) || (lane && LOUD.has(tone))) return;
 	// A [run] report only edits the session's progress line on Discord, unless it answers the owner (hub/lanewire.ts `running`).

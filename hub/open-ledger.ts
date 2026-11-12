@@ -42,7 +42,7 @@ export function createLedger(file: string, deps: Deps) {
 			const id = p.replyTo ?? (p.from ? `from:${p.at ?? 0}` : "");
 			if (!id || !p.target || p.quiet || p.handback) continue;
 			const before = entries.find(e => e.id === id);
-			const workers = waiting.filter(w => w.target === p.target && w.replyTo === p.replyTo).flatMap(w => w.workers.map(x => x.id));
+			const workers = [...new Set(waiting.filter(w => w.target === p.target && w.replyTo === p.replyTo).flatMap(w => w.workers.map(x => x.id)))];
 			live.set(id, {
 				id, target: p.target, at: before?.at ?? p.at ?? now(),
 				text: before?.text || (ownerView(p.text) || p.text).trim().slice(0, WORDS),

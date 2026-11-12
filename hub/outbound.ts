@@ -32,6 +32,7 @@ import { createBgWork, omoWorkById, sessionProjects } from "./bgwork.ts";
 import { createWorkRows } from "./workrows.ts";
 import { digest } from "./convdigest.ts";
 import { createPrompts, type Pending, type Reply, type WorkLink } from "./prompts.ts";
+import { recordHanded } from "./handed.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
@@ -109,12 +110,16 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		review: answerReview(() => o.orch.status === "idle" || o.orch.status === "working"),
 		isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
 		regenerated: isOpenNudge,
-		post: (target, text, replyTo) => out(target, text, replyTo, { auto: true, session: key }),
+		post: (target, text, replyTo, opts) => out(target, text, replyTo, { auto: true, session: key, ...opts }),
 		// A quiet check's plain answer: one gateway line in the worklog. Its text opens the line, so no tone marker in the answer can make it a result that pushes.
 		quietNote: (_target, text) => void out("worklog", msg().scheduleCheckLine(text.replace(/\s+/g, " ").slice(0, 300)), undefined, { source: "gateway", wk: "check" }).catch(e => log(`quiet check line failed: ${e}`)),
 		// An answer no label explains lands in the session's own conversation; work another session handed over goes back to it, as that session's next prompt.
 		home: primaryTarget(key),
-		handBack: (from, text, replyTo) => void convs.deliverTo(from, `${msg().handbackLead} ${text}`, { target: convs.get(from)?.primary ?? primaryTarget(from), replyTo, handback: true }),
+		handBack: (from, text, replyTo) => {
+			const to = convs.get(from)?.primary ?? primaryTarget(from);
+			recordHanded({ to, from: key, text, handback: true });
+			convs.deliverTo(from, `${msg().handbackLead} ${text}`, { target: to, replyTo, handback: true });
+		},
 		// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
 		announce: (target, text, worker) => void systemNote(target, text, "deferred", worker).catch(e => log(`deferral note to ${target} failed: ${e}`)),
 		interim: (target, text) => {
@@ -305,7 +310,7 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 	// Web only: a web conversation, a kind the owner switched off for Discord (hub/discord-post.ts), or a gateway alert that repeats one Discord already has.
 	// `discord_route`: the post's own app or monitor decided it (a monitor's 디스코드에도 보내기 switch, hub/watch-settings.ts), over the class switch.
 	const toDiscord = typeof j.extra.discord_route === "boolean" ? j.extra.discord_route : route({ target: j.target, text: j.text, extra: { ...j.extra, ...(threadMail(j.target) ? { mail: true } : {}) }, replyTo: j.replyTo }).messengers.discord;
-	if (isLocal(j.target) || j.extra.repeat === true || !toDiscord || !discord.status.enabled) {
+	if (isLocal(j.target) || j.extra.repeat === true || j.extra.hushed === true || !toDiscord || !discord.status.enabled) {
 		convs.markAnsweredAll(jobAnswers(j));
 		return Promise.resolve({ delivered: true });
 	}

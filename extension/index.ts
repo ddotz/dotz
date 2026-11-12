@@ -316,8 +316,8 @@ function orchestratorTools(pi: any): void {
 	pi.registerTool({
 		name: "dotz_conv",
 		label: "Dotz conversations",
-		description: `The other conversations ${NAME} runs: each mail thread, project channel, settings screen and the 알림/작업내역 windows answers in its own session, so contexts stay apart. You (the main session) oversee them all: action=list shows each one and what it is doing; read {key} shows its recent exchange; send {key, text} hands work into it (its answer is posted there; back=true returns it to you). A conversation session may send only to main. Do not pass work on in a loop: when you are handed another session's work, answer it yourself.`,
-		parameters: z.object({ action: z.enum(["list", "read", "send"]), key: z.string().optional(), text: z.string().optional(), limit: z.number().min(1).max(40).optional(), back: z.boolean().optional() }),
+		description: `The other conversations ${NAME} runs: each mail thread, project channel, settings screen and the 알림/작업내역 windows answers in its own session, so contexts stay apart. You (the main session) oversee them all: action=list shows each one and what it is doing; read {key} shows its recent exchange; send {key, text} hands work into it (its answer is posted there; back=true returns it to you; quiet=true marks bookkeeping between sessions, so its answer stays in that conversation without notifying the owner unless it begins with [ask] or [fail]). A conversation session may send only to main. Do not pass work on in a loop: when you are handed another session's work, answer it yourself.`,
+		parameters: z.object({ action: z.enum(["list", "read", "send"]), key: z.string().optional(), text: z.string().optional(), limit: z.number().min(1).max(40).optional(), back: z.boolean().optional(), quiet: z.boolean().optional() }),
 		async execute(_id: string, p: any) {
 			const from = process.env.DOTZ_CONV ?? "main";
 			if (p.action === "list") {
@@ -327,7 +327,7 @@ function orchestratorTools(pi: any): void {
 			if (!p.key) return { content: [{ type: "text", text: "key required (from list)" }] };
 			const out = p.action === "read"
 				? await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/history?limit=${p.limit ?? 20}`).catch(e => ({ error: e.message }))
-				: await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/send`, { method: "POST", body: JSON.stringify({ text: p.text, from, back: p.back }) }).catch(e => ({ error: e.message }));
+				: await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/send`, { method: "POST", body: JSON.stringify({ text: p.text, from, back: p.back, quiet: p.quiet }) }).catch(e => ({ error: e.message }));
 			return { content: [{ type: "text", text: JSON.stringify(out).slice(0, 8000) }] };
 		},
 	});

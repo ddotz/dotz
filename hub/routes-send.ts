@@ -24,6 +24,7 @@ import { repostRefusal } from "./lanewire.ts";
 import { MAIN, primaryTarget, QUICK } from "./session-key.ts";
 import { authHeld, parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body } from "./routes-util.ts";
+import { recordHanded } from "./handed.ts";
 import { attachNote } from "./attach-lines.ts";
 import { bannedHits, bannedNote } from "./word-ban.ts";
 
@@ -154,12 +155,14 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 			if (!toMain && !convs.get(key)) return json({ error: `no conversation session ${key}` }, 404);
 			// Into main: its answer goes to the conversation that asked, where its own window shows it.
 			if (toMain) {
+				recordHanded({ to: primaryTarget(MAIN), from, text });
 				queue.deliver(`[conversation ${from}] ${text}`, { target: sender.primary, replyTo: cur?.replyTo, from });
 				return json({ ok: true, to: MAIN, answers_in: sender.primary });
 			}
 			const c = convs.get(key)!;
 			// Main's request is that conversation's next turn with no reply_to: its answer is posted there; only back:true marks it handed work, answered to main (handBack).
-			convs.deliverTo(key, `[main session] ${text}`, { target: c.primary, ...(b.back === true ? { from: MAIN } : {}) });
+			recordHanded({ to: c.primary, from: MAIN, text });
+			convs.deliverTo(key, `[main session] ${text}`, { target: c.primary, ...(b.back === true ? { from: MAIN } : {}), ...(b.quiet === true ? { bookkeeping: true as const } : {}) });
 			return json({ ok: true, to: key, answers_in: b.back === true ? MAIN : c.primary });
 		}
 	}

@@ -38,11 +38,12 @@
 
 import { createBurst, sameConv } from "./promptburst.ts";
 import { isSilent, laterParts, stripLater } from "./tone.ts";
+import { closeHanded, hushedAnswer, waitedOn } from "./handed.ts";
 import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_MS, ORPHAN_MAX_AGE_MS, MAX_RECENT, remember, DEFER_MAX_AGE_MS, DEFER_BLOCKS_RESTART_MS, MAX_TURNS, TURN_SLACK_MS, CANCEL_NOTE_MS, LINK_MAX_AGE_MS, MAX_LINKS, REPORT_NOTE_CHARS, type Prompt, type OwnerMessage, type Pending, type WorkLink, type OpenRequest, type WorkRow, type Reply, type PromptDeps } from "./prompts-model.ts";
 export type { Prompt, OwnerMessage, Pending, WorkLink, OpenRequest, WorkRow, Reply, PromptDeps } from "./prompts-model.ts";
 
 /** The hand-over labels a prompt carries through pending.json. */
-const labels = (p: { from?: string; handback?: true; quiet?: true; fallback?: string }) => ({ ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.quiet ? { quiet: true as const } : {}), ...(p.fallback ? { fallback: p.fallback } : {}) });
+const labels = (p: { from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string }) => ({ ...(p.bookkeeping ? { bookkeeping: true as const } : {}), ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.quiet ? { quiet: true as const } : {}), ...(p.fallback ? { fallback: p.fallback } : {}) });
 
 /**
  * A final answer with a word of the user's 금지 낱말 목록 is held back and its request gets one more prompt: the note, through the queue
@@ -143,7 +144,7 @@ export function createPrompts(deps: PromptDeps) {
 	 * prompt that has not started yet it gathers (hub/promptburst.ts).
 	 */
 	function deliver(text: string, reply?: Reply): boolean {
-		const running = Boolean(!reply?.from && !reply?.handback && !reply?.quiet && current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
+		const running = Boolean(!reply?.from && !reply?.handback && !reply?.quiet && !reply?.bookkeeping && current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
 		// A turn that answers no request of ours (a worker's result woke the session, a session report) takes the owner's message too: as a
 		// followUp it waited behind the engine's own chain of runs (2026-11-11 11:31 UTC, about four minutes). Such a run answers at home, so
 		// only home's messages go in; another conversation's waits for its own turn. A keepalive turn keeps the old way.
@@ -586,7 +587,7 @@ export function createPrompts(deps: PromptDeps) {
 		const via = deps.handBack ? to.prompt?.from : undefined;
 		if (via) return (deps.handBack!(via, t, to.replyTo), settle());
 		void deps
-			.post(to.target, t, to.replyTo)
+			.post(to.target, t, to.replyTo, to.prompt && hushedAnswer(to.prompt, t, id => !isAnswered(id)))
 			.then(r => {
 				if (!r.delivered) return;
 				settle();
@@ -714,11 +715,11 @@ export function createPrompts(deps: PromptDeps) {
 		// Work another session handed over is answered to that session, never posted in the conversation it names.
 		if (p.from && deps.handBack) {
 			deps.handBack(p.from, body, p.replyTo);
-			markAnswered(p.replyTo);
+			markAnswered(p.replyTo), closeHanded(openDeferred(), p, linksOf, deps.work?.() ?? []) && save();
 			return burst.close(target, ids);
 		}
 		void deps
-			.post(target, body, p.replyTo)
+			.post(target, body, p.replyTo, hushedAnswer(p, body, id => !isAnswered(id)))
 			.then(r => {
 				if (!r.delivered) return;
 				markAnswered(p.replyTo);
@@ -783,7 +784,7 @@ export function createPrompts(deps: PromptDeps) {
 	}
 
 	/** Requests waiting on background work, with the workers linked to them. */
-	const openRequests = (): OpenRequest[] => openDeferred().flatMap(p => (p.target ? [{ target: p.target, ...(p.replyTo ? { replyTo: p.replyTo } : {}), at: p.at, workers: linksOf(p).map(({ id, description }) => ({ id, ...(description ? { description } : {}) })) }] : []));
+	const openRequests = (): OpenRequest[] => openDeferred().flatMap(p => (p.target ? [{ target: p.target, ...(p.replyTo ? { replyTo: p.replyTo } : {}), at: p.at, workers: waitedOn(linksOf(p), deps.work?.() ?? []).map(({ id, description }) => ({ id, ...(description ? { description } : {}) })) }] : []));
 
 	/** Messages of this conversation with a turn of their own still to come: an answer to another message there does not settle them. */
 	const waitingIds = (target: string): string[] => [...openDeferred(), ...prompts.filter(p => !p.seen)].flatMap(p => (p.target && sameConv(p.target, target) ? [...new Set([...(p.refs ?? []), ...(p.replyTo ? [p.replyTo] : [])])] : []));
