@@ -21,7 +21,7 @@ import { AGENT_AUTHOR, tokenOk } from "./entry-check.ts";
 import { queue, bgWork, out, progress } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
 import { repostRefusal } from "./lanewire.ts";
-import { MAIN, primaryTarget } from "./session-key.ts";
+import { MAIN, primaryTarget, QUICK } from "./session-key.ts";
 import { authHeld, parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body } from "./routes-util.ts";
 import { attachNote } from "./attach-lines.ts";
@@ -63,7 +63,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		// when its turn ends, see queue.ts; an idle target gets it now).
 		const mode = b.mode === "steer" || b.mode === "interrupt" || b.mode === "queue" ? b.mode : "default";
 		const lane = b.lane ? String(b.lane) : undefined;
-		const conv = b.conv === "alert" || b.conv === "worklog" ? b.conv : undefined;
+		const conv = b.conv === "alert" || b.conv === "worklog" || (b.conv === QUICK && convs.ownKinds().includes(QUICK)) ? b.conv : undefined;
 		const channel = b.channel === "terminal" ? "terminal" : "web";
 		// A reply to a message (swipe / reply button in the web): the quoted message reaches the model like a Discord reply (intake.ts parseReply).
 		const reply = parseReply(b.reply, login);

@@ -6,6 +6,7 @@
   "conv.load_failed": "Couldn't load chats",
   "conv.fixed.alert": "Warnings and decision requests",
   "conv.fixed.worklog": "Nightly cleanup and session progress",
+  "conv.fixed.quick": "Chat, quick questions and small jobs",
   "conv.read_title": "Chats that need a reply stay unread",
   "conv.read_n": "Mark {n} read",
   "conv.read_failed": "Couldn't mark {n} as read: {why}",

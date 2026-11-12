@@ -6,6 +6,7 @@
   "conv.load_failed": "대화 목록을 불러오지 못했어요",
   "conv.fixed.alert": "경고와 결정 요청",
   "conv.fixed.worklog": "야간 정리와 세션 진행 기록",
+  "conv.fixed.quick": "간단한 질문과 잡담, 가벼운 일",
   "conv.read_title": "답이 필요한 대화는 그대로 둬요",
   "conv.read_n": "{n}개 읽음 처리",
   "conv.read_failed": "{n}개를 읽음으로 표시하지 못했어요: {why}",

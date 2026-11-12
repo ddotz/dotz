@@ -186,6 +186,17 @@ function contextTokens(ctx: any): number {
 // the main one, so it keys its state the same way.
 export const stateOwner = (): string | undefined => process.env.DOTZ_LANE || process.env.DOTZ_CONV || undefined;
 
+// The quick chat (DOTZ_CONV=quick, hub/quick-chat.ts) is a cheaper model: what launches sessions, lands code or changes settings is main's.
+// Reads (dotz_connect status, dotz_channel list) and the hand-over to main (dotz_conv send main) stay.
+const QUICK_READS: Record<string, string> = { dotz_connect: "status", dotz_channel: "list" };
+export function quickChatBlock(tool: string, input: any, conv = process.env.DOTZ_CONV): string | undefined {
+	if (conv !== "quick") return undefined;
+	const launch = tool === "dotz_lane" && input?.action === "launch";
+	const changes = tool in QUICK_READS && input?.action !== QUICK_READS[tool];
+	if (!launch && !changes && tool !== "dotz_merge" && tool !== "dotz_escalate") return undefined;
+	return `orchestrator-guard: the quick chat does not launch sessions, merge, or change settings (${tool}). Hand it to main with dotz_conv send main.`;
+}
+
 // The files every session reads at start and only the main session writes (state.json, owner rules, lessons, owner memory):
 // a conversation's session hands a change to them to main, and a lane (DOTZ_LANE) puts it in its report's "<bot> 몫:" line
 // (hub/forline.ts), so two sessions never write one at once (2026-11-10: a lane wrote memory/owner.md).
@@ -598,7 +609,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 		}
 		const shellBlock = (tool === "bash" ? laneMergeBlock(expandShellVars(String(event?.input?.command ?? ""))) : undefined) ?? (tool === "bash" || tool === "eval" ? pipedStatusBlock(shellText(event?.input)) : undefined);
 		if (shellBlock) return { block: true, reason: shellBlock };
-		const shared = sharedWriteBlock(tool, event?.input, dataDir(), process.env.DOTZ_CONV, process.env.DOTZ_LANE, ctx?.cwd);
+		const shared = sharedWriteBlock(tool, event?.input, dataDir(), process.env.DOTZ_CONV, process.env.DOTZ_LANE, ctx?.cwd) ?? quickChatBlock(tool, event?.input);
 		if (shared) {
 			debug({ phase: "shared-write-block", tool });
 			return { block: true, reason: shared };

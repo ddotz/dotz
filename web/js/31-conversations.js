@@ -341,7 +341,7 @@ function convRows() {
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); const badge = sessionState(l); return { ...m, badge: badge === SESSION_WORD.run ? null : badge, hint: convPreview(l.lastText) || m.hint || homeRunLine(t) }; };
   // A card per group, and last the 메일 · 카카오톡 card of what waits there.
   const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
-  const out = [MAIN, "worklog"].map(mk);
+  const out = [MAIN, ...(quickOn() ? ["quick"] : []), "worklog"].map(mk);
   if (now.length) out.push({ header: TX("home.sys.running"), sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true });
   if (page.length) out.push({ header: TX("common.projects"), sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
@@ -380,7 +380,7 @@ function convCards(rows) {
 }
 // The two fixed rows alone cannot tell a list still loading, or one that failed, from a settled one: the line under them says which (never both, never before the first load).
 const cvState = () => CV.loaded ? null : CV.failed ? emptyNode(TX("conv.load_failed"), () => convLoad()) : emptyNode(TX("common.loading"));
-const FIXED_DESC = { alert: TX("conv.fixed.alert"), worklog: TX("conv.fixed.worklog") };
+const FIXED_DESC = { alert: TX("conv.fixed.alert"), worklog: TX("conv.fixed.worklog"), quick: TX("conv.fixed.quick") };
 
 /* ---- a long list: a page of projects, 읽음 처리 ---- */
 // more: projects drawn (CVF_PAGE more per 더 보기). What waits on an answer is on the 알림 screen's 처리할 것.
@@ -389,7 +389,7 @@ const CVF = { more: CVF_PAGE };
 // A conversation waits on the owner: an open decision asked there, a loose [ask] notice of it, or a session's question (same rules as 30-notices.js ntNeeds).
 // the same rule as the home 답변 필요 list: a gateway question it handles itself (nyHandled) is news there, not a need here
 const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && !nyHandled(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
-const convListed = () => [MAIN, "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
+const convListed = () => [MAIN, ...(quickOn() ? ["quick"] : []), "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
 // 읽음 처리, under the list: it takes only what needs no answer, so a conversation waiting on the owner keeps its unread.
 function convReadBtn() {
   const fyi = convListed().filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
@@ -413,7 +413,7 @@ const convReadAll = (btn, list) => busy(btn, async () => {
 // Every row has an icon, never a letter (so any name reads the same): the app's own mark for the main assistant, a bell / list for the fixed
 // feeds, the folder the 프로젝트 tab uses for a project, the session icon for a session.
 function convAvatar(t) {
-  if (isFixedT(t)) return el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon(t === "alert" ? "bell" : "list"));
+  if (isFixedT(t)) return el("span", { class: "cv-av nt", "aria-hidden": "true" }, icon(t === "alert" ? "bell" : t === "quick" ? "chat" : "list"));
   return el("span", { class: "cv-av", "aria-hidden": "true" }, t === MAIN ? el("span", { class: "logo" }) : icon(isLaneT(t) ? "lanes" : isProjT(t) ? "projects" : "chat"));
 }
 // The one list row of 채팅, 프로젝트 and 모니터링. A chat target (r.t) opens its conversation; r.open / r.sel / r.av let another list say what a tap opens,

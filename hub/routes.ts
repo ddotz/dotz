@@ -280,7 +280,7 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 	}
 	const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
 	const project = a.to.startsWith("ch:") ? projectTarget(a.to, discord.channels.work) : undefined;
-	const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
+	const conv = a.to === "alert" || a.to === "worklog" || a.to === "quick" ? a.to : undefined;
 	const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
 	if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
 	// The owner's answer to a stronger-model card (hub/escalate.ts) is acted on here, then reaches the asking session like any answer.
@@ -541,7 +541,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"), req.signal);
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main", locate = url.searchParams.get("locate"); if (locate) return json({ convs: locateMessage(locate) });
-			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target) && !isSettingsTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name>, ch:<id>, mail:<key> or settings:<app>" }, 400);
+			if (target !== "main" && target !== "alert" && target !== "worklog" && target !== "quick" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target) && !isSettingsTarget(target)) return json({ error: "target must be main, alert, worklog, quick, lane:<name>, ch:<id>, mail:<key> or settings:<app>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
 			const around = url.searchParams.get("around"), after = url.searchParams.get("after");
 			// A quote's original outside what the page holds (web/js/39-reply.js rpJump), and the messages of the gap that leaves.

@@ -17,7 +17,7 @@ import { keepHome, laneWorkerModel } from "./lanestate.ts";
 import { convs, type Conv } from "./convsessions.ts";
 import { isProjectTarget } from "./projectchat.ts";
 import { isMailTarget } from "./conv-model.ts";
-import { MAIN } from "./session-key.ts";
+import { MAIN, QUICK } from "./session-key.ts";
 import { convOfTarget, grantExpensive, noteModelChange, ownerGate } from "./model-guard.ts";
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, setLaneWorkerModel, stopLane } from "./lanes.ts";
 import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, orchestratorPid, restart as restartOrchestrator } from "./orchestrator.ts";
@@ -66,7 +66,7 @@ function fallbacksView() {
 
 // A project or mail conversation with its own session: its chip reads and changes that conversation alone (ConvMeta.ownModel); with
 // conversation sessions off it runs on main, so its target is main's.
-const modelConv = (target: string) => isProjectTarget(target) || isMailTarget(target);
+const modelConv = (target: string) => isProjectTarget(target) || isMailTarget(target) || target === QUICK;
 const projectOf = (target: string) => (modelConv(target) && convs.keyOf(target) === target ? target : undefined);
 // The conversation session that answers `target`, of any kind (mail, app settings, alert...): its context chip, /context and /compact act on that
 // session, unlike the model, which only a project chooses. A lane keeps its bare name.

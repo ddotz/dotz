@@ -239,7 +239,7 @@ export function workAnswer(w: { target?: string; reply_to?: string; ended_at?: n
 // fixed conversations "alert" / "worklog" (the gateway's alerts, and the answers to the owner's questions asked there, sent as target
 // "web:alert" / "web:worklog"). A watch wake event is in no chat conversation: its report is a notice of the 모니터링 tab (hub/notices.ts,
 // web/js/30-monitoring.js), never a message of 알림. The web app mirrors this rule for live events, so keep the two in step.
-const FIXED_CONV = /^(?:web:)?(alert|worklog)$/;
+const FIXED_CONV = /^(?:web:)?(alert|worklog|quick)$/;
 export function eventTarget(e: HubEvent): string | undefined {
 	if (e.kind === "activity" || e.kind === "subagents" || e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss" || e.kind === "read") return undefined;
 	// A mail is its own conversation (hub/mail.ts): stamped `conv` on its thread's messages, or the web-only target itself.

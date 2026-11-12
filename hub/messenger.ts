@@ -110,7 +110,7 @@ export type Adapter = {
 
 /** The kind of conversation a target belongs to, or undefined for targets that live in the web only (mail:, settings:). */
 export function kindOf(target: string): Kind | undefined {
-	if (target.startsWith("mail:") || target.startsWith("settings:")) return undefined;
+	if (target.startsWith("mail:") || target.startsWith("settings:") || target === "web:quick") return undefined;
 	if (target === "web:alert") return "alert";
 	if (target === "web:worklog") return "worklog";
 	if (target.startsWith("ch:") || target.startsWith("th:")) return "project";

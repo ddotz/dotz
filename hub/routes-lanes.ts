@@ -15,7 +15,7 @@ import { anthropicUsage, availableModels } from "./providers.ts";
 import { keepHome, persist } from "./lanestate.ts";
 import { closeLaneCards, laneVerified } from "./notices.ts";
 import { convs } from "./convsessions.ts";
-import { MAIN } from "./session-key.ts";
+import { MAIN, QUICK } from "./session-key.ts";
 import { doneProblem } from "./donesignals.ts";
 import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace, startedIn } from "./threads.ts";
@@ -220,6 +220,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 			}
 			if (req.method === "POST" && parts.length === 2) {
 				const b = await body(req);
+				if (b.session === QUICK) return json({ error: "the quick chat does not launch sessions; hand it to main with dotz_conv send main" }, 403);
 				const asked = Boolean(b.owner_asked_for_fable);
 				const dear = [b.model, b.worker_model].filter(m => m && isExpensive(String(m)));
 				if (dear.length && !asked) return json({ error: `Fable and max/xhigh-effort models (${dear.join(", ")}) run only when the owner explicitly asks for them. Use the defaults, or relaunch with owner_asked_for_fable=true after they ask.` }, 409);

@@ -289,7 +289,7 @@ function mergeTool(pi: any): void {
 }
 
 // A conversation's own session (DOTZ_CONV, hub/convsessions.ts) is reminded of its scope after a compaction, as at its start.
-const convScope = (): string => `You are ${NAME}'s session for the conversation ${process.env.DOTZ_CONV_NAME || process.env.DOTZ_CONV} (${process.env.DOTZ_CONV}). You answer only here; the main session oversees every conversation; to hand work elsewhere use dotz_conv send main.`;
+const convScope = (): string => process.env.DOTZ_CONV_SCOPE || `You are ${NAME}'s session for the conversation ${process.env.DOTZ_CONV_NAME || process.env.DOTZ_CONV} (${process.env.DOTZ_CONV}). You answer only here; the main session oversees every conversation; to hand work elsewhere use dotz_conv send main.`;
 
 function orchestratorTools(pi: any): void {
 	const z = pi.zod;

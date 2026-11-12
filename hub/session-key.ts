@@ -3,9 +3,11 @@
 // session that also takes every prompt the gateway starts itself (schedules, watches, mail wakes, lane reports).
 export const CONV_KINDS = ["mail", "ch", "th", "settings", "alert", "worklog"] as const;
 export type ConvKind = (typeof CONV_KINDS)[number];
-export type KeyRules = { on: boolean; kinds?: readonly string[]; mailOf?: (thread: string) => string | undefined };
+export type KeyRules = { on: boolean; kinds?: readonly string[]; mailOf?: (thread: string) => string | undefined; quick?: boolean };
 
 export const MAIN = "main";
+/** The quick chat's session key (config `conversations.quick_chat`, off by default, so it is no CONV_KINDS entry). */
+export const QUICK = "quick";
 
 function keyOf(target: string, mailOf?: (thread: string) => string | undefined): { kind: ConvKind; key: string } | undefined {
 	if (target === "web:alert" || target === "alert") return { kind: "alert", key: "alert" };
@@ -27,6 +29,7 @@ function keyOf(target: string, mailOf?: (thread: string) => string | undefined):
 /** The session key of `target`: `main`, or the conversation's own key when the feature is on and its kind is enabled. */
 export function sessionKeyOf(target: string | undefined, rules: KeyRules): string {
 	if (!rules.on || !target) return MAIN;
+	if (target === "web:quick" || target === QUICK) return rules.quick ? QUICK : MAIN;
 	const k = keyOf(target, rules.mailOf);
 	if (!k) return MAIN;
 	return (rules.kinds ?? CONV_KINDS).includes(k.kind) ? k.key : MAIN;
@@ -39,6 +42,7 @@ export function primaryTarget(key: string): string {
 	if (key === MAIN) return "web";
 	if (key === "alert") return "web:alert";
 	if (key === "worklog") return "web:worklog";
+	if (key === QUICK) return "web:quick";
 	return key;
 }
 

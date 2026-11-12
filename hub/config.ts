@@ -38,8 +38,8 @@ export type Config = {
 	accounts?: { history_days?: number };
 	// One agent session per conversation (hub/convsessions.ts): `sessions: false` turns it off (on by default, read at boot), `kinds` the conversation kinds that
 	// get one (hub/session-key.ts CONV_KINDS), `idle_stop_min` parks an idle one, `max_live` fixes how many run at once (main and lanes not counted; unset: sized from the
-	// computer's free memory and load, hub/convcapacity.ts).
-	conversations?: { sessions?: boolean; kinds?: string[]; idle_stop_min?: number; max_live?: number };
+	// computer's free memory and load, hub/convcapacity.ts). `quick_chat: true` adds the 가벼운 대화 (hub/quick-chat.ts): a second, cheaper session next to main.
+	conversations?: { sessions?: boolean; kinds?: string[]; idle_stop_min?: number; max_live?: number; quick_chat?: boolean };
 	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number; min_free_disk_gb?: number };
 	// Days an idle OmO session file is kept before the nightly hygiene deletes it (its pairs stay in recall); 0 keeps them. Default 90.
 	sessions?: { keep_days?: number };
@@ -308,6 +308,9 @@ export const lanesMinFreeDiskGb = () => (typeof cfg.lanes?.min_free_disk_gb === 
 // steers it into its conversation's running turn at once, as on the owner's Mac mini.
 export const convSessionsIn = (c: { conversations?: { sessions?: boolean } }): boolean => c.conversations?.sessions !== false;
 export const convSessionsOn = () => convSessionsIn(cfg);
+// Off unless `conversations.quick_chat` is true, and only with conversation sessions on.
+export const convQuickChatIn = (c: { conversations?: { sessions?: boolean; quick_chat?: boolean } }): boolean => convSessionsIn(c) && c.conversations?.quick_chat === true;
+export const convQuickChatOn = () => convQuickChatIn(cfg);
 export const convKinds = (): string[] | undefined => (Array.isArray(cfg.conversations?.kinds) ? cfg.conversations.kinds.filter(k => typeof k === "string") : undefined);
 export const convIdleStopMin = () => count(cfg.conversations?.idle_stop_min, DEFAULTS.conv_idle_stop_min, 0);
 export const convMaxLive = (): number | undefined => cap(cfg.conversations?.max_live);

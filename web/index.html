@@ -14,7 +14,7 @@
   const early = {};
   window.__early = early;
   const ask = p => { const r = fetch(p, { cache: "no-store" }); r.catch(() => {}); early[p] = r; };
-  const ok = x => x === "main" || x === "alert" || x === "worklog" || /^ch:\d+$/.test(x) || (x.startsWith("lane:") && x.length > 5);
+  const ok = x => x === "main" || x === "alert" || x === "worklog" || x === "quick" || /^ch:\d+$/.test(x) || (x.startsWith("lane:") && x.length > 5);
   let t = "main";
   try { const v = localStorage.getItem("dotz-target"); if (v && v !== "alert" && ok(v)) t = v; } catch {}
   const h = location.hash.slice(1), i = h.indexOf("/");

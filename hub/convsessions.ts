@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { ledgerIn } from "./recall-parts.ts";
 import type { createBgWork } from "./bgwork.ts";
 import { quietOmoWork, runningOmoWorkers } from "./bgwork.ts";
-import { convIdleStopMin, convKinds, convMaxLive, convSessionsOn, DATA_DIR, log as hubLog, NAME, orchestratorModel, selectorOf, writeAtomic } from "./config.ts";
+import { convIdleStopMin, convKinds, convMaxLive, convQuickChatOn, convSessionsOn, DATA_DIR, log as hubLog, NAME, orchestratorModel, selectorOf, writeAtomic } from "./config.ts";
 import { historyEvents, type HubEvent } from "./events.ts";
 import { mailByThread } from "./mail.ts";
 import { createOrchestrator, orchBusy, type OrchOpts, type Orchestrator } from "./orchestrator.ts";
@@ -17,7 +17,8 @@ import { convKindModel } from "./conv-model.ts";
 import { workersOf } from "./lanegates.ts";
 import { omoSelector } from "./runtime/omo.ts";
 import type { createPrompts, Pending, Reply } from "./prompts.ts";
-import { CONV_KINDS, MAIN, primaryTarget, safeDir, sessionKeyOf } from "./session-key.ts";
+import { quickScope } from "./quick-chat.ts";
+import { CONV_KINDS, MAIN, primaryTarget, QUICK, safeDir, sessionKeyOf } from "./session-key.ts";
 import type { ResumeSession } from "./sessionresume.ts";
 import { trackTimer } from "./shutdown.ts";
 import { markPark } from "./agent-tree.ts";
@@ -32,6 +33,8 @@ export type ConvState = "new" | "parked" | "live";
 
 export type ConvDeps = {
 	on: () => boolean;
+	/** The quick chat (config `conversations.quick_chat`) has a session of its own; unset = off. */
+	quick?: () => boolean;
 	kinds: () => readonly string[] | undefined;
 	maxLive: () => number;
 	idleMin: () => number;
@@ -84,7 +87,7 @@ function owedIds(q: Prompts): Set<string> {
 }
 
 export const scopeText = (m: ConvMeta): string =>
-	`You are ${NAME}'s session for the conversation ${m.name || m.primary} (${m.primary}). You answer only here; the main session oversees every conversation; to hand work elsewhere use dotz_conv send main.`;
+	m.key === QUICK ? quickScope(NAME) : `You are ${NAME}'s session for the conversation ${m.name || m.primary} (${m.primary}). You answer only here; the main session oversees every conversation; to hand work elsewhere use dotz_conv send main.`;
 
 // Under the memory cap a session resting this long is parked at once (a session between two quick messages keeps running).
 export const PRESSURE_IDLE_MS = 60_000;
@@ -93,7 +96,7 @@ export function createConvSessions(d: ConvDeps) {
 	const convs = new Map<string, Conv>();
 	let mainConv: Conv | undefined;
 	const hooks: ((c: Conv) => void)[] = [];
-	const rules = () => ({ on: d.on(), kinds: d.kinds(), mailOf: d.mailOf });
+	const rules = () => ({ on: d.on(), kinds: d.kinds(), mailOf: d.mailOf, quick: d.quick?.() ?? false });
 	const keyOf = (target: string | undefined): string => sessionKeyOf(target, rules());
 	const live = (c: Conv): boolean => c.o.orchestratorPid() !== undefined;
 	const metaFile = (c: Conv) => join(c.dir!, "state.json");
@@ -130,7 +133,7 @@ export function createConvSessions(d: ConvDeps) {
 			keepalive: false,
 			asks: false,
 			model: () => effective(c),
-			env: { DOTZ_CONV: key, DOTZ_LEDGER_FILE: ledgerIn(dir), DOTZ_WORKER_PIN_FILE: join(dir, "worker-pin"), ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}) },
+			env: { DOTZ_CONV: key, DOTZ_LEDGER_FILE: ledgerIn(dir), DOTZ_WORKER_PIN_FILE: join(dir, "worker-pin"), ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}), ...(key === QUICK ? { DOTZ_CONV_SCOPE: scopeText(meta) } : {}) },
 			scope: () => scopeText(c.meta),
 			seed: () => {
 				const owed = owedIds(c.queue);
@@ -193,6 +196,14 @@ export function createConvSessions(d: ConvDeps) {
 		else d.log(`conversation session ${except.key} starts over the cap of ${d.maxLive()}: none of the ${running.length} live ones can stop now`);
 	}
 
+	// The quick chat's context is bounded by its park: the stored session file is dropped, so its next start is a new session seeded with
+	// the last events (seedText) and not a resume of everything it said before.
+	function forgetSession(c: Conv): void {
+		c.o.orch.sessionFile = undefined;
+		const { sessionFile: _gone, ...rest } = readJson(metaFile(c));
+		writeAtomic(metaFile(c), `${JSON.stringify(rest, null, 2)}\n`);
+	}
+
 	/** The session for `key`, created (not spawned) when it does not exist; room is made when it is about to spawn. */
 	function ensure(key: string): Conv {
 		if (key === MAIN) return mainConv!;
@@ -200,6 +211,7 @@ export function createConvSessions(d: ConvDeps) {
 		if (!live(c)) {
 			makeRoom(c);
 			if (c.meta.parked) {
+				if (key === QUICK) forgetSession(c);
 				c.meta.parked = undefined;
 				saveMeta(c);
 			}
@@ -305,7 +317,7 @@ export function createConvSessions(d: ConvDeps) {
 	return {
 		keyOf,
 		/** The conversation kinds that have a session of their own; the others run on main. */
-		ownKinds: (): readonly string[] => (d.on() ? (d.kinds() ?? CONV_KINDS) : []),
+		ownKinds: (): readonly string[] => (d.on() ? [...(d.kinds() ?? CONV_KINDS), ...(d.quick?.() ? [QUICK] : [])] : []),
 		get,
 		forTarget,
 		ensure,
@@ -374,6 +386,7 @@ export function createConvSessions(d: ConvDeps) {
 }
 
 let on: boolean | undefined;
+let quickOn: boolean | undefined;
 let wiring: ((c: Conv) => { queue: Prompts; bg: BgWork }) | undefined;
 /** outbound.ts builds each instance's prompt queue and background-work view (it owns the delivery state they use). */
 export const setWiring = (fn: (c: Conv) => { queue: Prompts; bg: BgWork }): void => {
@@ -388,6 +401,7 @@ export const maxLiveView = () => {
 };
 export const convs = createConvSessions({
 	on: () => (on ??= convSessionsOn()),
+	quick: () => (quickOn ??= convQuickChatOn()),
 	kinds: convKinds,
 	maxLive: () => convMaxLive() ?? capacity.max(),
 	idleMin: convIdleStopMin,

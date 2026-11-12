@@ -253,6 +253,13 @@ effort change, otherwise at its next fresh start) and the worklog gets one line.
 conversation's chip, then the mail app's 이 메일에서 쓸 모델 (`custom/apps.json` `<mail app>.conv_model`, `<model>:<thinking>`, per mail app), then main's.
 With none set nothing changes. A new default reaches a mail at its next turn, main's later changes do not move it, and its task subagents stay on main's subagent model.
 
+**Quick chat (가벼운 대화).** `conversations.quick_chat: true` (default `false`; it only takes effect while `conversations.sessions` is on) adds a second
+conversation session next to the main chat, key `quick`, web target `web:quick`. It runs on the built-in worker default (Sonnet 5.5 high),
+never follows main, and its chip changes only itself. It reads the same memory and rules as main, and takes chat, quick questions, lookups and small jobs;
+launching sessions, merges, settings and model changes are refused by the guard (and `POST /api/lanes` with `session: "quick"` answers 403), so it hands those to main
+with `dotz_conv send main`. A parked quick chat starts again as a new agent session seeded with its seed text instead of resuming the stored one, which bounds its context.
+Schedules, watches, mail wakes, session reports and decisions stay on main.
+
 **Model fallback chains.** When a model fails at request time (usage limit, outage), the next model of a chain takes
 over. Three chains, each a list in `config.json`: `models.orchestrator.fallback`, `models.lanes.fallback` (every session's own
 model) and `models.workers.fallback` (the sessions' task subagents); an entry is a model selector (`provider/id[:thinking]`, the

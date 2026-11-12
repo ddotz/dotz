@@ -335,7 +335,7 @@ function eventTarget(e) {
   if (lane) return `lane:${lane}`;
   const proj = [e.channel, e.target].find(v => typeof v === "string" && isProjT(v));
   if (proj) return proj;
-  for (const v of [e.channel, e.target]) { const m = typeof v === "string" && /^(?:web:)?(alert|worklog)$/.exec(v); if (m) return m[1]; }
+  for (const v of [e.channel, e.target]) { const m = typeof v === "string" && /^(?:web:)?(alert|worklog|quick)$/.exec(v); if (m) return m[1]; }
   return e.kind === "watch" ? null : MAIN;   // a watch report is 모니터링's, not a message of 알림
 }
 

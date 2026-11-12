@@ -291,7 +291,7 @@ const homeDoneAgo = t => { const r = runOf(t), at = r && Date.parse(r.since || "
 // An app conversation with a session of its own (a mail, a project channel, an app's settings: /api/state `convs`) runs apart from the
 // assistant, so while its turn or its worker runs it is a row here: its title (the mail's subject, the app or project name), what it
 // does now (its run line: the tool-call intent or plan task, elapsed), one tap to that conversation in its app view (go: a mail opens in 모니터링).
-const convWebT = t => t === "web:alert" ? "alert" : t === "web:worklog" ? "worklog" : t;
+const convWebT = t => t === "web:alert" ? "alert" : t === "web:worklog" ? "worklog" : t === "web:quick" ? "quick" : t;
 const convRunning = c => { const r = runOf(c.target); return !!r && (r.kind === "working" || runBusy(c.target)); };
 function homeConvRow(c) {
   const t = convWebT(c.target), r = runOf(c.target), name = c.name || targetName(t), state = r.kind === "working" ? TX("common.status.working") : TX("home.sys.running"), end = homeSince(c.target);
@@ -590,8 +590,10 @@ const abortOrch = btn => busy(btn, async () => {
 const MAIN = "main", TARGET_KEY = "dotz-target";
 const isLaneT = t => t.startsWith("lane:");
 // The two fixed conversations next to the main chat (Discord's alert and worklog channels): the gateway's posts live there, not in the main chat.
-const isFixedT = t => t === "alert" || t === "worklog";
-const FIXED_NAME = { alert: TX("common.alerts"), worklog: TX("common.worklog") };
+// 가벼운 대화 ("quick") joins them when the gateway offers it (GET /api/context conversation_kinds): its answers come as target web:quick.
+const isFixedT = t => t === "alert" || t === "worklog" || t === "quick";
+const quickOn = () => !!C && (C.conversation_kinds || []).includes("quick");
+const FIXED_NAME = { alert: TX("common.alerts"), worklog: TX("common.worklog"), quick: TX("common.quick_chat") };
 const laneOf = t => t.slice(5);
 // A project orchestrator (hub/projectchat.ts): the one orchestrator in a project's work channel, target ch:<id>. Its
 // conversation is the channel's messages; its process, model and log are the orchestrator's.
