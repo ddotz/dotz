@@ -111,7 +111,8 @@ const waitForPosts = async (n: number) => { const t0 = Date.now(); while (posts.
 async function openList(width: number, height: number, theme: "light" | "dark" = "light"): Promise<View> {
 	const v = await hub.view({ width, height });
 	await v.navigate(`${hub.origin}/`);
-	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S && typeof INTG !== "undefined" && INTG.items.length === 1 && CONV.has("mail:fx-a")`);
+	// NM.loaded too: the monitors answer is part of the list's signature, so one landing later repaints the list and the bar, and a button held busy comes back as a fresh one.
+	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && typeof NM !== "undefined" && NM.loaded && S && typeof INTG !== "undefined" && INTG.items.length === 1 && CONV.has("mail:fx-a")`);
 	await run(v, `if (dotzTheme.get() !== ${JSON.stringify(theme)}) dotzTheme.toggle()`);
 	await run(v, `MON.mailFilter = "all"; MON.land = "i:mail"; go("monitoring")`);
 	await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k="i:mail"]')`);
