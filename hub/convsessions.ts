@@ -200,7 +200,7 @@ export function createConvSessions(d: ConvDeps) {
 	// The quick chat's context is bounded by its park: the stored session file is dropped, so its next start is a new session seeded with
 	// the last events (seedText) and not a resume of everything it said before.
 	function forgetSession(c: Conv): void {
-		c.o.orch.sessionFile = undefined;
+		c.o.orch.sessionFile = "";
 		const { sessionFile: _gone, ...rest } = readJson(metaFile(c));
 		writeAtomic(metaFile(c), `${JSON.stringify(rest, null, 2)}\n`);
 	}
