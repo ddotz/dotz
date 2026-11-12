@@ -138,7 +138,7 @@
   "chat.ctx.chip_tok": "컨텍스트 {tokens}",
   "chat.ctx.head_pct": "컨텍스트 {pct}% · {used}/{win}",
   "chat.ctx.head_tok": "컨텍스트 {tokens} 토큰",
-  "chat.ctx.recache": "작업 중인 세션이라 컨텍스트 {tokens} 토큰이 캐시에 다시 쓰여요\n{label}",
+  "chat.ctx.recache": "컨텍스트 {tokens} 토큰이 캐시에 다시 쓰여요\n{label}",
   "chat.ctx.apply": "적용",
   "chat.ctx.compact_later": "작업이 끝나면 압축해요",
   "chat.ctx.compact_started": "압축을 시작했어요",

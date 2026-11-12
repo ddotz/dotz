@@ -18,13 +18,19 @@ const CONTEXT = {
 const MODELS = { orchestrator: { model: OPUS, thinking: "medium" }, lanes: [], conversations: {}, thinking_levels: ["off", "low", "medium", "high"], available: [], pickable: [] };
 const puts: unknown[] = [];
 let onPut: (() => void) | undefined;
+let refuseUnforced = false;
 const TARGET_K2 = { target: "mail:k2", key: "orchestrator", own: false, inherited: `${OPUS}:medium`, inherited_kind: true, model: OPUS, thinking: "medium", active_model: "", running: false, busy: false, thinking_levels: ["off", "low", "medium", "high"], note: "", models: [{ selector: OPUS, name: "Opus 5.5", provider: "anthropic", reasoning: true }, { selector: SONNET, name: "Sonnet 5.5", provider: "anthropic", reasoning: true }] };
 const hub = fakeHub({
 	state: { name: "dotz", orchestrator: { status: "idle", activeModel: `${OPUS}:medium` }, lanes: [], terminals: {}, channels: { work: {} } },
 	async api(req, url) {
 		if (url.pathname === "/api/context") return json(CONTEXT);
 		if (url.pathname === "/api/models") return json(MODELS);
-		if (url.pathname === "/api/target" && req.method === "PUT") { puts.push(await req.json()); onPut?.(); return json({ ok: true }); }
+		if (url.pathname === "/api/target" && req.method === "PUT") {
+			const sent = (await req.json()) as { force?: boolean };
+			puts.push(sent);
+			onPut?.();
+			return refuseUnforced && !sent.force ? json({ error: "cache", requires_force: true, context_tokens: 189_760 }, 409) : json({ ok: true });
+		}
 		if (url.pathname === "/api/target" && url.searchParams.get("target") === "mail:k2") return json(TARGET_K2);
 		return undefined;
 	},
@@ -65,6 +71,26 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			await run(v, `[...document.querySelectorAll(".menu .mi")].find(b => b.textContent.includes("Sonnet 5.5")).click()`);
 			await saved;
 			expect(puts).toEqual([{ target: "mail:k2", model: SONNET }]);
+		});
+
+		test("a change the gateway refuses for the live cache asks first, and Apply repeats it with force", async () => {
+			await chipsAt(v, "mail:k2");
+			puts.length = 0;
+			refuseUnforced = true;
+			try {
+				await run(v, `document.querySelector("#c-model").click()`);
+				await waitFor(v, `document.querySelector(".menu .mi")`);
+				await run(v, `[...document.querySelectorAll(".menu .mi")].find(b => b.textContent.includes("Sonnet 5.5")).click()`);
+				const apply = `[...document.querySelectorAll("dialog.cf[open] button, dialog.fs-card[open] button, section.fs-card button")].find(b => b.textContent === "적용")`;
+				await waitFor(v, apply);
+				expect(puts).toEqual([{ target: "mail:k2", model: SONNET }]);
+				const forced = new Promise<void>(res => (onPut = res));
+				await run(v, `${apply}.click()`);
+				await forced;
+				expect(puts).toEqual([{ target: "mail:k2", model: SONNET }, { target: "mail:k2", model: SONNET, force: true }]);
+			} finally {
+				refuseUnforced = false;
+			}
 		});
 
 		test("tapping the model chip of a conversation without its own model choice never changes main's", async () => {

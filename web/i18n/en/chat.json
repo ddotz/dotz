@@ -144,7 +144,7 @@
   "chat.ctx.chip_tok": "Context {tokens}",
   "chat.ctx.head_pct": "Context {pct}% · {used}/{win}",
   "chat.ctx.head_tok": "Context {tokens} tokens",
-  "chat.ctx.recache": "This session is busy, so {tokens} tokens of context get re-cached\n{label}",
+  "chat.ctx.recache": "{tokens} tokens of context get re-cached\n{label}",
   "chat.ctx.apply": "Apply",
   "chat.ctx.compact_later": "Will compact when the work finishes",
   "chat.ctx.compact_started": "Compacting",

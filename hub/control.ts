@@ -20,7 +20,7 @@ import { isMailTarget } from "./conv-model.ts";
 import { MAIN } from "./session-key.ts";
 import { convOfTarget, grantExpensive, noteModelChange, ownerGate } from "./model-guard.ts";
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, setLaneWorkerModel, stopLane } from "./lanes.ts";
-import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
+import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, orchestratorPid, restart as restartOrchestrator } from "./orchestrator.ts";
 import { midConvoEffort } from "./mid-effort.ts";
 import { sweetSpot } from "./model-effort.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
@@ -256,7 +256,7 @@ export async function changeTarget(target: string, change: { model?: string; thi
 		if ("denied" in gate) throw new ControlError(gate.denied, 403);
 		by = gate.by;
 	}
-	if (inherits) return inheritMain(key);
+	if (inherits) return inheritMain(key, change.force === true);
 	if (change.compact) {
 		const r = compactTarget(key.replace(/^lane:/, ""));
 		return { ok: true, target: key, compaction: r.compaction.state, note: r.message };
@@ -294,25 +294,41 @@ function resolveModel(input: string, available: ModelInfo[]): string {
 type ModelChange = { ok: true; target: string; model: string; thinking: string; applied: "live" | "restarted" | "next-start" | "next-turn"; note: string };
 const PROJECT_NOTE = "Only this conversation changes.";
 const projectApplied = (applied: "live" | "restarted" | "next-start") => (applied === "next-start" ? "next-turn" : applied);
-function inheritMain(key: string): ModelChange {
-	const own = Boolean(ownModelOf(key)), applied = own ? projectApplied(convs.setOwnModel(key, undefined)) : "live";
+function inheritMain(key: string, force = false): ModelChange {
+	const own = Boolean(ownModelOf(key)), back = convs.kindModel(key);
+	if (own) askBeforeRewrite(`Conversation ${key}`, liveCtxOf(key), convModel(key), back ? parseSelector(back) : orchestratorModel(), force);
+	const applied = own ? projectApplied(convs.setOwnModel(key, undefined)) : "live";
 	return { ok: true, target: key, ...convModel(key), applied, note: own ? PROJECT_NOTE : "unchanged" };
 }
 
-// A running lane's model or effort change is refused without force: it invalidates that lane's whole message cache.
+// A running session's model or effort change is refused without force when it starts that session's prompt cache over (a lane, the orchestrator, a conversation session).
 export class ForceRequired extends ControlError {
 	constructor(message: string, readonly contextTokens: number) {
 		super(message, 409);
 	}
 }
 
-function laneCacheWarning(name: string): ForceRequired {
-	const ctx = lanes.get(name)!.ctx;
+// `modelChanged`: a different model; otherwise it is an effort change on the same model that the runtime cannot send per message.
+function cacheWarning(who: string, ctx: Ctx, modelChanged: boolean): ForceRequired {
 	return new ForceRequired(
-		`Lane ${name} is running with a context of ${describeCtx(ctx)}. Anthropic invalidates the message cache when the model or the output effort changes, and omp cannot change effort per message for anthropic (supportsPerMessageEffort=false), so the next turn re-writes that whole context into the cache (about 2x the input price). Nothing was changed. To confirm, repeat the command with --force (API: "force": true).`,
+		`${who} is running with a context of ${describeCtx(ctx)}. Changing ${modelChanged ? "its model" : "its effort"} starts its prompt cache over, so the next turn re-writes that whole context into the cache (about 2x the input price). Nothing was changed. To confirm, repeat the command with --force (API: "force": true).`,
 		ctx.tokens,
 	);
 }
+
+// Below this the rewrite costs cents: a session just started or rotated holds its prompt and tools and little else, and a question there is noise.
+const CACHE_WARN_TOKENS = 30_000;
+// The orchestrator or a conversation session asks only when its process runs (`ctx` is undefined otherwise: the change applies at the next start).
+function askBeforeRewrite(who: string, ctx: Ctx | undefined, from: { model: string; thinking: string }, to: { model: string; thinking: string }, force: boolean): void {
+	if (force || !ctx || ctx.tokens < CACHE_WARN_TOKENS) return;
+	const modelChanged = to.model !== from.model;
+	if (!modelChanged && (to.thinking === from.thinking || keepsCacheOnEffort(runtimeFor("orchestrator").id, to.model))) return;
+	throw cacheWarning(who, ctx, modelChanged);
+}
+const liveCtxOf = (key: string): Ctx | undefined => {
+	const c = convs.get(key);
+	return c && convs.live(c) ? c.o.orch.ctx : undefined;
+};
 
 // OmO sends an effort change as a per-message effort marker on these models (senpi anthropic-messages, compat
 // supportsMidConvoEffort; Anthropic docs "Change effort mid-conversation"), so the prompt cache survives it.
@@ -346,8 +362,12 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	};
 	// models.workers re-picked as it is still pulls running lanes off their launch-time worker value (below).
 	if (next.model === current.model && next.thinking === current.thinking && target !== "workers" && (!projectOf(target) || ownModelOf(target))) return { ok: true, target, ...next, applied: "live", note: "unchanged" };
-	if (projectOf(target)) return done(projectApplied(convs.setOwnModel(target, selectorOf(next))), PROJECT_NOTE);
+	if (projectOf(target)) {
+		askBeforeRewrite(`Conversation ${target}`, liveCtxOf(target), current, next, force);
+		return done(projectApplied(convs.setOwnModel(target, selectorOf(next))), PROJECT_NOTE);
+	}
 	if (target === "orchestrator") {
+		askBeforeRewrite("The orchestrator", orchestratorPid() === undefined ? undefined : orch.ctx, current, next, force);
 		updateModels("orchestrator", stored);
 		const applied = applyModelChange();
 		convs.followMain();
@@ -366,7 +386,7 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	}
 	const name = target.slice(5);
 	const cacheKept = next.model === current.model && keepsCacheOnEffort(runtimeFor("lane").id, next.model);
-	if (lanes.get(name)!.proc && !force && !cacheKept) throw laneCacheWarning(name);
+	if (lanes.get(name)!.proc && !force && !cacheKept) throw cacheWarning(`Lane ${name}`, lanes.get(name)!.ctx, next.model !== current.model);
 	const applied = await setLaneModel(name, selectorOf(next));
 	return done(applied, applied === "live" ? `Lane ${name} switched to ${selectorOf(next)} on its session.` : applied === "restarted" ? `Lane ${name} restarted on ${selectorOf(next)}, resuming its session.` : `Saved. Lane ${name} uses it when it is next resumed.`);
 }
@@ -566,7 +586,7 @@ function changedCard(r: ModelChange): CommandCard {
 // /model and /effort in a project conversation, or naming one (a card's button): the same change as its chip. Target names are still main's or a lane's.
 async function projectCommand(key: string, kind: "model" | "effort", first?: string, second?: string, force = false, by = "owner"): Promise<CommandCard> {
 	if (!first) return targetCard(key, kind);
-	if (first === "inherit") return changedCard(inheritMain(key));
+	if (first === "inherit") return changedCard(inheritMain(key, force));
 	const level = (THINKING_LEVELS as readonly string[]).includes(first);
 	return changedCard(await setModel(key, level ? undefined : first, level ? first : second, force, by));
 }

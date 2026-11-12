@@ -35,7 +35,7 @@ test("a project's numbers are its own session's, and its percent uses its own mo
 	const c = ctxFor(P, 100_000, 1_000_000);
 	running(c);
 	expect(row(P)).toMatchObject({ kind: "conversation", running: true, tokens: 100_000, window: 1_000_000, percent: 10 });
-	await changeTarget(P, { model: SONNET, thinking: "low" });
+	await changeTarget(P, { model: SONNET, thinking: "low", force: true });
 	c.o.orch.activeModel = `${SONNET}:low`;
 	setContextLimits(SONNET, { window: 200_000, compact_at: null }, 0);
 	expect(row(P)).toMatchObject({ model: `${SONNET}:low`, window: 200_000, percent: 50 });
