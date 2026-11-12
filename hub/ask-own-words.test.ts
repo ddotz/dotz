@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { paths } from "./config.ts";
 import { emit } from "./events.ts";
 import { flush, inboxText, sendWeb } from "./intake.ts";
-import { resetNoticesForTest, type Notice } from "./notices.ts";
+import { answerDecision, type DecisionSend, resetNoticesForTest, type Notice } from "./notices.ts";
 import { putDecision } from "./notices-store.ts";
 import { orch } from "./orchestrator.ts";
 import { setUpdateNow, type UpdateNow } from "./update-now.ts";
@@ -137,4 +137,38 @@ test("conversations never mix: a project's question reaches only that project's 
 	expect(inboxText(event("기존 방식으로 해"))).toBe(plain);
 	expect(inboxText(event("기존 방식으로 해", "ch:1500000000000000001"))).toContain(TITLE_C);
 	expect(plainProject).not.toContain(TITLE_C);
+});
+
+// "직접 답하기" on a question asked in the 알림 conversation (no composer there): the sheet's text field answers with no option picked.
+const askIn = (to: string, title: string, group = 1, replyTo = T1) => putDecision({ key: `own:${title}`, title, detail: "", to, options: [{ n: 1, label: "첫째" }, { n: 2, label: "둘째" }], group, replyTo }, T1);
+const idOf = (title: string) => stored().find(n => n.title === title)!.id;
+
+test("the owner's words alone answer a question: they are sent to where it was asked with the asking message, and settle only that question", async () => {
+	ask(T1, [TITLE_A], "alert");
+	const sent: Parameters<DecisionSend>[0][] = [];
+	const r = await answerDecision(idOf(TITLE_A), { note: "  기존 방식으로 해  " }, async a => void sent.push(a));
+	expect(r.status).toBe(200);
+	expect(sent).toEqual([{ to: "alert", text: "기존 방식으로 해", replyTo: T1, notice: idOf(TITLE_A) }]);
+	expect(byTitle(TITLE_A)).toMatchObject({ state: "answered", answer: "기존 방식으로 해" });
+	// the line the asking chat gets names the question the words answer
+	const line = inboxText(event(sent[0]!.text, "web:alert", { reply_to: sent[0]!.replyTo, decision: sent[0]!.notice }));
+	expect(line).toContain(TITLE_A);
+});
+
+test("words alone need text, are refused for a send approval and a login request, and a failed send leaves the question open", async () => {
+	askIn("alert", TITLE_B);
+	expect(await answerDecision(idOf(TITLE_B), { note: "   " }, async () => {})).toMatchObject({ status: 400 });
+	putDecision({ key: "draft:words", title: "답장 보내도 될까요?", detail: "", to: "main", options: [{ n: 1, label: "보내기" }], group: 1, replyTo: T2, draft: { toLabel: "x", to: "a@example.com", body: "안녕" } as never }, T2);
+	expect(await answerDecision(idOf("답장 보내도 될까요?"), { note: "알아서" }, async () => {})).toMatchObject({ status: 400 });
+	const failed = await answerDecision(idOf(TITLE_B), { note: "나중에" }, async () => { throw new Error("전달하지 못했어요"); });
+	expect(failed).toMatchObject({ status: 409 });
+	expect(byTitle(TITLE_B).state).toBe("open");
+});
+
+test("a question of a several-question message carries its title with the words, so the bot knows which one they answer", async () => {
+	ask(T1, [TITLE_A, TITLE_C], "alert");
+	const sent: Parameters<DecisionSend>[0][] = [];
+	await answerDecision(idOf(TITLE_C), { note: "새 이름" }, async a => void sent.push(a));
+	expect(sent[0]!.text).toBe(`${TITLE_C}: 새 이름`);
+	expect(byTitle(TITLE_A).state).toBe("open");
 });

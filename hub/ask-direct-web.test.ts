@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { emit } from "./events.ts";
-import { listNotices, resetNoticesForTest, unreadCount } from "./notices.ts";
+import { answerDecision, type DecisionSend, listNotices, resetNoticesForTest, unreadCount } from "./notices.ts";
+import { putDecision } from "./notices-store.ts";
 import { fakeHub, idleState, inbox, json, on, type View } from "./test-web.ts";
 
 // "직접 답하기" on a question card (web/js/30-notices.js ntDirect): the composer quotes the asking message and what the owner writes next is sent with that
@@ -8,6 +9,7 @@ import { fakeHub, idleState, inbox, json, on, type View } from "./test-web.ts";
 // message drops the id. Headless browser, fixture history, the real notice store; the fake hub's /api/message makes the same inbox event the route makes.
 type Sent = { text: string; reply?: { id: string; content: string }; decision?: string };
 const sent = inbox<Sent>();
+const delivered = inbox<Parameters<DecisionSend>[0]>();
 let history: unknown[] = [];
 const hub = fakeHub({
 	state: () => idleState({ notices_unread: unreadCount(), lanes: [{ name: "web", title: "웹", status: "idle", live: true, alive: true, home: "ch:7" }], channels: { work: { 7: "웹" } } }),
@@ -17,6 +19,12 @@ const hub = fakeHub({
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
 		if (p === "/api/notices" && req.method === "GET") return json(listNotices(300));
+		// A button or typed answer of the notice sheet goes through the real answerDecision; what it would hand the asking chat is recorded.
+		const answering = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(p) : null;
+		if (answering) {
+			const r = await answerDecision(answering[1]!, await req.json(), async a => void delivered.push(a));
+			return json(r.body, r.status);
+		}
 		if (p === "/api/message" && req.method === "POST") {
 			const b = (await req.json()) as Sent;
 			emit("inbox", { ts: new Date().toISOString(), kind: "message", source: "web", channel: "web", text: b.text, ...(b.reply ? { reply: b.reply } : {}), ...(b.decision ? { decision: b.decision } : {}) });
@@ -54,6 +62,7 @@ beforeEach(async () => {
 	resetNoticesForTest();
 	history = [plain];
 	sent.length = 0;
+	delivered.length = 0;
 	view = await hub.view({ width: 1280, height: 760 });
 }, 20_000);
 afterEach(() => hub.release());
@@ -129,6 +138,45 @@ describe("직접 답하기 on a question card", () => {
 		const body = await write("그건 그렇고 날씨 어때?");
 		expect(body.decision).toBeUndefined();
 		expect(body.reply?.id).toBe(T_PLAIN);
+		expect(stateOf("보고서")).toBe("open");
+	}, 20_000);
+});
+
+// The 알림 conversation has no composer (web/js/31-conversations.js convTakesText), so a question asked there is answered in the sheet's own text field.
+describe("직접 답하기 on a question asked in the 알림 conversation", () => {
+	const askAlert = () => putDecision({ key: "ask:alert", title: "보고서를 보낼까요?", detail: "", to: "alert", options: [{ n: 1, label: "보내기" }, { n: 2, label: "두기" }], group: 1, replyTo: T_ASK }, T_ASK);
+	const sheetDirect = async () => {
+		await view.navigate(`${hub.origin}/?v=${++visits}#notices`);
+		await waitFor(`typeof NT !== "undefined" && NT.loaded && document.querySelector('#v-notices .list[data-g="need"] .nsc-r')`);
+		await run(`document.querySelector('#v-notices .list[data-g="need"] .nsc-r .nsc-tx').click()`);
+		await waitFor(`document.querySelector('.ds-direct[data-k="direct"]')`);
+		await run(`document.querySelector('.ds-direct[data-k="direct"]').click()`);
+	};
+	const typing = `(() => { const t = document.querySelector(".dc-note"), r = t && t.getBoundingClientRect(); return !!t && !t.disabled && !t.readOnly && r.width > 0 && r.height > 0; })()`;
+
+	test("it opens a text field that is there to type in, and the text is that question's answer", async () => {
+		askAlert();
+		await sheetDirect();
+		await waitFor(typing);
+		expect(await ev<string>(`current`)).toBe("notices");
+		await run(`const t = document.querySelector(".dc-note"); t.value = "이미 보냈어요"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector('.dc-go[data-k="send"]').click()`);
+		const [a] = await delivered.until(d => d.length > 0);
+		await waitFor(`NT.items.some(n => n.decision && n.decision.state === "answered")`);   // the page heard the hub settle it
+		const id = decisions().find(d => d.title.includes("보고서"))!.id;
+		expect(a).toMatchObject({ to: "alert", text: "이미 보냈어요", replyTo: T_ASK, notice: id });
+		expect(a!.picks).toBeUndefined();
+		expect(stateOf("보고서")).toBe("answered");
+		expect(decisions()[0]!.answer).toBe("이미 보냈어요");
+	}, 20_000);
+
+	test("an empty field sends nothing, and 돌아가기 returns to the options", async () => {
+		askAlert();
+		await sheetDirect();
+		await waitFor(typing);
+		expect(await ev<boolean>(`document.querySelector('.dc-go[data-k="send"]').disabled`)).toBe(true);
+		await run(`document.querySelector('.dc-back').click()`);
+		await waitFor(`document.querySelector('.ds-opt') && !document.querySelector(".dc-note")`);
+		expect(delivered).toHaveLength(0);
 		expect(stateOf("보고서")).toBe("open");
 	}, 20_000);
 });

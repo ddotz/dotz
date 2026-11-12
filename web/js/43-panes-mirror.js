@@ -45,7 +45,7 @@ function paneMirror(p) {
     m.wrap.addEventListener("scroll", () => edgeFade(m.wrap), { passive: true });
     if (snap) m.keys = snap.keys; else paneFill(m);
     m.todo = el("div", { class: "todo", hidden: true });
-    m.node = el("div", { class: `pane-mir pane-chat${p.t === "alert" ? " no-composer" : ""}` }, head, m.todo, el("div", { class: "chatbox" }, m.wrap), paneComposerEl(m));
+    m.node = el("div", { class: `pane-mir pane-chat${convTakesText(p.t) ? "" : " no-composer"}` }, head, m.todo, el("div", { class: "chatbox" }, m.wrap), paneComposerEl(m));
     if (!TD.by[p.t]) loadTodo(p.t);
   } else {
     m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : el("div", { class: "empty", text: TX("misc.pane.tap_room") })));

@@ -27,6 +27,7 @@ export function settleOpenDecision(id: string, label: string): void {
 	const item = items.find(i => i.id === id);
 	if (item && isOpenDecision(item)) settleDecision(item, label);
 }
+const OWN_WORDS_MAX = 1000;
 export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; files?: Upload[]; picks?: { q: string; n: number; label: string; note?: string }[] }) => Promise<void>;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
@@ -37,6 +38,7 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	if (d.state !== "open") return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
 	// a second tap while the first answer is still going out: that one carries it (a double tap never sends the answer twice)
 	if (sending.has(item.id)) return { status: 200, body: { ok: true, already: true, item, unread: unreadCount() } };
+	if (body.n === undefined || body.n === null) return answerInWords(item, String(body.note ?? "").trim().slice(0, OWN_WORDS_MAX), send);
 	const o = d.options.find(x => x.n === Number(body.n));
 	if (!o || o.action === "form") return { status: 400, body: { error: "unknown option" } };
 	const label = `${o.n}) ${o.label}`;
@@ -48,10 +50,13 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	if (draftEdit && !note) return { status: 400, body: { error: draftActionOf(o.label) === "own" ? "어떻게 보낼지 적어 주세요" : "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
+	return deliverDecision(item, label, { to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
+}
+// Sends the answer, and only when that worked is the notice answered. `label` is what the notice then shows as the answer.
+async function deliverDecision(item: Notice, label: string, payload: Parameters<DecisionSend>[0], send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
 	sending.set(item.id, label);
 	try {
-		// `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines).
-		await send({ to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) });   // files: what 직접 수정 attached, for the bot to put on the draft
+		await send(payload);
 		settleDecision(item, label);
 	} catch (err) {
 		return { status: 409, body: { error: (err as Error).message } };
@@ -59,6 +64,17 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 		sending.delete(item.id);
 	}
 	return { status: 200, body: { ok: true, item, unread: unreadCount() } };
+}
+
+// The owner's own words as the answer, no option picked: for a question asked where no composer takes typed text (the 알림 conversation), so the sheet's
+// text field is the only place to write. It reaches the asking chat / session as an option answer does, with the question (intake.ts decisionLines reads
+// replyTo and the notice); a question of a several-question message, or one with no asking message to point at, carries its title. A send approval and a
+// login request are answered by their buttons only.
+async function answerInWords(item: Notice, said: string, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+	const d = item.decision!;
+	if (d.draft || d.to.startsWith("auth:")) return { status: 400, body: { error: "unknown option" } };
+	if (!said) return { status: 400, body: { error: "내용을 적어 주세요" } };
+	return deliverDecision(item, said, { to: d.to, text: d.group > 1 || !d.reply_to ? `${item.title}: ${said}` : said, notice: item.id, ...(d.reply_to ? { replyTo: d.reply_to } : {}) }, send);
 }
 
 // A login request (dotz_auth) waits on the owner: approve / cancel here, the form for typed values stays the page's own.

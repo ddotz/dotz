@@ -198,8 +198,9 @@ let ntJumpSeq = 0;
 let ntKeep = "";   // the session a tapped notice opened: it may end while its report is on screen, and the view then stays (refreshState)
 // `quiet`: a sheet is opening over the conversation and says what the notice is about itself, so a message that is gone needs no toast.
 // `via`: the conversation the gateway said holds the message (the second try, never a third).
+const ntWhere = n => n.msg || n.src || n.open || "main";   // the conversation a notice leads to
 async function ntJump(n, quiet = false, via = "") {
-  const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, want = via || n.msg || n.src || n.open || "main", ended = () => isLaneT(want) && S && !S.lanes.some(l => `lane:${l.name}` === want);
+  const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, want = via || ntWhere(n), ended = () => isLaneT(want) && S && !S.lanes.some(l => `lane:${l.name}` === want);
   let open = want, located = !!via;
   // A session this page has not read yet (it began and ended while the page slept) is not gone: ask the gateway before ntGo sends the tap to the main chat.
   if (!via && ended()) { await refreshState(); if (seq !== ntJumpSeq) return; }
@@ -595,22 +596,34 @@ const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null, pn
 function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
 // "직접 답하기": to the asking message in its chat (a login request: its own form), where the composer quotes that message as the answer to this question:
 // what the owner writes next carries the question's id and settles it (hub/notices-store.ts ownerReplied). A send approval stays a plain jump.
+// A question whose conversation takes no typed text (convTakesText: the 알림 record) is answered in the sheet's own text field instead: nothing to jump to.
 async function ntDirect(n) {
+  const d = n.decision;
+  if (!d.draft && d.state === "open" && !d.to.startsWith("auth:") && !convTakesText(ntWhere(n))) return ntOwnWords(n);   // a peer's question too: it is answered on its computer with the same call
   ntSheetClose(false);
   if (n.pc) { const t = n.decision.to; if (pqPc(t)) go("monitoring", `c:${t}`); else toast(TX("conv.nt.answer_on", { name: n.pc.name })); return; }   // a peer's question: its conversation as this page shows it
   if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(true); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast(TX("conv.nt.input_closed")); return; }
   if (await ntJump(n) !== undefined || n.decision.draft || n.decision.state !== "open") return;
+  if (!convTakesText(target)) return ntOwnWords(n);   // its message turned out to live in such a conversation
   const m = ntFind(n.at);
   if (m && m.dataset.ts === n.at && RP.src.has(m)) rpStart(m, String(n.id));
 }
 // Same rule as the hub (hub/notices.ts answerDecision): an option that needs detail is answered only with the owner's text.
 const ntNeedsNote = (n, o) => !o.say && !o.action && (n.decision.draft ? draftAsksText(o) : detailOf(o));
+// The sheet's text field with no option picked: what is written there is the answer (hub/notices-answers.ts answerInWords).
+async function ntOwnWords(n) {
+  if (!(NS.node && NS.id === String(n.id))) await noticeSheetOpen(n.pc ? n : String(n.id));
+  if (!NS.node || NS.id !== String(n.id)) return;
+  NS.edit = { id: String(n.id), opt: null, text: "", fresh: true };
+  ntSheetPaint();
+}
+// `opt` is null for the owner's own words (ntOwnWords): the answer is `note` alone.
 async function ntAnswer(n, opt, note) {
-  if (opt.action === "form") { ntDirect(n); return; }
-  if (!note && ntNeedsNote(n, opt)) { NS.edit = { id: String(n.id), opt, text: "", fresh: true }; ntSheetPaint(); return; }
+  if (opt && opt.action === "form") { ntDirect(n); return; }
+  if (opt && !note && ntNeedsNote(n, opt)) { NS.edit = { id: String(n.id), opt, text: "", fresh: true }; ntSheetPaint(); return; }
   NS.busy = true; ntSheetPaint();
   let sent = false;
-  try { await ntPost(n, opt.n, note, undefined, opt.label); NS.edit = null; sent = true; }
+  try { await ntPost(n, opt ? opt.n : undefined, note, undefined, opt ? opt.label : ""); NS.edit = null; sent = true; }
   catch (err) { toast(err.message, true); }
   NS.busy = false;
   if (sent && NS.id === String(n.id) && ntAfterAnswer(n)) return;
@@ -646,12 +659,12 @@ function ntAfterAnswer(n) {
   return true;
 }
 function ntEditNode(n, ed) {
-  const drf = !!n.decision.draft, dt = draftNoteText(ed.opt);
-  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": drf ? dt.aria : TX("decision.note.details"), disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
+  const own = !ed.opt, drf = !own && !!n.decision.draft, dt = drf ? draftNoteText(ed.opt) : null;
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: own ? "1000" : "500", placeholder: own ? TX("conv.nt.own_ph") : drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": own ? TX("conv.nt.direct") : drf ? dt.aria : TX("decision.note.details"), disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = ed.text;
-  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, noteGoLabel(ed.opt, drf, false));
+  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, own ? TX("conv.nt.own_go") : noteGoLabel(ed.opt, drf, false));
   const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, TX("decision.back"));
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
+  return el("div", { class: "dc-edit" }, own ? null : el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
 function ntBody(n, text) {
@@ -713,7 +726,7 @@ function ntSheetPaint() {
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
-  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? ed.opt.n : 0, sibs.map(x => [x.id, x.decision.state])]);
+  const sig = JSON.stringify([n.title, n.text, d, ntWhen(n), NS.busy, ed ? (ed.opt ? ed.opt.n : -1) : 0, sibs.map(x => [x.id, x.decision.state])]);
   if (NS.h.box.dataset.sig === sig) return;
   NS.h.box.dataset.sig = sig;
   const hadNote = !!NS.node.querySelector(".dc-note:focus");

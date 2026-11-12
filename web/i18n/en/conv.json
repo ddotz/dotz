@@ -51,6 +51,8 @@
   "conv.nt.answered": "Answered",
   "conv.nt.go_input": "Go to the input box",
   "conv.nt.direct": "Answer directly",
+  "conv.nt.own_go": "Send answer",
+  "conv.nt.own_ph": "Write your answer",
   "conv.nt.next_q": "Next question",
   "conv.nt.skipped": "Skipped without answering",
   "conv.nt.you_answered": "Your answer",

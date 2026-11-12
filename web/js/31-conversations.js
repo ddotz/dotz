@@ -492,10 +492,12 @@ function convPaint() {
   $("#v-chat").classList.toggle("mon-two", !!mit);
   monChatTop.hidden = !mit;
   if (topSig !== monChatTop.dataset.sig) { monChatTop.dataset.sig = topSig; clear(monChatTop); if (mit) monChatTop.append(...monChatTopNodes(mit).filter(Boolean)); }
-  $("#v-chat").classList.toggle("no-composer", target === "alert");
+  $("#v-chat").classList.toggle("no-composer", !convTakesText(target));
   convPaintHead();
   paneHeads();
 }
+// Whether the owner can type into conversation t. The 알림 record is read-only (no composer): a question asked there is answered in its sheet (30-notices.js ntDirect).
+const convTakesText = t => t !== "alert";
 function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPaint); }
 
 /* ---- app bar ---- */

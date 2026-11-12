@@ -42,6 +42,8 @@
   "conv.nt.answered": "답변함",
   "conv.nt.go_input": "입력 창으로 가기",
   "conv.nt.direct": "직접 답하기",
+  "conv.nt.own_go": "이 내용으로 답하기",
+  "conv.nt.own_ph": "답을 적어 주세요",
   "conv.nt.next_q": "다음 질문 보기",
   "conv.nt.skipped": "답하지 않고 넘겼어요",
   "conv.nt.you_answered": "이렇게 답했어요",
