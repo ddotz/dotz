@@ -1,5 +1,5 @@
 // End to end with fakes: a new KakaoTalk message -> `cli.ts draft --chat <id>` (the approval block) -> the owner's pick 1) 보내기 ->
-// `cli.ts send --draft <code>` -> the one Accessibility send of the fake KakaoTalk screen (ui.fixture.ts). The CLI runs with the real
+// the gateway's send (send.ts sendDraft) -> the one Accessibility send of the fake KakaoTalk screen (ui.fixture.ts). The CLI runs with the real
 // send.ts; only the screen, the database reader and the gateway are fakes. Nothing reaches KakaoTalk.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
@@ -57,6 +57,12 @@ function cli(screen: ReturnType<typeof fakeScreen>, stdin = "") {
 	} as Ctx;
 	return { ctx, out, hub };
 }
+// The send itself (send.ts sendDraft), as the gateway's KakaoTalk adapter runs it; `cli.ts send` only hands the draft to the gateway's queue now.
+async function sendNow(c: ReturnType<typeof cli>, code: string): Promise<number> {
+	const r = await sendDraft(code, { paths, runner: c.ctx.runner, latestIncoming: async () => IN.logId, roomNames: async () => [{ chatId: ROOM.chatId, name: ROOM.name, kind: ROOM.kind }] });
+	c.out.push(r.ok ? "보냈어요" : `보내지 않았어요: ${r.reason ?? "이유를 알 수 없어요"}`);
+	return r.ok ? 0 : 1;
+}
 
 const pick = (code: string, label = "보내기") =>
 	appendSealed(paths.inbox, { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: `1) ${label}`, picks: [{ q: `카톡 답장 보낼까요? (${code})`, n: 1, label }] });
@@ -74,19 +80,18 @@ describe("kakao: new message -> draft -> 1) 보내기 -> sent by the app screen"
 		const code = await drafted();
 		const screen = fakeScreen(rows);
 		const first = cli(screen);
-		expect(await run(["send", "--draft", code], first.ctx)).toBe(1);
+		expect(await sendNow(first, code)).toBe(1);
 		expect(first.out).toEqual(["보내지 않았어요: 아직 보내도 된다는 답을 받지 못했어요"]);
 		expect(screen.sends).toEqual([]);
 		pick(code);
 		const ok = cli(screen);
-		expect(await run(["send", "--draft", code], ok.ctx)).toBe(0);
+		expect(await sendNow(ok, code)).toBe(0);
 		expect(ok.out).toEqual(["보냈어요"]);
 		expect(screen.sends).toEqual([["ax-send", "스터디방", "응 7시에 봐"]]);
-		expect(ok.hub.map(h => h.path)).toEqual(["/api/followup"]);
 		expect((await listDrafts({ paths, runner: screen.runner }))[0]!.status).toBe("sent");
 		pick(code);
 		const again = cli(screen);
-		expect(await run(["send", "--draft", code], again.ctx)).toBe(1);
+		expect(await sendNow(again, code)).toBe(1);
 		expect(again.out[0]).toContain("이미 보낸 초안이에요");
 		expect(screen.sends).toHaveLength(1);
 	});
@@ -96,12 +101,12 @@ describe("kakao: new message -> draft -> 1) 보내기 -> sent by the app screen"
 		pick(code);
 		const broken = fakeScreen(rows, { openFail: { step: "row", why: "not_found" } });
 		const failed = cli(broken);
-		expect(await run(["send", "--draft", code], failed.ctx)).toBe(1);
+		expect(await sendNow(failed, code)).toBe(1);
 		expect(failed.out[0]!.startsWith("보내지 않았어요: ")).toBe(true);
 		expect(broken.sends).toEqual([]);
 		expect((await listDrafts({ paths, runner: broken.runner }))[0]!.status).toBe("pending");
 		const fixed = fakeScreen(rows);
-		expect(await run(["send", "--draft", code], cli(fixed).ctx)).toBe(0);
+		expect(await sendNow(cli(fixed), code)).toBe(0);
 		expect(fixed.sends).toHaveLength(1);
 	});
 
@@ -110,11 +115,11 @@ describe("kakao: new message -> draft -> 1) 보내기 -> sent by the app screen"
 		pick(code);
 		const unclear = fakeScreen(rows, { axSend: () => ({ ok: false, why: "unclear", pressed: true }) });
 		const first = cli(unclear);
-		expect(await run(["send", "--draft", code], first.ctx)).toBe(1);
+		expect(await sendNow(first, code)).toBe(1);
 		expect(first.out[0]).toContain("확인하지 못했어요");
 		const retry = fakeScreen(rows);
 		const second = cli(retry);
-		expect(await run(["send", "--draft", code], second.ctx)).toBe(1);
+		expect(await sendNow(second, code)).toBe(1);
 		expect(second.out[0]).toContain("카카오톡에서 확인해 주세요");
 		expect(retry.sends).toEqual([]);
 	});

@@ -188,19 +188,15 @@ async function draft(args: Record<string, string | true>, ctx: Ctx, config: Kaka
 	}
 }
 
-async function send(args: Record<string, string | true>, ctx: Ctx, config: KakaoConfig): Promise<number> {
+// A draft is sent only through the gateway's one queue (POST /api/reply/act): the lease, the newer-message check, the undo window and the
+// retries all apply, and this command sends nothing by itself.
+async function send(args: Record<string, string | true>, ctx: Ctx): Promise<number> {
 	const code = str(args.draft);
 	if (!code) return ctx.out(USAGE), 2;
-	let reader: Reader | undefined;
-	const open = async () => (reader ??= await ctx.reader(config));
-	const r = await (await ctx.drafts()).send(code, {
-		latestIncoming: async chatId => newestIncoming(await (await open()).messages(chatId, MAX_READ))?.logId,
-		roomNames: async () => (await (await open()).rooms()).map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })),
-	});
-	ctx.out(r.ok ? "보냈어요" : `보내지 않았어요: ${r.reason ?? "이유를 알 수 없어요"}`);
-	// An approved message went out: the gateway wakes the bot once when the kakao app has a 이어서 할 일 rule (hub/followup.ts).
-	if (r.ok) await ctx.hub.post("/api/followup", { app: "kakao", kind: "kakao", key: code, ids: { draft: code } }).catch(() => undefined);
-	return r.ok ? 0 : 1;
+	const r = await ctx.hub.post("/api/reply/act", { ref: code, action: "send" }).catch((e: Error) => ({ status: 0, json: { error: `게이트웨이에 닿지 못했어요: ${e.message}` } }));
+	const ok = r.status >= 200 && r.status < 300 && r.json?.ok !== false;
+	ctx.out(ok ? "보내기를 맡겼어요. 답장 대기에서 몇 초 안에 되돌릴 수 있어요" : `보내지 않았어요: ${r.json?.error ?? "이유를 알 수 없어요"}`);
+	return ok ? 0 : 1;
 }
 
 // Files go only to the owner's own 나와의 채팅 (the one database room of type 5), so no draft approval: no other room can be named here.
@@ -286,7 +282,7 @@ export async function run(argv: string[], ctx: Ctx): Promise<number> {
 	if (cmd === "read") return read(args, ctx, config);
 	if (cmd === "draft") return draft(args, ctx, config);
 	if (cmd === "send-file") return sendFile(rest, args, ctx, config);
-	return send(args, ctx, config);
+	return send(args, ctx);
 }
 
 const load = <T>(name: string) => import(`./${name}.ts`) as Promise<T>;

@@ -1,6 +1,7 @@
 // The real wiring of the one reply flow (the reply unification design, 1.2 and lane C1): the send queue with its job file, the three
 // adapters (mail and webmail, comments, KakaoTalk), the owner's word in the inbox, the cards in the notices and the reply event. Every
 // approval entry (the web's card answer, Discord's buttons, the triage list, /api/reply/*) reaches a reply through `replies` from here.
+import { triggerFollowup } from "./followup.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
@@ -55,6 +56,8 @@ export const reportSend = (r: SendResult): void => {
 	broadcast({ ts: now(), kind: "reply", ref: r.ref, ...(send ? { send } : {}) });
 	if (kakaoReply.target(r.ref)) broadcast({ kind: "kakao_draft", chatId: "" });
 	if (r.state === "sent") cardOwedMail(r);
+	// A KakaoTalk draft goes out in this process (no CLI posts /api/followup for it): the app's 이어서 할 일 is woken here, once per draft.
+	if (r.state === "sent" && kakaoReply.target(r.ref)) triggerFollowup({ app: "kakao", kind: "kakao", key: r.ref, ids: { draft: r.ref } });
 	if (r.state !== "failed" && r.state !== "unsure") return;
 	// Code is still retrying a surely-unsent send: the card shows it; the owner hears only when it needs him.
 	if (r.state === "failed" && r.safeToAuto) return;

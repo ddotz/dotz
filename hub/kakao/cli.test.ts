@@ -141,8 +141,10 @@ test("draft bases itself on the newest incoming text message; send hands the app
 	expect(await run(["draft", "--chat", "105"], ctx)).toBe(1);
 	expect(created).toHaveLength(1);
 	expect(await run(["send", "--draft", "KGOOD"], ctx)).toBe(0);
+	expect(log.hub.at(-1)).toEqual({ method: "POST", path: "/api/reply/act", body: { ref: "KGOOD", action: "send" } });
+	ctx.hub.post = async () => ({ status: 409, json: { ok: false, error: "아직 보내도 된다는 답을 받지 못했어요" } });
 	expect(await run(["send", "--draft", "KBAD"], ctx)).toBe(1);
-	expect(sent).toEqual([`KGOOD:${MSGS[2]!.logId}:Alex,Shop`, `KBAD:${MSGS[2]!.logId}:Alex,Shop`]);
+	expect(sent).toEqual([]);
 	expect(log.out.at(-1)).toContain("아직 보내도 된다는 답을 받지 못했어요");
 });
 
