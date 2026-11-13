@@ -8,7 +8,7 @@ import { bareAsk, normalizeAsk } from "./ask-normalize.ts";
 import { parseDecisions } from "./choices.ts";
 import { join } from "node:path";
 import { workerCheck } from "./activity.ts";
-import { orchestratorOnlyAsk } from "./forline.ts";
+import { forLines, mentionsMain, orchestratorOnlyAsk } from "./forline.ts";
 import { msg } from "./i18n.ts";
 import { checkDone, doneChecks, type Check } from "./donesignals.ts";
 import { unlanded } from "./lanetree.ts";
@@ -86,6 +86,14 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 			return prompt(lane, bannedNote(banned));
 		}
 		if (!banned.length) lane.bannedRefused = undefined;
+		// A [wait] on main must say what main is to do: in words alone it reached main only by a guess, and 13 such waits sat unheard (2026-11-06..13).
+		if (parseTone(text).tone === "wait" && !forLines(text) && mentionsMain(text) && lane.proc && !lane.waitMainRefused) {
+			lane.waitMainRefused = true;
+			persist(lane);
+			log(`lane ${lane.name} [wait] refused (waits on main with no for-line)`);
+			return prompt(lane, msg().waitMainRefused);
+		}
+		lane.waitMainRefused = undefined;
 		const unattached = lane.proc ? attachNote(text) : undefined;
 		if (unattached) {
 			log(`lane ${lane.name} report refused (send approval names a file with no [file] line)`);

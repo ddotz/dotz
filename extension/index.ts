@@ -470,7 +470,7 @@ function mainTool(pi: any): void {
 	pi.registerTool({
 		name: "dotz_main",
 		label: "Dotz main",
-		description: `Hand ${NAME}'s main session work only it can do (restart, release, another machine, another project); its answer comes back to you as a message. Results stay in your report; an owner's decision is an [ask].`,
+		description: `Hand ${NAME}'s main session work only it can do (restart, release, another machine, another project); its answer comes back to you as a message. Results stay in your report; an owner's decision is an [ask]. Before ending a turn with [wait] on main, call this (or write the For line in the report).`,
 		parameters: z.object({ text: z.string() }),
 		async execute(_id: string, p: any) {
 			const r = await call("/api/conv-sessions/main/send", { method: "POST", body: JSON.stringify({ text: p.text, from: `lane:${process.env.DOTZ_LANE}` }) }).catch(e => ({ error: e.message }));

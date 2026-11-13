@@ -72,6 +72,8 @@ export type Lane = Record_ & {
 	unverifiedRefused?: boolean;
 	// A report with a word of the owner's list (hub/word-ban.ts) went back to the lane once; the next clean report clears it.
 	bannedRefused?: boolean;
+	// A [wait] naming main with no for-line went back to the lane once; the next report goes through and clears it (hub/lanereport.ts).
+	waitMainRefused?: boolean;
 	// Set when a compaction finished: the next prompt sent to the process carries the retain nudge once (no extra turn).
 	retainNext?: boolean;
 	// This process holds the extension's re-read of the contract as a next-turn message (set with contractDue when its runtime loads the extension; reset at every spawn).

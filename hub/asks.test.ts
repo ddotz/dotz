@@ -4,7 +4,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pendingAskFile, pendingAsks, pendingAsksBlock } from "./asks.ts";
-import { cfg } from "./config.ts";
+import { cfg, NAME } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { decisionsOf } from "./notices.ts";
 import type * as Lanes from "./lanes.ts";
@@ -261,6 +261,24 @@ test("a report that says something is unverified without why and what was checke
 	await advance(500);
 	expect(reports).toEqual([reasoned]);
 	expect(lane.unverifiedRefused).toBeUndefined();
+});
+
+test("a [wait] that names main without saying in a for-line what main must do goes back once", async () => {
+	const { lane, agent, reports } = await fresh("pw");
+	const bare = "[wait] 메인이 전체 시험을 돌려 주길 기다려요.";
+	await said(agent, bare);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(agent.sent.at(-1)!.text).toContain(msg().waitMainRefused);
+	const withLine = `${bare}\n\n${NAME} 몫: e1bec7e8 전체 시험 결과를 주세요`;
+	await said(agent, withLine);
+	await advance(500);
+	expect(reports).toEqual([withLine]);
+	expect(lane.waitMainRefused).toBeUndefined();
+	const onCi = "[wait] Actions 빌드를 기다려요.";
+	await said(agent, onCi);
+	await advance(500);
+	expect(reports).toEqual([withLine, onCi]);
 });
 
 test("a \"still waiting\" [ask] on a card the owner still has open makes nothing, however its words differ", async () => {
