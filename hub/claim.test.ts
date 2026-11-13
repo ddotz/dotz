@@ -7,6 +7,8 @@ import { join } from "node:path";
 import type * as Lanes from "./lanes.ts";
 import { cfg } from "./config.ts";
 import { msg } from "./i18n.ts";
+import { checkDone } from "./donesignals.ts";
+import { shapeFailed } from "./lanereport.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
@@ -203,6 +205,15 @@ test("claim: the gateway checks a machine-checkable Done-when on [done], sends f
 	await advance(300);
 });
 
+// A check that could not judge the work (its pattern missed on a passing command, or it could not run) is told apart from a failing one.
+test("claim: a missed output pattern or a check that could not run is a check-shape failure, a failing command or a missing file is not", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "dotz-claim-shape-"));
+	const checks = await checkDone(["command `printf done` stdout~\"^ok$\"", "command `true` stdout~\"ok\"", "command `false`", "file nope.md"], cwd);
+	expect(checks.map(shapeFailed)).toEqual([true, true, false, false]);
+	expect(shapeFailed({ signal: "Done when", ok: false, detail: "check failed: spawn error" })).toBe(true);
+	expect(shapeFailed({ signal: "command `true`", ok: true, detail: "exit 0" })).toBe(false);
+});
+
 // The owner reads the gateway's verdict without the raw check lines (they stay in hub.log and the claim's evidence).
 test("claim: a verified report's owner-facing text carries no shell syntax", async () => {
 	const cwd = mkdtempSync(join(tmpdir(), "dotz-claim-gw-quiet-"));
@@ -230,6 +241,34 @@ const git = (cwd: string, ...args: string[]) => {
 	const r = Bun.spawnSync(["git", ...args], { cwd, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@x" } });
 	if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
 };
+
+// A brief that keeps its branch unmerged on purpose ("Do not merge. Leave the reviewed branch for me") is verified on its Done-when alone.
+test("claim: the gateway does not check landing for a brief that says not to merge", async () => {
+	const repo = mkdtempSync(join(tmpdir(), "dotz-claim-nomerge-"));
+	git(repo, "init", "-q", "-b", "main");
+	writeFileSync(join(repo, "a.txt"), "1\n");
+	git(repo, "add", "-A");
+	git(repo, "commit", "-qm", "one");
+	rmSync(join(DATA, "lanes", "nm"), { recursive: true, force: true });
+	const verified = Promise.withResolvers<string>();
+	const bounced = Promise.withResolvers<string>();
+	l.setReportHandler(() => {});
+	l.setNoticeHandler((_lane, text) => bounced.resolve(text));
+	l.setVerifiedHandler(name => verified.resolve(name));
+	l.setIdleHandler(() => {});
+	const lane = l.launch("nm", repo, "Change a.\nDo not merge: leave the branch for review.\nDone when: file a.txt");
+	const agent = agents.at(-1)!;
+	await advance(3000);
+	const wt = lane.worktree!.path;
+	writeFileSync(join(wt, "a.txt"), "2\n");
+	git(wt, "commit", "-qam", "two");
+	await turn(agent, "[done] changed a.txt on the lane branch");
+	const outcome = await Promise.race([verified.promise.then(() => "verified"), bounced.promise.then(() => "bounced")]);
+	expect(outcome).toBe("verified");
+	expect(lane.claim?.state).toBe("verified");
+	l.stopLane("nm");
+	await advance(300);
+});
 
 // Proposal #4 (dori done-flow.ts:54): a lane whose lane/<name> branch is not merged into its base is not "verified".
 test("claim: verify refuses a lane whose branch is not merged into its base, unless forced; merged passes", async () => {

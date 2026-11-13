@@ -142,14 +142,25 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 // with the results; a failure goes straight back to the lane (DONE_BOUNCES times in a row, then to the orchestrator). A
 // plain-text Done-when (owner-asked lanes) is relayed as before and verified by the orchestrator.
 export const DONE_BOUNCES = 2;
+// A brief that keeps the branch unmerged on purpose ("Do not merge. Push nothing. Leave the reviewed branch for me"): its [done] reports the
+// branch head (the footer says so), and the gateway does not check it for landing.
+const NO_MERGE = /\b(?:do not|don't|never|must not)\s+merge\b|\bno-merge\b|(?:머지|병합)\s*(?:하지|는\s*하지)\s*(?:마|말)|(?:머지|병합)\s*금지/i;
+export const keepsUnmerged = (brief: string): boolean => NO_MERGE.test(brief);
+// A check whose own shape failed (the command exited 0 but its stdout~ pattern did not match, empty output included, or the check could not
+// run) says nothing about the work; the bounce lists it apart, so the lane does not bend the work to fit the pattern.
+const SHAPE_FAILED = /^exit 0 but output does not match|^check failed:/;
+export const shapeFailed = (c: Check): boolean => !c.ok && SHAPE_FAILED.test(c.detail);
 async function gatewayCheck(lane: Lane, text: string, answering: boolean): Promise<void> {
 	const claim = lane.claim;
-	const brief = join(dir(lane.name), "brief.md");
-	const signals = claim && existsSync(brief) ? doneChecks(readFileSync(brief, "utf8")) : undefined;
+	const briefFile = join(dir(lane.name), "brief.md");
+	const brief = claim && existsSync(briefFile) ? readFileSync(briefFile, "utf8") : "";
+	const signals = brief ? doneChecks(brief) : undefined;
 	if (!claim || !signals) return hooks.report(lane, text, answering);
 	const checks: Check[] = await checkDone(signals, lane.cwd).catch(e => [{ signal: "Done when", ok: false, detail: `check failed: ${e}` }]);
-	const open = lane.worktree ? unlanded(lane.worktree) : undefined;
-	if (lane.worktree) checks.push({ signal: `landed ${lane.worktree.branch} in ${lane.worktree.base}`, ok: !open, detail: open ?? "merged" });
+	if (lane.worktree && !keepsUnmerged(brief)) {
+		const open = unlanded(lane.worktree);
+		checks.push({ signal: `landed ${lane.worktree.branch} in ${lane.worktree.base}`, ok: !open, detail: open ?? "merged" });
+	}
 	// A newer report replaced this claim while the checks ran: that report has its own check.
 	if (lane.claim !== claim) return log(`lane ${lane.name} Done-when check dropped (a newer report replaced the claim)`);
 	const lines = checks.map(c => `${c.ok ? "ok" : "NOT"} ${c.signal} -> ${c.detail}`);
@@ -171,7 +182,12 @@ async function gatewayCheck(lane: Lane, text: string, answering: boolean): Promi
 		hooks.notice(lane, msg().checkBounced(checks.length, failed.length));
 		lane.claim = undefined;
 		persist(lane);
-		return prompt(lane, `[gateway check] Your [done] is not verified: these Done-when checks fail now:\n- ${failed.join("\n- ")}\nFix them (land the branch if that is what fails) and report [done] again, or report [fail] / [ask] saying why they cannot pass.`);
+		const line = (c: Check) => `${c.signal} -> ${c.detail}`;
+		const real = checks.filter(c => !c.ok && !shapeFailed(c)).map(line);
+		const shape = checks.filter(shapeFailed).map(line);
+		const realText = real.length ? `\nThese Done-when checks fail now:\n- ${real.join("\n- ")}\nFix them (land the branch if that is what fails) and report [done] again, or report [fail] / [ask] saying why they cannot pass.` : "";
+		const shapeText = shape.length ? `\nThese checks could not judge the work (the command passed but its output did not match the brief's pattern, or the check could not run):\n- ${shape.join("\n- ")}\nDo not change the work to fit the pattern: check the result by hand and report [done] again with what you ran and saw, or [fail] if the brief's check is wrong.` : "";
+		return prompt(lane, `[gateway check] Your [done] is not verified.${realText}${shapeText}`);
 	}
 	lane.doneBounces = 0;
 	hooks.report(lane, `${text}\n\n${msg().checkFailed(checks.length, failed.length)}`, answering);

@@ -219,6 +219,9 @@ export function resumeLane(lane: Lane, text: string): void {
 	log(`lane ${lane.name} resumed ${lane.sessionFile}`);
 }
 
+// The reason laneevents.ts recovers a failed compaction with: its revive text names the compaction, not a process that stopped responding.
+export const COMPACTION_FAILED = "컨텍스트 압축이 실패했어요";
+
 // Recovers a lane that cannot go on (a stuck turn that ignored its abort, or a failed compaction) by killing its process,
 // then resumes the same session: a turn that was running is told to continue, an idle lane just comes back idle.
 export function recover(lane: Lane, why: string, wasWorking: boolean, stuck = false): void {
@@ -246,7 +249,8 @@ export function recover(lane: Lane, why: string, wasWorking: boolean, stuck = fa
 	// A stuck recovery opens the revive text with the shape of the call the turn froze in, so it is not repeated.
 	const info = stuck ? laneStuck(lane).info() : undefined;
 	const lead = info ? `${stuckLine(info)}\n\n` : "";
-	lane.revive = { text: wasWorking ? lead + msg().laneStopped + (steered.length ? `\n\n${msg().laneSteered(steered)}` : "") : undefined };
+	const stopped = !stuck && why === COMPACTION_FAILED ? msg().laneCompactFailed : msg().laneStopped;
+	lane.revive = { text: wasWorking ? lead + stopped + (steered.length ? `\n\n${msg().laneSteered(steered)}` : "") : undefined };
 	const p = lane.proc;
 	// A stuck process leaves a diagnostic file first (hub/stuck.ts, a few seconds at most); the kill follows whatever happens to it.
 	if (stuck) void takeSnapshot(`lane:${lane.name}`, p.pid, lane.sessionFile).then(() => lane.proc === p && p.kill(true));
