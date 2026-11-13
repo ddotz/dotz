@@ -117,7 +117,8 @@ test("a script error is fixed by the heal turn: one 'fixed' line, no alert, no r
 	setHealHandler((watch, turn) => {
 		turns.push(turn);
 		writeFileSync(script, "#!/bin/sh\necho ok\n");
-		setImmediate(() => writeFileSync(noteOf(watch), "selector fixed, the page moved\n"));
+		// Written before the hub's first look for the note (armHeal's tick): a later write would rest on fs.watch, which can miss it, and the poll is 20 s.
+		writeFileSync(noteOf(watch), "selector fixed, the page moved\n");
 	});
 	setHealedHandler((_w, note) => {
 		healedNotes.push(note);
@@ -142,7 +143,7 @@ test("a fix that does not work gets two turns in a day, then one plain alert wit
 	setHealHandler((watch, turn) => {
 		turns.push(turn);
 		const n = turns.length;
-		setImmediate(() => writeFileSync(noteOf(watch), `try ${n}: changed nothing useful\n`));
+		writeFileSync(noteOf(watch), `try ${n}: changed nothing useful\n`);
 	});
 	setHealedHandler(() => healedNotes.push("unexpected"));
 	await runWatch(w.id);
