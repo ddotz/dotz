@@ -1,5 +1,6 @@
 // Real wiring of the KakaoTalk web routes and the live watcher inside the gateway (hub/routes.ts and hub/main.ts import this).
 // Tests build createKakaoWeb / createLive with fakes instead.
+import { useReplies } from "../reply-actions.ts";
 import { hostname } from "node:os";
 import { enableKakaoApp, ensureKakaoVoice } from "../../features/reply-drafts/lib/kakao-voice.ts";
 import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
@@ -86,6 +87,7 @@ const web = createKakaoWeb({
 	learnVoice,
 	onCorrection,
 	onRevise,
+	replies: useReplies,
 });
 
 export const kakaoRoute = web.route;
