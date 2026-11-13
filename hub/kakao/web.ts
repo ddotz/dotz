@@ -614,7 +614,11 @@ export function createKakaoWeb(deps: WebDeps) {
 					if (revise) return json({ error: "만들 메시지와 고칠 초안은 함께 보낼 수 없어요" }, 400);
 				}
 				drafting.add(chatId);
-				const run = makeDraft(draftCtx, config!, chatId, choice, revise, intent).finally(() => drafting.delete(chatId));
+				// A 자동 초안 room (watch.ts asks with { auto: true }): its new draft is announced as a reply item, so the card shows where KakaoTalk cards go.
+				const auto = draftBody.auto === true;
+				const run = makeDraft(draftCtx, config!, chatId, choice, revise, intent)
+					.then(m => (auto && m.ok && m.code && deps.broadcast({ kind: "reply", ref: m.code }), m))
+					.finally(() => drafting.delete(chatId));
 				pending.add(run);
 				void run.finally(() => pending.delete(run));
 				return json({ state: "drafting" }, 202);

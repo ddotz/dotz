@@ -8,6 +8,7 @@ import { featureEnabled } from "../app-feature-flags.ts";
 import { callsOwner } from "./address.ts";
 import { bodiesOf, isDraftCandidate, isEmoticon, maxLogId, newSince, ownerNames, ownUserId, REPLY_TYPE, roomKinds, sentAtMs, sqlcipherDb, TEXT_TYPE, type KakaoDb } from "./db.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
+import { createHub } from "./hub.ts";
 
 export type WatchDeps = {
 	db: KakaoDb;
@@ -17,6 +18,8 @@ export type WatchDeps = {
 	dbFiles?: string[];
 	/** 답장 초안 (hub/app-feature-flags.ts) is off: no room wakes the bot, whatever 자동 초안 rooms are chosen. */
 	replyDraftOff?: boolean;
+	/** The gateway drafts a 자동 초안 room itself (POST /api/kakao/chat/<id>/draft { auto: true }); true = it took the room. Without it, a line wakes the bot (tests, an older gateway). */
+	draft?: (chatId: string) => Promise<boolean>;
 };
 export type WatchResult = { lines: string[]; code: number };
 
@@ -127,6 +130,11 @@ export async function runWatch(deps: WatchDeps): Promise<WatchResult> {
 			continue;
 		}
 		const last = batch[batch.length - 1]?.logId as string;
+		if (deps.draft) {
+			// Drafted by the gateway's one generator; a room it did not take is tried again on the next run, never handed to the bot.
+			if (!(await deps.draft(chatId).catch(e => (console.error(`kakao auto draft of ${chatId} not asked: ${(e as Error).message}`), false)))) nextHeld[chatId] = first;
+			continue;
+		}
 		lines.push(`kakao chat=${chatId} new=${batch.length} from=${first} to=${last} at=${new Date(newest).toISOString()}`);
 	}
 
@@ -200,6 +208,7 @@ if (import.meta.main) {
 			now: Date.now,
 			dbFiles: config?.dbPath ? [config.dbPath, `${config.dbPath}-wal`] : undefined,
 			replyDraftOff: !featureEnabled(paths.dataDir, "kakao", "reply_draft"),
+			draft: async chatId => (await createHub(paths.dataDir).post(`/api/kakao/chat/${encodeURIComponent(chatId)}/draft`, { auto: true })).status === 202,
 		});
 	} catch (err) {
 		const { kind, message } = failureOf(err);
