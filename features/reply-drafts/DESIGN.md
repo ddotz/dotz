@@ -18,7 +18,7 @@ tone is learned per install, from that install's user, and lives only under `<DA
 5. A revision records only the lasting preference the change shows (the model's `lesson`), dated under `## 고친 점` of the tone profile of the draft that was revised (its room, else its app). A one-off change (`lesson` empty) records nothing; a model that gives no `lesson` leaves the change itself. Only the newest 12, clipped to 200 characters, reach a mail or comment prompt.
 6. `drafts.json` remembers every mail key already looked at, so a mail is not drafted twice.
 7. A mail draft reads the whole mail and the sender's earlier mail, and judges who wrote before writing: `recipient {who, evidence}`, where the evidence must be the sender's own words.
-8. An edit asked outside a card, numbered answers in a chat included, goes through `draft.ts correct`, so the next draft sees it.
+8. An edit asked outside a card goes through the gateway's one reply flow (a typed change read by code, or the turn's one `[revise <id>] <change>` line), which records it once, so the next draft sees it.
 
 ## Approval
 
@@ -85,8 +85,8 @@ corrections turned into a checklist). `lib/persona.ts`:
 2. `onboard.ts learn [--app <app|install>] [--room <id>] [--from-file <f>]`: sentences of a file into a chosen profile (default `mail`).
 3. KakaoTalk: the first `draft.ts new --app kakao --room <chat id> --kind chat` of a room with an empty profile reads the user's own
    lines of that room from the hub/kakao reader (`lib/kakao-tone.ts`) and learns `tone/kakao/<chat id>.md`. Only that room's lines.
-4. Then every 고치기: `draft.ts revise` records it in the draft's room (else app) profile; for a chat reply the orchestrator runs
-   `draft.ts correct --app kakao --room <id> --change <text>`.
+4. Then every 고치기: the gateway's revise (hub/reply-actions.ts) records it in the draft's room (else app) profile, once, after the new draft is stored;
+   a KakaoTalk room's change goes the same way. `draft.ts revise` only hands the change to the gateway when one answers.
 
 ## Code
 
