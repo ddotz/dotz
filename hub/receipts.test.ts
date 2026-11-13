@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { acquireHeavySlot } from "./heavyslot.ts";
 import { runWithReceipt } from "./receipts.ts";
 import { clock } from "./runtime/test-clock.ts";
 
@@ -123,3 +124,37 @@ test("receipts older than 7 days are pruned on write", async () => {
 	expect(existsSync(old)).toBe(false);
 	expect(readdirSync(join(dir, "receipts")).length).toBe(1);
 });
+
+// The owner's stop reaches dotz_verify as an abort signal (OmO releases the turn at once, the tool's own work must end too).
+test("an abort kills the running command and gives the slot back", async () => {
+	const started = Promise.withResolvers<void>();
+	const w = watch(root, (_e, name) => name === "pid" && started.resolve());
+	const ctl = new AbortController();
+	const p = runWithReceipt({ command: `echo $$ > ${join(root, "pid")}.tmp && mv ${join(root, "pid")}.tmp ${join(root, "pid")}; exec sleep 60`, cwd: repo, dir, signal: ctl.signal });
+	await started.promise;
+	w.close();
+	ctl.abort();
+	const r = await p;
+	expect(r.exitCode).not.toBe(0);
+	const pid = Number(readFileSync(join(root, "pid"), "utf8"));
+	expect(() => process.kill(pid, 0)).toThrow();
+	expect(readdirSync(join(dir, "heavy"))).toEqual([]);
+	expect(existsSync(join(dir, "receipts"))).toBe(false);
+}, 10_000);
+
+test("an abort while waiting for the slot ends the wait and never runs the command", async () => {
+	process.env.DOTZ_HEAVY_SLOTS = "1";
+	const held = await acquireHeavySlot({ dir: join(dir, "heavy"), label: "other run" });
+	try {
+		const ctl = new AbortController();
+		const p = runWithReceipt({ command: counted(), cwd: repo, dir, signal: ctl.signal });
+		ctl.abort();
+		const r = await p;
+		expect(r.exitCode).not.toBe(0);
+		expect(runs()).toBe(0);
+	} finally {
+		held.release();
+		delete process.env.DOTZ_HEAVY_SLOTS;
+	}
+	expect(readdirSync(join(dir, "heavy"))).toEqual([]);
+}, 10_000);

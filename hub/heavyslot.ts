@@ -14,8 +14,9 @@ const WAIT_MS = 20 * 60_000;
 // Longer than the 15 min run limit in hub/receipts.ts: a slot this old belongs to no live run, even if its pid was reused.
 export const MAX_HOLD_MS = 20 * 60_000;
 
-export type HeavySlot = { release: () => void; waitedMs: number; note?: string };
-type SlotOptions = { dir: string; label: string; slots?: number; timeoutMs?: number; maxHoldMs?: number; onWait?: (heldBy: string) => void; pid?: number; family?: number[] };
+// aborted: the signal ended the wait (the owner's stop); no slot is held and the caller does not run.
+export type HeavySlot = { release: () => void; waitedMs: number; note?: string; aborted?: boolean };
+type SlotOptions = { dir: string; label: string; slots?: number; timeoutMs?: number; maxHoldMs?: number; onWait?: (heldBy: string) => void; pid?: number; family?: number[]; signal?: AbortSignal };
 
 export const heavySlots = (): number => Math.max(1, Math.floor(Number(process.env.DOTZ_HEAVY_SLOTS) || cpus().length / 4));
 
@@ -100,9 +101,11 @@ export async function acquireHeavySlot(o: SlotOptions): Promise<HeavySlot> {
 	};
 	const started = Date.now();
 	let slot: string | undefined;
+	let aborted = false;
 	try {
 		slot = attempt();
-		if (!slot) {
+		if (!slot && o.signal?.aborted) aborted = true;
+		else if (!slot) {
 			o.onWait?.(heldBy);
 			const { promise, resolve } = Promise.withResolvers<string | undefined>();
 			let done = false;
@@ -120,8 +123,14 @@ export async function acquireHeavySlot(o: SlotOptions): Promise<HeavySlot> {
 			localWaiters.add(check);
 			const tick = setInterval(check, RECHECK_MS);
 			const limit = setTimeout(() => finish(undefined), o.timeoutMs ?? WAIT_MS);
+			const onAbort = () => {
+				aborted = true;
+				finish(undefined);
+			};
+			o.signal?.addEventListener("abort", onAbort, { once: true });
 			check(); // a release between the first attempt and the watch registration fires no event
 			slot = await promise;
+			o.signal?.removeEventListener("abort", onAbort);
 			watcher.close();
 			localWaiters.delete(check);
 			clearInterval(tick);
@@ -132,11 +141,12 @@ export async function acquireHeavySlot(o: SlotOptions): Promise<HeavySlot> {
 	}
 	const waitedMs = Date.now() - started;
 	const who = heldBy ? ` (held by ${heldBy.slice(0, 80)})` : "";
-	const note = !heldBy && slot ? undefined : slot ? `waited ${(waitedMs / 1000).toFixed(1)}s for heavy slot${who}` : `heavy slot wait timed out after ${Math.round(waitedMs / 1000)}s${who}; ran anyway`;
+	const note = aborted ? undefined : !heldBy && slot ? undefined : slot ? `waited ${(waitedMs / 1000).toFixed(1)}s for heavy slot${who}` : `heavy slot wait timed out after ${Math.round(waitedMs / 1000)}s${who}; ran anyway`;
 	const held = slot;
 	return {
 		waitedMs,
 		note,
+		...(aborted ? { aborted } : {}),
 		release: () => {
 			if (!held || read(held) !== owner) return;
 			unlinkSync(held);

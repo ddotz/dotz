@@ -18,7 +18,8 @@ const RUN_TIMEOUT_MS = 15 * 60_000;
 
 type Receipt = { key: string; command: string; cwd: string; head: string; exitCode: number; stdout: string; stderr: string; ranAt: number; durationMs: number };
 type ReceiptResult = Receipt & { reused: boolean; slotNote?: string };
-type ReceiptRequest = { command: string; cwd: string; env?: string[]; dir?: string };
+// signal: the owner's stop reaches the tool call as an abort; the run and the wait for a slot end with it.
+type ReceiptRequest = { command: string; cwd: string; env?: string[]; dir?: string; signal?: AbortSignal };
 
 const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
 
@@ -70,8 +71,8 @@ function prune(dir: string): void {
 	}
 }
 
-function run(command: string, cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-	const { promise, resolve: done } = Promise.withResolvers<{ exitCode: number; stdout: string; stderr: string }>();
+function run(command: string, cwd: string, signal?: AbortSignal): Promise<{ exitCode: number; stdout: string; stderr: string; aborted?: boolean }> {
+	const { promise, resolve: done } = Promise.withResolvers<{ exitCode: number; stdout: string; stderr: string; aborted?: boolean }>();
 	// Own process group, so a hung check is killed with everything it started.
 	const child = spawn("bash", ["-lc", command], { cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
 	let timedOut = false;
@@ -88,12 +89,22 @@ function run(command: string, cwd: string): Promise<{ exitCode: number; stdout: 
 	};
 	child.stdout.on("data", keep(0));
 	child.stderr.on("data", keep(1));
+	let aborted = false;
+	const onAbort = () => {
+		aborted = true;
+		try {
+			process.kill(-child.pid!, "SIGKILL");
+		} catch {}
+	};
+	if (signal?.aborted) onAbort();
+	else signal?.addEventListener("abort", onAbort, { once: true });
 	const finish = (exitCode: number, extra = "") => {
 		clearTimeout(timer);
-		done({ exitCode, stdout: tails[0]!.toString(), stderr: tails[1]!.toString() + extra });
+		signal?.removeEventListener("abort", onAbort);
+		done({ exitCode, stdout: tails[0]!.toString(), stderr: tails[1]!.toString() + extra, ...(aborted ? { aborted } : {}) });
 	};
 	child.on("error", e => finish(127, String(e)));
-	child.on("close", (code, signal) => finish(code ?? (signal ? 128 : 1), timedOut ? `timed out after ${RUN_TIMEOUT_MS / 60_000} min` : signal ? `killed by ${signal}` : ""));
+	child.on("close", (code, sig) => finish(code ?? (sig ? 128 : 1), timedOut ? `timed out after ${RUN_TIMEOUT_MS / 60_000} min` : aborted ? "stopped by the owner" : sig ? `killed by ${sig}` : ""));
 	return promise;
 }
 
@@ -106,10 +117,18 @@ export async function runWithReceipt(req: ReceiptRequest): Promise<ReceiptResult
 	const stored = cacheable ? load(file, key) : undefined;
 	if (stored?.exitCode === 0) return { ...stored, reused: true };
 	// Only a real run takes the machine-wide slot (hub/heavyslot.ts); a reused receipt costs nothing.
-	const slot = await acquireHeavySlot({ dir: join(base, "heavy"), label: `${cwd}: ${req.command}` });
+	const stopped = (): ReceiptResult => ({ key, command: req.command, cwd, head, exitCode: 130, stdout: "", stderr: "stopped by the owner", ranAt: Date.now(), durationMs: 0, reused: false });
+	if (req.signal?.aborted) return stopped();
+	// A stop while waiting for the slot ends the wait now.
+	const slot = await acquireHeavySlot({ dir: join(base, "heavy"), label: `${cwd}: ${req.command}`, signal: req.signal });
+	if (slot.aborted || req.signal?.aborted) {
+		slot.release();
+		return stopped();
+	}
 	const started = performance.now();
-	const out = await run(req.command, cwd).finally(slot.release);
+	const { aborted, ...out } = await run(req.command, cwd, req.signal).finally(slot.release);
 	const receipt: Receipt = { key, command: req.command, cwd, head, ...out, ranAt: Date.now(), durationMs: Math.round(performance.now() - started) };
+	if (aborted) return { ...receipt, reused: false };
 	if (!cacheable) return { ...receipt, reused: false, slotNote: slot.note };
 	mkdirSync(dir, { recursive: true });
 	const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
