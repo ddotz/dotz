@@ -15,7 +15,7 @@ function worker(cap: number, compactAt = 0) {
 	const turn = (cacheRead: number, toolResults: unknown[] = [{}]) => handlers.turn_end?.[0]({ message: { role: "assistant", usage: { input: 400, cacheRead, cacheWrite: 0, output: 600 } }, toolResults }, ctx);
 	const answer = (stopReason = "stop", content: unknown[] = [{ type: "text", text: "report" }]) =>
 		handlers.turn_end?.[0]({ message: { role: "assistant", stopReason, content, usage: { input: 400, cacheRead: 10_000, cacheWrite: 0, output: 600 } }, toolResults: [] }, ctx);
-	const call = () => handlers.tool_call?.[0]({ toolName: "eval", toolCallId: "x" }, ctx);
+	const call = (toolName = "eval", input: unknown = {}) => handlers.tool_call?.[0]({ toolName, input, toolCallId: "x" }, ctx);
 	return { turn, answer, call, handlers, sent, compacts, aborted: () => aborted };
 }
 
@@ -52,9 +52,9 @@ test("one hidden steer past 75% of the configured cap, then the block still fire
 	expect(w.call().block).toBe(true);
 });
 
-test("the default cap warns at 9M", () => {
+test("the default cap warns at 18M", () => {
 	const w = worker(guardConfigFrom({}).task_token_cap);
-	w.turn(8_998_999);
+	w.turn(17_998_999);
 	expect(w.sent).toEqual([]);
 	w.turn(0);
 	expect(w.sent).toHaveLength(1);
@@ -72,10 +72,10 @@ test("no warning on a final turn without tools, nor when one turn jumps past the
 	expect(jump.call().block).toBe(true);
 });
 
-test("config: default 12M, 0 turns the cap off, bad values fall back", () => {
-	expect(guardConfigFrom({}).task_token_cap).toBe(12_000_000);
+test("config: default 24M, 0 turns the cap off, bad values fall back", () => {
+	expect(guardConfigFrom({}).task_token_cap).toBe(24_000_000);
 	expect(guardConfigFrom({ task_token_cap: 0 }).task_token_cap).toBe(0);
-	expect(guardConfigFrom({ task_token_cap: -1 }).task_token_cap).toBe(12_000_000);
+	expect(guardConfigFrom({ task_token_cap: -1 }).task_token_cap).toBe(24_000_000);
 	const off = worker(0);
 	expect(off.handlers.tool_call).toBeUndefined();
 	expect(off.handlers.turn_end).toBeUndefined();
@@ -198,8 +198,36 @@ test("the 75% warning asks for a handoff file and the cap's final-answer text na
 	expect(reason).toContain("[fail] token cap");
 });
 
-test("config: compaction threshold defaults to 150K, 0 turns it off, bad values fall back", () => {
-	expect(guardConfigFrom({}).task_compact_tokens).toBe(150_000);
+test("config: compaction threshold defaults to 400K, 0 turns it off, bad values fall back", () => {
+	expect(guardConfigFrom({}).task_compact_tokens).toBe(400_000);
 	expect(guardConfigFrom({ task_compact_tokens: 0 }).task_compact_tokens).toBe(0);
-	expect(guardConfigFrom({ task_compact_tokens: -5 }).task_compact_tokens).toBe(150_000);
+	expect(guardConfigFrom({ task_compact_tokens: -5 }).task_compact_tokens).toBe(400_000);
+});
+
+test("with the default threshold a worker at 200K context keeps working uncompacted and compacts past 400K", () => {
+	const w = worker(50_000_000, guardConfigFrom({}).task_compact_tokens);
+	w.turn(200_000);
+	w.turn(390_000);
+	expect(w.compacts).toHaveLength(0);
+	w.turn(400_000);
+	expect(w.compacts).toHaveLength(1);
+});
+
+test("past the cap read-only collection calls run without counting a block, every other tool stays blocked", () => {
+	const w = worker(1_000_000);
+	w.turn(1_000_000);
+	expect(w.call("edit", { path: "a.ts" }).block).toBe(true);
+	expect(w.call("read", { path: "a.ts" })).toBeUndefined();
+	expect(w.call("bash_output", { bash_id: "b1" })).toBeUndefined();
+	expect(w.call("eval", { action: "peek", cell_id: "c1" })).toBeUndefined();
+	expect(w.call("eval", { action: "run", code: "1" }).block).toBe(true);
+	w.call("bash", { command: "ls" });
+	expect(w.aborted()).toBe(0);
+	w.call("read", { path: "b.ts" });
+	w.call("write", { path: "b.ts" });
+	expect(w.aborted()).toBe(1);
+	const flood = worker(1_000_000);
+	flood.turn(1_000_000);
+	const reads = Array.from({ length: 12 }, () => flood.call("read", { path: "a.ts" }));
+	expect(reads.filter(r => r?.block)).toHaveLength(2);
 });

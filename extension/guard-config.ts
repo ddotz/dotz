@@ -58,7 +58,7 @@ export const SUB_COMPACT_STOP = 2;
 
 export const GUARD_DEFAULTS: GuardConfig = {
 	enabled: true,
-	max_brief_chars: 8000,
+	max_brief_chars: 16000,
 	max_fence_lines: 40,
 	max_output_chars: 2000,
 	worker_answer_chars: 800,
@@ -74,11 +74,11 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	expensive_models: [],
 	defer_to_installed: true,
 	harness_tools: true,
-	task_token_cap: 12_000_000,
-	task_compact_tokens: 150_000,
+	task_token_cap: 24_000_000,
+	task_compact_tokens: 400_000,
 	task_cap_grow: true,
-	task_cap_step: 3_000_000,
-	task_cap_ceiling: 24_000_000,
+	task_cap_step: 6_000_000,
+	task_cap_ceiling: 48_000_000,
 };
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");

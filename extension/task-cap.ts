@@ -12,7 +12,8 @@
 // between tool steps compacts itself once (OmO's 1M window never triggers its own auto compaction). Replay of 7 days of real
 // worker logs, with the 78K context a real compaction left and the re-written prefix priced as a cache write: 150K saves 23% of
 // the tokens and 6% of the cost and leaves 2 of 39 cap hits; 120K saves 28% and 3% (twice the compactions); 200K saves 14% and
-// 5% and leaves 10. The compaction's summary request re-sends the whole context, so it is counted against the cap. ctx.compact aborts the running turn and only continues a session that has queued input, and a message
+// 5% and leaves 10. Raised 2026-11-13 to 400K with the cap doubled (24M, step 6M, ceiling 48M): 150K compacted 61% of workers, where
+// same-model workers outside dotz ran to 290K without one; a replay of 2026-11-06..13 predicts 12 capped workers instead of 22. The compaction's summary request re-sends the whole context, so it is counted against the cap. ctx.compact aborts the running turn and only continues a session that has queued input, and a message
 // queued before it finishes starts a run that compaction then waits behind (seen on a real rpc run, where the compaction
 // ran after the whole task), so the hidden message that continues the worker is sent when the compaction ends, done or
 // failed, unless the worker's last turn was already its final answer (a message then would start a turn that replaces the
@@ -33,6 +34,13 @@ import { loadGuardConfig } from "./guard-config.ts";
 import { type CapEvent, type Growth, growLine, growthFor } from "./task-cap-grow.ts";
 
 const BLOCKS_BEFORE_ABORT = 3;
+// Past the cap, read-only collection calls (a file, a background session's output, a detached cell's result) still run, so the
+// final answer can report what a run it started ended with; they count no block, up to this many.
+const READS_AT_CAP = 10;
+const collects = (name: unknown, input: any) => name === "read" || name === "bash_output" || (name === "eval" && input?.action === "peek");
+// Whether this process's task worker has reached its cap (bg-guard.ts stops re-prompting it then); false with no cap installed.
+let reached = () => false;
+export const capReached = (): boolean => reached();
 // After a compaction, failed or not, the next try waits until the context is this much above what it was then.
 const REARM_GROWTH = 50_000;
 const k = (n: number) => `${Math.round(n / 1000).toLocaleString("en-US")}K`;
@@ -122,14 +130,17 @@ export function installTaskCap(pi: Host, cap = loadGuardConfig().task_token_cap,
 		if (cap > 0) announce(pi, ctx, growth.turn(spent), growth);
 	});
 	if (!(cap > 0)) return;
+	reached = () => spent >= growth.cap();
+	let reads = 0;
 	if (growth.enabled)
 		pi.on("before_agent_start", (event: any) => {
-			if (!event?.preview && growth.prompt(event?.prompt, spent) === "revived") blocked = 0;
+			if (!event?.preview && growth.prompt(event?.prompt, spent) === "revived") blocked = reads = 0;
 		});
 	pi.on("tool_call", (event: any, ctx: any) => {
 		growth.note(event?.toolName, event?.input);
 		announce(pi, ctx, growth.atCap(spent), growth);
 		if (spent < growth.cap()) return;
+		if (collects(event?.toolName, event?.input) && reads++ < READS_AT_CAP) return;
 		if (++blocked > BLOCKS_BEFORE_ABORT) ctx?.abort?.();
 		return { block: true, reason: capReason(spent, growth.cap(), turns, handoffPath(ctx), growth.lines()) };
 	});

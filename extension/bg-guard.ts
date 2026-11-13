@@ -5,6 +5,9 @@
 // hook waits on the same signal, hooks/stop-lifecycle.js); only the sources below are runs the worker started itself. When
 // the run ends with one of them live, one hidden follow-up message (the same delivery as OmO's goal continuation) asks the
 // worker to wait in the foreground. An exited run leaves the snapshot, so it does not count; after MAX_REPROMPTS the end is allowed.
+// A worker past its token cap (task-cap.ts) is not re-prompted: its tools are disabled, so it could not wait for the run anyway.
+import { capReached } from "./task-cap.ts";
+
 export const WAKE_SOURCE_STATE_EVENT = "wake_source_state";
 export const MAX_REPROMPTS = 3;
 const SOURCES: Record<string, string> = {
@@ -34,7 +37,7 @@ export function installBgGuard(pi: Host, max = MAX_REPROMPTS): void {
 		else live.set(data.source, entries.length ? entries.map(e => `${kind}: ${String(e?.description || e?.id || "?").slice(0, 80)}`) : [kind]);
 	});
 	pi.on("agent_end", (event: any) => {
-		if (!live.size || event?.aborted === true || reprompts >= max) return;
+		if (!live.size || event?.aborted === true || reprompts >= max || capReached()) return;
 		reprompts++;
 		const what = [...live.values()].flat().join("; ");
 		pi.sendMessage({ customType: "dotz-bg-guard", content: liveReason(what), display: false }, { triggerTurn: true, deliverAs: "followUp" });

@@ -1,6 +1,9 @@
 // Task workers ending a run while a background run they started is live: one hidden follow-up per end, capped.
 import { expect, test } from "bun:test";
 import { installBgGuard, MAX_REPROMPTS, WAKE_SOURCE_STATE_EVENT } from "./bg-guard.ts";
+import { guardConfigFrom } from "./guard-config.ts";
+import { installTaskCap } from "./task-cap.ts";
+import { growthFor } from "./task-cap-grow.ts";
 
 function worker() {
 	const handlers: Record<string, ((event: any, ctx: any) => any)[]> = {};
@@ -42,4 +45,24 @@ test("a live background bash, monitor or eval cell re-prompts the worker, at mos
 	expect(w.sent).toHaveLength(1);
 	for (let i = 0; i < MAX_REPROMPTS + 2; i++) w.end();
 	expect(w.sent).toHaveLength(MAX_REPROMPTS);
+});
+
+// A task cap installed in this process, its turn_end handler returned so the test can spend tokens.
+function taskCap(cap: number) {
+	let turnEnd: (event: any, ctx: any) => any = () => {};
+	installTaskCap({ on: (name, fn) => name === "turn_end" && (turnEnd = fn), sendMessage: () => {} }, cap, 0, growthFor(cap, guardConfigFrom({ task_cap_grow: false })));
+	return (cacheRead: number) => turnEnd({ message: { role: "assistant", usage: { input: 0, cacheRead, cacheWrite: 0, output: 0 } }, toolResults: [{}] }, {});
+}
+
+test("a worker past its token cap is not re-prompted for a live background run", () => {
+	const spend = taskCap(1_000_000);
+	const w = worker();
+	w.emit({ source: "terminal-background-sessions", activeCount: 1, items: [{ id: "b1", description: "bun test" }] });
+	spend(999_999);
+	w.end();
+	expect(w.sent).toHaveLength(1);
+	spend(1);
+	w.end();
+	expect(w.sent).toHaveLength(1);
+	taskCap(1_000_000);
 });

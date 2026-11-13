@@ -41,7 +41,7 @@ const brief = (task: string) => ({ tasks: [{ agent: "task", task }] });
 
 test("config: every key optional, defaults are the generic behaviour, bad values fall back", () => {
 	expect(loadGuardConfig(join(dir, "no-such-dir"))).toEqual(GUARD_DEFAULTS);
-	expect(GUARD_DEFAULTS).toMatchObject({ enabled: true, max_brief_chars: 8000, max_fence_lines: 40, budget_gate: true, ask_before_expensive: false, expensive_models: [] });
+	expect(GUARD_DEFAULTS).toMatchObject({ enabled: true, max_brief_chars: 16000, max_fence_lines: 40, budget_gate: true, ask_before_expensive: false, expensive_models: [] });
 	const c = guardConfigFrom({ max_brief_chars: 100, max_fence_lines: -5, enabled: "yes", expensive_models: ["fable", 3, " "], external_commands: ["foo"] });
 	expect(c.max_brief_chars).toBe(100);
 	expect(c.max_fence_lines).toBe(40);
@@ -50,7 +50,7 @@ test("config: every key optional, defaults are the generic behaviour, bad values
 	expect(c.external_commands).toEqual(["foo"]);
 	mkdirSync(join(dir, "cfg"), { recursive: true });
 	writeFileSync(join(dir, "cfg", "config.json"), JSON.stringify({ guard: { enabled: false, worker_answer_chars: 300 } }));
-	expect(loadGuardConfig(join(dir, "cfg"))).toMatchObject({ enabled: false, worker_answer_chars: 300, max_brief_chars: 8000 });
+	expect(loadGuardConfig(join(dir, "cfg"))).toMatchObject({ enabled: false, worker_answer_chars: 300, max_brief_chars: 16000 });
 });
 
 test("brief: done-condition required, size and fence caps, budget line appended once, limits configurable", () => {
@@ -64,8 +64,11 @@ test("brief: done-condition required, size and fence caps, budget line appended 
 	const again = checkTaskInput(ok.input);
 	expect("input" in again && again.input.tasks[0].task.match(/\[orchestrator-guard\]/g)?.length).toBe(1);
 	expect(budgetLine({ ...GUARD_DEFAULTS, worker_answer_chars: 300, worker_context_tokens: 200_000 })).toContain("at most 300 characters");
-	const big = checkTaskInput(brief(`Acceptance: x\n${"y".repeat(9000)}`));
-	expect("reason" in big && big.reason).toContain("limit 8000");
+	const big = checkTaskInput(brief(`Acceptance: x\n${"y".repeat(17000)}`));
+	expect("reason" in big && big.reason).toContain("limit 16000");
+	const barelyOver8000 = `Acceptance: x\n${"y".repeat(9029 - "Acceptance: x\n".length)}`;
+	expect(barelyOver8000).toHaveLength(9029);
+	expect("input" in checkTaskInput(brief(barelyOver8000))).toBe(true);
 	const small = checkTaskInput(brief(`Acceptance: x\n${"y".repeat(200)}`), true, [], { ...GUARD_DEFAULTS, max_brief_chars: 100 });
 	expect("reason" in small && small.reason).toContain("limit 100");
 	const fence = `\`\`\`\n${"line\n".repeat(41)}\`\`\``;
