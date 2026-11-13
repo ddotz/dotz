@@ -156,4 +156,19 @@ function rqItemCard(item, opts = {}) {
   return node;
 }
 
+// A send approval in a conversation whose draft the queue holds is that card in the message (10-decision-card.js dcInline), never a docked question.
+function raInline(blocks) {
+  if (!RA.loaded) return null;
+  const b = blocks.find(x => SEND_LABELS.test(x.options.map(o => o.label).join("|"))), m = b && /\(([A-Za-z0-9]{2,16})\)\s*$/.exec(b.title);
+  return m && RA.items.has(m[1]) ? el("div", { class: "ra-inl" }, rqItemCard(RA.items.get(m[1]))) : null;
+}
+// A draft notice's row answered in place (10-decision-card.js answerInline): through the queue when it holds the draft; 고치기 opens its card.
+function raAnswer(nd, opt) {
+  const it = RA.loaded && nd.decision.draft && !nd.pc ? RA.items.get(nd.decision.draft.ref) : null;
+  if (!it) return null;
+  // The send-approval options by number (hub/draft-approval.ts): 1 send, 2 revise, 3 drop.
+  if (opt.n === 2) { ntDraftSheet(nd); return Promise.resolve(true); }
+  return raAct(it, opt.n === 1 || opt.n === 4 ? "send" : "drop");
+}
+
 raLoad();

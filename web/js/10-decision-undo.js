@@ -34,3 +34,11 @@ const dcBackNote = dc => {
   return n && n.decision.send && n.decision.send.state === "back" ? n.decision.send.text || "" : "";
 };
 const dcStNode = (dc, st) => { const bk = st ? "" : dcBackNote(dc); return st || bk ? el("div", { class: "dc-st", role: "status", ...(st === "undo" ? { "data-undo": dc.key } : {}), text: st ? dcStText(dc, st) : bk }) : null; };
+// 되돌리기 of a draft answered 보내지 않기 (dcAnswerToast): the notice opens again.
+async function dcReopen(nd) {
+  try {
+    if (nd.pc) await pqNotice(nd, "notice", { op: "reopen", id: String(nd.id) });
+    else { const r = await api("/api/notices/reopen", "POST", { ids: [String(nd.id)] }); ntApply(null, r.unread); await loadNotices(); }
+    toast(TX("decision.toast.restored"));
+  } catch (e) { toast(e.message, true); }
+}

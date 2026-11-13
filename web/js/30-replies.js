@@ -539,12 +539,12 @@ function rqSheetOpen(r) {
 function rqSheetPaint(found) {
   const h = RQ.sheet;
   if (!h || h.tr) return;   // 빠른 처리 (30-triage.js) draws its own pane
-  const r = found || rqRows().find(x => x.key === RQ.cur) || (RQ.just.has(RQ.cur) ? rqAskRow(RQ.just.get(RQ.cur)) : null);
+  const r = found && found.it ? (RA.items.has(found.it.ref) ? rqItemRow(RA.items.get(found.it.ref)) : null) : found || rqRows().find(x => x.key === RQ.cur) || (RQ.just.has(RQ.cur) ? rqAskRow(RQ.just.get(RQ.cur)) : null);
   if (!r) { h.close(false); return; }   // its item left: answered, sent, dropped
   const sig = JSON.stringify([r.state, r.why, rqXSig(r), RQ.edit === r.key, RQ.busy.has(r.key), RQ.just.has(r.key)]);
   if (sig === RQ.shSig) return;
   RQ.shSig = sig;
-  const card = r.state === "ask" ? rqCardOf(r.x) : r.state === "fail" ? rqRecordCard(r, r.f, { revise: rqFailActs(r) }) : rqRecordCard(r, r.s, { sent: true, sentAt: rqWhen(r.at) || TX("home.ago.now") });
+  const card = r.it ? rqItemCard(r.it, { lead: true }) : r.state === "ask" ? rqCardOf(r.x) : r.state === "fail" ? rqRecordCard(r, r.f, { revise: rqFailActs(r) }) : rqRecordCard(r, r.s, { sent: true, sentAt: rqWhen(r.at) || TX("home.ago.now") });
   // A comment's note already stands in its card: the why line does not say it twice.
   const said = r.x && r.x.d && (r.x.d.notes || []).some(n => rqNorm(n) === r.why);
   const body = el("div", { class: "rq-sb" }, r.why && r.state !== "sent" && !said ? el("div", { class: "note rq-why", role: "note", text: r.why }) : null, card), old = h.box.querySelector(".rq-sb");

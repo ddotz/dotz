@@ -596,6 +596,8 @@ function syncInlineChoices() {
 // A tap on a message that is no longer the pending card: answered through the notice path, so the notice and the buttons settle together.
 async function answerInline(nd, opt) {
   if (dcSending.has(nd.id)) return false;   // a second press while the first waits sends nothing
+  const qa = raAnswer(nd, opt);   // a draft the one queue holds is answered there
+  if (qa) return qa;
   // An option that needs detail opens the notice sheet with its text field; nothing is sent from the row. A draft's own sheet
   // (ntDraftSheet) is the decision card, so its 고치기 field is that card's edit state.
   if (ntNeedsNote(nd, opt)) {
@@ -615,13 +617,6 @@ function dcAnswerToast(nd, opt, held) {
   if (opt.label === "보내기" && held && held.state === "undo") toast(TX("decision.toast.sending_soon"), false, { label: TX("decision.undo.cancel"), onclick: () => dcUndoPost(nd.decision.draft.ref) }, held.left);
   else if (opt.label === "보내기") toast(TX("decision.sent"), false, to.startsWith("mail:") ? { label: TX("decision.mail.open"), onclick: () => go("monitoring", `c:${to}`) } : null);
   else if (opt.label === "보내지 않기") toast(TX("decision.not_sent"), false, { label: TX("common.undo"), onclick: () => dcReopen(nd) });
-}
-async function dcReopen(nd) {
-  try {
-    if (nd.pc) await pqNotice(nd, "notice", { op: "reopen", id: String(nd.id) });
-    else { const r = await api("/api/notices/reopen", "POST", { ids: [String(nd.id)] }); ntApply(null, r.unread); await loadNotices(); }
-    toast(TX("decision.toast.restored"));
-  } catch (e) { toast(e.message, true); }
 }
 // Decision cards already docked: only one that really arrives rises in (not on the first paint, nor when another conversation opens).
 const DC_SEEN = new Set(); let dcShownT = "", dcLast = null;
@@ -647,6 +642,8 @@ function dcLeave(box, dc) {
 // (hub/owner-text.ts shownEvent), so a message from before the rule gets this card without ever being able to answer twice.
 const DCI = new WeakMap();
 function dcInline(e, body, pc) {
+  const ra = raInline(pc.blocks);   // a draft the one queue holds is its card in the message
+  if (ra) return ra;
   const box = el("div", { class: "dc-inl" });
   DCI.set(box, { e, t: target, body: body.trim(), question: pc.question, blocks: pc.blocks.filter(b => b.options.length > 1) });
   paintInline(box, isFixedT(target) ? null : decisionOf(target));
@@ -701,7 +698,7 @@ function paintDecision() {
   if (inlines.length) { const live = isFixedT(target) ? null : decisionOf(target); for (const b of inlines) paintInline(b, live); }
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   // 2 or more send-approval cards waiting in this conversation: one line above the composer (dcLine) instead of the dock card or its pointer; a question that is not a draft keeps its card.
-  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = line && dc0 && dcDraftAsk(dc0) ? null : dc0, had = !!DC.cur;
+  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = (line || RA.loaded) && dc0 && dcDraftAsk(dc0) ? null : dc0, had = !!DC.cur;   // with the one queue a draft is its card in the message, never docked
   dcLine(askN);
   // A message that carries several of those drafts folds to its first paragraph while they wait: the drafts live in 답장 대기, not in the conversation.
   for (const m of document.querySelectorAll("#timeline .bm[data-dat]")) m.classList.toggle("q-fold", line && ntDecisions().filter(n => n.decision.draft && n.decision.to === target && n.decision.reply_to === m.dataset.dat).length > 1);
