@@ -7,7 +7,9 @@ const RA = { items: new Map(), loaded: false, busy: new Map(), fail: new Map(), 
 async function raLoad() {
   try {
     const r = await api("/api/reply/queue");
-    RA.items = new Map((r.items || []).map(i => [i.ref, i]));
+    // A gateway without the one queue (an older one) answers no list: the screens keep their own reads.
+    if (!r || !Array.isArray(r.items)) return;
+    RA.items = new Map(r.items.map(i => [i.ref, i]));
     RA.loaded = true;
   } catch (e) { console.warn("reply queue not read", e); }   // the next event or open reads it again; what was shown stays
   for (const ref of [...RA.nodes.keys()]) raPaint(ref);
@@ -40,7 +42,8 @@ async function raAct(item, action, args = {}) {
   RA.fail.delete(ref);
   raPaint(ref);
   try {
-    const r = await api("/api/reply/act", "POST", { ref, action, ...args });
+    // Another computer's item runs there, through its own queue (hub/peer-monitor.ts "reply").
+    const body = { ref, action, ...args }, r = item.pc ? await api(pqProxy(item.pc, "/api/peer/act"), "POST", { action: "reply", args: body }) : await api("/api/reply/act", "POST", body);
     if (r && r.item) RA.items.set(ref, { ...RA.items.get(ref), ...r.item });
     if (action === "edit") RA.edit.delete(ref);
     if (action === "revise") RA.rev.delete(ref);
@@ -56,9 +59,11 @@ async function raAct(item, action, args = {}) {
 }
 
 /** The items a surface lists: "waiting" (a pending draft with no send), "attention" (a failed or unsure send), or every one. */
-const raItems = filter => [...RA.items.values()].filter(i => (filter === "waiting" ? i.draft.state === "pending" && !i.send : filter === "attention" ? i.send && (i.send.state === "failed" || i.send.state === "unsure") : true));
+const raItems = filter => [...RA.items.values(), ...raPeerItems()].filter(i => (filter === "waiting" ? i.draft.state === "pending" && !i.send : filter === "attention" ? i.send && (i.send.state === "failed" || i.send.state === "unsure") : true));
+// The other computers' queues (their snapshot's `reply` part), each item carrying its computer.
+const raPeerItems = () => PQ.list.filter(p => p && p.items && p.items.reply).flatMap(p => (p.items.reply.items || []).map(i => ({ ...i, pc: pqPcOf(p) })));
 const raCounts = () => {
-  const all = [...RA.items.values()], st = s => all.filter(i => i.send && i.send.state === s).length;
+  const all = [...RA.items.values(), ...raPeerItems()], st = s => all.filter(i => i.send && i.send.state === s).length;
   return { waiting: raItems("waiting").length, failed: st("failed"), unsure: st("unsure"), sending: st("undo") + st("queued") + st("sending") };
 };
 

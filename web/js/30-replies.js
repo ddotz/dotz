@@ -22,6 +22,7 @@ async function rqLoad() {
     RQ.err = "";
   } catch (e) { RQ.local = RQ.local || []; RQ.err = appFail(e, TX("triage.rq.load_fail")); }
   RQ.loaded = true;
+  await raLoad();
   monSchedule(); homeSoon(); rqSheetPaint(); paintDecision();
 }
 const rqSoon = () => { clearTimeout(RQ.t); RQ.t = setTimeout(rqLoad, 400); };
@@ -96,9 +97,22 @@ function rqRows() {
     for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.unsure ? TX("triage.rq.unsure", { why: f.why }) : f.why), f }); }
     for (const s of done) sent.push({ key: `s:${rqPcKey(pc)}|${s.key}`, state: "sent", who: s.who || "", what: s.what || "", inst: s.app, app: labelOf(pc, s.app), pc, at: s.at, why: RQ_SENT[s.how] || "", s });
   }
+  const byAt = (a, b) => (b.at || 0) - (a.at || 0);
+  // Waiting and failed / unsure come from the one reply queue (10-reply-actions.js), this computer's and the others'; the hand-written cards
+  // of TR.groups that it does not list stay as they were. 보낸 것 is still the hub's list.
+  if (RA.loaded) {
+    const items = raItems().filter(i => i.draft.state === "pending" || (i.send && i.send.state !== "sent")), listed = new Set(items.map(i => i.ref));
+    const held = rqAll().filter(x => x.kind === "held" && !listed.has(x.tr.ref)).map(rqAskRow);
+    return [...items.map(rqItemRow).sort((a, b) => (a.state === b.state ? byAt(a, b) : a.state === "fail" ? -1 : 1)), ...held, ...sent.sort(byAt)];
+  }
   const failedAt = new Map(fail.filter(r => r.f.ref).map(r => [r.f.ref, r.at || 0]));
-  const waiting = rqAll().filter(x => !failedAt.has(rqRefOf(x)) || x.at > failedAt.get(rqRefOf(x))), back = new Set(waiting.map(rqRefOf).filter(r => failedAt.has(r))), byAt = (a, b) => (b.at || 0) - (a.at || 0);
+  const waiting = rqAll().filter(x => !failedAt.has(rqRefOf(x)) || x.at > failedAt.get(rqRefOf(x))), back = new Set(waiting.map(rqRefOf).filter(r => failedAt.has(r)));
   return [...fail.filter(r => !back.has(r.f.ref)).sort(byAt), ...waiting.map(rqAskRow), ...sent.sort(byAt)];
+}
+// One queue item as a row of the screen: failed and unsure are 실패, the rest waits.
+function rqItemRow(i) {
+  const bad = i.send && (i.send.state === "failed" || i.send.state === "unsure");
+  return { key: `i:${rqPcKey(i.pc)}|${i.ref}`, state: bad ? "fail" : "ask", who: (i.original && i.original.who) || i.draft.to || "", what: i.draft.text, inst: i.app, app: i.label, pc: i.pc || null, at: i.at, why: bad && i.send.reason ? i.send.reason.text : "", it: i };
 }
 // The one number: what waits on the owner (답 필요 + 실패 as the screen shows them), of every computer.
 const rqWaiting = () => rqRows().filter(r => r.state !== "sent").length;
@@ -448,11 +462,17 @@ function rqDescs(shown) {
     const part = shown.filter(r => r.state === s);
     if (!part.length) continue;
     if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: label, make: () => el("div", { class: "sec", text: label }) });
-    const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = s === "fail" ? rqFailDescs(part) : part.slice(0, lim).map(r => rqRowDesc(r));
+    const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = part[0] && part[0].it ? part.slice(0, lim).map(r => rqCardDesc(r, shown)) : s === "fail" ? rqFailDescs(part) : part.slice(0, lim).map(r => rqRowDesc(r));
     if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(TX("mon.more_n", { n: part.length - lim }), () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
     out.push({ key: `list:${s}`, sig: "", make: () => el("div", { class: "list rq-list" }), rows });
   }
   return out;
+}
+// A queue item as its card (rqItemCard): only the first waiting card's 보내기 is filled; it is drawn again when its item changes.
+function rqCardDesc(r, shown) {
+  const lead = r.state === "ask" && shown.find(x => x.state === "ask") === r;
+  RA.items.has(r.it.ref) || r.it.pc ? null : RA.items.set(r.it.ref, r.it);
+  return { key: `r:${r.key}`, sig: JSON.stringify([r.it, lead, RA.busy.get(r.it.ref) || "", RA.fail.get(r.it.ref) || ""]), make: () => el("div", { class: "rq-r rq-c", "data-qr": r.key }, rqItemCard(r.it, { lead })) };
 }
 function rqPaintList(rows) {
   const u = rqUi(), shown = RQ.tab === "all" ? rows : rows.filter(r => r.state === RQ.tab), reset = RQ.reset;
