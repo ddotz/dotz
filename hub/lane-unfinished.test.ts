@@ -391,6 +391,20 @@ test("a lane the waiting restart paused (extension/restart-hold.ts) gets one not
 	await clear(lane.name);
 });
 
+test("qa-golden replay (2026-11-10): a lane whose last report waits for the gateway restart goes on after it, with no held file", async () => {
+	const lane = idleLane("uf-restart-wait");
+	session(lane, []);
+	reportFile(lane.name, "[wait] 게이트웨이가 재시작 전까지 멈추라고 해서 멈춰 있어요");
+	await down(lane);
+	const back = await restart(lane.name);
+	expect(await resumeUnfinished()).toEqual([lane.name]);
+	expect(lastAgent().sent.join("\n")).toContain(msg().laneRestartResume);
+	back.status = "idle";
+	back.prompted = undefined;
+	expect(await resumeUnfinished()).toEqual([]);
+	await clear(lane.name);
+});
+
 test("ddotz/dotz#44: a gateway nudge leaves the owner's [ask] pending, a stall on it nudges nobody, and his answer wakes the lane once", async () => {
 	const lane = idleLane("uf-44");
 	lane.pendingAsk = { text: "[ask] 보낼까요?", at: "2026-11-06T01:00:00.000Z" };

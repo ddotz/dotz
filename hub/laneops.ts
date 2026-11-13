@@ -388,6 +388,15 @@ export { laneClosed };
 // costs no slot at boot: the resume sweep (laneresume.ts) brings those back through the one gate of capacity, budget and the wake bound.
 // A wake costs no context: the note is one prompt on the same session, and the first turn after the 33-minute gap read the whole prefix
 // from cache (site-demo-proto 01:43: 182,024 read, 738 written). Returns the lanes that were resumed mid-work.
+// A lane can also stop on its own words, a last [wait] for the gateway restart with no held file: qa-golden sat 27 min after the restart
+// on 2026-11-10 (projects/session-stalls #9). It goes on like a held one.
+function waitsForRestart(name: string): boolean {
+	const file = join(dir(name), "report.md");
+	if (!existsSync(file)) return false;
+	const { tone, text } = parseTone(readFileSync(file, "utf8"));
+	return tone === "wait" && /재시작|restart/i.test(text);
+}
+
 export function restoreLanes(): string[] {
 	const resumed: string[] = [];
 	if (!existsSync(paths.lanes)) return resumed;
@@ -400,7 +409,7 @@ export function restoreLanes(): string[] {
 		// It stopped because the waiting restart refused its task workers (extension/restart-hold.ts): one note to go on, sent by the
 		// resume sweep like a message its busy session refused. A lane cut off mid-turn gets laneGatewayRestarted instead.
 		const restartHeld = join(dir(name), RESTART_HELD_FILE);
-		if (existsSync(restartHeld)) {
+		if (existsSync(restartHeld) || waitsForRestart(name)) {
 			rmSync(restartHeld, { force: true });
 			if (rec.status === "idle" && !lane.refused) {
 				lane.refused = { text: msg().laneRestartResume, tries: 0 };
