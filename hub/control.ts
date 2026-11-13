@@ -83,7 +83,13 @@ const convModel = (key: string) => {
 // The model a session answers on now (hub/escalate.ts reads it for a proposal): a lane's own, else a conversation's (its pick, its kind's, main's).
 export const sessionModel = (key: string): string => (key.startsWith("lane:") ? lanes.get(key.slice(5))?.model : undefined) ?? selectorOf(key === MAIN ? orchestratorModel() : convModel(key));
 // What the composer chips of every device read: project conversations that chose a model or run now. Absent means it inherits main's.
-const projectModels = () => Object.fromEntries(convs.conversations().filter(c => modelConv(c.key) && (c.meta.ownModel || convs.kindModel(c.key) || convs.live(c))).map(c => [c.key, { own: c.meta.ownModel ?? "", active: convs.live(c) ? c.o.orch.activeModel : "", ...(convs.kindModel(c.key) ? { kind: convs.kindModel(c.key) } : {}) }]));
+// The quick chat has no entry until its first message, yet its chips read this list: while it is on it carries its default (kind) from the start.
+const projectModels = (): Record<string, { own: string; active: string; kind?: string }> => {
+	const out = Object.fromEntries(convs.conversations().filter(c => modelConv(c.key) && (c.meta.ownModel || convs.kindModel(c.key) || convs.live(c))).map(c => [c.key, { own: c.meta.ownModel ?? "", active: convs.live(c) ? c.o.orch.activeModel : "", ...(convs.kindModel(c.key) ? { kind: convs.kindModel(c.key) } : {}) }]));
+	const quick = convs.ownKinds().includes(QUICK) ? convs.kindModel(QUICK) : undefined;
+	if (quick && !out[QUICK]) out[QUICK] = { own: "", active: "", kind: quick };
+	return out;
+};
 
 // Each listed model carries its sweet spot (hub/model-effort.ts, clamped to its levels): picking it in the 모델 view shows that effort.
 const withEffort = <T extends { selector: string; thinking?: string[] }>(list: T[]) => list.map(m => ({ ...m, effort: sweetSpot(m.selector, m.thinking).effort }));

@@ -75,3 +75,12 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 		}, 20_000);
 	});
 }
+
+test("beside another conversation, the quick chat's strip under its inactive pane shows its own chips (1280px)", async () => {
+	const v = await hub.view({ width: 1280, height: 800 }, "/?light#chat/quick");
+	await waitFor(v, `typeof paneSplit === "function" && S && C && M && M.conversations && M.conversations.quick && quickOn() && target === "quick"`);
+	await run(v, `paneSplit("main", "chat", "right")`);
+	await waitFor(v, `target === "main" && [...PNM.values()].some(m => m.k && m.p.t === "quick" && !m.k.model.hidden)`);
+	const strip = await q<{ model: string; effort: string; own: string; ownHidden: boolean }>(v, `const k = [...PNM.values()].find(m => m.p.t === "quick").k; return { model: k.model.textContent, effort: k.effort.textContent, own: k.own.textContent, ownHidden: k.own.hidden }`);
+	expect(strip).toMatchObject({ model: "Sonnet 5.5", effort: "높음", ownHidden: false });
+}, 20_000);
