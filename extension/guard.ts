@@ -202,7 +202,75 @@ export function quickChatBlock(tool: string, input: any, conv = process.env.DOTZ
 // (hub/forline.ts), so two sessions never write one at once (2026-11-10: a lane wrote memory/owner.md).
 const SHARED_FILES = ["state.json", "RULES.md", "LESSONS.md"];
 const WRITE_TOOLS = new Set(["write", "edit", "multiedit", "apply_patch", "ast_edit", "notebook_edit"]);
-const SHELL_WRITES = /\b(write(File|FileSync)?|appendFile(Sync)?|Bun\.write|writeAtomic|rename(Sync)?|unlink(Sync)?|rm|mv|cp|tee|sed\s+-i|truncate)\b|>{1,2}/;
+// A shell or eval text writes a shared file only when a write's target is one: a JS/Python write call with it as its target
+// argument, Python open(<it>, "w"|"a"), a shell > / >> right before it, or tee/cp/mv/rm/sed -i/truncate with it as an argument.
+// A bare >, =>, >= or 2>&1 is no write (2026-11-13: 52 of 57 refusals were reads, most of them a lane's first rules read).
+const WRITE_CALLS = /(?<![\w$.])(?:Bun\.write|(?:os\.|fs\.)?(?:write|rename|unlink|remove|open|openSync))\s*\(|(?:(?:writeFile|appendFile)(?:Sync)?|writeAtomic|renameSync|unlinkSync|rmSync)\s*\(/g;
+const SHELL_REDIRECT = /(?:^|[^=<>&\d-])\d?>>?\|?\s*([^\s;&|<>()`]+)/g;
+const SHELL_WRITE_CMDS = /(?:^|[\s;&|(`"'])(tee|cp|mv|rm|truncate|sed)\s+([^;&|\n)`]*)/g;
+
+// The top-level arguments of the call whose "(" ends just before `from`.
+function callArgs(text: string, from: number): string[] {
+	const args: string[] = [];
+	let depth = 0, quote = "", start = from;
+	for (let i = from; i < text.length; i++) {
+		const c = text[i]!;
+		if (quote) {
+			if (c === "\\") i++;
+			else if (c === quote) quote = "";
+		} else if (c === '"' || c === "'" || c === "`") quote = c;
+		else if ("([{".includes(c)) depth++;
+		else if (")]}".includes(c) && depth-- === 0) return [...args, text.slice(start, i)];
+		else if (c === "," && depth === 0) (args.push(text.slice(start, i)), (start = i + 1));
+	}
+	return [...args, text.slice(start)];
+}
+
+// A target named by a variable counts when the text set it to a shared path (not to a read of one), or when a JS/Python write's
+// target is a name the text never set (an earlier cell did).
+function shellWritesShared(text: string, hits: (p: string) => boolean, data: string): boolean {
+	const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const dir = `(?:${esc(data)}|\\.dotz)`;
+	const file = /state\.json|RULES\.md|LESSONS\.md|memory\b/;
+	const path = new RegExp(`${dir}[\\s"'\`,+/]*(?:${file.source})`);
+	const dirOnly = new RegExp(`${dir}/?(?:["'\`)\\s]|$)`);
+	const assigned = new Map<string, string>();
+	for (const m of text.matchAll(/(?:^|[\s;,({`"'])(?:(?:const|let|var|export)\s+)?([A-Za-z_$][\w$]*)\s*=(?![=>~])\s*([^;\n]*)/g)) assigned.set(m[1]!, m[2]!);
+	const sharedVars = new Set<string>(), dirVars = new Set<string>();
+	const uses = (t: string, vars: Set<string>) => [...vars].some(v => new RegExp(`(?<![\\w$])${esc(v)}(?![\\w$])`).test(t));
+	const names = (t: string) => path.test(t) || uses(t, sharedVars) || (uses(t, dirVars) && file.test(t));
+	for (let grew = true; grew; ) {
+		grew = false;
+		for (const [v, rhs] of assigned) {
+			const read = /(?:open|read|load|parse|text)\w*\s*\(/i.test(rhs);
+			const set = read ? undefined : names(rhs) ? sharedVars : dirOnly.test(rhs) ? dirVars : undefined;
+			if (set && !set.has(v)) (set.add(v), (grew = true));
+		}
+	}
+	// Quoted text and shell words are literal paths; a bare JS/Python name or a shell $NAME is a variable.
+	const target = (raw: string, shell: boolean) => {
+		const quoted = /^["'`]/.test(raw.trim());
+		const t = raw.trim().replace(/^["'`]|["'`]$/g, "");
+		if (names(t)) return true;
+		const variable = quoted ? null : (shell ? /^\$\{?([A-Za-z_]\w*)\}?$/ : /^([A-Za-z_$][\w$]*)$/).exec(t);
+		if (variable) return !shell && !assigned.has(variable[1]!);
+		return (quoted || shell) && /^[~\w./-]+$/.test(t) && hits(t);
+	};
+	for (const m of text.matchAll(WRITE_CALLS)) {
+		const args = callArgs(text, m.index + m[0].length);
+		if (m[0].includes("open") && !/^\s*(?:mode\s*=\s*)?[rbfu]*["'][rbt]*[wax+]/i.test(args[1] ?? "")) continue;
+		if (args.slice(0, m[0].includes("rename") ? 2 : 1).some(a => target(a, false))) return true;
+	}
+	for (const m of text.matchAll(/([^\n;=]*)\.(?:write_text|write_bytes|unlink)\s*\(/g)) if (names(m[1]!)) return true;
+	for (const m of text.matchAll(SHELL_REDIRECT)) if (target(m[1]!, true)) return true;
+	for (const m of text.matchAll(SHELL_WRITE_CMDS)) {
+		if (m[1] === "sed" && !/(?:^|\s)-[a-zA-Z]*i/.test(m[2]!)) continue;
+		const words = m[2]!.split(/\s+/).filter(w => w && !w.startsWith("-"));
+		if ((m[1] === "cp" ? words.slice(-1) : words).some(w => target(w, true))) return true;
+	}
+	return false;
+}
+
 // A relative path resolves in the session's folder (cwd): a lane's worktree may hold its own RULES.md or state.json.
 export function sharedWriteBlock(tool: string, input: any, data = dataDir(), conv = process.env.DOTZ_CONV, lane = process.env.DOTZ_LANE, cwd = data): string | undefined {
 	if (!conv && !lane) return undefined;
@@ -218,7 +286,7 @@ export function sharedWriteBlock(tool: string, input: any, data = dataDir(), con
 	} else if (tool === "bash" || tool === "eval") {
 		const text = shellText(input);
 		const named = shared.some(s => text.includes(s)) || SHARED_FILES.some(f => text.includes(`.dotz/${f}`)) || text.includes(".dotz/memory/");
-		writes = named && SHELL_WRITES.test(text);
+		writes = named && shellWritesShared(text, hits, data);
 	}
 	if (!writes) return undefined;
 	if (lane) return laneShareReason(data);
