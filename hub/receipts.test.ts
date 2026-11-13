@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, watch, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { acquireHeavySlot } from "./heavyslot.ts";
@@ -127,16 +128,16 @@ test("receipts older than 7 days are pruned on write", async () => {
 
 // The owner's stop reaches dotz_verify as an abort signal (OmO releases the turn at once, the tool's own work must end too).
 test("an abort kills the running command and gives the slot back", async () => {
-	const started = Promise.withResolvers<void>();
-	const w = watch(root, (_e, name) => name === "pid" && started.resolve());
+	// The command hands its pid through a named pipe: reading it returns once the command runs. A directory watch could miss the file under load
+	// (2026-11-13 gate: no event at all, the test hung until its timeout).
+	const fifo = join(root, "pid");
+	Bun.spawnSync(["mkfifo", fifo]);
 	const ctl = new AbortController();
-	const p = runWithReceipt({ command: `echo $$ > ${join(root, "pid")}.tmp && mv ${join(root, "pid")}.tmp ${join(root, "pid")}; exec sleep 60`, cwd: repo, dir, signal: ctl.signal });
-	await started.promise;
-	w.close();
+	const p = runWithReceipt({ command: `echo $$ > ${fifo}; exec sleep 60`, cwd: repo, dir, signal: ctl.signal });
+	const pid = Number(await readFile(fifo, "utf8"));
 	ctl.abort();
 	const r = await p;
 	expect(r.exitCode).not.toBe(0);
-	const pid = Number(readFileSync(join(root, "pid"), "utf8"));
 	expect(() => process.kill(pid, 0)).toThrow();
 	expect(readdirSync(join(dir, "heavy"))).toEqual([]);
 	expect(existsSync(join(dir, "receipts"))).toBe(false);
