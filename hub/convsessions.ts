@@ -373,8 +373,12 @@ export function createConvSessions(d: ConvDeps) {
 			for (const c of all()) c.queue.markAnswered(ref);
 		},
 		bgList: () => all().flatMap(c => c.bg.list()),
-		/** The owner's 중단 in `target`: only that conversation's session ends its turn. */
-		cancelFor: (target: string): void => (forTarget(target) ?? mainConv)!.o.cancelByOwner(),
+		/** The owner's 중단 in `target`: only that conversation's session ends its turn; a conversation with no session has no turn, and main's is never taken for it. */
+		cancelFor: (target: string): ReturnType<Orchestrator["cancelByOwner"]> | undefined => {
+			const c = forTarget(target);
+			if (!c) d.log(`owner stop in ${keyOf(target)}: no session, nothing running`);
+			return c?.o.cancelByOwner();
+		},
 		startIdleSweep: (): void => {
 			const timer = setInterval(sweep, SWEEP_MS);
 			timer.unref?.();

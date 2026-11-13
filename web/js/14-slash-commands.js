@@ -218,11 +218,12 @@ $("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.
 // With no turn running, the line is a background worker's (renderWorking): 중단 ends that worker (06-subagents.js workCancel).
 $("#working-stop").onclick = ev => (workingBg.length ? workCancel(workingBg[0].id, ev.currentTarget) : stopTarget());
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
+// What the gateway found (hub/ownerstop.ts): nothing running, a turn that is still ending, or ended. A lane's answer has neither field: stopped.
+const stopToast = r => TX(r?.stopped === false ? "chat.send.nothing_to_stop" : r?.ended === false ? "chat.send.stopping" : "chat.send.stopped");
 async function stopTarget() {
   if (workingBg.length && !$("#c-model").classList.contains("run")) return workCancel(workingBg[0].id, $("#send-btn"));
   try {
-    await api(isLaneT(target) ? `/api/lanes/${enc(laneOf(target))}/abort` : "/api/orchestrator/abort", "POST", isLaneT(target) ? {} : { target });
-    toast(TX("chat.send.stopped"));
+    toast(stopToast(await api(isLaneT(target) ? `/api/lanes/${enc(laneOf(target))}/abort` : "/api/orchestrator/abort", "POST", isLaneT(target) ? {} : { target })));
     scheduleState();
   } catch (e) { toast(e.message, true); }
 }

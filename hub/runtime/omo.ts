@@ -255,9 +255,12 @@ export function translateFrame(f: Frame & { reason?: string }): Frame {
 	return f;
 }
 
-class OmoProcess extends OmpProcess {
+export class OmoProcess extends OmpProcess {
 	// OmO has no task-worker subscription: a worker's result comes back into the session as a message.
 	watchSubagents(): void {}
+	abort(clearQueue?: boolean): void {
+		this.write(clearQueue ? { type: "abort", clearQueue: true } : { type: "abort" });
+	}
 	abortCompaction(): void {
 		this.write({ type: "abort_compaction" });
 	}

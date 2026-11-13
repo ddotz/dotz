@@ -75,7 +75,8 @@ export interface AgentProcess {
 	readonly events: AsyncIterable<AgentEvent>;
 	// prompt: a new turn; followUp: queued behind a running turn; steer: injected into the running turn.
 	send(text: string, mode: SendMode): void;
-	abort(): void;
+	// clearQueue: the owner's stop; a runtime that holds queued messages of its own (OmO) drops them too, so no turn starts from them.
+	abort(clearQueue?: boolean): void;
 	// Cancels a requested compaction that is running (the compact answer then reports it as cancelled); only where caps.abortCompact.
 	abortCompaction?(): void;
 	// The hub calls this only when the process is idle (a runtime may cut a running turn short to compact). `instructions`: how the

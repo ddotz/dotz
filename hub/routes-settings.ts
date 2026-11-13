@@ -9,6 +9,7 @@ import { checkNow as checkAccountNow } from "./account-rules.ts";
 import { accountsRoute } from "./accounts-api.ts";
 import { cancelByOwner, orch, restart as restartOrchestrator, resumeNow } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
+import { stopAnswer } from "./ownerstop.ts";
 import { cancelLogin, completeLogin, forgetAccountUsage, LoginBusy, loginStatus, logoutProvider, quota, refreshQuota, saveProviderKey, startLogin } from "./providers.ts";
 import { featureCatalog } from "./features.ts";
 import { mailboxRoute } from "./routes-mailbox.ts";
@@ -288,8 +289,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 				await restartChecked(() => restartOrchestrator(why), () => resumeNow(why));
 			} else {
 				const t = String(((await body(req).catch(error => { if (error instanceof BodyError) throw error; return {}; })) as { target?: unknown }).target ?? "").trim();
-				if (t) convs.cancelFor(t);
-				else cancelByOwner();
+				return json(await stopAnswer(t ? convs.cancelFor(t) : cancelByOwner()));
 			}
 			return json({ ok: true });
 		} catch (error) {

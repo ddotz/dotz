@@ -24,6 +24,7 @@ const posts: string[] = [];
 let QUEUED: Work[] = [];
 let SUBS: Record<string, Work[]> = {};
 const hits: string[] = [];
+let ABORT: Record<string, unknown> = { ok: true };
 // A POST the page sends, awaited by path: subscribed before the click, resolved by the fixture server when it arrives.
 const waiters: [string, () => void][] = [];
 const posted = (path: string) => new Promise<void>(res => (posts.includes(path) ? res() : waiters.push([path, res])));
@@ -37,7 +38,7 @@ const server = Bun.serve({
 		if (p === "/") return indexPage(req);
 		const asset = appAsset(req, p);
 		if (asset) return asset;
-		if (req.method === "POST" && /^\/api\/(workers|lanes|orchestrator)\//.test(p)) { posts.push(p); for (const [w, res] of waiters) if (w === p) res(); return json({ ok: true }); }
+		if (req.method === "POST" && /^\/api\/(workers|lanes|orchestrator)\//.test(p)) { posts.push(p); for (const [w, res] of waiters) if (w === p) res(); return json(p === "/api/orchestrator/abort" ? ABORT : { ok: true }); }
 		if (p === "/api/queue" && req.method === "GET") return json({ items: QUEUED });
 		if (p.startsWith("/api/queue/")) { hits.push(`${req.method} ${p}`); return json({ ok: true, text: QUEUED.find(i => p.split("/")[3] === i.id)?.text }); }
 		if (p === "/api/subagents") return json({ sources: SUBS });
@@ -257,4 +258,23 @@ test("a queued message is a bubble at the end of the timeline whose two actions 
 	expect(await v.evaluate(`ta.value`)).toBe("둘째 대기");
 	QUEUED = [];
 	SUBS = {};
+}, 30_000);
+
+test("the stop toast follows what the gateway found: ended, still ending and nothing running each say something else", async () => {
+	WORK = [];
+	RUNS = {};
+	const v = await boot("#chat");
+	await v.evaluate(`(setTarget(MAIN), go("chat"), 0)`);
+	const said: string[] = [];
+	for (const answer of [{ ok: true, stopped: true, ended: true }, { ok: true, stopped: true, ended: false }, { ok: true, stopped: false, ended: true }]) {
+		ABORT = answer;
+		posts.length = 0;
+		await v.evaluate(`stopTarget().then(() => true)`);
+		await waitFor(v, `document.querySelector(".snack")`);
+		said.push(String(await v.evaluate(`document.querySelector(".snack").textContent`)));
+		await v.evaluate(`(document.querySelectorAll(".snack").forEach(n => n.remove()), 0)`);
+	}
+	ABORT = { ok: true };
+	expect(new Set(said).size).toBe(3);
+	expect(posts).toContain("/api/orchestrator/abort");
 }, 30_000);

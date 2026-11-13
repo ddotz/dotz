@@ -98,6 +98,8 @@
   "chat.cmd.screen": "Open this computer's screen",
   "chat.cmd.help": "Describe every command",
   "chat.send.stopped": "Work stopped",
+  "chat.send.stopping": "Stop requested; it is still ending",
+  "chat.send.nothing_to_stop": "Nothing is running to stop",
   "chat.send.fix_uploads": "Upload the failed files again or remove them",
   "chat.send.uploading": "Uploading files…",
   "chat.send.cmd_no_files": "Commands can't take files",

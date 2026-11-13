@@ -21,7 +21,7 @@ const tmp = (): string => {
 	return d;
 };
 
-type Fake = { o: Orchestrator; delivered: string[]; parked: number; applied: number; started(): boolean };
+type Fake = { o: Orchestrator; delivered: string[]; parked: number; applied: number; cancels: number; started(): boolean };
 
 function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: string; history?: HubEvent[]; log?: string[]; queue?: Prompts; kindModel?: (key: string) => string | undefined } = {}) {
 	const dir = opts.dir ?? tmp();
@@ -40,6 +40,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: s
 			delivered,
 			parked: 0,
 			applied: 0,
+			cancels: 0,
 			started: () => pid !== undefined,
 			o: {
 				orch: { status: "idle", error: undefined, activeModel: "m", ctx: { tokens: 0, compaction: { state: "idle" } }, rateLimitedUntil: "", pauseKind: "rate", stoppedAt: "", stoppedBy: "", startedAt: "" },
@@ -57,6 +58,10 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: s
 					return false;
 				},
 				steer: () => true,
+				cancelByOwner: () => {
+					f.cancels++;
+					return { running: true, request: true, working: () => false };
+				},
 				applyModelChange: () => {
 					f.applied++;
 					return "next-start";
@@ -120,6 +125,17 @@ test("an owner message in a mail conversation goes to that conversation's own se
 	expect(created).toEqual(["mail:k1"]);
 	expect(delivered).toEqual([{ key: "mail:k1", text: "이거 파일 어디감?", target: "mail:k1" }]);
 	expect(delivered.some(d => d.key === MAIN)).toBe(false);
+});
+
+test("the owner's stop in a conversation with no session reaches no session, never main's; with one it reaches only that one", () => {
+	const log: string[] = [];
+	const { registry, fakes } = setup({ log });
+	expect(registry.cancelFor("mail:k1")).toBeUndefined();
+	expect(fakes.get(MAIN)!.cancels).toBe(0);
+	registry.deliverTo("mail:k1", "hello", { target: "mail:k1", replyTo: "m1", owner: true });
+	expect(registry.cancelFor("mail:k1")?.running).toBe(true);
+	expect([fakes.get("mail:k1")!.cancels, fakes.get(MAIN)!.cancels]).toEqual([1, 0]);
+	expect(log.filter(line => line.includes("owner stop"))).toHaveLength(1);
 });
 
 test("the message that starts a new session stays out of its starting history: its own turn carries it, once", () => {

@@ -27,6 +27,7 @@ class FakeAgent implements AgentProcess {
 	pid = FakeAgent.next++;
 	sent: { text: string; mode: SendMode }[] = [];
 	aborts = 0;
+	abortArgs: (boolean | undefined)[] = [];
 	kills: boolean[] = [];
 	endOnAbort = true;
 	ignoreTerm = false;
@@ -51,8 +52,9 @@ class FakeAgent implements AgentProcess {
 	send(text: string, mode: SendMode): void {
 		this.sent.push({ text, mode });
 	}
-	abort = () => {
+	abort = (clearQueue?: boolean) => {
 		this.aborts++;
+		this.abortArgs.push(clearQueue);
 		if (this.endOnAbort) void this.push({ type: "assistant", text: "", stop: "aborted" }, { type: "turn_end" });
 	};
 	compact = () => {};
@@ -268,6 +270,26 @@ test("d) an owner abort the process ignores: restarted after the grace, the canc
 		s.o.stop();
 		await quiet(1000);
 	}
+});
+
+test("d) an owner stop reports what it found, clears the runtime's own queue with the abort and logs one line without the message", async () => {
+	const stops = () => readFileSync(paths.log, "utf8").split("\n").filter(l => l.includes("owner stop in main"));
+	const before = stops().length;
+	const s = session("main");
+	const first = await turn(s, "geheim-wort", chat("chat", "m11"));
+	s.o.setOwnerCancel(() => s.q.cancel());
+	const found = s.o.cancelByOwner();
+	expect([found.running, found.request]).toEqual([true, true]);
+	expect(first.abortArgs).toEqual([true]);
+	await flush();
+	expect(found.working()).toBe(false);
+	expect(stops().length - before).toBe(1);
+	expect(stops().slice(before).join("\n")).not.toContain("geheim-wort");
+	const idle = s.o.cancelByOwner();
+	expect([idle.running, idle.request]).toEqual([false, false]);
+	expect(first.abortArgs).toEqual([true]);
+	s.o.stop();
+	await quiet(1000);
 });
 
 test("d) an owner abort that works cancels the grace restart", async () => {

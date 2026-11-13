@@ -602,8 +602,7 @@ const restartOrch = btn => busy(btn, async () => {
   refreshState();
 });
 const abortOrch = btn => busy(btn, async () => {
-  await api("/api/orchestrator/abort", "POST", {});
-  toast(TX("home.menu.stopped"));
+  toast(stopToast(await api("/api/orchestrator/abort", "POST", {})));
   refreshState();
 });
 

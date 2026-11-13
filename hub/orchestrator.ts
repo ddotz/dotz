@@ -32,6 +32,7 @@ import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { handover, lastAnswerAt, newOrchState, recallText } from "./orchestrator-parts.ts";
 import { noteModelChange } from "./model-guard.ts";
 import { orchStuck, takeSnapshot } from "./stuck.ts";
+import { stopFound, type StopFound } from "./ownerstop.ts";
 
 const ROTATE_BYTES = 50e6;
 // The compaction point of a session: the running model's own (config context.models, the 컨텍스트 screen) or
@@ -1013,21 +1014,21 @@ export function createOrchestrator(opts: OrchOpts) {
 		proc.abort();
 	}
 
-	// The owner's 중단 (the web stop button, /abort): besides the model's turn, what the turn set going ends too (outbound.ts registers
-	// the hook: the request and the messages steered into it are closed, its background workers cancelled). An interrupt that sends a
-	// new message right after uses abort() alone.
+	// The owner's 중단 (web stop button, /abort): besides the turn, what it set going ends too (outbound.ts registers the hook: request and
+	// steered messages closed, background workers cancelled). An interrupt that sends a new message right after uses abort() alone.
 	let ownerCancel: () => string | undefined = () => undefined;
 	const setOwnerCancel = (fn: () => string | undefined): void => {
 		ownerCancel = fn;
 	};
-	// Others that hold that conversation's messages back (intake's burst, the web queue) drop them too: a message sent a moment before
-	// 중단 started a new turn right after it (2026-10-28 live check).
+	// Others holding that conversation's messages back (intake's burst, the web queue) drop them too (2026-10-28: a just-sent one restarted a turn).
 	const cancelHooks: ((target: string) => void)[] = [];
 	const onOwnerCancel = (fn: (target: string) => void): void => void cancelHooks.push(fn);
-	function cancelByOwner(): void {
+	function cancelByOwner(): StopFound {
 		const target = ownerCancel();
 		if (target) for (const f of cancelHooks) f(target);
-		if (proc && orch.status === "working") stuck.ownerAbort(() => proc?.abort());
+		const found = stopFound(opts.key, !!proc && orch.status === "working", !!target, () => orch.status === "working");
+		if (proc && (found.running || target)) stuck.ownerAbort(() => proc?.abort(true));
+		return found;
 	}
 
 	// Compacts the orchestrator's context: now when idle, after the running turn otherwise. Rewrites the prompt cache once.
