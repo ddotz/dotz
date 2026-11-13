@@ -91,3 +91,17 @@
 .tr-row .rq-og-wrap { margin-top: 0; }
 .tr-row .rq-orig { cursor: pointer; }
 .tr-file { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 빠른 처리 over the one reply queue (30-triage.js tqOpen): the card, then 진행; the list's compact rows. */
+.tq-body { display: grid; gap: var(--sp-3); padding: var(--sp-3); }
+.tq-rail { display: grid; gap: var(--sp-05); }
+.tq-r { display: flex; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-2); font: inherit; font-size: var(--fs-meta); text-align: left; cursor: pointer; }
+.tq-r.on { background: var(--row-sel); color: var(--fg); }
+.tq-st.err { color: var(--err); }
+.tq-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-st { flex: none; }
+.tq-row { display: grid; gap: var(--sp-1); padding: var(--sp-3); border-radius: var(--r-card); background: var(--card); }
+.tq-line { display: flex; gap: var(--sp-2); align-items: baseline; font-size: var(--fs-meta); color: var(--fg-2); }
+.tq-line .tq-who { color: var(--fg); font-weight: 500; }
+.tq-tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+.tq-foot { display: flex; justify-content: flex-end; }

@@ -12,5 +12,16 @@
   "reply.retry": "다시 보내기",
   "reply.send_as_is": "이대로 보내기",
   "reply.edit_label": "보낼 글",
-  "reply.act_fail": "하지 못했어요. 잠시 뒤에 다시 눌러 주세요"
+  "reply.act_fail": "하지 못했어요. 잠시 뒤에 다시 눌러 주세요",
+  "reply.q.head": "빠른 처리 {i} / {n}",
+  "reply.q.rail": "진행",
+  "reply.q.st.undo": "{n}초 후 보내요",
+  "reply.q.st.sent": "보냈어요",
+  "reply.q.st.failed": "보내지 못했어요",
+  "reply.q.st.unsure": "확인이 필요해요",
+  "reply.q.st.now": "지금",
+  "reply.q.done": "{n}건 처리했어요",
+  "reply.q.fails": "실패만 다시 보기 ({n})",
+  "reply.q.skip": "건너뛰기",
+  "reply.q.go": "고른 것 처리 ({n})"
 }

@@ -334,7 +334,7 @@ function rqUi() {
   if (RQ_UI.hd) return RQ_UI;
   const tabs = el("div", { class: "nsc-f rq-tabs", role: "tablist", "aria-label": TX("triage.rq.state_aria") }, ...RQ_TABS.map(([k, l]) =>
     el("button", { class: "nsc-fb", type: "button", role: "tab", "data-f": k, onclick: () => rqTab(k) }, l, el("span", { class: `n${k === "fail" ? " err" : ""}`, "data-n": k }))));
-  const mt = el("span", { class: "meta" }), fast = el("button", { class: "btn tonal sm rq-fast", type: "button", "data-k": "triage", onclick: () => trOpen("*") }, icon("spark"), el("span", { text: TX("triage.fast") }));
+  const mt = el("span", { class: "meta" }), fast = el("button", { class: "btn tonal sm rq-fast", type: "button", "data-k": "triage", onclick: () => (RA.loaded ? tqOpen() : trOpen("*")) }, icon("spark"), el("span", { text: TX("triage.fast") }));
   const meta = el("div", { class: "nsc-m rq-qm" }, mt, el("span", { class: "sp" }), fast), chips = el("div", { class: "rq-chips" });
   return Object.assign(RQ_UI, { hd: el("div", { class: "rq-hd2" }, tabs, meta, chips), tabs, mt, fast, meta, chips, ls: el("div", { class: "rq-ls" }), seq: 0 });
 }

@@ -32,6 +32,7 @@ function raLive(e) {
   }
   if (!it && !e.item) raSoon();
   raPaint(e.ref);
+  tqLive();
 }
 
 // One action on one item, posted once: a second press while it waits does nothing. A refusal stays on the card (422 keeps the typed text).
@@ -149,7 +150,7 @@ function rqItemCard(item, opts = {}) {
     extra: (d.notes || []).map(n => el("div", { class: "dr-wn", text: n })),
     fail: fail && !RA.edit.has(ref) ? fail : null,
     foot,
-    acts: { quiet: !opts.lead, busy, press: RA.busy.get(ref), send: item.can.send ? () => raAct(item, "send") : null, edit: item.can.revise ? () => { RA.rev.set(ref, ""); raPaint(ref); } : null, drop: item.can.drop ? () => raAct(item, "drop") : null, manual: item.can.edit ? () => { RA.edit.set(ref, d.text); raPaint(ref); } : null },
+    acts: { quiet: !opts.lead, busy, press: RA.busy.get(ref), send: item.can.send ? () => raAct(item, "send").then(ok => ok && opts.after && opts.after("send")) : null, edit: item.can.revise ? () => { RA.rev.set(ref, ""); raPaint(ref); } : null, drop: item.can.drop ? () => raAct(item, "drop").then(ok => ok && opts.after && opts.after("drop")) : null, manual: item.can.edit ? () => { RA.edit.set(ref, d.text); raPaint(ref); } : null },
   });
   RA.nodes.set(ref, { node, opts });
   return node;
