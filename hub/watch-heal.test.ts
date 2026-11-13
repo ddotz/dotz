@@ -7,6 +7,7 @@ import { cfg, DATA_DIR } from "./config.ts";
 import { type FailClass, type NotifyInfo, classifyFailure, healTarget } from "./watch-heal.ts";
 import { addWatch, allWatches, removeWatch, runWatch, setHealedHandler, setHealHandler, startWatches, type Watch } from "./watch.ts";
 import { watchIssueLine } from "./watchtext.ts";
+import { advance, realSetTimeout } from "./runtime/test-clock.ts";
 
 const TYPE_ERROR = "TypeError: Cannot read properties of null (reading 'click')\n    at run (/srv/check.js:12:34)";
 
@@ -109,6 +110,18 @@ const brokenWatch = (name: string): { script: string; w: Watch } => {
 	return { script, w };
 };
 const next = (set: (r: () => void) => void) => new Promise<void>(r => set(r));
+// armHeal looks for the note on a setTimeout tick, and the test preload's fake clock fires a timer only when a test advances it: without this the
+// note is seen through fs.watch alone, which misses a write on a busy machine (the full run timed out at 5 s). The check runs a real process, so
+// between ticks the real clock gets a moment too.
+const until = async (p: Promise<void>) => {
+	let done = false;
+	void p.then(() => (done = true));
+	for (let i = 0; i < 200 && !done; i++) {
+		await advance(0);
+		await Promise.race([p, new Promise<void>(r => realSetTimeout(r, 20))]);
+	}
+	await p;
+};
 const state = (name: string) => allWatches().find(w => w.name === name)!.state;
 
 test("a script error is fixed by the heal turn: one 'fixed' line, no alert, no recovered notice", async () => {
@@ -127,7 +140,7 @@ test("a script error is fixed by the heal turn: one 'fixed' line, no alert, no r
 	await runWatch(w.id);
 	expect(turns).toHaveLength(0);
 	await runWatch(w.id);
-	await healed;
+	await until(healed);
 	expect(turns).toHaveLength(1);
 	expect(turns[0]).toContain(script);
 	expect(healedNotes).toEqual(["selector fixed, the page moved"]);
@@ -148,7 +161,7 @@ test("a fix that does not work gets two turns in a day, then one plain alert wit
 	setHealedHandler(() => healedNotes.push("unexpected"));
 	await runWatch(w.id);
 	await runWatch(w.id);
-	await alerted;
+	await until(alerted);
 	expect(turns).toHaveLength(2);
 	expect(healedNotes).toHaveLength(0);
 	expect(notices).toHaveLength(1);
