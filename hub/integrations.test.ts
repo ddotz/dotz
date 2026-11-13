@@ -2,7 +2,9 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commentAsk, type CommentAdapter } from "../features/reply-drafts/lib/comments.ts";
+import { commentAsk } from "./comments/ask.ts";
+import type { Comment, SourceConfig } from "./comments/contract.ts";
+import type { Draft } from "./comments/store.ts";
 import { appKeyOf, belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn, withStoreDrafts } from "./integrations.ts";
 
 const dirs: string[] = [];
@@ -185,9 +187,9 @@ describe("the registry itself", () => {
 	});
 });
 
-describe("comment reply asks of the reply-drafts adapter", () => {
-	const adapter = (label: string) => ({ app: "x", label }) as CommentAdapter;
-	const ask = (label: string) => notice("k", { text: commentAsk(adapter(label), { id: "c1", author: "Bob", text: "hi", context: "" }, "고마워요", "j-203006151200-ab12", []), decision: { to: "main" } });
+describe("comment reply asks of the comments app", () => {
+	const kind = (label: string) => (label === "유튜브" ? "youtube" : "instagram") as SourceConfig["kind"];
+	const ask = (label: string) => notice("k", { text: commentAsk({ kind: kind(label) } as SourceConfig, { id: "c1", author: "Bob", text: "hi", at: 0, postTitle: "" } as unknown as Comment, { code: "CD0001", text: "고마워요", notes: [] } as unknown as Draft), decision: { to: "main" } });
 	test("a 대상 ask lands under its own app only", () => {
 		expect(belongsTo(by("youtube"), ask("유튜브"))).toBe(true);
 		expect(belongsTo(by("instagram"), ask("유튜브"))).toBe(false);

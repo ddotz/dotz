@@ -37,7 +37,7 @@ features/youtube-instagram/
   lib/quota.ts          YouTube quota ledger per Pacific day (shared by every script), COSTS table
   lib/youtube.ts        Data API v3 client: token refresh, channel stats, comment threads, videos list/update, insert, reply
   lib/instagram.ts      Graph API (Instagram Login) client: me, media, comments, reply, reels publish, token refresh
-  lib/jobs.ts           approval jobs (upload / reply / metadata): draft -> approved -> (scheduled) -> done|failed|rejected
+  lib/jobs.ts           approval jobs (upload / metadata): draft -> approved -> (scheduled) -> done|failed|rejected
   lib/tunnel.ts         serve one file over a cloudflared quick tunnel for the length of an Instagram upload
   bin/yt-comments.ts    watch: new YouTube comments without an owner reply
   bin/ig-comments.ts    watch: new Instagram comments without an owner reply
@@ -175,11 +175,10 @@ Only the watches for the connected platforms are added. Commands use `command` (
 ## Jobs and approval (lib/jobs.ts)
 
 ```json
-{ "id": "j-<yyyymmddhhmm>-<4 hex>", "kind": "upload" | "reply" | "metadata", "status": "draft",
+{ "id": "j-<yyyymmddhhmm>-<4 hex>", "kind": "upload" | "metadata", "status": "draft",
   "created": "...", "targets": ["youtube", "instagram"], "publish_at": "ISO?",
   "upload": { "file": "/abs", "title": "...", "description": "...", "tags": [], "localizations": { "en": { "title": "", "description": "" } },
               "privacy": "private", "ig_caption": "..." },
-  "reply": { "platform": "youtube" | "instagram", "comment_id": "...", "text": "..." },
   "metadata": { "video_id": "...", "append": { "en": "..." }, "localizations": { "en": { "title": "", "description": "" } } },
   "approved_at": "?", "result": {}, "error": "?" }
 ```
@@ -316,3 +315,11 @@ Steps, in order (each skips itself when already satisfied, e.g. a valid secret f
 - The feature row "DM 읽기" (hub/app-features.ts, id `dm_read`) is the switch (`featureEnabled`). Off: the watch makes no request and deletes the stored DMs.
 - A missing permission (OAuthException code 10 or 200-299) is stored as `perm: "missing"` and re-checked only after a new token or 6 hours. Onboarding
   (`instagram-dm` step) reads the list once with the new token and asks for the permission only when it is missing.
+
+## Comment replies
+
+Comment replies are drafted, revised, approved and posted by the comments app (`hub/comments`, `features/comments`), the one reply path every
+channel shares (`hub/reply-actions.ts`). This feature no longer makes reply jobs: `sns.ts` has no `revise` and no reply branch of `approve` or
+`reject`, the comment watches print their lines without drafting, and `due.ts` never posts a reply job left from before. On an install that still
+ran the old watches, the gateway's `sns-comment-replies` migration (`hub/migrations.ts`, `lib/legacy.ts` legacyComments) turns the comments app on
+for the connected platforms, pauses the old watch and closes the open reply jobs with their drafts marked stale.

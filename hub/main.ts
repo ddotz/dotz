@@ -64,7 +64,7 @@ import { scheduleTarget, startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { startOmoEngineWatch } from "./runtime/omo-engine-watch.ts";
-import { CARD_AUDIT_ID, type CardAudit, runMigrations } from "./migrations.ts";
+import { CARD_AUDIT_ID, type CardAudit, legacyComments, runMigrations } from "./migrations.ts";
 import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
 import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
 import { pendingBackups } from "./carryover.ts";
@@ -623,7 +623,7 @@ const cards: CardAudit = {
 };
 // A state file that did not parse at load (hub/config.ts readJsonOrQuarantine) was set aside; tell the owner what the gateway started from.
 for (const r of takeRecoveries()) void out(discord.status.enabled ? "worklog" : "web", msg().fileRecovered(basename(r.file), r.restored), undefined, { source: "gateway", wk: "system" }).catch(e => log(`recovery notice failed: ${e}`));
-void runMigrations({ ...(process.env.DOTZ_NO_ORCHESTRATOR === "1" ? {} : { cards }), dataDir: DATA_DIR, ask: alert, notify: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway", wk: "system" }).catch(e => log(`migration notice failed: ${e}`)) }).catch(e => log(`migrations failed: ${e}`));
+void runMigrations({ ...(process.env.DOTZ_NO_ORCHESTRATOR === "1" ? {} : { cards, comments: legacyComments() }), dataDir: DATA_DIR, ask: alert, notify: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway", wk: "system" }).catch(e => log(`migration notice failed: ${e}`)) }).catch(e => log(`migrations failed: ${e}`));
 setWatchSummarizer(createWatchSummarizer());
 nameWatches();
 // A monitor's own 디스코드에도 보내기 (hub/watch-settings.ts), or for an app's watch the app's (hub/app-settings.ts appDiscordField; a mail instance's

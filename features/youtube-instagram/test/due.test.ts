@@ -3,7 +3,7 @@
 // transient, auth and permanent failures are covered, plus the upload fingerprint (no second upload after a lost response)
 // and the exhausted-quota state. Fake fetch, fake cloudflared, no timers.
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { hooks, publishJob, run } from "../bin/due.ts";
 import { loadConfig, paths, readJson, writeJson } from "../lib/config.ts";
@@ -171,20 +171,13 @@ test("a permanent failure marks the job failed and is not retried", async () => 
 	expect(await run(ctx, [])).toEqual({ lines: [], code: 0 });
 });
 
-test("reply jobs post through the platform reply calls and leave files alone", async () => {
+test("a reply job left from before the comments app is never posted", async () => {
 	const ctx = fakeCtx(env);
-	ctx.routes[`POST ${YT}/comments`] = () => ({ id: "r1" });
-	ctx.routes[`POST ${IG}/k1/replies`] = () => ({ id: "ir1" });
-	const a = newJob(ctx, { kind: "reply", reply: { platform: "youtube", comment_id: "c1", text: "thanks" } });
-	const b = newJob(ctx, { kind: "reply", reply: { platform: "instagram", comment_id: "k1", text: "고마워요" } });
-	approve(ctx, a.id, { publish_at: "now" });
-	approve(ctx, b.id, { publish_at: "now" });
-	const res = await run(ctx, []);
-	expect(res.code).toBe(0);
-	expect([...res.lines].sort()).toEqual([`posted ${a.id} youtube=r1`, `posted ${b.id} instagram=ir1`].sort());
-	expect(JSON.parse(calls(ctx, "/comments?")[0].body).snippet).toEqual({ parentId: "c1", textOriginal: "thanks" });
-	expect(new URLSearchParams(calls(ctx, "/k1/replies")[0].body).get("message")).toBe("고마워요");
-	expect(getJob(a.id)?.status).toBe("done");
+	mkdirSync(paths.jobs(), { recursive: true });
+	writeFileSync(join(paths.jobs(), "j-old.json"), JSON.stringify({ id: "j-old", kind: "reply", status: "approved", publish_at: "2020-01-01T00:00:00.000Z", created: "2020-01-01T00:00:00.000Z", targets: ["youtube"], reply: { platform: "youtube", comment_id: "c1", text: "thanks" } }));
+	await run(ctx, []);
+	expect(calls(ctx, "/comments")).toEqual([]);
+	expect(getJob("j-old")?.status).not.toBe("done");
 });
 
 test("a metadata job appends the section under the original description, merges localizations and backs up once", async () => {

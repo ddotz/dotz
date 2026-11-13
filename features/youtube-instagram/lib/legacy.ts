@@ -5,6 +5,12 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, 
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { paths, secretsDir, snsDir } from "./config.ts";
+import { readFileSync as readRules } from "node:fs";
+import { addWatch, allWatches, patchWatch } from "../../../hub/watch.ts";
+import { paths as hubPaths } from "../../../hub/config.ts";
+import type { Gateway } from "../../comments/bin/onboard.ts";
+import { getDraft, setStatus } from "../../reply-drafts/lib/store.ts";
+import { listJobs, OPEN, reject } from "./jobs.ts";
 
 export const LEGACY_ASK = "기존 유튜브·인스타 연결을 가져올까요?";
 export const LEGACY_YES = "--import-legacy";
@@ -118,4 +124,41 @@ export function legacyGate(args: readonly string[]): Gate {
 		return { lines: ["기존 연결은 가져오지 않아요"], ask: false };
 	}
 	return { lines: ["사용자가 고를 것이 하나 있어요 (한 번만 물어요):", `- ${LEGACY_ASK} (${names.join(", ")})`, `예: 같은 명령(받은 위치 옵션 그대로)에 ${LEGACY_YES}를 붙여 다시 실행해요. 아니요: ${LEGACY_NO}를 붙여요`], ask: true };
+}
+
+/** What moving YouTube and Instagram comment replies to the comments app needs from the running gateway (hub/migrations.ts sns-comment-replies). */
+export type LegacyComments = {
+	/** The platforms whose old watch (sns-yt-comments / sns-ig-comments) still runs. */
+	active: () => ("youtube" | "instagram")[];
+	/** Turns the comments app on for that platform the way features/comments/bin/onboard.ts does; it also pauses the old watch. */
+	onboard: (kind: "youtube" | "instagram") => Promise<boolean>;
+	/** Closes the reply jobs the old path left open (rejected) and marks their drafts stale; returns how many. */
+	closeJobs: () => number;
+};
+
+// The gateway side of that move: its watches, the comments app's own onboarding with them, and the old reply jobs.
+const OLD = { youtube: "sns-yt-comments", instagram: "sns-ig-comments" } as const;
+
+export function legacyComments(): LegacyComments {
+	const gateway: Gateway = {
+		watches: async () => allWatches().map(w => w.name),
+		add: async body => void addWatch(body, (() => { try { return readRules(hubPaths.rules, "utf8"); } catch { return ""; } })()),
+		pause: async name => void patchWatch(name, { paused: true }),
+	};
+	return {
+		active: () => (["youtube", "instagram"] as const).filter(k => allWatches().some(w => w.name === OLD[k] && !w.paused)),
+		// 0: on; 3: the platform is not connected, so the old watch has nothing to read either. Anything else (the watch not registered) is tried again.
+		// onboard.ts imports this file (legacyGate): it is loaded only when a move runs.
+		onboard: async kind => [0, 3].includes((await (await import("../../comments/bin/onboard.ts")).runOnboard(["on", "--app", kind], { gateway })).code),
+		closeJobs: () => {
+			let n = 0;
+			for (const j of listJobs()) {
+				if ((j.kind as string) !== "reply" || !OPEN.includes(j.status)) continue;
+				reject(j.id);
+				if (getDraft(j.id)?.status === "pending") setStatus(j.id, "stale");
+				n++;
+			}
+			return n;
+		},
+	};
 }

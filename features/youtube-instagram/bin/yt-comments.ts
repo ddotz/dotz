@@ -4,9 +4,8 @@
 // On the Data API path, 3 pages that do not reach the baseline add a `yt-comment-overflow` line (older new comments not listed).
 import type { Ctx } from "../lib/config.ts";
 import { SetupError } from "../lib/config.ts";
-import type { CommentDeps } from "../../reply-drafts/lib/comments.ts";
 import { COSTS, can } from "../lib/quota.ts";
-import { realReplyDeps, titleArg, withReplyDrafts } from "../lib/reply-adapter.ts";
+import { titleArg } from "../lib/reply-adapter.ts";
 import { main, oneLine, type RunResult, runWatch } from "../lib/watchkit.ts";
 import { readCommentsSince } from "../lib/yt-read.ts";
 import { videoInfos } from "../lib/youtube.ts";
@@ -14,8 +13,8 @@ import { videoInfos } from "../lib/youtube.ts";
 const MAX_PAGES = 3;
 type State = { since: string };
 
-// With the reply-drafts switch for youtube on, the comment lines come out as ready approval [ask] messages (reply-drafts/lib/comments.ts).
-export async function run(ctx: Ctx, _args: string[] = [], deps?: CommentDeps): Promise<RunResult> {
+// The comment lines go to the bot as they are; comment replies are drafted and sent by the comments app (hub/comments).
+export async function run(ctx: Ctx, _args: string[] = []): Promise<RunResult> {
 	const res = await runWatch<State>(ctx, {
 		quiet: true,
 		body: async (cfg, prev) => {
@@ -31,7 +30,7 @@ export async function run(ctx: Ctx, _args: string[] = [], deps?: CommentDeps): P
 			return { lines, state: { since } };
 		},
 	});
-	return withReplyDrafts(ctx, "youtube", res, deps);
+	return res;
 }
 
-if (import.meta.main) await main((ctx, args) => run(ctx, args, realReplyDeps()));
+if (import.meta.main) await main(run);

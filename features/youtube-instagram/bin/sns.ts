@@ -1,25 +1,20 @@
-// Action CLI the orchestrator runs: `job new --kind upload|reply|metadata --json <file>`, `approve <id> [--at ISO|now]`,
+// Action CLI the orchestrator runs: `job new --kind upload|metadata --json <file>`, `approve <id> [--at ISO|now]`,
 // `reject <id>`, `publish <id>` (approved/scheduled only; same path as due.ts), `status`, `tone-sample [--limit 30]`,
 // `restore <videoId>` and `mark-done <id> <platform> [ref]` (records a target the orchestrator finished through the
 // browser). Prints plain status lines; nothing public happens from a job that was not approved.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { draftVerdict } from "../../../hub/draft-approval.ts";
-import { reviseComment } from "../../reply-drafts/lib/comments.ts";
-import { defaultCall, type FlowDeps } from "../../reply-drafts/lib/flow.ts";
-import { loadSettings as replySettings, paths as replyPaths } from "../../reply-drafts/lib/settings.ts";
-import { getDraft, setStatus } from "../../reply-drafts/lib/store.ts";
 import { type Ctx, loadConfig, paths, SetupError } from "../lib/config.ts";
 import { PUBLISH_BLOCKED_CARD, publishState } from "../lib/ig-publish.ts";
 import { approve, getJob, type Job, type JobKind, listJobs, newJob, type NewJobInput, OPEN, PUBLISHABLE, recordResult, reject } from "../lib/jobs.ts";
 import { COSTS, can } from "../lib/quota.ts";
-import { cleanExample, ownReplyTexts, snsAdapter } from "../lib/reply-adapter.ts";
+import { cleanExample, ownReplyTexts } from "../lib/reply-adapter.ts";
 import { AuthError, failFrom, main, oneLine, type Platform, type RunResult, TransientError } from "../lib/watchkit.ts";
 import { progressLine, readBulk, restoreAll, restoreOne } from "../lib/bulk.ts";
 import { finishIfComplete, publishJob } from "./due.ts";
 
 const HEADING = "## 예시";
-const KINDS: JobKind[] = ["upload", "reply", "metadata"];
+const KINDS: JobKind[] = ["upload", "metadata"];
 const PLATFORMS: Platform[] = ["youtube", "instagram"];
 
 function flag(args: string[], name: string): string | undefined {
@@ -37,11 +32,10 @@ function positionals(args: string[]): string[] {
 }
 
 const ok = (...lines: string[]): RunResult => ({ lines, code: 0 });
-const usage = (): RunResult => ({ lines: ["usage: sns.ts job new --kind upload|reply|metadata --json <file> | approve <id> [--at ISO|now] | revise <replyJobId> --change <text> | reject <id> | publish <id> | status | tone-sample [--limit N] | restore <videoId>|all | bulk-status | mark-done <id> <platform> [ref]"], code: 2 });
+const usage = (): RunResult => ({ lines: ["usage: sns.ts job new --kind upload|metadata --json <file> | approve <id> [--at ISO|now] | reject <id> | publish <id> | status | tone-sample [--limit N] | restore <videoId>|all | bulk-status | mark-done <id> <platform> [ref]"], code: 2 });
 
 function summary(j: Job): string {
 	if (j.upload) return oneLine(j.upload.title, 60);
-	if (j.reply) return `${j.reply.platform} ${oneLine(j.reply.text, 60)}`;
 	return j.metadata?.video_id ?? "";
 }
 
@@ -70,16 +64,7 @@ async function toneSample(ctx: Ctx, args: string[]): Promise<RunResult> {
 	return ok(`tone-sample ${examples.length}`);
 }
 
-// A reply goes public only on the owner's own 1) 보내기 pick for exactly this job, made after the job was created (hub/draft-approval.ts).
-function requirePick(j: Job): void {
-	const v = draftVerdict(replyPaths.inbox(), j.id, Date.parse(j.created));
-	if (v.verdict === "send" || v.verdict === "send-as-is") return;
-	if (v.verdict === "edit") throw new Error(`고치기를 골랐어요${v.detail ? ` (${v.detail})` : ""}. sns.ts revise ${j.id} --change "<내용>"로 고친 뒤 다시 물어봐 주세요`);
-	if (v.verdict === "drop") throw new Error(`보내지 않기로 한 답글이에요. sns.ts reject ${j.id}`);
-	throw new Error("아직 보내도 된다는 답을 받지 못했어요");
-}
-
-async function dispatch(ctx: Ctx, args: string[], deps: FlowDeps): Promise<RunResult> {
+async function dispatch(ctx: Ctx, args: string[]): Promise<RunResult> {
 	const [cmd, ...rest] = args;
 	const pos = positionals(rest);
 	switch (cmd) {
@@ -97,21 +82,14 @@ async function dispatch(ctx: Ctx, args: string[], deps: FlowDeps): Promise<RunRe
 		}
 		case "approve": {
 			if (!pos[0]) return usage();
-			const before = getJob(pos[0]);
-			if (before?.kind === "reply") requirePick(before);
+			// A comment reply is answered in the comments app's 답장 대기 (hub/comments); a reply job left from before is never published.
+			if ((getJob(pos[0])?.kind as string) === "reply") throw new Error("댓글 답글은 답장 대기에서 보내요");
 			const j = approve(ctx, pos[0], { publish_at: flag(rest, "--at") });
 			return ok(`approved ${j.id} ${j.status} at=${j.publish_at}`);
-		}
-		case "revise": {
-			const j = pos[0] ? getJob(pos[0]) : undefined;
-			if (!j?.reply || j.status !== "draft") return usage();
-			const r = await reviseComment(snsAdapter(ctx, j.reply.platform), j.id, flag(rest, "--change") ?? "", deps);
-			return { lines: [r.text], code: r.ok ? 0 : 1 };
 		}
 		case "reject": {
 			if (!pos[0]) return usage();
 			const j = reject(pos[0]);
-			if (j.kind === "reply" && getDraft(j.id)?.status === "pending") setStatus(j.id, "dropped");
 			return ok(`rejected ${j.id}`);
 		}
 		case "publish": {
@@ -158,10 +136,9 @@ async function dispatch(ctx: Ctx, args: string[], deps: FlowDeps): Promise<RunRe
 	}
 }
 
-// The real CLI refines the tone identity after a 고치기 with the same subscription model call as the drafts (reply-drafts/lib/persona.ts).
-export async function run(ctx: Ctx, args: string[], deps: FlowDeps = { analyze: defaultCall(replySettings().model) }): Promise<RunResult> {
+export async function run(ctx: Ctx, args: string[]): Promise<RunResult> {
 	try {
-		return await dispatch(ctx, args, deps);
+		return await dispatch(ctx, args);
 	} catch (e) {
 		if (e instanceof AuthError || e instanceof SetupError || e instanceof TransientError) return failFrom(e);
 		return { lines: [`error: ${oneLine(e instanceof Error ? e.message : "unexpected failure", 200)}`], code: 1 };

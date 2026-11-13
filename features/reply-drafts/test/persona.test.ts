@@ -4,7 +4,6 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { runOnboard } from "../bin/onboard.ts";
-import { type CommentAdapter, draftComments } from "../lib/comments.ts";
 import { ensureKakaoRoom } from "../lib/kakao-tone.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { COMMENT_TONE_VERSION, corpusFile, learnFirst, maybeRefine, parseIdentity, REFINE_EVERY } from "../lib/persona.ts";
@@ -62,24 +61,6 @@ test("a mailbox with nothing to read yet is asked again with the next mail; a fa
 	const logs: string[] = [];
 	expect(await offerMailDraft({ ...mailFixture, key: "e-3" }, { send: () => {}, call: draft.call, analyze: fakeModel(["x"]).call, sentTexts: failing, log: l => void logs.push(l) })).toBe("offered");
 	expect(logs.join("\n")).toContain("zele down");
-});
-
-test("each comment source learns its own identity from its own past replies", async () => {
-	enable(env, { apps: { youtube: { auto: true }, instagram: { auto: true } } });
-	const adapter = (app: string, texts: string[]): CommentAdapter => ({
-		app,
-		label: app,
-		parse: l => (l.startsWith(`${app}:`) ? { id: l, author: "viewer", text: l.slice(app.length + 1), context: "" } : undefined),
-		stage: async c => `job-${c.id}`,
-		discard: async () => {},
-		ownTexts: async () => texts,
-	});
-	const reply = j({ action: "draft", reason: "r", to: "viewer", body: "고마워요!", questions: [] });
-	await draftComments(adapter("youtube", ["봐 주셔서 고마워요~"]), ["youtube:좋아요"], { call: fakeModel([reply]).call, analyze: fakeModel([j({ identity: ["물결표를 자주 쓴다"] })]).call });
-	await draftComments(adapter("instagram", ["감사합니다."]), ["instagram:예뻐요"], { call: fakeModel([reply]).call, analyze: fakeModel([j({ identity: ["마침표로 짧게 끝낸다"] })]).call });
-	expect(identityOf({ app: "youtube" })).toEqual(["물결표를 자주 쓴다"]);
-	expect(identityOf({ app: "instagram" })).toEqual(["마침표로 짧게 끝낸다"]);
-	expect(loadStyle({ app: "youtube" }).identity).toEqual(["물결표를 자주 쓴다"]);
 });
 
 test("a kakao room is swept from its history into its own identity; another room keeps its own; the app identity is the fallback", async () => {

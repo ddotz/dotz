@@ -10,7 +10,7 @@ import { type Config, type Ctx, dataDir, type Lang, loadConfig, paths, readJson,
 import { type Platform, zonedParts, zonedToDate } from "./watchkit.ts";
 import type { YtLoc } from "./youtube.ts";
 
-export type JobKind = "upload" | "reply" | "metadata";
+export type JobKind = "upload" | "metadata";
 export type JobStatus = "draft" | "approved" | "scheduled" | "posting" | "done" | "failed" | "rejected";
 export type UploadSpec = { file: string; title: string; description: string; tags: string[]; localizations: Record<Lang, YtLoc>; privacy: "private" | "unlisted" | "public"; ig_caption?: string; related?: string };
 export type ReplySpec = { platform: Platform; comment_id: string; text: string };
@@ -25,6 +25,7 @@ export type Job = {
 	posting_since?: string;
 	upload_intent?: UploadIntent;
 	upload?: UploadSpec;
+	// Only on a record from before comment replies moved to the comments app (hub/comments); no new job has it.
 	reply?: ReplySpec;
 	metadata?: MetadataSpec;
 	approved_at?: string;
@@ -35,7 +36,7 @@ export type Job = {
 	error?: string;
 };
 export type UploadIntent = { fingerprint: string; started: string };
-export type NewJobInput = { kind: JobKind; targets?: Platform[]; upload?: Partial<UploadSpec>; reply?: Partial<ReplySpec>; metadata?: Partial<MetadataSpec> };
+export type NewJobInput = { kind: JobKind; targets?: Platform[]; upload?: Partial<UploadSpec>; metadata?: Partial<MetadataSpec> };
 
 const ID = /^j-\d{12}-[0-9a-f]{4}$/;
 const PLATFORMS: Platform[] = ["youtube", "instagram"];
@@ -109,12 +110,6 @@ export function newJob(ctx: Ctx, input: NewJobInput): Job {
 		if (!job.targets.every(t => connected.includes(t))) throw new Error("a target platform is not connected");
 		if (!job.targets.length || !job.targets.every(t => jobFeatureOn("upload", t))) throw new Error("올리기 승인이 꺼져 있어요. 앱 설정에서 켜 주세요");
 		job.upload = { file: u.file, title: u.title as string, description: u.description ?? "", tags: u.tags ?? [], localizations: u.localizations ?? {}, privacy: u.privacy ?? cfg.youtube?.privacy ?? "private", ig_caption: u.ig_caption, ...(str(u.related) ? { related: u.related } : {}) };
-	} else if (input.kind === "reply") {
-		const r = input.reply;
-		if (!r || !PLATFORMS.includes(r.platform as Platform) || !str(r.comment_id) || !str(r.text)) throw new Error("reply needs platform, comment_id and text");
-		if (!connected.includes(r.platform as Platform)) throw new Error("a target platform is not connected");
-		job.targets = [r.platform as Platform];
-		job.reply = { platform: r.platform as Platform, comment_id: r.comment_id as string, text: r.text as string };
 	} else if (input.kind === "metadata") {
 		const m = input.metadata;
 		if (!m || !str(m.video_id)) throw new Error("metadata.video_id is required");
@@ -123,7 +118,7 @@ export function newJob(ctx: Ctx, input: NewJobInput): Job {
 		job.targets = ["youtube"];
 		job.metadata = { video_id: m.video_id as string, append: m.append ?? {}, localizations: m.localizations ?? {} };
 	} else {
-		throw new Error("kind must be upload, reply or metadata");
+		throw new Error("kind must be upload or metadata");
 	}
 	mkdirSync(paths.jobs(), { recursive: true });
 	save(job);

@@ -4,7 +4,8 @@
 // next start. The commands the migrations replace (features/*/bin/onboard.ts) stay for manual use.
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { findLegacy, LEGACY_NO, LEGACY_YES, legacyGate } from "../features/youtube-instagram/lib/legacy.ts";
+import { findLegacy, LEGACY_NO, LEGACY_YES, legacyComments, type LegacyComments, legacyGate } from "../features/youtube-instagram/lib/legacy.ts";
+export { legacyComments, type LegacyComments };
 import { createApp } from "./app-off.ts";
 import { issueBlock } from "./choices.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
@@ -26,9 +27,9 @@ export type CardAudit = {
 	/** Starts the one chat turn that compares the apps with the send records. */
 	turn: (counts: { closed: number; refreshed: number; open: number }) => void;
 };
-export type Ctx = { dataDir: string; state: State; ask: (text: string) => void; cards?: CardAudit };
+export type Ctx = { dataDir: string; state: State; ask: (text: string) => void; cards?: CardAudit; comments?: LegacyComments };
 export type Migration = { id: string; label: string; run: (ctx: Ctx) => string | undefined | Promise<string | undefined> };
-export type Deps = { dataDir: string; ask: (text: string) => void; notify: (text: string) => void; cards?: CardAudit; migrations?: Migration[]; log?: (s: string) => void; now?: () => Date };
+export type Deps = { dataDir: string; ask: (text: string) => void; notify: (text: string) => void; cards?: CardAudit; comments?: LegacyComments; migrations?: Migration[]; log?: (s: string) => void; now?: () => Date };
 
 const readState = (dataDir: string): State => {
 	try {
@@ -134,7 +135,24 @@ const modelPicks: Migration = {
 	},
 };
 
-export const MIGRATIONS: Migration[] = [siteApps, legacyTokens, cardAudit, modelPicks];
+export const SNS_COMMENTS_ID = "sns-comment-replies";
+// (e) YouTube and Instagram comment replies have one path, the comments app (the reply unification design, decision 4): an install that still runs the
+// old sns watches gets the comments app on for those platforms (the old watch paused), and the reply jobs that path left open are closed with their
+// drafts marked stale, so no old card can post. An install already on the comments app has no old watch running: nothing changes.
+const snsComments: Migration = {
+	id: SNS_COMMENTS_ID,
+	label: "유튜브·인스타 댓글 답글을 댓글 앱으로 옮기기",
+	run: async ({ comments }) => {
+		const kinds = comments!.active(), moved: string[] = [];
+		for (const k of kinds) if (await comments!.onboard(k)) moved.push(k === "youtube" ? "유튜브" : "인스타그램");
+		if (kinds.length && moved.length < kinds.length) throw new Error(`댓글 앱을 켜지 못한 곳: ${kinds.filter(k => !moved.includes(k === "youtube" ? "유튜브" : "인스타그램")).join(", ")}`);
+		const closed = comments!.closeJobs();
+		const parts = [...(moved.length ? [`${moved.join("·")} 댓글 답글을 댓글 앱으로 옮김`] : []), ...(closed ? [`예전 답글 작업 ${closed}건 닫음`] : [])];
+		return parts.length ? parts.join(", ") : undefined;
+	},
+};
+
+export const MIGRATIONS: Migration[] = [siteApps, legacyTokens, cardAudit, modelPicks, snsComments];
 
 /** Runs every migration that is not done, in order. One notice line lists what changed; each failure gets its own notice and is retried at the next start. */
 export async function runMigrations(deps: Deps): Promise<{ ran: string[]; failed: string[] }> {
@@ -143,9 +161,9 @@ export async function runMigrations(deps: Deps): Promise<{ ran: string[]; failed
 	const ran: string[] = [], failed: string[] = [];
 	for (const m of deps.migrations ?? MIGRATIONS) {
 		// A gateway with no orchestrator (the update smoke check) has no one to take the audit: it stays for the next real start.
-		if (state.done[m.id] || (m.id === CARD_AUDIT_ID && !deps.cards)) continue;
+		if (state.done[m.id] || (m.id === CARD_AUDIT_ID && !deps.cards) || (m.id === SNS_COMMENTS_ID && !deps.comments)) continue;
 		try {
-			const note = await m.run({ dataDir: deps.dataDir, state, ask: deps.ask, cards: deps.cards });
+			const note = await m.run({ dataDir: deps.dataDir, state, ask: deps.ask, cards: deps.cards, comments: deps.comments });
 			state.done[m.id] = { at: (deps.now?.() ?? new Date()).toISOString(), ...(note ? { note } : {}) };
 			saveState(deps.dataDir, state);
 			log(`migration ${m.id}: ${note ?? "nothing to do"}`);
