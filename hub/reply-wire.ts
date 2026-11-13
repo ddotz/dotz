@@ -16,7 +16,7 @@ import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type Se
 import type { BatchPick } from "./approval-batch.ts";
 import { DRAFT_UNDO } from "./draft-approval.ts";
 import { askText } from "./draft-attach.ts";
-import { createReplyActions, sendOf } from "./reply-actions.ts";
+import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
 import type { ReplyAdapter } from "./reply-types.ts";
 
 const mail = mailAdapter();
@@ -138,6 +138,7 @@ export const replies = createReplyActions({
 	log,
 	now,
 });
+setReplies(replies);
 
 let sendsBooted = false;
 // A card left 확인 필요 follows the comment's record: proof read back, the owner's 완료 or 다시 보내기, or the old sender that finished after all.

@@ -313,3 +313,8 @@ function cardItem(c: OpenCard, at: number): ReplyItem {
 	const kind: ReplyKind = "card";
 	return { item: `card:${c.conv}|${c.ref}`, ref: c.ref, kind, app: "card", label: c.title, conv: c.conv, notice: c.notice, at, can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", toLabel: "", to: "", text: "" } };
 }
+
+let live: ReturnType<typeof createReplyActions> | undefined;
+/** The live instance, for modules the wiring imports (late binding, like setRefHandled in hub/outbound.ts); undefined in tests that build a surface alone. */
+export const useReplies = () => live;
+export const setReplies = (r: ReturnType<typeof createReplyActions> | undefined): void => void (live = r);

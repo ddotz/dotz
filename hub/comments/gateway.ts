@@ -10,6 +10,7 @@ import { commentOriginal } from "./original.ts";
 import { realEngine } from "./real.ts";
 import { POST_UNKNOWN } from "./recover.ts";
 import { commentAdapter } from "./reply-adapter.ts";
+import { useReplies } from "../reply-actions.ts";
 import { createCommentsWeb } from "./web.ts";
 
 // An approved reply that was posted starts the app's 이어서 할 일 check (hub/followup.ts), once per send record.
@@ -18,7 +19,7 @@ const engine = realEngine(DATA_DIR, {
 	collector: resolveName(cfg.web?.machine_name, hostname()),
 	sent: (app, r) => triggerFollowup({ app, kind: "comment", key: r.id, ids: { comment: r.commentId, source: r.source, thread: r.thread.replace(/\s+/g, "_"), draft: r.draft } }),
 });
-const web = createCommentsWeb({ engine, broadcast });
+const web = createCommentsWeb({ engine, broadcast, replies: useReplies });
 // Once at start (also the migration of an install that has stale open comments / pending drafts): re-read the open comments, close what is answered or deleted.
 void engine.reconcile({ recheck: true }).then(
 	r => log(`comments reconcile: ${JSON.stringify({ answered: r.answered, gone: r.gone, draftsClosed: r.draftsClosed, ...(r.merged ? { merged: r.merged } : {}) })}${r.errors ? ` errors=${JSON.stringify(r.errors)}` : ""}`),
