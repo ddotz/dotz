@@ -198,18 +198,18 @@ test("the 75% warning asks for a handoff file and the cap's final-answer text na
 	expect(reason).toContain("[fail] token cap");
 });
 
-test("config: compaction threshold defaults to 400K, 0 turns it off, bad values fall back", () => {
-	expect(guardConfigFrom({}).task_compact_tokens).toBe(400_000);
+test("config: compaction threshold defaults to 300K, 0 turns it off, bad values fall back", () => {
+	expect(guardConfigFrom({}).task_compact_tokens).toBe(300_000);
 	expect(guardConfigFrom({ task_compact_tokens: 0 }).task_compact_tokens).toBe(0);
-	expect(guardConfigFrom({ task_compact_tokens: -5 }).task_compact_tokens).toBe(400_000);
+	expect(guardConfigFrom({ task_compact_tokens: -5 }).task_compact_tokens).toBe(300_000);
 });
 
-test("with the default threshold a worker at 200K context keeps working uncompacted and compacts past 400K", () => {
+test("with the default threshold a worker at 200K context keeps working uncompacted and compacts past 300K", () => {
 	const w = worker(50_000_000, guardConfigFrom({}).task_compact_tokens);
 	w.turn(200_000);
-	w.turn(390_000);
+	w.turn(290_000);
 	expect(w.compacts).toHaveLength(0);
-	w.turn(400_000);
+	w.turn(300_000);
 	expect(w.compacts).toHaveLength(1);
 });
 

@@ -12,7 +12,7 @@
 // between tool steps compacts itself once (OmO's 1M window never triggers its own auto compaction). Replay of 7 days of real
 // worker logs, with the 78K context a real compaction left and the re-written prefix priced as a cache write: 150K saves 23% of
 // the tokens and 6% of the cost and leaves 2 of 39 cap hits; 120K saves 28% and 3% (twice the compactions); 200K saves 14% and
-// 5% and leaves 10. Raised 2026-11-13 to 400K with the cap doubled (24M, step 6M, ceiling 48M): 150K compacted 61% of workers, where
+// 5% and leaves 10. Raised 2026-11-13 to the owner's 300K lane value with the cap doubled (24M, step 6M, ceiling 48M): 150K compacted 61% of workers, where
 // same-model workers outside dotz ran to 290K without one; a replay of 2026-11-06..13 predicts 12 capped workers instead of 22. The compaction's summary request re-sends the whole context, so it is counted against the cap. ctx.compact aborts the running turn and only continues a session that has queued input, and a message
 // queued before it finishes starts a run that compaction then waits behind (seen on a real rpc run, where the compaction
 // ran after the whole task), so the hidden message that continues the worker is sent when the compaction ends, done or

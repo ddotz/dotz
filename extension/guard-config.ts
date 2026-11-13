@@ -62,7 +62,7 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	max_fence_lines: 40,
 	max_output_chars: 2000,
 	worker_answer_chars: 800,
-	worker_context_tokens: 400_000, // the brief's "stop near it": never below task_compact_tokens, or a worker stops before its context is even compacted
+	worker_context_tokens: 300_000, // the owner's value (2026-10-20, hub/lane-compact-at.test.ts); never below task_compact_tokens, or a worker stops before its context is even compacted
 	budget_gate: true,
 	budget_margin_percent: 10,
 	budget_default_estimate_percent: 15,
@@ -75,7 +75,7 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	defer_to_installed: true,
 	harness_tools: true,
 	task_token_cap: 24_000_000,
-	task_compact_tokens: 400_000,
+	task_compact_tokens: 300_000, // the owner's lane and worker threshold (2026-10-20); was 150K for workers
 	task_cap_grow: true,
 	task_cap_step: 6_000_000,
 	task_cap_ceiling: 48_000_000,
