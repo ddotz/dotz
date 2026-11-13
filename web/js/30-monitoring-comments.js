@@ -372,6 +372,9 @@ async function cmRestore(code) {
   try { await cmApi(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast(TX("mon.cm.restored")); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
 }
 function cmDraftCard(d) {
+  // The one reply queue holds this draft (this computer's): its card, with 답글 / 메일 for a 고치기 when a mail rides along.
+  const qi = !CM.pc && RA.loaded ? RA.items.get(d.code) : null;
+  if (qi) return el("div", { class: "od-cwrap" }, rqItemCard(qi, { bare: true, part: !!d.mail }));
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); cmReload(); } finally { btn.disabled = false; } };
   const sending = CM.view.sends.some(s => s.commentId === d.commentId && (s.state === "sending" || s.state === "unsure"));
   const edit = CM.revising === d.code, src = CM.view.source || {};

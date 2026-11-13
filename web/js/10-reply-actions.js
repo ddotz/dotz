@@ -136,7 +136,11 @@ function rqItemCard(item, opts = {}) {
   const ref = item.ref, d = item.draft, busy = RA.busy.has(ref), fail = RA.fail.get(ref);
   let foot = null;
   if (RA.edit.has(ref)) foot = rqEditNode(item);
-  else if (RA.rev.has(ref)) foot = rqReviseNode({ value: RA.rev.get(ref), busy, onInput: v => RA.rev.set(ref, v), go: change => raAct(item, "revise", { change }), cancel: () => { RA.rev.delete(ref); raPaint(ref); } });
+  else if (RA.rev.has(ref)) {
+    // A comment reply that carries a mail: 고치기 says which part it changes (opts.part).
+    const pick = opts.part ? selectButton({ label: TX("mon.cm.part"), items: [{ value: "reply", label: TX("mon.cm.reply") }, { value: "mail", label: TX("common.mail") }], value: "reply" }) : null;
+    foot = rqReviseNode({ pick, value: RA.rev.get(ref), busy, onInput: v => RA.rev.set(ref, v), go: change => raAct(item, "revise", { change, ...(pick ? { part: pick.value } : {}) }), cancel: () => { RA.rev.delete(ref); raPaint(ref); } });
+  }
   else if (d.revising) foot = el("div", { class: "kk-st", role: "status", text: TX("reply.revising") });
   else if (item.send) foot = rqSendNode(item);
   const node = rqCard({

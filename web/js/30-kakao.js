@@ -1022,6 +1022,7 @@ async function kkRestore(code) {
 }
 // The room's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue.
 function kkDraftCard(d) {
+  if (RA.loaded && RA.items.has(d.code)) return rqItemCard(RA.items.get(d.code), { bare: true });   // the one queue's card: undo bar, failure and its buttons in its foot
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); kkTail(); } finally { btn.disabled = false; } };
   const making = !!KK.open && KK.drafting === KK.open && KK.reviseCode === d.code, rv = !making && KK.revise && KK.revise.code === d.code ? KK.revise : null;
   // The card sits right under the chat it answers: no head, quoted original or 첨부 line (10-reply-card.js bare); the draft's messages are yellow bubbles that scroll inside the card, the buttons stay.
@@ -1055,8 +1056,7 @@ function kkEdit(d) {
   kkTa.focus();
 }
 function kkEditCancel() {
-  KK.edit = null; kkTa.value = ""; KK.typed.delete(KK.open); kkAutosize();
-  kkPaintFoot();
+  KK.edit = null; kkTa.value = ""; KK.typed.delete(KK.open); kkAutosize(); kkPaintFoot();
 }
 function kkPaintFoot() {
   const edit = KK.edit && KK.drafts.some(d => d.code === KK.edit.code) ? KK.edit : null;
