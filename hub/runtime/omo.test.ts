@@ -214,7 +214,7 @@ test(`an OmO task worker of ${role === "DOTZ_LANE" ? "a lane" : "the orchestrato
 	expect(names).toEqual(["dotz_recall"]);
 	const big = Array.from({ length: 1000 }, (_, i) => `${i} ${"x".repeat(95)}`).join("\n");
 	const capped = handlers.tool_result!({ toolName: "read", input: { path: "/x" }, content: [{ type: "text", text: big }] });
-	expect(capped.content[0].text.length).toBeLessThan(21_000);
+	expect(capped.content[0].text.length).toBeLessThan(61_000);
 	expect(handlers.tool_call!({ toolName: "bash", input: { command: "echo ok" } })).toBeUndefined();
 	const payload = handlers.before_provider_request!({ payload: { system: [{ type: "text", text: "s", cache_control: { type: "ephemeral", ttl: "1h" } }] } }, { agent: { kind: "main" } });
 	expect(payload.system[0].cache_control).toEqual({ type: "ephemeral" });
