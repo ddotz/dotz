@@ -679,7 +679,12 @@ function targetInfo(t) {
   if (isRelayT(t)) return { status: "", alive: true, known: true };
   if (isSettingsT(t)) { const o = (S && S.orchestrator) || {}, busy = o.status === "working" || o.status === "starting"; return { status: busy && (!TURN.has(t) || PQ.of.has(t)) ? "idle" : o.status || "", alive: true, known: true }; }
   if (t === MAIN || isRowT(t) || isMailT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
-  if (isProjT(t)) { const o = (S && S.orchestrator) || {}, known = projTargets().includes(t); return { status: o.status || "", alive: known || !S, known }; }
+  if (isProjT(t)) {
+    // A project with a session of its own is not busy with main's turn (41-runstate.js runOf): its state is its own run, or the page grows a run line under the owner's fingers.
+    const o = (S && S.orchestrator) || {}, known = projTargets().includes(t), r = projOnMain(t) ? null : runOf(t);
+    const own = r ? (r.kind === "working" ? "working" : r.kind === "limited" ? "rate-limited" : "idle") : "idle";
+    return { status: projOnMain(t) ? o.status || "" : own, alive: known || !S, known };
+  }
   const l = S && S.lanes.find(x => x.name === laneOf(t));
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };
 }
