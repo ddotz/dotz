@@ -140,7 +140,8 @@ function rqItemCard(item, opts = {}) {
   else if (item.send) foot = rqSendNode(item);
   const node = rqCard({
     key: `ra:${item.item}`, cls: `ra-card${opts.lead ? " lead" : ""}`, attrs: { "data-ref": ref, "data-item": item.item }, bare: !!opts.bare,
-    head: { app: item.app, label: item.label, who: item.original && item.original.who, at: item.at },
+    // The head names the person: a mail sender's address ("이름 <a@b>") stays in the quoted original only.
+    head: { app: item.app, label: item.label, who: item.original && (String(item.original.who).replace(/\s*<[^<>]*>\s*$/, "") || item.original.who), at: item.at },
     original: item.original ? { who: item.original.who, text: item.original.text } : null,
     label: d.replaces ? TX("reply.revised") : "", to: [d.toLabel, d.to], subject: d.subject,
     body: { text: d.text, parts: d.parts, sentParts: d.sentParts },
