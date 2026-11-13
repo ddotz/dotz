@@ -258,6 +258,7 @@ export const en = {
 	laneGatewayRestarted: "[dotz gateway] The gateway restarted while you were working, which also stopped any task subagents and background commands you had running. Check what they finished (patches, files, commits), relaunch the rest, and continue; if an owner message was cut off mid-turn, handle it too.",
 	laneShellJob: "a background command",
 	keptEnded: (what: string, why: "ended" | "idle") => `Ended what the resting session left running${what ? ` (${what})` : ""}: ${why === "idle" ? "nothing used it for a day" : "the session ended"}.`,
+	laneIdleWaitMain: (lane: string, minutes: number, summary: string) => `[lane waiting] Lane ${lane} waited ${minutes} min on main and is stopping now. Send it an answer or work and it comes back on the same conversation. Its last report:\n${summary}`,
 	laneIdleHeld: (jobs: string[], minutes: number) => `[lane stuck] This idle lane stays up for: ${jobs.join(", ")}. Nothing was heard of it for ${minutes}+ minutes and it keeps about 1 GB in use. If it is still needed, leave it; if not, stop this lane.`,
 	laneRestartStuck: (n: number) => `[lane stuck] This session's work was cut off and it was brought back ${n} times, but its plan did not move, so it is left alone. To go on, send it a message; to drop the work, stop the session.`,
 	sessionRestartStuck: (n: number) => `This conversation's work was cut off and it was brought back ${n} times without finishing, so it is left alone. To go on, send a message here.`,

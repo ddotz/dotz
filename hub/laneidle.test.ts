@@ -3,7 +3,8 @@ import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as l from "./lanes.ts";
 import type * as Lanes from "./lanes.ts";
-import { cfg } from "./config.ts";
+import { cfg, NAME } from "./config.ts";
+import { msg } from "./i18n.ts";
 import { parkIdleLanes, shouldPark } from "./laneidle.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
@@ -104,6 +105,23 @@ test("an idle lane past the period is stopped but stays idle and live; the next 
 	expect(lane.parked).toBeUndefined();
 	expect(JSON.parse(readFileSync(join(DATA, "lanes", "idle-park", "lane.json"), "utf8")).parked).toBeUndefined();
 	l.stopLane("idle-park");
+	await advance(300);
+});
+
+test("a lane stopped while its last report waits on main tells main once; one waiting on CI does not", async () => {
+	const told: string[] = [];
+	l.setReportHandler((lane, text) => void told.push(`${lane.name}: ${text}`));
+	const onMain = await idleLane("idle-main");
+	writeFileSync(join(DATA, "lanes", "idle-main", "report.md"), `[wait] 전체 시험을 기다려요\n\n${NAME} 몫: e1bec7e8 전체 시험 결과를 주세요\n`);
+	const onCi = await idleLane("idle-ci");
+	writeFileSync(join(DATA, "lanes", "idle-ci", "report.md"), "[wait] Actions 빌드 완료를 기다려요\n");
+	expect(parkIdleLanes(1_000_000 + 25 * MIN, 20)).toEqual(expect.arrayContaining(["idle-main", "idle-ci"]));
+	await advance(300);
+	expect(told).toEqual([`idle-main: ${msg().laneIdleWaitMain("idle-main", 25, `전체 시험을 기다려요\n\n${NAME} 몫: e1bec7e8 전체 시험 결과를 주세요`)}`]);
+	expect(parkIdleLanes(1_000_000 + 60 * MIN, 20)).toEqual([]);
+	expect(told).toHaveLength(1);
+	l.setReportHandler(() => {});
+	for (const lane of [onMain, onCi]) l.stopLane(lane.name);
 	await advance(300);
 });
 

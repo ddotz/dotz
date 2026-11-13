@@ -17,10 +17,14 @@
 // longest silence of 224 workers over 7 days was that 28.5 min wait, and the longest wait of a lane on its own shell over 10 days 72.6
 // min. A worker stopped on a provider error holds it too: note-merge was stopped at 12:00 KST on 2026-11-06 with st_01a1aea0 on three
 // stream timeouts, its worker lost. A lane stopped with its plan open is the resume sweep's (laneresume.ts).
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { lanesIdleStopMin, log } from "./config.ts";
+import { waitsOnMain } from "./forline.ts";
 import { msg } from "./i18n.ts";
 import { type Lane, laneBusy, laneJobs, lanes, parkLane } from "./lanes.ts";
-import { hooks } from "./lanestate.ts";
+import { dir, hooks } from "./lanestate.ts";
+import { parseTone } from "./tone.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export const CHECK_MS = 60_000;
@@ -29,6 +33,21 @@ const JOB_BOUND_MIN = 120;
 const held = new Set<string>();
 // Lanes whose owner was told of a job past the bound.
 const told = new Set<string>();
+// The [wait]-on-main report each stopped lane already told main about (lane -> report text).
+const waitTold = new Map<string, string>();
+
+// A lane stopped while its last report waits on main tells main once (Claude Code's idle notification): main may have missed or
+// forgotten that report, and the stopped lane can no longer remind it (2026-11-10..12: five lanes sat 23-173 min, projects/session-stalls).
+function tellMainWaiting(lane: Lane, now: number): void {
+	const file = join(dir(lane.name), "report.md");
+	const text = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
+	const { tone, text: body } = parseTone(text);
+	if (tone !== "wait" || !waitsOnMain(text) || waitTold.get(lane.name) === text) return;
+	waitTold.set(lane.name, text);
+	const minutes = Math.round((now - (lane.lastFrameAt ?? now)) / 60_000);
+	log(`lane ${lane.name} stopped while waiting on main for ${minutes} min: main is told once`);
+	hooks.report(lane, msg().laneIdleWaitMain(lane.name, minutes, body.trim().slice(0, 600)));
+}
 
 // Pure decision: an idle lane with a session, nothing running for it, quiet for at least `minutes`.
 export function shouldPark(lane: Pick<Lane, "status" | "proc" | "revive" | "sessionFile" | "lastFrameAt" | "name">, busy: boolean, minutes: number, now: number): boolean {
@@ -54,6 +73,7 @@ export function parkIdleLanes(now = Date.now(), minutes = lanesIdleStopMin()): s
 		told.delete(lane.name);
 		if (!parkLane(lane)) continue;
 		parked.push(lane.name);
+		tellMainWaiting(lane, now);
 		log(`lane ${lane.name} idle for ${minutes}+ min: process stopped to free memory, the next message resumes ${lane.sessionFile}`);
 	}
 	return parked;
