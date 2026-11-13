@@ -1200,6 +1200,7 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
     "DOTZ_OWNER_ASKED_FABLE": "1"
    }
   ],
@@ -1718,6 +1719,7 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
     "DOTZ_OWNER_ASKED_FABLE": "1"
    }
   ],
@@ -1832,6 +1834,7 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
     "DOTZ_OWNER_ASKED_FABLE": "1"
    }
   ],
@@ -1901,6 +1904,7 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
     "DOTZ_OWNER_ASKED_FABLE": "1"
    }
   ],
@@ -1962,6 +1966,7 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
     "DOTZ_OWNER_ASKED_FABLE": "1"
    }
   ],
@@ -2080,6 +2085,7 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
     "DOTZ_OWNER_ASKED_FABLE": "1"
    }
   ],

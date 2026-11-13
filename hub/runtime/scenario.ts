@@ -50,7 +50,7 @@ class FakeProc {
 	};
 	constructor(args: string[], opts: { cwd?: string; env?: Record<string, string | undefined> }) {
 		FakeProc.all.push(this);
-		const dotz = Object.fromEntries(Object.entries(opts.env ?? {}).filter(([k]) => k.startsWith("DOTZ_") && !["DOTZ_DIR", "DOTZ_OMP", "DOTZ_OMO", "DOTZ_TEST_DIR", "DOTZ_WEB_LIVE"].includes(k)));
+		const dotz = Object.fromEntries(Object.entries(opts.env ?? {}).filter(([k]) => k.startsWith("DOTZ_") && !["DOTZ_DIR", "DOTZ_OMP", "DOTZ_OMO", "DOTZ_TEST_DIR", "DOTZ_WEB_LIVE"].includes(k)).map(([k, v]) => [k, typeof v === "string" ? norm(v) : v]));
 		T("spawn", this.n, args.slice(NICE.length + 1).map(a => norm(a)), norm(opts.cwd ?? ""), dotz);
 	}
 	kill(sig?: number) {

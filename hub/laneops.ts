@@ -2,19 +2,19 @@ import { DATA_DIR, log, paths, selectorOf, lanesModel, now, chainAfter, fallback
 import { markDeep } from "./deepmark.ts";
 import { type Lane, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
 import { broadcast } from "./events.ts";
-import { featurePrompt } from "./featuredirs.ts";
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync, rmSync } from "node:fs";
 import { RESTART_HELD_FILE } from "./restart.ts";
-import { withReplyLine, msg, modeFile, lang } from "./i18n.ts";
-import { worktreeNote, laneWorktree, dropWorktree, withWorktree, unlanded } from "./lanetree.ts";
+import { msg, lang } from "./i18n.ts";
+import { laneWorktree, dropWorktree, withWorktree, unlanded } from "./lanetree.ts";
 import { checkBrief } from "./lanegates.ts";
 import { newCtx, type Compaction, requestCompact } from "./context.ts";
 import { join } from "node:path";
 import { spawn, runtimeMismatch, resumeLane, harnessName, sessionRuntime } from "./lanerun.ts";
 import { prompt } from "./laneprompt.ts";
+import { footer } from "./lanefooter.ts";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { clearAsk, withHeld, report } from "./lanereport.ts";
-import { baseLanguage, languageName } from "./language.ts";
+import { baseLanguage } from "./language.ts";
 import { hubChain, Chain, Reverter } from "./fallback.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { statusActivity, runningSubagents } from "./activity.ts";
@@ -74,14 +74,6 @@ export function startLaneQueue(): void {
 	timer.unref();
 	trackTimer("lane queue", timer);
 	trackTimer("machine sampler", startMachineSampler());
-}
-
-function footer(lane: Lane): string {
-	const features = featurePrompt(DATA_DIR, "lanes", log);
-	// The owner's verbatim don'ts (memory/boundaries.md) bind a lane too; the empty template adds nothing.
-	const boundaries = existsSync(paths.boundaries) ? readFileSync(paths.boundaries, "utf8").trim() : "";
-	const donts = boundaries.includes("\n- [") ? `\n\n${boundaries}` : "";
-	return withReplyLine(msg().footer({ lane: lane.name, language: languageName(lang()), mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(lane).workers, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
 }
 
 export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean, title?: string, from?: string, peer?: Lane["peer"]): Lane {
@@ -347,12 +339,13 @@ export async function rotateLane(name: string, why: string): Promise<void> {
 	old.kill();
 	await old.exited;
 	lane.ctx = newCtx();
-	lane.retainNext = undefined; // the fresh session's handover already carries the nudge
+	lane.retainNext = lane.contractDue = undefined; // the fresh session's handover already carries the nudge and the footer
 	spawn(lane, false);
 	const tail = previous && existsSync(previous) ? runtimeFor("lane").recentExchanges(previous) : undefined;
 	const brief = join(dir(name), "brief.md");
 	const lastReport = join(dir(name), "report.md");
-	prompt(lane, withReplyLine(`${msg().laneRotated(why, lane.cwd, brief, lastReport)}${previous ? `\n\n${msg().laneHandover(previous, tail)}` : ""}`));
+	// The fresh session has neither the launch prompt nor a compaction hook to carry the lane's identity and rules: the footer goes in with it.
+	prompt(lane, `${msg().laneRotated(why, lane.cwd, brief, lastReport)}${previous ? `\n\n${msg().laneHandover(previous, tail)}` : ""}${footer(lane)}`);
 	lane.silent = { lastText: lane.lastText };
 }
 
@@ -370,18 +363,18 @@ export function handoverLane(name: string, text?: string): void {
 	const owner = text?.trim() || lane.pendingHandover;
 	lane.pendingHandover = undefined;
 	lane.ctx = newCtx();
-	lane.retainNext = undefined;
+	lane.retainNext = lane.contractDue = undefined;
 	lane.sessionFile = undefined;
 	const tail = previous && existsSync(previous) ? runtimeFor("lane").recentExchanges(previous) : undefined;
 	const brief = join(dir(name), "brief.md");
 	const lastReport = join(dir(name), "report.md");
 	const prior = previous ? `\n\n${msg().laneHandover(previous, tail)}` : "";
 	const lead = owner ? msg().laneRuntimeHandover(from, to, lane.cwd, brief, lastReport) : msg().laneRotated(`${from} -> ${to}`, lane.cwd, brief, lastReport);
-	const body = withWorktree(lane, `${lead}${prior}`);
 	spawn(lane, false);
+	const body = withWorktree(lane, `${lead}${prior}`) + footer(lane);
 	log(`lane ${name} handed over to a fresh ${to} session (previous ${from} session ${previous ?? "none"})`);
 	if (owner) return prompt(lane, withHeld(lane, `${body}\n\n${owner}`));
-	prompt(lane, withReplyLine(body));
+	prompt(lane, body);
 	lane.silent = { lastText: lane.lastText };
 }
 

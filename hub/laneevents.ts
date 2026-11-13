@@ -83,6 +83,11 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				lane.transientTimer = undefined;
 				lane.reportedThisTurn = undefined;
 				lane.startingOn = undefined;
+				if (lane.contractQueued) {
+					// The extension's next-turn message went into this turn: nothing left for the gateway to send.
+					lane.contractQueued = lane.contractDue = undefined;
+					persist(lane);
+				}
 				rmSync(pendingFile(lane), { force: true });
 				setStatus(lane, "working");
 				lane.progressAt = Date.now();
@@ -165,6 +170,10 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				} else if (ev.state === "error") recover(lane, "컨텍스트 압축이 실패했어요", wasWorking);
 				else {
 					lane.retainNext = true;
+					// On disk: a restart or a respawn loses the extension's queued re-read, and the next gateway prompt then carries the footer.
+					lane.contractDue = true;
+					lane.contractQueued = Boolean(runtimeFor("lane").caps.extension);
+					persist(lane);
 					if (lane.status === "idle" && lane.held?.length) {
 						const during = lane.held.splice(0);
 						lane.held = undefined;

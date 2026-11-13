@@ -76,6 +76,18 @@ test("the runtime that wrote a session is recorded, and read from the session's 
 	expect(l.sessionRuntime({ runtime: "omp", sessionFile: "/Users/x/.omo/agent/sessions/a.jsonl" })).toBe("omp");
 });
 
+test("a lane's footer is the launch prompt's, and the same text is handed to the process for re-reading after a compaction", async () => {
+	mkdirSync(join(DATA, "identity"), { recursive: true });
+	writeFileSync(join(DATA, "identity", "IDENTITY.md"), "voice marker 5d2e");
+	const lane = await stopped("rt-contract");
+	const file = spawns.find(s => s.opts.lane?.name === "rt-contract")!.opts.env.DOTZ_LANE_CONTRACT!;
+	expect(file).toBe(join(DATA, "lanes", "rt-contract", "contract.md"));
+	const footer = readFileSync(file, "utf8").trim();
+	expect(footer).toContain("[dotz lane rt-contract]");
+	expect(lane.prompted).toContain(footer);
+	expect(footer.split("voice marker 5d2e")).toHaveLength(2); // the identity text itself, not a pointer to its file
+});
+
 test("a session of the same runtime resumes as before", async () => {
 	const lane = await stopped("rt-same");
 	const session = join(DATA, "omo-agent", "sessions", "rt-same.jsonl");
@@ -125,6 +137,7 @@ test("an omp session is never resumed by OmO: refused with a handover offer, and
 	expect(prompt).toContain(old);
 	expect(prompt).toContain("owner: is this light theme the best?");
 	expect(prompt).toContain("[owner via Discord] is this light theme the best?");
+	expect(prompt).toContain("[dotz lane rt-omp]"); // the fresh session gets the lane footer, which no compaction hook can supply
 	expect(prompt).not.toContain("인계");
 	l.stopLane("rt-omp");
 	await advance(300);

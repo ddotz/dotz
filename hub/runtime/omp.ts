@@ -377,7 +377,7 @@ export function recentExchanges(sessionFile: string): string | undefined {
 
 export const omp: RuntimeAdapter = {
 	id: "omp",
-	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true },
+	caps: { steer: "native", subagents: "live", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, extension: true },
 	start(o) {
 		if (o.role === "lane" && !o.lane) throw new Error("a lane needs its lane options");
 		const mode = o.role === "orchestrator" ? ["--extension", EXTENSION, ...orchestratorOverlay(o)] : [`--config=${writeOverlay(o, o.lane!)}`];

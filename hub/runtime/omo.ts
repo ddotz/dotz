@@ -321,7 +321,7 @@ export const omo: RuntimeAdapter = {
 	// OmO writes the 1h prompt cache when started with PI_CACHE_RETENTION=long (start below; measured 2026-10-20: a full cache
 	// read after a 6.7-minute gap), so the idle keepalive pays off as on omp. OmO's usage records never show it: senpi's
 	// claude-sdk-oauth stream drops the cacheWrite1h field, so nothing here reads that field.
-	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact", abortCompact: true },
+	caps: { steer: "native", subagents: "transcript-only", contextNumbers: "exact", compact: "rpc", sessionTranscript: true, promptCacheKeepalive: true, contextLimit: "compact", abortCompact: true, extension: true },
 	start(o) {
 		const onKey = keyedWorker(o.env);
 		const key = keyProviderOf(o);

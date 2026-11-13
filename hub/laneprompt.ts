@@ -4,6 +4,7 @@ import { msg, lang } from "./i18n.ts";
 import { languageName } from "./language.ts";
 import { log } from "./config.ts";
 import { handoffNote } from "./outlang.ts";
+import { footer } from "./lanefooter.ts";
 
 const WATCHDOG_MS = 120_000;
 
@@ -23,11 +24,17 @@ export function prompt(lane: Lane, text: string): void {
 	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer. It names every kind of lane text
 	// (report, progress note, todo item, tool intent): "answer the owner in Korean" read as covering replies only.
 	const nudge = (lane.retainNext ? `\n${msg().retainNudge}` : "") + (lane.workerNext ? `\n${lane.workerNext}` : "") + (/^\[owner via /.test(text) ? `\n${msg().ownerAnswerNudge}` : "");
+	// A compaction finished and the extension's re-read of the footer (identity, rules) is not in this process: this prompt carries it once.
+	const contract = lane.contractDue && !lane.contractQueued ? `\n${footer(lane).trim()}` : "";
+	if (lane.contractDue && !lane.contractQueued) {
+		lane.contractDue = undefined;
+		persist(lane);
+	}
 	lane.retainNext = lane.workerNext = undefined;
 	// The owner's next message while the turn is still starting joins its first model call: a queued steer is drained at the start of
 	// the agent loop (orchestrator.ts), a second "prompt" would ask for a second turn.
 	const joins = lane.status === "working" || (lane.startingOn === lane.proc && lane.proc !== undefined && /^\[owner via /.test(text));
-	lane.proc?.send(`${text}${nudge}\n${msg().laneLanguage(languageName(lang()))}${handoffNote(`lane:${lane.name}`)}`, joins ? "steer" : "prompt");
+	lane.proc?.send(`${text}${nudge}${contract}\n${msg().laneLanguage(languageName(lang()))}${handoffNote(`lane:${lane.name}`)}`, joins ? "steer" : "prompt");
 	if (joins) return;
 	lane.prompted = text;
 	lane.startingOn = lane.proc;

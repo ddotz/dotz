@@ -19,6 +19,7 @@ export interface RuntimeCaps {
 	// memory of the work (a fresh session only when compaction fails, the model changes or at the nightly handover);
 	// "rotate" = a fresh session with a handover of recent exchanges.
 	contextLimit?: "compact" | "rotate";
+	extension?: boolean; // dotz's extension runs in the agent process, so its session hooks (the lane's contract re-read after a compaction) fire
 	abortCompact?: boolean; // a running compaction can be cancelled at once without harming the session (OmO abort_compaction)
 }
 

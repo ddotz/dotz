@@ -13,6 +13,7 @@ import { abandonCompact } from "./context.ts";
 import { report, withHeld } from "./lanereport.ts";
 import { withWorktree } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
+import { writeContract } from "./lanefooter.ts";
 import { existsSync, rmSync } from "node:fs";
 import { laneLimits } from "./lanelimits.ts";
 import { unfinishedWork } from "./laneunfinished.ts";
@@ -127,6 +128,8 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	try {
 	// posix_spawn with a missing cwd reports ENOENT for the binary (`omo`), which hides the real cause.
 	if (!existsSync(lane.cwd)) throw new Error(`working directory does not exist: ${lane.cwd}`);
+	// Rewritten at every spawn, with the rest of the lane's settings: the extension re-reads it after a compaction.
+	env.DOTZ_LANE_CONTRACT = writeContract(lane);
 	const steer = steerToken(HUB_TOKEN, `lane:${lane.name}`);
 	proc = markSteers(runtimeFor("lane").start({
 		role: "lane",
@@ -147,6 +150,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		return false;
 	}
 	lane.activeModel = spawnModel;
+	lane.contractQueued = undefined; // a new process holds no queued re-read
 	lane.startedModel = spawnModel;
 	lane.reverter = new Reverter();
 	lane.chained = !lane.chain && entries.length > 0;

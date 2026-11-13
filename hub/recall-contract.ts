@@ -22,6 +22,19 @@ function language(data: string): string {
 	}
 }
 
+/** The owner's voice and address file as every session re-reads it (the main session's contract and a lane's). */
+export const identityText = (data: string): string => {
+	const p = join(data, "identity", "IDENTITY.md");
+	return existsSync(p) ? readFileSync(p, "utf8").slice(0, 3000) : "";
+};
+
+/** What a lane re-reads after a compaction (extension/index.ts laneSession): the lane footer the gateway wrote at spawn (hub/lanefooter.ts),
+ * which already holds the owner's identity text. Not the orchestrator's contract or state. */
+export function laneContract(contractFile: string | undefined): string {
+	const footer = contractFile && existsSync(contractFile) ? readFileSync(contractFile, "utf8").trim() : "";
+	return `[dotz] Lane contract re-read after compaction:\n\n${footer}`;
+}
+
 export function recallContract(data: string, pkg: string): { text: string; parts: RecallParts } {
 	const file = (p: string, max: number) => (existsSync(p) ? readFileSync(p, "utf8").slice(0, max) : "");
 	const code = language(data);
@@ -40,7 +53,7 @@ export function recallContract(data: string, pkg: string): { text: string; parts
 	const stateFile = join(data, "state.json");
 	const setupsFile = join(data, "channel-setups.json");
 	const rules = file(join(data, "RULES.md"), 12000);
-	const parts = { identity: file(join(data, "identity", "IDENTITY.md"), 3000), rules: rules + (features ? `\n\n${features}` : ""), lessons: file(join(data, "LESSONS.md"), 3000), setups: existsSync(setupsFile) ? renderSetups(readFileSync(setupsFile, "utf8")) : "", state: (existsSync(stateFile) && renderState(readFileSync(stateFile, "utf8"), stateFile)) || "{}" };
+	const parts = { identity: identityText(data), rules: rules + (features ? `\n\n${features}` : ""), lessons: file(join(data, "LESSONS.md"), 3000), setups: existsSync(setupsFile) ? renderSetups(readFileSync(setupsFile, "utf8")) : "", state: (existsSync(stateFile) && renderState(readFileSync(stateFile, "utf8"), stateFile)) || "{}" };
 	const split: RecallParts = { identity: parts.identity, mode, rules, features, lessons: parts.lessons, setups: parts.setups, state: parts.state };
 	if (base === "ko") return { text: `[dotz] 컨텍스트 압축 뒤 계약을 다시 읽어요:\n\n정체성:\n${parts.identity}\n\n${mode}\n\n오너 규칙:\n${parts.rules}\n\n교훈:\n${parts.lessons}\n\n작업 채널 설정 (자세한 건 dotz_channel list):\n${parts.setups || "(없음)"}\n\n현재 state.json:\n${parts.state}`, parts: split };
 	const reply = base === "en" ? "" : `\n\nReply to the owner in ${languageName(code)} (${code}).`;

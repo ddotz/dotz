@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { FIELD_TYPES } from "../hub/authfields.ts";
 import { openRequestsBlock } from "../hub/recall-parts.ts";
-import { recallContract } from "../hub/recall-contract.ts";
+import { laneContract, recallContract } from "../hub/recall-contract.ts";
 import { blockedByFeatures } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
 import { mergeGate, recordReview, Refusal, type Scope } from "../hub/mergegate.ts";
@@ -480,6 +480,11 @@ function laneSession(pi: any): void {
 	escalateTool(pi);
 	recallTool(pi, DATA);
 	shortCache(pi);
+	// A compaction drops the launch prompt that carried the lane's identity and rules, and the next turn can start from a worker wake instead
+	// of the gateway: re-read them before the next model call. The text is the gateway's (DOTZ_LANE_CONTRACT); task workers never get here.
+	pi.on("session_compact", (_e: any, ctx: any) => {
+		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: laneContract(process.env.DOTZ_LANE_CONTRACT), display: false }, { deliverAs: "nextTurn" });
+	});
 }
 
 function terminalClient(pi: any): void {
