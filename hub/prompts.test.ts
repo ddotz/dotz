@@ -1030,7 +1030,8 @@ test("an answer with no prompt and no wake goes home, not to the conversation wh
 		{ id: "wA", description: "A", status: "done", target: "ch:A", replyTo: "a1", startedAt: now - 100_000, endedAt: now - 50_000 },
 		{ id: "wB", description: "B", status: "done", target: "ch:B", replyTo: "b1", startedAt: now - 40_000, endedAt: now - 10_000 },
 	];
-	const { q, state, startTurn } = setup([], [], { work: () => works });
+	let deferring = true;   // each [later] waits on its running worker
+	const { q, state, startTurn } = setup([], [], { work: () => works.map(w => ({ ...w, status: deferring ? "running" : "done" }) satisfies WorkRow) });
 	startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
 	q.onAnswer("[later]");
 	state.working = false;
@@ -1040,6 +1041,7 @@ test("an answer with no prompt and no wake goes home, not to the conversation wh
 	state.working = false;
 	q.settleTurn();
 	expect(q.deferredOpen().map(d => d.target)).toEqual(["ch:A", "ch:B"]);
+	deferring = false;
 
 	q.onAnswer("작업 결과예요");
 	await Promise.resolve();
@@ -1701,6 +1703,7 @@ test("a handed request is handed back even when its answer repeats what the turn
 test("a handed request the silent-wait check gives up on is reported once to the session that handed it over", () => {
 	const t = handedSetup();
 	t.startTurn("[conversation ch:A] fix Z", handed);
+	t.q.workersSpawned([{ id: "st_z" }]);
 	endTurn(t, "[later]");
 	const open = t.q.openRequests();
 	expect(open).toMatchObject([{ target: "ch:A", from: "ch:A" }]);
@@ -1710,4 +1713,58 @@ test("a handed request the silent-wait check gives up on is reported once to the
 	expect(t.back[0]!.from).toBe("ch:A");
 	expect(t.back[0]!.text).toContain("[conversation ch:A] fix Z");
 	expect(t.state.posts).toEqual([]);
+});
+
+
+// An owner message that arrives while main runs a turn it started itself (a worker's result woke it, a session report) waits as its
+// own prompt and gets a turn of its own; a message for a turn that answers its conversation is still steered in.
+test("an owner message during a run that answers no request waits as its own prompt; one for a turn of its conversation is steered", () => {
+	const woken = setup();
+	woken.state.working = true;
+	woken.q.onPrompt("<task-result>worker done</task-result>");
+	expect(woken.q.deliver("이거 먼저 봐줘", { target: "web", replyTo: "o1", owner: true })).toBe(false);
+	expect(woken.state.steered).toEqual([]);
+	expect(woken.state.delivered).toEqual(["이거 먼저 봐줘"]);
+	const { q, state, startTurn } = setup();
+	startTurn("[report] lane x is done", { target: "", replyTo: undefined });
+	expect(q.deliver("그건 나중에", { target: "web", replyTo: "o2", owner: true })).toBe(false);
+	expect(state.steered).toEqual([]);
+	expect(state.delivered).toEqual(["[report] lane x is done", "그건 나중에"]);
+	q.onAnswer("report noted");
+	state.working = false;
+	q.settleTurn();
+	startTurn("web 요청", { target: "web", replyTo: "o3" });
+	expect(q.deliver("하나 더", { target: "web", replyTo: "o4", owner: true })).toBe(true);
+	expect(state.steered).toEqual(["[note] 하나 더"]);
+});
+
+// A turn that ends with a bare [later] while no worker of its conversation runs and it started none would leave its request
+// waiting on nothing: it is asked once more to finish or answer; a second bare [later] is taken.
+test("a bare [later] that waits on no worker is refused once, then taken; one with a worker running is taken at once", () => {
+	const works: WorkRow[] = [];
+	const { q, state, open, startTurn } = setup([], [], { work: () => works });
+	startTurn("A 고쳐줘", { target: "ch:A", replyTo: "a1" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	expect(q.deferredOpen()).toEqual([]);
+	const again = state.delivered.at(-1)!;
+	expect(state.delivered).toHaveLength(2);
+	expect(again).toEndWith("A 고쳐줘");
+	expect(open()).toMatchObject([{ target: "ch:A", replyTo: "a1" }]);
+	state.working = true;
+	q.onPrompt(again);
+	expect(q.current()).toMatchObject({ target: "ch:A", replyTo: "a1" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	expect(state.delivered).toHaveLength(2);
+	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["a1"]);
+
+	works.push({ id: "st_b", status: "running", target: "ch:B", startedAt: Date.now() - 60_000 });
+	startTurn("B 고쳐줘", { target: "ch:B", replyTo: "b1" });
+	q.onAnswer("[later]");
+	expect(state.delivered).toHaveLength(3);
+	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["a1", "b1"]);
+	expect(state.posts).toEqual([]);
 });

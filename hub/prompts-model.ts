@@ -1,6 +1,6 @@
 // The prompt queue's shapes and limits: types and constants that capture no state (the queue itself is prompts.ts).
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; deep?: true; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; noted?: string; seen?: boolean; gathered?: boolean; owner?: boolean; deep?: true; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string; laterRefused?: true };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string; refs?: string[]; deferred?: boolean; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string };

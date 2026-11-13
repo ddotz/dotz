@@ -72,6 +72,9 @@ function closeDropped(deps: PromptDeps, d: Prompt): void {
 }
 /** An answer the owner must see even from a quiet check. */
 const LOUD = /^\s*\[(?:ask|fail)\]/i;
+/** A bare [later] is refused once, as a bare [ask] is (askRefused), when it waits on nothing: no worker of its conversation runs and none started or was messaged since the turn began (`from`). */
+const waitsOnNothing = (p: Prompt, seen: { work: readonly WorkRow[]; spawned: readonly number[]; from: number }): boolean => !p.told?.length && !seen.spawned.some(at => at >= seen.from) && !seen.work.some(w => w.startedAt >= seen.from || ((w.status === "running" || w.status === "stalled") && (!w.target || sameConv(w.target, p.target!))));
+const LATER_REFUSED = "[gateway check] Your last answer was a bare [later], but no background worker of this conversation is running and this turn started none, so nothing would ever answer this request. Do the work now and answer it, or start the worker and then end with [later]; if it cannot be done, say why.";
 
 export function createPrompts(deps: PromptDeps) {
 	const prompts: Prompt[] = [];
@@ -152,11 +155,8 @@ export function createPrompts(deps: PromptDeps) {
 	 */
 	function deliver(text: string, reply?: Reply): boolean {
 		const running = Boolean(!reply?.from && !reply?.handback && !reply?.quiet && !reply?.bookkeeping && current?.target && reply && sameConv(current.target, reply.target) && (!current.done || (reply.owner && !current.cancelled)));
-		// A turn that answers no request of ours (a worker's result woke the session, a session report) takes the owner's message too: as a
-		// followUp it waited behind the engine's own chain of runs (2026-11-11 11:31 UTC, about four minutes). Such a run answers at home, so
-		// only home's messages go in; another conversation's waits for its own turn. A keepalive turn keeps the old way.
-		const unrequested = Boolean(reply?.owner && !reply.from && !reply.handback && !reply.quiet && !current?.target && !deps.keepalive?.() && sameConv(reply.target, home().target));
-		const steered = deps.working() && (running || unrequested);
+		// A turn that answers no request of ours (a woken run, a session report) does not take the owner's message: it waits as its own prompt and gets a turn of its own.
+		const steered = deps.working() && running;
 		const gather = !steered && reply?.owner === true && burst.gathers(reply.target);
 		// A new owner turn for a conversation whose background worker is still running starts with a note naming that worker, so the
 		// orchestrator passes a follow-up to it (task_send) instead of spawning a second worker for the same job (owner 2026-10-30:
@@ -187,7 +187,6 @@ export function createPrompts(deps: PromptDeps) {
 		const note = deps.note(reply!.target, reply!.replyTo, text);
 		prompt.noted = note.trim();
 		if (deps.steer(note) !== false) {
-			if (unrequested) deps.log(`owner message for ${reply!.target} steered into a turn that answers no request of ours`);
 			// The owner's message is answered in this turn's final answer, so that answer must be posted, not kept as a quiet line.
 			if (current?.quiet) {
 				delete current.quiet;
@@ -499,10 +498,10 @@ export function createPrompts(deps: PromptDeps) {
 		deps.announce?.(l.target, took ? `백그라운드 작업으로 맡겼어요: ${took}` : "백그라운드 작업으로 맡겼어요", l.id);
 	}
 
+	const turnFrom = (p: Prompt) => (turns.at(-1)?.prompt === p ? turns.at(-1)!.start : p.at) - TURN_SLACK_MS;
 	/** The workers this turn spawned, by the runtime's own spawn event or by the task store's start time, without a line yet. */
 	function newWorkers(p: Prompt): WorkLink[] {
-		const turn = turns.at(-1);
-		const from = (turn?.prompt === p ? turn.start : p.at) - TURN_SLACK_MS;
+		const from = turnFrom(p);
 		for (const w of deps.work?.() ?? [])
 			if ((w.status === "running" || w.status === "stalled") && w.startedAt >= from && (!w.target || sameConv(w.target, p.target!))) link(w.id, { target: p.target!, replyTo: requestOf(p) }, w.description);
 		return linksOf({ target: p.target, replyTo: requestOf(p) }).filter(l => l.at >= from && !receiptedWorker(l));
@@ -626,23 +625,20 @@ export function createPrompts(deps: PromptDeps) {
 			.catch(e => deps.log(`reply to ${target} failed: ${e}`));
 	}
 
-	/** A run with no request of ours took an owner message mid-turn and has read it: its stop answers that message (true when it did). */
-	function answerSeen(text: string): boolean {
-		const q = prompts.findLast(x => x.steered && x.seen && x.target);
-		const { later, text: t } = laterParts(text);
-		if (!q?.target || later || isSilent(t) || t.length <= 3 || !burst.seen(q.target).length) return false;
-		return (onContinued(q, text), true);
-	}
-
 	/** An assistant stop: the turn's final answer goes to the channel that asked, once. */
 	function onAnswer(text: string): void {
 		const p = current;
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
-		if (!p) return void (answerSeen(text) || onOrphanAnswer(text));
-		if (!p.target && answerSeen(text)) return;
+		if (!p) return onOrphanAnswer(text);
 		if (p.done) return onContinued(p, text);
 		const { later, text: said } = laterParts(text);
 		const t = rewriteText(p, said, later);
+		if (later && !t && p.target && !p.deferred && !p.fallback && !p.laterRefused && deps.work && !deps.regenerated?.(p.text) && waitsOnNothing(p, { work: deps.work(), spawned: [...links.values()].map(l => l.at), from: turnFrom(p) })) {
+			deps.log(`a bare [later] for ${p.target} waits on no worker; its request is asked once more to be finished or answered`);
+			p.done = true;
+			deliver(`${LATER_REFUSED}\n\n${p.text.slice(0, REPORT_NOTE_CHARS)}`, { target: p.target, replyTo: p.replyTo, refs: p.refs, ...labels(p) });
+			return void Object.assign(prompts.at(-1)!, { sent: p.sent, held: p.held, laterRefused: true });
+		}
 		if (later && p.target && !p.deferred) {
 			flushHeld(p, t);
 			// The answer itself waits for the worker, but the conversation must not look silent (owner 2026-10-27: "메일 내 대화에서
