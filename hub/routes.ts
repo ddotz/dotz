@@ -71,6 +71,7 @@ import { routeApps } from "./routes-apps.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { escalations } from "./escalate.ts";
 import { routeNotices } from "./routes-notices.ts";
+import { addInputDiag } from "./input-diag.ts";
 import { routeSettings } from "./routes-settings.ts";
 import { routeMail, unrepliedMailList } from "./routes-mail.ts";
 import { routeSend, viaOf } from "./routes-send.ts";
@@ -503,6 +504,8 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (appsResponse) return appsResponse;
 		const noticesResponse = await routeNotices(req, url);
 		if (noticesResponse) return noticesResponse;
+		// The phone's input diagnostic reports itself here (web/js/34-input-diag.js): known fields only, into a capped file under the data dir.
+		if (req.method === "POST" && url.pathname === "/api/input-diag") return json({ ok: true, kept: addInputDiag(await body(req)) }, 201);
 		// The waiting send-approval cards of a conversation, their batch answer and the owner's own edit of a draft (hub/approval-wire.ts).
 		if (url.pathname === "/api/approvals" || url.pathname === "/api/approvals/failed" || url.pathname === "/api/approvals/undo" || /^\/api\/drafts\/[^/]+\/body$/.test(url.pathname)) {
 			const login = req.headers.get("tailscale-user-login") ?? "local";

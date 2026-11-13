@@ -2,12 +2,19 @@
 // For the phone keyboard that jumps or closes while typing (an unproven cause). Off by default. When on, every blur of a text field leaves one entry in a ring
 // buffer in localStorage (KBD_CAP entries): when, which field (tag, id, name, data-* and a selector path, never its value or any typed text), whether the
 // node left the page or was replaced, where the focus went, the last few events before (type and target only, no keys), visibility and a short call
-// stack (a blur fires inside the call that moved or removed the field, so the stack names it). Nothing is sent anywhere: the owner copies the buffer
+// stack (a blur fires inside the call that moved or removed the field, so the stack names it). The switch sends nothing: the owner copies the buffer
 // as JSON from the settings row and sends it by hand.
-const KBD_FLAG = "dotz-kbdiag", KBD_LOG = "dotz-kbdiag-log", KBD_CAP = 200, KBD_RECENT = 6;
+// On a phone (coarse pointer) a cheap part is always on, switch or not: a text field that loses focus (or leaves the page) while the page is visible and the
+// owner did not just tap, press back or change the route posts that one entry to the gateway (POST /api/input-diag, hub/input-diag.ts, capped file in the data
+// dir). The owner's own taps are no report: a tap anywhere (send, another control, another field) or a route change within KBD_TAP_MS before the blur. At most
+// KBD_POSTS posts a minute; a failed post is dropped. The ring a phone already has in localStorage is uploaded once. A desktop pointer posts nothing.
+const KBD_FLAG = "dotz-kbdiag", KBD_LOG = "dotz-kbdiag-log", KBD_SENT = "dotz-kbdiag-sent", KBD_CAP = 200, KBD_RECENT = 6;
+const KBD_TAP_MS = 800, KBD_POSTS = 3, KBD_POST_MS = 60000, KBD_SETTLE_MS = 500;
+const KBD_TAPS = new Set(["pointerdown", "touchstart", "hashchange", "popstate"]);
+const KBD_LIGHT = new Set(["input", "compositionstart", "compositionend", "resize"]);
 const KBD_TEXT = "textarea, input:not([type=button], [type=checkbox], [type=radio], [type=range], [type=file], [type=submit], [type=reset], [type=color])";
 const KBD_EVENTS = ["pointerdown", "pointerup", "click", "touchstart", "touchend", "focusin", "input", "change", "submit", "compositionstart", "compositionend", "visibilitychange", "pagehide", "pageshow", "resize", "orientationchange"];
-let kbdActive = false, kbdBuf = null, kbdCur = null, kbdSeq = 0, kbdMo = null;
+let kbdActive = false, kbdAuto = false, kbdBuf = null, kbdCur = null, kbdSeq = 0, kbdMo = null, kbdTapAt = -1e9, kbdPosts = [];
 const kbdRecent = [];
 const kbdIsText = n => n instanceof Element && (n.isContentEditable || n.matches(KBD_TEXT));
 function kbdSel(n) {
@@ -37,11 +44,11 @@ function kbdLoad() {
   kbdBuf = Array.isArray(a) ? a : [];
   return kbdBuf;
 }
-function kbdSave() { try { if (kbdBuf && kbdBuf.length) localStorage.setItem(KBD_LOG, JSON.stringify(kbdBuf)); else localStorage.removeItem(KBD_LOG); } catch (e) { console.warn("kbdiag", e); } }
+function kbdSave() { if (!kbdBuf) return; try { if (kbdBuf && kbdBuf.length) localStorage.setItem(KBD_LOG, JSON.stringify(kbdBuf)); else localStorage.removeItem(KBD_LOG); } catch (e) { console.warn("kbdiag", e); } }
 function kbdPush(entry) { const b = kbdLoad(); b.push(entry); if (b.length > KBD_CAP) b.splice(0, b.length - KBD_CAP); kbdSave(); }
 const kbdCount = () => kbdLoad().length;
 function kbdEntry(kind, field, extra) {
-  return { n: ++kbdSeq, at: new Date().toISOString(), kind, field: { ...field }, vis: document.visibilityState, hasFocus: document.hasFocus(), active: kbdSel(document.activeElement), recent: kbdRecent.slice(-KBD_RECENT), stack: kbdStack(), ...extra };
+  return { n: ++kbdSeq, app: typeof WEB_BUILD === "string" ? WEB_BUILD : "", at: new Date().toISOString(), kind, field: { ...field }, vis: document.visibilityState, hasFocus: document.hasFocus(), active: kbdSel(document.activeElement), recent: kbdRecent.slice(-KBD_RECENT), stack: kbdStack(), ...extra };
 }
 // Filled once the code that moved the field has finished (a microtask): is the node still in the page, did a same-looking field take its place, who has the focus.
 function kbdSettle(entry, field, node) {
@@ -53,42 +60,79 @@ function kbdSettle(entry, field, node) {
   });
 }
 function kbdOnEvent(e) {
-  if (e.type === "focusin" && kbdIsText(e.target)) kbdCur = { node: e.target, field: kbdField(e.target) };
+  if (KBD_TAPS.has(e.type)) kbdTapAt = performance.now();
+  if (e.type === "focusin" && kbdIsText(e.target)) { kbdCur = { node: e.target, field: kbdField(e.target) }; kbdObserve(true); }
   if (e.type !== "focusout") {
-    kbdRecent.push({ type: e.type, on: kbdSel(e.target) });
+    kbdRecent.push({ type: e.type, on: KBD_LIGHT.has(e.type) ? (e.target instanceof Element ? e.target.tagName.toLowerCase() + (e.target.id ? `#${e.target.id.slice(0, 40)}` : "") : "") : kbdSel(e.target) });
     if (kbdRecent.length > 12) kbdRecent.shift();
   }
 }
+// The page is in front, has the focus, and the owner did not just tap or change the route: the field lost its focus on its own.
+const kbdOnItsOwn = () => document.visibilityState === "visible" && document.hasFocus() && performance.now() - kbdTapAt > KBD_TAP_MS;
+const kbdVh = () => Math.round((window.visualViewport ? visualViewport.height : innerHeight) || 0);
+function kbdRecord(kind, field, node, extra) {
+  const post = kbdAuto && kbdOnItsOwn();
+  if (!kbdActive && !post) return;
+  const entry = kbdEntry(kind, field, extra);
+  if (kbdActive) kbdPush(entry);
+  kbdSettle(entry, field, node);
+  if (post) kbdReport(entry);
+}
+// Few posts a minute; the viewport height is read again once the keyboard has had time to move it.
+function kbdReport(entry) {
+  const now = Date.now();
+  kbdPosts = kbdPosts.filter(t => now - t < KBD_POST_MS);
+  if (kbdPosts.length >= KBD_POSTS) return;
+  kbdPosts.push(now);
+  entry.vh = { before: kbdVh(), after: 0 };
+  setTimeout(() => { entry.vh.after = kbdVh(); if (kbdActive) kbdSave(); kbdPost([entry], true); }, KBD_SETTLE_MS);
+}
+async function kbdPost(entries, small) {
+  try {
+    const r = await fetch("/api/input-diag", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app: typeof WEB_BUILD === "string" ? WEB_BUILD : "", entries }), keepalive: !!small });
+    return r.ok;
+  } catch { return false; }
+}
+function kbdUploadRing() {
+  try {
+    if (localStorage.getItem(KBD_SENT) || !kbdLoad().length) return;
+    kbdPost(kbdLoad().slice(-KBD_CAP), false).then(ok => { try { if (ok) localStorage.setItem(KBD_SENT, "1"); } catch { /* no storage: it is sent again next time */ } });
+  } catch { /* unreadable ring: nothing to send */ }
+}
 function kbdOnBlur(e) {
   const n = e.target;
-  if (!kbdActive || !kbdIsText(n)) return;
+  if (!(kbdActive || kbdAuto) || !kbdIsText(n)) return;
   const field = kbdCur && kbdCur.node === n && !n.isConnected ? kbdCur.field : kbdField(n);
   if (kbdCur && kbdCur.node === n) kbdCur = null;
-  const entry = kbdEntry("blur", field, { connected: n.isConnected, to: kbdSel(e.relatedTarget) });
-  kbdPush(entry);
-  kbdSettle(entry, field, n);
+  kbdObserve(false);
+  kbdRecord("blur", field, n, { connected: n.isConnected, to: kbdSel(e.relatedTarget) });
 }
 // A focused field taken out of the page may not blur at all (browsers differ): the observer notes that too, once.
 function kbdOnMutation() {
   if (!kbdCur || kbdCur.node.isConnected) return;
   const { node, field } = kbdCur;
   kbdCur = null;
-  const entry = kbdEntry("removed", field, { connected: false });
-  kbdPush(entry);
-  kbdSettle(entry, field, node);
+  kbdObserve(false);
+  kbdRecord("removed", field, node, { connected: false });
 }
-function kbdWatch() {
-  for (const t of KBD_EVENTS) { removeEventListener(t, kbdOnEvent, true); if (kbdActive) addEventListener(t, kbdOnEvent, true); }
-  removeEventListener("focusout", kbdOnBlur, true);
-  if (window.visualViewport) { visualViewport.removeEventListener("resize", kbdOnEvent); if (kbdActive) visualViewport.addEventListener("resize", kbdOnEvent); }
+// Watching the page for a removed field costs a call per change of the page: only while a text field has the focus.
+function kbdObserve(on) {
   if (kbdMo) { kbdMo.disconnect(); kbdMo = null; }
-  kbdCur = null;
-  if (!kbdActive) return;
-  addEventListener("focusout", kbdOnBlur, true);
-  const f = document.activeElement;
-  if (kbdIsText(f)) kbdCur = { node: f, field: kbdField(f) };
+  if (!on || !(kbdActive || kbdAuto)) return;
   kbdMo = new MutationObserver(kbdOnMutation);
   kbdMo.observe(document.documentElement, { childList: true, subtree: true });
+}
+function kbdWatch() {
+  const on = kbdActive || kbdAuto;
+  for (const t of [...KBD_EVENTS, "hashchange", "popstate"]) { removeEventListener(t, kbdOnEvent, true); if (on) addEventListener(t, kbdOnEvent, true); }
+  removeEventListener("focusout", kbdOnBlur, true);
+  if (window.visualViewport) { visualViewport.removeEventListener("resize", kbdOnEvent); if (on) visualViewport.addEventListener("resize", kbdOnEvent); }
+  kbdObserve(false);
+  kbdCur = null;
+  if (!on) return;
+  addEventListener("focusout", kbdOnBlur, true);
+  const f = document.activeElement;
+  if (kbdIsText(f)) { kbdCur = { node: f, field: kbdField(f) }; kbdObserve(true); }
 }
 function kbdSet(on) {
   kbdActive = !!on;
@@ -113,5 +157,7 @@ function kbdRows() {
 }
 try {
   const q = new URLSearchParams(location.search).get("kbdiag");
+  kbdAuto = matchMedia("(pointer: coarse)").matches;
   kbdSet(q === "1" ? true : q === "0" ? false : localStorage.getItem(KBD_FLAG) === "1");
 } catch { kbdSet(false); }
+if (kbdAuto) setTimeout(kbdUploadRing, 5000);

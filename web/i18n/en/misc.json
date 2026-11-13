@@ -70,8 +70,8 @@
   "misc.kbd.off_note": "Records when the keyboard closes. What you type isn't kept",
   "misc.kbd.log": "Diagnostic log",
   "misc.kbd.count": {
-    "one": "{n} entry · on this device only",
-    "other": "{n} entries · on this device only"
+    "one": "{n} entry · stored on this device",
+    "other": "{n} entries · stored on this device"
   },
   "misc.kbd.clear": "Clear diagnostic log",
   "misc.pq.change_there": "Change it on {name}",

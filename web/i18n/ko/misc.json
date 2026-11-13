@@ -66,7 +66,7 @@
   "misc.kbd.on_note": "입력칸에서 나올 때마다 기록해요. 쓴 글은 남기지 않아요",
   "misc.kbd.off_note": "키보드가 내려갈 때를 기록해요. 쓴 글은 남기지 않아요",
   "misc.kbd.log": "진단 기록",
-  "misc.kbd.count": "{n}건 · 이 기기에만 있어요",
+  "misc.kbd.count": "{n}건 · 이 기기에 저장돼 있어요",
   "misc.kbd.clear": "진단 기록 지우기",
   "misc.pq.change_there": "{name}에서 바꿔 주세요",
   "misc.pq.reattach": "{name}: 파일을 다시 붙여 주세요",
