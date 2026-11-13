@@ -98,3 +98,17 @@ test("a draft whose words and files agree has no issue", () => {
 	expect(kinds({ subject: "Re: alpha-song 문서", body: "alpha-song 문서 보내드립니다.", files: ["alpha-song.pdf"] })).toEqual([]);
 	expect(kinds({ subject: "Re: 일정", body: "확인해 보고 말씀드릴게요.", files: [] })).toEqual([]);
 });
+
+test("a file named by a short shared title and a variant marker is on topic when the draft says the title; an author's name over two works still flags the other work", () => {
+	const on = { subject: "달빛, 정원 자료", body: "안녕하세요. 달빛, 정원 MR과 가사 보내드립니다." };
+	expect(kinds({ ...on, files: ["달빛 inst.mp3", "달빛 가사.pdf"] })).toEqual([]);
+	expect(kinds({ ...on, files: ["달빛 inst.mp3", "달빛 MR.mp3"] })).toEqual([]);
+	expect(kinds({ subject: "봄바람 자료", body: "안녕하세요. 봄바람 MR과 가사 보내드립니다.", files: ["봄바람 inst.mp3", "봄바람 가사.pdf"] })).toEqual([]);
+	// A file with nothing but the title (or only noise/variant words besides it) is that work too.
+	expect(kinds({ ...on, files: ["달빛.mp3", "달빛 가사.pdf"] })).toEqual([]);
+	expect(kinds({ ...on, files: ["달빛 full.mp3", "달빛 가사.pdf"] })).toEqual([]);
+	// The author is named by the draft too, but 새벽 is another work, not a variant of the one it sends.
+	expect(kinds({ subject: "홍길동 별빛", body: "홍길동 작곡 별빛 문서 보내드립니다.", files: ["홍길동 별빛.pdf", "홍길동 새벽.pdf"] })).toEqual(["unrelated"]);
+	expect(kinds({ subject: "별빛", body: "별빛 문서 보내드립니다.", files: ["홍길동 별빛.pdf", "홍길동 새벽.pdf"] })).toEqual(["unrelated"]);
+	expect(attachIssues({ subject: "별빛", body: "별빛 문서 보내드립니다.", files: ["홍길동 별빛.pdf", "홍길동.pdf"] })[0]!.text).toContain("홍길동.pdf");
+});

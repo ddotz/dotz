@@ -67,16 +67,24 @@ export function wordVariants(word: string): string[] {
 // A short word several of the files share (an author's name) tells none of them apart; a longer shared one is the title they have in common.
 const SHARED_TITLE_MIN = 4;
 const LATIN_TITLE = /^[a-z]{4,}$/;
+// What a name adds to a title without being another work: the same work as instrumental, score or lyrics.
+const VARIANT_WORD = /^(?:inst|instrumental|karaoke|score|lyrics|가사)$/;
 function offTopic(files: readonly string[], text: string, raw: string): string[] {
 	const words = files.map(f => [...new Set(nameWords(f).map(norm))]);
 	const seen = words.flat();
 	// A short shared abbreviation the draft says on its own ("MR") is the thing it sends, not a name that happens to match.
 	const said = (w: string) => /^[a-z]{2,3}$/.test(w) && new RegExp(`(?:^|[^A-Za-z0-9])${w.toUpperCase()}(?:[^A-Za-z0-9]|$)`).test(raw);
 	const telling = (w: string) => w.length >= SHARED_TITLE_MIN || seen.indexOf(w) === seen.lastIndexOf(w) || said(w);
-	const onTopic = (i: number) => words[i]!.some(w => telling(w) && wordVariants(w).some(v => v.length >= 2 && text.includes(v)));
+	const says = (w: string) => wordVariants(w).some(v => v.length >= 2 && text.includes(v));
+	const onTopic = (i: number) => words[i]!.some(w => telling(w) && says(w));
+	// A file with no telling word but variant markers ("달빛 inst", or just "달빛" once the install's noise words are dropped) is that work: judged by its short shared title, if the draft says it. Another work by the same author ("홍길동 새벽") has a telling word of its own, so it is not.
+	const byTitle = (i: number) => {
+		const own = words[i]!.filter(telling);
+		return own.every(w => VARIANT_WORD.test(w)) && words[i]!.some(w => !telling(w) && says(w));
+	};
 	// A title in another script ("Comet" for "혜성") is known from a file of that work that carries both.
 	const titles = new Set(words.flatMap((w, i) => (onTopic(i) ? w.filter(x => LATIN_TITLE.test(x)) : [])));
-	return files.filter((_, i) => !onTopic(i) && !words[i]!.some(w => titles.has(w)));
+	return files.filter((_, i) => !onTopic(i) && !byTitle(i) && !words[i]!.some(w => titles.has(w)));
 }
 
 // The words of a name that say which file it is: "노래 음원 (1).mp3" and "노래 음원 (2).mp3" share all of theirs and are one file twice, "alpha song" and "beta song"
