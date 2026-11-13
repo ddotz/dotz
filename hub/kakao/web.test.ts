@@ -675,6 +675,39 @@ describe("on-demand draft", () => {
 		await t.web.idle();
 		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_draft", chatId: DIRECT, error: expect.any(String) });
 		expect((await storedDrafts()).filter(d => d.status === "pending").map(d => d.text)).toEqual(["내일 3시에 봐요"]);
+		// Nothing is learned from a revise that made no draft.
+		expect(t.revised).toEqual([]);
+		t.close();
+	});
+
+	test("a revise learns the model's lesson once, after the new draft is stored; a one-off change (lesson \"\") teaches nothing", async () => {
+		const t = setup();
+		const old = await t.draft({ text: "내일 3시에 봐요" });
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "내일 3시", summary: "", lesson: "짧게 끊어서 쓴다" }) });
+		await t.call("POST", DRAFT, { revise: { code: old.code, change: "더 짧게" } });
+		await t.web.idle();
+		const next = (await storedDrafts()).find(d => d.status === "pending")!;
+		expect([next.text, next.replaces]).toEqual(["내일 3시", old.code]);
+		expect(t.revised).toEqual([[DIRECT, "짧게 끊어서 쓴다"]]);
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: "3시", summary: "", lesson: "" }) });
+		await t.call("POST", DRAFT, { revise: { code: next.code, change: "3시만" } });
+		await t.web.idle();
+		expect(t.revised).toEqual([[DIRECT, "짧게 끊어서 쓴다"]]);
+		t.close();
+	});
+
+	test("a draft that fails the lint is written again once; what still fails is a 확인 note on the stored draft", async () => {
+		const t = setup({}, undefined, { draftStyle: () => ({ rules: [], corrections: [], forbidden: ["무조건"], samples: [] }) });
+		await t.draft({ text: "내일 3시에 봐요" });
+		const replies = ["무조건 3시에 와", "무조건 3시"];
+		t.model.reply = async () => ({ text: JSON.stringify({ action: "draft", body: replies.shift() ?? "3시", summary: "" }) });
+		const old = (await storedDrafts())[0]!;
+		await t.call("POST", DRAFT, { revise: { code: old.code, change: "단호하게" } });
+		await t.web.idle();
+		expect(t.model.calls).toHaveLength(2);
+		expect(t.model.calls[1]!.user).toContain("forbidden expression '무조건'");
+		const next = (await storedDrafts()).find(d => d.status === "pending")!;
+		expect([next.text, next.notes]).toEqual(["무조건 3시", ["확인: it uses the forbidden expression '무조건'"]]);
 		t.close();
 	});
 

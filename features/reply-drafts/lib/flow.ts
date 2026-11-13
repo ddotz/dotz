@@ -22,6 +22,8 @@ import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus
 import { realRunner, type Runner } from "./tone.ts";
 
 export { realRunner };
+// What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
+export { recordCorrection, webmailSite };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void };
@@ -423,7 +425,8 @@ export type Step = { ok: boolean; text: string; /** The id of the draft a revisi
 // The user picked 2) 고치기 (or the CLI is asked to): the draft is regenerated, and once that worked the lasting preference the change shows (the model's `lesson`;
 // the change itself when the model left it out; nothing when the change was only about this draft) is recorded in the tone profile of that draft (its room, else its app).
 // The change stays verbatim in the draft's own `changes`.
-export async function reviseDraft(id: string, change: string, deps: FlowDeps): Promise<Step> {
+// `learn: false`: the caller records the returned lesson itself (hub/reply-actions.ts, so every kind learns in one place).
+export async function reviseDraft(id: string, change: string, deps: FlowDeps, opts: { learn?: false } = {}): Promise<Step> {
 	const found = getDraft(id);
 	const old = found && withRecipient(found);
 	if (!old) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
@@ -456,7 +459,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	addDraft(rec);
 	// Learned only once the new draft is stored: a revise that failed teaches nothing.
 	const lesson = lessonOf(r, change);
-	if (lesson) await recordLesson(toneKey(old), lesson, deps);
+	if (lesson && opts.learn !== false) await recordLesson(toneKey(old), lesson, deps);
 	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(lesson ? { lesson: { key: toneKey(old), line: lesson } } : {}) };
 }
 

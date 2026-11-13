@@ -88,7 +88,7 @@ import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/o
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody, zeleHistory } from "../features/reply-drafts/lib/senders.ts";
 import { installSentMail, realRunner, refreshPairs } from "../features/reply-drafts/lib/tone.ts";
-import { defaultCall } from "../features/reply-drafts/lib/flow.ts";
+import { defaultCall } from "./reply-mail.ts";
 import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";

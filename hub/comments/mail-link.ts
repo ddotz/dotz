@@ -1,7 +1,7 @@
 // The real MailLink of the comment engine (engine.ts): the mail that rides on a comment reply is a compose draft of hub/mail-cli.ts, sent and
 // revised through the same reply-drafts flow, so its lint, files and sender are the ones of every other mail. It is not listed in the web mail
 // app on its own (the card of the comment reply is the one place to approve it).
-import { accountHold, draftAttachIssues, draftLintFailures, dropDraft, withRecipient, mailStyleOf, realRunner, reviseDraft, sendDraft, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
+import { accountHold, draftAttachIssues, draftLintFailures, dropDraft, editDraft, withRecipient, mailStyleOf, realRunner, reviseDraft, sendDraft, type FlowDeps } from "../../features/reply-drafts/lib/flow.ts";
 import { getDraft } from "../../features/reply-drafts/lib/store.ts";
 import { addressesOf, generateReply } from "../reply-draft.ts";
 import { callReplyModel } from "../reply-model.ts";
@@ -49,6 +49,10 @@ export function realMailLink(deps: FlowDeps = { run: realRunner }): RealMailLink
 			return rec ? [...draftLintFailures(withRecipient(rec)), ...(hold ? [hold] : [])] : [];
 		},
 		drop: id => void dropDraft(id),
+		edit: (id, text) => {
+			const r = editDraft(id, text);
+			return r.ok ? { ok: true } : { ok: false, reason: r.text, ...(r.code ? { code: r.code } : {}), ...(r.lint ? { lint: r.lint } : {}) };
+		},
 		async revise(id, change) {
 			const r = await reviseDraft(id, change, deps);
 			return r.ok && r.id ? { ok: true, id: r.id } : { ok: false, reason: r.text };

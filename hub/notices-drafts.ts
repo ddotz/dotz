@@ -75,8 +75,13 @@ export function markDraftSend(to: string, ref: string, state: NonNullable<Decisi
 }
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.
 export const openDraftText = (to: string, ref: string): string | undefined => items.find(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref)?.text;
-export function rewriteOpenDraft(to: string, ref: string, text: string): number {
-	const hit = items.filter(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref);
+export const rewriteOpenDraft = (to: string, ref: string, text: string, newRef?: string): number =>
+	rewriteCards(items.filter(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref), text, newRef);
+/** A revise made draft `newRef` out of `oldRef` (the reply unification design, 3.5): every open card of the old draft, in any conversation,
+ * shows the new text, draft and title and keeps its id, so the bell row, the queue row and the chat card stay one object. */
+export const replaceDraftCards = (oldRef: string, newRef: string, text: string): number =>
+	rewriteCards(items.filter(i => isOpenDecision(i) && i.decision!.draft?.ref === oldRef), text, newRef);
+function rewriteCards(hit: Notice[], text: string, newRef?: string): number {
 	if (!hit.length) return 0;
 	const body = parseTone(stripHandoff(text)).text.trim();
 	const draft = parseDraftApproval(body);
@@ -84,6 +89,8 @@ export function rewriteOpenDraft(to: string, ref: string, text: string): number 
 	for (const n of hit) {
 		n.text = body.slice(0, TEXT_MAX);
 		if (draft) n.decision!.draft = draft;
+		// A new draft has no send yet: the old one's state stays with the old ref.
+		if (newRef) delete n.decision!.send;
 		retitleDraftCard(n);
 		n.updated = at;
 	}

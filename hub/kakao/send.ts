@@ -27,7 +27,7 @@ export type DraftTokens = { in: number; out: number; estimated?: true };
 export type Pressing = { part: number; text: string; at: number };
 // replaces: the code of the draft this one replaced (a revise). editedFrom: the model's text before the owner's first direct edit (editDraft),
 // never overwritten. own: a message the owner typed himself; its send skips the newer-incoming-message check, as a typed send does.
-export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true; sentParts?: number; intent?: string; pressing?: Pressing; replaces?: string; editedFrom?: string; own?: true };
+export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true; sentParts?: number; intent?: string; pressing?: Pressing; replaces?: string; editedFrom?: string; own?: true; /** What the draft-time lint still found after one retry (design 3.6), shown on the card. */ notes?: string[] };
 // `later`: how the idle close of a kept window is scheduled (tests pass their own; the default is an unref'd timer). `sleep`: how a
 // confirmation poll waits (tests pass the fake clock). `confirm`: whether a pressed text reached the database; without it an install's own
 // database is asked through confirm.ts, and when there is none the press result stands.
@@ -87,7 +87,7 @@ function newCode(taken: Set<string>): string {
 	}
 }
 
-export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string; tokens?: DraftTokens; intent?: string; replaces?: string; own?: true }, deps: SendDeps): Promise<Draft> {
+export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string; tokens?: DraftTokens; intent?: string; replaces?: string; own?: true; notes?: string[] }, deps: SendDeps): Promise<Draft> {
 	const bad = draftTextError(input.text);
 	if (bad) throw new Error(bad);
 	if (!input.chatId || !input.roomName.trim()) throw new Error("대화방 정보가 비어 있어요");

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { basisOf, buildDraftPrompt, chatLines, DRAFT_MODEL, MAX_PAIRS, MAX_PROMPT_CHARS, MIN_CONTEXT_LINES, ownPairs, pickDraftModel, registerOf } from "./draft.ts";
+import { basisOf, buildDraftPrompt, chatLines, DRAFT_MODEL, MAX_PAIRS, MAX_PROMPT_CHARS, MIN_CONTEXT_LINES, ownPairs, parseDraftReply, pickDraftModel, registerOf } from "./draft.ts";
 import type { Msg } from "./types.ts";
 
 let n = 0;
@@ -126,4 +126,12 @@ describe("pickDraftModel", () => {
 		expect(pickDraftModel("anthropic/claude-opus-4-1")).toBe("anthropic/claude-opus-4-1");
 		for (const bad of [undefined, "", "@tiny", "openai/gpt-5-mini"]) expect(pickDraftModel(bad)).toBe(DRAFT_MODEL);
 	});
+});
+
+test("a revise answer carries its lesson; an answer without the key has none, an empty one says the change taught nothing", () => {
+	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", lesson: " 짧게 끊어서 쓴다 " }))?.lesson).toBe("짧게 끊어서 쓴다");
+	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "", lesson: "" }))?.lesson).toBe("");
+	expect(parseDraftReply(JSON.stringify({ action: "draft", parts: ["3시"], summary: "" }))?.lesson).toBeUndefined();
+	const { system } = buildDraftPrompt({ lines: ["상대: 몇 시?"], revise: { draft: "3시에 봐요", change: "더 짧게" } });
+	expect(system).toContain('"lesson"');
 });

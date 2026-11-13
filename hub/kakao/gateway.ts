@@ -12,6 +12,7 @@ import { claimLease, postLease } from "../send-lease.ts";
 import { getSecret } from "./creds.ts";
 import { type KakaoDb, sqlcipherDb } from "./db.ts";
 import { callReplyModel } from "../reply-model.ts";
+import { replyLearning } from "../reply-mail.ts";
 import { type DraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
 import { createLive } from "./live.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
@@ -52,7 +53,12 @@ const onCorrection = (chatId: string, draft: string, sent: string) => {
 	recordCorrection({ app: "kakao", room: chatId }, `초안 "${cut(draft.replace(/\s+/g, " "))}" 대신 "${cut(sent.replace(/\s+/g, " "))}"처럼 씀`, new Date());
 };
 
-const onRevise = (chatId: string, change: string) => recordCorrection({ app: "kakao", room: chatId }, `초안을 고쳐 달라고 함: ${change}`, new Date());
+// A revise that was stored teaches its lesson (never the raw request, never before the new draft exists), then the profile may fold it in.
+const learning = replyLearning();
+const onRevise = (chatId: string, lesson: string) => {
+	const key = { app: "kakao", room: chatId };
+	void learning.record(key, lesson).then(() => learning.refine(key)).catch(e => log(`kakao lesson for ${chatId} not recorded: ${e instanceof Error ? e.message : String(e)}`));
+};
 
 const machine = resolveName(cfg.web?.machine_name, hostname());
 // One sender per room across this owner's computers (docs/peer-monitoring.md): before a send, this gateway claims the room's lease here

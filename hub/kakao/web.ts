@@ -9,12 +9,13 @@ import { createLinkPreview, type Resolver } from "../linkpreview.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { addOnce, dispatchSend, type Lease } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
-import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, unreadCount, watermarks } from "./db.ts";
-import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, draftParts, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
+import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomShown, messages, roomHead, rooms, sentAtMs, unreadCount, watermarks } from "./db.ts";
+import { type DraftModel, draftParts, type StyleHint, type VoiceSource } from "./draft.ts";
+import { makeDraft } from "./make-draft.ts";
 import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { fetchMedia, mediaTarget, replySource, serveLocalFile } from "./media.ts";
 import { type AxStep, type Focus, sameText } from "./room.ts";
-import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, readDrafts, restoreDraft, type SendMs, type SendResult } from "./send.ts";
+import { draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, readDrafts, restoreDraft, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 import { chatView, clip, owedRooms, pendingRow, watchLists, withSummary } from "./web-shape.ts";
 import { json } from "../routes-util.ts";
@@ -42,8 +43,8 @@ export type WebDeps = {
 	learnVoice?: (src: VoiceSource) => Promise<void>;
 	// The owner sent a draft with his own edit (고치기): the draft text and the text he sent, for the room's tone profile.
 	onCorrection?: (chatId: string, draft: string, sent: string) => void;
-	// The owner asked for a change of a draft ("더 짧게"): recorded in the room's tone profile (draft.ts correct), the draft is rewritten right away.
-	onRevise?: (chatId: string, change: string) => void;
+	// A revise of a draft ("더 짧게") was stored: what it teaches beyond this draft (the model's lesson) goes into the room's tone profile.
+	onRevise?: (chatId: string, lesson: string) => void;
 	// The fetch behind GET /api/kakao/media/... and GET /api/link-preview (default: the global fetch).
 	fetch?: typeof fetch;
 	// How link previews resolve host names (default: dns.lookup); tests pass their own.
@@ -71,11 +72,6 @@ const STUCK_MS = 60_000;
 // A model error that is the subscription limit (or its 429), shown to the owner as is.
 const LIMIT_ERROR = /구독 한도|구독 계정|limit|quota|429|rate/i;
 const STUCK = "60초가 지나도 끝나지 않아서 실패로 처리했어요";
-const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
-const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
-const DRAFT_READ = 300;
-const REGISTER_LINES = 80;
-const VOICE_ROOMS = 8;
 const READS_MAX = 500;
 // A cached room head is trusted this long even when the database files look unchanged.
 const HEAD_TTL_MS = 10_000;
@@ -117,13 +113,6 @@ const readJsonFile = <T>(file: string, fallback: T): T => {
 	}
 };
 
-const readJsonText = (file: string): string | undefined => {
-	try {
-		return readFileSync(file, "utf8");
-	} catch {
-		return undefined;
-	}
-};
 
 const digits = (v: unknown): v is string => typeof v === "string" && /^\d+$/.test(v);
 
@@ -131,7 +120,6 @@ export function createKakaoWeb(deps: WebDeps) {
 	const { paths, now } = deps;
 	const later = deps.later ?? ((fn: () => void, ms: number) => (setTimeout(fn, ms) as { unref?: () => void }).unref?.());
 	const collector = deps.collector ?? hostname();
-	const summaryFile = (chatId: string) => join(paths.dataDir, "kakao", "summaries", `${chatId}.md`);
 	const drafting = new Set<string>();
 	const sendsFile = join(paths.dataDir, "kakao", "sends.json");
 	const asksFile = join(paths.dataDir, "kakao", "asks.json");
@@ -303,68 +291,7 @@ export function createKakaoWeb(deps: WebDeps) {
 		return { question: a.question, choices: a.choices };
 	};
 
-	// The one model call of a draft request (never per incoming message). Never rejects: every outcome is a kakao_draft event.
-	// With `choice` (the owner's pick of the room's open question) the call writes the reply for that pick instead of deciding again.
-	// With `revise` (a pending draft and the owner's change request) the call rewrites that draft; createDraft marks the old one stale only when the new one is stored.
-	async function makeDraft(config: KakaoConfig, chatId: string, choice?: string, revise?: { code: string; draft: string; change: string }, intent?: string): Promise<void> {
-		const done = (error?: string) => deps.broadcast({ kind: "kakao_draft", chatId, ...(error ? { error } : {}) });
-		try {
-			const room = eligible((await allRooms(config, true)).all, config).find(r => r.chatId === chatId);
-			if (!room) return done("대화방을 찾지 못했어요");
-			const db = await getDb(config);
-			const recent = await messages(db, chatId, DRAFT_READ, config.userId ?? "");
-			const self = room.kind === "self";
-			const compose = !!intent;
-			const window = compose ? recent : sinceOwnLast(recent, self);
-			// A message of his own has no message to answer: its basis is the room's newest row (nothing older makes it stale).
-			const basis = compose ? (await roomHead(db, chatId)) || "0" : basisOf(window, self);
-			if (!basis) return done(NO_REPLY);
-			if (deps.learnVoice) {
-				try {
-					const db = await getDb(config);
-					const me = config.userId ?? "";
-					const all = (await allRooms(config)).all;
-					const excluded = new Set(config.exclude_chats ?? []);
-					const recentRooms = all.filter(r => (r.kind === "direct" || r.kind === "group") && !excluded.has(r.chatId)).sort((a, b) => b.lastAt - a.lastAt).slice(0, VOICE_ROOMS).map(r => r.chatId);
-					await deps.learnVoice({ chatId, ownCounts: ids => ownTextCounts(db, ids, me), ownTexts: (id, limit) => ownTexts(db, id, me, limit), messages: (id, limit) => messages(db, id, limit, me), ask: deps.draftModel, recentRooms: async () => recentRooms });
-				} catch {}
-			}
-			let style: StyleHint | undefined;
-			try {
-				style = deps.draftStyle?.(chatId);
-			} catch {}
-			// The register from his own last lines of the room, not only those among the last messages: a busy group room has few of them there.
-			const ownLines = await ownTexts(db, chatId, config.userId ?? "", REGISTER_LINES);
-			const context = compose ? [] : contextLines(recent, window);
-			// The pairs come from before the context, so the prompt does not spend its budget on the same lines twice.
-			const pairs = ownPairs(compose ? recent : recent.slice(0, recent.length - window.length - context.length));
-			const group = room.kind === "group" || room.kind === "open";
-			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}) });
-			const reply = await deps.draftModel!(system, user, chatId);
-			const parsed = parseDraftReply(reply.text);
-			if (!parsed) return done(DRAFT_FAILED);
-			// A message he asked for has no room question and no skip: the call must write it.
-			if (intent && parsed.action !== "draft") return done(DRAFT_FAILED);
-			if (parsed.action === "ask" && !choice && !revise && !intent) {
-				if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
-				setAsk(chatId, { question: parsed.question!, choices: parsed.choices!, basisLogId: basis, created: now() });
-				return done();
-			}
-			if (parsed.action !== "draft" || !parsed.body) return done(parsed.action === "skip" ? NO_REPLY : DRAFT_FAILED);
-			const reported = (reply.inputTokens ?? 0) > 0 || (reply.outputTokens ?? 0) > 0;
-			const tokens = reported ? { in: reply.inputTokens ?? 0, out: reply.outputTokens ?? 0 } : { in: estimateTokens(system.length + user.length), out: estimateTokens(reply.text.length), estimated: true as const };
-			try {
-				await createDraft({ chatId, roomName: room.name, text: parsed.body, basisLogId: basis, tokens, ...(intent ? { intent } : {}) }, { paths, runner: deps.runner, now });
-			} catch (e) {
-				return done(e instanceof Error ? e.message : DRAFT_FAILED);
-			}
-			if (parsed.summary) writePrivate(summaryFile(chatId), `${parsed.summary}\n`);
-			if (storedAsks()[chatId]) setAsk(chatId, undefined);
-			done();
-		} catch {
-			done(DRAFT_FAILED);
-		}
-	}
+	const draftCtx = { deps, paths, now, getDb, allRooms, eligible, setAsk, storedAsks };
 
 	async function route(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 		if (parts[0] === "api" && parts[1] === "link-preview") return linkPreview.route(req, url, parts);
@@ -642,9 +569,6 @@ export function createKakaoWeb(deps: WebDeps) {
 					const old = (await listDrafts({ paths, runner: deps.runner })).find(d => d.code === rv?.code);
 					if (!old || old.chatId !== chatId || old.status !== "pending") return json({ error: "고칠 초안을 찾지 못했어요" }, 409);
 					revise = { code: old.code, draft: old.text, change };
-					try {
-						deps.onRevise?.(chatId, change);
-					} catch {}
 				}
 				// A message the owner wants to send (메시지 만들어 줘): { intent } instead of a reply to the room's last message.
 				const intentRaw = draftBody.intent;
@@ -656,7 +580,7 @@ export function createKakaoWeb(deps: WebDeps) {
 					if (revise) return json({ error: "만들 메시지와 고칠 초안은 함께 보낼 수 없어요" }, 400);
 				}
 				drafting.add(chatId);
-				const run = makeDraft(config!, chatId, choice, revise, intent).finally(() => drafting.delete(chatId));
+				const run = makeDraft(draftCtx, config!, chatId, choice, revise, intent).finally(() => drafting.delete(chatId));
 				pending.add(run);
 				void run.finally(() => pending.delete(run));
 				return json({ state: "drafting" }, 202);
@@ -774,5 +698,19 @@ export function createKakaoWeb(deps: WebDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { route, idle, unrepliedCount, draftFacts, pendingDrafts, pendingCount, draftSends };
+	// The kit of the one reply flow's KakaoTalk adapter (hub/kakao/reply-adapter.ts): a revise through this room's model call, and one send's deps.
+	const replyKit = {
+		paths,
+		revise: async (chatId: string, revise: { code: string; draft: string; change: string }) => {
+			const config = readConfig(paths);
+			if (!config?.enabled || !deps.draftModel) return { ok: false as const, error: "카카오톡 초안 만들기를 쓸 수 없어요" };
+			return makeDraft(draftCtx, config, chatId, undefined, revise, undefined, { learn: false });
+		},
+		sendDeps: async () => {
+			const config = readConfig(paths)!;
+			const cache = await allRooms(config, true);
+			return { paths, runner: deps.runner, now, lease: deps.lease, latestIncoming: (id: string) => latestIncoming(config, id), roomNames: async () => cache.all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members })) };
+		},
+	};
+	return { route, idle, unrepliedCount, draftFacts, pendingDrafts, pendingCount, draftSends, replyKit };
 }

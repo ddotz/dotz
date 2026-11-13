@@ -19,7 +19,7 @@ import { appEntries, commentOwner } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
 import { DATA_DIR } from "./config.ts";
 import { linkedComment } from "./comments/linked.ts";
-import { claimFile, getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
+import { claimFile, getDraft, patchDraft } from "./reply-mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, sendActionOf, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { answerBatch, batchCard, STALE_OPTIONS, type BatchCard, type BatchPick } from "./approval-batch.ts";
