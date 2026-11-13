@@ -132,6 +132,7 @@ export function sendToLane(name: string, text: string, ref?: string, gateway = f
 	if (!gateway) {
 		lane.askRefused = false;
 		lane.bareAsk = undefined;
+		lane.handedBack = undefined;
 		if (lane.claim?.state === "reported") lane.claim = undefined;
 		else if (lane.claim) lane.claim.reopened = true;
 		clearAsk(lane);

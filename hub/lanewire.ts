@@ -60,6 +60,7 @@ export function installLaneHandlers(): void {
 	setOpenCardCheck(laneHasOpenCard);
 	setReportHandler((lane, raw, answering, pause) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
+		lane.handedBack = undefined;
 		const text = stripHandoff(raw);
 		activeFleetLaunch()?.report(lane, text);
 		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);

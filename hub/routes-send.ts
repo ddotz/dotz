@@ -150,6 +150,16 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 			const text = String(b.text ?? "").trim();
 			const from = String(b.from ?? "").trim() || MAIN;
 			if (!text) return json({ error: "text required" }, 400);
+			// A lane (dotz_main) may hand work only to main, and not again while it answers main's own answer: one round.
+			if (from.startsWith("lane:")) {
+				const lane = lanes.get(from.slice(5));
+				if (!lane) return json({ error: `unknown session ${from}` }, 400);
+				if (key !== MAIN) return json({ error: `this session may hand work only to ${MAIN}` }, 403);
+				if (lane.handedBack) return json({ error: "handed work: answer it here, do not pass it on" }, 409);
+				recordHanded({ to: primaryTarget(MAIN), from, text });
+				queue.deliver(`[${from}] ${text}`, { target: from, from });
+				return json({ ok: true, to: MAIN, answers_in: from });
+			}
 			const sender = convs.get(from);
 			if (!sender) return json({ error: `unknown session ${from}` }, 400);
 			// One round only: a turn a session was handed another session's work for must not hand it back or onward.

@@ -33,6 +33,7 @@ import { createWorkRows } from "./workrows.ts";
 import { digest } from "./convdigest.ts";
 import { createPrompts, type Pending, type Reply, type WorkLink } from "./prompts.ts";
 import { recordHanded } from "./handed.ts";
+import { handBackToLane } from "./lane-handback.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
@@ -116,6 +117,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		// An answer no label explains lands in the session's own conversation; work another session handed over goes back to it, as that session's next prompt.
 		home: primaryTarget(key),
 		handBack: (from, text, replyTo) => {
+			if (from.startsWith("lane:")) return handBackToLane(from.slice(5), key, text);
 			const to = convs.get(from)?.primary ?? primaryTarget(from);
 			recordHanded({ to, from: key, text, handback: true });
 			convs.deliverTo(from, `${msg().handbackLead} ${text}`, { target: to, replyTo, handback: true });

@@ -25,6 +25,8 @@ export type Lane = Record_ & {
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
 	// the lane channel leaves it false, so that reply is not relayed (lanerelay.ts); unknown (a restored lane) relays.
 	orchAsked?: boolean;
+	// The turn now running began from main's answer to this lane's own request (dotz_main, lane-handback.ts): it may not hand main work again.
+	handedBack?: true;
 	lastText: string;
 	// [done] reports the gateway's Done-when check sent back in a row (lanereport.ts); past DONE_BOUNCES the orchestrator gets it.
 	doneBounces?: number;

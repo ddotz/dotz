@@ -1,6 +1,6 @@
 // Dotz mode extension; behaviour depends on which session loads it:
 // - gateway orchestrator (DOTZ_ORCHESTRATOR=1): dotz_send / dotz_lane / dotz_schedule / dotz_auth tools, recall after compaction.
-// - lane session (DOTZ_LANE set): dotz_auth tool; 5-minute prompt cache (1h is for the orchestrator only; idle warming covers waits).
+// - lane session (DOTZ_LANE set): dotz_auth and dotz_main (a request to the main session) tools; 5-minute prompt cache (1h is for the orchestrator only; idle warming covers waits).
 // - an OmO task worker of a lane or the orchestrator (DOTZ_LANE or DOTZ_ORCHESTRATOR=1, + OMO_SENPI_TASK_DEPTH): owner rules,
 //   output caps, 5-minute cache, the token cap and the in-place compaction past a context threshold (task-cap.ts).
 // - any other session: "<name>모드 켜" (dotz_mode tool, /dotz on) makes this terminal a thin client of the
@@ -464,6 +464,21 @@ function escalateTool(pi: any): void {
 	});
 }
 
+// A lane hands main one request only main can do; main's answer returns to the lane as a message (hub/lane-handback.ts). Workers never get it.
+function mainTool(pi: any): void {
+	const z = pi.zod;
+	pi.registerTool({
+		name: "dotz_main",
+		label: "Dotz main",
+		description: `Hand ${NAME}'s main session work only it can do (restart, release, another machine, another project); its answer comes back to you as a message. Results stay in your report; an owner's decision is an [ask].`,
+		parameters: z.object({ text: z.string() }),
+		async execute(_id: string, p: any) {
+			const r = await call("/api/conv-sessions/main/send", { method: "POST", body: JSON.stringify({ text: p.text, from: `lane:${process.env.DOTZ_LANE}` }) }).catch(e => ({ error: e.message }));
+			return { content: [{ type: "text", text: r.error ? `not sent: ${r.error}` : "sent to main; its answer comes back as a message" }] };
+		},
+	});
+}
+
 // Lanes and their workers write the 5-minute prompt cache (they inherit PI_CACHE_RETENTION=long from the gateway).
 function shortCache(pi: any): void {
 	pi.on("before_provider_request", (event: any, ctx: any) => {
@@ -478,6 +493,7 @@ function laneSession(pi: any): void {
 	mergeTool(pi);
 	authTool(pi, process.env.DOTZ_LANE);
 	escalateTool(pi);
+	mainTool(pi);
 	recallTool(pi, DATA);
 	shortCache(pi);
 	// A compaction drops the launch prompt that carried the lane's identity and rules, and the next turn can start from a worker wake instead
