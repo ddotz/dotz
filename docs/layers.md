@@ -139,10 +139,10 @@ links still open it.
 - The UI adapts to the workload. When many items of one kind wait on the owner, the app opens a fast triage view built for
   that kind instead of showing them one by one in the normal view; few items keep the normal view. "One kind" comes from the
   data (an app instance, a queue), never from app names or a person, and the switch point is a setting with a sane default.
-  First user: send approvals (hub/approval-wire.ts): with `web.triage_min` (default 3) or more waiting cards of one app
-  instance, the 답장 대기 screen's head (모니터링, 빠른 처리 at the right of its meta row) opens 빠른 처리: one item filling the view (original, draft, files,
-  rule), big 보내기 / 고치기 / 건너뛰기 with keys on desktop and large buttons on a phone, edit-in-place then send, auto-advance
-  with a progress bar, and a list to jump around and send the checked ones. Each item still needs its own pick.
+  First user: reply drafts (hub/reply-actions.ts, the one queue of every channel): the 답장 대기 screen's head opens 빠른 처리 whenever
+  one item waits; the banner shows from `web.triage_min` (default 3). One item fills the view as the same card every surface draws
+  (rqItemCard), with a progress rail of every item's live state, keys on desktop, auto-advance after 보내기 (the send waits its undo
+  window in the common queue), and a list where each row is picked (보내기 / 고치기 / 건너뛰기) before 고른 것 처리. Each item still needs its own pick.
 
 Device classes (CSS px; foldable values at DPR 2.625, source: herdr-web-ui-browser docs/foldable-testing.md, Samsung
 emulator skins and GSMArena):
