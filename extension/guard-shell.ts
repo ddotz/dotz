@@ -5,9 +5,14 @@ import { basename, join, resolve } from "node:path";
 // The shell text of a call: a bash command, or the code of an OmO `eval` cell (which runs shell through tool.bash / Bun.$).
 export const shellText = (input: any): string => String(input?.command ?? input?.code ?? "");
 
-export function expandShellVars(command: string): string {
+// The plain NAME=value assignments of a command (quotes stripped from the value).
+function shellVars(command: string): Map<string, string> {
 	const vars = new Map<string, string>();
 	for (const m of command.matchAll(/(?:^|[;&|\s])(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=("[^"]*"|'[^']*'|[^\s;&|]+)/g)) vars.set(m[1], m[2].replace(/^['"]|['"]$/g, ""));
+	return vars;
+}
+
+export function expandShellVars(command: string, vars = shellVars(command)): string {
 	return command.replace(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g, (whole, name: string) => vars.get(name) ?? whole);
 }
 
@@ -159,13 +164,16 @@ export function broadSearchProblem(toolName: string, input: unknown): string | u
 	}
 	if (tool !== "bash" || typeof record.command !== "string") return undefined;
 	const command = record.command;
+	// HOME is known even when the command never assigns it; an assignment in the command wins.
+	const vars = new Map([["HOME", homedir()], ...shellVars(command)]);
 	for (const words of shellSegments(command)) {
 		const found = recursiveSearch(words);
 		if (!found) continue;
-		const unquoted = found.args.find(a => a.expands);
-		if (unquoted) return `orchestrator-guard: the recursive-search argument \`${unquoted.text}\` of \`${found.name}\` has an unquoted shell expansion, so it was blocked: a value with a space splits and can sweep a broad path such as ~/Library. Wrap the expansion in double quotes (e.g. "$VAR"). ${how}`;
+		// Expand first: an unquoted variable whose value is known, holds no space and is not broad is as safe as the literal path.
 		for (const arg of found.args) {
-			const broad = broadPath(expandShellVars(arg.text));
+			const value = expandShellVars(arg.text, vars);
+			if (arg.expands && /[$`\s]/.test(value)) return `orchestrator-guard: the recursive-search argument \`${arg.text}\` of \`${found.name}\` has an unquoted shell expansion whose value is unknown or holds a space, so it was blocked: a value with a space splits and can sweep a broad path such as ~/Library. Wrap the expansion in double quotes (e.g. "$VAR"). ${how}`;
+			const broad = broadPath(value);
 			if (broad) return `orchestrator-guard: \`${found.name}\` path "${arg.text}" (${broad}) is too broad and was blocked: a recursive search of it can exhaust memory. ${how}`;
 		}
 	}
