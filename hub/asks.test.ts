@@ -288,7 +288,7 @@ test("a [wait] on main in the turn that handed main the request with dotz_main i
 	const { agent, reports } = await fresh("pm");
 	const handed: string[] = [];
 	const realDeliver = queue.deliver;
-	queue.deliver = ((text: string) => void handed.push(text)) as typeof queue.deliver;
+	queue.deliver = ((text: string) => (handed.push(text), false)) as typeof queue.deliver;
 	try {
 		const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "", mailDeps: () => ({}) as never });
 		const wait = "[wait] dotz_main으로 릴리스를 부탁했어요. 메인의 답을 기다려요.";

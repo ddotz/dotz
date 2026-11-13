@@ -9,7 +9,7 @@ describe("patch reads through joined names", () => {
 		["Python join", "print(open(W + '/st_x/root.patch').read())"],
 		["JS join", "const t = await Bun.file(W + \"/st_x/root.patch\").text();"],
 		["join assigned first", "P = W + '/st_x/root.patch'\nprint(open(P).read())"],
-	])("%s with a known W reads that patch", (_, code) => {
+	])("%s with a known W reads that patch", (_: string, code: string) => {
 		const known = new Map([["W", ISO]]);
 		expect(readPaths(expandCellVars(code, known), known)).toEqual([`${ISO}/st_x/root.patch`]);
 	});
@@ -40,7 +40,7 @@ describe("patch reads through joined names", () => {
 		["JS for-of", 'for (const n of ["a", "b"]) await sh(`git apply ${PD}${n}.patch`);'],
 		["Python for-in", "for n in ['a', 'b']:\n    sh('git apply ' + PD + n + '.patch')"],
 		["shell for-in", "for n in a b; do git apply $PD$n.patch; done"],
-	])("a %s loop variable names each listed patch", (_, code) => {
+	])("a %s loop variable names each listed patch", (_: string, code: string) => {
 		expect(patchesIn(code, new Map([["PD", "/pd/"]]))).toEqual(expect.arrayContaining(["/pd/a.patch", "/pd/b.patch"]));
 	});
 

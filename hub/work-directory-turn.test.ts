@@ -10,9 +10,9 @@ discord.channels.work = { "100000000000000001": "alpha", "100000000000000002": "
 const LIST = msg().workChannels(["#alpha ch:100000000000000001", "#beta ch:100000000000000002"]);
 const ev = (text: string) => ({ kind: "message", source: "web", channel: "web", mid: `m-${text}`, author: "owner", text });
 
-type State = { status: string; current?: string };
+type State = { status: "idle" | "working"; current?: string };
 const state: State = { status: "idle" };
-convs.setMain({ key: "main", o: { onOwnerCancel: () => {}, orch: { get status() { return state.status; } } }, queue: { current: () => (state.current === undefined ? undefined : { text: state.current }) } });
+convs.setMain({ key: "main", o: { onOwnerCancel: () => {}, orch: { get status() { return state.status; } } }, queue: { current: () => (state.current === undefined ? undefined : { text: state.current }) } } as unknown as Parameters<typeof convs.setMain>[0]);
 
 test("a message that opens a turn carries the work-channel list", () => {
 	state.status = "idle";

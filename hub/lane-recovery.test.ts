@@ -99,10 +99,10 @@ test("a failed compaction restarts the session without a chat message or an orch
 	for (let n = 1; n <= 3; n++) {
 		const before = spawns.length;
 		// The first failure is retried at the next idle point; the second in a row restarts the lane.
-		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
+		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled", requested: false });
 		await flush();
 		expect(spawns.length).toBe(before);
-		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
+		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled", requested: false });
 		await flush();
 		await advance(300);
 		await flush();
@@ -112,9 +112,9 @@ test("a failed compaction restarts the session without a chat message or an orch
 		expect(reports).toEqual([]);
 		expect(notices).toEqual([]);
 	}
-	spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
+	spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled", requested: false });
 	await flush();
-	spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
+	spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled", requested: false });
 	await flush();
 	expect(reports).toHaveLength(1);
 	expect(reports[0]).toStartWith("[lane stuck]");
@@ -134,7 +134,7 @@ test("a lane restarted after a failed compaction gets the compaction revive text
 	for (let n = 0; n < 2 && spawns.length === before; n++) {
 		// A frame opens with "alive": it records that the turn was running when the compaction failed.
 		spawns.at(-1)!.agent.push({ type: "alive" });
-		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
+		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled", requested: false });
 		await flush();
 		await advance(300);
 		await flush();
