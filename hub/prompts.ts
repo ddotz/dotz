@@ -38,7 +38,7 @@
 
 import { createBurst, sameConv } from "./promptburst.ts";
 import { isSilent, laterParts, stripLater } from "./tone.ts";
-import { closeHanded, hushedAnswer, waitedOn } from "./handed.ts";
+import { closeHanded, closeIdless, hushedAnswer, waitedOn } from "./handed.ts";
 import { NEAR_CHARS, NEAR_MIN, head, MAX_PROMPTS, MAX_ANSWERED, REPLAY_MAX_AGE_MS, ORPHAN_MAX_AGE_MS, MAX_RECENT, remember, DEFER_MAX_AGE_MS, DEFER_BLOCKS_RESTART_MS, MAX_TURNS, TURN_SLACK_MS, CANCEL_NOTE_MS, LINK_MAX_AGE_MS, MAX_LINKS, REPORT_NOTE_CHARS, type Prompt, type OwnerMessage, type Pending, type WorkLink, type OpenRequest, type WorkRow, type Reply, type PromptDeps } from "./prompts-model.ts";
 export type { Prompt, OwnerMessage, Pending, WorkLink, OpenRequest, WorkRow, Reply, PromptDeps } from "./prompts-model.ts";
 
@@ -690,10 +690,10 @@ export function createPrompts(deps: PromptDeps) {
 		if (p.target && !hush) receipted.delete(receiptKey(p.target));
 		if (!hush) closeResults(p.replyTo);
 		// The answer to the silent-wait reminder (it names no message here) settles the requests a provider error stopped before their own
-		// answer came, in its conversation and older than the reminder: the reminder listed them and told the run to finish or explain each
-		// (2026-11-11: scheduled items stopped by a usage limit stayed open after the answers to the reminders). Any other answer with no
+		// answer came, and, like the answer to a note naming their worker (a failure handover), id-less ones whose workers all stopped
+		// (2026-11-11: usage-limit stops; 2026-11-13: a worker failed at start, and the reminder kept coming). Any other answer with no
 		// message id (another scheduled item, a quiet check) did not do their work, so it leaves them open for the run that resumes them.
-		if (!hush && p.target && !p.replyTo && deps.regenerated?.(p.text)) for (const d of openDeferred()) if (d.retry && d.target === p.target && !d.replyTo && d.at <= p.at && !linksOf(d).some(l => !l.delivered && !l.cancelled)) d.done = true;
+		if (!hush && p.target && !p.replyTo) closeIdless(openDeferred(), p, linksOf, deps.work?.() ?? [], deps.regenerated?.(p.text) === true);
 		const ids = p.target && !hush ? [...(p.refs ?? []), ...burst.cover(p.target)] : [];
 		save();
 		if (!p.target) return;

@@ -1390,6 +1390,53 @@ test("a turn that started from an unpaired frame takes no deferred request, even
 	expect(t.state.posts.at(-1)).toEqual({ target: "web", text: "result", replyTo: "m1" });
 });
 
+// 2026-11-13: a watch turn (no message id) deferred to a worker that failed at start; the session answered the failure handover and
+// later the reminders, yet the request stayed open on that worker and the silent-wait reminder kept coming.
+test("an id-less request whose worker failed closes with the answer to the failure handover, and no reminder follows", async () => {
+	const target = "ch:watch";
+	const worker: WorkRow = { id: "st_x", description: "x", status: "running", target, startedAt: Date.now() - 2_000 };
+	let rows: WorkRow[] = [worker];
+	const t = setup([], [], { work: () => rows, regenerated: isOpenNudge });
+	t.startTurn("[dotz watch] check the feed", { target });
+	t.q.workersSpawned([{ id: worker.id, description: worker.description }]);
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+	expect(t.q.openRequests().map(r => r.workers.map(w => w.id))).toEqual([["st_x"]]);
+	rows = [{ ...worker, status: "failed", endedAt: Date.now() }];
+	t.startTurn(ko.workFailed(worker.description, worker.id, "403"), { target });
+	t.q.onAnswer("작업이 시작하지 못해서 직접 확인했어요: 새 글은 없어요.");
+	await Promise.resolve();
+	t.state.working = false;
+	t.q.settleTurn();
+	expect(t.q.openRequests()).toEqual([]);
+	let clock = 0;
+	const wakes: unknown[] = [];
+	const check = createWaitCheck({ sessions: () => [{ key: "main", open: t.q.openRequests, busy: () => false, workers: () => 0, armed: () => false, lastTurnEndAt: () => 0, wake: open => wakes.push(open) }], restarting: () => false, log: () => {}, now: () => clock });
+	check.tick();
+	clock += QUIET_MS + 1;
+	check.tick();
+	expect(wakes).toEqual([]);
+});
+
+test("the reminder's answer closes an id-less request whose worker failed and has left the task list", async () => {
+	const target = "ch:watch";
+	let rows: WorkRow[] = [{ id: "st_x", description: "x", status: "running", target, startedAt: Date.now() - 2_000 }];
+	const t = setup([], [], { work: () => rows, regenerated: isOpenNudge });
+	t.startTurn("[dotz watch] check the feed", { target });
+	t.q.workersSpawned([{ id: "st_x", description: "x" }]);
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+	rows = [];
+	t.startTurn(ko.openRequests(t.q.openRequests(), false), { target });
+	t.q.onAnswer("st_x는 시작하지 못했어요. 직접 확인했고 새 글은 없어요.");
+	await Promise.resolve();
+	t.state.working = false;
+	t.q.settleTurn();
+	expect(t.q.openRequests()).toEqual([]);
+});
+
 // A worker no turn of ours spawned is listed by bgwork.ts in the conversation that waits, on no message; `rows` stands for that list.
 function listedWorkers(rows: () => WorkRow[], link: () => (id: string, to: { target: string }, description?: string) => unknown): Pick<PromptDeps, "work" | "workFor"> {
 	return {

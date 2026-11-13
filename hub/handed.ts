@@ -26,3 +26,17 @@ export function closeHanded(open: readonly Prompt[], p: Prompt, linksOf: (p: Pro
 	for (const d of closing) d.done = true;
 	return closing.length > 0;
 }
+
+/**
+ * An answer with no message id in `p`'s conversation: the id-less requests there, older than its prompt, that it settles. A provider-error
+ * stop closes on the reminder's answer (`nudge`) once no worker of its own is pending; a request deferred to workers closes once none of
+ * them still runs, on the reminder's answer or on the answer to a note naming one of them (the failure handover).
+ */
+export function closeIdless(open: readonly Prompt[], p: Prompt, linksOf: (p: Prompt) => WorkLink[], work: readonly WorkRow[], nudge: boolean): void {
+	const runs = new Set(work.filter(w => w.status === "running" || w.status === "stalled").map(w => w.id));
+	for (const d of open) {
+		if (d.target !== p.target || d.replyTo || d.at > p.at) continue;
+		const ls = linksOf(d).filter(l => !l.delivered && !l.cancelled);
+		if (d.retry ? nudge && !ls.length : ls.length > 0 && !ls.some(l => runs.has(l.id)) && (nudge || ls.some(l => p.text.includes(l.id)))) d.done = true;
+	}
+}
