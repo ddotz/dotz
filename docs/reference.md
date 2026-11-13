@@ -260,6 +260,11 @@ conversation session next to the main chat, key `quick`, web target `web:quick`.
 never follows main, and its chip changes only itself. It reads the same memory and rules as main, and takes chat, quick questions, lookups and small jobs;
 launching sessions, merges, settings and model changes are refused by the guard (and `POST /api/lanes` with `session: "quick"` answers 403), so it hands those to main
 with `dotz_conv send main`. A parked quick chat starts again as a new agent session seeded with its seed text instead of resuming the stored one, which bounds its context.
+Its start is kept short: the start prompt carries identity, owner rules, lessons, owner memory and the quick scope, and only the contract sections a light chat follows
+(`QUICK_MODE_SECTIONS` in `hub/quick-chat.ts`: inputs, mail and calendar (while zele is on), browser and testing, message layout, confirmation gates, memory and rules; at most `QUICK_MODE_MAX_BYTES` of the contract),
+with neither the channel setups nor `state.json`. When the owner's message is what starts the session, the message rides the start turn (the seed says so) instead of
+following a context-only turn, so the first answer needs one model request, not two. A lone message to the quick chat waits `QUICK_COALESCE_MS` (600 ms) to be taken as a turn
+instead of `gateway.coalesce_ms`; a lower configured value, and 0, win, and no other conversation changes.
 Schedules, watches, mail wakes, session reports and decisions stay on main.
 
 **Model fallback chains.** When a model fails at request time (usage limit, outage), the next model of a chain takes

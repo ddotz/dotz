@@ -85,7 +85,7 @@ export function orchBusy(o: Pick<typeof orch, "status" | "ctx"> = orch): string 
 // handed with its first prompt (the conversation's recent history), in the steer slot a handover uses; asks: whether the
 // lane questions still waiting for the owner ride along (main only: a conversation answers here and nothing else); model: the
 // conversation's own selector, when the owner picked one (else it inherits main's).
-export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: () => string; skipOpen?: () => Set<string>; asks?: boolean; model?: () => string | undefined };
+export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: (joined?: boolean) => string; light?: boolean; skipOpen?: () => Set<string>; asks?: boolean; model?: () => string | undefined };
 export function createOrchestrator(opts: OrchOpts) {
 	const who = opts.key === "main" ? "orchestrator" : `conversation session ${opts.key}`;
 	// A conversation's session is handed its own prompts only: another conversation's pending question in it is what made a
@@ -110,7 +110,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	let pendingRestart = "";
 	// A model/effort change made while a turn or a compaction ran: switched in place at turn_end / when the compaction ends (applyModelChange).
 	let pendingModel = false;
-	let turnsSinceStart = 0;
+	let turnsSinceStart = 0, joinNext = false; // joinNext: deliver() starts a light session with the owner's message, which rides the start turn (seedText joined)
 	let lastTurnEnd = Date.now();
 	let keepalives = 0;
 	let inKeepalive = false;
@@ -149,7 +149,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	// What the usage-limit resume note adds: the background workers that stalled meanwhile (outbound.ts, bgwork.ts takeStalled).
 	let resumeExtra: () => string = () => "";
 	const setResumeExtra = (fn: () => string): void => void (resumeExtra = fn);
-	function sendOwner(text: string, header = false): void {
+	function sendOwner(text: string, header = false, mode: "followUp" | "steer" = "followUp"): void {
 		settleRevert(false);
 		const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
 		const asks = asksNext && carriesAsks ? pendingAsksBlock() : "";
@@ -157,7 +157,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		asksNext = false;
 		const line = header ? turnHeader() : "";
 		if (proc) unstarted.push({ text, header });
-		proc?.send((line ? `${line}\n` : "") + text + nudge + (asks ? `\n\n${asks}` : ""), "followUp");
+		proc?.send((line ? `${line}\n` : "") + text + nudge + (asks ? `\n\n${asks}` : ""), mode);
 	}
 	// Switches the process back to its configured model once that is due: before a prompt starts a turn (a refusal, a provider
 	// error, or a usage limit that has reset), or at an idle moment for a usage limit that has reset. Never in the middle of a turn.
@@ -804,13 +804,13 @@ export function createOrchestrator(opts: OrchOpts) {
 			// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
 			// (a "followUp" would wait until the first answer is done and start an extra paid turn; a "prompt" would start one too),
 			// and a queued steer is not dropped when it arrives before the turn has begun.
-			proc.send(recallText(opts.scope?.() ?? "", openRequestsBlock(ledgerIn(dirname(opts.stateFile)), TZ, Date.now(), opts.skipOpen?.())) + switchNote, "prompt");
-			const seed = rotate ? "" : (opts.seed?.() ?? "");
+			proc.send(recallText(opts.scope?.() ?? "", openRequestsBlock(ledgerIn(dirname(opts.stateFile)), TZ, Date.now(), opts.skipOpen?.()), Boolean(opts.light)) + switchNote, "prompt");
+			const seed = rotate ? "" : (opts.seed?.(joinNext) ?? "");
 			const lead = rotate ? handover(runtime, prior!) : seed;
 			const later = lead + (asks ? `${rotate || seed ? "\n\n" : ""}${asks}` : "");
 			if (later) proc.send(later, "steer");
 			if (rotate) nightly.started(lead.length);
-		} else asksNext = true;
+		} else (asksNext = true, joinNext = false);
 		proc.watchSubagents();
 		if (continueAfterSwitch && resume) {
 			proc.send(msg().orchTransient, "followUp");
@@ -866,8 +866,8 @@ export function createOrchestrator(opts: OrchOpts) {
 			held.push({ text, header: owner });
 			return void (owner && abortAhead(orch.ctx, port));
 		}
-		if (!proc) start();
-		sendOwner(text, owner);
+		if (!proc) { joinNext = Boolean(opts.light) && owner; start(); }
+		sendOwner(text, owner, joinNext ? "steer" : "followUp"), (joinNext = false);
 		armWatchdog();
 	}
 

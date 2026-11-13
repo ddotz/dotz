@@ -202,7 +202,7 @@ export const ko: Catalog = {
 		}),
 	},
 
-	recall: a => `[dotz gateway] 당신은 게이트웨이가 헤드리스로 띄운 dotz 오케스트레이터(${NAME})예요.\n\n정체성 (당신이 누구이고 어떻게 말하는지):\n${a.identity}\n\n계약:\n\n${a.mode}\n\n오너 규칙 (${paths.rules}; 계약보다 우선해요):\n${a.rules}\n\n교훈 (${paths.lessons}):\n${a.lessons}\n\n오너 메모리 (${paths.memory}; 오너에게 묻기 전에 여기를 보고 ${paths.observations}도 grep하세요):\n${a.memory}\n\n작업 채널 설정 (로그인 상태는 dotz_channel list):\n${a.setups}\n\n현재 state.json:\n${a.state}`,
+	recall: a => `[dotz gateway] 당신은 게이트웨이가 헤드리스로 띄운 dotz 오케스트레이터(${NAME})예요.\n\n정체성 (당신이 누구이고 어떻게 말하는지):\n${a.identity}\n\n계약:\n\n${a.mode}\n\n오너 규칙 (${paths.rules}; 계약보다 우선해요):\n${a.rules}\n\n교훈 (${paths.lessons}):\n${a.lessons}\n\n오너 메모리 (${paths.memory}; 오너에게 묻기 전에 여기를 보고 ${paths.observations}도 grep하세요):\n${a.memory}${a.setups === undefined || a.state === undefined ? "" : `\n\n작업 채널 설정 (로그인 상태는 dotz_channel list):\n${a.setups}\n\n현재 state.json:\n${a.state}`}`,
 	identityFallback: (character, tone) => `이름: ${NAME}\n성격: ${character}\n말투: ${tone}\n모든 답을 이 성격과 말투로 하세요.`,
 	handover: (previous, tail, summary = "") => `\n\n[handover] 이전 대화 기록(${previous})은 컨텍스트를 작게 유지하려고 교체했어요.${summary ? ` 그 대화가 마지막으로 압축하며 남긴 요약이에요:\n${summary}\n\n` : " "}가장 최근 대화를 오래된 순으로 붙여요. 열려 있는 일이 있으면 여기서 이어가세요:\n${tail}\n\n${koRetainNudge}`,
 	laneHandover: (previous, tail) => `[handover] 이전 대화 기록(${previous})을 교체했어요.${tail ? ` 가장 최근 대화를 오래된 순으로 붙여요:\n${tail}\n\n${koRetainNudge}` : ""}`,

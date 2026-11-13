@@ -10,6 +10,7 @@ import { featurePrompt } from "./featuredirs.ts";
 import { modeFile, msg, withReplyLine } from "./i18n.ts";
 import type { OrchError } from "./orch-error.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
+import { quickMode } from "./quick-chat.ts";
 import { dropSection, newestLines, renderState } from "./recall-parts.ts";
 import type { RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
@@ -41,11 +42,13 @@ export function lastAnswerAt(file: string, tailBytes = 512 * 1024): number | und
 	return undefined;
 }
 
-export function recallText(scope: string, ledger = ""): string {
+// `light` is the quick chat's start prompt: the contract cut to quickMode, and neither the channel setups nor state.json (hub/quick-chat.ts).
+export function recallText(scope: string, ledger = "", light = false): string {
 	// The mail and calendar section is only useful while zele runs (zele.enabled defaults to on, as in zele.ts).
 	const zeleOn = (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false;
 	const modeText = readFileSync(modeFile(), "utf8");
-	const mode = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
+	const full = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
+	const mode = light ? quickMode(full) : full;
 	const stateFile = join(DATA_DIR, "state.json");
 	const state = existsSync(stateFile) ? renderState(readFileSync(stateFile, "utf8"), stateFile) : "{}";
 	const id = cfg.identity;
@@ -57,7 +60,7 @@ export function recallText(scope: string, ledger = ""): string {
 		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
 	};
 	const features = featurePrompt(DATA_DIR, "orchestrator", log);
-	const text = withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
+	const text = withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, ...(light ? {} : { setups: setupsSummary(), state }) }) + (ledger ? `\n\n${ledger}` : "") + (scope ? `\n\n${scope}` : ""));
 	const note = yesterdayNote();
 	return note ? `${text}\n${msg().dayNote.line(note)}` : text;
 }

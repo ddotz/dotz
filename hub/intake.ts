@@ -5,6 +5,7 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
 import { recordCorrection } from "./corrections.ts";
+import { coalesceFor } from "./quick-chat.ts";
 import { recipeAnswer } from "./recipes.ts";
 import { askedText, emit, emitDelivery, eventTarget, isPeerMessage, onEmit, type HubEvent } from "./events.ts";
 import { openChoiceTitles } from "./notices.ts";
@@ -135,7 +136,7 @@ export const bursts = new Map<string, { events: Record<string, any>[]; replyTo?:
 
 const lastAsked = new Map<string, number>();
 const quietMs = (target: string, gathering: number, last: number | undefined): number =>
-	COALESCE_MS && (gathering > 1 || (last !== undefined && Date.now() - last <= BURST_GAP_MS && Boolean(awaiting.get(target)?.length))) ? Math.max(COALESCE_MS, BURST_WAIT_MS) : COALESCE_MS;
+	COALESCE_MS && (gathering > 1 || (last !== undefined && Date.now() - last <= BURST_GAP_MS && Boolean(awaiting.get(target)?.length))) ? Math.max(COALESCE_MS, BURST_WAIT_MS) : coalesceFor(target, COALESCE_MS);
 
 export function intake(event: Record<string, any>, target: string, replyTo?: string): void {
 	let b = bursts.get(target);

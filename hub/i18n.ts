@@ -16,7 +16,7 @@ import { diskReader, loadCatalog } from "./web-i18n.ts";
 
 export type LaneFooterArgs = { lane: string; language: string; mode: string; workerModel: string; slots: number; worktree: string };
 export type WorktreeArgs = { path: string; repo: string; branch: string; base: string };
-export type RecallArgs = { mode: string; identity: string; rules: string; lessons: string; memory: string; setups: string; state: string };
+export type RecallArgs = { mode: string; identity: string; rules: string; lessons: string; memory: string; setups?: string; state?: string };
 export type SettingText = { label: string; hint?: string; unit?: string; options?: Record<string, string> };
 export type FileText = { label: string; note: string };
 export type HelpText = { title: string; groups: { label: string; items: [command: string, text: string][] }[]; note: string };

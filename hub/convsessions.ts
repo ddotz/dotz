@@ -68,11 +68,11 @@ const readJson = (file: string): Record<string, unknown> => {
 // Context only: this first run has no prompt, so what it answers goes nowhere and what it starts belongs to no request. The message that
 // started the session is logged before it is delivered, so it is left out here and comes as its own turn (2026-11-05 web:worklog: it was
 // acted on from this history and then again as its turn, and the worker's answer closed nothing, so the owner got it twice).
-export function seedText(primary: string, events: HubEvent[], max = SEED_CHARS): string {
+export function seedText(primary: string, events: HubEvent[], max = SEED_CHARS, joined = false): string {
 	const lines = events
 		.filter(e => (e.kind === "message" || (e.kind === "out" && !e.update_key)) && typeof e.text === "string" && e.text.trim())
 		.map(e => `[${String(e.ts).slice(0, 16)}] ${e.kind === "message" ? `owner${e.author ? ` (${e.author})` : ""}` : NAME}: ${String(e.text).replace(/\s+/g, " ").trim()}`);
-	const wait = "This is context, not a request: reply with exactly - now. Any new message from the owner comes next as its own turn.";
+	const wait = joined ? "This is context, not a request: the owner's message follows in this same turn, and you answer it." : "This is context, not a request: reply with exactly - now. Any new message from the owner comes next as its own turn.";
 	if (!lines.length) return `[dotz gateway] This conversation (${primary}) is new. ${wait}`;
 	let body = lines.join("\n");
 	if (body.length > max) body = `…${body.slice(body.length - max)}`;
@@ -136,9 +136,10 @@ export function createConvSessions(d: ConvDeps) {
 			env: { DOTZ_CONV: key, DOTZ_LEDGER_FILE: ledgerIn(dir), DOTZ_WORKER_PIN_FILE: join(dir, "worker-pin"), ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}), ...(key === QUICK ? { DOTZ_CONV_SCOPE: scopeText(meta) } : {}) },
 			scope: () => scopeText(c.meta),
 			skipOpen: () => owedIds(c.queue),
-			seed: () => {
+			light: key === QUICK,
+			seed: joined => {
 				const owed = owedIds(c.queue);
-				return seedText(c.primary, d.history(key, SEED_EVENTS).filter(e => !owed.has(String(e.mid ?? e.message_id))));
+				return seedText(c.primary, d.history(key, SEED_EVENTS).filter(e => !owed.has(String(e.mid ?? e.message_id))), SEED_CHARS, joined);
 			},
 		});
 		Object.assign(c, d.wire(c));

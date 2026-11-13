@@ -22,6 +22,8 @@
 // within 35300 (a 10% cut), so a new line must replace an old one; these two are not raised per change. Earlier per-change growth is in git history.
 export const MODE_MD_MAX_BYTES = 30000;
 export const MODE_KO_MD_MAX_BYTES = 35300;
+// The quick chat's start prompt carries the contract cut to quickMode (hub/quick-chat.ts), not the whole file: measured 8119 / 10178 bytes (en / ko) of 19859 / 25433.
+export const QUICK_MODE_MAX_BYTES = 10600;
 export const RULES_TEMPLATE_MAX_BYTES = 780; // measured 703
 export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 // The owner card and boundaries go into the orchestrator's start prompt (observations.md does not).

@@ -123,6 +123,13 @@ export function dropSection(mode: string, heading: string): string {
 	return [...lines.slice(0, from), ...lines.slice(to)].join("\n");
 }
 
+// MODE.md cut to the text before its first `## ` heading and the sections whose heading starts with one of `headings`.
+export function keepSections(mode: string, headings: readonly string[]): string {
+	const lines = mode.split("\n");
+	let keep = true;
+	return lines.filter(l => (l.startsWith("## ") ? (keep = headings.some(h => l.startsWith(h))) : keep)).join("\n");
+}
+
 // channel-setups.json as one line per channel, the shape of workchannels.ts setupsSummary (that module needs the gateway's config):
 // the raw JSON with timestamps and ids took 2.8K of the re-read after a compaction; a purpose is cut at PURPOSE_MAX (dotz_channel list has it whole).
 // Not a list: the old raw slice.
