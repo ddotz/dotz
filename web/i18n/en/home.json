@@ -5,6 +5,7 @@
   "home.worklog.account": "Account",
   "home.worklog.system": "System",
   "home.worklog.note": "Note",
+  "home.worklog.doctor": "Doctor check",
   "home.fold.open_label": "Expand {label}",
   "home.fold.close_label": "Collapse {label}",
   "home.fold.close": "Collapse",

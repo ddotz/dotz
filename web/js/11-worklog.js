@@ -6,7 +6,7 @@
    Kind (`wk`) and state (`wst`) come from the hub; an event without them (the demo, an older hub) falls back as wlKind / wlState say.
    The same helpers draw 홈's 작업내역 card (08-home.js hcNotices), so the two never disagree. */
 const WL = { open: new Set() };   // unfolded rows, by wlRowKey
-const WL_LABEL = { session: TX("common.session"), check: TX("home.worklog.check"), night: TX("home.worklog.night"), update: TX("home.worklog.update"), account: TX("home.worklog.account"), system: TX("home.worklog.system"), note: TX("home.worklog.note") };
+const WL_LABEL = { session: TX("common.session"), check: TX("home.worklog.check"), night: TX("home.worklog.night"), update: TX("home.worklog.update"), account: TX("home.worklog.account"), system: TX("home.worklog.system"), note: TX("home.worklog.note"), doctor: TX("home.worklog.doctor") };
 const WL_STATES = new Set(["done", "run", "wait", "ask", "fail"]);
 const wlKey = o => String(o.update_key || o.key || "");
 const wlRowKey = o => `${o.ts}|${wlKey(o)}`;
@@ -72,12 +72,14 @@ function wlFitLater(row, toggle, label) {
     q.forEach(([r, toggle2, label2], i) => { if (clipped[i]) wlPress(r, toggle2, label2); });
   });
 }
-// The whole message as the chat draws it (its head line and the state tags the row's own head shows are left out).
+// The whole message as the chat draws it (its head line, the state tags and the kind word the row's own head shows are left out; the row is the fold, so nothing inside folds again).
 function wlFull(e) {
-  const b = msgNode({ ...e, update_key: undefined });
+  const b = msgNode({ ...e, update_key: undefined }, true);
   if (!b) return null;
   const body = el("div", { class: "wl-full" }, ...[...b.children].filter(c => !c.classList.contains("mt")));
   for (const t of body.querySelectorAll(":is(p, li):first-child > .st-tag")) { const p = t.parentElement; t.remove(); if (!p.children.length && !p.textContent.trim()) p.remove(); }
+  const label = WL_LABEL[wlKind(e)], first = label && document.createTreeWalker(body, NodeFilter.SHOW_TEXT).nextNode();
+  if (first && first.data.trimStart().startsWith(`${label}:`)) first.data = first.data.trimStart().slice(label.length + 1).trimStart();
   return body;
 }
 function wlNode(e) {

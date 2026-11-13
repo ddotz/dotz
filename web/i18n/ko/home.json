@@ -5,6 +5,7 @@
   "home.worklog.account": "계정",
   "home.worklog.system": "시스템",
   "home.worklog.note": "기록",
+  "home.worklog.doctor": "닥터 점검",
   "home.fold.open_label": "{label} 펼치기",
   "home.fold.close_label": "{label} 접기",
   "home.fold.close": "접기",

@@ -50,5 +50,18 @@ test("a stored event without wk is classified when served; other posts are left 
 	expect(withWorklogKind({ ...old, wk: "check" })).toEqual({ ...old, wk: "check" });
 	expect(withWorklogKind({ ...old, target: "web:worklog" })).not.toHaveProperty("wk");
 	expect(withWorklogKind({ kind: "message", target: "worklog", text: "안녕" })).not.toHaveProperty("wk");
-	expect(WORKLOG_KINDS).toHaveLength(7);
+	expect(WORKLOG_KINDS).toHaveLength(8);
+});
+
+test("the doctor is a kind: the writer says it on both targets, and an older alert post is told by its head in both languages", () => {
+	expect(worklogKind(gateway("스스로 고친 것: 모니터링 가격 확인.", { wk: "doctor" }))).toEqual({ wk: "doctor" });
+	for (const head of [ko.doctor.head(3), en.doctor.head(3)]) {
+		const post = { kind: "out", target: "alert", source: "gateway", text: `${head}\n- 디스크가 차고 있어요.` };
+		expect(withWorklogKind(post)).toMatchObject({ wk: "doctor" });
+		expect(withWorklogKind({ ...post, wk: "doctor" })).toEqual({ ...post, wk: "doctor" });
+		expect(withWorklogKind({ ...post, target: "worklog" })).toMatchObject({ wk: "doctor" });
+	}
+	const other = { kind: "out", target: "alert", source: "gateway", text: "디스크가 거의 찼어요." };
+	expect(withWorklogKind(other)).toBe(other);
+	expect(withWorklogKind({ ...other, source: "orchestrator", text: ko.doctor.head(1) })).not.toHaveProperty("wk");
 });

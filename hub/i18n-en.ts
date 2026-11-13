@@ -41,6 +41,7 @@ Decision: <question>
 **2) <name>**
 <one-line consequence>`;
 export const NIGHT_LEAD = "Nightly review:";
+export const DOCTOR_LEAD = "Doctor check:";
 export const SCHEDULE_CHECK_LEAD = "Scheduled check:";
 
 export const en = {
@@ -455,7 +456,7 @@ Do this, briefly:
 	},
 
 	doctor: {
-		head: (n: number) => `Doctor check: ${n} thing${n === 1 ? "" : "s"} to look at`,
+		head: (n: number) => `${DOCTOR_LEAD} ${n} thing${n === 1 ? "" : "s"} to look at`,
 		fixedLine: (items: string) => `Fixed by itself: ${items}.`,
 		restarts: (n: number) => `The gateway restarted ${n} times in the last day.`,
 		crashes: (n: number) => `The gateway crashed ${n} time${n === 1 ? "" : "s"} since the last check (a stack trace is in its error log).`,

@@ -83,15 +83,19 @@ function paintRestartBanner() {
   b.title = TX("home.gban.title", { n: list.length, cut, time: kstHM(last) });
   $("#gban-x").onclick = () => { lsSet(BAN_KEY, JSON.stringify({ day: today, cut })); b.hidden = true; };
 }
-// Alerts: one plain Korean line; the raw text (provider error strings, report lines) folds under 자세히.
-function humanAlert(text) {
+// Alerts: a model-provider error is said as one plain sentence (alertSaid, "" for any other alert); the raw text of such an alert folds under 자세히.
+function alertSaid(text) {
   const m = text.match(/^(.+?): 모델 제공자 오류\(([\s\S]*)\)가 (\d+)번 재시도해도 계속돼서 멈췄(?:습니다|어요)/);
   if (m) {
     const c = m[2];
     const key = /timed out|timeout/i.test(c) ? "home.alert.model_timeout" : /ENOTFOUND|reach|network|ECONN|fetch failed/i.test(c) ? "home.alert.model_network" : /rate|limit|429/i.test(c) ? "home.alert.model_limit" : /overload|529|50\d/i.test(c) ? "home.alert.model_busy" : "home.alert.model_error";
     return key === "home.alert.model_timeout" ? TX("home.alert.model_timeout", { name: m[1], n: Number(m[3]) }) : key === "home.alert.model_network" ? TX("home.alert.model_network", { name: m[1], n: Number(m[3]) }) : key === "home.alert.model_limit" ? TX("home.alert.model_limit", { name: m[1], n: Number(m[3]) }) : key === "home.alert.model_busy" ? TX("home.alert.model_busy", { name: m[1], n: Number(m[3]) }) : TX("home.alert.model_error", { name: m[1], n: Number(m[3]) });
   }
-  return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
+  return "";
+}
+// The one line a row and a log say for an alert: that sentence, else the text's first line without Latin parentheticals.
+function humanAlert(text) {
+  return alertSaid(text) || text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
 }
 // A reply that just arrived fades in as one piece (the harness sends only finished messages, no token deltas): no text is hidden or
 // retyped, so nothing reflows and the height is final from the first frame. History, re-renders and reduced motion show it at once.
@@ -241,7 +245,8 @@ function sysLine(e, text, hm) {
   const row = sysRow(id, st, e);
   return el("button", { class: "cv-sys", type: "button", title: TX("home.sys.open_task"), onclick: () => sysOpen(row, id, text.replace(/^[^:]*:\s*/, ""), e) }, ...kids);
 }
-function msgNode(e) {
+// `inRow`: drawn inside an unfolded row (11-worklog.js wlFull), which is the message's one fold.
+function msgNode(e, inRow) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
   // Nothing to read: an outbox record with no text and no card is not a bubble (a deferral note must never look like an empty one).
   if (!text.trim() && !e.card && !(Array.isArray(e.files) && e.files.length) && e.kind !== "result" && e.kind !== "lane_start") return null;
@@ -334,15 +339,17 @@ function msgNode(e) {
       if (e.live || isNote) return el("div", { class: `bm${card}` }, head, liveNode(body, tone, isNote));
       const liveAttr = parked ? { "data-live-tone": "1", "data-live-of": fromLane ? e.source : e.kind === "lane_report" ? `lane:${e.lane}` : "" } : {};
       const pc0 = !e.relay && (e.kind === "out" || e.kind === "lane_report") ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
-      // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
+      // A plain alert is drawn whole, once, as markdown; one that says a provider error as a sentence keeps its raw text under it (folded in the chat,
+      // shown directly in an unfolded row, which is the fold). An alert that asks (a choice block) shows whole, and a tap on it opens
       // the decision sheet (30-notices.js) — the options themselves live there, never in the message body.
       if (e.target === "alert" && !(pc && pc.blocks.length)) {
         const shown = noticeKo(body, NK);
         if (/```원문\n/.test(body)) return el("div", { class: `bm${card}` }, head, toneLead(mdNode(shown), tone));
-        const line = humanAlert(shown);
-        // A watch's change line (89,000원 → 72,000원) stands under the sentence with the old value struck, not only folded in the raw text.
-        const chg = nwChangeNode(nwChangeLine(body));
-        return el("div", { class: `bm${card}` }, head, toneLead(mdNode(line), tone), chg ? el("div", { class: "nw-line" }, chg) : null, line.trim() === shown.trim() ? null : el("details", { class: "more" }, el("summary", { text: TX("home.msg.details") }), el("pre", { text: shown })));
+        const said = alertSaid(shown), am = mdNode(said || shown);
+        // A watch's change line (89,000원 → 72,000원) keeps the old value struck, as in the watch's own rows.
+        if (!said) for (const x of am.querySelectorAll("li, p")) { const c = x.querySelector("br, li, p") ? null : nwChangeNode(x.textContent); if (c) x.replaceChildren(c); }
+        const raw = el("pre", { text: shown });
+        return el("div", { class: `bm${card}` }, head, toneLead(am, tone), !said ? null : inRow ? el("div", { class: "more" }, raw) : el("details", { class: "more" }, el("summary", { text: TX("home.msg.details") }), raw));
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       // A relayed line is another computer's text, not this gateway's: no file chips, no path chips, no choice card; its `[file]` lines stay text (e.relay, 42-relay-chat.js).

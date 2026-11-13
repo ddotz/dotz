@@ -36,6 +36,7 @@ const koLeads: Leads = {
 const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 오너·프로젝트·선호 중 오래 남길 사실이 아직 메모리에 없으면 메모리 도구가 있으면 그것으로(omp: `retain`), 없으면(OmO) dotz 데이터 폴더에 저장하세요(오너 사실은 memory/owner.md, 오너가 한 '하지 마' 원문은 memory/boundaries.md, 규칙은 RULES.md, 교훈은 LESSONS.md, 진행 중인 일은 state.json). 없으면 건너뛰세요.";
 
 export const NIGHT_LEAD = "야간 정리:";
+export const DOCTOR_LEAD = "닥터 점검:";
 export const SCHEDULE_CHECK_LEAD = "예약 점검:";
 
 export const ko: Catalog = {
@@ -431,7 +432,7 @@ export const ko: Catalog = {
 	},
 
 	doctor: {
-		head: (n: number) => `닥터 점검: 살펴볼 것이 ${n}가지 있어요`,
+		head: (n: number) => `${DOCTOR_LEAD} 살펴볼 것이 ${n}가지 있어요`,
 		fixedLine: (items: string) => `스스로 고친 것: ${items}.`,
 		restarts: (n: number) => `게이트웨이가 하루 새 ${n}번 다시 시작했어요.`,
 		crashes: (n: number) => `지난 점검 뒤로 게이트웨이가 ${n}번 비정상 종료했어요 (오류 로그에 스택 기록이 있어요).`,

@@ -2,11 +2,11 @@
 // (an option of out()); anything stored before that, and anything a writer does not tag, is classified here when it is served (history, live frames,
 // notices). The gateway's own lines are told by the openers its writers build them from, exported below and used by the writer and by this file alike,
 // so a reworded line changes both. Pure: no I/O, and the writers import this file, never the other way round.
-import { NIGHT_LEAD as NIGHT_EN, SCHEDULE_CHECK_LEAD as CHECK_EN } from "./i18n-en.ts";
-import { NIGHT_LEAD as NIGHT_KO, SCHEDULE_CHECK_LEAD as CHECK_KO } from "./i18n-ko.ts";
+import { DOCTOR_LEAD as DOCTOR_EN, NIGHT_LEAD as NIGHT_EN, SCHEDULE_CHECK_LEAD as CHECK_EN } from "./i18n-en.ts";
+import { DOCTOR_LEAD as DOCTOR_KO, NIGHT_LEAD as NIGHT_KO, SCHEDULE_CHECK_LEAD as CHECK_KO } from "./i18n-ko.ts";
 import { splitTone, type Tone } from "./tone.ts";
 
-export const WORKLOG_KINDS = ["session", "check", "night", "update", "account", "system", "note"] as const;
+export const WORKLOG_KINDS = ["session", "check", "night", "update", "account", "system", "note", "doctor"] as const;
 export type WorklogKind = (typeof WORKLOG_KINDS)[number];
 const STATES: readonly Tone[] = ["done", "run", "wait", "ask", "fail"];
 
@@ -38,6 +38,7 @@ export function worklogKind(e: Posted): { wk: WorklogKind; wst?: Tone } {
 		(typeof e.update_key === "string" && e.update_key.startsWith("lane:") ? "session"
 			: [NIGHT_KO, NIGHT_EN].some(lead => body.startsWith(lead)) ? "night"
 			: !gateway ? "note"
+			: [DOCTOR_KO, DOCTOR_EN].some(lead => text.startsWith(lead)) ? "doctor"
 			: [CHECK_KO, CHECK_EN].some(lead => text.startsWith(lead)) ? "check"
 			: text.startsWith(SELF_UPDATE_LEAD) || isHarnessLine(text) ? "update"
 			: isAccountLine(text) ? "account"
@@ -46,10 +47,13 @@ export function worklogKind(e: Posted): { wk: WorklogKind; wst?: Tone } {
 	return wst ? { wk, wst } : { wk };
 }
 
-// A worklog post as it is served: the stored event with `wk` / `wst` filled in when it carries none. Other targets and the owner's own messages are returned as they are.
+// A worklog post as it is served: the stored event with `wk` / `wst` filled in when it carries none. An 알림 post is only ever the doctor's (its own kind, `wk` set when the
+// writer did not, as for a post stored before the kind existed); other targets and the owner's own messages are returned as they are.
 export function withWorklogKind<E extends { kind: string; target?: unknown }>(e: E): E {
-	if (e.target !== "worklog" || (e.kind !== "out" && e.kind !== "lane_report")) return e;
-	const k = worklogKind(e);
+	if (e.kind !== "out" && e.kind !== "lane_report") return e;
 	const have = e as { wk?: unknown; wst?: unknown };
+	if (e.target === "alert") return have.wk !== "doctor" && worklogKind(e).wk === "doctor" ? { ...e, wk: "doctor" } : e;
+	if (e.target !== "worklog") return e;
+	const k = worklogKind(e);
 	return have.wk === k.wk && have.wst === k.wst ? e : { ...e, ...k };
 }
