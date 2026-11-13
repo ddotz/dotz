@@ -184,3 +184,55 @@ test("an unsure send survives a restart; a second approval sends nothing; only t
 	expect(second.reports.at(-1)).toMatchObject({ state: "sent" });
 	expect(left(m)).toEqual([]);
 });
+
+// A clock and a timer queue the test moves by hand: an automatic attempt runs when its time comes, never before.
+function clock() {
+	let at = 1_000_000;
+	const due: { at: number; fn: () => void }[] = [];
+	return { now: () => at, after: (ms: number, fn: () => void) => void due.push({ at: at + ms, fn }), move: (ms: number) => { at += ms; for (const d of due.filter(x => x.at <= at)) (due.splice(due.indexOf(d), 1), d.fn()); } };
+}
+
+test("a failed send with an automatic attempt left keeps its time across a restart and runs then, not before", async () => {
+	const m = memoryStore(), c1 = clock();
+	const runs: string[][] = [];
+	const first = createApprovalSender({ kind: ref => PLACES[ref], run: async argv => (runs.push(argv), { code: 1, out: line({ sent: "no", code: "offline" }) }), report: () => undefined, log: () => undefined, store: m.store, now: c1.now, after: c1.after });
+	first.enqueue(job("RAAAAAA"));
+	await first.idle();
+	expect(left(m)).toEqual(["RAAAAAA:failed"]);
+	const c2 = clock();
+	const ran: string[][] = [];
+	const second = createApprovalSender({ kind: ref => PLACES[ref], run: async argv => (ran.push(argv), { code: 0, out: "보냈어요" }), report: () => undefined, log: () => undefined, store: m.store, now: c2.now, after: c2.after });
+	second.recover();
+	c2.move(29_000);
+	await second.idle();
+	expect(ran).toEqual([]);
+	c2.move(1_000);
+	await second.idle();
+	expect(ran).toHaveLength(1);
+	expect(left(m)).toEqual([]);
+});
+
+test("the sweep's proof moves unsure to sent, no proof changes nothing, an item is asked at most once in 10 minutes, and unsure is never run", async () => {
+	const m = memoryStore(), c = clock();
+	let proof: "sent" | "unknown" = "unknown";
+	const asked: string[] = [];
+	const ran: string[][] = [];
+	const s = createApprovalSender({ kind: ref => PLACES[ref], run: async argv => (ran.push(argv), { code: 1, out: line({ sent: "maybe", code: "net_cut" }) }), report: () => undefined, log: () => undefined, store: m.store, now: c.now, after: c.after, prove: async j => (asked.push(j.ref), proof) });
+	s.enqueue(job("RAAAAAA"));
+	await s.idle();
+	s.recheck();
+	await s.idle();
+	expect(asked).toEqual(["RAAAAAA"]);
+	expect(left(m)).toEqual(["RAAAAAA:unsure"]);
+	proof = "sent";
+	c.move(9 * 60_000);
+	s.recheck();
+	expect(asked).toHaveLength(1);
+	c.move(60_000);
+	s.recheck();
+	await Promise.resolve();
+	await s.idle();
+	expect(asked).toHaveLength(2);
+	expect(left(m)).toEqual([]);
+	expect(ran).toHaveLength(1);
+});

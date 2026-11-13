@@ -40,6 +40,7 @@ export type SendJob = { ref: string; conv: string; action: SendAction; title: st
 export type SendLook = { state: "sent" } | { state: "alive" } | { state: "failed" | "unsure"; text: string };
 type Hold = { approvedAt: number; wait: number };
 /** Code's own next attempt of a failed send: which one, of how many, and when. */
+const PROVE_EVERY_MS = 10 * 60_000;
 export type AutoRetry = { attempt: number; max: number; nextAt: number };
 type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts?: number };
 type Kept = SendJob & { state: "queued" | "sending" | "undo" | "failed" | "unsure" } & Partial<Hold> & Ended;
@@ -248,6 +249,8 @@ export function createApprovalSender(deps: SenderDeps) {
 	// An automatic attempt: after its wait, the repair its reason asks for (a failed repair ends it for the owner), then the whole send again
 	// with no cancel window and no new approval. The lane is not held while it waits.
 	const autoAt = new Map<string, number>();
+	// A channel is read back for an unsure send at most once in PROVE_EVERY_MS (the sweep runs far more often).
+	const provedAt = new Map<string, number>();
 	function schedule(j: SendJob, next: AutoRetry): void {
 		autoAt.set(j.ref, next.nextAt);
 		(deps.after ?? timerAfter)(Math.max(0, next.nextAt - now()), () => void retryNow(j, next));
@@ -338,7 +341,8 @@ export function createApprovalSender(deps: SenderDeps) {
 			tick();
 			for (const j of [...orphans.values()]) settleLeft(j);
 			// An unsure send proved by reading the channel back is sent; proof never says "not sent".
-			if (deps.prove) for (const k of [...kept.values()].filter(x => x.state === "unsure")) {
+			if (deps.prove) for (const k of [...kept.values()].filter(x => x.state === "unsure" && now() - (provedAt.get(x.ref) ?? -Infinity) >= PROVE_EVERY_MS)) {
+				provedAt.set(k.ref, now());
 				const j: SendJob = { ref: k.ref, conv: k.conv, action: k.action, title: k.title };
 				void deps.prove(j).then(
 					p => void (p === "sent" && kept.get(k.ref)?.state === "unsure" && set(j, "sent")),
