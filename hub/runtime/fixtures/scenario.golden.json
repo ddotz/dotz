@@ -185,8 +185,8 @@
    "stdin",
    0,
    {
-    "customInstructions": "<compact-instructions>",
-    "type": "compact"
+    "type": "compact",
+    "customInstructions": "<compact-instructions>"
    }
   ],
   [
@@ -241,8 +241,8 @@
    "stdin",
    0,
    {
-    "customInstructions": "<compact-instructions>",
-    "type": "compact"
+    "type": "compact",
+    "customInstructions": "<compact-instructions>"
    }
   ],
   [
@@ -1200,8 +1200,8 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
-    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_OWNER_ASKED_FABLE": "1"
+    "DOTZ_OWNER_ASKED_FABLE": "1",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md"
    }
   ],
   [
@@ -1217,7 +1217,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#dy7312sf5vyn Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
+    "message": "#3ncm8cxw50wyx Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
    }
   ],
   [
@@ -1675,6 +1675,24 @@
    }
   ],
   [
+   "snap",
+   "compaction retry queued",
+   "working",
+   "<DATA>/lane-session.jsonl",
+   "[lane error] overloaded one more time",
+   [
+    1120,
+    200000,
+    "queued",
+    null,
+    null
+   ],
+   true,
+   null,
+   5,
+   "rate"
+  ],
+  [
    "kill",
    0,
    9
@@ -1719,8 +1737,8 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
-    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_OWNER_ASKED_FABLE": "1"
+    "DOTZ_OWNER_ASKED_FABLE": "1",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md"
    }
   ],
   [
@@ -1736,7 +1754,7 @@
    1,
    {
     "type": "prompt",
-    "message": "#1ve19muprtkey [dotz gateway] Your process was restarted after it stopped r…"
+    "message": "#1j2aln6e6089g [dotz gateway] Your context compaction failed, so the gatewa…"
    }
   ],
   [
@@ -1834,8 +1852,8 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
-    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_OWNER_ASKED_FABLE": "1"
+    "DOTZ_OWNER_ASKED_FABLE": "1",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md"
    }
   ],
   [
@@ -1904,8 +1922,8 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
-    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_OWNER_ASKED_FABLE": "1"
+    "DOTZ_OWNER_ASKED_FABLE": "1",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md"
    }
   ],
   [
@@ -1966,8 +1984,8 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
-    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_OWNER_ASKED_FABLE": "1"
+    "DOTZ_OWNER_ASKED_FABLE": "1",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md"
    }
   ],
   [
@@ -1983,7 +2001,7 @@
    4,
    {
     "type": "prompt",
-    "message": "#3mnbesnq9bkv7 [dotz gateway] Your conversation was rotated to a fresh one …"
+    "message": "#hevpei2dpjzx [dotz gateway] Your conversation was rotated to a fresh one …"
    }
   ],
   [
@@ -2041,6 +2059,24 @@
    "rate"
   ],
   [
+   "snap",
+   "compaction message error retried",
+   "working",
+   "<DATA>/lane-session.jsonl",
+   "worked again",
+   [
+    1120,
+    0,
+    "queued",
+    null,
+    null
+   ],
+   true,
+   null,
+   6,
+   "rate"
+  ],
+  [
    "kill",
    4,
    9
@@ -2085,8 +2121,8 @@
    "<DATA>/work",
    {
     "DOTZ_LANE": "alpha",
-    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md",
-    "DOTZ_OWNER_ASKED_FABLE": "1"
+    "DOTZ_OWNER_ASKED_FABLE": "1",
+    "DOTZ_LANE_CONTRACT": "<DATA>/lanes/alpha/contract.md"
    }
   ],
   [
@@ -2102,7 +2138,7 @@
    5,
    {
     "type": "prompt",
-    "message": "#1ve19muprtkey [dotz gateway] Your process was restarted after it stopped r…"
+    "message": "#1j2aln6e6089g [dotz gateway] Your context compaction failed, so the gatewa…"
    }
   ],
   [
@@ -2363,6 +2399,12 @@
      "kind": "activity",
      "source": "lane:alpha",
      "type": "status",
+     "text": "context compacted"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "status",
      "text": "lane process exited (code 137)"
     },
     {
@@ -2454,6 +2496,13 @@
      "source": "lane:alpha",
      "type": "turn_start",
      "text": "turn started"
+    },
+    {
+     "kind": "activity",
+     "source": "lane:alpha",
+     "type": "error",
+     "is_error": true,
+     "text": "Compaction failed while summarising"
     },
     {
      "kind": "activity",

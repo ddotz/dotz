@@ -370,9 +370,11 @@ export async function laneScenario(): Promise<Trace> {
 	await advance(500);
 	snap("transient spent");
 
-	// 6 a failed compaction recovers the lane: kill -9, exit, resume the same session with the stopped note.
+	// 6 a failed compaction is retried once; a second failure in a row recovers the lane: kill -9, exit, resume the same session with the compaction note.
 	l.sendToLane("alpha", "compaction trouble");
 	await proc().push(agentStart);
+	await proc().push({ type: "auto_compaction_end", errorMessage: "auto compaction failed: provider error" });
+	snap("compaction retry queued");
 	await proc().push({ type: "auto_compaction_end", errorMessage: "auto compaction failed: provider error" });
 	snap("recovering");
 	await proc().exit(137);
@@ -415,6 +417,8 @@ export async function laneScenario(): Promise<Trace> {
 	await advance(500);
 	snap("silent handover turn");
 	await proc().push(agentStart);
+	await proc().push(asstEnd("", "error", { errorMessage: "Compaction failed while summarising" }));
+	snap("compaction message error retried");
 	await proc().push(asstEnd("", "error", { errorMessage: "Compaction failed while summarising" }));
 	snap("compaction message error");
 	await proc().exit(137);

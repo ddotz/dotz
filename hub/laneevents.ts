@@ -1,7 +1,7 @@
 import { type Lane, portOf, pendingFile, setStatus, ownerNotes, persist, hooks } from "./lanestate.ts";
 import { type AgentProcess } from "./runtime/types.ts";
 import { emitEventActivity } from "./activity.ts";
-import { noteEvent, compactDue, requestCompact, flushCompact, requeueRefused } from "./context.ts";
+import { noteEvent, compactDue, requestCompact, flushCompact, requeueRefused, type Ctx } from "./context.ts";
 import { rmSync } from "node:fs";
 import { handleError, laneRanOn, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
 import { nextLastText, scheduleReport, REPORT_DEBOUNCE_MS, report } from "./lanereport.ts";
@@ -56,7 +56,7 @@ function retryRefused(lane: Lane, text: string): void {
 // Lanes whose last compaction failed (any failure requeueRefused does not take), with whether a turn ran at that failure. The first failure
 // since the lane's last finished compaction is queued again for the next idle point; only a second one in a row restarts the lane (recover),
 // as a single failure often clears on its own (provider timeout, a session that changed under the summary).
-const compactFailed = new Map<string, boolean>();
+const compactFailed = new Map<string, { working: boolean; before: Ctx["compaction"] }>();
 
 function refusedAnswered(lane: Lane): void {
 	if (!lane.refused) return;
@@ -172,17 +172,19 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				if (ev.state === "error" && requeueRefused(lane.ctx, ev.error)) {
 					log(`lane ${lane.name} compaction refused (${ev.error.slice(0, 120)}); retrying at the next idle point`);
 					// The refusal's own retry is this failure's one retry: a failure of that retry restarts the lane.
-					compactFailed.set(lane.name, wasWorking);
+					compactFailed.set(lane.name, { working: wasWorking, before: lane.ctx.compaction });
 					flushCompact(lane.ctx, portOf(lane));
 				} else if (ev.state === "error" && !compactFailed.has(lane.name)) {
-					compactFailed.set(lane.name, wasWorking);
+					compactFailed.set(lane.name, { working: wasWorking, before: lane.ctx.compaction });
 					lane.ctx.compaction = { state: "queued", at: now() };
 					log(`lane ${lane.name} compaction failed (${ev.error.slice(0, 120)}); retrying once at the next idle point`);
 					flushCompact(lane.ctx, portOf(lane));
 				} else if (ev.state === "error") {
-					const firstWorking = compactFailed.get(lane.name) ?? false;
+					// The restart leaves the compaction state as it was before the first failure, not the retry it queued.
+					const first = compactFailed.get(lane.name);
 					compactFailed.delete(lane.name);
-					recover(lane, COMPACTION_FAILED, wasWorking || firstWorking);
+					if (first) lane.ctx.compaction = first.before;
+					recover(lane, COMPACTION_FAILED, wasWorking || Boolean(first?.working));
 				} else {
 					compactFailed.delete(lane.name);
 					lane.retainNext = true;
