@@ -7,15 +7,17 @@ import { emit, emitDelivery } from "./events.ts";
 import { escalations } from "./escalate.ts";
 import { lanes, sendToLane, setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
 import { decisionsOf, laneHasOpenCard, laneVerified } from "./notices.ts";
-import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
+import { orch } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay, ownerAlone } from "./lanerelay.ts";
 import { workersOf } from "./lanevis.ts";
 import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
 import { parkedTone, parseTone, stripHandoff } from "./tone.ts";
-import { send, deliver, onConvIdle, out } from "./outbound.ts";
+import { send, deliver, onConvIdle, out, queue } from "./outbound.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
-import { dropForLine, forLines } from "./forline.ts";
+import { dropForLine, forLines, waitsOnMain } from "./forline.ts";
+import { recordHanded } from "./handed.ts";
+import type { Lane } from "./lanestate.ts";
 import { useKeptHooks } from "./agent-tree.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { withDoneLive } from "./done-live-wire.ts";
@@ -33,13 +35,37 @@ export function deliverToSession(key: string, text: string): void {
 	}
 }
 
+// Steers a lane's report into the running turn of its session (`steerOf` finds that session's steer); false leaves the report to the
+// relay, which holds it for the session's idle point (hub/lanerelay.ts flush). Main's turn is never steered: it multiplexes every
+// conversation, and a report steered into it made it drop the work it was doing (39 such steers 2026-11-06..13; 2026-11-07T06:49Z).
+export const reportSteer =
+	(steerOf: (key: string) => ((note: string) => boolean) | undefined) =>
+	(text: string, key: string): boolean =>
+		key !== MAIN && (steerOf(key)?.(msg().laneReportSteer(text)) ?? false);
+
 // A lane started from a conversation session (or from a lane) reports to that session (its key is the lane's `from`); the rest report to main.
 export const laneRelay = createLaneRelay({
 	busy: key => !key.startsWith("lane:") && (key === MAIN ? orch : convs.get(key)?.o.orch)?.status === "working",
 	deliver: (text, key) => deliverToSession(key, text),
 	lead: n => msg().inboxLaneReports(n),
-	steer: (text, key) => (key === MAIN ? steerOrchestrator(msg().laneReportSteer(text)) : (convs.get(key)?.o.steer(msg().laneReportSteer(text)) ?? false)),
+	steer: reportSteer(key => convs.get(key)?.o.steer),
 });
+
+// A [wait] on main from a lane main started is main's handed work from that lane, the queue entry its dotz_main request makes
+// (hub/routes-send.ts): main's answer goes back to the lane (hub/prompts.ts handBack). Relayed as a plain report, the answer went to
+// main's own channel and the lane heard nothing until the owner pushed (review-a G9). Not in the turn that answers main's own answer
+// (one round, as dotz_main refuses it); the same wait again is dropped, as the relay drops a repeat. Undefined: not such a wait.
+const handedWaits = new Map<string, string>();
+export function handWaitToMain(lane: Pick<Lane, "name" | "from">, text: string, answeringMain: boolean): "relayed" | "duplicate" | undefined {
+	if (answeringMain || (lane.from ?? MAIN) !== MAIN || parseTone(text).tone !== "wait" || !waitsOnMain(text)) return void handedWaits.delete(lane.name);
+	const key = text.replace(/\s+/g, " ").trim();
+	if (handedWaits.get(lane.name) === key) return "duplicate";
+	handedWaits.set(lane.name, key);
+	const from = `lane:${lane.name}`;
+	recordHanded({ to: primaryTarget(MAIN), from, text });
+	queue.deliver(`[${from}] ${text}`, { target: from, from });
+	return "relayed";
+}
 
 // Why this orchestrator post may not go out, when it would ask a session's open question a second time. A session's [ask] is already in 답변 필요 and the owner's answer
 // there reaches the session, so the turn that heard it makes no card of its own, in any words (2026-11-05 publish-voice: two cards 9 s apart; the same
@@ -60,10 +86,13 @@ export function installLaneHandlers(): void {
 	setOpenCardCheck(laneHasOpenCard);
 	setReportHandler((lane, raw, answering, pause) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
+		const answeringMain = lane.handedBack === true;
 		lane.handedBack = undefined;
 		const text = stripHandoff(raw);
 		activeFleetLaunch()?.report(lane, text);
-		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);
+		const handed = handWaitToMain(lane, text, answeringMain);
+		if (handed === "relayed") log(`lane ${lane.name} [wait] on main handed to main as its request; the answer goes back to the lane`);
+		const how = handed ?? laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 		if (escalations()?.reported(lane.name, parseTone(text).tone)) log(`lane ${lane.name} ended: its stronger-model step reported back`);
 		if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);
