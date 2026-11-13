@@ -1,18 +1,19 @@
-// A lane's report is never steered into main's running turn (it waits for main's idle point, hub/lanerelay.ts flush); a conversation
-// session's turn still takes it. A lane's [wait] on main is main's handed work from that lane, so main's answer goes back to the lane.
+// A lane's report is steered into main's running turn only when it is an [ask]; every other report waits for main's idle point
+// (hub/lanerelay.ts flush). A conversation session's turn takes every report. A lane's [wait] on main is main's handed work from that lane, so main's answer goes back to the lane.
 // The [wait] goes through the real report path (lanereport.ts, lanewire.ts); main's queue is stubbed so nothing reaches a real orchestrator.
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, NAME, paths } from "./config.ts";
 import { type HubEvent, onEmit } from "./events.ts";
+import { createLaneRelay } from "./lanerelay.ts";
 import { report } from "./lanereport.ts";
 import { lanes, type Lane } from "./lanestate.ts";
 import { installLaneHandlers, reportSteer } from "./lanewire.ts";
 import { queue } from "./outbound.ts";
 import { MAIN } from "./session-key.ts";
 
-test("a lane report is steered into a conversation session's running turn, never into main's: the relay holds main's for its idle point", () => {
+test("a lane report is steered into a conversation session's running turn; main's takes no [done]: the relay holds it for main's idle point", () => {
 	const asked: string[] = [];
 	const notes: string[] = [];
 	const steer = reportSteer(key => (asked.push(key), note => (notes.push(note), true)));
@@ -22,6 +23,17 @@ test("a lane report is steered into a conversation session's running turn, never
 	expect(notes).toHaveLength(1);
 	expect(notes[0]).toContain("[done] shipped");
 	expect(reportSteer(() => undefined)("[done] x", "ch:43")).toBe(false);
+});
+
+test("main's running turn takes a lane's [ask] at once; its [run] and [done] wait for main's idle point", () => {
+	const asked: string[] = [];
+	const steer = reportSteer(key => (asked.push(key), () => true));
+	const relay = createLaneRelay({ busy: () => true, deliver: () => {}, lead: n => `${n}`, steer });
+	expect(relay.report("alpha", "[ask] A or B?", "/r/alpha.md")).toBe("steered");
+	expect(relay.report("beta", "[done] shipped", "/r/beta.md")).toBe("held");
+	expect(steer("- lane gamma status=run (full: /r/gamma.md)\n[run] building", MAIN)).toBe(false);
+	expect(steer("- lane delta status=done (full: /r/delta.md)\n[done] shipped", MAIN)).toBe(false);
+	expect(asked).toEqual([MAIN]);
 });
 
 const delivered: { text: string; opts?: { target?: string; from?: string } }[] = [];

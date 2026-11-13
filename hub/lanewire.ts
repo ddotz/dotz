@@ -7,7 +7,7 @@ import { emit, emitDelivery } from "./events.ts";
 import { escalations } from "./escalate.ts";
 import { lanes, sendToLane, setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
 import { decisionsOf, laneHasOpenCard, laneVerified } from "./notices.ts";
-import { orch } from "./orchestrator.ts";
+import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay, ownerAlone } from "./lanerelay.ts";
 import { workersOf } from "./lanevis.ts";
@@ -36,19 +36,22 @@ export function deliverToSession(key: string, text: string): void {
 }
 
 // Steers a lane's report into the running turn of its session (`steerOf` finds that session's steer); false leaves the report to the
-// relay, which holds it for the session's idle point (hub/lanerelay.ts flush). Main's turn is never steered: it multiplexes every
-// conversation, and a report steered into it made it drop the work it was doing (39 such steers 2026-11-06..13; 2026-11-07T06:49Z).
+// relay, which holds it for the session's idle point (hub/lanerelay.ts flush). Main's turn takes only an [ask]: it multiplexes every
+// conversation, and any report steered into it made it drop the work it was doing (39 such steers 2026-11-06..13; 2026-11-07T06:49Z),
+// but a question waits on main, so it goes in at once (owner 2026-11-13). The tone is read from the relay item's
+// `status=` line (hub/lanerelay.ts relayItem).
+const ASK_ITEM = /^- lane \S+ status=ask\b/m;
 export const reportSteer =
 	(steerOf: (key: string) => ((note: string) => boolean) | undefined) =>
 	(text: string, key: string): boolean =>
-		key !== MAIN && (steerOf(key)?.(msg().laneReportSteer(text)) ?? false);
+		(key !== MAIN || ASK_ITEM.test(text)) && (steerOf(key)?.(msg().laneReportSteer(text)) ?? false);
 
 // A lane started from a conversation session (or from a lane) reports to that session (its key is the lane's `from`); the rest report to main.
 export const laneRelay = createLaneRelay({
 	busy: key => !key.startsWith("lane:") && (key === MAIN ? orch : convs.get(key)?.o.orch)?.status === "working",
 	deliver: (text, key) => deliverToSession(key, text),
 	lead: n => msg().inboxLaneReports(n),
-	steer: reportSteer(key => convs.get(key)?.o.steer),
+	steer: reportSteer(key => (key === MAIN ? steerOrchestrator : convs.get(key)?.o.steer)),
 });
 
 // A [wait] on main from a lane main started is main's handed work from that lane, the queue entry its dotz_main request makes
