@@ -1,7 +1,8 @@
 // The custom layer (hub/custom.ts): cards and pins read from <DATA_DIR>/custom, data commands with a cache, the pure
 // projects view, routine schedules and the HTTP routes. The fake clock (test-setup) moves time; no real waiting.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { DATA_DIR } from "./config.ts";
@@ -407,6 +408,17 @@ test("computerGroups: this computer first, the others by name; a pin joins its c
 		["office-pc", false, true, ["dir:~/Code/there"], ["report"]],
 	]);
 	expect(computerGroups("home-pc", view({ lanes: [], channels: {}, pins: { ...noPins, projects: [{ name: "Here", path: "~/h" }] }, computer: "home-pc" }), [])).toHaveLength(1);
+});
+
+test("GET /api/peer/projects gives a git project's normalized origin as repo, and none for a folder without one", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "peer-repo-"));
+	Bun.spawnSync(["git", "-C", dir, "init", "-q"]);
+	Bun.spawnSync(["git", "-C", dir, "remote", "add", "origin", "https://user:tok-123@git.example.test/o/proj.git"]);
+	pins({ projects: [{ name: "Git", path: dir }, { name: "Plain", path: "~/Code/plain" }] });
+	const list = (await json(await call("GET", "/api/peer/projects", undefined, { ...deps, machine: () => "home-pc" }))).projects as Array<{ name: string; repo?: string }>;
+	rmSync(dir, { recursive: true, force: true });
+	expect(list.find(p => p.name === "Git")!.repo).toBe("git.example.test/o/proj");
+	expect("repo" in list.find(p => p.name === "Plain")!).toBe(false);
 });
 
 test("GET /api/custom/computers groups this gateway's projects with the peers'; GET /api/peer/projects gives its own projects only, by key and name", async () => {

@@ -1,7 +1,7 @@
 // The 프로젝트 list's computer groups (docs/customization.md, Projects by computer): pure shapes and grouping, no network.
 import type { Project } from "./custom.ts";
 
-export type RemoteProject = { key: string; name: string; note?: string };
+export type RemoteProject = { key: string; name: string; note?: string; repo?: string };
 // One other computer as GET /api/custom/computers sees it: offline, online with its projects, or online without them (an older gateway, no token).
 // A computer reached through a messenger carries `relay` (the web target `relay:<via>:<key>`) and, when its last status snapshot is known, `status_at` (ms).
 export type PeerProjects = { name: string; url: string; online: boolean; projects?: RemoteProject[]; relay?: string; status_at?: number };

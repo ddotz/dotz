@@ -19,6 +19,7 @@ import { dropForLine, forLines } from "./forline.ts";
 import { useKeptHooks } from "./agent-tree.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { withDoneLive } from "./done-live-wire.ts";
+import { activeFleetLaunch } from "./fleet-launch.ts";
 
 // A gateway note or a report for a session: main, a conversation session, or a lane (a stronger-model step reports to the lane that
 // asked for it, hub/escalate.ts; sendToLane steers it into a running turn). A lane that cannot take it any more passes it to main.
@@ -60,6 +61,7 @@ export function installLaneHandlers(): void {
 	setReportHandler((lane, raw, answering, pause) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
 		const text = stripHandoff(raw);
+		activeFleetLaunch()?.report(lane, text);
 		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 		if (escalations()?.reported(lane.name, parseTone(text).tone)) log(`lane ${lane.name} ended: its stronger-model step reported back`);

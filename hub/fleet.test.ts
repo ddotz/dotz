@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { checkPeer } from "./peer-auth.ts";
-import { type Computer, createFleet, FLEET_V, type FleetRow, fleetState, type Fleet, type Load, type LoadCore, loadCore } from "./fleet.ts";
+import { type Computer, createFleet, FLEET_V, type FleetDeps, type FleetRow, fleetState, type Fleet, type Load, type LoadCore, loadCore } from "./fleet.ts";
 
 const TOKEN = "t".repeat(24);
 const LOGIN = "owner@example.test";
@@ -73,9 +73,9 @@ const netFetch = async (url: string, init?: RequestInit): Promise<Response> => {
 	n.calls.push(req.clone());
 	return n.handle(req);
 };
-function node(url: string, name: string, local: LoadCore, computers: () => Promise<Computer[]>, mode: Node["mode"] = "ok"): Node {
+function node(url: string, name: string, local: LoadCore, computers: () => Promise<Computer[]>, mode: Node["mode"] = "ok", sent?: FleetDeps["sent"]): Node {
 	const self: Node = { mode, calls: [] } as unknown as Node;
-	const fleet = createFleet({ name: () => name, local: () => local, computers, fetch: netFetch, now: () => clock, token: () => TOKEN, pair: async () => ({ ok: true }) as never });
+	const fleet = createFleet({ name: () => name, local: () => local, computers, fetch: netFetch, now: () => clock, token: () => TOKEN, pair: async () => ({ ok: true }) as never, ...(sent ? { sent } : {}) });
 	self.fleet = fleet;
 	self.handle = async req => {
 		const gate = checkPeer(req, TOKEN, true);
@@ -126,6 +126,22 @@ test("/api/fleet lists this computer first, then a peer with load, an older peer
 	expect(rows[2]).toMatchObject({ load: null, legacy: true });
 	expect(rows[3]).toMatchObject({ load: null });
 	expect(rows[3]!.legacy).toBeUndefined();
+});
+
+test("/api/fleet rows of other computers carry what this computer sent there, and this computer's own row does not", async () => {
+	nodes.clear();
+	clock += 1_000_000;
+	const sent = () => [
+		{ lane: "fleet-a1", computer: "맥북", title: "문서 정리" },
+		{ lane: "fleet-b2", computer: "서버", title: "빌드 확인" },
+		{ lane: "fleet-c3", computer: "맥북", title: "테스트 보강" },
+	];
+	const a = node(URL_A, "맥미니", core(), list(["맥북", URL_B], ["서버", URL_C], ["노트", URL_D]), "ok", sent);
+	node(URL_B, "맥북", core(), list());
+	node(URL_C, "서버", core(), list(), "legacy");
+	node(URL_D, "노트", core(), list(), "down");
+	const rows = (await (await a.handle(new Request(`${URL_A}/api/fleet`))).json()) as Array<FleetRow & { sent?: unknown }>;
+	expect(rows.map(r => r.sent)).toEqual([undefined, [{ lane: "fleet-a1", title: "문서 정리" }, { lane: "fleet-c3", title: "테스트 보강" }], [{ lane: "fleet-b2", title: "빌드 확인" }], []]);
 });
 
 test("a peer's load is read once per 20 s, again when stale, and again after peer_counts drops it", async () => {

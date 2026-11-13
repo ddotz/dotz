@@ -280,12 +280,13 @@ async function sendChat(how) {
     // One id per send, kept while it fails, so a retry of the same text is the same send to the hub (hub/routes.ts cid).
     if (!sendCid || sendCid.text !== text) sendCid = { text, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10) };
     const { decision, ...quote } = reply || {};   // decision: the question the quote answers (30-notices.js ntDirect)
-    const body = { text, cid: sendCid.id, ...(reply ? { reply: quote } : {}), ...(decision ? { decision } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isRowT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}), ...(refs.length ? { refs } : {}) };
+    const body = { text, cid: sendCid.id, ...(reply ? { reply: quote } : {}), ...(decision ? { decision } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isRowT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}), ...(refs.length ? { refs } : {}), ...cpcTake() };
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
     if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
     const r = await sendMsgOut(t, text, body, owner && owner.pc);   // null: the gateway is unreachable, the message waits in the outbox (14-outbox.js)
     sendCid = null;
+    if (body.computer) { CPC.name = ""; cpcPaint(); }   // the pick was for this one message
     // A peer's conversation is not on this computer's event stream: its history is read again now, so the sent bubble shows at once.
     if (owner && owner.pc) loadTarget(t, true);
     scrollChat(true); scrollTerm(true);
@@ -493,7 +494,7 @@ function paintChips(t, k) {
   b.classList.toggle("warn", pct >= 80);
 }
 function realChips() { return { own: $("#c-own"), model: $("#c-model"), effort: $("#c-effort"), worker: $("#c-worker"), ring: $("#ctx-ring"), api: $("#c-api"), fb: $("#c-fb"), bar: $("#cbar") }; }
-function renderCtxRing() { paintChips(target, realChips()); paneStrips(); }
+function renderCtxRing() { paintChips(target, realChips()); paneStrips(); if (typeof cpcPaint === "function") cpcPaint(); }
 /* ---------- composer chips: model / effort / context of the current target (GET/PUT /api/target) ---------- */
 // The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
 const MODELS_LINK = { value: "__models", label: TX("chat.models.link"), sub: TX("chat.models.link_sub") };

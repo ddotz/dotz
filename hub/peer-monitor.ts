@@ -13,6 +13,7 @@ import { PEER_GET, peerHeaders, peerTokenFor } from "./peer-auth.ts";
 import { createPairer, type PairResult } from "./peer-pair.ts";
 import { knownComputers } from "./peers.ts";
 import { json } from "./routes-util.ts";
+import type { FleetLaunch } from "./fleet-launch.ts";
 
 export type Computer = { name: string; url: string; self: boolean };
 // `orchestrator`: that gateway's bot status ("rate-limited" = paused; pauseKind "owner" = login/billing), for the composer's status line.
@@ -41,6 +42,7 @@ export type MonitorDeps = {
 	postTimeoutMs?: number;
 	refreshMs?: number;
 	log?: (message: string) => void;                          // where a failed handoff ack is noted (never thrown)
+	launch?: Pick<FleetLaunch, "receive" | "receiveReport">;   // `launch` and `lane-report` actions (hub/fleet-launch.ts, docs/fleet.md)
 };
 
 const GET_MS = 2500;
@@ -336,6 +338,12 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			case "handoff-ack":
 				if (typeof a.id !== "string" || !HANDOFF_ID.test(a.id)) return bad("id required");
 				return ask("POST", "/api/send", { target: "chat", text: `✅ ${from}에서 넘긴 작업을 받아 이어서 해요 (id ${a.id})`, session: "main" }, login);
+			// New work from another computer (docs/fleet.md): this gateway's own project folder, its own launch route and rules.
+			case "launch":
+				return deps.launch ? deps.launch.receive(from, a, (method, path, data) => ask(method, path, data, login)) : bad("unknown action");
+			// A report of a session this computer started on the other one.
+			case "lane-report":
+				return deps.launch ? deps.launch.receiveReport(from, a) : bad("unknown action");
 			case "answer":
 				if (typeof a.id !== "string" || !a.id) return bad("id required");
 				return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/answer`, { n: a.n, label: a.label, note: a.note, via: from }, login);

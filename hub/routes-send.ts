@@ -24,6 +24,7 @@ import { repostRefusal } from "./lanewire.ts";
 import { MAIN, primaryTarget, QUICK } from "./session-key.ts";
 import { authHeld, parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body } from "./routes-util.ts";
+import { activeFleetLaunch } from "./fleet-launch.ts";
 import { recordHanded } from "./handed.ts";
 import { attachNote } from "./attach-lines.ts";
 import { bannedHits, bannedNote } from "./word-ban.ts";
@@ -81,8 +82,11 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 			}
 		}
 		// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
+		// The web's computer chip (docs/fleet.md): the main chat's next turn names the computer the owner picked; any other conversation ignores it.
+		const computer = lane || project || mail || settings || conv ? undefined : await activeFleetLaunch()?.pickable(b.computer);
+		const turnRefs = computer ? [...refs, msg().fleetPicked(computer)] : refs;
 		if (mode === "queue" && !project && !mail && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !authHeld("web")) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
-			const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : "", elements.length ? pickedLines(elements) : "", ...refs].filter(Boolean).join("\n"), login);
+			const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : "", elements.length ? pickedLines(elements) : "", ...turnRefs].filter(Boolean).join("\n"), login);
 			if (cid) rememberCid(cid, { ok: true, queued: item });
 			return json({ ok: true, queued: item });
 		}
@@ -90,7 +94,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 		try {
 			// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
 			const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-			await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(refs.length ? { refs } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(typeof b.decision === "string" && b.decision ? { decision: b.decision.slice(0, 80) } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
+			await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(turnRefs.length ? { refs: turnRefs } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(typeof b.decision === "string" && b.decision ? { decision: b.decision.slice(0, 80) } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
 		} catch (error) {
 			sentCids.delete(cid);
 			return json({ error: (error as Error).message }, 409);

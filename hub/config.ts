@@ -49,6 +49,8 @@ export type Config = {
 	context?: { models?: Record<string, ContextLimits> };
 	// Web push per notice class (hub/notice-class.ts); a missing class takes CLASS_PUSH_DEFAULTS. The 앱 · 알림 settings edit it.
 	notify?: { push?: Record<string, boolean> };
+	// Fleet (docs/fleet.md): auto_place sends a launch that would wait here to a paired computer with room (default false).
+	fleet?: { auto_place?: boolean };
 };
 export type ContextLimits = { window?: number; compact_at?: number };
 // One target's model, thinking level and ordered fallback chain: the orchestrator, the lanes (default of every lane) and the

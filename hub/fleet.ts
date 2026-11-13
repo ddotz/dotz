@@ -1,6 +1,6 @@
 // Fleet (docs/fleet.md): each gateway tells a paired peer how busy it is, and this gateway lists every computer with a plain state.
 //   GET /api/peer/load   this gateway's load (peer gates in hub/peer-auth.ts), ETag over the body without its clock
-//   GET /api/fleet       this computer first, then every paired computer: [{name, url, self, online, state, load, legacy?}]
+//   GET /api/fleet       this computer first, then every paired computer: [{name, url, self, online, state, load, legacy?, sent?}] (sent: what this computer sent there)
 // A peer's load is kept 20 s and read again behind the request once stale (`cached` of hub/peers.ts); a peer_counts frame from its event
 // stream drops it (hub/peer-stream.ts). No timer of its own and no model call. Everything outside (fetch, computers, clock, token, pair, the
 // local load source) is injected, so tests run two gateways in one process or a fake peer.
@@ -26,7 +26,7 @@ export type Load = {
 	running: RunningRow[];
 };
 export type LoadCore = Omit<Load, "v" | "name" | "at">;
-export type FleetRow = { name: string; url: string; self: boolean; online: boolean; state: FleetState; load: Load | null; legacy?: true };
+export type FleetRow = { name: string; url: string; self: boolean; online: boolean; state: FleetState; load: Load | null; legacy?: true; sent?: Array<{ lane: string; title: string }> };
 export type Computer = { name: string; url: string; self: boolean; via?: string; public?: boolean };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -98,6 +98,8 @@ export type FleetDeps = {
 	name: () => string;
 	local: () => LoadCore;
 	computers?: () => Promise<Computer[]>;
+	/** What this computer sent to others (hub/fleet-launch.ts `sent`, wired by routes.ts): each other computer's row lists its own. */
+	sent?: () => Array<{ lane: string; computer: string; title: string }>;
 	fetch?: Fetcher;
 	now?: () => number;
 	token?: (peerUrl: string) => string | undefined;
@@ -175,9 +177,11 @@ export function createFleet(deps: FleetDeps): Fleet {
 		const mine = load();
 		const rows: FleetRow[] = [{ name: mine.name, url: self?.url ?? "", self: true, online: true, state: fleetState(mine, true), load: mine }];
 		const answers = await Promise.all(others.map(readOf));
+		const sentRows = deps.sent?.() ?? [];
 		others.forEach((c, i) => {
 			const a = answers[i]!;
-			rows.push({ name: c.name, url: c.url, self: false, online: a.online, state: fleetState(a.load, a.online), load: a.load, ...(a.legacy ? { legacy: true as const } : {}) });
+			const sent = sentRows.filter(s => s.computer === c.name).map(({ lane, title }) => ({ lane, title }));
+			rows.push({ name: c.name, url: c.url, self: false, online: a.online, state: fleetState(a.load, a.online), load: a.load, ...(a.legacy ? { legacy: true as const } : {}), sent });
 		});
 		return rows;
 	}

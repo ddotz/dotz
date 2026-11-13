@@ -11,7 +11,7 @@ function closeMenu(restore = true, now = false) {
   m.anchor.setAttribute("aria-expanded", "false");
   if (restore && m.anchor.isConnected) m.anchor.focus();
 }
-// items: [{value, label, sub?}] or [{header}]. onPick(value) runs after the menu closes.
+// items: [{value, label, sub?, off?}] or [{header}]; `off` stays listed, greyed, and does nothing when chosen. onPick(value) runs after the menu closes.
 // sheet: a bottom sheet across the screen above the anchor (the phone tab bar), instead of a dropdown at the anchor.
 function showMenu(anchor, items, { value, onPick, sheet, end }) {
   if (openMenu && openMenu.anchor === anchor) { closeMenu(); return; }
@@ -34,7 +34,7 @@ function showMenu(anchor, items, { value, onPick, sheet, end }) {
       return [b, b];
     }
     const on = it.value === value;
-    const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}${it.indent ? " ind" : ""}${it.danger ? " danger" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", onclick: () => { closeMenu(); onPick(it.value); } },
+    const b = el("button", { type: "button", role: "option", class: `mi${on ? " sel-on" : ""}${it.off ? " off" : ""}${it.indent ? " ind" : ""}${it.danger ? " danger" : ""}`, "aria-selected": on ? "true" : "false", tabindex: "-1", "aria-disabled": it.off ? "true" : null, onclick: () => { if (it.off) return; closeMenu(); onPick(it.value); } },
       on ? icon("check", "ck") : el("span", { class: "ck" }),
       it.tone != null ? el("span", { class: `dot ${it.tone}` }) : null,
       el("span", { class: "ml" }, it.label, it.sub ? el("small", { text: it.sub }) : null),

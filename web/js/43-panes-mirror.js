@@ -60,6 +60,7 @@ function paneComposerEl(m) {
   const c = PNV.cmp.cloneNode(true), id = x => c.querySelector(`#${x}`);
   m.k = { own: id("c-own"), model: id("c-model"), effort: id("c-effort"), worker: id("c-worker"), ring: id("ctx-ring"), api: id("c-api"), fb: id("c-fb"), bar: id("cbar"),
     run: id("runline"), runTx: id("runline-tx"), subs: id("runline-subs"), send: id("send-btn"), ta: id("text") };
+  id("c-pc").hidden = true;   // the computer pick belongs to the open composer only
   id("c-attach").dataset.c = "c-attach"; m.k.send.dataset.c = "send-btn";
   for (const x of c.querySelectorAll("#qline, #dcard, #hints, #runstate, #pausenote, #relaynote, #atray, input[type=file], .ta-hl, .ta-tok")) x.remove();
   id("send").className = "sendrow"; id("send").removeAttribute("style");

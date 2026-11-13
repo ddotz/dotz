@@ -42,7 +42,9 @@ import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
 import { laneTodo, openMonitor, readTodo } from "./todo.ts";
-import { customRoute } from "./custom.ts";
+import { customRoute, ownFolders } from "./custom.ts";
+import { activateFleetLaunch, activeFleetLaunch, createFleetLaunch } from "./fleet-launch.ts";
+import { deliverToSession } from "./lanewire.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { updateNow } from "./update-now.ts";
@@ -265,8 +267,12 @@ export const stateWaitlist = () => buildWaitlist({
 	work: [...bgWork.queuedWork(), ...convs.conversations().filter(c => convs.live(c)).flatMap(c => c.bg.queuedWork().map(w => ({ ...w, target: c.primary })))],
 });
 // Fleet (hub/fleet.ts): this computer's load for its peers, and GET /api/fleet for the computer sheet.
-const fleet = createFleet({ name: () => resolveName(cfg.web?.machine_name, machineHost()), local: () => loadCore({ sessions: maxLiveView(), capacity: laneCapacity(), waitlist: stateWaitlist().length, orchestrator: orch.status, lanes: laneSummary(), convs: convs.conversations().filter(c => convs.live(c)).map(c => ({ status: c.o.orch.status })) }) });
+const fleet = createFleet({ name: () => resolveName(cfg.web?.machine_name, machineHost()), sent: () => activeFleetLaunch()?.sent() ?? [], local: () => loadCore({ sessions: maxLiveView(), capacity: laneCapacity(), waitlist: stateWaitlist().length, orchestrator: orch.status, lanes: laneSummary(), convs: convs.conversations().filter(c => convs.live(c)).map(c => ({ status: c.o.orch.status })) }) });
 activateFleet(fleet);
+const machine = () => resolveName(cfg.web?.machine_name, machineHost());
+// A session started on another paired computer (hub/fleet-launch.ts, docs/fleet.md).
+const fleetLaunch = createFleetLaunch({ name: machine, autoOn: () => cfg.fleet?.auto_place === true, fleet: () => fleet.fleet(), folders: () => ownFolders({ lanes: () => withHomes(laneSummary(), discord.channels), channels: () => discord.channels, machine }), deliver: deliverToSession });
+activateFleetLaunch(fleetLaunch);
 const mainWork = (t: string | undefined) => t === "web" || t === "terminal" || !t;
 const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
@@ -617,7 +623,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 	};
 	// A body that is not JSON is refused here, whichever route read it (hub/routes-util.ts body).
 	const route = (req: Request, srv?: Server<unknown>): Promise<Response> => handle(req, srv).catch(error => { if (error instanceof BodyError) return json({ error: error.message }, 400); throw error; });
-	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, machineHost()), bot: () => NAME, local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
+	const peers = createPeerMonitor({ launch: fleetLaunch, name: () => resolveName(cfg.web?.machine_name, machineHost()), bot: () => NAME, local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
 	activatePeerMonitor(peers);
 	return route;
 }

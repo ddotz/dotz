@@ -111,7 +111,7 @@ function prPaint() {
     prHomeDot(false, false);
     brand.setAttribute("aria-label", TX("shell.aria.home")); brand.title = TX("shell.aria.home"); brand.removeAttribute("aria-haspopup");
     title.removeAttribute("tabindex"); title.removeAttribute("aria-haspopup");
-    prClose(false); return;
+    prClose(false); cpcPaint(); return;
   }
   // The TLS handshake to the other computer is paid now, not when the owner taps it.
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
@@ -122,6 +122,7 @@ function prPaint() {
   brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
   brand.title = TX("misc.pr.switch_tip", { key: prKeyHint });
   title.tabIndex = 0; title.setAttribute("aria-haspopup", "dialog");
+  cpcPaint();
   if (PR.node) prSheet();
 }
 
@@ -193,15 +194,30 @@ function prForgetBtn(p, off) {
 const PR_FLEET_TONE = { idle: "ok", busy: "pri", full: "warn", offline: "off" };
 const prFleetWord = state => ({ idle: TX("misc.pr.fleet.idle"), busy: TX("misc.pr.fleet.busy"), full: TX("misc.pr.fleet.full"), offline: TX("misc.pr.fleet.offline") })[state] || TX("misc.pr.fleet.offline");
 const prFleetNow = p => (Array.isArray(PR.fleet) && !selfDown && !isRelayRow(p) ? PR.fleet.find(f => (p.self ? f.self : f.url === p.url) && !f.legacy) : undefined);
+// The quiet line: what runs there, then what this computer sent there (hub/fleet.ts `sent`), each title once.
 function prFleetLine(f) {
   const l = f.load;
-  if (!l) return "";
-  return [f.state === "full" && l.paused ? TX("misc.pr.fleet.limit") : "", l.running.map(r => r.title).filter(Boolean).join(", ")].filter(Boolean).join(" · ");
+  const titles = [...new Set([...(l ? l.running : []), ...(f.sent || [])].map(r => r.title).filter(Boolean))];
+  return [l && f.state === "full" && l.paused ? TX("misc.pr.fleet.limit") : "", titles.join(", ")].filter(Boolean).join(" · ");
 }
 async function prFleetLoad() {
   try { const r = await api("/api/fleet"); PR.fleet = Array.isArray(r) ? r : null; } catch { return; /* the sheet keeps the plain connected / not connected pills */ }
   if (PR.node) prSheet();
 }
+
+// The computer chip of the main chat's composer: which computer the next new work starts on. It shows this computer until the owner picks another
+// from the menu (state words from /api/fleet, read when the menu opens); the pick goes out with the next main-chat message only (14-slash-commands.js sendChat).
+const CPC = { name: "" };
+const cpcShown = () => target === MAIN && PR.list.length >= 2;
+function cpcPaint() {
+  const b = $("#c-pc");
+  b.hidden = !cpcShown();
+  if (b.hidden) return;
+  if (CPC.name && !prOthers().some(p => p.name === CPC.name)) CPC.name = "";
+  b.textContent = CPC.name || TX("chat.chip.pc_here");
+  b.title = TX("chat.chip.pc_title", { name: b.textContent });
+}
+const cpcTake = () => { const name = target === MAIN ? CPC.name : ""; return name ? { computer: name } : {}; };
 
 function prSheet() {
   const rows = PR.list.map(p => {
@@ -301,6 +317,17 @@ mnLoad();
 
 $("#brand").append(el("span", { class: "brand-c", id: "brand-c", hidden: true }, icon("drop")));
 $("#brand").onclick = () => (prTrig() ? prOpen() : (H.tab = true, go("home")));
+// The composer's computer chip (cpcPaint): its menu reads /api/fleet when it opens.
+function cpcMenu(ev) {
+  const anchor = ev.currentTarget;
+  return busy(null, async () => {
+  if (!(openMenu && openMenu.anchor === anchor)) await prFleetLoad();
+  const rows = Array.isArray(PR.fleet) && !selfDown ? PR.fleet : PR.list.map(p => ({ name: p.name, self: p.self, online: p.online }));
+  const items = [{ header: TX("chat.chip.pc_head") }, ...rows.map(f => ({ value: f.self ? "" : f.name, label: f.self ? TX("chat.chip.pc_here") : f.name, sub: f.state ? prFleetWord(f.state) : "", off: !f.self && !f.online }))];
+  showMenu(anchor, items, { value: CPC.name, onPick: v => { CPC.name = v; cpcPaint(); } });
+  });
+}
+$("#c-pc").onclick = cpcMenu;
 // The phone's page title, on a page without a back arrow (there the title names the conversation or sub-page and the arrow leads back).
 const prTitleTap = () => { if (prTrig() && !$("#appbar").classList.contains("back")) prOpen(); };
 $("#title").addEventListener("click", prTitleTap);

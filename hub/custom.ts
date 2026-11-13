@@ -15,6 +15,7 @@ import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
 import { type GitState, gitState, type ReceiptIn, readReceipts, readReport } from "./custom-detail-data.ts";
 import { newestRules, reportHead, ruleTitle } from "./custom-text.ts";
+import { repoOfCached } from "./fleet-launch.ts";
 import { exec, listWatches } from "./watch.ts";
 import { getSetup, homeChannel } from "./workchannels.ts";
 
@@ -773,11 +774,23 @@ async function listAll(deps: CustomDeps) {
 }
 
 // What a peer reads (GET /api/peer/projects) and this computer's status snapshot (hub/relay-snapshot-source.ts): its own projects, by key, name, purpose, live sessions.
-export function ownProjects(deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): { name: string; projects: Array<RemoteProject & { live?: number }> } {
+function ownRows(deps: Pick<CustomDeps, "lanes" | "channels" | "machine">) {
 	const name = deps.machine?.() ?? "";
 	const list = projectsView({ lanes: deps.lanes(), channels: deps.channels(), pins: readPins({ sync: false }).pins, records: loadProjects(), computer: name }).map(withPurpose);
-	return { name, projects: list.filter(p => p.computer === name).slice(0, 30).map(p => ({ key: p.key, name: p.name, ...(p.purpose || p.note ? { note: String(p.purpose || p.note).slice(0, 200) } : {}), ...(p.lanes.some(l => l.live) ? { live: p.lanes.filter(l => l.live).length } : {}) })) };
+	return { name, rows: list.filter(p => p.computer === name).slice(0, 30) };
 }
+const peerRow = (p: ReturnType<typeof ownRows>["rows"][number]): RemoteProject & { live?: number } => ({ key: p.key, name: p.name, ...(p.purpose || p.note ? { note: String(p.purpose || p.note).slice(0, 200) } : {}), ...(p.lanes.some(l => l.live) ? { live: p.lanes.filter(l => l.live).length } : {}) });
+export function ownProjects(deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): { name: string; projects: Array<RemoteProject & { live?: number }> } {
+	const { name, rows } = ownRows(deps);
+	return { name, projects: rows.map(peerRow) };
+}
+// GET /api/peer/projects: the same list, each git folder with an origin carrying its normalized repo (hub/fleet-launch.ts normRepo), which is how another computer finds the same project.
+export async function ownProjectsWithRepo(deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): Promise<ReturnType<typeof ownProjects>> {
+	const { name, rows } = ownRows(deps);
+	return { name, projects: await Promise.all(rows.map(async p => { const repo = p.path ? await repoOfCached(p.path) : undefined; return { ...peerRow(p), ...(repo ? { repo } : {}) }; })) };
+}
+// The absolute folders of this computer's projects: where a session started from another computer looks for its repo.
+export const ownFolders = (deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): string[] => ownRows(deps).rows.map(p => p.path).filter((x): x is string => typeof x === "string" && x.startsWith("/"));
 
 async function computersView(deps: CustomDeps): Promise<ComputerGroup[]> {
 	const self = deps.machine?.() ?? "";
@@ -787,7 +800,7 @@ async function computersView(deps: CustomDeps): Promise<ComputerGroup[]> {
 
 export async function customRoute(req: Request, url: URL, deps: CustomDeps): Promise<Response | undefined> {
 	const p = url.pathname;
-	if (req.method === "GET" && p === "/api/peer/projects") return jsonOf(ownProjects(deps));
+	if (req.method === "GET" && p === "/api/peer/projects") return jsonOf(await ownProjectsWithRepo(deps));
 	if (!p.startsWith("/api/custom")) return undefined;
 	if (req.method === "GET" && p === "/api/custom") return jsonOf(await listAll(deps));
 	if (req.method === "GET" && p === "/api/custom/computers") return jsonOf(await computersView(deps));

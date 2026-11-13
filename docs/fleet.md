@@ -69,17 +69,20 @@ number) or the usage limit.
   (`GET /api/peer/projects`, each entry with `repo`: the normalized `origin` URL, no credentials) has the same repo. A project
   that is not a git repo with a remote lives only on its computer and is never moved. The branch to work from must be
   pushed (`git branch -r --contains HEAD`), or the launch is refused with "먼저 푸시".
-- The forward: `POST /api/peer/act` action `launch` with `{ v, repo, branch?, title, brief, why, hours?, est?, conv }`.
+- The forward: `POST /api/peer/act` action `launch` with `{ v, repo, branch?, title, brief, why, hours?, est?, owner_asked_for_lane?, conv }`; `branch` is the sender's current branch, and the receiver refuses when its folder is on another.
   The brief passes the same secret check as `dotz_peer` (`extension/peer-secrets.ts`). Model, worker model and `force`
   are never forwarded: the receiver uses its own.
 - The receiver finds its project folder for `repo`, refuses a dirty working tree, runs `git pull --ff-only` (never a copy),
   then starts the session through its own `POST /api/lanes` route: its title rule, Done-when check, budget gate and
   session cap apply, and a refusal comes back as the answer. The session records `peer: { name, conv }`.
 - Results come back: each report of such a session also goes to the asking gateway as `/api/peer/act` action
-  `lane-report` `{ lane, text }`, which lands in the asking conversation like a local session's report, with
+  `lane-report` `{ lane, title, text }` (a report that looks like it carries a secret is replaced by a note), which lands in the asking conversation like a local session's report, with
   `<computer> · <title>`. A question in it is answered from here with the existing `message` action, target `lane:<name>`.
   The asking gateway keeps `{ lane, computer, conv, title }` in `fleet-sent.json` for the sheet; it is dropped when the
-  session ends.
+  final report (`[done]` or `[fail]`) arrives. The asking gateway finds the conversation from that file, never from the report.
+- Code: `hub/fleet-launch.ts` (`normRepo`, `placeLaunch`, the receiver and the report path); `POST /api/lanes` takes `computer`
+  (a name other than this computer; answer `{ ok, placed, lane }`) and passes `peer` only from a launch that came from another
+  computer, which is never placed on again. One `hub.log` line per placement decision.
 - Reused plumbing: the peer trust, `/api/peer/act` and its proxy, the handoff's ack path (`ackHandoff`) for the report
   call, `dotz_peer`'s secret check, and the lane launch route itself. The handoff (`dotz_peer handoff`) stays for moving
   open work by the owner's word; `launch` is for new work.
@@ -106,3 +109,7 @@ project folders that are not a pushed git repo. A payload carries no secret, tok
   in the asking conversation. dotz does the same with `lane-report` and the `message` action.
 - OmO and Aside: Aside has session hosts (`aside host list`, `aside --host`) for its own browser sessions; OmO has no
   remote host for agent sessions. Fleet does not depend on either.
+
+## Out of scope
+
+The pool is the paired gateways only. A machine without a gateway (an SSH server) and rented cloud machines were weighed and left out by the owner: a new computer joins by installing dotz and pairing, like any other.

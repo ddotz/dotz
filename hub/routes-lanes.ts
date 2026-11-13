@@ -29,6 +29,9 @@ import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchSc
 import { queue, out, progress, send } from "./outbound.ts";
 import { postSettings } from "./discord-post.ts";
 import { json, body } from "./routes-util.ts";
+import { activeFleetLaunch } from "./fleet-launch.ts";
+import { launchWait, waitingLanes } from "./lanelimits.ts";
+import { msg } from "./i18n.ts";
 
 // Lanes are the expensive work, and the omp budget gate only sees task-tool workers, so lane launches check the quota here.
 // Every decision (go / blocked / forced / unknown) leaves exactly one hub.log line.
@@ -239,6 +242,15 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 					log(`lane ${String(b.name)} refused: ${unnamed}`);
 					return json({ error: unnamed }, 409);
 				}
+				// A session for another computer (docs/fleet.md): its own rules above ran here; the other computer runs its own again.
+				const fleetLaunch = activeFleetLaunch();
+				const conv = typeof b.session === "string" && b.session ? b.session : MAIN;
+				const toPlace = () => ({ cwd: String(b.cwd ?? ""), title: String(b.title).trim(), brief: String(b.brief ?? ""), why: String(b.why).trim(), ...(b.hours !== undefined ? { hours: Number(b.hours) } : {}), ...(b.est !== undefined ? { est: Number(b.est) } : {}), ...(b.owner_asked_for_lane ? { owner_asked_for_lane: true } : {}), conv });
+				if (typeof b.computer === "string" && b.computer.trim() && !fleetLaunch?.isSelf(b.computer)) {
+					if (!fleetLaunch) return json({ error: msg().fleetUnsent }, 409);
+					const placed = await fleetLaunch.placeLaunch(toPlace(), { computer: b.computer });
+					return placed.ok ? json({ ok: true, placed: placed.computer, lane: placed.lane }) : json({ error: placed.error }, 409);
+				}
 				const est = estimateOf(b.est, String(b.brief ?? ""));
 				const tight = await budgetProblem(String(b.name), est, Boolean(b.force));
 				if (tight) {
@@ -247,13 +259,18 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 					deferForLimit(STATE_FILE(), String(b.name), String(b.title ?? "").trim(), resumeAt, progress, log);
 					return json({ error: `budget gate: ${tight.text}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.`, resume_at: resumeAt }, 409);
 				}
+				// Full here and the owner switched placement on: another paired computer with room takes it; none fits -> it waits here as before.
+				const placedAuto = b.peer ? undefined : await fleetLaunch?.placeAuto(toPlace(), launchWait(String(b.cwd)) ?? waitingLanes()[0]?.waiting);
+				if (placedAuto?.ok) return json({ ok: true, placed: placedAuto.computer, lane: placedAuto.lane });
+				const peer = b.peer && typeof b.peer.name === "string" && typeof b.peer.conv === "string" ? { name: b.peer.name, conv: b.peer.conv } : undefined;
 				const home = b.home ? String(b.home) : undefined;
 				if (home && discord.status.enabled) discord.homeChannel(home);
 				// An approved stronger-model step (hub/escalate.ts) is launched from the owner's card answer, not from the turn running now.
-				const asking = b.escalation ? undefined : queue.current();
+				// A launch from another computer (peer) belongs to no turn of this gateway, so it never takes over the turn running here.
+				const asking = b.escalation || peer ? undefined : queue.current();
 				const origin = { home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: (id: string) => Boolean(discord.channels.work[id]), threadParent: (id: string) => discord.channels.threads[id]?.parent };
 				const place = lanePlace({ ...origin, discordForWeb: postSettings().web_lanes });
-				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim(), typeof b.session === "string" && b.session && b.session !== MAIN ? b.session : undefined);
+				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim(), typeof b.session === "string" && b.session && b.session !== MAIN ? b.session : undefined, peer);
 				// Started from the web: it lives in the web (its session conversation, notices and push), with no Discord channel.
 				if (place.kind === "web") {
 					lane.web = true;
