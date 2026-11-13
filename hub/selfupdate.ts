@@ -10,7 +10,7 @@
 // watchdog (hub/update-watchdog.ts) that rolls it back when the restarted gateway never comes up healthy (updateBoot clears it). The
 // restart itself is main.ts's restart gate (waits for running turns) or, on the owner's word, an immediate restart.
 // The checks run every 10 minutes (CHECK_EVERY_MS, one timer); a check with nothing new only logs. self_update.auto_apply (default on) sends a new release through the same apply()
-// (ff-only, bun install, tests, revert on failure) and the idle restart gate; a refusal or failure goes to alert with a choice block.
+// (ff-only, bun install, tests, revert on failure) and the idle restart gate, once a night at omp_update.at (nightSlot; until then it is only announced); a refusal or failure goes to alert.
 // Every check and update leaves lines in ~/.dotz/logs/update-YYYYMMDD.log.
 // A tarball install (install.sh without --git: no .git, a .dotz-install stamp with repo, ref, commit sha, source kind and
 // auth) updates the same way: the check asks GitHub for the newest release tag of the stamped repo (an install with no version, or an
@@ -24,9 +24,9 @@ import { join } from "node:path";
 import { installGitHooks } from "./git-hooks.ts";
 import { rewriteNote, rewriteState } from "./history-rewrite.ts";
 import { issueBlock } from "./choices.ts";
-import { CONFIG_FILE, cfg, DATA_DIR, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
+import { CONFIG_FILE, cfg, DATA_DIR, DEFAULTS, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
 import { FORMAT, type Keep, keepLine, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent, writeSavedSummary } from "./selfupdate-local.ts";
-import { compareReleases, diskRelease, failedTestNames, failureBlocks, gateIn, parseRelease, releaseTags, testFailure, testSummary } from "./selfupdate-parse.ts";
+import { compareReleases, diskRelease, failedTestNames, failureBlocks, gateIn, nightSlot, parseRelease, releaseTags, testFailure, testSummary } from "./selfupdate-parse.ts";
 import { type SigMode, type Signature, signatureAlert as signatureText, signed, verifyGitTag, wantOf } from "./release-verify.ts";
 import { json } from "./routes-util.ts";
 import { applyTarball, checkTarball, type Kit } from "./selfupdate-tarball.ts";
@@ -566,7 +566,7 @@ export async function applyAndSave(o: Options = { dir: REPO_DIR }): Promise<Job>
 	return j;
 }
 
-type State = { lastCheck?: CheckResult; notified?: string; autoFailed?: string; autoRefused?: string; signatureNotified?: string };
+type State = { lastCheck?: CheckResult; notified?: string; autoFailed?: string; autoRefused?: string; signatureNotified?: string; night?: string };
 const readState = (): State => {
 	try {
 		return existsSync(STATE_FILE) ? JSON.parse(readFileSync(STATE_FILE, "utf8")) : {};
@@ -644,25 +644,23 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 	hooks.alert(`dotz 자동 업데이트를 하지 못했어요 (${rel}): ${j.message}\n${autoChoice()}`);
 }
 
-export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoHooks): Promise<void> {
+// `install`: false outside the nightly slot (schedule): a new release is announced like auto_apply off, and installed at the slot.
+export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoHooks, install = true): Promise<CheckResult> {
 	const c = await check(o);
 	signalSignature(o, c, hooks);
 	const s = readState();
 	s.lastCheck = c;
 	settled(c);
-	if (settings().auto_apply && hooks && updateAvailable(c) && c.remoteHead) {
-		await autoApply(o, c, s, hooks);
-		saveState(s);
-		return;
-	}
-	if (updateAvailable(c) && c.remoteHead && s.notified !== c.remoteHead) {
+	if (settings().auto_apply && hooks && install && updateAvailable(c) && c.remoteHead) await autoApply(o, c, s, hooks);
+	else if (updateAvailable(c) && c.remoteHead && s.notified !== c.remoteHead) {
 		s.notified = c.remoteHead;
 		const rel = c.available && "release" in c.version && c.version.release ? `${c.version.release} → ${c.available}` : c.available ?? "";
 		const text = `새 버전이 있어요: ${rel ? `${rel} ` : ""}커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.available ? ` 릴리스 노트: https://github.com/ddotz/dotz/releases/tag/v${c.available}` : ""}${c.keep ? ` ${c.keep.line}` : ""}`;
-		record(resolve(o).logDir, `auto-check: notified ${c.remoteHead.slice(0, 7)}`);
+		record(resolve(o).logDir, `auto-check: notified ${c.remoteHead.slice(0, 7)}${settings().auto_apply ? " (auto-apply waits for the nightly slot)" : ""}`);
 		notifyFn?.(text, c.incomingTotal);
 	}
 	saveState(s);
+	return c;
 }
 
 // One timer, rearmed after each check finishes (a slow fetch never overlaps the next one).
@@ -672,7 +670,11 @@ function schedule(o: Options): void {
 	autoTimer = undefined;
 	if (!settings().auto_check) return;
 	autoTimer = setTimeout(async () => {
-		await autoCheck(o).catch(e => log(`self-update auto-check failed: ${e}`));
+		const up: unknown = "omp_update" in cfg ? (cfg as Record<string, unknown>).omp_update : undefined;
+		const at = up && typeof up === "object" && "at" in up && typeof up.at === "string" ? up.at : DEFAULTS.update_at;
+		const night = nightSlot(at, new Date(Date.now())), due = night !== undefined && readState().night !== night;
+		const c = await autoCheck(o, autoHooks, due).catch(e => void log(`self-update auto-check failed: ${e}`));
+		if (due && c?.ok) saveState({ ...readState(), night }); // one install per night: a release found later waits for the next slot
 		schedule(o);
 	}, CHECK_EVERY_MS);
 	trackTimer("self update check", autoTimer);

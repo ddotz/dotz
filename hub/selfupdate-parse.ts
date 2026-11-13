@@ -3,6 +3,20 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+// ---- the nightly install slot: checks run every 10 minutes, but a found release is installed by itself only once a night ----
+// The first check inside [at, at + NIGHT_WINDOW_MIN) on the local clock may install; the night it belongs to (the local date the slot
+// opened on, so a slot near midnight is one night) is returned so the caller installs once per night. Outside the window, or with
+// "off" or an unreadable time, undefined: the release waits (the owner's update button still installs at once).
+export const NIGHT_WINDOW_MIN = 60;
+export function nightSlot(at: string, now: Date): string | undefined {
+	const m = /^(\d{1,2}):(\d{2})$/.exec(at.trim());
+	if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return undefined;
+	const since = (now.getHours() * 60 + now.getMinutes() - Number(m[1]) * 60 - Number(m[2]) + 1440) % 1440;
+	if (since >= NIGHT_WINDOW_MIN) return undefined;
+	const d = new Date(now.getTime() - since * 60_000);
+	return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // ---- released versions (docs/releases.md, hub/release.ts): tag v<YYMMDD.N>[.<M>] on main plus VERSION, KST, at most three a day ----
 // A new commit on main is not an update any more; only a new release tag is. Ordering is numeric on (date, N, M), so
 // 261103.1 < 261103.1.1 < 261103.1.2 < 261103.2 (a third part is the forced/emergency track).
