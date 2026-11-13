@@ -104,11 +104,11 @@ function rqSendNode(item) {
     const acts = (s.actions || []).includes("retry") ? [btn("retry", TX("reply.retry"), () => raAct(item, "retry"), "btn tonal sm")] : [];
     if (item.can.revise) acts.push(btn("edit", TX("decision.edit"), () => { RA.rev.set(item.ref, ""); raPaint(item.ref); }));
     if (item.can.drop) acts.push(btn("drop", TX("decision.drop"), () => raAct(item, "drop")));
-    return el("div", { class: "rq-send failed" }, el("div", { class: "rq-why", role: "alert", text: TX("reply.failed", { why }) }), el("div", { class: "dr-act dr-row" }, ...acts));
+    return el("div", { class: "rq-send failed" }, el("div", { class: "rq-why", role: "alert", text: TX("reply.failed", { why }) }), el("div", { class: "dr-act dr-row rq-acts" }, ...acts));
   }
   return el("div", { class: "rq-send unsure" },
     el("div", { class: "rq-why warn", role: "alert", text: TX("reply.unsure") }), el("div", { class: "rq-sub2", text: `${why} · ${TX("reply.no_auto")}` }),
-    el("div", { class: "dr-act dr-row" }, btn("resolve-sent", TX("reply.went_out"), () => raAct(item, "resolve", { as: "sent" }), "btn tonal sm"),
+    el("div", { class: "dr-act dr-row rq-acts" }, btn("resolve-sent", TX("reply.went_out"), () => raAct(item, "resolve", { as: "sent" }), "btn tonal sm"),
       btn("open", TX("reply.check"), () => go("monitoring", `c:${item.conv}`)), btn("resolve-retry", TX("reply.retry"), () => raAct(item, "resolve", { as: "retry" }))));
 }
 
