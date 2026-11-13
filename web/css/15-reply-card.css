@@ -130,3 +130,8 @@
 /* 직접 수정 (10-reply-actions.js rqEditNode) */
 .ra-edit { width: 100%; min-height: calc(var(--sp-6) * 3); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: inherit; resize: vertical; }
 .ra-lint.err { color: var(--err); font-size: var(--fs-meta); }
+
+/* 답장 대기 as a queue of cards (design 4.4). One column: at 1280px the queue's column is about 640px wide, too narrow for two cards. */
+.rq-list:has(> .rq-c) { display: grid; gap: var(--sp-3); background: none; overflow: visible; }
+.rq-list > .rq-c + .rq-c { border-top: 0; }
+.rq-c { background: var(--card); border-radius: var(--r-card); padding: var(--sp-3); }

@@ -472,7 +472,7 @@ function rqDescs(shown) {
 function rqCardDesc(r, shown) {
   const lead = r.state === "ask" && shown.find(x => x.state === "ask") === r;
   RA.items.has(r.it.ref) || r.it.pc ? null : RA.items.set(r.it.ref, r.it);
-  return { key: `r:${r.key}`, sig: JSON.stringify([r.it, lead, RA.busy.get(r.it.ref) || "", RA.fail.get(r.it.ref) || ""]), make: () => el("div", { class: "rq-r rq-c", "data-qr": r.key }, rqItemCard(r.it, { lead })) };
+  return { key: `r:${r.key}`, sig: JSON.stringify([r.it, lead, RA.busy.get(r.it.ref) || "", RA.fail.get(r.it.ref) || ""]), make: () => el("div", { class: "rq-c", "data-qr": r.key }, rqItemCard(r.it, { lead })) };
 }
 function rqPaintList(rows) {
   const u = rqUi(), shown = RQ.tab === "all" ? rows : rows.filter(r => r.state === RQ.tab), reset = RQ.reset;
