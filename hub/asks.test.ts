@@ -4,7 +4,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pendingAskFile, pendingAsks, pendingAsksBlock } from "./asks.ts";
-import { cfg, NAME } from "./config.ts";
+import { cfg, HUB_TOKEN, NAME } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { decisionsOf } from "./notices.ts";
 import type * as Lanes from "./lanes.ts";
@@ -13,6 +13,9 @@ import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import type { AgentEvent, AgentProcess, RuntimeAdapter, SendMode } from "./runtime/types.ts";
+import { makeRoute } from "./routes.ts";
+import { queue } from "./outbound.ts";
+import { MAIN } from "./session-key.ts";
 
 const DATA = process.env.DOTZ_DIR!;
 // Own copies of the stateful modules (the query makes a new instance): the scenario test drives the originals in this process.
@@ -279,6 +282,35 @@ test("a [wait] that names main without saying in a for-line what main must do go
 	await said(agent, onCi);
 	await advance(500);
 	expect(reports).toEqual([withLine, onCi]);
+});
+
+test("a [wait] on main in the turn that handed main the request with dotz_main is not refused; a later turn's is", async () => {
+	const { agent, reports } = await fresh("pm");
+	const handed: string[] = [];
+	const realDeliver = queue.deliver;
+	queue.deliver = ((text: string) => void handed.push(text)) as typeof queue.deliver;
+	try {
+		const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "", mailDeps: () => ({}) as never });
+		const wait = "[wait] dotz_main으로 릴리스를 부탁했어요. 메인의 답을 기다려요.";
+		await agent.push({ type: "alive" }, { type: "turn_start" });
+		const r = await route(new Request(`http://hub.test/api/conv-sessions/${MAIN}/send`, { method: "POST", headers: { "x-dotz-token": HUB_TOKEN, "content-type": "application/json" }, body: JSON.stringify({ text: "cut the release", from: "lane:pm" }) }));
+		expect(r!.status).toBe(200);
+		expect(handed).toHaveLength(1);
+		const count = agent.sent.length;
+		await agent.push({ type: "assistant", text: wait, stop: "stop" }, { type: "turn_end" });
+		await advance(500);
+		expect(agent.sent.length).toBe(count);
+		expect(reports).toEqual([wait]);
+		// The next turn handed main nothing: its bare [wait] on main goes back to the lane as before.
+		await advance(1000);
+		const later = "[wait] 메인의 답을 아직 기다려요.";
+		await said(agent, later);
+		await advance(500);
+		expect(reports).toEqual([wait]);
+		expect(agent.sent.at(-1)!.text).toContain(msg().waitMainRefused);
+	} finally {
+		queue.deliver = realDeliver;
+	}
 });
 
 test("a \"still waiting\" [ask] on a card the owner still has open makes nothing, however its words differ", async () => {

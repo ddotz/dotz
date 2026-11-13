@@ -17,7 +17,8 @@ import { send, deliver, onConvIdle, out, queue } from "./outbound.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
 import { dropForLine, forLines, waitsOnMain } from "./forline.ts";
 import { recordHanded } from "./handed.ts";
-import type { Lane } from "./lanestate.ts";
+import { type Lane, setMainWroteHandler } from "./lanestate.ts";
+import { askedMainThisTurn } from "./lanereport.ts";
 import { useKeptHooks } from "./agent-tree.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { withDoneLive } from "./done-live-wire.ts";
@@ -85,6 +86,11 @@ export function repostRefusal(target: string, text: string): string | undefined 
 
 export function installLaneHandlers(): void {
 	onConvIdle(key => void laneRelay.flush(key));
+	// Main wrote to the lane: the same [wait] after that is a new wait, handed or relayed again (review-a G7).
+	setMainWroteHandler(name => {
+		handedWaits.delete(name);
+		laneRelay.forget(name);
+	});
 	setVerifiedHandler((name, text) => laneVerified(name, text));
 	setOpenCardCheck(laneHasOpenCard);
 	setReportHandler((lane, raw, answering, pause) => {
@@ -93,9 +99,11 @@ export function installLaneHandlers(): void {
 		lane.handedBack = undefined;
 		const text = stripHandoff(raw);
 		activeFleetLaunch()?.report(lane, text);
-		const handed = handWaitToMain(lane, text, answeringMain);
+		// A bare [wait] in the turn that already asked main with dotz_main is that request's wait: main has it once already.
+		const askedAlready = parseTone(text).tone === "wait" && !forLines(text) && askedMainThisTurn(lane);
+		const handed = askedAlready ? undefined : handWaitToMain(lane, text, answeringMain);
 		if (handed === "relayed") log(`lane ${lane.name} [wait] on main handed to main as its request; the answer goes back to the lane`);
-		const how = handed ?? laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);
+		const how = askedAlready ? "disk" : handed ?? laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), ownerAlone(lane, pause === true, workersOf(`lane:${lane.name}`).length), lane.from);
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 		if (escalations()?.reported(lane.name, parseTone(text).tone)) log(`lane ${lane.name} ended: its stronger-model step reported back`);
 		if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);

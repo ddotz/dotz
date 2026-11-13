@@ -8,7 +8,7 @@ import { cfg, NAME, paths } from "./config.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { report } from "./lanereport.ts";
-import { lanes, type Lane } from "./lanestate.ts";
+import { hooks, lanes, type Lane } from "./lanestate.ts";
 import { installLaneHandlers, reportSteer } from "./lanewire.ts";
 import { queue } from "./outbound.ts";
 import { MAIN } from "./session-key.ts";
@@ -88,6 +88,21 @@ test("the same [wait] again in a later turn hands main nothing more", async () =
 	l.reportedThisTurn = undefined; // a new turn of the lane
 	await reports(l, WAIT);
 	expect(delivered.map(d => d.opts?.from)).toEqual([`lane:${l.name}`]);
+});
+
+test("after main writes to the lane, the same [wait] is a new wait and goes to main again", async () => {
+	const l = lane();
+	await reports(l, WAIT);
+	hooks.mainWrote(l.name);
+	l.reportedThisTurn = undefined;
+	await reports(l, WAIT);
+	expect(delivered.map(d => d.opts?.from)).toEqual([`lane:${l.name}`, `lane:${l.name}`]);
+});
+
+test("a bare [wait] in the turn that already asked main with dotz_main goes to main no second time", async () => {
+	const l = lane({ workingSince: 1000, mainAskedAt: 2000 } as Partial<Lane>);
+	await reports(l, "[wait] 메인의 답을 기다려요.");
+	expect(delivered).toEqual([]);
 });
 
 test("a [wait] in the turn that answers main's own answer is relayed, not handed again (one round)", async () => {

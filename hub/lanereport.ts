@@ -25,6 +25,9 @@ export function bareUnverified(text: string): string[] {
 	return text.split("\n").map(l => l.trim()).filter(l => UNVERIFIED.test(l) && !INSTEAD_CHECKED.test(l));
 }
 
+// The lane handed main its request with dotz_main in this turn (hub/routes-send.ts): a [wait] on main then waits on that request, which main has.
+export const askedMainThisTurn = (lane: Pick<Lane, "mainAskedAt" | "workingSince">): boolean => lane.mainAskedAt !== undefined && lane.mainAskedAt >= (lane.workingSince ?? 0);
+
 export const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 
 // An [ask] while the lane's last one is still open (any owner message clears it) that asks nothing new: the same text, or a line with no
@@ -87,7 +90,7 @@ export function report(lane: Lane, written: string, notice: boolean | "pause" = 
 		}
 		if (!banned.length) lane.bannedRefused = undefined;
 		// A [wait] on main must say what main is to do: in words alone it reached main only by a guess, and 13 such waits sat unheard (2026-11-06..13).
-		if (parseTone(text).tone === "wait" && !forLines(text) && mentionsMain(text) && lane.proc && !lane.waitMainRefused) {
+		if (parseTone(text).tone === "wait" && !forLines(text) && mentionsMain(text) && lane.proc && !lane.waitMainRefused && !askedMainThisTurn(lane)) {
 			lane.waitMainRefused = true;
 			persist(lane);
 			log(`lane ${lane.name} [wait] refused (waits on main with no for-line)`);

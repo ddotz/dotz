@@ -156,6 +156,7 @@ export async function routeSend(req: Request, url: URL, parts: string[], { peer 
 				if (!lane) return json({ error: `unknown session ${from}` }, 400);
 				if (key !== MAIN) return json({ error: `this session may hand work only to ${MAIN}` }, 403);
 				if (lane.handedBack) return json({ error: "handed work: answer it here, do not pass it on" }, 409);
+				lane.mainAskedAt = Date.now();
 				recordHanded({ to: primaryTarget(MAIN), from, text });
 				queue.deliver(`[${from}] ${text}`, { target: from, from });
 				return json({ ok: true, to: MAIN, answers_in: from });
