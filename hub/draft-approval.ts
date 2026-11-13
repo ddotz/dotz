@@ -580,7 +580,11 @@ const isSend = (clause: string): boolean => {
 	const words = clause.split(/[\s,~ㅎ]+/).filter(Boolean);
 	return words.some(w => TEXT_YES.test(w) || TEXT_SEND.test(w)) && words.every(w => TEXT_YES.test(w) || TEXT_SEND.test(w) || TEXT_FILLER.test(w));
 };
-function textAnswer(text: string): { said?: "send" | "drop"; clause?: string } {
+// Quotes (straight or curly) around the phrase, as the refusal shows it ('이대로 보내'), are not part of the answer; a quote of someone else's words stays
+// a longer sentence with other words in it, so it still says nothing.
+const QUOTES = /['"‘’“”]/g;
+function textAnswer(typed: string): { said?: "send" | "drop"; clause?: string } {
+	const text = typed.replace(QUOTES, "");
 	const m = /^\s*([^.!?\n]*)([.!?\n]?)/.exec(text);
 	const first = (m?.[1] ?? "").trim();
 	if (!first || m?.[2] === "?") return {};

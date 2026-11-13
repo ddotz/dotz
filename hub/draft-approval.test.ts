@@ -176,6 +176,11 @@ test("textVerdict: an 이대로 보내 sentence of its own and a card's option t
 	for (const t of ["첨부 확인했어. 이대로 보내기 전에 확인해줘", "첨부 확인했어. 그대로 보내면 안 돼", "첨부 확인했어. 이대로 보내?", "제목 바꿔. 이대로 보내", "첨부 확인했어. 보내", "2) 보내기", "1) 이대로 보내기", "2) 고치기", "첨부 확인했어", "제목 변경해. 이대로 보내", "파일 삭제해, 그대로 보내", "제목 바꾸고, 그대로 보내", "첨부 맞으면, 그대로 보내", "내일 아침에, 이대로 보내", "첨부 확인 안 했어. 이대로 보내", "첨부 확인했어. 이대로 보내. (근데 제목 바꿔)", "첨부 확인했어. 이대로 보내. (맞으면)", "4) 이대로 보내기\n근데 제목 바꿔", "1) 보내기\n2) 고치기\n3) 보내지 않기"]) expect([t, textVerdict(t)]).toEqual([t, undefined]);
 });
 
+test("textVerdict: the 이대로 보내 typed back with the quotes the refusal showed it in still approves; a quote of someone else's words does not", () => {
+	for (const t of ["'이대로 보내'", '"이대로 보내"', "‘이대로 보내’", "“이대로 보내”", "'이대로 보내기'", "첨부 확인했어. '이대로 보내'"]) expect([t, textVerdict(t)]).toEqual([t, "send"]);
+	for (const t of ['홍길동이 "이대로 보내"라고 했어', "첨부 확인했어. '이대로 보내' 전에 제목 바꿔", "'이대로 보내?'"]) expect([t, textVerdict(t)]).toEqual([t, undefined]);
+});
+
 test("draftVerdict: 이대로 is read from the sentence that sends, not from the rest of the message", () => {
 	const since = Date.parse(ts()) - 1000, conv = "mail:acme-RASIS01";
 	const say = (text: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:9", conv, text });
