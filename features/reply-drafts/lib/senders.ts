@@ -7,6 +7,7 @@ import type { MailSearch } from "../../../hub/comments/mail-match.ts";
 import { log } from "../../../hub/config.ts";
 import { msg } from "../../../hub/i18n.ts";
 import { type AppRaw, readAppsFile } from "../../../hub/integrations.ts";
+import { addressesOf } from "../../../hub/reply-draft.ts";
 import { loadPlugins, pluginNeedsAccount, pluginReply, pluginRepliesWithFiles, pluginsLoaded, pluginsReply } from "../../../hub/plugins.ts";
 import { dataDir } from "./settings.ts";
 import { recipientList } from "./recipients.ts";
@@ -24,10 +25,13 @@ const MANUAL = "이 메일은 여기서 보낼 수 없어서 직접 보내야 �
 // `--account` is always passed when the mail's account is known: with two zele accounts every command without it ends in "Multiple accounts matched".
 const accountArgv = (account?: string): string[] => (account ? ["--account", account] : []);
 export const readArgv = (mailId: string, account?: string): string[] => ["zele", "mail", "read", mailId, ...accountArgv(account)];
-const ccArgv = (cc: readonly string[]): string[] => (cc.length ? ["--cc", cc.join(", ")] : []);
+// zele takes `--to` / `--cc` as bare addresses split on commas: "Kim <kim@x>" would be written as the address itself (and a name with a comma split in two,
+// which ends in "API call failed: Error: Invalid"). A value that is already a bare address or a list of them, or has no address at all, goes as it is.
+const bareList = (list: string): string => (list.split(",").every(p => /^[^\s<>"]+$/.test(p.trim())) ? list : addressesOf(list).join(", ") || list);
+const ccArgv = (cc: readonly string[]): string[] => (cc.length ? ["--cc", bareList(cc.join(", "))] : []);
 // A new mail (hub/mail-cli.ts compose): no mail to answer, so no `mail read` first.
-export const sendArgv = (to: string, subject: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "send", ...accountArgv(account), "--to", to, "--subject", subject, ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
-export const replyArgv = (mailId: string, to: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "reply", mailId, ...accountArgv(account), "--to", to, ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
+export const sendArgv = (to: string, subject: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "send", ...accountArgv(account), "--to", bareList(to), "--subject", subject, ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
+export const replyArgv = (mailId: string, to: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "reply", mailId, ...accountArgv(account), "--to", bareList(to), ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
 
 // The zele account a mail belongs to: the one the draft recorded, else the one the stored mail came to (mail-conversations.json, read as plain
 // data so the CLI process needs no gateway), else the account of the app instance (custom/apps.json filter.account). A new mail takes the account

@@ -78,6 +78,28 @@ describe("senders", () => {
 		expect(sendArgv("a@example.com", "제목", "body")).not.toContain("--cc");
 	});
 
+	test("zele gets bare addresses only: a display name (even a non-ASCII or comma-bearing one) never reaches --to or --cc", async () => {
+		const to = (argv: string[]) => argv[argv.indexOf("--to") + 1];
+		const cc = (argv: string[]) => argv[argv.indexOf("--cc") + 1];
+		expect(to(replyArgv("42", "홍길동 <a@example.com>", "body"))).toBe("a@example.com");
+		expect(to(replyArgv("42", '"홍, 길동" <a@example.com>', "body"))).toBe("a@example.com");
+		expect(to(replyArgv("42", '"홍, 길동" <a@example.com>, Lee <lee@example.com>, c@example.com', "body"))).toBe("a@example.com, lee@example.com, c@example.com");
+		expect(cc(replyArgv("42", "a@example.com", "body", [], ["홍길동 <b@example.com>", '"박, 서연" <c@example.com>']))).toBe("b@example.com, c@example.com");
+		expect(to(sendArgv("홍길동 <a@example.com>", "제목", "body"))).toBe("a@example.com");
+		expect(cc(sendArgv("a@example.com", "제목", "body", [], ["홍길동 <b@example.com>"]))).toBe("b@example.com");
+		// already bare (a comma list without a space, an uppercase letter) or a name with no address: left as written
+		expect(to(replyArgv("42", "Kim@Example.com,lee@example.com", "body"))).toBe("Kim@Example.com,lee@example.com");
+		expect(to(replyArgv("42", "홍길동", "body"))).toBe("홍길동");
+	});
+
+	test("a draft whose 받는이 shows a name still sends to the bare address, in the reply and the new mail path", async () => {
+		const f = fake();
+		await sendWith(rec({ to: "홍길동 <a@example.com>", cc: ["박서연 <b@example.com>"] }), f.run);
+		expect(f.calls.at(-1)).toEqual(["zele", "mail", "reply", "42", "--to", "a@example.com", "--cc", "b@example.com", "--body", "네, 확인했습니다."]);
+		await sendWith(rec({ compose: true, to: "홍길동 <a@example.com>" }), f.run);
+		expect(f.calls.at(-1)!.slice(0, 5)).toEqual(["zele", "mail", "send", "--to", "a@example.com"]);
+	});
+
 	test("전체 답장 reaches zele as the comma 받는 사람 list plus --cc", async () => {
 		const f = fake();
 		const out = await sendWith(rec({ to: "kim@example.com, lee@example.com", cc: ["park@example.com"], mode: "all" }), f.run);
