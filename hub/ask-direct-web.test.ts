@@ -43,9 +43,11 @@ afterAll(() => {
 	resetNoticesForTest();
 });
 
-const T_PLAIN = "2026-11-10T09:00:00.000Z";
-const T_ASK = "2026-11-10T09:05:00.000Z";
-const T_OTHER = "2026-11-10T09:10:00.000Z";
+// Asked an hour ago, not on a fixed day: a question older than its answer window (ANSWER_WINDOW_MS, 72 h) is expired and nothing answers it.
+const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
+const T_PLAIN = minutesAgo(60);
+const T_ASK = minutesAgo(55);
+const T_OTHER = minutesAgo(50);
 const plain = { ts: T_PLAIN, kind: "out", source: "orchestrator", target: "main", text: "확인했어요" };
 const ask = (at: string, text: string) => {
 	const e = { ts: at, kind: "out", source: "orchestrator", target: "main", text };
