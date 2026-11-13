@@ -7,7 +7,7 @@ import { sqliteDb } from "./db.ts";
 import { replySource, replySourceLog } from "./media.ts";
 import { MAX_CHAT_CHARS, MAX_PAIRS, MAX_PROMPT_CHARS, type ModelReply } from "./draft.ts";
 import { addMessage, BASE_LOG, BASE_TIME, bplistOfInts, makeFixtureDb, OWNER, ROOM } from "./fixture.ts";
-import { createDraft, listDrafts } from "./send.ts";
+import { createDraft, listDrafts, readDrafts } from "./send.ts";
 import { type KakaoConfig, kakaoPaths, type Runner } from "./types.ts";
 import { fakeScreen } from "./ui.fixture.ts";
 import { createKakaoWeb, type WebDeps } from "./web.ts";
@@ -251,6 +251,19 @@ describe("read counters", () => {
 });
 
 describe("typed send", () => {
+	test("with the one reply queue: the typed text becomes the owner's own draft and is handed to the queue's send, nothing pressed here", async () => {
+		const acts: Record<string, unknown>[] = [];
+		const replies = { act: async (input: Record<string, unknown>) => (acts.push(input), { status: 202, body: { ok: true, item: { ref: input.ref, send: { state: "undo" } } } }) };
+		const t = setup({}, undefined, { replies: () => replies as never });
+		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "내가 직접 쓴 답" });
+		expect(r.status).toBe(202);
+		expect(r.json.state).toBe("undo");
+		const own = readDrafts(paths).find(d => d.code === acts[0]!.ref);
+		expect(own).toMatchObject({ chatId: DIRECT, text: "내가 직접 쓴 답", own: true, status: "pending" });
+		expect(acts).toEqual([{ ref: own!.code, action: "send" }]);
+		expect(t.calls).toEqual([]);
+	});
+
 	test("goes through the stubbed screen without an approval step: sending -> sent, then listed in the room's sends", async () => {
 		const t = setup();
 		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });

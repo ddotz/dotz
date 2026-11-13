@@ -16,7 +16,7 @@ import { makeDraft } from "./make-draft.ts";
 import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { fetchMedia, mediaTarget, replySource, serveLocalFile } from "./media.ts";
 import { type AxStep, type Focus, sameText } from "./room.ts";
-import { draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, readDrafts, restoreDraft, type SendMs, type SendResult } from "./send.ts";
+import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, readDrafts, restoreDraft, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 import { chatView, clip, owedRooms, pendingRow, watchLists, withSummary } from "./web-shape.ts";
 import { json } from "../routes-util.ts";
@@ -500,6 +500,25 @@ export function createKakaoWeb(deps: WebDeps) {
 				const partial = drafts.findLast(d => (d.sentParts ?? 0) > 0);
 				if (partial) return json({ error: `이 글은 초안 ${draftParts(partial.text).length}개 메시지 중 ${partial.sentParts}개를 이미 보낸 글이에요. 통째로 다시 보내면 같은 말이 두 번 가서 보내지 않았어요` }, 409);
 				if (!text.trim() || [...text].length > MAX_TEXT) return json({ error: `글은 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
+				// The owner's own words become his own draft (own: true, its basis the room's newest message) and go through the one queue like any draft.
+				if (deps.replies?.()) {
+					const room = (await allRooms(config!, true)).all.find(r => r.chatId === chatId);
+					if (!room) return json({ error: "대화방을 찾지 못했어요" }, 404);
+					let basis: string | undefined;
+					try {
+						basis = await latestIncoming(config!, chatId);
+					} catch {
+						return json({ error: "새 메시지가 왔는지 확인하지 못했어요" }, 502);
+					}
+					let draft: Draft;
+					try {
+						draft = await createDraft({ chatId, roomName: room.name, text, basisLogId: basis ?? "0", own: true }, { paths, runner: deps.runner, now });
+					} catch (e) {
+						return json({ error: (e as Error).message }, 400);
+					}
+					deps.broadcast({ kind: "kakao_draft", chatId });
+					return (await viaReplies({ ref: draft.code, action: "send" }))!;
+				}
 				const rec = newRecord(chatId, text);
 				start(rec, async () => {
 					const cache = await allRooms(config!, true);
