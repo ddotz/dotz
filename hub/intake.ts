@@ -28,6 +28,9 @@ import { channelContext, listSetups } from "./workchannels.ts";
 import { updateNow } from "./update-now.ts";
 import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
+import { ownerIntent } from "./reply-chat.ts";
+import { AGENT_AUTHOR } from "./entry-check.ts";
+import { useReplies } from "./reply-actions.ts";
 import { memoryNote, settingsTarget } from "./app-settings.ts";
 import { appEntries } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
@@ -137,7 +140,8 @@ function inboxBody(e: Record<string, any>): string {
 const COALESCE_MS = Number(cfg.gateway?.coalesce_ms ?? DEFAULTS.coalesce_ms);
 // Every owner message of every surface is emitted to the inbox first, so the ledger sees them all, lanes and commands included.
 onEmit(e => recordCorrection(e));
-export const bursts = new Map<string, { events: Record<string, any>[]; replyTo?: string; first: number; timer?: ReturnType<typeof setTimeout> }>();
+type Burst = { events: Record<string, any>[]; replyTo?: string; first: number; timer?: ReturnType<typeof setTimeout>; cardsRead?: true };
+export const bursts = new Map<string, Burst>();
 
 const lastAsked = new Map<string, number>();
 const quietMs = (target: string, gathering: number, last: number | undefined): number =>
@@ -194,6 +198,25 @@ const inboundOf = (target: string, events: Record<string, any>[], replyTo?: stri
 /** The web's queue keeps a message from intake until the turn ends, which this wait holds off: it goes through intake instead. */
 export const authHeld = (target: string): boolean => authHolds(target, authWait);
 
+const CARD_LINE = { send: "보낼게요. 카드에서 몇 초 안에 되돌릴 수 있어요", drop: "이 답장은 보내지 않을게요", revise: "고쳐서 카드에 다시 올릴게요" } as const;
+// The owner's word about an open reply card of this conversation (hub/reply-chat.ts ownerIntent), acted on through the one reply flow; one gateway line says what happened.
+async function cardChatAnswer(target: string, b: Burst): Promise<void> {
+	const replies = useReplies()!, head = b.events[0]!;
+	const items = await replies.list().catch(e => (log(`reply card list failed: ${(e as Error).message}`), []));
+	const open = items.filter(i => i.conv === target && i.can.send).sort((x, y) => y.at - x.at);
+	const intent = ownerIntent({ text: String(head.text ?? "") }, { cards: open.map((i, k) => ({ ref: i.ref, newest: k === 0 && open.length === 1 })) });
+	if (!intent) {
+		// An ordinary turn after all: back into the burst (a message typed meanwhile joins it) and flushed again.
+		const later = bursts.get(target);
+		if (later) { later.events.unshift(...b.events); later.cardsRead = true; return; }
+		bursts.set(target, { ...b, cardsRead: true });
+		return flush(target);
+	}
+	const r = await replies.act(intent.act === "revise" ? { ref: intent.ref, action: "revise", change: intent.change } : { ref: intent.ref, action: intent.act }, { surface: "chat" }).catch(e => ({ body: { ok: false as const, error: (e as Error).message } }));
+	const line = r.body.ok ? CARD_LINE[intent.act] : `답장 카드에 반영하지 못했어요: ${(r.body as { error?: string }).error ?? "알 수 없는 이유"}`;
+	await out(target, line, b.replyTo, { source: "gateway" }).catch(e => log(`card chat reply failed: ${e}`));
+}
+
 export function flush(target: string): void {
 	const b = bursts.get(target);
 	if (!b) return;
@@ -203,6 +226,10 @@ export function flush(target: string): void {
 	if (cancelReply(inbound, authWait)) return;
 	// The session that answers this conversation (main with conversation sessions off); one not started yet has no error.
 	const session = convs.forTarget(target)?.o;
+	// 보내 / 보내지 마 / 좀 더 짧게 about the conversation's open reply card: run by code, no model turn (the reply design 3.2). Only a message that could be one
+	// waits for the card list; a miss comes back here once, marked, as an ordinary turn.
+	if (!b.cardsRead && b.events.length === 1 && !head.attachments?.length && head.author !== AGENT_AUTHOR && useReplies() && ownerIntent({ text: String(head.text ?? "") }, { cards: [{ ref: "probe", newest: true }] }))
+		return void cardChatAnswer(target, b);
 	const errAnswer = session?.orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
 	if (errAnswer) return void answerOrchError(target, errAnswer, session!, b.replyTo);
 	const legacy = b.events.length === 1 ? legacyAnswer(DATA_DIR, String(head.text ?? "")) : undefined;
