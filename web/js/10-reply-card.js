@@ -46,10 +46,10 @@ function rqBodyNode(key, b) {
   return el("div", { class: "rq-bodywrap" }, box, more);
 }
 // The three actions, the same words everywhere. A missing handler leaves its button disabled; `busy` disables all three. a.manual (a mail draft's 직접 수정)
-// stands at the right end of the row.
+// stands at the right end of the row. a.quiet: 보내기 is tonal (one filled control per screen: only the lead card's is filled).
 function rqActsNode(a) {
   const b = (cls, k, text, fn) => el("button", { class: cls, type: "button", "data-k": k, disabled: !!a.busy || !fn, text: a.busy && a.press === k ? RQ_PRESS[k] : text, onclick: fn });
-  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn sm dr-send", "send", TX("common.send"), a.send), b("btn tonal sm", "edit", TX("decision.edit"), a.edit), b("btn text sm dr-drop", "drop", a.dropText || TX("decision.drop"), a.drop), a.manual ? rqManualBtn(a.manual, a.busy) : null);
+  return el("div", { class: "dr-act dr-row rq-acts" }, b(`btn${a.quiet ? " tonal" : ""} sm dr-send`, "send", TX("common.send"), a.send), b("btn tonal sm", "edit", TX("decision.edit"), a.edit), b("btn text sm dr-drop", "drop", a.dropText || TX("decision.drop"), a.drop), a.manual ? rqManualBtn(a.manual, a.busy) : null);
 }
 const rqManualBtn = (fn, busy) => el("button", { class: "btn text sm rq-manual", type: "button", "data-k": "manual", "aria-label": TX("decision.manual"), disabled: !!busy, onclick: fn }, icon("pencil"), el("span", { text: TX("decision.manual") }));
 // 고치기: what to change, typed once; the bot rewrites the draft. o: { go(change), cancel(), manual() (직접 수정, optional), pick (a node before the field, such
@@ -121,9 +121,10 @@ function rqMailParts(dr, o) {
 // recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode; given instead of `to`), subject,
 // original: {who, text} (what the draft answers) or its node, body, attach (a draft's attachments / attachmentsNone / cannotAttach, or the caller's own files node),
 // extra (nodes under the body: the mail that goes along), then one of: status (a line such as 고치는 중…), revise (rqReviseNode or the caller's own),
-// acts (rqActsNode: { send, edit, drop, manual, busy, press }), fail ({ text, why }: the line above the buttons after a failed action) }.
+// acts (rqActsNode: { send, edit, drop, manual, busy, press }), fail ({ text, why }: the line above the buttons after a failed action),
+// foot (a node that stands in the foot instead: 10-reply-actions.js rqSendNode / rqEditNode) }.
 function rqCard(c) {
-  const foot = c.sent ? rqSentNode(c.sentAt) : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
+  const foot = c.foot ? c.foot : c.sent ? rqSentNode(c.sentAt) : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
   const att = c.bare ? null : c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
   const cm = !!(c.head && c.head.who);   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },

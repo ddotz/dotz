@@ -151,6 +151,7 @@
   },
   "enHangulKeys": [],
   "unusedKeyPrefixes": {
-    "common.": "shared words and the design glossary, seeded before the screens that use them are migrated"
+    "common.": "shared words and the design glossary, seeded before the screens that use them are migrated",
+    "reply.": "the one reply card's texts, adopted by the surfaces one wave at a time (reply unification design 5.4-5.9)"
   }
 }

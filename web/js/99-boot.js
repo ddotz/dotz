@@ -69,6 +69,7 @@
     else if (e.kind === "work") { workRowsLive(e); scheduleState(); }   // a background job changed (hub/workrows.ts): its rows, then the lists
     else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") { noticeLive(e); if (e.kind === "notice") trSoon(); }
     else if (e.kind === "approval_send") { trLive(e); dcUndoLive(e); rqSoon(); }
+    else if (e.kind === "reply") raLive(e);   // the one reply flow: a draft or its send changed (10-reply-actions.js)
     else if (e.kind === "approvals") trSoon();
     else if (e.kind === "quota") quotaLive(e.quota);   // the gateway's background usage read changed (09-needs-you.js)
     else if (e.kind === "peer_notice" || e.kind === "peer_counts" || e.kind === "peer_notice_done") prLive(e);

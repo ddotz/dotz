@@ -1,0 +1,16 @@
+{
+  "reply.undo_in": "Sending in {n}s",
+  "reply.sending": "Sending…",
+  "reply.revising": "Revising…",
+  "reply.revised": "Revised draft",
+  "reply.auto_retry": "Retrying automatically ({n}/{max})",
+  "reply.failed": "Not sent - {why}",
+  "reply.unsure": "Not sure it was sent",
+  "reply.no_auto": "Won't resend on its own",
+  "reply.went_out": "It went out",
+  "reply.check": "Check",
+  "reply.retry": "Send again",
+  "reply.send_as_is": "Send as is",
+  "reply.edit_label": "Text to send",
+  "reply.act_fail": "That didn't work. Try again in a moment"
+}

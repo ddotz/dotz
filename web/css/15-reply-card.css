@@ -119,3 +119,14 @@
 .qline .tx { flex: none; } .qline .tx b { font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
 .qline .sep { color: var(--fg-3); } .qline .go { font-weight: 600; color: var(--fg); }
 .qline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* the foot of a card whose send the queue holds (10-reply-actions.js rqSendNode): status colour only under its state class */
+.rq-send { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: var(--fs-meta); }
+.rq-send.undo { justify-content: space-between; }
+.rq-send.failed .rq-why { color: var(--err); }
+.rq-send.unsure .rq-why.warn { color: var(--warn); }
+.rq-send .rq-sub2 { width: 100%; color: var(--fg-2); }
+.rq-send .dr-act { width: 100%; }
+/* 직접 수정 (10-reply-actions.js rqEditNode) */
+.ra-edit { width: 100%; min-height: calc(var(--sp-6) * 3); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: inherit; resize: vertical; }
+.ra-lint.err { color: var(--err); font-size: var(--fs-meta); }

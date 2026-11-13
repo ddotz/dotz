@@ -1,0 +1,16 @@
+{
+  "reply.undo_in": "{n}초 후 보내요",
+  "reply.sending": "보내는 중…",
+  "reply.revising": "고치는 중…",
+  "reply.revised": "고친 초안",
+  "reply.auto_retry": "자동으로 다시 보내요 ({n}/{max})",
+  "reply.failed": "보내지 못했어요 - {why}",
+  "reply.unsure": "보냈는지 확인되지 않았어요",
+  "reply.no_auto": "자동으로 다시 보내지 않아요",
+  "reply.went_out": "나갔어요",
+  "reply.check": "확인하러 가기",
+  "reply.retry": "다시 보내기",
+  "reply.send_as_is": "이대로 보내기",
+  "reply.edit_label": "보낼 글",
+  "reply.act_fail": "하지 못했어요. 잠시 뒤에 다시 눌러 주세요"
+}
