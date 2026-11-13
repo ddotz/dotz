@@ -226,7 +226,7 @@ describe("a decision never docks in the 알림 / 작업내역 conversations", ()
 		const page: Record<string, unknown> = {
 			$: () => box, document: { querySelectorAll: () => [] }, decisionOf: () => dc, isFixedT: (x: string) => x === "alert" || x === "worklog", target, DC, clear: () => {}, renderDecision: () => calls.push("render"),
 			syncInlineChoices: () => {}, dkPaint: () => {}, updateComposerMeta: () => {}, S: null, DC_SEEN: new Set(), freshKeys: () => new Set(), dcLast: null, dcOut: null, dcShownT: "",
-			dcLeave: () => calls.push("leave"), dcBackNote: () => "", motionSwap: (_: unknown, f: () => void) => f(), motionIn: () => {},
+			dcLeave: () => calls.push("leave"), dcBackNote: () => "", RA: { loaded: false }, motionSwap: (_: unknown, f: () => void) => f(), motionIn: () => {},
 		};
 		new Function(...Object.keys(page), `${body}; paintDecision();`)(...Object.values(page));
 		return { hidden: box.hidden, cur: DC.cur, calls };
