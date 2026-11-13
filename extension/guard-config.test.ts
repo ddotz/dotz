@@ -21,3 +21,8 @@ test("the ceiling is never under the configured cap, and a cap of 0 stays 0", ()
 	expect(none.task_token_cap).toBe(0);
 	expect(none.task_cap_ceiling).toBe(48_000_000);
 });
+
+test("a worker's context budget in its brief is never below the size its context is compacted at", () => {
+	const g = guardConfigFrom({});
+	expect(g.worker_context_tokens).toBeGreaterThanOrEqual(g.task_compact_tokens);
+});
