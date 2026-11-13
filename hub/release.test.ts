@@ -290,7 +290,7 @@ describe("release note", () => {
 			return { code: 0, out: "" };
 		}, lines);
 		expect(code).toBe(0);
-		expect(cmds).toEqual([["bun", "site/build-demo.ts"]]);
+		expect(cmds).toEqual([["bun", "site/build-demo.ts"], ["bun", "test", "./site/demo-update.test.ts"]]);
 		expect(git(origin, "tag", "--list", "v*").trim()).toBe("v261106.1");
 		expect(git(root, "show", "--name-only", "--format=", "v261106.1").split("\n").filter(Boolean).sort()).toEqual(["VERSION", "site/demo/app.js"]);
 		expect(git(root, "show", "v261106.1:site/demo/app.js")).toBe("rebuilt demo\n");
@@ -313,6 +313,27 @@ describe("release note", () => {
 			expect(lines.join("\n")).toContain("데모를 다시 만들지 못해서");
 		});
 	}
+
+	test("a demo that builds but fails its own check is logged and the release goes out without the demo update", async () => {
+		const { root, origin, release } = withDemo();
+		const lines: string[] = [];
+		const cmds: (readonly string[])[] = [];
+		const code = await release(async cmd => {
+			cmds.push(cmd);
+			if (cmd.includes("site/build-demo.ts")) {
+				writeFileSync(join(root, "site", "demo", "app.js"), "throws on load\n");
+				return { code: 0, out: "" };
+			}
+			return { code: 1, out: "ReferenceError: Cannot access 'PN' before initialization." };
+		}, lines);
+		expect(code).toBe(0);
+		expect(cmds).toEqual([["bun", "site/build-demo.ts"], ["bun", "test", "./site/demo-update.test.ts"]]);
+		expect(git(origin, "tag", "--list", "v*").trim()).toBe("v261106.1");
+		expect(git(root, "show", "--name-only", "--format=", "v261106.1").trim()).toBe("VERSION");
+		expect(readFileSync(join(root, "site", "demo", "app.js"), "utf8")).toBe("old demo\n");
+		expect(lines.join("\n")).toContain("데모를 다시 만들지 못해서");
+		expect(lines.join("\n")).toContain("PN");
+	});
 });
 
 describe("summarizeChanges", () => {

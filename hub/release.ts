@@ -188,7 +188,7 @@ export type PublishOptions = {
 	exec?: Exec;
 	terms?: readonly Term[];
 	address?: string; // how the owner is addressed; this install's config when not given
-	buildDemo?: Exec; // rebuilds site/demo from web/ before the release commit (cmd is unused); `bun site/build-demo.ts` in the checkout when not given
+	buildDemo?: Exec; // rebuilds site/demo from web/ before the release commit, then runs the demo's check (cmd says which); `bun site/build-demo.ts` and `bun test ./site/demo-update.test.ts` in the checkout when not given
 	signingKey?: string; // the release signing key file; $DOTZ_DIR/secrets/release-signing-key when not given
 	ci?: boolean; // running on a GitHub runner (the one unsigned transition release); GITHUB_ACTIONS when not given
 };
@@ -247,11 +247,15 @@ async function pushPinned(root: string, auth: readonly string[]): Promise<{ code
 
 // The public demo is a build of web/, so the release commit carries a fresh one. A build that fails is logged and the release goes out with the
 // demo as it was: whatever the failed build left in site/ is put back. Returns whether the site/ changes should join the release commit.
+// The release gate ran the suite before this build, so the built demo is checked here: one that does not load (its own headless test) counts as failed.
 async function rebuildDemo(root: string, build: Exec | undefined, print: (line: string) => void): Promise<boolean> {
 	if (!build && !existsSync(join(root, "site", "build-demo.ts"))) return false;
 	const untracked = async () => new Set((await gitOutput(["ls-files", "--others", "--exclude-standard", "--", "site"], root)).out.split("\n").filter(Boolean));
 	const before = await untracked();
-	const made = await (build ?? ((cmd: readonly string[]) => run(cmd, root)))(["bun", "site/build-demo.ts"]).catch((e: unknown) => ({ code: 1, out: String(e) }));
+	const exec = build ?? ((cmd: readonly string[]) => run(cmd, root));
+	const step = (cmd: readonly string[]) => exec(cmd).catch((e: unknown) => ({ code: 1, out: String(e) }));
+	let made = await step(["bun", "site/build-demo.ts"]);
+	if (made.code === 0) made = await step(["bun", "test", "./site/demo-update.test.ts"]);
 	if (made.code === 0) {
 		print("데모: web/로 site/demo를 다시 만들었어요");
 		return true;
