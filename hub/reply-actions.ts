@@ -290,7 +290,9 @@ export function createReplyActions(deps: ReplyDeps) {
 			const views = (await Promise.all(deps.adapters.map(a => a.list().catch(e => (deps.log(`reply list of ${a.kind} failed: ${(e as Error).message}`), [] as DraftView[]))))).flat();
 			const known = new Set(views.map(v => v.ref));
 			const cards = deps.cards.open().filter(c => !known.has(c.ref)).map(c => cardItem(c, deps.now?.() ?? Date.now()));
-			return [...views.map(itemOf), ...cards];
+			const items = [...views.map(itemOf), ...cards];
+			noteOpen(items);
+			return items;
 		},
 		/** The old dismiss and delete routes: a failed or unsure send is forgotten and its draft waits again; nothing is sent. */
 		clear: (ref: string): boolean => deps.sender.forget(ref),
@@ -315,6 +317,14 @@ function cardItem(c: OpenCard, at: number): ReplyItem {
 }
 
 let live: ReturnType<typeof createReplyActions> | undefined;
+// The revisable cards of each conversation as of the last list (the queue page and the chat check read it often): what a turn's note and the
+// orchestrator's marker line may name, without waiting for a list in the turn's path.
+const openByConv = new Map<string, string[]>();
+export const openRefsOf = (conv: string): readonly string[] => openByConv.get(conv) ?? [];
+export function noteOpen(items: readonly Pick<ReplyItem, "conv" | "ref" | "can">[]): void {
+	openByConv.clear();
+	for (const i of items) if (i.can.revise) openByConv.set(i.conv, [...(openByConv.get(i.conv) ?? []), i.ref]);
+}
 /** The live instance, for modules the wiring imports (late binding, like setRefHandled in hub/outbound.ts); undefined in tests that build a surface alone. */
 export const useReplies = () => live;
 export const setReplies = (r: ReturnType<typeof createReplyActions> | undefined): void => void (live = r);

@@ -1,5 +1,7 @@
 // Outbound path of the hub: the owner's messages out (out, progress, alert), the send ledger, the prompt queue and the shared delivery state.
 // Split out of main.ts; it owns the one instance of that state and the other hub modules import it.
+import { reviseMarker } from "./reply-chat.ts";
+import { openRefsOf, useReplies } from "./reply-actions.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
@@ -433,6 +435,15 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	if (inHome !== target) [target, replyTo] = [inHome, undefined];
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = (extra.source === undefined || extra.source === "orchestrator") && !extra.keepsOpen;
+	// The orchestrator's one revise line for an open reply card of this conversation: run by code, not shown.
+	if (extra.source === undefined || extra.source === "orchestrator") {
+		const mark = reviseMarker(text, openRefsOf(target));
+		if (mark) {
+			void useReplies()?.act({ ref: mark.ref, action: "revise", change: mark.change }, { surface: "chat", agent: true }).catch(e => log(`revise marker of ${mark.ref} failed: ${(e as Error).message}`));
+			text = mark.rest;
+			if (!text) return { delivered: true };
+		}
+	}
 	const said = stripSteerMark(text);
 	text = stripLater(said);
 	if (typeof extra.session === "string") settleResolves(text, extra.session);

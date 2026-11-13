@@ -30,7 +30,7 @@ import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectRep
 import { mailTarget, type MailRecord } from "./mail.ts";
 import { ownerIntent } from "./reply-chat.ts";
 import { AGENT_AUTHOR } from "./entry-check.ts";
-import { useReplies } from "./reply-actions.ts";
+import { openRefsOf, useReplies } from "./reply-actions.ts";
 import { memoryNote, settingsTarget } from "./app-settings.ts";
 import { appEntries } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
@@ -247,6 +247,9 @@ export function flush(target: string): void {
 	const heldRefs = b.events.flatMap(e => refOf(e) ?? []);
 	if (updateNow()?.hold(inboxText(merged), { target, replyTo: b.replyTo, owner: true }, heldRefs)) return heldForUpdate(target, heldRefs, b.replyTo);
 	waitNotice(inbound, authWait);
+	// An open reply card here: the model changes its draft only by one marker line (hub/reply-chat.ts reviseMarker, read in hub/outbound.ts).
+	const open = openRefsOf(target);
+	if (open.length) merged.plugin_note = [merged.plugin_note, `열린 답장 카드: ${open.join(", ")}. 그 초안을 고치려면 명령을 실행하지 말고 답에 정확히 한 줄 \`[revise <ref>] <고칠 내용>\`만 쓰세요.`].filter(Boolean).join("\n");
 	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, refs: heldRefs, owner: true, ...deepOf(b.events) });
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.

@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { bursts, dropPending, flush, intake } from "./intake.ts";
-import { setReplies, type createReplyActions } from "./reply-actions.ts";
+import { noteOpen, setReplies, type createReplyActions } from "./reply-actions.ts";
+import { out } from "./outbound.ts";
 
 type Replies = ReturnType<typeof createReplyActions>;
 const item = (ref: string, conv: string, at: number) => ({ item: `mail:${ref}`, ref, kind: "mail", app: "mail", label: "메일", conv, at, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "", to: "", text: "x" } });
@@ -55,5 +56,21 @@ test("a question never waits for the card list", () => {
 	void f.listedOnce.then(() => (listed = true));
 	say("t-wire-4", "이 메일 언제 왔어?");
 	expect(listed).toBe(false);
+	expect(f.acts).toEqual([]);
+});
+
+test("a marker line in the orchestrator's answer runs the revise and is not shown", async () => {
+	const f = fake([]);
+	noteOpen([item("RA00006", "web:t-wire-5", 1)]);
+	const r = await out("web:t-wire-5", "[revise RA00006] 금요일을 목요일로");
+	expect(r.delivered).toBe(true);
+	expect(await f.actedOnce).toEqual({ ref: "RA00006", action: "revise", change: "금요일을 목요일로" });
+	noteOpen([]);
+});
+
+test("a marker for a ref that is not open is left as it is", async () => {
+	const f = fake([]);
+	noteOpen([]);
+	await out("web:t-wire-6", "[revise RZ99999] 짧게").catch(() => undefined);
 	expect(f.acts).toEqual([]);
 });
