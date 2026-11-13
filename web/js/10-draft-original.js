@@ -62,9 +62,9 @@ function orgHas(ref, t, repaint) {
   return false;
 }
 // The comment a combined card (reply + mail) answers, as a compact block at the top of the card: the side panel has no room beside the mail part, so
-// the same pane content (orgFill) is drawn inline under a 댓글 원문 header. Null unless `d` is a comment reply.
+// the same pane content (orgFill) is drawn inline under a 댓글 원문 header. Null unless `d` is a comment reply (a draft's toLabel, or `comment` for a comment store draft).
 function orgInline(d, t) {
-  if (!d.ref || d.toLabel !== "대상") return null;
+  if (!d.ref || (d.toLabel !== "대상" && !d.comment)) return null;
   const s = orgSt(d.ref), pane = el("div", { class: "od-pane", role: "region", "aria-label": TX("decision.org.comment") });
   const paint = () => orgFill(pane, d, t, () => { s.load = ""; (s.subs ||= new Set()).add(paint); orgLoad(d.ref, t, paint); });
   paint();

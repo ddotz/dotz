@@ -186,11 +186,19 @@ function rqOriginalOf(x) {
   if (x.kind !== "notice") return x.d.original ? { who: x.d.original.who, text: x.d.original.text, ref: x.d.ref } : null;
   return rqMailOriginal(x.n.decision.draft, x.n.decision.to);
 }
+// A comment reply's card: the comment it answers (author, time, text) and the post it is under (title, link), inline from the 원문 panel's own pane
+// (10-draft-original.js orgInline). An [ask] keys it by its ref, a store draft by its code; a peer's comes through the proxy (orgLoad reads pqPc).
+function rqCommentOrig(x) {
+  if (x.kind === "notice") return orgInline(x.n.decision.draft, x.n.decision.to);   // null for a mail draft
+  if (x.kind !== "comment") return null;
+  if (x.pc) PQ.of.set(x.key, { pc: x.pc, key: x.key });
+  return orgInline({ ref: x.d.code, comment: true }, x.key);
+}
 function rqCardOf(x) {
   if (x.kind === "held") return rqHeldCard(x);
   const dr = x.kind === "notice" ? x.n.decision.draft : null;
   const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), model: (dr && dr.model) || (x.d && x.d.model) || "", at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: TX("decision.open"), onclick: () => { if (RQ.sheet) RQ.sheet.close(); rqGoTo(x); } })] };   // the sheet folds away so the screen it opens is seen; the draft stays in this list
-  const editing = RQ.edit === x.key, busy = rqIsBusy(x), fk = rqFk(x), press = rqPress.get(fk), base = { key: x.key, cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": x.kind }, head, original: rqOriginalOf(x), fail: rqFail.get(fk) };
+  const editing = RQ.edit === x.key, busy = rqIsBusy(x), fk = rqFk(x), press = rqPress.get(fk), base = { key: x.key, cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": x.kind }, head, original: rqCommentOrig(x) || rqOriginalOf(x), fail: rqFail.get(fk) };
   if (x.kind === "notice" && dr.toLabel === "받는이") {   // a mail draft: the parts every screen shows it with (10-reply-card.js rqMailParts)
     const p = rqMailParts(dr, { t: x.n.decision.to, at: x.at, pc: head.pc, edit: false, tail: head.tail });
     return rqCard({ ...base, ...p, cls: [base.cls, p.cls].filter(Boolean).join(" "), body: { text: dr.body },
@@ -208,7 +216,7 @@ function rqCardOf(x) {
   }
   const d = x.d, kakao = x.kind === "kakao";
   if (!kakao) { const an = rqAppName(x.inst); head.who = (d.original && d.original.who) || d.to || ""; head.src = an.endsWith("댓글") ? an : an ? TX("triage.rq.comment_src", { app: an }) : TX("triage.rq.comment_src_plain"); }   // a comment draft: the landing card's head
-  return rqCard({ ...base, label: kakao && d.intent ? TX("triage.rq.new_msg") : "", to: kakao ? [TX("triage.rq.room"), d.room] : [TX("triage.rq.comment"), d.to], subject: kakao ? "" : d.title,
+  return rqCard({ ...base, label: kakao && d.intent ? TX("triage.rq.new_msg") : "", to: kakao ? [TX("triage.rq.room"), d.room] : [TX("triage.rq.comment"), d.to], subject: kakao || base.original ? "" : d.title,   // the post's title stands in the comment's block
     body: { text: d.text, parts: kakao ? d.parts : null, sentParts: d.sentParts },
     attach: d,
     extra: kakao ? [] : [draftMailNode(d.mail), (d.notes || []).length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],

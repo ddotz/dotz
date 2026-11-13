@@ -119,7 +119,7 @@ function rqMailParts(dr, o) {
 }
 // The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"), to: [label, value],
 // recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode; given instead of `to`), subject,
-// original: {who, text} (what the draft answers), body, attach (a draft's attachments / attachmentsNone / cannotAttach, or the caller's own files node),
+// original: {who, text} (what the draft answers) or its node, body, attach (a draft's attachments / attachmentsNone / cannotAttach, or the caller's own files node),
 // extra (nodes under the body: the mail that goes along), then one of: status (a line such as 고치는 중…), revise (rqReviseNode or the caller's own),
 // acts (rqActsNode: { send, edit, drop, manual, busy, press }), fail ({ text, why }: the line above the buttons after a failed action) }.
 function rqCard(c) {
@@ -128,7 +128,7 @@ function rqCard(c) {
   const cm = !!(c.head && c.head.who);   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     c.bare ? null : rqHeadNode(c.head),
-    !c.bare && c.original && c.original.text ? rqOrigNode(c.key, c.original) : null,
+    c.bare || !c.original ? null : c.original.nodeType ? c.original : c.original.text ? rqOrigNode(c.key, c.original) : null,   // a node: a comment's own block (30-replies.js rqCommentOrig)
     c.brief || null,
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
     c.to ? (cm ? null : el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" }))) : c.recv || null,   // a mail keeps its 받는이 rows

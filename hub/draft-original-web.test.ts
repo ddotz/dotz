@@ -371,6 +371,36 @@ describe("원문 보기 for a comment reply draft", () => {
 		expect(body).toContain("문서 보내드립니다");
 	});
 
+	// The 답장 확인 sheet (30-replies.js rqSheetOpen) of the same draft, as an [ask] row and as a store row without a notice: the comment it answers (author, time,
+	// text) and its post (title, link) sit inline at the top, in view and in 고치기 alike.
+	test("답장 확인 sheet of a comment draft shows the comment and its post inline, in view and edit", async () => {
+		const date = ((await (await draftAttachRoute(new Request("http://x/"), new URL("http://x/"), code.top!, "original")).json()) as { date: string }).date;
+		const store = { code: code.card, kind: "comment", app: "youtube", title: "달빛정원 OST 요약 연주", link: "https://www.youtube.com/watch?v=v1", to: "김팬", text: "봐 주셔서 감사합니다.", notes: [], at: CT0, original: { who: "김팬", text: CTEXT, at: CT0 } };
+		const rows = {
+			ask: `rqRows().find(r => r.x && r.x.kind === "notice" && r.x.n.decision.draft.ref === ${JSON.stringify(code.top)})`,
+			store: `rqRows().find(r => r.x && r.x.kind === "comment" && r.x.d.code === ${JSON.stringify(code.card)})`,
+		};
+		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
+			const v = await open(w, h);
+			await waitFor(v, `typeof rqSheetOpen === "function" && document.querySelector(".hn")`);
+			await v.evaluate(`(() => { RQ.local = [${JSON.stringify(store)}]; RQ.loaded = true; return 0; })()`);
+			for (const [kind, row] of Object.entries(rows)) {
+				await waitFor(v, row);
+				for (const edit of [false, true]) {
+					await v.evaluate(`(() => { const r = ${row}; RQ.edit = ${edit} ? r.key : ""; if (RQ.sheet) RQ.sheet.close(false); rqSheetOpen(r); return 0; })()`);
+					await waitFor(v, `document.querySelector(".rq-sheet .od-inline .od-ct")`);
+					const pane = await text(v, ".rq-sheet .od-inline");
+					for (const t of ["김팬", CTEXT, "달빛정원 OST 요약 연주", "원본 열기"]) expect(pane, `${kind} ${edit} ${w}`).toContain(t);
+					expect(await v.evaluate(`document.querySelector(".rq-sheet .od-inline").textContent.includes(kstStamp(${JSON.stringify(date)}))`)).toBe(true);
+					expect(await v.evaluate(`document.querySelector(".rq-sheet .od-inline .od-open").href`)).toBe("https://www.youtube.com/watch?v=v1");
+					expect(await v.evaluate(`!!document.querySelector(".rq-sheet .rq-rv, .rq-sheet .rq-acts")`)).toBe(true);
+				}
+			}
+			await v.evaluate(`(() => { RQ.edit = ""; if (RQ.sheet) RQ.sheet.close(false); return 0; })()`);
+			v.close();
+		}
+	});
+
 	test("a comment that is gone says 원문을 찾을 수 없어요 and the draft stays usable", async () => {
 		const v = await open(390, 844);
 		await openSheet(v, code.gone!);
