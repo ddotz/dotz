@@ -41,11 +41,13 @@ import { ownerWantsUltrathink } from "./ultrathink.ts";
 export { ownerWantsUltrathink };
 
 // Chat is the hub over every work channel: each chat turn carries a short directory so the orchestrator can route the
-// work into the channel it belongs to (or split a growing thread of work into a new one).
-function workDirectory(): string {
+// work into the channel it belongs to (or split a growing thread of work into a new one). The list goes once per turn: a message
+// that joins a running turn whose prompt already carries the same list leaves it out (~800 chars a copy).
+function workDirectory(target: string): string {
 	const setups = new Map(listSetups().map(s => [s.channel, s.purpose]));
-	const list = Object.entries(discord.channels.work).slice(0, 20).map(([id, name]) => `#${name} ch:${id}${setups.has(id) ? ` (${setups.get(id)!.slice(0, 60)})` : ""}`);
-	return msg().workChannels(list);
+	const list = msg().workChannels(Object.entries(discord.channels.work).slice(0, 20).map(([id, name]) => `#${name} ch:${id}${setups.has(id) ? ` (${setups.get(id)!.slice(0, 60)})` : ""}`));
+	const c = convs.forTarget(target);
+	return c?.o.orch.status === "working" && c.queue.current()?.text.includes(list) ? "" : list;
 }
 
 export function inboxText(e: Record<string, any>): string {
@@ -122,7 +124,10 @@ function inboxBody(e: Record<string, any>): string {
 	const home = e.parent?.startsWith("ch:") ? e.parent : e.channel;
 	const ctx = home?.startsWith("ch:") ? channelContext(home.slice(3)) : "";
 	if (ctx) lines.push(ctx);
-	if (["chat", "dm", "web", "web:alert", "web:worklog", "worklog", "alert", "brief"].includes(e.channel)) lines.push(workDirectory());
+	if (["chat", "dm", "web", "web:alert", "web:worklog", "worklog", "alert", "brief"].includes(e.channel)) {
+		const dir = workDirectory(e.channel);
+		if (dir) lines.push(dir);
+	}
 	return lines.join("\n");
 }
 
