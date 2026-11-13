@@ -168,6 +168,18 @@ function folderOf(r: Rec): string | undefined {
 	const repo = /^\s*Repo:\s*(\/[^\s;,()]+)/m.exec((s?.prompt ?? "").slice(0, 600))?.[1];
 	return repo ?? (s?.cwd && !s.isolation ? s.cwd : undefined);
 }
+/** Did a failed worker fail at start: its small task log (in OmO store `store`) says so, or shows no tool ever ran (chain_not_held, an auth error)? */
+function startFailed(store: string | undefined, id: string): boolean {
+	if (!store) return false;
+	const file = join(store, "logs", `${id}.jsonl`);
+	try {
+		if (statSync(file).size > LOG_TAIL_BYTES) return false;
+		const text = readFileSync(file, "utf8");
+		return text.includes('"task_start_failed"') || !text.includes('"tool_execution"');
+	} catch {
+		return false;
+	}
+}
 /** The report a finished worker's task log holds when its last message only closed its todo list: nothing but todo calls ran after it. */
 export function trailingReport(lastMessage: string, logTail: string): string | undefined {
 	const last = lastMessage.trim();
@@ -513,11 +525,14 @@ export function createBgWork(deps: BgWorkDeps) {
 		const ended = deps.turnEndedAt?.() ?? 0;
 		for (const w of works) {
 			if (w.status !== "failed" || w.cancelled) continue;
-			if (ended > (w.ended_at ?? 0)) {
+			// A worker that failed at start hands its still open request back at once, even past a turn that read OmO's notice without
+			// answering it (2026-11-11: chain_not_held, the request waited for the next run); once, like any handover.
+			const early = !handed.has(w.id) && open.some(d => d.target === w.target && d.replyTo === w.reply_to) && startFailed(storeOf.get(w.id), w.id);
+			if (ended > (w.ended_at ?? 0) && !early) {
 				w.handled = true;
 				continue;
 			}
-			if (!deps.handover || handed.has(w.id) || t - (w.ended_at ?? 0) < HANDOVER_AFTER_MS || deps.busy?.()) continue;
+			if (!deps.handover || handed.has(w.id) || (!early && t - (w.ended_at ?? 0) < HANDOVER_AFTER_MS) || deps.busy?.()) continue;
 			handed.add(w.id);
 			deps.log?.(`background work ${w.id} failed and no turn took it up: handed to the session to fix and finish`);
 			deps.handover(w);
