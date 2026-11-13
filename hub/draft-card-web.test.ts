@@ -61,7 +61,7 @@ const draw = `(() => {
 	MAILS.set("mail:fx-8", { subject: "지난달 점검 보고서", from: "Alex Sender <sender@example.com>", source: "fx", at: ${JSON.stringify(now)}, summary: "지난달 점검 결과예요." });
 	CONV.set("mail:fx-8", { ts: ${JSON.stringify(now)}, text: "[ask] ${Q}", from: "bot" }); ts("mail:fx-8").unread = 0;
 	const items = ${JSON.stringify(NOTES)};
-	NT.items = items; NT.loaded = true; DR.edit.clear(); DR.manual.clear();
+	NT.items = items; NT.loaded = true; window.ntDraftSheet = n => window.__opened.push("sheet:" + n.id);
 	const nodes = [...items.map(n => monNoticeNode(n, [])), monConvNode("mail:fx-8", "메일")];
 	document.querySelector("#mon-tl").replaceChildren(...nodes);
 	return true;
@@ -100,21 +100,9 @@ for (const width of [1440, 390]) {
 		expect(got.rowRole).toEqual(["button", 0]);
 		expect(got.rowButtons).toEqual(["mail-star", "mail-draft", "mail-menu"]);   // the row itself is the link; its buttons are the ☆ every row has, 초안 작성 of an incoming mail and the ⋯ menu last in the header
 
-		const edit = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), JSON.stringify((() => {
-			const c = document.querySelector("#mon-tl > .bm.dr"), ta = c.querySelector("textarea.dr-edit");
-			return { ta: ta ? ta.value : null, ph: ta ? ta.placeholder : null, body: !!c.querySelector(".dr-body"), ask: c.querySelector(".dr-q2") && c.querySelector(".dr-q2").textContent, buttons: [...c.querySelectorAll(".dr-act button")].map(b => b.textContent.trim()) };
-		})()))`)) as string) as any;
-		// 고치기 asks "어떻게 고칠까요?" with the old draft still shown; 직접 수정 is the small secondary action
-		expect(edit).toEqual({ ta: "", ph: "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", body: true, ask: "어떻게 고칠까요?", buttons: ["고쳐 달라고 하기", "취소", "직접 수정"] });
-		const manual = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), document.querySelector("#mon-tl > .bm.dr .dr-manual").click(), JSON.stringify((() => {
-			const c = document.querySelector("#mon-tl > .bm.dr"), ta = c.querySelector("textarea.dr-edit");
-			return { ta: ta ? ta.value : null, body: !!c.querySelector(".dr-body") };
-		})()))`)) as string) as any;
-		expect(manual).toEqual({ ta: "안녕하세요, Alex님.\n\n보내 주신 보고서는 잘 받았습니다.\n\n감사합니다.", body: false });
-
-		// the instruction goes out as the note of the 고치기 answer; a manual text goes out with its lead
-		const posts = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), (() => { const t = document.querySelector("#mon-tl > .bm.dr textarea.dr-edit"); t.value = "더 짧게"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("#mon-tl > .bm.dr .dr-act .btn").click(); })(), new Promise(r => setTimeout(r, 0)).then(() => 0), JSON.stringify(window.__posts.map(p => [p[0], p[1].n, p[1].note])))`)) as string) as any;
-		expect(posts).toEqual([["/api/notices/a/answer", 2, "더 짧게"]]);
+		// Without the one reply queue (another computer's draft) 고치기 opens the draft's own card; with it, the queue card's 고치기 and 직접 수정 (hub/mail-pane-queue-web.test.ts).
+		const edit = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), JSON.stringify(window.__opened))`)) as string) as any;
+		expect(edit).toEqual(["sheet:a"]);
 
 		const sent = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .dr-send").click(), new Promise(r => setTimeout(r, 0)).then(() => 0), JSON.stringify(window.__posts.map(p => [p[0], p[1].n])))`)) as string) as any;
 		expect(sent).toEqual([["/api/notices/a/answer", 1]]);

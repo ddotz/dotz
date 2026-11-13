@@ -74,7 +74,7 @@ function raPaint(ref, was) {
   if (!reg || !it) return;
   if (!reg.node.isConnected) { RA.nodes.delete(ref); return; }
   const k = reg.node.contains(document.activeElement) ? document.activeElement.getAttribute("data-k") : null;
-  const next = rqItemCard(it, reg.opts);
+  const next = reg.make ? reg.make(it) : rqItemCard(it, reg.opts);
   reg.node.replaceWith(next);
   if (was) RA.nodes.delete(was);
   if (k) { const f = next.querySelector(`[data-k="${k}"]`); if (f) f.focus(); }

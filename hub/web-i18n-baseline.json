@@ -117,7 +117,7 @@
       "why": "Parses Korean section headings and summary words in agent-written mail text; the mail text itself is server data"
     },
     "web/js/30-monitoring.js": {
-      "count": 24,
+      "count": 23,
       "why": "Matches server-sent Korean values (draft option labels, recipient label, hub status words) and parses Korean clock/report text"
     },
     "web/js/30-notices.js": {
