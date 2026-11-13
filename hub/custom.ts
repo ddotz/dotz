@@ -787,10 +787,10 @@ export function ownProjects(deps: Pick<CustomDeps, "lanes" | "channels" | "machi
 // GET /api/peer/projects: the same list, each git folder with an origin carrying its normalized repo (hub/fleet-launch.ts normRepo), which is how another computer finds the same project.
 export async function ownProjectsWithRepo(deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): Promise<ReturnType<typeof ownProjects>> {
 	const { name, rows } = ownRows(deps);
-	return { name, projects: await Promise.all(rows.map(async p => { const repo = p.path ? await repoOfCached(p.path) : undefined; return { ...peerRow(p), ...(repo ? { repo } : {}) }; })) };
+	return { name, projects: await Promise.all(rows.map(async p => { const repo = p.path ? await repoOfCached(expand(p.path)) : undefined; return { ...peerRow(p), ...(repo ? { repo } : {}) }; })) };
 }
-// The absolute folders of this computer's projects: where a session started from another computer looks for its repo.
-export const ownFolders = (deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): string[] => ownRows(deps).rows.map(p => p.path).filter((x): x is string => typeof x === "string" && x.startsWith("/"));
+// The absolute folders of this computer's projects (a pinned ~/... folder expanded): where a session started from another computer looks for its repo.
+export const ownFolders = (deps: Pick<CustomDeps, "lanes" | "channels" | "machine">): string[] => ownRows(deps).rows.map(p => (typeof p.path === "string" ? expand(p.path) : p.path)).filter((x): x is string => typeof x === "string" && x.startsWith("/"));
 
 async function computersView(deps: CustomDeps): Promise<ComputerGroup[]> {
 	const self = deps.machine?.() ?? "";

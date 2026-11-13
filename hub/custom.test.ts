@@ -2,13 +2,13 @@
 // projects view, routine schedules and the HTTP routes. The fake clock (test-setup) moves time; no real waiting.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { DATA_DIR } from "./config.ts";
 import { featureCatalog } from "./features.ts";
 import { saveProject } from "./projects.ts";
-import { BUILTIN_KEY, type CustomDeps, customRoute, type DetailInput, projectDetailView, projectsView, readCards, readPins, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
+import { BUILTIN_KEY, type CustomDeps, customRoute, ownFolders, type DetailInput, projectDetailView, projectsView, readCards, readPins, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
 import { computerGroups } from "./custom-computers.ts";
 import { PEER_GET } from "./peer-auth.ts";
 import { createPeerProjects } from "./peer-projects.ts";
@@ -273,6 +273,12 @@ test("a prompt action goes to the orchestrator as '[카드 <title>] <prompt>'; u
 });
 
 // ---- pins ----
+// A project pinned as ~/... is where a session from another computer looks for its repo (docs/fleet.md): the folder comes out absolute.
+test("a pinned ~ folder is listed for another computer's session as an absolute folder", () => {
+	pins({ projects: [{ name: "핀 폴더", path: "~/Code/fleet-pin" }] });
+	expect(ownFolders({ ...deps, machine: () => "본체" })).toContain(join(homedir(), "Code", "fleet-pin"));
+});
+
 test("pins validation drops a bad entry with its own error and keeps the rest", () => {
 	pins({
 		projects: [{ name: "ok", path: "~/Code/ok" }, { path: "~/x" }, { name: "empty" }, { name: "chan", channel: "123" }],
