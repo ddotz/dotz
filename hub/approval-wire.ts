@@ -6,42 +6,29 @@
 //                                        -> { results: [{ ref, ok, reason? }] } (hub/reply-outcomes.ts); no new approval is recorded
 //   POST /api/drafts/<ref>/body          { text, part?: "reply" | "mail" }: the owner's own edit of a pending draft's text, before he sends it
 // and the single-card answers of the web (routes.ts) and Discord (main.ts), which take this path when the gateway can send the draft.
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { cfg, log, now, writeAtomic } from "./config.ts";
-import { broadcast, emit } from "./events.ts";
-import { approvals, convOfTarget, newMid, out } from "./outbound.ts";
-import { answerDecision, type DecisionSend, allNotices, markDraftSend, openDraftCards, settleOpenDecision } from "./notices.ts";
+import { log, now } from "./config.ts";
+import { approvals, convOfTarget, newMid } from "./outbound.ts";
+import { answerDecision, type DecisionSend, allNotices, openDraftCards, settleOpenDecision } from "./notices.ts";
 import type { Upload } from "./files.ts";
-import { commentContextOf, commentDraftOf, commentPostedOf, commentDraftsByCode, commentPending, commentProveSends, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
+import { commentContextOf, commentDraftOf, commentPostedOf, commentDraftsByCode, commentPending, commentSendFailed, commentSourceApp, dropCommentDraft } from "./comments/gateway.ts";
 import { dropFailed, retryFailed, type RetryDeps } from "./reply-outcomes.ts";
 import { appEntries, commentOwner } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
 import { DATA_DIR } from "./config.ts";
-import { linkedComment } from "./comments/linked.ts";
-import { claimFile, getDraft, patchDraft } from "./reply-mail.ts";
-import { claimHolder } from "./draft-claim.ts";
-import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, sendActionOf, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
+import { getDraft } from "./reply-mail.ts";
+import { refOfQuestion, sendActionOf } from "./approval-send.ts";
 import { answerBatch, batchCard, STALE_OPTIONS, type BatchCard, type BatchPick } from "./approval-batch.ts";
-import { DRAFT_BODY_MAX, DRAFT_UNDO, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
-import { askText, mailOriginalOf, pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
+import { draftActionOf, DRAFT_BODY_MAX, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
+import { mailOriginalOf, pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
+import { channelOf, recordAnswer, replies, reportCliFailure, sender } from "./reply-wire.ts";
+import type { ActInput } from "./reply-actions.ts";
+
+export { recordAnswer, reportSend, sender, sendTargetOf, settleSends } from "./reply-wire.ts";
 import { mailByKey, mailRecords } from "./mail.ts";
 import { json } from "./routes-util.ts";
 
 // How many waiting cards of one conversation make the web open its triage view instead of one card at a time (settings: web.triage_min).
 export const TRIAGE_MIN_DEFAULT = 3;
-
-/** Where the gateway would send draft `ref`: a pending comment reply (per source) or a pending mail draft of its own (per sending account). */
-export function sendTargetOf(ref: string, action?: SendAction): SendTarget | undefined {
-	const c = commentDraftOf(ref);
-	if (c) return { kind: "comment", lane: `comment:${c.source}` };
-	// A posted reply whose mail is still owed: only the mail can go (comments.ts send --only mail), so no other action is answered.
-	const p = commentPostedOf(ref);
-	if (p?.mail && (!action || action === "send-mail") && getDraft(p.mail)?.status === "pending") return { kind: "comment", lane: `comment:${p.source}` };
-	const m = getDraft(ref);
-	if (m && m.kind === "mail" && m.status === "pending" && !linkedComment(ref)) return { kind: "mail", lane: `mail:${m.source}:${m.account ?? m.app}` };
-	return undefined;
-}
 
 /** Whether the mail of a comment draft whose reply is posted is still there to send (see RetryDeps.posted). */
 const postedMailOf = (ref: string): "pending" | "gone" | undefined => {
@@ -59,108 +46,32 @@ export const draftAppOf = (ref: string): string | undefined => {
 	return inst === "mail" ? m.app : inst;
 };
 
-// A conversation's gateway note goes where its cards were posted.
-const targetOf = (conv: string, ref: string): string => approvals.targetOf(conv, ref) ?? (conv === "main" ? "web" : conv);
-
-// 답글만 보내기 posts the reply and leaves its mail draft on its own; the CLI line that asks for it (hub/mail-cli.ts ask) is for the bot, and this path runs no
-// model turn. The card is posted as the assistant would post it: a "gateway" post never becomes a decision (hub/notices-decisions.ts). Judged from the stores, so a restart is covered and a second report finds the card already open.
-function cardOwedMail(r: SendResult): void {
-	const mailId = commentPostedOf(r.ref)?.mail;
-	const mail = mailId ? getDraft(mailId) : undefined;
-	if (!mailId || mail?.status !== "pending" || openDraftCards().some(c => c.ref === mailId)) return;
-	void out(targetOf(r.conv, mailId), askText(mail, []), undefined, { source: "orchestrator" }).catch(e => log(`mail card for ${mailId} failed: ${e instanceof Error ? e.message : String(e)}`));
+/** What a card's picked label asks of the one reply flow (design 1.9 old routes), or undefined when the bot reads it (직접 입력, a 고치기 with no words). */
+function replyInputOf(ref: string, label: string, note?: string): ActInput | undefined {
+	const a = draftActionOf(label);
+	if (a === "send" || a === "send-as-is") return { ref, action: "send", ...(a === "send-as-is" ? { asIs: true } : {}) };
+	if (a === "send-main" || a === "send-mail") return { ref, action: "send", part: a === "send-main" ? "reply" : "mail" };
+	if (a === "drop") return { ref, action: "drop" };
+	if (a === "edit" && note?.trim()) return { ref, action: "revise", change: note.trim() };
+	return undefined;
+}
+/** A pick on an open card whose draft an adapter knows, as one act of the reply flow; undefined = the answer keeps its old path. */
+async function actOnCard(conv: string, q: string, label: string, note: string | undefined, surface: "web" | "discord", login: string) {
+	const ref = refOfQuestion(q);
+	if (!ref || conv.startsWith("lane:") || conv.startsWith("auth:") || !openDraftCards(conv).some(c => c.ref === ref)) return undefined;
+	const input = replyInputOf(ref, label, note);
+	if (!input || !(await replies.list()).some(i => i.ref === ref && i.kind !== "card")) return undefined;
+	return replies.act(input, { surface, login });
 }
 
-export const reportSend = (r: SendResult): void => {
-	markDraftSend(r.conv, r.ref, r.state, r.text, r.until);
-	broadcast({ ts: now(), kind: "approval_send", source: "gateway", ...r, ...(r.until ? { left: Math.max(0, r.until - now()) } : {}) });
-	if (r.state === "sent") cardOwedMail(r);
-	if (r.state !== "failed" && r.state !== "unsure") return;
-	const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
-	if (r.state === "unsure") return void out(targetOf(r.conv, r.ref), `[wait] 확인 필요: ${what} (${r.ref})\n${r.text}\n저절로 다시 보내지 않아요. 답장 대기에서 골라 주세요.`, undefined, { source: "gateway" }).catch(e => log(`send check note for ${r.ref} failed: ${e}`));
-	void out(targetOf(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
-};
-// The approved sends still queued or sending are kept here (hub/approval-send.ts), so a restart finds them.
-const JOBS_FILE = join(DATA_DIR, "approval-sends.json");
-const jobStore = {
-	load: (): unknown[] => {
-		if (!existsSync(JOBS_FILE)) return [];
-		const list = JSON.parse(readFileSync(JOBS_FILE, "utf8"));
-		return Array.isArray(list) ? list : [];
-	},
-	save: (body: string): void => writeAtomic(JOBS_FILE, `${body}\n`),
-};
-/** A send that was running when the gateway stopped: sent, its sender still running (a mail CLI holding its claim), lost with the mail possibly out, or a comment nobody can say went up. */
-function lookSend(j: SendJob): SendLook {
-	const mail = getDraft(j.ref);
-	if (mail) return mail.status === "sent" ? { state: "sent" } : claimHolder(claimFile(j.ref)) === "live" ? { state: "alive" } : { state: "failed", text: MAY_HAVE_GONE_OUT };
-	return commentSendOutcome(j.ref) ?? { state: "failed", text: MAY_HAVE_GONE_OUT };
-}
-// The cancel window (settings: web.send_undo_sec, seconds, default 10, 0 = off) is read when a send is approved.
-const undoMs = (): number => ((s => (typeof s === "number" && Number.isFinite(s) && s >= 0 ? s : 10))(cfg.web.send_undo_sec)) * 1000;
-// A send taken back: the owner's cancel becomes his latest word on the draft (hub/draft-approval.ts draftVerdict), so the old 보내기 sends nothing from a CLI either.
-function revokeSend(j: SendJob): void {
-	recordAnswer({ source: "web", channel: channelOf(j.conv), author: "owner", text: DRAFT_UNDO, picks: [{ q: j.title, n: 0, label: DRAFT_UNDO }] });
-}
-export const sender = createApprovalSender({ kind: sendTargetOf, run: runCli, report: reportSend, log, store: jobStore, look: lookSend, undoMs, revoke: revokeSend });
-let sendsBooted = false;
-// A card left 확인 필요 follows the comment's record: proof read back, the owner's 완료 or 다시 보내기, or the old sender that finished after all.
-function settleUnsureCards(): void {
-	for (const n of allNotices()) {
-		const d = n.decision, ref = d?.draft?.ref;
-		if (d?.send?.state !== "unsure" || !ref) continue;
-		const o = commentSendOutcome(ref);
-		if (o?.state === "sent" || o?.state === "failed") sender.settle({ ref, conv: d.to, action: "send", title: n.title }, o.state, o.state === "failed" ? o.text : "");
-	}
-}
-/** Boot and every sweep after it: the first call takes up the sends the last run left (queued ones are queued again, running ones are judged, never re-run) and reads unsure comments back; later calls check the ones still running. */
-export function settleSends(): void {
-	if (!sendsBooted) {
-		sendsBooted = true;
-		commentSettleSending();
-		sender.recover();
-		void commentProveSends().then(
-			r => {
-				if (r.proved.length || r.errors.length) log(`comment read-back: proved ${r.proved.join(", ") || "none"}${r.errors.length ? `; not read: ${r.errors.join("; ")}` : ""}`);
-				settleUnsureCards();
-			},
-			e => log(`comment read-back failed: ${e instanceof Error ? e.message : String(e)}`),
-		);
-	}
-	sender.recheck();
-	settleUnsureCards();
-}
-// A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
-function reportCliFailure(ref: string, conv: string, text: string): void {
-	const card = allNotices().find(i => i.decision && i.title.endsWith(`(${ref})`));
-	reportSend({ ref, conv: card?.decision?.to ?? conv, title: card?.title ?? "답장", state: "failed", text, at: Date.now() });
-}
-
-// The owner's answer as the inbox keeps it (the CLIs' approval check reads it there), with no model turn. `decision`: the open card it answers;
-// any other value settles nothing (notices.ts ownerReplied otherwise answers every open card of the conversation with it).
-export function recordAnswer(a: { source: "web" | "discord"; channel: string; author: string; text: string; picks: BatchPick[]; decision?: string }): void {
-	const mid = newMid();
-	emit("inbox", { ts: now(), kind: "message", source: a.source, channel: a.channel, author: a.author, text: a.text, mid, picks: a.picks, decision: a.decision ?? `gateway:${mid}` });
-}
-const channelOf = (conv: string) => (conv === "main" ? "web" : conv);
-
-/** The send the gateway runs for this pick on an open card of `conv`, or undefined (the answer then goes to the bot as before). */
-export function gatewaySendOf(conv: string, q: string, label: string): { ref: string; notice: string; action: NonNullable<ReturnType<typeof sendActionOf>> } | undefined {
-	const ref = refOfQuestion(q), action = sendActionOf(label);
-	if (!ref || !action || conv.startsWith("lane:") || conv.startsWith("auth:") || !sender.can(ref, action)) return undefined;
-	const card = openDraftCards(conv).find(c => c.ref === ref);
-	return card ? { ref, notice: card.id, action } : undefined;
-}
-
-/** A Discord button pick (hub/askbuttons.ts) the gateway sends itself: recorded, the card closed (the next one shows), the send queued. */
-export function discordGatewayAnswer(target: string, conv: string, text: string, picks: BatchPick[]): boolean {
+/** A Discord button pick (hub/askbuttons.ts) on a draft the reply flow knows: the same act as the web's card (send, revise with its words, drop). */
+export async function discordGatewayAnswer(_target: string, conv: string, text: string, picks: BatchPick[]): Promise<boolean> {
 	const p = picks.length === 1 ? picks[0]! : undefined;
-	const g = p && gatewaySendOf(conv, p.q, p.label);
-	if (!p || !g) return false;
-	recordAnswer({ source: "discord", channel: target, author: "owner", text, picks, decision: g.notice });
-	settleOpenDecision(g.notice, `${p.n}) ${p.label}`);
-	sender.enqueue({ ref: g.ref, conv, action: g.action, title: p.q });
-	return true;
+	if (!p) return false;
+	const note = /\s-\s(.+)$/.exec(text)?.[1];
+	const r = await actOnCard(conv, p.q, p.label, note, "discord", "owner");
+	if (r && !r.body.ok) log(`discord pick on ${p.q}: ${r.body.error}`);
+	return !!r;
 }
 
 export type WaitingCard = BatchCard & { to: string; sendable: boolean; editable: boolean; group: string; info: string[] };
@@ -185,14 +96,14 @@ export async function webAnswer(id: string, body: { n?: unknown; label?: unknown
 	const opt = card?.decision?.state === "open" ? card.decision.options.find(o => o.n === Number(body.n)) : undefined;
 	// The page names the label it showed for `n`: a card whose options changed since (a staged file moves 이대로 보내기 and 답글만) answers 409 instead of running another action. No label = as before.
 	if (typeof body.label === "string" && card?.decision?.state === "open" && opt?.label !== body.label) return { status: 409, body: { error: STALE_OPTIONS } };
-	const gw = card && opt && !body.files?.length ? gatewaySendOf(card.decision!.to, card.title, opt.label) : undefined;
-	const r = await answerDecision(id, body, async a => (gw ? recordAnswer({ source: "web", channel: channelOf(a.to), author: login, text: a.text, picks: a.picks ?? [], decision: a.notice }) : deliver(a)));
-	if (gw && r.status === 200 && !r.body.already) {
-		sender.enqueue({ ref: gw.ref, conv: card!.decision!.to, action: gw.action, title: card!.title });
-		const held = sender.results().find(x => x.ref === gw.ref && x.state === "undo");
-		if (held) return { ...r, body: { ...r.body, send: { state: held.state, until: held.until, left: Math.max(0, (held.until ?? 0) - now()) } } };
+	// A draft the reply flow knows: its act writes the pick, settles or moves the card and queues the send. Files ride to the bot as before.
+	const acted = card && opt && !body.files?.length ? await actOnCard(card.decision!.to, card.title, opt.label, typeof body.note === "string" ? body.note : undefined, "web", login) : undefined;
+	if (acted) {
+		if (!acted.body.ok) return { status: acted.status, body: { error: acted.body.error } };
+		const held = sender.results().find(x => x.ref === refOfQuestion(card!.title) && x.state === "undo");
+		return { status: 200, body: { ok: true, ...(held ? { send: { state: held.state, until: held.until, left: Math.max(0, (held.until ?? 0) - now()) } } : {}) } };
 	}
-	return r;
+	return answerDecision(id, body, deliver);
 }
 
 function groupOf(ref: string, to: string, entries: ReturnType<typeof appEntries>, comments: ReturnType<typeof commentDraftsByCode>): { key: string; label?: string } {
@@ -341,13 +252,9 @@ export async function approvalRoute(req: Request, url: URL, deps: { login: strin
 		const b = (await req.json().catch(() => ({}))) as { text?: unknown; part?: unknown };
 		const text = typeof b.text === "string" ? b.text.replace(/\r\n?/g, "\n").trim() : "";
 		if (!text || text.length > DRAFT_BODY_MAX) return json({ error: text ? "글이 너무 길어요" : "보낼 글을 적어 주세요" }, 400);
-		const c = commentDraftOf(ref);
-		if (c && b.part === "mail") {
-			if (!c.mail || getDraft(c.mail)?.status !== "pending") return json({ error: "함께 보낼 메일이 없어요" }, 404);
-			patchDraft(c.mail, { body: text });
-		} else if (c) setCommentDraftText(ref, text);
-		else if (textEditable(ref)) patchDraft(ref, { body: text });
-		else return json({ error: "이미 처리됐거나 없는 초안이에요" }, 404);
+		// 직접 수정 is the reply flow's edit (design 3.3): saved as written, the owner-text lint, a 고치기 pick so an older 보내기 no longer covers it.
+		const r = await replies.act({ ref, action: "edit", text, ...(b.part === "mail" ? { part: "mail" as const } : {}) }, { surface: "web", login: deps.login });
+		if (!r.body.ok) return json({ error: r.body.error, ...(r.body.lint ? { lint: r.body.lint } : {}) }, r.status === 404 ? 404 : r.status);
 		log(`draft ${ref}${b.part === "mail" ? " (mail)" : ""}: the owner edited its text in place (${text.length} chars)`);
 		return json({ ok: true });
 	}

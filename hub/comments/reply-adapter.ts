@@ -7,11 +7,11 @@ import type { Engine } from "./engine.ts";
 import type { Draft } from "./store.ts";
 
 const STATE: Record<string, DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent", answered: "closed" };
-const isCode = (ref: string) => /^D[a-z2-9]{6}$/.test(ref);
 const question = (d: Draft | undefined) => (d?.mail ? "이 답글을 올리고 메일도 보낼까요?" : "이 답글 올릴까요?");
 
 export function commentAdapter(engine: Engine): ReplyAdapter {
-	const draftOf = (ref: string): Draft | undefined => (isCode(ref) ? engine.store.drafts().find(d => d.code === ref) : undefined);
+	// By the store, not the ref's shape: older and seeded codes do not all follow D + 6.
+	const draftOf = (ref: string): Draft | undefined => engine.store.drafts().find(d => d.code === ref);
 	const viewOf = (d: Draft): DraftView | undefined => {
 		const src = engine.store.config().sources[d.source];
 		const c = engine.store.comments().find(x => x.id === d.commentId);

@@ -9,6 +9,7 @@ import { triggerFollowup } from "../followup.ts";
 import { commentOriginal } from "./original.ts";
 import { realEngine } from "./real.ts";
 import { POST_UNKNOWN } from "./recover.ts";
+import { commentAdapter } from "./reply-adapter.ts";
 import { createCommentsWeb } from "./web.ts";
 
 // An approved reply that was posted starts the app's 이어서 할 일 check (hub/followup.ts), once per send record.
@@ -25,6 +26,8 @@ void engine.reconcile({ recheck: true }).then(
 );
 
 export const commentsRoute = web.route;
+// The comment adapter of the one reply flow (hub/reply-wire.ts), over this engine.
+export const commentReply = commentAdapter(engine);
 // The comment a draft of the comment engine answers (hub/draft-attach.ts: GET /api/drafts/<code>/original).
 export const commentOriginalOf = (code: string) => commentOriginal(engine.store, code);
 // What waits per integration key ("youtube", "instagram", "site") and whether a website source exists; read by GET /api/integrations.
@@ -77,5 +80,4 @@ export const commentContextOf = (code: string, pending: ReturnType<typeof engine
 };
 /** 보내지 않기 on a comment draft (the same step as the comment card's). */
 export const dropCommentDraft = (code: string) => engine.drop(code);
-export const setCommentDraftText = (code: string, text: string): void => engine.store.patchDraft(code, { text, clean: false });
 export const commentFlags = (): string[] => (Object.values(engine.store.config().sources).some(s => s.kind === "website") && engine.store.config().enabled ? ["comments-site"] : []);

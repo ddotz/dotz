@@ -48,7 +48,7 @@ test("the web button, a Discord button and the batch answer each leave an answer
 
 	await second;
 	const q = openCards()[0].title;
-	expect(discordGatewayAnswer(CONV, CONV, "1) 보내기", [{ q, n: 1, label: "보내기" }])).toBe(true);
+	expect(await discordGatewayAnswer(CONV, CONV, "1) 보내기", [{ q, n: 1, label: "보내기" }])).toBe(true);
 	expect(pickedSend(cardOf(refs[1]!).decision)).toBe("send");
 
 	await third;

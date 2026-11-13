@@ -13,6 +13,7 @@ import { getSecret } from "./creds.ts";
 import { type KakaoDb, sqlcipherDb } from "./db.ts";
 import { callReplyModel } from "../reply-model.ts";
 import { replyLearning } from "../reply-mail.ts";
+import { kakaoAdapter } from "./reply-adapter.ts";
 import { type DraftModel, type StyleHint, type VoiceSource } from "./draft.ts";
 import { createLive } from "./live.ts";
 import { defaultRunner, type KakaoConfig, kakaoPaths } from "./types.ts";
@@ -88,6 +89,8 @@ const web = createKakaoWeb({
 });
 
 export const kakaoRoute = web.route;
+// The KakaoTalk adapter of the one reply flow (hub/reply-wire.ts).
+export const kakaoReply = kakaoAdapter(web.replyKit);
 export const kakaoUnreplied = web.unrepliedCount;
 export const kakaoDraftFacts = web.draftFacts;
 export const kakaoPendingDrafts = web.pendingDrafts;

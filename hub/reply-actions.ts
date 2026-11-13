@@ -231,7 +231,9 @@ export function createReplyActions(deps: ReplyDeps) {
 		const found = await resolve(input.ref);
 		if (!found) return fail(404, "unknown_ref", "그 초안을 찾지 못했어요");
 		if ("card" in found) return toBot(ctx, found.card, input);
-		const { adapter: a, view } = found;
+		// The pick, the send and its card state belong where the draft's card was asked, when it has one; the store's own place otherwise.
+		const card = deps.cards.open().find(c => c.ref === input.ref);
+		const a = found.adapter, view = card ? { ...found.view, conv: card.conv } : found.view;
 		if (ctx.agent && input.action === "send") return agentSend(a, view);
 		switch (input.action) {
 			case "send": return send(ctx, a, view, input);

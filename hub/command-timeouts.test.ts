@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createApprovalSender, MAY_HAVE_GONE_OUT, runCli, SEND_CLI_MS, type SendResult } from "./approval-send.ts";
+import { createApprovalSender, MAY_HAVE_GONE_OUT, runCli, type SendResult } from "./approval-send.ts";
 import { spawnExec } from "./mail-sync.ts";
 import { advance } from "./runtime/test-clock.ts";
 
@@ -32,14 +32,14 @@ async function endOf(run: () => Promise<{ code: number; out: string; timedOut?: 
 	return reports.at(-1)!;
 }
 
-test("a send that timed out ends unsure with a reason of its own (not the gateway-stopped one) that carries the limit from the constant", async () => {
+test("a send that timed out ends unsure with a reason of its own (not the gateway-stopped one)", async () => {
 	const end = await endOf(async () => ({ code: 124, out: "\ntimed out", timedOut: true }));
 	expect(end.state).toBe("unsure");
+	expect(end.reason?.code).toBe("timeout");
 	expect(end.text).not.toBe(MAY_HAVE_GONE_OUT);
-	expect(end.text).toContain(String(SEND_CLI_MS / 60_000));
 });
 
-test("a send that failed on its own still ends failed", async () => {
-	const end = await endOf(async () => ({ code: 1, out: "로그인이 풀렸어요" }));
-	expect(end.state).toBe("failed");
+test("a send whose CLI says it surely did not go out ends failed; one that says nothing may have gone out", async () => {
+	expect((await endOf(async () => ({ code: 1, out: 'DOTZ_SEND {"sent":"no","code":"login_expired"}' }))).state).toBe("failed");
+	expect((await endOf(async () => ({ code: 1, out: "로그인이 풀렸어요" }))).state).toBe("unsure");
 });

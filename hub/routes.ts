@@ -3,6 +3,8 @@
 import { readFileSync } from "node:fs";
 import { dropAnsweredMailDraft } from "./draft-drop.ts";
 import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts";
+import { replies, setReplyBot } from "./reply-wire.ts";
+import { replyRoute } from "./reply-route.ts";
 import { join } from "node:path";
 import { cloudflareGate } from "./devices.ts";
 import { type Confirm, nativeConfirm } from "./local-login-dialog.ts";
@@ -51,7 +53,7 @@ import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, manifestI18n, setAppLang, setAppName, swScript, webBuild } from "./webapp.ts";
 import { forgetRoute, listPeers, ownLogin } from "./peers.ts";
-import { ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
+import { AGENT_AUTHOR, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
 import { peerProjects } from "./peer-projects.ts";
 import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
@@ -302,6 +304,9 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 
 export { applyMailStates, mailOriginal, mailSyncDeps } from "./routes-mail.ts";
 
+// A hand-written card's answer (kind `card`) is one owner message to the bot, as its own numbered answer would be.
+setReplyBot((to, text) => deliverAnswer({ to, text, picks: [], notice: "", login: "local" }));
+
 export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const setupGate = createSetupGate({ dir: DATA_DIR, localHeaders: () => localLogin.sessionHeaders(), restart: () => void restartGatewayNow(), providers: routeSettings, log });
 	// Before any onboarding route can run: the real browser/exec, a gateway restart only after a flow changed config, and the live web-access switch.
@@ -517,9 +522,9 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		// The phone's input diagnostic reports itself here (web/js/34-input-diag.js): known fields only, into a capped file under the data dir.
 		if (req.method === "POST" && url.pathname === "/api/input-diag") return json({ ok: true, kept: addInputDiag(await body(req)) }, 201);
 		// The waiting send-approval cards of a conversation, their batch answer and the owner's own edit of a draft (hub/approval-wire.ts).
-		if (url.pathname === "/api/approvals" || url.pathname === "/api/approvals/failed" || url.pathname === "/api/approvals/undo" || /^\/api\/drafts\/[^/]+\/body$/.test(url.pathname)) {
-			const login = req.headers.get("tailscale-user-login") ?? "local";
-			const res = await approvalRoute(req, url, { login, triageMin: cfg.web.triage_min ?? TRIAGE_MIN_DEFAULT, deliver: (to, text, picks, decision) => deliverAnswer({ to, text, picks, notice: decision ?? "", login }) });
+		if (url.pathname.startsWith("/api/reply/") || url.pathname === "/api/approvals" || url.pathname === "/api/approvals/failed" || url.pathname === "/api/approvals/undo" || /^\/api\/drafts\/[^/]+\/body$/.test(url.pathname)) {
+			const login = peer === "none" && tokenOk(req) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own call is never the owner's word (hub/routes-send.ts)
+			const res = (await replyRoute(req, url, { replies, login, agent: login === AGENT_AUTHOR, triageMin: 1, undoSec: cfg.web.send_undo_sec ?? 10, surface: peer === "none" ? "web" : "peer" })) ?? (await approvalRoute(req, url, { login, triageMin: cfg.web.triage_min ?? TRIAGE_MIN_DEFAULT, deliver: (to, text, picks, decision) => deliverAnswer({ to, text, picks, notice: decision ?? "", login }) }));
 			if (res) return res;
 		}
 		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).

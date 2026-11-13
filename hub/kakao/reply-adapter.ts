@@ -13,7 +13,6 @@ import type { KakaoPaths } from "./types.ts";
 export type KakaoKit = { paths: KakaoPaths; revise: (chatId: string, revise: { code: string; draft: string; change: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps> };
 
 const STATE: Record<string, DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent" };
-const isCode = (ref: string) => /^K[A-Z2-7]{4}$/.test(ref);
 const codeOf = (c: string | undefined): ReasonCode => (isReasonCode(c) ? c : "unknown");
 
 /** A send result as the queue reads it: sent, surely not sent, may be in the room, or some parts in. */
@@ -26,7 +25,7 @@ export function outcomeOf(r: SendResult): SendOutcome {
 }
 
 export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
-	const draftOf = (ref: string): Draft | undefined => (isCode(ref) ? readDrafts(kit.paths).find(d => d.code === ref) : undefined);
+	const draftOf = (ref: string): Draft | undefined => readDrafts(kit.paths).find(d => d.code === ref);
 	const viewOf = (d: Draft): DraftView => {
 		const pending = d.status === "pending";
 		const before = d.replaces ? draftOf(d.replaces) : undefined;

@@ -38,7 +38,10 @@ function viewOf(rec: DraftRec): DraftView {
 	};
 }
 
-const known = (ref: string): DraftRec | undefined => (/^R[A-Z2-7]{6}$/.test(ref) && getDraft(ref)?.kind === "mail" ? getDraft(ref) : undefined);
+const known = (ref: string): DraftRec | undefined => {
+	const rec = getDraft(ref);
+	return rec?.kind === "mail" ? rec : undefined;
+};
 const done = (r: { ok: boolean; text: string }, code: ReasonCode = "not_pending") => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code, text: r.text } });
 
 /** The mail and webmail adapter over the reply-drafts store; `deps` gives the model and tool runner of a revise (the real ones by default). */
