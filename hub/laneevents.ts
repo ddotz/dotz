@@ -6,7 +6,7 @@ import { rmSync } from "node:fs";
 import { handleError, laneRanOn, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
 import { nextLastText, scheduleReport, REPORT_DEBOUNCE_MS, report } from "./lanereport.ts";
 import { compactAtFor, lanesCompactAt, log, now } from "./config.ts";
-import { laneStuck, recover } from "./lanerun.ts";
+import { COMPACTION_FAILED, laneStuck, recover } from "./lanerun.ts";
 import { prompt } from "./laneprompt.ts";
 import { msg } from "./i18n.ts";
 import { revertWhy } from "./fallback.ts";
@@ -171,6 +171,8 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 			case "compaction":
 				if (ev.state === "error" && requeueRefused(lane.ctx, ev.error)) {
 					log(`lane ${lane.name} compaction refused (${ev.error.slice(0, 120)}); retrying at the next idle point`);
+					// The refusal's own retry is this failure's one retry: a failure of that retry restarts the lane.
+					compactFailed.set(lane.name, wasWorking);
 					flushCompact(lane.ctx, portOf(lane));
 				} else if (ev.state === "error" && !compactFailed.has(lane.name)) {
 					compactFailed.set(lane.name, wasWorking);
@@ -180,7 +182,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				} else if (ev.state === "error") {
 					const firstWorking = compactFailed.get(lane.name) ?? false;
 					compactFailed.delete(lane.name);
-					recover(lane, "컨텍스트 압축이 실패했어요", wasWorking || firstWorking);
+					recover(lane, COMPACTION_FAILED, wasWorking || firstWorking);
 				} else {
 					compactFailed.delete(lane.name);
 					lane.retainNext = true;

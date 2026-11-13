@@ -8,6 +8,7 @@ import { resumeUnfinished } from "./laneresume.ts";
 import type * as Lanes from "./lanes.ts";
 import { cfg, NAME } from "./config.ts";
 import { dropForLine } from "./forline.ts";
+import { msg } from "./i18n.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
@@ -97,6 +98,10 @@ test("a failed compaction restarts the session without a chat message or an orch
 	lane.sessionFile = session;
 	for (let n = 1; n <= 3; n++) {
 		const before = spawns.length;
+		// The first failure is retried at the next idle point; the second in a row restarts the lane.
+		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
+		await flush();
+		expect(spawns.length).toBe(before);
 		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
 		await flush();
 		await advance(300);
@@ -109,10 +114,36 @@ test("a failed compaction restarts the session without a chat message or an orch
 	}
 	spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
 	await flush();
+	spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
+	await flush();
 	expect(reports).toHaveLength(1);
 	expect(reports[0]).toStartWith("[lane stuck]");
 	expect(reports[0]).not.toContain("Compaction cancelled");
 	l.stopLane("recover-quiet");
+	await advance(300);
+});
+
+// A lane restarted for a failed compaction is told that, not that its process stopped responding (it did not).
+test("a lane restarted after a failed compaction gets the compaction revive text, not the stopped-process one", async () => {
+	const { lane } = await working("recover-compact");
+	const session = join(DATA, "recover-compact.jsonl");
+	writeFileSync(session, "");
+	lane.sessionFile = session;
+	const before = spawns.length;
+	// One failure or two in a row restart the lane, depending on whether the compaction retry is in place: push until it restarts.
+	for (let n = 0; n < 2 && spawns.length === before; n++) {
+		// A frame opens with "alive": it records that the turn was running when the compaction failed.
+		spawns.at(-1)!.agent.push({ type: "alive" });
+		spawns.at(-1)!.agent.push({ type: "compaction", state: "error", error: "Compaction cancelled" });
+		await flush();
+		await advance(300);
+		await flush();
+	}
+	expect(spawns.length).toBe(before + 1);
+	const revive = spawns.at(-1)!.agent.sent.join("\n");
+	expect(revive).toContain(msg().laneCompactFailed);
+	expect(revive).not.toContain(msg().laneStopped);
+	l.stopLane("recover-compact");
 	await advance(300);
 });
 
