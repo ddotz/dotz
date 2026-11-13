@@ -49,7 +49,7 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			events.push({ target: b.conv ?? b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}), ...(b.files ? { files: b.files } : {}) });
 			return Response.json({ ok: true });
 		}
-		if (req.method === "POST" && path.endsWith("/answer")) {
+		if (req.method === "POST" && (path.endsWith("/answer") || path === "/api/reply/act")) {
 			events.push({ target: path, text: JSON.stringify(await req.json()) });
 			return Response.json({ ok: true });
 		}
@@ -575,4 +575,22 @@ test("handoff from a sender that is not a known computer is delivered, with no a
 	expect(A.seen).toHaveLength(0);
 	expect(A.sends).toEqual([]);
 	expect(B.logs).toHaveLength(1);
+});
+
+test("a reply card's action on a peer's item is forwarded to that gateway's /api/reply/act with the same body", async () => {
+	const { A, B } = pair();
+	await A.mon.peerMonitoring();
+	const args = { ref: "RA00001", action: "revise", change: "좀 더 짧게" };
+	const r = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify({ action: "reply", args }) }));
+	expect(r.status).toBe(200);
+	expect(B.events.filter(e => e.target === "/api/reply/act").map(e => JSON.parse(e.text))).toEqual([args]);
+});
+
+test("the snapshot carries the reply queue when the gateway has it, and leaves it out on an older one", async () => {
+	const local = (queue: boolean) => async (r: Request) => (new URL(r.url).pathname === "/api/reply/queue" ? (queue ? Response.json({ items: [{ ref: "RA00002" }] }) : new Response("", { status: 404 })) : Response.json({}));
+	const withQueue = await createPeerMonitor({ name: () => "맥미니", local: local(true), computers: async () => [] }).snapshot();
+	const older = await createPeerMonitor({ name: () => "맥미니", local: local(false), computers: async () => [] }).snapshot();
+	expect(withQueue.reply).toEqual({ items: [{ ref: "RA00002" }] });
+	expect(older.reply).toBeUndefined();
+	expect(older.name).toBe("맥미니");
 });

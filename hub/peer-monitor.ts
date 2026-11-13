@@ -23,7 +23,7 @@ export type OrchestratorPause = { status: string; pauseKind: string };
 // `replies`: the reply drafts its apps keep in their own stores (GET /api/replies: KakaoTalk rooms, comment sources), for the 답장 확인 queue here.
 // `failed`, `sent`, `stops`: the 답장 대기 screen's 실패 / 보낸 것 rows and why a rule did not send a draft (GET /api/replies, hub/reply-outcomes.ts); an older peer leaves them out.
 // `bot`: that gateway's own bot name, so its items name their main chat after it on the computer that shows them (never that computer's bot).
-export type Snapshot = { name: string; bot?: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown>; replies?: unknown[]; failed?: unknown[]; sent?: unknown[]; stops?: Record<string, string> };
+export type Snapshot = { name: string; bot?: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown>; replies?: unknown[]; failed?: unknown[]; sent?: unknown[]; stops?: Record<string, string>; reply?: { items: unknown[] } };
 export type PeerView = { name: string; url: string; online: boolean; stale: boolean; items: Snapshot | null };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 export type MonitorDeps = {
@@ -120,7 +120,9 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	// The reply drafts are optional: a handler without /api/replies (or one that fails) leaves them out instead of failing the snapshot.
 	type RepliesPart = { items: unknown[]; failed?: unknown[]; sent?: unknown[]; stops?: Record<string, string> };
 	const replies = async (): Promise<RepliesPart | undefined> => { try { const r = await ask("GET", "/api/replies"); if (!r.ok) return undefined; const b = (await r.json()) as Partial<RepliesPart>; return { items: b.items ?? [], ...(Array.isArray(b.failed) ? { failed: b.failed } : {}), ...(Array.isArray(b.sent) ? { sent: b.sent } : {}), ...(b.stops && typeof b.stops === "object" ? { stops: b.stops } : {}) }; } catch { return undefined; } };
-	const snapshot = async (): Promise<Snapshot> => { const [parts, rs] = await Promise.all([Promise.all(PARTS.map(read)), replies()]); return build(deps.name(), parts, rs, deps.bot?.()); };
+	// The one reply queue (hub/reply-wire.ts GET /api/reply/queue), optional the same way: an older peer leaves `reply` out.
+	const queue = async (): Promise<{ items: unknown[] } | undefined> => { try { const r = await ask("GET", "/api/reply/queue"); if (!r.ok) return undefined; const b = (await r.json()) as { items?: unknown }; return Array.isArray(b.items) ? { items: b.items } : undefined; } catch { return undefined; } };
+	const snapshot = async (): Promise<Snapshot> => { const [parts, rs, q] = await Promise.all([Promise.all(PARTS.map(read)), replies(), queue()]); return { ...build(deps.name(), parts, rs, deps.bot?.()), ...(q ? { reply: q } : {}) }; };
 
 	// An older peer (404 on /api/peer/monitoring) or no shared token here: the four plain reads, which the peer allows through the owner's
 	// tailnet identity like the computer switcher's reads. Read-only: forwarded actions always need the token.
@@ -302,6 +304,9 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 		const login = req.headers.get("tailscale-user-login") ?? undefined;
 		const bad = (error: string) => json({ error }, 400);
 		switch (b.action) {
+			// A reply card's action on this computer's item: the same body the page posts to its own /api/reply/act.
+			case "reply":
+				return ask("POST", "/api/reply/act", a, login);
 			case "message": {
 				const fields = targetFields(a.target);
 				if (!fields) return bad("unknown target");
