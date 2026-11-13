@@ -2270,7 +2270,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .nt-wi .ic { width: 16px; height: 16px; }
 .nt-wt { flex: none; align-self: flex-start; padding-top: var(--sp-05); color: var(--fg-3); font: 400 12px/16px var(--font); font-variant-numeric: tabular-nums; }
 .nw-chg em { font-weight: 600; }
-.nw-line { margin-top: var(--sp-1); color: var(--fg-3); font: 400 13px/20px var(--font); }
 
 /* Computers (33-peers.js): the bot name as the switcher (its unread dot), the switch sheet (on the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
 /* the trigger: the brand row (wide) and the page title (phone, a page without a back arrow). On the phone the dot sits at the name's bottom right, inside its padding so the ellipsis clip keeps it */
