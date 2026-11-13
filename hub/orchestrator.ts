@@ -1027,7 +1027,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		const target = ownerCancel();
 		if (target) for (const f of cancelHooks) f(target);
 		const found = stopFound(opts.key, !!proc && orch.status === "working", !!target, () => orch.status === "working");
-		if (proc && (found.running || target)) stuck.ownerAbort(() => proc?.abort(true));
+		if (proc && (found.running || target)) found.running ? stuck.ownerAbort(() => proc?.abort(true)) : proc.abort(true); // grace only for a running turn: on an idle one no turn_end disarms it
 		return found;
 	}
 
