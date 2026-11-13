@@ -26,7 +26,8 @@ there because this computer is full. The receiving gateway runs the work as its 
   - `working`: the orchestrator or a session is in a turn now. `running`: at most 20 rows, a session's title only.
   - Never in it: account ids or names, project paths or content, briefs, reports, chat text.
 - It answers with an `ETag` and `304` to `If-None-Match`, like the monitoring snapshot. A peer that answers 404 is older
-  than Fleet: it is listed online with no load, and nothing is placed on it.
+  than Fleet: it is listed online with no load, and nothing is placed on it. `GET /api/fleet` gives it `online: true`, `load: null`,
+  `legacy: true` and `state: "busy"` (`fleetState(null, true)`), and the sheet shows its old 연결됨 instead of a state label.
 
 ## The fleet list (local hub side)
 

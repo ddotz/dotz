@@ -55,12 +55,13 @@ import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
 import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
+import { activateFleet, createFleet, loadCore } from "./fleet.ts";
 import { peerLimitNotice } from "./limit-peer.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
 import { queue, bgWork, workRows, out, fileRoots } from "./outbound.ts";
-import { convs } from "./convsessions.ts";
+import { convs, maxLiveView } from "./convsessions.ts";
 import { QUICK } from "./session-key.ts";
 import { sendWeb } from "./intake.ts";
 import { json, body, terminals, BodyError } from "./routes-util.ts";
@@ -263,6 +264,9 @@ export const stateWaitlist = () => buildWaitlist({
 	lanes: laneSummary(),
 	work: [...bgWork.queuedWork(), ...convs.conversations().filter(c => convs.live(c)).flatMap(c => c.bg.queuedWork().map(w => ({ ...w, target: c.primary })))],
 });
+// Fleet (hub/fleet.ts): this computer's load for its peers, and GET /api/fleet for the computer sheet.
+const fleet = createFleet({ name: () => resolveName(cfg.web?.machine_name, machineHost()), local: () => loadCore({ sessions: maxLiveView(), capacity: laneCapacity(), waitlist: stateWaitlist().length, orchestrator: orch.status, lanes: laneSummary(), convs: convs.conversations().filter(c => convs.live(c)).map(c => ({ status: c.o.orch.status })) }) });
+activateFleet(fleet);
 const mainWork = (t: string | undefined) => t === "web" || t === "terminal" || !t;
 const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
@@ -359,7 +363,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			if (hostname) saveWebAccessInput(DATA_DIR, { hostname });
 			return json(onboardingService().start("web-access"));
 		}
-		const peerResponse = await peers.route(req, url);
+		const peerResponse = (await peers.route(req, url)) ?? (await fleet.route(req, url));
 		if (peerResponse) return peerResponse;
 		// 화면 공유 (hub/remote-desktop.ts): /desk/, /api/desk/*, the peer's Chrome opener; null = upgraded to a websocket.
 		const deskResponse = await desk.route(req, url, srv, webAccess.mode());

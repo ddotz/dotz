@@ -9,6 +9,7 @@
 import { peerFetch } from "./tailnet-fetch.ts";
 import { log } from "./config.ts";
 import { broadcast } from "./events.ts";
+import { invalidateFleetPeer } from "./fleet.ts";
 import { invalidatePeer } from "./peer-monitor.ts";
 import { type Found, knownComputers, refreshCounts } from "./peers.ts";
 
@@ -75,6 +76,7 @@ export function startPeerStreams(opts: Opts = {}): () => void {
 		const c = await refreshCounts(url);
 		if (stopped || follows.get(url) !== f) return;
 		invalidatePeer(url);   // the merged 모니터링 cache reads this peer again (hub/peer-monitor.ts)
+		invalidateFleetPeer(url);   // and so does its load in the computer sheet (hub/fleet.ts)
 		broadcast({ ts: new Date().toISOString(), kind: "peer_counts", source: "gateway", url, name: f.name, online: c !== undefined, unread: c?.unread ?? 0, need: c?.need ?? 0 });
 	};
 	const countsSoon = (url: string): void => {

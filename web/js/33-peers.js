@@ -10,7 +10,7 @@
 // with three or more (owner 2026-10-31). The list is ordered by address (unique and the same everywhere), for the sheet and Ctrl+` alike.
 function prOrder(list) { return [...list].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0)); }
 const prCached = () => { const l = lsJson("dotz-peers", []); return Array.isArray(l) ? prOrder(l.filter(p => p && typeof p.name === "string" && typeof p.url === "string")) : []; };
-const PR = { list: prCached(), node: null, ov: null, opener: null, tries: 0, timer: 0, fresh: false };
+const PR = { list: prCached(), fleet: null, node: null, ov: null, opener: null, tries: 0, timer: 0, fresh: false };
 const PR_RETRY_MS = [2000, 5000, 15000];
 const prSelf = () => PR.list.find(p => p.self);
 const prOthers = () => PR.list.filter(p => !p.self);
@@ -189,20 +189,36 @@ function prForgetBtn(p, off) {
   } });
 }
 
+// Fleet (hub/fleet.ts): what each computer is doing, read only while the sheet opens. A row the list has no state for (an older gateway, a relay row) keeps the plain pill.
+const PR_FLEET_TONE = { idle: "ok", busy: "pri", full: "warn", offline: "off" };
+const prFleetWord = state => ({ idle: TX("misc.pr.fleet.idle"), busy: TX("misc.pr.fleet.busy"), full: TX("misc.pr.fleet.full"), offline: TX("misc.pr.fleet.offline") })[state] || TX("misc.pr.fleet.offline");
+const prFleetNow = p => (Array.isArray(PR.fleet) && !selfDown && !isRelayRow(p) ? PR.fleet.find(f => (p.self ? f.self : f.url === p.url) && !f.legacy) : undefined);
+function prFleetLine(f) {
+  const l = f.load;
+  if (!l) return "";
+  return [f.state === "full" && l.paused ? TX("misc.pr.fleet.limit") : "", l.running.map(r => r.title).filter(Boolean).join(", ")].filter(Boolean).join(" · ");
+}
+async function prFleetLoad() {
+  try { const r = await api("/api/fleet"); PR.fleet = Array.isArray(r) ? r : null; } catch { return; /* the sheet keeps the plain connected / not connected pills */ }
+  if (PR.node) prSheet();
+}
+
 function prSheet() {
   const rows = PR.list.map(p => {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
     const here = relayCur() ? isRelayRow(p) && relayCur() === relayTargetOf(p) : p.self;
     const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
-    const st = p.self ? (selfDown ? TX("settings.prov.not_connected") : "") : selfDown ? TX("misc.pr.unchecked") : p.online ? TX("connect.state.on") : TX("settings.prov.not_connected");
+    const fl = prFleetNow(p);
+    const st = fl ? prFleetWord(fl.state) : p.self ? (selfDown ? TX("settings.prov.not_connected") : "") : selfDown ? TX("misc.pr.unchecked") : p.online ? TX("connect.state.on") : TX("settings.prov.not_connected");
     // the prototype's switcher row: a status dot, the name over one quiet line, and at the right the check (this one) or the count of what waits there
     // a computer that cannot be reached says so at the right as a dot and one word (row anatomy: the status is last), not as the quiet line
-    const bad = !alert && !isRelayRow(p) && (st === TX("settings.prov.not_connected") || st === TX("misc.pr.unchecked"));
-    const sub = p.self ? (bad ? TX("project.pc.this") : st || TX("project.pc.this")) : isRelayRow(p) ? [p.note, p.online ? "" : st].filter(Boolean).join(" · ") : alert ? prText(p) : bad ? "" : st;
+    const bad = !fl && !alert && !isRelayRow(p) && (st === TX("settings.prov.not_connected") || st === TX("misc.pr.unchecked"));
+    const sub = fl ? [alert ? prText(p) : "", prFleetLine(fl) || (p.self ? TX("project.pc.this") : "")].filter(Boolean).join(" · ") : p.self ? (bad ? TX("project.pc.this") : st || TX("project.pc.this")) : isRelayRow(p) ? [p.note, p.online ? "" : st].filter(Boolean).join(" · ") : alert ? prText(p) : bad ? "" : st;
     const row = el("button", { type: "button", class: `pr-row${here ? " on" : ""}${off ? " off" : ""}`, "aria-current": here ? "true" : null, "aria-disabled": off ? "true" : null,
       "aria-label": [p.name, here ? TX("misc.pr.here") : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
       el("span", { class: `dot${(p.self ? !selfDown : p.online && !selfDown) ? " ok" : ""}` }),
       el("span", { class: "pr-tx" }, el("span", { class: "pr-t", text: p.name }), sub ? el("span", { class: "pr-sub", text: sub }) : null),
+      fl ? el("span", { class: `tag ${PR_FLEET_TONE[fl.state] || "off"}`, text: st }) : null,
       bad ? el("span", { class: "tag off", text: st }) : alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : here ? icon("check", "pr-ck") : null);
     const screen = dskRowBtn(p) || prForgetBtn(p, off);
     return screen ? el("div", { class: "pr-line" }, row, screen) : row;
@@ -245,6 +261,7 @@ function prOpen() {
   const cur = PR.node.querySelector(".pr-row.on") || PR.node.querySelector(".pr-row");
   if (cur) cur.focus({ preventScroll: true });
   prLoad();
+  prFleetLoad();
 }
 
 function prClose(restore = true) {
