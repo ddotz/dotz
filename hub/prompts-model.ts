@@ -7,7 +7,7 @@ export type Pending = { text: string; at?: number; target?: string; replyTo?: st
 /** A worker and the request it was spawned for. `also`: follow-ups deferred to it; `receipted`: its line was posted; `delivered`: an answer from its result went out; `read`: its result was read in a run that did not answer it. */
 export type WorkLink = { id: string; target: string; replyTo?: string; at: number; description?: string; also?: string[]; receipted?: boolean; delivered?: boolean; read?: boolean; cancelled?: boolean };
 /** A request waiting on background work, for the gateway's silent-wait check (hub/waitcheck.ts). */
-export type OpenRequest = { target: string; replyTo?: string; at: number; workers: { id: string; description?: string }[] };
+export type OpenRequest = { target: string; replyTo?: string; from?: string; handback?: true; bookkeeping?: true; at: number; workers: { id: string; description?: string }[] };
 /** One of this session's background workers, as hub/bgwork.ts lists it (running oldest first, then recently finished newest first). */
 export type WorkRow = { id: string; description?: string; status: "running" | "stalled" | "done" | "failed"; target?: string; replyTo?: string; startedAt: number; endedAt?: number };
 export type Reply = { target: string; replyTo?: string; refs?: string[]; owner?: boolean; deep?: true; from?: string; handback?: true; quiet?: true; bookkeeping?: true; fallback?: string }; // deep: the owner's own words ask for deeper reasoning on this turn (hub/ultrathink.ts); fallback: the answer a rewrite turn replaces, posted as it was if that turn writes nothing; quiet: a system check, see deps.quietNote; refs: every message merged into this prompt

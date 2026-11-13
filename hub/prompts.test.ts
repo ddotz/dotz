@@ -1628,3 +1628,86 @@ test("an owner message flagged deep reaches the turn's delivery as deep; a steer
 	expect(state.steered).toEqual(["[note] more ultrathink"]);
 	expect(deep).toEqual([true]);
 });
+
+
+// 2026-11-11 22:13-23:17 UTC: work a conversation session handed to main was asked again without its `from`, so the
+// answer was posted in a lane's conversation instead of going back to the session that handed it over.
+function handedSetup() {
+	const back: { from: string; text: string; replyTo?: string }[] = [];
+	const works: WorkRow[] = [];
+	const t = setup([], [], {
+		handBack: (from, text, replyTo) => void back.push({ from, text, replyTo }),
+		work: () => works,
+		readElsewhereNote: (w, readIn) => `[elsewhere] ${w.id} ${readIn}`,
+		readHereNote: id => `[read here] ${id}`,
+	});
+	return { ...t, back, works };
+}
+const handed = { target: "ch:A", from: "ch:A" };
+const endTurn = (t: ReturnType<typeof setup>, answer: string) => {
+	t.q.onAnswer(answer);
+	t.state.working = false;
+	t.q.settleTurn();
+};
+
+test("a handed request whose worker result is read in a turn for another conversation is asked again as handed work and handed back", async () => {
+	const t = handedSetup();
+	t.startTurn("[conversation ch:A] fix X", handed);
+	t.q.retarget("ch:A", "lane:L"); // a lane launched in that turn moved it (routes-lanes.ts)
+	t.q.workersSpawned([{ id: "st_w" }]);
+	t.works.push({ id: "st_w", status: "running", target: "lane:L", startedAt: Date.now() });
+	endTurn(t, "[later]");
+
+	t.startTurn("B 요청", { target: "web", replyTo: "b1" });
+	t.works[0] = { ...t.works[0]!, status: "done", endedAt: Date.now() };
+	endTurn(t, "B 답");
+	const again = t.state.delivered.at(-1)!;
+	expect(again).toStartWith("[elsewhere] st_w web");
+	t.state.working = true;
+	t.q.onPrompt(again);
+	t.q.onAnswer("X 고쳤어요");
+	await Promise.all(t.state.settling);
+	expect(t.back).toEqual([{ from: "ch:A", text: "X 고쳤어요", replyTo: undefined }]);
+	expect(t.state.posts.map(p => p.text)).toEqual(["B 답"]);
+});
+
+test("a handed request whose result was read in a run that did not answer it is asked again as handed work and handed back", async () => {
+	const t = handedSetup();
+	t.startTurn("[conversation ch:A] fix Y", handed);
+	t.q.workersSpawned([{ id: "st_y" }]);
+	endTurn(t, "[later]");
+
+	t.startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
+	t.q.workersDone(["st_y"]);
+	endTurn(t, "A 답");
+	const again = t.state.delivered.at(-1)!;
+	expect(again).toStartWith("[read here] st_y");
+	t.state.working = true;
+	t.q.onPrompt(again);
+	t.q.onAnswer("Y 고쳤어요");
+	await Promise.all(t.state.settling);
+	expect(t.back).toEqual([{ from: "ch:A", text: "Y 고쳤어요", replyTo: undefined }]);
+	expect(t.state.posts.map(p => p.text)).toEqual(["A 답"]);
+});
+
+test("a handed request is handed back even when its answer repeats what the turn already sent to the conversation it names", () => {
+	const t = handedSetup();
+	t.startTurn("[conversation ch:A] 상태는?", handed);
+	t.q.sent("ch:A", "모두 정상이에요");
+	t.q.onAnswer("모두 정상이에요");
+	expect(t.back).toEqual([{ from: "ch:A", text: "모두 정상이에요", replyTo: undefined }]);
+});
+
+test("a handed request the silent-wait check gives up on is reported once to the session that handed it over", () => {
+	const t = handedSetup();
+	t.startTurn("[conversation ch:A] fix Z", handed);
+	endTurn(t, "[later]");
+	const open = t.q.openRequests();
+	expect(open).toMatchObject([{ target: "ch:A", from: "ch:A" }]);
+	t.q.dropOpen(open);
+	expect(t.q.openRequests()).toEqual([]);
+	expect(t.back).toHaveLength(1);
+	expect(t.back[0]!.from).toBe("ch:A");
+	expect(t.back[0]!.text).toContain("[conversation ch:A] fix Z");
+	expect(t.state.posts).toEqual([]);
+});

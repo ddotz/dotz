@@ -51,7 +51,7 @@ import { errorAsk, startResumeWatch, watchSession } from "./orch-error.ts";
 import { interruptedLanes } from "./lanereconnect.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, markRestartPending, RESTART_NOTICE_MS, restartCapText } from "./restart.ts";
-import { createWaitCheck } from "./waitcheck.ts";
+import { createWaitCheck, wakeReply } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
@@ -748,7 +748,7 @@ const waitCheck = createWaitCheck({
 		workers: () => c.bg.running(),
 		armed: since => allWatches().some(w => w.once && w.to === "orchestrator" && !w.paused && Date.parse(w.created) >= since),
 		lastTurnEndAt: () => c.o.lastTurnEndAt(),
-		wake: (open, last) => void convs.deliverTo(c.key, msg().openRequests(open.map(r => ({ ...r, asked: r.replyTo ? ownerMessage(r.replyTo)?.text : undefined })), last), { target: open[0]!.target, ...(open[0]!.replyTo ? { replyTo: open[0]!.replyTo } : {}) }),
+		wake: (open, last) => void convs.deliverTo(c.key, msg().openRequests(open.map(r => ({ ...r, asked: r.replyTo ? ownerMessage(r.replyTo)?.text : undefined })), last), wakeReply(open[0]!)),
 	})),
 });
 setInterval(waitCheck.tick, WAIT_CHECK_MS);

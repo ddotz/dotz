@@ -1,7 +1,7 @@
 // The silent-wait check: one bounded wake when an owner request is open and nothing runs; never while something does.
 import { expect, test } from "bun:test";
-import type { OpenRequest } from "./prompts.ts";
-import { createWaitCheck, MAX_WAKES, QUIET_MS, RETRY_MS, type WaitSession } from "./waitcheck.ts";
+import { createPrompts, type OpenRequest } from "./prompts.ts";
+import { createWaitCheck, MAX_WAKES, QUIET_MS, RETRY_MS, wakeReply, type WaitSession } from "./waitcheck.ts";
 
 const TICK = 20_000;
 const request = (replyTo: string, at = 0): OpenRequest => ({ target: "web", replyTo, at, workers: [] });
@@ -111,4 +111,40 @@ test("a session down on errors spends no wake while it waits for the model host;
 	run(QUIET_MS + TICK);
 	expect(s.wakes).toHaveLength(1);
 	expect(s.wakes[0]!.last).toBe(false);
+});
+
+
+test("the wake of a request another session handed over names that session, so its answer is handed back", () => {
+	const state = { working: false };
+	const q = createPrompts({
+		deliver: () => {},
+		steer: () => false,
+		working: () => state.working,
+		note: (_t, _r, text) => text,
+		isNote: () => false,
+		post: async () => ({ delivered: true }),
+		clearProgress: () => {},
+		persist: () => {},
+		log: () => {},
+	});
+	q.deliver("[conversation ch:A] fix X", { target: "ch:A", from: "ch:A" });
+	state.working = true;
+	q.onPrompt("[conversation ch:A] fix X");
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	let t = Date.now();
+	const wakes: OpenRequest[][] = [];
+	const session: WaitSession = { key: "main", open: q.openRequests, busy: () => false, down: () => false, workers: () => 0, armed: () => false, lastTurnEndAt: () => 0, wake: list => void wakes.push(list) };
+	const check = createWaitCheck({ sessions: () => [session], restarting: () => false, log: () => {}, now: () => t });
+	check.tick();
+	t += QUIET_MS;
+	check.tick();
+	expect(wakes).toMatchObject([[{ target: "ch:A", from: "ch:A" }]]);
+});
+
+test("a wake is delivered under the hand-over labels of the request it names, and an owner request carries none", () => {
+	expect(wakeReply({ target: "lane:handed-lane", from: "ch:A", handback: true, at: 1, workers: [] })).toEqual({ target: "lane:handed-lane", from: "ch:A", handback: true });
+	expect(wakeReply({ target: "ch:A", replyTo: "m1", bookkeeping: true, at: 1, workers: [] })).toEqual({ target: "ch:A", replyTo: "m1", bookkeeping: true });
+	expect(wakeReply({ target: "ch:A", replyTo: "m1", at: 1, workers: [] })).toEqual({ target: "ch:A", replyTo: "m1" });
 });

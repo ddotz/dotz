@@ -63,6 +63,13 @@ function holdForRewrite(deps: PromptDeps, prompts: Prompt[], deliver: (text: str
 
 /** A rewrite turn that wrote nothing (or only the no-op word) leaves the held answer as its answer. */
 const rewriteText = (p: Prompt, said: string, later: boolean): string => (p.fallback && !later && (!said.trim() || isSilent(said)) ? p.fallback : said);
+/** The silent-wait check gave up on `d` (hub/waitcheck.ts): it is closed, and a session that handed it over, still waiting, is told once. */
+function closeDropped(deps: PromptDeps, d: Prompt): void {
+	d.done = true;
+	if (!d.from || !deps.handBack) return;
+	deps.log(`the request handed over by ${d.from} was dropped unanswered; ${d.from} is told`);
+	deps.handBack(d.from, `The request you handed over was closed without an answer: the reminders brought none. Hand it over again if it still matters.\n\n${d.text.slice(0, REPORT_NOTE_CHARS)}`, d.replyTo);
+}
 /** An answer the owner must see even from a quiet check. */
 const LOUD = /^\s*\[(?:ask|fail)\]/i;
 
@@ -393,7 +400,7 @@ export function createPrompts(deps: PromptDeps) {
 			if (!d?.target || askedBack.has(l.id) || !deps.readHereNote || (target && !sameConv(target, d.target)) || linksOf(d).some(o => live.has(o.id))) continue;
 			askedBack.add(l.id);
 			deps.log(`the result of ${l.id} was read in a run that did not answer ${d.replyTo ?? "(no id)"}; it is asked again`);
-			deliver(`${deps.readHereNote(l.id)}\n\n${d.text}`, { target: d.target, replyTo: d.replyTo });
+			deliver(`${deps.readHereNote(l.id)}\n\n${d.text}`, { target: d.target, replyTo: d.replyTo, ...labels(d) });
 		}
 	}
 
@@ -417,7 +424,7 @@ export function createPrompts(deps: PromptDeps) {
 			askedBack.add(w.id);
 			if (askedBack.size > MAX_ANSWERED) askedBack.delete(askedBack.values().next().value!);
 			deps.log(`the result of ${w.id} for ${w.target} was read in a turn for ${target}; ${w.target} is asked again`);
-			deliver(`${note(w, target)}\n\n${d.text}`, { target: w.target, replyTo: d.replyTo });
+			deliver(`${note(w, target)}\n\n${d.text}`, { target: w.target, replyTo: d.replyTo, ...labels(d) });
 		}
 	}
 
@@ -701,11 +708,11 @@ export function createPrompts(deps: PromptDeps) {
 		// Parts sent early with dotz_send do not replace the answer; skip it only when it repeats something already sent.
 		const sentHere = p.sent.some(s => s.target === target);
 		const held = p.held ?? []; p.held = undefined;
-		// Also a repeat: the same first NEAR_CHARS normalized characters as something this turn already posted to that conversation
-		// (a schedule text said "tell web" while its final answer goes to "chat", both the main web conversation).
+		// Also a repeat: the same first NEAR_CHARS normalized characters as something this turn already posted to that conversation ("tell web"
+		// vs "chat", both the main web one). Handed work counts its held parts only: its session is still owed the answer that went there.
 		const key = head(t);
 		const prior = [...p.sent.filter(s => sameConv(s.target, target)).map(s => s.text), ...held];
-		const repeat = hush || !t || prior.some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
+		const repeat = hush || !t || (p.from && deps.handBack ? held : prior).some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
 		if (repeat && !held.length) {
 			if (sentHere) deps.clearProgress(target);
 			return burst.close(target, ids);
@@ -779,12 +786,12 @@ export function createPrompts(deps: PromptDeps) {
 
 	/** The silent-wait check gave up on these after its last reminder (hub/waitcheck.ts): they stop being listed and are not replayed. */
 	function dropOpen(list: { target: string; replyTo?: string; at: number }[]): void {
-		for (const r of list) for (const d of openDeferred()) if (d.target === r.target && d.replyTo === r.replyTo && d.at === r.at) d.done = true;
+		for (const r of list) for (const d of openDeferred()) if (d.target === r.target && d.replyTo === r.replyTo && d.at === r.at) closeDropped(deps, d);
 		save();
 	}
 
 	/** Requests waiting on background work, with the workers linked to them. */
-	const openRequests = (): OpenRequest[] => openDeferred().flatMap(p => (p.target ? [{ target: p.target, ...(p.replyTo ? { replyTo: p.replyTo } : {}), at: p.at, workers: waitedOn(linksOf(p), deps.work?.() ?? []).map(({ id, description }) => ({ id, ...(description ? { description } : {}) })) }] : []));
+	const openRequests = (): OpenRequest[] => openDeferred().flatMap(p => (p.target ? [{ target: p.target, ...(p.replyTo ? { replyTo: p.replyTo } : {}), ...(p.from ? { from: p.from } : {}), ...(p.handback ? { handback: true as const } : {}), ...(p.bookkeeping ? { bookkeeping: true as const } : {}), at: p.at, workers: waitedOn(linksOf(p), deps.work?.() ?? []).map(({ id, description }) => ({ id, ...(description ? { description } : {}) })) }] : []));
 
 	/** Messages of this conversation with a turn of their own still to come: an answer to another message there does not settle them. */
 	const waitingIds = (target: string): string[] => [...openDeferred(), ...prompts.filter(p => !p.seen)].flatMap(p => (p.target && sameConv(p.target, target) ? [...new Set([...(p.refs ?? []), ...(p.replyTo ? [p.replyTo] : [])])] : []));
