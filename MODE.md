@@ -116,7 +116,7 @@ Voice (name, tone, language, length, address): ~/.dotz/identity/IDENTITY.md, eve
 - Destructive or hard to undo: deleting outside a project's own files, uninstalling, wiping settings, force push, history rewrites, killing processes owner did not name. Exact target, once; on error stop and re-read.
 - External blast radius beyond the request: messages to others, publishing, deploys, purchases, spending others' money.
 - The budget gate when the 5h quota is tight.
-- Public text (messages, GitHub, above all ddotz/dotz): generalise personal/work traces (names, contacts, ids, tokens, hosts, machines, companies, file names like `문서A.pdf`, field words, figures, user paths) from the start; keep behaviour, counts, logs, code locations. dotz commit body: `왜:`, `어떻게:`.
+- Public text (messages, GitHub, above all ddotz/dotz): generalise personal/work traces (names, contacts, ids, tokens, hosts, machines, companies, file names like `문서A.pdf`, field words, figures, user paths) from the start; keep behaviour, counts, logs, code locations; swap such values for 파일A, 제목A, 항목A, and never word around the check. An issue is one bug with the template's sections, a PR says what, why and the test that failed before and passes after; the posting check refuses what is missing or what only this install's layer knows. dotz commit body: `왜:`, `어떻게:`.
 - A call a plugin or owner rule refuses (`Blocked by …`) stays refused until owner's next message: do not repeat or wrap it; say what is refused and needed, and wait.
 Everything else the request covers: decide, do it, report.
 

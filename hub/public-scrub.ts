@@ -54,6 +54,8 @@ const MIN_SECRET = 8;
 const MIN_CONFIG = 4;
 const MAX_SECRET_BYTES = 64 * 1024;
 const MAX_NOTES_BYTES = 2 * 1024 * 1024; // memory and repo text outgrow a secret's size
+const MAX_LAYER_BYTES = 1024 * 1024; // all the memory, rule and recipe text of one check together
+const MAX_LAYER_FILES = 60; // per folder
 const IDENTIFYING_KEY = /owner|guild|app_id|user_id|chat_id|(?:^|[._])id$|email|phone|host|domain|login|url|address|token|secret/i;
 const NUMERIC_ID = /^\d{9,}$/; // a channel or chat id, under whatever key it is filed
 const GENERIC_MACHINE = /^(?:admin|root|user|ubuntu|runner|localhost|127\.0\.0\.1|0\.0\.0\.0|macbook|macbook-pro|macbook-air|mac-mini|imac)$/i;
@@ -164,7 +166,7 @@ const PERSONAL_POST = "this is a personal setting: it belongs in this install's 
 const MERGE_POST = `a PR lands on ${PUBLIC_REPO} only through dotz_merge (action=review with scope, then action=merge), which records that it is right for every install`;
 
 export function postKind(post: string): "issue" | "pr" | "merge" | undefined {
-	const code = post.slice(Math.max(0, post.search(/\b(?:gh|curl)\s/))).replace(QUOTED, " ");
+	const code = blankMentions(post).slice(Math.max(0, post.search(/\b(?:gh|curl)\s/))).replace(QUOTED, " ");
 	const verbs = [...code.matchAll(GH_POSTS)].map(m => m[0]);
 	if (verbs.length) return verbs.some(v => /\bissue\b[\s\S]*\bcreate$/.test(v)) ? "issue" : verbs.some(v => /\bpr\b[\s\S]*\bcreate$/.test(v)) ? "pr" : verbs.some(v => /\bpr\b[\s\S]*\bmerge$/.test(v)) ? "merge" : undefined;
 	if (API_READ.test(code)) return undefined;
@@ -182,29 +184,48 @@ function upstreamDeny(post: string, text: string): string | undefined {
 	const classes = [...text.matchAll(CLASS_LINE)].map(m => m[1]);
 	if (classes.includes(PERSONAL_SETTING)) return PERSONAL_POST;
 	if (!classes.length) return NEEDS_CLASS;
-	const missing = kind === "issue" ? missingSections(text) : [];
-	return missing.length ? `this new issue to ${PUBLIC_REPO} cannot be fixed from its text alone. Missing or empty: ${missing.join(", ")}. Write each as a "## " heading with content, every one required: ${ISSUE_SECTIONS.map(s => s.name).join(", ")}. 관련 코드 위치 needs at least one file:line. If a section truly has nothing, say why in it. A body this check cannot see counts as empty` : undefined;
+	const sections = kind === "issue" ? ISSUE_SECTIONS : PR_SECTIONS;
+	const missing = missingSections(text, sections);
+	if (!missing.length) return undefined;
+	const rule = kind === "issue" ? "One bug per issue. 재현 순서 is numbered steps on default settings, 버전 the dotz version and OS, 관련 코드 위치 a file:line, 로그 일부 a generalised excerpt." : "확인한 방법 names the test that failed before and passes after.";
+	return `this new ${kind === "issue" ? "issue" : "pull request"} to ${PUBLIC_REPO} lacks the analysis a maintainer needs. Missing or empty: ${missing.join(", ")}. Write each as a "## " heading with content (the English heading of the same meaning counts), every one required: ${sections.map(s => s.name).join(", ")}. ${rule} If a section truly has nothing, say why in it. A body this check cannot see counts as empty; do not work around this check`;
 }
 
-// What a maintainer needs to fix an issue from its text alone. Each is a heading whose section holds content; `shape` is what that content must show.
-const ISSUE_SECTIONS: readonly { name: string; shape?: RegExp }[] = [{ name: "증상" }, { name: "재현 순서" }, { name: "기대 결과" }, { name: "실제 결과" }, { name: "버전" }, { name: "관련 코드 위치", shape: /[\w.-]+\.\w+:\d+/ }, { name: "로그 일부" }, { name: "원인 추정" }, { name: "시도한 것" }];
+// What a maintainer needs to fix an issue from its text alone, and to judge a PR. Each is a heading whose section holds content; `alt` is the same heading in
+// English (the template ships in Korean, an agent often writes English), `shape` is what that content must show.
+type Section = { name: string; alt: RegExp; shape?: RegExp };
+const ISSUE_SECTIONS: readonly Section[] = [
+	{ name: "증상", alt: /^(?:symptom|summary|problem)/i },
+	{ name: "재현 순서", alt: /^(?:steps?|reproduc|repro\b)/i, shape: /^[ \t]*1[.)][ \t]*\S/m },
+	{ name: "기대 결과", alt: /^expected/i },
+	{ name: "실제 결과", alt: /^actual/i },
+	{ name: "버전", alt: /^(?:version|environment)/i, shape: /\d/ },
+	{ name: "관련 코드 위치", alt: /^(?:related )?(?:code )?locations?/i, shape: /[\w.-]+\.\w+:\d+/ },
+	{ name: "로그 일부", alt: /^(?:logs?|output|excerpt)/i },
+	{ name: "원인 추정", alt: /^(?:(?:root |suspected |likely )?cause)/i },
+	{ name: "시도한 것", alt: /^(?:tried|what (?:i|we|was) tried|attempts?|workaround)/i },
+];
+const PR_SECTIONS: readonly Section[] = [{ name: "무엇이 바뀌나요", alt: /^what/i }, { name: "왜 바꾸나요", alt: /^why/i }, { name: "확인한 방법", alt: /^(?:how .*(?:verif|test)|verif|tests?)/i }];
 const HEADING = /(?:^|["'\x60\n])[ \t]*#{1,6}[ \t]+([^\n]*)/g;
 const HEREDOC = /<<-?\s*["']?(\w+)/;
 const COMMAND_TAIL = /["'\x60]\s*(?:(?:-{1,2}\w|&&|\||;|\})[\s\S]*)?$/; // what follows the last section when the body is an inline argument
 const BARE_MARKER = /^[ \t]*(?:\d+[.)]|[-*])[ \t]*$/gm; // the template's empty list line
+const CHECKLIST = /^[ \t]*[-*][ \t]*\[[ xX]\].*$/gm; // the PR template's tick boxes after its last section
 
-function missingSections(text: string): string[] {
+function missingSections(text: string, sections: readonly Section[]): string[] {
 	let body = text.replace(/\\n/g, "\n").replace(/<!--[\s\S]*?-->/g, " ");
 	const tag = HEREDOC.exec(body);
 	const close = tag ? body.slice(tag.index).search(new RegExp(`\\n[ \\t]*${tag[1]}\\b`)) : -1;
 	if (tag && close >= 0) body = body.slice(0, tag.index + close);
-	const heads = [...body.matchAll(HEADING)].filter(h => ISSUE_SECTIONS.some(s => h[1].trim().startsWith(s.name))); // a "# comment" in a log is no section
-	return ISSUE_SECTIONS.flatMap(({ name, shape }) => {
-		const at = heads.findIndex(h => h[1].trim().startsWith(name));
+	const named = (heading: string, s: Section) => heading.trim().startsWith(s.name) || s.alt.test(heading.trim());
+	const heads = [...body.matchAll(HEADING)].filter(h => sections.some(s => named(h[1], s))); // a "# comment" in a log is no section
+	return sections.flatMap(s => {
+		const { name, shape } = s;
+		const at = heads.findIndex(h => named(h[1], s));
 		if (at < 0) return [name];
 		const end = heads[at + 1]?.index ?? body.length;
 		const section = body.slice(heads[at].index + heads[at][0].length, end);
-		const content = (at === heads.length - 1 ? section.replace(COMMAND_TAIL, "") : section).replace(BARE_MARKER, "");
+		const content = (at === heads.length - 1 ? section.replace(COMMAND_TAIL, "") : section).replace(CHECKLIST, "").replace(BARE_MARKER, "");
 		return /[\p{L}\p{N}]/u.test(content) && (!shape || shape.test(content)) ? [] : [name];
 	});
 }
@@ -279,7 +300,34 @@ export function installVocabulary(dataDir: string): Map<string, string> {
 	addWords(words, [jsonText(join(custom, "apps.json")), jsonText(join(custom, "mailboxes.json")), jsonText(join(custom, "projects.json"))].join("\n"), "메일 앱 A");
 	addWords(words, [...folderNames(join(custom, "apps")), ...folderNames(join(custom, "plugins")).map(f => f.split(".")[0])].join("\n"), "앱 A");
 	addProse(words, [jsonText(join(dataDir, "channel-setups.json")), fileText(join(dataDir, "identity", "IDENTITY.md")), ...["owner.md", "boundaries.md", "observations.md"].map(f => fileText(join(dataDir, "memory", f), MAX_NOTES_BYTES)), fileText(join(dataDir, "RULES.md")), fileText(join(dataDir, "LESSONS.md"))].join("\n"), "일반 표현");
+	addLayerWords(words, dataDir);
 	return words;
+}
+
+// The rest of what only this install holds: the owner's word lists, pins, cards, recipes, features, app manifests, rule files and the other notes. Names come from one
+// readdir each, text from a few files read once and capped in all (MAX_LAYER_BYTES), so an install of a few small files pays about what it did, and one at the cap about 70 ms and 50 MB of transient memory, only on a post to the public repo.
+function addLayerWords(words: Map<string, string>, dataDir: string): void {
+	const custom = join(dataDir, "custom");
+	const apps = folderNames(join(custom, "apps")).slice(0, MAX_LAYER_FILES);
+	addWords(words, [jsonText(join(custom, "words.json")), ...folderNames(join(custom, "cards")).map(n => n.replace(/\.json$/, "")), ...folderNames(join(custom, "recipes")), ...folderNames(join(dataDir, "features"))].join("\n"), "항목A");
+	addWords(words, [jsonText(join(custom, "pins.json")), ...apps.map(app => jsonText(join(custom, "apps", app, "app.json")))].join("\n"), "프로젝트A");
+	const budget = { left: MAX_LAYER_BYTES };
+	const read = (file: string) => {
+		const text = fileText(file, Math.min(budget.left, MAX_NOTES_BYTES));
+		budget.left -= text.length;
+		return text;
+	};
+	const inFolder = (dir: string, keep: (name: string) => boolean) => {
+		try {
+			return readdirSync(dir).filter(n => !n.startsWith(".") && keep(n)).sort().slice(0, MAX_LAYER_FILES).map(n => join(dir, n));
+		} catch {
+			return []; // not on this install
+		}
+	};
+	const done = new Set(["owner.md", "boundaries.md", "observations.md"]); // read above
+	const recipes = folderNames(join(custom, "recipes")).slice(0, MAX_LAYER_FILES).map(r => join(custom, "recipes", r, "recipe.md"));
+	const files = [...recipes, ...inFolder(join(dataDir, "rules"), n => n.endsWith(".md")), ...inFolder(join(dataDir, "memory"), n => n.endsWith(".md") && !done.has(n))];
+	addProse(words, files.map(read).join("\n"), "일반 표현");
 }
 
 // Any file-shaped name, a space-holding name by its last word. A call (res.json()) or a longer domain (x.ts.net) is not a file.
@@ -370,23 +418,47 @@ function workTextHits(raw: string, dataDir: string, dir: string): string[] {
 		if (hit && !allow.has(hit)) wordHits.set(hit, vocabulary.get(hit) as string);
 	}
 	const ordinary = usedByRepo([...new Set([...fileHits.keys()].map(t => basename(t).toLowerCase()).concat([...wordHits.keys()]))], files);
-	return [...[...fileHits].filter(([token]) => !ordinary.has(basename(token).toLowerCase())), ...[...wordHits].filter(([word]) => !ordinary.has(word))].map(([token, form]) => `"${token}" -> ${form}`);
+	const lower = text.toLowerCase();
+	const lineOf = (token: string) => lower.slice(0, Math.max(0, lower.indexOf(token.toLowerCase()))).split("\n").length;
+	const fileLines = [...fileHits].filter(([token]) => !ordinary.has(basename(token).toLowerCase())).map(([token, form]) => `a file name at line ${lineOf(token)} -> ${form}`);
+	const installWords = [...wordHits].filter(([word]) => !ordinary.has(word)).map(([word, form]) => `a word only this install's own layer uses at line ${lineOf(word)} -> ${form}`);
+	return [...fileLines, ...installWords];
 }
 
 function workTextDeny(raw: string, dataDir: string, dir: string): string | undefined {
 	const hits = workTextHits(raw, dataDir, dir);
 	if (!hits.length) return undefined;
 	const more = hits.length > MAX_REPORTED ? ` and ${hits.length - MAX_REPORTED} more` : "";
-	return `this post to ${PUBLIC_REPO} shows this install's own work, which tells readers what field its user is in. Generalise each: ${hits.slice(0, MAX_REPORTED).join(", ")}${more}. Keep the behaviour, flow, counts, logs and code locations; a file name that is not a repo path becomes a placeholder like 문서A.pdf or 파일1.xlsx. The whole command counts as the post, so move unrelated work out of it. An ordinary word refused by mistake goes in ${PRIVACY_ALLOW} in this install's secrets folder; do not work around this check`;
+	return `this post to ${PUBLIC_REPO} shows this install's own work, which tells readers what field its user is in. Replace each with a neutral placeholder: ${hits.slice(0, MAX_REPORTED).join(", ")}${more} (lines count the command first, then each body file; the values are not repeated here). Custom word lists, file and library names, project, channel, rule, recipe and app names and the owner's field words all count; use 파일A, 제목A or 항목A. Keep the behaviour, flow, counts, logs and code locations. The whole command counts as the post, so move unrelated work out of it. An ordinary word refused by mistake goes in ${PRIVACY_ALLOW} in this install's secrets folder; do not work around this check`;
 }
 
-export function postStart(flat: string): number {
+// What a command only searches for is no post: the pattern of a grep, ripgrep, ag or ack, a `pattern:` field, the argument of a JS string search. Blanked to
+// spaces of the same length, so every index stays valid. A pattern holding `$(` or a backtick runs, so it stays, and so does a pattern whose flag runs a command.
+const SEARCH_STR = String.raw`(?:"(?:\\[\s\S]|[^"\\])*"|'[^']*'|\x60(?:\\[\s\S]|[^\x60\\])*\x60)`;
+const SEARCH_WORD = String.raw`[^\s"'\x60;&|)<>-][^\s"'\x60;&|)<>]*`;
+const SEARCH_VALUE = `(?:${SEARCH_STR}|${SEARCH_WORD})`;
+const SEARCH_ARG = new RegExp(String.raw`(?<![\w./-])(?:e?grep|fgrep|zgrep|rg|ag|ack|git\s+grep)(?:\s+(?!--(?:pre|pager)\b)-[-\w=.]*)*\s+(?:-e\s*|--regexp[ =])?${SEARCH_VALUE}(?:\s+(?:-e\s*|--regexp[ =])${SEARCH_VALUE})*|\bpattern\s*:\s*${SEARCH_STR}|\.(?:includes|indexOf|startsWith|endsWith|match|matchAll|test|search|split)\(\s*${SEARCH_STR}`, "g");
+const blankMentions = (command: string): string => command.replace(SEARCH_ARG, found => (/\$\(|\x60/.test(found) ? found : found.replace(/\S/g, " ")));
+
+// The flags that make a call a write are the call's own: up to the next newline or unquoted separator, never an awk -F or a grep -f further along.
+function ownArgs(text: string, from: number): string {
+	let quote = "";
+	for (let i = from; i < text.length; i++) {
+		const c = text[i];
+		if (c === "\\" && quote !== "'") i++;
+		else if (quote) quote = c === quote ? "" : quote;
+		else if (c === '"' || c === "'" || c === "\x60") quote = c;
+		else if (c === "\n" || c === ";" || c === "&" || c === "|") return text.slice(from, i);
+	}
+	return text.slice(from);
+}
+
+export function postStart(command: string): number {
+	const flat = blankMentions(command);
 	const post = GH_POST.exec(flat);
 	if (post) return post.index;
-	const api = GH_API.exec(flat);
-	if (api && GH_API_WRITE.test(flat.slice(api.index))) return api.index;
-	const curl = CURL_POST.exec(flat);
-	return curl && CURL_WRITE.test(flat.slice(curl.index)) ? curl.index : -1;
+	const writes = (calls: RegExp, write: RegExp) => [...flat.matchAll(new RegExp(calls.source, "gm"))].find(m => write.test(ownArgs(flat, m.index)))?.index; // each call on its own: a read before a write hides nothing
+	return writes(GH_API, GH_API_WRITE) ?? writes(CURL_POST, CURL_WRITE) ?? -1;
 }
 
 export function shellPath(raw: string, dir: string): string {

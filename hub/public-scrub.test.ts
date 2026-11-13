@@ -143,7 +143,7 @@ describe("publicPostDeny", () => {
 			"grep -rn 'gh issue create --repo ddotz/dotz' . # 998877",
 			"git commit -m 'gh pr create on ddotz/dotz 998877'",
 			"curl -s https://api.github.com/repos/ddotz/dotz/issues # 998877",
-			"export PATH=/Users/somebody/bin:$PATH; gh pr create --repo ddotz/dotz --body '분류: 소스 오류'",
+			`export PATH=/Users/you/bin:$PATH; gh pr create --repo ddotz/dotz --body '${PR_TEXT}'`,
 		]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
 	});
 
@@ -221,18 +221,18 @@ describe("filing classification", () => {
 	test("a source bug or a universal improvement passes through every way a body arrives", () => {
 		const dir = install();
 		const file = join(dir, "body.md");
-		writeFileSync(file, "# 제목\r\n\r\n분류: 보편 개선\r\n\r\n본문\r\n");
+		writeFileSync(file, `# 제목\r\n\r\n${PR_UNIVERSAL.replaceAll("\n", "\r\n")}`);
 		for (const command of [
-			`${PR} --body '분류: 소스 오류'`,
-			`${PR} --body "분류: 보편 개선\\n\\n재현 순서"`,
-			`${PR} --body "증상\n\n분류: 소스 오류\n"`,
-			"gh pr create -R ddotz/dotz --title t --body '분류: 보편 개선'",
+			`${PR} --body '${PR_TEXT}'`,
+			`${PR} --body "${PR_UNIVERSAL.replaceAll("\n", "\\n")}"`,
+			`${PR} --body "증상\n\n${PR_TEXT}"`,
+			`gh pr create -R ddotz/dotz --title t --body '${PR_UNIVERSAL}'`,
 			`${PR} --body-file ${file}`,
 			`${PR} --body-file - < ${file}`,
 			`cat ${file} | ${PR} --body-file -`,
-			`${PR} --body-file - <<EOF\n분류: 소스 오류\n증상\nEOF`,
-			"gh api repos/ddotz/dotz/pulls -f title=t -f body='분류: 소스 오류'",
-			`curl -s -X POST https://api.github.com/repos/ddotz/dotz/pulls -d '{"body":"분류: 소스 오류\\n증상"}'`,
+			`${PR} --body-file - <<EOF\n${PR_TEXT}EOF`,
+			`gh api repos/ddotz/dotz/pulls -f title=t -f body='${PR_TEXT}'`,
+			`curl -s -X POST https://api.github.com/repos/ddotz/dotz/pulls -d '{"body":"${PR_TEXT.replaceAll("\n", "\\n")}"}'`,
 		]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
 	});
 
@@ -260,13 +260,13 @@ describe("filing classification", () => {
 	test("a valid body may mention the personal form, and a JSON body in double quotes passes", () => {
 		const dir = install();
 		for (const command of [
-			`${PR} --body "분류: 소스 오류\n\n\`분류: 개인 설정\` 이 거부돼요"`,
-			"curl -X POST https://api.github.com/repos/ddotz/dotz/pulls -d \"{\\\"body\\\":\\\"분류: 소스 오류\\\"}\"",
-			"BODY='분류: 보편 개선'; gh pr create -R ddotz/dotz --body \"$BODY\"",
-			`echo '분류: 소스 오류' | ${PR} --body-file -`,
-			`printf '분류: 보편 개선\\n본문' | ${PR} --body-file -`,
-			`${PR} --body-file - <<< '분류: 소스 오류'`,
-			"gh api graphql -f query='mutation { createPullRequest(input: {repositoryId: \"x\", title: \"t\", body: \"분류: 소스 오류\"}) { clientMutationId } }' # ddotz/dotz",
+			`${PR} --body "${PR_TEXT}\`분류: 개인 설정\` 이 거부돼요"`,
+			`curl -X POST https://api.github.com/repos/ddotz/dotz/pulls -d "{\\"body\\":\\"${PR_TEXT.replaceAll("\n", "\\n")}\\"}"`,
+			`BODY='${PR_UNIVERSAL}'; gh pr create -R ddotz/dotz --body "$BODY"`,
+			`echo '${PR_TEXT}' | ${PR} --body-file -`,
+			`printf '${PR_UNIVERSAL.replaceAll("\n", "\\n")}' | ${PR} --body-file -`,
+			`${PR} --body-file - <<< '${PR_TEXT}'`,
+			`gh api graphql -f query='mutation { createPullRequest(input: {repositoryId: "x", title: "t", body: "${PR_TEXT.replaceAll("\n", "\\n")}"}) { clientMutationId } }' # ddotz/dotz`,
 		]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
 	});
 
@@ -318,6 +318,8 @@ test("every command of a chain counts, inside a shell string too", () => {
 	expect(publicPostDeny("await tool.bash({ command: \"gh api -X GET repos/ddotz/dotz/issues -f state=open\" })", dir, dir)).toBeUndefined();
 });
 
+const PR_TEXT = "분류: 소스 오류\n\n## 무엇이 바뀌나요\n카드를 고쳐요\n\n## 왜 바꾸나요\n카드가 두 번 떠요\n\n## 확인한 방법\n고치기 전에 red, 고친 뒤에 green인 테스트예요\n";
+const PR_UNIVERSAL = PR_TEXT.replace("소스 오류", "보편 개선");
 const FULL_ISSUE = "분류: 소스 오류\n\n## 증상\n카드가 두 번 떠요\n\n## 재현 순서(기본 설정에서)\n1. 메일 앱을 열어요\n\n## 기대 결과\n한 번 떠요\n\n## 실제 결과\n두 번 떠요\n\n## 버전(dotz 버전, OS)\n261108.1, macOS\n\n## 관련 코드 위치(파일:줄, 함수)\nhub/public-scrub.ts:10 scrub\n\n## 로그 일부\n없음: 화면 동작이라 로그가 남지 않아요\n\n## 원인 추정\n같은 알림을 두 번 받아요\n\n## 시도한 것\n재시작해도 같아요\n";
 
 describe("the owner's work stays out of public posts", () => {
@@ -347,23 +349,23 @@ describe("the owner's work stays out of public posts", () => {
 			`curl -X POST https://api.github.com/repos/ddotz/dotz/issues/5/comments -d '{"body":"${name}"}'`,
 		]) {
 			const reason = publicPostDeny(command, dir, dir);
-			expect(reason).toContain(name);
+			expect(reason).not.toContain(name);
 			expect(reason).toContain("문서1.docx");
 		}
 		expect(publicPostDeny(`${COMMENT} '본문의 \`… 녹음 ….mp3\`'`, dir, dir)).toContain("파일1.mp3");
-		expect(publicPostDeny(`${COMMENT} '(마감본)계약.pdf'`, dir, dir)).toContain("(마감본)계약.pdf");
+		expect(publicPostDeny(`${COMMENT} '(마감본)계약.pdf'`, dir, dir)).toContain("-> 문서1.pdf");
 	}, 20_000); // every call walks and reads the whole repo tree (about 65 ms alone, several times that on a loaded machine) and the text paths must each run
 
 	test("emphasis, angle brackets, a glob, a scratch folder or an attachment URL does not hide a file name", () => {
 		const dir = install();
-		for (const text of ["**분기실적.pdf**", "<분기실적.pdf>", "**/분기실적.pdf", "/tmp/분기실적.pdf", "https://github.com/user-attachments/files/1/분기실적.pdf", "https://github.com/someone/private/blob/main/분기실적.pdf", "분기실적.xlsm", "__분기실적.pdf__", "~~분기실적.pdf~~", "$HOME/문서/분기실적.pdf", "--분기실적.pdf", "cat > 분기실적.pdf", "tee 분기실적.pdf"]) expect(publicPostDeny(`${COMMENT} '${text} 봐요'`, dir, dir)).toContain("분기실적");
+		for (const text of ["**분기실적.pdf**", "<분기실적.pdf>", "**/분기실적.pdf", "/tmp/분기실적.pdf", "https://github.com/user-attachments/files/1/분기실적.pdf", "https://github.com/someone/private/blob/main/분기실적.pdf", "분기실적.xlsm", "__분기실적.pdf__", "~~분기실적.pdf~~", "$HOME/문서/분기실적.pdf", "--분기실적.pdf", "cat > 분기실적.pdf", "tee 분기실적.pdf"]) expect(publicPostDeny(`${COMMENT} '${text} 봐요'`, dir, dir)).toContain("-> 문서1.");
 	}, 20_000); // 13 posts, each walking and reading the whole repo tree (about 65 ms alone, several times that on a loaded machine)
 
 	test("a body file over the secret size is still read, and one too big to read is refused", () => {
 		const dir = install();
 		const file = join(dir, "long.md");
 		writeFileSync(file, `${"긴 로그\n".repeat(20000)}명단정리표.xlsx`);
-		expect(publicPostDeny(`gh issue comment 5 -R ddotz/dotz --body-file ${file}`, dir, dir)).toContain("명단정리표.xlsx");
+		expect(publicPostDeny(`gh issue comment 5 -R ddotz/dotz --body-file ${file}`, dir, dir)).toContain("-> 문서1.xlsx");
 		writeFileSync(file, "x".repeat(3 * 1024 * 1024));
 		expect(publicPostDeny(`gh issue comment 5 -R ddotz/dotz --body-file ${file}`, dir, dir)).toContain("cannot read");
 	});
@@ -378,11 +380,11 @@ describe("the owner's work stays out of public posts", () => {
 
 	test("a release's own text still counts, and a chain with another post counts whole", () => {
 		const dir = install();
-		expect(publicPostDeny(`${"gh issue comment 5 -R ddotz/dotz"} --body "ran gh release create v1 x-plan.pdf today"`, dir, dir)).toContain("x-plan.pdf");
-		expect(publicPostDeny("gh release create v1 a.zip -R ddotz/dotz; echo x-plan.pdf | gh issue comment 1 -R ddotz/dotz -F -", dir, dir)).toContain("x-plan.pdf");
-		for (const flag of ["--notes '분기실적.pdf'", "--notes 분기실적.pdf", "--title 분기실적.pdf"]) expect(publicPostDeny(`gh release create v1 dotz-v1.tar.gz -R ddotz/dotz ${flag}`, dir, dir)).toContain("분기실적.pdf");
-		expect(publicPostDeny("gh release create v1 -R ddotz/dotz && gh api repos/ddotz/dotz/issues/5/comments -f body=분기실적.pdf", dir, dir)).toContain("분기실적.pdf");
-		expect(publicPostDeny("gh release create v1 -R ddotz/dotz && gh issue comment 5 -R ddotz/dotz --body '분기실적.pdf'", dir, dir)).toContain("분기실적.pdf");
+		expect(publicPostDeny(`${"gh issue comment 5 -R ddotz/dotz"} --body "ran gh release create v1 x-plan.pdf today"`, dir, dir)).toContain("-> 문서1.pdf");
+		expect(publicPostDeny("gh release create v1 a.zip -R ddotz/dotz; echo x-plan.pdf | gh issue comment 1 -R ddotz/dotz -F -", dir, dir)).toContain("-> 문서1.pdf");
+		for (const flag of ["--notes '분기실적.pdf'", "--notes 분기실적.pdf", "--title 분기실적.pdf"]) expect(publicPostDeny(`gh release create v1 dotz-v1.tar.gz -R ddotz/dotz ${flag}`, dir, dir)).toContain("-> 문서1.pdf");
+		expect(publicPostDeny("gh release create v1 -R ddotz/dotz && gh api repos/ddotz/dotz/issues/5/comments -f body=분기실적.pdf", dir, dir)).toContain("-> 문서1.pdf");
+		expect(publicPostDeny("gh release create v1 -R ddotz/dotz && gh issue comment 5 -R ddotz/dotz --body '분기실적.pdf'", dir, dir)).toContain("-> 문서1.pdf");
 	});
 
 	test("a merge or a personal setting keeps its own refusal even when the text names a file", () => {
@@ -395,7 +397,7 @@ describe("the owner's work stays out of public posts", () => {
 		const dir = install();
 		const file = join(dir, "body.md");
 		writeFileSync(file, "명단정리표.xlsx 가 안 열려요");
-		expect(publicPostDeny(`gh issue comment 5 -R ddotz/dotz --body-file ${file}`, dir, dir)).toContain("명단정리표.xlsx");
+		expect(publicPostDeny(`gh issue comment 5 -R ddotz/dotz --body-file ${file}`, dir, dir)).toContain("-> 문서1.xlsx");
 		expect(publicPostDeny("gh issue comment 5 -R me/private --body '명단정리표.xlsx'", dir, dir)).toBeUndefined();
 	});
 
@@ -403,17 +405,18 @@ describe("the owner's work stays out of public posts", () => {
 		const dir = workInstall();
 		for (const [word, form] of [["가상공방", "프로젝트A"], ["lunar-glaze", "작업 채널"], ["유약주문", "메일 앱 A"], ["가마예약", "메일 앱 A"], ["물레반죽", "일반 표현"]]) {
 			const reason = publicPostDeny(`${COMMENT} '오늘 ${word}에서 카드가 멈췄어요'`, dir, dir);
-			expect(reason).toContain(`"${word}" -> ${form}`);
+			expect(reason).toContain(`-> ${form}`);
+			expect(reason).not.toContain(word);
 		}
 	});
 
 	test("a decomposed folder name, a known word inside a compound and a word only inside a longer repo word are still refused", () => {
 		const dir = workInstall();
 		mkdirSync(join(dir, "projects", "달빛도예".normalize("NFD")));
-		expect(publicPostDeny(`${COMMENT} '달빛도예 흐름이 멈춰요'`, dir, dir)).toContain('"달빛도예"');
-		expect(publicPostDeny(`${COMMENT} '우리가상공방에서 멈춰요'`, dir, dir)).toContain('"가상공방"');
+		expect(publicPostDeny(`${COMMENT} '달빛도예 흐름이 멈춰요'`, dir, dir)).toContain("-> 프로젝트A");
+		expect(publicPostDeny(`${COMMENT} '우리가상공방에서 멈춰요'`, dir, dir)).toContain("-> 프로젝트A");
 		writeFileSync(join(dir, "channels.json"), JSON.stringify({ lanes: { plac: "1" } }));
-		expect(publicPostDeny(`${COMMENT} 'plac 흐름이 멈춰요'`, dir, dir)).toContain('"plac"');
+		expect(publicPostDeny(`${COMMENT} 'plac 흐름이 멈춰요'`, dir, dir)).toContain("-> 작업 채널");
 	});
 
 	test("a word the repo uses, a one-off word of the notes and an allowed word pass", () => {
@@ -439,7 +442,7 @@ describe("the owner's work stays out of public posts", () => {
 		execFileSync("git", ["remote", "add", "origin", "https://github.com/ddotz/dotz.git"], { cwd: repo });
 		writeFileSync(join(repo, "only-on-this-branch.md"), "x");
 		expect(publicPostDeny("gh pr comment 5 --body 'only-on-this-branch.md 를 더해요'", dir, repo)).toBeUndefined();
-		expect(publicPostDeny(`${COMMENT} 'only-on-this-branch.md'`, dir, dir)).toContain("only-on-this-branch.md");
+		expect(publicPostDeny(`${COMMENT} 'only-on-this-branch.md'`, dir, dir)).toContain("-> 파일1.md");
 	});
 
 	test("a scratch path that carries the body is no name of the post", () => {
@@ -496,7 +499,7 @@ describe("a new issue carries what a fix needs", () => {
 			`gh api repos/ddotz/dotz/issues -f title=t -f body="${FULL_ISSUE}"`,
 			`curl -s -X POST https://api.github.com/repos/ddotz/dotz/issues -d '{"body":"${escaped}"}'`,
 			`gh api graphql -f query='mutation { createIssue(input: {repositoryId: "x", title: "t", body: "${escaped}"}) { clientMutationId } }' # ddotz/dotz`,
-			"gh pr create -R ddotz/dotz --title t --body '분류: 소스 오류'",
+			`gh pr create -R ddotz/dotz --title t --body '${PR_TEXT}'`,
 			"gh issue comment 5 -R ddotz/dotz --body '고쳤어요'",
 		]) expect(publicPostDeny(command, dir, dir)).toBeUndefined();
 		expect(publicPostDeny("gh api repos/ddotz/dotz/issues -f title=t -f body='분류: 소스 오류'", dir, dir)).toContain("Missing or empty");
@@ -513,4 +516,80 @@ test("a direct merge into ddotz/dotz is refused toward dotz_merge; other repos a
 	const dir = install();
 	for (const command of ["gh pr merge 3 -R ddotz/dotz --squash", "gh api -X PUT repos/ddotz/dotz/pulls/3/merge", "curl -X PUT https://api.github.com/repos/ddotz/dotz/pulls/3/merge -d '{}'", "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {repo: \"ddotz/dotz\"}) { clientMutationId } }'"]) expect(publicPostDeny(command, dir, dir)).toContain("dotz_merge");
 	expect(publicPostDeny("gh pr merge 3 -R me/private --squash", dir, dir)).toBeUndefined();
+});
+
+describe("a filing carries an analysis, in either language, and nothing of this install's own layer", () => {
+	const ISSUE = "gh issue create -R ddotz/dotz --title t";
+	const PR = "gh pr create -R ddotz/dotz --title t";
+	const COMMENT = "gh issue comment 5 -R ddotz/dotz --body";
+	const EN_ISSUE = "분류: 소스 오류\n\n## Symptom\nThe card shows twice\n\n## Steps to reproduce (default settings)\n1. Open the app\n\n## Expected\nOne card\n\n## Actual\nTwo cards\n\n## Version\n261108.1, macOS\n\n## Code location\nhub/public-scrub.ts:10 scrub\n\n## Log excerpt\nnone: a screen behaviour\n\n## Cause (suspected)\nThe same notice arrives twice\n\n## What was tried\nA restart changes nothing\n";
+	const SHORT_ISSUE = "분류: 소스 오류\n\n## Symptom\nThe card shows twice\n\n## Cause (suspected)\nA retry\n\n## Fix suggestion\nDrop the retry\n\n## Location\nhub/public-scrub.ts:10\n";
+	const EN_PR = "분류: 소스 오류\n\n## What\nThe card shows once\n\n## Why\nIt showed twice\n\n## Verification\nThe test failed before and passes after\n";
+	const home = ["", "Users", "zed", "x"].join("/");
+
+	test("an issue shaped like a short report is refused with its missing sections, and a complete English one passes", () => {
+		const dir = install();
+		const reason = publicPostDeny(`${ISSUE} --body "${SHORT_ISSUE}"`, dir, dir) ?? "";
+		for (const name of ["재현 순서", "기대 결과", "실제 결과", "버전", "로그 일부", "시도한 것"]) expect(reason).toContain(name);
+		expect(reason).toContain("do not work around");
+		expect(reason).not.toContain("Missing or empty: 증상");
+		expect(publicPostDeny(`${ISSUE} --body "${EN_ISSUE}"`, dir, dir)).toBeUndefined();
+		expect(publicPostDeny(`${ISSUE} --body "${EN_ISSUE.replace("1. Open the app", "Open the app")}"`, dir, dir)).toContain("Missing or empty: 재현 순서");
+	});
+
+	test("a PR needs what, why and how it was verified; a complete one passes in either language", () => {
+		const dir = install();
+		expect(publicPostDeny(`${PR} --body '분류: 소스 오류'`, dir, dir)).toContain("Missing or empty: 무엇이 바뀌나요, 왜 바꾸나요, 확인한 방법");
+		expect(publicPostDeny(`${PR} --body "${EN_PR.replace(/## Verification[\s\S]*/, "## Verification\n")}"`, dir, dir)).toContain("Missing or empty: 확인한 방법");
+		for (const body of [EN_PR, PR_TEXT]) expect(publicPostDeny(`${PR} --body "${body}"`, dir, dir)).toBeUndefined();
+		expect(publicPostDeny(`${PR} --body "${EN_PR.replace("분류: 소스 오류", "")}"`, dir, dir)).toContain("분류: 소스 오류");
+	});
+
+	test("a word only this install's own layer holds is refused by line and neutral form, never echoed", () => {
+		const dir = install();
+		mkdirSync(join(dir, "custom", "recipes", "유약배합"), { recursive: true });
+		mkdirSync(join(dir, "features", "도자기장부"), { recursive: true });
+		mkdirSync(join(dir, "rules"));
+		writeFileSync(join(dir, "custom", "words.json"), JSON.stringify({ words: [{ word: "석영가마", use: "물레" }] }));
+		writeFileSync(join(dir, "rules", "projects.md"), "금분정리 절차는 금분정리 일정을 따라요\n");
+		for (const word of ["석영가마", "유약배합", "도자기장부", "금분정리"]) {
+			const reason = publicPostDeny(`${COMMENT} '첫째 줄\n오늘 ${word}에서 카드가 멈춰요'`, dir, dir) ?? "";
+			expect(reason, word).toContain("at line 2 -> ");
+			expect(reason).not.toContain(word);
+			expect(reason).toContain("do not work around");
+		}
+		expect(publicPostDeny(`${COMMENT} '카드가 두 번 떠요: 파일A, 항목A, 3개, hub/public-scrub.ts:10'`, dir, dir)).toBeUndefined();
+	});
+
+	test("a read-only search that only names a posting command is no post; a real post in quotes or a subshell is", () => {
+		const dir = install();
+		for (const command of [
+			`grep -rln 'gh issue create\\|gh pr create' ${home}`,
+			`grep -rlnE "gh issue create|gh pr create" ${home}`,
+			`await tool.grep({ pattern: "gh issue create|gh pr create", path: "${home}" })`,
+			`rg -n -e 'x' -e 'gh pr create' ${home}`,
+		]) expect(publicPostDeny(command, dir, dir), command).toBeUndefined();
+		for (const command of [
+			`bash -c "gh issue create -R ddotz/dotz --title t --body 'see ${home}'"`,
+			`echo $(gh pr create -R ddotz/dotz --body 'see ${home}')`,
+			`grep -rn x . && sh -c 'gh issue create -R ddotz/dotz --body "see ${home}"'`,
+			`grep -rn 'gh pr create' . ; gh pr create -R ddotz/dotz --body 'see ${home}'`,
+			`await sh(\`gh issue create -R ddotz/dotz --body "see ${home}"\`)`,
+			`grep "$(gh pr create -R ddotz/dotz --body 'see ${home}')" x`,
+		]) {
+			const reason = publicPostDeny(command, dir, dir);
+			expect(reason, command).toBeDefined();
+			expect(reason).not.toContain("zed");
+		}
+	});
+
+	test("a cell that writes and runs a script of read-only API calls is no post, while a body file not written yet still is", () => {
+		const dir = install();
+		const script = ["#!/bin/sh", "gh api user --jq .login", 'gh api repos/ddotz/dotz/issues/$1/comments --jq ".[].id" > "$2"', "awk -F'\\t' '{print $1}' < \"$2\""].join("\n");
+		const read = "gh api repos/ddotz/dotz/issues/5 --jq .updated_at";
+		for (const command of [`cat > /tmp/chk-1.sh <<'EOF'\n${script}\nEOF\nsh /tmp/chk-1.sh 5 /tmp/out-1.txt\n${read}`, `await Bun.write("/tmp/chk-1.sh", \`${script}\n\`);\nawait sh("${read}");`]) expect(publicPostDeny(command, dir, dir), command).toBeUndefined();
+		const later = join(dir, "later.md");
+		expect(publicPostDeny(`${script}\ngh issue comment 5 -R ddotz/dotz --body-file ${later}`, dir, dir)).toContain("does not exist yet");
+		expect(publicPostDeny(`gh api repos/ddotz/dotz/issues/5/comments > "$2"\ngh api repos/ddotz/dotz/issues -f title=t -f body=x`, dir, dir)).toContain("분류: 소스 오류");
+	});
 });

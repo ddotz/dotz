@@ -14,7 +14,8 @@ const MAIL = "pat@example.com";
 const VALUE = "zebrafish-private-term";
 const LOGIN = "pat-dev";
 const ID = "4242";
-const CLASSED = `--body "분류: 보편 개선"`;
+const PR_BODY = "분류: 보편 개선\n\n## 무엇이 바뀌나요\n카드를 고쳐요\n\n## 왜 바꾸나요\n카드가 두 번 떠요\n\n## 확인한 방법\n고치기 전에 red, 고친 뒤에 green인 테스트예요\n";
+const CLASSED = `--body "분류: 보편 개선\n\n## 무엇이 바뀌나요\n카드를 고쳐요\n\n## 왜 바꾸나요\n카드가 두 번 떠요\n\n## 확인한 방법\n고치기 전에 red, 고친 뒤에 green인 테스트예요\n"`;
 const PR = `gh pr create -R ddotz/dotz --head feature --title t ${CLASSED}`;
 
 let root: string, work: string, data: string;
@@ -150,7 +151,7 @@ test("a pull request whose commits cannot be read is refused rather than passed"
 
 test("the head can come from the API forms and from a cd before the post", () => {
 	commit("change", "one");
-	const api = `gh api repos/ddotz/dotz/pulls -f title=t -f head=alice:feature -f base=main -f body="분류: 보편 개선"`;
+	const api = `gh api repos/ddotz/dotz/pulls -f title=t -f head=alice:feature -f base=main -f body="${PR_BODY}"`;
 	expect(deny(api)).toContain(FIX_COMMAND);
 	expect(publicPostDeny(`cd ${work} && ${PR}`, data, root)).toContain(FIX_COMMAND);
 });
