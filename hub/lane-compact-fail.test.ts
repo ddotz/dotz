@@ -54,6 +54,7 @@ const fake: RuntimeAdapter = {
 	},
 	classifyError: omp.classifyError,
 	recentExchanges: () => undefined,
+	detect: async () => ({ installed: true }),
 };
 
 const turn: AgentEvent[] = [{ type: "alive" }, { type: "turn_start" }, { type: "assistant", text: "ok", stop: "stop" }, { type: "turn_end" }];
