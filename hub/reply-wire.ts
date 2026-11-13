@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
-import { approvals, newMid, out } from "./outbound.ts";
+import { approvals, newMid, out, showSendOnCard } from "./outbound.ts";
 import { allNotices, markDraftSend, openDraftCards, replaceDraftCards, rewriteOpenDraft, settleOpenDecision } from "./notices.ts";
 import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
@@ -51,6 +51,7 @@ function cardOwedMail(r: SendResult): void {
 
 export const reportSend = (r: SendResult): void => {
 	markDraftSend(r.conv, r.ref, r.state, r.text, r.until);
+	showSendOnCard(r.conv, r.ref, r.state, r.text, r.until ? r.until - now() : 0);
 	broadcast({ ts: now(), kind: "approval_send", source: "gateway", ...r, ...(r.until ? { left: Math.max(0, r.until - now()) } : {}) });
 	const send = sendOf(r);
 	broadcast({ ts: now(), kind: "reply", ref: r.ref, ...(send ? { send } : {}) });

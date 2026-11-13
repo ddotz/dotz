@@ -44,7 +44,7 @@ import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjec
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
 import { allNotices, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft } from "./notices.ts";
-import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards } from "./approval-queue.ts";
+import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
 import { draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
@@ -396,6 +396,11 @@ function closeDiscordCard(to: string, ref: string | undefined, c: { text: string
 	const text = closedCardText(c.text, c.how, c.label);
 	if (/^\s*\[file\]\s/m.test(text)) return;
 	ids.forEach((id, i) => void discord.edit(target, id, i === 0 ? text : text.split("\n").slice(1).join("\n"), { clearComponents: true }).catch(e => log(`approval card ${ref} not closed on Discord: ${e}`)));
+}
+/** A send of draft `ref` changed state (hub/reply-wire.ts reportSend): its Discord card shows it in place, the buttons kept so a failed one can be sent again. */
+export function showSendOnCard(conv: string, ref: string, state: string, why = "", left = 0): void {
+	const target = approvals.targetOf(conv, ref), ids = approvals.idsOf(conv, ref), text = openDraftText(conv, ref);
+	if (target && text && state !== "sent") editCard(target, ids, ref, withSendState(text, state, why, left));
 }
 onDraftCardRefreshed(n => {
 	const d = n.decision;

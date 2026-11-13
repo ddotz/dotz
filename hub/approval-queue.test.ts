@@ -1,7 +1,7 @@
 // One send-approval card at a time per conversation: the rest wait behind it ("남은 N건") and come one by one as each closes; the same
 // card again updates the open one instead of a second post.
 import { describe, expect, test } from "bun:test";
-import { type ApprovalQueueDeps, cardRef, CARDS_LEAD, closedCardText, createApprovalQueue, type Held, pendingCardsNote, splitCardLead, withLeft } from "./approval-queue.ts";
+import { type ApprovalQueueDeps, cardRef, CARDS_LEAD, closedCardText, createApprovalQueue, type Held, pendingCardsNote, splitCardLead, withLeft , withSendState } from "./approval-queue.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 
 // Draft refs are 2+ characters (draft-approval.ts REF): "A" stands for the draft "cm-A".
@@ -294,4 +294,12 @@ describe("an answer written above a held card", () => {
 		expect(splitCardLead(`쇼츠 업로드\n\n${body}`)).toBeUndefined();
 		expect(splitCardLead(`[ask] 끝났어.\n\n쇼츠 업로드\n${body}`)).toEqual({ lead: "끝났어.", card: `[ask] 쇼츠 업로드\n${body}` });
 	});
+});
+
+test("withSendState puts the send state on the card's last line and replaces the previous one", () => {
+	const card = "[ask] 이 답장 보낼까요? (RAAAAAA)\n안녕하세요";
+	const undo = withSendState(card, "undo", "", 9200);
+	expect(undo).toBe(`${card}\n-# 10초 후 보내요. 되돌리려면 웹앱 답장 대기에서 되돌리기`);
+	expect(withSendState(undo, "failed", "인터넷에 연결되지 않았어요\n자세히")).toBe(`${card}\n-# 보내지 못했어요 - 인터넷에 연결되지 않았어요`);
+	expect(withSendState(undo, "back")).toBe(card);
 });

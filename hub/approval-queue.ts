@@ -47,6 +47,13 @@ export function closedCardText(text: string, how: "answered" | "resolved" | "ign
 	return first ? `${first}\n${note}` : note;
 }
 
+/** A send-approval card's text with its send state as the last line (Discord shows it in place): the undo window, sending, or why it did not go. */
+export function withSendState(text: string, state: string, why = "", left = 0): string {
+	const line = state === "undo" ? `-# ${Math.max(1, Math.ceil(left / 1000))}초 후 보내요. 되돌리려면 웹앱 답장 대기에서 되돌리기` : state === "queued" || state === "sending" ? "-# 보내는 중" : state === "failed" ? `-# 보내지 못했어요${why ? ` - ${why.split("\n", 1)[0]!.slice(0, 160)}` : ""}` : state === "unsure" ? "-# 보냈는지 확인되지 않았어요. 자동으로 다시 보내지 않아요" : "";
+	const base = text.replace(/\n-# (?:\d+초 후 보내요|보내는 중|보내지 못했어요|보냈는지 확인되지 않았어요)[^\n]*$/, "");
+	return line ? `${base.replace(/\s+$/, "")}\n${line}` : base;
+}
+
 /** The draft ref a post asks approval for, or undefined when it is no send-approval card. */
 export function cardRef(text: string): string | undefined {
 	return parseDraftApproval(parseTone(stripHandoff(text)).text.trim())?.ref;

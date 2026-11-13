@@ -1,5 +1,7 @@
 // Decision buttons on an [ask] message (docs/layers.md section 3): one button per option of the message's choice block.
 // A click is the owner typing `<n>) <name>` in that channel: the answer goes through the same inbound path (main.ts).
+import { parseDraftApproval } from "./draft-approval.ts";
+import { webLink } from "./weblink.ts";
 import { log } from "./config.ts";
 import { type ChoiceOption, hasDecisionHead, parseChoices, parseDecisions } from "./choices.ts";
 import type { Interaction } from "./discord.ts";
@@ -10,6 +12,7 @@ import { parseTone, TONE_EMOJI } from "./tone.ts";
 
 export const ASK_PREFIX = "dz-ask";
 const SECONDARY = 2;
+const LINK = 5;
 const ROW = 5;
 const LABEL_MAX = 80;
 const ID_MAX = 100;
@@ -28,7 +31,10 @@ export function askComponentsFor(target: string, text: string, shown = text): un
 	const { question, options } = parseChoices(text);
 	const part = parseChoices(shown);
 	const sameQuestion = !question || part.question === question || part.question === `${TONE_EMOJI.ask} ${question}`;
-	return part.options.length === options.length && sameQuestion ? askComponents(target, options) : [];
+	const rows = part.options.length === options.length && sameQuestion ? askComponents(target, options) : [];
+	// A reply draft's card also opens the web app's 답장 대기, where the same card can be edited by hand (the reply design, mockup 4).
+	const edit = rows.length && rows.length < ROW && parseDraftApproval(text)?.ref ? webLink("/#monitoring/replies") : undefined;
+	return edit ? [...rows, { type: 1, components: [{ type: 2, style: LINK, label: "웹앱에서 편집", url: edit }] }] : rows;
 }
 
 export function parseAskId(customId: string): { target: string; n: number } | undefined {
