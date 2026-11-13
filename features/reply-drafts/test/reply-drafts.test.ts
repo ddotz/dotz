@@ -177,20 +177,18 @@ test("고치기 round trip: pick with the change, revise makes a new id, the old
 	expect((await reviseDraft(next.id, "x", { call: model.call })).ok).toBe(false);
 });
 
-test("draft.ts revise posts the rewritten mail card to the mail's conversation itself and gives the bot one short line; without the gateway it prints the card", async () => {
-	const { rec, model } = await offered(fakeModel([j(goodReply), j({ ...goodReply, body: "곧 알려 드릴게요." }), j({ ...goodReply, body: "내일 알려 드릴게요." })]));
+test("draft.ts revise hands the change to the gateway's one reply flow and rewrites nothing itself; without the gateway it rewrites and prints the card", async () => {
+	const { rec, model } = await offered(fakeModel([j(goodReply), j({ ...goodReply, body: "내일 알려 드릴게요." })]));
 	const posts: { path: string; body: any }[] = [];
 	const hub = { post: async (path: string, body?: unknown) => (posts.push({ path, body }), { status: 200 }) };
 	const out = await runDraft(["revise", rec!.id, "--change", "더 짧게"], "", { call: model.call, hub });
-	const next = listDrafts().find(d => d.status === "pending")!;
 	expect(out.code).toBe(0);
-	expect(posts.map(p => [p.path, p.body.target])).toEqual([["/api/send", "mail:m-1"]]);
-	expect(parseDraftApproval(posts[0]!.body.text)).toMatchObject({ ref: next.id, body: "곧 알려 드릴게요." });
+	expect(posts).toEqual([{ path: "/api/reply/act", body: { ref: rec!.id, action: "revise", change: "더 짧게" } }]);
+	expect(listDrafts().filter(d => d.status === "pending").map(d => d.id)).toEqual([rec!.id]);
 	expect(parseDraftApproval(out.lines.join("\n"))).toBeUndefined();
-	expect(out.lines.join("\n")).toContain(next.id);
 
 	const down = { post: async () => ({ status: 503 }) };
-	const again = await runDraft(["revise", next.id, "--change", "하루 늦게"], "", { call: model.call, hub: down });
+	const again = await runDraft(["revise", rec!.id, "--change", "하루 늦게"], "", { call: model.call, hub: down });
 	expect(parseDraftApproval(again.lines.join("\n"))).toMatchObject({ body: "내일 알려 드릴게요." });
 });
 

@@ -105,13 +105,12 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 		}
 		case "revise": {
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
-			const r = await reviseDraft(pos[0], flag(rest, "--change") ?? "", deps);
-			const rec = r.ok && r.id ? getDraft(r.id) : undefined;
-			// The rewritten mail draft goes to its mail's conversation from here, not through the bot's answer: a second 고치기 changes a word or
-			// two, and the runtime cut the near-identical card off as a repeated reply, so the owner never got it (2026-10-28, RZV7KMZ).
-			if (rec?.kind === "mail" && (await notifyGateway({ path: "/api/send", body: { target: `mail:${rec.ref}`, text: r.text } }, deps.hub)))
-				return { lines: [`고친 초안(${rec.id})을 그 메일 대화에 올렸어요. 초안을 다시 붙이지 말고, 무엇을 고쳤는지 한 줄로만 답하세요.`], code: 0 };
-			return done(r);
+			const change = flag(rest, "--change") ?? "";
+			// With a gateway the change runs through its one reply flow (the card shows the new draft in place, the lesson is stored once); only with
+			// none does this process rewrite the draft itself.
+			if (await notifyGateway({ path: "/api/reply/act", body: { ref: pos[0], action: "revise", change } }, deps.hub))
+				return { lines: [`고치기를 맡겼어요. 고친 초안은 카드(${pos[0]})에 바로 나와요. 초안을 붙이지 말고 무엇을 고쳤는지 한 줄로만 답하세요.`], code: 0 };
+			return done(await reviseDraft(pos[0], change, deps));
 		}
 		case "send": {
 			if (!pos[0]) return { lines: [USAGE], code: 2 };

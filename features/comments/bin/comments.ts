@@ -14,6 +14,7 @@ import type { Engine } from "../../../hub/comments/engine.ts";
 import { realEngine } from "../../../hub/comments/real.ts";
 import { ATTACH_REFUSED, draftVerdict, LINT_REFUSED } from "../../../hub/draft-approval.ts";
 import { dataDir } from "../../reply-drafts/lib/settings.ts";
+import { notifyGateway } from "../../../hub/followup.ts";
 
 type Out = { lines: string[]; code: number };
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -51,7 +52,11 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 			if (part !== "reply" && part !== "mail") return fail("--part는 reply 또는 mail이에요");
 			const noMail = args.includes("--no-mail");
 			if (noMail && part === "mail") return fail("--no-mail은 --part mail과 함께 쓸 수 없어요");
-			const step = await engine.revise(id, flag(args, "--change") ?? "", part, noMail);
+			const change = flag(args, "--change") ?? "";
+			// With a gateway the change runs through its one reply flow and the card shows the new draft; only with none does this process rewrite it.
+			if (!noMail && (await notifyGateway({ path: "/api/reply/act", body: { ref: id, action: "revise", change, part } })))
+				return { lines: [`고치기를 맡겼어요. 고친 초안은 카드(${id})에 바로 나와요. 무엇을 고쳤는지 한 줄로만 답하세요.`], code: 0 };
+			const step = await engine.revise(id, change, part, noMail);
 			return step.ok ? { lines: [askOf(step.draft.code, part === "mail" ? "함께 보낼 메일 초안을 고쳤어요" : "댓글 답글 초안을 고쳤어요") ?? "초안을 고쳤어요"], code: 0 } : fail(step.reason);
 		}
 		case "drop": {
