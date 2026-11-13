@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createApprovalSender, sendArgv, type SendJob, type SendLook, type SendResult } from "./approval-send.ts";
+import { createApprovalSender, outcomeOf, sendArgv, type SendJob, type SendLook, type SendResult } from "./approval-send.ts";
 
 const PLACES: Record<string, { kind: "comment" | "mail"; lane: string }> = {
 	RAAAAAA: { kind: "mail", lane: "mail:zele" },
@@ -42,10 +42,11 @@ test("a send approved but not started when the gateway stopped is queued again o
 	await second.s.idle();
 	expect(second.ran.map(a => a[a.length - 1])).toEqual(["RBBBBBB"]);
 	expect(second.reports.filter(r => r.ref === "RBBBBBB").map(r => r.state)).toEqual(["queued", "sending", "sent"]);
-	expect(left(m)).toEqual([]);
+	// The one that was sending is kept as look judged it, until it is resolved.
+	expect(left(m)).toEqual(["RAAAAAA:failed"]);
 });
 
-test("a send that was running when the gateway stopped is never run again: it ends failed with a text that says it may have gone out", async () => {
+test("a send that was running when the gateway stopped is never run again: what look says is shown and kept until it is resolved", async () => {
 	const m = memoryStore();
 	boot(m, { run: never }).s.enqueue(job("RAAAAAA"));
 	const text = "메일이 이미 나갔을 수 있어요. 확인하고 다시 보내기를 눌러 주세요";
@@ -54,7 +55,7 @@ test("a send that was running when the gateway stopped is never run again: it en
 	await second.s.idle();
 	expect(second.ran).toEqual([]);
 	expect(second.reports.at(-1)).toMatchObject({ ref: "RAAAAAA", state: "failed", text });
-	expect(left(m)).toEqual([]);
+	expect(left(m)).toEqual(["RAAAAAA:failed"]);
 });
 
 test("a comment nobody can say went up ends unsure: never run again, no second approval runs it, and a later answer settles it", async () => {
@@ -66,9 +67,10 @@ test("a comment nobody can say went up ends unsure: never run again, no second a
 	expect(s.enqueue(job("D1"))).toBe(true);
 	await s.idle();
 	expect(ran).toEqual([]);
-	expect(left(m)).toEqual([]);
+	expect(left(m)).toEqual(["D1:unsure"]);
 	s.settle(job("D1"), "sent");
 	expect(s.results().map(r => r.state)).toEqual(["sent"]);
+	expect(left(m)).toEqual([]);
 });
 
 test("a send whose draft is already sent is marked sent, not run", async () => {
@@ -112,12 +114,12 @@ test("a queued send the gateway can no longer make ends failed on boot instead o
 	expect(left(m)).toEqual([]);
 });
 
-test("a send the CLI's gate refuses ends failed with its reason and leaves nothing behind", async () => {
+test("a send the CLI's gate refuses because the draft is gone ends failed with its reason and leaves nothing behind", async () => {
 	const m = memoryStore();
-	const t = boot(m, { run: async () => ({ code: 1, out: "초안 RAAAAAA은(는) 이미 sent 상태라 보내지 않았어요" }) });
+	const t = boot(m, { run: async () => ({ code: 1, out: `초안 RAAAAAA은(는) 이미 sent 상태라 보내지 않았어요\nDOTZ_SEND {"sent":"no","code":"gone"}` }) });
 	t.s.enqueue(job("RAAAAAA"));
 	await t.s.idle();
-	expect(t.reports.at(-1)).toMatchObject({ state: "failed", text: "초안 RAAAAAA은(는) 이미 sent 상태라 보내지 않았어요" });
+	expect(t.reports.at(-1)).toMatchObject({ state: "failed", text: "이미 처리됐거나 없는 초안이에요", reason: { code: "gone" } });
 	expect(left(m)).toEqual([]);
 });
 
@@ -127,4 +129,58 @@ test("the owner's retry of a mail send reaches the CLI as --retry, a first send 
 	expect(first).not.toContain("--retry");
 	expect(retry!.slice(-2)).toEqual(["RAAAAAA", "--retry"]);
 	expect(sendArgv("comment", "D1", "send", "bun", true)).not.toContain("--retry");
+});
+
+const line = (o: object) => `DOTZ_SEND ${JSON.stringify(o)}`;
+
+test("a CLI result: its DOTZ_SEND line decides; without one exit 0 is sent and any other exit may have gone out", () => {
+	expect(outcomeOf({ code: 1, out: "TypeError: boom\n    at send (x.ts:1:1)" })).toEqual({ sent: "maybe", code: "unknown" });
+	expect(outcomeOf({ code: 1, out: line({ sent: "yes" }) })).toEqual({ sent: "yes" });
+	expect(outcomeOf({ code: 0, out: "보냈어요" })).toEqual({ sent: "yes" });
+	expect(outcomeOf({ code: 1, out: `${line({ sent: "no", code: "offline" })}\n${line({ sent: "no", code: "rejected" })}` })).toEqual({ sent: "no", code: "rejected" });
+	expect(outcomeOf({ code: 1, out: line({ sent: "no", code: "made_up" }) })).toEqual({ sent: "maybe", code: "unknown" });
+	expect(outcomeOf({ code: 0, out: line({ sent: "maybe", code: "net_cut" }), timedOut: true })).toEqual({ sent: "maybe", code: "timeout" });
+});
+
+test("offline is retried by code three times on its own schedule, then stays failed for the owner", async () => {
+	const m = memoryStore();
+	const waits: number[] = [];
+	const due: Array<() => void> = [];
+	let runs = 0;
+	const reports: SendResult[] = [];
+	const s = createApprovalSender({ kind: ref => PLACES[ref], run: async () => (runs++, { code: 1, out: line({ sent: "no", code: "offline" }) }), report: r => void reports.push(r), log: () => undefined, store: m.store, now: () => 0, after: (ms, fn) => void (waits.push(ms), due.push(fn)) });
+	s.enqueue({ ...job("RAAAAAA"), retry: true });
+	await s.idle();
+	for (let i = 0; i < 3; i++) {
+		expect(reports.at(-1)).toMatchObject({ state: "failed", safeToAuto: true, auto: { attempt: i + 1, max: 3 } });
+		due.shift()!();
+		await Bun.sleep(0);
+		await s.idle();
+	}
+	expect(runs).toBe(4);
+	expect(waits).toEqual([30_000, 120_000, 600_000]);
+	expect(reports.at(-1)).toMatchObject({ state: "failed", safeToAuto: false, reason: { code: "offline" } });
+	expect(due).toHaveLength(0);
+	expect(left(m)).toEqual(["RAAAAAA:failed"]);
+});
+
+test("an unsure send survives a restart; a second approval sends nothing; only the owner's force sends it again", async () => {
+	const m = memoryStore();
+	const first = boot(m, { run: async () => ({ code: 1, out: line({ sent: "maybe", code: "net_cut" }) }) });
+	first.s.enqueue(job("RAAAAAA"));
+	await first.s.idle();
+	expect(left(m)).toEqual(["RAAAAAA:unsure"]);
+	const second = boot(m);
+	second.s.recover();
+	expect(second.reports.at(-1)).toMatchObject({ state: "unsure", reason: { code: "net_cut" } });
+	expect(second.s.enqueue(job("RAAAAAA"))).toBe(true);
+	expect(second.s.enqueue({ ...job("RAAAAAA"), retry: true })).toBe(true);
+	await second.s.idle();
+	expect(second.ran).toEqual([]);
+	expect(second.s.enqueue({ ...job("RAAAAAA"), force: true })).toBe(true);
+	await second.s.idle();
+	expect(second.ran).toHaveLength(1);
+	expect(second.ran[0]!.at(-1)).toBe("--retry");
+	expect(second.reports.at(-1)).toMatchObject({ state: "sent" });
+	expect(left(m)).toEqual([]);
 });

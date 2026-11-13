@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createApprovalSender, refOfQuestion, sendActionOf, sendArgv, type SendResult } from "./approval-send.ts";
+import { reasonOf } from "./reply-reasons.ts";
+
+const said = (o: object) => `DOTZ_SEND ${JSON.stringify(o)}`;
 import { answerBatch, batchCard, type BatchCard, type BatchPick } from "./approval-batch.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 
@@ -50,7 +53,7 @@ describe("approval sender", () => {
 		await g.startedCount(2);
 		// The comment site runs D1 alone; the mail account does not wait for it.
 		expect(g.started).toEqual(["D1", "RAAAAAA"]);
-		g.finish("D1", 1, "답글을 올리지 못했어요: 로그인이 풀렸어요");
+		g.finish("D1", 1, `Error: invalid_grant\n    at refresh (x.js:1:1)\n${said({ sent: "no", code: "login_expired" })}`);
 		await g.startedCount(3);
 		expect(g.started).toEqual(["D1", "RAAAAAA", "D2"]);
 		g.finish("RAAAAAA");
@@ -60,7 +63,9 @@ describe("approval sender", () => {
 		await s.idle();
 		const last = new Map(reports.map(r => [r.ref, r]));
 		expect(Object.fromEntries([...last.values()].map(r => [r.ref, r.state]))).toEqual({ D1: "failed", RAAAAAA: "sent", D2: "sent", D3: "sent" });
-		expect(last.get("D1")!.text).toBe("답글을 올리지 못했어요: 로그인이 풀렸어요");
+		// The owner reads the reason's plain text, never the tool's stack line.
+		expect(last.get("D1")!.text).toBe(reasonOf("login_expired").text);
+		expect(last.get("D1")!.reason?.code).toBe("login_expired");
 	});
 
 	test("a second approval of the same draft sends nothing; an unknown ref is left to the bot; a failed one may be approved again", async () => {
@@ -72,7 +77,7 @@ describe("approval sender", () => {
 		// 답글만 / 메일만 belong to a comment card: a mail draft has only the whole send.
 		expect(s.can("RAAAAAA", "send-main")).toBe(false);
 		await g.startedCount(1);
-		g.finish("D1", 1, "실패");
+		g.finish("D1", 1, said({ sent: "no", code: "rejected" }));
 		await s.idle();
 		expect(g.started).toEqual(["D1"]);
 		expect(s.enqueue({ ref: "D1", conv: "c", action: "send", title: "q (D1)" })).toBe(true);

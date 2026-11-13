@@ -38,6 +38,8 @@ export type DraftRec = {
 	rule?: { id: string; name: string }; // the 자동 초안 규칙 that drafted it (lib/rules.ts): its name is the card's badge
 	subject?: string;
 	body: string;
+	replaces?: string; // the id of the draft this one replaced (a revise)
+	editedFrom?: string; // the model's text before the owner's first direct edit (직접 수정); set once, never overwritten
 	status: DraftStatus;
 	created: string;
 	changes: string[];
@@ -126,7 +128,7 @@ export function addDraft(rec: DraftRec): void {
 	write({ drafts: [...f.drafts, rec], keys: f.keys.includes(rec.ref) ? f.keys : [...f.keys, rec.ref] });
 }
 
-export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "cc" | "mode" | "ownerRecipients" | "item" | "questions" | "body" | "wantFiles">>): void {
+export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "cc" | "mode" | "ownerRecipients" | "item" | "questions" | "body" | "wantFiles" | "editedFrom" | "subject">>): void {
 	const f = read();
 	write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, ...patch } : d)) });
 }

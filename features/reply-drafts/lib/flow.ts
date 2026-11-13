@@ -8,11 +8,11 @@ import { attachIssues, ownWords, withoutKindWords } from "../../../hub/attach-ch
 import { withFileWords } from "../../../hub/auto-attach.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
+import { addressesOf, editLesson, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
-import { canAttach, sendsThroughZele, sendWith, settleAccount, webmailSite, zeleAccountOf, type SendOutcome } from "./senders.ts";
+import { canAttach, sendsThroughZele, sendWith, settleAccount, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { banWarnings, boxById } from "./box.ts";
@@ -24,12 +24,23 @@ import { realRunner, type Runner } from "./tone.ts";
 export { realRunner };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
-export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts };
+export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void };
+/** Where a send left the mail and why (design 1.5, 2.2): what sendDraft tells `onOutcome` and carries on a Step that did not send. */
+export type Outcome = { sent: Sent; code?: string; vars?: Record<string, string | number> };
+
+/** The deps of a real send or revise outside a test: the identity model of the reply-drafts settings and the real tool runner. */
+export const realFlowDeps = (): FlowDeps => ({ analyze: defaultCall(loadSettings().model), run: realRunner });
 
 // After a recorded correction: every few corrections fold into the profile's identity. A failed refinement keeps the old identity.
 export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promise<void> {
 	if (!deps.analyze) return;
 	await maybeRefine(key, deps.analyze).catch(e => console.error(`reply draft: identity of ${key.app} not refined: ${(e as Error).message}`));
+}
+
+/** The one "record, then refine" (design 3.4): a lesson line enters the tone profile, and every few fold into its identity. */
+export async function recordLesson(key: ToneKey, line: string, deps: FlowDeps): Promise<void> {
+	recordCorrection(key, line, nowOf(deps));
+	await refineAfterCorrection(key, deps);
 }
 
 // The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless the item says otherwise).
@@ -198,12 +209,49 @@ export function draftAttachIssues(rec: DraftRec): string[] {
 	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
 	const files = stagedFiles(rec.id).map(f => f.name);
 	const found = attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text);
-	const want = (rec.wantFiles ?? []).map(f => f.name).filter(n => !files.includes(stagedName(n)));
+	const want = notYetStaged(rec);
 	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
 }
+// The files chosen for a draft that are not on it yet (an iCloud file still downloading).
+const notYetStaged = (rec: DraftRec): string[] => {
+	const files = stagedFiles(rec.id).map(f => f.name);
+	return (rec.wantFiles ?? []).map(f => f.name).filter(n => !files.includes(stagedName(n)));
+};
 
-// The send-time lint of a draft as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
-export const draftLintFailures = (d: DraftRec): string[] => lintReply({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true }).map(ownerWarning);
+// The send-time lint of a draft, in the lint's own words. A text the owner wrote himself (editedFrom) gets the owner-text lint: his length is not the style's.
+const draftLint = (d: DraftRec): string[] => (d.editedFrom !== undefined ? ownerLint : lintReply)({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+// The same as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
+export const draftLintFailures = (d: DraftRec): string[] => draftLint(d).map(ownerWarning);
+
+// The reason code of a lint finding (design 2.2), with the value its text names.
+function lintCode(raw: string): { code: string; vars?: Record<string, string | number> } {
+	let x: RegExpExecArray | null;
+	if (raw === NO_RECIPIENT) return { code: "recipient_missing" };
+	if ((x = /^'(.+)' is the user's own address$/.exec(raw))) return { code: "recipient_self", vars: { address: x[1]! } };
+	if ((x = /^'(.+)' is not the sender, reply-to or a cc of the original$/.exec(raw))) return { code: "recipient_not_on_mail", vars: { address: x[1]! } };
+	if ((x = /^the body is (\d+) characters; the limit is (\d+)$/.exec(raw))) return { code: "too_long", vars: { n: Number(x[1]), max: Number(x[2]) } };
+	if ((x = /^it uses the forbidden expression '(.+)'$/.exec(raw))) return { code: "forbidden_word", vars: { word: x[1]! } };
+	if (raw === "the subject must start with 'Re:'") return { code: "subject_re" };
+	if (raw === "the body is empty") return { code: "empty" };
+	return { code: "placeholder" };
+}
+
+// 직접 수정 (design 3.3): the owner's text is saved as it is under the same id; only line ends are normalized and the ends trimmed. No model call.
+// The owner-text lint refuses it and nothing is stored; a file mismatch is only noted. `editedFrom` keeps the model's text from before his first edit.
+export function editDraft(id: string, text: string): Step & { lint?: string[] } {
+	const d = getDraft(id);
+	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요`, code: "gone" };
+	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 고칠 수 없어요`, code: "not_pending" };
+	const body = text.replace(/\r\n?/g, "\n").trim();
+	const found = ownerLint({ to: d.to, subject: d.subject, body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+	if (found.length) {
+		const lint = found.map(ownerWarning);
+		return { ok: false, text: `${LINT_REFUSED} ${lint.join(" · ")}`, ...lintCode(found[0]!), lint };
+	}
+	if (body !== d.body) patchDraft(id, { body, ...(d.editedFrom === undefined ? { editedFrom: d.body } : {}) });
+	const issues = draftAttachIssues({ ...d, body });
+	return { ok: true, text: `초안 ${id}을(를) 고친 글 그대로 저장했어요${issues.length ? `. 확인: ${issues.join(" · ")}` : ""}` };
+}
 
 
 // The account of a new draft that goes out through zele (senders.ts sendsThroughZele), settled before its card is shown: the owner hears here, not after he pressed 보내기, that it cannot go out as it is.
@@ -368,7 +416,9 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps,
 	return failed;
 }
 
-export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string; /** The approved send itself failed (not the approval gate): the owner has to hear it. */ sendFailed?: true };
+export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string; /** The approved send itself failed (not the approval gate): the owner has to hear it. */ sendFailed?: true;
+	/** A send that did not go out: whether it surely did not or may have, and the reason code (absent on success, where the mail went out). */ sent?: Exclude<Sent, "yes">; code?: string; vars?: Record<string, string | number>;
+	/** A revision: the draft it replaced, and the lesson it recorded (none when the change was only about that draft). */ replaces?: string; lesson?: { key: ToneKey; line: string } };
 
 // The user picked 2) 고치기 (or the CLI is asked to): the draft is regenerated, and once that worked the lasting preference the change shows (the model's `lesson`;
 // the change itself when the model left it out; nothing when the change was only about this draft) is recorded in the tone profile of that draft (its room, else its app).
@@ -385,15 +435,11 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	const item = rev ? { ...old.item, candidates: rev.names } : held.length ? { ...old.item, files: held } : old.item;
 	const r = await reviseReply(item, await styleOf(old.item, toneKey(old), old.source, old), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
-	const lesson = lessonOf(r, change);
-	if (lesson) {
-		recordCorrection(toneKey(old), lesson, nowOf(deps));
-		await refineAfterCorrection(toneKey(old), deps);
-	}
 	const banned = old.box && old.instance ? banWarnings(boxById(old.instance, old.box), r.draft) : [];
 	const rec = toRec(old.item, { ...(old.box && old.instance ? { box: old.box, instance: old.instance } : {}), source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	// The recipients the owner set on the card stay: a rewrite of the words is not a reason to send it to somebody else.
 	rec.to = old.to;
+	rec.replaces = old.id;
 	if (old.brief) rec.brief = old.brief;
 	if (old.cc?.length) rec.cc = old.cc;
 	if (old.mode) rec.mode = old.mode;
@@ -408,7 +454,10 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	carryStagedFiles(old.id, rec.id);
 	const notStaged = await restageForRevision(rec, change, deps, rev && r.files ? { rev, chosen: r.files } : undefined).catch(e => [(e as Error).message]);
 	addDraft(rec);
-	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id };
+	// Learned only once the new draft is stored: a revise that failed teaches nothing.
+	const lesson = lessonOf(r, change);
+	if (lesson) await recordLesson(toneKey(old), lesson, deps);
+	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id, replaces: old.id, ...(lesson ? { lesson: { key: toneKey(old), line: lesson } } : {}) };
 }
 
 export function dropDraft(id: string): Step {
@@ -442,38 +491,48 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	const stored = getDraft(id);
 	const d = stored && withRecipient(stored);
 	if (stored && d && d !== stored && stored.status === "pending") patchDraft(id, { to: d.to, item: d.item, questions: d.questions });
-	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
-	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요` };
+	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요`, sent: "no", code: "gone" };
+	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
 	const card = opts.withReply ? undefined : linkedComment(id);
-	if (card) return { ok: false, text: `이 메일은 댓글 답글(${card})과 한 장으로 승인해요. 답글 쪽 comments.ts send ${card}로 보내 주세요` };
+	if (card) return { ok: false, text: `이 메일은 댓글 답글(${card})과 한 장으로 승인해요. 답글 쪽 comments.ts send ${card}로 보내 주세요`, sent: "no", code: "not_approved" };
 	const v: DraftVerdict = opts.withReply ? { verdict: opts.asIs ? "send-as-is" : "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created), d.kind === "mail" ? { conv: `mail:${d.ref}` } : {});
 	if (v.verdict === "drop") {
 		setStatus(id, "dropped");
-		return { ok: false, text: "보내지 않기로 한 초안이에요" };
+		return { ok: false, text: "보내지 않기로 한 초안이에요", sent: "no", code: "not_approved" };
 	}
-	if (v.verdict === "edit") return { ok: false, text: `고치기를 골랐어요${v.detail ? ` (${v.detail})` : ""}. revise로 고친 뒤 다시 물어봐 주세요` };
-	if (v.verdict !== "send" && v.verdict !== "send-as-is") return { ok: false, text: "아직 보내도 된다는 답을 받지 못했어요" };
+	if (v.verdict === "edit") return { ok: false, text: `고치기를 골랐어요${v.detail ? ` (${v.detail})` : ""}. revise로 고친 뒤 다시 물어봐 주세요`, sent: "no", code: "not_approved" };
+	if (v.verdict !== "send" && v.verdict !== "send-as-is") return { ok: false, text: "아직 보내도 된다는 답을 받지 못했어요", sent: "no", code: "not_approved" };
 	const issues = v.verdict === "send" ? draftAttachIssues(d) : [];
-	if (issues.length) return { ok: false, text: `${ATTACH_REFUSED} ${issues.join(" · ")}. ${ATTACH_AS_IS_HINT}` };
-	const failures = draftLintFailures(d);
-	if (failures.length) return { ok: false, text: `${LINT_REFUSED} ${failures.join(" · ")}` };
+	// Only a chosen file still on its way (and nothing else wrong) is `file_pending`, which code may retry; any other mismatch waits for the owner.
+	if (issues.length) return { ok: false, text: `${ATTACH_REFUSED} ${issues.join(" · ")}. ${ATTACH_AS_IS_HINT}`, sent: "no", ...(issues.length === 1 && notYetStaged(d).length ? { code: "file_pending" } : { code: "attach_mismatch", vars: { issues: issues.join(" · ") } }) };
+	const found = draftLint(d);
+	if (found.length) return { ok: false, text: `${LINT_REFUSED} ${found.map(ownerWarning).join(" · ")}`, sent: "no", ...lintCode(found[0]!) };
 	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.
-	if (!opts.retry && claimHolder(claimFile(id)) === "dead") return { ok: false, text: `초안 ${id}은(는) 지난번에 보내다가 멈춰서 메일이 이미 나갔을 수 있어요. 보낸편지함을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요` };
+	if (!opts.retry && claimHolder(claimFile(id)) === "dead") return { ok: false, text: `초안 ${id}은(는) 지난번에 보내다가 멈춰서 메일이 이미 나갔을 수 있어요. 보낸편지함을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요`, sent: "maybe", code: "interrupted" };
+	// Another sender holds the claim and may still send it: no outcome of this run (design 2.3, the queue keeps it `sending`).
 	const release = claimSend(claimFile(id), opts.retry === true);
 	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요` };
 	try {
 		const now = getDraft(id);
-		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요` };
+		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
 		let out: SendOutcome;
 		try {
 			out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(now);
 		} catch (e) {
-			out = { ok: false, message: `보내지 못했어요: ${(e as Error).message}` };
+			console.error(`reply draft: sending ${id} threw: ${(e as Error).stack ?? (e as Error).message}`);
+			out = { ok: false, message: `보내지 못했어요: ${(e as Error).message}`, sent: "maybe", code: "unknown" };
 		}
-		if (!out.ok) return { ok: false, text: out.message, sendFailed: true };
+		// Told right after the transport answered and before any bookkeeping write: a status write that throws after the mail left cannot turn it into a failure.
+		// A sender that does not say where the mail is: out when it says ok, else it may have gone out.
+		const where: Outcome = out.ok ? { sent: out.sent ?? "yes" } : { sent: out.sent ?? "maybe", code: out.code ?? "unknown", ...(out.vars ? { vars: out.vars } : {}) };
+		deps.onOutcome?.(where);
+		if (!out.ok) return { ok: false, text: out.message, sendFailed: true, sent: where.sent === "no" ? "no" : "maybe", code: where.code, ...(where.vars ? { vars: where.vars } : {}) };
 		setStatus(id, "sent");
+		// A text the owner wrote himself (직접 수정) teaches what he changed, in the profile of that draft, once it went out (design 3.4).
+		const taught = now.editedFrom !== undefined ? editLesson(now.editedFrom, now.body) : undefined;
+		if (taught) await recordLesson(toneKey(now), taught, deps).catch(e => console.error(`reply draft: what the edit of ${id} teaches was not recorded: ${(e as Error).message}`));
 		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does.
-		if (now.kind === "mail" && !now.compose && now.changes.length > 0 && now.item.text.trim()) {
+		if (now.kind === "mail" && !now.compose && (now.changes.length > 0 || taught !== undefined) && now.item.text.trim()) {
 			try {
 				const source = pairSource(now.source);
 				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime(), edited: true, ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}), ...(source !== "zele" ? { source } : {}) });

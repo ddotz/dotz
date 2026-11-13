@@ -300,6 +300,19 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, o
 	return out;
 }
 
+// The owner's own text (직접 수정): the same checks without the style's length, with the channel's hard limit instead. A file mismatch is never
+// among them: for his own words it is a note on the card, not a refusal.
+const OWNER_MAX: Record<ReplyKind, number> = { mail: 6000, comment: 2000, chat: 3000 };
+export const ownerLint = (draft: DraftOut, item: ReplyItem, style: ReplyStyle, opts: { anyRecipient?: boolean } = {}): string[] => lintReply(draft, item, { ...style, maxChars: OWNER_MAX[item.kind] }, opts);
+
+// What a direct edit teaches, in the line KakaoTalk already records (hub/kakao/gateway.ts onCorrection): the draft as the model wrote it and as the owner
+// sent it, 70 characters each. Texts that differ only in whitespace teach nothing.
+const cut70 = (s: string): string => (s.length > 70 ? `${s.slice(0, 69)}…` : s);
+export function editLesson(before: string, after: string): string | undefined {
+	if (before.replace(/\s+/g, "") === after.replace(/\s+/g, "")) return undefined;
+	return `초안 "${cut70(before.replace(/\s+/g, " ").trim())}" 대신 "${cut70(after.replace(/\s+/g, " ").trim())}"처럼 씀`;
+}
+
 // Findings a rewrite by the model can fix; the rest (a recipient the model cannot know, the user's own address) come back as warnings, never as a retry.
 const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it says something was already sent|^the recipient evidence /;
 export const rewritable = (failures: string[]): string[] => failures.filter(f => REWRITABLE.test(f));

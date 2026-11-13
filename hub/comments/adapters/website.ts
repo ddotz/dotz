@@ -8,6 +8,7 @@
 // A read script is run as `<command...> --since <cursor>`; a JSON endpoint gets `?since=<cursor>`. The cursor `1` means "from the beginning": the owner's past replies
 // (mine:true, parent) and the comments they answer, read-only (nothing on the site is marked, no message room is opened). An RSS feed is read as usual.
 // Post body (webhook JSON, or stdin of the script): {"sendId","commentId","thread","parent?","text"}; answer {"ok":true,"ref?"} or {"ok":false,"reason"}.
+// A script that exits non-zero counts as "may have posted" unless its output says {"sent":"no"}; a webhook 5xx, timeout or cut may have posted too.
 //
 // DM inbox (optional `site.dm`): read output {"messages":[{"room","id","author","text","at","mine?","title?"}],"cursor?"} from
 // `<command...> [--since <cursor>] [--room <room>]` or `GET <url>?since=&room=`; each message becomes a comment of thread `dm:<room>`. A reply goes
@@ -131,23 +132,51 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 			return undefined;
 		}
 	};
+	// Reply design 2.3, comment table: "no" only where nothing can have reached the site.
+	const no = (code: string, reason: string, detail?: string): ReplyOutcome => ({ ok: false, code, sent: "no", reason, ...(detail ? { detail } : {}) });
+	const maybe = (code: string, reason: string, detail?: string): ReplyOutcome => ({ ok: false, code, sent: "maybe", reason, ...(detail ? { detail } : {}) });
+	const CONFIG = "사이트 보내기 설정이 올바르지 않아요", UNKNOWN = "보내다가 문제가 생겼어요", REJECTED = "사이트에서 이 글을 받지 않았어요";
+	const fetchFailure = (e: unknown): ReplyOutcome => {
+		const detail = e instanceof Error ? e.message : String(e);
+		const code = (e as { code?: unknown } | undefined)?.code;
+		if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return maybe("timeout", "보내는 데 너무 오래 걸려서 멈췄어요", detail);
+		if (typeof code === "string" && ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ConnectionRefused", "FailedToOpenSocket"].includes(code)) return no("offline", "인터넷에 연결되지 않았어요", detail);
+		return maybe("net_cut", "보내는 중에 연결이 끊겼어요", detail);
+	};
 	const deliver = async (post: { kind: "webhook" | "script"; url?: string; command?: string[]; secret?: string }, body: string): Promise<ReplyOutcome> => {
-		try {
-			if (post.kind === "script") {
-				const r = await deps.exec(command(post.command), body);
-				if (r.code !== 0) return { ok: false, reason: (r.stderr || r.stdout).trim().slice(0, 160) || `보내기 스크립트가 ${r.code}로 끝났어요` };
-				const out = r.stdout.trim() ? (JSON.parse(r.stdout) as { ok?: boolean; reason?: string; ref?: string }) : { ok: true };
-				return out.ok === false ? { ok: false, reason: out.reason ?? "사이트가 답글을 받지 않았어요" } : { ok: true, ...(out.ref ? { ref: out.ref } : {}) };
+		if (post.kind === "script") {
+			if (!post.command?.length) return no("config", CONFIG, "no post command");
+			let r: Awaited<ReturnType<Exec>>;
+			try {
+				r = await deps.exec(command(post.command), body);
+			} catch (e) {
+				return maybe("unknown", UNKNOWN, e instanceof Error ? e.message : String(e));
 			}
-			if (!post.url || !/^https?:\/\//.test(post.url)) return { ok: false, reason: "보낼 주소가 올바르지 않아요" };
-			const token = secret(post.secret);
-			const res = await deps.fetch(post.url, { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body });
-			if (!res.ok) return { ok: false, reason: `사이트가 ${res.status}로 답했어요` };
-			const out = (await res.json().catch(() => ({}))) as { ref?: unknown };
-			return { ok: true, ...(out.ref ? { ref: str(out.ref) } : {}) };
-		} catch (e) {
-			return { ok: false, reason: e instanceof Error ? e.message.slice(0, 200) : "보내지 못했어요" };
+			const raw = (r.stderr || r.stdout).trim().slice(0, 500);
+			let out: { ok?: boolean; sent?: string; ref?: string } | undefined;
+			try {
+				out = r.stdout.trim() ? JSON.parse(r.stdout) : { ok: true };
+			} catch {
+				out = undefined;
+			}
+			if (r.code !== 0) return out?.sent === "no" ? no("rejected", REJECTED, raw) : maybe("unknown", UNKNOWN, raw || `exit ${r.code}`);
+			if (!out) return maybe("unknown", UNKNOWN, raw);
+			return out.ok === false ? no("rejected", REJECTED, raw) : { ok: true, ...(out.ref ? { ref: out.ref } : {}) };
 		}
+		if (!post.url || !/^https?:\/\//.test(post.url)) return no("config", CONFIG, `bad post url ${post.url ?? ""}`);
+		const token = secret(post.secret);
+		let res: Response;
+		try {
+			res = await deps.fetch(post.url, { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body });
+		} catch (e) {
+			return fetchFailure(e);
+		}
+		if (res.status === 401 || res.status === 403) return no("login_expired", "사이트 로그인이 풀렸어요", `http ${res.status}`);
+		if (res.status >= 400 && res.status < 500) return no("rejected", REJECTED, `http ${res.status}`);
+		if (res.status >= 500) return maybe("server_error", "사이트에서 오류로 답했어요", `http ${res.status}`);
+		if (!res.ok) return maybe("unknown", UNKNOWN, `http ${res.status}`);
+		const out = (await res.json().catch(() => ({}))) as { ref?: unknown };
+		return { ok: true, ...(out.ref ? { ref: str(out.ref) } : {}) };
 	};
 	const readDms = async (dm: NonNullable<SiteConfig["dm"]>, since?: string, room?: string): Promise<{ comments: RawComment[]; cursor?: string }> => {
 		if (dm.read.kind === "script") {
@@ -203,23 +232,19 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 			return (await readComments(site, site.read.kind === "rss" ? undefined : HISTORY_CURSOR, Math.max(1_000, Math.min(HISTORY_TIMEOUT_MS, opts.deadline - Date.now())))).comments;
 		},
 		async reply(src, c, text, sendId) {
-			let site: SiteConfig;
-			try {
-				site = siteOf(src);
-			} catch (e) {
-				return { ok: false, reason: e instanceof Error ? e.message : "보내지 못했어요" };
-			}
+			if (!src.site) return no("config", "이 사이트의 읽기·보내기 설정이 없어요");
+			const site = src.site;
 			if (!c.thread.startsWith(DM_THREAD)) return deliver(site.post, JSON.stringify({ sendId, commentId: c.native, thread: c.thread, ...(c.parent ? { parent: c.parent } : {}), text }));
-			if (!site.dm) return { ok: false, reason: "이 사이트의 쪽지 보내기 설정이 없어요" };
+			if (!site.dm) return no("config", "이 사이트의 쪽지 보내기 설정이 없어요");
 			const room = c.thread.slice(DM_THREAD.length);
 			const sent = await deliver(site.dm.post, JSON.stringify({ sendId, room, text }));
 			if (!sent.ok) return sent;
 			// Read back: a 2xx is not proof the message landed in that room.
 			try {
 				const last = (await readDms(site.dm, undefined, room)).comments.filter(m => m.thread === c.thread).sort((a, b) => a.at - b.at).at(-1);
-				if (!last?.mine || !sameWords(last.text, text)) return { ok: false, reason: "보냈다는 답은 왔지만 다시 읽은 마지막 쪽지가 이 답장이 아니에요. 사이트에서 확인해 주세요" };
+				if (!last?.mine || !sameWords(last.text, text)) return maybe("readback_mismatch", "보냈다는 답은 왔지만 다시 읽은 마지막 쪽지가 이 답장이 아니에요. 사이트에서 확인해 주세요");
 			} catch (e) {
-				return { ok: false, reason: `보낸 뒤 다시 읽어 확인하지 못했어요(갔을 수도 있어요): ${e instanceof Error ? e.message.slice(0, 120) : "알 수 없는 이유"}` };
+				return maybe("readback_mismatch", "보낸 뒤 다시 읽어 확인하지 못했어요(갔을 수도 있어요)", e instanceof Error ? e.message : String(e));
 			}
 			return sent;
 		},

@@ -25,7 +25,9 @@ export type DraftTokens = { in: number; out: number; estimated?: true };
 // pressing: written before a part is typed and cleared once its outcome is known. Still there on the next send means the sender died at the
 // press: the database decides whether that part went out, and it is never pressed again on a guess.
 export type Pressing = { part: number; text: string; at: number };
-export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true; sentParts?: number; intent?: string; pressing?: Pressing };
+// replaces: the code of the draft this one replaced (a revise). editedFrom: the model's text before the owner's first direct edit (editDraft),
+// never overwritten. own: a message the owner typed himself; its send skips the newer-incoming-message check, as a typed send does.
+export type Draft = { code: string; chatId: string; roomName: string; text: string; basisLogId: string; created: string; status: DraftStatus; sentAt?: string; tokens?: DraftTokens; unconfirmed?: true; sentParts?: number; intent?: string; pressing?: Pressing; replaces?: string; editedFrom?: string; own?: true };
 // `later`: how the idle close of a kept window is scheduled (tests pass their own; the default is an unref'd timer). `sleep`: how a
 // confirmation poll waits (tests pass the fake clock). `confirm`: whether a pressed text reached the database; without it an install's own
 // database is asked through confirm.ts, and when there is none the press result stands.
@@ -39,7 +41,11 @@ export type Recovery = "none" | "retry" | "reopen" | "deep" | "front";
 export type SendAttempt = { n: number; recovery: Recovery; ok: boolean; state: "sent" | "failed" | "unconfirmed"; reason?: string; ms: number; ax: AxStep[]; at: number; left?: string };
 // focus: kept on the send record only when the send had to open the KakaoTalk list window (room.ts Focus). `ax`: the steps of the attempt
 // that ended the send (a recovered send keeps its earlier attempts under `attempts`).
-export type SendResult = { ok: boolean; reason?: string; ms?: SendMs; ax?: AxStep[]; focus?: Focus; unconfirmed?: true; attempts?: SendAttempt[] };
+// A send that did not end as sent says whether anything may be in the room (`sent`, by the KakaoTalk table of the reply design's failure
+// taxonomy) and why (`code`, a reason code of hub/reply-reasons.ts): "no" nothing went out, "maybe" it may have, "partial" `done` of `total`
+// parts are in the room and the failing part is judged by its code. `reason` stays the plain sentence the surfaces show today.
+type SendCode = "gone" | "not_pending" | "needs_resolve" | "already_sent" | "already_sending" | "interrupted" | "press_unconfirmed" | "state_write" | "empty" | "too_long" | "not_approved" | "app_not_ready" | "stale" | "input_busy" | "room_unknown" | "lease_held" | "lease_unknown";
+export type SendResult = { ok: boolean; reason?: string; sent?: "no" | "maybe" | "partial"; code?: SendCode; done?: number; total?: number; ms?: SendMs; ax?: AxStep[]; focus?: Focus; unconfirmed?: true; attempts?: SendAttempt[] };
 
 // One KakaoTalk message (a typed send, one part of a draft) and a whole draft of several parts.
 const MAX_TEXT = 1000;
@@ -47,6 +53,7 @@ const MAX_DRAFT_TEXT = 3000;
 // Why a draft text cannot be sent (empty, a part over MAX_TEXT, the whole over MAX_DRAFT_TEXT), else undefined.
 export const draftTextError = (text: string): string | undefined =>
 	!text.trim() ? "답장 글이 비어 있어요" : [...text].length > MAX_DRAFT_TEXT ? `답장은 모두 합쳡 ${MAX_DRAFT_TEXT}자까지예요` : draftParts(text).some(p => [...p].length > MAX_TEXT) ? `메시지 하나는 ${MAX_TEXT}자까지예요` : undefined;
+const textCode = (text: string): SendCode => (text.trim() ? "too_long" : "empty");
 const MAX_DRAFTS = 200;
 const TAIL_BYTES = 2 * 1024 * 1024;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -80,7 +87,7 @@ function newCode(taken: Set<string>): string {
 	}
 }
 
-export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string; tokens?: DraftTokens; intent?: string }, deps: SendDeps): Promise<Draft> {
+export async function createDraft(input: { chatId: string; roomName: string; text: string; basisLogId: string; tokens?: DraftTokens; intent?: string; replaces?: string; own?: true }, deps: SendDeps): Promise<Draft> {
 	const bad = draftTextError(input.text);
 	if (bad) throw new Error(bad);
 	if (!input.chatId || !input.roomName.trim()) throw new Error("대화방 정보가 비어 있어요");
@@ -150,7 +157,9 @@ const setStatus = (paths: KakaoPaths, code: string, status: DraftStatus, extra: 
 export const newer = (latest: string, basis: string) => (/^\d+$/.test(latest) && /^\d+$/.test(basis) ? BigInt(latest) > BigInt(basis) : latest !== basis);
 
 const sending = new Set<string>();
-const refuse = (reason: string): SendResult => ({ ok: false, reason });
+// Nothing of this send reached the room / it may have.
+const refuse = (reason: string, code: SendCode): SendResult => ({ ok: false, reason, sent: "no", code });
+const maybe = (reason: string, code: SendCode): SendResult => ({ ok: false, reason, sent: "maybe", code });
 
 // Every send of the gateway (typed, draft, CLI) goes through this chain: one at a time, because they drive the one KakaoTalk list.
 let sendChain: Promise<unknown> = Promise.resolve();
@@ -245,13 +254,21 @@ const readLeft = (paths: KakaoPaths): Record<string, Left> => {
 		return {};
 	}
 };
-const writeLeft = (paths: KakaoPaths, chatId: string, left: Left | undefined) => {
+// A state write that fails is logged and answered false: the send then ends as state_write (it may have gone out) once it pressed.
+const writeState = (paths: KakaoPaths, name: string, text: string): boolean => {
+	try {
+		writePrivate(kakaoFile(paths, name), text);
+		return true;
+	} catch (e) {
+		noteDamage(paths)(`kakao send: state file ${name} could not be written (${(e as Error).message})`);
+		return false;
+	}
+};
+const writeLeft = (paths: KakaoPaths, chatId: string, left: Left | undefined): boolean => {
 	const all = readLeft(paths);
 	if (left) all[chatId] = left;
 	else delete all[chatId];
-	try {
-		writePrivate(kakaoFile(paths, "input.json"), `${JSON.stringify(all, null, 1)}\n`);
-	} catch {}
+	return writeState(paths, "input.json", `${JSON.stringify(all, null, 1)}\n`);
 };
 // The list row each room was last opened from, per chat id (rows.json next to the other kakao state, so separate CLI sends share it). The
 // database order only guesses the list order; the row the room really sat in is the first row the next scan reads. A stale entry costs one
@@ -285,13 +302,16 @@ const rememberTyped = (chatId: string, text: string) => {
 
 // Every attempt of a send is kept on that send's record in sends.json (the same store the web shows): attempt number, recovery rung, the
 // failing Accessibility step, ms and reason. Bounded: 8 attempts per send, 200 sends.
-const saveAttempts = (paths: KakaoPaths, key: { chatId: string; text: string }, attempts: SendAttempt[], final: SendResult, at: number) => {
+const saveAttempts = (paths: KakaoPaths, key: { chatId: string; text: string }, attempts: SendAttempt[], final: SendResult, at: number): boolean => {
 	const file = kakaoFile(paths, "sends.json");
 	let list: Record<string, unknown>[] = [];
 	try {
 		const raw = JSON.parse(readFileSync(file, "utf8"));
 		if (Array.isArray(raw)) list = raw;
-	} catch {}
+	} catch (e) {
+		// No file yet is the normal start; anything else is logged (the write below then starts a fresh list).
+		if ((e as NodeJS.ErrnoException).code !== "ENOENT") noteDamage(paths)(`kakao send: state file sends.json could not be read (${(e as Error).message})`);
+	}
 	const since = at - 15 * 60_000;
 	const i = list.findLastIndex(r => r && r.chatId === key.chatId && r.state === "sending" && typeof r.at === "number" && r.at >= since);
 	const trimmed = attempts.slice(-MAX_ATTEMPTS);
@@ -311,9 +331,7 @@ const saveAttempts = (paths: KakaoPaths, key: { chatId: string; text: string }, 
 			...(final.ax ? { ax: final.ax } : {}),
 			attempts: trimmed,
 		});
-	try {
-		writePrivate(file, `${JSON.stringify(list.slice(-MAX_SENDS), null, 1)}\n`);
-	} catch {}
+	return writeState(paths, "sends.json", `${JSON.stringify(list.slice(-MAX_SENDS), null, 1)}\n`);
 };
 
 // Last resort of the ladder: KakaoTalk to the front for the menu and the press, and the app the owner had in front put back after that attempt.
@@ -379,8 +397,10 @@ const RUNGS: { recovery: Recovery; deep: boolean; reopen: boolean; front: boolea
 	{ recovery: "front", deep: false, reopen: false, front: true },
 ];
 
+const STATE_WRITE = "카카오톡으로 보냈을 수 있지만 보낸 기록을 남기지 못했어요. 다시 보내지 않았으니 카카오톡에서 확인해 주세요";
+
 const sendTextNow = async (input: { chatId: string; roomName: string; text: string; parts?: string[] }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => {
-	if (input.roomName.trim() === "(unknown)") return refuse("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요");
+	if (input.roomName.trim() === "(unknown)") return refuse("이름을 알 수 없는 대화방이라 화면 자동화로 찾을 수 없어요", "room_unknown");
 	const t0 = performance.now();
 	// The frontmost lookup runs beside the room open and the send; it is waited for only where its answer is needed.
 	const frontP = frontState(deps.runner);
@@ -388,17 +408,23 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	let ax: AxStep[] = [];
 	let focus: Focus | undefined;
 	let attempts: SendAttempt[] = [];
+	// A state write of this send that failed (logged where it failed). A send that pressed then ends as state_write: it may be in the room
+	// and its record is incomplete, so it is never pressed again. An attempt that provably did not press keeps its own code.
+	let lost = false;
 	const fin = (r: SendResult): SendResult => {
 		const out: SendResult = { ...r, attempts, ms: { ...ms, total: Math.round(performance.now() - t0) }, ax, ...(focus ? { focus } : {}) };
-		if (attempts.length) saveAttempts(deps.paths, { chatId: input.chatId, text: input.text }, attempts, out, nowMs(deps));
-		return out;
+		if (attempts.length && !saveAttempts(deps.paths, { chatId: input.chatId, text: input.text }, attempts, out, nowMs(deps))) lost = true;
+		return lost && (out.ok || out.unconfirmed) ? { ...out, ...maybe(STATE_WRITE, "state_write"), unconfirmed: true } : out;
+	};
+	const keepLeft = (left: Left | undefined) => {
+		if (!writeLeft(deps.paths, input.chatId, left)) lost = true;
 	};
 	let all: RoomFact[] = [];
 	if (deps.roomNames) {
 		try {
 			all = await deps.roomNames();
 		} catch {
-			return fin(refuse("대화방 목록을 확인하지 못해서 보내지 않았어요"));
+			return fin(refuse("대화방 목록을 확인하지 못해서 보내지 않았어요", "app_not_ready"));
 		}
 	}
 	const known = all.find(r => r.chatId === input.chatId);
@@ -425,6 +451,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	// any other value, and JXA then refuses to touch it.
 	const ours = [...(left && !left.pressed ? [left.text] : []), ...(recentTyped.get(input.chatId) ?? []), ...(input.parts ?? []), input.text];
 	let lastReason = "";
+	let lastCode: SendCode = "app_not_ready";
 	// The owner's own draft is never touched; the window holding it is left open (closing it could lose what he typed).
 	let keepForOwner = false;
 	let leftPressed = left?.pressed ? left : undefined;
@@ -454,6 +481,8 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 		steps.push(...opened.steps);
 		if (!opened.ok) {
 			lastReason = opened.reason;
+			// final: the whole list was read without the room, its twins cannot be told apart, or its window takes no text.
+			lastCode = opened.final ? "room_unknown" : "app_not_ready";
 			attempts.push({ n: attempts.length + 1, recovery: rung.recovery, ok: false, state: "failed", reason: opened.reason, ms: simMs(ms) + (steps.find(s => s.step === "activate")?.ms ?? 0), ax: steps, at: aAt });
 			ax = steps;
 			await back();
@@ -474,7 +503,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 			} catch {}
 			if (sent === true) {
 				const done = leftPressed.text;
-				writeLeft(deps.paths, input.chatId, undefined);
+				keepLeft(undefined);
 				leftPressed = undefined;
 				priorPressed.splice(0, priorPressed.length, ...priorPressed.filter(t => t !== done));
 				ours.push(done);
@@ -487,8 +516,8 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 		if (r.ok || r.pressed) rememberTyped(input.chatId, input.text);
 		// The same text pressed before keeps its first press time (the database is asked from then); a prior press of another text stays recorded.
 		const again = r.why === "prior_pressed" && leftPressed !== undefined && sameText(leftPressed.text, input.text);
-		if (r.pressed && !again) writeLeft(deps.paths, input.chatId, { text: input.text, at: aAt, pressed: true });
-		else if (r.left && r.why !== "prior_left" && !again) writeLeft(deps.paths, input.chatId, { text: r.left, at: aAt });
+		if (r.pressed && !again) keepLeft({ text: input.text, at: aAt, pressed: true });
+		else if (r.left && r.why !== "prior_left" && !again) keepLeft({ text: r.left, at: aAt });
 		const settled = await settle(deps, r, input, again ? leftPressed!.at : aAt);
 		const attempt: SendAttempt = { n: attempts.length + 1, recovery: rung.recovery, ok: settled.state === "sent", state: settled.state, ...(settled.state === "failed" ? { reason: settled.reason } : settled.state === "unconfirmed" ? { reason: UNCONFIRMED } : {}), ms: simMs(ms), ax: steps, at: aAt, ...(r.left ? { left: r.left } : {}) };
 		attempts.push(attempt);
@@ -497,15 +526,17 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 		if (settled.state === "failed") {
 			lastReason = settled.reason;
 			if (r.why === "owner_text" || r.why === "busy" || r.why === "prior_left") {
+				lastCode = "input_busy";
 				keepForOwner = true;
 				break;
 			}
+			lastCode = "app_not_ready";
 			continue;
 		}
 		const front = await frontP;
 		ms.front = front.ms;
 		if (settled.state === "sent") {
-			writeLeft(deps.paths, input.chatId, undefined);
+			keepLeft(undefined);
 			const keep = warm?.id === axKey || front.kakaoShown;
 			if (keep) {
 				keepWarm(axKey, deps, input.roomName);
@@ -517,7 +548,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 			return fin({ ok: true });
 		}
 		// Pressed but unconfirmed: the input keeps the text as ours and it is never pressed again.
-		if (r.ok) writeLeft(deps.paths, input.chatId, undefined);
+		if (r.ok) keepLeft(undefined);
 		if (warm?.id === axKey || front.kakaoShown) {
 			keepWarm(axKey, deps, input.roomName);
 			ms.keep = true;
@@ -525,7 +556,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 			if (warm?.id === axKey) forgetWarm();
 			await closeWindow(deps.runner, input.roomName);
 		}
-		return fin({ ...refuse(UNCONFIRMED), unconfirmed: true });
+		return fin({ ...maybe(UNCONFIRMED, "press_unconfirmed"), unconfirmed: true });
 	}
 	if (keepForOwner) {
 		if (warm?.id !== axKey) keepWarm(axKey, deps, input.roomName);
@@ -536,7 +567,7 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 	}
 	ms.front = (await frontP).ms;
 	const tried = attempts.length > 1;
-	return fin(refuse(tried ? `여러 번 다시 시도했지만 ${lastReason || "보내지 못했어요"}` : lastReason || "보내지 못했어요"));
+	return fin(refuse(tried ? `여러 번 다시 시도했지만 ${lastReason || "보내지 못했어요"}` : lastReason || "보내지 못했어요", lastCode));
 };
 
 // The one path of every send: the exact list row is opened and its window verified (room.ts), then the text goes in by Accessibility.
@@ -547,8 +578,8 @@ export const markStale = (paths: KakaoPaths, code: string) => setStatus(paths, c
 
 export function dropDraft(code: string, deps: Pick<SendDeps, "paths">): SendResult {
 	const d = readDrafts(deps.paths).find(x => x.code === code);
-	if (!d) return refuse("그 초안을 찾지 못했어요");
-	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요");
+	if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
+	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요", "not_pending");
 	setStatus(deps.paths, code, "dropped");
 	return { ok: true };
 }
@@ -556,16 +587,50 @@ export function dropDraft(code: string, deps: Pick<SendDeps, "paths">): SendResu
 // 되돌리기 after 보내지 않기: the dropped draft waits again, unless a newer draft of the room came meanwhile (that one is the room's draft now).
 export function restoreDraft(code: string, deps: Pick<SendDeps, "paths">): SendResult {
 	const list = readDrafts(deps.paths), d = list.find(x => x.code === code);
-	if (!d) return refuse("그 초안을 찾지 못했어요");
-	if (d.status !== "dropped") return refuse("보내지 않기로 한 초안만 되돌릴 수 있어요");
-	if (list.some(x => x.chatId === d.chatId && x.code !== code && x.status === "pending")) return refuse("그사이 새 초안이 와서 되돌리지 않았어요");
+	if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
+	if (d.status !== "dropped") return refuse("보내지 않기로 한 초안만 되돌릴 수 있어요", "not_pending");
+	if (list.some(x => x.chatId === d.chatId && x.code !== code && x.status === "pending")) return refuse("그사이 새 초안이 와서 되돌리지 않았어요", "not_pending");
 	setStatus(deps.paths, code, "pending");
+	return { ok: true };
+}
+
+// 직접 수정: the owner's text replaces the draft's under the same code, as it is. The model's text is kept once in `editedFrom`. Refused once
+// a part is in the room (an edit then could not be told apart from what is there) and while a press is under way.
+export function editDraft(code: string, text: string, deps: Pick<SendDeps, "paths">): SendResult {
+	const d = readDrafts(deps.paths).find(x => x.code === code);
+	if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
+	if (d.status !== "pending") return refuse("더 이상 고칠 수 없는 초안이에요", "not_pending");
+	if (d.sentParts) return refuse("일부가 이미 대화방에 나간 초안이라 고칠 수 없어요", "already_sent");
+	if (d.pressing) return refuse("보내는 중인 초안이라 고칠 수 없어요", "already_sending");
+	const bad = draftTextError(text);
+	if (bad) return refuse(bad, textCode(text));
+	setStatus(deps.paths, code, "pending", { text, editedFrom: d.editedFrom ?? d.text });
+	return { ok: true };
+}
+
+// The owner says an unconfirmed send went out (나갔어요): the draft is plainly sent.
+export function confirmSent(code: string, deps: Pick<SendDeps, "paths">): SendResult {
+	const d = readDrafts(deps.paths).find(x => x.code === code);
+	if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
+	if (d.status !== "sent" || !d.unconfirmed) return refuse("확인할 전송이 없는 초안이에요", "not_pending");
+	setStatus(deps.paths, code, "sent", { unconfirmed: undefined });
+	return { ok: true };
+}
+
+// The owner says an unconfirmed send did not go out (다시 보내기): the draft waits again, and the part whose press was not confirmed counts
+// as not sent, so the next send presses that part and the rest, never a part that was confirmed.
+export function resendUnconfirmed(code: string, deps: Pick<SendDeps, "paths">): SendResult {
+	const d = readDrafts(deps.paths).find(x => x.code === code);
+	if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
+	if (d.status !== "sent" || !d.unconfirmed) return refuse("확인할 전송이 없는 초안이에요", "not_pending");
+	const confirmed = Math.max(0, (d.sentParts ?? 1) - 1);
+	setStatus(deps.paths, code, "pending", { unconfirmed: undefined, sentAt: undefined, pressing: undefined, sentParts: confirmed || undefined });
 	return { ok: true };
 }
 
 // `ownerApproved`: the owner clicked 보내기 in the web app, which replaces the inbox verdict; every other check stays. `text`: the owner's edit.
 export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string; retry?: boolean }): Promise<SendResult> {
-	if (sending.has(code)) return Promise.resolve(refuse("이미 보내는 중이에요"));
+	if (sending.has(code)) return Promise.resolve(refuse("이미 보내는 중이에요", "already_sending"));
 	sending.add(code);
 	return oneAtATime(() => sendDraftNow(code, deps)).finally(() => sending.delete(code));
 }
@@ -574,9 +639,9 @@ export function sendDraft(code: string, deps: SendDeps & { latestIncoming: (chat
 async function sendDraftNow(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string; retry?: boolean }): Promise<SendResult> {
 	// A sender that died holding the claim may have pressed send already: only the owner's 다시 보내기 (`retry`) takes it over, a plain send is refused.
 	const claim = join(dirname(deps.paths.drafts), "sending", code);
-	if (!deps.retry && claimHolder(claim) === "dead") return refuse("지난번에 보내다가 멈춰서 보낸 메시지가 이미 나갔을 수 있어요. 카카오톡방을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요");
+	if (!deps.retry && claimHolder(claim) === "dead") return maybe("지난번에 보내다가 멈춰서 보낸 메시지가 이미 나갔을 수 있어요. 카카오톡방을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요", "interrupted");
 	const release = claimSend(claim, deps.retry === true);
-	if (!release) return refuse("이미 보내는 중이에요");
+	if (!release) return refuse("이미 보내는 중이에요", "already_sending");
 	try {
 		return await sendClaimed(code, deps);
 	} finally {
@@ -609,36 +674,39 @@ async function resolvePressing(d: Draft, p: Pressing, deps: SendDeps): Promise<"
 
 async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames?: RoomNames; ownerApproved?: boolean; text?: string; retry?: boolean }): Promise<SendResult> {
 	let d = readDrafts(deps.paths).find(x => x.code === code);
-	if (!d) return refuse("그 초안을 찾지 못했어요");
+	if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
 	if (d.status === "pending" && d.pressing) {
 		const was = await resolvePressing(d, d.pressing, deps);
-		if (was !== "partial") return was === "done" ? { ok: true } : { ...refuse(PRESS_UNKNOWN), unconfirmed: true };
+		if (was !== "partial") return was === "done" ? { ok: true } : { ...maybe(PRESS_UNKNOWN, "press_unconfirmed"), unconfirmed: true };
 		d = readDrafts(deps.paths).find(x => x.code === code);
-		if (!d) return refuse("그 초안을 찾지 못했어요");
+		if (!d) return refuse("그 초안을 찾지 못했어요", "gone");
 	}
-	if (d.status === "sent") return refuse(d.unconfirmed ? `전송 버튼을 이미 눌렀던 초안이라 다시 보내지 않아요. 카카오톡에서 확인해 주세요` : "이미 보낸 초안이에요");
-	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요");
+	if (d.status === "sent") return d.unconfirmed ? refuse("전송 버튼을 이미 눌렀던 초안이라 다시 보내지 않아요. 카카오톡에서 확인해 주세요", "needs_resolve") : refuse("이미 보낸 초안이에요", "already_sent");
+	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요", "gone");
 	// After a part already went out the text is fixed: an edit then could not be told apart from what is in the room.
 	const text = d.sentParts ? d.text : (deps.text ?? d.text);
 	const bad = draftTextError(text);
-	if (bad) return refuse(bad);
+	if (bad) return refuse(bad, textCode(text));
 	if (!deps.ownerApproved) {
 		const v = verdict(d, deps.paths);
 		if (v === "cancelled") {
 			setStatus(deps.paths, code, "dropped");
-			return refuse("보내지 않기로 한 초안이에요");
+			return refuse("보내지 않기로 한 초안이에요", "not_approved");
 		}
-		if (v !== "approved") return refuse("아직 보내도 된다는 답을 받지 못했어요");
+		if (v !== "approved") return refuse("아직 보내도 된다는 답을 받지 못했어요", "not_approved");
 	}
-	let latest: string | undefined;
-	try {
-		latest = await deps.latestIncoming(d.chatId);
-	} catch {
-		return refuse("새 메시지가 왔는지 확인하지 못해서 보내지 않았어요");
-	}
-	if (latest && newer(latest, d.basisLogId)) {
-		setStatus(deps.paths, code, "stale");
-		return refuse("그사이 새 메시지가 와서 초안이 낡았어요");
+	// A message the owner typed himself answers what he sees: no newer-message check, as a typed send never had one.
+	if (!d.own) {
+		let latest: string | undefined;
+		try {
+			latest = await deps.latestIncoming(d.chatId);
+		} catch {
+			return refuse("새 메시지가 왔는지 확인하지 못해서 보내지 않았어요", "app_not_ready");
+		}
+		if (latest && newer(latest, d.basisLogId)) {
+			setStatus(deps.paths, code, "stale");
+			return refuse("그사이 새 메시지가 와서 초안이 낡았어요", "stale");
+		}
 	}
 	// Each part is its own message, in order. The count of parts in the room is stored after every part, so a failed part is retried alone
 	// and an unconfirmed press ends the draft as sent (never pressed again).
@@ -657,7 +725,10 @@ async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (cha
 		if (done < parts.length) setStatus(deps.paths, code, "pending", { text, sentParts: done, pressing: undefined });
 	}
 	if (r.ok && done >= parts.length) setStatus(deps.paths, code, "sent", { text, sentParts: done, sentAt: new Date(nowMs(deps)).toISOString(), pressing: undefined });
-	else if (r.unconfirmed) setStatus(deps.paths, code, "sent", { text, sentParts: done, sentAt: new Date(nowMs(deps)).toISOString(), unconfirmed: true as const, pressing: undefined });
-	else if (done > 0) return { ...r, reason: `${parts.length}개 중 ${done}개를 보냈어요. 다시 보내면 나머지만 보내요: ${r.reason ?? "보내지 못했어요"}` };
+	else if (r.unconfirmed) {
+		setStatus(deps.paths, code, "sent", { text, sentParts: done, sentAt: new Date(nowMs(deps)).toISOString(), unconfirmed: true as const, pressing: undefined });
+		// The unconfirmed part is the last one counted in `done`; the parts before it are surely in the room.
+		if (done > 1) return { ...r, sent: "partial", done: done - 1, total: parts.length };
+	} else if (done > 0) return { ...r, sent: "partial", done, total: parts.length, reason: `${parts.length}개 중 ${done}개를 보냈어요. 다시 보내면 나머지만 보내요: ${r.reason ?? "보내지 못했어요"}` };
 	return r;
 }

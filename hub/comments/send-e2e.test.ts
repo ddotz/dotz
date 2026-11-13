@@ -49,7 +49,7 @@ function world(o: { replyFails?: string; zeleFails?: boolean } = {}) {
 	const adapter: CommentAdapter = {
 		kind: "youtube",
 		list: async () => ({ comments: [{ native: "c1", thread: "v1", author: "팬", text: "캐논 문서 받을 수 있나요? fan@example.com", postTitle: "캐논 연주", at: NOW - 1000 }], cursor: "1" }),
-		reply: async (_s, _c, text) => (posted.push(text), replyFails ? { ok: false, reason: replyFails } : { ok: true, ref: "yt-r1" }),
+		reply: async (_s, _c, text) => (posted.push(text), replyFails ? { ok: false, reason: replyFails, code: "rejected", sent: "no" } : { ok: true, ref: "yt-r1" }),
 	};
 	const engine = createEngine({ dir: root, now: () => NOW, collector: "mac-a", adapters: { youtube: adapter }, mail: realMailLink({ run }) });
 	const inbox = join(dir, "inbox.jsonl");

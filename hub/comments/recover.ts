@@ -10,7 +10,7 @@ export const POST_UNKNOWN = "게이트웨이가 멈출 때 답글을 올리던 �
 type Deps = { store: Store; adapters: Partial<Record<SourceKind, CommentAdapter>>; onState: (r: Reply) => void };
 
 export function createSendRecovery({ store, adapters, onState }: Deps) {
-	const posted = ({ reason: _reason, ...r }: Reply): void => {
+	const posted = ({ reason: _reason, code: _code, ...r }: Reply): void => {
 		const final: Reply = { ...r, state: "sent" };
 		store.putReply(final);
 		store.setDraftStatus(r.draft, "sent");
@@ -32,7 +32,7 @@ export function createSendRecovery({ store, adapters, onState }: Deps) {
 		leaveUnsure(): number {
 			const stuck = store.replies().filter(r => r.state === "sending");
 			for (const r of stuck) {
-				const left: Reply = { ...r, state: "unsure", reason: POST_UNKNOWN };
+				const left: Reply = { ...r, state: "unsure", reason: POST_UNKNOWN, code: "interrupted" };
 				store.putReply(left);
 				onState(left);
 			}

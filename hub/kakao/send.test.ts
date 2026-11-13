@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendSealed } from "../approval-seal.ts";
 import { parseDecisions } from "../choices.ts";
-import { approval, createDraft, draftBlock, forgetWarm, listDrafts, sendDraft, sendText, type Draft } from "./send.ts";
+import { approval, confirmSent, createDraft, draftBlock, editDraft, forgetWarm, listDrafts, resendUnconfirmed, sendDraft, sendText, type Draft } from "./send.ts";
 import { KAKAO_BUNDLE, kakaoPaths, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
 
@@ -555,6 +555,76 @@ test("two sends of the same draft at once (a double click, two surfaces) make on
 	const deps = { ...sender({ calls: screen.sends, focus: screen.focus, runner: screen.runner }), roomNames: names, ownerApproved: true, confirm: async () => true };
 	const rs = await Promise.all([sendDraft(d.code, deps), sendDraft(d.code, deps)]);
 	expect(rs.filter(r => r.ok)).toHaveLength(1);
-	expect(rs.find(r => !r.ok)?.reason).toBe("이미 보내는 중이에요");
+	expect(rs.find(r => !r.ok)).toMatchObject({ reason: "이미 보내는 중이에요", sent: "no", code: "already_sending" });
 	expect(screen.sends).toHaveLength(1);
+});
+
+// 직접 수정, 나갔어요 and 다시 보내기 of an unconfirmed send, and a message the owner typed himself.
+const stored = async (code: string) => (await listDrafts({ paths, runner: fakeKmsg().runner })).find(x => x.code === code)!;
+
+test("a direct edit saves the owner's text as it is under the same code and keeps the model's text once", async () => {
+	const d = await make();
+	expect(editDraft(d.code, "제가 고친 글", { paths })).toEqual({ ok: true });
+	expect(editDraft(d.code, "두 번째 고친 글", { paths })).toEqual({ ok: true });
+	expect(await stored(d.code)).toMatchObject({ code: d.code, status: "pending", text: "두 번째 고친 글", editedFrom: "내일 7시에 봐요" });
+	expect(editDraft(d.code, "  ", { paths })).toMatchObject({ ok: false, code: "empty" });
+	expect(editDraft("KNONE", "글", { paths })).toMatchObject({ ok: false, code: "gone" });
+	const k = fakeKmsg();
+	expect(await sendDraft(d.code, { ...sender(k), ownerApproved: true })).toMatchObject({ ok: true });
+	expect(k.calls).toEqual([["ax-send", "스터디방", "두 번째 고친 글"]]);
+	expect(editDraft(d.code, "늦은 수정", { paths })).toMatchObject({ ok: false, code: "not_pending" });
+});
+
+test("a direct edit is refused once a part of the draft is in the room", async () => {
+	const d = await make({ text: "첫째\n\n둘째" });
+	const s = fakeScreen(ROWS, { axSend: (_n, req) => (req.text === "둘째" ? { ok: false, why: "not_set" } : { ok: true }) });
+	expect(await sendDraft(d.code, { ...sender({ calls: s.sends, focus: s.focus, runner: s.runner }), ownerApproved: true, confirm: async () => true })).toMatchObject({ sent: "partial", done: 1, total: 2 });
+	expect(editDraft(d.code, "다른 글", { paths })).toMatchObject({ ok: false, code: "already_sent" });
+	expect((await stored(d.code)).text).toBe("첫째\n\n둘째");
+});
+
+// Three parts; the second part's press is not confirmed by the database.
+async function unconfirmedSecond() {
+	const d = await make({ text: "하나\n\n둘\n\n셋" });
+	const s = fakeScreen(ROWS, { axSend: (_n, req) => (req.text === "둘" ? { ok: false, why: "unclear", pressed: true } : { ok: true }) });
+	const deps = { ...sender({ calls: s.sends, focus: s.focus, runner: s.runner }), ownerApproved: true, sleep: async () => {} };
+	const r = await sendDraft(d.code, { ...deps, confirm: async q => q.text !== "둘" });
+	expect(r).toMatchObject({ ok: false, sent: "partial", done: 1, total: 3, code: "press_unconfirmed", unconfirmed: true });
+	expect(await stored(d.code)).toMatchObject({ status: "sent", unconfirmed: true, sentParts: 2 });
+	return { d, s, deps };
+}
+
+test("나갔어요 closes an unconfirmed send as sent; nothing else can be confirmed", async () => {
+	const { d, s, deps } = await unconfirmedSecond();
+	expect(confirmSent(d.code, { paths })).toEqual({ ok: true });
+	const done = await stored(d.code);
+	expect(done).toMatchObject({ status: "sent", sentParts: 2 });
+	expect(done.unconfirmed).toBeUndefined();
+	expect(confirmSent(d.code, { paths })).toMatchObject({ ok: false, code: "not_pending" });
+	expect(await sendDraft(d.code, { ...deps, confirm: async () => true })).toMatchObject({ ok: false, code: "already_sent" });
+	expect(s.sends).toHaveLength(2);
+});
+
+test("다시 보내기 of an unconfirmed send presses only the unconfirmed part and the rest, never a confirmed part", async () => {
+	const { d, s, deps } = await unconfirmedSecond();
+	expect(resendUnconfirmed(d.code, { paths })).toEqual({ ok: true });
+	const waiting = await stored(d.code);
+	expect(waiting).toMatchObject({ status: "pending", sentParts: 1 });
+	expect(waiting.unconfirmed).toBeUndefined();
+	expect(resendUnconfirmed(d.code, { paths })).toMatchObject({ ok: false, code: "not_pending" });
+	expect(await sendDraft(d.code, { ...deps, confirm: async () => true })).toMatchObject({ ok: true });
+	expect(s.sends.map(x => x[2])).toEqual(["하나", "둘", "둘", "셋"]);
+	expect(await stored(d.code)).toMatchObject({ status: "sent", sentParts: 3 });
+});
+
+test("a message the owner typed himself skips the newer-message check; a reply does not; replaces is kept", async () => {
+	const own = await createDraft({ ...base, own: true, replaces: "KPREV" }, { paths, runner: fakeKmsg().runner, now: () => T0 });
+	const k = fakeKmsg();
+	let asked = 0;
+	expect(await sendDraft(own.code, { ...sender(k), ownerApproved: true, latestIncoming: async () => (asked++, "999") })).toMatchObject({ ok: true });
+	expect(asked).toBe(0);
+	expect(await stored(own.code)).toMatchObject({ status: "sent", own: true, replaces: "KPREV" });
+	const reply = await make({ chatId: "300" });
+	expect(await sendDraft(reply.code, { ...sender(k, "999"), ownerApproved: true })).toMatchObject({ ok: false, code: "stale" });
+	expect(k.calls).toHaveLength(1);
 });

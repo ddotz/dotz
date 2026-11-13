@@ -36,7 +36,7 @@ function world(kind: SourceKind, adapter: Partial<CommentAdapter>, o: { thread?:
 test("a reply left sending ends unsure, not sent, and no send goes through the gate by itself", () => {
 	const w = world("youtube", {}, { autoSend: true });
 	expect(w.engine.leaveUnsure()).toBe(1);
-	expect(w.reply().state).toBe("unsure");
+	expect(w.reply()).toMatchObject({ state: "unsure", code: "interrupted" });
 	expect(w.reply().reason).toBeTruthy();
 	expect(w.draft().status).toBe("pending");
 	expect(w.engine.send("D1", { by: "owner" })).toMatchObject({ ok: false });
@@ -52,6 +52,7 @@ describe("read back", () => {
 		expect((await w.engine.proveSends()).proved).toEqual([ID]);
 		expect(w.reply()).toMatchObject({ state: "sent" });
 		expect(w.reply().reason).toBeUndefined();
+		expect(w.reply().code).toBeUndefined();
 		expect(w.draft().status).toBe("sent");
 		expect(w.posted).toEqual([]);
 	});

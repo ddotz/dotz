@@ -71,33 +71,62 @@ export function runDraft(site: string, now: number, input: { to: string; subject
 	return { draft, code: 0 };
 }
 
-export async function runSend(ctx: Ctx, spec: SiteSpec, site: string, draftId: string, now: number): Promise<{ lines: string[]; code: number }> {
+// Exit codes of `send`, so its caller (features/reply-drafts/lib/senders.ts) reads no text: 0 sent, 1 surely not sent, 2 not approved,
+// 3 may have been sent, 4 login expired. `reason` is the code of design 2.2 for the `DOTZ_SEND` line `main` prints.
+type SendRun = { lines: string[]; code: number; reason?: { sent: "yes" | "no" | "maybe"; code?: string } };
+const notSent = (line: string, reason: string): SendRun => ({ lines: [line], code: 1, reason: { sent: "no", code: reason } });
+// The POST threw: one that never connected sent nothing; a timeout or a cut connection may have left the mail with the server.
+const NO_CONNECT = /ConnectionRefused|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ENETUNREACH|FailedToOpenSocket|Unable to connect/i;
+function postThrew(error: Error & { code?: string }): SendRun {
+	const why = `${error.name} ${error.code ?? ""} ${error.message}`;
+	if (NO_CONNECT.test(why)) return notSent(`전송 실패: 서버에 연결하지 못했어요 (${error.message})`, "offline");
+	const timeout = error.name === "TimeoutError" || /timed? ?out/i.test(why);
+	return { lines: [`전송 중 ${timeout ? "시간이 다 돼서" : "연결이 끊겨서"} 멈췄어요. 메일이 나갔을 수 있어요 (${error.message})`], code: 3, reason: { sent: "maybe", code: timeout ? "timeout" : "net_cut" } };
+}
+function refusedWith(status: number): SendRun {
+	const line = `전송 실패: HTTP ${status}`;
+	if (status === 401 || status === 403) return { lines: [line], code: 4, reason: { sent: "no", code: "login_expired" } };
+	if (status >= 400 && status < 500) return notSent(line, "rejected");
+	return { lines: [line], code: 3, reason: { sent: "maybe", code: "server_error" } };
+}
+
+export async function runSend(ctx: Ctx, spec: SiteSpec, site: string, draftId: string, now: number): Promise<SendRun> {
 	const f = draftPath(site, draftId);
-	if (!existsSync(f)) return { lines: [`초안 ${draftId}을(를) 찾지 못했어요`], code: 1 };
-	if (!spec.send) return { lines: ["이 사이트 스펙에는 전송 엔드포인트가 없어요. 초안만 만들 수 있어요"], code: 1 };
-	if (!sendApproved(site, now)) return { lines: [`전송은 메일 스레드에서 오너가 OK(ㅇㅇ/보내)해야 돼요. 초안 ${draftId}을(를) 보여주고 승인을 기다려 주세요`], code: 2 };
+	if (!existsSync(f)) return notSent(`초안 ${draftId}을(를) 찾지 못했어요`, "gone");
+	if (!spec.send) return notSent("이 사이트 스펙에는 전송 엔드포인트가 없어요. 초안만 만들 수 있어요", "manual_only");
+	if (!sendApproved(site, now)) return { lines: [`전송은 메일 스레드에서 오너가 OK(ㅇㅇ/보내)해야 돼요. 초안 ${draftId}을(를) 보여주고 승인을 기다려 주세요`], code: 2, reason: { sent: "no", code: "not_approved" } };
 	const draft = JSON.parse(readFileSync(f, "utf8")) as Draft;
 	const cookie = await ctx.cookieHeader(spec);
 	// Every file must be accepted before the mail goes out; one refusal stops here, so no mail leaves half-attached.
 	const files: UploadedFile[] = [];
 	if (draft.files?.length) {
-		if (!spec.send.upload) return { lines: [`이 사이트 스펙에는 파일 올리기(send.upload)가 없어서 파일이 붙은 초안 ${draftId}은(는) 보내지 않았어요`], code: 1 };
+		if (!spec.send.upload) return notSent(`이 사이트 스펙에는 파일 올리기(send.upload)가 없어서 파일이 붙은 초안 ${draftId}은(는) 보내지 않았어요`, "cannot_attach");
 		for (const df of draft.files) {
 			try {
 				files.push(await uploadFile(ctx, spec, cookie, df));
 			} catch (error) {
-				return { lines: [`첨부를 다 올리지 못해서 보내지 않았어요: ${(error as Error).message}`, `올라간 파일 ${files.length}/${draft.files.length}개. 초안과 승인은 그대로예요`], code: 1 };
+				return { lines: [`첨부를 다 올리지 못해서 보내지 않았어요: ${(error as Error).message}`, `올라간 파일 ${files.length}/${draft.files.length}개. 초안과 승인은 그대로예요`], code: 1, reason: { sent: "no", code: "attach_upload" } };
 			}
 		}
 	}
 	const attached = files.length ? { [spec.send.upload?.sendField ?? "attachments"]: files.map(({ name, size, id, link, url }) => ({ name, size, id, ...(link ? { link } : {}), ...(url ? { url } : {}) })) } : {};
 	const url = endpointUrl(spec.origin, spec.send, {});
-	const r = await ctx.fetch(url, { method: spec.send.method ?? "POST", headers: headers(spec, cookie, { "Content-Type": "application/json", Accept: "application/json" }), body: JSON.stringify({ to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body, ...attached }), signal: AbortSignal.timeout(30_000) });
-	if (!r.ok) return { lines: [`전송 실패: HTTP ${r.status}`], code: 1 };
-	rmSync(paths.approval(site), { force: true });
-	rmSync(f, { force: true });
+	let r: Response;
+	try {
+		r = await ctx.fetch(url, { method: spec.send.method ?? "POST", headers: headers(spec, cookie, { "Content-Type": "application/json", Accept: "application/json" }), body: JSON.stringify({ to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body, ...attached }), signal: AbortSignal.timeout(30_000) });
+	} catch (error) {
+		return postThrew(error as Error);
+	}
+	if (!r.ok) return refusedWith(r.status);
+	// The mail is out: a leftover approval or draft file must not turn that into a failure.
+	try {
+		rmSync(paths.approval(site), { force: true });
+		rmSync(f, { force: true });
+	} catch (error) {
+		ctx.log(`sent ${draftId}, but its draft or approval was not removed: ${(error as Error).message}`);
+	}
 	const links = files.filter((x) => x.link).length;
-	return { lines: [`보냈어요: ${draft.subject} → ${draft.to}${files.length ? ` (첨부 ${files.length}개${links ? `, 그중 대용량 링크 ${links}개` : ""})` : ""}`], code: 0 };
+	return { lines: [`보냈어요: ${draft.subject} → ${draft.to}${files.length ? ` (첨부 ${files.length}개${links ? `, 그중 대용량 링크 ${links}개` : ""})` : ""}`], code: 0, reason: { sent: "yes" } };
 }
 
 export function listDrafts(site: string): Draft[] {
@@ -116,7 +145,7 @@ async function main(argv: string[]): Promise<number> {
 	}
 	const ctx = liveCtx(cookieHeaderFromAside);
 	const now = Date.now();
-	let out: { lines: string[]; code: number };
+	let out: SendRun;
 	switch (cmd) {
 		case "list":
 			out = await runList(ctx, spec);
@@ -159,6 +188,7 @@ async function main(argv: string[]): Promise<number> {
 			out = { lines: ["사용법: list | read <id> | search <말> | sent [--limit n] | draft <받는이> <제목> <본문...> [--file <경로>]... | approve | send <초안id>"], code: 1 };
 	}
 	for (const l of out.lines) console.log(l);
+	if (out.reason) console.log(`DOTZ_SEND ${JSON.stringify(out.reason)}`);
 	return out.code;
 }
 

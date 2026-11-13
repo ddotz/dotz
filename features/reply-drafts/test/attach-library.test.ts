@@ -225,7 +225,7 @@ export default { name: "work", reply: (d: any) => { if (d.source !== "work") ret
 			const rec = listDrafts()[0]!;
 			addStagedFile(rec.id, join(lib, "달빛정원_공유용.pdf"));
 			expect(canAttach("work")).toBe(true);
-			expect(await sendWith(rec, async () => ({ code: 1, stdout: "", stderr: "" }))).toEqual({ ok: true, message: "plugin sent" });
+			expect(await sendWith(rec, async () => ({ code: 1, stdout: "", stderr: "" }))).toEqual({ ok: true, message: "plugin sent", sent: "yes" });
 			const draft = JSON.parse(await Bun.file(got).text());
 			expect(draft).toMatchObject({ source: "work", id: "msg-1", to: "stu@example.com", body: TEACHER_BODY });
 			expect(draft.attachments).toHaveLength(1);

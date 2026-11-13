@@ -31,7 +31,9 @@ test("on boot the file's jobs are taken up: a running one is judged and never re
 	expect(state(done)).toMatchObject({ state: "sent" });
 	expect(state(queued)).toMatchObject({ state: "failed" });
 	expect(state(queued)!.text).not.toContain("나갔을 수");
-	expect(JSON.parse(await Bun.file(join(DATA_DIR, "approval-sends.json")).text())).toEqual([]);
+	// Failed sends stay in the file until they are resolved, so a restart forgets none; the sent one leaves it.
+	const kept = (JSON.parse(await Bun.file(join(DATA_DIR, "approval-sends.json")).text()) as { ref: string; state: string }[]).map(k => `${k.ref}:${k.state}`).sort();
+	expect(kept).toEqual([`${lost}:failed`, `${queued}:failed`].sort());
 });
 
 test("a comment reply left sending by the run that stopped ends unsure, visible, and is not sent again by itself", () => {

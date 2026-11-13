@@ -146,7 +146,7 @@ describe("zele argv with several accounts", () => {
 	test("an expired login or a lost connection is told as its own short reason, never with the tool's stack lines", async () => {
 		const stack = "Error: invalid_grant: Token has been expired or revoked.\n    at refresh (file:///opt/zele/dist/auth.js:88:11)";
 		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async () => ({ code: 1, stdout: "", stderr: stack }));
-		expect(out).toEqual({ ok: false, message: `보내지 못했어요: ${msg().sendFail.login}` });
+		expect(out).toEqual({ ok: false, message: `보내지 못했어요: ${msg().sendFail.login}`, sent: "no", code: "login_expired" });
 		expect(["Error: invalid_grant: Token expired", "fetch failed", "connect ECONNREFUSED 1.2.3.4:443", "boom"].map(sendReasonKey)).toEqual(["login", "offline", "offline", "other"]);
 	});
 

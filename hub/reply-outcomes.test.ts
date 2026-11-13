@@ -264,7 +264,8 @@ test("through the real sender: a retried draft runs its CLI once, and a ref that
 	expect(retryFailed([{ ref: "RMAIL01", to: "mail:work" }], deps)[0]).toEqual({ ref: "RMAIL01", ok: true });
 	await sender.idle();
 	expect(argvs).toHaveLength(1);
-	expect(argvs[0]!.slice(-3)).toEqual(["send", "RMAIL01", "--retry"]);
+	// A plain 다시 보내기 of a surely-unsent send takes over no claim: only the owner's force after 확인 필요 does (--retry).
+	expect(argvs[0]!.slice(-2)).toEqual(["send", "RMAIL01"]);
 	expect(marks).toEqual(["RMAIL01:queued", "RMAIL01:sending", "RMAIL01:sent"]);
 
 	// The page still lists the old failure (its snapshot is a moment old) and the owner taps again: nothing runs.

@@ -33,7 +33,7 @@ function setup(sources: SourceConfig[], opts: { model?: DraftModel; collector?: 
 		},
 		async reply(_s, c, text) {
 			if (state.hold) await state.hold;
-			if (state.failReply) return { ok: false, reason: state.failReply };
+			if (state.failReply) return { ok: false, reason: state.failReply, code: "rejected", sent: "no" };
 			state.posted.push({ id: c.id, text });
 			return { ok: true, ref: "ref1" };
 		},
@@ -395,14 +395,14 @@ console.log(JSON.stringify({ comments: all.filter(c => Number(c.id) > since), cu
 		expect(JSON.parse(posted[0]!)).toMatchObject({ commentId: "3", thread: "post-8", text: "답해 드릴게요." });
 	});
 
-	test("a failing post script is a failed send with its output as the reason", async () => {
+	test("a post script that exits non-zero without saying sent: no may have posted: unsure, its output kept for the log only", async () => {
 		const { read } = fixtureDir();
 		const bad = join(dir, "bad.ts");
 		writeFileSync(bad, `console.error("login expired"); process.exit(2);\n`);
 		const adapter = websiteAdapter({ exec: bunExec, fetch, secretsDir: dir, siteDir: dir });
 		const s = site(read, bad);
 		const out = await adapter.reply(s, { id: "cm:site-blog:3", source: s.key, native: "3", thread: "post-8", author: "Lee", text: "?", postTitle: "x", at: 0, mine: false, collector: "m" } as Comment, "hi", "send:1");
-		expect(out).toEqual({ ok: false, reason: "login expired" });
+		expect(out).toEqual({ ok: false, code: "unknown", sent: "maybe", reason: "보내다가 문제가 생겼어요", detail: "login expired" });
 	});
 
 	test("an RSS comment feed and a webhook with a bearer secret", async () => {
