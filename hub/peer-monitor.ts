@@ -64,11 +64,11 @@ const originOf = (u: string): string | undefined => {
 		return undefined;
 	}
 };
-// A message target of the web ("lane:x", "mail:k", "ch:id", "alert", "worklog", "main") as the fields /api/message takes.
+// A message target of the web ("lane:x", "mail:k", "ch:id", "alert", "worklog", "quick", "main") as the fields /api/message takes.
 function targetFields(target: unknown): Record<string, string> | undefined {
 	const t = typeof target === "string" ? target : "main";
 	if (t === "main" || t === "chat") return {};
-	if (t === "alert" || t === "worklog") return { conv: t };
+	if (t === "alert" || t === "worklog" || t === "quick") return { conv: t };
 	const [kind, rest] = [t.slice(0, t.indexOf(":")), t.slice(t.indexOf(":") + 1)];
 	if (!rest || t.indexOf(":") < 0) return undefined;
 	if (kind === "lane") return { lane: rest };

@@ -78,3 +78,17 @@ test("on the first run every message said before it counts as read (no reads.jso
 	expect(JSON.parse(readFileSync(paths.reads, "utf8"))._since).toBeTruthy();
 	expect(markRead({ target: "_since", ts: "2099-01-01T00:00:00.000Z" }).ok).toBe(false);
 });
+
+test("the quick chat has a read position of its own, and its unread count is counted from it", () => {
+	const t = "quick", first = "2099-11-01T08:00:00.000Z", second = "2099-11-01T08:01:00.000Z";
+	emit("outbox", { ts: first, kind: "out", source: "orchestrator", target: "web:quick", text: "첫 답" });
+	expect(unreadOf(t)).toBeGreaterThan(0);
+	expect(markRead({ target: t, ts: first })).toMatchObject({ ok: true, moved: true });
+	expect(readOf(t)).toBe(first);
+	expect(JSON.parse(readFileSync(paths.reads, "utf8"))[t]).toBe(first);
+	expect(item(t)).toMatchObject({ read: first, unread: 0 });
+	emit("outbox", { ts: second, kind: "out", source: "orchestrator", target: "web:quick", text: "둘째 답" });
+	expect(unreadOf(t)).toBe(1);
+	markRead({ target: t, ts: second });
+	expect(unreadOf(t)).toBe(0);
+});

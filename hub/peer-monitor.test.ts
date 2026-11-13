@@ -43,10 +43,10 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			return Response.json({ ok: true, files: out });
 		}
 		if (req.method === "POST" && path === "/api/message") {
-			const b = (await req.json()) as { mail?: string; lane?: string; project?: string; settings?: string; text: string; via?: string; files?: Array<{ path: string }> };
+			const b = (await req.json()) as { conv?: string; mail?: string; lane?: string; project?: string; settings?: string; text: string; via?: string; files?: Array<{ path: string }> };
 			// Like routes.ts ownerFiles: only this gateway's own uploads are accepted.
 			if (b.files && !b.files.every(f => uploads.has(f.path))) return Response.json({ error: "첨부파일을 찾지 못했어요" }, { status: 400 });
-			events.push({ target: b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}), ...(b.files ? { files: b.files } : {}) });
+			events.push({ target: b.conv ?? b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}), ...(b.files ? { files: b.files } : {}) });
 			return Response.json({ ok: true });
 		}
 		if (req.method === "POST" && path.endsWith("/answer")) {
@@ -451,6 +451,14 @@ test("a message to a peer's monitor conversation is forwarded as the settings ta
 	expect(r.status).toBe(200);
 	expect(B.events).toEqual([{ target: "settings:w:login-boutique-com", text: "다시 로그인해 줘", via: "노트북" }]);
 	expect(A.events).toEqual([]);
+});
+
+test("a message to a peer's quick chat is forwarded as the quick conversation of that gateway", async () => {
+	const { A, B } = pair();
+	const pc = encodeURIComponent(URL_B), p = encodeURIComponent("/api/peer/act");
+	const r = await A.handle(req(`/api/peer/proxy?pc=${pc}&p=${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "message", args: { target: "quick", text: "이것만 봐 줘" } }) }));
+	expect(r.status).toBe(200);
+	expect(B.events).toEqual([{ target: "quick", text: "이것만 봐 줘", via: "노트북" }]);
 });
 
 test("a message to a project target of a peer never carries a monitor name; a settings conversation target ignores it", async () => {
