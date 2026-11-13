@@ -267,7 +267,10 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				if (home && discord.status.enabled) discord.homeChannel(home);
 				// An approved stronger-model step (hub/escalate.ts) is launched from the owner's card answer, not from the turn running now.
 				// A launch from another computer (peer) belongs to no turn of this gateway, so it never takes over the turn running here.
-				const asking = b.escalation || peer ? undefined : queue.current();
+				// The running turn is the launching session's own (a conversation session's queue, else main's), never another session's.
+				// A session key the registry does not hold has no turn here: main's turn is never taken for it.
+				const turns = typeof b.session === "string" && b.session && b.session !== MAIN ? convs.get(b.session)?.queue : queue;
+				const asking = b.escalation || peer || !turns ? undefined : turns.current();
 				const origin = { home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: (id: string) => Boolean(discord.channels.work[id]), threadParent: (id: string) => discord.channels.threads[id]?.parent };
 				const place = lanePlace({ ...origin, discordForWeb: postSettings().web_lanes });
 				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim(), typeof b.session === "string" && b.session && b.session !== MAIN ? b.session : undefined, peer);
@@ -292,8 +295,10 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 					if (homeName) lane.homeName = homeName;
 					persist(lane);
 				}
-				// Work started from a work channel or a thread is answered in the lane's thread, where its reports will come.
-				if (channel && asking?.target && answerMovesToLane(place, asking.target)) queue.retarget(asking.target, `lane:${lane.name}`);
+				// Work the owner started from a work channel or a thread is answered in the lane's thread, where its reports will come.
+				// Work another session handed over (`from`) keeps its target, so its workers and answer go back to that session
+				// (2026-11-11: a conversation session's handed fixes were answered in the new lane's conversation).
+				if (channel && turns && asking?.target && !asking.from && !asking.handback && !asking.bookkeeping && answerMovesToLane(place, asking.target)) turns.retarget(asking.target, `lane:${lane.name}`);
 				log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
 				limitWaitStarted(STATE_FILE(), lane.name, lane.title ?? "", progress, log);
 				emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, ...(lane.title ? { title: lane.title } : {}), text: `lane ${lane.name} started in ${lane.cwd}` });
