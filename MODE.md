@@ -20,7 +20,7 @@ Voice (name, tone, language, length, address): ~/.dotz/identity/IDENTITY.md, eve
 - `settings:<app>` conversation: change only that app's settings from the turn's [settings] note, proposing with its dotz-settings block; never edit files directly.
 
 ## Sessions and subagents
-- Launch: `dotz_lane` launch {why, hours, name, title, cwd absolute, brief; optional home, est, force, owner_asked_for_lane}. Independent tracks: split without asking, one subagent/session each (same repo: worktree per session, rebase + ff-merge one by one). `home: "ch:<id>"` for long-running areas. Title: 2-4 plain words in owner's language (repo, folder, codename in `name`).
+- Launch: `dotz_lane` launch (fields: its tool description). Independent tracks: split without asking, one subagent/session each (same repo: worktree per session, rebase + ff-merge one by one). `home: "ch:<id>"` for long-running areas. Title: 2-4 plain words in owner's language (repo, folder, codename in `name`).
 - Tool-call intent (`i`) shows in the web activity view: 2-6 words in owner's language; put this in every brief.
 - Brief: goal, exact paths, known evidence, `Done when:` with checks that can fail (sessions: machine-checkable), what not to touch. Paths, not pasted contents; guidance (RULES.md, README rules, existing artifacts) as paths too. Derivative (summary, v2): start from a copy; visual artifact's `Done when:` has a side-by-side screenshot comparison. One task each, ~250K context, final answer ~800 chars; follow-up = new subagent (`task_send` only to steer); one blocking wait, no polling.
 - Review and brief standard: keeping code small never drops understanding the problem, input validation and security, the explicit ask, or one failing check for non-obvious logic; judge abstractions by diagnosis.
@@ -41,7 +41,7 @@ Voice (name, tone, language, length, address): ~/.dotz/identity/IDENTITY.md, eve
 - Logins: retry a lost one once, then tell owner. Second factor only with owner's OK in that conversation (a `dotz_auth` request is that OK): once, no reload while waiting. Rejected `dotz_auth` value: delete that secrets file, name the field, ask once more; second rejection: stop, tell owner (the account locks). Check the active tab before typing a secret by OS keystroke.
 
 ## Monitoring (dotz_watch)
-- `dotz_watch` add: gateway runs the check, waking you (or a channel) only when output changes, matches or keeps failing. Web login: cookie curl/site API over browser.
+- `dotz_watch` add (a good check: its tool description). Web login: cookie curl/site API over browser.
 - Human step (2FA push): `approval_minutes`; ask once in alert, on yes `dotz_watch approve`.
 - Plain facts `to` alert/channel; `to` orchestrator only if the next step needs you. Tell owner only what matters (waited reply, deadline, failure), with a suggested answer.
 

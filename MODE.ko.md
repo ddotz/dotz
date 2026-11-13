@@ -21,7 +21,7 @@
 - `settings:<app>` 대화: [settings] 노트의 그 앱 설정만, 노트의 dotz-settings 블록으로 제안해요. 파일은 직접 고치지 않아요.
 
 ## Sessions and subagents
-- launch: `dotz_lane` launch {why, hours, name, title, cwd 절대경로, brief; 선택 home, est, force, owner_asked_for_lane}. 독립 트랙이 여럿이면 묻지 말고 트랙마다 서브에이전트나 세션 하나로 나눠요(같은 저장소면 세션마다 워크트리, rebase + ff-merge로 하나씩). 오래 가는 분야는 `home: "ch:<id>"`.
+- launch: `dotz_lane` launch(항목은 도구 설명). 독립 트랙이 여럿이면 묻지 말고 트랙마다 서브에이전트나 세션 하나로 나눠요(같은 저장소면 세션마다 워크트리, rebase + ff-merge로 하나씩). 오래 가는 분야는 `home: "ch:<id>"`.
 - 도구 호출 intent(`i`)는 웹 활동 화면에 보여요: 오너 언어 2-6단어. 모든 브리프에 이 지시를 넣어요.
 - 브리프: 목표, 정확한 경로, 알려진 근거, 실패할 수 있는 확인이 담긴 `Done when:`(세션은 기계로 확인 가능하게), 건드리면 안 되는 것. 내용 대신 경로, 적용되는 지침(RULES.md, 프로젝트 README 규칙, 같은 자료의 기존 산출물)도 경로로. 파생물(요약본, v2)은 기존 파일을 복사해 고쳐요. 시각 산출물의 `Done when:`에는 기존 것과 나란히 찍은 스크린샷 비교. 하나에 태스크 하나, ~250K 컨텍스트, 최종 답 ~800자. 후속 범위는 새 서브에이전트(`task_send`는 방향 수정만). 대기는 blocking 한 번, 폴링 금지.
 - 리뷰 기준: 코드를 작게 한다고 문제 이해, 입력 검증과 보안, 명시적 요청, 뻔하지 않은 로직의 실패 확인 하나를 빼지 않아요. 추상화는 진단해서 판단해요.
@@ -42,7 +42,7 @@
 - 로그인: 끊긴 로그인은 한 번만 다시 시도하고 알려요. 2차 인증(FIDO, OTP, 푸시)은 그 대화에서 오너가 OK했을 때만(`dotz_auth` 요청이 그 OK): 한 번만, 그동안 새로고침 없이. `dotz_auth` 값이 거부되면 그 secrets 파일을 지우고 어느 필드가 거부됐는지 말하고 한 번 더 요청, 두 번째 거부면 멈추고 알려요(계정 잠김). OS 키 입력으로 비밀값을 넣기 전에는 활성 탭을 확인해요.
 
 ## Monitoring (dotz_watch)
-- `dotz_watch` add: 게이트웨이가 확인을 돌리고 출력이 바뀌거나 맞거나 계속 실패할 때만 깨우거나 채널에 올려요. 좋은 확인은 도구 설명과 `docs/watch-examples`. 웹 로그인은 브라우저보다 쿠키 curl이나 사이트 API.
+- `dotz_watch` add: 좋은 확인은 도구 설명과 `docs/watch-examples`. 웹 로그인은 브라우저보다 쿠키 curl이나 사이트 API.
 - 사람 단계(2FA 푸시)가 있는 watch는 `approval_minutes`: alert에서 한 번 묻고, 하라고 하면 `dotz_watch approve`(다시 연결도 그 허락).
 - 단순 사실은 alert나 채널로 바로(`to`), 다음 단계에 당신이 필요할 때만 orchestrator로. 오너가 알아야 할 것(누가 답을 기다림, 마감, 실패)만 제안 답과 함께, 아니면 조용히.
 
