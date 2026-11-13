@@ -16,8 +16,11 @@ const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
 const state = (title: string) => stored().find(n => n.kind === "decision" && n.title === title)!.decision!.state;
 const TITLE_MAIN = "사이트 배포 인증을 어떻게 할까요?";
 const TITLE_PROJECT = "폴더 이름을 무엇으로 할까요?";
-const T1 = "2026-11-10T10:00:00.000Z";
-const T2 = "2026-11-10T10:05:00.000Z";
+// An hour ago, not a fixed day: a question older than its answer window (ANSWER_WINDOW_MS, 72 h) is expired and nothing answers it. On the clock
+// config.ts now() reads (new Date(), the real one), not the fake Date.now of test-clock.ts: an answer only closes a question asked before it.
+const minutesAgo = (m: number) => new Date(new Date().getTime() - m * 60_000).toISOString();
+const T1 = minutesAgo(60);
+const T2 = minutesAgo(55);
 const block = (q: string) => `결정: ${q}\n**1) 첫째**\n**2) 둘째**`;
 const ask = (ts: string, q: string, target: string) => emit("outbox", { ts, kind: "out", source: "orchestrator", target, text: `[ask] ${q}\n${block(q)}` });
 const sizeOf = (f: string) => (existsSync(f) ? statSync(f).size : 0);
