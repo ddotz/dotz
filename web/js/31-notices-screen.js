@@ -204,7 +204,7 @@ function nscFold(n) {
 // A tap reads a row that needs no answer; a question stays unread until it is answered.
 function nscTap(n) {
   const a = noticeKindAction(n);
-  if (a === "sheet") { const d = ntLinkedDec(n) || n; noticeSheetOpen(n.pc ? n : d.id); return; }
+  if (a === "sheet") { const d = ntTapDec(n) || n; noticeSheetOpen(n.pc ? n : d.id); return; }
   if (a === "ask") { ntAskSheet(n).then(shown => { if (!shown) nscNav(n); }); return; }
   if (a === "detail") { ntRead(n); ntDetailOpen(n); return; }
   ntRead(n);

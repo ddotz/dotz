@@ -17,9 +17,11 @@ const dec = { options: [], to: "main", reply_to: "t", group: 1, state: "open" };
 const ntIsDec = (n: N) => n.kind === "decision" && !!n.decision;
 const linkedBlock = between(notices, "const ntOpenDec", "const ntById");
 const ntDecisions = (items: N[]) => () => items.filter(n => ntIsDec(n) && (n.decision as N).state === "open");
-const linkedOf = (items: N[]) => new Function("NT", "ntIsDec", "ntDecisions", `${linkedBlock}; return ntLinkedDec;`)({ items }, ntIsDec, ntDecisions(items)) as (n: N) => N | null;
-const actionIn = (items: N[]) => new Function("NM", "ntIsDec", "ntLinkedDec", `${between(notices, "function noticeKindAction", "async function noticeOpen(")}; return noticeKindAction;`)(
-	{ items: [] }, ntIsDec, linkedOf(items),
+const helpersOf = (items: N[]) => new Function("NT", "ntIsDec", "ntDecisions", `${linkedBlock}; return { ntLinkedDec, ntTapDec };`)({ items }, ntIsDec, ntDecisions(items)) as { ntLinkedDec: (n: N) => N | null; ntTapDec: (n: N) => N | null };
+const linkedOf = (items: N[]) => helpersOf(items).ntLinkedDec;
+const tapDecOf = (items: N[]) => helpersOf(items).ntTapDec;
+const actionIn = (items: N[]) => new Function("NM", "ntIsDec", "ntTapDec", `${between(notices, "function noticeKindAction", "async function noticeOpen(")}; return noticeKindAction;`)(
+	{ items: [] }, ntIsDec, tapDecOf(items),
 ) as (n: N, mons?: { name: string }[]) => string;
 const actionOf = actionIn([]);
 
@@ -56,10 +58,25 @@ const live = (state: "open" | "answered"): N[] => [
 ];
 
 describe("a notice that links to an open decision", () => {
-	test.each([["decision", "c223ecf2"], ["[ask] alert twin", "1f3d708d"], ["latest-message item of the conversation", "eb0e4c1e"]])("%s opens the decision sheet, not the conversation", (_n, id) => {
+	test.each([["decision", "c223ecf2"], ["[ask] alert twin", "1f3d708d"]])("%s opens the decision sheet, not the conversation", (_n, id) => {
 		const items = live("open"), n = items.find(x => x.id === id)!;
 		expect(actionIn(items)(n)).toBe("sheet");
 		expect(linkedOf(items)(n)!.id).toBe("c223ecf2");
+	});
+	// The latest-message item follows each later answer (hub/notices-store.ts fromAnswer): a message newer than the question is its own tap target.
+	test("the latest-message item opens the sheet while its message is the question's, and the conversation once it is newer", () => {
+		const at = (id: string, when: string) => (items: N[]) => items.map(x => (x.id === id ? { ...x, at: when } : x));
+		const asked = live("open")[0]!.decision as N, later = "2026-10-22T07:08:00.000Z";
+		for (const [when, want] of [[asked.reply_to as string, "sheet"], ["2026-10-22T06:34:12.758+00:00", "sheet"], [later, "message"]] as const) {
+			const items = at("eb0e4c1e", when)(live("open")), n = items.find(x => x.id === "eb0e4c1e")!;
+			expect(actionIn(items)(n)).toBe(want);
+			expect(tapDecOf(items)(n)?.id).toBe(want === "sheet" ? "c223ecf2" : undefined);
+			if (want === "message") expect(linkedOf(items)(n)).toBeNull();   // rows and counts never fold a later message into the question
+		}
+	});
+	test("a latest-message item without a time still opens the sheet", () => {
+		const items = live("open").map(x => (x.id === "eb0e4c1e" ? { ...x, at: undefined } : x));
+		expect(actionIn(items)(items.find(x => x.id === "eb0e4c1e")!)).toBe("sheet");
 	});
 	test("once it is answered the twins fall back to their own kind", () => {
 		const items = live("answered");
@@ -72,10 +89,10 @@ describe("a notice that links to an open decision", () => {
 		expect(actionIn(items)(items.find(x => x.id === "9973c0d6")!)).toBe("worklog");
 	});
 	test("noticeOpen hands the sheet the decision's id, whichever twin was tapped", async () => {
-		const items = live("open"), opened: unknown[] = [];
-		const fn = new Function("noticeKindAction", "ntLinkedDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntUnder", "monOpen",
+		const items = live("open").map(x => (x.id === "eb0e4c1e" ? { ...x, at: "2026-10-22T06:34:12.758Z" } : x)), opened: unknown[] = [];
+		const fn = new Function("noticeKindAction", "ntTapDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntUnder", "monOpen",
 			`${between(notices, "async function noticeOpen(", "async function noticeOpenId(")}; return noticeOpen;`)(
-			actionIn(items), linkedOf(items), () => {}, (id: string) => opened.push(id), () => { throw new Error("ask"); }, () => { throw new Error("jump"); }, () => {}, () => {}, () => {});
+			actionIn(items), tapDecOf(items), () => {}, (id: string) => opened.push(id), () => { throw new Error("ask"); }, () => { throw new Error("jump"); }, () => {}, () => {}, () => {});
 		for (const n of items.slice(0, 3)) await fn(n);
 		expect(opened).toEqual(["c223ecf2", "c223ecf2", "c223ecf2"]);
 	});
@@ -95,7 +112,7 @@ describe("noticeOpen dispatch", () => {
 	const run = (n: N | null, ask = true, here = false) => {
 		const calls: unknown[][] = [];
 		const rec = (name: string) => (...a: unknown[]) => { calls.push([name, ...a]); return undefined; };
-		const fn = new Function("noticeKindAction", "ntLinkedDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntUnder", "monOpen",
+		const fn = new Function("noticeKindAction", "ntTapDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntUnder", "monOpen",
 			`${between(notices, "async function noticeOpen(", "async function noticeOpenId(")}; return noticeOpen;`)(
 			(x: N) => x.act, () => null, rec("read"), rec("sheet"), (x: N) => { calls.push(["ask", x.id]); return Promise.resolve(ask); }, rec("jump"), rec("detail"), rec("under"), rec("monitor"));
 		return fn(n, here).then(() => calls);

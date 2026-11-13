@@ -261,7 +261,7 @@ async function pushOpen(hash, at, nid) {
 //   message  anything else (plain message, result, a mail)                 -> the conversation, on that message
 // `here`: tapped on the message itself (the 알림 / 작업내역 timeline), so the sheet opens without moving the list under it.
 function noticeKindAction(n, mons = NM.items) {
-  if (ntIsDec(n) || ntLinkedDec(n)) return "sheet";
+  if (ntIsDec(n) || ntTapDec(n)) return "sheet";
   if (n.tone === "ask") return "ask";
   if (n.kind === "alert" && n.tone === "fail") return "detail";
   if (String(n.src || n.open || "").startsWith("mail:")) return "message";   // a new mail is a watch-kind notice, but it has its own conversation
@@ -278,7 +278,7 @@ async function noticeOpen(n, here = false) {
   if (a === "detail" || a === "session" || a === "monitor" || a === "settings" || a === "app") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
   switch (a) {
     case "sheet": {
-      const d = ntLinkedDec(n) || n;
+      const d = ntTapDec(n) || n;
       if (!here) ntUnder(d);
       return noticeSheetOpen(n.pc ? n : d.id);   // a peer's question is not in NT: the notice itself
     }
@@ -473,13 +473,18 @@ const ntSuccessor = n => (n.pc ? (((PQ.list.find(p => p && p.url === n.pc.url) |
 // hub/notices.ts needsAnswer, which keeps these unread however they are viewed: only an answer, a resolving signal or the x (무시) clears them.
 const ntNeeds = n => !n.read && !n.ignored && !n.dismissed && (ntOpenDec(n) || n.tone === "ask");
 const ntIgnoredDec = n => ntIsDec(n) && n.decision.state === "ignored";
-// The open decision a notice carries or links to: itself, or the one asked in the same conversation at the same time (the [ask] alert twin the hub
-// stores beside it), or the newest one of the conversation for that conversation's latest-message item (key msg:<conversation>).
+// The open decision a notice carries or is the twin of: itself, or the one asked in the same conversation at the same time (the [ask] alert twin the hub
+// stores beside it). Rows and counts use this to show a question once.
 const ntLinkedDec = n => {
   if (ntOpenDec(n)) return n;
   const t = n.src || n.open;
-  return NT.items.find(d => ntOpenDec(d) && d.decision.to === t && n.at && d.decision.reply_to === n.at)
-    || (n.kind === "message" && n.key === `msg:${t}` ? ntDecisions().find(d => d.decision.to === t) : null) || null;
+  return NT.items.find(d => ntOpenDec(d) && d.decision.to === t && n.at && d.decision.reply_to === n.at) || null;
+};
+// The decision whose sheet a tap opens: the twin above, or, for the conversation's latest-message item (key msg:<conversation>), its newest open decision,
+// unless that item's message is newer than the question: then the tap is about the message (ntJump) and the question stays on the docked card.
+const ntTapDec = n => {
+  const t = n.src || n.open, q = n.kind === "message" && n.key === `msg:${t}` ? ntDecisions().find(x => x.decision.to === t) : null;
+  return ntLinkedDec(n) || (q && !(Date.parse(n.at) > Date.parse(q.decision.reply_to)) ? q : null);
 };
 const ntById = id => NT.items.find(x => String(x.id) === String(id));
 // A watch report that folded earlier ones into its repeats (hub/notices.ts) is its own line again for 모니터링's report lists and counts: nothing it recorded is lost.
