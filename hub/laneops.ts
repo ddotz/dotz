@@ -1,6 +1,6 @@
 import { DATA_DIR, log, paths, selectorOf, lanesModel, now, chainAfter, fallbackChain, parseSelector } from "./config.ts";
 import { markDeep } from "./deepmark.ts";
-import { type Lane, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
+import { type Lane, hooks, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
 import { broadcast } from "./events.ts";
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync, rmSync } from "node:fs";
 import { RESTART_HELD_FILE } from "./restart.ts";
@@ -143,6 +143,14 @@ export function sendToLane(name: string, text: string, ref?: string, gateway = f
 	// 2026-11-01: a stall nudge every few minutes to a lane waiting hours on a video made each "still waiting" reply a relayed
 	// report, so every one woke the orchestrator.
 	if (!gateway && !/^\[owner via /.test(text) && text !== "/budget-ok") lane.orchAsked = true;
+	// A message reached the lane: its wait on main is answered or moved on, so the reminders (laneidle.ts) start over from now. Main's
+	// answers come in as gateway prompts too (a handback, dotz_send lane:x), so any message that is not the owner's also makes the lane's
+	// next report news, even in the same words as its last relayed one (review-a G7).
+	if (lane.waitingMain) {
+		lane.waitingMain = { text: lane.waitingMain.text, since: Date.now(), tells: 0 };
+		persist(lane);
+	}
+	if (!/^\[owner via /.test(text) && text !== "/budget-ok") hooks.mainWrote(name);
 	const how: LaneDelivery = !lane.proc ? "resumed" : lane.status === "working" || lane.startingOn === lane.proc ? "steered" : lane.status === "rate-limited" ? "held" : "received";
 	// The owner's "ultrathink": the prompt carries a line whatever its delivery, so a held one or the one that resumes a stopped lane keeps it
 	// (hub/deepmark.ts). A steered message starts no new turn, so there the line reads as a hint.
@@ -394,7 +402,9 @@ function waitsForRestart(name: string): boolean {
 	const file = join(dir(name), "report.md");
 	if (!existsSync(file)) return false;
 	const { tone, text } = parseTone(readFileSync(file, "utf8"));
-	return tone === "wait" && /재시작|restart/i.test(text);
+	// Only a gateway restart, named in the same sentence ("게이트웨이를 <버전>으로 재시작하라는 요청에 따라", a version holds dots): a [wait] on a worker's restart
+	// got the gateway's resume note after every restart (review-a G11).
+	return tone === "wait" && /게이트웨이(?:(?![.!?]\s)[^\n]){0,20}(?:재시작|다시\s*(?:시작|띄))|gateway(?:(?![.!?]\s)[^\n]){0,20}restart|restart(?:(?![.!?]\s)[^\n]){0,20}gateway/i.test(text);
 }
 
 export function restoreLanes(): string[] {

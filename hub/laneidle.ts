@@ -17,13 +17,13 @@
 // longest silence of 224 workers over 7 days was that 28.5 min wait, and the longest wait of a lane on its own shell over 10 days 72.6
 // min. A worker stopped on a provider error holds it too: note-merge was stopped at 12:00 KST on 2026-11-06 with st_01a1aea0 on three
 // stream timeouts, its worker lost. A lane stopped with its plan open is the resume sweep's (laneresume.ts).
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { lanesIdleStopMin, log } from "./config.ts";
 import { waitsOnMain } from "./forline.ts";
 import { msg } from "./i18n.ts";
 import { type Lane, laneBusy, laneJobs, lanes, parkLane } from "./lanes.ts";
-import { dir, hooks } from "./lanestate.ts";
+import { dir, hooks, persist } from "./lanestate.ts";
 import { parseTone } from "./tone.ts";
 import { trackTimer } from "./shutdown.ts";
 
@@ -33,20 +33,50 @@ const JOB_BOUND_MIN = 120;
 const held = new Set<string>();
 // Lanes whose owner was told of a job past the bound.
 const told = new Set<string>();
-// The [wait]-on-main report each stopped lane already told main about (lane -> report text).
-const waitTold = new Map<string, string>();
+const MIN = 60_000;
+// Minutes into a lane's [wait] on main at which main is told of it again, until a message reaches the lane (sendToLane ends the count);
+// the last step tells the owner instead, once. One reminder at the idle stop was not enough: five lanes sat 23-173 min on main
+// 2026-11-10..12 (projects/session-stalls), and one that main put off or forgot heard nothing more (review-a G1). The count lives on
+// the lane record (waitingMain), so a gateway restart neither forgets nor repeats a step (G6).
+export const WAIT_MAIN_STEPS_MIN: readonly number[] = [20, 60, 180, 360];
 
-// A lane stopped while its last report waits on main tells main once (Claude Code's idle notification): main may have missed or
-// forgotten that report, and the stopped lane can no longer remind it (2026-11-10..12: five lanes sat 23-173 min, projects/session-stalls).
-function tellMainWaiting(lane: Lane, now: number): void {
+// The lane's last report if it is a [wait] on main, with when it was written.
+function waitOnMain(lane: Lane): { text: string; at: number } | undefined {
 	const file = join(dir(lane.name), "report.md");
-	const text = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
-	const { tone, text: body } = parseTone(text);
-	if (tone !== "wait" || !waitsOnMain(text) || waitTold.get(lane.name) === text) return;
-	waitTold.set(lane.name, text);
-	const minutes = Math.round((now - (lane.lastFrameAt ?? now)) / 60_000);
-	log(`lane ${lane.name} stopped while waiting on main for ${minutes} min: main is told once`);
-	hooks.report(lane, msg().laneIdleWaitMain(lane.name, minutes, body.trim().slice(0, 600)));
+	if (!existsSync(file)) return undefined;
+	const text = readFileSync(file, "utf8").trim();
+	return parseTone(text).tone === "wait" && waitsOnMain(text) ? { text, at: statSync(file).mtimeMs } : undefined;
+}
+
+// Every idle lane waiting on main, stopped, held up by a job or kept up because the idle stop is off (G5): main may have missed or
+// forgotten that report, and a waiting lane cannot remind it (Claude Code's idle notification). Returns the lanes told now.
+export function remindMainWaits(now = Date.now()): string[] {
+	const told: string[] = [];
+	for (const lane of lanes.values()) {
+		if (lane.status !== "idle") continue;
+		const wait = waitOnMain(lane);
+		if (lane.waitingMain?.text !== wait?.text) {
+			lane.waitingMain = wait && { text: wait.text, since: wait.at, tells: 0 };
+			persist(lane);
+		}
+		const w = lane.waitingMain;
+		const step = w && WAIT_MAIN_STEPS_MIN[w.tells];
+		if (!w || step === undefined) continue;
+		// After a restart that skipped steps, the next one still waits its own gap after the last tell.
+		const gap = step - (WAIT_MAIN_STEPS_MIN[w.tells - 1] ?? 0);
+		if (now < Math.max(w.since + step * MIN, (w.toldAt ?? 0) + gap * MIN)) continue;
+		w.tells += 1;
+		w.toldAt = now;
+		persist(lane);
+		const minutes = Math.round((now - w.since) / MIN);
+		const text = msg().laneIdleWaitMain(lane.name, minutes, parseTone(w.text).text.trim().slice(0, 600));
+		const owner = w.tells === WAIT_MAIN_STEPS_MIN.length;
+		log(`lane ${lane.name} has waited on main for ${minutes} min: ${owner ? "the owner" : "main"} is told (${w.tells} of ${WAIT_MAIN_STEPS_MIN.length})`);
+		if (owner) hooks.notice(lane, text);
+		else hooks.report(lane, text);
+		told.push(lane.name);
+	}
+	return told;
 }
 
 // Pure decision: an idle lane with a session, nothing running for it, quiet for at least `minutes`.
@@ -73,15 +103,17 @@ export function parkIdleLanes(now = Date.now(), minutes = lanesIdleStopMin()): s
 		told.delete(lane.name);
 		if (!parkLane(lane)) continue;
 		parked.push(lane.name);
-		tellMainWaiting(lane, now);
 		log(`lane ${lane.name} idle for ${minutes}+ min: process stopped to free memory, the next message resumes ${lane.sessionFile}`);
 	}
 	return parked;
 }
 
-export function startLaneIdleStop(): void {
-	if (lanesIdleStopMin() <= 0) return;
-	const timer = setInterval(() => parkIdleLanes(), CHECK_MS);
-	timer.unref();
-	trackTimer("lane idle stop", timer);
+/** Starts the wait-on-main reminders and, unless lanes.idle_stop_min is 0, the idle stop; the returned function stops both. */
+export function startLaneIdleStop(): () => void {
+	const timers = [setInterval(() => remindMainWaits(), CHECK_MS), ...(lanesIdleStopMin() > 0 ? [setInterval(() => parkIdleLanes(), CHECK_MS)] : [])];
+	timers.forEach((timer, i) => {
+		timer.unref();
+		trackTimer(i ? "lane idle stop" : "lane wait on main", timer);
+	});
+	return () => timers.forEach(clearInterval);
 }

@@ -405,6 +405,16 @@ test("qa-golden replay (2026-11-10): a lane whose last report waits for the gate
 	await clear(lane.name);
 });
 
+test("a [wait] on some other restart (a worker's) is no gateway restart: the lane gets no resume note after one", async () => {
+	const lane = idleLane("uf-worker-restart");
+	session(lane, []);
+	reportFile(lane.name, "[wait] 워커 재시작 결과를 기다려요");
+	await down(lane);
+	await restart(lane.name);
+	expect(await resumeUnfinished()).toEqual([]);
+	await clear(lane.name);
+});
+
 test("ddotz/dotz#44: a gateway nudge leaves the owner's [ask] pending, a stall on it nudges nobody, and his answer wakes the lane once", async () => {
 	const lane = idleLane("uf-44");
 	lane.pendingAsk = { text: "[ask] 보낼까요?", at: "2026-11-06T01:00:00.000Z" };
