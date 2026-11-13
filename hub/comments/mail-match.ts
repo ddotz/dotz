@@ -3,7 +3,7 @@
 // says whether the commenter already mailed and whether that mail was answered. The lines become notes of the draft (`메일 대조:`, `근거:`, `초안 메모:`).
 import { addressKey, isOwnAddress } from "../mail-state.ts";
 import { runLimited } from "../run-limited.ts";
-import { parseThread, type ThreadMessage } from "../zele.ts";
+import { parseThread, watchFlags, type ThreadMessage } from "../zele.ts";
 
 export type MailQuery = { author: string; postTitle: string; text: string; at: number };
 export type MailItem = { id: string; from: string; subject: string; snippet: string; date?: string };
@@ -104,8 +104,8 @@ export function zeleMailSearch(accounts: () => Promise<string[]>): MailSearch {
 		return r.stdout.normalize("NFC");
 	};
 	return {
-		search: async (query, account) => ((Bun.YAML.parse(await run(["search", query, "--limit", "50", ...(account ? ["--account", account] : [])])) as { items?: Record<string, unknown>[] } | null)?.items ?? []).map(t => ({ id: String(t.id), from: String(t.from ?? ""), subject: String(t.subject ?? ""), snippet: String(t.snippet ?? ""), ...(t.date ? { date: String(t.date) } : {}) })),
-		read: async id => parseThread(await run(["read", id])),
+		search: async (query, account) => ((Bun.YAML.parse(await run(["search", query, "--limit", "50", ...(account ? ["--account", account] : watchFlags())])) as { items?: Record<string, unknown>[] } | null)?.items ?? []).map(t => ({ id: String(t.id), from: String(t.from ?? ""), subject: String(t.subject ?? ""), snippet: String(t.snippet ?? ""), ...(t.date ? { date: String(t.date) } : {}) })),
+		read: async id => parseThread(await run(["read", id, ...watchFlags()])),
 		own: async () => new Set((await accounts()).map(addressKey).filter(Boolean)),
 	};
 }

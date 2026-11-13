@@ -31,7 +31,7 @@ export type Config = {
 	gateway?: { coalesce_ms?: number; restart_cap_min?: number; stuck_turn_min?: number };
 	ui?: { origin_view?: boolean };
 	// The zele mail connection (hub/zele.ts).
-	zele?: { enabled?: boolean; poll_sec?: number; brief_hour?: number; mail_noise?: string[] };
+	zele?: { enabled?: boolean; poll_sec?: number; brief_hour?: number; mail_noise?: string[]; accounts?: string[] };
 	// Monthly spend limit (USD) the owner set on the Anthropic platform console; the usage screen shows how much of it is used. Empty = none.
 	api_budget?: { monthly_usd?: number };
 	// Days the account switch history (bottom of the usage screen) is kept; older entries are pruned.

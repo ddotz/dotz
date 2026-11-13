@@ -8,6 +8,7 @@ real thing. UI words stay in Korean.
 
 - **Account** = one mail app instance (`mail`, `mail-2`, hub/integrations.ts `appEntries`). `custom/apps.json` keeps owning them: `label` is the
   account name, `filter.account` the zele account. With one account no account UI shows.
+  `zele.accounts` in config.json (a list of addresses, e.g. `["a@example.com"]`; restart to apply) limits which logged-in zele accounts dotz watches; see docs/custom-plugins.md.
 - **Mailbox** = a named box under one account, stored in `custom/mailboxes.json`. Every account has exactly one base mailbox (일반).
 - **Conversation** = a mail thread: `threadIdOf(source, id)` (a poster's trailing `.N` message count is not part of the thread). One conversation is in
   one mailbox.

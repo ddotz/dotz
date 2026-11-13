@@ -191,7 +191,12 @@ function installConfig(): Record<string, any> | undefined {
 // Where this install's sent mail can be read: every account when config.json turned zele on (`[undefined]`); else, with zele installed, the accounts
 // the mail apps of custom/apps.json name (a mail that comes from a watch has no zele switch but zele sends its replies); else nowhere.
 export function sentAccounts(config: Record<string, any> | undefined): (string | undefined)[] {
-	if (zeleEnabled(config)) return [undefined];
+	if (zeleEnabled(config)) {
+		const listed = config?.zele?.accounts;
+		// Read as hub/zele.ts reads it: the entries that are addresses count, anything else is dropped.
+		const only = (Array.isArray(listed) ? listed : []).filter((a): a is string => typeof a === "string").map(a => a.trim()).filter(Boolean);
+		return only.length ? only : [undefined];
+	}
 	if (!Bun.which("zele")) return [];
 	// The built-in instance has no `app`: its key is the app.
 	const named = Object.entries(readAppsFile(dataDir())).filter(([id, a]) => !a?.deleted && (a?.app ?? id) === "mail").map(([, a]) => a?.filter?.account?.trim());
