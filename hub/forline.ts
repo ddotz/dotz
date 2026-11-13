@@ -39,8 +39,8 @@ export function forLines(text: string): string {
 // budget question) is a question for the orchestrator, not the owner: it makes no decision, badge or push (2026-10-23).
 const NO_REQUEST = /^[\s\-–—.]*(?:없음|none|n\/a)?[\s.]*$/i;
 // A [wait] that names the main session as what it waits on (2026-11-06..13: 13 such reports stayed on disk and their lanes sat up to 173 min).
-// A build, CI or a worker is not main; "메인 브랜치" is a branch.
-const MAIN_NAMED = new RegExp(`(?<![\\w./-])(?:${NAME_RE}|땃쥐)(?![\\w./-])|메인(?!\\s*브랜치)|오케스트레이터|orchestrator|main session`, "i");
+// A build, CI or a worker is not main; "메인 브랜치" and "메인에 머지" are the branch, so 메인 counts only as the one who acts or is waited on.
+const MAIN_NAMED = new RegExp(`(?<![\\w./-])(?:${NAME_RE}|땃쥐)(?![\\w./-])|메인(?:에게|한테|께|이(?![가-힣])|을\\s*기다|의\\s*(?:답|확인|결정|몫))|오케스트레이터|orchestrator|main session`, "i");
 export const mentionsMain = (text: string): boolean => MAIN_NAMED.test(dropForLine(text));
 /** The text hands main something to do: a real for-line, or (with none written) words that name main. A for-line saying "없음" is no request. */
 export function waitsOnMain(text: string): boolean {

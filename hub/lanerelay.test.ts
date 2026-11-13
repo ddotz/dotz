@@ -35,6 +35,7 @@ test("a [wait] on main reaches main; a [wait] on CI, time or workers stays on di
 	expect(sent).toHaveLength(2);
 	expect(r.report("ci", "[wait] Actions 빌드 완료를 기다려요", "/f")).toBe("disk");
 	expect(r.report("ci", `[wait] 워커 결과를 기다려요 (메인 브랜치 기준)\n${NAME} 몫: 없음`, "/f")).toBe("disk");
+	expect(r.report("ci2", "[wait] Actions가 끝나면 메인에 머지해요", "/f")).toBe("disk");
 	expect(sent).toHaveLength(2);
 });
 
