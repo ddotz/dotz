@@ -38,6 +38,17 @@ export function forLines(text: string): string {
 // A session's [ask] whose only request is its "For <bot>:" line (a real hand-off, no choice block, no question mark elsewhere, not a
 // budget question) is a question for the orchestrator, not the owner: it makes no decision, badge or push (2026-10-23).
 const NO_REQUEST = /^[\s\-–—.]*(?:없음|none|n\/a)?[\s.]*$/i;
+// A [wait] that names the main session as what it waits on (2026-11-06..13: 13 such reports stayed on disk and their lanes sat up to 173 min).
+// A build, CI or a worker is not main; "메인 브랜치" is a branch.
+const MAIN_NAMED = new RegExp(`(?<![\\w./-])(?:${NAME_RE}|땃쥐)(?![\\w./-])|메인(?!\\s*브랜치)|오케스트레이터|orchestrator|main session`, "i");
+export const mentionsMain = (text: string): boolean => MAIN_NAMED.test(dropForLine(text));
+/** The text hands main something to do: a real for-line, or (with none written) words that name main. A for-line saying "없음" is no request. */
+export function waitsOnMain(text: string): boolean {
+	const lines = forLines(text);
+	if (lines) return lines.split("\n").some(l => !NO_REQUEST.test(l.replace(FOR_LINE, "")));
+	return mentionsMain(text);
+}
+
 export function orchestratorOnlyAsk(text: string): boolean {
 	if (/\/budget-ok/.test(text) || parseDecisions(text).blocks.length) return false;
 	const line = text.split("\n").find(l => FOR_LINE.test(l));

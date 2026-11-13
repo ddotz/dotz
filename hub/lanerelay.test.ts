@@ -26,6 +26,18 @@ test("results, questions and failures go in whole with status and the report fil
 	expect(sent).toHaveLength(4);
 });
 
+test("a [wait] on main reaches main; a [wait] on CI, time or workers stays on disk", () => {
+	const { r, sent } = relay();
+	const forMain = `[wait] 전체 시험을 기다려요\n\n${NAME} 몫: e1bec7e8 전체 시험 결과를 주세요`;
+	expect(r.report("web", forMain, "/f")).toBe("relayed");
+	expect(r.report("web", forMain, "/f")).toBe("duplicate");
+	expect(r.report("hero", "[wait] 메인이 시험 고침 커밋을 알려 주길 기다려요", "/f")).toBe("relayed");
+	expect(sent).toHaveLength(2);
+	expect(r.report("ci", "[wait] Actions 빌드 완료를 기다려요", "/f")).toBe("disk");
+	expect(r.report("ci", `[wait] 워커 결과를 기다려요 (메인 브랜치 기준)\n${NAME} 몫: 없음`, "/f")).toBe("disk");
+	expect(sent).toHaveLength(2);
+});
+
 test("reports while the orchestrator is busy become one prompt at idle; a lane's newer report replaces its older one, asks stay", () => {
 	const { r, sent, setBusy } = relay();
 	setBusy(true);

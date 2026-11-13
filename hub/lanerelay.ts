@@ -2,7 +2,9 @@
 // Every report still goes to the lane's channel and to report.md; for the orchestrator:
 // - a question, a failure, a result or an untagged report goes in whole (never cut), with its status and where the
 //   evidence is on disk;
-// - a routine [run] progress report is not a turn: it stays on disk and in the what-runs-now line of the next prompt;
+// - a routine [run] progress report is not a turn: it stays on disk and in the what-runs-now line of the next prompt; so is a [wait] on
+//   CI, time or workers, but a [wait] on main (a real "For <bot>:" line, or words naming main) goes in: 7 days to 2026-11-13 kept 13 such
+//   waits on disk and their lanes sat unheard for up to 173 min (projects/session-stalls);
 // - an untagged reply in an exchange between the owner and the lane alone (the orchestrator sent nothing since its last
 //   relayed report) is not a turn either: the owner read it in the lane channel;
 // - nor is the gateway's own usage-limit notice (the lane resumes by itself), or an untagged report while the lane's workers run: 7 days
@@ -11,7 +13,7 @@
 // - a report repeating the lane's last relayed one is dropped (a gateway notice such as [lane exited] never is);
 // - a report arriving while the orchestrator is in a turn is steered into that turn at once (2026-10-20: held reports
 //   reached it after p90 368 s); only when the turn cannot take it are reports batched into one prompt for idle.
-import { orchestratorOnlyAsk } from "./forline.ts";
+import { orchestratorOnlyAsk, waitsOnMain } from "./forline.ts";
 import { MAIN } from "./session-key.ts";
 import { parkedTone, parseTone, type Tone } from "./tone.ts";
 
@@ -105,7 +107,7 @@ export function createLaneRelay(deps: { busy: (key: string) => boolean; deliver:
 	/** A lane's report: "relayed" (now), "steered" (into the running turn), "held" (batched for idle), "disk" (routine), "owner" (owner-only exchange) or "duplicate". */
 	function report(lane: string, text: string, file: string, ownerOnly = false, from = MAIN): "relayed" | "steered" | "held" | "disk" | "owner" | "duplicate" {
 		const { tone } = parseTone(text);
-		if (parkedTone(tone)) return "disk";
+		if (parkedTone(tone) && !(tone === "wait" && waitsOnMain(text))) return "disk";
 		if (!tone && ownerOnly && !/^\[lane [a-z]+\]/.test(text)) return "owner";
 		const key = norm(text);
 		// A gateway notice ([lane exited], [lane error]) is a new event each time, even in the same words: an owner message
