@@ -5,6 +5,8 @@
   "shell.aria.monitoring_list": "Monitoring list",
   "shell.aria.apps_list": "App list",
   "shell.conn.lost": "Offline · reconnecting",
+  "shell.conn.unreachable": "Can't reach this computer · check this device's network or Tailscale",
+  "shell.conn.unreachable_short": "Check network",
   "shell.gban.close": "Dismiss restart notice",
   "shell.oerr.restart": "Restart orchestrator",
   "shell.chat.older": "Show earlier messages",

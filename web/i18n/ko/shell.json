@@ -5,6 +5,8 @@
   "shell.aria.monitoring_list": "모니터링 목록",
   "shell.aria.apps_list": "앱 목록",
   "shell.conn.lost": "연결 끊김 · 다시 연결 중",
+  "shell.conn.unreachable": "이 기기에서 이 컴퓨터에 연결할 수 없어요 · 기기의 네트워크나 Tailscale 연결을 확인해 주세요",
+  "shell.conn.unreachable_short": "네트워크 확인",
   "shell.gban.close": "재시작 알림 닫기",
   "shell.oerr.restart": "오케스트레이터 다시 시작",
   "shell.chat.older": "이전 메시지 더 보기",

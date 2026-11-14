@@ -50,20 +50,53 @@ function autoSwitch() {
   autoTried = true;
   prPick(other, { quiet: true, auto: true });
 }
+// A device that cannot reach this computer at all (its network is gone, or it fell off the tailnet: the owner's phone, 2026-11-14) looked like a gateway restart,
+// the one word 끊김. The page cannot tell a computer that is down from a device that is off the tailnet, but it can tell "no answer of any kind" from an answer:
+// the state request rejects with a TypeError (no status) and the stream's error leaves it CONNECTING (the browser retries on its own; an HTTP error status
+// closes it, 99-boot.js). When both hold for UNREACH_MS the line says this device cannot reach the computer and points at its network and Tailscale.
+// 30 s: a gateway restart is back well within it (the stream retries every 0.25 s up to 5 s, the gateway's ping comes every 25 s, hub/events.ts).
+// The stretch is timed from the stream's first such error; at its end one state request checks again when the last one was answered.
+const UNREACH_MS = 30000;
+let streamNet = false, stateNet = false, netLong = false, netTimer = 0;
+const unreachable = () => netLong && streamNet && stateNet;
+function reachNote(kind, net) {
+  const was = unreachable();
+  if (kind === "stream") streamNet = net; else stateNet = net;
+  if (!streamNet) { clearTimeout(netTimer); netTimer = 0; netLong = false; }
+  else if (!netTimer && !netLong) netTimer = setTimeout(() => { netTimer = 0; netLong = true; if (stateNet) { if (selfDown) paintConn(); } else refreshState(); }, UNREACH_MS);
+  if (was !== unreachable() && selfDown) paintConn();
+}
 function paintConn() {
-  const c = $("#conn"), other = typeof prFailover === "function" ? prFailover() : null;
-  const full = other ? koPick(TX("chat.conn.switching", { name: other.name })) : TX("shell.conn.lost");
+  const c = $("#conn"), other = typeof prFailover === "function" ? prFailover() : null, far = unreachable();
+  const full = far ? TX("shell.conn.unreachable") : other ? koPick(TX("chat.conn.switching", { name: other.name })) : TX("shell.conn.lost");
   c.hidden = !selfDown;
-  // A phone's bar has no room for the sentence: the dot and the word 끊김 stay, the sentence is the label.
-  c.textContent = matchMedia("(max-width: 639px)").matches ? TX("chat.conn.short") : full;
+  // A phone's bar has no room for the sentence: the dot and one short word stay, the sentence is the label.
+  c.textContent = matchMedia("(max-width: 639px)").matches ? TX(far ? "shell.conn.unreachable_short" : "chat.conn.short") : full;
   c.title = full; c.setAttribute("aria-label", full);
   c.disabled = !other;
   c.onclick = other ? () => prPick(other) : null;
+}
+// Only the state request decides the connection: an error while drawing a state that did arrive is a page bug, not a drop. It used to share the catch, so
+// a render error on one device showed the lost-connection line on every refresh while the stream and the requests were fine. Such an error goes to the
+// console and, once per message, to the gateway's diagnostic file (hub/input-diag.ts, kind "state-err").
+const stateErrSent = new Set();
+function stateRenderErr(e) {
+  console.error("state render", e);
+  const msg = String((e && e.message) || e).slice(0, 200);
+  if (stateErrSent.has(msg)) return;
+  stateErrSent.add(msg);
+  const stack = String((e && e.stack) || "").split("\n").slice(0, 8);
+  const entry = { at: new Date().toISOString(), kind: "state-err", vis: document.visibilityState, active: msg, field: { tag: "state", sel: current || "" }, stack };
+  fetch("/api/input-diag", { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: JSON.stringify({ app: typeof WEB_BUILD === "string" ? WEB_BUILD : "", entries: [entry] }) })
+    .catch(err => console.warn("state-err report", err));
 }
 async function refreshState() {
   try {
     const slow = setTimeout(() => setConn(false), STATE_WAIT_MS - 2000);
     try { S = await api("/api/state?limit=0"); } finally { clearTimeout(slow); }
+  } catch (e) { reachNote("state", e instanceof TypeError); setConn(false); return; }
+  reachNote("state", false);
+  try {
     S.work_skew = (S.work_now || Date.now()) - Date.now();
     setConn(true);
     webBuildCheck(S.web_build);
@@ -77,7 +110,7 @@ async function refreshState() {
     if (current === "settings") renderSettings();
     loadContext(true);
     snapHomeSoon();
-  } catch { setConn(false); }
+  } catch (e) { stateRenderErr(e); }
 }
 let stateTimer;
 const scheduleState = () => { clearTimeout(stateTimer); stateTimer = setTimeout(refreshState, 800); };

@@ -1,14 +1,19 @@
 import { afterAll, expect, test } from "bun:test";
-import { advanceTimers, ev, fakeHub, run, waitFor } from "./test-web.ts";
+import { advanceTimers, ev, fakeHub, inbox, run, waitFor } from "./test-web.ts";
 
 // This computer's gateway is off: nothing under /api answers and the owner's custom.js hangs too. The page still finishes loading; when the
 // state has not come within a few seconds of opening, it goes to the other computer from the last known list by itself. A page that came by such
 // a switch, or one that had reached its gateway before the drop, only shows the header line (a button to the other computer).
 let off = false;
 let reached: () => void = () => {};
+const diags = inbox<Record<string, unknown>>();
 const hub = fakeHub({
 	slowTimers: true,
-	api: (_req, url) => {
+	api: async (req, url) => {
+		if (url.pathname === "/api/input-diag") {
+			diags.push(...((await req.json()) as { entries: Record<string, unknown>[] }).entries);
+			return Response.json({ ok: true }, { status: 201 });
+		}
 		if (!off || !(url.pathname.startsWith("/api/") || url.pathname === "/custom.js")) return undefined;
 		reached();
 		return new Promise<Response>(() => {});
@@ -43,6 +48,40 @@ test("opened while this gateway does not answer, the page loads and goes to the 
 	expect(await ev<number>(v, `document.querySelectorAll(".snack, .toast").length`)).toBe(0);
 	v.close();
 	off = false;
+}, 30_000);
+
+test("an error while drawing a state that did arrive is not a lost connection: no header line, and the error is reported once", async () => {
+	const v = new Bun.WebView({ width: 390, height: 844 });
+	await v.navigate(`${hub.origin}/`);
+	await waitFor(v, `document.readyState === "complete" && typeof refreshState === "function" && !!S`);
+	await run(v, `window.ntSync = () => { throw new Error("draw boom"); }`);
+	await run(v, "window.__rs = 0; Promise.all([refreshState(), refreshState()]).then(() => { window.__rs = 1; })");
+	await waitFor(v, "window.__rs === 1");
+	await advanceTimers(v, 4000);
+	expect(await ev<boolean>(v, `$("#conn").hidden`)).toBe(true);
+	const got = (await diags.until(d => d.some(x => x.kind === "state-err"), 10_000, "a state-err report")).filter(d => d.kind === "state-err");
+	expect(got.length).toBe(1);
+	expect(got[0]!.active).toBe("draw boom");
+	v.close();
+}, 30_000);
+
+// The device cannot reach the computer at all (no answer of any kind: the network is gone, or the device is off the tailnet). A gateway restart is
+// over well within UNREACH_MS and keeps the plain line; past it the line says this device cannot reach the computer and points at its network.
+test("a long stretch with no answer at all says this device cannot reach the computer; a short one keeps the plain line", async () => {
+	const gone = fakeHub({ slowTimers: true });
+	const v = new Bun.WebView({ width: 390, height: 844 });
+	await v.navigate(`${gone.origin}/`);
+	await waitFor(v, `document.readyState === "complete" && !!S && $("#conn").hidden`);
+	await run(v, `window.__f = 0; const real = window.setConn; window.setConn = ok => { if (!ok) window.__f++; return real(ok); };`);
+	gone.stop();   // the socket closes and nothing listens any more: every request fails with no status
+	await waitFor(v, "window.__f > 0");
+	await advanceTimers(v, 10_000);
+	expect(await ev<string[]>(v, `[$("#conn").hidden, $("#conn").textContent, $("#conn").title]`)).toEqual([false, "끊김", "연결 끊김 · 다시 연결 중"]);
+	await advanceTimers(v, 25_000);
+	await waitFor(v, `$("#conn").textContent === "네트워크 확인"`);
+	expect(await ev<string>(v, `$("#conn").title`)).toBe("이 기기에서 이 컴퓨터에 연결할 수 없어요 · 기기의 네트워크나 Tailscale 연결을 확인해 주세요");
+	expect(await ev<number[]>(v, `[$("#conn").getBoundingClientRect().height, $("#title").scrollWidth - $("#title").clientWidth]`)).toEqual([20, 0]);
+	v.close();
 }, 30_000);
 
 test("a page that came by such a switch does not switch back; its header line is the button to try again", async () => {

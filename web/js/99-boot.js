@@ -43,7 +43,7 @@
   es = new EventSource(`/api/events?live=${LIVE_TOK}${lastId ? `&last=${lastId}` : ""}`);
   // The browser resends the last frame id on reconnect and the gateway replays only what was missed. "reset" comes on
   // the first connect and when the gap cannot be replayed (gateway restarted, or too long away): only then refetch.
-  es.onopen = () => { fast = true; tries = 0; setConn(true); outboxGo(); };
+  es.onopen = () => { fast = true; tries = 0; reachNote("stream", false); setConn(true); outboxGo(); };
   es.addEventListener("reset", m => {
     lastId = m.lastEventId;
     raLoad();   // the one reply queue (10-reply-actions.js): what waits may have changed while the stream was away
@@ -56,6 +56,7 @@
   es.onerror = () => {
     if (fast) { fast = false; openStream(); }
     else if (es.readyState === 2 && !retryT) retryT = setTimeout(openStream, Math.max(Math.min(250 * 2 ** tries++, 5000), document.hidden ? 15000 : 0));
+    reachNote("stream", es.readyState === 0);   // CONNECTING: no answer at all, the browser retries; CLOSED: an answer with an error status (17-state-refresh.js)
     setConn(false);
   };
   es.onmessage = m => {
