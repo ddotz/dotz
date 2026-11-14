@@ -11,6 +11,8 @@
   "reply.check": "확인하러 가기",
   "reply.retry": "다시 보내기",
   "reply.send_as_is": "이대로 보내기",
+  "reply.only_reply": "답글만 보내기",
+  "reply.only_mail": "메일만 보내기",
   "reply.edit_label": "보낼 글",
   "reply.act_fail": "하지 못했어요. 잠시 뒤에 다시 눌러 주세요",
   "reply.act_net": "연결이 끊겨서 못 보냈어요. 다시 눌러 주세요",

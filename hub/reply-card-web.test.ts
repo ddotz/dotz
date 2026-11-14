@@ -104,6 +104,28 @@ test("a revise's next swaps the card in place; a refused direct edit keeps the t
 	expect(posts.at(-1)).toEqual({ ref: "RCCCCCC", action: "edit", text: "무조건 목요일!", send: true });
 });
 
+test("a comment reply with its mail shows the mail in the same card, and 보내기 / 답글만 / 메일만 each post one send", async () => {
+	const mail = { ref: "RMAIL01", to: "fan@example.com", subject: "자료 보내드려요", text: "첨부한 파일 확인해 주세요.", attachments: [{ name: "자료.pdf", size: "2KB" }] };
+	const cm = item("DCMAIL1", { item: "comment:c1", kind: "comment", app: "youtube", label: "유튜브 댓글", conv: "comment:youtube", can: { send: true, revise: true, edit: true, drop: true, restore: false, sends: ["send", "send-main", "send-mail"] }, draft: { state: "pending", toLabel: "대상", to: "팬 댓글", text: "메일로 보내드렸어요!", mail }, original: { who: "팬", text: "자료 받을 수 있을까요?" } });
+	await mount(`RA.items.set("DCMAIL1", ${JSON.stringify(cm)}); box.append(rqItemCard(RA.items.get("DCMAIL1"), { lead: true }))`);
+	const q = (s: string) => ev<string>(`document.querySelector("#ra-test [data-ref=DCMAIL1] ${s}").textContent`);
+	expect(await q(".dr-mailpart")).toContain("fan@example.com");
+	expect(await q(".dr-mailpart")).toContain("자료 보내드려요");
+	expect(await q(".dr-mailpart .dr-fn")).toBe("자료.pdf");
+	expect(await q(".dr-mailpart .dr-fm")).toContain("2KB");
+	expect(await q(".dr-mailpart .dc-dr-b")).toContain("첨부한 파일 확인해 주세요.");
+	expect(await ev(`[...document.querySelectorAll("#ra-test [data-ref=DCMAIL1] .rq-acts [data-k]")].map(b => b.dataset.k)`)).toEqual(["send", "send-main", "send-mail", "edit", "drop", "manual"]);
+	answer = () => json({ ok: true });
+	for (const k of ["send-main", "send-mail", "send"]) {
+		const p = nextPost();
+		await view.evaluate(`document.querySelector("#ra-test [data-ref=DCMAIL1] [data-k=${k}]").click(), 0`);
+		await p;
+		release();
+		await waitFor(`!RA.busy.has("DCMAIL1")`);
+	}
+	expect(posts.filter(p => p.ref === "DCMAIL1")).toEqual([{ ref: "DCMAIL1", action: "send", part: "reply" }, { ref: "DCMAIL1", action: "send", part: "mail" }, { ref: "DCMAIL1", action: "send" }]);
+});
+
 test("a mail card quotes its original with 원문 보기 and lists the files staged on the draft", async () => {
 	await mount(`RA.items.set("RFILES1", { ...RA.items.get("RBBBBBB"), ref: "RFILES1", item: "mail:RFILES1", conv: "mail:RFILES1", original: { who: "김팀장 <kim@example.com>", text: "견적서 보내주세요" } }); box.append(rqItemCard(RA.items.get("RFILES1")))`);
 	await waitFor(`!!document.querySelector("#ra-test [data-ref=RFILES1] .dr-files .dr-fn")`);

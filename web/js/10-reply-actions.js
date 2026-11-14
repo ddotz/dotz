@@ -149,7 +149,7 @@ function rqItemCard(item, opts = {}) {
   if (RA.edit.has(ref)) foot = rqEditNode(item);
   else if (RA.rev.has(ref)) {
     // A comment reply that carries a mail: 고치기 says which part it changes (opts.part).
-    const pick = opts.part ? selectButton({ label: TX("mon.cm.part"), items: [{ value: "reply", label: TX("mon.cm.reply") }, { value: "mail", label: TX("common.mail") }], value: "reply" }) : null;
+    const pick = opts.part || d.mail ? selectButton({ label: TX("mon.cm.part"), items: [{ value: "reply", label: TX("mon.cm.reply") }, { value: "mail", label: TX("common.mail") }], value: "reply" }) : null;
     foot = rqReviseNode({ pick, value: RA.rev.get(ref), busy, onInput: v => RA.rev.set(ref, v), go: change => raAct(item, "revise", { change, ...(pick ? { part: pick.value } : {}) }), cancel: () => { RA.rev.delete(ref); raPaint(ref); } });
   }
   else if (d.revising) foot = el("div", { class: "kk-st", role: "status", text: TX("reply.revising") });
@@ -166,10 +166,13 @@ function rqItemCard(item, opts = {}) {
     label: d.replaces ? TX("reply.revised") : "", to: [d.toLabel, d.to], subject: d.subject,
     body: { text: d.text, parts: d.parts, sentParts: d.sentParts },
     attach: mail ? draftFilesNode({ ref, toLabel: d.toLabel, attachments: d.attachments }, { t: item.conv, edit: false }) : d.attachments ? { attachments: d.attachments } : { cannotAttach: [] },
-    extra: (d.notes || []).map(n => el("div", { class: "dr-wn", text: n })),
+    // The mail that goes out with a comment reply, in the same card (10-decision-card.js draftMailNode): recipient, subject, files and body.
+    extra: [...(d.notes || []).map(n => el("div", { class: "dr-wn", text: n })), d.mail ? draftMailNode({ ref: d.mail.ref, to: d.mail.to, subject: d.mail.subject, body: d.mail.text, attachments: d.mail.attachments || [] }, { t: item.conv }) : null],
     fail: fail && !RA.edit.has(ref) ? fail : null,
     foot,
-    acts: { quiet: !opts.lead, busy, press: RA.busy.get(ref), send: item.can.send ? () => raAct(item, "send").then(ok => ok && opts.after && opts.after("send")) : null, edit: item.can.revise ? () => { RA.rev.set(ref, ""); raPaint(ref); } : null, drop: item.can.drop ? () => raAct(item, "drop").then(ok => ok && opts.after && opts.after("drop")) : null, manual: item.can.edit ? () => { RA.edit.set(ref, d.text); raPaint(ref); } : null },
+    acts: { quiet: !opts.lead, busy, press: RA.busy.get(ref), send: item.can.send ? () => raAct(item, "send").then(ok => ok && opts.after && opts.after("send")) : null, edit: item.can.revise ? () => { RA.rev.set(ref, ""); raPaint(ref); } : null, drop: item.can.drop ? () => raAct(item, "drop").then(ok => ok && opts.after && opts.after("drop")) : null, manual: item.can.edit ? () => { RA.edit.set(ref, d.text); raPaint(ref); } : null,
+      // A reply with its mail: 보내기 sends both, and the card also offers each part alone (hub/reply-actions.ts sendAction).
+      only: (item.can.sends || []).filter(s => s !== "send").map(s => { const part = s === "send-main" ? "reply" : "mail"; return { k: s, text: part === "reply" ? TX("reply.only_reply") : TX("reply.only_mail"), fn: () => raAct(item, "send", { part }).then(ok => ok && opts.after && opts.after("send")) }; }) },
   });
   RA.nodes.set(ref, { node, opts });
   return node;

@@ -46,7 +46,8 @@ export type ReplyItem = {
 	conv: string;
 	notice?: string;
 	at: number;
-	can: { send: boolean; revise: boolean; edit: boolean; drop: boolean; restore: boolean };
+	/** sends: the ways 보내기 can go when a mail rides along (POST /api/reply/act send with part "reply" / "mail"); absent: one 보내기. */
+	can: { send: boolean; revise: boolean; edit: boolean; drop: boolean; restore: boolean; sends?: ("send" | "send-main" | "send-mail")[] };
 	draft: {
 		state: "pending" | "dropped" | "stale" | "sent" | "closed";
 		toLabel: string;
@@ -56,7 +57,7 @@ export type ReplyItem = {
 		text: string;
 		parts?: string[];
 		sentParts?: number;
-		mail?: { ref: string; to: string; subject?: string; text: string };
+		mail?: { ref: string; to: string; subject?: string; text: string; attachments?: { name: string; size?: string }[] };
 		attachments?: { name: string; size?: string }[];
 		notes?: string[];
 		decide?: string[];
