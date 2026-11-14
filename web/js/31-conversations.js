@@ -332,6 +332,7 @@ setInterval(viewReport, 2000);
 // has something unread or asked; the ended ones fold into one group after that, and the mails and rooms that wait on the owner close the list. 모니터링 has its
 // own tab (30-monitoring.js) and uses this same row.
 function convRows() {
+  if (relayCur()) return rvConvRows(relayCur());   // another computer is the chosen one: its list, from what it sent (44-relay-views.js)
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
   const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need: convNeeds(t) }; };

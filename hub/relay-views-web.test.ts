@@ -12,7 +12,7 @@ const OWN_MON = "내 모니터";
 const snapshot = () => ({
 	at: Date.now() - 120_000,
 	projects: [{ key: "dir:~/Code/site", name: "회사 사이트", note: "홈페이지를 고쳐요", live: 2 }],
-	sessions: [{ name: "빌드 세션", status: "일하는 중", live: true }],
+	sessions: [{ name: "build-1", title: "빌드 세션", status: "일하는 중", live: true, at: new Date(Date.now() - 300_000).toISOString() }, { name: "old-1", title: "끝난 세션", status: "끝남", live: false }],
 	monitors: [{ name: "배포 확인", kind: "web", result: "ok", last: "10분 전", next: "20분 후", summary: "문제 없어요" }],
 	todos: { open: 3, items: ["문서 정리", "테스트 추가"] },
 	notices: [{ at: "09:10", tone: "ok", title: "배포가 끝났어요" }],
@@ -140,5 +140,56 @@ describe("a relayed computer chosen, read-only screens", () => {
 		const text = await ev<string>(`document.querySelector("#v-projects > .rv").textContent`);
 		expect(text).toContain("회사 사이트");
 		expect(text).not.toContain(OWN);
+	});
+});
+
+// The chat list (the side list at 1280px, the 채팅 list at 390px) while that computer is chosen: its conversations from its snapshot, never this computer's.
+describe("a relayed computer chosen, the chat list", () => {
+	const listText = () => ev<string>(`document.querySelector("#chat-convo").textContent`);
+	const ownRows = () => ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-row")].map(r => r.dataset.t).filter(t => t && !t.startsWith("relay:"))`);
+	const atWidth = async (width: number, height: number, fn: () => Promise<void>) => {
+		await view.resize(width, height);
+		try { await fn(); } finally { await view.resize(390, 844); }
+	};
+
+	test("at 1280px the side list beside its chat is that computer's: its chat, its live sessions and its projects", async () => {
+		await atWidth(1280, 800, async () => {
+			await relayOpen();
+			await waitFor(`RV.by[target]?.loaded && document.querySelector("#chat-convo").textContent.includes("빌드 세션")`);
+			const text = await listText();
+			for (const s of ["work", "빌드 세션", "회사 사이트"]) expect(text).toContain(s);
+			expect(text).not.toContain("끝난 세션");
+			expect(await ownRows()).toEqual([]);
+			expect(await ev(`document.querySelector('#chat-convo .cv-row[data-t="relay:jandi:work"]').classList.contains("on")`)).toBe(true);
+		});
+	});
+
+	test("at 390px the 채팅 list keeps the chosen computer and lists its conversations; a tap on its chat goes back into it", async () => {
+		await relayOpen();
+		await run(`go("chat", "list")`);
+		await waitFor(`chatList && RV.by["relay:jandi:work"]?.loaded && document.querySelector("#chat-convo").textContent.includes("빌드 세션")`);
+		expect(await ev(`RELAY.cur`)).toBe("relay:jandi:work");
+		expect(await ownRows()).toEqual([]);
+		expect(await listText()).toContain("회사 사이트");
+		await run(`document.querySelector('#chat-convo .cv-row[data-t="relay:jandi:work"]').click()`);
+		await waitFor(`!chatList && current === "chat" && target === "relay:jandi:work"`);
+	});
+
+	test("before its snapshot arrives the list says so in plain words, and still shows none of this computer's conversations", async () => {
+		snap = null;
+		await relayOpen();
+		await run(`go("chat", "list")`);
+		await waitFor(`chatList && RV.by["relay:jandi:work"]?.loaded && document.querySelector("#chat-convo .cv-empty")`);
+		expect(await listText()).toContain("work 대화는 아직 받지 못했어요");
+		expect(await ownRows()).toEqual([]);
+	});
+
+	test("picking this computer again brings its own chat list back", async () => {
+		await relayOpen();
+		await pickRow("맥미니");
+		await waitFor(`target === "main" && !RELAY.cur`);
+		await run(`go("chat", "list")`);
+		await waitFor(`chatList && document.querySelector('#chat-convo .cv-row[data-t="main"]')`);
+		expect(await ev(`!!document.querySelector('#chat-convo .cv-row[data-t^="relay:"]')`)).toBe(false);
 	});
 });
