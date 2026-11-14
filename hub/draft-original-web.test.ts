@@ -229,19 +229,26 @@ describe("원문 보기 in the send sheet", () => {
 		expect((await box(v, ".rq-og-wrap .od-pane"))!.w).toBeGreaterThan(300);
 	});
 
-	test("the draft's buttons are one row: 보내기, 고치기, 보내지 않기", async () => {
+	test("the draft's buttons are one row: 보내기, 고치기, 보내지 않기, and 직접 수정 at the far right; 직접 수정 opens the clean body", async () => {
 		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 			const v = await open(w, h);
 			await theme(v, "light");
 			await openSheet(v, drafts.plain!, "", ".rq-og");
 			const acts = await v.evaluate(`[...document.querySelectorAll(".fs-ft .rq-acts .btn")].map(b => b.textContent)`);
-			expect(acts).toEqual(["보내기", "고치기", "보내지 않기"]);
-			const row = (await box(v, ".fs-ft .rq-acts"))!, main = (await box(v, ".fs-ft .rq-acts .btn:nth-child(1)"))!, third = (await box(v, ".fs-ft .rq-acts .btn:nth-child(3)"))!;
+			expect(acts).toEqual(["보내기", "고치기", "보내지 않기", "직접 수정"]);
+			const row = (await box(v, ".fs-ft .rq-acts"))!, main = (await box(v, ".fs-ft .rq-acts .btn:nth-child(1)"))!, third = (await box(v, ".fs-ft .rq-acts .btn:nth-child(3)"))!, man = (await box(v, ".fs-ft .rq-manual"))!;
 			expect(main.l).toBe(row.l);
 			expect((await box(v, ".fs-ft .rq-acts .btn:nth-child(2)"))!.l).toBeGreaterThan(main.r);
 			expect(main.t).toBe(third.t);
+			expect(man.l).toBeGreaterThan(third.r);
+			expect(man.r).toBeGreaterThan(row.r - 24);
+			expect(man.t).toBeGreaterThanOrEqual(row.t);
+			expect(man.b).toBeLessThanOrEqual(row.b);
 			expect(row.r).toBeLessThanOrEqual(w);
 			await Bun.write(`${SNAP}/buttons-${w}-light.png`, await v.screenshot());
+			await click(v, ".fs-ft .rq-manual");
+			await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
+			expect(await v.evaluate(`document.querySelector(".fs-ft .dc-note").value`)).toContain("말씀하신 일정 확인했습니다");
 			v.close();
 		}
 	});
