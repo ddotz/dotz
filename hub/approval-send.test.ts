@@ -3,8 +3,6 @@ import { createApprovalSender, refOfQuestion, sendActionOf, sendArgv, type SendR
 import { reasonOf } from "./reply-reasons.ts";
 
 const said = (o: object) => `DOTZ_SEND ${JSON.stringify(o)}`;
-import { answerBatch, batchCard, type BatchCard, type BatchPick } from "./approval-batch.ts";
-import { draftApprovalBlock } from "./draft-approval.ts";
 
 // A run whose sends finish only when the test says so, so the order and the overlap are what is asserted, not timing.
 function gatedRun() {
@@ -110,46 +108,5 @@ describe("approval sender", () => {
 		expect(sendActionOf("고치기")).toBeUndefined();
 		expect(sendActionOf("어떻게 보낼지 직접 입력")).toBeUndefined();
 		expect(refOfQuestion("이대로 보낼까? (D2jwqz9)")).toBe("D2jwqz9");
-	});
-});
-
-const cardText = (ref: string) => `[ask] 댓글 답글\n${draftApprovalBlock({ to: `${ref} 댓글`, toLabel: "대상", body: `${ref} 답글`, ref, question: "이 답글 올릴까요?" })}`;
-
-describe("batch answer", () => {
-	function world(sendable: string[]) {
-		const cards: BatchCard[] = [{ ...batchCard("D1", cardText("D1")), notice: "n1" }, batchCard("D2", cardText("D2")), batchCard("D3", cardText("D3")), batchCard("D4", cardText("D4"))];
-		const log: string[] = [];
-		const recorded: { text: string; picks: BatchPick[]; deliver: boolean; notice?: string }[] = [];
-		const deps = {
-			cards: () => cards,
-			take: (_c: string, refs: string[]) => void log.push(`take ${refs.join(",")}`),
-			record: async (_c: string, text: string, picks: BatchPick[], deliver: boolean, notice?: string) => void recorded.push({ text, picks, deliver, ...(notice ? { notice } : {}) }),
-			settle: (id: string, label: string) => void log.push(`settle ${id} ${label}`),
-			canSend: (ref: string) => sendable.includes(ref),
-			enqueue: (j: { ref: string }) => void log.push(`send ${j.ref}`),
-		};
-		return { deps, log, recorded };
-	}
-
-	test("picked cards are answered, skipped ones stay; the gateway's sends are recorded quietly, the rest go to the bot in one message", async () => {
-		const w = world(["D1", "D2"]);
-		const r = await answerBatch("ch:1", [{ ref: "D1", n: 1 }, { ref: "D2", n: 1 }, { ref: "D3", n: 2, note: "더 짧게" }], w.deps);
-		expect(r.body).toEqual({ ok: true, sending: 2, toBot: 1 });
-		// D4 was not picked: it is not taken, not recorded, not sent.
-		expect(w.log).toEqual(["take D2,D3", "settle n1 1) 보내기", "send D1", "send D2"]);
-		expect(w.recorded.map(x => [x.deliver, x.notice ?? "", x.picks.map(p => `${p.q}=${p.label}`)])).toEqual([
-			[false, "", ["이 답글 올릴까요? (D1)=보내기", "이 답글 올릴까요? (D2)=보내기"]],
-			[true, "", ["이 답글 올릴까요? (D3)=고치기"]],
-		]);
-		expect(w.recorded[1]!.text).toContain("2) 고치기 - 더 짧게");
-	});
-
-	test("nothing is answered when a pick is incomplete or names a card that is gone", async () => {
-		const w = world(["D1"]);
-		expect((await answerBatch("ch:1", [{ ref: "D2", n: 2 }], w.deps)).status).toBe(400);
-		expect((await answerBatch("ch:1", [{ ref: "D9", n: 1 }], w.deps)).status).toBe(409);
-		expect((await answerBatch("ch:1", [], w.deps)).status).toBe(400);
-		expect(w.log).toEqual([]);
-		expect(w.recorded).toEqual([]);
 	});
 });

@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectOutcomes } from "../reply-outcomes.ts";
 import type { CommentAdapter, RawComment, SourceConfig, SourceKind } from "./contract.ts";
 import { createEngine } from "./engine.ts";
 import type { Reply } from "./store.ts";
@@ -126,10 +125,3 @@ test("the record cannot be wiped: 지우기 would open the gate for a second pos
 	expect(w.reply().state).toBe("unsure");
 });
 
-test("the 답장 대기 list shows it as a row of its own, marked unsure", () => {
-	const w = world("youtube", {}, { state: "unsure" });
-	const src = w.engine.store.config().sources.s!;
-	const { failed, sent } = collectOutcomes({ notices: [], sendKind: () => undefined, appOf: () => undefined, comments: { sources: { s: { src, app: "youtube" } }, drafts: w.engine.store.drafts(), replies: w.engine.store.replies(), comments: [] }, kakao: { sends: [], drafts: {} }, since: 0, now: NOW });
-	expect(sent).toEqual([]);
-	expect(failed).toMatchObject([{ kind: "comment", ref: "D1", sendId: ID, unsure: true }]);
-});

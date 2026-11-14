@@ -1,6 +1,4 @@
-// HTTP routes of the apps and integrations (list, switches, features, settings) and the reply drafts the apps keep. Split out of routes.ts, called there at the same place of the chain.
-import { draftAppOf, sendTargetOf } from "./approval-wire.ts";
-import { collectOutcomes, localMidnight } from "./reply-outcomes.ts";
+// HTTP routes of the apps and integrations (list, switches, features, settings). Split out of routes.ts, called there at the same place of the chain.
 import { cfg, DATA_DIR } from "./config.ts";
 import { convs } from "./convsessions.ts";
 import { unreadOf } from "./conversations.ts";
@@ -10,15 +8,14 @@ import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, approveWatch, removeWatch, runWatch } from "./watch.ts";
 import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
 import { fieldsOf, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
-import { refreshReplyModelChoices, replyModelLabel } from "./reply-model-choices.ts";
-import { replyModel } from "./reply-model.ts";
+import { refreshReplyModelChoices } from "./reply-model-choices.ts";
 import { mailSuggests, mailTarget, mailTargets, type unrepliedMails } from "./mail.ts";
 import { withBoxes } from "./routes-mailbox.ts";
 import { allNotices } from "./notices.ts";
 import { json, body } from "./routes-util.ts";
-import { commentFlags, commentNeeds, commentOutcomeFacts, commentPending } from "./comments/gateway.ts";
+import { commentFlags, commentNeeds } from "./comments/gateway.ts";
 import { appHealth, loadUserApps, PROXY_ROOT, removeUserApp, setUserAppOff, userApp } from "./user-apps.ts";
-import { kakaoDraftSends, kakaoPendingCount, kakaoPendingDrafts, kakaoUnreplied } from "./kakao/gateway.ts";
+import { kakaoPendingCount, kakaoUnreplied } from "./kakao/gateway.ts";
 
 export async function routeApps(req: Request, url: URL, unrepliedMailList: () => ReturnType<typeof unrepliedMails>): Promise<Response | undefined> {
 	// A draft a send-approval notice already shows (its `> 참조:` ref) is that notice's card; the store's own list leaves it out, so nothing counts twice.
@@ -33,25 +30,6 @@ export async function routeApps(req: Request, url: URL, unrepliedMailList: () =>
 		return { items, available: integrationAvailable(items, ctx) };
 	};
 	if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
-	// 답장 확인 (web/js/30-replies.js): the reply drafts the apps keep in their own stores (KakaoTalk rooms, comment sources), newest first. A mail
-	// draft is a send-approval notice and is read from the notices; a store draft such a notice already shows is left out.
-	if (req.method === "GET" && url.pathname === "/api/replies") {
-		const skip = noticeDraftRefs();
-		const kakao = (await kakaoPendingDrafts(skip).catch(() => [])).map(d => ({ kind: "kakao", app: "kakao", conv: `kakao:${d.chatId}`, at: Date.parse(d.created) || 0, ...d }));
-		const comments = commentPending().filter(d => !skip.has(d.code)).map(d => ({ ...d, kind: "comment", via: d.kind, at: d.created }));
-		// The model a draft of that app uses (the app instance's 답장 모델, else the reply default) goes on the card's head when known.
-		const models = new Map<string, string>();
-		const withModel = async <T extends { app: string; conv?: string }>(item: T) => {
-			const key = `${item.app}|${item.conv ?? ""}`;
-			if (!models.has(key)) models.set(key, await replyModel(item.app, item.conv).then(replyModelLabel).catch(() => ""));
-			return models.get(key) ? { ...item, model: models.get(key) } : item;
-		};
-		const items = await Promise.all([...kakao, ...comments].map(withModel));
-		// 실패 / 보낸 것 / 멈춘 이유 (hub/reply-outcomes.ts): the stores' own records, read once here; `items` stays as it was.
-		const at = Date.now();
-		const outcomes = collectOutcomes({ notices: allNotices(), sendKind: ref => sendTargetOf(ref)?.kind, appOf: draftAppOf, comments: commentOutcomeFacts(), kakao: kakaoDraftSends(), since: localMidnight(at), now: at });
-		return json({ items: items.sort((a, b) => b.at - a.at), ...outcomes });
-	}
 	// The 앱 list (hub/user-apps.ts): the 모니터링 apps this install has on, then the owner's own manifests (with their health).
 	if (req.method === "GET" && url.pathname === "/api/apps") {
 		const view = integrationView();

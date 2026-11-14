@@ -3,7 +3,9 @@ import { dirname } from "node:path";
 import { draftVerdict, draftApprovalBlock } from "./draft-approval.ts";
 import { listNotices } from "./notices.ts";
 import { out } from "./outbound.ts";
-import { approvalRoute, sender, webAnswer } from "./approval-wire.ts";
+import { sender, webAnswer } from "./approval-wire.ts";
+import { replyRoute } from "./reply-route.ts";
+import { replies } from "./reply-wire.ts";
 import { cfg, paths } from "./config.ts";
 import { addDraft, getDraft, newId } from "../features/reply-drafts/lib/store.ts";
 
@@ -17,7 +19,7 @@ addDraft({ id, kind: "mail", app: "mail", source: "nowhere", mailId: `m-${id}`, 
 const card = `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: "답", ref, question: "이대로 보낼까요?" })}`;
 const openCard = () => listNotices(500).items.find((n: any) => n.decision?.state === "open" && n.decision.draft?.ref === ref) as any;
 const verdict = () => draftVerdict(paths.inbox, ref, 0, { conv: CONV }).verdict;
-const undo = () => approvalRoute(new Request("http://local/api/approvals/undo", { method: "POST", body: JSON.stringify({ ref }) }), new URL("http://local/api/approvals/undo"), { login: "owner@example.com", triageMin: 3, deliver: async () => undefined });
+const undo = () => replyRoute(new Request("http://local/api/reply/act", { method: "POST", body: JSON.stringify({ ref, action: "undo" }) }), new URL("http://local/api/reply/act"), { replies, login: "owner@example.com" });
 
 test("a cancel inside the window: nothing is sent, the pick is taken back, the card is open again and says so on the card", async () => {
 	await out(CONV, card);

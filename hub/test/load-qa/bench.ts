@@ -64,11 +64,10 @@ export async function bench(c: Ctx): Promise<number> {
 	const boot = await settle(small ? 20_000 : 60_000);
 	const bootTurns = turns(0);
 	const bootN = calls().length;
-	const notices0 = await get("/api/notices?limit=1000"), conv0 = await get("/api/conversations"), appr0 = await get("/api/approvals"), apps0 = await get("/api/apps");
-	const approvalCards = (appr0.groups as Json[]).reduce((s, g) => s + (g.cards as unknown[]).length, 0);
+	const notices0 = await get("/api/notices?limit=1000"), conv0 = await get("/api/conversations"), queue0 = await get("/api/reply/queue"), apps0 = await get("/api/apps");
 	res.backlog = {
 		seeded: c.seed.counts, read_back_by_real_readers: c.seed.read,
-		gateway_sees: { notices: (notices0.items as unknown[]).length, conversations: (conv0.items as Json[]).length, mail_conversations: (conv0.items as Json[]).filter(i => i.mail).length, approval_cards: approvalCards, apps: (apps0.items as unknown[]).length },
+		gateway_sees: { notices: (notices0.items as unknown[]).length, conversations: (conv0.items as Json[]).length, mail_conversations: (conv0.items as Json[]).filter(i => i.mail).length, reply_items: (queue0.items as unknown[]).length, apps: (apps0.items as unknown[]).length },
 		seed_store: c.seed.store,
 	};
 	res.boot = { seed_ms: c.seedMs, to_first_api_answer_ms: c.bootMs, settle: boot, rss_idle_mb: boot.rss_mb, model_turns_at_boot: bootTurns, gateway_files_copied: c.repoFiles };
@@ -84,8 +83,7 @@ export async function bench(c: Ctx): Promise<number> {
 	await run("notices limit=100", get_("/api/notices?limit=100"));
 	await run("notices limit=300 (what the web asks)", get_("/api/notices?limit=300"));
 	await run("notices limit=1000", get_("/api/notices?limit=1000"));
-	await run("drafts: approvals list (all pending cards)", get_("/api/approvals"));
-	await run("drafts: replies list (kakao + comments)", get_("/api/replies"));
+	await run("drafts: reply queue (every draft of every kind)", get_("/api/reply/queue"));
 	await run("mail list: conversations (every mail, no paging)", get_("/api/conversations"));
 	await run("one mail open: body", i => ({ path: `/api/mail/${encodeURIComponent(htmlKey)}/body?i=${i}` }));
 	await run("one mail open: history", () => ({ path: `/api/history?target=${encodeURIComponent(`mail:${htmlKey}`)}&limit=150` }));
@@ -110,14 +108,14 @@ export async function bench(c: Ctx): Promise<number> {
 	};
 	await quiet();
 	// The card is picked from a fresh list: the draft store keeps only the newest 200, so a card listed at boot can be gone after the API samples above.
-	const sendableOf = (a: Json): Json[] => (a.groups as Json[]).flatMap(g => g.cards as Json[]).filter(x => x.sendable);
-	const bootPick = sendableOf(appr0)[0];
-	const fresh = sendableOf(await get("/api/approvals"));
+	const sendableOf = (q: Json): Json[] => (q.items as Json[]).filter(x => x.can?.send && x.draft?.state === "pending" && !x.send);
+	const bootPick = sendableOf(queue0)[0];
+	const fresh = sendableOf(await get("/api/reply/queue"));
 	const card = fresh[0];
-	res.approval_pick = { boot_card: bootPick?.ref, boot_card_still_sendable_at_approval: bootPick ? fresh.some(x => x.ref === bootPick.ref) : null, sendable_cards_at_boot: sendableOf(appr0).length, sendable_cards_at_approval: fresh.length };
+	res.approval_pick = { boot_card: bootPick?.ref, boot_card_still_sendable_at_approval: bootPick ? fresh.some(x => x.ref === bootPick.ref) : null, sendable_cards_at_boot: sendableOf(queue0).length, sendable_cards_at_approval: fresh.length };
 	if (card) {
 		const before = snapshot(c.dataDir, 3);
-		const t = await timed(c.base, { method: "POST", path: "/api/approvals", body: { items: [{ ref: card.ref, to: card.to, n: 1 }] } }, h);
+		const t = await timed(c.base, { method: "POST", path: "/api/reply/act", body: { ref: card.ref, action: "send" } }, h);
 		// An approved send runs the fake zele; wait (bounded) for the recorded would_send line.
 		const shimFile = join(c.out, "shim-calls.jsonl");
 		for (let i = 0; i < 60 && !(existsSync(shimFile) && readFileSync(shimFile, "utf8").includes('"would_send":true')); i++) await Bun.sleep(500);

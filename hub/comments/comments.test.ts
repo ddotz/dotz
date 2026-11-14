@@ -285,7 +285,7 @@ describe("the send gate", () => {
 });
 
 describe("web routes", () => {
-	test("threads, status counts, draft on request, send once with 202, read clears unread", async () => {
+	test("threads, status counts, draft on request, send once, read clears unread", async () => {
 		const t = setup([src()]);
 		t.state.pages = [[raw("c1"), raw("c2", { thread: "p2", postTitle: "Post two" })]];
 		await t.engine.collect({ force: true });
@@ -306,9 +306,8 @@ describe("web routes", () => {
 		expect(view.json.drafts).toHaveLength(1);
 		expect(t.engine.needs().youtube).toEqual({ drafts: 1, unread: 2, unreplied: 2 });
 		const code = view.json.drafts[0].code;
-		const sent = await call("POST", `/api/comments/drafts/${code}/send`, { text: "고친 글이에요" });
-		expect(sent.status).toBe(202);
-		expect((await call("POST", `/api/comments/drafts/${code}/send`, {})).status).toBe(409);
+		expect(t.engine.send(code, { by: "owner", text: "고친 글이에요" }).ok).toBe(true);
+		expect(t.engine.send(code, { by: "owner" }).ok).toBe(false);
 		await web.idle();
 		expect(t.state.posted).toEqual([{ id, text: "고친 글이에요" }]);
 		expect((await call("GET", "/api/comments/thread/youtube/p1")).json.sends[0]).toMatchObject({ state: "sent" });
@@ -496,11 +495,11 @@ describe("답장 확인: a failed reply, a dropped draft and the pending list", 
 		if (first.ok) await first.done;
 		const id = first.ok ? first.reply.id : "";
 		t.state.failReply = undefined;
-		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/retry`)).status).toBe(202);
+		expect(t.engine.retrySend(id).ok).toBe(true);
 		await t.engine.idle();
 		expect(t.state.posted).toHaveLength(1);
-		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/retry`)).status).toBe(409);
-		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/dismiss`)).status).toBe(409);
+		expect(t.engine.retrySend(id).ok).toBe(false);
+		expect(t.engine.dismissSend(id).ok).toBe(false);
 		expect(t.state.posted).toHaveLength(1);
 	});
 
@@ -510,7 +509,7 @@ describe("답장 확인: a failed reply, a dropped draft and the pending list", 
 		const f = u.engine.send(u.code, { by: "owner" });
 		if (f.ok) await f.done;
 		const fid = f.ok ? f.reply.id : "";
-		expect(await u.call("POST", `/api/comments/sends/${encodeURIComponent(fid)}/dismiss`)).toEqual({ status: 200, json: { ok: true } });
+		expect(u.engine.dismissSend(fid)).toEqual({ ok: true });
 		expect(u.engine.store.replies()).toEqual([]);
 		expect(u.engine.store.drafts().find(d => d.code === u.code)!.status).toBe("pending");
 		expect(u.events.some(e => e.kind === "comment_send" && e.state === "removed")).toBe(true);
@@ -518,11 +517,11 @@ describe("답장 확인: a failed reply, a dropped draft and the pending list", 
 
 	test("되돌리기 after 보내지 않기 makes the draft wait again, once", async () => {
 		const t = await drafted();
-		expect((await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).status).toBe(409);
-		expect((await t.call("POST", `/api/comments/drafts/${t.code}/drop`)).status).toBe(200);
+		expect(t.engine.restore(t.code).ok).toBe(false);
+		expect(t.engine.drop(t.code).ok).toBe(true);
 		expect((await t.call("GET", "/api/comments/drafts")).json.items).toEqual([]);
-		expect(await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).toEqual({ status: 200, json: { ok: true } });
+		expect(t.engine.restore(t.code)).toEqual({ ok: true });
 		expect((await t.call("GET", "/api/comments/drafts")).json.items.map((d: any) => d.code)).toEqual([t.code]);
-		expect((await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).status).toBe(409);
+		expect(t.engine.restore(t.code).ok).toBe(false);
 	});
 });

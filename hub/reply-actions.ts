@@ -294,8 +294,6 @@ export function createReplyActions(deps: ReplyDeps) {
 			noteOpen(items);
 			return items;
 		},
-		/** The old dismiss and delete routes: a failed or unsure send is forgotten and its draft waits again; nothing is sent. */
-		clear: (ref: string): boolean => deps.sender.forget(ref),
 		/** Resolves when every running revise has finished (tests, shutdown). */
 		idle: async () => {
 			while (running.size) await Promise.all([...running]);

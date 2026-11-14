@@ -1,7 +1,7 @@
 // End to end with fakes: a collected comment -> reply draft carrying a mail with a file (the real mail link of hub/comments/mail-link.ts,
 // so the mail is a reply-drafts compose draft with a staged file) -> the owner's pick 1) 보내기 -> `comments.ts send` -> the platform reply
-// (fake adapter) and then `zele mail send --attach` (fake runner). The web button path (POST /api/comments/drafts/<code>/send) is the
-// owner's own click. Nothing real is posted or sent.
+// (fake adapter) and then `zele mail send --attach` (fake runner). The owner's own 보내기 (engine.send by the owner) is the other path.
+// Nothing real is posted or sent.
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +17,6 @@ import { type CommentAdapter, commentId, type SourceConfig } from "./contract.ts
 import { createEngine } from "./engine.ts";
 import { realMailLink } from "./mail-link.ts";
 import { commentsDir } from "./store.ts";
-import { createCommentsWeb } from "./web.ts";
 import { appendSealed } from "../approval-seal.ts";
 
 const NOW = Date.parse("2026-10-26T00:00:00.000Z");
@@ -140,17 +139,12 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		expect(getDraft(mailId)!.status).toBe("sent");
 	});
 
-	test("the web 보내기 button tapped twice posts once and sends the mail once", async () => {
+	test("the owner's 보내기 tapped twice posts once and sends the mail once", async () => {
 		const w = world();
 		const { d } = await card(w);
-		const web = createCommentsWeb({ engine: w.engine, broadcast: () => {} });
-		const tap = () => {
-			const url = new URL(`http://x/api/comments/drafts/${d.code}/send`);
-			return web.route(new Request(url, { method: "POST", body: "{}" }), url, url.pathname.split("/").filter(Boolean));
-		};
-		const [a, b] = await Promise.all([tap(), tap()]);
-		expect([a!.status, b!.status].sort()).toEqual([202, 409]);
-		await web.idle();
+		const [a, b] = [w.engine.send(d.code, { by: "owner" }), w.engine.send(d.code, { by: "owner" })];
+		expect([a.ok, b.ok].sort()).toEqual([false, true]);
+		await w.engine.idle();
 		expect(w.posted).toHaveLength(1);
 		expect(w.mailSends()).toHaveLength(1);
 		expect(w.engine.store.replies()[0]).toMatchObject({ state: "sent", mail: { state: "sent" } });

@@ -124,8 +124,8 @@ export function refreshStoredDrafts(at = now()): number {
 }
 
 // A draft sent or dropped from 모니터링 closes its card in the conversation at once, not at the next 30 s sweep: the apps announce every change
-// of a draft or a send, so a burst of them runs one pass and at most one more after it.
-export const DRAFT_CHANGED = new Set(["comment_send", "comment_draft", "kakao_send", "kakao_draft", "mail_unreplied"]);
+// of a draft or a send (the one reply flow's `reply`), so a burst of them runs one pass and at most one more after it.
+export const DRAFT_CHANGED = new Set(["reply", "comment_send", "comment_draft", "kakao_send", "kakao_draft", "mail_unreplied"]);
 let settling = false, settleAgain = false;
 export function settleSoon(): void {
 	if (settling) return void (settleAgain = true);

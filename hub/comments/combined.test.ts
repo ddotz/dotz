@@ -343,16 +343,13 @@ describe("the draft API", () => {
 		expect(none.engine.store.drafts()).toHaveLength(0);
 	});
 
-	test("the web 보내기 posts the reply, then sends the mail, and the revise route takes a part", async () => {
+	test("보내기 posts the reply, then sends the mail, and a revise takes a part", async () => {
 		const t = setup();
 		await t.engine.collect({ force: true });
 		const made = await call(t, path(t), { text: "문서는 메일로 보내 드렸어요", extra: { mail: MAIL } });
 		const code = made.json.code as string;
-		expect((await call(t, `/api/comments/drafts/${code}/revise`, { change: "x", part: "both" })).status).toBe(400);
-		expect((await call(t, `/api/comments/drafts/${code}/revise`, { change: "제목을 바꿔", part: "mail" })).status).toBe(200);
-		const sent = await call(t, `/api/comments/drafts/${code}/send`, {});
-		expect(sent.status).toBe(202);
-		await sent.web.idle();
+		expect((await t.engine.revise(code, "제목을 바꿔", "mail")).ok).toBe(true);
+		expect(t.engine.send(code, { by: "owner" }).ok).toBe(true);
 		await t.engine.idle();
 		expect(t.log).toEqual(["compose M1", "revise M1 -> M2", "reply", "send M2"]);
 		// the mail it carries is part of this card: no 이어서 할 일 rule wakes for a reply that brought its mail

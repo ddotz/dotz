@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { listNotices } from "./notices.ts";
 import { out } from "./outbound.ts";
-import { approvalRoute, webAnswer } from "./approval-wire.ts";
+import { webAnswer } from "./approval-wire.ts";
 import { addDraft, newId } from "../features/reply-drafts/lib/store.ts";
 
 const CONV = "mail:aw-label";
@@ -23,13 +23,5 @@ test("a pick whose label is not the option's label is refused with 409 and recor
 	const gone = await webAnswer(card.id, { n: 9, label: "보내기" }, "owner@example.com", deliver);
 	expect(gone.status).toBe(409);
 	expect(bot).toEqual([]);
-	expect(openCard()?.id).toBe(card.id);
-
-	// the batch path checks each item's label the same way
-	const delivered: string[] = [];
-	const res = await approvalRoute(new Request("http://local/api/approvals", { method: "POST", body: JSON.stringify({ items: [{ ref: id, to: CONV, n: 1, label: "답글만 보내기" }] }) }), new URL("http://local/api/approvals"), { login: "owner@example.com", triageMin: 3, deliver: async (_to, text) => void delivered.push(text) });
-	expect(res!.status).toBe(409);
-	expect(((await res!.json()) as { error: string }).error).toBe(STALE);
-	expect(delivered).toEqual([]);
 	expect(openCard()?.id).toBe(card.id);
 });

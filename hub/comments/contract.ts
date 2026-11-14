@@ -97,7 +97,7 @@ export const ruleAllows = (src: SourceConfig, text: string): boolean => {
 };
 
 // Why an enabled auto-send rule does not send this draft (the reasons dispatchReply gives for by: "rule"), or undefined when the rule would send it.
-// One source of truth: the gate refuses with it, and the review queue (hub/reply-outcomes.ts) reads it for every pending draft.
+// One source of truth: the gate refuses with it.
 export function ruleRefusal(src: SourceConfig, commentText: string, draft: Pick<Draft, "clean">, replies: Reply[], at: number): string | undefined {
 	if (!ruleAllows(src, commentText)) return "자동 보내기 규칙에 맞지 않아요";
 	if (!draft.clean) return "확인할 점이 있는 초안은 자동으로 보내지 않아요";

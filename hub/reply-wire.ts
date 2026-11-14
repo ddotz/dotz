@@ -14,7 +14,6 @@ import { linkedComment } from "./comments/linked.ts";
 import { claimFile, getDraft, mailAdapter, replyLearning } from "./reply-mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
-import type { BatchPick } from "./approval-batch.ts";
 import { DRAFT_UNDO } from "./draft-approval.ts";
 import { askText } from "./draft-attach.ts";
 import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
@@ -52,7 +51,6 @@ function cardOwedMail(r: SendResult): void {
 export const reportSend = (r: SendResult): void => {
 	markDraftSend(r.conv, r.ref, r.state, r.text, r.until);
 	showSendOnCard(r.conv, r.ref, r.state, r.text, r.until ? r.until - now() : 0);
-	broadcast({ ts: now(), kind: "approval_send", source: "gateway", ...r, ...(r.until ? { left: Math.max(0, r.until - now()) } : {}) });
 	const send = sendOf(r);
 	broadcast({ ts: now(), kind: "reply", ref: r.ref, ...(send ? { send } : {}) });
 	if (kakaoReply.target(r.ref)) broadcast({ kind: "kakao_draft", chatId: "" });
@@ -86,8 +84,10 @@ function lookSend(j: SendJob): SendLook {
 // The cancel window (settings: web.send_undo_sec, seconds, default 10, 0 = off) is read when a send is approved.
 const undoMs = (): number => ((s => (typeof s === "number" && Number.isFinite(s) && s >= 0 ? s : 10))(cfg.web.send_undo_sec)) * 1000;
 
+/** One card's pick as the inbox keeps it: the question, the option number and its label. */
+export type AnswerPick = { q: string; n: number; label: string; note?: string };
 // The owner's answer as the inbox keeps it (the CLIs' approval check reads it there), with no model turn. `decision`: the open card it answers.
-export function recordAnswer(a: { source: "web" | "discord"; channel: string; author: string; text: string; picks: BatchPick[]; decision?: string }): void {
+export function recordAnswer(a: { source: "web" | "discord"; channel: string; author: string; text: string; picks: AnswerPick[]; decision?: string }): void {
 	const mid = newMid();
 	emit("inbox", { ts: now(), kind: "message", source: a.source, channel: a.channel, author: a.author, text: a.text, mid, picks: a.picks, decision: a.decision ?? `gateway:${mid}` });
 }

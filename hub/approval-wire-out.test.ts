@@ -1,6 +1,6 @@
 // The gateway's own send path on the real modules (outbound.out -> queue -> notices -> inbox -> the real draft.ts send CLI): 보내기 on a
 // card shows the next card at once with no model turn, the send runs in the background and its result lands on the card, a failure is one
-// [fail] note, and the batch answer sends the picked cards, hands 고치기 to the bot in one message and leaves the skipped ones waiting.
+// [fail] note, and a session CLI's failed send reported through POST /api/approvals/failed reaches the card.
 // The drafts are mails of a source this machine cannot send from, refused after the approval check, so nothing leaves this machine.
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
@@ -36,12 +36,8 @@ const nextCard = (ref: string) =>
 			}
 		});
 	});
-const route = (method: string, path: string, body?: unknown, delivered: string[] = []) =>
-	approvalRoute(new Request(`http://local${path}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }), new URL(`http://local${path}`), {
-		login: "owner@example.com",
-		triageMin: 3,
-		deliver: async (_to, text) => void delivered.push(text),
-	});
+const route = (method: string, path: string, body?: unknown) =>
+	approvalRoute(new Request(`http://local${path}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }), new URL(`http://local${path}`));
 
 test("보내기 shows the next card at once with no model turn; the send runs in the background and a failure is one note on the card", async () => {
 	for (const r of refs) await out(CONV, card(r));
@@ -61,28 +57,6 @@ test("보내기 shows the next card at once with no model turn; the send runs in
 	// The CLI's own approval check saw the pick: the refusal is the sender's, not "아직 보내도 된다는 답을 받지 못했어요".
 	expect(first.decision.send.text).not.toContain("답을 받지 못했어요");
 	expect(outs.filter(e => String(e.text).startsWith("[fail]") && String(e.text).includes(refs[0]!))).toHaveLength(1);
-});
-
-test("the batch answer: picked cards go (sends by the gateway, 고치기 to the bot in one message), the skipped one shows next", async () => {
-	const list = (await (await route("GET", "/api/approvals"))!.json()) as any;
-	const group = list.groups.find((g: any) => g.cards.some((c: any) => c.to === CONV));
-	expect(group.cards.filter((c: any) => c.to === CONV).map((c: any) => [c.ref, !!c.notice, c.sendable])).toEqual([
-		[refs[1], true, true],
-		[refs[2], false, true],
-		[refs[3], false, true],
-	]);
-	const delivered: string[] = [];
-	const next = nextCard(refs[3]!);
-	const res = await route("POST", "/api/approvals", { items: [{ ref: refs[1], to: CONV, n: 1 }, { ref: refs[2], to: CONV, n: 2, note: "더 짧게" }] }, delivered);
-	// The batch answered while its send was still queued or running.
-	expect(sender.results(CONV).find(x => x.ref === refs[1])?.state).not.toBe("failed");
-	expect(await res!.json()).toEqual({ ok: true, sending: 1, toBot: 1 });
-	await next;
-	expect(delivered).toHaveLength(1);
-	expect(delivered[0]).toContain(`(${refs[2]}): 2) 고치기 - 더 짧게`);
-	expect(openCards().map((n: any) => n.decision.draft.ref)).toEqual([refs[3]]);
-	await sender.idle();
-	expect(sender.results(CONV).find(r => r.ref === refs[1])?.state).toBe("failed");
 });
 
 test("a send a session's CLI ran fails: the gateway report reaches the owner where the card is and marks the card failed", async () => {

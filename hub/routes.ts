@@ -2,7 +2,7 @@
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { readFileSync } from "node:fs";
 import { dropAnsweredMailDraft } from "./draft-drop.ts";
-import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts";
+import { approvalRoute, webAnswer } from "./approval-wire.ts";
 import { replies, setReplyBot } from "./reply-wire.ts";
 import { replyRoute } from "./reply-route.ts";
 import { join } from "node:path";
@@ -521,10 +521,10 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (noticesResponse) return noticesResponse;
 		// The phone's input diagnostic reports itself here (web/js/34-input-diag.js): known fields only, into a capped file under the data dir.
 		if (req.method === "POST" && url.pathname === "/api/input-diag") return json({ ok: true, kept: addInputDiag(await body(req)) }, 201);
-		// The waiting send-approval cards of a conversation, their batch answer and the owner's own edit of a draft (hub/approval-wire.ts).
-		if (url.pathname.startsWith("/api/reply/") || url.pathname === "/api/approvals" || url.pathname === "/api/approvals/failed" || url.pathname === "/api/approvals/undo" || /^\/api\/drafts\/[^/]+\/body$/.test(url.pathname)) {
+		// The one reply flow (hub/reply-route.ts) and a session CLI's failed-send report (hub/approval-wire.ts).
+		if (url.pathname.startsWith("/api/reply/") || url.pathname === "/api/approvals/failed") {
 			const login = peer === "none" && tokenOk(req) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own call is never the owner's word (hub/routes-send.ts)
-			const res = (await replyRoute(req, url, { replies, login, agent: login === AGENT_AUTHOR, triageMin: 1, undoSec: cfg.web.send_undo_sec ?? 10, surface: peer === "none" ? "web" : "peer" })) ?? (await approvalRoute(req, url, { login, triageMin: cfg.web.triage_min ?? TRIAGE_MIN_DEFAULT, deliver: (to, text, picks, decision) => deliverAnswer({ to, text, picks, notice: decision ?? "", login }) }));
+			const res = (await replyRoute(req, url, { replies, login, agent: login === AGENT_AUTHOR, triageMin: 1, undoSec: cfg.web.send_undo_sec ?? 10, surface: peer === "none" ? "web" : "peer" })) ?? (await approvalRoute(req, url));
 			if (res) return res;
 		}
 		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).

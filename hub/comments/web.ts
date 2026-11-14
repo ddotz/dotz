@@ -1,6 +1,5 @@
 // Web routes of the comment feature (contract: docs/comments-api.md): /api/comments/*. Only the sources the owner chose are listed, readable
 // or sendable. Events carry ids only, never a body. A reply goes out only through engine.send -> dispatchReply (contract.ts).
-import type { useReplies } from "../reply-actions.ts";
 import { instanceIdOf } from "../integrations.ts";
 import type { Engine } from "./engine.ts";
 import { json } from "../routes-util.ts";
@@ -15,11 +14,9 @@ const validMail = (m: any): boolean =>
 	&& (m.attach === undefined || (Array.isArray(m.attach) && m.attach.length <= 10 && m.attach.every((p: unknown) => typeof p === "string" && p)))
 	&& (m.fromLibrary === undefined || typeof m.fromLibrary === "string");
 
-export type WebDeps = {
-	/** The live reply flow (hub/reply-wire.ts): the draft and send routes act through it; absent (a surface built alone in a test) = the engine's own path. */
-	replies?: typeof useReplies; engine: Engine; broadcast: (event: Record<string, unknown>) => void };
+export type WebDeps = { engine: Engine; broadcast: (event: Record<string, unknown>) => void };
 
-export function createCommentsWeb({ engine, broadcast, replies: liveReplies }: WebDeps) {
+export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 	const drafting = new Set<string>();
 	const pending = new Set<Promise<unknown>>();
 	const track = (p: Promise<unknown>) => {
@@ -144,60 +141,6 @@ export function createCommentsWeb({ engine, broadcast, replies: liveReplies }: W
 		}
 		// The pending drafts of every source (the 답장 확인 queue across apps).
 		if (area === "drafts" && parts.length === 3 && method === "GET") return json({ items: cfg.enabled ? engine.pendingDrafts() : [] });
-		// A failed reply: 다시 보내기 (the same text through the same gate) or 지우기 (the record goes, the draft stays). An unsure one (recover.ts): 다시 보내기 or 완료 (`done`: closed as sent, nothing is posted).
-		if (area === "sends" && parts.length === 5 && method === "POST" && (parts[4] === "retry" || parts[4] === "dismiss" || parts[4] === "done")) {
-			if (!cfg.enabled) return json(OFF, 409);
-			// The one reply flow (hub/reply-actions.ts) acts on the draft the send record belongs to; a surface built alone (tests) keeps the engine's own path.
-			const replies = liveReplies?.(), rec = engine.store.replies().find(x => x.id === arg(3));
-			if (replies && rec) {
-				if (parts[4] === "dismiss") {
-					replies.clear(rec.draft);
-					const r = engine.dismissSend(arg(3));
-					return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
-				}
-				const r = await replies.act(parts[4] === "done" ? { ref: rec.draft, action: "resolve", as: "sent" } : rec.state === "unsure" ? { ref: rec.draft, action: "resolve", as: "retry" } : { ref: rec.draft, action: "retry" }, { surface: "web" });
-				return r.body.ok ? json({ ok: true, ...(r.body.item ? { item: r.body.item, state: r.body.item.send?.state } : {}) }, 200) : json({ error: r.body.error, code: r.body.code }, r.status);
-			}
-			if (parts[4] !== "retry") {
-				const r = parts[4] === "done" ? engine.markPosted(arg(3)) : engine.dismissSend(arg(3));
-				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
-			}
-			const r = engine.retrySend(arg(3));
-			return r.ok ? json({ id: r.reply.id, state: "sending" }, 202) : json({ error: r.reason }, 409);
-		}
-		if (area === "drafts" && parts.length === 5 && method === "POST") {
-			if (!cfg.enabled) return json(OFF, 409);
-			const code = arg(3);
-			const d = engine.store.drafts().find(x => x.code === code);
-			if (!d) return json({ error: "그 초안을 찾지 못했어요" }, 404);
-			const replies = liveReplies?.();
-			if (replies && ["drop", "restore", "revise", "send"].includes(parts[4]!)) {
-				const b = parts[4] === "revise" || parts[4] === "send" ? await body() : {};
-				if (b.part !== undefined && b.part !== "reply" && b.part !== "mail") return json({ error: "part: reply 또는 mail이어야 해요" }, 400);
-				const text = b.text;
-				if (text !== undefined && (typeof text !== "string" || !text.trim() || [...text].length > MAX_TEXT)) return json({ error: `글은 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
-				// 보내기 with the owner's own text is a direct edit then the send (design 1.9); 고치기 answers at once and the new draft arrives as an event.
-				const input = parts[4] === "send" ? (text !== undefined ? { ref: code, action: "edit", text, send: true } : { ref: code, action: "send" }) : parts[4] === "revise" ? { ref: code, action: "revise", change: String(b.change ?? ""), ...(b.part ? { part: b.part } : {}) } : { ref: code, action: parts[4]! };
-				const r = await replies.act(input, { surface: "web" });
-				return r.body.ok ? json({ ok: true, ...(r.body.item ? { item: r.body.item, state: r.body.item.send?.state ?? (parts[4] === "revise" ? "revising" : undefined) } : {}) }, r.status) : json({ error: r.body.error, code: r.body.code, ...(r.body.lint ? { lint: r.body.lint } : {}) }, r.status);
-			}
-			if (parts[4] === "drop" || parts[4] === "restore") {
-				const r = parts[4] === "drop" ? engine.drop(code) : engine.restore(code);
-				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
-			}
-			if (parts[4] === "revise") {
-				const b = await body();
-				if (b.part !== undefined && b.part !== "reply" && b.part !== "mail") return json({ error: "part: reply 또는 mail이어야 해요" }, 400);
-				const step = await engine.revise(code, String(b.change ?? ""), b.part);
-				return step.ok ? json({ ok: true, code: step.draft.code }) : json({ error: step.reason }, 409);
-			}
-			if (parts[4] === "send") {
-				const text = (await body()).text;
-				if (text !== undefined && (typeof text !== "string" || !text.trim() || [...text].length > MAX_TEXT)) return json({ error: `글은 1자에서 ${MAX_TEXT}자 사이여야 해요` }, 400);
-				const r = engine.send(code, { by: "owner", ...(text !== undefined ? { text } : {}) });
-				return r.ok ? json({ id: r.reply.id, state: "sending" }, 202) : json({ error: r.reason }, 409);
-			}
-		}
 		return undefined;
 	}
 

@@ -305,7 +305,7 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, o
 const OWNER_MAX: Record<ReplyKind, number> = { mail: 6000, comment: 2000, chat: 3000 };
 export const ownerLint = (draft: DraftOut, item: ReplyItem, style: ReplyStyle, opts: { anyRecipient?: boolean } = {}): string[] => lintReply(draft, item, { ...style, maxChars: OWNER_MAX[item.kind] }, opts);
 
-// What a direct edit teaches, in the line KakaoTalk already records (hub/kakao/gateway.ts onCorrection): the draft as the model wrote it and as the owner
+// What a direct edit teaches, in the tone-profile correction line: the draft as the model wrote it and as the owner
 // sent it, 70 characters each. Texts that differ only in whitespace teach nothing.
 const cut70 = (s: string): string => (s.length > 70 ? `${s.slice(0, 69)}…` : s);
 export function editLesson(before: string, after: string): string | undefined {

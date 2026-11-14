@@ -57,21 +57,15 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			sends.push((await req.json()) as Gateway["sends"][number]);
 			return Response.json({ delivered: true });
 		}
-		if (req.method === "DELETE" && path.startsWith("/api/kakao/chat/")) {
-			const p = path.split("/");
-			events.push({ target: `kakao:${p[4]}`, text: `delete ${p[6]}` });
-			return Response.json({ ok: true, removed: true });
-		}
 		if (req.method === "POST" && path.startsWith("/api/kakao/chat/")) {
 			const b = (await req.json()) as { text: string };
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: path.endsWith("/draft") ? `draft ${JSON.stringify(b)}` : b.text });
 			return Response.json({ ok: true });
 		}
-		if (req.method === "POST" && (path.startsWith("/api/comments/") || path.startsWith("/api/kakao/drafts/"))) {
+		if (req.method === "POST" && path.startsWith("/api/comments/")) {
 			events.push({ target: "comments", text: `${path} ${JSON.stringify(await req.json())}` });
 			return Response.json({ ok: true });
 		}
-		if (req.method === "GET" && path === "/api/replies") return Response.json({ items: [{ kind: "kakao", app: "kakao", code: `K-${name}`, at: 1 }] });
 		if (req.method === "PUT" && path.startsWith("/api/kakao/rooms/")) {
 			events.push({ target: `kakao:${decodeURIComponent(path.split("/")[4]!)}`, text: `room ${JSON.stringify(await req.json())}` });
 			return Response.json({ ok: true });
@@ -332,17 +326,6 @@ test("act: unknown action, unknown target and a missing sender are refused", asy
 	expect(B.events).toEqual([]);
 });
 
-test("deleting a failed KakaoTalk send from a peer runs on the owner's own delete route, once", async () => {
-	const { A, B } = pair();
-	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "send-delete", chatId: "123", sendId: "S1" } }) }));
-	expect(r.status).toBe(200);
-	expect(await r.json()).toEqual({ ok: true, removed: true });
-	expect(B.events).toEqual([{ target: "kakao:123", text: "delete S1" }]);
-	expect(A.events).toEqual([]);
-	expect((await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "send-delete", chatId: "123" } }) }))).status).toBe(400);
-});
-
 test("a monitor settings change from a peer is a plain PATCH on the owner, once; its settings read is a proxied GET", async () => {
 	const { A, B } = pair();
 	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
@@ -418,16 +401,6 @@ test("되돌리기 of a peer's draft answered 보내지 않기 reopens that noti
 	expect(A.events).toEqual([]);
 });
 
-test("a 고치기 request for a peer's KakaoTalk draft reaches the owner's draft route with the instruction", async () => {
-	const { A, B } = pair();
-	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	const revise = { code: "d2", change: "더 짧게" };
-	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "draft", chatId: "123", revise } }) }));
-	expect(r.status).toBe(200);
-	expect(B.events).toEqual([{ target: "kakao:123", text: `draft ${JSON.stringify({ revise })}` }]);
-	expect(A.events).toEqual([]);
-});
-
 test("a project delete from a peer reads its plan and runs the owner's own DELETE route, once", async () => {
 	const { A, B } = pair();
 	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
@@ -491,29 +464,17 @@ test("a peer's mail draft gets and loses files through the owner's own draft fil
 	expect(lib.status).toBe(404);
 });
 
-test("a peer snapshot carries that gateway's store reply drafts; a handler without them leaves the field out", async () => {
-	const { A } = pair();
-	const [m] = await A.mon.peerMonitoring();
-	expect(m!.items!.replies).toEqual([{ kind: "kakao", app: "kakao", code: "K-맥미니", at: 1 }]);
-	const plain = createPeerMonitor({ name: () => "맥미니", local: async () => new Response("not found", { status: 404 }), computers: async () => [] });
-	expect((await plain.snapshot().catch(() => null))?.replies).toBeUndefined();
-});
-
-test("a peer's comment draft, failed reply and dropped draft are acted on its owner's comment routes, once each", async () => {
+test("a peer's comment request and read run on its owner's comment routes, once each; a draft's own actions are not comment ops any more", async () => {
 	const { A, B } = pair();
 	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
-	const act = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "comments", args }) }));
-	for (const a of [{ op: "draft-send", code: "D1" }, { op: "draft-drop", code: "D1" }, { op: "draft-restore", code: "D1" }, { op: "draft-revise", code: "D1", change: "더 짧게" }, { op: "send-retry", id: "send:cm:1" }, { op: "send-dismiss", id: "send:cm:1" }, { op: "read", source: "youtube", thread: "v1" }])
-		expect((await act(a)).status).toBe(200);
-	expect(B.events.map(e => e.text)).toEqual([
-		"/api/comments/drafts/D1/send {}", "/api/comments/drafts/D1/drop {}", "/api/comments/drafts/D1/restore {}", `/api/comments/drafts/D1/revise ${JSON.stringify({ change: "더 짧게" })}`,
-		"/api/comments/sends/send%3Acm%3A1/retry {}", "/api/comments/sends/send%3Acm%3A1/dismiss {}", "/api/comments/thread/youtube/v1/read {}",
-	]);
+	const act = (action: string, args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action, args }) }));
+	for (const a of [{ op: "draft", commentId: "cm:youtube:c1" }, { op: "read", source: "youtube", thread: "v1" }]) expect((await act("comments", a)).status).toBe(200);
+	expect(B.events.map(e => e.text)).toEqual(["/api/comments/comment/cm%3Ayoutube%3Ac1/draft {}", "/api/comments/thread/youtube/v1/read {}"]);
 	expect(A.events).toEqual([]);
-	expect((await act({ op: "rm", code: "D1" })).status).toBe(400);
-	const k = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "draft-restore", code: "K1" } }) }));
-	expect(k.status).toBe(200);
-	expect(B.events.at(-1)!.text).toBe("/api/kakao/drafts/K1/restore {}");
+	for (const a of [{ op: "draft-send", code: "D1" }, { op: "send-retry", id: "send:cm:1" }]) expect((await act("comments", a)).status).toBe(400);
+	for (const a of [{ op: "draft-restore", code: "K1" }, { op: "send-retry", chatId: "123", sendId: "S1" }]) expect((await act("kakao", a)).status).toBe(400);
+	expect((await act("approvals", { op: "retry", items: [] })).status).toBe(400);
+	expect(B.events).toHaveLength(2);
 });
 
 test("handoff: B gets the owner's words and note as a chat message from A, then A's chat shows B's ack", async () => {

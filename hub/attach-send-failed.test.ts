@@ -6,13 +6,19 @@ import { onEmit } from "./events.ts";
 import { ATTACH_REFUSED, draftApprovalBlock } from "./draft-approval.ts";
 import { answerDecision, ignoreNotice, listNotices, markDraftSend } from "./notices.ts";
 import { out } from "./outbound.ts";
-import { pickedSend } from "./reply-outcomes.ts";
+import { sendActionOf } from "./approval-send.ts";
 
 const CONV = "mail:attach-refused-test";
 const why = "본문에 문서 파일을 보낸다고 썼지만 첨부파일이 없어요";
 const REFS = ["att-refused-1", "att-failed-2"];
 const card = (ref: string) => `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: `${ref} 문서 보내드립니다`, ref, question: "이 답장 보낼까요?", attachIssues: [why] })}`;
 const all = () => listNotices(500).items as any[];
+// The send the owner picked, read from the answer the card keeps ("1) 보내기") against the card's own option of that number.
+const pickedSend = (d: { answer?: string; options: { n: number; label: string }[] }) => {
+	const m = /^(\d+)\) (.+)$/.exec(d.answer ?? "");
+	const label = m && d.options.find(o => o.n === Number(m[1]) && o.label === m[2])?.label;
+	return label ? sendActionOf(label) : undefined;
+};
 const cardOf = (ref: string) => all().find(n => n.decision?.to === CONV && n.decision.draft?.ref === ref);
 const seen = new Set<string>();
 const waiting = new Map<string, () => void>();

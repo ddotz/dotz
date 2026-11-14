@@ -45,7 +45,7 @@ gateway that owns the item. That gateway executes it and records it.
   to the owner as `answer` (`pqNotice`), and the owner's notice replaces the snapshot copy. A peer's loose `[ask]` report still has no 답하러 가기.
 - `pqMail` (`web/js/34-peer-monitoring.js`) puts a peer's mail into `MAILS`, `CONV` and the unread count. `api()` runs each request through
   `pqRoute`: a read of a peer's mail, history or Kakao room becomes `/api/peer/proxy?pc=..&p=<path>`; `pqLink(path)` does the same for `fetch`
-  and download links. A POST that belongs to a peer (`/api/message` for its mail, `/api/read`, `/api/kakao/...` send, read, draft, draft send and drop)
+  and download links. A POST that belongs to a peer (`/api/message` for its mail, `/api/read`, `/api/kakao/...` send, read and draft, `/api/reply/act`)
   becomes `/api/peer/act`. A new route that a peer item uses needs a line in `pqFor` (read) or `pqAct` (action) and in `PEER_GET` (`hub/peer-auth.ts`).
 - A mail that this computer also holds stays a local row, unless this computer switched the mail app off (`available[].off` of `/api/integrations`): then the peer's copy shows.
 - 이 기기에서 쓰기 (off) and 제거 are per machine (`custom/apps.json`, `hub/app-off.ts`). Turning mail off here never hides what a peer shows. An app's switch,
@@ -64,7 +64,8 @@ gateway that owns the item. That gateway executes it and records it.
 
 - `POST /api/peer/act {action, args, from}` on the owning gateway. The actions are `message` (a reply or a confirmed draft
   in a conversation), `answer` (a decision, with `note` for 고치기), `notice` (`op` read with `ids`, ignore or unignore with `id`), `read` (mark read), `watch` (pause, resume or run a watch) and `kakao`
-  (`op` send, read, draft, draft-send or draft-drop on the owner's `/api/kakao/...` routes). `handoff` (`owner_words`, `note`, `id?`: the owner's work handed over from the sender; it lands in the owner's main chat as the owner's own instruction, then the owner sends `handoff-ack` back, fire and forget) and `handoff-ack` (`id`: a note in the sender's chat that the other computer took it). The owner runs
+  (`op` send, read, draft, ask-drop or room on the owner's `/api/kakao/...` routes), `comments` (`op` draft, no-reply, read or source) and `reply` (`args` = the
+  body of the owner's own `POST /api/reply/act`: every draft action of every kind, KakaoTalk and comment drafts included). `handoff` (`owner_words`, `note`, `id?`: the owner's work handed over from the sender; it lands in the owner's main chat as the owner's own instruction, then the owner sends `handoff-ack` back, fire and forget) and `handoff-ack` (`id`: a note in the sender's chat that the other computer took it). The owner runs
   the same handler as its own web app. It records the event with `via: <from machine name>`. Its own web and history show
   the action the same as a local action, with a small 'from <machine>' note. The other gateway keeps no copy beyond its cache.
 
