@@ -1,5 +1,6 @@
 // The comment adapter of the one reply flow (the reply unification design, 1.8 column 3): the engine's drafts (YouTube, Instagram, site
 // comments and site DMs) as the one view, and its revise, direct edit, drop, restore and read-back behind the adapter interface.
+import { fileSizeText } from "../draft-approval.ts";
 import { reasonOf } from "../reply-reasons.ts";
 import type { DraftView, ReasonCode, ReplyAdapter } from "../reply-types.ts";
 import { commentAsk } from "./ask.ts";
@@ -27,14 +28,14 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 			label: src.label,
 			conv: `comment:${d.source}`,
 			at: d.created,
-			can: { send: pending, revise: pending, edit: pending, drop: pending, restore: d.status === "dropped" && !d.mail },
+			can: { send: pending, revise: pending, edit: pending, drop: pending, restore: d.status === "dropped" && !d.mail, ...(pending && mail ? { sends: ["send", "send-main", "send-mail"] as ("send" | "send-main" | "send-mail")[] } : {}) },
 			draft: {
 				state: STATE[d.status] ?? "closed",
 				toLabel: "대상",
 				to: `${c.author} 댓글`,
 				text: d.text,
 				...(d.notes.length ? { notes: d.notes } : {}),
-				...(mail ? { mail: { ref: mail.id, to: mail.to, ...(mail.subject ? { subject: mail.subject } : {}), text: mail.body } } : {}),
+				...(mail ? { mail: { ref: mail.id, to: mail.to, ...(mail.subject ? { subject: mail.subject } : {}), text: mail.body, ...(mail.attachments.length ? { attachments: mail.attachments.map(f => ({ name: f.name, ...(f.size !== undefined ? { size: fileSizeText(f.size) } : {}) })) } : {}) } } : {}),
 				...(before ? { replaces: { ref: before.code, text: before.text } } : {}),
 				...(d.editedFrom !== undefined ? { edited: true as const } : {}),
 			},

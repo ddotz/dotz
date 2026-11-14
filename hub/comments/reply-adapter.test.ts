@@ -15,10 +15,10 @@ let dir: string;
 beforeEach(() => void (dir = mkdtempSync(join(tmpdir(), "comment-adapter-"))));
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function setup(o: { model?: string[]; learn?: string[] } = {}) {
+function setup(o: { model?: string[]; learn?: string[]; files?: MailView["attachments"] } = {}) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
 	const platform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [raw], cursor: "1" }), reply: async () => ({ ok: true, ref: "r1" }), posts: async () => [] };
-	const mails = new Map<string, MailView>([["RMAIL01", { id: "RMAIL01", to: "fan@example.com", subject: "자료", body: "보내드려요", attachments: [] }]]);
+	const mails = new Map<string, MailView>([["RMAIL01", { id: "RMAIL01", to: "fan@example.com", subject: "자료", body: "보내드려요", attachments: o.files ?? [] }]]);
 	const mail: MailLink = { compose: async () => ({ ok: false, reason: "x" }), send: async () => ({ ok: true, text: "" }), drop: () => undefined, revise: async () => ({ ok: false, reason: "x" }), view: id => mails.get(id), edit: (id, text) => (mails.set(id, { ...mails.get(id)!, body: text }), { ok: true }) };
 	let n = 0;
 	const outs = o.model ?? [reply("이번 주말이에요!")];
@@ -77,6 +77,16 @@ test("edit keeps the code, stores the owner's text, makes the draft unclean and 
 	expect(await a.markSent(code)).toEqual({ ok: true });
 	expect((await a.learned!(code))?.line).toContain("토요일에 올릴게요");
 	expect(await a.prove!(code)).toBe("sent");
+});
+
+test("a reply with a linked pending mail carries the mail's files and offers both, reply only and mail only; one without a mail offers one 보내기", async () => {
+	const { engine, a } = setup({ files: [{ name: "자료.pdf", size: 2048 }, { name: "사진.jpg" }] });
+	const code = await drafted(engine);
+	expect((await a.get(code))!.can.sends).toBeUndefined();
+	engine.store.putDraft({ ...engine.store.drafts().find(d => d.code === code)!, mail: "RMAIL01" });
+	const v = (await a.get(code))!;
+	expect(v.draft.mail).toEqual({ ref: "RMAIL01", to: "fan@example.com", subject: "자료", text: "보내드려요", attachments: [{ name: "자료.pdf", size: "2KB" }, { name: "사진.jpg" }] });
+	expect(v.can.sends).toEqual(["send", "send-main", "send-mail"]);
 });
 
 test("drop then restore; the mail part of an edit goes to the mail link", async () => {

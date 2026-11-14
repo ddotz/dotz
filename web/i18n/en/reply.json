@@ -11,6 +11,8 @@
   "reply.check": "Check",
   "reply.retry": "Send again",
   "reply.send_as_is": "Send as is",
+  "reply.only_reply": "Reply only",
+  "reply.only_mail": "Mail only",
   "reply.edit_label": "Text to send",
   "reply.act_fail": "That didn't work. Try again in a moment",
   "reply.act_net": "Connection dropped, so it didn't go. Try again",

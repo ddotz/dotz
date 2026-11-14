@@ -49,7 +49,7 @@ function rqBodyNode(key, b) {
 // stands at the right end of the row. a.quiet: 보내기 is tonal (one filled control per screen: only the lead card's is filled).
 function rqActsNode(a) {
   const b = (cls, k, text, fn) => el("button", { class: cls, type: "button", "data-k": k, disabled: !!a.busy || !fn, text: a.busy && a.press === k ? RQ_PRESS[k] : text, onclick: fn });
-  return el("div", { class: "dr-act dr-row rq-acts" }, b(`btn${a.quiet ? " tonal" : ""} sm dr-send`, "send", TX("common.send"), a.send), b("btn tonal sm", "edit", TX("decision.edit"), a.edit), b("btn text sm dr-drop", "drop", a.dropText || TX("decision.drop"), a.drop), a.manual ? rqManualBtn(a.manual, a.busy) : null);
+  return el("div", { class: "dr-act dr-row rq-acts" }, b(`btn${a.quiet ? " tonal" : ""} sm dr-send`, "send", TX("common.send"), a.send), ...(a.only || []).map(o => b("btn text sm", o.k, o.text, a.send && o.fn)), b("btn tonal sm", "edit", TX("decision.edit"), a.edit), b("btn text sm dr-drop", "drop", a.dropText || TX("decision.drop"), a.drop), a.manual ? rqManualBtn(a.manual, a.busy) : null);
 }
 const rqManualBtn = (fn, busy) => el("button", { class: "btn text sm rq-manual", type: "button", "data-k": "manual", "aria-label": TX("decision.manual"), disabled: !!busy, onclick: fn }, icon("pencil"), el("span", { text: TX("decision.manual") }));
 // 고치기: what to change, typed once; the bot rewrites the draft. o: { go(change), cancel(), pick (a node before the field, such
