@@ -419,6 +419,10 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 
 	test("a request with no draft waiting makes a new draft ({intent}); 보내기 on its card puts a 보내는 중 bubble on the right; sent clears it once read back; failed shows the reason", async () => {
 		const ask = async (text: string) => run(v, `const t = document.querySelector("#kk-text"); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))`);
+		// no draft waits: the earlier tests leave d3 in the room, and a waiting draft would take the request as its revise
+		drafts = [];
+		emit({ kind: "kakao_draft", chatId: "100" });
+		await waitFor(v, `!document.querySelector("#kk-drafts .ra-card")`);
 		await ask("가나다 답장");
 		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft" && r.body?.intent === "가나다 답장")).body).toEqual({ intent: "가나다 답장" });
 		await waitFor(v, `document.querySelector('.ra-card[data-ref="di"] [data-k="send"]')`);

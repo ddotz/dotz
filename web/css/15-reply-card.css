@@ -95,7 +95,7 @@
 .rq-pane { --ff-fill: var(--layer); display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: var(--card); }
 .rq-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-align: center; text-wrap: balance; }
 #v-monitoring.rq-on .tl-in { max-width: none; }
-.bm.q-fold .md > :not(:first-child) { display: none; }
+.bm.q-fold .md > :not(:first-child), .bm.q-fold .ra-inl { display: none; }
 .rq-qm .sp { flex: 1; }
 .rq-qm[hidden], .rq-fast[hidden], .rq-chips:empty { display: none; }
 .nsc-fb .n.err { color: var(--err); } .nsc-fb.on .n.err { color: inherit; }

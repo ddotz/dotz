@@ -81,7 +81,8 @@ describe("답장 대기 with a big backlog", () => {
 		const after = await ev<{ key: string; off: number; st: number }>(v, probe);
 		expect(after.key).toBe(before.key);
 		expect(Math.abs(after.off - before.off)).toBeLessThan(2);
-		expect(await ev<boolean>(v, `__keep.every(n => n.isConnected)`)).toBe(true);
+		// the old first card hands its filled 보내기 to the new one, so it alone is drawn again
+		expect(await ev<boolean>(v, `__keep.slice(1).every(n => n.isConnected)`)).toBe(true);
 	});
 
 	test("a section draws a page of cards, 더 보기 adds a page, the counts stay full and failed cards all show", async () => {

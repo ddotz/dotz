@@ -680,7 +680,8 @@ function paintDecision() {
   if (dc) { dcLast = dc; delete box.dataset.out; motionStay(box); }
   const arrived = S && freshKeys(DC_SEEN, dc ? [...DC_SEEN, dc.key] : [...DC_SEEN]).has(dc && dc.key) && dcShownT === target;
   if (S) dcShownT = target;
-  const waiting = dc || line || isFixedT(target) ? null : dcWaitingCard(target);
+  // A waiting draft already shown as its card in a message needs no pointer row in the dock as well.
+  const waiting = dc || line || isFixedT(target) ? null : (w => (w && !document.querySelector(`#timeline .ra-inl [data-ref="${w.decision.draft.ref}"]`) ? w : null))(dcWaitingCard(target));
   // The card whose answer is going out leaves first (the echo of the answer can arrive before it), then the pointer to the next waiting one takes its place.
   if (!dc && dcLast && !box.hidden && box.dataset.key === dcLast.key && DC.st[dcLast.key]) dcLeave(box, dcLast);
   else if (waiting) dcPointer(box, waiting);

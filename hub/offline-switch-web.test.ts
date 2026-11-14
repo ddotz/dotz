@@ -23,9 +23,8 @@ async function openOff(path: string) {
 	const v = new Bun.WebView({ width: 390, height: 844 });
 	await v.navigate(`${hub.origin}/`);
 	await run(v, `localStorage.setItem("dotz-peers", ${JSON.stringify(PEERS)})`);
-	// the first page's own fetch on its stream's open (the reply queue, read twice at boot and once on the stream's reset) has come back,
-	// so the first request after `off` is the new page's
-	await waitFor(v, `performance.getEntriesByType("resource").filter(e => e.name.includes("/api/reply/queue") && e.responseEnd > 0).length >= 3`);
+	// the first page's reads of the reply queue (once at boot, once on the stream's reset) have come back, so the first request after `off` is the new page's
+	await waitFor(v, `performance.getEntriesByType("resource").filter(e => e.name.includes("/api/reply/queue") && e.responseEnd > 0).length >= 2`);
 	off = true;
 	const hung = new Promise<void>(res => { reached = res; });
 	void v.navigate(`${hub.origin}${path}`).catch(() => {});
