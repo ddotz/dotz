@@ -7,7 +7,7 @@ import type { Notice } from "./notices-types.ts";
 import { encodeSnapshot, normalizeSnapshot, type Snapshot, snapshotChanged } from "./relay-snapshot.ts";
 
 // The sending side of hub/relay-snapshot.ts: a computer reached only through the JANDI self chat (hub/jandi-peers.ts) posts a short summary of itself into
-// that room when it changed (at most every 30 minutes, and once in 6 hours even when it did not), so the computer that reads the room can show it.
+// its status room (`status_room_id`, a private topic only the owner is in, never the chat the owner reads) when it changed (at most every 30 minutes, and once in 6 hours even when it did not), so the computer that reads the room can show it.
 // Off unless the owner switched `share_status` on. buildSnapshot is pure; the sender takes everything else (config, clock, post, store) as arguments.
 
 export const MIN_GAP_MS = 30 * 60_000;
@@ -83,7 +83,8 @@ export type SnapshotSenderDeps = {
 	config: () => SelfChatConfig | undefined;
 	/** The raw snapshot now, or undefined while there is nothing to read from yet. */
 	build: () => Snapshot | undefined | Promise<Snapshot | undefined>;
-	post: (text: string) => Promise<void>;
+	/** Posts `text` into JANDI room `room` (the configured status room). */
+	post: (text: string, room: number) => Promise<void>;
 	now: () => number;
 	store: SnapshotStore;
 	log?: (msg: string) => void;
@@ -101,7 +102,7 @@ export function createSnapshotSender(deps: SnapshotSenderDeps) {
 		busy = true;
 		try {
 			const c = deps.config();
-			if (!selfChatReady(c) || !c.share_status || !c.reply_prefix) return;
+			if (!selfChatReady(c) || !c.share_status || !c.reply_prefix || !c.status_room_id) return;
 			const raw = await deps.build();
 			// The cleaned, cut-to-limits form is what is compared and kept: a change past a list's limit is not a change the reader sees.
 			const snap = raw && normalizeSnapshot(raw);
@@ -113,7 +114,7 @@ export function createSnapshotSender(deps: SnapshotSenderDeps) {
 			if (last && since < HEARTBEAT_MS && !snapshotChanged(last.snap, snap)) return;
 			const body = encodeSnapshot(c.reply_prefix, snap);
 			if (!body) return;
-			await deps.post(body);
+			await deps.post(body, c.status_room_id);
 			deps.store.save({ sentAt: now, snap });
 		} catch (e) {
 			log(`jandi: status snapshot not sent (${(e as Error)?.message || "error"})`);
