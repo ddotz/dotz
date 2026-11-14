@@ -302,10 +302,10 @@ export const en = {
 	nowWorkers: (n: number, names: string) => `subagents ${n}${names ? ` ${names}` : ""}`,
 	nowOrchestrator: (n: number, names: string) => `orchestrator subagents ${n}${names ? `(${names})` : ""}`,
 	firstStart: (target: string) => `[dotz gateway] First start of this install. Speak first in ${target}: greet the owner in a few short messages as ${NAME} (who you are, what you can do: channels per project, monitoring, sessions, schedules). Then ask once whether you may learn their setup, read-only: Aside's memory of them (aside memory list / search: who they are, people, projects, sites) and the sites they are signed in to, coding agent conversations and their projects, tools and CLIs in use, logs and schedules on this machine. On yes, do it with read-only subagents, keep one progress message updated in place (dotz_send update_key "onboarding"), record what you learn in memory as you go, and end with a short summary of what you learned and what is still missing. On no, just say how to start. Also offer to connect the messengers the owner uses (discord, jandi, slack, telegram) with the dotz_connect tool.`,
-
 	inboxLaneReport: (lane: string) => `[dotz inbox] session report from ${lane}:`,
 	inboxLaneReports: (n: number) => `[dotz inbox] ${n === 1 ? "session report" : `${n} session reports`} (routine progress stays in report.md and the what-runs-now line):`,
 	laneReportSteer: (body: string) => `${enLeads.laneReportLead}. If it needs you (a result or failure to pass on, a question you can answer), pass it on with dotz_send or answer the session with dotz_lane, then continue the current work; it does not come back later. A session's [ask] already reached the owner: never post it again.\n\n${body}`,
+	draftCardRedo: "Closed: this card differs from its draft. It is being posted again as drafted",
 	laneAskWaiting: (lanes: string) => `Not posted: the question of session ${lanes} already waits as a card in the owner's 답변 필요, and his answer there reaches the session. A second card only repeats it, so do not post it again in any words. A different question of yours goes in a later turn.`,
 	// Starting a session on another paired computer (hub/fleet-launch.ts): each is a plain refusal the asking session or the owner reads.
 	fleetUnknown: (name: string) => `No paired computer is called "${name}".`,

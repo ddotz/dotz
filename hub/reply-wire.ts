@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
 import { approvals, newMid, out, showSendOnCard } from "./outbound.ts";
-import { allNotices, markDraftSend, openDraftCards, replaceDraftCards, rewriteOpenDraft, settleOpenDecision } from "./notices.ts";
+import { allNotices, markDraftSend, openDraftCards, replaceDraftCards, rewriteOpenDraft, setStoredDraft, settleOpenDecision } from "./notices.ts";
 import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
@@ -16,13 +16,22 @@ import { mailByKey } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { DRAFT_UNDO } from "./draft-approval.ts";
-import { askText } from "./draft-attach.ts";
+import { askText, withRecipient } from "./draft-attach.ts";
 import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
 import type { ReplyAdapter } from "./reply-types.ts";
 
 const mail = mailAdapter(undefined, mailByKey);
 /** The adapter whose store holds `ref`. */
 const adapterOf = (ref: string): ReplyAdapter | undefined => [mail, commentReply, kakaoReply].find(a => a.target(ref));
+
+// A mail send card must show its pending draft as stored, or it keeps no draft (hub/notices-rules.ts shownAsStored), with the recipient its send
+// will use: an address-less one takes the mail's sender (flow.ts withRecipient).
+setStoredDraft(ref => {
+	const m = getDraft(ref);
+	if (m?.status !== "pending") return undefined;
+	const r = withRecipient(m);
+	return { to: r.to, body: r.body };
+});
 
 /** Where the gateway would send draft `ref`: a pending comment reply (per source), a pending mail draft (per sending account) or a KakaoTalk draft (one lane). */
 export function sendTargetOf(ref: string, action?: SendAction): SendTarget | undefined {

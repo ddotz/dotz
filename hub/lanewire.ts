@@ -6,7 +6,7 @@ import { msg } from "./i18n.ts";
 import { emit, emitDelivery } from "./events.ts";
 import { escalations } from "./escalate.ts";
 import { lanes, sendToLane, setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
-import { decisionsOf, laneHasOpenCard, laneVerified } from "./notices.ts";
+import { decisionsOf, laneHasOpenCard, laneVerified, onDraftRepost } from "./notices.ts";
 import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay, ownerAlone } from "./lanerelay.ts";
@@ -91,6 +91,8 @@ export function installLaneHandlers(): void {
 		handedWaits.delete(name);
 		laneRelay.forget(name);
 	});
+	// A send card closed for not being its draft as printed: the session that posted it is told to post it again (hub/notices-rules.ts repostNote).
+	onDraftRepost((n, note) => deliverToSession(n.by?.startsWith("lane:") ? n.by : convs.keyOf(n.decision!.to), note));
 	setVerifiedHandler((name, text) => laneVerified(name, text));
 	setOpenCardCheck(laneHasOpenCard);
 	setReportHandler((lane, raw, answering, pause) => {

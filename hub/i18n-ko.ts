@@ -294,6 +294,7 @@ export const ko: Catalog = {
 	inboxLaneReport: lane => `[dotz inbox] 세션 ${lane}의 보고:`,
 	inboxLaneReports: n => `[dotz inbox] 세션 보고 ${n}건 (일상 진행은 report.md와 지금 도는 것 줄에만 있어요):`,
 	laneReportSteer: body => `${koLeads.laneReportLead}. 처리가 필요하면(전달할 결과나 실패, 당신이 답할 수 있는 질문) dotz_send로 전달하거나 dotz_lane으로 세션에 답한 뒤 하던 일을 이어가세요. 이 보고는 나중에 다시 오지 않아요. 세션의 [ask]는 이미 오너에게 갔으니 다시 올리지 마세요.\n\n${body}`,
+	draftCardRedo: "초안과 달라서 닫았어요. 초안 그대로 다시 올라와요",
 	laneAskWaiting: lanes => `올리지 않았어요. 세션 ${lanes}의 질문은 이미 오너의 답변 필요에 카드로 떠 있고, 거기서 답하면 세션에 바로 가요. 카드를 또 만들면 같은 질문이 두 번 보이니 어떤 말로도 다시 올리지 마세요. 당신의 다른 질문은 다음 턴에 내세요.`,
 	fleetUnknown: name => `"${name}"(이)라는 연결된 컴퓨터가 없어요.`,
 	fleetNotPaired: name => `아직 ${name}와(과) 연결(페어링)되지 않았어요.`,

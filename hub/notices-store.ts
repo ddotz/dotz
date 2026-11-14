@@ -12,8 +12,9 @@ import { dropClaim, isSilent, parkedTone } from "./tone.ts";
 import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, matchItems, matchTitle, PROVIDER_BACK_KO, scheduleLine, sentinelMatch, watchLine, watchReasonKo } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
 import type { Decision, DecisionOpt, Notice, NoticeKind, NoticeTone } from "./notices-types.ts";
-import { appBlocked, appOf, closedHooks, decisionHooks, orchestratorUp, stampApp, summarizeWatch, unreadHooks, watchLabelOf } from "./notices-wiring.ts";
-import { BACKFILL_DAYS, DAY_MS, FOLD_MS, LOUD, MESSAGE_PREVIEW, NOTICE_CAP, REASK_MS, REPEATS_MAX, REPEAT_TEXT, RESTART_PREFIX, answersOption, authorOf, clean, closedInfo, coveredByRead, hasChoice, hasExpired, isAsking, isOpenDecision, keepWatchNewest, laneTone, needsAnswer, originOf, refOf, systemTitle, twinOf, waitKind, waitsOf } from "./notices-rules.ts";
+import { msg } from "./i18n.ts";
+import { appBlocked, appOf, closedHooks, decisionHooks, repostHooks, orchestratorUp, stampApp, summarizeWatch, unreadHooks, watchLabelOf } from "./notices-wiring.ts";
+import { BACKFILL_DAYS, DAY_MS, FOLD_MS, LOUD, MESSAGE_PREVIEW, NOTICE_CAP, REASK_MS, REPEATS_MAX, REPEAT_TEXT, RESTART_PREFIX, answersOption, authorOf, clean, closedInfo, repostNote, shownAsStored, unreadDraftRef, coveredByRead, hasChoice, hasExpired, isAsking, isOpenDecision, keepWatchNewest, laneTone, needsAnswer, originOf, refOf, systemTitle, twinOf, waitKind, waitsOf } from "./notices-rules.ts";
 import { GENERIC_TITLES, channelLanes, channelTitle, laneExists, laneOfNotice, laneTitle, launchTitles, noteLaunch, readChannelMap, recordedCwd, stoppedSince } from "./notices-lanes.ts";
 import { snapshotResults } from "./files.ts";
 import { type ResultFile, type ResultLink, resultFiles, resultLinks } from "./result-refs.ts";
@@ -364,6 +365,7 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 	}
 	const open = d.open ?? d.to;
 	const expires_at = expiresAtOf(d, at);
+	if (d.draft && !shownAsStored(d.draft)) d = { ...d, draft: undefined };
 	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}) };
 	let item: Notice;
 	if (old) {
@@ -377,6 +379,14 @@ export function putDecision(d: { key: string; title: string; detail: string; to:
 		trim();
 	}
 	if (replaying) return;
+	// A send card that is not its draft as printed closes at once, saying why, and its session is told to post it again (notices-rules.ts unreadDraftRef);
+	// the card posted again from the draft takes the place of the one closed that way.
+	const note = repostNote(item);
+	if (note) {
+		settleDecision(item, msg().draftCardRedo, at);
+		for (const fn of repostHooks) fn(item, note);
+		return;
+	}
 	save();
 	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
 	for (const fn of decisionHooks) fn(item);
@@ -540,7 +550,8 @@ function rerenderPending(): number {
 			d.options = n.decision.options;
 			d.group = n.decision.group;
 			if (n.decision.draft) d.draft = n.decision.draft;
-			else delete d.draft;
+			// A card read as its draft when it came keeps it: the stored draft may have changed since by the owner's own edit (its text or recipient).
+			else if (d.draft?.ref !== unreadDraftRef(n)) delete d.draft;
 			if (n.decision.assumed) d.assumed = true;
 			else delete d.assumed;
 			if (was(i) !== before) changed++;

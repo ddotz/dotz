@@ -326,9 +326,10 @@ function toChoiceBlock(text: string): string {
 	return `${tone === "fail" ? "[fail]" : "[ask]"} ${out.join("\n").trim()}`;
 }
 
-/** At most `max` characters that still hold the choice block: a long lane report ends in its question, and Discord buttons need every option. */
+/** At most `max` characters that still hold the choice block: a long lane report ends in its question, and Discord buttons need every option.
+ *  A send card is never cut: the owner approves only a draft he saw whole, and a card that shows less keeps no draft (hub/notices-rules.ts shownAsStored). */
 export function clipKeepingAsk(text: string, max: number): string {
-	if (text.length <= max) return text;
+	if (text.length <= max || parseDraftApproval(text)) return text;
 	const lines = text.split("\n");
 	const at = lines.findIndex(l => DECISION_HEAD.test(l));
 	if (at < 0) return text.slice(0, max);

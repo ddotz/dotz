@@ -6,22 +6,23 @@ import { afterAll, beforeEach, expect, test } from "bun:test";
 import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
+import { askText } from "./draft-attach.ts";
 import { ignoreNotice, listNotices } from "./notices.ts";
 import { out } from "./outbound.ts";
 import { approvalRoute, reportSend, sendTargetOf, sender, webAnswer } from "./approval-wire.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
 import { DATA_DIR, cfg } from "./config.ts";
-import { addDraft, newId } from "../features/reply-drafts/lib/store.ts";
+import { addDraft, getDraft, newId } from "../features/reply-drafts/lib/store.ts";
 
 beforeEach(() => void (cfg.web.send_undo_sec = 0));
 const CONV = "mail:aw-test";
-const draft = (body: string) => {
+const draft = (body: string, to = "friend@example.com") => {
 	const id = newId();
-	addDraft({ id, kind: "mail", app: "mail", source: "nowhere", mailId: `m-${id}`, ref: `aw-${id.toLowerCase()}`, to: "friend@example.com", body, status: "pending", created: "2020-01-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", from: "friend@example.com", text: "안녕" } as never });
+	addDraft({ id, kind: "mail", app: "mail", source: "nowhere", mailId: `m-${id}`, ref: `aw-${id.toLowerCase()}`, to, body, status: "pending", created: "2020-01-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", from: "friend@example.com", text: "안녕" } as never });
 	return id;
 };
 const refs = [draft("첫째 답"), draft("둘째 답"), draft("셋째 답"), draft("넷째 답")];
-const card = (ref: string) => `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: `${ref} 답`, ref, question: "이대로 보낼까요?" })}`;
+const card = (ref: string) => `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: getDraft(ref)!.body, ref, question: "이대로 보낼까요?" })}`;
 const openCards = () => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === CONV);
 const outs: HubEvent[] = [];
 onEmit(e => void (e.kind === "out" && e.target === CONV && outs.push(e)));
@@ -78,6 +79,25 @@ test("a send a session's CLI ran fails: the gateway report reaches the owner whe
 	const shown = listNotices(500).items.find((n: any) => n.decision?.draft?.ref === ref) as any;
 	expect(shown.decision.send).toMatchObject({ state: "failed", text: "메일 계정을 알 수 없어서 보내지 않았어요" });
 	ignoreNotice(shown.id);
+});
+
+// The card as the CLI prints it (askText), posted in a conversation of its own: what the open card holds as its draft.
+const printedCard = async (conv: string, id: string) => {
+	await out(conv, askText(getDraft(id)!, []));
+	const open = listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === conv) as any[];
+	const seen = open.map(n => [n.decision.draft?.ref, n.decision.draft?.to]);
+	for (const n of open) ignoreNotice(n.id);
+	return seen;
+};
+
+test("a mail draft whose recipient has no address: its card shows the sender's address the send will use and keeps its draft", async () => {
+	const id = draft("이름만 아는 답", "친구");
+	expect(await printedCard("mail:aw-name", id)).toEqual([[id, "friend@example.com"]]);
+});
+
+test("a draft longer than the gateway reads of a card keeps its draft: the card shows it whole", async () => {
+	const id = draft("긴 답장의 한 줄이에요.\n".repeat(600));
+	expect(await printedCard("mail:aw-long", id)).toEqual([[id, "friend@example.com"]]);
 });
 
 afterAll(() => {
