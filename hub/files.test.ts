@@ -1,6 +1,6 @@
 // Upload storage, the read-only file route's guards (roots, traversal, symlinks, secrets), Range, and the live-lane rule.
 import { expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, watch, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { allowedRoots, attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, resolveAllowed, safeName, saveUpload, ownerFiles, serveFile, UPLOADS, uploadsFrom } from "./files.ts";
@@ -196,12 +196,43 @@ test("the client going away mid-upload (× on the chip, xhr.abort) removes the p
 	const dir = uploadDir();
 	let settled!: (e: unknown) => void;
 	const ended = new Promise(ok => { settled = ok; });
-	const server = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(req) { try { await uploadsFrom(req, dir); settled("saved"); } catch (e) { settled(e); } return new Response("x"); } });
-	const started = new Promise<void>(ok => { const w = watch(dir, { recursive: true }, () => { if (tree(dir).some(n => n.endsWith(".part"))) { w.close(); ok(); } }); });
+	// The body reaches uploadsFrom through a stream that reads only when asked (highWaterMark 0): a read asked for while a .part is on disk means the
+	// upload has opened its file and wants bytes the client has not sent. A file watch missed that file's creation now and then (macOS FSEvents).
+	let started!: () => void;
+	const writing = new Promise<void>(ok => { started = ok; });
+	const server = Bun.serve({
+		port: 0,
+		hostname: "127.0.0.1",
+		async fetch(req) {
+			const from = req.body!.getReader();
+			const body = new ReadableStream<Uint8Array>(
+				{
+					async pull(c) {
+						if (tree(dir).some(n => n.endsWith(".part"))) started();
+						try {
+							const r = await from.read();
+							if (r.done) c.close();
+							else c.enqueue(r.value);
+						} catch (e) {
+							c.error(e);
+						}
+					},
+				},
+				{ highWaterMark: 0 },
+			);
+			try {
+				await uploadsFrom(new Request(req.url, { method: "POST", headers: req.headers, body }), dir);
+				settled("saved");
+			} catch (e) {
+				settled(e);
+			}
+			return new Response("x");
+		},
+	});
 	const sock = connect(server.port, "127.0.0.1");
 	await new Promise(ok => sock.once("connect", ok));
 	sock.write(`POST /api/upload HTTP/1.1\r\nHost: x\r\nContent-Type: multipart/form-data; boundary=BB\r\nContent-Length: 1000000\r\n\r\n${part("half.bin", "some bytes").slice(0, 120)}`);
-	await started;
+	await writing;
 	sock.destroy();
 	expect(await ended).toBeInstanceOf(FileError);
 	expect(tree(dir)).toEqual([]);
