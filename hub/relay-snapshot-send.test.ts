@@ -75,6 +75,12 @@ describe("share_status in the self chat config", () => {
 		for (const v of [false, "true", 1, null, undefined, {}]) expect(normalizeSelfChat({ ...base, share_status: v })).not.toHaveProperty("share_status");
 		expect(normalizeSelfChat(base)).not.toHaveProperty("share_status");
 	});
+
+	test("status_room_id is kept only as a positive whole number", () => {
+		const base = { enabled: true, team_id: 1, room_id: 2, member_id: 3, bot_id: 4 };
+		expect(normalizeSelfChat({ ...base, status_room_id: 9 })).toMatchObject({ status_room_id: 9 });
+		for (const v of [0, -1, 1.5, "9", null, undefined]) expect(normalizeSelfChat({ ...base, status_room_id: v })).not.toHaveProperty("status_room_id");
+	});
 });
 
 describe("createSnapshotSender", () => {
@@ -85,18 +91,19 @@ describe("createSnapshotSender", () => {
 	afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 	const cfg = (over: Partial<SelfChatConfig> = {}): SelfChatConfig =>
-		normalizeSelfChat({ enabled: true, team_id: 1, room_id: 2, member_id: 3, bot_id: 4, reply_prefix: "[b]", share_status: true, ...over })!;
+		normalizeSelfChat({ enabled: true, team_id: 1, room_id: 2, member_id: 3, bot_id: 4, reply_prefix: "[b]", share_status: true, status_room_id: 9, ...over })!;
 
 	function rig(config: () => SelfChatConfig | undefined = () => cfg()) {
-		const state = { now: 1_000_000, src: sources(), fail: false, posts: [] as string[], logs: [] as string[] };
+		const state = { now: 1_000_000, src: sources(), fail: false, posts: [] as string[], rooms: [] as number[], logs: [] as string[] };
 		const store = snapshotFileStore(join(dir, "snapshot.json"));
 		const make = () =>
 			createSnapshotSender({
 				config,
 				build: () => buildSnapshot(state.src, state.now),
-				post: async text => {
+				post: async (text, room) => {
 					if (state.fail) throw new Error("HTTP 500");
 					state.posts.push(text);
+					state.rooms.push(room);
 				},
 				now: () => state.now,
 				store,
@@ -150,8 +157,14 @@ describe("createSnapshotSender", () => {
 		expect(state.posts).toHaveLength(1);
 	});
 
-	test("posts nothing when the switch is off, the prefix is empty, or the chat is not ready", async () => {
-		for (const c of [cfg({ share_status: undefined }), cfg({ reply_prefix: "" }), cfg({ enabled: false }), undefined]) {
+	test("posts only into the status room, never into the self chat the owner reads", async () => {
+		const { state, sender } = rig();
+		await sender.tick();
+		expect(state.rooms).toEqual([9]);
+	});
+
+	test("posts nothing when the switch is off, the prefix is empty, there is no status room, or the chat is not ready", async () => {
+		for (const c of [cfg({ share_status: undefined }), cfg({ reply_prefix: "" }), cfg({ status_room_id: undefined }), cfg({ enabled: false }), undefined]) {
 			const { state, sender } = rig(() => c);
 			await sender.tick();
 			expect(state.posts).toEqual([]);

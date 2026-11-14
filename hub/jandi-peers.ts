@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { scrub } from "./activity.ts";
 import { writeAtomic } from "./config.ts";
 import { msg } from "./i18n.ts";
-import { commandOf, SelfChatError, startsWord, type SelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
+import { checkStatusRoomOf, commandOf, SelfChatError, startsWord, type SelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
 import { type AdapterPush, RelayError, type RelayLine, type RelayRow, type RelayStatus } from "./messenger.ts";
 import { noticeClass } from "./notice-class.ts";
 import { decodeSnapshot, isSnapshotText, type Snapshot } from "./relay-snapshot.ts";
@@ -91,6 +91,7 @@ export function createPeerChats(deps: PeerChatDeps) {
 	const say = deps.log ?? (() => {});
 	let cache: { key: string; at: number; records: Rec[] } | undefined;
 	let checked = "";
+	let statusChecked = 0;
 	let listed: Rec[] | undefined;   // the last messages the computer list read, for when JANDI is slow
 	let reading: Promise<Rec[]> | undefined;
 	let kept: Record<string, Kept> | undefined;   // the last snapshot per peer keyword, as saved
@@ -135,15 +136,30 @@ export function createPeerChats(deps: PeerChatDeps) {
 	async function records(c: SelfChatConfig): Promise<Rec[]> {
 		const client = deps.client();
 		if (!client) throw new SelfChatError("잔디 나와의 대화가 꺼져 있어요");
-		const key = `${c.team_id}/${c.room_id}`;
+		const key = `${c.team_id}/${c.room_id}/${c.status_room_id ?? ""}`;
 		if (cache?.key === key && now() - cache.at < CACHE_MS) return cache.records;
 		if (checked !== key) {
 			await client.checkRoom();
 			checked = key;
 		}
 		const j = (await client.get(`message-api/v2/teams/${c.team_id}/rooms/${c.room_id}/messages?count=${PAGE}`, 2)) as { records?: unknown };
-		cache = { key, at: now(), records: (Array.isArray(j?.records) ? j.records : []) as Rec[] };
+		cache = { key, at: now(), records: [...((Array.isArray(j?.records) ? j.records : []) as Rec[]), ...(await statusRecords(client, c))] };
 		return cache.records;
+	}
+
+	/** The status room's latest messages (none without one): the peers post their snapshots there, out of the owner's chat. A failure there leaves the chat readable. */
+	async function statusRecords(client: Client, c: SelfChatConfig): Promise<Rec[]> {
+		const room = c.status_room_id;
+		if (!room) return [];
+		try {
+			if (statusChecked !== room) await checkStatusRoomOf(client.get, c, room);
+			statusChecked = room;
+			const j = (await client.get(`message-api/v2/teams/${c.team_id}/rooms/${room}/messages?count=${PAGE}`, 2)) as { records?: unknown };
+			return (Array.isArray(j?.records) ? j.records : []) as Rec[];
+		} catch (e) {
+			say(`jandi peer status: ${e instanceof SelfChatError ? e.message : "the status room could not be read"}`);
+			return [];
+		}
 	}
 
 	/** The peer behind `key`, and the room's lines, or a RelayError (404: not configured; 502: JANDI could not be reached). */

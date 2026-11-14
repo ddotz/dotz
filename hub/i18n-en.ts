@@ -78,7 +78,7 @@ export const en = {
 		prefixHint: "What that computer puts at the very start of its replies.",
 		invalid: "Check the keyword and the reply prefix. Neither can match another computer's, and the list holds up to 8.",
 		share: "Send this computer's status to JANDI",
-		shareHint: "Posts a short summary (projects, sessions, monitors, open todos, recent alerts) into your self-chat when it changes, at most every 30 minutes. No secrets or personal paths. Only useful when this computer has a reply prefix.",
+		shareHint: "Posts a short summary (projects, sessions, monitors, open todos, recent alerts) into a private JANDI topic only you are in (self_chat.status_room_id), never your self-chat, when it changes, at most every 30 minutes. No secrets or personal paths. Needs that topic and a reply prefix.",
 	},
 
 	// Messenger connect flows (hub/onboarding*.ts, hub/messenger-login.ts): owner-facing lines, plain and short.
