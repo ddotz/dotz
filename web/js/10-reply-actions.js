@@ -1,7 +1,8 @@
 /* ---------- 답장 하나의 흐름: the one client of GET /api/reply/queue and POST /api/reply/act (hub/reply-actions.ts) ---------- */
 // Every surface that shows a reply draws it with rqItemCard(item, opts) from the server's ReplyItem and acts on it with raAct: the card has no
 // per-channel code, and the server says which buttons a failed or unsure send gets. The `reply` event updates one item and swaps a replaced
-// card in place (99-boot.js). opts: { bare (no head, original or attach line), lead (this card's 보내기 is the filled one) }.
+// card in place (99-boot.js). opts: { bare (no head, original or attach line), lead (this card's 보내기 is the filled one),
+// after (called once a send or drop went through), send (the surface sends the item itself: 빠른 처리 moves on before the answer) }.
 // loaded: the first read came back; min: how many waiting items make the 답장 대기 head offer 빠른 처리 and the app filter (the queue's triageMin);
 // err: the last failed read, kept for 답장 대기's 다시 시도.
 const RA = { items: new Map(), loaded: false, min: 1, err: null, busy: new Map(), fail: new Map(), edit: new Map(), rev: new Map(), nodes: new Map(), t: 0, ticking: false };
@@ -169,7 +170,7 @@ function rqItemCard(item, opts = {}) {
     extra: (d.notes || []).map(n => el("div", { class: "dr-wn", text: n })),
     fail: fail && !RA.edit.has(ref) ? fail : null,
     foot,
-    acts: { quiet: !opts.lead, busy, press: RA.busy.get(ref), send: item.can.send ? () => raAct(item, "send").then(ok => ok && opts.after && opts.after("send")) : null, edit: item.can.revise ? () => { RA.rev.set(ref, ""); raPaint(ref); } : null, drop: item.can.drop ? () => raAct(item, "drop").then(ok => ok && opts.after && opts.after("drop")) : null, manual: item.can.edit ? () => { RA.edit.set(ref, d.text); raPaint(ref); } : null },
+    acts: { quiet: !opts.lead, busy, press: RA.busy.get(ref), send: item.can.send ? opts.send ? () => opts.send(item) : () => raAct(item, "send").then(ok => ok && opts.after && opts.after("send")) : null, edit: item.can.revise ? () => { RA.rev.set(ref, ""); raPaint(ref); } : null, drop: item.can.drop ? () => raAct(item, "drop").then(ok => ok && opts.after && opts.after("drop")) : null, manual: item.can.edit ? () => { RA.edit.set(ref, d.text); raPaint(ref); } : null },
   });
   RA.nodes.set(ref, { node, opts });
   return node;
