@@ -9,7 +9,7 @@ import { UPLOAD_MAX_BYTES } from "./files.ts";
 import { dropForLine, forLines } from "./forline.ts";
 import { msg } from "./i18n.ts";
 import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
-import { createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
+import { checkStatusRoomOf, createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
 import { createSessionMark } from "./jandi-session.ts";
 import { createSnapshotSender, snapshotFileStore } from "./relay-snapshot-send.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
@@ -307,12 +307,15 @@ type StatusShare = ReturnType<typeof createSnapshotSender>;
 /** Starts polling the self chat and, beside it, this computer's status sharing (hub/relay-snapshot-send.ts), which posts through the same session as a reply. */
 function runSelfChat(dataDir: string, sc: SelfChatConfig, chat: SelfChat, log: (m: string) => void): StatusShare {
 	void chat.run();
+	let checked = 0;
 	const sharer = createSnapshotSender({
 		config: () => loadJandiConfig(dataDir).self_chat,
 		// Loaded when it runs: the gateway's state modules (sessions, monitors, projects) are not this adapter's imports.
 		build: async () => (await import("./relay-snapshot-source.ts")).currentSnapshot(Date.now()),
-		post: async text => {
-			await chat.post(`message-api/v3/teams/${sc.team_id}/rooms/${sc.room_id}/messages`, 3, messageBody(text));
+		post: async (text, room) => {
+			if (checked !== room) await checkStatusRoomOf(chat.get, sc, room);
+			checked = room;
+			await chat.post(`message-api/v3/teams/${sc.team_id}/rooms/${room}/messages`, 3, messageBody(text));
 			mark("self_chat", { last_out: Date.now() });
 		},
 		now: Date.now,
