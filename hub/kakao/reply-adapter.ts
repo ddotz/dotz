@@ -10,7 +10,8 @@ import { confirmSent, type Draft, draftBlock, dropDraft, editDraft, readDrafts, 
 import type { KakaoPaths } from "./types.ts";
 
 /** What createKakaoWeb hands the adapter: the store, a revise through its own model call, and the deps of one send. */
-export type KakaoKit = { paths: KakaoPaths; revise: (chatId: string, revise: { code: string; draft: string; change: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps> };
+// original: the message a draft answers (absent in tests that build the adapter alone).
+export type KakaoKit = { paths: KakaoPaths; original?: (d: Draft) => Promise<DraftView["original"]>; revise: (chatId: string, revise: { code: string; draft: string; change: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps> };
 
 const STATE: Record<string, DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent" };
 const codeOf = (c: string | undefined): ReasonCode => (isReasonCode(c) ? c : "unknown");
@@ -51,15 +52,20 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 			},
 		};
 	};
+	// The card quotes the message it answers; a database that cannot be read leaves the draft without the quote.
+	const withOriginal = async (d: Draft): Promise<DraftView> => {
+		const v = viewOf(d), original = kit.original ? await kit.original(d).catch(() => undefined) : undefined;
+		return original ? { ...v, original } : v;
+	};
 	const done = (r: SendResult) => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code: codeOf(r.code), text: r.reason ?? "" } });
 
 	return {
 		kind: "kakao",
 		get: async ref => {
 			const d = draftOf(ref);
-			return d ? viewOf(d) : undefined;
+			return d ? withOriginal(d) : undefined;
 		},
-		list: async () => readDrafts(kit.paths).filter(d => d.status === "pending").map(viewOf),
+		list: async () => Promise.all(readDrafts(kit.paths).filter(d => d.status === "pending").map(withOriginal)),
 		target: ref => (draftOf(ref) ? { kind: "kakao", lane: "kakao" } : undefined),
 		// The owner's pick is in the inbox (written by hub/reply-actions.ts); the 다시 보내기 after 확인 필요 (force) takes over a dead sender.
 		run: async (job: SendJob) => outcomeOf(await dispatchSend({ kind: "draft", code: job.ref, ownerApproved: true, ...(job.force ? { retry: true } : {}) }, await kit.sendDeps())),

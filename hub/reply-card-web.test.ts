@@ -15,6 +15,7 @@ const hub = fakeHub({
 	stream: "fake",
 	slowTimers: true,
 	api: async (req, url) => {
+		if (url.pathname === "/api/drafts/RFILES1/files") return json({ files: [{ name: "견적서.pdf", size: "120KB" }], canAttach: true, library: false, editable: true, tracked: true, original: true, attachIssues: [] });
 		if (url.pathname === "/api/reply/queue") return json({ items: [item("RAAAAAA"), item("RBBBBBB")], counts: { waiting: 2, failed: 0, unsure: 0, sending: 0, sentToday: 0 }, triageMin: 1, undoSec: 10 });
 		if (url.pathname === "/api/reply/act" && req.method === "POST") {
 			const b = (await req.json()) as Record<string, unknown>;
@@ -101,4 +102,12 @@ test("a revise's next swaps the card in place; a refused direct edit keeps the t
 	expect(await ev(`document.querySelector("#ra-test [data-k=edit-text]").value`)).toBe("무조건 목요일!");
 	expect(await ev(`document.querySelector("#ra-test .ra-lint").textContent`)).toContain("무조건");
 	expect(posts.at(-1)).toEqual({ ref: "RCCCCCC", action: "edit", text: "무조건 목요일!", send: true });
+});
+
+test("a mail card quotes its original with 원문 보기 and lists the files staged on the draft", async () => {
+	await mount(`RA.items.set("RFILES1", { ...RA.items.get("RBBBBBB"), ref: "RFILES1", item: "mail:RFILES1", conv: "mail:RFILES1", original: { who: "김팀장 <kim@example.com>", text: "견적서 보내주세요" } }); box.append(rqItemCard(RA.items.get("RFILES1")))`);
+	await waitFor(`!!document.querySelector("#ra-test [data-ref=RFILES1] .dr-files .dr-fn")`);
+	expect(await ev(`document.querySelector("#ra-test [data-ref=RFILES1] .dr-files .dr-fn").textContent`)).toBe("견적서.pdf");
+	expect(await ev(`document.querySelector("#ra-test [data-ref=RFILES1] .rq-ot").textContent`)).toBe("견적서 보내주세요");
+	expect(await ev(`!!document.querySelector("#ra-test [data-ref=RFILES1] .rq-og")`)).toBe(true);
 });

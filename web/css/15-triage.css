@@ -20,7 +20,7 @@
 .tr-none { color: var(--fg-3); font: 400 13px/20px var(--font); }
 
 /* 빠른 처리 over the one reply queue (30-triage.js tqOpen): the card, then 진행; the list's compact rows. */
-.tq-body { display: grid; gap: var(--sp-3); padding: var(--sp-3); }
+.tq-body { display: grid; align-content: start; gap: var(--sp-3); flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--sp-3); }   /* the sheet clips (.fs-card, .rq-pane): a long list scrolls here */
 .tq-rail { display: grid; gap: var(--sp-05); }
 .tq-r { display: flex; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-2); font: inherit; font-size: var(--fs-meta); text-align: left; cursor: pointer; }
 .tq-r.on { background: var(--row-sel); color: var(--fg); }

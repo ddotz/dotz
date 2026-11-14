@@ -631,6 +631,13 @@ export function createKakaoWeb(deps: WebDeps) {
 	// The kit of the one reply flow's KakaoTalk adapter (hub/kakao/reply-adapter.ts): a revise through this room's model call, and one send's deps.
 	const replyKit = {
 		paths,
+		// The message a draft answers, for the card's quote (the same read as the chat screen's pending row).
+		original: async (d: Draft) => {
+			const config = readConfig(paths);
+			if (!config?.enabled || !d.basisLogId) return undefined;
+			const db = await getDb(config).catch(() => undefined);
+			return db ? (await pendingRow(d, db, config.userId ?? "", d.roomName)).original : undefined;
+		},
 		revise: async (chatId: string, revise: { code: string; draft: string; change: string }) => {
 			const config = readConfig(paths);
 			if (!config?.enabled || !deps.draftModel) return { ok: false as const, error: "카카오톡 초안 만들기를 쓸 수 없어요" };

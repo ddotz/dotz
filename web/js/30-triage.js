@@ -68,7 +68,11 @@ function tqPaint() {
   const body = TQ.list ? tqListView() : TQ.i >= n ? tqDoneView() : [rqItemCard(tqItem(TQ.items[TQ.i].ref), { lead: true, after: tqAfter }), tqRail()];
   const keep = TQ.h.box.querySelector("textarea:focus, input:focus");
   if (keep && TQ.h.box.contains(keep) && !TQ.list) return;   // typing in the card's field: the next event repaints
-  clear(TQ.h.box).append(head, el("div", { class: "tq-body" }, ...body));
+  // The body scrolls under the fixed head; a repaint (a pick, a live send state) keeps the place in a long list, a new card starts at its top.
+  const was = TQ.h.box.querySelector(".tq-body"), top = was && was.dataset.at === String(TQ.list ? "list" : TQ.i) ? was.scrollTop : 0;
+  const nb = el("div", { class: "tq-body", "data-at": TQ.list ? "list" : String(TQ.i) }, ...body);
+  clear(TQ.h.box).append(head, nb);
+  nb.scrollTop = top;
 }
 // 진행: every item and its live state; the one on screen is marked, a tap opens it.
 function tqRail() {

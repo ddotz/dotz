@@ -154,14 +154,18 @@ function rqItemCard(item, opts = {}) {
   }
   else if (d.revising) foot = el("div", { class: "kk-st", role: "status", text: TX("reply.revising") });
   else if (item.send) foot = rqSendNode(item);
+  // A draft of this hub that the server can open (a mail, a comment): 원문 보기 loads the whole original (10-draft-original.js), and a mail's 첨부 줄 reads the
+  // files staged on it (10-decision-card.js draftFilesNode); the queue item carries neither. Another computer's item keeps the quote it came with.
+  const local = !item.pc && (item.kind === "mail" || item.kind === "webmail" || item.kind === "comment"), mail = local && item.kind !== "comment";
+  if (mail && !DRF.st[ref]) { DRF.pc[ref] = null; drfLoad(ref).then(() => raPaint(ref)); }
   const node = rqCard({
     key: `ra:${item.item}`, cls: `ra-card${opts.lead ? " lead" : ""}`, attrs: { "data-ref": ref, "data-item": item.item }, bare: !!opts.bare,
     // The head names the person: a mail sender's address ("이름 <a@b>") stays in the quoted original only.
     head: { app: item.app, label: item.label, who: item.original && (String(item.original.who).replace(/\s*<[^<>]*>\s*$/, "") || item.original.who), at: item.at },
-    original: item.original ? { who: item.original.who, text: item.original.text } : null,
+    original: item.original ? { who: item.original.who, text: item.original.text, ...(local ? { ref, t: item.conv } : {}) } : null,
     label: d.replaces ? TX("reply.revised") : "", to: [d.toLabel, d.to], subject: d.subject,
     body: { text: d.text, parts: d.parts, sentParts: d.sentParts },
-    attach: d.attachments ? { attachments: d.attachments } : { cannotAttach: [] },
+    attach: mail ? draftFilesNode({ ref, toLabel: d.toLabel, attachments: d.attachments }, { t: item.conv, edit: false }) : d.attachments ? { attachments: d.attachments } : { cannotAttach: [] },
     extra: (d.notes || []).map(n => el("div", { class: "dr-wn", text: n })),
     fail: fail && !RA.edit.has(ref) ? fail : null,
     foot,

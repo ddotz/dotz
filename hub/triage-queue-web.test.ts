@@ -59,3 +59,14 @@ test("the list posts only the picked rows", async () => {
 	expect(posts.at(-1)).toEqual({ ref: "RAAAAA1", action: "send" });
 	expect(posts.map(b => b.ref)).not.toContain("RBBBBB2");
 });
+
+test("a long list scrolls inside the sheet to its last row, and a pick keeps the place", async () => {
+	await run(`TQ.h.close(); for (let k = 0; k < 40; k++) RA.items.set("RL" + k, { ...RA.items.get("RBBBBB2"), ref: "RL" + k, item: "kakao:RL" + k, at: Date.now() - 100000 - k }); tqOpen(); TQ.list = true; tqPaint()`);
+	await waitFor(`document.querySelectorAll(".tq-row").length > 40`);
+	await run(`const b = document.querySelector(".tq-body"); b.scrollTop = b.scrollHeight`);
+	const box = await ev(`(() => { const b = document.querySelector(".tq-body"), r = b.getBoundingClientRect(), last = [...document.querySelectorAll(".tq-row")].at(-1).getBoundingClientRect(); return { top: b.scrollTop, inView: last.bottom <= r.bottom + 1 && last.top >= r.top - 1 }; })()`);
+	expect(box.top).toBeGreaterThan(0);
+	expect(box.inView).toBe(true);
+	await run(`[...document.querySelectorAll(".tq-row")].at(-1).querySelector("[data-k=skip]").click()`);
+	expect(await ev(`document.querySelector(".tq-body").scrollTop`)).toBe(box.top);
+});

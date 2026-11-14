@@ -38,6 +38,16 @@ test("a pending draft is the one view; another kind's ref is not this adapter's"
 	expect(await a.ask(d.code)).toContain(`(${d.code})`);
 });
 
+test("the view quotes the message the draft answers; a database that cannot be read leaves it out", async () => {
+	const d = await draft();
+	const original = { who: "Alex", text: "내일 몇 시에 볼까요?", at: 1 };
+	const withQuote = kakaoAdapter({ ...kit, original: async x => (x.basisLogId === "9" ? original : undefined) });
+	expect((await withQuote.get(d.code))!.original).toEqual(original);
+	expect((await withQuote.list())[0]!.original).toEqual(original);
+	const broken = kakaoAdapter({ ...kit, original: async () => { throw new Error("db locked"); } });
+	expect((await broken.get(d.code))!.original).toBeUndefined();
+});
+
 test("revise returns the new code with what it replaced and the room's lesson; edit, drop and restore move the store", async () => {
 	const a = kakaoAdapter(kit);
 	const d = await draft();
