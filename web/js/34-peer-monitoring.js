@@ -37,7 +37,7 @@ function pqFor(path) {
 function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, pqBare(path)) : path; }
 // The action a POST of the page means on the computer that owns the item (hub/peer-monitor.ts act), or null for a local one.
 function pqAct(path, body) {
-  const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop|restore|ask\/drop)$/.exec(path);
+  const b = body || {}, k = /^\/api\/kakao\/chat\/([^/]+)\/(send|read|draft|ask\/drop)$/.exec(path);
   if (path === "/api/message" && b.mail) { const { mail, lane, project, via, ...rest } = b; return { pc: pqPc(`mail:${mail}`), action: "message", args: { target: `mail:${mail}`, ...rest } }; }
   // A monitor's conversation and switches go to the computer that owns the watch: the same message and the same settings PATCH, forwarded.
   const sp = /^\/api\/watches\/([a-z0-9-]+)\/settings$/.exec(path);
@@ -62,13 +62,10 @@ function pqAct(path, body) {
   const nm = /^\/api\/mail\/([^/?]+)\/no-reply$/.exec(path);
   if (nm && pqPc(`mail:${decodeURIComponent(nm[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(nm[1])}`), action: "no-reply", args: { kind: "mail", key: decodeURIComponent(nm[1]) } };
   if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: pqBare(b.target), ts: b.ts } };
-  // The comments pane of another computer (CM.pc, 30-monitoring-comments.js): its drafts, failed sends, drafted replies and source switches run there,
-  // on the routes hub/peer-monitor.ts act "comments" forwards (once per click).
+  // The comments pane of another computer (CM.pc, 30-monitoring-comments.js): its drafted replies, read marks and source switches run there,
+  // on the routes hub/peer-monitor.ts act "comments" forwards (once per click). Its drafts are the queue's items (raAct, act "reply").
   if (CM.pc) {
-    const e = v => decodeURIComponent(v), c = CM.pc, d = /^\/api\/comments\/drafts\/([^/]+)\/(send|drop|restore|revise)$/.exec(path);
-    if (d) return { pc: c, action: "comments", args: { op: `draft-${d[2]}`, code: e(d[1]), ...(d[2] === "revise" ? { change: b.change, ...(b.part ? { part: b.part } : {}) } : {}) } };
-    const s = /^\/api\/comments\/sends\/([^/]+)\/(retry|dismiss)$/.exec(path);
-    if (s) return { pc: c, action: "comments", args: { op: `send-${s[2]}`, id: e(s[1]) } };
+    const e = v => decodeURIComponent(v), c = CM.pc;
     const m = /^\/api\/comments\/comment\/([^/]+)\/(draft|no-reply)$/.exec(path);
     if (m) return { pc: c, action: "comments", args: m[2] === "draft" ? { op: "draft", commentId: e(m[1]) } : { op: "no-reply", commentId: e(m[1]), on: true } };
     const t = /^\/api\/comments\/thread\/([^/]+)\/([^/]+)\/read$/.exec(path);
@@ -79,15 +76,14 @@ function pqAct(path, body) {
   if (!path.startsWith("/api/kakao/") || !KK.pc) return null;
   const nk = /^\/api\/kakao\/chat\/([^/]+)\/no-reply$/.exec(path);
   if (nk) return { pc: KK.pc, action: "no-reply", args: { kind: "kakao", chatId: decodeURIComponent(nk[1]) } };
-  const id = k && decodeURIComponent(k[2]);
-  if (k && k[1] === "chat" && k[3] === "send") return { pc: KK.pc, action: "kakao", args: { op: "send", chatId: id, text: b.text } };
-  if (k && k[1] === "chat" && k[3] === "read") return { pc: KK.pc, action: "kakao", args: { op: "read", chatId: id, logId: b.logId } };
-  if (k && k[1] === "chat" && k[3] === "draft") return { pc: KK.pc, action: "kakao", args: { op: "draft", chatId: id, ...(typeof b.choice === "string" ? { choice: b.choice } : {}), ...(b.revise ? { revise: b.revise } : {}) } };
-  if (k && k[1] === "chat" && k[3] === "ask/drop") return { pc: KK.pc, action: "kakao", args: { op: "ask-drop", chatId: id } };
+  const id = k && decodeURIComponent(k[1]);
+  if (k && k[2] === "send") return { pc: KK.pc, action: "kakao", args: { op: "send", chatId: id, text: b.text } };
+  if (k && k[2] === "read") return { pc: KK.pc, action: "kakao", args: { op: "read", chatId: id, logId: b.logId } };
+  if (k && k[2] === "draft") return { pc: KK.pc, action: "kakao", args: { op: "draft", chatId: id, ...(typeof b.choice === "string" ? { choice: b.choice } : {}) } };
+  if (k && k[2] === "ask/drop") return { pc: KK.pc, action: "kakao", args: { op: "ask-drop", chatId: id } };
   // 지켜보기 / 자동 초안 of a room (PUT /api/kakao/rooms/<id>): the same change on the computer that has the room.
   const rm = /^\/api\/kakao\/rooms\/([^/?]+)$/.exec(path);
   if (rm) return { pc: KK.pc, action: "kakao", args: { op: "room", chatId: decodeURIComponent(rm[1]), ...(typeof b.watched === "boolean" ? { watched: b.watched } : {}), ...(typeof b.autoDraft === "boolean" ? { autoDraft: b.autoDraft } : {}) } };
-  if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: `draft-${k[3]}`, code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
   throw new Error(TX("misc.pq.change_there", { name: KK.pc.name }));
 }
 // The files of a message to another computer's conversation: the bytes kept in the composer go to THAT computer (act "upload", one file per

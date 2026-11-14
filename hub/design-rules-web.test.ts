@@ -57,9 +57,9 @@ const SIZE_ALLOWED: Record<string, [number, number]> = {
 	"01-tokens.css": [11, 4], "02-cards-lists-tags.css": [12, 3], "03-base.css": [32, 16], "04-files.css": [59, 25],
 	"05-log.css": [36, 18], "06-harness.css": [22, 3], "07-chat.css": [23, 5], "08-project-sessions.css": [6, 0],
 	"09-notices.css": [5, 1], "10-conversations.css": [8, 4], "11-peers.css": [0, 4], "13-code-shell.css": [2, 6],
-	"14-overlay.css": [1, 0], "15-draft-original.css": [2, 5], "15-reply-card.css": [4, 0], "15-reply.css": [2, 2],
-	"15-settings-pages.css": [2, 1], "15-settings-phone.css": [0, 1], "15-triage.css": [11, 13], "16-result-card.css": [67, 7],
-	"17-kakao.css": [10, 10], "18-app-settings.css": [2, 1], "18-comments.css": [3, 2], "19-volume.css": [10, 0],
+	"14-overlay.css": [1, 0], "15-draft-original.css": [2, 5], "15-reply-card.css": [3, 0], "15-reply.css": [2, 2],
+	"15-settings-pages.css": [2, 1], "15-settings-phone.css": [0, 1], "16-result-card.css": [67, 7],
+	"17-kakao.css": [8, 9], "18-app-settings.css": [2, 1], "18-comments.css": [3, 1], "19-volume.css": [10, 0],
 	"20-apps.css": [4, 0], "20-mail-box.css": [25, 14], "20-mail-thread.css": [7, 4], "20-monitoring.css": [7, 2],
 	"20-projects.css": [4, 2], "21-picker.css": [1, 3], "22-shell.css": [7, 3],
 };

@@ -5,7 +5,10 @@ import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 // home (item list + 답장 대기), an open reply card, a watch feed, an app's settings and the #apps view stand in the 채팅 tab's list box and content box, measured in the same run.
 // Names and texts are placeholders.
 const at = (d: number, h: number, m: number) => Date.UTC(2026, 9, d, h, m);
-const FAILED = [1, 2].map(n => ({ key: `f${n}`, app: "kakao", kind: "chat", sendId: `s${n}`, ref: `R${n}`, who: `가나${n}`, what: "대화방", text: `답장 ${n}`, at: Date.now() - n * 6e4, why: n === 1 ? "연결이 끊겼어요" : "로그인이 풀렸어요" }));
+// The reply queue (GET /api/reply/queue): two replies sent today (rows that open their card) and one failed send (a card in the list).
+const qItem = (n: number, send: object) => ({ item: `kakao:R${n}`, ref: `R${n}`, kind: "chat", app: "kakao", label: "카카오톡", conv: "i:kakao", at: Date.now() - n * 6e4, can: { send: false, revise: true, edit: true, drop: true, restore: false },
+	draft: { state: "pending", toLabel: "대화방", to: `가나${n}`, text: `답장 ${n}` }, original: { who: `가나${n}`, text: "대화방" }, send });
+const QUEUE = [qItem(1, { state: "sent", at: Date.now() - 6e4, how: "owner", actions: [] }), qItem(2, { state: "sent", at: Date.now() - 12e4, how: "owner", actions: [] }), qItem(3, { state: "failed", at: Date.now() - 18e4, reason: { code: "offline", text: "연결이 끊겼어요" }, actions: ["retry"] })];
 const ROOMS = [{ chatId: "100", name: "가나다 모임", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: at(22, 1, 29) }];
 let hits: Record<string, number> = {};
 let repliesFail = false;
@@ -23,7 +26,7 @@ const hub = fakeHub({
 		if (p === "/api/integrations") return json({ items: [{ key: "kakao", label: "카카오톡", icon: "chat", kind: "app", conv: [], notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } }] });
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: ROOMS });
 		if (p === "/api/integrations/kakao/settings") return json({ key: "kakao", fields: [] });
-		if (p === "/api/replies") return repliesFail ? json({ error: "no" }, 500) : json({ items: [], failed: FAILED, sent: [], stops: {} });
+		if (p === "/api/reply/queue") return repliesFail ? json({ error: "no" }, 500) : json({ items: QUEUE, counts: {}, triageMin: 1, undoSec: 10 });
 		if (p === "/api/apps") return json({ items: [{ id: "memo", label: "메모", icon: "file", source: "manifest", status: "ok", kind: "tool" }, { id: "todo", label: "할 일", icon: "file", source: "manifest", status: "ok", kind: "tool" }], errors: [] });
 		return undefined;
 	},
@@ -72,11 +75,11 @@ describe.each([1280, 1920])("모니터링 at %d", width => {
 		const chat = await chatBoxes(v);
 		await home(v);
 		await run(v, `document.querySelector('.rq-r[data-qr] .tx').click()`);
-		await waitFor(v, `RQ.sheet && RQ.sheet.pane && document.querySelector(".rq-pane .rq-acts")`);
+		await waitFor(v, `RQ.sheet && RQ.sheet.pane && document.querySelector(".rq-pane .ra-card")`);
 		await still(v);
 		sameList(await box(v, "#v-monitoring > .cv-side"), chat.list);
 		sameMain(await box(v, ".rq-pane"), chat.main);
-		expect(await ev<number>(v, `document.querySelectorAll(".fs-bd .rq-acts, .fs-card .rq-acts").length`)).toBe(0);
+		expect(await ev<number>(v, `document.querySelectorAll(".fs-bd .ra-card, .fs-card .ra-card").length`)).toBe(0);
 		await run(v, `document.querySelector("#back").click()`);
 		await waitFor(v, `!RQ.sheet && !document.querySelector(".rq-pane") && document.querySelector(".rq-r.on")`);
 		sameMain(await box(v, "#v-monitoring > .chatbox"), chat.main);
@@ -144,9 +147,9 @@ describe("모니터링 on a phone and on failure", () => {
 		await run(v, `go("monitoring", "replies")`);
 		await waitFor(v, `MON.sel === "replies" && document.querySelector(".rq-r[data-qr] .tx")`);
 		await run(v, `document.querySelector('.rq-r[data-qr] .tx').click()`);
-		await waitFor(v, `RQ.sheet && !RQ.sheet.pane && document.querySelector(".fs-bd .rq-acts")`);
-		// the reach: the drawn box plus the invisible ::after above and below it (ui-spec 버튼: a small control keeps its box and widens what a finger reaches)
-		const hit = await ev<number[]>(v, `[...document.querySelectorAll(".fs-bd .rq-acts .btn")].map(b => { const a = getComputedStyle(b, "::after"), out = a.content !== "none" && a.position === "absolute" ? -(parseFloat(a.top) || 0) - (parseFloat(a.bottom) || 0) : 0; return Math.round(b.getBoundingClientRect().height + Math.max(0, out)); })`);
+		await waitFor(v, `RQ.sheet && !RQ.sheet.pane && document.querySelector(".fs-bd .ra-card")`);
+		// the reach of the failed card's buttons in the list: the drawn box plus the invisible ::after above and below it (ui-spec 버튼: a small control keeps its box and widens what a finger reaches)
+		const hit = await ev<number[]>(v, `[...document.querySelectorAll("#v-monitoring .rq-c .rq-acts .btn")].map(b => { const a = getComputedStyle(b, "::after"), out = a.content !== "none" && a.position === "absolute" ? -(parseFloat(a.top) || 0) - (parseFloat(a.bottom) || 0) : 0; return Math.round(b.getBoundingClientRect().height + Math.max(0, out)); })`);
 		const need = await ev<number>(v, `parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--btn-hit"))`);
 		expect(hit.length).toBeGreaterThan(0);
 		for (const h of hit) expect(h).toBeGreaterThanOrEqual(need);

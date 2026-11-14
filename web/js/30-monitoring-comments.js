@@ -1,13 +1,13 @@
 /* ---------- 모니터링 > 앱 > 유튜브 / 인스타그램 / 웹사이트 댓글: choose what to follow, one conversation per post ---------- */
 // API: docs/comments-api.md. Shown instead of the notice timeline of an app entry only while the owner has comment replies on for that
 // app (CM.apps). It reuses the KakaoTalk pane's layout and classes (30-kakao.js, 17-kakao.css). Live updates: comment / comment_draft /
-// comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
+// comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기 (its queue card); text only
 // goes through el({text}), never innerHTML.
 // A request that did not get through reads as a sentence about what did not load, never the bare transport word ('offline'); 다시 시도 stands under it, the same in every empty or failed place of the kakao and comment panes.
 const appFail = (e, what) => { const m = String((e && e.message) || ""); return !m || /^(offline|failed to fetch|load failed|networkerror.*)$/i.test(m) ? TX("mon.cm.fail_net", { what }) : m; };
 const appRetry = fn => el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: fn });
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
-  drafting: new Set(), revising: "", note: {}, pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
+  drafting: new Set(), raMiss: "", pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
 // default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
@@ -203,7 +203,7 @@ function cmPaintRooms() {
 const cmUrl = t => `/api/comments/thread/${enc(t.source)}/${enc(t.thread)}`;
 async function cmOpen(t) {
   const seq = ++CM.seq;
-  CM.open = { source: t.source, thread: t.thread, title: t.title }; CM.view = null; CM.loading = true; CM.viewErr = ""; CM.revising = ""; CM.note = {};
+  CM.open = { source: t.source, thread: t.thread, title: t.title }; CM.view = null; CM.loading = true; CM.viewErr = "";
   cmPaintAll(); bkCmSync();
   await cmReload(seq, true);
 }
@@ -221,7 +221,7 @@ async function cmReload(seq = CM.seq, scroll = false) {
   cmPaintChat(scroll);
   cmMarkRead();
 }
-function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; CM.revising = ""; CM.note = {}; cmPaintAll(); convTitle(); bkCmSync(); }
+function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; cmPaintAll(); convTitle(); bkCmSync(); }
 function cmBack() {
   if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && current === "monitoring" && !MON.list)) return false;
   if (CM.tab === "dm") { dmClose(); return true; }
@@ -284,21 +284,11 @@ function cmCommentNode(c, v, by, nested) {
     el("div", { class: "kk-mb" }, hd, parent && !nested ? el("div", { class: "kk-reply", text: `↳ ${parent.author}` }) : null, el("div", { class: "kk-bub", text: c.text }), cmProgress(c, v),
       make || no ? el("div", { class: "cm-acts" }, make, no) : null));
 }
-// A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like KakaoTalk.
-// One nobody can say went up (hub/comments/recover.ts) offers 다시 보내기 and 완료 (closed as sent, nothing is posted).
-const cmSendCall = (s, op) => cmApi(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
-async function cmSendFix(btn, s, op) {
-  btn.disabled = true;
-  try { await cmSendCall(s, op); if (op === "dismiss" && CM.view) CM.view.sends = CM.view.sends.filter(x => x.id !== s.id); await cmReload(CM.seq, op === "retry"); }
-  catch (e) { toast(e.message, true); btn.disabled = false; }
-}
+// A reply on its way, failed or unsure stays under its comment as a bubble with its state; what to do about it is the queue card's (답장 대기).
 function cmSendNode(s) {
   const failed = s.state === "failed", unsure = s.state === "unsure", st = failed ? `${TX("mon.tag.fail")}${s.reason ? ` · ${s.reason}` : ""}` : unsure ? `${TX("mon.tag.need")}${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? TX("mon.dr.st.send") : TX("mon.cm.st.sending");
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id }, el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
-    el("div", { class: "kk-st", role: failed || unsure ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
-      failed || unsure ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: TX("mon.cm.send_again"), onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: TX("mail.remove"), onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null,
-      unsure ? el("button", { class: "btn text", type: "button", "data-k": "done", text: TX("settings.done"), onclick: ev => cmSendFix(ev.currentTarget, s, "done") }) : null));
+    el("div", { class: "kk-st", role: failed || unsure ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st })));
 }
 function cmPaintChat(stick) {
   if (CM.tab === "dm") { dmPaintChat(); return; }
@@ -310,13 +300,13 @@ function cmPaintChat(stick) {
     if (open) cmHead.append(cmThumb(open.title, v && v.thread.thumb), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.title }),
       v && v.thread.link ? el("a", { class: "cv-p", href: v.thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(v.source.kind) }) : el("span", { class: "cv-p", text: TX("mon.cm.comments") })));
   }
-  const csig = JSON.stringify([open, CM.loading, CM.viewErr, v && { ...v, read: null }, [...CM.drafting], CM.revising, v && v.sends.some(x => x.state === "sent" && Date.now() - x.at < 120000) ? Math.floor(Date.now() / 20000) : 0]);
+  const csig = JSON.stringify([open, CM.loading, CM.viewErr, v && { ...v, read: null }, [...CM.drafting], v && v.sends.some(x => x.state === "sent" && Date.now() - x.at < 120000) ? Math.floor(Date.now() / 20000) : 0]);
   if (!stick && csig === CM.chatSig) return;
   CM.chatSig = csig;
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("mon.cm.pick_post") })); return; }
   if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("common.loading") })); return; }
   if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr }), appRetry(() => { CM.loading = true; CM.viewErr = ""; cmPaintChat(false); cmReload(); })); return; }
-  // A repaint while he types what to change draws a new field (its text is CM.note): give it the focus and the caret the old one had.
+  // A repaint while he types what to change (the queue card's 고치기 field) draws a new field: give it the focus and the caret the old one had.
   const a = document.activeElement, typing = a && a.matches(".rq-edit input") && cmIn.contains(a) ? [a.selectionStart, a.selectionEnd, a.selectionDirection] : null;
   const nodes = [cmPostCard(v.thread, v.source.kind), ...cmThreadNodes(v)];
   const keep = cmTl.scrollTop;
@@ -341,7 +331,7 @@ function cmThreadNodes(v) {
   }
   const ids = new Set(v.comments.map(c => c.id));
   const sends = v.sends.filter(s => s.state !== "sent" || Date.now() - s.at < 120000);
-  const under = c => [...v.drafts.filter(d => d.commentId === c.id).map(cmDraftCard), ...sends.filter(s => s.commentId === c.id).map(cmSendNode)];
+  const under = c => [...v.drafts.filter(d => d.commentId === c.id).map(cmQueueCard).filter(Boolean), ...sends.filter(s => s.commentId === c.id).map(cmSendNode)];
   const nodes = []; let day = null;
   for (const { root, replies } of groups.values()) {
     if (day === null || kkDay(day) !== kkDay(root.at)) nodes.push(el("div", { class: "kk-date", text: kkDate(root.at) }));
@@ -350,7 +340,7 @@ function cmThreadNodes(v) {
     for (const r of replies) kids.push(cmCommentNode(r, v, by, true), ...under(r));
     nodes.push(el("div", { class: "cm-th", "data-root": root.id }, cmCommentNode(root, v, by, false), kids.length ? el("div", { class: "cm-replies" }, ...kids) : null));
   }
-  nodes.push(...v.drafts.filter(d => !ids.has(d.commentId)).map(cmDraftCard), ...sends.filter(s => !ids.has(s.commentId)).map(cmSendNode));
+  nodes.push(...v.drafts.filter(d => !ids.has(d.commentId)).map(cmQueueCard).filter(Boolean), ...sends.filter(s => !ids.has(s.commentId)).map(cmSendNode));
   return nodes;
 }
 function cmPaintAll() {
@@ -366,47 +356,22 @@ async function cmMakeDraft(c) {
   try { await cmApi(`/api/comments/comment/${enc(c.id)}/draft`, "POST", {}); }
   catch (e) { CM.drafting.delete(c.id); cmPaintChat(false); toast(e.message, true); }
 }
-// The thread's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue;
-// The card sits right under the comment it answers, so it has no 원문 보기 bar of its own (the send sheet keeps one: 10-draft-original.js).
-async function cmRestore(code) {
-  try { await cmApi(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast(TX("mon.cm.restored")); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
-}
-function cmDraftCard(d) {
-  // The one reply queue holds this draft (this computer's): its card, with 답글 / 메일 for a 고치기 when a mail rides along.
-  const qi = !CM.pc && RA.loaded ? RA.items.get(d.code) : null;
+// The thread's draft is its item of the one reply queue, drawn as that card (rqItemCard) right under the comment it answers, with 답글 / 메일 for a 고치기
+// when a mail rides along. A draft the queue does not list yet (just made) has the queue read once more and the thread drawn again.
+function cmQueueCard(d) {
+  const qi = raItems().find(i => i.ref === d.code);
   if (qi) return el("div", { class: "od-cwrap" }, rqItemCard(qi, { bare: true, part: !!d.mail }));
-  const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); cmReload(); } finally { btn.disabled = false; } };
-  const sending = CM.view.sends.some(s => s.commentId === d.commentId && (s.state === "sending" || s.state === "unsure"));
-  const edit = CM.revising === d.code, src = CM.view.source || {};
-  // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
-  const part = d.mail ? selectButton({ label: TX("mon.cm.part"), items: [{ value: "reply", label: TX("mon.cm.reply") }, { value: "mail", label: TX("common.mail") }], value: "reply" }) : null;
-  const wrap = el("div", { class: "od-cwrap" });
-  const who = ((CM.view.comments || []).find(c => c.id === d.commentId) || {}).author;
-  const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: CM.pc ? CM.pc.name : pqSelf(), at: d.created }, label: TX("mon.cm.reply_draft"), labelCls: "kk-dh",
-    to: [TX("mon.cm.comments"), who || ""], body: { text: d.text, cls: "kk-dt" },
-    // A comment reply is text only (a file goes with the mail that rides along, shown below): say so before 보내기.
-    attach: { attachmentsNone: true, cannotAttach: [] },
-    extra: [draftMailNode(d.mail), d.mail ? el("div", { class: "kk-note", role: "status", text: (d.mail.notes || []).join(" / ") || TX("mon.cm.then_mail") }) : null, d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
-    // What he types is kept per draft (CM.note): the thread repaints on its own while he types (the timer, a live event), and a new field must not start empty.
-    ...(edit ? { revise: rqReviseNode({ pick: part, value: CM.note[d.code] || "", onInput: t => { CM.note[d.code] = t; }, cancel: () => { CM.revising = ""; delete CM.note[d.code]; cmPaintChat(false); },
-      go: change => run($(".rq-edit [data-k=revise-go]", wrap) || el("button"), async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change, ...(part ? { part: part.value } : {}) }); CM.revising = ""; delete CM.note[d.code]; await cmReload(); }) }) }
-      : { acts: {
-        send: sending ? null : ev => run(ev.currentTarget, async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/send`, "POST", {}); await cmReload(CM.seq, true); }),
-        edit: () => { CM.revising = d.code; cmPaintChat(false); },
-        drop: ev => run(ev.currentTarget, async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); rqDroppedToast(d.mail ? null : () => cmRestore(d.code)); await cmReload(); }),
-      } }) });
-  wrap.append(card);
-  return wrap;
+  if (CM.raMiss !== d.code) { CM.raMiss = d.code; raLoad().then(() => { CM.chatSig = ""; cmPaintChat(false); }); }
+  return null;
 }
 
 /* ---- live and mode ---- */
 function cmLive(e) {
   cmIntgSoon();
-  if (e.kind === "comment_draft" || e.kind === "comment_send") rqSoon();
+  if (e.kind === "comment_draft") rqSoon();
   if (CM.pc) return;   // the stream is this computer's; the peer's comments are read again by the timer
   if (e.kind === "comment_sources") { cmLoadSources(); return; }
   if (e.kind === "comment_draft" && e.error) toast(e.error, true);
-  if (e.kind === "comment_send" && e.mail === "failed") toast(TX("mon.cm.mail_not_sent", { reason: e.mailReason || TX("mon.cm.unknown_reason") }), true);
   if (e.kind === "comment_draft") for (const id of [...CM.drafting]) CM.drafting.delete(id);
   if (!CM.vis) return;
   cmLoad();

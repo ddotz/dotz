@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 
-// A big backlog stays readable: 답장 대기 (web/js/30-replies.js) says what each row is about, counts per app, shows what is being sent, updates by key without
-// moving the reader and draws at most a page of rows per section; the mail list (30-monitoring.js monChronoNodes, 30-mail-box.js) draws 100 mails at a time.
+// A big backlog stays readable: 답장 대기 (web/js/30-replies.js, the one reply queue) counts per app, shows what is being sent, updates by key without
+// moving the reader and draws at most a page of cards per section; the mail list (30-monitoring.js monChronoNodes, 30-mail-box.js) draws 100 mails at a time.
 setDefaultTimeout(30_000);
 const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
 const app = (key: string, label: string, extra: object = {}) => ({ key, app: key, label, icon: "chat", kind: "app", unread: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: 0 }, ...extra });
@@ -11,16 +11,16 @@ type Mail = { key: string; subject: string; at: string };
 let mails: Mail[] = [];
 let notices: object[] = [];
 const mkMails = (n: number): Mail[] => Array.from({ length: n }, (_, i) => ({ key: `m${i}`, subject: `메일 ${i}`, at: ago(i + 1) }));
-const sendingNotice = (id: string, state: string) => ({
-	id, ts: ago(1), updated: ago(1), kind: "decision", tone: "ok", title: "답장을 보냈어요", text: "보냈어요", open: "mail:s", src: "mail:s", at: ago(1), read: true,
-	decision: { options: [{ n: 1, label: "보내기", desc: "", rec: true }], to: "mail:s", state: "closed", answer: "1) 보내기", send: { state, at: ago(1) }, draft: { toLabel: "받는이", to: "Kim <kim@example.com>", subject: "Re: 견적", body: "안녕하세요.", ref: `ref-${id}` } },
-});
+// One item of the reply queue (GET /api/reply/queue); `send` puts it in the undo window, on its way, sent or failed.
+const qItem = (ref: string, appKey: string, label: string, at: number, extra: object = {}) => ({ item: `${appKey}:${ref}`, ref, kind: "comment", app: appKey, label, conv: `i:${appKey}`, at,
+	can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "대상", to: "가나", text: `답 ${ref}` }, original: { who: "가나", text: `댓글 ${ref}` }, ...extra });
+let queue: object[] = [];
 
 const hub = fakeHub({
 	api: (req, url) => {
 		const p = url.pathname;
 		if (p === "/api/notices") return json({ items: notices, unread: 0 });
-		if (p === "/api/approvals") return json({ groups: [], results: [], triageMin: 3 });
+		if (p === "/api/reply/queue") return json({ items: queue, counts: {}, triageMin: 3, undoSec: 10 });
 		if (p === "/api/integrations") return json({ items: [app("mail", "메일", { icon: "mail", conv: ["mail:"] }), app("youtube", "유튜브"), app("instagram", "인스타그램")], available: [] });
 		if (p === "/api/conversations") return json({ items: mails.map(m => ({ target: `mail:${m.key}`, unread: 0, read: null, mail: { subject: m.subject, from: "Kim <kim@example.com>", source: "acme", at: m.at, summary: "요약", read: true, archived: false, starred: false, can: CAN }, last: { ts: m.at, text: m.subject, from: "bot" } })) });
 		return undefined;
@@ -31,35 +31,20 @@ afterAll(() => hub.stop());
 const boot = async (): Promise<View> => {
 	const v = await hub.view({ width: 1280, height: 900 });
 	await v.navigate(`${hub.origin}/`);
-	await waitFor(v, `typeof rqAll === "function" && NT.loaded && RQ.loaded && TR.loaded && INTG.items.length === 3`);
+	await waitFor(v, `typeof rqRows === "function" && NT.loaded && RQ.loaded && RA.loaded && INTG.items.length === 3`);
 	return v;
 };
-const comments = (n: number, appKey = "youtube", extra: object = {}) => Array.from({ length: n }, (_, i) => ({
-	kind: "comment", app: appKey, via: appKey, code: `${appKey}${i}`, thread: "p", to: "가나", title: `영상 ${i}`, text: "답", at: Date.now() - 60_000 - i * 1000,
-	original: { who: "가나", text: `댓글 ${i}` }, attachmentsNone: true, cannotAttach: [], ...extra,
-}));
-const seed = (v: View, list: object[], failed: object[] = []) => run(v, `RQ.local = ${JSON.stringify(list)}; RQ.failed = ${JSON.stringify(failed)}; RQ.loaded = true; MON.sig = ""; go("monitoring", "replies")`);
-const repaint = (v: View, list: object[]) => run(v, `RQ.local = ${JSON.stringify(list)}; MON.sig = ""; renderMonitoring()`);
-const rows = (v: View) => ev<number>(v, `document.querySelectorAll("#mon-tl .rq-r.ask").length`);
+const comments = (n: number, appKey = "youtube", label = "유튜브", extra: object = {}) => Array.from({ length: n }, (_, i) => qItem(`${appKey}${i}`, appKey, label, Date.now() - 60_000 - i * 1000, extra));
+// The queue the hub answers, read again and drawn on 답장 대기.
+const seed = async (v: View, list: object[]) => { queue = list; await run(v, `rqLoad().then(() => { MON.sig = ""; go("monitoring", "replies"); })`); };
+const repaint = async (v: View, list: object[]) => { queue = list; await run(v, `rqLoad()`); };
+const sending = { state: "sending", at: Date.now(), actions: [] };
 
 describe("답장 대기 with a big backlog", () => {
-	test("a mail row names its mail, a comment row its post or comment", async () => {
-		const v = await boot();
-		const what = await ev<string[]>(v, `(() => {
-			MAILS.set("mail:zz", { subject: "레슨 안내 문의", from: "Kim <kim@example.com>" });
-			const n = { id: "z1", title: "이 답장 보낼까요? (RSE1)", decision: { to: "mail:zz", options: [], draft: { ref: "r1", subject: "Re: 레슨 안내 문의" } } };
-			const mail = rqAskRow({ key: "n:|z1", kind: "notice", inst: "mail", label: "메일", pc: null, at: 1, n }).what;
-			const post = rqAskRow({ key: "comment:|c1", kind: "comment", inst: "youtube", label: "유튜브", pc: null, at: 1, d: { kind: "comment", code: "c1", title: "첫 번째 영상", original: { who: "가나", text: "자막 언제?" } } }).what;
-			const text = rqAskRow({ key: "comment:|c2", kind: "comment", inst: "youtube", label: "유튜브", pc: null, at: 1, d: { kind: "comment", code: "c2", title: "", original: { who: "가나", text: "자막 언제?" } } }).what;
-			return [mail, post, text];
-		})()`);
-		expect(what).toEqual(["레슨 안내 문의", "첫 번째 영상", "자막 언제?"]);
-	});
-
 	test("the app filter is one 앱 select with each app's count in its menu, shown while two or more apps wait and the count reaches the triage minimum", async () => {
 		const v = await boot();
-		await seed(v, [...comments(2, "youtube"), ...comments(2, "instagram")]);
-		await waitFor(v, `document.querySelector("#mon-tl .rq-r")`);
+		await seed(v, [...comments(2, "youtube", "유튜브"), ...comments(2, "instagram", "인스타그램")]);
+		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-c").length === 4`);
 		const sel = `document.querySelectorAll("#mon-tl .rq-chips .sel")`;
 		expect(await ev<number[]>(v, `[${sel}.length, document.querySelectorAll("#mon-tl .rq-chips .mr-f").length, document.querySelectorAll("#mon-tl .rq-tabs").length]`)).toEqual([1, 0, 1]);
 		expect(await ev<string>(v, `${sel}[0].getAttribute("aria-label")`)).toBe("앱: 전체");
@@ -67,75 +52,52 @@ describe("답장 대기 with a big backlog", () => {
 		await waitFor(v, `document.querySelectorAll(".menu [role=option]").length === 3`);
 		expect(await ev<string[]>(v, `[...document.querySelectorAll(".menu [role=option] .ml")].map(x => x.textContent)`)).toEqual(["전체 · 4", "유튜브 · 2", "인스타그램 · 2"]);
 		await run(v, `document.querySelectorAll(".menu [role=option]")[1].click()`);
-		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-r.ask").length === 2`);
-		await repaint(v, comments(4, "youtube"));
+		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-c").length === 2`);
+		await repaint(v, comments(4));
 		await run(v, `RQ.app = ""; MON.sig = ""; renderMonitoring()`);
-		expect(await ev<number>(v, `document.querySelectorAll("#mon-tl .rq-chips .sel").length`)).toBe(0);
+		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-chips .sel").length === 0`);
 	});
 
-	test("the meta line counts replies queued or sending", async () => {
-		notices = [sendingNotice("s1", "sending"), sendingNotice("s2", "queued"), sendingNotice("s3", "sent")];
+	test("the meta line counts the queue's replies in their undo window, queued or sending, and drops them once the queue says sent", async () => {
 		const v = await boot();
-		await seed(v, comments(1));
-		await waitFor(v, `document.querySelector("#mon-tl .rq-qm .meta") && document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중 2건")`);
-		notices = [];
-	});
-
-	test("the meta line counts the gateway's own queued or sending sends when no notice holds them, and drops them once sent", async () => {
-		notices = [];
-		const v = await boot();
-		await run(v, `TR.results = { a: { ref: "a", state: "queued", at: Date.now() }, b: { ref: "b", state: "sending", at: Date.now() }, c: { ref: "c", state: "queued", at: Date.now() }, d: { ref: "d", state: "sent", at: Date.now() } }`);
-		await seed(v, comments(1));
+		const out = (state: string) => ({ send: { ...sending, state }, draft: { state: "approved", toLabel: "대상", to: "가나", text: "답" } });
+		await seed(v, [...comments(1), qItem("s1", "youtube", "유튜브", Date.now(), out("sending")), qItem("s2", "youtube", "유튜브", Date.now(), out("queued")), qItem("s3", "youtube", "유튜브", Date.now(), out("undo")), qItem("s4", "youtube", "유튜브", Date.now(), out("sent"))]);
 		await waitFor(v, `document.querySelector("#mon-tl .rq-qm .meta") && document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중 3건")`);
-		await run(v, `for (const ref of ["a", "b", "c"]) trLive({ ref, state: "sent", at: Date.now() }); rqSoon()`);
+		await repaint(v, [...comments(1), ...["s1", "s2", "s3", "s4"].map(r => qItem(r, "youtube", "유튜브", Date.now(), out("sent")))]);
 		await waitFor(v, `!document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중")`);
 	});
 
-	test("a send the gateway no longer holds stops counting on the next load, so a lost frame leaves no 보내는 중 behind", async () => {
-		notices = [];
-		const v = await boot();
-		await run(v, `TR.results = { gone: { ref: "gone", state: "sending", at: Date.now() }, done: { ref: "done", state: "sent", at: Date.now() } }`);
-		await seed(v, comments(1));
-		await waitFor(v, `document.querySelector("#mon-tl .rq-qm .meta") && document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중 1건")`);
-		await run(v, `trLoad()`);
-		await waitFor(v, `!document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중")`);
-		expect(await ev<string>(v, `TR.results.done.state`)).toBe("sent");
-	});
-
-	test("a live update keeps the row nodes and the reader's place", async () => {
+	test("a live update keeps the card nodes and the reader's place", async () => {
 		const v = await boot();
 		const list = comments(458);
 		await seed(v, list);
-		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-r.ask").length > 100`);
-		const probe = `(() => { const box = $("#mon-timeline"), top = box.getBoundingClientRect().top, r = [...document.querySelectorAll("#mon-tl .rq-r")].find(e => e.getBoundingClientRect().bottom > top); return { key: r.dataset.qr, off: r.getBoundingClientRect().top - top, st: box.scrollTop }; })()`;
-		await run(v, `window.__keep = [...document.querySelectorAll("#mon-tl .rq-r")].slice(0, 40); $("#mon-timeline").scrollTop = 1500; window.__n = 0; window.__mo = new MutationObserver(() => {}); __mo.observe(rqUi().ls, { childList: true, subtree: true })`);
+		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-c").length > 100`);
+		const probe = `(() => { const box = $("#mon-timeline"), top = box.getBoundingClientRect().top, r = [...document.querySelectorAll("#mon-tl .rq-c")].find(e => e.getBoundingClientRect().bottom > top); return { key: r.dataset.qr, off: r.getBoundingClientRect().top - top, st: box.scrollTop }; })()`;
+		await run(v, `window.__keep = [...document.querySelectorAll("#mon-tl .rq-c")].slice(0, 40); $("#mon-timeline").scrollTop = 3000; window.__mo = new MutationObserver(() => {}); __mo.observe(rqUi().ls, { childList: true, subtree: true })`);
 		const before = await ev<{ key: string; off: number; st: number }>(v, probe);
 		expect(before.st).toBeGreaterThan(0);
-		await repaint(v, [...comments(1, "youtube", { code: "NEW", at: Date.now(), title: "새 영상" }), ...list]);
-		const added = await ev<number>(v, `__mo.takeRecords().reduce((c, r) => c + r.addedNodes.length, 0)`);
+		await repaint(v, [...comments(1, "youtube", "유튜브", { ref: "NEW", item: "youtube:NEW", at: Date.now() }), ...list]);
+		await waitFor(v, `document.querySelector('#mon-tl .rq-c[data-qr="i:|NEW"]')`);
 		const after = await ev<{ key: string; off: number; st: number }>(v, probe);
 		expect(after.key).toBe(before.key);
 		expect(Math.abs(after.off - before.off)).toBeLessThan(2);
-		expect(added).toBeLessThanOrEqual(6);
 		expect(await ev<boolean>(v, `__keep.every(n => n.isConnected)`)).toBe(true);
-		// at the very top a new row just shows there
-		await run(v, `$("#mon-timeline").scrollTop = 0`);
-		await repaint(v, [...comments(1, "youtube", { code: "NEW2", at: Date.now() + 1000, title: "더 새 영상" }), ...comments(1, "youtube", { code: "NEW", at: Date.now(), title: "새 영상" }), ...list]);
-		expect(await ev<string>(v, `document.querySelector("#mon-tl .rq-r").dataset.qr`)).toBe("comment:|NEW2");
 	});
 
-	test("a section draws a page of rows, 더 보기 adds a page, the counts stay full and failed rows all show", async () => {
+	test("a section draws a page of cards, 더 보기 adds a page, the counts stay full and failed cards all show", async () => {
 		const v = await boot();
-		const failed = Array.from({ length: 250 }, (_, i) => ({ key: `F${i}`, kind: "mail", app: "mail", who: "Kim", what: `견적 ${i}`, at: Date.now() - i * 1000, why: `이유 ${i}` }));
-		await seed(v, comments(458), failed);
-		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-r.ask").length > 0`);
-		expect(await rows(v)).toBe(200);
-		expect(await ev<number>(v, `document.querySelectorAll("#mon-tl .rq-r.fail").length`)).toBe(250);
+		const failed = Array.from({ length: 250 }, (_, i) => qItem(`F${i}`, "mail", "메일", Date.now() - i * 1000, { send: { state: "failed", at: Date.now(), reason: { code: "offline", text: `이유 ${i}` }, actions: ["retry"] } }));
+		await seed(v, [...comments(458), ...failed]);
+		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-c").length > 0`);
+		const ask = `document.querySelectorAll("#mon-tl .rq-c:not(:has(.rq-send))").length`;
+		expect(await ev<number>(v, `document.querySelectorAll("#mon-tl .rq-c").length`)).toBe(450);
+		expect(await ev<number>(v, `document.querySelectorAll("#mon-tl .rq-c:has(.rq-send.failed)").length`)).toBe(250);
+		expect(await ev<number>(v, ask)).toBe(200);
 		expect(await ev<string[]>(v, `[...document.querySelectorAll(".rq-tabs .n")].map(n => n.textContent)`)).toEqual(["", "458", "250", ""]);
 		await run(v, `document.querySelector("#mon-tl .rq-ls .cv-more").click()`);
-		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-r.ask").length === 400`);
+		await waitFor(v, `${ask} === 400`);
 		await run(v, `document.querySelector("#mon-tl .rq-ls .cv-more").click()`);
-		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-r.ask").length === 458`);
+		await waitFor(v, `${ask} === 458`);
 		expect(await ev<number>(v, `document.querySelectorAll("#mon-tl .rq-ls .cv-more").length`)).toBe(0);
 	});
 });

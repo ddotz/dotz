@@ -2,16 +2,18 @@
 // Every surface that shows a reply draws it with rqItemCard(item, opts) from the server's ReplyItem and acts on it with raAct: the card has no
 // per-channel code, and the server says which buttons a failed or unsure send gets. The `reply` event updates one item and swaps a replaced
 // card in place (99-boot.js). opts: { bare (no head, original or attach line), lead (this card's 보내기 is the filled one) }.
-const RA = { items: new Map(), loaded: false, busy: new Map(), fail: new Map(), edit: new Map(), rev: new Map(), nodes: new Map(), t: 0, ticking: false };
+// loaded: the first read came back; min: how many waiting items make the 답장 대기 head offer 빠른 처리 and the app filter (the queue's triageMin);
+// err: the last failed read, kept for 답장 대기's 다시 시도.
+const RA = { items: new Map(), loaded: false, min: 1, err: null, busy: new Map(), fail: new Map(), edit: new Map(), rev: new Map(), nodes: new Map(), t: 0, ticking: false };
 
 async function raLoad() {
   try {
     const r = await api("/api/reply/queue");
-    // A gateway without the one queue (an older one) answers no list: the screens keep their own reads.
-    if (!r || !Array.isArray(r.items)) return;
-    RA.items = new Map(r.items.map(i => [i.ref, i]));
+    RA.items = new Map((r.items || []).map(i => [i.ref, i]));
+    if (Number(r.triageMin) > 0) RA.min = Number(r.triageMin);
+    RA.err = null;
     RA.loaded = true;
-  } catch (e) { console.warn("reply queue not read", e); }   // the next event or open reads it again; what was shown stays
+  } catch (e) { RA.err = e; }   // the next event or open reads it again; what was shown stays
   for (const ref of [...RA.nodes.keys()]) raPaint(ref);
 }
 const raSoon = () => { clearTimeout(RA.t); RA.t = setTimeout(raLoad, 300); };
@@ -171,13 +173,12 @@ function rqItemCard(item, opts = {}) {
 
 // A send approval in a conversation whose draft the queue holds is that card in the message (10-decision-card.js dcInline), never a docked question.
 function raInline(blocks) {
-  if (!RA.loaded) return null;
   const b = blocks.find(x => SEND_LABELS.test(x.options.map(o => o.label).join("|"))), m = b && /\(([A-Za-z0-9]{2,16})\)\s*$/.exec(b.title);
   return m && RA.items.has(m[1]) ? el("div", { class: "ra-inl" }, rqItemCard(RA.items.get(m[1]))) : null;
 }
 // A draft notice's row answered in place (10-decision-card.js answerInline): through the queue when it holds the draft; 고치기 opens its card.
 function raAnswer(nd, opt) {
-  const it = RA.loaded && nd.decision.draft && !nd.pc ? RA.items.get(nd.decision.draft.ref) : null;
+  const it = nd.decision.draft && !nd.pc ? RA.items.get(nd.decision.draft.ref) : null;
   if (!it) return null;
   // The send-approval options by number (hub/draft-approval.ts): 1 send, 2 revise, 3 drop.
   if (opt.n === 2) { ntDraftSheet(nd); return Promise.resolve(true); }

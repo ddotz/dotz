@@ -10,7 +10,7 @@ const posts: { path: string; body: Record<string, unknown> }[] = [];
 let posted: () => void = () => undefined;
 const hub = fakeHub({
 	api: async (req, url) => {
-		if (url.pathname === "/api/reply/queue") return json({ items: [item("RAAAAAA", NOW - 2000), item("RBBBBBB", NOW - 1000), item("RCCCCCC", NOW - 5000, { send: failed })], counts: {}, triageMin: 1, undoSec: 10 });
+		if (url.pathname === "/api/reply/queue") return json({ items: [item("RAAAAAA", NOW - 2000), item("RBBBBBB", NOW - 1000), item("RCCCCCC", NOW - 5000, { send: failed }), item("RDDDDDD", NOW - 60_000, { send: { state: "sent", at: NOW - 60_000, how: "owner", actions: [] }, draft: { state: "sent", toLabel: "받는이", to: "lee@example.com", text: "보낸 답장" } })], counts: {}, triageMin: 1, undoSec: 10 });
 		if (req.method === "POST" && (url.pathname === "/api/reply/act" || url.pathname === "/api/peer/proxy")) {
 			posts.push({ path: url.pathname, body: (await req.json()) as Record<string, unknown> });
 			posted();
@@ -31,6 +31,15 @@ test("the cards are the queue's items: the failure first, then the waiting newes
 	expect(await ev(`[...document.querySelectorAll("#mon-timeline .rq-c [data-ref]")].map(n => n.dataset.ref).filter((r, i, a) => a.indexOf(r) === i)`)).toEqual(["RCCCCCC", "RBBBBBB", "RAAAAAA"]);
 	expect(await ev(`[...document.querySelectorAll("#mon-timeline .rq-c [data-k=send]")].map(b => b.classList.contains("tonal"))`)).toEqual([false, true]);
 	expect(await ev(`rqWaiting()`)).toBe(3);
+});
+
+test("the tab counts and the 모니터링 badge are the one number; what went out today is a row that opens ONE sheet with the same card", async () => {
+	expect(await ev(`[...document.querySelectorAll(".rq-tabs .n")].map(n => n.textContent)`)).toEqual(["", "2", "1", "1"]);
+	expect(await ev(`document.querySelector("#nav-mon").textContent`)).toBe("3");
+	await run(`document.querySelector('#mon-timeline .rq-r.sent .tx').click()`);
+	await waitFor(`RQ.sheet && document.querySelector(".rq-pane .ra-card[data-ref=RDDDDDD] .rq-sent")`);
+	await run(`RQ.sheet.close()`);
+	await waitFor(`!RQ.sheet && document.querySelector("#mon-timeline .rq-r.sent.on")`);
 });
 
 test("보내기 on a card posts once to /api/reply/act", async () => {

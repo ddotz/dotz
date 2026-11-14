@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// The comment pane of another computer (web/js/30-monitoring-comments.js CM.pc): its sources, posts and thread are read through /api/peer/proxy, and every
-// action of its draft and failed reply maps to one act for that computer (hub/peer-monitor.ts act "comments", web/js/34-peer-monitoring.js pqAct), so the
-// pane and its one reply card work the same wherever the comments live. Headless; the other computer is a fixture.
+// The comment pane of another computer (web/js/30-monitoring-comments.js CM.pc): its sources, posts and thread are read through /api/peer/proxy, its
+// drafted replies and read marks map to one act for that computer (hub/peer-monitor.ts act "comments", web/js/34-peer-monitoring.js pqAct), and its draft
+// is that computer's queue card, acted on through act "reply" (raAct). Headless; the other computer is a fixture.
 const SHOTS = process.env.COMMENTS_PEER_SHOTS ?? join(tmpdir(), "comments-peer-shots");
 mkdirSync(SHOTS, { recursive: true });
 const MINI = "http://mini.test";
@@ -19,7 +19,9 @@ const COMMENTS = [
 const DRAFTS = [{ code: "D1", commentId: "cm:youtube:c1", text: "고마워요! 이번 주 안에 올릴게요.", notes: [], clean: true, created: at(3, 0) }];
 const SENDS = [{ id: "send:cm:youtube:c3", commentId: "cm:youtube:c3", text: "곧 올릴게요", state: "failed", reason: "403 forbidden", at: at(2, 5) }];
 const YT = { key: "youtube", app: "youtube", label: "유튜브", icon: "chat", kind: "app", unread: 1, notices: [], needs: { drafts: 1, unread: 1, sentToday: 0 } };
-const snapshot = () => ({ name: "맥미니", rev: "r1", monitors: [], notices: [], integrations: [YT], available: [], conversations: [], replies: [] });
+// The draft as an item of the other computer's reply queue (its snapshot's `reply` part).
+const D1 = { item: "comment:D1", ref: "D1", kind: "comment", app: "youtube", label: "유튜브", conv: "i:youtube", at: at(3, 0), can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", toLabel: "대상", to: "가나", text: DRAFTS[0]!.text } };
+const snapshot = () => ({ name: "맥미니", rev: "r1", monitors: [], notices: [], integrations: [YT], available: [], conversations: [], reply: { items: [D1] } });
 
 const acts: { action: string; args: Record<string, unknown> }[] = [];
 const gets: string[] = [];
@@ -48,7 +50,6 @@ const server = Bun.serve({
 		if (p === "/api/notices") return json({ unread: 1, items: [] });
 		if (p === "/api/integrations") return json({ items: [], available: [] });
 		if (p === "/api/conversations") return json({ items: [] });
-		if (p === "/api/replies") return json({ items: [] });
 		if (p === "/api/monitoring/peers") return json([{ name: "맥미니", url: MINI, online: true, stale: false, items: snapshot() }]);
 		if (p === "/api/peer/proxy") {
 			if (req.method === "POST") { acts.push((await req.json()) as (typeof acts)[number]); return json({ ok: true }); }
@@ -82,55 +83,37 @@ const boot = async (width: number, height: number) => {
 };
 
 describe.each([[390, 844], [1280, 900]])("another computer's comment app at %ipx", (width, height) => {
-	test("its sources, post and draft come through the proxy, and its draft card is the one reply card", async () => {
+	test("its sources, post and draft come through the proxy, and its draft card is the one queue card", async () => {
 		const v = await boot(width, height);
 		expect(gets).toContain("/api/comments/sources");
 		expect(gets).toContain("/api/comments/threads?app=youtube");
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
-		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
-		const got = await q<{ head: string; pc: string; chip: string; attach: string; acts: string[]; tabs: number; overflow: boolean; pcWhole: string[] }>(v, `
-			const c = document.querySelector("#cm .kk-draft"), txt = e => e ? e.textContent.trim() : "";
-			return { head: txt(c.querySelector(".rq-meta")), pc: txt(c.querySelector(".mon-pc")), chip: txt(c.querySelector(".dr-chip")), attach: txt(c.querySelector(".rq-att")),
-				acts: [...c.querySelectorAll(".rq-acts button")].map(txt), tabs: document.querySelectorAll("#cm .cm-tabs").length,
-				overflow: document.documentElement.scrollWidth > innerWidth,
-				pcWhole: [0, 1].map(narrow => { const mt = c.querySelector(".rq-meta"); mt.style.maxWidth = narrow ? "120px" : ""; const m = mt.getBoundingClientRect(), p = c.querySelector(".mon-pc").getBoundingClientRect(); mt.style.maxWidth = ""; return p.top >= m.bottom - 0.5 ? "hidden" : p.right <= m.right + 0.5 && p.bottom <= m.bottom + 2 ? "whole" : "cut"; }) };`);
-		expect(got.head).toBe("유튜브 · 유튜브 댓글 · 맥미니");
-		expect(got.pcWhole).not.toContain("cut"); expect(got.pcWhole[1]).toBe("hidden");   // the computer in a card's head shows whole or not at all, never cut mid-word
-		expect(got.pc).toBe("· 맥미니");
-		expect(got.chip).toBe("가나");
-		expect(got.attach).toBe("");   // text only and no file left behind: no 첨부 line at all
-		expect(got.acts).toEqual(["보내기", "고치기", "보내지 않기"]);
-		expect(got.tabs).toBe(0);
-		expect(got.overflow).toBe(false);
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
+		const got = await q<{ text: string; acts: string[]; tabs: number; overflow: boolean }>(v, `
+			const c = document.querySelector("#cm .ra-card"), txt = e => e ? e.textContent.trim() : "";
+			return { text: txt(c.querySelector(".rq-text")), acts: [...c.querySelectorAll(".rq-acts button")].map(txt), tabs: document.querySelectorAll("#cm .cm-tabs").length, overflow: document.documentElement.scrollWidth > innerWidth };`);
+		expect(got).toEqual({ text: "고마워요! 이번 주 안에 올릴게요.", acts: ["보내기", "고치기", "보내지 않기"], tabs: 0, overflow: false });
 		await Bun.write(join(SHOTS, `comment-peer-${width}.png`), await v.screenshot());
 	}, 20000);
 
-	test("every action of its draft and failed reply is one act for that computer", async () => {
+	test("its draft's 보내기 is one reply act for that computer; its drafted replies and read marks one comments act; a failed reply has no buttons of its own", async () => {
 		const v = await boot(width, height);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
-		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
-		const got = await q<{ routes: string[][]; sends: string[]; buttons: string[] }>(v, `
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
+		const got = await q<{ routes: string[][]; sends: number }>(v, `
 			const r = (p, b = {}) => pqRoute(p, "POST", b);
-			const id = encodeURIComponent("send:cm:youtube:c3"), cid = encodeURIComponent("cm:youtube:c1");
-			return { routes: [r("/api/comments/drafts/D1/send"), r("/api/comments/drafts/D1/drop"), r("/api/comments/drafts/D1/restore"), r("/api/comments/drafts/D1/revise", { change: "더 짧게" }),
-				r("/api/comments/sends/" + id + "/retry"), r("/api/comments/sends/" + id + "/dismiss"), r("/api/comments/comment/" + cid + "/draft"), r("/api/comments/thread/youtube/v1/read")],
-				sends: [...document.querySelectorAll("#cm .kk-m.pend.failed button")].map(b => b.textContent),
-				buttons: [...document.querySelectorAll("#cm .kk-draft .rq-acts button")].map(b => b.textContent) };`);
-		expect(got.sends).toEqual(["다시 보내기", "지우기"]);
-		expect(got.buttons).toEqual(["보내기", "고치기", "보내지 않기"]);
-		expect(got.routes.map(r => r[1])).toEqual(Array(8).fill("POST"));
-		expect(got.routes.every(r => /^\/api\/peer\/proxy\?pc=[^&]+&p=%2Fapi%2Fpeer%2Fact$/.test(r[0]))).toBe(true);
+			const cid = encodeURIComponent("cm:youtube:c1");
+			return { routes: [r("/api/comments/comment/" + cid + "/draft"), r("/api/comments/thread/youtube/v1/read")], sends: document.querySelectorAll("#cm .kk-m.pend.failed button").length };`);
+		expect(got.sends).toBe(0);
+		expect(got.routes.every(r => /^\/api\/peer\/proxy\?pc=[^&]+&p=%2Fapi%2Fpeer%2Fact$/.test(r[0]!))).toBe(true);
 		expect(got.routes.map(r => r[2])).toEqual([
-			{ action: "comments", args: { op: "draft-send", code: "D1" } },
-			{ action: "comments", args: { op: "draft-drop", code: "D1" } },
-			{ action: "comments", args: { op: "draft-restore", code: "D1" } },
-			{ action: "comments", args: { op: "draft-revise", code: "D1", change: "더 짧게" } },
-			{ action: "comments", args: { op: "send-retry", id: "send:cm:youtube:c3" } },
-			{ action: "comments", args: { op: "send-dismiss", id: "send:cm:youtube:c3" } },
 			{ action: "comments", args: { op: "draft", commentId: "cm:youtube:c1" } },
 			{ action: "comments", args: { op: "read", source: "youtube", thread: "v1" } },
 		]);
+		acts.length = 0;
+		await run(v, `document.querySelector('#cm .ra-card [data-k="send"]').click()`);
+		await waitFor(v, `!RA.busy.size`);
+		expect(acts.filter(a => a.action === "reply")).toEqual([{ action: "reply", args: { ref: "D1", action: "send" } }]);
 		expect(localPosts).toEqual([]);
 	}, 20000);
-
 });

@@ -597,19 +597,19 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 답장 확인 (모니터링 > 답장 확인 큐)
 - 목적: 모든 앱, 모든 컴퓨터의 보내기 대기 답장 초안을 한 목록에서 보내기, 고치기, 보내지 않기 해요.
 - 구성: 모니터링의 항목 `답장 확인`(키 `replies`, 아이콘 `send`) 상세 안: 앱이 둘 이상 기다릴 때(또는 앱 선택 중일 때)만 `.rq-chips` 안 선택 단추 `button.sel`(aria-label `앱: <이름>`, 메뉴 항목 `전체 · N` + 앱별 `이름 · N`; 넓은 화면은 상태 탭 줄의 오른쪽 끝, 폰은 탭 아래 짧은 줄), 출처별 `div.mon-sec`(heading) + `div.rq-q` 안 답장 초안 카드들(`rqCard`).
-- 기능: 카드 `열기`(`rqGoTo`: 메일은 `c:<mail>`, 그 밖은 앱 패널), 보내기/고치기/보내지 않기. 저장소 초안(카카오톡, 댓글)은 앱 라우트로, 알림형 초안(메일 등)은 `answerInline`/`ntPost`로, 다른 컴퓨터 것은 `/api/peer/act`로 그 컴퓨터에서 한 번 실행해요. 고치기는 입력 한 줄(`어떻게 고칠까요?`) 후 봇이 다시 써요. 보낸 저장소 초안은 큐를 다시 열 때까지 `보냈어요 · 방금`으로 남아요.
-- 상태: 항목 힌트 `${앱이름 최대3} 답장 ${n}건`, 없으면 `확인할 답장이 없어요`(열려 있을 때만 항목이 보임). 본문 비었을 때 `확인할 답장이 없어요`, 로딩 `불러오는 중…`. 앱 필터 칩에 개수. 처리 중이면 카드 `busy` 클래스+버튼 비활성. 고친 뒤 토스트 `고쳐 달라고 했어요. 새 초안이 오면 여기 다시 떠요`. 보내지 않기 후 토스트 `보내지 않았어요` + `되돌리기`(6초, 댓글+메일 동반은 되돌리기 없음). 되돌림 `초안을 되돌렸어요`. 연결 끊김 `연결이 끊겨 처리하지 못했어요`. 보내기 시 경고/첨부가 있으면 `drfSure` 확인. 같은 메일의 초안은 최신 것 하나만, 같은 키는 중복 제거, 알림이 이미 보여 주는 저장소 초안은 허브가 빼요.
-- 데이터: `GET /api/replies`(items), 카카오톡 `POST /api/kakao/chat/:chatId/draft`(revise)와 `/api/kakao/drafts/:code/{send|drop|restore}`, 댓글 `POST /api/comments/drafts/:code/{revise|send|drop|restore}`, 다른 컴퓨터 `POST /api/peer/act`(action `kakao` 또는 `comments`), 알림 경로(`ntPost`, `answerInline`). 갱신 `rqLoad`, `pqLoad`, `loadIntegrations`.
-- 근거: web/js/30-replies.js:10(rqLoad), :34(rqAll), :56(rqMonItem), :64(rqOpen), :68(rqRun), :75(rqStoreCall), :93(rqStoreActs), :106(rqNoticeActs), :114(rqRevise), :130(rqCardOf), :152(rqGoTo), :158(rqFilterBar), :165(rqNodes), :174(rqSig).
+- 기능: 항목마다 공통 큐 카드(`rqItemCard`) 하나가 목록에 바로 놓이고, 보내기·고치기·보내지 않기·직접 수정·되돌리기·다시 보내기는 모두 `raAct`가 `POST /api/reply/act` 하나로 보내요(다른 컴퓨터 항목은 `/api/peer/act`의 `reply`로 그 컴퓨터 큐에서 한 번). 실패 카드의 버튼은 서버가 준 `send.actions`예요. 오늘 보낸 것은 행으로 남고 누르면 같은 카드가 시트로 열려요.
+- 상태: 항목 힌트 `${앱이름 최대3} 답장 ${n}건`, 없으면 `확인할 답장이 없어요`(열려 있을 때만 항목이 보임). 본문 비었을 때 `확인할 답장이 없어요`, 로딩 `불러오는 중…`, 큐를 못 읽으면 문장과 `다시 시도`. 처리 중이면 카드 버튼이 제자리에서 꺼지고 누른 버튼이 진행을 말해요. 실패는 카드 안 버튼 위 한 줄로 남아요.
+- 데이터: 게이트웨이의 공통 큐 하나(`GET /api/reply/queue`, `web/js/10-reply-actions.js` `RA`)와 다른 컴퓨터 스냅샷의 `reply` 부분. 갱신은 `rqLoad`(=`raLoad` 뒤 다시 그리기)와 `reply` 이벤트(`raLive`).
+- 근거: web/js/30-replies.js `rqLoad`, `rqRows`, `rqItemRow`, `rqMonItem`, `rqOpen`, `rqFilterBar`, `rqCardDesc`, `rqNodes`, `rqSig`; web/js/10-reply-actions.js `raLoad`, `raAct`, `rqItemCard`.
 - css: web/css/15-reply-card.css(`.rq-chips .sel`, :49 `pointer:coarse or max-width:639px`), 16-result-card.css/20-mail-box.css(`.mr-filter`).
 
 ### 답장 초안 카드 (공통 컴포넌트)
 - 목적: 메일, 카카오톡, 댓글의 답장 초안을 같은 모양과 같은 세 동작으로 보여 줘요.
 - 구성: `div.rq`(댓글이면 `.rq.cm`): 머리 `.rq-hd`(아이콘 `.dr-ic` 또는 이니셜 `.rq-av`, `.rq-meta`의 `b.rq-wt` + `.rq-src` + `.mon-pc`(출처와 컴퓨터 이름은 한 줄에 통째로 들어갈 때만 보이고, 안 들어가면 잘린 글 없이 빠져요), 시각 `.rc-time`, 꼬리 `열기`), 원문 인용 `.rq-og-wrap > .rq-orig`(+ 토글), 소제목 `.rq-lb`, 받는이 `.rq-to`(또는 `recv` 행), 제목 `.rq-sub`, 본문 `.rq-body`(6줄 접힘, `.rq-more`), 첨부 `.rq-att`, 추가 노드, 바닥(동작 `.rq-acts` / 고치기 `.rq-edit` / 상태 `.kk-st` / `.rq-sent`).
-- 기능: 본문 `펼치기`/`접기`(키별로 유지 `RQ_OPEN`). 원문 `원문 보기`/`원문 접기`(`RQ_OG`). 동작 세 개 `보내기`(`.dr-send`), `고치기`, `보내지 않기`는 호출자가 준 핸들러를 쓰고 없으면 비활성(`disabled`). 고치기 입력은 Enter로 제출(IME 조합 중 제외), 최대 500자, 보조 `직접 수정`(호출자가 줄 때).
+- 기능: 본문 `펼치기`/`접기`(키별로 유지 `RQ_OPEN`). 원문 `원문 보기`/`원문 접기`(`RQ_OG`). 동작 세 개 `보내기`(`.dr-send`), `고치기`, `보내지 않기`는 호출자가 준 핸들러를 쓰고 없으면 비활성(`disabled`). 고치기 입력은 Enter로 제출(IME 조합 중 제외), 최대 500자. `직접 수정`은 동작 줄 오른쪽 끝 연필(`rqManualBtn`)이고 큐 카드에서는 글 칸(`rqEditNode`)이 열려요.
 - 상태: 머리 `${이름}님께 답장`(원문 작성자가 있을 때) 아니면 앱 이름(`메일`, `카카오톡`, `인스타그램`, `유튜브`, `웹사이트 댓글`), 출처 줄은 계정 라벨+모델+`· 컴퓨터 이름`. 긴 본문은 36자/줄로 세서 6줄 넘으면 접고 `펼치기`. 첨부 줄은 항상 보이고 `첨부 ${n}개`+파일명(크기), 없으면 `첨부: 없음`, 못 붙이는 곳이면 남는 파일이 있을 때만 `첨부: 없음 · 파일을 붙일 수 없는 곳이에요` + `남는 파일: ...`(남는 파일이 없으면 줄 없음). 고치기 필드 placeholder `더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘`(aria `고칠 내용`), 질문 `어떻게 고칠까요?`, 버튼 `고쳐 달라고 하기`, `취소`. 보냄 표시 `보냈어요 · 방금`(role=status). 카카오톡 새 대화 초안은 소제목 `새 메시지 초안`, 받는이 라벨 `대화방`, 댓글은 `댓글`. 처리 중이면 `busy` 클래스. 터치(`pointer:coarse`/`max-width:639px`)는 버튼 높이를 키움.
-- 데이터: 직접 데이터 호출 없음. 호출자(`30-replies.js`, `30-monitoring.js` draftCardNode, `30-kakao.js` kkDraftCard, `30-monitoring-comments.js` cmDraftCard)가 넘겨요.
-- 근거: web/js/10-reply-card.js:15(rqHeadNode), :26(rqLong), :28(rqBodyNode), :42(rqActsNode), :48(rqReviseNode), :61(rqAttachNode), :72(rqOrigNode), :90(rqCard), :103-106(rqSentNode, 토스트).
+- 데이터: 직접 데이터 호출 없음. 공통 큐 카드(`10-reply-actions.js` `rqItemCard`)와 `30-monitoring.js` draftCardNode가 넘겨요. 답장 대기, 빠른 처리, 카카오톡 방, 댓글 스레드는 모두 `rqItemCard`를 그려요.
+- 근거: web/js/10-reply-card.js:15(rqHeadNode), :26(rqLong), :28(rqBodyNode), :42(rqActsNode), :48(rqReviseNode), :61(rqAttachNode), :72(rqOrigNode), :90(rqCard), rqSentNode.
 - css: web/css/15-reply-card.css(`.rq-*`; :49, :63 `pointer:coarse or max-width:639px`), 03-base.css(`.rq-body`, `.rq-orig`).
 
 ### 결정 카드 (입력창 위에 붙는 질문 카드)
@@ -624,10 +624,10 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 결정/발송 승인 시트 (전체 화면 결정 카드)
 - 목적: 알림에서 열거나 초안 보내기 승인(보내기/고치기/보내지 않기)을 전체화면 시트에서 처리해요.
 - 구성: 메일 답장 초안(받는이 행이 있는 것)의 시트는 댓글 답글 확인과 같은 `답장 확인` 시트예요(`mid rq-sheet`: 폰은 내용 높이 바텀시트, 넓은 화면은 가운데 창). 머리는 `답장 확인`과 닫기 ✕ 하나(`무시` 없음; 뒤에 기다리는 카드가 더 있으면 제목 옆에 옅은 글 `· 남은 N건 (1/2)`을 `.fs-left`로 보여요, 값이 없으면 자리도 없어요; 닫으면 나중에 확인, 버리기는 `보내지 않기`), 본문 `.fs-body.rq-sb`는 `rqMailParts`(10-reply-card.js)의 부품을 `rqCard`로 그리고(한 줄 머리 `${이름}님께 답장 · 메일 · 시각` + 오른쪽 `열기`, 받은 글 인용 + `원문 보기`, 굵은 제목(카드와 같은 굵기), 본문, 접힌 받는이 줄, 첨부 줄), 메일 화면의 목록 카드는 출처 글 ` · 메일`을 붙이지 않고(알림 시트와 `답장 대기`에는 남아요) 이미 본 줄은 `seen`으로 한 번만 보여요. 바닥 `.fs-ft`는 `.rq-acts`(`보내기`, `고치기`, `보내지 않기`, 맨 오른쪽 `직접 수정`). 그 밖의 초안은 아래 구성: `fsOpen` 시트: 머리(`.fs-ey` 질문/`보내기 전에 확인해요` + `.fs-left`, 받는이 줄 `.dc-dh`, 제목, `받는이 확인: ...`, 무시/닫기), 본문 `.fs-body.panel`(정할 것, 받는이·참조 행, 규칙 태그, 출처, 본문 `.dc-dr-b`, 첨부 줄, 동반 메일), 바닥 `.fs-ft`(한 줄 동작 `.dc-acts` 또는 선택지 행). 원문이 있으면 `.od-stage`로 원문 패널과 나란히.
-- 기능: 초안 동작 `보내기`(첫 선택지, main)/`고치기`(alt)/`보내지 않기`(+ 선택지 라벨 그대로). `직접 수정`(연필)은 본문을 직접 고쳐 `이 내용으로 고쳐 주세요: ...`로 보내요(첨부 파일은 `첨부할 파일 N개(...)를 이 초안에 붙여 주세요.`가 앞에 붙음). `직접 수정`에서 `파일 첨부`로 최대 10개 업로드. 선택지 행은 `choiceRow`. 보내기 시 경고/첨부가 있으면 `drfSure` 확인.
-- 상태: 머리 `결정이 필요해요`/`답변이 필요해요`(초안 아닐 때), 진행 `남은 N건 (k/T)` 또는 `마지막 카드예요 (T/T)`. 입력칸: 고치기 `어떻게 고칠까요?`(placeholder 같은 `더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘`), 보내는 방법 `어떻게 보낼까요?`(placeholder `메일 먼저 보내고 답글은 내일 올려 줘`), 직접 수정 placeholder `보낼 내용을 직접 고쳐 주세요`, 버튼 `고쳐 달라고 하기`/`이렇게 보내 달라고 하기`/`이 내용으로 고치기`. 파일 올리는 중 `올리는 중…`. 다른 컴퓨터 초안 파일 오류 `다른 컴퓨터의 이 초안에는 파일을 붙일 수 없어요`. 처리 후 인라인 답 토스트 `보냈어요`(+`메일 열기`) 또는 `보내지 않았어요`(+`되돌리기`, 성공 `초안을 되돌렸어요`). 스크롤/입력 포커스와 캐럿은 다시 그려도 유지해요.
+- 기능: 초안 동작 `보내기`(첫 선택지, main)/`고치기`(alt)/`보내지 않기`(+ 선택지 라벨 그대로). 큐가 가진 초안은 이 시트 대신 그 큐 카드가 열리고, 직접 수정은 큐 카드의 `rqEditNode`예요. 선택지 행은 `choiceRow`. 보내기 시 경고/첨부가 있으면 `drfSure` 확인.
+- 상태: 머리 `결정이 필요해요`/`답변이 필요해요`(초안 아닐 때), 진행 `남은 N건 (k/T)` 또는 `마지막 카드예요 (T/T)`. 입력칸: 고치기 `어떻게 고칠까요?`(placeholder 같은 `더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘`), 보내는 방법 `어떻게 보낼까요?`(placeholder `메일 먼저 보내고 답글은 내일 올려 줘`), 버튼 `고쳐 달라고 하기`/`이렇게 보내 달라고 하기`. 다른 컴퓨터 초안 파일 오류 `다른 컴퓨터의 이 초안에는 파일을 붙일 수 없어요`. 처리 후 인라인 답 토스트 `보냈어요`(+`메일 열기`) 또는 `보내지 않았어요`(+`되돌리기`, 성공 `초안을 되돌렸어요`). 스크롤/입력 포커스와 캐럿은 다시 그려도 유지해요.
 - 데이터: 알림 경로(`ntPost`, `/api/notices/reopen`), `POST /api/message`, 파일 `POST /api/upload`, 초안 파일/받는이/원문 API(아래 항목), 다른 컴퓨터는 `pqNotice`.
-- 근거: web/js/10-decision-card.js:403(renderSheet), :448(choiceRow), :368(editNode), :379(editFilesNode), :355-367(문구 상수), :507(answerInline), :519(dcAnswerToast), :525(dcReopen).
+- 근거: web/js/10-decision-card.js:403(renderSheet), :448(choiceRow), :368(editNode), :355-367(문구 상수), :507(answerInline), :519(dcAnswerToast), :525(dcReopen).
 - css: web/css/14-overlay.css(`.fs-*`, `.dc-row`), 07-chat.css(`.dc-edit`, `.dc-acts`).
 
 ### 답 대기 포인터와 결정 기록
@@ -1240,9 +1240,9 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 - 목적: 모든 앱과 컴퓨터에서 보내기를 기다리는 답장 초안을 한 목록으로 모아요.
 - 구성: 목록 행(그룹 라벨 없이 감시 소식 바로 아래, 초안이 있거나 열려 있을 때만), 머리 `monHead`, 본문 `rqNodes()` (30-replies.js).
-- 기능: 머리의 `빠른 처리` 버튼(`trOpen("*")`, 대기 초안이 `TR.min` 이상일 때만); 앱 머리의 `답장 확인 <n>` 버튼은 이 큐를 그 앱 기준으로 연다(`rqOpen`). 카드 동작은 30-replies.js 범위(코드 위치만 표기).
+- 기능: 머리의 `빠른 처리` 버튼(`tqOpen()`, 대기 항목이 큐의 `triageMin`(`RA.min`) 이상일 때만); 앱 머리의 `답장 확인 <n>` 버튼은 이 큐를 그 앱 기준으로 연다(`rqOpen`). 카드 동작은 공통 큐 카드(`raAct`).
 - 상태: 행 이름 `답장 확인`, 힌트 `<앱 이름 최대 3개 · 구분> 답장 <n>건`, 큐가 비면 `확인할 답장이 없어요`; 행 배지(안 읽음 수)는 대기 초안 수. 열린 항목 상태줄은 `기다리는 초안 <n>개`. 본문은 `rqSig()`가 바뀔 때만 다시 그려요(스크롤 위치 유지).
-- 데이터: 알림의 초안 결정, `comment_draft` / `comment_send` SSE로 `rqSoon()`.
+- 데이터: 공통 큐(`GET /api/reply/queue`), `reply` SSE(`raLive`), `comment_draft` / `kakao_draft` SSE로 `rqSoon()`.
 - css: web/css/15-reply-card.css, web/css/15-triage.css.
 - 근거: web/js/30-replies.js:56-64(`rqMonItem`, `rqOpen`), web/js/30-monitoring.js:218-219,247,981,1059-1070.
 
@@ -1319,7 +1319,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 - 목적: 열린 항목의 이름, 상태, 마지막 소식 시각, 동작을 한 줄(컴팩트)과 그 아래 상태줄로 보여줘요.
 - 구성: `.mon-hdwrap` 안 `.mon-hdrow`(아이콘 `.cv-av.nt`, 이름 `.cv-n` + 컴퓨터 이름표, 시각 `.mon-hd-time`, 동작 `.mon-hdacts`), 아래에 상태줄 `.cv-p`(감시/예약이면 대신 `.mon-desc` 설명), 감시/예약이면 진행 블록, 배너.
-- 기능: 동작 순서(있는 것만): `대화로 이어가기`, `답장 확인 <n>`(앱에 대기 초안이 있을 때, `rqOpen`), `빠른 처리`(답장 확인 항목에서 대기 초안이 `TR.min` 이상, `trOpen("*")`), `지금 확인`(감시이고 배너가 없을 때), `미답장 <n>`(알약), 앱 설정 ⋯(`asEntry(app, false)`). 대화로 들어가는 길은 한 곳뿐이에요: 넓은 화면은 `대화로 이어가기` 버튼(옆에 대화 아이콘을 두지 않아요), 폰은 앱바의 대화 아이콘(`#as-bar`, aria-label과 title이 `대화로 이어가기`)이고 카드(`monTopNodes`)에는 버튼을 두지 않아요(`asChatOn`). 메일·카카오톡처럼 버튼이 없는 항목은 아이콘(`대화`)이 그 길이에요. 시각은 감시의 마지막 실행, 아니면 가장 최근 소식이나 메일(`monHeadTime`).
+- 기능: 동작 순서(있는 것만): `대화로 이어가기`, `답장 확인 <n>`(앱에 대기 초안이 있을 때, `rqOpen`), `빠른 처리`(답장 확인 항목에서 대기 항목이 `RA.min` 이상, `tqOpen()`), `지금 확인`(감시이고 배너가 없을 때), `미답장 <n>`(알약), 앱 설정 ⋯(`asEntry(app, false)`). 대화로 들어가는 길은 한 곳뿐이에요: 넓은 화면은 `대화로 이어가기` 버튼(옆에 대화 아이콘을 두지 않아요), 폰은 앱바의 대화 아이콘(`#as-bar`, aria-label과 title이 `대화로 이어가기`)이고 카드(`monTopNodes`)에는 버튼을 두지 않아요(`asChatOn`). 메일·카카오톡처럼 버튼이 없는 항목은 아이콘(`대화`)이 그 길이에요. 시각은 감시의 마지막 실행, 아니면 가장 최근 소식이나 메일(`monHeadTime`).
 - 상태: 상태줄 `monState`: 앱 꺼짐(peer off) `연결 안 됨`; 감시/예약은 설명만; 답장 확인은 `기다리는 초안 <n>개` 또는 힌트; 감시 소식은 위 표; 앱은 힌트; 그 외 안 읽음이 있으면 `안 읽음 <n>개`, 없으면 `연결돼 있어요`. 폰에서는 이 머리가 보이지 않고(주석: `A phone has no .cv-head`) 같은 내용이 `monTopNodes`의 `.mon-topcard`로 본문 위에 나와요. 앱바 제목은 폰에서 항목 이름(`monName`), 아니면 `모니터링`.
 - 데이터: 위 항목들과 같음.
 - css: web/css/20-monitoring.css(`mon-hdwrap`, `mon-hdrow`, `mon-hdacts`, `mon-topcard`, `mon-continue`), web/css/17-kakao.css:90(좁은 폭에서 `.kk-head` 숨김).
@@ -1359,8 +1359,8 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 - 목적: 보낼 메일 답장 초안을 보고 승인, 수정, 폐기하게 해요(메일 앱 소식, 메일 대화, 답장 확인 큐에서 같은 카드).
 - 구성: 응답 카드(`rqCard`): 머리(앱, 계정, 컴퓨터, 모델, 규칙 태그, 상태 태그 `<상태> · <시각>`, 지우기 `x`), 질문 라벨, 받는이/참조, 제목, 받는 메일 원문 요약, 본문 단락, 첨부 줄, 동작. `bare` 모드는 보낸 초안만(`dr-mail`).
-- 기능: `보내기`(경고나 첨부가 있으면 `drfSure` 확인 뒤 `answerInline`), `고치기`(입력 `어떻게 고칠까요?`, 버튼 `고쳐 달라고 하기`, 또는 `직접 수정` 후 `이 내용으로 고치기`, `취소`), `보내지 않기`, 머리의 지우기 버튼(title `지우기 (보내지 않아요)`, aria `초안 지우기`)은 `보내지 않기`와 같아요.
-- 상태: `DR_STATE`: `확인 대기`(warn, 대기 초안 카드는 상태 태그가 말하니 같은 뜻의 굵은 제목 줄을 그리지 않아요), `보냄`(ok), `고침`(pri), `고치는 중…`(pri), `보내지 않음`, `보낼 방법 전함`(pri), `만료`, `무시함`. 처리 중(`dcSending`)이면 버튼 비활성. 직접 수정 칸 aria `직접 수정`, 고치기 칸 placeholder는 `DRAFT_HINT`, aria `고칠 내용`, 최대 6000/500자. 입력이 비면 이동 버튼 비활성. 보내기 완료 시 상태 태그 대신 보냄 표시. 사라지는 조건: `보내지 않기` 답, 같은 메일의 더 새 초안, 처리됨(메일 대화 안으로 접힘).
+- 기능: 큐가 가진 초안(이 컴퓨터 것)은 동작과 바닥이 공통 큐 카드의 것이에요: `보내기`(경고나 첨부가 있으면 `drfSure` 확인 뒤 `raAct` send), `고치기`(입력 `어떻게 고칠까요?`, `raAct` revise), 직접 수정(`rqEditNode`, `이대로 보내기`), `보내지 않기`, 보내기 상태 바닥(`rqSendNode`). 다른 컴퓨터 초안은 그 알림 경로(`monDraftRun` → `answerInline`)로 답하고 고치기는 그 알림 카드를 열어요. 머리의 지우기 버튼(title `지우기 (보내지 않아요)`, aria `초안 지우기`)은 `보내지 않기`와 같아요.
+- 상태: `DR_STATE`: `확인 대기`(warn, 대기 초안 카드는 상태 태그가 말하니 같은 뜻의 굵은 제목 줄을 그리지 않아요), `보냄`(ok), `고침`(pri), `고치는 중…`(pri), `보내지 않음`, `보낼 방법 전함`(pri), `만료`, `무시함`. 처리 중(`dcSending`)이면 버튼 비활성. 고치기 칸 placeholder는 `DRAFT_HINT`, aria `고칠 내용`, 최대 500자. 입력이 비면 이동 버튼 비활성. 보내기 완료 시 상태 태그 대신 보냄 표시. 사라지는 조건: `보내지 않기` 답, 같은 메일의 더 새 초안, 처리됨(메일 대화 안으로 접힘).
 - 데이터: 알림 `decision`(`draft`, `to`, `options`), 답하기 `ntPost`, 메일 `MAILS`.
 - css: web/css/15-reply-card.css, web/css/16-result-card.css(`dr-orig`), web/css/15-draft-original.css, web/css/07-chat.css.
 - 근거: web/js/30-monitoring.js:277-352(`DR_STATE`, `drState`, `draftCardNode`), :459-485(대기/완료 판정).
@@ -1398,14 +1398,14 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 - 목적: 댓글 답글을 켜 둔 앱의 글(게시물) 목록과 글 하나의 댓글 대화를 보여주고, 답글 초안을 승인하게 해요.
 - 구성: `#cm.kk.cm` (`#v-monitoring` 끝에 붙음, 카카오 창과 같은 클래스 재사용): 왼쪽 `#cm-rooms.kk-rooms`(aria `댓글을 지켜보는 글`)에 인스타그램 전용 탭 `.cm-tabs`(댓글/DM), `section.kk-watch`(aria `댓글이 있는 글`) 안 라벨 `글`과 글 행 `.cv-row.kk-row`; 오른쪽 `#cm-chat.kk-chat`: `#cm-head.kk-head`, `.kk-box > #cm-tl.kk-tl > #cm-in.kk-in`, `#cm-foot.composer`(항상 숨김, 초안은 댓글 밑에 들어감).
-- 기능: 글 행 탭 `cmOpen`; 댓글 탭 `댓글` / `DM` 전환 `cmTab`; 폰에서 뒤로가기 `cmBack`(댓글이면 `cmClose`, DM이면 `dmClose`); 댓글별 `답글 초안`(`cmMakeDraft`, `POST /api/comments/comment/<id>/draft`), `답장 안 함`(`cmNoReply`, `POST /api/comments/comment/<id>/no-reply`); 초안 카드 `보내기` / `고치기` / `보내지 않기`; 실패한 답글 `다시 보내기` / `지우기`; 지우기 토스트의 되돌리기(`cmRestore`, `POST /api/comments/drafts/<code>/restore`, 토스트 `초안을 되돌렸어요`). 글 본문 링크 `영상 열기`(유튜브) / `원본 글 열기`. 자동 읽음 `cmMarkRead`(`POST .../read`, 대화가 보일 때, 마지막 댓글 시각 기준).
+- 기능: 글 행 탭 `cmOpen`; 댓글 탭 `댓글` / `DM` 전환 `cmTab`; 폰에서 뒤로가기 `cmBack`(댓글이면 `cmClose`, DM이면 `dmClose`); 댓글별 `답글 초안`(`cmMakeDraft`, `POST /api/comments/comment/<id>/draft`), `답장 안 함`(`cmNoReply`, `POST /api/comments/comment/<id>/no-reply`); 초안은 공통 큐 카드(`cmQueueCard` → `rqItemCard`, `raAct`)로 보내기 / 고치기(답글 · 메일 고르기) / 보내지 않기 / 직접 수정. 글 본문 링크 `영상 열기`(유튜브) / `원본 글 열기`. 자동 읽음 `cmMarkRead`(`POST .../read`, 대화가 보일 때, 마지막 댓글 시각 기준).
 - 상태(목록): 아직 안 불러왔으면 목록 비움, 실패 `댓글 목록을 불러오지 못했어요`, 켜 둔 곳 없음 `켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요`, 켜 둔 곳은 있는데 댓글 없음 `아직 받은 댓글이 없어요` + 버튼 `지켜볼 글 고르기`. 글 행: 썸네일(없거나 실패하면 제목 이니셜), 제목, `<마지막 작성자>: <마지막 댓글>`, 오른쪽 위 시각, 오른쪽 아래 표식 하나(`cmMark`, 가장 급한 것만: 실패 `실패 <n>`(빨간 점 + 글자, aria `메일 실패 <n>건`) > 미답장 `미답장 <n>` 알약 > 초안 `초안 <n>` 알약(aria `답장 확인 <n>건`), 없으면 비움). 글 줄은 두 줄이고 안 읽음 숫자와 메일 보냄/초안/실패 줄은 없어요(안 읽은 글은 제목이 진해요, 댓글별 상태는 열린 글의 진행 트랙이 말해요). 줄의 미답장 합은 앱 머리의 `미답장` 수와 같아요. 시각은 목록 갱신 시 자리에서 만 바뀜.
-- 상태(댓글 대화): 열린 글 없음 `글을 골라 주세요`, 로딩 `불러오는 중…`, 실패 `<오류 또는 댓글을 불러오지 못했어요>`. 댓글 행(`.cm-c`): 작성자(내 댓글이면 `나` 또는 `나 · 내 답글`), 시각, 미답장 알약, 답글이면 `↳ <부모 작성자>`(중첩 시 생략), 본문, 진행 트랙, 동작. `답글 초안`(답이 필요하고 초안 없을 때; 만드는 중에는 비활성 `초안 만드는 중…`, 2분 뒤 초안이 안 오면 토스트 `초안이 아직 오지 않았어요`), `답장 안 함`(미답장일 때). 날짜 구분선 `kk-date`. 진행 트랙(`cmFlow`, 답글이면 `답글`, 메일이 따라가면 `메일`): 답글 단계 `초안`, `확인 대기`(ask), `보내는 중`(busy), `보냄` / `보냄 · 자동`, `실패[ · 이유]`(err), `답글 보냄`(플랫폼에서 직접 답한 경우), `초안 만드는 중`, `초안 필요`(ask), `확인`, `보냄`; 메일 단계 `초안`, `답글과 함께 보내요`, `보냄`, 실패 라벨(`메일 초안 작성됨` 등 허브 라벨). 답글 전송 기록 말풍선(`cmSendNode`): `보내는 중` / `보냄`(2분 동안만) / `실패[ · 이유]`+`다시 보내기`+`지우기`. 초안 카드(`cmDraftCard`): 라벨 `답글 초안`, 받는이 `댓글 <작성자>`, 메일이 따라가면 `보내기를 누르면 답글을 올린 뒤 메일을 보내요`, 고치기에서 고칠 곳 선택 `답글` / `메일`(aria `고칠 곳`), 보내는 중이면 `보내기` 비활성. 지우기 후 토스트는 되돌리기 제공(메일이 따라간 초안은 제외). 소스 행이 읽지 못했을 때 `읽지 못했어요 · <오류>`.
-- 상태(실시간, 다른 컴퓨터): SSE `comment`, `comment_draft`, `comment_send`, `comment_sources`로 즉시 갱신; 초안 실패 시 오류 토스트, 답글은 올렸지만 메일 실패 `답글은 올렸지만 메일은 보내지 못했어요: <이유|알 수 없는 이유>`. 다른 컴퓨터의 댓글 앱이면(`p:<url>|i:<인스턴스>~<해시>`) 모든 호출이 `cmApi`를 거쳐 그 컴퓨터로 가고(`GET` = `/api/peer/proxy`, 변경 = `/api/peer/act`) SSE가 아니라 15초마다 다시 읽어요(이 컴퓨터는 60초마다 폴백). 화면이 다시 보일 때도 즉시 다시 읽어요(`visibilitychange`).
+- 상태(댓글 대화): 열린 글 없음 `글을 골라 주세요`, 로딩 `불러오는 중…`, 실패 `<오류 또는 댓글을 불러오지 못했어요>`. 댓글 행(`.cm-c`): 작성자(내 댓글이면 `나` 또는 `나 · 내 답글`), 시각, 미답장 알약, 답글이면 `↳ <부모 작성자>`(중첩 시 생략), 본문, 진행 트랙, 동작. `답글 초안`(답이 필요하고 초안 없을 때; 만드는 중에는 비활성 `초안 만드는 중…`, 2분 뒤 초안이 안 오면 토스트 `초안이 아직 오지 않았어요`), `답장 안 함`(미답장일 때). 날짜 구분선 `kk-date`. 진행 트랙(`cmFlow`, 답글이면 `답글`, 메일이 따라가면 `메일`): 답글 단계 `초안`, `확인 대기`(ask), `보내는 중`(busy), `보냄` / `보냄 · 자동`, `실패[ · 이유]`(err), `답글 보냄`(플랫폼에서 직접 답한 경우), `초안 만드는 중`, `초안 필요`(ask), `확인`, `보냄`; 메일 단계 `초안`, `답글과 함께 보내요`, `보냄`, 실패 라벨(`메일 초안 작성됨` 등 허브 라벨). 답글 전송 기록 말풍선(`cmSendNode`): `보내는 중` / `보냄`(2분 동안만) / `실패[ · 이유]`(버튼 없음: 할 일은 답장 대기의 큐 카드가 말해요). 초안 카드(`cmQueueCard`): 공통 큐 카드를 댓글 밑에 그대로(`bare`), 메일이 따라가면 고치기에서 고칠 곳 선택 `답글` / `메일`(aria `고칠 곳`). 큐가 아직 그 초안을 모르면 큐를 한 번 다시 읽고 다시 그려요. 소스 행이 읽지 못했을 때 `읽지 못했어요 · <오류>`.
+- 상태(실시간, 다른 컴퓨터): SSE `comment`, `comment_draft`, `comment_sources`로 즉시 갱신(초안 실패 시 오류 토스트), 보내기 상태는 `reply` 이벤트로 큐 카드가 제자리에서 바뀌어요. 다른 컴퓨터의 댓글 앱이면(`p:<url>|i:<인스턴스>~<해시>`) 모든 호출이 `cmApi`를 거쳐 그 컴퓨터로 가고(`GET` = `/api/peer/proxy`, 변경 = `/api/peer/act`) SSE가 아니라 15초마다 다시 읽어요(이 컴퓨터는 60초마다 폴백). 화면이 다시 보일 때도 즉시 다시 읽어요(`visibilitychange`).
 - 상태(폰/데스크톱): `.cm-post`(글 카드: 썸네일, 제목, 원본 링크)는 대화 맨 위에 그려지는데 1100px 이상에서는 숨김(18-comments.css:35, 머리가 대신 보이기 때문). 1099px 이하에서 머리 `.kk-head`는 숨김(17-kakao.css:90). 639px 이하 여백 조정 18-comments.css:25.
-- 데이터: `GET /api/comments/sources`, `PUT /api/comments/sources/<key>` (`{watch, autoDraft, autoMail}`), `GET /api/comments/sources/<key>/posts`, `GET /api/comments/threads?app=<앱>`, `GET /api/comments/thread/<source>/<thread>`(응답 `{thread, source, comments, drafts, sends, read}`), `POST .../read`, `POST /api/comments/comment/<id>/draft`, `.../no-reply`, `POST /api/comments/drafts/<code>/send|revise|drop|restore`, `POST /api/comments/sends/<id>/retry|dismiss`. SSE `comment`, `comment_draft`, `comment_send`, `comment_sources`(99-boot.js:52).
+- 데이터: `GET /api/comments/sources`, `PUT /api/comments/sources/<key>` (`{watch, autoDraft, autoMail}`), `GET /api/comments/sources/<key>/posts`, `GET /api/comments/threads?app=<앱>`, `GET /api/comments/thread/<source>/<thread>`(응답 `{thread, source, comments, drafts, sends, read}`), `POST .../read`, `POST /api/comments/comment/<id>/draft`, `.../no-reply`, 초안 동작은 `POST /api/reply/act`. SSE `comment`, `comment_draft`, `comment_sources`(99-boot.js:52).
 - css: web/css/18-comments.css(`cm-*`, `kk-pick`), web/css/17-kakao.css(`kk-*`), web/css/15-reply-card.css(`rq-*`), web/css/15-draft-original.css, web/css/01-tokens.css.
-- 근거: web/js/30-monitoring-comments.js:6-36(상태와 요소), :15-20(`cmAppOf`), :60(`cmLoad`), :132-146(글 행), :155-165(탭), :166(`cmPaintRooms`), :191(`cmOpen`), :218(`cmMarkRead`), :232-253(`cmFlow`, `cmProgress`), :262(`cmCommentNode`), :280(`cmSendNode`), :287(`cmPaintChat`), :312(`cmThreadNodes`), :342(`cmMakeDraft`), :354(`cmDraftCard`), :379(`cmLive`), :393(`cmMode`), web/js/30-monitoring.js:1046-1048(연결), web/js/99-boot.js:52.
+- 근거: web/js/30-monitoring-comments.js:6-36(상태와 요소), :15-20(`cmAppOf`), :60(`cmLoad`), :132-146(글 행), :155-165(탭), :166(`cmPaintRooms`), :191(`cmOpen`), :218(`cmMarkRead`), :232-253(`cmFlow`, `cmProgress`), :262(`cmCommentNode`), :280(`cmSendNode`), :287(`cmPaintChat`), :312(`cmThreadNodes`), :342(`cmMakeDraft`), `cmQueueCard`, :379(`cmLive`), :393(`cmMode`), web/js/30-monitoring.js:1046-1048(연결), web/js/99-boot.js:52.
 
 ### 지켜볼 글 고르기 (댓글 소스 시트)
 
@@ -1546,79 +1546,30 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 답장 확인 목록 (모니터링 > 답장 확인)
 - 목적: 모든 앱과 모든 컴퓨터에서 `보내기`를 기다리는 답장 초안을 한 목록에서 처리해요.
-- 구성: 모니터링 목록의 행 `답장 확인`(아이콘 send, 안 읽음 수 = 대기 건수, 힌트). 화면은 앱이 둘 이상 기다릴 때(또는 앱 선택 중일 때) 상태 탭 옆에 `앱` 선택 단추(`button.sel`; 메뉴에 `전체`와 앱별 + 개수), 앱(메일, 카카오톡, 댓글 등)별 소제목 `.mon-sec`(role=heading level 3), 카드 목록 `.rq-q`(카드는 10-reply-card.js `rqCard`).
+- 구성: 모니터링 목록의 행 `답장 확인`(아이콘 send, 안 읽음 수 = 대기 건수, 힌트). 화면은 머리(탭 `전체 · 답 필요 · 실패 · 보낸 것`, `빠른 처리`, 앱이 둘 이상 기다릴 때 `앱` 선택 단추)와 구역 `실패` / `답 필요` / `보낸 것`. 실패와 대기는 공통 큐 카드(`rqItemCard`)가 목록에 바로 놓이고(채운 `보내기`는 첫 대기 카드 하나), 보낸 것은 행이에요.
 - 기능:
-  - 카드 `열기`(`rqGoTo`): 메일 초안이면 `go("monitoring","c:<mail key>")`, 아니면 앱 화면(`i:<앱>` 또는 `p:<pc url>|i:<앱>`).
-  - 알림 초안 동작(`rqNoticeActs`): `보내기`(첨부나 경고가 있으면 `drfSure` 확인 후 `answerInline`), `고치기`, `보내지 않기`.
-  - 저장소 초안(카카오톡/댓글) 동작(`rqStoreActs`): 보내기, 고치기, 보내지 않기, `rqStoreCall`이 해당 컴퓨터로 보내요.
-  - 고치기 입력(`rqRevise`): 고쳐 달라는 말을 적어 보냄, 취소 가능.
-  - 보내지 않기 후 `되돌리기`(`rqRestore`).
+  - 카드 동작은 모두 `raAct`(보내기, 고치기, 보내지 않기, 직접 수정, 되돌리기, 다시 보내기, 확인 필요의 `나갔어요` / `다시 보내기`). 다른 컴퓨터 항목은 그 컴퓨터 큐에서 실행돼요.
+  - 보낸 것 행을 누르면 같은 카드가 시트(폰) 또는 오른쪽 칸(넓은 화면)으로 열려요(`rqSheetOpen`).
   - 앱 행의 `답장 확인` 버튼은 `rqOpen(inst, pc)`로 그 앱만 필터해 열어요.
 - 상태:
-  - 빈 목록: `확인할 답장이 없어요`, 아직 안 불러왔으면 `불러오는 중…`.
+  - 빈 목록: `확인할 답장이 없어요`, 아직 안 불러왔으면 `불러오는 중…`, 큐를 못 읽으면 문장과 `다시 시도`.
   - 행 힌트: 대기 있으면 `<앱들> 답장 N건`(앱 이름 최대 3개를 ` · `로 이음), 없으면 `확인할 답장이 없어요`. 대기가 없으면 열려 있을 때만 행이 보여요.
-  - 카드 busy: 동작 중이면 카드 `.busy`(투명도 낮춤, 중복 실행 막음).
-  - 보낸 저장소 초안은 보내기 영역이 `보냈어요`(`rqSentNode`)로 바뀌고, 목록을 다시 열 때까지 카드가 남아요.
-  - 에러 토스트: 네트워크 오류는 `연결이 끊겨 처리하지 못했어요`, 그 외 서버 메시지. 고치기 성공 `고쳐 달라고 했어요. 새 초안이 오면 여기 다시 떠요`. 복구 `초안을 되돌렸어요`. 보내지 않기 `보내지 않았어요`(+ 되돌리기, 댓글에 딸린 메일 초안이면 되돌리기 없음).
-  - 다른 컴퓨터 변형: 소제목과 칩에 ` · <컴퓨터 이름>`이 붙고 동작은 `/api/peer/act`로 그 컴퓨터에서 실행. 카드 머리에 컴퓨터 이름.
-  - 카카오톡 초안이 새 메시지 의도면 카드 라벨 `새 메시지 초안`. 수신 표기 `대화방`, 댓글은 `댓글`, 메일 초안은 `받는이`.
-  - 원문 표시: 메일 초안은 보낸 사람과 제목, 저장소 초안은 `original`.
-  - 목록은 `rqSig()`가 바뀔 때만 다시 그려요(고치기 입력 중 타이핑은 다시 그리지 않음).
+  - 동작 중이면 카드 버튼이 제자리에서 꺼지고 누른 버튼이 진행을 말해요(`RA.busy`). 실패는 버튼 위 한 줄(`RA.fail`).
+  - 다른 컴퓨터 변형: 앱 선택 메뉴에 ` · <컴퓨터 이름>`이 붙고 동작은 `/api/peer/act`(action `reply`)로 그 컴퓨터에서 실행.
+  - 목록은 `rqSig()`가 바뀔 때만 다시 그려요. 카드 하나가 바뀌면 그 카드만 제자리에서(`raPaint`).
   - 폰/터치(`pointer: coarse` 또는 639px 이하): 카드 패딩 축소, 작은 버튼 터치 영역 확대.
-- 데이터: `GET /api/replies`(응답 `items`, `rqLoad`), 다른 컴퓨터 스냅샷 `PQ.list[].items.replies/notices/integrations`, 알림 `NT`, `INTG.items`. 저장소 초안 동작: `POST /api/kakao/drafts/<code>/<op>`, `POST /api/kakao/chat/<chatId>/draft`(revise), `POST /api/comments/drafts/<code>/<op>`, `POST /api/comments/drafts/<code>/revise`, 다른 컴퓨터 `POST /api/peer/act`(action kakao 또는 comments). 알림 초안 응답 `answerInline`/`ntPost`(경로는 이 범위 밖). SSE 이벤트는 코드에서 확인 못 함. `rqSoon`이 400ms 지연 재조회.
-- 근거: web/js/30-replies.js:34 `rqAll`, :56 `rqMonItem`, :64 `rqOpen`, :130 `rqCardOf`, :158 `rqFilterBar`, :165 `rqNodes`, :174 `rqSig`, :10 `rqLoad`, :68 `rqRun`, :93 `rqStoreActs`, :106 `rqNoticeActs`, :114 `rqRevise`, :152 `rqGoTo`; 카드는 web/js/10-reply-card.js:90 `rqCard`, :103 `rqSentNode`, :106 `rqDroppedToast`.
+- 데이터: 게이트웨이의 공통 큐 하나(`GET /api/reply/queue`, `web/js/10-reply-actions.js` `RA`)와 다른 컴퓨터 스냅샷의 `reply` 부분. 모든 동작 `POST /api/reply/act`. SSE `reply`(`raLive`), `kakao_draft` / `comment_draft`에서 `rqSoon`(400ms 지연 재조회).
+- 근거: web/js/30-replies.js `rqLoad`, `rqRows`, `rqItemRow`, `rqMonItem`, `rqOpen`, `rqFilterBar`, `rqDescs`, `rqCardDesc`, `rqSheetPaint`, `rqSig`; web/js/10-reply-actions.js `raLoad`, `raAct`, `rqItemCard`, `rqSendNode`, `rqEditNode`.
 - css: web/css/15-reply-card.css (`.rq-chips .sel`, `.rq-sent` :38, 폰 :49, :63), 필터 칩 `.mr-filter`/`.cchip`는 20-monitoring.css 등 공용.
 
-### 빠른 처리 배너 (#trban)
-- 목적: 한 곳에 답장 승인 카드가 많이 쌓이면 빠른 처리로 들어가는 입구를 보여줘요.
-- 구성: 화면 위쪽의 `button#trban.trban`(web/index.html:92, 기본 hidden). 안에 목록 아이콘, 글 `.tx`, `.go` 글 `빠르게 처리`.
-- 기능: 클릭하면 `trOpen("*")`(모든 그룹의 카드를 한 번에 훑는 검토 큐). 같은 입구가 모니터링 답장 확인 머리의 버튼 `빠른 처리`(`data-k=triage`, 대기 총합이 `TR.min` 이상일 때만, web/js/30-monitoring.js:981)로도 있어요. 승인 카드를 열 때 그 카드가 속한 그룹이 충분히 크면 한 장짜리 시트 대신 빠른 처리가 열려요(web/js/30-notices.js:407 `trGroupFor`).
-- 상태: 대기 합계가 `TR.min`(서버 `triageMin`, 기본 3) 미만이거나 빠른 처리 창이 열려 있으면 숨김. 글: 그룹이 여러 곳이면 `답장 대기 N건 · M곳`, 한 곳이면 `<그룹 라벨> 대기 N건`. 새로 읽기 실패 시 이전 화면을 유지하고 다음 알림 이벤트 때 다시 시도해요.
-- 데이터: `GET /api/approvals`(응답 `groups[]`, `triageMin`, `results[]`). SSE: `notice` 이벤트 시 `trSoon()`(300ms 지연 재조회), `approvals` 이벤트 시 `trSoon()`, `approval_send` 이벤트 시 `trLive(e)`(web/js/99-boot.js:46-48).
-- 근거: web/js/30-triage.js:12 `trLoad`, :32 `trBanner`, :24 `trBig`, :30 `trGroupFor`.
-- css: web/css/15-triage.css:4 (`.trban`), web/css/01-tokens.css:134, :203(좁은 화면에서 grid 위치 해제). 폭 분기: 15-triage.css `@media (max-width: 639px)`에서 `.trban` 너비 `calc(100% - 24px)`.
-
-### 빠른 처리 한 장씩 보기 (전체화면 시트)
-- 목적: 카드 한 장씩 초안을 확인하고 보내기, 고치기, 보내지 않기로 바로 넘겨요.
-- 구성: `fsOpen({label: "<라벨> 빠른 처리", cls: "tall tr"})` 시트. 머리(`fsHead`): 작은 글 `<라벨> · 빠른 처리`, 제목 `.tr-pos`(`i/N` + ` · 처리 N건`), 진행 막대 `.tr-bar`(role=progressbar, aria-label `처리한 카드`), 오른쪽에 `목록` 토글 `.tr-tog`. 본문 `.tr-body`: 질문 줄 `.tr-q`(질문 + 진행 칩), 결정 노드 `decideNode`, 메타 `.tr-meta`(받는이 라벨/주소, `제목`, `규칙: ...`, `봇이 보내요`), 원문 블록(`.tr-org`), 안내 목록 `.tr-info`, 경고 `.tr-warn`, 라벨 `보낼 글`(메일 동반이면 `답글`)과 `textarea.tr-ta`, 첨부 `.tr-files`, 동반 메일 `.tr-mail`. 발 `.tr-ft`: 버튼 줄 `.tr-acts`, 힌트, 이전/다음 `.tr-nav`, 단축키 안내 `.tr-keys`.
-- 기능:
-  - `보내기`(`trAnswer(c,1)`): 고친 글을 먼저 저장(`trSaveEdits`) 후 `POST /api/approvals`. 글이 바뀌었으면 버튼 글이 `고쳐서 보내기`로 바뀜(`trSendLabel`).
-  - `고치기 …`(`TR.noting`): 고칠 내용 입력 칸이 열리고 `고쳐 달라고 하기`(`trEditSubmit`, n=2)와 `취소`.
-  - `보내지 않기`(n=3).
-  - `‹ 이전` `다음 ›`(`trStep`, 답하지 않고 보기만; 마지막을 넘으면 요약 화면).
-  - 단축키(`trKey`, 시트가 맨 위일 때만): Enter 또는 1 보내기, 2 또는 E 고치기, 3 또는 X 보내지 않기, ← → 또는 K J 이전/다음, L 목록 전환, Ctrl/Cmd+Enter는 목록에서 `trSendPicked`, 고치기 입력 중 `trEditSubmit`, 아니면 보내기. 글자 입력 중에는 무시.
-  - 답하면 바로 다음 안 한 카드로 넘어가고(`trNext`) 요청은 뒤에서 실행.
-  - 원문 `trOriginal`: `GET /api/drafts/<ref>/original`로 지연 로드.
-- 상태(정확한 문구):
-  - 질문이 없으면 `이대로 보낼까요?`. 안내 힌트 `보내거나 보내지 않으면 다음 초안으로 넘어가요.`. 단축키 줄 `Enter·1 보내기 · 2·E 고치기 · 3·X 보내지 않기 · ← → 이전·다음 · L 목록`.
-  - 진행 칩(`TR_ST`): `보내지 않았어요`, `보낼 차례를 기다려요`, `보내는 중…`, `보냈어요`, `보내지 못했어요`, `봇이 보내요`, `봇이 고치는 중이에요`, `다른 곳에서 처리됐어요`, `답을 보내지 못했어요`. 처리한 카드는 본문 textarea와 버튼이 disabled(오류 `err` 상태는 다시 시도 가능).
-  - 오류: 카드에 `답을 보내지 못했어요: <서버 글>`(`.tr-warn`)과 토스트 `<질문 또는 카드>: <서버 글>`.
-  - 고치기 빈 입력: 토스트 `무엇을 고칠지 적어 주세요`. 고치기 placeholder `어떻게 고칠까요? 봇이 고쳐서 다시 물어봐요`, aria-label `어떻게 고칠지`.
-  - 원문 로딩 `원문을 불러오는 중…`(`.tr-org.muted`), 불러오기 실패면 원문 블록 없음. 메일 원문 머리 `받은 메일`(본문 600자까지), 댓글이면 `원댓글`(2000자). 댓글 초안이면 `답하는 댓글` 블록(게시물, 작성자, KST 시각, 메일 연동 표시 `.tag[data-mail]`).
-  - 동반 메일: 라벨 `함께 보낼 메일`, `받는이`, `제목`, aria-label `함께 보낼 메일 본문`. 글 칸 aria-label `보낼 글`.
-  - 카드가 다른 곳(다른 창, 디스코드, 봇)에서 처리되면 진행 중 목록에서 빠짐. 새 카드는 끝에 붙음(`trMerge`). 처리할 카드가 없으면 시트를 안 열고 토스트 `처리할 카드가 없어요`.
-  - 폰(639px 이하): 시트 전체 너비/높이, 버튼 높이 44px, 질문 17px. 터치(`pointer: coarse`)와 폰에서는 단축키 안내 `.tr-keys` 숨김.
-- 데이터: `POST /api/approvals {items:[{ref, to, n, note?}]}`(n 1 보내기, 2 고치기, 3 보내지 않기), `POST /api/drafts/<ref>/body {text, part?:"mail"}`, `GET /api/drafts/<ref>/original`. SSE `approval_send`로 카드별 진행(`TR.results[ref]`)이 칩에 반영돼요.
-- 근거: web/js/30-triage.js:42 `trOpen`, :167 `trPaint`, :204 `trOneView`, :117 `trAnswer`, :137 `trKey`, :160 `trEditSubmit`, :73 `trState`, :83 `trChip`, :87 `trLive`, :182 `trOriginal`, :194 `trCommentCtx`.
-- css: web/css/15-triage.css (`.tr-*`), 폭 분기 :68-76, 터치 :77.
-
-### 빠른 처리 목록 보기 (여러 장 한꺼번에)
-- 목적: 모든 카드의 초안을 한 화면에서 훑고 카드마다 보내기, 고치기, 건너뛰기를 골라 한 번에 보내요.
-- 구성: 머리 제목 `목록 N건`, 토글 글 `한 장씩`. 본문 `.tr-list`의 각 `.tr-row`: 머리 버튼 `.tr-rh`(번호, `<받는이> · <질문>`, 칩), 초안 `.tr-rb`(눌러서 전체 보기, title `눌러서 전체 보기`), 동반 메일 `.tr-rb.mail`(`함께 보낼 메일 → <받는이> · <제목>`), 선택 막대 `.tr-seg`(role=radiogroup, aria-label `N번 카드`; 버튼 `보내기` `고치기` `건너뛰기`, role=radio), 고치기 선택 시 입력 `.tr-rn`(placeholder `어떻게 고칠까요?`, aria-label `N번 고칠 내용`). 발: `확인한 것 보내기` `.tr-batch` + 안내 `카드마다 보내기·고치기·건너뛰기를 골라요. 고르지 않은 카드는 그대로 남아요`.
-- 기능: 행 머리 클릭은 그 카드의 한 장씩 보기로 이동. 선택 기본값은 건너뛰기(3). `확인한 것 보내기`(`trSendPicked`)는 보내기로 고른 것과, 고치기로 고르고 내용을 적은 것만 한 번에 `POST /api/approvals`. L 키로 목록 전환.
-- 상태: 고른 것이 없으면 `확인한 것 보내기` disabled, 있으면 `확인한 것 보내기 (N)`(입력 중에도 `trListCount`로 갱신). 보내기로 고른 행은 초안이 펼쳐짐. 처리된 행은 `.locked`로 선택 막대 없음. 결과 토스트 `N건 답했어요`(+ ` · M건 보내는 중`), 실패 시 모든 선택 카드에 `err` 표시와 토스트 `보내지 못했어요: <서버 글>`. 목록에서는 한 장씩 단축키가 꺼져요.
-- 데이터: 위와 같음.
-- 근거: web/js/30-triage.js:253 `trListView`, :267 `trListCount`, :275 `trSendPicked`.
-- css: web/css/15-triage.css (`.tr-list`, `.tr-row`, `.tr-seg`, `.tr-sg`); 폰에서 `.tr-sg` min-height 44px, `.tr-list .tr-seg` stretch.
-
-### 빠른 처리 마무리 화면
-- 목적: 끝까지 본 결과를 요약해요.
-- 구성: `.tr-empty` 본문(`.tr-done-t` 제목, 요약 목록 `.tr-sumlist`: 줄 라벨 + `N건`), 발에 버튼.
-- 기능: `건너뛴 것 다시 보기`(건너뛴 카드가 있을 때만, 첫 건너뛴 카드로 이동), `닫기`.
-- 상태: 제목은 건너뛴 카드가 있으면 `끝까지 봤어요`, 없으면 `모두 답했어요`. 요약 줄(0건은 숨김): `보냈어요`, `보내지 않았어요`, `보내는 중`, `보내지 못했어요`, `봇이 고치거나 보내요`, `건너뛰었어요`.
-- 데이터: 로컬 상태 `TR.done`, `TR.results`(SSE `approval_send`).
-- 근거: web/js/30-triage.js:241 `trDoneView`.
-- css: web/css/15-triage.css (`.tr-sumlist`, `.tr-done-t`).
+### 빠른 처리 (한 장씩, 목록, 끝 화면)
+- 목적: 모든 채널과 컴퓨터의 대기 답장을 공통 큐 카드 한 장씩, 또는 줄마다 골라 한꺼번에 처리해요.
+- 구성: `tqOpen()`이 폰은 `fsOpen({label: "빠른 처리", cls: "tall tr"})` 시트, 넓은 모니터링은 오른쪽 칸(`trPaneOpen`, `.tr-pane`)으로 열어요. 머리(`fsHead`): 작은 글 채널별 수(`countsLine`), 제목 `.tr-pos`(`빠른 처리 i / n`, 목록이면 `목록 N건`), 진행 막대 `.tr-bar`, 오른쪽 `목록`/`한 장씩` 토글 `.tr-tog`. 본문 `.tq-body`: 공통 큐 카드(`rqItemCard`, 채운 `보내기`)와 진행 레일 `.tq-rail`(항목별 `지금` · `N초 후 보내요` · `보내는 중` · `보냈어요` · `실패` · `확인 필요` · `보내지 않았어요`, 누르면 그 항목으로).
+- 기능: 보내기·보내지 않기 뒤 바로 다음 항목으로 넘어가요(보내기는 공통 큐의 되돌리기 시간을 기다려요). 키(`tqKey`, 입력칸에 있을 때는 동작 안 함): Enter 보내기, E 직접 수정, X 보내지 않기, → 건너뛰기, ← 이전, L 목록. 목록(`tqListView`)은 줄마다 `보내기` · `고치기` · `건너뛰기`를 고르고(고치기는 한 줄 입력), `고른 것 처리 (N)`(`tqGoPicked`)가 고른 것만 `raAct`로 처리해요. 끝 화면(`tqDoneView`)은 처리한 수, 실패가 있으면 `실패만 다시 보기`.
+- 상태: 대기가 없으면 열지 않고 토스트 `처리할 카드가 없어요`. 카드 상태는 `reply` 이벤트로 제자리에서 바뀌고 레일도 따라가요(`tqLive`).
+- 데이터: 게이트웨이의 공통 큐 하나(`GET /api/reply/queue`, `web/js/10-reply-actions.js` `RA`)와 다른 컴퓨터 스냅샷의 `reply` 부분, `POST /api/reply/act`.
+- 근거: web/js/30-triage.js `trPaneNow`, `trPaneOpen`, `tqOpen`, `tqKey`, `tqPaint`, `tqRail`, `tqDoneView`, `tqListView`, `tqGoPicked`.
+- css: web/css/15-triage.css (`.fs-card.tr`, `.tr-pane`, `.tr-pos`, `.tr-bar`, `.tr-tog`, `.tr-k`, `.tr-none`, `.tq-*`); 폰은 시트가 화면 전체.
 
 ### 카카오톡 화면 (모니터링 > 카카오톡 앱 패널)
 - 목적: 지켜볼 대화방을 고르고, 방마다 카카오톡 같은 대화 화면과 답장 초안 카드를 한 패널에서 써요.
@@ -1628,7 +1579,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
   - 넓은 화면(>=1100px)은 방 열 옆에 대화가 같이 보이고, 그보다 좁으면(`narrowChat()` = max-width 1099px) 두 화면으로 나뉘어 `KK.open`에 따라 `.chat-open`이 바뀌고 앱바의 뒤로 화살표(`kkBack`)가 방 목록으로 돌아가요.
   - 다른 컴퓨터 변형: `KK.pc`가 있으면 모든 GET이 `pqLink`/`/api/peer/proxy`를 거치고, 컴퓨터를 바꾸면 패널을 비우고 처음부터 시작해요.
   - 미답장 알약과 자동 초안 스위치는 폭과 관계없이 머리 밑 `#kk-owed` 한 줄에 있어요. 초안이 없고 답장이 남았을 때만 알약 옆에 `답장 안 함`이 있고, 초안이 있으면 그 카드의 `답장 안 함`이 대신해요.
-- 데이터: 아래 하위 화면 항목 참고. SSE는 `kakao`, `kakao_send`, `kakao_draft`, `kakao_rooms`, `kakao_unreplied`, `kakao_read`(web/js/99-boot.js -> `kkLive`).
+- 데이터: 아래 하위 화면 항목 참고. SSE는 `kakao`, `kakao_draft`, `kakao_rooms`, `kakao_unreplied`, `kakao_read`(web/js/99-boot.js -> `kkLive`).
 - 근거: web/js/30-kakao.js:433-465 (요소 조립), :1173 `kkMode`, :604 `kkPaintAll`, :766 `kkBack`.
 - css: web/css/17-kakao.css (주 파일), 일부 web/css/07-chat.css, 15-reply-card.css, 15-draft-original.css, 18-app-settings.css, 18-comments.css, 01-tokens.css가 `kk-` 클래스를 같이 써요. 폭 분기: 17-kakao.css `@media (max-width: 1099px)` :11, `(min-width: 1100px)` :15, :56, `(max-width: 1099px)` :90, :92, `(max-width: 639px)` :127, :145, :39-40, :271, `(min-width: 640px)` :270, `(pointer: coarse), (max-width: 639px)` :39, `prefers-reduced-motion` :85, :198.
 
@@ -1728,47 +1679,43 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 카카오톡 요청 입력줄 (답장 초안 요청, 직접 보내기)
 - 목적: 방 아래 입력줄에 쓴 말은 방에 곧바로 가지 않고 어시스턴트에게 가는 요청이에요. 직접 보내기만 방에 그대로 나가요.
-- 구성: `#kk-foot`(`.composer.kk-composer`): 고치는 중 막대 `#kk-edit`(`답장 초안을 고치는 중이에요` + `취소`), 폼 `#kk-form`(`textarea#kk-text` 최대 500자, aria-label `답장 요청`, 칩 `#kk-draft-btn`(`답장 초안`), 칩 `#kk-direct-btn`(`직접 보내기`), 전송 버튼 `#kk-send-btn`(submit, aria-label/title `요청 보내기`)), 초안 카드 영역 `#kk-drafts`는 이 줄 위(대화 바로 밑)에 있어요.
+- 구성: `#kk-foot`(`.composer.kk-composer`): 폼 `#kk-form`(`textarea#kk-text` 최대 500자, aria-label `답장 요청`, 칩 `#kk-draft-btn`(`답장 초안`), 칩 `#kk-direct-btn`(`직접 보내기`), 전송 버튼 `#kk-send-btn`(submit, aria-label/title `요청 보내기`)), 초안 카드 영역 `#kk-drafts`는 이 줄 위(대화 바로 밑)에 있어요.
 - 기능:
-  - 전송(`kkSend`): 초안 수정 중이 아니면 `kkAskBot`: 대기 중인 초안이 있으면 가장 최신 초안을 입력대로 고치고(`kkMakeDraft(undefined,{code,change})`), 없으면 새 메시지 의도로 초안을 만들어요(`kkComposeMake`). 입력은 500자까지.
+  - 전송(`kkSend` → `kkAskBot`): 대기 중인 초안이 있으면 가장 최신 초안을 입력대로 고치고(그 큐 항목의 `raAct` revise), 없으면 새 메시지 의도로 초안을 만들어요(`kkComposeMake`). 입력은 500자까지.
   - `답장 초안` 칩: `kkMakeDraft()`로 자동 초안 요청.
   - `직접 보내기`: `kkSendDirect`가 입력을 그대로 `POST /api/kakao/chat/<id>/send {text}`. 실패하면 입력을 복원.
-  - 초안 직접 수정(`kkEdit`): 입력줄에 초안 글을 채우고 이때 전송 버튼은 `보내기`(초안 경로 `POST /api/kakao/drafts/<code>/send {text}`)로 바뀜. `취소`는 `kkEditCancel`.
   - 키보드: 데스크톱은 Enter 전송, Shift+Enter 줄바꿈, 폰과 터치(`pointer: coarse` 또는 639px 이하)는 Enter가 줄바꿈. IME 조합 중 Enter는 전송 안 함. 입력창은 140px까지 자동 높이.
 - 상태(정확한 문구):
-  - placeholder `요청을 입력하세요 · 예: 좀 더 짧게`, 초안이 있으면 `초안을 어떻게 고칠까요? · 예: 좀 더 짧게`, 초안 수정 중 `고친 메시지`.
+  - placeholder `요청을 입력하세요 · 예: 좀 더 짧게`, 초안이 있으면 `초안을 어떻게 고칠까요? · 예: 좀 더 짧게`.
   - 초안 만드는 중: 칩 글 `초안 만드는 중…`(disabled), 카드 자리에 `답장 초안을 만드는 중이에요…`(role=status). 만드는 중 다시 요청하면 토스트 `초안을 만드는 중이에요 · 끝나면 다시 요청해 주세요`. 120초 안에 안 오면 `초안이 아직 오지 않았어요`.
-  - 다른 컴퓨터 방에서 초안이 없을 때 요청: 토스트 `다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요`. 그 방에서는 `직접 보내기` 칩이 숨어요(`KK.pc`). 칩은 입력이 비었거나 초안 수정 중이어도 숨어요.
+  - 다른 컴퓨터 방에서 초안이 없을 때 요청: 토스트 `다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요`. 그 방에서는 `직접 보내기` 칩이 숨어요(`KK.pc`). 칩은 입력이 비었을 때도 숨어요.
   - 입력 내용은 방별로 보관해 방을 바꿔도 복원돼요.
   - 입력줄은 전송 중(`KK.sending`)이면 중복 전송을 막아요.
-- 데이터: `POST /api/kakao/chat/<id>/draft`(본문 `{intent}` 새 메시지, `{revise:{code,change}}` 고치기, `{choice}` 선택, `{}` 자동), `POST /api/kakao/chat/<id>/send {text}`, `POST /api/kakao/drafts/<code>/send {text}`, `DELETE /api/kakao/chat/<id>/send/<sendId>`, `POST /api/kakao/chat/<id>/send/<sendId>/retry`. SSE `kakao_send`(전송 상태 `sending`, `sent`, `failed`, `deleted`; 모르는 id면 `kkTail`), `kakao_draft`(열린 방의 초안 완료, `e.error`가 있으면 토스트).
-- 근거: web/js/30-kakao.js:441-450 (요소), :913 `kkAskBot`, :924 `kkSendDirect`, :931 `kkSend`, :891 `kkSendText`, :1080 `kkComposeMake`, :1099 `kkMakeDraft`, :972 `kkSendEvent`, :942 `kkDeleteSend`, :955 `kkRetry`, :1056 `kkPaintFoot`, :481 키 처리.
-- css: web/css/17-kakao.css (`.kk-composer`, `.kk-send`, `.kk-dbtn`, `.kk-edit`), 12-composer-phone.css와의 관계는 코드에서 확인 못 함.
+- 데이터: `POST /api/kakao/chat/<id>/draft`(본문 `{intent}` 새 메시지, `{choice}` 선택, `{}` 자동), `POST /api/kakao/chat/<id>/send {text}`(직접 보내기), 초안 고치기는 `POST /api/reply/act`(revise). SSE `kakao_draft`(열린 방의 초안 완료, `e.error`가 있으면 토스트).
+- 근거: web/js/30-kakao.js `kkAskBot`, `kkSendDirect`, `kkSend`, `kkSendText`, `kkComposeMake`, `kkMakeDraft`, `kkPaintFoot`.
+- css: web/css/17-kakao.css (`.kk-composer`, `.kk-send`, `.kk-dbtn`).
 
 ### 카카오톡 답장 초안 카드와 질문 카드
 - 목적: 어시스턴트가 만든 초안을 확인하고 보내기, 고치기, 보내지 않기를 골라요. 질문이 있으면 먼저 고르게 해요.
-- 구성: `#kk-drafts` 안에 (있으면) 질문 카드 `.kk-draft.kk-ask`, 만드는 중 표시 `.kk-mk`, 초안마다 `rqCard`(web/js/10-reply-card.js 공용 답장 카드, `bare`, `.kk-draft`, data-code): 머리·근거 원문·첨부 줄 없이 라벨 `.kk-dh`(`답장 초안 · 메시지 N개`), 본문(메시지마다 노란 말풍선 `.kk-dp`, 하나여도 말풍선), 동작 `보내기` `고치기` `답장 안 함`. 카드는 화면 높이의 40%까지이고 넘으면 말풍선 부분만 스크롤, 버튼은 늘 보여요.
+- 구성: `#kk-drafts` 안에 (있으면) 질문 카드 `.kk-draft.kk-ask`, 만드는 중 표시 `.kk-mk`, 초안마다 공통 큐 카드(`rqItemCard(item, {bare:true})`: 머리·근거 원문·첨부 줄 없이 본문, 여러 메시지면 메시지마다 한 덩이, 동작 `보내기` `고치기` `보내지 않기`와 직접 수정). 카드 영역은 화면 높이의 40%까지이고 넘으면 안에서 스크롤해요.
 - 기능:
   - 질문 카드: 제목 `답장 전에 골라 주세요`, 질문 글, 선택 버튼마다 `kkMakeDraft(choice)`, `직접 쓸게`(`POST /api/kakao/chat/<id>/ask/drop` 후 입력창 포커스).
-  - 초안 카드 `보내기`: `POST /api/kakao/drafts/<code>/send`, 여러 메시지 초안은 한 번에 모두 보내요. 보내면 카드가 사라지고 타임라인에 전송 중 메시지가 붙어요.
-  - `고치기`: 카드 안에 고칠 내용 입력(`kkReviseBox`, `rqReviseNode`)이 열리고 `go`는 `kkMakeDraft(undefined,{code,change})`(새 초안이 오기 전까지 기존 초안 유지), `취소`, `직접 수정`(`kkEdit`)도 제공.
-  - `답장 안 함`(답장 초안의 카드): `POST /api/kakao/drafts/<code>/drop`으로 초안을 버리고, 방이 미답장이면 `POST /api/kakao/chat/<id>/no-reply`까지 해서 미답장도 끝내요. 토스트 `답장 안 함으로 표시했어요` + `되돌리기`(`DELETE /api/kakao/chat/<id>/no-reply` 뒤 `kkRestore`: `POST /api/kakao/drafts/<code>/restore`, 토스트 `초안을 되돌렸어요`). 방이 미답장이 아니면 초안만 버리고 토스트 `보내지 않았어요` + `되돌리기`예요.
-  - `보내지 않기`(새 메시지 초안의 카드, 답장이 아니라서 이름이 달라요): 초안만 버려요. 토스트 `보내지 않았어요` + `되돌리기`.
-- 상태: 카드 라벨(`kkDraftLabel`): `답장 초안` 또는 `새 메시지 초안`(의도로 만든 것), 여러 메시지면 `· 메시지 N개` 덧붙임. 고치는 중에는 카드가 `고치는 중…`(status). 버튼은 처리 중 disabled, 실패 시 서버 글 토스트 후 `kkTail`로 상태 재확인. 새 초안이 도착하면 카드 영역이 화면에 스크롤돼 들어와요. 다른 컴퓨터 방의 카드는 컴퓨터 이름을 머리에 표시하고 앱 라벨은 생략.
-- 데이터: 위 API, 응답 `drafts[]`(code, text, parts, sentParts, created, intent, basisLogId), `ask`({question, choices}), `sends[]`. 같은 초안은 답장 확인 목록(30-replies.js)에도 나타나요(`kakao_draft`, `kakao_send` 이벤트에서 `rqSoon`).
-- 근거: web/js/30-kakao.js:1015 `kkDraftCard`, :985 `kkAskCard`, :1003 `kkReviseBox`, :1011 `kkRestore`, :1046 `kkEdit`, :1052 `kkEditCancel`, :1008-1009 `kkDraftParts`/`kkDraftLabel`.
-- css: web/css/17-kakao.css (`.kk-draft`, `.kk-ask`, `.kk-dh`, `.kk-dt`, `.kk-dp`, `.kk-choices`), web/css/15-reply-card.css (공용 카드).
+  - 초안 카드 동작은 모두 공통 큐(`raAct`): `보내기`(여러 메시지 초안은 한 번에), `고치기`(고칠 내용 한 줄, 새 초안이 오기 전까지 카드는 `고치는 중…`), 직접 수정(`rqEditNode`, `이대로 보내기`), `보내지 않기`, 되돌리기 시간, 실패와 확인 필요의 버튼.
+- 상태: 버튼은 처리 중 제자리에서 꺼지고 실패는 카드 안 한 줄로 남아요. 새 초안이 도착하면 카드 영역이 화면에 스크롤돼 들어와요. 큐가 아직 그 초안을 모르면 큐를 한 번 다시 읽고 다시 그려요(`KK.raMiss`).
+- 데이터: 방 응답 `drafts[]`(code, text, parts, created, intent), `ask`({question, choices}), `sends[]`(직접 보낸 메시지의 상태 말풍선); 카드는 공통 큐 항목(`ref` = 초안 code). 같은 초안은 답장 대기 목록에도 같은 카드로 나와요(`kakao_draft` 이벤트에서 `rqSoon`).
+- 근거: web/js/30-kakao.js `kkItem`, `kkPaintFoot`, `kkAskCard`.
+- css: web/css/17-kakao.css (`.kk-draft`, `.kk-ask`, `.kk-dh`, `.kk-dt`, `.kk-choices`), web/css/15-reply-card.css (공용 카드).
 
 ### 카카오톡 실시간 갱신과 다른 컴퓨터 변형 (눈에 안 보이는 상태)
 - 목적: 화면 상태가 서버와 맞게 유지되는 규칙이에요.
 - 구성/기능:
-  - 이벤트 처리 `kkLive`: 다른 컴퓨터 패널이면 이벤트를 무시(그 스트림은 이 컴퓨터 것), 단 `kakao_draft`/`kakao_send`는 먼저 `rqSoon()`으로 답장 확인 큐도 새로 읽어요.
+  - 이벤트 처리 `kkLive`: 다른 컴퓨터 패널이면 이벤트를 무시(그 스트림은 이 컴퓨터 것), 단 `kakao_draft`는 먼저 `rqSoon()`으로 답장 확인 큐도 새로 읽어요.
   - 패널이 숨겨져 있으면 `kakao_rooms`/`kakao_unreplied`만 (패널이 보이거나 채팅 탭이 열려 있을 때) 방 목록을 새로 읽어요.
   - 다른 컴퓨터 방은 열려 있는 동안 2초마다 `GET /api/kakao/chat/<id>/head`로 최신 logId만 확인하고 바뀐 때만 `kkTail`(head를 지원하지 않으면 바로 `kkTail`).
   - 페이지가 다시 보이면(`visibilitychange`) 방 목록, 꼬리, 읽음 숫자를 다시 맞추고 60초 타이머도 같은 일을 해요.
   - 방 목록 갱신 뒤 채팅 탭의 `메일 · 카카오톡` 카드도 갱신(`convSig` 초기화).
 - 상태: 오프라인/재연결 전용 문구는 이 파일에서 코드에서 확인 못 함(실패는 조용히 무시하고 다음 이벤트나 타이머 때 재시도). 동시에 여러 번 호출되면 하나만 실행하고 끝나면 한 번 더(`KK.again`, `readAgain`, `olderAgain`).
-- 데이터: SSE `kakao`, `kakao_send`, `kakao_draft`, `kakao_rooms`, `kakao_unreplied`, `kakao_read`; `GET /api/kakao/chat/<id>/head`.
+- 데이터: SSE `kakao`, `kakao_draft`, `kakao_rooms`, `kakao_unreplied`, `kakao_read`; `GET /api/kakao/chat/<id>/head`.
 - 근거: web/js/30-kakao.js:1134 `kkLive`, :1155 `kkPeerPoll`, :1168 `kkResync`, :1173 `kkMode`; 이벤트 분기 web/js/99-boot.js.
 - css: 해당 없음.
 
@@ -2144,7 +2091,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 앱 셸 프레임 (사이드바, 하단 탭바, 화면 영역)
 - 목적: 모든 화면을 담는 바깥 틀. 넓은 화면은 왼쪽 사이드바, 좁은 화면은 같은 `#nav`가 하단 탭바가 돼요.
-- 구성: `.app#app` 안에 `aside.side`(`button.brand#brand` 로고+`#brand-name`+`#brand-c` 쉐브론, `nav.rail#nav` 탭 버튼들, `.sfoot` 안 `button.sf-row#sf-usage`), `button.side-tog#side-tog`(접기 단추), `.main`(`header.appbar#appbar`, `#gban`, `#trban`, `#oerr`, `.views#views`). `.views` 안에 화면별 `section.view#v-<이름>` 23개(`v-home`, `v-chat`, `v-monitoring`, `v-settings`, `v-webaccess` 등)와 04-state.js:39가 만드는 `#v-cardform`. 본문 밖에 `aside.sheet#sheet`(서브에이전트)와 `aside.sheet#hsheet`(구성 상세)가 있어요.
+- 구성: `.app#app` 안에 `aside.side`(`button.brand#brand` 로고+`#brand-name`+`#brand-c` 쉐브론, `nav.rail#nav` 탭 버튼들, `.sfoot` 안 `button.sf-row#sf-usage`), `button.side-tog#side-tog`(접기 단추), `.main`(`header.appbar#appbar`, `#gban`, `#oerr`, `.views#views`). `.views` 안에 화면별 `section.view#v-<이름>` 23개(`v-home`, `v-chat`, `v-monitoring`, `v-settings`, `v-webaccess` 등)와 04-state.js:39가 만드는 `#v-cardform`. 본문 밖에 `aside.sheet#sheet`(서브에이전트)와 `aside.sheet#hsheet`(구성 상세)가 있어요.
 - 기능: 탭 전환 `go(id)`, 채팅 탭 재탭 `chatTabTap`(좁은 화면에서 대화 열려 있으면 `openChatList`, 목록이 열려 있으면 `closeChatList`), 홈 탭 재탭 `homeTabTap`(컴퓨터가 2대 이상이면 전환 시트), 사이드바 접기 `sideToggle`(`localStorage dotz-side=min`, 첫 페인트 전에 index.html:67이 `side-min` 클래스를 먼저 붙여요), 브랜드 클릭 `#brand.onclick`(컴퓨터 2대 이상이면 `prOpen`, 아니면 `go("home")`). 탭 목록 `NAV`는 홈, 채팅, 프로젝트, 모니터링, 앱, 설정이고 앱 탭은 `APPS_ON=false`라 숨겨져요(`navOff`).
 - 상태: 사이드바 폭 232px, 접으면 60px 아이콘 레일(`:root.side-min`). 접기 단추 `aria-label`은 `사이드바 접기` 또는 `사이드바 펼치기`, title에 단축키(`⌘\` 또는 `Ctrl+\`). 탭 배지: `#nav-att`(채팅, 숫자, title `읽지 않은 대화 n개`), `#nav-mon`(모니터링, 숫자 title `확인할 것 n개`, 숫자 없고 새 소식만 있으면 점과 title `새 소식`), `#nav-upd`(설정, 텍스트 `새 버전`, `업데이트 n`, `재시작 필요`). 99+는 `99+`로 표시해요. 탭 title은 `홈 (⌘1)` 꼴. 1024px 이상에서 배지는 글자 오른쪽 아래 6px 점이고 숫자는 `aria-label`로만 읽혀요(22-shell.css:33-34). 폰(1023px 이하)은 탭 높이 56px, `.sfoot` 숨김. 채팅 목록 전환 기준은 1099px(`narrowChat`, 04-state.js:13), 프로젝트 목록 병렬 표시도 같은 기준(`ppWide`).
 - 데이터: `/api/state`(botName 등), 배지는 알림, 모니터링, 업데이트 상태에서 와요(`paintAttn`, `paintMonAttn`, `paintUpdBadge`). 주소 해시 라우팅은 `go()`, `parseHash`, `routeAlias`(`#lanes`는 `#chat/list`, `#accounts`는 `#provider/anthropic`, `#chat/alert`는 `#notices`).
@@ -2192,14 +2139,6 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - css: web/css/04-files.css:71,79.
 
 
-### 빠른 처리 배너 (#trban)
-- 목적: 보내기를 기다리는 답장 초안이 `triageMin`(기본 3) 이상 쌓이면 빠른 처리 화면으로 부르는 배너.
-- 구성: `button.trban#trban` 안 `list` 아이콘, `.tx`, `.go`(`빠르게 처리`).
-- 기능: 클릭이 `trOpen("*")`(전체 대기 카드 순회). 빠른 처리 화면 자체(`fsOpen` 시트, 키 `l`, `j`/`k`, 방향키, `1`/`2`/`3`, `e`, `x`, ⌘/Ctrl+Enter)는 모니터링 범위 파일이라 여기서는 키 목록만 적어요(아래 키보드 단축키 표).
-- 상태: 합계가 `TR.min` 미만이거나 빠른 처리 시트가 열려 있으면 숨김. 문구: 그룹이 2곳 이상이면 `답장 대기 <합계>건 · <곳 수>곳`, 1곳이면 `<그룹 라벨> 대기 <n>건`. 카드가 없으면 클릭 시 토스트 `처리할 카드가 없어요`.
-- 데이터: `GET /api/approvals`(`trLoad`, SSE `reset`, `notice`, `approvals` 때 `trSoon`으로 300ms 뒤 갱신), SSE `approval_send`는 `trLive`.
-- 근거: web/js/30-triage.js:12-54, 137-158, web/js/99-boot.js:35,46-48, web/index.html:92.
-- css: web/css/15-triage.css:4-10.
 
 
 ### 사용량 스트립 (#ustrip)과 사이드바 사용량 줄 (#sf-usage)
@@ -2247,7 +2186,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 기능(컴퓨터 전환 시트, 33-peers.js:184-194): Esc 닫기, Tab 포커스 가둠. 제목 `#title`에 Enter 또는 Space로 시트 열기(33-peers.js:258).
 - 기능(입력창 `ta`): 슬래시 메뉴가 열려 있으면 위아래, Tab, Enter(`Shift`/⌘/Ctrl/Alt 없이)로 선택, Esc로 닫음(14-slash-commands.js:183-191). 그 외 Enter 전송(작업 중이면 진행 중인 턴에 끼워 넣기), ⌘/Ctrl+Enter 다음 턴 대기열, Alt+Enter 중단 후 전송, Shift+Enter 줄바꿈, 작업 중 Esc 중단. 터치 기기(`pointer: coarse`)에서는 Enter가 줄바꿈. 14-slash-commands.js:193-199
 - 기능(공통 시트/메뉴): `fsOpen` 시트는 맨 위일 때 Esc 닫기와 Tab 가둠(38-overlay.js:16-26, 47). 팝오버 메뉴 `03-menu.js:73-86`은 Esc, 위아래, Home, End, Tab(닫기), 글자 입력 접두 이동(700ms). 서브에이전트 시트와 구성 상세 시트는 Esc로 닫기(06-subagents.js:170, 29-harness-features.js:203).
-- 기능(빠른 처리 시트, 30-triage.js:137-158): ⌘/Ctrl+Enter 전송 또는 고치기 제출, `l` 목록/카드 전환, `→`/`j` 다음, `←`/`k` 이전, `Enter`/`1` 보내기, `2`/`e` 고치기, `3`/`x` 보내지 않기. 입력칸 안에서는 ⌘/Ctrl+Enter만.
+- 기능(빠른 처리, 30-triage.js `tqKey`): `l` 목록/카드 전환, `→` 건너뛰기, `←` 이전, `Enter` 보내기, `e` 직접 수정, `x` 보내지 않기. 입력칸 안에서는 동작하지 않아요.
 - 기능(그 밖): 카카오 방 입력 Enter 전송, Shift+Enter 줄바꿈(30-kakao.js:481-485), 라이트박스 좌우 방향키(30-kakao.js:340), 요소 고르기에서 ⌘/Ctrl을 누르고 있는 동안 고르기 모드(15-picker.js:177-178,253-258), 보드 카드 머리줄 방향키 이동과 드래그 중 Esc 취소(07-board.js:221,371-385), 인라인 편집 Esc 취소와 Enter 확정(19-project-main.js:171-175, 285), 모니터링 글상자 ⌘/Ctrl+Enter 확정(30-monitoring.js:566), 웹 셸 비밀번호 Enter(36-shell.js:176), 앱 설정 대화 Enter 전송(32-app-settings.js:245), 답장 카드와 결정 카드 입력 Enter(10-reply-card.js:53, 10-decision-card.js:285), 컴퓨터 이름과 공급자 코드, 계정 입력 대화창 Enter로 마지막 버튼(33-peers.js:244, 21-providers.js:179, 25-settings-accounts.js:157,169). `role=link`/`button` 행의 Enter와 Space 활성화는 08-home.js:18,142,193, 06-subagents.js:61, 12-terminal-view.js:12, 29-harness-features.js:108, 28-harness-project.js:33, 30-monitoring.js:515,720,733,771, 19-project-main.js:466, web/custom.js:255,636에 있고, 30-mail-box.js:180,185, 30-notices.js:504, 30-monitoring.js:613은 행 클릭으로 번지지 않게 keydown을 막아요. 대화 타임라인과 카카오 타임라인은 keydown 등으로 자동 따라가기를 풀어요(31-conversations.js:194, 30-kakao.js:489). web/custom.js:712 Enter 전송(터치가 아닐 때).
 - 상태: 단축키 힌트 문구가 코드에 그대로 박힌 곳: 탭 title `홈 (⌘1)`, 사이드바 접기 title, 종 title `알림 (⌘/)`, 컴퓨터 브랜드 title `컴퓨터 바꾸기 (⌘` · Ctrl+`, 다음 컴퓨터로)`, 팔레트 `kbd` `⌘K` 또는 `Ctrl K`. 설정에 단축키 도움말 화면은 코드에서 확인 못 함. 25-settings-accounts.js:52-84(드래그 key, `onkeydown`)의 세부 키는 라인만 확인하고 내용은 읽지 않았어요.
 - 데이터: 없음.
@@ -2347,7 +2286,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 ### 부팅과 상태 새로고침, SSE 재연결
 - 목적: 첫 화면을 빨리 그리고 `/api/events` 스트림으로 계속 최신으로 유지해요.
 - 구성: index.html 인라인 스크립트(첫 요청 선발송 `window.__early`, 마지막 대화 스냅샷 `window.__snap`, 테마 선적용), `web/js/99-boot.js`(맨 마지막에 실행), `17-state-refresh.js`.
-- 기능: 인라인 스크립트가 `/api/state?limit=0`, `/api/history?target=...&limit=150`, `/api/todo`, `/api/conversations`, `/api/activity`(알림 화면이면 `/api/notices?limit=300`)를 JS 다운로드 전에 요청. 부팅은 `go(h.view || "home", h.t)` 후 `refreshState`, 스냅샷 시드 `snapSeed` 뒤 `loadTarget`, `loadTodo`, `prjLoad`, 1.5초 뒤 `worklog` 선읽기, 첫 상태 후 `loadModels`, `loadProviderData`, `loadSubs`, `loadQueue`, `loadContext`. `EventSource("/api/events")`를 `openStream()`으로 열고 `reset` 이벤트(처음 연결, 못 따라잡았을 때)에서만 전체를 다시 읽어요. 이벤트 종류별 분기: `activity`, `subagents`, `queue`, `notice`/`notice_read`/`notice_dismiss`, `approval_send`, `approvals`, `quota`, `peer_notice`/`peer_counts`/`peer_notice_done`, `read`, `comment*`, `kakao*`, `mail_unreplied`, `runtime_check`, `update_available`, `lanes`, 나머지는 메시지(`ingestMsg` + `scheduleState`, 60초 안의 새 알림이나 레인 보고는 `notify`). 타이머: 상태 15초(`document.hidden`이면 건너뛰고 복귀 때 따라잡기), `loadUpdate` 5분, 할 일 20초(작업 중인 채팅만), `loadStrip` 60초, `loadModels` 60초. 복귀(`visibilitychange`, `focus`): 5초 넘게 자리를 비웠으면 `resync`, 스트림이 닫혔으면(`readyState===2`) 다시 열기. `pagehide`에서 스트림 닫고, 뒤로가기 캐시(bfcache)에서 돌아오면(`pageshow` persisted) 새 스트림과 `resync`, `prLoad`, `loadStrip`, `loadUpdate`.
+- 기능: 인라인 스크립트가 `/api/state?limit=0`, `/api/history?target=...&limit=150`, `/api/todo`, `/api/conversations`, `/api/activity`(알림 화면이면 `/api/notices?limit=300`)를 JS 다운로드 전에 요청. 부팅은 `go(h.view || "home", h.t)` 후 `refreshState`, 스냅샷 시드 `snapSeed` 뒤 `loadTarget`, `loadTodo`, `prjLoad`, 1.5초 뒤 `worklog` 선읽기, 첫 상태 후 `loadModels`, `loadProviderData`, `loadSubs`, `loadQueue`, `loadContext`. `EventSource("/api/events")`를 `openStream()`으로 열고 `reset` 이벤트(처음 연결, 못 따라잡았을 때)에서만 전체를 다시 읽어요. 이벤트 종류별 분기: `activity`, `subagents`, `queue`, `notice`/`notice_read`/`notice_dismiss`, `reply`, `approvals`, `quota`, `peer_notice`/`peer_counts`/`peer_notice_done`, `read`, `comment*`, `kakao*`, `mail_unreplied`, `runtime_check`, `update_available`, `lanes`, 나머지는 메시지(`ingestMsg` + `scheduleState`, 60초 안의 새 알림이나 레인 보고는 `notify`). 타이머: 상태 15초(`document.hidden`이면 건너뛰고 복귀 때 따라잡기), `loadUpdate` 5분, 할 일 20초(작업 중인 채팅만), `loadStrip` 60초, `loadModels` 60초. 복귀(`visibilitychange`, `focus`): 5초 넘게 자리를 비웠으면 `resync`, 스트림이 닫혔으면(`readyState===2`) 다시 열기. `pagehide`에서 스트림 닫고, 뒤로가기 캐시(bfcache)에서 돌아오면(`pageshow` persisted) 새 스트림과 `resync`, `prLoad`, `loadStrip`, `loadUpdate`.
 - 상태: 연결 끊김 표시는 위 `#conn` 섹션. 상태 응답이 오면 이름 변경 반영(`setBrand`), 사라진 세션/프로젝트 채널이면 메인으로(`setTarget(MAIN)`), 그리고 `paintAuth`, `paintDecision`, `paintOrchError`, `paintPause`, `paintRunState`, `renderBars`, `renderWorking`, `dskPaint`를 다시 그려요. 푸시로 시작하면 `pushOpen`으로 해당 메시지로 이동. `custom.js`는 문서가 다 로드된 뒤 추가 로드(게이트웨이가 안 답해도 서비스 워커 등록이 막히지 않게).
 - 데이터: 위 요청들과 SSE `/api/events`(`Last-Event-ID` 자동 재전송으로 놓친 것만 재생).
 - 근거: web/index.html:10-40, web/js/99-boot.js:1-96, web/js/17-state-refresh.js:1-50.
@@ -2473,8 +2412,8 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 코드와 다르게 적힌 것
 - **보낸 편지함의 출처**: `30-mail-sent.js`는 처리된 답장 초안을 메일 대화 안에 접어 두는 파일이에요(`web/js/30-mail-sent.js:1-8`). 보낸 메일 목록은 모니터링 메일 앱의 `보낸 메일` 필터예요(`web/js/30-monitoring.js:456`).
-- **메일 쓰기와 `보냈어요`**: `mbCompose`는 초안만 만들고 토스트가 `초안을 만들었어요 · 승인 카드에서 보내요`예요(`web/js/30-mail-box.js`, D2 조사). `보냈어요`는 빠른 처리의 상태 문구로만 있어요(`web/js/30-triage.js:82,244`).
-- **빠른 처리 기준**: 인벤토리는 "기본 3개 넘게"인데 코드는 `count >= TR.min`, `total < TR.min`이고 기본값이 3이에요. 서버가 `triageMin`을 주면 그 값을 써요(`web/js/30-triage.js:8,17,24,36`). 즉 3개부터예요.
+- **메일 쓰기와 `보냈어요`**: `mbCompose`는 초안만 만들고 토스트가 `초안을 만들었어요 · 승인 카드에서 보내요`예요(`web/js/30-mail-box.js`, D2 조사). `보냈어요`는 공통 큐 카드의 보내기 상태 문구예요(`web/js/10-reply-card.js` `rqSentNode`).
+- **빠른 처리 기준**: 답장 대기 머리의 `빠른 처리`는 대기 항목이 큐의 `triageMin`(`GET /api/reply/queue`, `RA.min`) 이상일 때 보여요.
 - **프로젝트 목록의 출처**: 목록은 `18-lanes.js`(`renderProjects:307`)에 있고 `19-project-main.js`는 상세(`pmOpen:6`)예요.
 - **알림 목록**: 인벤토리는 "실제 앱은 아직 알림 대화"라고 하지만 코드에는 독립 `notices` 뷰가 있고(`web/js/04-state.js:36`, `31-notices-screen.js:123`), `#chat/alert`는 이 뷰로 바뀌어요(`web/js/05-command-palette.js:107-108`).
 - **`#sessions`, 세션 탭**: 세션 탭은 없어요. `#lanes`는 `chat/list`로 바뀌어요(`web/js/05-command-palette.js:105,108`).
@@ -2856,8 +2795,7 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 | 인용된 메시지 하이라이트 `[data-rid].rp-flash` `[data-rid].rp-flash` | 인용 줄을 눌러 원문으로 이동 (39-reply.js:56, animationend에서 클래스 제거) | 제자리 | rp-flash: background | 1200 | 0 | ease-out; 반복 1, fill none | web/css/15-reply.css:9, web/css/15-reply.css:8 | C063, K008 |
 | 답장 버튼 `.rp-btn` `.rp-btn` | 행 호버, 키보드 포커스 | 제자리 | opacity, background-color | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/15-reply.css:12 | C064 |
 | 인용 원문으로 스크롤 (rpJump) | scrollIntoView({ behavior: "smooth" }) (39-reply.js:55) | 제자리 | 스크롤 위치 (브라우저 smooth) | 브라우저 기본 | 0 | 브라우저 기본 | web/js/39-reply.js:55 | J121 |
-| 답장 큐 하단 액션 `foot` | rqStoreActs (30-replies.js:99) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/30-replies.js:99 | J093 |
-| 트리아지 진행 막대 `.tr-bar > span` `.tr-bar > span` | 처리된 개수가 바뀜 | 제자리 | width | 220 (--m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/15-triage.css:17 | C065 |
+| 트리아지 진행 막대 `.tr-bar > span` `.tr-bar > span` | 처리된 개수가 바뀜 | 제자리 | width | 220 (--m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/15-triage.css | C065 |
 
 ### 카카오 (web/js/30-kakao.js, web/css/17-kakao.css)
 

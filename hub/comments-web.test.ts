@@ -4,9 +4,9 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
-// 모니터링 > 앱 > 유튜브 (web/js/30-monitoring-comments.js): the app entry's status line, the posts as conversations, the one reply card with
-// 보내기 / 고치기 / 보내지 않기, a failed reply's 다시 보내기 / 지우기, run as shipped in a headless browser (Bun.WebView) against a stubbed
-// /api/comments/* (docs/comments-api.md).
+// 모니터링 > 앱 > 유튜브 (web/js/30-monitoring-comments.js): the app entry's status line, the posts as conversations, the draft as the one reply
+// queue's card with 보내기 / 고치기 / 보내지 않기 (POST /api/reply/act), a failed reply's state, run as shipped in a headless browser (Bun.WebView)
+// against a stubbed /api/comments/* (docs/comments-api.md) and /api/reply/*.
 // Names and texts are placeholders. Screenshots are written only when COMMENTS_SHOTS names a folder.
 const SHOTS = process.env.COMMENTS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
@@ -35,6 +35,12 @@ const expectReq = (pred: (r: Req) => boolean, ms = 3500): Promise<Req> => {
 };
 
 
+// A thread draft as the reply queue's item (ref = the draft's code).
+const queueItem = (d: (typeof drafts)[number]) => ({ item: `comment:${d.code}`, ref: d.code, kind: "comment", app: "youtube", label: "유튜브", conv: "i:youtube", at: d.created,
+	can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", toLabel: "대상", to: "가나", text: d.text } });
+// What the hub's reply / comment_draft events make the page do after an action: read the queue and the thread again.
+const settle = (v: View) => run(v, `raLoad().then(() => cmReload())`);
+
 const hub = fakeHub({
 	stream: "fake",
 	api: async (req, url) => {
@@ -48,25 +54,18 @@ const hub = fakeHub({
 		if (p === "/api/comments/sources") return json({ on: true, sources: [{ key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false, autoSend: false, error: null, ranAt: at(22, 3, 0) }] });
 		if (p === "/api/comments/threads") return json({ threads: threadRows ?? [{ source: "youtube", thread: "v1", title: "첫 번째 영상", link: "https://video.example/v1", lastAt: at(22, 2, 0), lastText: "다음 주에 올릴게요", lastAuthor: "나", unread: 2, drafts: drafts.length }] });
 		if (p === "/api/integrations/youtube/settings") return json({ fields: [] });
+		if (p === "/api/reply/queue") return json({ items: drafts.map(queueItem), counts: {}, triageMin: 1, undoSec: 10 });
 		const body = req.method === "GET" ? null : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
 		if (p === "/api/comments/thread/youtube/v1" && req.method === "GET")
 			return json({ source: { key: "youtube", kind: "youtube", label: "유튜브 댓글" }, thread: { id: "v1", title: "첫 번째 영상", link: "https://video.example/v1" }, comments: COMMENTS, read: null, drafts, sends });
 		if (p === "/api/comments/thread/youtube/v1/read") { record({ method: "POST", path: p, body }); return json({ ok: true }); }
-		const sf = /^\/api\/comments\/sends\/([^/]+)\/(retry|dismiss)$/.exec(p);
-		if (sf && req.method === "POST") {
+		if (p === "/api/reply/act" && req.method === "POST") {
 			record({ method: "POST", path: p, body });
-			const id = decodeURIComponent(sf[1]!);
-			if (sf[2] === "retry") { sends = sends.map(s => (s.id === id ? { ...s, state: "sent", reason: undefined } : s)); return json({ id, state: "sending" }, 202); }
-			sends = sends.filter(s => s.id !== id);
+			const a = body!.action;
+			if (a === "send") { sends = [{ id: "send:cm:youtube:c1", commentId: "cm:youtube:c1", text: drafts[0]!.text, state: "sent", at: Date.now() }]; drafts = []; }
+			else if (a === "drop") drafts = [];
+			else if (a === "revise") drafts = [{ ...drafts[0]!, code: "Dnew999", text: "짧게 답할게요." }];
 			return json({ ok: true });
-		}
-		const d = /^\/api\/comments\/drafts\/(\w+)\/(send|drop|revise)$/.exec(p);
-		if (d && req.method === "POST") {
-			record({ method: "POST", path: p, body });
-			if (d[2] === "send") { sends = [{ id: "send:cm:youtube:c1", commentId: "cm:youtube:c1", text: drafts[0]!.text, state: "sent", at: Date.now() }]; drafts = []; return json({ id: "send:cm:youtube:c1", state: "sending" }, 202); }
-			if (d[2] === "drop") { drafts = []; return json({ ok: true }); }
-			drafts = [{ ...drafts[0]!, code: "Dnew999", text: "짧게 답할게요." }];
-			return json({ ok: true, code: "Dnew999" });
 		}
 	},
 });
@@ -98,11 +97,11 @@ describe("댓글 on a phone (390x844)", async () => {
 		await shot(v, "comments-list-390.png");
 
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
-		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
 		const s = await q<{ names: string[]; texts: string[]; bubbles: number; xss: boolean; draft: string; buttons: string[]; overflow: boolean }>(v, `
 			const ts = [...document.querySelectorAll("#cm .kk-bub")].map(b => b.textContent);
 			return { names: [...document.querySelectorAll("#cm .kk-name")].map(n => n.textContent), texts: ts, bubbles: ts.length, xss: !!document.querySelector("#cm .kk-bub img, #cm .kk-bub b"),
-				draft: document.querySelector("#cm .kk-dt").textContent, buttons: [...document.querySelectorAll("#cm .kk-draft .btn")].map(b => b.textContent), overflow: document.documentElement.scrollWidth > 390 }`);
+				draft: document.querySelector("#cm .ra-card .rq-text").textContent, buttons: [...document.querySelectorAll("#cm .ra-card .rq-acts .btn")].map(b => b.textContent), overflow: document.documentElement.scrollWidth > 390 }`);
 		expect(s.names).toEqual(["가나", "다라"]);
 		expect(s.bubbles).toBe(3);
 		expect(s.texts[2]).toContain("<b>굵게</b>");
@@ -113,9 +112,10 @@ describe("댓글 on a phone (390x844)", async () => {
 		await shot(v, "comments-thread-390.png");
 
 		await run(v, `document.querySelector('#cm [data-k="send"]').click(); document.querySelector('#cm [data-k="send"]').click()`);
-		await expectReq(r => r.path === "/api/comments/drafts/Dabc234/send");
-		await waitFor(v, `!document.querySelector("#cm .kk-draft") && document.querySelector("#cm .kk-m.me.pend.sent")`);
-		expect(reqs.filter(r => r.path.endsWith("/send"))).toHaveLength(1);
+		expect((await expectReq(r => r.path === "/api/reply/act")).body).toEqual({ ref: "Dabc234", action: "send" });
+		await settle(v);
+		await waitFor(v, `!document.querySelector("#cm .ra-card") && document.querySelector("#cm .kk-m.me.pend.sent")`);
+		expect(reqs.filter(r => r.path === "/api/reply/act")).toHaveLength(1);
 		await shot(v, "comments-sent-390.png");
 	});
 
@@ -141,11 +141,11 @@ describe("댓글 on a phone (390x844)", async () => {
 	test("replies stand under the comment they answer (his own marked), the draft sits under its comment, not pinned below, and each comment shows how far its follow-up got", async () => {
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
-		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
 		const s = await q<{ roots: string[]; replies: string[]; mine: string; draftIn: string; row: string; quote: boolean; steps: string[]; owed: string[]; pinned: boolean }>(v, `
 			const th = id => document.querySelector('#cm .cm-th[data-root="cm:youtube:' + id + '"]');
 			return { roots: [...document.querySelectorAll("#cm .cm-th")].map(t => t.dataset.root), replies: [...th("c1").querySelectorAll(".cm-replies .kk-bub")].map(b => b.textContent),
-				mine: th("c1").querySelector(".cm-mine").textContent, draftIn: th("c1").querySelector(".kk-draft") ? "c1" : "", row: th("c1").querySelector(".cm-c").textContent, quote: !!document.querySelector("#cm .cm-dq"),
+				mine: th("c1").querySelector(".cm-mine").textContent, draftIn: th("c1").querySelector(".ra-card") ? "c1" : "", row: th("c1").querySelector(".cm-c").textContent, quote: !!document.querySelector("#cm .cm-dq"),
 				steps: [...th("c1").querySelectorAll(":scope > .cm-c .cm-st")].map(x => x.dataset.s + ":" + x.textContent), owed: [...th("c2").querySelectorAll(":scope > .cm-c .cm-st")].map(x => x.dataset.s + ":" + x.textContent), pinned: !document.querySelector("#cm-foot").hidden }`);
 		expect(s.roots).toEqual(["cm:youtube:c1", "cm:youtube:c2"]);
 		expect(s.replies).toEqual(["다음 주에 올릴게요"]);
@@ -164,16 +164,18 @@ describe("댓글 on a phone (390x844)", async () => {
 	test("고치기 asks what to change and shows the rewritten draft; 보내지 않기 removes it", async () => {
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
-		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
 		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
 		await waitFor(v, `document.querySelector('#cm [data-k="revise-go"]')`);
 		await run(v, `const i = document.querySelector("#cm .rq-edit input"); i.value = "더 짧게"; i.dispatchEvent(new Event("input")); document.querySelector('#cm [data-k="revise-go"]').click()`);
-		const req = await expectReq(r => r.path === "/api/comments/drafts/Dabc234/revise");
-		expect(req.body).toEqual({ change: "더 짧게" });
-		await waitFor(v, `document.querySelector("#cm .kk-dt") && document.querySelector("#cm .kk-dt").textContent === "짧게 답할게요."`);
+		const req = await expectReq(r => r.path === "/api/reply/act" && r.body!.action === "revise");
+		expect(req.body).toEqual({ ref: "Dabc234", action: "revise", change: "더 짧게" });
+		await settle(v);
+		await waitFor(v, `document.querySelector("#cm .ra-card .rq-text") && document.querySelector("#cm .ra-card .rq-text").textContent === "짧게 답할게요."`);
 		await run(v, `document.querySelector('#cm [data-k="drop"]').click()`);
-		await expectReq(r => r.path === "/api/comments/drafts/Dnew999/drop");
-		await waitFor(v, `!document.querySelector("#cm .kk-draft")`);
+		expect((await expectReq(r => r.path === "/api/reply/act" && r.body!.action === "drop")).body).toEqual({ ref: "Dnew999", action: "drop" });
+		await settle(v);
+		await waitFor(v, `!document.querySelector("#cm .ra-card")`);
 	});
 
 	// Owner 2026-11-04: typing what to change, then Backspace or moving the caret, wiped the field. The thread repaints on its own (the timer, a live
@@ -181,7 +183,7 @@ describe("댓글 on a phone (390x844)", async () => {
 	test("고치기 keeps what he typed, the focus and the caret through Backspace, the arrow keys and a repaint", async () => {
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
-		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
 		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
 		await waitFor(v, `document.querySelector("#cm .rq-edit input")`);
 		await run(v, `document.querySelector("#cm .rq-edit input").focus()`);
@@ -200,35 +202,23 @@ describe("댓글 on a phone (390x844)", async () => {
 		expect(s).toEqual({ same: true, value: "shorter pleas", focused: true, caret: 11, go: true });
 		await v.type("X");   // still typing into the same field, at the caret
 		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("shorter pleXas");
-		// leaving the field draws what arrived meanwhile (the failed reply's 다시 보내기); the text stays
+		// leaving the field draws what arrived meanwhile (the failed reply's bubble); the text stays
 		await run(v, `document.activeElement.blur()`);
-		await waitFor(v, `document.querySelector('#cm [data-k="retry"]')`);
+		await waitFor(v, `document.querySelector("#cm .kk-m.pend.failed")`);
 		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("shorter pleXas");
 		await run(v, `document.querySelector('#cm [data-k="revise-cancel"]').click()`);
 		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
 		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("");   // 취소 lets it go
 	});
 
-	test("a reply that did not go out offers 다시 보내기 and 지우기, and each posts once", async () => {
+	test("a reply that did not go out stays under its comment with its state and no buttons of its own (its queue card answers it)", async () => {
 		sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "403 forbidden", at: at(22, 4, 0) }];
 		const v = await open(390, 844);
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
-		await waitFor(v, `CM.view && CM.view.sends.length && document.querySelector('#cm [data-k="retry"]')`);
-		const got = await q<{ state: string; buttons: string[] }>(v, `const s = document.querySelector("#cm .kk-m.pend.failed"); return { state: s.querySelector(".kk-state").textContent, buttons: [...s.querySelectorAll("button")].map(b => b.textContent) }`);
-		expect(got.state).toBe("실패 · 403 forbidden");
-		expect(got.buttons).toEqual(["다시 보내기", "지우기"]);
-		await run(v, `document.querySelector('#cm [data-k="retry"]').click()`);
-		await expectReq(r => r.path === "/api/comments/sends/send%3Acm%3Ayoutube%3Ac2/retry");
-		await waitFor(v, `!document.querySelector("#cm [data-k=\\"retry\\"]")`);
-		expect(reqs.filter(r => r.path.endsWith("/retry"))).toHaveLength(1);
-		sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "timeout", at: at(22, 4, 0) }];
-		await run(v, `CM.view.sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "timeout", at: ${at(22, 4, 0)} }]; cmPaintChat(false)`);
-		await waitFor(v, `document.querySelector('#cm [data-k="dismiss"]')`);
-		await run(v, `document.querySelector('#cm [data-k="dismiss"]').click()`);
-		await expectReq(r => r.path === "/api/comments/sends/send%3Acm%3Ayoutube%3Ac2/dismiss");
-		await waitFor(v, `!document.querySelector("#cm .kk-m.pend.failed")`);
-		expect(reqs.filter(r => r.path.endsWith("/dismiss"))).toHaveLength(1);
+		await waitFor(v, `CM.view && CM.view.sends.length && document.querySelector("#cm .kk-m.pend.failed")`);
+		const got = await q<{ state: string; buttons: number }>(v, `const s = document.querySelector("#cm .kk-m.pend.failed"); return { state: s.querySelector(".kk-state").textContent, buttons: s.querySelectorAll("button").length }`);
+		expect(got).toEqual({ state: "실패 · 403 forbidden", buttons: 0 });
 		await shot(v, "comments-send-failed-390.png");
 	});
 

@@ -315,7 +315,7 @@ function draftCardNode(n, o = {}) {
   const q = ntPlain(n.title).replace(/\s*\([^()]*\)\s*$/, "");
   const gone = open && dcGone(d.to);
   // The one reply queue holds this draft: its actions, 직접 수정 (saved as written), 고치기 and the send's own state are the queue card's (10-reply-actions.js).
-  const qi = RA.loaded && dr.ref && !n.pc ? RA.items.get(dr.ref) : null, qbusy = qi && RA.busy.has(qi.ref);
+  const qi = dr.ref && !n.pc ? RA.items.get(dr.ref) : null, qbusy = qi && RA.busy.has(qi.ref);
   const qfoot = !qi ? null : RA.edit.has(qi.ref) ? rqEditNode(qi) : RA.rev.has(qi.ref) ? rqReviseNode({ value: RA.rev.get(qi.ref), busy: qbusy, onInput: v => RA.rev.set(qi.ref, v), go: change => raAct(qi, "revise", { change }), cancel: () => { RA.rev.delete(qi.ref); raPaint(qi.ref); } }) : qi.draft.revising ? el("div", { class: "kk-st", role: "status", text: TX("reply.revising") }) : qi.send ? rqSendNode(qi) : null;
   // The 받는이·참조 rows of a mail draft are its own (10-decision-card.js draftToNode): 답장 | 전체 답장, the chips, editable while it waits.
   const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: d.to, edit: open }) : el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || TX("mon.dr.to") }), el("span", { class: "dr-chip", title: dr.to || "", text: dr.to || "-" }));

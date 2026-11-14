@@ -259,12 +259,7 @@
   "mon.cm.my_reply": "Me · my reply",
   "mon.cm.drafting_dots": "Drafting…",
   "mon.cm.reply_draft": "Reply draft",
-  "mon.cm.send_again": "Send again",
   "mon.cm.pick_post": "Choose a post",
   "mon.cm.draft_late": "The draft hasn't arrived yet",
-  "mon.cm.restored": "Draft restored",
-  "mon.cm.part": "Part to change",
-  "mon.cm.then_mail": "Send posts the reply, then sends the mail",
-  "mon.cm.mail_not_sent": "The reply was posted, but the mail wasn't sent: {reason}",
-  "mon.cm.unknown_reason": "unknown reason"
+  "mon.cm.part": "Part to change"
 }

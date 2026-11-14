@@ -94,8 +94,8 @@ const PEERS = [{
 		conversations: [],
 	},
 }];
-// A draft this computer's store keeps for the owner (GET /api/replies): the one waiting reply the badge counts.
-const KAKAO_DRAFT = { kind: "kakao", app: "kakao", code: "K1", chatId: "100", room: "가나다 모임", text: "안녕하세요", parts: ["안녕하세요"], at: Date.parse("2026-10-27T11:00:00Z"), attachmentsNone: true, cannotAttach: [], original: { who: "가나", text: "내일 어때요?" } };
+// A waiting draft of this computer's reply queue (GET /api/reply/queue): the one waiting reply the badge counts.
+const KAKAO_DRAFT = { item: "kakao:K1", ref: "K1", kind: "chat", app: "kakao", label: "카카오톡", conv: "kakao:100", at: Date.parse("2026-10-27T11:00:00Z"), can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "대화방", to: "가나다 모임", text: "안녕하세요" }, original: { who: "가나", text: "내일 어때요?" } };
 let localReplies: object[] = [KAKAO_DRAFT];
 const server = Bun.serve({
 	port: 0,
@@ -110,7 +110,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
 		if (url.pathname === "/api/notices") return json({ items: [], unread: 0 });
 		if (url.pathname === "/api/monitors") return json({ items: MONITORS });
-		if (url.pathname === "/api/replies") return json({ items: localReplies });
+		if (url.pathname === "/api/reply/queue") return json({ items: localReplies, counts: {}, triageMin: 1, undoSec: 10 });
 		if (url.pathname === "/api/integrations") return json({ items: ITEMS });
 		if (url.pathname === "/api/monitoring/peers") return json(PEERS);
 		if (url.pathname === "/api/conversations") return json({ items: [] });
@@ -176,7 +176,7 @@ describe("screens", () => {
 
 	test("with nothing to count, an unread watch report puts the small dot on 모니터링 at the label's bottom-right corner, and reading it clears the dot", async () => {
 		const v = await open();
-		await v.evaluate(`(RQ.local = [], NM.items.forEach(m => { m.last_result = "ok"; m.connection = "connected"; }), INTG.items.forEach(i => { i.state = "connected"; i.needs = { drafts: 0, unread: 0, unreplied: 0, sentToday: 0 }; }), NT.items.push({ id: "w-news", kind: "watch", read: false, at: new Date().toISOString(), title: "새 소식" }), monSchedule(), 0)`);
+		await v.evaluate(`(RA.items = new Map(), NM.items.forEach(m => { m.last_result = "ok"; m.connection = "connected"; }), INTG.items.forEach(i => { i.state = "connected"; i.needs = { drafts: 0, unread: 0, unreplied: 0, sentToday: 0 }; }), NT.items.push({ id: "w-news", kind: "watch", read: false, at: new Date().toISOString(), title: "새 소식" }), monSchedule(), 0)`);
 		await v.evaluate(until(`(b => b && !b.hidden && b.classList.contains("nub"))(document.querySelector("#nav-mon"))`, "dot not shown"));
 		const dotBg = (theme: string) => q<string>(v, `document.documentElement.dataset.theme = "${theme}"; return getComputedStyle(document.querySelector("#nav-mon")).backgroundColor`);
 		expect(await dotBg("dark")).toBe("rgb(245, 165, 36)");

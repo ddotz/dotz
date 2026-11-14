@@ -1,7 +1,7 @@
 /* ---------- 모니터링 > 앱 > 카카오톡: choose the rooms to watch, and a KakaoTalk-style chat per chosen room ---------- */
 // API: docs/kakao-rooms-api.md. The item (30-monitoring.js, key "i:kakao") shows this pane instead of the notice timeline: renderMonitoring calls
 // kkMode(). Wide screens put the room column beside the chat; below 1100px they are two screens (KK.open picks which; the app bar's back
-// arrow, kkBack(), leaves the chat). Live updates arrive on the event stream as kakao / kakao_send / kakao_draft / kakao_rooms / kakao_read (99-boot.js -> kkLive).
+// arrow, kkBack(), leaves the chat). Live updates arrive on the event stream as kakao / kakao_draft / kakao_rooms / kakao_read (99-boot.js -> kkLive).
 // Each message carries `unread` (KakaoTalk's yellow number: members who have not read it yet); kakao_read -> /reads refreshes the numbers without bodies.
 // Nothing is ever sent without a click: a typed message, a draft's 보내기 or an edited draft's 보내기 is the owner's own action.
 // Message text only ever goes through el({text}) / textContent, never innerHTML.
@@ -13,7 +13,7 @@ const KK_PAGE = 50;
 const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, dsig: [], droom: "", adding: null,   // adding: the 지켜볼 대화방 dialog while it is open
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
-  stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
+  stick: true, pill: false, pin: "", placed: false, readSent: "", sending: false, drafting: "", draftT: 0, tailing: false, again: false,
   view: "all", typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
   peerT: 0, peerBusy: false, peerHead: "", lp: new Map(), olderBusy: false, olderAgain: false,
 };
@@ -440,19 +440,18 @@ const kkIn = el("div", { class: "kk-in", id: "kk-in" });
 const kkTl = el("div", { class: "kk-tl", id: "kk-tl" }, kkIn);
 const kkPill = el("button", { class: "btn kk-pill", id: "kk-pill", type: "button", hidden: true, onclick: () => kkToBottom() }, icon("down"), el("span", { text: TX("apps.kk.new_msg") }));
 const kkDrafts = el("div", { class: "kk-drafts", id: "kk-drafts" });
-const kkEditBar = el("div", { class: "kk-edit", id: "kk-edit", hidden: true }, el("span", { text: TX("apps.kk.editing") }), el("button", { class: "btn text", type: "button", "data-k": "cancel", text: TX("common.cancel"), onclick: () => kkEditCancel() }));
 // The bar under the chat window is a request to the assistant (kkAskBot): it revises the open draft or writes a new one, and the reply card below asks for 보내기.
 const KK_ASK = TX("apps.kk.ask_ph"), KK_REVISE = TX("apps.kk.revise_ph");
 const kkTa = el("textarea", { id: "kk-text", rows: "1", autocomplete: "off", maxlength: "500", placeholder: KK_ASK, "aria-label": TX("apps.kk.ask_aria") });
 const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "submit", "aria-label": TX("apps.kk.send_req"), title: TX("apps.kk.send_req") }, icon("send"));
 const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: TX("apps.kk.draft_reply") }));
-// 직접 보내기 (owner 2026-11-04): what is typed goes to the room as it is, past the assistant. It shows only with text, and never on another computer's room or while a draft is edited.
+// 직접 보내기 (owner 2026-11-04): what is typed goes to the room as it is, past the assistant. It shows only with text, and never on another computer's room.
 const kkDirectBtn = el("button", { class: "cchip kk-dbtn", id: "kk-direct-btn", type: "button", hidden: true, onclick: () => kkSendDirect() }, icon("send"), el("span", { text: TX("apps.kk.send_direct") }));
-const kkDirectSync = () => { kkDirectBtn.hidden = !kkTa.value.trim() || !!KK.edit || !!KK.pc; };
+const kkDirectSync = () => { kkDirectBtn.hidden = !kkTa.value.trim() || !!KK.pc; };
 kkTa.addEventListener("input", kkDirectSync);
 const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn, kkDirectBtn), kkSendBtn);
 // The room's reply card sits right under the chat it answers, above the request bar.
-const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkEditBar, kkForm);
+const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkDrafts, kkForm);
 // 자동 초안 of the open room: the one two-value switch of this screen (the watch toggles are eyes). Built once; kkPaintAuto only flips it.
 const kkAutoSw = el("button", { class: "kk-sw", type: "button", role: "switch", "aria-checked": "false", "aria-label": TX("apps.kk.auto"), "data-k": "auto", onclick: () => { const r = kkRoom(KK.open); if (r) kkSetRoom(r, { autoDraft: !r.autoDraft }); } }, el("span", { class: "kk-knob" }));
 const kkAuto = el("span", { class: "kk-auto", id: "kk-auto", hidden: true }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: TX("apps.kk.auto") })), kkAutoSw);
@@ -687,9 +686,7 @@ function kkSendNode(s) {
   const failed = s.state === "failed", st = failed ? (s.reason ? TX("apps.kk.send.failed_why", { reason: s.reason }) : TX("apps.kk.send.failed")) : s.state === "sent" ? TX("apps.kk.send.sent") : TX("apps.kk.send.sending");
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id },
     el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
-    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: TX("apps.kk.send.retry"), onclick: () => kkRetry(s) }) : null,
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: TX("apps.kk.send.dismiss"), onclick: () => kkDeleteSend(s) }) : null));
+    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st })));
 }
 function kkTimeline() {
   const out = [], msgs = KK.msgs;
@@ -748,7 +745,7 @@ async function kkOpen(id) {
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
   const seq = ++KK.seq;
   Object.assign(KK, { open: id, room: { chatId: id, name: r.name, kind: r.kind, group: r.kind === "group" || r.kind === "multi" || r.kind === "open", watched: !!r.watched }, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
-    loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", edit: null, drafting: "", revise: null, reviseCode: "" });
+    loading: true, roomErr: "", pill: false, stick: true, pin: "", placed: false, readSent: "", drafting: "" });
   kkTa.value = KK.typed.get(id) || ""; kkAutosize();
   kkPaintAll(); convTitle(); bkKkSync();
   try {
@@ -768,7 +765,7 @@ async function kkOpen(id) {
 }
 function kkClose() {
   if (KK.open) KK.typed.set(KK.open, kkTa.value);
-  KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = ""; KK.edit = null;
+  KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = "";
   kkPaintAll(); convTitle(); bkKkSync();
 }
 // The app bar's back arrow leaves an open room for the room column first, at every width (04-state.js #back); a wide screen gives the room no history step (histFlat).
@@ -841,7 +838,6 @@ function kkApply(d) {
   if (Array.isArray(d.drafts)) {
     KK.drafts = d.drafts; KK.ask = kkAskOf(d);
     // A peer's room gets no draft event: its old draft going away is the new one landing.
-    if (KK.pc && KK.drafting === KK.open && KK.reviseCode && !d.drafts.some(x => x.code === KK.reviseCode)) { KK.drafting = ""; clearTimeout(KK.draftT); }
   }
   if (Array.isArray(d.sends)) KK.sends = d.sends;
   if (d.room) KK.room = d.room;
@@ -896,16 +892,15 @@ const kkIntgSoon = () => { clearTimeout(KK.intgT); KK.intgT = setTimeout(loadInt
 function kkAddSend(r, text) {
   if (r && r.id && !KK.sends.some(s => s.id === r.id)) KK.sends.push({ id: r.id, text, state: r.state || "sending", at: Date.now() });
 }
-// text = what the owner wrote; edit = the draft being edited (the send then goes through the draft's route with the edited text).
-async function kkSendText(text, edit) {
+// text = what the owner wrote, sent to the room as typed.
+async function kkSendText(text) {
   const id = KK.open;
   if (!id || !text || KK.sending) return;
   KK.sending = true;
   try {
-    const r = await api(edit ? `/api/kakao/drafts/${enc(edit.code)}/send` : `/api/kakao/chat/${enc(id)}/send`, "POST", { text });
+    const r = await api(`/api/kakao/chat/${enc(id)}/send`, "POST", { text });
     if (KK.open === id) {
       kkAddSend(r, text);
-      if (edit) KK.drafts = KK.drafts.filter(d => d.code !== edit.code);
       KK.stick = true; KK.pin = "bottom";
       kkPaintTl(true); kkPaintFoot();
     }
@@ -917,17 +912,17 @@ async function kkSendText(text, edit) {
   } finally { KK.sending = false; }
 }
 // The request bar under the chat window: what the owner types goes to the assistant, never straight to the room. With a draft waiting it is the change to make
-// (POST .../draft { revise }, the newest draft), else it says what the new message is (POST .../draft { intent }); the reply card then asks for 보내기, and the
+// (the queue's revise of the newest draft, raAct), else it says what the new message is (POST .../draft { intent }); the reply card then asks for 보내기, and the
 // draft is split into the natural messages the existing flow already makes (d.parts).
 function kkAskBot(text) {
   const id = KK.open;
   if (KK.drafting === id) { toast(TX("apps.kk.drafting_wait"), true); return; }
-  // The other computer's gateway takes a revise ({revise}) but not a new message's intent (34-peer-monitoring.js kakao draft): say so instead of making an unrelated draft there.
+  // The other computer's queue takes a revise but its gateway not a new message's intent (34-peer-monitoring.js kakao draft): say so instead of making an unrelated draft there.
   if (KK.pc && !KK.drafts.length) { toast(TX("apps.kk.peer_revise"), true); return; }
   const ts = x => (typeof x === "number" ? x : Date.parse(x) || 0), d = KK.drafts.slice().sort((a, b) => ts(b.created) - ts(a.created))[0];
   kkTa.value = ""; KK.typed.delete(id); kkAutosize(); kkDirectSync();
-  KK.revise = null;
-  if (d) kkMakeDraft(undefined, { code: d.code, change: text.slice(0, 500) }); else kkComposeMake(text);
+  const it = d && kkQueueItem(d);
+  if (it) raAct(it, "revise", { change: text.slice(0, 500) }); else if (d) toast(TX("reply.act_fail"), true); else kkComposeMake(text);
   if (kkWide()) kkTa.focus();
 }
 async function kkSendDirect() {
@@ -938,53 +933,9 @@ async function kkSendDirect() {
   if (!ok && KK.open === id && !kkTa.value) { kkTa.value = text; kkAutosize(); kkDirectSync(); }
 }
 async function kkSend() {
-  const text = kkTa.value.trim(), edit = KK.edit;
+  const text = kkTa.value.trim();
   if (!KK.open || !text || KK.sending) return;
-  if (!edit) { kkAskBot(text); return; }
-  const id = KK.open;
-  kkTa.value = ""; KK.typed.delete(id); KK.edit = null; kkAutosize(); kkPaintFoot();
-  const ok = await kkSendText(text, edit);
-  if (!ok && KK.open === id && !kkTa.value) { kkTa.value = text; kkAutosize(); }
-  if (!kkTa.disabled && kkWide()) kkTa.focus();
-}
-// The failed send is deleted on the gateway (the stored record, so no other web or reload shows it again); a 404 means it is already gone.
-async function kkDeleteSend(s) {
-  const id = KK.open;
-  try {
-    await api(`/api/kakao/chat/${enc(id)}/send/${enc(s.id)}`, "DELETE");
-  } catch (e) {
-    toast(e.message, true);
-    return false;
-  }
-  if (KK.open === id) { KK.sends = KK.sends.filter(x => x.id !== s.id); kkPaintTl(KK.stick); }
-  return true;
-}
-// 다시 보내기 goes through the gateway, which knows what the failed send was: a draft's send resumes from its first unsent part, one
-// message each (never the joined text as one message); a typed send goes again as typed.
-async function kkRetry(s) {
-  const id = KK.open;
-  if (!id || KK.sending) return;
-  KK.sending = true;
-  try {
-    const r = await api(`/api/kakao/chat/${enc(id)}/send/${enc(s.id)}/retry`, "POST", {});
-    if (KK.open !== id) return;
-    KK.sends = KK.sends.filter(x => x.id !== s.id);
-    if (r && r.id && !KK.sends.some(x => x.id === r.id)) KK.sends.push({ id: r.id, text: s.text, state: r.state || "sending", at: Date.now(), ...(s.draft ? { draft: s.draft } : {}) });
-    if (s.draft) KK.drafts = KK.drafts.filter(d => d.code !== s.draft);
-    KK.stick = true; KK.pin = "bottom";
-    kkPaintTl(true); kkPaintFoot();
-  } catch (e) {
-    toast(e.message, true);
-    kkTail();
-  } finally { KK.sending = false; }
-}
-async function kkSendEvent(e) {
-  const s = KK.sends.find(x => x.id === e.id);
-  if (e.state === "deleted") { if (s) { KK.sends = KK.sends.filter(x => x.id !== e.id); kkPaintTl(KK.stick); } return; }
-  if (!s) { kkTail(); return; }
-  s.state = e.state; s.reason = e.reason;
-  kkPaintTl(KK.stick);
-  if (e.state === "sent") kkTail();
+  kkAskBot(text);
 }
 
 /* ---- drafts ---- */
@@ -1007,86 +958,37 @@ function kkAskCard() {
       ...a.choices.map((c, i) => el("button", { class: "btn tonal", type: "button", "data-k": "pick", "data-i": String(i), text: c, onclick: () => kkMakeDraft(c) })),
       el("button", { class: "btn text", type: "button", "data-k": "own", text: TX("apps.kk.write_own"), onclick: own })));
 }
-// 고치기 asks what to change; the bot rewrites the draft (one model call, POST .../draft { revise }) and the old draft stays until the new one lands.
-// 고치기 on a draft: what to change, typed once (the model rewrites it), or 직접 수정 in the composer. The one reply card's field (10-reply-card.js).
-function kkReviseBox(d, rv) {
-  return rqReviseNode({ value: rv.text, onInput: v => { rv.text = v; }, go: change => { KK.revise = null; kkMakeDraft(undefined, { code: d.code, change }); },
-    cancel: () => { KK.revise = null; kkPaintFoot(); }, manual: () => { KK.revise = null; kkEdit(d); } });
-}
-// A draft of several KakaoTalk messages (d.parts) shows one bubble per message, in the order they go out; one 보내기 sends them all.
-const kkDraftParts = d => (Array.isArray(d.parts) && d.parts.length ? d.parts : [d.text]);
-const kkDraftLabel = d => { const n = kkDraftParts(d).length; return d.intent ? (n > 1 ? TX("apps.kk.draft.new_n", { n }) : TX("apps.kk.draft.new")) : n > 1 ? TX("apps.kk.draft.reply_n", { n }) : TX("apps.kk.draft.reply"); };
-// 되돌리기 on the 보내지 않았어요 toast: the dropped draft waits again (POST .../restore; a peer's room on its own computer, 34-peer-monitoring.js).
-async function kkRestore(code) {
-  try { await api(`/api/kakao/drafts/${enc(code)}/restore`, "POST", {}); toast(TX("apps.kk.draft_restored")); kkTail(); kkIntgSoon(); } catch (e) { toast(e.message, true); }
-}
-// The room's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue.
-function kkDraftCard(d) {
-  if (RA.loaded && RA.items.has(d.code)) return rqItemCard(RA.items.get(d.code), { bare: true });   // the one queue's card: undo bar, failure and its buttons in its foot
-  const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); kkTail(); } finally { btn.disabled = false; } };
-  const making = !!KK.open && KK.drafting === KK.open && KK.reviseCode === d.code, rv = !making && KK.revise && KK.revise.code === d.code ? KK.revise : null;
-  // The card sits right under the chat it answers: no head, quoted original or 첨부 line (10-reply-card.js bare); the draft's messages are yellow bubbles that scroll inside the card, the buttons stay.
-  const card = { key: `kk:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, bare: true, label: kkDraftLabel(d), labelCls: "kk-dh",
-    body: { text: d.text, parts: kkDraftParts(d), one: true, full: true, sentParts: d.sentParts, cls: "kk-dt kk-dps", partCls: "kk-dp" } };
-  if (making) return rqCard({ ...card, status: TX("apps.kk.revising") });
-  if (rv) return rqCard({ ...card, revise: kkReviseBox(d, rv) });
-  return rqCard({ ...card, acts: {
-    dropText: d.intent ? "" : TX("apps.kk.no_reply"),   // a new message answers nothing: its draft keeps 보내지 않기
-    send: ev => run(ev.currentTarget, async () => {
-      const id = KK.open, r = await api(`/api/kakao/drafts/${enc(d.code)}/send`, "POST", {});
-      if (KK.open !== id) return;
-      kkAddSend(r, d.text); KK.drafts = KK.drafts.filter(x => x.code !== d.code); KK.stick = true; KK.pin = "bottom";
-      kkPaintTl(true); kkPaintFoot();
-    }),
-    edit: () => { KK.revise = { code: d.code, text: "" }; kkPaintFoot(); const i = $(".kk-rv", kkDrafts); if (i) i.focus(); },
-    drop: ev => run(ev.currentTarget, async () => {
-      const id = KK.open, r = kkRoom(id), wave = !d.intent && !!r && !!r.unreplied, nr = `/api/kakao/chat/${enc(id)}/no-reply`;   // on a reply's draft 답장 안 함 also ends the room's 미답장 (되돌리기 brings both back)
-      await api(`/api/kakao/drafts/${enc(d.code)}/drop`, "POST", {});
-      if (wave) { await api(nr, "POST", {}); r.unreplied = false; kkPaintRooms(); loadIntegrations(); toast(TX("apps.kk.no_reply_done"), false, { label: TX("common.undo"), onclick: () => api(nr, "DELETE").then(() => { r.unreplied = true; kkPaintRooms(); kkPaintAuto(); return kkRestore(d.code); }, e => toast(e.message, true)) }, 6000); } else rqDroppedToast(() => kkRestore(d.code));
-      if (KK.open !== id) return;
-      KK.drafts = KK.drafts.filter(x => x.code !== d.code);
-      if (KK.edit && KK.edit.code === d.code) kkEditCancel(); else kkPaintFoot();
-    }),
-  } });
-}
-function kkEdit(d) {
-  KK.edit = { code: d.code };
-  kkTa.value = d.text; KK.typed.set(KK.open, d.text); kkAutosize();
-  kkPaintFoot();
-  kkTa.focus();
-}
-function kkEditCancel() {
-  KK.edit = null; kkTa.value = ""; KK.typed.delete(KK.open); kkAutosize(); kkPaintFoot();
-}
+// A draft of several KakaoTalk messages shows one bubble per message in its queue card (rqItemCard); 고치기, 직접 수정 and 보내기 are the queue's.
+const kkQueueItem = d => raItems().find(i => i.ref === d.code) || null;
 function kkPaintFoot() {
-  const edit = KK.edit && KK.drafts.some(d => d.code === KK.edit.code) ? KK.edit : null;
-  if (KK.edit && !edit) KK.edit = null;
   const ask = kkAskCard(), hadRv = document.activeElement && document.activeElement.classList.contains("kk-rv");
-  if (KK.revise && !KK.drafts.some(d => d.code === KK.revise.code)) KK.revise = null;
   const making = !!KK.open && KK.drafting === KK.open;
   // A new draft on its way (no card to say "고치는 중…" yet): the place where its card will be says so.
-  const wait = making && !KK.reviseCode ? [el("div", { class: "kk-mk", role: "status", text: TX("apps.kk.making_reply") })] : [];
-  const drawn = paintKeep(kkDrafts, [...(ask ? [ask] : []), ...wait, ...KK.drafts.filter(d => !edit || d.code !== edit.code).map(kkDraftCard)], kkPaintFoot);
+  const wait = making ? [el("div", { class: "kk-mk", role: "status", text: TX("apps.kk.making_reply") })] : [];
+  const drawn = paintKeep(kkDrafts, [...(ask ? [ask] : []), ...wait, ...KK.drafts.map(kkQueueItem).filter(Boolean).map(it => rqItemCard(it, { bare: true }))], kkPaintFoot);
+  // A draft the queue does not list yet (it was just made): the queue is read once more and the foot drawn again.
+  const miss = KK.drafts.filter(d => !kkQueueItem(d)).map(d => d.code).join();
+  if (miss && miss !== KK.raMiss) raLoad().then(kkPaintFoot);
+  KK.raMiss = miss;
   kkDrafts.hidden = !kkDrafts.firstChild;
   // A draft that lands while the room is open (the owner's request came back) is brought into view: the card sits under the request bar, below the chat window.
   const codes = KK.drafts.map(d => d.code);
   if (drawn && KK.droom === KK.open && codes.some(c => !KK.dsig.includes(c))) requestAnimationFrame(() => kkDrafts.scrollIntoView({ block: "nearest" }));
   if (drawn) { KK.dsig = codes; KK.droom = KK.open; }
   if (hadRv) { const i = $(".kk-rv", kkDrafts); if (i) i.focus({ preventScroll: true }); }
-  kkEditBar.hidden = !edit;
   kkDraftBtn.disabled = making;
   kkPaintAuto();
   kkDraftBtn.lastChild.textContent = making ? TX("apps.kk.making") : TX("apps.kk.draft_reply");
-  // 직접 수정 puts a draft's text in the bar: then the bar sends it (the draft's own route); otherwise it is the request to the assistant.
-  kkTa.placeholder = edit ? TX("apps.kk.edited_ph") : KK.drafts.length ? KK_REVISE : KK_ASK;
-  const label = edit ? TX("common.send") : TX("apps.kk.send_req");
+  // The bar is the request to the assistant: the change to the waiting draft, or a new message.
+  kkTa.placeholder = KK.drafts.length ? KK_REVISE : KK_ASK;
+  const label = TX("apps.kk.send_req");
   kkSendBtn.setAttribute("aria-label", label); kkSendBtn.title = label;
 }
 // A new message the owner asked for in his own words (kkAskBot with no draft waiting); the same draft call (POST .../draft { intent }) writes it in his voice.
 async function kkComposeMake(intent) {
   const id = KK.open, text = String(intent || "").replace(/\s+/g, " ").trim().slice(0, 500);
   if (!id || !text || KK.drafting === id) return;
-  KK.drafting = id; KK.reviseCode = "";
+  KK.drafting = id;
   kkPaintFoot();
   clearTimeout(KK.draftT);
   KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast(TX("apps.kk.draft_late"), true); } }, 120000);
@@ -1101,15 +1003,14 @@ async function kkComposeMake(intent) {
   }
 }
 // Drafts are made only on demand (or by a room's 자동 초안): the request starts it, and the kakao_draft event for this room says it is done.
-// `revise` = { code, change }: rewrite that draft with the owner's change instead of making a new one.
-async function kkMakeDraft(choice, revise) {
+async function kkMakeDraft(choice) {
   const id = KK.open;
   if (!id || KK.drafting === id) return;
-  KK.drafting = id; KK.reviseCode = revise ? revise.code : ""; kkPaintFoot();
+  KK.drafting = id; kkPaintFoot();
   clearTimeout(KK.draftT);
   KK.draftT = setTimeout(() => { if (KK.drafting === id) { KK.drafting = ""; kkPaintFoot(); toast(TX("apps.kk.draft_late"), true); } }, 120000);
   try {
-    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", revise ? { revise } : choice ? { choice } : {});
+    const r = await api(`/api/kakao/chat/${enc(id)}/draft`, "POST", choice ? { choice } : {});
     if (r && typeof r.error === "string" && r.error) throw new Error(r.error);
   } catch (e) {
     clearTimeout(KK.draftT);
@@ -1138,7 +1039,7 @@ function kkSetRow(chatId, d) {
 }
 // The event stream (99-boot.js): ids only, so the bodies are fetched here.
 function kkLive(e) {
-  if (e.kind === "kakao_draft" || e.kind === "kakao_send") rqSoon();   // the 답장 대기 screen (30-replies.js) reads this computer's drafts again
+  if (e.kind === "kakao_draft") rqSoon();   // the 답장 대기 screen (30-replies.js) reads this computer's drafts again
   if (KK.pc) return;   // the stream is this computer's; a peer's room is refreshed by the timer
   if (e.kind === "kakao_read") { if (KK.vis && e.chatId === KK.open) kkReads(); return; }
   if (e.kind === "kakao_rooms" || e.kind === "kakao_unreplied") { if (KK.vis || current === "chat") kkLoadRooms(); kkIntgSoon(); return; }
@@ -1146,7 +1047,6 @@ function kkLive(e) {
   if (!KK.vis) return;
   const open = e.chatId === KK.open;
   if (e.kind === "kakao") { if (open) kkTail(); else kkRoomLatest(e.chatId); }
-  else if (e.kind === "kakao_send") { if (open) kkSendEvent(e); }
   else if (e.kind === "kakao_draft" && open) {
     if (KK.drafting === e.chatId) {
       KK.drafting = ""; clearTimeout(KK.draftT); kkPaintFoot();

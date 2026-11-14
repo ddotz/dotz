@@ -78,7 +78,7 @@
 .rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 var(--sp-3); border-radius: var(--r-ctl); font: 600 13px/20px var(--font); }
 /* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼).
    The keyboard hint of the quick triage has no keys to name on a touch screen. */
-@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } .tr-keys { display: none; } }
+@media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) -2px; } }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
 
@@ -102,11 +102,6 @@
 .rq-ls .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); } .rq-ls .sec:first-child { margin-top: 0; }
 .rq-r .hd { font-weight: 500; color: var(--fg); } .rq-r.sent .hd { font-weight: 400; color: var(--fg-2); }
 .rq-r .ln .tag { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rq-g .rq-retry { position: relative; z-index: 1; flex: none; align-self: center; height: var(--btn-h-sm); min-height: 0; }
-.rq-g .rq-retry:disabled { opacity: .4; pointer-events: none; }
-.rq-g .nsc-tr svg { transition: transform var(--m-fast) var(--m-ease); }
-.rq-g .nsc-tx[aria-expanded="true"] ~ .nsc-tr svg { transform: rotate(180deg); }
-.rq-r[data-kid] { padding-left: calc(var(--row-px) + var(--sp-6)); }
 /* the sheet's body under its fixed head: .fs-card caps the height and clips, so a long draft scrolls here down to its 첨부 줄 */
 .rq-sheet .rq-sb { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--sp-4) var(--sp-4); }
 .rq-sheet .rq-why { margin: 0 var(--sp-05) var(--sp-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); color: var(--fg-2); }

@@ -184,9 +184,10 @@ describe("GET /api/drafts/<ref>/original", () => {
 
 const mountCard = (v: View, ref: string) =>
 	v.evaluate(`(() => { CM.view = { comments: [{ id: ${JSON.stringify(commentId("youtube", "top"))}, author: "김팬" }], sends: [], drafts: [] };
+		RA.items.set(${JSON.stringify(ref)}, { item: "comment:" + ${JSON.stringify(ref)}, ref: ${JSON.stringify(ref)}, kind: "comment", app: "youtube", label: "유튜브", conv: "i:youtube", at: Date.now(), can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", toLabel: "대상", to: "김팬", text: "봐 주셔서 감사합니다. 문서는 설명란 링크에서 받으실 수 있어요." } });
 		const box = el("div", { class: "kk-drafts", id: "t-box", style: "position:fixed;left:8px;top:8px;width:" + (innerWidth - 16) + "px;z-index:9999;background:var(--bg)" });
 		document.body.append(box);
-		box.append(cmDraftCard({ code: ${JSON.stringify(ref)}, commentId: ${JSON.stringify(commentId("youtube", "top"))}, text: "봐 주셔서 감사합니다. 문서는 설명란 링크에서 받으실 수 있어요.", notes: [] })); })()`);
+		box.append(cmQueueCard({ code: ${JSON.stringify(ref)}, commentId: ${JSON.stringify(commentId("youtube", "top"))} })); })()`);
 
 describe("원문 보기 in the send sheet", () => {
 	test("closed by default and nothing fetched; the sheet has one close button and no tabs; 원문 보기 opens the original in place and keeps it", async () => {
@@ -228,26 +229,19 @@ describe("원문 보기 in the send sheet", () => {
 		expect((await box(v, ".rq-og-wrap .od-pane"))!.w).toBeGreaterThan(300);
 	});
 
-	test("the draft's buttons are one row: 보내기, 고치기, 보내지 않기, and 직접 수정 at the far right; 직접 수정 opens the clean body", async () => {
+	test("the draft's buttons are one row: 보내기, 고치기, 보내지 않기", async () => {
 		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 			const v = await open(w, h);
 			await theme(v, "light");
 			await openSheet(v, drafts.plain!, "", ".rq-og");
 			const acts = await v.evaluate(`[...document.querySelectorAll(".fs-ft .rq-acts .btn")].map(b => b.textContent)`);
-			expect(acts).toEqual(["보내기", "고치기", "보내지 않기", "직접 수정"]);
-			const row = (await box(v, ".fs-ft .rq-acts"))!, main = (await box(v, ".fs-ft .rq-acts .btn:nth-child(1)"))!, third = (await box(v, ".fs-ft .rq-acts .btn:nth-child(3)"))!, man = (await box(v, ".fs-ft .rq-manual"))!;
+			expect(acts).toEqual(["보내기", "고치기", "보내지 않기"]);
+			const row = (await box(v, ".fs-ft .rq-acts"))!, main = (await box(v, ".fs-ft .rq-acts .btn:nth-child(1)"))!, third = (await box(v, ".fs-ft .rq-acts .btn:nth-child(3)"))!;
 			expect(main.l).toBe(row.l);
 			expect((await box(v, ".fs-ft .rq-acts .btn:nth-child(2)"))!.l).toBeGreaterThan(main.r);
 			expect(main.t).toBe(third.t);
-			expect(man.l).toBeGreaterThan(third.r);
-			expect(man.r).toBeGreaterThan(row.r - 24);
-			expect(man.t).toBeGreaterThanOrEqual(row.t);
-			expect(man.b).toBeLessThanOrEqual(row.b);
 			expect(row.r).toBeLessThanOrEqual(w);
 			await Bun.write(`${SNAP}/buttons-${w}-light.png`, await v.screenshot());
-			await click(v, ".fs-ft .rq-manual");
-			await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
-			expect(await v.evaluate(`document.querySelector(".fs-ft .dc-note").value`)).toContain("말씀하신 일정 확인했습니다");
 			v.close();
 		}
 	});
@@ -373,34 +367,6 @@ describe("원문 보기 for a comment reply draft", () => {
 
 	// The 답장 확인 sheet (30-replies.js rqSheetOpen) of the same draft, as an [ask] row and as a store row without a notice: the comment it answers (author, time,
 	// text) and its post (title, link) sit inline at the top, in view and in 고치기 alike.
-	test("답장 확인 sheet of a comment draft shows the comment and its post inline, in view and edit", async () => {
-		const date = ((await (await draftAttachRoute(new Request("http://x/"), new URL("http://x/"), code.top!, "original")).json()) as { date: string }).date;
-		const store = { code: code.card, kind: "comment", app: "youtube", title: "달빛정원 OST 요약 연주", link: "https://www.youtube.com/watch?v=v1", to: "김팬", text: "봐 주셔서 감사합니다.", notes: [], at: CT0, original: { who: "김팬", text: CTEXT, at: CT0 } };
-		const rows = {
-			ask: `rqRows().find(r => r.x && r.x.kind === "notice" && r.x.n.decision.draft.ref === ${JSON.stringify(code.top)})`,
-			store: `rqRows().find(r => r.x && r.x.kind === "comment" && r.x.d.code === ${JSON.stringify(code.card)})`,
-		};
-		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
-			const v = await open(w, h);
-			await waitFor(v, `typeof rqSheetOpen === "function" && document.querySelector(".hn")`);
-			await v.evaluate(`(() => { RQ.local = [${JSON.stringify(store)}]; RQ.loaded = true; return 0; })()`);
-			for (const [kind, row] of Object.entries(rows)) {
-				await waitFor(v, row);
-				for (const edit of [false, true]) {
-					await v.evaluate(`(() => { const r = ${row}; RQ.edit = ${edit} ? r.key : ""; if (RQ.sheet) RQ.sheet.close(false); rqSheetOpen(r); return 0; })()`);
-					await waitFor(v, `document.querySelector(".rq-sheet .od-inline .od-ct")`);
-					const pane = await text(v, ".rq-sheet .od-inline");
-					for (const t of ["김팬", CTEXT, "달빛정원 OST 요약 연주", "원본 열기"]) expect(pane, `${kind} ${edit} ${w}`).toContain(t);
-					expect(await v.evaluate(`document.querySelector(".rq-sheet .od-inline").textContent.includes(kstStamp(${JSON.stringify(date)}))`)).toBe(true);
-					expect(await v.evaluate(`document.querySelector(".rq-sheet .od-inline .od-open").href`)).toBe("https://www.youtube.com/watch?v=v1");
-					expect(await v.evaluate(`!!document.querySelector(".rq-sheet .rq-rv, .rq-sheet .rq-acts")`)).toBe(true);
-				}
-			}
-			await v.evaluate(`(() => { RQ.edit = ""; if (RQ.sheet) RQ.sheet.close(false); return 0; })()`);
-			v.close();
-		}
-	});
-
 	test("a comment that is gone says 원문을 찾을 수 없어요 and the draft stays usable", async () => {
 		const v = await open(390, 844);
 		await openSheet(v, code.gone!);
@@ -426,14 +392,14 @@ describe("원문 보기 for a comment reply draft", () => {
 		const ref = code.card!;
 		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 			const v = await open(w, h);
-			await waitFor(v, `typeof cmDraftCard === "function"`);
+			await waitFor(v, `typeof cmQueueCard === "function"`);
 			await theme(v, "light");
 			await mountCard(v, ref);
 			delete hits[ref];
 			expect(hits[ref] ?? 0).toBe(0);
-			expect(await v.evaluate(`document.querySelectorAll("#t-box .kk-draft .rq-acts .btn").length`)).toBe(3);
+			expect(await v.evaluate(`document.querySelectorAll("#t-box .ra-card .rq-acts .btn").length`)).toBe(3);
 			expect(await v.evaluate(`document.querySelectorAll("#t-box .od-tg, #t-box .od-orig").length`)).toBe(0);
-			expect(await text(v, "#t-box .kk-draft")).toContain("봐 주셔서 감사합니다");
+			expect(await text(v, "#t-box .ra-card")).toContain("봐 주셔서 감사합니다");
 			await settled(v);
 			expect(hits[ref] ?? 0).toBe(0);
 			await Bun.write(`${SNAP}/comment-card-${w}-light.png`, await v.screenshot());

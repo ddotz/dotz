@@ -1,13 +1,13 @@
 /* ---------- 답장 초안 카드: one card for every reply draft (메일, 카카오톡, 댓글) of every computer ---------- */
-// One component for the 답장 확인 queue (30-replies.js), the mail list's 확인 대기 (30-monitoring.js draftCardNode), the KakaoTalk room
-// (30-kakao.js kkDraftCard) and a comment thread (30-monitoring-comments.js cmDraftCard): the same head (앱 · 계정 · 컴퓨터 · 모델 when known),
+// One component under the queue card (10-reply-actions.js rqItemCard) that the 답장 대기 list, 빠른 처리, the KakaoTalk room and a comment thread
+// draw, and under the mail list's 확인 대기 (30-monitoring.js draftCardNode): the same head (앱 · 계정 · 컴퓨터 · 모델 when known),
 // the body clamped to about six lines with 펼치기, and the same three actions with the same words, 보내기 · 고치기 · 보내지 않기.
 // Each caller passes what its actions do; the card never decides where a draft is sent.
 const RQ_APPS = { mail: [TX("common.mail"), "mail"], kakao: [TX("decision.app.kakao"), "chat"], instagram: [TX("decision.app.instagram"), "chat"], youtube: [TX("decision.app.youtube"), "chat"], site: [TX("decision.app.site"), "chat"] };
 const RQ_LINES = 6;
 const RQ_OPEN = new Set();   // card keys whose long body was unfolded (펼치기); kept across repaints
 // A press waits for its answer in the card itself: rqPress = the action in flight (its button says so, the others stay off in place), rqFail = the line a failed
-// action leaves right above the buttons (never a toast over the card's rows). Both are keyed by rqFk (30-replies.js): a notice by its id, any other draft by its key.
+// action leaves right above the buttons (never a toast over the card's rows). Both are keyed by the notice (rqNtKey); a queue item keeps its own (RA.busy, RA.fail).
 const rqPress = new Map(), rqFail = new Map();
 const RQ_PRESS = { send: TX("decision.pending.send"), edit: TX("decision.pending.edit"), drop: TX("decision.pending.drop") };
 const rqNtKey = n => `nt:${n.id}`;
@@ -52,7 +52,7 @@ function rqActsNode(a) {
   return el("div", { class: "dr-act dr-row rq-acts" }, b(`btn${a.quiet ? " tonal" : ""} sm dr-send`, "send", TX("common.send"), a.send), b("btn tonal sm", "edit", TX("decision.edit"), a.edit), b("btn text sm dr-drop", "drop", a.dropText || TX("decision.drop"), a.drop), a.manual ? rqManualBtn(a.manual, a.busy) : null);
 }
 const rqManualBtn = (fn, busy) => el("button", { class: "btn text sm rq-manual", type: "button", "data-k": "manual", "aria-label": TX("decision.manual"), disabled: !!busy, onclick: fn }, icon("pencil"), el("span", { text: TX("decision.manual") }));
-// 고치기: what to change, typed once; the bot rewrites the draft. o: { go(change), cancel(), manual() (직접 수정, optional), pick (a node before the field, such
+// 고치기: what to change, typed once; the bot rewrites the draft. o: { go(change), cancel(), pick (a node before the field, such
 // as which part of a comment reply with a mail to change), value, onInput(text), busy }
 function rqReviseNode(o) {
   const inp = el("input", { class: "kk-rv rq-rv", type: "text", maxlength: "500", placeholder: DRAFT_HINT, "aria-label": TX("decision.revise.what"), autocomplete: "off", disabled: !!o.busy });
@@ -62,8 +62,7 @@ function rqReviseNode(o) {
   inp.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); go.click(); } };
   return el("div", { class: "rq-edit" }, el("div", { class: "kk-rq", text: TX("decision.revise.ask") }), o.pick || null, inp,
     el("div", { class: "btns" }, go,
-      el("button", { class: "btn text", type: "button", "data-k": "revise-cancel", text: TX("common.cancel"), disabled: !!o.busy, onclick: o.cancel }),
-      o.manual ? el("button", { class: "btn text kk-manual", type: "button", "data-k": "manual", "aria-label": TX("decision.manual"), onclick: o.manual }, icon("pencil"), el("span", { text: TX("decision.manual") })) : null));
+      el("button", { class: "btn text", type: "button", "data-k": "revise-cancel", text: TX("common.cancel"), disabled: !!o.busy, onclick: o.cancel })));
 }
 // The attachment line: every card says what goes with the draft before 보내기 - the files that go (name + size), or 첨부: 없음, or, for a source that cannot
 // attach, the names of the files that stay behind (hub/draft-approval.ts attachments / attachmentsNone / cannotAttach); nothing when none stay behind.
@@ -129,7 +128,7 @@ function rqCard(c) {
   const cm = !!(c.head && c.head.who);   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     c.bare ? null : rqHeadNode(c.head),
-    c.bare || !c.original ? null : c.original.nodeType ? c.original : c.original.text ? rqOrigNode(c.key, c.original) : null,   // a node: a comment's own block (30-replies.js rqCommentOrig)
+    c.bare || !c.original ? null : c.original.nodeType ? c.original : c.original.text ? rqOrigNode(c.key, c.original) : null,   // a node: the caller's own block
     c.brief || null,
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
     c.to ? (cm ? null : el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" }))) : c.recv || null,   // a mail keeps its 받는이 rows
@@ -139,9 +138,6 @@ function rqCard(c) {
 }
 // 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
 const rqSentNode = (at = TX("decision.just_now")) => el("div", { class: "rq-sent", role: "status", "data-state": "send" }, icon("check"), el("span", { text: TX("decision.sent") }), el("span", { class: "rq-sent-at", text: `· ${at}` }));
-// What an answer did, in the same words everywhere: 보냈어요, and 보내지 않았어요 with 되돌리기 where the store can bring the draft back.
-const rqSentToast = action => toast(TX("decision.sent"), false, action || null);
-const rqDroppedToast = undo => toast(TX("decision.not_sent"), false, undo ? { label: TX("common.undo"), onclick: undo } : null, undo ? 6000 : undefined);
 // The 받는이 of a mail draft, folded to one text button under the body ("받는이 한서윤 · 답장"); it opens the rows of draftToNode in place. A draft with nobody to send to,
 // or an address that is not one, stands open from the start. Once the owner presses the button, that choice stays.
 const DR_ADDR = /^[^\s<>@,]+@[^\s<>@,]+\.[^\s<>@,]+$/;

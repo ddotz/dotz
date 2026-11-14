@@ -144,7 +144,6 @@
   "apps.kk.tag.group": "Group",
   "apps.kk.rooms_aria": "KakaoTalk chats",
   "apps.kk.new_msg": "New messages",
-  "apps.kk.editing": "Editing the reply draft",
   "apps.kk.ask_ph": "Ask the assistant · e.g. make it shorter",
   "apps.kk.revise_ph": "How should it change? · e.g. make it shorter",
   "apps.kk.ask_aria": "Reply request",
@@ -183,8 +182,6 @@
   "apps.kk.send.failed_why": "Failed · {reason}",
   "apps.kk.send.sent": "Sent",
   "apps.kk.send.sending": "Sending",
-  "apps.kk.send.retry": "Send again",
-  "apps.kk.send.dismiss": "Dismiss",
   "apps.kk.older": "Show earlier messages",
   "apps.kk.no_msgs": "No messages yet",
   "apps.kk.err_chat": "Couldn't load the chat",
@@ -192,20 +189,7 @@
   "apps.kk.peer_revise": "On another computer's chat, make a draft first, then ask for changes",
   "apps.kk.choose_first": "Choose before replying",
   "apps.kk.write_own": "I'll write it",
-  "apps.kk.draft.new": "New message draft",
-  "apps.kk.draft.reply": "Reply draft",
-  "apps.kk.draft.new_n": {
-    "one": "New message draft · {n} message",
-    "other": "New message draft · {n} messages"
-  },
-  "apps.kk.draft.reply_n": {
-    "one": "Reply draft · {n} message",
-    "other": "Reply draft · {n} messages"
-  },
-  "apps.kk.draft_restored": "Draft restored",
-  "apps.kk.revising": "Revising…",
   "apps.kk.making_reply": "Making the reply draft…",
   "apps.kk.making": "Drafting…",
-  "apps.kk.edited_ph": "Edited message",
   "apps.kk.draft_late": "The draft hasn't arrived yet"
 }

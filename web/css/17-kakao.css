@@ -247,20 +247,11 @@
 #kk-chat .kk-draft { display: flex; flex-direction: column; min-height: 0; max-height: 40dvh; }
 #kk-chat .kk-draft > * { flex: none; }
 #kk-chat .kk-draft > .rq-body { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
-#kk-chat .kk-draft .kk-dt.kk-dps { max-height: none; overflow: visible; }
 .kk-dt { max-height: min(16dvh, 120px); margin: var(--sp-05) 0 var(--sp-2); overflow-y: auto; font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
-/* a draft of several messages: one bubble each, in send order (a part already in the room is muted) */
-.kk-dt.kk-dps { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); max-height: min(28dvh, 220px); white-space: normal; }
-.kk-dp { max-width: 86%; padding: var(--sp-15) var(--sp-3); border-radius: var(--r-ctl); background: var(--kk-own); color: var(--kk-own-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
-.kk-dp.sent { opacity: .55; }
 .kk-rq { margin: var(--sp-05) 0 var(--sp-15); color: var(--fg-2); font: 600 13px/18px var(--font); }
 .kk-rv { width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
 .kk-rv:focus { outline: 0; box-shadow: var(--ff-ring); }
 .kk-st { color: var(--fg-3); font: 500 12.5px/18px var(--font); }
-.kk-manual { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--fg-2); }
-.kk-manual .ic { width: 14px; height: 14px; }
-.kk-edit { display: flex; align-items: center; gap: var(--sp-2); margin: 0 var(--sp-1) var(--sp-15); color: var(--fg-2); font: 500 12.5px/18px var(--font); }
-.kk-edit .btn { height: var(--btn-h-row); }
 .kk-dbtn { gap: var(--sp-1); }
 .kk-dbtn .ic { width: 14px; height: 14px; }
 .kk-dbtn:disabled { opacity: .6; }

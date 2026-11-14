@@ -136,8 +136,8 @@ test("390px: a sheet whose header buttons carry very long labels keeps its title
 	headOk(await headGeo(v));
 });
 test("390px: the same holds for the triage sheet's list toggle", async () => {
-	const v = await page(390, "light", `go("monitoring")`, `NM.loaded && TR.loaded`);
-	await v.evaluate(`void (TR.groups = [{ key: "g1", label: "뉴스레터", count: 3, cards: [1, 2, 3].map(i => ({ to: "mail:m" + i, ref: "r" + i, question: "답장할까요?", draft: { body: "네, 알겠습니다" } })) }], trOpen("g1"))`);
+	const v = await page(390, "light", `go("monitoring")`, `NM.loaded && RA.loaded`);
+	await v.evaluate(`void ([1, 2, 3].forEach(i => RA.items.set("r" + i, { item: "mail:r" + i, ref: "r" + i, kind: "mail", app: "mail", label: "뉴스레터", conv: "mail:m" + i, at: Date.now() - i * 1000, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to: "a@example.com", text: "네, 알겠습니다" } })), tqOpen())`);
 	await waitFor(v, `!!document.querySelector(".fs-card .tr-tog span")`);
 	await v.evaluate(`void document.querySelectorAll(".fs-card .fs-hb > :not(.fs-x) span").forEach(s => { s.textContent = ${JSON.stringify(TOKEN)}; })`);
 	await painted(v);
@@ -255,12 +255,12 @@ test("390px: the update bar's x reads at a listed size and line", async () => {
 for (const w of [390, 1280]) {
 	// 390px: a full-screen sheet; 1280px: the right column of the monitoring frame (rq-pane)
 	const holder = w === 390 ? ".fs-card" : ".tr-pane";
-	test(`${w}px: the triage ${w === 390 ? "sheet" : "pane"}'s question is a listed size`, async () => {
-		const v = await page(w, "light", `go("monitoring")`, `NM.loaded && TR.loaded`);
-		await v.evaluate(`void (TR.groups = [{ key: "g1", label: "뉴스레터", count: 3, cards: [1, 2, 3].map(i => ({ to: "mail:m" + i, ref: "r" + i, question: "답장할까요?", draft: { body: "네, 알겠습니다" } })) }], trOpen("g1"))`);
-		await waitFor(v, `!!document.querySelector("${holder} .tr-q > span")`);
+	test(`${w}px: the triage ${w === 390 ? "sheet" : "pane"}'s title is a listed size`, async () => {
+		const v = await page(w, "light", `go("monitoring")`, `NM.loaded && RA.loaded`);
+		await v.evaluate(`void ([1, 2, 3].forEach(i => RA.items.set("r" + i, { item: "mail:r" + i, ref: "r" + i, kind: "mail", app: "mail", label: "뉴스레터", conv: "mail:m" + i, at: Date.now() - i * 1000, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to: "a@example.com", text: "네, 알겠습니다" } })), tqOpen())`);
+		await waitFor(v, `!!document.querySelector("${holder} .tr-pos")`);
 		await shot(v, `8-triage-question-${w}`);
-		await typeOk(v, `${holder} .tr-q > span`);
+		await typeOk(v, `${holder} .tr-pos`);
 	});
 }
 

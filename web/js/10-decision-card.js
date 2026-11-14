@@ -75,7 +75,7 @@ function parseChoices(text) {
 const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
 const isHeadedChoice = pc => pc.blocks.some(b => b.headed && b.options.length > 1);
 const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
-const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {}, files: {}, fbusy: {}, undo: {} };   // files: uploads picked in 직접 수정 (sent as the answer's `files`), fbusy: one is going up
+const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {} };
 // A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
 const DRAFT_EDIT = "고치기", DRAFT_OWN = "어떻게 보낼지 직접 입력";
 // The draft options that carry the owner's text: 고치기 (what to change) and the send mode 직접 입력 (how to send). Mirrors hub draftNeedsText.
@@ -146,17 +146,16 @@ const dcSettledAt = (t, at) => {
 };
 async function answerDecision(dc, text, opt, note) {
   const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen
-  const files = DC.files[dc.key] || []; delete DC.files[dc.key];
   DC.st[dc.key] = "sending"; paintDecision();
   try {
     // A card with one block whose question is a decision notice answers through the notice path (30-notices.js), so both stay in step.
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
-    const held = nd ? await ntPost(nd, opt.n, note, files, opt.label) : null;
+    const held = nd ? await ntPost(nd, opt.n, note, undefined, opt.label) : null;
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
-    const r = nd ? null : await sendMsgOut(t, text, { text, ...(files.length ? { files } : {}), ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isRowT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
+    const r = nd ? null : await sendMsgOut(t, text, { text, ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isRowT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
-    DC.st[dc.key] = held && held.state === "undo" && dc.draft ? dcUndoStart(dc, held) : "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
+    DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
     if (t === target) { chatStick = true; scrollChat(true); }
   } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; toast(e.message, true); }   // a lone question lets go of the chosen row; several keep their picks, so a retry does not start the card over
   paintDecision();
@@ -183,7 +182,7 @@ function pickOption(dc, bi, opt, note) {
 }
 async function answerEach(dc, bi, opt, note) {
   DC.st[dc.key] = "sending"; paintDecision();
-  try { await ntPost(dc.blocks[bi].nd, opt.n, note, DC.files[dc.key], opt.label); delete DC.files[dc.key]; } catch (e) { toast(e.message, true); }
+  try { await ntPost(dc.blocks[bi].nd, opt.n, note, undefined, opt.label); } catch (e) { toast(e.message, true); }
   delete DC.picks[dc.key]; delete DC.step[dc.key];
   // The last question of the card answered: it leaves through dcLeave (fades, then goes) like any answered card; the others still wait on the card.
   if (decisionOf(dc.t)) delete DC.st[dc.key]; else DC.st[dc.key] = "sent";
@@ -207,7 +206,7 @@ function multiNodes(dc, picks, st) {
 // app's 첨부 파일 폴더, x = take one off. The live list (DRF.st) replaces the one written in the message. o.t = the draft's conversation
 // (a peer's draft is changed on its own computer), o.edit false = read only, o.warn = a box the warning is drawn into instead of under the files.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, add: {}, wait: {} };
+const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, wait: {} };
 const DRF_WIRE_MAX = 10 * 1024 * 1024;
 const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
 const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
@@ -250,7 +249,6 @@ function draftFilesNode(d, o = {}) {
     DRF.busy[ref] = false; paint();
   };
   const addAll = list => run(async () => { for (const f of list) await drfUpload(ref, f); DRF.menu[ref] = ""; });
-  if (ref) DRF.add[ref] = addAll;   // 직접 수정 of the same card (editNode) stages its files through the newest list of this draft
   pickers.onchange = () => { const list = [...pickers.files]; pickers.value = ""; addAll(list); };
   const openLib = async () => {
     DRF.menu[ref] = DRF.menu[ref] === "lib" ? "" : "lib"; paint();
@@ -411,13 +409,13 @@ function draftNode(d, o) {
     draftBodyNode(d.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": TX("decision.body_label") }), draftFilesNode(d, o), draftMailNode(d.mail, o));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
-const dcStText = (dc, st) => (st === "undo" ? dcUndoText(dc) : dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? TX("decision.pending.edit") : st === "sending" ? (((DC.picks[dc.key] || [])[0] || {}).label === "보내지 않기" ? TX("decision.pending.drop") : TX("decision.pending.send")) : TX("decision.st.sent_processing"));
+const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? TX("decision.pending.edit") : st === "sending" ? (((DC.picks[dc.key] || [])[0] || {}).label === "보내지 않기" ? TX("decision.pending.drop") : TX("decision.pending.send")) : TX("decision.st.sent_processing"));
 // 고치기 on a draft, or an option that needs detail (안 됨 …): the owner types the change / reason, then the answer goes out with it.
-// 고치기 on a draft asks "어떻게 고칠까요?" and the bot rewrites it; 직접 수정 (ed.manual) is the owner's own text, sent as the change "이 내용으로 고쳐 주세요: ...".
-const DRAFT_HINT = TX("decision.hint.revise"), MANUAL_LEAD = "이 내용으로 고쳐 주세요: ";
+// 고치기 on a draft asks "어떻게 고칠까요?" and the bot rewrites it (the owner's own text is the queue card's 직접 수정, 10-reply-actions.js rqEditNode).
+const DRAFT_HINT = TX("decision.hint.revise");
 // The button under the typed text names what it does with the choice made, never a bare "보내기": after 고치기 on a draft a 내용 보내기 read as if
 // the mail would go out (owner 2026-10-28). One rule for the chat card and the notice sheet.
-const noteGoLabel = (opt, drf, man) => (man ? TX("decision.note.go_manual") : drf && opt.label === DRAFT_OWN ? TX("decision.note.go_own") : drf ? TX("decision.revise.go") : TX("decision.note.go_answer", { label: opt.label }));
+const noteGoLabel = (opt, drf) => (drf && opt.label === DRAFT_OWN ? TX("decision.note.go_own") : drf ? TX("decision.revise.go") : TX("decision.note.go_answer", { label: opt.label }));
 // What the text box of a draft option asks: 고치기 = the change, 직접 입력 = how to send it.
 const OWN_HINT = TX("decision.hint.own");
 // A draft card's question without its "(<id>)", and what only the owner can decide (hub/draft-approval.ts decide) as a list of its own.
@@ -425,35 +423,14 @@ const OWN_HINT = TX("decision.hint.own");
 const draftQ = t => String(t || "").replace(/\s*\([^()]*\)\s*$/, "").replace(/\s*정할 것\s*[:：][\s\S]*$/, "");
 const decideNode = d => (d && d.decide && d.decide.length ? el("div", { class: "dc-decide" }, el("div", { class: "dc-decide-k", text: TX("decision.decide") }), el("ul", {}, ...d.decide.map(q => el("li", { text: q })))) : null);
 const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: TX("decision.own.aria"), ask: TX("decision.own.ask") } : { hint: DRAFT_HINT, aria: TX("decision.revise.what"), ask: TX("decision.revise.ask") });
-// 직접 수정 with files: the bot is told to attach them (the hub appends one [attachment] line per file with its path).
-const manualNote = (text, files) => (files.length ? `첨부할 파일 ${files.length}개(${files.map(f => f.name).join(", ")})를 이 초안에 붙여 주세요. ` : "") + MANUAL_LEAD + text;
 function editNode(dc, ed, st) {
-  const opt = ed.opt, drf = !!dc.draft, man = !!ed.manual;
+  const opt = ed.opt, drf = !!dc.draft;
   const dt = draftNoteText(opt);
-  const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? TX("decision.note.manual_ph") : dt.hint) : TX("decision.note.reason_ph"), "aria-label": man ? TX("decision.manual") : drf ? dt.aria : TX("decision.note.details"), disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
-  ta.value = DC.note[dc.key] ?? (man ? dc.draft.body : "");
-  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? manualNote(note, DC.files[dc.key] || []) : note); } }, noteGoLabel(opt, drf, man));
-  const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; delete DC.files[dc.key]; paintDecision(); } }, TX("decision.back"));
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? TX("decision.manual") : drf ? dt.ask : opt.label })), ta, man ? editFilesNode(dc, st) : null, el("div", { class: "dc-eb" }, back, go));
-}
-// 파일 첨부 in 직접 수정. A draft dotz tracks and can change (a reply-drafts mail draft) takes the file onto its 첨부 rows at once (the same
-// drfUpload as 파일 추가); any other draft uploads it here and shows it as a chip, and the 고치기 answer goes out with it as the message's `files`.
-function editFilesNode(dc, st) {
-  const key = dc.key, ref = dc.draft.ref, files = DC.files[key] || [], busy = !!DC.fbusy[key];
-  const pk = el("input", { type: "file", multiple: true, hidden: true, "aria-label": TX("decision.file.pick") });
-  pk.onchange = async () => {
-    const list = [...pk.files]; pk.value = "";
-    const s = ref ? DRF.st[ref] : null;
-    if (!list.length || DC.st[key]) return;
-    if (s && !s.failed && s.tracked !== false && s.editable && s.canAttach && DRF.add[ref]) { if (!DRF.busy[ref]) DRF.add[ref](list); return; }
-    if (dc.t && pqPc(dc.t)) { toast(TX("decision.file.cross_peer"), true); return; }
-    DC.fbusy[key] = true; paintDecision();
-    try { for (const f of list) { if ((DC.files[key] || []).length >= 10) break; DC.files[key] = (DC.files[key] || []).concat(await uploadFile(f)); } }
-    catch (e) { toast(e instanceof TypeError ? TX("decision.err.offline_upload") : e.message, true); }
-    delete DC.fbusy[key]; paintDecision();
-  };
-  const chips = files.map(f => fileChip(f.name, [extOf(f.name), fsize(f.size)].filter(Boolean).join(" · "), { x: el("button", { class: "ax", type: "button", disabled: !!st, "aria-label": TX("decision.remove_named", { name: f.name }), onclick: () => { DC.files[key] = (DC.files[key] || []).filter(x => x !== f); paintDecision(); } }, icon("close")) }));
-  return el("div", { class: "dc-fl" }, el("button", { class: "dr-add", type: "button", disabled: !!st || busy, onclick: () => pk.click() }, icon("clip"), el("span", { text: busy ? TX("decision.file.uploading") : TX("decision.file.attach") })), ...chips, pk);
+  const ta = el("textarea", { class: "dc-note", rows: "2", maxlength: "500", placeholder: drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": drf ? dt.aria : TX("decision.note.details"), disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
+  ta.value = DC.note[dc.key] ?? "";
+  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, note); } }, noteGoLabel(opt, drf));
+  const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, TX("decision.back"));
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
 // A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
@@ -489,16 +466,14 @@ function renderSheet(box, dc, picks, step) {
   if (edit) foot.append(editNode(dc, edit, st));
   else if (d && dcGone(dc.t)) foot.append(el("div", { class: "dc-gone", role: "status", text: DC_GONE }));
   else if (d) {
-    // One compact row: the first choice (보내기) filled, 고치기 tonal, the rest as text, and 직접 수정 as a small link at the end.
-    const opts = dc.blocks[0].options, oe = opts.find(o => o.label === DRAFT_EDIT);
-    const manual = oe && !st ? () => { delete DC.note[dc.key]; DC.edit[dc.key] = { bi: 0, opt: oe, manual: true }; paintDecision(); } : null;
-    if (mail) {   // the reply card's row: 보내기 filled, 고치기 tonal, the rest as text, 직접 수정 at the right end
-      const bs = st === "undo" ? [dcUndoBtn(dc, "btn sm dr-send")] : opts.map((o, i) => el("button", { class: i === 0 ? "btn sm dr-send" : o.label === DRAFT_EDIT ? "btn tonal sm" : `btn text sm${o.label === "보내지 않기" ? " dr-drop" : ""}`, type: "button", "data-n": String(o.n), disabled: !!st, onclick: () => pickOption(dc, 0, o) }, st && picks[0] && picks[0].n === o.n ? dcStText(dc, st) : o.label));
-      foot.append(el("div", { class: "dr-act dr-row rq-acts" }, ...bs, ...(manual ? [rqManualBtn(manual)] : [])));
+    // One compact row: the first choice (보내기) filled, 고치기 tonal, the rest as text.
+    const opts = dc.blocks[0].options;
+    if (mail) {   // the reply card's row: 보내기 filled, 고치기 tonal, the rest as text
+      const bs = opts.map((o, i) => el("button", { class: i === 0 ? "btn sm dr-send" : o.label === DRAFT_EDIT ? "btn tonal sm" : `btn text sm${o.label === "보내지 않기" ? " dr-drop" : ""}`, type: "button", "data-n": String(o.n), disabled: !!st, onclick: () => pickOption(dc, 0, o) }, st && picks[0] && picks[0].n === o.n ? dcStText(dc, st) : o.label));
+      foot.append(el("div", { class: "dr-act dr-row rq-acts" }, ...bs));
     } else {
-    const btns = st === "undo" ? [dcUndoBtn(dc, "dc-act main")] : opts.map((o, i) => el("button", { class: `dc-act${i === 0 ? " main" : o.label === DRAFT_EDIT ? " alt" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label));
-    const man = manual ? el("button", { class: "dc-manual", type: "button", title: TX("decision.manual"), "aria-label": TX("decision.manual"), onclick: manual }, icon("pencil"), el("span", { text: TX("decision.manual") })) : null;
-    foot.append(el("div", { class: "dc-acts" }, ...btns, ...(man ? [man] : [])));
+    const btns = opts.map((o, i) => el("button", { class: `dc-act${i === 0 ? " main" : o.label === DRAFT_EDIT ? " alt" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label));
+    foot.append(el("div", { class: "dc-acts" }, ...btns));
     }
   } else if (dc.blocks.length > 1) foot.append(...multiNodes(dc, picks, st));
   else {
@@ -508,7 +483,7 @@ function renderSheet(box, dc, picks, step) {
       for (const o of blk.options) foot.append(choiceRow(dc, step, o, picks, st));
     }
   }
-  const sn = mail && st && st !== "undo" ? null : dcStNode(dc, st); if (sn) foot.append(sn);
+  const sn = mail && st ? null : dcStNode(dc, st); if (sn) foot.append(sn);
   if (org) col.append(body);   // the button row stays outside the sliding column: it is the same under 초안 and 원문
   if (!paintKeep(box, org ? [head, org.bar, el("div", { class: "od-stage" }, org.orig, col), foot] : [head, ...(body ? [body] : []), foot], dcAgain(box))) return;
   if (body) body.scrollTop = top;
@@ -562,8 +537,7 @@ function renderDecision(box, dc, picks, step) {
     if (blk) {
       if (blk.title && dc.blocks.length > 1) body.append(el("div", { class: "dc-sub", text: blk.title }));
       // Once the answer goes out the card keeps only the chosen row (the others leave), so 보냈어요 reads in the same place.
-      if (st === "undo" && dc.draft) body.append(dcUndoBtn(dc, "dc-row dc-undo"));
-      else for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+      for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
         el("span", { class: "dc-key", text: String(o.n) }),
         el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
     }
@@ -614,7 +588,7 @@ async function answerInline(nd, opt) {
 function dcAnswerToast(nd, opt, held) {
   const to = String(nd.decision.to || "");
   if (!nd.decision.draft) return;
-  if (opt.label === "보내기" && held && held.state === "undo") toast(TX("decision.toast.sending_soon"), false, { label: TX("decision.undo.cancel"), onclick: () => dcUndoPost(nd.decision.draft.ref) }, held.left);
+  if (opt.label === "보내기" && held && held.state === "undo") toast(TX("decision.toast.sending_soon"), false, null, held.left);
   else if (opt.label === "보내기") toast(TX("decision.sent"), false, to.startsWith("mail:") ? { label: TX("decision.mail.open"), onclick: () => go("monitoring", `c:${to}`) } : null);
   else if (opt.label === "보내지 않기") toast(TX("decision.not_sent"), false, { label: TX("common.undo"), onclick: () => dcReopen(nd) });
 }
@@ -698,7 +672,7 @@ function paintDecision() {
   if (inlines.length) { const live = isFixedT(target) ? null : decisionOf(target); for (const b of inlines) paintInline(b, live); }
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   // 2 or more send-approval cards waiting in this conversation: one line above the composer (dcLine) instead of the dock card or its pointer; a question that is not a draft keeps its card.
-  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = (line || RA.loaded) && dc0 && dcDraftAsk(dc0) ? null : dc0, had = !!DC.cur;   // with the one queue a draft is its card in the message, never docked
+  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = dc0 && dcDraftAsk(dc0) ? null : dc0, had = !!DC.cur;   // with the one queue a draft is its card in the message, never docked
   dcLine(askN);
   // A message that carries several of those drafts folds to its first paragraph while they wait: the drafts live in 답장 대기, not in the conversation.
   for (const m of document.querySelectorAll("#timeline .bm[data-dat]")) m.classList.toggle("q-fold", line && ntDecisions().filter(n => n.decision.draft && n.decision.to === target && n.decision.reply_to === m.dataset.dat).length > 1);
@@ -749,7 +723,7 @@ const dcDraftAsk = dc => !dc.each && ntDecisions().some(n => n.decision.draft &&
 function dcDraftRefs(t) {
   const refs = new Set();
   for (const n of typeof ntDecisions === "function" ? ntDecisions() : []) if (n.decision.draft && n.decision.to === t) refs.add(n.decision.draft.ref || n.id);
-  try { for (const g of TR.groups) for (const c of g.cards) if (c.to === t) refs.add(c.ref); } catch { /* 30-triage.js has not run yet */ }
+  for (const i of raItems("waiting")) if (i.conv === t) refs.add(i.ref);
   return refs.size;
 }
 // 답장 초안 N건 기다려요 · 확인하기 (the prototype's .qline): N is the 답 필요 count of the 답장 대기 screen, a tap opens it.
@@ -779,7 +753,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key], dcBackNote(dc)]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a

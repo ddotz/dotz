@@ -46,7 +46,7 @@
   es.onopen = () => { fast = true; tries = 0; setConn(true); outboxGo(); };
   es.addEventListener("reset", m => {
     lastId = m.lastEventId;
-    trLoad();   // the waiting approvals by app instance: the 빠른 처리 banner (30-triage.js)
+    raLoad();   // the one reply queue (10-reply-actions.js): what waits may have changed while the stream was away
     // The drawn conversation stays as it is: loadTarget redraws it only when the read brought something new.
     if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); kkResync(); }
     opened = true;
@@ -67,15 +67,14 @@
     else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
     else if (e.kind === "waitlist") { if (S) S.waitlist = e.items || []; scheduleState(); }   // 할일 changed (hub/waitlist.ts)
     else if (e.kind === "work") { workRowsLive(e); scheduleState(); }   // a background job changed (hub/workrows.ts): its rows, then the lists
-    else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") { noticeLive(e); if (e.kind === "notice") trSoon(); }
-    else if (e.kind === "approval_send") { trLive(e); dcUndoLive(e); rqSoon(); }
+    else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") noticeLive(e);
     else if (e.kind === "reply") raLive(e);   // the one reply flow: a draft or its send changed (10-reply-actions.js)
-    else if (e.kind === "approvals") trSoon();
+    else if (e.kind === "approvals") raSoon();
     else if (e.kind === "quota") quotaLive(e.quota);   // the gateway's background usage read changed (09-needs-you.js)
     else if (e.kind === "peer_notice" || e.kind === "peer_counts" || e.kind === "peer_notice_done") prLive(e);
     else if (e.kind === "read") convOnRead(e);
-    else if (e.kind === "comment" || e.kind === "comment_send" || e.kind === "comment_draft" || e.kind === "comment_sources") cmLive(e);
-    else if (e.kind === "kakao" || e.kind === "kakao_send" || e.kind === "kakao_draft" || e.kind === "kakao_rooms" || e.kind === "kakao_read" || e.kind === "kakao_unreplied") kkLive(e);
+    else if (e.kind === "comment" || e.kind === "comment_draft" || e.kind === "comment_sources") cmLive(e);
+    else if (e.kind === "kakao" || e.kind === "kakao_draft" || e.kind === "kakao_rooms" || e.kind === "kakao_read" || e.kind === "kakao_unreplied") kkLive(e);
     else if (e.kind === "mail_unreplied") mailLive();
     else if (e.kind === "project_info") pmLive(e);
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
