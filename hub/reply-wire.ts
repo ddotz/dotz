@@ -12,6 +12,7 @@ import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, c
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { claimFile, getDraft, mailAdapter, replyLearning } from "./reply-mail.ts";
+import { mailByKey } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { DRAFT_UNDO } from "./draft-approval.ts";
@@ -19,7 +20,7 @@ import { askText } from "./draft-attach.ts";
 import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
 import type { ReplyAdapter } from "./reply-types.ts";
 
-const mail = mailAdapter();
+const mail = mailAdapter(undefined, mailByKey);
 /** The adapter whose store holds `ref`. */
 const adapterOf = (ref: string): ReplyAdapter | undefined => [mail, commentReply, kakaoReply].find(a => a.target(ref));
 

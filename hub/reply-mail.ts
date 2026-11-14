@@ -11,7 +11,17 @@ export { claimFile, defaultCall, getDraft, patchDraft };
 const STATE: Record<DraftRec["status"], DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent", answered: "closed", held: "closed" };
 const kindOf = (rec: DraftRec): ReplyKind => (webmailSite(rec.source) ? "webmail" : "mail");
 
-function viewOf(rec: DraftRec): DraftView {
+/** The mail record a draft answers (hub/mail.ts mailByKey), read only for a draft that kept no text of it. */
+export type MailOf = (key: string) => { from?: string; subject?: string; summary?: string; preview?: string } | undefined;
+
+// What the draft answers, quoted on its card. The reply the owner writes under an open mail (hub/mail-manual.ts) keeps no text of that mail,
+// so the card reads the mail record instead: its first lines, else its summary, else its subject.
+function originalOf(rec: DraftRec, mailOf: MailOf): NonNullable<DraftView["original"]> {
+	const m = rec.item.text.trim() ? undefined : mailOf(rec.ref), subject = rec.item.subject || m?.subject;
+	return { who: rec.item.from || m?.from || "", text: m ? m.preview || m.summary || subject || "" : rec.item.text, ...(subject ? { subject } : {}) };
+}
+
+function viewOf(rec: DraftRec, mailOf: MailOf): DraftView {
 	const pending = rec.status === "pending";
 	const before = rec.replaces ? getDraft(rec.replaces) : undefined;
 	return {
@@ -34,7 +44,7 @@ function viewOf(rec: DraftRec): DraftView {
 			...(before ? { replaces: { ref: before.id, text: before.body } } : {}),
 			...(rec.editedFrom !== undefined ? { edited: true as const } : {}),
 		},
-		...(rec.compose ? {} : { original: { who: rec.item.from, text: rec.item.text, ...(rec.item.subject ? { subject: rec.item.subject } : {}) } }),
+		...(rec.compose ? {} : { original: originalOf(rec, mailOf) }),
 	};
 }
 
@@ -44,15 +54,15 @@ const known = (ref: string): DraftRec | undefined => {
 };
 const done = (r: { ok: boolean; text: string }, code: ReasonCode = "not_pending") => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code, text: r.text } });
 
-/** The mail and webmail adapter over the reply-drafts store; `deps` gives the model and tool runner of a revise (the real ones by default). */
-export function mailAdapter(deps: () => FlowDeps = realFlowDeps): ReplyAdapter {
+/** The mail and webmail adapter over the reply-drafts store; `deps` gives the model and tool runner of a revise (the real ones by default), `mailOf` the mail records. */
+export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf = () => undefined): ReplyAdapter {
 	return {
 		kind: "mail",
 		get: async ref => {
 			const rec = known(ref);
-			return rec ? viewOf(rec) : undefined;
+			return rec ? viewOf(rec, mailOf) : undefined;
 		},
-		list: async () => listDrafts().filter(d => d.kind === "mail" && d.status === "pending").map(viewOf),
+		list: async () => listDrafts().filter(d => d.kind === "mail" && d.status === "pending").map(d => viewOf(d, mailOf)),
 		target: ref => {
 			const rec = known(ref);
 			if (!rec) return undefined;
