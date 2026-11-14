@@ -179,7 +179,8 @@ describe("a relayed computer chosen, the chat list", () => {
 		snap = null;
 		await relayOpen();
 		await run(`go("chat", "list")`);
-		await waitFor(`chatList && RV.by["relay:jandi:work"]?.loaded && document.querySelector("#chat-convo .cv-empty")`);
+		// The 불러오는 중 row is a .cv-empty too, and the list repaints after the load settles: wait for the settled words themselves.
+		await waitFor(`chatList && RV.by["relay:jandi:work"]?.loaded && (document.querySelector("#chat-convo .cv-empty")?.textContent || "").includes("work 대화는 아직 받지 못했어요")`);
 		expect(await listText()).toContain("work 대화는 아직 받지 못했어요");
 		expect(await ownRows()).toEqual([]);
 	});
