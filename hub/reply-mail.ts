@@ -3,6 +3,7 @@
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
 import { askText, defaultCall, dropDraft, editDraft, realFlowDeps, recordCorrection, refineAfterCorrection, restoreDraft, reviseDraft, type FlowDeps, webmailSite } from "../features/reply-drafts/lib/flow.ts";
 import { claimFile, getDraft, listDrafts, patchDraft, setStatus, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { ridingMails } from "./comments/linked.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import type { DraftView, Lesson, ReasonCode, ReplyAdapter, ReplyKind } from "./reply-types.ts";
 
@@ -62,7 +63,11 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 			const rec = known(ref);
 			return rec ? viewOf(rec, mailOf) : undefined;
 		},
-		list: async () => listDrafts().filter(d => d.kind === "mail" && d.status === "pending").map(d => viewOf(d, mailOf)),
+		// A mail riding on a waiting comment reply is part of that reply's card (one item, one 보내기); once the reply is gone it is listed on its own.
+		list: async () => {
+			const riding = ridingMails();
+			return listDrafts().filter(d => d.kind === "mail" && d.status === "pending" && !riding.has(d.id)).map(d => viewOf(d, mailOf));
+		},
 		target: ref => {
 			const rec = known(ref);
 			if (!rec) return undefined;

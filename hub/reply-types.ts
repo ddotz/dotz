@@ -8,7 +8,7 @@ export type ReasonCode =
 	// surely not sent
 	| "login_expired" | "offline" | "rate_limited" | "quota" | "rejected" | "recipient_invalid" | "recipient_not_on_mail" | "recipient_self" | "recipient_missing"
 	| "subject_re" | "placeholder" | "forbidden_word" | "too_long" | "empty" | "attach_mismatch" | "attach_missing" | "attach_upload" | "file_pending" | "cannot_attach"
-	| "account_needed" | "webmail_recipients" | "manual_only" | "mail_gone" | "stale" | "gone" | "original_gone" | "app_off" | "lease_held" | "lease_unknown"
+	| "account_needed" | "webmail_recipients" | "manual_only" | "mail_gone" | "mail_claim_unsent" | "stale" | "gone" | "original_gone" | "app_off" | "lease_held" | "lease_unknown"
 	| "app_not_ready" | "input_busy" | "room_unknown" | "not_approved" | "tool_before_send" | "config"
 	// may have gone out
 	| "net_cut" | "timeout" | "interrupted" | "server_error" | "press_unconfirmed" | "readback_mismatch" | "state_write" | "unknown"

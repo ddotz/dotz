@@ -41,6 +41,7 @@ const TABLE: Record<ReasonCode, Entry> = {
 	webmail_recipients: no("이 웹메일은 받는 사람 한 명에게만 보낼 수 있어요", "This webmail can send to one recipient only", ["fix_recipient"]),
 	manual_only: no("이 메일은 여기서 보낼 수 없어서 직접 보내야 해요", "This mail cannot be sent from here; send it yourself", ["drop"]),
 	mail_gone: no("함께 보낼 메일 초안이 없어졌어요", "The mail draft that goes with it is gone", []),
+	mail_claim_unsent: no("답글은 메일을 보냈다고 하는데 그 메일이 아직 나가지 않았어요", "The reply says the mail was sent, but that mail has not gone out yet", []),
 	stale: no("그사이 새 메시지가 와서 이 초안은 낡았어요", "A new message came in, so this draft is out of date", ["redraft", "drop"]),
 	gone: no("이미 처리됐거나 없는 초안이에요", "This draft is already handled or does not exist", []),
 	original_gone: no("원래 글이 지워졌어요", "The original post was deleted", ["drop"]),
