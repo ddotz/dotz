@@ -2,9 +2,9 @@ import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bindPeer, boundPeer } from "./peer-pair.ts";
+import { bindPeer, bindPublic, boundPeer } from "./peer-pair.ts";
 import { cfg } from "./config.ts";
-import { baseUrl, cached, forgetPeer, forgetRoute, candidatePorts, countsFrom, discover, extraUrls, friendlyName, isDotz, isPublicHost, knownComputers, listPeers, peerName, pool, publicPeer, refreshCounts, resolveNode, sameUserNodes, selfFound, uniqueNames } from "./peers.ts";
+import { baseUrl, cached, forgetPeer, forgetRoute, candidatePorts, countsFrom, discover, extraUrls, friendlyName, isDotz, isPublicHost, joinPublic, knownComputers, listPeers, peerName, pool, publicPeer, refreshCounts, resolveNode, sameUserNodes, selfFound, uniqueNames } from "./peers.ts";
 import { setWebBase } from "./weblink.ts";
 
 const roots: string[] = [];
@@ -312,4 +312,30 @@ test("a reset cache loads anew and ignores a load that began before the reset", 
 	gates[0]!(1);
 	expect([await first, await second, n]).toEqual([1, 2, 2]);
 	expect(await get()).toBe(2);
+});
+
+const PC_A = { name: "pcA", host: "a.ts.net.", url: "https://a.ts.net:8443", self: false };
+
+test("joinPublic folds a tailnet computer's public address into its row and binds it; another answering public computer keeps its own row; an unknown silent one is dropped", () => {
+	const r = joinPublic([PC_A], [{ url: "https://a.example.com", ok: true, name: "pcA" }, { url: "https://b.example.com", ok: true, name: "pcB" }, { url: "https://c.example.com", ok: false }], () => undefined);
+	expect(r.found).toEqual([{ ...PC_A, alt: "https://a.example.com" }, { name: "pcB", host: "b.example.com", url: "https://b.example.com", self: false, public: true }]);
+	expect(r.bind).toEqual([{ host: "a.ts.net.", url: "https://a.example.com" }]);
+});
+
+test("joinPublic pairs a public address that does not answer by the bound record, with nothing new to bind", () => {
+	const r = joinPublic([PC_A], [{ url: "https://a.example.com", ok: false }], h => (h === "a.ts.net." ? "https://a.example.com" : undefined));
+	expect(r.found).toEqual([{ ...PC_A, alt: "https://a.example.com" }]);
+	expect(r.bind).toEqual([]);
+});
+
+test("bindPeer keeps the public address bindPublic set; bindPublic sets it on a known computer only and does not rewrite an unchanged one", () => {
+	const { dir } = rigResolve([]);
+	bindPeer("a.ts.net.", "https://a.ts.net:8443", "pcA", dir, 1);
+	bindPublic("a.ts.net.", "https://a.example.com/x", dir, 2);
+	bindPublic("a.ts.net.", "https://a.example.com", dir, 3);
+	expect(boundPeer("a.ts.net.", dir)).toEqual({ url: "https://a.ts.net:8443", name: "pcA", public: "https://a.example.com", at: 2 });
+	bindPeer("a.ts.net.", "https://a.ts.net:8445", undefined, dir, 4);
+	expect(boundPeer("a.ts.net.", dir)?.public).toBe("https://a.example.com");
+	bindPublic("b.ts.net.", "https://b.example.com", dir);
+	expect(boundPeer("b.ts.net.", dir)).toBeUndefined();
 });

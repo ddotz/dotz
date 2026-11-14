@@ -53,7 +53,8 @@ function save(path: string, data: string): void {
 	renameSync(tmp, path);
 }
 
-export type Bound = { url: string; name?: string; at: number };
+// `public`: the same computer's public address (a web.peers entry hub/peers.ts matched to it), opened while its tailnet URL does not answer.
+export type Bound = { url: string; name?: string; public?: string; at: number };
 const hostKey = (h: string) => h.trim().toLowerCase().replace(/\.$/, "");
 
 // Peers this gateway is bound to, by host name (lowercase, no trailing dot).
@@ -63,7 +64,8 @@ export function boundPeers(dir: string = pairDir()): Record<string, Bound> {
 		const out: Record<string, Bound> = {};
 		for (const [h, b] of Object.entries(raw)) {
 			const url = typeof b?.url === "string" ? originOf(b.url) : undefined;
-			if (url) out[h] = { url, at: typeof b.at === "number" ? b.at : 0, ...(typeof b.name === "string" && b.name ? { name: b.name } : {}) };
+			const pub = typeof b?.public === "string" ? originOf(b.public) : undefined;
+			if (url) out[h] = { url, at: typeof b.at === "number" ? b.at : 0, ...(typeof b.name === "string" && b.name ? { name: b.name } : {}), ...(pub ? { public: pub } : {}) };
 		}
 		return out;
 	} catch {
@@ -84,9 +86,24 @@ export function bindPeer(host: string, url: string, name?: string, dir: string =
 		const prev = all[key];
 		const nextName = name || prev?.name;
 		if (prev && prev.url === origin && prev.name === nextName) return;
-		all[key] = { url: origin, at: now, ...(nextName ? { name: nextName } : {}) };
+		all[key] = { url: origin, at: now, ...(nextName ? { name: nextName } : {}), ...(prev?.public ? { public: prev.public } : {}) };
 		const keep = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, MAX_BOUND);
 		save(join(dir, "bound.json"), JSON.stringify(Object.fromEntries(keep)));
+	} catch {}
+}
+
+// Remembers `url` as the public address of the bound computer `host`, so its row keeps that address while the computer is off.
+// Only a computer already on record gets one; an unchanged record is not rewritten. Best effort like bindPeer.
+export function bindPublic(host: string, url: string, dir: string = pairDir(), now: number = Date.now()): void {
+	const origin = originOf(url);
+	const key = hostKey(host);
+	if (!origin || !key) return;
+	try {
+		const all = boundPeers(dir);
+		const prev = all[key];
+		if (!prev || prev.public === origin) return;
+		all[key] = { ...prev, public: origin, at: now };
+		save(join(dir, "bound.json"), JSON.stringify(all));
 	} catch {}
 }
 
