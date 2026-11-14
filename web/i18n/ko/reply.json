@@ -13,6 +13,7 @@
   "reply.send_as_is": "이대로 보내기",
   "reply.edit_label": "보낼 글",
   "reply.act_fail": "하지 못했어요. 잠시 뒤에 다시 눌러 주세요",
+  "reply.act_net": "연결이 끊겨서 못 보냈어요. 다시 눌러 주세요",
   "reply.q.head": "빠른 처리 {i} / {n}",
   "reply.q.rail": "진행",
   "reply.q.st.undo": "{n}초 후 보내요",

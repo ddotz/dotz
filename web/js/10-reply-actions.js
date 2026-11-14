@@ -50,6 +50,15 @@ async function raAct(item, action, args = {}) {
     if (action === "revise") RA.rev.delete(ref);
     return true;
   } catch (e) {
+    // No status: the answer never came back (Safari "Load failed", a phone switching networks), yet the hub may have taken the action.
+    // The queue read again says which: an item that left the waiting state was handled, so the card follows it and is not a failure.
+    if (e && !e.status && !item.pc) {
+      await raLoad();
+      const now = RA.items.get(ref), st = i => (i.send ? i.send.state : "");
+      if (!now || now.draft.state !== item.draft.state || st(now) !== st(item) || now.draft.text !== item.draft.text) return true;
+      RA.fail.set(ref, { text: TX("reply.act_net") });
+      return false;
+    }
     const d = (e && e.data) || {};
     RA.fail.set(ref, { text: d.error || TX("reply.act_fail"), why: Array.isArray(d.lint) ? d.lint.join(" · ") : "" });
     return false;
