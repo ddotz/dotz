@@ -11,6 +11,8 @@ import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfte
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
 import { blockText, recoveryText } from "./limit-alert.ts";
+import { en } from "./i18n-en.ts";
+import { ko } from "./i18n-ko.ts";
 import { watchLine } from "./watchtext.ts";
 import { allNotices, answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markDraftSend, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 import { sealLine } from "./approval-seal.ts";
@@ -1475,6 +1477,14 @@ test("a lost login is an alert of any kind and waits for its recovery: the watch
 	post("alert", "땃쥐: " + recoveryText(), { source: "gateway" });
 	expect(listed(p.id)!.waits).toBeUndefined();
 	expect(stored().find(n => n.id === p.id)).toMatchObject({ read: true });
+	// a stop that ends with the usage limit lifting (no recovery line of its own) is over too (2026-11-14: it stayed in 답변 필요)
+	for (const [n, lifted] of [["9545", ko.limitLifted], ["9546", ko.limitLiftedReset], ["9547", en.limitLifted]] as const) {
+		post("alert", "땃쥐: " + blockText("auth", `acct${n}`, "anthropic", 1_800_000), { source: "gateway" });
+		const q = stored().find(i => i.kind === "alert" && i.text.includes(`acct${n}`))!;
+		expect(listed(q.id)).toMatchObject({ waits: "login" });
+		post("alert", "땃쥐: " + lifted, { source: "gateway" });
+		expect(listed(q.id)!.waits).toBeUndefined();
+	}
 });
 
 test("a monitor report with nothing new is a record (log), also when it was stored before; one with news is not", () => {

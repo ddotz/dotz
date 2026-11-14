@@ -21,6 +21,8 @@ import { broadcast, summary } from "./notices-read.ts";
 import { QUIET_MS, awaitingReply, isViewing, quietReplies, viewers } from "./notices-viewing.ts";
 import { decisionsOf, expiresAtOf, sending } from "./notices-decisions.ts";
 import { worklogKind } from "./worklog-kind.ts";
+import { en } from "./i18n-en.ts";
+import { ko } from "./i18n-ko.ts";
 
 // A report stored before a schedule was said by its short name and a match that lists items by its count (2026-11-10) reads as a new one does.
 const MATCHED = `: ${watchReasonKo("matched /./")}`;
@@ -208,8 +210,10 @@ function fromOutbox(e: HubEvent, asks = false): void {
 		if (asks) return;
 		// An all-clear of the gateway is born read; a repeat (hub/alert-gate.ts) rewrites the alert it repeats, in place and in its read state.
 		const quiet = e.source === "gateway" && quietAlert(text);
-		// The provider is back: the logins it stopped on are over (limit-alert noteRecovered said so once for every agent).
-		if (quiet && text.replace(/^[^:\n]{1,60}:\s+/, "").startsWith(PROVIDER_BACK_KO)) providerBack(e.ts);
+		// The provider is back: the logins it stopped on are over (limit-alert noteRecovered said so once for every agent), and so they are when
+		// the usage limit lifts (hub/limit-lift.ts), which runs the held work on the same provider (2026-11-14: the stop stayed in 답변 필요).
+		const rest = text.replace(/^[^:\n]{1,60}:\s+/, "");
+		if (e.source === "gateway" && ((quiet && rest.startsWith(PROVIDER_BACK_KO)) || LIFTED.some(l => rest.startsWith(l)))) providerBack(e.ts);
 		const prior = e.repeat === true ? items.findLast(n => n.kind === "alert" && !n.dismissed && n.by === by && alertMatter(n.text) === alertMatter(text)) : undefined;
 		if (prior && !prior.key) prior.key = `alert:${prior.id}`;
 		return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, ...(prior ? { repeat: true } : {}), at: e.ts });
@@ -467,6 +471,7 @@ function watchRecovered(name: string, at: string, label = name): void {
 	readIds(items.filter(i => !i.read && !i.dismissed && i.ts < at && ((i.kind === "watch" && isTitle(i.title)) || failed(i))).map(i => i.id));
 }
 
+const LIFTED = [ko.limitLifted, ko.limitLiftedReset, en.limitLifted, en.limitLiftedReset];
 // Signal 3b: the model provider answers again (limit-alert recoveryText). The login stops it raised are over, read or not.
 function providerBack(at: string): void {
 	const ended = closeWaiting(i => i.kind === "alert" && i.text.includes(LOGIN_BLOCKED_KO), at);
