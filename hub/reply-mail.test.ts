@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addDraft, getDraft, setStatus, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { commentsDir, createStore } from "./comments/store.ts";
 import { mailAdapter } from "./reply-mail.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "reply-mail-"));
@@ -34,6 +35,20 @@ test("get and list read the store's statuses as the one view; a ref of another k
 	expect(await a.get("Dabcdef")).toBeUndefined();
 	expect(a.target("RMAILAA")).toEqual({ kind: "mail", lane: "mail:zele:me@example.net" });
 	expect(a.target("RMAILBB")).toEqual({ kind: "mail", lane: "mail:corp" });
+});
+
+test("a mail draft carried by a pending comment reply is left to that reply's card and is not listed on its own", async () => {
+	const a = mailAdapter();
+	addDraft(rec());
+	addDraft(rec({ id: "RMAILBB", ref: "k2" }));
+	const comments = createStore(commentsDir(dir));
+	comments.putDraft({ code: "Dlinked", commentId: "c1", source: "youtube", thread: "t1", text: "메일로 보내드렸어요", status: "pending", created: Date.now(), changes: [], clean: true, notes: [], mail: "RMAILBB" });
+	expect((await a.list()).map(v => v.ref)).toEqual(["RMAILAA"]);
+	// The reply's card still reads the mail draft by its id.
+	expect((await a.get("RMAILBB"))?.draft.state).toBe("pending");
+	// Once the reply is no longer pending, the mail is a card of its own again.
+	comments.putDraft({ ...comments.drafts().find(d => d.code === "Dlinked")!, status: "dropped" });
+	expect((await a.list()).map(v => v.ref).sort()).toEqual(["RMAILAA", "RMAILBB"]);
 });
 
 test("revise stores a new draft that names the one it replaced and returns the lesson without recording it", async () => {
