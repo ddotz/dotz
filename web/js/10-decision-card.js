@@ -411,11 +411,12 @@ function draftNode(d, o) {
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
 const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? TX("decision.pending.edit") : st === "sending" ? (((DC.picks[dc.key] || [])[0] || {}).label === "보내지 않기" ? TX("decision.pending.drop") : TX("decision.pending.send")) : TX("decision.st.sent_processing"));
 // 고치기 on a draft, or an option that needs detail (안 됨 …): the owner types the change / reason, then the answer goes out with it.
-// 고치기 on a draft asks "어떻게 고칠까요?" and the bot rewrites it (the owner's own text is the queue card's 직접 수정, 10-reply-actions.js rqEditNode).
-const DRAFT_HINT = TX("decision.hint.revise");
+// 고치기 on a draft asks "어떻게 고칠까요?" and the bot rewrites it. A draft the queue holds takes the owner's own text in its card (10-reply-actions.js
+// rqEditNode); a card with no reply-draft record (a session's own draft) takes it here, 직접 수정 (ed.manual), sent as the change "이 내용으로 고쳐 주세요: ...".
+const DRAFT_HINT = TX("decision.hint.revise"), MANUAL_LEAD = TX("decision.manual_lead");
 // The button under the typed text names what it does with the choice made, never a bare "보내기": after 고치기 on a draft a 내용 보내기 read as if
 // the mail would go out (owner 2026-10-28). One rule for the chat card and the notice sheet.
-const noteGoLabel = (opt, drf) => (drf && opt.label === DRAFT_OWN ? TX("decision.note.go_own") : drf ? TX("decision.revise.go") : TX("decision.note.go_answer", { label: opt.label }));
+const noteGoLabel = (opt, drf, man) => (man ? TX("decision.note.go_manual") : drf && opt.label === DRAFT_OWN ? TX("decision.note.go_own") : drf ? TX("decision.revise.go") : TX("decision.note.go_answer", { label: opt.label }));
 // What the text box of a draft option asks: 고치기 = the change, 직접 입력 = how to send it.
 const OWN_HINT = TX("decision.hint.own");
 // A draft card's question without its "(<id>)", and what only the owner can decide (hub/draft-approval.ts decide) as a list of its own.
@@ -423,14 +424,15 @@ const OWN_HINT = TX("decision.hint.own");
 const draftQ = t => String(t || "").replace(/\s*\([^()]*\)\s*$/, "").replace(/\s*정할 것\s*[:：][\s\S]*$/, "");
 const decideNode = d => (d && d.decide && d.decide.length ? el("div", { class: "dc-decide" }, el("div", { class: "dc-decide-k", text: TX("decision.decide") }), el("ul", {}, ...d.decide.map(q => el("li", { text: q })))) : null);
 const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: TX("decision.own.aria"), ask: TX("decision.own.ask") } : { hint: DRAFT_HINT, aria: TX("decision.revise.what"), ask: TX("decision.revise.ask") });
+const manualNote = text => MANUAL_LEAD + text;
 function editNode(dc, ed, st) {
-  const opt = ed.opt, drf = !!dc.draft;
+  const opt = ed.opt, drf = !!dc.draft, man = !!ed.manual;
   const dt = draftNoteText(opt);
-  const ta = el("textarea", { class: "dc-note", rows: "2", maxlength: "500", placeholder: drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": drf ? dt.aria : TX("decision.note.details"), disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
-  ta.value = DC.note[dc.key] ?? "";
-  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, note); } }, noteGoLabel(opt, drf));
+  const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? TX("decision.note.manual_ph") : dt.hint) : TX("decision.note.reason_ph"), "aria-label": man ? TX("decision.manual") : drf ? dt.aria : TX("decision.note.details"), disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
+  ta.value = DC.note[dc.key] ?? (man ? dc.draft.body : "");
+  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? manualNote(note) : note); } }, noteGoLabel(opt, drf, man));
   const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, TX("decision.back"));
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? TX("decision.manual") : drf ? dt.ask : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
 // A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
@@ -466,14 +468,16 @@ function renderSheet(box, dc, picks, step) {
   if (edit) foot.append(editNode(dc, edit, st));
   else if (d && dcGone(dc.t)) foot.append(el("div", { class: "dc-gone", role: "status", text: DC_GONE }));
   else if (d) {
-    // One compact row: the first choice (보내기) filled, 고치기 tonal, the rest as text.
-    const opts = dc.blocks[0].options;
-    if (mail) {   // the reply card's row: 보내기 filled, 고치기 tonal, the rest as text
+    // One compact row: the first choice (보내기) filled, 고치기 tonal, the rest as text, and 직접 수정 as a small link at the end.
+    const opts = dc.blocks[0].options, oe = opts.find(o => o.label === DRAFT_EDIT);
+    const manual = oe && !st ? () => { delete DC.note[dc.key]; DC.edit[dc.key] = { bi: 0, opt: oe, manual: true }; paintDecision(); } : null;
+    if (mail) {   // the reply card's row: 보내기 filled, 고치기 tonal, the rest as text, 직접 수정 at the right end
       const bs = opts.map((o, i) => el("button", { class: i === 0 ? "btn sm dr-send" : o.label === DRAFT_EDIT ? "btn tonal sm" : `btn text sm${o.label === "보내지 않기" ? " dr-drop" : ""}`, type: "button", "data-n": String(o.n), disabled: !!st, onclick: () => pickOption(dc, 0, o) }, st && picks[0] && picks[0].n === o.n ? dcStText(dc, st) : o.label));
-      foot.append(el("div", { class: "dr-act dr-row rq-acts" }, ...bs));
+      foot.append(el("div", { class: "dr-act dr-row rq-acts" }, ...bs, ...(manual ? [rqManualBtn(manual)] : [])));
     } else {
     const btns = opts.map((o, i) => el("button", { class: `dc-act${i === 0 ? " main" : o.label === DRAFT_EDIT ? " alt" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label));
-    foot.append(el("div", { class: "dc-acts" }, ...btns));
+    const man = manual ? el("button", { class: "dc-manual", type: "button", title: TX("decision.manual"), "aria-label": TX("decision.manual"), onclick: manual }, icon("pencil"), el("span", { text: TX("decision.manual") })) : null;
+    foot.append(el("div", { class: "dc-acts" }, ...btns, ...(man ? [man] : [])));
     }
   } else if (dc.blocks.length > 1) foot.append(...multiNodes(dc, picks, st));
   else {
@@ -672,7 +676,7 @@ function paintDecision() {
   if (inlines.length) { const live = isFixedT(target) ? null : decisionOf(target); for (const b of inlines) paintInline(b, live); }
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   // 2 or more send-approval cards waiting in this conversation: one line above the composer (dcLine) instead of the dock card or its pointer; a question that is not a draft keeps its card.
-  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = dc0 && dcDraftAsk(dc0) ? null : dc0, had = !!DC.cur;   // with the one queue a draft is its card in the message, never docked
+  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = dc0 && dcDraftAsk(dc0, !line) ? null : dc0, had = !!DC.cur;   // with the one queue a draft is its card in the message, never docked
   dcLine(askN);
   // A message that carries several of those drafts folds to its first paragraph while they wait: the drafts live in 답장 대기, not in the conversation.
   for (const m of document.querySelectorAll("#timeline .bm[data-dat]")) m.classList.toggle("q-fold", line && ntDecisions().filter(n => n.decision.draft && n.decision.to === target && n.decision.reply_to === m.dataset.dat).length > 1);
@@ -719,12 +723,13 @@ function dcShowDraft(dc) {
   });
 }
 // A docked question that is a send approval: a draft notice was made from its message.
-const dcDraftAsk = dc => !dc.each && ntDecisions().some(n => n.decision.draft && n.decision.to === dc.t && n.decision.reply_to === dc.at);
+// queued: only a draft the one queue holds counts (its card stands in the message); a session's own draft with no reply-draft record still docks.
+const dcDraftAsk = (dc, queued) => !dc.each && typeof ntDecisions === "function" && ntDecisions().some(n => n.decision.draft && n.decision.to === dc.t && n.decision.reply_to === dc.at && (!queued || (typeof RA !== "undefined" && !!RA.items && RA.items.has(n.decision.draft.ref))));
 // The send-approval cards waiting in conversation t, open ones and held ones, one per draft.
 function dcDraftRefs(t) {
   const refs = new Set();
   for (const n of typeof ntDecisions === "function" ? ntDecisions() : []) if (n.decision.draft && n.decision.to === t) refs.add(n.decision.draft.ref || n.id);
-  for (const i of raItems("waiting")) if (i.conv === t) refs.add(i.ref);
+  for (const i of typeof raItems === "function" ? raItems("waiting") : []) if (i.conv === t) refs.add(i.ref);
   return refs.size;
 }
 // 답장 초안 N건 기다려요 · 확인하기 (the prototype's .qline): N is the 답 필요 count of the 답장 대기 screen, a tap opens it.
@@ -754,7 +759,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n : 0, dr]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a

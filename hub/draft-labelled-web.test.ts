@@ -91,17 +91,7 @@ describe("the sheet of a card with no reply-draft record", () => {
 	});
 });
 
-describe("빠른 처리 and the queue", () => {
-	test("the text box only stands where the words can be changed in place", async () => {
-		const v = await hub.view({ width: 390, height: 844 });
-		await v.navigate(`${hub.origin}/`);
-		await waitFor(v, `typeof trOneView === "function"`);
-		const d = notice(LANE).decision!.draft!;
-		const got = JSON.parse(await v.evaluate(`(() => { const [b] = trOneView({ ref: ${JSON.stringify(d.ref)}, to: "lane:pilot-stage1", question: "q", draft: ${JSON.stringify(d)}, sendable: false, editable: false }); document.body.append(b); return JSON.stringify({ ta: !!b.querySelector("textarea"), code: b.querySelectorAll(".dc-dr-b code").length }); })()`) as string);
-		expect(got.ta).toBe(false);
-		expect(got.code).toBeGreaterThan(3);
-	});
-
+describe("the queue", () => {
 	test("the queue card shows the same fields and rendered body", async () => {
 		const v = await hub.view({ width: 390, height: 844 });
 		await v.navigate(`${hub.origin}/`);

@@ -136,5 +136,8 @@
   "decision.deliv.queued": "받았어요 · 작업 중이라 끝나면 읽어요",
   "decision.deliv.compacting": "받았어요 · 대화 정리가 끝나면 읽어요",
   "decision.deliv.held": "받았어요 · 한도가 풀리면 읽어요",
-  "decision.deliv.update": "받았어요 · 업데이트 뒤에 읽어요"
+  "decision.deliv.update": "받았어요 · 업데이트 뒤에 읽어요",
+  "decision.note.go_manual": "이 내용으로 고치기",
+  "decision.note.manual_ph": "보낼 내용을 직접 고쳐 주세요",
+  "decision.manual_lead": "이 내용으로 고쳐 주세요: "
 }

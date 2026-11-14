@@ -18,6 +18,9 @@ const NOTICES = [
 	draft("y2", "main", "아샘플 댓글", 9),
 	draft("k1", "main", "샘플 대화방", 10),
 ];
+// Each draft is also the reply queue's waiting item (GET /api/reply/queue): the one number counts those.
+const queueItem = (ref: string, conv: string, to: string, text: string, at: number) => ({ item: `mail:${ref}`, ref, kind: "mail", app: "mail", label: "메일", conv, at, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to, text } });
+const QUEUE = NOTICES.map(n => queueItem(n.id, n.decision.to, n.decision.draft.to, n.decision.draft.body, Date.parse(n.at)));
 const app = (key: string, label: string, icon: string, notices: string[]) => ({ key, app: key, label, kind: "app", icon, conv: [], unread: notices.length, unreplied: 0, notices, needs: { drafts: notices.length, unread: 0, sentToday: 0, unreplied: 0 } });
 const INTEGRATIONS = [app("mail", "메일", "mail", ["m1", "m2", "m3"]), app("youtube", "유튜브", "youtube", ["y1", "y2"]), app("kakao", "카카오톡", "kakao", ["k1"])];
 
@@ -34,6 +37,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/events") return new Response(new ReadableStream({}), { headers: { "content-type": "text/event-stream" } });
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: NOTICES.length });
 		if (url.pathname === "/api/notices") return json({ items: NOTICES, unread: NOTICES.length });
+		if (url.pathname === "/api/reply/queue") return json({ items: QUEUE, counts: {}, triageMin: 1, undoSec: 10 });
 		if (url.pathname === "/api/integrations") return json({ items: INTEGRATIONS, available: [] });
 		if (url.pathname === "/api/monitors") return json({ items: [] });
 		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
@@ -75,6 +79,6 @@ test("the 답장 대기 row opens the 답장 대기 screen, which lists all six 
 	for (const [w, h] of [[390, 900], [1280, 900]] as const) {
 		const v = await open(w, h);
 		await v.evaluate(`(document.querySelector('#home-now .hr[data-k="replies"]').click(), 0)`);
-		await waitFor(v, `current === "monitoring" && MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-r").length === 6`);
+		await waitFor(v, `current === "monitoring" && MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-c").length === 6`);
 	}
 }, 30_000);

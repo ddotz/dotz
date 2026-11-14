@@ -26,6 +26,10 @@ const threadBody = (t: string) => ({
 	sends: [], read: null,
 });
 
+// The drafts of every room and thread are the reply queue's items (GET /api/reply/queue, ref = the draft's code): each pane draws that card.
+const queueItem = (ref: string, kind: string, text: string) => ({ item: `${kind}:${ref}`, ref, kind, app: kind === "chat" ? "kakao" : "youtube", label: "", conv: "", at: Date.UTC(2026, 9, 27, 1, 5), can: { send: true, revise: true, edit: false, drop: true, restore: false }, draft: { state: "pending", toLabel: "", to: "", text } });
+const QUEUE = [...Object.keys(NAMES).map(id => queueItem(`d${id}`, "chat", `${id} 방의 초안`)), ...Object.keys(THREADS).map(t => queueItem(`d-${t}`, "comment", `${t} 글의 답글 초안`))];
+
 // Every held request waits on a resolver the test calls; `requests` and `posts` wake the test when one arrives.
 const pending = new Map<string, Array<() => void>>();
 const requests = inbox<string>();
@@ -36,6 +40,7 @@ const hub = fakeHub({
 		const p = url.pathname;
 		if (p === "/api/integrations") return json({ items: [KAKAO_APP], available: [] });
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: ROOMS });
+		if (p === "/api/reply/queue") return json({ items: QUEUE, counts: {}, triageMin: 1, undoSec: 10 });
 		const hold = async (body: unknown) => {
 			await new Promise<void>(res => { pending.set(p, [...(pending.get(p) ?? []), res]); requests.push(p); });
 			return json(body);
@@ -77,7 +82,7 @@ async function boot(): Promise<View> {
 	await run(v, `window.__n = {}; const o = api; api = async (p, ...r) => { try { return await o(p, ...r); } finally { const k = new URL(p, location.href).pathname; __n[k] = (__n[k] || 0) + 1; } }`);
 	return v;
 }
-const kkScreen = (v: View) => ev<{ open: string; head: string; tl: string; drafts: string[] }>(v, `({ open: KK.open, head: ($("#kk-head .cv-n") || {}).textContent || "", tl: $("#kk-in").textContent, drafts: [...document.querySelectorAll("#kk-drafts .kk-draft")].map(n => n.dataset.code) })`);
+const kkScreen = (v: View) => ev<{ open: string; head: string; tl: string; drafts: string[] }>(v, `({ open: KK.open, head: ($("#kk-head .cv-n") || {}).textContent || "", tl: $("#kk-in").textContent, drafts: [...document.querySelectorAll("#kk-drafts .ra-card")].map(n => n.dataset.ref) })`);
 const onlyC = { open: "C", head: "마바방", drafts: ["dC"] };
 function expectC(s: { open: string; head: string; tl: string; drafts: string[] }) {
 	expect({ open: s.open, head: s.head, drafts: s.drafts }).toEqual(onlyC);
@@ -129,7 +134,7 @@ describe("the room's reply card", () => {
 		await open("A");
 		await open("B");
 		const s = await ev<{ order: string[]; codes: string[]; gap: number; above: boolean; drop: string[]; line: number }>(v, `(() => { const b = $("#kk-chat > .kk-box").getBoundingClientRect(), c = $("#kk-drafts").getBoundingClientRect(), f = $("#kk-form").getBoundingClientRect();
-			return { order: [...document.querySelectorAll("#kk-owed, #kk-chat > .kk-box, #kk-drafts, #kk-form")].map(e => e.id || "box"), codes: [...document.querySelectorAll("#kk-drafts .kk-draft")].map(n => n.dataset.code), gap: Math.round(c.top - b.bottom), above: c.bottom <= f.top, drop: [...document.querySelectorAll("#kk-drafts .dr-drop")].map(n => n.textContent), line: document.querySelectorAll("#kk-owed .unrep-no").length }; })()`);
+			return { order: [...document.querySelectorAll("#kk-owed, #kk-chat > .kk-box, #kk-drafts, #kk-form")].map(e => e.id || "box"), codes: [...document.querySelectorAll("#kk-drafts .ra-card")].map(n => n.dataset.ref), gap: Math.round(c.top - b.bottom), above: c.bottom <= f.top, drop: [...document.querySelectorAll("#kk-drafts .dr-drop")].map(n => n.textContent), line: document.querySelectorAll("#kk-owed .unrep-no").length }; })()`);
 		expect(s).toEqual({ order: ["kk-owed", "box", "kk-drafts", "kk-form"], codes: ["dB"], gap: s.gap, above: true, drop: ["보내지 않기"], line: 0 });
 		expect(s.gap).toBeLessThanOrEqual(16);
 	});
@@ -138,7 +143,7 @@ describe("the room's reply card", () => {
 describe("comment threads opened back to back", () => {
 	test("answered second then first: the view and the card are the second's, and no revise note survives", async () => {
 		const v = await boot();
-		const screen = () => ev<{ open: string; head: string; text: string; cards: string[] }>(v, `({ open: CM.open && CM.open.thread, head: ($("#cm-head .cv-n") || {}).textContent || "", text: $("#cm-in").textContent, cards: [...document.querySelectorAll("#cm-in .kk-draft")].map(n => n.dataset.code) })`);
+		const screen = () => ev<{ open: string; head: string; text: string; cards: string[] }>(v, `({ open: CM.open && CM.open.thread, head: ($("#cm-head .cv-n") || {}).textContent || "", text: $("#cm-in").textContent, cards: [...document.querySelectorAll("#cm-in .ra-card")].map(n => n.dataset.ref) })`);
 		await run(v, `cmOpen({ source: "youtube", thread: "first", title: "첫째 글" }); cmOpen({ source: "youtube", thread: "second", title: "둘째 글" })`);
 		await held(cmPath("first")); await held(cmPath("second"));
 		for (const t of ["second", "first"]) {
@@ -148,15 +153,14 @@ describe("comment threads opened back to back", () => {
 			expect(s.text).toContain("second 글의 댓글");
 			expect(s.text).not.toContain("first 글의 댓글");
 		}
-		// A revise note typed on the second thread must not reach the first one opened after it.
-		await run(v, `CM.revising = "d-second"; CM.note["d-second"] = "절반만 쓴 수정 요청"; cmPaintChat(false)`);
+		// A revise note typed on the second thread's card stays with that draft (RA.rev by ref) and never shows on the first thread's card.
+		await run(v, `RA.rev.set("d-second", "절반만 쓴 수정 요청"); raPaint("d-second")`);
 		expect(await ev(v, `!!$("#cm-in .rq-edit input")`)).toBe(true);
 		await run(v, `cmOpen({ source: "youtube", thread: "first", title: "첫째 글" })`);
-		expect(await ev(v, `({ revising: CM.revising, note: CM.note })`)).toEqual({ revising: "", note: {} });
 		await answer(v, cmPath("first"));
 		const s = await screen();
 		expect({ open: s.open, cards: s.cards }).toEqual({ open: "first", cards: ["d-first"] });
-		expect(await ev(v, `({ revising: CM.revising, note: CM.note, edit: !!$("#cm-in .rq-edit") })`)).toEqual({ revising: "", note: {}, edit: false });
+		expect(await ev(v, `!!$("#cm-in .rq-edit")`)).toBe(false);
 	});
 });
 

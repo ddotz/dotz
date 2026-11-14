@@ -24,6 +24,9 @@ const notices = [
 	{ id: "gw-update", kind: "alert", tone: "ask", by: "gateway", title: "게이트웨이 업데이트", text: "새 버전이 있어요. 업데이트할까요?", open: "alert", src: "alert", at: at(7), ts: at(7), updated: at(7), read: false },
 	{ id: "gw-login", kind: "alert", tone: "ask", by: "gateway", title: "카카오톡 로그인", text: "카카오톡 로그인이 풀렸어요. 다시 로그인해 주세요", open: "alert", src: "alert", at: at(8), ts: at(8), updated: at(8), read: false },
 ];
+// The three send approvals are the reply queue's waiting items (GET /api/reply/queue), of no app: what the 답장 대기 row counts under 기타.
+const queueItem = (ref: string, conv: string, to: string, text: string, at: number) => ({ item: `mail:${ref}`, ref, kind: "mail", app: "", label: "", conv, at, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to, text } });
+const QUEUE = notices.filter(n => n.decision && (n.decision as { draft?: { to: string; body: string } }).draft).map(n => { const d = (n.decision as { to: string; draft: { to: string; body: string } }); return queueItem(n.id, d.to, d.draft.to, d.draft.body, Date.parse(n.at)); });
 const lanes = [
 	...["alpha", "beta", "gamma"].map((name, i) => ({ name, status: "idle", live: true, alive: true, pendingAsk: { text: `${name} 세션: 어느 브랜치에 합칠까요?`, at: at(10 + i) } })),
 	{ name: "limited", status: "rate-limited", live: true, alive: true },
@@ -45,6 +48,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
 		if (url.pathname === "/api/conversations") return json({ items: [] });
 		if (url.pathname === "/api/notices") return json({ unread: notices.length, items: notices });
+		if (url.pathname === "/api/reply/queue") return json({ items: QUEUE, counts: {}, triageMin: 1, undoSec: 10 });
 		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });

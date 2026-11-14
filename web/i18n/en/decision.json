@@ -139,5 +139,8 @@
   "decision.deliv.queued": "Received · will be read when the work ends",
   "decision.deliv.compacting": "Received · will be read after the compaction",
   "decision.deliv.held": "Received · will be read after the limit resets",
-  "decision.deliv.update": "Received · will be read after the update"
+  "decision.deliv.update": "Received · will be read after the update",
+  "decision.note.go_manual": "Apply this text",
+  "decision.note.manual_ph": "Edit the text to send",
+  "decision.manual_lead": "Change it to this: "
 }

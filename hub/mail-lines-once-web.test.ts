@@ -1,5 +1,5 @@
 // 할 일 / 직접 답할 것 are on screen once: the opened mail draws them under its summary, so a draft unfolded beside it leaves them out, and a draft
-// card that stands alone (답장 대기, the 메일 list, the quick-review sheet) keeps them. Headless against a fake hub. Set MAIL_LINES_SHOTS=<dir> to keep screenshots.
+// card that stands alone (the 메일 list, the quick-review sheet) keeps them; 답장 대기 draws the queue card, which has none. Headless against a fake hub. Set MAIL_LINES_SHOTS=<dir> to keep screenshots.
 import { afterAll, expect, test } from "bun:test";
 import { fakeHub, json, on } from "./test-web.ts";
 
@@ -55,16 +55,11 @@ for (const [width, theme] of [[1280, "light"], [1280, "dark"], [390, "light"], [
 	}, 30_000);
 }
 
-test("a draft card that stands alone shows the lines once: the 메일 list, 답장 대기, and the quick-review sheet over its own mail", async () => {
+test("a draft card that stands alone shows the lines once: the 메일 list and the quick-review sheet over its own mail", async () => {
 	const page = await open(1280, "light"), { v, waitFor } = page;
 	expect(await v.evaluate(`(() => { const c = monNoticeNode(ntById("wait"), []); c.id = "alone"; document.body.append(c); const n = ${blocks("#alone")}; c.remove(); return n; })()`)).toBe(1);
 	await openMail(page, "fx-2");
 	await v.evaluate(`(noticeSheetOpen("wait"), 0)`);
 	await waitFor(`DK.box && DK.box.querySelector(".fs-body .rq-brief")`);
 	expect(await v.evaluate(`DK.box.querySelectorAll('[data-k="mail-lines"]').length`)).toBe(1);
-	await v.evaluate(`(dkClose(false), rqOpen(), 0)`);
-	await waitFor(`document.querySelector('#mon-tl .rq-r .nsc-tx')`);
-	await v.evaluate(`(document.querySelector('#mon-tl .rq-r .nsc-tx').click(), 0)`);
-	await waitFor(`document.querySelector('.rq[data-rq]')`);
-	expect(await v.evaluate(blocks(".rq[data-rq]"))).toBe(1);
 }, 30_000);
