@@ -8,8 +8,9 @@ import type { DraftView, Lesson, ReplyAdapter } from "./reply-types.ts";
 const owner: ActCtx = { surface: "web", login: "me" };
 const agent: ActCtx = { surface: "cli", agent: true };
 
-function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; editLint?: string[] } = {}) {
+function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; editLint?: string[]; cardConv?: string } = {}) {
 	const log: string[] = [];
+	const reported: { state: string; conv: string }[] = [];
 	const drafts = new Map<string, DraftView>();
 	const view = (ref: string, text: string, state: DraftView["draft"]["state"] = "pending"): DraftView => ({ item: "mail:k1", ref, kind: "mail", app: "mail", label: "메일", conv: "mail:k1", at: 0, can: { send: true, revise: true, edit: true, drop: true, restore: true }, draft: { state, toLabel: "받는이", to: "kim@example.com", text } });
 	drafts.set("RAAAAAA", view("RAAAAAA", "확인해 보고 말씀드릴게요."));
@@ -43,7 +44,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; ed
 	const sender = createApprovalSender({
 		kind: ref => (drafts.has(ref) ? { kind: "mail", lane: "mail:x" } : undefined),
 		run: async argv => (ran.push(argv), { code: o.outcome ? 1 : 0, out: o.outcome ?? "보냈어요" }),
-		report: r => void log.push(`send ${r.ref} ${r.state}`),
+		report: r => void (log.push(`send ${r.ref} ${r.state}`), reported.push({ state: r.state, conv: r.conv })),
 		log: () => undefined,
 	});
 	const deps: ReplyDeps = {
@@ -52,14 +53,14 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; ed
 		recordPick: p => void log.push(`pick ${p.label}${p.note ? ` - ${p.note}` : ""}`),
 		recordText: (_c, t) => void log.push(`text ${t}`),
 		learning: { record: async (_k, line) => void log.push(`learn ${line}`), refine: async () => void log.push("refine") },
-		cards: { open: () => [], replace: (a, b) => void log.push(`cards ${a}->${b}`), rewrite: ref => void log.push(`rewrite ${ref}`), close: ref => void log.push(`close ${ref}`) },
+		cards: { open: () => [], convOf: () => o.cardConv, replace: (a, b) => void log.push(`cards ${a}->${b}`), rewrite: ref => void log.push(`rewrite ${ref}`), close: ref => void log.push(`close ${ref}`) },
 		toBot: async (conv, text) => void log.push(`bot ${conv} ${text}`),
 		emit: e => void log.push(`event ${e.ref}${e.next ? `->${e.next}` : ""}${e.revising ? " revising" : ""}${e.why ? ` ${e.why}` : ""}`),
 		log: () => undefined,
 	};
 	const replies = createReplyActions(deps);
 	const only = (prefix: string) => log.filter(l => l.startsWith(prefix));
-	return { replies, sender, log, ran, drafts, only };
+	return { replies, sender, log, ran, drafts, only, reported };
 }
 
 test("send: the owner's pick is written before the send is queued, and a second send of the same draft sends nothing", async () => {
@@ -70,6 +71,16 @@ test("send: the owner's pick is written before the send is queued, and a second 
 	await w.sender.idle();
 	expect(w.ran).toHaveLength(1);
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "send" }, owner)).body).toMatchObject({ ok: false, code: "already_sent" });
+});
+
+test("a send whose card was already answered reports to the card's conversation, not the draft's send lane, and so does its retry", async () => {
+	const w = world({ outcome: 'DOTZ_SEND {"sent":"no","code":"rejected"}', cardConv: "ch:card" });
+	expect((await w.replies.act({ ref: "RAAAAAA", action: "send" }, owner)).status).toBe(200);
+	await w.sender.idle();
+	expect((await w.replies.act({ ref: "RAAAAAA", action: "retry" }, owner)).status).toBe(200);
+	await w.sender.idle();
+	expect(w.reported.filter(r => r.state === "failed")).toEqual([{ state: "failed", conv: "ch:card" }, { state: "failed", conv: "ch:card" }]);
+	expect(w.reported.every(r => r.conv === "ch:card")).toBe(true);
 });
 
 test("revise: 202 at once; the model runs, the new draft is stored, then the lesson is learned and refined, then the cards move and one event names the new ref", async () => {

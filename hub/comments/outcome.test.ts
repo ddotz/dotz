@@ -91,6 +91,21 @@ test("website script: exit non-zero saying sent: no is failed; without it unsure
 	}
 });
 
+test("website script: ok: false with a known code keeps the code and the script's reason as detail; an unknown code or none is rejected", async () => {
+	const site = src("website", { read: { kind: "script", command: ["read"] }, post: { kind: "script", command: ["post"] } });
+	const cases: [string, string, string][] = [
+		['{"ok":false,"code":"original_gone","reason":"x"}', "original_gone", "원래 글이 지워졌어요"],
+		['{"ok":false,"code":"login_expired","reason":"x"}', "login_expired", "사이트 로그인이 풀렸어요"],
+		['{"ok":false,"code":"no_such_code","reason":"x"}', "rejected", "사이트에서 이 글을 받지 않았어요"],
+		['{"ok":false,"reason":"x"}', "rejected", "사이트에서 이 글을 받지 않았어요"],
+	];
+	for (const [stdout, code, reason] of cases) {
+		const adapter = websiteAdapter({ exec: async () => ({ code: 0, stdout, stderr: "" }), fetch, secretsDir: dir, siteDir: dir });
+		const out = await adapter.reply(site, comment("s"), "hi", "send:1");
+		expect([stdout, out]).toEqual([stdout, { ok: false, code, sent: "no", reason, detail: code === "rejected" ? stdout : "x" }]);
+	}
+});
+
 function gate(reply: CommentAdapter["reply"]) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { s: src("youtube") } }));
 	const store = createStore(dir);
