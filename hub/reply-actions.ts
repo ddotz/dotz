@@ -93,7 +93,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		if (st === "unsure") return refused(409, "needs_resolve");
 		if (st && LIVE.has(st)) return refused(409, "already_sending");
 		if (st === "sent" || view.draft.state === "sent") return refused(409, "already_sent");
-		if (st === "failed") return retry(a, view);
+		if (st === "failed") return retry(ctx, a, view, input);
 		if (view.draft.state !== "pending") return refused(409, "not_pending");
 		const action = sendAction(input);
 		pick(ctx, a, view, action === "send" ? 1 : action === "send-as-is" ? 4 : 1, SEND_LABEL[action]);
@@ -101,8 +101,17 @@ export function createReplyActions(deps: ReplyDeps) {
 		return { status: 200, body: { ok: true, item: itemOf(view) } };
 	}
 
-	function retry(a: ReplyAdapter, view: DraftView): ActResult {
-		if (ledger(view.ref)?.state !== "failed") return refused(409, "not_pending");
+	function retry(ctx: ActCtx, a: ReplyAdapter, view: DraftView, input: ActInput): ActResult {
+		const last = ledger(view.ref);
+		if (last?.state !== "failed") return refused(409, "not_pending");
+		// A failure that voids the earlier pick (the mail draft went away, no pick counts): the press is a fresh 보내기, sent as a new one.
+		if (last.reason && policyOf(last.reason.code).reapprove) {
+			if (view.draft.state !== "pending") return refused(409, "not_pending");
+			const action = sendAction(input);
+			pick(ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action]);
+			if (!deps.sender.enqueue(job(a, view, action))) return refused(409, "not_supported");
+			return { status: 200, body: { ok: true, item: itemOf(view) } };
+		}
 		// The sender's own gate reads the earlier pick again: a retry writes nothing.
 		if (!deps.sender.enqueue(job(a, view, "send", { retry: true }))) return refused(409, "not_supported");
 		return { status: 200, body: { ok: true, item: itemOf(view) } };
@@ -241,7 +250,7 @@ export function createReplyActions(deps: ReplyDeps) {
 			case "edit": return edit(ctx, a, view, input);
 			case "drop": return drop(ctx, a, view);
 			case "restore": return restore(a, view);
-			case "retry": return retry(a, view);
+			case "retry": return retry(ctx, a, view, input);
 			case "resolve": return resolveSend(ctx, a, view, input.as);
 			default: return undo(view);
 		}

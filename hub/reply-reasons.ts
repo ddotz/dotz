@@ -7,7 +7,8 @@ import type { OwnerAction, Reason, ReasonCode } from "./reply-types.ts";
 export type ReasonClass = "no" | "maybe" | "action";
 /** Code's own retry of a `failed` send: `repair` runs the adapter's repair first; `waits[i]` is the wait in ms before attempt i + 1. */
 export type AutoPolicy = { max: number; waits: number[]; repair?: true };
-export type ReasonPolicy = { class: ReasonClass; auto?: AutoPolicy; actions: OwnerAction[] };
+/** `reapprove`: the failure voids the owner's earlier pick, so pressing send again writes a new one instead of retrying on the old. */
+export type ReasonPolicy = { class: ReasonClass; auto?: AutoPolicy; actions: OwnerAction[]; reapprove?: true };
 type Entry = ReasonPolicy & { ko: string; en: string };
 
 const S = 1000, M = 60 * S;
@@ -40,7 +41,7 @@ const TABLE: Record<ReasonCode, Entry> = {
 	account_needed: no("어느 메일 계정으로 보낼지 정해지지 않았어요", "No mail account is chosen to send from", ["pick_account"]),
 	webmail_recipients: no("이 웹메일은 받는 사람 한 명에게만 보낼 수 있어요", "This webmail can send to one recipient only", ["fix_recipient"]),
 	manual_only: no("이 메일은 여기서 보낼 수 없어서 직접 보내야 해요", "This mail cannot be sent from here; send it yourself", ["drop"]),
-	mail_gone: no("함께 보낼 메일 초안이 없어졌어요", "The mail draft that goes with it is gone", []),
+	mail_gone: { ...no("함께 보낼 메일 초안이 없어졌어요", "The mail draft that goes with it is gone", []), reapprove: true },
 	mail_claim_unsent: no("답글은 메일을 보냈다고 하는데 그 메일이 아직 나가지 않았어요", "The reply says the mail was sent, but that mail has not gone out yet", []),
 	stale: no("그사이 새 메시지가 와서 이 초안은 낡았어요", "A new message came in, so this draft is out of date", ["redraft", "drop"]),
 	gone: no("이미 처리됐거나 없는 초안이에요", "This draft is already handled or does not exist", []),
@@ -51,7 +52,7 @@ const TABLE: Record<ReasonCode, Entry> = {
 	app_not_ready: no("카카오톡 창을 준비하지 못했어요", "The KakaoTalk window could not be made ready", ["retry"], auto(2, [M, M], true)),
 	input_busy: no("카카오톡 입력창에 쓰던 글이 있어요", "The KakaoTalk input box has text you were writing", ["open_channel", "retry"]),
 	room_unknown: no("대화방을 찾지 못했어요", "The chat room was not found", ["drop"]),
-	not_approved: no("보내기로 고른 기록이 없어요", "There is no record that you chose to send this", []),
+	not_approved: { ...no("보내기로 고른 기록이 없어요", "There is no record that you chose to send this", []), reapprove: true },
 	tool_before_send: no("보내기 전 준비 단계에서 오류가 났어요", "Something failed while getting ready to send", ["retry"], auto(1, [30 * S])),
 	config: no("{app} 보내기 설정이 올바르지 않아요", "The {app} send settings are not valid", ["open_channel"]),
 
@@ -80,8 +81,8 @@ export const isReasonCode = (s: unknown): s is ReasonCode => typeof s === "strin
 
 /** The class, the automatic retry (absent: never by code) and the owner's buttons of `code`. */
 export function policyOf(code: ReasonCode): ReasonPolicy {
-	const { class: c, auto: a, actions } = TABLE[code];
-	return { class: c, actions, ...(a ? { auto: a } : {}) };
+	const { class: c, auto: a, actions, reapprove } = TABLE[code];
+	return { class: c, actions, ...(a ? { auto: a } : {}), ...(reapprove ? { reapprove } : {}) };
 }
 
 // A value the caller did not give: the app and the computer get a plain word, any other one drops with the "( ... )" or '...' around it.
