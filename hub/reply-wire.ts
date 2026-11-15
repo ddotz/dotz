@@ -124,6 +124,8 @@ export const sender = createApprovalSender({
 let toBot: (conv: string, text: string) => Promise<void> = async conv => log(`reply: a hand-written card in ${conv} has no bot path yet`);
 export const setReplyBot = (fn: typeof toBot): void => void (toBot = fn);
 const openCardOf = (conv: string, ref: string) => openDraftCards(conv).find(c => c.ref === ref);
+// The card of draft `ref`, open or answered: the conversation its sends report to.
+const cardOfRef = (ref: string) => allNotices().find(i => i.decision && i.title.endsWith(`(${ref})`));
 
 export const replies = createReplyActions({
 	adapters: [mail, commentReply, kakaoReply],
@@ -139,6 +141,7 @@ export const replies = createReplyActions({
 	learning: replyLearning(),
 	cards: {
 		open: () => openDraftCards().map(c => ({ ref: c.ref, conv: c.to, notice: c.id, title: c.title })),
+		convOf: ref => cardOfRef(ref)?.decision?.to,
 		replace: (oldRef, newRef, text) => void replaceDraftCards(oldRef, newRef, text),
 		rewrite: (ref, text) => {
 			for (const c of openDraftCards().filter(x => x.ref === ref)) rewriteOpenDraft(c.to, ref, text);
@@ -183,6 +186,6 @@ export function settleSends(): void {
 }
 // A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
 export function reportCliFailure(ref: string, conv: string, text: string): void {
-	const card = allNotices().find(i => i.decision && i.title.endsWith(`(${ref})`));
+	const card = cardOfRef(ref);
 	reportSend({ ref, conv: card?.decision?.to ?? conv, title: card?.title ?? "답장", state: "failed", text, at: Date.now() });
 }

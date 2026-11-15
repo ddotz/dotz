@@ -26,7 +26,8 @@ export type ReplyDeps = {
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
 	learning: { record: (key: Lesson["key"], line: string) => Promise<void>; refine: (key: Lesson["key"]) => Promise<void> };
-	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string) => void; rewrite: (ref: string, text: string) => void; close: (ref: string) => void };
+	/** `convOf`: the conversation of the newest card of `ref`, open or already answered. */
+	cards: { open: () => OpenCard[]; convOf?: (ref: string) => string | undefined; replace: (oldRef: string, newRef: string, text: string) => void; rewrite: (ref: string, text: string) => void; close: (ref: string) => void };
 	/** A card a session wrote by hand (kind `card`): its answer goes to the bot as one message per conversation. */
 	toBot: (conv: string, text: string) => Promise<void>;
 	emit: (e: { kind: "reply"; ref: string; item?: ReplyItem; next?: string; revising?: true; why?: string }) => void;
@@ -231,9 +232,10 @@ export function createReplyActions(deps: ReplyDeps) {
 		const found = await resolve(input.ref);
 		if (!found) return fail(404, "unknown_ref", "그 초안을 찾지 못했어요");
 		if ("card" in found) return toBot(ctx, found.card, input);
-		// The pick, the send and its card state belong where the draft's card was asked, when it has one; the store's own place otherwise.
-		const card = deps.cards.open().find(c => c.ref === input.ref);
-		const a = found.adapter, view = card ? { ...found.view, conv: card.conv } : found.view;
+		// The pick, the send and its card state belong where the draft's card was asked, when it has one (a 다시 보내기 comes after the card
+		// was answered, so an answered card counts too); the store's own place otherwise.
+		const conv = deps.cards.open().find(c => c.ref === input.ref)?.conv ?? deps.cards.convOf?.(input.ref);
+		const a = found.adapter, view = conv ? { ...found.view, conv } : found.view;
 		if (ctx.agent && input.action === "send") return agentSend(a, view);
 		switch (input.action) {
 			case "send": return send(ctx, a, view, input);
