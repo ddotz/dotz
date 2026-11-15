@@ -83,6 +83,41 @@ test("a send whose card was already answered reports to the card's conversation,
 	expect(w.reported.every(r => r.conv === "ch:card")).toBe(true);
 });
 
+/** Every job the actions queue, in order (the sender keeps no retry flag once a job ends). */
+function spy(sender: ReturnType<typeof createApprovalSender>): SendJob[] {
+	const jobs: SendJob[] = [];
+	const enqueue = sender.enqueue;
+	sender.enqueue = j => (jobs.push(j), enqueue(j));
+	return jobs;
+}
+
+test("a send that failed for want of a fresh approval (mail_gone) writes a new 보내기 on the next press; a plain failure still retries on the old pick", async () => {
+	const o: { outcome?: string } = { outcome: 'DOTZ_SEND {"sent":"no","code":"mail_gone"}' };
+	const w = world(o);
+	const jobs = spy(w.sender);
+	await w.replies.act({ ref: "RAAAAAA", action: "send" }, owner);
+	await w.sender.idle();
+	expect((await w.replies.list())[0]!.send).toMatchObject({ state: "failed", reason: { code: "mail_gone" } });
+	o.outcome = undefined;
+	expect((await w.replies.act({ ref: "RAAAAAA", action: "send" }, owner)).status).toBe(200);
+	await w.sender.idle();
+	expect(w.only("pick")).toEqual(["pick 보내기", "pick 보내기"]);
+	expect(w.sender.results().findLast(r => r.ref === "RAAAAAA")).toMatchObject({ state: "sent" });
+	expect(jobs.map(j => j.retry ?? false)).toEqual([false, false]);
+
+	const p: { outcome?: string } = { outcome: 'DOTZ_SEND {"sent":"no","code":"quota"}' };
+	const v = world(p);
+	const vJobs = spy(v.sender);
+	await v.replies.act({ ref: "RAAAAAA", action: "send" }, owner);
+	await v.sender.idle();
+	p.outcome = undefined;
+	expect((await v.replies.act({ ref: "RAAAAAA", action: "send" }, owner)).status).toBe(200);
+	await v.sender.idle();
+	expect(v.only("pick")).toEqual(["pick 보내기"]);
+	expect(v.sender.results().findLast(r => r.ref === "RAAAAAA")).toMatchObject({ state: "sent" });
+	expect(vJobs.map(j => j.retry ?? false)).toEqual([false, true]);
+});
+
 test("revise: 202 at once; the model runs, the new draft is stored, then the lesson is learned and refined, then the cards move and one event names the new ref", async () => {
 	const w = world({ lesson: "마감은 넉넉히 잡아서 쓴다" });
 	const r = await w.replies.act({ ref: "RAAAAAA", action: "revise", change: "마감을 목요일로" }, owner);
