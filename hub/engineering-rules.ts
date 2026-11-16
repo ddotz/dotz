@@ -317,28 +317,43 @@ export function metrics(files: readonly Src[], graph?: Map<string, string[]>) {
 export type Raised = { key: string; from: number | undefined; to: number };
 export const ceilingsRaised = (base: Counts, head: Counts): Raised[] =>
 	Object.entries(head).flatMap(([key, to]) => (base[key] === undefined || to > base[key] ? [{ key, from: base[key], to }] : []));
-const flatCeilings = (text: string | undefined): Counts | undefined => {
-	let groups: unknown;
-	try { groups = JSON.parse(text ?? ""); } catch { return undefined; } // unreadable text is the "no baseline" case, reported by the caller
-	if (typeof groups !== "object" || groups === null || Array.isArray(groups)) return undefined;
+const isGroup = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+// One flat "group key" -> number map. A group is a map of numbers, a bare number (key "group"), or a list whose entries count 1 each. A document
+// with a "counts" object (hub/web-structure-allow.json) is read from there only, so its "reasons" and "_rule" never count.
+export const flatCounts = (doc: unknown): Counts | undefined => {
+	if (!isGroup(doc)) return undefined;
 	const flat: Counts = {};
-	for (const [group, counts] of Object.entries(groups)) for (const [k, n] of Object.entries(counts as Counts)) flat[`${group} ${k}`] = n;
+	for (const [group, v] of Object.entries(isGroup(doc.counts) ? doc.counts : doc)) {
+		if (typeof v === "number") flat[group] = v;
+		else if (Array.isArray(v)) for (const k of v) flat[`${group} ${k}`] = 1;
+		else if (isGroup(v)) for (const [k, n] of Object.entries(v)) flat[`${group} ${k}`] = n as number;
+	}
 	return flat;
 };
-// hub/engineering-ceilings.json at the baseline and at the pushed commit. A side that cannot be read never blocks: one warning line, ok.
-export const freezeReport = (baseText: string | undefined, headText: string | undefined): { ok: boolean; lines: string[] } => {
+const flatCeilings = (text: string | undefined): Counts | undefined => {
+	try { return flatCounts(JSON.parse(text ?? "")); } catch { return undefined; } // unreadable text is the "no baseline" case, reported by the caller
+};
+// hub/engineering-ceilings.json (or the "counts" of hub/web-structure-allow.json) at the baseline and at the pushed commit. A side that cannot be
+// read never blocks: one warning line, ok.
+export const freezeReport = (baseText: string | undefined, headText: string | undefined, what = "ceilings"): { ok: boolean; lines: string[] } => {
 	const base = flatCeilings(baseText), head = flatCeilings(headText);
-	if (!base || !head) return { ok: true, lines: ["pre-push: ceiling freeze skipped, the baseline ceilings cannot be read"] };
+	if (!base || !head) return { ok: true, lines: [`pre-push: ceiling freeze skipped, the baseline ${what} cannot be read`] };
 	const lines = ceilingsRaised(base, head).map(r => `ceiling raised ${r.key}: ${r.from ?? "none"} -> ${r.to}`);
 	return { ok: lines.length === 0, lines };
 };
 
 if (import.meta.main && process.argv[2] === "--ceiling-freeze") {
-	// bun hub/engineering-rules.ts --ceiling-freeze <baseline json file> <pushed json file>: exit 1 and one line per raised key; a missing file counts as unreadable.
+	// bun hub/engineering-rules.ts --ceiling-freeze <baseline json> <pushed json> [<baseline json> <pushed json> ...]: each pair is checked on its own,
+	// named by the pushed file's name; exit 1 and one line per raised key; a missing file counts as unreadable.
 	const read = (p: string | undefined) => (p && existsSync(p) ? readFileSync(p, "utf8") : undefined);
-	const r = freezeReport(read(process.argv[3]), read(process.argv[4]));
-	for (const l of r.lines) console.error(l);
-	process.exit(r.ok ? 0 : 1);
+	const args = process.argv.slice(3);
+	let ok = true;
+	for (let i = 0; i < args.length; i += 2) {
+		const r = freezeReport(read(args[i]), read(args[i + 1]), posix.basename(args[i + 1] ?? "ceilings"));
+		for (const l of r.lines) console.error(l);
+		ok &&= r.ok;
+	}
+	process.exit(ok ? 0 : 1);
 } else if (import.meta.main) {
 	const m = metrics(loadTree(join(import.meta.dir, "..")));
 	if (process.argv.includes("--json")) console.log(JSON.stringify(m, null, 2));

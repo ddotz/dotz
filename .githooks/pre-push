@@ -1,6 +1,7 @@
 #!/bin/sh
 # Refuses a push to public ddotz/dotz whose new commits carry a personal address, a personal value in a message or an added line, or land a PR by hand with no universal review (hub/push-identity.ts), and a push whose branch tips break the
-# repo-wide limits (hub/engineering-rules.test.ts), and one that raises a ceiling or adds a ceiling key compared with the remote main (hub/engineering-ceilings.json). The limits check the pushed commit, not the working tree, so
+# repo-wide limits (hub/engineering-rules.test.ts), and one that raises a ceiling or adds a ceiling key compared with the remote main (hub/engineering-ceilings.json, and the
+# "counts" of hub/web-structure-allow.json; a baseline without that file warns and passes). The limits check the pushed commit, not the working tree, so
 # an uncommitted change neither hides nor causes a failure. core.hooksPath points here: set by hub/git-hooks.ts, never by hand.
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 command -v bun >/dev/null 2>&1 || { echo "pre-push: bun not found, cannot run hub/engineering-rules.test.ts" >&2; exit 1; }
@@ -11,6 +12,8 @@ guard=$(dirname "$0")/../hub/history-rewrite.ts
 identity=$(dirname "$0")/../hub/push-identity.ts
 rules=$(dirname "$0")/../hub/engineering-rules.ts
 ceilings=hub/engineering-ceilings.json
+allow=hub/web-structure-allow.json
+mkdir "$tmp/base" "$tmp/head" || exit 1
 while read -r _ sha ref remotesha; do
 	case "$sha" in *[!0]*) ;; *) continue ;; esac # all zeros: a ref being deleted
 	if [ -f "$guard" ]; then bun "$guard" --guard "$1" "$sha" </dev/null || exit 1; fi # rewritten-away history never goes back up, on any ref
@@ -21,8 +24,10 @@ while read -r _ sha ref remotesha; do
 	# Baseline = the remote main this push targets: its sha when the push updates main, else the remote-tracking main. Unreadable (no ref, shallow, first push) warns and passes.
 	base=""
 	case "$ref:$remotesha" in refs/heads/main:*[!0]*) base=$remotesha ;; *) base=$(git rev-parse --verify -q "refs/remotes/$1/main^{commit}") ;; esac
-	if [ -f "$rules" ] && [ -n "$base" ] && git show "$base:$ceilings" >"$tmp/base.json" 2>/dev/null && git show "$sha:$ceilings" >"$tmp/head.json" 2>/dev/null; then
-		bun "$rules" --ceiling-freeze "$tmp/base.json" "$tmp/head.json" </dev/null || { echo "pre-push: refused, $ref at $sha raises a ceiling. Shrink the code; never raise a ceiling (docs/engineering-standards.md)." >&2; exit 1; }
+	if [ -f "$rules" ] && [ -n "$base" ] && git show "$base:$ceilings" >"$tmp/base/ceilings.json" 2>/dev/null && git show "$sha:$ceilings" >"$tmp/head/ceilings.json" 2>/dev/null; then
+		git show "$base:$allow" >"$tmp/base/web-structure-allow.json" 2>/dev/null || rm -f "$tmp/base/web-structure-allow.json"
+		git show "$sha:$allow" >"$tmp/head/web-structure-allow.json" 2>/dev/null || rm -f "$tmp/head/web-structure-allow.json"
+		bun "$rules" --ceiling-freeze "$tmp/base/ceilings.json" "$tmp/head/ceilings.json" "$tmp/base/web-structure-allow.json" "$tmp/head/web-structure-allow.json" </dev/null || { echo "pre-push: refused, $ref at $sha raises a ceiling or an allowlist number. Shrink the code; never raise either (docs/engineering-standards.md)." >&2; exit 1; }
 	else
 		echo "pre-push: ceiling freeze skipped, no readable baseline ceilings for $ref" >&2
 	fi
