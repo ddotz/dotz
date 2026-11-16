@@ -2,6 +2,7 @@
   "_rule": "Who may write each shared web/js state object (objects) and cross-file let (lets); any other file calls the owner's functions. Read by hub/web-structure-web.test.ts (rule C). One key per line.",
   "objects": {
     "ASC": ["32-app-settings.js"],
+    "AUTH_HID": ["16-target-switcher-conversation.js"],
     "CM": ["30-monitoring-comments.js"],
     "CONV": ["09-needs-you.js"],
     "CPC": ["33-peers.js"],
@@ -29,6 +30,7 @@
     "PR": ["33-peers.js"],
     "PRJ": ["18-lanes.js"],
     "RA": ["10-reply-actions.js"],
+    "READ": ["31-conversations.js"],
     "RELAY": ["42-relay-chat.js"],
     "RQ": ["30-replies.js"],
     "S": ["17-state-refresh.js","04-state.js"],
@@ -36,8 +38,11 @@
     "TS": ["09-needs-you.js"],
     "TURN": ["08-home.js"],
     "WA": ["25-settings-web-access.js"],
+    "convPend": ["31-conversations.js"],
+    "fcCollapsed": ["29-harness-features.js"],
     "fcFilter": ["29-harness-features.js"],
     "hCvOpen": ["28-harness-project.js"],
+    "rqFail": ["10-decision-card.js"],
     "rqPress": ["10-reply-card.js"]
   },
   "lets": {
@@ -48,11 +53,21 @@
     "QUEUE": ["14-slash-commands.js"],
     "chatStick": ["09-needs-you.js"],
     "endedOpen": ["04-state.js"],
+    "hEdgeRefs": ["27-harness.js"],
+    "hGeo": ["27-harness.js"],
+    "hNodeEls": ["27-harness.js"],
     "target": ["08-home.js"],
     "termStick": ["09-needs-you.js"]
   },
+  "exempt": {
+    "ICONS": "icon registry: 01-core.js declares it and the icon files add entries on purpose (ICONS.x = svg); it is a constant lookup table, not shared mutable state."
+  },
   "notes": {
-    "ICONS": "icon registry: 01-core.js declares it and the icon files add entries on purpose (ICONS.x = svg); it is a constant lookup table, not shared mutable state.",
+    "READ": "owner is 31-conversations.js, not the declaring 09-needs-you.js: 6 of the 8 writes live there and 09-needs-you.js writes none.",
+    "convPend": "owner is 31-conversations.js, not the declaring 09-needs-you.js: its only writes (set/clear) live there.",
+    "rqFail": "owner is 10-decision-card.js, not the declaring 10-reply-card.js: its only writes (delete/set) live there; 10-reply-card.js only declares it.",
+    "fcCollapsed": "owner is 29-harness-features.js, not the declaring 27-harness.js: its only writes (add/delete) live there.",
+    "hGeo, hNodeEls, hEdgeRefs": "lets kept with the declaring 27-harness.js, which resets all three per paint (:177); 28-harness-project.js fills them (set/push, frozen as foreign writes).",
     "fcFilter": "owner is 29-harness-features.js, not the declaring 27-harness.js: all 4 writes live there and 27-harness.js writes none.",
     "hCvOpen": "owner is 28-harness-project.js, not the declaring 27-harness.js: its only writes (add/delete) live there and 27-harness.js writes none.",
     "PQ": "owner is 34-peer-monitoring.js, not the declaring 08-home.js: 12 of the 15 writes live there and 08-home.js writes none.",

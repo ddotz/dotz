@@ -20,7 +20,7 @@ test("hub/web-areas.json names every web/js file once and registers the pending 
 // path for the real files and for the planted cases below, so a planted violation proves each rule can fail. Its numbers must equal the
 // "counts" of hub/web-structure-allow.json exactly: a new violation fails, and so does a fix that leaves its number standing.
 // - C ownerWrites "NAME|file": writes to a shared object or cross-file let from a file that does not own it (hub/web-structure-owners.json):
-//   X.f = / += / ++, X.f[k] =, X[k] =, delete X.f / X.f[k] / X[k], X(.f)?.add/delete/clear/set/push/pop/shift/unshift/splice/sort/reverse(,
+//   X.f = / += / ++, ++X.f / --X.f / ++X[k], X.f[k] =, X[k] =, delete X.f / X.f[k] / X[k], X(.f)?.add/delete/clear/set/push/pop/shift/unshift/splice/sort/reverse(,
 //   Object.assign(X; for a let also its reassignment, and the same writes to the object or list it holds (CS.who = "", PICK.push(x)).
 //   A match is skipped where an enclosing function declares a parameter or local of that name (bkStep(S), a local `target`).
 // - B goBranches: `name === "` inside go(); fnReassign "name|file": a declared function reassigned outside any function (a monkeypatch).
@@ -35,7 +35,7 @@ type Counts = Record<string, number>;
 type Audit = { ownerWrites: Counts; goBranches: number; fnReassign: Counts; overlaySites: string[]; rawNet: Counts; currentAssign: Counts; emptyBypass: Counts };
 type Allow = { _rule: string; counts: Audit; reasons: Record<string, string> };
 const ALLOW_PATH = join(ROOT, "hub/web-structure-allow.json");
-const OWNERS = JSON.parse(readFileSync(join(ROOT, "hub/web-structure-owners.json"), "utf8")) as { objects: Record<string, string[]>; lets: Record<string, string[]> };
+const OWNERS = JSON.parse(readFileSync(join(ROOT, "hub/web-structure-owners.json"), "utf8")) as { objects: Record<string, string[]>; lets: Record<string, string[]>; exempt: Record<string, string> };
 const OVERLAY_HOMES = new Set(["02-basic-markdown.js", "03-menu.js", "38-overlay.js", "32-history-nav.js"]);
 // The side drawer's back step. 06-subagents.js also holds the drawer's callers, so the part is named by its site, not by its file.
 const OVERLAY_PARTS = new Set(["overlay:showSheet"]);
@@ -50,7 +50,7 @@ const esc = (s: string) => s.replace(/[$]/g, "\\$");
 const PATH = String.raw`(?:\.[\w$]+|\[[^\]\n]*\])`;
 const objectWrite = (x: string) => {
   const at = `(?<![\\w$.])${esc(x)}`;
-  return new RegExp(`${at}${PATH}+\\s*(?:=(?![=>])|\\+\\+|--|[-+*/|&?]{1,2}=)|${at}${PATH}*\\.(?:add|delete|clear|set|push|pop|shift|unshift|splice|sort|reverse)\\(|(?<![\\w$.])delete\\s+${esc(x)}${PATH}+|Object\\.assign\\(${esc(x)}\\b`, "g");
+  return new RegExp(`${at}${PATH}+\\s*(?:=(?![=>])|\\+\\+|--|[-+*/|&?]{1,2}=)|(?:\\+\\+|--)\\s*${esc(x)}${PATH}+|${at}${PATH}*\\.(?:add|delete|clear|set|push|pop|shift|unshift|splice|sort|reverse)\\(|(?<![\\w$.])delete\\s+${esc(x)}${PATH}+|Object\\.assign\\(${esc(x)}\\b`, "g");
 };
 const letWrite = (x: string) => new RegExp(`(?<![\\w$.])${esc(x)}\\s*(?:=(?![=>])|\\+=|\\|\\|=|\\?\\?=)`, "g");
 
@@ -69,12 +69,40 @@ function declares(list: string, name: string): boolean {
   return false;
 }
 
+// The declarators of the const/let/var statement whose list starts at `from` in masked code: each bound name, where it stands and the code
+// of its initializer ("" for none or a destructuring pattern). The statement ends at a `;` outside brackets, or at a line break outside
+// brackets whose next line starts in column 0 (a continuation line is indented or starts with an operator).
+function declarators(code: string, from: number): { at: number; name: string; init: string }[] {
+  const out: { at: number; name: string; init: string }[] = [];
+  let depth = 0, start = from;
+  for (let i = from; ; i++) {
+    const c = code[i];
+    const end = c === undefined || (depth === 0 && (c === ";" || (c === "\n" && /[^\s,.?:)\]}]/.test(code[i + 1] ?? ""))));
+    if (end || (c === "," && depth === 0)) {
+      const part = code.slice(start, i), eq = /(?<![=!<>])=(?![=>])/.exec(part), lhs = eq ? part.slice(0, eq.index) : part;
+      const simple = /^\s*([\w$]+)\s*$/.exec(lhs);
+      // A pattern binds the names not followed by `:` (`{ a, b: c }` binds a and c).
+      const names = simple ? [simple[1]!] : [...lhs.matchAll(/(?<![\w$])[\w$]+(?![\w$]|\s*:)/g)].map((n) => n[0]);
+      for (const name of names) out.push({ at: start + lhs.indexOf(name), name, init: simple && eq ? part.slice(eq.index + 1) : "" });
+      if (end) return out;
+      start = i + 1;
+    } else if ("([{".includes(c)) depth++;
+    else if (")]}".includes(c)) depth--;
+  }
+}
+
 // One file: its code with strings and comments blanked, its { } blocks, and its top-level declarations.
 function parse(text: string) {
   const mask = codeMask(text), code = Array.from(text, (c, i) => (mask[i] || c === "\n" ? c : " ")).join("");
   const blocks: [number, number][] = [], open: number[] = [];
   for (let i = 0; i < code.length; i++) if (code[i] === "{") open.push(i); else if (code[i] === "}" && open.length) blocks.push([open.pop()!, i]);
-  const decls = [...text.matchAll(DECL)].filter((m) => mask[m.index]).map((m) => ({ at: m.index, name: m[1] ?? m[2]!, fn: !!m[1] }));
+  // Every name a top-level declaration makes: a function or class, and each declarator of `const|let|var a = ..., b = ...` (one line or
+  // several), with the masked code of its initializer and its keyword.
+  const decls = [...text.matchAll(DECL)].filter((m) => mask[m.index]).flatMap((m) => {
+    const kw = /^(const|let|var)\s/.exec(m[0])?.[1];
+    if (!kw) return [{ at: m.index, name: m[1] ?? m[2]!, fn: !!m[1], kw: "", init: "" }];
+    return declarators(code, m.index + kw.length).map((d, i) => ({ ...d, at: i ? d.at : m.index, fn: false, kw }));
+  });
   const topAt = (at: number) => decls.filter((d) => d.at <= at).at(-1)?.name ?? "";
   // A block's head: the parameters it declares (a function, an arrow, a catch, a for's let/const) and whether it is a function body.
   const head = (at: number) => {
@@ -164,6 +192,20 @@ function audit(files: Record<string, string>): Audit {
   return r;
 }
 
+// Completeness of the owners file: a top-level name that holds {}, [], a Map, Set, WeakMap or WeakSet and takes a rule C write from a file
+// other than the one declaring it is owned (objects or lets) or exempt with a reason. Each finding is "NAME|declaring file <- writing file".
+const CONTAINER = /^\s*(?:\{|\[|new\s+(?:Map|Set|WeakMap|WeakSet)\b)/;
+function unowned(files: Record<string, string>): string[] {
+  const known = new Set([...Object.keys(OWNERS.objects), ...Object.keys(OWNERS.lets), ...Object.keys(OWNERS.exempt)]);
+  const parsed = Object.entries(files).map(([f, t]) => [f, parse(t)] as const), out: string[] = [];
+  for (const [df, dp] of parsed) for (const d of dp.decls) if (CONTAINER.test(d.init) && !known.has(d.name))
+    for (const [f, p] of parsed) if (f !== df && p.code.includes(d.name)) {
+      const writes = [...p.find(objectWrite(d.name)), ...(d.kw === "const" ? [] : p.find(letWrite(d.name)).filter((m) => !p.isDecl(m.index)))];
+      if (writes.some((m) => !p.shadowed(m.index, d.name))) out.push(`${d.name}|${df} <- ${f}`);
+    }
+  return out.sort();
+}
+
 const webFiles = (): Record<string, string> => {
   const dir = join(ROOT, "web/js"), files: Record<string, string> = {};
   for (const f of readdirSync(dir).filter((f) => f.endsWith(".js")).sort()) files[f] = readFileSync(join(dir, f), "utf8");
@@ -190,6 +232,11 @@ test("web/js and web/custom.js add no foreign state write, go() branch, raw over
 // starts seeing a write shape the baseline code already had is not a raise, and a new write still is.
 test.if(!!process.env.WEB_STRUCTURE_RECOUNT)("recount: the ownerWrites of these web files, written to $WEB_STRUCTURE_RECOUNT", () => {
   writeFileSync(process.env.WEB_STRUCTURE_RECOUNT!, JSON.stringify(REAL.ownerWrites));
+});
+
+test("every shared {} / [] / Map / Set another file writes is owned or exempt in hub/web-structure-owners.json", () => {
+  expect(unowned(webFiles())).toEqual([]);
+  expect(Object.entries(OWNERS.exempt).filter(([, why]) => !why.trim())).toEqual([]);
 });
 
 test("hub/web-structure-owners.json names files that exist or are pending", () => {
@@ -230,6 +277,18 @@ test("planted C: an indexed write, a delete, an in-place list change and a write
   expect(delta(mailBox("function zzNew() { RELAY.name[\"x\"] = 1; DC.st[\"k\"] = 1; }"))).toEqual({ "ownerWrites DC|30-mail-box.js": 1, "ownerWrites RELAY|30-mail-box.js": 1 });
   expect(delta(mailBox("function zzRead(k) { return NT.by[k] === 1 || NT.by[1] == 2 || [...PICK].sort() || MON.xs.slice().sort(); }"))).toEqual({});
   expect(delta(mailBox("function zzShadow(CS, NT) { CS.who = 1; delete NT.a; NT.b[1] = 2; const PICK = []; PICK.push(1); }"))).toEqual({});
+});
+
+test("planted C: a prefix ++ / -- write counts, a prefix on another name does not", () => {
+  expect(delta(mailBox("function zzPre(k) { ++MON.zz; --MON.yy; ++MON.by[k]; }"))).toEqual({ "ownerWrites MON|30-mail-box.js": 3 });
+  expect(delta(mailBox("function zzPre2(k) { return ++k + MON.a; }"))).toEqual({});
+});
+
+test("planted completeness: a later declarator holding a Map, Set, {} or [] and written from another file is named until owned", () => {
+  const mon = (line: string) => ({ "30-monitoring.js": `${files["30-monitoring.js"]}\n${line}\n` });
+  expect(unowned({ ...files, ...mailBox("const ZA = 1, ZB = new Map();"), ...mon("function zzZB() { ZB.set(1, 2); }") })).toEqual(["ZB|30-mail-box.js <- 30-monitoring.js"]);
+  expect(unowned({ ...files, ...mailBox("let ZC = null, ZD = 0,\n  ZE = [];"), ...mon("function zzZE() { ZE = []; ZD = 1; }") })).toEqual(["ZE|30-mail-box.js <- 30-monitoring.js"]);
+  expect(unowned({ ...files, ...mailBox("const ZA = 1, ZB = new Map();\nfunction zzOwn() { ZB.set(1, 2); }"), ...mon("function zzRd(ZB) { ZB.set(1, 2); return ZB; }") })).toEqual([]);
 });
 
 test("planted B: a go() branch and a top-level function reassignment count", () => {

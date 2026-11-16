@@ -16,6 +16,7 @@
       "rawdialog:lightboxAt"
     ],
     "ownerWrites": {
+      "AUTH_HID|30-notices.js": 1,
       "CONV|30-mail-box.js": 2,
       "CONV|30-monitoring-mail.js": 1,
       "CONV|31-conversations.js": 4,
@@ -46,6 +47,8 @@
       "PQ|30-mail-box.js": 1,
       "PQ|30-monitoring-mail.js": 1,
       "RA|30-replies.js": 1,
+      "READ|13-snapshot.js": 1,
+      "READ|34-peer-monitoring.js": 1,
       "RELAY|44-relay-views.js": 3,
       "TD|13-snapshot.js": 1,
       "TS|13-data.js": 2,
@@ -53,6 +56,9 @@
       "TURN|11-todo-strip.js": 2,
       "TURN|14-slash-commands.js": 1,
       "WA|25-settings-onboarding.js": 1,
+      "hEdgeRefs|28-harness-project.js": 1,
+      "hGeo|28-harness-project.js": 3,
+      "hNodeEls|28-harness-project.js": 3,
       "rqPress|10-decision-card.js": 2
     },
     "rawNet": {
