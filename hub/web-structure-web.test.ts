@@ -22,7 +22,8 @@ test("hub/web-areas.json names every web/js file once and registers the pending 
 // - C ownerWrites "NAME|file": writes to a shared object or cross-file let from a file that does not own it (hub/web-structure-owners.json).
 //   A match is skipped where an enclosing function declares a parameter or local of that name (bkStep(S), a local `target`).
 // - B goBranches: `name === "` inside go(); fnReassign "name|file": a declared function reassigned outside any function (a monkeypatch).
-// - D overlaySites: rawdialog/overlay sites (hub/ui-surfaces.ts) outside the files that implement dialogs, menus, overlays and history.
+// - D overlaySites: rawdialog/overlay sites (hub/ui-surfaces.ts) outside the files that implement dialogs, menus, overlays and history, and
+//   outside the side drawer's own back step (showSheet), a shared part itself. A site that stays needs a reason in "reasons".
 // - E rawNet: fetch(, new EventSource, new XMLHttpRequest and a window.fetch wrapper outside api(), per file.
 // - F currentAssign: `current =` per file; go() is the only one.
 // - G emptyBypass: el() calls building an empty state (class empty/rq-empty/cv-empty/mon-ov-empty, id kk-empty/cm-empty/dm-empty/kk-nomatch)
@@ -34,6 +35,9 @@ type Allow = { _rule: string; counts: Audit; reasons: Record<string, string> };
 const ALLOW_PATH = join(ROOT, "hub/web-structure-allow.json");
 const OWNERS = JSON.parse(readFileSync(join(ROOT, "hub/web-structure-owners.json"), "utf8")) as { objects: Record<string, string[]>; lets: Record<string, string[]> };
 const OVERLAY_HOMES = new Set(["02-basic-markdown.js", "03-menu.js", "38-overlay.js", "32-history-nav.js"]);
+// The side drawer's back step. 06-subagents.js also holds the drawer's callers, so the part is named by its site, not by its file.
+const OVERLAY_PARTS = new Set(["overlay:showSheet"]);
+const unreasoned = (sites: string[], reasons: Record<string, string>) => sites.filter((k) => !reasons[`overlaySites ${k}`]);
 const EMPTY_CLASS = new Set(["empty", "rq-empty", "cv-empty", "mon-ov-empty"]);
 const EMPTY_ID = new Set(["kk-empty", "cm-empty", "dm-empty", "kk-nomatch"]);
 const NOT_PARAMS = new Set(["if", "while", "switch", "with", "return", "typeof", "await"]);
@@ -145,7 +149,7 @@ function audit(files: Record<string, string>): Audit {
     }
   }
   const sites = extractOpenSitesFromText(Object.fromEntries(Object.entries(files).map(([f, t]) => [f === "custom.js" ? f : `js/${f}`, t])));
-  r.overlaySites = sites.filter((s) => (s.kind === "rawdialog" || s.kind === "overlay") && !OVERLAY_HOMES.has(s.file)).map((s) => s.key).sort();
+  r.overlaySites = sites.filter((s) => (s.kind === "rawdialog" || s.kind === "overlay") && !OVERLAY_HOMES.has(s.file) && !OVERLAY_PARTS.has(s.key)).map((s) => s.key).sort();
   for (const k of ["ownerWrites", "fnReassign", "rawNet", "currentAssign", "emptyBypass"] as const) r[k] = sortKeys(r[k]);
   return r;
 }
@@ -168,6 +172,7 @@ test("web/js and web/custom.js add no foreign state write, go() branch, raw over
   expect(text).toBe(render(allow));
   const keys = Object.keys(flatCounts(allow) ?? {});
   expect(Object.keys(allow.reasons).filter((k) => !keys.includes(k))).toEqual([]);
+  expect(unreasoned(allow.counts.overlaySites, allow.reasons)).toEqual([]);
 });
 
 test("hub/web-structure-owners.json names files that exist or are pending", () => {
@@ -204,6 +209,8 @@ test("planted B: a go() branch and a top-level function reassignment count", () 
 test("planted D: a raw <dialog> or ovOpen outside the overlay files counts", () => {
   expect(delta(mailBox("function zzOpen(d) { d.showModal(); ovOpen(() => d.close()); }"))).toEqual({ "overlaySites overlay:zzOpen": 1, "overlaySites rawdialog:zzOpen": 1 });
   expect(delta({ "03-menu.js": `${files["03-menu.js"]}\nfunction zzMenu(d) { d.showModal(); }\n` })).toEqual({});
+  expect(delta({ "06-subagents.js": `${files["06-subagents.js"]}\nfunction zzSub() { ovOpen(() => {}); }\n` })).toEqual({ "overlaySites overlay:zzSub": 1 });
+  expect(unreasoned(["overlay:zzOpen", "rawdialog:lightboxAt"], { "overlaySites rawdialog:lightboxAt": "a media stage" })).toEqual(["overlay:zzOpen"]);
 });
 
 test("planted E: a raw request outside api() counts", () => {
