@@ -9,7 +9,7 @@ export type Site = { key: string; kind: string; file: string; line: number; look
 
 // Opener patterns: the call, and the argument that names it. `own` names the functions that implement the opener or shadow its name with a local, whose inner calls are not sites.
 const CALLS: { kind: string; re: RegExp; arg?: "title" | "first" | "label" | "go"; own?: string[] }[] = [
-	{ kind: "go", re: /(?<![\w.$])go\(/g, arg: "go", own: ["go", "api", "pendingLoginAsk"] },
+	{ kind: "go", re: /(?<![\w.$])go\(/g, arg: "go", own: ["go", "api", "pendingLoginAsk", "noteKeys"] },
 	{ kind: "dialog", re: /(?<![\w.$])dialog\(/g, arg: "title", own: ["dialog", "ask"] },
 	{ kind: "fsOpen", re: /(?<![\w.$])fsOpen\(/g, arg: "label" },
 	{ kind: "ask", re: /(?<![\w.$])ask\(/g, arg: "first", own: ["cmPaint"] },
@@ -23,10 +23,10 @@ const CALLS: { kind: string; re: RegExp; arg?: "title" | "first" | "label" | "go
 	{ kind: "float", re: /document\.body\.(?:append|appendChild)\(/g, own: ["dialog", "fsOpen", "openPalette", "~99-boot", "mbMeasure", "hFileEditor"] },
 	{ kind: "reveal", re: /\b(?:pkBox|canvasPane)\.hidden = false|\bbox\.hidden = false(?=;\s*\n\s*const sr)/g },
 ];
-const DECL = /^(?:export\s+)?(?:async\s+)?function\*?\s+([\w$]+)|^(?:const|let|var|class)\s+([\w$]+)/gm;
+export const DECL = /^(?:export\s+)?(?:async\s+)?function\*?\s+([\w$]+)|^(?:const|let|var|class)\s+([\w$]+)/gm;
 
 // Marks which characters are code: not inside a comment, a string, a regex literal or the text of a template (its ${} parts are code).
-function codeMask(t: string): Uint8Array {
+export function codeMask(t: string): Uint8Array {
 	const n = t.length, m = new Uint8Array(n), stk: number[] = [];
 	let i = 0, prev = "", brace = 0;
 	const tpl = () => {
@@ -96,16 +96,26 @@ function toastLook(args: string): string {
 	return [b, act === undefined ? "" : "act"].filter(Boolean).join("+") || "plain";
 }
 
+// The sites in web/ on disk: web/js/*.js and web/index.html (web/custom.js is not part of the ui-surfaces.json list).
 export function extractOpenSites(webDir: string): Site[] {
+	const files: Record<string, string> = { "index.html": readFileSync(join(webDir, "index.html"), "utf8") };
+	for (const f of readdirSync(join(webDir, "js")).filter(f => f.endsWith(".js"))) files[`js/${f}`] = readFileSync(join(webDir, "js", f), "utf8");
+	return extractOpenSitesFromText(files);
+}
+
+// The same scan over file texts keyed by their path under web/ ("js/08-home.js", "custom.js", "index.html"). A web/js file's site names
+// the bare file name, web/custom.js is scanned after web/js, so adding it leaves every web/js key as it is.
+export function extractOpenSitesFromText(files: Record<string, string>): Site[] {
 	const sites: Site[] = [], seen = new Map<string, number>();
 	const add = (kind: string, fn: string, arg: string, file: string, line: number, look?: string) => {
 		const base = [kind, fn, arg].filter(Boolean).join(":"), n = (seen.get(base) ?? 0) + 1;
 		seen.set(base, n);
 		sites.push({ key: n > 1 ? `${base}#${n}` : base, kind, file, line, ...(look ? { look } : {}) });
 	};
-	const files = readdirSync(join(webDir, "js")).filter(f => f.endsWith(".js")).sort();
-	for (const f of files) {
-		const t = readFileSync(join(webDir, "js", f), "utf8"), mask = codeMask(t);
+	const scripts = Object.keys(files).filter(p => /^js\/[^/]+\.js$/.test(p)).sort();
+	if ("custom.js" in files) scripts.push("custom.js");
+	for (const p of scripts) {
+		const f = p.replace(/^js\//, ""), t = files[p]!, mask = codeMask(t);
 		const decls = [...t.matchAll(DECL)].filter(m => mask[m.index]).map(m => ({ at: m.index, name: m[1] ?? m[2]! }));
 		const lineOf = (at: number) => t.slice(0, at).split("\n").length;
 		const fnAt = (at: number) => { let name = `~${f.replace(/\.js$/, "")}`; for (const d of decls) { if (d.at > at) break; name = d.name; } return name; };
@@ -121,11 +131,11 @@ export function extractOpenSites(webDir: string): Site[] {
 		}
 		for (const s of found.sort((a, b) => a.at - b.at)) add(s.kind, s.fn, s.arg, f, lineOf(s.at), s.look);
 	}
-	const state = readFileSync(join(webDir, "js", "04-state.js"), "utf8");
+	const state = files["js/04-state.js"] ?? "";
 	for (const v of /\bconst views = \[([^\]]*)\]/.exec(state)?.[1]?.match(/"([^"]+)"/g) ?? []) add("view", v.slice(1, -1), "", "04-state.js", 0);
-	const pages = readFileSync(join(webDir, "js", "22-settings-pages.js"), "utf8");
+	const pages = files["js/22-settings-pages.js"] ?? "";
 	for (const m of /\bconst SET_PAGE = \{([\s\S]*?)\n\};/.exec(pages)?.[1]?.matchAll(/^ {2}(\w+): \{/gm) ?? []) add("view", m[1]!, "", "22-settings-pages.js", 0);
-	const html = readFileSync(join(webDir, "index.html"), "utf8");
+	const html = files["index.html"] ?? "";
 	for (const m of html.matchAll(/<(dialog|[a-z]+)\b[^>]*?(?:role="dialog"|\spopover\b)[^>]*>|<dialog\b[^>]*>/g)) {
 		const id = /\bid="([^"]+)"/.exec(m[0])?.[1] ?? /aria-label="([^"]+)"/.exec(m[0])?.[1] ?? "";
 		add("html", id, "", "index.html", html.slice(0, m.index).split("\n").length);
