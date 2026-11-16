@@ -333,23 +333,40 @@ export const flatCounts = (doc: unknown): Counts | undefined => {
 const flatCeilings = (text: string | undefined): Counts | undefined => {
 	try { return flatCounts(JSON.parse(text ?? "")); } catch { return undefined; } // unreadable text is the "no baseline" case, reported by the caller
 };
+// The names hub/web-structure-owners.json registers (its objects and lets); undefined when the text cannot be read.
+const ownedNames = (text: string | undefined): Set<string> | undefined => {
+	try {
+		const doc = JSON.parse(text ?? "") as unknown;
+		if (!isGroup(doc)) return undefined;
+		return new Set([doc.objects, doc.lets].flatMap(g => (isGroup(g) ? Object.keys(g) : [])));
+	} catch { return undefined; } // no readable baseline owners: no new ownerWrites key is let through
+};
 // hub/engineering-ceilings.json (or the "counts" of hub/web-structure-allow.json) at the baseline and at the pushed commit. A side that cannot be
-// read never blocks: one warning line, ok.
-export const freezeReport = (baseText: string | undefined, headText: string | undefined, what = "ceilings"): { ok: boolean; lines: string[] } => {
+// read never blocks: one warning line, ok. A new "ownerWrites NAME|file" key is the first count of an object registered after the baseline
+// (NAME is not in the baseline's hub/web-structure-owners.json, baseOwnersText), a baseline rather than a raise; every other new or raised key refuses.
+export const freezeReport = (baseText: string | undefined, headText: string | undefined, what = "ceilings", baseOwnersText?: string): { ok: boolean; lines: string[] } => {
 	const base = flatCeilings(baseText), head = flatCeilings(headText);
 	if (!base || !head) return { ok: true, lines: [`pre-push: ceiling freeze skipped, the baseline ${what} cannot be read`] };
-	const lines = ceilingsRaised(base, head).map(r => `ceiling raised ${r.key}: ${r.from ?? "none"} -> ${r.to}`);
+	const owned = ownedNames(baseOwnersText);
+	const newlyOwned = (r: Raised) => {
+		if (r.from !== undefined || !owned) return false;
+		const name = /^ownerWrites ([^|]+)\|/.exec(r.key)?.[1];
+		return name !== undefined && !owned.has(name);
+	};
+	const lines = ceilingsRaised(base, head).filter(r => !newlyOwned(r)).map(r => `ceiling raised ${r.key}: ${r.from ?? "none"} -> ${r.to}`);
 	return { ok: lines.length === 0, lines };
 };
 
 if (import.meta.main && process.argv[2] === "--ceiling-freeze") {
 	// bun hub/engineering-rules.ts --ceiling-freeze <baseline json> <pushed json> [<baseline json> <pushed json> ...]: each pair is checked on its own,
-	// named by the pushed file's name; exit 1 and one line per raised key; a missing file counts as unreadable.
+	// named by the pushed file's name; exit 1 and one line per raised key; a missing file counts as unreadable. A leading
+	// --base-owners <baseline hub/web-structure-owners.json> lets through the first ownerWrites counts of objects registered since then.
 	const read = (p: string | undefined) => (p && existsSync(p) ? readFileSync(p, "utf8") : undefined);
-	const args = process.argv.slice(3);
+	let args = process.argv.slice(3), owners: string | undefined;
+	if (args[0] === "--base-owners") { owners = read(args[1]); args = args.slice(2); }
 	let ok = true;
 	for (let i = 0; i < args.length; i += 2) {
-		const r = freezeReport(read(args[i]), read(args[i + 1]), posix.basename(args[i + 1] ?? "ceilings"));
+		const r = freezeReport(read(args[i]), read(args[i + 1]), posix.basename(args[i + 1] ?? "ceilings"), owners);
 		for (const l of r.lines) console.error(l);
 		ok &&= r.ok;
 	}

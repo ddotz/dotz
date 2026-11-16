@@ -45,7 +45,7 @@ const NET = /(?<![\w$.])(?:window\.)?fetch\(|(?<![\w$.])window\.fetch\s*=(?![=>]
 const ASSIGN = /(?<![\w$.])([\w$]+)\s*=(?![=>])/g;
 const esc = (s: string) => s.replace(/[$]/g, "\\$");
 const objectWrite = (x: string) =>
-  new RegExp(`(?<![\\w$.])${esc(x)}\\.[\\w.]+\\s*(?:=(?![=>])|\\+\\+|--|[-+*/|&?]{1,2}=)|(?<![\\w$.])${esc(x)}\\.[\\w.]+\\.(?:add|delete|clear|set|push|splice)\\(|Object\\.assign\\(${esc(x)}\\b`, "g");
+  new RegExp(`(?<![\\w$.])${esc(x)}\\.[\\w.]+\\s*(?:=(?![=>])|\\+\\+|--|[-+*/|&?]{1,2}=)|(?<![\\w$.])${esc(x)}(?:\\.[\\w.]+)?\\.(?:add|delete|clear|set|push|splice)\\(|Object\\.assign\\(${esc(x)}\\b`, "g");
 const letWrite = (x: string) => new RegExp(`(?<![\\w$.])${esc(x)}\\s*(?:=(?![=>])|\\+=|\\|\\|=|\\?\\?=)`, "g");
 
 // Whether a declarator list ("a = 1, { b, c } = d", a parameter list) declares `name`: the part before each top-level comma's first `=`.
@@ -83,11 +83,12 @@ function parse(text: string) {
     return arrow || (j >= 0 && !NOT_PARAMS.has(word)) ? { fn: true, decl: inner } : { fn: false, decl: "" };
   };
   const enclosing = (at: number) => blocks.filter(([o, c]) => o < at && at < c).sort((a, b) => b[0] - a[0]);
-  // Locals a block declares itself: its text with the blocks inside it blanked, read for const/let/var lists.
+  // Locals a block declares itself: its text with the blocks inside it blanked, read for const/let/var lists. A brace-less for head
+  // (`for (const t of done) PQ.of.delete(t);`) declares only what stands before its of/in, never the loop body after it.
   const locals = ([o, c]: [number, number], name: string) => {
     let own = code.slice(o + 1, c);
     for (const [io, ic] of blocks) if (io > o && ic < c) own = own.slice(0, io - o - 1) + " ".repeat(ic - io + 1) + own.slice(ic - o);
-    return [...own.matchAll(/(?<![\w$.])(?:const|let|var)\s+([^;]*)/g)].some((m) => declares(m[1]!, name));
+    return [...own.matchAll(/(?<![\w$.])(?:const|let|var)\s+([^;]*)/g)].some((m) => declares(m[1]!.split(/\s(?:of|in)\s/)[0]!, name));
   };
   return {
     text, code, decls, topAt,
@@ -197,6 +198,12 @@ test("planted C: a foreign write counts, a parameter or local of that name does 
   expect(delta(mailBox("function bkStep(S){S.bk=1}"))).toEqual({});
   expect(delta(mailBox("function zzT(x) { const a = 1, target = x; target = 2; for (const MON of x) { MON.a = 1; } [1].map((S) => { S.b = 2; }); }"))).toEqual({});
   expect(delta({ "30-monitoring.js": `${files["30-monitoring.js"]}\nMON.zz = 1;\n` })).toEqual({});
+});
+
+test("planted C: a write to a registered Map itself and a write in a brace-less for body count", () => {
+  expect(delta(mailBox("function zzMap() { MAILS.set(\"zz\", {}); CONV.delete(\"zz\"); TURN.set(\"zz\", 1); }"))).toEqual({ "ownerWrites CONV|30-mail-box.js": 1, "ownerWrites MAILS|30-mail-box.js": 1, "ownerWrites TURN|30-mail-box.js": 1 });
+  expect(delta(mailBox("function zzFor(xs) { for (const t of xs) PQ.of.delete(t); }"))).toEqual({ "ownerWrites PQ|30-mail-box.js": 1 });
+  expect(delta(mailBox("function zzFor2(xs) { for (const PQ of xs) PQ.of.delete(1); }"))).toEqual({});
 });
 
 test("planted B: a go() branch and a top-level function reassignment count", () => {

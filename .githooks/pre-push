@@ -13,6 +13,7 @@ identity=$(dirname "$0")/../hub/push-identity.ts
 rules=$(dirname "$0")/../hub/engineering-rules.ts
 ceilings=hub/engineering-ceilings.json
 allow=hub/web-structure-allow.json
+owners=hub/web-structure-owners.json
 mkdir "$tmp/base" "$tmp/head" || exit 1
 while read -r _ sha ref remotesha; do
 	case "$sha" in *[!0]*) ;; *) continue ;; esac # all zeros: a ref being deleted
@@ -27,7 +28,8 @@ while read -r _ sha ref remotesha; do
 	if [ -f "$rules" ] && [ -n "$base" ] && git show "$base:$ceilings" >"$tmp/base/ceilings.json" 2>/dev/null && git show "$sha:$ceilings" >"$tmp/head/ceilings.json" 2>/dev/null; then
 		git show "$base:$allow" >"$tmp/base/web-structure-allow.json" 2>/dev/null || rm -f "$tmp/base/web-structure-allow.json"
 		git show "$sha:$allow" >"$tmp/head/web-structure-allow.json" 2>/dev/null || rm -f "$tmp/head/web-structure-allow.json"
-		bun "$rules" --ceiling-freeze "$tmp/base/ceilings.json" "$tmp/head/ceilings.json" "$tmp/base/web-structure-allow.json" "$tmp/head/web-structure-allow.json" </dev/null || { echo "pre-push: refused, $ref at $sha raises a ceiling or an allowlist number. Shrink the code; never raise either (docs/engineering-standards.md)." >&2; exit 1; }
+		git show "$base:$owners" >"$tmp/base/web-structure-owners.json" 2>/dev/null || rm -f "$tmp/base/web-structure-owners.json" # an object first owned since base: its first counts are a baseline
+		bun "$rules" --ceiling-freeze --base-owners "$tmp/base/web-structure-owners.json" "$tmp/base/ceilings.json" "$tmp/head/ceilings.json" "$tmp/base/web-structure-allow.json" "$tmp/head/web-structure-allow.json" </dev/null || { echo "pre-push: refused, $ref at $sha raises a ceiling or an allowlist number. Shrink the code; never raise either (docs/engineering-standards.md)." >&2; exit 1; }
 	else
 		echo "pre-push: ceiling freeze skipped, no readable baseline ceilings for $ref" >&2
 	fi

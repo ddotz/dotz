@@ -349,6 +349,15 @@ describe("ceiling freeze", () => {
 		expect(r.ok).toBe(false);
 		expect(r.lines).toEqual(["ceiling raised goBranches: 48 -> 49", "ceiling raised rawNet a.js: 2 -> 3", "ceiling raised overlaySites overlay:y: none -> 1"]);
 	});
+	test("a new ownerWrites key passes only for an object the baseline owners file does not register", () => {
+		const allow = (ownerWrites: Counts) => JSON.stringify({ _rule: "r", counts: { ownerWrites }, reasons: {} });
+		const owners = JSON.stringify({ objects: { MON: ["30-monitoring.js"] }, lets: { target: ["04-state.js"] } });
+		const base = allow({ "MON|a.js": 2 });
+		expect(freezeReport(base, allow({ "MON|a.js": 2, "NT|b.js": 3 }), "allow", owners)).toEqual({ ok: true, lines: [] });
+		expect(freezeReport(base, allow({ "MON|a.js": 2, "MON|b.js": 1, "target|b.js": 1 }), "allow", owners).lines).toEqual(["ceiling raised ownerWrites MON|b.js: none -> 1", "ceiling raised ownerWrites target|b.js: none -> 1"]);
+		expect(freezeReport(base, allow({ "MON|a.js": 3 }), "allow", owners).lines).toEqual(["ceiling raised ownerWrites MON|a.js: 2 -> 3"]);
+		expect(freezeReport(base, allow({ "MON|a.js": 2, "NT|b.js": 3 }), "allow").lines).toEqual(["ceiling raised ownerWrites NT|b.js: none -> 3"]);
+	});
 	test("an unreadable baseline passes with one warning line", () => {
 		for (const unreadable of [undefined, "", "not json", "[1]"]) {
 			const r = freezeReport(unreadable, file({ fileLines: { "hub/a.ts": 925 } }));
