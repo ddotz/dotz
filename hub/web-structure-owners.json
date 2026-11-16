@@ -52,7 +52,7 @@
     "PICK": ["15-picker.js"],
     "QUEUE": ["14-slash-commands.js"],
     "SHELL_RESTORE": ["23-installable-app-web.js"],
-    "accFocus": ["25-settings-accounts.js"],
+    "accFocus": ["21-providers.js"],
     "botName": ["17-state-refresh.js"],
     "chatList": ["05-command-palette.js"],
     "chatStick": ["09-needs-you.js"],
@@ -73,7 +73,7 @@
     "hGeo": ["27-harness.js"],
     "hGoto": ["28-harness-project.js"],
     "hNodeEls": ["27-harness.js"],
-    "hOv": ["27-harness.js"],
+    "hOv": ["28-harness-project.js"],
     "hProjId": ["27-harness.js"],
     "hSel": ["28-harness-project.js"],
     "hTimer": ["29-harness-features.js"],
@@ -109,7 +109,7 @@
     "hCvOpen": "owner is 28-harness-project.js, not the declaring 27-harness.js: its only writes (add/delete) live there and 27-harness.js writes none.",
     "PQ": "owner is 34-peer-monitoring.js, not the declaring 08-home.js: 12 of the 15 writes live there and 08-home.js writes none.",
     "RELAY": "owner is 42-relay-chat.js, not the declaring 08-home.js: 6 of the 8 writes live there and 08-home.js writes none.",
-    "cross-file primitive lets": "owner is the file making most of its writes (the declaring file on a tie); the rest are frozen as foreign writes. botName (17-state-refresh.js), pushOpenTs (99-boot.js) and go()'s context prevView/monCtx/ppCur/chatList (05-command-palette.js) have one writer, which owns them; 09-needs-you.js declares the conv* lets and 31-conversations.js writes them; 27-harness.js declares fcCount/fcList/fcOrig/hTimer (written by 29-harness-features.js) and hDirty/hGoto/hSel (28-harness-project.js).",
-    "alias writes": "a block-local `const g = X.f;` in a non-owner file counts g's writes as X's: CS|11-todo-strip.js markLive (g = CS.group; g.live, g.node.classList.add) FS|02-basic-markdown.js openSheet (top = FS[...]; top.ends.push) and hOv|28-harness-project.js (svg = hOv; svg.dataset.hot =)."
+    "cross-file primitive lets": "owner is the file making most of its writes, counted as rule C counts them (reassignments, property writes and writes through a block-local alias); the rest are frozen as foreign writes. On a tie the declaring file wins only if it writes the name itself; a file that never writes a name never owns it (accFocus: 25-settings-accounts.js only declares it, so 21-providers.js, which reads and clears it, owns it over 05-command-palette.js). hOv is owned by 28-harness-project.js (:202 hOv = svg, alias :280-282) over 27-harness.js (:177 reset). botName (17-state-refresh.js), pushOpenTs (99-boot.js) and go()'s context prevView/monCtx/ppCur/chatList (05-command-palette.js) have one writer, which owns them; 09-needs-you.js declares the conv* lets and 31-conversations.js writes them; 27-harness.js declares fcCount/fcList/fcOrig/hTimer (written by 29-harness-features.js) and hDirty/hGoto/hSel (28-harness-project.js).",
+    "alias writes": "a block-local `const g = X.f;` in a non-owner file counts g's writes as X's: CS|11-todo-strip.js markLive (g = CS.group; g.live, g.node.classList.add) FS|02-basic-markdown.js openSheet (top = FS[...]; top.ends.push). The alias at 28-harness-project.js:280 (svg = hOv; svg.dataset.hot =) is in hOv's owner file, so it counts toward ownership, not as a foreign write."
   }
 }

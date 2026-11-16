@@ -154,8 +154,10 @@ function parse(text: string) {
   return {
     text, code, decls, topAt,
     find: (re: RegExp) => [...code.matchAll(re)],
-    // The statement holding `at` starts with const/let/var: a declaration, not a write.
+    // The statement holding `at` starts with const/let/var: a declaration, not a write. A line starting with the keyword right before `at`
+    // is one too (after a `function f() {}` there is no `;` to stop the walk back).
     isDecl: (at: number) => {
+      if (/(?:^|\n)[ \t]*(?:const|let|var)\s+$/.test(code.slice(Math.max(0, at - 80), at))) return true;
       let j = at - 1;
       for (let d = 0; j >= 0; j--) {
         const c = code[j]!;
@@ -340,6 +342,7 @@ test("planted completeness: a null or call initializer later holding an object, 
 
 test("planted C: a write to a registered primitive let from another file counts", () => {
   expect(delta(mailBox("function zzLets() { botName = \"x\"; convSig = \"\"; hSel = null; }"))).toEqual({ "ownerWrites botName|30-mail-box.js": 1, "ownerWrites convSig|30-mail-box.js": 1, "ownerWrites hSel|30-mail-box.js": 1 });
+  expect(delta(mailBox("function zzDecl() {}\nlet botName = \"\";"))).toEqual({});
 });
 
 test("planted C: writes through a block-local alias of an owned object count in that block only", () => {
