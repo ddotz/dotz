@@ -36,12 +36,8 @@
       "rawdialog:viewer"
     ],
     "ownerWrites": {
-      "ATT|13-data.js": 1,
-      "ATT|14-slash-commands.js": 2,
       "CM|30-monitoring-comments-dm.js": 3,
-      "CS|11-todo-strip.js": 1,
       "DM|30-monitoring-comments.js": 6,
-      "HQ|09-needs-you.js": 1,
       "H|05-command-palette.js": 2,
       "H|33-peers.js": 2,
       "KK|30-kakao-views.js": 1,
@@ -63,22 +59,8 @@
       "NSC|31-notices-screen.js": 26,
       "PN|05-command-palette.js": 1,
       "PN|43-panes-view.js": 1,
-      "QUEUE|10-decision-card.js": 1,
-      "QUEUE|99-boot.js": 1,
       "RQ|30-monitoring.js": 1,
-      "RQ|30-triage.js": 4,
-      "chatStick|04-state.js": 1,
-      "chatStick|10-decision-card.js": 2,
-      "chatStick|13-data.js": 1,
-      "chatStick|14-slash-commands.js": 2,
-      "chatStick|31-conversations.js": 2,
-      "chatStick|42-relay-chat.js": 1,
-      "chatStick|43-panes-view.js": 1,
-      "endedOpen|05-command-palette.js": 1,
-      "endedOpen|16-target-switcher-conversation.js": 1,
-      "target|13-data.js": 1,
-      "target|43-panes-mirror.js": 2,
-      "termStick|14-slash-commands.js": 2
+      "RQ|30-triage.js": 4
     },
     "rawNet": {
       "01-forbidden-pair.js": 1,

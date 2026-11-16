@@ -78,7 +78,7 @@ async function relaySend(text) {
   ta.value = ""; s.draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch { /* no storage here: there is no stored draft to clear */ } autosize(); updateHints();
   const mine = { text, at: Date.now(), n: relayOwned(s.msgs, text) + (s.rpend || []).filter(p => relayNorm(p.text) === relayNorm(text)).length };
   s.rpend = (s.rpend || []).concat(mine); s.serr = "";
-  chatStick = true; renderAll(); scrollChat(true);
+  putChatStick(true); renderAll(); scrollChat(true);
   try { await api(`${relayApi(t)}/send`, "POST", { text }); }
   catch (e) {
     s.rpend = s.rpend.filter(p => p !== mine); s.serr = TX("misc.rl.failed", { why: e.message });

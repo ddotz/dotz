@@ -80,7 +80,7 @@ function renderBars() {
       ...(LA.some(v => !PA.some(p => p.t === homeOfT(v.t))) ? [{ header: TX("chat.tsw.no_project") }, ...LA.filter(v => !PA.some(p => p.t === homeOfT(v.t))).map(sesItem)] : []),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
       ...(D.length ? [{ value: "__ended", label: TX("chat.tsw.ended", { n: D.length }), sub: TX("chat.tsw.ended_sub") }] : [])];
-    drop._pick = v => { if (v === "__ended") { endedOpen = true; go("chat", "list"); } else pickTarget(v); };
+    drop._pick = v => { if (v === "__ended") { putEndedOpen(true); go("chat", "list"); } else pickTarget(v); };
     drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
     const ud = mode === "term" && ts(target).unread > 0;
     clear(bar).append(sw, drop);

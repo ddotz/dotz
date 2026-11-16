@@ -51,7 +51,7 @@ function paintOlderTop() {
   TL_MORE_BTN.hidden = !more;
 }
 if (TL_MORE_BTN) TL_MORE_BTN.onclick = () => loadOlderMsgs();
-function resetChat() { clear(tl); cvForget(); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; paintOlderTop(); }
+function resetChat() { clear(tl); cvForget(); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); putCS({ day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }); paintOlderTop(); }
 function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {

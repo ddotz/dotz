@@ -42,6 +42,7 @@ test("quotaLive repaints the strip and the open usage view from the pushed read"
 		clear: () => node,
 		el: () => node,
 		document: node,
+		putHQ: (v: unknown) => { scope.HQ = v; },
 		loadQuota: () => calls.push("loadQuota"),
 		paintQuota: (q: unknown) => calls.push(q === pushed ? "paintQuota" : "other"),
 		renderHome: () => calls.push("renderHome"),

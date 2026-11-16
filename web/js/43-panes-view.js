@@ -209,6 +209,6 @@ function paneLand(at, stick) {
   chatUnpin();
   if (!stick && at) { cvPinAt(at.ts, at.off); chatPin("at"); }
   else timeline.scrollTop = timeline.scrollHeight;
-  chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+  putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
   $("#chat-jump").hidden = chatStick;
 }

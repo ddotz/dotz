@@ -1,6 +1,7 @@
 /* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
 // The composer's files of the conversation open now; another conversation's wait in its ts(t).att (13-data.js setTarget swaps them).
 let ATT = [];   // [{id, name, type, size, url (local preview), file (server record once uploaded)}]
+const putAtt = v => { ATT = v; };
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
 // pc: the file is an upload of that other computer (a file sent to its conversation), read there through the peer proxy (hub/routes.ts /api/peer/file).
 const fileUrl = (p, dl, pc) => pc ? pqProxy(pc, `/api/peer/file?path=${enc(p)}${dl ? "&download=1" : ""}`) : `/api/file?path=${enc(p)}${dl ? "&download=1" : ""}`;

@@ -238,7 +238,7 @@ const isSlashCommand = text => SH_CMD.test(text) || SCR_CMD.test(text) || CMDS.s
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   const mk = (kind, extra) => ({ ts: new Date().toISOString(), kind, source: "local", ...(lane ? { lane } : {}), ...extra });
-  chatStick = true; termStick = true;
+  putChatStick(true); putTermStick(true);
   ingestMsg(mk("_cmd", { text }));
   try {
     const r = await api("/api/command", "POST", { text, ...(isConvT(t) ? { from: t } : {}) });
@@ -257,11 +257,11 @@ async function sendChat(how) {
   if (files.length && isCommand) { toast(TX("chat.send.cmd_no_files"), true); return; }
   if (picks.length && isCommand) { toast(TX("chat.send.cmd_no_picks"), true); return; }
   const refs = isCommand ? [] : mnRefs(text), sentMentions = MENTIONS;
-  const sentAtt = ATT, sentPicks = PICK; ATT = []; atkForget(); renderAtt(); pkClear(); MENTIONS = [];
+  const sentAtt = ATT, sentPicks = PICK; putAtt([]); atkForget(); renderAtt(); pkClear(); MENTIONS = [];
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
-  chatStick = true; termStick = true;
+  putChatStick(true); putTermStick(true);
   if (isCommand) {
     if (SCR_CMD.test(text)) {
       if (!(S && S.desk)) { toast(TX("chat.send.no_screen"), true); ta.value = text; autosize(); return; }
@@ -291,14 +291,14 @@ async function sendChat(how) {
     // A peer's conversation is not on this computer's event stream: its history is read again now, so the sent bubble shows at once.
     if (owner && owner.pc) loadTarget(t, true);
     scrollChat(true); scrollTerm(true);
-    if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast(TX("chat.send.queued")); }
+    if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); toast(TX("chat.send.queued")); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
   else if (mode === "interrupt" && r !== null) toast(TX("chat.send.interrupted"));
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
     if (t !== target) { ts(t).draft = text; ts(t).att = sentAtt.concat(ts(t).att || []); ts(t).pick = sentPicks.concat(ts(t).pick || []); lsSet(DRAFT_KEY(t), text); atkStore(t, ts(t).att); toast(TX("chat.send.kept", { message: e.message }), true); return; }
-    toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
+    toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); putAtt(sentAtt.concat(ATT)); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }
 // The hint in the message box of conversation t. Only the open composer (open) has a pending decision card (DC.cur) or the activity view's term mode;
@@ -376,6 +376,7 @@ function renderWorking() {
 
 /* ---------- queued messages (server queue, sent when the target's turn ends) + context ring ---------- */
 let QUEUE = [];
+const putQueue = v => { QUEUE = v; };
 async function loadQueue() {
   try { QUEUE = (await api("/api/queue")).items || []; } catch { return; }
   renderQueue();

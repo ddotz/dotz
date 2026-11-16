@@ -157,9 +157,9 @@ async function answerDecision(dc, text, opt, note) {
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
     const r = nd ? null : await sendMsgOut(t, text, { text, ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isRowT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
-    if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
+    if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); }
     DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
-    if (t === target) { chatStick = true; scrollChat(true); }
+    if (t === target) { putChatStick(true); scrollChat(true); }
   } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; if (note) DC.edit[dc.key] = { bi: 0, opt }; toast(e.message, true); }   // a refused reason opens again with its text (DC.note); a lone question lets go of the chosen row; several keep their picks, so a retry does not start the card over
   paintDecision();
 }
@@ -733,7 +733,7 @@ function dcShowDraft(dc) {
     if (mb.bottom <= tb.bottom && mb.bottom > tb.top) return;
     chatUnpin();
     timeline.scrollTop += mb.bottom - tb.bottom + 12;
-    chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+    putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
     $("#chat-jump").hidden = chatStick;
   });
 }

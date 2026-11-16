@@ -303,7 +303,7 @@ function noteQuota(q) {
 function quotaLive(q) {
   if (!q) return;
   noteQuota(q);
-  HQ = q;
+  putHQ(q);
   if (current === "usage") { if (P) paintQuota(q); else loadQuota(); }   // the pushed read is drawn as it is: a recovery shows now, not after a second fetch
   else if (current === "home") renderHome();
 }
@@ -343,6 +343,7 @@ function eventTarget(e) {
 /* ---------- conversation view (대화) ---------- */
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
+const putChatStick = v => { chatStick = v; }, putTermStick = v => { termStick = v; };
 timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; convReadSoon(); if (timeline.scrollTop < 80) loadOlderMsgs(); });
 timeline.addEventListener("scroll", () => edgeFade(timeline), { passive: true });
 term.addEventListener("scroll", () => edgeFade(term), { passive: true });
@@ -388,6 +389,7 @@ function fmtDur(ms) {
   if (m < 60) return s % 60 ? TX("home.dur.ms", { m, s: s % 60 }) : TX("home.dur.m", { n: m });
   return m % 60 ? TX("home.dur.hm", { h: Math.floor(m / 60), m: m % 60 }) : TX("home.dur.h", { n: Math.floor(m / 60) });
 }
+const putCS = v => { CS = v; };
 let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.

@@ -39,6 +39,7 @@ const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort(
 // and 선택 turns the rows into checkboxes for deleting several at once. Delete moves the lane into the gateway's trash
 // (lanetrash.ts, kept 7 days); the toast's 되돌리기 restores it.
 let endedOpen = false, endedSel = null;
+const putEndedOpen = v => { endedOpen = v; };
 const UNDO_MS = 8000;
 function refreshEnded() {
   document.querySelectorAll("details.ended").forEach(d => d.replaceWith(endedGroup() || ""));
@@ -160,7 +161,7 @@ function closeChatList() {
     chatUnpin();
     if (snap.at) { cvPinAt(snap.at.ts, snap.at.off); chatPin("at"); }
     else timeline.scrollTop = snap.top;
-    chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick;
+    putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40); $("#chat-jump").hidden = chatStick;
   }
 }
 // Setting (settings screen): what the 대화 tab opens when coming back from another tab - "last" (default) the conversation that was open, "main" the main chat.

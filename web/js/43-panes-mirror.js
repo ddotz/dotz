@@ -117,8 +117,8 @@ function paneFill(m) {
 function paneAppend(m, e) {
   const was = target;
   let n = null;
-  target = m.p.t;
-  try { n = msgNode(e); } finally { target = was; }
+  putTarget(m.p.t);
+  try { n = msgNode(e); } finally { putTarget(was); }
   if (!n) return;
   n.dataset.ts = e.ts;
   const key = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";

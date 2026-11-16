@@ -137,7 +137,7 @@ async function loadOlderMsgs() {
       const now = at && [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === at.ts);
       if (now) timeline.scrollTop += now.getBoundingClientRect().top - timeline.getBoundingClientRect().top - at.off;
       else timeline.scrollTop = timeline.scrollHeight - ch;
-      chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+      putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
       $("#chat-jump").hidden = chatStick;
     }
   } catch { toast(TX("chat.load.conv_failed"), true); }
@@ -268,7 +268,7 @@ function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself 
   ts(target).att = ATT;   // the files waiting in the composer stay with their conversation, like the typed text
   ts(target).pick = PICK;   // the picked elements stay with it too (15-picker.js)
   closeSheet();
-  target = t;
+  putTarget(t);
   if (!isRelayT(t)) lsSet(TARGET_KEY, t);   // a relayed computer is entered by the address (#chat/relay:<adapter>:<key>), never restored from here
   if (!nav && (current === "chat" || current === "activity")) routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
@@ -276,7 +276,7 @@ function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself 
   convSync();
   markSeen();
   if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
-  ta.value = s.draft; ATT = s.att || atkLoad(t); renderAtt(); pkAssign(s.pick || []); autosize(); updateHints();
+  ta.value = s.draft; putAtt(s.att || atkLoad(t)); renderAtt(); pkAssign(s.pick || []); autosize(); updateHints();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
   if (!(s.hLoaded && s.aLoaded)) loadTarget(t, hasCached(s));

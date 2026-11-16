@@ -218,7 +218,7 @@ function chatOpen() {
     return;
   }
   if (CV.pin) chatPlace();
-  else if (snap && !snap.stick) { timeline.scrollTop = snap.top; chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; }
+  else if (snap && !snap.stick) { timeline.scrollTop = snap.top; putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40); $("#chat-jump").hidden = chatStick; }
   else scrollChat(true);
 }
 // A jump target (notice, toast, push, 답변 필요, ?m=) sits with its top just under the app bar, wherever the divider is, and stays there while
@@ -255,7 +255,7 @@ function chatPlace() {
     if (n) want = timeline.scrollTop + n.getBoundingClientRect().top - timeline.getBoundingClientRect().top - CV.pinOff;   // gone from the history: the bottom
   }
   if (Math.abs(timeline.scrollTop - want) > 1) timeline.scrollTop = want;
-  chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+  putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
   $("#chat-jump").hidden = chatStick;
   convMaybeRead();   // what this placement put on screen is read now
 }
