@@ -2,13 +2,15 @@
 // card shows the next card at once with no model turn, the send runs in the background and its result lands on the card, a failure is one
 // [fail] note, and a session CLI's failed send reported through POST /api/approvals/failed reaches the card.
 // The drafts are mails of a source this machine cannot send from, refused after the approval check, so nothing leaves this machine.
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { realSetTimeout, realClearTimeout } from "./runtime/test-clock.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { askText } from "./draft-attach.ts";
 import { ignoreNotice, listNotices } from "./notices.ts";
+import * as outbound from "./outbound.ts";
 import { out } from "./outbound.ts";
+import { withSendState } from "./approval-queue.ts";
 import { approvalRoute, reportSend, sendTargetOf, sender, webAnswer } from "./approval-wire.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
 import { replies } from "./reply-wire.ts";
@@ -127,6 +129,19 @@ test("a failed comment reply's note goes where its card was asked, or to the mai
 	await flush(asked);
 	expect(notes.filter(e => String(e.text).includes(carded)).map(e => e.target)).toEqual([asked]);
 	for (const n of listNotices(500).items.filter((x: any) => x.decision?.draft?.ref === carded)) ignoreNotice(n.id);
+});
+
+// The card's countdown line (a Discord card is edited with it) is drawn from the milliseconds left in the window.
+test("a send in its undo window gives its card a countdown in whole seconds", () => {
+	const shown = spyOn(outbound, "showSendOnCard");
+	try {
+		reportSend({ ref: "DAWCOUNT01", conv: "mail:aw-countdown", title: "이대로 보낼까요? (DAWCOUNT01)", state: "undo", text: "", until: Date.now() + 10_000, at: Date.now() });
+		const left = shown.mock.calls.at(-1)![4]!;
+		expect(Number.isFinite(left)).toBe(true);
+		expect(withSendState("카드", "undo", "", left)).toContain("-# 10초 후 보내요");
+	} finally {
+		shown.mockRestore();
+	}
 });
 
 test("답글만 보내기 through the gateway: the mail draft left behind gets one open card, also when the send is reported twice, and 보내기 on it is a mail send", async () => {

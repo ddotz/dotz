@@ -85,7 +85,7 @@ function cardOwedMail(r: SendResult): void {
 
 export const reportSend = (r: SendResult): void => {
 	markDraftSend(r.conv, r.ref, r.state, r.text, r.until);
-	showSendOnCard(r.conv, r.ref, r.state, r.text, r.until ? r.until - now() : 0);
+	showSendOnCard(r.conv, r.ref, r.state, r.text, r.until ? r.until - Date.now() : 0);
 	const send = sendOf(r);
 	broadcast({ ts: now(), kind: "reply", ref: r.ref, ...(send ? { send } : {}) });
 	if (kakaoReply.target(r.ref)) broadcast({ kind: "kakao_draft", chatId: "" });
@@ -189,7 +189,8 @@ export const replies = createReplyActions({
 	toBot: (conv, text) => toBot(conv, text),
 	emit: e => broadcast({ ts: now(), ...e }),
 	log,
-	now,
+	// Milliseconds: config's now() is an ISO string for event stamps.
+	now: Date.now,
 });
 setReplies(replies);
 // A draft's card just opened: every surface gets the reply as that card shows it (the web swaps its inline placeholder for the real card at once).
