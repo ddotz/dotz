@@ -43,7 +43,7 @@
     "fcFilter": ["29-harness-features.js"],
     "hCvOpen": ["28-harness-project.js"],
     "rqFail": ["10-decision-card.js"],
-    "rqPress": ["10-reply-card.js"]
+    "rqPress": ["10-decision-card.js"]
   },
   "lets": {
     "ATT": ["15-attachments.js"],
@@ -65,6 +65,7 @@
   "notes": {
     "READ": "owner is 31-conversations.js, not the declaring 09-needs-you.js: 6 of the 8 writes live there and 09-needs-you.js writes none.",
     "convPend": "owner is 31-conversations.js, not the declaring 09-needs-you.js: its only writes (set/clear) live there.",
+    "rqPress": "owner is 10-decision-card.js, not the declaring 10-reply-card.js: both writes (set :599, delete :601) live there; 10-reply-card.js only declares it.",
     "rqFail": "owner is 10-decision-card.js, not the declaring 10-reply-card.js: its only writes (delete/set) live there; 10-reply-card.js only declares it.",
     "fcCollapsed": "owner is 29-harness-features.js, not the declaring 27-harness.js: its only writes (add/delete) live there.",
     "hGeo, hNodeEls, hEdgeRefs": "lets kept with the declaring 27-harness.js, which resets all three per paint (:177); 28-harness-project.js fills them (set/push, frozen as foreign writes).",

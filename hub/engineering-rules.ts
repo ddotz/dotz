@@ -345,7 +345,8 @@ const ownedNames = (text: string | undefined): Set<string> | undefined => {
 // read never blocks: one warning line, ok. A new "ownerWrites NAME|file" key is the first count of an object registered after the baseline
 // (NAME is not in the baseline's hub/web-structure-owners.json, baseOwnersText), a baseline rather than a raise. An "ownerWrites NAME|file" number
 // may also rise up to baseRecountText's (the baseline's web files counted by the pushed commit's rule C, a { "NAME|file": n } map): a write
-// the baseline code already had and the rule now sees. Every other new or raised key refuses.
+// the baseline code already had and the rule now sees; each such key is still named, as a "recount allowed" line. Every other new or raised
+// key refuses.
 export const freezeReport = (baseText: string | undefined, headText: string | undefined, what = "ceilings", baseOwnersText?: string, baseRecountText?: string): { ok: boolean; lines: string[] } => {
 	const base = flatCeilings(baseText), head = flatCeilings(headText);
 	if (!base || !head) return { ok: true, lines: [`pre-push: ceiling freeze skipped, the baseline ${what} cannot be read`] };
@@ -356,8 +357,10 @@ export const freezeReport = (baseText: string | undefined, headText: string | un
 		const name = /^ownerWrites ([^|]+)\|/.exec(r.key)?.[1];
 		return name !== undefined && !owned.has(name);
 	};
-	const lines = ceilingsRaised(base, head).filter(r => !newlyOwned(r) && !recounted(r)).map(r => `ceiling raised ${r.key}: ${r.from ?? "none"} -> ${r.to}`);
-	return { ok: lines.length === 0, lines };
+	const raised = ceilingsRaised(base, head).filter(r => !newlyOwned(r)), shown = (r: Raised) => `${r.key}: ${r.from ?? "none"} -> ${r.to}`;
+	const refused = raised.filter(r => !recounted(r)).map(r => `ceiling raised ${shown(r)}`);
+	const allowed = raised.filter(recounted).map(r => `recount allowed ${shown(r)} (recount ${recount[r.key.slice("ownerWrites ".length)]})`);
+	return { ok: refused.length === 0, lines: [...refused, ...allowed] };
 };
 
 if (import.meta.main && process.argv[2] === "--ceiling-freeze") {

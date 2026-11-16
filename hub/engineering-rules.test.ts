@@ -363,9 +363,10 @@ describe("ceiling freeze", () => {
 		const owners = JSON.stringify({ objects: { MON: ["m.js"] }, lets: { CS: ["c.js"] } });
 		const base = allow({ goBranches: 3, ownerWrites: { "CS|t.js": 1, "MON|a.js": 2 } });
 		const recount = JSON.stringify({ "CS|t.js": 14, "CS|d.js": 4, "MON|a.js": 2 });
-		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 14, "CS|d.js": 4, "MON|a.js": 2 } }), "allow", owners, recount)).toEqual({ ok: true, lines: [] });
+		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 14, "CS|d.js": 4, "MON|a.js": 2 } }), "allow", owners, recount))
+			.toEqual({ ok: true, lines: ["recount allowed ownerWrites CS|t.js: 1 -> 14 (recount 14)", "recount allowed ownerWrites CS|d.js: none -> 4 (recount 4)"] });
 		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 15, "CS|d.js": 4, "MON|a.js": 3 } }), "allow", owners, recount).lines)
-			.toEqual(["ceiling raised ownerWrites CS|t.js: 1 -> 15", "ceiling raised ownerWrites MON|a.js: 2 -> 3"]);
+			.toEqual(["ceiling raised ownerWrites CS|t.js: 1 -> 15", "ceiling raised ownerWrites MON|a.js: 2 -> 3", "recount allowed ownerWrites CS|d.js: none -> 4 (recount 4)"]);
 		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 14 } }), "allow", owners).lines).toEqual(["ceiling raised ownerWrites CS|t.js: 1 -> 14"]);
 		expect(freezeReport(base, allow({ goBranches: 4, ownerWrites: { "CS|t.js": 1 } }), "allow", owners, JSON.stringify({ goBranches: 9 })).lines).toEqual(["ceiling raised goBranches: 3 -> 4"]);
 	});
