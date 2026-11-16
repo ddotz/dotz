@@ -27,7 +27,7 @@ function broadPath(raw: string): string | undefined {
 	return roots.includes(normalized) ? normalized : undefined;
 }
 
-interface ShellWord {
+export interface ShellWord {
 	text: string;
 	expands: boolean;
 }
@@ -55,7 +55,7 @@ function skipBacktick(s: string, open: number): number {
 }
 
 // Splits a command into simple-command segments of words; `expands` marks an unquoted $VAR, ${VAR}, $(...) or backtick.
-function shellSegments(s: string): ShellWord[][] {
+export function shellSegments(s: string): ShellWord[][] {
 	const segments: ShellWord[][] = [];
 	let words: ShellWord[] = [];
 	let text = "";
@@ -136,9 +136,15 @@ function shellSegments(s: string): ShellWord[][] {
 
 const WRAPPER_COMMANDS: Record<string, true> = { sudo: true, env: true, time: true, nice: true, nohup: true, command: true, exec: true, builtin: true, xargs: true, timeout: true };
 
-function recursiveSearch(words: ShellWord[]): { name: string; args: ShellWord[] } | undefined {
+// The index of a segment's command word, past NAME=value assignments and wrappers (sudo, env, timeout 10, xargs -0, ...).
+export function commandStart(words: ShellWord[]): number {
 	let i = 0;
 	while (i < words.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i].text) || WRAPPER_COMMANDS[basename(words[i].text)] === true || (i > 0 && /^(-|\d+$)/.test(words[i].text)))) i++;
+	return i;
+}
+
+function recursiveSearch(words: ShellWord[]): { name: string; args: ShellWord[] } | undefined {
+	const i = commandStart(words);
 	const head = words[i];
 	if (!head) return undefined;
 	const name = basename(head.text);

@@ -36,6 +36,7 @@ import { dropLongTtl, externalAction, installGuard, sharedWriteBlock } from "./g
 import { dataDir, loadGuardConfig } from "./guard-config.ts";
 import { pipedStatusBlock } from "./guard-pipe.ts";
 import { expandShellVars } from "./guard-shell.ts";
+import { replySendDeny } from "./guard-send.ts";
 import { installHarnessTools } from "./harness-tools.ts";
 import { installOutputCap } from "./output-cap.ts";
 import { installOwnerValues } from "./owner-values.ts";
@@ -107,6 +108,8 @@ function enforceRules(pi: any): void {
 		if (command === undefined) return;
 		const system = systemDeny(command);
 		if (system) return { block: true, reason: `Blocked by dotz: ${system}.` };
+		const send = replySendDeny(String(event?.toolName ?? ""), event?.input);
+		if (send) return { block: true, reason: refusals.say(send) };
 		const post = publicPostDeny(command, DATA, process.cwd());
 		if (post) return { block: true, reason: refusals.say(`Blocked by dotz: ${post}.`) };
 		const plugin = pluginDeny(command, DATA);
