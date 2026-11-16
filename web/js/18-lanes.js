@@ -331,7 +331,7 @@ function pjPaintRows() {
     }
   }
   if (rest > 0 && card) card.append(moreRow(TX("project.more_n", { n: rest }), () => { PJ.more += PJ_PAGE; pjPaintRows(); }));
-  if (!rows.length && !(pcs && nodes.length)) nodes.push(el("div", { class: "empty pl-empty", text: searching ? TX("project.empty.search") : PJ.view === "need" ? TX("project.empty.need") : PJ.view === "run" ? TX("project.empty.run") : PJ.view === "done" ? TX("project.empty.done") : TX("project.empty.none") }));
+  if (!rows.length && !(pcs && nodes.length)) nodes.push(emptyNode(searching ? TX("project.empty.search") : PJ.view === "need" ? TX("project.empty.need") : PJ.view === "run" ? TX("project.empty.run") : PJ.view === "done" ? TX("project.empty.done") : TX("project.empty.none")));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
     nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: TX("project.my_settings") }));

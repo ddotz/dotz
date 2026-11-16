@@ -93,8 +93,8 @@ const nscRows = (n, group) => [nscRow(n, group), ...(n.repeats && n.repeats.leng
 
 function nscList(rows, defer = false) {
   nscTodo = [];
-  if (!NT.loaded) return [el("div", { class: "list" }, el("div", { class: "empty", text: NT.failed ? TX("misc.nsc.load_failed") : TX("misc.nsc.loading") }))];
-  if (!rows.length) return [el("div", { class: "list" }, el("div", { class: "empty", text: TX("misc.nsc.empty") }))];
+  if (!NT.loaded) return [emptyNode(NT.failed ? TX("misc.nsc.load_failed") : TX("misc.nsc.loading"))];
+  if (!rows.length) return [emptyNode(TX("misc.nsc.empty"))];
   const out = [];
   let room = defer ? NSC_FIRST : Infinity;   // rows to build now, over all groups
   for (const [g, label] of NSC_GROUPS) {

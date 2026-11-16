@@ -95,13 +95,12 @@ const rvDotTone = tone => (/^(ask|warn|need)/.test(tone) ? "warn" : /^(err|fail)
 
 function rvBody(name, t, c) {
   const who = targetName(t);
-  if (name === "settings") return [el("div", { class: "card empty rv-off" }, el("div", { text: TX("relay.settings_off") }),
-    el("div", { class: "rv-acts" },
-      el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }),
-      el("button", { class: "btn text sm", type: "button", "data-k": "relay-leave", onclick: () => relayLeave(), text: TX("relay.back_here") })))];
+  if (name === "settings") return [emptyNode(TX("relay.settings_off"), null, { more: [el("div", { class: "rv-acts" },
+    el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }),
+    el("button", { class: "btn text sm", type: "button", "data-k": "relay-leave", onclick: () => relayLeave(), text: TX("relay.back_here") }))] })];
   if (!c.loaded) return [emptyNode(TX("relay.loading"))];
   if (c.err && !c.snap) return [emptyNode(TX("relay.failed"), () => rvLoad(t))];
-  if (!c.snap) return [el("div", { class: "card empty rv-none" }, el("div", { text: TX("relay.none_title", { name: who }) }), el("div", { class: "sup", text: TX("relay.none_hint") })), rvFoot(t, null)];
+  if (!c.snap) return [emptyNode(TX("relay.none_title", { name: who }), null, { more: [el("div", { class: "sup", text: TX("relay.none_hint") })] }), rvFoot(t, null)];
   const s = c.snap;
   const head = el("div", { class: "rv-head" }, name === "home" ? null : el("span", { class: "rv-n", text: who }), el("span", { class: "sup", text: TX("relay.updated", { when: rvWhen(c) }) }));
   const body = name === "projects" ? rvProjects(s) : name === "monitoring" ? rvMonitors(s) : rvHome(s);
@@ -115,7 +114,6 @@ function rvFoot(t, s) {
     el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }));
 }
 
-const rvLine = text => el("div", { class: "empty rv-empty", text });
 function rvSession(x) {
   const tone = x.waiting ? "warn" : x.live ? "pri" : "", sub = [x.title ? x.name : "", rvTime(x.at)].filter(Boolean).join(" · ");
   return el("div", { class: "hr rv-row" },
@@ -124,12 +122,12 @@ function rvSession(x) {
     x.status ? el("span", { class: `hs ${tone}`, text: x.status }) : null);
 }
 function rvHome(s) {
-  const nodes = [el("div", { class: "sec", text: TX("relay.sessions") }), el("div", { class: "list" }, ...(s.sessions.length ? s.sessions.map(rvSession) : [rvLine(TX("relay.no_sessions"))]))];
+  const nodes = [el("div", { class: "sec", text: TX("relay.sessions") }), s.sessions.length ? el("div", { class: "list" }, ...s.sessions.map(rvSession)) : emptyNode(TX("relay.no_sessions"), null, { compact: true })];
   const todo = s.todos || { open: 0, items: [] }, more = todo.open - todo.items.length;
   nodes.push(el("div", { class: "sec", text: todo.open ? TX("relay.todos", { n: todo.open }) : TX("relay.todos_title") }));
-  nodes.push(el("div", { class: "list" }, ...(todo.items.length || more > 0
-    ? [...todo.items.map(x => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: x })))), more > 0 ? el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: TX("relay.todo_more", { n: more }) }))) : null]
-    : [rvLine(TX("relay.no_todos"))])));
+  nodes.push(todo.items.length || more > 0
+    ? el("div", { class: "list" }, ...todo.items.map(x => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: x })))), more > 0 ? el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: TX("relay.todo_more", { n: more }) }))) : null)
+    : emptyNode(TX("relay.no_todos"), null, { compact: true }));
   if (s.notices.length) {
     nodes.push(el("div", { class: "sec", text: TX("relay.notices") }));
     nodes.push(el("div", { class: "list" }, ...s.notices.map(n => el("div", { class: "li" },

@@ -233,8 +233,7 @@ function renderAll0(keepScroll) {
   }
   if (isRelayT(target)) relayTail(s);   // a send still waiting for its line and the last error, before the "no conversation yet" line is considered
   if (tl.children.length <= 1) {
-    const none = el("div", { class: "empty", text: TX("chat.empty.none") });
-    CS.empty = tl.appendChild(s.herr ? emptyNode(TX("chat.empty.load_failed"), () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, none, acctConnectRow()));
+    CS.empty = tl.appendChild(s.herr ? emptyNode(TX("chat.empty.load_failed"), () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, emptyNode(TX("chat.empty.none")), acctConnectRow()));
     if (!P && !s.herr) loadProviderData().then(() => current === "chat" && CS.empty && renderAll(true), () => {});   // the account line needs the list: draw again once it has come
   }   // only the top sentinel is there
   if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("chat.empty.no_activity") }));

@@ -160,11 +160,11 @@ describe("모니터링 on a phone and on failure", () => {
 		try {
 			const v = await boot(1280);
 			await run(v, `go("monitoring", "replies")`);
-			await waitFor(v, `document.querySelector("#v-monitoring .rq-empty")`);
-			const t = await ev<string>(v, `document.querySelector("#v-monitoring .rq-empty").innerText`);
+			await waitFor(v, `document.querySelector("#v-monitoring .rq-ls .card.empty")`);
+			const t = await ev<string>(v, `document.querySelector("#v-monitoring .rq-ls .card.empty").innerText`);
 			expect(t).toContain("다시 시도");
 			repliesFail = false;
-			await run(v, `[...document.querySelectorAll("#v-monitoring .rq-empty button")].find(b => /다시 시도/.test(b.innerText)).click()`);
+			await run(v, `[...document.querySelectorAll("#v-monitoring .rq-ls .card.empty button")].find(b => /다시 시도/.test(b.innerText)).click()`);
 			await waitFor(v, `document.querySelector("#v-monitoring .rq-r")`);
 		} finally { repliesFail = false; }
 	}, 40_000);

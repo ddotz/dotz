@@ -192,8 +192,8 @@ function cmPaintRooms() {
     list.append(el("div", { class: "cv-gh", role: "presentation", text: TX("mon.cm.posts") }));
     if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }), el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: () => cmLoad() }));
     else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
-    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: TX("mon.cm.none_on") }));
-    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: TX("mon.cm.empty") }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: TX("mon.cm.pick"), onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
+    else if (!srcs.length) list.append(emptyNode(TX("mon.cm.none_on"), null, { id: "cm-empty" }));
+    else list.append(emptyNode(TX("mon.cm.empty"), null, { id: "cm-empty", more: [el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: TX("mon.cm.pick"), onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) })] }));
   } else list.append(el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
   const tabs = cmTabs();
   clear(cmRooms).append(...(tabs ? [tabs] : []), list);

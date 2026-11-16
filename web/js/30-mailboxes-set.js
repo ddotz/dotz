@@ -164,7 +164,7 @@ const mxsCondSum = b => [...MXS_KINDS.filter(([k]) => b.conds[k].length).map(([k
 const mxsFirst = (l, none = TX("mail.none")) => (l.length ? (l.length > 1 ? TX("mail.first_more", { first: l[0], n: l.length - 1 }) : l[0]) : none);
 function mxsSetNodes() {
   const a = MX.accts.get(MX.acct), b = a && a.byId.get(MX.box);
-  if (!b) return [el("div", { class: "empty", text: TX("mail.set.gone") })];
+  if (!b) return [emptyNode(TX("mail.set.gone"))];
   const ap = mxsSetApply(a.key, b.id), mails = mxsMails(a, b), unread = mails.filter(t => mailUnread(t, MAILS.get(t))).length, drafts = !b.mode || b.mode === "auto" || b.mode === "ask";
   const text = (get, set, ph, label, rows) => el(rows ? "textarea" : "input", { class: `fi${rows ? " mxs-ta" : ""}`, ...(rows ? { rows } : { value: get }), placeholder: ph, "aria-label": label, onchange: ev => ap(x => set(x, ev.target.value.trim()), false) }, rows ? get : null);
   const nameBody = () => [el("input", { class: "fi", value: b.name, "aria-label": TX("mail.box.name"), onchange: ev => {
@@ -214,8 +214,8 @@ function mxsStartNodes(d) {
   mxsSuggest(d.acct);
   const groups = MXS.sug, row = (title, sup, onclick, n) => el("button", { class: n ? "li mxs-sg" : "li", type: "button", onclick }, el("span", { class: "tx" }, el("span", { class: "hd", text: title }), el("span", { class: "sup", text: sup })), n ? liEnd(el("span", { class: "mxs-cnt", text: n }), icon("chev")) : icon("chev"));
   const copyable = [...MX.accts.values()].flatMap(a => a.boxes.filter(b => !b.base).map(b => ({ a, b })));
-  return [...mxsAcctRow(d), mxsSec(TX("mail.new.groups")), el("div", { class: "list" }, ...(groups === null ? [el("div", { class: "empty", text: TX("mail.new.groups_loading") })] : groups.length ? groups.map(g => row(g.label, `${g.domain} · ${g.senders.join(", ")}`,
-    () => mxsStart(d, { name: g.label, conds: { from: [g.domain], subj: [], body: [] }, keys: g.keys, count: g.count }), TX("mail.emails_n", { n: g.count }))) : [el("div", { class: "empty", text: TX("mail.new.groups_none") })])),
+  return [...mxsAcctRow(d), mxsSec(TX("mail.new.groups")), groups === null ? emptyNode(TX("mail.new.groups_loading")) : groups.length ? el("div", { class: "list" }, ...groups.map(g => row(g.label, `${g.domain} · ${g.senders.join(", ")}`,
+    () => mxsStart(d, { name: g.label, conds: { from: [g.domain], subj: [], body: [] }, keys: g.keys, count: g.count }), TX("mail.emails_n", { n: g.count })))) : emptyNode(TX("mail.new.groups_none")),
   mxsSec(TX("mail.new.own")), el("div", { class: "list" }, row(TX("mail.new.blank"), TX("mail.new.blank_sub"), () => mxsStart(d, {})),
     copyable.length ? row(TX("mail.new.copy"), TX("mail.new.copy_sub"), () => { d.step = "copy"; mxsPaint(); }) : null)];
 }

@@ -44,7 +44,7 @@ function dmPaintRooms() {
   if (DM.perm === "missing") list.append(el("div", { class: "kk-note", id: "dm-perm", role: "status", text: DM.line }));
   else if (DM.error) list.append(el("div", { class: "kk-note", role: "status", text: DM.error }));
   if (DM.convs.length) list.append(...DM.convs.map(dmRow));
-  else if (DM.loaded && DM.perm !== "missing") list.append(el("div", { class: "kk-note", id: "dm-empty", text: TX("mon.dm.empty") }));
+  else if (DM.loaded && DM.perm !== "missing") list.append(emptyNode(TX("mon.dm.empty"), null, { id: "dm-empty" }));
   clear(cmRooms).append(...(tabs ? [tabs] : []), bar, list);
   cmRooms.scrollTop = top;
 }

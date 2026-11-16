@@ -4,21 +4,7 @@
     "currentAssign": {
       "05-command-palette.js": 1
     },
-    "emptyBypass": {
-      "13-data.js": 1,
-      "18-lanes.js": 1,
-      "30-kakao.js": 2,
-      "30-mailboxes-set.js": 3,
-      "30-monitoring-comments-dm.js": 1,
-      "30-monitoring-comments.js": 2,
-      "30-monitoring.js": 5,
-      "30-replies.js": 2,
-      "31-conversations.js": 1,
-      "31-notices-screen.js": 2,
-      "43-panes-mirror.js": 1,
-      "44-relay-views.js": 3,
-      "custom.js": 1
-    },
+    "emptyBypass": {},
     "fnReassign": {},
     "goBranches": 24,
     "overlaySites": [

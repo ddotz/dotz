@@ -79,7 +79,7 @@ type Surface = { id: string; kind: string; open: string; ready: string };
 
 const SURFACES = (JSON.parse(src("hub/ui-surfaces.json")) as Surface[]).filter(s => s.kind === "screen" || s.kind === "subscreen");
 // Screens whose `ready` the demo data cannot satisfy: they wait for the general settle (no request open, two quiet frames) instead.
-//   sub-replies  the queue stays empty on the demo data (`.rq-empty`), so `#v-monitoring .rq-r` never appears
+//   sub-replies  the queue stays empty on the demo data (`.card.empty`), so `#v-monitoring .rq-r` never appears
 const SETTLE_ONLY = new Set<string>(["sub-replies"]);
 const BOOT = `typeof S !== "undefined" && S && typeof target === "string" && CV.loaded && NT.loaded`;
 

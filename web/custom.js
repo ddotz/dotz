@@ -573,7 +573,6 @@ button.pv-res:hover { background: var(--card-hover); }
   // A folder as the rest of the app shows it (shortPath + pathCopy in 15-attachments.js): a short line, the full path in the title, a tap copies it.
   const pathNode = path => pathCopy(path, "pv-path");
   const sec = (label, extra) => el("div", { class: "pv-sh" }, el("div", { class: "sec", text: label }), extra || null);
-  const emptyCard = t => el("div", { class: "card empty", text: t });
 
   async function sendReq(text, target) {
     const p = curProject();
@@ -699,7 +698,7 @@ button.pv-res:hover { background: var(--card-hover); }
     return out;
   }
   function moreNode(D) {
-    if (!D) return emptyCard(TX("common.loading"));
+    if (!D) return emptyNode(TX("common.loading"));
     const tasks = D.tasks || [], links = D.linked ? linkChips(D.linked) : [];
     return el("div", { class: "list pv-box2" },
       el("div", { class: "pv-sub", text: tasks.length ? TX("custom.pv.tasks_head", { n: tasks.length }) : TX("custom.pv.no_tasks") }), ...tasks.map(taskNode),
@@ -740,7 +739,7 @@ button.pv-res:hover { background: var(--card-hover); }
     const D = DETAIL && detailKey === projKey ? DETAIL : null;
     if (!p) {
       root.dataset.sig = "";
-      clear(root).append(emptyCard(DATA ? TX("custom.pv.not_found") : TX("common.loading")));
+      clear(root).append(emptyNode(DATA ? TX("custom.pv.not_found") : TX("common.loading")));
       return;
     }
     if (same(root, JSON.stringify([p, D, reqTarget, botName]))) return;
@@ -753,11 +752,11 @@ button.pv-res:hover { background: var(--card-hover); }
       el("div", { class: "pv-top" }, overviewNode(p, D), requestNode(p, D)),
       el("div", { class: "pv-cols" },
         el("div", { class: "pv-col" },
-          sec(TX("custom.pv.lanes_head", { n: ls.length })), ls.length ? el("div", { class: "list" }, ...sorted.map(laneNode)) : emptyCard(TX("custom.pv.no_lanes")),
+          sec(TX("custom.pv.lanes_head", { n: ls.length })), ls.length ? el("div", { class: "list" }, ...sorted.map(laneNode)) : emptyNode(TX("custom.pv.no_lanes")),
           sec(TX("custom.pv.sec_more")), moreNode(D)),
         el("div", { class: "pv-col" },
           sec(TX("custom.pv.sec_results"), el("span", { class: "cu-m", text: TX("custom.pv.results_sub") })),
-          !results ? emptyCard(TX("common.loading")) : results.length ? resultsNode(results) : emptyCard(TX("custom.pv.no_results")))));
+          !results ? emptyNode(TX("common.loading")) : results.length ? resultsNode(results) : emptyNode(TX("custom.pv.no_results")))));
     const ta = $(".pv-ta", root);
     if (draft) { ta.value = draft; ta.dispatchEvent(new Event("input")); }
     if (focused) ta.focus();

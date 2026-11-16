@@ -56,7 +56,7 @@ function phraseTree(text) {
 // The tree as plain arrays of strings (the gaps dropped), for reading and testing the split points.
 const phraseChunks = text => (phraseTree(text) || []).map(([s]) => s.map(([c]) => c.map(([p]) => p.map(([u]) => u))));
 
-const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".cv-empty", ".bell-none", ".dr-none", ".fs-body",
+const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".bell-none", ".dr-none", ".fs-body",
   "dialog p", "[class$='-note']", "[class*='-note ']", "[class$='-sub']", "[class*='-sub ']", "[class$='-hint']", "[class*='-hint ']", "[class$='-desc']",
   "[class*='-desc ']", "[class$='-msg']", "[class$='-body']", "[class*='-body ']"].join(", ");
 // the chat window (#tl: answers, cards, notes) keeps normal line breaks (owner, 11-03), and so does prose an agent wrote wherever it is shown

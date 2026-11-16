@@ -207,8 +207,13 @@ const limitKo = s => String(s).replace(/^Claude\s+/i, "").replace(/^7\s*Day\s*\(
 const limitLabel = (p, l, multi) => `${multi ? `${p.name || providerName(p.provider)} · ` : ""}${limitKo(l.label || l.id)}`;
 const isConnected = p => p.auth && p.auth !== "none";
 const needsAttention = p => p.in_use && !isConnected(p);
-// A card that failed to load passes `retry`: its 다시 시도 button asks again (a load that gave no data is never a dead end).
-const emptyNode = (t, retry) => (retry ? el("div", { class: "card empty" }, el("div", { text: t }), el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: TX("base.retry"), onclick: ev => busy(ev.currentTarget, async () => retry()) })) : el("div", { class: "card empty", text: t }));
+// The one empty, loading or failed place of a screen (docs/ui-spec.md 빈 화면): a sentence on a card, and nothing else builds one (rule G of
+// hub/web-structure-web.test.ts). `retry` puts 다시 시도 under the sentence (a load that gave no data is never a dead end) and `more` what else stands
+// there: a hint, the one action. `compact` is the line of one section among others; `id` and `role` are for a node a test or a screen reader finds.
+const emptyNode = (t, retry, { id, role, compact, more = [] } = {}) => {
+  const under = [retry ? el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: TX("base.retry"), onclick: ev => busy(ev.currentTarget, async () => retry()) }) : null, ...more].filter(Boolean);
+  return el("div", { class: compact ? "card empty compact" : "card empty", id, role, text: under.length ? null : t }, ...(under.length ? [el("div", { text: t }), ...under] : []));
+};
 // The one 더 보기 of a list: the card's own last line, inside the card, never a control floating under it (.cv-more, 19-volume.css).
 const moreRow = (text, onclick) => el("button", { class: "cv-more", type: "button", "data-k": "more", onclick, text });
 

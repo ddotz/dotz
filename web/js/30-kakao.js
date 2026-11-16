@@ -563,7 +563,7 @@ const kkPickRow = r => el("button", { class: `pl-row kk-pr${r.watched ? " on" : 
   r.watched ? icon("check", "kk-ck") : null);
 function kkPickRows() {
   const list = KK.rooms.filter(r => kkMatch(r.name, KK.q));
-  return list.length ? list.map(kkPickRow) : [el("div", { class: "kk-note", id: "kk-nomatch", role: "status", text: TX("apps.kk.no_match") })];
+  return list.length ? list.map(kkPickRow) : [emptyNode(TX("apps.kk.no_match"), null, { id: "kk-nomatch", role: "status" })];
 }
 function kkAddOpen() {
   if (KK.adding) return;
@@ -597,7 +597,7 @@ function kkPaintRooms() {
   const list = el("section", { class: "pl-list kk-watch", "aria-label": TX("apps.kk.watched") });
   if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }), ...(KK.failed ? [appRetry(() => kkLoadRooms())] : []));
   else if (shown.length) list.append(...shown.map(kkRow));
-  else list.append(el("div", { class: "kk-note", id: "kk-empty", text: watched.length ? kkViewOf()[3] : KK.rooms.length ? TX("apps.kk.add_prompt") : TX("apps.kk.no_rooms") }));
+  else list.append(emptyNode(watched.length ? kkViewOf()[3] : KK.rooms.length ? TX("apps.kk.add_prompt") : TX("apps.kk.no_rooms"), null, { id: "kk-empty" }));
   // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
   const own = (kkItemNow() || {}).owned || [];
   clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": TX("apps.kk.status_aria") }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));

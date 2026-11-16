@@ -143,8 +143,8 @@ function rowHold(a) {
 const rqAnchor = () => rowAnchor(rqUi().ls, ".rq-c, .rq-r", "qr");
 // What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).
 function rqDescs(shown) {
-  if (!shown.length && RQ.err && !(RQ.rows || []).length) return [{ key: "empty", sig: RQ.err, make: () => el("div", { class: "rq-empty", role: "status" }, el("div", { text: RQ.err }), appRetry(() => rqLoad())) }];   // the load failed: a sentence and 다시 시도
-  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : TX("common.loading"); return [{ key: "empty", sig: text, make: () => el("div", { class: "rq-empty", role: "status", text }) }]; }
+  if (!shown.length && RQ.err && !(RQ.rows || []).length) return [{ key: "empty", sig: RQ.err, make: () => emptyNode(RQ.err, () => rqLoad(), { role: "status" }) }];   // the load failed: a sentence and 다시 시도
+  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : TX("common.loading"); return [{ key: "empty", sig: text, make: () => emptyNode(text, null, { role: "status" }) }]; }
   const out = [];
   for (const [s, label] of RQ_SECS) {
     const part = shown.filter(r => r.state === s);

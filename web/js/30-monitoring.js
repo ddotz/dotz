@@ -640,7 +640,7 @@ function monChronoNodes(it, names) {
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, TX("mon.older_n", { n: cut })));
   if (hidden && (hidden.size || CVP.more)) nodes.push(...mbMoreNodes(hidden.size));
   if (withMails) mbRowsPrune();
-  if (withMails) return MX.scr ? mxScreen() : [...mxTop(it), ...mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)))].filter(Boolean), ...(nodes.length ? nodes : [el("div", { class: "empty", text: mailEmptyText() })]), ...(held ? [] : [el("div", { class: "mbox-fab-gap", "aria-hidden": "true" }), mbFab()])];   // the gap keeps the last card, its 첨부 줄 included, clear of 메일 쓰기; the waiting drafts view has no round button over a card corner
+  if (withMails) return MX.scr ? mxScreen() : [...mxTop(it), ...mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)))].filter(Boolean), ...(nodes.length ? nodes : [emptyNode(mailEmptyText())]), ...(held ? [] : [el("div", { class: "mbox-fab-gap", "aria-hidden": "true" }), mbFab()])];   // the gap keeps the last card, its 첨부 줄 included, clear of 메일 쓰기; the waiting drafts view has no round button over a card corner
   return nodes;
 }
 // A short feed (a handful of reports) reads best as the whole cards, newest first, with the machine of a peer's report; past MON_COMPACT
@@ -698,18 +698,18 @@ function monOverview(it) {
     head = el("button", { class: "mon-ov-h", type: "button", "aria-expanded": String(open), "aria-label": `${ht} · ${sum} · ${open ? TX("mon.fold") : TX("mon.unfold")}`, onclick: () => { MON.ovOpen = !open; MON.sig = ""; monSchedule(); } },
       el("span", { class: "mon-ov-ht", text: ht }), el("span", { class: "mon-ov-sum", text: sum }), icon("chev", "chev"));
   }
-  return el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : []), sorted.length ? null : el("div", { class: "mon-ov-empty", text: TX("mon.ov.empty") }));
+  return sorted.length ? el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : [])) : emptyNode(TX("mon.ov.empty"), null, { compact: true });
 }
 function monTimeline(it) {
-  if (it.off) return [el("div", { class: "empty", text: TX("mon.state.off") })];
+  if (it.off) return [emptyNode(TX("mon.state.off"))];
   const names = it.mon ? monNames(it.mon) : [];
   const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = !monFeed(it) ? monChronoNodes(it, names) : it.notices.length > MON_COMPACT ? monFeedNodes(it, names) : monFeedCards(it, names);
   const ov = monOverview(it), head = [...monTopNodes(it), ...bar, ...(ov ? [ov] : [])];
   // A monitor's reports read as its 확인 기록, under a section label like the prototype's detail (its 지금 확인 stays in the head's actions).
   const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? TX("mon.log.sched") : TX("mon.log.watch") })] : [];
   if (nodes.length) return [...head, ...sec, ...nodes];
-  if (head.length) return [...head, el("div", { class: "empty", text: it.notices.length || (it.mails || []).length || it.mon ? TX("mon.empty.view") : TX("mon.empty.none") })];   // an app with nothing at all says so, never a bare head
-  return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? TX("common.loading") : it.mon ? monRunLine(it.mon) : TX("mon.empty.none") })];
+  if (head.length) return [...head, emptyNode(it.notices.length || (it.mails || []).length || it.mon ? TX("mon.empty.view") : TX("mon.empty.none"))];   // an app with nothing at all says so, never a bare head
+  return [emptyNode(!NT.loaded && !NM.loaded ? TX("common.loading") : it.mon ? monRunLine(it.mon) : TX("mon.empty.none"))];
 }
 // The settings an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct), a local schedule's (s:<id>, the screen only, no
 // conversation: 32-app-settings.js asEntry); none for a peer's app or schedule or an unreachable computer.
