@@ -9,8 +9,8 @@ import { loginPage } from "./local-login-page.ts";
 import { createLocalLogin } from "./local-login.ts";
 import { ALLOW, localLogin, makeRoute, setLoginConfirm, webAccess } from "./routes.ts";
 
-// 이 컴퓨터만 로그인 링크 on the real route: a link minted with the hub token becomes a cookie, and every check of localBrowser() still applies to both
-// the redeeming and the cookie. Unit cases (expiry, caps, an unreadable file) use createLocalLogin with an injected clock.
+// 이 컴퓨터만 로그인 링크 on the real route: a link minted with the hub token opens the page of an on-screen confirmation and becomes a cookie only after the
+// (fake) dialog allowed it; every check of localBrowser() still applies to both the redeeming and the cookie. Unit cases (expiry, caps, an unreadable file) use createLocalLogin with an injected clock.
 const DATA = process.env.DOTZ_DIR!;
 const FILE = join(DATA, "web-local-sessions.json");
 const PEER_FILE = join(DATA, "secrets", "peer-token");
@@ -27,7 +27,17 @@ const status = (path: string, o: Hit = {}) => hit(path, o).then(r => r.status);
 const mint = async () => ((await hit("/api/web-access/login-link", { method: "POST", headers: owner })).json() as Promise<{ url: string; expires_at: string }>);
 const linkPath = async () => `/local-login${new URL((await mint()).url).search}`;
 const cookieOf = (r: Response) => r.headers.get("set-cookie")!.split(";")[0]!;
-const session = async () => cookieOf(await hit(await linkPath()));
+const dataOf = (html: string, key: string) => new RegExp(`data-${key}="([^"]*)"`).exec(html)?.[1];
+const statusOf = (id: string, o: Hit = {}) => hit(`/local-login/status?id=${encodeURIComponent(id)}`, o);
+/** Opens a link (the page, no cookie yet), lets the fake dialog allow, then reads the status that carries the cookie. */
+const login = async (path: string, o: Hit = {}) => {
+	const page = await hit(path, o);
+	expect([page.status, page.headers.get("set-cookie")]).toEqual([200, null]);
+	const id = dataOf(await page.text(), "id")!;
+	await answer("allow");
+	return statusOf(id, o);
+};
+const session = async () => cookieOf(await login(await linkPath()));
 const setMode = (mode: string) => webAccess.change({ mode });
 const logText = () => (existsSync(join(DATA, "hub.log")) ? readFileSync(join(DATA, "hub.log"), "utf8") : "");
 const DENIED = "링크가 만료됐거나 이미 썼어요. 터미널에서 dotz를 다시 실행해 주세요.";
@@ -48,11 +58,12 @@ const NOT_LOCAL: [Record<string, string>, string?, string?][] = [
 	[{ "sec-fetch-site": "same-site" }],
 ];
 
-// The login page's confirmation dialog is a fake whose answer the test gives: `answer` settles the latest dialog and returns once the route has seen it.
+// The login page's confirmation dialog is a fake whose answer the test gives: `answer` settles one dialog (the latest by default; `asked[i]` is
+// the number dialog i showed) and returns once the route has seen it.
 const asked: string[] = [];
-let settleDialog: (a: DialogAnswer) => void = () => {};
-const answer = async (a: DialogAnswer): Promise<void> => {
-	settleDialog(a);
+const dialogsShown: ((a: DialogAnswer) => void)[] = [];
+const answer = async (a: DialogAnswer, i = dialogsShown.length - 1): Promise<void> => {
+	dialogsShown[i]?.(a);
 	await Promise.resolve();
 };
 
@@ -60,7 +71,7 @@ beforeAll(async () => {
 	setLoginConfirm(number => {
 		asked.push(number);
 		return new Promise<DialogAnswer>(resolve => {
-			settleDialog = resolve;
+			dialogsShown.push(resolve);
 		});
 	});
 	await webAccess.change({ mode: "local" });
@@ -73,11 +84,24 @@ afterAll(async () => {
 });
 
 describe("이 컴퓨터만 로그인 링크", () => {
-	test("a link minted with the token becomes a 303 with the cookie, the cookie opens the API, a restart keeps it", async () => {
+	beforeEach(() => {
+		localLogin.clear();
+		asked.length = 0;
+	});
+
+	test("a link opens the confirmation page with the dialog's number and no cookie; after the owner allows, the cookie opens the API, a restart keeps it", async () => {
 		const m = await mint();
 		expect(new URL(m.url).origin).toBe(BASE);
-		const r = await hit(`/local-login${new URL(m.url).search}`);
-		expect([r.status, r.headers.get("location"), r.headers.get("cache-control"), r.headers.get("referrer-policy")]).toEqual([303, "/", "no-store", "no-referrer"]);
+		const page = await hit(`/local-login${new URL(m.url).search}`);
+		expect([page.status, page.headers.get("content-type"), page.headers.get("cache-control"), page.headers.get("referrer-policy"), page.headers.get("set-cookie")]).toEqual([200, "text/html; charset=utf-8", "no-store", "no-referrer", null]);
+		const html = await page.text();
+		const id = dataOf(html, "id")!;
+		expect(asked).toEqual([dataOf(html, "number")!]);
+		const waiting = await statusOf(id);
+		expect([await waiting.json(), waiting.headers.get("set-cookie")]).toEqual([{ state: "pending" }, null]);
+		await answer("allow");
+		const r = await statusOf(id);
+		expect([r.status, r.headers.get("cache-control"), r.headers.get("referrer-policy")]).toEqual([200, "no-store", "no-referrer"]);
 		expect(r.headers.get("set-cookie")).toMatch(/^dotz_local=[\w-]{43}; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Strict$/);
 		const cookie = cookieOf(r);
 		expect(await status("/api/state", { headers: { cookie } })).toBe(200);
@@ -94,10 +118,60 @@ describe("이 컴퓨터만 로그인 링크", () => {
 
 	test("a code works once: the second use is 403", async () => {
 		const path = await linkPath();
-		expect(await status(path)).toBe(303);
+		expect(await status(path)).toBe(200);
 		const again = await hit(path);
 		expect([again.status, await again.text()]).toEqual([403, DENIED]);
 		expect(again.headers.get("set-cookie")).toBeNull();
+		expect(asked).toHaveLength(1);
+	});
+
+	for (const no of ["deny", "unavailable"] as const) {
+		test(`${no}: no cookie, the API stays closed, and the code is used up anyway`, async () => {
+			const path = await linkPath();
+			const id = dataOf(await (await hit(path)).text(), "id")!;
+			await answer(no);
+			const r = await statusOf(id);
+			expect([await r.json(), r.headers.get("set-cookie")]).toEqual([{ state: no === "deny" ? "denied" : "unavailable" }, null]);
+			const again = await hit(path);
+			expect([again.status, await again.text(), again.headers.get("set-cookie")]).toEqual([403, DENIED, null]);
+			expect(await status("/api/state")).toBe(403);
+			expect(asked).toHaveLength(1);
+		});
+	}
+
+	test("an agent with the hub token mints and opens a link from the loopback, but without the dialog's answer it never gets a cookie", async () => {
+		const path = await linkPath();
+		const page = await hit(path, { headers: owner });
+		expect([page.status, page.headers.get("set-cookie")]).toEqual([200, null]);
+		const id = dataOf(await page.text(), "id")!;
+		for (const headers of [{}, owner, { origin: BASE }]) {
+			const r = await statusOf(id, { headers });
+			expect([headers, await r.json(), r.headers.get("set-cookie")]).toEqual([headers, { state: "pending" }, null]);
+		}
+		expect(asked).toHaveLength(1);
+		expect(await status("/api/state", { headers: { cookie: "dotz_local=" } })).toBe(403);
+	});
+
+	// qa-clean-7 N12: the agent keeps its own link's dialog waiting; the owner's later link must not defer to it.
+	test("an agent's link waits, then the owner opens his: his page shows a new dialog's number, and allowing the agent's dialog gives nobody a cookie", async () => {
+		const agentPage = await hit(await linkPath(), { headers: owner });
+		const agentId = dataOf(await agentPage.text(), "id")!;
+		const mine = await hit(await linkPath());
+		const html = await mine.text();
+		const myId = dataOf(html, "id")!;
+		expect([mine.status, mine.headers.get("set-cookie"), asked.length, dataOf(html, "number"), html.includes("data-state")]).toEqual([200, null, 2, asked[1], false]);
+		// The owner (or a screen click) allows the agent's dialog, the first one on screen: it is superseded, so no cookie comes of it.
+		await answer("allow", dialogsShown.length - 2);
+		const agent = await statusOf(agentId, { headers: owner });
+		expect([await agent.json(), agent.headers.get("set-cookie")]).toEqual([{ state: "superseded" }, null]);
+		expect(await (await statusOf(myId)).json()).toEqual({ state: "pending" });
+		// He allows the dialog whose number his page shows: the cookie goes to his page's id, never to the agent's.
+		await answer("allow");
+		const done = await statusOf(myId);
+		expect(await done.json()).toEqual({ state: "allowed" });
+		expect(await status("/api/state", { headers: { cookie: cookieOf(done) } })).toBe(200);
+		const late = await statusOf(agentId, { headers: owner });
+		expect([await late.json(), late.headers.get("set-cookie")]).toEqual([{ state: "superseded" }, null]);
 	});
 
 	test("a wrong or missing code is 403", async () => {
@@ -112,7 +186,7 @@ describe("이 컴퓨터만 로그인 링크", () => {
 		expect(await status("/api/state", { headers: { ...evil, cookie } })).toBe(403);
 		expect(await status(path, { headers: evil })).toBe(403);
 		expect(await status("/api/state", { headers: { cookie } })).toBe(200);
-		expect(await status(path)).toBe(303);
+		expect(await status(path)).toBe(200);
 	});
 
 	test("anything that is not a browser on this computer is refused, for a code (it stays valid) and for a valid cookie", async () => {
@@ -123,13 +197,13 @@ describe("이 컴퓨터만 로그인 링크", () => {
 			expect([headers, base, ip, await status(path, { ...o, headers })]).toEqual([headers, base, ip, 403]);
 			expect([headers, base, ip, await status("/api/state", { ...o, headers: { ...headers, cookie } })]).toEqual([headers, base, ip, 403]);
 		}
-		expect(await status(path)).toBe(303);
+		expect(await status(path)).toBe(200);
 	});
 
 	test("a prefetch does not use the code up", async () => {
 		const path = await linkPath();
 		expect(await status(path, { headers: { "sec-purpose": "prefetch;prerender" } })).toBe(403);
-		expect(await status(path)).toBe(303);
+		expect(await status(path)).toBe(200);
 	});
 
 	test("only the token mints: a session cookie cannot, a stranger cannot, a request that came through a proxy cannot", async () => {
@@ -153,7 +227,7 @@ describe("이 컴퓨터만 로그인 링크", () => {
 		const path = await linkPath();
 		expect(await status(path, { headers: peer })).toBe(403);
 		expect(await status("/api/web-access/login-link", { method: "POST", headers: { ...peer, ...owner } })).toBe(403);
-		expect(await status(path)).toBe(303);
+		expect(await status(path)).toBe(200);
 	});
 
 	test("leaving local mode voids the cookie for good: switching to Tailscale and back needs a new link", async () => {
@@ -191,7 +265,7 @@ describe("이 컴퓨터만 로그인 링크", () => {
 	test("the sessions file is 0600 and holds neither a code nor a session token; neither is in the log", async () => {
 		const m = await mint();
 		const code = new URL(m.url).searchParams.get("code")!;
-		const cookie = cookieOf(await hit(`/local-login?code=${code}`));
+		const cookie = cookieOf(await login(`/local-login?code=${code}`));
 		const token = cookie.slice("dotz_local=".length);
 		expect(statSync(FILE).mode & 0o777).toBe(0o600);
 		const text = readFileSync(FILE, "utf8");
@@ -405,7 +479,7 @@ describe("createLocalLogin requests", () => {
 	const tmp = mkdtempSync(join(tmpdir(), "local-login-ask-"));
 	afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 	let t = 5_000_000;
-	let settle: (a: DialogAnswer) => void = () => {};
+	const shown: ((a: DialogAnswer) => void)[] = [];
 	let dialogs = 0;
 	const ll = createLocalLogin({
 		dir: tmp,
@@ -413,7 +487,7 @@ describe("createLocalLogin requests", () => {
 		confirm: () => {
 			dialogs++;
 			return new Promise<DialogAnswer>(resolve => {
-				settle = resolve;
+				shown.push(resolve);
 			});
 		},
 	});
@@ -425,19 +499,24 @@ describe("createLocalLogin requests", () => {
 	const begin = () => call("/local-login/request", "POST");
 	const stateOf = async (id: string) => ((await call(`/local-login/status?id=${id}`).json()) as { state: string }).state;
 	const idOf = async (r: Response) => ((await r.json()) as { id: string }).id;
-	const answerNow = async (a: DialogAnswer) => {
-		settle(a);
+	// Settles one dialog: the latest by default.
+	const answerNow = async (a: DialogAnswer, i = shown.length - 1) => {
+		shown[i]!(a);
 		await Promise.resolve();
 	};
 
-	test("only one request waits at a time; the second is 429 and does not open another dialog", async () => {
-		const first = await begin();
-		expect(first.status).toBe(200);
+	test("a second request supersedes the waiting one: a new dialog opens, and the first one's allow, earlier or later, logs nobody in", async () => {
+		const first = await idOf(await begin());
+		const before = dialogs;
 		const second = await begin();
-		expect([second.status, await second.json()]).toEqual([429, { error: "pending" }]);
-		expect(dialogs).toBe(1);
+		const { id, number } = (await second.json()) as { id: string; number: string };
+		expect([second.status, number, dialogs]).toEqual([200, expect.stringMatching(/^\d{4}$/), before + 1]);
+		await answerNow("allow", shown.length - 2);
+		const old = call(`/local-login/status?id=${first}`);
+		expect([await old.json(), old.headers.get("set-cookie")]).toEqual([{ state: "superseded" }, null]);
+		expect(await stateOf(id)).toBe("pending");
 		await answerNow("allow");
-		expect(await stateOf(await idOf(first))).toBe("allowed");
+		expect(await stateOf(id)).toBe("allowed");
 		ll.clear();
 	});
 
@@ -468,6 +547,29 @@ describe("createLocalLogin requests", () => {
 		expect((await begin()).status).toBe(429);
 		t += 3000;
 		expect((await begin()).status).toBe(200);
+		ll.clear();
+	});
+
+	test("a link shares the one request: while one waits, opening a link supersedes it with a new dialog and its code is used up; after a no it waits 3 seconds", async () => {
+		const open = (code: string, mode: "local" | "tailscale" = "local") => {
+			const req = new Request(`${BASE}/local-login?code=${code}`);
+			return ll.page(req, new URL(req.url), mode, "127.0.0.1").text();
+		};
+		const old = await idOf(await begin());
+		const before = dialogs;
+		const code = ll.mint();
+		const page = await open(code);
+		const id = dataOf(page, "id")!;
+		expect([dataOf(page, "state"), dataOf(page, "number"), dialogs]).toEqual([undefined, expect.stringMatching(/^\d{4}$/), before + 1]);
+		expect(await stateOf(old)).toBe("superseded");
+		await answerNow("deny");
+		expect(await stateOf(id)).toBe("denied");
+		expect(await open(code)).not.toContain("<main");
+		expect(dataOf(await open(ll.mint(), "tailscale"), "state")).toBe("wait");
+		t += 3000;
+		const html = await open(ll.mint(), "tailscale");
+		expect([dataOf(html, "id"), html.includes("data-button")]).toEqual([expect.stringMatching(/^[\w-]{43}$/), false]);
+		expect(dialogs).toBe(before + 2);
 		ll.clear();
 	});
 
@@ -502,7 +604,11 @@ describe("로컬 진입 (모든 모드)", () => {
 	for (const mode of ["tailscale", "cloudflare", "local"]) {
 		describe(mode, () => {
 			beforeAll(() => enter(mode));
-			beforeEach(() => ALLOW.delete(OWNER));
+			beforeEach(() => {
+				ALLOW.delete(OWNER);
+				localLogin.clear();
+				asked.length = 0;
+			});
 
 			test("no open loopback: without a token or a cookie nothing gets in", async () => {
 				expect(await status("/api/state")).not.toBe(200);
@@ -510,10 +616,17 @@ describe("로컬 진입 (모든 모드)", () => {
 				expect(await status("/local-login")).toBe(403);
 			});
 
-			test("a loopback request with a valid token becomes a session, and the token is single use", async () => {
+			test("a loopback request with a valid token opens the confirmation (the button only in local mode), becomes a session only after the owner allows, and the token is single use", async () => {
 				const path = await linkPath();
-				const first = await hit(path);
-				expect([first.status, first.headers.get("location")]).toEqual([303, "/"]);
+				const page = await hit(path);
+				const html = await page.text();
+				expect([page.status, page.headers.get("set-cookie"), html.includes("data-button")]).toEqual([200, null, mode === "local"]);
+				const id = dataOf(html, "id")!;
+				expect(asked).toHaveLength(1);
+				const waiting = await statusOf(id);
+				expect([await waiting.json(), waiting.headers.get("set-cookie")]).toEqual([{ state: "pending" }, null]);
+				await answer("allow");
+				const first = await statusOf(id);
 				const cookie = cookieOf(first);
 				expect(first.headers.get("set-cookie")).toContain("HttpOnly");
 				expect(first.headers.get("set-cookie")).toContain("SameSite=Strict");
@@ -526,7 +639,7 @@ describe("로컬 진입 (모든 모드)", () => {
 				for (const header of ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port", "forwarded", "x-real-ip", "cf-connecting-ip", "cf-ray", "tailscale-user-login", "via", "true-client-ip"]) expect(await status(path, { headers: { [header]: "203.0.113.9" } })).toBe(403);
 				for (const base of ["https://box.example.ts.net", `https://${HOST}`, `http://rebind.example.com:${PORT}`, "http://127.0.0.1.nip.io"]) expect(await status(path, { base })).toBe(403);
 				expect(await status(path, { ip: "100.64.0.9" })).toBe(403);
-				expect(await status(path)).toBe(303);
+				expect(await status(path)).toBe(200);
 			});
 
 			test("the session counts only for a genuine local request", async () => {
@@ -560,10 +673,10 @@ describe("로컬 진입 (모든 모드)", () => {
 		expect(asked).toEqual([]);
 	});
 
-	test("an expired token is refused, and a session of another mode (or of an older file) does not count", () => {
+	test("an expired token is refused, and a session of another mode (or of an older file) does not count", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "dotz-loopback-"));
 		let clock = 1_000_000;
-		const login = createLocalLogin({ dir, now: () => clock });
+		const login = createLocalLogin({ dir, now: () => clock, confirm: async () => "allow" });
 		const request = (code: string) => new Request(`${BASE}/local-login?code=${code}`);
 		const url = (code: string) => new URL(request(code).url);
 		const code = login.mint();
@@ -571,8 +684,10 @@ describe("로컬 진입 (모든 모드)", () => {
 		expect(login.page(request(code), url(code), "tailscale", "127.0.0.1").status).toBe(403);
 
 		const good = login.mint();
-		const answered = login.page(request(good), url(good), "tailscale", "127.0.0.1");
-		const cookie = cookieOf(answered);
+		const id = dataOf(await login.page(request(good), url(good), "tailscale", "127.0.0.1").text(), "id")!;
+		await Promise.resolve();
+		const probe = new Request(`${BASE}/local-login/status?id=${id}`);
+		const cookie = cookieOf(login.status(probe, new URL(probe.url), "tailscale", "127.0.0.1"));
 		const browser = new Request(`${BASE}/`, { headers: { cookie } });
 		expect([login.verify(browser, "tailscale"), login.verify(browser, "cloudflare"), login.verify(browser, "local")]).toEqual([true, false, false]);
 
