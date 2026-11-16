@@ -3,7 +3,7 @@ import { fakeHub, json, on } from "./test-web.ts";
 
 // Where a conversation sits after a jump, in a headless browser at 390px against a fixture conversation with tall images (their bytes are held
 // back by the test, so they land late), code blocks and a "새 메시지" divider. The rule (web/js/31-conversations.js chatJump): a jump target
-// (notice / toast / push / 답변 필요 / ?m=) is placed at a fixed place - its top just under the app bar, ntInset() - wins over the divider, and
+// (notice / toast / push / 답변 필요 / ?m=) is placed at a fixed place - its top 20px under the app bar's bottom (chatJump) - wins over the divider, and
 // stays there while late content changes the layout, until the owner touches the timeline.
 const ts = (i: number) => new Date(Date.UTC(2026, 9, 20, 1, i)).toISOString();
 const N = 70;
