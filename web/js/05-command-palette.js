@@ -191,7 +191,7 @@ function go(name, tgt) {
   if (name === "project") pmOpen(tgt);
   if (name === "notices") nscOpen();
   if (name === "settings") { if (!updFresh()) loadUpdate(); renderSettings(); loadMessengerIndex(); if (!provFresh()) loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
-  if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
+  if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); if (!ACC) loadAccounts().then(() => current === "models" && renderModels()); }
   if (name === "accounts") { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
   if (name === "messengers") { renderMessengers(); loadMessengerIndex(); }
   if (name === "usage") { gaugeForget("usage:"); quotaDrawn = 0; loadQuota(); }   // opening the screen shows the values as they are, no motion

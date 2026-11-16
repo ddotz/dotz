@@ -103,13 +103,15 @@ const readJson = (file: string): any => {
 	}
 };
 
-// OmO's pool for Anthropic models, names and states only (tokens are never read into it).
-export function readPool(file = authFile(), now = Date.now()): Pool | undefined {
-	const sub = readJson(file)?.["anthropic-subscription"];
-	const entries: any[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: any) => typeof a?.name === "string" && (a.access || a.store === "claude-cli")) : [];
+// OmO's account pool of one provider (dotz id; `anthropic` is the Claude subscription), names and states only (tokens are never
+// read into it). A Claude account counts once it holds a login (access, or Claude Code's own store); another provider's every named slot.
+export function readPool(file = authFile(), now = Date.now(), provider = "anthropic"): Pool | undefined {
+	const key = provider === "anthropic" ? "anthropic-subscription" : provider;
+	const sub = readJson(file)?.[key];
+	const entries: any[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: any) => typeof a?.name === "string" && (key !== "anthropic-subscription" || a.access || a.store === "claude-cli")) : [];
 	const names: string[] = entries.map(a => a.name);
 	if (!names.length) return undefined;
-	const slots = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};
+	const slots = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.[key]?.lanes?.stored?.slots ?? {};
 	const blocked: Pool["blocked"] = {};
 	const lastSuccess: Pool["lastSuccess"] = {};
 	for (const n of names) {

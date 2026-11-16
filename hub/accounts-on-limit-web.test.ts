@@ -3,12 +3,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { i18nPrelude } from "./web-i18n.ts";
 
-// The 계정 card's 물어보기 row (under the small section name 한도에 걸리면) (web/js/25-settings-accounts.js accountSection): the stored on_limit is marked, the unset
-// state says the alert asks once, and a tap writes PUT /api/accounts/on-limit and re-renders like the other rows.
+// The 계정 card's 물어보기 row (under the small section name 한도에 걸리면) (web/js/25-settings-accounts.js accountSection): one menu with three answers,
+// 한 번 묻기 (unset: the alert asks once), 기다리기 and 자동 전환; a pick writes PUT /api/accounts/on-limit (null for 한 번 묻기) and re-renders.
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "25-settings-accounts.js"), "utf8");
-// rowToggle, the shared 두 값 설정 pill, comes from 01-core.js.
-const core = readFileSync(join(import.meta.dir, "..", "web", "js", "01-core.js"), "utf8");
-const rowToggleSrc = /^function rowToggle[\s\S]*?\n}\n/m.exec(core)![0];
 
 type Node = { tag: string; attrs: Record<string, any>; kids: any[]; addEventListener: () => void; focus: () => void };
 const el = (tag: string, attrs: Record<string, any> | null, ...kids: any[]): Node => ({ tag, attrs: attrs ?? {}, kids: kids.flat().filter(k => k != null), addEventListener: () => {}, focus: () => {} });
@@ -56,37 +53,30 @@ function card(acc: object) {
 		limitShort: (l: any) => l.label,
 		bar: () => null,
 		pctText: () => "",
+		selectButton: (o: { label: string; items: { value: string; label: string }[]; value: string; onPick: (v: string) => void }) => el("button", { class: "sel", "aria-label": o.label, "data-v": o.value, items: o.items, pick: o.onPick }),
 	};
-	const mod = new Function(...Object.keys(env), `${i18nPrelude()}${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
+	const mod = new Function(...Object.keys(env), `${i18nPrelude()}${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
 	const section = mod(...Object.values(env), acc) as () => Node[];
 	return { nodes: section(), calls, renders: () => renders };
 }
 
-const pill = (nodes: any) => find(nodes, n => String(n.attrs.class ?? "").includes("tgl"));
+const menu = (nodes: any) => find(nodes, n => n.attrs.class === "sel" && n.attrs["aria-label"] === "물어보기");
 
-test("물어보기: one pill shows the saved value, and it reads as the second value pressed or not", () => {
-	const wait = card(body("wait"));
-	expect(pill(wait.nodes)).toHaveLength(1);
-	expect(pill(wait.nodes)[0]!.attrs["data-v"]).toBe("wait");
-	expect(pill(wait.nodes)[0]!.attrs["aria-pressed"]).toBe("false");
-	const sw = card(body("switch"));
-	expect(pill(sw.nodes)[0]!.attrs["data-v"]).toBe("switch");
-	expect(pill(sw.nodes)[0]!.attrs["aria-pressed"]).toBe("true");
+test("물어보기: one menu with 한 번 묻기, 기다리기, 자동 전환 shows the saved value; unset is 한 번 묻기", () => {
+	for (const [saved, shown] of [["wait", "wait"], ["switch", "switch"], [null, ""]] as const) {
+		const m = menu(card(body(saved)).nodes);
+		expect(m).toHaveLength(1);
+		expect(m[0]!.attrs["data-v"]).toBe(shown);
+		expect(m[0]!.attrs.items.map((i: { value: string; label: string }) => [i.value, i.label])).toEqual([["", "한 번 묻기"], ["wait", "기다리기"], ["switch", "자동 전환"]]);
+	}
 });
 
-test("물어보기: unset leaves the pill empty, and the first tap picks 기다리기", async () => {
-	const c = card(body(null));
-	expect(pill(c.nodes)[0]!.attrs["data-v"]).toBe("");
-	await pill(c.nodes)[0]!.attrs.onclick({ currentTarget: {} });
-	expect(c.calls).toEqual([["/api/accounts/on-limit", "PUT", { on_limit: "wait" }]]);
-});
-
-test("물어보기: a tap moves to the other value with PUT /api/accounts/on-limit and re-renders", async () => {
+test("물어보기: a pick writes PUT /api/accounts/on-limit and re-renders; 한 번 묻기 sends null so the next limit asks again", async () => {
 	const c = card(body("wait"));
-	await pill(c.nodes)[0]!.attrs.onclick({ currentTarget: {} });
+	await menu(c.nodes)[0]!.attrs.pick("switch");
 	expect(c.calls).toEqual([["/api/accounts/on-limit", "PUT", { on_limit: "switch" }]]);
 	expect(c.renders()).toBe(1);
 	const back = card(body("switch"));
-	await pill(back.nodes)[0]!.attrs.onclick({ currentTarget: {} });
-	expect(back.calls).toEqual([["/api/accounts/on-limit", "PUT", { on_limit: "wait" }]]);
+	await menu(back.nodes)[0]!.attrs.pick("");
+	expect(back.calls).toEqual([["/api/accounts/on-limit", "PUT", { on_limit: null }]]);
 });

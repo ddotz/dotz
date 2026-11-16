@@ -80,3 +80,11 @@
 dialog.dlg .dact .ac-gap { margin-right: auto; }
 /* a dialog's failure note (usErr) takes no room until it has a reason */
 dialog.dlg .dbody .err-t:empty { display: none; }
+/* 전환 규칙 (rulesDialog): a condition is one line (which account, its state, the amount, remove); on a phone the account and remove
+   share the first line, the state and the amount the second. The action and its account sit side by side and wrap. */
+dialog.dlg .rl-cond { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; grid-template-areas: "who st num x"; gap: var(--sp-2); align-items: center; }
+dialog.dlg .rl-cond > .sel { width: auto; min-width: 0; }
+.rl-cond .rl-who { grid-area: who; } .rl-cond .rl-st { grid-area: st; } .rl-cond .rl-num { grid-area: num; display: inline-flex; align-items: center; gap: var(--sp-2); } .rl-cond .rl-x { grid-area: x; }
+.rl-num .fi { width: 96px; flex: none; }
+@media (max-width: 639px) { dialog.dlg .rl-cond { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "who who x" "st num num"; } .rl-num .fi { width: 72px; } }
+dialog.dlg .rl-do > .sel { flex: 1 1 160px; width: auto; min-width: 0; }

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { aliasesFile, setAlias } from "./account-alias.ts";
-import { checkNow, decisionsFile, evaluate, lastDecision, readOnLimit, readRules, rulesFile, runScript, type Rules, type ScriptInput, setManual, setOnLimit, setUsage, writeRules } from "./account-rules.ts";
+import { checkNow, checkRules, decisionsFile, describeRule, evaluate, lastDecision, providerPick, readOnLimit, readRules, readRulesFile, type Rule, rulesFile, runScript, type Rules, type ScriptInput, setManual, setOnLimit, setRuleList, setUsage, validateRules, validateRulesFile, writeRules } from "./account-rules.ts";
 import { type AccountSwitch, MAX_LOG_LINES, onSwitch, type Pool, resetStickyForTest, stickyAccount, switchesFile } from "./account-sticky.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
@@ -254,4 +254,111 @@ test("a pinned account whose login died yields to a working one (a fresh /login)
 	expect(limited).toMatchObject({ account: "imported-anthropic", source: "manual", hard: true });
 	const alone = evaluate({ now: WED_10, pool: pool(["imported-anthropic"], { "imported-anthropic": { reason: "auth_error" } }), current: "imported-anthropic", usage: {}, rules: { manual: { account: "imported-anthropic" } }, aliases: {} });
 	expect(alone.account).toBe("imported-anthropic");   // nothing else works: the pick stays
+});
+
+// rules.json v2 (owner 2026-11-16: conditions about a named account, several providers): a v1 file is the anthropic part, and its rules
+// decide exactly as before once their flat keys are conditions.
+const V1_RULES: Rules[] = [
+	officeRule,
+	{ rules: [{ name: "low", when: { five_hour_left_below: 10 }, do: { prefer: ["work", "spare"] } }] },
+	{ rules: [{ name: "week", when: { seven_day_left_below: 30, rate_limited: true }, do: { pin: "spare" } }] },
+	{ rules: [{ name: "relogin", when: { auth_error: true }, do: { prefer: ["work", "spare"] } }] },
+	{ rules: [{ name: "gone", when: { unavailable: "work" }, do: { pin: "spare" } }, { name: "ghost", when: { unavailable: "nobody" }, do: { pin: "work" } }] },
+	{ rules: [{ name: "night", when: { days: ["fri"], from: "22:00", to: "06:00", five_hour_left_below: 50 }, do: { pin: "spare" } }] },
+];
+const POOLS: Pool[] = [
+	pool(["personal", "work", "spare"]),
+	pool(["personal", "work", "spare"], { work: { reason: "rate_limit", until: WED_10 + MIN } }),
+	pool(["personal", "work", "spare"], { personal: { reason: "auth_error" } }),
+	pool(["personal", "work", "spare"], { personal: { reason: "rate_limit", until: WED_10 + MIN }, spare: { reason: "rate_limit" } }),
+];
+const USAGES = [{}, { personal: { five_hour_left: 8, seven_day_left: 20 }, work: { five_hour_left: 60 } }, { personal: { five_hour_left: 40 }, work: { five_hour_left: 4 }, spare: { five_hour_left: 90 } }];
+
+test("v1 -> v2: every legacy rule decides the same after migration, on every pool, usage and time", () => {
+	let compared = 0;
+	for (const legacy of V1_RULES) {
+		const migrated = validateRulesFile(JSON.parse(JSON.stringify(legacy))).providers.anthropic!;
+		expect(migrated.rules!.every(r => !r.when || !("five_hour_left_below" in r.when || "seven_day_left_below" in r.when || "rate_limited" in r.when || "auth_error" in r.when || "unavailable" in r.when))).toBe(true);
+		for (const p of POOLS) for (const usage of USAGES) for (const now of [WED_10, WED_20, FRI_23, SAT_02]) {
+			const a = evaluate({ now, pool: p, current: "personal", usage, rules: legacy, aliases: {} });
+			const b = evaluate({ now, pool: p, current: "personal", usage, rules: migrated, aliases: {} });
+			expect(b).toEqual(a);
+			compared++;
+		}
+	}
+	expect(compared).toBe(V1_RULES.length * POOLS.length * USAGES.length * 4);
+	// the stored shape: one condition per flat key, unavailable: X is X blocked
+	expect(validateRules({ rules: [{ when: { unavailable: "work", five_hour_left_below: 10 }, do: { pin: "spare" } }] }).rules![0]!.when).toEqual({ conditions: [{ five_hour_left_below: 10 }, { account: "work", blocked: true }] });
+});
+
+test("v1 file: read as the anthropic part, written back as v2; another provider's part never touches its bytes", () => {
+	mkdirSync(dirname(rulesFile()), { recursive: true });
+	const v1: Rules = { order: ["work", "personal"], on_limit: "wait", rules: officeRule.rules };
+	writeFileSync(rulesFile(), JSON.stringify(v1));
+	expect(readRules()).toEqual(v1);
+	expect(readRules("chatgpt-subscription")).toEqual({});
+	setRuleList("chatgpt-subscription", [{ when: { from: "09:00", to: "18:00" }, do: { pin: "login-2" } }]);
+	const v2 = JSON.parse(readFileSync(rulesFile(), "utf8"));
+	expect(v2.v).toBe(2);
+	expect(JSON.stringify(v2.providers.anthropic)).toBe(JSON.stringify(validateRules(v1)));
+	expect(v2.providers["chatgpt-subscription"]).toEqual({ rules: [{ when: { from: "09:00", to: "18:00" }, do: { pin: "login-2" } }] });
+	// Claude's order, pick and limit answer move only Claude's part; the other provider keeps only rules
+	setOnLimit("switch");
+	expect(readRulesFile().providers["chatgpt-subscription"]).toEqual(v2.providers["chatgpt-subscription"]);
+	expect(() => writeRules({ manual: { account: "x" } }, "chatgpt-subscription")).toThrow("manual");
+	expect(() => setRuleList("chatgpt-subscription", [], { path: "/x.sh" })).toThrow("script");
+	// the rules-only save never writes back a stale copy of the rest
+	setRuleList("anthropic", []);
+	expect(readRules()).toEqual({ order: ["work", "personal"], on_limit: "switch" });
+});
+
+test("a condition names its account: usage and blocks of that account, not the one in use; blocked covers any block and a gone account", () => {
+	const rules: Rules = { rules: [{ name: "spare A", when: { conditions: [{ account: "work", five_hour_left_below: 20 }] }, do: { pin: "spare" } }] };
+	expect(ev({ rules, usage: { personal: { five_hour_left: 5 }, work: { five_hour_left: 50 } } }).source).toBe("auto");
+	expect(ev({ rules, usage: { personal: { five_hour_left: 90 }, work: { five_hour_left: 10 } } })).toMatchObject({ account: "spare", source: "rule", rule: "spare A" });
+	expect(ev({ rules: { rules: [{ when: { conditions: [{ account: "회사 계정", rate_limited: true }] }, do: { pin: "spare" } }] }, aliases: { work: "회사 계정" }, pool: pool(["personal", "work", "spare"], { work: { reason: "rate_limit" } }) }).account).toBe("spare");
+	const blocked: Rules = { rules: [{ when: { conditions: [{ blocked: true }] }, do: { pin: "spare" } }] };
+	expect(ev({ rules: blocked }).source).toBe("auto");
+	expect(ev({ rules: blocked, pool: pool(["personal", "work", "spare"], { personal: { reason: "auth_error" } }) }).account).toBe("spare");
+	// two conditions about two accounts, both must hold
+	const both: Rules = { rules: [{ when: { conditions: [{ five_hour_left_below: 20 }, { account: "work", seven_day_left_below: 50 }] }, do: { pin: "spare" } }] };
+	expect(ev({ rules: both, usage: { personal: { five_hour_left: 10 }, work: { seven_day_left: 80 } } }).source).toBe("auto");
+	expect(ev({ rules: both, usage: { personal: { five_hour_left: 10 }, work: { seven_day_left: 40 } } }).account).toBe("spare");
+});
+
+test("describeRule says whose state each condition is about and joins conditions into one sentence", () => {
+	const label = (n: string) => ({ personal: "개인 계정", work: "회사 계정" })[n] ?? n;
+	const r = (when: Rule["when"], d: Rule["do"]): Rule => validateRules({ rules: [{ when, do: d }] }).rules![0]!;
+	expect(describeRule(r({ conditions: [{ account: "personal", five_hour_left_below: 20 }] }, { pin: "work" }), label)).toBe("개인 계정의 5시간 한도가 20% 밑이면 회사 계정으로 고정");
+	expect(describeRule(r({ days: ["mon", "tue", "wed", "thu", "fri"], from: "09:00", to: "18:00", conditions: [{ five_hour_left_below: 20 }, { account: "work", rate_limited: true }] }, { pin: "personal" }), label)).toBe("평일 09:00-18:00에 5시간 한도가 20% 밑이고 회사 계정이 한도에 걸린 상태면 개인 계정으로 고정");
+	expect(describeRule(r({ unavailable: "work" }, { pin: "personal" }), label)).toBe("회사 계정을 못 쓰는 상태면 개인 계정으로 고정");
+	expect(describeRule(r(undefined, { prefer: ["work", "personal"] }), label)).toBe("항상 회사 계정, 개인 계정 순서로 우선 사용");
+});
+
+test("checkRules: a sentence per good rule, the field and reason for a bad one, and an unknown account named", () => {
+	const known = (n: string) => ["personal", "work"].includes(n);
+	const c = checkRules([
+		{ when: { conditions: [{ account: "personal", five_hour_left_below: 20 }] }, do: { pin: "work" } },
+		{ when: { conditions: [{ five_hour_left_below: 20, rate_limited: true }] }, do: { auto: true } },
+		{ when: { from: "25:00" }, do: { pin: "work" } },
+		{ when: { conditions: [{ account: "ghost", blocked: true }] }, do: { pin: "work" } },
+	], n => n, known);
+	expect(c.texts).toEqual(["personal의 5시간 한도가 20% 밑이면 work로 고정", null, null, null]);
+	expect(c.errors.map(e => [e.index, e.field])).toEqual([[1, "when.conditions[0]"], [2, "when.from"], [3, "when.conditions[0].account"]]);
+	expect(c.errors[2]!.text).toContain("ghost");
+	expect(checkRules("nope", n => n).errors[0]!.field).toBe("rules");
+});
+
+test("providerPick (another provider, through OmO's pin): a rule's pick, sticky while usable, handed back on auto or a block", () => {
+	const p = pool(["a", "b"]);
+	const base = { now: WED_10, pool: p, usage: {}, aliases: {} };
+	const low: Rule[] = [{ when: { conditions: [{ five_hour_left_below: 20 }] }, do: { pin: "b" } }];
+	// a's usage is low while OmO serves a: pin b
+	expect(providerPick({ ...base, rules: low, usage: { a: { five_hour_left: 10 } } })).toBe("b");
+	// on b the condition no longer holds, and b stays (no flapping back to a)
+	expect(providerPick({ ...base, rules: low, own: "b", usage: { a: { five_hour_left: 10 }, b: { five_hour_left: 90 } } })).toBe("b");
+	// b blocked: back to OmO's own choice
+	expect(providerPick({ ...base, rules: low, own: "b", pool: pool(["a", "b"], { b: { reason: "rate_limit" } }) })).toBeUndefined();
+	expect(providerPick({ ...base, rules: [{ do: { auto: true } }], own: "b" })).toBeUndefined();
+	expect(providerPick({ ...base, rules: [], own: "b" })).toBeUndefined();
 });

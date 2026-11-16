@@ -4,10 +4,9 @@ import { join } from "node:path";
 import { i18nPrelude } from "./web-i18n.ts";
 
 // The 계정 card (web/js/25-settings-accounts.js accountSection), run on the real source text with a small element stub:
-// the 자동 전환 switch row leads (off = 고정, the account is fixed by tapping its row), the 전환 규칙 rows show only in 자동 전환, the switch writes
-// PUT /api/accounts/mode and the move buttons write PUT /api/accounts/order.
+// the 자동 전환 switch row leads (off = 고정, the account is fixed by tapping its row), the 전환 규칙 row stays in both modes (in 고정 it says the
+// rules rest), the script rows show only in 자동 전환, the switch writes PUT /api/accounts/mode and the move buttons write PUT /api/accounts/order.
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "25-settings-accounts.js"), "utf8");
-const rowToggleSrc = /^function rowToggle[\s\S]*?\n}\n/m.exec(readFileSync(join(import.meta.dir, "..", "web", "js", "01-core.js"), "utf8"))![0];
 
 type Node = { tag: string; attrs: Record<string, any>; kids: any[]; addEventListener: () => void; focus: () => void };
 const el = (tag: string, attrs: Record<string, any> | null, ...kids: any[]): Node => ({ tag, attrs: attrs ?? {}, kids: kids.flat().filter(k => k != null), addEventListener: () => {}, focus: () => {} });
@@ -61,8 +60,9 @@ function card(acc: object, providers: object[] = []) {
 		limitShort: (l: any) => l.label,
 		bar: () => null,
 		pctText: () => "",
+		selectButton: (o: { label: string; value: string }) => el("button", { class: "sel", "aria-label": o.label, "data-v": o.value }),
 	};
-	const mod = new Function(...Object.keys(env), `${i18nPrelude()}${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
+	const mod = new Function(...Object.keys(env), `${i18nPrelude()}${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
 	const section = mod(...Object.values(env), acc) as () => Node[];
 	return { nodes: section(), calls, dialogs, logins, acts, outs };
 }
@@ -83,7 +83,7 @@ test("자동 전환: the card is the accounts, then the 한도에 걸리면 sect
 	expect(cells.slice(1, labels[1]).every(k => String(k.attrs.class).split(" ").includes("acc"))).toBe(true);
 	const lead = cells[labels[1]! + 1]!;
 	expect(supOf(lead)).toHaveLength(0);
-	expect(pillOf(cells[labels[1]! + 2])).toHaveLength(1);
+	expect(selOf(cells[labels[1]! + 2])).toHaveLength(1);
 	expect(text(cells[labels[1]! + 3]).replace(/\s+/g, " ")).toContain("평일 09:00-18:00");
 	expect(find(cells[cells.length - 1], n => n.attrs.class === "sup")).toHaveLength(1);
 	expect(find(nodes, n => String(n.attrs.class ?? "").includes("prow-lim"))).toHaveLength(0);
@@ -105,13 +105,16 @@ test("자동 전환: the card is the accounts, then the 한도에 걸리면 sect
 	expect(all).not.toContain("고정");
 });
 
-test("고정: the switch is off, the help becomes the 고정 text, no 전환 규칙 row, the chosen account row has the 사용 중 · 고정 badge, no select", () => {
+test("고정: the switch is off, the help becomes the 고정 text, the 전환 규칙 row stays with 편집 and says the rules rest, the chosen account row has the 사용 중 · 고정 badge, no select", () => {
 	const { nodes } = card(body("pinned"));
 	const all = text(nodes);
 	expect(switchOf(nodes).attrs["aria-checked"]).toBe("false");
 	expect(supOf(find(nodes, n => n.attrs.class === "li" && find(n, m => m.attrs.role === "switch").length > 0)[0])).toHaveLength(1);
 	expect(all).not.toContain("default");
-	expect(all).not.toContain("전환 규칙");
+	const rules = find(nodes, n => n.attrs["data-acc-rules"] === "anthropic")[0]!;
+	expect(text(rules)).toContain("평일 09:00-18:00");
+	expect(text(rules)).toContain("고정 중엔 쉬어요");
+	expect(find(rules, n => n.tag === "button" && text(n).includes("편집"))).toHaveLength(1);
 	expect(all).not.toContain("스크립트");
 	expect(find(nodes, n => n.tag === "select")).toHaveLength(0);
 	const [first, second] = rowsOf(nodes);
@@ -176,7 +179,7 @@ test("every account row has its number and a grip; no arrow buttons; ArrowUp/Arr
 	expect(auto.calls.at(-1)).toEqual(["/api/accounts/order", "PUT", { order: ["default", "third", "teammate-shared"] }]);
 });
 
-const pillOf = (row: any) => find(row, n => String(n.attrs.class ?? "").includes("tgl"));
+const selOf = (row: any) => find(row, n => n.attrs.class === "sel");
 test("only an account whose login ran out gets 다시 로그인, on its own row beside the tap area; the other rows and the card have none", () => {
 	const lost = body("auto", { accounts: [account("default", { current: true }), account("teammate-shared", { blocked: "auth_error", blocked_tag: "로그인 풀림" })] });
 	const c = card(lost);
