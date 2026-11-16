@@ -232,15 +232,15 @@ describe("the 알림 screen", () => {
 		expect(calls).toEqual([]);   // a read notice, a jump and a way back: nothing to write
 	}, 30_000);
 
-	test("no back arrow on the screen at any width, the title stays where it was, and a row opened from it keeps its way back", async () => {
+	test("the screen's back arrow leads to 홈 at every width, the sidebar's chevron stays put, and a row opened from it keeps its way back", async () => {
 		for (const width of [390, 800, 1280]) {
 			const v = await open(width, "#settings");
-			const spot = () => on(v).ev<{ arrow: boolean; title: [number, number]; fold: number[] }>(`(r => ({ arrow: !$("#back").hidden, title: [r.left, r.top], fold: (b => [b.left, b.top])($("#side-tog").getBoundingClientRect()) }))($("#title").getBoundingClientRect())`);
+			const spot = () => on(v).ev<{ arrow: boolean; to: string | null; fold: number[] }>(`({ arrow: !$("#back").hidden, to: backTarget(), fold: (b => [b.left, b.top])($("#side-tog").getBoundingClientRect()) })`);
 			await on(v).waitFor(`current === "settings"`);
 			const plain = await spot();
 			await on(v).run(`go("notices")`);
 			await shown(v);
-			expect(await spot()).toEqual({ ...plain, arrow: false });   // the spot of a page that has no arrow, the sidebar's chevron unmoved
+			expect(await spot()).toEqual({ ...plain, arrow: true, to: "home" });   // the sidebar's chevron unmoved
 		}
 		const v = await shown(await open(390));
 		await click(v, '#v-notices .nsc-r[data-nid="a3"] .nsc-tx');
