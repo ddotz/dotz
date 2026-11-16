@@ -43,6 +43,13 @@ async function open(width: number, hash = "home") {
 }
 const MAIL_LIST = "#monitoring/i%3Amail";
 
+test("390: 알림 shows the app bar's 뒤로, and it leads to 홈", async () => {
+	const v = await open(390, "notices");
+	await until(v, `backTarget() === "home" && $("#back").offsetParent !== null`, "no 뒤로 on 알림");
+	await v.evaluate(`$("#back").click()`);
+	await until(v, `current === "home"`, "뒤로 on 알림 did not lead to 홈");
+});
+
 test("390: back after another tab returns to the mail item that was showing, then its list, then 홈", async () => {
 	const v = await open(390);
 	const len0 = (await where(v)).len;
