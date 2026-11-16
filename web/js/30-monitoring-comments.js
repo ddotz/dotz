@@ -222,10 +222,10 @@ async function cmReload(seq = CM.seq, scroll = false) {
   cmMarkRead();
 }
 function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; cmPaintAll(); convTitle(); bkCmSync(); }
+function bkCmSync() { bkStep(CM, !!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list), () => (CM.tab === "dm" ? dmClose() : cmClose())); }   // a phone's open post or DM is one history step (32-history-nav.js bkStep)
 function cmBack() {
   if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && current === "monitoring" && !MON.list)) return false;
-  if (CM.tab === "dm") { dmClose(); return true; }
-  cmClose();
+  if (CM.tab === "dm") dmClose(); else cmClose();
   return true;
 }
 function cmMarkRead() {

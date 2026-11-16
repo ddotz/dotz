@@ -768,11 +768,11 @@ function kkClose() {
   KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = "";
   kkPaintAll(); convTitle(); bkKkSync();
 }
+function bkKkSync() { bkStep(KK, !!(KK.vis && KK.open && narrowChat() && current === "monitoring" && !MON.list), () => kkClose()); }   // a phone's open room is one history step (32-history-nav.js bkStep)
 // The app bar's back arrow leaves an open room for the room column first, at every width (04-state.js #back); a wide screen gives the room no history step (histFlat).
 function kkBack() {
   if (!(KK.vis && KK.open && current === "monitoring" && !MON.list)) return false;
-  kkClose();
-  return true;
+  kkClose(); return true;
 }
 // The older page, one load in flight at a time (an auto-load at the top and the fallback button share it). The message that was at the top
 // of the view keeps its offset: the content added above it never moves the reader.

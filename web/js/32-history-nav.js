@@ -16,24 +16,23 @@ const hstate = (c, ov = 0, w = c) => ({ dz: 1, c, ov, w });
 const hurl = c => `#${c[c.length - 1]}`;
 
 // The chain of routes for a view, computed when the app navigates by itself (a back/forward uses the entry's stored chain).
+// A screen whose chain follows its own state builds it in its chain hook (03-screens.js); a fixed parent is its row's up.
 function routeChain(name, hash) {
   if (name === "home") return ["home"];
   if (NSC.ret && name !== "notices") return ["home", "notices", hash];
-  const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
-  // A conversation opened from 모니터링 (a mail of the 메일 list): back returns to that item's list, on a wide screen too (owner 2026-10-27).
-  if (monCtx && (name === "chat" || name === "activity")) return MON.sel && !monChatIt() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
-  if (name === "chat" || name === "activity") return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
-  if (name === "harness") return ["home", "settings", hash];
+  const own = SCREEN_HOOKS[name]?.chain?.(hash);
+  if (own) return own;
   if (name === "project") return ppWide() ? ["home", hash] : ["home", "projects", hash];   // wide: the list sits beside the pane, it is not a screen of its own
-  if (name === "monitoring") return !MON.list ? ["home", "monitoring", ...mxChain(hash)] : ["home", hash];
-  if (SUB.has(name)) {
+  if (SUB.has(name)) {   // backTarget reads a fixed up first (시스템 -> 설정), then the screen it was opened from
+    const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
     const bt = backTarget();
     if (bt === "home") return ["home", hash];
     if (bt === "messengers") return ["home", "settings", bt, hash];
     if (bt === "chat" || bt === "activity") return [...conv(bt), hash];
     return ["home", bt === "project" ? "projects" : bt, hash];
   }
-  return ["home", hash];
+  const up = SCREENS[name].up;
+  return up && up !== "home" ? ["home", up, hash] : ["home", hash];
 }
 function navSync(name, hash) {
   H.hash = hash;
@@ -121,14 +120,13 @@ const ovCloseAll = () => { for (const o of [...OV].reverse()) o.close(); };
 // A modal <dialog> is an overlay for as long as it is open (Esc, ✕ and back all end in its close event).
 function dialogHist(d) { const o = ovOpen(() => d.close()); d.addEventListener("close", () => ovDone(o)); }
 // On a phone, a screen's inner state that the app bar arrow closes (a KakaoTalk room, a comment post or DM) is one history step, like a sheet: the browser's back
-// closes what the arrow closes. bkStep makes the step (S.bk) match the state. It runs wherever the room, post, screen or list changes (kkOpen, kkClose, kkMode,
-// cmOpen, cmClose, dmOpen, dmClose, cmTab, cmMode, go); switching rooms keeps the one step, and a wide screen has none.
+// closes what the arrow closes. bkStep makes the step (S.bk) match the state; the screen's own bkKkSync (30-kakao.js) and bkCmSync (30-monitoring-comments.js)
+// call it wherever the room, post, screen or list changes (kkOpen, kkClose, kkMode, cmOpen, cmClose, dmOpen, dmClose, cmTab, cmMode, go); switching rooms keeps
+// the one step, and a wide screen has none.
 function bkStep(S, on, close) {
   if (on && !S.bk) S.bk = ovOpen(close);
   else if (!on && S.bk) { const o = S.bk; S.bk = null; ovDone(o); }
 }
-function bkKkSync() { bkStep(KK, !!(KK.vis && KK.open && narrowChat() && current === "monitoring" && !MON.list), () => kkClose()); }
-function bkCmSync() { bkStep(CM, !!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list), () => (CM.tab === "dm" ? dmClose() : cmClose())); }
 
 function guardHit() {
   if (H.hash !== "home") { H.fromHist = ["home"]; go("home"); }

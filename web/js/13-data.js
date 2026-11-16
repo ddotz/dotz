@@ -288,8 +288,14 @@ function chatEnter() {
   enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !ts(target).loading) loadTarget(target, hasCached(ts(target)));
   if (monCtx) monEnter();
 }
-screenHooks("chat", { enter: chatEnter });
-screenHooks("activity", { enter: chatEnter });
+// The routes behind a conversation (32-history-nav.js routeChain). One opened from 모니터링 (a mail of the 메일 list) returns to that item's list,
+// on a wide screen too (owner 2026-10-27); on a phone the conversation list sits between 홈 and the conversation.
+function convChain(hash) {
+  if (monCtx) return MON.sel && !monChatIt() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
+  return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
+}
+screenHooks("chat", { enter: chatEnter, chain: convChain });
+screenHooks("activity", { enter: chatEnter, chain: convChain });
 function enterTarget() {
   // Appending moves the node and a moved focused field loses its focus (and a phone its keyboard): the composer moves only when it is on the other view, and keeps the focus there.
   const view = $(current === "activity" ? "#v-activity" : "#v-chat"), typing = document.activeElement === ta;

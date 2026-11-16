@@ -6,4 +6,6 @@ function monBack() { return asBack() || rqBack() || kkBack() || cmBack() || mxsB
 // 모니터링 opening, or a conversation opening inside it (13-data.js chatEnter): the list is drawn and its reads refreshed when stale.
 // A conversation reads the app list kept fresh already; the read it sends asks again, so it asks only before the first one.
 function monEnter() { renderMonitoring(); if (!monitorsFresh()) loadMonitors(); if (!noticesFresh()) loadNotices(); if (current === "monitoring" || !INTG.loaded) loadIntegrations(); }
-screenHooks("monitoring", { back: monBack, enter: monEnter });
+// The routes behind 모니터링 (32-history-nav.js routeChain): an open item sits on the list, a mailbox settings screen on its box (30-mailboxes-set.js mxChain).
+function monChain(hash) { return !MON.list ? ["home", "monitoring", ...mxChain(hash)] : ["home", hash]; }
+screenHooks("monitoring", { back: monBack, enter: monEnter, chain: monChain });

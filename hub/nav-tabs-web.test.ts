@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { i18nPrelude } from "./web-i18n.ts";
 
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
-const palette = web("05-command-palette.js"), history = web("32-history-nav.js"), monitoring = web("30-monitoring.js");
+const palette = web("05-command-palette.js"), history = web("32-history-nav.js"), monitoring = web("30-monitoring.js"), monRoute = web("30-monitoring-route.js");
 const between = (src: string, from: string, to: string) => {
 	const a = src.indexOf(from), b = src.indexOf(to, a);
 	if (a < 0 || b < 0) throw new Error(`markers not found: ${from} .. ${to}`);
@@ -23,7 +23,9 @@ function monitoringRoute(narrow: boolean) {
 
 function chain(name: string, hash: string, narrow: boolean, mon: Mon) {
 	const env = { narrowChat: () => narrow, chatList: false, target: "main", SUB: new Set(), NSC: { ret: false }, backTarget: () => null, MON: mon, monCtx: "", enc: encodeURIComponent, mxChain: (h: string) => [h] };
-	const src = `${between(history, "function routeChain", "function navSync")}\nreturn routeChain;`;
+	// 모니터링 builds its own chain in its chain hook (30-monitoring-route.js monChain), which routeChain asks first.
+	const hook = `${between(monRoute, "function monChain", "screenHooks(")}\nconst SCREEN_HOOKS = { monitoring: { chain: monChain } };\n`;
+	const src = `${hook}${between(history, "function routeChain", "function navSync")}\nreturn routeChain;`;
 	return (new Function(...Object.keys(env), src)(...Object.values(env)) as (n: string, h: string) => string[])(name, hash);
 }
 
