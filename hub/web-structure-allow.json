@@ -23,7 +23,6 @@
     "goBranches": 24,
     "overlaySites": [
       "overlay:asPaneOpen",
-      "overlay:openHSheet",
       "overlay:prGo",
       "overlay:prOpen",
       "overlay:showSheet",

@@ -322,19 +322,14 @@ function hReveal(id) {
   else if (r.right + 16 > s.right) sc.scrollLeft += r.right + 16 - s.right;
 }
 
-let hSheetOv = null;
-function closeHSheet() {
-  const s = $("#hsheet");
-  if (!s || s.hidden) return;
-  const ov = hSheetOv; hSheetOv = null; ovDone(ov);
-  s.hidden = true; hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel();
-}
+// A card's detail is read in the side drawer (showSheet, 06-subagents.js); hSel is the card it shows, "" when it shows none.
+// The drawer stopped showing it (it closed, or other content took it): the selection, its unsaved-edit check and the room the map made go too.
+function hSheetGone() { hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel(); }
+function closeHSheet() { if (hSel) hideSheet(); }
 
 function hHead() {
   const n = hNode(hSel);
-  if (!n || $("#hsheet").hidden) return;
-  $("#hs-name").textContent = n.label; $("#hs-sub").textContent = n.summary;
-  const t = $("#hs-tag"); t.className = `tag ${H_TONE[n.status] || ""}`; t.textContent = H_STATE[n.status] || "";
+  if (n) sheetHead({ name: n.label, sub: n.summary, tag: H_STATE[n.status] || "", tone: H_TONE[n.status] || "" });
 }
 
 async function openHSheet(id, focus = {}) {
@@ -345,12 +340,10 @@ async function openHSheet(id, focus = {}) {
   hSel = id; hGoto = null; paintHSel();
   const drafts = [];
   hDirty = () => drafts.some(f => f());
-  $("#hsheet").hidden = false;
-  if (!hSheetOv) hSheetOv = ovOpen(closeHSheet);
+  const body = clear(showSheet({ label: TX("shell.sheet.detail"), gone: hSheetGone }));
   $("#harness").classList.add("hs-open");
   hReveal(id);
   hHead();
-  const body = clear($("#hs-body"));
   body.scrollTop = 0;
   const more = n.desc.startsWith(n.summary) ? n.desc.slice(n.summary.length).trim() : n.desc;   // the head already says the summary
   if (more) body.append(el("p", { class: "hs-desc", text: more }));

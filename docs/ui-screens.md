@@ -71,7 +71,6 @@ flowchart LR
     c_harness(["harness code"])
     o_harness_ask["ask (2)"]
     o_harness_menu["menu (1)"]
-    o_harness_overlay["overlay (1)"]
     o_harness_select["select (2)"]
     o_harness_toast["toast (2)"]
   end

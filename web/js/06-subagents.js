@@ -93,30 +93,51 @@ function paintSubs(box, src) {
     el("span", { class: "nm", text: TX("base.sub.running", { n: run }) }),
     icon("chev", "chev")));
 }
-let SUBD = null;
+/* ---------- the side drawer (#sheet): the one panel for what is read beside the screen (docs/ui-spec.md 시트·대화창) ---------- */
+// SHEET is what the drawer shows now. showSheet opens it, or hands an open drawer to other content, and returns the body to fill: label names
+// the drawer for a screen reader, gone() is the content's own cleanup (run when the drawer closes or other content takes it), opener is the
+// element that gets the focus back on close. The drawer is one history step (ovOpen) however often its content changes. hideSheet closes it
+// whatever it shows (✕, Esc, back); each content has its own close that leaves the other's alone (closeSheet here, closeHSheet in 28-harness-project.js).
+let SHEET = null;
 const sheet = $("#sheet"), shBody = $("#sh-body");
+function showSheet({ label, gone, opener }) {
+  const was = SHEET, same = !!was && was.gone === gone;
+  if (!same) { if (was) was.gone(); clear(shBody).className = "sh-body"; }
+  SHEET = { gone, opener: same ? was.opener : opener, ov: was ? was.ov : ovOpen(hideSheet) };
+  sheet.setAttribute("aria-label", label);
+  sheet.hidden = false;
+  return shBody;
+}
+// The drawer's head: the title, the line under it, a state tag (none hides it) and whether the way back to a list shows.
+function sheetHead({ name, sub, tag = "", tone = "", back = false }) {
+  $("#sh-name").textContent = name; $("#sh-sub").textContent = sub;
+  const t = $("#sh-tag");
+  t.hidden = !tag; t.className = `tag ${tone}`; t.textContent = tag;
+  $("#sh-back").hidden = !back;
+}
+function hideSheet() {
+  const s = SHEET;
+  if (!s) return;
+  SHEET = null; sheet.hidden = true; clear(shBody);
+  s.gone();
+  ovDone(s.ov);
+  if (s.opener && s.opener.isConnected && s.opener.focus) s.opener.focus();
+}
+let SUBD = null;
 // SUBD: {sources} lists the running subagents of those sources; {source, id} shows one (with a way back when it was
 // opened from a list).
-function showSheet(d) {
+function subSheet(d) {
   if (SUBD) clearTimeout(SUBD.timer);
-  SUBD = { data: null, err: "", timer: 0, opener: SUBD ? SUBD.opener : document.activeElement, ov: SUBD ? SUBD.ov : null, ...d };
-  if (!SUBD.ov) SUBD.ov = ovOpen(closeSheet);
-  shBody.dataset.init = "";
-  sheet.hidden = false;
+  SUBD = { data: null, err: "", timer: 0, ...d };
+  showSheet({ label: TX("common.subagent"), gone: subGone, opener: document.activeElement }).dataset.init = "";
   renderSubSheet();
   $("#sh-close").focus();
   if (SUBD.id) loadSub();
 }
-function openSubs(sources) { showSheet({ sources }); }
-function openSub(source, id, from, title) { showSheet({ source, id, from, title }); }
-function closeSheet() {
-  if (!SUBD) return;
-  clearTimeout(SUBD.timer);
-  const o = SUBD.opener, ov = SUBD.ov;
-  SUBD = null; sheet.hidden = true; clear(shBody);
-  ovDone(ov);
-  if (o && o.isConnected && o.focus) o.focus();
-}
+function subGone() { clearTimeout(SUBD.timer); SUBD = null; }
+function closeSheet() { if (SUBD) hideSheet(); }
+function openSubs(sources) { subSheet({ sources }); }
+function openSub(source, id, from, title) { subSheet({ source, id, from, title }); }
 const subNow = d => (SUBS[d.source] || []).find(s => s.id === d.id) || {};
 async function loadSub() {
   const d = SUBD;
@@ -132,12 +153,9 @@ async function loadSub() {
 function renderSubSheet() {
   const d = SUBD;
   if (!d) return;
-  $("#sh-back").hidden = !d.from;
   if (!d.id) {
     const rows = d.sources.flatMap(s => spawnOrder(runningSubs(s)).map(x => [s, x]));
-    $("#sh-name").textContent = TX("base.sub.running", { n: rows.length });
-    $("#sh-sub").textContent = d.sources.map(s => targetName(targetOfSource(s))).join(", ");
-    $("#sh-tag").hidden = true;
+    sheetHead({ name: TX("base.sub.running", { n: rows.length }), sub: d.sources.map(s => targetName(targetOfSource(s))).join(", "), back: !!d.from });
     shBody.className = "sh-body";
     clear(shBody);
     if (!rows.length) shBody.append(el("div", { class: "a-div", text: TX("base.sub.none") }));
@@ -150,10 +168,7 @@ function renderSubSheet() {
   }
   const l = subNow(d), data = d.data || {};
   const st = data.status || l.status || "";
-  $("#sh-name").textContent = data.description || l.description || d.title || data.agent || l.agent || TX("common.subagent");
-  $("#sh-sub").textContent = `${targetName(targetOfSource(d.source))} · ${TX("common.subagent")}`;
-  const tag = $("#sh-tag");
-  tag.hidden = !st; tag.className = `tag ${subTone(st)}`; tag.textContent = subKo[st] || st;
+  sheetHead({ name: data.description || l.description || d.title || data.agent || l.agent || TX("common.subagent"), sub: `${targetName(targetOfSource(d.source))} · ${TX("common.subagent")}`, tag: subKo[st] || st, tone: subTone(st), back: !!d.from });
   const m = modeOf(), items = data.items || [];
   const stick = !shBody.dataset.init || shBody.scrollTop + shBody.clientHeight >= shBody.scrollHeight - 40;
   const top = shBody.scrollTop;
@@ -172,7 +187,7 @@ function renderSubSheet() {
   shBody.dataset.init = "1";
 }
 $("#sh-close").append(icon("close"));
-$("#sh-close").onclick = closeSheet;
+$("#sh-close").onclick = hideSheet;
 $("#sh-back").append(icon("back"));
 $("#sh-back").onclick = () => { if (SUBD && SUBD.from) openSubs(SUBD.from); };
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SUBD && !openMenu && !document.querySelector("dialog[open]:not([data-leaving])")) closeSheet(); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SHEET && !openMenu && !document.querySelector("dialog[open]:not([data-leaving])")) hideSheet(); });
