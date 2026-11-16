@@ -154,3 +154,9 @@ test("plainDecisions keeps each question and drops its options and their lines",
 	expect(plainDecisions(text)).toBe("README를 올렸어요.\n\n라이선스를 무엇으로 할까요?\n\n- 남은 것: 배지");
 	expect(plainDecisions("본문\n1) 하나\n2) 둘")).toBe("본문\n1) 하나\n2) 둘");
 });
+
+test("a send card is never cut, however long: the owner approves only a draft he saw whole", () => {
+	const card = `[ask] 초안이에요\n${draftApprovalBlock({ to: "a@example.test", body: "긴 본문이에요.\n".repeat(300), ref: "abc123", question: "보낼까요?" } as Parameters<typeof draftApprovalBlock>[0])}`;
+	expect(card.length).toBeGreaterThan(1800);
+	expect(clipKeepingAsk(card, 1800)).toBe(card);
+});

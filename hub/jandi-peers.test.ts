@@ -26,6 +26,9 @@ const HOUR = 3600_000;
 
 type Msg = { id: number; fromEntity: number; body: string; time?: number };
 let messages: Msg[];
+let statusMessages: Msg[];
+let statusMembers: number[];
+const STATUS_ROOM = 200;
 let roomType: string;
 let failMessages: number | undefined;
 let posted: Array<{ path: string; accept: string | null; auth: string | null; body: any }>;
@@ -37,6 +40,9 @@ const jandi = Bun.serve({
 		if (u.pathname === "/inner-api/token") return Response.json({ access_token: "at-secret", expires_in: 43200 });
 		if (req.headers.get("authorization") !== "bearer at-secret") return new Response(null, { status: 401 });
 		if (u.pathname === `/room-api/v2/teams/${TEAM}/rooms/${ROOM}`) return Response.json({ id: ROOM, type: roomType, companionId: BOT, members: [ME, OTHER] });
+		if (u.pathname === `/room-api/v2/teams/${TEAM}/rooms/${STATUS_ROOM}`) return Response.json({ id: STATUS_ROOM, type: "privateGroup", members: statusMembers });
+		if (u.pathname === `/message-api/v2/teams/${TEAM}/rooms/${STATUS_ROOM}/messages` && req.method === "GET")
+			return Response.json({ records: statusMessages.map(m => ({ id: m.id, fromEntity: m.fromEntity, time: m.time, message: { content: { body: m.body } } })).reverse() });
 		if (u.pathname === `/message-api/v2/teams/${TEAM}/rooms/${ROOM}/messages` && req.method === "GET") {
 			if (failMessages) return new Response("internal", { status: failMessages });
 			const records = messages.map(m => ({ id: m.id, fromEntity: m.fromEntity, time: m.time, message: { content: { body: m.body } } }));
@@ -89,6 +95,8 @@ beforeEach(() => {
 	roomType = "chat";
 	failMessages = undefined;
 	posted = [];
+	statusMessages = [];
+	statusMembers = [ME];
 	messages = [
 		{ id: 1, fromEntity: ME, body: "dotz 내 게이트웨이 명령", time: NOW - 5 * HOUR },
 		{ id: 2, fromEntity: ME, body: "work 빌드 돌려", time: NOW - 3 * HOUR },
@@ -383,6 +391,18 @@ describe("status snapshots", () => {
 		const { chat } = chats();
 		expect(await chat.status("work")).toEqual({ snapshot: snap(200, "new"), received_at: NOW - 2 * HOUR });
 		expect((await chat.rows())[0]!.status_at).toBe(NOW - 2 * HOUR);
+	});
+
+	test("with a status room the snapshot is read there, not from the self chat; a status room someone else is in is not read", async () => {
+		const withRoom = { ...cfg, status_room_id: STATUS_ROOM };
+		statusMessages = [{ ...line(50, "[work]", snap(7, "quiet")), fromEntity: ME }];
+		expect(await chats(withRoom).chat.status("work")).toEqual({ snapshot: snap(7, "quiet"), received_at: NOW - HOUR });
+		expect((await chats(withRoom).chat.lines("work")).map(l => l.id)).toEqual([2, 3]);
+		rmSync(join(dir, "messengers"), { recursive: true, force: true });
+		statusMembers = [ME, OTHER];
+		const { chat, logs } = chats(withRoom);
+		expect(await chat.status("work")).toEqual({ snapshot: null });
+		expect(logs.join("\n")).toContain(`${STATUS_ROOM}`);
 	});
 
 	test("no snapshot yet: null, and the row has no status_at", async () => {

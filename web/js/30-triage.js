@@ -22,7 +22,8 @@ function trPaneOpen(onClose) {
 // After 보내기 the view moves on at once; the send waits its undo window in the common queue and its state shows in the rail. 목록: one compact row per item (tqRowNode),
 // 보내기 | 건너뛰기 picked per row and 고치기 opening the row's panel, and 고른 것 처리 posts only the picked sends. Keys: Enter 보내기, E 고치기, X 보내지 않기, ← → move, L list;
 // the one-card view names them in a row under the card (tqKeysNode). picks: { [ref]: { k ("send" | "skip"), it (the item as its row showed it when picked) } }.
-const TQ = { h: null, items: [], i: 0, list: false, picks: {}, running: false };   // running: 고른 것 처리 is going through the picks
+// press: sends posted and not answered yet; bad: sends the hub never took (a lost press, a refusal), shown as failed in the rail.
+const TQ = { h: null, items: [], i: 0, list: false, picks: {}, running: false, press: new Set(), bad: new Set() };   // running: 고른 것 처리 is going through the picks
 // A card that waits takes every key, any other only the moves. [the key caps, the i18n key of what it does, the card's button it presses]
 const TQ_KEYS = [[["Enter"], "common.send", "send"], [["E"], "decision.fix", "fix"], [["X"], "decision.drop", "drop"], [["←", "→"], "triage.key.move"], [["L"], "triage.tog.list"]];
 const tqCan = (it, k) => !it.send && it.draft.state === "pending" && (k === "fix" ? raCanFix(it) : it.can[k]);
@@ -33,13 +34,15 @@ const TQ_ST = { undo: "reply.q.st.undo", queued: "reply.sending", sending: "repl
 function tqStateOf(ref) {
   const it = tqItem(ref), s = it && it.send;
   if (s) return s.state;
+  if (TQ.press.has(ref)) return "queued";
+  if (TQ.bad.has(ref)) return "failed";
   return it && it.draft.state === "dropped" ? "dropped" : "";
 }
 function tqOpen(ref) {
   const items = raItems("waiting").sort((a, b) => (b.at || 0) - (a.at || 0));
   if (!items.length) { toast(TX("triage.none")); return; }
   if (TQ.h) TQ.h.close(false);
-  Object.assign(TQ, { items, i: Math.max(0, ref ? items.findIndex(i => i.ref === ref) : 0), list: false, picks: {} });
+  Object.assign(TQ, { items, i: Math.max(0, ref ? items.findIndex(i => i.ref === ref) : 0), list: false, picks: {}, press: new Set(), bad: new Set() });
   const onClose = () => { if (TQ.h === h) TQ.h = null; document.removeEventListener("keydown", tqKey); };
   const h = trPaneNow() ? trPaneOpen(onClose) : fsOpen({ label: TX("triage.fast"), cls: "tall tr", onClose });
   TQ.h = h;
@@ -67,6 +70,20 @@ function tqKey(ev) {
 const tqAfter = () => { if (TQ.h) tqStep(1); };
 // A live change draws the view again, except while he types in a field of it (the card's panel): the field under his keyboard is never replaced, and the next event repaints.
 function tqLive() { if (TQ.h && !TQ.h.box.contains(typingIn())) tqPaint(); }
+// 보내기 counts at once and moves on; the post goes behind, so a phone that loses the answer does not hold the view (issue #5). raAct reads the queue
+// again on a lost answer and the hub refuses a second send of the same item (already_sending), so nothing goes twice. A send the hub did not take
+// comes back as failed in the rail with one toast, the card keeping its line and a live 보내기.
+function tqSend(it) {
+  if (RA.busy.has(it.ref)) return;
+  TQ.press.add(it.ref); TQ.bad.delete(it.ref);
+  const sent = raAct(it, "send");
+  tqAfter();
+  sent.then(ok => {
+    TQ.press.delete(it.ref);
+    if (!ok) { TQ.bad.add(it.ref); toast((RA.fail.get(it.ref) || {}).text || TX("reply.act_fail"), true); }
+    tqPaint();
+  });
+}
 function tqPaint() {
   if (!TQ.h) return;
   const n = TQ.items.length, handled = TQ.items.filter(i => tqStateOf(i.ref)).length, by = new Map();
@@ -76,7 +93,7 @@ function tqPaint() {
   const tog = el("button", { class: "btn text sm tr-tog", type: "button", "aria-pressed": String(TQ.list), onclick: () => { TQ.list = !TQ.list; tqPaint(); } }, icon("list"), el("span", { text: TQ.list ? TX("triage.tog.one") : TX("triage.tog.list") }));
   $(".fs-hb", head).prepend(tog);
   const cur = !TQ.list && TQ.i < n ? tqItem(TQ.items[TQ.i].ref) : null;
-  const body = TQ.list ? tqListView() : cur ? [rqItemCard(cur, { lead: true, after: tqAfter }), tqKeysNode(cur), tqRail()] : tqDoneView();
+  const body = TQ.list ? tqListView() : cur ? [rqItemCard(cur, { lead: true, after: tqAfter, send: tqSend }), tqKeysNode(cur), tqRail()] : tqDoneView();
   // The body scrolls under the fixed head; a repaint (a pick, a live send state) keeps the place in a long list, a new card starts at its top.
   const was = TQ.h.box.querySelector(".tq-body"), top = was && was.dataset.at === String(TQ.list ? "list" : TQ.i) ? was.scrollTop : 0;
   const nb = el("div", { class: "tq-body", "data-at": TQ.list ? "list" : String(TQ.i) }, ...body);

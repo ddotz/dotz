@@ -159,6 +159,17 @@ describe("the 채팅 tab", () => {
 		await waitFor(`current === "chat"`);
 		expect(await ev(`[target, document.querySelector("#brand-name").textContent]`)).toEqual(["relay:jandi:work", "work"]);
 	});
+	test("chosen from 프로젝트 while the chat is split in two, 홈 then 채팅 opens its chat, not the conversation the active pane held", async () => {
+		const w = on(await hub.view({ width: 1280, height: 800 }, "/#chat/main"));
+		await w.waitFor(`PR.list.length === 2 && current === "chat"`);
+		await w.run(`paneSplit("worklog", "chat", "right"); paneFocus(paneLeaves()[0].id); go("projects")`);
+		await w.waitFor(`paneCount() === 2 && current !== "chat"`);
+		await w.run(`relayShow("relay:jandi:work", "work", "projects"); go("home")`);
+		await w.waitFor(`current === "home"`);
+		await w.run(`document.querySelector('#nav .ni[data-view="chat"]').click()`);
+		await w.waitFor(`current === "chat"`);
+		expect(await w.ev(`[target, location.hash, document.querySelector("#brand-name").textContent]`)).toEqual(["relay:jandi:work", "#chat/relay:jandi:work", "work"]);
+	});
 });
 
 describe("leaving", () => {

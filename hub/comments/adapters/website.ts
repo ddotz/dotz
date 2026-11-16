@@ -15,6 +15,7 @@
 // to `site.dm.post` with {"sendId","room","text"} and is then read back (`--room`): it counts as sent only when the room's newest message is the
 // owner's with that text. A DM read failure leaves the comments read and is reported as the source's error.
 import { join } from "node:path";
+import { isReasonCode, policyOf, reasonOf } from "../../reply-reasons.ts";
 import { readSecretFile } from "../../secretbox.ts";
 import { withoutRuntimeWarnings } from "../../tool-output.ts";
 import { type CommentAdapter, DM_THREAD, type RawComment, type ReplyOutcome, sameWords, type SiteConfig } from "../contract.ts";
@@ -137,6 +138,10 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 	const no = (code: string, reason: string, detail?: string): ReplyOutcome => ({ ok: false, code, sent: "no", reason, ...(detail ? { detail } : {}) });
 	const maybe = (code: string, reason: string, detail?: string): ReplyOutcome => ({ ok: false, code, sent: "maybe", reason, ...(detail ? { detail } : {}) });
 	const CONFIG = "사이트 보내기 설정이 올바르지 않아요", UNKNOWN = "보내다가 문제가 생겼어요", REJECTED = "사이트에서 이 글을 받지 않았어요";
+	// A script that says why it did not post (`code`, e.g. original_gone when the comment was deleted on the site) keeps that cause, with the
+	// script's own reason as detail; a code that is no surely-not-sent reason, or none, is a refusal.
+	const refusedBy = (out: { code?: unknown; reason?: unknown }, raw: string): ReplyOutcome =>
+		isReasonCode(out.code) && policyOf(out.code).class === "no" ? no(out.code, reasonOf(out.code, { app: "사이트" }).text, typeof out.reason === "string" && out.reason ? out.reason : raw) : no("rejected", REJECTED, raw);
 	const fetchFailure = (e: unknown): ReplyOutcome => {
 		const detail = e instanceof Error ? e.message : String(e);
 		const code = (e as { code?: unknown } | undefined)?.code;
@@ -154,15 +159,15 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 				return maybe("unknown", UNKNOWN, e instanceof Error ? e.message : String(e));
 			}
 			const raw = (withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim()).slice(0, 500);
-			let out: { ok?: boolean; sent?: string; ref?: string } | undefined;
+			let out: { ok?: boolean; sent?: string; ref?: string; code?: unknown; reason?: unknown } | undefined;
 			try {
 				out = r.stdout.trim() ? JSON.parse(r.stdout) : { ok: true };
 			} catch {
 				out = undefined;
 			}
-			if (r.code !== 0) return out?.sent === "no" ? no("rejected", REJECTED, raw) : maybe("unknown", UNKNOWN, raw || `exit ${r.code}`);
+			if (r.code !== 0) return out?.sent === "no" ? refusedBy(out, raw) : maybe("unknown", UNKNOWN, raw || `exit ${r.code}`);
 			if (!out) return maybe("unknown", UNKNOWN, raw);
-			return out.ok === false ? no("rejected", REJECTED, raw) : { ok: true, ...(out.ref ? { ref: out.ref } : {}) };
+			return out.ok === false ? refusedBy(out, raw) : { ok: true, ...(out.ref ? { ref: out.ref } : {}) };
 		}
 		if (!post.url || !/^https?:\/\//.test(post.url)) return no("config", CONFIG, `bad post url ${post.url ?? ""}`);
 		const token = secret(post.secret);

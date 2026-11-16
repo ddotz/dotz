@@ -31,7 +31,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 			label: src.label,
 			conv: `${PLACE}${d.source}`,
 			at: d.created,
-			can: { send: pending, revise: pending, edit: pending, drop: pending, restore: d.status === "dropped" && !d.mail },
+			can: { send: pending, revise: pending, edit: pending, drop: pending, restore: d.status === "dropped" && !d.mail, ...(pending && mail ? { sends: ["send", "send-main", "send-mail"] as ("send" | "send-main" | "send-mail")[] } : {}) },
 			draft: {
 				state: STATE[d.status] ?? "closed",
 				toLabel: "대상",

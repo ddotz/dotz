@@ -9,11 +9,12 @@ const owner: ActCtx = { surface: "web", login: "me" };
 const agent: ActCtx = { surface: "cli", agent: true };
 
 /** `held`: the revise waits on it; `askThrows`: drawing a card throws; `cards`: the open cards. */
-function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; editLint?: string[]; undoMs?: number; sameRef?: boolean; held?: Promise<void>; askThrows?: boolean; cards?: OpenCard[] } = {}) {
+function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; editLint?: string[]; undoMs?: number; sameRef?: boolean; held?: Promise<void>; askThrows?: boolean; cards?: OpenCard[]; cardConv?: string } = {}) {
 	const log: string[] = [];
 	const calls = { edit: 0, drop: 0 };
 	const picks: Parameters<ReplyDeps["recordPick"]>[0][] = [];
 	let onAsk: ((ref: string) => Promise<void>) | undefined;
+	const reported: { state: string; conv: string }[] = [];
 	const drafts = new Map<string, DraftView>();
 	const view = (ref: string, text: string, state: DraftView["draft"]["state"] = "pending"): DraftView => ({ item: "mail:k1", ref, kind: "mail", app: "mail", label: "메일", conv: "mail:k1", at: 0, can: { send: true, revise: true, edit: true, drop: true, restore: true }, draft: { state, toLabel: "받는이", to: "kim@example.com", text } });
 	drafts.set("RAAAAAA", view("RAAAAAA", "확인해 보고 말씀드릴게요."));
@@ -62,7 +63,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; ed
 		kind: ref => (drafts.has(ref) ? { kind: "mail", lane: "mail:x" } : undefined),
 		fingerprint: async ref => (drafts.has(ref) ? approvalHash(drafts.get(ref)!) : undefined),
 		run: async argv => (ran.push(argv), { code: o.outcome ? 1 : 0, out: o.outcome ?? "보냈어요" }),
-		report: r => void log.push(`send ${r.ref} ${r.state}`),
+		report: r => void (log.push(`send ${r.ref} ${r.state}`), reported.push({ state: r.state, conv: r.conv })),
 		log: () => undefined,
 		now: () => clock,
 		undoMs: () => o.undoMs ?? 0,
@@ -74,7 +75,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; ed
 		recordPick: p => void (picks.push(p), log.push(`pick ${p.label}${p.note ? ` - ${p.note}` : ""}`)),
 		recordText: (_c, t) => void log.push(`text ${t}`),
 		learning: { record: async (_k, line) => void log.push(`learn ${line}`), refine: async () => void log.push("refine") },
-		cards: { open: () => o.cards ?? [], replace: (a, b, _t, hash) => void (drawn.push([b, hash]), log.push(`cards ${a}->${b}`)), rewrite: (ref, _t, hash) => void (drawn.push([ref, hash]), log.push(`rewrite ${ref}`)), repost: async (ref, text, hash) => void reposts.push([ref, text, hash]), close: ref => void log.push(`close ${ref}`) },
+		cards: { open: () => o.cards ?? [], convOf: () => o.cardConv, replace: (a, b, _t, hash) => void (drawn.push([b, hash]), log.push(`cards ${a}->${b}`)), rewrite: (ref, _t, hash) => void (drawn.push([ref, hash]), log.push(`rewrite ${ref}`)), repost: async (ref, text, hash) => void reposts.push([ref, text, hash]), close: ref => void log.push(`close ${ref}`) },
 		toBot: async (conv, text) => void log.push(`bot ${conv} ${text}`),
 		emit: e => void log.push(`event ${e.ref}${e.next ? `->${e.next}` : ""}${e.revising ? " revising" : ""}${e.why ? ` ${e.why}` : ""}`),
 		log: () => undefined,
@@ -90,7 +91,7 @@ function world(o: { outcome?: string; reviseFails?: boolean; lesson?: string; ed
 	const last = () => sender.results().at(-1);
 	// The version the owner is shown now (a web card names it with its 보내기).
 	const seen = (ref: string) => approvalHash(drafts.get(ref)!);
-	return { replies, sender, log, ran, drafts, seen, drawn, reposts, only, picks, set, fire, last, timers, calls, onAsk: (fn: typeof onAsk) => void (onAsk = fn) };
+	return { replies, sender, log, ran, drafts, seen, drawn, reposts, only, picks, set, fire, last, timers, calls, onAsk: (fn: typeof onAsk) => void (onAsk = fn), reported };
 }
 
 test("send: the owner's pick is written before the send is queued, and a second send of the same draft sends nothing", async () => {
@@ -101,6 +102,42 @@ test("send: the owner's pick is written before the send is queued, and a second 
 	await w.sender.idle();
 	expect(w.ran).toHaveLength(1);
 	expect((await w.replies.act({ ref: "RAAAAAA", action: "send", hash: w.seen("RAAAAAA") }, owner)).body).toMatchObject({ ok: false, code: "already_sent" });
+});
+
+test("a send whose card was already answered reports to the card's conversation, not the draft's send lane, and so does its retry", async () => {
+	const w = world({ outcome: 'DOTZ_SEND {"sent":"no","code":"rejected"}', cardConv: "ch:card" });
+	expect((await w.replies.act({ ref: "RAAAAAA", action: "send", hash: w.seen("RAAAAAA") }, owner)).status).toBe(200);
+	await w.sender.idle();
+	expect((await w.replies.act({ ref: "RAAAAAA", action: "retry", hash: w.seen("RAAAAAA") }, owner)).status).toBe(200);
+	await w.sender.idle();
+	expect(w.reported.filter(r => r.state === "failed")).toEqual([{ state: "failed", conv: "ch:card" }, { state: "failed", conv: "ch:card" }]);
+	expect(w.reported.every(r => r.conv === "ch:card")).toBe(true);
+});
+
+/** Every job the actions queue, in order (the sender keeps no retry flag once a job ends). */
+function spy(sender: ReturnType<typeof createApprovalSender>): SendJob[] {
+	const jobs: SendJob[] = [];
+	const enqueue = sender.enqueue;
+	sender.enqueue = j => (jobs.push(j), enqueue(j));
+	return jobs;
+}
+
+// Every press is a fresh 보내기 (Dt8pq3b below); what differs is what the CLI is asked to do with it.
+test("다시 보내기 of a send that failed for want of a fresh approval (mail_gone) sends it as a new one; a plain failure's 다시 보내기 is a retry of the same send", async () => {
+	for (const [code, retried] of [["mail_gone", false], ["quota", true]] as const) {
+		const o: { outcome?: string } = { outcome: `DOTZ_SEND {"sent":"no","code":"${code}"}` };
+		const w = world(o);
+		const jobs = spy(w.sender);
+		await w.replies.act({ ref: "RAAAAAA", action: "send", hash: w.seen("RAAAAAA") }, owner);
+		await w.sender.idle();
+		expect((await w.replies.list())[0]!.send).toMatchObject({ state: "failed", reason: { code } });
+		o.outcome = undefined;
+		expect((await w.replies.act({ ref: "RAAAAAA", action: "retry", hash: w.seen("RAAAAAA") }, owner)).status).toBe(200);
+		await w.sender.idle();
+		expect(w.only("pick")).toEqual(["pick 보내기", "pick 보내기"]);
+		expect(w.last()).toMatchObject({ state: "sent" });
+		expect(jobs.map(j => j.retry ?? false)).toEqual([false, retried]);
+	}
 });
 
 test("revise: 202 at once; the model runs, the new draft is stored, then the lesson is learned and refined, then the cards move and one event names the new ref", async () => {

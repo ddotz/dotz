@@ -7,20 +7,21 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
 import { approvals, cardMoved, newMid, out, showSendOnCard } from "./outbound.ts";
-import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, settleOpenDecision, stampDraftCard } from "./notices.ts";
+import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, setStoredDraft, settleOpenDecision, stampDraftCard } from "./notices.ts";
 import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { isCommentPlace } from "./comments/reply-adapter.ts";
 import { claimFile, getDraft, mailAdapter, replyLearning } from "./reply-mail.ts";
+import { mailByKey } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { approvalHash, createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { DRAFT_UNDO, draftActionOf } from "./draft-approval.ts";
-import { askText } from "./draft-attach.ts";
+import { askText, withRecipient } from "./draft-attach.ts";
 import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
 import type { ReplyAdapter } from "./reply-types.ts";
 
-const mail = mailAdapter();
+const mail = mailAdapter(undefined, mailByKey);
 const adapters: ReplyAdapter[] = [mail, commentReply, kakaoReply];
 /** The adapter whose store holds `ref`. */
 const adapterOf = (ref: string): ReplyAdapter | undefined => adapters.find(a => a.target(ref));
@@ -40,6 +41,15 @@ setCardFingerprint(async ref => {
 		if (view) return { hash: approvalHash(view), text: await a.ask(ref) };
 	}
 	return undefined;
+});
+
+// A mail send card must show its pending draft as stored, or it keeps no draft (hub/notices-rules.ts shownAsStored), with the recipient its send
+// will use: an address-less one takes the mail's sender (flow.ts withRecipient).
+setStoredDraft(ref => {
+	const m = getDraft(ref);
+	if (m?.status !== "pending") return undefined;
+	const r = withRecipient(m);
+	return { to: r.to, body: r.body };
 });
 
 /** Where the gateway would send draft `ref`: a pending comment reply (per source), a pending mail draft (per sending account) or a KakaoTalk draft (one lane). */
@@ -141,6 +151,8 @@ export const sender = createApprovalSender({
 let toBot: (conv: string, text: string) => Promise<void> = async conv => log(`reply: a hand-written card in ${conv} has no bot path yet`);
 export const setReplyBot = (fn: typeof toBot): void => void (toBot = fn);
 const openCardOf = (conv: string, ref: string) => openDraftCards(conv).find(c => c.ref === ref);
+// The card of draft `ref`, open or answered: the conversation its sends report to.
+const cardOfRef = (ref: string) => allNotices().find(i => i.decision && i.title.endsWith(`(${ref})`));
 
 export const replies = createReplyActions({
 	adapters,
@@ -160,6 +172,7 @@ export const replies = createReplyActions({
 	learning: replyLearning(),
 	cards: {
 		open: () => openDraftCards().map(c => ({ ref: c.ref, conv: c.to, notice: c.id, title: c.title, ...(c.hash ? { hash: c.hash } : {}), ...(c.discord ? { discord: c.discord } : {}), ...(c.asked ? { asked: c.asked } : {}), ...(c.posts ? { posts: c.posts } : {}) })),
+		convOf: ref => cardOfRef(ref)?.decision?.to,
 		replace: (oldRef, newRef, text, hash) => void redrawDraftCards(oldRef, text, hash, newRef),
 		rewrite: (ref, text, hash) => void redrawDraftCards(ref, text, hash),
 		// The confirm card goes where the card was; its old post is marked moved only once the new one is out.
@@ -215,6 +228,6 @@ export function settleSends(): void {
 }
 // A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
 export function reportCliFailure(ref: string, conv: string, text: string): void {
-	const card = allNotices().find(i => i.decision && i.title.endsWith(`(${ref})`));
+	const card = cardOfRef(ref);
 	reportSend({ ref, conv: card?.decision?.to ?? conv, title: card?.title ?? "답장", state: "failed", text, at: Date.now() });
 }

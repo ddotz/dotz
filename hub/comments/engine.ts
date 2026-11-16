@@ -26,6 +26,8 @@ export type MailLink = {
 	compose: (spec: MailSpec) => Promise<{ ok: true; id: string; notes?: string[]; libraryMiss?: boolean } | { ok: false; reason: string }>;
 	/** The status of a mail draft whatever it is ("pending", "sent", ...); missing = only pending drafts are known (`view`). */
 	state?: (id: string) => string | undefined;
+	/** A pending mail draft made for the comment `commentId` on its own (compose --origin comment:<id>). Missing = none is known. */
+	pendingFor?: (commentId: string) => string | undefined;
 	/** Sends the mail draft; the reply was just posted by the owner's pick, so no second pick is asked. A mail whose files disagree with its words is refused unless `asIs` (the owner picked 이대로 보내기). */
 	send: (id: string, opts?: { asIs?: true; retry?: true }) => Promise<{ ok: boolean; text: string }>;
 	/** Where the mail draft's words and files disagree; checked before the reply is posted. Missing = nothing to check. */
@@ -77,6 +79,12 @@ function mailGoneRefusal(store: { putDraft: (d: Draft) => void }, d: Draft, now:
 	const { mail: _gone, ...rest } = d;
 	store.putDraft({ ...rest, mailAt: now });
 	return { ok: false, reason: "이 답글에 붙어 있던 메일 초안이 더 이상 없어요. 답글도 올리지 않았어요. 답글만 올리려면 다시 승인해 주세요." };
+}
+// A reply whose words say the mail already went out (보내드렸습니다, 발송했어요, emailed) while that mail still waits would tell the commenter something untrue:
+// it is held and the owner decides (1) 보내기 of the one card sends both; or he rewrites the reply). Nothing is sent by code.
+const MAIL_SENT_CLAIM = /(메일|e-?mail)[^.!?\n]{0,15}(보내\s?드렸|보냈|발송\s?(해\s?드렸|했|하였|됐|되었))|\be-?mailed\b|\bsent\b[^.!?\n]{0,20}\be-?mail\b/i;
+function mailClaimRefusal(text: string, mailId: string | undefined): GateResult | undefined {
+	return mailId && MAIL_SENT_CLAIM.test(text) ? { ok: false, code: "mail_claim_unsent", reason: `답글에 메일을 보냈다고 썼는데 그 메일(${mailId})은 아직 나가지 않았어요. 답글도 올리지 않았어요. 답글과 메일을 함께 보내려면 한 카드에서 1) 보내기를, 답글만 올리려면 답글을 고쳐 주세요.` } : undefined;
 }
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
@@ -281,6 +289,11 @@ export function createEngine(deps: EngineDeps) {
 		const linked = opts.by === "owner" && opts.only !== "reply" ? store.drafts().find(d => d.code === codeOrId) : undefined;
 		if (linked?.status === "pending" && linked.mail && !mailView(linked)) return mailGoneRefusal(store, linked, deps.now());
 		const mailId = linked?.mail;
+		const d = store.drafts().find(x => x.code === codeOrId && x.status === "pending");
+		// A mail that does not go with this send but still waits for the same comment: the reply may not say it went out.
+		const owed = d && !mailId ? (d.mail && mailView(d) ? d.mail : deps.mail?.pendingFor?.(d.commentId)) : undefined;
+		const held = d && mailClaimRefusal(opts.text ?? d.text, owed);
+		if (held) return held;
 		const r = (mailId ? mailLintRefusal(deps.mail, mailId) : undefined) ?? (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}), ...(opts.resend ? { resend: true as const } : {}) }, gate);
 		if (!r.ok) return r;
 		const done = mailId ? r.done.then(rep => sendMail(rep, mailId, opts.asIs)) : r.done;

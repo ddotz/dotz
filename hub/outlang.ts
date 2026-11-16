@@ -8,6 +8,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withoutApiKeys } from "./apikey-policy.ts";
 import { cfg, DATA_DIR, DEFAULTS, IDENTITY_FILE, log, OMP, splitThinking } from "./config.ts";
+import { parseDraftApproval } from "./draft-approval.ts";
 import { callWarm, ensureProvider, invalidateHealth, readyAccount } from "./model-runner.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
 import { lang, msg } from "./i18n.ts";
@@ -77,10 +78,11 @@ export function languageMismatch(text: string, language: string): boolean {
 	return native / (native + latin) < MAX_NATIVE_SHARE;
 }
 
-// Owner-facing text is only mismatched when the identity language has its own script and text was not made by a template.
-function needsRewrite(text: string, source?: string): boolean {
+// Owner-facing text is only mismatched when the identity language has its own script and text was not made by a template. A send card goes out
+// as the draft printed it: the owner approves the mail's own words, never a translation (hub/notices-rules.ts shownAsStored).
+export function needsRewrite(text: string, source?: string): boolean {
 	if (setting().mode === "off" || source === "gateway" || source === "hub") return false;
-	return languageMismatch(text, lang());
+	return languageMismatch(text, lang()) && !parseDraftApproval(text);
 }
 
 // The Tone line of IDENTITY.md ("- Tone: ..."), else identity.tone from config.json.

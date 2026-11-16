@@ -28,7 +28,9 @@ import { isSealed, readSealKey } from "./approval-seal.ts";
 import { withFileWords } from "./auto-attach.ts";
 import { mailLineText, type DraftBrief } from "./mail-lines.ts";
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { DECISION_HEAD, issueBlock, parseDecisions } from "./choices.ts";
+import type { DraftView, FileShown } from "./reply-types.ts";
 
 export const DRAFT_SEND = "보내기";
 export const DRAFT_EDIT = "고치기";
@@ -564,7 +566,21 @@ export const draftNeedsText = (label: string): boolean => {
 	return a === "edit" || a === "own";
 };
 
-export type DraftVerdict = { verdict: DraftAction | "none"; detail?: string };
+/** The fingerprint of what a send would carry: recipients, subject, text, parts, files (name, size and, for a file held locally, its content) and a
+ * bundled mail. Display fields (labels, notes, state) are not in it. The one definition: the gateway's gate (hub/approval-send.ts), every act's
+ * pick and the CLIs' draftVerdict all compare this. Kept here, beside draftVerdict, so a CLI computes it without loading the gateway. */
+export function approvalHash(view: DraftView): string {
+	const d = view.draft;
+	const files = (list?: FileShown[]) => (list ?? []).map(f => `${f.name}\n${f.size ?? ""}\n${f.digest ?? ""}`).sort();
+	const mail = d.mail ? { to: d.mail.to, subject: d.mail.subject ?? "", text: d.mail.text, attachments: files(d.mail.attachments) } : null;
+	const body = { to: d.to, cc: [...(d.cc ?? [])].sort(), subject: d.subject ?? "", text: d.text, parts: d.parts ?? [], attachments: files(d.attachments), mail };
+	return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
+}
+
+/** `changed`: the owner's latest word is a send, but of another version than the store holds now (or a pick that names none). */
+export type DraftVerdict = { verdict: DraftAction | "none" | "changed"; detail?: string };
+// The picks that let a CLI send: each must name the version it approved (its approvalHash).
+const SENDING = new Set<DraftAction>(["send", "send-main", "send-mail", "send-as-is", "own"]);
 const OWNER_SOURCES = new Set(["web", "discord", "terminal"]);
 const TAIL_BYTES = 2 * 1024 * 1024;
 
@@ -595,7 +611,10 @@ const parsedLine = <T>(line: string): T | undefined => {
 // on its card wins. Only a line the gateway sealed counts, from the owner's own surfaces (web, discord, terminal; not a session's lane_message). Typed
 // chat is never read here (the reply intent design, 2026-11-16): the model reads it, and every send the hub queues follows a pick it sealed. For
 // 고치기 the detail is the change the owner typed ("2) 고치기 - <change>"), for 직접 입력 how to send it.
-export function draftVerdict(inboxPath: string, ref: string, sinceMs: number): DraftVerdict {
+// `current`: the approvalHash of the draft as its store holds it now, computed by the caller from the same view the gateway reads. A send pick
+// counts only when it carries that very hash (owner rule 2026-11-16: what goes out is the version he saw when he pressed 보내기); a pick with
+// another hash, or none, is `changed`. A send the gateway refused `changed` or he took back is followed by 보내기 취소 (undo), so it never counts again.
+export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, current: string | undefined): DraftVerdict {
 	const tag = `(${ref})`;
 	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown };
 	// Only a line the gateway sealed (hub/approval-seal.ts) is the owner's word: a line appended to the file by another process is not.
@@ -604,8 +623,12 @@ export function draftVerdict(inboxPath: string, ref: string, sinceMs: number): D
 	for (const line of tailLines(inboxPath)) {
 		const e = parsedLine<Entry>(line);
 		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !Array.isArray(e.picks) || !isSealed(key, e)) continue;
-		for (const p of e.picks as { q?: unknown; label?: unknown }[]) {
+		for (const p of e.picks as { q?: unknown; label?: unknown; hash?: unknown }[]) {
 			if (typeof p?.q !== "string" || !p.q.includes(tag) || typeof p.label !== "string" || !draftActionOf(p.label)) continue;
+			if (SENDING.has(draftActionOf(p.label)!) && (!current || p.hash !== current)) {
+				out = { verdict: "changed" };
+				continue;
+			}
 			const detail = draftNeedsText(p.label) && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
 			out = { verdict: draftActionOf(p.label)!, ...(detail ? { detail } : {}) };
 		}

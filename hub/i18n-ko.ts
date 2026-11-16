@@ -71,7 +71,7 @@ export const ko: Catalog = {
 		prefixHint: "그 컴퓨터가 답 맨 앞에 붙이는 말이에요.",
 		invalid: "키워드와 답 머리말을 확인해 주세요. 다른 컴퓨터와 겹치면 안 되고, 8대까지 넣을 수 있어요.",
 		share: "이 컴퓨터 상태를 잔디로 보내기",
-		shareHint: "프로젝트, 세션, 모니터, 남은 할 일, 최근 알림을 짧게 요약해 나와의 대화에 올려요. 바뀌었을 때만, 30분에 한 번까지 올리고 비밀번호나 개인 경로는 빼요. 이 컴퓨터에 답 머리말이 있어야 쓸모가 있어요.",
+		shareHint: "프로젝트, 세션, 모니터, 남은 할 일, 최근 알림을 짧게 요약해 나만 있는 잔디 비공개 토픽(self_chat.status_room_id)이 있으면 거기에, 없으면 나와의 대화에 올려요. 바뀌었을 때만, 30분에 한 번까지 올리고 비밀번호나 개인 경로는 빼요. 이 컴퓨터에 답 머리말이 있어야 보내요.",
 	},
 
 	// Messenger connect flows (hub/onboarding*.ts, hub/messenger-login.ts): owner-facing lines, plain and short.
@@ -294,6 +294,7 @@ export const ko: Catalog = {
 	inboxLaneReport: lane => `[dotz inbox] 세션 ${lane}의 보고:`,
 	inboxLaneReports: n => `[dotz inbox] 세션 보고 ${n}건 (일상 진행은 report.md와 지금 도는 것 줄에만 있어요):`,
 	laneReportSteer: body => `${koLeads.laneReportLead}. 처리가 필요하면(전달할 결과나 실패, 당신이 답할 수 있는 질문) dotz_send로 전달하거나 dotz_lane으로 세션에 답한 뒤 하던 일을 이어가세요. 이 보고는 나중에 다시 오지 않아요. 세션의 [ask]는 이미 오너에게 갔으니 다시 올리지 마세요.\n\n${body}`,
+	draftCardRedo: "초안과 달라서 닫았어요. 초안 그대로 다시 올라와요",
 	laneAskWaiting: lanes => `올리지 않았어요. 세션 ${lanes}의 질문은 이미 오너의 답변 필요에 카드로 떠 있고, 거기서 답하면 세션에 바로 가요. 카드를 또 만들면 같은 질문이 두 번 보이니 어떤 말로도 다시 올리지 마세요. 당신의 다른 질문은 다음 턴에 내세요.`,
 	fleetUnknown: name => `"${name}"(이)라는 연결된 컴퓨터가 없어요.`,
 	fleetNotPaired: name => `아직 ${name}와(과) 연결(페어링)되지 않았어요.`,

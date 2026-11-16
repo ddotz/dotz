@@ -2,6 +2,7 @@ import { beforeEach, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { commentDraftHandled, draftHandled, kakaoDraftHandled, mailDraftHandled, mailItemKey, mailRefHandled, type AllFacts } from "./draft-handled.ts";
 import { broadcast, emit } from "./events.ts";
+import { msg } from "./i18n.ts";
 import { type ClosedCard, confirmGroup, listNotices, markDraftPosted, markDraftSend, onDecisionClosed, resetNoticesForTest, setAppLabelResolver, setAppResolver, setDraftHandled, settleHandledDrafts, unreadCount } from "./notices.ts";
 import { decisionPush } from "./push.ts";
 
@@ -134,21 +135,17 @@ test("one message asking about several drafts: a failed send shows on its own bl
 	expect(listNotices(100).items.filter(i => i.decision?.to === "ch:9" && i.decision.send).map(i => [i.title, i.decision!.send!.state])).toEqual([["이 답글 올릴까? (f2)", "failed"]]);
 });
 
-test("one message asking about several drafts: each block closes when its own draft was sent or dropped elsewhere (the 모니터링 queue)", async () => {
+test("one message asking about several drafts: every block closes at once to be posted again one card per message, and a plain several-decision question is never asked about", async () => {
 	const block = (ref: string) => draftApprovalBlock({ to: "유튜브 댓글", toLabel: "대상", body: `답글 ${ref}`, ref, question: "이 답글 올릴까?" });
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "ch:1", text: `[ask] 댓글 답글 초안이에요\n\n${["c1", "c2", "c3"].map(block).join("\n\n")}` });
 	const blocks = () => listNotices(100).items.filter(i => i.decision?.to === "ch:1");
-	expect(blocks().map(i => [i.decision!.group, !!i.decision!.draft, i.decision!.state])).toEqual([[3, false, "open"], [3, false, "open"], [3, false, "open"]]);
-	handled.add("c2");
-	expect(await settleHandledDrafts()).toBe(1);
-	const settled = blocks().filter(i => i.decision!.state !== "open");
-	expect(settled.map(i => i.title)).toEqual(["이 답글 올릴까? (c2)"]);
-	expect(settled[0]).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
+	// The blocks of one message are not read as drafts (a card per message), so each closes at once with the reason and goes back to be posted again (issue #7).
+	expect(blocks().map(i => [i.decision!.group, !!i.decision!.draft, i.decision!.state, i.decision!.answer])).toEqual(["c1", "c2", "c3"].map(() => [3, false, "answered", msg().draftCardRedo]));
 	// A plain several-decision question (no draft options) is never asked about.
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "ch:2", text: "[ask] 두 가지\n\n결정: 어느 쪽? (c1)\n1) 가\n2) 나\n\n결정: 언제? (c3)\n1) 오늘\n2) 내일" });
 	handled.add("c1");
 	handled.add("c3");
-	expect(await settleHandledDrafts()).toBe(2);
+	expect(await settleHandledDrafts()).toBe(0);
 	expect(listNotices(100).items.filter(i => i.decision?.to === "ch:2" && i.decision.state === "open")).toHaveLength(2);
 });
 

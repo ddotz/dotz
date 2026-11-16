@@ -2,7 +2,8 @@
 // Every surface that shows a reply draws it with rqItemCard(item, opts) from the server's ReplyItem and acts on it with raAct: the card has no
 // per-channel code, and the server says which buttons a failed or unsure send gets. The `reply` event updates one item and swaps a replaced
 // card in place (99-boot.js). opts: { bare (no head or original), lead (this card's 보내기 is the filled one), after (called once a send or a drop went through),
-// parts (a mail draft's own parts from its notice, 10-reply-card.js rqMailParts, in place of the item's), cls, attrs, tail (nodes at the head's end), sure (asked before 보내기) }.
+// parts (a mail draft's own parts from its notice, 10-reply-card.js rqMailParts, in place of the item's), cls, attrs, tail (nodes at the head's end), sure (asked before 보내기),
+// send (the surface sends the item itself: 빠른 처리 moves on before the answer) }. A comment reply with its mail also offers each part alone (답글만·메일만 보내기).
 // The card's buttons are 보내기 · 고치기 · 보내지 않기. 고치기 (`fix` here) opens one panel that posts the server's two changing actions (hub/reply-actions.ts ActInput): `edit`
 // saves the owner's own text as written, `revise` has the model rewrite from an instruction. A changing action never sends: only `send`, `retry` and `resolve` do, and each
 // of those carries the hash of the version its card showed. RA.fix holds what is being changed in an open panel (raFixOpen); `edit` carries the hash the panel opened on.
@@ -292,7 +293,9 @@ function rqItemCard(item, opts = {}) {
     foot,
     // A draft that no longer waits (dropped, sent, replaced) offers nothing to press.
     acts: d.state !== "pending" ? null : { quiet: !opts.lead, busy, press: RA.busy.get(ref),
-      send: item.can.send ? () => (opts.sure ? opts.sure().then(ok => ok && raAct(item, "send")) : raAct(item, "send")).then(ok => ok && opts.after && opts.after("send")) : null,
+      send: !item.can.send ? null : opts.send ? () => opts.send(item) : () => (opts.sure ? opts.sure().then(ok => ok && raAct(item, "send")) : raAct(item, "send")).then(ok => ok && opts.after && opts.after("send")),
+      // A reply with its mail: 보내기 sends both, and the card also offers each part alone (hub/reply-actions.ts sendAction).
+      only: (item.can.sends || []).filter(s => s !== "send").map(s => { const part = s === "send-main" ? "reply" : "mail"; return { k: s, text: part === "reply" ? TX("reply.only_reply") : TX("reply.only_mail"), fn: () => raAct(item, "send", { part }).then(ok => ok && opts.after && opts.after("send")) }; }),
       fix: raCanFix(item) ? () => raFixOpen(item) : null,
       drop: item.can.drop ? () => raAct(item, "drop").then(ok => ok && opts.after && opts.after("drop")) : null },
   });

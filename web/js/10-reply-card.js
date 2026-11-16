@@ -53,7 +53,7 @@ function rqBodyNode(key, b) {
 // handler leaves its button disabled; `busy` disables them all. a.quiet: 보내기 is tonal (one filled control per screen: only the lead card's is filled).
 function rqActsNode(a) {
   const b = (cls, k, text, fn) => el("button", { class: cls, type: "button", "data-k": k, disabled: !!a.busy || !fn, text: a.busy && a.press === k ? RQ_PRESS[k] : text, onclick: fn });
-  return el("div", { class: "dr-act dr-row rq-acts" }, b(`btn${a.quiet ? " tonal" : ""} sm dr-send`, "send", TX("common.send"), a.send), b("btn tonal sm", "fix", TX("decision.fix"), a.fix), b("btn text sm dr-drop", "drop", TX("decision.drop"), a.drop));
+  return el("div", { class: "dr-act dr-row rq-acts" }, b(`btn${a.quiet ? " tonal" : ""} sm dr-send`, "send", TX("common.send"), a.send), ...(a.only || []).map(o => b("btn text sm", o.k, o.text, a.send && o.fn)), b("btn tonal sm", "fix", TX("decision.fix"), a.fix), b("btn text sm dr-drop", "drop", TX("decision.drop"), a.drop));
 }
 // An AI-revised draft shows what changed against the draft it replaced (the item's draft.replaces.text): the words that came in are marked (<ins>), the ones that went
 // stand struck (<del>) where they were. rqDiffOps is the word-level diff as ops in the new text's order, ["=" | "+" | "-", word, the white space after it]; null when

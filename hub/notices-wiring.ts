@@ -36,6 +36,9 @@ export const setConvNameResolver = (fn: (conv: string) => string | undefined) =>
 export const decisionHooks: Array<(n: Notice) => void> = [];
 // Called once for every new (or re-asked) open decision, never while the old history is replayed.
 export const onDecision = (fn: (n: Notice) => void): void => void decisionHooks.push(fn);
+// A send-approval card closed because it is not its draft as printed (notices-rules.ts unreadDraftRef): `note` goes to the session that posted it.
+export const repostHooks: Array<(n: Notice, note: string) => void> = [];
+export const onDraftRepost = (fn: (n: Notice, note: string) => void): void => void repostHooks.push(fn);
 
 // The send-approval queue of a conversation (hub/approval-queue.ts) reads which draft cards are open there and hears when a decision closes
 // (answered, resolved, ignored), so it can show the next held card.
@@ -49,6 +52,9 @@ export const onDecisionClosed = (fn: (to: string, ref: string | undefined, card?
 // A message asking about several drafts at once has one notice per draft without `draft`: its block title still names the ref (blockDraftRef).
 export let draftHandled: (d: Decision, n: Notice, ref: string) => Promise<boolean> | boolean = () => false;
 export const setDraftHandled = (fn: typeof draftHandled) => void (draftHandled = fn);
+// The stored draft behind a card's ref (hub/reply-wire.ts reads the mail drafts): a card that shows other words or another recipient keeps no draft.
+export let storedDraftOf: (ref: string) => { to: string; body: string } | undefined = () => undefined;
+export const setStoredDraft = (fn: typeof storedDraftOf) => void (storedDraftOf = fn);
 // The send approvals of one monitoring app instance are shown, and pushed, as one group ("메일 답장 확인 3건"): the app instance key, its name and the open count.
 export let appLabelOf: (key: string) => string = key => key;
 export const setAppLabelResolver = (fn: typeof appLabelOf) => void (appLabelOf = fn);

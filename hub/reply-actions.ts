@@ -37,7 +37,9 @@ export type ReplyDeps = {
 	learning: { record: (key: Lesson["key"], line: string) => Promise<void>; refine: (key: Lesson["key"]) => Promise<void> };
 	/** `rewrite` and `replace` draw a card anew (every surface, Discord included) and store `hash`, the version it now shows. `repost` posts the open card
 	 * of `ref` again at the bottom of its conversation (the same notice; `text` and `hash` when given), its old post marked moved. */
-	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string) => void };
+	cards: { open: () => OpenCard[]; replace: (oldRef: string, newRef: string, text: string, hash: string | undefined) => void; rewrite: (ref: string, text: string, hash: string | undefined) => void; repost: (ref: string, text: string | undefined, hash: string | undefined) => Promise<void>; close: (ref: string) => void;
+		/** The conversation of the newest card of `ref`, open or already answered. */
+		convOf?: (ref: string) => string | undefined };
 	/** A card a session wrote by hand (kind `card`): its answer goes to the bot as one message per conversation. */
 	toBot: (conv: string, text: string) => Promise<void>;
 	emit: (e: { kind: "reply"; ref: string; item?: ReplyItem; next?: string; revising?: true; why?: string }) => void;
@@ -150,9 +152,16 @@ export function createReplyActions(deps: ReplyDeps) {
 		return sendPicked(ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action], job(a, view, action));
 	}
 
-	// 다시 보내기 of a surely-failed send: a fresh 보내기 on the current version (the CLIs' gates count from it), with no cancel window.
-	function retry(ctx: ActCtx, a: ReplyAdapter, view: DraftView): ActResult {
-		if (ledger(view.ref)?.state !== "failed") return refused(409, "not_pending");
+	// 다시 보내기 of a surely-failed send: a fresh 보내기 on the current version (the CLIs' gates count from it), with no cancel window. A failure that
+	// voids what the earlier send stood on (the mail draft went away, no pick counted) is sent as a new one, not as a retry of the old.
+	function retry(ctx: ActCtx, a: ReplyAdapter, view: DraftView, input: ActInput): ActResult {
+		const last = ledger(view.ref);
+		if (last?.state !== "failed") return refused(409, "not_pending");
+		if (last.reason && policyOf(last.reason.code).reapprove) {
+			if (view.draft.state !== "pending") return refused(409, "not_pending");
+			const action = sendAction(input);
+			return sendPicked(ctx, a, view, action === "send-as-is" ? 4 : 1, SEND_LABEL[action], job(a, view, action));
+		}
 		return sendPicked(ctx, a, view, 1, SEND_LABEL.send, job(a, view, "send", { retry: true }));
 	}
 
@@ -289,9 +298,11 @@ export function createReplyActions(deps: ReplyDeps) {
 		const found = await resolve(input.ref);
 		if (!found) return fail(404, "unknown_ref", "그 초안을 찾지 못했어요");
 		if ("card" in found) return toBot(ctx, found.card, input);
-		// The pick, the send and its card state belong where the draft's card was asked, when it has one; the store's own place otherwise.
+		// The pick, the send and its card state belong where the draft's card was asked, when it has one (a 다시 보내기 comes after the card
+		// was answered, so an answered card counts too); the store's own place otherwise.
 		const card = deps.cards.open().find(c => c.ref === input.ref);
-		const a = found.adapter, view = card ? { ...found.view, conv: card.conv } : found.view;
+		const conv = card?.conv ?? deps.cards.convOf?.(input.ref);
+		const a = found.adapter, view = conv ? { ...found.view, conv } : found.view;
 		// A send that names no version (typed chat, an older page) is checked against the version its card was last drawn with. One with neither
 		// (a card never drawn with one, no card) is refused like a stale one and its cards drawn anew: nothing sends a version no surface showed.
 		const shown = input.hash ?? (SENDS.has(input.action) ? (card?.hash ?? "") : undefined);
@@ -303,7 +314,7 @@ export function createReplyActions(deps: ReplyDeps) {
 			case "edit": return edit(ctx, a, view, input);
 			case "drop": return drop(ctx, a, view);
 			case "restore": return restore(a, view);
-			case "retry": return retry(ctx, a, view);
+			case "retry": return retry(ctx, a, view, input);
 			case "resolve": return resolveSend(ctx, a, view, input.as);
 			default: return undo(view);
 		}

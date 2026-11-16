@@ -11,6 +11,8 @@
   "reply.went_out": "It went out",
   "reply.check": "Check",
   "reply.retry": "Send again",
+  "reply.only_reply": "Reply only",
+  "reply.only_mail": "Mail only",
   "reply.edit_label": "Text to send",
   "reply.fix.apply": "Apply",
   "reply.fix.note": "Ask AI to change it (optional)",

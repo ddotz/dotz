@@ -87,7 +87,7 @@ type T = ReturnType<typeof setup>;
 
 async function withMail(t: T) {
 	await t.engine.collect({ force: true });
-	const s = await t.engine.addDraft(t.id, "문서는 메일로 보내 드렸어요", undefined, MAIL);
+	const s = await t.engine.addDraft(t.id, "문서는 메일로 보내 드릴게요", undefined, MAIL);
 	if (!s.ok) throw new Error(s.reason);
 	return s.draft;
 }
@@ -107,7 +107,7 @@ describe("the combined card", () => {
 		expect(block.indexOf("> 대상: 팬 댓글")).toBeLessThan(block.indexOf("> 함께 보낼 메일"));
 		expect(block.indexOf("> 함께 보낼 메일")).toBeLessThan(block.indexOf("> 받는이: fan@example.com"));
 		const card = parseDraftApproval(text);
-		expect(card).toMatchObject({ toLabel: "대상", to: "팬 댓글", body: "문서는 메일로 보내 드렸어요", ref: d.code });
+		expect(card).toMatchObject({ toLabel: "대상", to: "팬 댓글", body: "문서는 메일로 보내 드릴게요", ref: d.code });
 		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "문서 보내드립니다", body: "안녕하세요.\n요청하신 문서를 보내드립니다.", attachments: [{ name: "brief.pdf", size: "2KB" }] });
 		expect(card?.mail?.warning).toBeUndefined();
 		expect(card?.mail?.ref).toBe("M1");   // the mail draft id its files are staged under: the card opens them at /api/drafts/M1/files/<n>
@@ -321,7 +321,7 @@ describe("the draft API", () => {
 	test("extra.mail becomes a mail draft on the same card and the thread view shows it", async () => {
 		const t = setup();
 		await t.engine.collect({ force: true });
-		const ok = await call(t, path(t), { text: "문서는 메일로 보내 드렸어요", extra: { note: "문서 메일", mail: MAIL } });
+		const ok = await call(t, path(t), { text: "문서는 메일로 보내 드릴게요", extra: { note: "문서 메일", mail: MAIL } });
 		expect(ok.status).toBe(200);
 		expect(t.engine.store.drafts()[0]).toMatchObject({ code: ok.json.code, mail: "M1", clean: false, notes: [expect.stringContaining("문서 메일")] });
 		const view = t.engine.threadView("youtube", "p1")!;
@@ -346,7 +346,7 @@ describe("the draft API", () => {
 	test("보내기 posts the reply, then sends the mail, and a revise takes a part", async () => {
 		const t = setup();
 		await t.engine.collect({ force: true });
-		const made = await call(t, path(t), { text: "문서는 메일로 보내 드렸어요", extra: { mail: MAIL } });
+		const made = await call(t, path(t), { text: "문서는 메일로 보내 드릴게요", extra: { mail: MAIL } });
 		const code = made.json.code as string;
 		expect((await t.engine.revise(code, "제목을 바꿔", "mail")).ok).toBe(true);
 		expect(t.engine.send(code, { by: "owner" }).ok).toBe(true);

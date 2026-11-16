@@ -10,6 +10,9 @@ import { commentsDir, createStore, type Draft, type Store } from "./store.ts";
 /** The pending comment draft that carries the mail draft `mailId`, or undefined when it is a mail of its own. */
 export const linkedComment = (mailId: string): string | undefined => createStore(commentsDir(dataDir())).drafts().find(d => d.status === "pending" && d.mail === mailId)?.code;
 
+/** The mail drafts that ride on a pending comment draft: the reply queue shows each inside that reply's card, not as a card of its own. */
+export const ridingMails = (): Set<string> => new Set(createStore(commentsDir(dataDir())).drafts().flatMap(d => (d.status === "pending" && d.mail ? [d.mail] : [])));
+
 /** Puts the mail draft on the comment draft `code` (a mail attached before is dropped). The card is new then: `mailAt` keeps older picks from approving it. */
 export function attachMail(store: Store, code: string, mailId: string, now: number): Draft {
 	const d = store.drafts().find(x => x.code === code)!;

@@ -7,7 +7,7 @@
 // mode is removing the child: the screen's own markup was never touched.
 // Function declarations, not arrows: 33-peers.js, 42-relay-chat.js and the render functions call these before a const of this file exists.
 const RV_POLL_MS = 30_000, RV_FRESH_MS = 10_000;
-const RV_SCREENS = { home: 1, projects: 1, monitoring: 1, settings: 1 };
+const RV_SCREENS = { home: 1, projects: 1, monitoring: 1, settings: 1, chat: 1 };
 const RV = { by: {} };
 
 /** The relay target shown as THE computer right now: its chat on screen, or a snapshot screen opened from it. "" for this computer. */
@@ -27,7 +27,7 @@ async function rvLoad(t, quiet) {
   if (relayCur() === t) rvRefresh();
 }
 function rvRefresh() {
-  const draw = { home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings }[current];
+  const draw = { home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings, chat: () => { convSig = ""; convSchedule(); } }[current];
   if (draw) draw();
 }
 const rvTick = () => { const t = relayCur(); if (t && !document.hidden && RV_SCREENS[current]) rvLoad(t, true); };
@@ -52,6 +52,23 @@ function rvPaint(name) {
   if (node.dataset.sig !== sig) { node.dataset.sig = sig; clear(node).append(...rvBody(name, t, c)); }
   if (name === "home") $("#title").textContent = targetName(t);
   return true;
+}
+
+// The chat list (31-conversations.js convRows: the side list beside a chat, the 채팅 list on a phone) while that computer is chosen: its own chat first, then
+// its live sessions and its projects from its snapshot, each opening its read-only screen. Never this computer's conversations, not even before the snapshot is in.
+function rvConvRows(t) {
+  const c = RV.by[t] || (RV.by[t] = { snap: null, rcv: 0, at: 0, loaded: false, err: "", flight: null });
+  if (!c.flight && Date.now() - c.at > RV_FRESH_MS) rvLoad(t, true);
+  const who = targetName(t), show = view => () => relayShow(t, who, view);
+  const rows = [{ t, name: who, hint: RELAY.note[t] || "", open: () => relayOpenChat(t) }];
+  const s = c.snap;
+  if (!s) return [...rows, { split: true }, { empty: !c.loaded ? TX("relay.loading") : c.err ? TX("relay.failed") : TX("relay.conv_none", { name: who }) }];
+  const av = ic => el("span", { class: "cv-av", "aria-hidden": "true" }, icon(ic));
+  const live = s.sessions.filter(x => x.live);
+  if (live.length) rows.push({ header: TX("home.sys.running"), sec: true }, ...live.map(x => ({ k: `rv:s:${x.name}`, name: x.title || x.name, hint: x.waiting ? "" : x.status, last: x.at ? { ts: x.at } : null, av: av("lanes"), chips: x.waiting ? [[x.status, "warn"]] : undefined, open: show("home") })));
+  if (s.projects.length) rows.push({ header: TX("common.projects"), sec: true }, ...s.projects.map(p => ({ k: `rv:p:${p.key}`, name: p.name, hint: p.note || "", av: av("projects"), chips: p.live > 0 ? [[TX("relay.live", { n: p.live }), "pri"]] : undefined, open: show("projects") })));
+  if (!live.length && !s.projects.length) rows.push({ split: true }, { empty: TX("relay.no_sessions") });
+  return rows;
 }
 
 /** Choose a relay computer from outside its chat (the 프로젝트 list's computer group) and show it on `view`. */

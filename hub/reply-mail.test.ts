@@ -72,3 +72,17 @@ test("repair adds Re: to a subject without it and leaves a login to the owner; t
 	expect(a.question("RMAILAA")).toBe("이 답장 보낼까요? (RMAILAA)");
 	expect(await a.ask("RMAILAA")).toContain("(RMAILAA)");
 });
+
+test("a reply that kept no text of the mail it answers quotes that mail from the mail record, as a comment quotes its comment", async () => {
+	// The reply the owner writes under an open mail (hub/mail-manual.ts) stores the sender and no text of the mail.
+	const mails: Record<string, { from: string; subject: string; summary?: string; preview?: string }> = { k1: { from: "Kim <kim@example.com>", subject: "문의", summary: "자료 요청", preview: "자료 금요일까지 되나요?" } };
+	const a = mailAdapter(undefined, key => mails[key]);
+	addDraft(rec({ item: { kind: "mail", from: "Kim <kim@example.com>", text: "" } as DraftRec["item"] }));
+	expect((await a.get("RMAILAA"))!.original).toEqual({ who: "Kim <kim@example.com>", text: "자료 금요일까지 되나요?", subject: "문의" });
+	// A draft that carries the mail's text keeps it; a mail without a preview falls back to its summary, then its subject.
+	addDraft(rec({ id: "RMAILBB", ref: "k2" }));
+	expect((await a.get("RMAILBB"))!.original).toEqual({ who: "Kim <kim@example.com>", text: "문의드립니다", subject: "문의" });
+	mails.k3 = { from: "Lee <lee@example.com>", subject: "일정" };
+	addDraft(rec({ id: "RMAILCC", ref: "k3", item: { kind: "mail", from: "", text: "" } as DraftRec["item"] }));
+	expect((await a.get("RMAILCC"))!.original).toEqual({ who: "Lee <lee@example.com>", text: "일정", subject: "일정" });
+});

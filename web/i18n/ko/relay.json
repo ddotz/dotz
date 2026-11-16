@@ -10,6 +10,7 @@
   "relay.none_title": "{name+이/가} 아직 상태를 보내지 않았어요",
   "relay.none_hint": "그 컴퓨터에서 설정 > 메신저 > JANDI > 이 컴퓨터 상태를 잔디로 보내기를 켜면 여기에 보여요",
   "relay.sessions": "세션",
+  "relay.conv_none": "{name} 대화는 아직 받지 못했어요",
   "relay.no_sessions": "진행 중인 세션이 없어요",
   "relay.todos": "열린 할 일 {n}개",
   "relay.todos_title": "할 일",
