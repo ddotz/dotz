@@ -3,22 +3,33 @@
   "objects": {
     "ASC": ["32-app-settings.js"],
     "CM": ["30-monitoring-comments.js"],
+    "CONV": ["09-needs-you.js"],
+    "CPC": ["33-peers.js"],
     "CV": ["31-conversations.js"],
+    "DELIV": ["11-todo-strip.js"],
     "DM": ["30-monitoring-comments-dm.js"],
     "FS": ["38-overlay.js"],
     "H": ["32-history-nav.js"],
     "KK": ["30-kakao.js"],
     "M": ["20-models.js"],
-    "MON": ["30-monitoring.js", "30-monitoring-route.js"],
+    "MAILS": ["08-home.js"],
+    "MBOX": ["30-mail-box.js"],
+    "MON": ["30-monitoring.js","30-monitoring-route.js"],
     "MX": ["30-mailboxes.js"],
-    "NSC": ["31-notices-screen.js", "04-state.js"],
+    "NSC": ["31-notices-screen.js","04-state.js"],
+    "NT": ["30-notices.js"],
     "OV": ["32-history-nav.js"],
     "P": ["21-providers.js"],
     "PN": ["43-panes.js"],
+    "PQ": ["34-peer-monitoring.js"],
     "PR": ["33-peers.js"],
     "PRJ": ["18-lanes.js"],
+    "RA": ["10-reply-actions.js"],
+    "RELAY": ["42-relay-chat.js"],
     "RQ": ["30-replies.js"],
-    "S": ["17-state-refresh.js", "04-state.js"]
+    "S": ["17-state-refresh.js","04-state.js"],
+    "TURN": ["08-home.js"],
+    "WA": ["25-settings-web-access.js"]
   },
   "lets": {
     "ATT": ["15-attachments.js"],
@@ -29,5 +40,10 @@
     "endedOpen": ["04-state.js"],
     "target": ["08-home.js"],
     "termStick": ["09-needs-you.js"]
+  },
+  "notes": {
+    "ICONS": "icon registry: 01-core.js declares it and the icon files add entries on purpose (ICONS.x = svg); it is a constant lookup table, not shared mutable state.",
+    "PQ": "owner is 34-peer-monitoring.js, not the declaring 08-home.js: 12 of the 15 writes live there and 08-home.js writes none.",
+    "RELAY": "owner is 42-relay-chat.js, not the declaring 08-home.js: 6 of the 8 writes live there and 08-home.js writes none."
   }
 }

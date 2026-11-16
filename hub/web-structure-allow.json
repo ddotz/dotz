@@ -16,7 +16,21 @@
       "rawdialog:kkViewer",
       "rawdialog:lightboxAt"
     ],
-    "ownerWrites": {},
+    "ownerWrites": {
+      "CPC|14-slash-commands.js": 1,
+      "DELIV|01-peer-msg.js": 2,
+      "MBOX|30-mailboxes.js": 1,
+      "MBOX|31-conversations.js": 1,
+      "NT|13-snapshot.js": 2,
+      "NT|30-mail-sent.js": 2,
+      "NT|30-monitoring.js": 4,
+      "NT|31-notices-screen.js": 8,
+      "PQ|10-draft-original.js": 1,
+      "PQ|30-monitoring-mail.js": 1,
+      "RA|30-replies.js": 1,
+      "RELAY|44-relay-views.js": 2,
+      "WA|25-settings-onboarding.js": 1
+    },
     "rawNet": {
       "01-forbidden-pair.js": 1,
       "11-mailbody.js": 2,
