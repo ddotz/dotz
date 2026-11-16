@@ -3,6 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { appendSealed } from "../../../hub/approval-seal.ts";
+import { getDraft } from "../lib/store.ts";
+import { mailHash } from "../lib/view.ts";
+import { approvalHash } from "../../../hub/draft-approval.ts";
+import { commentAdapter } from "../../../hub/comments/reply-adapter.ts";
+import type { Engine } from "../../../hub/comments/engine.ts";
 
 export type TestEnv = { dir: string; cleanup: () => void };
 
@@ -37,12 +42,17 @@ export function fakeModel(outs: string[]) {
 	return { call, calls };
 }
 
-// What the gateway's web send writes to inbox.jsonl for a decision answer (hub/notices.ts answerDecision), a bit in the future of any draft.
-export function pick(env: TestEnv, id: string, n: 1 | 2 | 3, note?: string, source = "web"): void {
+// What the gateway's web send writes to inbox.jsonl for a decision answer (hub/notices.ts answerDecision), a bit in the future of any draft. A
+// 보내기 names the version the draft has when it is picked (hub/reply-actions.ts records its approvalHash), so a later change voids it.
+// `hash`: the version named; by default a stored mail draft's own (a comment reply's comes from commentHash).
+export function pick(env: TestEnv, id: string, n: 1 | 2 | 3, note?: string, source = "web", hash?: string): void {
 	const label = ["보내기", "고치기", "보내지 않기"][n - 1]!;
 	const text = `${n}) ${label}${note ? ` - ${note}` : ""}`;
-	appendSealed(join(env.dir, "inbox.jsonl"), { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source, text, picks: [{ q: `이 답장 보낼까요? (${id})`, n, label }] });
+	const rec = getDraft(id), named = hash ?? (rec ? mailHash(rec) : undefined);
+	appendSealed(join(env.dir, "inbox.jsonl"), { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source, text, picks: [{ q: `이 답장 보낼까요? (${id})`, n, label, ...(named ? { hash: named } : {}) }] });
 }
+/** The approvalHash of comment reply `code` as its card shows it now (the reply, and the mail riding on it). */
+export const commentHash = async (engine: Engine, code: string): Promise<string | undefined> => ((v => v && approvalHash(v))(await commentAdapter(engine).get(code)));
 
 export const mailFixture = { key: "m-1", target: "main", thread: "t1", source: "zele", id: "msg-1", subject: "회의 일정 문의", from: "Kim <kim@example.com>", to: "me@example.net", body: "다음 주 회의 일정을 알려 주실 수 있을까요?" };
 export const goodReply = { action: "draft", reason: "asks a question", to: "kim@example.com", subject: "Re: 회의 일정 문의", body: "확인해 보고 말씀드릴게요.", questions: [] };

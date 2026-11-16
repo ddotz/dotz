@@ -6,14 +6,19 @@ import { fakeHub, json, on } from "./test-web.ts";
 
 const NOW = Date.now();
 const REF = "RQCHAT1";
-const item = { item: `mail:${REF}`, ref: REF, kind: "mail", app: "mail", label: "메일", conv: "web", at: NOW, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to: "kim@example.com", text: "자료는 금요일까지 드릴게요." }, original: { who: "김팀장", text: "자료 되나요?" } };
+const item = { item: `mail:${REF}`, ref: REF, kind: "mail", app: "mail", label: "메일", conv: "web", at: NOW, can: { send: true, revise: true, edit: true, drop: true, restore: false }, draft: { state: "pending", toLabel: "받는이", to: "kim@example.com", text: "자료는 금요일까지 드릴게요.", hash: `${REF}-v1` }, original: { who: "김팀장", text: "자료 되나요?" } };
+const posts: { path: string; body: Record<string, unknown> }[] = [];
 const draftMsg = { ts: new Date(NOW - 2000).toISOString(), kind: "out", source: "orchestrator", target: "web", text: `[ask] 메일 답장 초안이에요\n${draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "자료는 금요일까지 드릴게요.", ref: REF, question: "이 답장 보낼까요?" })}` };
 const history: unknown[] = [draftMsg];
 const queue: unknown[] = [item];
 const mailItem = (ref: string) => ({ ...item, ref, item: `mail:${ref}` });
 const block = (ref: string) => draftApprovalBlock({ to: "kim@example.com", toLabel: "받는이", body: "자료는 금요일까지 드릴게요.", ref, question: "이 답장 보낼까요?" });
 const hub = fakeHub({
-	api: (_req, url) => {
+	api: async (req, url) => {
+		if (req.method === "POST" && (url.pathname === "/api/reply/act" || url.pathname === "/api/message")) {
+			posts.push({ path: url.pathname, body: (await req.json()) as Record<string, unknown> });
+			return json({ ok: true, item });
+		}
 		if (url.pathname === "/api/state") return json({ name: "땅콩", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
 		if (url.pathname === "/api/reply/queue") return json({ items: queue, counts: {}, triageMin: 3, undoSec: 10 });
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: url.searchParams.get("target") === "main" ? history : [] });
@@ -28,11 +33,17 @@ const open = async () => {
 	await run(`openTarget("main", "chat")`);
 };
 
-test("a draft message draws the one card in the message and the dock holds no draft", async () => {
+// qa-clean-3 M4: with no decision notice for the message, the dock used to show the old question (2 고치기 "어떻게 고칠지 알려 주면…") and its 보내기
+// posted /api/message with no hash. The queue holds the draft, so the only surface is its card: three buttons, and a 보내기 that names the version.
+test("a draft message draws the one card in the message, the dock holds no draft, and its 보내기 carries the version's hash", async () => {
 	await open();
 	await waitFor(`!!document.querySelector("#timeline .ra-inl .ra-card")`);
 	expect(await ev(`document.querySelector("#timeline .ra-inl .ra-card").dataset.ref`)).toBe(REF);
-	expect(await ev(`!!document.querySelector("#dcard .dr-send")`)).toBe(false);
+	expect(await ev(`[document.querySelector("#dcard").hidden, document.querySelectorAll("#dcard .dc-row").length, DC.cur]`)).toEqual([true, 0, null]);
+	expect(await ev(`[...document.querySelectorAll("#timeline .ra-inl .rq-acts [data-k]")].map(b => b.dataset.k)`)).toEqual(["send", "fix", "drop"]);
+	await run(`document.querySelector("#timeline .ra-inl [data-k=send]").click()`);
+	await waitFor(`!RA.busy.has(${JSON.stringify(REF)})`);
+	expect(posts).toEqual([{ path: "/api/reply/act", body: { ref: REF, action: "send", hash: `${REF}-v1` } }]);
 });
 
 test("a decision that is not a send approval keeps its own card", async () => {

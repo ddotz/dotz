@@ -6,12 +6,12 @@ import { askComponentsFor, askInteraction, ASK_PREFIX } from "./askbuttons.ts";
 import { parseDecisions } from "./choices.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { paths } from "./config.ts";
-import { briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, parseDraftApproval } from "./draft-approval.ts";
+import { approvalHash, briefLines, draftActionOf, draftApprovalBlock, draftVerdict, keepBrief, parseDraftApproval } from "./draft-approval.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
-import { approval, createDraft, draftBlock } from "./kakao/send.ts";
+import { approval, createDraft, draftBlock, kakaoView, readDrafts } from "./kakao/send.ts";
 import { kakaoPaths, type Runner } from "./kakao/types.ts";
-import { answerDecision, type DecisionSend, type Notice } from "./notices.ts";
+import { answerDecision, setCardFingerprint, stampDraftCard, type DecisionSend, type Notice } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -43,7 +43,8 @@ for (const target of ["chat", "th:111", "ch:222"]) for (const preface of ["", "�
 			},
 		});
 
-		expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
+		// The pick names the card's ref; a hand-written card shows no stored version, so its 보내기 lets no CLI send.
+		expect(draftVerdict(paths.inbox, ref, since, "h-any")).toEqual({ verdict: "changed" });
 	});
 }
 
@@ -99,11 +100,16 @@ test("직접 입력 needs the owner's words; they go out with the answer and dra
 	ask(draftApprovalBlock(card));
 	const n = noticeFor("직접 입력 카드");
 	expect(n.decision!.draft).toMatchObject({ ref: "DOWN1" });
+	// The card shows the store's version: its answer carries that version's hash, which is what lets a CLI act on it.
+	setCardFingerprint(async () => ({ hash: "h-own", text: n.text }));
+	await stampDraftCard(n.id);
+	setCardFingerprint(async () => undefined);
 	const sent: Parameters<DecisionSend>[0][] = [];
 	const send: DecisionSend = async a => void sent.push(a);
 	expect((await answerDecision(n.id, { n: 6 }, send)).status).toBe(400);
 	expect((await answerDecision(n.id, { n: 6, note: "메일 먼저, 답글은 내일" }, web)).status).toBe(200);
-	expect(draftVerdict(paths.inbox, "DOWN1", since)).toEqual({ verdict: "own", detail: "메일 먼저, 답글은 내일" });
+	expect(draftVerdict(paths.inbox, "DOWN1", since, "h-own")).toMatchObject({ verdict: "own", detail: "메일 먼저, 답글은 내일" });
+	expect(draftVerdict(paths.inbox, "DOWN1", since, "h-later")).toEqual({ verdict: "changed" });
 });
 
 test("a long draft stays whole in the notice's draft and the notice is a normal open decision", () => {
@@ -149,19 +155,36 @@ test("draftVerdict: the owner's latest pick for one ref after the cutoff; sessio
 	const refs = ["RAAAAAA", "RBBBBBB", "RCCCCCC", "RDDDDDD"];
 	for (const ref of refs) ask(draftApprovalBlock({ ...mail, ref, question: `답장 보낼까요? #${ref}` }));
 	const key = (ref: string) => noticeFor(`#${ref}`).id;
-	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "none" });
-	await answerDecision(key(refs[0]!), { n: 1 }, web);
+	const v = (ref: string, at = since) => draftVerdict(paths.inbox, ref, at, `h-${ref}`);
+	expect(v(refs[0]!)).toEqual({ verdict: "none" });
+	emit("inbox", { ts: ts(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `답장 보낼까요? #${refs[0]} (${refs[0]})`, n: 1, label: "보내기", hash: `h-${refs[0]}` }] });
 	await answerDecision(key(refs[1]!), { n: 2, note: "3시 말고 4시 - 하이픈으로" }, web);
 	await answerDecision(key(refs[2]!), { n: 3 }, web);
 	const lane: DecisionSend = async a => void emit("inbox", { ts: ts(), kind: "lane_message", source: "web", lane: "x", text: a.text, picks: a.picks });
 	await answerDecision(key(refs[3]!), { n: 1 }, lane);
-	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "send" });
-	expect(draftVerdict(paths.inbox, refs[1]!, since)).toEqual({ verdict: "edit", detail: "3시 말고 4시 - 하이픈으로" });
-	expect(draftVerdict(paths.inbox, refs[2]!, since)).toEqual({ verdict: "drop" });
-	expect(draftVerdict(paths.inbox, refs[3]!, since)).toEqual({ verdict: "none" });
-	expect(draftVerdict(paths.inbox, refs[0]!, Date.parse(ts()) + 60_000)).toEqual({ verdict: "none" });
+	expect(v(refs[0]!)).toMatchObject({ verdict: "send" });
+	expect(v(refs[1]!)).toEqual({ verdict: "edit", detail: "3시 말고 4시 - 하이픈으로" });
+	expect(v(refs[2]!)).toEqual({ verdict: "drop" });
+	expect(v(refs[3]!)).toEqual({ verdict: "none" });
+	expect(v(refs[0]!, Date.parse(ts()) + 60_000)).toEqual({ verdict: "none" });
 	emit("inbox", { ts: ts(), kind: "message", source: "terminal", text: "3) 보내지 않기", picks: [{ q: `답장 보낼까요? #${refs[0]} (${refs[0]})`, n: 3, label: "보내지 않기" }] });
-	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "drop" });
+	expect(v(refs[0]!)).toEqual({ verdict: "drop" });
+});
+
+// H1 (qa-clean-3): a 보내기 counts for a CLI only on the version it named. The store moving on, a pick that names none, and the gateway's
+// 보내기 취소 after a `changed` refusal all leave nothing a CLI may send, even once the text is back to the approved one.
+test("draftVerdict: a send pick counts only with the current version's hash, and a later 보내기 취소 voids it", () => {
+	const since = Date.parse(ts()) - 1000;
+	const ref = "RHASH01", q = `이 답장 보낼까요? (${ref})`;
+	const pick = (label: string, hash?: string) => emit("inbox", { ts: ts(), kind: "message", source: "web", text: label, picks: [{ q, n: 1, label, ...(hash ? { hash } : {}) }] });
+	pick("보내기");
+	expect(draftVerdict(paths.inbox, ref, since, "v1")).toEqual({ verdict: "changed" });
+	pick("보내기", "v1");
+	expect(["v1", "v2", undefined].map(h => draftVerdict(paths.inbox, ref, since, h).verdict)).toEqual(["send", "changed", "changed"]);
+	pick("이대로 보내기", "v2");
+	expect(draftVerdict(paths.inbox, ref, since, "v2")).toMatchObject({ verdict: "send-as-is" });
+	pick("보내기 취소");
+	expect(draftVerdict(paths.inbox, ref, since, "v2")).toEqual({ verdict: "undo" });
 });
 
 // Typed chat is the model's to read (the reply intent design, 2026-11-16): the gate counts sealed picks only, so a sentence typed after a 보내기
@@ -170,15 +193,15 @@ test("draftVerdict: only sealed picks count; typed lines after them change nothi
 	const since = Date.parse(ts()) - 1000;
 	const ref = "RTEXT01", conv = "mail:acme-RTEXT01";
 	const say = (text: string, extra: Record<string, unknown> = {}) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:1", conv, text, ...extra });
-	const pick = (n: number, label: string) => say(`${n}) ${label}`, { picks: [{ q: `이 답장을 보낼까요? (${ref})`, n, label }] });
+	const pick = (n: number, label: string) => say(`${n}) ${label}`, { picks: [{ q: `이 답장을 보낼까요? (${ref})`, n, label, hash: "h1" }] });
 	pick(1, "보내기");
 	say("회의 취소됐어");
 	say("보내지 마");
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
+	expect(draftVerdict(paths.inbox, ref, since, "h1")).toMatchObject({ verdict: "send" });
 	pick(3, "보내지 않기");
-	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	expect(draftVerdict(paths.inbox, ref, since, "h1")).toEqual({ verdict: "drop" });
 	emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:1", conv: "mail:acme-RTEXT02", text: "보내자" });
-	expect(draftVerdict(paths.inbox, "RTEXT02", since)).toEqual({ verdict: "none" });
+	expect(draftVerdict(paths.inbox, "RTEXT02", since, "h1")).toEqual({ verdict: "none" });
 });
 
 test("kakao: the web sheet's 보내기 is an owner message the approval check accepts; 보내지 않기 and a session's answer are not", async () => {
@@ -191,6 +214,10 @@ test("kakao: the web sheet's 보내기 is an owner message the approval check ac
 		const d2 = await createDraft({ chatId: "11", roomName: "가족방", text: "저녁 먹어요", basisLogId: "1" }, deps);
 		const d3 = await createDraft({ chatId: "12", roomName: "동호회", text: "참석해요", basisLogId: "1" }, deps);
 		for (const d of [d1, d2, d3]) ask(draftBlock(d));
+		// Each card shows the store's version, so its answer carries that version's hash (hub/reply-wire.ts stamps cards the same way).
+		setCardFingerprint(async ref => (k => k && { hash: approvalHash(kakaoView(k, readDrafts(kp))), text: noticeFor(ref).text })(readDrafts(kp).find(x => x.code === ref)));
+		for (const d of [d1, d2, d3]) await stampDraftCard(noticeFor(d.code).id);
+		setCardFingerprint(async () => undefined);
 		expect(await approval(d1.code, deps)).toBe(false);
 		await answerDecision(noticeFor(d1.code).id, { n: 1 }, web);
 		await answerDecision(noticeFor(d2.code).id, { n: 3 }, web);

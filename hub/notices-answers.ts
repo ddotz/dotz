@@ -28,7 +28,7 @@ export function settleOpenDecision(id: string, label: string): void {
 	if (item && isOpenDecision(item)) settleDecision(item, label);
 }
 const OWN_WORDS_MAX = 1000;
-export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; files?: Upload[]; picks?: { q: string; n: number; label: string; note?: string }[] }) => Promise<void>;
+export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; files?: Upload[]; picks?: { q: string; n: number; label: string; note?: string; hash?: string }[] }) => Promise<void>;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
 export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown; files?: Upload[] }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -50,7 +50,7 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	if (draftEdit && !note) return { status: 400, body: { error: draftActionOf(o.label) === "own" ? "어떻게 보낼지 적어 주세요" : "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
-	return deliverDecision(item, label, { to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
+	return deliverDecision(item, label, { to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}), ...(d.draft && d.hash ? { hash: d.hash } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) }, send);   // `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines); files: what 직접 수정 attached, for the bot to put on the draft
 }
 // Sends the answer, and only when that worked is the notice answered. `label` is what the notice then shows as the answer.
 async function deliverDecision(item: Notice, label: string, payload: Parameters<DecisionSend>[0], send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {

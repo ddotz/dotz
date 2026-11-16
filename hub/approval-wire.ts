@@ -1,7 +1,7 @@
 // The single-card answers of the web (routes.ts) and Discord (main.ts) on a draft the one reply flow knows (hub/reply-wire.ts), and the one
 // approval route left beside /api/reply/*:
 //   POST /api/approvals/failed           { op: "report", ref, conv, text }: a session's own CLI send of a draft failed; the card shows it and the owner hears it
-import { log, now } from "./config.ts";
+import { log } from "./config.ts";
 import { answerDecision, type DecisionSend, allNotices, openDraftCards } from "./notices.ts";
 import type { Upload } from "./files.ts";
 import { refOfQuestion } from "./approval-send.ts";
@@ -75,7 +75,7 @@ export async function webAnswer(id: string, body: { n?: unknown; label?: unknown
 	if (acted) {
 		if (!acted.body.ok) return { status: acted.status, body: { code: acted.body.code, error: acted.body.error, ...(acted.body.item ? { item: acted.body.item } : {}) } };
 		const held = sender.results().find(x => x.ref === refOfQuestion(card!.title) && x.state === "undo");
-		return { status: 200, body: { ok: true, ...(held ? { send: { state: held.state, until: held.until, left: Math.max(0, (held.until ?? 0) - now()) } } : {}) } };
+		return { status: 200, body: { ok: true, ...(held ? { send: { state: held.state, until: held.until, left: Math.max(0, (held.until ?? 0) - Date.now()) } } : {}) } };
 	}
 	return answerDecision(id, body, deliver);
 }

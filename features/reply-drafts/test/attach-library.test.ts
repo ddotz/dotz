@@ -12,6 +12,7 @@ import { canAttach, sendWith } from "../lib/senders.ts";
 import { addStagedFile, EVICTED, EVICTED_LATER, removeStagedFile, stagedFiles } from "../lib/staged.ts";
 import { paths } from "../lib/settings.ts";
 import { getDraft, listDrafts, setStatus } from "../lib/store.ts";
+import { mailHash } from "../lib/view.ts";
 import type { Runner } from "../lib/tone.ts";
 import { enable, fakeModel, j, mailFixture, setupEnv } from "./helpers.ts";
 import { sealLine } from "../../../hub/approval-seal.ts";
@@ -260,7 +261,7 @@ export default { name: "work", reply: () => { writeFileSync(${JSON.stringify(got
 		}, 30_000);
 		test("send refuses a draft that promises a file it does not carry, as the gateway's check does", async () => {
 			const { rec, got } = await pluginDraft("c-3");
-			writeFileSync(paths.inbox(), `${sealLine(paths.inbox(), { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `이 답장 보낼까요? (${rec.id})`, n: 1, label: "보내기" }] })}\n`);
+			writeFileSync(paths.inbox(), `${sealLine(paths.inbox(), { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `이 답장 보낼까요? (${rec.id})`, n: 1, label: "보내기", hash: mailHash(getDraft(rec.id)!) }] })}\n`);
 			const out = await cli("send", rec.id);
 			expect(out.stderr).toContain(ATTACH_REFUSED);
 			expect(out.code).toBe(1);

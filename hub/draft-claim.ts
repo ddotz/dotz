@@ -5,7 +5,7 @@
 // by a plain claim, only by a caller that says the owner retried on purpose (`takeOver`). The claim holds the pid and that process's start time, so a pid the system gave
 // to another process does not count as the sender. No clock and no config import (the CLIs use it).
 import { execFileSync } from "node:child_process";
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 
 const alive = (pid: number): boolean => {
@@ -44,6 +44,22 @@ export function claimHolder(file: string): "none" | "live" | "dead" {
 	if (!alive(holder)) return "dead";
 	const now = started ? startOf(holder) : undefined;
 	return now && now !== started ? "dead" : "live";
+}
+
+// The approval a run of this claim went under (hub/draft-approval.ts DraftVerdict `token`: the gateway's sealed `go`, or a pick no gateway holds), kept
+// beside the claim and not removed with it: one approval lets one run through, and a sender killed mid-send leaves it behind, so a takeover cannot
+// reuse it (qa-clean-8 N15).
+export function claimToken(file: string): string | undefined {
+	try {
+		return readFileSync(`${file}.token`, "utf8").trim() || undefined;
+	} catch {
+		return undefined; // none kept: no run went under a token yet
+	}
+}
+export function keepClaimToken(file: string, token: string): void {
+	const tmp = `${file}.token.${process.pid}.tmp`;
+	writeFileSync(tmp, token, { mode: 0o600 });
+	renameSync(tmp, `${file}.token`);
 }
 
 // The release function when this caller holds the claim now, undefined when another sender holds it (or died holding it and `takeOver` is not set).

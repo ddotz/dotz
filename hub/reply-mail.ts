@@ -1,56 +1,13 @@
 // The mail and webmail adapter of the one reply flow (the reply unification design, 1.8 columns 1 and 2) and the one learning
 // implementation ("record, then refine"). It is the hub's single door into the reply-drafts feature: it imports exactly flow.ts and store.ts,
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
-import { askText, defaultCall, dropDraft, editDraft, fileDigest, realFlowDeps, recordCorrection, refineAfterCorrection, restoreDraft, reviseDraft, stagedFiles, type FlowDeps, webmailSite } from "../features/reply-drafts/lib/flow.ts";
+import { askText, defaultCall, dropDraft, editDraft, mailView, realFlowDeps, recordCorrection, refineAfterCorrection, restoreDraft, reviseDraft, type FlowDeps, type MailOf, webmailSite } from "../features/reply-drafts/lib/flow.ts";
 import { claimFile, getDraft, listDrafts, patchDraft, setStatus, type DraftRec } from "../features/reply-drafts/lib/store.ts";
-import { fileSizeText } from "./draft-approval.ts";
 import { ridingMails } from "./comments/linked.ts";
 import { reasonOf } from "./reply-reasons.ts";
-import type { DraftView, Lesson, ReasonCode, ReplyAdapter, ReplyKind } from "./reply-types.ts";
+import type { Lesson, ReasonCode, ReplyAdapter } from "./reply-types.ts";
 
 export { claimFile, defaultCall, getDraft, patchDraft };
-
-const STATE: Record<DraftRec["status"], DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent", answered: "closed", held: "closed" };
-const kindOf = (rec: DraftRec): ReplyKind => (webmailSite(rec.source) ? "webmail" : "mail");
-
-/** The mail record a draft answers (hub/mail.ts mailByKey), read only for a draft that kept no text of it. */
-export type MailOf = (key: string) => { from?: string; subject?: string; summary?: string; preview?: string } | undefined;
-
-// What the draft answers, quoted on its card. The reply the owner writes under an open mail (hub/mail-manual.ts) keeps no text of that mail,
-// so the card reads the mail record instead: its first lines, else its summary, else its subject.
-function originalOf(rec: DraftRec, mailOf: MailOf): NonNullable<DraftView["original"]> {
-	const m = rec.item.text.trim() ? undefined : mailOf(rec.ref), subject = rec.item.subject || m?.subject;
-	return { who: rec.item.from || m?.from || "", text: m ? m.preview || m.summary || subject || "" : rec.item.text, ...(subject ? { subject } : {}) };
-}
-
-function viewOf(rec: DraftRec, mailOf: MailOf): DraftView {
-	const pending = rec.status === "pending";
-	const before = rec.replaces ? getDraft(rec.replaces) : undefined;
-	const attachments = stagedFiles(rec.id).map(f => ({ name: f.name, size: fileSizeText(f.size), digest: fileDigest(f.path) }));
-	return {
-		item: `mail:${rec.ref}`,
-		ref: rec.id,
-		kind: kindOf(rec),
-		app: rec.profile ?? rec.app,
-		label: rec.compose ? "새 메일" : "메일",
-		conv: `mail:${rec.ref}`,
-		at: Date.parse(rec.created) || 0,
-		can: { send: pending, revise: pending, edit: pending, drop: pending, restore: rec.status === "dropped" },
-		draft: {
-			state: STATE[rec.status],
-			toLabel: "받는이",
-			to: rec.to,
-			...(rec.cc?.length ? { cc: rec.cc } : {}),
-			...(rec.subject ? { subject: rec.subject } : {}),
-			text: rec.body,
-			...(attachments.length ? { attachments } : {}),
-			...(rec.rule ? { rule: rec.rule.name } : {}),
-			...(before ? { replaces: { ref: before.id, text: before.body } } : {}),
-			...(rec.editedFrom !== undefined ? { edited: true as const } : {}),
-		},
-		...(rec.compose ? {} : { original: originalOf(rec, mailOf) }),
-	};
-}
 
 const known = (ref: string): DraftRec | undefined => {
 	const rec = getDraft(ref);
@@ -64,12 +21,13 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps, mailOf: MailOf 
 		kind: "mail",
 		get: async ref => {
 			const rec = known(ref);
-			return rec ? viewOf(rec, mailOf) : undefined;
+			// The same view the send CLI's gate hashes (features/reply-drafts/lib/view.ts).
+			return rec ? mailView(rec, mailOf) : undefined;
 		},
 		// A mail riding on a waiting comment reply is part of that reply's card (one item, one 보내기); once the reply is gone it is listed on its own.
 		list: async () => {
 			const riding = ridingMails();
-			return listDrafts().filter(d => d.kind === "mail" && d.status === "pending" && !riding.has(d.id)).map(d => viewOf(d, mailOf));
+			return listDrafts().filter(d => d.kind === "mail" && d.status === "pending" && !riding.has(d.id)).map(d => mailView(d, mailOf));
 		},
 		target: ref => {
 			const rec = known(ref);

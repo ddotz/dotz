@@ -14,7 +14,7 @@ import { runMailCli } from "../../../hub/mail-cli.ts";
 import { mailAdapter } from "../../../hub/reply-mail.ts";
 import { paths } from "../lib/settings.ts";
 import { getDraft, listDrafts } from "../lib/store.ts";
-import { enable, pick, setupEnv } from "./helpers.ts";
+import { commentHash, enable, pick, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 afterAll(() => env.cleanup());
@@ -24,6 +24,8 @@ writeFileSync(FILE, "pdf bytes");
 const BODY = "안녕하세요.\n\n요청하신 자료를 보내드립니다.\n\n감사합니다.";
 
 let t: ReturnType<typeof setup>;
+// The owner's 1) 보내기 on a comment card names the version that card shows (the reply and its mail).
+const approve = async (code: string) => pick(env, code, 1, undefined, "web", await commentHash(t.engine, code));
 beforeEach(() => {
 	t = setup();
 });
@@ -69,7 +71,7 @@ test("after 답글만 보내기 the mail left behind is its own open card in the
 	const code = await reply("메일로 보내 드릴게요");
 	await compose(["--with-comment", code]);
 	const mailId = listDrafts()[0]!.id;
-	pick(env, code, 1);
+	await approve(code);
 	expect((await runComments(["send", code, "--only", "reply"], t.engine, paths.inbox())).code).toBe(0);
 	expect(getDraft(mailId)?.status).toBe("pending");
 	expect(await commentAdapter(t.engine).list()).toEqual([]);
@@ -78,7 +80,7 @@ test("after 답글만 보내기 the mail left behind is its own open card in the
 
 test("a pending mail made for a comment whose reply already went out (origin comment:<id>) is listed when the queue is built", async () => {
 	const code = await reply("메일로 보내 드릴게요");
-	pick(env, code, 1);
+	await approve(code);
 	expect((await runComments(["send", code], t.engine, paths.inbox())).code).toBe(0);
 	expect((await compose(["--origin", `comment:${t.id}`])).code).toBe(0);
 	const mail = listDrafts()[0]!;
@@ -90,7 +92,7 @@ test("답글만 보내기 of a reply that says the mail was sent is held while i
 	const code = await reply("요청하신 자료는 메일로 보내드렸습니다");
 	await compose(["--with-comment", code]);
 	const mailId = listDrafts()[0]!.id;
-	pick(env, code, 1);
+	await approve(code);
 	const r = t.engine.send(code, { by: "owner", only: "reply" });
 	expect(r).toMatchObject({ ok: false, code: "mail_claim_unsent" });
 	const out = await runComments(["send", code, "--only", "reply"], t.engine, paths.inbox());
@@ -105,7 +107,7 @@ test("a reply that says the mail was sent is held while a mail made for the same
 	const mailId = listDrafts()[0]!.id;
 	const code = await reply("메일로 보내드렸어요. 확인해 주세요");
 	expect(t.engine.store.drafts().find(d => d.code === code)?.mail).toBeUndefined();
-	pick(env, code, 1);
+	await approve(code);
 	expect(t.engine.send(code, { by: "owner" })).toMatchObject({ ok: false, code: "mail_claim_unsent" });
 	expect(t.posted).toEqual([]);
 	expect(getDraft(mailId)?.status).toBe("pending");
@@ -115,7 +117,7 @@ test("1) 보내기 of the one card sends the reply and then its mail, even when 
 	const code = await reply("요청하신 자료는 메일로 보내드렸습니다");
 	await compose(["--with-comment", code]);
 	const mailId = listDrafts()[0]!.id;
-	pick(env, code, 1);
+	await approve(code);
 	const out = await runComments(["send", code], t.engine, paths.inbox());
 	expect(out.code).toBe(0);
 	expect(t.posted).toEqual(["요청하신 자료는 메일로 보내드렸습니다"]);

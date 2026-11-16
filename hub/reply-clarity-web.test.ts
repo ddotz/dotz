@@ -1,5 +1,5 @@
 // The reply card on the real 답장 대기 screen against a fake hub (reply clarity redesign, spec Amendments A and B). Every card has 보내기 · 고치기 · 보내지 않기 and says what
-// goes with it (the files, or that there are none). 고치기 opens one panel: 반영 writes the rows he marked, then posts the server's `edit`, `revise`, or `edit` and then `revise`,
+// goes with it (the files, or that there are none). 고치기 opens one panel: 반영 checks the version (the server's `edit`, or the queue read again), then writes the rows he marked, then `revise`,
 // and never sends; 닫기 forgets everything. A send carries the hash of the version its card showed, and one the hub refuses as changed is drawn again from the fresh item.
 // The fake hub keeps the server's side of the contract: an `edit` that also asks to send is a 400, a lint failure a 422, and a send whose hash names another version a
 // 409 `changed` with the item as it is now. Shots are written only when REPLY_SHOTS names a folder.
@@ -51,6 +51,7 @@ const queue: Item[] = [
 	mail("RROW02", 11_000, "견적서를 붙여 보내 드려요.", {}, { attachments: PDF }),
 	mail("RROW03", 12_000, "요청하신 견적서를 붙였습니다.\n확인하시고 궁금한 점은 알려 주세요.", {}, { attachments: PDF }),
 	mail("RROW04", 12_500, "지난번 견적서를 다시 보내 드려요.", {}, { attachments: PDF }),
+	mail("RROW05", 12_700, "견적서는 이번 주에 다시 보내 드릴게요.", {}, { attachments: PDF }),
 	mail("RSUB01", 13_000, "수정한 자료를 보내 드립니다."),
 	comment("DCOM01", 14_000, "메일로 보내드렸어요!", along("RMAILX1", [{ name: "자료_3부.pdf", size: "88KB" }])),
 	comment("DCOM02", 15_000, "좋게 봐 주셔서 고마워요."),
@@ -97,7 +98,7 @@ const hub = fakeHub({
 			posts.push(b); writesInOrder.push({ path: p, body: b });
 			if (b.action === "edit" && "send" in b) return json({ ok: false, code: "bad_request", error: "bad_request" }, 400);
 			if (b.action === "edit" && String(b.text).includes("무조건")) return json({ ok: false, code: "forbidden_word", error: "쓰지 않기로 한 표현이 들어 있어요", lint: ["쓰지 않기로 한 표현 '무조건'이 있어요"] }, 422);
-			if (sends(b) && b.hash !== it.draft.hash) return json({ ok: false, code: "changed", error: "보내기를 고른 뒤 초안이 바뀌었어요", item: it }, 409);
+			if ((sends(b) || (b.action === "edit" && typeof b.hash === "string")) && b.hash !== it.draft.hash) return json({ ok: false, code: "changed", error: "보내기를 고른 뒤 초안이 바뀌었어요", item: it }, 409);
 			if (b.action === "edit") {
 				const part = b.part === "mail" ? it.draft.mail! : it.draft;
 				part.text = String(b.text);
@@ -306,7 +307,7 @@ test("choosing 전체 답장 in the panel marks only that choice, the rows sayin
 	expect(writesInOrder.filter(l => l.path.includes("RROW01"))).toEqual([]);
 });
 
-test("반영 writes the marked rows first, then edit, then revise", async () => {
+test("반영 checks the version with edit first, then writes the marked rows, then revise", async () => {
 	const c = card("RROW02");
 	await fix("RROW02");
 	await waitFor(`!!document.querySelector(${q(`${c} .dr-recv [data-row=cc] .dr-rc-add`)}) && !!document.querySelector(${q(`${c} .dr-files .dr-x`)})`);
@@ -320,15 +321,43 @@ test("반영 writes the marked rows first, then edit, then revise", async () => 
 	await click(`${c} [data-k=fix-apply]`);
 	await acted("RROW02", "revise");
 	expect(writesInOrder.filter(l => l.path.includes("RROW02") || l.path === "/api/upload" || l.body.ref === "RROW02")).toEqual([
+		{ path: "/api/reply/act", body: { ref: "RROW02", action: "edit", hash: "RROW02-v1", text: "일정표를 붙여 보내 드려요." } },
 		{ path: "/api/drafts/RROW02/recipients", body: { cc: ["lee@example.com"] } },
 		{ path: "/api/drafts/RROW02/files", body: { remove: 0 } },
 		{ path: "/api/upload", body: { name: "일정표.pdf" } },
 		{ path: "/api/drafts/RROW02/files", body: { upload: { path: "/uploads/일정표.pdf", name: "일정표.pdf" } } },
-		{ path: "/api/reply/act", body: { ref: "RROW02", action: "edit", hash: "RROW02-v4", text: "일정표를 붙여 보내 드려요." } },
 		{ path: "/api/reply/act", body: { ref: "RROW02", action: "revise", change: "더 정중하게" } },
 	]);
 	await fixed("RROW02");
 	expect(await texts(`${c} .dr-files .dr-fn`)).toEqual(["일정표.pdf"]);
+});
+
+// qa-clean-3 M3: a refused 반영 leaves nothing half-applied. Rows alone: the queue is read again first, and a draft that moved since the panel opened
+// is refused `changed` with no row written; the next 반영 stands on the new version. With text: the hub's `edit` answers first, so its refusal writes no row.
+test("반영 writes no row when the version moved or the edit is refused; the marks stay for the next 반영", async () => {
+	const c = card("RROW05"), rows = () => writesInOrder.filter(l => l.path.includes("RROW05") || (l.path === "/api/upload" && l.body.name === "추가.pdf"));
+	const refused = (code?: string) => waitFor(`!!RA.fail.get("RROW05") && ${code ? `RA.fail.get("RROW05").code === ${q(code)} && ` : ""}!RA.busy.has("RROW05") && !RA.fix.get("RROW05").busy`);
+	await fix("RROW05");
+	await waitFor(`!!document.querySelector(${q(`${c} .dr-files .dr-x`)})`);
+	await click(`${c} .dr-files .dr-x`);
+	Object.assign(find("RROW05").draft, { text: "다른 기기에서 고친 글이에요.", hash: "RROW05-v7" });
+	await click(`${c} [data-k=fix-apply]`);
+	await refused("changed");
+	expect(rows()).toEqual([]);
+	await click(`${c} [data-k=fix-apply]`);
+	await fixed("RROW05");
+	expect(rows()).toEqual([{ path: "/api/drafts/RROW05/files", body: { remove: 0 } }]);
+
+	await fix("RROW05");
+	await waitFor(`!!document.querySelector(${q(`${c} .dr-files input[type=file]`)})`);
+	await pick(`${c} .dr-files input[type=file]`, "추가.pdf");
+	await type(`${c} [data-k=fix-text]`, "무조건 오늘 드릴게요.");
+	await click(`${c} [data-k=fix-apply]`);
+	await refused();
+	expect(rows()).toHaveLength(1);
+	await click(`${c} [data-k=fix-close]`);
+	await fixed("RROW05");
+	expect(rows()).toHaveLength(1);
 });
 
 test("반영 of rows alone writes them, and the next 보내기 goes with the version that has them", async () => {

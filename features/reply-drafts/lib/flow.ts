@@ -3,27 +3,29 @@
 import { existsSync, statSync } from "node:fs";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment } from "../../../hub/comments/linked.ts";
-import { claimHolder, claimSend } from "../../../hub/draft-claim.ts";
+import { claimHolder, claimSend, claimToken, keepClaimToken } from "../../../hub/draft-claim.ts";
 import { attachIssues, ownWords, withoutKindWords } from "../../../hub/attach-check.ts";
 import { withFileWords } from "../../../hub/auto-attach.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, briefLines, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, editLesson, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, ownerLint, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
-import { carryStagedFiles, fileDigest, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
+import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
 import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
+import { mailHash, mailView, type MailOf } from "./view.ts";
+import { reasonOf } from "../../../hub/reply-reasons.ts";
 
-export { fileDigest, realRunner, stagedFiles };
+export { realRunner };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
-export { recordCorrection, webmailSite };
+export { mailView, recordCorrection, webmailSite, type MailOf };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts; /** Told where an approved send left the mail, right after the transport answered and before any bookkeeping write (bin/draft.ts prints its DOTZ_SEND line). */ onOutcome?: (o: Outcome) => void };
@@ -485,7 +487,8 @@ export function restoreDraft(ref: string): { ok: boolean; text: string } {
 	return { ok: true, text: `초안 ${ref}을(를) 되돌렸어요` };
 }
 
-// Refuses unless the user's latest pick for this exact draft id, made after the draft was created, is 1) 보내기 (hub/draft-approval.ts draftVerdict:
+// Refuses unless the user's latest pick for this exact draft id, made after the draft was created, is 1) 보내기 of the version stored now (its
+// approvalHash, view.ts mailHash, read before the recipient fill below like the gateway's own gate reads it; hub/draft-approval.ts draftVerdict:
 // typed chat is never read there); lints again first.
 // `withReply`: the mail rides on a comment reply (hub/comments/linked.ts) and the caller is that reply's send, which has already passed the
 // reply's gate (the owner's pick on the one card, or the owner's own click); a linked mail is refused without it.
@@ -500,7 +503,9 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
 	const card = opts.withReply ? undefined : linkedComment(id);
 	if (card) return { ok: false, text: `이 메일은 댓글 답글(${card})과 한 장으로 승인해요. 그 카드에서 사용자가 보내기를 누르면 답글과 함께 나가요`, sent: "no", code: "not_approved" };
-	const v: DraftVerdict = opts.withReply ? { verdict: opts.asIs ? "send-as-is" : "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created));
+	const v: DraftVerdict = opts.withReply ? { verdict: opts.asIs ? "send-as-is" : "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created), mailHash(stored ?? d));
+	if (v.verdict === "changed") return { ok: false, text: reasonOf("changed").text, sent: "no", code: "changed" };
+	if (v.verdict === "waiting" || v.verdict === "spent") return { ok: false, text: v.verdict === "waiting" ? WAITING_REFUSED : SPENT_REFUSED, sent: "no", code: "not_approved" };
 	if (v.verdict === "drop") {
 		setStatus(id, "dropped");
 		return { ok: false, text: "보내지 않기로 한 초안이에요", sent: "no", code: "not_approved" };
@@ -512,11 +517,15 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (issues.length) return { ok: false, text: `${ATTACH_REFUSED} ${issues.join(" · ")}. ${ATTACH_AS_IS_HINT}`, sent: "no", ...(issues.length === 1 && notYetStaged(d).length ? { code: "file_pending" } : { code: "attach_mismatch", vars: { issues: issues.join(" · ") } }) };
 	const found = draftLint(d);
 	if (found.length) return { ok: false, text: `${LINT_REFUSED} ${found.map(ownerWarning).join(" · ")}`, sent: "no", ...lintCode(found[0]!) };
+	// One approval, one run (qa-clean-8 N15): the run that took the claim under this token (the gateway's `go`, or a pick no gateway holds) used it
+	// up, even one killed mid-send; a takeover (`--retry`) or a second run under it needs a new `go` or the owner's new pick.
+	if (v.token && (v.go || opts.retry) && claimToken(claimFile(id)) === v.token) return { ok: false, text: SPENT_REFUSED, sent: "no", code: "not_approved" };
 	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.
 	if (!opts.retry && claimHolder(claimFile(id)) === "dead") return { ok: false, text: `초안 ${id}은(는) 지난번에 보내다가 멈춰서 메일이 이미 나갔을 수 있어요. 보낸편지함을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요`, sent: "maybe", code: "interrupted" };
 	// Another sender holds the claim and may still send it: no outcome of this run (design 2.3, the queue keeps it `sending`).
 	const release = claimSend(claimFile(id), opts.retry === true);
 	if (!release) return { ok: false, text: `초안 ${id}은(는) 지금 보내는 중이라 한 번 더 보내지 않았어요` };
+	if (v.token) keepClaimToken(claimFile(id), v.token);
 	try {
 		const now = getDraft(id);
 		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요`, sent: "no", code: "gone" };

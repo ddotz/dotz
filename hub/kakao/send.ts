@@ -9,7 +9,9 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { claimHolder, claimSend } from "../draft-claim.ts";
 import { readState } from "../statefile.ts";
-import { type DraftAction, draftApprovalBlock, draftVerdict } from "../draft-approval.ts";
+import { approvalHash, draftApprovalBlock, draftVerdict, type DraftVerdict, SPENT_REFUSED, WAITING_REFUSED } from "../draft-approval.ts";
+import { reasonOf } from "../reply-reasons.ts";
+import type { DraftView } from "../reply-types.ts";
 import { type Confirmer, dbConfirmer, dbPreview } from "./confirm.ts";
 import { writePrivate } from "./creds.ts";
 import { draftParts } from "./draft.ts";
@@ -44,7 +46,7 @@ export type SendAttempt = { n: number; recovery: Recovery; ok: boolean; state: "
 // A send that did not end as sent says whether anything may be in the room (`sent`, by the KakaoTalk table of the reply design's failure
 // taxonomy) and why (`code`, a reason code of hub/reply-reasons.ts): "no" nothing went out, "maybe" it may have, "partial" `done` of `total`
 // parts are in the room and the failing part is judged by its code. `reason` stays the plain sentence the surfaces show today.
-type SendCode = "gone" | "not_pending" | "needs_resolve" | "already_sent" | "already_sending" | "interrupted" | "press_unconfirmed" | "state_write" | "empty" | "too_long" | "not_approved" | "app_not_ready" | "stale" | "input_busy" | "room_unknown" | "lease_held" | "lease_unknown";
+type SendCode = "gone" | "changed" | "not_pending" | "needs_resolve" | "already_sent" | "already_sending" | "interrupted" | "press_unconfirmed" | "state_write" | "empty" | "too_long" | "not_approved" | "app_not_ready" | "stale" | "input_busy" | "room_unknown" | "lease_held" | "lease_unknown";
 export type SendResult = { ok: boolean; reason?: string; sent?: "no" | "maybe" | "partial"; code?: SendCode; done?: number; total?: number; ms?: SendMs; ax?: AxStep[]; focus?: Focus; unconfirmed?: true; attempts?: SendAttempt[] };
 
 // One KakaoTalk message (a typed send, one part of a draft) and a whole draft of several parts.
@@ -104,15 +106,43 @@ export function draftBlock(d: Draft): string {
 
 const ms = (ts: string) => Date.parse(ts);
 
-type Verdict = "approved" | "cancelled" | "none";
+type Verdict = "approved" | "cancelled" | "none" | "waiting" | "spent";
 
-// A draft card has three answers: 보내기 approves, 고치기 and 보내지 않기 cancel; the other draft actions say nothing here.
-const VERDICT_OF: Record<DraftAction | "none", Verdict> = { send: "approved", edit: "cancelled", drop: "cancelled", "send-main": "none", "send-mail": "none", own: "none", "send-as-is": "approved", undo: "none", none: "none" };
+// A draft card has three answers: 보내기 approves, 고치기 and 보내지 않기 cancel; the other draft actions say nothing here, and a 보내기 of another version approves nothing.
+const VERDICT_OF: Record<DraftVerdict["verdict"], Verdict> = { send: "approved", edit: "cancelled", drop: "cancelled", "send-main": "none", "send-mail": "none", own: "none", "send-as-is": "approved", undo: "none", none: "none", changed: "none", waiting: "waiting", spent: "spent" };
 
-// The same rule as every other draft (hub/draft-approval.ts draftVerdict): only the owner's own sealed picks after the draft was made count, and
-// the owner's LAST pick wins.
+const STATE: Record<string, DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent" };
+/** A room draft as the one reply flow shows it (hub/kakao/reply-adapter.ts): the view its cards draw and its approvalHash reads; `drafts` holds the one it replaced. */
+export function kakaoView(d: Draft, drafts: Draft[]): DraftView {
+	const pending = d.status === "pending";
+	const before = d.replaces ? drafts.find(x => x.code === d.replaces) : undefined;
+	const fixed = (d.sentParts ?? 0) > 0;
+	return {
+		item: `kakao:${d.chatId}`,
+		ref: d.code,
+		kind: "kakao",
+		app: "kakao",
+		label: d.roomName,
+		conv: `kakao:${d.chatId}`,
+		at: Date.parse(d.created) || 0,
+		can: { send: pending, revise: pending && !fixed, edit: pending && !fixed, drop: pending && !fixed, restore: d.status === "dropped" },
+		draft: {
+			state: d.status === "sent" && d.unconfirmed ? "pending" : (STATE[d.status] ?? "closed"),
+			toLabel: "대화방",
+			to: d.roomName,
+			text: d.text,
+			...(d.sentParts ? { sentParts: d.sentParts } : {}),
+			...(d.notes?.length ? { notes: d.notes } : {}),
+			...(before ? { replaces: { ref: before.code, text: before.text } } : {}),
+			...(d.editedFrom !== undefined ? { edited: true as const } : {}),
+		},
+	};
+}
+
+// The same rule as every other draft (hub/draft-approval.ts draftVerdict): only the owner's own sealed picks after the draft was made count, the
+// owner's LAST pick wins, and a 보내기 counts only for the version it named (its approvalHash).
 function verdict(d: Draft, paths: KakaoPaths): Verdict {
-	return VERDICT_OF[draftVerdict(paths.inbox, d.code, ms(d.created)).verdict];
+	return VERDICT_OF[draftVerdict(paths.inbox, d.code, ms(d.created), approvalHash(kakaoView(d, readDrafts(paths)))).verdict];
 }
 
 export async function approval(code: string, deps: SendDeps): Promise<boolean> {
@@ -654,11 +684,14 @@ async function sendClaimed(code: string, deps: SendDeps & { latestIncoming: (cha
 	const bad = draftTextError(text);
 	if (bad) return refuse(bad, textCode(text));
 	if (!deps.ownerApproved) {
+		// The inbox pick names the stored text: another text handed in here is a version he never approved.
+		if (deps.text !== undefined && deps.text !== d.text) return refuse(reasonOf("changed").text, "changed");
 		const v = verdict(d, deps.paths);
 		if (v === "cancelled") {
 			setStatus(deps.paths, code, "dropped");
 			return refuse("보내지 않기로 한 초안이에요", "not_approved");
 		}
+		if (v === "waiting" || v === "spent") return refuse(v === "waiting" ? WAITING_REFUSED : SPENT_REFUSED, "not_approved");
 		if (v !== "approved") return refuse("아직 보내도 된다는 답을 받지 못했어요", "not_approved");
 	}
 	// A message the owner typed himself answers what he sees: no newer-message check, as a typed send never had one.

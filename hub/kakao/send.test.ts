@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { appendSealed } from "../approval-seal.ts";
 import { parseDecisions } from "../choices.ts";
-import { approval, confirmSent, createDraft, draftBlock, editDraft, forgetWarm, listDrafts, resendUnconfirmed, sendDraft, sendText, type Draft } from "./send.ts";
+import { approvalHash } from "../draft-approval.ts";
+import { approval, confirmSent, createDraft, draftBlock, editDraft, forgetWarm, kakaoView, listDrafts, readDrafts, resendUnconfirmed, sendDraft, sendText, type Draft } from "./send.ts";
 import { KAKAO_BUNDLE, kakaoPaths, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
 
@@ -23,7 +24,8 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 const add = (file: string, e: Record<string, unknown>) => appendFileSync(file, `${JSON.stringify(e)}\n`);
 const owner = (sec: number, e: Record<string, unknown> = {}) => appendSealed(paths.inbox, { ts: at(sec), kind: "message", source: "web", channel: "web", author: "me", text: "", ...e });
 const ask = (sec: number, d: Draft, target = "web") => add(paths.outbox, { ts: at(sec), kind: "out", source: "orchestrator", target, text: draftBlock(d), reply_to: null });
-const pick = (d: Draft, label: string, n = 1) => ({ picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n, label }] });
+// A pick names the version the card showed: the draft as stored now (its approvalHash, the one the queue's cards carry).
+const pick = (d: Draft, label: string, n = 1) => ({ picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n, label, hash: approvalHash(kakaoView(d, readDrafts(paths))) }] });
 
 // A fake KakaoTalk screen: every room of the tests is one list row whose window shows its own title. `calls` are the sends only.
 const row = (title: string, window: FakeRow["window"] = { title }): FakeRow => ({ id: `chat_${title}`, title, window });
@@ -90,6 +92,17 @@ test("typed chat approves nothing in any conversation, and a typed no after a pi
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
 	owner(10, pick(d, "보내기"));
 	owner(11, { text: "아니 보내지 마" });
+	expect(await approval(d.code, sender(fakeKmsg()))).toBe(true);
+});
+
+// qa-clean-3 H1: the inbox verdict counts a 보내기 only for the version it named.
+test("a 보내기 that named another version of the draft, or none, approves nothing", async () => {
+	const d = await make();
+	owner(10, { picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n: 1, label: "보내기", hash: approvalHash(kakaoView({ ...d, text: "다른 글" }, [])) }] });
+	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
+	owner(11, { picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n: 1, label: "보내기" }] });
+	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
+	owner(12, pick(d, "보내기"));
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(true);
 });
 

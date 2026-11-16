@@ -58,6 +58,22 @@ const refusedShell = [
 	`ruby -e 'system "zele mail reply 1 --body x"'`,
 	`ruby -e 'system("zele", "mail", "send")'`,
 	`node -e "require('child_process').spawn('zele', ['mail', 'send', '--to', 'a@example.com'])"`,
+	// qa-clean-3 H2: the send CLIs without their extension or in another case, with a flag before `send`, fed by xargs or parallel, inside env -S,
+	// and loaded by inline code that is handed `send`.
+	"bun features/reply-drafts/bin/draft send A1",
+	"bun features/comments/bin/comments send D1",
+	"bun hub/mail-cli send --draft D1",
+	"cd features/reply-drafts/bin && bun draft send A1",
+	"bun features/reply-drafts/bin/draft.TS send A1",
+	"bun features/reply-drafts/bin/draft.ts --retry send A1",
+	"echo send A1 | xargs bun features/reply-drafts/bin/draft.ts",
+	`env -S "bun features/reply-drafts/bin/draft.ts send A1"`,
+	"parallel bun features/reply-drafts/bin/draft.ts ::: send ::: A1",
+	`bun -e 'await import("./features/reply-drafts/bin/draft")' send A1`,
+	// qa-clean-7 N4: bun told where to run, the script named bare after it.
+	"bun --cwd features/reply-drafts/bin draft send A1",
+	"bun --cwd=features/reply-drafts/bin draft send A1",
+	"bun --cwd features/comments/bin comments.ts send D1",
 ];
 
 const allowedShell = [
@@ -94,6 +110,13 @@ const allowedShell = [
 	"$PAGER mail send-log.txt",
 	`perl -e 'system("zele", "mail", "list")'`,
 	`ruby -e 'system "zele mail read 1"'`,
+	"bun features/reply-drafts/bin/draft revise A1 --change shorter",
+	"git diff features/reply-drafts/bin/draft.ts features/comments/bin/comments.ts",
+	"bun features/reply-drafts/bin/draft.ts show A1 > send.txt",
+	"bun --cwd features/reply-drafts/bin draft show A1",
+	"bun --cwd=features/reply-drafts/bin draft revise A1 \"짧게\"",
+	"rg -l sendDraft features | xargs wc -l",
+	`bun -e 'const { reviseDraft } = await import("./features/reply-drafts/lib/flow"); console.log(typeof reviseDraft)'`,
 ];
 
 const refusedCell = [
@@ -106,6 +129,12 @@ const refusedCell = [
 	"await fetch('http://127.0.0.1:7420/api/reply/act', { method: 'POST', body: JSON.stringify({ ref: 'D1', action: 'send' }) })",
 	"await fetch('http://127.0.0.1:7420/api/notices/n1/answer', { method: 'POST', body: JSON.stringify({ n: 1, label: '보내기' }) })",
 	"await fetch(`${base}/api/notices/${id}/answer`, { method: 'POST', body: JSON.stringify({ n: 3 }) })",
+	// qa-clean-3 H2: the CLI or its flow called in-process, also through a name an earlier cell imported.
+	`const { sendDraft } = await import("./features/reply-drafts/lib/flow"); await sendDraft("A1", {})`,
+	`const { runDraft } = await import("/x/features/reply-drafts/bin/draft"); await runDraft(["send", "A1"], "")`,
+	`await sendDraft("A1", deps)`,
+	`const c = await import("./features/comments/bin/comments"); await c.run(["send", "D1"])`,
+	`const m = await import("./hub/mail-cli"); const verb = "send"; await m.runMailCli([verb, "--draft", "D1"], "")`,
 ];
 
 const allowedCell = [

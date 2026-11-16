@@ -640,6 +640,8 @@ function dcInline(e, body, pc) {
   return ra.length === 1 && !rest.length ? ra[0][1] : el("div", { class: "ra-msg" }, ...ra.map(x => x[1]), rest.length ? draw(rest) : null);
 }
 const SEND_LABELS = /^보내기\|고치기\|보내지 않기/;
+// The draft a send approval block asks about (its question's trailing "(<ref>)"), or "" for any other block.
+const dcSendRef = b => ((SEND_LABELS.test(b.options.map(o => o.label).join("|")) && /\(([A-Za-z0-9]{2,16})\)\s*$/.exec(b.title || "")) || [])[1] || "";
 function inlineDc(i, live) {
   const sig = hashOf(i.body), at = i.e.ts, s = ts(i.t);
   if (live && live.t === i.t && (live.sig === sig || live.at === at)) return live;
@@ -689,7 +691,7 @@ function paintDecision() {
   if (inlines.length) { const live = isFixedT(target) ? null : decisionOf(target); for (const b of inlines) paintInline(b, live); }
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   // 2 or more send-approval cards waiting in this conversation: one line above the composer (dcLine) instead of the dock card or its pointer; a question that is not a draft keeps its card.
-  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = dc0 && dcDraftAsk(dc0, !line) ? null : dc0, had = !!DC.cur;   // with the one queue a draft is its card in the message, never docked
+  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = dc0 && (dcDraftAsk(dc0, !line) || dcQueued(dc0)) ? null : dc0, had = !!DC.cur;   // with the one queue a draft is its card in the message, never docked
   dcLine(askN);
   // A message that carries several of those drafts folds to its first paragraph while they wait: the drafts live in 답장 대기, not in the conversation.
   for (const m of document.querySelectorAll("#timeline .bm[data-dat]")) m.classList.toggle("q-fold", line && ntDecisions().filter(n => n.decision.draft && n.decision.to === target && n.decision.reply_to === m.dataset.dat).length > 1);
@@ -735,6 +737,9 @@ function dcShowDraft(dc) {
     $("#chat-jump").hidden = chatStick;
   });
 }
+// A send approval whose draft the one queue holds is that draft's card in the message (10-reply-actions.js raInline: the three buttons, the panel, a 보내기
+// carrying the hash of the version it shows), never docked as the old question, notice or not (qa-clean-3 M4).
+const dcQueued = dc => typeof RA !== "undefined" && !!RA.items && dc.blocks.some(b => RA.items.has(dcSendRef(b)));
 // A docked question that is a send approval: a draft notice was made from its message.
 // queued: only a draft the one queue holds counts (its card stands in the message); a session's own draft with no reply-draft record still docks.
 const dcDraftAsk = (dc, queued) => !dc.each && typeof ntDecisions === "function" && ntDecisions().some(n => n.decision.draft && n.decision.to === dc.t && n.decision.reply_to === dc.at && (!queued || (typeof RA !== "undefined" && !!RA.items && RA.items.has(n.decision.draft.ref))));

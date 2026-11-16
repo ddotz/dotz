@@ -19,6 +19,7 @@ import { discordGatewayAnswer, webAnswer } from "./approval-wire.ts";
 import { routeNotices } from "./routes-notices.ts";
 import { addDraft, getDraft, newId, patchDraft, setStatus } from "../features/reply-drafts/lib/store.ts";
 import { restoreDraft } from "../features/reply-drafts/lib/flow.ts";
+import { mailHash } from "../features/reply-drafts/lib/view.ts";
 
 process.env.DOTZ_DIR = dirname(paths.inbox);
 beforeEach(() => void (cfg.web.send_undo_sec = 10));
@@ -31,7 +32,7 @@ const cardOf = (id: string) => listNotices(500).items.find((n: any) => n.decisio
 const reopen = (id: string) => routeNotices(new Request("http://local/api/notices/reopen", { method: "POST", body: JSON.stringify({ ids: [id] }) }), new URL("http://local/api/notices/reopen"));
 const act = (b: object, agent = false) => replyRoute(new Request("http://local/api/reply/act", { method: "POST", body: JSON.stringify(b) }), new URL("http://local/api/reply/act"), { replies, login: "owner@example.com", agent });
 const openCard = () => listNotices(500).items.find((n: any) => n.decision?.state === "open" && n.decision.draft?.ref === ref) as any;
-const verdict = () => draftVerdict(paths.inbox, ref, 0).verdict;
+const verdict = () => draftVerdict(paths.inbox, ref, 0, mailHash(getDraft(ref)!)).verdict;
 const post = (path: string, body: object) => new Request(`http://local${path}`, { method: "POST", body: JSON.stringify(body) });
 // The version the reply item shows now: what a web card's 보내기 names.
 const shownHash = async (id: string) => (await replies.view(id))!.draft.hash;
@@ -45,7 +46,8 @@ test("send through /api/reply/act: the pick is sealed where the card was asked, 
 
 	const sent = (await act({ ref, action: "send", hash: await shownHash(ref) }))!;
 	expect(sent.status).toBe(200);
-	expect(verdict()).toBe("send");
+	// Inside its undo window the pick sends nothing from a CLI (qa-clean-7 N13): only the gateway's sender, at the window's end.
+	expect(verdict()).toBe("waiting");
 	expect(lastPick()).toMatchObject({ label: "보내기", hash: approvalHash((await replies.list()).find(i => i.ref === ref)!) });
 	// What the owner approved cannot change while its send waits: not the recipients, not the files.
 	const to = await draftRecipientsRoute(post(`/api/drafts/${ref}/recipients`, { to: ["other@example.com"] }), ref);
@@ -209,7 +211,7 @@ test("a drop the model read from the owner's words is his sealed pick, marked re
 	await out(conv, cardText(id));
 	expect((await replies.act({ ref: id, action: "drop" }, { surface: "chat", owner: { mid: "m-d1", text: "메일 안 보내도 돼" } })).status).toBe(200);
 	const line = JSON.parse(readFileSync(paths.inbox, "utf8").trim().split("\n").findLast(l => l.includes(`(${id})`) && l.includes('"picks"'))!);
-	expect([line.read_by, line.owner_msg, line.picks[0].label, isSealed(readSealKey(paths.inbox), line), draftVerdict(paths.inbox, id, 0).verdict]).toEqual(["model", "m-d1", "보내지 않기", true, "drop"]);
+	expect([line.read_by, line.owner_msg, line.picks[0].label, isSealed(readSealKey(paths.inbox), line), draftVerdict(paths.inbox, id, 0, undefined).verdict]).toEqual(["model", "m-d1", "보내지 않기", true, "drop"]);
 });
 
 test("D8: a staged file swapped for one of the same name with other bytes is another version (size, then content)", async () => {

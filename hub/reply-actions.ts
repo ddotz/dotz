@@ -18,7 +18,7 @@ export type ActCtx = { surface: "web" | "discord" | "chat" | "peer" | "cli"; log
 export type ActInput = { ref: string; action: string; change?: string; text?: string; subject?: string; part?: Part; asIs?: boolean; as?: "sent" | "retry"; hash?: string };
 export type ActResult = { status: number; body: { ok: true; item?: ReplyItem } | { ok: false; code: ReasonCode | "bad_request" | "unknown_ref"; error: string; lint?: string[]; item?: ReplyItem } };
 type Sender = {
-	enqueue: (j: SendJob) => boolean;
+	enqueue: (j: SendJob, approved?: (until: number) => void) => boolean;
 	cancel: (ref: string) => "cancelled" | "late" | "none";
 	settle: (j: SendJob, state: "sent" | "failed", text?: string) => void;
 	forget: (ref: string) => boolean;
@@ -31,7 +31,8 @@ export type ReplyDeps = {
 	adapters: ReplyAdapter[];
 	sender: Sender;
 	/** The owner's word, sealed into the inbox (the CLIs' gate reads it): the one writer of a pick. */
-	recordPick: (p: { surface: ActCtx["surface"]; conv: string; q: string; n: number; label: string; note?: string; hash?: string; from?: ActCtx["owner"] }) => void;
+	/** `until`: on a 보내기, when its undo window ends (the CLIs' gate counts it only from then). */
+	recordPick: (p: { surface: ActCtx["surface"]; conv: string; q: string; n: number; label: string; note?: string; hash?: string; until?: number; from?: ActCtx["owner"] }) => void;
 	/** A plain line from the owner in the card's conversation (나갔어요), no pick. */
 	recordText?: (conv: string, text: string) => void;
 	learning: { record: (key: Lesson["key"], line: string) => Promise<void>; refine: (key: Lesson["key"]) => Promise<void> };
@@ -86,6 +87,16 @@ async function learn(deps: ReplyDeps, lesson: Lesson | undefined): Promise<void>
 	}
 }
 
+/** The cards of `ref` show the version the store holds now, and keep its hash (a pick from one of them is checked against it). */
+async function redraw(deps: ReplyDeps, a: ReplyAdapter, ref: string, now: DraftView | undefined) {
+	const text = await a.ask(ref);
+	if (text) deps.cards.rewrite(ref, text, now && approvalHash(now));
+}
+/** The owner's pick on `view`, kept as his answer on the card; an agent's call records none. */
+function pick(deps: ReplyDeps, ctx: ActCtx, a: ReplyAdapter, view: DraftView, n: number, label: string, o: { note?: string; hash?: string; until?: number } = {}) {
+	if (!ctx.agent) deps.recordPick({ surface: ctx.surface, conv: view.conv, q: a.question(view.ref), n, label, ...o, ...(ctx.owner ? { from: ctx.owner } : {}) });
+}
+
 export function createReplyActions(deps: ReplyDeps) {
 	const revising = new Set<string>();
 	const running = new Set<Promise<void>>();
@@ -105,27 +116,19 @@ export function createReplyActions(deps: ReplyDeps) {
 		const send = sendOf(ledger(view.ref));
 		return { ...view, draft: { ...view.draft, hash: approvalHash(view), ...(revising.has(view.ref) ? { revising: true as const } : {}) }, ...(send ? { send, why: "reason" in send ? send.reason.text : view.why } : {}) };
 	};
-	/** The cards of `ref` show the version the store holds now, and keep its hash (a pick from one of them is checked against it). */
-	const redraw = async (a: ReplyAdapter, ref: string, now: DraftView | undefined) => {
-		const text = await a.ask(ref);
-		if (text) deps.cards.rewrite(ref, text, now && approvalHash(now));
-	};
 	/** A send or an edit whose `hash` names another version than the store holds: refused with the fresh item, nothing queued or saved, and its
 	 * cards redrawn and every surface told (another device repaints too). */
 	const stale = async (a: ReplyAdapter, view: DraftView, input: ActInput): Promise<ActResult | undefined> => {
 		if ((!SENDS.has(input.action) && input.action !== "edit") || (input.action === "resolve" && input.as !== "retry") || typeof input.hash !== "string" || input.hash === approvalHash(view)) return undefined;
-		await redraw(a, view.ref, view);
+		await redraw(deps, a, view.ref, view);
 		const item = itemOf(view);
 		deps.emit({ kind: "reply", ref: view.ref, item });
 		return { status: 409, body: { ok: false, code: "changed", error: reasonOf("changed").text, item } };
 	};
-	const pick = (ctx: ActCtx, a: ReplyAdapter, view: DraftView, n: number, label: string, o: { note?: string; hash?: string } = {}) => {
-		if (!ctx.agent) deps.recordPick({ surface: ctx.surface, conv: view.conv, q: a.question(view.ref), n, label, ...o, ...(ctx.owner ? { from: ctx.owner } : {}) });
-	};
-	/** The owner's 보내기 on the version `view` holds: his pick carries its fingerprint, then the job with the same one is queued. */
+	/** The owner's 보내기 on the version `view` holds: his pick carries its fingerprint and the end of its undo window (the sender's own, handed
+	 *  over before the job is held or queued), so no CLI counts it before the gateway's sender would run it (qa-clean-7 N13). */
 	const sendPicked = (ctx: ActCtx, a: ReplyAdapter, view: DraftView, n: number, label: string, j: SendJob): ActResult => {
-		pick(ctx, a, view, n, label, { hash: j.hash });
-		if (!deps.sender.enqueue(j)) return refused(409, "not_supported");
+		if (!deps.sender.enqueue(j, until => pick(deps, ctx, a, view, n, label, { hash: j.hash, until }))) return refused(409, "not_supported");
 		return { status: 200, body: { ok: true, item: itemOf(view) } };
 	};
 	/** Why a send of `ref` holds its draft still: one waits, runs or may have gone out. */
@@ -171,7 +174,7 @@ export function createReplyActions(deps: ReplyDeps) {
 		const guard = editable(view);
 		if (guard) return guard;
 		revising.add(view.ref);
-		pick(ctx, a, view, 2, "고치기", { note: change });
+		pick(deps, ctx, a, view, 2, "고치기", { note: change });
 		// Code's own retry of an earlier failed send would send the text this changes.
 		deps.sender.forget(view.ref);
 		deps.emit({ kind: "reply", ref: view.ref, revising: true, item: itemOf(view) });
@@ -242,10 +245,10 @@ export function createReplyActions(deps: ReplyDeps) {
 		// names the old version), so his pick may follow the save.
 		const r = await a.edit(view.ref, input.text, input.part, input.subject);
 		if (!r.ok) return fail(422, r.reason.code, r.reason.text, "lint" in r ? r.lint : undefined);
-		pick(ctx, a, view, 0, DRAFT_HAND_EDIT);
+		pick(deps, ctx, a, view, 0, DRAFT_HAND_EDIT);
 		deps.sender.forget(view.ref);
 		const next = await a.get(view.ref);
-		await redraw(a, view.ref, next);
+		await redraw(deps, a, view.ref, next);
 		const item = itemOf(next ?? view);
 		deps.emit({ kind: "reply", ref: view.ref, item });
 		return { status: 200, body: { ok: true, item } };
@@ -254,7 +257,7 @@ export function createReplyActions(deps: ReplyDeps) {
 	async function drop(ctx: ActCtx, a: ReplyAdapter, view: DraftView): Promise<ActResult> {
 		const guard = editable(view);
 		if (guard) return guard;
-		pick(ctx, a, view, 3, "보내지 않기");
+		pick(deps, ctx, a, view, 3, "보내지 않기");
 		const r = await a.drop(view.ref);
 		if (!r.ok) return fail(409, r.reason.code, r.reason.text);
 		deps.sender.forget(view.ref);

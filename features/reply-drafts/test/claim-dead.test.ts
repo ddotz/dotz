@@ -11,7 +11,8 @@ import { pick, setupEnv } from "./helpers.ts";
 const env = setupEnv();
 afterAll(env.cleanup);
 beforeEach(() => {
-	for (const p of [paths.config(), paths.drafts(), paths.inbox(), claimFile("RDEAD1")]) rmSync(p, { force: true, recursive: true });
+	// The claim and the approval its last run went under (hub/draft-claim.ts claimToken): each test starts with neither.
+	for (const p of [paths.config(), paths.drafts(), paths.inbox(), claimFile("RDEAD1"), `${claimFile("RDEAD1")}.token`]) rmSync(p, { force: true, recursive: true });
 });
 
 const draft = (): DraftRec =>

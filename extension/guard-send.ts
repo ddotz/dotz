@@ -4,21 +4,34 @@
 // Reads, drafts and revises stay open.
 // Not caught (a shell guard reads the words it is given, not what they become): a command held in a variable and run later
 // (`c="zele mail send"; $c`), code decoded and piped to a shell (`base64 -d | sh`), a script written to a file and run (`python3 send.py`),
-// strings built at run time ('se'+'nd'). These still meet the owner's gate: the draft CLIs and the hub refuse a send without his pick on the
-// card; the raw mailer (zele) has none, which is why every cheap form of it is refused here (docs/ARCHITECTURE.md, extension). Kept out of the agent's prompt on purpose.
+// strings built at run time ('se'+'nd', a module path joined from parts), a send function kept under another name across eval cells
+// (`const s = sendDraft` in one, `s(id)` in the next), and a send script reached through a symlink or a copy under another name.
+// These still meet the owner's gate by data, not by this guard: the draft CLIs send only on his latest sealed 보내기 pick that names the very
+// version the store holds now (hub/draft-approval.ts draftVerdict, approvalHash), and the hub refuses an agent's send; the raw mailer (zele) has
+// none, which is why every cheap form of it is refused here (docs/ARCHITECTURE.md, extension). Kept out of the agent's prompt on purpose.
 import { basename } from "node:path";
 import { commandStart, shellSegments, type ShellWord } from "./guard-shell.ts";
 
 const REFUSAL = "Blocked by dotz: an agent never sends a reply itself (%s). Only the owner's 보내기 on the draft card sends it, through the gateway. Leave the card to the owner: make the draft (draft.ts new, mail-cli.ts compose, comments.ts draft, kakao cli.ts draft) and post its block, and ask for a change only with one line `[revise <ref>] <change>` or `draft.ts revise`. If the owner's words mean to send it, write one line `[send <ref>]`: that only puts a confirm card up for his button.";
 
 const ZELE_SENDS = new Set(["send", "reply", "forward"]);
-// The CLIs whose `send` subcommand sends a draft (each still checks the owner's pick; the agent must not be the one calling it).
+// The CLIs whose `send` subcommand sends a draft (each still checks the owner's pick; the agent must not be the one calling it). Any case and
+// with or without the extension (Bun resolves `bin/draft` and a case-insensitive disk opens `draft.TS`); without one the word must be a path or follow
+// an interpreter (`bun draft send` inside bin/).
 const SEND_SCRIPTS: [RegExp, string][] = [
-	[/(^|\/)draft\.ts$/, "draft.ts send"],
-	[/(^|\/)mail-cli\.ts$/, "mail-cli.ts send"],
-	[/(^|\/)comments\.ts$/, "comments.ts send"],
-	[/(^|\/)kakao\/cli\.ts$/, "kakao cli.ts send"],
+	[/(^|\/)draft(\.[cm]?[jt]s)?$/i, "draft.ts send"],
+	[/(^|\/)mail-cli(\.[cm]?[jt]s)?$/i, "mail-cli.ts send"],
+	[/(^|\/)comments(\.[cm]?[jt]s)?$/i, "comments.ts send"],
+	[/(^|\/)kakao\/cli(\.[cm]?[jt]s)?$/i, "kakao cli.ts send"],
 ];
+const sendScript = (word: string, run = false): string | undefined => SEND_SCRIPTS.find(([re]) => re.test(word) && (run || /\.[cm]?[jt]s$/i.test(word) || word.includes("/")))?.[1];
+// A cell that loads a send CLI or the flow behind it (import or require of the module), and the in-process send calls of those modules.
+const SEND_MODULE = /["'\x60][^"'\x60\n]*(?:^|\/)(?:draft|flow|senders|mail-cli|comments|kakao\/cli)(?:\.[cm]?[jt]s)?["'\x60]/i;
+const LOADS = /\b(?:import|require)\b/;
+const SEND_CALL = /\b(?:sendDraft|sendMailOnly|sendWith)\s*\(/;
+const RUN_SEND = /\b(?:run|runDraft|runCmd)\s*\(\s*\[\s*["'\x60]send["'\x60]/i;
+// The code with its string literals emptied: a call named inside a string (a search pattern) is no call.
+const codeOnly = (code: string): string => code.replace(/(["'\x60])(?:(?!\1)[^\\\n]|\\.)*\1/g, '""');
 const SHELLS = new Set(["bash", "sh", "zsh", "dash", "ksh", "eval"]);
 // Words that open a group or a clause before the command they run (`{ zele mail send; }`, `if true; then zele ...`).
 const LEADS = new Set(["{", "!", "if", "then", "elif", "else", "do", "while", "until"]);
@@ -50,11 +63,24 @@ function postSends(text: string, fromFile: boolean, calls = true): string | unde
 
 function segmentSend(words: ShellWord[], depth: number): string | undefined {
 	const start = commandStart(words);
+	// `env -S "bun … send"` (or -S<string>, --split-string=<string>): the string is a command line of its own.
+	if (words.slice(0, start).some(w => basename(w.text) === "env"))
+		for (let i = 0; i <= start && i < words.length; i++) {
+			const w = words[i]!.text, apart = /^(-S|--split-string)$/.test(w);
+			const s = apart ? words[i + 1]?.text : /^(?:-S|--split-string=)(.+)$/.exec(w)?.[1];
+			if (s !== undefined) return commandSend([s, ...words.slice(i + (apart ? 2 : 1)).map(x => x.text)].join(" "), depth + 1);
+		}
 	const head = words[start];
 	if (!head) return undefined;
 	const name = basename(head.text);
 	const args = words.slice(start + 1).map(w => w.text);
 	if (LEADS.has(head.text)) return segmentSend(words.slice(start + 1), depth + 1);
+	// GNU parallel runs its command once per argument after `:::`: a send script anywhere in it may be handed `send`.
+	if (name === "parallel") {
+		const cut = args.findIndex(a => a === ":::" || a === "::::");
+		const hit = args.map(sendScript).find(Boolean);
+		return hit ?? segmentSend(words.slice(start + 1, cut < 0 ? undefined : start + 1 + cut), depth + 1);
+	}
 	if (name === "find") {
 		const at = args.findIndex(a => FIND_RUNS.has(a));
 		if (at < 0) return undefined;
@@ -77,7 +103,10 @@ function segmentSend(words: ShellWord[], depth: number): string | undefined {
 	}
 	if (INTERPRETERS.test(name)) {
 		const flag = args.findIndex(a => INLINE_FLAG.test(a));
-		const code = flag >= 0 ? args[flag + 1] : name === "deno" && args[0] === "eval" ? args[1] : undefined;
+		const at = flag >= 0 ? flag + 1 : name === "deno" && args[0] === "eval" ? 1 : -1;
+		const code = at >= 0 ? args[at] : undefined;
+		// `bun -e 'await import("…/draft.ts")' send A1`: the loaded CLI reads `send` from the words after the code.
+		if (code !== undefined && LOADS.test(code) && SEND_MODULE.test(code) && args.slice(at + 1).some(a => a.toLowerCase() === "send")) return "a send CLI loaded by inline code";
 		if (code !== undefined) return cellSend(code);
 	}
 	if (name === "zele") {
@@ -86,13 +115,18 @@ function segmentSend(words: ShellWord[], depth: number): string | undefined {
 		return sub && ZELE_SENDS.has(sub) ? `zele mail ${sub}` : undefined;
 	}
 	if (name === "curl" || name === "wget") return postSends(args.join(" "), args.some(a => a.startsWith("@") || /^--(post|body)-file\b/.test(a)));
-	const line = [head.text, ...args];
-	for (let i = 0; i < line.length - 1; i++) {
-		const hit = SEND_SCRIPTS.find(([re]) => re.test(line[i]));
-		if (hit) return line[i + 1] === "send" ? hit[1] : undefined;
+	// A send script with `send` anywhere after it (flags may come first: `draft.ts --retry send`); under xargs its words come from stdin, so any run of it.
+	// An interpreter's `--cwd <dir>` (or `--cwd=<dir>`) is where it runs, not what: `bun --cwd features/reply-drafts/bin draft send` runs draft.
+	const line = [head.text, ...(INTERPRETERS.test(name) ? withoutCwd(args) : args)];
+	const viaXargs = words.slice(0, start).some(w => basename(w.text) === "xargs");
+	for (let i = 0; i < line.length; i++) {
+		const hit = sendScript(line[i]!, i > 0 && INTERPRETERS.test(basename(line[i - 1]!)));
+		if (hit) return viaXargs || line.slice(i + 1).some(a => a.toLowerCase() === "send") ? hit : undefined;
 	}
 	return undefined;
 }
+
+const withoutCwd = (args: string[]): string[] => args.filter((a, i) => a !== "--cwd" && !a.startsWith("--cwd=") && args[i - 1] !== "--cwd");
 
 // A shell command line: every simple command of it, and every $(...) or backtick substitution inside a word.
 function commandSend(command: string, depth = 0): string | undefined {
@@ -136,6 +170,11 @@ function cellSend(code: string): string | undefined {
 		const found = segmentSend(m[1]!.trim().split(/\s+/).map(text => ({ text, expands: false })), 0);
 		if (found) return found;
 	}
+	// In-process sends: the flow's send functions called (also from a module an earlier cell loaded), a CLI's run with `send`, or a send
+	// module loaded in this cell together with any `send` word or `.send(` call.
+	const bare = codeOnly(code);
+	if (SEND_CALL.test(bare) || RUN_SEND.test(code)) return "an in-process call of a send CLI or its flow";
+	if (LOADS.test(bare) && SEND_MODULE.test(code) && (/["'\x60]send["'\x60]/i.test(code) || /\.send\s*\(/.test(bare))) return "a send CLI or its flow loaded and run in-process";
 	return postSends(code, false, HTTP_CALL.test(code));
 }
 

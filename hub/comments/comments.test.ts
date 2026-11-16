@@ -4,13 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
 import { type Comment, type CommentAdapter, commentId, mergeComments, type RawComment, type SourceConfig } from "./contract.ts";
-import { createEngine, type DraftModel } from "./engine.ts";
+import { createEngine, type DraftModel, type Engine } from "./engine.ts";
+import { approvalHash } from "../draft-approval.ts";
+import { commentAdapter } from "./reply-adapter.ts";
 import { instagramAdapter } from "./adapters/google-meta.ts";
 import { bunExec, parseRss, websiteAdapter } from "./adapters/website.ts";
 import { createCommentsWeb } from "./web.ts";
 import { appendSealed } from "../approval-seal.ts";
+import { reasonOf } from "../reply-reasons.ts";
 
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
+const shownHash = async (engine: Engine, code: string): Promise<string | undefined> => ((v => v && approvalHash(v))(await commentAdapter(engine).get(code)));
 const reply = (body: string, extra: object = {}) => `\`\`\`json\n${JSON.stringify({ action: "draft", reason: "asks", to: "", body, questions: [], ...extra })}\n\`\`\``;
 const raw = (native: string, o: Partial<RawComment> = {}): RawComment => ({ native, thread: "p1", author: "A", text: `question ${native}?`, postTitle: "Post one", at: NOW - 1000, ...o });
 const src = (o: Partial<SourceConfig> = {}): SourceConfig => ({ key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false, ...o });
@@ -259,11 +263,18 @@ describe("the send gate", () => {
 		const refused = await runComments(["send", t.code], t.engine, inbox);
 		expect(refused.code).toBe(1);
 		expect(t.state.posted).toHaveLength(0);
-		const pick = (id: string, label: string, source = "web") => appendSealed(inbox, { ts: new Date(NOW + 5000).toISOString(), kind: "message", source, text: `1) ${label}`, picks: [{ q: `이 답글 올릴까요? (${id})`, n: 1, label }] });
+		const hash = await shownHash(t.engine, t.code);
+		const pick = (id: string, label: string, source = "web", named = hash) => appendSealed(inbox, { ts: new Date(NOW + 5000).toISOString(), kind: "message", source, text: `1) ${label}`, picks: [{ q: `이 답글 올릴까요? (${id})`, n: 1, label, ...(named ? { hash: named } : {}) }] });
 		pick("Dother00", "보내기");
 		expect((await runComments(["send", t.code], t.engine, inbox)).code).toBe(1);
 		pick(t.code, "보내기", "lane_message");
 		expect((await runComments(["send", t.code], t.engine, inbox)).code).toBe(1);
+		// A 보내기 that names no version, or another one, is refused `changed` (qa-clean-3 H1).
+		for (const named of ["", "0000000000000000"]) {
+			pick(t.code, "보내기", "web", named);
+			const r = await runComments(["send", t.code], t.engine, inbox);
+			expect([r.code, r.lines[0]]).toEqual([1, reasonOf("changed").text]);
+		}
 		expect(t.state.posted).toHaveLength(0);
 		pick(t.code, "보내기");
 		const ok = await runComments(["send", t.code], t.engine, inbox);

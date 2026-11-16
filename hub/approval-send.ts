@@ -14,7 +14,14 @@
 // Cancel window: unless the window is 0 (web.send_undo_sec), an approved send waits that long as `undo` before it is queued. The job is kept (approved at, window) in the same
 // file; `cancel` inside the window never runs the send, `revoke` writes the owner's cancel into the inbox (the CLIs' own gate then refuses the old 보내기) and the card is
 // back to waiting for approval. A restart inside the window never sends by itself: the job comes back as `back` (told once, on the card) and waits for a new 보내기.
-// Only a send that starts here is delayed: a CLI an agent runs by hand after the owner's approval does not pass through this file.
+// A CLI run by hand cannot cut the window short either (qa-clean-7 N13), nor send while this gateway is down across its end (qa-clean-8 N14): `enqueue`
+// hands its caller the window's end before anything is queued, his pick carries it (`until`), and the CLIs' gate (hub/draft-approval.ts draftVerdict)
+// answers `waiting` for such a pick until `mark` seals `go`, which this sender does right before each run it starts, never by the clock alone.
+//
+// One go, one run (qa-clean-7 N13, qa-clean-8 N15): a run that ends failed or unsure seals `spent`, so no CLI can send on it again; each later run here
+// (the owner's 다시 보내기, code's own retry) seals a new `go`; and the mail CLI keeps the `go` its run went under beside its claim, so a run killed
+// mid-send leaves no `go` a takeover (`--retry`) can use again (features/reply-drafts/lib/flow.ts). The marks are sealed inbox lines, not state of this
+// process, because the CLIs that must honour them run in other processes and read only the inbox.
 //
 // Refs the gateway does not know (a card the bot wrote by hand, a 직접 입력 pick) still go to the bot as before.
 //
@@ -27,12 +34,12 @@
 //
 // The one approval gate (owner rule 2026-11-16: what goes out is exactly the version he saw when he pressed 보내기): every job carries the
 // `approvalHash` of the draft as his act read it, and immediately before any run (the first, code's own retry, his 다시 보내기, a force) the draft
-// is read again; a different version ends `failed` with `changed`, nothing sent and no retry by code.
-import { createHash } from "node:crypto";
+// is read again; a different version ends `failed` with `changed`, nothing sent and no retry by code, and his pick is taken back (`revoke`), so no
+// CLI run can send on it either. Code's own repair (a "Re:" subject) that changes the version ends the same way: he approves the repaired one.
 import { join } from "node:path";
-import { draftActionOf } from "./draft-approval.ts";
+import { approvalHash, draftActionOf } from "./draft-approval.ts";
 import { isReasonCode, partialReason, policyOf, reasonOf } from "./reply-reasons.ts";
-import type { DraftView, FileShown, Reason, ReasonCode, ReplyAdapter, SendOutcome } from "./reply-types.ts";
+import type { Reason, ReasonCode, ReplyAdapter, SendOutcome } from "./reply-types.ts";
 import { runLimited } from "./run-limited.ts";
 
 export type SendKind = "comment" | "mail" | "kakao";
@@ -65,15 +72,8 @@ export function sendActionOf(label: string): SendAction | undefined {
 	return a === "send" || a === "send-main" || a === "send-mail" || a === "send-as-is" ? a : undefined;
 }
 
-/** The fingerprint of what a send would carry: recipients, subject, text, parts, files (name, size and, for a file held locally, its content) and a
- * bundled mail. Display fields (labels, notes, state) are not in it. */
-export function approvalHash(view: DraftView): string {
-	const d = view.draft;
-	const files = (list?: FileShown[]) => (list ?? []).map(f => `${f.name}\n${f.size ?? ""}\n${f.digest ?? ""}`).sort();
-	const mail = d.mail ? { to: d.mail.to, subject: d.mail.subject ?? "", text: d.mail.text, attachments: files(d.mail.attachments) } : null;
-	const body = { to: d.to, cc: [...(d.cc ?? [])].sort(), subject: d.subject ?? "", text: d.text, parts: d.parts ?? [], attachments: files(d.attachments), mail };
-	return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
-}
+/** The one fingerprint (hub/draft-approval.ts approvalHash), for the gateway's modules that read it with the queue. */
+export { approvalHash };
 
 /** The ref in a decision question's trailing "(<ref>)". */
 export const refOfQuestion = (q: string): string | undefined => /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/.exec(q)?.[1];
@@ -110,8 +110,10 @@ export type SenderDeps = {
 	undoMs?: () => number;
 	/** Calls `fn` after `ms` (default: a timer that does not keep the process alive). */
 	after?: (ms: number, fn: () => void) => void;
-	/** A job in the window is not going out (cancelled, or the gateway restarted): take back the owner's 보내기 so nothing can send it until he approves again. */
-	revoke?: (j: SendJob, why: "cancel" | "restart") => void;
+	/** A job is not going out (cancelled or restarted in the window, or refused `changed`): take back the owner's 보내기 so nothing can send it until he approves again. */
+	revoke?: (j: SendJob, why: "cancel" | "restart" | "changed") => void;
+	/** Seals a mark on the job's pick for the CLIs' gate: `go` right before each run, `spent` once a run ended failed or unsure. */
+	mark?: (j: SendJob, mark: "spent" | "go") => void;
 };
 
 const timerAfter = (ms: number, fn: () => void): void => void (setTimeout(fn, ms) as { unref?: () => void }).unref?.();
@@ -146,6 +148,7 @@ export function createApprovalSender(deps: SenderDeps) {
 	const orphans = new Map<string, SendJob>();
 	// `gone`: the draft is no longer pending, so there is nothing left to resolve and the file does not keep it.
 	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold, ended: Ended = {}) => {
+		if ((state === "failed" || state === "unsure") && !spentAlready(kept.get(j.ref)?.state)) gateMark(deps, j, "spent");
 		const keep = state === "queued" || state === "sending" || state === "undo" || ((state === "failed" || state === "unsure") && ended.reason?.code !== "gone");
 		if (keep) kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), ...(j.force ? { force: true as const } : {}), ...(j.hash ? { hash: j.hash } : {}), ...(j.by ? { by: j.by } : {}), state, ...(hold ?? {}), ...ended });
 		else kept.delete(j.ref);
@@ -168,8 +171,8 @@ export function createApprovalSender(deps: SenderDeps) {
 	// Approved sends inside the cancel window, by draft ref.
 	const pending = new Map<string, { j: SendJob; t: SendTarget; until: number }>();
 
-	/** Queues one approved send (after the cancel window, unless `hold` is false or it is a 다시 보내기); false when the gateway cannot send it; a draft already in the window, queued, sending or sent sends nothing more. */
-	function enqueue(j: SendJob, o: { hold?: false } = {}): boolean {
+	/** Queues one approved send (after the cancel window, unless `hold` is false or it is a 다시 보내기), first handing `approved` its start (the window's end, or now); false when the gateway cannot send it; a draft already in the window, queued, sending or sent sends nothing more. */
+	function enqueue(j: SendJob, o: { hold?: false } = {}, approved?: (until: number) => void): boolean {
 		if (!can(j.ref, j.action)) return false;
 		const t = deps.kind(j.ref, j.action)!;
 		// The file, not memory, says what is unfinished: an unsure send survives a restart and only the owner's force sends it again.
@@ -180,8 +183,9 @@ export function createApprovalSender(deps: SenderDeps) {
 		}
 		autoAt.delete(j.ref);
 		const wait = o.hold === false || j.retry || j.force ? 0 : Math.max(0, deps.undoMs?.() ?? 0);
+		const approvedAt = now();
+		approved?.(approvedAt + wait);
 		if (wait > 0) {
-			const approvedAt = now();
 			pending.set(j.ref, { j, t, until: approvedAt + wait });
 			set(j, "undo", "", { approvedAt, wait });
 			(deps.after ?? timerAfter)(wait, tick);
@@ -202,12 +206,15 @@ export function createApprovalSender(deps: SenderDeps) {
 
 	/** A job in the window will not be sent: the owner's pick is taken back, then the card waits for approval again. */
 	function back(j: SendJob, why: "cancel" | "restart"): void {
-		try {
-			deps.revoke?.(j, why);
-		} catch (e) {
-			deps.log(`approved send ${j.ref}: the cancel was not written to the inbox: ${(e as Error).message}`);
-		}
+		takeBack(deps, j, why);
 		set(j, "back", why === "cancel" ? UNDONE : RETURNED_ON_RESTART);
+	}
+	/** The gate refused `j` before it ran: nothing sent, no retry by code; a `changed` one also loses the pick it was approved with. */
+	function refuse(j: SendJob, code: ReasonCode, tries: number | undefined): void {
+		const reason = reasonOf(code);
+		deps.log(`approved send ${j.ref} in ${j.conv}: not sent, ${code}`);
+		if (code === "changed") takeBack(deps, j, "changed");
+		set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: tries });
 	}
 
 	function start(j: SendJob, t: SendTarget, ended: Ended = {}): void {
@@ -227,14 +234,13 @@ export function createApprovalSender(deps: SenderDeps) {
 		for (let j = jobs.shift(); j; j = jobs.shift() ?? (lanes.delete(key), undefined)) {
 			const refusal = deps.fingerprint ? await unapproved(deps, j) : undefined;
 			if (refusal) {
-				const reason = reasonOf(refusal);
-				deps.log(`approved send ${j.ref} in ${j.conv}: not sent, ${refusal}`);
-				set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: attempts(j.ref) });
+				refuse(j, refusal, attempts(j.ref));
 				continue;
 			}
 			const tries = attempts(j.ref) + 1;
 			const auto = kept.get(j.ref)?.auto;
 			set(j, "sending", "", undefined, { attempts: tries, ...(auto ? { auto } : {}) });
+			gateMark(deps, j, "go");
 			let o: SendOutcome;
 			try {
 				o = await runOne(j);
@@ -288,14 +294,10 @@ export function createApprovalSender(deps: SenderDeps) {
 		autoAt.delete(j.ref);
 		const t = deps.kind(j.ref, j.action);
 		if (!t) return set(j, "failed", k.reason.text, undefined, { reason: k.reason, safeToAuto: false, attempts: k.attempts });
-		let job = j;
 		if (policyOf(k.reason.code).auto?.repair) {
 			// A draft changed since the owner's 보내기 is not repaired into a send.
 			const refusal = await unapproved(deps, j);
-			if (refusal) {
-				const reason = reasonOf(refusal);
-				return set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: k.attempts });
-			}
+			if (refusal) return refuse(j, refusal, k.attempts);
 			let fixed: "fixed" | "needs_owner" | "failed";
 			try {
 				fixed = (await deps.repair?.(j, k.reason.code)) ?? "failed";
@@ -304,11 +306,12 @@ export function createApprovalSender(deps: SenderDeps) {
 				fixed = "failed";
 			}
 			if (fixed !== "fixed") return set(j, "failed", k.reason.text, undefined, { reason: k.reason, safeToAuto: false, attempts: k.attempts });
-			// Code's own repair (a "Re:" subject, a re-login) on the approved version: what it leaves is the version this attempt is checked against.
-			const now = await current(deps, j.ref);
-			if (typeof now === "string") job = { ...j, hash: now };
+			// A repair that left the approved version as it was (a re-login) goes on; one that changed it (a "Re:" subject) is a version the owner
+			// never saw: nothing is sent and he approves the repaired one (the gate below would refuse it too; this says so before queueing).
+			const after = await unapproved(deps, j);
+			if (after) return refuse(j, after, k.attempts);
 		}
-		const { retry: _r, force: _f, ...rest } = job;
+		const { retry: _r, force: _f, ...rest } = j;
 		const plain: SendJob = { ...rest, by: "auto" };
 		set(plain, "queued", "", undefined, { attempts: k.attempts, auto: next });
 		const lane = lanes.get(t.lane);
@@ -339,7 +342,7 @@ export function createApprovalSender(deps: SenderDeps) {
 
 	return {
 		can,
-		enqueue: (j: SendJob) => enqueue(j),
+		enqueue: (j: SendJob, approved?: (until: number) => void) => enqueue(j, {}, approved),
 		/** Once, on boot: takes up the jobs the file kept (see the top of this file). */
 		recover: () => {
 			if (recovered || !deps.store) return;
@@ -421,6 +424,25 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 }
 
+// The owner's 보내기 of a job that will not go out is taken back in the inbox, so no CLI can send on it either.
+function takeBack(deps: Pick<SenderDeps, "revoke" | "log">, j: SendJob, why: "cancel" | "restart" | "changed"): void {
+	try {
+		deps.revoke?.(j, why);
+	} catch (e) {
+		deps.log(`approved send ${j.ref}: the cancel was not written to the inbox: ${(e as Error).message}`);
+	}
+}
+// A job that ends failed or unsure spends its pick once: one shown again in that state (a boot, a settle) was marked when it first ended there.
+const spentAlready = (was: string | undefined): boolean => was === "failed" || was === "unsure";
+// Every run of this sender is marked `go` right before it starts (the CLI gate counts a held pick only from then on, so a gateway that is down
+// lets no CLI send on it); a run that ends failed or unsure marks it `spent`.
+function gateMark(deps: Pick<SenderDeps, "mark" | "log">, j: SendJob, mark: "spent" | "go"): void {
+	try {
+		deps.mark?.(j, mark);
+	} catch (e) {
+		deps.log(`approved send ${j.ref}: the ${mark} mark was not written to the inbox: ${(e as Error).message}`);
+	}
+}
 // The draft's fingerprint as its store holds it now; undefined when no store knows it (or there is no gate), null when it could not be read.
 async function current(deps: Pick<SenderDeps, "fingerprint" | "log">, ref: string): Promise<string | undefined | null> {
 	try {

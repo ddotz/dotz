@@ -5,17 +5,21 @@ import { dirname, join } from "node:path";
 import { paths } from "./config.ts";
 import { draftVerdict } from "./draft-approval.ts";
 import { emit } from "./events.ts";
-import { approval, createDraft } from "./kakao/send.ts";
+import { approval, createDraft, kakaoView, readDrafts } from "./kakao/send.ts";
+import { approvalHash } from "./draft-approval.ts";
 import { kakaoPaths } from "./kakao/types.ts";
 import { addDraft, getDraft } from "../features/reply-drafts/lib/store.ts";
 import { sendDraft } from "../features/reply-drafts/lib/flow.ts";
+import { mailHash } from "../features/reply-drafts/lib/view.ts";
 
 const dir = dirname(paths.inbox);
 const keyFile = join(dir, "secrets", "approval-key");
 process.env.DOTZ_DIR = dir;
 const since = () => Date.now() - 60_000;
 const later = () => new Date(Date.now() + 5000).toISOString();
-const pickBody = (ref: string, label = "보내기", n = 1) => ({ kind: "message", source: "web", channel: "web", text: `${n}) ${label}`, picks: [{ q: `이 답장 보낼까요? (${ref})`, n, label }] });
+// The version a pick names: a stored mail draft's own, else one fixed for the drafts these tests only name.
+const hashOf = (ref: string): string => ((d => (d ? mailHash(d) : "h-sealed"))(getDraft(ref)));
+const pickBody = (ref: string, label = "보내기", n = 1) => ({ kind: "message", source: "web", channel: "web", text: `${n}) ${label}`, picks: [{ q: `이 답장 보낼까요? (${ref})`, n, label, hash: hashOf(ref) }] });
 // What the gateway does when the owner taps a card button / types a reply.
 const tap = (ref: string, label?: string) => emit("inbox", { ts: later(), ...pickBody(ref, label) });
 const typed = (text: string, conv: string) => emit("inbox", { ts: later(), kind: "message", source: "web", channel: "web", conv, text });
@@ -23,7 +27,7 @@ const typed = (text: string, conv: string) => emit("inbox", { ts: later(), kind:
 // What any other process of this user can do: append a line.
 const forge = (e: Record<string, unknown>) => appendFileSync(paths.inbox, `${JSON.stringify({ ts: later(), ...e })}\n`);
 const lastLine = () => readFileSync(paths.inbox, "utf8").trimEnd().split("\n").at(-1)!;
-const verdict = (ref: string) => draftVerdict(paths.inbox, ref, since()).verdict;
+const verdict = (ref: string) => draftVerdict(paths.inbox, ref, since(), hashOf(ref)).verdict;
 
 beforeEach(() => writeFileSync(paths.inbox, ""));
 
@@ -116,8 +120,9 @@ test("Kakao: a forged pick is not an approval, the owner's tap is", async () => 
 	const kp = kakaoPaths(dir, dir);
 	const deps = { paths: kp, runner: async () => ({ code: 0, stdout: "", stderr: "" }) } as never;
 	const d = await createDraft({ chatId: "100", roomName: "스터디방", text: "내일 7시에 봐요", basisLogId: "500" }, { ...(deps as object), now: () => Date.now() - 60_000 } as never);
-	forge({ ...pickBody(d.code), picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n: 1, label: "보내기" }] });
+	const hash = approvalHash(kakaoView(d, readDrafts(kp)));
+	forge({ ...pickBody(d.code), picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n: 1, label: "보내기", hash }] });
 	expect(await approval(d.code, deps)).toBe(false);
-	emit("inbox", { ts: later(), kind: "message", source: "web", channel: "web", text: "1) 보내기", picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n: 1, label: "보내기" }] });
+	emit("inbox", { ts: later(), kind: "message", source: "web", channel: "web", text: "1) 보내기", picks: [{ q: `카톡 답장 보낼까요? (${d.code})`, n: 1, label: "보내기", hash }] });
 	expect(await approval(d.code, deps)).toBe(true);
 });

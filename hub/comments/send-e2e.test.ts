@@ -10,16 +10,21 @@ import { run as runComments } from "../../features/comments/bin/comments.ts";
 import { stagedFiles } from "../../features/reply-drafts/lib/staged.ts";
 import { getDraft, setStatus } from "../../features/reply-drafts/lib/store.ts";
 import type { Runner } from "../../features/reply-drafts/lib/tone.ts";
+import { mailHash } from "../../features/reply-drafts/lib/view.ts";
 import { parseDraftApproval } from "../draft-approval.ts";
 import { runMailCli } from "../mail-cli.ts";
 import { commentAsk } from "./ask.ts";
 import { type CommentAdapter, commentId, type SourceConfig } from "./contract.ts";
-import { createEngine } from "./engine.ts";
+import { createEngine, type Engine } from "./engine.ts";
+import { approvalHash } from "../draft-approval.ts";
+import { commentAdapter } from "./reply-adapter.ts";
 import { realMailLink } from "./mail-link.ts";
 import { commentsDir } from "./store.ts";
 import { appendSealed } from "../approval-seal.ts";
+import { reasonOf } from "../reply-reasons.ts";
 
 const NOW = Date.parse("2026-10-26T00:00:00.000Z");
+const shownHash = async (engine: Engine, code: string): Promise<string | undefined> => ((v => v && approvalHash(v))(await commentAdapter(engine).get(code)));
 const source: SourceConfig = { key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false };
 const before = process.env.DOTZ_DIR;
 let dir: string;
@@ -53,9 +58,11 @@ function world(o: { replyFails?: string; zeleFails?: boolean } = {}) {
 	const clock = { now: NOW };
 	const engine = createEngine({ dir: root, now: () => clock.now, collector: "mac-a", adapters: { youtube: adapter }, mail: realMailLink({ run }) });
 	const inbox = join(dir, "inbox.jsonl");
-	const pick = (code: string, n: 1 | 3 = 1, at = NOW + 5000) => {
+	// A pick names the version the card shows now (hub/reply-actions.ts records its approvalHash).
+	const pick = async (code: string, n: 1 | 3 = 1, at = NOW + 5000) => {
 		const label = n === 1 ? "보내기" : "보내지 않기";
-		appendSealed(inbox, { ts: new Date(at).toISOString(), kind: "message", source: "web", text: `${n}) ${label}`, picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${code})`, n, label }] });
+		const hash = await shownHash(engine, code);
+		appendSealed(inbox, { ts: new Date(at).toISOString(), kind: "message", source: "web", text: `${n}) ${label}`, picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${code})`, n, label, ...(hash ? { hash } : {}) }] });
 	};
 	const recover = () => {
 		replyFails = undefined;
@@ -81,13 +88,13 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(1);
 		expect(w.posted).toEqual([]);
 		expect(w.mailSends()).toEqual([]);
-		w.pick(d.code);
+		await w.pick(d.code);
 		expect(await runComments(["send", d.code], w.engine, w.inbox)).toEqual({ lines: [`답글을 올리고 메일을 보냈어요 (${d.code})`], code: 0 });
 		expect(w.posted).toEqual(["문서는 메일로 보내 드렸어요"]);
 		expect(w.mailSends()).toEqual([["zele", "mail", "send", "--to", "fan@example.com", "--subject", "캐논 문서 보내드립니다", "--body", "요청하신 캐논 문서 보내드립니다.", "--attach", stagedFiles(mailId)[0]!.path]]);
 		expect(w.engine.store.drafts()[0]!.status).toBe("sent");
 		expect(getDraft(mailId)!.status).toBe("sent");
-		w.pick(d.code);
+		await w.pick(d.code);
 		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(1);
 		expect(w.posted).toHaveLength(1);
 		expect(w.mailSends()).toHaveLength(1);
@@ -106,7 +113,7 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 	test("a failed reply sends no mail and keeps the card; after the platform recovers the same pick posts and sends once", async () => {
 		const w = world({ replyFails: "quota exceeded" });
 		const { d, mailId } = await card(w);
-		w.pick(d.code);
+		await w.pick(d.code);
 		const out = await runComments(["send", d.code], w.engine, w.inbox);
 		expect(out.code).toBe(1);
 		expect(out.lines[0]).toBe("답글을 올리지 못했어요 (메일도 보내지 않았어요): quota exceeded");
@@ -119,20 +126,20 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		expect(w.mailSends()).toHaveLength(1);
 	});
 
-	test("Dt8pq3b: the mail gone after the pick re-stamps mailAt, so the old pick sends nothing; the owner's fresh 다시 보내기 pick posts once", async () => {
+	test("Dt8pq3b: the mail gone after the pick leaves the card, so the old pick (it named the version with the mail) sends nothing; the owner's fresh 다시 보내기 pick posts once", async () => {
 		const w = world();
 		const { d, mailId } = await card(w);
-		w.pick(d.code);
+		await w.pick(d.code);
 		// The mail went out on its own after the owner's 보내기 (the incident's raw mail CLI).
 		setStatus(mailId, "sent");
 		w.clock.now = NOW + 10_000;
-		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(1);
-		expect(w.engine.store.drafts()[0]!.mailAt).toBe(NOW + 10_000);
-		// The old loop: every later send reads the pick from before mailAt and is refused.
+		const first = await runComments(["send", d.code], w.engine, w.inbox);
+		expect([first.code, first.lines[0], w.engine.store.drafts()[0]!.mail]).toEqual([1, reasonOf("changed").text, undefined]);
+		// The old loop: every later send reads that pick, which names the version with the mail, and is refused.
 		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(1);
 		expect(w.posted).toEqual([]);
 		// What hub/reply-actions.ts retry writes now: a fresh 1) 보내기 on the card as it is.
-		w.pick(d.code, 1, NOW + 20_000);
+		await w.pick(d.code, 1, NOW + 20_000);
 		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(0);
 		expect(w.posted).toHaveLength(1);
 		expect(w.mailSends()).toEqual([]);
@@ -141,7 +148,7 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 	test("a failed mail is told with its draft id; the reply stays posted and the mail goes out after its own card is approved", async () => {
 		const w = world({ zeleFails: true });
 		const { d, mailId } = await card(w);
-		w.pick(d.code);
+		await w.pick(d.code);
 		const out = await runComments(["send", d.code], w.engine, w.inbox);
 		expect(out.code).toBe(1);
 		expect(out.lines[0]).toContain("답글은 올렸지만 메일은 보내지 못했어요");
@@ -151,7 +158,7 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		const hub = { post: async () => ({ status: 200 }) };
 		const ask = await runMailCli(["ask", "--draft", mailId], "", { hub });
 		expect(parseDraftApproval(ask.lines[0]!)).toMatchObject({ ref: mailId, attachments: [{ name: "캐논.pdf" }] });
-		appendSealed(w.inbox, { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `이 메일 보낼까요? (${mailId})`, n: 1, label: "보내기" }] });
+		appendSealed(w.inbox, { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `이 메일 보낼까요? (${mailId})`, n: 1, label: "보내기", hash: mailHash(getDraft(mailId)!) }] });
 		const run: Runner = async argv => (w.zele.push(argv), { code: 0, stdout: "", stderr: "" });
 		expect((await runMailCli(["send", "--draft", mailId], "", { run, hub })).code).toBe(0);
 		expect(w.posted).toHaveLength(1);

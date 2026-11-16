@@ -16,7 +16,7 @@ import { claimFile, getDraft, mailAdapter, replyLearning } from "./reply-mail.ts
 import { mailByKey } from "./mail.ts";
 import { claimHolder } from "./draft-claim.ts";
 import { approvalHash, createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
-import { DRAFT_UNDO, draftActionOf } from "./draft-approval.ts";
+import { DRAFT_UNDO, draftActionOf, SEND_GATE } from "./draft-approval.ts";
 import { askText, withRecipient } from "./draft-attach.ts";
 import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
 import type { ReplyAdapter } from "./reply-types.ts";
@@ -120,7 +120,7 @@ function lookSend(j: SendJob): SendLook {
 const undoMs = (): number => ((s => (typeof s === "number" && Number.isFinite(s) && s >= 0 ? s : 10))(cfg.web.send_undo_sec)) * 1000;
 
 /** One card's pick as the inbox keeps it: the question, the option number and its label; a 보내기 of the reply flow also the approvalHash it approved. */
-export type AnswerPick = { q: string; n: number; label: string; note?: string; hash?: string };
+export type AnswerPick = { q: string; n: number; label: string; note?: string; hash?: string; until?: number };
 // The owner's answer as the inbox keeps it (the CLIs' approval check reads it there), with no model turn. `decision`: the open card it answers.
 // `from`: the owner's chat message the model read it from (`read_by: "model"`, `owner_msg`), the audit of a pick no button made.
 export function recordAnswer(a: { source: "web" | "discord"; channel: string; author: string; text: string; picks: AnswerPick[]; decision?: string; from?: { mid: string } }): void {
@@ -130,6 +130,11 @@ export function recordAnswer(a: { source: "web" | "discord"; channel: string; au
 // A send taken back: the owner's cancel becomes his latest word on the draft, so the old 보내기 sends nothing from a CLI either.
 function revokeSend(j: SendJob): void {
 	recordAnswer({ source: "web", channel: channelOf(j.conv), author: "owner", text: DRAFT_UNDO, picks: [{ q: j.title, n: 0, label: DRAFT_UNDO }] });
+}
+// The sender's mark on a 보내기 for the CLIs' gate (hub/draft-approval.ts draftVerdict): a sealed inbox line of its own kind, with no text, so no
+// conversation shows it and no reader takes it for the owner's word. A `go` carries its own id, so its seal (the CLI's one-run token) is never another's.
+function markSend(j: SendJob, mark: "spent" | "go"): void {
+	emit("inbox", { ts: now(), kind: SEND_GATE, source: "gateway", text: "", ref: j.ref, mark, ...(mark === "go" ? { id: newMid(), action: j.action, ...(j.hash ? { hash: j.hash } : {}) } : {}) });
 }
 
 export const sender = createApprovalSender({
@@ -145,6 +150,7 @@ export const sender = createApprovalSender({
 	look: lookSend,
 	undoMs,
 	revoke: revokeSend,
+	mark: markSend,
 });
 
 // The bot's turn for a hand-written card (kind `card`): routes.ts hands its deliver here once it exists.
@@ -157,7 +163,7 @@ const cardOfRef = (ref: string) => allNotices().find(i => i.decision && i.title.
 export const replies = createReplyActions({
 	adapters,
 	sender,
-	recordPick: ({ surface, conv, q, n, label, note, hash, from }) => {
+	recordPick: ({ surface, conv, q, n, label, note, hash, until, from }) => {
 		const ref = refOfQuestion(q);
 		const card = ref ? openCardOf(conv, ref) : undefined;
 		// A word that is no card option (직접 고치기, n 0) is written as its label alone.
@@ -165,7 +171,7 @@ export const replies = createReplyActions({
 		// A change (고치기, 직접 고치기) keeps its card open: the revise moves it to the new draft, the edit redraws it in place. Its record names no
 		// card, since a message that names one answers it (notices-store.ts ownerReplied).
 		const settles = card && draftActionOf(label) !== "edit";
-		recordAnswer({ source: surface === "discord" ? "discord" : "web", channel: channelOf(conv), author: "owner", text: `${said}${note ? ` - ${note}` : ""}`, picks: [{ q: card?.title ?? q, n, label, ...(hash ? { hash } : {}) }], ...(settles ? { decision: card.id } : {}), ...(from ? { from } : {}) });
+		recordAnswer({ source: surface === "discord" ? "discord" : "web", channel: channelOf(conv), author: "owner", text: `${said}${note ? ` - ${note}` : ""}`, picks: [{ q: card?.title ?? q, n, label, ...(hash ? { hash } : {}), ...(until !== undefined ? { until } : {}) }], ...(settles ? { decision: card.id } : {}), ...(from ? { from } : {}) });
 		if (settles) settleOpenDecision(card.id, said);
 	},
 	recordText: (conv, text) => recordAnswer({ source: "web", channel: channelOf(conv), author: "owner", text, picks: [] }),

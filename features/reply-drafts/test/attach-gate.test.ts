@@ -12,6 +12,7 @@ import { paths } from "../lib/settings.ts";
 import { addStagedFile, stagedFiles } from "../lib/staged.ts";
 import { addDraft, type DraftRec, getDraft } from "../lib/store.ts";
 import { enable, setupEnv } from "./helpers.ts";
+import { mailHash } from "../lib/view.ts";
 import { appendSealed } from "../../../hub/approval-seal.ts";
 
 const env = setupEnv();
@@ -34,8 +35,9 @@ function draft(body: string, extra: Partial<DraftRec> = {}): DraftRec {
 	addDraft(rec);
 	return rec;
 }
+// A pick names the version the card showed: the draft as stored when it is made.
 const choose = (id: string, k: number, label: string) =>
-	appendSealed(join(env.dir, "inbox.jsonl"), { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: `${k}) ${label}`, picks: [{ q: `이 답장 보낼까요? (${id})`, n: k, label }] });
+	appendSealed(join(env.dir, "inbox.jsonl"), { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: `${k}) ${label}`, picks: [{ q: `이 답장 보낼까요? (${id})`, n: k, label, hash: mailHash(getDraft(id)!) }] });
 function fakeSend() {
 	const sent: string[] = [];
 	return { sent, send: async (r: DraftRec) => (sent.push(r.id), { ok: true, message: "보냈어요" }) };

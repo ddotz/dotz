@@ -118,7 +118,7 @@ test("a send whose card was already answered reports to the card's conversation,
 function spy(sender: ReturnType<typeof createApprovalSender>): SendJob[] {
 	const jobs: SendJob[] = [];
 	const enqueue = sender.enqueue;
-	sender.enqueue = j => (jobs.push(j), enqueue(j));
+	sender.enqueue = (j, approved) => (jobs.push(j), enqueue(j, approved));
 	return jobs;
 }
 

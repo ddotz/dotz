@@ -152,6 +152,8 @@ describe("sendDraft: the gate and the outcome", () => {
 		expect(await step(rec())).toBe("fail no file_pending");
 		rmSync(paths.drafts(), { force: true });
 		addDraft(rec({ subject: "문의", item: { kind: "mail", text: "문의드립니다", from: "Kim <kim@example.com>", subject: "문의" } } as Partial<DraftRec>));
+		// Another version of the draft: the owner's 보내기 names this one.
+		pick(env, "ROUT01", 1);
 		expect(await step(rec())).toBe("fail no subject_re");
 	});
 

@@ -25,6 +25,7 @@ async function raLoad() {
     RA.loaded = true;
   } catch (e) { RA.err = e; }   // the next event or open reads it again; what was shown stays
   for (const ref of [...RA.nodes.keys()]) raPaint(ref, undefined, true);
+  paintDecision();   // a send approval the queue now holds leaves the dock for its card (10-decision-card.js dcQueued)
 }
 const raSoon = () => { clearTimeout(RA.t); RA.t = setTimeout(raLoad, 300); };
 
@@ -46,6 +47,7 @@ function raFixMove(ref, next) {
 // The reply event: one item changed (its draft, its send) or was replaced by a revise (`next`); a card shown anywhere follows at once.
 function raLive(e) {
   if (!e || !e.ref) return;
+  const fresh = !!e.item && !RA.items.has(e.item.ref);
   if (e.item) RA.items.set(e.item.ref, e.item);
   const it = RA.items.get(e.ref);
   if (e.send && it) it.send = e.send;
@@ -61,6 +63,7 @@ function raLive(e) {
   }
   if (!it && !e.item) raSoon();
   raPaint(e.ref, undefined, true);
+  if (fresh) paintDecision();   // a draft the queue did not hold yet: its question leaves the dock (10-decision-card.js dcQueued)
   tqLive();
 }
 
@@ -195,8 +198,9 @@ async function raRowsApply(ref, rows) {
   for (; f.add.length; f.add.shift()) await (f.add[0].file ? drfUpload(ref, f.add[0].file) : drfWrite(ref, { library: f.add[0].library }));
 }
 /** 고치기 (the panel): the draft's text as a field in the body's own place (답글 / 메일 choosing which part it shows), a mail's 제목 as a field and its 받는이 and 첨부 rows
- *  open in their own places, then one optional line to the AI, and 반영 · 닫기. 반영 writes the marked rows first, then posts `edit` for each part whose text or subject
- *  changed, then `revise` when the line is filled, so the AI works from the saved text; with nothing changed it is off. Nothing here can send, and 닫기 forgets every
+ *  open in their own places, then one optional line to the AI, and 반영 · 닫기. 반영 checks the version first: it posts `edit` (with the hash the panel opened on) for
+ *  each part whose text or subject changed, or, with only rows marked, reads the queue again and compares the hash; a draft that moved meanwhile is refused
+ *  `changed` before any row is written (qa-clean-3 M3). Then the marked rows, then `revise` when the line is filled, so the AI works from the saved text; with nothing changed it is off. Nothing here can send, and 닫기 forgets every
  *  change, the rows' too. Cmd/Ctrl+Enter (Enter in the AI line) is 반영, Esc is 닫기; a refusal keeps what was typed, with its cause above the buttons.
  *  lead: 반영 is the filled control (this card's 보내기 is away while the panel is open); elsewhere another card holds it, so 반영 is tonal.
  *  Returns { body, foot, card (the card's own parts as fields and open rows), mail (draftMailNode's `fix`) }. */
@@ -217,18 +221,28 @@ function rqFixNodes(item, lead) {
   const save = async () => {
     if (!ready()) return;
     const todo = edits(), change = st.note.trim();
-    if (marked()) {
+    // Only rows marked: the queue is read again and its hash compared first. Refused as changed (here, or by the hub's `edit` below), the panel now
+    // stands on the version the hub has, so a second 반영 saves over it knowingly; the typed text and the marks stay, and no row was written.
+    if (marked() && !todo.length) {
       st.busy = true; RA.fail.delete(ref); raPaint(ref);
-      // The queue is read again before anything else: the item must carry the hash of the rows as they are now, or the next 보내기 would be refused as changed.
-      try { await raRowsApply(rowRef, rows); await raLoad(); st.hash = (RA.items.get(ref) || item).draft.hash; }
-      catch (e) { RA.fail.set(ref, { text: e instanceof TypeError ? TX("decision.err.offline_change") : e.message }); return; }
-      finally { st.busy = false; raPaint(ref); }
+      await raLoad();
+      st.busy = false;
+      // A queue that could not be read says nothing of the version: nothing is written.
+      if (RA.err) { RA.fail.set(ref, { text: TX("decision.err.offline_change") }); raPaint(ref); return; }
+      const now = (RA.items.get(ref) || item).draft.hash;
+      if (now !== st.hash) { st.hash = now; RA.fail.set(ref, { text: TX("reply.fix.changed"), code: "changed" }); raPaint(ref); return; }
     }
     for (const p of todo) {
       const ok = await raAct(item, "edit", { text: st.text[p].trim(), ...(moved("subject", p) ? { subject: st.subject[p].trim() } : {}), ...(d.mail ? { part: p } : {}), ...(st.hash ? { hash: st.hash } : {}) });
-      // Saved, or refused as changed: the panel now stands on the version the hub has, so a second 반영 after the refusal saves over it knowingly. The typed text stays.
       st.hash = (RA.items.get(ref) || item).draft.hash;
       if (!ok) return;
+    }
+    if (marked()) {
+      st.busy = true; RA.fail.delete(ref); raPaint(ref);
+      // The queue is read again after the rows: the item must carry the hash of the rows as they are now, or the next 보내기 would be refused as changed.
+      try { await raRowsApply(rowRef, rows); await raLoad(); st.hash = (RA.items.get(ref) || item).draft.hash; }
+      catch (e) { RA.fail.set(ref, { text: e instanceof TypeError ? TX("decision.err.offline_change") : e.message }); return; }
+      finally { st.busy = false; raPaint(ref); }
     }
     if (change) {
       RA.asked.set(ref, { note: change, part: st.part });
@@ -308,12 +322,12 @@ function rqItemCard(item, opts = {}) {
 // the card in its place. Returns [block, node] for every send block that names a ref.
 function raInline(blocks, draw) {
   return blocks.flatMap(b => {
-    const m = SEND_LABELS.test(b.options.map(o => o.label).join("|")) && /\(([A-Za-z0-9]{2,16})\)\s*$/.exec(b.title);
-    if (!m) return [];
+    const ref = dcSendRef(b);
+    if (!ref) return [];
     const make = it => el("div", { class: "ra-inl" }, rqItemCard(it));
-    if (RA.items.has(m[1])) return [[b, make(RA.items.get(m[1]))]];
+    if (RA.items.has(ref)) return [[b, make(RA.items.get(ref))]];
     const node = draw([b]);
-    raReg(m[1], { node, make });
+    raReg(ref, { node, make });
     return [[b, node]];
   });
 }

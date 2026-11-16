@@ -757,8 +757,8 @@ test("a card rewritten to a newer draft of the same mail switches the open notic
 	// 보내기 on this card records its title as the pick: the send gate looks for the draft's own id there (features/reply-drafts/lib/flow.ts sendDraft).
 	expect(open[0]!.title).toBe("이 답장 보낼까요? (RAYVKXK)");
 	const inbox = join(mkdtempSync(join(tmpdir(), "notice-pick-")), "inbox.jsonl");
-	writeFileSync(inbox, `${sealLine(inbox, { ts: new Date().toISOString(), kind: "message", source: "web", channel: "mail:acct-1a1a", text: "결정 답", picks: [{ q: open[0]!.title, n: 1, label: DRAFT_SEND }] })}\n`);
-	expect(draftVerdict(inbox, "RAYVKXK", 0).verdict).toBe("send");
+	writeFileSync(inbox, `${sealLine(inbox, { ts: new Date().toISOString(), kind: "message", source: "web", channel: "mail:acct-1a1a", text: "결정 답", picks: [{ q: open[0]!.title, n: 1, label: DRAFT_SEND, hash: "h-shown" }] })}\n`);
+	expect(draftVerdict(inbox, "RAYVKXK", 0, "h-shown").verdict).toBe("send");
 });
 
 test("a session [ask] makes one decision for that session, a repeated copy adds none, and only a reply in that session settles it", () => {

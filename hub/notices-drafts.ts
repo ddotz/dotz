@@ -50,15 +50,19 @@ export const onDraftCardRefreshed = (fn: (n: Notice) => void): void => void refr
 let fingerprint: (ref: string) => Promise<{ hash: string; text?: string } | undefined> = async () => undefined;
 export const setCardFingerprint = (fn: typeof fingerprint): void => void (fingerprint = fn);
 const cardBody = (text: string): string => parseTone(stripHandoff(text)).text.trim();
+// The latest stamp started on each card: only its read is kept, so an earlier read that answers later never undoes a newer one.
+const stamping = new WeakMap<Notice, number>();
 function stamp(hit: Notice[]): Promise<void> {
 	const runs: Promise<void>[] = [];
 	for (const n of hit) {
 		const shown = n.decision?.draft, ref = shown?.ref, text = n.text;
 		if (!ref) continue;
+		const turn = (stamping.get(n) ?? 0) + 1;
+		stamping.set(n, turn);
 		const run = fingerprint(ref).then(
 			now => {
-				// Drawn again meanwhile: that drawing keeps its own fingerprint.
-				if (n.text !== text || n.decision?.draft?.ref !== ref) return;
+				// Drawn again or stamped again meanwhile: that drawing or stamp keeps its own fingerprint.
+				if (stamping.get(n) !== turn || n.text !== text || n.decision?.draft?.ref !== ref) return;
 				const store = now?.text ? parseDraftApproval(cardBody(now.text)) : undefined;
 				const h = store && sameDraft(store, shown) ? now!.hash : undefined;
 				if (n.decision.hash === h) return;

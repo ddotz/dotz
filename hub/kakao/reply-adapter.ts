@@ -6,14 +6,13 @@ import { isReasonCode } from "../reply-reasons.ts";
 import type { DraftView, ReasonCode, ReplyAdapter, SendOutcome } from "../reply-types.ts";
 import { dispatchSend, type DispatchDeps } from "./contract.ts";
 import type { Made } from "./make-draft.ts";
-import { confirmSent, type Draft, draftBlock, dropDraft, editDraft, readDrafts, restoreDraft, type SendResult } from "./send.ts";
+import { confirmSent, type Draft, draftBlock, dropDraft, editDraft, kakaoView, readDrafts, restoreDraft, type SendResult } from "./send.ts";
 import type { KakaoPaths } from "./types.ts";
 
 /** What createKakaoWeb hands the adapter: the store, a revise through its own model call, and the deps of one send. */
 // original: the message a draft answers (absent in tests that build the adapter alone).
 export type KakaoKit = { paths: KakaoPaths; original?: (d: Draft) => Promise<DraftView["original"]>; revise: (chatId: string, revise: { code: string; draft: string; change: string }) => Promise<Made>; sendDeps: () => Promise<DispatchDeps> };
 
-const STATE: Record<string, DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent" };
 const codeOf = (c: string | undefined): ReasonCode => (isReasonCode(c) ? c : "unknown");
 
 /** A send result as the queue reads it: sent, surely not sent, may be in the room, or some parts in. */
@@ -27,34 +26,10 @@ export function outcomeOf(r: SendResult): SendOutcome {
 
 export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 	const draftOf = (ref: string): Draft | undefined => readDrafts(kit.paths).find(d => d.code === ref);
-	const viewOf = (d: Draft): DraftView => {
-		const pending = d.status === "pending";
-		const before = d.replaces ? draftOf(d.replaces) : undefined;
-		const fixed = (d.sentParts ?? 0) > 0;
-		return {
-			item: `kakao:${d.chatId}`,
-			ref: d.code,
-			kind: "kakao",
-			app: "kakao",
-			label: d.roomName,
-			conv: `kakao:${d.chatId}`,
-			at: Date.parse(d.created) || 0,
-			can: { send: pending, revise: pending && !fixed, edit: pending && !fixed, drop: pending && !fixed, restore: d.status === "dropped" },
-			draft: {
-				state: d.status === "sent" && d.unconfirmed ? "pending" : (STATE[d.status] ?? "closed"),
-				toLabel: "대화방",
-				to: d.roomName,
-				text: d.text,
-				...(d.sentParts ? { sentParts: d.sentParts } : {}),
-				...(d.notes?.length ? { notes: d.notes } : {}),
-				...(before ? { replaces: { ref: before.code, text: before.text } } : {}),
-				...(d.editedFrom !== undefined ? { edited: true as const } : {}),
-			},
-		};
-	};
-	// The card quotes the message it answers; a database that cannot be read leaves the draft without the quote.
+	// The card quotes the message it answers; a database that cannot be read leaves the draft without the quote. The view itself is the one the
+	// inbox verdict hashes too (send.ts kakaoView).
 	const withOriginal = async (d: Draft): Promise<DraftView> => {
-		const v = viewOf(d), original = kit.original ? await kit.original(d).catch(() => undefined) : undefined;
+		const v = kakaoView(d, readDrafts(kit.paths)), original = kit.original ? await kit.original(d).catch(() => undefined) : undefined;
 		return original ? { ...v, original } : v;
 	};
 	const done = (r: SendResult) => (r.ok ? { ok: true as const } : { ok: false as const, reason: { code: codeOf(r.code), text: r.reason ?? "" } });

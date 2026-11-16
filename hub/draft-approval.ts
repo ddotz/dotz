@@ -28,7 +28,9 @@ import { isSealed, readSealKey } from "./approval-seal.ts";
 import { withFileWords } from "./auto-attach.ts";
 import { mailLineText, type DraftBrief } from "./mail-lines.ts";
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { DECISION_HEAD, issueBlock, parseDecisions } from "./choices.ts";
+import type { DraftView, FileShown } from "./reply-types.ts";
 
 export const DRAFT_SEND = "보내기";
 export const DRAFT_EDIT = "고치기";
@@ -564,7 +566,30 @@ export const draftNeedsText = (label: string): boolean => {
 	return a === "edit" || a === "own";
 };
 
-export type DraftVerdict = { verdict: DraftAction | "none"; detail?: string };
+/** The fingerprint of what a send would carry: recipients, subject, text, parts, files (name, size and, for a file held locally, its content) and a
+ * bundled mail. Display fields (labels, notes, state) are not in it. The one definition: the gateway's gate (hub/approval-send.ts), every act's
+ * pick and the CLIs' draftVerdict all compare this. Kept here, beside draftVerdict, so a CLI computes it without loading the gateway. */
+export function approvalHash(view: DraftView): string {
+	const d = view.draft;
+	const files = (list?: FileShown[]) => (list ?? []).map(f => `${f.name}\n${f.size ?? ""}\n${f.digest ?? ""}`).sort();
+	const mail = d.mail ? { to: d.mail.to, subject: d.mail.subject ?? "", text: d.mail.text, attachments: files(d.mail.attachments) } : null;
+	const body = { to: d.to, cc: [...(d.cc ?? [])].sort(), subject: d.subject ?? "", text: d.text, parts: d.parts ?? [], attachments: files(d.attachments), mail };
+	return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
+}
+
+/** `changed`: the owner's latest word is a send, but of another version than the store holds now (or a pick that names none). `waiting`: his
+ * 보내기 is held by the gateway and its sender has not started it (inside the undo window, or the gateway is down). `spent`: the gateway already
+ * tried that 보내기 and it did not go out; only his 다시 보내기 (a new pick) sends again. Every CLI refuses all three. `token`: the seal of the
+ * line that lets a send through (the gateway's `go` mark, or a pick held by no gateway), so a CLI lets one run through per approval; `go`: it is a mark. */
+export type DraftVerdict = { verdict: DraftAction | "none" | "changed" | "waiting" | "spent"; detail?: string; token?: string; go?: true };
+/** The CLIs' lines for a `waiting` and a `spent` verdict. */
+export const WAITING_REFUSED = "사용자가 보내기를 눌렀지만 게이트웨이가 아직 보내기 시작하지 않아서(되돌리기 시간 중이거나 게이트웨이가 꺼져 있어요) 보내지 않았어요. 게이트웨이가 보내요. 직접 보내지 마세요";
+export const SPENT_REFUSED = "이 보내기로 보낸 시도가 이미 끝났고 나가지 않았어요. 다시 보내려면 사용자가 카드에서 다시 보내기를 눌러야 해요";
+/** The inbox kind of the gateway sender's marks on a 보내기 (hub/approval-send.ts `mark`): `go` right before its sender runs it, `spent` after a
+ * run of it did not go out. */
+export const SEND_GATE = "send_gate";
+// The picks that let a CLI send: each must name the version it approved (its approvalHash).
+const SENDING = new Set<DraftAction>(["send", "send-main", "send-mail", "send-as-is", "own"]);
 const OWNER_SOURCES = new Set(["web", "discord", "terminal"]);
 const TAIL_BYTES = 2 * 1024 * 1024;
 
@@ -595,19 +620,40 @@ const parsedLine = <T>(line: string): T | undefined => {
 // on its card wins. Only a line the gateway sealed counts, from the owner's own surfaces (web, discord, terminal; not a session's lane_message). Typed
 // chat is never read here (the reply intent design, 2026-11-16): the model reads it, and every send the hub queues follows a pick it sealed. For
 // 고치기 the detail is the change the owner typed ("2) 고치기 - <change>"), for 직접 입력 how to send it.
-export function draftVerdict(inboxPath: string, ref: string, sinceMs: number): DraftVerdict {
+// `current`: the approvalHash of the draft as its store holds it now, computed by the caller from the same view the gateway reads. A send pick
+// counts only when it carries that very hash (owner rule 2026-11-16: what goes out is the version he saw when he pressed 보내기); a pick with
+// another hash, or none, is `changed`. A send the gateway refused `changed` or he took back is followed by 보내기 취소 (undo), so it never counts again.
+// The gateway's own start (qa-clean-7 N13, qa-clean-8 N14/N15): a 보내기 the gateway holds carries the end of its undo window (`until`), and it
+// is `waiting` until the gateway's sender seals a `go` mark right before it runs the job: not the clock, so a gateway that is down across the
+// window's end lets no CLI send (its restart takes the job back, as it always did). After a run failed (or may have gone out) the sender seals
+// `spent`; each later run of the gateway (다시 보내기, code's own retry) seals a new `go` first. Both marks are sealed lines in this one inbox, so
+// every process reads one record; the `token` (the granting line's seal) lets a CLI hold one approval to one run (features/reply-drafts/lib/flow.ts).
+export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, current: string | undefined): DraftVerdict {
 	const tag = `(${ref})`;
-	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown };
+	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown; ref?: unknown; mark?: unknown; action?: unknown; hash?: unknown; seal?: unknown };
 	// Only a line the gateway sealed (hub/approval-seal.ts) is the owner's word: a line appended to the file by another process is not.
 	const key = readSealKey(inboxPath);
 	let out: DraftVerdict = { verdict: "none" };
 	for (const line of tailLines(inboxPath)) {
 		const e = parsedLine<Entry>(line);
+		if (e?.kind === SEND_GATE && e.ref === ref && typeof e.ts === "string" && Date.parse(e.ts) > sinceMs && isSealed(key, e)) {
+			if (e.mark === "spent" && (out.verdict === "waiting" || SENDING.has(out.verdict as DraftAction))) out = { verdict: "spent" };
+			else if (e.mark === "go" && typeof e.action === "string" && SENDING.has(e.action as DraftAction)) out = current && e.hash === current ? { verdict: e.action as DraftAction, token: String(e.seal), go: true } : { verdict: "changed" };
+			continue;
+		}
 		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !Array.isArray(e.picks) || !isSealed(key, e)) continue;
-		for (const p of e.picks as { q?: unknown; label?: unknown }[]) {
+		for (const p of e.picks as { q?: unknown; label?: unknown; hash?: unknown; until?: unknown }[]) {
 			if (typeof p?.q !== "string" || !p.q.includes(tag) || typeof p.label !== "string" || !draftActionOf(p.label)) continue;
+			if (SENDING.has(draftActionOf(p.label)!) && (!current || p.hash !== current)) {
+				out = { verdict: "changed" };
+				continue;
+			}
+			if (SENDING.has(draftActionOf(p.label)!) && typeof p.until === "number") {
+				out = { verdict: "waiting" };
+				continue;
+			}
 			const detail = draftNeedsText(p.label) && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
-			out = { verdict: draftActionOf(p.label)!, ...(detail ? { detail } : {}) };
+			out = { verdict: draftActionOf(p.label)!, ...(detail ? { detail } : {}), ...(SENDING.has(draftActionOf(p.label)!) ? { token: String(e.seal) } : {}) };
 		}
 	}
 	return out;
