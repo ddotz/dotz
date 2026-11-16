@@ -15,7 +15,7 @@ import { readSecretFile, writeSecretFile } from "./secretbox.ts";
  *  `notify: false`: its new replies raise no phone notification (the default notifies, hub/jandi-peers.ts peerReplyPush). */
 export type SelfChatPeer = { name: string; keyword: string; reply_prefix: string; notify?: false };
 /** `share_status: true`: this computer posts a short summary of itself behind its reply prefix (hub/relay-snapshot-send.ts); off when absent.
- *  `status_room_id`: where those summaries go and are read, a JANDI private topic whose only member is the owner, so they never show in the owner's chat; without one nothing is posted. */
+ *  `status_room_id`: where those summaries go and are read, a JANDI private topic whose only member is the owner, so they stay out of the owner's chat; without one they go into the self chat as before. */
 export type SelfChatConfig = { enabled: boolean; team_id: number; room_id: number; member_id: number; bot_id: number; keyword: string; reply_prefix: string; session_secret: string; interval_ms: number; peers?: SelfChatPeer[]; share_status?: true; status_room_id?: number };
 export type SelfChatDeps = {
 	dataDir: string;

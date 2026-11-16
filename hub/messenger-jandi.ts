@@ -313,7 +313,8 @@ function runSelfChat(dataDir: string, sc: SelfChatConfig, chat: SelfChat, log: (
 		// Loaded when it runs: the gateway's state modules (sessions, monitors, projects) are not this adapter's imports.
 		build: async () => (await import("./relay-snapshot-source.ts")).currentSnapshot(Date.now()),
 		post: async (text, room) => {
-			if (checked !== room) await checkStatusRoomOf(chat.get, sc, room);
+			// A status room is checked to be the owner's alone before the first post; the self chat (no status room set) is the room the chat already checked.
+			if (room !== sc.room_id && checked !== room) await checkStatusRoomOf(chat.get, sc, room);
 			checked = room;
 			await chat.post(`message-api/v3/teams/${sc.team_id}/rooms/${room}/messages`, 3, messageBody(text));
 			mark("self_chat", { last_out: Date.now() });

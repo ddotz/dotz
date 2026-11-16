@@ -163,8 +163,14 @@ describe("createSnapshotSender", () => {
 		expect(state.rooms).toEqual([9]);
 	});
 
-	test("posts nothing when the switch is off, the prefix is empty, there is no status room, or the chat is not ready", async () => {
-		for (const c of [cfg({ share_status: undefined }), cfg({ reply_prefix: "" }), cfg({ status_room_id: undefined }), cfg({ enabled: false }), undefined]) {
+	test("without a status room it posts into the self chat, as before the status room existed", async () => {
+		const { state, sender } = rig(() => cfg({ status_room_id: undefined }));
+		await sender.tick();
+		expect(state.rooms).toEqual([2]);
+	});
+
+	test("posts nothing when the switch is off, the prefix is empty, or the chat is not ready", async () => {
+		for (const c of [cfg({ share_status: undefined }), cfg({ reply_prefix: "" }), cfg({ enabled: false }), undefined]) {
 			const { state, sender } = rig(() => c);
 			await sender.tick();
 			expect(state.posts).toEqual([]);
