@@ -74,7 +74,7 @@ const snapHomeSoon = () => { if (Date.now() - snapHomeAt >= SNAP_HOME_EVERY_MS) 
 async function snapHomeSeed() {
   const rec = await Promise.race([window.__snapHome, new Promise(r => setTimeout(r, SNAP_HOME_WAIT_MS))]);
   if (!rec || rec.v !== 1 || S || Date.now() - rec.at > SNAP_HOME_MAX_MS) return;
-  S = { ...rec.state, seeded: true };
+  stateSet({ ...rec.state, seeded: true });
   if (!NT.loaded) { NT.items = rec.notices; NT.unread = rec.unread; }
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { snapSave(target); snapHomeSave(); } });

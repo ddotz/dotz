@@ -98,7 +98,7 @@ async function deleteEnded(names) {
     const ok = r.results.filter(x => x.ok), bad = r.results.filter(x => !x.ok);
     await Promise.all([...document.querySelectorAll(".ended [data-lane]")].filter(n => ok.some(x => x.name === n.dataset.lane)).map(n => motionGone(n)));   // the deleted rows fold away once the hub said yes
     endedSel = null;
-    if (S && S.lanes) S.lanes = S.lanes.filter(l => !ok.some(x => x.name === l.name));
+    if (S && S.lanes) stateMerge({ lanes: S.lanes.filter(l => !ok.some(x => x.name === l.name)) });
     refreshEnded();
     refreshState();
     if (ok.length) toast(ok.length === 1 ? TX("base.ended.deleted_one", { name: ok[0].name }) : TX("base.ended.deleted_many", { n: ok.length }), false, { label: TX("common.undo"), onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);

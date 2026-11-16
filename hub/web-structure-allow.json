@@ -67,8 +67,6 @@
       "QUEUE|99-boot.js": 1,
       "RQ|30-monitoring.js": 1,
       "RQ|30-triage.js": 4,
-      "S|37-remote-desktop.js": 1,
-      "S|99-boot.js": 1,
       "chatStick|04-state.js": 1,
       "chatStick|10-decision-card.js": 2,
       "chatStick|13-data.js": 1,

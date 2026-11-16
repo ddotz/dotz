@@ -90,6 +90,9 @@ function stateRenderErr(e) {
   fetch("/api/input-diag", { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: JSON.stringify({ app: typeof WEB_BUILD === "string" ? WEB_BUILD : "", entries: [entry] }) })
     .catch(err => console.warn("state-err report", err));
 }
+// S (the /api/state answer) is written only here: whole replacement or a merge of fields into the current one (nothing before the first answer).
+function stateSet(next) { S = next; }
+function stateMerge(part) { if (S) Object.assign(S, part); }
 async function refreshState() {
   try {
     const slow = setTimeout(() => setConn(false), STATE_WAIT_MS - 2000);
