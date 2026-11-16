@@ -15,17 +15,18 @@ flowchart LR
   subgraph a_chat["chat"]
     c_chat(["chat code"])
     o_chat_ask["ask (5)"]
+    o_chat_dialog["dialog (1)"]
     o_chat_float["float (1)"]
     o_chat_fsOpen["fsOpen (1)"]
     o_chat_menu["menu (7)"]
     o_chat_overlay["overlay (1)"]
-    o_chat_rawdialog["rawdialog (2)"]
+    o_chat_rawdialog["rawdialog (1)"]
     o_chat_reveal["reveal (3)"]
     o_chat_toast["toast (48)"]
   end
   subgraph a_comments["comments"]
     c_comments(["comments code"])
-    o_comments_rawdialog["rawdialog (1)"]
+    o_comments_dialog["dialog (1)"]
     o_comments_toast["toast (6)"]
   end
   subgraph a_core["core"]
@@ -82,7 +83,8 @@ flowchart LR
   end
   subgraph a_kakao["kakao"]
     c_kakao(["kakao code"])
-    o_kakao_rawdialog["rawdialog (3)"]
+    o_kakao_dialog["dialog (2)"]
+    o_kakao_rawdialog["rawdialog (1)"]
     o_kakao_toast["toast (18)"]
   end
   subgraph a_mail["mail"]

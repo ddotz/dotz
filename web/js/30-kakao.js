@@ -356,17 +356,13 @@ function kkBars(values, labels, title) {
 function kkPerson(uid) {
   uid = String(uid || "");
   const id = KK.open;
-  if (!uid || !id) return;
+  if (!uid || !id || document.querySelector("dialog.kk-pd[data-uid]:not([data-leaving])")) return;
   const who = KK.msgs.find(m => !m.fromMe && String(m.authorId) === uid);
   const name = who ? who.sender || TX("apps.kk.other") : TX("apps.kk.other");
-  const body = el("div", { class: "kk-pd-b" }, el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
-  const d = el("dialog", { class: "kk-pd", "data-uid": uid, "aria-label": TX("apps.kk.person_aria", { name }) },
-    el("div", { class: "kk-pd-in" },
-      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: TX("apps.kk.person") })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))),
-      body));
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
-  d.addEventListener("close", () => d.remove());
+  const body = el("div", null, el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
+  const d = dialog({ title: TX("apps.kk.person"), body: [el("div", { class: "kk-pwho" }, kkAvatar(name), el("span", { class: "cv-n", text: name })), body] }).node;
+  d.classList.add("kk-pd"); d.dataset.uid = uid; d.setAttribute("aria-label", TX("apps.kk.person_aria", { name }));
+  d.querySelector(".fs-x").dataset.k = "close";
   api(`/api/kakao/person/${enc(uid)}?room=${enc(id)}`).then(r => { if (d.isConnected) kkPersonPaint(d, body, r); }, e => { if (d.isConnected) clear(body).append(el("div", { class: "kk-note", role: "status", text: e.message })); });
 }
 function kkPersonPaint(d, body, r) {
@@ -568,14 +564,9 @@ function kkPickRows() {
 function kkAddOpen() {
   if (KK.adding) return;
   KK.q = ""; kkSearch.value = "";
-  const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": TX("apps.kk.add_title") },
-    el("div", { class: "kk-pd-in", tabindex: "-1", autofocus: true },
-      fsHead([el("h2", { class: "fs-t", text: TX("apps.kk.add_title") })], { close: () => d.close() }),
-      el("div", { class: "kk-pd-b" }, el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows()))));
-  KK.adding = d;
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
-  d.addEventListener("close", () => { if (KK.adding === d) KK.adding = null; d.remove(); });
+  const d = KK.adding = dialog({ title: TX("apps.kk.add_title"), onclose: () => { KK.adding = null; },
+    body: [el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows())] }).node;
+  d.id = "kk-add"; d.classList.add("kk-pd", "kk-add"); d.setAttribute("aria-label", TX("apps.kk.add_title"));
 }
 function kkRow(r) {
   const on = KK.open === r.chatId, sub = kkSubLine(r), time = r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null;

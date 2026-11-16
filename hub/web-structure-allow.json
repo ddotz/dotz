@@ -13,12 +13,8 @@
       "overlay:prOpen",
       "overlay:showSheet",
       "overlay:trPaneOpen",
-      "rawdialog:cmPickOpen",
-      "rawdialog:kkAddOpen",
-      "rawdialog:kkPerson",
       "rawdialog:kkViewer",
-      "rawdialog:lightboxAt",
-      "rawdialog:viewer"
+      "rawdialog:lightboxAt"
     ],
     "ownerWrites": {},
     "rawNet": {
@@ -37,6 +33,8 @@
   },
   "reasons": {
     "currentAssign 05-command-palette.js": "go() is the one navigation entry and the only place current changes.",
+    "overlaySites rawdialog:kkViewer": "KakaoTalk's photo and video viewer is the same lightbox (dialog.lbox.kk-vwd, docs/ui-spec.md lightbox): a media stage with previous and next, not a window.",
+    "overlaySites rawdialog:lightboxAt": "The lightbox (dialog.lbox, docs/ui-spec.md lightbox) is a media stage of its own, not a window: a fitted picture, pinch and double-tap zoom, arrows and swipe between pictures. Pinned by hub/composer-image-web.test.ts and hub/ask-sheet-images-web.test.ts.",
     "rawNet 01-forbidden-pair.js": "window.fetch wrapper: every response, api() or raw, passes the pairing gate (403 with X-Dotz-Pair) first.",
     "rawNet 11-mailbody.js": "the mail's stored HTML body (text, not JSON, which api() would turn into null) and inline image blobs read through a cache-friendly fetch, not JSON calls.",
     "rawNet 15-attachments.js": "file bodies and HEAD probes of attachments, not JSON calls.",

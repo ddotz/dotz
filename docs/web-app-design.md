@@ -733,7 +733,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 메시지 속 파일 칩, 뷰어, 라이트박스
 - 목적: 메시지에 붙은 파일/`[file]` 줄/본문 속 경로를 칩, 썸네일, 미리보기로 열어요.
-- 구성: `.mfiles > .fitem`(`.fbox`: 칩 `a/button .fatt` 또는 썸네일 `button.thumb`, 다운로드 `a.fdl`; 번호 `.tag.img-no`; 경로 `button.fpath`). 뷰어 `dialog.tbox`(`.tv-bar`: `.tv-n`, `다운로드`, 닫기 x; `.tv-body.md`). 라이트박스 `dialog.lbox`(`.lb-bar`: `새 탭`, `다운로드`, 닫기; `.lb-p`; `.lb-img`).
+- 구성: `.mfiles > .fitem`(`.fbox`: 칩 `a/button .fatt` 또는 썸네일 `button.thumb`, 다운로드 `a.fdl`; 번호 `.tag.img-no`; 경로 `button.fpath`). 뷰어는 공용 `dialog()`의 큰 카드 `dialog.dlg.fs-card.tall.tbox`(머리: 제목 `.tv-n`에 파일 이름, 오른쪽에 `다운로드`와 닫기 ✕; 본문 `.tv-body.md`). 라이트박스 `dialog.lbox`(`.lb-bar`: `새 탭`, `다운로드`, 닫기; `.lb-p`; `.lb-img`).
 - 기능: 이미지는 라이트박스, 텍스트류(`md, markdown, txt, log, json, yml/yaml, csv, tsv`)는 뷰어(마크다운은 렌더, 그 밖은 `pre`), HTML(이 컴퓨터)은 캔버스(`canvasOpen`), 나머지는 새 탭. 칩마다 `다운로드`(title `${이름} 다운로드`). 경로 버튼은 짧은 경로(`~/…/폴더/파일`)를 보이고 탭하면 전체 경로를 복사(`경로를 복사했어요` 또는 `복사하지 못했어요`). 본문의 ``code.path`` 경로는 `미리보기`(title)로 열고 이미지는 최대 4개 인라인 미리보기. `[file]` 줄(`check`)은 HEAD로 먼저 확인해 크기를 채우거나 비활성 칩으로.
 - 상태: 확인 실패 칩 문구 `원본이 지워졌어요`(404), `열 수 없는 파일이에요`, `확인하지 못했어요`(네트워크), 서버가 `x-file-note`를 주면 그 문구. 뷰어 `불러오는 중…`, 200KB 초과 시 `앞부분만 보여요. 전체는 다운로드해 주세요`, 열기 실패 `열 수 없어요`. 경로 열기 실패는 토스트(같은 문구). 폰(`max-width:639px`)에서 `dialog.tbox`가 전체 화면. 터치는 다운로드 버튼 36px. 다른 컴퓨터 대화 파일은 `/api/peer/file`을 프록시로 읽어요.
 - 데이터: `GET /api/file?path=...[&download=1]`(HEAD 확인 포함), 다른 컴퓨터 `GET /api/peer/file?path=...`.
@@ -1411,10 +1411,10 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 - 목적: 어느 소스의 어떤 글을 지켜볼지, 자동 초안과 메일을 켜고 끌 수 있어요.
 - 구성: `dialog#cm-pick.kk-pd.kk-add`(aria `지켜볼 글`, 제목 `지켜볼 글`, 닫기 버튼 aria `닫기`), 안내 `자동 초안은 새 댓글마다 답글 초안을 만들어서 토큰이 들어요.`, 소스마다 스위치 3개(`<라벨> 전부 지켜보기`, `자동 초안`, `파일 요청 메일 초안`)와 누르는 줄 `지켜볼 글 고르기`(오른쪽 화살표), 글별 스위치 목록(`data-post`).
-- 기능: 열기 `cmPickOpen(app)`(앱 설정 행 `asPickRow` 또는 빈 목록의 `지켜볼 글 고르기`; 제목은 `지켜볼 대화방`과 같은 `fsHead`의 `h2.fs-t`, `지켜볼 글 고르기`는 설정 화면의 누르는 줄 `button.li.tap`과 화살표), 스위치는 `PUT /api/comments/sources/<key>` (`cmUpdate`), 글 목록 `cmPosts`로 한 번만 `GET .../posts`. 배경 탭이나 닫기로 닫아요.
+- 기능: 열기 `cmPickOpen(app)`(앱 설정 행 `asPickRow` 또는 빈 목록의 `지켜볼 글 고르기`; `지켜볼 대화방`과 같은 공용 `dialog()` 창이라 머리는 `fsHead`의 `h2.fs-t`, `지켜볼 글 고르기`는 설정 화면의 누르는 줄 `button.li.tap`과 화살표), 스위치는 `PUT /api/comments/sources/<key>` (`cmUpdate`), 글 목록 `cmPosts`로 한 번만 `GET .../posts`. 배경 탭이나 닫기로 닫아요.
 - 상태: 소스 없음 `켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요`, 글 목록 로딩 `불러오는 중…`, 글 목록 오류는 그 메시지, 소스 오류 `읽지 못했어요 · <오류>`. 스위치 변경 실패는 오류 토스트 후 소스 다시 읽음. 전부 지켜보기가 켜져 있으면 글별 스위치는 같이 켜집니다. 폰(639px 이하)에서는 시트가 전체 폭.
 - 데이터: 위 댓글 소스 API.
-- css: web/css/18-comments.css(`kk-pick*`), web/css/17-kakao.css(`kk-pd`, :270-271 폰 전체 폭, 데스크톱 오른쪽 시트).
+- css: web/css/18-comments.css(`kk-pick*`), web/css/17-kakao.css(`dialog.dlg.kk-pd`: 데스크톱 오른쪽 패널). 폰 전체 화면은 `dialog()`의 공용 시트(web/css/14-overlay.css).
 - 근거: web/js/30-monitoring-comments.js:76-131(`cmUpdate`, `cmPosts`, `cmSourceNode`, `cmPickPaint`, `cmPickOpen`).
 
 ### 인스타그램 DM (댓글 앱 `instagram`의 DM 탭, 읽기만)

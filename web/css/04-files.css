@@ -305,14 +305,11 @@ details.work.live .wdot { display: block; }
 .term .tmore { display: flex; margin: 0 auto var(--sp-3); }
 .term .tdv, .term .lg-note { margin: var(--sp-2) auto; color: var(--fg-3); font-size: 12.5px; line-height: 18px; text-align: center; }/* attachment chips as buttons (md and text open in the reader) and the reader sheet */
 button.fatt { border: 0; font: inherit; text-align: left; cursor: pointer; }
-dialog.tbox { width: min(760px, 100vw); height: min(80dvh, 100dvh); max-width: none; max-height: none; margin: auto; padding: 0; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 12px 40px rgb(0 0 0 / .22); overflow: hidden; }
-dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
-.tbox .tv-in { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
-.tbox .tv-bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--line); font-size: 14px; }
-.tbox .tv-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-.tbox .tv-bar a, .tbox .tv-bar button { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--active); color: var(--fg-2); font-size: 13px; text-decoration: none; }
-.tbox .tv-bar button.x { width: 32px; padding: 0; }
-.tbox .tv-body { min-height: 0; overflow: auto; padding: var(--sp-4) var(--sp-5) var(--sp-6); font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
+/* the reader (15-attachments.js viewer): dialog()'s large card. The file name is its title, on one line; the text reads on white on a phone too, where
+   Markdown's grey fills (code, table heads, quotes) would vanish into the sheet's grey */
+.tbox .tv-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 639px) { dialog.dlg.fs-card.tbox[open] { background: var(--pop); } }
+.tbox .tv-body { color: var(--fg); font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
 .tbox .tv-body:focus { outline: 0; }
 .tbox .tv-body p { margin: 0 0 var(--sp-3); }
 .tbox .tv-body p.h { margin: var(--sp-5) 0 var(--sp-2); font-size: 17px; line-height: 26px; } .tbox .tv-body p.h:first-child { margin-top: 0; }
@@ -320,4 +317,3 @@ dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
 .tbox .tv-body pre { margin: 0; font: 13px/20px var(--mono); white-space: pre-wrap; }
 .tbox .tv-body .md pre, .tbox .tv-body > .md pre { margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: var(--layer); }
 .tbox .tv-st { color: var(--fg-3); font-size: 13px; line-height: 20px; }
-@media (max-width: 639px) { dialog.tbox { width: 100vw; height: 100dvh; border-radius: 0; } }

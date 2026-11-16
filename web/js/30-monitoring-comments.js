@@ -115,23 +115,19 @@ function cmSourceNode(s) {
   }
   return node;
 }
-// The picker: the side sheet of KakaoTalk's 지켜볼 대화방, opened from the app's settings row (asPickRow) or the empty list.
+// The picker: dialog() worn as the side panel of KakaoTalk's 지켜볼 대화방, opened from the app's settings row (asPickRow) or the empty list.
 function cmPickPaint() {
   const d = CM.pickD;
   if (!d) return;
   const srcs = cmSrcOf(d.dataset.app);
-  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: TX("mon.cm.tokens") }), el("div", { class: "sec", text: TX("mon.cm.channels") }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: TX("mon.cm.none_on") })]));
+  clear(d.querySelector(".dbody")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: TX("mon.cm.tokens") }), el("div", { class: "sec", text: TX("mon.cm.channels") }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: TX("mon.cm.none_on") })]));
 }
 function cmPickOpen(app) {
   if (CM.pickD) return;
-  const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": TX("mon.cm.posts_watch") },
-    el("div", { class: "kk-pd-in" },
-      fsHead([el("h2", { class: "fs-t", text: TX("mon.cm.posts_watch") })], { close: () => d.close() }),
-      el("div", { class: "kk-pd-b" })));
+  const d = CM.pickD = dialog({ title: TX("mon.cm.posts_watch"), onclose: () => { CM.pickD = null; } }).node;
+  d.id = "cm-pick"; d.dataset.app = app; d.classList.add("kk-pd", "kk-add"); d.setAttribute("aria-label", TX("mon.cm.posts_watch"));
+  d.querySelector(".dtitle").classList.add("fs-t");
   cmPickPaint();
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
-  d.addEventListener("close", () => { if (CM.pickD === d) CM.pickD = null; d.remove(); });
 }
 // A post's row carries one marker, the most urgent: a failed mail > comments nobody answered > drafts waiting. The rest is in the opened post, on each comment (cmProgress).
 function cmMark(t) {

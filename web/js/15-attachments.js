@@ -325,18 +325,16 @@ function mdFiles(src) {
   const { text, files } = fileLines(src);
   return [text.trim() ? mdNode(text) : null, filesNode(files)].filter(Boolean);
 }
-// Markdown renders, other text shows as it is; a big file shows its first 200KB and offers the download.
+// Markdown renders, other text shows as it is; a big file shows its first 200KB and offers the download. The reader is dialog()'s large card: one at a
+// time (a second open while it is up is ignored), the download beside ✕, and the text takes the focus so the keys scroll it.
 async function viewer(path, name, pc) {
-  const body = el("div", { class: "tv-body md", tabindex: "-1", autofocus: true }, el("p", { class: "tv-st", text: TX("common.loading") }));
-  const d = el("dialog", { class: "tbox", "aria-label": name },
-    el("div", { class: "tv-in" },
-      el("div", { class: "tv-bar" }, el("span", { class: "tv-n", text: name }),
-        el("a", { href: fileUrl(path, true, pc), download: name }, TX("chat.att.download")),
-        el("button", { class: "x", type: "button", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))),
-      body));
-  d.addEventListener("close", () => d.remove());
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
+  if (document.querySelector("dialog.tbox:not([data-leaving])")) return;
+  const body = el("div", { class: "tv-body md", tabindex: "-1" }, el("p", { class: "tv-st", text: TX("common.loading") }));
+  const d = dialog({ title: name, body }).node;
+  d.classList.add("tbox", "tall"); d.setAttribute("aria-label", name);
+  d.querySelector(".dtitle").classList.add("tv-n");
+  d.querySelector(".fs-hb").prepend(el("a", { class: "btn text sm", href: fileUrl(path, true, pc), download: name }, TX("chat.att.download")));
+  body.focus({ preventScroll: true });
   try {
     const r = await fetch(fileUrl(path, false, pc));
     if (!r.ok) throw refusedNote(r);
