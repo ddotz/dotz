@@ -358,6 +358,17 @@ describe("ceiling freeze", () => {
 		expect(freezeReport(base, allow({ "MON|a.js": 3 }), "allow", owners).lines).toEqual(["ceiling raised ownerWrites MON|a.js: 2 -> 3"]);
 		expect(freezeReport(base, allow({ "MON|a.js": 2, "NT|b.js": 3 }), "allow").lines).toEqual(["ceiling raised ownerWrites NT|b.js: none -> 3"]);
 	});
+	test("an ownerWrites number may rise up to the baseline code recounted by the pushed rule, and no further", () => {
+		const allow = (counts: object) => JSON.stringify({ _rule: "r", counts, reasons: {} });
+		const owners = JSON.stringify({ objects: { MON: ["m.js"] }, lets: { CS: ["c.js"] } });
+		const base = allow({ goBranches: 3, ownerWrites: { "CS|t.js": 1, "MON|a.js": 2 } });
+		const recount = JSON.stringify({ "CS|t.js": 14, "CS|d.js": 4, "MON|a.js": 2 });
+		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 14, "CS|d.js": 4, "MON|a.js": 2 } }), "allow", owners, recount)).toEqual({ ok: true, lines: [] });
+		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 15, "CS|d.js": 4, "MON|a.js": 3 } }), "allow", owners, recount).lines)
+			.toEqual(["ceiling raised ownerWrites CS|t.js: 1 -> 15", "ceiling raised ownerWrites MON|a.js: 2 -> 3"]);
+		expect(freezeReport(base, allow({ goBranches: 3, ownerWrites: { "CS|t.js": 14 } }), "allow", owners).lines).toEqual(["ceiling raised ownerWrites CS|t.js: 1 -> 14"]);
+		expect(freezeReport(base, allow({ goBranches: 4, ownerWrites: { "CS|t.js": 1 } }), "allow", owners, JSON.stringify({ goBranches: 9 })).lines).toEqual(["ceiling raised goBranches: 3 -> 4"]);
+	});
 	test("an unreadable baseline passes with one warning line", () => {
 		for (const unreadable of [undefined, "", "not json", "[1]"]) {
 			const r = freezeReport(unreadable, file({ fileLines: { "hub/a.ts": 925 } }));

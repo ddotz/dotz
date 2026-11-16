@@ -6,11 +6,15 @@
     "CONV": ["09-needs-you.js"],
     "CPC": ["33-peers.js"],
     "CV": ["31-conversations.js"],
+    "DC": ["10-decision-card.js"],
     "DELIV": ["11-todo-strip.js"],
     "DM": ["30-monitoring-comments-dm.js"],
+    "DRF": ["10-decision-card.js"],
+    "DRR": ["10-decision-card.js"],
     "FS": ["38-overlay.js"],
     "H": ["32-history-nav.js"],
     "KK": ["30-kakao.js"],
+    "LAST": ["08-home.js"],
     "M": ["20-models.js"],
     "MAILS": ["08-home.js"],
     "MBOX": ["30-mail-box.js"],
@@ -28,13 +32,19 @@
     "RELAY": ["42-relay-chat.js"],
     "RQ": ["30-replies.js"],
     "S": ["17-state-refresh.js","04-state.js"],
+    "TD": ["11-todo-strip.js"],
+    "TS": ["09-needs-you.js"],
     "TURN": ["08-home.js"],
-    "WA": ["25-settings-web-access.js"]
+    "WA": ["25-settings-web-access.js"],
+    "fcFilter": ["29-harness-features.js"],
+    "hCvOpen": ["28-harness-project.js"],
+    "rqPress": ["10-reply-card.js"]
   },
   "lets": {
     "ATT": ["15-attachments.js"],
     "CS": ["09-needs-you.js"],
     "HQ": ["08-home.js"],
+    "PICK": ["15-picker.js"],
     "QUEUE": ["14-slash-commands.js"],
     "chatStick": ["09-needs-you.js"],
     "endedOpen": ["04-state.js"],
@@ -43,6 +53,8 @@
   },
   "notes": {
     "ICONS": "icon registry: 01-core.js declares it and the icon files add entries on purpose (ICONS.x = svg); it is a constant lookup table, not shared mutable state.",
+    "fcFilter": "owner is 29-harness-features.js, not the declaring 27-harness.js: all 4 writes live there and 27-harness.js writes none.",
+    "hCvOpen": "owner is 28-harness-project.js, not the declaring 27-harness.js: its only writes (add/delete) live there and 27-harness.js writes none.",
     "PQ": "owner is 34-peer-monitoring.js, not the declaring 08-home.js: 12 of the 15 writes live there and 08-home.js writes none.",
     "RELAY": "owner is 42-relay-chat.js, not the declaring 08-home.js: 6 of the 8 writes live there and 08-home.js writes none."
   }

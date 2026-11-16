@@ -19,7 +19,9 @@ test("hub/web-areas.json names every web/js file once and registers the pending 
 // Structure ratchet over web/js/*.js and web/custom.js, read as code only (codeMask: strings and comments do not count). audit() is the same
 // path for the real files and for the planted cases below, so a planted violation proves each rule can fail. Its numbers must equal the
 // "counts" of hub/web-structure-allow.json exactly: a new violation fails, and so does a fix that leaves its number standing.
-// - C ownerWrites "NAME|file": writes to a shared object or cross-file let from a file that does not own it (hub/web-structure-owners.json).
+// - C ownerWrites "NAME|file": writes to a shared object or cross-file let from a file that does not own it (hub/web-structure-owners.json):
+//   X.f = / += / ++, X.f[k] =, X[k] =, delete X.f / X.f[k] / X[k], X(.f)?.add/delete/clear/set/push/pop/shift/unshift/splice/sort/reverse(,
+//   Object.assign(X; for a let also its reassignment, and the same writes to the object or list it holds (CS.who = "", PICK.push(x)).
 //   A match is skipped where an enclosing function declares a parameter or local of that name (bkStep(S), a local `target`).
 // - B goBranches: `name === "` inside go(); fnReassign "name|file": a declared function reassigned outside any function (a monkeypatch).
 // - D overlaySites: rawdialog/overlay sites (hub/ui-surfaces.ts) outside the files that implement dialogs, menus, overlays and history, and
@@ -44,8 +46,12 @@ const NOT_PARAMS = new Set(["if", "while", "switch", "with", "return", "typeof",
 const NET = /(?<![\w$.])(?:window\.)?fetch\(|(?<![\w$.])window\.fetch\s*=(?![=>])|(?<![\w$.])new\s+(?:EventSource|XMLHttpRequest)\(/g;
 const ASSIGN = /(?<![\w$.])([\w$]+)\s*=(?![=>])/g;
 const esc = (s: string) => s.replace(/[$]/g, "\\$");
-const objectWrite = (x: string) =>
-  new RegExp(`(?<![\\w$.])${esc(x)}\\.[\\w.]+\\s*(?:=(?![=>])|\\+\\+|--|[-+*/|&?]{1,2}=)|(?<![\\w$.])${esc(x)}(?:\\.[\\w.]+)?\\.(?:add|delete|clear|set|push|splice)\\(|Object\\.assign\\(${esc(x)}\\b`, "g");
+// A path below X: .field and [index] segments (strings inside an index are blank in the masked code).
+const PATH = String.raw`(?:\.[\w$]+|\[[^\]\n]*\])`;
+const objectWrite = (x: string) => {
+  const at = `(?<![\\w$.])${esc(x)}`;
+  return new RegExp(`${at}${PATH}+\\s*(?:=(?![=>])|\\+\\+|--|[-+*/|&?]{1,2}=)|${at}${PATH}*\\.(?:add|delete|clear|set|push|pop|shift|unshift|splice|sort|reverse)\\(|(?<![\\w$.])delete\\s+${esc(x)}${PATH}+|Object\\.assign\\(${esc(x)}\\b`, "g");
+};
 const letWrite = (x: string) => new RegExp(`(?<![\\w$.])${esc(x)}\\s*(?:=(?![=>])|\\+=|\\|\\|=|\\?\\?=)`, "g");
 
 // Whether a declarator list ("a = 1, { b, c } = d", a parameter list) declares `name`: the part before each top-level comma's first `=`.
@@ -132,8 +138,11 @@ function audit(files: Record<string, string>): Audit {
   for (const [f, p] of parsed) {
     for (const [name, owners] of Object.entries(OWNERS.objects)) if (!owners.includes(f))
       for (const m of p.find(objectWrite(name))) if (!p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
-    for (const [name, owners] of Object.entries(OWNERS.lets)) if (!owners.includes(f))
+    // A let is reassigned, and the object or list it holds is written like an owned object's (CS.who = "", PICK.push(x)).
+    for (const [name, owners] of Object.entries(OWNERS.lets)) if (!owners.includes(f)) {
       for (const m of p.find(letWrite(name))) if (!p.isDecl(m.index) && !p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
+      for (const m of p.find(objectWrite(name))) if (!p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
+    }
     for (const m of p.find(letWrite("current"))) if (!p.isDecl(m.index) && !p.shadowed(m.index, "current")) bump(r.currentAssign, f);
     for (const m of p.find(ASSIGN)) if (fnNames.has(m[1]!) && /^$|[;{}]$/.test(p.code.slice(Math.max(0, m.index - 300), m.index).trimEnd()) && !p.inFunction(m.index)) bump(r.fnReassign, `${m[1]}|${f}`);
     for (const m of p.find(NET)) if (!(f === "02-basic-markdown.js" && p.topAt(m.index) === "api")) bump(r.rawNet, f);
@@ -176,6 +185,13 @@ test("web/js and web/custom.js add no foreign state write, go() branch, raw over
   expect(unreasoned(allow.counts.overlaySites, allow.reasons)).toEqual([]);
 });
 
+// .githooks/pre-push runs this alone (-t "^recount") in a tree of the pushed hub/ and the baseline's web/ files: the baseline code counted by
+// this commit's rule C and owners. hub/engineering-rules.ts --base-recount lets an ownerWrites number rise up to that count, so a rule that
+// starts seeing a write shape the baseline code already had is not a raise, and a new write still is.
+test.if(!!process.env.WEB_STRUCTURE_RECOUNT)("recount: the ownerWrites of these web files, written to $WEB_STRUCTURE_RECOUNT", () => {
+  writeFileSync(process.env.WEB_STRUCTURE_RECOUNT!, JSON.stringify(REAL.ownerWrites));
+});
+
 test("hub/web-structure-owners.json names files that exist or are pending", () => {
   const { pending } = JSON.parse(readFileSync(join(ROOT, "hub/web-areas.json"), "utf8")) as { pending: string[] };
   const files = new Set([...Object.keys(webFiles()), ...pending]);
@@ -204,6 +220,16 @@ test("planted C: a write to a registered Map itself and a write in a brace-less 
   expect(delta(mailBox("function zzMap() { MAILS.set(\"zz\", {}); CONV.delete(\"zz\"); TURN.set(\"zz\", 1); }"))).toEqual({ "ownerWrites CONV|30-mail-box.js": 1, "ownerWrites MAILS|30-mail-box.js": 1, "ownerWrites TURN|30-mail-box.js": 1 });
   expect(delta(mailBox("function zzFor(xs) { for (const t of xs) PQ.of.delete(t); }"))).toEqual({ "ownerWrites PQ|30-mail-box.js": 1 });
   expect(delta(mailBox("function zzFor2(xs) { for (const PQ of xs) PQ.of.delete(1); }"))).toEqual({});
+});
+
+test("planted C: an indexed write, a delete, an in-place list change and a write to an object a registered let holds count", () => {
+  expect(delta(mailBox("function zzIx(k) { NT.by[\"k\"] = 1; NT[k] = 1; NT.by[k].n += 1; }"))).toEqual({ "ownerWrites NT|30-mail-box.js": 3 });
+  expect(delta(mailBox("function zzDel(k) { delete NT.zz; delete NT.by[\"k\"]; delete NT[k]; }"))).toEqual({ "ownerWrites NT|30-mail-box.js": 3 });
+  expect(delta(mailBox("function zzList() { MON.xs.pop(); MON.xs.shift(); MON.xs.unshift(1); MON.xs.sort(); MON.xs.reverse(); }"))).toEqual({ "ownerWrites MON|30-mail-box.js": 5 });
+  expect(delta(mailBox("function zzLet() { CS.who = \"\"; CS.prog.set(1, 2); PICK.push(1); }"))).toEqual({ "ownerWrites CS|30-mail-box.js": 2, "ownerWrites PICK|30-mail-box.js": 1 });
+  expect(delta(mailBox("function zzNew() { RELAY.name[\"x\"] = 1; DC.st[\"k\"] = 1; }"))).toEqual({ "ownerWrites DC|30-mail-box.js": 1, "ownerWrites RELAY|30-mail-box.js": 1 });
+  expect(delta(mailBox("function zzRead(k) { return NT.by[k] === 1 || NT.by[1] == 2 || [...PICK].sort() || MON.xs.slice().sort(); }"))).toEqual({});
+  expect(delta(mailBox("function zzShadow(CS, NT) { CS.who = 1; delete NT.a; NT.b[1] = 2; const PICK = []; PICK.push(1); }"))).toEqual({});
 });
 
 test("planted B: a go() branch and a top-level function reassignment count", () => {

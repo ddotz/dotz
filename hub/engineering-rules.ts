@@ -343,30 +343,39 @@ const ownedNames = (text: string | undefined): Set<string> | undefined => {
 };
 // hub/engineering-ceilings.json (or the "counts" of hub/web-structure-allow.json) at the baseline and at the pushed commit. A side that cannot be
 // read never blocks: one warning line, ok. A new "ownerWrites NAME|file" key is the first count of an object registered after the baseline
-// (NAME is not in the baseline's hub/web-structure-owners.json, baseOwnersText), a baseline rather than a raise; every other new or raised key refuses.
-export const freezeReport = (baseText: string | undefined, headText: string | undefined, what = "ceilings", baseOwnersText?: string): { ok: boolean; lines: string[] } => {
+// (NAME is not in the baseline's hub/web-structure-owners.json, baseOwnersText), a baseline rather than a raise. An "ownerWrites NAME|file" number
+// may also rise up to baseRecountText's (the baseline's web files counted by the pushed commit's rule C, a { "NAME|file": n } map): a write
+// the baseline code already had and the rule now sees. Every other new or raised key refuses.
+export const freezeReport = (baseText: string | undefined, headText: string | undefined, what = "ceilings", baseOwnersText?: string, baseRecountText?: string): { ok: boolean; lines: string[] } => {
 	const base = flatCeilings(baseText), head = flatCeilings(headText);
 	if (!base || !head) return { ok: true, lines: [`pre-push: ceiling freeze skipped, the baseline ${what} cannot be read`] };
-	const owned = ownedNames(baseOwnersText);
+	const owned = ownedNames(baseOwnersText), recount = flatCeilings(baseRecountText) ?? {};
+	const recounted = (r: Raised) => r.key.startsWith("ownerWrites ") && r.to <= (recount[r.key.slice("ownerWrites ".length)] ?? -1);
 	const newlyOwned = (r: Raised) => {
 		if (r.from !== undefined || !owned) return false;
 		const name = /^ownerWrites ([^|]+)\|/.exec(r.key)?.[1];
 		return name !== undefined && !owned.has(name);
 	};
-	const lines = ceilingsRaised(base, head).filter(r => !newlyOwned(r)).map(r => `ceiling raised ${r.key}: ${r.from ?? "none"} -> ${r.to}`);
+	const lines = ceilingsRaised(base, head).filter(r => !newlyOwned(r) && !recounted(r)).map(r => `ceiling raised ${r.key}: ${r.from ?? "none"} -> ${r.to}`);
 	return { ok: lines.length === 0, lines };
 };
 
 if (import.meta.main && process.argv[2] === "--ceiling-freeze") {
 	// bun hub/engineering-rules.ts --ceiling-freeze <baseline json> <pushed json> [<baseline json> <pushed json> ...]: each pair is checked on its own,
 	// named by the pushed file's name; exit 1 and one line per raised key; a missing file counts as unreadable. A leading
-	// --base-owners <baseline hub/web-structure-owners.json> lets through the first ownerWrites counts of objects registered since then.
+	// --base-owners <baseline hub/web-structure-owners.json> lets through the first ownerWrites counts of objects registered since then; a leading
+	// --base-recount <json> lets an ownerWrites number rise up to the baseline code's count under the pushed rule (freezeReport).
 	const read = (p: string | undefined) => (p && existsSync(p) ? readFileSync(p, "utf8") : undefined);
-	let args = process.argv.slice(3), owners: string | undefined;
-	if (args[0] === "--base-owners") { owners = read(args[1]); args = args.slice(2); }
+	let args = process.argv.slice(3), owners: string | undefined, recount: string | undefined;
+	for (;;) {
+		if (args[0] === "--base-owners") owners = read(args[1]);
+		else if (args[0] === "--base-recount") recount = read(args[1]);
+		else break;
+		args = args.slice(2);
+	}
 	let ok = true;
 	for (let i = 0; i < args.length; i += 2) {
-		const r = freezeReport(read(args[i]), read(args[i + 1]), posix.basename(args[i + 1] ?? "ceilings"), owners);
+		const r = freezeReport(read(args[i]), read(args[i + 1]), posix.basename(args[i + 1] ?? "ceilings"), owners, recount);
 		for (const l of r.lines) console.error(l);
 		ok &&= r.ok;
 	}
