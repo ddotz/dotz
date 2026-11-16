@@ -16,7 +16,6 @@ const MON_GROUP = { app: TX("common.apps"), plain: TX("mon.group.plain") };
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
 const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", mailIn: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0, ovOpen: undefined, miss: false, top: 0, tlTop: 0, tlFor: "", land: "" };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
 const monConv = () => current === "monitoring" && !MON.list;
-const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}${mxHash(MON.sel)}` : "monitoring");
 // A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
 const monOwned = t => isMailT(String(t || "")) || isSettingsT(String(t || ""));
 const monItemOf = t => {
@@ -30,17 +29,6 @@ const monItemOf = t => {
   const it = INTG.items.find(x => intgHas(x, t));
   return it ? mxKeyOf(it.key) : "i:mail";
 };
-// go("monitoring", key) opens that item; without one the list shows.
-function monRoute(tgt) {
-  pqOpen();
-  MON.miss = false; tgt = mxRoute(tgt);
-  if (tgt && tgt !== "list") {
-    if (tgt !== MON.sel) { MON.filter = "all"; MON.open.clear(); MON.more.clear(); }   // another item: its list starts whole and folded
-    MON.autoArmed = false; MON.olderBusy = false;
-    MON.sel = tgt; MON.list = false;
-  } else MON.list = true;
-}
-
 // Callers that ask while a read is out share it (the page's first read and the home's ask for it at the same time).
 let monFlight = null;
 async function loadMonitors() { return monFlight || (monFlight = monFetch().finally(() => { monFlight = null; })); }

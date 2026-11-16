@@ -1,5 +1,5 @@
 /* ---------- 메일함 설정과 메일함 추가: the two screens of the mail app that replace the list in the same view (docs/mailbox.md "Web", prototype s-mailbox.js) ---------- */
-// MX.scr ("", "set", "new") is part of the address: `monitoring/i%3Amail/<account>/<box>/set` (30-mailboxes.js mxRoute, mxHash). In a screen mxScope hands the timeline no mails, so
+// MX.scr ("", "set", "new") is part of the address: `monitoring/i%3Amail/<account>/<box>/set` (30-monitoring-route.js monParse, monHashOf). In a screen mxScope hands the timeline no mails, so
 // its signature stays put and the one node MXS.root is drawn by mxsPaint only when something here changes; a live mail update never redraws a field being typed in.
 // A change saves at once with PUT /api/mailbox/box (the whole box, so `alone`, `rules` and the source conditions the hub keeps come back unchanged), optimistic: the box object of
 // INTG is changed first and put back from the last answer the hub gave when a save fails. Nothing here polls; the tone and the suggestions are read when their item or screen opens.
@@ -13,22 +13,22 @@ const mxsFind = (app, id) => { const a = MX.accts.get(app); return a ? a.byId.ge
 const mxsList = (o, path) => path.split(".").reduce((x, k) => x[k], o);
 const mxsMails = (a, b) => [...MX.of].filter(([t, k]) => k === a.key && mxBoxOf(t) === b).map(([t]) => t);
 const mxsBlank = acct => ({ acct, step: "start", name: "", icon: "folder", mode: "ask", conds: { from: [], subj: [], body: [] }, judge: { on: false, text: "" }, how: "", greets: [], folders: [], bans: [], keys: [], count: 0, bring: false, copied: "", busy: false });
-// The address of the screen the state says; the box list is the same address without the last part.
-const mxsGo = scr => go("monitoring", `${MX.key}/${enc(MX.acct)}/${enc(MX.box)}${scr ? `/${scr}` : ""}`);
+// The address of a screen of a box (the open box of the open account unless given); the box list is the same address without the last part.
+// go() reads the account, box and screen back into MX from it, so nothing here sets them.
+const mxsGo = (scr, box = MX.box, acct = MX.acct) => go("monitoring", `${MX.key}/${enc(acct)}/${enc(box)}${scr ? `/${scr}` : ""}`);
 // The browser's back from a screen lands on the box list (32-history-nav.js routeChain).
 const mxChain = hash => (MX.scr && MON.sel === MX.key ? [hash.slice(0, hash.lastIndexOf("/")), hash] : [hash]);
 // The screens name the app bar (monName) and its back arrow returns to the box list (#back, 04-state.js).
 const mxsName = () => (MON.sel === MX.key && MX.scr ? (MX.scr === "set" ? TX("mail.box.settings") : TX("mail.box.add")) : "");
-const mxsBack = () => { if (current !== "monitoring" || !MX.it || !MX.scr) return false; MX.scr = ""; mxsGo(""); return true; };
-function mxsEnter(scr, note = "") { MXS.note = note; MXS.open = ""; MXS.add = ""; MXS.blank = 0; MXS.reply = ""; MXS.more.clear(); MXS.tone.clear(); MXS.d = null; MXS.sug = null; MXS.sugFor = ""; mxsGo(scr); }
+const mxsBack = () => { if (current !== "monitoring" || !MX.it || !MX.scr) return false; mxsGo(""); return true; };
+function mxsEnter(scr, note = "", box, acct) { MXS.note = note; MXS.open = ""; MXS.add = ""; MXS.blank = 0; MXS.reply = ""; MXS.more.clear(); MXS.tone.clear(); MXS.d = null; MXS.sug = null; MXS.sugFor = ""; mxsGo(scr, box, acct); }
 // box "n:<name>" (the merged entry) opens the first account's box of that name.
 function mxOpenSet(id) {
   const name = mxGroup(id) ? id.slice(2) : "", merged = !!name || (MX.acct === "all" && MX.accts.size > 1);
   for (const a of MX.accts.values()) {
     const b = name ? a.boxes.find(x => x.name === name) : (MX.acct === "all" || MX.acct === a.key) && a.byId.get(id);
     if (!b) continue;
-    MX.acct = a.key; MX.box = b.id;
-    mxsEnter("set", merged ? TX("mail.set.merged_note", { name: a.label }) : "");
+    mxsEnter("set", merged ? TX("mail.set.merged_note", { name: a.label }) : "", b.id, a.key);
     return;
   }
 }
@@ -194,9 +194,7 @@ async function mxsDelete(a, b) {
   if (!(await ask(TX("mail.box.delete_named", { name: b.name }), n ? TX("mail.box.delete_body_n", { n }) : TX("mail.box.delete_body"), TX("common.delete"), true))) return;
   try { await api("/api/mailbox/box", "DELETE", { app: a.key, id: b.id }); } catch (e) { toast(mxsErr(e), true); return; }
   await Promise.allSettled([loadIntegrations(), convLoad()]);
-  MX.box = a.base.id;
-  MX.scr = "";
-  mxsGo("");
+  mxsGo("", a.base.id);
   toast(TX("mail.box.deleted", { name: b.name }));
 }
 
@@ -245,8 +243,7 @@ async function mxsCreate() {
   let moved = true;
   if (d.bring && d.keys.length) try { await api("/api/mailbox/move", "POST", { keys: d.keys, box: made.id }); } catch (e) { moved = false; toast(TX("mail.new.made_not_moved", { name }), true); }
   await Promise.allSettled([loadIntegrations(), convLoad()]);
-  MX.acct = d.acct; MX.box = made.id; MX.scr = "";
-  mxsGo("");
+  mxsGo("", made.id, d.acct);
   if (moved) toast(TX("mail.new.made", { name }));
 }
 function mxsNewNodes() {

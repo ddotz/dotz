@@ -97,20 +97,20 @@ const mailDraftGone = (n, newest) => !!(n.decision && n.decision.draft) && Strin
 // Opening a mail app while reply drafts wait lands on 확인 대기 (once per opening, so a filter the owner picks stays); with none waiting a
 // left-over 확인 대기 goes back to 전체. It waits for the notices, so a draft that loads late still decides the landing.
 function mailLand(sel) {
-  if (!monMailList(sel)) { MON.land = ""; return; }
+  if (!monMailList(sel)) { monMailLand(""); return; }
   if (MON.land === sel.key || !NT.loaded) return;
-  MON.land = sel.key;
+  monMailLand(sel.key);
   const waiting = [...mailDraftLive(sel.notices).values()].some(mailDraftOpen);
-  if (waiting) MON.mailFilter = "pending"; else if (MON.mailFilter === "pending") MON.mailFilter = "all";
+  if (waiting) monMailFilter("pending"); else if (MON.mailFilter === "pending") monMailFilter("all");
 }
 // The head of the mail list is two rows (owner 2026-11-11): where the mail sits (받은 메일 / 보낸 메일 / 보관함, screen tabs) and, only in 받은 메일,
 // the five ways to sift it. MON.mailFilter keeps its seven values; the place is read from it, and MON.mailIn is the sift 받은 메일 comes back to.
 const MAIL_PLACES = [["in", TX("mon.mail.inbox")], ["sent", TX("mon.mail.sent")], ["archived", TX("mon.mail.archive")]];
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0], place = cur === "sent" || cur === "archived" ? cur : "in";
-  if (place === "in") MON.mailIn = cur;
+  if (place === "in") monMailIn(cur);
   const count = (k, ok) => k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mailChipCount(k, mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length);
-  const pick = k => () => { MON.mailFilter = k; monDirty(); };
+  const pick = k => () => { monMailFilter(k); monDirty(); };
   const tabs = segKeep(el("div", { class: "mx-tabs mr-place", role: "tablist", "aria-label": TX("mon.mail.place_aria") }, ...MAIL_PLACES.map(([k, label]) =>
     el("button", { class: `mx-tab${k === place ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === place), "data-filter": k, onclick: pick(k === "in" ? MON.mailIn || "all" : k) },
       label, k === "in" ? null : cntSpan(`mail-filter:${k}`, "mr-fn", count(k, MAIL_FILTERS.find(f => f[0] === k)[2]))))));
@@ -203,7 +203,7 @@ async function mailSetFyi(t, on, btn = null) {
   const m = MAILS.get(t);
   if (m) { m.reply = on ? "fyi" : m.reply === "draft" ? "draft" : "needs"; m.unreplied = !on; }
   document.querySelectorAll(".mtop-fyi").forEach(mailFyiPaint);
-  MON.sig = ""; MON.side = ""; monSchedule();
+  monSigReset(true); monSchedule();
   toast(on ? TX("mail.fyi.done") : TX("mail.fyi.undone"), false, on ? { label: TX("common.undo"), onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
@@ -230,7 +230,7 @@ async function mailDelete(t, btn = null) {
   if (p && p.items) p.items.conversations = (p.items.conversations || []).filter(c => String(c.target) !== t);
   if (monCtx === t && current === "chat") go("monitoring", MON.sel);   // deleted from its open conversation: back to the list
   const leaving = mbRowsOut([t]);
-  PQ.of.delete(t); MON.sig = ""; MON.side = "";
+  PQ.of.delete(t); monSigReset(true);
   if (leaving) leaving.then(monSchedule); else monSchedule();
   toast(TX("mon.mail.deleted"));
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);

@@ -536,7 +536,7 @@ function asPaneFollow(items) {
   const h = ASC.h;
   if (!h || !h.pane || !asOwn(ASC.app) || items.some(i => i.key === MON.sel)) return;
   const it = items.find(i => monSettingsApp(i) === ASC.app);
-  if (it) MON.sel = h.sel = it.key;
+  if (it) { h.sel = it.key; monSelSet(it.key); }
 }
 const asBack = () => !!(current === "monitoring" && ASC.h && ASC.h.pane && (ASC.h.close(), true));
 function asScreen(app) {

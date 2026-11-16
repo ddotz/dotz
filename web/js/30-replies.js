@@ -49,7 +49,7 @@ function rqMonItem(home) {   // home: the wide home shows the queue also while n
     hint: n ? countsLine(by) : TX("triage.empty.all"), at: at ? new Date(at).toISOString() : "" };
 }
 // Opens the queue, filtered to one app of one computer when given (an app's own 답장 대기 button).
-function rqOpen(inst, pc) { RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; MON.sig = ""; go("monitoring", RQ_KEY); }
+function rqOpen(inst, pc) { RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; monSigReset(); go("monitoring", RQ_KEY); }
 
 /* ---- the screen ---- */
 const RQ_TABS = [["all", TX("mon.filter.all")], ["ask", TX("mon.filter.need")], ["fail", TX("mon.tag.fail")], ["sent", TX("triage.tab.sent")]];
@@ -68,7 +68,7 @@ function rqUi() {
 function rqTab(k) {
   if (RQ.tab === k) return;
   RQ.tab = k; RQ.now = true; RQ.reset = true; RQ.lim = {};
-  motionSwap(rqUi().ls, () => { MON.sig = ""; renderMonitoring(); });
+  motionSwap(rqUi().ls, () => monRenderNow());
   const box = $("#mon-timeline"); if (box) box.scrollTop = 0;
 }
 // The app filter with each app's count in its menu items: shown while two or more apps wait and the waiting count reaches the triage minimum, or while one app is picked (an app row's 답장 대기 button).
@@ -195,7 +195,7 @@ function rqScreen(qSel, box, tl) {
   if (sig !== MON.sig || MON.shown !== qSel.key) {
     const pane = !!(RQ.sheet && RQ.sheet.pane), back = RQ.top != null && !pane, keep = pane ? 0 : back ? RQ.top : MON.shown === qSel.key ? box.scrollTop : 0, anchor = keep > 0 && !back && !pane ? rqAnchor() : null;   // the first row in view stays where it was
     if (!pane) RQ.top = null;
-    MON.sig = sig; MON.shown = qSel.key;
+    monDrawn(sig, qSel.key);
     clear($("#mon-head")).append(...monHead(qSel));
     if (!(pane && tl.firstElementChild === RQ.sheet.box)) clear(tl).append(...(pane ? [RQ.sheet.box] : rqNodes()));   // an open pane already stands there: drawn again it would lose the focus
     box.scrollTop = keep;

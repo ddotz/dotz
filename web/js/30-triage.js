@@ -15,7 +15,7 @@ function trPaneOpen(onClose) {
     if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; monDirty(); }
   } };
   ov = ovOpen(() => h.close());
-  RQ.sheet = h; MON.sig = ""; renderMonitoring();   // drawn now, so the box is on the page when it takes the focus
+  RQ.sheet = h; monRenderNow();   // drawn now, so the box is on the page when it takes the focus
   return h;
 }
 // One by one: the head counts the place and the channels, the card is rqItemCard with the filled 보내기, and 진행 lists every item with its live state.

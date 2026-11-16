@@ -330,9 +330,9 @@ async function monOpen(n) {
   await Promise.all([NM.loaded || loadMonitors(), INTG.loaded || loadIntegrations()]);
   if (seq !== ntJumpSeq) return;
   const key = monKeyOf(n);
-  MON.want = String(n.id || ""); MON.filter = "all"; MON.sig = "";
+  monWant(String(n.id || ""), true);
   go("monitoring", key);
-  MON.want = "";
+  monWant("");
   const it = monItems().find(i => i.key === key);
   if (it && kkItem(it)) { if (n.item && n.item.app === "kakao") kkOpen(n.item.id); return; }
   if (it && cmAppOf(key)) return;
@@ -340,7 +340,7 @@ async function monOpen(n) {
   if (!row) { toast(TX("conv.nt.no_news")); return; }
   row.scrollIntoView({ block: "center" });
   ntFlash(row);
-  MON.hl = String(n.id); MON.hlUntil = Date.now() + 2300;
+  monLit(String(n.id), 2300);
 }
 // A message tapped in the 알림 / 작업내역 conversations opens like its notice does (capture phase: the choice rows inside it do not answer in place there).
 // A file row (.fatt, a plain element so its name can be selected: 15-attachments.js fileChipRow) keeps its own job: it opens the file.

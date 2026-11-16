@@ -137,12 +137,12 @@ function go(name, tgt) {
   paneAppOff();   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
   // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
   const inChat = name === "chat" || name === "activity";
-  let mc = false;
-  if (name === "monitoring" && tgt && tgt.startsWith("c:")) { if (validTarget(tgt.slice(2))) { name = "chat"; tgt = tgt.slice(2); mc = true; } else tgt = undefined; }
+  let mc = false, cv = name === "monitoring" ? monParse(tgt).c : undefined;
+  if (cv !== undefined) { if (validTarget(cv)) { name = "chat"; tgt = cv; mc = true; } else tgt = undefined; }
   else if (inChat && !paneKeeps(tgt && tgt !== "list" ? tgt : target) && (tgt ? tgt !== "list" && monOwned(tgt) : monOwned(target))) { name = "chat"; mc = true; }
   else if (inChat && !tgt && monCtx && target === monCtx && !paneKeeps(target)) mc = true;
   monCtx = mc ? tgt || target : "";
-  if (mc) { const k = monItemOf(tgt || target); if (k) MON.sel = k; MON.list = false; }
+  if (mc) monConvIn(tgt || target);
   if (!views.includes(name) || navOff(name)) name = "home";
   if (name === "projects" && ppWide() && !relayCur()) { histAuto(); name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { histAuto(); go("project", prjFirst()); } }); }
   if (name === "project" && !tgt) name = "projects";

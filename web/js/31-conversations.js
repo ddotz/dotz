@@ -493,7 +493,7 @@ function convPaint() {
   convTitle();
   mailSentPaint();
   mbReplyPaint();
-  if (monCtx && isSettingsT(target)) MON.sel = monItemOf(target) || MON.sel;   // the monitor list may have loaded after this conversation opened
+  if (monCtx && isSettingsT(target)) monSelSet(monItemOf(target) || MON.sel);   // the monitor list may have loaded after this conversation opened
   const two = mxTwo(), items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, CV.loaded, CV.failed, two ? [two.esig, MX.box] : 0]);
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig && motionAfter(convSide, convPaint)) return;   // a session leaves 진행 중 right now: the list is drawn once it is gone

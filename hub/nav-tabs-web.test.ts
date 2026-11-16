@@ -16,8 +16,9 @@ const routeAlias = new Function(`const NSC = { pass: 0 };\n${between(palette, "c
 
 type Mon = { sel: string; list: boolean };
 function monitoringRoute(narrow: boolean) {
-	const env = { narrowChat: () => narrow, enc: encodeURIComponent, current: "monitoring", pqOpen: () => {}, mxHash: () => "", mxRoute: (t: string) => t };
-	const src = `${between(monitoring, "const MON =", "async function loadMonitors")}\nreturn { MON, monConv, monHash, monRoute };`;
+	// The address is read and written in 30-monitoring-route.js (monParse, monApply, monHashOf); no mail account is open here.
+	const env = { narrowChat: () => narrow, enc: encodeURIComponent, current: "monitoring", pqOpen: () => {}, mxKeyOf: (k: string) => `i:${k}`, mxDec: (s: string) => s, mxRouteSet: () => {}, MX: { key: "" } };
+	const src = `${between(monitoring, "const MON =", "async function loadMonitors")}\n${between(monRoute, "const MON_MAIL", "/* ---------- monitoring: what other files")}\nreturn { MON, monConv, monHash, monRoute };`;
 	return new Function(...Object.keys(env), src)(...Object.values(env)) as { MON: Mon; monConv: () => boolean; monHash: () => string; monRoute: (t?: string) => void };
 }
 
