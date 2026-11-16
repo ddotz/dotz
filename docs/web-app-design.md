@@ -500,7 +500,7 @@ dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 �
 - 기능: 앱바의 `‹ 모니터링`(`#back`, aria `모니터링 목록으로`)은 보던 목록(`MON.sel`)으로 돌아가요. 세션 메뉴 `button.cvmenu`(aria `세션 메뉴`)는 `homeMenu`를 열어요. 프로젝트 메뉴는 `pmMenuButton`. 설정 대화는 `asMoreBtn`. 알림 종은 `#bell`(title `알림 (⌘/)` 또는 `알림 (Ctrl+/)`)이 `nscGo`로 알림 화면을 열어요.
 - 상태: 상태 줄 문구는 `알림`=`경고와 결정 요청`, `작업 기록`=`야간 정리와 세션 진행 기록`(`FIXED_DESC`), 메일 대화는 보낸 사람 또는 `메일`, 설정 대화는 `말로 설정을 바꾸고 적용을 눌러요`, 살아 있는 세션은 `statusKo(status)`, 종료된 세션은 `종료됨`. 알림 대화(`target==="alert"`)는 `#v-chat.no-composer`로 입력창이 사라져요. 폰에서 대화 안(`convOnPhone`)일 때만 `#cvmenu`/`#pjmenu`가 보이고 앱바는 `back`/`cvconv` 클래스를 가져요. 넓은 화면의 모니터링 대화는 `#back`이 `‹ 모니터링 목록으로`(aria `모니터링 목록으로`) 모양(`mon-up`)이에요. 미디어쿼리 변화(`max-width:1099px`)에서 `convChrome`이 다시 그려요.
 - 데이터: 읽는 것은 `targetInfo`, `MAILS`, `S.lanes` 등 메모리 상태뿐이에요. 프로젝트 대화면 `prjLoad`(프로젝트 목록)를 한 번 불러와요.
-- 근거: web/js/31-conversations.js `convPaintHead`, 31-conversations.js(메뉴 버튼), `convOnPhone`, `convTitle`, `convChrome`, `convPaintHead`(미디어쿼리 리스너), 31-conversations.js(종).
+- 근거: web/js/31-conversations.js `convPaintHead`, 31-conversations.js(메뉴 버튼), `convOnPhone`, `convTitle`, `convChrome`, 31-conversations.js(미디어쿼리 리스너), 31-conversations.js(종).
 - css: web/css/10-conversations.css(`.cv-head`, `.cv-hd-*`), web/css/16-result-card.css(`.appbar.cvconv h1` 2줄 말줄임, `max-width:1099px`), 18-app-settings.css.
 
 ### 대화 타임라인 열림과 읽음 위치
