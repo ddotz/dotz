@@ -17,8 +17,6 @@ const convListing = () => current === "chat" && chatList && narrowChat();
 // A conversation opened from 모니터링 (a mail, a monitor's project chat) is drawn by the chat view but belongs to the 모니터링 tab: its tab stays lit,
 // its list is 모니터링's list and its address is #monitoring/c:<target> (go() in 05-command-palette.js sets it; 30-monitoring.js monOwned).
 let monCtx = "";
-// 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
-const NAV = [["home", TX("common.home")], ["chat", TX("common.chat")], ["projects", TX("common.projects")], ["monitoring", TX("common.monitoring")], ["apps", TX("common.apps")], ["settings", TX("common.settings")]];
 // 앱 (user apps, 30-apps.js): the tab is hidden until user apps ship (owner 2026-10-27; the code stays); every way into it (shortcut, palette,
 // address) goes home instead. true shows the tab and opens it (the 앱 tests switch it on).
 let APPS_ON = false;
@@ -31,11 +29,6 @@ const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : 
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
-const SUB = new Set(["models", "accounts", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "messengers", "devices", "webaccess"]);
-const views = ["home", "chat", "activity", "harness", "settings", "models", "accounts", "usage", "context", "discord", "jandi", "slack", "telegram", "messengers", "devices", "webaccess", "project", "projects", "monitoring", "apps", "notices", "cardform"];
-const titles = { home: TX("common.home"), chat: TX("common.chat"), activity: TX("common.chat"), harness: TX("common.system"), settings: TX("common.settings"), models: TX("common.model"), accounts: TX("common.accounts"), usage: TX("common.usage"), context: TX("common.context"), discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: TX("base.title.messengers"), devices: TX("base.title.devices"), webaccess: TX("base.title.webaccess"), project: TX("common.project"), projects: TX("common.projects"), monitoring: TX("common.monitoring"), apps: TX("common.apps"), notices: TX("common.alerts"), cardform: TX("base.title.cardform") };
-// 카드 추가·수정 (web/custom.js cardForm) has its section made here: go() needs one for every view, and the demo's own index.html has no custom layer.
-$("#views").append(el("section", { class: "view cu-page", id: "v-cardform", hidden: true }));
 // 알림 화면 (31-notices-screen.js): f filter, lim rows drawn per group, open unfolded repeats, keep/scroll = come back from a row to the same place,
 // arm = the next go() was started by a row (ret: the way back is this screen), pass = ntGo lets the next go() open the alert record conversation, back = where ← goes when it was opened fresh.
 const NSC = { f: "all", lim: { news: 50, past: 50 }, open: new Set(), seen: new Set(), busy: new Set(), keep: false, scroll: 0, arm: 0, pass: 0, ret: false, sig: "", raf: 0 };

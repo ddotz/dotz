@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { flatCounts } from "./engineering-rules.ts";
+import { readScreens } from "./screens-read.ts";
 import { codeMask, DECL, extractOpenSitesFromText } from "./ui-surfaces.ts";
 
 const ROOT = join(import.meta.dir, "..");
@@ -99,6 +100,7 @@ function parse(text: string) {
     },
     shadowed: (at: number, name: string) => enclosing(at).some((b) => declares(head(b[0]).decl, name) || locals(b, name)),
     inFunction: (at: number) => enclosing(at).some((b) => head(b[0]).fn),
+    topLevel: (at: number) => enclosing(at).length === 0,
     // The source text of each top-level argument of the call whose "(" ends just before `at`.
     args: (at: number) => {
       const out: string[] = [];
@@ -217,4 +219,43 @@ test("planted F: assigning current outside go() counts, a local does not", () =>
 test("planted G: an empty state built outside emptyNode counts, a kk-note line does not", () => {
   expect(delta(mailBox("const zzE = () => [el(\"div\", { class: \"list rq-empty\", text: \"\" }), el(\"div\", { class: \"kk-note\", id: \"cm-empty\" })];"))).toEqual({ "emptyBypass 30-mail-box.js": 2 });
   expect(delta(mailBox("const zzN = () => el(\"div\", { class: \"kk-note\", id: \"kk-load\", text: \"\" });"))).toEqual({});
+});
+
+// Rule A: the screen lists. Only web/js/03-screens.js declares or changes SCREENS and the lists made from it; a local of the same name
+// (a function's `const views = $("#views")`, the notice wording's own SUB inside its IIFE) is not one. The rows marked html: true and the
+// #v-<id> sections of web/index.html match both ways. Unlike the ratchet above there is no allowance: every finding fails.
+const SCREENS_FILE = "03-screens.js";
+const SCREEN_LISTS = ["SCREENS", "views", "SUB", "titles", "NAV", "VIEW_ICON"];
+const listWrite = (x: string) => {
+  const ref = `(?<![\\w$.])${x}(?:\\.[\\w$]+|\\[[^\\]\\n]*\\])*`;
+  return new RegExp(`${ref}\\s*(?:=(?![=>])|\\+\\+|--|[-+*/|&?]{1,2}=)|${ref}\\.(?:push|pop|shift|unshift|splice|sort|reverse|add|delete|clear|set)\\(|Object\\.assign\\(${x}\\b`, "g");
+};
+function screenRule(files: Record<string, string>, html: string): string[] {
+  const out: string[] = [];
+  for (const [f, t] of Object.entries(files)) {
+    if (f === SCREENS_FILE) continue;
+    const p = parse(t);
+    for (const d of p.decls) if (SCREEN_LISTS.includes(d.name) && p.topLevel(d.at)) out.push(`declares ${d.name}|${f}`);
+    for (const x of SCREEN_LISTS) for (const m of p.find(listWrite(x))) if (!p.isDecl(m.index) && !p.shadowed(m.index, x)) out.push(`changes ${x}|${f}`);
+  }
+  const rows = readScreens(files[SCREENS_FILE] ?? "") ?? [];
+  const inTable = new Set(rows.filter((r) => r.html).map((r) => r.id)), inHtml = new Set([...html.matchAll(/\bid="v-([\w-]+)"/g)].map((m) => m[1]!));
+  for (const id of inTable) if (!inHtml.has(id)) out.push(`no section #v-${id} in web/index.html`);
+  for (const id of inHtml) if (!inTable.has(id)) out.push(`no html: true row in SCREENS for #v-${id}`);
+  return out.sort();
+}
+const INDEX_HTML = readFileSync(join(ROOT, "web/index.html"), "utf8");
+
+test("rule A: only 03-screens.js declares or changes the screen lists, and its html rows match web/index.html", () => {
+  expect(readScreens(files[SCREENS_FILE]!)?.length).toBeGreaterThan(0);
+  expect(screenRule(files, INDEX_HTML)).toEqual([]);
+});
+
+test("planted A: a list declared or changed elsewhere, or a row and a section out of step, is named", () => {
+  expect(screenRule({ ...files, ...mailBox("views.push(\"zz\"); SUB.add(\"zz\"); titles.zz = \"x\"; VIEW_ICON[\"zz\"] = \"x\";\nconst NAV = [];") }, INDEX_HTML))
+    .toEqual(["changes SUB|30-mail-box.js", "changes VIEW_ICON|30-mail-box.js", "changes titles|30-mail-box.js", "changes views|30-mail-box.js", "declares NAV|30-mail-box.js"]);
+  expect(screenRule({ ...files, ...mailBox("function zzV() { const views = $(\"#views\"); views.scrollTop += 1; }") }, INDEX_HTML)).toEqual([]);
+  const noHarness = files[SCREENS_FILE]!.replace(/^ {2}harness: .*\n/m, "");
+  expect(screenRule({ ...files, [SCREENS_FILE]: noHarness }, INDEX_HTML)).toEqual(["no html: true row in SCREENS for #v-harness"]);
+  expect(screenRule(files, INDEX_HTML.replace('id="v-usage"', 'id="zz-usage"'))).toEqual(["no section #v-usage in web/index.html"]);
 });

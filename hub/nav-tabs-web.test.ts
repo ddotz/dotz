@@ -4,15 +4,14 @@ import { join } from "node:path";
 import { i18nPrelude } from "./web-i18n.ts";
 
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
-const state = web("04-state.js"), palette = web("05-command-palette.js"), history = web("32-history-nav.js"), monitoring = web("30-monitoring.js");
+const palette = web("05-command-palette.js"), history = web("32-history-nav.js"), monitoring = web("30-monitoring.js");
 const between = (src: string, from: string, to: string) => {
 	const a = src.indexOf(from), b = src.indexOf(to, a);
 	if (a < 0 || b < 0) throw new Error(`markers not found: ${from} .. ${to}`);
 	return src.slice(a, b);
 };
-const array = (src: string, name: string) => new Function(`${i18nPrelude()}${between(src, `const ${name} =`, ";\n")}; return ${name};`)() as unknown[];
 
-const NAV = array(state, "NAV") as [string, string][], views = array(state, "views") as string[];
+const { NAV, views } = new Function(`${i18nPrelude()}${web("03-screens.js")} return { NAV, views };`)() as { NAV: [string, string][]; views: string[] };
 const routeAlias = new Function(`const NSC = { pass: 0 };\n${between(palette, "const alertAddr =", ";\n")};\n${between(palette, "const routeAlias =", ";\n")}; return routeAlias;`)() as (name: string, tgt?: string) => [string, string | undefined];
 
 type Mon = { sel: string; list: boolean };

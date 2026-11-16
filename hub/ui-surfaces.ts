@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readScreens } from "./screens-read";
 
 // Every place web/js and web/index.html can put something on screen: go() to a view, a dialog, a sheet, a menu, a toast, the palette, a
 // floating card. hub/ui-surfaces.json names each one; hub/ui-surfaces.test.ts fails when a site is in the code but not in the list, or the
@@ -131,10 +132,7 @@ export function extractOpenSitesFromText(files: Record<string, string>): Site[] 
 		}
 		for (const s of found.sort((a, b) => a.at - b.at)) add(s.kind, s.fn, s.arg, f, lineOf(s.at), s.look);
 	}
-	const state = files["js/04-state.js"] ?? "";
-	for (const v of /\bconst views = \[([^\]]*)\]/.exec(state)?.[1]?.match(/"([^"]+)"/g) ?? []) add("view", v.slice(1, -1), "", "04-state.js", 0);
-	const pages = files["js/22-settings-pages.js"] ?? "";
-	for (const m of /\bconst SET_PAGE = \{([\s\S]*?)\n\};/.exec(pages)?.[1]?.matchAll(/^ {2}(\w+): \{/gm) ?? []) add("view", m[1]!, "", "22-settings-pages.js", 0);
+	for (const r of readScreens(files["js/03-screens.js"] ?? "") ?? []) add("view", r.id, "", "03-screens.js", 0);
 	const html = files["index.html"] ?? "";
 	for (const m of html.matchAll(/<(dialog|[a-z]+)\b[^>]*?(?:role="dialog"|\spopover\b)[^>]*>|<dialog\b[^>]*>/g)) {
 		const id = /\bid="([^"]+)"/.exec(m[0])?.[1] ?? /aria-label="([^"]+)"/.exec(m[0])?.[1] ?? "";

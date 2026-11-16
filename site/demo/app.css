@@ -243,7 +243,7 @@ button.conn:disabled { cursor: default; }
 @media (max-width: 1099px) and (pointer: coarse) { :root[data-kb] .app:has(.composer textarea:focus) .side { display: none; } }
 /* buttons: one system for every page and card. Kind: primary (accent fill, the default), secondary (.tonal), quiet (.text), danger;
    size: md (default, 40px) and .sm (36px). A touch screen gets a 44px target. Card buttons keep their own class names (.dc-act,
-   .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
+   .dc-go, .dc-back) and are aliased here, so the look is defined once. */
 /* size tiers (docs/ui-spec.md 버튼, tokens in the :root above): 기본 --btn-h 36, 작은 --btn-h-sm 32 (.sm), 행 안 --btn-h-row 28 (.inrow).
    --btn-hit is the touch target, not a tier: a phone raises the box to it, a row button reaches 40px with padding (::after). */
 .bk-l { display: none; }
@@ -258,16 +258,16 @@ button.conn:disabled { cursor: default; }
 .menu .mi.off { color: var(--fg-3); cursor: default; }
 .menu .mi.off:active { background: transparent; } @media (hover: hover) { .menu .mi.off:hover { background: transparent; } }
 .menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
-.btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
+.btn, .dc-act, .dc-go, .dc-back { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
 .btn, .dc-go, .dc-act.main { background: var(--accent); color: var(--on-accent); }
 .btn.tonal, .btn.outlined, .dc-back, .dc-act.alt { background: var(--layer); color: var(--fg); }
-.btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
+.btn.text, .dc-act { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
 .btn.sm { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
-.btn, .dc-act, .dc-go, .dc-back, .dc-manual { transition: opacity var(--m-fast) var(--m-ease); }
+.btn, .dc-act, .dc-go, .dc-back { transition: opacity var(--m-fast) var(--m-ease); }
 .btn:active:not(:disabled), .dc-go:active:not(:disabled), .dc-back:active:not(:disabled) { opacity: .7; }
-@media (hover: hover) { .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; } }
+@media (hover: hover) { .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover { opacity: .85; } }
 @media (hover: hover) { .btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; } }
-@media (hover: hover) { .btn.text:hover, .dc-act:not(.main):not(.alt):hover, .dc-manual:hover { background: var(--hover); color: var(--fg); opacity: 1; } }
+@media (hover: hover) { .btn.text:hover, .dc-act:not(.main):not(.alt):hover { background: var(--hover); color: var(--fg); opacity: 1; } }
 .btn.danger { background: transparent; color: var(--err); padding: 0 var(--sp-3); }
 @media (hover: hover) { .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; } }
 .btn.danger.fill { background: var(--err); color: var(--on-err); padding: 0 var(--sp-3); }
@@ -275,7 +275,7 @@ button.conn:disabled { cursor: default; }
 /* 행 안 tier (docs/ui-spec.md 버튼, 설정 행): the button or field in the right slot of a row. 32px high, 13px; on a touch screen the box stays 32px and ::after widens the hit area to 44px. */
 .btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 var(--sp-3); font-size: 13px; }
 .btn.inrow.text, .btn.inrow.danger { padding: 0 var(--sp-2); }
-@media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
+@media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
 @media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) calc(var(--sp-05) * -1); } }
 /* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
    vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.
@@ -2051,9 +2051,6 @@ textarea.hs-ta { resize: none; }
 .dc-act.main { order: 0; padding: 0 var(--sp-5); }
 .dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .dc-act:disabled { opacity: .55; }
-.dc-manual { margin-left: auto; gap: var(--sp-1); padding: 0 var(--sp-1) 0 var(--sp-2); color: var(--fg-3); font-size: 13px; }
-.dc-manual:active { color: var(--fg); }
-.dc-manual .ic { width: 14px; height: 14px; }
 
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
 button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
@@ -2659,7 +2656,12 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */
 .rq[data-kind="comment"] .rq-sub { margin-top: var(--sp-15); color: var(--fg-2); font: 500 13px/19px var(--font); }
 .rq-orig .rq-ow { color: var(--fg-2); font-weight: 500; }
-.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: var(--sp-2); }
+.rq-att[data-k="none"] .dr-none { margin-top: var(--sp-2); }
+/* the 첨부 줄 of a card that only reads its files (10-reply-card.js rqAttachNode): the count, then one quiet line per file with its size */
+.rq-att[data-k="files"] { display: grid; gap: var(--sp-05); min-width: 0; margin-top: var(--sp-2); }
+.rq-af { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq-af .ic { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rq-af .rq-afn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 /* 보냈어요: 버튼 행과 같은 높이, 그 자리에서 바뀝니다(원칙 6) */
 .rq-sent { display: flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); margin-top: var(--sp-3); color: var(--fg); font: 500 14px/20px var(--font); }
 .rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -2678,8 +2680,6 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .bm.dr.rq-ml { gap: 0; }   /* the parts carry their own margins, as in the sheet */
 .rq.cm.rq-ml .rq-og { padding-left: 0; }
 .rq.cm.rq-ml .dr-files { margin-top: var(--sp-2); }
-.rq-acts .rq-manual { margin-left: auto; gap: var(--sp-1); color: var(--fg-3); }
-.rq-acts .rq-manual .ic { width: 14px; height: 14px; }
 
 /* the queue: one list, newest first, an app filter on top */
 .rq-chips .sel { width: 160px; }
@@ -2739,15 +2739,29 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .qline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* the foot of a card whose send the queue holds (10-reply-actions.js rqSendNode): status colour only under its state class */
-.rq-send { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: var(--fs-meta); }
+.rq-send { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: var(--fs-meta); }
 .rq-send.undo { justify-content: space-between; }
 .rq-send.failed .rq-why { color: var(--err); }
 .rq-send.unsure .rq-why.warn { color: var(--warn); }
 .rq-send .rq-sub2 { width: 100%; color: var(--fg-2); }
 .rq-send .dr-act { width: 100%; }
-/* 직접 수정 (10-reply-actions.js rqEditNode) */
-.ra-edit { width: 100%; min-height: calc(var(--sp-6) * 3); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: inherit; resize: vertical; }
+/* 고치기 panel (10-reply-actions.js rqFixNodes): every part of the draft is a field in its own place, filled like every field of the card (--ff-fill). The text takes the
+   body's place with 답글 | 메일 above it when a mail rides along, a mail's 제목 its subject line, its 받는이 and 첨부 rows open where they stand; the line to the AI and 반영 · 닫기 are the foot. */
+.ra-editbox { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ra-edit, .ra-sub { display: block; width: 100%; box-sizing: border-box; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); }
+.ra-edit { min-height: calc(var(--sp-6) * 5); font: inherit; resize: vertical; }
+.ra-sub { min-height: var(--field-h-touch); font: 600 var(--fs-card)/var(--lh-card) var(--font); }
+.ra-edit:focus, .ra-sub:focus { outline: 0; box-shadow: var(--ff-ring); }
+.rq > .ra-sub, .rq > .dr-recv { margin-top: var(--sp-2); }
+.rq-edit .kk-rq { margin: 0; }
+.rq-edit .kk-rv { margin: 0; }
 .ra-lint.err { color: var(--err); font-size: var(--fs-meta); }
+/* AI가 고친 초안 (10-reply-card.js rqDiffBody): the words that came in carry a wash of the text's own ink, the ones that went are struck and quiet. Neutral on purpose:
+   a change is not a state, so no status colour, and the wash reads on the card, on a Messenger bubble and in the dark theme alike. */
+.rq-diff .rq-dl { min-height: 1lh; }
+.rq-diff ins { padding: 0 var(--sp-05); border-radius: 4px; background: color-mix(in srgb, var(--fg) 10%, transparent); font-weight: 500; text-decoration: none; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.rq-diff del { color: var(--fg-3); text-decoration: none; background: linear-gradient(transparent calc(55% - 0.06em), var(--fg-2) 0 calc(55% + 0.06em), transparent 0); -webkit-box-decoration-break: clone; box-decoration-break: clone; }   /* the strike is drawn, not a text-decoration: WebKit leaves line-through off Hangul fallback glyphs, so only the gaps between words showed it */
+.rq-diff .rq-dgap { color: var(--fg-3); }
 
 /* 답장 대기 as a queue of cards (design 4.4). One column: at 1280px the queue's column is about 640px wide, too narrow for two cards. */
 .rq-list:has(> .rq-c) { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); background: none; overflow: visible; }
@@ -2883,6 +2897,14 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 dialog.dlg .dact .ac-gap { margin-right: auto; }
 /* a dialog's failure note (usErr) takes no room until it has a reason */
 dialog.dlg .dbody .err-t:empty { display: none; }
+/* 전환 규칙 (rulesDialog): a condition is one line (which account, its state, the amount, remove); on a phone the account and remove
+   share the first line, the state and the amount the second. The action and its account sit side by side and wrap. */
+dialog.dlg .rl-cond { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; grid-template-areas: "who st num x"; gap: var(--sp-2); align-items: center; }
+dialog.dlg .rl-cond > .sel { width: auto; min-width: 0; }
+.rl-cond .rl-who { grid-area: who; } .rl-cond .rl-st { grid-area: st; } .rl-cond .rl-num { grid-area: num; display: inline-flex; align-items: center; gap: var(--sp-2); } .rl-cond .rl-x { grid-area: x; }
+.rl-num .fi { width: 96px; flex: none; }
+@media (max-width: 639px) { dialog.dlg .rl-cond { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "who who x" "st num num"; } .rl-num .fi { width: 72px; } }
+dialog.dlg .rl-do > .sel { flex: 1 1 160px; width: auto; min-width: 0; }
 
 /* Settings sub-screens (설정, 모델·폴백, 공급자, 사용량, 컨텍스트) and the small settings dialogs (dialog.dlg.cl) on a phone.
    Scoped to those surfaces so the rest of the app keeps its compact controls. Loaded last: same-specificity rules here win. */
@@ -2936,6 +2958,7 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 /* 빠른 처리 over the one reply queue (30-triage.js tqOpen): the card, then 진행; the list's compact rows. */
 .tq-body { display: grid; align-content: start; gap: var(--sp-3); flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--sp-3); }   /* the sheet clips (.fs-card, .rq-pane): a long list scrolls here */
 .tq-rail { display: grid; gap: var(--sp-05); }
+@media (max-width: 639px) { .tq-rail { display: none; } }   /* 진행 would list every waiting item under the card; on a phone the head's "i / n" and its bar already say where he is */
 .tq-r { display: flex; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-2); font: inherit; font-size: var(--fs-meta); text-align: left; cursor: pointer; }
 .tq-r.on { background: var(--row-sel); color: var(--fg); }
 .tq-st.err { color: var(--err); }
@@ -2945,7 +2968,18 @@ dialog.dlg .dbody .err-t:empty { display: none; }
 .tq-line { display: flex; gap: var(--sp-2); align-items: baseline; font-size: var(--fs-meta); color: var(--fg-2); }
 .tq-line .tq-who { color: var(--fg); font-weight: 500; }
 .tq-tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* a row shows what its 보내기 sends, compactly (30-triage.js tqRowNode): the original as one quoted line, the 첨부 줄, the mail that rides along as one line with its own 첨부 줄 */
+.tq-og { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-ml { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; margin-top: var(--sp-1); color: var(--fg-2); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
+.tq-ml .ic { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tq-ml > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-row .rq-att, .tq-row .rq-att .dr-none { margin-top: 0; }
+.tq-row .rq-acts { margin-top: var(--sp-1); }
 .tq-foot { display: flex; justify-content: flex-end; }
+/* the keys of the one-card view (30-triage.js tqKeysNode): one quiet line under the card, each key in the app's own <kbd>. A touch screen has no keys to name. */
+.tq-keys { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); padding: 0 var(--sp-1); color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.tq-key { display: inline-flex; align-items: center; gap: var(--sp-1); white-space: nowrap; }
+@media (pointer: coarse) { .tq-keys { display: none; } }
 
 /* Assistant answers drawn by their shape (02-answer-shapes.js, prototype answers.css). Rows are the result card's .rc-row; this file only adds the card
    around them, a wider key and the phone stack. Every word is plain selectable text: a selection copies what it covers. */
@@ -3212,7 +3246,7 @@ a.dr-att:active { background: var(--active); }
 .dr-warn > .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--warn); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .dr-wt { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
 .dr-wn { font-weight: 500; color: var(--fg-2); font-size: 12px; line-height: 18px; }
-.dr-files[hidden], .dr-warnbox[hidden] { display: none; }
+.dr-warnbox[hidden] { display: none; }
 .dr-warnbox { display: flex; flex-direction: column; gap: var(--sp-15); margin-bottom: var(--sp-2); }
 .dr-ar { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
 .dr-ar > .dr-att { flex: 1; }
@@ -4900,8 +4934,8 @@ body { display: flow-root; }
 
 /* phone / touch: a control in the page body keeps its drawn size and answers a tap over --btn-hit through ::after, like the app bar above (a list row only needs 40). A row that scrolls sideways clips what hangs out above and below it (overflow-x: auto clips y too), so it carries the area as padding and gives the same back as negative margin: nothing moves. Where two areas would share a strip, the line gap or the end of the stack gives way, not the drawn size. */
 @media (pointer: coarse), (max-width: 639px) {
-  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-manual, .rq-open, .hrx-n) { position: relative; }
-  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-manual, .rq-open, .hrx-n)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
+  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-pencil, .rq-open, .hrx-n) { position: relative; }
+  :where(.subsum, .mtop-b, .hgreet-more, .hgreet .subline, .board .ch .ib, .ct-file, #c-attach, #send-btn, .cbar .cchip, .mr-f, .nsc-fb, .hm-chip, .pmv-edit, .pmv-more, .dr-rm, .dr-rc-add, .dr-rc-edit .btn, .kk-add-btn, .rq-recv, .rq-og, .rq-open, .hrx-n)::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, var(--btn-hit)); height: max(100%, var(--btn-hit)); transform: translate(-50%, -50%); }
   .subsum { z-index: 1; }
   .subsum::after { top: calc(var(--sp-3) * -1); bottom: calc(var(--sp-1) * -1); height: auto; transform: translateX(-50%); }
   .qd-ln .btn.inrow::after { inset: calc(var(--sp-2) * -1 - 1px) calc(var(--sp-05) * -1); }

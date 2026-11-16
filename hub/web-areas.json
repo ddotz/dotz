@@ -105,5 +105,5 @@
   "43-panes.js": "panes",
   "44-relay-views.js": "peers",
   "99-boot.js": "boot",
-  "pending": ["03-screens.js", "30-monitoring-route.js"]
+  "pending": ["30-monitoring-route.js"]
 }
