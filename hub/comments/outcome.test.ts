@@ -113,6 +113,25 @@ test("the gate stores a sent: no outcome as failed and a maybe as unsure, with t
 	}
 });
 
+test("a site's refusal reaches the finished send masked and bounded, for the gateway's log and record, never the stored reply (Dggtza6)", async () => {
+	const said = `spam filter matched; token=aB3dE9fGh1Jk2LmN ${"x".repeat(400)}`;
+	const g = gate(async () => ({ ok: false, reason: "사이트에서 이 글을 받지 않았어요", code: "rejected", sent: "no", detail: said }));
+	const done = await g.done;
+	expect(done).toMatchObject({ state: "failed", code: "rejected" });
+	expect(done.detail!.startsWith("spam filter matched; token=[가림:pair]")).toBe(true);
+	expect(done.detail!.length).toBe(300);
+	expect(JSON.stringify(g.store.replies())).not.toContain("spam filter");
+	expect(g.logged.some(l => l.includes("spam filter matched; token=[가림:pair]") && !l.includes("aB3dE9fGh1Jk2LmN"))).toBe(true);
+});
+
+test("website script: the runtime warning a site script prints first on stderr is not taken for the site's answer", async () => {
+	const site = src("website", { read: { kind: "script", command: ["read"] }, post: { kind: "script", command: ["post"] } });
+	const stderr = "(node:8498) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\ncomment rejected: duplicate text\n";
+	const adapter = websiteAdapter({ exec: async () => ({ code: 1, stdout: '{"ok":false,"sent":"no"}', stderr }), fetch, secretsDir: dir, siteDir: dir });
+	const out = await adapter.reply(site, comment("s"), "hi", "send:1");
+	expect(out).toMatchObject({ ok: false, code: "rejected", sent: "no", detail: "comment rejected: duplicate text" });
+});
+
 test("an adapter that throws ends unsure with code unknown: the raw message goes to the log, never into the record", async () => {
 	const g = gate(async () => {
 		throw new Error("secret stack text");

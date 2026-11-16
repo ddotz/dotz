@@ -7,7 +7,8 @@
 // A mail whose files disagree with its words is refused before the reply is posted; `--as-is` sends it as it is, and only after the owner's pick 이대로 보내기.
 // (the gateway adds it for that pick). `--only mail --retry` is the owner's 다시 보내기 of a mail that failed after its reply was posted: that mail alone goes out, the reply never again.
 // Run by the gateway's send queue (DOTZ_GATEWAY_SEND set), `send` also prints one `DOTZ_SEND {"sent","code","part"}` line per part (hub/approval-send.ts reads
-// them): "yes" posted, "no" surely not posted, "maybe" may have gone up. A send still running elsewhere prints none for its part.
+// them): "yes" posted, "no" surely not posted, "maybe" may have gone up. A send still running elsewhere prints none for its part. A reply that did not go up
+// also carries the place's own answer as `detail` (masked and bounded by the gate, hub/comments/contract.ts), for the gateway's log and its send record.
 import { join } from "node:path";
 import { commentAsk } from "../../../hub/comments/ask.ts";
 import type { Engine } from "../../../hub/comments/engine.ts";
@@ -20,7 +21,7 @@ type Out = { lines: string[]; code: number };
 const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 type Part = "reply" | "mail";
 type Sent = "yes" | "no" | "maybe";
-const sendLine = (sent: Sent, part: Part, code?: string): string => `DOTZ_SEND ${JSON.stringify({ sent, ...(code ? { code } : {}), part })}`;
+const sendLine = (sent: Sent, part: Part, code?: string, detail?: string): string => `DOTZ_SEND ${JSON.stringify({ sent, ...(code ? { code } : {}), part, ...(detail ? { detail } : {}) })}`;
 // A refusal the engine gives before the gate (the linked mail's checks) has no code of its own: it is named by its first words.
 const refusalCode = (r: { reason: string; code?: string }): string => r.code ?? (r.reason.startsWith(ATTACH_REFUSED) ? "attach_mismatch" : r.reason.startsWith(LINT_REFUSED) ? "tool_before_send" : "mail_gone");
 // A mail that did not go out after its reply: only a file refusal is known to have sent nothing.
@@ -102,7 +103,7 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 			if (done.state !== "sent") {
 				const sent: Sent = done.state === "failed" ? "no" : "maybe";
 				// The mail goes only after the reply is up: a reply that did not go up sent no mail.
-				return { ...fail(`답글을 올리지 못했어요${d.mail ? " (메일도 보내지 않았어요)" : ""}: ${done.reason ?? "알 수 없는 이유"}`), send: parts.map(p => (p === "reply" ? sendLine(sent, "reply", done.code ?? "unknown") : sendLine("no", "mail", done.code ?? "unknown"))) };
+				return { ...fail(`답글을 올리지 못했어요${d.mail ? " (메일도 보내지 않았어요)" : ""}: ${done.reason ?? "알 수 없는 이유"}`), send: parts.map(p => (p === "reply" ? sendLine(sent, "reply", done.code ?? "unknown", done.detail) : sendLine("no", "mail", done.code ?? "unknown"))) };
 			}
 			const replyUp = sendLine("yes", "reply");
 			if (only === "reply" && d.mail) return { lines: [...said, `답글만 올렸어요 (${d.code}). 메일 초안 ${d.mail}은 따로 물어요: bun hub/mail-cli.ts ask --draft ${d.mail}`], code: 0, send: [replyUp] };

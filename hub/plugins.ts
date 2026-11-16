@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Claim } from "./discord.ts";
 import type { SentMail } from "../features/reply-drafts/lib/tone.ts";
+import { withoutRuntimeWarnings } from "./tool-output.ts";
 
 export type { Claim };
 
@@ -206,7 +207,7 @@ export async function pluginReply(draft: MailReply): Promise<MailReplyResult | u
 			if (result) return result;
 		} catch (error) {
 			note(`plugin ${l.name}: reply failed: ${error}`);
-			return { ok: false, message: `플러그인 ${l.name}이(가) 보내지 못했어요: ${String(error).slice(0, 160)}` };
+			return { ok: false, message: `플러그인 ${l.name}이(가) 보내지 못했어요: ${withoutRuntimeWarnings(String(error)).trim().slice(0, 160)}` };
 		}
 	}
 	return undefined;

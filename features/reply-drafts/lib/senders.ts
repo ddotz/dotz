@@ -9,6 +9,7 @@ import { msg } from "../../../hub/i18n.ts";
 import { type AppRaw, readAppsFile } from "../../../hub/integrations.ts";
 import { addressesOf } from "../../../hub/reply-draft.ts";
 import { loadPlugins, pluginNeedsAccount, pluginReply, pluginRepliesWithFiles, pluginsLoaded, pluginsReply } from "../../../hub/plugins.ts";
+import { withoutRuntimeWarnings } from "../../../hub/tool-output.ts";
 import { dataDir } from "./settings.ts";
 import { recipientList } from "./recipients.ts";
 import { stagedFiles } from "./staged.ts";
@@ -163,15 +164,13 @@ export const canAttach = (source: string): boolean => source === "zele" || (!web
 type Verdict = { sent: Sent; code: string };
 const fail = (message: string, code: string): SendOutcome => ({ ok: false, message, sent: "no", code });
 const done = (message: string): SendOutcome => ({ ok: true, message, sent: "yes" });
-// Node prints its warnings first on stderr; they must not stand in for the reason the owner reads.
-const NODE_NOISE = /^\(node:\d+\) |^\(Use `node --trace-warnings/;
 // The tool's own words (English, often with stack lines) never reach the owner: they go to the log, and the owner reads one short reason.
 const LOGIN_LOST = /invalid_grant|token.*(expired|revoked)|not (logged|signed) in|unauthori[sz]ed|\b401\b|re-?auth/i;
 const OFFLINE = /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|network|socket hang up|offline/i;
 export const sendReasonKey = (raw: string): keyof ReturnType<typeof msg>["sendFail"] => (LOGIN_LOST.test(raw) ? "login" : OFFLINE.test(raw) ? "offline" : "other");
 // A failed tool run: its raw words go to the log, the owner reads `lead` and one short reason, and `judge` says where the mail is.
 function told(r: { stdout: string; stderr: string }, lead: string, judge: (raw: string) => Verdict): SendOutcome {
-	const raw = (r.stderr.split("\n").filter(l => !NODE_NOISE.test(l)).join("\n").trim() || r.stdout.trim()).slice(0, 2000);
+	const raw = (withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim()).slice(0, 2000);
 	if (raw) log(`reply draft: mail tool failed: ${raw}`);
 	return { ok: false, message: `${lead}${msg().sendFail[sendReasonKey(raw)]}`, ...judge(raw) };
 }
@@ -242,7 +241,10 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 		if (!sent) return fail(MANUAL, "manual_only");
 		// A plugin is a third party: only an explicit "sent": "no" says nothing left (design 2.3); any other failure may have gone out.
 		if (sent.ok) return { ...sent, sent: "yes" };
-		return (sent as { sent?: unknown }).sent === "no" ? { ...sent, sent: "no", code: "rejected" } : { ...sent, sent: "maybe", code: "unknown" };
+		// A plugin often words its failure around its tool's stderr ("보내지 못했어요: (node:8498) ExperimentalWarning: ..."): the owner reads it without the warnings.
+		const message = withoutRuntimeWarnings(sent.message).trim();
+		if (message !== sent.message.trim()) log(`reply draft: plugin send failed: ${sent.message}`);
+		return (sent as { sent?: unknown }).sent === "no" ? { ...sent, message, sent: "no", code: "rejected" } : { ...sent, message, sent: "maybe", code: "unknown" };
 	}
 	const saved = await run(["bun", WEBMAIL_MAIL, site, "draft", rec.to, rec.subject ?? "", rec.body]);
 	const id = /초안 저장:\s*(\S+)/.exec(saved.stdout)?.[1];

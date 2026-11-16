@@ -69,6 +69,7 @@ const SHARED_TITLE_MIN = 4;
 const LATIN_TITLE = /^[a-z]{4,}$/;
 // What a name adds to a title without being another work: the same work as instrumental, score or lyrics.
 const VARIANT_WORD = /^(?:inst|instrumental|karaoke|score|lyrics|가사)$/;
+const letters = (words: string[]) => words.join("").length;
 function offTopic(files: readonly string[], text: string, raw: string): string[] {
 	const words = files.map(f => [...new Set(nameWords(f).map(norm))]);
 	const seen = words.flat();
@@ -76,7 +77,12 @@ function offTopic(files: readonly string[], text: string, raw: string): string[]
 	const said = (w: string) => /^[a-z]{2,3}$/.test(w) && new RegExp(`(?:^|[^A-Za-z0-9])${w.toUpperCase()}(?:[^A-Za-z0-9]|$)`).test(raw);
 	const telling = (w: string) => w.length >= SHARED_TITLE_MIN || seen.indexOf(w) === seen.lastIndexOf(w) || said(w);
 	const says = (w: string) => wordVariants(w).some(v => v.length >= 2 && text.includes(v));
-	const onTopic = (i: number) => words[i]!.some(w => telling(w) && says(w));
+	// Several short words the files share and the draft says ("김철수 바람결") are the title they have in common, as one long word is; one alone (an author's name) is not.
+	const sharedTitle = (i: number) => {
+		const shared = words[i]!.filter(w => !telling(w) && says(w));
+		return shared.length >= 2 && letters(shared) >= SHARED_TITLE_MIN;
+	};
+	const onTopic = (i: number) => words[i]!.some(w => telling(w) && says(w)) || sharedTitle(i);
 	// A file with no telling word but variant markers ("달빛 inst", or just "달빛" once the install's noise words are dropped) is that work: judged by its short shared title, if the draft says it. Another work by the same author ("홍길동 새벽") has a telling word of its own, so it is not.
 	const byTitle = (i: number) => {
 		const own = words[i]!.filter(telling);
@@ -90,7 +96,6 @@ function offTopic(files: readonly string[], text: string, raw: string): string[]
 // The words of a name that say which file it is: "노래 음원 (1).mp3" and "노래 음원 (2).mp3" share all of theirs and are one file twice, "alpha song" and "beta song"
 // too few. A date or a version ("26.10.22") tells nothing; a numbered word one side lacks ("1탄", "2탄") is a part of a series, a different file.
 const fileWords = (name: string) => [...new Set(nameWords(name).map(norm))].filter(w => !/^\d+$/.test(w));
-const letters = (words: string[]) => words.join("").length;
 const numberedOnly = (a: string[], b: string[]) => a.some(w => /\d/.test(w) && !b.includes(w));
 // "곡 - 파트A.pdf" and "곡 - 파트B.pdf": what follows the last " - " names the file; no word of it in common is two files of one title.
 const tailWords = (name: string) => fileWords(name.replace(/\.[^.]+$/, "").split(/\s[-–—]\s/).slice(1).at(-1) ?? "");
@@ -99,10 +104,12 @@ const otherTail = (a: string, b: string) => {
 	return x.length > 0 && y.length > 0 && !x.some(w => y.includes(w));
 };
 const VARIANT_MIN = 4, VARIANT_SHARE = 0.6;
+// One document as pdf and hwpx is two formats sent on purpose, not two cuts: only files of one format are compared.
+const formatOf = (name: string) => /\.([^.]+)$/.exec(name)?.[1]?.toLowerCase();
 function cutsOfOneFile(files: readonly string[]): string[] {
 	const out = new Set<string>();
 	files.forEach((a, i) => files.slice(i + 1).forEach(b => {
-		if (kindOf(a) !== kindOf(b)) return;
+		if (formatOf(a) !== formatOf(b)) return;
 		const x = fileWords(a), y = fileWords(b), both = letters(x.filter(w => y.includes(w)));
 		if (numberedOnly(x, y) || numberedOnly(y, x) || otherTail(a, b)) return;
 		if (both >= VARIANT_MIN && both >= VARIANT_SHARE * Math.min(letters(x), letters(y))) out.add(a).add(b);

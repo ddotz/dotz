@@ -16,6 +16,7 @@
 // owner's with that text. A DM read failure leaves the comments read and is reported as the source's error.
 import { join } from "node:path";
 import { readSecretFile } from "../../secretbox.ts";
+import { withoutRuntimeWarnings } from "../../tool-output.ts";
 import { type CommentAdapter, DM_THREAD, type RawComment, type ReplyOutcome, sameWords, type SiteConfig } from "../contract.ts";
 
 export type Exec = (argv: string[], stdin?: string, timeoutMs?: number) => Promise<{ code: number; stdout: string; stderr: string }>;
@@ -152,7 +153,7 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 			} catch (e) {
 				return maybe("unknown", UNKNOWN, e instanceof Error ? e.message : String(e));
 			}
-			const raw = (r.stderr || r.stdout).trim().slice(0, 500);
+			const raw = (withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim()).slice(0, 500);
 			let out: { ok?: boolean; sent?: string; ref?: string } | undefined;
 			try {
 				out = r.stdout.trim() ? JSON.parse(r.stdout) : { ok: true };
@@ -181,7 +182,7 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 	const readDms = async (dm: NonNullable<SiteConfig["dm"]>, since?: string, room?: string): Promise<{ comments: RawComment[]; cursor?: string }> => {
 		if (dm.read.kind === "script") {
 			const r = await deps.exec([...command(dm.read.command), ...(since ? ["--since", since] : []), ...(room ? ["--room", room] : [])]);
-			if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().slice(0, 160) || `쪽지 읽기 스크립트가 ${r.code}로 끝났어요`);
+			if (r.code !== 0) throw new Error((withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim()).slice(0, 160) || `쪽지 읽기 스크립트가 ${r.code}로 끝났어요`);
 			return parseDmJson(r.stdout);
 		}
 		if (!dm.read.url || !/^https?:\/\//.test(dm.read.url)) throw new Error("쪽지를 읽을 주소가 올바르지 않아요");
@@ -196,7 +197,7 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 		const { read } = site;
 		if (read.kind === "script") {
 			const r = await deps.exec([...command(read.command), ...(cursor ? ["--since", cursor] : [])], undefined, timeoutMs);
-			if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim().slice(0, 160) || `읽기 스크립트가 ${r.code}로 끝났어요`);
+			if (r.code !== 0) throw new Error((withoutRuntimeWarnings(r.stderr).trim() || r.stdout.trim()).slice(0, 160) || `읽기 스크립트가 ${r.code}로 끝났어요`);
 			return parseSiteJson(r.stdout);
 		}
 		if (!read.url || !/^https?:\/\//.test(read.url)) throw new Error("읽을 주소가 올바르지 않아요");

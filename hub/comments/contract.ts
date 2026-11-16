@@ -4,6 +4,7 @@
 // only says who saw it first). One door out: dispatchReply() is the only function a reply is posted through (owner's 보내기 or an
 // owner-enabled rule), a reply is posted at most once per comment, and the record goes sending -> sent | failed | unsure (+reason, code); one cut off by a restart goes to unsure (recover.ts).
 // `failed` means surely not posted, `unsure` means it may have gone up: only the owner sends an unsure reply again.
+import { maskSecrets } from "../public-scrub.ts";
 import { type Draft, type Reply, type Store } from "./store.ts";
 
 export type SourceKind = "youtube" | "instagram" | "website";
@@ -80,8 +81,12 @@ export type Approval = { by: "owner" } | { by: "rule" };
 export type ReplyRequest = { code: string; approval: Approval; text?: string; resend?: true };
 export type GateDeps = { store: Store; adapters: Partial<Record<SourceKind, CommentAdapter>>; now: () => number; collector: string; inflight: Set<string>; onState?: (r: Reply) => void; log?: (line: string) => void };
 /** A refusal carries the reason code of hub/reply-reasons.ts when the gate gave it. */
-export type GateResult = { ok: true; reply: Reply; done: Promise<Reply> } | { ok: false; reason: string; code?: string };
+export type GateResult = { ok: true; reply: Reply; done: Promise<Posted> } | { ok: false; reason: string; code?: string };
+/** A finished send: the stored record, plus `detail`, what the place itself answered when it refused (a site's own words; masked and bounded).
+ * The CLI hands it to the gateway for its log and its send record; it is never stored here and never shown on a card. A crash's text is not the place's answer: log only. */
+type Posted = Reply & { detail?: string };
 const UNKNOWN_REASON = "보내다가 문제가 생겼어요";
+const DETAIL_MAX = 300;
 
 const DAY = 24 * 3600 * 1000;
 export const ruleAllows = (src: SourceConfig, text: string): boolean => {
@@ -135,21 +140,24 @@ export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
 	deps.inflight.add(sendId);
 	store.putReply(record);
 	deps.onState?.(record);
-	const done = (async (): Promise<Reply> => {
+	const done = (async (): Promise<Posted> => {
 		let outcome: ReplyOutcome;
+		let crashed = false;
 		try {
 			outcome = await adapter.reply(src, comment, text, sendId);
 		} catch (e) {
 			// A throw says nothing about whether the POST reached the platform.
+			crashed = true;
 			outcome = { ok: false, reason: UNKNOWN_REASON, code: "unknown", sent: "maybe", detail: e instanceof Error ? e.message : String(e) };
 		}
 		deps.inflight.delete(sendId);
-		if (!outcome.ok && outcome.detail) deps.log?.(`comments: ${sendId} post failed (${outcome.code ?? "unknown"}): ${outcome.detail.slice(0, 500)}`);
+		const detail = !outcome.ok && outcome.detail ? maskSecrets(outcome.detail.trim()).text.slice(0, DETAIL_MAX) : undefined;
+		if (!outcome.ok && detail) deps.log?.(`comments: ${sendId} post failed (${outcome.code ?? "unknown"}): ${detail}`);
 		const final: Reply = outcome.ok ? { ...record, state: "sent", ...(outcome.ref ? { ref: outcome.ref } : {}) } : { ...record, state: outcome.sent === "no" ? "failed" : "unsure", reason: outcome.reason, code: outcome.code ?? "unknown" };
 		store.putReply(final);
 		if (outcome.ok) store.setDraftStatus(draft.code, "sent");
 		deps.onState?.(final);
-		return final;
+		return detail && !crashed ? { ...final, detail } : final;
 	})();
 	return { ok: true, reply: record, done };
 }
