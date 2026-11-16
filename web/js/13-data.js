@@ -267,7 +267,7 @@ function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself 
   ts(target).att = ATT;   // the files waiting in the composer stay with their conversation, like the typed text
   ts(target).pick = PICK;   // the picked elements stay with it too (15-picker.js)
   closeSheet();
-  putTarget(t);
+  putTargetId(t);
   if (!isRelayT(t)) lsSet(TARGET_KEY, t);   // a relayed computer is entered by the address (#chat/relay:<adapter>:<key>), never restored from here
   if (!nav && (current === "chat" || current === "activity")) routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
