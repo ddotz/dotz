@@ -39,7 +39,9 @@ const SUB = new Set(views.filter(id => SCREENS[id].sub));
 const titles = Object.fromEntries(views.map(id => [id, SCREENS[id].title]));
 const NAV = views.filter(id => SCREENS[id].nav).sort((a, b) => SCREENS[a].nav - SCREENS[b].nav).map(id => [id, SCREENS[id].title]);
 const VIEW_ICON = Object.fromEntries(views.filter(id => SCREENS[id].ic).map(id => [id, SCREENS[id].ic]));
-// A screen's own functions, which a data row cannot hold: its owner file registers them once with screenHooks(id, { back }).
+// A screen's own functions, which a data row cannot hold: its owner file registers them once with screenHooks(id, { route, enter, back }).
+// route(tgt): go() reads the target into the screen's state, after current is set and before the address is built from it.
+// enter(tgt): go() hands over once the view is shown: the screen draws itself and asks for its data.
 // back: the app bar's 뒤로 asks it first (04-state.js #back); true means it closed something on the screen itself.
 const SCREEN_HOOKS = {};
 function screenHooks(id, hooks) {

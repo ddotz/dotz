@@ -10,6 +10,8 @@ const WA_HELP = {
 const WA = { data: null, draft: null, fail: "", asked: false, advOpen: false };
 const waLabel = m => (WA_MODES.find(x => x[0] === m) || [m, m])[1];
 
+function webAccessEnter() { loadWebAccess(); loadOnboarding("web-access"); }
+screenHooks("webaccess", { enter: webAccessEnter });
 async function loadWebAccess() {
   WA.asked = true;
   try { WA.data = await api("/api/web-access"); WA.fail = ""; } catch (e) { WA.data = null; WA.fail = e.message; }

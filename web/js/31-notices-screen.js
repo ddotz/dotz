@@ -160,6 +160,7 @@ function nscPaint(force, fresh = false) {
 }
 const nscRowOf = id => nscBox && nscBox.list.querySelector(`.nsc-r[data-nid="${CSS.escape(String(id))}"]:not([data-child])`);
 function nscSchedule() { if (!NSC.raf) NSC.raf = requestAnimationFrame(() => { NSC.raf = 0; nscPaint(false); }); }
+screenHooks("notices", { enter: nscOpen });
 function nscOpen() {
   nscInit();
   const keep = NSC.keep;

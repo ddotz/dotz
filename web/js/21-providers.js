@@ -51,6 +51,8 @@ function provRow(p, g, own) {
   return el("div", { class: "li prow", "data-prov": own ? null : p.id, "data-prov-conn": p.id },
     slot ? el("button", { class: "acc-main", type: "button", onclick: () => accProviderDialog(g, slot) }, tx) : tx, liEnd(act, rm));
 }
+function accountsEnter() { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
+screenHooks("accounts", { enter: accountsEnter });
 // 계정: one screen for what used to be 공급자, each provider's screen and the accounts block. OmO keeps a pool per provider, so the
 // provider is the group: a login provider has its own section with its accounts, and the rest (keys, not set up) share one list.
 function renderAccounts() {
@@ -317,6 +319,9 @@ function fixCard(u) {
   return card;
 }
 let quotaDrawn = 0;
+// Opening 사용량 shows the values as they are, no motion.
+function usageEnter() { gaugeForget("usage:"); quotaDrawn = 0; loadQuota(); }
+screenHooks("usage", { enter: usageEnter });
 async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
   const box = $("#usage");

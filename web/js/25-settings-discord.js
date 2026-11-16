@@ -14,6 +14,8 @@ function dcFill() {
   if (!DCS.guild.dataset.dirty) DCS.guild.value = DCS.v.guild;
   if (!DCS.owner.dataset.dirty) DCS.owner.value = DCS.v.owner_id;
 }
+function discordEnter() { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
+screenHooks("discord", { enter: discordEnter });
 async function loadDiscord() {
   DCS.asked = true;
   try { DCS.v = await api("/api/discord/connection"); DCS.fail = ""; } catch (e) { DCS.v = null; DCS.fail = e.message; }

@@ -19,10 +19,8 @@
       "44-relay-views.js": 3,
       "custom.js": 1
     },
-    "fnReassign": {
-      "go|22-settings-pages.js": 1
-    },
-    "goBranches": 48,
+    "fnReassign": {},
+    "goBranches": 25,
     "overlaySites": [
       "overlay:asPaneOpen",
       "overlay:openHSheet",
@@ -108,7 +106,6 @@
   },
   "reasons": {
     "currentAssign 05-command-palette.js": "go() is the one navigation entry and the only place current changes.",
-    "fnReassign go|22-settings-pages.js": "the settings pages wrap go() to load their data on entry; screen hooks replace the wrap later in this plan.",
     "rawNet 01-forbidden-pair.js": "window.fetch wrapper: every response, api() or raw, passes the pairing gate (403 with X-Dotz-Pair) first.",
     "rawNet 11-mailbody.js": "the mail's stored HTML body (text, not JSON, which api() would turn into null) and inline image blobs read through a cache-friendly fetch, not JSON calls.",
     "rawNet 15-attachments.js": "file bodies and HEAD probes of attachments, not JSON calls.",

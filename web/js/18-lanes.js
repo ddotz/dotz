@@ -343,6 +343,8 @@ function pjPaintRows() {
   }
   clear(box).append(...nodes);
 }
+function projectsEnter() { renderProjects(); prjLoad(); }
+screenHooks("projects", { enter: projectsEnter });
 function renderProjects() {
   if (rvPaint("projects")) return;   // a messenger-only computer is chosen: its projects, read-only (44-relay-views.js)
   const box = $("#v-projects");

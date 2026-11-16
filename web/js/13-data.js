@@ -282,6 +282,14 @@ function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself 
   if (!(s.hLoaded && s.aLoaded)) loadTarget(t, hasCached(s));
   loadTodo(t);
 }
+// 채팅 and its 터미널 view opening: the open conversation is placed and read unless it is loaded or loading already; a conversation
+// opened inside 모니터링 (monCtx) also draws and refreshes 모니터링's list behind it (30-monitoring-route.js).
+function chatEnter() {
+  enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !ts(target).loading) loadTarget(target, hasCached(ts(target)));
+  if (monCtx) monEnter();
+}
+screenHooks("chat", { enter: chatEnter });
+screenHooks("activity", { enter: chatEnter });
 function enterTarget() {
   // Appending moves the node and a moved focused field loses its focus (and a phone its keyboard): the composer moves only when it is on the other view, and keeps the focus there.
   const view = $(current === "activity" ? "#v-activity" : "#v-chat"), typing = document.activeElement === ta;

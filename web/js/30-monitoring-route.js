@@ -3,4 +3,7 @@
 // the reply sheet in its pane (30-replies.js), an open KakaoTalk room (30-kakao.js), an open comment or DM thread
 // (30-monitoring-comments.js), then a mailbox settings page (30-mailboxes-set.js). Each closer checks it is on 모니터링 itself.
 function monBack() { return asBack() || rqBack() || kkBack() || cmBack() || mxsBack(); }
-screenHooks("monitoring", { back: monBack });
+// 모니터링 opening, or a conversation opening inside it (13-data.js chatEnter): the list is drawn and its reads refreshed when stale.
+// A conversation reads the app list kept fresh already; the read it sends asks again, so it asks only before the first one.
+function monEnter() { renderMonitoring(); if (!monitorsFresh()) loadMonitors(); if (!noticesFresh()) loadNotices(); if (current === "monitoring" || !INTG.loaded) loadIntegrations(); }
+screenHooks("monitoring", { back: monBack, enter: monEnter });

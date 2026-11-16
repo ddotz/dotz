@@ -584,6 +584,8 @@ function renderHomeNowRaw() {
 
 // The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
 const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
+function homeEnter() { renderHome(); loadHomeData(); }
+screenHooks("home", { enter: homeEnter });
 function renderHome() {
   const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
   if (!box || current !== "home") return;

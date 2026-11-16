@@ -163,7 +163,7 @@ function go(name, tgt) {
   current = name;
   bkKkSync(); bkCmSync();   // leaving 모니터링 (or its item list) releases an open room's or post's history step before the new view stacks
   relayPaint();
-  if (name === "apps") appsOpen(tgt);   // after current is set: appsRender draws only the shown 앱 tab
+  SCREEN_HOOKS[name]?.route?.(tgt);   // after current is set, before the address is built: 앱's appsOpen draws only the shown tab and names it for appsHash
   if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
@@ -183,24 +183,8 @@ function go(name, tgt) {
   $("#title").textContent = name === "home" ? botName : titles[name];
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
-  if (name === "harness") loadHarness(); else closeHSheet();
-  if (tv) { enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !ts(target).loading) loadTarget(target, hasCached(ts(target))); }
-  if (name === "home") { renderHome(); loadHomeData(); }
-  if (name === "projects" || pp) { renderProjects(); prjLoad(); }
-  if (name === "monitoring" || mc) { renderMonitoring(); if (!monitorsFresh()) loadMonitors(); if (!noticesFresh()) loadNotices(); if (name === "monitoring" || !INTG.loaded) loadIntegrations(); }   // opening a conversation reads the app list kept fresh already; the read it sends asks again
-  if (name === "project") pmOpen(tgt);
-  if (name === "notices") nscOpen();
-  if (name === "settings") { if (!updFresh()) loadUpdate(); renderSettings(); loadMessengerIndex(); if (!provFresh()) loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
-  if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); if (!ACC) loadAccounts().then(() => current === "models" && renderModels()); }
-  if (name === "accounts") { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
-  if (name === "messengers") { renderMessengers(); loadMessengerIndex(); }
-  if (name === "usage") { gaugeForget("usage:"); quotaDrawn = 0; loadQuota(); }   // opening the screen shows the values as they are, no motion
-  if (name === "context") loadContext();
-  if (name === "discord") { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
-  if (name === "jandi" || name === "slack" || name === "telegram") { loadMessengerIndex(); loadMessengerSettings(name); loadOnboarding(name); }
-  if (name === "devices" || name === "settings") loadDevices();
-  if (name === "webaccess" || name === "settings") loadWebAccess();
-  if (name === "webaccess") loadOnboarding("web-access");
+  if (name !== "harness") closeHSheet();
+  SCREEN_HOOKS[name]?.enter?.(tgt);   // the screen's own file draws it and asks for its data (screenHooks in 03-screens.js)
   // No screen is empty on its first frame: one whose loader has not drawn yet (사용량, 컨텍스트, 구성 ...) says so, and the loader replaces this line.
   const body = $(`#v-${name} > #${name}`);
   if (body && !body.firstChild) body.append(emptyNode(TX("common.loading")));

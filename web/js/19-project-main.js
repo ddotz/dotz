@@ -3,6 +3,9 @@
 // PM.sheets = the open drill-in pages, repainted from the re-fetched detail after every write.
 const pmReset = () => ({ key: "", D: null, fail: false, open: 0, flight: null, sheets: new Set() });
 let PM = pmReset();
+// A project opens beside the list on a wide screen (ppWide), so the list is drawn and read first.
+function projectEnter(key) { if (ppWide()) projectsEnter(); pmOpen(key); }
+screenHooks("project", { enter: projectEnter });
 function pmOpen(key) {
   if (PM.key !== key) { for (const s of PM.sheets) s.h.close(false); PM = { ...pmReset(), key }; }
   pmPaint(); prjLoad(); pmLoad();
@@ -516,6 +519,8 @@ function ctxBar(p) {
 }
 // A quiet read asked while another is out shares it (the page's first read and refreshState ask at the same time).
 let ctxFlight = null;
+function contextEnter() { loadContext(); }
+screenHooks("context", { enter: contextEnter });
 function loadContext(quiet) {
   if (quiet && ctxFlight) return ctxFlight;
   const p = ctxFlight = ctxFetch(quiet).finally(() => { if (ctxFlight === p) ctxFlight = null; });

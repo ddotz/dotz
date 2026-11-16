@@ -28,6 +28,8 @@ function msHubRow() {
   r.dataset.msHub = "";
   return r;
 }
+function messengersEnter() { renderMessengers(); loadMessengerIndex(); }
+screenHooks("messengers", { enter: messengersEnter });
 // The messenger screen: Discord · JANDI · Slack · Telegram, each a row with its status tag that opens that messenger's own screen.
 function renderMessengers() {
   if (!MSS.asked) loadMessengerIndex();
@@ -56,6 +58,9 @@ async function loadMessengerIndex() {
   finally { MSS.loading = false; }
   msPaint();
 }
+// JANDI, Slack and Telegram share one settings page shape; current names the one opening.
+function messengerEnter() { loadMessengerIndex(); loadMessengerSettings(current); loadOnboarding(current); }
+for (const id of ["jandi", "slack", "telegram"]) screenHooks(id, { enter: messengerEnter });
 async function loadMessengerSettings(id) {
   const p = msPage(id);
   p.loading = true;
