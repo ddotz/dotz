@@ -62,7 +62,7 @@ const stepJs = (s: Step) => (s === null ? `go("monitoring");` : s.startsWith("#"
 type Row = { in: string; out: Record<string, unknown> };
 let v: View;
 // A fresh page per case: the cases do not lean on each other, and WebKit refuses more than 100 history writes in 10 s on one page.
-async function fresh(i: number) {
+async function fresh(v: View, i: number) {
 	await run(v, `localStorage.clear(); sessionStorage.clear()`).catch(() => undefined);
 	await v.navigate(`${hub.origin}/?case=${i}`);
 	await waitFor(v, `NT.loaded && NM.loaded && INTG.items.length === 3 && CONV.has("mail:p-1")`);
@@ -74,11 +74,28 @@ beforeAll(async () => { v = await hub.view({ width: 1280, height: 900 }); }, 30_
 test("every 모니터링 route string means what hub/monitoring-route.json recorded", async () => {
 	const got: Row[] = [];
 	for (const [i, c] of CASES.entries()) {
-		await fresh(i);
+		await fresh(v, i);
 		got.push({ in: label(c), out: await ev<Record<string, unknown>>(v, `(() => { ${RESET} ${c.map(stepJs).join(" ")} return ${SNAP}; })()`) });
 	}
 	if (process.env.MONITORING_ROUTE_WRITE) writeFileSync(TABLE, `${JSON.stringify(got, null, "\t")}\n`);
 	const want = JSON.parse(readFileSync(TABLE, "utf8")) as Row[];
 	expect(got.map(r => r.in)).toEqual(want.map(r => r.in));
 	for (const [i, r] of got.entries()) expect(r.out, r.in).toEqual(want[i]!.out);
+}, 120_000);
+
+// On the phone the address settles asynchronously (histMove steps the history with history.go), so the route is run and the address read once it has settled
+// on what the table recorded.
+test("every 모니터링 route string settles on the address hub/monitoring-route.json recorded at 390px", async () => {
+	const want = JSON.parse(readFileSync(TABLE, "utf8")) as Row[];
+	expect(want.map(r => r.in)).toEqual(CASES.map(label));
+	const phone = await hub.view({ width: 390, height: 844 });
+	const got: Record<string, unknown>[] = [];
+	for (const [i, c] of CASES.entries()) {
+		await fresh(phone, i);
+		await run(phone, `${RESET} ${c.map(stepJs).join(" ")}`);
+		const hash = want[i]!.out.hash as string;
+		await waitFor(phone, `location.hash === ${JSON.stringify(hash)}`).catch(() => undefined);
+		got.push({ in: label(c), hash: await ev<string>(phone, "location.hash") });
+	}
+	expect(got).toEqual(want.map(r => ({ in: r.in, hash: r.out.hash })));
 }, 120_000);
