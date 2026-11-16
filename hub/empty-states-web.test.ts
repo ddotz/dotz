@@ -53,7 +53,11 @@ async function boot(width: number): Promise<View> {
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	return v;
 }
-const shot = async (v: View, name: string) => { if (SHOTS) { await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); await Bun.write(join(SHOTS, name), await v.screenshot()); } };
+// A shot waits until the screen is settled, read off what is drawn: the open app's ⋯ settings button (it appears only once the app-settings read has landed and the
+// head or app bar was repainted for it) is on screen, and the DM refresh button no longer reads 불러오는 중….
+const LOADED = `(app => !app || [...document.querySelectorAll('[data-as-more="' + app + '"]')].some(n => n.getClientRects().length > 0))(monDetailApp())
+	&& (b => !b || b.textContent !== TX("common.loading"))(document.querySelector("#dm-refresh"))`;
+const shot = async (v: View, name: string) => { if (SHOTS) { await waitFor(v, LOADED); await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); await Bun.write(join(SHOTS, name), await v.screenshot()); } };
 // Page code: the node `sel` finds reads as the page's own text `tx` (white space aside: a long sentence is cut into phrases, web/js/01-phrase-wrap.js).
 const says = (sel: string, tx: string) => `((document.querySelector(${JSON.stringify(sel)}) || {}).textContent || "").replace(/\\s/g, "") === ${tx}.replace(/\\s/g, "")`;
 const onScreen = (v: View, selectors: string[]) => ev<{ notSharedCard: string[]; found: number[] }>(v, `(() => { const seen = n => n.getClientRects().length > 0;
