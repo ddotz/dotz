@@ -166,7 +166,10 @@ function cmTabs() {
   const b = (id, text) => el("button", { type: "button", class: `cchip mr-f${CM.tab === id ? " on" : ""}`, role: "tab", "data-tab": id, "aria-selected": String(CM.tab === id), text, onclick: () => cmTab(id) });
   return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": TX("mon.cm.view_aria") }, b("comments", TX("mon.cm.comments")), b("dm", "DM"));
 }
-function cmSigSet(key, sig) { CM[key] = sig; }   // the DM pane's paint signatures (30-monitoring-comments-dm.js)
+// The DM pane's paint signatures (30-monitoring-comments-dm.js): these three only, a field not named here cannot be written from outside.
+const cmRoomsSig = sig => { CM.roomsSig = sig; };
+const cmHeadSig = sig => { CM.headSig = sig; };
+const cmChatSig = sig => { CM.chatSig = sig; };
 function cmTab(id) {
   if (CM.tab === id) return;
   CM.tab = id; CM.open = null; CM.seq++; dmReset();

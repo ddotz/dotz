@@ -23,7 +23,7 @@ const mailCan = (t, a) => { const m = MAILS.get(t); return !!m && Array.isArray(
 const mailOldHub = t => { const m = MAILS.get(t); return !!m && !Array.isArray(m.can); };
 // Unread: the hub's read flag when the card has one (the real mailbox's, two-way); else dotz's own read position (ts(t).unread). A sent mail is never unread.
 const mailUnread = (t, m = MAILS.get(t)) => !!m && m.dir !== "out" && (typeof m.read === "boolean" ? !m.read : (ts(t).unread | 0) > 0);
-const mbRefresh = () => { monSigReset(true); monSchedule(); mbPaintBar(); };
+const mbRefresh = () => { monDirty(true); mbPaintBar(); };
 // What waits on the hub is kept here by id (the mail, `|`, the button's data-k), not only on its node: a repaint draws the button again and mbHeld puts it back busy;
 // the end clears the node that is on the page then. `keep`: the row is leaving, so the node stays as it is and only the id goes.
 const mbWid = b => { const r = b.closest(".mr[data-t]"); return `${r ? r.dataset.t : ""}|${b.dataset.k}`; };

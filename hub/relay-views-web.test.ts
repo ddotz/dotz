@@ -67,6 +67,13 @@ const ownHidden = (name: string) => ev<boolean>(`[...document.querySelectorAll("
 const buttons = (name: string) => ev<string[]>(`[...document.querySelectorAll("#v-${name} > .rv button")].map(b => b.dataset.k)`);
 
 describe("a relayed computer chosen, read-only screens", () => {
+	test("the screens that draw the snapshot are the four this file exercises, named by the relay column of the SCREENS table", async () => {
+		const want = ["home", "monitoring", "projects", "settings"];
+		await open();
+		await waitFor(`typeof SCREENS === "object" && RELAY_VIEWS.size > 0`);
+		expect((await ev<string[]>(`Object.keys(SCREENS).filter(id => SCREENS[id].relay).sort()`))).toEqual(want);
+		expect((await ev<string[]>(`[...RELAY_VIEWS].sort()`))).toEqual(want);
+	});
 	test("홈 keeps the relay target and draws the snapshot: sessions, to-dos, notices, how old it is", async () => {
 		await relayOpen();
 		const text = await show("home");
@@ -179,8 +186,8 @@ describe("a relayed computer chosen, the chat list", () => {
 		snap = null;
 		await relayOpen();
 		await run(`go("chat", "list")`);
-		// The 불러오는 중 row is a .cv-empty too, and the list repaints after the load settles: wait for the settled words themselves.
-		await waitFor(`chatList && RV.by["relay:jandi:work"]?.loaded && (document.querySelector("#chat-convo .cv-empty")?.textContent || "").includes("work 대화는 아직 받지 못했어요")`);
+		// The 불러오는 중 row is an empty-state card too, and the list repaints after the load settles: wait for the settled words themselves.
+		await waitFor(`chatList && RV.by["relay:jandi:work"]?.loaded && (document.querySelector("#chat-convo .empty")?.textContent || "").includes("work 대화는 아직 받지 못했어요")`);
 		expect(await listText()).toContain("work 대화는 아직 받지 못했어요");
 		expect(await ownRows()).toEqual([]);
 	});

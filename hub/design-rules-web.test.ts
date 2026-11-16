@@ -44,7 +44,7 @@ const STATUS_ALLOWED = new Set([
 // the KakaoTalk look (a per-person avatar hue, its unread yellow, the video placeholder).
 const COLOR_ALLOWED = new Set([
 	"03-base.css .sendrow.ulw", "03-base.css .ta-hl .ulw-kw", '03-base.css :root[data-theme="dark"] .ntf', '03-base.css :root[data-theme="dark"] .ntf:hover',
-	'04-files.css :root[data-theme="dark"] .hintrow', "04-files.css dialog.lbox::backdrop", "04-files.css dialog.tbox::backdrop",
+	'04-files.css :root[data-theme="dark"] .hintrow', "04-files.css dialog.lbox::backdrop",
 	"17-kakao.css .kk-av", '17-kakao.css :root[data-theme="dark"] .kk-av', "17-kakao.css .kk-chat", '17-kakao.css :root[data-theme="dark"] .kk-chat', "17-kakao.css .kk-video",
 ]);
 // Literal times with no token to match: delays that wait for a close.
@@ -54,7 +54,7 @@ const DURATION_ALLOWED = new Set([
 ]);
 // [px font-sizes, px radii] per file: a ceiling, too many entries to name one by one.
 const SIZE_ALLOWED: Record<string, [number, number]> = {
-	"01-tokens.css": [11, 4], "02-cards-lists-tags.css": [12, 3], "03-base.css": [32, 16], "04-files.css": [59, 25],
+	"01-tokens.css": [11, 4], "02-cards-lists-tags.css": [12, 3], "03-base.css": [32, 16], "04-files.css": [54, 22],
 	"05-log.css": [36, 18], "06-harness.css": [22, 3], "07-chat.css": [23, 5], "08-project-sessions.css": [6, 0],
 	"09-notices.css": [5, 1], "10-conversations.css": [8, 4], "11-peers.css": [0, 4], "13-code-shell.css": [2, 6],
 	"14-overlay.css": [1, 0], "15-draft-original.css": [2, 5], "15-reply-card.css": [3, 0], "15-reply.css": [2, 2],

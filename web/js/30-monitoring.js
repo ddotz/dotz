@@ -388,7 +388,7 @@ function monItemNode(n) {
 // row, so the bar's right edge moves at once; a peer has no row to read here, so its list is re-read through pqSoon.
 const monRunNow = (btn, m) => busy(btn, async () => {
   if (!m || !m.watch) return;
-  MON.running.add(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
+  MON.running.add(m.watch); monDirty(true);
   const was = btn && btn.textContent;
   if (btn) btn.textContent = TX("mon.running");
   try {
@@ -401,7 +401,7 @@ const monRunNow = (btn, m) => busy(btn, async () => {
     if (m.pc) pqSoon();
     toast(r && r.approved ? MON_RECONNECT : r && r.item && r.item.connection === "disconnected" ? TX("mon.run.still_down") : TX("mon.run.checked"));
   } finally {
-    MON.running.delete(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
+    MON.running.delete(m.watch); monDirty(true);
     if (btn) btn.textContent = was;
   }
 });
@@ -410,14 +410,14 @@ const MON_RECONNECT = TX("mon.reconnect_asked");
 // 다시 연결 on a disconnected app: every watch the app owns runs on this computer, then the app and the list are read again.
 const monRecheckApp = (btn, it, names) => busy(btn, async () => {
   for (const n of names) MON.running.add(n);
-  MON.sig = ""; MON.side = ""; monSchedule();
+  monDirty(true);
   // allSettled: one watch failing to run still lets the others finish, the data reload and the owner hear how it went.
   // A peer's app: its watches run (and a gated login is approved) on the computer that owns them.
   const runOne = n => it.pc ? api(pqProxy(it.pc, "/api/peer/act"), "POST", { action: "watch", args: { op: "run", name: n } }) : api(`/api/watches/${enc(n)}/run`, "POST", {});
   const res = await Promise.allSettled(names.map(runOne));
   for (const n of names) MON.running.delete(n);
   await Promise.allSettled([loadMonitors(), it.pc ? pqLoad() : loadIntegrations()]);
-  MON.sig = ""; MON.side = ""; monSchedule();
+  monDirty(true);
   const bad = res.filter(r => r.status === "rejected").length, asked = res.some(r => r.status === "fulfilled" && r.value && r.value.approved);
   toast(bad ? TX("mon.recheck.partial", { total: names.length, n: bad }) : asked ? MON_RECONNECT : TX("mon.recheck.done"), !!bad);
 });

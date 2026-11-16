@@ -43,9 +43,9 @@ function monRoute(tgt) { pqOpen(); monApply(monParse(tgt)); }
 const monHash = () => monHashOf({ list: MON.list, sel: MON.sel, mx: MON.sel === MX.key ? MX : null });
 
 /* ---------- monitoring: what other files change on the screen ---------- */
-// Every file outside 모니터링 that changes what the screen shows asks for its redraw here: the next paint is not skipped as unchanged.
-function monDirty() { MON.sig = ""; monSchedule(); }
-// The same for a caller that draws or schedules the paint itself; side: the list beside the item is drawn again too.
+// Every file outside 모니터링 that changes what the screen shows asks for its redraw here: the next paint is not skipped as unchanged (side: the list beside the item is drawn again too).
+function monDirty(side) { MON.sig = ""; if (side) MON.side = ""; monSchedule(); }
+// The same for a caller that draws or schedules the paint itself.
 function monSigReset(side) { MON.sig = ""; if (side) MON.side = ""; }
 // Drawn now, not on the next frame: a sheet that takes the focus (30-triage.js), a tab whose rows swap in a motion (30-replies.js).
 function monRenderNow() { MON.sig = ""; renderMonitoring(); }

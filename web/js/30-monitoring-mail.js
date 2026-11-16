@@ -203,7 +203,7 @@ async function mailSetFyi(t, on, btn = null) {
   const m = MAILS.get(t);
   if (m) { m.reply = on ? "fyi" : m.reply === "draft" ? "draft" : "needs"; m.unreplied = !on; }
   document.querySelectorAll(".mtop-fyi").forEach(mailFyiPaint);
-  monSigReset(true); monSchedule();
+  monDirty(true);
   toast(on ? TX("mail.fyi.done") : TX("mail.fyi.undone"), false, on ? { label: TX("common.undo"), onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }

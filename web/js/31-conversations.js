@@ -433,7 +433,7 @@ function convAvatar(t) {
 // { name, badge: [word, tone], unread }, with an optional one-line preview (hint) under the name. A row never shows a time: the name and the content tell what it is.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
-  if (r.empty) { const n = emptyNode(r.empty); n.classList.add("cv-empty"); return n; }   // .cv-empty styles nothing: hub/relay-views-web.test.ts finds the line by it
+  if (r.empty) return emptyNode(r.empty);
   if (r.more) return moreRow(TX("conv.more_projects", { n: r.more }), () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); });
   if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";

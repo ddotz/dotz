@@ -21,7 +21,8 @@ const mxMail = () => INTG.items.filter(x => x.app === "mail");
 // The one item's key: `i:mail`, or the first mail instance when `mail` is gone. Any mail instance opens it.
 const mxKeyOf = inst => (mxMail().some(x => x.key === inst) ? `i:${(mxMail().find(x => x.key === "mail") || mxMail()[0]).key}` : `i:${inst}`);
 // The address `monitoring/i%3Amail/<account>/<box>` is read and written in 30-monitoring-route.js (monParse, monHashOf); mxRouteSet takes what it names (monApply).
-// mxHash and mxRoute are the mail part alone: the suffix of the open state, and an address target read into MX (its item key back).
+// mxHash and mxRoute are kept for web/custom.js of other installs (nothing in the app calls them; do not delete as dead code).
+// They are the mail part alone: the suffix of the open state, and an address target read into MX (its item key back).
 const mxRouteSet = x => { MX.scr = x.scr; if (x.acct !== undefined) { MX.acct = x.acct; MX.box = x.box; } };
 const mxHash = sel => (sel === MX.key ? monHashOf({ sel, mx: MX }).slice(`monitoring/${enc(sel)}`.length) : "");
 function mxRoute(tgt) { const r = monParse(tgt); if (!r.mx) return tgt; mxRouteSet(r.mx); return r.sel; }

@@ -36,7 +36,7 @@ function dmPaintRooms() {
   const top = cmRooms.scrollTop, tabs = cmTabs();
   const sig = JSON.stringify(["dm", DM.perm, DM.line, DM.error, DM.convs, DM.loaded, DM.busy, DM.open && DM.open.id, !!tabs]);
   if (sig === CM.roomsSig) return;
-  cmSigSet("roomsSig", sig);
+  cmRoomsSig(sig);
   const bar = el("div", { class: "dm-bar" }, el("span", { class: "dm-note", text: TX("mon.dm.ro") }),
     el("button", { class: "btn text", type: "button", id: "dm-refresh", disabled: DM.busy, text: DM.busy ? TX("common.loading") : TX("settings.refresh"), onclick: dmRefresh }));
   const list = el("section", { class: "kk-watch", "aria-label": TX("mon.dm.aria") });
@@ -79,12 +79,12 @@ function dmPaintChat(stick) {
   dmRo.hidden = !open;
   const sig = open ? `dm/${open.id}/${open.peer}` : "";
   if (sig !== CM.headSig) {
-    cmSigSet("headSig", sig); clear(cmHead);
+    cmHeadSig(sig); clear(cmHead);
     if (open) cmHead.append(kkAvatar(open.peer), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.peer })));
   }
   const csig = JSON.stringify(["dm", open, DM.loading, DM.viewErr, v]);
   if (!stick && csig === CM.chatSig) return;
-  cmSigSet("chatSig", csig);
+  cmChatSig(csig);
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("mon.dm.pick") })); return; }
   if (DM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("common.loading") })); return; }
   if (DM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: DM.viewErr }), appRetry(() => { DM.loading = true; DM.viewErr = ""; cmPaintChat(false); dmReload(); })); return; }

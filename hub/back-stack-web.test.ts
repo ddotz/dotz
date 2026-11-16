@@ -94,6 +94,18 @@ test("390: settings → 메신저 → Slack, back goes up one level at a time", 
 	await until(v, `current === "settings"`, "back did not return to the settings");
 });
 
+test("390: 메신저 → Discord, back lands on 메신저 (the under column of the SCREENS table), not on 설정", async () => {
+	const v = await open(390);
+	await tab(v, "settings");
+	await until(v, `current === "settings"`, "settings not shown");
+	await v.evaluate(`go("messengers")`);
+	await until(v, `current === "messengers"`, "messengers not shown");
+	await v.evaluate(`go("discord")`);
+	await until(v, `current === "discord"`, "discord not shown");
+	await v.evaluate(`document.querySelector("#back").click()`);   // the app bar's arrow asks backTarget(); history.back() would not
+	await until(v, `current === "messengers"`, "back from discord did not land on the messengers");
+});
+
 test("390: tab A → B → A, back returns to B then A; the same tab again adds no entry", async () => {
 	const v = await open(390);
 	await tab(v, "settings");
