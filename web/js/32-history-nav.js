@@ -41,6 +41,8 @@ function navSync(name, hash) {
   histSync();
   H.auto = H.tab = false;
 }
+const histTab = () => { H.tab = true; };
+const histAuto = () => { H.auto = true; };
 // A route changed its own hash without changing level (a conversation picked from the switcher, a project map opened).
 function routeReplace(hash) {
   const S = history.state;

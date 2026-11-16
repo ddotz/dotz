@@ -137,7 +137,7 @@ function ntGo(t, kept = false) {
   if (!kept && isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // `kept`: the gateway holds the message in that session's history   // the session is gone: its result card is in the main chat
   if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast(TX("project.not_found")); go("projects"); return ""; }
   if (!validTarget(t)) { toast(TX("conv.nt.no_screen")); go("home"); return ""; }
-  if (t === "alert") NSC.pass = Date.now() + 1000;   // the one way into the record conversation: a row's source message (#chat/alert alone is the 알림 screen)
+  if (t === "alert") nscPass(1000);   // the one way into the record conversation: a row's source message (#chat/alert alone is the 알림 screen)
   if (current !== "chat" || target !== t || convListing()) go("chat", t);   // already open (a cold start draws the address first): no second draw
   return t;
 }

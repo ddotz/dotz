@@ -167,6 +167,9 @@ function paneRestore() {
   paneSync();
   panePersist();
 }
+const paneAppOff = () => { if (!PN.going) PN.app = false; };
+const paneActiveSet = id => { PN.active = id; };
+const paneTreePut = next => { PN = next; };
 // The chat tab pressed again after another tab: the panes come back as they were, the active one's content opened again.
 // A relayed computer chosen off the chat (44-relay-views.js relayShow) sits in no pane: the tab opens its chat, not what the active pane held.
 function paneReturn() {

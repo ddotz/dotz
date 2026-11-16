@@ -11,7 +11,7 @@
     "M": ["20-models.js"],
     "MON": ["30-monitoring.js", "30-monitoring-route.js"],
     "MX": ["30-mailboxes.js"],
-    "NSC": ["04-state.js"],
+    "NSC": ["31-notices-screen.js", "04-state.js"],
     "OV": ["32-history-nav.js"],
     "P": ["21-providers.js"],
     "PN": ["43-panes.js"],

@@ -133,12 +133,8 @@ function go(name, tgt) {
   // does one raised together with the move ("프로젝트를 지웠어요" and then the list).
   document.querySelectorAll("body > .snack:not(.act)").forEach(n => { if (n !== toastNew) toastGone(n); });
   [name, tgt] = routeAlias(name, tgt);
-  NSC.pass = 0;
-  if (!PN.going) PN.app = false;   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
-  const viaRow = NSC.arm > Date.now();
-  NSC.arm = 0;
-  if (name === "notices") NSC.ret = false;
-  else { NSC.ret = viaRow; if (!viaRow) NSC.keep = false; }
+  nscLanding(name);
+  paneAppOff();   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
   // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
   const inChat = name === "chat" || name === "activity";
   let mc = false;
@@ -148,7 +144,7 @@ function go(name, tgt) {
   monCtx = mc ? tgt || target : "";
   if (mc) { const k = monItemOf(tgt || target); if (k) MON.sel = k; MON.list = false; }
   if (!views.includes(name) || navOff(name)) name = "home";
-  if (name === "projects" && ppWide() && !relayCur()) { H.auto = true; name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { H.auto = true; go("project", prjFirst()); } }); }
+  if (name === "projects" && ppWide() && !relayCur()) { histAuto(); name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { histAuto(); go("project", prjFirst()); } }); }
   if (name === "project" && !tgt) name = "projects";
   if (name === "accounts") accFocus = tgt || "";
   if (name === "project") ppCur = tgt;

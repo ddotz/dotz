@@ -159,6 +159,15 @@ function nscPaint(force, fresh = false) {
   if (!first) for (const id of arrived) { const r = nscRowOf(id); if (r) motionIn(r, "top"); }   // a notification that arrives slides in at the top of its group
 }
 const nscRowOf = id => nscBox && nscBox.list.querySelector(`.nsc-r[data-nid="${CSS.escape(String(id))}"]:not([data-child])`);
+const nscPass = ms => { NSC.pass = Date.now() + ms; };
+// go() landed on a screen: the alert pass and the row arm are spent, and the way back to the list holds only when a row led here.
+function nscLanding(name) {
+  NSC.pass = 0;
+  const viaRow = NSC.arm > Date.now();
+  NSC.arm = 0;
+  if (name === "notices") NSC.ret = false;
+  else { NSC.ret = viaRow; if (!viaRow) NSC.keep = false; }
+}
 function nscSchedule() { if (!NSC.raf) NSC.raf = requestAnimationFrame(() => { NSC.raf = 0; nscPaint(false); }); }
 screenHooks("notices", { enter: nscOpen });
 function nscOpen() {

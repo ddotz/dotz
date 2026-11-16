@@ -24,7 +24,7 @@ function paneLayoutApply(name) {
   const r = panePrune(paneLayouts()[name]);
   if (!r) { toast(TX("misc.pl.cant_open"), true); return; }
   paneMirrorsClear();
-  PN = { ...r, seq: Math.max(PN.seq, r.seq) };
+  paneTreePut({ ...r, seq: Math.max(PN.seq, r.seq) });
   paneEnter(paneFind(PN.active));
   panePersist();
 }
