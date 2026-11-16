@@ -1,6 +1,6 @@
 // The screen table SCREENS in web/js/03-screens.js, read from its text: one row per line, `  <id>: { key: value, ... },`, data only.
 // hub/ui-surfaces.ts (the view sites) and site/demo-views.ts (the demo's sections) read the screen list here instead of each scraping its own.
-export type ScreenRow = { id: string; tab?: string; nav?: number; sub?: boolean; up?: string; title?: string; ic?: string; html?: boolean };
+export type ScreenRow = { id: string; tab?: string; nav?: number; sub?: boolean; up?: string; title?: string; ic?: string; html?: boolean; relay?: boolean; under?: string };
 
 const ROW = /^ {2}([\w$]+): \{ (.*) \},$/;
 // One field: a string, a number, true, or TX("key") (title keeps the i18n key).

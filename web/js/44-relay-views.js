@@ -7,7 +7,6 @@
 // mode is removing the child: the screen's own markup was never touched.
 // Function declarations, not arrows: 33-peers.js, 42-relay-chat.js and the render functions call these before a const of this file exists.
 const RV_POLL_MS = 30_000, RV_FRESH_MS = 10_000;
-const RV_SCREENS = { home: 1, projects: 1, monitoring: 1, settings: 1, chat: 1 };
 const RV = { by: {} };
 
 /** The relay target shown as THE computer right now: its chat on screen, or a snapshot screen opened from it. "" for this computer. */
@@ -30,7 +29,7 @@ function rvRefresh() {
   const draw = { home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings, chat: () => { convSig = ""; convSchedule(); } }[current];
   if (draw) draw();
 }
-const rvTick = () => { const t = relayCur(); if (t && !document.hidden && RV_SCREENS[current]) rvLoad(t, true); };
+const rvTick = () => { const t = relayCur(); if (t && !document.hidden && RELAY_VIEWS.has(current)) rvLoad(t, true); };
 setInterval(rvTick, RV_POLL_MS);
 document.addEventListener("visibilitychange", rvTick);
 

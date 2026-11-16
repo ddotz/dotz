@@ -3,28 +3,29 @@
 // tab: the bottom tab a screen belongs to; nav: its place in the tab bar (no nav: not a tab); sub: a settings sub-page (the 설정 tab
 // stays lit, 뒤로 leads back toward 설정); up: the fixed screen 뒤로 goes to, only where that never depends on state; title and ic: the
 // header title and the icon of the tab and palette row; html: its section is in web/index.html (without it 22-settings-pages.js adds one).
+// relay: a relayed computer's snapshot is drawn in this screen (44-relay-views.js); under: the settings page 뒤로 falls back to when it was not opened from another screen.
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
 // The order is the order of the views list (the palette lists screens in it); the four settings pages come last.
 const SCREENS = {
-  home: { tab: "home", nav: 1, title: TX("common.home"), ic: "home", html: true },
+  home: { tab: "home", nav: 1, title: TX("common.home"), ic: "home", html: true, relay: true },
   chat: { tab: "chat", nav: 2, title: TX("common.chat"), ic: "chat", html: true },
   activity: { tab: "chat", title: TX("common.chat"), ic: "activity", html: true },
   harness: { tab: "settings", sub: true, up: "settings", title: TX("common.system"), ic: "harness", html: true },
-  settings: { tab: "settings", nav: 6, title: TX("common.settings"), ic: "settings", html: true },
+  settings: { tab: "settings", nav: 6, title: TX("common.settings"), ic: "settings", html: true, relay: true },
   models: { tab: "settings", sub: true, title: TX("common.model"), ic: "model", html: true },
   accounts: { tab: "settings", sub: true, title: TX("common.accounts"), ic: "key", html: true },
   usage: { tab: "settings", sub: true, title: TX("common.usage"), ic: "usage", html: true },
   context: { tab: "settings", sub: true, title: TX("common.context"), ic: "context", html: true },
-  discord: { tab: "settings", sub: true, title: TX("base.title.discord"), ic: "discord", html: true },
-  jandi: { tab: "settings", sub: true, title: TX("base.title.jandi"), ic: "chat", html: true },
-  slack: { tab: "settings", sub: true, title: TX("base.title.slack"), ic: "chat", html: true },
-  telegram: { tab: "settings", sub: true, title: TX("base.title.telegram"), ic: "chat", html: true },
+  discord: { tab: "settings", sub: true, title: TX("base.title.discord"), ic: "discord", html: true, under: "messengers" },
+  jandi: { tab: "settings", sub: true, title: TX("base.title.jandi"), ic: "chat", html: true, under: "messengers" },
+  slack: { tab: "settings", sub: true, title: TX("base.title.slack"), ic: "chat", html: true, under: "messengers" },
+  telegram: { tab: "settings", sub: true, title: TX("base.title.telegram"), ic: "chat", html: true, under: "messengers" },
   messengers: { tab: "settings", sub: true, title: TX("base.title.messengers"), ic: "chat", html: true },
   devices: { tab: "settings", sub: true, title: TX("base.title.devices"), ic: "key", html: true },
   webaccess: { tab: "settings", sub: true, title: TX("base.title.webaccess"), ic: "open", html: true },
   project: { tab: "projects", title: TX("common.project"), ic: "projects", html: true },
-  projects: { tab: "projects", nav: 3, title: TX("common.projects"), ic: "projects", html: true },
-  monitoring: { tab: "monitoring", nav: 4, title: TX("common.monitoring"), ic: "activity", html: true },
+  projects: { tab: "projects", nav: 3, title: TX("common.projects"), ic: "projects", html: true, relay: true },
+  monitoring: { tab: "monitoring", nav: 4, title: TX("common.monitoring"), ic: "activity", html: true, relay: true },
   apps: { tab: "apps", nav: 5, title: TX("common.apps"), ic: "apps", html: true },
   notices: { title: TX("common.alerts"), ic: "bell", html: true },
   cardform: { tab: "home", up: "home", title: TX("base.title.cardform") },
@@ -38,6 +39,7 @@ const views = Object.keys(SCREENS);
 const SUB = new Set(views.filter(id => SCREENS[id].sub));
 const titles = Object.fromEntries(views.map(id => [id, SCREENS[id].title]));
 const NAV = views.filter(id => SCREENS[id].nav).sort((a, b) => SCREENS[a].nav - SCREENS[b].nav).map(id => [id, SCREENS[id].title]);
+const RELAY_VIEWS = new Set(views.filter(id => SCREENS[id].relay));
 const VIEW_ICON = Object.fromEntries(views.filter(id => SCREENS[id].ic).map(id => [id, SCREENS[id].ic]));
 // A screen's own functions, which a data row cannot hold: its owner file registers them once with screenHooks(id, { route, enter, back, chain }).
 // route(tgt): go() reads the target into the screen's state, after current is set and before the address is built from it.
