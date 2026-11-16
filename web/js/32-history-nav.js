@@ -27,7 +27,7 @@ function routeChain(name, hash) {
     const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
     const bt = backTarget();
     if (bt === "home") return ["home", hash];
-    if (bt === "messengers") return ["home", "settings", bt, hash];
+    if (views.some(id => SCREENS[id].under === bt)) return ["home", SCREENS[bt].tab, bt, hash];   // a page other screens sit under (메신저) is itself in its tab
     if (bt === "chat" || bt === "activity") return [...conv(bt), hash];
     return ["home", bt === "project" ? "projects" : bt, hash];
   }

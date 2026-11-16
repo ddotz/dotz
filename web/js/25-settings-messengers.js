@@ -3,7 +3,7 @@
 // onboarding panel. Manual IDs/tokens live only in the closed "직접 입력" disclosure.
 // The messenger screens are the SCREENS rows under 메신저, in table order (03-screens.js loads first).
 const MS_IDS = views.filter(id => SCREENS[id].under === "messengers");
-const MS_LABELS = { discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram" };
+const MS_LABELS = Object.fromEntries(MS_IDS.map(id => [id, titles[id]]));
 const MS_KINDS = [["main", TX("common.main_chat")], ["project", TX("common.project")], ["alert", TX("common.alerts")], ["worklog", TX("common.worklog")]];
 const MS_AS_USER = TX("connect.ms.as_user");
 const MSS = { items: null, fail: "", asked: false, loading: false, page: null };

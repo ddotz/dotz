@@ -25,7 +25,8 @@ const CHAT_MODE_KEY = "dotz-chat-mode";
 // 로그 보기 (the "activity" view): kept in the code, off in the app. false hides the 대화/로그 toggle and sends every way into the log view
 // (an old #activity address, a saved choice, a subagent row) to 대화 instead; true brings the toggle back.
 const LOG_VIEW = false;
-const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : v === "cardform" ? "home" : v;
+// The tab a screen lights: its row's tab (채팅's 터미널 view, a project, the card form); a settings page and a screen without a tab name themselves.
+const navView = v => (SCREENS[v] && !SUB.has(v) && SCREENS[v].tab) || v;
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
