@@ -172,7 +172,7 @@ Discord, Telegram, Slack에 중계를 지금 만들지는 않아요. 같은 규�
 
 ## 화면 지도
 
-dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 하위 4개(`notifications`, `display`, `update`, `runtime`)는 `web/js/22-settings-pages.js:5-14`가 실행 시점에 `views`, `SUB`, `titles`에 더해서 실제로는 27개 뷰가 돌아요. 주소는 `#<뷰>/<대상>` 꼴이고 `parseHash`(`web/js/05-command-palette.js:99`)가 나누고 `go()`(같은 파일 :109)가 해시를 만들어요(:143). 제목은 `titles`(`03-screens.js:39`), 뒤로 가는 곳은 `backTarget`(`04-state.js:231`)이에요. 아래 "SUB"는 설정 하위 화면 집합(`03-screens.js:38`)이에요: 이 화면에서 뒤로는 직전 비-SUB 화면이고, 없으면 `provider`는 `providers`, 메신저 넷은 `messengers`, 나머지는 `settings`예요.
+dotz 웹앱의 화면은 `web/js/03-screens.js`의 `SCREENS` 표에 한 줄씩 있고(`:8`), `views` 배열(`:37`)은 그 줄의 이름들이에요. 설정 하위 4개(`notifications`, `display`, `update`, `runtime`)도 같은 표의 줄이고, 제목, 아이콘, SUB 여부, 뒤로 갈 곳이 거기에 있어요. 주소는 `#<뷰>/<대상>` 꼴이고 `parseHash`(`web/js/05-command-palette.js:120`)가 나누고 `go()`(같은 파일 :130)가 해시를 만들어요(:166). `go()`는 화면 파일이 `screenHooks`로 등록한 `route`(:162)와 `enter`(:183)를 불러요. 제목은 `titles`(`03-screens.js:39`), 뒤로 가는 곳은 `backTarget`(`04-state.js:231`)이에요. 아래 "SUB"는 설정 하위 화면 집합(`03-screens.js:38`)이에요: 이 화면에서 뒤로는 직전 비-SUB 화면이고, 없으면 `provider`는 `providers`, 메신저 넷은 `messengers`, 나머지는 `settings`예요.
 
 | 뷰 이름 | 경로(해시) | DOM id | 화면에 보이는 제목 | 부모 / 뒤로 | web/js | web/css |
 |---|---|---|---|---|---|---|
@@ -199,10 +199,10 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 | `apps` | `appsHash()` 결과 (`APPS_ON=false`라 `home`으로 바뀜) | `#v-apps` (`#apps-side`, `#apps-pane`) | `앱` | 탭 루트 | 30-apps.js, 23-installable-app-web.js(설치 안내만) | 20-apps.css, 10-conversations.css |
 | `notices` | `#notices` (`#chat/alert`, `#activity/alert`도 여기로) | `#v-notices` | `알림` | `NSC.ret`이면 `notices`로 돌아옴, 새로 열면 `nscBack` | 31-notices-screen.js, 30-notices.js, 01-notice-ko.js | 09-notices-screen.css, 09-notices.css |
 | `cardform` | `#cardform/<id>` | `#v-cardform` (`22-settings-pages.js:12-13`에서 만든 빈 section) | `카드 추가` | `home` | web/custom.js(cardForm:382) | web/custom.js 안의 `CSS` 문자열(`.cu-*`, `.pv-*`) |
-| `notifications` | `#notifications` | `#v-notifications` > `#notifications.st-page` | `앱과 알림` | `settings` | 22-settings-pages.js:6, 23-installable-app-web.js(pushSection) | 15-settings-pages.css, 06-harness.css |
-| `display` | `#display` | `#v-display` > `#display.st-page` | `표시` | `settings` | 22-settings-pages.js:7,101 | 02-cards-lists-tags.css, 15-settings-phone.css |
-| `update` | `#update` | `#v-update` > `#update.st-page` | `업데이트` | `settings` | 24-settings-update.js(updateSection), 22-settings-pages.js:8 | 06-harness.css, 03-base.css(`.upd-bar`) |
-| `runtime` | `#runtime` | `#v-runtime` > `#runtime.st-page` | `실행 하네스` | `settings` | 26-settings-runtime.js(hvSection), 22-settings-pages.js:9 | 06-harness.css, 02-cards-lists-tags.css |
+| `notifications` | `#notifications` | `#v-notifications` > `#notifications.st-page` | `앱과 알림` | `settings` | 22-settings-pages.js:5, 23-installable-app-web.js(pushSection) | 15-settings-pages.css, 06-harness.css |
+| `display` | `#display` | `#v-display` > `#display.st-page` | `표시` | `settings` | 22-settings-pages.js:6,120 | 02-cards-lists-tags.css, 15-settings-phone.css |
+| `update` | `#update` | `#v-update` > `#update.st-page` | `업데이트` | `settings` | 24-settings-update.js(updateSection), 22-settings-pages.js:7 | 06-harness.css, 03-base.css(`.upd-bar`) |
+| `runtime` | `#runtime` | `#v-runtime` > `#runtime.st-page` | `실행 하네스` | `settings` | 26-settings-runtime.js(hvSection), 22-settings-pages.js:8 | 06-harness.css, 02-cards-lists-tags.css |
 
 ### 앱 틀 (`.app-two` + `.app-side`)
 - 목적: 앱의 화면은 왼쪽 가장자리에 앱 자신의 칸, 그 옆에 본 화면 하나예요. 채팅, 프로젝트, 모니터링이 서는 방식 그대로이고, 앱 안에서 항목을 열어도 칸은 그대로예요(전체 화면으로 갈아타지 않아요).
@@ -228,17 +228,17 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 ### 주소 별칭과 보조 주소
 | 입력 | 실제로 여는 곳 | 근거 |
 |---|---|---|
-| `#chat/alert`, `#activity/alert` | `notices` (`ntGo`가 `NSC.pass`를 세우면 기록 대화) | 05-command-palette.js:107-108 |
-| `#lanes` | `chat/list` | 05-command-palette.js:105,108 |
-| `#providers/<id>` | `provider/<id>` | 05-command-palette.js:108 |
-| `#accounts`, `#settings/accounts` | `provider/anthropic` | 05-command-palette.js:108 |
-| `#monitoring/c:<키>`, 모니터링 소유 대화 | 대화 화면을 그리되 탭, 목록, 주소는 모니터링 쪽 | 05-command-palette.js:117-124 |
-| `#chat/list` | 폰(1099px 이하)에서만 대화 목록, 넓은 화면은 대화 | 05-command-palette.js:133 |
-| `#projects` (1100px 이상) | `project/<ppCur 또는 builtin:custom>` | 05-command-palette.js:126 |
-| `#project` (대상 없음), `#provider` (대상 없음) | 각각 `projects`, `providers` | 05-command-palette.js:127-128 |
-| 모르는 뷰, 꺼진 앱 탭 | `home` | 05-command-palette.js:125 |
+| `#chat/alert`, `#activity/alert` | `notices` (`ntGo`가 `NSC.pass`를 세우면 기록 대화) | 05-command-palette.js:127-129 |
+| `#lanes` | `chat/list` | 05-command-palette.js:129 |
+| `#providers/<id>` | `provider/<id>` | 05-command-palette.js:129 |
+| `#accounts`, `#settings/accounts` | `provider/anthropic` | 05-command-palette.js:129 |
+| `#monitoring/c:<키>`, 모니터링 소유 대화 | 대화 화면을 그리되 탭, 목록, 주소는 모니터링 쪽 | 05-command-palette.js:138-145 |
+| `#chat/list` | 폰(1099px 이하)에서만 대화 목록, 넓은 화면은 대화 | 05-command-palette.js:153-154 |
+| `#projects` (1100px 이상) | `project/<ppCur 또는 builtin:custom>` | 05-command-palette.js:147 |
+| `#project` (대상 없음), `#provider` (대상 없음) | 각각 `projects`, `providers` | 05-command-palette.js:129,148 |
+| 모르는 뷰, 꺼진 앱 탭 | `home` | 05-command-palette.js:146 |
 
-탭(NAV, `03-screens.js:40`)은 `home`, `chat`, `projects`, `monitoring`, `apps`(숨김), `settings`예요. `activity`는 `chat`, `project`는 `projects`, `cardform`은 `home` 탭이 켜져요(`navView`, `04-state.js:28`). SUB 화면은 `settings` 탭이 켜져요(`05-command-palette.js:149`).
+탭(NAV, `03-screens.js:40`)은 `home`, `chat`, `projects`, `monitoring`, `apps`(숨김), `settings`예요. `activity`는 `chat`, `project`는 `projects`, `cardform`은 `home` 탭이 켜져요(`navView`, `04-state.js:28`). SUB 화면은 `settings` 탭이 켜져요(`05-command-palette.js:173`).
 
 ## 화면별 명세
 
@@ -250,7 +250,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 카드 전체가 `tapCard`(role=link, Enter/Space로도 열림)라서 눌러 이동해요. 카드 머리의 ⋯ 버튼은 `menuBtn`/`homeMenu`예요. 화면에 들어올 때 `go("home")`가 `renderHome()`과 `loadHomeData()`를 불러요. 홈이 열려 있으면 60초마다 `loadHomeData` 재실행. 홈 맨 위로 스크롤은 `homeTop`.
 - 상태: 제목은 `titles.home` = `홈`. 첫 `loadHomeData`가 끝나기 전에는 `HOME_READY=false`라서 새로 생기는 행에 올라오는 모션을 안 줘요. 상태(`S`)가 아직 없으면 인사말 상태 단어가 `연결 중`. 메뉴가 열려 있으면(`openMenu`가 카드 안) 카드 격자는 닫힐 때까지 다시 그리지 않아요. 폰/데스크톱: 22-shell.css의 `@media (max-width: 1023px)`에서 `#v-home` 안쪽 여백이 줄어요. 카드 격자는 폭 719px 이하(또는 coarse 포인터이면서 767px 이하)에서 한 열로 바뀌어요(`narrowMQ`, 07-board.js 항목 참고). 다른 컴퓨터(peer) 항목은 홈에 안 그려요: `!i.pc`, `!x.pc` 필터(08-home.js:361)이고 다른 컴퓨터는 모니터링 화면 담당이에요.
 - 데이터: `GET /api/quota`, `loadProviderData()`(공급자), `loadMonitors()`(모니터링), `pqLoad()`(다른 컴퓨터 스냅샷을 미리 읽기만 함). 상태는 `S`(`/api/state`의 `orchestrator`, `lanes`, `runs`, `work`, `deferred`, `convs`), `C`(컨텍스트 프로세스), `P`(공급자), `M`(모델), `NT`(알림), `NM`(모니터), `INTG`(앱 연동). SSE는 `activity`, `subagents`, `quota`, `notice` 계열을 받아 홈을 다시 그려요(`homeSoon`, `subsChanged`, `quotaLive`).
-- 근거: web/js/08-home.js:4 `loadHomeData`, 08-home.js:356 `renderHomeNow`, 08-home.js:448 `renderHome`, 08-home.js:447 `homeTop`, 08-home.js:16 `tapCard`, 08-home.js:94 `homeSoon`; web/index.html:95 (`#v-home`).
+- 근거: web/js/08-home.js:4 `loadHomeData`, 08-home.js:469 `renderHomeNow`, 08-home.js:590 `renderHome`, 08-home.js:587 `homeTop`, 08-home.js:18 `tapCard`, 08-home.js:98 `homeSoon`; web/index.html:95 (`#v-home`).
 - css: 22-shell.css(`#v-home`, `.hgreet`, `.hstrip`, `.hneeds`, `.hn`, `.hr`, `.hrx`), 05-log.css(`.hn`, `.hr`, `.board`, `.bi`, `.glist`, `.grow`), 09-notices.css(`.hc-*`, `.nt-dot`), 02-cards-lists-tags.css(`.card`, `.ch`).
 
 ### 홈 인사 영역 (`homeGreeting`)
@@ -259,7 +259,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: ⋯ 버튼은 `homeMenu(btn, MAIN)`(aria-label `어시스턴트 메뉴`). 메뉴: `모델 변경…`, `추론 강도…`, `모델 · 폴백 설정`(`openModels`), `중단`(작업 중일 때만, `abortOrch`), `재시작`(`restartOrch`). `서브에이전트 N개 진행 중` 줄을 누르면 서브에이전트 시트가 열려요(`openSubs`).
 - 상태: 인사말은 시간대별 `편안한 밤이에요`(5시 전), `좋은 아침이에요`(12시 전), `좋은 오후예요`(18시 전), `좋은 저녁이에요`. 메타 줄 = `{봇이름}이/가 {상태 단어}` · 모델과 추론 강도 · `세션 {n}개`(살아 있는 세션이 있을 때) · 컴퓨터 이름 · KST 시각. 상태 단어(`homeWord`): `S` 없음 `연결 중`, 지금 진행 중 항목이 있으면 `일하는 중`, 답을 기다리는 대화가 있으면 `답을 기다려요`, 오케스트레이터 상태가 idle이 아니면 `statusKo` 값(`작업 중` `대기` `시작 중` `멈춤` `한도 걸림` `종료됨`), 실행 오류면 `오류로 멈췄어요`, 그 외 `쉬는 중`. 메뉴의 `중단`은 `S.orchestrator.status === "working"`일 때만 나와요. `재시작` 확인 대화상자: 제목 `어시스턴트 재시작`, 본문 `작업 중인 내용이 있으면 멈춰요.`, 버튼 `재시작`, 완료 토스트 `재시작을 요청했어요`. 중단 토스트 `작업을 중단했어요`.
 - 데이터: `S.orchestrator`, `S.runs.main`, `M.orchestrator`(모델), `POST /api/orchestrator/restart`, `POST /api/orchestrator/abort`, `PUT` 모델 변경(`putModel`, 이 파일 밖).
-- 근거: web/js/08-home.js:330 `homeGreeting`, 08-home.js:321 `homeWord`, 08-home.js:308 `homeGreetWord`, 08-home.js:311 `homeRunning`, 08-home.js:458 `restartOrch`, 08-home.js:464 `abortOrch`.
+- 근거: web/js/08-home.js:445 `homeGreeting`, 08-home.js:436 `homeWord`, 08-home.js:411 `homeGreetWord`, 08-home.js:414 `homeRunning`, 08-home.js:601 `restartOrch`, 08-home.js:607 `abortOrch`.
 - css: 22-shell.css(`.hgreet`, `.hgreet-fb`), 03-base.css(`.smodel`), 05-log.css(`.subline`).
 
 ### 홈 로그인 풀림 줄 (`nyLogins`)
@@ -276,7 +276,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 행을 누르면 각 항목 종류대로 열려요(알림은 `ntHomeRow`/`noticeOpen`, 세션 질문은 `homeNowRow`로 세션 대화, 모니터 실패는 `go("monitoring", key)`). 보내기 승인(rank 1)은 앱별로 묶여 한 행이에요(`ntHomeRows`). 목록은 처음 `NY.top`=5행만 보이고 `더 보기 · {n}개` / `접기`로 펼쳐요(`NY.more` 토글 후 `renderHomeNow`).
 - 상태: 정렬 rank 0 중요(로그인, 게이트웨이 실패), 1 보내기 확인, 2 결정/모니터 3번 연속 실패, 3 세션 질문, 4 일반 질문. 우측 라벨(`act`)은 `로그인`, `보내기 확인`, `선택`, `답변`, `확인 필요`. 중요 행은 `.crit`, 실패 톤은 빨강. 다른 컴퓨터 알림이면 행에 컴퓨터 이름 태그(`.tag.mon-pc`). 모니터 실패 행 문구 `{n}번 연속 실패했어요 · {마지막 요약}`, 제목은 모니터 이름, `NY_FAILS=3`회 이상이고 `paused` 아닌 이 컴퓨터 모니터만. 게이트웨이가 스스로 처리하는 질문은 여기에 안 나오고(`nyHandled`) 알림 카드 뉴스로 가요. 비어 있으면 `답변할 항목이 없어요`. 접근성: 행 aria-label 끝의 `답변 필요`가 `중요 · {act}` 또는 `{act}`로 바뀌어요.
 - 데이터: `S.lanes`(세션 `pendingAsk`), `ntDecisions()`, `ntLooseAsks()`, `monItems()`(`m.fails`, `m.paused`, `m.last_run`, `m.last_summary`), `NT`, `DONE`/`SEEN`(localStorage `dotz-done`, `dotz-seen`).
-- 근거: web/js/09-needs-you.js:154 `NY`, 09-needs-you.js:156 `nyOf`, 09-needs-you.js:170 `nyMonFails`, 09-needs-you.js:177 `nyList`, 09-needs-you.js:186 `nyRows`, 09-needs-you.js:210 `nyMonRow`, 09-needs-you.js:219 `nyListNode`; 08-home.js:373 (머리 렌더).
+- 근거: web/js/09-needs-you.js:154 `NY`, 09-needs-you.js:156 `nyOf`, 09-needs-you.js:170 `nyMonFails`, 09-needs-you.js:177 `nyList`, 09-needs-you.js:186 `nyRows`, 09-needs-you.js:227 `nyMonRow`, 09-needs-you.js:235 `nyListNode`; 08-home.js:373 (머리 렌더).
 - css: 22-shell.css(`.hneeds`, `.ny-more`), 05-log.css(`.hn-h`, `.hn`, `.hr`, `.ny-more`), 02-cards-lists-tags.css(`.tag`).
 
 ### 홈 답장 두 줄 (`homeRepliesRow`, `homeOwedRow`)
@@ -294,7 +294,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 어시스턴트 행은 `openTarget(t, lastChatView())`로 대화 열기. 세션 행은 `sessionRow`(아래 세션 행 항목). 앱 대화 행은 `go("chat", target)`. 작업 행은 `workGo`(진행 중이면 대화로, 끝났으면 결과 메시지로). 새로 생기는 행은 위에서 올라오는 모션(`motionIn`).
 - 상태: 허브 상태를 받기 전엔 `불러오는 중…`(연결이 끊겼으면 `불러오지 못했어요`), 받은 뒤 비어 있으면 `진행 중인 작업이 없어요`(할일·답변 필요 카드도 같은 규칙). 행 미리보기 우선순위: 답변 필요일 때 질문 문구, 런 상태 줄(`runText`), 최신 활동 줄(`nowLine`), 모델 칩, 상태 단어. 서브에이전트가 있으면 `서브에이전트 {끝남}/{전체}`(title `서브에이전트 끝난 수 / 전체`). 폴백 모델이면 세션 행에 모델과 폴백 태그. 앱 대화 행 상태 `작업 중` 또는 `진행 중`, aria-label `{이름} · {상태} · 대화 열기`. 한도 대기 행: 배지 `한도 리셋되면 재개 ({HH:MM})`, 시각을 못 읽으면 `한도 리셋되면 재개`. 방금 끝난 작업은 `HC_KEEP`=6초 동안 이 카드에 `완료`로 남았다가 모션(`motionSwap`)으로 최근 끝난 작업으로 가요.
 - 데이터: `S.orchestrator`, `S.lanes`, `S.runs`, `S.work`, `S.convs`, `S.deferred`, `SUBS`, `LAST`(세션별 마지막 활동 줄), `GET /api/activity?source=lane:{name}&limit=30`(처음 한 번), `S.work_skew`.
-- 근거: web/js/08-home.js:311 `homeRunning`, 08-home.js:230 `homeNowRow`, 08-home.js:250 `homeConvRow`, 08-home.js:271 `homeLimitRow`, 08-home.js:283 `hcSettled`, 08-home.js:371-372, 08-home.js:393.
+- 근거: web/js/08-home.js:414 `homeRunning`, 08-home.js:261 `homeNowRow`, 08-home.js:297 `homeConvRow`, 08-home.js:271 `homeLimitRow`, 08-home.js:338 `hcSettled`, 08-home.js:371-372, 08-home.js:393.
 - css: 05-log.css(`.hr`, `.hn`, `.hrx`), 22-shell.css(`.hr`, `.hn`), 10-conversations.css(`.hr`).
 
 ### 홈 대기 중 / 최근 끝난 작업 (카드 `now:waiting`, `now:ended`)
@@ -303,7 +303,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 대기 행은 `homeNowRow`와 같아요(세션 대화로). 끝난 작업 행은 `workRow`: 결과 파일 칩(텍스트 파일이면 `viewer`, 아니면 새 탭 링크), `다시 맡기기` 버튼(사용자가 중단한 작업만, `workRetry`).
 - 상태: 끝난 작업 목록은 `workEnded()`: 실패했지만 에이전트가 이미 넘겨받은 것(`handled`)은 빠져요. 행 상태 문구는 `작업 중`, `멈춤`, `완료`, `중단됨`, `이어서 처리 중`(실패 후 에이전트가 처리 중), `실패`. 부제: 진행 중 `{N분째 또는 방금 시작} · {모델}`, 멈춤 `{이유 또는 활동이 없어요} · {시간}`, 완료 `끝남 · {방금/N분 전/N시간 전}`, 실패 `실패 · {이유 또는 이유가 기록되지 않았어요} · {시간}`(중단됨이면 `중단됨 · {시간}`). 톤: 진행/처리 중 파랑(pri), 멈춤 주황(warn), 완료 초록(ok), 실패 빨강(err), 중단/넘겨받음 회색. aria-label은 `{설명} · {상태} · 대화로 가기` 또는 `결과 보기`.
 - 데이터: `S.work`(`id`, `status`, `description`, `model`, `started_at`, `ended_at`, `reason`, `cancelled`, `handled`, `files`, `target`, `reply_to`, `result_at`, `result_conv`). `POST /api/workers/{id}/retry`(다시 맡기기), `POST /api/workers/{id}/cancel`(중단, 확인 대화상자 `백그라운드 작업 중단` / `하던 작업을 멈춰요. 필요하면 다시 맡길 수 있어요.`, 이 홈에서는 안 쓰고 입력창 중단 버튼에서 호출). 15초마다 작업이 돌면 `refreshState()`.
-- 근거: web/js/08-home.js:533 `workRow`, 08-home.js:302 `hcWorkFiles`, 08-home.js:394-395; web/js/06-subagents.js:11 `workEnded`, 06-subagents.js:13-17 (`workRecovering`, `workTone`, `workFailText`), 06-subagents.js:25 `workRetry`, 06-subagents.js:43 (15초 타이머); web/js/18-lanes.js:34 `workGo`.
+- 근거: web/js/08-home.js:533 `workRow`, 08-home.js:302 `hcWorkFiles`, 08-home.js:394-395; web/js/06-subagents.js:14 `workEnded`, 06-subagents.js:13-17 (`workRecovering`, `workTone`, `workFailText`), 06-subagents.js:32 `workRetry`, 06-subagents.js:43 (15초 타이머); web/js/18-lanes.js:31 `workGo`.
 - css: 05-log.css(`.hrx`, `.hrx-f`), 22-shell.css(`.hrx`, `.hrx-f`), 09-notices.css(`.hrx`).
 
 ### 홈 알림 / 작업내역 / 모니터링 카드
@@ -312,7 +312,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 카드 전체 탭은 알림 `nscGo`, 작업내역 `openTarget("worklog","chat")`, 모니터링 `go("monitoring")`. 각 행은 `noticeOpen(n)`로 그 항목을 열고 이벤트 전파를 막아요. ⋯ 메뉴: `알림 열기`/`작업내역 열기`/`모니터링 열기` + `앞으로 옮기기`/`뒤로 옮기기`.
 - 상태: 알림 카드 머리에 안 읽은 수. 불러오기 전 `불러오는 중…`, 실패 `불러오지 못했어요`, 알림 비어 있음 `새 알림이 없어요`, 작업내역 비어 있음 `아직 작업내역이 없어요`, 모니터링 비어 있음 `모니터링 중인 항목이 없어요`. 모니터링은 4개까지, 더 있으면 `더 보기 · {n}개`, 실패가 있으면 머리에 빨간 점과 `실패 {n}`. 알림 카드는 안 읽은 새 소식만 최대 3개(게이트웨이 재시작 알림 제외, 이미 답변 필요에 있는 질문 제외). 제목이 `작업 기록`/`작업내역`/`알림`처럼 일반적이면 본문 첫 줄을 대신 보여요.
 - 데이터: `NT`(`loaded`, `failed`, `items`), `NM`(`loaded`, `failed`), `ntMons()`, `monStatus(m)`. 갱신은 알림/모니터링 SSE 후 `homeSoon`(500ms 디바운스).
-- 근거: web/js/08-home.js:153 `homeAlertCard`, 08-home.js:158 `homeWorklogCard`, 08-home.js:162 `homeMonitorCard`, 08-home.js:136-152 (헬퍼), 08-home.js:144 `hcRecent`, 08-home.js:147 `hcFyi`.
+- 근거: web/js/08-home.js:181 `homeAlertCard`, 08-home.js:187 `homeWorklogCard`, 08-home.js:191 `homeMonitorCard`, 08-home.js:136-152 (헬퍼), 08-home.js:150 `hcRecent`, 08-home.js:153 `hcFyi`.
 - css: 09-notices.css(`.hc-list`, `.hc-row`, `.hc-mon`, `.hc-none`, `.hc-more`, `.hc-n`, `.nt-dot`), 02-cards-lists-tags.css(`.ch`), 05-log.css(`.ch`).
 
 ### 홈 사용량 / 컨텍스트 / 공급자 카드
@@ -321,7 +321,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 카드/행 탭은 `go("usage")`, `go("context")`, `go("provider", id)`. 묶음 카드 탭은 `usage`, `context`, `providers`. 행의 ⋯ 메뉴(아래 항목). 묶을지 여부는 localStorage `dotz-home-groups`(기본 `["ctx","limit","prov"]`)에 저장(`setHomeGroup`).
 - 상태: 컨텍스트 값 `{percent}%` 또는 `{토큰수} 토큰`, 80% 이상이면 주황 점. 사용량은 한도에 닿았거나 남은 비율이 20% 이하이면 주황. 공급자: 로그인 필요면 `로그인 필요`(주황 점), 아니면 `API 키` 또는 `로그인됨`(초록 점), 계정이 있으면 `.sup`에 계정. 연결 안 됐고 주의도 필요 없는 공급자는 안 보여요. 묶음 빈 상태: 데이터 전 `불러오는 중…`, 사용량 읽기 실패 `사용량을 불러오지 못했어요`, 그 외 `없어요`. 묶음 카드 머리 점은 하나라도 주의면 주황, `err`가 있으면 빨강. 컨텍스트는 실행 중인 프로세스만(`x.running`). 아직 데이터가 안 온 카드는 저장된 자리를 유지해요(보드 `keep`).
 - 데이터: `GET /api/quota`(`HQ.providers[].limits`), `C.processes`, `P.providers`, `POST /api/compact`.
-- 근거: web/js/08-home.js:402-438 (`E` 구성과 `add`), 08-home.js:179 `HOME_KINDS`, 08-home.js:183 `setHomeGroup`, 08-home.js:192 `homeRow`.
+- 근거: web/js/08-home.js:402-438 (`E` 구성과 `add`), 08-home.js:209 `HOME_KINDS`, 08-home.js:213 `setHomeGroup`, 08-home.js:222 `homeRow`.
 - css: 05-log.css(`.glist`, `.grow`, `.gm`, `.kv`), 02-cards-lists-tags.css(`.kv`, `.card`, `.ch`), 22-shell.css(`.card`).
 
 ### 홈 카드 ⋯ 메뉴 (`homeMenu`)
@@ -330,7 +330,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 묶음 카드 `카드로 나누기`, `{제목} 열기`. 알림류 `{알림|작업내역|모니터링} 열기`. 어시스턴트/세션 `모델 변경…`, `추론 강도…`, `모델 · 폴백 설정`, `중단`, `재시작`. 세션 `중단` = `POST /api/lanes/{n}/abort`(토스트 `작업을 중단했어요`), `재시작` = 확인 `{n} 재시작` / `이 세션을 다시 시작할까요?` / 버튼 `재시작`, `POST /api/lanes/{n}/restart`(토스트 `재시작했어요`). 공급자 `다시 로그인`/`로그인`, `키 삭제`/`로그아웃`, `공급자 열기`. 컨텍스트 `압축`(`POST /api/compact`, 토스트 `{name}: 압축을 시작했어요` 또는 큐에 들어가면 `{name}: 작업 중이라 끝나면 압축해요`), `컨텍스트 열기`. 사용량 `사용량 열기`, `공급자 열기`. 개별 카드에서 `{종류} 한 카드로 묶기`. 공통 `앞으로 옮기기`, `뒤로 옮기기`(`homeBoard.moveBefore`). 커스텀 카드는 `dotzCustom.menuActs`.
 - 상태: 컨텍스트 압축은 프로세스가 실행 중이고 압축이 대기/진행 중이 아닐 때만. 어시스턴트의 `중단`은 작업 중일 때만. 대화(`inChat`) 모드에서는 이동/묶기 항목 숨김.
 - 데이터: `POST /api/lanes/{n}/abort`, `POST /api/lanes/{n}/restart`, `POST /api/compact`, `POST /api/orchestrator/restart|abort`.
-- 근거: web/js/08-home.js:26 `homeMenu`, 08-home.js:83 `homeMoveActs`, 08-home.js:23 `menuBtn`.
+- 근거: web/js/08-home.js:28 `homeMenu`, 08-home.js:83 `homeMoveActs`, 08-home.js:25 `menuBtn`.
 - css: 02-cards-lists-tags.css(`.ib`), 03-base.css(`.mi` 메뉴 항목).
 
 ### 홈 보드 (`makeBoard`)
@@ -339,7 +339,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 마우스는 머리를 4px 이상 끌면 이동, 가장자리 핸들로 크기 조절. 키보드는 방향키 이동, Shift+방향키 크기. 폰/좁은 화면은 한 열이고, 터치로 450ms 길게 눌러(`B_PRESS`) 들어 올려 순서를 바꿔요(8px 이상 움직이면 스크롤로 취급). Esc는 들어 올린 카드를 되돌려요. 끌 때 가장자리 56px에서 자동 스크롤. `reorder`, `moveBefore`(⋯ 메뉴의 `앞으로 옮기기`/`뒤로 옮기기`), `resize`. `카드 추가`는 `dotzCustom.add()`, `배치 초기화`는 `reset()`(커스텀 카드 숨김 해제 후 다시 그림).
 - 상태: 홈은 `px`+`rows` 모드라서 모든 카드가 내용 높이(`fit`)이고 폭만 정해져요(기본 6칸=절반, 최소 6, 최대 12). 한 줄 두 장이 짝이면 둘이 더 큰 높이로 맞춰져요(`measureRows`). 저장은 localStorage `dotz-board-home`(`_u:"px"`, `_g:"rows"`, `_order`); `_g`가 없는 옛 배치는 한 번 초기화돼요. 좁은 화면(`narrowMQ` = `(max-width: 719px), (pointer: coarse) and (max-width: 767px)`)에서는 위치 대신 순서(`style.order`)로만 쌓여요. coarse 포인터에서 리사이즈 핸들은 `.se`만 보이고 카드 머리 ⋯ 버튼이 40px로 커져요(05-log.css:193, 230). 카드가 하나도 없으면 `.bbar` 숨김. 드래그 중에 들어온 갱신은 `pending`으로 미뤘다가 놓은 뒤 반영해요. `prefers-reduced-motion`이면 전환 없음.
 - 데이터: localStorage `dotz-board-home`. 서버 호출 없음.
-- 근거: web/js/07-board.js:62 `makeBoard`, 07-board.js:10 `narrowMQ`, 07-board.js:151 `measureRows`, 07-board.js:175 `set`, 07-board.js:211 `reset`, 07-board.js:281 `reorder`, 07-board.js:356 (pointerdown), 07-board.js:371 (keydown), 07-board.js:394 `resize`, 07-board.js:404 `moveBefore`; web/js/08-home.js:448 (`makeBoard(box, "home", ...)`), 08-home.js:177 `HOME_FIT`.
+- 근거: web/js/07-board.js:68 `makeBoard`, 07-board.js:10 `narrowMQ`, 07-board.js:165 `measureRows`, 07-board.js:190 `set`, 07-board.js:227 `reset`, 07-board.js:305 `reorder`, 07-board.js:356 (pointerdown), 07-board.js:371 (keydown), 07-board.js:420 `resize`, 07-board.js:430 `moveBefore`; web/js/08-home.js:448 (`makeBoard(box, "home", ...)`), 08-home.js:207 `HOME_FIT`.
 - css: 05-log.css(`.board`, `.bi`, `.bph`, `.bhead`, `.brz`, `.bbar`), 22-shell.css(`.bbar`, `.bi`).
 
 ### 끝난 세션 그룹 (`details.ended`, `endedGroup`)
@@ -357,7 +357,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 기본 클릭은 `openTarget("lane:{name}", lastChatView())`(`o.open`으로 바꿀 수 있음). 홈의 지금 진행 중/대기 중/답변 필요가 이 행을 써요. `openLaneChat(name)`은 채팅 대화로 열기.
 - 상태: 프로젝트 이름은 세션이 시작된 작업 채널(`laneHome`)로만 찾고, 없으면 `프로젝트 없음`(`.sproj.none`). aria-label `{이름} · 프로젝트 {proj} 또는 프로젝트 없음 · {상태} · 대화 열기`. 상태 단어(`sessionState`: `진행 중`/`답을 기다림`/`완료`, 멈춘 세션은 제 단어. `sessionStatus` -> `runStatus`): 끝났으면 `종료됨`이 아니라 이 행에서는 `끝남`(회색), 실행 중 `작업 중`(파랑), `답을 기다려요`(주황), `순서 대기`/`진행 중`(핸드오프 작업, 파랑), `한도 걸림`(주황), `오류`(빨강), 그 외 `statusKo`(`대기` 등). 답변 필요 행은 `word: "답변 필요"`, 주황으로 덮어써요.
 - 데이터: `S.lanes`(`name`, `title`, `status`, `live`, `home`, `project`, `pendingAsk`, `lastText`), `S.channels.homes`/`S.channels.work`, `PRJ`(프로젝트 목록), `S.runs`, `SUBS`.
-- 근거: web/js/18-lanes.js:168 `sessionRow`, 18-lanes.js:162 `sessionStatus`, 18-lanes.js:151 `laneHome`, 18-lanes.js:153 `laneProject`, 18-lanes.js:30 `openLaneChat`; web/js/41-runstate.js:20 `runStatus`.
+- 근거: web/js/18-lanes.js:166 `sessionRow`, 18-lanes.js:144 `sessionStatus`, 18-lanes.js:127 `laneHome`, 18-lanes.js:133 `laneProject`, 18-lanes.js:30 `openLaneChat`; web/js/41-runstate.js:27 `runStatus`.
 - css: 03-base.css(`.srow`), 05-log.css(`.sproj`, `.sline`, `.hr`), 08-project-sessions.css(세션 관련).
 
 ### 세션 마지막 보고와 활동 줄 (`LP`, `laneRecent`)
@@ -366,7 +366,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `laneLoad(p)`로 활동/히스토리를 읽고, `laneActivity(a)`가 SSE `activity`마다 이미 불러온 세션을 갱신하며 홈용 마지막 줄(`LAST[name]`)도 갱신해요. `laneResultGo(name, at)`는 끝난 세션의 결과(해당 시각에 가장 가까운 보고)로 점프해요. `laneRecent`는 최신 3줄, 같은 줄 반복은 `{문장} ({n}번)`, 보고는 `보고 · {문장}`(없으면 `내용을 남겼어요`).
 - 상태: 도구 호출 한국어 `명령을 실행했어요`, `파일을 고쳤어요`, `파일을 읽어봤어요`, `코드를 찾아봤어요`, 오류 `오류가 있었어요`, 턴 종료 `이번 작업을 마쳤어요`. 읽기 실패면 `failedAt` 기록. 재연결 시 `laneTailsStale()`이 `loaded=false`로 되돌려요.
 - 데이터: `GET /api/activity?source=lane:{name}&limit=40`, `GET /api/history?target=lane:{name}&limit=30`, SSE `activity`.
-- 근거: web/js/18-lanes.js:2 `LP`, 18-lanes.js:57 `laneActKo`, 18-lanes.js:68 `laneRecent`, 18-lanes.js:95 `laneLoad`, 18-lanes.js:109 `laneActivity`, 18-lanes.js:21 `laneResultGo`; web/js/99-boot.js:43.
+- 근거: web/js/18-lanes.js:2 `LP`, 18-lanes.js:54 `laneActKo`, 18-lanes.js:68 `laneRecent`, 18-lanes.js:95 `laneLoad`, 18-lanes.js:75 `laneActivity`, 18-lanes.js:19 `laneResultGo`; web/js/99-boot.js:43.
 - css: 해당 없음(화면 요소 없음).
 
 ### 프로젝트 목록 (`#v-projects`, 18-lanes.js)
@@ -375,7 +375,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 행 탭은 `go("project", key)`. `프로젝트 {n}개 더 보기`(12개씩, `PJ_PAGE`). `세션과 채널` 행은 `go("chat","list")`, 부제 `일하는 세션 {n}개 · 작업 채널 {n}개`. 내 설정 행 부제 `내가 바꾼 것을 봐요`.
 - 상태: 프로젝트 상태 태그 `일시 정지`, `답을 기다려요`, `끝남`, `쉬는 중`, `세션 없음` 또는 세션 상태 단어. 로드 전 `불러오는 중…`, 실패 `프로젝트를 불러오지 못했어요`. 프로젝트가 없으면 `아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요` + `채팅 열기` 버튼. 필터 결과 없음: `찾는 프로젝트가 없어요`, `확인할 프로젝트가 없어요`, `지금 진행 중인 프로젝트가 없어요`, `끝낸 프로젝트가 없어요`, `아직 프로젝트가 없어요`. 읽지 않은 수 배지(`읽지 않은 메시지 {n}개`).
 - 데이터: `GET /api/custom`(`PRJ`), `S.lanes`.
-- 근거: web/js/18-lanes.js:141 `prjLoad`, 18-lanes.js:185 `prjState`, 18-lanes.js:230 `prjRow`, 18-lanes.js:269 `pjPaintRows`, 18-lanes.js:307 `renderProjects`.
+- 근거: web/js/18-lanes.js:105 `prjLoad`, 18-lanes.js:185 `prjState`, 18-lanes.js:230 `prjRow`, 18-lanes.js:306 `pjPaintRows`, 18-lanes.js:348 `renderProjects`.
 - css: 20-projects.css, 08-project-sessions.css.
 
 ### 서브에이전트 줄과 시트 (`#sheet`)
@@ -391,7 +391,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 목적: 한 대화의 에이전트 활동을 명령/출력 줄로 보는 로그 화면. 코드에는 있지만 지금은 꺼져 있어요(`LOG_VIEW = false`).
 - 구성: `#v-activity` 안에 `.subs`, `.termbox`(`#term`, 맨 아래로 `#act-jump`). `#term` 안에 턴 카드 `section.lg`(머리 `.lg-h`: 점, 제목 `.lg-t`, 시각/길이 `.lg-m`; 본문 `.lg-b`), 접힌 작업 묶음 `details.ls`(요약 `.ls-s`), 행 `.lr`(종류 `.lr-k`, 라벨 `.lr-l`, 소요 `.lr-d`, 점, 출력 `.lr-o`), 서브에이전트 행 `.lw`와 아래 `.lw-s`/`.lw-r`.
 - 기능: 행을 누르면 펼침/접힘(`toggleOpen`, Enter/Space 지원, 글을 드래그해서 선택 중이면 무시). 서브에이전트 하위 행을 누르면 그 기록 시트(`openSub`, title `서브에이전트 기록 열기`). `이전 기록 더 보기`(`.tmore`)는 이전 300개 로드(`loadOlder`). 맨 아래로 `#act-jump`.
-- 상태: `LOG_VIEW`가 꺼져 있어서 `viewFor`가 항상 `chat`을 돌려주고 `go("activity")`는 채팅으로 바뀌며(`05-command-palette.js:136`), 대화/로그 전환 토글 `#vtog`가 숨겨져요(`05-command-palette.js:152`, `16-target-switcher-conversation.js:93`). 켜지면: 세션별 선택은 localStorage `dotz-lane-view:{target}`, 그 외는 `dotz-chat-mode`. 점 색: 진행 중 파랑, 오류 빨강, 도구를 쓴 턴 초록. 요약 `{N초 작업 | 작업} · 명령 3 · 읽기 2 · 오류 {n}`(종류 `명령` `읽기` `수정` `검색` `서브에이전트` `웹` `기록` `도구`, 생각은 `생각`). 도구 결과 출력이 없으면 `(출력 없음)`. 오류 한 줄 아래 `자세히` 펼침. 게이트웨이 프롬프트는 짧은 라벨로 줄여요: `작업 중에 온 메시지`, `작업 중에 온 세션 보고`, `재시작 뒤 다시 처리`, `답을 기다리는 중`, `사용량 한도 풀림`, `모델 제공자 복구`, `일시 오류 뒤 다시 시도`, `대화 정리 뒤 지침 다시 읽기`, `첫 시작`, `캐시 유지 신호`, `야간 자기 점검`, `이전 대화 이어받기`, `세션 보고`, `모니터링 · {이름}`, `새 메일`, `예약 작업`, 빈 제목은 `메시지`. 런타임 상태는 한국어(`컨텍스트 압축 중`, `컨텍스트 압축 완료`, `다시 시도 중 (N/M)`, `모델 전환 · {모델}`, `{이름} 대화 기록 이어서|새로 시작 · {모델}`). 로드 전 `불러오는 중…`, 활동 없음 `활동이 없어요`, 과거 기록 구분선 `지난 기록`. 폰: 639px 이하에서 `.lg` 패딩 축소(05-log.css:40), `.lw-s` 들여쓰기(03-base.css:282).
+- 상태: `LOG_VIEW`가 꺼져 있어서 `viewFor`가 항상 `chat`을 돌려주고 `go("activity")`는 채팅으로 바뀌며(`05-command-palette.js:156`), 대화/로그 전환 토글 `#vtog`가 숨겨져요(`05-command-palette.js:176`, `16-target-switcher-conversation.js:93`). 켜지면: 세션별 선택은 localStorage `dotz-lane-view:{target}`, 그 외는 `dotz-chat-mode`. 점 색: 진행 중 파랑, 오류 빨강, 도구를 쓴 턴 초록. 요약 `{N초 작업 | 작업} · 명령 3 · 읽기 2 · 오류 {n}`(종류 `명령` `읽기` `수정` `검색` `서브에이전트` `웹` `기록` `도구`, 생각은 `생각`). 도구 결과 출력이 없으면 `(출력 없음)`. 오류 한 줄 아래 `자세히` 펼침. 게이트웨이 프롬프트는 짧은 라벨로 줄여요: `작업 중에 온 메시지`, `작업 중에 온 세션 보고`, `재시작 뒤 다시 처리`, `답을 기다리는 중`, `사용량 한도 풀림`, `모델 제공자 복구`, `일시 오류 뒤 다시 시도`, `대화 정리 뒤 지침 다시 읽기`, `첫 시작`, `캐시 유지 신호`, `야간 자기 점검`, `이전 대화 이어받기`, `세션 보고`, `모니터링 · {이름}`, `새 메일`, `예약 작업`, 빈 제목은 `메시지`. 런타임 상태는 한국어(`컨텍스트 압축 중`, `컨텍스트 압축 완료`, `다시 시도 중 (N/M)`, `모델 전환 · {모델}`, `{이름} 대화 기록 이어서|새로 시작 · {모델}`). 로드 전 `불러오는 중…`, 활동 없음 `활동이 없어요`, 과거 기록 구분선 `지난 기록`. 폰: 639px 이하에서 `.lg` 패딩 축소(05-log.css:40), `.lw-s` 들여쓰기(03-base.css:282).
 - 데이터: `GET /api/activity?source={source}&limit=300`(`before=` 로 이전 300개), SSE `activity`(`ingestAct` -> `termPush`).
 - 근거: web/js/04-state.js:27 `LOG_VIEW`, 04-state.js:30 `viewFor`; web/js/12-terminal-view.js:127 `termNode`, 12-terminal-view.js:29 `logGroup`, 12-terminal-view.js:41 `logSteps`, 12-terminal-view.js:54 `logRow`, 12-terminal-view.js:20 `statusKoLine`, 12-terminal-view.js:93 `promptOf`, 12-terminal-view.js:184 `paintWorkers`, 12-terminal-view.js:194 `termPush`; web/index.html:139-145.
 - css: 05-log.css(`.lg`, `.lg-h`, `.ls`, `.lr`, `.lg-q`, `.lg-e`, `.tdv`), 04-files.css(`.lg-note`, `.tdv`, `.tmore`), 03-base.css(`.tmore`, `.jump`, `.lw-s`), 04-files.css(`.jump`).
@@ -409,7 +409,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `loadTarget(t, quiet)`는 history 150개와 activity 300개를 동시에 읽어요(알림/작업내역/메일은 activity 생략). `ingestMsg`/`ingestAct`가 SSE 이벤트를 대화별로 나눠 넣고(`eventTarget`), 답이 끝난 대화는 `noteDone`으로 안 본 표시를 만들어요. `loadOlderMsgs`(150개씩), `loadOlder`(300개씩). `resync()`는 앱이 다시 보일 때 상태/대화/서브에이전트/큐를 다시 읽어요. `setTarget`, `enterTarget`으로 대화 전환.
 - 상태: 그리기 전 `불러오는 중…`(대화와 로그 둘 다), 읽기 실패 `대화를 불러오지 못했어요`, 비었으면 `아직 대화가 없어요`, 로그 보기가 켜졌고 비었으면 `활동이 없어요`. 이전 기록 실패 토스트 `이전 기록을 불러오지 못했어요`, 이전 대화 실패 `이전 대화를 불러오지 못했어요`. 긴 대화는 최근 `CHAT_WINDOW`=50개만 그리고(로그 보기가 켜지면 전부) 맨 위에 닿으면 더 불러와요. 서버가 모델에게 보낸 `[later]` 턴 종료는 채팅 줄로 안 그려요. 선택 응답 직후 첫 답은 조용한 응답(`quietReply`)이라 알림 토스트 안 나와요.
 - 데이터: `GET /api/history?target=&limit=150&before=`, `GET /api/activity?source=&limit=300&before=`, SSE 이벤트는 99-boot.js에서 분기: `activity`(`onActivity`+`laneActivity`), `subagents`, `quota`, `notice` 계열, `lanes`, 그 외 `ingestMsg`+`scheduleState`.
-- 근거: web/js/13-data.js:15 `ingestMsg`, 13-data.js:48 `ingestAct`, 13-data.js:64 `loadTarget`, 13-data.js:90 `resync`, 13-data.js:96 `loadOlder`, 13-data.js:114 `loadOlderMsgs`, 13-data.js:169 `renderAll0`, 13-data.js:208 `onActivity`, 13-data.js:217 `setTarget`, 13-data.js:237 `enterTarget`; web/js/99-boot.js:41-66.
+- 근거: web/js/13-data.js:15 `ingestMsg`, 13-data.js:48 `ingestAct`, 13-data.js:64 `loadTarget`, 13-data.js:97 `resync`, 13-data.js:103 `loadOlder`, 13-data.js:121 `loadOlderMsgs`, 13-data.js:208 `renderAll0`, 13-data.js:255 `onActivity`, 13-data.js:264 `setTarget`, 13-data.js:298 `enterTarget`; web/js/99-boot.js:41-66.
 - css: 해당 없음.
 
 ### 실행 상태 줄 (`#runstate`)
@@ -418,7 +418,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 버튼은 상태에 따라 하나: 답을 기다리는 질문이면 `질문으로 가기`(`runAskGo`: 입력창 위 결정 카드로 포커스, 없으면 알림의 결정 시트), 백그라운드 작업 실패면 `다시 맡기기`(`workRetry`), 세션이 오류/멈춤이면 `다시 시작`(`runLaneRestart`), 어시스턴트가 한도/오류면 `지금 다시 시도`(`orchResume`), 멈춤이면 `다시 시작`(`runRestart`). 중단은 이 줄이 아니라 입력창 보내기 버튼이 해요. 계속하기 버튼은 의도적으로 없음.
 - 상태: 라벨 `작업 중`, `답을 기다려요`, `쉬는 중`, `한도에 걸렸어요`, `오류로 멈췄어요`, `멈춤`, `끝났어요`. 대기 사유별 `순서를 기다려요`, `이어서 처리 중`, `맡긴 작업 진행 중`. 본문 조합: 작업 중 `작업 중 · {세부} · {경과}`; 대기 `{라벨} · {세부} · {경과} · 할 일 {n}개 남음`(`recover`면 `{작업} 실패`); 쉬는 중 `쉬는 중 · 할 일 {n}개 남음 · 이번 턴이 끝났는데 할 일이 남아 있어요` 또는 `마지막 턴이 끝나기 전에 멈췄어요`; 한도 `한도에 걸렸어요 · 12:39까지`(오늘, KST 24시간, 초 없음) 또는 `한도에 걸렸어요 · 11.13 12:39까지`(다른 날은 `kstShort` 날짜를 앞에, `pauseUntilText`) 또는 `잠시 쉬어요`; 오류 `실패`/`중단됨`/`오류로 멈췄어요 · {세부}`; 멈춤 `멈춤 · 직접 멈췄어요`; 끝남 `끝났어요 · {세부} · {시각}`. 경과는 `방금`, `N분`, `N시간 M분`, 게이트웨이 시계(`workNow`) 기준으로 1초마다 갱신. 색: 답을 기다림/한도 주황(`.warn`), 오류 빨강(`.err`, 오너가 직접 중단한 작업은 회색), 일하는 중/맡긴 작업 파랑. 같은 대화에서 상태가 바뀌면 제자리 전환 모션. 한도 시각이 지났으면 5초 간격으로 상태를 다시 물어요. 알림/작업내역/설정 대화에서는 줄이 없고, 메일 대화는 그 메일의 백그라운드 작업 상태를 보여요(다른 컴퓨터 메일이면 그 컴퓨터 스냅샷, 버튼 없음).
 - 데이터: `S.runs`(`main` 또는 대화 키: `kind`, `reason`, `since`, `detail`, `todos`, `work`, `cancelled`), `POST /api/orchestrator/restart`, `POST /api/orchestrator/resume`, `POST /api/lanes/{name}/restart`, `POST /api/workers/{id}/retry`.
-- 근거: web/js/41-runstate.js:6 `RUN_LABEL`, 41-runstate.js:11 `waitLabel`, 41-runstate.js:20 `runStatus`, 41-runstate.js:32 `runStateOf`, 41-runstate.js:47 `runText`, 41-runstate.js:67 `runAction`, 41-runstate.js:83 `paintRunState`, 41-runstate.js:113 (1초 타이머), 41-runstate.js:118 `runAskGo`, 41-runstate.js:136 `runRestart`, 41-runstate.js:142 `runLaneRestart`; web/index.html:115. 질문을 못 찾으면 토스트 `질문을 찾지 못했어요. 알림에서 확인해 주세요`.
+- 근거: web/js/41-runstate.js:6 `RUN_LABEL`, 41-runstate.js:13 `waitLabel`, 41-runstate.js:27 `runStatus`, 41-runstate.js:42 `runStateOf`, 41-runstate.js:60 `runText`, 41-runstate.js:80 `runAction`, 41-runstate.js:117 `paintRunState`, 41-runstate.js:113 (1초 타이머), 41-runstate.js:153 `runAskGo`, 41-runstate.js:171 `runRestart`, 41-runstate.js:177 `runLaneRestart`; web/index.html:115. 질문을 못 찾으면 토스트 `질문을 찾지 못했어요. 알림에서 확인해 주세요`.
 - css: 04-files.css(`.runstate`, `.runstate.warn/.err`), 07-chat.css(`.runstate`), 12-composer-phone.css(639px 이하 입력창).
 
 ### 봇 멈춤 줄 (`#pausenote`)
@@ -463,14 +463,14 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 줄을 누르면 펼침/접힘(대화마다 `TD.open[target]` 기억, `aria-expanded`). 플랜이 바뀌면 todo 도구 호출이 끝난 뒤 250ms 디바운스로 `loadTodo`.
 - 상태: 모든 항목이 완료/취소이거나 항목이 없으면 줄이 숨겨져요. 알림/작업내역/메일 대화는 플랜이 없어 항상 빈 목록(요청도 안 함). 표시: `{완료}/{취소 제외 전체}`. 현재 항목은 진행 중 우선, 없으면 첫 대기 항목. 항목 상태 `in_progress`=act, `completed`=done, `abandoned`=drop, 나머지 pend. 단계가 바뀌면 줄이 제자리 전환 모션(`motionSwap`). 로드 실패는 이전 값을 유지(없으면 빈 배열). 터치 기기에서 `.td-bar` 최소 높이 확대(07-chat.css:173).
 - 데이터: `GET /api/todo?target={t}`(`phases[].name`, `phases[].tasks[]`: `content`, `status`), SSE `activity`의 todo 도구 호출/결과.
-- 근거: web/js/11-todo-strip.js:3 `loadTodo`, 11-todo-strip.js:10 `todoState`, 11-todo-strip.js:11 `paintTodo`, 11-todo-strip.js:35 `todoActivity`; web/index.html:106.
+- 근거: web/js/11-todo-strip.js:3 `loadTodo`, 11-todo-strip.js:11 `todoState`, 11-todo-strip.js:13 `paintTodo`, 11-todo-strip.js:36 `todoActivity`; web/index.html:106.
 - css: 07-chat.css(`.todo`, `.td-bar`, `.td-list`, `.td-ch`), 10-conversations.css(`.todo`).
 
 ### 웹 터미널 (셸, `openShell`)
 - 목적: 이 페이지를 서비스하는 컴퓨터의 진짜 셸(xterm.js)을 대화상자로 열어요.
 - 구성: 대화상자 `dialog`(wide, 클래스 `shell`, 제목 `터미널 · {컴퓨터 이름}`, 이름이 없으면 `이 컴퓨터`). 헤더 `.fs-hb`에 상태 `.sh-st`(role=status, aria-live=polite), 암호 버튼 `.sh-k-pw`(title/aria-label `암호 입력`), ⋯ 버튼 `.sh-more`(title/aria-label `더 보기`). 본문 `.sh-wrap` 안에 터미널 `.sh-term`(aria-label `터미널`), 암호 상자 `.sh-pw`(안내 `암호를 입력해요. 화면에 보이지도, 저장되지도 않아요.`, 입력 aria-label/placeholder `암호`, 버튼 `보내기`, `닫기`), 터치 기기면 특수 키 줄 `.sh-keys`(role=toolbar, aria-label `특수 키`).
 - 기능: 키 입력은 터미널 안에서 그대로 PTY로 가요(`shInput` -> `shSend`, 16000자 단위, 전송 중이면 모아서 순서대로). ⋯ 메뉴 `셸 다시 시작`(`shRestart`). 암호는 별도 상자로 보내고(`shSendPw`, `secret: true`) 보낸 뒤 입력을 비워요. 마지막 줄이 `password/passphrase/암호/비밀번호/패스워드 ... :`로 끝나면 암호 버튼이 강조(`.hot`)돼요. 특수 키 줄 `Esc`, `Tab`, `Ctrl`(누른 채 고정, 다음 글자를 제어 코드로 바꿈), `↑ ↓ ← →`, `^C`, `^D`. 열린 뒤 `openShell({command})`가 다시 불리면 새로 열지 않고 명령만 입력해 둬요(`shSetCommand`). 크기가 바뀌면 `POST /api/pty/resize`.
-- 호출처: 명령 팔레트 `셸 터미널 열기`(05-command-palette.js:56), 슬래시 명령(14-slash-commands.js:254), 코드 블록의 `터미널에서 실행`(35-code-blocks.js:63). 홈 화면에서 직접 여는 버튼은 이 범위에서 못 찾음.
+- 호출처: 명령 팔레트 `셸 터미널 열기`(05-command-palette.js:41), 슬래시 명령(14-slash-commands.js:254), 코드 블록의 `터미널에서 실행`(35-code-blocks.js:63). 홈 화면에서 직접 여는 버튼은 이 범위에서 못 찾음.
 - 상태: 상태 글자 `불러오는 중…`(xterm 로드), 구성요소 로드 실패는 머리 대신 본문(`.sh-fail`)에 `터미널 구성요소를 불러오지 못했어요`와 `다시 시도` 단추, `연결 중…`, `연결됨`(ok), `셸이 꺼져 있어요`(err, 터미널에 `셸이 꺼져 있어요. Enter를 누르면 다시 시작해요.`), `셸이 끝났어요`(err, `셸이 끝났어요. Enter를 누르면 다시 시작해요.`), `연결이 끊겼어요`(err, `연결이 끊겼어요. Enter를 누르면 다시 연결해요.`), `연결하지 못했어요`(err, `연결하지 못했어요. Enter를 누르면 다시 연결해요.`). 연결이 끊긴 상태에서 Enter 입력 시 `shConnect`로 다시 연결. 명령을 미리 넣으면 토스트 `명령을 입력해 뒀어요. Enter를 누르면 실행돼요`. 입력 전송 실패 토스트는 서버 메시지. 터치 기기(`pointer: coarse`)에서만 특수 키 줄이 생기고 글자 크기 14(데스크톱 13). coarse에서 xterm 숨은 입력 16px(13-code-shell.css:25), 639px 이하 레이아웃은 13-code-shell.css:42에서 별도 규칙(내용 못 읽음). 아무것도 저장하지 않아요.
 - 데이터: `GET /api/pty/stream?cols=&rows=`(SSE 스타일 스트림, 이벤트 `reset`{data, alive}, `out`{data}, `exit`), `POST /api/pty/input` `{data}` 또는 `{data, secret:true}`, `POST /api/pty/restart`, `POST /api/pty/resize` `{cols, rows}`, 정적 `/vendor/xterm.css`, `/vendor/xterm.js`, `/vendor/addon-fit.js`. 서버는 hub/pty.ts.
 - 근거: web/js/36-shell.js:148 `openShell`, 36-shell.js:21 `shLib`, 36-shell.js:59 `shFrame`, 36-shell.js:74 `shConnect`, 36-shell.js:101 `shPost`, 36-shell.js:105 `shSend`, 36-shell.js:113 `shRestart`, 36-shell.js:118 `shInput`, 36-shell.js:128 `shSendPw`, 36-shell.js:137 `shResize`, 36-shell.js:141 `shSetCommand`, 36-shell.js:15 `SH_KEYS`, 36-shell.js:11 `isPasswordPrompt`.
@@ -482,7 +482,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 사용량 띠/사이드바 행은 `go("usage")`. 가장 빡빡한 한도 하나(Anthropic/Claude 우선, 없으면 전체 공급자)를 `{N시간|N일|N주} {남은%}% 남음` 형태로 보여요(title `사용량 · {단위} {n}% 남음`). 40% 이하면 주황. `loadStrip`은 보일 때 3분에 한 번만 `GET /api/quota`.
 - 상태: 한도 정보가 없으면 띠와 사이드바 행이 숨겨져요. 종 배지는 안 읽은 알림 수(99 넘으면 `99+`), aria-label `알림, 안 읽은 알림 {n}개` 또는 `알림`. 채팅 배지는 안 읽은 대화 수(메인, 작업내역, 프로젝트 기준; 세션은 제외), title `읽지 않은 대화 {n}개`. 모니터링 배지는 확인할 것 개수(실패/연결 끊긴 앱·모니터 + 보낼 초안), title `확인할 것 {n}개`, 개수가 없고 새 소식만 있으면 점과 title `새 소식`. 세션 질문/한도/끝난 턴이 새로 생기면 토스트 `{이름} · 답변 필요|한도 걸림|확인 필요`, 본문 질문 / `사용량 한도로 대기 중이에요` / `답을 마쳤어요. 확인해 주세요`. 페이지 로드 직후엔 열린 질문만 알리고, 여러 개면 한 토스트 `답변 필요 {n}개`(본문 `{이름들} 외 {n}개가 답을 기다려요`)가 홈을 열어요. 숫자가 바뀌면 숫자 롤링, 0에서 올라올 때 팝 모션.
 - 데이터: `GET /api/quota`, SSE `quota`(`quotaLive`), `NT`, `NM`, `INTG`, localStorage `dotz-seen`/`dotz-done`. 다른 탭에서는 60초마다 `loadMonitors()`(홈/모니터링 제외).
-- 근거: web/js/09-needs-you.js:243 `paintStrip`, 09-needs-you.js:261 `paintBell`, 09-needs-you.js:54 `paintAttn`, 09-needs-you.js:71 `monAttnCount`, 09-needs-you.js:87 `paintMonAttn`, 09-needs-you.js:100 (60초 타이머), 09-needs-you.js:106 `toastAttn`, 09-needs-you.js:130 `attnHomeClick`, 09-needs-you.js:141 `attnToast`, 09-needs-you.js:277 `quotaLive`, 09-needs-you.js:285 `loadStrip`, 09-needs-you.js:42 `attnRaw`; web/index.html:77, 88-89.
+- 근거: web/js/09-needs-you.js:258 `paintStrip`, 09-needs-you.js:284 `paintBell`, 09-needs-you.js:54 `paintAttn`, 09-needs-you.js:71 `monAttnCount`, 09-needs-you.js:87 `paintMonAttn`, 09-needs-you.js:100 (60초 타이머), 09-needs-you.js:107 `toastAttn`, 09-needs-you.js:131 `attnHomeClick`, 09-needs-you.js:142 `attnToast`, 09-needs-you.js:303 `quotaLive`, 09-needs-you.js:311 `loadStrip`, 09-needs-you.js:42 `attnRaw`; web/index.html:77, 88-89.
 - css: 01-tokens.css(`.ustrip`), 22-shell.css(`.ustrip`, `.bellbtn`, 사이드바 `#sf-usage`).
 
 ### 채팅 목록 (대화 목록)
@@ -854,7 +854,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 폰 vs 데스크톱: 폭 1100px 이상(`ppWide`=`!narrowChat`, `04-state.js:12-14`)에서는 `go("projects")`가 곧바로 `project`로 바뀌고 목록은 왼쪽 칸(채팅 목록과 같은 `--frame-list-w` 340px, 틀은 `01-tokens.css:50,195-196`)에 남고 열린 프로젝트 본문은 채팅 본문 칸과 같은 상자(같은 x, 폭, 오른쪽 여백 `--edge`)예요. 1099px 이하(폰)에서는 목록이 한 화면이에요.
   - 20초마다 `prjLoad`로 새로고침(`19-project-main.js:490`).
 - 데이터: `GET /api/custom`(`prjLoad`), 상태 `S.lanes`, 채널별 안 읽음 `ts(chat).unread`. SSE는 이 화면 코드에서 확인 못 함.
-- 근거: `web/js/18-lanes.js:307`(renderProjects), `:269`(pjPaintRows), `:230`(prjRow), `:185`(prjState), `:218`(projRows), `:141`(prjLoad); 진입 `web/js/05-command-palette.js:126,161`.
+- 근거: `web/js/18-lanes.js:307`(renderProjects), `:269`(pjPaintRows), `:230`(prjRow), `:185`(prjState), `:218`(projRows), `:141`(prjLoad); 진입 `web/js/05-command-palette.js:147`, `web/js/18-lanes.js:347`, `web/js/19-project-main.js:8`.
 - css: `web/css/20-projects.css`(`.pl-*`, 칩 가로 스크롤). 미디어쿼리 `20-projects.css:96`(min-width 1100px: `.pl-chips` 끝 페이드, 열린 세부 쪽 `.fs-bd:has(> .fs-card.pdv)`가 본문 칸 상자에 앉음). `.views.pp`의 칸 폭은 `10-conversations.css:172`가 채팅과 같은 `--frame-*` 토큰으로 정해요.
 
 ### 프로젝트 개요 (`#v-project`, 뷰 `project`, 2단계)
@@ -880,7 +880,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 필드를 편집 중(`PM.open>0`)이면 다시 그리지 않아요. 데이터 시그니처가 같으면 그대로 둬요. 20초마다 `pmLoad`+`prjLoad`(편집 중 제외).
   - 내장 `builtin:custom`이면 이 화면 대신 `cmPaint`(아래 `내 설정` 항목).
 - 데이터: `GET /api/custom/project?key=`(`pmLoad`), `GET /api/custom`(`prjLoad`), `PUT /api/projects`. 쓰기 뒤에는 둘 다 다시 읽어서 서버가 보관한 값으로 그려요(`pmReload`). SSE는 코드에서 확인 못 함.
-- 근거: `web/js/19-project-main.js:53`(pmPaint), `:107`(pmOverview), `:122`(pmSection), `:184`(pmHead), `:152`(pmEditable), `:75`(pmPrimary), `:85`(pmStepRow), `:99`(pmWatchRow), `:398`(pmLaneRow), `:406`(pmWorkRow), `:6`(pmOpen), `:19`(pmReload); 진입 `05-command-palette.js:163`.
+- 근거: `web/js/19-project-main.js:53`(pmPaint), `:107`(pmOverview), `:122`(pmSection), `:184`(pmHead), `:152`(pmEditable), `:75`(pmPrimary), `:85`(pmStepRow), `:99`(pmWatchRow), `:398`(pmLaneRow), `:406`(pmWorkRow), `:6`(pmOpen), `:19`(pmReload); 진입 `web/js/19-project-main.js:8`.
 - css: `web/css/08-project-sessions.css`(`.pmv-*`), `web/css/20-projects.css`(`.pm-*`, 목록 열). 미디어쿼리 `08-project-sessions.css:4`(max 639: 머리 패딩), `:14`(max 479: 진행 막대 순서), `:37`(min 640), `:59`(coarse 또는 max 639: 단계 추가 입력 높이), `08-project-sessions.css:4`와 `20-projects.css:58`(max 1099: 머리와 `.pm-o` 최대 760px, 1100px 이상에서는 최대 폭 없이 본문 칸을 채움).
 
 ### 프로젝트 ⋯ 메뉴 (`pmMenuButton`)
@@ -953,7 +953,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 상태: 로드 전 `불러오는 중…`, 첫 로드 실패 `구성을 불러오지 못했어요`(조용한 갱신은 숨김). 안내문: 기본 `큰 카드가 메시지가 흐르는 길이에요. 카드 안의 작은 칩은 함께 실행되는 시스템·파일이고, 칩에 마우스를 올리거나 눌러서(폰: 눌러서) 이어진 곳과 설정을 봐요. 고칠 때는 <봇>에게 요청이 가요.`, 자세히 `카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요.`. 상태 단어(`H_STATE`) `정상`/`작업 중`/`주의`/`멈춤`/`꺼짐`. origin_view가 켜지면 범례 `내 설정` + `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 기본값이에요 (<경로>).`. 폰(`H_MQ` 최대 639px)에서는 연결선 오버레이를 안 그리고 카드 모양이 달라져요.
 - 갱신: 열려 있는 동안 15초마다 `loadHarness(true)`, `lanes` SSE 이벤트의 라이브 상태가 바뀌면 `loadHarness(true)`(`99-boot.js:58`), 자세히 모드에서 폭이 40px 넘게 바뀌면 150ms 뒤 다시 그림.
 - 데이터: `GET /api/harness`, `GET /api/features`(`fcSplit`), 모델 목록(`loadModels`). 쓰기는 `POST /api/message`(수정 요청).
-- 근거: `web/js/27-harness.js:172`(renderHarness), `:57`(loadHarness), `:165`(hUse), `:49-53`(H_MQ, H_COLS, H_TONE, H_STATE, H_APPLY); 진입 `05-command-palette.js:142,158`; 상위 `03-screens.js:38`(SUB에 포함), `32-history-nav.js:21`(홈 > 설정 > 구성).
+- 근거: `web/js/27-harness.js:172`(renderHarness), `:57`(loadHarness), `:165`(hUse), `:49-53`(H_MQ, H_COLS, H_TONE, H_STATE, H_APPLY); 진입 `05-command-palette.js:166`, `27-harness.js:58`; 상위 `03-screens.js:38`(SUB에 포함), `32-history-nav.js:21`(홈 > 설정 > 구성).
 - css: `web/css/06-harness.css`(`.hm-*`, `.hs-*`, `.fc-*`), `05-log.css`(`.hm-*`, `.pj-*`도 일부). 미디어쿼리 `06-harness.css:56`(max 1199: 단계 카드 2열), `:61`(max 699: 1열, 툴바 줄바꿈), `:150`(min 1700: `#harness.hs-open`일 때 시트 너비만큼 오른쪽 패딩).
 
 ### 구성 지도: 기본 보기 (`hSimple`, 단계 카드)
@@ -998,7 +998,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `전체 구성`은 `hOpenProject("")`. 카드를 누르면 시트에 `이 카드에 대한 요청`(`hProjAsk`: 자리표시자 `이 프로젝트에 바라는 변경을 적어 주세요`, 버튼 `<봇>에게 수정 요청`, 성공 `요청 보냄 · <시각>` + 버튼 글자 `요청했어요`, 실패는 노트와 토스트). 시트 설정 줄에 `바꿈 · 전역 <값>`.
 - 상태: 저장 안 한 변경이 있으면 이동 전 확인 `저장하지 않은 변경` / `열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?` / 버튼 `버리기`. 그 프로젝트가 목록에서 사라지면 `hProjId`를 비우고 `#harness`로 바꿔요(`routeReplace`).
 - 데이터: `HGB.projects[].map.nodes|edges`, `POST /api/message`(`[구성 탭 수정 요청] 범위: 프로젝트 (<채널> · <경로>)\n<내용>`).
-- 근거: `web/js/28-harness-project.js:45`(hProjHead), `:63`(hProjAsk), `:2`(hPj); `27-harness.js:165`(hUse); 주소 `05-command-palette.js:142-143`.
+- 근거: `web/js/28-harness-project.js:45`(hProjHead), `:63`(hProjAsk), `:2`(hPj); `27-harness.js:165`(hUse); 주소 `05-command-palette.js:166`.
 - css: `05-log.css`(`.pj-bk`, `.pj-title`), `06-harness.css`.
 
 ### 구성 상세 시트 (옆 서랍 `#sheet`)
@@ -1051,14 +1051,14 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 구성: `#v-apps` 안에 왼쪽 목록 `#apps-side`(`.cv-side`)와 오른쪽 `#apps-pane`(`.apps-pane`). 목록은 `convRow`로 그린 줄들(`.cv-av.app-av` 아바타 + 상태 점 `.app-dot`), 상세는 머리 `.apps-hd` + 본문.
 - 기능: 줄을 누르면 `go("apps", id)`(사용자 앱), `go("monitoring","i:<id>")`(모니터링 앱), 오류 줄은 대화상자, 빈 줄은 `go("chat")`. 폰에서는 목록이 한 화면(`cv-listing`), 앱을 고르면 상세, 머리 뒤로 버튼(aria/title `앱 목록`)으로 돌아옴. 데스크톱은 첫 도구 앱이 기본 선택.
 - 상태:
-  - **플래그**: `APPS_ON = false`가 기본이라 탭이 안 보이고 `go()`가 `navOff`에서 `home`으로 보내요(`04-state.js:22-23`, `05-command-palette.js:125`). 코드에서 `APPS_ON`을 true로 바꾸는 곳은 찾지 못했어요(`grep APPS_ON js/*.js index.html`: 선언과 `navOff`뿐).
+  - **플래그**: `APPS_ON = false`가 기본이라 탭이 안 보이고 `go()`가 `navOff`에서 `home`으로 보내요(`04-state.js:22-23`, `05-command-palette.js:146`). 코드에서 `APPS_ON`을 true로 바꾸는 곳은 찾지 못했어요(`grep APPS_ON js/*.js index.html`: 선언과 `navOff`뿐).
   - 목록 머리 `사용자 앱`, `모니터링 앱`, `불러오지 못한 앱`. 로딩 `앱 불러오는 중…`, 실패 `앱을 불러오지 못했어요`(머리글 줄로 표시). 사용자 앱이 없으면 줄 `아직 내 앱이 없어요` + 힌트 `채팅에서 앱을 추가해 달라고 하면 돼요`.
   - 상태 단어(`APP_STATUS`) `실행 중`/`응답 없음`/`상태 모름`/`꺼짐`. 상태는 오른쪽 배지 한 번만(점 + 단어, `appsBadge`; 아바타 모서리 점은 없어요, 아이콘이 비면 `file` 아이콘). 줄 힌트는 정상·꺼짐이면 비고, 끊기면 `a.hint`, 응답 없음이면 사유(`a.reason`), 모니터링형 `상태만 확인하는 앱이에요`.
   - 상세 본문: 정상 도구 앱은 `<iframe class="apps-frame" src=a.web.href>`(상태가 같으면 프레임 유지). 꺼진 앱 `꺼 둔 앱이에요. 켜면 화면이 다시 열려요.` + `켜기`. 응답 없음 `<이름>이(가) 응답하지 않아요 (<사유>).` + (시작 명령이 있으면) `앱이 떠 있는지 확인해 주세요.` + `다시 확인`. 화면 없는 앱 `이 앱은 모니터링에서 소식을 모아 보여 줘요.`/`이 앱은 자체 화면이 없어요.`(+ 모니터링 앱은 `모니터링에서 열기`). 선택 없음 머리 `앱`/`내 앱을 한곳에서 열어요`, 본문 `왼쪽에서 앱을 골라 주세요.`.
   - 머리 버튼: `새 탭에서 열기`(도구 앱이고 꺼지지 않았을 때), `앱 메뉴`(⋯: `설정`, 내 앱만 `끄기`/`켜기`, `제거`). 상단 상태 줄 `<상태> · <사유>`. 폰에서는 선택 힌트(`pkHint`)가 이름 아래 줄.
   - 30초마다 `loadApps`(화면이 열려 있고 숨김 아닐 때), 표시 중인 탭만 그림.
 - 데이터: `GET /api/apps`(`items`, `errors`), `PATCH /api/apps/<id> {off}`, `DELETE /api/apps/<id>`, iframe `/apps/<id>/`. 모니터링 쪽 연결은 `window.appsMonItems`(`30-apps.js:164`). SSE는 코드에서 확인 못 함.
-- 근거: `web/js/30-apps.js:139`(appsRender), `:35`(appsRows), `:73`(appsHeader), `:119`(appsBody), `:60`(appsPicked), `:66`(appsOpen), `:15`(loadApps), `:8`(APP_STATUS); `index.html:146-149`; 진입 `05-command-palette.js:139`.
+- 근거: `web/js/30-apps.js:139`(appsRender), `:35`(appsRows), `:73`(appsHeader), `:119`(appsBody), `:60`(appsPicked), `:66`(appsOpen), `:15`(loadApps), `:8`(APP_STATUS); `index.html:146-149`; 진입 `30-apps.js:75`.
 - css: `web/css/20-apps.css`(`.apps-*`, `.app-av`), `10-conversations.css`(`.cv-*`). 미디어쿼리 `20-apps.css:38`(min 1100: 목록 + 상세 2열 격자).
 
 ### 앱 설정 대화상자와 제거 확인 (`appsSettings`, `appsRemove`)
@@ -1090,7 +1090,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 오류: `제목을 적어 주세요`, `영어 소문자, 숫자, 빼기(-)만 쓸 수 있어요`, 서버 검증 메시지는 앞 단어(필드 키)에 맞는 칸 아래에 붙고 그 칸이 포커스(`더 보기` 안이면 펼침), 그 외 `저장하지 못했어요`. 기존 파일이 깨져 있으면 맨 위 `지금 파일에 문제가 있어요: <오류>. 저장하면 이 내용으로 바꿔 써요.`. 저장 버튼은 `busy`로 중복 방지.
   - 성공: 토스트 `<제목|id> 카드를 저장했어요`/`추가했어요`, 홈으로 가고 새 카드는 보드의 빈 자리로 스크롤 + 머리에 포커스(`reveal`).
   - 폰 vs 데스크톱: 1100px 이상은 폼 + 380px 미리보기(미리보기가 오른쪽 sticky), 1099px 이하는 한 열(최대 560px)이고 미리보기가 위에 붙어 sticky. 899px 이하/coarse는 입력 글자 16px, 899px 이하는 `취소`/`저장`이 가로로 꽉 참.
-- 데이터: `GET/POST/PUT /api/custom/cards[/<id>]`. 진입: 홈 카드 ⋯ 메뉴 `수정…`, `window.dotzCustom.add/edit`(`go("cardform", id)`); 주소 `#cardform/<id>`(`05-command-palette.js:143`). 탭 강조는 홈(`navView`).
+- 데이터: `GET/POST/PUT /api/custom/cards[/<id>]`. 진입: 홈 카드 ⋯ 메뉴 `수정…`, `window.dotzCustom.add/edit`(`go("cardform", id)`); 주소 `#cardform/<id>`(`05-command-palette.js:166`). 탭 강조는 홈(`navView`).
 - 근거: `web/custom.js:382`(cardForm), `:492`(openForm), `:512`(formDone), `:506`(reveal), `:764`(view 훅), `:773-`(pins); `04-state.js:28, 03-screens.js:39, 22-settings-pages.js:12-13`.
 - css: 스타일은 `web/custom.js:7-195`의 `CSS` 문자열을 `<style>`로 넣어요(`.cu-*`, `.pv-*`; `web/css/*.css`에서 `.cu-`/`.pv-`는 검색되지 않음), 공용 `.fi`, `.tf`, `.seg`는 `03-base.css`(주석과 INVENTORY 기준, 직접 확인은 못 함). 미디어쿼리는 같은 CSS 문자열 안: `(pointer:coarse), (max-width:899px)`, `(max-width:1099px)`, `(max-width:899px)`, `(min-width:1100px)`, `(max-width:639px)`.
 
@@ -1122,7 +1122,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 벨, 팔레트, 주소로 열면 필터와 펼침이 초기화되고, 행에서 돌아오면 유지(`NSC.keep`). 새 알림은 묶음 위로 슬라이드 인(`motionIn`).
   - 폰 vs 데스크톱: `09-notices-screen.css`에는 `@media` 규칙이 없어요(`grep ^@media` 결과 없음). 폭별 차이는 코드에서 확인 못 함.
 - 데이터: `GET /api/notices?limit=300`(`loadNotices`), `POST /api/notices/read {ids}`, `POST /api/notices/<id>/handled|dismiss|undismiss`. SSE `notice`, `notice_dismiss`, `notice_read`(`noticeLive`, `99-boot.js`로 라우팅된다고 주석에 적힘), `/api/state`의 `notices_unread`가 어긋나면 다시 읽음(`ntSync`).
-- 근거: `web/js/31-notices-screen.js:102`(nscPaint), `:73`(nscList), `:54`(nscRow), `:21`(nscTag), `:165`(nscTap), `:123`(nscOpen), `:189`(nscX), `:204`(nscDismiss), `:228`(nscReadAll); `30-notices.js:40`(loadNotices), `:77`(noticeLive), `:62`(ntSync); 상태 `04-state.js:34`(NSC); 진입 `05-command-palette.js:115,164`.
+- 근거: `web/js/31-notices-screen.js:102`(nscPaint), `:73`(nscList), `:54`(nscRow), `:21`(nscTag), `:165`(nscTap), `:123`(nscOpen), `:189`(nscX), `:204`(nscDismiss), `:228`(nscReadAll); `30-notices.js:40`(loadNotices), `:77`(noticeLive), `:62`(ntSync); 상태 `04-state.js:34`(NSC); 진입 `05-command-palette.js:136`, `31-notices-screen.js:172`.
 - css: `web/css/09-notices-screen.css`(`.nsc-*`), 알림 공용 `09-notices.css`.
 
 ### 알림 결정 시트 (`ntSheetPaint`, `dkOpen`)
@@ -1175,7 +1175,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 설정 줄 문구: `화면 공유` / `이 컴퓨터 화면을 내 다른 기기에서 봐요`, `조작 허용` / `켜면 화면을 보는 사람이 이 컴퓨터를 직접 조작해요`, `지금 보는 사람` / `<기기 · 기기>` 또는 `아무도 보고 있지 않아요`(+ 인원 태그), `공개 주소` / `Cloudflare 주소로 들어온 기기도 화면을 볼 수 있어요`(웹 접속 모드가 cloudflare일 때만). 토스트 `화면 공유를 켰어요`/`껐어요`, `조작을 허용했어요`/`보기만 할 수 있어요`, `공개 주소로도 열었어요`/`공개 주소로는 막았어요`. `조작 허용`과 `지금 보는 사람`은 공유가 켜졌을 때만.
   - 폰 vs 데스크톱: 알약은 1099px 이하에서 왼쪽 마진 0, 639px 이하에서 폭 제한(`23-remote-desktop.css:6-7`). 키보드 잠금은 데스크톱 Chrome 최상위 탭에서만 동작한다고 주석에 있음. `/desk/` 뷰어 화면 자체는 `web/js`에 없어 코드에서 확인 못 함.
 - 데이터: `S.desk`(`/api/state`), `POST /api/desk/open`, `GET /api/desk/status`, `PUT /api/desk/settings`. SSE는 알약이 `17-state-refresh.js` 갱신을 따른다고 주석에 있고, 직접 구독은 코드에서 확인 못 함.
-- 근거: `web/js/37-remote-desktop.js:25`(openScreen), `:83`(dskPaint), `:75`(dskPillNode), `:102`(dskSettings), `:54`(dskTake), `:64`(dskSet), `:11`(deskIsChrome); 진입 `05-command-palette.js:57`, `14-slash-commands.js:28,246-248`, `33-peers.js:180`, `22-settings-pages.js:87`.
+- 근거: `web/js/37-remote-desktop.js:25`(openScreen), `:83`(dskPaint), `:75`(dskPillNode), `:102`(dskSettings), `:54`(dskTake), `:64`(dskSet), `:11`(deskIsChrome); 진입 `05-command-palette.js:57`, `14-slash-commands.js:28,246-248`, `33-peers.js:180`, `22-settings-pages.js:105`.
 - css: `web/css/23-remote-desktop.css`(`.dsk-pill`).
 
 ### API 월 한도 (사용량 카드, 행, 대화상자)
@@ -1189,7 +1189,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 
 ### 앱 설치와 푸시 알림 (설정 `앱과 알림`, 새 버전 칩)
 - 목적: 홈 화면 앱 설치 안내, 이 기기의 푸시 알림 켜기/끄기, 새 버전 적용, 공유 시트로 받은 사진과 글을 입력창에 붙이기.
-- 구성: 설정 페이지 `notifications`(`22-settings-pages.js:6`의 `앱과 알림`)가 `pushSection`을 그려요: 섹션 `이 기기`(줄들), 섹션 `알림 종류`(`appNotifyRows`는 이 범위 밖이라 코드에서 확인 못 함). 그 밖에 `body`에 붙는 칩 `.shell-chip`(`새 버전 · 눌러서 적용`), 설치 안내 `dialog`.
+- 구성: 설정 페이지 `notifications`(`22-settings-pages.js:5`의 `앱과 알림`)가 `pushSection`을 그려요: 섹션 `이 기기`(줄들), 섹션 `알림 종류`(`appNotifyRows`는 이 범위 밖이라 코드에서 확인 못 함). 그 밖에 `body`에 붙는 칩 `.shell-chip`(`새 버전 · 눌러서 적용`), 설치 안내 `dialog`.
 - 기능: `앱 설치`(`installApp`: Chrome/Edge는 `beforeinstallprompt` 프롬프트, 없으면 안내 대화상자 `앱 설치` + 단계 목록 + `확인`), `알림 켜기`(`pushEnable`: 권한 요청, 구독, `POST /api/push/subscribe`), `테스트 알림`(`POST /api/push/test`), `끄기`(`pushDisable`), 게이트웨이별 스위치 `<이름|이 컴퓨터> 알림`(`pushGw` → `PUT /api/push/gateways`). 새 버전 칩은 눌러서 `shellApply`(페이지 새로고침). `?shared=1`로 열리면 캐시에 둔 공유 파일/글을 채팅 입력창에 붙임(`sharedIntake`, 전송 안 함).
 - 상태:
   - 줄: 설치 안 된 상태에서만 `홈 화면에 추가` 줄(오른쪽 버튼 `앱 설치`). 앱이 있는 기기는 게이트웨이마다 스위치, 응답 없는 게이트웨이는 `연결 안 됨`. 알림 미지원 `이 브라우저는 알림을 지원하지 않아요`(iOS 일반 탭은 `iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요`), 권한 거부 `알림 권한이 막혀 있어요`, 미구독 `알림` + `알림 켜기`, 구독 중 `알림 확인` + `테스트 알림` + `끄기`.
@@ -1197,7 +1197,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 설치 안내 단계: iOS(Safari 또는 다른 브라우저별 공유 버튼, `'홈 화면에 추가'`, `'웹 앱으로 열기'`), Android(`브라우저 메뉴(⋮)`, `'앱 설치'`, `'바로가기 만들기'`는 고르지 말 것), 그 밖(`주소창 오른쪽의 설치 아이콘`, `'앱 설치'`) + 노트 `전에 추가한 <봇> 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.`
   - 새 버전: 페이지가 숨겨져 있고 입력/첨부/시트/대화상자가 없으면 자동 새로고침(1분에 한 번 이하), 아니면 칩만 보여요. 구독이 서버에서 사라졌고 권한이 있으면 10분에 한 번 조용히 다시 구독.
 - 데이터: `GET /api/push[?endpoint=]`, `POST /api/push/subscribe|unsubscribe|test|presence|claim`, `GET`/`PUT /api/push/gateways`, 서비스 워커 `/sw.js`(`shell-updated`, `refresh-shell` 메시지), 공유 캐시 `dotz-share`.
-- 근거: `web/js/23-installable-app-web.js:226`(pushSection), `:209`(installApp), `:158`(pushEnable), `:172`(pushDisable), `:151`(pushGw), `:116`(pushLoad), `:62`(shellUpdated), `:15`(sharedIntake), `:109`(pwaInit); 설정 연결 `22-settings-pages.js:6`.
+- 근거: `web/js/23-installable-app-web.js:226`(pushSection), `:209`(installApp), `:158`(pushEnable), `:172`(pushDisable), `:151`(pushGw), `:116`(pushLoad), `:62`(shellUpdated), `:15`(sharedIntake), `:109`(pwaInit); 설정 연결 `22-settings-pages.js:5`.
 - css: 칩 `web/css/03-base.css`(`.shell-chip` 2건), 줄은 설정 공용 `02-cards-lists-tags.css`/`15-settings-pages.css`.
 
 ### 모니터링 화면 (뷰 monitoring)
@@ -1211,7 +1211,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 데이터: `GET /api/monitors` (`{items:[{name, watch?, kind, channel?, last_run?, last_result?, next_run?, every?, connection?, since?, conn_reason?, paused?, last_summary?, scope?, project?, project_title?, app?, fails?, last_ok?, last_output?}]}`), `GET /api/integrations`, 알림(`NT.items`, SSE `notice`, `notice_read`, `notice_dismiss`), 대화(`CONV`, `MAILS`).
 - css: web/css/20-monitoring.css(대부분의 `mon-*`), web/css/10-conversations.css(`#v-monitoring` 그리드 2~7행, 114~137행), web/css/01-tokens.css:188(1100px 이상 여백), web/css/19-volume.css(`mon-bar`, `mon-tabs`, `fr-*`, `mon-more`, `mon-day`, `mon-sh`).
 - css(반응형): 10-conversations.css:6-7 목록 단계, :114 `max-width:1099px`, :128 `min-width:1100px`(`--cv-w:240px`, `#v-monitoring` 한 열 그리드, `max-width:920px`), 20-monitoring.css:107 `min-width:1100px`(열린 앱 대화는 목록 칸 없이 채팅 대화창 폭으로 가운데: `#v-chat.mon-ctx:not(.mon-two)`, 감시는 `.mon-two`로 채팅의 두 칸).
-- 근거: web/index.html:99-103(마크업), web/js/30-monitoring.js:9-18(상태와 `monHash`), :33(`monRoute`), :1032(`renderMonitoring`), :1031(`monSchedule`), :1179-1180(60초 갱신, 첫 로드), web/js/05-command-palette.js:117-143,162(`go`), web/js/31-conversations.js:438-441(`cv-listing`), web/js/32-history-nav.js:19-23.
+- 근거: web/index.html:99-103(마크업), web/js/30-monitoring.js:9-18(상태와 `monHash`), :33(`monRoute`), :1032(`renderMonitoring`), :1031(`monSchedule`), :1179-1180(60초 갱신, 첫 로드), web/js/05-command-palette.js:138-166,183(`go`), web/js/31-conversations.js:438-441(`cv-listing`), web/js/32-history-nav.js:19-23.
 
 ### 모니터링 목록 (좌측 목록, list)
 
@@ -1448,7 +1448,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 필터 정의(`MAIL_FILTERS`, 30-monitoring.js:456): `전체`(받은 메일, 보관 제외), `안 읽음`, `답장 필요`(reply가 needs 또는 draft), `확인 대기`(메일 행 없음, 답장 초안 승인 카드만), `답장함`, `보관함`, `보낸 메일`. 일곱 값은 그대로이고, 보관함·보낸 메일은 자리 탭(`data-filter="archived"`/`"sent"`)이 고르며 받은 메일 탭은 `data-filter="in"`이에요(`MON.mailIn`이 직전 걸러 보기).
   - 새 메일 도착 행은 위에서 미끄러져 들어와요(`mbFresh`/`motionIn`, 첫 그림이나 다른 폴더 전환은 움직임 없음). 처리로 목록에서 빠지는 행은 먼저 사라져요(`mbRowsOut`/`motionOut`). 개수 배지는 바뀐 숫자만 굴러요(`cntSpan`/`rollCount`).
 - 데이터: `POST /api/mail/<key>/action {action}`(1건, 응답 `{ok, synced, note?}`), `POST /api/mail/actions {keys, action}`(여러 건, 응답 `{ok, results:[{key, ok, synced, note?}]}`), action은 read, unread, archive, unarchive, trash, star, unstar. 옛 허브(카드에 `can` 없음)는 삭제만 `DELETE /api/mail/<key>`. 처리 뒤 `convLoad()`와 `loadIntegrations()`. SSE 이벤트는 이 파일에서 코드에서 확인 못 함.
-- 근거: web/js/30-mail-box.js:191 `mbPaintBar`, :220 `mbList`, :176 `mbStar`, :183 `mbLead`, :73 `mbRun`, :58 `mbApply`, :51 `mbRowsOut`, :43 `mbFresh`; 호출처 web/js/30-monitoring.js:858, :456.
+- 근거: web/js/30-mail-box.js:253 `mbPaintBar`, :325 `mbList`, :238 `mbStar`, :245 `mbLead`, :92 `mbRun`, :78 `mbApply`, :63 `mbRowsOut`, :55 `mbFresh`; 호출처 web/js/30-monitoring.js:858, :456.
 - css: web/css/20-mail-box.css (`.mbox-*`, `.mr-star`, `.mr-lead`), 필터 줄은 web/css/15-reply-card.css 쪽 `.mr-filter` 계열과 20-monitoring.css도 같이 쓴다는 점은 코드에서 확인 못 함(rq grep 결과에 20-monitoring.css 포함). 폭 분기: 20-mail-box.css `@media (max-width: 639px)` (:101, :124, :130), `@media (min-width: 1100px)` (:180).
 
 ### 메일 처리 동작 (삭제 되돌리기, 낙관적 반영, 답장 안 함)
@@ -1468,7 +1468,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 답장 안 함 결과: `답장 안 함으로 표시했어요`/`답장 필요로 표시했어요`(여러 건은 `N개를 `), 일부 실패 `N개 중 M개는 표시하지 못했어요`, 전부 실패 시 오류 글 또는 `표시하지 못했어요`.
   - 공통 낙관적 반영: 실패 시 `read/archived/starred/reply` 값과 `ts(t).unread`를 되돌려요.
 - 데이터: 위 막대 항목과 같음. 추가로 `/api/mail/fyi`, `/api/peer/act`(args `{action:"fyi"}`), 후속 `convLoad`, `pqLoad`, `loadIntegrations`, `loadNotices`.
-- 근거: web/js/30-mail-box.js:73 `mbRun`, :108 `mbTrash`, :139 `mbFyi`, :169 `mbLeave`, :69 `MB_DONE`, :19 `MB_NOTE`.
+- 근거: web/js/30-mail-box.js:92 `mbRun`, :162 `mbTrash`, :196 `mbFyi`, :230 `mbLeave`, :89 `MB_DONE`, :19 `MB_NOTE`.
 - css: 토스트와 확인 상자는 이 범위 밖 공용 컴포넌트(스타일 위치는 코드에서 확인 못 함).
 
 ### 열린 메일 상단 도구줄 (mtop)
@@ -1485,7 +1485,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 목록에서만 지우는 삭제(`mailDelete`)는 목록 행의 ⋯에 있어요.
 - 상태: 버튼은 `busy()` 동안 진행 표시. 메일함이 동작을 따라주지 않아도 평소 완료 토스트만 떠요(`dotz에서만 바뀌어요` 꼬리 없음, 실제 동기화 실패 `note`만 예외). 열린 메일이 이미 사라지면 `monCtx`면 모니터링 목록으로. 보낸 메일이면 읽음 토글과 초안 작성 없음. phone/desktop 분기는 이 도구줄에는 코드에서 확인 못 함(아이콘만 있음).
 - 데이터: 위 `mbRun`/`mbTrash` API와 같음.
-- 근거: web/js/30-mail-box.js:232 `mailOpenBar`, :231 `mbIco`, :244 모드 버튼; web/js/11-todo-strip.js:238-242.
+- 근거: web/js/30-mail-box.js:358 `mailOpenBar`, :338 `mbIco`, :244 모드 버튼; web/js/11-todo-strip.js:238-242.
 - css: web/css/20-mail-box.css (`.mtop`, `.mtop-b`; 폭 분기 `@media (max-width: 639px)` :34는 `.tl-in > .bm.rc.mopen`).
 
 ### 메일 쓰기 시트 (새 메일 초안)
@@ -1505,7 +1505,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 최소화: `.min` 클래스, 머리만 남음. 접힌 동안 단추는 펼침 화살표와 `펼치기`(aria-label과 title)이고, 열리면 `최소화`예요(`mbFold`). 아래 탭 줄이 아래에 있으면 접힌 막대는 그 바로 위에 앉아요(`--mbox-lift`, `#nav` 위쪽을 재서 정해요). 실패 시 첨부 칩과 입력은 상태 객체에 남아요.
   - phone vs desktop: 데스크톱은 오른쪽 아래 도킹(최소화/닫기), 폰(639px 이하)은 전체 화면 시트(`inset:0`), FAB은 56px 원형이고 글자 `.mbox-fab-t`는 숨김, 위치 `bottom: calc(72px + env(safe-area-inset-bottom))`.
 - 데이터: `POST /api/mail/compose {to, cc, subject, body, attachments:[{name,path,size}], (reply_to, mode)}`, 파일 업로드 `uploadFile`(경로는 이 범위에서 코드에서 확인 못 함).
-- 근거: web/js/30-mail-box.js:250 `mbFab`, :303 `mbCompose`, :260 `mbForm`, :291 `mbSave`, :253 `mbChips`.
+- 근거: web/js/30-mail-box.js:378 `mbFab`, :447 `mbCompose`, :388 `mbForm`, :424 `mbSave`, :381 `mbChips`.
 - css: web/css/20-mail-box.css (`.mbox-fab` :66, `.mbox-sheet` :73-75, 폰 :101-103, :70).
 
 ### 메일 인라인 답장 칸 (답장 / 전체답장 / 전달)
@@ -1514,7 +1514,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `mbOpenReply(t, mode)`가 받는 사람, 참조, 제목을 채워요(`mbDefaults`). 제목은 `Re: `/`Fwd: `(이미 있으면 안 붙임). 전체답장은 원래 받는 사람과 참조를 참조로 넣어요. 전달은 본문에 `---------- 전달한 메일 ----------`, `보낸 사람:`, `제목:`과 원문을 넣어요. 모드 칩 전환은 본문과 첨부는 유지. `mbReplyPaint`가 슬롯을 그려요. `접기`는 칸만 접고 내용은 남아요.
 - 상태: 닫혀 있으면 슬롯은 비어 있고 숨김. 메일 대화가 아니거나 메일 헤더(`.mhd-wrap`)가 없으면 슬롯 제거. 내용 placeholder `답장 내용`(6행). 저장 성공 시 그 메일의 답장 상자 상태를 지움. 오류 문구는 `mbSave`와 동일.
 - 데이터: `POST /api/mail/compose` 에 `reply_to: <key>`, `mode: reply|all|forward` 추가.
-- 근거: web/js/30-mail-box.js:327 `MB_MODES`, :331 `mbDefaults`, :343 `mbBox`, :348 `mbOpenReply`, :357 `mbReplyPaint`; 호출 web/js/31-conversations.js:397.
+- 근거: web/js/30-mail-box.js:474 `MB_MODES`, :478 `mbDefaults`, :490 `mbBox`, :495 `mbOpenReply`, :504 `mbReplyPaint`; 호출 web/js/31-conversations.js:397.
 - css: web/css/20-mail-box.css (`.mbox-reply`, `.mbox-modes`, `.mbox-quote`; 폭 분기 :101, :124, :130).
 
 ### 메일 사람 헤더 (보낸 사람 / 받는 사람 / 참조)
@@ -1531,7 +1531,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 구성: 넓은 화면(>=1024px) `aside#mail-thread.mth`(aria-label `같은 사람과 주고받은 메일`; 머리 `.mth-h` = `이 사람과 주고받은 메일` + 개수 `.mth-n` + 접기 X `.mth-x`; 목록 `ol.mth-list`). 폰과 좁은 창: 헤더 줄 끝의 칩 `.mth-mb`(메일 아이콘 + 개수 + 화살표, `data-k=mail-thread-toggle`)가 헤더 아래 `ol.mth-list`를 펼쳐요. 각 행 `.mth-row`: 상태 태그, 시각(`rcWhen`), 제목, 요약.
 - 기능: `mailThreadToggle()`이 패널을 열고 닫고 `localStorage dz-mth-open`에 저장(`mailThreadSync`로 제자리 갱신). 칩: 넓은 화면이면 패널 토글, 좁으면 목록 펼침/접힘. 행 클릭: `mailThreadOpen(k)`(모니터링 맥락이면 `go("monitoring", "c:<t>")`, 아니면 `go("chat", t)`). 현재 열린 행은 `.on`, `aria-current=true`, 클릭 불가.
 - 상태: 관련 메일이 2개 미만이면 칩과 패널 모두 없음. 패널은 기본 접힘이고 선택은 세션 사이에 유지. `#v-chat`에 `.mail-open`(관련 메일 있음)과 `.mail-thr`(패널 열림) 클래스. 최대 20개(`MT_MAX`), 최신순. 제목이 없으면 `(제목 없음)`. 태그는 모니터링 행과 같은 상태 태그이고 미답장이면 채워진 미답장 알약(`unrepPill`). 칩 이름/aria-label `이 사람과 주고받은 메일 N`. 상대 판정: 받은 메일은 보낸 사람, 보낸 메일(`dir:"out"`)은 받는 사람 주소(`mailPeers`).
-- 데이터: MAILS 맵만 사용(`GET /api/conversations`), 별도 라우트 없음. 갱신 호출: web/js/05-command-palette.js:154, web/js/11-todo-strip.js:242.
+- 데이터: MAILS 맵만 사용(`GET /api/conversations`), 별도 라우트 없음. 갱신 호출: web/js/05-command-palette.js:163, web/js/11-todo-strip.js:242.
 - 근거: web/js/30-mail-thread.js:89 `mailRelated`, :110 `mailThreadRows`, :124 `mailThreadMobile`, :141 `mailThreadToggle`, :166 `mailThreadSync`, :105 `mailThreadOpen`.
 - css: web/css/20-mail-thread.css. 폭 분기: `@media (max-width: 1023px)` :50, `@media (min-width: 1024px)` :56 (JS도 `matchMedia("(min-width: 1024px)")`).
 
@@ -1541,7 +1541,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 줄 클릭으로 펼침/접힘(`MS.open`). `지우기`(`mailSentRemove`): 카드가 사라지고 `POST /api/notices/<id>/dismiss`(다른 컴퓨터는 `pqNotice` op dismiss). `모두 지우기`(`mailSentClear`): 전부 같은 방식으로 지움. 지운 것은 이 컴퓨터에서만 숨김이고 메일을 보내지는 않아요.
 - 상태: 라벨(`MS_LABEL`) `보낸 답장`, `만료된 초안`, `무시한 초안`, `고친 초안`, 그 외 `처리된 초안`. 받는이 라벨이 없으면 `받는이`, 주소 없으면 `-`. 보낸 것은 send 아이콘, 나머지는 mail 아이콘. 표시 대상: 보낸 초안 전부와 보내지 않은 것 중 최신(대기 중이거나 버린 것은 제외). 다른 컴퓨터 메일은 그 컴퓨터 스냅샷(`PQ.list`)에서 읽어요. 지우기 중 버튼 disabled. 성공 `초안을 지웠어요`(모두 지우기는 `초안 N개를 지웠어요`), 실패 시 되돌리고 `지우지 못했어요`(서버 메시지가 있으면 그 글), 일부 실패 `N개 중 M개를 지우지 못했어요`. 응답 `ok` 거짓이면 `지우지 못했어요`.
 - 데이터: `POST /api/notices/<id>/dismiss`(응답 `unread` 숫자 반영), `/api/peer/act` action notice op dismiss. 알림 목록 `NT.items`, 다른 컴퓨터 `PQ.list`. SSE 이벤트는 코드에서 확인 못 함(`convPaint`가 알림/스냅샷 변경마다 호출한다고 주석에 있음).
-- 근거: web/js/30-mail-sent.js:68 `mailSentPaint`, :57 `mailSentNode`, :18 `mailSentList`, :27 `mailSentRemove`, :50 `mailSentClear`; 호출 web/js/31-conversations.js:396.
+- 근거: web/js/30-mail-sent.js:72 `mailSentPaint`, :61 `mailSentNode`, :18 `mailSentList`, :27 `mailSentRemove`, :54 `mailSentClear`; 호출 web/js/31-conversations.js:396.
 - css: web/css/16-result-card.css:228-232 (`.ms-slot`, `.ms-card`, `.ms-line`), web/css/01-tokens.css:118.
 
 ### 답장 확인 목록 (모니터링 > 답장 확인)
@@ -1580,7 +1580,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 다른 컴퓨터 변형: `KK.pc`가 있으면 모든 GET이 `pqLink`/`/api/peer/proxy`를 거치고, 컴퓨터를 바꾸면 패널을 비우고 처음부터 시작해요.
   - 미답장 알약과 자동 초안 스위치는 폭과 관계없이 머리 밑 `#kk-owed` 한 줄에 있어요. 초안이 없고 답장이 남았을 때만 알약 옆에 `답장 안 함`이 있고, 초안이 있으면 그 카드의 `답장 안 함`이 대신해요.
 - 데이터: 아래 하위 화면 항목 참고. SSE는 `kakao`, `kakao_draft`, `kakao_rooms`, `kakao_unreplied`, `kakao_read`(web/js/99-boot.js -> `kkLive`).
-- 근거: web/js/30-kakao.js:433-465 (요소 조립), :1173 `kkMode`, :604 `kkPaintAll`, :766 `kkBack`.
+- 근거: web/js/30-kakao.js:433-465 (요소 조립), :1074 `kkMode`, :607 `kkPaintAll`, :766 `kkBack`.
 - css: web/css/17-kakao.css (주 파일), 일부 web/css/07-chat.css, 15-reply-card.css, 15-draft-original.css, 18-app-settings.css, 18-comments.css, 01-tokens.css가 `kk-` 클래스를 같이 써요. 폭 분기: 17-kakao.css `@media (max-width: 1099px)` :11, `(min-width: 1100px)` :15, :56, `(max-width: 1099px)` :90, :92, `(max-width: 639px)` :127, :145, :39-40, :271, `(min-width: 640px)` :270, `(pointer: coarse), (max-width: 639px)` :39, `prefers-reduced-motion` :85, :198.
 
 ### 카카오톡 방 목록 (지켜보는 대화방)
@@ -1597,7 +1597,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 힌트 줄: 서버 hint, 없고 단체/오픈이 아니면 종류 글(`단체 대화방`, `1:1 대화`, `오픈채팅`). 32자 넘으면 말줄임.
   - 방 목록 갱신: 열린 방에 새 메시지가 붙으면 그 행의 힌트, 시각, 안 읽음을 같이 갱신. 다른 방에 새 메시지가 오면 `GET /api/kakao/rooms/<id>/latest`로 그 행만 갱신(실패하면 전체 다시 읽기).
 - 데이터: `GET /api/kakao/rooms`(응답 `on`, `error`, `rooms[]`: chatId, name, kind, watched, autoDraft, unread, unreplied, hint, lastAt), `GET /api/kakao/rooms/<chatId>/latest`, `PUT /api/kakao/rooms/<chatId>`. 후속 `loadIntegrations`(500ms 지연, `kkIntgSoon`). SSE `kakao_rooms`, `kakao_unreplied`는 방 목록 전체 재조회, `kakao`는 위 latest.
-- 근거: web/js/30-kakao.js:580 `kkPaintRooms`, :570 `kkRow`, :505 `kkLoadRooms`, :413-418 `kkKindLine`/`kkTag`/`kkSubLine`, :27 `kkListTime`, :1118 `kkRoomLatest`.
+- 근거: web/js/30-kakao.js:582 `kkPaintRooms`, :571 `kkRow`, :511 `kkLoadRooms`, :415-419 `kkKindLine`/`kkTag`/`kkSubLine`, :29 `kkListTime`, :1020 `kkRoomLatest`.
 - css: web/css/17-kakao.css (`.kk-rooms`, `.kk-row`, `.kk-lh`; 데스크톱 아바타 32px는 :56).
 
 ### 지켜볼 대화방 추가 대화상자
@@ -1606,7 +1606,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 행(`button.pl-row.kk-pr`, role=checkbox, aria-checked) 클릭이 `kkSetRoom(r, {watched: !r.watched})`. 지켜보는 행은 `.on`과 체크 아이콘. 검색은 이름 부분 일치(대소문자 무시)이고 자음만 입력하면 초성 일치(`kkMatch`). 입력해도 목록만 다시 그려 입력 포커스와 IME를 유지해요. 배경 클릭으로 닫기.
 - 상태: 검색 결과가 없으면 `찾는 대화방이 없어요`(`#kk-nomatch`). 낙관적 반영 후 PUT 실패 시 값을 되돌리고 서버 메시지 토스트. 방을 지켜보지 않기로 하면 `autoDraft`도 꺼져요. 폰/터치(`pointer: coarse` 또는 639px 이하): 검색 입력 높이 40px, 글자 16px, 안전 영역 패딩(17-kakao.css:39-40).
 - 데이터: `PUT /api/kakao/rooms/<chatId> {watched?, autoDraft?}`.
-- 근거: web/js/30-kakao.js:558 `kkAddOpen`, :550 `kkPickRow`, :554 `kkPickRows`, :525 `kkSetRoom`, :545 `kkSearch`, :422 `kkMatch`.
+- 근거: web/js/30-kakao.js:564 `kkAddOpen`, :556 `kkPickRow`, :560 `kkPickRows`, :531 `kkSetRoom`, :551 `kkSearch`, :424 `kkMatch`.
 - css: web/css/17-kakao.css (`.kk-pd`, `.kk-add`, `.kk-pr`; :39-40, :270-271).
 
 ### 카카오톡 방 대화 화면 (머리, 읽기 전용, 자동 초안)
@@ -1626,7 +1626,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 맨 아래가 아니면 새 메시지 알림 버튼 `#kk-pill` `새 메시지`(클릭 시 맨 아래로).
   - 방을 열면 마지막으로 쓰던 입력 내용을 방별로 복원(`KK.typed`).
 - 데이터: 방 열기 `GET /api/kakao/chat/<id>?limit=50`(응답 room, messages, read, drafts, sends, ask, kakaoUnread). `POST /api/kakao/chat/<id>/read {logId}`(맨 아래 도달 + 화면이 보이는 동안만, 성공 시 방 안 읽음 0). 갱신 `kkTail`(`?after=<마지막 logId>` 반복, 이어 최신 페이지 병합). SSE `kakao`(열린 방이면 `kkTail`), `kakao_read`(`kkReads`: `GET /api/kakao/chat/<id>/reads?from=<첫 logId>`로 읽음 숫자만 갱신).
-- 근거: web/js/30-kakao.js:608 `kkPaintChat`, :736 `kkOpen`, :760 `kkClose`, :638 `kkNoReply`, :454 `kkPaintAuto`, :633 `kkWatching`, :808 `kkTail`, :854 `kkMaybeRead`, :867 `kkReads`.
+- 근거: web/js/30-kakao.js:611 `kkPaintChat`, :735 `kkOpen`, :759 `kkClose`, :639 `kkNoReply`, :460 `kkPaintAuto`, :634 `kkWatching`, :807 `kkTail`, :852 `kkMaybeRead`, :865 `kkReads`.
 - css: web/css/17-kakao.css (`.kk-head`, `.kk-owed`, `.kk-auto`, `.kk-ro`, `.kk-sw`, `#kk-chat .kk-drafts`); 좁은 폭에서 머리 숨김.
 
 ### 카카오톡 타임라인과 말풍선
@@ -1649,7 +1649,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 전송 중 메시지(`kkSendNode`): `보내는 중`, 성공 `보냄`(이후 `보냈어요` 칩 `rqSentNode`), 실패 `실패 · <사유>`(role=alert) + 버튼 `다시 보내기`(`kkRetry`), `지우기`(`kkDeleteSend`). 방에 실제 메시지로 나타나면 대기 항목은 사라지고, 보냄 상태는 2분 뒤 사라짐.
   - 원래 메시지 이동: 못 찾으면 토스트 `원래 메시지를 찾지 못했어요 · 대화에서 지워졌거나 아주 오래된 메시지예요`, 찾는 동안 인용 버튼에 `찾는 중…`. 이동하면 `원래 메시지` 라벨로 3.2초 강조하고 12초 동안 `답장으로 돌아가기` 알약(`data-k=kk-back-reply`).
 - 데이터: `GET /api/kakao/chat/<id>?limit=50&before=<logId>`(이전), `&after=<logId>`(이후/빈틈), `&around=<logId>`(점프), `GET /api/link-preview?url=`(응답 ok, image, site, title, description), 미디어 `/api/kakao/media/<chatId>/<logId>?i=<n>&v=thumb|full`, 파일 `.../file`(둘 다 `pqLink`로 다른 컴퓨터 대응).
-- 근거: web/js/30-kakao.js:685 `kkTimeline`, :652 `kkMsgNode`, :706 `kkPaintTl`, :773 `kkOlder`, :667 `kkPending`, :677 `kkSendNode`, :231 `kkJump`, :270 `kkMergeGap`, :283 `kkFillGap`, :295 `kkGapNode`, :96 `kkLpLoad`, :50 `kkBody`, :61 `kkSysText`.
+- 근거: web/js/30-kakao.js:684 `kkTimeline`, :653 `kkMsgNode`, :705 `kkPaintTl`, :772 `kkOlder`, :668 `kkPending`, :678 `kkSendNode`, :233 `kkJump`, :272 `kkMergeGap`, :285 `kkFillGap`, :297 `kkGapNode`, :98 `kkLpLoad`, :52 `kkBody`, :63 `kkSysText`.
 - css: web/css/17-kakao.css (`.kk-m`, `.kk-bub`, `.kk-date`, `.kk-new`, `.kk-lp`, `.kk-gap`); 폰 말풍선 최대폭 `--kk-maxw: 200px`(:145).
 
 ### 카카오톡 미디어 말풍선과 사진·동영상 뷰어
@@ -1674,7 +1674,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 타임라인의 아바타나 이름 클릭으로 열기(`kkPerson`). `요약 분석`/`다시 분석` 버튼(`data-k=analyze`, `kkAnalyze`)이 모델 분석을 요청. 닫기 X, 배경 클릭, 닫히면 DOM에서 제거.
 - 상태: 로딩 `불러오는 중…`, 로딩 실패는 서버 글. 이름을 못 찾으면 `상대`. 답장 시간을 못 재면 `아직 잴 수 없어요`. 기다리는 메시지가 없으면 `없어요`. 분석 있으면 본문과 `<시각>에 만든 요약`. 분석 중 버튼 disabled와 `분석 중…`, 실패 시 `요약 분석`으로 복귀하고 토스트. 응답 시간 단위는 초, 분, 시간(`kkMin`). 폰(639px 이하)은 전체 화면, 640px 이상은 오른쪽에 붙은 패널(17-kakao.css:270-271).
 - 데이터: `GET /api/kakao/person/<uid>?room=<chatId>`(응답 stats, analysis), `POST /api/kakao/person/<uid>/analyze {room}`(응답 analysis).
-- 근거: web/js/30-kakao.js:354 `kkPerson`, :370 `kkPersonPaint`, :397 `kkAnalyze`, :350 `kkBars`, :349 `kkMin`.
+- 근거: web/js/30-kakao.js:356 `kkPerson`, :368 `kkPersonPaint`, :399 `kkAnalyze`, :352 `kkBars`, :351 `kkMin`.
 - css: web/css/17-kakao.css (`.kk-pd`, `.kk-prow`, `.kk-hist`, `.kk-hb`, `.kk-sum`; :270-271).
 
 ### 카카오톡 요청 입력줄 (답장 초안 요청, 직접 보내기)
@@ -1716,7 +1716,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
   - 방 목록 갱신 뒤 채팅 탭의 `메일 · 카카오톡` 카드도 갱신(`convSig` 초기화).
 - 상태: 오프라인/재연결 전용 문구는 이 파일에서 코드에서 확인 못 함(실패는 조용히 무시하고 다음 이벤트나 타이머 때 재시도). 동시에 여러 번 호출되면 하나만 실행하고 끝나면 한 번 더(`KK.again`, `readAgain`, `olderAgain`).
 - 데이터: SSE `kakao`, `kakao_draft`, `kakao_rooms`, `kakao_unreplied`, `kakao_read`; `GET /api/kakao/chat/<id>/head`.
-- 근거: web/js/30-kakao.js:1134 `kkLive`, :1155 `kkPeerPoll`, :1168 `kkResync`, :1173 `kkMode`; 이벤트 분기 web/js/99-boot.js.
+- 근거: web/js/30-kakao.js:1036 `kkLive`, :1056 `kkPeerPoll`, :1069 `kkResync`, :1074 `kkMode`; 이벤트 분기 web/js/99-boot.js.
 - css: 해당 없음.
 
 ### 설정 목록 (`#v-settings`, `settingsList`)
@@ -1725,7 +1725,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 행을 누르면 `go("providers")`, `openModels("orchestrator")`(모델 · 폴백), `go("provider","anthropic")`(계정), `go("usage")`, `go("context")`, `go("messengers")`, `go("webaccess")`, `go("devices")`, `mnDialog`(컴퓨터 이름 바꾸기 대화창, 33-peers.js), `go("notifications")`, `go("apps")`, `go("display")`, `go("update")`, `go("runtime")`, `go("harness")`로 가요. 화면 공유 묶음에는 스위치 `화면 공유`, `조작 허용`(켜져 있을 때), 읽기 전용 행 `지금 보는 사람`, `공개 주소`(Cloudflare 모드이고 상태를 읽었을 때)가 있어요(37-remote-desktop.js:102).
 - 상태: 행의 오른쪽 한 줄 요약은 코드가 채워요. `공급자`는 `{n}개 연결`(`P` 로드 전에는 빈 줄), `모델 · 폴백`은 `{모델 이름} · {추론 강도}`, `계정` 행은 `ACC.accounts`가 1개 이상일 때만 나오고 `{라벨} 사용 중`, `사용량과 월 한도`는 가장 낮게 남은 한도 `{한도 이름} {퍼센트}` + `월 $N`, `메신저`는 `{첫 연결 이름} 외 {n}개 연결됨` 또는 `설정 안 됨`, `웹 접속`은 `Tailscale` `Cloudflare` `이 컴퓨터만`, `연결된 기기`는 `{n}대`(Cloudflare 모드에서 `/api/devices`가 답할 때만 행이 생겨요, 아니면 행 자체가 없어요), `앱과 알림`은 `푸시 알림 켬` `푸시 알림 꺼짐` `이 브라우저는 알림을 지원하지 않아요`, `앱 관리` 행은 `navOff("apps")`(앱 기능이 꺼짐)이면 숨겨요, `표시`는 `다크 · 대화 탭 메인` 같은 조합, `업데이트`는 `stUpdateSub` 문구와 오른쪽 태그 `재시작 필요` `새 버전` `업데이트`(하네스만 새 버전일 때), `실행 하네스`는 역할을 맡은 하네스 이름들을 ` · `로 이어 붙인 줄과 태그 `새 버전`, `구성`과 `화면 안내 다시 보기`는 값이 없어서 둘째 줄이 없어요(행 이름만 가운데). 폰 vs 데스크톱: 목록 구조는 같고, 639px 이하 또는 터치 포인터에서 `.ib`와 스위치 터치 영역이 커져요(15-settings-phone.css:19). 설정 탭에 들어올 때 `go`가 `loadUpdate`, `loadMessengerIndex`, `loadProviderData`, `loadRuntimes`, `loadDevices`, `loadWebAccess`, `loadAccounts`(ACC 없을 때)를 한꺼번에 불러요.
 - 데이터: `GET /api/update`, `/api/harness/update`, `/api/messengers`, `/api/providers`, `/api/runtimes`, `/api/devices`, `/api/web-access`, `/api/accounts`, `/api/api-budget`, `/api/quota`(`SQ`), `/api/push*`. SSE는 이 화면 전용이 없어요. 전역 SSE `update_available`이 `loadUpdate`를 불러 이 화면의 업데이트 요약을 바꿔요(99-boot.js:56). 화면을 열 때 `/api/update`와 `/api/harness/update`는 마지막으로 읽은 지 5분(부팅이 쓰는 주기, `updFresh`)이, `/api/providers`는 1분(`provFresh`)이 안 됐으면 다시 읽지 않고 가진 값으로 그려요.
-- 근거: web/js/22-settings-pages.js:72 `settingsList`, :42-70 요약 함수들(`stUsageSub` `stAccountSub` `stUpdateSub` `stRuntimeSub` `stPushSub`), :17 `go` 덮어쓰기, web/js/24-settings-update.js:302 `renderSettings`, web/js/05-command-palette.js:165 (설정 진입 시 로드), web/js/03-screens.js:37-39 (`views` `SUB` `titles`).
+- 근거: web/js/22-settings-pages.js:91 `settingsList`, :46-78 요약 함수들(`stUsageSub` `stAccountSub` `stUpdateSub` `stRuntimeSub` `stPushSub`), :16 `settingsEnter`, :24-28 (`screenHooks`), web/js/24-settings-update.js:331 `renderSettings`, web/js/05-command-palette.js:183 (`go`가 `enter` 훅을 불러요), web/js/03-screens.js:37-39 (`views` `SUB` `titles`).
 - css: 02-cards-lists-tags.css(`.li` `.tap` `.sec` `.list` `.tag`), 15-settings-pages.css, 15-settings-phone.css(`@media (max-width: 639px), (pointer: coarse)` 터치 크기), 06-harness.css(`.hs-sw`).
 
 ### 설정 행 부품 (`stRow`, `stToggle`, `stTag`, `stSec`, `stList`)
@@ -1734,7 +1734,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `stRow`의 `onclick`이 클릭된 버튼을 인자로 받아요. `stToggle`의 `onPick(v, btn)`.
 - 상태: `trail === null`이면 화살표와 끝 영역이 없어요. `trail === undefined`이면 화살표만 있어요.
 - 데이터: 없음(순수 렌더 부품).
-- 근거: web/js/22-settings-pages.js:27 `stSec`, :28 `stList`, :30 `stRow`, :35 `stToggle`, :39 `stTag`.
+- 근거: web/js/22-settings-pages.js:31 `stSec`, :32 `stList`, :34 `stRow`, :39 `stToggle`, :43 `stTag`.
 - css: 02-cards-lists-tags.css, 06-harness.css(`.upd-new`는 코드에서 클래스만 확인, 규칙 위치는 코드에서 확인 못 함).
 
 ### 표시 (`#display`, `displayPage`)
@@ -1743,7 +1743,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `화면 모드` 두 값 알약 `라이트` / `다크`(`toggleTheme` 후 `renderSettings`). `대화 탭` 두 값 알약 `메인` / `마지막`(`chatTabModeSet`가 localStorage `CHAT_TAB_KEY`에 저장).
 - 상태: 행 설명은 대화 탭 값에 따라 `채팅을 열면 메인 대화부터 시작해요` 또는 `채팅을 열면 마지막 대화부터 시작해요`(두 값 모두 390px에서 한 줄이라 아래 행이 밀리지 않아요). 화면 모드 행은 설명 줄이 없어요(오른쪽 값이 말해요). 행 아이콘은 테마에 따라 해/달. 서버 호출 없이 브라우저에만 저장해요. 제목은 `titles.display` = `표시`. 로딩, 오류, 빈 상태는 코드에 없어요.
 - 데이터: 없음(localStorage).
-- 근거: web/js/22-settings-pages.js:101 `displayPage`, :5-10 `SET_PAGE.display`, web/js/04-state.js:169-170 `chatTabMode` `chatTabModeSet`, :220-223 `themeIs` `themeIc` `toggleTheme`.
+- 근거: web/js/22-settings-pages.js:120 `displayPage`, :4-9 `SET_PAGE.display`, web/js/04-state.js:169-170 `chatTabMode` `chatTabModeSet`, :220-223 `themeIs` `themeIc` `toggleTheme`.
 - css: 02-cards-lists-tags.css(`.seg`/알약), 15-settings-phone.css. `.st-page` 규칙은 web/css에서 못 찾음.
 
 ### 앱과 알림 (`#notifications`, `pushSection`)
@@ -1752,7 +1752,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `홈 화면에 추가` 줄의 `앱 설치` 버튼(`installApp`, 설치된 앱이 아닐 때만). 앱이 설치된 기기는 게이트웨이마다 `{이름 또는 이 컴퓨터} 알림` 스위치(`pushGw` -> `PUT /api/push/gateways`). 앱이 없는 브라우저는 `알림 켜기`(`pushEnable`). 구독 중이면 `알림 확인` 행에 `테스트 알림`(`pushTest`)과 `끄기`(`pushDisable`). 알림 종류 6개 스위치(`notifyRows`, `appNotifySet` -> `PUT /api/push/classes`): `답변 필요`(질문 · 승인 · 로그인), `경고`(게이트웨이 오류 · 로그인 끊김 · 감시 반복 실패), `결과`(세션 · 작업 완료 · 실패), `새 소식`(메일 · 카톡 · 댓글 · 감시 · 예약), `대화`(보고 있지 않은 대화의 새 답), `진행`(진행 중 보고 · 작업 기록).
 - 상태: 푸시 불가 브라우저 `이 브라우저는 알림을 지원하지 않아요. Chrome이나 설치한 앱에서 켤 수 있어요`, iPhone이면서 설치 전 `iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요`. 권한 거부 `알림 권한이 막혀 있어요`. 게이트웨이가 응답하지 않으면 스위치 대신 `연결 안 됨`. 토스트: `알림을 켰어요`, `알림을 껐어요`, `테스트 알림을 보냈어요`, 권한이 꺼져 있으면 `알림 권한이 꺼져 있어요. 기기 설정에서 {봇 이름} 알림을 허용해 주세요`. `알림 종류` 구역은 `/api/push/classes` 응답이 오기 전과 실패했을 때 아예 안 그려요(`APPN.v` null이면 빈 배열). 스위치를 누르면 먼저 값을 바꿔 보여 주고 실패하면 되돌리며 토스트로 오류를 보여요. 알림 종류 아래 설명 줄: `웹앱과 휴대폰에 같이 적용돼요. 꺼도 알림 목록에는 남아요. 메신저 알림은 설정 → 메신저의 각 연결에서 따로 정해요.` 폰 vs 데스크톱 전용 분기는 코드에 없어요(설치 방법만 UA로 iOS/Android/그 외로 갈라요).
 - 데이터: `GET /api/push[?endpoint=]`, `POST /api/push/subscribe`, `POST /api/push/unsubscribe`, `POST /api/push/test`, `POST /api/push/presence`, `GET|PUT /api/push/gateways`, `POST /api/push/claim`, `GET|PUT /api/push/classes`. SSE 직접 구독은 없어요.
-- 근거: web/js/23-installable-app-web.js:226 `pushSection`, :116 `pushLoad`, :140 `pushGateways`, :151 `pushGw`, :158 `pushEnable`, :172 `pushDisable`, :183 `pushTest`; web/js/24-settings-update.js:283-296 `NOTIFY_CLASSES` `notifyRows` `appNotifyLoad` `appNotifySet` `appNotifyRows`; web/js/22-settings-pages.js:5-10 `SET_PAGE.notifications`.
+- 근거: web/js/23-installable-app-web.js:273 `pushSection`, :163 `pushLoad`, :187 `pushGateways`, :198 `pushGw`, :205 `pushEnable`, :219 `pushDisable`, :230 `pushTest`; web/js/24-settings-update.js:310-325 `NOTIFY_CLASSES` `notifyRows` `appNotifyLoad` `appNotifySet` `appNotifyRows`; web/js/22-settings-pages.js:4-9 `SET_PAGE.notifications`.
 - css: 06-harness.css(`.hs-sw` 스위치), 15-settings-pages.css, 15-settings-phone.css(`#settings .hs-sw::before` 터치 영역은 `#settings` 안에서만 적용, 이 화면은 `#notifications`라서 적용 여부는 코드에서 확인 못 함).
 
 ### 앱 설치 안내 대화창 (`installApp`)
@@ -1761,7 +1761,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 브라우저가 `beforeinstallprompt`를 줬으면 대화창 없이 바로 설치 프롬프트를 띄워요. 아니면 안내 대화창.
 - 상태: iOS는 Chrome/Firefox/Edge이면 `주소창의 공유 버튼을 눌러요`, Safari이면 `Safari 아래쪽(또는 주소창)의 공유 버튼을 눌러요`, 이어서 `'홈 화면에 추가'를 골라요`, `'웹 앱으로 열기'가 켜져 있는지 보고 '추가'를 눌러요`. Android는 `브라우저 메뉴(⋮)를 열어요`, `'앱 설치'를 골라요. '홈 화면에 추가'라면 다음 창에서 '설치'를 골라요`, `'바로가기 만들기'는 브라우저로 열려요. 고르지 마세요`. 그 외는 `주소창 오른쪽의 설치 아이콘을 눌러요`, `없으면 브라우저 메뉴에서 '앱 설치'를 골라요`. 하단 문구 `전에 추가한 {봇 이름} 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.` 설치 후 토스트 `앱을 설치했어요. 홈 화면의 {봇 이름} 아이콘으로 열어 주세요`.
 - 데이터: 없음.
-- 근거: web/js/23-installable-app-web.js:209 `installApp`.
+- 근거: web/js/23-installable-app-web.js:256 `installApp`.
 - css: 03-base.css(`.steps`), 14-overlay.css(대화창, 파일명만 확인하고 해당 규칙은 코드에서 확인 못 함).
 
 ### 업데이트 (`#update`, `updateSection`)
@@ -1770,7 +1770,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `확인`(`updCheck` -> `POST /api/update/check`), `지금 업데이트`(`updNow` -> `POST /api/update/now`), `재시작`(`updRestart` -> `POST /api/update/restart` with `when: idle|now`), 스위치 두 개(`updSet` -> `PUT /api/update/settings`, 키 `auto_check` `auto_apply`).
 - 상태: 로딩/오류 `앱 버전` 행에 `불러오는 중…` 또는 서버 오류 문구. `확인`을 누르면 그 행이 `확인하는 중…`(단추 잠김)이 되고 목록은 그대로 남아요(`UPD.checking`). 실행 버전 `실행 중 {버전}` (`updVer`: git이면 릴리스가 있을 때 `v{릴리스}`만, 없을 때 `{짧은 해시} · {날짜} · {브랜치}`, tarball이면 `v{릴리스} · 설치본` 또는 `설치본 {해시} · {날짜}`, install이면 `설치본 · {날짜}`, 모르면 `알 수 없음`). 확인 실패 시 `.upd-box.err`에 이유, 해결 방법(백틱은 `<code>`), 상세. 최신이면 같은 `앱 버전` 행의 부제가 `실행 중 {버전} · 최신 버전이에요 · 확인 {시각}`(+ `로컬 커밋 {n}개 (아직 올리지 않음)` + `커밋 안 한 변경 {n}개`)로 바뀌어요. 줄은 하나예요. 새 버전이 있으면 상자: 제목 `새 버전 {현재} → {새 버전}` 또는 `새 커밋 {n}개 · {upstream}`, 커밋 목록(8개까지, `외 {n}개`), 막힘 사유, 로컬 변경 보관 상자(`updKeepBox`, `보관: {브랜치 · 패치}`), 로컬 커밋 안내 `로컬 커밋 {n}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.`, 버튼 `지금 업데이트`(막힘이거나 재시작 대기이면 disabled; 작업 중이거나 재시작 대기 중이면 `확인`도 disabled), 설명 `새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요.`(tarball) 또는 `fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요.`. 진행 중 `업데이트 중 · {단계}`; 끝난 작업은 `.upd-box.ok|err`. 받았지만 미적용: `새 버전 {짧은 해시} 받음` / `재시작하면 적용돼요` + `재시작`. 재시작 대기: `재시작 대기 중` / `곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요.` 또는 `작업이 끝나면 다시 켜져요 ({작업들}). 이 화면은 자동으로 다시 연결돼요.` 재시작 대화창(`dialog`) `작업 중: {목록}` / `작업이 끝난 뒤 재시작하거나, 지금 끊고 재시작할 수 있어요. 끊긴 요청은 다시 켜질 때 이어서 보내요.` 버튼 `작업이 끝나면` `지금 재시작`. 재시작이 끝나면 토스트 `다시 시작했어요 · 지금 버전 {해시}`(2초마다 `/api/update`를 폴링해 boot id가 바뀌면). `자동 확인` 설명: 자동 적용이 꺼져 있으면 `새 버전이 있으면 알림만 보내요. 적용은 직접 해요.`, 켜져 있으면 `새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요.` `새 버전 자동 적용` 설명: `새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요.` 확인 토스트 `새 버전 {버전}이 있어요` / `새 커밋 {n}개가 있어요` / `최신 버전이에요`. 폰: 커밋 제목과 경로가 줄바꿈돼요(15-settings-phone.css:3-17 블록의 `#settings .upd-log span` 규칙. 선택자가 `#settings` 하위라서 `#update` 화면에도 적용되는지는 코드에서 확인 못 함). 600px 이하에서 `.upd-box` 왼쪽 여백이 `--sp-4`(06-harness.css:141).
 - 데이터: `GET /api/update`(5분마다 + 진입 시 + 작업 중 1.5초), `POST /api/update/check`, `POST /api/update/now`, `POST /api/update/restart`, `PUT /api/update/settings`. SSE `update_available`.
-- 근거: web/js/24-settings-update.js:247 `updateSection`, :118 `loadUpdate`, :143 `updCheck`, :96 `updNow`, :160 `updSet`, :164 `updRestart`, :178 `updWaitTick`, :153 `updKeepBox`, :16 `updState`, :23 `updAvailable`; web/js/22-settings-pages.js:5-10 `SET_PAGE.update`, :17-25 (`update` 또는 `runtime` 진입 시 `loadUpdate`).
+- 근거: web/js/24-settings-update.js:271 `updateSection`, :125 `loadUpdate`, :158 `updCheck`, :96 `updNow`, :179 `updSet`, :183 `updRestart`, :202 `updWaitTick`, :172 `updKeepBox`, :21 `updState`, :28 `updAvailable`; web/js/22-settings-pages.js:4-9 `SET_PAGE.update`, :22-23 (`updateEnter`, `runtimeEnter`가 `loadUpdate`).
 - css: 06-harness.css(`.upd-box` `.upd-log` `.upd-act` `.upd-block`, 이름은 코드에서 확인하고 규칙은 `.upd-box` `.upd-log`만 파일에서 확인), 15-settings-phone.css, 06-harness.css(`.hs-sw`).
 
 ### 상단 업데이트 바와 새 버전 배지 (`#upd-bar`, `#nav-upd`)
@@ -1779,7 +1779,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `new`, `failed` 단계에서 문구를 누르면 `updNow`. `×`는 `ubSee`로 이 제안(원격 head) 또는 이 결과(flow id)를 localStorage `dotz-upd-bar`에 기억해 숨겨요. 2초 간격 `updBarTick` 폴링.
 - 상태: 문구는 `새 버전이 있어요 · 눌러서 업데이트`(new), 서버가 준 진행 문구(download, waiting, restarting; 이때 `×` 없음), 게이트웨이가 응답하지 않으면 `다시 켜는 중이에요`, 끝나면 서버 문구 + ` · 지금 버전 {해시}`(done, 2.4초 뒤 스스로 사라짐), 실패 `업데이트하지 못했어요: {이유} · 눌러서 다시 시도`(이유가 이미 `업데이트하지 못했어요`로 시작하면 한 번만). 결과는 1시간 안의 것만, 이미 본 것은 안 보여요. 사라질 때 높이 접힘 250ms(모션 줄이기 설정이면 즉시). 폰에서 두 줄로 접히면 `--upd-h`를 바 높이로 설정해 앱을 아래로 밀어요(`ubFit`). `#nav-upd` 배지: 재시작 대기 `재시작 필요`, 둘 이상 `업데이트 {n}`, 그 외 `새 버전`(제목 `재시작하면 새 버전이 적용돼요` / `새 버전이 있어요`).
 - 데이터: `GET /api/update`, `POST /api/update/now`, SSE `update_available`.
-- 근거: web/js/24-settings-update.js:40 `paintUpdBadge`, :52-64 `UB` `ubSeen` `ubSee` `updBarState`, :65 `ubFit`, :72 `ubOut`, :79 `paintUpdBar`, :96 `updNow`, :107 `updBarTick`; web/js/99-boot.js:56, :80.
+- 근거: web/js/24-settings-update.js:46 `paintUpdBadge`, :58-62 `UB` `ubSeen` `ubSee` `updBarState`, :71 `ubFit`, :78 `ubOut`, :85 `paintUpdBar`, :96 `updNow`, :114 `updBarTick`; web/js/99-boot.js:56, :80.
 - css: 03-base.css(`.upd-bar`, `--upd-h`).
 
 ### 실행 하네스 (`#runtime`, `hvSection`)
@@ -1788,7 +1788,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `확인`(`hvCheck` -> `POST /api/harness/update/check`), `업데이트`(`hvApply` -> `POST /api/harness/update/apply` `{id}`), 바꾸기 버튼(`hvSwitcher`, 메뉴에서 설치된 다른 하네스를 골라 `rtFlow`).
 - 상태: 하네스 정보가 없으면 `emptyNode` `실행 하네스를 확인하는 중이에요`. 상태 줄(`hvSub`): 버전 미확인 `확인 중…` 또는 에러, `지금 {현재}` + ` → {최신}`, 관리형 `{버전} · {관리 주체 또는 다른 프로그램}이 관리해요`, 앱 설치 `· 앱으로 설치됨`, 최신 `· 최신`, 역할 `어시스턴트·세션 사용 중` 같은 접미. `업데이트` 버튼은 `bun-global` 또는 `omp-update` 설치일 때만 enabled이고, 진행 중 작업이 있으면 disabled. 진행 태그 `대기 중` / `진행 중`, 줄 `작업이 끝나면 업데이트해요` / `업데이트 중 · {단계}`. `확인`은 검사 중이면 disabled. 토스트 `실행 하네스 새 버전 {n}개가 있어요` / `실행 하네스는 최신이에요`. 안내는 한 줄 `설치가 실패하면 지금 버전을 그대로 써요.` 진행 중이면 `loadUpdate`가 2초마다 다시 읽어요. `rtSection`(26-settings-runtime.js:10)은 정의만 있고 어디서도 호출하지 않아요(grep 결과 정의 1건).
 - 데이터: `GET /api/harness/update`, `POST /api/harness/update/check|apply`, `GET /api/runtimes[?refresh=1]`. SSE `runtime_check`(검사 중일 때 `rtLive`).
-- 근거: web/js/24-settings-update.js:223 `hvSection`, :197 `hvSub`, :209 `hvSwitcher`, :216 `hvJobLine`, :130 `hvCheck`, :139 `hvApply`; web/js/26-settings-runtime.js:6 `loadRuntimes`; web/js/22-settings-pages.js:5-10 `SET_PAGE.runtime`.
+- 근거: web/js/24-settings-update.js:248 `hvSection`, :221 `hvSub`, :233 `hvSwitcher`, :241 `hvJobLine`, :139 `hvCheck`, :153 `hvApply`; web/js/26-settings-runtime.js:6 `loadRuntimes`; web/js/22-settings-pages.js:4-9 `SET_PAGE.runtime`.
 - css: 06-harness.css(`.upd-box`), 02-cards-lists-tags.css(`.sec-act`는 01-tokens/06-harness/18-app-settings에서도 선언), 15-settings-pages.css.
 
 ### 하네스 바꾸기 대화창 (`rtFlow`)
@@ -1806,7 +1806,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 모델/추론 강도 선택은 `pending[key]`에 담고 `적용`(`putModel` -> `PUT /api/models` `{target, model, thinking}`)을 눌러야 저장. 폴백은 `fbParts` 안에서 바로 저장(`PUT /api/fallbacks`). 공급자 필터 `전체` + 공급자들. 다른 화면에서 들어올 때 `openModels(key)`가 해당 행을 펼치고 그 행으로 스크롤(`modelsOpen`, `modelsFocus`). 이 화면을 눌러 고치는 행(`change.models`)은 행 전체가 버튼(`role="button"`, Enter/Space, `aria-expanded`)이고 맨 끝에 아래 화살표(열리면 위로 뒤집힘). 앱 설정에서 바꾸는 행(`change.app`)은 오른쪽 화살표이고 눌러 그 앱의 설정 화면(`asScreen`)을 열어요. 고정된 행(`change.none`)은 `고정` 글자만 있고 눌리지 않아요. 같은 자리를 가리키는 두 번째 행(대화 백그라운드 작업, 세션 서브에이전트)은 읽기 전용이에요.
 - 상태: 처음 `M` 없으면 `불러오는 중…`. 로드 실패(조용 모드가 아닐 때) `모델 정보를 불러오지 못했어요`와 `다시 시도` 단추(뒤이어 다시 그려져도 남고, 다시 불러오기에 성공하면 사라져요). `적용`은 바뀐 것이 있을 때만 enabled, `되돌리기` 같이 보임. 어시스턴트 카드 적용 시 확인창(제목 카드명, 본문 `어시스턴트가 다시 시작돼요.` + `{모델} · {추론}`, 버튼 `적용`), 캐시가 다시 쓰이면 `캐시가 다시 쓰여요 · 컨텍스트 {n} 토큰`으로 한 번 더 물어요(`requires_force`). 토스트 `적용했어요` / `적용했어요 · 재시작됨` / `다음 시작부터 적용돼요`. 추론 강도를 안 쓰는 모델은 `이 모델은 추론 강도를 쓰지 않아요`. 세션 카드 상태 점/문구는 `runStatus`(41-runstate.js:20). 드래그 중(`fbDragging`)에는 다시 그리지 않아요. 폰 vs 데스크톱: 639px 이하에서 폴백 줄이 격자로 재배치되고 전환 스위치가 태그 줄 앞으로 와요(15-settings-phone.css:3-17), 드롭다운 폭 `min(58%, 200px)`(15-settings-pages.css:42), 터치/639px 이하에서 필드 높이 확대(15-settings-pages.css:43, 15-settings-phone.css:19-23), 640px 이하에서 `.mt-model` `.mt-eff` 폭 제한 해제(03-base.css:42). 이 화면은 60초마다와 탭 복귀 시 `loadModels(true)`로 조용히 다시 읽어요. 바꾼 값이 있는 편집기(`pending`)는 다시 그려도 열린 채로 있고, 폴백 행을 끄는 중(`fbDragging`)에는 다시 그리지 않아요. 실행 중이지만 `M.in_use`에 행이 없는 세션도 `M.lanes`로 한 줄을 만들어요.
 - 데이터: `GET /api/models`(`M`), `PUT /api/models`, `GET /api/providers`(공급자 이름, 구독/API 구분), `PUT /api/fallbacks`, `GET /api/apikeys`. SSE는 없고 폴링만 있어요(99-boot.js:95).
-- 근거: web/js/20-models.js `renderModels`, `modelGroups`, `mtRow`, `mtRows`, `mtEditor`, `targetEdit`, `repliesEdit`, `putModel`, `loadModels`, `openModels`, `modelSource`, `modelPickItems`, `modelItems`; web/js/05-command-palette.js:166; web/js/22-settings.js `FB_LAYERS`.
+- 근거: web/js/20-models.js `renderModels`, `modelGroups`, `mtRow`, `mtRows`, `mtEditor`, `targetEdit`, `repliesEdit`, `putModel`, `loadModels`, `openModels`, `modelSource`, `modelPickItems`, `modelItems`; web/js/20-models.js:134; web/js/22-settings.js `FB_LAYERS`.
 - css: 03-base.css(`.mt-*` `.fb-*` `.fbe*`), 15-settings-pages.css(`#models`), 15-settings-phone.css.
 
 ### 모델 선택 메뉴 (`modelItems`, `modelPickItems`)
@@ -1824,7 +1824,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 단계 클릭 또는 `편집` 버튼 = 편집기 열기(`fbOpenStep`), `켜짐/꺼짐` 스위치(`role="switch"`), `위로` `아래로` 버튼과 포인터 드래그(6px 넘게 움직이면 `fbDrag`)로 순서 변경, `빼기`. 기본 단계를 누르면 카드의 모델 드롭다운이 열려요. 모든 변경은 즉시 `fbSave` -> `PUT /api/fallbacks` `{target, chain}`.
 - 상태: 태그: `API 키`, `서브에이전트·세션도 사용`, `구독 소진 시` / `오류 시`, 상한 `월 $N까지` / `일 N 토큰까지`, `복귀 안 함`, 경고 태그 `상한 도달` `한도 소진` `공유 계정 사용 중이라 꺼짐` `API 키 사용 안 함(설정)` `쓸 수 없음`(툴팁 `풀리는 때: {시각}`), `{하네스 이름 또는 이 하네스}에서 못 써요`. 사용 상한 막대 라벨 `오늘|이번 달 $사용 / $상한` 또는 `... N / N 토큰`. 추가는 `최대 개수`(`M.fallbacks.max`, 기본 6)에 닿으면 `더 넣을 수 없어요`로 바뀌고 disabled. 중복이면 토스트 `이미 있는 모델이에요`. 저장 토스트: `바로 적용돼요` / `지금 하던 일이 끝나면 적용돼요` / `다음에 시작될 때부터 적용돼요`, 실패 시 서버 메시지 또는 `저장하지 못했어요`(그 후 다시 읽어요). 설명 줄은 서브에이전트이면 `서브에이전트 폴백은 순서대로 넘어가요. API 키 단계는 세션이 시작될 때 정해져요. 이미 실행 중인 서브에이전트는 모델을 그대로 쓰고, 상한·복귀는 다음 시작부터 반영돼요.`, 하네스가 claude이면 `Claude Code는 Anthropic 모델만, 조건 없이 순서대로 넘어가요.`, 그 외 `단계를 누르면 바로 수정해요(모델·추론 강도·구독/API 키·넘어가는 때·복귀·상한). 끌거나 화살표로 순서를 바꿔요.` `구독 소진 시 API 키로 계속` 버튼은 허브가 조건을 지원하고 같은 모델의 API 키 단계가 아직 없을 때만 나와요. 기본 칩 툴팁 `{모델} · 눌러서 모델 바꾸기`, 단계 툴팁 `{모델} · 눌러서 편집`. 접근성: 단계별 `aria-label` (`{이름} 위로` `아래로` `편집` `빼기` `끄기` `켜기`).
 - 데이터: `M.fallbacks[대상]`(chain, active, harness, providers, conditions, max), `PUT /api/fallbacks`.
-- 근거: web/js/22-settings.js:159 `fbParts`, :18 `fbTags`, :28 `fbBar`, :37 `fbSave`, :127 `fbDrag`, :50 `fbOpenStep`.
+- 근거: web/js/22-settings.js:176 `fbParts`, :18 `fbTags`, :32 `fbBar`, :42 `fbSave`, :142 `fbDrag`, :58 `fbOpenStep`.
 - css: 03-base.css(`.fb-list` `.fb-item` `.fb-acts` `.fb-bar`), 15-settings-pages.css, 15-settings-phone.css:3-17.
 
 ### 폴백 단계 편집기 (`fbEditor`)
@@ -1833,7 +1833,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 값 변경은 `redraw`(초안만 바뀜). `저장`(`save`)은 체인 전체를 `PUT /api/fallbacks`로 보내고 성공하면 닫아요. `삭제`는 그 단계를 빼요.
 - 상태: 조건/복귀/상한 항목은 허브가 체인을 직접 돌릴 때(`F.conditions`)만 나오고, 서브에이전트 체인에서는 API 키 단계에만 나와요. 키 상태 `저장된 키 {마스크}` / `저장된 키가 없어요`(경고 톤) / `키 파일 {이름}`. 560px 이하(`@media (max-width: 560px)`)에서 격자가 한 열(03-base.css:55). 639px 이하에서 알약 버튼이 줄바꿈 허용(15-settings-phone.css:3-17 블록). 편집기가 열린 동안 `GET /api/apikeys`로 키 목록을 한 번 읽어요.
 - 데이터: `GET /api/apikeys`, `PUT /api/fallbacks`.
-- 근거: web/js/22-settings.js:55 `fbEditor`, :48-49 `fbSplit` `fbDraftOf`.
+- 근거: web/js/22-settings.js:63 `fbEditor`, :56-57 `fbSplit` `fbDraftOf`.
 - css: 03-base.css(`.fbe` `.fbe-grid` `.fbe-cap` `.fbe-key`), 15-settings-pages.css, 15-settings-phone.css.
 
 ### API 키 대화창 (`fbKeyDialog`)
@@ -1842,7 +1842,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 값이 있으면 `PUT /api/apikeys` `{provider, key}`로 한 번 확인하고 저장, 아니면 파일 이름 또는 이미 저장된 키 사용.
 - 상태: 설명 `구독 대신 API 키로 쓸 때 키를 붙여 넣어요. 저장하기 전에 한 번 확인하고, 키 값은 다시 보여주거나 기록에 남기지 않아요. 비워 두면 저장된 키를 써요.` 상태 줄 `저장된 키: {마스크} (사용 중)` / `저장된 키가 없어요`. 지원하지 않는 공급자는 토스트 `{공급자} 모델은 API 키를 쓸 수 없어요`. 입력이 모두 비면 토스트 `API 키를 붙여 넣어 주세요`. 성공 토스트 `키를 확인하고 저장했어요 ({마스크})`.
 - 데이터: `GET|PUT /api/apikeys`(`{from:"omo"}` 포함).
-- 근거: web/js/22-settings.js:101 `fbKeyDialog`.
+- 근거: web/js/22-settings.js:113 `fbKeyDialog`.
 - css: 14-overlay.css(대화창, 규칙 이름은 코드에서 확인 못 함), 06-harness.css.
 
 ### 모델 목록의 행 (`mtRow`)
@@ -1869,7 +1869,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 행을 누르면 `go("provider", id)`. `추가`는 `addProviderDialog`. 정렬은 로그인 방식 공급자가 먼저, 그다음 API 키와 미연결.
 - 상태: 로딩 `불러오는 중…`, 실패 `공급자를 불러오지 못했어요`, 빈 목록 `공급자가 없어요`. 부제는 `{계정 또는 마스크 또는 연결 안 됨} · 지금 사용 중 · 계정 {n}개`. 오른쪽 태그 `로그인됨` / `API 키` / `연결 안 됨`(연결됨은 초록, 쓰고 있는데 미연결이면 주황 점). 한도 막대는 `SQ`에서 가져와요(5시간 한도는 `5시간 한도`, 7일은 `7일 한도 Opus`처럼 `limitName`). 하단 설명 `공급자를 누르면 로그인과 API 키, 계정과 한도를 바꿔요. 모델은 어느 경로로 쓰는지 공급자 줄에서 구분해요.`
 - 데이터: `GET /api/providers`(`providers`, `addable`).
-- 근거: web/js/21-providers.js:41 `renderProviders`, :7 `loadProviders`, :2 `loadProviderData`, :37 `limitName`; web/js/05-command-palette.js:167.
+- 근거: web/js/21-providers.js:41 `renderProviders`, :13 `loadProviders`, :4 `loadProviderData`, :19 `limitName`; web/js/05-command-palette.js:183.
 - css: 02-cards-lists-tags.css(`.prow`), 15-settings-pages.css(`.prow` `.prow-lim`), 15-settings-phone.css(`:is(#settings,#models,#providers,#usage,#context) .ib`).
 
 ### 공급자 추가 대화창 (`addProviderDialog`)
@@ -1878,7 +1878,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 로그인 항목을 누르면 대화창을 닫고 `startLogin`. API 키 항목을 누르면 입력 칸이 생겨요. `저장` -> `POST /api/providers` `{provider, key}`.
 - 상태: `addable`이 있는 서버는 목록으로 고르고, 목록이 비면 `추가할 공급자가 없어요` + `닫기`. `addable`이 없는 서버(구버전)는 `공급자` 이름과 `API 키`를 직접 입력. 입력이 비면 토스트 `공급자와 API 키를 입력해 주세요`. 성공 토스트 `저장했어요`.
 - 데이터: `POST /api/providers`.
-- 근거: web/js/21-providers.js:67 `addProviderDialog`.
+- 근거: web/js/21-providers.js:75 `addProviderDialog`.
 - css: 14-overlay.css(대화창), 02-cards-lists-tags.css(`.li` `.avatar`는 코드에서 클래스만 확인).
 
 ### 공급자 상세 (`#v-provider`, `renderProvider`)
@@ -1887,7 +1887,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `로그인` / `다시 로그인`(`startLogin`, 계정이 있는 공급자는 이 버튼이 없고 계정 블록 맨 아래 `계정 추가` 행으로 해요), 휴지통 버튼(API 키 공급자의 `키 삭제`, 계정이 없는 공급자의 `로그아웃`, `logoutProvider` -> 확인창 -> `POST /api/providers/{id}/logout`).
 - 상태: 화면 제목은 공급자 이름(`providerName(provCur)`). 로딩 `불러오는 중…`, 못 찾으면 `공급자를 찾지 못했어요`. 부제는 `{계정 또는 마스크 또는 연결 안 됨} · 계정 {n}개`. 로그아웃 확인 `{이름} 로그아웃` / `저장된 로그인 정보가 삭제돼요.`(버튼 `로그아웃`), 키는 `{이름} 키 삭제` / `저장된 API 키를 삭제할까요?`(버튼 `삭제`), 토스트 `로그아웃했어요` / `키를 삭제했어요`. 뒤로 가기는 `providers`(04-state.js:231).
 - 데이터: `GET /api/providers`, `POST /api/providers/{id}/logout`, `GET /api/accounts`.
-- 근거: web/js/21-providers.js:17 `renderProvider`; web/js/20-models.js:65 `logoutProvider`; web/js/05-command-palette.js:168; web/js/04-state.js:231 `backTarget`.
+- 근거: web/js/21-providers.js:17 `renderProvider`; web/js/20-models.js:71 `logoutProvider`; web/js/05-command-palette.js:183; web/js/04-state.js:231 `backTarget`.
 - css: 02-cards-lists-tags.css, 15-settings-pages.css, 15-settings-phone.css.
 
 ### 로그인 대화창 (`startLogin`)
@@ -1904,9 +1904,9 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 목적: 공급자별 사용 한도 소진율, 사용 중인 Claude 계정과 전환 기록을 봐요.
 - 구성: `#usage`: (API 월 한도 행), 카드 격자 맨 앞 카드의 머리 오른쪽 끝에 조회 시각 + `새로고침`(`usRefresh`; 카드가 하나도 없거나 읽기에 실패했을 때만 맨 위 `.tools-bar`(`quotaBar`)), (API 월 한도 카드), 카드 격자 `.grid`(공급자마다 `.card`: 제목, 한도 줄 `.lim`에 이름, 퍼센트, 막대, 초기화 시각), `.sec` `사용 계정`(계정 라벨, 시작 시각 + 설명, 전환 기록 행 5개, 더 보기 버튼, `기록 모두 지우기`), `.sec` `정보가 없어요`(공급자와 사유).
 - 기능: `새로고침`(`loadQuota(true)` -> `GET /api/quota?fresh=1`). 전환 기록 행의 `×`(`이 기록 지우기`, `DELETE /api/accounts/switches?at=`), `이전 기록 {n}개 더 보기` / `이전 기록 접기`, `기록 모두 지우기` 확인창 `기록을 모두 지울까요?` / `계정 전환 기록 {n}개를 지워요. 되돌릴 수 없어요.`(버튼 `모두 지우기`).
-- 상태: 실패 `사용량을 불러오지 못했어요`. 한도 없는 공급자 카드는 `없어요`. 전부 비면 `사용량 정보가 없어요`. 한도 이름은 `5시간 한도` 같은 한글화(`limitName`), 퍼센트와 막대 `pctText` `bar`(05-command-palette.js:186-194). 계정 설명: 고정 `고정한 계정이에요. 한도에 걸리면 다른 계정 대신 폴백 순서를 따라요`, 아니면 `규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요`. 전환 종류 `처음 선택` `한도` `직접 변경` `계정 사라짐`. 토스트 `기록을 지웠어요` / `기록을 모두 지웠어요` / 실패 `지우지 못했어요`. 화면이 열려 있는 동안 60초마다 자동 새로고침. 폰 vs 데스크톱 분기는 코드에 없어요(`.ib` 터치 크기만).
+- 상태: 실패 `사용량을 불러오지 못했어요`. 한도 없는 공급자 카드는 `없어요`. 전부 비면 `사용량 정보가 없어요`. 한도 이름은 `5시간 한도` 같은 한글화(`limitName`), 퍼센트와 막대 `pctText` `bar`(05-command-palette.js:196-204). 계정 설명: 고정 `고정한 계정이에요. 한도에 걸리면 다른 계정 대신 폴백 순서를 따라요`, 아니면 `규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요`. 전환 종류 `처음 선택` `한도` `직접 변경` `계정 사라짐`. 토스트 `기록을 지웠어요` / `기록을 모두 지웠어요` / 실패 `지우지 못했어요`. 화면이 열려 있는 동안 60초마다 자동 새로고침. 폰 vs 데스크톱 분기는 코드에 없어요(`.ib` 터치 크기만).
 - 데이터: `GET /api/quota[?fresh=1]`, `GET /api/providers`, `DELETE /api/accounts/switches`. SSE `quota`(`quotaLive`가 사용량 화면이면 `loadQuota`, 09-needs-you.js:281).
-- 근거: web/js/21-providers.js:185 `loadQuota`; web/js/09-needs-you.js:275-281 `noteQuota` `quotaLive`; web/js/99-boot.js:49; web/js/05-command-palette.js:170.
+- 근거: web/js/21-providers.js:325 `loadQuota`; web/js/09-needs-you.js:298-303 `noteQuota` `quotaLive`; web/js/99-boot.js:49; web/js/21-providers.js:324.
 - css: 02-cards-lists-tags.css(`.tools-bar` `.lim` `.card`), 15-settings-pages.css(`.lim`).
 
 ### API 월 한도 (사용량 카드, 행, 대화창)
@@ -1923,8 +1923,8 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 구성: `#context`: 프로세스 카드들(`.card`: 상태 점 + 이름(어시스턴트는 봇 이름) + 상태 태그, 모델 줄 `{모델} · {추론}`, 막대 + `{tokens} / {window} 토큰`과 퍼센트, 압축 상태 태그 + `압축` 버튼), `.sec` `모델별 컨텍스트 설정` + 모델 카드(`.card.ctx-model`: 모델 이름 + `설정`, `컨텍스트 크기`, `자동 압축`, `사용: {대상들}`).
 - 기능: `압축`(`POST /api/compact` `{target}`), `설정`(`ctxDialog`). 열려 있는 동안 4초마다 `loadContext(true)`.
 - 상태: 로딩 `불러오는 중…`, 실패 `컨텍스트를 불러오지 못했어요`. 실행 중이 아닌 세션은 카드 없이 한 줄 목록(`.li[data-cx-off]`)으로 모여 이름과 오른쪽 `꺼짐`(점 + 글자)만 보여요. 카드는 돌고 있는 세션만 가져요. 60% 이상이면 막대가 주황(`ctxTone`, 빨강은 안 써요). 압축 상태 `압축 대기` / `압축 중 · {시각}` / `압축 완료 {시각} · {n} 토큰 전` / `압축 실패 {시각} · {오류}`. `압축` 버튼은 프로세스가 안 돌거나 압축 진행 중이면 disabled. 토스트 `{이름}: 작업 중이라 끝나면 압축해요` / `{이름}: 압축을 시작했어요`. 끝난 세션은 목록에서 빠지고 어시스턴트는 항상 남아요. 모델 카드: 값이 있으면 `{N} 토큰 · 직접 설정`, 없으면 `· 기본`, 크기를 모르면 `아직 모름 (처음 응답 뒤 표시)`, 자동 압축 `{N} 토큰 ({퍼센트}%) · 직접 설정|기본`, 사용처 이름은 `{봇 이름}` `새 세션 기본` 또는 세션 이름.
-- 데이터: `GET /api/context`(`C`), `POST /api/compact`, `PUT /api/context/model`. SSE 직접 구독은 없고 `/model|effort|compact|restart...` 명령 후 `loadContext(true)`(05-command-palette.js:39), 홈 카드와 `renderCtxRing`도 같은 `C`를 써요.
-- 근거: web/js/19-project-main.js:526 `renderContext`, :514 `loadContext`, :508 `ctxBar`, :500 `compactState`, :562 `ctxModels`; web/js/05-command-palette.js:171.
+- 데이터: `GET /api/context`(`C`), `POST /api/compact`, `PUT /api/context/model`. SSE 직접 구독은 없고 `/model|effort|compact|restart...` 명령 후 `loadContext(true)`(05-command-palette.js:48), 홈 카드와 `renderCtxRing`도 같은 `C`를 써요.
+- 근거: web/js/19-project-main.js:541 `renderContext`, :524 `loadContext`, :514 `ctxBar`, :506 `compactState`, :586 `ctxModels`; web/js/19-project-main.js:523.
 - css: 02-cards-lists-tags.css(`.card` `.heads` `.dot` `.bar` `.kv`), 15-settings-pages.css. `.ctx-model` 규칙은 web/css에서 못 찾음.
 
 ### 모델별 컨텍스트 설정 대화창 (`ctxDialog`)
@@ -1933,7 +1933,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `PUT /api/context/model` `{model, window, compact_at}`(`null` = 기본). 입력은 `300000` `300,000` `300k` `1.5m`, 압축 시점은 `80%`도 허용(`ctxParse`, %는 컨텍스트 크기를 알 때만).
 - 상태: 오류 문구 `컨텍스트 크기는 토큰 수로 적어 주세요 (예: 1000000, 200k)`, `자동 압축 시점은 토큰 수나 %로 적어 주세요 (예: 300k, 80%). %는 컨텍스트 크기를 알 때만 써요`, 서버 오류는 같은 줄에. 성공 토스트 `저장했어요. 다음 턴부터 적용돼요` / `기본값으로 되돌렸어요`.
 - 데이터: `PUT /api/context/model`, 한계값은 `C.limits`.
-- 근거: web/js/19-project-main.js:575 `ctxDialog`, :553 `ctxParse`.
+- 근거: web/js/19-project-main.js:599 `ctxDialog`, :577 `ctxParse`.
 - css: 14-overlay.css, 03-base.css(`.fi`).
 
 ### 계정 블록 (Claude 구독, `accountSection`)
@@ -1942,7 +1942,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 스위치 `자동 전환`(`PUT /api/accounts/mode` `{mode:"pinned"|"auto"}`), 고정 모드에서 행을 누르면 그 계정으로 고정(`{mode:"pinned", account}`), 자동 모드에서 행을 누르면 `accDialog`, 손잡이 끌기 또는 ArrowUp/ArrowDown 또는 터치 길게 누르기(450ms)로 순서 변경(`PUT /api/accounts/order`), `한도에 걸렸을 때`(`PUT /api/accounts/on-limit`), `전환 규칙` `편집`(`rulesDialog`), 스크립트 행 누르면 경로 복사(`accCopy`), `계정 추가`(`startLogin({..., add_account:true})`), `다시 로그인`(`startLogin(공급자)`). 계정 행을 누르면 계정 창이 열리고 거기서 `계정 삭제`를 해요(카드에는 휴지통이 없어요). 저장된 이름 `default`는 화면에서 `기본`으로만 보여요.
 - 상태: 태그 `사용 중`, `사용 중 · 고정`, 한도로 막힌 계정은 `{blocked_tag}` 또는 `쓸 수 없음`(주황), 로그인이 풀린 계정은 태그 대신 `다시 로그인` 버튼, 그 밖에는 태그 없음. 부제 `5시간 {n}% 남음 · 7일 {n}% 남음`. `자동 전환` 설명: 고정이면 `{라벨}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 폴백 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.`, 자동이면 `규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가고, 모두 막히면 폴백 순서(API 키 포함)를 따라요. 답장 초안은 API 키로 넘어가지 않아요.` `물어보기` 부제 `한도에 걸리면 자동 전환으로 넘어가요` / `한도에 걸린 동안 기다려요` / `아직 정하지 않았어요`. 규칙이 없으면 `전환 규칙` 부제 `계정이 막힐 때만 자동으로 바꿔요.` 스크립트 부제 `{n}초 안에 끝나요 · {n}분마다`, 마지막 결과 `마지막 결과 · {라벨 또는 고르지 않음}` / `마지막 실행이 실패했어요`. 토스트 `고정 계정을 바꿨어요`, `자동 전환으로 바꿨어요`, `고정했어요`, `한도에 걸렸을 때 기다리기로 정했어요`, `한도에 걸렸을 때 자동 전환으로 넘어가기로 정했어요`, `복사했어요` / `복사하지 못했어요`. `ACC`가 없으면 블록 자체가 없어요(빈 배열). 드래그 직후의 클릭은 무시(`accSwallow`).
 - 데이터: `GET /api/accounts`(`ACC`), `PUT /api/accounts/mode|order|on-limit|rules|alias`, `DELETE /api/accounts?name=`.
-- 근거: web/js/25-settings-accounts.js:66 `accountSection`, :16 `accTags`, :28 `accDrag`, :7 `loadAccounts`, :14 `accMut`.
+- 근거: web/js/25-settings-accounts.js:84 `accountSection`, :35 `accTags`, :46 `accDrag`, :8 `loadAccounts`, :30 `accMut`.
 - css: 02-cards-lists-tags.css(`.acc` `.acc-grip` `.acc-main`), 01-tokens.css/06-harness.css/18-app-settings.css(`.sec-act`).
 
 ### 계정 상세 대화창 (`accDialog`, `accProviderDialog`)
@@ -1951,7 +1951,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 별칭 `PUT /api/accounts/alias`, 삭제 확인창 `{라벨} 삭제`(삭제 뒤 토스트 `{라벨}을(를) 삭제했어요`) / `OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.`(`DELETE /api/accounts?name=` 또는 `?provider=&name=`), 고정 `PUT /api/accounts/mode` 또는 `/api/accounts/pin`. Enter = 저장.
 - 상태: `계정 삭제`는 Claude 쪽은 계정이 2개 이상일 때만. 하나뿐이면 그 자리에 `로그아웃`이 있어요(`logoutProvider`, 카드에 휴지통이 없어서 설정에서 나가는 길은 여기예요). 이미 고정된 계정이면 `이 계정으로 고정`이 disabled. 토스트 `별칭을 저장했어요` `별칭을 지웠어요` `{라벨}을(를) 지웠어요` `{라벨}로 고정했어요` `고정을 풀었어요`.
 - 데이터: 위 API들.
-- 근거: web/js/25-settings-accounts.js:160 `accDialog`, :145 `accProviderDialog`.
+- 근거: web/js/25-settings-accounts.js:201 `accDialog`, :185 `accProviderDialog`.
 - css: 14-overlay.css(`dialog.dlg.cl`).
 
 ### 전환 규칙 대화창 (`rulesDialog(provider)`)
@@ -1979,7 +1979,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 행을 누르면 `go(id)`.
 - 상태: 부제는 에러가 있을 때만 그 문구예요. 상태는 오른쪽에 점 + 낱말 하나(`연결됨` / `연결 안 됨` / `설정 안 됨`, 점 색 초록/빨강/주황)로 한 번만 말해요. 인덱스를 아직 못 읽으면 상태가 비어요. 인덱스는 화면에 들어올 때 한 번 읽고 렌더마다 다시 읽지 않아요.
 - 데이터: `GET /api/messengers`(`items`).
-- 근거: web/js/25-settings-messengers.js:32 `renderMessengers`, :50 `loadMessengerIndex`, :10 `msTag`; web/js/05-command-palette.js:169.
+- 근거: web/js/25-settings-messengers.js:34 `renderMessengers`, :52 `loadMessengerIndex`, :10 `msTag`; web/js/25-settings-messengers.js:32.
 - css: 07-messengers.css, 02-cards-lists-tags.css.
 
 ### JANDI / Slack / Telegram 설정 (`#v-jandi` `#v-slack` `#v-telegram`, `renderMessenger`)
@@ -1988,7 +1988,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `연결`/`켜기`(`msConnect`: 설정은 됐지만 꺼져 있고 오류가 없으면 `PUT /api/messengers/{id}` `{enabled:true}`, 아니면 온보딩 시작 `obStart`), 알림 스위치 즉시 저장(`msNotifySet` -> `PUT` `{notify:{k:on}}`, 실패하면 되돌리고 토스트), `확인`(`msTest` -> `POST /api/messengers/{id}/test`), `직접 입력`의 값 폼과 `사용` 스위치와 허용 목록 추가/빼기와 `저장`(`msSave` -> `PUT` `{enabled, values, allow}`, 바뀐 것이 있어야 enabled, 저장 후 버튼이 잠깐 `저장했어요`).
 - 상태: 로딩 `불러오는 중`, 실패 `메신저 설정을 불러오지 못했어요`. 상태 문구(`msLine`): 에러면 그 문구, `연결을 누르면 자동으로 설정해요.`, `설정은 돼 있어요. 켜기를 누르면 알림을 보내요.`, JANDI는 `방 {n}개`, 그 외 연결된 상태는 줄 없이 태그만 (연결 전에는 연결 줄과 `직접 입력`만 보이고 알림·방·사람·연결 확인은 숨겨요). 단추는 연결돼 있으면 `다시 연결`. 허용한 사람은 같은 id의 방 이름이 있으면 이름 + id 부제. 태그 `설정 안 됨` / `연결 안 됨` / `연결됨`. 알림 설명 `끄면 그 알림은 여기로 보내지 않고 앱에만 와요.` 연결 확인 결과 줄 `{방}: 보냈어요` / `{방}: {오류 또는 보내지 못했어요}` / 방이 없으면 `방이 없어요`. 필드: 읽기 전용, 비밀(저장돼 있으면 태그 `저장됨`, placeholder `바꾸려면 새로 붙여 넣기`, 계정 대행이면 태그 `내 계정으로 보냅니다`), 숫자, 텍스트. 허용 목록 행의 `빼기`는 `aria-label` `{값} 빼기`, 추가 버튼 `추가`. 방 점: 오류 빨강, 오가는 메시지가 있으면 초록.
 - 데이터: `GET /api/messengers`, `GET|PUT /api/messengers/{id}`, `POST /api/messengers/{id}/test`, `/api/onboarding/{id}*`. SSE 구독 없음(온보딩은 폴링).
-- 근거: web/js/25-settings-messengers.js:174 `renderMessenger`, :59 `loadMessengerSettings`, :70 `msLine`, :78 `msConnect`, :92 `msNotifySet`, :116 `msSave`, :135 `msTest`, :141 `msFieldInput`, :153 `msAllowEditor`, :161 `msAdvancedBody`, :105 `msDirty`; web/js/05-command-palette.js:173; web/index.html `#v-jandi` `#v-slack` `#v-telegram`.
+- 근거: web/js/25-settings-messengers.js:204 `renderMessenger`, :64 `loadMessengerSettings`, :77 `msLine`, :95 `msConnect`, :109 `msNotifySet`, :133 `msSave`, :153 `msTest`, :171 `msFieldInput`, :183 `msAllowEditor`, :191 `msAdvancedBody`, :122 `msDirty`; web/js/05-command-palette.js:183; web/index.html `#v-jandi` `#v-slack` `#v-telegram`.
 - css: 07-messengers.css(`.ms-adv`), 06-harness.css(`.dcs-*` `.ms-copy` `.ms-link`), 02-cards-lists-tags.css, 15-settings-phone.css.
 
 ### Discord 설정 (`#v-discord`, `renderDiscord`)
@@ -1997,7 +1997,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `dcSave`(`PUT /api/discord/connection`), `dcCheck`(`POST /api/discord/connection/check`), `dcClear`(`DELETE /api/discord/connection`, 확인창 `봇 토큰 삭제` / `저장된 봇 토큰을 삭제해요. dotz를 다시 시작하면 Discord 연결이 끊겨요.`, 버튼 `삭제`, 성공 토스트 `봇 토큰을 삭제했어요`, 열기 버튼 `토큰 삭제`), `dcRestart`(`POST /api/update/restart` -> 토스트 `작업이 끝나면 다시 켜져요. 이 화면은 자동으로 다시 연결돼요`), 스위치 `dpSet`(`PUT /api/discord/post` 즉시, 실패 시 되돌림).
 - 상태: 로딩 `불러오는 중`, 실패 `Discord 설정을 불러오지 못했어요`. 상태(`dcStatus`): 꺼져 있으면 `설정 안 됨`(토큰만 있으면 `토큰은 저장돼 있어요. 서버 ID와 내 사용자 ID까지 저장하고 게이트웨이를 다시 시작하면 연결돼요.`, 없으면 `아직 Discord 봇이 연결되지 않았어요.`), 연결됨 `{사용자}`(봇 이름만, 없으면 줄 없음), 오류 `연결 안 됨` + 오류 문구, 아니면 `연결 중` / `연결하는 중이에요.` 스위치 영역은 연결되기 전(또는 `/api/discord/post` 실패)에는 `연결하면 고를 수 있어요`로 대신해요. 스위치 설명 `끄면 그 알림은 디스코드로 가지 않고 앱에만 와요. 디스코드에서 직접 물은 것의 답은 디스코드에도 가요.` / `끄면 웹에만 와요. 디스코드에서 직접 물은 것의 답은 디스코드에도 가요.` `웹에서 시작한 세션`만 기본 꺼짐(`=== true`일 때 켜짐). 연결 확인 결과: 실패 `확인하지 못했어요` 또는 서버 오류 + 인텐트 안내, 성공 `봇 {이름 또는 이름 없음}`, `관리자 권한 확인됨` / `관리자 권한이 없어요.` + `봇 권한 다시 승인` 링크 / `서버 ID를 저장하면 관리자 권한도 확인해요`. 바꾼 값이 없으면 `바꾼 값이 없어요`. `restart_needed`이면 행 `게이트웨이를 다시 시작하면 적용돼요` + `다시 시작`. 안내 3단계(`연결하는 방법`): `디스코드 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요` / `초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)` / `봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요`.
 - 데이터: `GET|PUT|DELETE /api/discord/connection`, `POST /api/discord/connection/check`, `GET|PUT /api/discord/post`, `GET /api/messengers`, `/api/onboarding/discord*`.
-- 근거: web/js/25-settings-discord.js:112 `renderDiscord`, :17 `loadDiscord`, :30 `dcSave`, :49 `dcCheck`, :56 `dcClear`, :61 `dcRestart`, :65 `dcStatus`, :75 `dcSwitches`, :89 `dcChecked`, :101 `dcAdvanced`, :24 `dpSet`, :5 `DP_KINDS`; web/js/05-command-palette.js:172.
+- 근거: web/js/25-settings-discord.js:113 `renderDiscord`, :17 `loadDiscord`, :32 `dcSave`, :51 `dcCheck`, :58 `dcClear`, :63 `dcRestart`, :67 `dcStatus`, :77 `dcSwitches`, :90 `dcChecked`, :102 `dcAdvanced`, :26 `dpSet`, :5 `DP_KINDS`; web/js/25-settings-discord.js:18.
 - css: 06-harness.css(`.dcs-form` `.dcs-res` `.dcs-ok` `.dcs-err` `.dcs-acts` `.dcs-saved`), 07-messengers.css(`.ms-adv`).
 
 ### 연결 자동 설정 패널 (`onboardingPanel`)
@@ -2006,7 +2006,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `연결`(`obStart` -> `POST /api/onboarding/{key}/start`), `계속`(`obAct` `continue`), `다시 시작`, `취소`(`cancel`). 실행 중/대기 중에는 1.5초 폴링(`GET /api/onboarding/{key}`), 화면을 떠나면 멈춰요. 대기 상태에서 4초 뒤 한 번 자동 `continue`(최대 1회).
 - 상태: `연결`을 누르면 답이 오기 전에도 그 단추가 `연결하는 중`으로 잠기고 이 줄이 진행 중(취소 없음)이 돼요(`OB_WAIT`). 시작이 실패하면 `연결을 시작하지 못했어요 · … 잠시 뒤에 다시 눌러 주세요` 띠와 함께 단추가 돌아와요. 한 줄 `아직 시작하지 않았어요.` / `자동으로 연결하는 중이에요.` / `내가 할 일이 하나 남았어요.` / `연결했어요.` / `연결하지 못했어요.` 점 색 파랑(running), 주황(waiting), 초록(done), 빨강(failed), 깜박이지 않음. 대기/실패이면 `계속`, 실패이면 `다시 시작`, 실행/대기이면 `취소`. 오류는 `role="alert"`. 이미 연결된 메신저는 실행 중/대기/실패가 아니면 이 구역을 숨겨요. 상태가 바뀌면 같은 행이 부드럽게 교체(`motionSwap`). 완료되면 인덱스와 해당 화면을 다시 읽어요(`obAfterDone`). 키는 `web-access` `discord` `jandi` `slack` `telegram`만 허용.
 - 데이터: `GET /api/onboarding/{key}`, `POST /api/onboarding/{key}/start|continue|cancel`.
-- 근거: web/js/25-settings-onboarding.js:94 `onboardingPanel`, :40 `obApply`, :21 `obAuto`, :76 `obPoll`, :68 `obStart`, :73 `obAct`, :89 `obSection`, :57 `obAfterDone`, :63 `loadOnboarding`, :11 `obLine`; 보조 `stFlash` :116, `msAdvanced` :124.
+- 근거: web/js/25-settings-onboarding.js:110 `onboardingPanel`, :40 `obApply`, :21 `obAuto`, :91 `obPoll`, :73 `obStart`, :88 `obAct`, :104 `obSection`, :59 `obAfterDone`, :65 `loadOnboarding`, :11 `obLine`; 보조 `stFlash` :116, `msAdvanced` :124.
 - css: `.ms-onb` 전용 규칙은 web/css에서 못 찾음(`.li` `.dot` 재사용), 07-messengers.css(`.ms-adv`), 06-harness.css(`.ms-link`).
 
 ### 연결된 기기 (`#v-devices`, `renderDevices`)
@@ -2015,7 +2015,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 기기 행 -> `dvOpen`, `새 기기 연결` -> `dvNew(false)`, `이 기기에 패스키 추가` -> `dvNew(true)`.
 - 상태: 로딩 `불러오는 중`, 실패 `연결된 기기를 불러오지 못했어요`, 없으면 `연결된 기기가 없어요`. `/api/devices`가 응답하지 않는 설치(Cloudflare 모드 아님)에서는 설정 목록에 이 항목이 없어요. 시간 표기 `방금` `{n}분 전` `{n}시간 전` `{n}일 전`.
 - 데이터: `GET /api/devices`, `PATCH|DELETE /api/devices/{id}`, `POST /api/devices/code`.
-- 근거: web/js/25-settings-devices.js:20 `renderDevices`, :8 `loadDevices`, :15 `devicesRow`, :5-6 `dvDate` `dvUsed`; web/js/25-settings-messengers.js:13 `msAgo`; web/js/05-command-palette.js:174.
+- 근거: web/js/25-settings-devices.js:27 `renderDevices`, :15 `loadDevices`, :22 `devicesRow`, :6-12 `dvDate` `dvUsed`; web/js/25-settings-messengers.js:13 `msAgo`; web/js/25-settings-devices.js:14.
 - css: 02-cards-lists-tags.css(`.li`), 06-harness.css(`.dv-code` `.dcs-saved`).
 
 ### 기기 이름/해제 대화창 (`dvOpen`)
@@ -2024,7 +2024,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `PATCH /api/devices/{id}` `{name}`, `DELETE /api/devices/{id}`.
 - 상태: 이름을 비우고 저장하면 칸 아래에 `이름을 적어 주세요`, 요청이 실패하면 창이 남고 이유가 버튼 위에 서요. 해제 확인창 `기기 해제`: 이 기기면 `지금 쓰고 있는 이 기기를 해제해요. 바로 로그아웃되고, 다시 쓰려면 메신저로 받은 코드로 새로 연결해야 해요.`(해제 후 `/pair`로 이동), 다른 기기면 `{이름}의 로그인이 바로 끊겨요. 다시 쓰려면 코드로 새로 연결해야 해요.`(버튼 `해제`). 토스트 `저장했어요` / `기기를 해제했어요`(행이 150ms 나가는 모션 후 목록 다시 읽기).
 - 데이터: `PATCH|DELETE /api/devices/{id}`.
-- 근거: web/js/25-settings-devices.js:39 `dvOpen`.
+- 근거: web/js/25-settings-devices.js:46 `dvOpen`.
 - css: 14-overlay.css, 06-harness.css(`.dcs-saved`).
 
 ### 새 기기 연결 대화창 (`dvNew`)
@@ -2033,7 +2033,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `POST /api/devices/code` -> `{code, url, minutes}`. 닫으면 목록을 다시 읽어요.
 - 상태: 안내 `코드는 10분 동안 한 번만 쓸 수 있고, 메신저와 이 화면을 합쳐 한 시간에 3번까지 만들 수 있어요.` 결과 안내 `{n}분 동안 한 번만 쓸 수 있어요. 새 코드를 만들면 이 코드는 사라져요.` 단계(다른 기기): `새 기기의 브라우저에서 이 웹앱 주소를 열어요. '기기 연결' 화면이 나와요.` / `'코드 받기'를 누르면 6자리 코드가 메신저 알림으로 와요. 메신저를 볼 수 없으면 아래에서 바로 만들 수 있어요.` / `코드와 기기 이름을 넣고 패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요.` 단계(이 기기): `아래에서 코드를 만들어요.` / `'연결 화면 열기'를 눌러 코드와 이 기기 이름을 넣어요.` / `패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요.` 복사 토스트 `복사했어요`.
 - 데이터: `POST /api/devices/code`.
-- 근거: web/js/25-settings-devices.js:69 `dvNew`.
+- 근거: web/js/25-settings-devices.js:85 `dvNew`.
 - css: 06-harness.css(`.dv-code` `.ms-copy` `.dcs-acts` `.dcs-res`), 03-base.css(`.steps`).
 
 ### 웹 접속 (`#v-webaccess`, `renderWebAccess`)
@@ -2042,7 +2042,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `Tailscale` 선택은 즉시 `PUT /api/web-access` `{mode:"tailscale"}`(`waPickTailscale`). `Cloudflare` 또는 `이 컴퓨터만`은 `POST /api/web-access/onboard` `{mode[, hostname]}`로 자동 연결 시작(`waOnboard`, 모드를 먼저 화면에 반영). `저장`(`waSave` -> `PUT /api/web-access`, 바뀐 값만). `연결된 기기 (패스키)` -> `go("devices")`.
 - 상태: 로딩 `불러오는 중`, 실패 `웹 접속 설정을 불러오지 못했어요`. 설명: `Tailscale로 연결한 내 기기에서 열어요. 기본값이에요.` / `Cloudflare 터널로 고정 주소를 열어요. 연결은 자동으로 진행하고, 필요한 한 가지 동작만 알려드려요.` / `이 컴퓨터에서만 열어요.` 터널 상태 `연결됨`(초록) `연결 중`(주황) `연결 안 됨`(빨강) `꺼짐`, 부제 `터널이 열려 있어요` / 터널 오류 / 프로그램 없음 `터널 프로그램이 없어요. 채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요.`. 직접 입력 도움말 `터널에 연결해 둔 주소예요. 주소를 바꾸면 기기를 다시 연결해야 해요.` `Cloudflare Access로 한 번 더 확인할 때만 적어요. 확인 번호와 함께 적어요.` `Access 앱 화면의 Audience Tag 값이에요.` 토큰 placeholder `eyJ…`, 저장돼 있으면 `바꾸려면 새로 붙여 넣기` + 태그 `저장됨` + `저장하면 이 컴퓨터에만 보관하고, 화면에는 다시 보여 주지 않아요.` `저장`은 바뀐 값이 있을 때만 enabled, `되돌리기`는 바뀐 값이 있을 때만 보여요. Cloudflare에서 주소를 비우고 저장하면 토스트 `주소를 적어 주세요`. 저장 후 버튼이 잠깐 `저장했어요`. 완료되면 인덱스와 이 화면을 다시 읽어요.
 - 데이터: `GET|PUT /api/web-access`, `POST /api/web-access/onboard`, `/api/onboarding/web-access*`, `GET /api/devices`.
-- 근거: web/js/25-settings-web-access.js:78 `renderWebAccess`, :13 `loadWebAccess`, :32 `waTunnel`, :44 `waOnboard`, :52 `waPickTailscale`, :62 `waAdvanced`, :101 `waSave`, :28 `webAccessRow`, :4 `WA_MODES`; web/js/05-command-palette.js:175-176.
+- 근거: web/js/25-settings-web-access.js:80 `renderWebAccess`, :13 `loadWebAccess`, :34 `waTunnel`, :46 `waOnboard`, :54 `waPickTailscale`, :64 `waAdvanced`, :107 `waSave`, :30 `webAccessRow`, :4 `WA_MODES`; web/js/25-settings-web-access.js:14.
 - css: 06-harness.css(`.dcs-*`), 07-messengers.css(`.ms-adv`), 02-cards-lists-tags.css.
 
 ### 앱 설정 화면 (`asScreen`, `asPaint`)
@@ -2051,7 +2051,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 값 행마다 컨트롤(`asControl`: 스위치, 두 값 `seg`, 선택, 숫자 − + 스테퍼, 텍스트)이 바꾸는 즉시 `PATCH`(`asPatch`). 기능 스위치(`asFeatSet` -> `PATCH /api/integrations/{app}/features` `{id,on}`), 승인 대기는 수와 `›`가 있는 한 줄(`asWaitRow`)이고 누르면 설정을 닫고 그 앱의 답장 대기(`rqOpen`)를 열어요(보내기·버리기는 거기서), 감시 주기 숫자(`asEvery`, 1~10080분), `다시 시도` / `다시 연결`(`asRetry` -> `POST .../retry`), `지켜볼 글` + `고르기`, 자동 초안 규칙, 제거/삭제.
 - 상태: 로딩 `불러오는 중…`, 실패 `설정을 불러오지 못했어요`. 연결 끊김 부제 `{시각}부터 연결이 끊겼어요` 또는 서버 힌트 또는 `다시 로그인해 주세요`; 정상은 `마지막 확인 {시각}`; 다른 컴퓨터 앱은 `{컴퓨터}에서 쓰는 앱이에요`. 값 형식: bool `켜짐`/`꺼짐`, 목록 `{n}개`/`없음`, 열거는 라벨. 목록 값은 여기서 고치지 않고 개수만 보여 줘요(대화에서 바꿔요). 기억 항목은 `기억해 둔 것` 행에 읽기 전용(`{라벨}: {값}` 또는 `아직 없어요`, 안내 `대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요`). 승인 대기 행 `승인 대기` + `{n}건` + `›`(없으면 행이 없어요). 감시 상태 행: 점(초록/빨강/회색), 이름, 상태 줄, `연속 실패 {n}번`, `마지막 정상 {시각}`, `마지막 결과: {...}`, `이유: {...}`, 주기 `{n}분마다`(다른 컴퓨터는 읽기 전용, 이 컴퓨터는 입력 + `분`). 주기 범위 밖이면 토스트 `1분에서 7일 사이로 정해 주세요`. 오류 토스트 `기능을 바꾸지 못했어요` `다시 시도하지 못했어요` `답하지 못했어요` `감시 주기를 바꾸지 못했어요` `설정을 바꾸지 못했어요`. 다른 컴퓨터 앱(`<앱>~<컴퓨터>`)은 같은 화면이 그 컴퓨터의 프록시로 읽고 써요(`pqPc`, `pqProxy`). 재그림은 서명(`sig`) 비교로 같으면 건너뛰어요.
 - 데이터: `GET|PATCH /api/integrations/{app}/settings`, `/api/watches/{name}/settings`, `/api/schedules/{id}/settings`, `GET|PATCH /api/integrations/{app}/features`, `POST /api/integrations/{app}/retry`, `POST /api/integrations/{app}/approve`(다른 컴퓨터) 또는 `POST /api/notices/{id}/answer`, `POST /api/peer/act`. SSE는 이 화면 전용이 없고 모니터링/알림의 갱신에 따라 `asPaint`가 다시 그려져요.
-- 근거: web/js/32-app-settings.js:499 `asScreen`, :445 `asPaint`, :421 `asConnNode`, :432 `asSettingRow`, :338 `asControl`, :80 `asStatRow`, :60 `asWaitRow`, :69 `asEvery`, :105 `asPickRow`, :110 `asFeatRow`, :115 `asPatch`, :14 `asLoad`, :27 `asFeatLoad`, :413 `AS_SECTIONS`.
+- 근거: web/js/32-app-settings.js:542 `asScreen`, :448 `asPaint`, :424 `asConnNode`, :435 `asSettingRow`, :332 `asControl`, :67 `asStatRow`, :47 `asWaitRow`, :54 `asEvery`, :90 `asPickRow`, :97 `asFeatRow`, :102 `asPatch`, :15 `asLoad`, :28 `asFeatLoad`, :416 `AS_SECTIONS`.
 - css: 18-app-settings.css(`.as-row` `.as-screen` `.as-sec` `.as-card`), 01-tokens.css/06-harness.css(`.sec-act`).
 
 ### 앱 설정 변경 카드 (`settingsCardHtml`)
@@ -2060,7 +2060,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `적용` -> `asPatch(app, changes)`. `취소`는 로컬 기록만. 결과는 localStorage `dotz.settings.cards`에 저장.
 - 상태: 읽기 실패 `변경 제안을 읽지 못했어요`. 바뀌는 값은 이전 값을 회색 취소선, 새 값을 굵게. 목록은 `추가 ... · 뺌 ...` 또는 `달라지는 것 없음`. 기억 항목만이면 `기억해 뒀어요`(적용 버튼 없음). 처리 후 `적용했어요` / `취소했어요`로 같은 자리에서 교체. 적용 실패 토스트 `설정을 바꾸지 못했어요`.
 - 데이터: `PATCH` 위 설정 API.
-- 근거: web/js/32-app-settings.js:579 `settingsCardHtml`(바로 아래 `document` click 위임 처리), :331 `asChange`, :324 `asFmt`.
+- 근거: web/js/32-app-settings.js:641 `settingsCardHtml`(바로 아래 `document` click 위임 처리), :325 `asChange`, :318 `asFmt`.
 - css: 18-app-settings.css(`.as-card` `.as-cr` `.as-old` `.as-now`).
 
 ### 앱 관리 시트 (`asAddSheet`)
@@ -2069,7 +2069,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `맡기기`(Enter, Shift+Enter 줄바꿈) = 메인 대화로 `연결할 앱: {입력}`을 보내요(`asNewSend`). `다시 켜기`(`asAdd` -> `POST /api/integrations/{key}/add`, 다른 컴퓨터는 `POST /api/peer/act`), `삭제`(`asDelAsk` -> 확인 -> `DELETE /api/apps/{key}[?data=1]`).
 - 상태: 입력이 비어 있으면 `맡기기`는 꺼 두고(Enter는 입력 상자로 포커스만), `삭제`는 지우는 줄 단추(`btn danger`)예요. 삭제 확인: `{컴퓨터에서 }{라벨} 앱을 완전히 지워요. 되돌릴 수 없어요` / `이름과 설정을 지우고, 앱 목록에서 빠져요` / `감시 {n}개를 지워요: ...` 또는 `지울 감시는 없어요`, 체크박스 `저장된 데이터(...)도 지우기. 체크하지 않으면 남겨요`, 버튼 `삭제 확인`(지우는 동작용 `btn danger fill`) / `취소`. 다시 켜기 토스트 `{라벨}을(를) 다시 켰어요` / `{컴퓨터}에서 {라벨}을(를) 다시 켰어요` / 재연결 필요 `{라벨}을(를) 켰어요. 다시 연결할 내용을 채워 두었어요`(그 앱 요청 템플릿을 채팅 입력에 채워 줘요), 실패 `앱을 추가하지 못했어요`, 템플릿 못 읽음 `템플릿을 불러오지 못했어요`. 채팅 입력 위 줄 안내 `{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요`(닫기 버튼 `앱 추가 닫기`). 설정 목록의 `앱 관리` 행 부제는 `asAddHint`(`꺼 둔 앱 ... · 새로 추가` 또는 `새로 추가하기`)지만, 설정 목록 쪽은 `stRow("apps","앱 관리","", ...)`로 부제를 비워 둬요.
 - 데이터: `GET /api/app-templates`, `GET /api/integrations/{app}/remove`, `POST /api/integrations/{app}/add`, `DELETE /api/apps/{key}`, `POST /api/peer/act`.
-- 근거: web/js/32-app-settings.js:231 `asAddSheet`, :238 `asAddPaint`, :262 `asNewSend`, :273 `asNewApp`, :304 `asAdd`, :188 `asOffApps`, :196 `asDelAsk`, :203 `asDelGo`, :216 `asDelNode`, :226 `asAddHint`, :290 `asTplPaint`.
+- 근거: web/js/32-app-settings.js:223 `asAddSheet`, :230 `asAddPaint`, :256 `asNewSend`, :267 `asNewApp`, :298 `asAdd`, :180 `asOffApps`, :188 `asDelAsk`, :195 `asDelGo`, :208 `asDelNode`, :218 `asAddHint`, :284 `asTplPaint`.
 - css: 18-app-settings.css(`.as-new-in` `.as-del` `.as-rm` `.as-sec`), 14-overlay.css(시트).
 
 ### 자동 초안 규칙 (메일 앱 설정, `arNodes`)
@@ -2078,7 +2078,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 기본 규칙은 입력을 벗어나면 저장(`PATCH` `{draft_default}`, 토스트 `기본 규칙을 저장했어요`). 규칙 저장은 목록 전체를 `PATCH` `{draft_rules}`(`arSave`). 규칙 폼(`arForm`)의 `저장` / `취소`. 최대 20개(`규칙 추가` disabled).
 - 상태: 폼 placeholder는 `이름: 메일 옆 뱃지에 보일 짧은 이름 (예: 자료 요청)`, `언제: 이 규칙을 쓸 메일 (예: 자료나 양식을 보내 달라는 메일)`, `어떻게: 초안에 바라는 것 (예: 요청한 자료를 첨부하고 짧게 인사)`, `붙일 파일: ...`. 이름 또는 언제가 비면 토스트 `이름과 언제를 적어 주세요`. 지우기 토스트 `규칙 {이름}을(를) 지웠어요`, 실패 `규칙을 저장하지 못했어요` / `기본 규칙을 저장하지 못했어요`.
 - 데이터: `PATCH /api/integrations/{app}/settings` `{draft_rules | draft_default}`.
-- 근거: web/js/32-app-settings.js:399 `arNodes`, :374 `arForm`, :388 `arRow`, :367 `arSave`, :360 `AR_PH`.
+- 근거: web/js/32-app-settings.js:401 `arNodes`, :376 `arForm`, :390 `arRow`, :369 `arSave`, :362 `AR_PH`.
 - css: 18-app-settings.css(`.as-rule` `.as-rform` `.as-rtag` 계열은 파일명만 확인, 이름 단위 대조는 코드에서 확인 못 함).
 
 ### 앱 제거와 감시/예약 삭제 (`asRemoveNode`, `asWatchRmNode`)
@@ -2087,7 +2087,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: `asRemoveAsk` -> `GET /api/integrations/{app}/remove`로 무엇이 지워지는지 읽고 `asRemoveGo` -> `POST .../remove` `{deleteData}`. 감시/예약은 `DELETE /api/watches/{name}` / `DELETE /api/schedules/{id}`.
 - 상태: 제거 확인 `{라벨}을(를) 이 기기에서 제거할까요?` + `이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요`, `감시 {n}개를 지워요: ...` 또는 `지울 감시는 없어요`, `기능을 이 기기에서 꺼요: ...` 또는 `끌 기능은 없어요`, `다른 컴퓨터의 같은 앱은 그대로예요`. 다른 컴퓨터 앱은 `이 앱을 그 컴퓨터에서 제거할까요?` + 일반 문구. 감시 삭제: `{이름}을(를) 삭제할까요?` + `{컴퓨터에서 }확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요` / `지금까지 온 감시 소식은 그대로 남아요` / `잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요`(예약은 `다시 실행하지 않고 목록에서 빼요. 되돌릴 수 없어요` / `잠깐 멈추려면 삭제 대신 예약 켜기를 끄세요`). 프로젝트의 작업 채널에 묶인 감시는 거부되어 토스트 `이 감시는 프로젝트의 작업 채널 설정에 묶여 있어요. 그 프로젝트에서 빼 주세요`. 제거 성공 토스트 `{라벨}을(를) 이 기기에서|그 컴퓨터에서 제거했어요`, 삭제 `{이름}을(를) 삭제했어요`, 실패 `제거할 내용을 읽지 못했어요` `제거하지 못했어요` `삭제하지 못했어요`. 끝나면 모니터링으로 돌아가요.
 - 데이터: 위 API들.
-- 근거: web/js/32-app-settings.js:172 `asRemoveNode`, :159 `asRemoveAsk`, :164 `asRemoveGo`, :146 `asWatchRmNode`, :129 `asWatchRmGo`.
+- 근거: web/js/32-app-settings.js:164 `asRemoveNode`, :148 `asRemoveAsk`, :153 `asRemoveGo`, :135 `asWatchRmNode`, :118 `asWatchRmGo`.
 - css: 18-app-settings.css(`.as-rm` `.as-rml` `.as-act` `.as-del`).
 
 ### 앱 셸 프레임 (사이드바, 하단 탭바, 화면 영역)
@@ -2096,7 +2096,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 탭 전환 `go(id)`, 채팅 탭 재탭 `chatTabTap`(좁은 화면에서 대화 열려 있으면 `openChatList`, 목록이 열려 있으면 `closeChatList`), 홈 탭 재탭 `homeTabTap`(컴퓨터가 2대 이상이면 전환 시트), 사이드바 접기 `sideToggle`(`localStorage dotz-side=min`, 첫 페인트 전에 index.html:67이 `side-min` 클래스를 먼저 붙여요), 브랜드 클릭 `#brand.onclick`(컴퓨터 2대 이상이면 `prOpen`, 아니면 `go("home")`). 탭 목록 `NAV`는 홈, 채팅, 프로젝트, 모니터링, 앱, 설정이고 앱 탭은 `APPS_ON=false`라 숨겨져요(`navOff`).
 - 상태: 사이드바 폭 232px, 접으면 60px 아이콘 레일(`:root.side-min`). 접기 단추 `aria-label`은 `사이드바 접기` 또는 `사이드바 펼치기`, title에 단축키(`⌘\` 또는 `Ctrl+\`). 탭 배지: `#nav-att`(채팅, 숫자, title `읽지 않은 대화 n개`), `#nav-mon`(모니터링, 숫자 title `확인할 것 n개`, 숫자 없고 새 소식만 있으면 점과 title `새 소식`), `#nav-upd`(설정, 텍스트 `새 버전`, `업데이트 n`, `재시작 필요`). 99+는 `99+`로 표시해요. 탭 title은 `홈 (⌘1)` 꼴. 1024px 이상에서 배지는 글자 오른쪽 아래 6px 점이고 숫자는 `aria-label`로만 읽혀요(22-shell.css:33-34). 폰(1023px 이하)은 탭 높이 56px, `.sfoot` 숨김. 채팅 목록 전환 기준은 1099px(`narrowChat`, 04-state.js:12), 프로젝트 목록 병렬 표시도 같은 기준(`ppWide`).
 - 데이터: `/api/state`(botName 등), 배지는 알림, 모니터링, 업데이트 상태에서 와요(`paintAttn`, `paintMonAttn`, `paintUpdBadge`). 주소 해시 라우팅은 `go()`, `parseHash`, `routeAlias`(`#lanes`는 `#chat/list`, `#accounts`는 `#provider/anthropic`, `#chat/alert`는 `#notices`).
-- 근거: web/index.html:73-166, web/js/03-screens.js:37-41, web/js/04-state.js:9-28,175-216, web/js/05-command-palette.js:99-181(go), web/js/09-needs-you.js:54-66,87-97, web/js/24-settings-update.js:40-48.
+- 근거: web/index.html:73-166, web/js/03-screens.js:37-41, web/js/04-state.js:9-28,175-216, web/js/05-command-palette.js:120-190(go), web/js/09-needs-you.js:54-66,87-97, web/js/24-settings-update.js:40-48.
 - css: web/css/22-shell.css(1024px 이상 사이드바 격자, 1023px 이하 탭바), web/css/01-tokens.css:128-222(앱바 격자, 1100px 레이아웃 주석), web/css/03-base.css. 메모: 01-tokens.css:129의 주석은 1100px을 말하지만 22-shell.css는 1024px에서 사이드바 격자로 덮어써요. 어느 쪽이 최종인지는 두 파일 모두 읽었고 22-shell.css가 뒤 파일이라 그쪽이 이긴다고 봐요(로드 순서 파일명 순, 04-state는 99-boot 앞).
 
 
@@ -2106,7 +2106,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 뒤로 `#back.onclick`(알림 화면, 카카오, 댓글 화면의 자체 뒤로 우선, 모니터링 안 대화면 `go("monitoring")`, 폰 대화면 `openChatList`, 아니면 `go(backTarget() || "home")`), 제목 클릭 `prTitleTap`(폰에서 컴퓨터가 2대 이상이고 뒤로 없을 때 전환 시트), `#cmdk` 클릭 `openPalette`.
 - 상태: 제목은 홈이면 `botName`, 공급자 상세면 공급자 이름, 나머지는 `titles[name]`. 뒤로 버튼은 `backTarget()` 또는 폰 대화에서만 보여요(`convChrome`). 넓은 화면의 모니터링 안 앱에서는 `‹ 모니터링`이 제목 자리에 서고 `aria-label`이 `모니터링 목록으로`(`mon-up`). 대화 화면(`tv`)이면 `#thead`가 보여요. `LOG_VIEW=false`라 `#vtog`(대화/로그 토글)은 항상 숨겨요. `.appbar.hasp`는 컴퓨터가 2대 이상일 때(제목 쉐브론, 폰), `.appbar.back`은 뒤로가 있을 때, `.appbar.cvconv`는 대화 화면. `.scrolled` 클래스는 화면 이동 때 지워요. 넓은 화면(1024px 이상) 높이 60px, 폰 `56px + safe-area`. 1024px 이상에서 `#cmdk`는 텍스트와 `kbd`가 보이고, `.ustrip`은 숨기고 사이드바 `#sf-usage`가 대신해요.
 - 데이터: 별도 API 없음.
-- 근거: web/index.html:81-90, web/js/04-state.js:227-232, web/js/05-command-palette.js:141-157, web/js/31-conversations.js:429-446, web/js/33-peers.js:256-258.
+- 근거: web/index.html:81-90, web/js/04-state.js:227-232, web/js/05-command-palette.js:164-180, web/js/31-conversations.js:429-446, web/js/33-peers.js:256-258.
 - css: web/css/01-tokens.css:128-222, web/css/22-shell.css:10-99, web/css/03-base.css:224-256, web/css/10-conversations.css:56-57, web/css/16-result-card.css:84(1099px 이하 `.cvconv h1` 두 줄 제한).
 
 
@@ -2168,22 +2168,22 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 열기 `openPalette`(앱바 `#cmdk` 클릭 또는 ⌘/Ctrl+K), 목록 이동 방향키 위아래(순환), `Tab`은 명령 항목이면 입력을 `<명령> `으로 채움, `Enter`는 선택 실행(`/`로 시작하고 공백이 있으면 그대로 `runCmd`), 항목 클릭 `exec`. 항목 종류: 이동(`go(it.go)`), 동작(`it.act()`), 명령(`/api/command`로 실행). 결과 카드의 버튼은 다음 명령을 같은 팔레트에서 실행해요. `/model`, `/effort`, `/compact`, `/restart`, `/resume`, `/stop`, `/abort` 실행 뒤에는 `refreshState`, `loadModels(true)`, `loadContext(true)`.
 - 상태: 입력이 비면 도구(화면 이동, `activity`, `project`, `provider`, `cardform`, 숨긴 탭 제외, 각 줄 오른쪽에 `⌘n` 힌트), 화면 동작(`종료된 세션 n` 한 줄, 질의가 있으면 세션 이름별 `종료된 세션 · <이름>`, `셸 터미널 열기`, `S.desk`가 있을 때 `화면 공유 열기`, `라이트 모드로 전환` 또는 `다크 모드로 전환`), 명령 순서. 질의가 `/`로 시작하면 명령만. 결과 없음 `결과가 없어요`. 실행 중 `실행 중`, 결과 태그 `완료`, `진행 중`, `주의`, `실패`(`PAL_TONE`), 오류 응답 카드는 `실패` 제목에 오류 메시지(`.pal-res.err`). 텍스트 응답만 오면 첫 줄이 제목이고 나머지는 노트. IME 조합 중(`isComposing`, keyCode 229)에는 키를 무시해요. 폰(639px 이하)에서 `.pal` 위쪽 12vh, 항목 높이 44px, 코스 포인터에서 입력 글자 16px.
 - 데이터: `POST /api/command` `{text}`, 슬래시 힌트 `hintList`(14-slash-commands.js), `S.lanes`(종료된 세션), `S.desk`.
-- 근거: web/js/05-command-palette.js:4-96, web/js/01-motion.js:28-40(`motionDialog` "pop"), web/js/04-state.js:220-226.
+- 근거: web/js/05-command-palette.js:1-116, web/js/01-motion.js:28-40(`motionDialog` "pop"), web/js/04-state.js:220-226.
 - css: web/css/03-base.css:130,153-181, web/css/14-overlay.css:16-29.
 
 
 ### 키보드 단축키 (web/js 전체 keydown 핸들러)
 - 목적: 앱 전역과 화면별 키 동작을 한곳에 모아요. 수식어 키는 Mac이면 ⌘, 그 외 Ctrl(`isMac`).
-- 구성: 전역 `document` 핸들러 3종(04-state.js:202, 05-command-palette.js:96, 33-peers.js:269)과 화면별 핸들러들.
+- 구성: 전역 `document` 핸들러 3종(04-state.js:202, 05-command-palette.js:117, 33-peers.js:269)과 화면별 핸들러들.
 - 기능(전역):
   - ⌘/Ctrl+/ : 알림 화면(`#bell.click()`). 04-state.js:197
   - ⌘/Ctrl+. : 메인 대화로(`openTarget("main","chat")`). 04-state.js:198
   - ⌘/Ctrl+\ : 사이드바 접기/펴기, 화면 폭 1024px 이상일 때만. 04-state.js:199,201
   - ⌘/Ctrl+1..5 : 보이는 탭을 `NAV` 순서로 열기(홈, 채팅, 프로젝트, 모니터링, 설정). 앱 탭이 숨겨져 있어 6은 비어 있어요. 1부터 6까지 키를 받고 탭이 없으면 무시. 04-state.js:177-183,209-212
-  - ⌘/Ctrl+K : 명령 팔레트. 05-command-palette.js:96
+  - ⌘/Ctrl+K : 명령 팔레트. 05-command-palette.js:117
   - Ctrl+` 또는 ⌘+` (Shift 추가 시 반대 방향) : 다음 컴퓨터로 바로 전환, 꺼진 컴퓨터는 건너뛰고 다 꺼져 있으면 토스트 `다른 컴퓨터에 연결할 수 없어요`. 33-peers.js:259-273
   - 위 전역 키는 `isComposing`, Alt, 열린 `dialog`가 있으면 무시해요(04-state.js:203, 33-peers.js:270-271은 Alt만 무시하고 Shift는 허용).
-- 기능(팔레트 안, 05-command-palette.js:75-86): 위아래, Tab, Enter. Esc는 `motionDialog`가 가로채 부드럽게 닫아요(01-motion.js:39).
+- 기능(팔레트 안, 05-command-palette.js:100-103): 위아래, Tab, Enter. Esc는 `motionDialog`가 가로채 부드럽게 닫아요(01-motion.js:39).
 - 기능(컴퓨터 전환 시트, 33-peers.js:184-194): Esc 닫기, Tab 포커스 가둠. 제목 `#title`에 Enter 또는 Space로 시트 열기(33-peers.js:258).
 - 기능(입력창 `ta`): 슬래시 메뉴가 열려 있으면 위아래, Tab, Enter(`Shift`/⌘/Ctrl/Alt 없이)로 선택, Esc로 닫음(14-slash-commands.js:183-191). 그 외 Enter 전송(작업 중이면 진행 중인 턴에 끼워 넣기), ⌘/Ctrl+Enter 다음 턴 대기열, Alt+Enter 중단 후 전송, Shift+Enter 줄바꿈, 작업 중 Esc 중단. 터치 기기(`pointer: coarse`)에서는 Enter가 줄바꿈. 14-slash-commands.js:193-199
 - 기능(공통 시트/메뉴): `fsOpen` 시트는 맨 위일 때 Esc 닫기와 Tab 가둠(38-overlay.js:16-26, 47). 팝오버 메뉴 `03-menu.js:73-86`은 Esc, 위아래, Home, End, Tab(닫기), 글자 입력 접두 이동(700ms). 서브에이전트 시트와 구성 상세 시트는 Esc로 닫기(06-subagents.js:170, 29-harness-features.js:203).
@@ -2311,7 +2311,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 결과 움직임(승인, 보내기, 버리기, 결정 답하기, 알림 닫기, 지우기, 옮기기): 서버가 됐다고 답한 뒤에만 카드가 사라져요. `pressWait(btn, label)`은 누른 단추를 그 화면의 대기 문구로 바꾸고 폭을 유지한 채 끄며(`aria-busy`), 실패 때 되돌릴 함수를 돌려줘요. `motionGone(el, {keep, with})`은 카드를 같은 상자 그대로 흐름에서 빼서 제자리에서 150ms 흐리고, 아래 줄은 최종 자리에서 transform으로 220ms 동안 미끄러져 올라와요(레이아웃은 시작할 때 한 번만 재요). 둥근 목록 카드는 높이를 붙들고 아래 가장자리를 clip-path로 같은 곡선에 맞춰 올려요. 미끄러지는 줄은 그동안 `inert`라 같은 자리를 다시 눌러도 다음 카드가 눌리지 않아요. 끝나면 DOM에서 지우고(`keep`이면 숨김) `motion-gone` 이벤트를 쏴요. 카드 안에 있던 포커스는 그 자리에 오른 카드로 가요. `motionAfter(box, fn)`은 줄이 떠나는 동안 목록 통째 다시 그리기를 미루고 마지막 것 하나만 돌려요. `motionStay(el)`은 `keep` 상자의 떠남을 멈춰요(결정 카드 독에 새 질문이 왔을 때). 쓰는 곳: 결정 카드 독(10-decision-card.js dcLeave), 알림 화면 ✕·모두 읽음(31-notices-screen.js nscLeave, nscReadAll), 알림 무시(30-notices.js ntIgnore). 규칙은 web/DESIGN.md Result motion.
 - 상태: `reducedMotion()`이면 모든 헬퍼가 즉시 변경. 03-base/01-tokens의 CSS에도 `prefers-reduced-motion: reduce`에서 전체 transition, animation을 끄는 규칙이 있어요(01-tokens.css:126).
 - 데이터: 없음.
-- 근거: web/js/01-motion.js:1-99, web/js/05-command-palette.js:91, web/js/04-state.js(`motionView` 호출 05-command-palette.js:179).
+- 근거: web/js/01-motion.js:1-99, web/js/05-command-palette.js:112, web/js/04-state.js(`motionView` 호출 05-command-palette.js:189).
 - css: web/css/01-tokens.css:64-65,125-126(motion 토큰과 감소 규칙).
 
 
@@ -2321,7 +2321,7 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 - 기능: 저장값 `localStorage dotz-theme`(`light` 또는 `dark`), 없으면 시스템 설정(`prefers-color-scheme`)을 따르고 시스템 변경도 따라가요(저장값이 없을 때). 전환은 설정의 `화면 모드` 두 칸 토글(`라이트`, `다크`, 부제 `밝게 또는 어둡게`)과 팔레트의 `라이트 모드로 전환` 또는 `다크 모드로 전환`(`toggleTheme`). 앱바에는 테마 단추가 없어요. 변경 때 `dotz-theme` 이벤트로 설정 화면을 다시 그려요.
 - 상태: 다크는 `:root[data-theme="dark"]` 토큰 세트(배경 `#121214`, 카드 `#1d1d21` 등)이고 `color-scheme`도 함께 바뀌어요. 자세한 토큰 값은 web/css/01-tokens.css:4-92.
 - 데이터: localStorage만.
-- 근거: web/index.html:49-69, web/js/04-state.js:220-224, web/js/22-settings-pages.js:103, web/js/05-command-palette.js:58.
+- 근거: web/index.html:49-69, web/js/04-state.js:220-224, web/js/22-settings-pages.js:110, web/js/05-command-palette.js:80.
 - css: web/css/01-tokens.css:4-92.
 
 
@@ -2405,22 +2405,22 @@ dotz 웹앱의 `views` 배열(`web/js/03-screens.js:37`)은 23개예요. 설정 
 기준은 `site/prototype/INVENTORY.md`예요. 아래는 web/js, web/index.html, web/custom.js를 직접 grep해서 확인한 것과 범위별 조사에서 나온 것이에요.
 
 ### 코드에서 못 찾은 것
-- **알림 문체(일상 / 간결 / STE)**: `알림 문체`, `STE` 문자열이 web/js에 없어요(`STE`는 `BSTEP` 변수 이름 안에서만 걸려요, `web/js/07-board.js:6`). 표시 화면은 `화면 모드`와 `대화 탭` 두 줄뿐이에요(`web/js/22-settings-pages.js:101-105`).
+- **알림 문체(일상 / 간결 / STE)**: `알림 문체`, `STE` 문자열이 web/js에 없어요(`STE`는 `BSTEP` 변수 이름 안에서만 걸려요, `web/js/07-board.js:6`). 표시 화면은 `화면 모드`와 `대화 탭` 두 줄뿐이에요(`web/js/22-settings-pages.js:120-124`).
 - **입력 중 표시(`쓰고 있어요` 줄)**: 문자열이 web/js, web/index.html, web/custom.js 어디에도 없어요. 실행 상태 줄은 `41-runstate.js`가 따로 그려요(화면별 명세의 `실행 상태 줄` 참고). 진행 메시지가 제자리에서 바뀌는 동작은 web/js에서 확인 못 했어요.
 - **홈의 아침 점검 카드**: `web/js/08-home.js`에는 없어요. `아침 점검` 태그는 채팅 답이 브리핑 모양일 때 `web/js/11-resultcard.js:131`이 카드로 그리고, 알림 화면 라벨로 `web/js/31-notices-screen.js:31`에 한 번 더 나와요.
 - **앱 추가 시트의 `#apps/add` 주소**: 이런 라우트는 없어요. 시트 본체 `asAddSheet`는 `web/js/32-app-settings.js:231`에 있고, 모니터링 목록의 `앱 관리` 행(`web/js/30-monitoring.js:257`)에서 열려요. 인벤토리가 적은 출처 `30-apps.js`에는 시트가 없어요.
-- **시제품 주소 전부**: `#watch/price`, `#schedule/*`, `#comments*`, `#kakao*`, `#mail*`, `#replies`, `#triage`, `#peers`, `#settings/<page>`는 앱 라우트가 아니에요. `#watch/price`는 `web/js/30-monitoring.js:725` 주석에만 나와요. 앱의 실제 주소는 `#monitoring/m:<이름>`, `#monitoring/i:<앱>`, `#monitoring/c:<대화 키>`, 설정 하위는 `#models`, `#update`처럼 뷰 이름 그대로예요(`web/js/05-command-palette.js:143`).
+- **시제품 주소 전부**: `#watch/price`, `#schedule/*`, `#comments*`, `#kakao*`, `#mail*`, `#replies`, `#triage`, `#peers`, `#settings/<page>`는 앱 라우트가 아니에요. `#watch/price`는 `web/js/30-monitoring.js:725` 주석에만 나와요. 앱의 실제 주소는 `#monitoring/m:<이름>`, `#monitoring/i:<앱>`, `#monitoring/c:<대화 키>`, 설정 하위는 `#models`, `#update`처럼 뷰 이름 그대로예요(`web/js/05-command-palette.js:166`).
 
 ### 코드와 다르게 적힌 것
 - **보낸 편지함의 출처**: `30-mail-sent.js`는 처리된 답장 초안을 메일 대화 안에 접어 두는 파일이에요(`web/js/30-mail-sent.js:1-8`). 보낸 메일 목록은 모니터링 메일 앱의 `보낸 메일` 필터예요(`web/js/30-monitoring.js:456`).
 - **메일 쓰기와 `보냈어요`**: `mbCompose`는 초안만 만들고 토스트가 `초안을 만들었어요 · 승인 카드에서 보내요`예요(`web/js/30-mail-box.js`, D2 조사). `보냈어요`는 공통 큐 카드의 보내기 상태 문구예요(`web/js/10-reply-card.js` `rqSentNode`).
 - **빠른 처리 기준**: 답장 대기 머리의 `빠른 처리`는 대기 항목이 큐의 `triageMin`(`GET /api/reply/queue`, `RA.min`) 이상일 때 보여요.
 - **프로젝트 목록의 출처**: 목록은 `18-lanes.js`(`renderProjects:307`)에 있고 `19-project-main.js`는 상세(`pmOpen:6`)예요.
-- **알림 목록**: 인벤토리는 "실제 앱은 아직 알림 대화"라고 하지만 코드에는 독립 `notices` 뷰가 있고(`web/js/03-screens.js:37`, `31-notices-screen.js:123`), `#chat/alert`는 이 뷰로 바뀌어요(`web/js/05-command-palette.js:107-108`).
-- **`#sessions`, 세션 탭**: 세션 탭은 없어요. `#lanes`는 `chat/list`로 바뀌어요(`web/js/05-command-palette.js:105,108`).
-- **`#settings/accounts`**: `provider/anthropic`으로 바뀌어요(`web/js/05-command-palette.js:108`).
-- **대화/터미널 전환과 터미널 보기**: `LOG_VIEW = false`라 토글(`#vtog`)이 숨고 `activity`는 항상 `chat`이 돼요(`web/js/04-state.js:27`, `05-command-palette.js:136,152`).
-- **앱 탭**: `APPS_ON = false`라 탭이 없고 모든 진입이 홈으로 가요(`web/js/04-state.js:22-23`, `05-command-palette.js:125`). `APPS_ON`을 true로 바꾸는 코드는 못 찾았어요(C 조사).
+- **알림 목록**: 인벤토리는 "실제 앱은 아직 알림 대화"라고 하지만 코드에는 독립 `notices` 뷰가 있고(`web/js/03-screens.js:37`, `31-notices-screen.js:123`), `#chat/alert`는 이 뷰로 바뀌어요(`web/js/05-command-palette.js:127-129`).
+- **`#sessions`, 세션 탭**: 세션 탭은 없어요. `#lanes`는 `chat/list`로 바뀌어요(`web/js/05-command-palette.js:129`).
+- **`#settings/accounts`**: `provider/anthropic`으로 바뀌어요(`web/js/05-command-palette.js:129`).
+- **대화/터미널 전환과 터미널 보기**: `LOG_VIEW = false`라 토글(`#vtog`)이 숨고 `activity`는 항상 `chat`이 돼요(`web/js/04-state.js:27`, `05-command-palette.js:156,176`).
+- **앱 탭**: `APPS_ON = false`라 탭이 없고 모든 진입이 홈으로 가요(`web/js/04-state.js:22-23`, `05-command-palette.js:146`). `APPS_ON`을 true로 바꾸는 코드는 못 찾았어요(C 조사).
 - **단축키 개수**: 코드는 `Digit1`부터 `Digit6`까지 보이는 탭 수만큼 받아요(`web/js/04-state.js:209`). 앱 탭이 숨겨진 지금은 5개예요.
 
 ### 인벤토리에 없는데 코드에 있는 것
@@ -2676,8 +2676,8 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 
 | 대상 | 트리거 | 구분 | 속성 | 길이(ms) | 지연(ms) | 이징 | 근거 | 원시 ID |
 |---|---|---|---|---|---|---|---|---|
-| 보이는 화면 박스 (#views 자식 중 hidden 아닌 것) | go()로 다른 화면으로 이동. 첫 그리기, 같은 화면, 늦게 도착한 데이터는 제외 | 진입 | opacity 0→1, transform translateY(8px)→none | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/05-command-palette.js:179, web/js/01-motion.js:54 | J027 |
-| 그 화면 안 `.li, .card, .rc, .cv-row, .hr, .pj-card` 중 보이는 앞 8개 (채팅 화면은 rows=false) | 같은 go() 호출, 박스 다음에 한 줄씩 어긋나게 | 진입 | opacity 0→1, transform translateY(8px)→none | 150 (M_MS.fast = --m-fast) | i x 12 (0, 12 ... 84) | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/05-command-palette.js:179, web/js/01-motion.js:58 | J027 |
+| 보이는 화면 박스 (#views 자식 중 hidden 아닌 것) | go()로 다른 화면으로 이동. 첫 그리기, 같은 화면, 늦게 도착한 데이터는 제외 | 진입 | opacity 0→1, transform translateY(8px)→none | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/05-command-palette.js:189, web/js/01-motion.js:54 | J027 |
+| 그 화면 안 `.li, .card, .rc, .cv-row, .hr, .pj-card` 중 보이는 앞 8개 (채팅 화면은 rows=false) | 같은 go() 호출, 박스 다음에 한 줄씩 어긋나게 | 진입 | opacity 0→1, transform translateY(8px)→none | 150 (M_MS.fast = --m-fast) | i x 12 (0, 12 ... 84) | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/05-command-palette.js:189, web/js/01-motion.js:58 | J027 |
 
 ### 토스트와 플로팅 알림 (web/js/02-basic-markdown.js, web/css/03-base.css)
 
@@ -2698,7 +2698,7 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 | `dialog[data-leaving]::backdrop` 뒷막 `dialog[data-leaving][open]::backdrop` | motionDialog의 close()가 data-leaving을 붙일 때 | 이탈 | m-scrim-out: opacity | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease); 반복 1, fill forwards | web/css/14-overlay.css:10, web/css/14-overlay.css:12 | C052, K007 |
 | `dialog` 본체 (dialog() 헬퍼) | dialog 생성 후 motionDialog(d) (02-basic-markdown.js:275). 폰: 아래에서 올라옴, 넓은 화면: 16px 아래에서 페이드 | 진입 | 폰: transform translateY(100%)→none. 넓은 화면: opacity 0→1, translateY(16px)→none | 280 (리터럴) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/02-basic-markdown.js:275 | J025 |
 | `dialog` 본체 (close, Esc, 뒤로가기 포함) | d.close() 가로채기 (01-motion.js:34-38) | 이탈 | opacity 1→0 (fade, 끝나면 fill forwards) | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill forwards | web/js/01-motion.js:34-38 | - |
-| 명령 팔레트 dialog | 팔레트 생성 (05-command-palette.js:91, motionDialog(d, "pop")) | 진입 | opacity 0→1, transform scale(.98)→scale(1) | 180 (리터럴) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/05-command-palette.js:91 | J026 |
+| 명령 팔레트 dialog | 팔레트 생성 (05-command-palette.js:112, motionDialog(d, "pop")) | 진입 | opacity 0→1, transform scale(.98)→scale(1) | 180 (리터럴) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/05-command-palette.js:112 | J026 |
 | 전체화면 시트 `.fs-card` 등 (overlay 프레임) | 시트 생성 (38-overlay.js:44, motionSheet(box, node)) | 진입 | 폰: transform translateY(100%)→none. 넓은 화면: opacity 0→1, translateY(16px)→none. 뒷막: opacity 0→1 | 시트 280 (리터럴), 뒷막 220 (M_MS.base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/38-overlay.js:44 | J120 |
 | 전체화면 시트와 뒷막 | 소유자가 닫음(X, Esc, 뒷막). 프로그램 close(restore=false)는 즉시 제거 | 이탈 | opacity 1→0 (fade, 끝나면 fill forwards) | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill forwards | web/js/38-overlay.js:35 | J119 |
 | 컴퓨터 전환기 `.ds-sheet.pr-sheet` (폰: 시트, 넓은 화면: `.anch` 팝오버) | prOpen (33-peers.js:214). CSS의 기본 애니메이션은 `animation: none`으로 꺼 둠 | 진입 | 팝오버: opacity 0→1, translateY(-8px)→none. 시트: 폰 translateY(100%)→none, 넓은 화면 opacity 0→1 + translateY(16px)→none | 팝오버 150 (M_MS.fast), 시트 280 (리터럴), 뒷막 220 (M_MS.base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/33-peers.js:214, web/css/11-peers.css:23, web/css/11-peers.css:25 | J111, J112, C044, C045 |
