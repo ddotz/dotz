@@ -234,7 +234,10 @@ export function describeOutput(output: string, opts: DescribeOpts = {}): Describ
 	const fail = /^DOTZ_FAIL[ =:]([a-z0-9-]{1,20})\b/m.exec(out);
 	if (fail) {
 		const said = linesOf(out, opts.now, opts.tz).filter(l => !l.startsWith("DOTZ_") && HANGUL.test(l) && !isMachineOutput(l)).slice(0, 2);
-		return { text: [failKindKo(fail[1]!), ...said.map(l => cut(l, 120))].join("\n"), readable: true };
+		// The rest of the DOTZ_FAIL line is the check's own reason ("not-local 63: a.mp3"); a kind without a phrase keeps its word in front of it.
+		const rest = tidy(out.slice(fail.index + fail[0].length).split("\n", 1)[0]!.replace(/^[\s:=]+/, ""), opts.now, opts.tz);
+		const why = rest && !isMachineOutput(rest) ? cut(FAIL_KO[fail[1]!] ? rest : `${fail[1]} ${rest}`, 120) : "";
+		return { text: [failKindKo(fail[1]!), ...(why ? [why] : []), ...said.map(l => cut(l, 120))].join("\n"), readable: true };
 	}
 	if (/^[{[]/.test(out)) {
 		try {

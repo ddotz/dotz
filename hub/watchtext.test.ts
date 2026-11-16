@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { i18nPrelude } from "./web-i18n.ts";
-import { clockKo, deriveLabel, describeOutput, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLabel, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
+import { clockKo, deriveLabel, describeOutput, failKindKo, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLabel, scheduleLine, sentinelMatch, watchLine, watchSummary } from "./watchtext.ts";
 
 const KAKAO = "kakao chat=100000000000001 new=1 from=3900000000000000001 to=3900000000000000001 at=2026-10-22T12:26:36.000Z";
 const NOW = Date.parse("2026-10-22T13:00:00.000Z");
@@ -175,6 +175,17 @@ test("a DOTZ_FAIL kind reads as a Korean phrase", () => {
 	expect(describeOutput("DOTZ_FAIL fetch\n페이지가 열리지 않아요", { issue: true }).text).toBe("내용을 가져오지 못했어요\n페이지가 열리지 않아요");
 	expect(describeOutput("DOTZ_FAIL something-new", { issue: true }).text).toBe("점검에 실패했어요");
 	expect(watchLine("샘플 감시", "failed 3 times in a row (exit 1)", "DOTZ_FAIL login")).toBe("샘플 감시: 3번 연속 실패했어요\n로그인이 풀렸어요\n" + rawFence("DOTZ_FAIL login"));
+});
+
+test("a DOTZ_FAIL line keeps the check's own reason, on the web too", () => {
+	const out = "DOTZ_FAIL not-local 63: sample/a.mp3";
+	expect(describeOutput(out, { issue: true }).text.split("\n")).toEqual([failKindKo("not-local"), "not-local 63: sample/a.mp3"]);
+	expect(describeOutput("DOTZ_FAIL fetch: timeout after 30s", { issue: true }).text.split("\n")).toEqual([failKindKo("fetch"), "timeout after 30s"]);
+	expect(describeOutput(`DOTZ_FAIL x ${"y".repeat(300)}`, { issue: true }).text.split("\n")[1]!.length).toBe(120);
+	const src = readFileSync(join(import.meta.dir, "../web/js/11-watchtext.js"), "utf8");
+	const web = new Function(`${i18nPrelude()}${src}; return { watchLine };`)() as Record<string, (...a: any[]) => string>;
+	const opts = { now: NOW, tz: TZ };
+	expect(web.watchLine!("샘플 감시", "failed 3 times in a row (exit 1)", out, opts)).toBe(watchLine("샘플 감시", "failed 3 times in a row (exit 1)", out, opts));
 });
 
 test("JSON output is drawn as key: value lines without ids", () => {
