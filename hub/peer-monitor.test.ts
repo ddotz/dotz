@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { checkPeer, peerToken } from "./peer-auth.ts";
 import { type Computer, createPeerMonitor, type PeerMonitor } from "./peer-monitor.ts";
+import { HUB_TOKEN } from "./config.ts";
+import { actSurface, agentCall } from "./entry-check.ts";
 
 // Two simulated gateways (A and B) in one process: each is a handler function (peer gate, peer routes, then a small fake of the owner's own API),
 // wired to the other by an injected fetch. No network, no real clock.
@@ -9,6 +11,8 @@ const LOGIN = "owner@example.test";
 const URL_A = "https://a.example.test";
 const URL_B = "https://b.example.test";
 let clock = 1_000_000;
+// How each owner-only route read a forwarded act (hub/entry-check.ts): an agent's hub-token call, or the owner's word and from where.
+const readAs: { agent: boolean; surface: string }[] = [];
 
 type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string; files?: unknown }>; uploads: Map<string, Uint8Array>; notes: Array<{ id: string; title: string }>; sends: Array<{ target: string; text: string; session?: string }>; logs: string[]; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
 const nodes = new Map<string, Gateway>();
@@ -50,6 +54,7 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			return Response.json({ ok: true });
 		}
 		if (req.method === "POST" && (path.endsWith("/answer") || path === "/api/reply/act")) {
+			readAs.push({ agent: agentCall(req, "none"), surface: actSurface(req, "none") });
 			events.push({ target: path, text: JSON.stringify(await req.json()) });
 			return Response.json({ ok: true });
 		}
@@ -109,7 +114,7 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 		return new Response("not found", { status: 404 });
 	};
 	const computers: Computer[] = [{ name, url: self, self: true }, { name: otherName, url: other, self: false }];
-	const mon = createPeerMonitor({ name: () => name, local, computers: async () => computers, fetch: netFetch, now: () => clock, token: () => TOKEN, timeoutMs: 20, log: m => logs.push(m) });
+	const mon = createPeerMonitor({ name: () => name, local, localHeaders: { "x-dotz-token": HUB_TOKEN }, computers: async () => computers, fetch: netFetch, now: () => clock, token: () => TOKEN, timeoutMs: 20, log: m => logs.push(m) });
 	const handle = async (req: Request): Promise<Response> => {
 		if (checkPeer(req, TOKEN) === "denied") return new Response("forbidden", { status: 403 });
 		return (await mon.route(req, new URL(req.url))) ?? local(req);
@@ -274,6 +279,22 @@ test("an answer from the other computer carries the label the owner saw, so the 
 	const r = await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify({ action: "answer", args: { id: "n1", n: 4, label: "이대로 보내기" } }) }));
 	expect(r.status).toBe(200);
 	expect(B.events.map(e => [e.target, JSON.parse(e.text).label])).toEqual([["/api/notices/n1/answer", "이대로 보내기"]]);
+});
+
+// qa-clean-3 M1: the forward carries the hub token to pass the local checks, but it is the owner's own act: never read as an agent's (which may
+// only revise), and the 보내기 keeps the hash of the version his page showed.
+test("the owner's answer and reply act from the other computer are his, not an agent's, and the answer keeps the page's hash", async () => {
+	const { A, B } = pair();
+	await A.mon.peerMonitoring();
+	readAs.length = 0;
+	const act = (body: object) => A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify(body) }));
+	expect((await act({ action: "answer", args: { id: "n1", n: 1, label: "보내기", hash: "h-shown" } })).status).toBe(200);
+	expect((await act({ action: "reply", args: { ref: "RAAAAAA", action: "send", hash: "h-shown" } })).status).toBe(200);
+	expect(B.events.map(e => [e.target, JSON.parse(e.text).hash])).toEqual([["/api/notices/n1/answer", "h-shown"], ["/api/reply/act", "h-shown"]]);
+	expect(readAs).toEqual([{ agent: false, surface: "peer" }, { agent: false, surface: "peer" }]);
+	// The same hub token on a request nobody forwarded is an agent's.
+	const own = new Request("http://local/api/reply/act", { method: "POST", headers: { "x-dotz-token": HUB_TOKEN } });
+	expect([agentCall(own, "none"), actSurface(own, "none")]).toEqual([true, "web"]);
 });
 
 test("a forwarded message is recorded once on the owner with via, and shows once in the sender's merged view", async () => {
@@ -554,4 +575,27 @@ test("the snapshot carries the reply queue when the gateway has it, and leaves i
 	expect(withQueue.reply).toEqual({ items: [{ ref: "RA00002" }] });
 	expect(older.reply).toBeUndefined();
 	expect(older.name).toBe("맥미니");
+});
+
+// qa-clean-4 N1: an agent on this computer (its own hub token: the dotz_peer tool, a curl) that posts the proxy stays an agent's call on the other
+// computer, so that gateway's send routes refuse it; only the owner's own page makes a forward his word there.
+test("an agent's call through the proxy is an agent's on the other computer, never the owner's word", async () => {
+	const { A, B } = pair();
+	await A.mon.peerMonitoring();
+	readAs.length = 0;
+	const agent = (body: object) => A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", headers: { "x-dotz-token": HUB_TOKEN }, body: JSON.stringify(body) }));
+	expect((await agent({ action: "reply", args: { ref: "RAAAAAA", action: "send" } })).status).toBe(200);
+	expect((await agent({ action: "answer", args: { id: "n1", n: 1, label: "보내기", agent: false }, agent: false })).status).toBe(200);
+	expect(readAs).toEqual([{ agent: true, surface: "web" }, { agent: true, surface: "web" }]);
+});
+
+// qa-clean-5 N7/N8: /api/peer/act posted on this computer with its own hub token, or by a peer that does not say `agent: false` (an older
+// computer, a string), is an agent's call: the owner's word comes only from his page through the other computer's proxy.
+test("a peer act is the owner's only from a paired computer that says no agent asked", async () => {
+	const { B } = pair();
+	readAs.length = 0;
+	const post = (headers: Record<string, string>, body: object) => B.handle(new Request(`${URL_B}/api/peer/act`, { method: "POST", headers, body: JSON.stringify({ action: "reply", args: { ref: "RAAAAAA", action: "send" }, from: "노트북", ...body }) }));
+	const peer = { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN };
+	for (const [headers, body] of [[{ "x-dotz-token": HUB_TOKEN }, { agent: false }], [peer, {}], [peer, { agent: "false" }], [peer, { agent: true }], [peer, { agent: false }]] as const) expect((await post(headers, body)).status).toBe(200);
+	expect(readAs.map(r => r.agent)).toEqual([true, true, true, true, false]);
 });

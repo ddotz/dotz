@@ -103,6 +103,14 @@ export const tokenOk = (req: Request): boolean => {
 	const sent = req.headers.get("x-dotz-token");
 	return sent !== null && same(sent, HUB_TOKEN);
 };
+// What the owner did on his other computer, forwarded here (hub/peer-monitor.ts act): the inner request carries the hub token to pass the local
+// checks, yet it is his word. Only a Request object this process built can be marked, so no caller over HTTP can claim it.
+const ownerForwards = new WeakSet<Request>();
+export const ownerForward = (req: Request): Request => (ownerForwards.add(req), req);
+/** An agent's own call (the hub token from this computer), never the owner's word; the owner's forward from his other computer is not one. */
+export const agentCall = (req: Request, peer: string): boolean => peer === "none" && tokenOk(req) && !ownerForwards.has(req);
+/** Where an owner's act came from: this computer's web, or his other computer (a peer's own request or his forward from there). */
+export const actSurface = (req: Request, peer: string): "web" | "peer" => (peer === "none" && !ownerForwards.has(req) ? "web" : "peer");
 
 export const ownTailnetName = rememberName(async () => (await tailscaleStatus())?.Self?.DNSName?.replace(/\.$/, ""));
 

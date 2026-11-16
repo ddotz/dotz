@@ -53,7 +53,7 @@ import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, manifestI18n, setAppLang, setAppName, swScript, webBuild } from "./webapp.ts";
 import { forgetRoute, listPeers, ownLogin } from "./peers.ts";
-import { AGENT_AUTHOR, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
+import { actSurface, AGENT_AUTHOR, agentCall, ambientWrite, entryHost, ownTailnetName, refuse, tokenOk } from "./entry-check.ts";
 import { peerProjects } from "./peer-projects.ts";
 import { relayRoute, relayRows } from "./relay-route.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
@@ -116,7 +116,7 @@ export const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCas
 // and only paired devices (hub/devices.ts) get in; Access, when set up, is required on top of the device session.
 // The Tailscale-User-Login header is trusted only in "tailscale" mode: elsewhere nothing vouches for it, so whoever reaches the port could write it.
 // In "local" (이 컴퓨터만) a browser on this computer logs in once: a button on the login page makes the gateway ask on the owner's screen (or the bot hands out a
-// link, hub/web-login-cli.ts). In every mode the `dotz` command logs a browser on this computer in with that same link; changing the mode voids such sessions (hub/local-login.ts).
+// link, hub/web-login-cli.ts). In every mode the `dotz` command logs a browser on this computer in with that same link, once the owner allows it in the same on-screen dialog (an agent holds the hub token too); changing the mode voids such sessions (hub/local-login.ts).
 let confirmLogin: Confirm = nativeConfirm;
 /** Tests replace the native confirmation dialog of the login page (hub/local-login-dialog.ts) with a fake whose answer they control. */
 export const setLoginConfirm = (c: Confirm): void => { confirmLogin = c; };
@@ -309,7 +309,7 @@ setReplyBot((to, text) => deliverAnswer({ to, text, picks: [], notice: "", login
 
 // An agent's own call never sends into a KakaoTalk room: that send is the owner's (hub/reply-actions.ts owner_only).
 const agentKakaoSend = (req: Request, url: URL, peer: string): Response | undefined =>
-	req.method === "POST" && /^\/api\/kakao\/chat\/[^/]+\/send$/.test(url.pathname) && peer === "none" && tokenOk(req) ? json({ ok: false, code: "owner_only", error: "보내기는 오너만 할 수 있어요" }, 403) : undefined;
+	req.method === "POST" && /^\/api\/kakao\/chat\/[^/]+\/send$/.test(url.pathname) && agentCall(req, peer) ? json({ ok: false, code: "owner_only", error: "보내기는 오너만 할 수 있어요" }, 403) : undefined;
 
 export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const setupGate = createSetupGate({ dir: DATA_DIR, localHeaders: () => localLogin.sessionHeaders(), restart: () => void restartGatewayNow(), providers: routeSettings, log });
@@ -527,8 +527,8 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (req.method === "POST" && url.pathname === "/api/input-diag") return json({ ok: true, kept: addInputDiag(await body(req)) }, 201);
 		// The one reply flow (hub/reply-route.ts) and a session CLI's failed-send report (hub/approval-wire.ts).
 		if (url.pathname.startsWith("/api/reply/") || url.pathname === "/api/approvals/failed") {
-			const login = peer === "none" && tokenOk(req) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own call is never the owner's word (hub/routes-send.ts)
-			const res = (await replyRoute(req, url, { replies, login, agent: login === AGENT_AUTHOR, triageMin: 1, undoSec: cfg.web.send_undo_sec ?? 10, surface: peer === "none" ? "web" : "peer" })) ?? (await approvalRoute(req, url));
+			const login = agentCall(req, peer) ? AGENT_AUTHOR : (req.headers.get("tailscale-user-login") ?? "local"); // an agent's own call is never the owner's word; his forward from his other computer is (hub/entry-check.ts)
+			const res = (await replyRoute(req, url, { replies, login, agent: login === AGENT_AUTHOR, triageMin: 1, undoSec: cfg.web.send_undo_sec ?? 10, surface: actSurface(req, peer) })) ?? (await approvalRoute(req, url));
 			if (res) return res;
 		}
 		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).
@@ -544,7 +544,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
 			}
 			// 보내기 on a draft the gateway sends itself takes its path (hub/approval-wire.ts webAnswer); every other answer goes to the bot. The hub token is an agent's: on a draft's card it may only ask for a change.
-			const r = await webAnswer(decodeURIComponent(decide[1]!), { ...answer, files }, login, a => deliverAnswer({ ...a, login, via }), peer === "none" && tokenOk(req));
+			const r = await webAnswer(decodeURIComponent(decide[1]!), { ...answer, files }, login, a => deliverAnswer({ ...a, login, via }), agentCall(req, peer));
 			// 보내지 않기 on a mail reply draft drops it in the reply-drafts store at once (not only when the bot gets to it), so every count and
 			// list, here and on the other computer, sees it gone.
 			if (r.status === 200 && !r.body.already) await dropAnsweredMailDraft(r.body.item as Notice | undefined, Number(answer.n), log);
