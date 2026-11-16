@@ -341,6 +341,14 @@ describe("ceiling freeze", () => {
 		expect(r.ok).toBe(false);
 		expect(r.lines).toEqual(["ceiling raised fileLines hub/a.ts: 900 -> 925", "ceiling raised fileLines hub/b.ts: none -> 850"]);
 	});
+	test("an allowlist's counts freeze the same way: a number, a map entry or a list entry; reasons and _rule are ignored", () => {
+		const allow = (counts: object, reasons = {}) => JSON.stringify({ _rule: "r", counts, reasons });
+		const base = allow({ goBranches: 48, rawNet: { "a.js": 2 }, overlaySites: ["overlay:x"] });
+		expect(freezeReport(base, allow({ goBranches: 47, rawNet: { "a.js": 2 }, overlaySites: [] }, { "rawNet a.js": "why", "rawNet b.js": "new" })).ok).toBe(true);
+		const r = freezeReport(base, allow({ goBranches: 49, rawNet: { "a.js": 3 }, overlaySites: ["overlay:x", "overlay:y"] }));
+		expect(r.ok).toBe(false);
+		expect(r.lines).toEqual(["ceiling raised goBranches: 48 -> 49", "ceiling raised rawNet a.js: 2 -> 3", "ceiling raised overlaySites overlay:y: none -> 1"]);
+	});
 	test("an unreadable baseline passes with one warning line", () => {
 		for (const unreadable of [undefined, "", "not json", "[1]"]) {
 			const r = freezeReport(unreadable, file({ fileLines: { "hub/a.ts": 925 } }));

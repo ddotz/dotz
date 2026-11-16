@@ -1,0 +1,33 @@
+{
+  "_rule": "Who may write each shared web/js state object (objects) and cross-file let (lets); any other file calls the owner's functions. Read by hub/web-structure-web.test.ts (rule C). One key per line.",
+  "objects": {
+    "ASC": ["32-app-settings.js"],
+    "CM": ["30-monitoring-comments.js"],
+    "CV": ["09-needs-you.js"],
+    "DM": ["30-monitoring-comments-dm.js"],
+    "FS": ["38-overlay.js"],
+    "H": ["32-history-nav.js"],
+    "KK": ["30-kakao.js"],
+    "M": ["20-models.js"],
+    "MON": ["30-monitoring.js", "30-monitoring-route.js"],
+    "MX": ["30-mailboxes.js"],
+    "NSC": ["04-state.js"],
+    "OV": ["32-history-nav.js"],
+    "P": ["21-providers.js"],
+    "PN": ["43-panes.js"],
+    "PR": ["33-peers.js"],
+    "PRJ": ["18-lanes.js"],
+    "RQ": ["30-replies.js"],
+    "S": ["17-state-refresh.js", "04-state.js"]
+  },
+  "lets": {
+    "ATT": ["15-attachments.js"],
+    "CS": ["09-needs-you.js"],
+    "HQ": ["08-home.js"],
+    "QUEUE": ["14-slash-commands.js"],
+    "chatStick": ["09-needs-you.js"],
+    "endedOpen": ["04-state.js"],
+    "target": ["08-home.js"],
+    "termStick": ["09-needs-you.js"]
+  }
+}
