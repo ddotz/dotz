@@ -391,7 +391,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					spawnedAt = undefined;
 				}
 					clearTimeout(errorHold);
-					orch.status = "working";
+					if (orch.status !== "rate-limited") orch.status = "working"; // a runtime retry into the limit keeps the pause (an answer ends it: stalePauseEnded)
 					stuck.begin();
 					unstarted.length = 0;
 					clearTimeout(watchdog);
