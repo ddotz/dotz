@@ -140,7 +140,7 @@
    a change is not a state, so no status colour, and the wash reads on the card, on a KakaoTalk bubble and in the dark theme alike. */
 .rq-diff .rq-dl { min-height: 1lh; }
 .rq-diff ins { padding: 0 var(--sp-05); border-radius: 4px; background: color-mix(in srgb, var(--fg) 10%, transparent); font-weight: 500; text-decoration: none; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-.rq-diff del { color: var(--fg-3); text-decoration: line-through; }
+.rq-diff del { color: var(--fg-3); text-decoration: none; background: linear-gradient(transparent calc(55% - 0.06em), var(--fg-2) 0 calc(55% + 0.06em), transparent 0); -webkit-box-decoration-break: clone; box-decoration-break: clone; }   /* the strike is drawn, not a text-decoration: WebKit leaves line-through off Hangul fallback glyphs, so only the gaps between words showed it */
 .rq-diff .rq-dgap { color: var(--fg-3); }
 
 /* 답장 대기 as a queue of cards (design 4.4). One column: at 1280px the queue's column is about 640px wide, too narrow for two cards. */
