@@ -207,7 +207,7 @@ function paneEnter(p) {
 function paneLand(at, stick) {
   if (current !== "chat") return;
   chatUnpin();
-  if (!stick && at) { CV.pinTs = at.ts; CV.pinOff = at.off; chatPin("at"); }
+  if (!stick && at) { cvPinAt(at.ts, at.off); chatPin("at"); }
   else timeline.scrollTop = timeline.scrollHeight;
   chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
   $("#chat-jump").hidden = chatStick;

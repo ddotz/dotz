@@ -3,7 +3,7 @@
   "objects": {
     "ASC": ["32-app-settings.js"],
     "CM": ["30-monitoring-comments.js"],
-    "CV": ["09-needs-you.js"],
+    "CV": ["31-conversations.js"],
     "DM": ["30-monitoring-comments-dm.js"],
     "FS": ["38-overlay.js"],
     "H": ["32-history-nav.js"],

@@ -158,7 +158,7 @@ function closeChatList() {
   go(lastChatView());
   if (snap && snap.key === target && current === "chat" && !snap.stick) {
     chatUnpin();
-    if (snap.at) { CV.pinTs = snap.at.ts; CV.pinOff = snap.at.off; chatPin("at"); }
+    if (snap.at) { cvPinAt(snap.at.ts, snap.at.off); chatPin("at"); }
     else timeline.scrollTop = snap.top;
     chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick;
   }

@@ -85,7 +85,7 @@ async function loadTarget(t, quiet) {
   snapSoon(t);
   if (t !== target) return;
   if (!quiet || settled || chatTail(s) !== before) renderAll();
-  else if (CV.full) { if (s.msgs[0] && s.msgs[0].ts < CV.low) CV.from = CV.low; CV.drawn = CV.divNode ? "" : chatSig(s); }   // only rows above the drawn stretch came: nothing on screen changes
+  else if (CV.full) { if (s.msgs[0] && s.msgs[0].ts < CV.low) cvFrom(CV.low); cvDrawn(chatSig(s)); }   // only rows above the drawn stretch came: nothing on screen changes
 }
 // A tapped push or notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
 // history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.
@@ -209,7 +209,7 @@ function renderAll0(keepScroll) {
   if (current !== "chat") return;   // nothing is shown: entering the chat draws it (go, convSync)
   const s = ts(target);
   if (!keepScroll && chatReuse(s)) return;
-  if (CV.full) { CV.snap = { top: timeline.scrollTop, stick: chatStick }; CV.full = false; }   // a redraw keeps the owner's place (chatOpen)
+  if (CV.full) { cvStash({ top: timeline.scrollTop, stick: chatStick }); }   // a redraw keeps the owner's place (chatOpen)
   const lit = tl.querySelector(".nt-hl")?.closest("[data-ts]")?.dataset.ts;   // the glow of a jump (ntFlash) sits on a row this draw replaces: it moves to the new row
   resetChat(); resetTerm();
   if (!((s.hLoaded && s.aLoaded) || hasCached(s)) || !chatReady()) {
@@ -218,7 +218,7 @@ function renderAll0(keepScroll) {
     return;
   }
   const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null, from = chatFrom(s);
-  CV.from = from; CV.low = from || (M[0] ? M[0].ts : "");
+  cvRange(from, from || (M[0] ? M[0].ts : ""));
   if (s.amore && A.length) term.append(el("button", { class: "btn text tmore", type: "button", onclick: () => loadOlder() }, TX("chat.older.more")));
   if (s.ahist && A.length && !from) { tl.append(el("div", { class: "a-div", text: TX("chat.history.divider") })); term.append(el("div", { class: "tdv", text: TX("chat.history.divider") })); }
   let i = from ? A.findIndex(a => a.ts >= from) : 0, j = from ? M.findIndex(m => m.ts >= from) : 0;
@@ -239,10 +239,10 @@ function renderAll0(keepScroll) {
   }   // only the top sentinel is there
   if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("chat.empty.no_activity") }));
   if (lit) { const n = [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === lit); if (n) ntFlash(n); }
-  if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else { CV.snap = null; CV.full = true; }
+  if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else cvKeep();
   markLive();
   paintQueue(tl, target);
-  CV.drawn = CV.divNode ? "" : chatSig(s);   // a divider belongs to one opening: the next one draws anew
+  cvDrawn(chatSig(s));   // a divider belongs to one opening: the next one draws anew
 }
 // Coming back to the conversation still in the timeline, with nothing new while it was away: the drawn rows stay (their images too) and only the place is set.
 // Live changes skipped while hidden reach the store first, so its counts and newest times tell. An opening with a read divider or a pending draw redraws.

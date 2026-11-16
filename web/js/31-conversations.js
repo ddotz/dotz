@@ -228,6 +228,17 @@ function chatJump(node) {
   CV.pinTs = node.dataset.ts; CV.pinOff = Math.max(0, bar.bottom - a.top) + 20;
   chatPin("at");
 }
+// Every write to CV from another screen file goes through these (hub/web-structure-owners.json: CV is this file's).
+function cvPinAt(ts, off) { CV.pinTs = ts; CV.pinOff = off; }
+function cvJump(ts) { CV.jump = ts; }
+function cvSeeded() { CV.seeded = true; }
+function cvForget() { CV.drawn = ""; CV.divNode = null; }
+function cvDivNode(node) { CV.divNode = node; }
+function cvDrawn(sig) { CV.drawn = CV.divNode ? "" : sig; }
+function cvFrom(ts) { CV.from = ts; }
+function cvRange(from, low) { CV.from = from; CV.low = low; }
+function cvStash(snap) { CV.snap = snap; CV.full = false; }
+function cvKeep() { CV.snap = null; CV.full = true; }
 function chatPin(kind) { CV.pin = kind; chatPlace(); }
 function chatUnpin() { CV.pin = ""; }
 // Put the view where the pin says. Runs right after the draw and again whenever the timeline or its content changes size (images,

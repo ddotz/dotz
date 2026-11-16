@@ -211,7 +211,7 @@ async function ntJump(n, quiet = false, via = "") {
   if (isLaneT(open) && t === MAIN) { toast(TX("conv.nt.session_gone")); return "session-gone"; }   // the main chat has no message of it: say so instead of landing on the nearest one
   chatUnpin();
   ntKeep = isLaneT(t) ? t : "";
-  CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
+  cvJump(at);   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
   try {
     const s = ts(t), stored = s.msgs.some(e => e.ts === at);
     if (!(s.hLoaded && s.aLoaded)) { if (stored) loadTarget(t, true).catch(() => {}); else await loadTarget(t); }   // the message is here: land now, refresh behind it

@@ -43,7 +43,7 @@ async function snapSeed(t) {
   s.hmore = rec.hmore; s.amore = rec.amore; s.ahist = rec.ahist;
   if (TD.by[t] === undefined && rec.todo) TD.by[t] = rec.todo;
   if (READ[t] === undefined && rec.read) READ[t] = rec.read;
-  CV.seeded = true;
+  cvSeeded();
   renderAll();
   return true;
 }
