@@ -159,11 +159,18 @@ test("E opens the 고치기 panel, where no key sends and Esc only closes it, an
 	expect(posts.slice(before)).toEqual([{ ref: "RBBBBB2", action: "revise", change: "더 짧게" }, { ref: "RBBBBB2", action: "drop" }]);
 });
 
-test("on a phone the list rows fit the screen", async () => {
+test("on a phone the one-card view has no 진행 list under the card, and the list rows fit the screen", async () => {
 	const v = await hub.view({ width: 390, height: 844 }, "/");
 	const p = on(v);
 	await p.waitFor(`typeof tqOpen === "function" && RA.loaded`);
-	await p.run(`document.documentElement.dataset.theme = "light"; go("monitoring", "replies"); tqOpen(); TQ.list = true; tqPaint()`);
+	await p.run(`document.documentElement.dataset.theme = "light"; go("monitoring", "replies"); tqOpen()`);
+	await p.waitFor(`TQ.h && !!document.querySelector(".tq-body .ra-card")`);
+	expect(await p.ev(`[document.querySelector(".tr-pos").textContent, getComputedStyle(document.querySelector(".tq-rail")).display]`)).toEqual(["빠른 처리 1 / 3", "none"]);
+	if (SHOTS) {
+		await p.waitFor(`document.getAnimations().every(a => a.playState !== "running")`);
+		await Bun.write(join(SHOTS, "08-triage-one-390.png"), await v.screenshot());
+	}
+	await p.run(`TQ.list = true; tqPaint()`);
 	await p.waitFor(`document.querySelectorAll(".tq-row").length === 3`);
 	expect(await p.ev(`[...document.querySelectorAll(".tq-row")].every(r => r.scrollWidth <= r.clientWidth && r.getBoundingClientRect().right <= innerWidth)`)).toBe(true);
 	if (SHOTS) {
