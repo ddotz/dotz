@@ -66,6 +66,8 @@ function laterTones(text: string): string {
 
 // A bold "**결정: ...까요?**" line with no option under it is a yes/no question the model meant as a card (orchestrator 2026-11-12): it gets 예 / 아니요.
 const BOLD_HEAD = /^\s*\*\*\s*(?:결정|decision(?: needed)?)\s*[:：][^*\n]+\*\*\s*$/i;
+// An option of its block, as the model writes it: after a context line, as a list item ("- **1) 이름**: 설명"); normalizeAsk reshapes it later.
+const LISTED_OPT = /^\s*(?:[-*+][ \t]+)?(?:\*\*)?\s*\d{1,2}\)\s*\S/;
 function yesNoCards(text: string): string {
 	if (!text.includes("**")) return text;
 	const lines = text.split("\n");
@@ -73,8 +75,8 @@ function yesNoCards(text: string): string {
 	return lines.map((line, i) => {
 		if (FENCE.test(line)) fence = !fence;
 		if (fence || !BOLD_HEAD.test(line) || !QUESTION.test(line)) return line;
-		const next = lines.slice(i + 1).find(l => l.trim());
-		return next !== undefined && D_OPT.test(next) ? line : issueBlock(DECISION_HEAD.exec(line)![1]!, [{ name: "예", result: "" }, { name: "아니요", result: "" }]);
+		const after = lines.slice(i + 1), end = after.findIndex(l => DECISION_HEAD.test(l) || FENCE.test(l));
+		return (end < 0 ? after : after.slice(0, end)).some(l => LISTED_OPT.test(l)) ? line : issueBlock(DECISION_HEAD.exec(line)![1]!, [{ name: "예", result: "" }, { name: "아니요", result: "" }]);
 	}).join("\n");
 }
 

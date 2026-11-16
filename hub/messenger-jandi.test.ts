@@ -10,6 +10,7 @@ import { specOfElements } from "./message-spec.ts";
 import type { Incoming } from "./messenger.ts";
 import { commandOf } from "./jandi-selfchat.ts";
 import { desiredRooms } from "./messenger-rooms.ts";
+import { buildSnapshot, createSnapshotSender, snapshotFileStore } from "./relay-snapshot-send.ts";
 import { createJandiAdapter, type JandiAdapter, jandiConfigPath, loadJandiConfig, roomStatus, saveJandiConfig, splitText } from "./messenger-jandi.ts";
 
 type Captured = { path: string; headers: Headers; body: any };
@@ -331,6 +332,39 @@ describe("rooms from the web structure", () => {
 			try {
 				expect(() => none.a.saveSettings!({ share_status: true })).toThrow();
 				expect(loadJandiConfig(none.d).self_chat).toBeUndefined();
+			} finally {
+				none.cleanup();
+			}
+		});
+
+		test("the status room is set from the settings screen, refused unless a whole number, and the status summary then goes to it", async () => {
+			const t = fresh({ ...base, self_chat: { ...self_chat, share_status: true } });
+			try {
+				expect(t.a.settings!().fields.find(f => f.key === "status_room_id")).toMatchObject({ type: "number", label: "상태 방 번호" });
+				for (const bad of ["abc", -1, 1.5, true]) expect(() => t.a.saveSettings!({ values: { status_room_id: bad } })).toThrow();
+				const saved = t.a.saveSettings!({ values: { status_room_id: "77" } });
+				expect(saved.fields.find(f => f.key === "status_room_id")!.value).toBe(77);
+				expect(loadJandiConfig(t.d).self_chat).toMatchObject({ status_room_id: 77, room_id: 2, share_status: true });
+				const rooms: number[] = [];
+				const sender = createSnapshotSender({
+					config: () => loadJandiConfig(t.d).self_chat,
+					build: () => buildSnapshot({ projects: [], sessions: [], monitors: [], todos: { open: 0, items: [] }, notices: [] }, 1),
+					post: async (_text, room) => void rooms.push(room),
+					now: () => 1,
+					store: snapshotFileStore(join(t.d, "snapshot.json")),
+					log: () => {},
+				});
+				await sender.tick();
+				expect(rooms).toEqual([77]);
+				t.a.saveSettings!({ values: { status_room_id: 0 } });
+				expect(loadJandiConfig(t.d).self_chat).not.toHaveProperty("status_room_id");
+			} finally {
+				t.cleanup();
+			}
+			const none = fresh(base);
+			try {
+				expect(none.a.settings!().fields.some(f => f.key === "status_room_id")).toBe(false);
+				expect(() => none.a.saveSettings!({ values: { status_room_id: 9 } })).toThrow();
 			} finally {
 				none.cleanup();
 			}

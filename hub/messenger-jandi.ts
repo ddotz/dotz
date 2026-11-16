@@ -12,7 +12,7 @@ import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
 import { checkStatusRoomOf, createSelfChat, MAX_FILES, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
 import { createSessionMark } from "./jandi-session.ts";
 import { createSnapshotSender, snapshotFileStore } from "./relay-snapshot-send.ts";
-import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
+import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsField, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import type { MessageSpec } from "./message-spec.ts";
 import { specOf } from "./message-spec-of.ts";
 import { sameRoom } from "./messenger-rooms.ts";
@@ -169,6 +169,8 @@ const HELP = [
 	"허용 목록에 말을 걸 수 있는 사람의 이메일이나 이름을 넣어요. 목록에 없는 사람의 말은 무시해요",
 ];
 const WEBHOOK_HINT = "남은 일: JANDI는 웹훅을 API로 만들 수 없어서, 수신 웹훅 URL 하나를 '기본 수신 웹훅 URL'에 한 번 붙여 넣어요";
+const STATUS_ROOM = "상태 방 번호";
+const STATUS_ROOM_HINT = "나만 들어 있는 잔디 비공개 토픽의 번호예요. 웹에서 그 토픽을 열면 주소 끝에 있는 숫자예요. 비워 두면 나와의 대화에 올려요";
 const LISTEN_HINT = "바꾸면 JANDI 연결이 다시 시작돼요. 0.0.0.0은 같은 네트워크의 다른 기기도 접근할 수 있어요";
 const roomErr = (id: string, msg: string) => new SettingsError(`${id}: ${msg}`);
 const newRoomId = (taken: Set<string>): string => {
@@ -202,6 +204,25 @@ function withShare(sc: SelfChatConfig | undefined, on: unknown): SelfChatConfig 
 	if (typeof on !== "boolean") throw new SettingsError("share_status must be true or false");
 	if (!selfChatReady(sc)) throw new SettingsError("share_status needs the JANDI login connection");
 	return normalizeSelfChat({ ...sc, share_status: on })!;
+}
+/** The listener fields of the settings screen, and the status room (`status_room_id`) once the self chat runs. */
+function listenerFields(cfg: JandiConfig): SettingsField[] {
+	const sc = cfg.self_chat;
+	return [
+		{ key: "host", label: "받는 주소", type: "text", value: cfg.listen.host, hint: LISTEN_HINT },
+		{ key: "port", label: "받는 포트", type: "number", value: cfg.listen.port, hint: "0이면 빈 포트를 골라요" },
+		{ key: "incoming_url", label: "기본 수신 웹훅 URL", type: "secret", set: !!cfg.incoming_url, hint: "방마다 따로 정하지 않은 방의 메시지가 모두 이 JANDI 방으로 가요" },
+		...(selfChatReady(sc) ? [{ key: "status_room_id", label: STATUS_ROOM, type: "number" as const, ...(sc.status_room_id ? { value: sc.status_room_id } : {}), hint: STATUS_ROOM_HINT }] : []),
+	];
+}
+/** The self chat with `value` as its status room (unchanged when not given); 0 or "" clears it, so the summary goes to the self chat again. */
+function withStatusRoom(sc: SelfChatConfig | undefined, value: unknown): SelfChatConfig | undefined {
+	if (value === undefined) return sc;
+	const room = typeof value === "string" ? (value.trim() === "" ? 0 : Number(value)) : value;
+	if (typeof room !== "number" || !Number.isInteger(room) || room < 0) throw new SettingsError("status_room_id must be a whole number (0 or empty clears it)");
+	if (!selfChatReady(sc)) throw new SettingsError("status_room_id needs the JANDI login connection");
+	const { status_room_id: _old, ...rest } = sc;
+	return normalizeSelfChat(room ? { ...rest, status_room_id: room } : rest)!;
 }
 /** The self chat with `list` as its peers. A list the config would cut down is refused whole: the owner sees why, and nothing changes. */
 function withRelays(sc: SelfChatConfig | undefined, list: unknown): SelfChatConfig {
@@ -428,11 +449,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 		return {
 			enabled: cfg.enabled,
 			help: HELP,
-			fields: [
-				{ key: "host", label: "받는 주소", type: "text", value: cfg.listen.host, hint: LISTEN_HINT },
-				{ key: "port", label: "받는 포트", type: "number", value: cfg.listen.port, hint: "0이면 빈 포트를 골라요" },
-				{ key: "incoming_url", label: "기본 수신 웹훅 URL", type: "secret", set: !!cfg.incoming_url, hint: "방마다 따로 정하지 않은 방의 메시지가 모두 이 JANDI 방으로 가요" },
-			],
+			fields: listenerFields(cfg),
 			allow: { label: "말을 걸 수 있는 사람", hint: "이메일이나 JANDI 이름", items: [...cfg.allow_emails, ...(cfg.allow_names ?? [])] },
 			rooms: {
 				label: "방",
@@ -530,7 +547,8 @@ export function createJandiAdapter(dataDir: string = DATA_DIR, spec?: (body: str
 			}
 			next.rooms = rooms;
 		}
-		next.self_chat = withShare(body.relays === undefined ? next.self_chat : withRelays(cfg.self_chat, body.relays), body.share_status);
+		const relayed = body.relays === undefined ? next.self_chat : withRelays(next.self_chat, body.relays);
+		next.self_chat = withShare(withStatusRoom(relayed, v?.status_room_id), body.share_status);
 		saveJandiConfig(next, dataDir);
 	}
 
