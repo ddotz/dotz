@@ -1,0 +1,1241 @@
+[
+	{
+		"in": "(none)",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"list\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"notice\"",
+		"out": {
+			"hash": "#monitoring/notice",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/notice"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "notice",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"replies\"",
+		"out": {
+			"hash": "#monitoring/replies",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/replies"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "replies",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:kakao\"",
+		"out": {
+			"hash": "#monitoring/i%3Akakao",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Akakao"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:kakao",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:youtube\"",
+		"out": {
+			"hash": "#monitoring/i%3Ayoutube",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Ayoutube"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:youtube",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:site-mapia\"",
+		"out": {
+			"hash": "#monitoring/i%3Asite-mapia",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Asite-mapia"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:site-mapia",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"m:서버 디스크\"",
+		"out": {
+			"hash": "#monitoring/m%3A%EC%84%9C%EB%B2%84%20%EB%94%94%EC%8A%A4%ED%81%AC",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/m%3A%EC%84%9C%EB%B2%84%20%EB%94%94%EC%8A%A4%ED%81%AC"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "m:서버 디스크",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"m:정상 감시\"",
+		"out": {
+			"hash": "#monitoring/m%3A%EC%A0%95%EC%83%81%20%EA%B0%90%EC%8B%9C",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/m%3A%EC%A0%95%EC%83%81%20%EA%B0%90%EC%8B%9C"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "m:정상 감시",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail-2/all\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail-2/all",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail-2/all"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail/all\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/all",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/all"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail/b-pay\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/b-pay",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/b-pay"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "b-pay",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail/b-pay/set\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/b-pay/set",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/b-pay",
+				"monitoring/i%3Amail/mail/b-pay/set"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "b-pay",
+			"scr": "set"
+		}
+	},
+	{
+		"in": "\"i:mail/mail/all/new\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/all/new",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/all",
+				"monitoring/i%3Amail/mail/all/new"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "all",
+			"scr": "new"
+		}
+	},
+	{
+		"in": "\"i:mail/all/all/new\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/all/all/new",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/all/all",
+				"monitoring/i%3Amail/all/all/new"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": "new"
+		}
+	},
+	{
+		"in": "\"i:mail/mail/b-pay/zz\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/b-pay",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/b-pay"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "b-pay",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail-2\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail-2/all",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail-2/all"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail-2/mail-2/b-work\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail-2/b-work",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail-2/b-work"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "b-work",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:nobox/a/b\"",
+		"out": {
+			"hash": "#monitoring/i%3Anobox",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Anobox"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:nobox",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "a",
+			"box": "b",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:nobox\"",
+		"out": {
+			"hash": "#monitoring/i%3Anobox",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Anobox"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:nobox",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"p:mini|i:mail\"",
+		"out": {
+			"hash": "#monitoring/p%3Amini%7Ci%3Amail",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/p%3Amini%7Ci%3Amail"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "p:mini|i:mail",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"p:mini|m:peer-backup\"",
+		"out": {
+			"hash": "#monitoring/p%3Amini%7Cm%3Apeer-backup",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/p%3Amini%7Cm%3Apeer-backup"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "p:mini|m:peer-backup",
+			"list": true,
+			"filter": "all",
+			"miss": true,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:mail:p-1\"",
+		"out": {
+			"hash": "#monitoring/c:mail%3Ap-1",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail",
+				"monitoring/c:mail%3Ap-1"
+			],
+			"current": "chat",
+			"ctx": "mail:p-1",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:mail:w-1\"",
+		"out": {
+			"hash": "#monitoring/c:mail%3Aw-1",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail",
+				"monitoring/c:mail%3Aw-1"
+			],
+			"current": "chat",
+			"ctx": "mail:w-1",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:settings:kakao\"",
+		"out": {
+			"hash": "#monitoring/c:settings%3Akakao",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Akakao",
+				"monitoring/c:settings%3Akakao"
+			],
+			"current": "chat",
+			"ctx": "settings:kakao",
+			"sel": "i:kakao",
+			"list": false,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:settings:mail\"",
+		"out": {
+			"hash": "#monitoring/c:settings%3Amail",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail",
+				"monitoring/c:settings%3Amail"
+			],
+			"current": "chat",
+			"ctx": "settings:mail",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:settings:w:login-local\"",
+		"out": {
+			"hash": "#monitoring/c:settings%3Aw%3Alogin-local",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Aw%3Alogin-local",
+				"monitoring/c:settings%3Aw%3Alogin-local"
+			],
+			"current": "chat",
+			"ctx": "settings:w:login-local",
+			"sel": "i:w:login-local",
+			"list": false,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:mail:\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:bogus\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail-2/b-work\" > \"i:mail\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail-2/b-work",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail-2/b-work"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "b-work",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail-2/b-work\" > \"list\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": true,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "b-work",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail-2/b-work\" > (none)",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": true,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "b-work",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail/b-pay/set\" > \"i:mail/mail/b-pay\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/b-pay",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/b-pay"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "b-pay",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"i:mail/mail-2/b-work\" > \"m:서버 디스크\"",
+		"out": {
+			"hash": "#monitoring/m%3A%EC%84%9C%EB%B2%84%20%EB%94%94%EC%8A%A4%ED%81%AC",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/m%3A%EC%84%9C%EB%B2%84%20%EB%94%94%EC%8A%A4%ED%81%AC"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "m:서버 디스크",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "b-work",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"m:서버 디스크\" > \"list\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "m:서버 디스크",
+			"list": true,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"m:서버 디스크\" > (none)",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "m:서버 디스크",
+			"list": true,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"m:서버 디스크\" > \"c:bogus\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "m:서버 디스크",
+			"list": true,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:mail:p-1\" > \"list\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"c:mail:p-1\" > \"i:kakao\"",
+		"out": {
+			"hash": "#monitoring/i%3Akakao",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Akakao"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:kakao",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/notice\"",
+		"out": {
+			"hash": "#monitoring/notice",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/notice"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "notice",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/replies\"",
+		"out": {
+			"hash": "#monitoring/replies",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/replies"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "replies",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/i:mail\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Akakao\"",
+		"out": {
+			"hash": "#monitoring/i%3Akakao",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Akakao"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:kakao",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail/mail/b-score\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/b-score",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/b-score"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "b-score",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail/mail/b-score/set\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/b-score/set",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/b-score",
+				"monitoring/i%3Amail/mail/b-score/set"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "b-score",
+			"scr": "set"
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail/mail/base/set\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/base/set",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/base",
+				"monitoring/i%3Amail/mail/base/set"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "base",
+			"scr": "set"
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail/mail/all/new\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/all/new",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/all",
+				"monitoring/i%3Amail/mail/all/new"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "all",
+			"scr": "new"
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail/all/all/new\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/all/all/new",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/all/all",
+				"monitoring/i%3Amail/all/all/new"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": "new"
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail/mail-2/b-work\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail-2/b-work",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail-2/b-work"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "b-work",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail-2\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail-2/all",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail-2/all"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail-2",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail/all/n%253A%25EA%25B2%25B0%25EC%25A0%259C%252F%25EC%2598%2581%25EC%2588%2598\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/all/n%253A%25EA%25B2%25B0%25EC%25A0%259C%252F%25EC%2598%2581%25EC%2588%2598",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/all/n%253A%25EA%25B2%25B0%25EC%25A0%259C%252F%25EC%2598%2581%25EC%2588%2598"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "n:결제/영수",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/i%3Amail/mail/n%253A%25EA%25B2%25B0%25EC%25A0%259C%252F%25EC%2598%2581%25EC%2588%2598\"",
+		"out": {
+			"hash": "#monitoring/i%3Amail/mail/n%253A%25EA%25B2%25B0%25EC%25A0%259C%252F%25EC%2598%2581%25EC%2588%2598",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail/mail/n%253A%25EA%25B2%25B0%25EC%25A0%259C%252F%25EC%2598%2581%25EC%2588%2598"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "mail",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/c:mail%3Ap-1\"",
+		"out": {
+			"hash": "#monitoring/c:mail%3Ap-1",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail",
+				"monitoring/c:mail%3Ap-1"
+			],
+			"current": "chat",
+			"ctx": "mail:p-1",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/c:mail%3Afx-1\"",
+		"out": {
+			"hash": "#monitoring/c:mail%3Afx-1",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/i%3Amail",
+				"monitoring/c:mail%3Afx-1"
+			],
+			"current": "chat",
+			"ctx": "mail:fx-1",
+			"sel": "i:mail",
+			"list": false,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/c%3Abogus\"",
+		"out": {
+			"hash": "#monitoring",
+			"want": [
+				"home",
+				"monitoring"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "",
+			"list": true,
+			"filter": "fail",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	},
+	{
+		"in": "\"#monitoring/m%3A%EC%84%9C%EB%B2%84%20%EB%94%94%EC%8A%A4%ED%81%AC\"",
+		"out": {
+			"hash": "#monitoring/m%3A%EC%84%9C%EB%B2%84%20%EB%94%94%EC%8A%A4%ED%81%AC",
+			"want": [
+				"home",
+				"monitoring",
+				"monitoring/m%3A%EC%84%9C%EB%B2%84%20%EB%94%94%EC%8A%A4%ED%81%AC"
+			],
+			"current": "monitoring",
+			"ctx": "",
+			"sel": "m:서버 디스크",
+			"list": false,
+			"filter": "all",
+			"miss": false,
+			"acct": "all",
+			"box": "all",
+			"scr": ""
+		}
+	}
+]
