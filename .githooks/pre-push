@@ -1,7 +1,8 @@
 #!/bin/sh
 # Refuses a push to public ddotz/dotz whose new commits carry a personal address, a personal value in a message or an added line, or land a PR by hand with no universal review (hub/push-identity.ts), and a push whose branch tips break the
 # repo-wide limits (hub/engineering-rules.test.ts), and one that raises a ceiling or adds a ceiling key compared with the remote main (hub/engineering-ceilings.json, and the
-# "counts" of hub/web-structure-allow.json, where an ownerWrites number may rise only up to the baseline web code recounted by the pushed rule; a baseline without that file warns and passes). The limits check the pushed commit, not the working tree, so
+# "counts" of hub/web-structure-allow.json, where an ownerWrites number may rise only up to the baseline web code recounted by the pushed rule; a baseline without that file warns and passes), and one
+# with a top-level web/js name another file writes that hub/web-structure-owners.json neither owns nor exempts (the completeness test). The limits check the pushed commit, not the working tree, so
 # an uncommitted change neither hides nor causes a failure. core.hooksPath points here: set by hub/git-hooks.ts, never by hand.
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 command -v bun >/dev/null 2>&1 || { echo "pre-push: bun not found, cannot run hub/engineering-rules.test.ts" >&2; exit 1; }
@@ -42,6 +43,11 @@ while read -r _ sha ref remotesha; do
 	if ! (cd "$tmp/tree" && DOTZ_TEST_NO_DEPS=1 bun test hub/engineering-rules.test.ts) >"$tmp/out" 2>&1; then
 		grep -E '^\+ +"|\(fail\)' "$tmp/out" >&2 || tail -n 30 "$tmp/out" >&2
 		echo "pre-push: refused, $ref at $sha is over a limit. Shrink the code; never raise a ceiling (docs/engineering-standards.md)." >&2
+		exit 1
+	fi
+	if [ -f "$tmp/tree/hub/web-structure-web.test.ts" ] && ! (cd "$tmp/tree" && DOTZ_TEST_NO_DEPS=1 bun test hub/web-structure-web.test.ts -t '^completeness') >"$tmp/out" 2>&1; then
+		grep -E '^\+ +"|\(fail\)' "$tmp/out" >&2 || tail -n 30 "$tmp/out" >&2
+		echo "pre-push: refused, $ref at $sha has a web/js name another file writes that hub/web-structure-owners.json neither owns nor exempts. Call the owner's function, or register the name." >&2
 		exit 1
 	fi
 done
