@@ -170,9 +170,10 @@ function cmTabs() {
   const b = (id, text) => el("button", { type: "button", class: `cchip mr-f${CM.tab === id ? " on" : ""}`, role: "tab", "data-tab": id, "aria-selected": String(CM.tab === id), text, onclick: () => cmTab(id) });
   return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": TX("mon.cm.view_aria") }, b("comments", TX("mon.cm.comments")), b("dm", "DM"));
 }
+function cmSigSet(key, sig) { CM[key] = sig; }   // the DM pane's paint signatures (30-monitoring-comments-dm.js)
 function cmTab(id) {
   if (CM.tab === id) return;
-  CM.tab = id; CM.open = null; DM.open = null; CM.seq++; DM.seq++;
+  CM.tab = id; CM.open = null; CM.seq++; dmReset();
   cmPaintAll(); bkCmSync();
   if (id === "dm") dmRefresh(); else cmLoad();
 }
@@ -391,14 +392,14 @@ function cmMode(app, shown, pc) {
     // The DM tab is this computer's Instagram app only; another computer's comment app starts on its comments.
     const dm = !CM.pc && DM.on && DM.connected && app === DM_APP && !CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length);
     Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
-    Object.assign(DM, { open: null, view: null }); DM.seq++;
+    dmReset(true);
     cmPaintAll(); cmLoad();
     if (CM.tab === "dm") dmRefresh();
     clearInterval(CM.timer);
     // A peer's comments do not stream here (its events are its own), so its pane is read again on a short timer.
     CM.timer = setInterval(() => { if (document.visibilityState === "visible") { cmLoad(); if (CM.open) cmReload(); } }, CM.pc ? 15000 : 60000);
   } else if (!shown && CM.vis) {
-    CM.vis = false; CM.open = null; DM.open = null; CM.seq++; DM.seq++; clearInterval(CM.timer);
+    CM.vis = false; CM.open = null; CM.seq++; dmReset(); clearInterval(CM.timer);
   }
   bkCmSync();
 }
