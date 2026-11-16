@@ -22,7 +22,9 @@ test("hub/web-areas.json names every web/js file once and registers the pending 
 // - C ownerWrites "NAME|file": writes to a shared object or cross-file let from a file that does not own it (hub/web-structure-owners.json):
 //   X.f = / += / ++, ++X.f / --X.f / ++X[k], X.f[k] =, X[k] =, delete X.f / X.f[k] / X[k], X(.f)?.add/delete/clear/set/push/pop/shift/unshift/splice/sort/reverse(,
 //   Object.assign(X; for a let also its reassignment, and the same writes to the object or list it holds (CS.who = "", PICK.push(x)).
-//   A match is skipped where an enclosing function declares a parameter or local of that name (bkStep(S), a local `target`).
+//   A function-local alias `const g = X(.path);` counts its writes (g.live = true) as writes to X, within the block declaring it.
+//   A match is skipped where an enclosing function or expression-bodied arrow declares a parameter or local of that name (bkStep(S),
+//   a local `target`, `list => list.sort()`).
 // - B goBranches: `name === "` inside go(); fnReassign "name|file": a declared function reassigned outside any function (a monkeypatch).
 // - D overlaySites: rawdialog/overlay sites (hub/ui-surfaces.ts) outside the files that implement dialogs, menus, overlays and history, and
 //   outside the side drawer's own back step (showSheet), a shared part itself. A site that stays needs a reason in "reasons".
@@ -53,6 +55,10 @@ const objectWrite = (x: string) => {
   return new RegExp(`${at}${PATH}+\\s*(?:=(?![=>])|\\+\\+|--|[-+*/|&?]{1,2}=)|(?:\\+\\+|--)\\s*${esc(x)}${PATH}+|${at}${PATH}*\\.(?:add|delete|clear|set|push|pop|shift|unshift|splice|sort|reverse)\\(|(?<![\\w$.])delete\\s+${esc(x)}${PATH}+|Object\\.assign\\(${esc(x)}\\b`, "g");
 };
 const letWrite = (x: string) => new RegExp(`(?<![\\w$.])${esc(x)}\\s*(?:=(?![=>])|\\+=|\\|\\|=|\\?\\?=)`, "g");
+// `const g = X.f;` (or X itself, or an indexed path) ending its statement: g names the object X holds there.
+const aliasOf = (x: string) => new RegExp(`(?<![\\w$.])(?:const|let|var)\\s+([\\w$]+)\\s*=\\s*${esc(x)}${PATH}*[ \\t]*(?=;|\\n)`, "g");
+// Top-level declarations: hub/ui-surfaces.ts DECL plus a destructuring one (`const { a, b } = ...`).
+const TOP = new RegExp(String.raw`${DECL.source}|^(?:const|let|var)\s+(?=[{[])`, "gm");
 
 // Whether a declarator list ("a = 1, { b, c } = d", a parameter list) declares `name`: the part before each top-level comma's first `=`.
 function declares(list: string, name: string): boolean {
@@ -98,7 +104,7 @@ function parse(text: string) {
   for (let i = 0; i < code.length; i++) if (code[i] === "{") open.push(i); else if (code[i] === "}" && open.length) blocks.push([open.pop()!, i]);
   // Every name a top-level declaration makes: a function or class, and each declarator of `const|let|var a = ..., b = ...` (one line or
   // several), with the masked code of its initializer and its keyword.
-  const decls = [...text.matchAll(DECL)].filter((m) => mask[m.index]).flatMap((m) => {
+  const decls = [...text.matchAll(TOP)].filter((m) => mask[m.index]).flatMap((m) => {
     const kw = /^(const|let|var)\s/.exec(m[0])?.[1];
     if (!kw) return [{ at: m.index, name: m[1] ?? m[2]!, fn: !!m[1], kw: "", init: "" }];
     return declarators(code, m.index + kw.length).map((d, i) => ({ ...d, at: i ? d.at : m.index, fn: false, kw }));
@@ -117,18 +123,41 @@ function parse(text: string) {
     return arrow || (j >= 0 && !NOT_PARAMS.has(word)) ? { fn: true, decl: inner } : { fn: false, decl: "" };
   };
   const enclosing = (at: number) => blocks.filter(([o, c]) => o < at && at < c).sort((a, b) => b[0] - a[0]);
+  // Expression-bodied arrows (`list => list.sort()`, `(a, b) => a.x`): their parameter list and their body, which ends at a `,` or `;`
+  // outside its own brackets, at the bracket that closes around it, or where the statement ends (a line starting in column 0).
+  const arrows: { decl: string; o: number; c: number }[] = [];
+  for (const m of code.matchAll(/=>\s*(?=[^\s{])/g)) {
+    const h = code.slice(Math.max(0, m.index - 600), m.index).trimEnd();
+    let decl = /([\w$]+)$/.exec(h)?.[1] ?? "";
+    if (h.endsWith(")")) {
+      let j = h.length - 1;
+      for (let d = 0; j >= 0; j--) if (h[j] === ")") d++; else if (h[j] === "(" && --d === 0) break;
+      decl = h.slice(j + 1, -1);
+    }
+    let i = m.index + m[0].length;
+    for (let d = 0; i < code.length; i++) {
+      const c = code[i]!;
+      if ("([{".includes(c)) d++;
+      else if (")]}".includes(c) && d-- === 0) break;
+      else if (d === 0 && (c === "," || c === ";" || (c === "\n" && /[^\s,.?:)\]}]/.test(code[i + 1] ?? "")))) break;
+    }
+    arrows.push({ decl, o: m.index, c: i });
+  }
   // Locals a block declares itself: its text with the blocks inside it blanked, read for const/let/var lists. A brace-less for head
-  // (`for (const t of done) PQ.of.delete(t);`) declares only what stands before its of/in, never the loop body after it.
+  // (`for (const t of done) PQ.of.delete(t);`) declares only what stands before its of/in, never the loop body after it. A { } right after
+  // const/let/var or a comma is a destructuring pattern or an object literal, not a block: kept (`const a = 1, { w } = act`).
   const locals = ([o, c]: [number, number], name: string) => {
     let own = code.slice(o + 1, c);
-    for (const [io, ic] of blocks) if (io > o && ic < c) own = own.slice(0, io - o - 1) + " ".repeat(ic - io + 1) + own.slice(ic - o);
+    for (const [io, ic] of blocks) if (io > o && ic < c && !/(?:,|(?<![\w$.])(?:const|let|var))\s*$/.test(code.slice(Math.max(0, io - 12), io))) own = own.slice(0, io - o - 1) + " ".repeat(ic - io + 1) + own.slice(ic - o);
     return [...own.matchAll(/(?<![\w$.])(?:const|let|var)\s+([^;]*)/g)].some((m) => declares(m[1]!.split(/\s(?:of|in)\s/)[0]!, name));
   };
   return {
     text, code, decls, topAt,
     find: (re: RegExp) => [...code.matchAll(re)],
-    // The statement holding `at` starts with const/let/var: a declaration, not a write.
+    // The statement holding `at` starts with const/let/var: a declaration, not a write. A line starting with the keyword right before `at`
+    // is one too (after a `function f() {}` there is no `;` to stop the walk back).
     isDecl: (at: number) => {
+      if (/(?:^|\n)[ \t]*(?:const|let|var)\s+$/.test(code.slice(Math.max(0, at - 80), at))) return true;
       let j = at - 1;
       for (let d = 0; j >= 0; j--) {
         const c = code[j]!;
@@ -137,7 +166,9 @@ function parse(text: string) {
       }
       return /^\s*(?:const|let|var)\s/.test(code.slice(j + 1, at));
     },
-    shadowed: (at: number, name: string) => enclosing(at).some((b) => declares(head(b[0]).decl, name) || locals(b, name)),
+    shadowed: (at: number, name: string) => enclosing(at).some((b) => declares(head(b[0]).decl, name) || locals(b, name)) || arrows.some((a) => a.o < at && at < a.c && declares(a.decl, name)),
+    // The innermost { } block holding `at`, or undefined at top level.
+    scope: (at: number): [number, number] | undefined => enclosing(at)[0],
     inFunction: (at: number) => enclosing(at).some((b) => head(b[0]).fn),
     topLevel: (at: number) => enclosing(at).length === 0,
     // The source text of each top-level argument of the call whose "(" ends just before `at`.
@@ -166,6 +197,12 @@ function audit(files: Record<string, string>): Audit {
   for (const [f, p] of parsed) {
     for (const [name, owners] of Object.entries(OWNERS.objects)) if (!owners.includes(f))
       for (const m of p.find(objectWrite(name))) if (!p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
+    // A block-local alias of an owned object or let: its writes after the alias, inside that block, are writes to the owned name.
+    for (const [name, owners] of [...Object.entries(OWNERS.objects), ...Object.entries(OWNERS.lets)]) if (!owners.includes(f))
+      for (const a of p.find(aliasOf(name))) {
+        const s = p.scope(a.index);
+        if (s && !p.shadowed(a.index, name)) for (const m of p.find(objectWrite(a[1]!))) if (m.index > a.index && m.index < s[1]) bump(r.ownerWrites, `${name}|${f}`);
+      }
     // A let is reassigned, and the object or list it holds is written like an owned object's (CS.who = "", PICK.push(x)).
     for (const [name, owners] of Object.entries(OWNERS.lets)) if (!owners.includes(f)) {
       for (const m of p.find(letWrite(name))) if (!p.isDecl(m.index) && !p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
@@ -192,13 +229,14 @@ function audit(files: Record<string, string>): Audit {
   return r;
 }
 
-// Completeness of the owners file: a top-level name that holds {}, [], a Map, Set, WeakMap or WeakSet and takes a rule C write from a file
-// other than the one declaring it is owned (objects or lets) or exempt with a reason. Each finding is "NAME|declaring file <- writing file".
-const CONTAINER = /^\s*(?:\{|\[|new\s+(?:Map|Set|WeakMap|WeakSet)\b)/;
+// Completeness of the owners file: a top-level name (any declarator, a destructured one too, whatever its initializer: {}, a Map, null, a
+// call, a number) that takes a rule C write from a file other than the one declaring it is owned (objects or lets) or exempt with a reason.
+// A write is a property or container write (X.f =, X.set(, X[k] =, X.push( ...), and for a let or var also its reassignment. Each
+// finding is "NAME|declaring file <- writing file".
 function unowned(files: Record<string, string>): string[] {
   const known = new Set([...Object.keys(OWNERS.objects), ...Object.keys(OWNERS.lets), ...Object.keys(OWNERS.exempt)]);
   const parsed = Object.entries(files).map(([f, t]) => [f, parse(t)] as const), out: string[] = [];
-  for (const [df, dp] of parsed) for (const d of dp.decls) if (CONTAINER.test(d.init) && !known.has(d.name))
+  for (const [df, dp] of parsed) for (const d of dp.decls) if (!d.fn && !known.has(d.name))
     for (const [f, p] of parsed) if (f !== df && p.code.includes(d.name)) {
       const writes = [...p.find(objectWrite(d.name)), ...(d.kw === "const" ? [] : p.find(letWrite(d.name)).filter((m) => !p.isDecl(m.index)))];
       if (writes.some((m) => !p.shadowed(m.index, d.name))) out.push(`${d.name}|${df} <- ${f}`);
@@ -234,7 +272,8 @@ test.if(!!process.env.WEB_STRUCTURE_RECOUNT)("recount: the ownerWrites of these 
   writeFileSync(process.env.WEB_STRUCTURE_RECOUNT!, JSON.stringify(REAL.ownerWrites));
 });
 
-test("every shared {} / [] / Map / Set another file writes is owned or exempt in hub/web-structure-owners.json", () => {
+// .githooks/pre-push runs this alone (-t "^completeness") in the pushed tree.
+test("completeness: every top-level name another file writes is owned or exempt in hub/web-structure-owners.json", () => {
   expect(unowned(webFiles())).toEqual([]);
   expect(Object.entries(OWNERS.exempt).filter(([, why]) => !why.trim())).toEqual([]);
 });
@@ -287,8 +326,33 @@ test("planted C: a prefix ++ / -- write counts, a prefix on another name does no
 test("planted completeness: a later declarator holding a Map, Set, {} or [] and written from another file is named until owned", () => {
   const mon = (line: string) => ({ "30-monitoring.js": `${files["30-monitoring.js"]}\n${line}\n` });
   expect(unowned({ ...files, ...mailBox("const ZA = 1, ZB = new Map();"), ...mon("function zzZB() { ZB.set(1, 2); }") })).toEqual(["ZB|30-mail-box.js <- 30-monitoring.js"]);
-  expect(unowned({ ...files, ...mailBox("let ZC = null, ZD = 0,\n  ZE = [];"), ...mon("function zzZE() { ZE = []; ZD = 1; }") })).toEqual(["ZE|30-mail-box.js <- 30-monitoring.js"]);
+  expect(unowned({ ...files, ...mailBox("let ZC = null, ZD = 0,\n  ZE = [];"), ...mon("function zzZE() { ZE = []; ZD = 1; }") })).toEqual(["ZD|30-mail-box.js <- 30-monitoring.js", "ZE|30-mail-box.js <- 30-monitoring.js"]);
   expect(unowned({ ...files, ...mailBox("const ZA = 1, ZB = new Map();\nfunction zzOwn() { ZB.set(1, 2); }"), ...mon("function zzRd(ZB) { ZB.set(1, 2); return ZB; }") })).toEqual([]);
+});
+
+test("planted completeness: a null or call initializer later holding an object, a destructured name and a primitive let are named until owned", () => {
+  const mon = (line: string) => ({ "30-monitoring.js": `${files["30-monitoring.js"]}\n${line}\n` });
+  expect(unowned({ ...files, ...mailBox("let ZN = null;\nconst ZK = zzMake(), ZU = undefined;"), ...mon("function zzNK(k) { ZN.k = 1; ZK.set(1, 2); ZU[k] = 1; }") }))
+    .toEqual(["ZK|30-mail-box.js <- 30-monitoring.js", "ZN|30-mail-box.js <- 30-monitoring.js", "ZU|30-mail-box.js <- 30-monitoring.js"]);
+  expect(unowned({ ...files, ...mailBox("const { ZP, ZQ: ZR } = zzObj();\nlet [ZV] = [1];"), ...mon("function zzDs() { ZR.x = 1; ZV = 2; return ZP; }") }))
+    .toEqual(["ZR|30-mail-box.js <- 30-monitoring.js", "ZV|30-mail-box.js <- 30-monitoring.js"]);
+  expect(unowned({ ...files, ...mailBox("let ZS = 0, ZT = \"\";"), ...mon("function zzPr() { ZS = 2; return ZT; }") })).toEqual(["ZS|30-mail-box.js <- 30-monitoring.js"]);
+  expect(unowned({ ...files, ...mailBox("let ZS = 0;"), ...mon("function zzPr(ZS) { ZS = 2; }\nconst zzPr2 = ZS => ZS.k = 1;") })).toEqual([]);
+});
+
+test("planted C: a write to a registered primitive let from another file counts", () => {
+  expect(delta(mailBox("function zzLets() { botName = \"x\"; convSig = \"\"; hSel = null; }"))).toEqual({ "ownerWrites botName|30-mail-box.js": 1, "ownerWrites convSig|30-mail-box.js": 1, "ownerWrites hSel|30-mail-box.js": 1 });
+  expect(delta(mailBox("function zzDecl() {}\nlet botName = \"\";"))).toEqual({});
+});
+
+test("planted C: writes through a block-local alias of an owned object count in that block only", () => {
+  expect(delta(mailBox("function zzAl() { const g = CS.group; g.live = 1; g.xs.push(1); const t = FS[FS.length - 1]; t.ends.push(1); }"))).toEqual({ "ownerWrites CS|30-mail-box.js": 2, "ownerWrites FS|30-mail-box.js": 1 });
+  expect(delta(mailBox("function zzAl2() { const g = CS.group; return g.live; }\nfunction zzAl3(g) { g.live = 1; }\nfunction zzAl4(CS) { const g = CS.group; g.live = 1; }"))).toEqual({});
+});
+
+test("planted C: a parameter of an expression-bodied arrow and a destructured local shadow", () => {
+  expect(delta(mailBox("const zzAr = MON => MON.xs.sort();\nconst zzAr2 = (a, NT) => NT.by[a] = 1;\nfunction zzDs(act) { const a = 1, { MON } = act; MON.zz = 1; }"))).toEqual({});
+  expect(delta(mailBox("const zzAr3 = (xs) => MON.xs.sort(), zzAr4 = NT => 1;\nfunction zzAr5() { NT.zz = 1; }"))).toEqual({ "ownerWrites MON|30-mail-box.js": 1, "ownerWrites NT|30-mail-box.js": 1 });
 });
 
 test("planted B: a go() branch and a top-level function reassignment count", () => {
