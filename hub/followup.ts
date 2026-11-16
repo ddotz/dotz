@@ -50,7 +50,7 @@ export function followupTurn(rule: string, i: FollowupInput): string {
 		"2. 맞지 않으면 초안도 질문도 만들지 않고 아무 말 없이 끝냅니다.",
 		`3. 맞으면 메일 초안을 만듭니다: bun ${MAIL_CLI} compose --app <메일 앱> --to <주소> --subject <제목> [--attach <경로>]... [--from-library <키워드>]${origin} (본문은 stdin)`,
 		"4. 출력된 블록(받는이, 제목, 첨부, 본문, 보내기/고치기/보내지 않기)을 그대로 [ask]로 올립니다. 오너가 보내기를 고르기 전에는 보내지 않습니다.",
-		`5. 보내기를 고르면 bun ${MAIL_CLI} send --draft <코드> 로 보냅니다.`,
+		"5. 보내기는 오너가 카드에서 고르면 게이트웨이가 합니다. 직접 보내지 않습니다.",
 	].join("\n");
 }
 

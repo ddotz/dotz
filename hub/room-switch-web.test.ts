@@ -153,8 +153,8 @@ describe("comment threads opened back to back", () => {
 			expect(s.text).toContain("second 글의 댓글");
 			expect(s.text).not.toContain("first 글의 댓글");
 		}
-		// A revise note typed on the second thread's card stays with that draft (RA.rev by ref) and never shows on the first thread's card.
-		await run(v, `RA.rev.set("d-second", "절반만 쓴 수정 요청"); raPaint("d-second")`);
+		// What is typed in the 고치기 panel of the second thread's card stays with that draft (RA.fix by ref) and never shows on the first thread's card.
+		await run(v, `raFixOpen(RA.items.get("d-second")); RA.fix.get("d-second").note = "절반만 쓴 수정 요청"; raPaint("d-second")`);
 		expect(await ev(v, `!!$("#cm-in .rq-edit input")`)).toBe(true);
 		await run(v, `cmOpen({ source: "youtube", thread: "first", title: "첫째 글" })`);
 		await answer(v, cmPath("first"));

@@ -48,7 +48,10 @@
     lastId = m.lastEventId;
     raLoad();   // the one reply queue (10-reply-actions.js): what waits may have changed while the stream was away
     // The drawn conversation stays as it is: loadTarget redraws it only when the read brought something new.
-    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); kkResync(); }
+    // The first reset reads the open conversation again too when its history already came: what was sent between that answer and this stream is in neither.
+    const reread = opened || ts(target).hLoaded;
+    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; loadSubs(); loadQueue(); laneTailsStale(); kkResync(); }
+    if (reread) { loadTarget(target, hasCached(ts(target))); convLoad(); }
     opened = true;
   });
   // A stream the gateway closed (a cleanup, a slow reader) is attached again at once, not after the browser's wait, so the 2 s of setConn pass unseen. Behind a proxy that

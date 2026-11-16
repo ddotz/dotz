@@ -4,7 +4,7 @@ import { emit } from "./events.ts";
 import { answerDecision, listNotices, markNoticesRead, type Notice, resolveNotices } from "./notices.ts";
 
 // A send-approval answer that carries files (POST /api/notices/<id>/answer, hub/routes.ts -> hub/notices.ts answerDecision -> sendWeb): a draft's
-// 고치기 hands them on, any other answer drops them. The web's own file picker of the old dock 직접 수정 is gone; the queue card's 직접 수정 replaced it.
+// 고치기 hands them on, any other answer drops them. The web's own file picker of the old dock 직접 수정 is gone; the queue card's 고치기 panel replaced it.
 const find = (ref: string) => listNotices(300).items.find(n => n.kind === "decision" && n.decision?.state === "open" && n.decision.draft?.ref === ref)! as Notice;
 const ask = (ref: string, extra: object) =>
 	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${draftApprovalBlock({ subject: "견적서 회신", body: "안녕하세요.\n견적서를 보내 드립니다.", ref, ...extra })}` });

@@ -101,13 +101,13 @@ describe("댓글 on a phone (390x844)", async () => {
 		const s = await q<{ names: string[]; texts: string[]; bubbles: number; xss: boolean; draft: string; buttons: string[]; overflow: boolean }>(v, `
 			const ts = [...document.querySelectorAll("#cm .kk-bub")].map(b => b.textContent);
 			return { names: [...document.querySelectorAll("#cm .kk-name")].map(n => n.textContent), texts: ts, bubbles: ts.length, xss: !!document.querySelector("#cm .kk-bub img, #cm .kk-bub b"),
-				draft: document.querySelector("#cm .ra-card .rq-text").textContent, buttons: [...document.querySelectorAll("#cm .ra-card .rq-acts .btn")].map(b => b.textContent), overflow: document.documentElement.scrollWidth > 390 }`);
+				draft: document.querySelector("#cm .ra-card .rq-text").textContent, buttons: [...document.querySelectorAll("#cm .ra-card .rq-acts .btn")].map(b => b.dataset.k), overflow: document.documentElement.scrollWidth > 390 }`);
 		expect(s.names).toEqual(["가나", "다라"]);
 		expect(s.bubbles).toBe(3);
 		expect(s.texts[2]).toContain("<b>굵게</b>");
 		expect(s.xss).toBe(false);
 		expect(s.draft).toBe("고마워요! 자막은 이번 주 안에 올릴게요.");
-		expect(s.buttons).toEqual(["보내기", "고치기", "보내지 않기"]);   // the one reply card's words (10-reply-card.js)
+		expect(s.buttons).toEqual(["send", "fix", "drop"]);   // the one reply card's actions (10-reply-card.js)
 		expect(s.overflow).toBe(false);
 		await shot(v, "comments-thread-390.png");
 
@@ -161,13 +161,13 @@ describe("댓글 on a phone (390x844)", async () => {
 		expect(bold.every(n => n <= 1)).toBe(true);
 	});
 
-	test("고치기 asks what to change and shows the rewritten draft; 보내지 않기 removes it", async () => {
+	test("고치기 takes what to change in its line to the AI and shows the rewritten draft; 보내지 않기 removes it", async () => {
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
 		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
-		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
-		await waitFor(v, `document.querySelector('#cm [data-k="revise-go"]')`);
-		await run(v, `const i = document.querySelector("#cm .rq-edit input"); i.value = "더 짧게"; i.dispatchEvent(new Event("input")); document.querySelector('#cm [data-k="revise-go"]').click()`);
+		await run(v, `document.querySelector('#cm [data-k="fix"]').click()`);
+		await waitFor(v, `document.querySelector('#cm [data-k="fix-apply"]')`);
+		await run(v, `const i = document.querySelector("#cm .rq-edit input"); i.value = "더 짧게"; i.dispatchEvent(new Event("input")); document.querySelector('#cm [data-k="fix-apply"]').click()`);
 		const req = await expectReq(r => r.path === "/api/reply/act" && r.body!.action === "revise");
 		expect(req.body).toEqual({ ref: "Dabc234", action: "revise", change: "더 짧게" });
 		await settle(v);
@@ -184,7 +184,7 @@ describe("댓글 on a phone (390x844)", async () => {
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
 		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
-		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
+		await run(v, `document.querySelector('#cm [data-k="fix"]').click()`);
 		await waitFor(v, `document.querySelector("#cm .rq-edit input")`);
 		await run(v, `document.querySelector("#cm .rq-edit input").focus()`);
 		await v.type("shorter please");
@@ -198,7 +198,7 @@ describe("댓글 on a phone (390x844)", async () => {
 		await waitFor(v, `CM.view && CM.view.sends.some(s => s.state === "failed")`);
 		// the field being typed in is never replaced (a phone would drop and raise its keyboard): the same node keeps text, focus and caret
 		const s = await q<{ same: boolean; value: string; focused: boolean; caret: number | null; go: boolean }>(v, `const i = document.querySelector("#cm .rq-edit input");
-			return { same: i === window.__in, value: i.value, focused: document.activeElement === i, caret: i.selectionStart, go: !document.querySelector('#cm [data-k="revise-go"]').disabled }`);
+			return { same: i === window.__in, value: i.value, focused: document.activeElement === i, caret: i.selectionStart, go: !document.querySelector('#cm [data-k="fix-apply"]').disabled }`);
 		expect(s).toEqual({ same: true, value: "shorter pleas", focused: true, caret: 11, go: true });
 		await v.type("X");   // still typing into the same field, at the caret
 		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("shorter pleXas");
@@ -206,9 +206,9 @@ describe("댓글 on a phone (390x844)", async () => {
 		await run(v, `document.activeElement.blur()`);
 		await waitFor(v, `document.querySelector("#cm .kk-m.pend.failed")`);
 		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("shorter pleXas");
-		await run(v, `document.querySelector('#cm [data-k="revise-cancel"]').click()`);
-		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
-		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("");   // 취소 lets it go
+		await run(v, `document.querySelector('#cm [data-k="fix-close"]').click()`);
+		await run(v, `document.querySelector('#cm [data-k="fix"]').click()`);
+		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("");   // 닫기 lets it go
 	});
 
 	test("a reply that did not go out stays under its comment with its state and no buttons of its own (its queue card answers it)", async () => {

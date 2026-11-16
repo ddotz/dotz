@@ -1,53 +1,95 @@
-// What an owner's typed chat message asks of an open reply card, read by code before any model turn (the reply unification design, 3.2):
-// send, drop or revise, or nothing. Pure: no I/O. The card a message is about is the one it quotes, else the conversation's only open draft
-// card when that card is also the newest there; with two open cards and no quote it is about none of them. The model's fallback is one marker
-// line, `[revise <ref>] <change>`, which `reviseMarker` reads out of its post.
-import { textVerdict } from "./draft-approval.ts";
+// What an owner's typed chat message asks of an open reply card, and the model's marker lines (the reply intent design, 2026-11-16). Typed chat
+// is read by the model in its turn, never by keyword: the one answer code reads itself is the card's own numbered option typed out whole
+// ("1) 보내기", "2) 고치기 - <내용>", "3) 보내지 않기", "4) 이대로 보내기"), about the quoted card or the conversation's only open card. The model answers
+// the rest with one marker line per card, `[send <ref>]`, `[drop <ref>]` or `[revise <ref>] <change>`: `cardMarkers` reads them out of its post
+// and `applyCardMarkers` acts on them. A send only posts a confirm card (its 보내기 is the owner's); a drop or a revise in an answer to the owner is his word.
+import { REF_ID } from "./draft-approval.ts";
+import type { ActCtx, ActInput, ActResult } from "./reply-actions.ts";
+import type { ReplyItem } from "./reply-types.ts";
 
-export type OpenCard = { ref: string; newest?: boolean };
-export type OwnerIntent = { act: "send" | "drop"; ref: string } | { act: "revise"; ref: string; change: string };
+export type OwnerPick = { act: "send"; asIs?: true } | { act: "drop" } | { act: "revise"; change: string };
+export type OwnerIntent = OwnerPick & { ref: string };
 
-const MAX_REVISE = 500;
-const EXPLICIT = /^\s*(?:2\)\s*)?고치기\s*[-:：]\s*(.+)$/s;
-const VERBS = ["바꿔", "바꾸", "고쳐", "고치", "수정", "빼", "삭제", "지워", "추가", "넣어", "붙여", "줄여", "늘려", "다시 써", "다듬"];
-const MANNER = ["짧게", "길게", "간단하게", "간결하게", "자세하게", "공손하게", "정중하게", "부드럽게", "친근하게", "가볍게", "단호하게"];
-const STYLE = /(?:말투|톤|존댓말|반말|이모지|인사|서명)(?:은|는|이|가|을|를|도|로|으로)/;
-// A request addressed to the assistant, not a change to the draft ("19번 카드 열어", "확인해줘").
-const COMMAND = /^\s*(?:\/|!)|(?:열어|보여|찾아|알려|확인해)\s*(?:줘|주세요|봐)?\s*[.!]?\s*$/;
-
-/** A free-text change to a draft: not a question or a command, short, and with a change cue (a verb, a manner word or a style noun with a particle). */
-export function textRevise(text: string): string | undefined {
-	const t = text.trim();
-	if (!t || [...t].length > MAX_REVISE || /[?？]/.test(t) || COMMAND.test(t)) return undefined;
-	const cue = VERBS.some(v => t.includes(v)) || MANNER.some(m => t.includes(m)) || STYLE.test(t);
-	return cue ? t : undefined;
+const CARD_LINE = { drop: "이 답장은 보내지 않을게요", revise: "고쳐서 카드에 다시 올릴게요" } as const;
+const HEAD_CHARS = 40;
+/** The start of a draft's text on one line: what a send's gateway line, the confirm card and the model's card note show. */
+export function draftHead(text: string): string {
+	const chars = [...text.replace(/\s+/g, " ").trim()];
+	return chars.length > HEAD_CHARS ? `${chars.slice(0, HEAD_CHARS).join("")}…` : chars.join("");
+}
+/** The one gateway line after a typed answer acted on a card. A send says who gets what (the recipient and the start of the text) and how long the card can take it back. */
+export function cardLine(act: OwnerIntent["act"], item: Pick<ReplyItem, "draft" | "send"> | undefined, now: number): string {
+	if (act !== "send") return CARD_LINE[act];
+	if (!item) return "보낼게요";
+	const left = item.send?.state === "undo" ? Math.max(1, Math.round((item.send.until - now) / 1000)) : 0;
+	return `보낼게요 - ${item.draft.toLabel} ${item.draft.to}: "${draftHead(item.draft.text)}"${left ? `. 카드에서 ${left}초 안에 되돌릴 수 있어요` : ""}`;
 }
 
-/** The card a message is about: its quote, else the one open card when it is the newest. */
-function targetOf(cards: OpenCard[], quoted?: string): string | undefined {
-	if (quoted) return cards.some(c => c.ref === quoted) ? quoted : undefined;
-	return cards.length === 1 && cards[0]!.newest ? cards[0]!.ref : undefined;
+// The card's own options, typed out whole; number and name must agree ("2) 보내기" is no pick), and a 고치기 carries its change.
+const OPTION = /^\s*([1-4])\)\s*(보내기|고치기(?:\s*[-:：]\s*(.+?))?|보내지 않기|이대로 보내기)\s*$/s;
+const NAMED: Record<string, string> = { "1": "보내기", "3": "보내지 않기", "4": "이대로 보내기" };
+/** The card option a message types out whole, or undefined: everything else is the model's to read. */
+export function ownerPick(text: string): OwnerPick | undefined {
+	const [, n, label, change] = OPTION.exec(text) ?? [];
+	if (n === "2") return label?.startsWith("고치기") && change?.trim() ? { act: "revise", change: change.trim() } : undefined;
+	if (!n || NAMED[n] !== label) return undefined;
+	return n === "3" ? { act: "drop" } : n === "4" ? { act: "send", asIs: true } : { act: "send" };
 }
 
-/** What the owner's message asks of an open card, or undefined for an ordinary chat turn. */
-export function ownerIntent(message: { text: string }, o: { cards: OpenCard[]; quoted?: string }): OwnerIntent | undefined {
-	const ref = targetOf(o.cards, o.quoted);
-	if (!ref) return undefined;
-	const said = textVerdict(message.text);
-	if (said) return { act: said, ref };
-	const explicit = EXPLICIT.exec(message.text)?.[1]?.trim();
-	if (explicit) return { act: "revise", ref, change: explicit };
-	const change = textRevise(message.text);
-	return change ? { act: "revise", ref, change } : undefined;
+/** What the owner's message asks of an open card of his conversation: a typed option, about the card he quoted or else the only open one; undefined is the model's turn. */
+export function ownerIntent(message: { text: string }, o: { cards: { ref: string }[]; quoted?: string }): OwnerIntent | undefined {
+	const pick = ownerPick(message.text);
+	const ref = o.quoted ? o.cards.find(c => c.ref === o.quoted)?.ref : o.cards.length === 1 ? o.cards[0]!.ref : undefined;
+	return pick && ref ? { ...pick, ref } : undefined;
 }
 
-/** The model's one revise line for an open card, and its post without that line; a ref that is not open is left as it is. */
-export function reviseMarker(text: string, openRefs: readonly string[]): { ref: string; change: string; rest: string } | undefined {
-	const lines = text.split("\n");
-	for (let i = 0; i < lines.length; i++) {
-		const m = /^\s*\[revise\s+([A-Za-z0-9]{2,16})\]\s*(.+?)\s*$/.exec(lines[i]!);
-		if (!m || !openRefs.includes(m[1]!)) continue;
-		return { ref: m[1]!, change: m[2]!, rest: [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n").trim() };
+export type CardMark = { act: "send" | "drop"; ref: string } | { act: "revise"; ref: string; change: string };
+export type CardMarks = { acts: CardMark[]; rest: string; unknown: { verb: string; ref: string; why: string }[] };
+const MARK = new RegExp(`^\\s*\\[(send|drop|revise)\\s+(${REF_ID})\\]\\s*(.*?)\\s*$`);
+/** The model's marker lines (each one leads its line) for the cards open here, and its post without them. A ref that is not open, a revise with
+ * no change and two markers for one card (they contradict each other) act on nothing; every marker line leaves the post. */
+export function cardMarkers(text: string, openRefs: readonly string[]): CardMarks {
+	const acts: CardMark[] = [], unknown: CardMarks["unknown"] = [], rest: string[] = [];
+	for (const line of text.split("\n")) {
+		const [, verb, ref, change] = MARK.exec(line) ?? [];
+		if (!verb || !ref) rest.push(line);
+		else if (!openRefs.includes(ref)) unknown.push({ verb, ref, why: "not an open card of this conversation" });
+		else if (verb === "revise" && !change) unknown.push({ verb, ref, why: "no change" });
+		else if (verb === "revise") acts.push({ act: "revise", ref, change: change! });
+		else acts.push({ act: verb === "send" ? "send" : "drop", ref });
 	}
-	return undefined;
+	const twice = new Set(acts.filter((a, i) => acts.findIndex(b => b.ref === a.ref) !== i).map(a => a.ref));
+	for (const a of acts) if (twice.has(a.ref)) unknown.push({ verb: a.act, ref: a.ref, why: "two markers for one card" });
+	return { acts: acts.filter(a => !twice.has(a.ref)), rest: rest.join("\n").trim(), unknown };
+}
+
+const NOT_FOUND = "보낼 카드를 찾지 못했어요. 카드의 보내기를 눌러 주세요";
+const STILL_REVISING = "고치는 중이에요. 고친 카드가 올라오면 거기서 보내기를 눌러 주세요";
+export type MarkDeps = {
+	replies: { act: (input: ActInput, ctx: ActCtx) => Promise<ActResult>; confirm: (input: { ref: string }, ctx: ActCtx) => Promise<ActResult> };
+	/** The owner's message the post answers, when it is one of this conversation: only then may a send or a drop act, and a revise is his word. */
+	owner?: { mid: string; text: string };
+	/** One gateway line in the conversation. */
+	tell: (line: string) => Promise<unknown>;
+	log: (line: string) => void;
+};
+/** Acts on the model's markers: `[send]` posts the confirm card (nothing is sent), `[drop]` and `[revise]` in an answer to the owner are his word (a
+ * sealed pick naming his message), a `[revise]` in any other post stays the agent's own. One hub.log line per marker; a refused one is told. */
+export async function applyCardMarkers(marks: CardMarks, d: MarkDeps): Promise<void> {
+	for (const u of marks.unknown) {
+		d.log(`card marker ${u.verb} ${u.ref} refused: ${u.why}`);
+		if (u.verb === "send") await d.tell(NOT_FOUND);
+	}
+	const from = d.owner ? ` for owner msg ${d.owner.mid} "${d.owner.text.replace(/\s+/g, " ").slice(0, 80)}"` : "";
+	for (const m of marks.acts) {
+		if (m.act !== "revise" && !d.owner) {
+			d.log(`card marker ${m.act} ${m.ref} refused: the post answers no owner message`);
+			continue;
+		}
+		const ctx: ActCtx = d.owner ? { surface: "chat", owner: d.owner } : { surface: "chat", agent: true };
+		const r = await (m.act === "send" ? d.replies.confirm({ ref: m.ref }, ctx) : d.replies.act(m.act === "revise" ? { ref: m.ref, action: "revise", change: m.change } : { ref: m.ref, action: "drop" }, ctx));
+		d.log(`card marker ${m.act} ${m.ref}${from}: ${r.body.ok ? "done" : `refused ${r.body.code}`}`);
+		if (!r.body.ok) await d.tell(m.act !== "send" ? `답장 카드에 반영하지 못했어요: ${r.body.error}` : r.body.code === "revising" ? STILL_REVISING : r.body.code === "unknown_ref" ? NOT_FOUND : `보낼 수 없어요: ${r.body.error}`);
+		else if (m.act !== "send" && d.owner) await d.tell(cardLine(m.act, undefined, Date.now()));
+	}
 }

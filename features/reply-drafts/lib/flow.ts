@@ -13,7 +13,7 @@ import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } f
 import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, webmailSite, zeleAccountOf, type Sent, type SendOutcome } from "./senders.ts";
-import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
+import { carryStagedFiles, fileDigest, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, validApp, type ToneKey } from "./settings.ts";
 import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
@@ -21,7 +21,7 @@ import { addPair, styleFrom, styleWithExamples } from "./pairs.ts";
 import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
-export { realRunner };
+export { fileDigest, realRunner, stagedFiles };
 // What hub/reply-mail.ts (the hub's single door into this feature) needs beside the flow itself.
 export { recordCorrection, webmailSite };
 
@@ -240,17 +240,19 @@ function lintCode(raw: string): { code: string; vars?: Record<string, string | n
 
 // 직접 수정 (design 3.3): the owner's text is saved as it is under the same id; only line ends are normalized and the ends trimmed. No model call.
 // The owner-text lint refuses it and nothing is stored; a file mismatch is only noted. `editedFrom` keeps the model's text from before his first edit.
-export function editDraft(id: string, text: string): Step & { lint?: string[] } {
+/** The owner's own text (and subject, when given) for draft `id`, saved as written once the owner-text lint passes. */
+export function editDraft(id: string, text: string, subject?: string): Step & { lint?: string[] } {
 	const d = getDraft(id);
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요`, code: "gone" };
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 고칠 수 없어요`, code: "not_pending" };
 	const body = text.replace(/\r\n?/g, "\n").trim();
-	const found = ownerLint({ to: d.to, subject: d.subject, body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
+	const subj = subject === undefined ? d.subject : subject.replace(/\s+/g, " ").trim();
+	const found = ownerLint({ to: d.to, subject: subj, body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
 	if (found.length) {
 		const lint = found.map(ownerWarning);
 		return { ok: false, text: `${LINT_REFUSED} ${lint.join(" · ")}`, ...lintCode(found[0]!), lint };
 	}
-	if (body !== d.body) patchDraft(id, { body, ...(d.editedFrom === undefined ? { editedFrom: d.body } : {}) });
+	if (body !== d.body || subj !== d.subject) patchDraft(id, { ...(subj !== d.subject ? { subject: subj } : {}), ...(body !== d.body ? { body, ...(d.editedFrom === undefined ? { editedFrom: d.body } : {}) } : {}) });
 	const issues = draftAttachIssues({ ...d, body });
 	return { ok: true, text: `초안 ${id}을(를) 고친 글 그대로 저장했어요${issues.length ? `. 확인: ${issues.join(" · ")}` : ""}` };
 }
@@ -483,8 +485,8 @@ export function restoreDraft(ref: string): { ok: boolean; text: string } {
 	return { ok: true, text: `초안 ${ref}을(를) 되돌렸어요` };
 }
 
-// Refuses unless the user's latest word for this exact draft id, made after the draft was created, is 1) 보내기 or a typed yes in the mail's
-// conversation ("보내자", hub/draft-approval.ts textVerdict); lints again first.
+// Refuses unless the user's latest pick for this exact draft id, made after the draft was created, is 1) 보내기 (hub/draft-approval.ts draftVerdict:
+// typed chat is never read there); lints again first.
 // `withReply`: the mail rides on a comment reply (hub/comments/linked.ts) and the caller is that reply's send, which has already passed the
 // reply's gate (the owner's pick on the one card, or the owner's own click); a linked mail is refused without it.
 // `asIs`: with `withReply`, the owner picked 이대로 보내기 on the card (without it the verdict says so). A mail whose files disagree with its words is refused
@@ -497,8 +499,8 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요`, sent: "no", code: "gone" };
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요`, sent: "no", code: "gone" };
 	const card = opts.withReply ? undefined : linkedComment(id);
-	if (card) return { ok: false, text: `이 메일은 댓글 답글(${card})과 한 장으로 승인해요. 답글 쪽 comments.ts send ${card}로 보내 주세요`, sent: "no", code: "not_approved" };
-	const v: DraftVerdict = opts.withReply ? { verdict: opts.asIs ? "send-as-is" : "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created), d.kind === "mail" ? { conv: `mail:${d.ref}` } : {});
+	if (card) return { ok: false, text: `이 메일은 댓글 답글(${card})과 한 장으로 승인해요. 그 카드에서 사용자가 보내기를 누르면 답글과 함께 나가요`, sent: "no", code: "not_approved" };
+	const v: DraftVerdict = opts.withReply ? { verdict: opts.asIs ? "send-as-is" : "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created));
 	if (v.verdict === "drop") {
 		setStatus(id, "dropped");
 		return { ok: false, text: "보내지 않기로 한 초안이에요", sent: "no", code: "not_approved" };

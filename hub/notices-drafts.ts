@@ -1,7 +1,8 @@
 // Send-approval cards: staged files, recipients, Discord post, the settle pass. A part of the notice store split out of hub/notices.ts, code unchanged.
+import { createHash } from "node:crypto";
 import { log, now } from "./config.ts";
 import { parseDecisions } from "./choices.ts";
-import { ATTACH_REFUSED, blockDraftRef, type DraftApproval, type DraftFileIn, parseDraftApproval, refreshDraft, rewriteDraftTo, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
+import { ATTACH_REFUSED, blockDraftRef, type DraftApproval, type DraftFileIn, parseDraftApproval, refreshDraft, rewriteDraftTo, sameDraft, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { Decision, DecisionOpt, Notice } from "./notices-types.ts";
 import { appLabelOf, appOf, draftHandled } from "./notices-wiring.ts";
@@ -43,23 +44,71 @@ export function refreshDraftFiles(list: Notice[], filesOf: (id: string) => Draft
 // A card whose words changed this way is out on Discord as it was: outbound.ts edits it there, buttons included.
 const refreshedHooks: ((n: Notice) => void)[] = [];
 export const onDraftCardRefreshed = (fn: (n: Notice) => void): void => void refreshedHooks.push(fn);
+// A draft as its store holds it now (hub/reply-wire.ts wires the reply flow's): its approval fingerprint and the card text drawn from it. A card
+// keeps that fingerprint (Decision.hash) only while it shows that very draft (sameDraft); a card showing anything else (a store changed outside
+// the hub, a hand-written text) keeps none, so its next 보내기 is refused `changed` and the card drawn anew from the store (hub/reply-actions.ts).
+let fingerprint: (ref: string) => Promise<{ hash: string; text?: string } | undefined> = async () => undefined;
+export const setCardFingerprint = (fn: typeof fingerprint): void => void (fingerprint = fn);
+const cardBody = (text: string): string => parseTone(stripHandoff(text)).text.trim();
+function stamp(hit: Notice[]): Promise<void> {
+	const runs: Promise<void>[] = [];
+	for (const n of hit) {
+		const shown = n.decision?.draft, ref = shown?.ref, text = n.text;
+		if (!ref) continue;
+		const run = fingerprint(ref).then(
+			now => {
+				// Drawn again meanwhile: that drawing keeps its own fingerprint.
+				if (n.text !== text || n.decision?.draft?.ref !== ref) return;
+				const store = now?.text ? parseDraftApproval(cardBody(now.text)) : undefined;
+				const h = store && sameDraft(store, shown) ? now!.hash : undefined;
+				if (n.decision.hash === h) return;
+				if (h) n.decision.hash = h;
+				else delete n.decision.hash;
+				save();
+			},
+			e => log(`card hash of ${ref} not read: ${(e as Error).message}`),
+		);
+		runs.push(run);
+	}
+	return Promise.all(runs).then(() => undefined);
+}
+const redrawn = (hit: Notice[]): void => {
+	for (const n of hit) for (const fn of refreshedHooks) fn(n);
+	void stamp(hit);
+};
 export function syncDraftFiles(filesOf: (id: string) => DraftFileIn[] | undefined, issuesOf?: (id: string) => string[] | undefined): number {
 	const hit = refreshDraftFiles(items, filesOf, issuesOf);
 	if (hit.length) announce(hit, now());
-	for (const n of hit) for (const fn of refreshedHooks) fn(n);
+	redrawn(hit);
 	return hit.length;
 }
 /** The newest open card of draft `ref` in `to` went to Discord as these messages. */
 export function markDraftPosted(to: string, ref: string, target: string, ids: string[]): void {
 	const n = items.findLast(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref);
 	if (!n || !ids.length) return;
-	n.decision!.card = { target, ids };
+	n.decision!.card = { target, ids, shows: digest(n.text) };
+	save();
+	void stamp([n]);
+}
+// What a card's Discord message shows: the digest of the card text it was last posted or edited with (hub/outbound.ts, on success only).
+const digest = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 16);
+/** The Discord message of the open card of draft `ref` in `to` was edited to show `text` (the card's text then). */
+export function markCardShown(to: string, ref: string, text: string): void {
+	const card = items.findLast(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref)?.decision!.card;
+	if (!card) return;
+	card.shows = digest(text);
 	save();
 }
+// The version a card's Discord message shows: the card's own while that message shows the card's text, else none (a long card cut into several
+// messages, a [file] line, a failed edit keep the old text there; a pick from it is refused, hub/approval-wire.ts).
+const discordHash = (i: Notice): string | undefined => (i.decision!.card?.shows && i.decision!.card.shows === digest(i.text) ? i.decision!.hash : undefined);
+/** A draft's card just opened (notice `id`, hub/reply-wire.ts): it keeps the version it shows, when that is the store's. */
+export const stampDraftCard = (id: string): Promise<void> => stamp(items.filter(i => i.id === id && isOpenDecision(i)));
 export const openDraftRefs = (to: string): string[] => items.flatMap(i => (isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref ? [i.decision!.draft.ref] : []));
-/** The open send-approval cards (of one conversation, or all): notice id, conversation, draft ref, question and draft (hub/approval-wire.ts). */
-export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string; text: string }[] =>
-	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts, text: i.text }] : []));
+/** The open send-approval cards (of one conversation, or all): notice id, conversation, draft ref, question and draft (hub/approval-wire.ts);
+ * `hash`: the version the card shows, `discord`: the one its Discord message shows; `asked`: the ts of the post that asked it, `posts`: its Discord message ids. */
+export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string; text: string; hash?: string; discord?: string; asked?: string; posts?: string[] }[] =>
+	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts, text: i.text, ...(i.decision!.hash ? { hash: i.decision!.hash } : {}), ...(discordHash(i) ? { discord: discordHash(i) } : {}), ...(i.decision!.reply_to ? { asked: i.decision!.reply_to } : {}), ...(i.decision!.card?.ids.length ? { posts: i.decision!.card.ids } : {}) }] : []));
 /** The newest card of draft `ref` in `to` shows how the gateway's send of it went. */
 export function markDraftSend(to: string, ref: string, state: NonNullable<Decision["send"]>["state"], text = "", until?: number): void {
 	const n = items.findLast(i => i.decision?.to === to && openDraftRef(i) === ref);
@@ -75,15 +124,42 @@ export function markDraftSend(to: string, ref: string, state: NonNullable<Decisi
 }
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.
 export const openDraftText = (to: string, ref: string): string | undefined => items.find(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref)?.text;
-export const rewriteOpenDraft = (to: string, ref: string, text: string, newRef?: string): number =>
-	rewriteCards(items.filter(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref), text, newRef);
-/** A revise made draft `newRef` out of `oldRef` (the reply unification design, 3.5): every open card of the old draft, in any conversation,
- * shows the new text, draft and title and keeps its id, so the bell row, the queue row and the chat card stay one object. */
-export const replaceDraftCards = (oldRef: string, newRef: string, text: string): number =>
-	rewriteCards(items.filter(i => isOpenDecision(i) && i.decision!.draft?.ref === oldRef), text, newRef);
+export function rewriteOpenDraft(to: string, ref: string, text: string): number {
+	const hit = items.filter(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref);
+	rewriteCards(hit, text);
+	void stamp(hit);
+	return hit.length;
+}
+/** The reply flow changed draft `ref` (an edit, or a revise into `newRef`; the reply unification design, 3.5): every open card of it, in any
+ * conversation, shows the new text, draft and title, keeps its id (the bell row, the queue row and the chat card stay one object) and stores
+ * `hash`, the version it now shows; a card out on Discord is edited there, buttons included. */
+export function redrawDraftCards(ref: string, text: string, hash: string | undefined, newRef?: string): number {
+	const hit = items.filter(i => isOpenDecision(i) && i.decision!.draft?.ref === ref);
+	for (const n of hit) {
+		if (hash) n.decision!.hash = hash;
+		else delete n.decision!.hash;
+	}
+	rewriteCards(hit, text, newRef);
+	for (const n of hit) for (const fn of refreshedHooks) fn(n);
+	return hit.length;
+}
+/** A confirm card (the reply intent design, 4.3): the open card of draft `ref` is to be posted again at the bottom of its conversation. Its notice keeps
+ * its id (bell, queue row and chat card stay one object), takes `text` and `hash` when given and forgets its old Discord place until the new post
+ * lands (hub/outbound.ts markDraftPosted); the post carries `repost: <id>`, so the notice adopts it (notices-store.ts) instead of a second one being made.
+ * Returns what to post, where, and where the old card was; undefined when no card of `ref` is open. */
+export function repostDraftCard(ref: string, text: string | undefined, hash: string | undefined): { id: string; to: string; text: string; card?: { target: string; ids: string[] } } | undefined {
+	const n = items.findLast(i => isOpenDecision(i) && i.decision!.draft?.ref === ref);
+	if (!n) return undefined;
+	const card = n.decision!.card;
+	if (text) rewriteCards([n], text);
+	if (hash) n.decision!.hash = hash;
+	delete n.decision!.card;
+	save();
+	return { id: n.id, to: n.decision!.to, text: text ?? `[ask] ${n.text}`, ...(card ? { card } : {}) };
+}
 function rewriteCards(hit: Notice[], text: string, newRef?: string): number {
 	if (!hit.length) return 0;
-	const body = parseTone(stripHandoff(text)).text.trim();
+	const body = cardBody(text);
 	const draft = parseDraftApproval(body);
 	const at = now();
 	for (const n of hit) {
@@ -116,9 +192,11 @@ export const draftCardCounts = (): { all: number; open: number } => {
 	const all = items.filter(isDraftCard);
 	return { all: all.length, open: all.filter(isOpenDecision).length };
 };
-/** The re-read of the load, on the live cards: an open card's title follows its draft's ref, so its 보내기 passes the send gate. */
+/** The re-read of the load, on the live cards: an open card's title follows its draft's ref, so its 보내기 passes the send gate, and a card
+ * stored without the version it shows keeps it now, when it shows the store's. */
 export function refreshStoredDrafts(at = now()): number {
 	const n = refreshNoticeDrafts(items);
+	void stamp(items.filter(i => isOpenDecision(i) && i.decision!.draft?.ref && !i.decision!.hash));
 	if (n) announce(items.filter(i => isOpenDecision(i) && i.decision!.draft), at);
 	return n;
 }
@@ -171,5 +249,6 @@ export function updateDraftRecipients(ref: string, r: { to: string; cc: string[]
 		n.updated = at;
 	}
 	announce(hit, at);
+	redrawn(hit);
 	return hit.length;
 }

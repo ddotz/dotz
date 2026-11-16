@@ -68,7 +68,13 @@ async function loadTarget(t, quiet) {
   if (s.loading) return s.loading;
   s.loading = (async () => {
     await Promise.all([
-      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { workRowsOf(r.events || []); settled = snapSettle(s, "msgs", r.events || []) || settled; s.hmore = (r.events || []).length >= 150; for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
+      api(`/api/history?target=${enc(t)}&limit=150`).then(r => {
+        const got = r.events || [];
+        workRowsOf(got); settled = snapSettle(s, "msgs", got) || settled; s.hmore = got.length >= 150;
+        // A full page that starts after the newest stored row leaves the messages between unread: the stored stretch ends there (chatGapNode reads them on request).
+        const top = s.msgs.at(-1)?.ts;
+        if (s.hmore && top && got[0].ts > top) s.gaps.add(top);
+        for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
       isRowT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { settled = snapSettle(s, "acts", r.items || []) || settled; s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
@@ -177,7 +183,7 @@ function chatMerge(s, r, after) {
   const add = got.filter(e => !s.mk.has(msgKey(e)));
   for (const e of add) { s.mk.add(msgKey(e)); s.msgs.push(e); }
   s.msgs.sort(byTs); s.cap += add.length + s.gaps.size;
-  if (isFixedT(target)) dedupKeyed(s);
+  if (isFixedT(s.t)) dedupKeyed(s);   // the store's own conversation: the page may have come back after the owner moved on
 }
 // The messages after a gap, one page at a time, with the top of the view staying where it is.
 async function chatFillGap(after) {

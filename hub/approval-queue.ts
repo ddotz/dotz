@@ -11,7 +11,9 @@
 // One item, one card (2026-11-02): a card is keyed by the item it is about (deps.itemOf: the bot's `mail:<id>` card and the app's reply draft of that
 // mail are one item). A newer card of an item that has an open or held card replaces it in place (one that waits behind another card is replaced on the
 // load/sweep path too), and a held card whose item was handled meanwhile (deps.handled) is dropped instead of being shown.
-import { DECISION_HEAD } from "./choices.ts";
+// The version the owner reads (2026-11-16 audit S6/S7): a card whose item is handled already is not posted at all, a held card is shown with the text
+// its store holds when it is released (deps.fresh), and one ref waits in one conversation only (the newest card of it).
+import { D_CLOSE, D_OPT, DECISION_HEAD } from "./choices.ts";
 import { keepBrief, parseDraftApproval, withRecipientMark } from "./draft-approval.ts";
 import { readState } from "./statefile.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
@@ -36,14 +38,17 @@ export type ApprovalQueueDeps = {
 	load?: () => Held[];
 	/** The item a card is about (default: its ref): cards of one item never wait behind each other. */
 	itemOf?: (conv: string, ref: string) => string;
-	/** Whether the item behind a ref was handled elsewhere (sent, dropped, answered by the owner himself): such a held card is dropped, never shown. */
+	/** Whether the item behind a ref was handled elsewhere (sent, dropped, answered by the owner himself): such a card is not posted, a held one is dropped. */
 	handled?: (ref: string, conv: string) => boolean | Promise<boolean>;
+	/** The card text of `ref` as its store holds it now: a held card is shown with it, not with the text it was held with (undefined: the held text). */
+	fresh?: (ref: string) => Promise<string | undefined>;
 };
 
-/** The closed form of a send-approval card on Discord: its first line kept, then how it ended (the buttons are removed by the caller). */
-export function closedCardText(text: string, how: "answered" | "resolved" | "ignored", label = ""): string {
+/** The closed form of a send-approval card on Discord: its first line kept, then how it ended (the buttons are removed by the caller); `moved`: the card
+ * was posted again below it (a confirm card). */
+export function closedCardText(text: string, how: "answered" | "resolved" | "ignored" | "moved", label = ""): string {
 	const first = (parseTone(stripHandoff(text)).text.trim().split("\n", 1)[0] ?? "").trim();
-	const note = how === "resolved" ? "-# 다른 곳에서 처리됐어요" : `-# 처리됨: ${label.replace(/\s+/g, " ").trim().slice(0, 80) || (how === "ignored" ? "무시" : "답변")}`;
+	const note = how === "moved" ? "-# 아래 확인 카드로 옮겼어요" : how === "resolved" ? "-# 다른 곳에서 처리됐어요" : `-# 처리됨: ${label.replace(/\s+/g, " ").trim().slice(0, 80) || (how === "ignored" ? "무시" : "답변")}`;
 	return first ? `${first}\n${note}` : note;
 }
 
@@ -59,11 +64,34 @@ export function cardRef(text: string): string | undefined {
 	return parseDraftApproval(parseTone(stripHandoff(text)).text.trim())?.ref;
 }
 
+const FENCE_LINE = /^\s*```/;
+// The last line of the decision block in lines[from, to): its last option (with the line under it that describes it) or a "번호로 답해" line after them.
+function blockEnd(lines: string[], from: number, to: number): number {
+	let fence = false, head = -1;
+	for (let i = from; i < to && head < 0; i++) {
+		if (FENCE_LINE.test(lines[i]!)) fence = !fence;
+		else if (!fence && DECISION_HEAD.test(lines[i]!)) head = i;
+	}
+	if (head < 0) return to - 1;
+	let end = head;
+	for (let i = head + 1; i < to; i++) {
+		const line = lines[i]!, next = lines[i + 1];
+		if (!line.trim()) continue;
+		if (D_OPT.test(line)) {
+			end = i;
+			if (i + 1 < to && next?.trim() && !D_OPT.test(next) && !DECISION_HEAD.test(next) && !D_CLOSE.test(next) && !FENCE_LINE.test(next)) end = ++i;
+		} else if (D_CLOSE.test(line)) end = i;
+		else break;
+	}
+	return end;
+}
+
 /**
  * One post that asks about several drafts: one post per draft, so each is a real card (a draft, its own notice, its turn in the queue) instead of one
- * message the queue does not know. Undefined unless every part is a draft approval with a ref of its own.
+ * message the queue does not know. Each card ends with its decision block: the prose between two cards is the next card's lead, and the prose after
+ * the last card is `tail`, an answer that must not wait with a held card. Undefined unless every part is a draft approval with a ref of its own.
  */
-export function splitDraftCards(text: string): string[] | undefined {
+export function splitDraftCards(text: string): { cards: string[]; tail?: string } | undefined {
 	const lines = text.split("\n");
 	const starts: number[] = [];
 	let fence = false, decided = false;
@@ -77,9 +105,16 @@ export function splitDraftCards(text: string): string[] | undefined {
 	if (starts.length < 2) return undefined;
 	const lead = lines.slice(0, starts[0]).join("\n").trim() || "[ask] 답장 초안이에요";
 	const head = lead.includes("\n") ? "[ask] 답장 초안이에요" : lead;
-	const cards = starts.map((from, i) => `${i ? head : lead}\n${lines.slice(from, starts[i + 1]).join("\n").trim()}`);
+	const ends = starts.map((from, i) => blockEnd(lines, from, starts[i + 1] ?? lines.length));
+	// A card note ("-# ⚠️ 첨부 확인") above the next quote is no lead of its own: the card keeps the common head over it.
+	const leadOf = (i: number) => {
+		const between = lines.slice(ends[i - 1]! + 1, starts[i]).join("\n").trim();
+		return !between ? head : /^-#/.test(between) ? `${head}\n${between}` : between;
+	};
+	const cards = starts.map((from, i) => `${i ? leadOf(i) : lead}\n${lines.slice(from, ends[i]! + 1).join("\n").trim()}`);
+	const tail = lines.slice(ends.at(-1)! + 1).join("\n").trim();
 	const refs = cards.map(cardRef);
-	return refs.every(Boolean) && new Set(refs).size === refs.length ? cards : undefined;
+	return refs.every(Boolean) && new Set(refs).size === refs.length ? { cards, ...(tail ? { tail } : {}) } : undefined;
 }
 
 /**
@@ -171,12 +206,20 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		deps.rewrite(conv, s, next);
 	};
 
-	function route(target: string, text: string, extra: Record<string, unknown> = {}): Route {
+	async function route(target: string, text: string, extra: Record<string, unknown> = {}): Promise<Route> {
 		const ref = cardRef(text);
 		if (!ref) return { action: "post" };
 		const conv = deps.convOf(target);
-		const item = itemOf(conv, ref);
 		const parts = splitCardLead(text);
+		// A card for an item handled meanwhile (a draft already sent) would show live buttons for nothing: only its answer above it goes out.
+		if (await Promise.resolve(deps.handled?.(ref, conv)).catch(() => false)) {
+			deps.log(`approval card ${ref} in ${conv} not posted: its item was handled elsewhere`);
+			return parts ? { action: "post", text: parts.lead } : { action: "same" };
+		}
+		// One ref waits in one conversation only: the newest card of it wins, an older held copy elsewhere is dropped.
+		const elsewhere = held.filter(x => x.ref === ref && deps.convOf(x.target) !== conv);
+		for (const c of new Set(elsewhere.map(x => deps.convOf(x.target)))) drop(c, elsewhere.filter(x => deps.convOf(x.target) === c), `a newer card of it came in ${conv}`);
+		const item = itemOf(conv, ref);
 		const h = held.find(x => itemOf(conv, x.ref) === item && deps.convOf(x.target) === conv);
 		if (h) {
 			if (h.ref !== ref) Object.assign(h, { ref, target, extra });
@@ -248,6 +291,10 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	 * bot's `mail:<id>` card open over the app's reply draft of the same mail, and the draft's staged files with it).
 	 */
 	function dropRedundant(): void {
+		// One ref held in two conversations: the later copy (the newer card) stays, as route() keeps it.
+		const convOfHeld = (h: Held) => deps.convOf(h.target);
+		const twice = held.filter((h, i) => held.some((o, j) => j > i && o.ref === h.ref && convOfHeld(o) !== convOfHeld(h)));
+		for (const c of new Set(twice.map(convOfHeld))) drop(c, twice.filter(h => convOfHeld(h) === c), "a newer card of it is held in another conversation");
 		for (const conv of heldConvs()) {
 			const list = heldIn(conv);
 			const older = list.filter((h, i) => {
@@ -300,7 +347,8 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		return show(conv, next, h === true);
 	}
 
-	function show(conv: string, next: Held, handled: boolean): void | Promise<void> {
+	// `now`: the card as its store holds it now (deps.fresh), read once before the post; null when it was read and the store has none.
+	function show(conv: string, next: Held, handled: boolean, now?: string | null): void | Promise<void> {
 		// The queue moved while the answer was awaited: look again.
 		if (!held.includes(next)) return release(conv);
 		if (waiting(conv) || deps.openRefs(conv).length) return;
@@ -308,12 +356,18 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 			drop(conv, [next], "its item was handled elsewhere");
 			return release(conv);
 		}
+		// Held hours ago, the draft may have changed since: the owner reads (and answers) the version the store holds now.
+		if (deps.fresh && now === undefined)
+			return deps
+				.fresh(next.ref)
+				.catch(e => (deps.log(`approval card ${next.ref} in ${conv} not re-read: ${e}`), undefined))
+				.then(t => show(conv, next, false, t ?? null));
 		held = held.filter(h => h !== next);
 		save();
 		const left = heldIn(conv).length;
 		// After a restart the first card shown is the first of its run.
 		place.set(conv, place.has(conv) ? place.get(conv)! + 1 : 1);
-		const text = marked(conv, next.text);
+		const text = marked(conv, now ? keepBrief(next.text, now) : next.text);
 		shown.set(conv, { ref: next.ref, target: next.target, text, pending: true });
 		deps.log(`approval card ${next.ref} in ${conv} shown from the queue (${left} left)`);
 		deps.post(next.target, text, next.extra);
@@ -371,18 +425,21 @@ export function cardPointer(c: { title: string; progress: string }, link?: strin
 }
 
 export const CARDS_LEAD = "[pending cards]";
-export type PendingCard = { ref: string; title: string; notice: string; progress?: string; link?: string };
+/** `to`: the recipient; `head`: the start of the draft; `newest`: nothing was posted in the conversation after the card; `revising`: a revise replaces it now. */
+export type PendingCard = { ref: string; title: string; notice: string; progress?: string; link?: string; to?: string; head?: string; newest?: boolean; revising?: true };
 /**
- * The note an owner message to the bot starts with while send-approval cards wait in its conversation: each open card with where it is,
- * and how many are held behind it. Undefined when none waits.
+ * The note an owner message to the bot starts with while send-approval cards wait in its conversation: each open card with whom it goes to, how it
+ * starts, whether it is still the newest post and where it is, how many are held behind it, and the marker lines the bot answers a card with (the
+ * reply intent design, 4.4: the bot reads the owner's words, code acts on the marker). Undefined when none waits.
  */
 export function pendingCardsNote(cards: PendingCard[], held: number): string | undefined {
 	if (!cards.length && !held) return undefined;
-	const rows = cards.map(c => `- ${c.title} (${c.ref})${c.progress ? ` · ${c.progress}` : ""} · ${c.link ? `Discord: ${c.link}` : `web: /?n=${c.notice}`}`);
+	const rows = cards.map(c => `- ${c.title} (${c.ref})${c.to ? ` · to ${c.to}` : ""}${c.head ? ` · "${c.head}"` : ""} · ${c.newest ? "the newest post here" : "not the newest post here (something was posted after it)"}${c.revising ? " · being revised" : ""}${c.progress ? ` · ${c.progress}` : ""} · ${c.link ? `Discord: ${c.link}` : `web: /?n=${c.notice}`}`);
 	return [
 		`${CARDS_LEAD} Send-approval cards waiting for the owner's answer in this conversation (the gateway's list, current as of this message):`,
 		...rows,
 		...(held ? [`- ${held} more held by the gateway; each is posted by itself as soon as the open card is answered.`] : []),
+		"If the owner's message answers one of these cards, end your answer with one line per card and run no command for it: `[send <ref>]` (the gateway posts a confirm card and only the owner's 보내기 on it sends: never say it was sent), `[drop <ref>]` (보내지 않기) or `[revise <ref>] <the change>`. A bare yes (응, 좋아, 네) next to a card that is not the newest post may answer what came after it: write a marker only when you are sure, else ask without one.",
 		"If the owner asks where a card is, answer with this list and its link instead of posting the card again. When you ask a numbered batch one card at a time, post the next card in the same turn the previous one is answered.",
 	].join("\n");
 }

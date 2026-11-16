@@ -169,7 +169,7 @@ test("a closing send approval hands the hook what closes its Discord message: wh
 	expect(closed).toHaveLength(1);
 	expect(closed[0]).toMatchObject({ ref: "d1", card: { how: "resolved", target: "mail:sample-1", ids: ["111"] } });
 	// The ids are on the stored notice, so a restart still finds the message.
-	expect(listNotices(100).items.find(i => i.decision?.draft?.ref === "d1")?.decision?.card).toEqual({ target: "mail:sample-1", ids: ["111"] });
+	expect(listNotices(100).items.find(i => i.decision?.draft?.ref === "d1")?.decision?.card).toEqual({ target: "mail:sample-1", ids: ["111"], shows: expect.any(String) });
 	// A card that never reached Discord closes with no ids.
 	handled.add("d2");
 	expect(await settleHandledDrafts()).toBe(1);

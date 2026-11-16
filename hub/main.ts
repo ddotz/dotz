@@ -314,9 +314,9 @@ discord.setClaimHandler(pluginClaim);
 discord.connect(onOwner);
 void discord.clearLeftProgress().catch(e => log(`left progress messages not cleared: ${e}`));
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
-setAskAnswer(async (target, content, picks) => {
-	// A pick on a draft the reply flow knows (send, revise, drop) runs there with no model turn (hub/approval-wire.ts).
-	if (await discordGatewayAnswer(target, convOfTarget(target), content, picks)) return;
+setAskAnswer(async (target, content, picks, edit) => {
+	// A pick on a draft the reply flow knows (send, 고치기 with the owner's text and words, drop) runs there with no model turn (hub/approval-wire.ts).
+	const acted = await discordGatewayAnswer(target, convOfTarget(target), content, picks, edit); if (acted) return acted.error;
 	const id = target.slice(target.indexOf(":") + 1);
 	const channel = target.startsWith("lane:") ? { lane: id } : target.startsWith("ch:") ? { work: id, name: discord.channels.work[id] ?? id, first: false } : target.startsWith("th:") ? { thread: id, name: discord.channels.threads[id]?.name ?? id } : (target as "chat");
 	onOwner({ id: "", channelId: "", ackChannelId: "", channel, author: "owner", content, attachments: [], picks });

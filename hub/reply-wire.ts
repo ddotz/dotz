@@ -6,22 +6,41 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
-import { approvals, newMid, out, showSendOnCard } from "./outbound.ts";
-import { allNotices, markDraftSend, openDraftCards, replaceDraftCards, rewriteOpenDraft, settleOpenDecision } from "./notices.ts";
+import { approvals, cardMoved, newMid, out, showSendOnCard } from "./outbound.ts";
+import { allNotices, markDraftSend, onDecision, openDraftCards, redrawDraftCards, repostDraftCard, setCardFingerprint, settleOpenDecision, stampDraftCard } from "./notices.ts";
 import { commentPostedOf, commentProveSends, commentReply, commentSendOutcome, commentSettleSending } from "./comments/gateway.ts";
 import { kakaoReply } from "./kakao/gateway.ts";
 import { linkedComment } from "./comments/linked.ts";
+import { isCommentPlace } from "./comments/reply-adapter.ts";
 import { claimFile, getDraft, mailAdapter, replyLearning } from "./reply-mail.ts";
 import { claimHolder } from "./draft-claim.ts";
-import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
-import { DRAFT_UNDO } from "./draft-approval.ts";
+import { approvalHash, createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
+import { DRAFT_UNDO, draftActionOf } from "./draft-approval.ts";
 import { askText } from "./draft-attach.ts";
 import { createReplyActions, sendOf, setReplies } from "./reply-actions.ts";
 import type { ReplyAdapter } from "./reply-types.ts";
 
 const mail = mailAdapter();
+const adapters: ReplyAdapter[] = [mail, commentReply, kakaoReply];
 /** The adapter whose store holds `ref`. */
-const adapterOf = (ref: string): ReplyAdapter | undefined => [mail, commentReply, kakaoReply].find(a => a.target(ref));
+const adapterOf = (ref: string): ReplyAdapter | undefined => adapters.find(a => a.target(ref));
+/** The approval fingerprint of draft `ref` as the first store that knows it holds it now (the queue's one gate reads it before every run). */
+async function fingerprintOf(ref: string): Promise<string | undefined> {
+	for (const a of adapters) {
+		const view = await a.get(ref);
+		if (view) return approvalHash(view);
+	}
+	return undefined;
+}
+// Every card drawn keeps the fingerprint of the version it shows, when that is the store's (hub/notices-drafts.ts): a pick from a card drawn before
+// a change, or from one that never showed the store's version, is refused. The card text is drawn from the same store the fingerprint reads.
+setCardFingerprint(async ref => {
+	for (const a of adapters) {
+		const view = await a.get(ref);
+		if (view) return { hash: approvalHash(view), text: await a.ask(ref) };
+	}
+	return undefined;
+});
 
 /** Where the gateway would send draft `ref`: a pending comment reply (per source), a pending mail draft (per sending account) or a KakaoTalk draft (one lane). */
 export function sendTargetOf(ref: string, action?: SendAction): SendTarget | undefined {
@@ -38,6 +57,12 @@ export function sendTargetOf(ref: string, action?: SendAction): SendTarget | und
 
 // A conversation's gateway note goes where its cards were posted.
 const targetOf = (conv: string, ref: string): string => approvals.targetOf(conv, ref) ?? (conv === "main" ? "web" : conv);
+// A note about draft `ref` goes where its card was asked. One sent from the web's reply list that never had a card carries only its store's place
+// (a comment's `comment:<source>`), which no surface delivers to ("unknown target comment:site-indi", 2026-11-15): its note goes to the main conversation.
+const noteTarget = (conv: string, ref: string): string => {
+	const card = allNotices().findLast(n => n.decision?.draft?.ref === ref)?.decision?.to;
+	return card ? targetOf(card, ref) : isCommentPlace(conv) ? "web" : targetOf(conv, ref);
+};
 export const channelOf = (conv: string) => (conv === "main" ? "web" : conv);
 
 // 답글만 보내기 posts the reply and leaves its mail draft on its own; the card is posted as the assistant would post it, judged from the stores.
@@ -45,7 +70,7 @@ function cardOwedMail(r: SendResult): void {
 	const mailId = commentPostedOf(r.ref)?.mail;
 	const m = mailId ? getDraft(mailId) : undefined;
 	if (!mailId || m?.status !== "pending" || openDraftCards().some(c => c.ref === mailId)) return;
-	void out(targetOf(r.conv, mailId), askText(m, []), undefined, { source: "orchestrator" }).catch(e => log(`mail card for ${mailId} failed: ${e instanceof Error ? e.message : String(e)}`));
+	void out(noteTarget(r.conv, mailId), askText(m, []), undefined, { source: "orchestrator" }).catch(e => log(`mail card for ${mailId} failed: ${e instanceof Error ? e.message : String(e)}`));
 }
 
 export const reportSend = (r: SendResult): void => {
@@ -61,8 +86,8 @@ export const reportSend = (r: SendResult): void => {
 	// Code is still retrying a surely-unsent send: the card shows it; the owner hears only when it needs him.
 	if (r.state === "failed" && r.safeToAuto) return;
 	const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
-	if (r.state === "unsure") return void out(targetOf(r.conv, r.ref), `[wait] 보냈는지 확인되지 않았어요: ${what} (${r.ref})\n${r.text}\n자동으로 다시 보내지 않아요. 답장 대기에서 나갔어요 또는 다시 보내기를 골라 주세요.`, undefined, { source: "gateway" }).catch(e => log(`send check note for ${r.ref} failed: ${e}`));
-	void out(targetOf(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
+	if (r.state === "unsure") return void out(noteTarget(r.conv, r.ref), `[wait] 보냈는지 확인되지 않았어요: ${what} (${r.ref})\n${r.text}\n자동으로 다시 보내지 않아요. 답장 대기에서 나갔어요 또는 다시 보내기를 골라 주세요.`, undefined, { source: "gateway" }).catch(e => log(`send check note for ${r.ref} failed: ${e}`));
+	void out(noteTarget(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
 };
 
 // Every send that is not finished is kept here (hub/approval-send.ts), so a restart finds it.
@@ -84,12 +109,13 @@ function lookSend(j: SendJob): SendLook {
 // The cancel window (settings: web.send_undo_sec, seconds, default 10, 0 = off) is read when a send is approved.
 const undoMs = (): number => ((s => (typeof s === "number" && Number.isFinite(s) && s >= 0 ? s : 10))(cfg.web.send_undo_sec)) * 1000;
 
-/** One card's pick as the inbox keeps it: the question, the option number and its label. */
-export type AnswerPick = { q: string; n: number; label: string; note?: string };
+/** One card's pick as the inbox keeps it: the question, the option number and its label; a 보내기 of the reply flow also the approvalHash it approved. */
+export type AnswerPick = { q: string; n: number; label: string; note?: string; hash?: string };
 // The owner's answer as the inbox keeps it (the CLIs' approval check reads it there), with no model turn. `decision`: the open card it answers.
-export function recordAnswer(a: { source: "web" | "discord"; channel: string; author: string; text: string; picks: AnswerPick[]; decision?: string }): void {
+// `from`: the owner's chat message the model read it from (`read_by: "model"`, `owner_msg`), the audit of a pick no button made.
+export function recordAnswer(a: { source: "web" | "discord"; channel: string; author: string; text: string; picks: AnswerPick[]; decision?: string; from?: { mid: string } }): void {
 	const mid = newMid();
-	emit("inbox", { ts: now(), kind: "message", source: a.source, channel: a.channel, author: a.author, text: a.text, mid, picks: a.picks, decision: a.decision ?? `gateway:${mid}` });
+	emit("inbox", { ts: now(), kind: "message", source: a.source, channel: a.channel, author: a.author, text: a.text, mid, picks: a.picks, decision: a.decision ?? `gateway:${mid}`, ...(a.from ? { read_by: "model", owner_msg: a.from.mid } : {}) });
 }
 // A send taken back: the owner's cancel becomes his latest word on the draft, so the old 보내기 sends nothing from a CLI either.
 function revokeSend(j: SendJob): void {
@@ -98,6 +124,7 @@ function revokeSend(j: SendJob): void {
 
 export const sender = createApprovalSender({
 	kind: sendTargetOf,
+	fingerprint: fingerprintOf,
 	run: runCli,
 	runJob: j => (j.kind === "kakao" ? kakaoReply.run?.(j) : undefined),
 	repair: async (j, code) => (await adapterOf(j.ref)?.repair?.(j.ref, code)) ?? "failed",
@@ -116,22 +143,31 @@ export const setReplyBot = (fn: typeof toBot): void => void (toBot = fn);
 const openCardOf = (conv: string, ref: string) => openDraftCards(conv).find(c => c.ref === ref);
 
 export const replies = createReplyActions({
-	adapters: [mail, commentReply, kakaoReply],
+	adapters,
 	sender,
-	recordPick: ({ surface, conv, q, n, label, note }) => {
+	recordPick: ({ surface, conv, q, n, label, note, hash, from }) => {
 		const ref = refOfQuestion(q);
 		const card = ref ? openCardOf(conv, ref) : undefined;
-		recordAnswer({ source: surface === "discord" ? "discord" : "web", channel: channelOf(conv), author: "owner", text: `${n}) ${label}${note ? ` - ${note}` : ""}`, picks: [{ q: card?.title ?? q, n, label }], ...(card ? { decision: card.id } : {}) });
-		// A 고치기 keeps its card open: the revise moves it to the new draft (or rewrites it in place) instead.
-		if (card && n !== 2) settleOpenDecision(card.id, `${n}) ${label}`);
+		// A word that is no card option (직접 고치기, n 0) is written as its label alone.
+		const said = `${n ? `${n}) ` : ""}${label}`;
+		// A change (고치기, 직접 고치기) keeps its card open: the revise moves it to the new draft, the edit redraws it in place. Its record names no
+		// card, since a message that names one answers it (notices-store.ts ownerReplied).
+		const settles = card && draftActionOf(label) !== "edit";
+		recordAnswer({ source: surface === "discord" ? "discord" : "web", channel: channelOf(conv), author: "owner", text: `${said}${note ? ` - ${note}` : ""}`, picks: [{ q: card?.title ?? q, n, label, ...(hash ? { hash } : {}) }], ...(settles ? { decision: card.id } : {}), ...(from ? { from } : {}) });
+		if (settles) settleOpenDecision(card.id, said);
 	},
 	recordText: (conv, text) => recordAnswer({ source: "web", channel: channelOf(conv), author: "owner", text, picks: [] }),
 	learning: replyLearning(),
 	cards: {
-		open: () => openDraftCards().map(c => ({ ref: c.ref, conv: c.to, notice: c.id, title: c.title })),
-		replace: (oldRef, newRef, text) => void replaceDraftCards(oldRef, newRef, text),
-		rewrite: (ref, text) => {
-			for (const c of openDraftCards().filter(x => x.ref === ref)) rewriteOpenDraft(c.to, ref, text);
+		open: () => openDraftCards().map(c => ({ ref: c.ref, conv: c.to, notice: c.id, title: c.title, ...(c.hash ? { hash: c.hash } : {}), ...(c.discord ? { discord: c.discord } : {}), ...(c.asked ? { asked: c.asked } : {}), ...(c.posts ? { posts: c.posts } : {}) })),
+		replace: (oldRef, newRef, text, hash) => void redrawDraftCards(oldRef, text, hash, newRef),
+		rewrite: (ref, text, hash) => void redrawDraftCards(ref, text, hash),
+		// The confirm card goes where the card was; its old post is marked moved only once the new one is out.
+		repost: async (ref, text, hash) => {
+			const n = repostDraftCard(ref, text, hash);
+			if (!n) return;
+			const r = await out(targetOf(n.to, ref), n.text, undefined, { queued: true, repost: n.id });
+			if (r.delivered && n.card) cardMoved(n.to, ref, { ...n.card, text: n.text });
 		},
 		close: ref => {
 			for (const c of openDraftCards().filter(x => x.ref === ref)) settleOpenDecision(c.id, "");
@@ -143,6 +179,12 @@ export const replies = createReplyActions({
 	now,
 });
 setReplies(replies);
+// A draft's card just opened: every surface gets the reply as that card shows it (the web swaps its inline placeholder for the real card at once).
+onDecision(n => {
+	const ref = n.decision?.draft?.ref;
+	if (ref) void stampDraftCard(n.id);
+	if (ref) void replies.view(ref).then(item => item && broadcast({ ts: now(), kind: "reply", ref, item: { ...item, conv: n.decision!.to, notice: n.id } }), e => log(`reply ${ref}: carded item not read: ${(e as Error).message}`));
+});
 
 let sendsBooted = false;
 // A card left 확인 필요 follows the comment's record: proof read back, the owner's 완료 or 다시 보내기, or the old sender that finished after all.

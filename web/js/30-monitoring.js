@@ -287,14 +287,17 @@ const MON_TONE = { fail: [TX("mon.tag.fail"), "err"], warn: [TX("mon.tag.warn"),
 const monWhen = n => ntTime(n.updated || n.ts);
 const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class: `tag ${t[1]}`, text: t[0] }) : null; };
 // A send approval (hub/draft-approval.ts): drawn as the mail it would send - the one question, the mail being answered when known, the recipient chip,
-// the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 and 직접 수정 go through the one reply queue (10-reply-actions.js),
-// 보내지 않기 is the quiet way out. The whole answer path is the notice's (answerInline / ntPost), so the chat card and this one stay in step.
-const DR_STATE = { open: [TX("mon.dr.st.open"), "warn"], send: [TX("mon.dr.st.send"), "ok"], edit: [TX("mon.dr.st.edit"), "pri"], revising: [TX("mon.dr.st.revising"), "pri"], drop: [TX("mon.dr.st.drop"), ""], own: [TX("mon.dr.st.own"), "pri"], expired: [TX("mon.dr.st.expired"), ""], ignored: [TX("mon.dr.st.ignored"), ""] };
+// the subject in bold, the body in paragraphs - with its state as a badge with the time. A draft the one reply queue holds is the queue's own card
+// (10-reply-actions.js rqItemCard); any other is answered through its notice (answerInline / ntPost), so the chat card and this one stay in step.
+// What each option of a send approval asks of the reply queue, by its label (hub/draft-approval.ts draftActionOf, hub/approval-wire.ts replyInputOf): [action, its arguments].
+// 직접 입력 is not here: its words go to the bot. The numbers move with the card (이대로 보내기 and 답글만 보내기 share the fourth place), so nothing reads them.
+const DRAFT_ACTS = { 보내기: ["send"], [DRAFT_EDIT]: ["revise"], "보내지 않기": ["drop"], "답글만 보내기": ["send", { part: "reply" }], "메일만 보내기": ["send", { part: "mail" }], "이대로 보내기": ["send", { asIs: true }] };
+const DR_STATE = { open: [TX("mon.dr.st.open"), "warn"], send: [TX("mon.dr.st.send"), "ok"], revise: [TX("mon.dr.st.revise"), "pri"], revising: [TX("mon.dr.st.revising"), "pri"], drop: [TX("mon.dr.st.drop"), ""], own: [TX("mon.dr.st.own"), "pri"], expired: [TX("mon.dr.st.expired"), ""], ignored: [TX("mon.dr.st.ignored"), ""] };
 function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
   if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && d.options.find(x => x.n === Number(m[1]));
-  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop", "답글만 보내기": "send", "메일만 보내기": "send", "이대로 보내기": "send", [DRAFT_OWN]: "own" }[o.label] || "expired";
+  return d.resolved || !o ? "expired" : (DRAFT_ACTS[o.label] || [o.label === DRAFT_OWN ? "own" : "expired"])[0];
 }
 function drOriginal(t) {
   const m = MAILS.get(t);
@@ -305,8 +308,8 @@ function drOriginal(t) {
 // The app instance that holds a conversation target, for the card's head (a peer's row first: PQ.of).
 const monInstLabel = t => { const pe = PQ.of.get(t); if (pe) return pe.label || ""; const it = INTG.items.find(x => intgHas(x, t)); return it ? it.label : ""; };
 // The send approval as the one reply card (web/js/10-reply-card.js): same head (앱 · 계정 · 컴퓨터 · 모델), same 첨부 줄, clamped body, and the same
-// three actions as the 답장 확인 queue, the KakaoTalk room and a comment thread. The answer path is the notice's (answerInline / ntPost), so this
-// card and the chat card stay in step.
+// actions as the 답장 확인 queue, the KakaoTalk room and a comment thread. A draft the queue does not hold is answered through its notice (answerInline / ntPost),
+// so this card and the chat card stay in step.
 // o.bare: only the mail it sends (a handled draft unfolded inside its mail's conversation, 30-mail-sent.js).
 function draftCardNode(n, o = {}) {
   const d = n.decision, dr = d.draft, st = drState(d), open = st === "open", [stText, stTone] = DR_STATE[st], busy = dcSending.has(n.id);
@@ -314,51 +317,45 @@ function draftCardNode(n, o = {}) {
   const when = ntTime(d.answered_at || n.updated || n.ts), mail = d.to.startsWith("mail:"), seen = mailLinesOpen(d.to);
   const q = ntPlain(n.title).replace(/\s*\([^()]*\)\s*$/, "");
   const gone = open && dcGone(d.to);
-  // The one reply queue holds this draft: its actions, 직접 수정 (saved as written), 고치기 and the send's own state are the queue card's (10-reply-actions.js).
-  const qi = dr.ref && !n.pc ? RA.items.get(dr.ref) : null, qbusy = qi && RA.busy.has(qi.ref);
-  const qfoot = !qi ? null : RA.edit.has(qi.ref) ? rqEditNode(qi) : RA.rev.has(qi.ref) ? rqReviseNode({ value: RA.rev.get(qi.ref), busy: qbusy, onInput: v => RA.rev.set(qi.ref, v), go: change => raAct(qi, "revise", { change }), cancel: () => { RA.rev.delete(qi.ref); raPaint(qi.ref); } }) : qi.draft.revising ? el("div", { class: "kk-st", role: "status", text: TX("reply.revising") }) : qi.send ? rqSendNode(qi) : null;
-  // The 받는이·참조 rows of a mail draft are its own (10-decision-card.js draftToNode): 답장 | 전체 답장, the chips, editable while it waits.
-  const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: d.to, edit: open }) : el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || TX("mon.dr.to") }), el("span", { class: "dr-chip", title: dr.to || "", text: dr.to || "-" }));
-  if (o.bare) return el("div", { class: "dr-mail" }, draftBriefNode(dr.brief, seen), recv,
+  // The one reply queue holds this draft (never another computer's: that one is answered through its notice).
+  const qi = dr.ref && !n.pc ? RA.items.get(dr.ref) : null;
+  // The 받는이·참조 rows of a mail draft are its own (10-decision-card.js draftToNode): 답장 | 전체 답장 and the chips, only read on this card.
+  const recv = () => dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: d.to, edit: false }) : el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || TX("mon.dr.to") }), el("span", { class: "dr-chip", title: dr.to || "", text: dr.to || "-" }));
+  if (o.bare) return el("div", { class: "dr-mail" }, draftBriefNode(dr.brief, seen), recv(),
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
     draftOriginNode(dr),
     draftBodyNode(dr.body, "dr-body"),
-    draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
+    draftFilesNode(dr, { t: d.to, edit: false }), draftMailNode(dr.mail));
   // A mail answered by this draft reads like the landing page's comment card: who wrote, where it came from, what they wrote, then the draft in a grey box.
   const om = mail ? MAILS.get(d.to) || {} : {}, who = mail ? mailSender(om.from) : "", sent = st === "send", b = dr.brief || {}, orig = b.summary || String(om.summary || om.preview || "").split("\n")[0];
   const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: null,   // the state tag carries the time
     ...(who ? { who, src: monInstLabel(d.to) || TX("common.mail") } : {}),
     tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, sent ? null : el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // x in the head is 보내지 않기 only for a card whose button row has none (its conversation is gone): otherwise it is a second way to the same thing and reads as close
-      open && oDrop && gone ? el("button", { class: "ib dr-rm", type: "button", title: TX("mon.dr.rm_title"), "aria-label": TX("mon.dr.rm_aria"), disabled: busy, onclick: () => (qi ? raAct(qi, "drop") : monDraftRun(n, oDrop)) }, icon("close")) : null] };
-  const acts = gone || !open ? null : qi ? {
-    send: qi.can.send ? () => { if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && raAct(qi, "send")); else raAct(qi, "send"); } : null,
-    edit: qi.can.revise ? () => { RA.rev.set(qi.ref, ""); raPaint(qi.ref); } : null,
-    drop: qi.can.drop ? () => raAct(qi, "drop") : null,
-    manual: qi.can.edit ? () => { RA.edit.set(qi.ref, qi.draft.text); raPaint(qi.ref); } : null,
-    busy: qbusy, press: RA.busy.get(qi.ref),
-  } : {
-    // Another computer's draft: answered through its notice; 고치기 opens that notice's card.
-    send: oSend ? () => { if (!busy) monDraftRun(n, oSend); } : null,
-    edit: () => ntDraftSheet(n),
-    drop: oDrop ? () => { if (!busy) monDraftRun(n, oDrop); } : null,
-    busy, press: rqPress.get(rqNtKey(n)),
-  };
-  // A mail draft reads as the 답장 확인 sheet does (10-reply-card.js rqMailParts): the same head line, quote, subject, folded 받는이 and 첨부 줄, here in place.
-  const mp = mail && dr.toLabel === "받는이" ? rqMailParts(dr, { t: d.to, pc: head.pc, edit: open, hold: busy || qbusy, tail: head.tail, seen, src: "" }) : null;
-  const card = rqCard({ key: `dr:${n.id}`, attrs: { "data-nid": n.id, ...(qi ? { "data-ref": qi.ref } : {}) }, fail: qi ? (RA.edit.has(qi.ref) ? null : RA.fail.get(qi.ref)) : rqFail.get(rqNtKey(n)),
+      open && oDrop && gone && !qi ? el("button", { class: "ib dr-rm", type: "button", title: TX("mon.dr.rm_title"), "aria-label": TX("mon.dr.rm_aria"), disabled: busy, onclick: () => monDraftRun(n, oDrop) }, icon("close")) : null] };
+  // A mail draft reads as the 답장 확인 sheet does (10-reply-card.js rqMailParts): the same head line, quote, subject, folded 받는이 and 첨부 줄, here in place and only read.
+  // The rows change in the 고치기 panel of the queue's card, whose own rows stand in their places then; a draft the queue does not hold changes them in its notice's sheet.
+  const mp = mail && dr.toLabel === "받는이" ? rqMailParts(dr, { t: d.to, pc: head.pc, edit: false, tail: head.tail, seen, src: "" }) : null;
+  if (qi) {
+    // Its card is the queue's (10-reply-actions.js rqItemCard): the same actions and 고치기 panel, the marked words of a rewrite and the send's own state as on every other surface. A mail
+    // keeps the parts this screen has from its notice (the brief, the folded 받는이, the 첨부 줄, 원문 보기); the state tag stays at the head's end.
+    const card = rqItemCard(qi, { lead: true, cls: `bm alert rc dr ${st}`, attrs: { "data-nid": n.id }, sure: dr.warning || (dr.attachments || []).length ? () => drfSure(dr, d.to) : null,
+      ...(mp ? { parts: { ...mp, extra: [draftOriginNode(dr)] } } : { tail: head.tail }) });
+    raReg(qi.ref, { node: card, make: () => draftCardNode(ntById(n.id) || n) });   // a change of the queue item draws this same card again in place (raPaint)
+    return card;
+  }
+  // Answered through its notice (another computer's draft, or one the queue does not hold); 고치기 opens that notice's card.
+  const acts = gone || !open ? null : { send: oSend ? () => { if (!busy) monDraftRun(n, oSend); } : null, fix: () => ntDraftSheet(n), drop: oDrop ? () => { if (!busy) monDraftRun(n, oDrop); } : null, busy, press: rqPress.get(rqNtKey(n)) };
+  return rqCard({ key: `dr:${n.id}`, attrs: { "data-nid": n.id }, fail: rqFail.get(rqNtKey(n)),
     ...(mp ? { ...mp, cls: `bm alert rc dr ${st} ${mp.cls}` } : { cls: `bm alert rc dr ${st}`, head, label: open ? null : q || null, labelCls: "rc-title dr-q",   // a waiting draft's title asks to confirm it: the state tag says so already
-      recv, subject: dr.subject, ...(who && orig ? { original: { text: orig, ...(dr.ref ? { ref: dr.ref, t: d.to } : {}) } } : {}), brief: who ? (seen ? null : mailLinesNode(b.todo, b.questions)) : draftBriefNode(dr.brief, seen),
-      // A draft always shows its 첨부 줄 right before 보내기; the files are editable while the draft waits.
-      attach: draftFilesNode(dr, { t: d.to, edit: open }) }),
-    sent: sent && !qfoot, sentAt: when,
+      recv: recv(), subject: dr.subject, ...(who && orig ? { original: { text: orig, ...(dr.ref ? { ref: dr.ref, t: d.to } : {}) } } : {}), brief: who ? (seen ? null : mailLinesNode(b.todo, b.questions)) : draftBriefNode(dr.brief, seen),
+      // A draft always shows its 첨부 줄 right before 보내기, only read like the 받는이 rows.
+      attach: draftFilesNode(dr, { t: d.to, edit: false }) }),
+    sent, sentAt: when,
     body: { text: dr.body, node: draftBodyNode(dr.body, "dr-body"), cls: "dr-body" },
     extra: [mail && !who ? drOriginal(d.to) : null,   // the head already says who wrote and what
       gone ? el("div", { class: "dc-gone", role: "status", text: DC_GONE }) : null, draftOriginNode(dr), draftMailNode(dr.mail)],
-    ...(qfoot ? { foot: qfoot } : acts ? { acts } : {}) });
-  // A change of the queue item (its send, a revise, the edit field) draws this same card again in place (raPaint).
-  if (qi) RA.nodes.set(qi.ref, { node: card, make: () => draftCardNode(ntById(n.id) || n) });
-  return card;
+    ...(acts ? { acts } : {}) });
 }
 // A decision: the question and the same choice rows a chat message has; an open one is answered here, an answered one shows what was chosen.
 function monDecisionNode(n) {

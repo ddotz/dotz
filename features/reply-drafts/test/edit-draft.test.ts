@@ -31,6 +31,14 @@ test("the owner's text is stored byte for byte, and editedFrom keeps the model's
 	expect(getDraft("REDIT1")?.editedFrom).toBe("확인해 보고 말씀드릴게요.");
 });
 
+test("a subject given with the text is saved too (trimmed); a subject alone changes no body and leaves editedFrom unset", () => {
+	addDraft(rec());
+	expect(editDraft("REDIT1", "확인해 보고 말씀드릴게요.", "  Re: 문의 드린 일정  ").ok).toBe(true);
+	expect([getDraft("REDIT1")?.subject, getDraft("REDIT1")?.body, getDraft("REDIT1")?.editedFrom]).toEqual(["Re: 문의 드린 일정", "확인해 보고 말씀드릴게요.", undefined]);
+	expect(editDraft("REDIT1", "목요일까지 보내드릴게요.").ok).toBe(true);
+	expect([getDraft("REDIT1")?.subject, getDraft("REDIT1")?.body]).toEqual(["Re: 문의 드린 일정", "목요일까지 보내드릴게요."]);
+});
+
 test("a forbidden word refuses the edit with its code and stores nothing", () => {
 	addDraft(rec());
 	const r = editDraft("REDIT1", "무조건 금요일에 드릴게요");

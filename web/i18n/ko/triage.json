@@ -19,5 +19,7 @@
   "triage.rq.app_frame": "앱 {t}",
   "triage.rq.all_n": "전체 · {n}",
   "triage.rq.sent_today": "오늘 보낸 답장 {n}건",
-  "triage.rq.sending_n": "보내는 중 {n}건"
+  "triage.rq.sending_n": "보내는 중 {n}건",
+  "triage.keys": "키보드로 처리하기",
+  "triage.key.move": "이동"
 }

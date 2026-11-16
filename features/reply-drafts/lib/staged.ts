@@ -2,6 +2,7 @@
 // Pure fs (no hub/config.ts import, the CLI send path reads it too); the data dir is read from DOTZ_DIR on every call like settings.ts.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, sep } from "node:path";
+import { createHash } from "node:crypto";
 import { dataDir } from "./settings.ts";
 import { getDraft, listDrafts, patchDraft } from "./store.ts";
 
@@ -36,6 +37,19 @@ const dirOf = (ref: string, root: string) => {
 	if (!REF.test(ref)) throw new Error(`draft ref ${ref} is not usable as a folder name`);
 	return join(root, ref);
 };
+
+// The content fingerprint of a staged file (the approval hash of a draft carries it, so a same-named file with other bytes is another version).
+// Read once per path, size and mtime: listing the drafts stats each file and hashes only one that changed.
+const digests = new Map<string, { key: string; digest: string }>();
+export function fileDigest(path: string): string {
+	const st = statSync(path);
+	const key = `${st.size}:${st.mtimeMs}`;
+	const known = digests.get(path);
+	if (known?.key === key) return known.digest;
+	const digest = createHash("sha256").update(readFileSync(path)).digest("hex").slice(0, 16);
+	digests.set(path, { key, digest });
+	return digest;
+}
 
 export function stagedFiles(ref: string, root: string = stagedRoot()): StagedFile[] {
 	if (!REF.test(ref)) return [];

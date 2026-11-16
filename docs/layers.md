@@ -143,7 +143,8 @@ links still open it.
   item with the same card (rqItemCard) and acts through `POST /api/reply/act` (raAct; another computer's item through its own queue).
   The 답장 대기 screen's head opens 빠른 처리 once the queue's `triageMin` items wait. One item fills the view as that card, with a
   progress rail of every item's live state, keys on desktop, auto-advance after 보내기 (the send waits its undo window in the common
-  queue), and a list where each row is picked (보내기 / 고치기 / 건너뛰기) before 고른 것 처리. Each item still needs its own pick.
+  queue), and a list where each row shows what its 보내기 sends and is picked (보내기 / 건너뛰기) before 고른 것 처리, while its 고치기 opens
+  the item's panel in the row. Each item still needs its own pick.
 
 Device classes (CSS px; foldable values at DPR 2.625, source: herdr-web-ui-browser docs/foldable-testing.md, Samsung
 emulator skins and GSMArena):

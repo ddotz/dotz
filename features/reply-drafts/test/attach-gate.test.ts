@@ -46,13 +46,16 @@ describe("sendDraft with a card posted in a work channel", () => {
 	const at = "ch:700000000000000009";
 	const log = (file: string, e: Record<string, unknown>, ms: number) => (file === "inbox.jsonl" ? appendSealed : (f: string, o: Record<string, unknown>) => appendFileSync(f, `${JSON.stringify(o)}\n`))(join(env.dir, file), { ts: new Date(Date.now() + ms).toISOString(), ...e });
 	const posted = (rec: DraftRec) => log("outbox.jsonl", { kind: "out", source: "orchestrator", target: at, text: askText(rec, []) }, 1000);
-	test("the card alone sends nothing; his typed answer under it sends once", async () => {
+	// Typed chat is the model's to read (the reply intent design, 2026-11-16): the gate counts the owner's pick only.
+	test("the card alone and his typed answer under it send nothing; his pick sends once", async () => {
 		const rec = draft("확인했습니다.");
 		posted(rec);
 		const f = fakeSend();
 		expect((await sendDraft(rec.id, f)).ok).toBe(false);
-		expect(f.sent).toEqual([]);
 		log("inbox.jsonl", { kind: "message", source: "discord", channel: at, text: "1) 보내기" }, 2000);
+		expect((await sendDraft(rec.id, f)).ok).toBe(false);
+		expect(f.sent).toEqual([]);
+		choose(rec.id, 1, "보내기");
 		expect((await sendDraft(rec.id, f)).ok).toBe(true);
 		expect(f.sent).toEqual([rec.id]);
 	});
@@ -89,15 +92,14 @@ describe("sendDraft with a mail whose files disagree with its words", () => {
 		expect(getDraft(rec.id)!.status).toBe("sent");
 	});
 
-	test("a typed 이대로 보내 in the draft's conversation sends it as it is, where a typed 보내 is refused like the pick", async () => {
+	test("a typed 보내 or 이대로 보내 in the draft's conversation sends nothing: only the 4) 이대로 보내기 pick does", async () => {
 		const typed = (id: string, text: string) => appendSealed(join(env.dir, "inbox.jsonl"), { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", channel: `mail:ref-${id}`, text });
 		const rec = draft(PROMISE);
 		typed(rec.id, "보내");
+		typed(rec.id, "이대로 보내");
 		const s = fakeSend();
 		expect((await sendDraft(rec.id, { send: s.send })).ok).toBe(false);
-		typed(rec.id, "이대로 보내");
-		expect((await sendDraft(rec.id, { send: s.send })).ok).toBe(true);
-		expect(s.sent).toEqual([rec.id]);
+		expect([s.sent, getDraft(rec.id)!.status]).toEqual([[], "pending"]);
 	});
 
 	test("with the file on the draft, 1) 보내기 sends", async () => {

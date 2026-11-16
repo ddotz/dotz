@@ -152,7 +152,7 @@ describe("open chat rooms", () => {
 		const card = parseDraftApproval(out[0]!)!;
 		expect(card).toMatchObject({ toLabel: "대화방", to: OPEN_NAME, body: "7시에 해요" });
 		appendSealed(paths.inbox, { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: "1) 보내기", picks: [{ q: `카톡 답장 보낼까요? (${card.ref})`, n: 1, label: "보내기" }] });
-		// The send as the gateway's KakaoTalk adapter runs it (cli.ts send only hands the draft to the gateway's queue).
+		// The send as the gateway's KakaoTalk adapter runs it (after the owner's 보내기 on the card).
 		expect((await sendDraft(card.ref!, { ...deps, latestIncoming: async () => undefined })).ok).toBe(true);
 		expect(screen.sends).toEqual([["ax-send", OPEN_NAME, "7시에 해요"]]);
 		db.close();

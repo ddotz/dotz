@@ -9,6 +9,7 @@ import { compactAtFor, lanesCompactAt, log, now } from "./config.ts";
 import { COMPACTION_FAILED, laneStuck, recover } from "./lanerun.ts";
 import { prompt } from "./laneprompt.ts";
 import { msg } from "./i18n.ts";
+import { errorKo } from "./notice.ts";
 import { revertWhy } from "./fallback.ts";
 import { noteModelChange } from "./model-guard.ts";
 import { runtimeFor } from "./runtime/index.ts";
@@ -203,7 +204,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				break;
 			case "fallback": {
 				log(`lane ${lane.name} model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
-				let line = msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker);
+				let line = msg().modelFallback(ev.from, ev.to, ev.reason && errorKo(ev.reason), ev.worker);
 				if (!ev.worker) noteModelChange(`lane:${lane.name}`, ev.from, ev.to, "fallback");
 				if (ev.worker) lane.activeWorkerModel = ev.to;
 				else {

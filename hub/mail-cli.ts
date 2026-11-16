@@ -140,7 +140,7 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 		const id = one("--draft");
 		if (!id) return { lines: [USAGE], code: 2 };
 		const rec = getDraft(id);
-		if (rec && !rec.compose) return { lines: ["이 초안은 받은 메일의 답장이에요. features/reply-drafts/bin/draft.ts send로 보내 주세요"], code: 2 };
+		if (rec && !rec.compose) return { lines: ["이 초안은 받은 메일의 답장이에요. 답장 카드에서 사용자가 보내기를 눌러야 나가요"], code: 2 };
 		const r = await sendDraft(id, deps);
 		if (r.sendFailed && rec) await reportSendFailed(rec, r.text, deps.hub);
 		if (r.ok && rec) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);

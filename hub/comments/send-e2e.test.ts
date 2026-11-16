@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
 import { stagedFiles } from "../../features/reply-drafts/lib/staged.ts";
-import { getDraft } from "../../features/reply-drafts/lib/store.ts";
+import { getDraft, setStatus } from "../../features/reply-drafts/lib/store.ts";
 import type { Runner } from "../../features/reply-drafts/lib/tone.ts";
 import { parseDraftApproval } from "../draft-approval.ts";
 import { runMailCli } from "../mail-cli.ts";
@@ -50,17 +50,18 @@ function world(o: { replyFails?: string; zeleFails?: boolean } = {}) {
 		list: async () => ({ comments: [{ native: "c1", thread: "v1", author: "팬", text: "캐논 문서 받을 수 있나요? fan@example.com", postTitle: "캐논 연주", at: NOW - 1000 }], cursor: "1" }),
 		reply: async (_s, _c, text) => (posted.push(text), replyFails ? { ok: false, reason: replyFails, code: "rejected", sent: "no" } : { ok: true, ref: "yt-r1" }),
 	};
-	const engine = createEngine({ dir: root, now: () => NOW, collector: "mac-a", adapters: { youtube: adapter }, mail: realMailLink({ run }) });
+	const clock = { now: NOW };
+	const engine = createEngine({ dir: root, now: () => clock.now, collector: "mac-a", adapters: { youtube: adapter }, mail: realMailLink({ run }) });
 	const inbox = join(dir, "inbox.jsonl");
-	const pick = (code: string, n: 1 | 3 = 1) => {
+	const pick = (code: string, n: 1 | 3 = 1, at = NOW + 5000) => {
 		const label = n === 1 ? "보내기" : "보내지 않기";
-		appendSealed(inbox, { ts: new Date(NOW + 5000).toISOString(), kind: "message", source: "web", text: `${n}) ${label}`, picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${code})`, n, label }] });
+		appendSealed(inbox, { ts: new Date(at).toISOString(), kind: "message", source: "web", text: `${n}) ${label}`, picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${code})`, n, label }] });
 	};
 	const recover = () => {
 		replyFails = undefined;
 		zeleFails = false;
 	};
-	return { engine, posted, zele, mailSends: () => zele.filter(a => a[2] === "send"), inbox, pick, recover };
+	return { engine, posted, zele, mailSends: () => zele.filter(a => a[2] === "send"), inbox, pick, recover, clock };
 }
 type World = ReturnType<typeof world>;
 
@@ -116,6 +117,25 @@ describe("comment reply + mail: 1) 보내기 -> reply posted -> mail sent with t
 		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(0);
 		expect(w.posted).toHaveLength(2);
 		expect(w.mailSends()).toHaveLength(1);
+	});
+
+	test("Dt8pq3b: the mail gone after the pick re-stamps mailAt, so the old pick sends nothing; the owner's fresh 다시 보내기 pick posts once", async () => {
+		const w = world();
+		const { d, mailId } = await card(w);
+		w.pick(d.code);
+		// The mail went out on its own after the owner's 보내기 (the incident's raw mail CLI).
+		setStatus(mailId, "sent");
+		w.clock.now = NOW + 10_000;
+		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(1);
+		expect(w.engine.store.drafts()[0]!.mailAt).toBe(NOW + 10_000);
+		// The old loop: every later send reads the pick from before mailAt and is refused.
+		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(1);
+		expect(w.posted).toEqual([]);
+		// What hub/reply-actions.ts retry writes now: a fresh 1) 보내기 on the card as it is.
+		w.pick(d.code, 1, NOW + 20_000);
+		expect((await runComments(["send", d.code], w.engine, w.inbox)).code).toBe(0);
+		expect(w.posted).toHaveLength(1);
+		expect(w.mailSends()).toEqual([]);
 	});
 
 	test("a failed mail is told with its draft id; the reply stays posted and the mail goes out after its own card is approved", async () => {

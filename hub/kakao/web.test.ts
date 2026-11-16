@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Database } from "bun:sqlite";
@@ -253,107 +253,40 @@ describe("read counters", () => {
 describe("typed send", () => {
 	test("with the one reply queue: the typed text becomes the owner's own draft and is handed to the queue's send, nothing pressed here", async () => {
 		const acts: Record<string, unknown>[] = [];
-		const replies = { act: async (input: Record<string, unknown>) => (acts.push(input), { status: 202, body: { ok: true, item: { ref: input.ref, send: { state: "undo" } } } }) };
+		// The draft as the reply flow reads it back: the typed words name its version only while it holds exactly them.
+		let held = "내가 직접 쓴 답";
+		const replies = { view: async () => ({ draft: { text: held, hash: "h-own" } }), act: async (input: Record<string, unknown>) => (acts.push(input), { status: 202, body: { ok: true, item: { ref: input.ref, send: { state: "undo" } } } }) };
 		const t = setup({}, undefined, { replies: () => replies as never });
 		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "내가 직접 쓴 답" });
 		expect(r.status).toBe(202);
 		expect(r.json.state).toBe("undo");
 		const own = readDrafts(paths).find(d => d.code === acts[0]!.ref);
 		expect(own).toMatchObject({ chatId: DIRECT, text: "내가 직접 쓴 답", own: true, status: "pending" });
-		expect(acts).toEqual([{ ref: own!.code, action: "send" }]);
+		expect(acts).toEqual([{ ref: own!.code, action: "send", hash: "h-own" }]);
+		// A draft that no longer holds the typed words is sent naming no version: the flow refuses it `changed`.
+		held = "그사이 바뀐 글";
+		await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "다시 쓴 답" });
+		expect(acts[1]).toMatchObject({ action: "send", hash: "" });
 		expect(t.calls).toEqual([]);
 	});
 
-	test("goes through the stubbed screen without an approval step: sending -> sent, then listed in the room's sends", async () => {
+	test("without the one reply queue a typed send is refused (503) and nothing is pressed or recorded", async () => {
 		const t = setup();
 		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		expect(r.status).toBe(202);
-		expect(r.json.state).toBe("sending");
+		expect([r.status, r.json.code]).toEqual([503, "not_wired"]);
 		await t.web.idle();
-		expect(t.events.map(e => [e.kind, e.id, e.state])).toEqual([["kakao_send", r.json.id, "sending"], ["kakao_send", r.json.id, "sent"]]);
-		expect(t.calls).toEqual([["ax-send", "Alex", "hello there"]]);
-		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(sends).toEqual([{ id: r.json.id, text: "hello there", state: "sent", at: NOW, collector: "mac-a" }]);
-		expect(statSync(join(dir, "kakao", "sends.json")).mode & 0o777).toBe(0o600);
-		expect(JSON.stringify(t.events)).not.toContain("hello there");
-		expect(JSON.stringify(t.events)).not.toContain("Alex");
+		expect(t.calls).toEqual([]);
+		expect(t.events).toEqual([]);
+		expect(existsSync(join(dir, "kakao", "sends.json"))).toBe(false);
 		t.close();
 	});
 
-	test("a failed send is recorded as failed with a reason and announced", async () => {
+	test("a typed send of before the reply queue that was left sending is listed as failed", async () => {
 		const t = setup();
-		t.state.failSend = true;
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		await t.web.idle();
-		const last = t.events.at(-1)!;
-		expect(last).toMatchObject({ kind: "kakao_send", chatId: DIRECT, id: r.json.id, state: "failed" });
-		expect(typeof last.reason).toBe("string");
-		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(sends[0]).toMatchObject({ id: r.json.id, state: "failed", reason: last.reason });
-		t.close();
-	});
-
-	test("KakaoTalk with no window: the send ends failed with the Korean reason and its steps, never left sending", async () => {
-		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { listShown: false });
-		const t = setup({}, undefined, { runner: screen.runner });
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		await t.web.idle();
-		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_send", id: r.json.id, state: "failed", reason: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요" });
-		const stored = JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"));
-		expect(stored[0]).toMatchObject({ id: r.json.id, state: "failed", reason: "카톡 창이 닫혀 있어요. 카카오톡 창을 열어 주세요" });
-		expect(stored[0].ax.map((s: { step: string }) => s.step)).toEqual(["rows", "openlist"]);
-		expect(screen.sends).toHaveLength(0);
-		t.close();
-	});
-
-	test("a list opened for the send keeps its focus change on the send record", async () => {
-		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { listShown: false, openlist: "ok", front: "com.example.Editor" });
-		const t = setup({}, undefined, { runner: screen.runner });
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		await t.web.idle();
-		const stored = JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"));
-		expect(stored[0]).toMatchObject({ id: r.json.id, state: "sent", focus: { from: "com.example.Editor", took: true, restored: true } });
-		t.close();
-	});
-
-	test("watchdog: a send whose job still runs after 60 s is never reported failed (it may still press); its result lands when it ends", async () => {
-		let clock = NOW;
-		const timers: { fn: () => void; ms: number }[] = [];
-		let release!: () => void;
-		const hold = new Promise<void>(r => (release = r));
-		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }]);
-		const runner: Runner = async (argv, o) => {
-			if (argv[1] === "-l" && JSON.parse(o!.stdin!.trim()).action === "rows") await hold;
-			return screen.runner(argv, o);
-		};
-		const t = setup({}, undefined, { runner, now: () => clock, later: (fn, ms) => void timers.push({ fn, ms }) });
-		const r = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
-		expect(timers.map(x => x.ms)).toEqual([60_000]);
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends[0].state).toBe("sending");
-		clock = NOW + 61_000;
-		timers[0]!.fn();
-		// Still running: no failure, and the watchdog looks again later.
-		expect(t.events.filter(e => e.state === "failed")).toHaveLength(0);
-		expect(timers.map(x => x.ms)).toEqual([60_000, 60_000]);
-		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends[0].state).toBe("sending");
-		release();
-		await t.web.idle();
-		expect(t.events.at(-1)).toMatchObject({ kind: "kakao_send", id: r.json.id, state: "sent" });
-		timers[1]!.fn();
-		expect(t.events.filter(e => e.state === "failed")).toHaveLength(0);
-		expect(JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"))[0]).toMatchObject({ id: r.json.id, state: "sent" });
-		t.close();
-	});
-
-	test("a send older than 60 s that is still sending is listed as failed even when no timer ran", async () => {
-		const t = setup();
-		const file = join(dir, "kakao", "sends.json");
-		const probe = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "x" });
-		await t.web.idle();
-		writeFileSync(file, JSON.stringify([{ id: "Sold", chatId: DIRECT, text: "old", state: "sending", at: NOW - 61_000 }]));
+		mkdirSync(join(dir, "kakao"), { recursive: true });
+		writeFileSync(join(dir, "kakao", "sends.json"), JSON.stringify([{ id: "Sold", chatId: DIRECT, text: "old", state: "sending", at: NOW - 61_000 }, { id: "Sdone", chatId: DIRECT, text: "done", state: "sent", at: NOW - 30_000 }]));
 		const list = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(list.map((s: any) => [s.id, s.state])).toEqual([["Sold", "failed"]]);
-		expect(probe.status).toBe(202);
+		expect(list.map((s: any) => [s.id, s.state])).toEqual([["Sold", "failed"], ["Sdone", "sent"]]);
 		t.close();
 	});
 
@@ -687,20 +620,6 @@ describe("on-demand draft", () => {
 		expect(chatBlock(t.model.calls[0]!.user)).toBe("나: note to self");
 		const [d] = await storedDrafts();
 		expect(d).toMatchObject({ chatId: String(ROOM.self), roomName: "My Memo", basisLogId: id(6) });
-		t.close();
-	});
-});
-
-describe("sends go through dispatchSend", () => {
-	test("a refused lease fails a typed send with its reason, and nothing is sent", async () => {
-		const t = setup();
-		t.state.leaseRefusal = "다른 맥이 이 대화방을 맡고 있어요";
-		const typed = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hi" });
-		expect(typed.status).toBe(202);
-		await t.web.idle();
-		expect(t.calls).toEqual([]);
-		const sends = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
-		expect(sends.map((s: any) => [s.state, s.reason])).toEqual([["failed", t.state.leaseRefusal]]);
 		t.close();
 	});
 });
@@ -1058,19 +977,20 @@ describe("draft of several messages: 다시 보내기", () => {
 	// The owner's 보내기 as the one reply flow runs it (hub/kakao/reply-adapter.ts): one dispatch with this surface's own send deps.
 	const sendOnce = async (t: ReturnType<typeof setup>, code: string) => dispatchSend({ kind: "draft", code, ownerApproved: true }, await t.web.replyKit.sendDeps());
 
-	test("an older web's retry (the joined text as a typed send) still goes out part by part from the first unsent part", async () => {
+	test("an older web's retry (the joined text of a pending draft as a typed send) is the owner's 보내기 through the reply flow, never a direct send", async () => {
 		const { flag, screen } = failingSecond();
-		const t = setup({}, undefined, { runner: screen.runner });
+		const acts: Record<string, unknown>[] = [];
+		const replies = { view: async () => ({ draft: { text: PARTS, hash: "h-parts" } }), act: async (input: Record<string, unknown>) => (acts.push(input), { status: 200, body: { ok: true, item: { ref: input.ref, send: { state: "undo" } } } }) };
+		const t = setup({}, undefined, { runner: screen.runner, replies: () => replies as never });
 		const d = await t.draft({ text: PARTS });
 		await sendOnce(t, d.code);
-		expect((await drafts())[0]).toMatchObject({ status: "pending", sentParts: 1 });
 		flag.failing = false;
 		const before = screen.sends.length;
 		const typed = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: PARTS });
-		expect(typed.status).toBe(202);
+		expect(typed.status).toBe(200);
 		await t.web.idle();
-		expect(okTexts(screen).slice(before)).toEqual(["둘째", "셋째"]);
-		expect((await drafts())[0]).toMatchObject({ status: "sent", sentParts: 3 });
+		expect(acts).toEqual([{ ref: d.code, action: "send", hash: "h-parts" }]);
+		expect(screen.sends.length).toBe(before);
 		t.close();
 	});
 

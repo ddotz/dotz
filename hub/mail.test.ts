@@ -82,6 +82,7 @@ describe("mail key", () => {
 		expect(mailKey("Zele", "18F3a.B_c")).toBe("zele-18f3a.b_c");
 		expect(mailKey("work mail", "<abc@host>")).toBe("work-mail-abc-host");
 		expect(mailTarget("zele-1")).toBe("mail:zele-1");
+		expect(mailTarget("mail:mail:zele-1")).toBe("mail:zele-1");
 	});
 	test("a source or id with nothing usable is rejected", () => {
 		expect(() => mailKey("", "1")).toThrow(MailError);

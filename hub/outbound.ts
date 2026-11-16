@@ -1,6 +1,6 @@
 // Outbound path of the hub: the owner's messages out (out, progress, alert), the send ledger, the prompt queue and the shared delivery state.
 // Split out of main.ts; it owns the one instance of that state and the other hub modules import it.
-import { reviseMarker } from "./reply-chat.ts";
+import { applyCardMarkers, cardMarkers, draftHead } from "./reply-chat.ts";
 import { openRefsOf, useReplies } from "./reply-actions.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -43,7 +43,7 @@ import { answerReview } from "./answer-words.ts";
 import { dropClaim, resolvesOf, splitTone, stripHandoff, stripLater, stripProjectInfo, stripResolves } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { keepBrief } from "./draft-approval.ts";
-import { allNotices, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft } from "./notices.ts";
+import { allNotices, markCardShown, markDraftPosted, onDecisionClosed, onDraftCardRefreshed, openDraftCards, openDraftRefs, openDraftText, orchestratorAnswered, resolveNotices, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards, withSendState } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
 import { draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
@@ -67,9 +67,15 @@ try {
 // network outages, sent again after a restart; an answer marks its message answered only once it was delivered.
 const UNSENT = join(DATA_DIR, "unsent.json");
 // A card that went to Discord as one message is edited there too, its buttons with its options (a [file] line would show raw in an edit, so such a card keeps its first text).
-function editCard(target: string, ids: string[] | undefined, ref: string, text: string): void {
+// Only an edit Discord took moves what that message shows (`card`: the card's text then, notices-drafts.ts markCardShown); a skipped or failed one leaves
+// the old text there, and a pick from it is refused (hub/approval-wire.ts).
+function editCard(target: string, ids: string[] | undefined, ref: string, text: string, card?: { to: string; text: string }): void {
 	const id = ids?.length === 1 ? ids[0] : undefined;
-	if (id && !isLocal(target) && route({ target }).messengers.discord && !/^\s*\[file\]\s/m.test(text)) void discord.edit(target, id, text, { buttons: true }).catch(e => log(`approval card ${ref} not edited on Discord: ${e}`));
+	if (!id || isLocal(target) || !route({ target }).messengers.discord || /^\s*\[file\]\s/m.test(text)) return;
+	void discord.edit(target, id, text, { buttons: true }).then(
+		r => (r.delivered ? card && markCardShown(card.to, ref, card.text) : log(`approval card ${ref} not edited on Discord: ${r.reason}`)),
+		e => log(`approval card ${ref} not edited on Discord: ${e}`),
+	);
 }
 export const sends = createSendLedger({
 	file: UNSENT,
@@ -343,13 +349,17 @@ export const approvals = createApprovalQueue({
 	openRefs: openDraftRefs,
 	// The bot's `mail:<id>` card and the app's reply draft of that mail are one item.
 	itemOf: (conv, ref) => mailItemKey(ref, conv, draftHeads),
-	handled: (ref, conv) => refHandled(ref, conv),
+	// A ref whose card is open in another conversation is handled there: a second copy (held here, or posted again) would ask twice.
+	handled: (ref, conv) => openDraftCards().some(c => c.ref === ref && c.to !== conv) || refHandled(ref, conv),
+	// A held card goes out with the text its store holds when it is released (hub/reply-actions.ts ask).
+	fresh: ref => useReplies()?.ask(ref) ?? Promise.resolve(undefined),
 	post: (target, text, extra) => void out(target, text, undefined, { ...extra, queued: true, ...(extra.session ? { cross: "approval" } : {}) }).catch(e => log(`held approval card to ${target} failed: ${e}`)),
 	rewrite: (conv, card, next) => {
 		// A card that replaces the open one keeps what only that one showed (hub/draft-approval.ts keepBrief).
 		const text = keepBrief(openDraftText(conv, card.ref) ?? "", next);
 		rewriteOpenDraft(conv, card.ref, text);
-		editCard(card.target, card.ids, card.ref, text);
+		const shown = openDraftText(conv, card.ref);
+		editCard(card.target, card.ids, card.ref, text, shown === undefined ? undefined : { to: conv, text: shown });
 	},
 	// The web's 빠른 처리 banner counts held cards too (web/js/30-triage.js): it refetches on this.
 	persist: held => {
@@ -389,7 +399,7 @@ export async function reconcileMailCards(): Promise<number> {
 	return replaced;
 }
 // The card of a closed decision shows it on Discord too: first line kept, buttons removed, how it ended (a [file] line would show raw in an edit, so such a text is left).
-function closeDiscordCard(to: string, ref: string | undefined, c: { text: string; how: "answered" | "resolved" | "ignored"; label: string; target?: string; ids?: string[] }): void {
+function closeDiscordCard(to: string, ref: string | undefined, c: { text: string; how: "answered" | "resolved" | "ignored" | "moved"; label: string; target?: string; ids?: string[] }): void {
 	const target = c.target ?? (ref ? approvals.targetOf(to, ref) : undefined);
 	const ids = c.ids?.length ? c.ids : ref ? approvals.idsOf(to, ref) : undefined;
 	if (!target || !ids?.length || isLocal(target) || !route({ target }).messengers.discord) return;
@@ -397,14 +407,16 @@ function closeDiscordCard(to: string, ref: string | undefined, c: { text: string
 	if (/^\s*\[file\]\s/m.test(text)) return;
 	ids.forEach((id, i) => void discord.edit(target, id, i === 0 ? text : text.split("\n").slice(1).join("\n"), { clearComponents: true }).catch(e => log(`approval card ${ref} not closed on Discord: ${e}`)));
 }
+/** The card of draft `ref` was posted again below it (a confirm card, hub/reply-wire.ts): its old Discord message says so, buttons cleared. */
+export const cardMoved = (to: string, ref: string, c: { text: string; target: string; ids: string[] }): void => closeDiscordCard(to, ref, { ...c, how: "moved", label: "" });
 /** A send of draft `ref` changed state (hub/reply-wire.ts reportSend): its Discord card shows it in place, the buttons kept so a failed one can be sent again. */
 export function showSendOnCard(conv: string, ref: string, state: string, why = "", left = 0): void {
 	const target = approvals.targetOf(conv, ref), ids = approvals.idsOf(conv, ref), text = openDraftText(conv, ref);
-	if (target && text && state !== "sent") editCard(target, ids, ref, withSendState(text, state, why, left));
+	if (target && text && state !== "sent") editCard(target, ids, ref, withSendState(text, state, why, left), { to: conv, text });
 }
 onDraftCardRefreshed(n => {
 	const d = n.decision;
-	if (d?.card && d.draft?.ref) editCard(d.card.target, d.card.ids, d.draft.ref, `[ask] ${n.text}`);
+	if (d?.card && d.draft?.ref) editCard(d.card.target, d.card.ids, d.draft.ref, `[ask] ${n.text}`, { to: d.to, text: n.text });
 });
 onDecisionClosed((to, ref, card) => {
 	if (card) closeDiscordCard(to, ref, card);
@@ -418,10 +430,14 @@ function withCardPointer(target: string, text: string): string {
 	const c = approvals.openCard(convOfTarget(target));
 	return c && c.target === target ? `${text.replace(/\s+$/, "")}\n${cardPointer(c, cardLink(c))}` : text;
 }
-// The bot's turn for an owner message names the cards waiting in that conversation ("마지막 카드 어디?" is answerable from it).
+// A card is the newest post of its conversation while nothing else was posted there after it (a progress line edited in place does not count).
+const newestIn = (conv: string, asked: string | undefined, posts: HubEvent[]): boolean => !!asked && !posts.some(e => e.kind === "out" && !e.update_key && e.ts > asked && eventTarget(e) === conv);
+// The bot's turn for an owner message names the cards waiting in that conversation, whom each goes to, how it starts and whether it is still the
+// newest post there: the bot tells an answer to a card from one to what came after it ("마지막 카드 어디?" is answerable from it too).
 const cardsNoteFor = (target: string): string | undefined => {
-	const conv = convOfTarget(target), shown = approvals.openCard(conv);
-	const cards = openDraftCards(conv).map(c => ({ ref: c.ref, title: cardTitle(c.text) || c.title, notice: c.id, ...(shown?.ref === c.ref ? { progress: shown.progress, link: cardLink(shown) } : {}) }));
+	const conv = convOfTarget(target), shown = approvals.openCard(conv), open = openDraftCards(conv);
+	const posts = open.length ? tailEvents(paths.outbox) : [];
+	const cards = open.map(c => ({ ref: c.ref, title: cardTitle(c.text) || c.title, notice: c.id, to: c.draft.to, head: draftHead(c.draft.body), newest: newestIn(conv, c.asked, posts), ...(useReplies()?.revising(c.ref) ? { revising: true as const } : {}), ...(shown?.ref === c.ref ? { progress: shown.progress, link: cardLink(shown) } : {}) }));
 	return pendingCardsNote(cards, approvals.heldIn(conv).length);
 };
 // A gateway status line (a deferral receipt): `system` on its event makes the web draw a compact system line (opening `worker` with its
@@ -440,13 +456,18 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	if (inHome !== target) [target, replyTo] = [inHome, undefined];
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = (extra.source === undefined || extra.source === "orchestrator") && !extra.keepsOpen;
-	// The orchestrator's one revise line for an open reply card of this conversation: run by code, not shown.
+	// The orchestrator's marker lines for this conversation's open reply cards (hub/reply-chat.ts): acted on by code, not shown. A send or a drop is
+	// the owner's word only in an answer to his message of this conversation; a revise elsewhere is the agent's own.
 	if (extra.source === undefined || extra.source === "orchestrator") {
-		const mark = reviseMarker(text, openRefsOf(target));
-		if (mark) {
-			void useReplies()?.act({ ref: mark.ref, action: "revise", change: mark.change }, { surface: "chat", agent: true }).catch(e => log(`revise marker of ${mark.ref} failed: ${(e as Error).message}`));
-			text = mark.rest;
-			if (!text) return { delivered: true };
+		const conv = convOfTarget(target), marks = cardMarkers(text, openRefsOf(conv)), replies = useReplies();
+		if (marks.acts.length || marks.unknown.length) {
+			const asked = answersOwner && !extra.update_key ? (replyTo ?? lateRequest(target)) : undefined;
+			const said = asked ? ownerMessage(asked) : undefined;
+			const owner = asked && said?.conv === conv ? { owner: { mid: asked, text: said.text } } : {};
+			if (replies) void applyCardMarkers(marks, { replies, ...owner, tell: line => out(target, line, replyTo, { source: "gateway" }), log }).catch(e => log(`card markers in ${target} failed: ${(e as Error).message}`));
+			text = marks.rest;
+			// A marker alone still answers the owner's message: it is settled (shown answered, its progress line stopped) as a posted answer is.
+			if (!text) return (settleAnswer({ target, text, replyTo: replyTo ?? lateRequest(target), extra }), { delivered: true });
 		}
 	}
 	const said = stripSteerMark(text);
@@ -465,11 +486,13 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	const drafts = routed ? splitDraftCards(body) : undefined;
 	if (drafts) {
 		let last: { delivered: boolean; reason?: string } = { delivered: true };
-		for (const c of drafts) last = await out(target, c, replyTo, extra);
+		for (const c of drafts.cards) last = await out(target, c, replyTo, extra);
+		// The answer written after the last card goes out once, after the cards (it holds no card, so route() never holds it).
+		if (drafts.tail) last = await out(target, drafts.tail, replyTo, extra);
 		return last;
 	}
 	const job: OutJob = { target, text: body, replyTo: replyTo ?? (routed ? lateRequest(target) : undefined), extra };
-	const routing: { card?: ReturnType<typeof approvals.route> } = {};
+	const routing: { card?: Awaited<ReturnType<typeof approvals.route>> } = {};
 	let landed = false;
 	replies.begin(job);
 	let sent: string;
@@ -484,7 +507,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 				log(`limit-stop ask in chat to ${target}: the gateway applies the owner's setting at a real limit`);
 				steerOrchestrator(msg().limitStopAskNote);
 			}
-			const card = routed ? approvals.route(target, t, extra) : undefined;
+			const card = routed ? await approvals.route(target, t, extra) : undefined;
 			routing.card = card;
 			if (card?.action === "post") t = card.text ?? withCardPointer(target, t);
 			// False: shutdown already landed this post with the original text.

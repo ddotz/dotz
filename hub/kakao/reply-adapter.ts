@@ -67,8 +67,13 @@ export function kakaoAdapter(kit: KakaoKit): ReplyAdapter {
 		},
 		list: async () => Promise.all(readDrafts(kit.paths).filter(d => d.status === "pending").map(withOriginal)),
 		target: ref => (draftOf(ref) ? { kind: "kakao", lane: "kakao" } : undefined),
-		// The owner's pick is in the inbox (written by hub/reply-actions.ts); the 다시 보내기 after 확인 필요 (force) takes over a dead sender.
-		run: async (job: SendJob) => outcomeOf(await dispatchSend({ kind: "draft", code: job.ref, ownerApproved: true, ...(job.force ? { retry: true } : {}) }, await kit.sendDeps())),
+		// The inbox verdict is skipped (ownerApproved) only because every job the queue runs is the owner's own act or code's retry of one, and the
+		// queue's gate (hub/approval-send.ts) checked it carries the version he approved; any other job is refused. The 다시 보내기 after 확인 필요
+		// (force) takes over a dead sender.
+		run: async (job: SendJob) => {
+			if (job.by !== "owner" && job.by !== "auto") return { sent: "no", code: "not_approved" };
+			return outcomeOf(await dispatchSend({ kind: "draft", code: job.ref, ownerApproved: true, ...(job.force ? { retry: true } : {}) }, await kit.sendDeps()));
+		},
 		revise: async (ref, change) => {
 			const d = draftOf(ref);
 			if (!d) return { ok: false, reason: { code: "gone", text: "그 초안을 찾지 못했어요" } };

@@ -31,4 +31,15 @@
 .tq-line { display: flex; gap: var(--sp-2); align-items: baseline; font-size: var(--fs-meta); color: var(--fg-2); }
 .tq-line .tq-who { color: var(--fg); font-weight: 500; }
 .tq-tx { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* a row shows what its 보내기 sends, compactly (30-triage.js tqRowNode): the original as one quoted line, the 첨부 줄, the mail that rides along as one line with its own 첨부 줄 */
+.tq-og { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-ml { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; margin-top: var(--sp-1); color: var(--fg-2); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
+.tq-ml .ic { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tq-ml > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tq-row .rq-att, .tq-row .rq-att .dr-none { margin-top: 0; }
+.tq-row .rq-acts { margin-top: var(--sp-1); }
 .tq-foot { display: flex; justify-content: flex-end; }
+/* the keys of the one-card view (30-triage.js tqKeysNode): one quiet line under the card, each key in the app's own <kbd>. A touch screen has no keys to name. */
+.tq-keys { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); padding: 0 var(--sp-1); color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.tq-key { display: inline-flex; align-items: center; gap: var(--sp-1); white-space: nowrap; }
+@media (pointer: coarse) { .tq-keys { display: none; } }

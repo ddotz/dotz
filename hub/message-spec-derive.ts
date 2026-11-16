@@ -1,7 +1,7 @@
 // Text -> spec; no spec means the plain text path. This is the one place the written shapes of an answer are read (MODE.md "Message layout"): the page drew them
 // from its own copy of this grammar before (web/js/02-basic-markdown.js, 02-answer-shapes.js); now hub/gen-message-spec-web.ts runs this code in the page too, and
 // web/js/02-answer-shapes.js only draws the result. No imports but message-spec.ts, because the same file is transpiled for the page.
-import { specOfElements, specPlain, validateSpec } from "./message-spec.ts";
+import { specOfElements, validateSpec } from "./message-spec.ts";
 import type { MessageSpec, SpecElement } from "./message-spec.ts";
 
 type Props = Record<string, unknown>;
@@ -309,34 +309,3 @@ export function deriveBasicSpec(text: string, relayed = false, bot = ""): Messag
 	return specOfElements(parse(String(text ?? ""), false, relayed, bot) ?? []);
 }
 
-// ---- a model-written ```dotz-spec fence ----
-const SPEC_FENCE = /(\n|^)([ \t]{0,3})```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/g;
-function readable(v: unknown, out: string[] = []): string[] {
-	if (typeof v === "string") { if (v.trim()) out.push(v); }
-	else if (Array.isArray(v)) for (const x of v) readable(x, out);
-	else if (v && typeof v === "object") for (const x of Object.values(v)) readable(x, out);
-	return out;
-}
-function fenceBody(body: string): string | null {
-	let json: unknown;
-	try { json = JSON.parse(body); } catch { return null; }
-	const ok = validateSpec(json);
-	if (ok.ok) return specPlain(ok.spec);
-	const els = (json as { elements?: Record<string, { props?: unknown; children?: unknown }> } | null)?.elements;
-	const words = els && typeof els === "object" && !Array.isArray(els) ? Object.values(els).map(e => readable(e?.props).join("\n")).filter(Boolean) : readable(json);
-	return words.length ? words.join("\n\n") : null;
-}
-
-/** A model-written ```dotz-spec fence replaced by its plain form when valid, by its readable strings when not. Text without a fence comes back unchanged. A fence that is not JSON stays as the code block it is. */
-export function resolveSpecFence(text: string): string {
-	if (typeof text !== "string" || !text.includes("dotz-spec")) return text;
-	try {
-		return text.replace(SPEC_FENCE, (all, lead: string, _indent: string, lang: string, body: string) => {
-			if (lang.trim() !== "dotz-spec") return all;
-			const plain = fenceBody(body);
-			return plain === null ? all : lead + plain;
-		});
-	} catch {
-		return text;
-	}
-}

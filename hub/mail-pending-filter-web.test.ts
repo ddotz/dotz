@@ -115,7 +115,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			const p = await seen(v);
 			expect(p.cards).toEqual(["Re: 회의 일정 문의", "Re: 자료 요청"]);
 			expect(p.rows).toEqual([]);
-			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .dr.open .dr-act button")].map(b => b.textContent)`)).toEqual(["보내기", "고치기", "보내지 않기", "보내기", "고치기", "보내지 않기"]);
+			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .dr.open .dr-act button")].map(b => b.dataset.k)`)).toEqual(["send", "fix", "drop", "send", "fix", "drop"]);
 			expect(p.over).toBe(false);
 			await Bun.write(join(SHOTS, `pending-${width}.png`), await v.screenshot());
 			expect(await q<boolean>(v, `return !!document.querySelector("#mbox-bar")`)).toBe(false);

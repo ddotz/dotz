@@ -24,10 +24,15 @@
 // that is not finished stays in the file, `failed` and `unsure` too, so a restart forgets none and a second approval of an unsure one sends
 // nothing. Code retries a `failed` send by itself only as its reason's policy allows (section 2.4); it never sends an `unsure` one again:
 // only the owner's `force` (다시 보내기 after 확인 필요) does.
+//
+// The one approval gate (owner rule 2026-11-16: what goes out is exactly the version he saw when he pressed 보내기): every job carries the
+// `approvalHash` of the draft as his act read it, and immediately before any run (the first, code's own retry, his 다시 보내기, a force) the draft
+// is read again; a different version ends `failed` with `changed`, nothing sent and no retry by code.
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { draftActionOf } from "./draft-approval.ts";
 import { isReasonCode, partialReason, policyOf, reasonOf } from "./reply-reasons.ts";
-import type { Reason, ReasonCode, ReplyAdapter, SendOutcome } from "./reply-types.ts";
+import type { DraftView, FileShown, Reason, ReasonCode, ReplyAdapter, SendOutcome } from "./reply-types.ts";
 import { runLimited } from "./run-limited.ts";
 
 export type SendKind = "comment" | "mail" | "kakao";
@@ -35,14 +40,16 @@ export type SendKind = "comment" | "mail" | "kakao";
 export type SendTarget = { kind: SendKind; lane: string };
 export type SendAction = "send" | "send-main" | "send-mail" | "send-as-is";
 /** `retry`: the owner pressed 다시 보내기 on a failed send (no cancel window). `force`: his 다시 보내기 after 확인 필요: it may send an unsure one again and the mail CLI takes over a claim a dead sender left (features/reply-drafts/lib/flow.ts sendDraft). */
-export type SendJob = { ref: string; conv: string; action: SendAction; title: string; retry?: true; force?: true };
+/** `hash`: the approvalHash of the version the owner approved. `by`: his own act, or code's retry of one; nothing else may queue a send. */
+export type SendJob = { ref: string; conv: string; action: SendAction; title: string; retry?: true; force?: true; hash?: string; by?: "owner" | "auto" };
 /** What is known of a job that was sending when the gateway stopped. */
 export type SendLook = { state: "sent" } | { state: "alive" } | { state: "failed" | "unsure"; text: string };
 type Hold = { approvedAt: number; wait: number };
 /** Code's own next attempt of a failed send: which one, of how many, and when. */
 const PROVE_EVERY_MS = 10 * 60_000;
 export type AutoRetry = { attempt: number; max: number; nextAt: number };
-type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts?: number };
+/** `detail`: what the place itself answered to the last try (hub/reply-types.ts SendOutcome), kept with the job, never shown on a card. */
+type Ended = { reason?: Reason; safeToAuto?: boolean; auto?: AutoRetry; attempts?: number; detail?: string };
 type Kept = SendJob & { state: "queued" | "sending" | "undo" | "failed" | "unsure" } & Partial<Hold> & Ended;
 /** `undo`: approved, inside the cancel window (`until`); `back`: not sent, the draft waits for approval again (cancelled, or the gateway restarted in the window).
  * `failed` is surely not sent, `unsure` may have gone out; both carry `reason`, and `text` is its plain Korean for today's readers. */
@@ -58,6 +65,16 @@ export function sendActionOf(label: string): SendAction | undefined {
 	return a === "send" || a === "send-main" || a === "send-mail" || a === "send-as-is" ? a : undefined;
 }
 
+/** The fingerprint of what a send would carry: recipients, subject, text, parts, files (name, size and, for a file held locally, its content) and a
+ * bundled mail. Display fields (labels, notes, state) are not in it. */
+export function approvalHash(view: DraftView): string {
+	const d = view.draft;
+	const files = (list?: FileShown[]) => (list ?? []).map(f => `${f.name}\n${f.size ?? ""}\n${f.digest ?? ""}`).sort();
+	const mail = d.mail ? { to: d.mail.to, subject: d.mail.subject ?? "", text: d.mail.text, attachments: files(d.mail.attachments) } : null;
+	const body = { to: d.to, cc: [...(d.cc ?? [])].sort(), subject: d.subject ?? "", text: d.text, parts: d.parts ?? [], attachments: files(d.attachments), mail };
+	return createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
+}
+
 /** The ref in a decision question's trailing "(<ref>)". */
 export const refOfQuestion = (q: string): string | undefined => /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/.exec(q)?.[1];
 
@@ -71,6 +88,8 @@ export function sendArgv(kind: SendKind, ref: string, action: SendAction, bun = 
 export type SenderDeps = {
 	/** An in-process sender for `job` (used before the CLI; a kind with no CLI, KakaoTalk, needs one). */
 	runJob?: (job: SendJob & { kind: SendKind }) => ReturnType<NonNullable<ReplyAdapter["run"]>> | undefined;
+	/** The approvalHash of draft `ref` as its store holds it now (undefined: no store knows it). Absent: no approval gate (tests of the queue alone). */
+	fingerprint?: (ref: string) => Promise<string | undefined>;
 	/** Code repair before an automatic retry whose policy asks for one (a background re-login). Absent: such a reason is never retried by code. */
 	repair?: (job: SendJob, code: ReasonCode) => Promise<"fixed" | "needs_owner" | "failed">;
 	/** Proof read back for an unsure send: it can say "sent", never "not sent". */
@@ -128,7 +147,7 @@ export function createApprovalSender(deps: SenderDeps) {
 	// `gone`: the draft is no longer pending, so there is nothing left to resolve and the file does not keep it.
 	const set = (j: SendJob, state: SendResult["state"], text = "", hold?: Hold, ended: Ended = {}) => {
 		const keep = state === "queued" || state === "sending" || state === "undo" || ((state === "failed" || state === "unsure") && ended.reason?.code !== "gone");
-		if (keep) kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), ...(j.force ? { force: true as const } : {}), state, ...(hold ?? {}), ...ended });
+		if (keep) kept.set(j.ref, { ref: j.ref, conv: j.conv, action: j.action, title: j.title, ...(j.retry ? { retry: true as const } : {}), ...(j.force ? { force: true as const } : {}), ...(j.hash ? { hash: j.hash } : {}), ...(j.by ? { by: j.by } : {}), state, ...(hold ?? {}), ...ended });
 		else kept.delete(j.ref);
 		persist();
 		const r: SendResult = { ref: j.ref, conv: j.conv, title: j.title, state, text, at: now(), ...(hold ? { until: hold.approvedAt + hold.wait } : {}), ...ended };
@@ -206,6 +225,13 @@ export function createApprovalSender(deps: SenderDeps) {
 	// The lane is dropped in the same tick its last job is taken, so a job queued later always starts a new runner.
 	async function drain(key: string, jobs: (SendJob & { kind: SendKind })[]): Promise<void> {
 		for (let j = jobs.shift(); j; j = jobs.shift() ?? (lanes.delete(key), undefined)) {
+			const refusal = deps.fingerprint ? await unapproved(deps, j) : undefined;
+			if (refusal) {
+				const reason = reasonOf(refusal);
+				deps.log(`approved send ${j.ref} in ${j.conv}: not sent, ${refusal}`);
+				set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: attempts(j.ref) });
+				continue;
+			}
 			const tries = attempts(j.ref) + 1;
 			const auto = kept.get(j.ref)?.auto;
 			set(j, "sending", "", undefined, { attempts: tries, ...(auto ? { auto } : {}) });
@@ -228,7 +254,7 @@ export function createApprovalSender(deps: SenderDeps) {
 		if (!argv) return { sent: "no", code: "not_supported" };
 		const r = await deps.run(argv);
 		const o = outcomeOf(r);
-		deps.log(`approved send ${j.ref} in ${j.conv}: exit ${r.code}, ${o.sent}${"code" in o ? ` ${o.code}` : ""}${r.code !== 0 ? ` (${lastLine(r.out).slice(0, 200)})` : ""}`);
+		deps.log(`approved send ${j.ref} in ${j.conv}: exit ${r.code}, ${o.sent}${"code" in o ? ` ${o.code}` : ""}${r.code !== 0 ? ` (${lastLine(r.out).slice(0, 200)})` : ""}${"detail" in o && o.detail ? `; it said: ${o.detail}` : ""}`);
 		return o;
 	}
 
@@ -236,13 +262,14 @@ export function createApprovalSender(deps: SenderDeps) {
 	function ended(j: SendJob, o: SendOutcome, tries: number): void {
 		if (o.sent === "yes") return set(j, "sent");
 		const reason = o.sent === "partial" ? partialReason(o) : reasonOf(o.code, o.sent === "no" ? o.vars : {});
-		if (o.sent === "maybe" || (o.sent === "partial" && o.rest === "maybe")) return set(j, "unsure", reason.text, undefined, { reason, attempts: tries });
+		const said = "detail" in o && o.detail ? { detail: o.detail } : {};
+		if (o.sent === "maybe" || (o.sent === "partial" && o.rest === "maybe")) return set(j, "unsure", reason.text, undefined, { reason, attempts: tries, ...said });
 		const p = policyOf(reason.code).auto;
 		const auto = p && (!p.repair || deps.repair) && !j.force ? p : undefined;
 		const done = j.retry || j.force ? 0 : (kept.get(j.ref)?.auto?.attempt ?? 0);
-		if (!auto || done >= auto.max) return set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: tries });
+		if (!auto || done >= auto.max) return set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: tries, ...said });
 		const next: AutoRetry = { attempt: done + 1, max: auto.max, nextAt: now() + (auto.waits[done] ?? auto.waits.at(-1) ?? 0) };
-		set(j, "failed", reason.text, undefined, { reason, safeToAuto: true, auto: next, attempts: tries });
+		set(j, "failed", reason.text, undefined, { reason, safeToAuto: true, auto: next, attempts: tries, ...said });
 		schedule(j, next);
 	}
 
@@ -261,7 +288,14 @@ export function createApprovalSender(deps: SenderDeps) {
 		autoAt.delete(j.ref);
 		const t = deps.kind(j.ref, j.action);
 		if (!t) return set(j, "failed", k.reason.text, undefined, { reason: k.reason, safeToAuto: false, attempts: k.attempts });
+		let job = j;
 		if (policyOf(k.reason.code).auto?.repair) {
+			// A draft changed since the owner's 보내기 is not repaired into a send.
+			const refusal = await unapproved(deps, j);
+			if (refusal) {
+				const reason = reasonOf(refusal);
+				return set(j, "failed", reason.text, undefined, { reason, safeToAuto: false, attempts: k.attempts });
+			}
 			let fixed: "fixed" | "needs_owner" | "failed";
 			try {
 				fixed = (await deps.repair?.(j, k.reason.code)) ?? "failed";
@@ -270,8 +304,12 @@ export function createApprovalSender(deps: SenderDeps) {
 				fixed = "failed";
 			}
 			if (fixed !== "fixed") return set(j, "failed", k.reason.text, undefined, { reason: k.reason, safeToAuto: false, attempts: k.attempts });
+			// Code's own repair (a "Re:" subject, a re-login) on the approved version: what it leaves is the version this attempt is checked against.
+			const now = await current(deps, j.ref);
+			if (typeof now === "string") job = { ...j, hash: now };
 		}
-		const { retry: _r, force: _f, ...plain } = j;
+		const { retry: _r, force: _f, ...rest } = job;
+		const plain: SendJob = { ...rest, by: "auto" };
 		set(plain, "queued", "", undefined, { attempts: k.attempts, auto: next });
 		const lane = lanes.get(t.lane);
 		if (lane) lane.jobs.push({ ...plain, kind: t.kind });
@@ -317,10 +355,10 @@ export function createApprovalSender(deps: SenderDeps) {
 			for (const k of left) kept.set(k.ref, k);
 			saved = JSON.stringify(left);
 			persist();
-			for (const { state, approvedAt: _a, wait: _w, reason, safeToAuto, auto, attempts: tries, ...j } of left) {
+			for (const { state, approvedAt: _a, wait: _w, reason, safeToAuto, auto, attempts: tries, detail, ...j } of left) {
 				// A failed or unsure send is shown again as it was; a failed one's automatic attempt keeps its schedule.
 				if ((state === "failed" || state === "unsure") && reason && isReasonCode(reason.code)) {
-					set(j, state, reason.text, undefined, { reason, attempts: tries ?? 0, ...(state === "failed" ? { safeToAuto: safeToAuto === true, ...(auto ? { auto } : {}) } : {}) });
+					set(j, state, reason.text, undefined, { reason, attempts: tries ?? 0, ...(detail ? { detail } : {}), ...(state === "failed" ? { safeToAuto: safeToAuto === true, ...(auto ? { auto } : {}) } : {}) });
 					if (state === "failed" && safeToAuto && auto) schedule(j, auto);
 				} else if (state === "failed" || state === "unsure") kept.delete(j.ref);
 				else if (state === "undo") back(j, "restart");
@@ -383,14 +421,34 @@ export function createApprovalSender(deps: SenderDeps) {
 	};
 }
 
+// The draft's fingerprint as its store holds it now; undefined when no store knows it (or there is no gate), null when it could not be read.
+async function current(deps: Pick<SenderDeps, "fingerprint" | "log">, ref: string): Promise<string | undefined | null> {
+	try {
+		return await deps.fingerprint?.(ref);
+	} catch (e) {
+		deps.log(`approved send ${ref}: its draft could not be read: ${(e as Error).message}`);
+		return null;
+	}
+}
+/** Why `j` must not run now (the one gate, see the top of this file), or undefined when it carries the version the store holds. */
+async function unapproved(deps: Pick<SenderDeps, "fingerprint" | "log">, j: SendJob): Promise<ReasonCode | undefined> {
+	if (!deps.fingerprint) return undefined;
+	const now = await current(deps, j.ref);
+	if (now === null) return "tool_before_send";
+	if (now === undefined) return "gone";
+	return now === j.hash ? undefined : "changed";
+}
+
 const lastLine = (out: string): string => out.trim().split("\n").filter(Boolean).slice(-1)[0] ?? "";
+// A CLI's `detail` is another process's text: bounded here, whatever it printed.
+const DETAIL_MAX = 300;
 const SENT = new Set(["yes", "no", "maybe"]);
 
 /** How a CLI send ended (design 1.11): timed out is unsure; the last `DOTZ_SEND` line decides (a "yes" wins over a non-zero exit); without one, exit 0 is sent and anything else may have gone out. */
 export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }): SendOutcome {
 	if (r.timedOut) return { sent: "maybe", code: "timeout" };
 	const line = r.out.split("\n").filter(l => l.startsWith("DOTZ_SEND ")).at(-1);
-	let said: { sent?: unknown; code?: unknown; vars?: unknown } | undefined;
+	let said: { sent?: unknown; code?: unknown; vars?: unknown; detail?: unknown } | undefined;
 	try {
 		said = line ? JSON.parse(line.slice("DOTZ_SEND ".length)) : undefined;
 	} catch {
@@ -399,9 +457,10 @@ export function outcomeOf(r: { code: number; out: string; timedOut?: boolean }):
 	if (said && SENT.has(String(said.sent))) {
 		if (said.sent === "yes") return { sent: "yes" };
 		const code = isReasonCode(said.code) ? said.code : "unknown";
-		if (said.sent === "maybe" || code === "unknown") return { sent: "maybe", code };
+		const detail = typeof said.detail === "string" && said.detail.trim() ? { detail: said.detail.trim().slice(0, DETAIL_MAX) } : {};
+		if (said.sent === "maybe" || code === "unknown") return { sent: "maybe", code, ...detail };
 		const vars = said.vars && typeof said.vars === "object" ? (said.vars as Record<string, string | number>) : undefined;
-		return { sent: "no", code, ...(vars ? { vars } : {}) };
+		return { sent: "no", code, ...(vars ? { vars } : {}), ...detail };
 	}
 	return r.code === 0 ? { sent: "yes" } : { sent: "maybe", code: "unknown" };
 }

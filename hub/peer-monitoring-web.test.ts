@@ -159,7 +159,7 @@ describe("merged 모니터링", () => {
 		await waitFor(v, `$("#kk-in .kk-m.in .kk-bub") && $("#kk-form") && !$("#kk-foot").hidden`);
 		expect(await text(v, `$("#kk-in .kk-m.in .kk-bub").textContent`)).toBe("저녁 뭐 먹을래?");
 		expect(await text(v, `$("#kk-in .kk-m.me .kk-bub").textContent`)).toBe("김치찌개");
-		// The bar asks the assistant (no draft here, the other computer cannot make a new one: nothing goes out); a send is the card's own 보내기 / 직접 수정.
+		// The bar asks the assistant (no draft here, the other computer cannot make a new one: nothing goes out); a send is the card's own 보내기.
 		await v.evaluate(`(kkTa.value = "내일 간다고 해줘", kkSend(), 0)`);
 		expect(acts.filter(a => a.args.op === "draft")).toEqual([]);
 		await v.evaluate(`(kkSendText("좋아요"), 0)`);

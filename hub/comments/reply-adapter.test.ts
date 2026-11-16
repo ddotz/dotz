@@ -19,7 +19,7 @@ function setup(o: { model?: string[]; learn?: string[] } = {}) {
 	writeFileSync(join(dir, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
 	const platform: CommentAdapter = { kind: "youtube", list: async () => ({ comments: [raw], cursor: "1" }), reply: async () => ({ ok: true, ref: "r1" }), posts: async () => [] };
 	const mails = new Map<string, MailView>([["RMAIL01", { id: "RMAIL01", to: "fan@example.com", subject: "자료", body: "보내드려요", attachments: [] }]]);
-	const mail: MailLink = { compose: async () => ({ ok: false, reason: "x" }), send: async () => ({ ok: true, text: "" }), drop: () => undefined, revise: async () => ({ ok: false, reason: "x" }), view: id => mails.get(id), edit: (id, text) => (mails.set(id, { ...mails.get(id)!, body: text }), { ok: true }) };
+	const mail: MailLink = { compose: async () => ({ ok: false, reason: "x" }), send: async () => ({ ok: true, text: "" }), drop: () => undefined, revise: async () => ({ ok: false, reason: "x" }), view: id => mails.get(id), edit: (id, text, subject) => (mails.set(id, { ...mails.get(id)!, body: text, ...(subject !== undefined ? { subject } : {}) }), { ok: true }) };
 	let n = 0;
 	const outs = o.model ?? [reply("이번 주말이에요!")];
 	const engine = createEngine({ dir, now: () => NOW, collector: "mac", adapters: { youtube: platform }, model: async () => ({ text: outs[Math.min(n++, outs.length - 1)]! }), mail, learn: (_s, line) => void o.learn?.push(line), style: () => ({ rules: [], corrections: [], forbidden: ["무조건"], samples: [] }) });
@@ -88,4 +88,7 @@ test("drop then restore; the mail part of an edit goes to the mail link", async 
 	engine.store.putDraft({ ...engine.store.drafts().find(d => d.code === code)!, mail: "RMAIL01" });
 	expect(await a.edit(code, "메일은 제가 쓴 대로요", "mail")).toEqual({ ok: true });
 	expect((await a.get(code))!.draft.mail?.text).toBe("메일은 제가 쓴 대로요");
+	// The bundled mail's subject rides along with its text.
+	expect(await a.edit(code, "메일은 제가 쓴 대로요", "mail", "자료 보내드려요")).toEqual({ ok: true });
+	expect((await a.get(code))!.draft.mail).toMatchObject({ subject: "자료 보내드려요", text: "메일은 제가 쓴 대로요" });
 });

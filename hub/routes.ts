@@ -307,6 +307,10 @@ export { applyMailStates, mailOriginal, mailSyncDeps } from "./routes-mail.ts";
 // A hand-written card's answer (kind `card`) is one owner message to the bot, as its own numbered answer would be.
 setReplyBot((to, text) => deliverAnswer({ to, text, picks: [], notice: "", login: "local" }));
 
+// An agent's own call never sends into a KakaoTalk room: that send is the owner's (hub/reply-actions.ts owner_only).
+const agentKakaoSend = (req: Request, url: URL, peer: string): Response | undefined =>
+	req.method === "POST" && /^\/api\/kakao\/chat\/[^/]+\/send$/.test(url.pathname) && peer === "none" && tokenOk(req) ? json({ ok: false, code: "owner_only", error: "보내기는 오너만 할 수 있어요" }, 403) : undefined;
+
 export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const setupGate = createSetupGate({ dir: DATA_DIR, localHeaders: () => localLogin.sessionHeaders(), restart: () => void restartGatewayNow(), providers: routeSettings, log });
 	// Before any onboarding route can run: the real browser/exec, a gateway restart only after a flow changed config, and the live web-access switch.
@@ -539,8 +543,8 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
 			}
-			// 보내기 on a draft the gateway sends itself takes its path (hub/approval-wire.ts webAnswer); every other answer goes to the bot.
-			const r = await webAnswer(decodeURIComponent(decide[1]!), { ...answer, files }, login, a => deliverAnswer({ ...a, login, via }));
+			// 보내기 on a draft the gateway sends itself takes its path (hub/approval-wire.ts webAnswer); every other answer goes to the bot. The hub token is an agent's: on a draft's card it may only ask for a change.
+			const r = await webAnswer(decodeURIComponent(decide[1]!), { ...answer, files }, login, a => deliverAnswer({ ...a, login, via }), peer === "none" && tokenOk(req));
 			// 보내지 않기 on a mail reply draft drops it in the reply-drafts store at once (not only when the bot gets to it), so every count and
 			// list, here and on the other computer, sees it gone.
 			if (r.status === 200 && !r.body.already) await dropAnsweredMailDraft(r.body.item as Notice | undefined, Number(answer.n), log);
@@ -618,7 +622,7 @@ export function makeRoute({ tailnetName = ownTailnetName, busyNow, restartGatewa
 		if (commentsResponse) return commentsResponse;
 		const igDmResponse = await igDmRoute(req, url, parts);
 		if (igDmResponse) return igDmResponse;
-		const kakaoResponse = await kakaoRoute(req, url, parts);
+		const kakaoResponse = agentKakaoSend(req, url, peer) ?? (await kakaoRoute(req, url, parts));
 		if (kakaoResponse) return kakaoResponse;
 		const settingsResponse = await routeSettings(req, url, parts);
 		if (settingsResponse) return settingsResponse;

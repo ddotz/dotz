@@ -131,7 +131,7 @@ test("a reply + mail draft with send modes shows all six choices; 직접 입력 
 	await waitFor(v, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
 	await v.evaluate(`noticeSheetOpen(${JSON.stringify(String(dn.id))})`);
 	await waitFor(v, `document.querySelectorAll(".fs-ft .dc-acts .dc-act").length === 6`);
-	expect(JSON.parse(await v.evaluate(`JSON.stringify([...document.querySelectorAll(".fs-ft .dc-acts .dc-act")].map(b => b.textContent))`))).toEqual(["보내기", "고치기", "보내지 않기", "답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"]);
+	expect(JSON.parse(await v.evaluate(`JSON.stringify([...document.querySelectorAll(".fs-ft .dc-acts .dc-act")].map(b => b.dataset.n))`))).toEqual(["1", "2", "3", "4", "5", "6"]);
 	expect(await v.evaluate(`[draftAsksText({ label: "답글만 보내기" }), draftAsksText({ label: "메일만 보내기" }), draftAsksText({ label: "어떻게 보낼지 직접 입력" })].join()`)).toBe("false,false,true");
 	await v.evaluate(`document.querySelector(".fs-ft .dc-acts .dc-act:nth-child(6)").click()`);
 	await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);

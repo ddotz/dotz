@@ -32,7 +32,7 @@ const TABLE: Record<ReasonCode, Entry> = {
 	forbidden_word: no("쓰지 않기로 한 표현이 들어 있어요 ('{word}')", "The text has a phrase you chose not to use ('{word}')", []),
 	too_long: no("글이 너무 길어요 ({n}자, {max}자까지)", "The text is too long ({n} characters, up to {max})", []),
 	empty: no("보낼 글이 비어 있어요", "There is no text to send", []),
-	attach_mismatch: no("첨부가 글과 맞지 않아요 ({issues})", "The attachments do not match the text ({issues})", ["pick_file"]),
+	attach_mismatch: no("첨부가 글과 맞지 않아요 ({issues})", "The attachments do not match the text ({issues})", ["pick_file", "send_as_is"]),
 	attach_missing: no("첨부 파일 '{name}'를 찾지 못했어요", "The attachment '{name}' was not found", ["pick_file"]),
 	attach_upload: no("첨부 파일을 올리지 못했어요", "The attachment could not be uploaded", ["retry"], auto(1, [30 * S])),
 	file_pending: no("첨부 파일을 아직 내려받는 중이에요", "The attachment is still downloading", ["retry"], auto(5, [M, M, M, M, M])),
@@ -51,6 +51,8 @@ const TABLE: Record<ReasonCode, Entry> = {
 	input_busy: no("카카오톡 입력창에 쓰던 글이 있어요", "The KakaoTalk input box has text you were writing", ["open_channel", "retry"]),
 	room_unknown: no("대화방을 찾지 못했어요", "The chat room was not found", ["drop"]),
 	not_approved: no("보내기로 고른 기록이 없어요", "There is no record that you chose to send this", []),
+	// The draft is not the version the owner saw when he pressed 보내기 (hub/approval-send.ts approvalHash): never sent by code, his 다시 보내기 approves the new one.
+	changed: no("보내기를 고른 뒤 초안이 바뀌었어요. 다시 확인하고 보내 주세요", "The draft changed after you chose to send it. Check it and send it again", ["retry", "redraft", "drop"]),
 	tool_before_send: no("보내기 전 준비 단계에서 오류가 났어요", "Something failed while getting ready to send", ["retry"], auto(1, [30 * S])),
 	config: no("{app} 보내기 설정이 올바르지 않아요", "The {app} send settings are not valid", ["open_channel"]),
 

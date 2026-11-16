@@ -2,7 +2,16 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { check, classifyModelError, classifyToolError, failureReport, wakeOf } from "./failure-report.ts";
+import { check, classifyModelError, classifyToolError, failureReport, grownClasses, type Report, wakeOf } from "./failure-report.ts";
+
+test("a grown class keyed by a wake's raw first words reads as a label in the digest line, its key unchanged", () => {
+	const name = "빈 깨움 other:[dotz gateway] 작업 중에 세션 ";
+	const r = { tokens: 10e6, turns: 100, lost: [{ name, count: 5, tokens: 4.3e6, share: 0.43 }] } as unknown as Report;
+	const [g] = grownClasses(r, { version: 2, at: "", tokens: 10e6, turns: 100, classes: { [name]: { count: 1, tokens: 3.6e6 } } }, { pct: 10, minTokens: 1, minCount: 1 });
+	expect(g!.name).toBe(name);
+	expect(g!.line).not.toContain("other:");
+	expect(g!.line).not.toContain("[dotz gateway]");
+});
 
 const root = mkdtempSync(join(tmpdir(), "failure-report-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));

@@ -1,8 +1,9 @@
 // The mail and webmail adapter of the one reply flow (the reply unification design, 1.8 columns 1 and 2) and the one learning
 // implementation ("record, then refine"). It is the hub's single door into the reply-drafts feature: it imports exactly flow.ts and store.ts,
 // and re-exports what the gateway's other modules read of it, so no other hub file needs a feature edge for them.
-import { askText, defaultCall, dropDraft, editDraft, realFlowDeps, recordCorrection, refineAfterCorrection, restoreDraft, reviseDraft, type FlowDeps, webmailSite } from "../features/reply-drafts/lib/flow.ts";
+import { askText, defaultCall, dropDraft, editDraft, fileDigest, realFlowDeps, recordCorrection, refineAfterCorrection, restoreDraft, reviseDraft, stagedFiles, type FlowDeps, webmailSite } from "../features/reply-drafts/lib/flow.ts";
 import { claimFile, getDraft, listDrafts, patchDraft, setStatus, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { fileSizeText } from "./draft-approval.ts";
 import { reasonOf } from "./reply-reasons.ts";
 import type { DraftView, Lesson, ReasonCode, ReplyAdapter, ReplyKind } from "./reply-types.ts";
 
@@ -14,6 +15,7 @@ const kindOf = (rec: DraftRec): ReplyKind => (webmailSite(rec.source) ? "webmail
 function viewOf(rec: DraftRec): DraftView {
 	const pending = rec.status === "pending";
 	const before = rec.replaces ? getDraft(rec.replaces) : undefined;
+	const attachments = stagedFiles(rec.id).map(f => ({ name: f.name, size: fileSizeText(f.size), digest: fileDigest(f.path) }));
 	return {
 		item: `mail:${rec.ref}`,
 		ref: rec.id,
@@ -30,6 +32,7 @@ function viewOf(rec: DraftRec): DraftView {
 			...(rec.cc?.length ? { cc: rec.cc } : {}),
 			...(rec.subject ? { subject: rec.subject } : {}),
 			text: rec.body,
+			...(attachments.length ? { attachments } : {}),
 			...(rec.rule ? { rule: rec.rule.name } : {}),
 			...(before ? { replaces: { ref: before.id, text: before.body } } : {}),
 			...(rec.editedFrom !== undefined ? { edited: true as const } : {}),
@@ -64,8 +67,8 @@ export function mailAdapter(deps: () => FlowDeps = realFlowDeps): ReplyAdapter {
 			if (!r.ok || !r.id) return { ok: false, reason: { code: "revise_failed", text: r.text || reasonOf("revise_failed").text } };
 			return { ok: true, ref: r.id, replaces: ref, ...(r.lesson ? { lesson: r.lesson as Lesson } : {}) };
 		},
-		edit: async (ref, text) => {
-			const r = editDraft(ref, text);
+		edit: async (ref, text, _part, subject) => {
+			const r = editDraft(ref, text, subject);
 			if (r.ok) return { ok: true };
 			return { ok: false, reason: { code: (r.code as ReasonCode | undefined) ?? "not_pending", text: r.text }, ...(r.lint ? { lint: r.lint } : {}) };
 		},

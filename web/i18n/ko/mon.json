@@ -62,7 +62,7 @@
   "mon.tag.warn": "주의",
   "mon.dr.st.open": "확인 대기",
   "mon.dr.st.send": "보냄",
-  "mon.dr.st.edit": "고침",
+  "mon.dr.st.revise": "고침",
   "mon.dr.st.revising": "고치는 중…",
   "mon.dr.st.drop": "보내지 않음",
   "mon.dr.st.own": "보낼 방법 전함",

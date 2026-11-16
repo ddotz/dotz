@@ -7,7 +7,8 @@ import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import * as discord from "./discord.ts";
 import { answerDecision, ignoreNotice, listNotices, markDraftPosted } from "./notices.ts";
-import { out, reconcileMailCards } from "./outbound.ts";
+import { approvals, out, reconcileMailCards } from "./outbound.ts";
+import { cardRef } from "./approval-queue.ts";
 import { addDraft, listDrafts, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { paths } from "../features/reply-drafts/lib/settings.ts";
 
@@ -115,4 +116,39 @@ test("one post with several draft blocks becomes one card per draft, shown one a
 		if (ref !== "mb-3") await next;
 	}
 	expect(open()).toEqual([]);
+});
+
+test("the answer written after the last of several cards goes out once as its own post, not with a held card", async () => {
+	const conv = "mail:aq-tail";
+	const block = (ref: string) => draftApprovalBlock({ to: "friend@example.com", toLabel: "받는이", subject: `Re: ${ref}`, body: `보내 ${ref}`, ref, question: "이 답장 보낼까요?" });
+	const events: HubEvent[] = [];
+	onEmit(e => void (e.kind === "out" && e.target === conv && events.push(e)));
+	await out(conv, `[ask] 답장 초안이에요\n${block("tl-1")}\n\n두 번째예요\n${block("tl-2")}\n\n나머지는 끝냈어요`);
+	const tails = events.filter(e => String(e.text).includes("나머지는 끝냈어요"));
+	expect(tails).toHaveLength(1);
+	expect(cardRef(String(tails[0]!.text))).toBeUndefined();
+	expect(events.map(e => cardRef(String(e.text)))).toEqual(["tl-1", undefined]);
+	const open = () => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === conv);
+	const second = new Promise<void>(resolve => onEmit(e => e.kind === "out" && e.target === conv && cardRef(String(e.text)) === "tl-2" && resolve()));
+	ignoreNotice(open()[0]!.id);
+	await second;
+	const card2 = events.find(e => cardRef(String(e.text)) === "tl-2")!;
+	expect(String(card2.text)).not.toContain("나머지");
+	for (const n of open()) ignoreNotice(n.id);
+	expect(open()).toEqual([]);
+});
+
+test("a card held in one conversation leaves the queue when the same draft is carded in another", async () => {
+	const [a, b] = ["mail:aq-x-a", "mail:aq-x-b"];
+	const openIn = (conv: string) => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === conv);
+	await out(b, card("aq-x-first"));
+	await out(b, card("aq-x-both"));
+	await out(a, card("aq-x-both"));
+	expect(openIn(a).map((n: any) => n.decision.draft.ref)).toEqual(["aq-x-both"]);
+	// The copy held in b behind its open card is gone: closing that card shows nothing more there.
+	expect(approvals.heldIn(b)).toEqual([]);
+	ignoreNotice(openIn(b)[0]!.id);
+	expect(approvals.heldIn(b)).toEqual([]);
+	expect(openIn(b)).toEqual([]);
+	for (const n of openIn(a)) ignoreNotice(n.id);
 });

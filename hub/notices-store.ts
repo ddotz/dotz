@@ -270,6 +270,7 @@ export function feed(e: HubEvent): void {
 	try {
 		resolveByReport(e);
 		if (e.kind === "lane_start") noteLaunch(e);
+		else if (e.kind === "out" && adoptRepost(e)) return;
 		else if (e.kind === "out") {
 			const ds = decisionsOf(e);
 			fromOutbox(e, ds.length > 0);
@@ -353,6 +354,16 @@ function closeRepeat(old: Notice, at: string): void {
 		save();
 		for (const n of hit) broadcast({ ts: at, kind: "notice", source: "gateway", item: n, unread: unreadCount() });
 	}
+}
+
+// A card posted again at the bottom (a confirm card, hub/notices-drafts.ts repostDraftCard) is the open notice it names, now asked by this post: a
+// web quote of it names the card and it counts as the newest post there. No second notice is made.
+function adoptRepost(e: HubEvent): boolean {
+	const n = typeof e.repost === "string" ? items.find(i => i.id === e.repost && isOpenDecision(i)) : undefined;
+	if (!n) return false;
+	n.decision!.reply_to = e.ts;
+	if (!replaying) save();
+	return true;
 }
 
 export function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {

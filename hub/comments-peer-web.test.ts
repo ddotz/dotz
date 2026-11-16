@@ -91,8 +91,8 @@ describe.each([[390, 844], [1280, 900]])("another computer's comment app at %ipx
 		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .ra-card")`);
 		const got = await q<{ text: string; acts: string[]; tabs: number; overflow: boolean }>(v, `
 			const c = document.querySelector("#cm .ra-card"), txt = e => e ? e.textContent.trim() : "";
-			return { text: txt(c.querySelector(".rq-text")), acts: [...c.querySelectorAll(".rq-acts button")].map(txt), tabs: document.querySelectorAll("#cm .cm-tabs").length, overflow: document.documentElement.scrollWidth > innerWidth };`);
-		expect(got).toEqual({ text: "고마워요! 이번 주 안에 올릴게요.", acts: ["보내기", "고치기", "보내지 않기"], tabs: 0, overflow: false });
+			return { text: txt(c.querySelector(".rq-text")), acts: [...c.querySelectorAll(".rq-acts button")].map(b => b.dataset.k), tabs: document.querySelectorAll("#cm .cm-tabs").length, overflow: document.documentElement.scrollWidth > innerWidth };`);
+		expect(got).toEqual({ text: "고마워요! 이번 주 안에 올릴게요.", acts: ["send", "fix", "drop"], tabs: 0, overflow: false });
 		await Bun.write(join(SHOTS, `comment-peer-${width}.png`), await v.screenshot());
 	}, 20000);
 

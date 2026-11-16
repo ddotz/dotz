@@ -19,9 +19,15 @@ function trPaneOpen(onClose) {
   return h;
 }
 // One by one: the head counts the place and the channels, the card is rqItemCard with the filled 보내기, and 진행 lists every item with its live state.
-// After 보내기 the view moves on at once; the send waits its undo window in the common queue and its state shows in the rail. 목록: one compact row per item,
-// 보내기 | 고치기 | 건너뛰기 picked per row, and 고른 것 처리 posts only the picks. Keys: Enter 보내기, E 직접 수정, X 보내지 않기, → 건너뛰기, ← back, L list.
-const TQ = { h: null, items: [], i: 0, list: false, picks: {}, notes: {} };
+// After 보내기 the view moves on at once; the send waits its undo window in the common queue and its state shows in the rail. 목록: one compact row per item (tqRowNode),
+// 보내기 | 건너뛰기 picked per row and 고치기 opening the row's panel, and 고른 것 처리 posts only the picked sends. Keys: Enter 보내기, E 고치기, X 보내지 않기, ← → move, L list;
+// the one-card view names them in a row under the card (tqKeysNode). picks: { [ref]: { k ("send" | "skip"), it (the item as its row showed it when picked) } }.
+const TQ = { h: null, items: [], i: 0, list: false, picks: {}, running: false };   // running: 고른 것 처리 is going through the picks
+// A card that waits takes every key, any other only the moves. [the key caps, the i18n key of what it does, the card's button it presses]
+const TQ_KEYS = [[["Enter"], "common.send", "send"], [["E"], "decision.fix", "fix"], [["X"], "decision.drop", "drop"], [["←", "→"], "triage.key.move"], [["L"], "triage.tog.list"]];
+const tqCan = (it, k) => !it.send && it.draft.state === "pending" && (k === "fix" ? raCanFix(it) : it.can[k]);
+const tqKeysNode = it => el("div", { class: "tq-keys", "data-k": "keys", role: "note", "aria-label": TX("triage.keys") },
+  ...TQ_KEYS.filter(([, , k]) => !k || tqCan(it, k)).map(([keys, label, k]) => el("span", { class: "tq-key", "data-key": k || null }, ...keys.map(c => el("kbd", { text: c })), el("span", { text: TX(label) }))));
 const tqItem = ref => RA.items.get(ref) || TQ.items.find(i => i.ref === ref);
 const TQ_ST = { undo: "reply.q.st.undo", queued: "reply.sending", sending: "reply.sending", sent: "reply.q.st.sent", failed: "reply.q.st.failed", unsure: "reply.q.st.unsure" };
 function tqStateOf(ref) {
@@ -33,7 +39,7 @@ function tqOpen(ref) {
   const items = raItems("waiting").sort((a, b) => (b.at || 0) - (a.at || 0));
   if (!items.length) { toast(TX("triage.none")); return; }
   if (TQ.h) TQ.h.close(false);
-  Object.assign(TQ, { items, i: Math.max(0, ref ? items.findIndex(i => i.ref === ref) : 0), list: false, picks: {}, notes: {} });
+  Object.assign(TQ, { items, i: Math.max(0, ref ? items.findIndex(i => i.ref === ref) : 0), list: false, picks: {} });
   const onClose = () => { if (TQ.h === h) TQ.h = null; document.removeEventListener("keydown", tqKey); };
   const h = trPaneNow() ? trPaneOpen(onClose) : fsOpen({ label: TX("triage.fast"), cls: "tall tr", onClose });
   TQ.h = h;
@@ -50,13 +56,17 @@ function tqKey(ev) {
   if (TQ.list) return;
   if (k === "arrowright") { ev.preventDefault(); tqStep(1); return; }
   if (k === "arrowleft") { ev.preventDefault(); tqStep(-1); return; }
-  if (!it || RA.busy.has(it.ref) || it.send || (k === "enter" && ev.target instanceof HTMLElement && ev.target.closest("button, a"))) return;
-  if (k === "enter" && it.can.send) { ev.preventDefault(); raAct(it, "send").then(ok => ok && tqAfter()); }
-  else if (k === "e" && it.can.edit) { ev.preventDefault(); RA.edit.set(it.ref, it.draft.text); tqPaint(); const f = TQ.h.box.querySelector(".ra-edit"); if (f) f.focus(); }
-  else if (k === "x" && it.can.drop) { ev.preventDefault(); raAct(it, "drop").then(ok => ok && tqAfter()); }
+  // A card whose 고치기 panel is open takes no key here: nothing sends or drops while he changes it.
+  if (!it || RA.busy.has(it.ref) || it.send || RA.fix.has(it.ref) || (k === "enter" && ev.target instanceof HTMLElement && ev.target.closest("button, a"))) return;
+  // A key presses the card's own button, so it does what the button does, on the version the card shows.
+  const b = TQ.h.box.querySelector(`.ra-card .rq-acts [data-k="${{ enter: "send", e: "fix", x: "drop" }[k] || ""}"]`);
+  if (!b || b.disabled) return;
+  ev.preventDefault(); b.click();
+  if (k === "e") { const f = TQ.h.box.querySelector("[data-k=fix-text], [data-k=fix-note]"); if (f) f.focus(); }
 }
 const tqAfter = () => { if (TQ.h) tqStep(1); };
-function tqLive() { if (TQ.h) tqPaint(); }
+// A live change draws the view again, except while he types in a field of it (the card's panel): the field under his keyboard is never replaced, and the next event repaints.
+function tqLive() { if (TQ.h && !TQ.h.box.contains(typingIn())) tqPaint(); }
 function tqPaint() {
   if (!TQ.h) return;
   const n = TQ.items.length, handled = TQ.items.filter(i => tqStateOf(i.ref)).length, by = new Map();
@@ -65,9 +75,8 @@ function tqPaint() {
   const head = fsHead([el("span", { class: "fs-ey", text: countsLine(by) }), el("h2", { class: "fs-t tr-pos", text: TQ.list ? TX("triage.head.list", { n }) : TX("reply.q.head", { i: Math.min(TQ.i + 1, n), n }) }), bar], { close: () => TQ.h && TQ.h.close() });
   const tog = el("button", { class: "btn text sm tr-tog", type: "button", "aria-pressed": String(TQ.list), onclick: () => { TQ.list = !TQ.list; tqPaint(); } }, icon("list"), el("span", { text: TQ.list ? TX("triage.tog.one") : TX("triage.tog.list") }));
   $(".fs-hb", head).prepend(tog);
-  const body = TQ.list ? tqListView() : TQ.i >= n ? tqDoneView() : [rqItemCard(tqItem(TQ.items[TQ.i].ref), { lead: true, after: tqAfter }), tqRail()];
-  const keep = TQ.h.box.querySelector("textarea:focus, input:focus");
-  if (keep && TQ.h.box.contains(keep) && !TQ.list) return;   // typing in the card's field: the next event repaints
+  const cur = !TQ.list && TQ.i < n ? tqItem(TQ.items[TQ.i].ref) : null;
+  const body = TQ.list ? tqListView() : cur ? [rqItemCard(cur, { lead: true, after: tqAfter }), tqKeysNode(cur), tqRail()] : tqDoneView();
   // The body scrolls under the fixed head; a repaint (a pick, a live send state) keeps the place in a long list, a new card starts at its top.
   const was = TQ.h.box.querySelector(".tq-body"), top = was && was.dataset.at === String(TQ.list ? "list" : TQ.i) ? was.scrollTop : 0;
   const nb = el("div", { class: "tq-body", "data-at": TQ.list ? "list" : String(TQ.i) }, ...body);
@@ -88,26 +97,40 @@ function tqDoneView() {
   return [el("div", { class: "tr-none", role: "status", text: TX("reply.q.done", { n: TQ.items.filter(i => tqStateOf(i.ref)).length }) }),
     bad.length ? el("button", { class: "btn tonal sm", type: "button", "data-k": "fails", text: TX("reply.q.fails", { n: bad.length }), onclick: () => { TQ.items = bad; TQ.i = 0; tqPaint(); } }) : null, tqRail()].filter(Boolean);
 }
-// 목록: a pick per row; a revise opens a one-line field, and the new draft shows in the same row and waits for a new pick. Nothing unpicked is sent.
-function tqListView() {
-  const picked = Object.values(TQ.picks).filter(v => v === "send" || v === "revise").length;
-  const rows = TQ.items.map(i => {
-    const it = tqItem(i.ref), pick = TQ.picks[i.ref] || "", st = tqStateOf(i.ref);
-    const b = (k, label) => el("button", { class: `btn ${pick === k ? "tonal" : "text"} sm`, type: "button", "aria-pressed": String(pick === k), "data-k": k, disabled: !!st || RA.busy.has(i.ref), text: label, onclick: () => { TQ.picks[i.ref] = pick === k ? "" : k; tqPaint(); } });
-    const note = pick === "revise" ? el("input", { class: "kk-rv rq-rv", type: "text", maxlength: "500", placeholder: DRAFT_HINT, "aria-label": TX("decision.revise.what"), value: TQ.notes[i.ref] || "", oninput: ev => (TQ.notes[i.ref] = ev.target.value) }) : null;
-    return el("div", { class: "tq-row", role: "group", "data-ref": i.ref },
-      el("div", { class: "tq-line" }, el("span", { class: "tq-who", text: (it.original && String(it.original.who).replace(/\s*<[^<>]*>\s*$/, "")) || it.draft.to }), el("span", { class: "tq-app", text: it.label }), st ? el("span", { class: "tq-st", text: TQ_ST[st] ? TX(TQ_ST[st], { n: 0 }) : "" }) : null),
-      el("div", { class: "tq-tx", text: it.draft.text }), note,
-      el("div", { class: "dr-act dr-row rq-acts" }, b("send", TX("common.send")), b("revise", TX("decision.edit")), b("skip", TX("reply.q.skip"))));
-  });
-  return [...rows, el("div", { class: "tq-foot" }, el("button", { class: "btn sm", type: "button", "data-k": "go-picked", disabled: !picked, text: TX("reply.q.go", { n: picked }), onclick: tqGoPicked }))];
+// 목록: one compact row per item that still shows everything a 보내기 sends, as the card does: the original (one line), the draft, its files or 첨부 없음, and the
+// mail that rides along (who gets it, its subject, its files). 보내기 and 건너뛰기 are picks; 고치기 turns the row into the item's card with its panel open, and 반영 or
+// 닫기 turns it back (raPaint draws the row again through `make`). Nothing unpicked is sent.
+function tqRowNode(i) {
+  const it = tqItem(i.ref), d = it.draft, pick = (TQ.picks[i.ref] || {}).k || "", st = tqStateOf(i.ref), off = !!st || RA.busy.has(i.ref), fail = RA.fail.get(i.ref);
+  const b = (k, label, can = true) => el("button", { class: `btn ${pick === k ? "tonal" : "text"} sm`, type: "button", "aria-pressed": String(pick === k), "data-k": k, disabled: off || !can, text: label,
+    onclick: () => { if (pick === k) delete TQ.picks[i.ref]; else TQ.picks[i.ref] = { k, it }; tqPaint(); } });
+  const row = RA.fix.has(i.ref) ? el("div", { class: "tq-row", "data-ref": i.ref }, rqItemCard(it)) : el("div", { class: "tq-row", role: "group", "data-ref": i.ref },
+    el("div", { class: "tq-line" }, el("span", { class: "tq-who", text: (it.original && String(it.original.who).replace(/\s*<[^<>]*>\s*$/, "")) || d.to }), el("span", { class: "tq-app", text: it.label }), st ? el("span", { class: "tq-st", text: TQ_ST[st] ? TX(TQ_ST[st], { n: 0 }) : "" }) : null),
+    it.original && it.original.text ? el("div", { class: "rq-orig tq-og", "data-k": "orig", title: it.original.text, text: it.original.text }) : null,
+    el("div", { class: "tq-tx", text: d.text }), rqAttachNode(d.attachments),
+    ...(d.mail ? [el("div", { class: "tq-ml", "data-k": "mail" }, icon("mail"), el("span", { text: [TX("decision.mail.along"), d.mail.to, d.mail.subject].filter(Boolean).join(" · ") })), rqAttachNode(d.mail.attachments)] : []),
+    fail ? rqFailNode(fail) : null,
+    el("div", { class: "dr-act dr-row rq-acts" }, b("send", TX("common.send"), it.can.send),
+      el("button", { class: "btn text sm", type: "button", "data-k": "fix", disabled: off || !raCanFix(it), text: TX("decision.fix"), onclick: () => raFixOpen(it) }), b("skip", TX("reply.q.skip"))));
+  raReg(i.ref, { node: row, make: () => tqRowNode(i) });
+  return row;
 }
+function tqListView() {
+  const picked = TQ.items.filter(i => (TQ.picks[i.ref] || {}).k === "send").length;
+  return [...TQ.items.map(tqRowNode), el("div", { class: "tq-foot" }, el("button", { class: "btn sm", type: "button", "data-k": "go-picked", disabled: !picked || TQ.running, text: TX("reply.q.go", { n: picked }), onclick: tqGoPicked }))];
+}
+// Each picked send goes with the item its row showed when it was picked: a draft that changed since is refused by the hub, and its row then shows the new version and says so.
+// One run at a time: a second press, or the button a repaint drew again meanwhile, does nothing until it ends.
 async function tqGoPicked() {
-  for (const i of TQ.items) {
-    const pick = TQ.picks[i.ref], it = tqItem(i.ref);
-    if (pick === "send") await raAct(it, "send");
-    else if (pick === "revise" && (TQ.notes[i.ref] || "").trim()) await raAct(it, "revise", { change: TQ.notes[i.ref].trim() });
-    if (pick === "send" || pick === "revise") delete TQ.picks[i.ref];
-  }
+  if (TQ.running) return;
+  TQ.running = true;
+  try {
+    for (const i of TQ.items) {
+      const p = TQ.picks[i.ref];
+      if (!p || p.k !== "send") continue;
+      delete TQ.picks[i.ref];
+      await raAct(p.it, "send");
+    }
+  } finally { TQ.running = false; }
   tqPaint();
 }

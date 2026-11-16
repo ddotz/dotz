@@ -55,6 +55,9 @@ export function wakeOf(text: string): string {
 	if (m) return /^(lane|lanes|session)$/.test(m[1] ?? "") ? "inbox:lane-report" : `inbox:${m[1]}`;
 	return PREFIXES.find(([p]) => text.startsWith(p))?.[1] ?? `other:${text.slice(0, 24).replace(/\n/g, " ")}`;
 }
+// The digest line the owner reads names a class in words: a wake with no known prefix is keyed by its raw first words ("other:[dotz gateway] ..."),
+// which stay the key (the baseline compares it) but not the words.
+const shownClass = (name: string): string => name.replace(/other:\[dotz gateway\].*$/, "게이트웨이 알림").replace(/other:.*$/, "기타");
 const NOT_A_WAKE = new Set(["cm:senpi-task.usage", "cm:environment-context", "cm:senpi.todo-owed"]);
 
 // Hub log events worth counting; `sum` reads the number out of the line when the line stands for several things.
@@ -333,7 +336,7 @@ export function grownClasses(r: Report, base: Baseline | undefined, th: Threshol
 		if (excess < (byTokens ? th.minTokens : th.minCount) || after < before * (1 + th.pct / 100)) continue;
 		const pct = before ? `+${Math.round((after / before - 1) * 100)}%` : "새로 생김";
 		const share = byTokens ? `비중 ${P(before)} → ${P(after)}` : `1천 턴당 ${(before * 1e3).toFixed(2)} → ${(after * 1e3).toFixed(2)}`;
-		out.push({ name: c.name, weight: byTokens ? excess : excess * 1e3, line: `${c.name}: ${byTokens ? `토큰 ${M(b.tokens)} → ${M(c.tokens)}, ` : ""}건수 ${b.count} → ${c.count}, ${share} (${pct})` });
+		out.push({ name: c.name, weight: byTokens ? excess : excess * 1e3, line: `${shownClass(c.name)}: ${byTokens ? `토큰 ${M(b.tokens)} → ${M(c.tokens)}, ` : ""}건수 ${b.count} → ${c.count}, ${share} (${pct})` });
 	}
 	return out.sort((a, b) => b.weight - a.weight);
 }

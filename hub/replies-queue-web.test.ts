@@ -49,9 +49,9 @@ test("보내기 on a card posts once to /api/reply/act", async () => {
 	expect(posts.at(-1)).toEqual({ path: "/api/reply/act", body: { ref: "RBBBBBB", action: "send" } });
 });
 
-test("another computer's item is acted on through /api/peer/act as reply", async () => {
+test("another computer's item is acted on through /api/peer/act as reply, with the hash of the version shown", async () => {
 	const p = new Promise<void>(r => (posted = r));
-	await run(`raAct({ ref: "RPEER01", pc: { url: "http://peer.test", name: "맥미니" } }, "send")`);
+	await run(`raAct({ ref: "RPEER01", pc: { url: "http://peer.test", name: "맥미니" }, draft: { state: "pending", text: "초안", hash: "RPEER01-v1" } }, "send")`);
 	await p;
-	expect(posts.at(-1)).toMatchObject({ path: "/api/peer/proxy", body: { action: "reply", args: { ref: "RPEER01", action: "send" } } });
+	expect(posts.at(-1)).toMatchObject({ path: "/api/peer/proxy", body: { action: "reply", args: { ref: "RPEER01", action: "send", hash: "RPEER01-v1" } } });
 });

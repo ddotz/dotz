@@ -82,28 +82,15 @@ test("an approval that does not come from the owner does not count", async () =>
 	expect(k.calls).toHaveLength(0);
 });
 
-test("a typed reply counts only in the conversation the ask went out in; a bare number or a question says nothing", async () => {
-	const d = await make();
-	ask(5, d);
-	owner(6, { text: "1" });
-	owner(7, { text: "보내도 돼?" });
-	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
-	owner(8, { text: "네 보내주세요", channel: "web:alert" });
-	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
-	owner(9, { text: "네 보내주세요" });
-	expect(await approval(d.code, sender(fakeKmsg()))).toBe(true);
-});
-
-test("the owner's last typed word wins, in either order", async () => {
+// Typed chat is the model's to read (the reply intent design, 2026-11-16): the gate counts the owner's picks only, whatever he typed around them.
+test("typed chat approves nothing in any conversation, and a typed no after a pick takes nothing back", async () => {
 	const d = await make();
 	ask(5, d, "web");
-	owner(6, { text: "응" });
-	owner(7, { text: "아니 보내지 마" });
+	for (const [i, text] of ["네 보내주세요", "ㅇㅇ", "1) 보내기"].entries()) owner(6 + i, { text });
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
-	owner(8, { text: "ㅇㅇ" });
+	owner(10, pick(d, "보내기"));
+	owner(11, { text: "아니 보내지 마" });
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(true);
-	owner(9, { text: "취소" });
-	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
 });
 
 test("an approval from before the draft existed does not count", async () => {

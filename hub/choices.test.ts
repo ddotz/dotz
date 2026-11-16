@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { clipKeepingAsk, normalizeAsk } from "./ask-normalize.ts";
 import { ASK_A, ASK_B } from "./ask-normalize.fixture.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { decisionText, hasDecisionHead, parseChoices, parseDecisions, stripRecommendMark } from "./choices.ts";
+import { decisionText, detailOf, hasDecisionHead, parseChoices, parseDecisions, plainDecisions, stripRecommendMark } from "./choices.ts";
 
 test("an old message's recommendation mark does not survive parsing or display", () => {
 	const old = "[ask] 배포\n결정: 시점\n**1) 지금** ← 추천\n바로 올려요\n2) 내일 (recommended)\n3) 모레 <- recommended";
@@ -136,4 +136,21 @@ test("a numbered body list above the block does not cost the buttons; a clip kee
 	const cut = clipKeepingAsk(text, 1800);
 	expect(cut.length).toBeLessThanOrEqual(1800);
 	expect(parseChoices(cut).options.map(o => o.label)).toEqual(["반영", "보류"]);
+});
+
+test("a head written twice is one head: no marker and no second label in the title or the question", () => {
+	const text = "결정: [ask] 결정: 남은 디자인 두 가지를 어떻게 할까요?\n**1) 둘 다**\n설명\n**2) 하나만**\n설명";
+	expect(parseDecisions(text).blocks.map(b => b.title)).toEqual(["남은 디자인 두 가지를 어떻게 할까요?"]);
+	expect(parseChoices(text).question).toBe("결정: 남은 디자인 두 가지를 어떻게 할까요?");
+});
+
+test("아니요 and 다른 … answer at once; 안 됨, 고치기 and a marked option ask for text", () => {
+	expect(["아니요", "아냐", "다른 날로", "안 됨", "고치기"].map(label => detailOf({ label }))).toEqual([false, false, false, true, true]);
+	expect(detailOf({ label: "아니요", detail: true })).toBe(true);
+});
+
+test("plainDecisions keeps each question and drops its options and their lines", () => {
+	const text = "README를 올렸어요.\n\n결정: 라이선스를 무엇으로 할까요?\n**1) MIT**\n짧아요\n**2) Apache-2.0**\n특허 조항\n\n- 남은 것: 배지";
+	expect(plainDecisions(text)).toBe("README를 올렸어요.\n\n라이선스를 무엇으로 할까요?\n\n- 남은 것: 배지");
+	expect(plainDecisions("본문\n1) 하나\n2) 둘")).toBe("본문\n1) 하나\n2) 둘");
 });

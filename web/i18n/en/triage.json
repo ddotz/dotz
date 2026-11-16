@@ -25,5 +25,7 @@
     "one": "{n} reply sent today",
     "other": "{n} replies sent today"
   },
-  "triage.rq.sending_n": "Sending {n}"
+  "triage.rq.sending_n": "Sending {n}",
+  "triage.keys": "Keyboard shortcuts",
+  "triage.key.move": "Move"
 }

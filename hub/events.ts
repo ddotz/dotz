@@ -23,7 +23,8 @@ const isAnswer = (e: HubEvent): boolean =>
 export const isPeerMessage = (e: HubEvent): boolean =>
 	!!e.via && (e.kind === "message" || e.kind === "lane_message") && !e.decision && !e.picks && !/^(?:mail|th|settings):/.test(String(e.conv || e.channel || ""));
 
-/** What goes into inbox/outbox: a secret pasted into a message is masked in the file (hub/public-scrub.ts maskSecrets); the live event, its ids and its replies are untouched. */
+/** What goes into inbox/outbox: a secret pasted into a message is masked in the file (hub/public-scrub.ts maskSecrets), in the text, its parts and every string of
+ * its spec (a page drawn after a reload reads the spec from the file); the live event, its ids and its replies are untouched. */
 export function maskedForDisk(event: HubEvent): HubEvent {
 	let changed = false;
 	const mask = (s: string): string => {
@@ -33,7 +34,10 @@ export function maskedForDisk(event: HubEvent): HubEvent {
 	};
 	const text = typeof event.text === "string" ? mask(event.text) : event.text;
 	const parts = Array.isArray(event.parts) ? event.parts.map((p: any) => (typeof p?.text === "string" ? { ...p, text: mask(p.text) } : p)) : undefined;
-	return changed ? { ...event, text, ...(parts ? { parts } : {}) } : event;
+	const deep = (v: unknown): unknown =>
+		typeof v === "string" ? mask(v) : Array.isArray(v) ? v.map(deep) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, deep(x)])) : v;
+	const spec = event.spec === undefined ? undefined : deep(event.spec);
+	return changed ? { ...event, text, ...(parts ? { parts } : {}), ...(spec === undefined ? {} : { spec }) } : event;
 }
 
 const recent: HubEvent[] = [];
@@ -324,11 +328,11 @@ export function answeredIds(): string[] {
 }
 
 // The owner message with this id (a web `mid` or a Discord message id): the live ring first, then the inbox tail. A reply_to
-// names it, so a late answer can quote it (hub/outbound.ts).
-export function ownerMessage(id: string): { text: string; ts: string; author?: string } | undefined {
+// names it, so a late answer can quote it (hub/outbound.ts). `conv`: the conversation it was written in.
+export function ownerMessage(id: string): { text: string; ts: string; author?: string; conv: string } | undefined {
 	const is = (e: HubEvent) => (e.kind === "message" || e.kind === "lane_message") && (e.mid === id || e.message_id === id);
 	const e = recent.findLast(is) ?? tailEvents(paths.inbox).findLast(is);
-	return e ? { text: String(e.text ?? ""), ts: e.ts, ...(typeof e.author === "string" ? { author: e.author } : {}) } : undefined;
+	return e ? { text: String(e.text ?? ""), ts: e.ts, ...(typeof e.author === "string" ? { author: e.author } : {}), conv: eventTarget(e) ?? "main" } : undefined;
 }
 
 // Did the orchestrator answer in `target` after `at` (ms)? A stored prompt without a message id counts as answered then.

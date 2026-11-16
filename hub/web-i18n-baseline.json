@@ -41,7 +41,7 @@
       "why": "server value comparison"
     },
     "web/js/10-decision-card.js": {
-      "count": 73,
+      "count": 71,
       "why": "agent-text parsing and fixed answer phrases"
     },
     "web/js/10-draft-original.js": {
@@ -117,7 +117,7 @@
       "why": "Parses Korean section headings and summary words in agent-written mail text; the mail text itself is server data"
     },
     "web/js/30-monitoring.js": {
-      "count": 23,
+      "count": 22,
       "why": "Matches server-sent Korean values (draft option labels, recipient label, hub status words) and parses Korean clock/report text"
     },
     "web/js/30-notices.js": {

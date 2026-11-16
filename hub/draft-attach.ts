@@ -6,7 +6,7 @@
 //   GET    /api/drafts/<ref>/library[?q=] the files of the 첨부 파일 폴더, best match for the mail first
 //   GET    /api/drafts/<ref>/original     what this draft answers (the sheet's 원문 보기); 404 when it is gone. A mail: { kind: "mail", key, from, to?, date, subject?, text, html, attachments }.
 //                                          A comment (YouTube, Instagram, site): { kind: "comment", key, author, date?, text, post: { title?, link?, thumb?, kind }, parent? } (hub/comments/original.ts)
-// Only a pending mail draft of reply-drafts can change; nothing is sent from here (the owner's 보내기 does that).
+// Only a pending mail draft of reply-drafts can change, never while its send holds it (draft-recipients.ts sendHold); nothing is sent from here (the owner's 보내기 does that).
 import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { paths } from "./config.ts";
@@ -24,6 +24,7 @@ import { fileLinePaths, messageFiles, resolveAllowed } from "./files.ts";
 import { commentDraftOf, commentOriginalOf } from "./comments/gateway.ts";
 import type { CommentOriginal } from "./comments/original.ts";
 import { attachmentList, mailByKey } from "./mail.ts";
+import { sendHold } from "./draft-recipients.ts";
 import { json } from "./routes-util.ts";
 
 const FILE_MAX = 25 * 1024 * 1024;
@@ -142,6 +143,8 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 			return json({ items: ranked.slice(0, LIBRARY_LIST_MAX).map(r => ({ rel: r.file.rel, name: basename(r.file.rel), size: fileSizeText(r.file.size), match: r.score > 0 })) });
 		}
 		if (tail === "files" && req.method === "POST") {
+			const hold = sendHold(rec.id);
+			if (hold) return hold;
 			const b = (await req.json().catch(() => ({}))) as Record<string, any>;
 			if (Number.isInteger(b.remove)) {
 				if (!removeStagedFile(rec.id, b.remove)) return json({ error: "그런 첨부파일이 없어요" }, 404);

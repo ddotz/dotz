@@ -23,6 +23,12 @@ import { useKeptHooks } from "./agent-tree.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { withDoneLive } from "./done-live-wire.ts";
 import { activeFleetLaunch } from "./fleet-launch.ts";
+import { errorKo } from "./notice.ts";
+
+// A gateway-written [lane error] line carries the provider's or harness's own words ("Provider stream start timed out after 300000ms (raise
+// streamStartTimeoutMs ...)", 2026-11-11): the owner reads them in plain words. The orchestrator and report.md keep the raw report.
+const LANE_ERROR = /^(\[lane error\][ \t]*)(\S.*)$/gm;
+const ownerErrors = (text: string): string => (text.includes("[lane error]") ? text.replace(LANE_ERROR, (_m, head: string, err: string) => head + errorKo(err)) : text);
 
 // A gateway note or a report for a session: main, a conversation session, or a lane (a stronger-model step reports to the lane that
 // asked for it, hub/escalate.ts; sendToLane steers it into a running turn). A lane that cannot take it any more passes it to main.
@@ -117,10 +123,11 @@ export function installLaneHandlers(): void {
 		// The owner-visible part is localized once, before it is recorded: the web chat, the bell, push and Discord all show that
 		// text (the web showed a lane's English report while only Discord got the rewrite). The orchestrator and report.md keep
 		// the raw report, and the "For <bot>:" line stays as written (notices.ts reads it).
-		const body = dropForLine(text);
+		const shownText = ownerErrors(text);
+		const body = dropForLine(shownText);
 		void inOrder(channel, async () => {
 			const local = await localize(body, channel, "lane");
-			const kept = local === body ? text : [local, forLines(text)].filter(Boolean).join("\n\n");
+			const kept = local === body ? shownText : [local, forLines(text)].filter(Boolean).join("\n\n");
 			// `answering`: the report answers an owner message (the bell and push treat it as the session's answer, hub/notices.ts, hub/push.ts).
 			// An ask's event carries the ask's own time: the docked card (pendingAsk) and the decision notice (this event) must name one message, or an answer on one leaves the other open (pilot-stage1 2026-11-05: tapped twice, 2 ms apart).
 			const ts = lane.pendingAsk?.text === text ? lane.pendingAsk.at : now();
@@ -157,7 +164,7 @@ export function installLaneHandlers(): void {
 	// Mid-turn lane text: an [ask], [fail] or [done] line is something the owner must see and keep, so it is a real message;
 	// anything else edits the lane channel's one progress message.
 	setProgressHandler((lane, raw) => {
-		const text = withDoneLive(plainBareAsk(normalizeAsk(stripHandoff(raw))));
+		const text = ownerErrors(withDoneLive(plainBareAsk(normalizeAsk(stripHandoff(raw)))));
 		const channel = `lane:${lane.name}`;
 		const tone = parseTone(text).tone;
 		const real = tone === "ask" || tone === "fail" || tone === "done";

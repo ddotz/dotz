@@ -21,6 +21,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
   };
   const key = ev => {
     if (FS[FS.length - 1] !== h || document.querySelector("dialog[open]:not([data-leaving])")) return;
+    if (ev.key === "Escape" && ev.target instanceof Element && ev.target.closest("[data-esc]")) return;   // a card's field closes itself on Esc, the sheet stays
     if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); h.close(); return; }
     if (ev.key !== "Tab") return;
     const f = [...box.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]")].filter(e => e.offsetParent && !e.closest("[inert]"));

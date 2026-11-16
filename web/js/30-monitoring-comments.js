@@ -356,11 +356,11 @@ async function cmMakeDraft(c) {
   try { await cmApi(`/api/comments/comment/${enc(c.id)}/draft`, "POST", {}); }
   catch (e) { CM.drafting.delete(c.id); cmPaintChat(false); toast(e.message, true); }
 }
-// The thread's draft is its item of the one reply queue, drawn as that card (rqItemCard) right under the comment it answers, with 답글 / 메일 for a 고치기
-// when a mail rides along. A draft the queue does not list yet (just made) has the queue read once more and the thread drawn again.
+// The thread's draft is its item of the one reply queue, drawn as that card (rqItemCard) right under the comment it answers; a mail that rides along stands in the
+// card, and its 고치기 panel has a 답글 | 메일 switch for which of the two it changes. A draft the queue does not list yet (just made) has the queue read once more and the thread drawn again.
 function cmQueueCard(d) {
   const qi = raItems().find(i => i.ref === d.code);
-  if (qi) return el("div", { class: "od-cwrap" }, rqItemCard(qi, { bare: true, part: !!d.mail }));
+  if (qi) return el("div", { class: "od-cwrap" }, rqItemCard(qi, { bare: true }));
   if (CM.raMiss !== d.code) { CM.raMiss = d.code; raLoad().then(() => { CM.chatSig = ""; cmPaintChat(false); }); }
   return null;
 }

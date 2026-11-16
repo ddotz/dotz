@@ -16,6 +16,7 @@ import { ko } from "./i18n-ko.ts";
 import { watchLine } from "./watchtext.ts";
 import { allNotices, answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markDraftSend, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 import { sealLine } from "./approval-seal.ts";
+import { brokenCount } from "./owner-text.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -122,6 +123,17 @@ test("verifying a session reopens its result and puts one compact card into the 
 	expect(card).toMatchObject({ kind: "result", source: "gateway", target: "web", session: "x", title: "로그인 고치기", tone: "done", verified: true, open: "lane:x" });
 	expect(eventTarget(card)).toBe("main");
 	expect(replayAfter(seen)?.some(f => f.includes('"kind":"notice"'))).toBe(true);
+});
+
+test("a verified card cut from a report with a decision keeps the question in words and no option of it", () => {
+	markNoticesRead({ all: true });
+	post("worklog", "[done] README를 올렸어요.\n\n결정: 라이선스를 무엇으로 할까요?\n**1) MIT**\n**2) Apache-2.0**\n**3) GPL-3.0**", { update_key: "lane:lic" });
+	const broken = brokenCount();
+	laneVerified("lic", "[done] 무시");
+	const card = recentEvents(300).at(-1)!;
+	expect(card).toMatchObject({ kind: "result", session: "lic" });
+	expect(String(card.text)).not.toContain("MIT");
+	expect(brokenCount()).toBe(broken);
 });
 
 test("notice broadcasts belong to no conversation", () => {
@@ -746,7 +758,7 @@ test("a card rewritten to a newer draft of the same mail switches the open notic
 	expect(open[0]!.title).toBe("이 답장 보낼까요? (RAYVKXK)");
 	const inbox = join(mkdtempSync(join(tmpdir(), "notice-pick-")), "inbox.jsonl");
 	writeFileSync(inbox, `${sealLine(inbox, { ts: new Date().toISOString(), kind: "message", source: "web", channel: "mail:acct-1a1a", text: "결정 답", picks: [{ q: open[0]!.title, n: 1, label: DRAFT_SEND }] })}\n`);
-	expect(draftVerdict(inbox, "RAYVKXK", 0, { conv: "mail:acct-1a1a" }).verdict).toBe("send");
+	expect(draftVerdict(inbox, "RAYVKXK", 0).verdict).toBe("send");
 });
 
 test("a session [ask] makes one decision for that session, a repeated copy adds none, and only a reply in that session settles it", () => {

@@ -49,8 +49,8 @@ export function realMailLink(deps: FlowDeps = { run: realRunner }): RealMailLink
 			return rec ? [...draftLintFailures(withRecipient(rec)), ...(hold ? [hold] : [])] : [];
 		},
 		drop: id => void dropDraft(id),
-		edit: (id, text) => {
-			const r = editDraft(id, text);
+		edit: (id, text, subject) => {
+			const r = editDraft(id, text, subject);
 			return r.ok ? { ok: true } : { ok: false, reason: r.text, ...(r.code ? { code: r.code } : {}), ...(r.lint ? { lint: r.lint } : {}) };
 		},
 		async revise(id, change) {

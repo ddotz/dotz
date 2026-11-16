@@ -26,11 +26,11 @@ import { withTurnLanguage } from "./outlang.ts";
 import { MAIL_TURN_MARK } from "./systemdeny.ts";
 import { channelContext, listSetups } from "./workchannels.ts";
 import { updateNow } from "./update-now.ts";
-import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
+import { deliver, awaiting, convOfTarget, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
-import { ownerIntent } from "./reply-chat.ts";
+import { cardLine, ownerIntent, ownerPick } from "./reply-chat.ts";
 import { AGENT_AUTHOR } from "./entry-check.ts";
-import { openRefsOf, useReplies } from "./reply-actions.ts";
+import { useReplies } from "./reply-actions.ts";
 import { memoryNote, settingsTarget } from "./app-settings.ts";
 import { appEntries } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
@@ -198,13 +198,15 @@ const inboundOf = (target: string, events: Record<string, any>[], replyTo?: stri
 /** The web's queue keeps a message from intake until the turn ends, which this wait holds off: it goes through intake instead. */
 export const authHeld = (target: string): boolean => authHolds(target, authWait);
 
-const CARD_LINE = { send: "보낼게요. 카드에서 몇 초 안에 되돌릴 수 있어요", drop: "이 답장은 보내지 않을게요", revise: "고쳐서 카드에 다시 올릴게요" } as const;
-// The owner's word about an open reply card of this conversation (hub/reply-chat.ts ownerIntent), acted on through the one reply flow; one gateway line says what happened.
+// The card's own option typed out (hub/reply-chat.ts ownerIntent) about an open reply card of this conversation, acted on through the one reply flow
+// with no model turn; one gateway line says what happened. A pick on a card being revised is refused there (409 revising) and told.
 async function cardChatAnswer(target: string, b: Burst): Promise<void> {
 	const replies = useReplies()!, head = b.events[0]!;
-	const items = await replies.list().catch(e => (log(`reply card list failed: ${(e as Error).message}`), []));
-	const open = items.filter(i => i.conv === target && i.can.send).sort((x, y) => y.at - x.at);
-	const intent = ownerIntent({ text: String(head.text ?? "") }, { cards: open.map((i, k) => ({ ref: i.ref, newest: k === 0 && open.length === 1 })) });
+	const cards = replies.open(convOfTarget(target));
+	// A quote names its card by the post's ts (web) or a Discord message id; a quote of anything else is about no card.
+	const said = (head.reply as { id?: unknown } | undefined)?.id;
+	const quoted = typeof said === "string" && said ? (cards.find(c => c.asked === said || c.posts?.includes(said))?.ref ?? said) : undefined;
+	const intent = ownerIntent({ text: String(head.text ?? "") }, { cards, ...(quoted ? { quoted } : {}) });
 	if (!intent) {
 		// An ordinary turn after all: back into the burst (a message typed meanwhile joins it) and flushed again.
 		const later = bursts.get(target);
@@ -212,8 +214,10 @@ async function cardChatAnswer(target: string, b: Burst): Promise<void> {
 		bursts.set(target, { ...b, cardsRead: true });
 		return flush(target);
 	}
-	const r = await replies.act(intent.act === "revise" ? { ref: intent.ref, action: "revise", change: intent.change } : { ref: intent.ref, action: intent.act }, { surface: "chat" }).catch(e => ({ body: { ok: false as const, error: (e as Error).message } }));
-	const line = r.body.ok ? CARD_LINE[intent.act] : `답장 카드에 반영하지 못했어요: ${(r.body as { error?: string }).error ?? "알 수 없는 이유"}`;
+	// Typed on Discord, it answers the card as that message shows it; typed on the web, as the card was drawn (hub/reply-actions.ts act).
+	const seen = head.source === "discord" ? { hash: cards.find(c => c.ref === intent.ref)?.discord ?? "" } : {};
+	const r = await replies.act(intent.act === "revise" ? { ref: intent.ref, action: "revise", change: intent.change } : { ref: intent.ref, action: intent.act, ...(intent.act === "send" && intent.asIs ? { asIs: true } : {}), ...(intent.act === "send" ? seen : {}) }, { surface: "chat" }).catch(e => ({ body: { ok: false as const, error: (e as Error).message } }));
+	const line = r.body.ok ? cardLine(intent.act, r.body.item, Date.now()) : `답장 카드에 반영하지 못했어요: ${(r.body as { error?: string }).error ?? "알 수 없는 이유"}`;
 	await out(target, line, b.replyTo, { source: "gateway" }).catch(e => log(`card chat reply failed: ${e}`));
 }
 
@@ -226,9 +230,9 @@ export function flush(target: string): void {
 	if (cancelReply(inbound, authWait)) return;
 	// The session that answers this conversation (main with conversation sessions off); one not started yet has no error.
 	const session = convs.forTarget(target)?.o;
-	// 보내 / 보내지 마 / 좀 더 짧게 about the conversation's open reply card: run by code, no model turn (the reply design 3.2). Only a message that could be one
-	// waits for the card list; a miss comes back here once, marked, as an ordinary turn.
-	if (!b.cardsRead && b.events.length === 1 && !head.attachments?.length && head.author !== AGENT_AUTHOR && useReplies() && ownerIntent({ text: String(head.text ?? "") }, { cards: [{ ref: "probe", newest: true }] }))
+	// A card's own option typed out ("1) 보내기") about the conversation's open reply card: run by code, no model turn. Every other word reaches the model,
+	// which reads it from the conversation (the reply intent design); a pick that names no card comes back here once, marked, as an ordinary turn.
+	if (!b.cardsRead && b.events.length === 1 && !head.attachments?.length && head.author !== AGENT_AUTHOR && useReplies() && ownerPick(String(head.text ?? "")))
 		return void cardChatAnswer(target, b);
 	const errAnswer = session?.orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
 	if (errAnswer) return void answerOrchError(target, errAnswer, session!, b.replyTo);
@@ -247,9 +251,6 @@ export function flush(target: string): void {
 	const heldRefs = b.events.flatMap(e => refOf(e) ?? []);
 	if (updateNow()?.hold(inboxText(merged), { target, replyTo: b.replyTo, owner: true }, heldRefs)) return heldForUpdate(target, heldRefs, b.replyTo);
 	waitNotice(inbound, authWait);
-	// An open reply card here: the model changes its draft only by one marker line (hub/reply-chat.ts reviseMarker, read in hub/outbound.ts).
-	const open = openRefsOf(target);
-	if (open.length) merged.plugin_note = [merged.plugin_note, `열린 답장 카드: ${open.join(", ")}. 그 초안을 고치려면 명령을 실행하지 말고 답에 정확히 한 줄 \`[revise <ref>] <고칠 내용>\`만 쓰세요.`].filter(Boolean).join("\n");
 	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, refs: heldRefs, owner: true, ...deepOf(b.events) });
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.

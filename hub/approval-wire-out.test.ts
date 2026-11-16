@@ -10,6 +10,7 @@ import { ignoreNotice, listNotices } from "./notices.ts";
 import { out } from "./outbound.ts";
 import { approvalRoute, reportSend, sendTargetOf, sender, webAnswer } from "./approval-wire.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
+import { replies } from "./reply-wire.ts";
 import { DATA_DIR, cfg } from "./config.ts";
 import { addDraft, newId } from "../features/reply-drafts/lib/store.ts";
 
@@ -44,7 +45,8 @@ test("보내기 shows the next card at once with no model turn; the send runs in
 	expect(openCards().map((n: any) => n.decision.draft.ref)).toEqual([refs[0]]);
 	const bot: string[] = [];
 	const next = nextCard(refs[1]!);
-	const r = await webAnswer(openCards()[0].id, { n: 1 }, "owner@example.com", async a => void bot.push(a.text));
+	// The owner presses 보내기 on the version the reply item shows him (its hash, as the web sends it).
+	const r = await webAnswer(openCards()[0].id, { n: 1, hash: (await replies.view(refs[0]!))!.draft.hash }, "owner@example.com", async a => void bot.push(a.text));
 	expect(r.status).toBe(200);
 	// The answer came back while the send was still queued or running: neither it nor the next card waited for the send.
 	expect(sender.results(CONV).find(x => x.ref === refs[0])?.state).not.toBe("failed");
@@ -83,6 +85,26 @@ test("a send a session's CLI ran fails: the gateway report reaches the owner whe
 afterAll(() => {
 	for (const n of openCards()) ignoreNotice(n.id);
 	expect(openCards()).toEqual([]);
+});
+
+test("a failed comment reply's note goes where its card was asked, or to the main conversation when it never had one; never to the store's place (Dggtza6)", async () => {
+	const place = "comment:site-aw";
+	const notes: HubEvent[] = [];
+	onEmit(e => void (e.kind === "out" && String(e.text).startsWith("[fail]") && notes.push(e)));
+	const fail = (ref: string) => reportSend({ ref, conv: place, title: `이 답글 올릴까요? (${ref})`, state: "failed", text: "앱에서 이 글을 받지 않았어요", reason: { code: "rejected", text: "앱에서 이 글을 받지 않았어요" }, safeToAuto: false, at: Date.now() });
+	// A later post to the same place passes the queue after the note, so the note is out by then.
+	const flush = (to: string) => out(to, "정리했어요", undefined, { source: "gateway" });
+
+	fail("DAWNOCARD1");
+	await flush("web");
+	expect(notes.filter(e => String(e.text).includes("DAWNOCARD1")).map(e => e.target)).toEqual(["web"]);
+
+	const asked = "mail:aw-comment-card";
+	await out(asked, card("DAWCARD001"));
+	fail("DAWCARD001");
+	await flush(asked);
+	expect(notes.filter(e => String(e.text).includes("DAWCARD001")).map(e => e.target)).toEqual([asked]);
+	for (const n of listNotices(500).items.filter((x: any) => x.decision?.draft?.ref === "DAWCARD001")) ignoreNotice(n.id);
 });
 
 test("답글만 보내기 through the gateway: the mail draft left behind gets one open card, also when the send is reported twice, and 보내기 on it is a mail send", async () => {

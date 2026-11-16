@@ -143,6 +143,18 @@ describe("zele argv with several accounts", () => {
 		expect(out).toMatchObject({ ok: false, message: `보내지 못했어요: ${msg().sendFail.other}` });
 	});
 
+	test("a plugin's failure that wraps its tool's stderr reads as the real error, not the runtime warning before it (RDZ4EAK)", async () => {
+		const said = "보내지 못했어요: (node:8498) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\nAPI call failed: Error: Invalid ";
+		mkdirSync(join(env.dir, "custom", "plugins"), { recursive: true });
+		const plugin = join(env.dir, "custom", "plugins", "warned.ts");
+		writeFileSync(plugin, `export default { reply: async () => ({ ok: false, message: ${JSON.stringify(said)} }) };`);
+		await loadPlugins(env.dir);
+		const out = await sendWith(rec({ source: "orders", ref: "order-t42" }), fake().run);
+		rmSync(plugin);
+		await loadPlugins(env.dir);
+		expect(out).toEqual({ ok: false, message: "보내지 못했어요: API call failed: Error: Invalid", sent: "maybe", code: "unknown" });
+	});
+
 	test("an expired login or a lost connection is told as its own short reason, never with the tool's stack lines", async () => {
 		const stack = "Error: invalid_grant: Token has been expired or revoked.\n    at refresh (file:///opt/zele/dist/auth.js:88:11)";
 		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async () => ({ code: 1, stdout: "", stderr: stack }));

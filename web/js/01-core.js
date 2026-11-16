@@ -29,6 +29,14 @@ function el(tag, props, ...kids) {
   return n;
 }
 const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); return n; };
+// What the owner was typing into a card outlives a reload of this tab (a phone dropping the page, an update's reload): a holder names its part and how to read it,
+// every part is written to sessionStorage when the page is hidden or left, and the holder reads its own back once, when its module loads (kept returns it).
+const KEPT_KEY = "dotz.kept", KEPT_FROM = {};
+const KEPT = (() => { try { return JSON.parse(sessionStorage.getItem(KEPT_KEY) || "{}") || {}; } catch { return {}; } })();   // storage blocked or garbled: nothing to restore
+function kept(name, from) { KEPT_FROM[name] = from; return KEPT[name]; }
+const keptSave = () => { try { sessionStorage.setItem(KEPT_KEY, JSON.stringify(Object.fromEntries(Object.entries(KEPT_FROM).map(([k, f]) => [k, f()])))); } catch { /* storage full or blocked: the text stays on this page only */ } };
+addEventListener("pagehide", keptSave);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") keptSave(); });
 // A filter or tab row that scrolls sideways keeps its chosen item in view after it is drawn (a repaint starts the row at its left end).
 // Only the row scrolls, never the page. Returns the row.
 function segKeep(row) {

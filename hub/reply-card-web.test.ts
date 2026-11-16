@@ -79,7 +79,7 @@ test("every send state draws its own foot with the server's buttons", async () =
 	expect((await foot("sending")).cls).toContain("sending");
 	expect((await foot("sent")).cls).toContain("rq-sent");
 	expect((await foot("auto")).text).toContain("(1/3)");
-	expect(await foot("failed")).toMatchObject({ cls: "rq-send failed", keys: ["retry", "edit", "drop"] });
+	expect(await foot("failed")).toMatchObject({ cls: "rq-send failed", keys: ["retry", "fix", "drop"] });
 	expect((await foot("failed")).text).toContain("보내지 못했어요 - 메일에서 이 글을 받지 않았어요");
 	expect(await foot("unsure")).toMatchObject({ cls: "rq-send unsure", keys: ["resolve-sent", "open", "resolve-retry"] });
 	expect((await foot("unsure")).text).toContain("자동으로 다시 보내지 않아요");
@@ -92,16 +92,16 @@ test("a revise's next swaps the card in place; a refused direct edit keeps the t
 	expect(await ev(`document.querySelector("#ra-test .ra-card").textContent.includes("목요일까지 보내드릴게요.")`)).toBe(true);
 
 	answer = () => json({ ok: false, code: "forbidden_word", error: "쓰지 않기로 한 표현이 들어 있어요 ('무조건')", lint: ["쓰지 않기로 한 표현 '무조건'이(가) 있어요"] }, 422);
-	await view.evaluate(`document.querySelector("#ra-test [data-k=manual]").click(), 0`);
-	await waitFor(`!!document.querySelector("#ra-test [data-k=edit-text]")`);
+	await view.evaluate(`document.querySelector("#ra-test [data-k=fix]").click(), 0`);
+	await waitFor(`!!document.querySelector("#ra-test [data-k=fix-text]")`);
 	const edit = nextPost();
-	await view.evaluate(`(() => { const a = document.querySelector("#ra-test [data-k=edit-text]"); a.value = "무조건 목요일!"; a.dispatchEvent(new Event("input")); document.querySelector("#ra-test [data-k=edit-send]").click(); })(), 0`);
+	await view.evaluate(`(() => { const a = document.querySelector("#ra-test [data-k=fix-text]"); a.value = "무조건 목요일!"; a.dispatchEvent(new Event("input")); document.querySelector("#ra-test [data-k=fix-apply]").click(); })(), 0`);
 	await edit;
 	release();
 	await waitFor(`!!document.querySelector("#ra-test .ra-lint")`);
-	expect(await ev(`document.querySelector("#ra-test [data-k=edit-text]").value`)).toBe("무조건 목요일!");
+	expect(await ev(`document.querySelector("#ra-test [data-k=fix-text]").value`)).toBe("무조건 목요일!");
 	expect(await ev(`document.querySelector("#ra-test .ra-lint").textContent`)).toContain("무조건");
-	expect(posts.at(-1)).toEqual({ ref: "RCCCCCC", action: "edit", text: "무조건 목요일!", send: true });
+	expect(posts.at(-1)).toEqual({ ref: "RCCCCCC", action: "edit", text: "무조건 목요일!" });
 });
 
 test("a mail card quotes its original with 원문 보기 and lists the files staged on the draft", async () => {

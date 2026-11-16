@@ -5,7 +5,7 @@
 // dotz itself left in a room's input is recognized (kakao/input.json) and cleared; the owner's own draft is never touched.
 // There is no Kakao message API, HTTP or private-protocol path in this module.
 import { randomBytes } from "node:crypto";
-import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { claimHolder, claimSend } from "../draft-claim.ts";
 import { readState } from "../statefile.ts";
@@ -55,7 +55,6 @@ export const draftTextError = (text: string): string | undefined =>
 	!text.trim() ? "답장 글이 비어 있어요" : [...text].length > MAX_DRAFT_TEXT ? `답장은 모두 합쳡 ${MAX_DRAFT_TEXT}자까지예요` : draftParts(text).some(p => [...p].length > MAX_TEXT) ? `메시지 하나는 ${MAX_TEXT}자까지예요` : undefined;
 const textCode = (text: string): SendCode => (text.trim() ? "too_long" : "empty");
 const MAX_DRAFTS = 200;
-const TAIL_BYTES = 2 * 1024 * 1024;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 const nowMs = (d: SendDeps) => (d.now ?? Date.now)();
@@ -103,34 +102,6 @@ export function draftBlock(d: Draft): string {
 	return draftApprovalBlock({ to: d.roomName, toLabel: "대화방", body: d.text, ref: d.code, question: "카톡 답장 보낼까요?" });
 }
 
-type Ev = { ts: string; kind: string; source: string; text: string; picks?: { q?: unknown; label?: unknown }[]; reply_to?: unknown; [k: string]: unknown };
-
-function tailJsonl(file: string): Ev[] {
-	if (!existsSync(file)) return [];
-	const size = statSync(file).size;
-	const start = Math.max(0, size - TAIL_BYTES);
-	const buf = Buffer.alloc(size - start);
-	const fd = openSync(file, "r");
-	try {
-		readSync(fd, buf, 0, buf.length, start);
-	} finally {
-		closeSync(fd);
-	}
-	const lines = buf.toString("utf8").split("\n");
-	if (start > 0) lines.shift();
-	const out: Ev[] = [];
-	for (const line of lines) {
-		try {
-			const e = JSON.parse(line);
-			if (e && typeof e.ts === "string" && typeof e.kind === "string") out.push(e);
-		} catch {
-			continue;
-		}
-	}
-	return out;
-}
-
-const hasCode = (text: unknown, code: string) => typeof text === "string" && new RegExp(`(?<![A-Z0-9])${code}(?![A-Z0-9])`).test(text);
 const ms = (ts: string) => Date.parse(ts);
 
 type Verdict = "approved" | "cancelled" | "none";
@@ -138,12 +109,10 @@ type Verdict = "approved" | "cancelled" | "none";
 // A draft card has three answers: 보내기 approves, 고치기 and 보내지 않기 cancel; the other draft actions say nothing here.
 const VERDICT_OF: Record<DraftAction | "none", Verdict> = { send: "approved", edit: "cancelled", drop: "cancelled", "send-main": "none", "send-mail": "none", own: "none", "send-as-is": "approved", undo: "none", none: "none" };
 
-// The same rule as every other draft (hub/draft-approval.ts draftVerdict): only the owner's own messages after the draft was made count, and
-// the owner's LAST word wins. A typed reply counts in the conversation the ask went out in, which the outbox says.
+// The same rule as every other draft (hub/draft-approval.ts draftVerdict): only the owner's own sealed picks after the draft was made count, and
+// the owner's LAST pick wins.
 function verdict(d: Draft, paths: KakaoPaths): Verdict {
-	const ask = tailJsonl(paths.outbox).findLast(o => o.kind === "out" && hasCode(o.text, d.code));
-	const conv = [ask?.channel, ask?.target].find((v): v is string => typeof v === "string" && !!v);
-	return VERDICT_OF[draftVerdict(paths.inbox, d.code, ms(d.created), conv ? { conv } : {}).verdict];
+	return VERDICT_OF[draftVerdict(paths.inbox, d.code, ms(d.created)).verdict];
 }
 
 export async function approval(code: string, deps: SendDeps): Promise<boolean> {
@@ -572,9 +541,6 @@ const sendTextNow = async (input: { chatId: string; roomName: string; text: stri
 
 // The one path of every send: the exact list row is opened and its window verified (room.ts), then the text goes in by Accessibility.
 export const sendText = (input: { chatId: string; roomName: string; text: string; parts?: string[] }, deps: SendDeps & { roomNames?: RoomNames }): Promise<SendResult> => oneAtATime(() => sendTextNow(input, deps));
-
-// A pending draft whose room got a newer incoming message can no longer be sent.
-export const markStale = (paths: KakaoPaths, code: string) => setStatus(paths, code, "stale");
 
 export function dropDraft(code: string, deps: Pick<SendDeps, "paths">): SendResult {
 	const d = readDrafts(deps.paths).find(x => x.code === code);

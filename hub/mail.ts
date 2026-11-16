@@ -93,7 +93,8 @@ export function mailKey(source: string, id: string): string {
 	return `${s}-${i}`;
 }
 
-export const mailTarget = (key: string) => `mail:${key}`;
+// A key that already carries the prefix stays one target (outbox 2026-11-07: `mail:mail:<id>` split one mail into two conversations).
+export const mailTarget = (key: string) => `mail:${key.replace(/^(?:mail:)+/, "")}`;
 
 // An unreadable history is moved aside as a .corrupt-<time> file (readJsonOrQuarantine), so the first save cannot overwrite it with the empty list.
 let records: MailRecord[] = readJsonOrQuarantine<MailRecord[]>(FILE, () => [], { keepGood: false });

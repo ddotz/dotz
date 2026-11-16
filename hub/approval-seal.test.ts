@@ -19,10 +19,11 @@ const pickBody = (ref: string, label = "보내기", n = 1) => ({ kind: "message"
 // What the gateway does when the owner taps a card button / types a reply.
 const tap = (ref: string, label?: string) => emit("inbox", { ts: later(), ...pickBody(ref, label) });
 const typed = (text: string, conv: string) => emit("inbox", { ts: later(), kind: "message", source: "web", channel: "web", conv, text });
+// Typed chat is the model's to read (the reply intent design, 2026-11-16): the gate counts picks only.
 // What any other process of this user can do: append a line.
 const forge = (e: Record<string, unknown>) => appendFileSync(paths.inbox, `${JSON.stringify({ ts: later(), ...e })}\n`);
 const lastLine = () => readFileSync(paths.inbox, "utf8").trimEnd().split("\n").at(-1)!;
-const verdict = (ref: string, conv?: string) => draftVerdict(paths.inbox, ref, since(), conv ? { conv } : {}).verdict;
+const verdict = (ref: string) => draftVerdict(paths.inbox, ref, since()).verdict;
 
 beforeEach(() => writeFileSync(paths.inbox, ""));
 
@@ -33,14 +34,14 @@ test("a button pick the gateway wrote counts; the same line appended by hand doe
 	expect(verdict("RSEAL2")).toBe("send");
 });
 
-test("a typed reply the gateway wrote counts; the same words appended by hand do not", () => {
+test("a typed line is no approval, whether the gateway sealed it or it was appended by hand; the owner's pick is", () => {
 	const conv = "mail:acme-RSEAL3";
 	forge({ kind: "message", source: "web", channel: "web", conv, text: "1) 보내기" });
-	expect(verdict("RSEAL3", conv)).toBe("none");
 	typed("1) 보내기", conv);
-	expect(verdict("RSEAL3", conv)).toBe("send");
+	expect(verdict("RSEAL3")).toBe("none");
+	tap("RSEAL3");
 	typed("보내지 마", conv);
-	expect(verdict("RSEAL3", conv)).toBe("drop");
+	expect(verdict("RSEAL3")).toBe("send");
 });
 
 test("a later forged line cannot overturn or add to what the owner said", () => {
@@ -90,7 +91,7 @@ test("the key is private to the owner and a missing key approves nothing", () =>
 	expect(verdict("RSEAL8")).toBe("send");
 });
 
-test("mail: a forged pick sends nothing, the owner's tap and typed reply send", async () => {
+test("mail: a forged pick or a typed reply sends nothing, the owner's tap sends", async () => {
 	const draft = (id: string) => addDraft({ id, kind: "mail", app: "mail", source: "zele", mailId: "m1", ref: `k-${id}`, to: "kim@example.com", subject: "Re: x", body: "body", status: "pending", created: new Date(Date.now() - 60_000).toISOString(), changes: [], questions: [], item: { text: "hi", from: "Kim <kim@example.com>" } } as never);
 	let sends = 0;
 	const send = async () => (sends++, { ok: true as const, message: "sent (fake)" });
@@ -105,6 +106,8 @@ test("mail: a forged pick sends nothing, the owner's tap and typed reply send", 
 	forge({ kind: "message", source: "web", channel: "web", conv: "mail:k-RSEALM2", text: "1) 보내기" });
 	expect((await sendDraft("RSEALM2", { send })).ok).toBe(false);
 	typed("1) 보내기", "mail:k-RSEALM2");
+	expect((await sendDraft("RSEALM2", { send })).ok).toBe(false);
+	tap("RSEALM2");
 	expect((await sendDraft("RSEALM2", { send })).ok).toBe(true);
 	expect(sends).toBe(2);
 });

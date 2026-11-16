@@ -2,7 +2,7 @@
 // The mail then is not sent on its own: hub/mail-cli.ts send and features/reply-drafts sendDraft refuse it and point to the reply's send.
 import { type DraftPart } from "../draft-approval.ts";
 import { dataDir } from "../../features/reply-drafts/lib/settings.ts";
-import { stagedFiles } from "../../features/reply-drafts/lib/staged.ts";
+import { fileDigest, stagedFiles } from "../../features/reply-drafts/lib/staged.ts";
 import { type DraftRec, getDraft, setStatus } from "../../features/reply-drafts/lib/store.ts";
 import type { MailView } from "./engine.ts";
 import { commentsDir, createStore, type Draft, type Store } from "./store.ts";
@@ -29,5 +29,5 @@ export function mailPartOf(rec: DraftRec): DraftPart {
 export function mailViewOf(id: string): MailView | undefined {
   const rec = getDraft(id);
   if (!rec || rec.status !== "pending") return undefined;
-  return { id: rec.id, to: rec.to, ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size })), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) };
+  return { id: rec.id, to: rec.to, ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size, digest: fileDigest(f.path) })), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) };
 }

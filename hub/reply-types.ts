@@ -9,7 +9,7 @@ export type ReasonCode =
 	| "login_expired" | "offline" | "rate_limited" | "quota" | "rejected" | "recipient_invalid" | "recipient_not_on_mail" | "recipient_self" | "recipient_missing"
 	| "subject_re" | "placeholder" | "forbidden_word" | "too_long" | "empty" | "attach_mismatch" | "attach_missing" | "attach_upload" | "file_pending" | "cannot_attach"
 	| "account_needed" | "webmail_recipients" | "manual_only" | "mail_gone" | "stale" | "gone" | "original_gone" | "app_off" | "lease_held" | "lease_unknown"
-	| "app_not_ready" | "input_busy" | "room_unknown" | "not_approved" | "tool_before_send" | "config"
+	| "app_not_ready" | "input_busy" | "room_unknown" | "not_approved" | "changed" | "tool_before_send" | "config"
 	// may have gone out
 	| "net_cut" | "timeout" | "interrupted" | "server_error" | "press_unconfirmed" | "readback_mismatch" | "state_write" | "unknown"
 	// not a send failure: an action was refused, or a revise failed
@@ -33,7 +33,10 @@ export type Lesson = { key: { app: string; room?: string }; line: string };
 export type Done = { ok: true } | { ok: false; reason: Reason };
 
 /** The buttons the server gives a send that needs the owner (hub/reply-reasons.ts policyOf), so no surface holds per-channel failure logic. */
-export type OwnerAction = "retry" | "resolve_sent" | "resolve_retry" | "open_channel" | "relogin" | "fix_recipient" | "pick_file" | "pick_account" | "redraft" | "drop";
+/** A file a draft carries: `digest` is the content fingerprint of a file the store holds locally (staged files), so a same-named swap is a new version. */
+export type FileShown = { name: string; size?: string; digest?: string };
+
+export type OwnerAction = "retry" | "resolve_sent" | "resolve_retry" | "open_channel" | "relogin" | "fix_recipient" | "pick_file" | "pick_account" | "redraft" | "drop" | "send_as_is";
 
 /** What every surface shows of one reply (GET /api/reply/queue, the `reply` event). */
 export type ReplyItem = {
@@ -56,8 +59,8 @@ export type ReplyItem = {
 		text: string;
 		parts?: string[];
 		sentParts?: number;
-		mail?: { ref: string; to: string; subject?: string; text: string };
-		attachments?: { name: string; size?: string }[];
+		mail?: { ref: string; to: string; subject?: string; text: string; attachments?: FileShown[] };
+		attachments?: FileShown[];
 		notes?: string[];
 		decide?: string[];
 		model?: string;
@@ -65,6 +68,8 @@ export type ReplyItem = {
 		replaces?: { ref: string; text: string };
 		edited?: true;
 		revising?: true;
+		/** The approvalHash of this version (hub/approval-send.ts): a send act carries it back, and a different one is refused `changed`. */
+		hash?: string;
 	};
 	original?: { who: string; text: string; at?: number; subject?: string; post?: string; cut?: true };
 	/** Absent: it waits for the owner. */
@@ -75,11 +80,12 @@ export type ReplyItem = {
 /** What an adapter knows of a draft: the item without the send, which the ledger adds. */
 export type DraftView = Omit<ReplyItem, "send">;
 
-/** How one send ended, said by the place that knows (an in-process runner, or a CLI's `DOTZ_SEND` line). */
+/** How one send ended, said by the place that knows (an in-process runner, or a CLI's `DOTZ_SEND` line). `detail`: the place's own answer (masked,
+ * bounded), for hub.log and the send queue's record only. */
 export type SendOutcome =
 	| { sent: "yes" }
-	| { sent: "no"; code: ReasonCode; vars?: Record<string, string | number> }
-	| { sent: "maybe"; code: ReasonCode }
+	| { sent: "no"; code: ReasonCode; vars?: Record<string, string | number>; detail?: string }
+	| { sent: "maybe"; code: ReasonCode; detail?: string }
 	| { sent: "partial"; done: number; total: number; code: ReasonCode; rest: "no" | "maybe" };
 
 export type ReplyAdapter = {
@@ -94,8 +100,8 @@ export type ReplyAdapter = {
 	run?(job: SendJob): Promise<SendOutcome>;
 	/** Model rewrite: stores the new draft with `replaces`, marks the old one stale. Records no learning itself. */
 	revise(ref: string, change: string, part?: Part): Promise<{ ok: true; ref: string; replaces: string; lesson?: Lesson } | { ok: false; reason: Reason }>;
-	/** The owner's text, saved as it is under the same ref. Refuses when the owner-text lint fails. */
-	edit(ref: string, text: string, part?: Part): Promise<{ ok: true } | { ok: false; reason: Reason; lint?: string[] }>;
+	/** The owner's text (and a mail's subject), saved as it is under the same ref. Refuses when the owner-text lint fails. */
+	edit(ref: string, text: string, part?: Part, subject?: string): Promise<{ ok: true } | { ok: false; reason: Reason; lint?: string[] }>;
 	drop(ref: string): Promise<Done>;
 	restore(ref: string): Promise<Done>;
 	/** The owner says it went out: closed as sent, nothing is sent. */

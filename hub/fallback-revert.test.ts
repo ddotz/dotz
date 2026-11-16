@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { cfg } from "./config.ts";
 import { resetFallbackState } from "./fallback.ts";
 import { msg } from "./i18n.ts";
+import { errorKo } from "./notice.ts";
 import type * as Lanes from "./lanes.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { adapters } from "./runtime/index.ts";
@@ -135,7 +136,8 @@ test("orchestrator: a refusal alerts the owner and goes back to the configured m
 	await turnWithFallback(p, "Refusal (cyber): the request was declined");
 	// The fallback is one plain alert line; the worklog notice channel stays quiet; nothing is switched mid-turn or at its end.
 	expect(alerts).toHaveLength(1);
-	expect(alerts[0]).toContain(msg().modelFallback("anthropic/test-orch", "anthropic/test-fallback", "Refusal (cyber): the request was declined"));
+	expect(alerts[0]).toContain(msg().modelFallback("anthropic/test-orch", "anthropic/test-fallback", errorKo("Refusal (cyber): the request was declined")));
+	expect(alerts[0]).not.toContain("the request was declined");
 	expect(notices).toEqual([]);
 	expect(o.orch.activeModel).toBe("anthropic/test-fallback");
 	expect(p.types()).not.toContain("set_model");
@@ -290,7 +292,7 @@ test("lane: a refusal posts to the lane channel and goes back before the next pr
 	await p.push(agentEnd);
 	await advance(500);
 	expect(lane.status).toBe("idle");
-	expect(laneNotices).toEqual([`rv: ${msg().modelFallback("anthropic/test-lane", "anthropic/test-lane-fallback", "Refusal (cyber): declined")}`]);
+	expect(laneNotices).toEqual([`rv: ${msg().modelFallback("anthropic/test-lane", "anthropic/test-lane-fallback", errorKo("Refusal (cyber): declined"))}`]);
 	expect(alerts).toEqual([]);
 	expect(lane.activeModel).toBe("anthropic/test-lane-fallback");
 	expect(p.types()).not.toContain("set_model");

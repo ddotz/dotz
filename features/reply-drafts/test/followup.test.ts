@@ -146,7 +146,6 @@ describe("the 이어서 할 일 wake", () => {
 		expect(t).toContain("comment=c1");
 		expect(t).toContain("mail-cli.ts compose");
 		expect(t).toContain("--origin comment:c1");
-		expect(t).toContain("mail-cli.ts send --draft");
 		// condition not met: the wake text tells the bot to end silently, with no draft and no question
 		expect(followupTurn(RULE, comment)).toBe(t);
 	});

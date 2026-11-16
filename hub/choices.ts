@@ -94,7 +94,7 @@ export function parseChoices(text: string): Choices {
 			continue;
 		}
 		const plain = line.replace(/^\s*>\s?/, "").replace(/\*\*/g, "").trim();
-		if (plain && !options.length) before = plain.replace(/^\[[^\]]{1,10}\][ \t]*/, "");
+		if (plain && !options.length) before = oneHead(plain.replace(/^\[[^\]]{1,10}\][ \t]*/, ""));
 	}
 	if (options.length < 2 || options.length > MAX_OPTIONS) return { options: [] };
 	return { ...(question ? { question } : {}), options };
@@ -107,7 +107,8 @@ export function parseChoices(text: string): Choices {
 // The bot marks it with a trailing ` …` on the option name (`**2) 안 됨 …**`, MODE.md); without the mark, detailOf guesses from the label and the description.
 export type DecisionOption = { n: number; label: string; desc: string; detail?: true };
 export const DETAIL_MARK = /\s*…\s*$/;
-const DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/;
+// "아니요" and "다른 …" are answers in themselves: only a refusal that needs its reason or an edit asks for text unmarked.
+const DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|고치기|수정)/;
 export const DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
 // Mirrors detailOf in web/js/10-decision-card.js. A marked option (`detail`) always asks; otherwise a negative / edit label or a description that asks for text does.
 export const detailOf = (o: { label: string; desc?: string; detail?: boolean }): boolean => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc ?? "");
@@ -118,6 +119,9 @@ export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some
 export const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
 export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 export const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
+// A head written twice ("결정: [ask] 결정: <question>", outbox 2026-11-09) is one head: the marker and the second label after the first go.
+const DOUBLED_HEAD = /^(\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*)(?:\[[^\]\n]{1,10}\][ \t]*|(?:결정|decision(?: needed)?)\s*[:：][ \t]*)+/i;
+const oneHead = (line: string): string => line.replace(DOUBLED_HEAD, "$1");
 // One decision of a several-decision message: the lead text before the first "결정:" line plus that block's own lines, without its option
 // lines (the buttons show them) and without the other decisions. A message whose blocks are not all headed stays whole. Empty when nothing is left.
 export function decisionText(body: string, index: number): string {
@@ -142,6 +146,27 @@ export function decisionText(body: string, index: number): string {
 	}
 	return [...lead, "", ...(parts[index] ?? [])].join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
+// A message for a place with no buttons (the main chat's compact result card): each "결정:" line keeps its question in words, its option lines and their
+// description lines go (a summary cut inside the block left a head with one option: a card that could not be, 2026-11-10 "라이선스").
+export function plainDecisions(text: string): string {
+	const lines = text.split("\n"), out: string[] = [];
+	let fence = false, headed = false;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (FENCE.test(line)) fence = !fence;
+		const h = fence ? null : DECISION_HEAD.exec(oneHead(line));
+		if (h || (!fence && headed && (D_OPT.test(line) || D_CLOSE.test(line)))) {
+			if (h) out.push(h[1]!);
+			const nx = lines[i + 1];
+			if (!h && D_OPT.test(line) && nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx) && !FENCE.test(nx)) i++;
+			headed = true;
+			continue;
+		}
+		if (line.trim()) headed = false;
+		out.push(line);
+	}
+	return out.join("\n");
+}
 export function parseDecisions(text: string): { question: string; blocks: DecisionBlock[] } {
 	const lines = stripRecommendMark(text).replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
 	const blocks: DecisionBlock[] = [];
@@ -158,7 +183,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 			continue;
 		}
 		if (fence) continue;
-		const h = DECISION_HEAD.exec(line);
+		const h = DECISION_HEAD.exec(oneHead(line));
 		if (h) {
 			cur = { title: h[1]!.trim(), options: [], headed: true };
 			blocks.push(cur);

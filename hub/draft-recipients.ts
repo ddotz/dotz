@@ -2,7 +2,8 @@
 //   GET  /api/drafts/<ref>/recipients   { to: [..], cc: [..], mode, editable, reply } - `reply` = the draft answers a mail, so 전체 답장 exists
 //   POST /api/drafts/<ref>/recipients   one of { mode: "reply" | "all" } (recomputed from the original mail),
 //                                       { to: [addresses] }, { cc: [addresses] } (the owner's own edit); a change is one request
-// Only a pending mail draft of reply-drafts can change, and nothing is sent from here (the owner's 보내기 does that). The original mail's
+// Only a pending mail draft of reply-drafts can change, never while a send of it (or of the comment reply that carries it) waits, runs or may
+// have gone out, and nothing is sent from here (the owner's 보내기 does that). The original mail's
 // headers come from the mail record; the owner's own addresses from hub/mail-state.ts (the config aliases and each source's account).
 import { addressesOf } from "./reply-draft.ts";
 import { getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
@@ -11,7 +12,18 @@ import { mailByKey } from "./mail.ts";
 
 import { ownAddresses } from "./mail-state.ts";
 import { updateDraftRecipients } from "./notices.ts";
+import { linkedComment } from "./comments/linked.ts";
+import { useReplies } from "./reply-actions.ts";
+import { reasonOf } from "./reply-reasons.ts";
 import { json } from "./routes-util.ts";
+
+/** 409 while a send of mail draft `id`, or of the comment reply carrying it, holds it: the version the owner approved must not change under it. */
+export function sendHold(id: string): Response | undefined {
+	const replies = useReplies();
+	const linked = linkedComment(id);
+	const code = replies?.held(id) ?? (linked ? replies?.held(linked) : undefined);
+	return code ? json({ ok: false, code, error: reasonOf(code).text }, 409) : undefined;
+}
 
 const editable = (rec: { kind: string; status: string } | undefined) => !!rec && rec.kind === "mail" && rec.status === "pending";
 
@@ -29,6 +41,8 @@ export async function draftRecipientsRoute(req: Request, ref: string): Promise<R
 	if (req.method === "GET") return json(view());
 	if (!rec) return json({ error: "이 초안을 찾지 못했어요" }, 404);
 	if (!editable(rec)) return json({ error: "이 초안은 이미 처리돼서 받는 사람을 바꿀 수 없어요" }, 409);
+	const hold = sendHold(rec.id);
+	if (hold) return hold;
 
 	try {
 		const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;

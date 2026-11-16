@@ -99,8 +99,8 @@ on the next poll (`adapter.retitle`); the drafts' [ask] text names the post (`> 
   notes `메일 대조: 있음|못 찾음|확인 실패 ...`, `근거: ...` and, when that mail is not answered yet, `초안 메모: ...` (`hub/comments/mail-match.ts`).
 - `pastSeed: true`: the 3 stored comments most like this one that the owner answered (his reply under it, or a reply sent through the gate) go into the
   draft prompt; when the model skips or leaves the reply empty, the closest past answer becomes the draft with a `확인 필요:` note (`hub/comments/past.ts`).
-- Sending one part of a reply + mail card: `features/comments/bin/comments.ts send <code> --only reply|mail` (after the owner's 보내기, 답글만/메일만 보내기
-  or own-words pick). `reply` posts the reply and leaves the mail draft as a mail of its own; `mail` sends the mail and leaves the reply draft pending alone.
+- Sending one part of a reply + mail card: the gateway runs `features/comments/bin/comments.ts send <code> --only reply|mail` on the owner's
+  답글만/메일만 보내기 (an agent session is refused that command). `reply` posts the reply and leaves the mail draft as a mail of its own; `mail` sends the mail and leaves the reply draft pending alone.
 
 ## Website DM inbox (`site.dm`, optional)
 

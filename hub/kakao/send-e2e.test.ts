@@ -57,7 +57,7 @@ function cli(screen: ReturnType<typeof fakeScreen>, stdin = "") {
 	} as Ctx;
 	return { ctx, out, hub };
 }
-// The send itself (send.ts sendDraft), as the gateway's KakaoTalk adapter runs it; `cli.ts send` only hands the draft to the gateway's queue now.
+// The send itself (send.ts sendDraft), as the gateway's KakaoTalk adapter runs it after the owner's 보내기 on the card.
 async function sendNow(c: ReturnType<typeof cli>, code: string): Promise<number> {
 	const r = await sendDraft(code, { paths, runner: c.ctx.runner, latestIncoming: async () => IN.logId, roomNames: async () => [{ chatId: ROOM.chatId, name: ROOM.name, kind: ROOM.kind }] });
 	c.out.push(r.ok ? "보냈어요" : `보내지 않았어요: ${r.reason ?? "이유를 알 수 없어요"}`);

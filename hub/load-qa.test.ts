@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { alive, client, prepare, probe, records, start, stop, waitFor, type Gateway } from "./test/load-qa/harness.ts";
+import { alive, client, ownerClient, prepare, probe, records, start, stop, waitFor, type Gateway } from "./test/load-qa/harness.ts";
 import { ACCOUNTS } from "./test/load-qa/names.ts";
 import { SANDBOX_EXEC } from "./test/load-qa/sandbox.ts";
 
@@ -13,6 +13,7 @@ type Json = Record<string, any>;
 setDefaultTimeout(60_000);
 let g: Gateway;
 let api: ReturnType<typeof client>;
+let owner: ReturnType<typeof client>;
 const used = new Set<string>();
 
 const flag = (name: string, on: boolean): void => (on ? writeFileSync(join(OUT, name), "") : rmSync(join(OUT, name), { force: true }));
@@ -28,9 +29,11 @@ const draftOf = (card: Json): Json => JSON.parse(readFileSync(join(OUT, "data/cu
 const sends = (card: Json): number => records(g, "shim-calls.jsonl").filter(s => s.would_send && s.argv.includes(draftOf(card).mailId)).length;
 const composeSends = (): number => records(g, "shim-calls.jsonl").filter(s => s.would_send && s.argv[1] === "send").length;
 const posts = (): number => records(g, "net-calls.jsonl").filter(n => n.method === "POST" && /comments|replies/.test(n.url)).length;
-// The owner's 보내기 on the card (POST /api/notices/<id>/answer, which acts through the one reply flow). The test's client carries the hub token,
-// so on /api/reply/act it is an agent caller: it may not write the owner's word (403 for retry, resolve, drop).
-const approve = (card: Json) => api.post(`/api/notices/${encodeURIComponent(card.notice)}/answer`, { n: 1, label: "보내기" });
+// The owner's 보내기 on the card (POST /api/notices/<id>/answer, which acts through the one reply flow), from his own web session. The `api`
+// client carries the hub token, so it is an agent caller: it may not write the owner's word (403 for send, retry, resolve, drop).
+// His press names the version he is shown now, the reply item's hash, as the web sends it (a pick naming none is refused `changed`).
+const shownHash = async (card: Json): Promise<string> => ((await api.get(`/api/reply/queue?refs=${encodeURIComponent(card.ref)}`)).items as Json[])[0]?.draft.hash;
+const approve = async (card: Json) => owner.post(`/api/notices/${encodeURIComponent(card.notice)}/answer`, { n: 1, label: "보내기", hash: await shownHash(card) });
 const agentAct = (card: Json, action: string, extra: Json = {}) => api.post("/api/reply/act", { ref: card.ref, action, ...extra });
 const settled = (card: Json, state: string) => waitFor(`${card.ref} ${state}`, async () => (await resultOf(card.ref))?.state === state);
 /** An unused seeded mail card of one account (cards of the 20 mails the test adds are not in the fake mailbox). */
@@ -54,6 +57,7 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		g = await prepare({ out: OUT, scale: "small" });
 		await start(g);
 		api = client(g);
+		owner = await ownerClient(g);
 		seeded = await cards();
 	}, 90_000);
 	// Every test starts from a running gateway and no hang/fail flag: a restart that failed in one test (killed, or still booting when its limit hit)
@@ -122,6 +126,12 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		expect(sends(x)).toBe(0);
 		const retry = await agentAct(x, "retry");
 		expect([retry.status, retry.body.code]).toEqual([403, "owner_only"]);
+		// Nor can it type into a KakaoTalk room: that send is the owner's too.
+		const kakao = await api.post("/api/kakao/chat/1234/send", { text: "x" });
+		expect([kakao.status, kakao.body.code]).toEqual([403, "owner_only"]);
+		// Nor can it pick 보내기 on a card: the card answer with the hub token is not the owner's word either.
+		const pick = await api.post(`/api/notices/${encodeURIComponent(sentinel.notice)}/answer`, { n: 1, label: "보내기" });
+		expect([pick.status, pick.body.code, (await resultOf(sentinel.ref))?.state]).toEqual([403, "owner_only", undefined]);
 		flag("fail-mail", false);
 		await approve(sentinel); // the lane is serial: a second send of x would have run before this one finishes
 		await settled(sentinel, "sent");
@@ -149,7 +159,7 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		// Option 1 (보내기) is refused for the compose mail (it asks for a file and has none): the owner sends it as is with 이대로 보내기.
 		const notice = (await api.get("/api/notices?limit=300")).items.find((n: Json) => n.id === combined.notice);
 		const option = notice.decision.options.find((o: Json) => o.label === "이대로 보내기");
-		expect((await api.post(`/api/notices/${combined.notice}/answer`, { n: option.n, label: option.label })).status).toBe(200);
+		expect((await owner.post(`/api/notices/${combined.notice}/answer`, { n: option.n, label: option.label })).status).toBe(200);
 		await waitFor("both sends", () => composeSends() > mails && posts() > comments);
 		await settled(combined, "sent");
 		expect(composeSends() - mails).toBe(1);

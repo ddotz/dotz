@@ -18,12 +18,13 @@ const ref = id;
 addDraft({ id, kind: "mail", app: "mail", source: "nowhere", mailId: `m-${id}`, ref: `un-${id.toLowerCase()}`, to: "friend@example.com", body: "답", status: "pending", created: "2020-01-01T00:00:00.000Z", changes: [], questions: [], item: { kind: "mail", from: "friend@example.com", text: "안녕" } as never });
 const card = `[ask] 답장 초안이에요\n${draftApprovalBlock({ to: "친구", toLabel: "대화방", body: "답", ref, question: "이대로 보낼까요?" })}`;
 const openCard = () => listNotices(500).items.find((n: any) => n.decision?.state === "open" && n.decision.draft?.ref === ref) as any;
-const verdict = () => draftVerdict(paths.inbox, ref, 0, { conv: CONV }).verdict;
+const verdict = () => draftVerdict(paths.inbox, ref, 0).verdict;
 const undo = () => replyRoute(new Request("http://local/api/reply/act", { method: "POST", body: JSON.stringify({ ref, action: "undo" }) }), new URL("http://local/api/reply/act"), { replies, login: "owner@example.com" });
 
 test("a cancel inside the window: nothing is sent, the pick is taken back, the card is open again and says so on the card", async () => {
 	await out(CONV, card);
-	const r = await webAnswer(openCard().id, { n: 1 }, "owner@example.com", async () => undefined);
+	// The owner presses 보내기 on the version the reply item shows him (its hash, as the web sends it).
+	const r = await webAnswer(openCard().id, { n: 1, hash: (await replies.view(ref))!.draft.hash }, "owner@example.com", async () => undefined);
 	expect(r.status).toBe(200);
 	expect((r.body as any).send).toMatchObject({ state: "undo" });
 	expect(verdict()).toBe("send");

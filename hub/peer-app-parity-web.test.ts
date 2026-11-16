@@ -28,7 +28,8 @@ const ROOMS = { on: true, rooms: [{ chatId: "100", name: "가나다 모임", kin
 const ROOM = { room: { chatId: "100", name: "가나다 모임", kind: "group", group: true, watched: true }, messages: [{ logId: "1", authorId: "u1", sender: "가나", text: "안녕하세요", type: 1, sentAt: Date.parse(now), fromMe: false, unread: 0 }], read: "1", kakaoUnread: 0, drafts: [], sends: [] };
 const labelField = { key: "label", label: "앱 이름", type: "text", help: "", max: 30, switch: true, value: "카카오톡" };
 
-let peerNote = draft("dp", PEER_T);
+// The card records the draft version it shows (decision.hash): its 보내기 names it, so a changed draft is refused instead of sent.
+let peerNote = draft("dp", PEER_T, "open", { hash: "RSE5J5F-v1" });
 const acts: { action: string; args: Record<string, unknown> }[] = [];
 const localPosts: { path: string; body: unknown }[] = [];
 const snapshot = () => ({ name: "맥미니", rev: "r1", monitors: [KAKAO_W], notices: [peerNote], integrations: [MAIL_APP("dp"), KAKAO_APP], available: [], conversations: [conv(PEER_T)] });
@@ -117,14 +118,14 @@ describe.each([[390, 844], [1280, 900]])("the same app on this computer and on t
 	test("the mail reply-draft card is the same structured card with the same buttons", async () => {
 		const parts = async (v: View) => q<{ card: string; buttons: string[]; orig: boolean; chip: string }>(v, `${NORMALIZE}
 			const c = document.querySelector("#mon-tl .bm.dr");
-			return { card: clean(c), buttons: [...c.querySelectorAll("button:not(.dr-rm, .rq-recv)")].map(b => b.textContent.trim()), orig: !!c.querySelector(".rq-orig"), chip: c.querySelector(".dr-chip").textContent };`);
+			return { card: clean(c), buttons: [...c.querySelectorAll("button:not(.dr-rm, .rq-recv)")].map(b => b.dataset.k), orig: !!c.querySelector(".rq-orig"), chip: c.querySelector(".dr-chip").textContent };`);
 		const lv = await boot(width, height, KEYS.mail.local, DRAFT_READY, "pending");
 		const local = await parts(lv);
 		await Bun.write(join(SHOTS, `local-mail-draft-${width}.png`), await lv.screenshot());
 		const pv = await boot(width, height, KEYS.mail.peer, DRAFT_READY, "pending");
 		const peer = await parts(pv);
 		await Bun.write(join(SHOTS, `peer-mail-draft-${width}.png`), await pv.screenshot());
-		expect(local.buttons).toEqual(["보내기", "고치기", "보내지 않기"]);
+		expect(local.buttons).toEqual(["send", "fix", "drop"]);
 		expect(local.orig).toBe(true);
 		expect(peer).toEqual(local);
 		expect(await q(pv, `return document.querySelector("#mon-tl").textContent.includes("RSE5J5F")`)).toBe(false);
@@ -158,7 +159,7 @@ test("a peer's draft card answers on the Mac mini once and turns to 보냄; noth
 	acts.length = 0; localPosts.length = 0;
 	await run(v, `document.querySelector("#mon-tl .bm.dr .dr-send").click()`);
 	await waitFor(v, `!document.querySelector("#mon-tl .bm.dr .dr-send")`);   // answered: it leaves 확인 대기
-	expect(acts).toEqual([{ action: "answer", args: { id: "dp", n: 1, label: "보내기" } }]);
+	expect(acts).toEqual([{ action: "answer", args: { id: "dp", n: 1, label: "보내기", hash: "RSE5J5F-v1" } }]);
 	expect(localPosts.filter(x => x.path.startsWith("/api/notices"))).toEqual([]);
 	await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"]').click()`);
 	await waitFor(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"].on')`);

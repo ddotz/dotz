@@ -1,5 +1,6 @@
 // The comment adapter of the one reply flow (the reply unification design, 1.8 column 3): the engine's drafts (YouTube, Instagram, site
 // comments and site DMs) as the one view, and its revise, direct edit, drop, restore and read-back behind the adapter interface.
+import { fileSizeText } from "../draft-approval.ts";
 import { reasonOf } from "../reply-reasons.ts";
 import type { DraftView, ReasonCode, ReplyAdapter } from "../reply-types.ts";
 import { commentAsk } from "./ask.ts";
@@ -8,6 +9,9 @@ import type { Draft } from "./store.ts";
 
 const STATE: Record<string, DraftView["draft"]["state"]> = { pending: "pending", dropped: "dropped", stale: "stale", sent: "sent", answered: "closed" };
 const question = (d: Draft | undefined) => (d?.mail ? "이 답글을 올리고 메일도 보낼까요?" : "이 답글 올릴까요?");
+// A comment draft's own place is its source (`comment:<source>`), not a conversation: until a card asks about it, nothing is posted there.
+const PLACE = "comment:";
+export const isCommentPlace = (conv: string): boolean => conv.startsWith(PLACE);
 
 export function commentAdapter(engine: Engine): ReplyAdapter {
 	// By the store, not the ref's shape: older and seeded codes do not all follow D + 6.
@@ -25,7 +29,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 			kind: "comment",
 			app: engine.ownerOf(src),
 			label: src.label,
-			conv: `comment:${d.source}`,
+			conv: `${PLACE}${d.source}`,
 			at: d.created,
 			can: { send: pending, revise: pending, edit: pending, drop: pending, restore: d.status === "dropped" && !d.mail },
 			draft: {
@@ -34,7 +38,7 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 				to: `${c.author} 댓글`,
 				text: d.text,
 				...(d.notes.length ? { notes: d.notes } : {}),
-				...(mail ? { mail: { ref: mail.id, to: mail.to, ...(mail.subject ? { subject: mail.subject } : {}), text: mail.body } } : {}),
+				...(mail ? { mail: { ref: mail.id, to: mail.to, ...(mail.subject ? { subject: mail.subject } : {}), text: mail.body, ...(mail.attachments.length ? { attachments: mail.attachments.map(f => ({ name: f.name, ...(f.size !== undefined ? { size: fileSizeText(f.size) } : {}), ...(f.digest ? { digest: f.digest } : {}) })) } : {}) } } : {}),
 				...(before ? { replaces: { ref: before.code, text: before.text } } : {}),
 				...(d.editedFrom !== undefined ? { edited: true as const } : {}),
 			},
@@ -61,8 +65,8 @@ export function commentAdapter(engine: Engine): ReplyAdapter {
 			const src = engine.store.config().sources[r.draft.source];
 			return { ok: true, ref: r.draft.code, replaces: ref, ...(r.lesson && src ? { lesson: { key: { app: src.key }, line: r.lesson } } : {}) };
 		},
-		edit: async (ref, text, part) => {
-			const r = engine.edit(ref, text, part ?? "reply");
+		edit: async (ref, text, part, subject) => {
+			const r = engine.edit(ref, text, part ?? "reply", subject);
 			return r.ok ? { ok: true } : { ok: false, reason: reason(r.reason, (r.code as ReasonCode | undefined) ?? "not_pending"), ...(r.lint ? { lint: r.lint } : {}) };
 		},
 		drop: async ref => done(engine.drop(ref)),

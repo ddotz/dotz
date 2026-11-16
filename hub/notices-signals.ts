@@ -1,4 +1,5 @@
 // Hub signals that close a waiting failure or question (rerun passed, update, account). A part of the notice store split out of hub/notices.ts, code unchanged.
+import { plainDecisions } from "./choices.ts";
 import { log, now } from "./config.ts";
 import { emit } from "./events.ts";
 import { clean, originOf } from "./notices-rules.ts";
@@ -17,7 +18,7 @@ export function laneVerified(name: string, fallbackText: string): void {
 	const at = now();
 	resolveAsks(i => originOf(i) === key, at);
 	upsert({ kind: "result", tone: "done", title, text, open: key, key, unread: true, src: "main", at });
-	emit("outbox", { ts: at, kind: "result", source: "gateway", target: "web", session: name, title, tone: "done", verified: true, text: summary(text), open: key });
+	emit("outbox", { ts: at, kind: "result", source: "gateway", target: "web", session: name, title, tone: "done", verified: true, text: summary(plainDecisions(text)), open: key });
 }
 
 // The daily self-update check found a new dotz version: one fixed-key item in the bell (a later check updates it in place and

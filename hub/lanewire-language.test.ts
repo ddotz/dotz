@@ -57,6 +57,14 @@ test("an English lane report is recorded once in the owner's language, its For l
 	expect(calls).toEqual(["The prototype build passes now. All 12 tests are green."]);
 });
 
+test("a lane error reaches the owner in plain words; the provider's own text does not", async () => {
+	Reflect.set(cfg, "output_language", "off");
+	const e = await report("lw-err", "[lane error] Provider stream start timed out after 300000ms (raise streamStartTimeoutMs: retry.provider.streamStartTimeoutMs in senpi settings; 0 disables)");
+	expect(e.text).toStartWith("[lane error] ");
+	expect(e.text).not.toContain("streamStartTimeoutMs");
+	expect(e.text).not.toContain("Provider stream");
+});
+
 test('output_language "off" records the raw report and makes no model call', async () => {
 	Reflect.set(cfg, "output_language", "off");
 	calls = [];

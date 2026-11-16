@@ -28,7 +28,6 @@ import { isSealed, readSealKey } from "./approval-seal.ts";
 import { withFileWords } from "./auto-attach.ts";
 import { mailLineText, type DraftBrief } from "./mail-lines.ts";
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { DECISION_HEAD, issueBlock, parseDecisions } from "./choices.ts";
 
 export const DRAFT_SEND = "보내기";
@@ -44,6 +43,8 @@ export const DRAFT_OWN = "어떻게 보낼지 직접 입력";
 export const DRAFT_AS_IS = "이대로 보내기";
 /** Recorded by the gateway when the owner cancels inside the send window: the latest word, so the old 보내기 no longer lets a CLI send. */
 export const DRAFT_UNDO = "보내기 취소";
+/** Recorded by the gateway when the owner saves his own text (직접 고치기): a change like 고치기, so an older 보내기 no longer lets a CLI send. Not a card option. */
+export const DRAFT_HAND_EDIT = "직접 고치기";
 export const ATTACH_MARK = "-# ⚠️ 첨부 확인: ";
 export const ATTACH_REFUSED = "첨부를 확인해 주세요:";
 // The send-time lint (placeholder, forbidden expression, recipient) refused the mail; the findings follow.
@@ -368,7 +369,9 @@ const RULE = /^규칙\s*[:：]\s*(.+)$/;
 const NONE_NOTE = /^없음\s*\((.+)\)$/;
 // "a.pdf (352KB)", also with a note after the size as a session writes it by hand ("a.pdf (352KB, 3쪽)").
 const FILE_SIZE = /^(.*\S)\s+\((\d+(?:\.\d+)?(?:B|KB|MB|GB))(?:\s*[,·][^()]*)?\)$/;
-const REF = /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/;
+/** A draft ref as a card's question names it ("RAAAAAA", "mail:<id>", "indi:57259637"). */
+export const REF_ID = "[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}";
+const REF = new RegExp(`\\((${REF_ID})\\)\\s*$`);
 
 const DRAFT_MODES = new Set([DRAFT_AS_IS, DRAFT_ONLY_MAIN, DRAFT_ONLY_MAIL, DRAFT_OWN]);
 const ATTACH_LINE = /^\s*-#\s*⚠️\s*첨부 확인\s*[:：]\s*(.+?)\s*$/m;
@@ -382,6 +385,11 @@ export function parseDraftApproval(text: string): DraftApproval | undefined {
 	const draft = parseQuotedDraft(text);
 	const ref = REF.exec(block.title)?.[1];
 	return draft && ref ? { ...draft, ref } : draft;
+}
+/** Whether two cards show the same draft going out: recipients, subject, body, files and the bundled mail's, as their texts show them. */
+export function sameDraft(a: DraftApproval, b: DraftApproval): boolean {
+	const key = (d: DraftApproval | undefined): unknown[] => (d ? [d.to, [...(d.cc ?? [])].sort(), d.subject ?? "", d.body.trim(), (d.attachments ?? []).map(f => `${f.name} ${f.size ?? ""}`), key(d.mail)] : []);
+	return JSON.stringify(key(a)) === JSON.stringify(key(b));
 }
 
 // One block of a message that asks about several drafts at once ("<question> (<ref>)" over 보내기 / 고치기 / 보내지 않기): its notice carries no
@@ -545,7 +553,7 @@ export function quotedDraft(text: string): string | undefined {
 	return out?.join("\n").replace(/(?:\n>)+$/, "");
 }
 
-const ACTIONS: Record<string, DraftAction> = { [DRAFT_SEND]: "send", [DRAFT_EDIT]: "edit", [DRAFT_DROP]: "drop", [DRAFT_ONLY_MAIN]: "send-main", [DRAFT_ONLY_MAIL]: "send-mail", [DRAFT_OWN]: "own", [DRAFT_AS_IS]: "send-as-is", [DRAFT_UNDO]: "undo" };
+const ACTIONS: Record<string, DraftAction> = { [DRAFT_SEND]: "send", [DRAFT_EDIT]: "edit", [DRAFT_DROP]: "drop", [DRAFT_ONLY_MAIN]: "send-main", [DRAFT_ONLY_MAIL]: "send-mail", [DRAFT_OWN]: "own", [DRAFT_AS_IS]: "send-as-is", [DRAFT_UNDO]: "undo", [DRAFT_HAND_EDIT]: "edit" };
 // What a picked label means; anything else (a label outside the three and the send modes) is not a draft answer.
 export function draftActionOf(label: string): DraftAction | undefined {
 	return Object.hasOwn(ACTIONS, label) ? ACTIONS[label] : undefined;
@@ -559,48 +567,6 @@ export const draftNeedsText = (label: string): boolean => {
 export type DraftVerdict = { verdict: DraftAction | "none"; detail?: string };
 const OWNER_SOURCES = new Set(["web", "discord", "terminal"]);
 const TAIL_BYTES = 2 * 1024 * 1024;
-
-// The owner's own words about a waiting draft, typed instead of a tap: "보내자", "ㅇㅇㅇ 메일 보내", "아잇 보내라고" approve, "보내지 마", "안 보내",
-// "ㄴㄴ" refuse. Only the first clause counts ("보내자. 그리고 화면도 고쳐" approves), and it approves only when it is nothing but a yes or a send
-// verb with filler words, so "파일 하나 더 붙여서 보내줘" or "보내기 전에 제목 바꿔" says nothing (the draft is not what he asked for). A question says nothing.
-const TEXT_NO = /보내지\s*(?:마|말|않)|안\s*보내|보내면\s*안|ㄴㄴ|보류|취소|그만/;
-const TEXT_YES = /^(?:ㅇ{2,}|ㅇㅋ|응|네|넵|예|ok|okay|오케이|좋아|좋아요|그래|ㄱ|ㄱㄱ|고|고고)$/i;
-const TEXT_SEND = /^(?:보내(?:기|자|줘|줘요|주세요|요|라|라고|라니까|놔|놔라|버려|도)?|(?:전송|발송)(?:해|해줘|해요|하자|하라고)?)$/;
-const TEXT_AS_IS = /이대로|그대로/;
-// What may stand before an "이대로 보내" of its own: a plain "I checked". Anything else ("제목 바꿔", "첨부 맞으면", "내일 아침에") may take it back, so it says nothing.
-const TEXT_CHECKED = /^(?:(?:첨부파일|첨부|파일|내용|본문|메일|답장|다|전부|모두)(?:은|는|도|이|가)?\s+)*(?:확인\s*(?:했어|했음|함|했습니다|완료)|봤어|봤음|맞아|맞음|맞습니다|괜찮아|문제\s*없어|수정할?\s*(?:거|것|게)?\s*없어)요?$/;
-// A note in brackets after it is his aside ("이대로 보내. (참고)") unless it reads as a change or a condition.
-const TEXT_NOTE = /^(.*?)[\s.!]*\(([^()]*)\)[\s.!]*$/s;
-const TEXT_CHANGE = /\?|바꾸|바꿔|변경|고치|고쳐|수정|삭제|빼|추가|붙이|붙여|넣|다시|말고|전에|(?:으|하|되)면/;
-const TEXT_PICK = /^(\d)\)\s*(.+)$/;
-const TEXT_FILLER = /^(?:아|아잇|아니|그냥|빨리|얼른|어서|이제|그럼|일단|좀|메일|답장|회신|답글|댓글|이거|그거|이걸로|그걸로|이대로|그대로|다시|바로|지금|돼|됨)$/;
-// A card's option typed out counts when number and name agree: "1) 보내기", "4) 이대로 보내기".
-// After the first clause only a last "이대로 보내" sentence of its own counts, after nothing but "I checked" ("첨부 확인했어. 이대로 보내").
-const isSend = (clause: string): boolean => {
-	const words = clause.split(/[\s,~ㅎ]+/).filter(Boolean);
-	return words.some(w => TEXT_YES.test(w) || TEXT_SEND.test(w)) && words.every(w => TEXT_YES.test(w) || TEXT_SEND.test(w) || TEXT_FILLER.test(w));
-};
-// Quotes (straight or curly) around the phrase, as the refusal shows it ('이대로 보내'), are not part of the answer; a quote of someone else's words stays
-// a longer sentence with other words in it, so it still says nothing.
-const QUOTES = /['"‘’“”]/g;
-function textAnswer(typed: string): { said?: "send" | "drop"; clause?: string } {
-	const text = typed.replace(QUOTES, "");
-	const m = /^\s*([^.!?\n]*)([.!?\n]?)/.exec(text);
-	const first = (m?.[1] ?? "").trim();
-	if (!first || m?.[2] === "?") return {};
-	const pick = TEXT_PICK.exec(first);
-	if (text.trim().replace(/[.!\s]+$/, "") === first && (pick && Number(pick[1]) >= 4 && pick[2] === DRAFT_AS_IS || pick?.[1] === "1" && pick[2] === DRAFT_SEND)) return { said: "send", clause: first };
-	if (TEXT_NO.test(first)) return { said: "drop" };
-	if (isSend(first)) return { said: "send", clause: first };
-	const note = TEXT_NOTE.exec(text.trim());
-	if (note && (TEXT_CHANGE.test(note[2]!) || TEXT_NO.test(note[2]!))) return {};
-	const clauses = (note?.[1] ?? text).split(/(?<=[.!?,\n])/).map(c => c.trim()).filter(Boolean);
-	if (clauses.some(c => c.endsWith("?"))) return {};
-	const bare = clauses.map(c => c.replace(/[.!,\s]+$/, ""));
-	const clause = bare.pop();
-	return clause && TEXT_AS_IS.test(clause) && isSend(clause) && !TEXT_NO.test(clause) && bare.every(c => TEXT_CHECKED.test(c)) ? { said: "send", clause } : {};
-}
-export const textVerdict = (text: string): "send" | "drop" | undefined => textAnswer(text).said;
 
 function tailLines(path: string): string[] {
 	if (!existsSync(path)) return [];
@@ -625,81 +591,24 @@ const parsedLine = <T>(line: string): T | undefined => {
 	}
 };
 
-// The assistant's posts from the outbox log, each with the refs of the cards it carries. The CLI that sends runs outside the gateway, so the log is the one record it shares.
-type Post = { at: number; place?: string; refs: string[]; gateway: boolean };
-type Typed = { at: number; places: (string | undefined)[]; named: boolean };
-// The owner's main conversation is one place whichever surface he types on.
-const placeOf = (v: unknown): string | undefined => (typeof v !== "string" || !v ? undefined : v === "web" || v === "chat" || v === "terminal" ? "main" : v);
-function postsIn(outboxPath: string): Post[] {
-	return tailLines(outboxPath).flatMap(line => {
-		const e = parsedLine<{ ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; update_key?: unknown; target?: unknown }>(line);
-		if (e?.kind !== "out" || e.update_key || typeof e.ts !== "string" || typeof e.text !== "string") return [];
-		// Every decision counts, also one with no draft ref ("" here): it stands between him and an older card all the same.
-		const refs = parseDecisions(e.text).blocks.filter(b => b.headed || b.options.length).map(b => /\(([^()\s]+)\)[\s*]*$/.exec(b.title)?.[1] ?? "");
-		return [{ at: Date.parse(e.ts), place: placeOf(e.target), refs, gateway: e.source === "gateway" }];
-	});
-}
-// Is the owner's message `m` an answer to the card of `ref` posted where he wrote? That card must be the newest card there, with no other card since the draft was made that
-// he had not answered by then (two waiting cards: nothing says which one he means). A bare "응" also needs the card to be the last thing said there, since it can answer
-// whatever came after; a word that names sending does not.
-function answersCard(posts: Post[], ref: string, sinceMs: number, m: Typed, answered: (ref: string, before: number) => boolean): boolean {
-	const said = posts.filter(p => p.at <= m.at && !p.gateway && p.place !== undefined && m.places.includes(p.place));
-	const cards = said.filter(p => p.refs.length);
-	const last = cards.at(-1);
-	// Two logs and a clock: a post in the same millisecond may be on either side of his message, so it counts against the answer in both places.
-	if (last?.refs.length !== 1 || last.refs[0] !== ref || last.at >= m.at) return false;
-	if (cards.some(p => p.at > sinceMs && p.refs.some(r => r !== ref && !answered(r, m.at)))) return false;
-	return m.named || said.at(-1) === last;
-}
-
-// What the owner decided for the draft `ref` (the id in the question's trailing "(<ref>)") after `sinceMs`, read from the inbox log.
-// Only the owner's own messages count (web, discord, terminal; not a session's lane_message) and the latest word wins: a pick on the card,
-// or a typed reply (textVerdict) in the conversation the draft was asked in (`conv`, the one a pick for this ref came from, or the one its card was posted to: answersCard). For 고치기 the
-// detail is the change the owner typed ("2) 고치기 - <change>"), for 직접 입력 how to send it.
-export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, opts: { conv?: string } = {}): DraftVerdict {
-	const lines = tailLines(inboxPath);
+// What the owner decided for the draft `ref` (the id in the question's trailing "(<ref>)") after `sinceMs`, read from the inbox log: his latest pick
+// on its card wins. Only a line the gateway sealed counts, from the owner's own surfaces (web, discord, terminal; not a session's lane_message). Typed
+// chat is never read here (the reply intent design, 2026-11-16): the model reads it, and every send the hub queues follows a pick it sealed. For
+// 고치기 the detail is the change the owner typed ("2) 고치기 - <change>"), for 직접 입력 how to send it.
+export function draftVerdict(inboxPath: string, ref: string, sinceMs: number): DraftVerdict {
 	const tag = `(${ref})`;
-	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown; conv?: unknown; channel?: unknown };
-	const owned: Entry[] = [];
+	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown };
 	// Only a line the gateway sealed (hub/approval-seal.ts) is the owner's word: a line appended to the file by another process is not.
 	const key = readSealKey(inboxPath);
-	for (const line of lines) {
-		const e = parsedLine<Entry>(line);
-		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !isSealed(key, e)) continue;
-		owned.push(e);
-	}
-	const picksOf = (e: Entry) => (Array.isArray(e.picks) ? (e.picks as { q?: unknown; label?: unknown }[]) : []).filter(p => typeof p?.q === "string" && p.q.includes(tag) && typeof p.label === "string" && !!draftActionOf(p.label));
-	const where = new Set<string>(opts.conv ? [opts.conv] : []);
-	for (const e of owned) if (picksOf(e).length) for (const c of [e.conv, e.channel]) if (typeof c === "string" && c) where.add(c);
-	const atOf = (e: Entry) => Date.parse(e.ts as string);
-	const typedOf = (e: Entry): Typed => ({ at: atOf(e), places: [placeOf(e.conv), placeOf(e.channel)], named: /보내|전송|발송/.test(e.text as string) });
-	const typed = owned.filter(e => !Array.isArray(e.picks) && typeof e.text === "string" && textAnswer(e.text).said).map(typedOf);
-	const pickedRef = (r: string, before: number) => owned.some(e => atOf(e) < before && Array.isArray(e.picks) && (e.picks as { q?: unknown }[]).some(p => typeof p?.q === "string" && p.q.includes(`(${r})`)));
-	let posts: Post[] | undefined;
-	// `before` falls at every step, so this ends, and each pair is worked out once. A typed answer that went to another card settled that card as a tap would have.
-	const known = new Map<string, boolean>();
-	const underCard = (r: string, m: Typed): boolean => {
-		const key = `${r}@${m.at}`;
-		const hit = known.get(key);
-		if (hit !== undefined) return hit;
-		const found = answersCard((posts ??= postsIn(join(dirname(inboxPath), "outbox.jsonl"))), r, sinceMs, m, (other, before) => pickedRef(other, before) || typed.some(t => t.at < before && underCard(other, t)));
-		known.set(key, found);
-		return found;
-	};
 	let out: DraftVerdict = { verdict: "none" };
-	for (const e of owned) {
-		const picks = picksOf(e);
-		for (const p of picks) {
-			const verdict = draftActionOf(p.label as string)!;
-			const detail = draftNeedsText(p.label as string) && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
-			out = { verdict, ...(detail ? { detail } : {}) };
+	for (const line of tailLines(inboxPath)) {
+		const e = parsedLine<Entry>(line);
+		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs) || !Array.isArray(e.picks) || !isSealed(key, e)) continue;
+		for (const p of e.picks as { q?: unknown; label?: unknown }[]) {
+			if (typeof p?.q !== "string" || !p.q.includes(tag) || typeof p.label !== "string" || !draftActionOf(p.label)) continue;
+			const detail = draftNeedsText(p.label) && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
+			out = { verdict: draftActionOf(p.label)!, ...(detail ? { detail } : {}) };
 		}
-		// A typed reply: a message without picks, in the draft's own conversation or under its card.
-		if (picks.length || Array.isArray(e.picks) || typeof e.text !== "string") continue;
-		const { said, clause } = textAnswer(e.text);
-		if (!said) continue;
-		if (![e.conv, e.channel].some(c => typeof c === "string" && where.has(c)) && !underCard(ref, typedOf(e))) continue;
-		out = { verdict: said === "send" && TEXT_AS_IS.test(clause ?? "") ? "send-as-is" : said };
 	}
 	return out;
 }

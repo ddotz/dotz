@@ -1,4 +1,4 @@
-// `bun hub/kakao/cli.ts <setup|status|login|read|draft|send|send-file|off>`: the one entry point of the KakaoTalk integration for the
+// `bun hub/kakao/cli.ts <setup|status|login|read|draft|send-file|off>`: the one entry point of the KakaoTalk integration for the
 // orchestrator and the owner. Off by default: until `setup` wrote an enabled config, every command except setup/status/off prints
 // one line and does nothing else (no runner call, no gateway call). The db / creds / login / send modules are loaded on first use
 // (variable specifier, like watch.ts does for creds.ts), so `status` and `off` stay cheap and never touch the app.
@@ -8,7 +8,6 @@ import { dirname, join, resolve } from "node:path";
 import { atomicWrite, cardFile, featureFile, isOn, OFF_LINE, type Deps, pidAlive, type Ports, readJson, readState, RUNNING_LINE, runDry, runLoginOnly, runOnboarding, stepName, WATCH_NAME } from "./onboard.ts";
 import { createHub } from "./hub.ts";
 import { hasWords, readText } from "./db.ts";
-import type { RoomFact } from "./room.ts";
 import type { FileSendInput, FileSendResult } from "./sendfile.ts";
 import { listBlock } from "../listblock.ts";
 import { defaultRunner, type HubFull, type KakaoConfig, type KakaoPaths, kakaoPaths, type Msg, type Room, type Runner } from "./types.ts";
@@ -25,7 +24,6 @@ export type Reader = {
 export type DraftsApi = {
 	create: (input: { chatId: string; roomName: string; text: string; basisLogId: string }) => Promise<{ code: string }>;
 	block: (draft: any) => string;
-	send: (code: string, deps: { latestIncoming: (chatId: string) => Promise<string | undefined>; roomNames: () => Promise<RoomFact[]> }) => Promise<{ ok: boolean; reason?: string }>;
 };
 
 export type Ctx = {
@@ -49,14 +47,15 @@ export type Ctx = {
 	log?: (line: string) => void;
 };
 
-const VALUE_FLAGS = new Set(["to", "chat", "limit", "draft"]);
-const GATED = new Set(["login", "rooms", "read", "draft", "send", "send-file"]);
+const VALUE_FLAGS = new Set(["to", "chat", "limit"]);
+// No `send`: a draft goes out only by the owner's 보내기 on its card (the gateway's one queue); nothing here sends one.
+const GATED = new Set(["login", "rooms", "read", "draft", "send-file"]);
 const MAX_READ = 50;
 const MAX_FILES = 10;
 const MAX_FILE_BYTES = 300 * 1024 * 1024;
 // tone.ts loads the hub config, which every other command on an empty data dir must not need; these runs post through the hub, so it is there.
 const shown = async (text: string) => (await import("../tone.ts")).toneText(text);
-const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | rooms [--all] [--limit 30] [--plain] | read --chat <id> [--limit 20] | draft --chat <id> | send --draft <코드> | send-file --self --file <경로> [--file <경로>...] | off [--forget]";
+const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | rooms [--all] [--limit 30] [--plain] | read --chat <id> [--limit 20] | draft --chat <id> | send-file --self --file <경로> [--file <경로>...] | off [--forget]";
 
 function parseArgs(argv: string[]): Record<string, string | true> {
 	const out: Record<string, string | true> = {};
@@ -188,17 +187,6 @@ async function draft(args: Record<string, string | true>, ctx: Ctx, config: Kaka
 	}
 }
 
-// A draft is sent only through the gateway's one queue (POST /api/reply/act): the lease, the newer-message check, the undo window and the
-// retries all apply, and this command sends nothing by itself.
-async function send(args: Record<string, string | true>, ctx: Ctx): Promise<number> {
-	const code = str(args.draft);
-	if (!code) return ctx.out(USAGE), 2;
-	const r = await ctx.hub.post("/api/reply/act", { ref: code, action: "send" }).catch((e: Error) => ({ status: 0, json: { error: `게이트웨이에 닿지 못했어요: ${e.message}` } }));
-	const ok = r.status >= 200 && r.status < 300 && r.json?.ok !== false;
-	ctx.out(ok ? "보내기를 맡겼어요. 답장 대기에서 몇 초 안에 되돌릴 수 있어요" : `보내지 않았어요: ${r.json?.error ?? "이유를 알 수 없어요"}`);
-	return ok ? 0 : 1;
-}
-
 // Files go only to the owner's own 나와의 채팅 (the one database room of type 5), so no draft approval: no other room can be named here.
 async function sendFile(argv: string[], args: Record<string, string | true>, ctx: Ctx, config: KakaoConfig): Promise<number> {
 	if (args.self !== true || args.chat !== undefined) return ctx.out("파일은 나와의 채팅에만 보낼 수 있어요: send-file --self --file <경로>"), 2;
@@ -281,8 +269,7 @@ export async function run(argv: string[], ctx: Ctx): Promise<number> {
 	if (cmd === "rooms") return rooms(args, ctx, config);
 	if (cmd === "read") return read(args, ctx, config);
 	if (cmd === "draft") return draft(args, ctx, config);
-	if (cmd === "send-file") return sendFile(rest, args, ctx, config);
-	return send(args, ctx);
+	return sendFile(rest, args, ctx, config);
 }
 
 const load = <T>(name: string) => import(`./${name}.ts`) as Promise<T>;
@@ -342,7 +329,7 @@ export function realCtx(paths: KakaoPaths): Ctx {
 		sendFiles: async input => (await load<typeof import("./sendfile.ts")>("sendfile")).sendFilesToSelf(input, { runner, sleep: ms => new Promise(resolve => setTimeout(resolve, ms)), now: Date.now }),
 		drafts: async () => {
 			const s = await load<typeof import("./send.ts")>("send");
-			return { create: input => s.createDraft(input, deps), block: s.draftBlock, send: (code, extra) => s.sendDraft(code, { ...deps, ...extra }) };
+			return { create: input => s.createDraft(input, deps), block: s.draftBlock };
 		},
 		sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
 		now: Date.now,

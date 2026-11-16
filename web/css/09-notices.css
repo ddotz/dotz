@@ -97,9 +97,6 @@
 .dc-act.main { order: 0; padding: 0 var(--sp-5); }
 .dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .dc-act:disabled { opacity: .55; }
-.dc-manual { margin-left: auto; gap: var(--sp-1); padding: 0 var(--sp-1) 0 var(--sp-2); color: var(--fg-3); font-size: 13px; }
-.dc-manual:active { color: var(--fg); }
-.dc-manual .ic { width: 14px; height: 14px; }
 
 /* x (무시): a question that waits on the owner can be waved off. 44px thumb target on every surface, quiet --fg-3 until pressed. */
 button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }

@@ -243,7 +243,7 @@ button.conn:disabled { cursor: default; }
 @media (max-width: 1099px) and (pointer: coarse) { :root[data-kb] .app:has(.composer textarea:focus) .side { display: none; } }
 /* buttons: one system for every page and card. Kind: primary (accent fill, the default), secondary (.tonal), quiet (.text), danger;
    size: md (default, 40px) and .sm (36px). A touch screen gets a 44px target. Card buttons keep their own class names (.dc-act,
-   .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
+   .dc-go, .dc-back) and are aliased here, so the look is defined once. */
 /* size tiers (docs/ui-spec.md 버튼, tokens in the :root above): 기본 --btn-h 36, 작은 --btn-h-sm 32 (.sm), 행 안 --btn-h-row 28 (.inrow).
    --btn-hit is the touch target, not a tier: a phone raises the box to it, a row button reaches 40px with padding (::after). */
 .bk-l { display: none; }
@@ -258,16 +258,16 @@ button.conn:disabled { cursor: default; }
 .menu .mi.off { color: var(--fg-3); cursor: default; }
 .menu .mi.off:active { background: transparent; } @media (hover: hover) { .menu .mi.off:hover { background: transparent; } }
 .menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
-.btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
+.btn, .dc-act, .dc-go, .dc-back { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
 .btn, .dc-go, .dc-act.main { background: var(--accent); color: var(--on-accent); }
 .btn.tonal, .btn.outlined, .dc-back, .dc-act.alt { background: var(--layer); color: var(--fg); }
-.btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
+.btn.text, .dc-act { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
 .btn.sm { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
-.btn, .dc-act, .dc-go, .dc-back, .dc-manual { transition: opacity var(--m-fast) var(--m-ease); }
+.btn, .dc-act, .dc-go, .dc-back { transition: opacity var(--m-fast) var(--m-ease); }
 .btn:active:not(:disabled), .dc-go:active:not(:disabled), .dc-back:active:not(:disabled) { opacity: .7; }
-@media (hover: hover) { .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; } }
+@media (hover: hover) { .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover { opacity: .85; } }
 @media (hover: hover) { .btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; } }
-@media (hover: hover) { .btn.text:hover, .dc-act:not(.main):not(.alt):hover, .dc-manual:hover { background: var(--hover); color: var(--fg); opacity: 1; } }
+@media (hover: hover) { .btn.text:hover, .dc-act:not(.main):not(.alt):hover { background: var(--hover); color: var(--fg); opacity: 1; } }
 .btn.danger { background: transparent; color: var(--err); padding: 0 var(--sp-3); }
 @media (hover: hover) { .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; } }
 .btn.danger.fill { background: var(--err); color: var(--on-err); padding: 0 var(--sp-3); }
@@ -275,7 +275,7 @@ button.conn:disabled { cursor: default; }
 /* 행 안 tier (docs/ui-spec.md 버튼, 설정 행): the button or field in the right slot of a row. 32px high, 13px; on a touch screen the box stays 32px and ::after widens the hit area to 44px. */
 .btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 var(--sp-3); font-size: 13px; }
 .btn.inrow.text, .btn.inrow.danger { padding: 0 var(--sp-2); }
-@media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
+@media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
 @media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: calc(var(--sp-2) * -1) calc(var(--sp-05) * -1); } }
 /* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
    vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.

@@ -100,6 +100,53 @@ describe("approval sender", () => {
 		expect(g.started).toHaveLength(251);
 	});
 
+	test("code's repair runs only on the approved version, and its retry carries the version the repair left (a Re: subject)", async () => {
+		const world = (changed: boolean) => {
+			let subject = "안녕";
+			const runs: string[] = [], repaired: string[] = [], timers: (() => void)[] = [];
+			let done: (r: SendResult) => void = () => undefined;
+			const ended = new Promise<SendResult>(resolve => (done = resolve));
+			const s = createApprovalSender({
+				kind: () => PLACES.RAAAAAA,
+				fingerprint: async () => subject,
+				run: async () => (runs.push(subject), runs.length === 1 ? { code: 1, out: said({ sent: "no", code: "subject_re" }) } : { code: 0, out: "" }),
+				repair: async () => (repaired.push(subject), (subject = `Re: ${subject}`), "fixed"),
+				after: (_ms, fn) => void timers.push(fn),
+				report: r => void (runs.length && r.state !== "queued" && r.state !== "sending" && !(r.state === "failed" && r.safeToAuto) && done(r)),
+				log: () => undefined,
+			});
+			s.enqueue({ ref: "RAAAAAA", conv: "c", action: "send", title: "q (RAAAAAA)", hash: "안녕", by: "owner" });
+			const retry = async () => {
+				await s.idle();
+				if (changed) subject = "다른 제목";
+				for (const fn of timers.splice(0)) fn();
+				return ended;
+			};
+			return { runs, repaired, retry };
+		};
+		const ok = world(false);
+		expect(await ok.retry()).toMatchObject({ state: "sent" });
+		expect(ok.runs).toEqual(["안녕", "Re: 안녕"]);
+		const moved = world(true);
+		expect(await moved.retry()).toMatchObject({ state: "failed", reason: { code: "changed" } });
+		expect(moved.repaired).toEqual([]);
+		expect(moved.runs).toEqual(["안녕"]);
+	});
+
+	test("a CLI's detail (the place's own answer) reaches the log line and the kept result, bounded (Dggtza6)", async () => {
+		const logged: string[] = [];
+		const out = `${said({ sent: "no", code: "rejected", part: "reply", detail: `site said: duplicate text ${"y".repeat(400)}` })}
+답글을 올리지 못했어요: 사이트에서 이 글을 받지 않았어요`;
+		const s = createApprovalSender({ kind: ref => PLACES[ref], run: async () => ({ code: 1, out }), report: () => undefined, log: l => void logged.push(l) });
+		expect(s.enqueue({ ref: "D1", conv: "comment:site-a", action: "send", title: "q (D1)" })).toBe(true);
+		await s.idle();
+		const r = s.results().find(x => x.ref === "D1")!;
+		expect(r).toMatchObject({ state: "failed", reason: { code: "rejected" } });
+		expect(r.detail!.startsWith("site said: duplicate text")).toBe(true);
+		expect(r.detail!.length).toBe(300);
+		expect(logged.filter(l => l.startsWith("approved send D1") && l.includes("site said: duplicate text"))).toHaveLength(1);
+	});
+
 	test("the send commands are the ones the bot runs", () => {
 		expect(sendArgv("comment", "D1", "send-mail", "bun").slice(2)).toEqual(["send", "D1", "--only", "mail"]);
 		expect(sendArgv("comment", "D1", "send-mail", "bun", true)!.slice(2)).toEqual(["send", "D1", "--only", "mail", "--retry"]);

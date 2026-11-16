@@ -382,6 +382,7 @@ function dkPaint() {
   let dc = DK.dc;
   if (DK.nid) {   // a draft sheet follows its own notice, whose draft (받는이·참조) may have changed since it opened
     const n = ntById(DK.nid), rv = n ? ntRevising(n) : null;
+    if (n && ntOpenDec(n) && n.decision.draft && RA.items.has(n.decision.draft.ref) && !DC.st[dc.key] && !DC.edit[dc.key]) { dkClose(false); ntDraftSheet(n); return; }   // the queue came to hold this draft after the sheet opened (its first read was on the way): its one card takes the sheet's place, unless he is answering here
     if (n && n.decision?.draft) { DK.dc = { ...DK.dc, draft: n.decision.draft }; dc = DK.dc; }
     if (rv) {   // 고치기 was answered: the sheet keeps the old draft with 고치는 중… until the new one lands, then shows that one
       const nx = ntSuccessor(n);
@@ -397,7 +398,7 @@ function dkPaint() {
   const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
   const sig = dcSig(dc, picks, step);
   if (DK.box.dataset.sig !== sig) { DK.box.dataset.key = dc.key; renderDecision(DK.box, DK.dc, picks, step); DK.box.dataset.sig = sig; }
-  if (DC.st[dc.key] === "sent" && !DK.timer && !(dc.draft && dcStText(dc, "sent") === TX("decision.pending.edit"))) DK.timer = setTimeout(() => { dkClose(false); toast(TX("conv.nt.sent")); }, 900);
+  if (DC.st[dc.key] === "sent" && !DK.timer && !(dc.draft && dcStText(dc, "sent") === TX("decision.pending.revise"))) DK.timer = setTimeout(() => { dkClose(false); toast(TX("conv.nt.sent")); }, 900);
 }
 // Several cards in one conversation are answered one after another (2026-10-31: "차례로 보여줘야지", "마지막 카드 어디?"): once a draft card
 // is answered, the next open draft card of the same conversation opens in its place, at once when it is already there, else when it
@@ -512,17 +513,17 @@ function ntApply(item, unread) {
 // Throws with the hub's reason when the answer could not be delivered.
 // `files` (uploads, 10-decision-card.js uploadFile) go with a draft's 직접 수정 answer to the bot; a peer's question takes none.
 // `label` is the button text the owner saw for `num` (default: the option of that number on the card as shown); the hub refuses it when the card's options changed since,
-// and the list is read again so the new options show (the error is thrown to the caller's toast like any other).
+// and the list is read again so the new options show (the error is thrown to the caller's toast like any other). `hash`: the draft version this card shows; a send of another (or of none) is refused `changed` and the list read again.
 const NT_STALE = "카드 선택지가 바뀌었어요. 다시 확인하고 골라 주세요";
 async function ntPost(n, num, note, files, label) {
-  const seen = label || ((n.decision && n.decision.options || []).find(o => o.n === num) || {}).label;
+  const seen = label || ((n.decision && n.decision.options || []).find(o => o.n === num) || {}).label, hash = n.decision && n.decision.hash ? { hash: n.decision.hash } : {};
   try {
-    if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
-    const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}) });
+    if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...hash }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
+    const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}), ...hash });
     ntApply(r.item, r.unread);
     return r.send;   // set while the gateway holds the send for its cancel window (hub/approval-send.ts)
   } catch (e) {
-    if (e && e.message === NT_STALE) await loadNotices();
+    if (e && (e.message === NT_STALE || (e.data && e.data.code === "changed"))) await loadNotices();
     throw e;
   }
 }
@@ -597,7 +598,8 @@ function ntHomeRow(n, label = TX("common.needs_reply")) {
 }
 
 /* ---- detail sheet ---- */
-const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null, pn: null, stash: new Map() };   // pn: a peer's notice (it is not in NT; drawn from the snapshot, 34-peer-monitoring.js)   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
+const NS = { id: "", det: null, h: null, node: null, busy: false, edit: null, pn: null, stash: new Map() };
+for (const [id, e] of kept("nt-edit", () => [...NS.stash, ...(NS.edit ? [[NS.edit.id, NS.edit]] : [])]) || []) NS.stash.set(id, { ...e, fresh: true });   // a reason being typed outlives a reload: its sheet opens on it (01-core.js kept)   // pn: a peer's notice (it is not in NT; drawn from the snapshot, 34-peer-monitoring.js)   // edit: { id, opt, text, fresh } while the owner writes the detail an option asks for   // det: a notice shown read-only (a failure alert), not looked up by id
 function ntSheetClose(restore = true) { if (NS.h) NS.h.close(restore); }
 // "직접 답하기": to the asking message in its chat (a login request: its own form), where the composer quotes that message as the answer to this question:
 // what the owner writes next carries the question's id and settles it (hub/notices-store.ts ownerReplied). A send approval stays a plain jump.
@@ -665,9 +667,9 @@ function ntAfterAnswer(n) {
 }
 function ntEditNode(n, ed) {
   const own = !ed.opt, drf = !own && !!n.decision.draft, dt = drf ? draftNoteText(ed.opt) : null;
-  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: own ? "1000" : "500", placeholder: own ? TX("conv.nt.own_ph") : drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": own ? TX("conv.nt.direct") : drf ? dt.aria : TX("decision.note.details"), disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: own ? "1000" : "500", placeholder: own ? TX("conv.nt.own_ph") : drf ? dt.hint : TX("decision.note.reason_ph"), "aria-label": own ? TX("conv.nt.direct") : drf ? dt.aria : TX("decision.note.details"), disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); }, "data-esc": "field", onkeydown: noteKeys(() => go.click(), () => back.click()) });
   ta.value = ed.text;
-  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, own ? TX("conv.nt.own_go") : noteGoLabel(ed.opt, drf, false));
+  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, own ? TX("conv.nt.own_go") : noteGoLabel(ed.opt, drf));
   const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, TX("decision.back"));
   return el("div", { class: "dc-edit" }, own ? null : el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
@@ -775,7 +777,7 @@ async function noticeSheetOpen(id) {
   ntSheetShow(String(n.id), null, pn);
 }
 function ntSheetShow(id, det, pn = null) {
-  NS.id = id; NS.det = det; NS.pn = pn; NS.busy = false;
+  NS.id = id; NS.det = det; NS.pn = pn; NS.busy = false; NS.edit = NS.stash.get(id) || null; NS.stash.delete(id);
   const h = fsOpen({ labelledby: "ds-t", onClose: () => { if (NS.h === h) { NS.h = NS.node = null; NS.id = ""; NS.det = null; NS.edit = null; NS.pn = null; NS.stash.clear(); } } });
   NS.h = h; NS.node = h.node;
   ntSheetPaint();   // fsOpen already put the focus on the sheet itself: no option shows a ring until the keyboard moves to it

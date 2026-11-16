@@ -38,6 +38,15 @@ test("a pending draft is the one view; another kind's ref is not this adapter's"
 	expect(await a.ask(d.code)).toContain(`(${d.code})`);
 });
 
+test("a send job that is not the owner's act (or code's retry of one) is refused before KakaoTalk is touched", async () => {
+	const d = await draft();
+	let touched = 0;
+	const a = kakaoAdapter({ ...kit, sendDeps: async () => (touched++, { paths, runner }) });
+	expect(await a.run!({ ref: d.code, conv: "kakao:1", action: "send", title: a.question(d.code) })).toEqual({ sent: "no", code: "not_approved" });
+	expect(touched).toBe(0);
+	expect(readDrafts(paths).find(x => x.code === d.code)!.status).toBe("pending");
+});
+
 test("the view quotes the message the draft answers; a database that cannot be read leaves it out", async () => {
 	const d = await draft();
 	const original = { who: "Alex", text: "내일 몇 시에 볼까요?", at: 1 };

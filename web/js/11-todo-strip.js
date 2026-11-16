@@ -311,8 +311,9 @@ function msgNode(e, inRow) {
       const snip = (text.match(/^snippet: ?([\s\S]*)$/m) || [])[1] || "";
       const from = f("from").replace(/\s*<[^>]+>\s*$/, "").replace(/^"|"$/g, "") || f("from");
       if (subj) return resultCard({ src: from || acct || SYS_LABEL.mail, at: e.ts, title: subj, text: snip.trim() });
+      // a mail without a subject (hub/mail.ts accepts one) shows as plain text
+      return mdNode(text);
     }
-    // falls through: a mail without a subject line shows as plain text
     // Text one session handed to another (hub/handed.ts): the schedule start's card, the sender in the header, the text behind 원문 보기.
     case "handed":
       return resultCard({ src: targetName(e.from), at: e.ts, title: TX(e.handback ? "home.handed.back" : "home.handed.sent"), raw: text });
@@ -418,7 +419,6 @@ function chatPush(en, bulk) {
   if (CS.empty) { CS.empty.remove(); CS.empty = null; }
   if (en.m) {
     if (cleanRestart(en.m)) return;
-    dayDiv(en.m.ts);
     if (CS.group) workDone(CS.group);
     CS.group = null;
     const e = en.m;
@@ -439,6 +439,7 @@ function chatPush(en, bulk) {
     if (parked && CS.parked) { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; }
     const n = wlIs(e) ? wlNode(e) : msgNode(e);
     if (n) {
+      dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
       if (!pkey) CS.parked = parked ? n : null;
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (!n.classList.contains("wl-row")) rpMark(n, e);

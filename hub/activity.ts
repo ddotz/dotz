@@ -7,7 +7,8 @@ import { mask, secretValues } from "./providers.ts";
 import { now } from "./config.ts";
 import { ownerView } from "./gateway-added.ts";
 import { isNote } from "./i18n.ts";
-import { stripLater } from "./tone.ts";
+import { stripHandoff, stripLater } from "./tone.ts";
+import { stripMarkerLines } from "./owner-text.ts";
 import { stripSteerMark } from "./steer-mark.ts";
 import type { AgentEvent, SubagentUpdate } from "./runtime/types.ts";
 
@@ -24,6 +25,9 @@ export function scrub(text: string): string {
 }
 
 export const blocks = (content: Block[] | string | undefined): Block[] => (Array.isArray(content) ? content : []);
+// The model's text as the terminal view shows it: the parts an answer never shows the owner (the handoff block, <project-info>, <resolves>, a
+// [revise] line, [later]) go here too.
+const shownText = (text = ""): string => stripLater(stripMarkerLines(stripHandoff(text)));
 export const joined = (content: Block[] | string | undefined) => (typeof content === "string" ? content : blocks(content).filter(b => b.type === "text").map(b => b.text ?? "").join("")).trim();
 
 // A short plain label for a collapsed tool call: the model's own intent (`i`; omp moves it out of the args into the
@@ -48,7 +52,7 @@ export function ownIntent(args: unknown, intent?: string): boolean {
 export function emitEventActivity(source: string, ev: AgentEvent): void {
 	if (ev.type === "subagent") return trackSubagent(source, ev.update);
 	if (ev.type !== "activity") return;
-	const a = ev.row.type === "text" ? { ...ev.row, text: stripLater(ev.row.text) } : ev.row;
+	const a = ev.row.type === "text" ? { ...ev.row, text: shownText(ev.row.text) } : ev.row;
 	if (a.type === "text" && !a.text) return;
 	emitActivity({ ts: now(), kind: "activity", source, ...a, text: scrub(a.text), ...(a.args !== undefined ? { args: scrub(a.args) } : {}), ...(a.intent ? { intent: scrub(a.intent) } : {}) });
 }
@@ -163,7 +167,7 @@ function itemsOf(lines: string[]): TranscriptItem[] {
 		} else if (m.role === "assistant") {
 			for (const b of Array.isArray(m.content) ? m.content : []) {
 				if (b.type === "thinking" && b.thinking?.trim()) items.push({ ts, type: "thinking", text: scrub(b.thinking.trim()) });
-				else if (b.type === "text" && stripLater(b.text ?? "").trim()) items.push({ ts, type: "text", text: scrub(stripLater(b.text!).trim()) });
+				else if (b.type === "text" && shownText(b.text).trim()) items.push({ ts, type: "text", text: scrub(shownText(b.text).trim()) });
 				else if (b.type === "toolCall") {
 					const label = summary(b.arguments, b.intent);
 					items.push({ ts, type: "tool_call", tool: b.name, intent: scrub(label), text: label ? `${b.name}: ${scrub(label)}` : String(b.name ?? ""), args: scrub(JSON.stringify(b.arguments ?? {}, null, 2)) });

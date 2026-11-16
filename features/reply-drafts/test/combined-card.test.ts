@@ -135,7 +135,7 @@ describe("compose --with-comment", () => {
 		pick(env, mailId, 1);
 		const alone = await runMailCli(["send", "--draft", mailId], "", t.deps);
 		expect(alone.code).toBe(1);
-		expect(alone.lines[0]).toContain(`comments.ts send ${code}`);
+		expect(alone.lines[0]).toContain(`(${code})`);
 		expect((await runDraft(["send", mailId], "", t.deps)).code).toBe(1);
 		expect(t.argvs).toEqual([]);
 		expect((await runMailCli(["ask", "--draft", mailId], "", t.deps)).code).toBe(2);

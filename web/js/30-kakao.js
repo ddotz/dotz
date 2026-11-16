@@ -922,7 +922,9 @@ function kkAskBot(text) {
   const ts = x => (typeof x === "number" ? x : Date.parse(x) || 0), d = KK.drafts.slice().sort((a, b) => ts(b.created) - ts(a.created))[0];
   kkTa.value = ""; KK.typed.delete(id); kkAutosize(); kkDirectSync();
   const it = d && kkQueueItem(d);
-  if (it) raAct(it, "revise", { change: text.slice(0, 500) }); else if (d) toast(TX("reply.act_fail"), true); else kkComposeMake(text);
+  // A refused change puts its text back in the bar, as kkSendDirect does, unless he typed something new meanwhile.
+  if (it) raAct(it, "revise", { change: text.slice(0, 500) }).then(ok => { if (!ok && KK.open === id && !kkTa.value) { kkTa.value = text; kkAutosize(); kkDirectSync(); } });
+  else if (d) toast(TX("reply.act_fail"), true); else kkComposeMake(text);
   if (kkWide()) kkTa.focus();
 }
 async function kkSendDirect() {
@@ -958,7 +960,7 @@ function kkAskCard() {
       ...a.choices.map((c, i) => el("button", { class: "btn tonal", type: "button", "data-k": "pick", "data-i": String(i), text: c, onclick: () => kkMakeDraft(c) })),
       el("button", { class: "btn text", type: "button", "data-k": "own", text: TX("apps.kk.write_own"), onclick: own })));
 }
-// A draft of several KakaoTalk messages shows one bubble per message in its queue card (rqItemCard); 고치기, 직접 수정 and 보내기 are the queue's.
+// A draft of several KakaoTalk messages shows one bubble per message in its queue card (rqItemCard); 고치기 and 보내기 are the queue's.
 const kkQueueItem = d => raItems().find(i => i.ref === d.code) || null;
 function kkPaintFoot() {
   const ask = kkAskCard(), hadRv = document.activeElement && document.activeElement.classList.contains("kk-rv");

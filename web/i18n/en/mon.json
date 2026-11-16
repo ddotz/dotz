@@ -74,7 +74,7 @@
   "mon.tag.warn": "Warning",
   "mon.dr.st.open": "To review",
   "mon.dr.st.send": "Sent",
-  "mon.dr.st.edit": "Revised",
+  "mon.dr.st.revise": "Revised",
   "mon.dr.st.revising": "Revising…",
   "mon.dr.st.drop": "Not sent",
   "mon.dr.st.own": "Handled by you",

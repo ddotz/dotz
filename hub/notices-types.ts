@@ -87,5 +87,9 @@ export type Decision = {
 	// An approved draft the gateway sends itself (hub/approval-send.ts): how that send went, shown on the answered card.
 	send?: { state: "undo" | "queued" | "sending" | "sent" | "failed" | "unsure" | "back"; text?: string; at: string; /** `undo`: when the cancel window ends (ms). */ until?: number; /** Which try this is, set when a failed send was queued again (absent = the first). */ attempts?: number };
 	// Where the send-approval card went on Discord (outbound.ts markDraftPosted): kept so the message is closed when the card is, also after a restart.
-	card?: { target: string; ids: string[] };
+	// `shows`: the digest of the card text that message was last posted or edited with (notices-drafts.ts markCardShown); a pick there counts only while it is this card's.
+	card?: { target: string; ids: string[]; shows?: string };
+	// The approvalHash (hub/approval-send.ts) of the draft version this card shows, set whenever it is drawn: a pick from the card carries it, so a
+	// card drawn before a change is refused `changed` instead of sending a version it never showed. Absent: not known, so a send pick from it is refused too.
+	hash?: string;
 };

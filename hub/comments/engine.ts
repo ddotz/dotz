@@ -16,7 +16,7 @@ import { createPastRefresh, type PastDeps } from "./past-refresh.ts";
 // after the reply is posted, revised or dropped with it.
 // `request`: the writer's own words, for the install's narrow rule (hub/auto-attach.ts; see hub/mail-cli.ts composeMail).
 export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; request?: string };
-export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
+export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number; digest?: string }[]; asksFile?: boolean; libraryMiss?: boolean; /** Warnings the owner reads before approving, shown with the mail. */ notes?: string[]; /** Where the mail's words and files disagree (flow.ts draftAttachIssues): the card's `첨부 확인` line. */ attachIssues?: string[] };
 /** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
 export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string };
 export type MailLink = {
@@ -35,7 +35,7 @@ export type MailLink = {
 	drop: (id: string) => void;
 	revise: (id: string, change: string) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
 	/** The owner's own text for the mail, saved as written (직접 수정); refused with the lint's lines. Missing = the mail cannot be edited here. */
-	edit?: (id: string, text: string) => { ok: true } | { ok: false; reason: string; code?: string; lint?: string[] };
+	edit?: (id: string, text: string, subject?: string) => { ok: true } | { ok: false; reason: string; code?: string; lint?: string[] };
 	view: (id: string) => MailView | undefined;
 };
 export type ModelReply = { text: string; inputTokens?: number; outputTokens?: number };
@@ -590,12 +590,12 @@ export function createEngine(deps: EngineDeps) {
 	}
 
 	// 직접 수정 (design 3.3): the owner's text under the same code, no model call. An edited draft is never `clean`, so no rule sends it by itself.
-	function edit(draftCode: string, text: string, part: "reply" | "mail" = "reply"): { ok: true } | { ok: false; reason: string; code?: string; lint?: string[] } {
+	function edit(draftCode: string, text: string, part: "reply" | "mail" = "reply", subject?: string): { ok: true } | { ok: false; reason: string; code?: string; lint?: string[] } {
 		const d = store.drafts().find(x => x.code === draftCode);
 		const src = d && sourceOf(d.source);
 		if (!d || !src) return { ok: false, reason: "그 초안을 찾지 못했어요", code: "gone" };
 		if (d.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요", code: "not_pending" };
-		if (part === "mail") return d.mail && deps.mail?.edit ? deps.mail.edit(d.mail, text) : { ok: false, reason: "이 초안에는 함께 보낼 메일이 없어요", code: "not_supported" };
+		if (part === "mail") return d.mail && deps.mail?.edit ? deps.mail.edit(d.mail, text, subject) : { ok: false, reason: "이 초안에는 함께 보낼 메일이 없어요", code: "not_supported" };
 		const body = text.replace(/\r\n?/g, "\n").trim();
 		const found = ownerLint({ body }, { kind: "comment", app: src.key, from: find(d.commentId)?.author ?? "", text: "" }, styleOf(src));
 		if (found.length) return { ok: false, reason: `${LINT_REFUSED} ${found.join(" · ")}`, code: found[0]!.startsWith("it uses the forbidden") ? "forbidden_word" : found[0]!.startsWith("the body is empty") ? "empty" : found[0]!.startsWith("the body is") ? "too_long" : "placeholder", lint: found };
