@@ -35,10 +35,7 @@
       "rawdialog:lightboxAt",
       "rawdialog:viewer"
     ],
-    "ownerWrites": {
-      "RQ|30-monitoring.js": 1,
-      "RQ|30-triage.js": 4
-    },
+    "ownerWrites": {},
     "rawNet": {
       "01-forbidden-pair.js": 1,
       "11-mailbody.js": 2,

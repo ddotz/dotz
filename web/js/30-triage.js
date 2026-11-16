@@ -6,16 +6,16 @@
 const trPaneNow = () => current === "monitoring" && !narrowChat() && !!$("#v-monitoring.rq-on");
 function trPaneOpen(onClose) {
   if (RQ.sheet) RQ.sheet.close(false);
-  RQ.top = $("#mon-timeline").scrollTop;
+  rqTopSave();
   let ov = null, closed = false;
   const box = el("div", { class: "rq-pane tr-pane", tabindex: "-1", onkeydown: ev => { if (ev.key === "Escape" && !document.querySelector("dialog[open]:not([data-leaving])")) { ev.preventDefault(); ev.stopPropagation(); h.close(); } } });
   const h = { pane: true, tr: true, box, close() {
     if (closed) return;
     closed = true; ovDone(ov); onClose();
-    if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; monDirty(); }
+    if (rqSheetDrop(h)) monDirty();
   } };
   ov = ovOpen(() => h.close());
-  RQ.sheet = h; monRenderNow();   // drawn now, so the box is on the page when it takes the focus
+  rqSheetSet(h); monRenderNow();   // drawn now, so the box is on the page when it takes the focus
   return h;
 }
 // One by one: the head counts the place and the channels, the card is rqItemCard with the filled 보내기, and 진행 lists every item with its live state.

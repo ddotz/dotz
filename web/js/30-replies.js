@@ -209,10 +209,15 @@ function rqNodes() { rqPaint(RQ.rows || rqRows()); return [rqUi().hd, rqUi().ls]
 
 /* ---- the sheet: ONE sheet for every row, holding the reply card (10-reply-card.js) with the why line on top ---- */
 // A wide window opens the card in the right column in place of the queue (no modal); a phone keeps the sheet. Back (the card's x, the app bar) returns to the queue with the row marked.
+// The queue's open card and place are written only here (the triage pane and the screen draw call these).
+const rqTopSave = () => { RQ.top = $("#mon-timeline").scrollTop; };
+const rqSheetSet = h => { RQ.sheet = h; };
+const rqSheetDrop = h => { if (RQ.sheet !== h) return false; RQ.sheet = null; RQ.cur = ""; return true; };
+const rqMarkClear = () => { RQ.mark = ""; };
 function rqPaneOpen() {
-  RQ.top = $("#mon-timeline").scrollTop;
-  const h = { pane: true, box: el("div", { class: "rq-sheet rq-pane" }), close: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; monDirty(); } } };
-  RQ.sheet = h; monDirty();
+  rqTopSave();
+  const h = { pane: true, box: el("div", { class: "rq-sheet rq-pane" }), close: () => { if (rqSheetDrop(h)) monDirty(); } };
+  rqSheetSet(h); monDirty();
 }
 const rqBack = () => !!(current === "monitoring" && RQ.sheet && RQ.sheet.pane && (RQ.sheet.close(), true));
 function rqSheetOpen(r) {

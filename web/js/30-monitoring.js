@@ -859,7 +859,7 @@ function renderMonitoring() {
   $("#v-monitoring").classList.toggle("mon-home", homeQ);
   $("#v-monitoring").classList.toggle("rq-on", !!qSel);   // the screen's own head is its tabs: no item head above them (the prototype's #queue)
   if (qSel) { rqScreen(qSel, box, tl); return; }   // 답장 대기: the queue, or the open row's card (30-replies.js)
-  RQ.mark = "";
+  rqMarkClear();
   if (RQ.sheet && RQ.sheet.pane) RQ.sheet.close();   // the card of a queue row stays with the queue
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
