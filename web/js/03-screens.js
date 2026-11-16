@@ -3,13 +3,14 @@
 // tab: the bottom tab a screen belongs to; nav: its place in the tab bar (no nav: not a tab); sub: a settings sub-page (the 설정 tab
 // stays lit, 뒤로 leads back toward 설정); up: the fixed screen 뒤로 goes to, only where that never depends on state; title and ic: the
 // header title and the icon of the tab and palette row; html: its section is in web/index.html (without it 22-settings-pages.js adds one).
+// palette: false keeps a screen out of the command palette's screen list (it is reached from another screen, never by name).
 // relay: a relayed computer's snapshot is drawn in this screen (44-relay-views.js); under: the settings page 뒤로 falls back to when it was not opened from another screen.
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
 // The order is the order of the views list (the palette lists screens in it); the four settings pages come last.
 const SCREENS = {
   home: { tab: "home", nav: 1, title: TX("common.home"), ic: "home", html: true, relay: true },
   chat: { tab: "chat", nav: 2, title: TX("common.chat"), ic: "chat", html: true, relay: true },
-  activity: { tab: "chat", title: TX("common.chat"), ic: "activity", html: true },
+  activity: { tab: "chat", title: TX("common.chat"), ic: "activity", html: true, palette: false },
   harness: { tab: "settings", sub: true, up: "settings", title: TX("common.system"), ic: "harness", html: true },
   settings: { tab: "settings", nav: 6, title: TX("common.settings"), ic: "settings", html: true, relay: true },
   models: { tab: "settings", sub: true, title: TX("common.model"), ic: "model", html: true },
@@ -23,12 +24,12 @@ const SCREENS = {
   messengers: { tab: "settings", sub: true, title: TX("base.title.messengers"), ic: "chat", html: true },
   devices: { tab: "settings", sub: true, title: TX("base.title.devices"), ic: "key", html: true },
   webaccess: { tab: "settings", sub: true, title: TX("base.title.webaccess"), ic: "open", html: true },
-  project: { tab: "projects", title: TX("common.project"), ic: "projects", html: true },
+  project: { tab: "projects", title: TX("common.project"), ic: "projects", html: true, palette: false },
   projects: { tab: "projects", nav: 3, title: TX("common.projects"), ic: "projects", html: true, relay: true },
   monitoring: { tab: "monitoring", nav: 4, title: TX("common.monitoring"), ic: "activity", html: true, relay: true },
   apps: { tab: "apps", nav: 5, title: TX("common.apps"), ic: "apps", html: true },
   notices: { title: TX("common.alerts"), ic: "bell", html: true },
-  cardform: { tab: "home", up: "home", title: TX("base.title.cardform") },
+  cardform: { tab: "home", up: "home", title: TX("base.title.cardform"), palette: false },
   notifications: { tab: "settings", sub: true, title: TX("settings.page.notifications"), ic: "bell" },
   display: { tab: "settings", sub: true, title: TX("settings.page.display"), ic: "settings" },
   update: { tab: "settings", sub: true, title: TX("settings.page.update"), ic: "download" },

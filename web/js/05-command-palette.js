@@ -70,7 +70,7 @@ function openPalette() {
       else if (!spaced) for (const x of hintList) if (x.c.startsWith(v)) items.push(palCmd(x));
     } else {
       for (const x of hintList) if (!x.dup && (!v || x.c.includes(v))) items.push(palCmd(x));
-      for (const id of views) if (id !== "activity" && id !== "project" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
+      for (const id of views) if (SCREENS[id].palette !== false && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
       if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: TX("base.ended.label", { n: ended.length }), act: () => { putEndedOpen(true); go("chat", "list"); } });

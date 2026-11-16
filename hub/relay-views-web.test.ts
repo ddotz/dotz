@@ -74,6 +74,7 @@ describe("a relayed computer chosen, read-only screens", () => {
 		await waitFor(`typeof SCREENS === "object" && RELAY_VIEWS.size > 0`);
 		expect((await ev<string[]>(`Object.keys(SCREENS).filter(id => SCREENS[id].relay).sort()`))).toEqual(want);
 		expect((await ev<string[]>(`[...RELAY_VIEWS].sort()`))).toEqual(want);
+		expect((await ev<string[]>(`Object.keys(rvDraw()).sort()`))).toEqual(want);   // the redraw map is behaviour, kept in step with the column
 	});
 	test("홈 keeps the relay target and draws the snapshot: sessions, to-dos, notices, how old it is", async () => {
 		await relayOpen();
