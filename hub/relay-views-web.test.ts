@@ -20,11 +20,12 @@ const snapshot = () => ({
 
 let snap: object | null;
 let groups: object[];
+let statusHits = 0;
 const hub = fakeHub({
 	api: async (_req, url) => {
 		const p = url.pathname;
 		if (p === "/api/peers") return json([{ ...SELF, url: hub.origin }, WORK]);
-		if (p === `${RELAY}/status`) return json(snap ? { snapshot: snap, received_at: Date.now() - 60_000 } : { snapshot: null });
+		if (p === `${RELAY}/status`) { statusHits++; return json(snap ? { snapshot: snap, received_at: Date.now() - 60_000 } : { snapshot: null }); }
 		if (p === `${RELAY}/messages`) return json([]);
 		if (p === "/api/custom") return json({ dir: "~/.dotz/custom", cards: [], routines: [], links: [], projects: [{ key: "dir:~/Code/own", name: OWN, pinned: true, lanes: [], record: { title: OWN, purpose: OWN, updated: "2026-10-25T09:00:00.000Z" } }] });
 		if (p === "/api/custom/computers") return json(groups);
@@ -67,8 +68,8 @@ const ownHidden = (name: string) => ev<boolean>(`[...document.querySelectorAll("
 const buttons = (name: string) => ev<string[]>(`[...document.querySelectorAll("#v-${name} > .rv button")].map(b => b.dataset.k)`);
 
 describe("a relayed computer chosen, read-only screens", () => {
-	test("the screens that draw the snapshot are the four this file exercises, named by the relay column of the SCREENS table", async () => {
-		const want = ["home", "monitoring", "projects", "settings"];
+	test("the screens that read the snapshot again (채팅 and the four drawn from it) are named by the relay column of the SCREENS table", async () => {
+		const want = ["chat", "home", "monitoring", "projects", "settings"];
 		await open();
 		await waitFor(`typeof SCREENS === "object" && RELAY_VIEWS.size > 0`);
 		expect((await ev<string[]>(`Object.keys(SCREENS).filter(id => SCREENS[id].relay).sort()`))).toEqual(want);
@@ -152,6 +153,15 @@ describe("a relayed computer chosen, read-only screens", () => {
 
 // The chat list (the side list at 1280px, the 채팅 list at 390px) while that computer is chosen: its conversations from its snapshot, never this computer's.
 describe("a relayed computer chosen, the chat list", () => {
+	test("on 채팅 the poll tick asks that computer's status again", async () => {
+		await relayOpen();
+		await waitFor(`RV.by[target]?.loaded && !RV.by[target].flight`);
+		const before = statusHits;
+		expect(await ev<boolean>(`(rvTick(), !!RV.by[target].flight)`)).toBe(true);
+		await waitFor(`!RV.by[target].flight`);
+		expect(statusHits).toBe(before + 1);
+	});
+
 	const listText = () => ev<string>(`document.querySelector("#chat-convo").textContent`);
 	const ownRows = () => ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-row")].map(r => r.dataset.t).filter(t => t && !t.startsWith("relay:"))`);
 	const atWidth = async (width: number, height: number, fn: () => Promise<void>) => {

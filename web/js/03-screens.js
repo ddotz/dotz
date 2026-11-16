@@ -8,7 +8,7 @@
 // The order is the order of the views list (the palette lists screens in it); the four settings pages come last.
 const SCREENS = {
   home: { tab: "home", nav: 1, title: TX("common.home"), ic: "home", html: true, relay: true },
-  chat: { tab: "chat", nav: 2, title: TX("common.chat"), ic: "chat", html: true },
+  chat: { tab: "chat", nav: 2, title: TX("common.chat"), ic: "chat", html: true, relay: true },
   activity: { tab: "chat", title: TX("common.chat"), ic: "activity", html: true },
   harness: { tab: "settings", sub: true, up: "settings", title: TX("common.system"), ic: "harness", html: true },
   settings: { tab: "settings", nav: 6, title: TX("common.settings"), ic: "settings", html: true, relay: true },

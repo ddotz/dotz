@@ -1,7 +1,8 @@
 // 설정의 메신저 화면: Discord · JANDI · Slack · Telegram each has its own view. Every view reads the shared index
 // (GET /api/messengers), one settings view (GET/PUT /api/messengers/<id>, POST .../test, hub/messengers-api.ts), and the
 // onboarding panel. Manual IDs/tokens live only in the closed "직접 입력" disclosure.
-const MS_IDS = ["discord", "jandi", "slack", "telegram"];
+// The messenger screens are the SCREENS rows under 메신저, in table order (03-screens.js loads first).
+const MS_IDS = views.filter(id => SCREENS[id].under === "messengers");
 const MS_LABELS = { discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram" };
 const MS_KINDS = [["main", TX("common.main_chat")], ["project", TX("common.project")], ["alert", TX("common.alerts")], ["worklog", TX("common.worklog")]];
 const MS_AS_USER = TX("connect.ms.as_user");
@@ -60,7 +61,7 @@ async function loadMessengerIndex() {
 }
 // JANDI, Slack and Telegram share one settings page shape; current names the one opening.
 function messengerEnter() { loadMessengerIndex(); loadMessengerSettings(current); loadOnboarding(current); }
-for (const id of ["jandi", "slack", "telegram"]) screenHooks(id, { enter: messengerEnter });
+for (const id of MS_IDS.filter(id => id !== "discord")) screenHooks(id, { enter: messengerEnter });
 async function loadMessengerSettings(id) {
   const p = msPage(id);
   p.loading = true;
