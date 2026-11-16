@@ -297,7 +297,7 @@ function convMaybeRead() {
 }
 // A mail read on the page moves its row, the app's badge and the 안 읽음 filter now; once the hub holds the position its app counts raise
 // (needs.unread, GET /api/integrations), and a peer's mail has its snapshot read again (34-peer-monitoring.js).
-function mailReadPainted() { const m = MAILS.get(CV.key); if (m && m.read === false) m.read = true; MON.sig = ""; monSchedule(); }
+function mailReadPainted() { const m = MAILS.get(CV.key); if (m && m.read === false) m.read = true; monDirty(); }
 function mailReadSynced(t) { if (typeof pqPc === "function" && pqPc(t)) pqSoon(); else loadIntegrations(); }
 function convFlush() {
   convPendT = 0;

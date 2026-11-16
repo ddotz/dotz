@@ -84,7 +84,7 @@ async function orgMailOf(t) {
 // 원문 보기 of a mail row (owner 2026-11-04): an item of the row's ⋯ menu (a row keeps no other right-side button, owner 2026-10-27) folds the original open under
 // the summary, without leaving the list. Open rows are kept across repaints; the first open fetches once (orgLoad), and a click inside the original does not open the mail's conversation.
 const MR_OG = new Set();
-const orgMailItem = t => [{ value: "original", label: MR_OG.has(t) ? TX("decision.org.hide") : TX("decision.org.show"), run: () => { if (!MR_OG.delete(t)) MR_OG.add(t); MON.sig = ""; monSchedule(); } }];
+const orgMailItem = t => [{ value: "original", label: MR_OG.has(t) ? TX("decision.org.hide") : TX("decision.org.show"), run: () => { if (!MR_OG.delete(t)) MR_OG.add(t); monDirty(); } }];
 function orgMailRow(t) {
   if (!MR_OG.has(t)) return [];
   const s = orgSt(t), stop = ev => ev.stopPropagation();

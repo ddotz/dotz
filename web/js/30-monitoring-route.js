@@ -9,3 +9,5 @@ function monEnter() { renderMonitoring(); if (!monitorsFresh()) loadMonitors(); 
 // The routes behind 모니터링 (32-history-nav.js routeChain): an open item sits on the list, a mailbox settings screen on its box (30-mailboxes-set.js mxChain).
 function monChain(hash) { return !MON.list ? ["home", "monitoring", ...mxChain(hash)] : ["home", hash]; }
 screenHooks("monitoring", { back: monBack, enter: monEnter, chain: monChain });
+// Every file outside 모니터링 that changes what the screen shows asks for its redraw here: the next paint is not skipped as unchanged.
+function monDirty() { MON.sig = ""; monSchedule(); }

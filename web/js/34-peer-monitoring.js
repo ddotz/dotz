@@ -131,7 +131,7 @@ async function pqNotice(n, action, args) {
   const r = await api(pqProxy(n.pc, "/api/peer/act"), "POST", { action, args });
   const raw = pqNoticeOf(n);
   if (r && r.item) { if (raw) Object.assign(raw, r.item); Object.assign(n, r.item, { pc: n.pc }); }
-  MON.sig = ""; monSchedule(); syncInlineChoices(); ntSheetPaint(); pqSoon();
+  monDirty(); syncInlineChoices(); ntSheetPaint(); pqSoon();
   return r;
 }
 // Peer reports read here (seen on screen, 읽음 처리): marked read on each computer that holds them, one request per computer.
@@ -142,7 +142,7 @@ async function pqNoticesRead(list) {
     for (const n of ns) { n.read = true; const raw = pqNoticeOf(n); if (raw) raw.read = true; }
     await api(pqProxy(ns[0].pc, "/api/peer/act"), "POST", { action: "notice", args: { op: "read", ids: ns.map(n => String(n.id)) } });
   }
-  if (by.size) { MON.sig = ""; monSchedule(); pqSoon(); }
+  if (by.size) { monDirty(); pqSoon(); }
 }
 
 async function pqLoad() {

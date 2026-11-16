@@ -81,7 +81,7 @@ function rqFilterBar(rows) {
   if (!(RQ.app || (by.size >= 2 && total >= RA.min))) return null;
   return selectButton({ label: TX("home.ny.app"), frame: t => TX("triage.rq.app_frame", { t }), value: RQ.app, text: k => (k ? by.get(k).text : TX("mon.filter.all")),
     items: [{ value: "", label: TX("triage.rq.all_n", { n: total }) }, ...[...by].map(([k, v]) => ({ value: k, label: `${v.text} · ${v.n}` }))],
-    onPick: k => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } });
+    onPick: k => { RQ.app = k; RQ.lim = {}; monDirty(); } });
 }
 // 방금 / N분 전 within the hour, as the prototype's rows, then the plain time.
 const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? TX("home.ago.now") : m < 60 ? TX("home.ago.m", { n: m }) : rcWhen(new Date(at).toISOString()); };
@@ -151,7 +151,7 @@ function rqDescs(shown) {
     if (!part.length) continue;
     if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: label, make: () => el("div", { class: "sec", text: label }) });
     const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = part.slice(0, lim).map(r => (s === "sent" ? rqRowDesc(r) : rqCardDesc(r, shown)));
-    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(TX("mon.more_n", { n: part.length - lim }), () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
+    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(TX("mon.more_n", { n: part.length - lim }), () => { RQ.lim[s] = lim + RQ_PAGE; monDirty(); }) });
     out.push({ key: `list:${s}`, sig: "", make: () => el("div", { class: "list rq-list" }), rows });
   }
   return out;
@@ -211,8 +211,8 @@ function rqNodes() { rqPaint(RQ.rows || rqRows()); return [rqUi().hd, rqUi().ls]
 // A wide window opens the card in the right column in place of the queue (no modal); a phone keeps the sheet. Back (the card's x, the app bar) returns to the queue with the row marked.
 function rqPaneOpen() {
   RQ.top = $("#mon-timeline").scrollTop;
-  const h = { pane: true, box: el("div", { class: "rq-sheet rq-pane" }), close: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; MON.sig = ""; monSchedule(); } } };
-  RQ.sheet = h; MON.sig = ""; monSchedule();
+  const h = { pane: true, box: el("div", { class: "rq-sheet rq-pane" }), close: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; monDirty(); } } };
+  RQ.sheet = h; monDirty();
 }
 const rqBack = () => !!(current === "monitoring" && RQ.sheet && RQ.sheet.pane && (RQ.sheet.close(), true));
 function rqSheetOpen(r) {

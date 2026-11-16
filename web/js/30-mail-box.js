@@ -305,8 +305,8 @@ function mbRowsPrune() {
 // A step draws MB_PAGE more of the loaded mails; when the hub has older ones, the next page is asked for too, and the list draws again when it lands.
 function mbMore() {
   MBOX.drawn += MB_PAGE;
-  if (CVP.more) convMore().then(() => { MON.sig = ""; monSchedule(); });
-  MON.sig = ""; monSchedule();
+  if (CVP.more) convMore().then(() => { monDirty(); });
+  monDirty();
 }
 // After the drawn rows: a sentinel that adds a page when it reaches the viewport, and the plain button for a browser without IntersectionObserver.
 function mbMoreNodes(left) {

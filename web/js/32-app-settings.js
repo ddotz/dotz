@@ -18,7 +18,7 @@ function asLoad(app, again) {
     try { AS.by[app] = (await api(asUrl(app))).fields || []; delete AS.none[app]; }
     catch { AS.none[app] = true; }
     asPaint();
-    MON.sig = ""; monSchedule();
+    monDirty();
     if (typeof KK !== "undefined" && KK.loaded && app === "kakao") kkPaintAll();
     if (monCtx) convSchedule();
   })();
@@ -41,7 +41,7 @@ async function asRetry(app, watch, down) {
   if (AS.busy[app]) return;
   AS.busy[app] = true;
   try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast(down ? MON_RECONNECT : TX("appset.retry.done")); } catch (e) { toast(e.message || TX("appset.retry.fail"), true); }
-  AS.busy[app] = false; MON.sig = ""; monSchedule(); asPaint();
+  AS.busy[app] = false; monDirty(); asPaint();
 }
 // 승인 대기 is one row: the count and a chevron that opens 답장 대기 (30-replies.js rqOpen) on this app's own drafts. The answers live there, not in a settings screen.
 function asWaitRow(app, n) {
@@ -105,7 +105,7 @@ async function asPatch(app, values) {
   const got = new Map((r.fields || []).map(f => [f.key, f])), prev = AS.by[app] || [];
   AS.by[app] = [...prev.map(f => got.get(f.key) || f), ...[...got.values()].filter(f => !prev.some(p => p.key === f.key))];
   asPaint();
-  MON.sig = ""; monSchedule();
+  monDirty();
   if (app.includes("~") || pqPc(`settings:${app}`)) pqSoon(); else if (asOwn(app)) loadMonitors(); else loadIntegrations();   // a peer's app or monitor is read back from that computer
   // The Kakao room list draws the same watch and draft lists: read it again so its switches and the screen never disagree.
   if (pqBare(app) === "kakao" && typeof KK !== "undefined" && KK.loaded) kkLoadRooms().catch(() => {});

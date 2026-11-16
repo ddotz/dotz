@@ -12,7 +12,7 @@ function trPaneOpen(onClose) {
   const h = { pane: true, tr: true, box, close() {
     if (closed) return;
     closed = true; ovDone(ov); onClose();
-    if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; MON.sig = ""; monSchedule(); }
+    if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; monDirty(); }
   } };
   ov = ovOpen(() => h.close());
   RQ.sheet = h; MON.sig = ""; renderMonitoring();   // drawn now, so the box is on the page when it takes the focus
