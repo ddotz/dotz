@@ -7,10 +7,9 @@ function chartDraw(spec, width) {
   const k = `${Math.round(width / 40)}:${spec}`;
   let p = chartDrawn.get(k);
   if (!p) {
-    p = fetch("/api/chart", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spec, width: width || undefined }) })
-      .then(r => r.json())
-      // a failed request is not kept: the next time the message is drawn it asks again
-      .catch(() => (chartDrawn.delete(k), { ok: false, note: TX("base.chart.load_failed") }));
+    // The gateway answers a refused spec with a status and { ok: false, note } (e.data): that note is shown and kept; no answer at all is not kept, so the next time the message is drawn it asks again.
+    p = api("/api/chart", "POST", { spec, width: width || undefined })
+      .catch(e => e.data || (chartDrawn.delete(k), { ok: false, note: TX("base.chart.load_failed") }));
     chartDrawn.set(k, p);
   }
   return p;

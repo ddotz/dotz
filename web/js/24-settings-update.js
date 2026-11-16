@@ -114,7 +114,7 @@ async function updNow() {
 async function updBarTick() {
   clearTimeout(UB.timer);
   UB.timer = 0;
-  const r = await fetch("/api/update", { cache: "no-store" }).then(x => (x.ok ? x.json() : null), () => null);
+  const r = await api("/api/update").catch(() => /* no answer: the bar shows the gateway as down */ null);
   UB.down = !r;
   if (r) { UPD.info = r; paintUpdBadge(); if (inSettings()) renderSettings(); }
   paintUpdBar();
@@ -201,7 +201,7 @@ function updRestart() {
 }
 async function updWaitTick() {
   if (!UPD.wait) return;
-  const info = await fetch("/api/update", { cache: "no-store" }).then(r => r.ok ? r.json() : null, () => null);
+  const info = await api("/api/update").catch(() => /* no answer yet: the gateway is still restarting, ask again below */ null);
   if (info && info.boot !== UPD.wait.boot) {
     UPD.wait = null;
     UPD.info = info;
