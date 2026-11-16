@@ -126,7 +126,7 @@
   #v-monitoring.app-two.kk-on > .kk > .kk-chat { grid-column: 2; grid-row: 4; margin-bottom: var(--sp-4); }
   #v-monitoring.app-two.kk-on > .kk.chat-open > .kk-chat { grid-row: 1 / -1; }
   #v-monitoring.app-two.kk-on:has(> .kk.chat-open) > #mon-head { display: none; }
-  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat { display: flex; align-self: start; background: none; }
+  #v-monitoring.app-two.kk-on:not(.as-on) > .kk:not(.chat-open) > .kk-chat { display: flex; align-self: start; background: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat > :not(.kk-box) { display: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-box { flex: none; min-height: 0; background: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-in > .kk-note { color: var(--fg-3); }
