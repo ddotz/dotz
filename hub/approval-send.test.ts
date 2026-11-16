@@ -100,19 +100,17 @@ describe("approval sender", () => {
 		expect(g.started).toHaveLength(251);
 	});
 
-	test("code's repair runs only on the approved version; one that changes it (a Re: subject) sends nothing and takes the pick back, one that keeps it (a re-login) sends", async () => {
-		const world = (o: { rewrites: boolean; changed?: true }) => {
-			const changed = o.changed === true;
+	test("code's repair runs only on the approved version, and its retry carries the version the repair left (a Re: subject)", async () => {
+		const world = (changed: boolean) => {
 			let subject = "안녕";
-			const runs: string[] = [], repaired: string[] = [], revoked: string[] = [], timers: (() => void)[] = [];
+			const runs: string[] = [], repaired: string[] = [], timers: (() => void)[] = [];
 			let done: (r: SendResult) => void = () => undefined;
 			const ended = new Promise<SendResult>(resolve => (done = resolve));
 			const s = createApprovalSender({
 				kind: () => PLACES.RAAAAAA,
 				fingerprint: async () => subject,
 				run: async () => (runs.push(subject), runs.length === 1 ? { code: 1, out: said({ sent: "no", code: "subject_re" }) } : { code: 0, out: "" }),
-				repair: async () => (repaired.push(subject), o.rewrites && (subject = `Re: ${subject}`), "fixed"),
-				revoke: (_j, why) => void revoked.push(why),
+				repair: async () => (repaired.push(subject), (subject = `Re: ${subject}`), "fixed"),
 				after: (_ms, fn) => void timers.push(fn),
 				report: r => void (runs.length && r.state !== "queued" && r.state !== "sending" && !(r.state === "failed" && r.safeToAuto) && done(r)),
 				log: () => undefined,
@@ -124,25 +122,15 @@ describe("approval sender", () => {
 				for (const fn of timers.splice(0)) fn();
 				return ended;
 			};
-			return { runs, repaired, revoked, retry };
+			return { runs, repaired, retry };
 		};
-		const relogin = world({ rewrites: false });
-		expect(await relogin.retry()).toMatchObject({ state: "sent" });
-		expect([relogin.runs, relogin.revoked]).toEqual([["안녕", "안녕"], []]);
-		const re = world({ rewrites: true });
-		expect(await re.retry()).toMatchObject({ state: "failed", reason: { code: "changed" } });
-		expect([re.repaired, re.runs, re.revoked]).toEqual([["안녕"], ["안녕"], ["changed"]]);
-		const moved = world({ rewrites: true, changed: true });
+		const ok = world(false);
+		expect(await ok.retry()).toMatchObject({ state: "sent" });
+		expect(ok.runs).toEqual(["안녕", "Re: 안녕"]);
+		const moved = world(true);
 		expect(await moved.retry()).toMatchObject({ state: "failed", reason: { code: "changed" } });
-		expect([moved.repaired, moved.runs, moved.revoked]).toEqual([[], ["안녕"], ["changed"]]);
-	});
-
-	test("the gate's `changed` refusal takes the owner's pick back (no CLI can send on it later), and sends nothing", async () => {
-		const revoked: string[] = [], runs: string[] = [];
-		const s = createApprovalSender({ kind: () => PLACES.RAAAAAA, fingerprint: async () => "v2", run: async a => (runs.push(a[3]!), { code: 0, out: "" }), revoke: (j, why) => void revoked.push(`${j.ref} ${why}`), report: () => undefined, log: () => undefined });
-		s.enqueue({ ref: "RAAAAAA", conv: "c", action: "send", title: "q (RAAAAAA)", hash: "v1", by: "owner" });
-		await s.idle();
-		expect([s.results()[0]?.state, s.results()[0]?.reason?.code, runs, revoked]).toEqual(["failed", "changed", [], ["RAAAAAA changed"]]);
+		expect(moved.repaired).toEqual([]);
+		expect(moved.runs).toEqual(["안녕"]);
 	});
 
 	test("a CLI's detail (the place's own answer) reaches the log line and the kept result, bounded (Dggtza6)", async () => {

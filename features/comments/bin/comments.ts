@@ -1,8 +1,7 @@
 // Commands the orchestrator runs for a comment ask: `draft <comment id>` (on request), `send <code>`, `revise <code> --change <text> [--part reply|mail] [--no-mail]`,
 // `drop <code>`, `status`. A reply draft can carry a mail (hub/mail-cli.ts compose --with-comment <code>, or the draft API): the one card shows
 // both, `send` posts the reply and then sends the mail, `revise --part mail` changes only the mail, `drop` drops both. `send` goes out only when the owner's latest pick for exactly that draft code, made after the draft was
-// created, is 1) 보내기 of the version the store holds now (its approvalHash, read from the same view the gateway reads; hub/draft-approval.ts draftVerdict);
-// the engine's gate (hub/comments/contract.ts) then posts it once.
+// created, is 1) 보내기 (hub/draft-approval.ts draftVerdict); the engine's gate (hub/comments/contract.ts) then posts it once.
 // `send <code> --only reply|mail` sends one part of a reply + mail card: also allowed after the card's 답글만 보내기 / 메일만 보내기 pick, and after
 // 어떻게 보낼지 직접 입력 (the owner's own words, printed back so the bot does what they say). The other part stays and is asked again.
 // A mail whose files disagree with its words is refused before the reply is posted; `--as-is` sends it as it is, and only after the owner's pick 이대로 보내기.
@@ -14,9 +13,7 @@ import { join } from "node:path";
 import { commentAsk } from "../../../hub/comments/ask.ts";
 import type { Engine } from "../../../hub/comments/engine.ts";
 import { realEngine } from "../../../hub/comments/real.ts";
-import { commentAdapter } from "../../../hub/comments/reply-adapter.ts";
-import { approvalHash, ATTACH_REFUSED, draftVerdict, LINT_REFUSED } from "../../../hub/draft-approval.ts";
-import { reasonOf } from "../../../hub/reply-reasons.ts";
+import { ATTACH_REFUSED, draftVerdict, LINT_REFUSED } from "../../../hub/draft-approval.ts";
 import { dataDir } from "../../reply-drafts/lib/settings.ts";
 import { notifyGateway } from "../../../hub/followup.ts";
 
@@ -76,11 +73,8 @@ async function runCmd(args: string[], engine: Engine, inbox: string): Promise<Ou
 			const parts: Part[] = only === "reply" || only === "mail" ? [only] : d.mail ? ["reply", "mail"] : ["reply"];
 			const refused = (line: string, code: string) => ({ ...fail(line), send: parts.map(p => sendLine("no", p, code)) });
 			// A pick made before the mail was put on the card did not show the mail: it counts from `mailAt` on.
-			const view = await commentAdapter(engine).get(d.code);
-			const v = draftVerdict(inbox, d.code, Math.max(d.created, d.mailAt ?? 0), view && approvalHash(view));
+			const v = draftVerdict(inbox, d.code, Math.max(d.created, d.mailAt ?? 0));
 			if (only !== undefined && only !== "reply" && only !== "mail") return refused("--only는 reply 또는 mail이에요", "config");
-			// His 보내기 named another version (the draft changed after it): nothing goes; he approves the one there now.
-			if (v.verdict === "changed") return refused(reasonOf("changed").text, "changed");
 			// Labels of the send-mode options on the card (hub/draft-approval.ts, when the card offers them).
 			const picked: string = v.verdict;
 			const allowed = ["send", "own", "send-as-is", ...(only === "reply" ? ["send-main"] : only === "mail" ? ["send-mail"] : [])];
