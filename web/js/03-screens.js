@@ -39,3 +39,14 @@ const SUB = new Set(views.filter(id => SCREENS[id].sub));
 const titles = Object.fromEntries(views.map(id => [id, SCREENS[id].title]));
 const NAV = views.filter(id => SCREENS[id].nav).sort((a, b) => SCREENS[a].nav - SCREENS[b].nav).map(id => [id, SCREENS[id].title]);
 const VIEW_ICON = Object.fromEntries(views.filter(id => SCREENS[id].ic).map(id => [id, SCREENS[id].ic]));
+// A screen's own functions, which a data row cannot hold: its owner file registers them once with screenHooks(id, { back }).
+// back: the app bar's 뒤로 asks it first (04-state.js #back); true means it closed something on the screen itself.
+const SCREEN_HOOKS = {};
+function screenHooks(id, hooks) {
+  if (!SCREENS[id]) throw new Error(`screenHooks: unknown screen ${id}`);
+  const own = SCREEN_HOOKS[id] ||= {};
+  for (const [k, f] of Object.entries(hooks)) {
+    if (k in own) throw new Error(`screenHooks: ${id}.${k} is registered twice`);
+    own[k] = f;
+  }
+}
