@@ -170,6 +170,23 @@ describe("a monitor row and its conversation", () => {
     expect(fail.recheck).toBe(1);
   });
 
+  test("a plain check that keeps failing gets the failure banner and 지금 다시 확인, never 다시 연결", async () => {
+    runs.length = 0;
+    monitors = monitors.map(m => (m.watch === "down-watch" ? { ...m, conn_reason: "check", last_summary: "점검에 실패했어요 not-local 2: sample/a.mp3" } : m));
+    const v = await boot(1280, 900);
+    await run(v, `go("monitoring", "m:끊긴 감시")`);
+    await waitFor(v, `document.querySelector("#mon-head .mon-banner")`);
+    const b = await q<{ kind: string; head: string; text: string; btn: string; recheck: string; reconnect: string }>(v, `const b = document.querySelector("#mon-head .mon-banner"); return { kind: b.dataset.kind, head: b.querySelector("b").textContent, text: b.textContent, btn: b.querySelector(".mon-recheck").textContent, recheck: TX("mon.recheck_btn"), reconnect: TX("mon.reconnect") }`);
+    expect(b.kind).toBe("fail");
+    expect(b.head).toBe(await q(v, `return TX("mon.conn.failing")`));
+    expect(b.text).toContain("not-local 2:");
+    expect(b.btn).toBe(b.recheck);
+    expect(b.btn).not.toBe(b.reconnect);
+    await run(v, `document.querySelector("#mon-head .mon-banner .mon-recheck").click()`);
+    await waitFor(v, `!MON.running.size && !document.querySelector("#mon-head .mon-banner")`);
+    expect(runs).toEqual(["down-watch"]);
+  });
+
   test("the per-second update moves the bar but keeps the result tag the node was built with", async () => {
     monitors = monitors.map(m => (m.watch === "many-watch" ? { ...m, last_result: "changed" } : m));
     const v = await boot(1280, 900);
