@@ -15,8 +15,14 @@ const fbCapText = c => c.usd ? TX(c.period === "day" ? "settings.fb.cap.day_usd"
 let fbDragging = false;
 // A long model id breaks after its separators, not inside a word; the text itself stays the same.
 const fbNameParts = nm => nm.split(/(?<=[-/])/).flatMap((p, i) => (i ? [el("wbr"), p] : [p]));
+// Which account a subscription step runs on: its provider's 자동 전환 (and the account in use now) or 고정 (the pinned one), from the 계정
+// screen's data (ACC, loaded when this screen opens); nothing for an API-key step or a provider without an account pool.
+function fbAccount(e) {
+  const g = !e.key_file && accGroup(fbBase(e.model).split("/")[0]), a = g && (g.accounts || []).find(x => (g.mode === "pinned" ? x.pinned : x.current));
+  return a ? TX(g.mode === "pinned" ? "settings.fb.acc_pinned" : "settings.fb.acc_auto", { name: accName(a.label || a.name) }) : "";
+}
 // A step's row says at most two of these; the rest sit behind the tap (and in the row's title).
-const fbFacts = e => [e.key_file ? TX("settings.api_key") : "", e.cap ? fbCapText(e.cap) : "", e.when ? FB_WHEN[e.when] : "", e.revert === false ? TX("settings.fb.no_revert") : ""].filter(Boolean);
+const fbFacts = e => [fbAccount(e), e.key_file ? TX("settings.api_key") : "", e.cap ? fbCapText(e.cap) : "", e.when ? FB_WHEN[e.when] : "", e.revert === false ? TX("settings.fb.no_revert") : ""].filter(Boolean);
 function fbDownTag(e) {
   if (!e.down) return null;
   return el("span", { class: "tag warn", title: e.until ? TX("settings.fb.until", { at: new Date(e.until).toLocaleString(TX_LOCALE) }) : "", text: e.down === "cap" ? TX("settings.fb.down.cap") : e.down === "quota" ? TX("settings.fb.down.quota") : e.down_reason === "api_key_ban" ? TX("settings.fb.down.shared") : e.down_reason === "api_key_off" ? TX("settings.fb.down.key_off") : TX("settings.fb.down.unavailable") });
@@ -36,7 +42,10 @@ function fbBar(e, nearOnly) {
 async function fbSave(layer, list) {
   try {
     const r = await api("/api/fallbacks", "PUT", { target: layer, chain: list.map(fbStored) });
-    toast(r && (r.applied === "updated" || r.applied === "restarted") ? TX("settings.fb.saved_now") : r && r.applied === "after-turn" ? TX("settings.fb.saved_after") : TX("settings.fb.saved_next"));
+    // the hub saves a newly added API-key step switched off (control.ts setFallback): say so instead of "applied"
+    const sent = new Set(list.filter(e => e.key_file && e.enabled === undefined).map(e => fbBase(e.model)));
+    const off = ((r && r.chain) || []).some(e => e.key_file && e.enabled === false && sent.has(fbBase(e.model)));
+    toast(off ? TX("settings.fb.saved_off") : r && (r.applied === "updated" || r.applied === "restarted") ? TX("settings.fb.saved_now") : r && r.applied === "after-turn" ? TX("settings.fb.saved_after") : TX("settings.fb.saved_next"));
     await loadModels(true);
     return true;
   } catch (e) { toast(e.message || TX("settings.save_failed"), true); await loadModels(true); return false; }
@@ -83,7 +92,8 @@ function fbEditor(L, F, list, i, move) {
     d.key_file && keyable && L.id !== "workers" ? seg(TX("settings.fb.workers_label"), [["", TX("settings.fb.workers_no_key")], ["on", TX("settings.fb.workers_same_key")]], d.workers ? "on" : "", v => { d.workers = v === "on" ? true : undefined; redraw(); }) : null,
     keyable ? seg(TX("settings.fb.mode"), [["login", TX("settings.fb.mode_login")], ["key", TX("settings.api_key")]], d.key_file ? "key" : "login", v => { if (v === "login") { d.key_file = undefined; redraw(); } else pickKey(); }) : null,
     d.key_file && keyable ? el("div", { class: "fbe-key" }, el("span", { class: `sup${kp && !kp.present ? " warn" : ""}`, text: keyText }), el("button", { type: "button", class: "btn text", onclick: pickKey }, TX("settings.fb.change_key"))) : null,
-    cond ? seg(TX("settings.fb.when_label"), [["", TX("settings.fb.when_prev")], ["quota", TX("settings.fb.when_quota")], ["error", TX("settings.fb.when_error")]], d.when || "", v => { d.when = v || undefined; redraw(); }) : null,
+    // one label per value, the same words the step's row uses (FB_WHEN); unset is both
+    cond ? seg(TX("settings.fb.when_label"), [["", TX("settings.fb.when_prev")], ["quota", FB_WHEN.quota], ["error", FB_WHEN.error]], d.when || "", v => { d.when = v || undefined; redraw(); }) : null,
     cond ? seg(TX("settings.fb.revert_label"), [["", TX("settings.fb.revert_when")], ["keep", TX("settings.fb.revert_keep")]], d.revert === false ? "keep" : "", v => { d.revert = v === "keep" ? false : undefined; redraw(); }) : null,
     cond ? el("div", { class: "fbe-cap" },
       seg(TX("settings.fb.cap_label"), [["month", TX("settings.fb.period_month")], ["day", TX("settings.fb.period_day")]], c.period, v => { c.period = v; redraw(); }),

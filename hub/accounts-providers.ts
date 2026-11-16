@@ -4,18 +4,22 @@
 // (`providers.<id>.lanes.stored.slots.<name>`), and `subscription-usage.json` the usage windows per
 // `<provider>/<account>`. Verified 2026-10-26 with a throwaway agent dir: `omo auth check --provider chatgpt-subscription --json`
 // lists two accounts of a hand-made pool and `--provider google` one account of an API key, i.e. the pool is not Anthropic-only.
-// dotz's own switching (rules, order, the Claude pin env) stays Claude-only; here a group only shows its accounts and lets the
-// owner pin one in OmO, which OmO honours for its own account selection.
-import { chmodSync, copyFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+// Here a group shows its accounts and lets the owner pin one in OmO; dotz's switching rules (hub/account-rules.ts) reach every
+// pooled provider but Claude through the same pin (applyProviderPick), which OmO re-reads on each request and serves first while it
+// is usable (verified 2026-11-16, ~/.dotz/logs/model-account-audit-20261116/repro/omo-pinned-verify.txt). The order, the manual
+// pick, the script and the Claude pin env stay Claude-only.
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { accountsDir } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
-import { log } from "./config.ts";
+import { log, writeAtomic } from "./config.ts";
 import { lock } from "./file-lock.ts";
 
 const SUBSCRIPTION = "anthropic-subscription";
 // OmO's `anthropic-subscription` is the Claude login, which dotz (like omp) calls `anthropic`; its own `anthropic` entry is the
 // API-key provider and stays out of the way while a subscription login exists (providers.ts omoSelector maps back).
 const dotzProvider = (id: string): string => (id === SUBSCRIPTION ? "anthropic" : id);
+const omoProvider = (id: string): string => (id === "anthropic" ? SUBSCRIPTION : id);
 
 // Product names the owner reads, keyed by dotz provider id. Anything else falls back to OmO's catalog name, then the raw id.
 const NAMES: Record<string, string> = {
@@ -37,7 +41,8 @@ const readJson = (file: string): Json | undefined => {
 };
 
 export type GenericWindow = { id: string; label: string; left: number; resets_at: number | null };
-export type GenericAccount = { name: string; label: string; order: number; current: boolean; pinned: boolean; blocked: string | null; blocked_until: string | null; blocked_tag: string | null; windows: GenericWindow[] };
+// pinned: the owner's own pin (고정); picked: the pin a dotz rule set (applyProviderPick).
+export type GenericAccount = { name: string; label: string; order: number; current: boolean; pinned: boolean; picked: boolean; blocked: string | null; blocked_until: string | null; blocked_tag: string | null; windows: GenericWindow[] };
 export type ProviderGroup = { id: string; name: string; auth: "oauth" | "api_key"; multi: boolean; can_add: boolean; can_pin: boolean; can_delete: boolean; accounts: GenericAccount[] };
 export type LoginProviderRow = { id: string; name: string; configured: boolean };
 type Item = { name: string; access?: string; source?: string; blockedUntil?: number; blockReason?: string };
@@ -68,7 +73,7 @@ export function windowsOf(usage: Json | undefined, omoId: string, account: strin
 
 // Pure: the account groups OmO's store describes, Claude's subscription excluded (accounts-api.ts composes that group from the
 // account pool it already reads). `catalog` is the login providers this install offers; an entry there can gain accounts.
-export function providerGroups(input: { auth: Json | undefined; pool?: Json; usage?: Json; aliases?: Record<string, string>; catalog: { id: string; name: string }[]; now: number }): { providers: ProviderGroup[]; login_providers: LoginProviderRow[] } {
+export function providerGroups(input: { auth: Json | undefined; pool?: Json; usage?: Json; aliases?: Record<string, string>; own?: Record<string, string>; catalog: { id: string; name: string }[]; now: number }): { providers: ProviderGroup[]; login_providers: LoginProviderRow[] } {
 	const auth = input.auth ?? {};
 	const catalog = input.catalog;
 	const ids = new Set(catalog.map(p => p.id));
@@ -121,7 +126,8 @@ export function providerGroups(input: { auth: Json | undefined; pool?: Json; usa
 					label: input.aliases?.[`${id}:${it.name}`] ?? (oauth ? it.name : "API 키"),
 					order: i + 1,
 					current: it === wanted,
-					pinned: pinnedName === it.name,
+					pinned: pinnedName === it.name && input.own?.[id] !== it.name,
+					picked: pinnedName === it.name && input.own?.[id] === it.name,
 					blocked: st?.blocked ?? null,
 					blocked_until: st?.until !== undefined ? new Date(st.until).toISOString() : null,
 					blocked_tag: null,
@@ -133,6 +139,57 @@ export function providerGroups(input: { auth: Json | undefined; pool?: Json; usa
 	providers.sort((a, b) => a.name.localeCompare(b.name));
 	const login_providers = catalog.map(p => ({ id: p.id, name: providerLabel(p.id, catalog), configured: configured.has(p.id) }));
 	return { providers, login_providers };
+}
+
+// The two usage numbers rules read (hub/account-rules.ts Usage), per account of one provider: what is left of its 5-hour and 7-day
+// windows (a model-scoped window like "7d fable" is not the account's own). A window whose reset time passed is an old reading.
+export function usageLeft(usage: Json | undefined, provider: string, names: string[], now: number): Record<string, { five_hour_left?: number; seven_day_left?: number }> {
+	const out: Record<string, { five_hour_left?: number; seven_day_left?: number }> = {};
+	for (const n of names) {
+		const w = usage?.accounts?.[`${omoProvider(provider)}/${n}`]?.windows;
+		if (!Array.isArray(w)) continue;
+		for (const x of w as Json[]) {
+			const reset = resetMs(x?.resetsAt);
+			if (typeof x?.usedPercent !== "number" || scopeOf(x.label) || (reset !== null && reset <= now)) continue;
+			const left = Math.round((100 - Math.min(100, Math.max(0, x.usedPercent))) * 10) / 10;
+			if (x.windowMinutes === 300) out[n] = { ...out[n], five_hour_left: left };
+			if (x.windowMinutes === 10_080) out[n] = { ...out[n], seven_day_left: left };
+		}
+	}
+	return out;
+}
+export const providerUsage = (provider: string, names: string[], now: number) => usageLeft(readJson(join(dirname(authFile()), "subscription-usage.json")), provider, names, now);
+
+// The pins dotz itself wrote for a provider's pool (a rule's pick), so the owner's own pin is never taken for one and a rule never
+// moves it: <DATA_DIR>/accounts/provider-pins.json { "<provider>": "<slot>" }.
+export const providerPinsFile = () => join(accountsDir(), "provider-pins.json");
+export function ownProviderPins(): Record<string, string> {
+	const j = readJson(providerPinsFile()) ?? {};
+	return Object.fromEntries(Object.entries(j).filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== ""));
+}
+function setOwnProviderPin(provider: string, account: string | undefined): void {
+	const next = ownProviderPins();
+	if (next[provider] === account) return;
+	if (account === undefined) delete next[provider];
+	else next[provider] = account;
+	mkdirSync(accountsDir(), { recursive: true });
+	writeAtomic(providerPinsFile(), `${JSON.stringify(next, null, 2)}\n`);
+}
+// The owner pinned or unpinned in the web: whatever stands now is his, not a rule's.
+export const forgetOwnProviderPin = (provider: string): void => setOwnProviderPin(provider, undefined);
+
+// A rule's pick for a provider other than Claude, as OmO's own pin; undefined hands the choice back to OmO. A pin dotz did not
+// write (the owner's 고정) stands: "owner", nothing written.
+export function applyProviderPick(provider: string, account: string | undefined, now = Date.now()): "written" | "unchanged" | "owner" | "missing" {
+	const auth = readJson(authFile());
+	const entry = auth?.[authKeyOf(auth ?? {}, provider) ?? ""];
+	if (!entry) return "missing";
+	const pinned = typeof entry.pinned === "string" ? entry.pinned : undefined;
+	const own = ownProviderPins()[provider];
+	if (pinned && pinned !== own) return "owner";
+	// recorded before the file changes, so the change is never read as the owner's
+	setOwnProviderPin(provider, account);
+	return pinned === account ? "unchanged" : writeProviderPin(provider, account, now);
 }
 
 // The three files OmO's store is made of, read fresh (they are small and change on a login).

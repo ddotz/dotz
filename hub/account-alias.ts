@@ -29,6 +29,14 @@ export function setAlias(key: string, alias: string, file = aliasesFile()): Reco
 	return next;
 }
 
+// One provider's aliases keyed by slot: Claude's are kept under the bare slot id (or email), every other provider's as
+// `<provider>:<slot>` (two pools can both hold a "default"), so rules and their sentences resolve names the same way for any provider.
+export function aliasesOf(provider: string, all = readAliases()): Record<string, string> {
+	if (provider === "anthropic") return all;
+	const p = `${provider}:`;
+	return Object.fromEntries(Object.entries(all).flatMap(([k, v]) => (k.startsWith(p) ? [[k.slice(p.length), v]] : [])));
+}
+
 // The display name: the alias of the slot id, else of the email, else the raw id.
 export function aliasOf(name: string, email?: string, aliases = readAliases()): string | undefined {
 	return aliases[name] ?? (email ? aliases[email] : undefined);

@@ -37,21 +37,33 @@ Rules, the script and chat commands can name an account by its id or its alias.
 
 ## rules.json
 
+One part per provider (`v: 2`). Claude's part (`anthropic`) holds everything below; every other pooled provider
+(`chatgpt-subscription`, ...) holds `rules` only.
+
 ```json
 {
-  "rules": [
-    { "name": "한도 거의 다 씀", "when": { "five_hour_left_below": 10 }, "do": { "prefer": ["개인 계정", "회사 계정"] } },
-    { "name": "근무 시간", "when": { "days": ["mon", "tue", "wed", "thu", "fri"], "from": "09:00", "to": "18:00" }, "do": { "pin": "회사 계정" } },
-    { "name": "그 밖", "do": { "pin": "개인 계정" } }
-  ],
-  "script": { "path": "~/.dotz/accounts/work-hours.ts", "timeout_ms": 5000, "every_minutes": 5 }
+  "v": 2,
+  "providers": {
+    "anthropic": {
+      "rules": [
+        { "name": "개인 계정 아끼기", "when": { "conditions": [{ "account": "개인 계정", "five_hour_left_below": 20 }] }, "do": { "pin": "회사 계정" } },
+        { "name": "근무 시간", "when": { "days": ["mon", "tue", "wed", "thu", "fri"], "from": "09:00", "to": "18:00" }, "do": { "pin": "회사 계정" } },
+        { "name": "그 밖", "do": { "pin": "개인 계정" } }
+      ],
+      "script": { "path": "~/.dotz/accounts/work-hours.ts", "timeout_ms": 5000, "every_minutes": 5 }
+    },
+    "chatgpt-subscription": { "rules": [{ "when": { "from": "09:00", "to": "18:00" }, "do": { "pin": "login-2" } }] }
+  }
 }
 ```
 
-- `when` (all conditions must hold; usage and block conditions are about the account in use now):
-  `days` (`mon`..`sun`), `from` / `to` (`HH:MM` KST; `from` later than `to` wraps midnight),
-  `five_hour_left_below` / `seven_day_left_below` (percent of the window left), `rate_limited: true`,
-  `auth_error: true`, `unavailable: "<account>"` (that account is blocked or gone). No `when` = always.
+- `when` (everything in it must hold): `days` (`mon`..`sun`), `from` / `to` (`HH:MM` KST; `from` later than `to` wraps
+  midnight), and `conditions`, each one account and one state: `account` (an id or alias; left out, or `"current"`, is
+  the account in use now) with `five_hour_left_below` / `seven_day_left_below` (percent of the window left),
+  `rate_limited: true`, `auth_error: true` or `blocked: true` (any block, or the account left the pool). No `when` = always.
+- An older file (the Claude part at the top level, `when` keys like `five_hour_left_below` or `unavailable: "<account>"`)
+  is read as the `anthropic` part with the same decisions: each such key is one condition on the account in use, and
+  `unavailable: X` is `{ "account": X, "blocked": true }`. The next save writes the file as v2.
 - `do`: `{ "pin": "<account>" }`, `{ "prefer": ["a", "b"] }` (the first usable one, skipping one under the rule's
   threshold), or `{ "auto": true }` (dotz's own choice: stay, move only when blocked).
 - `manual`: `{ "account": "<account>", "until"?: "<ISO time>", "reason"?: "..." }`, written by `/account <name>` or
@@ -59,6 +71,16 @@ Rules, the script and chat commands can name an account by its id or its alias.
 
 Order: `manual` (until it expires), then the script's answer, then the first rule whose `when` holds, then automatic.
 A blocked or missing account is skipped: a `pin` falls through to the next step, a `prefer` takes the next account.
+
+Another provider's rules reach OmO as that pool's own pin (`auth.json` `<provider>.pinned`), which OmO re-reads on every
+request and serves first while it is usable. OmO still moves a request to another account of the pool while the pinned
+one is blocked, so there is no hard stop like Claude's 고정. A pin the owner set himself (고정 on the 계정 screen) stands and
+the rules rest; the pins a rule wrote are kept in `provider-pins.json` beside the rules. A rule's pick stays while usable
+and no other rule matches, as Claude's does; an `auto` rule or an empty rule list hands the choice back to OmO.
+
+The web dialog saves one provider's rule list only (`PUT /api/accounts/rules {provider, rules}`); the order, the manual
+pick and the limit answer have their own routes. `POST /api/accounts/rules/check {provider, rules}` returns each rule's
+sentence and the fields that are wrong, without saving.
 
 ## The script hook
 

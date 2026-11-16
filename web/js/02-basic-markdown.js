@@ -371,7 +371,8 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm, mi
     : fsHead([el("h2", { class: "dtitle", text: title })], { close: () => d.close() });
   d.append(head, bodyBox, actBox);
   let downOutside = false;
-  const outside = ev => { const r = d.getBoundingClientRect(); return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom; };
+  // a menu opened from a control in the box is the box's own, even where it hangs past the box's edge (its option closes the menu before the click lands here)
+  const outside = ev => { if (ev.target instanceof Element && ev.target.closest(".menu")) return false; const r = d.getBoundingClientRect(); return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom; };
   d.addEventListener("pointerdown", ev => { downOutside = outside(ev); });
   d.addEventListener("click", ev => { if (downOutside && outside(ev) && !openMenu) d.close(); downOutside = false; });
   const h = { node: d, body: bodyBox, close: () => d.close(), setActions };

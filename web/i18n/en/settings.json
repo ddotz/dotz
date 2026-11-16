@@ -215,7 +215,7 @@
   "settings.fb.lanes_title": "Session defaults",
   "settings.fb.lanes_sub": "New sessions",
   "settings.fb.workers_sub": "Implementation and tests a session delegates",
-  "settings.fb.when.quota": "When the subscription runs out",
+  "settings.fb.when.quota": "When the limit runs out",
   "settings.fb.when.error": "On error",
   "settings.fb.cap.day_usd": "Up to {amount} a day",
   "settings.fb.cap.month_usd": "Up to {amount} a month",
@@ -254,9 +254,7 @@
   "settings.fb.mode_login": "Subscription (sign-in)",
   "settings.fb.change_key": "Change key",
   "settings.fb.when_label": "Switch when",
-  "settings.fb.when_prev": "The previous model fails",
-  "settings.fb.when_quota": "Limit used up (429)",
-  "settings.fb.when_error": "Provider error",
+  "settings.fb.when_prev": "Limit or error",
   "settings.fb.revert_label": "Return to base model",
   "settings.fb.revert_when": "Return when the limit clears",
   "settings.fb.revert_keep": "Keep this model",
@@ -428,5 +426,8 @@
   "settings.notify.conv": "New replies in conversations you are not viewing",
   "settings.notify.log_label": "Progress",
   "settings.notify.log": "Progress reports · work log",
-  "settings.notify.stays": "Turned-off alerts still appear in the list."
+  "settings.notify.stays": "Turned-off alerts still appear in the list.",
+  "settings.fb.saved_off": "Saved. The API key step stays off until you turn it on",
+  "settings.fb.acc_auto": "Auto switch · now {name}",
+  "settings.fb.acc_pinned": "Pinned · {name}"
 }
