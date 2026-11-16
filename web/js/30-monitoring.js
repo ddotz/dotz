@@ -747,8 +747,8 @@ const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? (it.account
 // A connection that is down says so at the top of the conversation, whether or not an alert went out, with the way to check again.
 // Two states, two banners: kind "down" (the connection is gone: err tone, 연결이 끊겼어요) and "fail" (connected, the last check failed: err tone too,
 // 확인 실패). The head is passed in, never guessed from the detail text.
-function monBannerNode(kind, detail, btn) {
-  const head = kind === "down" ? TX("mon.banner.down") : TX("mon.banner.fail"), t = String(detail || "").trim();
+function monBannerNode(kind, detail, btn, head = kind === "down" ? TX("mon.banner.down") : TX("mon.banner.fail")) {
+  const t = String(detail || "").trim();
   return el("div", { class: `mon-banner ${kind}`, role: kind === "down" ? "alert" : "status", "data-kind": kind }, icon("refresh"), el("span", { class: "mon-banner-tx" }, el("b", { text: head }), t ? ` · ${t}` : ""), btn);
 }
 // The app hint the hub writes for a down app starts with the row word ("연결 끊김 · ..."); the banner has its own head, so only the why is kept.
@@ -757,12 +757,16 @@ const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", typ
 const monRecheckBtn = (watch, onclick, text = TX("mon.recheck_btn")) => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
+// Which banner a monitor gets: "down" (다시 연결) only for a lost login, or a hub that gives no reason; a plain check that keeps failing is a
+// failure (지금 다시 확인), never a lost connection. "" when there is nothing to say.
+const monBannerKind = m => m.connection === "disconnected" ? (m.conn_reason === "check" ? "fail" : "down") : m.last_result === "fail" ? "fail" : "";
 function monBannerOf(it) {
   if (it.mon) {
-    const m = it.mon, down = m.connection === "disconnected";
-    if (!down && m.last_result !== "fail") return null;
-    const detail = down ? monConnWhy(m) : [m.fails > 1 ? TX("mon.fail_streak", { n: m.fails }) : TX("mon.run.fail"), monClean(m.last_summary || "")].filter(Boolean).join(" · ");
-    return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? TX("mon.reconnect") : undefined) : null);
+    const m = it.mon, kind = monBannerKind(m), down = kind === "down", streak = kind === "fail" && m.connection === "disconnected";
+    if (!kind) return null;
+    const detail = down ? monConnWhy(m) : streak ? [m.since ? TX("mon.conn.since", { t: monTime(m.since) }) : "", monClean(m.last_summary || "")].filter(Boolean).join(" · ")
+      : [m.fails > 1 ? TX("mon.fail_streak", { n: m.fails }) : TX("mon.run.fail"), monClean(m.last_summary || "")].filter(Boolean).join(" · ");
+    return monBannerNode(kind, detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? TX("mon.reconnect") : undefined) : null, streak ? TX("mon.conn.failing") : undefined);
   }
   if (!it.conn) return null;
   const names = (it.owned || []).map(m => m.watch).filter(Boolean);
