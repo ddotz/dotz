@@ -38,8 +38,6 @@
     "ownerWrites": {
       "CM|30-monitoring-comments-dm.js": 3,
       "DM|30-monitoring-comments.js": 6,
-      "KK|30-kakao-views.js": 1,
-      "KK|31-conversations.js": 1,
       "RQ|30-monitoring.js": 1,
       "RQ|30-triage.js": 4
     },

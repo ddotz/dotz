@@ -17,6 +17,8 @@ const KK = {
   view: "all", typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
   peerT: 0, peerBusy: false, peerHead: "", lp: new Map(), olderBusy: false, olderAgain: false,
 };
+const kkViewSet = k => { KK.view = k; kkPaintRooms(); };   // the room-list pill picked: the only write to KK.view from outside this file
+const kkRoomsAsk = () => { KK.asked = true; kkLoadRooms(); };   // the first load of the room list, asked once from the conversation pane
 
 /* ---- small helpers ---- */
 const kkBig = s => { try { return BigInt(s); } catch { return 0n; } };

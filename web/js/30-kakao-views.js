@@ -4,6 +4,6 @@ const kkViewOf = () => KK_VIEWS.find(v => v[0] === KK.view) || KK_VIEWS[0];
 function kkViewBar(watched) {
   return segKeep(el("div", { class: "mr-filter kk-views", role: "tablist", "aria-label": TX("apps.kk.view_aria") }, ...KK_VIEWS.map(([k, label, ok]) => {
     const on = k === kkViewOf()[0];
-    return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => { KK.view = k; kkPaintRooms(); } }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
+    return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => kkViewSet(k) }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
   })));
 }
