@@ -121,7 +121,7 @@ describe("each mailbox has its own voice", () => {
 	});
 
 	test("a learned base box reaches its drafts; a base box with no voice stays as it was", () => {
-		const m = { key: "vc-base", source: "zele", id: "m1", subject: "s", from: "x@example.com" } as never, deps = { mailOf: () => ({ mbox: "base" }) } as never;
+		const m = { key: "vc-base", source: "zele", id: "m1", subject: "s", from: "x@example.com" } as never, deps = { mailOf: () => ({ key: "vc-base", mbox: "base" }) } as never;
 		expect(boxCtx("mail", m, deps).box).toBeUndefined();
 		writeIdentity({ app: "mail", room: "base" }, ["일반 메일의 말투"]);
 		expect(boxCtx("mail", m, deps).box?.id).toBe("base");

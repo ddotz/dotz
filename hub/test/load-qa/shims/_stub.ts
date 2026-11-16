@@ -10,6 +10,15 @@ export function deny(tool: string, argv: string[]): never {
 	process.exit(127);
 }
 
+/** The owner at this computer's desktop: the web login dialog (hub/local-login-dialog.ts MAC_SCRIPT, the number and the name as argv) is
+ * answered 허용, the way the owner allows the login he just asked for. Any other AppleScript is refused. */
+export function osascript(argv: string[]): never {
+	if (argv[0] !== "-e" || !argv[1]?.includes("웹 브라우저 로그인을 허용할까요?")) deny("osascript", argv);
+	begin("osascript", argv);
+	console.log("허용");
+	process.exit(0);
+}
+
 export function aside(argv: string[]): never {
 	begin("aside", argv);
 	console.error("aside: no browser in the load-qa sandbox");

@@ -7,8 +7,9 @@ import { ev, fakeHub, json, on } from "./test-web.ts";
 // parser. Each format is rendered on each surface with the page's real functions and compared with the main chat; a raw mark left on a surface fails, and so
 // does a new caller of mdNode, which is how a surface bypasses the shared path.
 const JS = join(import.meta.dir, "..", "web", "js");
-// Who may draw text without shapes, and how many calls each holds: the owner's own words, a document, a model's thinking, a raw original, a question line.
-const PLAIN_MD = { "15-attachments.js": 2, "17-state-refresh.js": 1, "11-resultcard.js": 1, "12-terminal-view.js": 1, "10-decision-card.js": 5, "11-todo-strip.js": 3, "02-answer-shapes.js": 1 };
+// Who may draw text without shapes, and how many calls each holds: the owner's own words, a document, a model's thinking, a raw original (a mail
+// without a subject line among them), a question line.
+const PLAIN_MD = { "15-attachments.js": 2, "17-state-refresh.js": 1, "11-resultcard.js": 1, "12-terminal-view.js": 1, "10-decision-card.js": 5, "11-todo-strip.js": 4, "02-answer-shapes.js": 1 };
 
 test("mdNode and mdHtml have no new caller: a model's text goes through answerNode", () => {
 	const calls: Record<string, number> = {};

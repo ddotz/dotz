@@ -518,6 +518,7 @@ const RUNTIME = `typeof S !== "undefined" && S && typeof target === "string" && 
 // open: a second step after the screen is ready (opens a dialog or an inline form), with its own ready; close: undoes it before the next screen.
 // scope: where the checks look (default: the shown view), e.g. the dialog.
 const SHOWN_ADD = `[...document.querySelectorAll(".dr-rc-add")].find(b => b.getBoundingClientRect().width > 0)`;
+const SHOWN_FIX = `[...document.querySelectorAll("[data-k=fix]")].find(b => b.getBoundingClientRect().width > 0)`;
 export type Screen = { name: string; call: string; view: string; ready: string; scope?: string; open?: { call: string; ready: string }; close?: string };
 // How each screen is reached: go(view, target) as the page's own links do (web/js/05-command-palette.js), so the address follows.
 //   chat      go("chat","list"): the phone's chat list; on a wide screen the chat itself (list + conversation side by side)
@@ -533,9 +534,11 @@ export const SCREENS: Screen[] = [
 	{ name: "project", call: `go("project", "ch:5")`, view: "project", ready: `!!document.querySelector("#v-project > *")` },
 	{ name: "monitoring", call: `go("monitoring")`, view: "monitoring", ready: `NM.loaded` },
 	{ name: "mail", call: `go("monitoring", "i:mail")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail"` },
-	// mail-recipient: the draft card's 받는이 fold (button.rq-recv) opened, then 받는 사람 추가 opened: an address field + 확인 button in the row
+	// mail-recipient: the draft card's 고치기 pressed (받는이 rows are edited only there), its 받는이 fold (button.rq-recv) opened, then 받는 사람 추가 opened:
+	// an address field + 확인 button in the row
 	{ name: "mail-recipient", call: `go("monitoring", "i:mail")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail" && !!document.querySelector(".rq-recv")`,
-		open: { call: `(document.querySelectorAll('.rq-recv[aria-expanded="false"]').forEach(b => b.click()), ${SHOWN_ADD}.click())`, ready: `!!document.querySelector(".dr-rc-edit .dr-rc-in")` }, close: `document.querySelectorAll(".dr-rc-edit .btn.text:not(.dr-rc-go)").forEach(b => b.click())` },
+		open: { call: `(${SHOWN_FIX}.click(), new Promise(r => { const t = () => (document.querySelector(".rq-recvbox .dr-rc-add") ? r(0) : requestAnimationFrame(t)); t(); })
+			.then(() => (document.querySelectorAll('.rq-recv[aria-expanded="false"]').forEach(b => b.click()), ${SHOWN_ADD}.click())))`, ready: `!!document.querySelector(".dr-rc-edit .dr-rc-in")` }, close: `document.querySelectorAll(".dr-rc-edit .btn.text:not(.dr-rc-go)").forEach(b => b.click())` },
 	{ name: "notices", call: `go("notices")`, view: "notices", ready: `NT.loaded && !!document.querySelector("#v-notices > *")` },
 	{ name: "settings", call: `go("settings")`, view: "settings", ready: `!!document.querySelector("#settings > *")` },
 	{ name: "kakao", call: `go("monitoring", "i:kakao")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:kakao" && KK.loaded && KK.rooms.length === 5` },

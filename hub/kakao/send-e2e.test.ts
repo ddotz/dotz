@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseDraftApproval } from "../draft-approval.ts";
+import { approvalHash, parseDraftApproval } from "../draft-approval.ts";
 import { type Ctx, type DraftsApi, type Reader, run } from "./cli.ts";
 import { atomicWrite } from "./onboard.ts";
-import { createDraft, draftBlock, forgetWarm, listDrafts, sendDraft } from "./send.ts";
+import { createDraft, draftBlock, forgetWarm, kakaoView, listDrafts, readDrafts, sendDraft } from "./send.ts";
 import { kakaoPaths, type Msg, type Room, type Runner } from "./types.ts";
 import { type FakeRow, fakeScreen } from "./ui.fixture.ts";
 import { appendSealed } from "../approval-seal.ts";
@@ -64,8 +64,13 @@ async function sendNow(c: ReturnType<typeof cli>, code: string): Promise<number>
 	return r.ok ? 0 : 1;
 }
 
+// A pick names the version the card shows now: the draft as stored (its approvalHash, the one the queue's cards carry).
+const shownHash = (code: string): string => {
+	const all = readDrafts(paths);
+	return approvalHash(kakaoView(all.find(d => d.code === code)!, all));
+};
 const pick = (code: string, label = "보내기") =>
-	appendSealed(paths.inbox, { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: `1) ${label}`, picks: [{ q: `카톡 답장 보낼까요? (${code})`, n: 1, label }] });
+	appendSealed(paths.inbox, { ts: new Date(Date.now() + 5000).toISOString(), kind: "message", source: "web", text: `1) ${label}`, picks: [{ q: `카톡 답장 보낼까요? (${code})`, n: 1, label, hash: shownHash(code) }] });
 
 async function drafted(): Promise<string> {
 	const c = cli(fakeScreen(rows), "응 7시에 봐");

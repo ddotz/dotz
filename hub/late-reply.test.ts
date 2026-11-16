@@ -13,7 +13,7 @@ const snowAt = (ms: number) => ((BigInt(ms) - 1420070400000n) << 22n).toString()
 
 test("a web short id resolves to the owner message it names", () => {
 	emit("inbox", { ts: "2026-10-23T07:22:48.000Z", kind: "message", source: "web", channel: "ch:1", author: "owner", text: "계정 고정 스위치 만들어 줘", mid: "cbfba25d" });
-	expect(ownerMessage("cbfba25d")).toEqual({ text: "계정 고정 스위치 만들어 줘", ts: "2026-10-23T07:22:48.000Z", author: "owner" });
+	expect(ownerMessage("cbfba25d")).toEqual({ text: "계정 고정 스위치 만들어 줘", ts: "2026-10-23T07:22:48.000Z", author: "owner", conv: "ch:1" });
 	expect(ownerMessage("00000000")).toBeUndefined();
 });
 
