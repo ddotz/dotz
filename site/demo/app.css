@@ -106,7 +106,7 @@ body { font: 400 var(--fs-body)/var(--lh-body) var(--font); font-variant-numeric
    only code and paths may break inside a token. */
 h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
 /* short fixed copy (empty states, notes, card questions, meta lines): balanced, so a phrase never leaves one word on the last line */
-.empty, .hc-none, .cv-empty, .bell-none, .note, .cc-note, .dr-none, .od-note, .mb-note, .sup, .dc-q, .dc-ds, .cc-hd { text-wrap: balance; }
+.empty, .hc-none, .bell-none, .note, .cc-note, .dr-none, .od-note, .mb-note, .sup, .dc-q, .dc-ds, .cc-hd { text-wrap: balance; }
 p, li, blockquote, dd { text-wrap: pretty; }
 code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
 /* a sentence / clause / phrase chunk of copy text (01-phrase-wrap.js): the line breaks between chunks, inside one only when it is
@@ -308,6 +308,9 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .muted { color: var(--fg-2); }
 .empty { padding: var(--sp-8) var(--sp-4); text-align: center; color: var(--fg-3); font-size: 12px; }
 .empty > .btn { margin-top: var(--sp-3); }
+/* emptyNode (05-command-palette.js) builds every one: a hint under the sentence, and the tighter line of one section among others */
+.empty > .sup { margin-top: var(--sp-2); }
+.empty.compact { padding: var(--sp-4); }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
 .dot.ok { background: var(--ok); } .dot.warn, .dot.att { background: var(--warn); } .dot.err { background: var(--err); }
 .dot.pri { background: var(--accent); }
@@ -1089,14 +1092,11 @@ details.work.live .wdot { display: block; }
 .term .tmore { display: flex; margin: 0 auto var(--sp-3); }
 .term .tdv, .term .lg-note { margin: var(--sp-2) auto; color: var(--fg-3); font-size: 12.5px; line-height: 18px; text-align: center; }/* attachment chips as buttons (md and text open in the reader) and the reader sheet */
 button.fatt { border: 0; font: inherit; text-align: left; cursor: pointer; }
-dialog.tbox { width: min(760px, 100vw); height: min(80dvh, 100dvh); max-width: none; max-height: none; margin: auto; padding: 0; border: 0; border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: 0 12px 40px rgb(0 0 0 / .22); overflow: hidden; }
-dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
-.tbox .tv-in { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
-.tbox .tv-bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--line); font-size: 14px; }
-.tbox .tv-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-.tbox .tv-bar a, .tbox .tv-bar button { display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--active); color: var(--fg-2); font-size: 13px; text-decoration: none; }
-.tbox .tv-bar button.x { width: 32px; padding: 0; }
-.tbox .tv-body { min-height: 0; overflow: auto; padding: var(--sp-4) var(--sp-5) var(--sp-6); font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
+/* the reader (15-attachments.js viewer): dialog()'s large card. The file name is its title, on one line; the text reads on white on a phone too, where
+   Markdown's grey fills (code, table heads, quotes) would vanish into the sheet's grey */
+.tbox .tv-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 639px) { dialog.dlg.fs-card.tbox[open] { background: var(--pop); } }
+.tbox .tv-body { color: var(--fg); font-size: 15px; line-height: 26px; overflow-wrap: anywhere; }
 .tbox .tv-body:focus { outline: 0; }
 .tbox .tv-body p { margin: 0 0 var(--sp-3); }
 .tbox .tv-body p.h { margin: var(--sp-5) 0 var(--sp-2); font-size: 17px; line-height: 26px; } .tbox .tv-body p.h:first-child { margin-top: 0; }
@@ -1104,7 +1104,6 @@ dialog.tbox::backdrop { background: rgb(10 10 12 / .5); }
 .tbox .tv-body pre { margin: 0; font: 13px/20px var(--mono); white-space: pre-wrap; }
 .tbox .tv-body .md pre, .tbox .tv-body > .md pre { margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: var(--layer); }
 .tbox .tv-st { color: var(--fg-3); font-size: 13px; line-height: 20px; }
-@media (max-width: 639px) { dialog.tbox { width: 100vw; height: 100dvh; border-radius: 0; } }
 
 /* log: one card per turn - header (dot, what was asked, when, how long), answers as text, tool calls folded into one summary row */
 .lg { margin-bottom: var(--sp-3); --lg-dot: 8px; padding: var(--sp-4); border-radius: var(--r-card); background: var(--card); }
@@ -2339,12 +2338,10 @@ body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-pc,
 .rv-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; margin: 0 var(--sp-1) var(--sp-2); }
 .rv-head .rv-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
 .rv > .list + .sec, .rv > .pl-list + .rv-foot, .rv > .list + .rv-foot, .rv > .card + .rv-foot { margin-top: var(--sp-6); }
-.rv-empty { padding: var(--sp-4); color: var(--fg-2); }
 .rv-row { cursor: default; }
 .rv .li > .dot { margin-top: 0; }
 .rv-foot { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); margin-top: var(--sp-6); padding: 0 var(--sp-1); }
 .rv-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-3); }
-.rv-none .sup { margin-top: var(--sp-2); }
 
 /* ---------- composer above the phone keyboard ----------
    --kb / --vvh come from web/js/34-composer-viewport.js (visualViewport). With interactive-widget=resizes-content the page already shrinks
@@ -2716,7 +2713,6 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* the card fits the column the way the sheet fits the window: its head stays and a long draft scrolls in its body */
 #mon-tl:has(> .rq-pane) { display: flex; flex-direction: column; height: 100%; }
 .rq-pane { --ff-fill: var(--layer); display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; border-radius: var(--r-card); background: var(--card); }
-.rq-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-align: center; text-wrap: balance; }
 #v-monitoring.rq-on .tl-in { max-width: none; }
 .bm.q-fold .md > :not(:first-child), .bm.q-fold .ra-inl { display: none; }
 .rq-qm .sp { flex: 1; }
@@ -3356,10 +3352,9 @@ a.dr-att:active { background: var(--active); }
 .kk-l1 { display: flex; align-items: baseline; gap: var(--sp-15); min-width: 0; }
 .kk-l1 > .cv-n { flex: 0 1 auto; min-width: 0; }
 .kk-grp { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
-/* 지켜볼 대화방: the .kk-pd sheet (side panel on a desktop, full screen on a phone). The sheet's body is the page canvas, so the head is the sheets' .fs-hd and the
-   search and the rooms are the project list's own .pl-search, .pl-list and .pl-row, the same white on grey as that list. */
-#kk-add .kk-pd-in { background: var(--bg); outline: 0; }
-#kk-add .kk-pd-b { padding: var(--sp-1) var(--sp-6) var(--sp-6); }
+/* 지켜볼 대화방: dialog() worn as the .kk-pd panel (side panel on a desktop, full screen on a phone). Its canvas is the page's, so the search and the
+   rooms are the project list's own .pl-search, .pl-list and .pl-row, the same white on grey as that list. */
+#kk-add { background: var(--bg); }
 .kk-search + .kk-pl { margin-top: var(--sp-3); }
 /* in the sheet the check says "watched"; the grey fill is the selected row of a list, so the sheet's rows keep none */
 #kk-add .kk-pr.on { background: none; }
@@ -3367,8 +3362,7 @@ a.dr-att:active { background: var(--active); }
 .kk-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .kk-ck { flex: none; width: 18px; height: 18px; color: var(--accent); }
 @media (pointer: coarse), (max-width: 639px) { #kk-add .kk-search { height: 40px; font-size: 16px; } }
-@media (max-width: 639px) { #kk-add .kk-pd-in { padding-top: env(safe-area-inset-top); } #kk-add .kk-pd-b { padding-inline: var(--sp-4); } }
-.kk-add .kk-pd-b { padding: var(--sp-2) 0 0; }
+.kk-add .dbody { display: block; }   /* a picker's body is one list: its parts stack by their own margins, and a long list scrolls the body */
 .kk-hint { padding: 0 var(--sp-4) var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-note + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }   /* a failed or empty place: the line, then its one action, centred */
 .kk-note { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font: 400 12px/16px var(--font); text-align: center; text-wrap: balance; }
@@ -3583,13 +3577,11 @@ a.dr-att:active { background: var(--active); }
 .kk-dbtn .ic { width: 14px; height: 14px; }
 .kk-dbtn:disabled { opacity: .6; }
 
-/* 사용자별 분석 (30-kakao.js kkPerson): desktop a side panel, phone a full-screen sheet */
-.kk-pd { border: 0; padding: 0; max-width: none; max-height: none; background: transparent; color: var(--fg); }
-.kk-pd::backdrop { background: rgb(0 0 0 / .3); }
-.kk-pd-in { display: flex; flex-direction: column; width: min(400px, 100vw); max-height: min(680px, 100dvh); margin: auto; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
-.kk-pd-h { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); }
-.kk-pd-h .fs-x { margin-left: auto; }
-.kk-pd-b { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-2) var(--sp-4) var(--sp-4); }
+/* The .kk-pd windows (사용자별 분석 of 30-kakao.js kkPerson, 지켜볼 대화방, a comment app's 지켜볼 글): dialog() docked as a side panel on a desktop; a phone
+   keeps dialog()'s full-screen sheet */
+@media (min-width: 640px) { dialog.dlg.kk-pd { width: 400px; height: 100dvh; max-height: none; margin: 0 0 0 auto; border-radius: 0; background: var(--card); box-shadow: var(--shadow-panel); } }
+.kk-pd .dbody { color: var(--fg); }
+.kk-pwho { display: flex; align-items: center; gap: var(--sp-2); }
 .kk-psec { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
 .kk-psec:last-child { border-bottom: 0; }
 .kk-prow { display: flex; gap: var(--sp-3); padding: var(--sp-05) 0; font: 400 13px/19px var(--font); }
@@ -3603,8 +3595,6 @@ a.dr-att:active { background: var(--active); }
 .kk-put { font: 400 13px/19px var(--font); overflow-wrap: anywhere; }
 .kk-sum { padding-top: var(--sp-3); }
 .kk-sum .btn { margin-top: var(--sp-2); height: var(--btn-h-sm); }
-@media (min-width: 640px) { .kk-pd { margin: 0 0 0 auto; height: 100dvh; } .kk-pd-in { height: 100dvh; max-height: none; border-radius: 0; } }
-@media (max-width: 639px) { .kk-pd { margin: 0; width: 100vw; height: 100dvh; } .kk-pd-in { width: 100vw; height: 100dvh; max-height: none; border-radius: 0; } }
 
 /* a room row's second line on the right: 미답장 then the unread count, side by side (30-kakao.js kkRow) */
 .kk-row .kk-rmeta { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--sp-15); }
@@ -3736,6 +3726,7 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 #cm-pick .sec { margin-inline: var(--sp-4); }   /* section names start on the rows' left line */
 #cm-pick .sec + .kk-pick-src { border-top: 0; }
 #cm-pick .fs-hd { padding-left: max(var(--sp-4), env(safe-area-inset-left)); }   /* the head starts on the rows' left line (this sheet's rows sit at --sp-4 at every width) */
+#cm-pick .fs-body { padding-inline: 0; }   /* the rows run edge to edge and bring their own side padding */
 /* 댓글 / DM swap the whole list under them, so they are screen tabs like the mailbox tabs (web/DESIGN.md 화면 탭), not a filter track */
 #cm-rooms .cm-tabs { position: static; flex-wrap: nowrap; margin: 0 var(--sp-4) var(--sp-1); padding: 0; background: none; box-shadow: inset 0 -1px 0 var(--line); }
 #cm-rooms .cm-tabs .mr-f { height: var(--btn-hit); border-radius: 0; background: none; color: var(--fg-2); }
@@ -3872,7 +3863,6 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .cv-more { display: block; width: 100%; min-height: 44px; padding: var(--sp-2) var(--sp-4); border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg-3); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); text-align: center; cursor: pointer; }
 @media (hover: hover) { .cv-more:hover { background: var(--card-hover); color: var(--fg-2); } }
 .cv-more:active { background: var(--row-sel); }
-.cv-empty { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: center; }
 @media (prefers-reduced-motion: reduce) { .fr-chev { transition: none; } }
 
 /* 앱 (web/js/30-apps.js): the 모니터링 list's rows on the left and the open app on the right. Below 1100px the list and the app
@@ -4482,7 +4472,6 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .mon-ov-n { min-width: 0; font: 600 14px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mon-ov-peer { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .mon-ov-s { color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mon-ov-empty { padding: var(--sp-1); color: var(--fg-3); font-size: 13px; }
 
 /* the top of an older page: the reports above load when this reaches the view (the button under it stays as a fallback) */
 .mon-sentinel { width: 100%; height: 1px; }
@@ -4556,7 +4545,7 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
   #v-monitoring.app-two.kk-on > .kk > .kk-chat { grid-column: 2; grid-row: 4; margin-bottom: var(--sp-4); }
   #v-monitoring.app-two.kk-on > .kk.chat-open > .kk-chat { grid-row: 1 / -1; }
   #v-monitoring.app-two.kk-on:has(> .kk.chat-open) > #mon-head { display: none; }
-  #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat { display: flex; align-self: start; background: none; }
+  #v-monitoring.app-two.kk-on:not(.as-on) > .kk:not(.chat-open) > .kk-chat { display: flex; align-self: start; background: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) > .kk-chat > :not(.kk-box) { display: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-box { flex: none; min-height: 0; background: none; }
   #v-monitoring.app-two.kk-on > .kk:not(.chat-open) .kk-in > .kk-note { color: var(--fg-3); }
@@ -4652,7 +4641,6 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
 .pl-groups .pl-gh { margin-bottom: var(--sp-2); }
 .pl-list { background: var(--card); border-radius: var(--r-card); overflow: hidden; }
 .pl-list > .empty { background: transparent; }
-.pl-empty { padding: var(--sp-8) var(--sp-4); }
 .pl-empty-a { margin-top: var(--sp-3); }
 .pl-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: var(--sp-2) var(--sp-4); border: 0; background: transparent; color: inherit; text-align: left; }
 .pl-row + .pl-row { border-top: 1px solid var(--line); }

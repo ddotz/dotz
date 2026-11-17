@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "9295793ad5a6";
+const WEB_BUILD = "61d6786b460a";
 const I18N_LANG = "ko", I18N = {"apps.status.running":"실행 중","apps.status.unreachable":"응답 없음","apps.status.unknown":"상태 모름","apps.status.off":"꺼짐","apps.status.error":"오류","apps.row.monitor_hint":"상태만 확인하는 앱이에요","apps.group.own":"사용자 앱","apps.group.monitor":"모니터링 앱","apps.group.failed":"불러오지 못한 앱","apps.empty.name":"아직 내 앱이 없어요","apps.empty.hint":"채팅에서 앱을 추가해 달라고 하면 돼요","apps.err.title":"앱을 불러오지 못했어요","apps.load_failed":"앱을 불러오지 못했어요","apps.loading":"앱 불러오는 중…","apps.recheck":"다시 확인","apps.list":"앱 목록","apps.open_tab":"새 탭에서 열기","apps.menu":"앱 메뉴","apps.title":"앱","apps.subtitle":"내 앱을 한곳에서 열어요","apps.pick":"앱을 골라 주세요.","apps.set.address":"주소","apps.set.status":"상태","apps.set.in_monitoring":"모니터링에서 확인해요","apps.set.run":"앱 실행","apps.set.run_note":"이 앱은 스스로 실행되지 않아요. 아래 명령으로 띄워 주세요.","apps.set.watches":"감시","apps.set.title":"{label} 설정","apps.on":"켜기","apps.off":"끄기","apps.remove":"제거","apps.toast.on":"{label}을(를) 켰어요","apps.toast.off":"{label}을(를) 껐어요","apps.toast.removed":"{label}을(를) 제거했어요","apps.remove.title":"{label} 제거","apps.remove.body":"목록에서 빼요. 파일은 남아서 되돌릴 수 있어요.","apps.body.monitor":"이 앱은 모니터링에서 소식을 모아 보여 줘요.","apps.body.no_screen":"이 앱은 자체 화면이 없어요.","apps.open_monitoring":"모니터링에서 열기","apps.body.no_response":"{label} 앱이 응답하지 않아요.","apps.body.no_response_why":"{label} 앱이 응답하지 않아요 ({reason}).","apps.body.check_running":"앱이 떠 있는지 확인해 주세요.","apps.body.wont_open":"{label} 앱이 열리지 않아요. 앱이 켜져 있는지 확인하고 다시 열어 보세요","apps.unreplied":"미답장","apps.unreplied.aria":"미답장 {n}개","apps.unreplied.badge":"미답장 {c}","apps.canvas":"캔버스","apps.canvas.close":"캔버스 닫기","apps.canvas.file":"화면 파일","apps.canvas.cant_open":"열 수 없는 파일이에요","apps.canvas.offline":"연결이 끊겨 열지 못했어요","apps.canvas.pick_max":"요소는 한 번에 10개까지 보낼 수 있어요","apps.kk.view.all":"전체","apps.kk.view.no_unread":"안 읽은 대화방이 없어요","apps.kk.view.no_unreplied":"미답장 대화방이 없어요","apps.kk.view_aria":"지켜보는 대화방 보기","apps.kk.today":"오늘","apps.kk.yesterday":"어제","apps.kk.type.photo":"(사진)","apps.kk.type.video":"(동영상)","apps.kk.type.voice":"(음성 메시지)","apps.kk.type.sticker":"(이모티콘)","apps.kk.type.file":"(파일)","apps.kk.type.location":"(위치)","apps.kk.type.other":"(지원하지 않는 메시지)","apps.kk.sys.hidden":"가려진 메시지예요","apps.kk.sys.joined":"{names}님이 들어왔어요","apps.kk.sys.left":"{names}님이 나갔어요","apps.kk.sys.removed":"{names}님을 내보냈어요","apps.kk.link_preview":"링크 미리보기","apps.kk.gone":"기간이 지나 볼 수 없어요","apps.kk.photo":"사진","apps.kk.photo_n":"사진 {n}","apps.kk.video":"동영상","apps.kk.enlarge":"{alt} 크게 보기","apps.kk.play":"동영상 재생","apps.kk.view_photo":"사진 보기","apps.kk.view_video":"동영상 보기","apps.kk.photo_of":"사진 {i} / {count}","apps.kk.prev":"이전 사진","apps.kk.next":"다음 사진","apps.kk.open":"열기","apps.kk.not_on_pc":"PC에 없음","apps.kk.go_original":"원래 메시지로 이동","apps.kk.reply_to":"{name}에게 답장","apps.kk.reply":"답장","apps.kk.see_original":"원문 보기","apps.kk.original":"원래 메시지","apps.kk.back_to_reply":"답장으로 돌아가기","apps.kk.finding":"찾는 중…","apps.kk.orig_missing":"원래 메시지를 찾지 못했어요 · 대화에서 지워졌거나 아주 오래된 메시지예요","apps.kk.gap_aria":"불러오지 않은 메시지가 있어요","apps.kk.gap":"사이 메시지 불러오기","apps.kk.sticker":"이모티콘","apps.kk.loc":"위치: {label}","apps.kk.map":"지도에서 보기","apps.kk.sec":"{n}초","apps.kk.min":"{n}분","apps.kk.hour":"{n}시간","apps.kk.hist_hour":"{h}시 {v}개","apps.kk.hist_day":"{d}시 {v}개","apps.kk.other":"상대","apps.kk.person_aria":"{name} 사용자별 분석","apps.kk.person":"사용자별 분석","apps.kk.reply_to_me":"상대 → 나 {t}","apps.kk.me_to_other":"나 → 상대 {t}","apps.kk.not_yet":"아직 잴 수 없어요","apps.kk.summary":"요약","apps.kk.summary_at":"{at}에 만든 요약","apps.kk.reanalyze":"다시 분석","apps.kk.analyze":"요약 분석","apps.kk.analyzing":"분석 중…","apps.kk.stat.messages":"메시지","apps.kk.stat.messages_v":"이 방 {room}개 · 지켜보는 방 {watched}개 ({n}곳)","apps.kk.stat.span":"기간","apps.kk.stat.reply":"답장 ({n}일)","apps.kk.stat.mentions":"나를 부른 메시지","apps.kk.stat.mentions_v":"{pct}% ({n}개)","apps.kk.active_hours":"활동 시간","apps.kk.hour_mark":"{h}시","apps.kk.weekday":"요일","apps.kk.wd.sun":"일","apps.kk.wd.mon":"월","apps.kk.wd.tue":"화","apps.kk.wd.wed":"수","apps.kk.wd.thu":"목","apps.kk.wd.fri":"금","apps.kk.wd.sat":"토","apps.kk.waiting":"답장을 기다리는 메시지","apps.kk.none":"없어요","apps.kk.kind.group":"단체 대화방","apps.kk.kind.direct":"1:1 대화","apps.kk.kind.open":"오픈채팅","apps.kk.tag.group":"단체","apps.kk.rooms_aria":"메신저 대화방","apps.kk.new_msg":"새 메시지","apps.kk.ask_ph":"요청을 입력하세요 · 예: 좀 더 짧게","apps.kk.revise_ph":"초안을 어떻게 고칠까요? · 예: 좀 더 짧게","apps.kk.ask_aria":"답장 요청","apps.kk.send_req":"요청 보내기","apps.kk.draft_reply":"답장 초안","apps.kk.send_direct":"직접 보내기","apps.kk.auto":"자동 초안","apps.kk.err_rooms":"대화방 목록을 불러오지 못했어요","apps.kk.search":"대화방 검색","apps.kk.no_match":"찾는 대화방이 없어요","apps.kk.add_title":"지켜볼 대화방","apps.kk.unread_aria":"읽지 않은 메시지 {n}개","apps.kk.off":"메신저 연동이 꺼져 있어요","apps.kk.watched":"지켜보는 대화방","apps.kk.zero":"0개","apps.kk.add":"추가","apps.kk.add_prompt":"지켜볼 대화방을 추가해 주세요","apps.kk.no_rooms":"고를 수 있는 대화방이 없어요","apps.kk.status_aria":"감시 상태","apps.kk.readonly":"감시하지 않는 방이에요. 읽기만 할 수 있어요","apps.kk.watch_start":"감시 시작","apps.kk.pick_room":"대화방을 골라 주세요","apps.kk.no_reply":"답장 안 함","apps.kk.no_reply_done":"답장 안 함으로 표시했어요","apps.kk.unread_from":"여기부터 읽지 않은 메시지","apps.kk.read_upto":"여기까지 읽었어요","apps.kk.unread_people":"아직 안 읽은 사람 {n}명","apps.kk.unknown":"알 수 없음","apps.kk.send.failed":"실패","apps.kk.send.failed_why":"실패 · {reason}","apps.kk.send.sent":"보냄","apps.kk.send.sending":"보내는 중","apps.kk.older":"이전 메시지 더 보기","apps.kk.no_msgs":"아직 받은 메시지가 없어요","apps.kk.err_chat":"대화를 불러오지 못했어요","apps.kk.drafting_wait":"초안을 만드는 중이에요 · 끝나면 다시 요청해 주세요","apps.kk.peer_revise":"다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요","apps.kk.choose_first":"답장 전에 골라 주세요","apps.kk.write_own":"직접 쓸게","apps.kk.making_reply":"답장 초안을 만드는 중이에요…","apps.kk.making":"초안 만드는 중…","apps.kk.draft_late":"초안이 아직 오지 않았어요","appset.exit.again":"한 번 더 누르면 닫혀요","appset.feat.fail":"기능을 바꾸지 못했어요","appset.retry.done":"다시 확인했어요","appset.retry.fail":"다시 시도하지 못했어요","appset.pending.title":"승인 대기","appset.pending.n":"{n}건","appset.every.range":"1분에서 7일 사이로 정해 주세요","appset.every.done":"감시 주기를 바꿨어요","appset.every.fail":"감시 주기를 바꾸지 못했어요","appset.last.out":"마지막 결과: {text}","appset.last.check":"마지막 확인 {at}","appset.fails":"연속 실패 {n}번","appset.repeat":"반복 {every}","appset.send_to":"보낼 곳: {name}","appset.reason":"이유: {text}","appset.every_min":"{n}분마다","appset.every_aria":"{name} 감시 주기(분)","appset.min":"분","appset.reconnect":"다시 연결","appset.retry":"다시 시도","appset.watch_posts":"지켜볼 글","appset.pick":"고르기","appset.deleted":"{name}을(를) 삭제했어요","appset.delete.fail":"삭제하지 못했어요","appset.rm.bound":"이 감시는 프로젝트의 작업 채널 설정에 묶여 있어요. 그 프로젝트에서 빼 주세요","appset.rm.title_sched":"예약 삭제","appset.rm.title_watch":"감시 삭제","appset.rm.hint_sched":"이 예약을 완전히 지워요","appset.rm.hint_watch":"이 감시를 완전히 지워요","appset.rm.sched1":"다시 실행하지 않고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.sched2":"잠깐 멈추려면 삭제 대신 예약 켜기를 끄세요","appset.rm.watch1":"확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.watch1_at":"{pc}에서 확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요","appset.rm.watch2":"지금까지 온 감시 소식은 그대로 남아요","appset.rm.watch3":"잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요","appset.rm.ask":"{name}을(를) 삭제할까요?","appset.rm.confirm":"삭제 확인","appset.remove.read_fail":"제거할 내용을 읽지 못했어요","appset.removed_here":"{label}을(를) 이 기기에서 제거했어요","appset.removed_there":"{label}을(를) 그 컴퓨터에서 제거했어요","appset.remove.fail":"제거하지 못했어요","appset.remove.title":"앱 제거","appset.remove.hint":"이 기기에서만 지워요. 다른 컴퓨터는 그대로예요","appset.remove.btn":"제거","appset.remove.here1":"이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요","appset.remove.watches":"감시 {n}개를 지워요: {names}","appset.remove.no_watch":"지울 감시는 없어요","appset.remove.feats":"기능을 이 기기에서 꺼요: {names}","appset.remove.no_feat":"끌 기능은 없어요","appset.remove.others":"다른 컴퓨터의 같은 앱은 그대로예요","appset.remove.there1":"그 컴퓨터의 앱 목록에서 빼고, 알림과 푸시를 멈춰요","appset.remove.there2":"이 앱의 감시도 함께 꺼요","appset.remove.there3":"이 컴퓨터와 다른 컴퓨터의 같은 앱은 그대로예요","appset.remove.ask_here":"{label}을(를) 이 기기에서 제거할까요?","appset.remove.ask_there":"이 앱을 그 컴퓨터에서 제거할까요?","appset.remove.data":"저장된 데이터({data})도 지우기. 체크하지 않으면 남겨요","appset.remove.data_any":"저장된 데이터도 지우기. 체크하지 않으면 남겨요","appset.remove.confirm":"제거 확인","appset.del.line1":"{label} 앱을 완전히 지워요. 되돌릴 수 없어요","appset.del.line1_at":"{machine}에서 {label} 앱을 완전히 지워요. 되돌릴 수 없어요","appset.del.line2":"이름과 설정을 지우고, 앱 목록에서 빠져요","appset.del.line3":"이 앱의 감시도 함께 지워요","appset.add.hint_off":"꺼 둔 앱 {names} · 새로 추가","appset.add.hint_new":"새로 추가하기","appset.add.send":"맡기기","appset.add.ph":"어떤 앱을 연결하거나 만들까요?","appset.add.aria":"연결하거나 만들 앱","appset.add.title":"앱 관리","appset.add.new":"새 앱 추가","appset.add.off":"꺼 둔 앱","appset.add.on":"다시 켜기","appset.tpl.fail":"템플릿을 불러오지 못했어요","appset.tpl.close_aria":"앱 추가 닫기","appset.tpl.note":"{ph} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요","appset.on_at":"{pc}에서 {label}을(를) 다시 켰어요","appset.on_again":"{label}을(를) 다시 켰어요","appset.on_refill":"{label}을(를) 켰어요. 다시 연결할 내용을 채워 두었어요","appset.add.fail":"앱을 추가하지 못했어요","appset.fmt.items":"{n}개","appset.chg.add":"추가 {names}","appset.chg.del":"뺌 {names}","appset.chg.none":"달라지는 것 없음","appset.step.dec":"{label} 줄이기","appset.step.inc":"{label} 늘리기","appset.rule.ph_name":"이름: 메일 옆 뱃지에 보일 짧은 이름 (예: 자료 요청)","appset.rule.ph_when":"언제: 이 규칙을 쓸 메일 (예: 자료나 양식을 보내 달라는 메일)","appset.rule.ph_how":"어떻게: 초안에 바라는 것 (예: 요청한 자료를 첨부하고 짧게 인사)","appset.rule.ph_files":"붙일 파일: 첨부 파일 폴더 안의 파일 이름이나 전체 경로를 쉼표로 구분. 비우면 메일에 맞는 파일을 폴더에서 찾아요","appset.rule.save_fail":"규칙을 저장하지 못했어요","appset.rule.need":"이름과 언제를 적어 주세요","appset.rule.files":"붙일 파일: {files}","appset.rule.when":"언제: {text}","appset.rule.how":"어떻게: {text}","appset.rule.edit":"고치기","appset.rule.del":"지우기","appset.rule.deleted":"규칙 {name}을(를) 지웠어요","appset.rule.default_saved":"기본 규칙을 저장했어요","appset.rule.default_fail":"기본 규칙을 저장하지 못했어요","appset.rule.add":"규칙 추가","appset.sec.draft":"자동 초안과 승인","appset.sec.watch":"감시","appset.sec.more":"기타 기능","appset.sec.advanced":"고급","appset.conn.since":"{at}부터 연결이 끊겼어요","appset.conn.relogin":"다시 로그인해 주세요","appset.conn.at_pc":"{pc}에서 쓰는 앱이에요","appset.conn.off":"연결 끊김","appset.conn.on":"연결됨","appset.conn.checking":"연결 상태를 확인 중이에요","appset.set.fail":"설정을 바꾸지 못했어요","appset.set.load_fail":"설정을 불러오지 못했어요","appset.mem.title":"기억해 둔 것","appset.mem.hint":"대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요","appset.mem.none":"아직 없어요","appset.chip.relogin":"다시 로그인해 줘","appset.chip.cause":"원인 찾아 줘","appset.chip.resume":"다시 켜 줘","appset.chip.pause":"일시정지","appset.chips_aria":"빠른 지시","appset.card.bad":"변경 제안을 읽지 못했어요","appset.card.mem":"기억해 뒀어요","appset.card.title":"설정 바꾸기 제안","appset.card.applied":"적용했어요","appset.card.cancelled":"취소했어요","appset.apply":"적용","base.peer.kind.handoff":"작업 넘김","base.peer.kind.message":"메시지","base.peer.kind.ack":"작업 받음","base.peer.handed_off":"{from}에서 작업을 넘겼어요","base.peer.took_over":"{from}에서 작업을 이어받았어요","base.peer.ack_words":"넘긴 작업을 이어서 해요","base.more":"더 보기","base.less":"접기","base.peer.note":"인계 메모","base.chart.label":"차트","base.chart.bad_spec":"차트 형식이 맞지 않아 JSON으로 보여 드려요","base.chart.load_failed":"차트를 불러오지 못했어요","base.chart.draw_failed":"차트를 그리지 못했어요","base.raw":"원문","base.mark.done":"완료","base.mark.run":"진행 중","base.mark.wait":"대기","base.mark.ask":"확인 필요","base.mark.fail":"실패","base.tone.wait":"답을 기다려요","base.claim.verified":"확인됨","base.claim.reported":"보고만 함","base.peer.read_only":"이 컴퓨터에서는 읽기만 돼요","base.notice.worklog":"{name} 작업 기록","base.bot_default":"비서","base.select":"선택","base.select_all":"전체 선택","base.ended.delete_n":"삭제 {n}개","base.ended.delete_n_btn":"{n}개 삭제","base.ended.unread_aria":"읽지 않은 메시지 {n}개","base.ended.delete_one":"{name} 삭제","base.ended.label":"끝난 세션 {n}","base.ended.need":"답변 필요 {n}","base.ended.unread":"안 읽음 {n}","base.ended.delete_many":"세션 {n}개 삭제","base.ended.trash_note":"휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요.","base.ended.deleted_one":"{name} 삭제했어요","base.ended.deleted_many":"{n}개 삭제했어요","base.ended.kept.dirty":"아직 커밋하지 않은 변경이 있어요. 커밋하거나 정리하면 지울 수 있어요.","base.ended.kept.running":"아직 실행 중이에요. 멈춘 뒤에 지울 수 있어요.","base.ended.kept.other":"작업 폴더를 정리하지 못했어요. 잠시 뒤에 다시 해 보세요.","base.ended.kept_one":"{name} 세션은 그대로 뒀어요","base.ended.kept_many":"세션 {n}개는 그대로 뒀어요","base.ended.restore_failed":"{n}개는 되돌리지 못했어요. 휴지통에 그대로 있어요","base.ended.restored":"되돌렸어요","base.status.unknown":"알 수 없음","base.title.discord":"Discord","base.title.jandi":"JANDI","base.title.slack":"Slack","base.title.telegram":"Telegram","base.title.messengers":"메신저","base.title.devices":"연결된 기기","base.title.webaccess":"웹 접속","base.title.cardform":"카드 추가","base.sidebar.expand":"사이드바 펼치기","base.sidebar.collapse":"사이드바 접기","base.update.badge":"새 버전","base.update.title":"새 버전이 있어요","base.theme.light":"라이트","base.theme.dark":"다크","base.command":"명령","base.pal.warn":"주의","base.pal.words.accounts":"공급자 provider 로그인","base.pal.words.usage":"한도 quota","base.pal.pick":"{name} 고르기","base.pal.placeholder":"도구 또는 명령","base.pal.hint.move":"↑↓ 이동","base.pal.hint.open":"↵ 열기","base.pal.hint.close":"esc 닫기","base.pal.running":"실행 중","base.pal.words.ended":"끝난 세션 종료된 세션","base.pal.words.terminal":"셸 터미널 명령줄 shell terminal","base.pal.words.screen":"화면 공유 원격 데스크톱 screen desktop remote","base.pal.words.theme":"화면 모드 전환 라이트 다크 theme dark light","base.pal.open_terminal":"터미널 열기","base.pal.open_screen":"화면 공유 열기","base.pal.theme_switch":"{mode} 모드로 전환","base.pal.group.tools":"도구","base.pal.group.screen":"화면","base.pal.group.commands":"명령","base.pal.empty":"결과가 없어요","base.pct_left":"{n}% 남음","base.limit.weekly":"주간 {model}","base.limit.hours":"{n}시간","base.limit.days":"{n}일","base.retry":"다시 시도","base.sub.aborted":"중단됨","base.work.no_reason":"이유가 기록되지 않았어요","base.work.stop_title":"백그라운드 작업 중단","base.work.stop_text_job":"'{description}' 작업을 멈춰요. 필요하면 다시 맡길 수 있어요.","base.work.stop_text":"하던 작업을 멈춰요. 필요하면 다시 맡길 수 있어요.","base.work.stopped":"작업을 중단했어요","base.work.retried":"다시 맡겼어요","base.work.just_started":"방금 시작","base.work.minutes":"{n}분째","base.just_now":"방금","base.min_ago":"{n}분 전","base.hours_ago":"{n}시간 전","base.work.more":"외 {n}개","base.sub.running":"서브에이전트 {n}개 진행 중","base.sub.none":"진행 중인 서브에이전트가 없어요","base.sub.log_failed":"기록을 불러오지 못했어요","base.sub.log_empty":"기록이 없어요","base.board.reset_done":"카드를 처음 순서로 돌려놨어요","base.board.reset_failed":"카드 순서를 처음으로 돌리지 못했어요","base.board.reset":"배치 초기화","base.board.head_hint":"끌거나 방향키로 옮기고, Shift+방향키로 크기를 바꿔요","chat.kind.command":"명령","chat.kind.read":"읽기","chat.kind.edit":"수정","chat.kind.search":"검색","chat.kind.web":"웹","chat.kind.notes":"기록","chat.kind.tool":"도구","chat.kind.thinking":"생각","chat.status.resumed":"{name} 대화 기록 이어서 시작 · {model}","chat.status.started":"{name} 대화 기록 새로 시작 · {model}","chat.status.compacting":"컨텍스트 압축 중","chat.status.compacted":"컨텍스트 압축 완료","chat.status.retrying":"다시 시도 중","chat.status.retrying_n":"다시 시도 중 ({attempt})","chat.status.fallback":"모델 전환 · {model}","chat.log.work":"작업","chat.log.work_for":"{dur} 작업","chat.log.errors":"오류 {n}","chat.log.no_output":"(출력 없음)","chat.log.details":"자세히","chat.log.open_sub":"서브에이전트 기록 열기","chat.gw.work_msg":"작업 중에 온 메시지","chat.gw.work_lane":"작업 중에 온 세션 보고","chat.gw.restart":"재시작 뒤 다시 처리","chat.gw.waiting":"답을 기다리는 중","chat.gw.limit_over":"사용량 한도 풀림","chat.gw.provider_ok":"모델 제공자 복구","chat.gw.provider_retry":"일시 오류 뒤 다시 시도","chat.gw.reread":"대화 정리 뒤 지침 다시 읽기","chat.gw.first":"첫 시작","chat.inbox.lane_from":"세션 보고 · {name}","chat.inbox.lane":"세션 보고","chat.inbox.watch":"모니터링 · {name}","chat.inbox.mail":"새 메일","chat.inbox.schedule":"예약 작업","chat.prompt.keepalive":"캐시 유지 신호","chat.prompt.reflect":"야간 자기 점검","chat.prompt.handover":"이전 대화 이어받기","chat.prompt.message":"메시지","chat.prompt.attached":"첨부: {files}","chat.load.older_failed":"이전 기록을 불러오지 못했어요","chat.load.conv_failed":"이전 대화를 불러오지 못했어요","chat.gap.aria":"불러오지 않은 메시지가 있어요","chat.gap.load":"사이 메시지 불러오기","chat.older.more":"이전 기록 더 보기","chat.history.divider":"지난 기록","chat.empty.none":"아직 대화가 없어요","chat.empty.load_failed":"대화를 불러오지 못했어요","chat.empty.no_activity":"활동이 없어요","chat.upload.too_big":"파일이 너무 커요 ({size}MB, 최대 {max}MB)","chat.upload.failed":"올리지 못했어요 (HTTP {status})","chat.upload.lost":"연결이 끊겼어요","chat.upload.retry":"다시 올리기","chat.upload.retry_aria":"{name} 다시 올리기","chat.upload.progress":"{name} 올리는 중","chat.picker.drop":"{n}번 요소 빼기","chat.picker.limit":"요소는 한 번에 10개까지 보낼 수 있어요","chat.picker.hint_touch":"길게 눌러 요소 고르기","chat.picker.hint_mac":"⌘+클릭으로 요소 고르기","chat.picker.hint_ctrl":"Ctrl+클릭으로 요소 고르기","chat.conn.switching":"연결 끊김 · {name}(으)로 전환","chat.conn.short":"끊김","chat.sl.lane_sub":"세션 · {status}","chat.sl.session_default":"세션 기본값","chat.sl.auto":"자동으로 고르기","chat.sl.gateway_all":"게이트웨이 전체 (한가할 때)","chat.sl.bg_task":"백그라운드 작업","chat.sl.bg_task_model":"백그라운드 작업 · {model}","chat.sl.conv_running":"대화 · 진행 중","chat.sl.now_running":"지금 진행 중 · 골라서 지칭하기","chat.sl.optional":"{name} · 비워도 돼요","chat.arg.target":"대상","chat.arg.level":"강도","chat.arg.text":"글","chat.arg.account":"계정","chat.arg.provider":"공급자","chat.cmd.status":"봇·세션·Discord 상태와 컨텍스트","chat.cmd.context":"프로세스별 컨텍스트 사용량과 압축 상태","chat.cmd.compact":"컨텍스트 압축 (작업 중이면 끝난 뒤)","chat.cmd.lanes":"세션마다 상태와 모델","chat.cmd.model":"모델 보기, 또는 대상의 모델 바꾸기","chat.cmd.effort":"추론 강도 바꾸기","chat.cmd.fable_ok":"이 대화에서 비싼 모델(페이블)을 한동안 허용","chat.cmd.restart":"에이전트 재시작 · 게이트웨이는 전체 재시작","chat.cmd.stop":"세션 멈추기 (나중에 다시 시작할 수 있어요)","chat.cmd.resume":"멈춘 세션 이어가기, 실행 중이면 메시지 보내기","chat.cmd.abort":"지금 하는 일 취소 (비우면 봇)","chat.cmd.providers":"연결된 공급자와 모델 수","chat.cmd.account":"지금 Claude 계정 보기, 또는 바꾸기","chat.cmd.login":"공급자 로그인 (링크가 열려요)","chat.cmd.logout":"공급자 로그아웃","chat.cmd.quota":"공급자·계정별 사용 한도","chat.cmd.terminal":"이 컴퓨터 터미널에서 명령 실행","chat.cmd.screen":"이 컴퓨터 화면 열기","chat.cmd.help":"명령 전체 설명","chat.send.stopped":"작업을 중단했어요","chat.send.stopping":"중단을 요청했어요. 아직 끝나는 중이에요","chat.send.nothing_to_stop":"중단할 작업이 없어요","chat.send.fix_uploads":"못 올린 파일을 다시 올리거나 빼 주세요","chat.send.uploading":"파일을 올리는 중이에요","chat.send.cmd_no_files":"명령에는 파일을 붙일 수 없어요","chat.send.cmd_no_picks":"명령에는 요소를 붙일 수 없어요","chat.send.no_screen":"이 컴퓨터에서는 화면 공유를 쓸 수 없어요","chat.send.need_cmd":"터미널에서 실행할 명령을 /terminal 뒤에 적어 주세요","chat.send.queued":"작업이 끝나면 전달할게요","chat.send.interrupted":"중단하고 보냈어요","chat.send.kept":"{message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요","chat.ph.ended":"종료된 세션이에요","chat.ph.pick_number":"번호를 누르거나 직접 입력해 주세요","chat.ph.resume":"재개하면서 보내기","chat.ph.project":"{name} 프로젝트의 {bot}에게 메시지 · /명령","chat.ph.mail":"이 메일 답장·전달은 {bot}에게 · /명령","chat.ph.settings":"{name} 설정은 {bot}에게 말해요 · /명령","chat.ph.target":"{name}에게 메시지 · /명령","chat.run.limit":"사용량 한도로 대기 중","chat.run.working":"작업 중…","chat.run.stop_title":"지금 하는 일 중단","chat.sub.count_lead":"서브에이전트 {n} ›","chat.sub.count_running":"서브에이전트 {n}개 진행 중 ›","chat.queue.label":"작업이 끝나면 전달","chat.queue.now":"지금 끼워넣기","chat.queue.clear_first":"입력창을 비운 뒤 취소해 주세요","chat.chip.session":"세션 {name}","chat.chip.this_project":"이 프로젝트","chat.chip.this_mail":"이 메일","chat.chip.this_conv":"이 대화","chat.chip.pc_here":"이 컴퓨터","chat.chip.pc_head":"새 일을 시작할 컴퓨터","chat.chip.pc_title":"새 일을 시작할 컴퓨터: {name}","chat.chip.sub":"서브에이전트 {model}","chat.chip.sub_level":"서브에이전트 {model} · {level}","chat.chip.sub_title":"이 세션의 서브에이전트 모델","chat.chip.model_title":"{owner} 모델 · {name}","chat.chip.effort_title":"{owner} 추론 강도 · {level}","chat.chip.fallback_title":"{owner} 기본 모델 {model} 대신 쓰는 중","chat.chip.sub_change":"서브에이전트 {from} → {to}","chat.chip.effort_change":"{model} · 추론 강도 {from} → {to}","chat.ctx.label_pct":"{who} 컨텍스트 {pct}% · {used}/{win}","chat.ctx.label_tok":"{who} 컨텍스트 {tokens} 토큰","chat.ctx.idle_note":"쉬는 중이라 마지막 값이에요","chat.ctx.chip_pct":"컨텍스트 {pct}%","chat.ctx.chip_tok":"컨텍스트 {tokens}","chat.ctx.head_pct":"컨텍스트 {pct}% · {used}/{win}","chat.ctx.head_tok":"컨텍스트 {tokens} 토큰","chat.ctx.recache":"컨텍스트 {tokens} 토큰이 캐시에 다시 쓰여요\n{label}","chat.ctx.apply":"적용","chat.ctx.compact_later":"작업이 끝나면 압축해요","chat.ctx.compact_started":"압축을 시작했어요","chat.ctx.applied":"적용했어요","chat.ctx.compact_now":"지금 압축","chat.ctx.recache_once":"캐시가 한 번 다시 쓰여요","chat.ctx.compacting":"압축 진행 중","chat.ctx.resting":"쉬는 중이에요","chat.ctx.resting_sub":"다음 메시지가 오면 다시 시작해요","chat.ctx.open":"컨텍스트 화면 열기","chat.models.link":"모델 설정","chat.models.link_sub":"대체 모델 순서까지","chat.inherit.mail":"이 메일 기본값과 같게","chat.inherit.main":"메인 대화와 같게","chat.inherit.quick":"가벼운 대화 기본값과 같게","chat.att.photo":"사진","chat.att.file":"파일","chat.att.relay_no":"이 대화에는 파일을 붙일 수 없어요","chat.att.max":"한 번에 10개까지 보낼 수 있어요","chat.att.pasted":"붙여넣은 이미지.png","chat.att.enlarge":"{name} 크게 보기","chat.att.enlarge_named":"{no} {name} 크게 보기","chat.att.enlarge_no":"{no} 크게 보기","chat.att.open":"{name} · 열기","chat.att.cancel_upload":"{name} 올리기 취소","chat.att.remove":"{name} 빼기","chat.att.deleted":"원본이 지워졌어요","chat.att.cant_open":"열 수 없는 파일이에요","chat.att.cant_check":"확인하지 못했어요","chat.att.image_n":"이미지 {n}","chat.att.download_name":"{name} 다운로드","chat.att.download":"다운로드","chat.att.copy_path":"경로 복사: {path}","chat.att.path_copied":"경로를 복사했어요","chat.att.copy_failed":"복사하지 못했어요","chat.att.cut":"앞부분만 보여요. 전체는 다운로드해 주세요","chat.att.cant_open_short":"열 수 없어요","chat.att.new_tab":"새 탭","chat.att.prev":"이전 이미지","chat.att.next":"다음 이미지","chat.att.preview":"미리보기","chat.tsw.subs":"서브 {n}","chat.tsw.group":"대화 대상","chat.tsw.drop_aria":"대화 대상: {name}","chat.tsw.others_attn":"다른 대상 확인 필요 {n}개","chat.tsw.others_new":"다른 대상의 새 메시지","chat.tsw.no_project":"프로젝트 없음","chat.tsw.ended":"끝난 세션 {n}","chat.tsw.ended_sub":"기록 보기 · 재개","chat.tsw.show_chat":"대화 보기","chat.tsw.show_log":"로그 보기","chat.tsw.more":"더 보기 {n}","chat.tsw.attn":"확인 필요 {n}개","chat.auth.show_aria":"{label} 보기","chat.auth.show":"보기","chat.auth.hide":"숨기기","chat.auth.optional_label":"{label}(선택)","chat.auth.remember":"다음에도 쓰게 저장해 두기","chat.auth.remember_sub":"끄면 한 번 쓰고 지워요","chat.auth.required":"비워 둘 수 없어요","chat.auth.format":"형식을 확인해 주세요","chat.auth.store_failed":"게이트웨이가 값을 저장하지 못했어요(봇에게도 알렸어요): {error}","chat.auth.send_failed":"전달하지 못했어요. 다시 시도해 주세요","chat.auth.cancelled":"요청을 취소했어요","chat.auth.sent":"전달했어요","chat.auth.approve":"승인","chat.auth.approve_req":"승인 요청","chat.auth.input_req":"입력 요청","chat.auth.note":"입력한 값은 이 컴퓨터의 비밀 파일에만 저장되고, 대화나 기록에는 남지 않아요.","common.home":"홈","common.chat":"채팅","common.main_chat":"메인 대화","common.conversation":"대화","common.alerts":"알림","common.worklog":"작업내역","common.quick_chat":"가벼운 대화","common.project":"프로젝트","common.projects":"프로젝트","common.monitoring":"모니터링","common.apps":"앱","common.settings":"설정","common.system":"구성","common.features":"기능","common.session":"세션","common.ended_sessions":"끝난 세션","common.subagent":"서브에이전트","common.assistant":"어시스턴트","common.model":"모델","common.reasoning":"추론 강도","common.accounts":"계정","common.usage":"사용량","common.limit":"한도","common.resets":"초기화","common.context":"컨텍스트","common.compact":"압축","common.mail":"메일","common.mailbox":"메일함","common.draft":"초안","common.schedule":"예약","common.routine":"루틴","common.devices":"기기","common.computer":"컴퓨터","common.trash":"휴지통","common.needs_reply":"답변 필요","common.unread":"안 읽음","common.decision":"결정","common.evidence":"근거","common.status.working":"작업 중","common.status.idle":"대기","common.status.starting":"시작 중","common.status.stopped":"멈춤","common.status.rate_limited":"한도 걸림","common.status.ended":"종료됨","common.effort.off":"끔","common.effort.minimal":"최소","common.effort.low":"낮음","common.effort.medium":"보통","common.effort.high":"높음","common.effort.very_high":"매우 높음","common.effort.max":"최고","common.effort.auto":"자동","common.cancel":"취소","common.delete":"삭제","common.save":"저장","common.close":"닫기","common.ok":"확인","common.undo":"되돌리기","common.restart":"재시작","common.stop":"중단","common.send":"보내기","common.back":"뒤로","common.loading":"불러오는 중…","common.load_failed":"불러오지 못했어요","connect.cond.five_hour":"5시간 남은 % 밑","connect.cond.week":"주간 남은 % 밑","connect.cond.auth":"로그인 풀림","connect.do.pin":"계정 고정","connect.do.prefer":"순서대로 우선","connect.do.auto":"자동","connect.acc.default":"기본","connect.copied":"복사했어요","connect.acc.in_use_pinned":"사용 중 · 고정","connect.acc.left_5h":"5시간 {pct} 남음","connect.acc.left_week":"주간 {pct} 남음","connect.acc.pin_changed":"고정 계정을 바꿨어요","connect.acc.reorder":"{name} 순서 바꾸기. 끌거나 위아래 화살표를 눌러요","connect.acc.rename":"{name} 이름 바꾸기","connect.acc.pinned_note":"{name}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 대체 모델 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.","connect.acc.chosen":"고른 계정","connect.acc.auto":"자동 전환","connect.acc.auto_done":"자동 전환으로 바꿨어요","connect.acc.pin_done":"고정했어요","connect.limit.switch_sub":"한도에 걸리면 자동 전환으로 넘어가요","connect.limit.wait_sub":"한도에 걸린 동안 기다려요","connect.limit.unset_sub":"한도에 걸리면 한 번 물어봐요","connect.limit.wait_done":"한도에 걸렸을 때 기다리기로 정했어요","connect.limit.switch_done":"한도에 걸렸을 때 자동 전환으로 넘어가기로 정했어요","connect.limit.ask":"물어보기","connect.limit.wait":"기다리기","connect.rules.title":"전환 규칙","connect.rules.none":"계정이 막힐 때만 자동으로 바꿔요.","connect.edit":"편집","connect.script.timeout":"{n}초 안에 끝나요","connect.script.every":"{n}분마다","connect.script.failed":"마지막 실행이 실패했어요","connect.script.last":"마지막 결과 · {result}","connect.script.none":"고르지 않음","connect.acc.name_prefix":"계정 ","connect.limit.title":"한도에 걸리면","connect.acc.no_usage":"사용량 아직 확인 안 됨","connect.acc.left":"{label} {pct}% 남음","connect.acc.none":"{name} 계정이 없어요","connect.acc.none_add":"계정을 하나 넣으면 여기 보여요.","connect.acc.none_login":"로그인이나 API 키를 넣어 주세요.","connect.alias.ph":"별칭 (예: 회사, 개인)","connect.alias":"별칭","connect.acc.delete":"계정 삭제","connect.delete_named":"{name} 삭제","connect.acc.delete_body":"OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.","connect.acc.deleted":"{name}을(를) 삭제했어요","connect.acc.unpin":"고정 풀기","connect.acc.unpinned":"고정을 풀었어요","connect.acc.pin_this":"이 계정으로 고정","connect.acc.pinned_to":"{name}로 고정했어요","connect.alias.saved":"별칭을 저장했어요","connect.alias.removed":"별칭을 지웠어요","connect.rules.days":"요일 (선택)","connect.rules.json":"규칙 JSON","connect.rules.name_ph":"규칙 {n} 이름 (선택)","connect.rules.name":"규칙 이름","connect.rules.left":"남은 %","connect.rules.below":"% 밑","connect.rules.action":"동작","connect.rules.hours":"시간 (선택)","connect.rules.from":"시작","connect.rules.to":"끝","connect.rules.add":"규칙 추가","connect.rules.bad_json":"JSON 모양이 맞지 않아요","connect.rules.as_fields":"항목으로 보기","connect.rules.as_json":"직접 편집","connect.rules.saved":"규칙을 저장했어요","connect.dev.last_used":"마지막 사용 {ago}","connect.dev.never":"아직 쓰지 않음","connect.dev.title":"연결된 기기","connect.dev.count":"{n}대","connect.dev.load_failed":"연결된 기기를 불러오지 못했어요","connect.loading":"불러오는 중","connect.dev.connected_on":"{date} 연결","connect.dev.add_passkey":"이 기기에 패스키 추가","connect.dev.no_passkey":"이 브라우저는 패스키 없이 들어왔어요","connect.dev.sec":"이 웹앱을 쓸 수 있는 기기","connect.dev.none":"연결된 기기가 없어요","connect.dev.add":"새 기기 연결","connect.dev.name":"기기 이름","connect.dev.current":"지금 쓰고 있는 기기","connect.dev.remove":"해제","connect.dev.remove_self":"이 기기는 바로 로그아웃돼요. 다시 쓰려면 메신저로 받은 코드로 새로 연결해야 해요.","connect.dev.remove_other":"{name}의 로그인이 바로 끊겨요. 다시 쓰려면 코드로 새로 연결해야 해요.","connect.dev.remove_title":"기기 해제","connect.dev.removed":"기기를 해제했어요","connect.dev.need_name":"이름을 적어 주세요","connect.dev.qr":"새 기기 연결 QR 코드","connect.dev.step_self":"'연결 화면 열기'를 눌러 코드와 이 기기 이름을 넣어요.","connect.dev.step_passkey":"패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요.","connect.dev.step_open":"새 기기의 브라우저에서 이 웹앱 주소를 열어요. '기기 연결' 화면이 나와요.","connect.dev.step_qr":"QR을 찍거나 위의 코드를 넣어요.","connect.dev.step_code":"위의 코드를 넣어요.","connect.dev.step_name":"기기 이름을 넣고 패스키(Face ID, 지문, Windows Hello 등)로 확인하면 끝나요.","connect.dev.addr":"연결 화면 주소","connect.dev.open_page":"연결 화면 열기","connect.copy":"복사","connect.dev.code_note":"코드는 10분 동안 한 번만 쓸 수 있고, 메신저와 이 화면을 합쳐 한 시간에 3번까지 만들 수 있어요.","connect.dev.make_code":"여기서 코드 만들기","connect.dc.kind_chat":"대화 답장","connect.dc.kind_chat_sub":"내가 Discord에서 묻지 않은 대화의 답","connect.dc.kind_lanes_sub":"세션이 올리는 진행·완료 보고","connect.dc.kind_worklog_sub":"작업 기록 메시지","connect.dc.kind_web":"웹에서 시작한 세션","connect.dc.kind_web_sub":"웹이나 터미널에서 시작한 세션도 Discord에 채널을 만들어요","connect.dc.id_ph":"예: 123456789012345678","connect.dc.token":"봇 토큰","connect.nothing_changed":"바꾼 값이 없어요","connect.dc.token_delete_title":"봇 토큰 삭제","connect.dc.token_delete_body":"저장된 봇 토큰을 삭제해요. dotz를 다시 시작하면 Discord 연결이 끊겨요.","connect.dc.token_deleted":"봇 토큰을 삭제했어요","connect.restart_later":"작업이 끝나면 다시 켜져요. 이 화면은 자동으로 다시 연결돼요","connect.state.unset":"설정 안 됨","connect.dc.half":"토큰은 저장돼 있어요. 서버 ID와 내 사용자 ID까지 저장하고 게이트웨이를 다시 시작하면 연결돼요.","connect.dc.not_yet":"아직 Discord 봇이 연결되지 않았어요.","connect.state.on":"연결됨","connect.state.connecting":"연결 중","connect.dc.connecting":"연결하는 중이에요.","connect.dc.also_send":"{name} Discord로도 보내기","connect.dc.after_connect":"연결하면 고를 수 있어요","connect.dc.direct_note":"Discord에서 직접 물은 것의 답은 Discord에도 가요.","connect.dc.per_chat":"대화별로 Discord에도 보내기","connect.check_failed":"확인하지 못했어요","connect.dc.bot_named":"봇 {name}","connect.dc.unnamed":"이름 없음","connect.dc.admin_ok":"관리자 권한 확인됨","connect.dc.admin_no":"관리자 권한이 없어요.","connect.dc.reauth":"봇 권한 다시 승인","connect.dc.guild":"서버 ID","connect.dc.owner":"내 사용자 ID","connect.dc.token_saved":"봇 토큰 (저장됨 · 바꾸려면 새로 붙여 넣기)","connect.saved_tag":"저장됨","connect.check_conn":"연결 확인","connect.dc.token_delete":"토큰 삭제","connect.dc.restart_applies":"게이트웨이를 다시 시작하면 적용돼요","connect.restart":"다시 시작","connect.dc.load_failed":"Discord 설정을 불러오지 못했어요","connect.dc.how":"연결하는 방법","connect.dc.how1":"Discord 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요","connect.dc.how2":"초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)","connect.dc.how3":"봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요","connect.sec":"연결","connect.dc.bot":"Discord 봇","connect.connecting":"연결하는 중","connect.ms.as_user":"내 계정으로 보냅니다","connect.connect":"연결","connect.turn_on":"켜기","connect.ms.sum_more":"{name} 외 {n}개 연결됨","connect.ms.sum_one":"{name} 연결됨","connect.ms.title":"메신저","connect.ms.connected_ago":"{ago} 연결했어요","connect.ms.tap_connect":"연결을 누르면 자동으로 설정해요.","connect.ms.tap_on":"설정은 돼 있어요. 켜기를 누르면 알림을 보내요.","connect.ms.rooms_n":"방 {n}개","connect.ms.test_failed":"확인하지 못했어요 · {error}. 잠시 뒤에 다시 눌러 주세요","connect.ms.checked_ago":"{ago} 확인했어요","connect.ms.no_rooms":"방이 없어요","connect.ms.some_failed":"보내지 못한 방이 있어요","connect.ms.all_ok":"정상이에요","connect.ms.sent_to":"{name}: 보냈어요","connect.ms.send_failed":"보내지 못했어요","connect.paste_new":"바꾸려면 새로 붙여 넣기","connect.ms.on":"켜져 있어요","connect.ms.off":"꺼져 있어요","connect.ms.load_failed":"메신저 설정을 불러오지 못했어요","connect.ms.received":"받음 {ago}","connect.ms.sent":"보냄 {ago}","connect.check":"확인","connect.onb.waiting":"내가 할 일이 하나 남았어요.","connect.onb.running":"자동으로 연결하는 중이에요.","connect.onb.done":"연결했어요.","connect.onb.failed":"연결하지 못했어요.","connect.onb.idle":"아직 시작하지 않았어요.","connect.onb.start_failed":"연결을 시작하지 못했어요 · {error}. 잠시 뒤에 다시 눌러 주세요","connect.onb.title":"자동 연결","connect.onb.continue":"계속","connect.onb.restart":"다시 시작","connect.onb.pick":"고르기","connect.manual":"직접 입력","connect.wa.local":"이 컴퓨터만","connect.wa.tailscale_sub":"Tailscale로 연결한 내 기기에서 열어요. 기본값이에요.","connect.wa.cloudflare_sub":"Cloudflare 터널로 고정 주소를 열어요. 연결은 자동으로 진행하고, 필요한 한 가지 동작만 알려드려요.","connect.wa.local_sub":"이 컴퓨터에서만 열어요.","connect.wa.title":"웹 접속","connect.wa.no_tunnel_hint":"터널 프로그램이 없어요. 채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요.","connect.wa.tunnel_open":"터널이 열려 있어요","connect.wa.tunnel":"터널","connect.wa.host":"주소","connect.wa.host_help":"터널에 연결해 둔 주소예요. 주소를 바꾸면 기기를 다시 연결해야 해요.","connect.wa.team":"팀 이름 (선택)","connect.wa.team_help":"Cloudflare Access로 한 번 더 확인할 때만 적어요. 확인 번호와 함께 적어요.","connect.wa.aud":"확인 번호 (선택)","connect.wa.aud_help":"Access 앱 화면의 Audience Tag 값이에요.","connect.wa.token":"터널 토큰","connect.wa.token_help":"저장하면 이 컴퓨터에만 보관하고, 화면에는 다시 보여 주지 않아요.","connect.revert":"되돌리기","connect.wa.load_failed":"웹 접속 설정을 불러오지 못했어요","connect.wa.mode":"접속 방식","connect.wa.status":"상태","connect.wa.devices":"연결된 기기 (패스키)","connect.wa.devices_sub":"이 웹앱에 들어올 수 있는 브라우저","connect.wa.plain_note":"Cloudflare를 거치는 내용은 Cloudflare가 평문으로 볼 수 있어요. 암호화(TLS)가 거기서 끝나기 때문이에요.","connect.wa.no_tunnel":"터널 프로그램이 없어요","connect.wa.install_hint":"채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요.","connect.wa.need_host":"주소를 적어 주세요","connect.rt.adapted":"대체","connect.rt.disabled":"끔","connect.rt.unsupported":"미지원","connect.rt.current":"현재 쓰는 중","connect.rt.row_aria":"작업 프로그램: {name}. 눌러서 바꾸기","connect.rt.no_adapter":"dotz가 아직 지원하지 않아서 바꿀 수 없어요.","connect.rt.blocked":"핵심 항목이 통과하지 못해서 바꿀 수 없어요: {list}","connect.rt.stale":"검사한 뒤 버전이 바뀌었어요 (v{from} → v{to}). 다시 검사해 주세요.","connect.rt.adjusted":"핵심 항목은 모두 통과했어요. {n}개 기능은 게이트웨이가 대신 처리하거나 꺼요.","connect.rt.all_ok":"모든 항목이 통과했어요.","connect.rt.checked":"검사 {meta}","connect.rt.core":"핵심","connect.rt.switch_to":"{name}로 바꾸기","connect.rt.applies":"적용 대상","connect.rt.need_one":"하나는 켜 두어야 해요.","connect.rt.checking":"작동을 검사하는 중이에요","connect.rt.progress":"{done}/{total} 항목","connect.rt.starting":"시작하는 중…","connect.rt.omo_note":"OmO는 기본 작업 프로그램이라서 검사 없이 쓸 수 있어요.","connect.rt.check_note":"바꾸기 전에 잘 작동하는지 검사해요. 짧은 작업을 실제로 돌려 보기 때문에 1~2분쯤 걸릴 수 있어요.","connect.rt.no_adapter_check":"dotz가 아직 지원하지 않아서 바꿀 수 없어요. 작동 검사를 하면 어떤 항목이 막히는지 볼 수 있어요.","connect.rt.omp_note":"omp는 선택해서 쓰는 작업 프로그램이에요. 처음에 쓰던 것이라 검사 없이 바꿀 수 있어요.","connect.rt.recheck":"다시 검사","connect.rt.run_check":"작동 검사","connect.rt.switch":"바꾸기","connect.cond.current":"지금 쓰는 계정","connect.cond.blocked":"못 씀","connect.rules.who":"어느 계정","connect.rules.state":"상태","connect.rules.target":"바꿀 계정","connect.rules.if":"조건 (모두 맞을 때)","connect.rules.then":"그러면","connect.rules.cond_add":"조건 추가","connect.rules.cond_remove":"조건 {n} 지우기","connect.rules.note_other":"규칙이 고른 계정을 OmO가 먼저 써요. 그 계정이 막히면 OmO가 {name}의 다른 계정으로 넘겨요.","connect.rules.title_of":"전환 규칙 · {name}","connect.rules.resting":"고정 중엔 쉬어요","connect.limit.ask_once":"한 번 묻기","connect.limit.unset_done":"다음에 한도에 걸리면 한 번 물어볼게요","connect.acc.by_rule":"규칙","connect.prov.auto_note":"규칙이 고른 계정을 먼저 써요. 막힌 계정은 OmO가 건너뛰어요.","connect.prov.pinned_note":"{name} 계정을 먼저 써요. 막히면 OmO가 다른 계정으로 넘겨요.","conv.unread_from":"여기부터 읽지 않은 메시지","conv.read_to":"여기까지 읽음","conv.draft_waits":"답장 초안이 기다려요","conv.unreplied":"미답장","conv.load_failed":"대화 목록을 불러오지 못했어요","conv.fixed.alert":"경고와 결정 요청","conv.fixed.worklog":"야간 정리와 세션 진행 기록","conv.fixed.quick":"간단한 질문과 잡담, 가벼운 일","conv.read_title":"답이 필요한 대화는 그대로 둬요","conv.read_n":"{n}개 읽음 처리","conv.read_failed":"{n}개를 읽음으로 표시하지 못했어요: {why}","conv.read_done":"대화 {n}개를 읽음으로 표시했어요","conv.more_projects":"프로젝트 {n}개 더 보기","conv.unread_n":"읽지 않은 메시지 {n}개","conv.list_aria":"채팅 목록","conv.settings_hint":"말로 설정을 바꾸고 적용을 눌러요","conv.back_mail":"메일 목록으로","conv.back_mon":"모니터링 목록으로","conv.bell_title":"알림 ({key})","conv.nt.no_screen":"이 화면을 찾을 수 없어요","conv.nt.session_gone":"이 세션은 이미 지워졌어요","conv.nt.nearby":"그 메시지가 없어서 바로 옆 메시지를 열었어요","conv.nt.unshown":"이 알림은 대화에 따로 표시하지 않아요","conv.nt.no_msg":"그 메시지를 찾을 수 없어요","conv.nt.handled":"이 알림은 이미 처리됐어요","conv.nt.ignore_aria":"{title} 무시","conv.worklog":"작업 기록","conv.session_named":"세션 {name}","conv.nt.no_news":"그 소식을 찾을 수 없어요","conv.nt.sent":"답을 보냈어요","conv.nt.sent_next_card":"답을 보냈어요 · 다음 카드예요","conv.nt.sent_last_card":"답을 보냈어요 · 마지막 카드였어요","conv.nt.check_send":"보낼 내용 확인","conv.nt.login_req":"로그인 요청","conv.nt.unignored":"다시 답변 필요로 돌렸어요","conv.nt.answer_on":"{name}에서 답해 주세요","conv.nt.input_closed":"입력 창이 이미 닫혔어요","conv.nt.sent_next_q":"답을 보냈어요 · 다음 질문이에요","conv.nt.problem":"문제가 생겼어요","conv.nt.see_in_chat":"대화에서 보기","conv.nt.resolved":"해결됨","conv.nt.answered":"답변함","conv.nt.go_input":"입력 창으로 가기","conv.nt.direct":"직접 답하기","conv.nt.own_go":"이 내용으로 답하기","conv.nt.own_ph":"답을 적어 주세요","conv.nt.next_q":"다음 질문 보기","conv.nt.skipped":"답하지 않고 넘겼어요","conv.nt.you_answered":"이렇게 답했어요","conv.nt.closed_late":"답할 시간이 지나 닫혔어요","conv.nt.closed_done":"일이 끝나서 닫혔어요","custom.yesterday_at":"어제 {hm}","custom.none":"없음","custom.more_n":"더 보기 · {n}개","custom.card":"카드","custom.tag_error":"오류","custom.draw_failed":"카드를 그리지 못했어요","custom.no_data":"값을 받지 못했어요","custom.no_value":"값 없음","custom.empty":"비어 있어요","custom.run_ask":"실행할까요?","custom.run":"실행","custom.sent_to":"{name}에게 보냈어요","custom.done":"끝냈어요","custom.failed":"실패했어요","custom.stale":"오래된 값","custom.render_error":"render.js 오류","custom.daily_at":"매일 {at}","custom.every_min":"{n}분마다","custom.refresh":"새로고침","custom.open":"열기","custom.edit":"수정…","custom.size_s":"작게","custom.size_m":"보통","custom.size_l":"크게","custom.hide":"숨기기","custom.delete":"삭제…","custom.view.text":"글","custom.view.stat":"숫자","custom.view.list":"목록","custom.view.kv":"항목별 값","custom.field.title":"제목","custom.field.note":"설명","custom.field.view":"보기","custom.field.text":"내용","custom.field.command":"명령","custom.field.cwd":"폴더","custom.field.every":"갱신 주기","custom.field.timeout":"제한 시간","custom.field.link":"링크","custom.field.actions":"동작","custom.field.id":"아이디","custom.ph.text":"카드에 보일 글","custom.ph.stat":"예: 128GB","custom.ph.list":"우유 사기\n치과 예약","custom.ph.kv":"남은 공간: 128GB\n마지막 확인: 어제","custom.hint.stat":"숫자나 짧은 값 하나를 적어요.","custom.hint.list":"한 줄에 하나씩 적어요.","custom.hint.kv":"한 줄에 이름: 값으로 적어요.","custom.ghost.first":"첫 번째 항목","custom.ghost.second":"두 번째 항목","custom.ghost.name":"이름","custom.ghost.value":"값","custom.ph.cmd":"예: df -h ~ | tail -1   (출력이 JSON이면 그대로 읽어요)","custom.ph.title":"예: 디스크 남은 공간","custom.ph.note":"제목 아래 한 줄","custom.ph.id":"비우면 제목으로 만들어요","custom.ph.cwd":"~/Code/… (선택)","custom.ph.link":"https://… 또는 #화면","custom.src.text":"직접 입력","custom.src.command":"명령 실행","custom.src.aria":"내용 출처","custom.cmd_hint":"갱신 주기는 분, 제한 시간은 초(1~60). 출력은 {view} 보기로 그려요.","custom.act.add":"동작 추가","custom.act.ph_label":"버튼 이름","custom.act.label_aria":"동작 이름","custom.act.text_aria":"동작 내용","custom.act.ph_prompt":"{name}에게 보낼 요청","custom.act.ph_command":"실행할 명령","custom.request":"요청","custom.act.kind_aria":"동작 종류","custom.act.confirm":"누르기 전에 확인","custom.act.remove":"빼기","custom.more":"더 보기","custom.act.hint":"최대 {max}개, 앞의 2개는 카드에 버튼으로 보여요.","custom.file":"파일 · {file}","custom.file_broken":"지금 파일에 문제가 있어요: {error}. 저장하면 이 내용으로 바꿔 써요.","custom.card_saved":"{name} 카드를 저장했어요","custom.card_added":"{name} 카드를 추가했어요","custom.preview_title":"카드 제목","custom.preview_cmd":"저장하면 명령을 실행해 결과를 그려요","custom.more_sub":"설명 · 링크 · 동작","custom.filled":"{n}개 채움","custom.need_title":"제목을 적어 주세요","custom.bad_id":"영어 소문자, 숫자, 빼기(-)만 쓸 수 있어요","custom.save_failed":"저장하지 못했어요","custom.preview":"미리보기","custom.preview_note":"홈에서 이렇게 보여요","custom.edit_title":"카드 수정","custom.delete_title":"카드 삭제","custom.delete_body":"{name} 카드와 그 파일({file})을 지워요. 되돌릴 수 없어요.","custom.card_deleted":"{name} 카드를 지웠어요","custom.today_at":"오늘 {hm}","custom.pv.sent_lane":"{name} 레인에 보냈어요","custom.pv.req_new":"새 레인을 열어서 맡겨 주세요: {text}","custom.pv.branch":"{name} 브랜치","custom.pv.dirty":"커밋 안 한 파일 {n}개","custom.pv.clean":"커밋 안 한 파일 없음","custom.pv.loose":"{base}에 안 들어간 브랜치 {n}개","custom.pv.loose_one":"{branch} (커밋 {n}개)","custom.pv.last_report":"{name} 마지막 보고","custom.pv.last_verify":"마지막 확인","custom.pv.last_commit":"마지막 커밋","custom.pv.last":"마지막 ","custom.pv.tile_running":"작업 중인 레인","custom.pv.tile_waiting":"답을 기다리는 레인","custom.pv.tile_tasks":"열린 할 일","custom.pv.tile_last":"마지막 활동","custom.pv.waiting":"답을 기다려요","custom.pv.resume":"이어서 진행","custom.pv.resumed":"{name} 레인을 이어서 진행해요","custom.pv.clean_up":"정리","custom.pv.clean_title":"{name} 정리","custom.pv.clean_body":"휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요.","custom.pv.cleaned":"{name} 레인을 정리했어요","custom.pv.clean_failed":"지금은 정리하지 못했어요","custom.pv.tap_chat":"누르면 {name} 채팅이 열려요","custom.pv.open_chat":"{name} 채팅 열기","custom.pv.unmerged":"안 합침 {n}","custom.pv.unmerged_tip":"lane/{name} 브랜치에 main에 없는 커밋이 {n}개 있어요","custom.pv.no_report":"아직 보고가 없어요","custom.pv.lane_named":"{name} 레인","custom.pv.next":"다음: {text}","custom.pv.tap_send":"누르면 {name}에게 요청으로 보내요","custom.pv.task_title":"할 일 보내기","custom.pv.task_ask":"{name}에게 이어서 진행하도록 요청해요: {what}","custom.pv.task_req":"할 일 {id}: {what} - 이어서 해 주세요.","custom.pv.channel_threads":"작업 채널 · 스레드 {n}개: {names}","custom.pv.channel":"작업 채널","custom.pv.lane_channel":"{name} 레인 채널","custom.pv.run_now_named":"{name} 지금 실행","custom.pv.run_now":"지금 실행","custom.pv.routine_sent":"루틴을 보냈어요","custom.pv.schedule":"일정","custom.pv.paused":"쉬는 중","custom.pv.tasks_head":"열린 할 일 {n} · 누르면 요청으로 보내요","custom.pv.no_tasks":"열린 할 일 없음","custom.pv.links":"연결된 채널 · 루틴 · 일정","custom.pv.no_links":"연결된 채널 · 루틴 · 일정 없음","custom.pv.ph":"이 프로젝트에 맡길 일을 적어 주세요","custom.pv.to_main":"알맞은 곳을 골라 맡겨요","custom.pv.to_lane":"{name} 레인이 하던 일에 이어서 넣어요","custom.pv.new_lane":"새 레인으로","custom.pv.to_new":"새 레인을 열어 따로 진행해요","custom.pv.target":"맡길 곳","custom.pv.quick_status":"지금 상태 알려줘","custom.pv.quick_tasks":"남은 할 일 정리해줘","custom.pv.quick_check":"잘 되는지 확인해줘","custom.pv.quick_merge":"끝난 작업 합쳐줘","custom.pv.not_found":"프로젝트를 찾지 못했어요","custom.pv.lanes_head":"레인 {n}","custom.pv.no_lanes":"아직 레인이 없어요","custom.pv.sec_more":"할 일과 연결","custom.pv.sec_results":"최근 결과","custom.pv.results_sub":"보고 · 확인 · 커밋","custom.pv.no_results":"아직 결과가 없어요","decision.gone":"이 세션이 끝나서 답을 보낼 수 없어요","decision.org.post_video":"영상","decision.org.post_post":"게시물","decision.org.post_other":"글","decision.org.author":"작성자","decision.org.time":"시간","decision.org.date":"날짜","decision.org.parent":"↳ {author}의 댓글","decision.org.open_source":"원본 열기","decision.org.missing":"원문을 찾을 수 없어요","decision.org.load_failed":"원문을 불러오지 못했어요","decision.org.retry":"다시 시도","decision.org.loading":"원문을 불러와요…","decision.org.none":"원문이 없어요","decision.org.comment":"댓글 원문","decision.org.mail":"메일 원문","decision.org.show":"원문 보기","decision.org.hide":"원문 접기","decision.org.original":"원문","decision.org.pick":"초안과 원문 고르기","decision.org.close":"원문 닫기","decision.subject":"제목","decision.from":"보낸이","decision.to":"받는이","decision.cc":"참조","decision.summary":"요약","decision.reply":"답장","decision.reply_all":"전체 답장","decision.reply_scope":"답장 범위","decision.fix":"고치기","decision.drop":"보내지 않기","decision.edit_named":"{name} 고치기","decision.remove":"빼기","decision.remove_named":"{name} 빼기","decision.add":"추가","decision.add_named":"{name} 추가","decision.open":"열기","decision.back":"돌아가기","decision.more":"펼치기","decision.less":"접기","decision.app.kakao":"메신저","decision.app.instagram":"인스타그램","decision.app.youtube":"유튜브","decision.app.site":"웹사이트 댓글","decision.pending.send":"보내는 중…","decision.pending.revise":"고치는 중…","decision.pending.drop":"처리하는 중…","decision.st.sent_processing":"보냈어요 · 처리하는 중","decision.fail.send_offline":"연결이 끊겨 보내지 못했어요 · 다시 보내기","decision.fail.send":"보내지 못했어요 · 다시 보내기","decision.fail.act_offline":"연결이 끊겨 처리하지 못했어요 · 다시 눌러 주세요","decision.fail.act":"처리하지 못했어요 · 다시 눌러 주세요","decision.err.offline_act":"연결이 끊겨 처리하지 못했어요","decision.err.offline_change":"연결이 끊겨 바꾸지 못했어요","decision.rq.reply_to":"{who}님께 답장","decision.hint.revise":"AI에게 부탁할 내용 · 예: 더 짧게, 존댓말로","decision.hint.own":"메일 먼저 보내고 답글은 내일 올려 줘","decision.revise.what":"고칠 내용","decision.revise.ask":"어떻게 고칠까요?","decision.revise.go":"고쳐 달라고 하기","decision.own.aria":"보내는 방법","decision.own.ask":"어떻게 보낼까요?","decision.note.go_own":"이렇게 보내 달라고 하기","decision.note.go_answer":"{label}(으)로 답하기","decision.note.reason_ph":"이유나 내용을 적어 주세요","decision.note.details":"자세한 내용","decision.note.detail_ph":"내용을 적어 주세요","decision.decide":"정할 것","decision.attach.count":"첨부 {n}개","decision.attach.attached":"✓ 첨부 {n}개 붙어 있어요","decision.attach.none":"첨부 없음","decision.attach.check":"첨부 확인","decision.attach.no_send":"이 계정은 파일을 못 보내요 · 본문만 가요","decision.attach.check_title":"첨부를 확인해 주세요","decision.attach.asis_to":"{to}에게 보낼 메일이에요. {issues}. 그래도 보내면 지금 상태 그대로 나가요. 보낼까요?","decision.attach.asis":"{issues}. 그래도 보내면 지금 상태 그대로 나가요. 보낼까요?","decision.attach.unknown_title":"첨부를 확인하지 못했어요","decision.attach.unknown_body":"여기서는 이 파일을 열 수 없어서 보여 드리거나 확인할 수 없어요. 메일을 보내는 도구가 직접 붙여요. 보낼까요?","decision.attach.without_title":"첨부 없이 보낼까요?","decision.attach.without_body":"이 계정은 파일을 못 보내요. 본문만 가요.","decision.send_anyway":"그래도 보내기","decision.n":"결정 {n}","decision.send_progress":"보내기 ({got}/{total} 선택)","decision.file.peer_max":"다른 컴퓨터의 초안에는 10MB 이하 파일만 붙일 수 있어요","decision.file.pick":"파일 고르기","decision.file.open":"{name} 열기","decision.file.open_size":"{name} 열기 ({size})","decision.file.detach":"첨부에서 빼기","decision.file.match":"맞음","decision.file.folder_empty":"폴더가 비어 있어요","decision.file.from_device":"이 기기에서 고르기","decision.file.from_folder":"첨부 파일 폴더에서 고르기","decision.file.attaching":"붙이는 중…","decision.file.add":"파일 추가","decision.file.locked":"열람 불가","decision.file.uploading":"올리는 중…","decision.rc.edit":"고치기","decision.rc.to_addr":"받는 사람 주소","decision.rc.cc_addr":"참조 주소","decision.rc.add_to":"메일 주소 추가","decision.rc.add_cc":"참조 주소 추가","decision.rc.refill":"받는이와 참조는 반영하면 원래 메일에 맞춰 다시 채워져요","decision.rule.title":"자동 초안 규칙: {name}","decision.mail.along":"함께 보낼 메일","decision.mail.along_body":"함께 보낼 메일 내용","decision.mail.open":"메일 열기","decision.my_reply":"내 답글","decision.body_label":"보낼 내용","decision.sent":"보냈어요","decision.not_sent":"보내지 않았어요","decision.just_now":"방금","decision.rcpt.check":"받는이 확인: {warning}","decision.rcpt.none":"없음","decision.rcpt.to":"받는이 {first}","decision.rcpt.to_more":"받는이 {first} 외 {n}명","decision.rcpt.cc":"참조 {n}","decision.check_reply":"답장 확인","decision.check_before":"보내기 전에 확인해요","decision.needs_decision":"결정이 필요해요","decision.needs_reply":"답변이 필요해요","decision.waiting_tag":"답 기다림","decision.toast.sending_soon":"곧 보내요","decision.toast.restored":"초안을 되돌렸어요","decision.past":"지난 결정이에요","decision.qline":"답장 초안 {n}건 기다려요","decision.review":"확인하기","decision.wait.tag":"답 대기","decision.wait.confirm":"보내기 확인","decision.record.aria":"결정 기록","decision.record.q":"질문","decision.record.a":"· 답:","decision.deliv.queued":"받았어요 · 작업 중이라 끝나면 읽어요","decision.deliv.compacting":"받았어요 · 대화 정리가 끝나면 읽어요","decision.deliv.held":"받았어요 · 한도가 풀리면 읽어요","decision.deliv.update":"받았어요 · 업데이트 뒤에 읽어요","home.worklog.check":"예약 점검","home.worklog.night":"야간 정리","home.worklog.update":"업데이트","home.worklog.account":"계정","home.worklog.system":"시스템","home.worklog.note":"기록","home.worklog.doctor":"닥터 점검","home.fold.open_label":"{label} 펼치기","home.fold.close_label":"{label} 접기","home.fold.close":"접기","home.mailbody.title":"메일 원문","home.mailbody.blocked":"바깥 이미지 {n}개를 막았어요","home.mailbody.broken":"바깥 이미지 {n}개는 이 기기에서 열리지 않아요","home.mailbody.showing":"바깥 이미지를 보고 있어요","home.mailbody.hide":"이미지 숨기기","home.mailbody.show":"이미지 보기","home.mailbody.failed":"원문을 불러오지 못했어요","home.mailtext.fold":"이전 메일 {n}줄 보기","home.mailtext.quote":"인용 {n}줄 보기","home.mailtext.summary_k":"요약 · ","home.mailtext.todo":"할 일","home.mailtext.ask":"직접 답할 것","home.result.raw_close":"원문 접기","home.result.raw_open":"원문 보기","home.result.changed_from":"{from}에서 바뀜","home.result.morning":"아침 점검","home.watch.changed":"결과가 바뀌었어요","home.watch.matched":"조건에 맞는 결과가 나왔어요","home.watch.check_failed":"점검에 실패했어요","home.watch.recovered":"다시 정상이에요","home.watch.slot_skipped":"이 시간대의 릴리스를 건너뛰었어요","home.watch.no_password":"저장된 비밀번호가 없어 다시 로그인하지 못했어요. 맥 암호에 저장하고 다시 연결을 눌러 주세요","home.watch.stopped":"실패가 이어져 멈췄어요. 승인하면 다시 확인해요","home.watch.second_factor":"2차 인증이 필요해요. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요","home.watch.needs_approval":"승인이 필요해요","home.watch.passes_again":"점검이 다시 통과했어요","home.watch.unchanged":"내용은 그대로이고 시각 같은 값만 바뀌었어요","home.watch.fresh":"새로 생겼어요","home.watch.gone":"사라졌어요","home.watch.schedule_started":"예약한 일이 시작됐어요","home.watch.value":"값","home.watch.fail_login":"로그인이 풀렸어요","home.watch.fail_fetch":"내용을 가져오지 못했어요","home.watch.fail_network":"네트워크에 연결하지 못했어요","home.watch.fail_timeout":"시간이 너무 오래 걸렸어요","home.watch.fail_captcha":"보안 확인(캡차)이 필요해요","home.watch.fail_off":"연동이 꺼져 있어요","home.watch.fail_app":"앱이 꺼져 있어요","home.watch.fail_browser":"브라우저를 열지 못했어요","home.watch.fail_parse":"화면 구조가 바뀌어 읽지 못했어요","home.watch.fail_rate":"요청이 너무 잦아 잠시 막혔어요","home.watch.json_status":"상태","home.watch.json_count":"개수","home.watch.json_total":"전체","home.watch.json_title":"제목","home.watch.json_name":"이름","home.watch.json_time":"시각","home.watch.json_date":"날짜","home.watch.json_updated":"갱신 시각","home.watch.json_created":"만든 시각","home.watch.json_checked":"확인 시각","home.watch.json_latest":"최근","home.watch.json_last":"마지막","home.watch.json_price":"가격","home.watch.json_message":"메시지","home.watch.json_error":"오류","home.watch.json_version":"버전","home.watch.json_items":"항목","home.watch.json_url":"주소","home.watch.json_ok":"정상","home.watch.json_yes":"예","home.watch.json_no":"아니요","home.watch.json_failed":"실패","home.watch.kind_count":"{kind} {n}건","home.watch.more":"외 {n}건","home.watch.fails":"{n}번 연속 실패했어요","home.watch.new_items":"새 항목 {n}건","home.watch.removed_items":"사라진 항목 {n}건","home.watch.matching_items":"조건에 맞는 항목 {n}건","home.watch.news":"새 소식 {n}건","home.watch.log_lines":"기록 {n}줄","home.watch.last":"마지막 {time}","home.attn.check":"확인 필요","home.attn.unread_chats":"읽지 않은 대화 {n}개","home.attn.chat_aria":"채팅, {say}","home.attn.to_check":"확인할 것 {n}개","home.attn.news":"새 소식","home.attn.mon_aria":"모니터링, {say}","home.attn.needs_n":"답변 필요 {n}개","home.attn.waiting":"{names}가 답을 기다려요","home.attn.waiting_more":"{names} 외 {n}개가 답을 기다려요","home.attn.limit_wait":"사용량 한도로 대기 중이에요","home.attn.done_check":"답을 마쳤어요. 확인해 주세요","home.attn.alerts_aria":"알림, 안 읽은 알림 {n}개","home.ny.login":"로그인","home.ny.choose":"선택","home.ny.reply":"답변","home.ny.relogin":"다시 로그인","home.ny.relogin_hint":"다시 로그인해야 이어서 볼 수 있어요","home.ny.login_lost":"{app} 로그인이 풀렸어요","home.ny.app":"앱","home.ny.none":"답변할 항목이 없어요","home.dur.d":"{n}일","home.dur.w":"{n}주","home.dur.h":"{n}시간","home.dur.s":"{n}초","home.dur.m":"{n}분","home.dur.ms":"{m}분 {s}초","home.dur.hm":"{h}시간 {m}분","home.usage.title":"사용량 · {word} {pct}% 남음","home.usage.left":"{word} {pct}% 남음","home.today":"오늘","home.ny.critical":"중요 · {act}","home.gban.times":"{n}회","home.gban.tx":"오늘 재시작 {restarts} · 끊긴 작업 {cut}","home.gban.title":"오늘 게이트웨이 재시작 {n}회, 끊긴 작업 {cut}, 마지막 {time}","home.alert.model_timeout":"{name+이/가} 모델 응답이 너무 오래 없어서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_network":"{name+이/가} 모델 서버에 연결되지 않아서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_limit":"{name+이/가} 사용 한도에 걸려서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_busy":"{name+이/가} 모델 서버가 바빠서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.alert.model_error":"{name+이/가} 모델 오류가 계속돼서 {n}번 다시 해 보다가 멈췄어요. 다음 메시지부터 다시 해요.","home.deliv.steered":"받음 · 지금 작업에 전달","home.deliv.received":"받음 · 바로 전달","home.deliv.queued":"받음 · 기다렸다 전달","home.deliv.held":"받음 · 한도가 풀리면 전달","home.deliv.compacting":"받음 · 대화 정리가 끝나면 전달","home.deliv.update":"받음 · 업데이트 뒤 전달","home.deliv.resumed":"다시 시작해서 전달","home.deliv.answered":"답함","home.deliv.failed":"전달하지 못했어요","home.sys.running":"진행 중","home.sys.done":"완료","home.sys.failed":"실패","home.sys.stopped":"중단됨","home.sys.view_result":"결과 보기","home.sys.open_task":"작업 열기","home.sys.open_file":"{name} · 열기","home.sys.bg":"백그라운드 작업","home.msg.cmd":"명령","home.msg.terminal":"터미널","home.msg.more":"더 보기","home.lane.open":"세션 열기","home.lane.result":"세션 결과","home.lane.finished":"{title} 끝났어요","home.lane.verified":"확인됨","home.lane.started":"세션 시작 · {hm}","home.msg.details":"자세히","home.gateway":"게이트웨이","home.work.dur":"{dur} 작업","home.work.work":"작업","home.work.think":"생각","home.work.errs":"오류 {n}","home.kind.cmd":"명령","home.kind.read":"읽기","home.kind.edit":"수정","home.kind.search":"검색","home.kind.subagent":"서브에이전트","home.kind.web":"웹","home.kind.notes":"기록","home.kind.tool":"도구","home.menu.split":"카드로 나누기","home.menu.open":"{label} 열기","home.menu.assistant_restarts":"어시스턴트가 다시 시작돼요.","home.menu.change_model":"모델 변경…","home.menu.reasoning":"추론 강도…","home.menu.model_settings":"모델 설정","home.menu.stopped":"작업을 중단했어요","home.menu.restart_title":"{name} 재시작","home.menu.restart_body":"작업 중인 내용이 있으면 멈추고 세션을 다시 시작해요.","home.menu.restarted":"재시작했어요","home.menu.delete_key":"키 삭제","home.menu.logout":"로그아웃","home.menu.compact_queued":"{name}: 작업 중이라 끝나면 압축해요","home.menu.compact_started":"{name}: 압축을 시작했어요","home.menu.group":"{label} 한 카드로 묶기","home.menu.move_up":"앞으로 옮기기","home.menu.move_down":"뒤로 옮기기","home.tool.run":"명령 실행","home.tool.edit":"파일 수정","home.status.compacting":"컨텍스트 압축 중","home.status.compacted":"컨텍스트 압축 완료","home.status.retrying":"다시 시도 중","home.status.fallback":"다른 모델로 전환","home.card.no_alerts":"새 알림이 없어요","home.card.no_worklog":"아직 작업내역이 없어요","home.card.failed_n":"실패 {n}","home.card.no_monitors":"모니터링 중인 항목이 없어요","home.card.more_n":"더 보기 · {n}개","home.later":"백그라운드 작업 중","home.subs.title":"서브에이전트 끝난 수 / 전체","home.subs.count":"서브에이전트 {done}/{total}","home.conv.open_aria":"{name} · {state} · 대화 열기","home.count.aria":"{title} · {n}건","home.owed.title":"답 안 한 댓글","home.replies.other":"기타","home.replies.title":"답장 초안 확인","home.limit.resume":"한도 리셋되면 재개","home.limit.resume_at":"한도 리셋되면 재개 ({time})","home.todo.queued":"순서 대기","home.since.now":"방금 시작","home.since.for":"{time}째","home.ago.now":"방금","home.ago.m":"{n}분 전","home.ago.h":"{n}시간 전","home.chip.commit":"커밋","home.chip.link":"링크","home.result.aria":"결과 {n}개 보기","home.result.count":"결과 {n}","home.greet.night":"편안한 밤이에요","home.greet.morning":"좋은 아침이에요","home.greet.afternoon":"좋은 오후예요","home.greet.evening":"좋은 저녁이에요","home.word.connecting":"연결 중","home.word.working":"일하는 중","home.word.resting":"쉬는 중","home.greet.line":"{bot+이/가} {word}","home.greet.sessions":"세션 {n}개","home.greet.menu":"어시스턴트 메뉴","home.connect.hint":"계정을 연결해야 답할 수 있어요","home.connect.btn":"계정 연결","home.card.nothing_running":"진행 중인 작업이 없어요","home.card.critical_n":"중요 {n}","home.card.todo":"할일","home.card.items_n":"{n}개","home.card.nothing_waiting":"아직 시작 전인 일이 없어요","home.card.running":"지금 진행 중","home.card.held":"대기 중","home.card.ended":"최근 끝난 작업","home.ctx.tokens":"{n} 토큰","home.ctx.title":"컨텍스트 · {who}","home.prov.login_needed":"로그인 필요","home.prov.api_key":"API 키","home.prov.signed_in":"로그인됨","home.group.usage_failed":"사용량을 불러오지 못했어요","home.group.none":"없어요","home.card.add":"카드 추가","home.orch.restart_title":"어시스턴트 재시작","home.orch.restart_body":"어시스턴트가 하던 일이 있으면 멈추고 다시 시작해요.","home.orch.restart_asked":"재시작을 요청했어요","home.wk.resumed":"이어서 처리 중","home.wk.no_activity":"활동이 없어요","home.wk.retry":"다시 맡기기","home.wk.go_chat":"대화로 가기","home.handed.sent":"다른 대화에서 일을 넘겨 줬어요","home.handed.back":"넘긴 일의 결과가 돌아왔어요","home.wk.aria":"{desc} · {state} · {act}","mail.mode.auto":"자동 초안","mail.mode.ask":"확인 먼저","mail.mode.notify":"알림만","mail.mode.quiet":"조용히 모으기","mail.mode.default":"기본 방식","mail.box.general":"일반","mail.disconnected":"연결 끊김","mail.peer_why":"{name}의 메일함은 그 컴퓨터에서 바꿔 주세요","mail.accounts_n":"계정 {n}개","mail.unread_n":"안 읽음 {n}","mail.boxes_n":"메일함 {n}개","mail.account_named":"{name} 계정","mail.needs_reply":"답장 필요","mail.all":"전체","mail.default_tag":"기본","mail.box.add":"메일함 추가","mail.box.settings":"메일함 설정","mail.merged_n":"계정 {n}개를 합쳐서 보여요","mail.base_note_multi":"계정마다 어느 메일함에도 맞지 않는 메일이 여기로 와요.","mail.base_note":"어느 메일함에도 맞지 않는 메일은 여기로 와요.","mail.down.title":"{name} 계정 로그인이 풀렸어요","mail.down.body":"받은 메일은 그대로 있어요. 다시 연결하면 새 메일도 들어와요.","mail.reconnect":"다시 연결","mail.load_failed":"메일을 불러오지 못했어요","mail.acct.switch":"메일 계정 바꾸기","mail.acct.all":"모든 계정","mail.needs_reply_n":"답장 필요 {n}","mail.signed_out":"로그인이 풀렸어요","mail.acct.add":"계정 추가","mail.move":"메일함 옮기기","mail.move.mixed":"여러 계정의 메일이 섞여 있어요","mail.move.mixed_hint":"계정마다 따로 골라서 옮겨 주세요","mail.move.ask":"어느 메일함으로 옮길까요?","mail.move.within":"{name} 계정 안에서만 옮길 수 있어요","mail.move.failed":"옮기지 못했어요","mail.teach.failed":"기억해 두지 못했어요","mail.teach.only_one":"이 메일만","mail.teach.only_many":"이 메일들만","mail.teach.exclude":"{who} 메일은 {box}에 넣지 않기","mail.teach.from":"{who} 메일은 앞으로 여기로","mail.teach.subject":"제목에 ‘{word}’ 들어가면 앞으로 여기로","mail.teach.moved":"{box}에 넣었어요","mail.teach.with_thread":"같은 대화 {n}통이 함께 옮겨졌어요","mail.teach.saved":"기억해 뒀어요 · {rule}","mail.teach.ask":"앞으로는 어떻게 할까요?","mail.sent.send":"보낸 답장","mail.sent.expired":"만료된 초안","mail.sent.ignored":"무시한 초안","mail.sent.edit":"고친 초안","mail.sent.remove_failed":"지우지 못했어요","mail.sent.removed":"초안을 지웠어요","mail.sent.clear_failed":"{total}개 중 {n}개를 지우지 못했어요","mail.sent.cleared":"초안 {n}개를 지웠어요","mail.sent.handled":"처리된 초안","mail.sent.remove_this":"이 초안 지우기","mail.remove":"지우기","mail.sent.group":"처리된 답장 초안","mail.sent.count":"처리된 초안 {n}개","mail.sent.clear":"모두 지우기","mail.people.more":"외 {n}명","mail.people.aria":"보낸 사람과 받는 사람","mail.from":"보낸 사람","mail.to":"받는 사람","mail.people.and_more":"{names} 외 {n}명","mail.to_line":"받는 사람 {names}","mail.cc_line":"참조 {names}","mail.no_subject":"(제목 없음)","mail.thread.count":"이 사람과 주고받은 메일 {n}","mail.people.details":"보낸 사람·받는 사람 자세히","mail.thread.aria":"같은 사람과 주고받은 메일","mail.thread.title":"이 사람과 주고받은 메일","mail.thread.fold":"접기","mail.thread.fold_aria":"같은 사람 메일 접기","mail.mode.auto_desc":"메일이 오면 초안을 써 둬요. 보내기 전에 확인해요.","mail.mode.ask_desc":"답장할지 먼저 물어요. 쓰라고 하면 그때 초안을 써요.","mail.mode.notify_desc":"새 메일을 알려 줘요. 초안은 쓰지 않아요.","mail.mode.quiet_desc":"알리지 않고 여기 모아 둬요.","mail.cond.from":"보낸 사람","mail.cond.addr_ph":"주소나 @도메인","mail.cond.subj_ph":"제목에 든 말","mail.cond.body":"내용","mail.cond.body_ph":"내용에 든 말","mail.icon.mail":"편지","mail.icon.folder":"폴더","mail.icon.file":"문서","mail.icon.tag":"태그","mail.icon.users":"사람","mail.icon.bell":"종","mail.set.save_failed":"저장하지 못했어요","mail.set.merged_note":"계정마다 있는 메일함이라 {name} 계정의 설정을 열었어요.","mail.set.view_mail":"메일 보기","mail.set.mode":"처리 방식","mail.remove_named":"{name} 지우기","mail.more_n":"더 보기 · {n}개","mail.add":"추가","mail.cond.not_from":"넣지 않을 보낸 사람","mail.judge.switch":"내용을 보고 판단","mail.judge.ph":"예: 강의 자료를 달라는 메일","mail.judge.aria":"판단 설명","mail.icon.label":"아이콘","mail.name":"이름","mail.greet.addr":"주소","mail.greet.hello":"첫 인사","mail.greet.add":"받는 사람 추가","mail.voice.own":"보낸 글 {n}개로 따로 배웠어요","mail.voice.kept":"이 메일함에 따로 적어 둔 말투를 써요","mail.voice.ready":"보낸 글 {n}개가 모였어요. 곧 따로 배워요","mail.voice.few":"이 메일함에서 보낸 글이 {n}개라 계정 말투를 써요. {need}개부터 따로 배워요","mail.voice.learned":"말투를 다시 배웠어요","mail.voice.learn_few":"보낸 메일을 더 읽어 볼게요. 모이면 알아서 배워요","mail.voice.learn_busy":"이미 배우고 있어요","mail.voice.learn_empty":"말투를 찾지 못해 그대로 뒀어요","mail.voice.examples":"예시 보기","mail.voice.ex_received":"받은 메일","mail.voice.ex_reply":"내가 쓴 답장","mail.voice.learning":"지난 메일을 다시 읽고 있어요","mail.voice.relearn":"다시 배우기","mail.voice.how_first":"기본 지시가 배운 말투보다 먼저예요","mail.set.loading":"불러오는 중이에요","mail.voice.failed":"말투를 읽지 못했어요","mail.voice.none":"아직 정리된 말투가 없어요. 보낸 메일이 모이면 알아서 배워요.","mail.voice.no_own":"이 메일함만의 말투는 아직 없어요.","mail.voice.fixes":"고친 점","mail.cond.excluded":"제외 {n}","mail.cond.none":"기준 없음","mail.none":"없음","mail.first_more":"{first} 외 {n}개","mail.set.gone":"지운 메일함이에요","mail.box.name":"메일함 이름","mail.set.name_empty":"이름을 비워 둘 수 없어요","mail.set.has":"있음","mail.set.view":"보기","mail.voice.title":"말투","mail.how.title":"기본 지시","mail.how.ph":"이 메일함의 초안을 쓸 때마다 지킬 말","mail.greet.title":"받는 사람별 인사","mail.people_n":"{n}명","mail.folders.title":"첨부 폴더","mail.folders.add":"폴더 추가","mail.folders.ph":"~/폴더","mail.bans.title":"금지 문구","mail.items_n":"{n}개","mail.bans.add":"문구 추가","mail.bans.ph":"쓰지 않을 말","mail.cond.title":"분류 기준","mail.cond.base_note_acct":"기준이 없어요. {name} 계정의 다른 메일함에 맞지 않는 메일이 모두 여기로 와요.","mail.cond.base_note":"기준이 없어요. 다른 메일함에 맞지 않는 메일이 모두 여기로 와요.","mail.cond.builtin":"처음부터 정해진 분류 기준 {n}개도 함께 쓰여요. 여기서는 바꾸지 않아요.","mail.emails_n":"메일 {n}통","mail.set.inherit":"앱 설정대로 되돌리기","mail.set.this":"이 메일함","mail.account":"계정","mail.set.reply_from":"답장은 메일을 받은 주소 {addr}에서 나가요","mail.judge.title":"판단 조건","mail.on":"켜짐","mail.off":"꺼짐","mail.set.replying":"답장 쓸 때","mail.set.tone_how":"말투와 기본 지시","mail.set.folded":"{mode} 메일함은 초안을 쓰지 않아서 접어 뒀어요","mail.set.notify":"알림 켜기","mail.set.quiet_note":"조용히 모으는 메일함은 알리지 않아요","mail.box.delete":"메일함 삭제","mail.box.delete_named":"{name} 삭제","mail.box.delete_body_n":"메일 {n}통은 일반으로 옮겨요. 메일은 지워지지 않아요.","mail.box.delete_body":"이 메일함의 메일은 일반으로 옮겨요. 메일은 지워지지 않아요.","mail.box.deleted":"{name} 메일함을 삭제했어요","mail.change":"바꾸기","mail.new.which_acct":"어느 계정에 만들까요?","mail.new.groups":"메일을 보니 이런 묶음이 있어요","mail.new.groups_loading":"묶음을 찾는 중이에요","mail.new.groups_none":"지금은 눈에 띄는 묶음이 없어요","mail.new.own":"직접 만들기","mail.new.blank":"빈 메일함으로 시작","mail.new.blank_sub":"이름과 조건을 직접 정해요","mail.new.copy":"다른 메일함 설정 복사","mail.new.copy_sub":"같은 처리 방식과 기본 지시를 다시 적지 않아도 돼요","mail.new.copy_which":"어느 메일함 설정을 가져올까요?","mail.new.copy_note":"원래 메일함은 바뀌지 않아요.","mail.new.name_ph":"예: 강의 자료","mail.new.existing":"지금 있는 메일","mail.new.bring_n":"메일 {n}통도 옮기기","mail.new.bring_recent":"보낸 사람이 같은 메일 {total}통 중 최근 {n}통만 옮겨요","mail.new.bring_off":"옮기지 않으면 지금 있는 메일은 그대로 있어요","mail.new.bring_aria":"지금 있는 메일도 옮기기","mail.new.note_copied":"{from} 설정을 가져왔어요. 분류 기준이 이 계정에 맞는지만 봐 주세요. 맞지 않는 메일은 계속 {base}으로 가요.","mail.new.note":"말투와 기본 지시는 만든 뒤 설정에서 정해요. 맞지 않는 메일은 계속 {base}으로 가요.","mail.new.create":"메일함 만들기","mail.new.made_not_moved":"{name} 메일함은 만들었지만 메일은 옮기지 못했어요","mail.new.made":"{name} 메일함을 만들었어요","mail.done.read":"읽음으로 표시했어요","mail.done_n.read":"{n}개를 읽음으로 표시했어요","mail.done.unread":"안 읽음으로 표시했어요","mail.done_n.unread":"{n}개를 안 읽음으로 표시했어요","mail.done.archive":"보관했어요","mail.done_n.archive":"{n}개를 보관했어요","mail.done.unarchive":"받은편지함으로 옮겼어요","mail.done_n.unarchive":"{n}개를 받은편지함으로 옮겼어요","mail.done.trash":"삭제했어요","mail.done_n.trash":"{n}개를 삭제했어요","mail.done.star":"별표를 달았어요","mail.done_n.star":"{n}개를 별표를 달았어요","mail.done.unstar":"별표를 뺐어요","mail.done_n.unstar":"{n}개를 별표를 뺐어요","mail.err.unsupported":"서버가 아직 이 작업을 지원하지 않아요","mail.err.failed":"처리하지 못했어요","mail.trash.ask_n":"메일 {n}개를 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.ask_some":"메일 {n}개를 삭제할까요? 그중 {m}개는 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.ask_one":"이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요. 휴지통에서 되살릴 수 있어요","mail.trash.title":"메일 삭제","mail.trash.go_n":"{n}개 삭제","mail.trash.orig_failed":"원본을 지우지 못했어요","mail.trash.some_failed":"{total}개 중 {n}개는 지우지 못했어요 · {note}","mail.retry":"다시 시도","mail.trash.deleting":"삭제하는 중이에요","mail.trash.stay_some":"메일함에는 남아 있을 수 있어요.","mail.trash.stay_one":"메일함에는 그대로 남아 있어요.","mail.trash.list_n":"메일 {n}개를 목록에서 지워요.","mail.trash.list_one":"이 메일을 목록에서 지워요.","mail.fyi.title":"답장 안 함","mail.fyi.ask_n":"메일 {n}개를 답장 안 함으로 표시할까요? 메일을 보내지는 않아요","mail.fyi.go_n":"{n}개 표시","mail.fyi.some_failed":"{total}개 중 {n}개는 표시하지 못했어요","mail.fyi.failed":"표시하지 못했어요","mail.fyi.done_n":"{n}개를 답장 안 함으로 표시했어요","mail.fyi.undone_n":"{n}개를 답장 필요로 표시했어요","mail.fyi.done":"답장 안 함으로 표시했어요","mail.fyi.undone":"답장 필요로 표시했어요","mail.read":"읽음","mail.archive":"보관","mail.inbox":"받은편지함","mail.star.remove":"별표 빼기","mail.star.add":"별표 달기","mail.select_named":"{name} 선택","mail.select_all":"모두 선택","mail.count_n":"메일 {n}개","mail.fyi.all":"이 목록 전부 답장 안 함","mail.act.read":"읽음으로 표시","mail.act.unarchive":"받은편지함으로","mail.act.done":"완료(보관)","mail.act.unread":"안 읽음으로 표시","mail.fyi.label_n":"답장 안 함 {n}개","mail.more":"더 보기","mail.selected_n":"{n}개 선택","mail.deselect":"선택 해제","mail.more_left":"{n}개 더 보기","mail.more_mail":"메일 더 보기","mail.open.toolbar":"메일 처리","mail.compose":"메일 쓰기","mail.attachments":"첨부파일","mail.upload_failed":"올리지 못했어요","mail.body":"내용","mail.many_ph":"쉼표로 여러 명","mail.cc_add":"참조 추가","mail.need_to":"받는 사람을 적어 주세요","mail.uploading_wait":"파일을 올리는 중이에요","mail.err.compose_unsupported":"서버가 아직 새 메일 초안을 지원하지 않아요","mail.draft_failed":"초안을 만들지 못했어요","mail.draft_made":"초안을 만들었어요 · 승인 카드에서 보내요","mail.sheet.expand":"펼치기","mail.sheet.min":"최소화","mail.new_mail":"새 메일","mail.discard.title":"작성 중인 메일","mail.discard.body":"쓰던 내용을 버릴까요?","mail.discard.go":"버리기","mail.draft_create":"초안 만들기","mail.attach":"파일 붙이기","mail.reply_all":"전체답장","mail.forward":"전달","mail.fwd.head":"---------- 전달한 메일 ----------\n보낸 사람: {from}\n제목: {subject}","mail.reply.aria":"답장 쓰기","mail.reply.quote":"이전 메일","mail.reply.ph":"답장 내용","mail.reply.fold":"접기","misc.nsc.all":"전체","misc.nsc.g_need":"처리할 것","misc.nsc.g_past":"지난 알림","misc.nsc.x_done":"처리했어요","misc.nsc.x_read":"읽음으로 표시","misc.clear":"지우기","misc.nsc.comments":"댓글","misc.nsc.tag_reply":"답장 대기","misc.nsc.tag_login":"로그인","misc.nsc.tag_ask":"질문","misc.nsc.tag_done":"작업 완료","misc.nsc.tag_price":"가격 변경","misc.nsc.tag_sched":"일정","misc.nsc.tag_morning":"아침 점검","misc.nsc.tag_watch":"감시","misc.nsc.tag_back":"복구","misc.nsc.d_open":"답을 기다리고 있어요","misc.nsc.d_ignored":"무시했어요","misc.nsc.d_expired":"기한 지남","misc.nsc.d_closed":"답 없이 끝났어요","misc.nsc.d_answered":"답했어요","misc.nsc.one":"알림","misc.nsc.unfold":"반복 알림 펼치기","misc.nsc.times":"{n}번","misc.nsc.load_failed":"알림을 불러오지 못했어요","misc.nsc.loading":"불러오는 중이에요","misc.nsc.empty":"새 알림이 없어요","misc.more_n":"{n}개 더 보기","misc.nsc.kinds":"알림 종류","misc.nsc.read_all":"모두 읽음","misc.nsc.clear_failed":"지우지 못했어요","misc.nsc.cleared":"알림을 지웠어요","misc.nsc.clear_one_failed":"알림을 지우지 못했어요","misc.nsc.kept":"답이 필요한 알림은 그대로 뒀어요","misc.pr.need":"답변 필요 {n}","misc.pr.unread":"새 알림 {n}","misc.pr.cant_reach":"{name}에 연결할 수 없어요","misc.pr.not_found":"그 컴퓨터를 찾지 못했어요","misc.pr.ask_title":"답변이 필요해요 · {title}","misc.pr.ask":"답변이 필요해요","misc.pr.new_alert":"새 알림","misc.open":"열기","misc.pr.switch":"컴퓨터 바꾸기, 지금은 {name}","misc.pr.switch_more":"컴퓨터 바꾸기, 지금은 {name}, 다른 컴퓨터에 새 알림","misc.pr.home_more":"홈, 다른 컴퓨터에 새 알림","misc.pr.switch_tip":"컴퓨터 바꾸기 ({key}, 다음 컴퓨터로)","misc.pr.other":"다른 컴퓨터","misc.pr.going":"{name}(으)로 넘어가요","misc.pr.remove":"제거","misc.pr.remove_title":"내 컴퓨터에서 {name} 제거","misc.pr.remove_body":"내 컴퓨터 목록에서만 제거해요. 그 컴퓨터는 그대로이고, 다시 켜면 목록에 돌아와요.","misc.pr.removed":"{name}을(를) 제거했어요","misc.pr.remove_failed":"{name}을(를) 제거하지 못했어요","misc.pr.unchecked":"확인 못 함","misc.pr.here":"지금 보고 있어요","misc.pr.fleet.busy":"작업 중","misc.pr.fleet.idle":"여유","misc.pr.fleet.full":"꽉 참","misc.pr.fleet.offline":"연결 안 됨","misc.pr.fleet.limit":"사용량 한도","misc.pr.manage":"컴퓨터 관리","misc.pr.mine":"내 컴퓨터","misc.pr.name_aria":"컴퓨터 이름","misc.pr.this_name":"이 컴퓨터 이름","misc.pr.name_default":"기본 이름으로","misc.pr.name_reset":"기본 이름으로 돌렸어요","misc.pr.name_saved":"이름을 저장했어요","misc.pr.none_reachable":"다른 컴퓨터에 연결할 수 없어요","misc.kbd.title":"입력 진단","misc.kbd.on_note":"입력칸에서 나올 때마다 기록해요. 쓴 글은 남기지 않아요","misc.kbd.off_note":"키보드가 내려갈 때를 기록해요. 쓴 글은 남기지 않아요","misc.kbd.log":"진단 기록","misc.kbd.count":"{n}건 · 이 기기에 저장돼 있어요","misc.kbd.clear":"진단 기록 지우기","misc.pq.change_there":"{name}에서 바꿔 주세요","misc.pq.reattach":"{name}: 파일을 다시 붙여 주세요","misc.pq.too_big":"{name}: 다른 컴퓨터의 대화에는 50MB 이하 파일만 보낼 수 있어요","misc.pq.upload_failed_why":"{pc}에 {name}을(를) 올리지 못해서 보내지 않았어요 ({why})","misc.pq.upload_failed":"{pc}에 {name}을(를) 올리지 못해서 보내지 않았어요","misc.pq.off":"꺼짐","misc.pq.runs_on":"{name}에서 돌아요","misc.pq.pc_offline":"{name} 연결 안 됨","misc.pq.pc_monitoring":"{name} 모니터링","misc.pq.pc_offline_empty":"{name} 연결 안 됨 · 아직 받은 목록이 없어요","misc.cb.run":"터미널에서 실행","misc.cb.copy_code":"코드 복사","misc.sh.load_failed":"터미널 구성요소를 불러오지 못했어요","misc.sh.off":"셸이 꺼져 있어요","misc.sh.off_note":"셸이 꺼져 있어요. Enter를 누르면 다시 시작해요.","misc.sh.ended":"셸이 끝났어요","misc.sh.ended_note":"셸이 끝났어요. Enter를 누르면 다시 시작해요.","misc.sh.connecting":"연결 중…","misc.sh.lost":"연결이 끊겼어요","misc.sh.lost_note":"연결이 끊겼어요. Enter를 누르면 다시 연결해요.","misc.sh.failed":"연결하지 못했어요","misc.sh.failed_note":"연결하지 못했어요. Enter를 누르면 다시 연결해요.","misc.sh.typed":"명령을 입력해 뒀어요. Enter를 누르면 실행돼요","misc.sh.terminal":"터미널","misc.sh.pw":"암호","misc.sh.pw_note":"암호를 입력해요. 화면에 보이지도, 저장되지도 않아요.","misc.sh.keys":"특수 키","misc.retry":"다시 시도","misc.sh.title":"터미널 · {name}","misc.sh.pw_enter":"암호 입력","misc.more":"더 보기","misc.sh.restart":"셸 다시 시작","misc.ab.title":"API 월 한도","misc.ab.src_admin":"콘솔 기준 (관리자 키)","misc.ab.src_est":"이 앱 사용분 추정","misc.ab.left":"{pct}% 남음","misc.ab.this_month":"이번 달 {usd}","misc.ab.no_limit":"월 한도 없음","misc.ab.hint":"콘솔에서 정한 월 한도를 설정에 입력하면 사용 비율을 보여줘요.","misc.ab.unset":"정하지 않았어요","misc.ab.change":"월 한도 바꾸기","misc.ab.monthly":"월 {usd}","misc.ab.ph_limit":"예: 100","misc.ab.ph_key":"관리자 키 붙여 넣기","misc.ab.key_delete":"관리자 키 삭제","misc.ab.key_deleted":"관리자 키를 지웠어요","misc.ab.body":"Anthropic 콘솔에서 정한 월 한도(달러)예요. 비우면 사용액만 보여줘요.","misc.ab.field_limit":"월 한도 (달러)","misc.ab.key_masked":"관리자 키: {key}","misc.ab.no_key":"관리자 키가 없어요. 콘솔 설정의 관리자 키 메뉴에서 만들어 붙여 넣어요.","misc.ab.field_key":"관리자 키","misc.ab.key_note":"저장한 키는 다시 보여 주지 않아요.","misc.dsk.blocked":"새 탭이 막혔어요. 팝업을 허용해 주세요","misc.dsk.opened_in":"{name}의 크롬에서 열었어요","misc.dsk.that_pc":"그 컴퓨터","misc.dsk.cant_now":"지금은 화면을 열 수 없어요","misc.dsk.open_peer":"{name} 열기","misc.dsk.open_failed":"화면을 열지 못했어요","misc.dsk.aria_on_view":"{name} 화면 공유 켜고 보기","misc.dsk.aria_view":"{name} 화면 보기","misc.dsk.on_view":"켜고 보기","misc.dsk.view":"화면 보기","misc.dsk.device":"기기","misc.dsk.viewing_from":"{who}에서 보는 중","misc.dsk.viewing_n":"{n}곳에서 보는 중","misc.dsk.pill_aria":"{text}. 설정에서 보기","misc.dsk.this_screen":"이 컴퓨터 화면","misc.dsk.on_note":"다른 기기에서 보고 조작해요","misc.dsk.off_note":"꺼져 있어요. 누르면 켜고 열어요","misc.dsk.share":"화면 공유","misc.dsk.share_note":"이 컴퓨터 화면을 내 다른 기기에서 보고 조작해요","misc.dsk.share_off":"화면 공유를 껐어요","misc.dsk.share_on":"화면 공유를 켰어요","misc.dsk.public":"공개 주소","misc.dsk.public_note":"Cloudflare 주소로 들어온 기기도 화면을 볼 수 있어요","misc.dsk.public_off":"공개 주소로는 막았어요","misc.dsk.public_on":"공개 주소로도 열었어요","misc.ignore":"무시","misc.rp.quote":"인용","misc.rp.jump":"인용한 메시지로 이동","misc.rp.bar":"인용할 메시지","misc.rp.cancel":"인용 취소","misc.rp.finding":"찾는 중…","misc.rp.not_found":"원래 메시지를 찾지 못했어요 · 지워졌거나 너무 오래됐어요","misc.rp.me":"나","misc.oe.paused_named":"{name} 봇이 멈춰 있어요: {why}","misc.oe.paused":"봇이 멈춰 있어요: {why}","misc.oe.why_login":"로그인 필요","misc.oe.why_limit":"사용량 한도","misc.retry_now":"지금 다시 시도","misc.oe.resuming":"다시 시도해요. 멈춘 동안 온 메시지도 이어서 처리해요","misc.oe.stopped":"{bot+이/가} 멈췄어요","misc.oe.since":"{at}부터","misc.run.waiting":"답을 기다려요","misc.run.limited":"한도에 걸렸어요","misc.run.error_stop":"오류로 멈췄어요","misc.run.done":"끝났어요","misc.run.until":"{at}까지","misc.run.queued":"순서를 기다려요","misc.run.resuming":"이어서 처리 중","misc.run.work":"맡긴 작업 진행 중","misc.run.error":"오류","misc.run.todos_left":"할 일 {n}개 남음","misc.run.what_failed":"{what} 실패","misc.run.unfinished":"이번 턴이 끝났는데 할 일이 남아 있어요","misc.run.interrupted":"마지막 턴이 끝나기 전에 멈췄어요","misc.run.resting":"잠시 쉬어요","misc.run.by_owner":"직접 멈췄어요","misc.run.go_ask":"질문으로 가기","misc.run.restart":"다시 시작","misc.run.ask_missing":"질문을 찾지 못했어요. 알림에서 확인해 주세요","misc.run.restarting":"다시 시작할게요","misc.intro.home_t":"홈에서 오늘 볼 것을 봐요","misc.intro.home_b":"새 메일, 답을 기다리는 일, 돌고 있는 작업이 카드로 모여요. 위의 종을 누르면 알림만 따로 볼 수 있어요.","misc.intro.chat_t":"채팅으로 일을 시켜요","misc.intro.chat_b":"말하듯 쓰면 돼요. 일하는 중에 보내면 바로 끼어들어요. 메일처럼 밖으로 나가는 것은 보내기 전에 꼭 물어봐요.","misc.intro.proj_t":"프로젝트마다 대화가 따로예요","misc.intro.proj_b":"폴더 하나가 프로젝트 하나예요. 세션과 결과가 프로젝트별로 남아서 섞이지 않아요.","misc.intro.mon_t":"모니터링은 대신 지켜봐요","misc.intro.mon_b":"메일, 댓글, 사이트 변화를 보고 있다가 알려 줘요. 답장 초안도 여기서 고치고 보내요.","misc.intro.set_t":"앱과 설정은 필요할 때 열어요","misc.intro.set_b":"계정, 메신저, 웹 접속은 설정에서 바꿔요. 이 안내도 설정에서 다시 볼 수 있어요.","misc.intro.set_b_apps":"내가 붙인 앱은 앱 탭에서 열어요. 계정, 메신저, 웹 접속은 설정에서 바꿔요. 이 안내도 설정에서 다시 볼 수 있어요.","misc.intro.keys_t":"단축키를 쓰면 더 빨라요","misc.intro.key_cmdk":"검색과 명령","misc.intro.key_tabs":"탭 이동","misc.intro.skip":"건너뛰기","misc.intro.prev":"이전","misc.intro.start":"시작하기","misc.intro.next":"다음","misc.rl.note":"{line}. 파일 첨부와 진행 표시는 쓸 수 없어요.","misc.rl.ph":"{name}에게 보내요","misc.rl.sending":"보내는 중…","misc.rl.failed":"보내지 못했어요: {why}","misc.rl.drop":"{name} 빼기","misc.pd.move_left":"왼쪽으로 옮기기","misc.pd.move_right":"오른쪽으로 옮기기","misc.pd.new_left":"왼쪽에 새 칸","misc.pd.new_right":"오른쪽에 새 칸","misc.pd.chat_only":"분할은 채팅 탭에서만 할 수 있어요","misc.pd.no":"칸에 넣을 수 없어요","misc.pd.swap":"자리 바꾸기","misc.pd.goes_open":"열려 있는 칸으로 가요","misc.pd.full":"칸은 2개까지라 이 칸을 바꿔요","misc.pd.replace":"이 칸을 바꿔요","misc.pd.narrow":"창이 좁아 여기서 열어요","misc.pd.here":"여기서 열기","misc.pk.split":"칸 나누기","misc.pk.move":"칸 이동","misc.pk.close":"칸 닫기","misc.pk.max":"창은 두 개까지 열 수 있어요","misc.pk.narrow":"창이 좁아 칸을 나눌 수 없어요","misc.pk.none":"나란히 열 대화가 더 없어요","misc.pl.save_failed":"배치를 저장하지 못했어요","misc.pl.cant_open":"이 배치는 열 수 없어요","misc.pl.ph":"예: 메일 보면서 작업","misc.pl.name":"배치 이름","misc.pl.saved":"'{name}' 배치를 저장했어요","misc.pl.save":"배치 저장","misc.pl.overwrite":"같은 이름이 있으면 덮어써요.","misc.pl.need_name":"이름을 적어 주세요.","misc.pl.open":"배치: {name}","misc.pl.drop":"배치 지우기: {name}","misc.pl.dropped":"'{name}' 배치를 지웠어요","misc.pane.room":"대화방","misc.pane.tap_room":"이 창을 누르면 대화방이 열려요","misc.pane.stop_tip":"지금 하는 일 중단","misc.pane.close":"창 닫기","misc.pane.menu":"세션 메뉴","misc.pane.list":"대화 목록","misc.pane.bar_tip":"끌어서 크기를 바꿔요, 두 번 누르면 반반이에요","mon.group.plain":"일반 모니터링","mon.last_at":"마지막 {t}","mon.not_run":"아직 실행 전이에요","mon.next_at":"다음 {t}","mon.rel.now_past":"방금 전","mon.rel.now_future":"곧","mon.rel.min_past":"{n}분 전","mon.rel.min_future":"{n}분 후","mon.rel.hour_past":"{n}시간 전","mon.rel.hour_future":"{n}시간 후","mon.rel.day_past":"{n}일 전","mon.rel.day_future":"{n}일 후","mon.tag.ok":"정상","mon.tag.changed":"바뀜","mon.tag.fail":"실패","mon.tag.disconnected":"연결 끊김","mon.tag.need":"확인 필요","mon.tag.off":"꺼짐","mon.tag.late":"늦어짐","mon.tag.run":"확인 중","mon.conn.since":"{t}부터","mon.conn.login":"다시 로그인 필요","mon.conn.failing":"확인이 계속 실패해요","mon.checking_now":"지금 확인하고 있어요","mon.prog.before":"실행 전","mon.prog.none":"예정 없음","mon.prog.last":"지난 실행 {t}","mon.prog.not_yet":"아직 실행 전","mon.prog.next_late":"다음 확인이 늦어졌어요","mon.prog.aria":"{name} 다음 확인까지","mon.kind.watch":"지켜보는 일","mon.kind.schedule":"예약한 일","mon.desc.sched_every":"{every} 알아서 실행해요.","mon.desc.sched_once":"정해 둔 때에 한 번 실행해요.","mon.desc.watch_every":"바뀐 곳이 있는지 {every} 확인해요.","mon.desc.watch_auto":"바뀐 곳이 있는지 알아서 확인해요.","mon.last_ok":"마지막 정상 {t}","mon.run.ok":"마지막 확인 결과 정상이에요","mon.run.changed":"마지막 확인에서 바뀐 점이 있어요","mon.run.fail":"마지막 확인이 실패했어요","mon.run.unchecked":"아직 확인 전이에요","mon.run.sched_ran":"예약한 일을 실행했어요","mon.run.checked":"확인했어요","mon.feed":"감시 소식","mon.group.project":"프로젝트 · {name}","mon.need.sent_today":"오늘 자동 답장 {n}건 보냄","mon.last_news":"마지막 소식 {t}","mon.need.none":"확인할 것 없어요","mon.check_failed":"확인이 실패했어요","mon.today_at":"오늘 {t}","mon.feed.none":"새 감시 소식이 없어요","mon.need_chip":"답 필요 {n}","mon.state.off":"연결 안 됨","mon.state.rq":"답장 {n}건 기다려요","mon.state.need":"답 필요 {n}건","mon.state.unread":"안 읽음 {n}개","mon.state.results":"감시와 예약 결과","mon.state.connected":"연결돼 있어요","mon.manage_apps":"앱 관리","mon.load_failed":"모니터링을 불러오지 못했어요","mon.tag.warn":"주의","mon.dr.st.open":"확인 대기","mon.dr.st.send":"보냄","mon.dr.st.revise":"고침","mon.dr.st.revising":"고치는 중…","mon.dr.st.drop":"보내지 않음","mon.dr.st.own":"보낼 방법 전함","mon.dr.st.expired":"만료","mon.dr.st.ignored":"무시함","mon.dr.reply_to":"답장할 메일","mon.dr.rm_title":"지우기 (보내지 않아요)","mon.dr.rm_aria":"초안 지우기","mon.dr.to":"받는이","mon.dec.ignored":"무시했어요","mon.dec.expired":"기한 지남","mon.dec.closed":"답 없이 끝났어요","mon.dec.answered":"답했어요","mon.dec.needs":"답변이 필요해요","mon.reply_go":"답하러 가기","mon.running":"확인하는 중…","mon.run.still_down":"확인했지만 아직 연결이 끊겨 있어요","mon.reconnect_asked":"다시 연결을 요청했어요. 승인 요청이 오면 눌러 주세요","mon.recheck.partial":"{total}개 중 {n}개는 확인하지 못했어요","mon.recheck.done":"지금 다시 확인했어요","mon.filter.all":"전체","mon.filter.need":"답 필요","mon.more_n":"{n}개 더 보기","mon.bar.aria":"소식 보기","mon.bar.read_title":"답이 필요한 것은 그대로 둬요","mon.bar.read_n":"{n}개 읽음 처리","mon.bar.read":"읽음 처리","mon.read_done":"{n}개를 읽음으로 표시했어요","mon.row.fold_aria":"{src} 소식 접기","mon.row.unfold_aria":"{src} 소식 펼치기","mon.fold":"접기","mon.fails":"연속 실패 {n}번","mon.grp.fold_aria":"{src} 소식 {n}건 접기","mon.grp.unfold_aria":"{src} 소식 {n}건 펼치기","mon.grp.same_q":"같은 질문 {n}번","mon.grp.n":"{n}건","mon.sec.news":"소식","mon.rep":"같은 결과 {n}번 · 처음 {t}","mon.older_n":"이전 소식 {n}개 보기","mon.conv.title":"이 항목으로 대화를 이어가요","mon.conv.btn":"대화로 이어가기","mon.ov.peer":"다른 컴퓨터","mon.ov.sum_off":"정상 {n} · 꺼짐 {off}","mon.ov.all_ok":"모두 정상","mon.ov.last":"마지막 확인 {t}","mon.ov.rest":"나머지 {n}개","mon.ov.count":"모니터 {n}개","mon.unfold":"펼치기","mon.ov.empty":"아직 일반 모니터링이 없어요","mon.log.sched":"실행 기록","mon.log.watch":"확인 기록","mon.empty.view":"이 보기에 해당하는 소식이 없어요","mon.empty.none":"아직 소식이 없어요","mon.banner.down":"연결이 끊겼어요","mon.banner.fail":"확인 실패","mon.run_btn":"지금 확인","mon.recheck_btn":"지금 다시 확인","mon.reconnect":"다시 연결","mon.fail_streak":"{n}번 연속 실패했어요","mon.rq_btn":"답장 대기 {n}","mon.mail.files":"첨부 {n}개","mon.mail.clip":"첨부파일 {n}개","mon.mail.download":"{name} 내려받기","mon.mail.reply.draft":"답장 초안 있음","mon.mail.reply.sent":"자동 답장 보냄","mon.mail.reply.waiting":"답장 대기","mon.mail.state.draft":"초안 있음","mon.mail.state.replied":"답장함","mon.mail.state.out":"내가 보냄","mon.mail.pending":"확인 대기","mon.mail.archive":"보관함","mon.mail.sent":"보낸 메일","mon.mail.inbox":"받은 메일","mon.mail.empty.pending":"확인할 초안이 없어요","mon.mail.empty.unread":"안 읽은 메일이 없어요","mon.mail.empty.owed":"답장할 메일이 없어요","mon.mail.empty.replied":"답장한 메일이 없어요","mon.mail.empty.archived":"보관한 메일이 없어요","mon.mail.empty.sent":"보낸 메일이 없어요","mon.mail.empty.all":"받은 메일이 없어요","mon.mail.place_aria":"메일 위치","mon.mail.view_aria":"메일 보기","mon.mail.open_orig":"원문 열기","mon.mail.me_to":"나 → {to}","mon.mail.someone":"받는 사람","mon.mail.todo_more":"{todo} 외 {n}건","mon.mail.drafting":"답장 초안을 만드는 중이에요","mon.mail.making":"만드는 중…","mon.mail.ex.todo":"예: 이번 주 안에 처리하겠다고 써 줘","mon.mail.ex.time":"예: 그 시간 괜찮다고 써 줘","mon.mail.ex.ask":"예: 확인하고 금요일까지 답한다고 써 줘","mon.mail.ex.thanks":"예: 잘 받았다고 짧게 써 줘","mon.mail.ex.default":"예: 금요일까지 보내 드린다고 써 줘","mon.mail.instr_aria":"초안에 넣을 내용","mon.mail.no_sender":"보낸 사람 없음","mon.mail.dlg_title":"답장 초안","mon.mail.ask":"어떻게 답할까요?","mon.mail.ask_hint":"비워 두면 알아서 써요","mon.mail.act.draft":"초안 작성","mon.mail.act.need":"답장 필요로 표시","mon.mail.deleted":"메일을 목록에서 지웠어요","mon.mail.menu":"메일 메뉴","mon.chat.log_title":"이 모니터링의 소식을 봐요","mon.chat.log_n":"소식 {n}","mon.dm.ro":"여기서는 DM에 답장할 수 없어요","mon.dm.list_fail":"DM 목록을 불러오지 못했어요","mon.dm.fail":"DM을 불러오지 못했어요","mon.dm.aria":"DM 대화","mon.dm.empty":"아직 받은 DM이 없어요","mon.dm.image":"(사진)","mon.dm.video":"(동영상)","mon.dm.audio":"(음성 메시지)","mon.dm.file":"(파일)","mon.dm.blank":"(내용 없음)","mon.dm.pick":"대화를 골라 주세요","mon.dm.no_msgs":"메시지가 없어요","mon.cm.fail_net":"{what}. 연결을 확인해 주세요","mon.cm.rooms_aria":"댓글을 지켜보는 글","mon.cm.all":"전부","mon.cm.watch_n":"{n}개","mon.cm.list_fail":"댓글 목록을 불러오지 못했어요","mon.cm.read_fail":"읽지 못했어요 · {error}","mon.cm.watch_all":"{label} 전부 지켜보기","mon.cm.auto":"자동 초안","mon.cm.auto_aria":"{label} 자동 초안","mon.cm.filemail":"파일 요청 메일 초안","mon.cm.filemail_aria":"{label} 파일 요청 메일 초안","mon.cm.pick":"지켜볼 글 고르기","mon.cm.tokens":"새 댓글마다 답글 초안을 만들어서 토큰이 들어요.","mon.cm.channels":"지켜볼 채널","mon.cm.none_on":"켜 둔 곳이 없어요. 채팅에서 켜 달라고 해 주세요.","mon.cm.posts_watch":"지켜볼 글","mon.cm.mail_fail_aria":"메일 실패 {n}건","mon.cm.failed_n":"실패 {n}","mon.cm.drafts_aria":"답장 확인 {n}건","mon.cm.drafts_n":"초안 {n}","mon.cm.open_video":"영상 열기","mon.cm.open_post":"원본 글 열기","mon.cm.view_aria":"보기","mon.cm.comments":"댓글","mon.cm.posts_aria":"댓글이 있는 글","mon.cm.posts":"글","mon.cm.empty":"아직 받은 댓글이 없어요","mon.cm.fail":"댓글을 불러오지 못했어요","mon.cm.st.check":"확인","mon.cm.st.sending":"보내는 중","mon.cm.st.auto":"보냄 · 자동","mon.cm.st.reply_sent":"답글 보냄","mon.cm.st.drafting":"초안 만드는 중","mon.cm.st.need_draft":"초안 필요","mon.cm.st.with_reply":"답글과 함께 보내요","mon.cm.reply":"답글","mon.cm.mail_drafted":"메일 초안 작성됨","mon.cm.me":"나","mon.cm.my_reply":"나 · 내 답글","mon.cm.drafting_dots":"초안 만드는 중…","mon.cm.reply_draft":"답글 초안","mon.cm.pick_post":"글을 골라 주세요","mon.cm.draft_late":"초안이 아직 오지 않았어요","mon.cm.part":"고칠 곳","notice.err.signin":"다시 로그인해 주세요","notice.err.denied":"권한이 없어요","notice.err.notfound":"찾지 못했어요","notice.err.slow":"시간이 너무 오래 걸렸어요","notice.err.toomany":"요청이 너무 잦아요. 잠시 뒤에 다시 해 주세요","notice.err.server":"서버에 문제가 있어요. 잠시 뒤에 다시 해 주세요","notice.err.request":"요청을 처리하지 못했어요","notice.err.network":"연결이 끊겨 처리하지 못했어요","notice.cron.minutes":"{n}분마다","notice.cron.hours":"{n}시간마다","notice.cron.hourly":"매시 {m}분","notice.cron.daily":"매일 {time}","notice.cron.weekly":"매주 {day} {time}","notice.cron.weekdays":"평일 {time}","notice.cron.other":"정해진 시각마다","notice.worker.one":"워커","notice.worker.many":"워커 {n}개","project.act.ran":"명령을 실행했어요","project.act.edited":"파일을 고쳤어요","project.act.read":"파일을 읽어봤어요","project.act.searched":"코드를 찾아봤어요","project.act.error":"오류가 있었어요","project.act.done":"이번 작업을 마쳤어요","project.word.ended":"끝남","project.word.wait":"답을 기다림","project.row.in_project":"프로젝트 {name}","project.open_chat":"대화 열기","project.subs_count":"서브에이전트 {done}/{total}","project.view.all":"전체","project.paused":"일시 정지","project.word.asks":"답을 기다려요","project.word.no_sessions":"세션 없음","project.ago.none":"기록 없음","project.yesterday":"어제","project.ago.d":"{n}일 전","project.open":"열기","project.unread_n":"읽지 않은 메시지 {n}개","project.group.pinned":"고정","project.pc.this":"이 컴퓨터","project.pc.offline":"연결 안 됨","project.count_n":"프로젝트 {n}개","project.fold":"접기","project.unfold":"펼치기","project.pc.cant":"{name}에 연결할 수 없어요","project.pc.switch":"{name}(으)로 넘어가요","project.search":"프로젝트 검색","project.view.aria":"프로젝트 보기","project.custom":"커스텀","project.more_n":"프로젝트 {n}개 더 보기","project.empty.search":"찾는 프로젝트가 없어요","project.empty.need":"확인할 프로젝트가 없어요","project.empty.run":"지금 진행 중인 프로젝트가 없어요","project.empty.done":"끝낸 프로젝트가 없어요","project.empty.none":"아직 프로젝트가 없어요","project.my_settings":"내 설정","project.custom_sub":"내가 바꾼 것을 봐요","project.load_failed":"프로젝트를 불러오지 못했어요","project.empty.first":"아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요","project.chat_open":"채팅 열기","project.save_failed":"저장하지 못했어요 · {error}","project.one.load_failed":"프로젝트를 불러오지 못했어요","project.rest_failed":"나머지를 불러오지 못했어요","project.need.more":"외 {n}개도 답을 기다려요","project.need.answer":"대화에서 답하기","project.rt.last":"마지막 {at}","project.sec.info":"지금 상황","project.sec.all":"전체","project.sec.sessions":"세션","project.sec.results":"결과","project.result":"결과","project.sec.files":"파일","project.sec.watch":"감시","project.empty.overview":"아직 쌓인 내용이 없어요. 채팅에서 이 프로젝트의 일을 맡기면 세션과 결과가 여기에 모여요","project.info.blocked_tag":"막힘","project.info.next":"다음","project.info.decided_tag":"정함","project.info.blocked":"막힌 것","project.info.decided":"정한 것","project.info.prefs":"기억해 둔 말","project.info.empty":"대화하면서 정한 내용이 여기에 모여요","project.page.info_sub":"대화에서 정리된 내용이에요","project.page.rules":"내 규칙","project.page.rules_sub":"최근에 정한 순서예요","project.page.sessions":"세션 기록","project.page.sessions_sub":"이 프로젝트의 세션과 백그라운드 작업","project.page.results":"결과 전체","project.page.results_sub":"보고, 확인, 커밋","project.page.routines":"루틴과 모니터링","project.page.routines_sub":"주기적으로 도는 일","project.back_to":"프로젝트로","project.edit.empty":"비어 있어요","project.edit.hint":"눌러서 고쳐요","project.edit.aria":"{label} 고치기","project.edit.required":"비워 둘 수 없어요","project.name":"프로젝트 이름","project.last_chat":"마지막 대화 {ago}","project.desc":"프로젝트 설명","project.desc_ph":"무엇을 하는 프로젝트인지 적어 주세요","project.chat_title":"이 프로젝트 전용 채팅을 열어요","project.chat":"프로젝트 채팅","project.menu":"프로젝트 메뉴","project.not_found":"이 프로젝트를 찾을 수 없어요","project.edit.title":"프로젝트 수정","project.del.title":"프로젝트 삭제","project.del.channel":"#{name} 채널을 Discord에서 지워요","project.del.monitors":"모니터링 {n}개는 따로 남겨요: {list}","project.del.logins":"로그인 유지 {n}개도 남겨요: {list}","project.del.standing":"자동 처리 설정을 지워요: {what}","project.del.notices":"알림 {n}개를 치워요","project.del.messages":"대화 {n}개는 보관 파일로 남겨요","project.del.plan_failed":"지울 내용을 읽지 못했어요","project.del.drop_aria":"보관 파일도 같이 지우기","project.del.drop":"보관 파일도 같이 지워요","project.del.partial":"프로젝트는 지웠지만 Discord 채널은 남아 있어요 · {error}","project.del.done":"{name} 프로젝트를 지웠어요","project.del.failed":"지우지 못했어요","project.del.ask":"{name} 프로젝트를 삭제할까요?","project.del.running":"실행 중인 세션이 있어서 지울 수 없어요: {list}","project.recent":"최근 세션","project.rt.every_h":"매 {n}시간","project.rt.every_m":"매 {n}분","project.rt.failing":"계속 실패 {n}번","project.rt.last_failed":"마지막 실행 실패","project.rt.failed_n":"실패 {n}번","project.rt.empty":"아직 루틴이나 모니터링이 없어요","project.rt.once":"한 번","project.rt.on_match":"패턴이 나오면 알려요","project.rt.on_check":"확인해서 알려요","project.rt.never":"아직 안 돌았어요","project.rt.next":"다음 {at}","project.rt.resume":"다시 시작","project.rt.pause":"일시정지","project.edit.go":"수정","project.rt.script":"스크립트","project.rt.run_now":"지금 실행","project.rt.ok":"정상","project.rt.no_state":"상태 없음","project.rt.script_title":"게이트웨이가 직접 실행 · 토큰 없음","project.rt.model_title":"실행할 때마다 모델을 호출해요","project.rt.pattern_line":"패턴 · {pattern}","project.rt.script_named":"{name} 스크립트","project.rt.script_failed":"스크립트를 읽지 못했어요 · {error}","project.rt.gap_h":"간격(시간)","project.rt.gap_m":"간격(분)","project.rt.pattern":"패턴","project.rt.gap_bad_h":"간격은 1시간 이상의 정수로 적어 주세요","project.rt.gap_bad_m":"간격은 1분 이상의 정수로 적어 주세요","project.rt.gap":"간격","project.rt.per_h":"시간마다","project.rt.per_m":"분마다","project.work.resuming":"이어서","project.work.queued_sub":"순서를 기다려요","project.recent_empty":"아직 끝난 세션이 없어요","project.res.report":"보고","project.res.verify":"확인","project.res.failed":"안 됨","project.res.unverified":"보고만 함","project.res.passed":"통과","project.res.empty":"아직 결과가 없어요","project.edit.named":"{name} 수정","project.rules.more_n":"규칙 {n}개 더 보기","project.rules.none":"찾는 규칙이 없어요","project.rules.search":"규칙 검색","project.ctx.queued":"압축 대기","project.ctx.compacting":"압축 중 · {at}","project.ctx.done_from":"압축 완료 {at} · {tokens} 토큰 전","project.ctx.done":"압축 완료 {at}","project.ctx.failed_why":"압축 실패 {at} · {error}","project.ctx.failed":"압축 실패 {at}","project.ctx.of":"{name} 컨텍스트","project.ctx.tokens_of":"{used} / {win} 토큰","project.ctx.tokens":"{tokens} 토큰","project.ctx.load_failed":"컨텍스트를 불러오지 못했어요","project.ctx.later":"{name}: 작업 중이라 끝나면 압축해요","project.ctx.started":"{name}: 압축을 시작했어요","project.ctx.off":"꺼짐","project.ctx.off_note":"꺼져 있어요. 다음 메시지가 오면 다시 시작해요","project.ctx.not_running":"실행 중이 아니에요","project.ctx.new_default":"새 세션 기본","project.ctx.per_model":"모델별 컨텍스트 설정","project.ctx.size":"컨텍스트 크기","project.ctx.custom":"직접 설정","project.ctx.default":"기본","project.ctx.unknown":"아직 모름 (처음 응답 뒤 표시)","project.ctx.auto":"자동 압축","project.ctx.used_by":"사용: {list}","project.ctx.default_n":"기본 {n}","project.ctx.default_ph":"기본값","project.ctx.auto_ph":"비우면 자동으로 정해요","project.ctx.reset":"기본값으로","project.ctx.reset_done":"기본값으로 되돌렸어요","project.ctx.bad_size":"컨텍스트 크기는 토큰 수로 적어 주세요 (예: 1000000, 200k)","project.ctx.bad_at":"자동 압축 시점은 토큰 수나 %로 적어 주세요 (예: 300k, 80%). %는 컨텍스트 크기를 알 때만 써요","project.ctx.saved":"저장했어요. 다음 턴부터 적용돼요","project.ctx.applies":"이 모델을 쓰는 모든 세션({list})에 적용돼요.","project.ctx.size_label":"컨텍스트 크기 (토큰)","project.ctx.range":"{min}~{max} 토큰","project.ctx.at_label":"자동 압축 시작 (토큰 또는 %)","project.ctx.at_hint_min":"{min} 토큰부터 컨텍스트 크기 미만까지 적을 수 있고, 낮을수록 매 턴 다시 읽는 토큰과 비용이 줄어요.","project.ctx.at_hint":"컨텍스트 크기보다 작게 적고, 낮을수록 매 턴 다시 읽는 토큰과 비용이 줄어요.","relay.updated":"마지막 갱신 {when}","relay.readonly":"읽기 전용이에요. 바꾸려면 채팅으로 요청해요","relay.open_chat":"채팅 열기","relay.back_here":"이 컴퓨터 설정 보기","relay.settings_off":"잔디로 연결된 컴퓨터는 채팅으로 요청해요","relay.cut":"일부 항목은 빠져 있어요","relay.loading":"불러오는 중…","relay.failed":"상태를 불러오지 못했어요","relay.none_title":"{name+이/가} 아직 상태를 보내지 않았어요","relay.none_hint":"그 컴퓨터에서 설정 > 메신저 > JANDI > 이 컴퓨터 상태를 잔디로 보내기를 켜면 여기에 보여요","relay.sessions":"세션","relay.conv_none":"{name} 대화는 아직 받지 못했어요","relay.no_sessions":"진행 중인 세션이 없어요","relay.todos":"열린 할 일 {n}개","relay.todos_title":"할 일","relay.todo_more":"그 밖에 {n}개","relay.no_todos":"열린 할 일이 없어요","relay.notices":"최근 알림","relay.no_projects":"보낸 프로젝트가 없어요","relay.live":"진행 중 {n}","relay.no_monitors":"모니터링하는 것이 없어요","relay.mon_last":"마지막 {when}","relay.mon_next":"다음 {when}","reply.undo_in":"{n}초 후 보내요","reply.sending":"보내는 중…","reply.revising":"고치는 중…","reply.revised":"AI가 고친 초안","reply.edited":"직접 고친 초안","reply.auto_retry":"자동으로 다시 보내요 ({n}/{max})","reply.failed":"보내지 못했어요 - {why}","reply.unsure":"보냈는지 확인되지 않았어요","reply.no_auto":"자동으로 다시 보내지 않아요","reply.went_out":"나갔어요","reply.check":"확인하러 가기","reply.retry":"다시 보내기","reply.only_reply":"답글만 보내기","reply.only_mail":"메일만 보내기","reply.edit_label":"보낼 글","reply.fix.apply":"반영","reply.fix.note":"AI에게 부탁할 내용 (선택)","reply.fix.note_part":"AI에게 부탁할 내용 (선택) · {part}","reply.fix.note_ph":"예: 더 짧게, 존댓말로","reply.act_fail":"하지 못했어요. 잠시 뒤에 다시 눌러 주세요","reply.act_net":"연결이 끊겨서 못 보냈어요. 다시 눌러 주세요","reply.changed":"초안이 바뀌었어요. 확인하고 다시 보내 주세요","reply.undo_net":"연결이 끊겨서 되돌리지 못했어요. 보내기는 그대로 진행돼요","reply.act_net_change":"연결이 끊겨서 하지 못했어요. 다시 눌러 주세요","reply.fix.changed":"그사이 다른 곳에서 초안이 바뀌었어요. 쓴 내용은 남겨 뒀어요. 다시 반영하면 그 위에 저장돼요","reply.fix.moved":"AI가 다시 고친 초안이 왔어요. 쓰던 내용은 옮겨 뒀어요","reply.q.head":"빠른 처리 {i} / {n}","reply.q.rail":"진행","reply.q.st.undo":"{n}초 후 보내요","reply.q.st.sent":"보냈어요","reply.q.st.failed":"보내지 못했어요","reply.q.st.unsure":"확인이 필요해요","reply.q.st.now":"지금","reply.q.done":"{n}건 처리했어요","reply.q.fails":"실패만 다시 보기 ({n})","reply.q.skip":"건너뛰기","reply.q.go":"고른 것 처리 ({n})","settings.apply":"적용","settings.apply.done":"적용했어요","settings.apply.restarted":"적용했어요 · 재시작됨","settings.apply.next_start":"다음 시작부터 적용돼요","settings.apply.next_turn":"다음 턴부터 적용돼요","settings.save_failed":"저장하지 못했어요","settings.all":"전체","settings.provider":"공급자","settings.provider.all":"공급자 전체","settings.models.load_failed":"모델 정보를 불러오지 못했어요","settings.model.source_sub":"구독 {account}","settings.model.account":"계정","settings.model.older":"이전 모델","settings.model.older_n":"이전 모델 {n}개","settings.model.current":"현재","settings.model.apply_ask":"모델 설정을 적용할까요?","settings.model.cache_rewrite":"캐시가 다시 쓰여요 · 컨텍스트 {tokens} 토큰\n{label}","settings.model.apply_failed":"적용하지 못했어요. {error}","settings.logout.key_text":"저장된 API 키를 삭제할까요?","settings.logout.info_acc":"{account} 계정의 저장된 로그인 정보가 삭제돼요.","settings.logout.info":"저장된 로그인 정보가 삭제돼요.","settings.logout.all":"{name}의 계정 {n}개가 모두 로그아웃돼요.","settings.logout.key_title":"{name} 키 삭제","settings.logout.title":"{name} 로그아웃","settings.logout.btn":"로그아웃","settings.logout.key_failed":"키를 삭제하지 못했어요. {error}","settings.logout.failed":"로그아웃하지 못했어요. {error}","settings.logout.key_done":"키를 삭제했어요","settings.logout.done":"로그아웃했어요","settings.models.no_effort":"이 모델은 추론 강도를 쓰지 않아요","settings.models.intro":"막히면 번호 순서대로 넘어가요.","settings.fb.down.quota":"한도 소진","settings.fb.down.cap":"상한 도달","settings.fb.down.error":"오류","settings.fb.using":"대체 모델 사용 중","settings.fb.return_at":"{at}에 복귀","settings.fb.instead":"기본 모델 {model} 대신 쓰는 중","settings.models.group_replies":"답장과 요약","settings.models.replies_default":"답장 기본값","settings.models.lane_label":"세션 · {name}","settings.models.fixed":"고정","settings.models.fallbacks_n":"대체 {n}","settings.models.reply_model":"답장 모델","settings.models.reply_note":"답장 초안은 API 키로 넘어가지 않아요.","settings.api_key":"API 키","settings.login":"로그인","settings.saved":"저장했어요","settings.done":"완료","settings.use":"사용","settings.refresh":"새로고침","settings.limit.hours":"{n}시간 한도","settings.limit.hours_of":"{n}시간 한도 {rest}","settings.limit.days":"{n}일 한도","settings.limit.days_of":"{n}일 한도 {rest}","settings.limit.hours_short":"{n}시간","settings.limit.hours_short_of":"{n}시간 {rest}","settings.limit.days_short":"{n}일","settings.limit.days_short_of":"{n}일 {rest}","settings.prov.key_delete":"키 삭제","settings.prov.relogin":"다시 로그인","settings.prov.in_use":"지금 사용 중","settings.prov.accounts_n":"계정 {n}개","settings.prov.signed_in":"로그인됨","settings.prov.not_connected":"연결 안 됨","settings.prov.load_failed":"계정을 불러오지 못했어요","settings.prov.connected_n":"{n}개 연결","settings.prov.add":"공급자 추가","settings.prov.none":"공급자가 없어요","settings.prov.other":"다른 공급자","settings.prov.key_of":"{name} API 키","settings.prov.need_key":"공급자와 API 키를 입력해 주세요","settings.prov.add_account":"계정 추가","settings.prov.nothing_to_add":"추가할 공급자가 없어요","settings.login.pending_title":"끝나지 않은 로그인이 있어요","settings.login.pending_other":"지금 {name} 로그인이 열려 있어요.","settings.login.restart":"새로 시작","settings.login.resume":"이어서 하기","settings.login.open_page":"로그인 페이지 열기","settings.login.how_none":"브라우저에서 로그인한 뒤 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.how_opened":"열린 페이지에서 로그인한 뒤 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.how_open":"‘로그인 페이지 열기’를 눌러 로그인한 뒤, 나온 코드나 주소를 아래에 붙여 넣어요.","settings.login.code_label":"코드 또는 주소","settings.login.refreshed":"이미 등록된 계정이에요 ({account}). 로그인을 새로 고쳤어요","settings.login.added":"계정을 추가했어요 ({account})","settings.login.done":"{name} 로그인했어요","settings.login.failed":"로그인에 실패했어요","settings.login.need_code":"코드나 주소를 붙여 넣어 주세요","settings.login.title_add":"{name} 계정 추가","settings.login.title":"{name} 로그인","settings.reset.pair":"{a}와 {b}","settings.reset.kind_label":"{kind} 리셋권","settings.reset.label":"리셋권","settings.reset.when_limited":"한도에 걸리면 쓸 수 있어요","settings.reset.expires":"{day} 만료","settings.reset.say.reset":"한도를 다시 채웠어요","settings.reset.say.nothing":"다시 채울 한도가 없어서 쓰지 않았어요","settings.reset.say.no_credit":"남은 리셋권이 없어요","settings.reset.say.used":"이미 쓴 리셋권이에요","settings.reset.say.cooldown":"조금 뒤에 다시 쓸 수 있어요","settings.reset.body_kind":"{name} {account}의 {kind} 리셋권으로 한도를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.body_claude":"{name} {account}의 리셋권으로 한도를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.body_codex":"{name} {account}의 {wins}를 지금 다시 채워요. 쓰고 나면 {label}이 {n}개 남아요. 되돌릴 수는 없어요.","settings.reset.ask_title":"리셋권을 쓸까요?","settings.reset.use":"리셋권 쓰기","settings.reset.used":"리셋권을 썼어요","settings.reset.use_failed":"리셋권을 쓰지 못했어요. 잠시 뒤 다시 눌러 주세요","settings.reset.held":"{n}개","settings.reset.use_aria":"{name} {label} 사용","settings.usage.load_failed":"사용량을 불러오지 못했어요","settings.usage.no_limits":"없어요","settings.usage.stale":"{ago} 전 값이에요 · 다시 읽는 중","settings.usage.reset_reading":"초기화됐어요 · 새 값을 읽는 중","settings.usage.kind.start":"처음 선택","settings.usage.kind.owner":"직접 변경","settings.usage.kind.gone":"계정 사라짐","settings.usage.account":"사용 계정","settings.usage.clear_failed":"지우지 못했어요","settings.usage.clear_one":"이 기록 지우기","settings.usage.cleared_one":"기록을 지웠어요","settings.usage.more_n":"이전 기록 {n}개 더 보기","settings.usage.less":"이전 기록 접기","settings.usage.since":"{at}부터","settings.usage.pinned":"고정한 계정이에요","settings.usage.clear_all":"기록 모두 지우기","settings.usage.clear_all_ask":"기록을 모두 지울까요?","settings.usage.clear_all_body":"계정 전환 기록 {n}개를 지워요. 되돌릴 수 없어요.","settings.usage.clear_all_btn":"모두 지우기","settings.usage.cleared_all":"기록을 모두 지웠어요","settings.usage.unavailable":"정보가 없어요","settings.usage.empty":"사용량 정보가 없어요","settings.usage.use.title":"어디에 썼나","settings.usage.use.when":"{at}까지 {hours}시간 · 밤 점검 기준","settings.usage.use.main":"메인 대화","settings.usage.use.lane":"레인 {name}","settings.usage.use.worker":"작업 {name}","settings.usage.use.none":"10% 넘게 쓴 곳이 없어요","settings.usage.use.rest":"나머지 {n}개 세션 {pct}","settings.usage.use.models":"모델별: {list}","settings.usage.fix.title":"줄일 수 있는 곳","settings.usage.fix.watch":"{who} 워치가 자주 깨워요","settings.usage.fix.compact":"{who} 컨텍스트가 커요","settings.usage.fix.worker":"{who} 작업이 {model}로 돌았어요","settings.usage.fix.check":"{who} 캐시가 자주 깨져요","settings.usage.fix.watch_btn":"간격 늘리기","settings.usage.fix.compact_btn":"지금 압축","settings.usage.fix.worker_btn":"기본 모델로","settings.usage.fix.watch_body":"워치 {who}의 확인 간격을 두 배로 늘려요. 프로젝트 화면에서 언제든 되돌릴 수 있어요.","settings.usage.fix.compact_body":"{who}의 컨텍스트를 지금 한 번 압축해요.","settings.usage.fix.worker_body":"{who}의 작업 워커 모델을 {model}에서 기본 워커 모델로 바꿔요. 다른 모델 설정은 그대로예요.","settings.usage.fix.check_cause":"원인 확인","settings.usage.fix.applied":"적용했어요","settings.usage.fix.apply":"적용","settings.usage.fix.done":"적용했어요","settings.usage.fix.failed":"적용하지 못했어요","settings.usage.fix.cost":"{cost} 상당 · {n}번","settings.usage.fix.cost_only":"{cost} 상당","settings.unknown":"알 수 없음","settings.page.notifications":"앱과 알림","settings.page.display":"표시","settings.page.update":"업데이트","settings.page.runtime":"작업 프로그램","settings.runtime.check_failed":"작업 프로그램을 확인하지 못했어요","settings.runtime.checking":"작업 프로그램을 확인하는 중이에요","settings.row.account_in_use":"{name} 사용 중","settings.row.update_restart":"새 버전 {version} 받음 · 재시작하면 적용돼요","settings.row.update_now":"지금 {version}","settings.row.update_latest":"지금 {version} · 최신","settings.row.context_used":"{pct}% 사용 중","settings.row.push_on":"푸시 알림 켬","settings.row.push_off":"푸시 알림 꺼짐","settings.row.push_unsupported":"이 브라우저는 알림을 지원하지 않아요","settings.sec.system":"시스템","settings.sec.accounts_models":"계정과 모델","settings.sec.connect":"연결","settings.sec.diagnostics":"진단","settings.row.usage":"사용량과 월 한도","settings.row.apps":"앱 관리","settings.row.intro":"화면 안내 다시 보기","settings.row.chat_tab_main":"대화 탭 메인","settings.row.chat_tab_last":"대화 탭 마지막","settings.theme.light":"라이트","settings.theme.dark":"다크","settings.tag.restart_needed":"재시작 필요","settings.tag.new_version":"새 버전","settings.display.mode":"화면 모드","settings.display.chat_tab":"대화 탭","settings.display.chat_main":"채팅을 열면 메인 대화부터 시작해요","settings.display.chat_last":"채팅을 열면 마지막 대화부터 시작해요","settings.display.opt_main":"메인","settings.display.opt_last":"마지막","settings.none":"없음","settings.fb.main_sub":"메인 어시스턴트","settings.fb.confirm_restart":"어시스턴트가 다시 시작돼요.","settings.fb.lanes_title":"세션 기본값","settings.fb.lanes_sub":"새로 시작하는 세션","settings.fb.workers_sub":"세션이 맡기는 구현·테스트","settings.fb.when.quota":"한도 소진 시","settings.fb.when.error":"오류 시","settings.fb.cap.day_usd":"일 {amount}까지","settings.fb.cap.month_usd":"월 {amount}까지","settings.fb.cap.day_tokens":"일 {tokens} 토큰까지","settings.fb.cap.month_tokens":"월 {tokens} 토큰까지","settings.fb.no_revert":"복귀 안 함","settings.fb.until":"풀리는 때: {at}","settings.fb.down.shared":"공유 계정 사용 중이라 꺼짐","settings.fb.down.key_off":"API 키 사용 안 함(설정)","settings.fb.down.unavailable":"쓸 수 없음","settings.fb.today":"오늘","settings.fb.month":"이번 달","settings.fb.bar_usd":"{when} {used} / {cap}","settings.fb.bar_tokens":"{when} {used} / {cap} 토큰","settings.fb.saved_now":"바로 적용돼요","settings.fb.saved_after":"지금 하던 일이 끝나면 적용돼요","settings.fb.saved_next":"다음에 시작될 때부터 적용돼요","settings.fb.saved_key":"저장된 키 {masked}","settings.fb.no_saved_key":"저장된 키가 없어요","settings.fb.key_file":"키 파일 {file}","settings.fb.edit_aria":"{name} 편집","settings.fb.same_as_base":"기본 모델과 같게","settings.fb.enabled":"사용","settings.fb.opt_on":"켜기","settings.fb.opt_off":"끄기","settings.fb.workers_label":"서브에이전트·세션","settings.fb.workers_no_key":"API 키 사용 안 함","settings.fb.workers_same_key":"같은 키 사용","settings.fb.mode":"사용 방식","settings.fb.mode_login":"구독 (로그인)","settings.fb.change_key":"키 바꾸기","settings.fb.when_label":"넘어가는 때","settings.fb.when_prev":"한도·오류 모두","settings.fb.revert_label":"기본 모델 복귀","settings.fb.revert_when":"한도가 풀리면 복귀","settings.fb.revert_keep":"계속 이 모델","settings.fb.cap_label":"사용 상한 (KST)","settings.fb.period_month":"월","settings.fb.period_day":"일","settings.fb.amount":"금액 (USD)","settings.fb.tokens":"토큰","settings.fb.up":"위로","settings.fb.up_aria":"{name} 위로","settings.fb.down":"아래로","settings.fb.down_aria":"{name} 아래로","settings.fb.no_key_provider":"{provider} 모델은 API 키를 쓸 수 없어요","settings.fb.key_status_use":"저장된 키: {masked} (사용 중)","settings.fb.key_status":"저장된 키: {masked}","settings.fb.key_paste_note":"키를 붙여 넣으면 이 칸은 쓰지 않아요.","settings.fb.file_name":"파일 이름","settings.fb.advanced":"고급: 키 파일 이름으로 지정","settings.fb.key_saved":"키를 확인하고 저장했어요 ({masked})","settings.fb.use_omo":"OmO 키 쓰기","settings.fb.key_off":"키 끄기","settings.fb.key_hidden":"저장한 키는 다시 보여 주지 않아요.","settings.fb.workers_too":"서브에이전트·세션도 사용","settings.fb.drag":"끌어서 순서 바꾸기","settings.fb.reorder_aria":"{name} 순서 바꾸기, 위아래 화살표 키","settings.fb.in_use":"사용 중","settings.fb.cant_use":"여기서 못 써요","settings.fb.sw_on_title":"켜짐 · 눌러서 끄기","settings.fb.sw_off_title":"꺼짐 · 눌러서 켜기","settings.fb.switch_off":"{name} 끄기","settings.fb.switch_on":"{name} 켜기","settings.fb.sw_on":"켜짐","settings.fb.sw_off":"꺼짐","settings.fb.continue_key":"{model} API 키로 계속","settings.fb.exists":"이미 있는 모델이에요","settings.fb.full":"더 넣을 수 없어요","settings.fb.add":"대체 모델 추가","settings.fb.how_workers":"실행 중인 서브에이전트는 다음 시작부터 반영돼요.","settings.fb.how_claude":"Claude Code는 Anthropic 모델만, 조건 없이 넘어가요.","settings.fb.list_aria":"{name} 대체 모델 순서","settings.app.shared_photos":"사진 {n}장을 붙였어요","settings.app.shared_files":"파일 {n}개를 붙였어요","settings.app.shell_chip":"새 버전 · 눌러서 적용","settings.app.perm_off":"알림 권한이 꺼져 있어요. 기기 설정에서 {bot} 알림을 허용해 주세요","settings.app.alerts_on":"알림을 켰어요","settings.app.alerts_off":"알림을 껐어요","settings.app.test_sent":"테스트 알림을 보냈어요","settings.app.installed":"앱을 설치했어요. 홈 화면의 {bot} 아이콘으로 열어 주세요","settings.app.ios_share_bar":"주소창의 공유 버튼을 눌러요","settings.app.ios_share_safari":"Safari 아래쪽(또는 주소창)의 공유 버튼을 눌러요","settings.app.ios_add":"'홈 화면에 추가'를 골라요","settings.app.ios_web_app":"'웹 앱으로 열기'가 켜져 있는지 보고 '추가'를 눌러요","settings.app.and_menu":"브라우저 메뉴(⋮)를 열어요","settings.app.and_install":"'앱 설치'를 골라요. '홈 화면에 추가'라면 다음 창에서 '설치'를 골라요","settings.app.and_shortcut":"'바로가기 만들기'는 브라우저로 열려요. 고르지 마세요","settings.app.desk_icon":"주소창 오른쪽의 설치 아이콘을 눌러요","settings.app.desk_menu":"없으면 브라우저 메뉴에서 '앱 설치'를 골라요","settings.app.install":"앱 설치","settings.app.reinstall_note":"전에 추가한 {bot} 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.","settings.app.add_home":"홈 화면에 추가","settings.app.gw_alerts":"{name} 알림","settings.app.this_computer":"이 컴퓨터","settings.app.iphone_note":"iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요","settings.app.no_support":"이 브라우저는 알림을 지원하지 않아요. Chrome이나 설치한 앱에서 켤 수 있어요","settings.app.perm_blocked":"알림 권한이 막혀 있어요","settings.app.turn_on":"알림 켜기","settings.app.check":"알림 확인","settings.app.test":"테스트 알림","settings.app.turn_off":"끄기","settings.app.this_device":"이 기기","settings.app.kinds":"알림 종류","settings.upd.v_installed":"v{release} · 설치본","settings.upd.installed_commit":"설치본 {commit} · {when}","settings.upd.installed_when":"설치본 · {when}","settings.upd.installed":"설치본","settings.upd.checked_ago":"{ago} 확인","settings.upd.bar_new":"{names} 새 버전","settings.upd.restart_applies":"재시작하면 새 버전이 적용돼요","settings.upd.names_new":"{names} 새 버전이 있어요","settings.upd.restarting":"다시 켜는 중이에요","settings.upd.bar_offer":"새 버전이 있어요 · 눌러서 업데이트","settings.upd.failed":"업데이트하지 못했어요","settings.upd.failed_why":"업데이트하지 못했어요: {reason}","settings.upd.tap_retry":"눌러서 다시 시도","settings.upd.done_now":"{text} · 지금 버전 {version}","settings.upd.rt_new_n":"작업 프로그램 새 버전 {n}개가 있어요","settings.upd.rt_latest":"작업 프로그램은 최신이에요","settings.upd.rewrite":"저장소 기록이 바뀌어서 새 기록으로 옮겨요","settings.upd.new_version":"새 버전 {version}이 있어요","settings.upd.new_commits":"새 커밋 {n}개가 있어요","settings.upd.latest":"최신 버전이에요","settings.upd.kept":"보관: {where}","settings.upd.working":"작업 중: {names}","settings.upd.resend":"끊긴 요청은 다시 켜질 때 이어서 보내요.","settings.upd.when_idle":"작업이 끝나면","settings.upd.restart_now":"지금 재시작","settings.upd.restarted_now":"다시 시작했어요 · 지금 버전 {version}","settings.upd.roles_in_use":"{roles} 사용 중","settings.upd.checking_short":"확인 중…","settings.upd.rt_now":"지금 {version}","settings.upd.managed_by":"{ver} · {by}이 관리해요","settings.upd.another_program":"다른 프로그램","settings.upd.as_app":"{ver} · 앱으로 설치됨","settings.upd.ver_latest":"{ver} · 최신","settings.upd.change":"{name} 바꾸기","settings.upd.change_rt":"작업 프로그램 바꾸기","settings.upd.deferred":"작업이 끝나면 업데이트해요","settings.upd.updating_phase":"업데이트 중 · {phase}","settings.upd.waiting":"대기 중","settings.upd.in_progress":"진행 중","settings.upd.btn":"업데이트","settings.upd.rt_note":"바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요.","settings.upd.rt_versions":"작업 프로그램 버전","settings.upd.checking":"확인하는 중…","settings.upd.check":"새 버전 확인","settings.upd.app_version":"앱 버전","settings.upd.running":"실행 중 {version}","settings.upd.ahead_n":"로컬 커밋 {n}개 (아직 올리지 않음)","settings.upd.dirty_n":"커밋 안 한 변경 {n}개","settings.upd.hd_new":"새 버전 {from} → {to}","settings.upd.hd_commits":"새 커밋 {n}개 · {upstream}","settings.upd.more_n":"외 {n}개","settings.upd.release_notes":"릴리스 노트 보기","settings.upd.ahead_note":"로컬 커밋 {n}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.","settings.upd.now":"지금 업데이트","settings.upd.fail_stays":"테스트가 실패하면 그대로 있어요.","settings.upd.wait_title":"재시작 대기 중","settings.upd.wait_now":"곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요.","settings.upd.wait_idle":"작업이 끝나면 다시 켜져요. 이 화면은 자동으로 다시 연결돼요.","settings.upd.wait_idle_busy":"작업이 끝나면 다시 켜져요 ({busy}). 이 화면은 자동으로 다시 연결돼요.","settings.upd.got":"새 버전 {version} 받음","settings.upd.restart_to_apply":"재시작하면 적용돼요","settings.upd.auto_check":"자동 확인","settings.upd.auto_check_apply":"새 버전이 있으면 알려요.","settings.upd.auto_check_note":"알림만 보내요. 적용은 직접 해요.","settings.upd.auto_apply":"새 버전 자동 적용","settings.upd.auto_apply_note":"새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요.","settings.notify.ask":"질문 · 승인 · 로그인","settings.notify.alert_label":"경고","settings.notify.alert":"dotz 오류 · 로그인 끊김 · 감시 반복 실패","settings.notify.result_label":"결과","settings.notify.result":"세션 · 작업 완료 · 실패","settings.notify.news_label":"새 소식","settings.notify.news":"메일 · 댓글 · 감시 · 예약","settings.notify.conv":"보고 있지 않은 대화의 새 답","settings.notify.log_label":"진행","settings.notify.log":"진행 중 보고 · 작업 기록","settings.notify.stays":"꺼도 목록에는 남아요.","settings.fb.saved_off":"저장했어요. API 키 단계는 꺼진 채라 켜야 써요","settings.fb.acc_auto":"자동 전환 · 지금 {name}","settings.fb.acc_pinned":"고정 · {name}","shell.aria.home":"홈으로","shell.aria.menu":"메뉴","shell.aria.command":"명령","shell.aria.monitoring_list":"모니터링 목록","shell.aria.apps_list":"앱 목록","shell.conn.lost":"연결 끊김 · 다시 연결 중","shell.conn.unreachable":"이 기기에서 이 컴퓨터에 연결할 수 없어요 · 기기의 네트워크나 Tailscale 연결을 확인해 주세요","shell.conn.unreachable_short":"네트워크 확인","shell.gban.close":"재시작 알림 닫기","shell.oerr.restart":"오케스트레이터 다시 시작","shell.chat.older":"이전 메시지 더 보기","shell.chat.to_bottom":"맨 아래로","shell.composer.placeholder":"메시지 또는 /명령","shell.composer.label":"메시지","shell.composer.attach":"파일 첨부","shell.composer.attach_hint":"파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요","shell.composer.api":"api사용중","shell.sheet.to_list":"목록으로","shell.sheet.detail":"구성 상세","shell.toggle.unset":"정하기","shell.toggle.label":"{label}: {value} · 누르면 {next}","shell.left.d":"{d}일","shell.left.dh":"{d}일 {h}시간","shell.left.h":"{h}시간","shell.left.hm":"{h}시간 {m}분","shell.left.m":"{m}분","shell.rel.now":"초기화 중","shell.rel.soon":"1분 안에 초기화","shell.rel.at":"{left} 후 초기화 ({when})","shell.think.working":"생각을 정리하는 중","shell.sw.cleanup_title":"알림 정리","shell.sw.cleanup_body":"처리한 알림을 정리했어요","shell.sw.reply_sent":"답변을 보냈어요","shell.manifest.description":"{name} · 항상 켜져 있는 개인 비서","system.scope.project":"범위: 프로젝트 ({where})","system.scope.shipped":"범위: 배포 ({where})","system.scope.personal":"범위: 개인 ({where})","system.scope.project_short":"프로젝트","system.scope.shipped_short":"배포","system.scope.personal_short":"개인","system.origin.shipped":"배포용","system.origin.personal":"개인용","system.fmt.on":"켜짐","system.fmt.off":"꺼짐","system.fmt.blank":"비움","system.mark.custom":"바꾼 값 {n}","system.mark.feats":"내 기능 {n}","system.mark.files":"내 파일 {n}","system.mark.title":"내가 바꾼 것: {parts}","system.mark.ext":"내 확장","system.mark.badge":"내 설정","system.col.inputs":"들어오는 곳","system.col.gateway":"게이트웨이","system.state.ok":"정상","system.state.warn":"주의","system.state.off":"꺼짐","system.apply.live":"바로 적용","system.apply.next":"다음 메시지부터","system.apply.restart":"재시작 후 적용","system.load_failed":"구성을 불러오지 못했어요","system.view.scope":"보기 범위","system.view.all":"전체","system.view.all_tip":"기본과 내가 바꾼 것을 모두 보여줘요","system.view.custom":"커스텀 {n}","system.view.custom_tip":"같은 단계 그대로, 내가 바꾼 것만 걸러 보여줘요","system.note.project":"이 프로젝트만의 지도예요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.","system.note.dotted":"점선 카드는 곁에서 돕는 시스템이에요.","system.note.flow":"큰 카드가 메시지가 흐르는 길이에요. 작은 칩은 함께 실행되는 시스템·파일이에요.","system.detail.btn":"자세히","system.detail.tip":"모든 시스템과 연결선을 한 화면에 그려요","system.feat.btn":"기능 보기","system.feat.tip":"각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요","system.refresh":"새로고침","system.legend":"내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 기본값이에요 ({path}).","system.fcnote.instr":"모델에게 주는 지침 글이에요. 모델이 따르도록 부탁하는 것이라 어길 수도 있어요 (권고).","system.fcnote.deny":"RULES의 deny 줄이에요. 실행 직전에 코드가 막아요 (강제).","system.fcnote.folder":"features 폴더 안의 폴더 하나가 기능 하나예요. 글은 권고, deny 줄·모니터링 파일이 있으면 코드가 강제해요. 스위치로 켜고 꺼요.","system.fcnote.skill":"SKILL.md 절차서예요. 모델이 필요할 때 읽고 따라요 (권고).","system.fcnote.ext":"하네스가 불러오는 코드예요. 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).","system.fcnote.schedule":"정해진 시각에 문장을 어시스턴트에게 보내는 타이머예요.","system.fcnote.monitor":"모델을 호출하지 않고 주기적으로 명령을 실행해 변화만 알리는 점검이에요.","system.fcnote.channel":"작업 채널마다 묶어 둔 로그인 유지와 모니터링이에요.","system.fcnote.gateway":"게이트웨이 코드에 들어 있는 기능이에요.","system.fcnote.external":"Discord·메일(zele)·브라우저(Aside) 같은 바깥 서비스와의 연결이에요.","system.fcnote.web":"~/.dotz/custom의 홈 카드·사이드바 고정·루틴이에요. 봇이 파일로 만들고 재시작 없이 바로 보여요.","system.str.enforced":"강제","system.str.advisory":"권고","system.harness":"하네스","system.ext.label":"{name} 확장","system.ext.default":"기본 확장","system.ext.note":"{name}가 실제로 불러오는 코드예요 ({dirs}). 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).","system.dup.code":"같은 일을 코드(강제)로도 적어 뒀어요: {names}","system.dup.text":"같은 일을 글(권고)로도 적어 뒀어요: {names}","system.fbadge.title":"여기서 작동하는 기능: 강제 {e}개 · 권고 {a}개","system.fbadge.enforced":"강제 {n}","system.fbadge.advisory":"권고 {n}","system.sw.aria_off":"{name} 끄기 요청","system.sw.aria_on":"{name} 켜기 요청","system.sw.title_off":"{bot}에게 끄기 요청","system.sw.title_on":"{bot}에게 켜기 요청","system.sw.sent":"요청 보냄 · {at}","system.sw.scope_tip":"{scope} · 스위치를 누르면 배포 파일 변경 요청도 고를 수 있어요","system.sw.req_off":"{name} 끄기 ({src})","system.sw.req_on":"{name} 켜기 ({src})","system.sw.shipped_feat":"배포 기능 {repo}","system.sw.req_shipped":"배포 저장소의 {repo} 를 직접 고쳐 주세요 (enabled: {on}). 모든 사용자에게 바뀌는 변경이에요.","system.sw.req_override":"{where} 에 같은 id 로 덮어쓰기: {repo} 를 그 폴더에 복사해 enabled: {on} 로 두세요. 배포 저장소 파일은 건드리지 마세요.","system.sw.pick_personal":"개인 설정으로 덮어쓰기 (기본)","system.sw.pick_shipped":"배포 파일 변경 요청","system.sw.pick_shipped_sub":"{path} · 모든 사용자에게 바뀌어요","system.ext.not_loaded_tip":"{name}는 이 확장을 불러오지 않아요","system.ext.not_loaded":"안 불러옴","system.str.enforced_tip":"코드·훅·차단 줄이 막거나 실행해요","system.str.advisory_tip":"모델에게 따르라고 부탁한 글이에요","system.origin.personal_tip":"내 파일·설정에만 있는 기능이에요 (~/.dotz, 하네스 확장 폴더)","system.origin.shipped_tip":"기본으로 함께 오는 기능이에요","system.dup.tag":"중복","system.src.added":"{added} 추가","system.src.last":"마지막 {at}","system.fcount.all":"{n}개 · 강제 {e} · 권고 {a}","system.fcount.hit":"{hit} / {n}개 · 강제 {e} · 권고 {a}","system.fnone":"조건에 맞는 기능이 없어요","system.n_items":"{n}개","system.fsum":"강제 {e} · 권고 {a}","system.off_group":"이 하네스에선 꺼짐","system.fsearch.ph":"기능 검색 (이름·내용·파일)","system.fsearch.aria":"기능 검색","system.fstrength.aria":"강제/권고","system.flist":"기능 목록","system.flist.sup":"회색으로 채운 카드(강제)는 코드가 막거나 실행하는 것, 테두리만 있는 카드(권고)는 모델에게 따르라고 부탁한 글이에요.","system.pick.form":"형식","system.pick.trigger":"트리거","system.pick.origin":"출처","system.mark.mine_feat":"내 기능","system.here.sec":"여기서 작동하는 기능 · 강제 {e} · 권고 {a}","system.pj.keyed":"{name} (API 키)","system.pj.revert":"리셋되면 복귀","system.pj.none":"없음","system.pj.model":"모델","system.pj.effort":"강도","system.pj.worker_model":"서브에이전트 모델","system.pj.worker_effort":"서브에이전트 강도","system.pj.runtime":"런타임","system.pj.fallback":"폴백","system.pj.worker_fallback":"서브에이전트 폴백","system.pj.changed":"바뀜","system.pj.global":"전역 기본","system.pj.feat":"기능 {n}: {names}","system.pj.deny":"차단 규칙 {n}줄","system.pj.open_map":"{name} 프로젝트 지도 열기","system.pj.diff_tip":"전역 기본과 다른 값의 수","system.pj.diff_n":"전역과 다름 {n}","system.pj.all_global":"전부 전역 기본","system.pj.files":"지침 파일","system.pj.file_tip":"{name} · {bytes}바이트 · {at} 수정","system.pj.channel":"채널 설정","system.pj.logins":"로그인 {n}","system.pj.logins_named":"로그인 {n} ({names})","system.pj.monitors":"모니터링 {n}","system.pj.standing":"상시 처리: {text}","system.pj.no_settings":"설정 없음","system.pj.only_here":"이 프로젝트에만 적용","system.pj.head":"프로젝트 · {n}","system.pj.sup_some":"작업 채널·홈 채널에 묶인 세션이에요.","system.pj.sup_none":"작업 채널이나 홈 채널에 묶인 세션이 아직 없어요.","system.pj.lg_diff":"전역과 다른 값","system.pj.lg_same":"전역 그대로","system.pj.back":"전체 구성","system.pj.dirty.title":"저장하지 않은 변경","system.pj.dirty.body":"열려 있는 항목에 저장하지 않은 변경이 있어요. 버리고 넘어갈까요?","system.pj.dirty.ok":"버리기","system.pj.ask.ph":"이 프로젝트에 바라는 변경을 적어 주세요","system.pj.ask.aria":"프로젝트 수정 요청","system.pj.ask.send":"{bot}에게 수정 요청","system.pj.ask.done":"요청했어요","system.many_in":"들어온 글","system.from.start":"여기서 시작해요","system.from.stage":"{from}에서","system.count.items":"항목 {n}","system.count.items_tip":"이 단계의 항목 수","system.count.warn":"주의 {n}","system.with.head":"함께 실행되는 항목 · {n}","system.cv.changed_tip":"이 단계에서 바꾼 것","system.cv.default_only":"기본 그대로","system.cv.mine_head":"내 파일·확장 · {n}","system.cv.chars":"{n}자 · {at} 수정","system.fe.missing":"아직 없는 파일","system.cv.rules":"글 {n}줄","system.cv.deny":"차단 {n}줄","system.cv.sets_head":"바꾼 설정 · {n}","system.cv.default_val":"기본 {v}","system.cv.feats_head":"내 기능 · {n}","system.cv.fold":"접기","system.cv.more":"{n}개 더 보기","system.sheet.facts":"지금 상태","system.sheet.req_note":"수정 요청은 {bot}에게 가요.","system.sheet.file":"파일","system.sheet.file_named":"파일 · {name}","system.sheet.near":"이어진 곳","system.sheet.ask":"이 카드에 대한 요청","system.sheet.current":"현재","system.req.tag":"[구성 탭 수정 요청]","system.own.file":"내 파일이에요","system.own.file_at":"내 파일이에요 ({where})","system.own.ext":"내 확장이에요","system.own.ext_at":"내 확장이에요 ({where})","system.own.ship":"기본으로 함께 오는 거예요","system.own.ship_file":"기본으로 함께 오는 거예요 (저장소 파일 · 읽기 전용)","system.own.changed_vals":"설정값 {n}개는 내가 바꿨어요 ({path})","system.own.saved_in":"설정값은 {path}에 저장돼요","system.set.pending":"재시작 대기 중","system.set.models":"모델 · 폴백에서 바꾸기","system.set.ro":"읽기 전용","system.set.ro_note":"보안·연결 정보라 화면에서 바꿀 수 없어요.","system.set.reset":"기본값","system.set.req":"{label} ({source}): {from} -> {to}. 적용 시점: {when}.","system.set.diff_global_tip":"전역 기본과 다른 값이에요","system.set.diff_global":"바꿈 · 전역 {v}","system.set.diff_def_tip":"기본값과 다른 값이에요","system.set.diff_def":"바꿈 · 기본 {v}","system.span.line":"{a}줄","system.span.lines":"{a}-{b}줄","system.span.replace":"{x} ({n}줄로 교체)","system.span.delete":"{x} 삭제","system.span.add":"{s}줄 뒤에 {n}줄 추가","system.fe.req_head":"{label} ({path}) 수정","system.fe.req_memo":"메모: {note}","system.fe.req_unchanged":"파일 내용은 바꾸지 않았어요. 메모대로 파일을 직접 고쳐 주세요. 적용 시점: {when}","system.fe.req_diff":"아래 diff 대로 파일을 고쳐 주세요 (줄 단위, 앞뒤 3줄 맥락 포함).\n```diff\n--- {name}\n+++ {name} (수정안)\n{diff}\n```","system.fe.req_big":"변경이 커서 diff 는 생략했어요 (+{add}줄 -{del}줄). 바뀐 곳(원본 줄 기준): {spans}. 파일을 직접 열어 확인하고 메모대로 고쳐 주세요.","system.fe.req_big_more":"변경이 커서 diff 는 생략했어요 (+{add}줄 -{del}줄). 바뀐 곳(원본 줄 기준): {spans} 외 {n}곳. 파일을 직접 열어 확인하고 메모대로 고쳐 주세요.","system.fe.req_applies":"적용 시점: {when}","system.fe.memo_ph":"무엇을 왜 바꾸는지 (선택)","system.fe.memo_aria":"수정 요청 메모","system.fe.stat":"변경 +{add}줄 -{del}줄","system.fe.stat_big":"많이 바뀌어서 diff 대신 바뀐 줄 범위만 보내요. 메모에 무엇을 바꾸는지 적어 주세요","system.fe.len":"{n}자","system.fe.len_cap":"{n}자 (시작 지침에는 앞 {cap}자까지)","system.fe.modified":"{at} 수정","system.fe.load_failed":"파일을 불러오지 못했어요","triage.none":"처리할 카드가 없어요","triage.bar":"처리한 카드","triage.head.list":"목록 {n}건","triage.tog.one":"한 장씩","triage.tog.list":"목록","triage.rq.load_fail":"답장 대기를 불러오지 못했어요","triage.sent.owner":"확인 후 발송","triage.sent.rule":"자동 발송","triage.sent.retry":"다시 보냄","triage.rq.name":"답장 대기","triage.empty.all":"기다리는 답장이 없어요","triage.empty.ask":"답을 기다리는 초안이 없어요","triage.empty.fail":"못 보낸 답장이 없어요","triage.empty.sent":"오늘 보낸 답장이 없어요","triage.tab.sent":"보낸 것","triage.rq.state_aria":"답장 상태","triage.fast":"빠른 처리","triage.rq.app_frame":"앱 {t}","triage.rq.all_n":"전체 · {n}","triage.rq.sent_today":"오늘 보낸 답장 {n}건","triage.rq.sending_n":"보내는 중 {n}건","triage.keys":"키보드로 처리하기","triage.key.move":"이동"};
 // Screen text and number/date locale. The server puts `const I18N_LANG = "ko", I18N = {...};` right after the WEB_BUILD line (hub/webapp.ts);
 // this file reads those two constants and nothing else, and touches no DOM, so hub/web-i18n.ts runs the same source on the server.
@@ -1553,7 +1553,7 @@ function peerMsgCard(e, p, hm) {
   if (long) body.classList.add("clamp");
   const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = body.classList.toggle("clamp"); more.textContent = c ? TX("base.more") : TX("base.less"); } }, TX("base.more")) : null;
   const mt = el("div", { class: "mt", text: hm }), mid = e.mid || e.message_id || "";
-  if (p.kind !== "ack" && mid) { DELIV.nodes.set(mid, { mt, base: hm }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
+  if (p.kind !== "ack" && mid) delivTrack(mid, { mt, base: hm });
   return el("div", { class: "bm pmc" }, filesNode(e.files, true), rpQuote(e),
     el("div", { class: "ccard" },
       el("div", { class: "pmc-hd" }, icon("desktop"), el("span", { class: "mn", text: p.from }), el("span", { class: "tag", text: PEER_KIND[p.kind], ...(p.id ? { title: `id ${p.id}` } : {}) }), mt),
@@ -1618,7 +1618,7 @@ function phraseTree(text) {
 // The tree as plain arrays of strings (the gaps dropped), for reading and testing the split points.
 const phraseChunks = text => (phraseTree(text) || []).map(([s]) => s.map(([c]) => c.map(([p]) => p.map(([u]) => u))));
 
-const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".cv-empty", ".bell-none", ".dr-none", ".fs-body",
+const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".bell-none", ".dr-none", ".fs-body",
   "dialog p", "[class$='-note']", "[class*='-note ']", "[class$='-sub']", "[class*='-sub ']", "[class$='-hint']", "[class*='-hint ']", "[class$='-desc']",
   "[class*='-desc ']", "[class$='-msg']", "[class$='-body']", "[class*='-body ']"].join(", ");
 // the chat window (#tl: answers, cards, notes) keeps normal line breaks (owner, 11-03), and so does prose an agent wrote wherever it is shown
@@ -1973,8 +1973,35 @@ function statedTone(text, keepFiles = false) {
 
 /* ---------- api ---------- */
 // index.html starts the first answers (state, history, plan, read positions, activity) in <head>, before this 480KB script is downloaded and parsed; the first api() of that path takes it over.
-// A GET that is already in flight is shared (the same path asked twice at boot is one request); each caller parses its own copy of the text.
-const apiGets = new Map();
+// One run of fn per key at a time, and each caller is answered by the first run that starts after its call: a call while run N is out joins run N+1
+// (one queued run, started with the newest caller's fn when run N ends), and the callers of each run get that run's own answer or error. So no caller is
+// handed an answer asked for before its call, an older answer never lands after a newer one, and a wait is at most two reads however often calls come.
+// api() runs every GET through it by path (each caller parses its own copy of the text); a loader that reads in more than one step or paints once per
+// read (loadTarget, convLoad, ...) runs through it by a key of its own.
+const FLIGHTS = new Map();   // key -> { p: the run out, fn, next: the queued run's promise and its settle functions }
+function latest(key, fn) {
+  const f = FLIGHTS.get(key);
+  if (f) {
+    f.fn = fn;
+    if (!f.next) { const n = {}; n.p = new Promise((ok, no) => { n.ok = ok; n.no = no; }); f.next = n; }
+    return f.next.p;
+  }
+  const g = { fn, next: null };
+  const run = () => {
+    g.p = (async () => g.fn())();
+    g.p.then(after, after);
+    return g.p;
+  };
+  const after = () => {
+    const n = g.next;
+    if (!n) { FLIGHTS.delete(key); return; }
+    g.next = null;
+    run().then(n.ok, n.no);
+  };
+  FLIGHTS.set(key, g);
+  return run();
+}
+const latestOut = key => FLIGHTS.get(key)?.p;   // the run of key on its way (to wait for it without asking for another), else undefined
 // Names this page's event stream to the gateway: every request carries it, so a stream whose page stopped asking (a phone asleep, the network gone) is closed by the gateway (hub/events.ts noteLive).
 const LIVE_TOK = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("");
 async function api(path, method = "GET", body) {
@@ -1982,18 +2009,12 @@ async function api(path, method = "GET", body) {
   const go = () => fetch(path, { method, cache: "no-store", headers: { "x-dotz-live": LIVE_TOK, ...(body !== undefined && { "Content-Type": "application/json" }) }, body: body !== undefined ? JSON.stringify(body) : undefined });
   const read = async r => ({ ok: r.ok, status: r.status, text: await r.text() });
   let res;
-  if (method === "GET") {
-    let p = apiGets.get(path);
-    if (!p) {
-      const early = window.__early && window.__early[path];
-      if (early) delete window.__early[path];
-      p = (early ? early.catch(go) : go()).then(read);
-      apiGets.set(path, p);
-      const done = () => { if (apiGets.get(path) === p) apiGets.delete(path); };
-      p.then(done, done);
-    }
-    res = await p;
-  } else res = await read(await go());
+  if (method === "GET") res = await latest(path, () => {
+    const early = window.__early && window.__early[path];
+    if (early) delete window.__early[path];
+    return (early ? early.catch(go) : go()).then(read);
+  });
+  else res = await read(await go());
   let data = null;
   try { data = JSON.parse(res.text); } catch {}
   if (!res.ok) throw Object.assign(new Error(res.status === 503 && path.startsWith("/api/peer/proxy") ? (data && data.reason) || TX("base.peer.read_only") : (data && data.error) || `HTTP ${res.status}`), { data, status: res.status });
@@ -2111,7 +2132,7 @@ function openSheet() {
   const d = document.querySelector("dialog[open]:not([data-leaving]):not(.cf)");
   if (d) return { host: d, onEnd: f => d.addEventListener("close", f, { once: true }) };
   const top = FS[FS.length - 1];
-  return top ? { host: top.box, onEnd: f => top.ends.push(f) } : null;
+  return top ? { host: top.box, onEnd: f => fsOnEnd(top, f) } : null;
 }
 function confirmInSheet({ host, onEnd }, { title, body, actions, onclose }) {
   const sheet = host.classList.contains("fs-card"), from = document.activeElement, kept = [...host.children].map(n => [n, n.hidden]);
@@ -2193,10 +2214,9 @@ function chartDraw(spec, width) {
   const k = `${Math.round(width / 40)}:${spec}`;
   let p = chartDrawn.get(k);
   if (!p) {
-    p = fetch("/api/chart", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spec, width: width || undefined }) })
-      .then(r => r.json())
-      // a failed request is not kept: the next time the message is drawn it asks again
-      .catch(() => (chartDrawn.delete(k), { ok: false, note: TX("base.chart.load_failed") }));
+    // The gateway answers a refused spec with a status and { ok: false, note } (e.data): that note is shown and kept; no answer at all is not kept, so the next time the message is drawn it asks again.
+    p = api("/api/chart", "POST", { spec, width: width || undefined })
+      .catch(e => e.data || (chartDrawn.delete(k), { ok: false, note: TX("base.chart.load_failed") }));
     chartDrawn.set(k, p);
   }
   return p;
@@ -2361,31 +2381,35 @@ const input = (opts = {}) => el("input", { id: `f${++fieldSeq}`, class: "fi", au
 // tab: the bottom tab a screen belongs to; nav: its place in the tab bar (no nav: not a tab); sub: a settings sub-page (the 설정 tab
 // stays lit, 뒤로 leads back toward 설정); up: the fixed screen 뒤로 goes to, only where that never depends on state; title and ic: the
 // header title and the icon of the tab and palette row; html: its section is in web/index.html (without it 22-settings-pages.js adds one).
-// 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
+// palette: false keeps a screen out of the command palette's screen list (it is reached from another screen, never by name).
+// relay: a relayed computer's snapshot is drawn in this screen (44-relay-views.js); under: the settings page 뒤로 falls back to when it was not opened from another screen.
+// 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used; term: the 터미널 view (its header bar reads term).
+// keyed: the address target names one of the screen's own items (a project, a provider, a card), never a conversation: go() leaves the open one alone.
+// go() reads the 채팅 tab's views as the conversation views: the open conversation is their address.
 // The order is the order of the views list (the palette lists screens in it); the four settings pages come last.
 const SCREENS = {
-  home: { tab: "home", nav: 1, title: TX("common.home"), ic: "home", html: true },
-  chat: { tab: "chat", nav: 2, title: TX("common.chat"), ic: "chat", html: true },
-  activity: { tab: "chat", title: TX("common.chat"), ic: "activity", html: true },
+  home: { tab: "home", nav: 1, title: TX("common.home"), ic: "home", html: true, relay: true },
+  chat: { tab: "chat", nav: 2, title: TX("common.chat"), ic: "chat", html: true, relay: true },
+  activity: { tab: "chat", title: TX("common.chat"), ic: "activity", html: true, palette: false, term: true },
   harness: { tab: "settings", sub: true, up: "settings", title: TX("common.system"), ic: "harness", html: true },
-  settings: { tab: "settings", nav: 6, title: TX("common.settings"), ic: "settings", html: true },
+  settings: { tab: "settings", nav: 6, title: TX("common.settings"), ic: "settings", html: true, relay: true },
   models: { tab: "settings", sub: true, title: TX("common.model"), ic: "model", html: true },
-  accounts: { tab: "settings", sub: true, title: TX("common.accounts"), ic: "key", html: true },
+  accounts: { tab: "settings", sub: true, title: TX("common.accounts"), ic: "key", html: true, keyed: true },
   usage: { tab: "settings", sub: true, title: TX("common.usage"), ic: "usage", html: true },
   context: { tab: "settings", sub: true, title: TX("common.context"), ic: "context", html: true },
-  discord: { tab: "settings", sub: true, title: TX("base.title.discord"), ic: "discord", html: true },
-  jandi: { tab: "settings", sub: true, title: TX("base.title.jandi"), ic: "chat", html: true },
-  slack: { tab: "settings", sub: true, title: TX("base.title.slack"), ic: "chat", html: true },
-  telegram: { tab: "settings", sub: true, title: TX("base.title.telegram"), ic: "chat", html: true },
+  discord: { tab: "settings", sub: true, title: TX("base.title.discord"), ic: "discord", html: true, under: "messengers" },
+  jandi: { tab: "settings", sub: true, title: TX("base.title.jandi"), ic: "chat", html: true, under: "messengers" },
+  slack: { tab: "settings", sub: true, title: TX("base.title.slack"), ic: "chat", html: true, under: "messengers" },
+  telegram: { tab: "settings", sub: true, title: TX("base.title.telegram"), ic: "chat", html: true, under: "messengers" },
   messengers: { tab: "settings", sub: true, title: TX("base.title.messengers"), ic: "chat", html: true },
   devices: { tab: "settings", sub: true, title: TX("base.title.devices"), ic: "key", html: true },
   webaccess: { tab: "settings", sub: true, title: TX("base.title.webaccess"), ic: "open", html: true },
-  project: { tab: "projects", title: TX("common.project"), ic: "projects", html: true },
-  projects: { tab: "projects", nav: 3, title: TX("common.projects"), ic: "projects", html: true },
-  monitoring: { tab: "monitoring", nav: 4, title: TX("common.monitoring"), ic: "activity", html: true },
+  project: { tab: "projects", title: TX("common.project"), ic: "projects", html: true, palette: false, keyed: true },
+  projects: { tab: "projects", nav: 3, title: TX("common.projects"), ic: "projects", html: true, relay: true },
+  monitoring: { tab: "monitoring", nav: 4, title: TX("common.monitoring"), ic: "activity", html: true, relay: true },
   apps: { tab: "apps", nav: 5, title: TX("common.apps"), ic: "apps", html: true },
-  notices: { title: TX("common.alerts"), ic: "bell", html: true },
-  cardform: { tab: "home", up: "home", title: TX("base.title.cardform") },
+  notices: { up: "home", title: TX("common.alerts"), ic: "bell", html: true },
+  cardform: { tab: "home", up: "home", title: TX("base.title.cardform"), palette: false, keyed: true },
   notifications: { tab: "settings", sub: true, title: TX("settings.page.notifications"), ic: "bell" },
   display: { tab: "settings", sub: true, title: TX("settings.page.display"), ic: "settings" },
   update: { tab: "settings", sub: true, title: TX("settings.page.update"), ic: "download" },
@@ -2396,7 +2420,30 @@ const views = Object.keys(SCREENS);
 const SUB = new Set(views.filter(id => SCREENS[id].sub));
 const titles = Object.fromEntries(views.map(id => [id, SCREENS[id].title]));
 const NAV = views.filter(id => SCREENS[id].nav).sort((a, b) => SCREENS[a].nav - SCREENS[b].nav).map(id => [id, SCREENS[id].title]);
+const RELAY_VIEWS = new Set(views.filter(id => SCREENS[id].relay));
 const VIEW_ICON = Object.fromEntries(views.filter(id => SCREENS[id].ic).map(id => [id, SCREENS[id].ic]));
+// A screen's own functions, which a data row cannot hold: its owner file registers them with screenHooks(id, { ... }), one function per key.
+// go() asks them in this order and tests no screen name itself:
+// conv(tgt): the conversation an address target opens inside the screen (모니터링's monitoring/c:<target>), drawn in the chat view.
+// aim(tgt): before current changes, the screen reads the target; it may return [name, tgt] to open another screen or target instead (a third element true: the phone's chat list).
+// leave(): the screen being left, before current changes (채팅 keeps the reader's place in its pane).
+// route(tgt): after current is set and before the address is built, the screen reads the target into its state.
+// hash(tgt): the screen's address when it says more than its id (project/<key>); empty or missing: the id.
+// beside(): a view shown beside this one (the project list beside a project from 1100px).
+// title(): a header title that follows state (홈 names the bot).
+// away(): every other screen's, on each move, before the new one's enter (시스템's node sheet closes).
+// enter(tgt): once the view is shown, the screen draws itself and asks for its data.
+// back(): the app bar's 뒤로 asks it first (04-state.js #back); true means it closed something on the screen itself.
+// chain(hash): the routes from 홈 down to the screen when they follow its state (32-history-nav.js routeChain); without it the row's up is used.
+const SCREEN_HOOKS = {};
+function screenHooks(id, hooks) {
+  if (!SCREENS[id]) throw new Error(`screenHooks: unknown screen ${id}`);
+  const own = SCREEN_HOOKS[id] ||= {};
+  for (const [k, f] of Object.entries(hooks)) {
+    if (k in own) throw new Error(`screenHooks: ${id}.${k} is registered twice`);
+    own[k] = f;
+  }
+}
 
 /* ---------- state ---------- */
 let S = null;          // /api/state (no events)
@@ -2425,7 +2472,8 @@ const CHAT_MODE_KEY = "dotz-chat-mode";
 // 로그 보기 (the "activity" view): kept in the code, off in the app. false hides the 대화/로그 toggle and sends every way into the log view
 // (an old #activity address, a saved choice, a subagent row) to 대화 instead; true brings the toggle back.
 const LOG_VIEW = false;
-const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : v === "cardform" ? "home" : v;
+// The tab a screen lights: its row's tab (채팅's 터미널 view, a project, the card form); a settings page and a screen without a tab name themselves.
+const navView = v => (SCREENS[v] && !SUB.has(v) && SCREENS[v].tab) || v;
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
@@ -2439,6 +2487,7 @@ const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort(
 // and 선택 turns the rows into checkboxes for deleting several at once. Delete moves the lane into the gateway's trash
 // (lanetrash.ts, kept 7 days); the toast's 되돌리기 restores it.
 let endedOpen = false, endedSel = null;
+const putEndedOpen = v => { endedOpen = v; };
 const UNDO_MS = 8000;
 function refreshEnded() {
   document.querySelectorAll("details.ended").forEach(d => d.replaceWith(endedGroup() || ""));
@@ -2498,7 +2547,7 @@ async function deleteEnded(names) {
     const ok = r.results.filter(x => x.ok), bad = r.results.filter(x => !x.ok);
     await Promise.all([...document.querySelectorAll(".ended [data-lane]")].filter(n => ok.some(x => x.name === n.dataset.lane)).map(n => motionGone(n)));   // the deleted rows fold away once the hub said yes
     endedSel = null;
-    if (S && S.lanes) S.lanes = S.lanes.filter(l => !ok.some(x => x.name === l.name));
+    if (S && S.lanes) stateMerge({ lanes: S.lanes.filter(l => !ok.some(x => x.name === l.name)) });
     refreshEnded();
     refreshState();
     if (ok.length) toast(ok.length === 1 ? TX("base.ended.deleted_one", { name: ok[0].name }) : TX("base.ended.deleted_many", { n: ok.length }), false, { label: TX("common.undo"), onclick: () => restoreEnded(ok.map(x => x.id)) }, UNDO_MS);
@@ -2558,9 +2607,9 @@ function closeChatList() {
   go(lastChatView());
   if (snap && snap.key === target && current === "chat" && !snap.stick) {
     chatUnpin();
-    if (snap.at) { CV.pinTs = snap.at.ts; CV.pinOff = snap.at.off; chatPin("at"); }
+    if (snap.at) { cvPinAt(snap.at.ts, snap.at.off); chatPin("at"); }
     else timeline.scrollTop = snap.top;
-    chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick;
+    putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40); $("#chat-jump").hidden = chatStick;
   }
 }
 // Setting (settings screen): what the 대화 tab opens when coming back from another tab - "last" (default) the conversation that was open, "main" the main chat.
@@ -2625,8 +2674,10 @@ $("#cmdk").append(icon("search"), el("span", { class: "tx", text: TX("base.comma
 const setBrand = () => { $("#brand-name").textContent = relayBrand(); paintAttn(); };
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"), el("span", { class: "bk-l", text: titles.monitoring }));
-const backTarget = () => current === "cardform" ? "home" : NSC.ret && current !== "home" ? "notices" : current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : ["discord", "jandi", "slack", "telegram"].includes(current) ? "messengers" : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat") ? "monitoring" : null;
-$("#back").onclick = () => (nscBack() || asBack() || rqBack() || kkBack() || cmBack() || mxsBack() ? 0 : monCtx && current === "chat" ? go("monitoring", (narrowChat() ? !monChatIt() : !isSettingsT(target)) ? MON.sel : undefined) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
+// 뒤로's screen: the card form goes to its fixed parent even when opened from 알림, any other screen opened from 알림 returns there, then the
+// fixed parent of the table (SCREENS up), then the cases that depend on state (a settings page returns to the screen that opened it).
+const backTarget = () => current === "cardform" ? SCREENS.cardform.up : NSC.ret && current !== "home" ? "notices" : SCREENS[current]?.up || (SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : SCREENS[current].under || "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat") ? "monitoring" : null);
+$("#back").onclick = () => (nscBack() || SCREEN_HOOKS[current]?.back?.() ? 0 : monCtx && current === "chat" ? go("monitoring", (narrowChat() ? !monChatIt() : !isSettingsT(target)) ? MON.sel : undefined) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
 
 /* ---------- command palette: jump to a view or run a /command ---------- */
 // A command's answer (the card /api/command returns) in the app's own components: a status line, the facts as list rows,
@@ -2700,10 +2751,10 @@ function openPalette() {
       else if (!spaced) for (const x of hintList) if (x.c.startsWith(v)) items.push(palCmd(x));
     } else {
       for (const x of hintList) if (!x.dup && (!v || x.c.includes(v))) items.push(palCmd(x));
-      for (const id of views) if (id !== "activity" && id !== "project" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
+      for (const id of views) if (SCREENS[id].palette !== false && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
-      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: TX("base.ended.label", { n: ended.length }), act: () => { endedOpen = true; go("chat", "list"); } });
+      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: TX("base.ended.label", { n: ended.length }), act: () => { putEndedOpen(true); go("chat", "list"); } });
       else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || TX("base.pal.words.ended").includes(v))) items.push({ kind: "act", ic: "lanes", label: `${TX("common.ended_sessions")} · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
       if (!v || TX("base.pal.words.terminal").includes(v)) items.push({ kind: "act", ic: "shell", label: TX("base.pal.open_terminal"), act: () => openShell() });
       if (S && S.desk && (!v || TX("base.pal.words.screen").includes(v))) items.push({ kind: "act", ic: "desktop", label: TX("base.pal.open_screen"), act: () => openScreen() });
@@ -2763,74 +2814,47 @@ function go(name, tgt) {
   // does one raised together with the move ("프로젝트를 지웠어요" and then the list).
   document.querySelectorAll("body > .snack:not(.act)").forEach(n => { if (n !== toastNew) toastGone(n); });
   [name, tgt] = routeAlias(name, tgt);
-  NSC.pass = 0;
-  if (!PN.going) PN.app = false;   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
-  const viaRow = NSC.arm > Date.now();
-  NSC.arm = 0;
-  if (name === "notices") NSC.ret = false;
-  else { NSC.ret = viaRow; if (!viaRow) NSC.keep = false; }
+  nscLanding(name);
+  paneAppOff();   // 모니터링 is a pane's screen only while the pane machinery lends it (43-panes.js paneGoApp)
   // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
-  const inChat = name === "chat" || name === "activity";
-  let mc = false;
-  if (name === "monitoring" && tgt && tgt.startsWith("c:")) { if (validTarget(tgt.slice(2))) { name = "chat"; tgt = tgt.slice(2); mc = true; } else tgt = undefined; }
+  const inChat = SCREENS[name]?.tab === "chat";
+  let mc = false, cv = SCREEN_HOOKS[name]?.conv?.(tgt);
+  if (cv !== undefined) { if (validTarget(cv)) { name = "chat"; tgt = cv; mc = true; } else tgt = undefined; }
   else if (inChat && !paneKeeps(tgt && tgt !== "list" ? tgt : target) && (tgt ? tgt !== "list" && monOwned(tgt) : monOwned(target))) { name = "chat"; mc = true; }
   else if (inChat && !tgt && monCtx && target === monCtx && !paneKeeps(target)) mc = true;
   monCtx = mc ? tgt || target : "";
-  if (mc) { const k = monItemOf(tgt || target); if (k) MON.sel = k; MON.list = false; }
+  if (mc) monConvIn(tgt || target);
   if (!views.includes(name) || navOff(name)) name = "home";
-  if (name === "projects" && ppWide() && !relayCur()) { H.auto = true; name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { H.auto = true; go("project", prjFirst()); } }); }
-  if (name === "project" && !tgt) name = "projects";
-  if (name === "accounts") accFocus = tgt || "";
-  if (name === "project") ppCur = tgt;
-  if (name === "monitoring") monRoute(tgt);
-  // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
-  chatList = name === "chat" && tgt === "list" && narrowChat();
-  if (name === "chat" && tgt === "list") tgt = undefined;
-  if (tgt && name !== "project" && name !== "accounts" && name !== "cardform" && tgt !== target && validTarget(tgt)) setTarget(tgt, !PN.going);   // a pane coming forward changes the address in place
-  if (name === "activity" && (!LOG_VIEW || isRowT(target) || isRelayT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
+  const aim = SCREEN_HOOKS[name]?.aim?.(tgt);   // before current changes: the screen reads the target, or opens another screen or target instead
+  if (aim) [name, tgt] = aim;
+  chatList = !!aim?.[2];   // the phone's chat list (13-data.js chatAim)
+  if (tgt && !SCREENS[name].keyed && tgt !== target && validTarget(tgt)) setTarget(tgt, !PN.going);   // a pane coming forward changes the address in place
   if (name !== current) prevView = current;
-  if (current === "chat" && name !== "chat") paneStash();
+  if (name !== current) SCREEN_HOOKS[current]?.leave?.();   // the screen being left keeps what it needs (43-panes.js paneStash for 채팅)
   current = name;
   bkKkSync(); bkCmSync();   // leaving 모니터링 (or its item list) releases an open room's or post's history step before the new view stacks
   relayPaint();
-  if (name === "apps") appsOpen(tgt);   // after current is set: appsRender draws only the shown 앱 tab
+  SCREEN_HOOKS[name]?.route?.(tgt);   // after current is set, before the address is built: 앱's appsOpen draws only the shown tab and names it for appsHash
   if (convSync()) renderAll();
-  const tv = name === "chat" || name === "activity";
-  if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "cardform" && tgt ? `cardform/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
+  const tv = SCREENS[name].tab === "chat";
+  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : SCREEN_HOOKS[name]?.hash?.(tgt) || name;
   navSync(name, hash);
-  const pp = name === "project" && ppWide();
-  for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
-  $("#views").classList.toggle("pp", pp);
+  const beside = SCREEN_HOOKS[name]?.beside?.() || "";   // a view shown beside this one (19-project-main.js projectBeside)
+  for (const v of views) $(`#v-${v}`).hidden = v !== name && v !== beside;
+  $("#views").classList.toggle("pp", !!beside);
   paneSync();
-  if ((name === "chat" || name === "activity") && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
+  if (tv && !chatList) try { localStorage.setItem(isLaneT(target) ? `dotz-lane-view:${target}` : CHAT_MODE_KEY, name); } catch {}
   document.querySelectorAll("#nav .ni").forEach(b => { const on = b.dataset.view === navView(SUB.has(name) ? "settings" : mc ? "monitoring" : paneLit(name) ? "chat" : name); b.classList.toggle("on", on); b.setAttribute("aria-current", on ? "page" : "false"); });
   $("#appbar").classList.toggle("tv", tv);
-  const th = $("#thead"), mode = name === "chat" ? "chat" : "term";
+  const th = $("#thead"), mode = SCREENS[name].term ? "term" : "chat";
   th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   if (MT_READY) mailThreadSync();   // the same-sender mail panel belongs to the mail conversation that is open (30-mail-thread.js)
-  $("#title").textContent = name === "home" ? botName : titles[name];
+  $("#title").textContent = SCREEN_HOOKS[name]?.title?.() ?? titles[name];
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
-  if (name === "harness") loadHarness(); else closeHSheet();
-  if (tv) { enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !ts(target).loading) loadTarget(target, hasCached(ts(target))); }
-  if (name === "home") { renderHome(); loadHomeData(); }
-  if (name === "projects" || pp) { renderProjects(); prjLoad(); }
-  if (name === "monitoring" || mc) { renderMonitoring(); if (!monitorsFresh()) loadMonitors(); if (!noticesFresh()) loadNotices(); if (name === "monitoring" || !INTG.loaded) loadIntegrations(); }   // opening a conversation reads the app list kept fresh already; the read it sends asks again
-  if (name === "project") pmOpen(tgt);
-  if (name === "notices") nscOpen();
-  if (name === "settings") { if (!updFresh()) loadUpdate(); renderSettings(); loadMessengerIndex(); if (!provFresh()) loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
-  if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); if (!ACC) loadAccounts().then(() => current === "models" && renderModels()); }
-  if (name === "accounts") { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
-  if (name === "messengers") { renderMessengers(); loadMessengerIndex(); }
-  if (name === "usage") { gaugeForget("usage:"); quotaDrawn = 0; loadQuota(); }   // opening the screen shows the values as they are, no motion
-  if (name === "context") loadContext();
-  if (name === "discord") { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
-  if (name === "jandi" || name === "slack" || name === "telegram") { loadMessengerIndex(); loadMessengerSettings(name); loadOnboarding(name); }
-  if (name === "devices" || name === "settings") loadDevices();
-  if (name === "webaccess" || name === "settings") loadWebAccess();
-  if (name === "webaccess") loadOnboarding("web-access");
+  for (const id in SCREEN_HOOKS) if (id !== name) SCREEN_HOOKS[id].away?.();   // every other screen lets go of what it lent the page (28-harness-project.js closeHSheet)
+  SCREEN_HOOKS[name]?.enter?.(tgt);   // the screen's own file draws it and asks for its data (screenHooks in 03-screens.js)
   // No screen is empty on its first frame: one whose loader has not drawn yet (사용량, 컨텍스트, 구성 ...) says so, and the loader replaces this line.
   const body = $(`#v-${name} > #${name}`);
   if (body && !body.firstChild) body.append(emptyNode(TX("common.loading")));
@@ -2857,8 +2881,13 @@ const limitKo = s => String(s).replace(/^Claude\s+/i, "").replace(/^7\s*Day\s*\(
 const limitLabel = (p, l, multi) => `${multi ? `${p.name || providerName(p.provider)} · ` : ""}${limitKo(l.label || l.id)}`;
 const isConnected = p => p.auth && p.auth !== "none";
 const needsAttention = p => p.in_use && !isConnected(p);
-// A card that failed to load passes `retry`: its 다시 시도 button asks again (a load that gave no data is never a dead end).
-const emptyNode = (t, retry) => (retry ? el("div", { class: "card empty" }, el("div", { text: t }), el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: TX("base.retry"), onclick: ev => busy(ev.currentTarget, async () => retry()) })) : el("div", { class: "card empty", text: t }));
+// The one empty, loading or failed place of a screen (docs/ui-spec.md 빈 화면): a sentence on a card, and nothing else builds one (rule G of
+// hub/web-structure-web.test.ts). `retry` puts 다시 시도 under the sentence (a load that gave no data is never a dead end) and `more` what else stands
+// there: a hint, the one action. `compact` is the line of one section among others; `id` and `role` are for a node a test or a screen reader finds.
+const emptyNode = (t, retry, { id, role, compact, more = [] } = {}) => {
+  const under = [retry ? el("button", { class: "btn tonal", type: "button", "data-k": "retry", text: TX("base.retry"), onclick: ev => busy(ev.currentTarget, async () => retry()) }) : null, ...more].filter(Boolean);
+  return el("div", { class: compact ? "card empty compact" : "card empty", id, role, text: under.length ? null : t }, ...(under.length ? [el("div", { text: t }), ...under] : []));
+};
 // The one 더 보기 of a list: the card's own last line, inside the card, never a control floating under it (.cv-more, 19-volume.css).
 const moreRow = (text, onclick) => el("button", { class: "cv-more", type: "button", "data-k": "more", onclick, text });
 
@@ -2911,8 +2940,6 @@ function workAgo(w) {
 }
 // The left of the status line above the composer: what the background work is and how long it has run. The model is in the chip under the box, so the line does not say it.
 const workLine = ws => `${ws[0].description} · ${workElapsed(ws[0])}${ws.length > 1 ? ` · ${TX("base.work.more", { n: ws.length - 1 })}` : ""}`;
-// Re-read the state while work runs, so a finished or failed one leaves the line without waiting for another event.
-setInterval(() => { if (!document.hidden && (workRunning().length || Object.values((S && S.runs) || {}).some(runMoving))) refreshState(); }, 15000);
 function setSubs(source, items) {
   if (!source) return;
   SUBS[source] = Array.isArray(items) ? items : [];
@@ -2958,30 +2985,51 @@ function paintSubs(box, src) {
     el("span", { class: "nm", text: TX("base.sub.running", { n: run }) }),
     icon("chev", "chev")));
 }
-let SUBD = null;
+/* ---------- the side drawer (#sheet): the one panel for what is read beside the screen (docs/ui-spec.md 시트·대화창) ---------- */
+// SHEET is what the drawer shows now. showSheet opens it, or hands an open drawer to other content, and returns the body to fill: label names
+// the drawer for a screen reader, gone() is the content's own cleanup (run when the drawer closes or other content takes it), opener is the
+// element that gets the focus back on close. The drawer is one history step (ovOpen) however often its content changes. hideSheet closes it
+// whatever it shows (✕, Esc, back); each content has its own close that leaves the other's alone (closeSheet here, closeHSheet in 28-harness-project.js).
+let SHEET = null;
 const sheet = $("#sheet"), shBody = $("#sh-body");
+function showSheet({ label, gone, opener }) {
+  const was = SHEET, same = !!was && was.gone === gone;
+  if (!same) { if (was) was.gone(); clear(shBody).className = "sh-body"; }
+  SHEET = { gone, opener: same ? was.opener : opener, ov: was ? was.ov : ovOpen(hideSheet) };
+  sheet.setAttribute("aria-label", label);
+  sheet.hidden = false;
+  return shBody;
+}
+// The drawer's head: the title, the line under it, a state tag (none hides it) and whether the way back to a list shows.
+function sheetHead({ name, sub, tag = "", tone = "", back = false }) {
+  $("#sh-name").textContent = name; $("#sh-sub").textContent = sub;
+  const t = $("#sh-tag");
+  t.hidden = !tag; t.className = `tag ${tone}`; t.textContent = tag;
+  $("#sh-back").hidden = !back;
+}
+function hideSheet() {
+  const s = SHEET;
+  if (!s) return;
+  SHEET = null; sheet.hidden = true; clear(shBody);
+  s.gone();
+  ovDone(s.ov);
+  if (s.opener && s.opener.isConnected && s.opener.focus) s.opener.focus();
+}
+let SUBD = null;
 // SUBD: {sources} lists the running subagents of those sources; {source, id} shows one (with a way back when it was
 // opened from a list).
-function showSheet(d) {
+function subSheet(d) {
   if (SUBD) clearTimeout(SUBD.timer);
-  SUBD = { data: null, err: "", timer: 0, opener: SUBD ? SUBD.opener : document.activeElement, ov: SUBD ? SUBD.ov : null, ...d };
-  if (!SUBD.ov) SUBD.ov = ovOpen(closeSheet);
-  shBody.dataset.init = "";
-  sheet.hidden = false;
+  SUBD = { data: null, err: "", timer: 0, ...d };
+  showSheet({ label: TX("common.subagent"), gone: subGone, opener: document.activeElement }).dataset.init = "";
   renderSubSheet();
   $("#sh-close").focus();
   if (SUBD.id) loadSub();
 }
-function openSubs(sources) { showSheet({ sources }); }
-function openSub(source, id, from, title) { showSheet({ source, id, from, title }); }
-function closeSheet() {
-  if (!SUBD) return;
-  clearTimeout(SUBD.timer);
-  const o = SUBD.opener, ov = SUBD.ov;
-  SUBD = null; sheet.hidden = true; clear(shBody);
-  ovDone(ov);
-  if (o && o.isConnected && o.focus) o.focus();
-}
+function subGone() { clearTimeout(SUBD.timer); SUBD = null; }
+function closeSheet() { if (SUBD) hideSheet(); }
+function openSubs(sources) { subSheet({ sources }); }
+function openSub(source, id, from, title) { subSheet({ source, id, from, title }); }
 const subNow = d => (SUBS[d.source] || []).find(s => s.id === d.id) || {};
 async function loadSub() {
   const d = SUBD;
@@ -2997,12 +3045,9 @@ async function loadSub() {
 function renderSubSheet() {
   const d = SUBD;
   if (!d) return;
-  $("#sh-back").hidden = !d.from;
   if (!d.id) {
     const rows = d.sources.flatMap(s => spawnOrder(runningSubs(s)).map(x => [s, x]));
-    $("#sh-name").textContent = TX("base.sub.running", { n: rows.length });
-    $("#sh-sub").textContent = d.sources.map(s => targetName(targetOfSource(s))).join(", ");
-    $("#sh-tag").hidden = true;
+    sheetHead({ name: TX("base.sub.running", { n: rows.length }), sub: d.sources.map(s => targetName(targetOfSource(s))).join(", "), back: !!d.from });
     shBody.className = "sh-body";
     clear(shBody);
     if (!rows.length) shBody.append(el("div", { class: "a-div", text: TX("base.sub.none") }));
@@ -3015,10 +3060,7 @@ function renderSubSheet() {
   }
   const l = subNow(d), data = d.data || {};
   const st = data.status || l.status || "";
-  $("#sh-name").textContent = data.description || l.description || d.title || data.agent || l.agent || TX("common.subagent");
-  $("#sh-sub").textContent = `${targetName(targetOfSource(d.source))} · ${TX("common.subagent")}`;
-  const tag = $("#sh-tag");
-  tag.hidden = !st; tag.className = `tag ${subTone(st)}`; tag.textContent = subKo[st] || st;
+  sheetHead({ name: data.description || l.description || d.title || data.agent || l.agent || TX("common.subagent"), sub: `${targetName(targetOfSource(d.source))} · ${TX("common.subagent")}`, tag: subKo[st] || st, tone: subTone(st), back: !!d.from });
   const m = modeOf(), items = data.items || [];
   const stick = !shBody.dataset.init || shBody.scrollTop + shBody.clientHeight >= shBody.scrollHeight - 40;
   const top = shBody.scrollTop;
@@ -3037,10 +3079,10 @@ function renderSubSheet() {
   shBody.dataset.init = "1";
 }
 $("#sh-close").append(icon("close"));
-$("#sh-close").onclick = closeSheet;
+$("#sh-close").onclick = hideSheet;
 $("#sh-back").append(icon("back"));
 $("#sh-back").onclick = () => { if (SUBD && SUBD.from) openSubs(SUBD.from); };
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SUBD && !openMenu && !document.querySelector("dialog[open]:not([data-leaving])")) closeSheet(); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SHEET && !openMenu && !document.querySelector("dialog[open]:not([data-leaving])")) hideSheet(); });
 
 /* ---------- board: free-form 12-column card grid shared by 홈 and 레인 ---------- */
 // Each card is {id, x, y, w, h} in grid units. Positions are calc() of the container width, so a saved layout paints correctly on the first frame.
@@ -3484,14 +3526,15 @@ function makeBoard(container, key, opts = {}) {
 
 /* ---------- home: every status at a glance, each card navigates ---------- */
 let HQ = null, homeTimer;
+const putHQ = v => { HQ = v; };
 let HOME_READY = false;   // the first loadHomeData has landed: until then rows arriving in pieces are the first paint, and move nothing
 async function loadHomeData() {
   clearTimeout(homeTimer);
   // the other computers' snapshot, read ahead for 모니터링 and a peer's item opened by link; 홈 draws none of it, so its first paint does not wait for a slow peer
   if (typeof pqLoad === "function") pqLoad().catch(() => {});
-  stripAt = Date.now();   // this read feeds the usage strip too (noteQuota): loadStrip does not ask again for it
+  stripAsked();   // this read feeds the usage strip too (noteQuota): loadStrip does not ask again for it
   await Promise.all([
-    api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; stripAt = 0; }),
+    api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; stripRetry(); }),
     loadProviderData().catch(() => {}),
     loadMonitors(),
   ]);
@@ -3577,6 +3620,7 @@ function homeMoveActs(id, inChat, add) {
 
 // Last meaningful line of each running lane, kept from the live activity stream (fetched once per lane for the first sight).
 const LAST = {}, LAST_ASKED = new Set();
+const laneLastPut = (name, s) => { LAST[name] = s; };
 let homeSoonT;
 const homeSoon = () => { clearTimeout(homeSoonT); homeSoonT = setTimeout(() => { if (current === "home") renderHome(); }, 500); };
 // A tool call said in Korean: the kind verb, plus the file's base name for a read or an edit ("파일 수정 · conversations.ts").
@@ -4068,6 +4112,12 @@ function renderHomeNowRaw() {
 
 // The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
 const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
+function homeEnter() { renderHome(); loadHomeData(); }
+function homeTitle() { return botName; }   // the header names the bot on 홈
+screenHooks("home", { enter: homeEnter, title: homeTitle });
+// The card editor (a home card's 편집) names the card it edits in its address (#cardform/<id>); its page is drawn by web/custom.js, which may come in after the first go().
+function cardformHash(id) { return id ? `cardform/${enc(id)}` : ""; }
+screenHooks("cardform", { hash: cardformHash });
 function renderHome() {
   const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
   if (!box || current !== "home") return;
@@ -4112,6 +4162,7 @@ const projTargets = () => Object.keys((S && S.channels && S.channels.work) || {}
 const isMailT = t => t.startsWith("mail:");
 const mailOf = t => t.slice(5);
 const MAILS = new Map();
+const mailPut = (t, m) => { MAILS.set(t, m); }, mailDrop = t => { MAILS.delete(t); }, mailMark = (t, patch) => { Object.assign(MAILS.get(t), patch); };
 // The other computers' items (34-peer-monitoring.js). of: conversation target -> {pc, key: the list item it sits under}; seen: unread/read pair last taken from a snapshot.
 const PQ = { list: [], loaded: false, busy: false, again: false, at: 0, t: 0, of: new Map(), apps: new Map(), seen: new Map() };
 // An app's settings conversation (hub/app-settings.ts, 32-app-settings.js): target settings:<app>, answered by the orchestrator.
@@ -4154,10 +4205,13 @@ const targetName = t => {
 const liveTargets = () => S ? [MAIN, ...projTargets(), ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)] : [MAIN];
 const modeOf = () => current === "activity" ? "term" : "chat";
 let target = MAIN;
+// Only the variable: setTarget (13-data.js) is the conversation switch (draft, files, address, redraw) and calls this.
+const putTargetId = v => { target = v; };
 try { const v = localStorage.getItem(TARGET_KEY); if (v && v !== "alert" && validTarget(v)) target = v; } catch {}
 // A settings conversation (a monitor's or an app's) shows the orchestrator busy only for a turn its own message started: TURN = target -> when that message
 // was sent, until the answer comes. A peer's monitor is answered on that computer, so this one's status never applies to it.
 const TURN = new Map();
+const turnStart = (t, at) => { TURN.set(t, at); }, turnEnd = t => { TURN.delete(t); };
 function targetInfo(t) {
   if (isRelayT(t)) return { status: "", alive: true, known: true };
   if (isSettingsT(t)) { const o = (S && S.orchestrator) || {}, busy = o.status === "working" || o.status === "starting"; return { status: busy && (!TURN.has(t) || PQ.of.has(t)) ? "idle" : o.status || "", alive: true, known: true }; }
@@ -4497,7 +4551,7 @@ function noteQuota(q) {
 function quotaLive(q) {
   if (!q) return;
   noteQuota(q);
-  HQ = q;
+  putHQ(q);
   if (current === "usage") { if (P) paintQuota(q); else loadQuota(); }   // the pushed read is drawn as it is: a recovery shows now, not after a second fetch
   else if (current === "home") renderHome();
 }
@@ -4507,10 +4561,14 @@ async function loadStrip() {
   stripAt = Date.now();
   try { noteQuota(await api("/api/quota")); } catch {}
 }
+const stripAsked = () => { stripAt = Date.now(); };   // a quota read is out: loadStrip waits its 3 minutes
+const stripRetry = () => { stripAt = 0; };   // that read failed: the next loadStrip asks again
 
 // Per-target data, shared by both views: conversation events (msgs) and what the agent did (acts).
 const TS = {};
-const ts = t => TS[t] || (TS[t] = { t, msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", loading: null, ahist: false, amore: false, older: false, cap: 600, gaps: new Set() });
+const ts = t => TS[t] || (TS[t] = { t, msgs: [], mk: new Set(), acts: [], ak: new Set(), hLoaded: false, aLoaded: false, unread: 0, draft: "", ahist: false, amore: false, older: false, cap: 600, gaps: new Set() });
+// Every conversation's history and activity are read again when next opened, except keep (the one being reread now).
+const tsStale = keep => { for (const k of Object.keys(TS)) if (k !== keep) TS[k].hLoaded = TS[k].aLoaded = false; };
 const byTs = (a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0;
 // The fields an event keeps from the stream to the history (hub/events.ts emit, history): two events of one ms, kind and opening tell apart by these.
 const msgKey = e => `${e.ts}|${e.kind}|${e.lane ?? ""}|${e.target ?? ""}|${e.id ?? ""}|${e.update_key ?? ""}|${e.ref ?? ""}${e.state ?? ""}|${String(e.text ?? "").slice(0, 60)}`;
@@ -4537,6 +4595,7 @@ function eventTarget(e) {
 /* ---------- conversation view (대화) ---------- */
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
+const putChatStick = v => { chatStick = v; }, putTermStick = v => { termStick = v; };
 timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; convReadSoon(); if (timeline.scrollTop < 80) loadOlderMsgs(); });
 timeline.addEventListener("scroll", () => edgeFade(timeline), { passive: true });
 term.addEventListener("scroll", () => edgeFade(term), { passive: true });
@@ -4583,13 +4642,32 @@ function fmtDur(ms) {
   return m % 60 ? TX("home.dur.hm", { h: Math.floor(m / 60), m: m % 60 }) : TX("home.dur.h", { n: Math.floor(m / 60) });
 }
 let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 };
+// The chat timeline's draw state (11-todo-strip.js chatPush, 13-data.js renderAll) changes only through these.
+const csReset = () => { CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; };
+const csBreak = () => { CS.who = ""; };   // the next message shows its speaker head again
+const csDay = d => { CS.day = d; CS.who = ""; };
+const csWho = (who, t) => { CS.who = who; CS.whoT = t; };
+const csEmptySet = n => { CS.empty = n; };
+const csEmptyDrop = () => { if (CS.empty) { CS.empty.remove(); CS.empty = null; } };
+const csGroupStart = g => { CS.group = g; };
+const csGroupAdd = a => { CS.group.add(a); };
+const csGroupDrop = () => { CS.group = null; };
+const csGroupLive = () => { const g = CS.group; g.live = true; g.node.classList.add("live"); g.update(); };
+const csProgSet = (key, p) => { CS.prog.set(key, p); };
+const csProgDrop = key => { CS.prog.delete(key); };
+const csParked = n => { CS.parked = n; };
+const csParkedDrop = () => { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; };
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
 // "top" (a mail's start), "bottom", or "" once the owner took over; placed = the opening has been positioned.
-const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", from: "", low: "", seeded: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", openAt: 0, gateT: 0 };
+const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", from: "", low: "", seeded: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", pinTs: "", pinOff: 0, openAt: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();
+// A row's last-message preview: convNewer keeps the newer one (a row it does not know yet gets null), convLastSet puts it as given.
+const convNewer = (t, last) => { const prev = CONV.get(t); if (last && (!prev || prev.ts <= last.ts)) CONV.set(t, last); else if (!CONV.has(t)) CONV.set(t, null); };
+const convLastSet = (t, last) => { CONV.set(t, last); };
+const convDrop = t => { CONV.delete(t); };
 let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0, convReadF = 0;
 
 /* ---------- decision card: a question that waits on the owner, docked above the composer ---------- */
@@ -4672,6 +4750,8 @@ const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
 const isHeadedChoice = pc => pc.blocks.some(b => b.headed && b.options.length > 1);
 const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
 const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, fresh: "", note: {} };
+function dcUnfold(t) { DC.fold[t] = false; }
+function dcMarkSent(key, pick) { DC.picks[key] = [pick]; DC.st[key] = "sent"; delete DC.edit[key]; }   // an answer given elsewhere (a revised draft's sheet, 30-notices.js dkPaint)
 { const k = kept("dc", () => ({ edit: DC.edit, note: DC.note })) || {}; Object.assign(DC.edit, k.edit); Object.assign(DC.note, k.note); }   // the open field and its text outlive a reload (01-core.js kept)
 // A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
 const DRAFT_EDIT = "고치기", DRAFT_OWN = "어떻게 보낼지 직접 입력";
@@ -4751,9 +4831,9 @@ async function answerDecision(dc, text, opt, note) {
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
     const r = nd ? null : await sendMsgOut(t, text, { text, ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isRowT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
-    if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
+    if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); }
     DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
-    if (t === target) { chatStick = true; scrollChat(true); }
+    if (t === target) { putChatStick(true); scrollChat(true); }
   } catch (e) { delete DC.st[dc.key]; if (dc.blocks.length === 1) delete DC.picks[dc.key]; if (note) DC.edit[dc.key] = { bi: 0, opt }; toast(e.message, true); }   // a refused reason opens again with its text (DC.note); a lone question lets go of the chosen row; several keep their picks, so a retry does not start the card over
   paintDecision();
 }
@@ -4807,6 +4887,7 @@ function multiNodes(dc, picks, st) {
 // nothing is written until 반영 (raRowsApply), and 닫기 forgets it.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
 const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, wait: {} };
+function drfFrom(ref, t) { DRF.pc[ref] = t ? pqPc(t) : null; }   // the computer a draft's files are read from: none is this one
 const DRF_WIRE_MAX = 10 * 1024 * 1024;
 const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
 const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
@@ -4904,6 +4985,7 @@ function draftFilesNode(d, o = {}) {
 // o.stage (the 고치기 panel, 10-reply-actions.js rqFixNodes) = { to, cc, mode }, only what he changed: a change marks it (o.onstage is told) and 반영 writes it in one
 // request (raRowsApply). A new choice of 답장 | 전체 답장 drops the lists he typed, for the hub fills them again from the original mail, and the rows say so until then.
 const DRR = { st: {}, pc: {}, busy: {}, add: {}, edit: {} };
+function drRowIdle(ref) { DRR.add[ref] = ""; DRR.edit[ref] = ""; DRF.menu[ref] = ""; }   // no recipient editor and no file menu open on this draft
 const DRR_NONE = { to: [], cc: [], mode: "reply", editable: false, reply: false, failed: true };
 const drrPath = ref => `/api/drafts/${enc(ref)}/recipients`;
 const drrSplit = s => String(s || "").split(/\s*,\s*/).map(a => a.trim()).filter(Boolean);
@@ -5327,7 +5409,7 @@ function dcShowDraft(dc) {
     if (mb.bottom <= tb.bottom && mb.bottom > tb.top) return;
     chatUnpin();
     timeline.scrollTop += mb.bottom - tb.bottom + 12;
-    chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+    putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
     $("#chat-jump").hidden = chatStick;
   });
 }
@@ -5418,7 +5500,7 @@ async function orgLoad(ref, t, paint, get) {
   };
   if (s.load === "busy" || s.load === "ok" || s.load === "missing") return;
   s.load = "busy"; go();
-  if (!get) DRF.pc[ref] = t ? pqPc(t) : null;
+  if (!get) drfFrom(ref, t);
   try { s.data = await (get ? get() : api(drfPath(ref, "original"))); s.load = "ok"; }
   catch (e) { s.load = /찾을 수 없|HTTP 404/.test(e.message) ? "missing" : "fail"; }
   go();
@@ -5443,7 +5525,7 @@ function orgFill(pane, d, t, retry) {
   if (s.load !== "ok") { note(TX("decision.org.loading")); return; }
   const m = s.data, pc = t ? pqPc(t) : null;
   if (m.kind === "comment") { orgComment(pane, m); return; }
-  if (pc) PQ.of.set(`mail:${m.key}`, { pc, key: m.key });   // its body and files are read from the computer that owns the mail
+  if (pc) pqBind(`mail:${m.key}`, pc, m.key);   // its body and files are read from the computer that owns the mail
   const files = mailRealFiles(m.attachments);   // the body's own pictures are drawn in it, not listed as files
   // 보낸 사람 / 받는 사람 / 참조 come from the mail view's own header (30-mail-thread.js), so every place a mail is read names them the same way
   const pp = mailPeople(m, m.text, m.subject), blank = v => !String(v || "").replace(/[\s\-–—]+/g, "");   // a lone "-" names nobody
@@ -5459,7 +5541,7 @@ function orgFill(pane, d, t, retry) {
 function orgHas(ref, t, repaint) {
   const st = ref ? DRF.st[ref] : null;
   if (st) return st.original !== false;
-  if (ref) { DRF.pc[ref] = t ? pqPc(t) : null; drfLoad(ref).then(repaint); }
+  if (ref) { drfFrom(ref, t); drfLoad(ref).then(repaint); }
   return false;
 }
 // The comment a combined card (reply + mail) answers, as a compact block at the top of the card: the side panel has no room beside the mail part, so
@@ -5485,7 +5567,7 @@ async function orgMailOf(t) {
 // 원문 보기 of a mail row (owner 2026-11-04): an item of the row's ⋯ menu (a row keeps no other right-side button, owner 2026-10-27) folds the original open under
 // the summary, without leaving the list. Open rows are kept across repaints; the first open fetches once (orgLoad), and a click inside the original does not open the mail's conversation.
 const MR_OG = new Set();
-const orgMailItem = t => [{ value: "original", label: MR_OG.has(t) ? TX("decision.org.hide") : TX("decision.org.show"), run: () => { if (!MR_OG.delete(t)) MR_OG.add(t); MON.sig = ""; monSchedule(); } }];
+const orgMailItem = t => [{ value: "original", label: MR_OG.has(t) ? TX("decision.org.hide") : TX("decision.org.show"), run: () => { if (!MR_OG.delete(t)) MR_OG.add(t); monDirty(); } }];
 function orgMailRow(t) {
   if (!MR_OG.has(t)) return [];
   const s = orgSt(t), stop = ev => ev.stopPropagation();
@@ -5537,9 +5619,11 @@ function orgNodes(d, t, host, draftEl) {
 // loaded: the first read came back; min: how many waiting items make the 답장 대기 head offer 빠른 처리 and the app filter (the queue's triageMin);
 // err: the last failed read, kept for 답장 대기's 다시 시도.
 const RA = { items: new Map(), loaded: false, min: 1, err: null, busy: new Map(), fail: new Map(), fix: new Map(), asked: new Map(), nodes: new Map(), t: 0, ticking: false };
+function raKeep(it) { if (!RA.items.has(it.ref) && !it.pc) RA.items.set(it.ref, it); }   // a queue item this computer's list has not read yet (30-replies.js)
 // An open panel outlives a reload of the tab (01-core.js kept): its texts, subjects, line to the AI, part and the hash it opened on. The rows it marked (files picked) do not.
 for (const [ref, s] of kept("ra-fix", () => [...RA.fix].map(([r, f]) => [r, { part: f.part, text: f.text, subject: f.subject, note: f.note, hash: f.hash }])) || []) RA.fix.set(ref, { ...s, rows: {} });
 
+// The read is api()'s (02-basic-markdown.js latest): every caller gets a queue read that started after its call, and reads never land out of order.
 async function raLoad() {
   try {
     const r = await api("/api/reply/queue");
@@ -5742,7 +5826,7 @@ function rqFixNodes(item, lead) {
   const edits = () => (hand ? parts.filter(p => moved("text", p) || moved("subject", p)) : []);
   const marked = () => !!rows && Object.keys(rows.recv).length + rows.files.remove.length + rows.files.add.length > 0;
   const ready = () => !off() && parts.every(p => st.text[p].trim() && (!was.subject[p] || st.subject[p].trim())) && (edits().length > 0 || !!st.note.trim() || marked());
-  const close = () => { RA.fix.delete(ref); RA.fail.delete(ref); if (rowRef) { DRR.add[rowRef] = ""; DRR.edit[rowRef] = ""; DRF.menu[rowRef] = ""; } raPaint(ref); };
+  const close = () => { RA.fix.delete(ref); RA.fail.delete(ref); if (rowRef) drRowIdle(rowRef); raPaint(ref); };
   const save = async () => {
     if (!ready()) return;
     const todo = edits(), change = st.note.trim();
@@ -5810,7 +5894,7 @@ function rqItemCard(item, opts = {}) {
   // A draft of this hub that the server can open (a mail, a comment): 원문 보기 loads the whole original (10-draft-original.js), also when the item came with no quote,
   // and a mail's 첨부 줄 reads the files staged on it (10-decision-card.js draftFilesNode); the queue item carries neither. Another computer's item keeps the quote it came with.
   const local = !item.pc && (item.kind === "mail" || item.kind === "webmail" || item.kind === "comment"), mail = local && item.kind !== "comment", src = local ? { ref, t: item.conv } : {};
-  if (mail && !DRF.st[ref]) { DRF.pc[ref] = null; drfLoad(ref).then(() => raPaint(ref)); }
+  if (mail && !DRF.st[ref]) { drfFrom(ref, null); drfLoad(ref).then(() => raPaint(ref)); }
   const node = rqCard({
     key: `ra:${item.item}`, bare: !!opts.bare,
     // The head names the person: a mail sender's address ("이름 <a@b>") stays in the quoted original only.
@@ -6701,6 +6785,7 @@ function hcBriefNode(text) {
 
 /* ---------- todo strip: the target's plan (GET /api/todo), one line above the timeline ---------- */
 const TD = { by: {}, open: {}, timer: 0, calls: new Set() };
+const tdSeed = (t, todo) => { if (TD.by[t] === undefined && todo) TD.by[t] = todo; };   // a stored snapshot's plan, until the hub's arrives
 async function loadTodo(t = target) {
   if (isFixedT(t) || isMailT(t) || isRelayT(t)) { TD.by[t] = []; if (t === target) { paintTodo(); if (CV.key && !CV.placed) renderAll(); } return; }   // no plan in 알림 / 작업 기록
   let r;
@@ -6752,8 +6837,8 @@ function paintOlderTop() {
   TL_MORE_BTN.hidden = !more;
 }
 if (TL_MORE_BTN) TL_MORE_BTN.onclick = () => loadOlderMsgs();
-function resetChat() { clear(tl); CV.drawn = ""; if (TL_TOP_NODE) tl.append(TL_TOP_NODE); CV.divNode = null; CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; paintOlderTop(); }
-function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
+function resetChat() { clear(tl); cvForget(); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); csReset(); paintOlderTop(); }
+function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { csDay(d); tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {
   const peer = peerMsgOf(e);
@@ -6822,6 +6907,8 @@ function paintDelivery(mid) {
   if (rq) n.mt.append(rq);
   n.mt.classList.add("dv"); n.mt.classList.toggle("dv-fail", d.state === "failed");
 }
+// A message's meta line follows its delivery state; the newest 600 are kept.
+function delivTrack(mid, node) { DELIV.nodes.set(mid, node); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
 function applyDelivery(e) {
   const old = DELIV.state.get(e.ref);
   if (old && DELIV_RANK[old.state] > DELIV_RANK[e.state]) return;
@@ -6961,7 +7048,7 @@ function msgNode(e, inRow) {
       if (long) ub.classList.add("clamp");
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? TX("home.msg.more") : TX("home.fold.close"); } }, TX("home.msg.more")) : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
-      if (mid) { DELIV.nodes.set(mid, { mt, base, rec: e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length > 0 }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
+      if (mid) delivTrack(mid, { mt, base, rec: e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length > 0 });
       // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
       const pc = Array.isArray(e.files) && e.files.length ? pqPc(eventTarget(e) || "") : null;
       // An answered decision is a quiet record of what was decided, not a "1) …" bubble (10-decision-card.js dcRecordNode); the options
@@ -7112,18 +7199,18 @@ function newGroup(a) {
   };
   return g;
 }
-function dropProgress(key) { const p = CS.prog.get(key); if (p) { const home = p.node.parentNode; p.node.remove(); wlTidy(home); CS.prog.delete(key); } }
+function dropProgress(key) { const p = CS.prog.get(key); if (p) { const home = p.node.parentNode; p.node.remove(); wlTidy(home); csProgDrop(key); } }
 // entry: {m: conversation event} or {a: activity item}. Work between messages folds into one collapsed group.
 function chatPush(en, bulk) {
   let fresh = null;   // an incoming message node: a tall one is scrolled to by its top (scrollChat)
   if (en.m && en.m.kind === "delivery") { applyDelivery(en.m); return; }
-  if (CS.empty) { CS.empty.remove(); CS.empty = null; }
+  csEmptyDrop();
   if (en.m) {
     if (cleanRestart(en.m)) return;
     if (CS.group) workDone(CS.group);
-    CS.group = null;
+    csGroupDrop();
     const e = en.m;
-    if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") TURN.set(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) TURN.delete(target); }
+    if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") turnStart(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) turnEnd(target); }
     const pkey = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
     const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
     // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);
@@ -7137,27 +7224,27 @@ function chatPush(en, bulk) {
     }
     // Repeated [run]/[wait] reports are one message, as on Discord (hub/lanewire.ts): the newest takes the place of the one before it, until another message stands between.
     const parked = e.kind === "lane_report" && !e.answering && parkedTone(statedTone(noHandoff(String(e.text ?? ""))).tone);
-    if (parked && CS.parked) { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; }
+    if (parked && CS.parked) csParkedDrop();
     const n = wlIs(e) ? wlNode(e) : msgNode(e);
     if (n) {
       dayDiv(e.ts);   // only above a drawn row: a conversation of rows that draw nothing keeps its empty state
-      if (!pkey) CS.parked = parked ? n : null;
+      if (!pkey) csParked(parked ? n : null);
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       if (!n.classList.contains("wl-row")) rpMark(n, e);
-      if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
+      if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { cvDivNode(tl.appendChild(convDivider())); csBreak(); }
       // A status goes when the answer comes, so it never carries a run of speaker heads: the answer keeps its own.
       const who = n.matches(".um, .bm:not(.wl-row)") && !n.querySelector(":scope > .lv") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000 && !(e.target === "alert" && n.querySelector(":scope > .mt > .tag"))) n.classList.add("cont");   // an 알림 row that carries a status tag keeps its head, so the tag shows
-      CS.who = who; CS.whoT = t;
+      csWho(who, t);
       if (convIncoming(e)) fresh = n;
       if (held) n.style.minHeight = `${held}px`;
       tlHome(n).append(n); if (!bulk && !held) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
-      if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
+      if (pkey) csProgSet(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
     if (!WORK.has(en.a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(en.a.ts) || 0)))) return;
-    if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
-    CS.group.add(en.a);
+    if (!CS.group) { dayDiv(en.a.ts); csGroupStart(newGroup(en.a)); tl.append(CS.group.node); }
+    csGroupAdd(en.a);
   }
   if (!bulk) syncLiveTags();
   const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;
@@ -7175,7 +7262,7 @@ function markLive() {
   if (!g) return;
   const live = isWorking(target) && tlTail() === g.node;
   if (g.live === live) return;
-  if (live) { g.live = true; g.node.classList.add("live"); g.update(); } else workDone(g);
+  if (live) csGroupLive(); else workDone(g);
 }
 
 // The words the owner reads for a watch event or a schedule fire; mirrors hub/watchtext.ts (the hub composes the same text for the bell, Discord and
@@ -7516,6 +7603,7 @@ function wlTidy(parent) { if (parent && parent.classList.contains("wl-list") && 
 
 /* ---------- terminal view (터미널): the same data as a session transcript ---------- */
 let LG = { cur: null, steps: null, calls: new Map(), workers: [] }, termEmpty = null;
+function termNote(text) { termEmpty = term.appendChild(el("div", { class: "a-div", text })); }   // the one line an empty 터미널 shows (13-data.js)
 function resetTerm() { clear(term); LG = { cur: null, steps: null, calls: new Map(), workers: [] }; termEmpty = null; }
 function toggleOpen(n) {
   if (getSelection().toString()) return;
@@ -7778,42 +7866,43 @@ const hasCached = s => s.msgs.length > 0 || s.acts.length > 0;
 // quiet: a repeated read (a peer's conversation, 34-peer-monitoring.js; a refresh behind a drawn conversation) redraws only when it brought something new.
 // What the drawn stretch of a conversation holds: a quiet refresh that leaves it alone needs no redraw.
 const chatTail = s => `${s.msgs.filter(e => e.ts >= CV.low).length}|${s.acts.filter(a => a.ts >= CV.low).length}`;
+// One read of a conversation at a time (targetKey, 02-basic-markdown.js latest): a call while one is out reads again when it ends, so it sees what came before it.
+const targetKey = t => `target:${t}`;
 async function loadTarget(t, quiet) {
   if (isRelayT(t)) return relayLoad(t, quiet);
-  const s = ts(t), before = chatTail(s);
-  let settled = false;
-  if (s.loading) return s.loading;
-  s.loading = (async () => {
-    await Promise.all([
-      api(`/api/history?target=${enc(t)}&limit=150`).then(r => {
-        const got = r.events || [];
-        workRowsOf(got); settled = snapSettle(s, "msgs", got) || settled; s.hmore = got.length >= 150;
-        // A full page that starts after the newest stored row leaves the messages between unread: the stored stretch ends there (chatGapNode reads them on request).
-        const top = s.msgs.at(-1)?.ts;
-        if (s.hmore && top && got[0].ts > top) s.gaps.add(top);
-        for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
-      isRowT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { settled = snapSettle(s, "acts", r.items || []) || settled; s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
-    ]);
-    s.hLoaded = s.aLoaded = true;
-    if (t === MAIN) paintRestartBanner();
-    { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
-  })().finally(() => { s.loading = null; });
-  await s.loading;
+  const s = ts(t), before = chatTail(s), settles = s.settles;
+  await latest(targetKey(t), () => targetRead(t, s));
   snapSoon(t);
   if (t !== target) return;
-  if (!quiet || settled || chatTail(s) !== before) renderAll();
-  else if (CV.full) { if (s.msgs[0] && s.msgs[0].ts < CV.low) CV.from = CV.low; CV.drawn = CV.divNode ? "" : chatSig(s); }   // only rows above the drawn stretch came: nothing on screen changes
+  if (!quiet || s.settles !== settles || chatTail(s) !== before) renderAll();
+  else if (CV.full) { if (s.msgs[0] && s.msgs[0].ts < CV.low) cvFrom(CV.low); cvDrawn(chatSig(s)); }   // only rows above the drawn stretch came: nothing on screen changes
+}
+// settles counts the reads that replaced a stored snapshot's rows (snapSettle): a quiet caller redraws after one.
+async function targetRead(t, s) {
+  const settle = (kind, got) => { if (snapSettle(s, kind, got)) s.settles = (s.settles || 0) + 1; };
+  await Promise.all([
+    api(`/api/history?target=${enc(t)}&limit=150`).then(r => {
+      const got = r.events || [];
+      workRowsOf(got); settle("msgs", got); s.hmore = got.length >= 150;
+      // A full page that starts after the newest stored row leaves the messages between unread: the stored stretch ends there (chatGapNode reads them on request).
+      const top = s.msgs.at(-1)?.ts;
+      if (s.hmore && top && got[0].ts > top) s.gaps.add(top);
+      for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
+    isRowT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { settle("acts", r.items || []); s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+  ]);
+  s.hLoaded = s.aLoaded = true;
+  if (t === MAIN) paintRestartBanner();
+  { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
 }
 // A tapped push or notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
-// history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.
+// history when that message is not in (loadTarget's read starts after this call, so it holds whatever the hub had by then).
 async function ensureMsg(t, at) {
-  const s = ts(t);
-  for (let i = 0; i < 2 && at && !s.msgs.some(e => e.ts >= at); i++) await loadTarget(t);
+  if (at && !ts(t).msgs.some(e => e.ts >= at)) await loadTarget(t);
 }
 // The page is back after being away: whatever the stream missed is fetched now, before anyone taps a notification for it.
 function resync() {
   refreshState();
-  for (const k of Object.keys(TS)) if (k !== target) TS[k].hLoaded = TS[k].aLoaded = false;
+  tsStale(target);
   loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); convLoad();
 }
 // Older activity from the saved session transcript, 300 at a time, prepended while the scroll position stays put.
@@ -7854,7 +7943,7 @@ async function loadOlderMsgs() {
       const now = at && [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === at.ts);
       if (now) timeline.scrollTop += now.getBoundingClientRect().top - timeline.getBoundingClientRect().top - at.off;
       else timeline.scrollTop = timeline.scrollHeight - ch;
-      chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+      putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
       $("#chat-jump").hidden = chatStick;
     }
   } catch { toast(TX("chat.load.conv_failed"), true); }
@@ -7926,16 +8015,16 @@ function renderAll0(keepScroll) {
   if (current !== "chat") return;   // nothing is shown: entering the chat draws it (go, convSync)
   const s = ts(target);
   if (!keepScroll && chatReuse(s)) return;
-  if (CV.full) { CV.snap = { top: timeline.scrollTop, stick: chatStick }; CV.full = false; }   // a redraw keeps the owner's place (chatOpen)
+  if (CV.full) { cvStash({ top: timeline.scrollTop, stick: chatStick }); }   // a redraw keeps the owner's place (chatOpen)
   const lit = tl.querySelector(".nt-hl")?.closest("[data-ts]")?.dataset.ts;   // the glow of a jump (ntFlash) sits on a row this draw replaces: it moves to the new row
   resetChat(); resetTerm();
   if (!((s.hLoaded && s.aLoaded) || hasCached(s)) || !chatReady()) {
-    CS.empty = tl.appendChild(el("div", { class: "a-div", text: TX("common.loading") }));
-    termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("common.loading") }));
+    csEmptySet(tl.appendChild(el("div", { class: "a-div", text: TX("common.loading") })));
+    termNote(TX("common.loading"));
     return;
   }
   const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null, from = chatFrom(s);
-  CV.from = from; CV.low = from || (M[0] ? M[0].ts : "");
+  cvRange(from, from || (M[0] ? M[0].ts : ""));
   if (s.amore && A.length) term.append(el("button", { class: "btn text tmore", type: "button", onclick: () => loadOlder() }, TX("chat.older.more")));
   if (s.ahist && A.length && !from) { tl.append(el("div", { class: "a-div", text: TX("chat.history.divider") })); term.append(el("div", { class: "tdv", text: TX("chat.history.divider") })); }
   let i = from ? A.findIndex(a => a.ts >= from) : 0, j = from ? M.findIndex(m => m.ts >= from) : 0;
@@ -7944,22 +8033,21 @@ function renderAll0(keepScroll) {
     if (j < M.length && (i >= A.length || M[j].ts <= A[i].ts)) {
       const m = M[j++];
       chatPush({ m }, true);
-      if (s.gaps.has(m.ts) && M[j]?.ts !== m.ts) { tl.append(chatGapNode(m.ts)); CS.group = null; CS.who = ""; }
+      if (s.gaps.has(m.ts) && M[j]?.ts !== m.ts) { tl.append(chatGapNode(m.ts)); csGroupDrop(); csBreak(); }
       if (LOG_VIEW && ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
     } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); if (LOG_VIEW) termPush(a, true); }
   }
   if (isRelayT(target)) relayTail(s);   // a send still waiting for its line and the last error, before the "no conversation yet" line is considered
   if (tl.children.length <= 1) {
-    const none = el("div", { class: "empty", text: TX("chat.empty.none") });
-    CS.empty = tl.appendChild(s.herr ? emptyNode(TX("chat.empty.load_failed"), () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, none, acctConnectRow()));
+    csEmptySet(tl.appendChild(s.herr ? emptyNode(TX("chat.empty.load_failed"), () => loadTarget(target).catch(() => { /* the card says it failed again */ })) : el("div", {}, emptyNode(TX("chat.empty.none")), acctConnectRow())));
     if (!P && !s.herr) loadProviderData().then(() => current === "chat" && CS.empty && renderAll(true), () => {});   // the account line needs the list: draw again once it has come
   }   // only the top sentinel is there
-  if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: TX("chat.empty.no_activity") }));
+  if (LOG_VIEW && !term.children.length) termNote(TX("chat.empty.no_activity"));
   if (lit) { const n = [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === lit); if (n) ntFlash(n); }
-  if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else { CV.snap = null; CV.full = true; }
+  if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else cvKeep();
   markLive();
   paintQueue(tl, target);
-  CV.drawn = CV.divNode ? "" : chatSig(s);   // a divider belongs to one opening: the next one draws anew
+  cvDrawn(chatSig(s));   // a divider belongs to one opening: the next one draws anew
 }
 // Coming back to the conversation still in the timeline, with nothing new while it was away: the drawn rows stay (their images too) and only the place is set.
 // Live changes skipped while hidden reach the store first, so its counts and newest times tell. An opening with a read divider or a pending draw redraws.
@@ -7985,7 +8073,7 @@ function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself 
   ts(target).att = ATT;   // the files waiting in the composer stay with their conversation, like the typed text
   ts(target).pick = PICK;   // the picked elements stay with it too (15-picker.js)
   closeSheet();
-  target = t;
+  putTargetId(t);
   if (!isRelayT(t)) lsSet(TARGET_KEY, t);   // a relayed computer is entered by the address (#chat/relay:<adapter>:<key>), never restored from here
   if (!nav && (current === "chat" || current === "activity")) routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
@@ -7993,12 +8081,30 @@ function setTarget(t, nav) {   // nav: go() follows and stacks the entry itself 
   convSync();
   markSeen();
   if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
-  ta.value = s.draft; ATT = s.att || atkLoad(t); renderAtt(); pkAssign(s.pick || []); autosize(); updateHints();
+  ta.value = s.draft; putAtt(s.att || atkLoad(t)); renderAtt(); pkAssign(s.pick || []); autosize(); updateHints();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
   if (!(s.hLoaded && s.aLoaded)) loadTarget(t, hasCached(s));
   loadTodo(t);
 }
+// 채팅 and its 터미널 view opening: the open conversation is placed and read unless it is loaded or loading already; a conversation
+// opened inside 모니터링 (monCtx) also draws and refreshes 모니터링's list behind it (30-monitoring-route.js).
+function chatEnter() {
+  enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !latestOut(targetKey(target))) loadTarget(target, hasCached(ts(target)));
+  if (monCtx) monEnter();
+}
+// The routes behind a conversation (32-history-nav.js routeChain). One opened from 모니터링 (a mail of the 메일 list) returns to that item's list,
+// on a wide screen too (owner 2026-10-27); on a phone the conversation list sits between 홈 and the conversation.
+function convChain(hash) {
+  if (monCtx) return MON.sel && !monChatIt() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
+  return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
+}
+// go() opening 채팅: "chat/list" is the phone's chat list (the third element, which go() keeps in chatList); any other way in opens a conversation.
+function chatAim(tgt) { if (tgt === "list") return ["chat", undefined, narrowChat()]; }
+// 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all. t is the conversation go() is about to open (setTarget).
+function activityAim(tgt) { const t = tgt && validTarget(tgt) ? tgt : target; if (!LOG_VIEW || isRowT(t) || isRelayT(t)) return ["chat", tgt]; }
+screenHooks("chat", { enter: chatEnter, chain: convChain, aim: chatAim });
+screenHooks("activity", { enter: chatEnter, chain: convChain, aim: activityAim });
 function enterTarget() {
   // Appending moves the node and a moved focused field loses its focus (and a phone its keyboard): the composer moves only when it is on the other view, and keeps the focus there.
   const view = $(current === "activity" ? "#v-activity" : "#v-chat"), typing = document.activeElement === ta;
@@ -8053,9 +8159,9 @@ async function snapSeed(t) {
   s.msgs.sort(byTs); s.acts.sort(byTs);
   if (isFixedT(t)) dedupKeyed(s);
   s.hmore = rec.hmore; s.amore = rec.amore; s.ahist = rec.ahist;
-  if (TD.by[t] === undefined && rec.todo) TD.by[t] = rec.todo;
-  if (READ[t] === undefined && rec.read) READ[t] = rec.read;
-  CV.seeded = true;
+  tdSeed(t, rec.todo);
+  if (READ[t] === undefined && rec.read) readMark(t, rec.read);
+  cvSeeded();
   renderAll();
   return true;
 }
@@ -8086,8 +8192,8 @@ const snapHomeSoon = () => { if (Date.now() - snapHomeAt >= SNAP_HOME_EVERY_MS) 
 async function snapHomeSeed() {
   const rec = await Promise.race([window.__snapHome, new Promise(r => setTimeout(r, SNAP_HOME_WAIT_MS))]);
   if (!rec || rec.v !== 1 || S || Date.now() - rec.at > SNAP_HOME_MAX_MS) return;
-  S = { ...rec.state, seeded: true };
-  if (!NT.loaded) { NT.items = rec.notices; NT.unread = rec.unread; }
+  stateSet({ ...rec.state, seeded: true });
+  if (!NT.loaded) ntSeed(rec.notices, rec.unread);
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { snapSave(target); snapHomeSave(); } });
 
@@ -8381,7 +8487,7 @@ const isSlashCommand = text => SH_CMD.test(text) || SCR_CMD.test(text) || CMDS.s
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   const mk = (kind, extra) => ({ ts: new Date().toISOString(), kind, source: "local", ...(lane ? { lane } : {}), ...extra });
-  chatStick = true; termStick = true;
+  putChatStick(true); putTermStick(true);
   ingestMsg(mk("_cmd", { text }));
   try {
     const r = await api("/api/command", "POST", { text, ...(isConvT(t) ? { from: t } : {}) });
@@ -8400,11 +8506,11 @@ async function sendChat(how) {
   if (files.length && isCommand) { toast(TX("chat.send.cmd_no_files"), true); return; }
   if (picks.length && isCommand) { toast(TX("chat.send.cmd_no_picks"), true); return; }
   const refs = isCommand ? [] : mnRefs(text), sentMentions = MENTIONS;
-  const sentAtt = ATT, sentPicks = PICK; ATT = []; atkForget(); renderAtt(); pkClear(); MENTIONS = [];
+  const sentAtt = ATT, sentPicks = PICK; putAtt([]); atkForget(); renderAtt(); pkClear(); MENTIONS = [];
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
-  chatStick = true; termStick = true;
+  putChatStick(true); putTermStick(true);
   if (isCommand) {
     if (SCR_CMD.test(text)) {
       if (!(S && S.desk)) { toast(TX("chat.send.no_screen"), true); ta.value = text; autosize(); return; }
@@ -8419,7 +8525,7 @@ async function sendChat(how) {
     sendCommand(text); return;
   }
   const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
-  if (isSettingsT(t) && !TURN.has(t)) TURN.set(t, Date.now() - 5000);
+  if (isSettingsT(t) && !TURN.has(t)) turnStart(t, Date.now() - 5000);
   try {
     // One id per send, kept while it fails, so a retry of the same text is the same send to the hub (hub/routes.ts cid).
     if (!sendCid || sendCid.text !== text) sendCid = { text, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 10) };
@@ -8430,18 +8536,18 @@ async function sendChat(how) {
     if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
     const r = await sendMsgOut(t, text, body, owner && owner.pc);   // null: the gateway is unreachable, the message waits in the outbox (14-outbox.js)
     sendCid = null;
-    if (body.computer) { CPC.name = ""; cpcPaint(); }   // the pick was for this one message
+    if (body.computer) cpcPick("");   // the pick was for this one message
     // A peer's conversation is not on this computer's event stream: its history is read again now, so the sent bubble shows at once.
     if (owner && owner.pc) loadTarget(t, true);
     scrollChat(true); scrollTerm(true);
-    if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); toast(TX("chat.send.queued")); }
+    if (r && r.queued) { putQueue(QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued)); renderQueue(); toast(TX("chat.send.queued")); }
     // Steering is the default for a message sent mid-turn, so it gets no toast (owner 2026-10-20); interrupting still does.
   else if (mode === "interrupt" && r !== null) toast(TX("chat.send.interrupted"));
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
     if (t !== target) { ts(t).draft = text; ts(t).att = sentAtt.concat(ts(t).att || []); ts(t).pick = sentPicks.concat(ts(t).pick || []); lsSet(DRAFT_KEY(t), text); atkStore(t, ts(t).att); toast(TX("chat.send.kept", { message: e.message }), true); return; }
-    toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
+    toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); putAtt(sentAtt.concat(ATT)); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }
 // The hint in the message box of conversation t. Only the open composer (open) has a pending decision card (DC.cur) or the activity view's term mode;
@@ -8519,6 +8625,7 @@ function renderWorking() {
 
 /* ---------- queued messages (server queue, sent when the target's turn ends) + context ring ---------- */
 let QUEUE = [];
+const putQueue = v => { QUEUE = v; };
 async function loadQueue() {
   try { QUEUE = (await api("/api/queue")).items || []; } catch { return; }
   renderQueue();
@@ -8725,6 +8832,7 @@ $("#send").after($("#cbar"));
 /* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
 // The composer's files of the conversation open now; another conversation's wait in its ts(t).att (13-data.js setTarget swaps them).
 let ATT = [];   // [{id, name, type, size, url (local preview), file (server record once uploaded)}]
+const putAtt = v => { ATT = v; };
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
 // pc: the file is an upload of that other computer (a file sent to its conversation), read there through the peer proxy (hub/routes.ts /api/peer/file).
 const fileUrl = (p, dl, pc) => pc ? pqProxy(pc, `/api/peer/file?path=${enc(p)}${dl ? "&download=1" : ""}`) : `/api/file?path=${enc(p)}${dl ? "&download=1" : ""}`;
@@ -9048,18 +9156,16 @@ function mdFiles(src) {
   const { text, files } = fileLines(src);
   return [text.trim() ? mdNode(text) : null, filesNode(files)].filter(Boolean);
 }
-// Markdown renders, other text shows as it is; a big file shows its first 200KB and offers the download.
+// Markdown renders, other text shows as it is; a big file shows its first 200KB and offers the download. The reader is dialog()'s large card: one at a
+// time (a second open while it is up is ignored), the download beside ✕, and the text takes the focus so the keys scroll it.
 async function viewer(path, name, pc) {
-  const body = el("div", { class: "tv-body md", tabindex: "-1", autofocus: true }, el("p", { class: "tv-st", text: TX("common.loading") }));
-  const d = el("dialog", { class: "tbox", "aria-label": name },
-    el("div", { class: "tv-in" },
-      el("div", { class: "tv-bar" }, el("span", { class: "tv-n", text: name }),
-        el("a", { href: fileUrl(path, true, pc), download: name }, TX("chat.att.download")),
-        el("button", { class: "x", type: "button", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))),
-      body));
-  d.addEventListener("close", () => d.remove());
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
+  if (document.querySelector("dialog.tbox:not([data-leaving])")) return;
+  const body = el("div", { class: "tv-body md", tabindex: "-1" }, el("p", { class: "tv-st", text: TX("common.loading") }));
+  const d = dialog({ title: name, body }).node;
+  d.classList.add("tbox", "tall"); d.setAttribute("aria-label", name);
+  d.querySelector(".dtitle").classList.add("tv-n");
+  d.querySelector(".fs-hb").prepend(el("a", { class: "btn text sm", href: fileUrl(path, true, pc), download: name }, TX("chat.att.download")));
+  body.focus({ preventScroll: true });
   try {
     const r = await fetch(fileUrl(path, false, pc));
     if (!r.ok) throw refusedNote(r);
@@ -9148,7 +9254,6 @@ function pathFiles(md, pc) {
   if (n) for (const img of n.querySelectorAll("img")) img.onerror = () => img.closest(".fitem").remove();
   return n;
 }
-setInterval(() => { if ((current === "chat" || current === "activity") && !document.hidden) loadContext(true).then(renderCtxRing); }, 15000);
 // A reload lands on the conversation it left: its draft and waiting files come back (a microtask: the later modules of this one script must exist first).
 queueMicrotask(() => {
   try { if (!ta.value) ta.value = ts(target).draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {}
@@ -9317,6 +9422,7 @@ function pkDrop(id) {
 function pkClear() { PICK = []; renderPicks(); }
 function pkRestore(list) { if (list && list.length) { PICK = list.concat(PICK); renderPicks(); } }
 function pkAssign(list) { PICK = list || []; renderPicks(); }
+function pkAdd(p) { PICK.push(p); renderPicks(); }
 
 /* ---------- picking itself ---------- */
 function pkDo(n, doc, frame) {
@@ -9605,7 +9711,7 @@ function renderBars() {
       ...(LA.some(v => !PA.some(p => p.t === homeOfT(v.t))) ? [{ header: TX("chat.tsw.no_project") }, ...LA.filter(v => !PA.some(p => p.t === homeOfT(v.t))).map(sesItem)] : []),
       ...D.filter(v => v.t === target).map(v => ({ value: v.t, label: v.name, tone: v.tone, sub: v.status, badge: v.unread || "" })),
       ...(D.length ? [{ value: "__ended", label: TX("chat.tsw.ended", { n: D.length }), sub: TX("chat.tsw.ended_sub") }] : [])];
-    drop._pick = v => { if (v === "__ended") { endedOpen = true; go("chat", "list"); } else pickTarget(v); };
+    drop._pick = v => { if (v === "__ended") { putEndedOpen(true); go("chat", "list"); } else pickTarget(v); };
     drop.onclick = () => showMenu(drop, drop._items(), { value: target, onPick: drop._pick });
     const ud = mode === "term" && ts(target).unread > 0;
     clear(bar).append(sw, drop);
@@ -9645,6 +9751,8 @@ new ResizeObserver(() => { const sw = $("#thead .tsw"); if (sw) fitChips(sw); })
 // 0600 secrets file; they are never kept in the page.
 const AUTH_DONE = new Set(), AUTH_HID = new Set(), AUTH_CARDS = new Map();   // AUTH_HID: closed with the x or back, still waiting (the notice's 입력 창으로 가기 shows it again)
 let authH = null, authId = "", authWaits = false;
+// The notice's 입력 창으로 가기: every request closed with the x shows again, at once.
+function authUnhide() { AUTH_HID.clear(); paintAuth(true); }
 // `force` = the owner asked for it (the notice's 입력 창으로 가기); otherwise a request that arrives while a text field has the focus waits until the field is left, so its sheet does not take the focus (and a phone's keyboard) from what is being typed.
 function paintAuth(force) {
   const list = ((S && S.auth) || []).filter(a => !AUTH_DONE.has(a.id));
@@ -9802,6 +9910,9 @@ function stateRenderErr(e) {
   fetch("/api/input-diag", { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true, body: JSON.stringify({ app: typeof WEB_BUILD === "string" ? WEB_BUILD : "", entries: [entry] }) })
     .catch(err => console.warn("state-err report", err));
 }
+// S (the /api/state answer) is written only here: whole replacement or a merge of fields into the current one (nothing before the first answer).
+function stateSet(next) { S = next; }
+function stateMerge(part) { if (S) Object.assign(S, part); }
 async function refreshState() {
   try {
     const slow = setTimeout(() => setConn(false), STATE_WAIT_MS - 2000);
@@ -9948,7 +10059,7 @@ function laneIngest(p, a) {
 // SSE "activity": keep every loaded session live, even while another view is open.
 function laneActivity(a) {
   const name = typeof a.source === "string" && a.source.startsWith("lane:") ? a.source.slice(5) : null;
-  if (name) { const s = actLine(a); if (s && LAST[name] !== s) { LAST[name] = s; homeSoon(); } }
+  if (name) { const s = actLine(a); if (s && LAST[name] !== s) { laneLastPut(name, s); homeSoon(); } }
   const p = name && LP[name];
   if (!p) return;
   if (p.loading) p.queue.push(a);
@@ -9958,7 +10069,7 @@ function laneTailsStale() {
   for (const p of Object.values(LP)) p.loaded = false;
 }
 /* ---------- 프로젝트 (docs/layers.md §5): the list (GET /api/custom) and the main view (GET /api/custom/project?key=) ---------- */
-let PRJ = null, PRJ_FAIL = false, prjFlight = null, prjRev = 0, PRJ_AT = 0;
+let PRJ = null, PRJ_FAIL = false, prjRev = 0, PRJ_AT = 0;
 const prjTitle = p => (p.record && p.record.title) || p.title || p.name;
 const prjPurpose = p => (p.record && p.record.purpose) || p.purpose || p.note || "";
 // A purpose as the owner reads it: its first one or two plain sentences. A sentence that names a path, link, port, file or repo stays in the raw
@@ -9976,16 +10087,15 @@ function prjBlurb(text) {
 }
 const prjChat = p => p.key.startsWith("ch:") ? p.key : p.channel ? `ch:${p.channel.id}` : "";
 const prjPaused = p => !!(p.paused || (p.record && p.record.paused));
-function prjLoad() {
-  if (prjFlight) return prjFlight;
-  prjFlight = api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; PRJ_AT = Date.now(); }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
-    prjFlight = null; prjRev++;
+// A screen that opens joins a read already out; again (asked after a write) reads after it, since that read may predate the write.
+function prjLoad(again) {
+  return (!again && latestOut("prj")) || latest("prj", () => api("/api/custom").then(d => { PRJ = d; PRJ_FAIL = false; PRJ_AT = Date.now(); }, () => { if (!PRJ) PRJ_FAIL = true; }).then(() => {
+    prjRev++;
     prjPcLoad();
     if (current === "project") { if (ppWide()) renderProjects(); pmPaint(); }
     else if (current === "projects") renderProjects();
     else if (current === "home") homeSoon();   // a 진행 중 row names the session's project
-  });
-  return prjFlight;
+  }));
 }
 // The computer groups (GET /api/custom/computers, hub/custom.ts computerGroups): this computer first, then the others, each with its own
 // projects. Read behind the project list, at most once a minute (another computer's answer can take seconds). One group: no headers.
@@ -10205,7 +10315,7 @@ function pjPaintRows() {
     }
   }
   if (rest > 0 && card) card.append(moreRow(TX("project.more_n", { n: rest }), () => { PJ.more += PJ_PAGE; pjPaintRows(); }));
-  if (!rows.length && !(pcs && nodes.length)) nodes.push(el("div", { class: "empty pl-empty", text: searching ? TX("project.empty.search") : PJ.view === "need" ? TX("project.empty.need") : PJ.view === "run" ? TX("project.empty.run") : PJ.view === "done" ? TX("project.empty.done") : TX("project.empty.none") }));
+  if (!rows.length && !(pcs && nodes.length)) nodes.push(emptyNode(searching ? TX("project.empty.search") : PJ.view === "need" ? TX("project.empty.need") : PJ.view === "run" ? TX("project.empty.run") : PJ.view === "done" ? TX("project.empty.done") : TX("project.empty.none")));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
     nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: TX("project.my_settings") }));
@@ -10217,6 +10327,17 @@ function pjPaintRows() {
   }
   clear(box).append(...nodes);
 }
+function projectsEnter() { renderProjects(); prjLoad(); }
+// From 1100px 프로젝트 opens on a project with the list beside it: the open one while it still exists, else the first (19-project-main.js projectAim).
+function projectsAim() {
+  if (!ppWide() || relayCur()) return;
+  histAuto();
+  const key = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom";
+  if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { histAuto(); go("project", prjFirst()); } });
+  projectAim(key);
+  return ["project", key];
+}
+screenHooks("projects", { enter: projectsEnter, aim: projectsAim });
 function renderProjects() {
   if (rvPaint("projects")) return;   // a messenger-only computer is chosen: its projects, read-only (44-relay-views.js)
   const box = $("#v-projects");
@@ -10239,8 +10360,15 @@ function renderProjects() {
 /* ---------- 프로젝트: level 2 overview (header, 확인 필요, four summary rows) and level 3 drill-in pages ---------- */
 // PM.D = the detail; PM.open counts fields being edited (a refresh never repaints under them);
 // PM.sheets = the open drill-in pages, repainted from the re-fetched detail after every write.
-const pmReset = () => ({ key: "", D: null, fail: false, open: 0, flight: null, sheets: new Set() });
+const pmReset = () => ({ key: "", D: null, fail: false, open: 0, sheets: new Set() });
 let PM = pmReset();
+// A project opens beside the list on a wide screen (ppWide), so the list is drawn and read first.
+function projectEnter(key) { if (ppWide()) projectsEnter(); pmOpen(key); }
+// go() opening a project: without a key the list opens instead; the key is the open project (ppCur) and its address.
+function projectAim(key) { if (!key) return ["projects", key]; ppCur = key; }
+function projectHash(key) { return key ? `project/${enc(key)}` : ""; }
+function projectBeside() { return ppWide() ? "projects" : ""; }
+screenHooks("project", { enter: projectEnter, aim: projectAim, hash: projectHash, beside: projectBeside });
 function pmOpen(key) {
   if (PM.key !== key) { for (const s of PM.sheets) s.h.close(false); PM = { ...pmReset(), key }; }
   pmPaint(); prjLoad(); pmLoad();
@@ -10248,24 +10376,20 @@ function pmOpen(key) {
 function pmLoad() {
   const st = PM;
   if (!st.key) return Promise.resolve(false);
-  if (st.flight) return st.flight;
-  st.flight = api(`/api/custom/project?key=${enc(st.key)}`).then(d => { st.D = d; st.fail = false; return true; }, () => { if (!st.D) st.fail = true; return false; })
-    .then(ok => { st.flight = null; if (PM === st) pmPaint(); return ok; });
-  return st.flight;
+  return latest(`project:${st.key}`, () => api(`/api/custom/project?key=${enc(st.key)}`).then(d => { st.D = d; st.fail = false; return true; }, () => { if (!st.D) st.fail = true; return false; })
+    .then(ok => { if (PM === st) pmPaint(); return ok; }));
 }
-// A project turn changed this project's info (hub/outbound.ts noteProjectInfo): a fetch already out may predate it, so one follows it.
+// A project turn changed this project's info (hub/outbound.ts noteProjectInfo): pmLoad reads after a fetch already out, which may predate it.
 function pmLive(e) {
   if (current !== "project" || (e.key !== PM.key && e.key !== (pmProject() || {}).recordKey)) return;
-  (PM.flight || Promise.resolve()).then(pmLoad);
+  pmLoad();
 }
 // After a write: fetch again and repaint from what the gateway kept (the page never shows the typed value as saved).
 async function pmReload() {
-  const st = PM;
-  if (st.flight) await st.flight;
   const root = $("#v-project");
   if (root) delete root.dataset.sig;
-  st.open = 0;
-  await Promise.all([pmLoad(), prjLoad()]);
+  PM.open = 0;
+  await Promise.all([pmLoad(), prjLoad(true)]);
 }
 // The record lives under the project's channel when it has one (hub/custom.ts recordKey).
 const pmWrite = body => api("/api/projects", "PUT", { key: (pmProject() || {}).recordKey || PM.key, ...body });
@@ -10508,7 +10632,7 @@ async function pmDeleteAsk(q) {
       toast(r && r.discord && !r.discord.ok ? TX("project.del.partial", { error: r.discord.error }) : TX("project.del.done", { name: (r && r.name) || p.name }), !!(r && r.discord && !r.discord.ok));
       PM = pmReset();
       if (fromChat) pickTarget(MAIN); else go("projects");
-      prjLoad();
+      prjLoad(true);
     } catch (e) { err.textContent = e.message || TX("project.del.failed"); st.busy = false; go1.disabled = false; }
   } }, TX("common.delete"));
   clear(h.box).append(
@@ -10752,19 +10876,17 @@ function ctxBar(p) {
     el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-label": TX("project.ctx.of", { name: p.name }), "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` })),
     el("div", { class: "kv", style: "margin-top:var(--sp-1)" }, el("span", { class: "v", text: p.window ? TX("project.ctx.tokens_of", { used: num(p.tokens), win: num(p.window) }) : TX("project.ctx.tokens", { tokens: num(p.tokens) }) }), el("span", { class: "v", text: pct != null ? `${pct}%` : "–" })));
 }
-// A quiet read asked while another is out shares it (the page's first read and refreshState ask at the same time).
-let ctxFlight = null;
-function loadContext(quiet) {
-  if (quiet && ctxFlight) return ctxFlight;
-  const p = ctxFlight = ctxFetch(quiet).finally(() => { if (ctxFlight === p) ctxFlight = null; });
-  return p;
-}
+// One read at a time: one asked while another is out (the page's first read and refreshState ask at the same time) reads again when it ends.
+function contextEnter() { loadContext(); }
+screenHooks("context", { enter: contextEnter });
+function loadContext(quiet) { return latest("context", () => ctxFetch(quiet)); }
 async function ctxFetch(quiet) {
   clearTimeout(ctxTimer);
   try { C = await api("/api/context"); }
   catch (e) { if (!quiet && current === "context") clear($("#context")).append(emptyNode(TX("project.ctx.load_failed"))); return; }
   if (current === "context") { renderContext(); ctxTimer = setTimeout(() => loadContext(true), 4000); }
   if (current === "home") renderHome();
+  if (current === "chat" || current === "activity") renderCtxRing();
 }
 // "<model>:<thinking>" selector -> readable "model · thinking".
 function selLabel(sel) {
@@ -10996,6 +11118,8 @@ function targetEdit(key, title, cur, confirmText, extra = {}) {
   ].filter(Boolean);
   return el("div", { class: "mt-list mt-edit", role: "group", "data-target": key, "aria-label": title }, ...(extra.chain ? [extra.chain(pick, notes)] : [pick, ...notes]));
 }
+function modelsEnter() { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); if (!ACC) loadAccounts().then(() => current === "models" && renderModels()); }
+screenHooks("models", { enter: modelsEnter });
 function renderModels() {
   const box = $("#models");
   if (fbDragging) return;
@@ -11115,9 +11239,8 @@ function repliesEdit(title) {
 }
 
 /* ---------- providers ---------- */
-// Callers that ask while a read is out share it (the page's first read and the home's ask for it at the same time).
-let provFlight = null;
-function loadProviderData() { return provFlight || (provFlight = provFetch().finally(() => { provFlight = null; })); }
+// One read at a time: callers that ask while one is out (the page's first read and the home's ask for it) get the read after it.
+function loadProviderData() { return latest("providers", provFetch); }
 async function provFetch() {
   const r = await api("/api/providers");
   P = { providers: r.providers || [], addable: Array.isArray(r.addable) ? r.addable : null, at: Date.now() };
@@ -11167,6 +11290,8 @@ function provRow(p, g, own) {
   return el("div", { class: "li prow", "data-prov": own ? null : p.id, "data-prov-conn": p.id },
     slot ? el("button", { class: "acc-main", type: "button", onclick: () => accProviderDialog(g, slot) }, tx) : tx, liEnd(act, rm));
 }
+function accountsEnter() { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
+screenHooks("accounts", { enter: accountsEnter, aim: accFocusAsk });
 // 계정: one screen for what used to be 공급자, each provider's screen and the accounts block. OmO keeps a pool per provider, so the
 // provider is the group: a login provider has its own section with its accounts, and the rest (keys, not set up) share one list.
 function renderAccounts() {
@@ -11186,6 +11311,8 @@ function renderAccounts() {
   // an old provider address or a home card lands on that provider, once both lists are in
   if (accFocus && ACC) { const n = box.querySelector(`[data-prov="${CSS.escape(accFocus)}"]`); accFocus = ""; if (n) n.scrollIntoView({ block: "start" }); }
 }
+// The provider an old address or a home card asked for; renderAccounts scrolls to it once and clears it.
+function accFocusAsk(prov) { accFocus = prov || ""; }
 function addProviderDialog() {
   const addable = P && P.addable;
   let pick = null, keyIn = null, free = null;
@@ -11433,6 +11560,9 @@ function fixCard(u) {
   return card;
 }
 let quotaDrawn = 0;
+// Opening 사용량 shows the values as they are, no motion.
+function usageEnter() { gaugeForget("usage:"); quotaDrawn = 0; loadQuota(); }
+screenHooks("usage", { enter: usageEnter });
 async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
   const box = $("#usage");
@@ -11519,7 +11649,7 @@ function paintQuota(q) {
 
 /* ---------- settings: the short list and its sub-pages (prototype #settings and #settings/<page>) ---------- */
 // 설정 is a short list of links in four groups; 앱과 알림, 표시, 업데이트 and 실행 하네스 are pages of their own. Their rows (title, icon,
-// the sub-screen flag that keeps the 설정 tab lit and sends 뒤로 to 설정) are in 03-screens.js; here is what each page draws, and go() loads their data on entry.
+// the sub-screen flag that keeps the 설정 tab lit and sends 뒤로 to 설정) are in 03-screens.js; here is what each page draws and loads on entry.
 const SET_PAGE = {
   notifications: { build: () => pushSection() },
   display: { build: () => displayPage() },
@@ -11531,15 +11661,20 @@ const SET_PAGE = {
 for (const [id, s] of Object.entries(SCREENS)) if (!s.html)
   $("#views").append(Object.hasOwn(SET_PAGE, id) ? el("section", { class: "view", id: `v-${id}`, hidden: "" }, el("div", { id, class: "st-page" })) : el("section", { class: "view cu-page", id: `v-${id}`, hidden: true }));
 const inSettings = () => current === "settings" || Object.hasOwn(SET_PAGE, current);
-const goBeforeSettingPages = go;
-go = function (name, tgt) {
-  goBeforeSettingPages(name, tgt);
-  if (current === "settings" && !ACC) loadAccounts();
-  if (!Object.hasOwn(SET_PAGE, current)) return;
-  if (current === "update" || current === "runtime") loadUpdate();
-  if (current === "runtime") loadRuntimes();
-  renderSettings();
-};
+// Opening 설정 draws the list and refreshes what its rows summarise; each page draws its box, 업데이트 and 실행 하네스 asking again first.
+function settingsEnter() {
+  if (!updFresh()) loadUpdate(); renderSettings(); loadMessengerIndex(); if (!provFresh()) loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes();
+  loadDevices(); loadWebAccess();
+  if (!ACC) loadAccounts();
+}
+function setPageEnter() { renderSettings(); }
+function updateEnter() { loadUpdate(); renderSettings(); }
+function runtimeEnter() { loadUpdate(); loadRuntimes(); renderSettings(); }
+screenHooks("settings", { enter: settingsEnter });
+screenHooks("notifications", { enter: setPageEnter });
+screenHooks("display", { enter: setPageEnter });
+screenHooks("update", { enter: updateEnter });
+screenHooks("runtime", { enter: runtimeEnter });
 
 /* ---------- the rows these pages share ---------- */
 const stSec = title => el("div", { class: "sec", text: title });
@@ -11938,7 +12073,8 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
 const SHELL_KEY = "dotz-shell-reload", SHELL_LOOP_MS = 60000, SHELL_AWAY_MS = 3 * 60000;
 const shellMem = () => { try { return JSON.parse(sessionStorage.getItem(SHELL_KEY) || "null") || {}; } catch { return {}; } };
 let SHELL_RESTORE = (() => { const m = shellMem(); if (!m.at || m.used || Date.now() - m.at > 30000) return null; try { sessionStorage.setItem(SHELL_KEY, JSON.stringify({ ...m, used: true })); } catch {} return m; })();
-if (SHELL_RESTORE) setTimeout(() => { SHELL_RESTORE = null; }, 15000);
+const shellRestoreDone = () => { SHELL_RESTORE = null; };
+if (SHELL_RESTORE) setTimeout(shellRestoreDone, 15000);
 const shellSafe = () => !ta.value.trim() && !ATT.length && !OV.length && !SUBD && !document.querySelector("dialog[open]:not([data-leaving])");
 function shellApply() {
   shellPending = false;
@@ -12287,7 +12423,7 @@ async function updNow() {
 async function updBarTick() {
   clearTimeout(UB.timer);
   UB.timer = 0;
-  const r = await fetch("/api/update", { cache: "no-store" }).then(x => (x.ok ? x.json() : null), () => null);
+  const r = await api("/api/update").catch(() => /* no answer: the bar shows the gateway as down */ null);
   UB.down = !r;
   if (r) { UPD.info = r; paintUpdBadge(); if (inSettings()) renderSettings(); }
   paintUpdBar();
@@ -12374,7 +12510,7 @@ function updRestart() {
 }
 async function updWaitTick() {
   if (!UPD.wait) return;
-  const info = await fetch("/api/update", { cache: "no-store" }).then(r => r.ok ? r.json() : null, () => null);
+  const info = await api("/api/update").catch(() => /* no answer yet: the gateway is still restarting, ask again below */ null);
   if (info && info.boot !== UPD.wait.boot) {
     UPD.wait = null;
     UPD.info = info;
@@ -12857,6 +12993,7 @@ const dvDate = iso => {
 };
 const dvUsed = d => d.last_used ? TX("connect.dev.last_used", { ago: msAgo(Date.parse(d.last_used)) }) : TX("connect.dev.never");
 
+screenHooks("devices", { enter: loadDevices });
 async function loadDevices() {
   DEV.asked = true;
   try { const v = await api("/api/devices"); DEV.items = Array.isArray(v) ? v : null; DEV.fail = ""; } catch (e) { DEV.items = null; DEV.fail = e.message; }
@@ -12966,6 +13103,8 @@ function dcFill() {
   if (!DCS.guild.dataset.dirty) DCS.guild.value = DCS.v.guild;
   if (!DCS.owner.dataset.dirty) DCS.owner.value = DCS.v.owner_id;
 }
+function discordEnter() { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
+screenHooks("discord", { enter: discordEnter });
 async function loadDiscord() {
   DCS.asked = true;
   try { DCS.v = await api("/api/discord/connection"); DCS.fail = ""; } catch (e) { DCS.v = null; DCS.fail = e.message; }
@@ -13083,11 +13222,12 @@ function renderDiscord() {
 // 설정의 메신저 화면: Discord · JANDI · Slack · Telegram each has its own view. Every view reads the shared index
 // (GET /api/messengers), one settings view (GET/PUT /api/messengers/<id>, POST .../test, hub/messengers-api.ts), and the
 // onboarding panel. Manual IDs/tokens live only in the closed "직접 입력" disclosure.
-const MS_IDS = ["discord", "jandi", "slack", "telegram"];
-const MS_LABELS = { discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram" };
+// The messenger screens are the SCREENS rows under 메신저, in table order (03-screens.js loads first).
+const MS_IDS = views.filter(id => SCREENS[id].under === "messengers");
+const MS_LABELS = Object.fromEntries(MS_IDS.map(id => [id, titles[id]]));
 const MS_KINDS = [["main", TX("common.main_chat")], ["project", TX("common.project")], ["alert", TX("common.alerts")], ["worklog", TX("common.worklog")]];
 const MS_AS_USER = TX("connect.ms.as_user");
-const MSS = { items: null, fail: "", asked: false, loading: false, page: null };
+const MSS = { items: null, fail: "", asked: false, page: null };
 const msItem = id => (MSS.items || []).find(x => x.id === id) || null;
 const msTag = m => !m ? ["", ""] : !m.configured ? [TX("connect.state.unset"), "warn"] : m.state === "error" ? [TX("settings.prov.not_connected"), "err"] : [TX("connect.state.on"), "ok"];
 const msConnectLabel = m => (!m || !m.configured || m.error ? TX("connect.connect") : !m.enabled ? TX("connect.turn_on") : TX("mail.reconnect"));
@@ -13110,6 +13250,8 @@ function msHubRow() {
   r.dataset.msHub = "";
   return r;
 }
+function messengersEnter() { renderMessengers(); loadMessengerIndex(); }
+screenHooks("messengers", { enter: messengersEnter });
 // The messenger screen: Discord · JANDI · Slack · Telegram, each a row with its status tag that opens that messenger's own screen.
 function renderMessengers() {
   if (!MSS.asked) loadMessengerIndex();
@@ -13129,15 +13271,18 @@ function msPaint() {
   else if (MS_IDS.includes(current)) renderMessenger(current);
 }
 // The index is fetched when a screen opens, never on every render; the rows stay while it is in flight.
-async function loadMessengerIndex() {
+// One read at a time: a screen that opens joins a read already out; again (a save's re-read) reads after it, since that read may predate the save.
+function loadMessengerIndex(again) {
   MSS.asked = true;
-  if (MSS.loading) return;
-  MSS.loading = true;
-  try { const j = await api("/api/messengers"); MSS.items = Array.isArray(j.items) ? j.items : []; MSS.fail = ""; }
-  catch (e) { MSS.fail = e.message; }
-  finally { MSS.loading = false; }
-  msPaint();
+  return (!again && latestOut("messengers")) || latest("messengers", async () => {
+    try { const j = await api("/api/messengers"); MSS.items = Array.isArray(j.items) ? j.items : []; MSS.fail = ""; }
+    catch (e) { MSS.fail = e.message; }
+    msPaint();
+  });
 }
+// JANDI, Slack and Telegram share one settings page shape; current names the one opening.
+function messengerEnter() { loadMessengerIndex(); loadMessengerSettings(current); loadOnboarding(current); }
+for (const id of MS_IDS.filter(id => id !== "discord")) screenHooks(id, { enter: messengerEnter });
 async function loadMessengerSettings(id) {
   const p = msPage(id);
   p.loading = true;
@@ -13176,7 +13321,7 @@ function msConnect(id, btn) {
       const p = msPage(id);
       p.s = await api(`/api/messengers/${enc(id)}`, "PUT", { enabled: true });
       p.enabled = !!p.s.enabled;
-      await loadMessengerIndex();
+      await loadMessengerIndex(true);
       if (current === id) renderMessenger(id);
     });
   }
@@ -13221,7 +13366,7 @@ async function msSave(btn) {
     p.enabled = !!p.s.enabled; p.vals = {}; p.add = "";
     p.allow = p.s.allow ? p.s.allow.items.slice() : null;
     saved = true;
-    await loadMessengerIndex();
+    await loadMessengerIndex(true);
   });
   if (current === p.id) renderMessenger(p.id);
   if (saved) stFlash(`#${p.id} [data-ms-save]`);
@@ -13333,7 +13478,7 @@ const OB = {};
 const OB_POLL_MS = 1500;
 const OB_AUTO_MS = 4000;
 const OB_AUTO_MAX = 1;
-const obKeyOk = key => key === "web-access" || key === "discord" || key === "jandi" || key === "slack" || key === "telegram";
+const obKeyOk = key => key === "web-access" || MS_IDS.includes(key);
 const obVisible = key => key === "web-access" ? current === "webaccess" : current === key;
 const OB_TONE = { running: "pri", waiting: "warn", done: "ok", failed: "err" };
 const obLine = v => v.state === "waiting" ? TX("connect.onb.waiting") : v.state === "running" ? TX("connect.onb.running") : v.state === "done" ? TX("connect.onb.done") : v.state === "failed" ? TX("connect.onb.failed") : TX("connect.onb.idle");
@@ -13385,8 +13530,8 @@ function obApply(key, next) {
 }
 // A finished flow reloads the index and the screen it belongs to, so the header and switches show the new state.
 function obAfterDone(key) {
-  loadMessengerIndex();
-  if (key === "web-access") { WA.draft = null; loadWebAccess(); return; }
+  loadMessengerIndex(true);
+  if (key === "web-access") { waReload(); return; }
   if (key === "discord") { loadDiscord(); return; }
   loadMessengerSettings(key);
 }
@@ -13492,6 +13637,8 @@ const WA_HELP = {
 const WA = { data: null, draft: null, fail: "", asked: false, advOpen: false };
 const waLabel = m => (WA_MODES.find(x => x[0] === m) || [m, m])[1];
 
+function webAccessEnter() { loadWebAccess(); loadOnboarding("web-access"); }
+screenHooks("webaccess", { enter: webAccessEnter });
 async function loadWebAccess() {
   WA.asked = true;
   try { WA.data = await api("/api/web-access"); WA.fail = ""; } catch (e) { WA.data = null; WA.fail = e.message; }
@@ -13499,6 +13646,8 @@ async function loadWebAccess() {
   if (current === "webaccess") renderWebAccess();
   if (inSettings()) renderSettings();
 }
+// A finished setup flow (25-settings-onboarding.js obAfterDone): drop the draft so the reload draws the new state.
+function waReload() { WA.draft = null; loadWebAccess(); }
 function waReset() {
   const d = WA.data;
   WA.draft = { mode: d.mode, hostname: d.hostname, team: d.team, aud: d.aud, token: "" };
@@ -13658,6 +13807,7 @@ function rtFlow(r) {
     if (checking && !(st && st.running)) { checking = false; clearInterval(timer); rtLive = null; }
     paint();
   }
+  const tick = () => { if (!latestOut(`/api/runtimes/${r.id}`)) pull(); };   // a poll while the last read is out skips it
   // The two targets are separate on/off choices (switch rows), not one either/or pick; 바꾸기 needs at least one on.
   const roleBar = () => el("div", { class: "col" }, el("div", { class: "sup", text: TX("connect.rt.applies") }),
     el("div", { class: "list" }, ...Object.entries(RT_ROLE).map(([k, v]) => {
@@ -13668,7 +13818,7 @@ function rtFlow(r) {
     roles.size ? null : el("div", { class: "sup", text: TX("connect.rt.need_one") }));
   async function check() {
     try { await api(`/api/runtimes/${r.id}/verify`, "POST", { real: true }); } catch (e) { toast(e.message, true); return; }
-    checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(pull, 1000); paint();
+    checking = true; st = { running: true, done: 0, total: 0 }; rtLive = pull; clearInterval(timer); timer = setInterval(tick, 1000); paint();
   }
   function paint() {
     clear(box);
@@ -13687,7 +13837,7 @@ function rtFlow(r) {
       catch (e) { await pull(); throw e; } }) });
     d.setActions(acts);
   }
-  pull().then(() => { if (st && st.running) { checking = true; rtLive = pull; timer = setInterval(pull, 1000); paint(); } });
+  pull().then(() => { if (st && st.running) { checking = true; rtLive = pull; timer = setInterval(tick, 1000); paint(); } });
   paint();
 }
 
@@ -13747,6 +13897,9 @@ const H_APPLY = { live: [TX("system.apply.live"), ""], "next-turn": [TX("system.
 const hNode = id => HG && HG.nodes.find(n => n.id === id);
 const hSvg = (tag, attrs) => { const n = document.createElementNS("http://www.w3.org/2000/svg", tag); for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v); return n; };
 
+function harnessEnter() { loadHarness(); }
+function harnessHash() { return hProjId ? `harness/project/${enc(hProjId)}` : ""; }
+screenHooks("harness", { enter: harnessEnter, route: hProjRoute, hash: harnessHash });
 async function loadHarness(quiet) {
   if (hLoading) return;
   hLoading = true;
@@ -13845,6 +13998,14 @@ function hCard(n, mobile) {
   hNodeEls.set(n.id, b);
   return b;
 }
+// A drawn card (node) and the box its edges attach to (geo); edge refs are what hHot lights. 28-harness-project.js fills them per paint.
+function hMapNode(id, node, geo) { hNodeEls.set(id, node); hGeo.set(id, geo); }
+function hEdgeAdd(ref) { hEdgeRefs.push(ref); }
+// The open project's map: from the address (`project/<id>`) or picked by id ("" = the main map).
+function hProjRoute(tgt) { hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : ""; }
+function hProjPick(id) { hProjId = id; }
+// The signature of the feature list now drawn (29-harness-features.js renderFeatures); "" forces the next paint.
+function fcDrawn(sig) { fcSig = sig; }
 
 function hHot(id) {
   if (hOv) { hOverlay(id); return; }
@@ -13859,13 +14020,13 @@ function hUse() {
   const p = hPj();
   if (hProjId && HGB && !p) { hProjId = ""; if (current === "harness") routeReplace("harness"); }
   HG = p ? { ...HGB, origin_view: false, nodes: p.map.nodes, edges: p.map.edges } : HGB;
-  if (hSel && !hNode(hSel)) { closeHSheet(); hSel = ""; }
+  if (hSel && !hNode(hSel)) hSelClear();
 }
 
 function renderHarness() {
   const box = $("#harness");
   hUse();
-  hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOv = null;
+  hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOvDrop();
   if (!HG) { clear(box).append(emptyNode(TX("common.loading"))); return; }
   const mobile = H_MQ.matches, pj = hPj();
   const onlySeg = hOrigin() ? el("div", { class: "seg", role: "group", "aria-label": TX("system.view.scope") }, ...[[false, TX("system.view.all"), TX("system.view.all_tip")], [true, TX("system.view.custom", { n: hCustomCount() }), TX("system.view.custom_tip")]].map(([v, t, tip]) => {
@@ -13949,8 +14110,8 @@ function hProjHead(p) {
 // Opens a project's own map (or the main map with ""); the hash `#harness/project/<id>` restores it on reload.
 async function hOpenProject(id) {
   if (hDirty && hDirty() && !await ask(TX("system.pj.dirty.title"), TX("system.pj.dirty.body"), TX("system.pj.dirty.ok"), true)) return;
-  closeHSheet(); hSel = "";
-  hProjId = id;
+  hSelClear();
+  hProjPick(id);
   routeReplace(id ? `harness/project/${enc(id)}` : "harness");
   renderHarness();
   $("#views").scrollTop = 0;
@@ -13992,7 +14153,7 @@ function hCanvas(avail) {
     const label = hSvg("text", { x: r.lx, y: r.ly + 3.5, class: "hm-lb", "text-anchor": "middle" });
     label.textContent = r.e.label;
     svg.append(path); labels.append(label);
-    hEdgeRefs.push({ e: r.e, path, label });
+    hEdgeAdd({ e: r.e, path, label });
   }
   svg.append(labels);
   canvas.append(svg);
@@ -14044,7 +14205,7 @@ function hStageLabel(a, b) {
 function hChip(n) {
   const b = el("button", { type: "button", class: `hm-chip${hSick(n) ? ` ${n.status}` : n.status === "off" ? " off" : ""}${hOrigin() && hMine(n.id).any ? " mine" : ""}`, "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
     el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "l", text: hShort(n) }), hMark(n.id), fcBadges(n.id, true));
-  hNodeEls.set(n.id, b); hGeo.set(n.id, b);
+  hMapNode(n.id, b, b);
   return b;
 }
 
@@ -14077,11 +14238,11 @@ function hStageCard(s, i, stages) {
   const head = one ? el("button", { type: "button", class: "hm-sh", "aria-label": `${one.label}: ${one.summary}` }, ...kids) : el("div", { class: "hm-sh" }, ...kids);
   const card = el("div", { class: `hm-st${one ? " one" : ""}${hOrigin() && hMine(ids).any ? " mine" : ""}`, "data-id": one ? one.id : null }, ...hFrom(stages, i), head);
   const list = el("div", { class: "hm-list" });
-  if (one) { hNodeEls.set(one.id, card); hGeo.set(one.id, head); }
+  if (one) hMapNode(one.id, card, head);
   else list.append(el("div", { class: "hm-rows" }, ...s.main.map(n => {
     const r = el("button", { type: "button", class: "hm-row", "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
       el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "tx" }, el("span", { class: "l", text: n.label }), el("span", { class: "s", text: n.summary })), hMark(n.id));
-    hNodeEls.set(n.id, r); hGeo.set(n.id, r);
+    hMapNode(n.id, r, r);
     return r;
   })));
   if (s.chips.length) list.append(el("div", { class: "hm-with" }, el("div", { class: "wl", text: TX("system.with.head", { n: s.chips.length }) }), el("div", { class: "hm-chips" }, ...s.chips.map(hChip))));
@@ -14219,19 +14380,18 @@ function hReveal(id) {
   else if (r.right + 16 > s.right) sc.scrollLeft += r.right + 16 - s.right;
 }
 
-let hSheetOv = null;
-function closeHSheet() {
-  const s = $("#hsheet");
-  if (!s || s.hidden) return;
-  const ov = hSheetOv; hSheetOv = null; ovDone(ov);
-  s.hidden = true; hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel();
-}
+// A card's detail is read in the side drawer (showSheet, 06-subagents.js); hSel is the card it shows, "" when it shows none.
+// The drawer stopped showing it (it closed, or other content took it): the selection, its unsaved-edit check and the room the map made go too.
+function hSheetGone() { hSel = ""; hDirty = null; hGoto = null; $("#harness").classList.remove("hs-open"); paintHSel(); }
+function closeHSheet() { if (hSel) hideSheet(); }
+screenHooks("harness", { away: closeHSheet });   // the node sheet closes on every move to another screen
+function hSelClear() { closeHSheet(); hSel = ""; }
+// The simple view's edge overlay goes with each repaint (27-harness.js renderHarness); hSimple sets the new one.
+function hOvDrop() { hOv = null; }
 
 function hHead() {
   const n = hNode(hSel);
-  if (!n || $("#hsheet").hidden) return;
-  $("#hs-name").textContent = n.label; $("#hs-sub").textContent = n.summary;
-  const t = $("#hs-tag"); t.className = `tag ${H_TONE[n.status] || ""}`; t.textContent = H_STATE[n.status] || "";
+  if (n) sheetHead({ name: n.label, sub: n.summary, tag: H_STATE[n.status] || "", tone: H_TONE[n.status] || "" });
 }
 
 async function openHSheet(id, focus = {}) {
@@ -14242,12 +14402,10 @@ async function openHSheet(id, focus = {}) {
   hSel = id; hGoto = null; paintHSel();
   const drafts = [];
   hDirty = () => drafts.some(f => f());
-  $("#hsheet").hidden = false;
-  if (!hSheetOv) hSheetOv = ovOpen(closeHSheet);
+  const body = clear(showSheet({ label: TX("shell.sheet.detail"), gone: hSheetGone }));
   $("#harness").classList.add("hs-open");
   hReveal(id);
   hHead();
-  const body = clear($("#hs-body"));
   body.scrollTop = 0;
   const more = n.desc.startsWith(n.summary) ? n.desc.slice(n.summary.length).trim() : n.desc;   // the head already says the summary
   if (more) body.append(el("p", { class: "hs-desc", text: more }));
@@ -14651,10 +14809,10 @@ function fcBuild(box) {
 function renderFeatures() {
   const box = hFcBox;
   if (!box) return;
-  if (!FC) { clear(box); fcSig = ""; return; }
+  if (!FC) { clear(box); fcDrawn(""); return; }
   const sig = JSON.stringify(FC.features) + (HG ? HG.nodes.map(n => n.label).join("") : "") + (hOrigin() ? "o" : "");
   if (sig === fcSig && box.firstChild) return;
-  fcSig = sig;
+  fcDrawn(sig);
   if (!hOrigin()) fcFilter.origin = "";
   if (fcOrig !== hOrigin()) { fcOrig = hOrigin(); clear(box); }
   if (!box.firstChild) fcBuild(box);
@@ -14679,9 +14837,6 @@ function fcSheetSection(n, focusId) {
   return [el("div", { class: "sec", text: TX("system.here.sec", { e, a: list.length - e }) }), el("div", { class: "hs-fts" }, ...rows)];
 }
 
-$("#hs-close").append(icon("close"));
-$("#hs-close").onclick = closeHSheet;
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && !$("#hsheet").hidden && !openMenu && !document.querySelector("dialog[open]:not([data-leaving])")) closeHSheet(); });
 H_MQ.addEventListener("change", () => { if (current === "harness") renderHarness(); });
 let hW = 0;
 window.addEventListener("resize", () => { if (current !== "harness" || H_MQ.matches || !hDetail) return; clearTimeout(hTimer); hTimer = setTimeout(() => { const w = $("#harness").clientWidth; if (Math.abs(w - hW) > 40) { hW = w; renderHarness(); } }, 150); });
@@ -14761,6 +14916,7 @@ function appsPick(id) {
   appsRender();
 }
 const appsHash = () => (APPS.sel && !(appsNarrow() && APPS.list) ? `apps/${enc(APPS.sel)}` : "apps");
+screenHooks("apps", { route: appsOpen, hash: appsHash });
 function appsOpen(tgt) {
   if (tgt && tgt !== "list") { APPS.sel = tgt; APPS.list = false; }
   else APPS.list = appsNarrow();
@@ -14956,9 +15112,8 @@ function canvasPick(d) {
   if (PICK.length >= 10) { toast(TX("apps.canvas.pick_max"), true); return; }
   if (PICK.some(p => p.remote && p.id === d.id)) return;
   const frame = $(".cvs-frame", canvasPane);
-  PICK.push({ id: d.id, n: PICK.length + 1, tag: String(d.tag || "div").toLowerCase(), sel: String(d.sel || ""), text: String(d.text || "").slice(0, 200), html: String(d.html || "").slice(0, 600),
+  pkAdd({ id: d.id, n: PICK.length + 1, tag: String(d.tag || "div").toLowerCase(), sel: String(d.sel || ""), text: String(d.text || "").slice(0, 200), html: String(d.html || "").slice(0, 600),
     view: `canvas:${(frame && frame.title) || "html"}`, title: String(d.title || ""), node: null, doc: null, frame: null, remote: true });
-  renderPicks();
 }
 // The page draws the numbered badges, so every change sends it the remote ids in order (15-picker.js renderPicks calls this).
 function pkRemoteSync() {
@@ -15020,7 +15175,7 @@ const kkViewOf = () => KK_VIEWS.find(v => v[0] === KK.view) || KK_VIEWS[0];
 function kkViewBar(watched) {
   return segKeep(el("div", { class: "mr-filter kk-views", role: "tablist", "aria-label": TX("apps.kk.view_aria") }, ...KK_VIEWS.map(([k, label, ok]) => {
     const on = k === kkViewOf()[0];
-    return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => { KK.view = k; kkPaintRooms(); } }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
+    return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => kkViewSet(k) }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
   })));
 }
 
@@ -15043,6 +15198,8 @@ const KK = {
   view: "all", typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
   peerT: 0, peerBusy: false, peerHead: "", lp: new Map(), olderBusy: false, olderAgain: false,
 };
+const kkViewSet = k => { KK.view = k; kkPaintRooms(); };   // the room-list pill picked: the only write to KK.view from outside this file
+const kkRoomsAsk = () => { KK.asked = true; kkLoadRooms(); };   // the first load of the room list, asked once from the conversation pane
 
 /* ---- small helpers ---- */
 const kkBig = s => { try { return BigInt(s); } catch { return 0n; } };
@@ -15380,17 +15537,13 @@ function kkBars(values, labels, title) {
 function kkPerson(uid) {
   uid = String(uid || "");
   const id = KK.open;
-  if (!uid || !id) return;
+  if (!uid || !id || document.querySelector("dialog.kk-pd[data-uid]:not([data-leaving])")) return;
   const who = KK.msgs.find(m => !m.fromMe && String(m.authorId) === uid);
   const name = who ? who.sender || TX("apps.kk.other") : TX("apps.kk.other");
-  const body = el("div", { class: "kk-pd-b" }, el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
-  const d = el("dialog", { class: "kk-pd", "data-uid": uid, "aria-label": TX("apps.kk.person_aria", { name }) },
-    el("div", { class: "kk-pd-in" },
-      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: TX("apps.kk.person") })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": TX("common.close"), onclick: () => d.close() }, icon("close"))),
-      body));
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
-  d.addEventListener("close", () => d.remove());
+  const body = el("div", null, el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
+  const d = dialog({ title: TX("apps.kk.person"), body: [el("div", { class: "kk-pwho" }, kkAvatar(name), el("span", { class: "cv-n", text: name })), body] }).node;
+  d.classList.add("kk-pd"); d.dataset.uid = uid; d.setAttribute("aria-label", TX("apps.kk.person_aria", { name }));
+  d.querySelector(".fs-x").dataset.k = "close";
   api(`/api/kakao/person/${enc(uid)}?room=${enc(id)}`).then(r => { if (d.isConnected) kkPersonPaint(d, body, r); }, e => { if (d.isConnected) clear(body).append(el("div", { class: "kk-note", role: "status", text: e.message })); });
 }
 function kkPersonPaint(d, body, r) {
@@ -15551,7 +15704,7 @@ async function kkLoadRooms() {
   if (KK.open && !kkRoom(KK.open) && !KK.failed) kkClose();
   kkPaintRooms();
   if (KK.open) kkPaintChat();
-  convSig = ""; convSchedule();   // the 채팅 list's 메일 card
+  convRepaint();   // the 채팅 list's 메일 card
 }
 function kkSwitch(on, label, key, change, small) {
   return el("button", { class: `kk-sw${on ? " on" : ""}${small ? " sm" : ""}`, type: "button", role: "switch", "aria-checked": on ? "true" : "false", "aria-label": label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, el("span", { class: "kk-knob" }));
@@ -15587,19 +15740,14 @@ const kkPickRow = r => el("button", { class: `pl-row kk-pr${r.watched ? " on" : 
   r.watched ? icon("check", "kk-ck") : null);
 function kkPickRows() {
   const list = KK.rooms.filter(r => kkMatch(r.name, KK.q));
-  return list.length ? list.map(kkPickRow) : [el("div", { class: "kk-note", id: "kk-nomatch", role: "status", text: TX("apps.kk.no_match") })];
+  return list.length ? list.map(kkPickRow) : [emptyNode(TX("apps.kk.no_match"), null, { id: "kk-nomatch", role: "status" })];
 }
 function kkAddOpen() {
   if (KK.adding) return;
   KK.q = ""; kkSearch.value = "";
-  const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": TX("apps.kk.add_title") },
-    el("div", { class: "kk-pd-in", tabindex: "-1", autofocus: true },
-      fsHead([el("h2", { class: "fs-t", text: TX("apps.kk.add_title") })], { close: () => d.close() }),
-      el("div", { class: "kk-pd-b" }, el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows()))));
-  KK.adding = d;
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
-  d.addEventListener("close", () => { if (KK.adding === d) KK.adding = null; d.remove(); });
+  const d = KK.adding = dialog({ title: TX("apps.kk.add_title"), onclose: () => { KK.adding = null; },
+    body: [el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows())] }).node;
+  d.id = "kk-add"; d.classList.add("kk-pd", "kk-add"); d.setAttribute("aria-label", TX("apps.kk.add_title"));
 }
 function kkRow(r) {
   const on = KK.open === r.chatId, sub = kkSubLine(r), time = r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null;
@@ -15621,7 +15769,7 @@ function kkPaintRooms() {
   const list = el("section", { class: "pl-list kk-watch", "aria-label": TX("apps.kk.watched") });
   if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }), ...(KK.failed ? [appRetry(() => kkLoadRooms())] : []));
   else if (shown.length) list.append(...shown.map(kkRow));
-  else list.append(el("div", { class: "kk-note", id: "kk-empty", text: watched.length ? kkViewOf()[3] : KK.rooms.length ? TX("apps.kk.add_prompt") : TX("apps.kk.no_rooms") }));
+  else list.append(emptyNode(watched.length ? kkViewOf()[3] : KK.rooms.length ? TX("apps.kk.add_prompt") : TX("apps.kk.no_rooms"), null, { id: "kk-empty" }));
   // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
   const own = (kkItemNow() || {}).owned || [];
   clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": TX("apps.kk.status_aria") }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));
@@ -15794,11 +15942,11 @@ function kkClose() {
   KK.open = ""; KK.seq++; KK.loading = false; KK.roomErr = "";
   kkPaintAll(); convTitle(); bkKkSync();
 }
+function bkKkSync() { bkStep(KK, !!(KK.vis && KK.open && narrowChat() && current === "monitoring" && !MON.list), () => kkClose()); }   // a phone's open room is one history step (32-history-nav.js bkStep)
 // The app bar's back arrow leaves an open room for the room column first, at every width (04-state.js #back); a wide screen gives the room no history step (histFlat).
 function kkBack() {
   if (!(KK.vis && KK.open && current === "monitoring" && !MON.list)) return false;
-  kkClose();
-  return true;
+  kkClose(); return true;
 }
 // The older page, one load in flight at a time (an auto-load at the top and the fallback button share it). The message that was at the top
 // of the view keeps its offset: the content added above it never moves the reader.
@@ -16145,6 +16293,7 @@ ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
 ICONS.flag = "M6 21V4h12l-2.5 4 2.5 4H6";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set(), held: new Map() };
+const mbUnselect = t => { MBOX.sel.delete(t); }, mbSelClear = () => { MBOX.sel.clear(); }, mbRowsForget = rows => { for (const r of rows) MBOX.rows.delete(r.dataset.t); };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
@@ -16152,7 +16301,7 @@ const mailCan = (t, a) => { const m = MAILS.get(t); return !!m && Array.isArray(
 const mailOldHub = t => { const m = MAILS.get(t); return !!m && !Array.isArray(m.can); };
 // Unread: the hub's read flag when the card has one (the real mailbox's, two-way); else dotz's own read position (ts(t).unread). A sent mail is never unread.
 const mailUnread = (t, m = MAILS.get(t)) => !!m && m.dir !== "out" && (typeof m.read === "boolean" ? !m.read : (ts(t).unread | 0) > 0);
-const mbRefresh = () => { MON.sig = ""; MON.side = ""; monSchedule(); mbPaintBar(); };
+const mbRefresh = () => { monDirty(true); mbPaintBar(); };
 // What waits on the hub is kept here by id (the mail, `|`, the button's data-k), not only on its node: a repaint draws the button again and mbHeld puts it back busy;
 // the end clears the node that is on the page then. `keep`: the row is leaving, so the node stays as it is and only the id goes.
 const mbWid = b => { const r = b.closest(".mr[data-t]"); return `${r ? r.dataset.t : ""}|${b.dataset.k}`; };
@@ -16192,7 +16341,7 @@ function mbFresh(scope, box) {
 function mbRowsOut(keys) {
   const keep = mailFilterOf()[2], gone = keys.filter(t => !MAILS.has(t) || !keep(MAILS.get(t), t));
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => gone.includes(r.dataset.t));
-  for (const r of rows) MBOX.rows.delete(r.dataset.t);   // a row that fades out is not kept
+  mbRowsForget(rows);   // a row that fades out is not kept
   return rows.length ? Promise.all(rows.map(r => motionGone(r))) : null;
 }
 // Whether an action takes the mail out of the list that is shown: that row stays, and the button says it waits, until the hub has answered.
@@ -16212,8 +16361,8 @@ function mbApply(t, a) {
   else if (a === "unread") m.read = false;
   else if (a === "archive" || a === "unarchive") m.archived = a === "archive";
   else if (a === "star" || a === "unstar") m.starred = a === "star";
-  else if (a === "trash") { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); }
-  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { MAILS.set(t, m); if (conv) CONV.set(t, conv); } };
+  else if (a === "trash") { mailDrop(t); convDrop(t); MBOX.sel.delete(t); }
+  return () => { Object.assign(m, was); ts(t).unread = unread; if (a === "trash") { mailPut(t, m); if (conv) convLastSet(t, conv); } };
 }
 const MB_DONE = { read: n => (n > 1 ? TX("mail.done_n.read", { n }) : TX("mail.done.read")), unread: n => (n > 1 ? TX("mail.done_n.unread", { n }) : TX("mail.done.unread")), archive: n => (n > 1 ? TX("mail.done_n.archive", { n }) : TX("mail.done.archive")), unarchive: n => (n > 1 ? TX("mail.done_n.unarchive", { n }) : TX("mail.done.unarchive")), trash: n => (n > 1 ? TX("mail.done_n.trash", { n }) : TX("mail.done.trash")), star: n => (n > 1 ? TX("mail.done_n.star", { n }) : TX("mail.done.star")), unstar: n => (n > 1 ? TX("mail.done_n.unstar", { n }) : TX("mail.done.unstar")) };
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };
@@ -16249,7 +16398,7 @@ async function mbRun(keys, action, quiet = false, btn = null) {
   if (!quiet && said) toast(said, res.some(x => x.ok === false));
   else if (!quiet && res.some(x => x.ok === false)) toast(TX("mail.err.failed"), true);
   else if (!quiet && done.length && MB_DONE[action]) toast(MB_DONE[action](done.length), false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: TX("common.undo"), onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
-  if (legacy) for (const t of done) PQ.of.delete(t);
+  if (legacy) for (const t of done) pqUnbind(t);
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
 }
@@ -16328,7 +16477,7 @@ async function mbFyi(keys, on = true, btn = null) {
   if (on && keys.length > MB_FYI_ASK && !await ask(TX("mail.fyi.title"), TX("mail.fyi.ask_n", { n: keys.length }), TX("mail.fyi.go_n", { n: keys.length }))) return [];
   const was = new Map(keys.map(t => { const m = MAILS.get(t); return [t, { reply: m.reply, unreplied: m.unreplied }]; })), byPc = new Map(), mark = { reply: on ? "fyi" : "needs", unreplied: !on }, keep = mailFilterOf()[2];
   // A row that leaves this list stays until the hub said yes; the others change at once.
-  const wait = new Set(keys.filter(t => !keep({ ...MAILS.get(t), ...mark }, t))), put = t => { Object.assign(MAILS.get(t), mark); MBOX.sel.delete(t); };
+  const wait = new Set(keys.filter(t => !keep({ ...MAILS.get(t), ...mark }, t))), put = t => { mailMark(t, mark); MBOX.sel.delete(t); };
   for (const t of keys) {
     if (!wait.has(t)) put(t);
     const pc = pqPc(t), k = pc ? pc.url : "";
@@ -16345,7 +16494,7 @@ async function mbFyi(keys, on = true, btn = null) {
     } catch (e) { g.keys.forEach(t => bad.add(t)); return e.message; }
   }));
   unwait();
-  for (const t of bad) if (!wait.has(t) && MAILS.has(t)) Object.assign(MAILS.get(t), was.get(t));
+  for (const t of bad) if (!wait.has(t) && MAILS.has(t)) mailMark(t, was.get(t));
   const done = keys.filter(t => !bad.has(t));
   for (const t of done) if (wait.has(t) && MAILS.has(t)) put(t);
   const leaving = mbRowsOut(done.filter(t => wait.has(t)));
@@ -16434,8 +16583,8 @@ function mbRowsPrune() {
 // A step draws MB_PAGE more of the loaded mails; when the hub has older ones, the next page is asked for too, and the list draws again when it lands.
 function mbMore() {
   MBOX.drawn += MB_PAGE;
-  if (CVP.more) convMore().then(() => { MON.sig = ""; monSchedule(); });
-  MON.sig = ""; monSchedule();
+  if (CVP.more) convMore().then(() => { monDirty(); });
+  monDirty();
 }
 // After the drawn rows: a sentinel that adds a page when it reaches the viewport, and the plain button for a browser without IntersectionObserver.
 function mbMoreNodes(left) {
@@ -16698,8 +16847,7 @@ async function mailSentRemove(n, btn, quiet = false) {
       const r = await api(`/api/notices/${enc(id)}/dismiss`, "POST", {});
       if (!r || !r.ok) throw new Error(TX("mail.sent.remove_failed"));
       leave();
-      NT.items = NT.items.filter(x => String(x.id) !== id);
-      if (typeof r.unread === "number") NT.unread = r.unread;
+      ntRemove(id, r.unread);
       ntPaint();
     }
     if (out) out.then(mailSentPaint); else mailSentPaint();
@@ -16932,7 +17080,7 @@ function mailThreadSync() {
 MT_READY = true;
 
 /* ---------- 메일함 설정과 메일함 추가: the two screens of the mail app that replace the list in the same view (docs/mailbox.md "Web", prototype s-mailbox.js) ---------- */
-// MX.scr ("", "set", "new") is part of the address: `monitoring/i%3Amail/<account>/<box>/set` (30-mailboxes.js mxRoute, mxHash). In a screen mxScope hands the timeline no mails, so
+// MX.scr ("", "set", "new") is part of the address: `monitoring/i%3Amail/<account>/<box>/set` (30-monitoring-route.js monParse, monHashOf). In a screen mxScope hands the timeline no mails, so
 // its signature stays put and the one node MXS.root is drawn by mxsPaint only when something here changes; a live mail update never redraws a field being typed in.
 // A change saves at once with PUT /api/mailbox/box (the whole box, so `alone`, `rules` and the source conditions the hub keeps come back unchanged), optimistic: the box object of
 // INTG is changed first and put back from the last answer the hub gave when a save fails. Nothing here polls; the tone and the suggestions are read when their item or screen opens.
@@ -16946,22 +17094,22 @@ const mxsFind = (app, id) => { const a = MX.accts.get(app); return a ? a.byId.ge
 const mxsList = (o, path) => path.split(".").reduce((x, k) => x[k], o);
 const mxsMails = (a, b) => [...MX.of].filter(([t, k]) => k === a.key && mxBoxOf(t) === b).map(([t]) => t);
 const mxsBlank = acct => ({ acct, step: "start", name: "", icon: "folder", mode: "ask", conds: { from: [], subj: [], body: [] }, judge: { on: false, text: "" }, how: "", greets: [], folders: [], bans: [], keys: [], count: 0, bring: false, copied: "", busy: false });
-// The address of the screen the state says; the box list is the same address without the last part.
-const mxsGo = scr => go("monitoring", `${MX.key}/${enc(MX.acct)}/${enc(MX.box)}${scr ? `/${scr}` : ""}`);
+// The address of a screen of a box (the open box of the open account unless given); the box list is the same address without the last part.
+// go() reads the account, box and screen back into MX from it, so nothing here sets them.
+const mxsGo = (scr, box = MX.box, acct = MX.acct) => go("monitoring", `${MX.key}/${enc(acct)}/${enc(box)}${scr ? `/${scr}` : ""}`);
 // The browser's back from a screen lands on the box list (32-history-nav.js routeChain).
 const mxChain = hash => (MX.scr && MON.sel === MX.key ? [hash.slice(0, hash.lastIndexOf("/")), hash] : [hash]);
 // The screens name the app bar (monName) and its back arrow returns to the box list (#back, 04-state.js).
 const mxsName = () => (MON.sel === MX.key && MX.scr ? (MX.scr === "set" ? TX("mail.box.settings") : TX("mail.box.add")) : "");
-const mxsBack = () => { if (current !== "monitoring" || !MX.it || !MX.scr) return false; MX.scr = ""; mxsGo(""); return true; };
-function mxsEnter(scr, note = "") { MXS.note = note; MXS.open = ""; MXS.add = ""; MXS.blank = 0; MXS.reply = ""; MXS.more.clear(); MXS.tone.clear(); MXS.d = null; MXS.sug = null; MXS.sugFor = ""; mxsGo(scr); }
+const mxsBack = () => { if (current !== "monitoring" || !MX.it || !MX.scr) return false; mxsGo(""); return true; };
+function mxsEnter(scr, note = "", box, acct) { MXS.note = note; MXS.open = ""; MXS.add = ""; MXS.blank = 0; MXS.reply = ""; MXS.more.clear(); MXS.tone.clear(); MXS.d = null; MXS.sug = null; MXS.sugFor = ""; mxsGo(scr, box, acct); }
 // box "n:<name>" (the merged entry) opens the first account's box of that name.
 function mxOpenSet(id) {
   const name = mxGroup(id) ? id.slice(2) : "", merged = !!name || (MX.acct === "all" && MX.accts.size > 1);
   for (const a of MX.accts.values()) {
     const b = name ? a.boxes.find(x => x.name === name) : (MX.acct === "all" || MX.acct === a.key) && a.byId.get(id);
     if (!b) continue;
-    MX.acct = a.key; MX.box = b.id;
-    mxsEnter("set", merged ? TX("mail.set.merged_note", { name: a.label }) : "");
+    mxsEnter("set", merged ? TX("mail.set.merged_note", { name: a.label }) : "", b.id, a.key);
     return;
   }
 }
@@ -17097,7 +17245,7 @@ const mxsCondSum = b => [...MXS_KINDS.filter(([k]) => b.conds[k].length).map(([k
 const mxsFirst = (l, none = TX("mail.none")) => (l.length ? (l.length > 1 ? TX("mail.first_more", { first: l[0], n: l.length - 1 }) : l[0]) : none);
 function mxsSetNodes() {
   const a = MX.accts.get(MX.acct), b = a && a.byId.get(MX.box);
-  if (!b) return [el("div", { class: "empty", text: TX("mail.set.gone") })];
+  if (!b) return [emptyNode(TX("mail.set.gone"))];
   const ap = mxsSetApply(a.key, b.id), mails = mxsMails(a, b), unread = mails.filter(t => mailUnread(t, MAILS.get(t))).length, drafts = !b.mode || b.mode === "auto" || b.mode === "ask";
   const text = (get, set, ph, label, rows) => el(rows ? "textarea" : "input", { class: `fi${rows ? " mxs-ta" : ""}`, ...(rows ? { rows } : { value: get }), placeholder: ph, "aria-label": label, onchange: ev => ap(x => set(x, ev.target.value.trim()), false) }, rows ? get : null);
   const nameBody = () => [el("input", { class: "fi", value: b.name, "aria-label": TX("mail.box.name"), onchange: ev => {
@@ -17127,9 +17275,7 @@ async function mxsDelete(a, b) {
   if (!(await ask(TX("mail.box.delete_named", { name: b.name }), n ? TX("mail.box.delete_body_n", { n }) : TX("mail.box.delete_body"), TX("common.delete"), true))) return;
   try { await api("/api/mailbox/box", "DELETE", { app: a.key, id: b.id }); } catch (e) { toast(mxsErr(e), true); return; }
   await Promise.allSettled([loadIntegrations(), convLoad()]);
-  MX.box = a.base.id;
-  MX.scr = "";
-  mxsGo("");
+  mxsGo("", a.base.id);
   toast(TX("mail.box.deleted", { name: b.name }));
 }
 
@@ -17149,8 +17295,8 @@ function mxsStartNodes(d) {
   mxsSuggest(d.acct);
   const groups = MXS.sug, row = (title, sup, onclick, n) => el("button", { class: n ? "li mxs-sg" : "li", type: "button", onclick }, el("span", { class: "tx" }, el("span", { class: "hd", text: title }), el("span", { class: "sup", text: sup })), n ? liEnd(el("span", { class: "mxs-cnt", text: n }), icon("chev")) : icon("chev"));
   const copyable = [...MX.accts.values()].flatMap(a => a.boxes.filter(b => !b.base).map(b => ({ a, b })));
-  return [...mxsAcctRow(d), mxsSec(TX("mail.new.groups")), el("div", { class: "list" }, ...(groups === null ? [el("div", { class: "empty", text: TX("mail.new.groups_loading") })] : groups.length ? groups.map(g => row(g.label, `${g.domain} · ${g.senders.join(", ")}`,
-    () => mxsStart(d, { name: g.label, conds: { from: [g.domain], subj: [], body: [] }, keys: g.keys, count: g.count }), TX("mail.emails_n", { n: g.count }))) : [el("div", { class: "empty", text: TX("mail.new.groups_none") })])),
+  return [...mxsAcctRow(d), mxsSec(TX("mail.new.groups")), groups === null ? emptyNode(TX("mail.new.groups_loading")) : groups.length ? el("div", { class: "list" }, ...groups.map(g => row(g.label, `${g.domain} · ${g.senders.join(", ")}`,
+    () => mxsStart(d, { name: g.label, conds: { from: [g.domain], subj: [], body: [] }, keys: g.keys, count: g.count }), TX("mail.emails_n", { n: g.count })))) : emptyNode(TX("mail.new.groups_none")),
   mxsSec(TX("mail.new.own")), el("div", { class: "list" }, row(TX("mail.new.blank"), TX("mail.new.blank_sub"), () => mxsStart(d, {})),
     copyable.length ? row(TX("mail.new.copy"), TX("mail.new.copy_sub"), () => { d.step = "copy"; mxsPaint(); }) : null)];
 }
@@ -17178,8 +17324,7 @@ async function mxsCreate() {
   let moved = true;
   if (d.bring && d.keys.length) try { await api("/api/mailbox/move", "POST", { keys: d.keys, box: made.id }); } catch (e) { moved = false; toast(TX("mail.new.made_not_moved", { name }), true); }
   await Promise.allSettled([loadIntegrations(), convLoad()]);
-  MX.acct = d.acct; MX.box = made.id; MX.scr = "";
-  mxsGo("");
+  mxsGo("", made.id, d.acct);
   if (moved) toast(TX("mail.new.made", { name }));
 }
 function mxsNewNodes() {
@@ -17204,7 +17349,7 @@ function mxScreen() {
 // mxPaint draws what sits outside the timeline (the pane, the account chip), mxTop what sits at its head. The rows stay `.mr` of monConvNode / mbRow, so the
 // partial redraw, the off-screen skipping and the paging of 30-mail-box.js work as before. Data comes with GET /api/integrations (a mail item carries
 // `boxes` and `account`) and `mail.box` / `mail.boxWhy` of the conversation card: nothing here polls or fetches on its own.
-// MX.acct: "all" or an instance; MX.box: "all", a box id or "n:<name>" (the boxes of one name in every account). Both are part of the address (mxHash, mxRoute).
+// MX.acct: "all" or an instance; MX.box: "all", a box id or "n:<name>" (the boxes of one name in every account). Both are part of the address (30-monitoring-route.js monParse, monHashOf).
 // Settings and 메일함 추가 are another screen: the buttons call mxOpenSet(boxId) / mxOpenNew() where those exist.
 ICONS.folder ??= ICONS.projects;
 ICONS.sliders ??= "M4 7h9M17 7h3M4 17h3M11 17h9M13 5v4M9 15v4";
@@ -17221,19 +17366,15 @@ const mxGroup = id => id.startsWith("n:");
 const mxMail = () => INTG.items.filter(x => x.app === "mail");
 // The one item's key: `i:mail`, or the first mail instance when `mail` is gone. Any mail instance opens it.
 const mxKeyOf = inst => (mxMail().some(x => x.key === inst) ? `i:${(mxMail().find(x => x.key === "mail") || mxMail()[0]).key}` : `i:${inst}`);
-// The address: `monitoring/i%3Amail/<account>/<box>`; the box is encoded twice so a name with a slash stays one part. Without a suffix the item opens as it was.
-const mxHash = sel => (sel === MX.key && (MX.acct !== "all" || MX.box !== "all" || MX.scr) ? `/${enc(MX.acct)}/${enc(enc(MX.box))}${MX.scr ? `/${MX.scr}` : ""}` : "");
-function mxRoute(tgt) {
-  const m = /^(i:[^/]+)(?:\/([^/]*)\/([^/]*)(?:\/([^/]*))?)?$/.exec(tgt || "");
-  if (!m) return tgt;
-  const key = mxKeyOf(m[1].slice(2));
-  MX.scr = m[4] === "set" || m[4] === "new" ? m[4] : "";
-  if (m[2] !== undefined) { MX.acct = mxDec(m[2]); MX.box = mxDec(m[3]); } else if (key !== m[1]) { MX.acct = m[1].slice(2); MX.box = "all"; }
-  return key;
-}
-const mxSync = () => { MON.sig = ""; const box = $("#mon-timeline"); if (box) box.scrollTop = 0; routeReplace(monHash()); monSchedule(); };
+// The address `monitoring/i%3Amail/<account>/<box>` is read and written in 30-monitoring-route.js (monParse, monHashOf); mxRouteSet takes what it names (monApply).
+// mxHash and mxRoute are kept for web/custom.js of other installs (nothing in the app calls them; do not delete as dead code).
+// They are the mail part alone: the suffix of the open state, and an address target read into MX (its item key back).
+const mxRouteSet = x => { MX.scr = x.scr; if (x.acct !== undefined) { MX.acct = x.acct; MX.box = x.box; } };
+const mxHash = sel => (sel === MX.key ? monHashOf({ sel, mx: MX }).slice(`monitoring/${enc(sel)}`.length) : "");
+function mxRoute(tgt) { const r = monParse(tgt); if (!r.mx) return tgt; mxRouteSet(r.mx); return r.sel; }
+const mxSync = () => { monSigReset(); const box = $("#mon-timeline"); if (box) box.scrollTop = 0; routeReplace(monHash()); monSchedule(); };
 // A box picked in the panel beside an open mail (30-mailboxes.js mxTwo) goes back to that box's list; on the list it filters it in place.
-const mxBox = id => { MX.box = id; MX.scr = ""; if (current === "chat") { MON.sig = ""; MON.tlTop = 0; go("monitoring", MON.sel); } else mxSync(); };
+const mxBox = id => { MX.box = id; MX.scr = ""; if (current === "chat") { monFromTop(); go("monitoring", MON.sel); } else mxSync(); };
 const mxPick = a => { MX.acct = a; MX.box = "all"; MX.scr = ""; mxSync(); };
 const mxNew = () => { if (typeof mxOpenNew === "function") mxOpenNew(); };
 const mxSet = id => { if (typeof mxOpenSet === "function") mxOpenSet(id); };
@@ -17437,7 +17578,7 @@ function mxMoveOpen(anchor, keys) {
 // Rows the move takes out of the list leave first; the rest of the list is drawn again without them.
 function mxRowsOut(keys) {
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => keys.includes(r.dataset.t) && !mxIn(r.dataset.t));
-  for (const r of rows) MBOX.rows.delete(r.dataset.t);
+  mbRowsForget(rows);
   return rows.length ? Promise.all(rows.map(r => motionGone(r))) : null;
 }
 // POST /api/mailbox/move: the rows say they are busy until the hub answers; then the card changes (box, why) and the rows that leave this box fold away.
@@ -17463,7 +17604,7 @@ async function mxPut(keys, id) {
   const a = MX.accts.get(MX.of.get(keys[0])), from = keys.every(t => mxBoxOf(t).id === mxBoxOf(keys[0]).id) ? mxBoxOf(keys[0]) : null, who = mxAddr(keys), kw = keys.length === 1 ? mxKw(MAILS.get(keys[0]).subject) : "";
   const r = await mxMove(keys, id);
   if (!r) return;
-  MBOX.sel.clear(); mbPaintBar();
+  mbSelClear(); mbPaintBar();
   MX.teach = { keys, to: a.byId.get(id), from, who, kw, was: r.was || {}, done: "" };
   mxTeachShow();
 }
@@ -17563,12 +17704,13 @@ function dmRow(c) {
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: c.peer, text: c.peer }), el("span", { class: "cv-p", text: c.last })),
     el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(c.lastAt) })));
 }
+function dmReset(clearView) { DM.open = null; if (clearView) DM.view = null; DM.seq++; }   // the comment pane's tab switch, open and close end an open DM thread here
 function dmPaintRooms() {
   if (!CM.vis) return;
   const top = cmRooms.scrollTop, tabs = cmTabs();
   const sig = JSON.stringify(["dm", DM.perm, DM.line, DM.error, DM.convs, DM.loaded, DM.busy, DM.open && DM.open.id, !!tabs]);
   if (sig === CM.roomsSig) return;
-  CM.roomsSig = sig;
+  cmRoomsSig(sig);
   const bar = el("div", { class: "dm-bar" }, el("span", { class: "dm-note", text: TX("mon.dm.ro") }),
     el("button", { class: "btn text", type: "button", id: "dm-refresh", disabled: DM.busy, text: DM.busy ? TX("common.loading") : TX("settings.refresh"), onclick: dmRefresh }));
   const list = el("section", { class: "kk-watch", "aria-label": TX("mon.dm.aria") });
@@ -17576,7 +17718,7 @@ function dmPaintRooms() {
   if (DM.perm === "missing") list.append(el("div", { class: "kk-note", id: "dm-perm", role: "status", text: DM.line }));
   else if (DM.error) list.append(el("div", { class: "kk-note", role: "status", text: DM.error }));
   if (DM.convs.length) list.append(...DM.convs.map(dmRow));
-  else if (DM.loaded && DM.perm !== "missing") list.append(el("div", { class: "kk-note", id: "dm-empty", text: TX("mon.dm.empty") }));
+  else if (DM.loaded && DM.perm !== "missing") list.append(emptyNode(TX("mon.dm.empty"), null, { id: "dm-empty" }));
   clear(cmRooms).append(...(tabs ? [tabs] : []), bar, list);
   cmRooms.scrollTop = top;
 }
@@ -17611,12 +17753,12 @@ function dmPaintChat(stick) {
   dmRo.hidden = !open;
   const sig = open ? `dm/${open.id}/${open.peer}` : "";
   if (sig !== CM.headSig) {
-    CM.headSig = sig; clear(cmHead);
+    cmHeadSig(sig); clear(cmHead);
     if (open) cmHead.append(kkAvatar(open.peer), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.peer })));
   }
   const csig = JSON.stringify(["dm", open, DM.loading, DM.viewErr, v]);
   if (!stick && csig === CM.chatSig) return;
-  CM.chatSig = csig;
+  cmChatSig(csig);
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("mon.dm.pick") })); return; }
   if (DM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: TX("common.loading") })); return; }
   if (DM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: DM.viewErr }), appRetry(() => { DM.loading = true; DM.viewErr = ""; cmPaintChat(false); dmReload(); })); return; }
@@ -17749,23 +17891,19 @@ function cmSourceNode(s) {
   }
   return node;
 }
-// The picker: the side sheet of Messenger's 지켜볼 대화방, opened from the app's settings row (asPickRow) or the empty list.
+// The picker: dialog() worn as the side panel of Messenger's 지켜볼 대화방, opened from the app's settings row (asPickRow) or the empty list.
 function cmPickPaint() {
   const d = CM.pickD;
   if (!d) return;
   const srcs = cmSrcOf(d.dataset.app);
-  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: TX("mon.cm.tokens") }), el("div", { class: "sec", text: TX("mon.cm.channels") }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: TX("mon.cm.none_on") })]));
+  clear(d.querySelector(".dbody")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: TX("mon.cm.tokens") }), el("div", { class: "sec", text: TX("mon.cm.channels") }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: TX("mon.cm.none_on") })]));
 }
 function cmPickOpen(app) {
   if (CM.pickD) return;
-  const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": TX("mon.cm.posts_watch") },
-    el("div", { class: "kk-pd-in" },
-      fsHead([el("h2", { class: "fs-t", text: TX("mon.cm.posts_watch") })], { close: () => d.close() }),
-      el("div", { class: "kk-pd-b" })));
+  const d = CM.pickD = dialog({ title: TX("mon.cm.posts_watch"), onclose: () => { CM.pickD = null; } }).node;
+  d.id = "cm-pick"; d.dataset.app = app; d.classList.add("kk-pd", "kk-add"); d.setAttribute("aria-label", TX("mon.cm.posts_watch"));
+  d.querySelector(".dtitle").classList.add("fs-t");
   cmPickPaint();
-  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
-  document.body.append(d); d.showModal(); dialogHist(d);
-  d.addEventListener("close", () => { if (CM.pickD === d) CM.pickD = null; d.remove(); });
 }
 // A post's row carries one marker, the most urgent: a failed mail > comments nobody answered > drafts waiting. The rest is in the opened post, on each comment (cmProgress).
 function cmMark(t) {
@@ -17804,9 +17942,13 @@ function cmTabs() {
   const b = (id, text) => el("button", { type: "button", class: `cchip mr-f${CM.tab === id ? " on" : ""}`, role: "tab", "data-tab": id, "aria-selected": String(CM.tab === id), text, onclick: () => cmTab(id) });
   return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": TX("mon.cm.view_aria") }, b("comments", TX("mon.cm.comments")), b("dm", "DM"));
 }
+// The DM pane's paint signatures (30-monitoring-comments-dm.js): these three only, a field not named here cannot be written from outside.
+const cmRoomsSig = sig => { CM.roomsSig = sig; };
+const cmHeadSig = sig => { CM.headSig = sig; };
+const cmChatSig = sig => { CM.chatSig = sig; };
 function cmTab(id) {
   if (CM.tab === id) return;
-  CM.tab = id; CM.open = null; DM.open = null; CM.seq++; DM.seq++;
+  CM.tab = id; CM.open = null; CM.seq++; dmReset();
   cmPaintAll(); bkCmSync();
   if (id === "dm") dmRefresh(); else cmLoad();
 }
@@ -17825,8 +17967,8 @@ function cmPaintRooms() {
     list.append(el("div", { class: "cv-gh", role: "presentation", text: TX("mon.cm.posts") }));
     if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }), el("button", { class: "btn tonal sm", type: "button", "data-k": "retry", text: TX("appset.retry"), onclick: () => cmLoad() }));
     else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
-    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: TX("mon.cm.none_on") }));
-    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: TX("mon.cm.empty") }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: TX("mon.cm.pick"), onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
+    else if (!srcs.length) list.append(emptyNode(TX("mon.cm.none_on"), null, { id: "cm-empty" }));
+    else list.append(emptyNode(TX("mon.cm.empty"), null, { id: "cm-empty", more: [el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: TX("mon.cm.pick"), onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) })] }));
   } else list.append(el("div", { class: "kk-note", role: "status", text: TX("common.loading") }));
   const tabs = cmTabs();
   clear(cmRooms).append(...(tabs ? [tabs] : []), list);
@@ -17856,10 +17998,10 @@ async function cmReload(seq = CM.seq, scroll = false) {
   cmMarkRead();
 }
 function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; cmPaintAll(); convTitle(); bkCmSync(); }
+function bkCmSync() { bkStep(CM, !!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list), () => (CM.tab === "dm" ? dmClose() : cmClose())); }   // a phone's open post or DM is one history step (32-history-nav.js bkStep)
 function cmBack() {
   if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && current === "monitoring" && !MON.list)) return false;
-  if (CM.tab === "dm") { dmClose(); return true; }
-  cmClose();
+  if (CM.tab === "dm") dmClose(); else cmClose();
   return true;
 }
 function cmMarkRead() {
@@ -18025,14 +18167,14 @@ function cmMode(app, shown, pc) {
     // The DM tab is this computer's Instagram app only; another computer's comment app starts on its comments.
     const dm = !CM.pc && DM.on && DM.connected && app === DM_APP && !CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length);
     Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
-    Object.assign(DM, { open: null, view: null }); DM.seq++;
+    dmReset(true);
     cmPaintAll(); cmLoad();
     if (CM.tab === "dm") dmRefresh();
     clearInterval(CM.timer);
     // A peer's comments do not stream here (its events are its own), so its pane is read again on a short timer.
     CM.timer = setInterval(() => { if (document.visibilityState === "visible") { cmLoad(); if (CM.open) cmReload(); } }, CM.pc ? 15000 : 60000);
   } else if (!shown && CM.vis) {
-    CM.vis = false; CM.open = null; DM.open = null; CM.seq++; DM.seq++; clearInterval(CM.timer);
+    CM.vis = false; CM.open = null; CM.seq++; dmReset(); clearInterval(CM.timer);
   }
   bkCmSync();
 }
@@ -18137,20 +18279,20 @@ const mailDraftGone = (n, newest) => !!(n.decision && n.decision.draft) && Strin
 // Opening a mail app while reply drafts wait lands on 확인 대기 (once per opening, so a filter the owner picks stays); with none waiting a
 // left-over 확인 대기 goes back to 전체. It waits for the notices, so a draft that loads late still decides the landing.
 function mailLand(sel) {
-  if (!monMailList(sel)) { MON.land = ""; return; }
+  if (!monMailList(sel)) { monMailLand(""); return; }
   if (MON.land === sel.key || !NT.loaded) return;
-  MON.land = sel.key;
+  monMailLand(sel.key);
   const waiting = [...mailDraftLive(sel.notices).values()].some(mailDraftOpen);
-  if (waiting) MON.mailFilter = "pending"; else if (MON.mailFilter === "pending") MON.mailFilter = "all";
+  if (waiting) monMailFilter("pending"); else if (MON.mailFilter === "pending") monMailFilter("all");
 }
 // The head of the mail list is two rows (owner 2026-11-11): where the mail sits (받은 메일 / 보낸 메일 / 보관함, screen tabs) and, only in 받은 메일,
 // the five ways to sift it. MON.mailFilter keeps its seven values; the place is read from it, and MON.mailIn is the sift 받은 메일 comes back to.
 const MAIL_PLACES = [["in", TX("mon.mail.inbox")], ["sent", TX("mon.mail.sent")], ["archived", TX("mon.mail.archive")]];
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0], place = cur === "sent" || cur === "archived" ? cur : "in";
-  if (place === "in") MON.mailIn = cur;
+  if (place === "in") monMailIn(cur);
   const count = (k, ok) => k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mailChipCount(k, mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length);
-  const pick = k => () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); };
+  const pick = k => () => { monMailFilter(k); monDirty(); };
   const tabs = segKeep(el("div", { class: "mx-tabs mr-place", role: "tablist", "aria-label": TX("mon.mail.place_aria") }, ...MAIL_PLACES.map(([k, label]) =>
     el("button", { class: `mx-tab${k === place ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === place), "data-filter": k, onclick: pick(k === "in" ? MON.mailIn || "all" : k) },
       label, k === "in" ? null : cntSpan(`mail-filter:${k}`, "mr-fn", count(k, MAIL_FILTERS.find(f => f[0] === k)[2]))))));
@@ -18243,7 +18385,7 @@ async function mailSetFyi(t, on, btn = null) {
   const m = MAILS.get(t);
   if (m) { m.reply = on ? "fyi" : m.reply === "draft" ? "draft" : "needs"; m.unreplied = !on; }
   document.querySelectorAll(".mtop-fyi").forEach(mailFyiPaint);
-  MON.sig = ""; MON.side = ""; monSchedule();
+  monDirty(true);
   toast(on ? TX("mail.fyi.done") : TX("mail.fyi.undone"), false, on ? { label: TX("common.undo"), onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
@@ -18265,12 +18407,12 @@ async function mailDelete(t, btn = null) {
   try { await api(`/api/mail/${t.slice(5)}`, "DELETE"); }
   catch (e) { unrow(); unwait(); throw e; }
   unrow(true); unwait(true);
-  MAILS.delete(t); CONV.delete(t);
+  mailDrop(t); convDrop(t);
   const p = pc && PQ.list.find(x => x && x.url === pc.url);
   if (p && p.items) p.items.conversations = (p.items.conversations || []).filter(c => String(c.target) !== t);
   if (monCtx === t && current === "chat") go("monitoring", MON.sel);   // deleted from its open conversation: back to the list
   const leaving = mbRowsOut([t]);
-  PQ.of.delete(t); MON.sig = ""; MON.side = "";
+  pqUnbind(t); monSigReset(true);
   if (leaving) leaving.then(monSchedule); else monSchedule();
   toast(TX("mon.mail.deleted"));
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
@@ -18285,6 +18427,75 @@ function mailMenuBtn(t, extra = () => []) {
     showMenu(b, [...mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a], danger: a === "delete" })), ...more.map(x => ({ value: x.value, label: x.label }))], { onPick: v => { const x = more.find(i => i.value === v); if (x) x.run(); else busy(null, () => mailActRun(t, v, v === "draft" ? null : b)); } });
   }, onkeydown: ev => ev.stopPropagation() }, icon("more"));
 }
+
+/* ---------- monitoring: how the screen is left ---------- */
+// 모니터링's 뒤로 closes what is open on the screen before it leaves it, in this order: the app settings pane (32-app-settings.js),
+// the reply sheet in its pane (30-replies.js), an open Messenger room (30-kakao.js), an open comment or DM thread
+// (30-monitoring-comments.js), then a mailbox settings page (30-mailboxes-set.js). Each closer checks it is on 모니터링 itself.
+function monBack() { return asBack() || rqBack() || kkBack() || cmBack() || mxsBack(); }
+// 모니터링 opening, or a conversation opening inside it (13-data.js chatEnter): the list is drawn and its reads refreshed when stale.
+// A conversation reads the app list kept fresh already; the read it sends asks again, so it asks only before the first one.
+function monEnter() { renderMonitoring(); if (!monitorsFresh()) loadMonitors(); if (!noticesFresh()) loadNotices(); if (current === "monitoring" || !INTG.loaded) loadIntegrations(); }
+// The routes behind 모니터링 (32-history-nav.js routeChain): an open item sits on the list, a mailbox settings screen on its box (30-mailboxes-set.js mxChain).
+function monChain(hash) { return !MON.list ? ["home", "monitoring", ...mxChain(hash)] : ["home", hash]; }
+screenHooks("monitoring", { back: monBack, enter: monEnter, chain: monChain, conv: monConvOf, aim: monRoute, hash: monHash });
+
+/* ---------- monitoring: the address ---------- */
+// A route: { list, sel, mx?, c? }. list: the list is on screen; sel: the open item's key; mx: what a mail item's address names, its account, box and
+// screen ({ scr } alone when it names none: the item opens as it was); c: the conversation a `c:<target>` address opens inside 모니터링 (go() in 05-command-palette.js).
+// The address: `monitoring`, `monitoring/<item>`, and after a mail item `/<account>/<box>` and `/set` or `/new` (30-mailboxes-set.js); the box is encoded twice
+// so a name with a slash stays one part.
+const MON_MAIL = /^(i:[^/]+)(?:\/([^/]*)\/([^/]*)(?:\/([^/]*))?)?$/;
+// Reads an address target and changes nothing. Any mail instance opens the one mail item (30-mailboxes.js mxKeyOf); an instance that is not that item's key
+// opens it on its own account.
+function monParse(tgt) {
+  const t = tgt || "", m = MON_MAIL.exec(t);
+  if (!m) return !t || t === "list" ? { list: true, sel: "" } : t.startsWith("c:") ? { list: false, sel: t, c: t.slice(2) } : { list: false, sel: t };
+  const sel = mxKeyOf(m[1].slice(2)), scr = m[4] === "set" || m[4] === "new" ? m[4] : "";
+  return { list: false, sel, mx: m[2] !== undefined ? { acct: mxDec(m[2]), box: mxDec(m[3]), scr } : sel !== m[1] ? { acct: m[1].slice(2), box: "all", scr } : { scr } };
+}
+// The conversation a `monitoring/c:<target>` address opens inside 모니터링 (go()'s conv hook).
+function monConvOf(tgt) { return monParse(tgt).c; }
+// Opens what a route says; MX's part goes through its own setter (30-mailboxes.js mxRouteSet).
+function monApply(r) {
+  MON.miss = false;
+  if (r.mx) mxRouteSet(r.mx);
+  if (r.list) { MON.list = true; return; }
+  if (r.sel !== MON.sel) { MON.filter = "all"; MON.open.clear(); MON.more.clear(); }   // another item: its list starts whole and folded
+  MON.autoArmed = false; MON.olderBusy = false;
+  MON.sel = r.sel; MON.list = false;
+}
+function monHashOf(r) {
+  if (r.list || !r.sel) return "monitoring";
+  const x = r.mx;
+  return `monitoring/${enc(r.sel)}${x && (x.acct !== "all" || x.box !== "all" || x.scr) ? `/${enc(x.acct)}/${enc(enc(x.box))}${x.scr ? `/${x.scr}` : ""}` : ""}`;
+}
+// go("monitoring", key) opens that item; without one the list shows (the aim hook: read before current changes).
+function monRoute(tgt) { pqOpen(); monApply(monParse(tgt)); }
+function monHash() { return monHashOf({ list: MON.list, sel: MON.sel, mx: MON.sel === MX.key ? MX : null }); }
+
+/* ---------- monitoring: what other files change on the screen ---------- */
+// Every file outside 모니터링 that changes what the screen shows asks for its redraw here: the next paint is not skipped as unchanged (side: the list beside the item is drawn again too).
+function monDirty(side) { MON.sig = ""; if (side) MON.side = ""; monSchedule(); }
+// The same for a caller that draws or schedules the paint itself.
+function monSigReset(side) { MON.sig = ""; if (side) MON.side = ""; }
+// Drawn now, not on the next frame: a sheet that takes the focus (30-triage.js), a tab whose rows swap in a motion (30-replies.js).
+function monRenderNow() { MON.sig = ""; renderMonitoring(); }
+// 답장 대기 draws its own screen (30-replies.js rqScreen) and records what it drew, so the next paint is skipped while nothing changed.
+function monDrawn(sig, key) { MON.sig = sig; MON.shown = key; }
+// A box picked beside an open mail (30-mailboxes.js mxBox): its list is drawn again from the top.
+function monFromTop() { MON.sig = ""; MON.tlTop = 0; }
+// A conversation opened inside 모니터링 (go() in 05-command-palette.js) sits on its item, which is open behind it.
+function monConvIn(t) { const k = monItemOf(t); if (k) MON.sel = k; MON.list = false; }
+// The open item follows its conversation (31-conversations.js) or a schedule renamed in its pane (32-app-settings.js asPaneFollow).
+function monSelSet(k) { MON.sel = k; }
+// The mail list's landing and its filters (30-monitoring-mail.js mailLand, mailFilterBar).
+function monMailLand(key) { MON.land = key; }
+function monMailFilter(k) { MON.mailFilter = k; }
+function monMailIn(k) { MON.mailIn = k; }
+// A jump to a notice (30-notices.js monOpen): the notice it is reaching (fresh: the item's list whole and drawn again), then the row it lit for ms.
+function monWant(id, fresh) { MON.want = id; if (fresh) { MON.filter = "all"; MON.sig = ""; } }
+function monLit(id, ms) { MON.hl = id; MON.hlUntil = Date.now() + ms; }
 
 /* ---------- 모니터링: a tab built like 채팅 - a list of what is watched, and a conversation per item ---------- */
 // The list is the chat list's panel and row (31-conversations.js convRow); an item opens as a conversation: its notices and results as messages,
@@ -18302,9 +18513,8 @@ const monitorsFresh = () => NM.loaded && Date.now() - NM.at < NM_FRESH_MS;
 const MON_GROUP = { app: TX("common.apps"), plain: TX("mon.group.plain") };
 // sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width. An app's item has the whole column; a monitor opens beside the list of monitors (monListRows).
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
-const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", mailIn: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0, ovOpen: undefined };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
+const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", mailIn: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0, ovOpen: undefined, miss: false, top: 0, tlTop: 0, tlFor: "", land: "" };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
 const monConv = () => current === "monitoring" && !MON.list;
-const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}${mxHash(MON.sel)}` : "monitoring");
 // A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
 const monOwned = t => isMailT(String(t || "")) || isSettingsT(String(t || ""));
 const monItemOf = t => {
@@ -18318,17 +18528,6 @@ const monItemOf = t => {
   const it = INTG.items.find(x => intgHas(x, t));
   return it ? mxKeyOf(it.key) : "i:mail";
 };
-// go("monitoring", key) opens that item; without one the list shows.
-function monRoute(tgt) {
-  pqOpen();
-  MON.miss = false; tgt = mxRoute(tgt);
-  if (tgt && tgt !== "list") {
-    if (tgt !== MON.sel) { MON.filter = "all"; MON.open.clear(); MON.more.clear(); }   // another item: its list starts whole and folded
-    MON.autoArmed = false; MON.olderBusy = false;
-    MON.sel = tgt; MON.list = false;
-  } else MON.list = true;
-}
-
 // Callers that ask while a read is out share it (the page's first read and the home's ask for it at the same time).
 let monFlight = null;
 async function loadMonitors() { return monFlight || (monFlight = monFetch().finally(() => { monFlight = null; })); }
@@ -18668,7 +18867,7 @@ function monNoticeNode(n, names = []) {
 // shows the subject and sender the check printed, and a report with nothing to show is a plain report.
 function monItemNode(n) {
   const it = n.item, t = it && it.app === "mail" && it.key ? `mail:${it.key}` : "", c = it && it.card;
-  if (t && !MAILS.has(t) && c && c.source) MAILS.set(t, c);
+  if (t && !MAILS.has(t) && c && c.source) mailPut(t, c);
   const node = t && MAILS.has(t) ? monConvNode(t, TX("common.mail")) : c && (c.subject || c.from) ? resultCard({ src: mailSender(c.from), at: n.updated || n.ts, title: c.subject }) : null;
   const raw = node ? rcSplit(n.text).raw : "";
   if (raw) { const d = rcRawFold(raw); d.addEventListener("click", e => e.stopPropagation()); node.append(d); }
@@ -18688,7 +18887,7 @@ function monItemNode(n) {
 // row, so the bar's right edge moves at once; a peer has no row to read here, so its list is re-read through pqSoon.
 const monRunNow = (btn, m) => busy(btn, async () => {
   if (!m || !m.watch) return;
-  MON.running.add(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
+  MON.running.add(m.watch); monDirty(true);
   const was = btn && btn.textContent;
   if (btn) btn.textContent = TX("mon.running");
   try {
@@ -18701,7 +18900,7 @@ const monRunNow = (btn, m) => busy(btn, async () => {
     if (m.pc) pqSoon();
     toast(r && r.approved ? MON_RECONNECT : r && r.item && r.item.connection === "disconnected" ? TX("mon.run.still_down") : TX("mon.run.checked"));
   } finally {
-    MON.running.delete(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
+    MON.running.delete(m.watch); monDirty(true);
     if (btn) btn.textContent = was;
   }
 });
@@ -18710,14 +18909,14 @@ const MON_RECONNECT = TX("mon.reconnect_asked");
 // 다시 연결 on a disconnected app: every watch the app owns runs on this computer, then the app and the list are read again.
 const monRecheckApp = (btn, it, names) => busy(btn, async () => {
   for (const n of names) MON.running.add(n);
-  MON.sig = ""; MON.side = ""; monSchedule();
+  monDirty(true);
   // allSettled: one watch failing to run still lets the others finish, the data reload and the owner hear how it went.
   // A peer's app: its watches run (and a gated login is approved) on the computer that owns them.
   const runOne = n => it.pc ? api(pqProxy(it.pc, "/api/peer/act"), "POST", { action: "watch", args: { op: "run", name: n } }) : api(`/api/watches/${enc(n)}/run`, "POST", {});
   const res = await Promise.allSettled(names.map(runOne));
   for (const n of names) MON.running.delete(n);
   await Promise.allSettled([loadMonitors(), it.pc ? pqLoad() : loadIntegrations()]);
-  MON.sig = ""; MON.side = ""; monSchedule();
+  monDirty(true);
   const bad = res.filter(r => r.status === "rejected").length, asked = res.some(r => r.status === "fulfilled" && r.value && r.value.approved);
   toast(bad ? TX("mon.recheck.partial", { total: names.length, n: bad }) : asked ? MON_RECONNECT : TX("mon.recheck.done"), !!bad);
 });
@@ -18772,11 +18971,11 @@ const monReadAll = (btn, list) => busy(btn, async () => {
   try { await pqNoticesRead(list); } catch (err) { for (const n of list) if (n.pc) n.read = false; pqSoon(); throw err; }
   if (ids.length) {
     for (const n of mine) n.read = true;
-    NT.unread = Math.max(0, NT.unread - ids.length); ntPaint(); homeSoon();
+    ntReadDown(ids.length); ntPaint(); homeSoon();
     let r;
     try { r = await api("/api/notices/read", "POST", { ids }); }
-    catch (err) { for (const n of mine) n.read = false; NT.unread += ids.length; ntPaint(); homeSoon(); loadNotices(); throw err; }
-    if (r && typeof r.unread === "number") NT.unread = r.unread;
+    catch (err) { for (const n of mine) n.read = false; ntReadUndo(ids.length); ntPaint(); homeSoon(); loadNotices(); throw err; }
+    if (r) ntUnreadSet(r.unread);
     ntPaint();
   }
   toast(TX("mon.read_done", { n: list.length }));
@@ -18940,7 +19139,7 @@ function monChronoNodes(it, names) {
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, TX("mon.older_n", { n: cut })));
   if (hidden && (hidden.size || CVP.more)) nodes.push(...mbMoreNodes(hidden.size));
   if (withMails) mbRowsPrune();
-  if (withMails) return MX.scr ? mxScreen() : [...mxTop(it), ...mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)))].filter(Boolean), ...(nodes.length ? nodes : [el("div", { class: "empty", text: mailEmptyText() })]), ...(held ? [] : [el("div", { class: "mbox-fab-gap", "aria-hidden": "true" }), mbFab()])];   // the gap keeps the last card, its 첨부 줄 included, clear of 메일 쓰기; the waiting drafts view has no round button over a card corner
+  if (withMails) return MX.scr ? mxScreen() : [...mxTop(it), ...mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)))].filter(Boolean), ...(nodes.length ? nodes : [emptyNode(mailEmptyText())]), ...(held ? [] : [el("div", { class: "mbox-fab-gap", "aria-hidden": "true" }), mbFab()])];   // the gap keeps the last card, its 첨부 줄 included, clear of 메일 쓰기; the waiting drafts view has no round button over a card corner
   return nodes;
 }
 // A short feed (a handful of reports) reads best as the whole cards, newest first, with the machine of a peer's report; past MON_COMPACT
@@ -18998,18 +19197,18 @@ function monOverview(it) {
     head = el("button", { class: "mon-ov-h", type: "button", "aria-expanded": String(open), "aria-label": `${ht} · ${sum} · ${open ? TX("mon.fold") : TX("mon.unfold")}`, onclick: () => { MON.ovOpen = !open; MON.sig = ""; monSchedule(); } },
       el("span", { class: "mon-ov-ht", text: ht }), el("span", { class: "mon-ov-sum", text: sum }), icon("chev", "chev"));
   }
-  return el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : []), sorted.length ? null : el("div", { class: "mon-ov-empty", text: TX("mon.ov.empty") }));
+  return sorted.length ? el("div", { class: "mon-ov" }, ...loud.map(row), head, ...(head && open ? calm.map(row) : [])) : emptyNode(TX("mon.ov.empty"), null, { compact: true });
 }
 function monTimeline(it) {
-  if (it.off) return [el("div", { class: "empty", text: TX("mon.state.off") })];
+  if (it.off) return [emptyNode(TX("mon.state.off"))];
   const names = it.mon ? monNames(it.mon) : [];
   const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = !monFeed(it) ? monChronoNodes(it, names) : it.notices.length > MON_COMPACT ? monFeedNodes(it, names) : monFeedCards(it, names);
   const ov = monOverview(it), head = [...monTopNodes(it), ...bar, ...(ov ? [ov] : [])];
   // A monitor's reports read as its 확인 기록, under a section label like the prototype's detail (its 지금 확인 stays in the head's actions).
   const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? TX("mon.log.sched") : TX("mon.log.watch") })] : [];
   if (nodes.length) return [...head, ...sec, ...nodes];
-  if (head.length) return [...head, el("div", { class: "empty", text: it.notices.length || (it.mails || []).length || it.mon ? TX("mon.empty.view") : TX("mon.empty.none") })];   // an app with nothing at all says so, never a bare head
-  return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? TX("common.loading") : it.mon ? monRunLine(it.mon) : TX("mon.empty.none") })];
+  if (head.length) return [...head, emptyNode(it.notices.length || (it.mails || []).length || it.mon ? TX("mon.empty.view") : TX("mon.empty.none"))];   // an app with nothing at all says so, never a bare head
+  return [emptyNode(!NT.loaded && !NM.loaded ? TX("common.loading") : it.mon ? monRunLine(it.mon) : TX("mon.empty.none"))];
 }
 // The settings an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct), a local schedule's (s:<id>, the screen only, no
 // conversation: 32-app-settings.js asEntry); none for a peer's app or schedule or an unreachable computer.
@@ -19118,7 +19317,7 @@ function monSeen() {
     pqNoticesRead(fresh).catch(() => pqSoon());
     if (!mine.length) return;
     for (const n of mine) n.read = true;
-    NT.unread = Math.max(0, NT.unread - mine.length);
+    ntReadDown(mine.length);
     ntPaint(); homeSoon();
     ntMarkRead({ ids: mine.map(n => n.id) });
   }, 700);
@@ -19159,7 +19358,7 @@ function renderMonitoring() {
   $("#v-monitoring").classList.toggle("mon-home", homeQ);
   $("#v-monitoring").classList.toggle("rq-on", !!qSel);   // the screen's own head is its tabs: no item head above them (the prototype's #queue)
   if (qSel) { rqScreen(qSel, box, tl); return; }   // 답장 대기: the queue, or the open row's card (30-replies.js)
-  RQ.mark = "";
+  rqMarkClear();
   if (RQ.sheet && RQ.sheet.pane) RQ.sheet.close();   // the card of a queue row stays with the queue
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
@@ -19276,6 +19475,119 @@ $("#mon-timeline").addEventListener("scroll", () => {
 setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) loadMonitors(); }, 60_000);
 loadMonitors();
 
+/* ---- tap: go to the source message ---- */
+// The conversation holding the notice's message (n.src; older items fall back to n.open) is opened on its chat view, older history
+// is fetched until the message's time is covered, the message is scrolled to the top of the timeline and flashed. A message that is not in that
+// conversation is asked of the gateway (ntLocate: a row stored with the wrong conversation, a session that has ended); a message the gateway does not hold
+// lands on a neighbour only within NT_NEAR_MS, else the conversation stays at its end. Alert and worklog posts are messages of the 알림 / 작업 기록 conversations. Nothing here ever reports an error.
+const NT_NEAR_MS = 60_000;   // the median gap between two messages of the main chat is 44 s (alert 3.8 min, worklog 25 min): a neighbour this close is the same exchange
+const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
+function ntGo(t, kept = false) {
+  if (t === "settings") { go("settings"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
+  if (!kept && isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // `kept`: the gateway holds the message in that session's history   // the session is gone: its result card is in the main chat
+  if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast(TX("project.not_found")); go("projects"); return ""; }
+  if (!validTarget(t)) { toast(TX("conv.nt.no_screen")); go("home"); return ""; }
+  if (t === "alert") nscPass(1000);   // the one way into the record conversation: a row's source message (#chat/alert alone is the 알림 screen)
+  if (current !== "chat" || target !== t || convListing()) go("chat", t);   // already open (a cold start draws the address first): no second draw
+  return t;
+}
+// The rendered message of an event ts (data-ts is set in chatPush): the exact one, else the nearest in time within NT_NEAR_MS, else none.
+function ntFind(at) {
+  const want = Date.parse(at);
+  let best = null, gap = NT_NEAR_MS + 1;
+  for (const m of tl.querySelectorAll("[data-ts]")) {
+    if (m.dataset.ts === at) return m;
+    const d = Math.abs(Date.parse(m.dataset.ts) - want);
+    if (d < gap) { gap = d; best = m; }
+  }
+  return best;
+}
+// The other conversation the gateway holds the message of `at` in (/api/history?locate=), "" when it holds it nowhere else. Asked only after the exact message was not found.
+async function ntLocate(at, not = "") {
+  try { return ((await api(`/api/history?locate=${enc(at)}`)).convs || []).find(c => c !== not && validTarget(c)) || ""; } catch { return ""; }
+}
+// Older messages, 300 at a time (up to four rounds), until the loaded history reaches back to `at`; a message further back comes in with the page around it
+// (GET /api/history?around=, joined by chatMerge as a quote's original is, rpJump). Only a message the gateway no longer holds is left to the caller's toast.
+async function ntReach(t, at) {
+  const s = ts(t);
+  for (let i = 0; i < 4 && s.msgs.length && s.msgs[0].ts > at; i++) {
+    let r;
+    try { r = await api(`/api/history?target=${enc(t)}&limit=300&before=${enc(s.msgs[0].ts)}`); } catch { return; }
+    const add = (r.events || []).filter(e => !s.mk.has(msgKey(e)));
+    if (!add.length) return;
+    for (const e of add) { s.mk.add(msgKey(e)); s.msgs.push(e); }
+    s.msgs.sort(byTs); s.cap += add.length;
+    if (isFixedT(t)) dedupKeyed(s);
+    if (t === target) renderAll(true);
+  }
+  if (!s.msgs.length || s.msgs.some(e => e.ts === at)) return;
+  try {
+    const r = await api(`/api/history?target=${enc(t)}&limit=150&around=${enc(at)}`);
+    if (!r.at || t !== target) return;
+    chatMerge(s, r);
+    renderAll(true);
+  } catch (e) { console.warn("history around", e); }
+}
+// The element that carries the highlight: the card or bubble inside the message when there is one, else the message itself. Anything that paints
+// its own fill keeps the glow on its own rounded shape; plain text gets the tint alone ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
+function ntHlHost(node) {
+  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm, .cmdbox") ? node.querySelector(":scope > .ccard") : null;
+  return { host: card || node, bar: !card && /(\d, ){3}0\)$/.test(getComputedStyle(node).backgroundColor) };   // alpha 0: no fill of its own
+}
+function ntFlash(node) {
+  const { host, bar } = ntHlHost(node);
+  if (host.classList.contains("nt-hl")) return;   // the first draw lit it and the notice list confirmed it: the glow does not restart
+  for (const x of document.querySelectorAll(".nt-hl")) x.classList.remove("nt-hl", "nt-bar");
+  void host.offsetWidth;
+  host.classList.add("nt-hl");
+  host.classList.toggle("nt-bar", bar);
+  clearTimeout(host._hl);
+  host._hl = setTimeout(() => host.classList.remove("nt-hl", "nt-bar"), 2300);
+}
+let ntJumpSeq = 0;
+let ntKeep = "";   // the session a tapped notice opened: it may end while its report is on screen, and the view then stays (refreshState)
+// `quiet`: a sheet is opening over the conversation and says what the notice is about itself, so a message that is gone needs no toast.
+// `via`: the conversation the gateway said holds the message (the second try, never a third).
+const ntWhere = n => n.msg || n.src || n.open || "main";   // the conversation a notice leads to
+async function ntJump(n, quiet = false, via = "") {
+  const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, want = via || ntWhere(n), ended = () => isLaneT(want) && S && !S.lanes.some(l => `lane:${l.name}` === want);
+  let open = want, located = !!via;
+  // A session this page has not read yet (it began and ended while the page slept) is not gone: ask the gateway before ntGo sends the tap to the main chat.
+  if (!via && ended()) { await refreshState(); if (seq !== ntJumpSeq) return; }
+  // An ended session keeps its history at the gateway, and its report may have been posted to 작업 기록: open where the message is.
+  if (!via && ended()) { const c = await ntLocate(at); if (seq !== ntJumpSeq) return; if (c) { open = c; located = true; } }
+  const t = ntGo(open, located);
+  if (!t) return "no-conversation";
+  if (isLaneT(open) && t === MAIN) { toast(TX("conv.nt.session_gone")); return "session-gone"; }   // the main chat has no message of it: say so instead of landing on the nearest one
+  chatUnpin();
+  ntKeep = isLaneT(t) ? t : "";
+  cvJump(at);   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
+  try {
+    const s = ts(t), stored = s.msgs.some(e => e.ts === at);
+    if (!(s.hLoaded && s.aLoaded)) { if (stored) loadTarget(t, true).catch(() => {}); else await loadTarget(t); }   // the message is here: land now, refresh behind it
+    await ensureMsg(t, at);   // a stale stream may not have the message yet: fetch it before jumping
+    await ntReach(t, at);
+    for (let i = 0; i < 300 && seq === ntJumpSeq && !CV.placed; i++) await ntRaf();   // the opening's first draw waits for the read position (chatReady)
+    if (seq !== ntJumpSeq || target !== t || current !== "chat") return "moved-on";
+    chatShow(at);
+    let m = ntFind(at), exact = !!m && m.dataset.ts === at;
+    if (!exact && !located) {   // not where the row said: the one place the page asks the gateway, so a tap that finds its message costs nothing extra
+      const c = await ntLocate(at, t);
+      if (seq !== ntJumpSeq) return "moved-on";
+      if (c) return ntJump(n, quiet, c);
+    }
+    if (m) chatJump(m); else chatPin("bottom");   // no message to show: the conversation stays at its end, whatever pages the search loaded meanwhile
+    if (exact) ntFlash(m);
+    else {
+      const unshown = !m && ts(t).msgs.some(e => e.ts === at && cleanRestart(e));   // stored but never drawn (a restart with nothing cut off): not a missing message
+      if (n.at && !quiet) toast(m ? TX("conv.nt.nearby") : unshown ? TX("conv.nt.unshown") : TX("conv.nt.no_msg"));
+      return m ? "near-message" : "no-message";   // what a tap on a push reports to the gateway (23-installable-app-web.js pushTapReport)
+    }
+  } catch {}
+}
+// The conversation behind a sheet (a decision, an [ask], a failure): the same jump, without one for a question that has no conversation (a login request) or lives on another computer.
+const ntUnder = n => { if (!n.pc && !n.decision?.to?.startsWith("auth:") && validTarget(n.src || n.open || "")) ntJump(n, true); };
+
 /* ---------- decisions and notices: the data behind 홈's 답변 필요 / 알림 / 작업내역 cards and the decision sheet ---------- */
 // Data: GET /api/notices, POST /api/notices/read, POST /api/notices/:id/answer; live frames {kind:"notice"} / {kind:"notice_read"} from the event stream
 // (routed here by 99-boot.js, never into the chat timeline or the corner toasts). There is no notice list screen: 알림 and 작업내역 are their own
@@ -19380,7 +19692,7 @@ function noticeLive(e) {
     ntHandled(e.id);
     const g = NT.items.find(x => x.id === e.id);
     if (g && g.at && (g.src || g.open) === "alert") NT.gone.add(g.at);
-    NT.items = NT.items.filter(x => x.id !== e.id);
+    ntRemove(e.id);
     NT.mut++;
     ntAlertMarks();
   } else if (e.kind === "notice_read") {
@@ -19402,119 +19714,6 @@ async function ntMarkRead(body) {
     return r || {};
   } catch (err) { toast(err.message, true); loadNotices(); return null; }
 }
-
-/* ---- tap: go to the source message ---- */
-// The conversation holding the notice's message (n.src; older items fall back to n.open) is opened on its chat view, older history
-// is fetched until the message's time is covered, the message is scrolled to the top of the timeline and flashed. A message that is not in that
-// conversation is asked of the gateway (ntLocate: a row stored with the wrong conversation, a session that has ended); a message the gateway does not hold
-// lands on a neighbour only within NT_NEAR_MS, else the conversation stays at its end. Alert and worklog posts are messages of the 알림 / 작업 기록 conversations. Nothing here ever reports an error.
-const NT_NEAR_MS = 60_000;   // the median gap between two messages of the main chat is 44 s (alert 3.8 min, worklog 25 min): a neighbour this close is the same exchange
-const ntRaf = () => new Promise(r => requestAnimationFrame(() => r()));
-function ntGo(t, kept = false) {
-  if (t === "settings") { go("settings"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
-  if (!kept && isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // `kept`: the gateway holds the message in that session's history   // the session is gone: its result card is in the main chat
-  if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast(TX("project.not_found")); go("projects"); return ""; }
-  if (!validTarget(t)) { toast(TX("conv.nt.no_screen")); go("home"); return ""; }
-  if (t === "alert") NSC.pass = Date.now() + 1000;   // the one way into the record conversation: a row's source message (#chat/alert alone is the 알림 screen)
-  if (current !== "chat" || target !== t || convListing()) go("chat", t);   // already open (a cold start draws the address first): no second draw
-  return t;
-}
-// The rendered message of an event ts (data-ts is set in chatPush): the exact one, else the nearest in time within NT_NEAR_MS, else none.
-function ntFind(at) {
-  const want = Date.parse(at);
-  let best = null, gap = NT_NEAR_MS + 1;
-  for (const m of tl.querySelectorAll("[data-ts]")) {
-    if (m.dataset.ts === at) return m;
-    const d = Math.abs(Date.parse(m.dataset.ts) - want);
-    if (d < gap) { gap = d; best = m; }
-  }
-  return best;
-}
-// The other conversation the gateway holds the message of `at` in (/api/history?locate=), "" when it holds it nowhere else. Asked only after the exact message was not found.
-async function ntLocate(at, not = "") {
-  try { return ((await api(`/api/history?locate=${enc(at)}`)).convs || []).find(c => c !== not && validTarget(c)) || ""; } catch { return ""; }
-}
-// Older messages, 300 at a time (up to four rounds), until the loaded history reaches back to `at`; a message further back comes in with the page around it
-// (GET /api/history?around=, joined by chatMerge as a quote's original is, rpJump). Only a message the gateway no longer holds is left to the caller's toast.
-async function ntReach(t, at) {
-  const s = ts(t);
-  for (let i = 0; i < 4 && s.msgs.length && s.msgs[0].ts > at; i++) {
-    let r;
-    try { r = await api(`/api/history?target=${enc(t)}&limit=300&before=${enc(s.msgs[0].ts)}`); } catch { return; }
-    const add = (r.events || []).filter(e => !s.mk.has(msgKey(e)));
-    if (!add.length) return;
-    for (const e of add) { s.mk.add(msgKey(e)); s.msgs.push(e); }
-    s.msgs.sort(byTs); s.cap += add.length;
-    if (isFixedT(t)) dedupKeyed(s);
-    if (t === target) renderAll(true);
-  }
-  if (!s.msgs.length || s.msgs.some(e => e.ts === at)) return;
-  try {
-    const r = await api(`/api/history?target=${enc(t)}&limit=150&around=${enc(at)}`);
-    if (!r.at || t !== target) return;
-    chatMerge(s, r);
-    renderAll(true);
-  } catch (e) { console.warn("history around", e); }
-}
-// The element that carries the highlight: the card or bubble inside the message when there is one, else the message itself. Anything that paints
-// its own fill keeps the glow on its own rounded shape; plain text gets the tint alone ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
-function ntHlHost(node) {
-  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm, .cmdbox") ? node.querySelector(":scope > .ccard") : null;
-  return { host: card || node, bar: !card && /(\d, ){3}0\)$/.test(getComputedStyle(node).backgroundColor) };   // alpha 0: no fill of its own
-}
-function ntFlash(node) {
-  const { host, bar } = ntHlHost(node);
-  if (host.classList.contains("nt-hl")) return;   // the first draw lit it and the notice list confirmed it: the glow does not restart
-  for (const x of document.querySelectorAll(".nt-hl")) x.classList.remove("nt-hl", "nt-bar");
-  void host.offsetWidth;
-  host.classList.add("nt-hl");
-  host.classList.toggle("nt-bar", bar);
-  clearTimeout(host._hl);
-  host._hl = setTimeout(() => host.classList.remove("nt-hl", "nt-bar"), 2300);
-}
-let ntJumpSeq = 0;
-let ntKeep = "";   // the session a tapped notice opened: it may end while its report is on screen, and the view then stays (refreshState)
-// `quiet`: a sheet is opening over the conversation and says what the notice is about itself, so a message that is gone needs no toast.
-// `via`: the conversation the gateway said holds the message (the second try, never a third).
-const ntWhere = n => n.msg || n.src || n.open || "main";   // the conversation a notice leads to
-async function ntJump(n, quiet = false, via = "") {
-  const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, want = via || ntWhere(n), ended = () => isLaneT(want) && S && !S.lanes.some(l => `lane:${l.name}` === want);
-  let open = want, located = !!via;
-  // A session this page has not read yet (it began and ended while the page slept) is not gone: ask the gateway before ntGo sends the tap to the main chat.
-  if (!via && ended()) { await refreshState(); if (seq !== ntJumpSeq) return; }
-  // An ended session keeps its history at the gateway, and its report may have been posted to 작업 기록: open where the message is.
-  if (!via && ended()) { const c = await ntLocate(at); if (seq !== ntJumpSeq) return; if (c) { open = c; located = true; } }
-  const t = ntGo(open, located);
-  if (!t) return "no-conversation";
-  if (isLaneT(open) && t === MAIN) { toast(TX("conv.nt.session_gone")); return "session-gone"; }   // the main chat has no message of it: say so instead of landing on the nearest one
-  chatUnpin();
-  ntKeep = isLaneT(t) ? t : "";
-  CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
-  try {
-    const s = ts(t), stored = s.msgs.some(e => e.ts === at);
-    if (!(s.hLoaded && s.aLoaded)) { if (stored) loadTarget(t, true).catch(() => {}); else await loadTarget(t); }   // the message is here: land now, refresh behind it
-    await ensureMsg(t, at);   // a stale stream may not have the message yet: fetch it before jumping
-    await ntReach(t, at);
-    for (let i = 0; i < 300 && seq === ntJumpSeq && !CV.placed; i++) await ntRaf();   // the opening's first draw waits for the read position (chatReady)
-    if (seq !== ntJumpSeq || target !== t || current !== "chat") return "moved-on";
-    chatShow(at);
-    let m = ntFind(at), exact = !!m && m.dataset.ts === at;
-    if (!exact && !located) {   // not where the row said: the one place the page asks the gateway, so a tap that finds its message costs nothing extra
-      const c = await ntLocate(at, t);
-      if (seq !== ntJumpSeq) return "moved-on";
-      if (c) return ntJump(n, quiet, c);
-    }
-    if (m) chatJump(m); else chatPin("bottom");   // no message to show: the conversation stays at its end, whatever pages the search loaded meanwhile
-    if (exact) ntFlash(m);
-    else {
-      const unshown = !m && ts(t).msgs.some(e => e.ts === at && cleanRestart(e));   // stored but never drawn (a restart with nothing cut off): not a missing message
-      if (n.at && !quiet) toast(m ? TX("conv.nt.nearby") : unshown ? TX("conv.nt.unshown") : TX("conv.nt.no_msg"));
-      return m ? "near-message" : "no-message";   // what a tap on a push reports to the gateway (23-installable-app-web.js pushTapReport)
-    }
-  } catch {}
-}
-// The conversation behind a sheet (a decision, an [ask], a failure): the same jump, without one for a question that has no conversation (a login request) or lives on another computer.
-const ntUnder = n => { if (!n.pc && !n.decision?.to?.startsWith("auth:") && validTarget(n.src || n.open || "")) ntJump(n, true); };
 
 // A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
 async function pushOpen(hash, at, nid) {
@@ -19584,8 +19783,28 @@ async function noticeOpenId(id, quiet, hash, at) {
 }
 function ntRead(n) {
   if (!n.id || n.read || ntNeeds(n) || !ntById(n.id)) return;
-  n.read = true; NT.unread = Math.max(0, NT.unread - 1); ntPaint(); homeSoon();
+  n.read = true; ntReadDown(1); ntPaint(); homeSoon();
   ntMarkRead({ ids: [n.id] });
+}
+// The unread count: k read here before the hub answers, k put back when that read failed, the hub's own count when its answer carries one.
+const ntReadDown = k => { NT.unread = Math.max(0, NT.unread - k); };
+const ntReadUndo = k => { NT.unread += k; };
+const ntUnreadSet = unread => { if (typeof unread === "number") NT.unread = unread; };
+// The home snapshot's notices (13-snapshot.js), until the list itself arrives.
+const ntSeed = (items, unread) => { NT.items = items; NT.unread = unread; };
+function ntRemove(id, unread) {
+  NT.items = NT.items.filter(x => String(x.id) !== String(id));
+  ntUnreadSet(unread);
+}
+// Dismissed here: its alert message stays out (gone) and a list already on its way is read again (mut).
+function ntDismissed(n, unread) {
+  ntRemove(n.id, unread);
+  NT.mut++;
+  if (n.at) NT.gone.add(n.at);
+}
+function ntUndismissed(n) {
+  NT.mut++;
+  if (n.at) NT.gone.delete(n.at);
 }
 // The stored notice of a message (its decision first), by conversation and event time; a 작업내역 line of a session is stored under the session, so time alone is the fallback.
 const ntMsgFor = (src, at) => NT.items.find(x => ntIsDec(x) && x.decision.to === src && x.decision.reply_to === at)
@@ -19608,9 +19827,9 @@ async function monOpen(n) {
   await Promise.all([NM.loaded || loadMonitors(), INTG.loaded || loadIntegrations()]);
   if (seq !== ntJumpSeq) return;
   const key = monKeyOf(n);
-  MON.want = String(n.id || ""); MON.filter = "all"; MON.sig = "";
+  monWant(String(n.id || ""), true);
   go("monitoring", key);
-  MON.want = "";
+  monWant("");
   const it = monItems().find(i => i.key === key);
   if (it && kkItem(it)) { if (n.item && n.item.app === "kakao") kkOpen(n.item.id); return; }
   if (it && cmAppOf(key)) return;
@@ -19618,7 +19837,7 @@ async function monOpen(n) {
   if (!row) { toast(TX("conv.nt.no_news")); return; }
   row.scrollIntoView({ block: "center" });
   ntFlash(row);
-  MON.hl = String(n.id); MON.hlUntil = Date.now() + 2300;
+  monLit(String(n.id), 2300);
 }
 // A message tapped in the 알림 / 작업내역 conversations opens like its notice does (capture phase: the choice rows inside it do not answer in place there).
 // A file row (.fatt, a plain element so its name can be selected: 15-attachments.js fileChipRow) keeps its own job: it opens the file.
@@ -19666,7 +19885,7 @@ function dkPaint() {
       const nx = ntSuccessor(n);
       if (nx && ntOpenDec(nx)) { ntDraftSheet(nx); return; }
       if (nx) { dkClose(false); return; }
-      if (!DC.picks[dc.key]) { DC.picks[dc.key] = [rv]; DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; }
+      if (!DC.picks[dc.key]) dcMarkSent(dc.key, rv);
     } else if (DC.st[dc.key] !== "undo" && DC.st[dc.key] !== "sending" && (!n || !ntOpenDec(n))) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) dkNext(n); return; }
   } else {
     dc = decisionOf(DK.dc.t);
@@ -19887,7 +20106,7 @@ async function ntDirect(n) {
   if (!d.draft && d.state === "open" && !d.to.startsWith("auth:") && !convTakesText(ntWhere(n))) return ntOwnWords(n);   // a peer's question too: it is answered on its computer with the same call
   ntSheetClose(false);
   if (n.pc) { const t = n.decision.to; if (pqPc(t)) go("monitoring", `c:${t}`); else toast(TX("conv.nt.answer_on", { name: n.pc.name })); return; }   // a peer's question: its conversation as this page shows it
-  if (n.decision.to.startsWith("auth:")) { AUTH_HID.clear(); paintAuth(true); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast(TX("conv.nt.input_closed")); return; }
+  if (n.decision.to.startsWith("auth:")) { authUnhide(); const f = document.querySelector(".au input"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); } else toast(TX("conv.nt.input_closed")); return; }
   if (await ntJump(n) !== undefined || n.decision.draft || n.decision.state !== "open") return;
   if (!convTakesText(target)) return ntOwnWords(n);   // its message turned out to live in such a conversation
   const m = ntFind(n.at);
@@ -20127,7 +20346,7 @@ function rqMonItem(home) {   // home: the wide home shows the queue also while n
     hint: n ? countsLine(by) : TX("triage.empty.all"), at: at ? new Date(at).toISOString() : "" };
 }
 // Opens the queue, filtered to one app of one computer when given (an app's own 답장 대기 button).
-function rqOpen(inst, pc) { RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; MON.sig = ""; go("monitoring", RQ_KEY); }
+function rqOpen(inst, pc) { RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; monSigReset(); go("monitoring", RQ_KEY); }
 
 /* ---- the screen ---- */
 const RQ_TABS = [["all", TX("mon.filter.all")], ["ask", TX("mon.filter.need")], ["fail", TX("mon.tag.fail")], ["sent", TX("triage.tab.sent")]];
@@ -20146,7 +20365,7 @@ function rqUi() {
 function rqTab(k) {
   if (RQ.tab === k) return;
   RQ.tab = k; RQ.now = true; RQ.reset = true; RQ.lim = {};
-  motionSwap(rqUi().ls, () => { MON.sig = ""; renderMonitoring(); });
+  motionSwap(rqUi().ls, () => monRenderNow());
   const box = $("#mon-timeline"); if (box) box.scrollTop = 0;
 }
 // The app filter with each app's count in its menu items: shown while two or more apps wait and the waiting count reaches the triage minimum, or while one app is picked (an app row's 답장 대기 button).
@@ -20159,7 +20378,7 @@ function rqFilterBar(rows) {
   if (!(RQ.app || (by.size >= 2 && total >= RA.min))) return null;
   return selectButton({ label: TX("home.ny.app"), frame: t => TX("triage.rq.app_frame", { t }), value: RQ.app, text: k => (k ? by.get(k).text : TX("mon.filter.all")),
     items: [{ value: "", label: TX("triage.rq.all_n", { n: total }) }, ...[...by].map(([k, v]) => ({ value: k, label: `${v.text} · ${v.n}` }))],
-    onPick: k => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } });
+    onPick: k => { RQ.app = k; RQ.lim = {}; monDirty(); } });
 }
 // 방금 / N분 전 within the hour, as the prototype's rows, then the plain time.
 const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? TX("home.ago.now") : m < 60 ? TX("home.ago.m", { n: m }) : rcWhen(new Date(at).toISOString()); };
@@ -20221,15 +20440,15 @@ function rowHold(a) {
 const rqAnchor = () => rowAnchor(rqUi().ls, ".rq-c, .rq-r", "qr");
 // What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).
 function rqDescs(shown) {
-  if (!shown.length && RQ.err && !(RQ.rows || []).length) return [{ key: "empty", sig: RQ.err, make: () => el("div", { class: "rq-empty", role: "status" }, el("div", { text: RQ.err }), appRetry(() => rqLoad())) }];   // the load failed: a sentence and 다시 시도
-  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : TX("common.loading"); return [{ key: "empty", sig: text, make: () => el("div", { class: "rq-empty", role: "status", text }) }]; }
+  if (!shown.length && RQ.err && !(RQ.rows || []).length) return [{ key: "empty", sig: RQ.err, make: () => emptyNode(RQ.err, () => rqLoad(), { role: "status" }) }];   // the load failed: a sentence and 다시 시도
+  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : TX("common.loading"); return [{ key: "empty", sig: text, make: () => emptyNode(text, null, { role: "status" }) }]; }
   const out = [];
   for (const [s, label] of RQ_SECS) {
     const part = shown.filter(r => r.state === s);
     if (!part.length) continue;
     if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: label, make: () => el("div", { class: "sec", text: label }) });
     const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = part.slice(0, lim).map(r => (s === "sent" ? rqRowDesc(r) : rqCardDesc(r, shown)));
-    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(TX("mon.more_n", { n: part.length - lim }), () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
+    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(TX("mon.more_n", { n: part.length - lim }), () => { RQ.lim[s] = lim + RQ_PAGE; monDirty(); }) });
     out.push({ key: `list:${s}`, sig: "", make: () => el("div", { class: "list rq-list" }), rows });
   }
   return out;
@@ -20237,7 +20456,7 @@ function rqDescs(shown) {
 // A queue item as its card (rqItemCard): only the first waiting card's 보내기 is filled; it is drawn again when its item changes.
 function rqCardDesc(r, shown) {
   const lead = r.state === "ask" && shown.find(x => x.state === "ask") === r;
-  RA.items.has(r.it.ref) || r.it.pc ? null : RA.items.set(r.it.ref, r.it);
+  raKeep(r.it);
   return { key: `r:${r.key}`, sig: JSON.stringify([r.it, lead, RA.busy.get(r.it.ref) || "", RA.fail.get(r.it.ref) || ""]), make: () => el("div", { class: "rq-c", "data-qr": r.key }, rqItemCard(r.it, { lead })) };
 }
 function rqPaintList(rows) {
@@ -20273,7 +20492,7 @@ function rqScreen(qSel, box, tl) {
   if (sig !== MON.sig || MON.shown !== qSel.key) {
     const pane = !!(RQ.sheet && RQ.sheet.pane), back = RQ.top != null && !pane, keep = pane ? 0 : back ? RQ.top : MON.shown === qSel.key ? box.scrollTop : 0, anchor = keep > 0 && !back && !pane ? rqAnchor() : null;   // the first row in view stays where it was
     if (!pane) RQ.top = null;
-    MON.sig = sig; MON.shown = qSel.key;
+    monDrawn(sig, qSel.key);
     clear($("#mon-head")).append(...monHead(qSel));
     if (!(pane && tl.firstElementChild === RQ.sheet.box)) clear(tl).append(...(pane ? [RQ.sheet.box] : rqNodes()));   // an open pane already stands there: drawn again it would lose the focus
     box.scrollTop = keep;
@@ -20287,10 +20506,15 @@ function rqNodes() { rqPaint(RQ.rows || rqRows()); return [rqUi().hd, rqUi().ls]
 
 /* ---- the sheet: ONE sheet for every row, holding the reply card (10-reply-card.js) with the why line on top ---- */
 // A wide window opens the card in the right column in place of the queue (no modal); a phone keeps the sheet. Back (the card's x, the app bar) returns to the queue with the row marked.
+// The queue's open card and place are written only here (the triage pane and the screen draw call these).
+const rqTopSave = () => { RQ.top = $("#mon-timeline").scrollTop; };
+const rqSheetSet = h => { RQ.sheet = h; };
+const rqSheetDrop = h => { if (RQ.sheet !== h) return false; RQ.sheet = null; RQ.cur = ""; return true; };
+const rqMarkClear = () => { RQ.mark = ""; };
 function rqPaneOpen() {
-  RQ.top = $("#mon-timeline").scrollTop;
-  const h = { pane: true, box: el("div", { class: "rq-sheet rq-pane" }), close: () => { if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; MON.sig = ""; monSchedule(); } } };
-  RQ.sheet = h; MON.sig = ""; monSchedule();
+  rqTopSave();
+  const h = { pane: true, box: el("div", { class: "rq-sheet rq-pane" }), close: () => { if (rqSheetDrop(h)) monDirty(); } };
+  rqSheetSet(h); monDirty();
 }
 const rqBack = () => !!(current === "monitoring" && RQ.sheet && RQ.sheet.pane && (RQ.sheet.close(), true));
 function rqSheetOpen(r) {
@@ -20337,16 +20561,16 @@ async function monDraftRun(n, opt) {
 const trPaneNow = () => current === "monitoring" && !narrowChat() && !!$("#v-monitoring.rq-on");
 function trPaneOpen(onClose) {
   if (RQ.sheet) RQ.sheet.close(false);
-  RQ.top = $("#mon-timeline").scrollTop;
+  rqTopSave();
   let ov = null, closed = false;
   const box = el("div", { class: "rq-pane tr-pane", tabindex: "-1", onkeydown: ev => { if (ev.key === "Escape" && !document.querySelector("dialog[open]:not([data-leaving])")) { ev.preventDefault(); ev.stopPropagation(); h.close(); } } });
   const h = { pane: true, tr: true, box, close() {
     if (closed) return;
     closed = true; ovDone(ov); onClose();
-    if (RQ.sheet === h) { RQ.sheet = null; RQ.cur = ""; MON.sig = ""; monSchedule(); }
+    if (rqSheetDrop(h)) monDirty();
   } };
   ov = ovOpen(() => h.close());
-  RQ.sheet = h; MON.sig = ""; renderMonitoring();   // drawn now, so the box is on the page when it takes the focus
+  rqSheetSet(h); monRenderNow();   // drawn now, so the box is on the page when it takes the focus
   return h;
 }
 // One by one: the head counts the place and the channels, the card is rqItemCard with the filled 보내기, and 진행 lists every item with its live state.
@@ -20527,11 +20751,10 @@ const convEnded = t => { const l = isLaneT(t) && ((S && S.lanes) || []).find(x =
 // A live message (called by ingestMsg once per new event): moves the row's preview and, unless the owner is looking at that
 // conversation's bottom right now, adds to its unread count (server rule: hub/conversations.ts).
 function convNote(e, t, was) {
-  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) MAILS.set(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", ...(e.todo ? { todo: e.todo } : {}), ...(e.questions ? { questions: e.questions } : {}), preview: e.preview || "", attachments: e.attachments || [], html: !!e.html });
+  if (isMailT(t) && e.kind === "mail" && !MAILS.has(t)) mailPut(t, { subject: e.subject || "", from: e.from || "", source: e.source || "", at: e.ts, summary: e.summary || "", ...(e.todo ? { todo: e.todo } : {}), ...(e.questions ? { questions: e.questions } : {}), preview: e.preview || "", attachments: e.attachments || [], html: !!e.html });
   const last = convLastOf(e);
   if (!last) return;
-  const prev = CONV.get(t);
-  if (!prev || prev.ts <= last.ts) CONV.set(t, last);
+  convNewer(t, last);
   // `was`: the older version of an edited post, still unread = this one is the same unread message (counted once, like the hub does)
   const again = !!was && !(READ[t] && READ[t] >= was.ts);
   if (convIncoming(e) && !again && !convEnded(t) && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
@@ -20552,17 +20775,12 @@ function convDropGone(items, cursor, whole) {
   const now = new Set(items.filter(it => it.mail).map(it => it.target)), gone = [...convHadMail].filter(t => !now.has(t) && !PQ.of.has(t) && (whole ? true : convInRange(t, cursor)));
   convHadMail = whole ? now : new Set([...convHadMail].filter(t => !gone.includes(t)).concat([...now]));
   if (!gone.length) return;
-  for (const t of gone) { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); ts(t).unread = 0; }
+  for (const t of gone) { mailDrop(t); convDrop(t); mbUnselect(t); ts(t).unread = 0; }
   if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
   mbRefresh();
 }
-// One load at a time: a call that comes while one runs makes it read again once it ends, and both callers get the same promise.
-let convFlight = null, convAgain = false;
-function convLoad() {
-  if (convFlight) { convAgain = true; return convFlight; }
-  convFlight = (async () => { do { convAgain = false; await convLoadNow(); } while (convAgain); })().finally(() => { convFlight = null; });
-  return convFlight;
-}
+// One load at a time: a call that comes while one runs makes it read again once it ends, and both callers get the same promise (02-basic-markdown.js latest).
+function convLoad() { return latest("conv", convLoadNow); }
 // A live event (one per mail) refreshes through this: the first runs at once; events during the load or the next LIVE_GAP ms collapse into one trailing run.
 let LIVE_GAP = 2000;
 function coalesced(fn) {
@@ -20580,10 +20798,9 @@ const monitorsLive = coalesced(() => loadMonitors());
 // The rows of one answer into the stores.
 function convApply(items) {
   for (const it of items) {
-    const t = it.target, prev = CONV.get(t);
-    if (it.mail) MAILS.set(t, it.mail);
-    if (it.last && (!prev || prev.ts <= it.last.ts)) CONV.set(t, it.last);
-    else if (!CONV.has(t)) CONV.set(t, null);
+    const t = it.target;
+    if (it.mail) mailPut(t, it.mail);
+    convNewer(t, it.last);
     let unread = it.unread | 0;
     const local = READ[t], last = CONV.get(t);
     // Our own read post may be ahead of what the server has answered with.
@@ -20640,6 +20857,7 @@ function convMore() {
   })().finally(() => { CVP.busy = null; });
   return CVP.busy;
 }
+const readMark = (t, at) => { READ[t] = at; }, convRepaint = () => { convSig = ""; convSchedule(); };
 // Another device (or this one) moved a read position.
 function convOnRead(e) {
   const t = e.target, at = e.ts;
@@ -20698,12 +20916,12 @@ function chatOpen() {
     }
     // reloaded onto a new shell (23-installable-app-web.js): the place the owner was at, unless they were at the bottom
     const r = SHELL_RESTORE;
-    if (r && r.key === CV.key && !r.stick && r.anchor) { SHELL_RESTORE = null; CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
+    if (r && r.key === CV.key && !r.stick && r.anchor) { shellRestoreDone(); CV.pinTs = r.anchor.ts; CV.pinOff = r.anchor.off; chatPin("at"); return; }
     chatPin(CV.divNode ? "div" : isMailT(CV.key) ? "top" : "bottom");   // a mail reads top-down: the first unread, else the start of the mail
     return;
   }
   if (CV.pin) chatPlace();
-  else if (snap && !snap.stick) { timeline.scrollTop = snap.top; chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; }
+  else if (snap && !snap.stick) { timeline.scrollTop = snap.top; putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40); $("#chat-jump").hidden = chatStick; }
   else scrollChat(true);
 }
 // A jump target (notice, toast, push, 답변 필요, ?m=) sits with its top just under the app bar, wherever the divider is, and stays there while
@@ -20713,6 +20931,17 @@ function chatJump(node) {
   CV.pinTs = node.dataset.ts; CV.pinOff = Math.max(0, bar.bottom - a.top) + 20;
   chatPin("at");
 }
+// Every write to CV from another screen file goes through these (hub/web-structure-owners.json: CV is this file's).
+function cvPinAt(ts, off) { CV.pinTs = ts; CV.pinOff = off; }
+function cvJump(ts) { CV.jump = ts; }
+function cvSeeded() { CV.seeded = true; }
+function cvForget() { CV.drawn = ""; CV.divNode = null; }
+function cvDivNode(node) { CV.divNode = node; }
+function cvDrawn(sig) { CV.drawn = CV.divNode ? "" : sig; }
+function cvFrom(ts) { CV.from = ts; }
+function cvRange(from, low) { CV.from = from; CV.low = low; }
+function cvStash(snap) { CV.snap = snap; CV.full = false; }
+function cvKeep() { CV.snap = null; CV.full = true; }
 function chatPin(kind) { CV.pin = kind; chatPlace(); }
 function chatUnpin() { CV.pin = ""; }
 // Put the view where the pin says. Runs right after the draw and again whenever the timeline or its content changes size (images,
@@ -20729,7 +20958,7 @@ function chatPlace() {
     if (n) want = timeline.scrollTop + n.getBoundingClientRect().top - timeline.getBoundingClientRect().top - CV.pinOff;   // gone from the history: the bottom
   }
   if (Math.abs(timeline.scrollTop - want) > 1) timeline.scrollTop = want;
-  chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+  putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
   $("#chat-jump").hidden = chatStick;
   convMaybeRead();   // what this placement put on screen is read now
 }
@@ -20771,7 +21000,7 @@ function convMaybeRead() {
 }
 // A mail read on the page moves its row, the app's badge and the 안 읽음 filter now; once the hub holds the position its app counts raise
 // (needs.unread, GET /api/integrations), and a peer's mail has its snapshot read again (34-peer-monitoring.js).
-function mailReadPainted() { const m = MAILS.get(CV.key); if (m && m.read === false) m.read = true; MON.sig = ""; monSchedule(); }
+function mailReadPainted() { const m = MAILS.get(CV.key); if (m && m.read === false) m.read = true; monDirty(); }
 function mailReadSynced(t) { if (typeof pqPc === "function" && pqPc(t)) pqSoon(); else loadIntegrations(); }
 function convFlush() {
   convPendT = 0;
@@ -20907,7 +21136,7 @@ function convAvatar(t) {
 // { name, badge: [word, tone], unread }, with an optional one-line preview (hint) under the name. A row never shows a time: the name and the content tell what it is.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
-  if (r.empty) return el("div", { class: "cv-empty", text: r.empty });
+  if (r.empty) return emptyNode(r.empty);
   if (r.more) return moreRow(TX("conv.more_projects", { n: r.more }), () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); });
   if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
@@ -20967,9 +21196,9 @@ function convPaint() {
   convTitle();
   mailSentPaint();
   mbReplyPaint();
-  if (monCtx && isSettingsT(target)) MON.sel = monItemOf(target) || MON.sel;   // the monitor list may have loaded after this conversation opened
+  if (monCtx && isSettingsT(target)) monSelSet(monItemOf(target) || MON.sel);   // the monitor list may have loaded after this conversation opened
   const two = mxTwo(), items = monCtx ? monItems() : null, rows = items ? monListRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.dotOnly, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, CV.loaded, CV.failed, two ? [two.esig, MX.box] : 0]);
-  if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
+  if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) kkRoomsAsk();
   if (sig !== convSig && motionAfter(convSide, convPaint)) return;   // a session leaves 진행 중 right now: the list is drawn once it is gone
   if (sig !== convSig) {
     convSig = sig;
@@ -21146,8 +21375,8 @@ const nscRows = (n, group) => [nscRow(n, group), ...(n.repeats && n.repeats.leng
 
 function nscList(rows, defer = false) {
   nscTodo = [];
-  if (!NT.loaded) return [el("div", { class: "list" }, el("div", { class: "empty", text: NT.failed ? TX("misc.nsc.load_failed") : TX("misc.nsc.loading") }))];
-  if (!rows.length) return [el("div", { class: "list" }, el("div", { class: "empty", text: TX("misc.nsc.empty") }))];
+  if (!NT.loaded) return [emptyNode(NT.failed ? TX("misc.nsc.load_failed") : TX("misc.nsc.loading"))];
+  if (!rows.length) return [emptyNode(TX("misc.nsc.empty"))];
   const out = [];
   let room = defer ? NSC_FIRST : Infinity;   // rows to build now, over all groups
   for (const [g, label] of NSC_GROUPS) {
@@ -21212,7 +21441,17 @@ function nscPaint(force, fresh = false) {
   if (!first) for (const id of arrived) { const r = nscRowOf(id); if (r) motionIn(r, "top"); }   // a notification that arrives slides in at the top of its group
 }
 const nscRowOf = id => nscBox && nscBox.list.querySelector(`.nsc-r[data-nid="${CSS.escape(String(id))}"]:not([data-child])`);
+const nscPass = ms => { NSC.pass = Date.now() + ms; };
+// go() landed on a screen: the alert pass and the row arm are spent, and the way back to the list holds only when a row led here.
+function nscLanding(name) {
+  NSC.pass = 0;
+  const viaRow = NSC.arm > Date.now();
+  NSC.arm = 0;
+  if (name === "notices") NSC.ret = false;
+  else { NSC.ret = viaRow; if (!viaRow) NSC.keep = false; }
+}
 function nscSchedule() { if (!NSC.raf) NSC.raf = requestAnimationFrame(() => { NSC.raf = 0; nscPaint(false); }); }
+screenHooks("notices", { enter: nscOpen });
 function nscOpen() {
   nscInit();
   const keep = NSC.keep;
@@ -21288,7 +21527,7 @@ function nscX(n, group, btn) {
   // ✕ on news: read.
   if (group === "news") return nscLeave(n, btn, async () => {
     const r = await ntMarkRead({ ids: [n.id] });   // it shows its own failure
-    return r && (() => { n.read = true; NT.unread = typeof r.unread === "number" ? r.unread : Math.max(0, NT.unread - 1); });
+    return r && (() => { n.read = true; ntReadDown(1); ntUnreadSet(r.unread); });
   });
   if (group === "need") return nscLeave(n, btn, () => nscHandled(n));
   return nscLeave(n, btn, () => nscDismiss(n));
@@ -21306,9 +21545,7 @@ async function nscDismiss(n) {
     const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
     if (!r || !r.ok) throw new Error(TX("misc.nsc.clear_failed"));
     return () => {
-      NT.items = NT.items.filter(x => x.id !== n.id); NT.mut++;
-      if (n.at) NT.gone.add(n.at);
-      if (typeof r.unread === "number") NT.unread = r.unread;
+      ntDismissed(n, r.unread);
       toast(TX("misc.nsc.cleared"), false, { label: TX("common.undo"), onclick: () => nscUndo(n) }, 6000);
     };
   } catch (err) { toast(TX("misc.nsc.clear_one_failed"), true); return null; }
@@ -21316,7 +21553,7 @@ async function nscDismiss(n) {
 async function nscUndo(n) {
   try {
     const r = await api(`/api/notices/${enc(n.id)}/undismiss`, "POST", {});
-    NT.mut++; if (n.at) NT.gone.delete(n.at);
+    ntUndismissed(n);
     ntApply(r.item, r.unread);
     if (current === "notices") requestAnimationFrame(() => requestAnimationFrame(() => { const row = nscRowOf(n.id); if (row) motionIn(row, "top"); }));
   } catch (err) { toast(err.message, true); }
@@ -21329,7 +21566,7 @@ async function nscReadAll(btn) {
   const r = await ntMarkRead({ ids });   // it shows its own failure
   if (!r) { undo(); return; }
   for (const n of rows) n.read = true;
-  NT.unread = typeof r.unread === "number" ? r.unread : Math.max(0, NT.unread - ids.length);
+  ntReadDown(ids.length); ntUnreadSet(r.unread);
   const gone = new Set(ids);
   // From the last row up: a row lifted out of the flow does not move the ones above it, so each one folds at its own place.
   const leaving = [...nscBox.list.querySelectorAll(".nsc-r[data-nid]")].filter(x => gone.has(Number(x.dataset.nid)) || gone.has(x.dataset.nid)).reverse().map(x => motionGone(x));
@@ -21359,7 +21596,7 @@ function asLoad(app, again) {
     try { AS.by[app] = (await api(asUrl(app))).fields || []; delete AS.none[app]; }
     catch { AS.none[app] = true; }
     asPaint();
-    MON.sig = ""; monSchedule();
+    monDirty();
     if (typeof KK !== "undefined" && KK.loaded && app === "kakao") kkPaintAll();
     if (monCtx) convSchedule();
   })();
@@ -21382,7 +21619,7 @@ async function asRetry(app, watch, down) {
   if (AS.busy[app]) return;
   AS.busy[app] = true;
   try { asFeatSave(app, await api(asFeatUrl(app, "retry"), "POST", { watch })); toast(down ? MON_RECONNECT : TX("appset.retry.done")); } catch (e) { toast(e.message || TX("appset.retry.fail"), true); }
-  AS.busy[app] = false; MON.sig = ""; monSchedule(); asPaint();
+  AS.busy[app] = false; monDirty(); asPaint();
 }
 // 승인 대기 is one row: the count and a chevron that opens 답장 대기 (30-replies.js rqOpen) on this app's own drafts. The answers live there, not in a settings screen.
 function asWaitRow(app, n) {
@@ -21446,7 +21683,7 @@ async function asPatch(app, values) {
   const got = new Map((r.fields || []).map(f => [f.key, f])), prev = AS.by[app] || [];
   AS.by[app] = [...prev.map(f => got.get(f.key) || f), ...[...got.values()].filter(f => !prev.some(p => p.key === f.key))];
   asPaint();
-  MON.sig = ""; monSchedule();
+  monDirty();
   if (app.includes("~") || pqPc(`settings:${app}`)) pqSoon(); else if (asOwn(app)) loadMonitors(); else loadIntegrations();   // a peer's app or monitor is read back from that computer
   // The Kakao room list draws the same watch and draft lists: read it again so its switches and the screen never disagree.
   if (pqBare(app) === "kakao" && typeof KK !== "undefined" && KK.loaded) kkLoadRooms().catch(() => {});
@@ -21877,7 +22114,7 @@ function asPaneFollow(items) {
   const h = ASC.h;
   if (!h || !h.pane || !asOwn(ASC.app) || items.some(i => i.key === MON.sel)) return;
   const it = items.find(i => monSettingsApp(i) === ASC.app);
-  if (it) MON.sel = h.sel = it.key;
+  if (it) { h.sel = it.key; monSelSet(it.key); }
 }
 const asBack = () => !!(current === "monitoring" && ASC.h && ASC.h.pane && (ASC.h.close(), true));
 function asScreen(app) {
@@ -22044,24 +22281,23 @@ const hstate = (c, ov = 0, w = c) => ({ dz: 1, c, ov, w });
 const hurl = c => `#${c[c.length - 1]}`;
 
 // The chain of routes for a view, computed when the app navigates by itself (a back/forward uses the entry's stored chain).
+// A screen whose chain follows its own state builds it in its chain hook (03-screens.js); a fixed parent is its row's up.
 function routeChain(name, hash) {
   if (name === "home") return ["home"];
   if (NSC.ret && name !== "notices") return ["home", "notices", hash];
-  const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
-  // A conversation opened from 모니터링 (a mail of the 메일 list): back returns to that item's list, on a wide screen too (owner 2026-10-27).
-  if (monCtx && (name === "chat" || name === "activity")) return MON.sel && !monChatIt() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
-  if (name === "chat" || name === "activity") return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
-  if (name === "harness") return ["home", "settings", hash];
+  const own = SCREEN_HOOKS[name]?.chain?.(hash);
+  if (own) return own;
   if (name === "project") return ppWide() ? ["home", hash] : ["home", "projects", hash];   // wide: the list sits beside the pane, it is not a screen of its own
-  if (name === "monitoring") return !MON.list ? ["home", "monitoring", ...mxChain(hash)] : ["home", hash];
-  if (SUB.has(name)) {
+  if (SUB.has(name)) {   // backTarget reads a fixed up first (시스템 -> 설정), then the screen it was opened from
+    const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
     const bt = backTarget();
     if (bt === "home") return ["home", hash];
-    if (bt === "messengers") return ["home", "settings", bt, hash];
+    if (views.some(id => SCREENS[id].under === bt)) return ["home", SCREENS[bt].tab, bt, hash];   // a page other screens sit under (메신저) is itself in its tab
     if (bt === "chat" || bt === "activity") return [...conv(bt), hash];
     return ["home", bt === "project" ? "projects" : bt, hash];
   }
-  return ["home", hash];
+  const up = SCREENS[name].up;
+  return up && up !== "home" ? ["home", up, hash] : ["home", hash];
 }
 function navSync(name, hash) {
   H.hash = hash;
@@ -22070,6 +22306,8 @@ function navSync(name, hash) {
   histSync();
   H.auto = H.tab = false;
 }
+const histTab = () => { H.tab = true; };
+const histAuto = () => { H.auto = true; };
 // A route changed its own hash without changing level (a conversation picked from the switcher, a project map opened).
 function routeReplace(hash) {
   const S = history.state;
@@ -22149,14 +22387,13 @@ const ovCloseAll = () => { for (const o of [...OV].reverse()) o.close(); };
 // A modal <dialog> is an overlay for as long as it is open (Esc, ✕ and back all end in its close event).
 function dialogHist(d) { const o = ovOpen(() => d.close()); d.addEventListener("close", () => ovDone(o)); }
 // On a phone, a screen's inner state that the app bar arrow closes (a Messenger room, a comment post or DM) is one history step, like a sheet: the browser's back
-// closes what the arrow closes. bkStep makes the step (S.bk) match the state. It runs wherever the room, post, screen or list changes (kkOpen, kkClose, kkMode,
-// cmOpen, cmClose, dmOpen, dmClose, cmTab, cmMode, go); switching rooms keeps the one step, and a wide screen has none.
+// closes what the arrow closes. bkStep makes the step (S.bk) match the state; the screen's own bkKkSync (30-kakao.js) and bkCmSync (30-monitoring-comments.js)
+// call it wherever the room, post, screen or list changes (kkOpen, kkClose, kkMode, cmOpen, cmClose, dmOpen, dmClose, cmTab, cmMode, go); switching rooms keeps
+// the one step, and a wide screen has none.
 function bkStep(S, on, close) {
   if (on && !S.bk) S.bk = ovOpen(close);
   else if (!on && S.bk) { const o = S.bk; S.bk = null; ovDone(o); }
 }
-function bkKkSync() { bkStep(KK, !!(KK.vis && KK.open && narrowChat() && current === "monitoring" && !MON.list), () => kkClose()); }
-function bkCmSync() { bkStep(CM, !!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list), () => (CM.tab === "dm" ? dmClose() : cmClose())); }
 
 function guardHit() {
   if (H.hash !== "home") { H.fromHist = ["home"]; go("home"); }
@@ -22403,6 +22640,7 @@ function cpcPaint() {
   b.textContent = CPC.name || TX("chat.chip.pc_here");
   b.title = TX("chat.chip.pc_title", { name: b.textContent });
 }
+function cpcPick(name) { CPC.name = name; cpcPaint(); }
 const cpcTake = () => { const name = target === MAIN ? CPC.name : ""; return name ? { computer: name } : {}; };
 
 function prSheet() {
@@ -22502,7 +22740,7 @@ const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", o
 mnLoad();
 
 $("#brand").append(el("span", { class: "brand-c", id: "brand-c", hidden: true }, icon("drop")));
-$("#brand").onclick = () => (prTrig() ? prOpen() : (H.tab = true, go("home")));
+$("#brand").onclick = () => (prTrig() ? prOpen() : (histTab(), go("home")));
 // The composer's computer chip (cpcPaint): its menu reads /api/fleet when it opens.
 function cpcMenu(ev) {
   const anchor = ev.currentTarget;
@@ -22510,7 +22748,7 @@ function cpcMenu(ev) {
   if (!(openMenu && openMenu.anchor === anchor)) await prFleetLoad();
   const rows = Array.isArray(PR.fleet) && !selfDown ? PR.fleet : PR.list.map(p => ({ name: p.name, self: p.self, online: p.online }));
   const items = [{ header: TX("chat.chip.pc_head") }, ...rows.map(f => ({ value: f.self ? "" : f.name, label: f.self ? TX("chat.chip.pc_here") : f.name, sub: f.state ? prFleetWord(f.state) : "", off: !f.self && !f.online }))];
-  showMenu(anchor, items, { value: CPC.name, onPick: v => { CPC.name = v; cpcPaint(); } });
+  showMenu(anchor, items, { value: CPC.name, onPick: cpcPick });
   });
 }
 $("#c-pc").onclick = cpcMenu;
@@ -22534,7 +22772,7 @@ document.addEventListener("keydown", ev => {
   if (prNext(ev.shiftKey ? -1 : 1)) ev.preventDefault();
 });
 // Tapping 홈 again while on 홈 opens the computer sheet (like the 채팅 tab's re-tap, 04-state.js chatTabTap) and the next tap closes it; with one gateway the tab behaves as before.
-const homeTabTap = () => { if (PR.node) prClose(); else if (current === "home" && PR.list.length >= 2) prOpen(); else { H.tab = true; go("home"); } };
+const homeTabTap = () => { if (PR.node) prClose(); else if (current === "home" && PR.list.length >= 2) prOpen(); else { histTab(); go("home"); } };
 if (PR.list.length) prPaint();
 prLoad();
 setInterval(() => { if (!document.hidden) prLoad(); }, 60_000);
@@ -22754,6 +22992,7 @@ const pqSig = sel => [pqSelf(), sel.pc ? sel.pc.name : ""];
 // The computer an item of the snapshot `p` came from, as every peer item carries it: its machine name, address and its own bot's name
 // (the snapshot's `bot`, hub/peer-monitor.ts; the machine name for an older gateway without it), never this computer's bot.
 function pqPcOf(p) { return { name: p.name, url: p.url, bot: (p.items && p.items.bot) || p.name }; }
+const pqBind = (t, pc, key) => { PQ.of.set(t, { pc, key }); }, pqUnbind = t => { PQ.of.delete(t); };
 function pqPc(t) { return (PQ.of.get(String(t)) || {}).pc || null; }
 function pqProxy(pc, path) { return `/api/peer/proxy?pc=${enc(pc.url)}&p=${enc(path)}`; }
 // An app of another computer is named `<key>~<hash of that computer>` here (its key may also be an app of this one); the computer gets the plain key.
@@ -22870,7 +23109,7 @@ async function pqNotice(n, action, args) {
   const r = await api(pqProxy(n.pc, "/api/peer/act"), "POST", { action, args });
   const raw = pqNoticeOf(n);
   if (r && r.item) { if (raw) Object.assign(raw, r.item); Object.assign(n, r.item, { pc: n.pc }); }
-  MON.sig = ""; monSchedule(); syncInlineChoices(); ntSheetPaint(); pqSoon();
+  monDirty(); syncInlineChoices(); ntSheetPaint(); pqSoon();
   return r;
 }
 // Peer reports read here (seen on screen, 읽음 처리): marked read on each computer that holds them, one request per computer.
@@ -22881,7 +23120,7 @@ async function pqNoticesRead(list) {
     for (const n of ns) { n.read = true; const raw = pqNoticeOf(n); if (raw) raw.read = true; }
     await api(pqProxy(ns[0].pc, "/api/peer/act"), "POST", { action: "notice", args: { op: "read", ids: ns.map(n => String(n.id)) } });
   }
-  if (by.size) { MON.sig = ""; monSchedule(); pqSoon(); }
+  if (by.size) { monDirty(); pqSoon(); }
 }
 
 async function pqLoad() {
@@ -22928,10 +23167,10 @@ function pqMail(c, pc, itemKey) {
   const t = String(c.target);
   if (!PQ.of.has(t) && CONV.has(t) && !intgHidden(t)) return null;
   PQ.of.set(t, { pc, key: itemKey });
-  if (c.mail) MAILS.set(t, c.mail);
-  if (c.last) CONV.set(t, c.last);
+  if (c.mail) mailPut(t, c.mail);
+  if (c.last) convLastSet(t, c.last);
   const sig = `${c.unread | 0}|${c.read || ""}`;
-  if (PQ.seen.get(t) !== sig) { PQ.seen.set(t, sig); ts(t).unread = c.unread | 0; READ[t] = c.read || null; }
+  if (PQ.seen.get(t) !== sig) { PQ.seen.set(t, sig); ts(t).unread = c.unread | 0; readMark(t, c.read || null); }
   return t;
 }
 
@@ -23394,7 +23633,7 @@ const dskPillText = vs => (vs.length === 1 ? TX("misc.dsk.viewing_from", { who: 
 // An answer of GET/PUT /api/desk/... is the new status; S.desk follows it at once instead of waiting for the next state refresh.
 function dskTake(st) {
   DSK.st = st;
-  if (S && S.desk) S.desk = { ...S.desk, on: st.on, running: st.running, viewers: Array.isArray(st.viewers) ? st.viewers : [] };
+  if (S && S.desk) stateMerge({ desk: { ...S.desk, on: st.on, running: st.running, viewers: Array.isArray(st.viewers) ? st.viewers : [] } });
   dskPaint();
   if (inSettings()) renderSettings();
 }
@@ -23458,6 +23697,7 @@ dskPillNode();
 // viewport so the footer stays above the keyboard. The caller paints fsHead / .fs-body / .fs-ft into h.box. Built on it: decision, notice and computer sheets
 // (30-notices.js, 33-peers.js) and login requests (16-target-switcher-conversation.js); dialog() (02-basic-markdown.js) wears the same classes on a native <dialog>.
 const FS = [];   // open overlays, top last
+function fsOnEnd(h, f) { h.ends.push(f); }   // run f once overlay h closes (a confirm shown inside it, 02-basic-markdown.js openSheet)
 // The one place that sets a window's first focus: opened by a mouse or a touch (no key pressed since, 02-basic-markdown.js data-pointer) the window itself
 // holds it, so no button shows a ring; opened by the keyboard the first control does.
 function ovFocus(host, first) {
@@ -23886,7 +24126,7 @@ setInterval(() => { if (!document.hidden) paintRunState(); }, 1000);
 async function runAskGo() {
   const box = $("#dcard");
   if (DC.cur && DC.cur.t === target && box && !box.hidden) {
-    if (DC.fold[DC.cur.t]) { DC.fold[DC.cur.t] = false; paintDecision(); }
+    if (DC.fold[DC.cur.t]) { dcUnfold(DC.cur.t); paintDecision(); }
     box.scrollIntoView({ block: "nearest" });
     const row = $(".dc-row:not(:disabled), .dc-note, .dc-act:not(:disabled)", box);
     (row || box).focus({ preventScroll: true });
@@ -24015,6 +24255,7 @@ function relayBrand() { return relayCur() ? targetName(relayCur()) : botName; }
 
 // The rows' names and notes (the title and the header line name the computer before the list is drawn again), and this view's state on the screen.
 function relayNames() { for (const p of PR.list) if (isRelayRow(p)) { RELAY.name[relayTargetOf(p)] = p.name; RELAY.note[relayTargetOf(p)] = p.note || ""; } }
+function relayPick(t, name) { RELAY.name[t] = name; if (!isRelayT(target)) RELAY.back = target; RELAY.cur = t; }   // chosen from outside its chat (44-relay-views.js relayShow)
 function relayPaint() {
   const on = relayOn();
   if (on) RELAY.cur = target; else if (RELAY.cur && target !== RELAY.cur) RELAY.cur = "";   // another conversation took the target: the computer is no longer the chosen one
@@ -24052,8 +24293,7 @@ function relayEvents(t, lines) {
 const relaySig = s => JSON.stringify([s.rids, s.rerr, s.serr, (s.rpend || []).length]);
 async function relayLoad(t, quiet) {
   const s = ts(t), before = relaySig(s);
-  if (s.loading) return s.loading;
-  s.loading = (async () => {
+  await latest(targetKey(t), async () => {   // one read of the room at a time, like loadTarget (13-data.js)
     try {
       const lines = await api(`${relayApi(t)}/messages`);
       const list = Array.isArray(lines) ? lines : [];
@@ -24063,8 +24303,7 @@ async function relayLoad(t, quiet) {
       s.rerr = "";
     } catch (e) { s.rerr = e.message; }
     s.hLoaded = s.aLoaded = true;
-  })().finally(() => { s.loading = null; });
-  await s.loading;
+  });
   if (t === target && (!quiet || relaySig(s) !== before)) renderAll();
 }
 // After the lines (renderAll0): what was sent and is not in the room yet, and the last error of a read or a send.
@@ -24077,7 +24316,7 @@ async function relaySend(text) {
   ta.value = ""; s.draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch { /* no storage here: there is no stored draft to clear */ } autosize(); updateHints();
   const mine = { text, at: Date.now(), n: relayOwned(s.msgs, text) + (s.rpend || []).filter(p => relayNorm(p.text) === relayNorm(text)).length };
   s.rpend = (s.rpend || []).concat(mine); s.serr = "";
-  chatStick = true; renderAll(); scrollChat(true);
+  putChatStick(true); renderAll(); scrollChat(true);
   try { await api(`${relayApi(t)}/send`, "POST", { text }); }
   catch (e) {
     s.rpend = s.rpend.filter(p => p !== mine); s.serr = TX("misc.rl.failed", { why: e.message });
@@ -24086,7 +24325,8 @@ async function relaySend(text) {
   }
   await relayLoad(t, true);
 }
-const relayTick = () => { if (relayOn() && !document.hidden) relayLoad(target, true); };
+// A poll while the room's read is still out skips: that read is fresh enough, and asking again would queue polls back to back on a slow gateway.
+const relayTick = () => { if (relayOn() && !document.hidden && !latestOut(targetKey(target))) relayLoad(target, true); };
 setInterval(relayTick, RELAY_POLL_MS);
 document.addEventListener("visibilitychange", relayTick);
 
@@ -24349,7 +24589,7 @@ function paneLayoutApply(name) {
   const r = panePrune(paneLayouts()[name]);
   if (!r) { toast(TX("misc.pl.cant_open"), true); return; }
   paneMirrorsClear();
-  PN = { ...r, seq: Math.max(PN.seq, r.seq) };
+  paneTreePut({ ...r, seq: Math.max(PN.seq, r.seq) });
   paneEnter(paneFind(PN.active));
   panePersist();
 }
@@ -24429,7 +24669,7 @@ function paneMirror(p) {
     m.node = el("div", { class: `pane-mir pane-chat${convTakesText(p.t) ? "" : " no-composer"}` }, head, m.todo, el("div", { class: "chatbox" }, m.wrap), paneComposerEl(m));
     if (!TD.by[p.t]) loadTodo(p.t);
   } else {
-    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : el("div", { class: "empty", text: TX("misc.pane.tap_room") })));
+    m.node = el("div", { class: "pane-mir" }, head, el("div", { class: "pane-pj" }, snap ? paneBare(snap.n) : emptyNode(TX("misc.pane.tap_room"))));
   }
   PNM.set(p.id, m);
   if (m.k) paneStrip(m);
@@ -24492,14 +24732,14 @@ function paneFill(m) {
   clear(m.list);
   m.keys = new Set(s.mk);
   for (const e of s.msgs.slice(-60)) paneAppend(m, e);
-  if (!s.hLoaded && !s.loading) loadTarget(t, true).then(() => { if (PNM.get(m.p.id) === m) { paneFill(m); m.wrap.scrollTop = m.wrap.scrollHeight; } }, () => { /* the pane shows what it has */ });
+  if (!s.hLoaded && !latestOut(targetKey(t))) loadTarget(t, true).then(() => { if (PNM.get(m.p.id) === m) { paneFill(m); m.wrap.scrollTop = m.wrap.scrollHeight; } }, () => { /* the pane shows what it has */ });
 }
 // msgNode reads the global target (a lane report's look), so it is the pane's own for the call.
 function paneAppend(m, e) {
   const was = target;
   let n = null;
-  target = m.p.t;
-  try { n = msgNode(e); } finally { target = was; }
+  putTargetId(m.p.t);
+  try { n = msgNode(e); } finally { putTargetId(was); }
   if (!n) return;
   n.dataset.ts = e.ts;
   const key = e.kind === "out" && e.update_key ? `${e.target ?? ""}|${e.update_key}` : "";
@@ -24723,7 +24963,7 @@ function paneAdopt() {
   const a = paneFind(PN.active), h = paneHere();
   if (!a || PN.going || current !== "chat" || (a.kind === h.kind && a.t === h.t)) return;
   const dup = paneOpenIn(h.kind, h.t);
-  if (dup) { PN.active = dup.id; dup.t = h.t; dup.dot = ""; paneForget(dup.id); }
+  if (dup) { paneActiveSet(dup.id); dup.t = h.t; dup.dot = ""; paneForget(dup.id); }
   else Object.assign(a, { kind: h.kind, t: h.t, at: null, stick: true, dot: "" });
   paneForget(a.id);
   panePersist();
@@ -24825,9 +25065,9 @@ function paneEnter(p) {
 function paneLand(at, stick) {
   if (current !== "chat") return;
   chatUnpin();
-  if (!stick && at) { CV.pinTs = at.ts; CV.pinOff = at.off; chatPin("at"); }
+  if (!stick && at) { cvPinAt(at.ts, at.off); chatPin("at"); }
   else timeline.scrollTop = timeline.scrollHeight;
-  chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
+  putChatStick(timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40);
   $("#chat-jump").hidden = chatStick;
 }
 
@@ -25000,6 +25240,9 @@ function paneRestore() {
   paneSync();
   panePersist();
 }
+const paneAppOff = () => { if (!PN.going) PN.app = false; };
+const paneActiveSet = id => { PN.active = id; };
+const paneTreePut = next => { PN = next; };
 // The chat tab pressed again after another tab: the panes come back as they were, the active one's content opened again.
 // A relayed computer chosen off the chat (44-relay-views.js relayShow) sits in no pane: the tab opens its chat, not what the active pane held.
 function paneReturn() {
@@ -25012,6 +25255,7 @@ function paneStash() {
   const p = PNV.el && !PNV.el.hidden && current === "chat" && paneFind(PN.active);
   if (p && p.kind === "chat") { p.at = chatAnchor(); p.stick = chatStick; }
 }
+screenHooks("chat", { leave: paneStash });
 
 /* ---------- a relayed computer's other screens: its last snapshot, read-only (hub/relay-snapshot.ts, docs/messengers/jandi.ko.md 8) ---------- */
 // A computer reached only through a messenger has no gateway to ask, so while it is the chosen one (RELAY.cur, 42-relay-chat.js relayPaint) 홈, 프로젝트 and
@@ -25022,7 +25266,6 @@ function paneStash() {
 // mode is removing the child: the screen's own markup was never touched.
 // Function declarations, not arrows: 33-peers.js, 42-relay-chat.js and the render functions call these before a const of this file exists.
 const RV_POLL_MS = 30_000, RV_FRESH_MS = 10_000;
-const RV_SCREENS = { home: 1, projects: 1, monitoring: 1, settings: 1, chat: 1 };
 const RV = { by: {} };
 
 /** The relay target shown as THE computer right now: its chat on screen, or a snapshot screen opened from it. "" for this computer. */
@@ -25041,11 +25284,13 @@ async function rvLoad(t, quiet) {
   await c.flight;
   if (relayCur() === t) rvRefresh();
 }
+// How each relay screen (the SCREENS relay column, RELAY_VIEWS) draws itself again; hub/relay-views-web.test.ts keeps the keys equal to that column.
+const rvDraw = () => ({ home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings, chat: () => { convRepaint(); } });
 function rvRefresh() {
-  const draw = { home: renderHome, projects: renderProjects, monitoring: renderMonitoring, settings: renderSettings, chat: () => { convSig = ""; convSchedule(); } }[current];
+  const draw = rvDraw()[current];
   if (draw) draw();
 }
-const rvTick = () => { const t = relayCur(); if (t && !document.hidden && RV_SCREENS[current]) rvLoad(t, true); };
+const rvTick = () => { const t = relayCur(); if (t && !document.hidden && RELAY_VIEWS.has(current)) rvLoad(t, true); };
 setInterval(rvTick, RV_POLL_MS);
 document.addEventListener("visibilitychange", rvTick);
 
@@ -25088,9 +25333,7 @@ function rvConvRows(t) {
 
 /** Choose a relay computer from outside its chat (the 프로젝트 list's computer group) and show it on `view`. */
 function relayShow(t, name, view) {
-  RELAY.name[t] = name;
-  if (!isRelayT(target)) RELAY.back = target;
-  RELAY.cur = t;
+  relayPick(t, name);
   if (target !== t) setTarget(t, true);
   go(view);
 }
@@ -25110,13 +25353,12 @@ const rvDotTone = tone => (/^(ask|warn|need)/.test(tone) ? "warn" : /^(err|fail)
 
 function rvBody(name, t, c) {
   const who = targetName(t);
-  if (name === "settings") return [el("div", { class: "card empty rv-off" }, el("div", { text: TX("relay.settings_off") }),
-    el("div", { class: "rv-acts" },
-      el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }),
-      el("button", { class: "btn text sm", type: "button", "data-k": "relay-leave", onclick: () => relayLeave(), text: TX("relay.back_here") })))];
+  if (name === "settings") return [emptyNode(TX("relay.settings_off"), null, { more: [el("div", { class: "rv-acts" },
+    el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }),
+    el("button", { class: "btn text sm", type: "button", "data-k": "relay-leave", onclick: () => relayLeave(), text: TX("relay.back_here") }))] })];
   if (!c.loaded) return [emptyNode(TX("relay.loading"))];
   if (c.err && !c.snap) return [emptyNode(TX("relay.failed"), () => rvLoad(t))];
-  if (!c.snap) return [el("div", { class: "card empty rv-none" }, el("div", { text: TX("relay.none_title", { name: who }) }), el("div", { class: "sup", text: TX("relay.none_hint") })), rvFoot(t, null)];
+  if (!c.snap) return [emptyNode(TX("relay.none_title", { name: who }), null, { more: [el("div", { class: "sup", text: TX("relay.none_hint") })] }), rvFoot(t, null)];
   const s = c.snap;
   const head = el("div", { class: "rv-head" }, name === "home" ? null : el("span", { class: "rv-n", text: who }), el("span", { class: "sup", text: TX("relay.updated", { when: rvWhen(c) }) }));
   const body = name === "projects" ? rvProjects(s) : name === "monitoring" ? rvMonitors(s) : rvHome(s);
@@ -25130,7 +25372,6 @@ function rvFoot(t, s) {
     el("button", { class: "btn tonal sm", type: "button", "data-k": "relay-chat", onclick: () => relayOpenChat(t), text: TX("relay.open_chat") }));
 }
 
-const rvLine = text => el("div", { class: "empty rv-empty", text });
 function rvSession(x) {
   const tone = x.waiting ? "warn" : x.live ? "pri" : "", sub = [x.title ? x.name : "", rvTime(x.at)].filter(Boolean).join(" · ");
   return el("div", { class: "hr rv-row" },
@@ -25139,12 +25380,12 @@ function rvSession(x) {
     x.status ? el("span", { class: `hs ${tone}`, text: x.status }) : null);
 }
 function rvHome(s) {
-  const nodes = [el("div", { class: "sec", text: TX("relay.sessions") }), el("div", { class: "list" }, ...(s.sessions.length ? s.sessions.map(rvSession) : [rvLine(TX("relay.no_sessions"))]))];
+  const nodes = [el("div", { class: "sec", text: TX("relay.sessions") }), s.sessions.length ? el("div", { class: "list" }, ...s.sessions.map(rvSession)) : emptyNode(TX("relay.no_sessions"), null, { compact: true })];
   const todo = s.todos || { open: 0, items: [] }, more = todo.open - todo.items.length;
   nodes.push(el("div", { class: "sec", text: todo.open ? TX("relay.todos", { n: todo.open }) : TX("relay.todos_title") }));
-  nodes.push(el("div", { class: "list" }, ...(todo.items.length || more > 0
-    ? [...todo.items.map(x => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: x })))), more > 0 ? el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: TX("relay.todo_more", { n: more }) }))) : null]
-    : [rvLine(TX("relay.no_todos"))])));
+  nodes.push(todo.items.length || more > 0
+    ? el("div", { class: "list" }, ...todo.items.map(x => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: x })))), more > 0 ? el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: TX("relay.todo_more", { n: more }) }))) : null)
+    : emptyNode(TX("relay.no_todos"), null, { compact: true }));
   if (s.notices.length) {
     nodes.push(el("div", { class: "sec", text: TX("relay.notices") }));
     nodes.push(el("div", { class: "list" }, ...s.notices.map(n => el("div", { class: "li" },
@@ -25186,7 +25427,7 @@ function rvMonitors(s) {
   let h = parseHash();
   if (pushOpenTs && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // #chat/alert is the 알림 screen: drawn first, then pushOpen lands on the item
   go(h.view || "home", h.t);
-  if (pushOpenTs && h.view === "chat") CV.jump = pushOpenTs;   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
+  if (pushOpenTs && h.view === "chat") cvJump(pushOpenTs);   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
   // is the biggest answer and nothing the conversation draws waits for it; a lane that is gone is switched away from inside refreshState).
   const state = refreshState();
@@ -25223,7 +25464,7 @@ function rvMonitors(s) {
     // The drawn conversation stays as it is: loadTarget redraws it only when the read brought something new.
     // The first reset reads the open conversation again too when its history already came: what was sent between that answer and this stream is in neither.
     const reread = opened || ts(target).hLoaded;
-    if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; loadSubs(); loadQueue(); laneTailsStale(); kkResync(); }
+    if (opened) { refreshState(); tsStale(); loadSubs(); loadQueue(); laneTailsStale(); kkResync(); }
     if (reread) { loadTarget(target, hasCached(ts(target))); convLoad(); }
     opened = true;
   });
@@ -25241,8 +25482,8 @@ function rvMonitors(s) {
     try { e = JSON.parse(m.data); } catch { return; }
     if (e.kind === "activity") { onActivity(e); laneActivity(e); }
     else if (e.kind === "subagents") setSubs(e.source, e.items);
-    else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
-    else if (e.kind === "waitlist") { if (S) S.waitlist = e.items || []; scheduleState(); }   // 할일 changed (hub/waitlist.ts)
+    else if (e.kind === "queue") { putQueue(e.items || []); renderQueue(); }
+    else if (e.kind === "waitlist") { stateMerge({ waitlist: e.items || [] }); scheduleState(); }   // 할일 changed (hub/waitlist.ts)
     else if (e.kind === "work") { workRowsLive(e); scheduleState(); }   // a background job changed (hub/workrows.ts): its rows, then the lists
     else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") noticeLive(e);
     else if (e.kind === "reply") raLive(e);   // the one reply flow: a draft or its send changed (10-reply-actions.js)
@@ -25278,6 +25519,7 @@ function rvMonitors(s) {
   // poll could start a model-list process on the gateway, so a forgotten tab cost the computer one every minute for nothing.
   const missed = { state: false, models: false };
   const unlessHidden = (key, fn) => () => { if (document.hidden) missed[key] = true; else fn(); };
+  // The page's one 15 s state read (refreshState then reads /api/context): it also takes finished background work off the status line and refreshes the context ring.
   setInterval(unlessHidden("state", refreshState), 15000);
   // The 새 버전 badge comes from /api/update: read it on open and again every few minutes.
   loadUpdate(); setInterval(() => { if (!document.hidden) loadUpdate(); }, 5 * 60000);
