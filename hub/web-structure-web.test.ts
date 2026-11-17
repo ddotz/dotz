@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { flatCounts } from "./engineering-rules.ts";
-import { readScreens } from "./screens-read.ts";
+import { readScreens, type ScreenRow } from "./screens-read.ts";
 import { codeMask, DECL, extractOpenSitesFromText } from "./ui-surfaces.ts";
 
 const ROOT = join(import.meta.dir, "..");
@@ -25,7 +25,7 @@ test("hub/web-areas.json names every web/js file once and registers the pending 
 //   A function-local alias `const g = X(.path);` counts its writes (g.live = true) as writes to X, within the block declaring it.
 //   A match is skipped where an enclosing function or expression-bodied arrow declares a parameter or local of that name (bkStep(S),
 //   a local `target`, `list => list.sort()`).
-// - B goBranches: `name === "` inside go(); fnReassign "name|file": a declared function reassigned outside any function (a monkeypatch).
+// - B goBranches: each test of a screen name inside go() (goTests below); fnReassign "name|file": a declared function reassigned outside any function (a monkeypatch).
 // - D overlaySites: rawdialog/overlay sites (hub/ui-surfaces.ts) outside the files that implement dialogs, menus, overlays and history, and
 //   outside the side drawer's own back step (showSheet), a shared part itself. A site that stays needs a reason in "reasons".
 // - E rawNet: fetch(, new EventSource, new XMLHttpRequest and a window.fetch wrapper outside api(), per file.
@@ -33,6 +33,7 @@ test("hub/web-areas.json names every web/js file once and registers the pending 
 // - G emptyBypass: el() calls building an empty state (class empty/rq-empty/cv-empty/mon-ov-empty, id kk-empty/cm-empty/dm-empty/kk-nomatch)
 //   outside emptyNode, per file. kk-note alone is a loading, error or pick-a-room line, not counted.
 // Regenerate after a fix: WEB_STRUCTURE_WRITE=1 bun test hub/web-structure-web.test.ts (reasons and _rule are kept; the test preload drops DOTZ_* names).
+const SCREENS_FILE = "03-screens.js";
 type Counts = Record<string, number>;
 type Audit = { ownerWrites: Counts; goBranches: number; fnReassign: Counts; overlaySites: string[]; rawNet: Counts; currentAssign: Counts; emptyBypass: Counts };
 type Allow = { _rule: string; counts: Audit; reasons: Record<string, string> };
@@ -152,7 +153,9 @@ function parse(text: string) {
     return [...own.matchAll(/(?<![\w$.])(?:const|let|var)\s+([^;]*)/g)].some((m) => declares(m[1]!.split(/\s(?:of|in)\s/)[0]!, name));
   };
   return {
-    text, code, decls, topAt,
+    text, mask, code, decls, topAt,
+    // Every identifier in the code: a name the file never spells cannot be written there.
+    words: new Set(code.match(/[\w$]+/g)),
     find: (re: RegExp) => [...code.matchAll(re)],
     // The statement holding `at` starts with const/let/var: a declaration, not a write. A line starting with the keyword right before `at`
     // is one too (after a `function f() {}` there is no `;` to stop the walk back).
@@ -189,42 +192,128 @@ function parse(text: string) {
 const bump = (c: Counts, k: string) => { c[k] = (c[k] ?? 0) + 1; };
 const sortKeys = (c: Counts): Counts => Object.fromEntries(Object.entries(c).sort(([a], [b]) => (a < b ? -1 : 1)));
 
-function audit(files: Record<string, string>): Audit {
-  const parsed = Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1)).map(([f, t]) => [f, parse(t)] as const);
-  const vars = new Set(parsed.flatMap(([, p]) => p.decls.filter((d) => !d.fn).map((d) => d.name)));
-  const fnNames = new Set(parsed.flatMap(([, p]) => p.decls.filter((d) => d.fn && !vars.has(d.name)).map((d) => d.name)));
-  const r: Audit = { ownerWrites: {}, goBranches: 0, fnReassign: {}, overlaySites: [], rawNet: {}, currentAssign: {}, emptyBypass: {} };
-  for (const [f, p] of parsed) {
-    for (const [name, owners] of Object.entries(OWNERS.objects)) if (!owners.includes(f))
-      for (const m of p.find(objectWrite(name))) if (!p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
-    // A block-local alias of an owned object or let: its writes after the alias, inside that block, are writes to the owned name.
-    for (const [name, owners] of [...Object.entries(OWNERS.objects), ...Object.entries(OWNERS.lets)]) if (!owners.includes(f))
-      for (const a of p.find(aliasOf(name))) {
-        const s = p.scope(a.index);
-        if (s && !p.shadowed(a.index, name)) for (const m of p.find(objectWrite(a[1]!))) if (m.index > a.index && m.index < s[1]) bump(r.ownerWrites, `${name}|${f}`);
+// Parsing and the per-file counts are cached by file text: the planted cases change one or two files, so each re-reads only those and
+// shares the rest with REAL (re-parsing and re-scanning all of web/js per case made each planted test take seconds).
+type Parsed = ReturnType<typeof parse>;
+const PARSED = new Map<string, Parsed>();
+const parsed = (text: string): Parsed => { let p = PARSED.get(text); if (!p) PARSED.set(text, (p = parse(text))); return p; };
+
+// Rule B: each test of a screen name inside go(). A screen name is a SCREENS row id, or an address whose first part (before / or :) is
+// one ("monitoring/c:"). A test is the name compared with === !== == != (on either side), a case label, an item of an array literal or
+// new Set([...]) read with .includes( .indexOf( .has(, or the argument of .startsWith( .endsWith( .includes( .indexOf(. Each literal
+// counts once. Not counted: a test whose other side is a SCREENS row field (row.tab === "chat", switch (SCREENS[n].tab), ["chat"].
+// includes(r.tab): the row's data), and a name written as a value, an address, an argument, a key or an index (name = "home",
+// navSync("monitoring", ...), SCREENS["chat"]). Strings in comments and template text are not code.
+function goTests(p: Parsed, from: number, to: number, rows: ScreenRow[]): number {
+  const ids = new Set(rows.map((r) => r.id)), fields = new Set(rows.flatMap((r) => Object.keys(r)).filter((k) => k !== "id"));
+  const { text, mask, code } = p, OPERAND = String.raw`[\w$.?[\]]*`;
+  const rowField = (operand: string) => fields.has(/\.([\w$]+)$/.exec(operand.trim())?.[1] ?? "");
+  const tail = (at: number) => new RegExp(`${OPERAND}$`).exec(code.slice(Math.max(from, at - 200), at).trimEnd())![0];
+  let n = 0;
+  for (let s = from; s < to; s++) {
+    const q = text[s];
+    // A string starts at a quote that is not code right after a character that is (inside a comment or a template the one before is not).
+    if ((q !== '"' && q !== "'") || mask[s] || !mask[s - 1]) continue;
+    let e = s + 1;
+    while (e < text.length && text[e] !== q && text[e] !== "\n") e += text[e] === "\\" ? 2 : 1;
+    const value = text.slice(s + 1, e), pre = code.slice(Math.max(from, s - 200), s), post = code.slice(e + 1, e + 200);
+    const at = s;
+    s = e;
+    if (!ids.has(value) && !ids.has(value.split(/[/:]/)[0]!)) continue;
+    const left = new RegExp(`(${OPERAND})\\s*[!=]==?\\s*$`).exec(pre), right = new RegExp(`^\\s*[!=]==?\\s*(${OPERAND})`).exec(post);
+    const method = /\.(?:startsWith|endsWith|includes|indexOf)\(\s*$/.exec(pre);
+    let tested: string | undefined;
+    if (left) tested = left[1]!;
+    else if (right) tested = right[1]!;
+    else if (method) tested = tail(at - method[0].length);
+    else if (/(?<![\w$.])case\s*$/.test(pre)) {
+      // The switch's discriminant: the parenthesized text after the nearest `switch` before the label.
+      const sw = code.lastIndexOf("switch", at);
+      const open = sw >= from ? code.indexOf("(", sw) : -1;
+      let c = open + 1;
+      for (let d = 0; open >= 0 && c < at; c++) if (code[c] === "(") d++; else if (code[c] === ")" && d-- === 0) break;
+      tested = open >= 0 ? code.slice(open + 1, c) : "";
+    } else {
+      // An item of an array literal: walk back to the unclosed [ (not an index: no name, ) or ] before it), forward to its ], then a read.
+      let o = at - 1;
+      for (let d = 0; o >= from; o--) {
+        const c = code[o]!;
+        if (")]}".includes(c)) d++;
+        else if ("([{".includes(c)) { if (d === 0) break; d--; } else if (c === ";" && d === 0) { o = from - 1; break; }
       }
-    // A let is reassigned, and the object or list it holds is written like an owned object's (CS.who = "", PICK.push(x)).
-    for (const [name, owners] of Object.entries(OWNERS.lets)) if (!owners.includes(f)) {
-      for (const m of p.find(letWrite(name))) if (!p.isDecl(m.index) && !p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
-      for (const m of p.find(objectWrite(name))) if (!p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
+      if (o < from || code[o] !== "[" || /[\w$)\]]$/.test(code.slice(from, o).trimEnd())) continue;
+      let c = e + 1;
+      for (let d = 0; c < to; c++) if ("([{".includes(code[c]!)) d++; else if (")]}".includes(code[c]!) && d-- === 0) break;
+      const read = new RegExp(`^\\]\\s*\\)?\\s*\\.(?:includes|indexOf|has)\\(\\s*(${OPERAND})`).exec(code.slice(c, c + 200));
+      if (!read) continue;
+      tested = read[1]!;
     }
-    for (const m of p.find(letWrite("current"))) if (!p.isDecl(m.index) && !p.shadowed(m.index, "current")) bump(r.currentAssign, f);
-    for (const m of p.find(ASSIGN)) if (fnNames.has(m[1]!) && /^$|[;{}]$/.test(p.code.slice(Math.max(0, m.index - 300), m.index).trimEnd()) && !p.inFunction(m.index)) bump(r.fnReassign, `${m[1]}|${f}`);
-    for (const m of p.find(NET)) if (!(f === "02-basic-markdown.js" && p.topAt(m.index) === "api")) bump(r.rawNet, f);
-    for (const m of p.find(/(?<![\w$.])el\(/g)) {
-      if (f === "05-command-palette.js" && p.topAt(m.index) === "emptyNode") continue;
-      const props = p.args(m.index + 3)[1] ?? "";
-      const cls = /(?:^|[{,\s])class:\s*"([^"]*)"/.exec(props)?.[1] ?? "", id = /(?:^|[{,\s])id:\s*"([^"]*)"/.exec(props)?.[1] ?? "";
-      if (cls.split(/\s+/).some((c) => EMPTY_CLASS.has(c)) || EMPTY_ID.has(id)) bump(r.emptyBypass, f);
-    }
-    const go = p.decls.findIndex((d) => d.fn && d.name === "go");
-    if (go >= 0) {
-      const from = p.decls[go]!.at, to = p.decls[go + 1]?.at ?? p.text.length;
-      r.goBranches += [...p.text.slice(from, to).matchAll(/(?<![\w$.])name === "/g)].filter((m) => p.code[from + m.index] !== " ").length;
-    }
+    if (!rowField(tested)) n++;
   }
-  const sites = extractOpenSitesFromText(Object.fromEntries(Object.entries(files).map(([f, t]) => [f === "custom.js" ? f : `js/${f}`, t])));
-  r.overlaySites = sites.filter((s) => (s.kind === "rawdialog" || s.kind === "overlay") && !OVERLAY_HOMES.has(s.file) && !OVERLAY_PARTS.has(s.key)).map((s) => s.key).sort();
+  return n;
+}
+
+// One file's counts, cached by its name and text. topAssigns holds every name assigned outside any function after a statement end;
+// audit() keeps those naming a declared function (fnReassign). overlay holds the file's rawdialog and overlay sites as "kind:fn" in
+// order; audit() numbers repeats across files as hub/ui-surfaces.ts does.
+type FileAudit = { ownerWrites: Counts; topAssigns: string[]; rawNet: number; currentAssign: number; emptyBypass: number; overlay: string[] };
+const FILE_AUDITS = new Map<string, FileAudit>();
+function auditFile(f: string, text: string): FileAudit {
+  const key = `${f}\n${text}`, hit = FILE_AUDITS.get(key);
+  if (hit) return hit;
+  const p = parsed(text), r: FileAudit = { ownerWrites: {}, topAssigns: [], rawNet: 0, currentAssign: 0, emptyBypass: 0, overlay: [] };
+  for (const [name, owners] of Object.entries(OWNERS.objects)) if (!owners.includes(f))
+    for (const m of p.find(objectWrite(name))) if (!p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
+  // A block-local alias of an owned object or let: its writes after the alias, inside that block, are writes to the owned name.
+  for (const [name, owners] of [...Object.entries(OWNERS.objects), ...Object.entries(OWNERS.lets)]) if (!owners.includes(f))
+    for (const a of p.find(aliasOf(name))) {
+      const s = p.scope(a.index);
+      if (s && !p.shadowed(a.index, name)) for (const m of p.find(objectWrite(a[1]!))) if (m.index > a.index && m.index < s[1]) bump(r.ownerWrites, `${name}|${f}`);
+    }
+  // A let is reassigned, and the object or list it holds is written like an owned object's (CS.who = "", PICK.push(x)).
+  for (const [name, owners] of Object.entries(OWNERS.lets)) if (!owners.includes(f)) {
+    for (const m of p.find(letWrite(name))) if (!p.isDecl(m.index) && !p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
+    for (const m of p.find(objectWrite(name))) if (!p.shadowed(m.index, name)) bump(r.ownerWrites, `${name}|${f}`);
+  }
+  for (const m of p.find(letWrite("current"))) if (!p.isDecl(m.index) && !p.shadowed(m.index, "current")) r.currentAssign++;
+  for (const m of p.find(ASSIGN)) if (/^$|[;{}]$/.test(p.code.slice(Math.max(0, m.index - 300), m.index).trimEnd()) && !p.inFunction(m.index)) r.topAssigns.push(m[1]!);
+  for (const m of p.find(NET)) if (!(f === "02-basic-markdown.js" && p.topAt(m.index) === "api")) r.rawNet++;
+  for (const m of p.find(/(?<![\w$.])el\(/g)) {
+    if (f === "05-command-palette.js" && p.topAt(m.index) === "emptyNode") continue;
+    const props = p.args(m.index + 3)[1] ?? "";
+    const cls = /(?:^|[{,\s])class:\s*"([^"]*)"/.exec(props)?.[1] ?? "", id = /(?:^|[{,\s])id:\s*"([^"]*)"/.exec(props)?.[1] ?? "";
+    if (cls.split(/\s+/).some((c) => EMPTY_CLASS.has(c)) || EMPTY_ID.has(id)) r.emptyBypass++;
+  }
+  r.overlay = extractOpenSitesFromText({ [f === "custom.js" ? f : `js/${f}`]: text }).filter((s) => s.kind === "rawdialog" || s.kind === "overlay").map((s) => s.key.replace(/#\d+$/, ""));
+  FILE_AUDITS.set(key, r);
+  return r;
+}
+
+function audit(files: Record<string, string>): Audit {
+  const entries = Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1));
+  const decls = entries.flatMap(([, t]) => parsed(t).decls), vars = new Set(decls.filter((d) => !d.fn).map((d) => d.name));
+  const fnNames = new Set(decls.filter((d) => d.fn && !vars.has(d.name)).map((d) => d.name));
+  const rows = readScreens(files[SCREENS_FILE] ?? "") ?? [];
+  const r: Audit = { ownerWrites: {}, goBranches: 0, fnReassign: {}, overlaySites: [], rawNet: {}, currentAssign: {}, emptyBypass: {} };
+  for (const [f, t] of entries) {
+    const a = auditFile(f, t), p = parsed(t);
+    Object.assign(r.ownerWrites, a.ownerWrites);
+    for (const name of a.topAssigns) if (fnNames.has(name)) bump(r.fnReassign, `${name}|${f}`);
+    if (a.rawNet) r.rawNet[f] = a.rawNet;
+    if (a.currentAssign) r.currentAssign[f] = a.currentAssign;
+    if (a.emptyBypass) r.emptyBypass[f] = a.emptyBypass;
+    const go = p.decls.findIndex((d) => d.fn && d.name === "go");
+    if (go >= 0) r.goBranches += goTests(p, p.decls[go]!.at, p.decls[go + 1]?.at ?? p.text.length, rows);
+  }
+  // The overlay sites in hub/ui-surfaces.ts order (web/js by name, then custom.js), a repeated "kind:fn" numbered #2, #3 across files.
+  const seen = new Map<string, number>();
+  for (const [f, t] of [...entries.filter(([f]) => f !== "custom.js"), ...entries.filter(([f]) => f === "custom.js")])
+    for (const base of auditFile(f, t).overlay) {
+      const n = (seen.get(base) ?? 0) + 1, key = n > 1 ? `${base}#${n}` : base;
+      seen.set(base, n);
+      if (!OVERLAY_HOMES.has(f) && !OVERLAY_PARTS.has(key)) r.overlaySites.push(key);
+    }
+  r.overlaySites.sort();
   for (const k of ["ownerWrites", "fnReassign", "rawNet", "currentAssign", "emptyBypass"] as const) r[k] = sortKeys(r[k]);
   return r;
 }
@@ -233,14 +322,24 @@ function audit(files: Record<string, string>): Audit {
 // call, a number) that takes a rule C write from a file other than the one declaring it is owned (objects or lets) or exempt with a reason.
 // A write is a property or container write (X.f =, X.set(, X[k] =, X.push( ...), and for a let or var also its reassignment. Each
 // finding is "NAME|declaring file <- writing file".
+// Whether a file's code writes a name, cached per parsed file (shared across the planted cases like the parse itself).
+const WRITES = new WeakMap<Parsed, Map<string, boolean>>();
 function unowned(files: Record<string, string>): string[] {
   const known = new Set([...Object.keys(OWNERS.objects), ...Object.keys(OWNERS.lets), ...Object.keys(OWNERS.exempt)]);
-  const parsed = Object.entries(files).map(([f, t]) => [f, parse(t)] as const), out: string[] = [];
-  for (const [df, dp] of parsed) for (const d of dp.decls) if (!d.fn && !known.has(d.name))
-    for (const [f, p] of parsed) if (f !== df && p.code.includes(d.name)) {
-      const writes = [...p.find(objectWrite(d.name)), ...(d.kw === "const" ? [] : p.find(letWrite(d.name)).filter((m) => !p.isDecl(m.index)))];
-      if (writes.some((m) => !p.shadowed(m.index, d.name))) out.push(`${d.name}|${df} <- ${f}`);
+  const all = Object.entries(files).map(([f, t]) => [f, parsed(t)] as const), out: string[] = [];
+  const writes = (p: Parsed, name: string, isConst: boolean) => {
+    let memo = WRITES.get(p);
+    if (!memo) WRITES.set(p, (memo = new Map()));
+    const key = `${isConst ? "c" : "l"} ${name}`;
+    let hit = memo.get(key);
+    if (hit === undefined) {
+      const ms = [...p.find(objectWrite(name)), ...(isConst ? [] : p.find(letWrite(name)).filter((m) => !p.isDecl(m.index)))];
+      memo.set(key, (hit = ms.some((m) => !p.shadowed(m.index, name))));
     }
+    return hit;
+  };
+  for (const [df, dp] of all) for (const d of dp.decls) if (!d.fn && !known.has(d.name))
+    for (const [f, p] of all) if (f !== df && p.words.has(d.name) && writes(p, d.name, d.kw === "const")) out.push(`${d.name}|${df} <- ${f}`);
   return out.sort();
 }
 
@@ -355,9 +454,25 @@ test("planted C: a parameter of an expression-bodied arrow and a destructured lo
   expect(delta(mailBox("const zzAr3 = (xs) => MON.xs.sort(), zzAr4 = NT => 1;\nfunction zzAr5() { NT.zz = 1; }"))).toEqual({ "ownerWrites MON|30-mail-box.js": 1, "ownerWrites NT|30-mail-box.js": 1 });
 });
 
-test("planted B: a go() branch and a top-level function reassignment count", () => {
-  const cp = files["05-command-palette.js"]!;
-  expect(delta({ "05-command-palette.js": cp.replace("function go(name, tgt) {\n", "function go(name, tgt) {\n  if (name === \"zz\") return;\n") })).toEqual({ goBranches: 1 });
+const inGo = (line: string) => ({ "05-command-palette.js": files["05-command-palette.js"]!.replace("function go(name, tgt) {\n", `function go(name, tgt) {\n  ${line}\n`) });
+
+test("planted B: each test of a screen name inside go() counts, whatever its form", () => {
+  expect(delta(inGo("if (name === \"notices\") return;"))).toEqual({ goBranches: 1 });
+  expect(delta(inGo("if (\"usage\" !== current || prevView == \"apps\" || tgt.view != 'models') return;"))).toEqual({ goBranches: 3 });
+  expect(delta(inGo("switch (name) { case \"devices\": return; case \"zz\": break; }"))).toEqual({ goBranches: 1 });
+  expect(delta(inGo("if ([\"models\", \"usage\"].includes(name) || new Set([\"apps\"]).has(current)) return;"))).toEqual({ goBranches: 3 });
+  expect(delta(inGo("if (name.startsWith(\"monitoring\") || current.indexOf(\"monitoring/c:\") === 0 || routeName(tgt) === \"chat\") return;"))).toEqual({ goBranches: 3 });
+});
+
+test("planted B: a screen name written, a row field tested, a non-screen literal or a test outside go() does not count", () => {
+  expect(delta(inGo("if (!tgt) { name = \"home\"; tgt = tgt ? \"chat/list\" : `monitoring/c:${tgt}`; navSync(\"monitoring\", \"settings\"); }"))).toEqual({});
+  expect(delta(inGo("if (SCREENS[name]?.tab === \"chat\" || \"settings\" !== SCREENS[name].tab || [\"chat\"].includes(SCREENS[name].tab)) tgt = SCREENS[\"chat\"];"))).toEqual({});
+  expect(delta(inGo("switch (SCREENS[name].tab) { case \"chat\": break; }"))).toEqual({});
+  expect(delta(inGo("if (tgt === \"list\" || name === \"zz\" || $(\"#v-chat\") || localStorage.getItem(\"chat\")) return; // name === \"notices\""))).toEqual({});
+  expect(delta(mailBox("function zzNm(name) { return name === \"notices\" || [\"apps\"].includes(name); }"))).toEqual({});
+});
+
+test("planted B: a top-level function reassignment counts", () => {
   expect(delta(mailBox("const zzGo = go;\ngo = function (n, t) { zzGo(n, t); };"))).toEqual({ "fnReassign go|30-mail-box.js": 1 });
   expect(delta(mailBox("function zzGo2() { let go = 1; go = 2; }"))).toEqual({});
 });
@@ -387,7 +502,6 @@ test("planted G: an empty state built outside emptyNode counts, a kk-note line d
 // Rule A: the screen lists. Only web/js/03-screens.js declares or changes SCREENS and the lists made from it; a local of the same name
 // (a function's `const views = $("#views")`, the notice wording's own SUB inside its IIFE) is not one. The rows marked html: true and the
 // #v-<id> sections of web/index.html match both ways. Unlike the ratchet above there is no allowance: every finding fails.
-const SCREENS_FILE = "03-screens.js";
 const SCREEN_LISTS = ["SCREENS", "views", "SUB", "titles", "NAV", "VIEW_ICON"];
 const listWrite = (x: string) => {
   const ref = `(?<![\\w$.])${x}(?:\\.[\\w$]+|\\[[^\\]\\n]*\\])*`;
@@ -397,7 +511,7 @@ function screenRule(files: Record<string, string>, html: string): string[] {
   const out: string[] = [];
   for (const [f, t] of Object.entries(files)) {
     if (f === SCREENS_FILE) continue;
-    const p = parse(t);
+    const p = parsed(t);
     for (const d of p.decls) if (SCREEN_LISTS.includes(d.name) && p.topLevel(d.at)) out.push(`declares ${d.name}|${f}`);
     for (const x of SCREEN_LISTS) for (const m of p.find(listWrite(x))) if (!p.isDecl(m.index) && !p.shadowed(m.index, x)) out.push(`changes ${x}|${f}`);
   }
