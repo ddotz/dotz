@@ -159,6 +159,7 @@ function pkDrop(id) {
 function pkClear() { PICK = []; renderPicks(); }
 function pkRestore(list) { if (list && list.length) { PICK = list.concat(PICK); renderPicks(); } }
 function pkAssign(list) { PICK = list || []; renderPicks(); }
+function pkAdd(p) { PICK.push(p); renderPicks(); }
 
 /* ---------- picking itself ---------- */
 function pkDo(n, doc, frame) {

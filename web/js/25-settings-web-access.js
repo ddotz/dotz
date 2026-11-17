@@ -19,6 +19,8 @@ async function loadWebAccess() {
   if (current === "webaccess") renderWebAccess();
   if (inSettings()) renderSettings();
 }
+// A finished setup flow (25-settings-onboarding.js obAfterDone): drop the draft so the reload draws the new state.
+function waReload() { WA.draft = null; loadWebAccess(); }
 function waReset() {
   const d = WA.data;
   WA.draft = { mode: d.mode, hostname: d.hostname, team: d.team, aud: d.aud, token: "" };

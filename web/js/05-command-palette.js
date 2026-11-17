@@ -146,7 +146,7 @@ function go(name, tgt) {
   if (!views.includes(name) || navOff(name)) name = "home";
   if (name === "projects" && ppWide() && !relayCur()) { histAuto(); name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : prjFirst() || "builtin:custom"; if (!PRJ) prjLoad().then(() => { if (current === "project" && ppCur === "builtin:custom" && prjFirst()) { histAuto(); go("project", prjFirst()); } }); }
   if (name === "project" && !tgt) name = "projects";
-  if (name === "accounts") accFocus = tgt || "";
+  if (name === "accounts") accFocusAsk(tgt);
   if (name === "project") ppCur = tgt;
   if (name === "monitoring") monRoute(tgt);
   // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
@@ -162,7 +162,7 @@ function go(name, tgt) {
   SCREEN_HOOKS[name]?.route?.(tgt);   // after current is set, before the address is built: 앱's appsOpen draws only the shown tab and names it for appsHash
   if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
-  if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
+  if (name === "harness") hProjRoute(tgt);
   const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "cardform" && tgt ? `cardform/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
   navSync(name, hash);
   const pp = name === "project" && ppWide();

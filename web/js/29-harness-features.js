@@ -163,10 +163,10 @@ function fcBuild(box) {
 function renderFeatures() {
   const box = hFcBox;
   if (!box) return;
-  if (!FC) { clear(box); fcSig = ""; return; }
+  if (!FC) { clear(box); fcDrawn(""); return; }
   const sig = JSON.stringify(FC.features) + (HG ? HG.nodes.map(n => n.label).join("") : "") + (hOrigin() ? "o" : "");
   if (sig === fcSig && box.firstChild) return;
-  fcSig = sig;
+  fcDrawn(sig);
   if (!hOrigin()) fcFilter.origin = "";
   if (fcOrig !== hOrigin()) { fcOrig = hOrigin(); clear(box); }
   if (!box.firstChild) fcBuild(box);

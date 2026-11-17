@@ -154,6 +154,14 @@ function hCard(n, mobile) {
   hNodeEls.set(n.id, b);
   return b;
 }
+// A drawn card (node) and the box its edges attach to (geo); edge refs are what hHot lights. 28-harness-project.js fills them per paint.
+function hMapNode(id, node, geo) { hNodeEls.set(id, node); hGeo.set(id, geo); }
+function hEdgeAdd(ref) { hEdgeRefs.push(ref); }
+// The open project's map: from the address (`project/<id>`) or picked by id ("" = the main map).
+function hProjRoute(tgt) { hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : ""; }
+function hProjPick(id) { hProjId = id; }
+// The signature of the feature list now drawn (29-harness-features.js renderFeatures); "" forces the next paint.
+function fcDrawn(sig) { fcSig = sig; }
 
 function hHot(id) {
   if (hOv) { hOverlay(id); return; }
@@ -168,13 +176,13 @@ function hUse() {
   const p = hPj();
   if (hProjId && HGB && !p) { hProjId = ""; if (current === "harness") routeReplace("harness"); }
   HG = p ? { ...HGB, origin_view: false, nodes: p.map.nodes, edges: p.map.edges } : HGB;
-  if (hSel && !hNode(hSel)) { closeHSheet(); hSel = ""; }
+  if (hSel && !hNode(hSel)) hSelClear();
 }
 
 function renderHarness() {
   const box = $("#harness");
   hUse();
-  hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOv = null;
+  hNodeEls = new Map(); hEdgeRefs = []; hGeo = new Map(); hOvDrop();
   if (!HG) { clear(box).append(emptyNode(TX("common.loading"))); return; }
   const mobile = H_MQ.matches, pj = hPj();
   const onlySeg = hOrigin() ? el("div", { class: "seg", role: "group", "aria-label": TX("system.view.scope") }, ...[[false, TX("system.view.all"), TX("system.view.all_tip")], [true, TX("system.view.custom", { n: hCustomCount() }), TX("system.view.custom_tip")]].map(([v, t, tip]) => {

@@ -72,6 +72,8 @@ function renderAccounts() {
   // an old provider address or a home card lands on that provider, once both lists are in
   if (accFocus && ACC) { const n = box.querySelector(`[data-prov="${CSS.escape(accFocus)}"]`); accFocus = ""; if (n) n.scrollIntoView({ block: "start" }); }
 }
+// The provider an old address or a home card asked for; renderAccounts scrolls to it once and clears it.
+function accFocusAsk(prov) { accFocus = prov || ""; }
 function addProviderDialog() {
   const addable = P && P.addable;
   let pick = null, keyIn = null, free = null;

@@ -58,7 +58,7 @@ function obApply(key, next) {
 // A finished flow reloads the index and the screen it belongs to, so the header and switches show the new state.
 function obAfterDone(key) {
   loadMessengerIndex();
-  if (key === "web-access") { WA.draft = null; loadWebAccess(); return; }
+  if (key === "web-access") { waReload(); return; }
   if (key === "discord") { loadDiscord(); return; }
   loadMessengerSettings(key);
 }
