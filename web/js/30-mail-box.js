@@ -33,7 +33,12 @@ function mbHold(id, node, press = pressWait) {
   return keep => { const h = MBOX.held.get(id); MBOX.held.delete(id); if (h && !keep) h.undo(); };
 }
 const mbHeld = (id, node) => { const h = MBOX.held.get(id); if (h) h.undo = h.press(node); return node; };
-const mbWait = btn => (btn && btn.dataset.k ? mbHold(mbWid(btn), btn) : pressWait(btn));
+const mbWait = btn => {
+  if (!btn || !btn.dataset.k) return pressWait(btn);
+  const unwait = mbHold(mbWid(btn), btn), offPage = !btn.isConnected;
+  if (offPage) mbPaintBar();
+  return unwait;
+};
 const mbRowPress = r => { r.setAttribute("aria-busy", "true"); return () => r.removeAttribute("aria-busy"); };
 const mbHeldRow = (t, row) => { if (MBOX.held.size) { for (const b of row.querySelectorAll("button[data-k]")) mbHeld(`${t}|${b.dataset.k}`, b); mbHeld(`${t}|row`, row); } return row; };
 const mbBarHeld = bar => { if (MBOX.held.size) for (const b of bar.querySelectorAll("button[data-k]")) mbHeld(`|${b.dataset.k}`, b); };

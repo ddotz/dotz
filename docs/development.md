@@ -64,7 +64,8 @@ Check: `ps aux | grep hub/main.ts` shows `~/.local/share/dotz/hub/main.ts`, and 
 - Owner machines do not run the suite on update. The update gate (`hub/update-gate.json`, read from the version being installed) is
   `bun test ./hub/update-smoke-run.ts` (5-minute limit, under a second in practice). It starts that version's gateway on a throwaway data dir,
   HOME and port, with no Discord, no agent and no tailscale, and checks `/api/health`, the web page with its scripts and styles, and
-  `/api/state` and `/api/notices`.
+  `/api/state` and `/api/notices`. When the owner's `config.json` runs the assistant or the sessions on omp, it also starts omp from that tree
+  (`hub/update-smoke.ts`, 30-second limit, no model call) and fails the update when omp does not answer `get_state` with the dotz extension's guard tool.
 - When the running gateway applies an update, it writes `<data>/update-pending.json` and starts a detached watchdog from a copy in the data
   folder (`hub/update-watchdog.ts`). If the restarted gateway has not marked the update healthy within 3 minutes (it does so after
   45 s up while `/api/health` answers), the watchdog rolls back once: `git reset --keep <from>`, or swapping `<dir>` and `<dir>.prev`. It then
